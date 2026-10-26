@@ -20,7 +20,7 @@ from guiyi_quant.newow.product_identity import InputQualityPolicy, build_segment
 
 
 _STRATEGIES = ("trend", "oscillation", "main_rise")
-_FREQUENCIES = ("1w", "1d", "60m")
+_FREQUENCIES = ("1w", "1d", "60m", "5m", "15m", "30m")
 
 
 @pytest.mark.parametrize("strategy", _STRATEGIES)
@@ -308,7 +308,7 @@ def test_owned_60m_same_day_bars_do_not_use_legacy_d1_day_order(product_cases):
 
 
 @pytest.mark.parametrize("strategy", _STRATEGIES)
-@pytest.mark.parametrize("frequency", ("1d", "1w", "60m"))
+@pytest.mark.parametrize("frequency", _FREQUENCIES)
 def test_owned_batch_matches_atomic_steps_through_physical_rollover_and_typed_gap(
     product_cases, strategy, frequency,
 ):
@@ -321,7 +321,7 @@ def test_owned_batch_matches_atomic_steps_through_physical_rollover_and_typed_ga
     )) for item in first)
     # Rewinding in time is legitimate only across authoritative owner segments.
     gaps = ()
-    if frequency != '60m':
+    if frequency in ('1d', '1w'):
         split = len(second) // 2
         missing = second[split].bar
         second = (*second[:split], *second[split + 1:])

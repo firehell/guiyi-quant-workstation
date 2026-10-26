@@ -18,6 +18,7 @@ from sqlalchemy import and_, false, func, or_, select, text, tuple_
 from sqlalchemy.orm import Session, aliased
 
 from app.db.readonly import readonly_transaction
+from app.reference_trading.manifest_storage import resolve_manifest
 from app.reference_trading.contracts import SnapshotIdentity, manifest_sha256
 from app.reference_trading.models import (
     ReferenceActionRow, ReferenceBatch, ReferenceMarkRow, ReferenceRevision, ReferenceStream, ReferenceTradeRow,
@@ -273,7 +274,7 @@ class HistoricalReferenceQuery:
         ).order_by(ReferenceBatch.seq.desc()).limit(1))
         if batch is None:
             raise QueryConflict("SNAPSHOT_CONFLICT")
-        return manifest_sha256(batch.dependency_manifest)
+        return manifest_sha256(resolve_manifest(session, batch))
 
     @staticmethod
     def _window(since: date, through: date, cutoff: datetime | None) -> None:
@@ -648,12 +649,13 @@ class HistoricalReferenceQuery:
                 session, row, since=saved_since, through=saved_through,
                 cutoff=cutoff, encoded=snapshot_token,
             )
-            manifest = session.scalar(select(ReferenceBatch.dependency_manifest).where(
+            manifest_batch = session.scalar(select(ReferenceBatch).where(
                 ReferenceBatch.stream_id == stream_id,
                 ReferenceBatch.revision_id == snapshot.revision_id,
                 ReferenceBatch.seq <= snapshot.seq,
                 ReferenceBatch.kind.in_(("seed_seal", "calculation")),
             ).order_by(ReferenceBatch.seq.desc()).limit(1))
+            manifest = None if manifest_batch is None else resolve_manifest(session, manifest_batch)
             saved_count = manifest.get("input_count") if isinstance(manifest, dict) else None
             if saved_count is None and isinstance(manifest, dict) and manifest.get("reader") == "newow_product_reader_v2":
                 fingerprints = manifest.get("input_fingerprints")

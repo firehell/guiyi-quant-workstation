@@ -167,9 +167,9 @@ class PreviousReferenceWindowOut(ReferenceOut):
 
 class SubingReferenceResponse(ReferenceOut):
     symbol: str
-    frequency: Literal["15m", "30m", "60m", "1d"]
+    frequency: Literal["5m", "15m", "30m", "60m", "1d", "1w"]
     series_kind: Literal["actual_dominant"]
-    formula_version: Literal["subing_ths_15m_v3", "subing_ths_30m_v1", "subing_ths_60m_v1", "subing_ths_1d_v1"]
+    formula_version: Literal["subing_ths_5m_v1", "subing_ths_1w_v1", "subing_ths_15m_v3", "subing_ths_30m_v1", "subing_ths_60m_v1", "subing_ths_1d_v1"]
     reference_model_version: Literal[
         "subing_reference_reverse_close_v1",
         "subing_reference_reverse_close_quality_segment_v2",

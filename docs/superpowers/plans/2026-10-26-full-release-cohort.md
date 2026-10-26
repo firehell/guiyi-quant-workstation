@@ -29,3 +29,10 @@ Recovery ledger:
 - v7修bootout一次后有限等待label+PID；恢复先等teardown再cancel/start。新增仅precommit的历史身份审计checkpoint，不执行过期plan、不处理postCAS unknown，不覆原attempt。独立70项Review通过，现场checkpoint/全新switch仍待验。
 
 - v7最终13文件组合231 passed/0 skipped；独立终审70 passed，现场10项只读恢复proof通过，Ruff/OpenSpec12/12/secret0。准备发布7后只读审计checkpoint及全新切换，不复用6attempt。
+
+Final execution ledger:
+- PR483/main/annotated v1.16.7 exact44de0c4a，候选同树；部署231/候选165、独立70、type/build/OpenSpec/secret通过。
+- v7 resolve-restored已通过：旧6attempt字节保持restore_unknown，唯一receipt8a762c...，仅global checkpoint cancelled；之后全新plan57dd3c...单次CAS switched，十项统一root7/gen29。
+- 新六PID（API56434/Web56441/Feed57330/Live56417/Alert56422/Reference56428）三次307秒稳定，清树后第四次1523秒仍相同，HTTP/Web-dist/代理/identity/游标均通过；SimNow not_connected，7输入warming与自然pending如实保留。
+- 三份已卸载旧candidate plist按冻结原件SHA私有备份后退休；四旧发布树1/4/5/6经native cleanup plan a31b321...两次一致、30原件19492字节保全后non-force移除，tag/Release不删。
+- 仅保留一个发布树7，develop保留。已合并任务树55fedb0仍有多个Codex/node_repl及8003/5176预览引用，非零引用，因此不强删、不终止无关会话；这是剩余清理边界，不是发布或十服务切换阻断。

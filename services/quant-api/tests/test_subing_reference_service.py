@@ -153,7 +153,7 @@ def test_defaults_twenty_complete_days_and_explicit_identity(case):
     assert market.requests[-1].since == market.days[0]
 
 
-@pytest.mark.parametrize("frequency", ("30m", "60m"))
+@pytest.mark.parametrize("frequency", ("5m", "30m", "60m"))
 def test_new_frequency_uses_same_physical_replay_with_separate_identity(frequency):
     market = FrequencyMarket()
     service = SubingReferenceService(
@@ -556,3 +556,58 @@ def test_wire_decimal_is_fixed_point_even_for_cancellation_zero():
         "sum": "0.000000000000000000000000000",
         "price": "1000",
     }
+
+class WeeklyMarket(FrequencyMarket):
+    def __init__(self):
+        super().__init__()
+        self.days = tuple(date(2025, 7, 4) + timedelta(weeks=n) for n in range(54))
+        self.bars = tuple(CanonicalBar(datetime.combine(day, time(6), UTC), day,
+            Decimal(100 if i < 50 else (120 if i % 2 == 0 else 80)),
+            Decimal(125), Decimal(75), Decimal(100 if i < 50 else (120 if i % 2 == 0 else 80)),
+            Decimal(1), None, None) for i, day in enumerate(self.days))
+        self.physical = self.bars
+        self.owner = ResolvedContractSegment('RB2610', self.days[-10], self.days[-1] + timedelta(days=5))
+
+    def completed_trading_days(self, *, symbol, start, as_of, latest, calendar_since=None):
+        return tuple(start.date() + timedelta(days=i) for i in range((latest-start.date()).days+1)
+            if (start.date()+timedelta(days=i)).weekday() < 5
+            and datetime.combine(start.date()+timedelta(days=i), time(6), UTC) <= as_of)
+
+    def completed_calendar_week(self, *, symbol, week_monday, as_of):
+        day = week_monday + timedelta(days=4)
+        end = datetime.combine(day, time(6), UTC) + timedelta(microseconds=1)
+        return (day, end) if end <= as_of else None
+
+
+def test_weekly_reference_midweek_uses_last_confirmed_week_with_physical_warmup():
+    market = WeeklyMarket()
+    now = datetime.combine(market.days[-1] + timedelta(days=3), time(7), UTC)
+    service = SubingReferenceService(market, coverage=Coverage(), active_products={'rb'}, now=lambda: now)
+    result = service.query(SubingReferenceQuery('rb', frequency='1w'))
+    assert result['frequency'] == '1w'
+    assert result['formula_version'] == 'subing_ths_1w_v1'
+    assert result['reference_cutoff'] == market.bars[-1].bar_end.isoformat()
+    assert all(row['bar_end'] <= result['reference_cutoff'] for row in result['signals'])
+    assert all(request.frequency.value == '1w' for request in market.requests)
+
+
+def test_weekly_explicit_completed_through_matches_default_cutoff():
+    market = WeeklyMarket()
+    now = datetime.combine(market.days[-1] + timedelta(days=3), time(7), UTC)
+    service = SubingReferenceService(market, coverage=Coverage(), active_products={'rb'}, now=lambda: now)
+    implicit = service.resolve_read_window(SubingReferenceQuery('rb', frequency='1w'))
+    explicit = service.resolve_read_window(SubingReferenceQuery('rb', frequency='1w', through=market.days[-1]))
+    assert explicit[1:3] == implicit[1:3]
+
+
+def test_weekly_holiday_short_week_requires_final_session_confirmation():
+    class ShortWeek(WeeklyMarket):
+        def completed_calendar_week(self, *, symbol, week_monday, as_of):
+            day = week_monday + timedelta(days=3 if week_monday == date(2026, 7, 6) else 4)
+            end = datetime.combine(day, time(6), UTC) + timedelta(microseconds=1)
+            return (day, end) if end <= as_of else None
+    market = ShortWeek()
+    close = datetime(2026, 7, 9, 6, tzinfo=UTC)
+    for observed, expected_day in [(close, date(2026, 7, 3)), (close+timedelta(microseconds=1), date(2026, 7, 9))]:
+        service = SubingReferenceService(market, coverage=Coverage(), active_products={'rb'}, now=lambda: observed)
+        assert service.resolve_read_window(SubingReferenceQuery('rb',frequency='1w',through=date(2026,7,9)))[1] == expected_day

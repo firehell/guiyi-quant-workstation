@@ -16,7 +16,7 @@ def test_formal_capability_has_exact_historical_scope():
         response = client.get('/api/v1/market/newow/product-capabilities')
     data = response.json()
     assert response.status_code == 200
-    assert data['schema_version'] == 'newow_product_capabilities_v33'
+    assert data['schema_version'] == 'newow_product_capabilities_v35'
     assert data['intraday_products'] == PRODUCTS
     assert len(PRODUCTS) == 60
     assert data['intraday_as_of'] is None
@@ -47,9 +47,9 @@ def test_intraday_cutoff_is_not_silently_extended():
         released_intraday_as_of(datetime(2026, 9, 30, 7, tzinfo=UTC))
 
 
-def test_one_minute_and_main_rise_never_enter_formal_reader():
+def test_one_minute_never_enters_formal_reader():
     with TestClient(app) as client:
-        for frequency, strategy in [('1m', 'trend'), ('5m', 'main_rise')]:
+        for frequency, strategy in [('1m', 'trend'), ('1m', 'main_rise')]:
             response = client.get('/api/v1/market/newow/strategy-detail', params={
                 'product': 'rb', 'frequency': frequency, 'strategy': strategy, 'section': 'chart',
             })

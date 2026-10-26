@@ -1,3 +1,5 @@
+import { CAUTION_DISPLAY_VERSION, normalizeCautionDisplay, cautionDisplayTitle } from './newowCautionDisplay.ts'
+import type { NewowCautionEvent } from '../types/newowProduct.ts'
 import type { PriceProvenance } from './newowPriceSources.ts'
 import { comparePositiveDecimalText } from './marketDisplay.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
@@ -52,7 +54,7 @@ export interface HomePeriodFact {
   target_space_percent?: string | null
   absorb_space_percent?: string | null
   main_force_control?: { status: string; label: string | null; formula_version: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean }
-  row_hints?: { status: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean; items: Array<{ kind: 'caution' | 'reduce'; event_bar_end?: string; tentative?: boolean; confirmed_day?: string | null; peak_day?: string; event_day: string; j_value?: string; reference_price?: string; formula_version: string }> } | null
+  row_hints?: { display_policy_version?: string; status: string; bar_end: string; physical_contract: string; calculation_segment_id: string; page_parity: boolean; executable: boolean; items: Array<{ kind: 'caution' | 'reduce'; event_bar_end?: string; tentative?: boolean; confirmed_day?: string | null; peak_day?: string; event_day: string; j_value?: string; reference_price?: string; formula_version: string } & Partial<Omit<NewowCautionEvent, 'formula_version'>>> } | null
   page_performance?: { status: string; reason_code?: string; version?: string; strategy?: HomeStrategy; frequency?: HomePeriod; as_of?: string; input_sha256?: string; source_evidence_sha256?: string | null; since?: string | null; through?: string | null; cum_return_percent?: string; trade_count?: number; page_parity?: boolean; executable?: boolean }
   display_as_of?: string
   display_projection_version?: 'newow_home_display_v1'
@@ -235,10 +237,29 @@ export function homePagePerformance(day: HomePeriodFact | undefined, strategy: H
 
 export function homeRowHints(day?: HomePeriodFact) {
   const hints = day?.row_hints
-  if (day?.status !== 'ready' || !day.bar_end || !day.physical_contract || !day.calculation_segment_id || !hints || hints.status !== 'ready' || hints.page_parity !== true || hints.executable !== false || hints.bar_end !== day.bar_end || hints.physical_contract !== day.physical_contract || hints.calculation_segment_id !== day.calculation_segment_id || !Array.isArray(hints.items)) return []
-  return hints.items.filter(item => item.formula_version && /^\d{4}-\d{2}-\d{2}$/.test(item.event_day) && item.event_day <= day.bar_end!.slice(0, 10) && (item.kind === 'caution' ? /^\d{4}-\d{2}-\d{2}$/.test(item.peak_day ?? '') && item.peak_day! <= item.event_day : item.kind === 'reduce' && Number.isFinite(Number(item.j_value)) && Number(item.reference_price) > 0)).map(item => ({
-    label: item.kind === 'caution' ? '小心' : '减仓',
-    focusBarEnd: item.kind === 'caution' ? item.event_bar_end : undefined,
-    title: item.kind === 'caution' ? item.tentative ? `当天暂定峰（${item.event_day}），尚未回落5%确认 · 回看会变化，非交易信号` : `波峰（${item.peak_day}）事件 ${item.event_day}${item.confirmed_day ? ` · 确认于 ${item.confirmed_day}` : " · 历史回看"} · 页面参考提示` : `J值（${Number(item.j_value).toFixed(1)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`,
-  }))
+  if (day?.status !== 'ready' || !day.bar_end || !day.physical_contract || !day.calculation_segment_id || !hints || hints.status !== 'ready' || hints.display_policy_version!==CAUTION_DISPLAY_VERSION || hints.page_parity !== false || hints.executable !== false || hints.bar_end !== day.bar_end || hints.physical_contract !== day.physical_contract || hints.calculation_segment_id !== day.calculation_segment_id || !Array.isArray(hints.items)) return []
+  return hints.items.flatMap<{label: string; focusBarEnd?: string; title: string}>(item => {
+    if (item.kind==='caution') {
+      try {
+        const {kind, event_day, event_bar_end, confirmed_day, ...wire}=item
+        const e=normalizeCautionDisplay(wire)
+        if (!e.home_visible || e.frequency!=='1d' || e.physical_contract!==day.physical_contract || e.segment_id!==day.segment_id || e.calculation_segment_id!==day.calculation_segment_id || Date.parse(e.as_of)!==Date.parse(day.bar_end!) || Date.parse(e.bar_end)!==Date.parse(event_bar_end??'') || !/^\d{4}-\d{2}-\d{2}$/.test(event_day)) return []
+        return [{label:'小心',focusBarEnd:e.bar_end,title:cautionDisplayTitle(e)}]
+      } catch { return [] }
+    }
+    if (item.kind!=='reduce' || !item.formula_version || !/^\d{4}-\d{2}-\d{2}$/.test(item.event_day) || !Number.isFinite(Number(item.j_value)) || Number(item.reference_price)<=0) return []
+    return [{label:'减仓',focusBarEnd:undefined,title:`J值（${Number(item.j_value).toFixed(1)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`}]
+  })
+}
+
+
+/** Unknown input is a neutral explanation, never a green event or an inferred confirmation. */
+export function homeCautionNotice(day?: HomePeriodFact): string | null {
+  if (day?.status!=='ready') return null
+  const hints=day.row_hints
+  if (!hints) return cautionDisplayTitle(null,'缺少小心事件资料')
+  if (hints.display_policy_version!==CAUTION_DISPLAY_VERSION) return cautionDisplayTitle(null,'显示口径尚未更新')
+  if (hints.status!=='ready' || hints.page_parity!==false || hints.executable!==false || hints.bar_end!==day.bar_end || hints.physical_contract!==day.physical_contract || hints.calculation_segment_id!==day.calculation_segment_id || !Array.isArray(hints.items)) return cautionDisplayTitle(null,'资料时点或合约来源尚未核对')
+  if (hints.items.some(i=>i.kind==='caution') && !homeRowHints(day).some(i=>i.label==='小心')) return cautionDisplayTitle(null,'事件状态或时间资料尚未通过核验')
+  return null
 }

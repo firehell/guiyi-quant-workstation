@@ -73,7 +73,7 @@ def test_real_kernel_reversals_preserve_decimal_prices_and_explicit_links():
     assert result.trades[-1].mark_reference_price == Decimal(80)
 
 
-@pytest.mark.parametrize("frequency", ("15m", "30m", "60m", "1d"))
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m", "1d", "1w"))
 def test_public_projection_and_bounded_per_bar_state_share_one_step(frequency):
     seg = segment()
     expected = project_reference(
@@ -185,11 +185,11 @@ def test_periods_share_formula_values_but_keep_independent_signal_identity():
     seg = segment()
     options = dict(since=date(2026, 1, 1), through=date(2026, 1, 9), as_of=START + timedelta(days=9))
     results = {frequency: project_reference("RB", (seg,), frequency=frequency, **options)
-               for frequency in ("15m", "30m", "60m", "1d")}
+               for frequency in ("5m", "15m", "30m", "60m", "1d", "1w")}
     assert all([s.direction for s in value.signals] == ["buy", "sell", "buy", "sell"]
                for value in results.values())
-    assert len({value.signals[0].signal_id for value in results.values()}) == 4
-    assert len({value.trades[0].reference_trade_id for value in results.values()}) == 4
+    assert len({value.signals[0].signal_id for value in results.values()}) == 6
+    assert len({value.trades[0].reference_trade_id for value in results.values()}) == 6
     for value in results.values():
         first_signal = value.signals[0]
         matching = next(point for point in value.indicators if point.bar_end == first_signal.bar_end)

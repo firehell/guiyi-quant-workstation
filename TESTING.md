@@ -187,6 +187,28 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 对60m测试2和1d测试1重放基线/双费，记录逐笔成交与首次日停机时刻；年度结果须与原JSON完全
 一致（仅排除独立合约诊断），否则不输出trace。该诊断不写账户或改原始结果。
 
+## Newow 当前 v35 六周期能力与文档一致性
+
+当前能力为 `newow_product_capabilities_v35`：三主策略与独立融合支持5m/15m/30m/60m/1d/1w，
+记录支持矩阵为60×24=1440组合；不代表正式Scope或Runtime已扩展。v33与v34候选合同保持冻结。
+短分钟 `decision_v2`／路径仍关闭，完整解释分区仍按能力合同声明不可用。
+下方带日期或候选名称的验证入口保留历史合同，不作为当前能力声明。
+
+```bash
+node tools/generate_newow_capabilities.mjs --check
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/engineering/test_newow_capability_contract.py \
+  services/quant-api/tests/newow/test_main_rise_minutes.py \
+  services/quant-api/tests/newow/test_intraday_release.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/reference_trading/test_newow_recording_matrix.py
+openspec validate --specs --strict --no-interactive
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
+```
+
 ## 牛哇 v3.3.79 手册同输入验证
 
 该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，
@@ -2036,6 +2058,11 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 资金初始基线生效验收可在first读取时成对提供 `--expected-balance 100000 --not-before-trading-day 20261027`，
 日期取自本次官网受理回执。验收单独报告，不改变原查询状态或执行权限；旧交易日、测试副本和部分结果不能通过。
 
+只读协议回归另覆盖真实Mac SDK请求/回报结构和实际SPI方法的跨线程两轮查询、零回调/缺终态/超时边界分类，
+以及等待参数边界。账户consumer验证diagnostics不改变身份哈希且不能覆盖不完整查询；fixture不连接柜台。
+持仓首查对照覆盖两种固定顺序、首项持仓超时不再查询资金、持仓完整零行但资金失败不判账户为空，
+以及非法profile零请求；两种顺序各两轮的经济事实哈希保持一致。
+
 ## 苏冰／HTDY 实时留存参考收益面板
 
 ```sh
@@ -2070,3 +2097,13 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 状态机与主机故障注入不停止真实服务；真实切换须另验 exact release、权威休市窗口、十服务绑定/PID/heartbeat/HTTP、游标及原Scope。闭市生命周期不代替自然业务证据。
 
 详情与首页缓存旧入口回归按当前中文周期、全局搜索、预警audit及可见性返回验证；保留原截图阈值，实际发布验证及已确认旧金图/旧pane例外见[整组发布记录](docs/superpowers/plans/2026-10-26-full-release-cohort.md)。
+
+### SimNow 原生只读查询对照
+
+仅macOS ARM64，需已独立核对的Mac头文件与既有6.7.7库，不下载/连接。
+
+```sh
+python3 scripts/broker/native/build_control.py --headers /private/path/headers --library /private/path/libthosttraderapi_se.dylib --output /private/path/build
+```
+
+该入口编译运行10个C++离线回调案例，再加载真实库检查版本；不证明第一套现场回报。真实对照见docs/SIMNOW_READONLY.md。

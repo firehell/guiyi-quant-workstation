@@ -60,7 +60,7 @@ def test_real_projection_response_has_typed_strings_and_stable_pages(client):
     assert body["items"] != page.json()["items"]
 
 
-@pytest.mark.parametrize("frequency", ("30m", "60m"))
+@pytest.mark.parametrize("frequency", ("5m", "30m", "60m"))
 def test_research_frequency_api_keeps_alert_independent(client, monkeypatch, frequency):
     service = SubingReferenceService(
         FrequencyMarket(), coverage=Coverage(), active_products={"rb"},
@@ -108,7 +108,7 @@ def test_daily_quality_api_exposes_v2_coverage_without_changing_formula(monkeypa
     "suffix",
     [
         "?limit=0",
-        "?frequency=5m",
+        "?frequency=1m",
         "?since=2026-07-01&since=2026-07-02",
         "?through=tomorrow",
         "?as_of=2026-07-20T00:00:00",
@@ -191,3 +191,18 @@ def test_budget_and_concurrent_request_are_bounded(client, monkeypatch):
 
 def test_response_is_read_only(client):
     assert client.post("/api/v1/market/rb/subing/reference").status_code == 405
+
+
+def test_weekly_reference_api_has_independent_formula_and_completed_cutoff(client, monkeypatch):
+    from datetime import timedelta
+    from test_subing_reference_service import WeeklyMarket
+    market = WeeklyMarket()
+    now = datetime.combine(market.days[-1] + timedelta(days=3), datetime.min.time(), UTC) + timedelta(hours=7)
+    service = SubingReferenceService(market,coverage=Coverage(),active_products={'rb'},now=lambda:now)
+    monkeypatch.setattr(market_subing_reference,'_build_service',lambda *_:service)
+    response = client.get('/api/v1/market/rb/subing/reference',params={'frequency':'1w','through':str(market.days[-1])})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['formula_version'] == 'subing_ths_1w_v1'
+    assert body['performance_through'] == str(market.days[-1])
+    assert body['executable'] is False and body['auto_order'] is False

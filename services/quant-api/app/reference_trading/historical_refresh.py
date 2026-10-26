@@ -5,7 +5,7 @@ Unknown commits and interrupted processes require readback instead of blind retr
 """
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES, recording_route_supported
+from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES as NEWOW_MAX_ROUTES, recording_route_supported
 
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
@@ -13,6 +13,8 @@ from datetime import UTC, date, datetime
 import fcntl
 import json
 import os
+import re
+from hashlib import sha256
 from pathlib import Path
 from threading import Event, Thread
 
@@ -28,8 +30,11 @@ from app.reference_trading.refresh_plan_codec import (
 )
 
 VERSION = 'newow_historical_refresh_v1'
-STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion')
+PLAN_FILE_CODEC = 'reference_refresh_plan_file_v1'
+STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion', 'subing_reference')
+MAX_ROUTES = NEWOW_MAX_ROUTES + 60 * 6
 BUDGET = WorkBudget(1, 500_000, 1800, 512_000_000)
+SUBING_BUDGET = WorkBudget(1, 2_000_000, 1800, 8_192_000_000)
 
 
 def _strategy(identity):
@@ -82,10 +87,68 @@ class RefreshStateStore:
                 raise RefreshStateError('REFRESH_STATE_INVALID')
             if isinstance(item.get('plan'), dict) and 'codec' in item['plan']:
                 try:
-                    validate_encoded_plan(item['plan'])
+                    if item['plan']['codec'] == PLAN_FILE_CODEC:
+                        self._validate_file_ref(item['plan'])
+                    else:
+                        validate_encoded_plan(item['plan'])
                 except RefreshPlanCodecError as error:
                     raise RefreshStateError(str(error)) from error
         return value
+
+    @staticmethod
+    def _validate_file_ref(value):
+        if (set(value) != {'codec', 'file', 'sha256'} or value['codec'] != PLAN_FILE_CODEC
+                or not isinstance(value['sha256'], str) or re.fullmatch('[a-f0-9]{64}', value['sha256']) is None
+                or value['file'] != value['sha256']+'.json'):
+            raise RefreshPlanCodecError()
+
+    def store_plan(self, value):
+        from app.reference_trading.plan_bundle import canonical_bytes, write_plan, read_plan, _parent
+        if value.get('codec') == PLAN_FILE_CODEC:
+            self._validate_file_ref(value)
+            return value
+        if 'codec' in value:
+            validate_encoded_plan(value)
+            return value
+        raw = canonical_bytes(value)
+        if len(raw) <= 64_000:
+            return encode_plan(value)
+        digest = sha256(raw).hexdigest()
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        folder = self.path.with_name(self.path.name+'.plans')
+        with _parent(self.path) as (fd, name):
+            try:
+                os.mkdir(name+'.plans', mode=0o700, dir_fd=fd)
+            except FileExistsError:
+                pass
+            check = os.open(name+'.plans', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            try:
+                try:
+                    os.stat(digest+'.json', dir_fd=check, follow_symlinks=False)
+                except FileNotFoundError:
+                    exists = False
+                else:
+                    exists = True
+            finally:
+                os.close(check)
+        target = folder/(digest+'.json')
+        if exists:
+            if sha256(canonical_bytes(read_plan(target, trusted_root=self.path.parent))).hexdigest() != digest:
+                raise RefreshPlanCodecError()
+        else:
+            write_plan(target, value, force_bundle=True, trusted_root=self.path.parent)
+        return {'codec': PLAN_FILE_CODEC, 'file': digest+'.json', 'sha256': digest}
+
+    def read_plan(self, value):
+        if value.get('codec') != PLAN_FILE_CODEC:
+            return decode_plan(value)
+        from app.reference_trading.plan_bundle import canonical_bytes, read_plan
+        self._validate_file_ref(value)
+        target = self.path.with_name(self.path.name+'.plans')/value['file']
+        result = read_plan(target, trusted_root=self.path.parent)
+        if sha256(canonical_bytes(result)).hexdigest() != value['sha256']:
+            raise RefreshPlanCodecError()
+        return result
 
     def write(self, value):
         try:
@@ -99,7 +162,7 @@ class RefreshStateStore:
             raise RefreshStateError('REFRESH_STATE_INVALID')
         # Encode a copy: callers retain full plans for committed callbacks.
         try:
-            stored = {**value, 'routes': {key: ({**item, 'plan': encode_plan(item['plan'])}
+            stored = {**value, 'routes': {key: ({**item, 'plan': self.store_plan(item['plan'])}
                 if 'plan' in item else dict(item)) for key, item in value['routes'].items()}}
             data = json.dumps(stored, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
         except (RefreshPlanCodecError, TypeError, ValueError) as error:
@@ -194,7 +257,7 @@ class HistoricalRefresh:
                 if _strategy(identity) == 'dual_fusion':
                     base = [item for item in routes if item.identity.product == identity.product
                             and item.identity.frequency == identity.frequency
-                            and _strategy(item.identity) != 'dual_fusion']
+                            and _strategy(item.identity) in {'trend', 'oscillation', 'main_rise'}]
                     if (len(base) != 3 or any(item.computed_through is None or item.computed_through < endpoint
                                             for item in base)):
                         continue
@@ -213,6 +276,7 @@ class HistoricalRefresh:
         self.state.write(state)
 
     def _execute(self, route, endpoint, trading_day, prior, state, now, cancelled, batch_limit):
+        budget = SUBING_BUDGET if _strategy(route.identity) == 'subing_reference' else BUDGET
         key = route.identity.stream_id
         storage_failure: RefreshStateError | None = None
         original_cancelled = cancelled
@@ -258,7 +322,7 @@ class HistoricalRefresh:
                     raise
             if prior:
                 try:
-                    plan = plan_from_dict(decode_plan(prior['plan']))
+                    plan = plan_from_dict(self.state.read_plan(prior['plan']))
                 except ValueError as error:
                     raise RefreshStateError('REFRESH_PLAN_READBACK_REQUIRED') from error
                 if (len(plan.streams) != 1 or plan.streams[0].request.identity != route.identity
@@ -268,7 +332,7 @@ class HistoricalRefresh:
                     # Rebuild only the exact same endpoint and source already
                     # proven by the failed append plan. Never shrink its prefix.
                     replacement = prepare(HistoricalReferenceRequest(
-                        'rebuild', (plan.streams[0].request,), BUDGET,
+                        'rebuild', (plan.streams[0].request,), budget,
                     ))
                     before, after = plan.streams[0], replacement.streams[0]
                     if (before.source_token != after.source_token
@@ -280,11 +344,11 @@ class HistoricalRefresh:
                 plan = prepare(HistoricalReferenceRequest(
                     'rebuild' if route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED' else 'advance',
                     (HistoricalStreamRequest(route.identity, route.since,
-                                                        trading_day, endpoint),), BUDGET,
+                                                        trading_day, endpoint),), budget,
                 ))
                 if plan.streams[0].target_completed_through != endpoint:
                     raise ValueError('AUTHORITATIVE_ENDPOINT_CONFLICT')
-            pending = {'status': 'inflight', 'reason': None, 'plan': plan_to_dict(plan)}
+            pending = {'status': 'inflight', 'reason': None, 'plan': self.state.store_plan(plan_to_dict(plan))}
             if prior and prior.get('resume'):
                 pending['resume'] = prior['resume']
             state['routes'][key] = pending
@@ -383,7 +447,7 @@ def build_historical_refresh(session_factory, *, state_path):
     Each callback creates its own session in the refresh thread. No MDS, Session,
     Redis client or canonical lease crosses from the foreground worker.
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, func
     from app.db.readonly import readonly_transaction
     from app.reference_trading.models import ReferenceStream, ReferenceRevision, ReferenceBatch
     from app.reference_trading.repository import _identity_from_row
@@ -396,11 +460,12 @@ def build_historical_refresh(session_factory, *, state_path):
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             rows = session.scalars(select(ReferenceStream).where(
                 ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
-                ReferenceStream.enabled.is_(True), ReferenceStream.product.in_(products),
+                ReferenceStream.enabled.is_(True), func.lower(ReferenceStream.product).in_(products),
                 ReferenceStream.frequency.in_(FREQUENCIES),
             )).all()
             identities = [_identity_from_row(row) for row in rows
-                          if recording_route_supported(_strategy(_identity_from_row(row)), row.frequency)]
+                          if recording_route_supported(_strategy(_identity_from_row(row)), row.frequency)
+                          or (_strategy(_identity_from_row(row)) == "subing_reference" and row.frequency in FREQUENCIES)]
         historical = [replace(identity, recording_mode=RecordingMode.HISTORICAL_REPLAY,
                               observation_policy_version=None) for identity in identities]
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
@@ -438,7 +503,7 @@ def build_historical_refresh(session_factory, *, state_path):
         from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             page = build_market_data_service(session).query_page(SeriesPageQuery(
-                SeriesKind.ACTUAL_DOMINANT, route.identity.product, BarFrequency(route.identity.frequency),
+                SeriesKind.ACTUAL_DOMINANT, route.identity.product.lower(), BarFrequency(route.identity.frequency),
                 # Discover the Catalog-published tail, rather than requiring
                 # historical coverage through wall-clock Live time. Prepared
                 # Calendar/Session/MainMap facts do not publish Canonical bars.

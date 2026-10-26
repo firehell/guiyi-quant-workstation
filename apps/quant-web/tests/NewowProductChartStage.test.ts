@@ -957,14 +957,27 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] extends readonly (infer U)[] 
 test('independent caution layer survives auxiliary selection and clears on strategy switch',async()=>{
   const Stage=await loadComponent(),response=ref(chartResponse()),switching=ref(false)
   const b=response.value.value!.bars[0]!
-  response.value.value!.caution_events=[{bar_end:b.bar_end,peak_day:b.trading_day,confirmed_at:null,as_of:b.bar_end,tentative:true,physical_contract:b.physical_contract,segment_id:b.segment_id,calculation_segment_id:b.calculation_segment_id,formula_version:'newow_zhaoyao_mirror_repainting_page_v2',repainting:true,executable:false}]
+  response.value.value!.caution_events=[{event_id:'a'.repeat(64),frequency:response.value.meta.identity.frequency,peak_bar_end:b.bar_end,first_visible_at:b.bar_end,display_state:'tentative',age_bars:0,home_visible:true,detail_visible:true,max_tentative_age_bars:10,visibility_basis:'completed_bar',display_policy_version:'guiyi_caution_completed_anchor_v1',page_parity:false,bar_end:b.bar_end,peak_day:b.trading_day,confirmed_at:null,as_of:b.bar_end,tentative:true,physical_contract:b.physical_contract,segment_id:b.segment_id,calculation_segment_id:b.calculation_segment_id,formula_version:'newow_zhaoyao_mirror_repainting_page_v2',repainting:true,executable:false}]
   const scale={width:()=>500,timeToCoordinate:()=>210,fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>null,scrollToRealTime(){},subscribeVisibleLogicalRangeChange(){},unsubscribeVisibleLogicalRangeChange(){}}
   const fakeChart={addSeries:()=>({setData(){},createPriceLine(){},attachPrimitive(){},detachPrimitive(){},priceToCoordinate:(price:number)=>price*2}),removeSeries(){},panes:()=>[400,100,100].map(height=>({getHeight:()=>height,setStretchFactor(){}})),timeScale:()=>scale,subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
   const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response:response.value,strategy:'oscillation',selectedSignalId:null,strategySwitching:switching.value})}))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart));const root=element('root');app.mount(root);await nextTick();await nextTick()
   const layer=()=>findNode(root,n=>n.props.class==='newow-caution-overlay')!
   assert.match(textContent(layer()),/小心/)
+  const trigger=findNode(root,n=>n.props['data-testid']==='newow-caution-trigger')!
+  assert.equal(trigger.props['aria-expanded'],false)
+  ;(trigger.props.onClick as (event:object)=>void)({stopPropagation(){}})
+  await nextTick()
+  const explanation=findNode(root,n=>n.props['data-testid']==='newow-caution-explanation')!
+  assert.match(textContent(explanation),/暂定峰.*首次可见.*北京时间/)
+  assert.equal(trigger.props['aria-expanded'],true)
+  ;(trigger.props.onKeydown as (event:object)=>void)({key:'Escape',stopPropagation(){}})
+  await nextTick()
+  assert.equal(findNode(root,n=>n.props['data-testid']==='newow-caution-explanation'),undefined)
+  ;(trigger.props.onClick as (event:object)=>void)({stopPropagation(){}})
+  await nextTick()
   switching.value=true;await nextTick();await nextTick()
   assert.doesNotMatch(textContent(layer()),/小心/)
+  assert.equal(findNode(root,n=>n.props['data-testid']==='newow-caution-explanation'),undefined)
   app.unmount()
 })

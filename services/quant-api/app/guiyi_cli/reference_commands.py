@@ -14,10 +14,10 @@ from app.reference_trading.planning import (
     request_from_dict,
 )
 from app.reference_trading.service import ResumeToken
+from app.reference_trading.plan_bundle import read_plan, write_plan
 
 
 _MAX_JSON_BYTES = 1_048_576
-_MAX_PLAN_JSON_BYTES = 16_777_216
 
 
 def _pairs(values):
@@ -89,10 +89,7 @@ def run_reference_command(args, *, planner=None, service=None) -> dict[str, obje
         output = Path(args.output)
         if output.is_symlink() or output.exists() or not output.parent.is_dir():
             raise ValueError("REFERENCE_OUTPUT_EXISTS")
-        output.write_text(
-            json.dumps(plan_to_dict(plan), sort_keys=True, separators=(",", ":")) + "\n",
-            encoding="utf-8",
-        )
+        write_plan(output, plan_to_dict(plan))
         return {
             "schema_version": 1,
             "command": "reference.plan",
@@ -103,7 +100,7 @@ def run_reference_command(args, *, planner=None, service=None) -> dict[str, obje
             "output": str(output),
         }
 
-    plan = plan_from_dict(_read_json(args.plan, max_bytes=_MAX_PLAN_JSON_BYTES))
+    plan = plan_from_dict(read_plan(args.plan))
     if plan.operation != args.reference_command and not (
         args.reference_command == "resume" and plan.operation in {"build", "rebuild"}
     ):

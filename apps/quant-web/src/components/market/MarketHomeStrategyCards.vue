@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { homeContext, type NewowHomeContext } from '@/utils/newowHomeContext'
 import MarketStateIcon from './MarketStateIcon.vue'
-import { onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getNewowHomeProjection } from '@/api/newowHomeCards'
 import { homeSnapshotCache } from '@/api/homeSnapshotCache'
 import { normalizeHomeCards, type HomeCard } from '@/utils/newowHomeCards'
-import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { homeCardPresentation, homeRowHints, homeCautionNotice, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import { marketHomeQualityNotice } from '@/utils/marketHomePresentation'
 import type { MarketHomeRow } from '@/utils/marketHomeViewModel'
 import type { MarketHomeLiveDisplayRow } from '@/utils/marketHomeLiveView'
 import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHomeWorkspace'
+
+import { isNewowHomeSort, sortNewowHomeRows } from '@/utils/newowHomeSort'
 
 type Row = MarketHomeLiveDisplayRow<MarketHomeRow>
 const props = defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection; active?: boolean }>()
@@ -61,6 +63,9 @@ async function readProjection(resetPoll = true) {
 }
 const strategy = ref<HomeStrategy>('trend')
 const expanded = ref(new Set<string>())
+const sortedRows = computed(() => isNewowHomeSort(props.sort) ? sortNewowHomeRows(props.rows, deliveries.value, strategy.value, props.sort, props.sortDirection) : props.rows)
+const projectionColumns = [{ key: 'target', label: '目标价', rule: '按当前显示的目标或吸筹参考价' }, { key: 'daily', label: '日', rule: '降序为建仓、持有、清仓、空仓' }, { key: 'weekly', label: '周', rule: '降序为建仓、持有、清仓、空仓' }, { key: 'trend', label: '趋势', rule: '降序为向上、向下；MA60近似方向' }] as const
+function columnSortLabel(key: MarketHomeSort, label: string) { return `${label}排序，当前${props.sort === key ? props.sortDirection === 'desc' ? '降序' : '升序' : '默认'}；点击切换降序、升序、默认，缺失值置后` }
 function toggleSummary(symbol: string) { const next = new Set(expanded.value); if (next.has(symbol)) next.delete(symbol); else next.add(symbol); expanded.value = next }
 const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
 const periods = ['1d', '1w'] as const
@@ -99,11 +104,11 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 
   </div>
   <section class="strategy-list" aria-label="品种日周策略列表">
-    <div class="strategy-list-columns"><span>品种</span><span>价格</span><span><button class="change-sort" type="button" :aria-pressed="sort === 'change'" :aria-label="sort === 'change' ? `涨跌幅排序，当前${sortDirection === 'desc' ? '降序' : '升序'}` : '涨跌幅排序，当前默认'" @click="emit('sort', 'change')">涨跌幅<span class="sort-arrow" aria-hidden="true">{{ sort === 'change' ? sortDirection === 'desc' ? '▾' : '▴' : '' }}</span></button></span><span>目标价</span><span>日</span><span>周</span><span>趋势</span></div>
+    <div class="strategy-list-columns"><span>品种</span><span>价格</span><span><button class="change-sort" type="button" :aria-pressed="sort === 'change'" :aria-label="sort === 'change' ? `涨跌幅排序，当前${sortDirection === 'desc' ? '降序' : '升序'}` : '涨跌幅排序，当前默认'" @click="emit('sort', 'change')">涨跌幅<span class="sort-arrow" aria-hidden="true">{{ sort === 'change' ? sortDirection === 'desc' ? '▾' : '▴' : '' }}</span></button></span><span v-for="column in projectionColumns" :key="column.key"><button class="change-sort" type="button" :aria-pressed="sort === column.key" :aria-label="columnSortLabel(column.key, column.label)" :title="column.rule" @click="emit('sort', column.key)">{{ column.label }}<span class="sort-arrow" aria-hidden="true">{{ sort === column.key ? sortDirection === 'desc' ? '▾' : '▴' : '' }}</span></button></span></div>
     <slot name="status" />
-    <article v-for="row in rows" :key="row.symbol" class="strategy-list-item">
+    <article v-for="row in sortedRows" :key="row.symbol" class="strategy-list-item">
       <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded.has(row.symbol)" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
-        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" @click.stop="openChart(row.symbol,'1d',hint.focusBarEnd)">{{ hint.label }}</button></span></small></span></div>
+        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" :aria-label="`${hint.label}：${hint.title}。点击定位对应K线`" @click.stop="openChart(row.symbol,'1d',hint.focusBarEnd)">{{ hint.label }}</button><span v-if="homeCautionNotice(fact(row.symbol, '1d'))" class="row-hint-pending" role="status" :title="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined" :aria-label="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined">小心待确认</span></span></small></span></div>
         <div class="list-price" :class="priceTone(row)"><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
         <div class="list-change"><span :class="priceTone(row)">{{ change(row) }}</span></div>
         <div class="list-reference"><strong :class="reference(row.symbol).label === '目标' ? 'target' : reference(row.symbol).label === '吸筹' ? 'absorb' : 'pending'" :title="`${reference(row.symbol).label} · 页面参考价格，非成交成本`">{{ reference(row.symbol).text }}</strong></div>
@@ -191,4 +196,8 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 .composite-tags>.control-tag{color:#ff9500;background:#fff3e6}.composite-tags>.performance-tag{color:#007aff;background:#eaf2ff}
 .composite-footer strong{font-size:13px;font-weight:600}.space-up{color:#ff3b30}.space-down{color:#34c759}
 @media(max-width:600px){.composite-card{padding:10px}.composite-heading strong{font-size:12px;line-height:18px}.composite-heading strong>.composite-price{font-size:15px}.composite-heading{gap:5px}.composite-signal{padding:2px 6px;font-size:10px}.composite-card .composite-context{font-size:10px}.composite-footer strong{font-size:12px}}
+</style>
+
+<style scoped>
+.row-hint-pending { font-size:10px; color:#667085; border:1px dashed #98a2b3; border-radius:8px; padding:1px 4px; cursor:help; }
 </style>

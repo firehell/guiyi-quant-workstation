@@ -100,3 +100,10 @@ test('fresh peak is a separate hollow marker while the last caution stays zero',
   assert.equal(data[0]!.caution,0);assert.equal(marker.hollow,true);assert.equal(marker.text,'小心')
   assert.ok(marker.fromY>=12)
 })
+
+test('accepted display events replace raw moving candidates and expiry removes both marker types', () => {
+  const source=[{key:'entry',points:[{index:0,time:'a' as never,value:1},{index:1,time:'b' as never,value:1}]},{key:'tentative',points:[{index:1,time:'b' as never,value:50}]}]
+  const fixed=buildNewowZhaoyaoMirrorData(source,[{time:'a' as never,tentative:true}])
+  assert.deepEqual(fixed.map(r=>r.tentative),[50,0])
+  assert.deepEqual(buildNewowZhaoyaoMirrorData(source,[]).map(r=>[r.caution,r.tentative]),[[0,0],[0,0]])
+})

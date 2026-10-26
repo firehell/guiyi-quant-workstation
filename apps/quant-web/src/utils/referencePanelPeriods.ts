@@ -3,5 +3,5 @@ export function referencePanelSupported(strategy: string, frequency: string, ser
   if (seriesKind && seriesKind !== 'actual_dominant') return false
   if (strategy === 'htdy') return frequency === '60m'
   return ['subing-reference', 'subing_reference'].includes(strategy)
-    && ['15m', '30m', '60m', '1d'].includes(frequency)
+    && ['5m', '15m', '30m', '60m', '1d', '1w'].includes(frequency)
 }

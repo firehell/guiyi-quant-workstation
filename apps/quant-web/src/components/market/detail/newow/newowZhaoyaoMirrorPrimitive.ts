@@ -33,7 +33,7 @@ interface MirrorSourceSeries {
 }
 
 /** Joins server-owned split series without collapsing repeated keys from later physical segments. */
-export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[]): NewowZhaoyaoMirrorDatum[] {
+export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[], events?: readonly { time: Time; tentative: boolean }[]): NewowZhaoyaoMirrorDatum[] {
   type MutableRow = { time: Time; entry: number; wash: number; distribution: number; markup: number; exit: number; inducement: number; caution: number; tentative: number }
   const rows = new Map<number, MutableRow>()
   const allowed = new Set(['entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'caution', 'tentative'])
@@ -48,7 +48,16 @@ export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[
       row[source.key as keyof Omit<MutableRow, 'time'>] = point.value
     }
   }
-  return [...rows.entries()].sort(([left], [right]) => left - right).map(([, row]) => ({ ...row }))
+  const result = [...rows.entries()].sort(([left], [right]) => left - right).map(([, row]) => ({ ...row }))
+  if (events !== undefined) {
+    const byTime = new Map(events.map(e=>[String(e.time),e]))
+    for (const row of result) {
+      const event=byTime.get(String(row.time))
+      row.caution=event&&!event.tentative?50:0
+      row.tentative=event?.tentative?50:0
+    }
+  }
+  return result
 }
 
 type MirrorKind = 'zero' | 'entry' | 'wash' | 'distribution' | 'markup' | 'exit' | 'inducement' | 'caution'

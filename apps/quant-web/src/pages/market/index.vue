@@ -30,7 +30,7 @@ import { validateStoredMarketHomeOverview } from '@/utils/marketHomeTypes'
 const router = useRouter()
 const initialPreferences = loadMarketHomePreferences()
 const sector = ref(initialPreferences.sector)
-const sort = ref<MarketHomeSort>(initialPreferences.sort === 'change' ? 'change' : 'default')
+const sort = ref<MarketHomeSort>(['change', 'target', 'daily', 'weekly', 'trend'].includes(initialPreferences.sort) ? initialPreferences.sort : 'default')
 const sortDirection = ref<MarketHomeSortDirection>(initialPreferences.sortDirection)
 const compactDensity = ref(initialPreferences.compactDensity)
 const activeTab = ref<MarketHomeTab>(loadActiveTab())

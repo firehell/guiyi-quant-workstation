@@ -61,9 +61,30 @@ CTP 查询不是事务快照；两轮相等只证明有界稳定，不排除窗�
 摘要仅是身份标签，不声称可以抵抗对短账号的穷举。允许保存的交易记录仍属于本地私人账户数据，不提交Git。
 屏幕只显示结果与文件位置；原生SDK日志关闭，回调异常仅保留阶段及异常类型。
 
-查询等待每条15秒、登录等待25秒；这不是整个进程或原生 `Init/Release` 的硬截止。
+查询默认每条15秒，CLI可显式指定 `--query-timeout 1..60` 秒；登录等待25秒。
+一次只发送一条查询，超时停止，不延长后自动重发；这不是整个进程或原生 `Init/Release` 的硬截止。
 遇到原生阻塞可由用户结束该一次性进程，不产生任何交易写入；重新运行是新的显式核验，不覆写旧文件，
 不后台重试。取消、断线和部分结果不代表账户清空；下一次必须重新登录并从第一轮完整读取。
+
+## 资金查询超时诊断
+
+查询结果追加脱敏diagnostics：response_count、data_row_count、terminal_response_seen、timed_out和单调时钟elapsed_seconds。
+它们不进入账户内容哈希，不改变complete、资金事实或两轮稳定验收；有数据但无完整终态仍失败关闭。
+QUERY_TIMEOUT按事实区分ZERO_QUERY_CALLBACKS（零回调）、QUERY_TERMINATOR_MISSING（有回调但缺终态）和
+TERMINAL_AT_TIMEOUT_BOUNDARY（等待超时边界处已收到终态，仍保留失败，不称终态缺失）。不输出原始响应、账号或异常文本。
+
+例如在用户核对账号后，单次第一套只读诊断可显式使用45秒等待：
+
+    /path/to/isolated/python -I scripts/broker/simnow_readonly.py --environment first --expected-balance 100000 --not-before-trading-day 20261027 --query-timeout 45
+
+这是有界响应观测，不宣称延长等待已经修复柜台超时，也不更改原生请求参数、前置、认证、结算或交易行为。
+离线真实SDK结构和SPI方法的跨线程测试只能证明本地请求/回调处理路径，不能模拟第一套后台或传输状态。
+
+可显式指定 --query-order positions-first 做持仓首查对照；只允许funds-first和positions-first两种固定顺序。
+默认资金→持仓→委托→成交保持；对照为持仓→资金→委托→成交，每轮仍是相同四类、两轮稳定核验。
+首项持仓若超时，立即停止，不再发送资金查询；持仓空记录只有收到完整终态才算该查询完成，不能据此判整个账户空仓。
+若持仓完成而资金超时，仅证明两类查询表现不同，不直接归因后台；同样不得自动重试、换前置或改变账户参数。
+顺序作为诊断元数据记录，不进入原生经济事实哈希，不改变执行宿主默认行为。
 
 ## 验证
 
@@ -91,3 +112,24 @@ CTP 查询不是事务快照；两轮相等只证明有界稳定，不排除窗�
 不据新余额改写旧记录；即使验收通过，`execution_eligible=false`、`ledger_reconciled=false`仍保持。
 
 验收只证明生效日之后实际读回符合目标状态，不单独证明余额变化必然归因于某一笔重置申请。
+
+## 原生 C++ 查询对照（仅诊断）
+
+`scripts/broker/native/simnow_query_control.cpp` 用相同 Mac 6.7.7 dylib、第一套30001、认证和无topic订阅
+初始化直接调用C++接口，排除Python/SWIG回调桥这一变量。只认证/登录一次，持仓→资金各查询一次；
+间隔1.1秒，每项45秒，零回调、缺终态、错身份或断线即停止，不重发、不换前置、不确认结算、不报撤单。
+本工具不替代正式账户适配器；即使DIAGNOSTIC_COMPLETE，也没有两轮四类读取、财务质量验收或执行资格。
+
+构建头文件来自vnpy/vnpy_ctp维护者仓库冻结提交 `1be9bfb5292208e5c258cc769c90be4abe83f9a9` 的
+`vnpy_ctp/api/include/mac/ctp/`，三个SHA固定在build_control.py。独立目录提供头文件和现有SDK库，
+构建脚本只校验/编译，不下载、不连接；真实运行另由本机TTY输入。SDK版本不符直接拒绝。
+编译输出需放私有目录，SDK库仅复制到该目录以满足原有@loader_path，不改系统库或加载安全设置。
+
+    python3 scripts/broker/native/build_control.py --headers /private/path/headers --library /private/path/libthosttraderapi_se.dylib --output /private/path/build
+    /private/path/build/probe /absolute/private/new-result.json
+
+结果文件exclusive创建0600，仅保留摘要、交易日、回调/行数、错误码和请求计数，不保存资金值、持仓内容或凭据。
+SDK输出关闭，flow使用新建私有临时目录，Release返回后清理。密码不进入参数或持久化；账号最多12位，按最窄InvestorID字段限制。
+查询等待不是Init/Release全进程硬截止；原生阻塞时手动终止该一次性只读进程，保留已有结果，不自动重试。
+对照在第一套正常服务时段才具有可解释性；闭市失败不判方案不可行。成功只能证明此原生客户端查询路径可行，
+不能单独把此前失败归因为SWIG，也不能替代100000元/20261027生效或受控交易端到端验收。

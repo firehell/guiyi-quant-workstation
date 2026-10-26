@@ -120,3 +120,14 @@ test('writes only normalized preference fields and safely ignores blocked storag
   assert.deepEqual(loadMarketHomePreferences(), defaultPreferences)
   assert.doesNotThrow(() => saveMarketHomePreferences(defaultPreferences))
 })
+
+
+test('projection column sort preferences retain ascending direction across reload', () => {
+  const values = new Map<string, string>()
+  useStorage({ getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) })
+  for (const sort of ['target', 'daily', 'weekly', 'trend'] as const) {
+    saveMarketHomePreferences({ ...defaultPreferences, version: 1, detailFrequency: '1d', sort, sortDirection: 'asc' })
+    assert.equal(loadMarketHomePreferences().sort, sort)
+    assert.equal(loadMarketHomePreferences().sortDirection, 'asc')
+  }
+})

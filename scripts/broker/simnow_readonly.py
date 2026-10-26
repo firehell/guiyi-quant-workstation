@@ -40,6 +40,18 @@ ENVIRONMENTS = {
 BROKER = "9999"
 SCHEMA = "simnow_readonly_inventory_v1"
 QUERY_GAP = 1.1
+
+
+def query_timeout_option(value):
+    try:
+        seconds = int(value)
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError("查询等待须为1..60秒整数") from None
+    if not 1 <= seconds <= 60:
+        raise argparse.ArgumentTypeError("查询等待须为1..60秒整数")
+    return seconds
+
+
 # Records retain all native position dimensions; never net LONG/SHORT or today/yesterday.
 FIELDS = {
     "funds": {
@@ -124,6 +136,10 @@ QUERY_TYPES = {
     "positions": "CThostFtdcQryInvestorPositionField",
     "orders": "CThostFtdcQryOrderField",
     "trades": "CThostFtdcQryTradeField",
+}
+QUERY_ORDERS = {
+    "funds-first": tuple(FIELDS),
+    "positions-first": ("positions", "funds", "orders", "trades"),
 }
 
 
@@ -338,6 +354,10 @@ class Probe(tdapi.CThostFtdcTraderSpi):
                 "started_at": stamp(),
                 "rows": {},
                 "complete": False,
+                "response_count": 0,
+                "data_row_count": 0,
+                "terminal_response_seen": False,
+                "started_monotonic": time.monotonic(),
             }
             req = getattr(tdapi, QUERY_TYPES[kind])()
             req.BrokerID, req.InvestorID = BROKER, self.user
@@ -363,6 +383,9 @@ class Probe(tdapi.CThostFtdcTraderSpi):
             if current["kind"] != kind or current["complete"]:
                 self.fail("UNEXPECTED_QUERY_RESPONSE")
                 return
+            current["response_count"] += 1
+            current["data_row_count"] += int(row is not None)
+            current["terminal_response_seen"] = bool(last)
             if info is not None and int(info.ErrorID):
                 self.fail(
                     "QUERY_REJECTED", error_stage=kind, error_id=int(info.ErrorID)
@@ -399,18 +422,36 @@ class Probe(tdapi.CThostFtdcTraderSpi):
     def OnRspQryTrade(self, row, info, request_id, last):
         self.receive("trades", row, info, request_id, last)
 
-    def collect(self, gap=QUERY_GAP, query_timeout=15):
+    def collect(self, gap=QUERY_GAP, query_timeout=15, query_order="funds-first"):
+        if type(query_timeout) is not int or not 0 <= query_timeout <= 60:
+            raise ValueError("QUERY_TIMEOUT_BOUND_INVALID")
+        if type(query_order) is not str or query_order not in QUERY_ORDERS:
+            raise ValueError("QUERY_ORDER_PROFILE_INVALID")
+        kinds = QUERY_ORDERS[query_order]
+        self.result["query_order"] = list(kinds)
+        self.result["query_timeout_seconds"] = query_timeout
         for round_number in (1, 2):
             record = {"round": round_number, "started_at": stamp(), "queries": {}}
             self.result["rounds"].append(record)
-            for index, kind in enumerate(FIELDS):
+            for index, kind in enumerate(kinds):
                 time.sleep(gap)
                 if self.failed:
                     return
                 self.begin_query(kind, 100 + round_number * 10 + index)
-                if not self.query_done.wait(query_timeout):
+                timed_out = not self.query_done.wait(query_timeout)
+                if timed_out:
                     with self.lock:
-                        self.fail("QUERY_TIMEOUT", error_stage=kind)
+                        self.fail(
+                            "QUERY_TIMEOUT",
+                            error_stage=kind,
+                            timeout_kind=(
+                                "TERMINAL_AT_TIMEOUT_BOUNDARY"
+                                if self.current["terminal_response_seen"]
+                                else "ZERO_QUERY_CALLBACKS"
+                                if self.current["response_count"] == 0
+                                else "QUERY_TERMINATOR_MISSING"
+                            ),
+                        )
                 with self.lock:
                     if self.current:
                         current = self.current
@@ -419,6 +460,17 @@ class Probe(tdapi.CThostFtdcTraderSpi):
                             "started_at": current["started_at"],
                             "completed_at": current.get("completed_at"),
                             "rows": sorted(current["rows"].values(), key=canonical),
+                            "diagnostics": {
+                                "response_count": current["response_count"],
+                                "data_row_count": current["data_row_count"],
+                                "terminal_response_seen": current[
+                                    "terminal_response_seen"
+                                ],
+                                "timed_out": timed_out,
+                                "elapsed_seconds": round(
+                                    time.monotonic() - current["started_monotonic"], 6
+                                ),
+                            },
                         }
                     if self.failed:
                         return
@@ -574,6 +626,18 @@ def main():
         "--expected-balance", type=Decimal, help="重置目标资金，只读验收，不修改资金"
     )
     parser.add_argument("--not-before-trading-day", help="官网回执生效交易日 YYYYMMDD")
+    parser.add_argument(
+        "--query-timeout",
+        type=query_timeout_option,
+        default=15,
+        help="每个只读查询等待1..60秒；默认15，超时停止且不重发",
+    )
+    parser.add_argument(
+        "--query-order",
+        choices=tuple(QUERY_ORDERS),
+        default="funds-first",
+        help="默认先查资金；positions-first仅用于持仓首查对照，仍逐条查询且超时停止",
+    )
     options = parser.parse_args()
     if (options.expected_balance is None) != (options.not_before_trading_day is None):
         parser.error("资金目标与官网生效日必须同时提供")
@@ -597,6 +661,7 @@ def main():
     print(
         "不下单、不撤单、不确认结算；密码不保存。测试环境结果不能代替第一套环境验收。"
     )
+    print("查询顺序：", " → ".join(QUERY_ORDERS[options.query_order]))
     user = input("投资者代码（数字）: ").strip()
     if not user.isascii() or not user.isdigit() or not 1 <= len(user) <= 15:
         raise SystemExit("投资者代码格式不合格，未连接。")
@@ -622,7 +687,10 @@ def main():
                     with probe.lock:
                         probe.fail("LOGIN_TIMEOUT", error_stage=probe.result["status"])
                 if not probe.failed:
-                    probe.collect()
+                    probe.collect(
+                        query_timeout=options.query_timeout,
+                        query_order=options.query_order,
+                    )
             except Exception as exc:
                 probe.fail(
                     "LOCAL_ERROR",

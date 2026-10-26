@@ -38,7 +38,7 @@ class ForwardMarketAuthority:
         if code.startswith("newow_") and identity.frequency in LIVE_FREQUENCIES:
             owner_id = build_segment_id(product, contract, owner_start)
             return owner_id, build_calculation_segment_id(owner_id)
-        if code == "subing_reference" and identity.frequency in {"15m", "30m", "60m"}:
+        if code == "subing_reference" and identity.frequency in {"5m", "15m", "30m", "60m"}:
             owner_id = subing_intraday_owner_segment_id(
                 product, contract, owner.start_trading_day,
             )
@@ -47,6 +47,13 @@ class ForwardMarketAuthority:
             owner_id = f"htdy:{product}:{contract}:{owner_start.isoformat()}"
             return owner_id, owner_id
         raise ForwardInputUnavailable("FORWARD_OWNER_UNSUPPORTED")
+
+    def owner_started_at(self, identity, contract, trading_day):
+        owner = self._market_data.dominant_segment_for_day(identity.product.lower(), trading_day)
+        if owner.contract != contract:
+            raise ForwardInputUnavailable("OWNER_IDENTITY_CONFLICT")
+        return min(window.start for window in self._market_data.session_windows(
+            symbol=identity.product.lower(), trading_day=owner.start_trading_day))
 
     def expected_endpoints(
         self, identity: StreamIdentity, contract: str, trading_day: date,

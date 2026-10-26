@@ -33,12 +33,22 @@ def advance_subing_forward(
     strategy: SubingForwardState, reference: ReferenceState, *,
     physical_contract: str, owner_segment_id: str, calculation_segment_id: str,
     bar_end: datetime, trading_day: date, close: Decimal,
+    warmup_kernel: SubingThs15mState | None = None, rollover_at: datetime | None = None,
 ) -> tuple[SubingForwardState, tuple[ReferenceAction, ...], ReferenceTransition, dict[str, object]]:
     owner_changed = strategy.physical_contract is not None and (
         strategy.physical_contract != physical_contract
         or strategy.calculation_segment_id != calculation_segment_id
     )
-    if owner_changed:
+    boundaries = ()
+    if owner_changed and warmup_kernel is not None:
+        prior = reference.open_trade
+        if prior is not None:
+            if (rollover_at is None or not reference.computed_through < rollover_at < bar_end):
+                raise ValueError("SUBING_ROLLOVER_TIME_UNPROVEN")
+            boundaries = (ReferenceBoundary(reference.stream, BoundaryReason.ROLLOVER,
+                prior.physical_contract, prior.owner_segment_id, prior.calculation_segment_id,
+                rollover_at, trading_day),)
+    if owner_changed and warmup_kernel is None:
         prior = reference.open_trade
         boundary = () if prior is None else (ReferenceBoundary(
             reference.stream, BoundaryReason.ROLLOVER,
@@ -63,7 +73,7 @@ def advance_subing_forward(
              "direction": None, "ready": False, "rollover_interrupted": prior is not None},
         )
     kernel_state, result = SubingThs15mKernel().step(
-        strategy.kernel_state, float(close), bar_end=bar_end.isoformat(),
+        warmup_kernel or strategy.kernel_state, float(close), bar_end=bar_end.isoformat(),
     )
     if not result.valid or len(result.result_codes) > 1:
         raise ValueError("SUBING_FORWARD_SIGNAL_CONFLICT")
@@ -72,7 +82,7 @@ def advance_subing_forward(
     if direction not in (None, "buy", "sell"):
         raise ValueError("SUBING_FORWARD_SIGNAL_CONFLICT")
     target = None if direction is None else (Side.LONG if direction == "buy" else Side.SHORT)
-    current = None if reference.open_trade is None else reference.open_trade.side
+    current = None if owner_changed or reference.open_trade is None else reference.open_trade.side
     if target is not None and target != current:
         digest = sha256(json.dumps([
             reference.stream.stream_id, physical_contract, owner_segment_id,
@@ -84,7 +94,7 @@ def advance_subing_forward(
             bar_end=bar_end, trading_day=trading_day, reference_price=close,
             reference_price_type="subing_signal_close",
         )
-        if reference.open_trade is not None:
+        if reference.open_trade is not None and not owner_changed:
             actions.append(ReferenceAction(
                 source_action_id=f"subing:{digest}:close", sequence=0,
                 kind=ActionKind.CLOSE,
@@ -96,14 +106,14 @@ def advance_subing_forward(
             **common,
         ))
     transition = reduce_reference(
-        reference, actions=tuple(actions), return_policy="delta_over_entry",
+        reference, actions=tuple(actions), boundaries=boundaries, return_policy="delta_over_entry",
         completed_bar=CompletedReferenceBar(
             physical_contract, owner_segment_id, calculation_segment_id,
             bar_end, trading_day, close,
         ),
     )
     next_state = SubingForwardState(
-        kernel_state, strategy.processed_count + 1, physical_contract,
+        kernel_state, (warmup_kernel.macd.fast.count if warmup_kernel is not None else strategy.processed_count) + 1, physical_contract,
         calculation_segment_id,
     )
     display = {

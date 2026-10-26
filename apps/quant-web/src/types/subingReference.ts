@@ -24,7 +24,7 @@ export interface SubingReferenceResponse {
   history_start?: string; previous_window?: { since: string; through: string } | null
   loaded_history_since?: string; history_sources?: { since: string; through: string; source: string }[]; history_capped?: boolean
 
-  symbol: string; frequency: '15m' | '30m' | '60m' | '1d'; series_kind: 'actual_dominant'; formula_version: 'subing_ths_15m_v3' | 'subing_ths_30m_v1' | 'subing_ths_60m_v1' | 'subing_ths_1d_v1'
+  symbol: string; frequency: '5m' | '15m' | '30m' | '60m' | '1d' | '1w'; series_kind: 'actual_dominant'; formula_version: 'subing_ths_5m_v1' | 'subing_ths_1w_v1' | 'subing_ths_15m_v3' | 'subing_ths_30m_v1' | 'subing_ths_60m_v1' | 'subing_ths_1d_v1'
   reference_model_version: 'subing_reference_reverse_close_v1' | 'subing_reference_reverse_close_quality_segment_v2'; as_of: string; performance_since: string; performance_through: string
   reference_cutoff: string; input_snapshot_hash: string; executable: false; auto_order: false; source: 'historical_replay'; research_status: 'ready' | 'warming' | 'WARMING' | 'INDICATOR_READY_CROSS_UNEVALUABLE' | 'CROSS_EVALUATED'
   storage_mode?: 'persisted'

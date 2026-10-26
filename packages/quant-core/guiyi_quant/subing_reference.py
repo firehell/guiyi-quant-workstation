@@ -42,6 +42,8 @@ FORMULA_VERSION = SUBING_THS_FORMULA_VERSION
 REFERENCE_MODEL_VERSION = "subing_reference_reverse_close_v1"
 REFERENCE_MODEL_VERSION_V2 = "subing_reference_reverse_close_quality_segment_v2"
 FORMULA_VERSIONS = {
+    "5m": "subing_ths_5m_v1",
+    "1w": "subing_ths_1w_v1",
     "15m": FORMULA_VERSION,
     "30m": "subing_ths_30m_v1",
     "60m": "subing_ths_60m_v1",

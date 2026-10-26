@@ -10,7 +10,7 @@ from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 from .capability_contracts import capability_response, capability_intraday_scope
 
-CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v33"] = "newow_product_capabilities_v33"
+CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v35"] = "newow_product_capabilities_v35"
 CANDIDATE_CAPABILITY_SCHEMA_VERSION: Literal["newow_product_capabilities_v34"] = "newow_product_capabilities_v34"
 _CURRENT_CAPABILITY = capability_response(CAPABILITY_SCHEMA_VERSION)
 _CANDIDATE_CAPABILITY = capability_response(CANDIDATE_CAPABILITY_SCHEMA_VERSION)

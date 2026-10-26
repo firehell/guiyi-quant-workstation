@@ -181,9 +181,14 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                                                        source_revision_policy=True),
                 read_guard=canonical_guard,
             )
+            from app.market_data.subing_reference import SubingReferenceService
+            subing_service = SubingReferenceService(
+                market_data, coverage=coverage, active_products=products,
+            )
             worker = build_forward_reference_worker(
                 repository=repository, market_read=market_read,
-                newow_reader=reader_for,
+                newow_reader=reader_for, subing_service=subing_service,
+                subing_owner_started_at=authority.owner_started_at,
                 owner_segments=authority.owner_segments,
                 expected_endpoints=authority.expected_endpoints,
                 newow_capability_ready=capability_ready,

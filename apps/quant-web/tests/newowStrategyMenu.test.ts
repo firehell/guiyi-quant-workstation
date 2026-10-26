@@ -14,3 +14,11 @@ test('main-rise selection does not request unsupported short periods', () => {
 test('base option leaves main-rise for independent oscillation without stale focus or dual mode', () => {
   assert.deepEqual(newowMenuIdentity({ ...identity, strategy: 'main_rise', frequency: '1w' }, 'oscillation'), { view: 'newow', symbol: 'rb', strategy: 'oscillation', seriesKind: 'actual_dominant', frequency: '1w' })
 })
+
+test('v35 main-rise menu preserves short minutes and still clears focus and dual mode', () => {
+  const supported = ['5m', '15m', '30m', '60m', '1d', '1w']
+  for (const frequency of ['5m', '15m', '30m'] as const) {
+    assert.deepEqual(newowMenuIdentity({ ...identity, frequency }, 'main_rise', supported), { view: 'newow', symbol: 'rb', strategy: 'main_rise', seriesKind: 'actual_dominant', frequency })
+  }
+  assert.equal(newowMenuIdentity({ ...identity, frequency: '1m' }, 'main_rise', supported).frequency, '1d')
+})

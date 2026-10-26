@@ -6,9 +6,9 @@ const periods = ['1m', '5m', '15m', '30m', '60m', '1d', '1w']
 test('HTDY reference panel appears only at 60m', () => {
   assert.deepEqual(periods.filter(period => referencePanelSupported('htdy', period)), ['60m'])
 })
-test('SuBing reference panel appears only at 15m, 30m, 60m and D1', () => {
+test('SuBing reference panel appears at all six alert periods', () => {
   for (const strategy of ['subing-reference', 'subing_reference']) {
-    assert.deepEqual(periods.filter(period => referencePanelSupported(strategy, period)), ['15m', '30m', '60m', '1d'])
+    assert.deepEqual(periods.filter(period => referencePanelSupported(strategy, period)), ['5m', '15m', '30m', '60m', '1d', '1w'])
   }
 })
 test('reference panels require actual dominant and a known strategy', () => {

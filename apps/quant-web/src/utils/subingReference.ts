@@ -12,7 +12,7 @@ const isTime = (value: unknown) => typeof value === 'string' && /(?:Z|[+-]\d{2}:
 const isMoney = (value: unknown) => typeof value === 'string' && value.length < 100 && decimal.test(value)
 export function normalizeSubingReference(value: unknown, symbol: string): SubingReferenceResponse {
   const root = record(value)
-  const versions: Record<string, string> = { '15m': 'subing_ths_15m_v3', '30m': 'subing_ths_30m_v1', '60m': 'subing_ths_60m_v1', '1d': 'subing_ths_1d_v1' }
+  const versions: Record<string, string> = { '5m': 'subing_ths_5m_v1', '1w': 'subing_ths_1w_v1', '15m': 'subing_ths_15m_v3', '30m': 'subing_ths_30m_v1', '60m': 'subing_ths_60m_v1', '1d': 'subing_ths_1d_v1' }
   const daily = root.frequency === '1d'
   requireThat(root.symbol === symbol.toLowerCase() && typeof root.frequency === 'string' && versions[root.frequency] === root.formula_version && root.series_kind === 'actual_dominant' && root.reference_model_version === (daily ? 'subing_reference_reverse_close_quality_segment_v2' : 'subing_reference_reverse_close_v1') && root.executable === false && root.auto_order === false && root.source === 'historical_replay' && (daily ? ['WARMING', 'INDICATOR_READY_CROSS_UNEVALUABLE', 'CROSS_EVALUATED'] : ['ready', 'warming']).includes(root.research_status as string))
   requireThat(isTime(root.as_of) && isTime(root.reference_cutoff) && typeof root.performance_since === 'string' && day.test(root.performance_since) && typeof root.performance_through === 'string' && day.test(root.performance_through) && root.performance_since <= root.performance_through && typeof root.input_snapshot_hash === 'string' && /^[a-f0-9]{64}$/.test(root.input_snapshot_hash))

@@ -18,7 +18,7 @@ export interface NewowDeferredSection {
 }
 
 export interface NewowProductCapabilities {
-  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13' | 'newow_product_capabilities_v14' | 'newow_product_capabilities_v15' | 'newow_product_capabilities_v16' | 'newow_product_capabilities_v17' | 'newow_product_capabilities_v18' | 'newow_product_capabilities_v19' | 'newow_product_capabilities_v20' | 'newow_product_capabilities_v21' | 'newow_product_capabilities_v22' | 'newow_product_capabilities_v23' | 'newow_product_capabilities_v24' | 'newow_product_capabilities_v25' | 'newow_product_capabilities_v26' | 'newow_product_capabilities_v27' | 'newow_product_capabilities_v28' | 'newow_product_capabilities_v29' | 'newow_product_capabilities_v30' | 'newow_product_capabilities_v31' | 'newow_product_capabilities_v32' | 'newow_product_capabilities_v33' | 'newow_product_capabilities_v34'
+  readonly schema_version: 'newow_product_capabilities_v3' | 'newow_product_capabilities_v4' | 'newow_product_capabilities_v5' | 'newow_product_capabilities_v6' | 'newow_product_capabilities_v7' | 'newow_product_capabilities_v8' | 'newow_product_capabilities_v9' | 'newow_product_capabilities_v10' | 'newow_product_capabilities_v11' | 'newow_product_capabilities_v12' | 'newow_product_capabilities_v13' | 'newow_product_capabilities_v14' | 'newow_product_capabilities_v15' | 'newow_product_capabilities_v16' | 'newow_product_capabilities_v17' | 'newow_product_capabilities_v18' | 'newow_product_capabilities_v19' | 'newow_product_capabilities_v20' | 'newow_product_capabilities_v21' | 'newow_product_capabilities_v22' | 'newow_product_capabilities_v23' | 'newow_product_capabilities_v24' | 'newow_product_capabilities_v25' | 'newow_product_capabilities_v26' | 'newow_product_capabilities_v27' | 'newow_product_capabilities_v28' | 'newow_product_capabilities_v29' | 'newow_product_capabilities_v30' | 'newow_product_capabilities_v31' | 'newow_product_capabilities_v32' | 'newow_product_capabilities_v33' | 'newow_product_capabilities_v34' | 'newow_product_capabilities_v35'
   readonly release_stage: 'daily' | 'daily_weekly_candidate' | 'au_daily_weekly_hourly_candidate' | 'pd_pt_hourly_candidate' | 'ap_hourly_candidate' | 'daily_weekly' | 'rb_intraday_candidate' | 'black_steel_intraday_candidate' | 'single_product_intraday_candidate' | 'daily_weekly_intraday_history' | 'daily_weekly_hourly_current' | 'daily_weekly_intraday_current'
   readonly open_frequencies: readonly ['1d'] | readonly ['1d', '1w'] | readonly ['1d', '1w', '60m'] | readonly ['1d', '60m'] | readonly ['1m', '15m', '30m', '60m', '1d', '1w'] | readonly ['5m', '15m', '30m', '60m', '1d', '1w']
   readonly weekly_products?: readonly string[]
@@ -195,7 +195,15 @@ export interface NewowProductHint {
   readonly sequence: number | null
 }
 
-export interface NewowCautionEvent { bar_end: string; peak_day: string; confirmed_at: string | null; as_of: string; tentative: boolean; physical_contract: string; segment_id: string; calculation_segment_id: string; formula_version: string; repainting: true; executable: false }
+export interface NewowCautionEvent {
+  event_id: string; frequency: NewowProductFrequency; bar_end: string; peak_day: string;
+  peak_bar_end: string; first_visible_at: string; confirmed_at: string | null; as_of: string;
+  tentative: boolean; display_state: 'tentative' | 'confirmed'; age_bars: number;
+  home_visible: boolean; detail_visible: boolean; max_tentative_age_bars: 10;
+  visibility_basis: 'completed_bar'; display_policy_version: 'guiyi_caution_completed_anchor_v1';
+  physical_contract: string; segment_id: string; calculation_segment_id: string;
+  formula_version: 'newow_zhaoyao_mirror_repainting_page_v2'; repainting: true; page_parity: false; executable: false;
+}
 
 export interface NewowChartValue {
   readonly caution_events?: readonly NewowCautionEvent[]

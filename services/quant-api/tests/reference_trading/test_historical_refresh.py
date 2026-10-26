@@ -461,3 +461,14 @@ def test_health_rejects_future_published_tail(tmp_path, monkeypatch, frequency):
     assert values[('jm', frequency)] == {
         'expected_through': None, 'expected_source': 'canonical_completed',
         'endpoint_status': 'UNKNOWN', 'endpoint_reason': 'COMPLETE_PERIOD_MISSING'}
+
+
+def test_subing_full_history_uses_separate_bounded_budget(tmp_path):
+    from app.reference_trading.subing_activation import subing_identity
+    item = RefreshRoute(subing_identity('rb', '5m'), date(2023, 1, 1), END-timedelta(days=1))
+    runner, planner, service = setup(tmp_path, [('completed', None, False)], routes=(item,))
+    runner.tick(now=END)
+    assert len(planner.requests) == 1
+    assert planner.requests[0].budget.max_input_bars == 2_000_000
+    assert planner.requests[0].budget.max_input_bytes == 8_192_000_000
+    assert len(service.calls) == 1

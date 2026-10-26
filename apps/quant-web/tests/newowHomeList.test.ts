@@ -6,8 +6,9 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeCardPresentation, homeRowHints, homeCautionNotice, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
+function cautionHint() { return {kind:'caution' as const,event_day:'2026-10-08',event_bar_end:'2026-10-08T00:00:00Z',confirmed_day:'2026-10-09',event_id:'a'.repeat(64),frequency:'1d' as const,bar_end:'2026-10-08T00:00:00Z',peak_day:'2026-10-09',peak_bar_end:'2026-10-09T00:00:00Z',first_visible_at:'2026-10-08T00:00:00Z',confirmed_at:'2026-10-09T00:00:00Z',as_of:'2026-10-09T00:00:00Z',tentative:false,display_state:'confirmed' as const,age_bars:1,home_visible:true,detail_visible:true,max_tentative_age_bars:10 as const,visibility_basis:'completed_bar' as const,display_policy_version:'guiyi_caution_completed_anchor_v1' as const,physical_contract:'RB2701',segment_id:'s',calculation_segment_id:'c',formula_version:'newow_zhaoyao_mirror_repainting_page_v2',repainting:true as const,page_parity:false as const,executable:false as const} }
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
 
 
@@ -144,7 +145,7 @@ test('rows expand and summary cards navigate with selected strategy while retain
   try {
     app.mount(root)
     const call = api.calls.at(-1)
-    call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:true, executable:false, items:[{kind:'caution', peak_day:'2026-10-08', event_day:'2026-10-09', formula_version:'mirror'}]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
+    call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {display_policy_version:'guiyi_caution_completed_anchor_v1',status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:false, executable:false, items:[cautionHint()]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
     await settle()
     assert.match(nodeText(root), /3100.13/)
     assert.equal(nodeText(findNode(root, n => n.props.class === 'row-hint')!), '小心')
@@ -178,6 +179,15 @@ test('rows expand and summary cards navigate with selected strategy while retain
     assert.match(nodeText(root), /参考收益待确认/)
     const sort = findNode(root, n => n.type === 'button' && nodeText(n).startsWith('涨跌幅'))!
     ;(sort.props.onClick as Function)(); assert.deepEqual(sorts, ['change'])
+    const readsBeforeSort = api.calls.length
+    for (const [label, key] of [['目标价','target'], ['日','daily'], ['周','weekly'], ['趋势','trend']]) {
+      const button = findNode(root, n => n.type === 'button' && String(n.props['aria-label']).startsWith(`${label}排序`))!
+      assert.ok(button)
+      assert.match(String(button.props['aria-label']), /缺失值置后/)
+      ;(button.props.onClick as Function)()
+      assert.equal(sorts.at(-1), key)
+    }
+    assert.equal(api.calls.length, readsBeforeSort)
     sequence.value++; await nextTick()
     assert.match(nodeText(root), /策略历史快照，正在重新验证/)
     api.calls.at(-1).reject(Error('offline')); await settle()
@@ -276,7 +286,7 @@ function nodeOperations() {
 
 
 test('row hints require exact daily ownership and do not create a trend source', () => {
-  const day = { ...ready('FLAT'), row_hints: { status: 'ready', bar_end: ready('FLAT').bar_end!, physical_contract: 'RB2701', calculation_segment_id: 'c', page_parity: true, executable: false, items: [{kind: 'caution' as const, peak_day: '2026-10-08', event_day: '2026-10-09', formula_version: 'mirror'}, {kind: 'reduce' as const, event_day: '2026-10-09', j_value: '98.1', reference_price: '3000', formula_version: 'j'}] } }
+  const day = { ...ready('FLAT'), row_hints: { display_policy_version: 'guiyi_caution_completed_anchor_v1', status: 'ready', bar_end: ready('FLAT').bar_end!, physical_contract: 'RB2701', calculation_segment_id: 'c', page_parity: false, executable: false, items: [cautionHint(), {kind: 'reduce' as const, event_day: '2026-10-09', j_value: '98.1', reference_price: '3000', formula_version: 'j'}] } }
   assert.deepEqual(homeRowHints(day).map(hint => hint.label), ['小心', '减仓'])
   assert.match(homeRowHints(day)[0].title, /2026-10-08.*2026-10-09/)
   assert.deepEqual(homeRowHints({...day, row_hints: {...day.row_hints, physical_contract: 'RB2601'}}), [])
@@ -319,4 +329,48 @@ test('MA60 approximate trend uses precomputed D1 identity and preserves stale di
   assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,formula_version:'unrecognized'}}).tone,'pending')
   assert.match(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,status:'warming',direction:null,sample_count:59}}).label,/预热/)
   assert.equal(homeTrendDisplay(fact).tone, 'up') // No quote input is accepted.
+})
+
+
+test('unknown caution input has a neutral reason while accepted absence stays quiet', () => {
+  assert.match(homeCautionNotice(ready('FLAT'))!,/待确认.*缺少/)
+  const day={...ready('FLAT'),row_hints:{display_policy_version:'guiyi_caution_completed_anchor_v1',status:'ready',bar_end:ready('FLAT').bar_end!,physical_contract:'RB2701',calculation_segment_id:'c',page_parity:false,executable:false,items:[]}}
+  assert.equal(homeCautionNotice(day),null)
+  assert.match(homeCautionNotice({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}})!,/尚未通过核验/)
+  assert.equal(homeRowHints({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}}).length,0)
+})
+
+test('column sorting follows displayed reference/state and keeps unavailable last and ties stable', async () => {
+  const { sortNewowHomeRows } = await import('../src/utils/newowHomeSort.ts')
+  const rows = [{symbol:'a'}, {symbol:'b'}, {symbol:'c'}, {symbol:'d'}]
+  const cards = {
+    a: {card:{strategies:{trend:{'1d':{...ready('HOLD'),target:'9007199254740993.12'},'1w':ready('CLEAR')}}}},
+    b: {card:{strategies:{trend:{'1d':{...ready('BUILD'),target:'9007199254740993.13'},'1w':ready('BUILD')}}}},
+    c: {card:null},
+    d: {card:{strategies:{trend:{'1d':{...ready('FLAT'),absorb:'10'},'1w':ready('HOLD')}}}},
+  } as unknown as Record<string, import('../src/utils/newowHomeCards.ts').CardDelivery>
+  const symbols = (key: 'target'|'daily'|'weekly', direction: 'asc'|'desc') => sortNewowHomeRows(rows,cards,'trend',key,direction).map(row=>row.symbol)
+  assert.deepEqual(symbols('target','desc'), ['b','a','d','c'])
+  assert.deepEqual(symbols('target','asc'), ['d','a','b','c'])
+  assert.deepEqual(symbols('daily','desc'), ['b','a','d','c'])
+  assert.deepEqual(symbols('weekly','desc'), ['b','d','a','c'])
+  assert.deepEqual(symbols('weekly','asc'), ['a','d','b','c'])
+  assert.deepEqual(sortNewowHomeRows(rows,cards,'oscillation','daily','desc'), rows)
+  assert.deepEqual(rows.map(row=>row.symbol), ['a','b','c','d'])
+})
+
+
+test('trend column uses the displayed approximate D1 direction in both strategy views', async () => {
+  const { sortNewowHomeRows } = await import('../src/utils/newowHomeSort.ts')
+  const day = ready('HOLD')
+  day.independent_trend = {status:'ready',direction:'bull',frequency:'1d',formula_version:'guiyi_home_close_ma60_v1',bar_end:day.bar_end!,physical_contract:day.physical_contract!,segment_id:day.segment_id!,calculation_segment_id:day.calculation_segment_id!,parent_input_sha256:day.input_sha256!,input_sha256:'window',close:'101',ma60:'100',sample_count:60,approximate:true,page_parity:false,executable:false}
+  const deliveries = {
+    a:{card:{strategies:{trend:{'1d':day}}}},
+    b:{card:{strategies:{trend:{'1d':{...day,independent_trend:{...day.independent_trend,direction:'bear'}}}}}},
+    c:{card:null},
+    d:{card:{strategies:{trend:{'1d':day}}},stale:true},
+  } as unknown as Record<string, import('../src/utils/newowHomeCards.ts').CardDelivery>
+  const rows = ['b','a','c','d'].map(symbol=>({symbol}))
+  assert.deepEqual(sortNewowHomeRows(rows,deliveries,'oscillation','trend','desc').map(r=>r.symbol), ['a','d','b','c'])
+  assert.deepEqual(sortNewowHomeRows(rows,deliveries,'trend','trend','asc').map(r=>r.symbol), ['b','a','d','c'])
 })

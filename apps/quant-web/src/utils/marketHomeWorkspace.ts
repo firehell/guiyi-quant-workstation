@@ -1,7 +1,7 @@
 import type { MarketHomeRow } from './marketHomeViewModel.ts'
 
 export type MarketHomeLocalFilter = 'all' | 'up' | 'down' | 'flat' | 'aligned' | 'daily-up' | 'daily-down' | 'daily-neutral' | 'daily-unavailable' | 'with-event'
-export type MarketHomeSort = 'default' | 'close' | 'change' | 'volume' | 'oi' | 'event'
+export type MarketHomeSort = 'default' | 'close' | 'change' | 'volume' | 'oi' | 'event' | 'target' | 'daily' | 'weekly' | 'trend'
 export type MarketHomeSortDirection = 'asc' | 'desc'
 export type MarketHomeTrendFilter = 'all' | 'up' | 'down' | 'neutral' | 'unavailable'
 export type MarketHomeAlignmentFilter = 'all' | 'aligned-up' | 'aligned-down' | 'neutral' | 'mixed' | 'unavailable'
@@ -34,7 +34,8 @@ export function filterAndSortMarketHomeRows<T extends MarketHomeRow>(
       && matchesData(row, options.data ?? 'all')
   })
   const sort = options.sort
-  if (sort === 'default') return filtered
+  // Projection columns are sorted by the strategy list after its shared projection loads.
+  if (sort === 'default' || sort === 'target' || sort === 'daily' || sort === 'weekly' || sort === 'trend') return filtered
   return [...filtered].sort((left, right) => compareRows(left, right, sort, options.sortDirection ?? 'desc'))
 }
 
@@ -60,7 +61,7 @@ function matchesData(row: MarketHomeRow, filter: MarketHomeDataFilter): boolean 
   return filter === 'all' || (filter === 'available' ? available : !available)
 }
 
-function compareRows(left: MarketHomeRow, right: MarketHomeRow, sort: Exclude<MarketHomeSort, 'default'>, direction: MarketHomeSortDirection): number {
+function compareRows(left: MarketHomeRow, right: MarketHomeRow, sort: Exclude<MarketHomeSort, 'default' | 'target' | 'daily' | 'weekly' | 'trend'>, direction: MarketHomeSortDirection): number {
   if (sort === 'event') {
     const presence = Number(Boolean(right.event)) - Number(Boolean(left.event))
     if (presence) return presence
@@ -69,7 +70,7 @@ function compareRows(left: MarketHomeRow, right: MarketHomeRow, sort: Exclude<Ma
     return (direction === 'desc' ? eventTimeOrder : -eventTimeOrder) || left.symbol.localeCompare(right.symbol)
   }
 
-  const values: Record<Exclude<MarketHomeSort, 'default' | 'event'>, (row: MarketHomeRow) => number | null> = {
+  const values: Record<Exclude<MarketHomeSort, 'default' | 'event' | 'target' | 'daily' | 'weekly' | 'trend'>, (row: MarketHomeRow) => number | null> = {
     close: (row) => row.close,
     change: (row) => row.price_change_1d,
     volume: (row) => row.volume_ratio20,

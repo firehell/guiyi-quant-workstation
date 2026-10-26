@@ -21,12 +21,12 @@ _CAPABILITIES = {
     "newow_dual_fusion": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
     "newow-trend": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
     "newow-oscillation": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
-    "newow-main-rise": frozenset({"1d", "1w", "60m"}),
-    "subing-reference": frozenset({"15m", "30m", "60m", "1d"}),
+    "newow-main-rise": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
+    "subing-reference": frozenset({"5m", "15m", "30m", "60m", "1d", "1w"}),
     "newow_trend": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
     "newow_oscillation": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
-    "newow_main_rise": frozenset({"1d", "1w", "60m"}),
-    "subing_reference": frozenset({"15m", "30m", "60m", "1d"}),
+    "newow_main_rise": frozenset({"1d", "1w", "5m", "15m", "30m", "60m"}),
+    "subing_reference": frozenset({"5m", "15m", "30m", "60m", "1d", "1w"}),
 }
 
 
