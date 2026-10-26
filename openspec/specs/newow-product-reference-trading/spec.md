@@ -1419,6 +1419,21 @@ semantics, page-parity and non-executable boundaries SHALL remain unchanged.
 - **THEN** all six combinations or three periods use that exact cutoff
 - **AND** unavailable owner, quality or preheating facts remain explicit without substitution
 
+### Requirement: Home projection column sorting
+
+首页目标价、日、周、趋势列头 SHALL 沿用降序、升序、默认三次点击循环，支持键盘及当前方向说明，
+并复用首页排序偏好持久化。排序 SHALL 仅消费已筛选列表和共享投影，不发起额外读取或改变公式。
+目标列 SHALL 对当前显示的目标/吸筹原始正十进制价排序；日/周降序 SHALL 为BUILD、HOLD、CLEAR、FLAT，
+随当前策略视角切换；趋势列 SHALL 使用独立D1 MA60近似展示方向，降序向上、向下，不替换成策略状态。
+两个方向的未知/预热值 SHALL 始终置后，同值保留原有顺序。排序 SHALL NOT 声称牛哇私有权重已知。
+
+#### Scenario: Projection sorting preserves display facts and input identity
+- **GIVEN** a filtered list containing ready, warming and missing projection values
+- **WHEN** a user cycles any of the four column headers or switches the displayed strategy
+- **THEN** displayed facts alone determine order, missing values stay last, and ties remain stable
+- **AND** no extra HTTP request is made and no state, formula, reference price or Runtime Scope changes
+- **AND** the selected sort and direction survive a page reload
+
 ### Requirement: Independent v3.3.79 page performance projection
 
 P0 的 active 产品 envelope SHALL 为 `newow_product_detail_v4`，ReferenceTrade model 为

@@ -88,3 +88,15 @@ test('sorts only filtered rows without changing the source array', () => {
   }).map((row) => row.symbol), ['au', 'ag'])
   assert.deepEqual(source.map((row) => row.symbol), originalSymbols)
 })
+
+
+test('projection columns share the three-click cycle and preserve filtered order until projection sorting', () => {
+  for (const column of ['target', 'daily', 'weekly', 'trend'] as const) {
+    const first = nextMarketHomeSort({ sort: 'default', sortDirection: 'desc' }, column)
+    assert.deepEqual(first, { sort: column, sortDirection: 'desc' })
+    const second = nextMarketHomeSort(first, column)
+    assert.deepEqual(second, { sort: column, sortDirection: 'asc' })
+    assert.deepEqual(nextMarketHomeSort(second, column), { sort: 'default', sortDirection: 'desc' })
+    assert.deepEqual(filterAndSortMarketHomeRows(rows, {query:'',sector:'',filter:'all',sort:column}), rows)
+  }
+})
