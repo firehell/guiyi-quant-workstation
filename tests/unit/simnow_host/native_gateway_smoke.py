@@ -93,6 +93,73 @@ class Compatibility(unittest.TestCase):
         self.g.query("settlement")
         self.assertEqual([v[0] for v in self.g.api.calls], ["settlement"])
 
+    def test_diagnostics_zero_callback_timeout_stops_without_retry(self):
+        calls = []
+        self.g.api.ReqQryInstrument = lambda req, rid: calls.append(rid) or 0
+        with patch.object(self.g.extra_done, "wait", return_value=False):
+            with self.assertRaisesRegex(ValueError, "NATIVE_FACT_QUERY_FAILED"):
+                self.g.query("instrument")
+        d = self.g.query_diagnostics[-1]
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(d["timed_out"])
+        self.assertEqual(d["response_count"], 0)
+        self.assertFalse(d["terminal_response_seen"])
+        with self.assertRaises(ValueError):
+            self.g.query("settlement")
+        self.assertEqual(len(calls), 1)
+
+    def test_diagnostics_partial_rows_without_terminator_remain_failed(self):
+        def partial(req, rid):
+            row = t.CThostFtdcInstrumentField()
+            self.g.OnRspQryInstrument(row, t.CThostFtdcRspInfoField(), rid, False)
+            return 0
+        self.g.api.ReqQryInstrument = partial
+        with patch.object(self.g.extra_done, "wait", return_value=False):
+            with self.assertRaises(ValueError):
+                self.g.query("instrument")
+        d = self.g.query_diagnostics[-1]
+        self.assertEqual(d["data_row_count"], 1)
+        self.assertTrue(d["timed_out"])
+        self.assertFalse(d["complete"])
+        self.assertFalse(d["terminal_response_seen"])
+
+    def test_diagnostics_sdk_rejection_does_not_wait_or_retry(self):
+        self.g.api.ReqQryInstrument = lambda req, rid: -2
+        with patch.object(self.g.extra_done, "wait") as wait:
+            with self.assertRaises(ValueError):
+                self.g.query("instrument")
+        wait.assert_not_called()
+        d = self.g.query_diagnostics[-1]
+        self.assertEqual(d["sdk_return_code"], -2)
+        self.assertFalse(d["timed_out"])
+        self.assertFalse(d["complete"])
+
+    def test_diagnostics_server_rejection_no_raw_message(self):
+        def rejected(req, rid):
+            info = t.CThostFtdcRspInfoField()
+            info.ErrorID = 7
+            info.ErrorMsg = "private-example"
+            self.g.OnRspQryInstrument(None, info, rid, True)
+            return 0
+        self.g.api.ReqQryInstrument = rejected
+        with self.assertRaises(ValueError):
+            self.g.query("instrument")
+        d = self.g.query_diagnostics[-1]
+        self.assertEqual(d["callback_error"], "NATIVE_FACT_QUERY_REJECTED")
+        self.assertEqual(d["response_count"], 1)
+        self.assertTrue(d["terminal_response_seen"])
+        self.assertNotIn("private-example", str(d))
+        self.assertFalse(d["complete"])
+
+    def test_diagnostics_success_contains_no_account_or_raw_rows(self):
+        self.g.query("margin", "rb2701")
+        d = self.g.query_diagnostics[-1]
+        self.assertTrue(d["complete"])
+        self.assertEqual(d["data_row_count"], 1)
+        self.assertFalse(d["timed_out"])
+        self.assertNotIn("000000", str(d))
+        self.assertNotIn("InvestorID", str(d))
+
     def test_login_native_identity_exists_before_completion_waiter(self):
         row = t.CThostFtdcRspUserLoginField()
         row.BrokerID = "9999"

@@ -98,6 +98,7 @@ class Gateway(_readonly.Probe):
         self.extra = None
         self.extra_done = threading.Event()
         self.extra_counter = 30000
+        self.query_diagnostics = []
         self.buffer = []
         self.monitor_progress = None
 
@@ -247,19 +248,42 @@ class Gateway(_readonly.Probe):
         ):
             if hasattr(req, field):
                 setattr(req, field, value)
-        result = getattr(self.api, _METHODS[kind])(req, request_id)
-        if (
-            result != 0
-            or not self.extra_done.wait(15)
-            or self.failed
-            or not self.extra["complete"]
-        ):
-            self.fail("NATIVE_FACT_QUERY_FAILED")
-            raise ValueError("NATIVE_FACT_QUERY_FAILED")
-        return tuple(self.extra["rows"])
+        started = time.monotonic()
+        self.extra.update(response_count=0, terminal_response_seen=False, callback_error=None)
+        result = None
+        timed_out = False
+        try:
+            result = getattr(self.api, _METHODS[kind])(req, request_id)
+            if result == 0:
+                timed_out = not self.extra_done.wait(15)
+            if result != 0 or timed_out or self.failed or not self.extra["complete"]:
+                self.fail("NATIVE_FACT_QUERY_FAILED")
+                raise ValueError("NATIVE_FACT_QUERY_FAILED")
+            return tuple(self.extra["rows"])
+        finally:
+            with self.lock:
+                self.query_diagnostics.append(dict(
+                    kind=kind,
+                    request_id=request_id,
+                    sdk_return_code=result if type(result) is int else None,
+                    response_count=self.extra["response_count"],
+                    data_row_count=len(self.extra["rows"]),
+                    terminal_response_seen=self.extra["terminal_response_seen"],
+                    complete=self.extra["complete"],
+                    timed_out=timed_out,
+                    callback_error=self.extra["callback_error"],
+                    elapsed_seconds=round(time.monotonic()-started, 6),
+                ))
 
     def _extra_response(self, kind, row, info, request_id, last):
+        with self.lock:
+            self._locked_extra_response(kind, row, info, request_id, last)
+
+    def _locked_extra_response(self, kind, row, info, request_id, last):
         try:
+            if self.extra is not None:
+                self.extra["response_count"] += 1
+                self.extra["terminal_response_seen"] |= bool(last)
             if (
                 self.extra is None
                 or self.extra["kind"] != kind
@@ -290,7 +314,13 @@ class Gateway(_readonly.Probe):
             if last:
                 self.extra["complete"] = True
                 self.extra_done.set()
-        except Exception:
+        except Exception as exc:
+            if self.extra is not None:
+                allowed = {
+                    "NATIVE_FACT_RESPONSE_IDENTITY", "NATIVE_FACT_QUERY_REJECTED",
+                    "NATIVE_FACT_ACCOUNT_MISMATCH", "NATIVE_FACT_ROW_LIMIT",
+                }
+                self.extra["callback_error"] = str(exc) if type(exc) is ValueError and str(exc) in allowed else "NATIVE_FACT_FIELD_INVALID"
             self.fail("NATIVE_FACT_RESPONSE_INVALID")
             self.extra_done.set()
 

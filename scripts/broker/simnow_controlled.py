@@ -543,6 +543,7 @@ def main(argv=None):
                 )
                 output["native_failed"] = gateway.failed
             finally:
+                output["native_query_diagnostics"] = list(gateway.query_diagnostics)
                 try:
                     if gateway.api is not None:
                         gateway.api.RegisterSpi(None)
