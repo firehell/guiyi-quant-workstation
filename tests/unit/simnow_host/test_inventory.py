@@ -78,6 +78,21 @@ def test_complete_snapshot_projects_real_flat_balance_without_execution_authorit
     assert rb.coverage == ()
 
 
+def test_query_diagnostics_do_not_change_native_identity_or_override_incomplete_facts():
+    value = report()
+    original = read_snapshot(value)
+    value["query_timeout_seconds"] = 45
+    for record in value["rounds"]:
+        for query in record["queries"].values():
+            query["diagnostics"] = dict(
+                response_count=1, terminal_response_seen=True, timed_out=False
+            )
+    assert read_snapshot(value) == original
+    value["rounds"][0]["queries"]["funds"]["complete"] = False
+    with pytest.raises(ValueError):
+        read_snapshot(value)
+
+
 @pytest.mark.parametrize(
     "problem",
     ["partial", "changed", "hash", "environment", "identity", "day", "future"],
