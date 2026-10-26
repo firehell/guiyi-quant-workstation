@@ -108,3 +108,18 @@ Feed恢复后PID40179，其余五常驻PID未变；全局runtime health仍blocke
 不改变停止顺序、时间预算、CAS与恢复条件。新增先红后绿回归，相关部署191 passed；
 独立Review135项及服务名隐私补验通过，允许进入release candidate，不声称drain已修复。
 旧tag/attempt原件保留，禁止以dirty Runtime继续切换。完整历史和360路激活仍未执行。
+
+### v5定位preserve上限；1.16.10修复候选
+
+v1.16.9已由PR488发布，exact cb6836a4abe3f733f59161242c0e4d9756acda20。
+v5 hash a35564963002720b705612940dfc2c9cc74f202bbd8c83cc5d67dba7c4d8f44c
+完整预热、calendars_off、drain、old_exited通过；诊断明确failed_phase=preserve、error_type=ValueError，
+原生自动恢复并cancelled，未CAS。部分原件保留在私有attempt/originals，含私密配置，不搬到普通输出或展示内容。
+
+现场相同控制文件：普通CohortHost.bytes抛ValueError，原安全file_snapshot使用其既有64,000,000上限完整成功，
+当时2,276,292字节；自然控制继续推进至2,646,411字节。修复后相同安全读取得到完整长度及sha256，未改文件。
+根因是交接读取上限与既有历史刷新控制合同不一致，非价格/公式问题。1.16.10候选仅在稳定目录下精确
+newow-historical-refresh-state.json复用读写共享上限，普通配置/外目录/显式limit不变；不改drain/CAS/恢复。
+新增先红后绿的2.27MB、超界、外目录与symlink测试。相关256 passed/2 skipped；独立141/2及Review通过；
+统一写端同值常量后再验109/2，Web/type/build/topology、Ruff、secret0、diff通过。
+旧v4/v5原件不复用，正式身份仍按实际恢复读回，不把发布9或候选10说成已切换。

@@ -29,6 +29,7 @@ from app.reference_trading.refresh_plan_codec import (
     RefreshPlanCodecError, decode_plan, encode_plan, validate_encoded_plan,
 )
 
+MAX_REFRESH_STATE_BYTES = 64_000_000
 VERSION = 'newow_historical_refresh_v1'
 PLAN_FILE_CODEC = 'reference_refresh_plan_file_v1'
 STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion', 'subing_reference')
@@ -74,7 +75,7 @@ class RefreshStateStore:
     def read(self):
         if not self.path.exists():
             return {'version': VERSION, 'cursor': '', 'routes': {}}
-        if self.path.is_symlink() or self.path.stat().st_size > 64_000_000:
+        if self.path.is_symlink() or self.path.stat().st_size > MAX_REFRESH_STATE_BYTES:
             raise RefreshStateError('REFRESH_STATE_INVALID')
         value = json.loads(self.path.read_text(encoding='utf-8'))
         if (not isinstance(value, dict) or set(value) != {'version', 'cursor', 'routes'}
@@ -167,7 +168,7 @@ class RefreshStateStore:
             data = json.dumps(stored, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
         except (RefreshPlanCodecError, TypeError, ValueError) as error:
             raise RefreshStateError('REFRESH_STATE_INVALID') from error
-        if len(data) > 64_000_000:
+        if len(data) > MAX_REFRESH_STATE_BYTES:
             raise RefreshStateError('REFRESH_STATE_BUDGET_EXCEEDED')
         temporary = self.path.with_name(self.path.name + '.tmp')
         fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
