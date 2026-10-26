@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
 import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vue'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
@@ -114,7 +115,7 @@ function actionTitle(callout: KlineReferenceCallout, strategy = props.strategy) 
 function actionWidth(callout: KlineReferenceCallout, strategy = props.strategy): number {
   return Math.max(ACTION_LABEL_BOX.width, Math.min(180, Math.max(actionTitle(callout, strategy).length, actionDisplay(callout, strategy).text.length) * 7 + 14))
 }
-const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean}>>([])
+const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;title:string}>>([])
 const visualOverlays = ref(readVisualOverlayPreferences())
 watch(visualOverlays, value => { saveVisualOverlayPreferences(value); renderVisualOverlays() })
 const cursorRows = ref<string[]>([])
@@ -550,7 +551,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay))
     const y=priceToCoordinate.call(candles,bar.close)
     if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
-      cautionOverlays.value.push({x,y:Math.max(3,y-22),key:bar.barEnd,tentative:event.tentative})
+      cautionOverlays.value.push({x,y:Math.max(3,y-22),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
   }
   if (showHints.value && !comparisonActive.value) {
     cycleCountOverlays.value = (value.cycleCounts ?? []).flatMap(({ bar, color }) => {
@@ -762,7 +763,11 @@ function renderAuxiliary(): void {
   const reversal = value?.component === 'trend_reversal'
   auxiliaryZeroLine?.applyOptions({ color: mirror || energy || control || reversal ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
   const { topInset, auxiliaryHeight } = newowAuxiliaryPaneLayout(container.value?.clientHeight ?? 700, auxiliaryToolbar.value?.offsetHeight ?? 0)
-  zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series) : [], topInset)
+  const displayEvents = (props.response?.value?.caution_events ?? []).flatMap(e=>{
+    const bar=model.value?.bars.find(b=>b.barEnd===e.bar_end)
+    return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative}] : []
+  })
+  zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series, displayEvents) : [], topInset)
   upDownEnergy.setData(energy && model.value ? buildNewowUpDownEnergyData(value.series, model.value.bars) : [],
     topInset)
   mainForceControl.setData(control && props.auxiliaryResponse?.value?.component === 'main_force_control'
@@ -872,7 +877,7 @@ defineExpose({ revealSignal, scrollToLatest })
       @dblclick="scheduleActionProjection"
     />
     <div class="newow-caution-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
-      <span v-for="item in cautionOverlays" :key="item.key" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" title="主力照妖镜历史回看小心提示，会重绘，非交易信号">小心</span>
+      <span v-for="item in cautionOverlays" :key="item.key" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title">小心</span>
     </div>
     <div v-if="showHints && (processOverlays.length || cycleCountOverlays.length)" class="newow-process-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="主图过程提示，非成交">
       <i v-for="item in cycleCountOverlays" :key="item.barEnd" class="newow-cycle-count" :data-cycle-count-bar="item.barEnd" :style="{ left: `${item.x}px`, top: `${item.top}px`, height: `${item.height}px`, background: item.color }" />

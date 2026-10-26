@@ -96,6 +96,7 @@ def test_chart_events_share_prefix_and_do_not_change_strategy_markers():
 
     def replay(count):
         return SimpleNamespace(
+            identity=SimpleNamespace(frequency=SimpleNamespace(value="1d")),
             frames=tuple(
                 SimpleNamespace(
                     bar=SimpleNamespace(bar=b, calculation_segment_id="calc")
@@ -111,7 +112,7 @@ def test_chart_events_share_prefix_and_do_not_change_strategy_markers():
         and before[-1]["tentative"]
     )
     assert (
-        moved[-1]["bar_end"] == source[21].bar_end.isoformat()
+        moved[-1]["bar_end"] == source[20].bar_end.isoformat()
         and moved[-1]["tentative"]
     )
     confirmed = project_caution_events(replay(24))
@@ -134,6 +135,6 @@ def test_overlapping_foreign_warmup_peaks_are_not_observation_events():
     for contract,eligible in [('RB2605',True),('RB2610',False)]:
         for b in source:
             frames.append(SimpleNamespace(bar=SimpleNamespace(bar=replace(b,physical_contract=contract,segment_id=contract,observation_eligible=eligible),calculation_segment_id=contract+'-calc')))
-    events=project_caution_events(SimpleNamespace(frames=tuple(frames)))
+    events=project_caution_events(SimpleNamespace(identity=SimpleNamespace(frequency=SimpleNamespace(value="1d")),frames=tuple(frames)))
     assert events
     assert all(e['physical_contract']=='RB2605' for e in events)

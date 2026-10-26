@@ -140,6 +140,42 @@ def calculate_main_force_control(
     return MainForceControlResult(tuple(kongpan), tuple(status), status[-1])
 
 
+def mirror_peak_structure(bars: tuple[NewowDailyBar, ...]):
+    """Shared close-5% scan; display first-seen metadata never changes peak rules."""
+    closes = [float(bar.close) for bar in bars]
+    size = len(bars)
+    confirmed_peaks: list[int] = []
+    confirmed_peak_events: list[tuple[int, int]] = []
+    first_seen: int | None = None
+    first_seen_by_peak: dict[int, int | None] = {}
+    trend = 1
+    candidate_peak = candidate_trough = 0
+    peak_value = trough_value = closes[0]
+    for index in range(1, size):
+        if trend >= 0:
+            if closes[index] > peak_value:
+                peak_value, candidate_peak = closes[index], index
+            elif closes[index] <= peak_value * 0.95:
+                first_seen_by_peak[candidate_peak] = first_seen
+                first_seen = None
+                confirmed_peaks.append(candidate_peak)
+                confirmed_peak_events.append((candidate_peak, index))
+                trend, candidate_trough, trough_value = -1, index, closes[index]
+        elif closes[index] < trough_value:
+            trough_value, candidate_trough = closes[index], index
+        elif closes[index] >= trough_value * 1.05:
+            trend, candidate_peak, peak_value = 1, index, closes[index]
+            first_seen = None
+        # This is exactly the prefix fresh condition of the public 10-bar V window.
+        if (trend >= 0 and candidate_peak == index and index >= 19
+                and bars[index].observation_eligible
+                and (not confirmed_peaks or index - 1 - confirmed_peaks[-1] >= 10)
+                and first_seen is None):
+            first_seen = index
+    del candidate_trough
+    return confirmed_peaks, confirmed_peak_events, trend, candidate_peak, first_seen, first_seen_by_peak
+
+
 def calculate_zhaoyao_mirror(
     bars: tuple[NewowDailyBar, ...],
 ) -> ZhaoyaoMirrorResult | None:
@@ -149,7 +185,6 @@ def calculate_zhaoyao_mirror(
     if len(bars) < 20:
         return None
     size = len(bars)
-    closes = [float(bar.close) for bar in bars]
     highs = [float(bar.high) for bar in bars]
     lows = [float(bar.low) for bar in bars]
     quarters = [float(bar.low + bar.open + bar.close + bar.high) / 4.0 for bar in bars]
@@ -210,24 +245,7 @@ def calculate_zhaoyao_mirror(
         for index in range(size)
     ]
 
-    confirmed_peaks: list[int] = []
-    confirmed_peak_events: list[tuple[int, int]] = []
-    trend = 1
-    candidate_peak = candidate_trough = 0
-    peak_value = trough_value = closes[0]
-    for index in range(1, size):
-        if trend >= 0:
-            if closes[index] > peak_value:
-                peak_value, candidate_peak = closes[index], index
-            elif closes[index] <= peak_value * 0.95:
-                confirmed_peaks.append(candidate_peak)
-                confirmed_peak_events.append((candidate_peak, index))
-                trend, candidate_trough, trough_value = -1, index, closes[index]
-        elif closes[index] < trough_value:
-            trough_value, candidate_trough = closes[index], index
-        elif closes[index] >= trough_value * 1.05:
-            trend, candidate_peak, peak_value = 1, index, closes[index]
-    del candidate_trough
+    confirmed_peaks, confirmed_peak_events, trend, candidate_peak, _, _ = mirror_peak_structure(bars)
     all_peaks = list(confirmed_peaks)
     if trend >= 0 and candidate_peak not in all_peaks:
         all_peaks.append(candidate_peak)

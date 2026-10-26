@@ -32,6 +32,7 @@ from guiyi_quant.newow.product_adapters import (
 )
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 
+from guiyi_quant.newow.caution_display import CAUTION_DISPLAY_VERSION
 from .home_cards import project_caution_events
 from .page_performance_adapter import project_page_performance
 from .product_macd import MACD_CACHE_IDENTITY, calculate_macd_display
@@ -773,6 +774,7 @@ def _dependency_proof(read: ProductReadSet) -> dict[str, str]:
         "|".join(
             (
                 SCHEMA_VERSION,
+                CAUTION_DISPLAY_VERSION,
                 futures_adaptation_version(
                     read.frequency, read.input_quality_policy
                 ),

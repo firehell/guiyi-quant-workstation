@@ -195,7 +195,15 @@ export interface NewowProductHint {
   readonly sequence: number | null
 }
 
-export interface NewowCautionEvent { bar_end: string; peak_day: string; confirmed_at: string | null; as_of: string; tentative: boolean; physical_contract: string; segment_id: string; calculation_segment_id: string; formula_version: string; repainting: true; executable: false }
+export interface NewowCautionEvent {
+  event_id: string; frequency: NewowProductFrequency; bar_end: string; peak_day: string;
+  peak_bar_end: string; first_visible_at: string; confirmed_at: string | null; as_of: string;
+  tentative: boolean; display_state: 'tentative' | 'confirmed'; age_bars: number;
+  home_visible: boolean; detail_visible: boolean; max_tentative_age_bars: 10;
+  visibility_basis: 'completed_bar'; display_policy_version: 'guiyi_caution_completed_anchor_v1';
+  physical_contract: string; segment_id: string; calculation_segment_id: string;
+  formula_version: 'newow_zhaoyao_mirror_repainting_page_v2'; repainting: true; page_parity: false; executable: false;
+}
 
 export interface NewowChartValue {
   readonly caution_events?: readonly NewowCautionEvent[]

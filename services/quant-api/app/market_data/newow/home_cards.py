@@ -1,11 +1,13 @@
 """Small display projection of an authenticated replay, never a strategy engine."""
 from decimal import Decimal
+from hashlib import sha256
+
+from guiyi_quant.newow.caution_display import CAUTION_DISPLAY_VERSION, DETAIL_MAX_AGE, HOME_MAX_AGE, caution_display_points
 
 from guiyi_quant.newow.home_independent_trend import calculate_home_trend
 
 from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 from guiyi_quant.newow.main_rise import calculate_main_rise_series
-from guiyi_quant.newow.subplots import calculate_zhaoyao_mirror
 
 from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, MainState, TradeEligibility
 
@@ -107,22 +109,19 @@ def project_row_hints(replay, anchor, ready):
     bars = tuple(frame.bar.bar for frame in replay.frames
                  if frame.bar.calculation_segment_id == anchor.bar.calculation_segment_id
                  and frame.bar.bar.physical_contract == anchor.bar.bar.physical_contract
+                 and frame.bar.bar.segment_id == anchor.bar.bar.segment_id
                  and frame.bar.bar.bar_end <= anchor.bar.bar.bar_end)
     if len(bars) < 20 or bars[-1].bar_end != anchor.bar.bar.bar_end:
         return None
-    mirror = calculate_zhaoyao_mirror(bars)
     hints = []
-    if mirror:
-        event = len(bars)-1 if mirror.last_bar_fresh_peak else next(
-            (i for i in range(len(bars)-1, -1, -1) if mirror.caution[i] == 50), -1)
-        if event >= 0 and len(bars)-event <= 2:
-            confirmed = dict(mirror.confirmed_peak_events).get(event)
-            hints.append({'kind': 'caution', 'peak_day': bars[event].trading_day,
-                          'event_day': bars[event].trading_day,
-                          'event_bar_end': bars[event].bar_end.isoformat(),
-                          'confirmed_day': bars[confirmed].trading_day if confirmed is not None else None,
-                          'tentative': mirror.last_bar_fresh_peak,
-                          'formula_version': mirror.formula_version})
+    owner = (bars[-1].physical_contract, bars[-1].segment_id, anchor.bar.calculation_segment_id)
+    for point in caution_display_points(bars):
+        if point.age_bars > HOME_MAX_AGE:
+            continue
+        event = _caution_event(bars, owner, point, replay.identity.frequency.value)
+        hints.append({**event, 'peak_day': bars[point.peak_index].trading_day, 'kind': 'caution', 'event_day': bars[point.event_index].trading_day,
+                      'event_bar_end': event['bar_end'],
+                      'confirmed_day': bars[point.confirmed_index].trading_day if point.confirmed_index is not None else None})
     series = calculate_main_rise_series(bars)
     event = project_home_j_hint(series)
     if event is not None and len(bars) - event <= 2:
@@ -130,10 +129,10 @@ def project_row_hints(replay, anchor, ready):
                           'event_bar_end': bars[event].bar_end.isoformat(),
                       'j_value': str(series[event].j_value), 'reference_price': str(bars[event].high),
                       'formula_version': 'newow_home_j_hint_page_v1'})
-    return {'status': 'ready', 'bar_end': bars[-1].bar_end,
+    return {'status': 'ready', 'display_policy_version': CAUTION_DISPLAY_VERSION, 'bar_end': bars[-1].bar_end,
             'physical_contract': bars[-1].physical_contract,
             'calculation_segment_id': anchor.bar.calculation_segment_id,
-            'page_parity': True, 'executable': False, 'items': hints}
+            'page_parity': False, 'executable': False, 'items': hints}
 
 
 def project_home_j_hint(series):
@@ -152,26 +151,31 @@ def project_home_j_hint(series):
     return latest
 
 
+def _caution_event(bars, owner, point, frequency):
+    event_bar, peak = bars[point.event_index], bars[point.peak_index]
+    event_at = event_bar.bar_end.isoformat()
+    identity = '|'.join((*owner, frequency, event_at, CAUTION_DISPLAY_VERSION))
+    tentative = point.confirmed_index is None
+    return dict(event_id=sha256(identity.encode()).hexdigest(), frequency=frequency, bar_end=event_at,
+        peak_day=peak.trading_day.isoformat(), peak_bar_end=peak.bar_end.isoformat(),
+        first_visible_at=bars[point.first_visible_index].bar_end.isoformat(),
+        confirmed_at=bars[point.confirmed_index].bar_end.isoformat() if not tentative else None,
+        as_of=bars[-1].bar_end.isoformat(), tentative=tentative,
+        display_state='tentative' if tentative else 'confirmed', age_bars=point.age_bars,
+        home_visible=point.age_bars <= HOME_MAX_AGE,
+        detail_visible=not tentative or point.age_bars <= DETAIL_MAX_AGE,
+        max_tentative_age_bars=DETAIL_MAX_AGE, visibility_basis='completed_bar',
+        display_policy_version=CAUTION_DISPLAY_VERSION,
+        physical_contract=owner[0], segment_id=owner[1], calculation_segment_id=owner[2],
+        formula_version='newow_zhaoyao_mirror_repainting_page_v2',
+        repainting=True, page_parity=False, executable=False)
+
+
 def project_caution_events(replay):
-    """Independent chart layer, bounded by calculation owner; not strategy markers."""
+    """One owner-scoped display policy for home, main chart and auxiliary chart."""
     from itertools import groupby
-    events=[]
+    events = []
     for owner, group in groupby(replay.frames, key=lambda f: (f.bar.bar.physical_contract, f.bar.bar.segment_id, f.bar.calculation_segment_id)):
-        frames=tuple(group)
-        bars=tuple(f.bar.bar for f in frames)
-        mirror=calculate_zhaoyao_mirror(bars)
-        if mirror is None:
-            continue
-        for i in range(len(bars)):
-            if not bars[i].observation_eligible:
-                continue
-            tentative=mirror.tentative[i]==50
-            if mirror.caution[i]!=50 and not tentative:
-                continue
-            confirmed=mirror.confirmation_index[i]
-            events.append(dict(bar_end=bars[i].bar_end.isoformat(),peak_day=bars[i].trading_day.isoformat(),
-                confirmed_at=bars[confirmed].bar_end.isoformat() if confirmed>=0 else None,
-                as_of=bars[-1].bar_end.isoformat(),tentative=tentative,
-                physical_contract=owner[0],segment_id=owner[1],calculation_segment_id=owner[2],
-                formula_version=mirror.formula_version,repainting=True,executable=False))
+        bars = tuple(f.bar.bar for f in group)
+        events.extend(_caution_event(bars, owner, point, replay.identity.frequency.value) for point in caution_display_points(bars))
     return tuple(events)

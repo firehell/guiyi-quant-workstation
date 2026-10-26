@@ -187,8 +187,49 @@ class ChartPriceUnavailableDayOut(_Out):
     segment_id: str
 
 
+class CautionDisplayEventOut(_Out):
+    event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    frequency: ProductFrequencyValue
+    bar_end: datetime
+    peak_day: date
+    peak_bar_end: datetime
+    first_visible_at: datetime
+    confirmed_at: datetime | None
+    as_of: datetime
+    tentative: bool
+    display_state: Literal['tentative', 'confirmed']
+    age_bars: int = Field(ge=0)
+    home_visible: bool
+    detail_visible: bool
+    max_tentative_age_bars: Literal[10]
+    visibility_basis: Literal['completed_bar']
+    display_policy_version: Literal['guiyi_caution_completed_anchor_v1']
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str
+    formula_version: Literal['newow_zhaoyao_mirror_repainting_page_v2']
+    repainting: Literal[True]
+    page_parity: Literal[False]
+    executable: Literal[False]
+
+    @model_validator(mode='after')
+    def validate_display_identity(self):
+        if (not self.event_id or not self.physical_contract or not self.segment_id
+                or not self.calculation_segment_id
+                or self.bar_end > self.peak_bar_end or self.peak_bar_end > self.as_of
+                or self.first_visible_at < self.bar_end or self.first_visible_at > self.as_of
+                or self.tentative != (self.display_state == 'tentative')
+                or self.tentative != (self.confirmed_at is None)
+                or self.home_visible != (self.age_bars <= 1)
+                or not self.detail_visible
+                or (self.tentative and (self.age_bars > 10 or self.first_visible_at != self.bar_end))
+                or (self.confirmed_at is not None and not self.peak_bar_end <= self.confirmed_at <= self.as_of)):
+            raise ValueError('NEWOW_CAUTION_DISPLAY_INVALID')
+        return self
+
+
 class ChartValueOut(_Out):
-    caution_events: list[dict[str, Any]] = Field(default_factory=list)
+    caution_events: list[CautionDisplayEventOut] = Field(default_factory=list)
     chart_from: date
     chart_through: date
     page_identity: str

@@ -1645,6 +1645,61 @@ facts, reference trade projection and returns. Night-session trading day and act
 SHALL remain explicit; interface consistency SHALL NOT flatten them into one fictitious timestamp.
 
 
+### Requirement: Completed-bar caution display events have stable first-observation anchors
+
+The product SHALL use `guiyi_caution_completed_anchor_v1` for the futures caution display adapter,
+separately from the unchanged `newow_zhaoyao_mirror_repainting_page_v2` numerical primitive.
+This adapter SHALL be `page_parity=false`, `repainting=true`, `executable=false`; no BUILD/CLEAR,
+CDV2 care/extra input, reference pairing, return, delivery or account rule may consume its display gate.
+The close-5% peak scan SHALL remain shared with the primitive, with no independent alternate peak algorithm.
+
+Within a physical contract, physical segment, calculation segment and frequency, the first eligible
+completed prefix of at least 20 bars that produces a fresh candidate SHALL establish the display anchor.
+New highs may change the actual `peak_bar_end` but SHALL NOT move that anchor or restart its age.
+The deterministic event identity SHALL include these owner identities, frequency, policy version and
+anchor time. A new leg SHALL NOT inherit the prior anchor. Recalculation/restart with the same prefix
+SHALL produce the same identity and known times without notification records or persistent mutation.
+Input that is unordered or duplicated SHALL fail closed. Non-observation warmup bars cannot establish
+an event. A historical confirmation before the 20-bar warmup floor SHALL NOT claim visibility before
+that floor. Confirmation time remains the actual 5% confirming completed bar, separately from visibility.
+
+The new-event display gate SHALL be the accepted completed input cutoff, not device wall-clock time
+or the stock-specific 14:30 rule. Home visibility SHALL include ages 0 and 1 of the event anchor;
+detail tentative visibility SHALL include ages 0 through 10 inclusive. New highs cannot revive an
+expired tentative event. Confirmed events may remain available as historical display records, with
+an explicit `confirmed_at`; they are not fresh home signals. Absorbed nearby peaks SHALL not invent
+independent events. This is a documented futures adaptation, not a claim to reproduce private server
+first-publication history, intrabar visibility or a real-time trading decision.
+
+Chart `caution_events` SHALL expose a typed shared contract: event identity, frequency, display anchor,
+actual peak/time/day, first visibility, confirmation or null, cutoff, tentative/confirmed state, bar age,
+home/detail visibility, maximum tentative age, policy/formula versions and all owner identities.
+Home caution items SHALL carry this same contract plus their row fields. Missing policy, unknown
+certainty or mismatched ownership/cutoff SHALL NOT be treated as confirmed or silently shown.
+Chart data validation SHALL reject contradictory state/time/expiry fields. Main and mirror panels
+SHALL draw their caution markers from the accepted chart events, rather than independently drawing
+moving raw tentative arrays. Pure raw mirror arrays SHALL remain accessible and unchanged for numerical
+parity and explanation. Snapshot dependency proofs and persisted home input identities SHALL include
+the display policy version so previous policy output cannot survive as fresh cache data.
+
+#### Scenario: Candidate advances but the first completed event remains fixed
+- **GIVEN** a fresh event at completed bar A and a higher candidate peak at bar B
+- **WHEN** the same owner is queried after B
+- **THEN** home and chart share the same event identity and anchor A, while `peak_bar_end` is B
+- **AND** a subsequent confirmation retains the event identity and reports its actual confirming bar
+
+#### Scenario: Tentative age expires without rejuvenation
+- **GIVEN** a tentative event anchored at A
+- **WHEN** its age is 10 accepted same-owner bars
+- **THEN** it remains visible in detail but is absent from home
+- **WHEN** age reaches 11, including after new highs
+- **THEN** neither panel emits a tentative marker for that event
+
+#### Scenario: Warmup, future or foreign identity cannot supply a display event
+- **WHEN** a candidate is only available on non-observation bars or another owner/frequency
+- **THEN** it cannot establish or replace the current event anchor
+- **AND** a future peak/cutoff or missing display policy is rejected, never converted to confirmed
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.

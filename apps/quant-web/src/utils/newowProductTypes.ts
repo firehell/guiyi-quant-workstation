@@ -1,3 +1,4 @@
+import { normalizeCautionDisplay } from './newowCautionDisplay.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
 import { normalizePagePerformance } from './newowPagePerformance.ts'
 import {
@@ -287,7 +288,8 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
   const older = nullableText(value.next_older_window, 'chart.next_older_window')
   if (older !== null && (older.length > 256 || meta.snapshot_token === null || value.next_before !== null)) throw new Error('older window requires an exhausted snapshot window')
     const cautionEvents = array(value.caution_events ?? [], 'chart.caution_events').map(raw => {
-    const e=record(raw,'caution_event'); const at=instant(e.bar_end,'caution.bar_end')
+    const e=normalizeCautionDisplay(raw); const at=instant(e.bar_end,'caution.bar_end')
+    if (e.frequency!==meta.identity.frequency) throw new Error('caution frequency conflict')
     const bar=bars.find(b=>Date.parse(b.bar_end)===Date.parse(at))
     if (!bar || (e.physical_contract!==bar.physical_contract || e.segment_id!==bar.segment_id || e.calculation_segment_id!==bar.calculation_segment_id)) throw new Error('caution owner conflict')
     requireNotAfter(at,meta.as_of,'caution.bar_end','as_of'); requireNotAfter(instant(e.as_of,'caution.as_of'),meta.as_of,'caution.as_of','as_of')
