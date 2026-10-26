@@ -592,3 +592,22 @@ def test_fusion_gap_interrupts_old_open_restores_fusion_checkpoint_and_resumes_c
         days=boundary_count + 1
     )
     assert completed.checkpoint.reference_state.open_trade is None
+
+
+def test_fusion_shared_source_proof_excludes_only_route_local_inbox_receipt():
+    from datetime import datetime
+    from app.reference_trading.capture import ForwardCapture
+    case, dependencies=sources('60m')
+    for i,dependency in enumerate(dependencies):
+        old=dependency['capture']
+        proof={**old['source_proof'],'inbox_delivery_id':f'delivery-{i}',
+               'journal_stream_id':'123-0','journal_envelope_sha256':'a'*64}
+        capture=ForwardCapture(dependency['stream_id'],dependency['revision_id'],old['generation'],
+          old['source_key'],datetime.fromisoformat(old['bar_end']),datetime.fromisoformat(old['observed_at']),
+          old['source_kind'],old['input_payload'],proof,old['eligibility'])
+        dependency['capture']=capture.evidence()['forward_capture_v1']
+    stream=build_fusion_stream_identity('rb','60m',recording_mode='forward_observation',
+       observation_policy_version='completed_observation_v1')
+    result=build_fusion_capture(stream,revision_id='fusion',generation=1,after=None,
+       now=case.bars[0].bar.bar_end+timedelta(minutes=1),dependencies=dependencies)
+    assert result.input_payload

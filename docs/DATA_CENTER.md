@@ -919,3 +919,18 @@ Feed 在闭市启动也只使用当前 Calendar 证明的交易日；先证明�
 `raw_received_at` 与 `source_observed_at` 保留真实原始接收时间；`confirmed_at` 是首次正常 completed 原子提交时刻，
 幂等重放复用已提交值。Reference 捕获以 confirmed 时刻证明 completed 合法性，通知时效仍用原始接收时间，
 不会通过确认、扫描或重启延长 30 秒预算。原始 preview 不具备正式通知资格。
+
+
+### 正常主力切换的历史准备
+
+`contract_preparation_v1` 在既有 Market Live 进程的独立线程运行，正常日切、启动及消费者缺物理前缀
+只提出需求；权威 Calendar/Session 与正式 rank1 决定 operational 且已启用消费者的实际合约和周期。
+缺历史不阻断来源采集，不用旧合约、连续序列或实时原件替代 Canonical。
+
+准备复用原生 `contract_warmup`：已完成历史截止、生命周期、周期和精确 plan hash 在 maintenance lease
+内重新校验，来源请求前持久化预算预留/attempt，安全单元间检查1200秒准入预算，不强杀提交。
+每合约64来源请求/200万预期Bar，每交易日256请求/800万Bar；合法派生先用已有合格1m。
+`noop` 与 `passed` 都必须经独立新事务的原生重规划和物理读取后才可READY。
+同源周期等待不消耗attempt，不反向阻断原任务唯一一次一小时后provider未就绪重试；partial、未知提交、
+身份/质量异常与进程中断均保留READBACK_REQUIRED，不以新key、重启或重复需求绕过。
+READY依赖漂移只触发重新读回，不自动重跑已不明的生产写入。稳定状态与不可变终态归档跨发布保留。

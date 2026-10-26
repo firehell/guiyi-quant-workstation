@@ -212,7 +212,33 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
             durable_observations = os.getenv("GUIYI_OBSERVATION_STREAM_ENABLED", "0") == "1"
             worker.scan_live = not durable_observations
             wake_type = StreamForwardLiveWake if durable_observations else ForwardLiveWake
-            wake = wake_type(redis, repository, worker, market_data)
+            inbox_mode = False
+            if durable_observations:
+                from app.reference_trading.inbox_protocol import (
+                    build_receiving_protocol, require_inbox_schema,
+                )
+                from app.runtime_handover import runtime_directory
+                if (runtime_directory()/"reference-receiving-protocol.json").exists():
+                    from app.market_data.observation_stream import ObservationStream
+                    require_inbox_schema(SessionLocal)
+                    protocol = build_receiving_protocol()
+                    if ownership is None and not warmup:
+                        raise RuntimeError("REFERENCE_INBOX_OWNER_REQUIRED")
+                    inbox_mode = protocol.activate(ObservationStream(redis, kind="completed"),
+                        assert_owned=ownership.assert_owned if ownership else lambda: None, warmup=warmup)
+            repository.inbox_enabled = inbox_mode
+            if inbox_mode:
+                from app.reference_trading.inbox import ReferenceInboxRepository
+                from app.reference_trading.live_wake import InboxForwardLiveWake
+                from app.market_data.contract_preparation_runtime import build_contract_preparation_requester
+                wake = InboxForwardLiveWake(redis, repository, worker, market_data,
+                    inbox=ReferenceInboxRepository(SessionLocal),
+                    request_history=build_contract_preparation_requester())
+                if not warmup:
+                    wake.on_intake_failure = protocol.block_intake
+                wake.intake_error = protocol.read().get("intake_error")
+            else:
+                wake = wake_type(redis, repository, worker, market_data)
             if durable_observations:
                 wake.stop_requested = ownership.should_drain if ownership else lambda: False
                 worker.poll_observations = wake.poll

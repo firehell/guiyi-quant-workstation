@@ -72,6 +72,9 @@ class ForwardReferenceWorker:
         end_unit: Callable[[], None] = lambda: None,
     ) -> None:
         self.source_envelope = None
+        self.retained_source_observations = ()
+        self.inbox_ingested_at = None
+        self.inbox_delivery_id = None
         self.source_observed_at: datetime | None = None
         self.raw_received_at: datetime | None = None
         self.assert_owned = lambda: None
@@ -190,6 +193,51 @@ class ForwardReferenceWorker:
                 raise RuntimeError("REFERENCE_BUFFER_PROCESSING_BLOCKED")
         if any(key in self._blocked for key in (*keys, *routes)):
             raise RuntimeError("REFERENCE_BUFFER_PROCESSING_BLOCKED")
+
+    def process_inbox_delivery(self, stream_id: str, bar_end: datetime, *, delivery_id: str):
+        """Compute exactly one frozen delivery; an unrelated stream cannot join it.
+
+        The dispatcher owns envelope timestamps and activation checks. Calculation
+        and inbox completion share the repository transaction, not a later ACK.
+        """
+        if not self._enabled:
+            raise RuntimeError("REFERENCE_WORKER_NOT_ENABLED")
+        with self.observation_priority():
+            self.assert_owned()
+            self._begin_unit()
+            self.inbox_delivery_id = delivery_id
+            try:
+                pending = self._repository.read_pending_capture(stream_id)
+                if pending is None:
+                    capture = self._read_input(stream_id, "live_event", bar_end)
+                    if capture is None:
+                        raise RuntimeError("REFERENCE_INBOX_NO_CALCULATION")
+                    proof = {**capture.source_proof, "inbox_delivery_id": delivery_id}
+                    if self.source_envelope is not None:
+                        from hashlib import sha256
+                        proof["journal_envelope_sha256"] = sha256(self.source_envelope.to_json().encode()).hexdigest()
+                        proof["journal_stream_id"] = self.source_envelope.stream_id
+                    if self.raw_received_at is not None:
+                        proof["raw_received_at"] = self.raw_received_at.isoformat()
+                    proof["confirmed_at"] = capture.observed_at.isoformat()
+                    if self.inbox_ingested_at is not None:
+                        proof["ingested_at"] = self.inbox_ingested_at.isoformat()
+                    capture = replace(capture, source_proof=proof)
+                    self.assert_owned()
+                    self._repository.capture_forward(capture)
+                self.assert_owned()
+                result = self._service_for(stream_id).process_pending(stream_id)
+                if result is None:
+                    raise RuntimeError("REFERENCE_INBOX_NO_CALCULATION")
+                self._last_success = datetime.now(UTC)
+                self._blocked.pop(stream_id, None)
+                return result
+            except Exception as error:
+                self._blocked[stream_id] = failure_reason(error)
+                raise
+            finally:
+                self.inbox_delivery_id = None
+                self._end_unit()
 
     def _prefer_source_retry(self) -> None:
         # A resource failure is cleared only by a real successful read. Let one

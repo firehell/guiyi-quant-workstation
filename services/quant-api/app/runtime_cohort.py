@@ -75,9 +75,6 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
     contracts = host.contracts(candidate_root)
     for old in previous.services.values():
         host.verify_release(Path(old.root), old.tag, old.commit)
-        require(
-            old.contracts["db"] == contracts["db"], "COHORT_SCHEMA_CHANGE_UNSUPPORTED"
-        )
     generation = max(v.generation for v in previous.services.values()) + 1
     new = BindingRegistry(
         1,
@@ -108,6 +105,10 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
         "expires_at": (now + timedelta(minutes=15)).isoformat(),
         "downtime_seconds": 600,
     }
+    if any(value.contracts["db"] != contracts["db"] for value in previous.services.values()):
+        verifier = getattr(host, "schema_compatibility", None)
+        require(callable(verifier), "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
+        result["schema_compatibility"] = verifier(previous, new)
     result["plan_sha256"] = digest(result)
     return result
 
@@ -169,13 +170,19 @@ def validate(plan, now):
             == 1,
             "COHORT_TARGET_CONTRACTS_INVALID",
         )
-        require(
-            all(
-                new.services[k].contracts["db"] == v.contracts["db"]
-                for k, v in old.services.items()
-            ),
-            "COHORT_SCHEMA_CHANGE_UNSUPPORTED",
-        )
+        changed = {value.contracts["db"] for key, value in old.services.items()
+                   if new.services[key].contracts["db"] != value.contracts["db"]}
+        if changed:
+            from app.runtime_schema_compatibility import validate_transition_proof, SchemaCompatibilityError
+            proof = plan.get("schema_compatibility")
+            require(isinstance(proof, dict) and set(proof) == changed, "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
+            for fingerprint in changed:
+                try:
+                    validate_transition_proof(proof[fingerprint], old_db=fingerprint, new_db=target.contracts["db"])
+                except SchemaCompatibilityError:
+                    raise CohortError("COHORT_SCHEMA_CHANGE_UNSUPPORTED") from None
+        else:
+            require("schema_compatibility" not in plan, "COHORT_SCHEMA_PROOF_UNEXPECTED")
         require(
             tuple(map(int, next(iter(new.services.values())).tag[1:].split(".")))
             > max(tuple(map(int, v.tag[1:].split("."))) for v in old.services.values()),
@@ -184,6 +191,13 @@ def validate(plan, now):
         return old, new
     except (KeyError, TypeError, OverflowError) as error:
         raise CohortError("COHORT_PLAN_INVALID") from error
+
+
+def _check_schema(host, plan):
+    if "schema_compatibility" in plan:
+        verifier = getattr(host, "check_schema_compatibility", None)
+        require(callable(verifier), "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
+        verifier(plan)
 
 
 def apply_cohort(host, plan):
@@ -199,6 +213,7 @@ def apply_cohort(host, plan):
             "COHORT_REGISTRY_DRIFT",
         )
         host.check_plan(plan)
+        _check_schema(host, plan)
         attempts = host.directory / "cohort-attempts"
         require(not attempts.is_symlink(), "COHORT_ATTEMPT_DIRECTORY_UNSAFE")
         attempts.mkdir(mode=0o700, exist_ok=True)
@@ -249,9 +264,13 @@ def apply_cohort(host, plan):
             step("calendars_off", lambda: host.suspend_calendars(plan))
             proof = step("drain", lambda: host.drain(plan))
             with host.guards(plan):
+                _check_schema(host, plan)  # Fresh installed proof before any owner stop.
                 step("old_exited", lambda: host.stop_old(plan, proof))
                 step("preserve", lambda: host.preserve(plan, attempt))
                 step("install", lambda: host.install(plan, attempt))
+                validate(plan, host.now())
+                require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
+                _check_schema(host, plan)  # Revalidate after install, before CAS intent.
                 validate(plan, host.now())
                 require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
                 persist("committing")

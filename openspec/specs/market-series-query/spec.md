@@ -248,7 +248,11 @@ subscriptions, emit an Event, invoke transport or change the normal live signal 
 ### Requirement: Incompatible all-service releases require a bounded stopped cohort
 
 The cohort installer SHALL freeze exact old and new identities for all ten services, preserve existing enabled
-states and schedules, and support no schema change. It SHALL require all six continuous services enabled,
+states and schedules, and SHALL NOT run a schema migration. The sole additive compatibility exception SHALL be
+`reference_inbox_preinstalled_additive_0053_v1`: exactly the known added 0053 migration, unchanged existing DB-contract
+files and single 0052→0053 head, plus fresh read-only proof of installed revision, exact tables/constraints/indexes and
+immutable guards. The exception SHALL be frozen in the plan and revalidated before stopping services and before CAS.
+Any other schema or proof drift SHALL remain blocked. It SHALL require all six continuous services enabled,
 authoritative rest for all operational products and at least 660 seconds before the next Session.
 The plan SHALL expire after fifteen minutes and be revalidated after read-only prewarm and immediately before
 CAS. Downtime SHALL be bounded to 600 seconds. All old owners SHALL drain and exit before the sole registry CAS,

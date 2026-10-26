@@ -317,7 +317,9 @@ Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 com
 ### 休市窗口整组发布
 
 当待发布共享合同改变、不能与旧消费者并行时，使用 `install-local-services.sh --plan-cohort --candidate-root <absolute-release-root> --tag <annotated-tag> --commit <peeled-commit>` 冻结整组计划，再用 `--apply-cohort-plan --plan <absolute-plan>` 单次执行。
-仅支持现有十服务、六常驻全部启用、数据库合同不变的向前版本；保留原定时服务启用状态，不启用缺省任务。
+仅支持现有十服务、六常驻全部启用的向前版本；数据库合同默认不变，仅已预装的0052→0053新增接收表可按
+`reference_inbox_preinstalled_additive_0053_v1`提供精确Git差异、单链head及新鲜只读schema/约束/触发器证明；
+该证明写入计划并在停服前和CAS前重验，其他schema变化不放行；保留原定时服务启用状态，不启用缺省任务。
 所有 operational 品种须由权威 Calendar/Session 证明休市、无 grace、距离下一 Session 超过660秒；未知仍阻断。
 计划有效15分钟，预热后和CAS前重新验证；停机预算600秒。预热只读Canonical，不伪造Live订阅、消费信号或发送通知。
 日历先暂停，Feed先排空，全部旧所有者退出后持维护/所有者锁，一次CAS提交全部新绑定；消费者先于Feed启动，最后仅注册原日历。
@@ -334,3 +336,13 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 卸载每项仅请求一次；在既定停机预算内等待真实label缺席与旧PID退出。CAS前恢复须先等待本控制器已请求的teardown完成（独立有界恢复等待），再取消drain，按原loaded前像恢复，不把异步仍loaded误当恢复成功。
 
 若CAS前进入`restore_unknown`，先恢复并只读核对原态；`install-local-services.sh --resolve-cohort-restored --plan <original-plan>`仅审计历史计划身份，不执行过期计划。它要求exact旧registry/SHA、原plist及loaded前像、fresh owner/实际PID/OS锁、空闲日历、Scope/config哈希与本attempt不同目标label缺席，写唯一私有恢复receipt并fsync后才更新global指针。原attempt/state.json逐字保留；postCAS unknown、新registry或任何漂移均不能使用此入口。之后切换必须全新plan/attempt，全局工作树引用另按retention核查。
+
+
+### Reference receiving v2 交接
+
+先升级0053新增两表，发布兼容版时接收协议仍为旧版；`ReceivingProtocol.request` 只在schema可读后登记
+稳定的升级意图，不改Redis。原生独占所有权交接后的实际启动冻结现有各日游标/尾部，再原子启用v2。
+候选warmup只读，不写升级状态或生产intake_error。不得同时启动两个接收者。
+首个v2持久接收后禁止回退到旧“计算完成才ACK”的语义；只能用兼容版本或前向修复。
+0053原件非空时downgrade拒绝，禁止删除原件以完成回滚。
+接收异常持久保留并停止intake；已提交的各流原件仍可计算，health分别呈现二者。

@@ -60,3 +60,18 @@ def test_disable_blocks_new_capture_and_preserves_pending():
     assert repository.read_pending_capture(identity.stream_id) is None
     with factory() as session:
         assert session.get(ReferenceBatch, batch_id).outcome == "pending"
+
+
+def test_capture_commit_failure_reads_exact_committed_identity_once(monkeypatch):
+    from sqlalchemy.exc import OperationalError
+    factory, identity, revision, _=_active()
+    repo = ReferenceRepository(factory)
+    capture = _capture(identity, revision)
+    identifier=repo.capture_forward(capture)
+    def lost(_):raise OperationalError('redacted',{},Exception())
+    monkeypatch.setattr(repo,'_capture_forward',lost,raising=False)
+    assert repo.capture_forward(capture)==identifier
+    from dataclasses import replace
+    absent=replace(capture,source_key='a-different-source')
+    with pytest.raises(RepositoryConflict,match='FORWARD_CAPTURE_OUTCOME_UNKNOWN'):
+        repo.capture_forward(absent)

@@ -155,3 +155,123 @@ class StreamForwardLiveWake(ForwardLiveWake):
             return
         from time import sleep
         sleep(min(seconds, 1))
+
+
+class InboxForwardLiveWake(StreamForwardLiveWake):
+    """Journal intake is durable acceptance; calculation advances per stream."""
+
+    def __init__(self, redis, repository, worker, market_data, *, inbox, request_history=lambda *_: None):
+        super().__init__(redis, repository, worker, market_data)
+        self._inbox = inbox
+        self.request_history = request_history
+        self._after_stream_id = None
+        self._retry_after_by_stream = {}
+
+    def _block_intake(self, error):
+        from app.reference_trading.runtime import diagnostic_reason
+        code = diagnostic_reason(str(error))
+        self.intake_error = code if code != "UNCLASSIFIED_FAILURE" else "REFERENCE_INBOX_INTAKE_BLOCKED"
+        callback = getattr(self, "on_intake_failure", None)
+        if callback is not None:
+            self._worker.assert_owned()
+            callback(self.intake_error)
+
+    def subscribe(self):
+        if getattr(self, "intake_error", None):
+            return
+        try:
+            super().subscribe()
+        except Exception as error:
+            self._block_intake(error)
+
+    def poll(self, *, limit=128):
+        if type(limit) is not int or not 1 <= limit <= 128:
+            raise ValueError("REFERENCE_OBSERVATION_POLL_BUDGET_INVALID")
+        self._last_poll_count = 0
+        if not getattr(self, "intake_error", None):
+            try:
+                self._ingest(limit=limit)
+            except Exception as error:
+                self._block_intake(error)
+        # Already accepted originals are independent of Redis TTL and of an
+        # uncertain new intake. Never reconstruct/ACK a missing Redis cursor.
+        self._calculate_heads()
+        return self._last_poll_count == limit
+
+    def _ingest(self, *, limit):
+        if type(limit) is not int or not 1 <= limit <= 128:
+            raise ValueError("REFERENCE_OBSERVATION_POLL_BUDGET_INVALID")
+        self._last_poll_count = 0
+        for day in self._stream.days():
+            cursor = self._stream.cursor("reference", day)
+            for observation in self._stream.read("reference", day, count=limit-self._last_poll_count):
+                if self.stop_requested():
+                    return True
+                # Ingestion itself verifies immutable identity and frozen routes.
+                # Do not validate against current routes before an idempotent reread.
+                self._worker.assert_owned()
+                self._inbox.ingest(observation, assert_owned=self._worker.assert_owned)
+                self._worker.assert_owned()
+                self._stream.ack("reference", day, expected_cursor=cursor,
+                                 next_id=observation.stream_id)
+                cursor = observation.stream_id
+                self._last_poll_count += 1
+                if self._last_poll_count == limit:
+                    break
+            if self._last_poll_count == limit:
+                break
+
+    def _calculate_heads(self):
+        from app.reference_trading.runtime import failure_reason
+        now = monotonic()
+        heads = self._inbox.next_heads(limit=32, after_stream_id=self._after_stream_id)
+        if not heads and self._after_stream_id is not None:
+            self._after_stream_id = None
+            heads = self._inbox.next_heads(limit=32)
+        for delivery in heads:
+            if self.stop_requested():
+                return
+            self._after_stream_id = delivery.stream_id
+            if delivery.status in {"BLOCKED", "UNKNOWN"}:
+                continue
+            if self._retry_after_by_stream.get(delivery.stream_id, 0) > now:
+                continue
+            observation = delivery.envelope
+            try:
+                self._inbox.validate_delivery(delivery.delivery_id)
+                self._worker.source_envelope = observation
+                reader = getattr(self._inbox, "retained_observations", None)
+                self._worker.retained_source_observations = reader(delivery.delivery_id) if reader else ()
+                self._worker.source_observed_at = observation.confirmed_at
+                self._worker.raw_received_at = observation.raw_received_at or observation.source_observed_at
+                self._worker.inbox_ingested_at = getattr(delivery, "ingested_at", None)
+                end = datetime.fromisoformat(observation.data["bar_end"])
+                self._worker.process_inbox_delivery(delivery.stream_id, end,
+                                                   delivery_id=delivery.delivery_id)
+                self._retry_after_by_stream.pop(delivery.stream_id, None)
+            except Exception as error:
+                from app.reference_trading.runtime import diagnostic_reason
+                code = failure_reason(error)
+                if diagnostic_reason(code) == "UNCLASSIFIED_FAILURE":
+                    candidate = diagnostic_reason(str(error)) if isinstance(error, (RuntimeError, ValueError)) else "UNCLASSIFIED_FAILURE"
+                    code = candidate if candidate != "UNCLASSIFIED_FAILURE" else "REFERENCE_INBOX_PROCESSING_FAILED"
+                if code == "REFERENCE_FUSION_SOURCE_NOT_READY":
+                    self._inbox.mark_dependency_wait(delivery.delivery_id, code)
+                    self._retry_after_by_stream[delivery.stream_id] = now + 1
+                elif code in {"SUBING_PHYSICAL_PREFIX_UNAVAILABLE", "MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE",
+                            "LIVE_SOURCE_UNAVAILABLE", "SOURCE_BUSY"}:
+                    self._inbox.mark_waiting(delivery.delivery_id, code)
+                    product, frequency = observation.channel.rsplit(":", 2)[-2:]
+                    self.request_history(product, observation.data["contract"],
+                                         observation.trading_day, (frequency,))
+                    self._retry_after_by_stream[delivery.stream_id] = now + 30
+                elif code in {"FORWARD_COMMIT_OUTCOME_UNKNOWN", "FORWARD_CAPTURE_OUTCOME_UNKNOWN"}:
+                    self._inbox.mark_unknown(delivery.delivery_id, code)
+                else:
+                    self._inbox.mark_blocked(delivery.delivery_id, code)
+            finally:
+                self._worker.source_envelope = None
+                self._worker.retained_source_observations = ()
+                self._worker.inbox_ingested_at = None
+                self._worker.source_observed_at = None
+                self._worker.raw_received_at = None

@@ -94,3 +94,20 @@ def test_subing_reader_requires_one_session_proven_completed_bar():
             owner_segments=lambda *_: ("owner", "calc"),
             expected_endpoints=lambda *_: (latest.bar_end - timedelta(minutes=15), latest.bar_end),
         )
+
+
+def test_retained_original_conflict_is_not_classified_as_history_preparation():
+    from app.market_data.market_read_service import MarketReadWindowError
+    read = _Read()
+    def conflicted(*args,**kwargs):
+        raise MarketReadWindowError('MARKET_READ_RETAINED_ORIGINAL_INVALID')
+    read.retained_contract_replay_window = conflicted
+    identity = StreamIdentity('subing-reference',('subing_ths_v1',),'subing-v1','subing-v1',
+        'actual_dominant_v1','RB','15m','actual_dominant',RecordingMode.FORWARD_OBSERVATION,
+        'subing_physical_prefix_forward_v2')
+    latest=read.bars[-1]
+    with pytest.raises(ForwardInputUnavailable, match='SUBING_RETAINED_ORIGINAL_CONFLICT'):
+        capture_subing_live(read,identity,revision_id='r',generation=1,after=None,
+            now=latest.bar_end+timedelta(seconds=2),wake_kind='scan',
+            owner_segments=lambda *_:('owner','calc'),expected_endpoints=lambda *_:(latest.bar_end,),
+            retained_observations=(object(),))

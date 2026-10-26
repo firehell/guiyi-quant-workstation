@@ -1,4 +1,4 @@
-"""1260 persisted observation routes through real kernels in an isolated schema."""
+"""1440 persisted six-frequency routes through real kernels in an isolated schema."""
 from dataclasses import replace
 from datetime import timedelta
 from hashlib import sha256
@@ -13,7 +13,7 @@ from app.db.base import Base
 from app.reference_trading.activation import ForwardActivation
 from app.reference_trading.contracts import SeedChunk, manifest_sha256
 from app.reference_trading.forward_service import ForwardReferenceService
-from app.reference_trading.models import ReferenceBatch
+from app.reference_trading.models import ReferenceBatch, ReferenceStream
 from app.reference_trading.newow_forward import evaluate_newow_capture
 from app.reference_trading.newow_fusion_forward import SavedForwardFusionSources, evaluate_fusion_capture
 from app.reference_trading.repository import ReferenceRepository
@@ -29,7 +29,7 @@ from test_newow_forward import _capture
 
 
 @pytest.mark.isolated_postgresql
-def test_1260_current_routes_are_fair_persisted_and_restart_idempotent(isolated_postgres_engine):  # noqa: F811
+def test_1440_six_frequency_routes_are_fair_persisted_and_restart_idempotent(isolated_postgres_engine):  # noqa: F811
     from newow.product_fixtures import ProductCases
 
     schema = 'newow_720_' + uuid4().hex
@@ -106,13 +106,28 @@ def test_1260_current_routes_are_fair_persisted_and_restart_idempotent(isolated_
             if worker.health().pending_keys == 0:
                 break
             completed += worker.run_round()
-        assert completed == 1260, worker.health().blocked
+        assert completed == 1440, worker.health().blocked
         assert not worker.health().blocked and worker.health().pending_keys == 0
         with factory() as c:
             count=c.scalar(select(func.count()).select_from(ReferenceBatch).where(ReferenceBatch.kind=='calculation'))
             pending=c.scalar(select(func.count()).select_from(ReferenceBatch).where(
                 ReferenceBatch.kind=='capture',ReferenceBatch.consumed_by_batch_id.is_(None)))
-        assert count == 1260 and pending == 0
+            frequency_counts = dict(c.execute(select(ReferenceStream.frequency, func.count())
+                .join(ReferenceBatch, ReferenceBatch.stream_id == ReferenceStream.stream_id)
+                .where(ReferenceBatch.kind == "calculation").group_by(ReferenceStream.frequency)).all())
+            strategy_counts = c.execute(select(ReferenceStream.frequency, ReferenceStream.strategy_code, func.count())
+                .join(ReferenceBatch, ReferenceBatch.stream_id == ReferenceStream.stream_id)
+                .where(ReferenceBatch.kind == "calculation")
+                .group_by(ReferenceStream.frequency, ReferenceStream.strategy_code)).all()
+        assert count == 1440 and pending == 0
+        assert frequency_counts == {"5m": 240, "15m": 240, "30m": 240, "60m": 240, "1d": 240, "1w": 240}
+        assert len(strategy_counts) == 24
+        assert {(frequency, strategy) for frequency, strategy, _ in strategy_counts} == {
+            (frequency, strategy)
+            for frequency in ("5m", "15m", "30m", "60m", "1d", "1w")
+            for strategy in ("newow_trend", "newow_oscillation", "newow_main_rise", "newow_dual_fusion")
+        }
+        assert all(route_count == 60 for _, _, route_count in strategy_counts)
         restarted=ForwardReferenceWorker(repo,service,read,enabled=True)
         restarted.scan()
         while restarted.health().pending_keys:

@@ -682,6 +682,58 @@ def _alert_runtime_observation(
     }
 
 
+def _public_contract_preparation(raw):
+    """Bounded non-secret background status; never reread preparation files here."""
+    import re
+    try:
+        if not isinstance(raw, dict) or type(raw.get("running")) is not bool:
+            raise ValueError
+        def code(value):
+            return value is None or isinstance(value, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{1,95}", value)
+        counts = raw.get("counts", {})
+        if not code(raw.get("error")) or not isinstance(counts, dict) or len(counts) > 16:
+            raise ValueError
+        if any(not code(k) or k is None or type(v) is not int or not 0 <= v <= 100_000 for k, v in counts.items()):
+            raise ValueError
+        active = raw.get("active", [])
+        budgets = raw.get("budgets", {})
+        if not isinstance(active, list) or len(active) > 16 or not isinstance(budgets, dict) or len(budgets) > 3:
+            raise ValueError
+        public = []
+        for item in active:
+            if (not isinstance(item, dict) or not re.fullmatch(r"[a-z]{1,4}", item.get("product", ""))
+                    or not re.fullmatch(r"[A-Z]{1,4}[0-9]{3,4}", item.get("contract", ""))
+                    or item.get("frequency") not in {"1m", "5m", "15m", "30m", "60m", "1d", "1w"}
+                    or not code(item.get("status")) or not item.get("status") or not code(item.get("reason"))):
+                raise ValueError
+            date.fromisoformat(item["trading_day"])
+            public.append({key:item.get(key) for key in ("product","contract","trading_day","frequency","status","reason")})
+        public_budgets = {}
+        for day, item in budgets.items():
+            date.fromisoformat(day)
+            if not isinstance(item, dict) or any(type(item.get(key)) is not int or item[key] < 0 for key in ("requests","bars")):
+                raise ValueError
+            public_budgets[day] = {key:item[key] for key in ("requests","bars")}
+        result = {"running": raw["running"], "error": raw.get("error"), "counts": counts,
+                  "active":public,"active_truncated":raw.get("active_truncated") is True,"budgets":public_budgets}
+        if "authority_waiting" in raw:
+            waiting = raw["authority_waiting"]
+            if not isinstance(waiting, list) or len(waiting) > 16:
+                raise ValueError
+            for item in waiting:
+                if (not isinstance(item, dict) or set(item) != {"product", "status", "reason"}
+                        or not re.fullmatch(r"[a-z]{1,4}", item.get("product", ""))
+                        or item.get("status") != "WAITING_AUTHORITY"
+                        or not isinstance(item.get("reason"), str) or not code(item["reason"])):
+                    raise ValueError
+            result["authority_waiting"] = waiting
+            result["authority_waiting_truncated"] = raw.get("authority_waiting_truncated") is True
+        return result
+    except (ValueError, TypeError, KeyError):
+        return {"running":False,"error":"CONTRACT_PREPARATION_STATUS_INVALID","counts":{},
+                "active":[],"active_truncated":False,"budgets":{}}
+
+
 def _collect_live_market_health(
     connection: Redis | None,
     *,
@@ -785,6 +837,8 @@ def _collect_live_market_health(
         }
     payload = {
         **empty,
+        **({"contract_preparation": _public_contract_preparation(heartbeat["contract_preparation"])}
+           if "contract_preparation" in heartbeat else {}),
         "operational_count": operational_count,
         "subscribed_count": subscribed_count,
         "last_heartbeat_at": _iso(heartbeat_at),
