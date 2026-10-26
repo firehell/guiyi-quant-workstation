@@ -948,14 +948,24 @@ class CohortHost(FaultRecoveryHost):
                 if valid and name == "market-feed":
                     mode = "closed_idle"
                     valid = self._feed_closed_healthy(binding, state, window)
+                elif valid and name == "reference-worker":
+                    owner_proof = state.get("proof", {})
+                    if "receiving" in owner_proof:
+                        from app.reference_trading.operational_readiness import reference_waiting_history_mode
+                        receiving_mode = reference_waiting_history_mode(state)
+                        valid = receiving_mode is not None and monotonic() < end
+                        if valid:
+                            mode = receiving_mode
+                    else:
+                        rp = owner_proof.get("reference_runtime", {})
+                        valid = state.get("ready") is True and rp.get("stage") == "cycle" and rp.get("blocked_count") == 0
                 elif valid:
                     valid = state.get("ready") is True
-                if valid and name == "reference-worker":
-                    rp = state.get("proof", {}).get("reference_runtime", {})
-                    valid = rp.get("stage") == "cycle" and rp.get("blocked_count") == 0
                 matched = matched and valid
                 accepted[name] = mode
             if matched:
+                if any(mode.startswith("durable_receiving") for mode in accepted.values()):
+                    require(monotonic() < end, "COHORT_NEW_READY_TIMEOUT")
                 return accepted
             sleep(0.2)
         raise CohortError("COHORT_NEW_READY_TIMEOUT")

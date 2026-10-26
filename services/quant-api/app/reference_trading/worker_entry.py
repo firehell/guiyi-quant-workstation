@@ -68,10 +68,20 @@ def open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None):
                 'stage': stage, 'ready': False}})
     def report_health(proof):
         nonlocal last_runtime
-        last_runtime = dict(proof)
+        receiving = proof.get('receiving')
+        last_runtime = {key: value for key, value in proof.items() if key != 'receiving'}
         if ownership is not None:
-            (ownership.mark_ready if proof['ready'] else ownership.mark_not_ready)(
-                {'reference_runtime': proof, 'cursor_validated': True})
+            intake_ready = 'receiving' not in proof
+            if not intake_ready:
+                from app.reference_trading.operational_readiness import valid_receiving_wait_proof
+                intake_ready = (isinstance(receiving, dict)
+                    and type(receiving.get('protocol_version')) is int and receiving['protocol_version'] == 2
+                    and receiving.get('intake_error') is None
+                    and valid_receiving_wait_proof(receiving.get('waiting_history_proof')))
+            payload = {'reference_runtime': last_runtime, 'cursor_validated': True}
+            if 'receiving' in proof:
+                payload['receiving'] = receiving
+            (ownership.mark_ready if proof['ready'] and intake_ready else ownership.mark_not_ready)(payload)
     publish(stage)
     try:
         with _open_forward_worker(ownership=ownership, warmup=warmup, warmup_deadline=warmup_deadline,
@@ -205,6 +215,19 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                         'historical_refresh_error': None if refresh.last_error is None
                             else diagnostic_reason(refresh.last_error),
                         'notifications_alive': notifications.is_alive()}
+                    if inbox_mode:
+                        from app.reference_trading.operational_readiness import build_receiving_wait_proof
+                        receiving = {'protocol_version': 2,
+                            'intake_error': getattr(wake, 'intake_error', None),
+                            'waiting_history_proof': None}
+                        if proof.get('stage') in {'cycle', 'receiving_cycle'} and receiving['intake_error'] is None:
+                            try:
+                                receiving['waiting_history_proof'] = build_receiving_wait_proof(
+                                    SessionLocal, worker.health().blocked)
+                            except Exception:
+                                # A failed readback is never lifecycle readiness.
+                                pass
+                        proof = {**proof, 'receiving': receiving}
                     report_health(proof)
                 worker.report_health = report
             worker.observation_priority = refresh_priority.observation
@@ -237,6 +260,8 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                 if not warmup:
                     wake.on_intake_failure = protocol.block_intake
                 wake.intake_error = protocol.read().get("intake_error")
+                wake.on_receiving_round = lambda: worker.report_health(
+                    worker.diagnostic_health(stage='receiving_cycle', ready=False))
             else:
                 wake = wake_type(redis, repository, worker, market_data)
             if durable_observations:
@@ -352,6 +377,7 @@ def warmup_reference_worker():
     with open_forward_worker(warmup=True, warmup_deadline=deadline) as (worker, _wake, _reconciliation):
         repository = worker._repository
         count = 0
+        initialized = 0
         after = None
         while True:
             _check_warmup_deadline(deadline)
@@ -370,37 +396,49 @@ def warmup_reference_worker():
                         continue
                 service = worker._service_for(stream_id)
                 token, checkpoint = repository.load_checkpoint(stream_id)
+                result = "calculated"
                 if pending:
                     capture_id, evidence = pending
                     service._evaluator(token, checkpoint, {**evidence, "capture_id": capture_id})
                 else:
                     capture = worker._read_input(stream_id, "scan", None)
                     if capture is None:
-                        _warmup_saved_capture(repository, stream_id, service)
+                        result = _warmup_saved_capture(repository, stream_id, service)
                     else:
                         service._evaluator(token, checkpoint, {**capture.evidence(), "capture_id": "warmup"})
-                count += 1
+                if result == "initialized":
+                    initialized += 1
+                else:
+                    count += 1
                 _check_warmup_deadline(deadline)
             after = streams[-1]
-        if count == 0:
+        if count + initialized == 0:
             raise RuntimeError("REFERENCE_WARMUP_SCOPE_EMPTY")
-        return {"calculated": count}
+        return {"calculated": count, **({"initialized": initialized} if initialized else {})}
 
 
 def _warmup_saved_capture(repository, stream_id, service):
-    """Recompute the last immutable calculation from its actual predecessor."""
-    from sqlalchemy import select
+    """Replay a real calculation, or verify a never-calculated activation seed."""
+    from sqlalchemy import select, text
     from app.reference_trading.models import ReferenceBatch, ReferenceStream
     from app.reference_trading.contracts import CheckpointToken
     from app.reference_trading.repository import _checkpoint_hash, _identity_from_row
     from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_from_json
     with repository._session_factory() as session:
+        if session.get_bind().dialect.name == "postgresql":
+            session.connection(execution_options={"isolation_level": "REPEATABLE READ"})
+            session.execute(text("SET TRANSACTION READ ONLY"))
         stream = session.get(ReferenceStream, stream_id)
+        if stream is None or stream.active_revision_id is None:
+            raise RuntimeError("REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE")
         batches = session.scalars(select(ReferenceBatch).where(
             ReferenceBatch.stream_id == stream_id,
             ReferenceBatch.revision_id == stream.active_revision_id,
             ReferenceBatch.outcome == "committed", ReferenceBatch.checkpoint_text.is_not(None),
         ).order_by(ReferenceBatch.seq.desc()).limit(2)).all()
+        if len(batches) == 1 and batches[0].kind == "seed_seal" and batches[0].seq == 1:
+            _validate_initial_seed(session, repository, stream, batches[0])
+            return "initialized"
         if len(batches) != 2 or batches[0].seq != batches[1].seq + 1:
             raise RuntimeError("REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE")
         latest, previous = batches
@@ -410,6 +448,94 @@ def _warmup_saved_capture(repository, stream_id, service):
         token = CheckpointToken(stream_id, stream.active_revision_id, previous.seq,
                                 stream.row_version, _checkpoint_hash(previous.checkpoint_text))
         service._evaluator(token, checkpoint, evidence)
+        return "calculated"
+
+
+def _validate_initial_seed(session, repository, stream, seed):
+    """Validate the original zero-calculation contract without fabricating a Bar.
+
+    A seed seal has seq=1 and expected_seq=0. It is initialization evidence,
+    never a replacement preimage for an already calculated or pending stream.
+    """
+    from hashlib import sha256
+    from sqlalchemy import select
+    from app.reference_trading.models import ReferenceActivationReceipt, ReferenceBatch, ReferenceRevision
+    from app.reference_trading.repository import _aware, _checkpoint_hash, _identity_from_row, RepositoryConflict
+    from app.reference_trading.contracts import manifest_sha256
+    from guiyi_quant.reference_trading import RecordingMode, ReferenceState
+    from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_from_json
+
+    failure = "REFERENCE_WARMUP_INITIAL_SEED_INVALID"
+    try:
+        revision = session.get(ReferenceRevision, (stream.stream_id, stream.active_revision_id))
+        if (not stream.enabled or stream.recording_mode != RecordingMode.FORWARD_OBSERVATION.value
+                or stream.activation_generation != 1 or stream.recording_start is None
+                or revision is None or revision.status != "active" or revision.parent_revision_id is not None
+                or revision.last_seq != 1 or stream.latest_seq != 1
+                or revision.checkpoint_batch_id != seed.batch_id
+                or seed.stream_id != stream.stream_id or seed.revision_id != revision.revision_id
+                or seed.kind != "seed_seal" or seed.outcome != "committed"
+                or seed.seq != 1 or seed.expected_seq != 0 or seed.pre_state_hash is not None
+                or not seed.checkpoint_text or not seed.strategy_schema
+                or seed.projected_action_pks or seed.diagnostics or seed.consumed_by_batch_id is not None):
+            raise ValueError
+        receipts = session.scalars(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id == stream.stream_id)).all()
+        if len(receipts) != 1:
+            raise ValueError
+        receipt = receipts[0]
+        if (receipt.revision_id != revision.revision_id or receipt.generation != stream.activation_generation
+                or receipt.disabled_at is not None or receipt.plan_hash != stream.activation_plan_hash
+                or not isinstance(receipt.plan_hash, str) or len(receipt.plan_hash) != 64
+                or any(char not in "0123456789abcdef" for char in receipt.plan_hash)
+                or _aware(receipt.recording_start) != _aware(stream.recording_start)
+                or _aware(receipt.activated_at) > _aware(receipt.recording_start)):
+            raise ValueError
+        identity = _identity_from_row(stream)
+        if (identity.stream_id != stream.stream_id
+                or stream.identity_hash != identity.stream_id.removeprefix("reference-stream:")):
+            raise ValueError
+        checkpoint = adapter_checkpoint_from_json(seed.checkpoint_text,
+            expected_stream=identity, expected_strategy_schema=seed.strategy_schema)
+        state_hash = _checkpoint_hash(seed.checkpoint_text)
+        digest = manifest_sha256(seed.dependency_manifest)
+        if (checkpoint.reference_state != ReferenceState.flat(identity, recording_start=_aware(stream.recording_start))
+                or _aware(seed.computed_through) != checkpoint.computed_through
+                or seed.last_event_bar_end is not None or seed.last_event_kind is not None
+                or seed.last_event_sequence is not None or seed.post_state_hash != state_hash
+                or seed.batch_key != "seed-seal:" + state_hash or revision.dependency_digest != digest
+                or seed.payload_hash != sha256((digest + state_hash).encode()).hexdigest()):
+            raise ValueError
+        # Exact hash linkage is shared with seal_seed; no second seed algorithm.
+        rows = session.scalars(select(ReferenceBatch).where(
+            ReferenceBatch.stream_id == stream.stream_id,
+            ReferenceBatch.revision_id == revision.revision_id)).all()
+        chunks = [row for row in rows if row.kind == "seed_chunk"]
+        if len(rows) != len(chunks) + 1:
+            raise ValueError
+        ever_calculated = session.scalar(select(ReferenceBatch.batch_id).where(
+            ReferenceBatch.stream_id == stream.stream_id,
+            ReferenceBatch.kind.in_(("calculation", "capture"))).limit(1))
+        if ever_calculated is not None:
+            raise ValueError
+        repository._validate_chunks(chunks)
+        if (seed.source_evidence != {"seed_root_hash": chunks[0].seed_root_hash}
+                or any(row.outcome != "staged" or row.seq is not None or row.expected_seq != 0
+                    or row.checkpoint_text is not None or row.consumed_by_batch_id is not None
+                    or row.payload_hash != sha256(row.seed_chunk_text.encode()).hexdigest() for row in chunks)):
+            raise ValueError
+        activation = seed.dependency_manifest.get("subing_activation_v2")
+        if activation is not None and (
+                not isinstance(activation, dict)
+                or activation.get("stream_id") != stream.stream_id
+                or activation.get("product") != identity.product or activation.get("frequency") != identity.frequency
+                or activation.get("version") != identity.observation_policy_version
+                or activation.get("host") != receipt.host or activation.get("environment") != receipt.environment
+                or datetime.fromisoformat(activation["recording_start"]) != _aware(receipt.recording_start)
+                or seed.dependency_manifest.get("plan_hash") != manifest_sha256(activation)):
+            raise ValueError
+    except (AttributeError, KeyError, TypeError, ValueError, RepositoryConflict):
+        raise RuntimeError(failure) from None
 
 
 def _saved_capture_evidence(session, stream, latest, previous):

@@ -1,6 +1,8 @@
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 
+import pytest
+
 from app.market_data.contract_preparation_runtime import discover_demands, ContractPreparationWorker
 from app.market_data.market_phase import MarketPhase
 
@@ -21,7 +23,8 @@ def fake_catalog_authority(monkeypatch, selected, state=None):
         latest_complete_day_with_refresh_at=lambda products, now: (state.get("through", selected.through), now)))
     monkeypatch.setattr(market_phase, "MarketPhaseResolver", lambda session: SimpleNamespace(
         resolve=lambda product, instant: SimpleNamespace(phase=state.get("phase", MarketPhase.TRADING),
-                                                         trading_day=state.get("day", selected.trading_day))))
+                                                         trading_day=state.get("day", selected.trading_day)),
+        completed_observation_trading_day=lambda product, instant: state.get("owner_day", selected.through)))
 
 
 def test_discovery_uses_current_or_thirty_minute_session_and_rank1_only():
@@ -32,6 +35,8 @@ def test_discovery_uses_current_or_thirty_minute_session_and_rank1_only():
             active = symbol == "rb" and instant > NOW
             return SimpleNamespace(phase=MarketPhase.TRADING if active else MarketPhase.CLOSED,
                                    trading_day=DAY if active else None)
+        def completed_observation_trading_day(self, product, instant):
+            return date(2026, 10, 26)
     demands = discover_demands(now=NOW, products=("rb", "cu"), resolver=Resolver(),
                                scopes={"rb": (("5m", "1w"), "rb-scope"), "cu": (("1d",), "cu-scope")},
                                dominant=lambda product, day: "RB2701",
@@ -81,7 +86,8 @@ def test_worker_lifecycle_calls_coordinator_in_own_thread_and_joins():
     assert worker.snapshot()["running"] is False
 
 
-def test_real_composition_keeps_apply_lease_reservation_and_fresh_readback_sessions(tmp_path, monkeypatch):
+@pytest.mark.parametrize("closed", (False, True))
+def test_real_composition_keeps_apply_lease_reservation_and_fresh_readback_sessions(tmp_path, monkeypatch, closed):
     from app.market_data import contract_preparation_runtime as module
     from app.market_data import market_data_service as service_module
     from app.market_data.contract_preparation import PreparationDemand
@@ -120,7 +126,7 @@ def test_real_composition_keeps_apply_lease_reservation_and_fresh_readback_sessi
             calls.append(("MDS", self.session))
             assert request.contract == selected.contract
     monkeypatch.setattr(service_module, "MarketDataService", Data)
-    fake_catalog_authority(monkeypatch, selected)
+    fake_catalog_authority(monkeypatch, selected, {"phase": MarketPhase.CLOSED, "owner_day": selected.trading_day} if closed else {})
     monkeypatch.setattr(module, "enabled_consumer_scopes", lambda session, products: {"rb": (selected.frequencies, "scope")})
     preparation = module.build_contract_preparation(session_factory, canonical_root=tmp_path / "canonical", products=("rb",),
                                                    state_path=tmp_path / "state.json", manager_factory=lambda session, **kwargs: Manager(session), clock=lambda: NOW)
@@ -222,9 +228,6 @@ def test_background_health_cache_bounds_active_requests_and_budget_days():
     assert health["active_truncated"] is True
     assert list(health["budgets"]) == ["2026-10-24", "2026-10-25", "2026-10-26"]
     assert all(set(budget) == {"requests", "bars"} for budget in health["budgets"].values())
-
-
-import pytest  # noqa: E402
 
 
 @pytest.mark.parametrize("drift", ("phase", "day", "lifecycle", "cutoff", "rank1"))
@@ -417,3 +420,120 @@ def test_unknown_discovery_error_never_exposes_exception_text_or_claims_attempt(
     assert preparation.snapshot()["requests"] == {}
     assert preparation.snapshot()["budgets"] == {}
     engine.dispose()
+
+
+@pytest.fixture
+def authoritative_market_session():
+    # Reuse the existing complete Calendar/Session fixture; no synthetic owner
+    # resolver or civil-date substitution is introduced for closed recovery.
+    from tests.data_foundation.test_market_phase import session
+    from app.models import TradingCalendar
+    for value in session.__wrapped__():
+        # The original fixture ends on a holiday. Keep the next published
+        # Calendar fact explicit so the Tuesday close is a proved phase.
+        value.add(TradingCalendar(exchange_code="SHFE", trade_date=date(2025, 1, 9),
+                                  is_trading_day=True, has_night_session=True))
+        value.commit()
+        yield value
+
+
+@pytest.mark.parametrize("day,owner,cutoff", (
+    (7, date(2025, 1, 7), date(2025, 1, 6)),
+    (6, date(2025, 1, 6), date(2025, 1, 3)),
+    (4, date(2025, 1, 6), date(2025, 1, 3)),
+    (5, date(2025, 1, 6), date(2025, 1, 3)),
+))
+def test_closed_night_startup_recovers_only_latest_started_session_owner(authoritative_market_session, day, owner, cutoff):
+    from app.market_data.market_phase import MarketPhaseResolver
+    from app.market_data.session_clock import SHANGHAI
+    resolver = MarketPhaseResolver(authoritative_market_session)
+    now = datetime(2025, 1, day, 3, 5, tzinfo=SHANGHAI)
+    assert resolver.resolve("ag", now).phase is MarketPhase.CLOSED
+    assert resolver.completed_observation_trading_day("ag", now) == owner
+    from app.market_data.composition import build_database_coverage_source
+    coverage = build_database_coverage_source(authoritative_market_session)
+    assert coverage.latest_complete_day_with_refresh_at(("ag",), now=now)[0] == cutoff
+    calls = []
+    def dominant(product, trading_day):
+        calls.append((product, trading_day))
+        return "AG2506"
+    demands = discover_demands(now=now, products=("ag",), resolver=resolver,
+        scopes={"ag": (("5m", "1d"), "scope")}, dominant=dominant,
+        contract_fact=lambda *args: SimpleNamespace(listed_date=date(2024, 1, 1), expired_date=date(2025, 7, 1)),
+        completed_day=lambda product: coverage.latest_complete_day_with_refresh_at((product,), now=now)[0])
+    assert len(demands) == 1
+    assert demands[0].trading_day == owner
+    assert demands[0].through == cutoff
+    assert calls == [("ag", owner)]
+
+
+def test_fully_completed_closed_owner_has_no_demand_or_guessed_next_day(authoritative_market_session):
+    from app.market_data.market_phase import MarketPhaseResolver
+    from app.market_data.session_clock import SHANGHAI
+    resolver = MarketPhaseResolver(authoritative_market_session)
+    now = datetime(2025, 1, 6, 18, tzinfo=SHANGHAI)
+    assert resolver.resolve("ag", now).phase is MarketPhase.CLOSED
+    assert resolver.completed_observation_trading_day("ag", now) == date(2025, 1, 6)
+    def no_rank_guess(*args):
+        raise AssertionError("completed close must not discover another rank1")
+    assert discover_demands(now=now, products=("ag",), resolver=resolver,
+        scopes={"ag": (("5m",), "scope")}, dominant=no_rank_guess, contract_fact=no_rank_guess,
+        completed_day=lambda product: date(2025, 1, 6)) == ()
+
+
+def test_closed_phase_civil_display_day_is_not_a_missing_session_owner():
+    class Resolver:
+        def resolve(self, product, instant):
+            return SimpleNamespace(phase=MarketPhase.CLOSED, trading_day=DAY)
+        def completed_observation_trading_day(self, product, instant):
+            return None
+    calls = []
+    with pytest.raises(ValueError, match="AUTHORITY_UNAVAILABLE"):
+        discover_demands(now=NOW, products=("rb",), resolver=Resolver(), scopes={"rb": (("5m",), "scope")},
+            dominant=lambda *args: calls.append(args), contract_fact=None,
+            completed_day=lambda product: date(2026, 10, 26))
+    assert calls == []
+
+
+@pytest.mark.parametrize("cutoff", (None, date(2025, 1, 7)))
+def test_closed_recovery_rejects_unknown_or_future_completed_cutoff(authoritative_market_session, cutoff):
+    from app.market_data.market_phase import MarketPhaseResolver
+    from app.market_data.session_clock import SHANGHAI
+    resolver = MarketPhaseResolver(authoritative_market_session)
+    now = datetime(2025, 1, 6, 3, 5, tzinfo=SHANGHAI)
+    calls = []
+    with pytest.raises(ValueError, match="AUTHORITY_UNAVAILABLE"):
+        discover_demands(now=now, products=("ag",), resolver=resolver, scopes={"ag": (("5m",), "scope")},
+            dominant=lambda *args: calls.append(args), contract_fact=None, completed_day=lambda product: cutoff)
+    assert calls == []
+
+
+def test_closed_day_only_start_without_prior_session_owner_never_uses_civil_day(authoritative_market_session):
+    from app.market_data.market_phase import MarketPhaseResolver
+    from app.market_data.session_clock import SHANGHAI
+    resolver = MarketPhaseResolver(authoritative_market_session)
+    now = datetime(2025, 1, 2, 3, 5, tzinfo=SHANGHAI)
+    phase = resolver.resolve("j", now)
+    assert phase.phase is MarketPhase.CLOSED
+    assert phase.trading_day == date(2025, 1, 2)
+    assert resolver.completed_observation_trading_day("j", now) is None
+    calls = []
+    with pytest.raises(ValueError, match="AUTHORITY_UNAVAILABLE"):
+        discover_demands(now=now, products=("j",), resolver=resolver, scopes={"j": (("5m",), "scope")},
+            dominant=lambda *args: calls.append(args), contract_fact=None, completed_day=lambda product: date(2025, 1, 1))
+    assert calls == []
+
+
+def test_near_opening_formal_session_still_admits_when_closed_owner_is_unavailable():
+    class Resolver:
+        def resolve(self, product, instant):
+            return SimpleNamespace(phase=MarketPhase.CLOSED if instant == NOW else MarketPhase.TRADING,
+                                   trading_day=None if instant == NOW else DAY)
+        def completed_observation_trading_day(self, product, instant):
+            return None
+    demands = discover_demands(now=NOW, products=("rb",), resolver=Resolver(), scopes={"rb": (("5m",), "scope")},
+        dominant=lambda product, day: "RB2701",
+        contract_fact=lambda *args: SimpleNamespace(listed_date=date(2026, 1, 1), expired_date=date(2027, 1, 16)),
+        completed_day=lambda product: date(2026, 10, 26))
+    assert len(demands) == 1
+    assert demands[0].trading_day == DAY

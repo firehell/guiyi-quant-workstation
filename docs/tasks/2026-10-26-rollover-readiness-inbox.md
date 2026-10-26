@@ -31,3 +31,11 @@ Owner批准完整方案：自动预算内预热；顺序恢复真实原件并标
 扩大回归最终1553 passed/664.96s（Reference全模块、准备/HDM、schema/cohort/host/runtime-health，真实隔离PG/Redis）；fixture污染已修正。合并origin/develop后的精确候选86ec793eb定向324 passed/11.35s，Web重新build/type/topology通过，secret0/diff通过。独立Review允许集成。
 
 23:25 PR497集成develop31628cfa1；生产0052→0053单次migration已confirmed。独立schema proof f822759925d99fe3ff125adc6630f7f1e4bdba3ff666db0a7455484348df337b（数据库身份hash独立保存），两表0行。唯一intent、结果保存在output/rollover-readiness-20261026/migration-{intent,result}.json；未启用协议或改游标，Runtime仍v1.16.10/gen30。
+
+10/27凌晨续办：03:05现场复核0053 schema完整，原有十服务仍v1.16.10/gen30，binding hash16d0b1aa...，两表未接收。追加develop改动定向104 passed。PR498已正式发布v1.16.11 exact397fbd1423fac4d5a6257121631852332a04d3a6；正式树依赖与Web构建通过且editable来源重绑新树。
+原生cohort v1计划17a27cc3f2ae0c3c2dceeebe46844788155a61379e10f629d1f18283804f1c8b在prewarm阶段cancelled，effects={}，COHORT_CANDIDATE_WARMUP_FAILED；未停服/未CAS，不复用该attempt。独立Alert只读诊断继续定位，未改scope、游标或发通知。
+另已确认P1：凌晨CLOSED不创建历史准备需求，等到08:30才触发，不满足启动恢复。已在forward修复分支使用既有latest-started Session owner，严格cutoff<owner才准入，不用civil day推断；两文件91项通过，独立Review进行中，候选版本1.16.12，尚未发布。
+
+凌晨向前修复最终完成：CLOSED通过latest-started权威Session owner准入；初始flatseed完整校验计initialized而非calculated；v2 receiving_cycle在完整有界轮结束报告，原计算ready/blocked不变，owner失权/排空不写错误状态或发布可接受报告。新原生运行证明全head精确验证、当前StreamIdentity/原件channel/revision/gen/receipt/hash、合法waiting与blocked全等、普通pending无error、active protocol/0053独立复验；legacy和原native时限不变。
+独立Review修正identity漂移P1、无效proof误标owner ready的P2后，225 passed/0 skipped。最终冻结父级组合387 passed/11.42s，含真实PG/Redis；Ruff、OpenSpec12/12、secret0、uv lock及diff通过。1.16.12待集成/发布，未提前声明运行切换。
+保留原件：retained-originals-20261027/2026-10-27.jsonl共8956条、sha256925267707e10651a88e195fda640f707c14594a40650966cb37e3e7cc6060e57；cursor1793019905299-0前后不变，tail1793039404268-4。导出仅证据，不替代正式入口或用于伪造回放。
