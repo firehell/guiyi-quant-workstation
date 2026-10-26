@@ -76,3 +76,20 @@ PID25301仍运行。自然行情维护18:11已passed，消费者检查仍not_ver
 当前为PARTIAL / RELEASED，运行切换、剩余完整历史、v2激活和自然新Bar验收未完成。
 下一触发条件是自然盘后PID退出且维护锁空闲；届时生成全新有效期内cohort计划，先切换所有读取端，
 再执行精确历史计划。旧生产资产不删除；未知结果只读核对；不借回放补造自然记录，不新增监控任务。
+
+### 后续现场读回（覆盖上一段当前阻断）
+
+盘后PID随后自然退出，消费者审计incomplete；未将该结论改写为通过。全新cohort v2只读freeze通过，
+但其计划父目录为公共/tmp，不符合原生安全读取合同，apply在attempt创建前拒绝；已证实不存在v2attempt。
+转为0700私有目录及0600计划后，全新v3 hash
+`3fe300223ac7ae36cdd2a1ef567cc94e942bedaacdb482c76d15da3da857469d`进入预热，随后原生取消。
+state.json保留phase=cancelled、effects={}、error_type=CohortError；无停服/CAS，不复用该attempt。
+单独Reference同预算只读预热定位为REFERENCE_WARMUP_TIMEOUT（120.01秒），堆栈在Canonical租约等待。
+
+维护锁属于已有并行只读全量审计
+`output/data-complete-audit-20261026/parallel-full-audit.py`，最近完成52/60，未干预该任务。
+实际切换与新格式历史写入仍阻断。360路未来20:55开始的v2激活计划仅readonly生成、未apply；
+原生registry/global phase守卫禁止在旧版本运行时激活；过期后必须生成新计划。
+其私有意图保存在output/subing-six-periods-20261026/activation-v2/，不能据此声明流已启用。
+剩余历史原生驱动仅准备并语法校验，未启动；保持原AL15m candidate和39路已完成W1，不覆盖旧事实。
+下一步唯一前置是既有审计释放锁，然后用全新cohort计划重新完整预热和交接；无须owner重复授权。

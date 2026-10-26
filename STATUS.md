@@ -26,14 +26,19 @@ owner已选定保留2023年以来完整历史。新增有界分片计划与同�
 已完成项不重复构建。其余历史未写入，苏冰forward启用数独立读回为0；本地develop8002/5175已加载代码，
 正式十服务仍保持v1.16.7/gen29；v1.16.8已由PR487/main与annotated tag发布，
 exact `9b559ce80b968f214347aa49abdb4d649aff915d`。正式树依赖与Web build/type/topology已验证。
-原生整组只读计划因after-market仍运行而拒绝（逐服务定位SERVICE_IDENTITY_INVALID，要求日历空闲）；
-尚未执行停服/CAS。自然18:05行情维护已于18:11 passed，后续消费者尚未退出。维护锁同时占用，
-45路只读重新规划均SOURCE_BUSY，无新历史写入。新存储表示必须等正式读端切换后再生产。
+原生v1计划先因盘后进程运行拒绝；该自然进程随后退出，消费者结果incomplete。
+v2计划放在公共临时目录，在安全读取前拒绝，未创建attempt；改为0700私有目录后，
+全新v3计划通过，但Reference只读预热等待Canonical维护锁120秒超时。v3 attempt
+`3fe300223ac7ae36cdd2a1ef567cc94e942bedaacdb482c76d15da3da857469d`
+已cancelled、effects={}，未停服/未CAS，不复用。锁由现有
+`output/data-complete-audit-20261026/parallel-full-audit.py`全量只读审计持有，最近52/60。
+45路只读重新规划均SOURCE_BUSY，无新历史写入。360路持续记录精确计划已生成但未apply；
+尚未生效的20:55开始意图不能当作已启用，过期需重做。新存储表示必须等正式读端切换后再生产。
 合并候选1206 passed/9 skipped/79 deselected、隔离PG/Redis102 passed、canonical一致性18 passed；
 独立Review另验后端69 passed/9 skipped、Web103 passed。开发预览8002已读回1.16.8，5175保留。
 不声明自然六周期记录验收完成。
 证据：[任务记录](docs/tasks/2026-10-26-subing-six-periods.md)，实际扫描/构建原件在`output/subing-six-periods-20261026/`。
-下一步：自然盘后进程退出且维护锁空闲后，重新冻结整组计划并切换正式读端，再继续完整历史、六周期激活和自然验收。
+下一步：现有全量数据审计结束并释放维护锁后，重新冻结整组计划并切换正式读端，再继续完整历史、六周期激活和自然验收。
 
 ## 10/26 原生 C++ 只读对照准备完成，第一套查询可行性仍待现场
 
