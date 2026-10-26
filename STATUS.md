@@ -16,7 +16,8 @@
 CODE_COMPLETE／TEST_COMPLETE／REVIEW_COMPLETE；任务提交69420d5a5，已合并最新develop依赖，
 合并候选定向324 passed（真实隔离PG/Redis）、扩大Reference等1553 passed；独立Review允许集成develop。
 Web type/build/topology、OpenSpec12/12、secret0、Ruff及diff通过。1553扩大回归与最终324核心回归分别留证，不混称生产验收。
-生产迁移、兼容发布、Runtime及v2切换、EG真实历史/原件恢复与自然新Bar验收仍待执行；正式运行仍为下方v1.16.10/gen30。
+PR497已集成develop exact31628cfa1；23:25生产0052→0053单次迁移成功，独立schema/约束/触发器读回确认，两表均0行。
+接收仍为旧协议，兼容发布、Runtime及v2切换、EG真实历史/原件恢复与自然新Bar验收待执行；正式运行仍为下方v1.16.10/gen30。
 休市cohort要求60品种权威休市且下一Session>660秒，夜盘中不能绕过。首个v2持久接收后仅兼容恢复或前向修复，保留原件及游标。
 详情见[任务记录](docs/tasks/2026-10-26-rollover-readiness-inbox.md)。
 
