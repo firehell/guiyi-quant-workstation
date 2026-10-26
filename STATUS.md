@@ -31,7 +31,7 @@ v2计划放在公共临时目录，在安全读取前拒绝，未创建attempt�
 全新v3计划通过，但Reference只读预热等待Canonical维护锁120秒超时。v3 attempt
 `3fe300223ac7ae36cdd2a1ef567cc94e942bedaacdb482c76d15da3da857469d`
 已cancelled、effects={}，未停服/未CAS，不复用。锁由现有
-`output/data-complete-audit-20261026/parallel-full-audit.py`全量只读审计持有，最近52/60。
+`output/data-complete-audit-20261026/parallel-full-audit.py`全量只读审计持有，最近59/60。
 45路只读重新规划均SOURCE_BUSY，无新历史写入。360路持续记录精确计划已生成但未apply；
 尚未生效的20:55开始意图不能当作已启用，过期需重做。新存储表示必须等正式读端切换后再生产。
 合并候选1206 passed/9 skipped/79 deselected、隔离PG/Redis102 passed、canonical一致性18 passed；
