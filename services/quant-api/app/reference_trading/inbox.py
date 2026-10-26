@@ -129,9 +129,10 @@ def _head_query(stream_id: str):
                       ReferenceInboxInput.journal_sequence, ReferenceInboxDelivery.delivery_id).limit(1))
 
 
-def _validate_active(session, delivery: ReferenceInboxDelivery) -> None:
-    stream = session.scalar(select(ReferenceStream).where(
-        ReferenceStream.stream_id == delivery.stream_id).with_for_update())
+def _validate_active(session, delivery: ReferenceInboxDelivery, *, lock=True) -> None:
+    stream = (session.scalar(select(ReferenceStream).where(
+        ReferenceStream.stream_id == delivery.stream_id).with_for_update()) if lock
+        else session.get(ReferenceStream, delivery.stream_id))
     revision = session.get(ReferenceRevision, (delivery.stream_id, delivery.revision_id))
     receipt = session.get(ReferenceActivationReceipt, delivery.activation_receipt_id)
     if (stream is None or not stream.enabled or stream.recording_mode != "forward_observation"

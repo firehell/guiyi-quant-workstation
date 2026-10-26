@@ -47,7 +47,17 @@ class NewowInputCache:
 
         class CanonicalReader:
             def forward_incremental_bar(self, **kwargs):
-                key = ("canonical", identity.futures_adaptation_version, *sorted(kwargs.items()))
+                from guiyi_quant.newow.product_identity import input_quality_policy
+                frequency = kwargs.get("frequency")
+                frequency = getattr(frequency, "value", frequency)
+                try:
+                    if frequency not in {"1d", "1w"}:
+                        raise ValueError
+                    policy = input_quality_policy(frequency, getattr(reader, "_input_quality_policy", None))
+                except (TypeError, ValueError):
+                    # Unknown reader policy cannot establish shared-input identity.
+                    return incremental(**kwargs)
+                key = ("canonical", identity.futures_adaptation_version, policy.value, *sorted(kwargs.items()))
                 return cache.read(key, lambda: incremental(**kwargs))
 
             def __getattr__(self, name):

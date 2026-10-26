@@ -26,24 +26,43 @@ def build_contract_preparation_requester(*, state_path=None):
 
 
 def discover_demands(*, now, products, resolver, scopes, dominant, contract_fact, completed_day):
-    """Authoritative current/near Session only. Never guess next rank or contract."""
+    """Current/near Session plus its closed observation owner; no guessed rank."""
     demands = []
     for product in products:
         if product not in scopes:
             continue
         days = set()
+        closed_now = False
         for instant in (now, now + timedelta(minutes=30)):
             phase = resolver.resolve(product, instant)
+            if instant == now:
+                closed_now = phase.phase is MarketPhase.CLOSED
             if phase.phase is MarketPhase.UNKNOWN:
                 raise ValueError("CONTRACT_PREPARATION_AUTHORITY_UNAVAILABLE")
             if phase.phase in {MarketPhase.TRADING, MarketPhase.BREAK}:
                 if phase.trading_day is None:
                     raise ValueError("CONTRACT_PREPARATION_AUTHORITY_UNAVAILABLE")
                 days.add(phase.trading_day)
+        cutoff = None
+        if closed_now:
+            # CLOSED.trading_day is a civil/display fact. Recovery after a night
+            # close uses only the existing resolver's latest started Session.
+            owner = resolver.completed_observation_trading_day(product, now)
+            if owner is None:
+                if not days:
+                    raise ValueError("CONTRACT_PREPARATION_AUTHORITY_UNAVAILABLE")
+            else:
+                cutoff = completed_day(product)
+                if type(cutoff) is not date or cutoff > owner:
+                    raise ValueError("CONTRACT_PREPARATION_AUTHORITY_UNAVAILABLE")
+                if cutoff < owner:
+                    days.add(owner)
+                # cutoff == owner is a completed close, not a next-day demand.
         for day in sorted(days):
+            if cutoff is None:
+                cutoff = completed_day(product)
             contract = dominant(product, day)
             fact = contract_fact(product, contract)
-            cutoff = completed_day(product)
             frequencies, fingerprint = scopes[product]
             demands.append(PreparationDemand(
                 product, contract, day, fact.listed_date, fact.expired_date,

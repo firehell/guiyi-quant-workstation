@@ -272,6 +272,13 @@ with maintenance and owner guards held; new consumers SHALL start before Feed an
 - **THEN** it records the stream identity and bar count as warming, excludes it from calculated and keeps natural_signals_verified false
 - **AND** default native warmup remains strict, while any quality, mapping or other error still blocks the cohort
 
+#### Scenario: A Reference receiver is operational while original calculations wait
+
+- **WHEN** the active v2 receiver publishes a complete bounded receiving round with pending or history-waiting deliveries
+- **THEN** the cohort MAY use the independently reverified durable receiving mode without changing calculation readiness
+- **AND** exact source identity, owner/PID/generation, fresh heartbeat, cursor progress, schema, protocol binding, readonly head proof and original execution deadlines SHALL all remain required
+- **AND** legacy readiness is unchanged, and invalid v2 proof SHALL NOT fall back to legacy readiness.
+
 ### Requirement: Asynchronous teardown and precommit recovery remain evidence gated
 
 The cohort host SHALL request each bootout once and wait for actual label absence and old PID exit within its budget. Before restoring a requested source, it SHALL wait for that teardown to finish before cancelling drain and restoring the frozen loaded state.
