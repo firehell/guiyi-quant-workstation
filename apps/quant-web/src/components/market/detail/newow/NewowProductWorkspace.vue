@@ -60,7 +60,7 @@ const menuChoice = computed<ExperimentKind | 'main_rise' | null>({
   set: (choice) => {
     if (choice === 'main_rise') {
       experimentKind.value = null
-      emit('select-identity', newowMenuIdentity(props.identity, 'main_rise'))
+      emit('select-identity', newowMenuIdentity(props.identity, 'main_rise', props.capabilities.strategy_frequencies?.main_rise ?? ['1d', '1w']))
     } else {
       experimentKind.value = choice
       emit('select-identity', { ...props.identity, strategy: 'oscillation', newowMode: undefined, newowTest: choice ?? undefined, focusBarEnd: undefined, homeContext: undefined })

@@ -3,9 +3,9 @@ from app.reference_trading.recording_matrix import newow_recording_matrix
 
 def test_matrix_includes_missing_combinations_without_inventing_flat_state():
     report = newow_recording_matrix(("rb", "cu"), {"streams": []})
-    assert report["expected_count"] == 42
+    assert report["expected_count"] == 48
     assert report["enabled_count"] == report["observed_count"] == 0
-    assert len(report["items"]) == 42
+    assert len(report["items"]) == 48
     assert all(item["status"] == "NOT_CONFIGURED" for item in report["items"])
     assert all(item["latest_state"] is None for item in report["items"])
 
@@ -15,7 +15,7 @@ def test_matrix_does_not_count_historical_or_unrecognized_strategies():
         {"strategy_code": "htdy", "product": "rb", "frequency": "60m"},
         {"strategy_code": "newow_trend", "product": "cu", "frequency": "60m"},
     ]})
-    assert report["expected_count"] == 21 and report["configured_count"] == 0
+    assert report["expected_count"] == 24 and report["configured_count"] == 0
 
 
 def test_matrix_preserves_missing_period_and_actual_observation():

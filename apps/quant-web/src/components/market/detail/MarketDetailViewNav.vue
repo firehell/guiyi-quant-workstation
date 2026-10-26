@@ -68,7 +68,7 @@ function chooseView(view: AnalysisChoice) {
     const preferredFrequency = props.identity.view === 'newow'
       ? props.identity.frequency
       : (restored.frequency === '1m' || props.newowFrequencies.includes(restored.frequency)) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
-    const frequency = !isFutures.value && view === 'main_rise' && ['5m', '15m', '30m'].includes(preferredFrequency) ? '1d' : preferredFrequency
+    const frequency = preferredFrequency
     emit('select', {
       view: 'newow', symbol: props.identity.symbol, ...(isFutures.value ? { strategyModel: 'futures_bidir_v1' as const } : {}), strategy: view === 'dual' ? 'trend' : view,
       ...(view === 'dual' ? { newowMode: 'dual' as const } : {}),

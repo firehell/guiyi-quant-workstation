@@ -115,8 +115,8 @@ class _Reader:
         )
 
 
-def _service(product_cases, frequency="1d"):
-    case = product_cases.primitive_input("trend", frequency)
+def _service(product_cases, frequency="1d", strategy="trend"):
+    case = product_cases.primitive_input(strategy, frequency)
     if frequency == "1w":
         shift = timedelta(days=364)
         case = replace(
@@ -144,13 +144,13 @@ def _service(product_cases, frequency="1d"):
     return service, reader, build, clear
 
 
-@pytest.mark.parametrize("frequency", ["1d", "1w"])
-def test_split_reference_matches_legacy_complete_values_for_daily_and_weekly(product_cases, frequency):
+@pytest.mark.parametrize("strategy,frequency", [("trend", "1d"), ("trend", "1w")] + [("main_rise", f) for f in ("5m", "15m", "30m", "60m", "1d", "1w")])
+def test_split_reference_matches_legacy_complete_values_for_daily_and_weekly(product_cases, strategy, frequency):
     from app.api.market_newow import _product_response
 
-    service, _reader, build, clear = _service(product_cases, frequency)
+    service, _reader, build, clear = _service(product_cases, frequency, strategy)
     query = ProductServiceQuery(
-        "rb", "trend", frequency, section="reference",
+        "rb", strategy, frequency, section="reference",
         performance_since=build.trading_day, performance_through=clear.trading_day,
         as_of=clear.bar_end,
     )
@@ -2241,3 +2241,10 @@ def test_chart_caution_selection_binds_complete_owner_not_just_time(product_case
     result=service.query(ProductServiceQuery('rb','trend','1d',section='chart',since=build.trading_day,through=clear.trading_day,as_of=clear.bar_end+timedelta(microseconds=1)))
     assert len(result.chart.value.caution_events)==1
     assert result.chart.value.caution_events[0]['physical_contract']!='FOREIGN'
+
+
+@pytest.mark.parametrize('frequency', ['5m', '15m', '30m'])
+@pytest.mark.parametrize('strategy', ['trend', 'oscillation', 'main_rise'])
+def test_short_minute_decision_path_keeps_existing_explanation_boundary(frequency, strategy):
+    with pytest.raises(ValueError, match='NEWOW_SECTION_PARAMETER_INVALID'):
+        ProductServiceQuery('rb', strategy, frequency, section='explanation', decision_v2=True, path_strategy=strategy)

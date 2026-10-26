@@ -77,7 +77,7 @@ def test_display_ma10_restarts_at_a_new_physical_owner(product_cases):
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
-@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
+@pytest.mark.parametrize("frequency", ["1w", "1d", "60m", "5m", "15m", "30m"])
 def test_adapter_preserves_every_primitive_prefix_value(
     product_cases, strategy, frequency
 ):
@@ -208,7 +208,7 @@ def test_price_gap_keeps_verified_lifecycle_input_while_relabeling_frames(
 
 
 @pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
-@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
+@pytest.mark.parametrize("frequency", ["1w", "1d", "60m", "5m", "15m", "30m"])
 def test_adapter_preserves_direct_primitive_hints_without_quantity_effect(
     product_cases, strategy, frequency
 ):
@@ -232,7 +232,7 @@ def test_adapter_preserves_direct_primitive_hints_without_quantity_effect(
         }
 
 
-@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
+@pytest.mark.parametrize("frequency", ["1w", "1d", "60m", "5m", "15m", "30m"])
 def test_main_rise_d456_outputs_remain_non_quantity_hints(product_cases, frequency):
     case = product_cases.primitive_input("main_rise", frequency)
     bars = tuple(
@@ -423,7 +423,7 @@ def test_main_rise_requires_a_real_prewarm_build_witness_for_an_isolated_clear(
     assert clear.related_build_id == warmup_build.signal_id
 
 
-@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
+@pytest.mark.parametrize("frequency", ["1w", "1d", "60m", "5m", "15m", "30m"])
 def test_verified_main_rise_lifecycle_emits_initial_clear_without_entry(
     product_cases, frequency
 ):

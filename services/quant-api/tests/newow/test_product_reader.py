@@ -334,7 +334,7 @@ def test_daily_quality_version_is_scoped_to_daily_products():
         input_quality_policy("1w", policy)
 
 
-@pytest.mark.parametrize("frequency", ["1w", "1d", "60m"])
+@pytest.mark.parametrize("frequency", ["1w", "1d", "60m", "5m", "15m", "30m"])
 def test_reads_requested_canonical_frequency_without_fallback(product_cases, frequency):
     reader, query, fake = product_cases.paged_reader(prefix_bars=3, frequency=frequency)
     result = reader.load(query, product_cases.as_of)
@@ -1432,7 +1432,8 @@ def test_reader_retains_authoritative_batch_session_windows(product_cases, monke
     assert len(calls) == 1
 
 
-def test_historical_bound_uses_completed_night_not_future_day_session(monkeypatch):
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
+def test_historical_bound_uses_completed_night_not_future_day_session(monkeypatch, frequency):
     from types import SimpleNamespace
     night_end = datetime(2026, 10, 23, 17, tzinfo=UTC)
     day = date(2026, 10, 26)
@@ -1448,7 +1449,7 @@ def test_historical_bound_uses_completed_night_not_future_day_session(monkeypatc
     reader = NewowProductReader(Market(), coverage=SimpleNamespace(), active_products=('al',),
         now=lambda: night_end+timedelta(days=1))
     monkeypatch.setattr(reader, 'dependency_owners', lambda *args: (owner,))
-    assert reader.historical_input_bound(product='al',frequency='60m',since=day,through=day,as_of=night_end) == (5, 5*4096)
+    assert reader.historical_input_bound(product='al',frequency=frequency,since=day,through=day,as_of=night_end) == (5, 5*4096)
     assert calls[0]['cutoff'] == night_end
     assert calls[0]['trading_day'] == day
 

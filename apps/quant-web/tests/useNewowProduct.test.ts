@@ -2319,3 +2319,21 @@ function withChartPrice(response: NewowProductSectionResponse, raw: string): New
     target: value, absorb: value,
   } } } as NewowProductSectionResponse<'chart'>
 }
+
+for (const frequency of ['5m', '15m', '30m'] as const) {
+test(`main-rise ${frequency} switch aborts old pagination and rejects late snapshots`, async () => {
+  const identity = ref(newowIdentity('trend', '1d'))
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity, now: () => new Date(AS_OF), fetchSection: controlled(pending) })
+  await nextTick()
+  const initial = normalizedChart(pending[0]!.request) as NewowProductSectionResponse<'chart'>
+  pending[0]!.resolve({ ...initial, value: { ...initial.value!, next_older_window: 'older-window' } }); await flush()
+  const older = state.loadNextChartPage()
+  identity.value = { ...newowIdentity('main_rise', '60m'), frequency }
+  assert.equal(pending[1]!.signal.aborted, true)
+  pending[1]!.resolve(initial)
+  await older
+  assert.equal(state.sections.chart.data.value, null)
+  state.dispose()
+})
+}

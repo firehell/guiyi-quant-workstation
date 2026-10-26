@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from dataclasses import asdict
 from datetime import UTC, date, datetime
 import re
@@ -235,12 +234,12 @@ def _input_quality_policy(
 
 
 def _require_strategy_frequency(request: Request, strategy: str, frequency: str) -> None:
-    """Keep the immutable minute candidates closed while opening formal hourly main rise."""
+    """Keep frozen minute previews closed independently of the current capability."""
     if strategy != "main_rise":
         return
     preview = getattr(request.state, "intraday_preview_products", None) is not None
-    if frequency in ("5m", "15m", "30m") or (frequency == "60m" and preview):
-        raise ValueError("NEWOW_INVALID_QUERY" if preview else "NEWOW_FREQUENCY_NOT_OPEN")
+    if preview and frequency in ("5m", "15m", "30m", "60m"):
+        raise ValueError("NEWOW_INVALID_QUERY")
 
 
 def _enforce_product_frequency(request: Request, product: str, frequency: str) -> None:
