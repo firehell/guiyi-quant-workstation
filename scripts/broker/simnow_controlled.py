@@ -620,6 +620,7 @@ def main(argv=None):
                 )
                 output["native_failed"] = gateway.failed
             finally:
+                output["inventory_diagnostics"] = gateway.inventory_diagnostics()
                 output["native_query_diagnostics"] = list(gateway.query_diagnostics)
                 output["book_selection_diagnostics"] = getattr(gateway, "book_selection_diagnostics", None)
                 try:
