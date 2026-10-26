@@ -145,9 +145,10 @@ class FakeGateway:
     def attach(self, adapter, snapshot):
         self.execution_adapter = adapter
 
-    def query(self, kind, instrument=""):
+    def query(self, kind, instrument="", *, exchange="", product=""):
         self.calls.append((kind, instrument))
         if kind == "instrument":
+            assert exchange == "SHFE" and product == "rb"
             return (
                 dict(
                     InstrumentID="rb2701",
@@ -468,3 +469,190 @@ def test_monitor_publication_failure_does_not_change_controlled_execution(
     assert result["monitor_status"] == "unavailable"
     assert "private observer failure" not in str(result)
     assert len([c for c in gateway.calls if c[0] == "insert"]) == 1
+
+
+def test_preflight_batch_book_selects_exact_physical_contract(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def batch(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        if kind != "book":
+            return rows
+        # Bad/stale unrelated rows cannot substitute for or poison the exact target.
+        return tuple(dict(rows[0], InstrumentID=f"other{i}", BidPrice1=0) for i in range(32)) + rows
+    gateway.query = batch
+    result = cli.run(gateway, NS(), config, tmp_path)
+    assert result["status"] == "READ_ONLY_PREFLIGHT_COMPLETE"
+    observed = result["execution_input_observed"]
+    assert observed["contract"] == "RB2701" and observed["native_contract"] == "rb2701"
+    assert observed["bid"] == "999" and observed["ask"] == "1000"
+    assert observed["scope"] == "OBSERVED_INPUT_NOT_CURRENT_ORDER_PERMISSION"
+    diagnostic = gateway.book_selection_diagnostics
+    assert diagnostic["batch_rows"] == 33 and diagnostic["exact_identity_matches"] == 1
+    assert diagnostic["trading_day_matches"] is True
+    assert 0 <= float(diagnostic["event_age_seconds"]) <= 5
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+    assert not (tmp_path / "output/simnow-controlled").exists()
+
+
+def test_preflight_duplicate_target_book_stops_without_mutation(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def duplicate(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        return rows + rows if kind == "book" else rows
+    gateway.query = duplicate
+    with pytest.raises(ValueError, match="NATIVE_BOOK_TARGET_AMBIGUOUS"):
+        cli.run(gateway, NS(), config, tmp_path)
+    assert gateway.book_selection_diagnostics["exact_identity_matches"] == 2
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+    assert not (tmp_path / "output/simnow-controlled").exists()
+
+
+def rate_scope(kind):
+    return dict(schema="native_rate_query_scope_v1", kind=kind, instrument="rb2701", exchange="SHFE", request_id=30003)
+
+
+def test_blank_rate_exchange_requires_completed_query_scope(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    seen = []
+    def scoped(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        if kind in ("margin", "commission"):
+            assert scope["exchange"] == "SHFE"
+            rows = tuple(dict(row, ExchangeID="", query_scope=rate_scope(kind)) for row in rows)
+            seen.extend(rows)
+        return rows
+    gateway.query = scoped
+    result = cli.run(gateway, NS(), config, tmp_path)
+    assert result["status"] == "READ_ONLY_PREFLIGHT_COMPLETE"
+    assert all(row["ExchangeID"] == "" for row in seen)
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+
+
+@pytest.mark.parametrize("issue", ["no_scope", "wrong_scope_exchange", "wrong_scope_contract", "wrong_scope_kind", "wrong_request_id", "wrong_schema", "wrong_response_exchange", "wrong_response_contract", "wrong_broker"])
+def test_rate_scope_never_repairs_conflicting_identity(monkeypatch, tmp_path, issue):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def bad(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        if kind == "margin":
+            row = dict(rows[0], ExchangeID="", query_scope=rate_scope(kind))
+            if issue == "no_scope":
+                row.pop("query_scope")
+            elif issue == "wrong_scope_exchange":
+                row["query_scope"]["exchange"] = "DCE"
+            elif issue == "wrong_scope_contract":
+                row["query_scope"]["instrument"] = "rb2705"
+            elif issue == "wrong_scope_kind":
+                row["query_scope"]["kind"] = "commission"
+            elif issue == "wrong_request_id":
+                row["query_scope"]["request_id"] = True
+            elif issue == "wrong_schema":
+                row["query_scope"]["schema"] = "unknown"
+            elif issue == "wrong_response_exchange":
+                row["ExchangeID"] = "DCE"
+            elif issue == "wrong_response_contract":
+                row["InstrumentID"] = "rb2705"
+            elif issue == "wrong_broker":
+                row["BrokerID"] = "other"
+            return (row,)
+        return rows
+    gateway.query = bad
+    with pytest.raises(ValueError, match="NATIVE_RATE_IDENTITY"):
+        cli.run(gateway, NS(), config, tmp_path)
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+
+
+def test_flat_transient_old_book_waits_then_uses_fresh_quote(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("filled")
+    original = gateway.query
+    books = 0
+    def intermittent(kind, instrument="", **scope):
+        nonlocal books
+        rows = original(kind, instrument, **scope)
+        if kind == "book":
+            books += 1
+            if books == 2:
+                return tuple(dict(row, ActionDay="20261026") for row in rows)
+        return rows
+    gateway.query = intermittent
+    result = cli.run(gateway, NS(CThostFtdcInputOrderField=NS, CThostFtdcInputOrderActionField=NS), config, tmp_path)
+    assert result["status"] == "CONTROLLED_RUN_ENDED"
+    assert result["empty_account_quote_waits"] == 1
+    assert result["submit_budget_used"] == 1
+    assert books >= 3
+
+
+def test_flat_old_book_until_deadline_never_submits(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    books = 0
+    def old(kind, instrument="", **scope):
+        nonlocal books
+        rows = original(kind, instrument, **scope)
+        if kind == "book":
+            books += 1
+            if books > 1:
+                return tuple(dict(row, ActionDay="20261026") for row in rows)
+        return rows
+    gateway.query = old
+    result = cli.run(gateway, NS(), config, tmp_path)
+    assert result["status"] == "CONTROLLED_RUN_ENDED"
+    assert result["empty_account_quote_waits"] > 0
+    assert result["submit_budget_used"] == 0
+    assert not result["orders"]
+    assert all(call[0] != "insert" for call in gateway.calls)
+
+
+@pytest.mark.parametrize("mode", ["future", "unknown-order", "bad-rate"])
+def test_quote_wait_never_hides_future_identity_or_pending_order(monkeypatch, tmp_path, mode):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("unknown" if mode == "unknown-order" else "filled")
+    original = gateway.query
+    books = 0
+    def invalid(kind, instrument="", **scope):
+        nonlocal books
+        rows = original(kind, instrument, **scope)
+        if mode == "bad-rate" and kind == "margin" and books >= 1:
+            return tuple(dict(row, ExchangeID="DCE") for row in rows)
+        if kind == "book":
+            books += 1
+            if (mode == "future" and books == 2) or (mode == "unknown-order" and books >= 3):
+                return tuple(dict(row, ActionDay="20261028" if mode == "future" else "20261026") for row in rows)
+        return rows
+    gateway.query = invalid
+    sdk = NS(CThostFtdcInputOrderField=NS, CThostFtdcInputOrderActionField=NS)
+    result = cli.run(gateway, sdk, config, tmp_path)
+    assert result["status"] == "CONTROLLED_RUN_REQUIRES_RECOVERY"
+    assert result["empty_account_quote_waits"] == 0
+    if mode == "unknown-order":
+        assert result["submit_budget_used"] == 1
+        assert any(not r["released"] for r in result["reservations"])
+    else:
+        assert result["submit_budget_used"] == 0
+
+
+def test_initial_old_book_still_stops_before_settlement_or_initialization(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def old(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        return tuple(dict(row, ActionDay="20261026") for row in rows) if kind == "book" else rows
+    gateway.query = old
+    with pytest.raises(ValueError, match="NATIVE_BOOK_STALE"):
+        cli.run(gateway, NS(), config, tmp_path)
+    assert not (tmp_path / "output/simnow-controlled").exists()
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)

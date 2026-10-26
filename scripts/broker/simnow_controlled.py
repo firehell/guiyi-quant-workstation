@@ -100,8 +100,12 @@ def run(gateway, tdapi, config, root):
     from guiyi_quant.simnow_execution.host import Host
     from guiyi_quant.simnow_execution.facts import (
         bind_contract,
-        quote_from_native,
+        native_product_id,
+        quote_from_native_batch,
         execution_input,
+        validate_native_rate_identity,
+        EXECUTION_INPUT_VERSION,
+        MAX_BOOK_SOURCE_AGE_SECONDS,
     )
     from guiyi_quant.htdy_account_execution.codec import digest
     from app.simnow_controlled_market import MarketBridge
@@ -109,6 +113,33 @@ def run(gateway, tdapi, config, root):
 
     def now():
         return datetime.now(UTC)
+
+    def read_book(bound, trading_day):
+        rows = gateway.query("book", bound.native)
+        received = now()
+        matches = [r for r in rows if r["InstrumentID"] == bound.native and r["ExchangeID"] == bound.exchange]
+        diagnostic = dict(
+            requested_contract=bound.canonical,
+            received_at=received.isoformat(),
+            batch_rows=len(rows),
+            max_source_age_seconds=MAX_BOOK_SOURCE_AGE_SECONDS,
+            input_version=EXECUTION_INPUT_VERSION,
+            native_id_matches=sum(r["InstrumentID"] == bound.native for r in rows),
+            exact_identity_matches=len(matches),
+        )
+        if len(matches) == 1:
+            row = matches[0]
+            diagnostic["trading_day_matches"] = row["TradingDay"] == trading_day
+            try:
+                from zoneinfo import ZoneInfo
+                event = datetime.strptime(row["ActionDay"] + row["UpdateTime"], "%Y%m%d%H:%M:%S").replace(
+                    tzinfo=ZoneInfo("Asia/Shanghai"), microsecond=row["UpdateMillisec"] * 1000
+                )
+                diagnostic["event_age_seconds"] = format((received-event).total_seconds(), ".6f")
+            except (ValueError, TypeError, KeyError, OverflowError):
+                diagnostic["event_time_valid"] = False
+        gateway.book_selection_diagnostics = diagnostic
+        return quote_from_native_batch(bound, rows, trading_day, received)
 
     market = MarketBridge(config.product.lower())
     store = journal = evidence = None
@@ -118,12 +149,16 @@ def run(gateway, tdapi, config, root):
     folder = None
     result = None
     monitor = None
+    empty_account_quote_waits = 0
     try:
         # All startup dependencies are native/authoritative reads; no default settlement write.
         first = read_snapshot(gateway.snapshot(), now=now())
         day = datetime.strptime(first.trading_day, "%Y%m%d").date()
         authority = market.authority(day, now())
-        instruments = gateway.query("instrument")
+        instruments = gateway.query(
+            "instrument", exchange=authority.exchange,
+            product=native_product_id(config.product.upper(), authority.exchange),
+        )
         until = now() + timedelta(minutes=5)
         binding, metadata = bind_contract(
             authority.contract,
@@ -137,14 +172,11 @@ def run(gateway, tdapi, config, root):
         confirmed = bool(
             len(settlement) == 1 and settlement[0]["ConfirmDate"] == first.trading_day
         )
-        margin = gateway.query("margin", binding.native)
-        commission = gateway.query("commission", binding.native)
+        margin = gateway.query("margin", binding.native, exchange=binding.exchange)
+        commission = gateway.query("commission", binding.native, exchange=binding.exchange)
         if len(margin) != 1 or len(commission) != 1:
             raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
-        book = gateway.query("book", binding.native)
-        if len(book) != 1:
-            raise ValueError("NATIVE_BOOK_MISSING")
-        quote = quote_from_native(binding, book[0], first.trading_day, now())
+        quote = read_book(binding, first.trading_day)
         authority = market.authority(day, now())
         facts = execution_input(
             binding, metadata, margin[0], commission[0], quote, authority.session, now()
@@ -197,6 +229,29 @@ def run(gateway, tdapi, config, root):
                 initial_100k_observed=funding,
                 settlement_confirmed=confirmed,
                 execution_book_qualified=True,
+                execution_input_observed=dict(
+                    input_version=EXECUTION_INPUT_VERSION,
+                    max_source_age_seconds=MAX_BOOK_SOURCE_AGE_SECONDS,
+                    contract=binding.canonical,
+                    native_contract=binding.native,
+                    exchange=binding.exchange,
+                    checked_at=facts.instrument.at.isoformat(),
+                    tick_size=str(facts.instrument.tick_size),
+                    multiplier=str(facts.instrument.multiplier),
+                    long_margin_rate=str(facts.instrument.long_margin_rate),
+                    short_margin_rate=str(facts.instrument.short_margin_rate),
+                    opening_fee_budget=str(facts.instrument.open_fee),
+                    margin_exchange_observed=margin[0]["ExchangeID"],
+                    commission_exchange_observed=commission[0]["ExchangeID"],
+                    margin_exchange_binding="QUERY_SCOPE" if margin[0]["ExchangeID"] == "" else "RESPONSE_FIELD",
+                    commission_exchange_binding="QUERY_SCOPE" if commission[0]["ExchangeID"] == "" else "RESPONSE_FIELD",
+                    bid=str(quote.bid), ask=str(quote.ask),
+                    bid_volume=quote.bid_volume, ask_volume=quote.ask_volume,
+                    quote_received_at=quote.at.isoformat(),
+                    quote_valid_until=quote.valid_until.isoformat(),
+                    quote_source=quote.source_id,
+                    scope="OBSERVED_INPUT_NOT_CURRENT_ORDER_PERMISSION",
+                ),
                 authority_source=authority.source_id,
                 orders_sent=0,
                 auto_order=False,
@@ -351,22 +406,42 @@ def run(gateway, tdapi, config, root):
                     now() + timedelta(minutes=5),
                     snapshot.trading_day,
                 )
-                mar = gateway.query("margin", bound.native)
-                com = gateway.query("commission", bound.native)
+                mar = gateway.query("margin", bound.native, exchange=bound.exchange)
+                com = gateway.query("commission", bound.native, exchange=bound.exchange)
                 if len(mar) != 1 or len(com) != 1:
                     raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
                 bindings.append(bound)
                 rate_facts.append((bound, meta, mar[0], com[0]))
             execution = []
+            wait_for_book = False
             for bound, meta, mar, com in rate_facts:
-                rows = gateway.query("book", bound.native)
-                if len(rows) != 1:
-                    raise ValueError("NATIVE_BOOK_MISSING")
-                q = quote_from_native(bound, rows[0], snapshot.trading_day, now())
+                validate_native_rate_identity(bound, mar, com)
+                try:
+                    q = read_book(bound, snapshot.trading_day)
+                except ValueError as exc:
+                    current = store.current()
+                    diagnostic = getattr(gateway, "book_selection_diagnostics", {})
+                    old_source = Decimal(diagnostic.get("event_age_seconds", "-1")) > MAX_BOOK_SOURCE_AGE_SECONDS
+                    idle = (
+                        current.phase == "READY" and current.readback_valid
+                        and not current.orders and not current.positions
+                        and not current.reservations and not current.unresolved_fill_ids
+                        and not host.pending and not adapter._faulted
+                        and not any(p.must_close or p.rolling for p in current.products)
+                    )
+                    if str(exc) != "NATIVE_BOOK_STALE" or not old_source or not idle:
+                        raise
+                    empty_account_quote_waits += 1
+                    wait_for_book = True
+                    break
                 auth = market.authority(day, now(), bound.canonical)
                 execution.append(
                     execution_input(bound, meta, mar, com, q, auth.session, now())
                 )
+            if wait_for_book:
+                monitor_progress("READING")
+                time.sleep(0.2)
+                continue  # No Tick/effects with this batch; bounded deadline remains unchanged.
             adapter.drain()
             outcomes = host.tick(tuple(execution), tuple(bindings), now())
             monitor_progress("ACTIVE")
@@ -472,6 +547,8 @@ def run(gateway, tdapi, config, root):
             except Exception:
                 if result is not None:
                     result["status"] = "CONTROLLED_RUN_REQUIRES_RECOVERY"
+        if result is not None:
+            result.update(host_version="simnow_bounded_host_v2", empty_account_quote_waits=empty_account_quote_waits)
         if monitor is not None:
             monitor_progress(
                 "ERROR"
@@ -544,6 +621,7 @@ def main(argv=None):
                 output["native_failed"] = gateway.failed
             finally:
                 output["native_query_diagnostics"] = list(gateway.query_diagnostics)
+                output["book_selection_diagnostics"] = getattr(gateway, "book_selection_diagnostics", None)
                 try:
                     if gateway.api is not None:
                         gateway.api.RegisterSpi(None)

@@ -44,6 +44,18 @@ class Api:
         self.g.OnRspQryInstrumentMarginRate(row, t.CThostFtdcRspInfoField(), rid, True)
         return 0
 
+    def ReqQryInstrumentCommissionRate(self, req, rid):
+        self.calls.append(("commission", req, rid))
+        row = t.CThostFtdcInstrumentCommissionRateField()
+        row.BrokerID = "9999"
+        row.InvestorID = "000000"
+        row.InvestorRange = "3"
+        row.InstrumentID = req.InstrumentID
+        row.ExchangeID = ""
+        row.OpenRatioByMoney = 0.0001
+        self.g.OnRspQryInstrumentCommissionRate(row, t.CThostFtdcRspInfoField(), rid, True)
+        return 0
+
     def ReqQryDepthMarketData(self, req, rid):
         self.calls.append(("book", req, rid))
         row = t.CThostFtdcDepthMarketDataField()
@@ -72,12 +84,14 @@ class Compatibility(unittest.TestCase):
         self.pause.stop()
 
     def test_instrument_sdk_request_and_rows(self):
-        rows = self.g.query("instrument")
+        rows = self.g.query("instrument", exchange="SHFE", product="rb")
         self.assertEqual(rows[0]["InstrumentID"], "rb2701")
+        self.assertEqual(self.g.api.calls[0][1].ProductID, "rb")
+        self.assertEqual(self.g.api.calls[0][1].ExchangeID, "SHFE")
         self.assertIsInstance(self.g.api.calls[0][1], t.CThostFtdcQryInstrumentField)
 
     def test_margin_all_investors_scope_is_explicit_and_not_another_account(self):
-        rows = self.g.query("margin", "rb2701")
+        rows = self.g.query("margin", "rb2701", exchange="SHFE")
         self.assertEqual(rows[0]["InvestorRange"], "1")
         self.assertNotIn("InvestorID", rows[0])
         self.assertEqual(self.g.api.calls[0][1].InvestorID, "000000")
@@ -98,7 +112,7 @@ class Compatibility(unittest.TestCase):
         self.g.api.ReqQryInstrument = lambda req, rid: calls.append(rid) or 0
         with patch.object(self.g.extra_done, "wait", return_value=False):
             with self.assertRaisesRegex(ValueError, "NATIVE_FACT_QUERY_FAILED"):
-                self.g.query("instrument")
+                self.g.query("instrument", exchange="SHFE", product="rb")
         d = self.g.query_diagnostics[-1]
         self.assertEqual(len(calls), 1)
         self.assertTrue(d["timed_out"])
@@ -111,12 +125,14 @@ class Compatibility(unittest.TestCase):
     def test_diagnostics_partial_rows_without_terminator_remain_failed(self):
         def partial(req, rid):
             row = t.CThostFtdcInstrumentField()
+            row.ExchangeID = "SHFE"
+            row.ProductID = "rb"
             self.g.OnRspQryInstrument(row, t.CThostFtdcRspInfoField(), rid, False)
             return 0
         self.g.api.ReqQryInstrument = partial
         with patch.object(self.g.extra_done, "wait", return_value=False):
             with self.assertRaises(ValueError):
-                self.g.query("instrument")
+                self.g.query("instrument", exchange="SHFE", product="rb")
         d = self.g.query_diagnostics[-1]
         self.assertEqual(d["data_row_count"], 1)
         self.assertTrue(d["timed_out"])
@@ -127,7 +143,7 @@ class Compatibility(unittest.TestCase):
         self.g.api.ReqQryInstrument = lambda req, rid: -2
         with patch.object(self.g.extra_done, "wait") as wait:
             with self.assertRaises(ValueError):
-                self.g.query("instrument")
+                self.g.query("instrument", exchange="SHFE", product="rb")
         wait.assert_not_called()
         d = self.g.query_diagnostics[-1]
         self.assertEqual(d["sdk_return_code"], -2)
@@ -143,7 +159,7 @@ class Compatibility(unittest.TestCase):
             return 0
         self.g.api.ReqQryInstrument = rejected
         with self.assertRaises(ValueError):
-            self.g.query("instrument")
+            self.g.query("instrument", exchange="SHFE", product="rb")
         d = self.g.query_diagnostics[-1]
         self.assertEqual(d["callback_error"], "NATIVE_FACT_QUERY_REJECTED")
         self.assertEqual(d["response_count"], 1)
@@ -152,13 +168,84 @@ class Compatibility(unittest.TestCase):
         self.assertFalse(d["complete"])
 
     def test_diagnostics_success_contains_no_account_or_raw_rows(self):
-        self.g.query("margin", "rb2701")
+        self.g.query("margin", "rb2701", exchange="SHFE")
         d = self.g.query_diagnostics[-1]
         self.assertTrue(d["complete"])
         self.assertEqual(d["data_row_count"], 1)
         self.assertFalse(d["timed_out"])
         self.assertNotIn("000000", str(d))
         self.assertNotIn("InvestorID", str(d))
+
+    def test_unbounded_instrument_query_rejected_before_sdk(self):
+        with self.assertRaisesRegex(ValueError, "BOUNDED_INSTRUMENT_QUERY_REQUIRED"):
+            self.g.query("instrument")
+        self.assertEqual(self.g.api.calls, [])
+
+    def test_wrong_product_response_fails_closed(self):
+        def wrong(req, rid):
+            row = t.CThostFtdcInstrumentField()
+            row.ExchangeID = "SHFE"
+            row.ProductID = "cu"
+            self.g.OnRspQryInstrument(row, t.CThostFtdcRspInfoField(), rid, True)
+            return 0
+        self.g.api.ReqQryInstrument = wrong
+        with self.assertRaises(ValueError):
+            self.g.query("instrument", exchange="SHFE", product="rb")
+        d = self.g.query_diagnostics[-1]
+        self.assertEqual(d["callback_error"], "NATIVE_FACT_SCOPE_MISMATCH")
+        self.assertEqual(d["data_row_count"], 0)
+
+    def test_disconnect_during_gap_does_not_send_query(self):
+        with patch.object(m.time, "sleep", lambda _: self.g.OnFrontDisconnected(1)):
+            with self.assertRaisesRegex(ValueError, "NATIVE_GATEWAY_FAILED"):
+                self.g.query("instrument", exchange="SHFE", product="rb")
+        self.assertEqual(self.g.api.calls, [])
+
+    def test_disconnect_during_request_construction_prevents_send(self):
+        real = t.CThostFtdcQryInstrumentField
+        def construct():
+            self.g.OnFrontDisconnected(1)
+            return real()
+        with patch.object(t, "CThostFtdcQryInstrumentField", construct):
+            with self.assertRaisesRegex(ValueError, "NATIVE_GATEWAY_FAILED"):
+                self.g.query("instrument", exchange="SHFE", product="rb")
+        self.assertEqual(self.g.api.calls, [])
+
+    def test_rate_scope_attached_only_after_complete_without_rewriting_exchange(self):
+        response = self.g.OnRspQryInstrumentMarginRate
+        def blank_exchange(row, info, rid, last):
+            row.ExchangeID = ""
+            response(row, info, rid, last)
+        self.g.OnRspQryInstrumentMarginRate = blank_exchange
+        rows = self.g.query("margin", "rb2701", exchange="SHFE")
+        self.assertEqual(self.g.api.calls[0][1].ExchangeID, "SHFE")
+        self.assertEqual(rows[0]["ExchangeID"], "")
+        self.assertEqual(rows[0]["query_scope"]["instrument"], "rb2701")
+        self.assertEqual(rows[0]["query_scope"]["exchange"], "SHFE")
+        self.assertNotIn("query_scope", self.g.extra["rows"][0])
+        self.assertNotIn("InvestorID", str(rows))
+
+    def test_rate_without_explicit_exchange_is_not_sent(self):
+        with self.assertRaisesRegex(ValueError, "BOUNDED_RATE_QUERY_REQUIRED"):
+            self.g.query("margin", "rb2701")
+        self.assertEqual(self.g.api.calls, [])
+
+    def test_incomplete_rate_batch_does_not_emit_query_scope(self):
+        response = self.g.OnRspQryInstrumentMarginRate
+        self.g.OnRspQryInstrumentMarginRate = lambda row, info, rid, last: response(row, info, rid, False)
+        with patch.object(self.g.extra_done, "wait", return_value=False):
+            with self.assertRaises(ValueError):
+                self.g.query("margin", "rb2701", exchange="SHFE")
+        self.assertNotIn("query_scope", self.g.extra["rows"][0])
+        self.assertFalse(self.g.query_diagnostics[-1]["complete"])
+
+    def test_commission_real_sdk_request_has_exchange_scope(self):
+        rows = self.g.query("commission", "rb2701", exchange="SHFE")
+        req = self.g.api.calls[0][1]
+        self.assertIsInstance(req, t.CThostFtdcQryInstrumentCommissionRateField)
+        self.assertEqual(req.ExchangeID, "SHFE")
+        self.assertEqual(rows[0]["ExchangeID"], "")
+        self.assertEqual(rows[0]["query_scope"]["kind"], "commission")
 
     def test_login_native_identity_exists_before_completion_waiter(self):
         row = t.CThostFtdcRspUserLoginField()

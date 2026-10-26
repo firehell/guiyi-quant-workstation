@@ -9,7 +9,7 @@ from ..htdy_account_execution.codec import digest
 
 ENVIRONMENT = "SIMNOW_FIRST"
 FRONT = "tcp://182.254.243.31:30001"
-VERSION = "simnow_ctp_controlled_v1"
+VERSION = "simnow_ctp_controlled_v2"
 
 
 def integer(value, minimum=0):
