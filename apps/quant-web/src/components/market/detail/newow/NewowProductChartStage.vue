@@ -116,6 +116,10 @@ function actionWidth(callout: KlineReferenceCallout, strategy = props.strategy):
   return Math.max(ACTION_LABEL_BOX.width, Math.min(180, Math.max(actionTitle(callout, strategy).length, actionDisplay(callout, strategy).text.length) * 7 + 14))
 }
 const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;title:string}>>([])
+const selectedCautionKey = ref<string | null>(null)
+const selectedCaution = computed(() => cautionOverlays.value.find(item=>item.key===selectedCautionKey.value) ?? null)
+watch(cautionOverlays, items => { if (!items.some(item=>item.key===selectedCautionKey.value)) selectedCautionKey.value=null }, {deep:true})
+
 const visualOverlays = ref(readVisualOverlayPreferences())
 watch(visualOverlays, value => { saveVisualOverlayPreferences(value); renderVisualOverlays() })
 const cursorRows = ref<string[]>([])
@@ -877,8 +881,12 @@ defineExpose({ revealSignal, scrollToLatest })
       @dblclick="scheduleActionProjection"
     />
     <div class="newow-caution-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
-      <span v-for="item in cautionOverlays" :key="item.key" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title">小心</span>
+      <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null">小心</button>
     </div>
+    <aside v-if="selectedCaution" class="newow-caution-explanation" data-testid="newow-caution-explanation" role="region" aria-label="小心说明" @pointerdown.stop @keydown.esc.stop="selectedCautionKey = null">
+      <header><strong>{{ selectedCaution.tentative ? '暂定峰' : '已确认峰' }}</strong><button type="button" aria-label="关闭小心说明" @click="selectedCautionKey = null">关闭</button></header>
+      <p>{{ selectedCaution.title }}</p>
+    </aside>
     <div v-if="showHints && (processOverlays.length || cycleCountOverlays.length)" class="newow-process-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="主图过程提示，非成交">
       <i v-for="item in cycleCountOverlays" :key="item.barEnd" class="newow-cycle-count" :data-cycle-count-bar="item.barEnd" :style="{ left: `${item.x}px`, top: `${item.top}px`, height: `${item.height}px`, background: item.color }" />
       <span v-for="item in processOverlays" :key="item.id" :data-process-hint-id="item.id" :data-hint-kind="item.kind" :data-anchor-price="item.anchorPrice" :class="{ below: item.below, cycle: item.cycle }" :style="{ left: `${item.x}px`, top: `${item.y}px`, color: item.color }">{{ item.text }}</span>
@@ -921,7 +929,7 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
-.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay span{position:absolute;transform:translateX(-50%);border-radius:8px;padding:1px 6px;background:#00ff00;color:#111;font-size:11px;line-height:16px;white-space:nowrap}
+.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:1px 6px;background:#00ff00;color:#111;font-size:11px;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
 
 .newow-product-chart-stage__reference-prices { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; padding:5px 12px; border-bottom:1px solid #eef0f3; background:#fafafa; font-size:11px; font-weight:600; }
 .newow-product-chart-stage__reference-controls { margin-left:auto; display:flex; align-items:center; gap:8px; }
@@ -988,4 +996,10 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 
 <style scoped>
 .newow-caution-overlay .tentative { background:transparent; border:1px dashed #00b800; color:#008800; }
+
+.newow-caution-overlay button:focus-visible { outline:2px solid #365af5; outline-offset:2px; }
+.newow-caution-explanation { position:absolute; top:56px; right:8px; z-index:15; max-width:min(340px,calc(100% - 16px)); box-sizing:border-box; padding:10px 12px; border:1px solid #d0d5dd; border-radius:8px; background:var(--gy-bg-panel,#fff); color:var(--gy-text-primary,#1d2939); box-shadow:0 4px 16px #0002; font-size:12px; line-height:1.6; }
+.newow-caution-explanation header { display:flex; justify-content:space-between; align-items:center; gap:16px; }
+.newow-caution-explanation header button { cursor:pointer; color:inherit; background:transparent; border:1px solid #d0d5dd; border-radius:4px; }
+.newow-caution-explanation p { margin:8px 0 0; overflow-wrap:anywhere; }
 </style>

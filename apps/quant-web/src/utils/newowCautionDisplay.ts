@@ -1,3 +1,4 @@
+import { formatBeijingInstant } from './marketDisplay.ts'
 import type { NewowCautionEvent } from '../types/newowProduct.ts'
 export const CAUTION_DISPLAY_VERSION = 'guiyi_caution_completed_anchor_v1'
 
@@ -31,7 +32,8 @@ export function normalizeCautionDisplay(raw: unknown): NewowCautionEvent {
   return {...e} as unknown as NewowCautionEvent
 }
 
-export function cautionDisplayTitle(e: NewowCautionEvent): string {
-  const state = e.display_state==='tentative' ? '暂定峰，尚未回落5%确认' : `已确认于 ${e.confirmed_at}`
-  return `首次可见 ${e.first_visible_at} · 峰位置 ${e.peak_day} · ${state} · 已完成K线参考，非交易信号`
+export function cautionDisplayTitle(e: NewowCautionEvent | null, reason = '资料不足或来源尚未通过核验'): string {
+  if (!e) return `小心状态待确认：${reason} · 暂不显示风险标记，不等于没有风险`
+  const state = e.display_state==='tentative' ? '暂定峰，尚未回落5%确认' : `已确认于 ${formatBeijingInstant(e.confirmed_at)}`
+  return `首次可见 ${formatBeijingInstant(e.first_visible_at)} · 峰位置 ${e.peak_day} · ${state} · 已完成K线参考，非交易信号`
 }

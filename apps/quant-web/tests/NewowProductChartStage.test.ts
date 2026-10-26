@@ -964,7 +964,20 @@ test('independent caution layer survives auxiliary selection and clears on strat
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart));const root=element('root');app.mount(root);await nextTick();await nextTick()
   const layer=()=>findNode(root,n=>n.props.class==='newow-caution-overlay')!
   assert.match(textContent(layer()),/小心/)
+  const trigger=findNode(root,n=>n.props['data-testid']==='newow-caution-trigger')!
+  assert.equal(trigger.props['aria-expanded'],false)
+  ;(trigger.props.onClick as (event:object)=>void)({stopPropagation(){}})
+  await nextTick()
+  const explanation=findNode(root,n=>n.props['data-testid']==='newow-caution-explanation')!
+  assert.match(textContent(explanation),/暂定峰.*首次可见.*北京时间/)
+  assert.equal(trigger.props['aria-expanded'],true)
+  ;(trigger.props.onKeydown as (event:object)=>void)({key:'Escape',stopPropagation(){}})
+  await nextTick()
+  assert.equal(findNode(root,n=>n.props['data-testid']==='newow-caution-explanation'),undefined)
+  ;(trigger.props.onClick as (event:object)=>void)({stopPropagation(){}})
+  await nextTick()
   switching.value=true;await nextTick();await nextTick()
   assert.doesNotMatch(textContent(layer()),/小心/)
+  assert.equal(findNode(root,n=>n.props['data-testid']==='newow-caution-explanation'),undefined)
   app.unmount()
 })

@@ -8,3 +8,12 @@ test('fixed event and moving peak have independent dates and explicit certainty'
 test('missing policy, contradictory certainty, future peak, wrong window and expiry fail closed', () => {
   for(const patch of [{display_policy_version:undefined},{confirmed_at:'2026-10-21T07:00:00Z'},{peak_bar_end:'2026-10-22T07:00:00Z'},{home_visible:false},{age_bars:11,home_visible:false},{tentative:undefined},{display_state:'confirmed'}])assert.throws(()=>normalizeCautionDisplay({...event(),...patch}))
 })
+
+test('human-readable Beijing times and explicit unknown reason never imply confirmed', () => {
+  const title=cautionDisplayTitle(normalizeCautionDisplay(event()))
+  assert.match(title,/2026-10-20 15:00 北京时间/)
+  assert.doesNotMatch(title,/T07:00:00Z/)
+  const unknown=cautionDisplayTitle(null,'缺少已完成K线资料')
+  assert.match(unknown,/待确认.*缺少已完成K线资料/)
+  assert.doesNotMatch(unknown,/已确认|不会撤回/)
+})

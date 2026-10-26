@@ -5,7 +5,7 @@ import { onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getNewowHomeProjection } from '@/api/newowHomeCards'
 import { homeSnapshotCache } from '@/api/homeSnapshotCache'
 import { normalizeHomeCards, type HomeCard } from '@/utils/newowHomeCards'
-import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
+import { homeCardPresentation, homeRowHints, homeCautionNotice, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeDeliveryNotice, homePeriodDisplay, type CardDelivery, type HomePeriod, type HomeStrategy } from '@/utils/newowHomeCards'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { formatBeijingInstant, formatMarketPercent } from '@/utils/marketDisplay'
 import { marketHomeQualityNotice } from '@/utils/marketHomePresentation'
@@ -103,7 +103,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
     <slot name="status" />
     <article v-for="row in rows" :key="row.symbol" class="strategy-list-item">
       <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded.has(row.symbol)" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
-        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" @click.stop="openChart(row.symbol,'1d',hint.focusBarEnd)">{{ hint.label }}</button></span></small></span></div>
+        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" :aria-label="`${hint.label}：${hint.title}。点击定位对应K线`" @click.stop="openChart(row.symbol,'1d',hint.focusBarEnd)">{{ hint.label }}</button><span v-if="homeCautionNotice(fact(row.symbol, '1d'))" class="row-hint-pending" role="status" :title="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined" :aria-label="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined">小心待确认</span></span></small></span></div>
         <div class="list-price" :class="priceTone(row)"><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
         <div class="list-change"><span :class="priceTone(row)">{{ change(row) }}</span></div>
         <div class="list-reference"><strong :class="reference(row.symbol).label === '目标' ? 'target' : reference(row.symbol).label === '吸筹' ? 'absorb' : 'pending'" :title="`${reference(row.symbol).label} · 页面参考价格，非成交成本`">{{ reference(row.symbol).text }}</strong></div>
@@ -191,4 +191,8 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 .composite-tags>.control-tag{color:#ff9500;background:#fff3e6}.composite-tags>.performance-tag{color:#007aff;background:#eaf2ff}
 .composite-footer strong{font-size:13px;font-weight:600}.space-up{color:#ff3b30}.space-down{color:#34c759}
 @media(max-width:600px){.composite-card{padding:10px}.composite-heading strong{font-size:12px;line-height:18px}.composite-heading strong>.composite-price{font-size:15px}.composite-heading{gap:5px}.composite-signal{padding:2px 6px;font-size:10px}.composite-card .composite-context{font-size:10px}.composite-footer strong{font-size:12px}}
+</style>
+
+<style scoped>
+.row-hint-pending { font-size:10px; color:#667085; border:1px dashed #98a2b3; border-radius:8px; padding:1px 4px; cursor:help; }
 </style>
