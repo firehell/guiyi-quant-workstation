@@ -8,6 +8,9 @@ from .. import htdy_account_execution as a
 from ..htdy_account_execution.codec import digest
 from .model import Contract, valid
 
+EXECUTION_INPUT_VERSION = "simnow_native_input_v2"
+MAX_BOOK_SOURCE_AGE_SECONDS = 8
+
 
 def decimal(value, positive=False):
     if type(value) not in (str, int, float, Decimal):
@@ -99,7 +102,7 @@ def quote_from_native(binding, row, trading_day, received_at):
     ).replace(
         tzinfo=ZoneInfo("Asia/Shanghai"), microsecond=row["UpdateMillisec"] * 1000
     )
-    if not event <= received_at or (received_at - event).total_seconds() > 5:
+    if not event <= received_at or (received_at - event).total_seconds() > MAX_BOOK_SOURCE_AGE_SECONDS:
         raise ValueError("NATIVE_BOOK_STALE")
     for k in ("BidVolume1", "AskVolume1"):
         if type(row[k]) is not int or row[k] < 0:
@@ -108,7 +111,7 @@ def quote_from_native(binding, row, trading_day, received_at):
         binding.canonical,
         received_at,
         received_at + timedelta(seconds=3),
-        "simnow-execution-book:" + digest((row, received_at)),
+        "simnow-execution-book:" + digest((EXECUTION_INPUT_VERSION, MAX_BOOK_SOURCE_AGE_SECONDS, row, received_at)),
         decimal(row["BidPrice1"], True),
         decimal(row["AskPrice1"], True),
         row["BidVolume1"],

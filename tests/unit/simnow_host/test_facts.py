@@ -71,7 +71,7 @@ def test_native_book_is_not_promoted_to_fresh_execution_input(issue):
     )
     now = T
     if issue == "stale":
-        now = T + timedelta(seconds=6)
+        now = T + timedelta(seconds=9)
     elif issue == "wrong_day":
         row["TradingDay"] = "20261026"
     elif issue == "missing_action_day":
@@ -134,7 +134,7 @@ def test_batch_book_missing_or_duplicate_never_falls_back(rows, code):
 
 @pytest.mark.parametrize("change,now", [
     ({"TradingDay":"20261026"}, T),
-    ({}, T+timedelta(seconds=6)),
+    ({}, T+timedelta(seconds=9)),
     ({}, T-timedelta(seconds=1)),
     ({"AskPrice1":1.7976931348623157e308}, T),
     ({"AskPrice1":998}, T),
@@ -143,3 +143,15 @@ def test_selected_batch_quote_retains_identity_price_and_time_checks(change, now
     from guiyi_quant.simnow_execution.facts import quote_from_native_batch
     with pytest.raises(ValueError):
         quote_from_native_batch(rb_binding(), [dict(rb_book(), **change)], "20261027", now)
+
+
+@pytest.mark.parametrize("age,accepted", [(5.922269, True), (8, True), (8.000001, False), (-0.000001, False)])
+def test_owner_eight_second_source_age_limit(age, accepted):
+    from guiyi_quant.simnow_execution.facts import quote_from_native_batch
+    now = T + timedelta(seconds=age)
+    if accepted:
+        quote = quote_from_native_batch(rb_binding(), [rb_book()], "20261027", now)
+        assert quote.valid_until == now + timedelta(seconds=3)
+    else:
+        with pytest.raises(ValueError, match="NATIVE_BOOK_STALE"):
+            quote_from_native_batch(rb_binding(), [rb_book()], "20261027", now)

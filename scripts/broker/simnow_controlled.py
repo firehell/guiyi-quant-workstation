@@ -103,6 +103,8 @@ def run(gateway, tdapi, config, root):
         native_product_id,
         quote_from_native_batch,
         execution_input,
+        EXECUTION_INPUT_VERSION,
+        MAX_BOOK_SOURCE_AGE_SECONDS,
     )
     from guiyi_quant.htdy_account_execution.codec import digest
     from app.simnow_controlled_market import MarketBridge
@@ -119,6 +121,8 @@ def run(gateway, tdapi, config, root):
             requested_contract=bound.canonical,
             received_at=received.isoformat(),
             batch_rows=len(rows),
+            max_source_age_seconds=MAX_BOOK_SOURCE_AGE_SECONDS,
+            input_version=EXECUTION_INPUT_VERSION,
             native_id_matches=sum(r["InstrumentID"] == bound.native for r in rows),
             exact_identity_matches=len(matches),
         )
@@ -224,6 +228,8 @@ def run(gateway, tdapi, config, root):
                 settlement_confirmed=confirmed,
                 execution_book_qualified=True,
                 execution_input_observed=dict(
+                    input_version=EXECUTION_INPUT_VERSION,
+                    max_source_age_seconds=MAX_BOOK_SOURCE_AGE_SECONDS,
                     contract=binding.canonical,
                     native_contract=binding.native,
                     exchange=binding.exchange,
