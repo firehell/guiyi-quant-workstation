@@ -112,3 +112,24 @@ TERMINAL_AT_TIMEOUT_BOUNDARY（等待超时边界处已收到终态，仍保留�
 不据新余额改写旧记录；即使验收通过，`execution_eligible=false`、`ledger_reconciled=false`仍保持。
 
 验收只证明生效日之后实际读回符合目标状态，不单独证明余额变化必然归因于某一笔重置申请。
+
+## 原生 C++ 查询对照（仅诊断）
+
+`scripts/broker/native/simnow_query_control.cpp` 用相同 Mac 6.7.7 dylib、第一套30001、认证和无topic订阅
+初始化直接调用C++接口，排除Python/SWIG回调桥这一变量。只认证/登录一次，持仓→资金各查询一次；
+间隔1.1秒，每项45秒，零回调、缺终态、错身份或断线即停止，不重发、不换前置、不确认结算、不报撤单。
+本工具不替代正式账户适配器；即使DIAGNOSTIC_COMPLETE，也没有两轮四类读取、财务质量验收或执行资格。
+
+构建头文件来自vnpy/vnpy_ctp维护者仓库冻结提交 `1be9bfb5292208e5c258cc769c90be4abe83f9a9` 的
+`vnpy_ctp/api/include/mac/ctp/`，三个SHA固定在build_control.py。独立目录提供头文件和现有SDK库，
+构建脚本只校验/编译，不下载、不连接；真实运行另由本机TTY输入。SDK版本不符直接拒绝。
+编译输出需放私有目录，SDK库仅复制到该目录以满足原有@loader_path，不改系统库或加载安全设置。
+
+    python3 scripts/broker/native/build_control.py --headers /private/path/headers --library /private/path/libthosttraderapi_se.dylib --output /private/path/build
+    /private/path/build/probe /absolute/private/new-result.json
+
+结果文件exclusive创建0600，仅保留摘要、交易日、回调/行数、错误码和请求计数，不保存资金值、持仓内容或凭据。
+SDK输出关闭，flow使用新建私有临时目录，Release返回后清理。密码不进入参数或持久化；账号最多12位，按最窄InvestorID字段限制。
+查询等待不是Init/Release全进程硬截止；原生阻塞时手动终止该一次性只读进程，保留已有结果，不自动重试。
+对照在第一套正常服务时段才具有可解释性；闭市失败不判方案不可行。成功只能证明此原生客户端查询路径可行，
+不能单独把此前失败归因为SWIG，也不能替代100000元/20261027生效或受控交易端到端验收。
