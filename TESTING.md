@@ -2117,3 +2117,7 @@ python3 scripts/broker/native/build_control.py --headers /private/path/headers -
 `test_inbox.py`的真实PostgreSQL并发/迁移测试仅使用guarded disposable
 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，无生产库、无host volume；SQLite通过不证明生产锁。
 现场另核schema、协议边界、原件hash、接收/计算独立进度、EG物理前缀与其他品种连续推进，不用测试代替自然验收。
+
+主力恢复的预热共享输入定向回归：`services/quant-api/tests/reference_trading/test_prewarm_input_sharing.py`
+及`test_newow_input_cache.py`验证完整工作组、逐流计算、effective policy/after隔离及异常清理；
+不会替代真实维护锁、完整Scope或120秒原生预热验收。
