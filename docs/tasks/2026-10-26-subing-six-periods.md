@@ -123,3 +123,24 @@ newow-historical-refresh-state.json复用读写共享上限，普通配置/外�
 新增先红后绿的2.27MB、超界、外目录与symlink测试。相关256 passed/2 skipped；独立141/2及Review通过；
 统一写端同值常量后再验109/2，Web/type/build/topology、Ruff、secret0、diff通过。
 旧v4/v5原件不复用，正式身份仍按实际恢复读回，不把发布9或候选10说成已切换。
+
+### v6正式切换、真实存储与360路激活
+
+PR489／tag v1.16.10 exact a80753c3cf32fb2759920d26f88a1ba6cbc8ea02。
+v6 hash f6d42ea520c3ddfc99228961ac1fc74986486a3d09be9c0cb0705ab8921b2637原生switched；
+十服务同root10/gen30；独立readback通过，两次132.5秒PID全相同。API/Web HTTP200/1.16.10，
+整体runtime health仍degraded，版本切换不代表自然业务Ready。修复已通过真实preserve步骤，旧失败attempt均不重用。
+
+原生完整历史驱动经独立Review后执行，固定exactv10导入根与正式配置，所有candidate跳过，
+每路native计划/意图/回调/报告fsync；未知结果停写，20:45前取消不缩窗。日线60全部completed；
+周线保留39、新增JD完成1、20来源不足blocked；60m及后续分钟继续，实时ledger单独保留。
+真实AL日线43批42compact，所有引用完整digest一致、query_since2023-01-01、cutoff10/26；
+公开API先请求多年窗被既有366天合同422拒绝，改用合法2026窗口200/persisted，未改变完整资产范围或API边界。
+
+360路v4激活scope hash fc5eb4305c8a85b456dca0b806792f3fe9e186c54250b7520be3577af8c530a2，
+在20:10:09有效期内成功apply全部360，逐条native receipt/fsync；与exactv10、v6 switched绑定，旧v2/v3意图未执行。
+20:11独立DB六周期各60、policy=subing_physical_prefix_forward_v2、recording_start20:55一致，
+receipt360、capture/action/trade均0；剔除授权新增360身份后的保护hash完全匹配v6，规则/通知/其他scope未变。
+历史HISTORY_SOURCE_MISSING与质量阻断仍独立验收；seed/READY不是自然新Bar证据。
+开发API与Vite已在精确PID核对后重载1.16.10；原5175浏览器保留，实际DOM六周期及全部周期，无1m；
+截图/tmp/guiyi-subing-six-v10.png，不把已有历史预警显示当作本次forward自然验收。

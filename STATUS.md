@@ -1,11 +1,32 @@
 # 当前状态
 
-本页以10/26 v1.16.8发布及v1.16.7实际运行读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
+本页以10/26 v1.16.10发布及实际gen30运行读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/26 苏冰六周期已发布并激活，完整历史构建与自然记录待收尾
+
+正式PR489／annotated v1.16.10／GitHub Release exact `a80753c3cf32fb2759920d26f88a1ba6cbc8ea02`，
+十服务统一 `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.16.10`／gen30。
+v6原生switched；独立identity十项matched，API/Web200／1.16.10；两次读回间132.5秒六常驻PID不变。
+全局runtime health仍degraded，不声明整体RUNTIME_READY。旧v3/v4/v5取消及恢复原件保留。
+
+operational60×六周期v2已原子激活，360receipt、每周期60路；20:55开始只接受之后自然confirmed输入。
+20:11独立DB读回capture/action/trade均0、flat初始化；不将health=READY或激活当作自然记录验收。
+剔除授权新增身份后，Alert/通知policy/schema/其他ReferenceScope保护hash与v6前像相同；无推送、订单或交易阶段变更。
+
+完整历史自2023（新上市按权威起点）继续：日线60/60截至10/26完成；周线39原件保留＋JD新增完成，
+共40有资产／20路原生来源不足显式阻断，不补造缺价周；其余分钟按精确计划顺序构建，20:45前取消并留resume。
+AL日线真实43批／42compact引用完整digest校验通过；正式历史API在既有<=366天查询窗200/persisted，
+全量资产query_since仍2023-01-01、cutoff10/26。范围未缩短。原AL15m candidate不覆盖。
+
+开发8002/5175已重载1.16.10，消息苏冰仅六周期及全部周期、无1m，页面保留。
+验证与精确结果见[任务记录](docs/tasks/2026-10-26-subing-six-periods.md)，真实计划/原生报告在
+`output/subing-six-periods-20261026/`。下一步是完成可证明的剩余历史及其控制状态核对，等待20:55后自然新Bar；
+周线新自然记录须等待下一根已确认周线，不通过回放制造实时记录。
 
 ## 10/26 苏冰六周期及完整历史存储已发布，正式切换受盘后任务占用阻断
 
