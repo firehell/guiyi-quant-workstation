@@ -163,3 +163,10 @@ SDK返回0只证明受理，仍需完整回报；有行但缺结束、回调身�
 本地结果记录匹配数量与可解析的来源年龄，避免将批次多行直接误报没有行情；不保存整批原始回报。
 只读预检成功时记录合约、费率/费用预算及买卖盘的Decimal字符串与检查时间、有效期，口径为
 OBSERVED_INPUT_NOT_CURRENT_ORDER_PERMISSION；后续账户查询可能使该盘口过期，预检结果不能授权使用旧报价下单。
+
+费率身份使用 `native_rate_query_scope_v1`：margin/commission请求显式携带已绑定的交易所与原生合约，
+SDK不支持ExchangeID字段则拒绝；账号和Broker回报先由Gateway核验。只有完整终态之后才给返回副本附加
+schema、查询种类、请求合约、交易所和请求ID，原生行及其空ExchangeID保持不变。
+若回报ExchangeID为空，执行输入仅在上述请求上下文完整且与物理绑定逐项一致时采用请求范围确定交易所；
+原生合约或Broker不符、非空交易所冲突、上下文缺失/矛盾均拒绝，不推测或改写回报。来源hash包含原生值与上下文。
+只读结果分别展示原始ExchangeID及QUERY_SCOPE/RESPONSE_FIELD绑定口径；保证金和费用数值不因绑定方式改变。
