@@ -58,3 +58,21 @@ FIFO/符号链接、损坏、越界、重复key、解码上限及失败恢复均
 统一候选合入并行develop后，参考交易/苏冰与部署交接回归1206 passed、9 skipped、79 deselected；
 canonical一致性18 passed，Web类型/build/topology通过。独立合并Review另验后端69 passed/9 skipped、
 Web103 passed，允许进入release candidate；应用候选版本1.16.8，尚未声明发布或Runtime切换。
+
+## v1.16.8发布与现场阻断
+
+PR487已合并main，annotated v1.16.8及GitHub Release exact
+`9b559ce80b968f214347aa49abdb4d649aff915d`；正式树
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.16.8`的离线Python/前端依赖与Web构建通过。
+原生整组plan v1仅只读即拒绝，未停服、未CAS：逐服务确认只有after-market空闲身份不成立，
+PID25301仍运行。自然行情维护18:11已passed，消费者检查仍not_verified；不终止或重跑自然业务。
+维护锁读回为既有客户端持有，45路仅预算/锁阻断路重新只读规划均SOURCE_BUSY，未启动apply。
+
+296份原计划全部转为有界原生文件并逐份逻辑hash核对，保存在任务证据
+`.task-evidence/subing-six-periods/packed-full-history-v1/`；尚未缩窗或生成新格式生产资产。
+独立生产前像：56个苏冰流，55 READY/1 NOT_BUILT，enabled forward=0；39路已完成W1保留。
+开发API仅重载本任务PID17069，替换后8002 health读回1.16.8；正式8000与十服务仍v1.16.7/gen29。
+
+当前为PARTIAL / RELEASED，运行切换、剩余完整历史、v2激活和自然新Bar验收未完成。
+下一触发条件是自然盘后PID退出且维护锁空闲；届时生成全新有效期内cohort计划，先切换所有读取端，
+再执行精确历史计划。旧生产资产不删除；未知结果只读核对；不借回放补造自然记录，不新增监控任务。

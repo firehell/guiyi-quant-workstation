@@ -1,13 +1,13 @@
 # 当前状态
 
-本页以10/26 v1.16.7的实际读回为最新运行事实；下方旧任务记录是历史证据，不代替本轮现场。
+本页以10/26 v1.16.8发布及v1.16.7实际运行读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
-## 10/26 苏冰参考六周期代码已集成，完整历史存储改进验证通过
+## 10/26 苏冰六周期及完整历史存储已发布，正式切换受盘后任务占用阻断
 
 苏冰参考支持5m/15m/30m/60m/1d/1w，新增5m/W1历史身份；新持续记录策略使用
 `subing_physical_prefix_forward_v2`，只预热指标、不继承历史持仓，沿用耐久journal、原子激活和原后台刷新线程。
@@ -24,9 +24,16 @@ owner已选定保留2023年以来完整历史。新增有界分片计划与同�
 
 39个W1历史资产按精确原生计划构建并独立读回READY，统一截至10/23 15:00；RB/JM历史API读回200/persisted。
 已完成项不重复构建。其余历史未写入，苏冰forward启用数独立读回为0；本地develop8002/5175已加载代码，
-正式v1.16.7及十服务保持，未发布/切Runtime，不声明自然六周期记录验收完成。
+正式十服务仍保持v1.16.7/gen29；v1.16.8已由PR487/main与annotated tag发布，
+exact `9b559ce80b968f214347aa49abdb4d649aff915d`。正式树依赖与Web build/type/topology已验证。
+原生整组只读计划因after-market仍运行而拒绝（逐服务定位SERVICE_IDENTITY_INVALID，要求日历空闲）；
+尚未执行停服/CAS。自然18:05行情维护已于18:11 passed，后续消费者尚未退出。维护锁同时占用，
+45路只读重新规划均SOURCE_BUSY，无新历史写入。新存储表示必须等正式读端切换后再生产。
+合并候选1206 passed/9 skipped/79 deselected、隔离PG/Redis102 passed、canonical一致性18 passed；
+独立Review另验后端69 passed/9 skipped、Web103 passed。开发预览8002已读回1.16.8，5175保留。
+不声明自然六周期记录验收完成。
 证据：[任务记录](docs/tasks/2026-10-26-subing-six-periods.md)，实际扫描/构建原件在`output/subing-six-periods-20261026/`。
-下一步：集成存储改进并升级读取端，再继续剩余资产、启用及运行验收。
+下一步：自然盘后进程退出且维护锁空闲后，重新冻结整组计划并切换正式读端，再继续完整历史、六周期激活和自然验收。
 
 ## 10/26 原生 C++ 只读对照准备完成，第一套查询可行性仍待现场
 
