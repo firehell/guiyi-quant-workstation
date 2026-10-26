@@ -159,7 +159,7 @@ def test_plan_is_deterministic_and_does_not_mutate_repository() -> None:
     [
         ("newow-trend", "1m"),
         ("newow-oscillation", "120m"),
-        ("newow-main-rise", "5m"),
+        ("newow-main-rise", "1m"),
         ("subing-reference", "1m"),
         ("htdy-first-seen", "1d"),
     ],
@@ -304,15 +304,15 @@ def test_intraday_pilot_plan_admits_only_existing_base_kernels(strategy, frequen
 
 
 @pytest.mark.parametrize("frequency", ("5m", "15m", "30m"))
-def test_intraday_pilot_does_not_expand_main_rise(frequency):
+def test_formal_short_minutes_plan_main_rise_without_activating_streams(frequency):
     reader = Reader()
-    with pytest.raises(ValueError, match="REFERENCE_CAPABILITY_UNSUPPORTED"):
-        HistoricalReferencePlanner(reader, now=lambda: NOW).plan(
-            HistoricalReferenceRequest(
-                "build", (_stream(strategy="newow-main-rise", frequency=frequency),), _budget(),
-            ),
-        )
-    assert reader.calls == []
+    result = HistoricalReferencePlanner(reader, now=lambda: NOW).plan(
+        HistoricalReferenceRequest(
+            "build", (_stream(strategy="newow-main-rise", frequency=frequency),), _budget(),
+        ),
+    )
+    assert len(result.streams) == 1
+    assert len(reader.calls) == 1
 
 
 @pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m"))

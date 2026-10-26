@@ -42,11 +42,11 @@ CLI 经唯一 MarketDataService 读取冻结 Canonical；独立的有界 RQData 
 
 ## Newow 与参考交易
 
-牛哇持续记录范围为 operational 60 品种 × 日/周/60m 四策略，加上5m/15m/30m趋势、震荡和双策略，共1260路；短分钟主升浪保持关闭。历史资产由完成的 Canonical 重算；持续观察的四分钟周期来自实际捕获的 completed Live，日周来自 completed Canonical。动作、Hint与逐Bar状态独立保存，历史预热不算实际观察，不创建账户事实或发送通知。当前配置和自然验收仍以 `STATUS.md` 及运行读回为准。
+牛哇记录支持矩阵为 operational 60 品种 × 六周期（5m/15m/30m/60m/1d/1w）× 四策略（趋势、震荡、主升浪、独立双策略），共1440个支持组合。支持能力不自动创建、启用或扩展已保存Scope；实际持续记录范围、当前配置和自然验收只看 `STATUS.md` 及运行读回。历史资产由完成的 Canonical 重算；持续观察的四分钟周期来自实际捕获的 completed Live，日周来自 completed Canonical。动作、Hint与逐Bar状态独立保存，历史预热不算实际观察，不创建账户事实或发送通知。
 
-- 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 三周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
+- 本节冻结允许实现的稳定产品合同，不声明 Newow 三策略 × 六周期、ReferenceTrade 或新 Workspace 已发布、已部署或通过生产验收。
 - 公共 `ReferenceTrading` canonical 已冻结两种不可混淆的记录口径：`historical_replay` 是可从固定 Canonical 输入和版本重建的研究投影；`forward_observation` 只记录明确启用后实际观察的 completed 输入，默认 FLAT 起点。统一域提供纯 contracts/reducer、checkpoint、历史 plan/build/resume/rebuild、前向 capture/recovery、仓储及 HTTP/Web 查询。worker 与消费者切换受显式启用约束；代码存在不代表生产 migration/bootstrap 或 Runtime 已启用，阶段事实只见 `STATUS.md`；详见 `openspec/specs/reference-trading/spec.md`。
-- Newow 主产品范围为趋势、震荡、主升浪 × `1w/1d/60m` 九个独立组合；历史页面与研究计算只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。
+- Newow 主产品范围为趋势、震荡、主升浪 × `5m/15m/30m/60m/1d/1w` 十八个独立组合；历史页面与研究计算只消费 completed Canonical `actual_dominant`，并继续通过 `MarketDataService`、Catalog 与 `MainContractMap` 取得行情和物理 owner。浏览器不聚合周期、不重算公式、不配对交易。
 - Newow 详情采用局部白色全宽 Shell、单层策略入口、唯一周期入口、原位展开解释与原生弹窗；K 线、成交量和单一副图共享时间轴。同品种同周期切换 Newow 策略时只替换策略所属图层，加载态清空旧事实但保留兼容窗口元数据，并仅在新时间轴完全兼容时恢复缩放；身份或时间轴不兼容时清空旧图层并重置。默认 MACD 为既有内核的只读显示（12/26/9、sma_window、histogram×2），不声明牛哇 MACD 原站 parity；其他副图替换同一 pane。
 - 日线收盘报价通过有界 `actual_dominant + 1d + limit=2` 独立读取并标记时间/非实时。参考记录随文档纵向滚动，首次可见读取一次、cursor 手动加载更多；解释和独立比较器按需读取。长身份/原始时间仍可在来源和详情中查询，缺失或不兼容证据不填示例值。
 - 主动作只有各策略自己的 `BUILD/CLEAR`；J、D1–D6、4/7/11、阶段、风险和结构信息是 `quantity_effect=none` 的 Hint。无主动作是有效策略结果，不能与 `EVIDENCE_REQUIRED`、`NOT_APPLICABLE` 或照妖镜重绘混写成“无信号”。
@@ -62,33 +62,28 @@ Newow 提供显式历史快照入口：当前数据缺失时可主动选择已�
 ### 分阶段开放边界
 
 分钟 Newow 产品周期为 `5m/15m/30m/60m`，使用同物理合约 Canonical 1m 独立聚合。
-正式开放以capability的品种、周期与section为边界；v33六周期页面使用当前已发布completed Canonical截止，
+正式开放以capability的品种、周期与section为边界；v35六周期页面使用当前已发布completed Canonical截止，
 显式历史as_of仍受快照身份校验，旧v31/v32固定截止证据保持原身份；页面明确来源与时间。
 持续记录不由历史验收或源码发布自动启用，现场配置与验收见 `STATUS.md`。
 1m仅承担行情事实和聚合输入，Newow的1m页面与策略产品后续单独版本处理；保留通用Market的1m能力。
 RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当前开放与验收状态见 `STATUS.md`。
 
-九组合是长期允许的产品范围，不要求同一版本同时开放或通过全品种生产验收。
-允许先交付趋势、震荡、主升浪 × `1d` 三组合，再分别验收 `1w` 和 `60m`；
-每次须声明品种、历史窗口和面板支持范围。阶段目标、实际发布/开放和未完成 Gate 只看 `STATUS.md`。
-本节记录已接受的分阶段边界；实际数据与 Runtime 验收仍以 `STATUS.md` 和现场证据为准。
-
-日线版只收窄 Newow 本版开放面，不删除数据中心分钟链路或通用 60m 能力，
-不改变 HTDY/SuBing/Free 合同与持续授权。同周期主图、主动作/状态、选定副图和 ReferenceTrade
-按各自输入独立验收；依赖未开放周期的完整综合解释暂缓开放并明确原因，不能拖垮已验证面板。
-不得仅隐藏按钮而让旧链接、保存偏好或 API 继续隐式进入未开放能力；实施前须在任务合同及
-相关 OpenSpec 中明确入口与状态处理，不能仅靠本次文档修改声称完成。
+十八组合为当前代码支持面，不表示所有品种、窗口与面板均通过生产数据或Runtime验收。
+日线、日周、60m和短分钟为历史分阶段交付顺序；当前支持范围以v35能力合同为准。
+同周期主图、主动作/状态、选定副图和ReferenceTrade按各自输入独立验收；依赖未开放周期的
+完整综合解释继续明确不可用。`decision_v2`及路径仍只接受1d/1w/60m，不将短分钟替换成60m。
+旧链接、偏好和API必须与能力合同一致；不改变HTDY/SuBing/Free、通用分钟链路或正式运行配置。
 
 缺少 60m 输入不能通过沿用原综合总分、补默认值或创造日周简化评分解决。跨周期能力恢复时仍须
 按各周期 completed Bar、`bar_end` 与 `as_of` 验证；数据已下载/派生不等于产品已开放。
 新版综合评分、公式、参考价格和推送不随日周恢复或 60m 开放自动变更。
 
 实际分阶段开放由 `GET /api/v1/market/newow/product-capabilities` 作为 Web 与 typed API 的共同 authority；
-已接受的 `newow_product_capabilities_v32` 使用 `daily_weekly_hourly_current`，对 operational 60 品种开放
-趋势、震荡、主升浪与独立双策略的 `1d/1w/60m` 参考记录；主升浪的 `5m/15m/30m` 不开放。
-`5m/15m/30m` 的既有历史开放继续保留精确历史截止和原资产身份，1m仅作为聚合输入。
-完整 `explanation` section仍显式未开放；独立 `decision_v2` 与分析入口按各自合同读取已完成输入，
-不能据此声称所有解释面板均已开放。旧v22日周限制只属于该历史版本，不约束v32。
+当前 `newow_product_capabilities_v35` 使用 `daily_weekly_intraday_current`，对operational 60品种
+声明趋势、震荡、主升浪及独立双策略的六周期支持；页面使用当前completed Canonical截止。
+旧v31/v32历史截止、v33与v34候选wire保持冻结；不把旧合同限制用于当前v35，也不改写历史证据。
+1m仅作为聚合输入。完整 `explanation` section仍显式未开放；独立 `decision_v2` 与分析入口
+按各自合同读取已完成输入，不能据此声称所有解释面板均已开放。
 旧 `/trend-detail` 固定 D1 兼容合同不变；当前发布身份、配置和自然运行验收仍只看 `STATUS.md` 与真实 evidence。
 
 ## 指标

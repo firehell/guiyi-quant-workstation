@@ -10,8 +10,8 @@ const frequencies = [{ value: '1w', label: '周线' }, { value: '1d', label: '�
 const product = ref(props.product.toLowerCase())
 const strategy = ref<NewowRecordingStrategy>(strategies.some(item => item.value === props.strategy) ? props.strategy as NewowRecordingStrategy : 'trend')
 const frequency = ref<NewowRecordingFrequency>(frequencies.some(item => item.value === props.frequency) ? props.frequency as NewowRecordingFrequency : '60m')
-const availableFrequencies = computed(() => strategy.value === 'main_rise' ? frequencies.filter(item => ['1d', '1w', '60m'].includes(item.value)) : frequencies)
-watch(strategy, () => { if (!availableFrequencies.value.some(item => item.value === frequency.value)) frequency.value = '60m' })
+const availableFrequencies = computed(() => frequencies.filter(item => matrix.value?.items.some(row => row.product.toLowerCase() === product.value && row.strategy === strategy.value && row.frequency === item.value)))
+
 const matrix = ref<NewowRecordingMatrix | null>(null)
 const actions = ref<ReferencePage<ReferencePoint> | null>(null)
 const states = ref<ReferencePage<ReferencePoint> | null>(null)

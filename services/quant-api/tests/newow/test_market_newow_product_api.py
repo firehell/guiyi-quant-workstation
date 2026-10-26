@@ -148,7 +148,7 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
 
     assert response.status_code == 200
     assert response.json() == {
-        "schema_version": "newow_product_capabilities_v33",
+        "schema_version": "newow_product_capabilities_v35",
         "release_stage": "daily_weekly_intraday_current",
         "open_frequencies": ["5m", "15m", "30m", "60m", "1d", "1w"],
         "intraday_products": sorted("rb hc i j jm ma ur ta sh v sa au ag sf sm cj jd ap c lh m rm pk sr cf oi p y lc ps fg a b bz eb ec eg l pd pf pg pl pr pt px rs si sc ao ru bu cu ni pb sn al zn fu ss pp".split()),
@@ -157,7 +157,7 @@ def test_daily_weekly_release_capabilities_are_public_without_database_access():
         "strategy_frequencies": {
             "trend": ["5m", "15m", "30m", "60m", "1d", "1w"],
             "oscillation": ["5m", "15m", "30m", "60m", "1d", "1w"],
-            "main_rise": ["1d", "1w", "60m"],
+            "main_rise": ["5m", "15m", "30m", "60m", "1d", "1w"],
             "dual": ["5m", "15m", "30m", "60m", "1d", "1w"],
         },
         "weekly_products": [
@@ -1261,3 +1261,24 @@ def test_mirror_subplot_wire_does_not_leak_internal_peak_events():
     assert "confirmed_peak_events" not in payload
     assert result.confirmed_peak_events == ((0, 1),)
     assert market_newow._json_value(result)["confirmed_peak_events"] == [[0, 1]]
+
+
+@pytest.mark.parametrize('frequency', ['5m', '15m', '30m'])
+@pytest.mark.parametrize('section', ['chart', 'auxiliary', 'reference'])
+def test_main_rise_short_minutes_reach_existing_service(monkeypatch, product_cases, frequency, section):
+    from newow.test_product_service import _service
+    service, _reader, build, clear = _service(product_cases, frequency, 'main_rise')
+    monkeypatch.setattr(market_newow, '_build_product_service', lambda *_args, **_kwargs: service)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get('/api/v1/market/newow/strategy-detail', params={
+                'product': 'rb', 'strategy': 'main_rise', 'frequency': frequency,
+                'section': section, 'as_of': clear.bar_end.isoformat(),
+                **({'component': 'zhaoyao_mirror'} if section == 'auxiliary' else {}),
+                **({'performance_since': build.trading_day.isoformat(), 'performance_through': clear.trading_day.isoformat()} if section == 'reference' else {}),
+            })
+        assert response.status_code == 200, response.text
+        assert response.json()['meta']['identity']['frequency'] == frequency
+    finally:
+        app.dependency_overrides.clear()

@@ -179,6 +179,15 @@ test('rows expand and summary cards navigate with selected strategy while retain
     assert.match(nodeText(root), /参考收益待确认/)
     const sort = findNode(root, n => n.type === 'button' && nodeText(n).startsWith('涨跌幅'))!
     ;(sort.props.onClick as Function)(); assert.deepEqual(sorts, ['change'])
+    const readsBeforeSort = api.calls.length
+    for (const [label, key] of [['目标价','target'], ['日','daily'], ['周','weekly'], ['趋势','trend']]) {
+      const button = findNode(root, n => n.type === 'button' && String(n.props['aria-label']).startsWith(`${label}排序`))!
+      assert.ok(button)
+      assert.match(String(button.props['aria-label']), /缺失值置后/)
+      ;(button.props.onClick as Function)()
+      assert.equal(sorts.at(-1), key)
+    }
+    assert.equal(api.calls.length, readsBeforeSort)
     sequence.value++; await nextTick()
     assert.match(nodeText(root), /策略历史快照，正在重新验证/)
     api.calls.at(-1).reject(Error('offline')); await settle()
@@ -329,4 +338,39 @@ test('unknown caution input has a neutral reason while accepted absence stays qu
   assert.equal(homeCautionNotice(day),null)
   assert.match(homeCautionNotice({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}})!,/尚未通过核验/)
   assert.equal(homeRowHints({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}}).length,0)
+})
+
+test('column sorting follows displayed reference/state and keeps unavailable last and ties stable', async () => {
+  const { sortNewowHomeRows } = await import('../src/utils/newowHomeSort.ts')
+  const rows = [{symbol:'a'}, {symbol:'b'}, {symbol:'c'}, {symbol:'d'}]
+  const cards = {
+    a: {card:{strategies:{trend:{'1d':{...ready('HOLD'),target:'9007199254740993.12'},'1w':ready('CLEAR')}}}},
+    b: {card:{strategies:{trend:{'1d':{...ready('BUILD'),target:'9007199254740993.13'},'1w':ready('BUILD')}}}},
+    c: {card:null},
+    d: {card:{strategies:{trend:{'1d':{...ready('FLAT'),absorb:'10'},'1w':ready('HOLD')}}}},
+  } as unknown as Record<string, import('../src/utils/newowHomeCards.ts').CardDelivery>
+  const symbols = (key: 'target'|'daily'|'weekly', direction: 'asc'|'desc') => sortNewowHomeRows(rows,cards,'trend',key,direction).map(row=>row.symbol)
+  assert.deepEqual(symbols('target','desc'), ['b','a','d','c'])
+  assert.deepEqual(symbols('target','asc'), ['d','a','b','c'])
+  assert.deepEqual(symbols('daily','desc'), ['b','a','d','c'])
+  assert.deepEqual(symbols('weekly','desc'), ['b','d','a','c'])
+  assert.deepEqual(symbols('weekly','asc'), ['a','d','b','c'])
+  assert.deepEqual(sortNewowHomeRows(rows,cards,'oscillation','daily','desc'), rows)
+  assert.deepEqual(rows.map(row=>row.symbol), ['a','b','c','d'])
+})
+
+
+test('trend column uses the displayed approximate D1 direction in both strategy views', async () => {
+  const { sortNewowHomeRows } = await import('../src/utils/newowHomeSort.ts')
+  const day = ready('HOLD')
+  day.independent_trend = {status:'ready',direction:'bull',frequency:'1d',formula_version:'guiyi_home_close_ma60_v1',bar_end:day.bar_end!,physical_contract:day.physical_contract!,segment_id:day.segment_id!,calculation_segment_id:day.calculation_segment_id!,parent_input_sha256:day.input_sha256!,input_sha256:'window',close:'101',ma60:'100',sample_count:60,approximate:true,page_parity:false,executable:false}
+  const deliveries = {
+    a:{card:{strategies:{trend:{'1d':day}}}},
+    b:{card:{strategies:{trend:{'1d':{...day,independent_trend:{...day.independent_trend,direction:'bear'}}}}}},
+    c:{card:null},
+    d:{card:{strategies:{trend:{'1d':day}}},stale:true},
+  } as unknown as Record<string, import('../src/utils/newowHomeCards.ts').CardDelivery>
+  const rows = ['b','a','c','d'].map(symbol=>({symbol}))
+  assert.deepEqual(sortNewowHomeRows(rows,deliveries,'oscillation','trend','desc').map(r=>r.symbol), ['a','d','b','c'])
+  assert.deepEqual(sortNewowHomeRows(rows,deliveries,'trend','trend','asc').map(r=>r.symbol), ['b','a','d','c'])
 })

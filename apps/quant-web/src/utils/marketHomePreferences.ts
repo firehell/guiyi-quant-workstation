@@ -4,7 +4,7 @@ import type { MarketHomeSort, MarketHomeSortDirection } from './marketHomeWorksp
 export interface MarketHomePreferences { version: 1; sector: string; sort: MarketHomeSort; sortDirection?: MarketHomeSortDirection; compactDensity: boolean; detailFrequency: MarketFrequency; focusRailCollapsed: boolean }
 export type LoadedMarketHomePreferences = MarketHomePreferences & { sortDirection: MarketHomeSortDirection }
 export const MARKET_HOME_PREFERENCES_KEY = 'guiyi.market-home.preferences.v1'
-const SORTS: readonly MarketHomeSort[] = ['default', 'close', 'change', 'volume', 'oi', 'event']
+const SORTS: readonly MarketHomeSort[] = ['default', 'close', 'change', 'volume', 'oi', 'event', 'target', 'daily', 'weekly', 'trend']
 const DIRECTIONS: readonly MarketHomeSortDirection[] = ['asc', 'desc']
 const FREQUENCIES: readonly MarketFrequency[] = ['1m', '5m', '15m', '30m', '60m', '1d', '1w']
 const DEFAULT: LoadedMarketHomePreferences = { version: 1, sector: '', sort: 'default', sortDirection: 'desc', compactDensity: false, detailFrequency: '1d', focusRailCollapsed: true }

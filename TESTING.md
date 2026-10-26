@@ -187,6 +187,28 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
 对60m测试2和1d测试1重放基线/双费，记录逐笔成交与首次日停机时刻；年度结果须与原JSON完全
 一致（仅排除独立合约诊断），否则不输出trace。该诊断不写账户或改原始结果。
 
+## Newow 当前 v35 六周期能力与文档一致性
+
+当前能力为 `newow_product_capabilities_v35`：三主策略与独立融合支持5m/15m/30m/60m/1d/1w，
+记录支持矩阵为60×24=1440组合；不代表正式Scope或Runtime已扩展。v33与v34候选合同保持冻结。
+短分钟 `decision_v2`／路径仍关闭，完整解释分区仍按能力合同声明不可用。
+下方带日期或候选名称的验证入口保留历史合同，不作为当前能力声明。
+
+```bash
+node tools/generate_newow_capabilities.mjs --check
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  tests/engineering/test_newow_capability_contract.py \
+  services/quant-api/tests/newow/test_main_rise_minutes.py \
+  services/quant-api/tests/newow/test_intraday_release.py \
+  services/quant-api/tests/newow/test_product_service.py \
+  services/quant-api/tests/newow/test_market_newow_product_api.py \
+  services/quant-api/tests/reference_trading/test_newow_recording_matrix.py
+openspec validate --specs --strict --no-interactive
+python3 scripts/engineering/secret_scan.py --json
+git diff --check
+```
+
 ## 牛哇 v3.3.79 手册同输入验证
 
 该验证区分原式匹配、归一差异及未实现，不改变正式公式或数据。fixture expected来自冻结公开函数，

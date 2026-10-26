@@ -190,7 +190,7 @@ class ProductServiceQuery:
             or (self.reference_part is not None and self.reference_part is not ReferencePart.HISTORY
                 and self.fusion_before is not None)):
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
-        if self.strategy is ProductStrategy.MAIN_RISE and self.frequency.value in ("1m", "5m", "15m", "30m"):
+        if self.strategy is ProductStrategy.MAIN_RISE and self.frequency.value == "1m":
             raise ValueError("NEWOW_STRATEGY_NOT_OPEN")
         if self.component is not None:
             object.__setattr__(self, "component", AuxiliaryComponent(self.component))

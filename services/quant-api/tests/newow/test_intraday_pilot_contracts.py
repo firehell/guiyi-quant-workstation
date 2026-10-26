@@ -14,7 +14,7 @@ from app.schemas.market_newow_product import ProductFrequencyValue
 
 
 @pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
-@pytest.mark.parametrize("strategy", ["trend", "oscillation"])
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
 def test_intraday_identity_and_wire_frequency(frequency, strategy):
     identity = build_product_identity("rb", strategy, frequency)
     assert identity.profile_id == f"newow_product_{strategy}_{frequency}_v1"
@@ -115,7 +115,7 @@ def test_four_period_audit_rejects_invalid_scope_before_database_access(products
 
 
 @pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
-@pytest.mark.parametrize("strategy", ["trend", "oscillation"])
+@pytest.mark.parametrize("strategy", ["trend", "oscillation", "main_rise"])
 def test_minute_replay_is_prefix_and_incremental_invariant(
     product_cases, frequency, strategy
 ):

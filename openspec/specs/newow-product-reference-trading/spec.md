@@ -2,7 +2,7 @@
 
 ## Purpose
 
-定义 Newow 趋势、震荡、主升浪在 `1w / 1d / 60m` 上的只读产品合同，以及主动作、Hint、
+定义 Newow 趋势、震荡、主升浪在 `5m / 15m / 30m / 60m / 1d / 1w` 上的只读产品合同，以及主动作、Hint、
 ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图层之间不可混淆的边界。
 该能力服务个人期货研究复核，不创建 Position、Order、Account、Execution、Fill、Ledger、AlertEvent，
 不授权生产数据写入、通知、Runtime、策略晋升或真实交易。
@@ -15,7 +15,7 @@ The default-off RB candidate SHALL recognize `5m / 15m / 30m / 60m` for trend an
 and an independent persisted dual-fusion reference model. Canonical 1m SHALL remain an aggregation
 source only in this version; Newow 1m routes, saved preferences and API entry SHALL fail closed,
 without deleting historical 1m assets or altering generic Market 1m readers. Formal daily/weekly capability and
-its deferred 60m gate SHALL remain unchanged. Minute main-rise SHALL be rejected before kernel
+its deferred 60m gate SHALL remain unchanged. In this frozen RB candidate only, minute main-rise SHALL be rejected before kernel
 execution; candidate recognition SHALL NOT enable Runtime, observation, notification or orders.
 
 Each derived period SHALL aggregate independently from trusted physical-contract Canonical 1m
@@ -140,7 +140,7 @@ restoration failure SHALL invalidate the connection rather than leak uncertain s
 
 ### Requirement: Parallel development without production promotion
 
-Newow 产品 SHALL 以趋势、震荡、主升浪 × `1w / 1d / 60m` 九个独立组合提供只读主状态、
+Newow 产品 SHALL 以趋势、震荡、主升浪 × `5m / 15m / 30m / 60m / 1d / 1w` 十八个独立组合提供只读主状态、
 主动作、Hint、ReferenceTrade 和乐观参考摘要。这是新的产品能力，不是恢复已退役 Historical Projection、
 账户、策略 Event 或 Runtime。既有 `view=trend` 与 `GET /api/v1/market/newow/trend-detail`
 MUST 保持固定 `actual_dominant + 1d + trend` 兼容语义，并允许薄适配复用同一公式 authority。
@@ -149,7 +149,7 @@ MUST 保持固定 `actual_dominant + 1d + trend` 兼容语义，并允许薄适�
 现役 Runtime 隔离；`auto_order=false` 不变。代码、测试或文档通过不能改变 SuBing 自然验收、
 release、Runtime、通知送达或交易 Gate。
 
-产品实现 MUST 服从下列完整能力矩阵；“三策略 × 三周期完整”不表示每个辅助能力可机械复制到全部组合。
+产品实现 MUST 服从下列完整能力矩阵；“三策略 × 六周期完整”不表示每个辅助能力可机械复制到全部组合。
 每个实际输出 MUST 携带适用的 formula/rule identity、输入周期、`bar_end`、请求 `as_of`、warming 与
 repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留源码和测试入口，不表示本阶段已经
 完成产品包装；`RESEARCH_EVIDENCE_ONLY` 必须先恢复并核对冻结原件再实现；`EVIDENCE_REQUIRED` 必须阻塞
@@ -157,14 +157,14 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 
 | 能力 | 适用策略与周期 | formula identity | evidence status | warming / repaint / as-of 边界 |
 |---|---|---|---|---|
-| 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v3` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
-| 趋势通道圆点 | `trend × 1w/1d/60m`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
-| 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v2` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10；主图 CLEAR 当根不再 BUILD（普通 AI 回测保留独立先清后建） |
-| 主升浪主状态 | `main_rise × 1w/1d/60m` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
-| S 跑 / D1–D3 | `trend/main_rise × 1w/1d/60m`，Hint only | `newow_escape_d123_page_v2` | `ACTIVE_CODE_VERIFIED` | 必须报告公式所需 warming 与已验证 repaint 属性；只使用当时 completed 输入，不改变 BUILD/CLEAR |
-| D4–D6 | `main_rise × 1w/1d/60m`，Hint only | `newow_buy_d456_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；Low×0.99 仅为显示锚点，不产生加仓 |
-| J 风险 | `main_rise × 1w/1d/60m`，Hint only | `newow_main_rise_j_reduce_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；不推导减仓比例 |
-| 4/7/11 | `main_rise × 1w/1d/60m`，结构 Hint | `newow_magic11_page_v1` | `ACTIVE_CODE_VERIFIED` | 按物理区段重置；不得产生独立 Action |
+| 趋势主状态 | `trend × 5m/15m/30m/60m/1d/1w` | `newow_trend_band_page_v3` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
+| 趋势通道圆点 | `trend × 5m/15m/30m/60m/1d/1w`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
+| 震荡主状态 | `oscillation × 5m/15m/30m/60m/1d/1w` | `newow_oscillation_hhv_llv10_page_v2` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10；主图 CLEAR 当根不再 BUILD（普通 AI 回测保留独立先清后建） |
+| 主升浪主状态 | `main_rise × 5m/15m/30m/60m/1d/1w` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
+| S 跑 / D1–D3 | `trend/main_rise × 5m/15m/30m/60m/1d/1w`，Hint only | `newow_escape_d123_page_v2` | `ACTIVE_CODE_VERIFIED` | 必须报告公式所需 warming 与已验证 repaint 属性；只使用当时 completed 输入，不改变 BUILD/CLEAR |
+| D4–D6 | `main_rise × 5m/15m/30m/60m/1d/1w`，Hint only | `newow_buy_d456_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；Low×0.99 仅为显示锚点，不产生加仓 |
+| J 风险 | `main_rise × 5m/15m/30m/60m/1d/1w`，Hint only | `newow_main_rise_j_reduce_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；不推导减仓比例 |
+| 4/7/11 | `main_rise × 5m/15m/30m/60m/1d/1w`，结构 Hint | `newow_magic11_page_v1` | `ACTIVE_CODE_VERIFIED` | 按物理区段重置；不得产生独立 Action |
 | 主力控盘副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_main_force_control_page_v1` | `ACTIVE_CODE_VERIFIED` | 必须报告公式 warming 与已验证 repaint 属性；“主力”不证明真实持仓或席位 |
 | 主力照妖镜副图 | 三策略 × `1w/1d/60m`，retrospective only | `newow_zhaoyao_mirror_repainting_page_v2` | `ACTIVE_CODE_VERIFIED` | `repainting=true / formal_signal_eligible=false`；不进入 Hint、Action、ReferenceTrade、收益或历史 as-of 事实 |
 | 涨跌动能副图 | 三策略 × `1w/1d/60m`，共享解释层 | `newow_up_down_energy_page_v1` | `ACTIVE_CODE_VERIFIED` | 短区段 warming/unavailable；不得跨合约借值，且必须报告已验证 repaint 属性 |
@@ -960,7 +960,7 @@ summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit �
 
 ### Requirement: Typed API keeps availability and legacy semantics explicit
 
-新 GET MUST 只接受 active product、三策略、`1w/1d/60m`、`actual_dominant`、合法 section 及其专属参数；
+当前正式 GET MUST 只接受 active product、三策略、能力合同声明的`5m/15m/30m/60m/1d/1w`、`actual_dominant`、合法 section 及其专属参数；
 日期有序、performance 成对、`as_of` 带时区且不晚于服务器当前时间。非法参数为 422；身份、数据、token
 或 cursor 世代冲突为 409；资源队列满为明确 429。opaque cursor 不得作为路径、SQL 或对象反序列化入口。
 
@@ -1372,21 +1372,22 @@ strategy/period. Unavailable combinations stay visible and cannot be recommended
 
 ### Requirement: Current completed daily weekly intraday product capability
 
-The active formal capability `newow_product_capabilities_v33` SHALL use release stage
+The active formal capability `newow_product_capabilities_v35` SHALL use release stage
 `daily_weekly_intraday_current`. All sixty operational products SHALL support trend, oscillation,
 main-rise and independent dual reference recording at D1/W1/60m. `strategy_frequencies`
-SHALL declare main-rise only at D1/W1/60m; 5m/15m/30m main-rise remains closed and 1m remains
+SHALL declare main-rise at 5m/15m/30m/60m/D1/W1; 1m remains
 aggregation input only. `latest_completed_frequencies` SHALL be exactly `1d,1w,60m,5m,15m,30m`.
-Trend, oscillation and independent dual SHALL additionally support continuous recording
-at 5m/15m/30m, giving 21 routes per product and 1260 routes overall.
+All four recording strategies SHALL support 5m/15m/30m, giving 24 supported routes per product
+and 1440 overall. Supported routes SHALL NOT create, enable or expand persisted Scope;
+unconfigured routes SHALL remain unconfigured.
 
 Formal D1/W1/60m/5m/15m/30m requests SHALL use the requested completed Canonical cutoff through the
 existing Catalog/MainContractMap/MDS reader, with no fixed September 24 cap. Intraday reference
 reads SHALL use current public reference assets rather than the frozen pilot schema; missing
 or stale assets SHALL remain unavailable. Unconfirmed Live input SHALL NOT enter Canonical
 page calculations. The existing v31 wire, source evidence and exact historical cutoff remain
-immutable; v33 formal short-minute requests use current primary historical assets.
-The v33 `intraday_as_of` SHALL be null; explicit historical requests still bind one
+immutable together with v33 and the v34 candidate; v35 formal short-minute requests use current primary historical assets.
+The v35 `intraday_as_of` SHALL be null; explicit historical requests still bind one
 completed Canonical as-of. Completed Live observation remains separately labelled and
 SHALL NOT be substituted into historical page calculations.
 
@@ -1398,16 +1399,40 @@ historical cutoff helpers remain readable. Existing formulas, scores, sample gat
 semantics, page-parity and non-executable boundaries SHALL remain unchanged.
 
 #### Scenario: Current hourly main-rise retains minute boundaries
-- **GIVEN** v33 and verified completed hourly Canonical input for an operational product
+- **GIVEN** v35 and verified completed hourly Canonical input for an operational product
 - **WHEN** main-rise 60m is requested after the former fixed cutoff
 - **THEN** the current authoritative input is read with the unchanged main-rise kernel
-- **AND** a 5m/15m/30m main-rise request fails before opening any source reader
+- **AND** 5m/15m/30m main-rise uses the same kernel, original MA35/45, J, D1–D6 and 4/7/11 parameters
+- **AND** frozen intraday previews still reject main-rise intraday and 1m remains closed
+
+#### Scenario: Short main-rise selection preserves the selected frequency
+- **GIVEN** v35 and a 5m/15m/30m selected chart
+- **WHEN** the user selects main-rise
+- **THEN** chart, auxiliary, reference history and ordinary/theoretical performance retain the frequency
+- **AND** previous response, snapshot and pagination identities cannot overwrite the new selection
+- **AND** missing warm-up, authoritative inputs or reference assets remain explicitly unavailable
+- **AND** existing cross-period explanation openness and D1/W1/60m background rules remain unchanged
 
 #### Scenario: Explicit historical analysis retains source identity
 - **GIVEN** an explicit historical Canonical as-of
 - **WHEN** formal v3 AI or current cross-period decision is requested
 - **THEN** all six combinations or three periods use that exact cutoff
 - **AND** unavailable owner, quality or preheating facts remain explicit without substitution
+
+### Requirement: Home projection column sorting
+
+首页目标价、日、周、趋势列头 SHALL 沿用降序、升序、默认三次点击循环，支持键盘及当前方向说明，
+并复用首页排序偏好持久化。排序 SHALL 仅消费已筛选列表和共享投影，不发起额外读取或改变公式。
+目标列 SHALL 对当前显示的目标/吸筹原始正十进制价排序；日/周降序 SHALL 为BUILD、HOLD、CLEAR、FLAT，
+随当前策略视角切换；趋势列 SHALL 使用独立D1 MA60近似展示方向，降序向上、向下，不替换成策略状态。
+两个方向的未知/预热值 SHALL 始终置后，同值保留原有顺序。排序 SHALL NOT 声称牛哇私有权重已知。
+
+#### Scenario: Projection sorting preserves display facts and input identity
+- **GIVEN** a filtered list containing ready, warming and missing projection values
+- **WHEN** a user cycles any of the four column headers or switches the displayed strategy
+- **THEN** displayed facts alone determine order, missing values stay last, and ties remain stable
+- **AND** no extra HTTP request is made and no state, formula, reference price or Runtime Scope changes
+- **AND** the selected sort and direction survive a page reload
 
 ### Requirement: Independent v3.3.79 page performance projection
 
