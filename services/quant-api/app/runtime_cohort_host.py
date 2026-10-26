@@ -395,7 +395,9 @@ class CohortHost(FaultRecoveryHost):
                     break
                 sleep(0.05)
             else:
-                raise CohortError("COHORT_OLD_DRAIN_TIMEOUT")
+                error = CohortError("COHORT_OLD_DRAIN_TIMEOUT")
+                error.service = name
+                raise error
         from app.redis_connections import get_redis_connection
 
         redis = get_redis_connection()

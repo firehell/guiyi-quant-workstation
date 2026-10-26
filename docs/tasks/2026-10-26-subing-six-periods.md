@@ -58,3 +58,53 @@ FIFO/符号链接、损坏、越界、重复key、解码上限及失败恢复均
 统一候选合入并行develop后，参考交易/苏冰与部署交接回归1206 passed、9 skipped、79 deselected；
 canonical一致性18 passed，Web类型/build/topology通过。独立合并Review另验后端69 passed/9 skipped、
 Web103 passed，允许进入release candidate；应用候选版本1.16.8，尚未声明发布或Runtime切换。
+
+## v1.16.8发布与现场阻断
+
+PR487已合并main，annotated v1.16.8及GitHub Release exact
+`9b559ce80b968f214347aa49abdb4d649aff915d`；正式树
+`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.16.8`的离线Python/前端依赖与Web构建通过。
+原生整组plan v1仅只读即拒绝，未停服、未CAS：逐服务确认只有after-market空闲身份不成立，
+PID25301仍运行。自然行情维护18:11已passed，消费者检查仍not_verified；不终止或重跑自然业务。
+维护锁读回为既有客户端持有，45路仅预算/锁阻断路重新只读规划均SOURCE_BUSY，未启动apply。
+
+296份原计划全部转为有界原生文件并逐份逻辑hash核对，保存在任务证据
+`.task-evidence/subing-six-periods/packed-full-history-v1/`；尚未缩窗或生成新格式生产资产。
+独立生产前像：56个苏冰流，55 READY/1 NOT_BUILT，enabled forward=0；39路已完成W1保留。
+开发API仅重载本任务PID17069，替换后8002 health读回1.16.8；正式8000与十服务仍v1.16.7/gen29。
+
+当前为PARTIAL / RELEASED，运行切换、剩余完整历史、v2激活和自然新Bar验收未完成。
+下一触发条件是自然盘后PID退出且维护锁空闲；届时生成全新有效期内cohort计划，先切换所有读取端，
+再执行精确历史计划。旧生产资产不删除；未知结果只读核对；不借回放补造自然记录，不新增监控任务。
+
+### 后续现场读回（覆盖上一段当前阻断）
+
+盘后PID随后自然退出，消费者审计incomplete；未将该结论改写为通过。全新cohort v2只读freeze通过，
+但其计划父目录为公共/tmp，不符合原生安全读取合同，apply在attempt创建前拒绝；已证实不存在v2attempt。
+转为0700私有目录及0600计划后，全新v3 hash
+`3fe300223ac7ae36cdd2a1ef567cc94e942bedaacdb482c76d15da3da857469d`进入预热，随后原生取消。
+state.json保留phase=cancelled、effects={}、error_type=CohortError；无停服/CAS，不复用该attempt。
+单独Reference同预算只读预热定位为REFERENCE_WARMUP_TIMEOUT（120.01秒），堆栈在Canonical租约等待。
+
+维护锁属于已有并行只读全量审计
+`output/data-complete-audit-20261026/parallel-full-audit.py`，最近完成52/60，未干预该任务。
+实际切换与新格式历史写入仍阻断。360路未来20:55开始的v2激活计划仅readonly生成、未apply；
+原生registry/global phase守卫禁止在旧版本运行时激活；过期后必须生成新计划。
+其私有意图保存在output/subing-six-periods-20261026/activation-v2/，不能据此声明流已启用。
+剩余历史原生驱动仅准备并语法校验，未启动；保持原AL15m candidate和39路已完成W1，不覆盖旧事实。
+下一步唯一前置是既有审计释放锁，然后用全新cohort计划重新完整预热和交接；无须owner重复授权。
+
+### v4完整预热与排空取消；诊断向前补丁
+
+并行审计最终60/60 passed，维护锁独立读回为空，故冻结全新v4计划
+`b60835c2fe92db2f5a1108e2062c77a1fd55c919cdcf1c74c4397c47a972c689`。
+完整候选预热全部通过：Alert413计算/7明确warming、Reference480、API18路由、Web构建hash、
+Live/Feed60品种闭市及cursor=tail。随后原生calendars_off完成，但drain步骤取消；未CAS，
+原日历自动恢复。全十服务独立readback均matched/v1.16.7/gen29，API/Web HTTP通过，
+Feed恢复后PID40179，其余五常驻PID未变；全局runtime health仍blocked，不冒充自然READY。
+
+原控制器仅保留error_type，具体排空拒绝码被外层取消码覆盖，无法据此猜测root cause。
+1.16.9候选仅补齐failed_phase、安全CohortError协议码及已知排空服务名，不记录任意异常文本，
+不改变停止顺序、时间预算、CAS与恢复条件。新增先红后绿回归，相关部署191 passed；
+独立Review135项及服务名隐私补验通过，允许进入release candidate，不声称drain已修复。
+旧tag/attempt原件保留，禁止以dirty Runtime继续切换。完整历史和360路激活仍未执行。
