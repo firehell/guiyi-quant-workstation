@@ -15,7 +15,7 @@ The default-off RB candidate SHALL recognize `5m / 15m / 30m / 60m` for trend an
 and an independent persisted dual-fusion reference model. Canonical 1m SHALL remain an aggregation
 source only in this version; Newow 1m routes, saved preferences and API entry SHALL fail closed,
 without deleting historical 1m assets or altering generic Market 1m readers. Formal daily/weekly capability and
-its deferred 60m gate SHALL remain unchanged. Minute main-rise SHALL be rejected before kernel
+its deferred 60m gate SHALL remain unchanged. In this frozen RB candidate only, minute main-rise SHALL be rejected before kernel
 execution; candidate recognition SHALL NOT enable Runtime, observation, notification or orders.
 
 Each derived period SHALL aggregate independently from trusted physical-contract Canonical 1m
@@ -157,9 +157,9 @@ repaint/evidence 状态。表中的 `ACTIVE_CODE_VERIFIED` 只表示 BASE 保留
 
 | 能力 | 适用策略与周期 | formula identity | evidence status | warming / repaint / as-of 边界 |
 |---|---|---|---|---|
-| 趋势主状态 | `trend × 1w/1d/60m` | `newow_trend_band_page_v3` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
-| 趋势通道圆点 | `trend × 1w/1d/60m`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
-| 震荡主状态 | `oscillation × 1w/1d/60m` | `newow_oscillation_hhv_llv10_page_v2` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10；主图 CLEAR 当根不再 BUILD（普通 AI 回测保留独立先清后建） |
+| 趋势主状态 | `trend × 5m/15m/30m/60m/1d/1w` | `newow_trend_band_page_v3` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；BUILD/HOLD/CLEAR/FLAT 不跨合约继承 |
+| 趋势通道圆点 | `trend × 5m/15m/30m/60m/1d/1w`，chart-layer only | `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | 同批 completed Bar 的 HHV(high,10) 绿色上轨与 LLV(low,10) 红色下轨；按物理合约和 Segment 重置，不进入趋势策略或 ReferenceTrade 身份 |
+| 震荡主状态 | `oscillation × 5m/15m/30m/60m/1d/1w` | `newow_oscillation_hhv_llv10_page_v2` + `newow_hhv_llv_channel_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；HHV/LLV10；主图 CLEAR 当根不再 BUILD（普通 AI 回测保留独立先清后建） |
 | 主升浪主状态 | `main_rise × 5m/15m/30m/60m/1d/1w` | `newow_main_rise_ma35_ma45_page_v1` | `ACTIVE_CODE_VERIFIED` | completed 本周期、同物理区段 warm-up；MA35/MA45 主动作不由 Hint 改写 |
 | S 跑 / D1–D3 | `trend/main_rise × 5m/15m/30m/60m/1d/1w`，Hint only | `newow_escape_d123_page_v2` | `ACTIVE_CODE_VERIFIED` | 必须报告公式所需 warming 与已验证 repaint 属性；只使用当时 completed 输入，不改变 BUILD/CLEAR |
 | D4–D6 | `main_rise × 5m/15m/30m/60m/1d/1w`，Hint only | `newow_buy_d456_page_v1` | `ACTIVE_CODE_VERIFIED` | 同物理区段、当时 completed 输入；Low×0.99 仅为显示锚点，不产生加仓 |
@@ -960,7 +960,7 @@ summary 可在同 reference 指纹下共享，页结果不得跨 cursor/limit �
 
 ### Requirement: Typed API keeps availability and legacy semantics explicit
 
-新 GET MUST 只接受 active product、三策略、`1w/1d/60m`、`actual_dominant`、合法 section 及其专属参数；
+当前正式 GET MUST 只接受 active product、三策略、能力合同声明的`5m/15m/30m/60m/1d/1w`、`actual_dominant`、合法 section 及其专属参数；
 日期有序、performance 成对、`as_of` 带时区且不晚于服务器当前时间。非法参数为 422；身份、数据、token
 或 cursor 世代冲突为 409；资源队列满为明确 429。opaque cursor 不得作为路径、SQL 或对象反序列化入口。
 
