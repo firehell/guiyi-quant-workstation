@@ -251,3 +251,15 @@ export function homeRowHints(day?: HomePeriodFact) {
     return [{label:'减仓',focusBarEnd:undefined,title:`J值（${Number(item.j_value).toFixed(1)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`}]
   })
 }
+
+
+/** Unknown input is a neutral explanation, never a green event or an inferred confirmation. */
+export function homeCautionNotice(day?: HomePeriodFact): string | null {
+  if (day?.status!=='ready') return null
+  const hints=day.row_hints
+  if (!hints) return cautionDisplayTitle(null,'缺少小心事件资料')
+  if (hints.display_policy_version!==CAUTION_DISPLAY_VERSION) return cautionDisplayTitle(null,'显示口径尚未更新')
+  if (hints.status!=='ready' || hints.page_parity!==false || hints.executable!==false || hints.bar_end!==day.bar_end || hints.physical_contract!==day.physical_contract || hints.calculation_segment_id!==day.calculation_segment_id || !Array.isArray(hints.items)) return cautionDisplayTitle(null,'资料时点或合约来源尚未核对')
+  if (hints.items.some(i=>i.kind==='caution') && !homeRowHints(day).some(i=>i.label==='小心')) return cautionDisplayTitle(null,'事件状态或时间资料尚未通过核验')
+  return null
+}

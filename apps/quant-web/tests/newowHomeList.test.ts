@@ -6,7 +6,7 @@ import { resolve } from 'node:path'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
-import { homeCardPresentation, homeRowHints, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
+import { homeCardPresentation, homeRowHints, homeCautionNotice, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
 function cautionHint() { return {kind:'caution' as const,event_day:'2026-10-08',event_bar_end:'2026-10-08T00:00:00Z',confirmed_day:'2026-10-09',event_id:'a'.repeat(64),frequency:'1d' as const,bar_end:'2026-10-08T00:00:00Z',peak_day:'2026-10-09',peak_bar_end:'2026-10-09T00:00:00Z',first_visible_at:'2026-10-08T00:00:00Z',confirmed_at:'2026-10-09T00:00:00Z',as_of:'2026-10-09T00:00:00Z',tentative:false,display_state:'confirmed' as const,age_bars:1,home_visible:true,detail_visible:true,max_tentative_age_bars:10 as const,visibility_basis:'completed_bar' as const,display_policy_version:'guiyi_caution_completed_anchor_v1' as const,physical_contract:'RB2701',segment_id:'s',calculation_segment_id:'c',formula_version:'newow_zhaoyao_mirror_repainting_page_v2',repainting:true as const,page_parity:false as const,executable:false as const} }
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
@@ -320,4 +320,13 @@ test('MA60 approximate trend uses precomputed D1 identity and preserves stale di
   assert.equal(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,formula_version:'unrecognized'}}).tone,'pending')
   assert.match(homeTrendDisplay({...fact,independent_trend:{...fact.independent_trend,status:'warming',direction:null,sample_count:59}}).label,/预热/)
   assert.equal(homeTrendDisplay(fact).tone, 'up') // No quote input is accepted.
+})
+
+
+test('unknown caution input has a neutral reason while accepted absence stays quiet', () => {
+  assert.match(homeCautionNotice(ready('FLAT'))!,/待确认.*缺少/)
+  const day={...ready('FLAT'),row_hints:{display_policy_version:'guiyi_caution_completed_anchor_v1',status:'ready',bar_end:ready('FLAT').bar_end!,physical_contract:'RB2701',calculation_segment_id:'c',page_parity:false,executable:false,items:[]}}
+  assert.equal(homeCautionNotice(day),null)
+  assert.match(homeCautionNotice({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}})!,/尚未通过核验/)
+  assert.equal(homeRowHints({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}}).length,0)
 })
