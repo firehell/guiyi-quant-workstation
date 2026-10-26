@@ -511,3 +511,63 @@ def test_preflight_duplicate_target_book_stops_without_mutation(monkeypatch, tmp
     assert gateway.book_selection_diagnostics["exact_identity_matches"] == 2
     assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
     assert not (tmp_path / "output/simnow-controlled").exists()
+
+
+def rate_scope(kind):
+    return dict(schema="native_rate_query_scope_v1", kind=kind, instrument="rb2701", exchange="SHFE", request_id=30003)
+
+
+def test_blank_rate_exchange_requires_completed_query_scope(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    seen = []
+    def scoped(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        if kind in ("margin", "commission"):
+            assert scope["exchange"] == "SHFE"
+            rows = tuple(dict(row, ExchangeID="", query_scope=rate_scope(kind)) for row in rows)
+            seen.extend(rows)
+        return rows
+    gateway.query = scoped
+    result = cli.run(gateway, NS(), config, tmp_path)
+    assert result["status"] == "READ_ONLY_PREFLIGHT_COMPLETE"
+    assert all(row["ExchangeID"] == "" for row in seen)
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+
+
+@pytest.mark.parametrize("issue", ["no_scope", "wrong_scope_exchange", "wrong_scope_contract", "wrong_scope_kind", "wrong_request_id", "wrong_schema", "wrong_response_exchange", "wrong_response_contract", "wrong_broker"])
+def test_rate_scope_never_repairs_conflicting_identity(monkeypatch, tmp_path, issue):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def bad(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        if kind == "margin":
+            row = dict(rows[0], ExchangeID="", query_scope=rate_scope(kind))
+            if issue == "no_scope":
+                row.pop("query_scope")
+            elif issue == "wrong_scope_exchange":
+                row["query_scope"]["exchange"] = "DCE"
+            elif issue == "wrong_scope_contract":
+                row["query_scope"]["instrument"] = "rb2705"
+            elif issue == "wrong_scope_kind":
+                row["query_scope"]["kind"] = "commission"
+            elif issue == "wrong_request_id":
+                row["query_scope"]["request_id"] = True
+            elif issue == "wrong_schema":
+                row["query_scope"]["schema"] = "unknown"
+            elif issue == "wrong_response_exchange":
+                row["ExchangeID"] = "DCE"
+            elif issue == "wrong_response_contract":
+                row["InstrumentID"] = "rb2705"
+            elif issue == "wrong_broker":
+                row["BrokerID"] = "other"
+            return (row,)
+        return rows
+    gateway.query = bad
+    with pytest.raises(ValueError, match="NATIVE_RATE_IDENTITY"):
+        cli.run(gateway, NS(), config, tmp_path)
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
