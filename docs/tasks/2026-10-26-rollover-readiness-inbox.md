@@ -8,7 +8,8 @@ Owner批准完整方案：自动预算内预热；顺序恢复真实原件并标
 - [x] 两表持久接收与逐流完成事务、120000/day与6GiB未完成容量；DB确认后才ACK。
 - [x] 逐流公平调度及延迟时间、原生协议边界切换和健康接口。
 - [x] 单元/隔离PG+Redis/故障注入、独立Review。
-- [ ] 迁移/兼容发布/新协议切换、EG恢复和自然业务现场验收。
+- [x] 生产0053单次迁移、独立schema读回；兼容代码发布至v1.16.13。
+- [ ] Runtime/v2独占交接、EG自动准备与原件顺序恢复、重启一致性及自然业务验收（维护锁竞争阻断）。
 
 当前根因原件：原workspace output/reference-stall-diagnosis-20261026。
 真实操作串行；schema/protocol推进后只能兼容恢复或前向修复，不删除数据回滚。
@@ -47,3 +48,7 @@ Owner批准完整方案：自动预算内预热；顺序恢复真实原件并标
 8956条原始envelope、精确journal ID及游标证据已复制到主仓库稳定私有output/rollover-readiness-20261026/retained-originals-20261027；导出不是第二正式输入源。生产0053不重复，Runtime仍v1.16.10/gen30；新协议仅requested，尚无EG补数或过期推送。
 
 共享输入候选最终227 passed/16.20s，含实际隔离PG/Redis相关恢复；独立Review217 passed/0skip，Ruff/secret0/diff通过。实际120s预热仍因985次锁忙终止，故Runtime gate未通过；候选代码验证不替代现场运行证据。
+
+收尾现场：PR503/504已集成并发布v1.16.13 exactbe9c1a8dde70aa5db4716304aad33d7a7e7241ad，annotated tag与GitHub Release target一致，正式树Python metadata/app/core来源及Web build/type/topology通过。未再重试过期或失败native计划。04:42独立readback确认十服务仍旧v1.16.10/gen30，protocol requested，inputs/deliveries均0且唯一计数相等，准备state/budget无attempt，游标仍1793019905299-0（tail1793039404268-4）。这只证明没有误切换/误接收，不证明业务恢复。
+稳定只读证据：主仓库output/rollover-readiness-20261026/prewarm-sharing-timing.json及runtime-readback-blocked-final.json；8956条原件在其retained-originals-20261027内。两份原生失败attempt保持私有稳定目录原样。当前PARTIAL / Runtime gate pending，不是等待重复人工批准；须维护资源释放后新建精确计划。
+按精确retention dry-run哈希1f6da9e68b989dc58a6abdd420f81063c687ce52ccc53ba58429136becbb8a38并二次同像核对，v11/v12无任何binding/plist/进程引用且新v13依赖不指向它们，已non-force移除两棵从未运行的旧树；保留现役v10、最新v13、所有tag及控制/原件证据。任务隔离PG/Redis已精确停止，不影响生产或另一任务。
