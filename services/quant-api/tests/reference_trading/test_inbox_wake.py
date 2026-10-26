@@ -138,6 +138,9 @@ def test_generic_processing_failure_uses_valid_code_and_keeps_other_heads_runnin
             timeline.append((identifier, code))
 
     class Worker:
+        def assert_owned(self):
+            pass
+
         def process_inbox_delivery(self, stream, *args, **kwargs):
             if stream == "bad":
                 raise RuntimeError("REFERENCE_INBOX_NO_CALCULATION")
@@ -171,3 +174,43 @@ def test_expired_redis_cursor_blocks_only_intake_not_durable_pending_calculation
     wake.poll()
     assert timeline == ["compute-durable"]
     assert wake.intake_error == "OBSERVATION_CURSOR_MISSING"
+
+
+def test_lost_owner_cannot_mark_a_delivery_or_report_receiver_acceptance():
+    import pytest
+    end = datetime(2026, 10, 26, 13, 5, tzinfo=UTC)
+    event = SimpleNamespace(confirmed_at=end, raw_received_at=end, source_observed_at=end,
+                            data={"bar_end": end.isoformat()})
+    writes = []
+    owned = [True]
+    def assert_owned():
+        if not owned[0]:
+            raise RuntimeError("RUNTIME_OWNERSHIP_LOST")
+    def calculate(*args, **kwargs):
+        owned[0] = False
+        raise RuntimeError("RUNTIME_OWNERSHIP_LOST")
+    wake = object.__new__(InboxForwardLiveWake)
+    wake._inbox = SimpleNamespace(next_heads=lambda **_: [SimpleNamespace(stream_id="s", delivery_id="d",
+        status="PENDING", envelope=event)], validate_delivery=lambda *_: None,
+        mark_blocked=lambda *_: writes.append("blocked"))
+    wake._worker = SimpleNamespace(assert_owned=assert_owned, process_inbox_delivery=calculate)
+    wake.stop_requested = lambda: False
+    wake._after_stream_id = None
+    wake._retry_after_by_stream = {}
+    with pytest.raises(RuntimeError, match="RUNTIME_OWNERSHIP_LOST"):
+        wake._calculate_heads()
+    assert writes == []
+
+
+def test_receiving_round_is_reported_before_backlog_is_fully_ingested_and_never_during_drain():
+    wake = object.__new__(InboxForwardLiveWake)
+    wake._ingest = lambda **_: setattr(wake, "_last_poll_count", 128)
+    wake._calculate_heads = lambda: None
+    reports = []
+    wake.on_receiving_round = lambda: reports.append("receiving")
+    wake.stop_requested = lambda: False
+    assert wake.poll() is True
+    assert reports == ["receiving"]
+    wake.stop_requested = lambda: True
+    assert wake.poll() is True
+    assert reports == ["receiving"]

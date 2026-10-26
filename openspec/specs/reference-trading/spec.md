@@ -1099,6 +1099,21 @@ intake, but SHALL NOT prevent calculation of already accepted deliveries. Intake
 - **AND** read-only warmup SHALL NOT persist protocol state or intake failure
 - **AND** accepted originals SHALL continue calculation even if subsequent Redis intake is blocked.
 
+#### Scenario: A fresh activation has no natural calculation yet
+
+- **GIVEN** the original generation-one flat seed, activation receipt, complete manifest and chunk/hash chain are independently verified
+- **WHEN** no capture or calculation has ever existed for that stream
+- **THEN** read-only prewarm MAY count the stream as initialized, SHALL NOT count it as calculated, and SHALL NOT manufacture a replay input
+- **AND** a calculated stream with missing predecessor evidence SHALL remain blocked.
+
+#### Scenario: Durable receiving runs while calculation is pending
+
+- **WHEN** a bounded receiving round completes with a valid owner and no drain request
+- **THEN** it MAY publish a receiving_cycle proof distinct from calculation readiness
+- **AND** native handover MAY accept only independently reverified active-v2/schema/cursor evidence and the exact current immutable heads in a read-only repeatable snapshot
+- **AND** every worker block SHALL match a permitted WAITING_HISTORY head, ordinary PENDING heads SHALL have no error code, and activation/identity/hash drift, BLOCKED, UNKNOWN, intake failure or unproved fusion dependency SHALL reject the proof
+- **AND** receiving, backlog and history-wait modes SHALL NOT rewrite calculation ready/blocked facts or claim that Redis is caught up.
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

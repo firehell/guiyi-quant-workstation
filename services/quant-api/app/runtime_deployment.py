@@ -359,7 +359,14 @@ class LaunchdBackend:
         deadline = monotonic() + 10
         while monotonic() < deadline:
             state = read_service_state(service)
-            if state and state.get('phase') == 'active' and state.get('generation') == candidate.generation and state.get('ready') is True:
+            operational_mode = None
+            candidate_active = bool(state and state.get('phase') == 'active' and state.get('generation') == candidate.generation)
+            ready = candidate_active and state.get('ready') is True
+            if candidate_active and service == 'reference-worker' and 'receiving' in state.get('proof', {}):
+                from app.reference_trading.operational_readiness import reference_waiting_history_mode
+                operational_mode = reference_waiting_history_mode(state)
+                ready = operational_mode is not None and monotonic() < deadline
+            if ready:
                 from app.services.deployment_identity import deployment_identity_health
                 identity = deployment_identity_health(root=Path(candidate.root), commit=candidate.commit)
                 rows = identity.get('services', {})
@@ -369,7 +376,8 @@ class LaunchdBackend:
                         and progress_reached(observation_progress(service), self.boundaries[service],
                                              service=service, proof=state.get('proof'))
                         and (service not in {'api', 'web'} or port_is_ready(service))):
-                    return True
+                    if operational_mode is None or monotonic() < deadline:
+                        return True
             sleep(0.1)
         return False
 

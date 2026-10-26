@@ -1,11 +1,23 @@
 # 当前状态
 
-本页以10/26 v1.16.10发布及实际gen30运行读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
+本页以10/27 v1.16.11发布及实际v1.16.10/gen30运行读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 凌晨主力切换方案已发布，原生交接预热发现正常启动边界待向前修复
+
+v1.16.11已通过PR498发布，exact397fbd1423fac4d5a6257121631852332a04d3a6；正式树构建与依赖来源已核对。
+03:05生产0053独立读回完整，无重复迁移；十服务仍v1.16.10/gen30。原生cohort v1在停服前cancelled，
+effects为空，COHORT_CANDIDATE_WARMUP_FAILED；不能把发布当作切换。独立Alert预热413计算/7 warming通过；
+Reference失败精确定位为M/苏冰1w只有原始seed、尚无自然计算时错误要求两批前像。
+
+向前候选1.16.12修复闭市权威Session owner准备及完整flat seed初始化证明；接收运行与计算健康分层的
+v2原生只读证明已完成独立Review；最终冻结387 passed（真实隔离PG/Redis），候选待集成发布。原件8956条只读私有导出留存，10/27游标仍1793019905299-0，前后相同。
+EG2701已只读冻结当前需求：owner10/27、历史截止10/26、上市1/28；首5m原生计划10次provider、72414预期Bar，
+尚未执行下载。新协议未启用、Runtime未切换，无通知补发或账户变化。详见唯一任务记录。
 
 ## 10/26 主力切换准备及Reference耐久接收候选验证完成
 

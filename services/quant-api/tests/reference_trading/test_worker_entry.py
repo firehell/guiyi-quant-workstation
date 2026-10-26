@@ -160,3 +160,225 @@ def test_main_signal_during_round_does_not_grant_or_start_history(monkeypatch):
     monkeypatch.setenv('GUIYI_RUNTIME_LEGACY_MODE', '0')
     assert worker_entry.main() == 0
     assert starts == []
+
+
+def _initialized_route(engine=None, frequency="1w"):
+    from datetime import timedelta
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.db.base import Base
+    from app.reference_trading.repository import ReferenceRepository
+    from app.reference_trading.subing_activation import apply_subing_activation, plan_subing_activation
+    from tests.reference_trading.test_subing_activation import NOW
+    engine = engine or create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine)
+    plan = plan_subing_activation("m", frequency, operational={"m"},
+        start=NOW + timedelta(minutes=2), expiry=NOW + timedelta(minutes=1),
+        now=NOW, host="isolated", environment="isolated")
+    result = apply_subing_activation(factory, plan, expected_plan_hash=plan["plan_hash"],
+        operational={"m"}, now=NOW)
+    return factory, ReferenceRepository(factory), result
+
+
+def _never_evaluate_initialization():
+    from types import SimpleNamespace
+    return SimpleNamespace(_evaluator=lambda *_: pytest.fail("initialization is not a calculation"))
+
+
+@pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m", "1d", "1w"))
+def test_saved_warmup_accepts_exact_flat_activation_seed_without_calculation(frequency):
+    from sqlalchemy import select, func
+    from app.reference_trading.models import ReferenceBatch
+    factory, repository, result = _initialized_route(frequency=frequency)
+    with factory() as session:
+        before = session.scalar(select(func.count()).select_from(ReferenceBatch))
+    assert worker_entry._warmup_saved_capture(repository, result["stream_id"],
+        _never_evaluate_initialization()) == "initialized"
+    with factory() as session:
+        assert session.scalar(select(func.count()).select_from(ReferenceBatch)) == before
+        assert session.scalar(select(func.count()).select_from(ReferenceBatch).where(
+            ReferenceBatch.kind.in_(("calculation", "capture")))) == 0
+
+
+def test_initialized_only_warmup_is_successful_but_calculated_count_is_zero(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    factory, repository, result = _initialized_route()
+    worker = SimpleNamespace(_repository=repository, scan_live=False,
+        _service_for=lambda _: _never_evaluate_initialization(), _read_input=lambda *_: None)
+    @contextmanager
+    def opened(**_):
+        yield worker, None, None
+    monkeypatch.setattr(worker_entry, "open_forward_worker", opened)
+    assert worker_entry.warmup_reference_worker() == {"calculated": 0, "initialized": 1}
+
+
+@pytest.mark.parametrize("drift", (
+    "missing_receipt", "receipt_disabled", "receipt_generation", "receipt_revision", "receipt_plan",
+    "receipt_start", "stream_generation", "stream_identity", "stream_identity_hash", "revision_status",
+    "revision_digest", "seal_payload", "seal_hash", "seal_key", "seal_manifest", "seal_pre_hash",
+    "seal_checkpoint", "seal_source_root", "chunk_content", "chunk_payload", "nonflat_checkpoint",
+))
+def test_initialized_warmup_rejects_broken_seed_activation_and_manifest(drift):
+    from dataclasses import replace
+    from datetime import timedelta
+    from sqlalchemy import select
+    from app.reference_trading.models import ReferenceActivationReceipt, ReferenceBatch, ReferenceRevision, ReferenceStream
+    from app.reference_trading.repository import _checkpoint_hash
+    from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_to_json
+    factory, repository, result = _initialized_route()
+    with factory() as session, session.begin():
+        stream = session.get(ReferenceStream, result["stream_id"])
+        revision = session.get(ReferenceRevision, (stream.stream_id, result["revision_id"]))
+        seal = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+        receipt = session.get(ReferenceActivationReceipt, result["receipt_id"])
+        chunk = session.scalar(select(ReferenceBatch).where(ReferenceBatch.kind == "seed_chunk"))
+        if drift == "missing_receipt":
+            session.delete(receipt)
+        elif drift == "receipt_disabled":
+            receipt.disabled_at = receipt.activated_at
+        elif drift == "receipt_generation":
+            receipt.generation = 2
+        elif drift == "receipt_revision":
+            receipt.revision_id = "another-revision"
+        elif drift == "receipt_plan":
+            receipt.plan_hash = "0" * 64
+        elif drift == "receipt_start":
+            receipt.recording_start += timedelta(seconds=1)
+        elif drift == "stream_generation":
+            stream.activation_generation = 2
+        elif drift == "stream_identity":
+            stream.profile_id = "another-profile"
+        elif drift == "stream_identity_hash":
+            stream.identity_hash = "0" * 64
+        elif drift == "revision_status":
+            revision.status = "candidate"
+        elif drift == "revision_digest":
+            revision.dependency_digest = "0" * 64
+        elif drift == "seal_payload":
+            seal.payload_hash = "0" * 64
+        elif drift == "seal_hash":
+            seal.post_state_hash = "0" * 64
+        elif drift == "seal_key":
+            seal.batch_key = "another-seed"
+        elif drift == "seal_manifest":
+            seal.dependency_manifest = {"changed": True}
+        elif drift == "seal_pre_hash":
+            seal.pre_state_hash = "0" * 64
+        elif drift == "seal_checkpoint":
+            seal.checkpoint_text = "{}"
+        elif drift == "seal_source_root":
+            seal.source_evidence = {"seed_root_hash": "0" * 64}
+        elif drift == "chunk_content":
+            chunk.seed_chunk_text += "changed"
+        elif drift == "chunk_payload":
+            chunk.payload_hash = "0" * 64
+        elif drift == "nonflat_checkpoint":
+            _, checkpoint = repository.load_checkpoint(stream.stream_id)
+            changed = replace(checkpoint, reference_state=replace(checkpoint.reference_state, last_input_hash="not-initial"))
+            seal.checkpoint_text = adapter_checkpoint_to_json(changed, strategy_schema=seal.strategy_schema)
+            seal.post_state_hash = _checkpoint_hash(seal.checkpoint_text)
+    with pytest.raises((RuntimeError, ValueError), match="REFERENCE_WARMUP_"):
+        worker_entry._warmup_saved_capture(repository, result["stream_id"], _never_evaluate_initialization())
+
+
+def test_initialized_warmup_rejects_any_capture_even_without_calculation():
+    from datetime import timedelta
+    from app.reference_trading.capture import ForwardCapture
+    from tests.reference_trading.test_subing_activation import NOW
+    _, repository, result = _initialized_route()
+    capture = ForwardCapture(result["stream_id"], result["revision_id"], 1, "M2601:original",
+        NOW + timedelta(minutes=3), NOW + timedelta(minutes=4), "completed_live", {}, {}, "first_seen")
+    repository.capture_forward(capture)
+    with pytest.raises(RuntimeError, match="REFERENCE_WARMUP_"):
+        worker_entry._warmup_saved_capture(repository, result["stream_id"], _never_evaluate_initialization())
+
+
+def test_prior_calculation_with_missing_preimage_never_becomes_initialized():
+    from app.reference_trading.models import ReferenceBatch, ReferenceRevision, ReferenceStream
+    factory, repository, result = _initialized_route()
+    with factory() as session, session.begin():
+        stream = session.get(ReferenceStream, result["stream_id"])
+        revision = session.get(ReferenceRevision, (stream.stream_id, result["revision_id"]))
+        seal = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+        seal.kind, seal.seq, seal.expected_seq = "calculation", 2, 1
+        revision.last_seq, stream.latest_seq = 2, 2
+    with pytest.raises(RuntimeError, match="REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE"):
+        worker_entry._warmup_saved_capture(repository, result["stream_id"], _never_evaluate_initialization())
+
+
+def test_saved_warmup_keeps_two_batch_replay_and_exact_capture_linkage():
+    from datetime import timedelta
+    from types import SimpleNamespace
+    from app.reference_trading.capture import ForwardCapture
+    from app.reference_trading.models import ReferenceBatch, ReferenceRevision, ReferenceStream
+    from tests.reference_trading.test_subing_activation import NOW
+    factory, repository, result = _initialized_route()
+    capture = ForwardCapture(result["stream_id"], result["revision_id"], 1, "original-weekly",
+        NOW + timedelta(minutes=3), NOW + timedelta(minutes=4), "canonical_completed", {}, {}, "first_seen")
+    identifier = repository.capture_forward(capture)
+    with factory() as session, session.begin():
+        stream = session.get(ReferenceStream, result["stream_id"])
+        revision = session.get(ReferenceRevision, (stream.stream_id, result["revision_id"]))
+        seed = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+        fields = {column.name: getattr(seed, column.name) for column in seed.__table__.columns}
+        fields.update(batch_id="real-calculation", batch_key="calculation-fixture", kind="calculation", seq=2,
+            expected_seq=1, source_evidence={"forward_capture_v1": {
+                "capture_id": identifier, "hash": capture.capture_hash, "generation": 1}})
+        session.add(ReferenceBatch(**fields))
+        stored = session.get(ReferenceBatch, identifier)
+        stored.consumed_by_batch_id, stored.outcome = "real-calculation", "consumed"
+        revision.last_seq, revision.checkpoint_batch_id, stream.latest_seq = 2, "real-calculation", 2
+    evaluated = []
+    service = SimpleNamespace(_evaluator=lambda token, checkpoint, evidence: evaluated.append((token, checkpoint, evidence)))
+    assert worker_entry._warmup_saved_capture(repository, result["stream_id"], service) == "calculated"
+    assert len(evaluated) == 1
+    assert evaluated[0][0].seq == 1
+    assert evaluated[0][2] == {**capture.evidence(), "capture_id": identifier}
+
+
+@pytest.mark.parametrize("intake_error,proof_present,expected", [(None, True, "ready"),
+    ("OBSERVATION_CURSOR_EXPIRED", True, "not_ready"), (None, False, "not_ready")])
+def test_receiving_error_or_missing_readback_prevents_owner_ready_without_rewriting_calculation(monkeypatch, intake_error, proof_present, expected):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    calls = []
+    owner = SimpleNamespace(mark_ready=lambda proof: calls.append(("ready", proof)),
+        mark_not_ready=lambda proof: calls.append(("not_ready", proof)))
+    @contextmanager
+    def components(**kwargs):
+        kwargs["report_health"]({"stage": "receiving_cycle", "ready": True, "blocked_count": 0,
+            "receiving": {"protocol_version": 2, "intake_error": intake_error,
+                "waiting_history_proof": {"schema_version": 1, "kind": "reference_receiving_operational_v1",
+                    "waiting_count": 0, "pending_count": 0, "blocked_pairs_sha256": "a" * 64,
+                    "heads_sha256": "b" * 64} if proof_present else None}})
+        yield (None, None, None)
+    monkeypatch.setattr(worker_entry, "_open_forward_worker", components)
+    with worker_entry.open_forward_worker(ownership=owner):
+        pass
+    assert calls[-1][0] == expected
+    assert calls[-1][1]["reference_runtime"]["ready"] is True
+    assert calls[-1][1]["reference_runtime"]["blocked_count"] == 0
+    assert "receiving" not in calls[-1][1]["reference_runtime"]
+    assert calls[-1][1]["receiving"]["intake_error"] == intake_error
+
+
+@pytest.mark.parametrize("receiving", [None, {"protocol_version": 2, "intake_error": None,
+    "waiting_history_proof": {"schema_version": 1, "kind": "reference_receiving_operational_v1"}}])
+def test_explicit_null_or_incomplete_receiving_is_not_legacy_readiness(monkeypatch, receiving):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+    calls = []
+    owner = SimpleNamespace(mark_ready=lambda proof: calls.append(("ready", proof)),
+        mark_not_ready=lambda proof: calls.append(("not_ready", proof)))
+    @contextmanager
+    def components(**kwargs):
+        kwargs["report_health"]({"stage": "cycle", "ready": True, "blocked_count": 0,
+                                "receiving": receiving})
+        yield (None, None, None)
+    monkeypatch.setattr(worker_entry, "_open_forward_worker", components)
+    with worker_entry.open_forward_worker(ownership=owner):
+        pass
+    assert calls[-1][0] == "not_ready"
+    assert calls[-1][1]["reference_runtime"]["ready"] is True
