@@ -167,6 +167,9 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
         self._after_stream_id = None
         self._retry_after_by_stream = {}
 
+    def on_receiving_round(self):
+        """Owned composition attaches its separate lifecycle report here."""
+
     def _block_intake(self, error):
         from app.reference_trading.runtime import diagnostic_reason
         code = diagnostic_reason(str(error))
@@ -196,6 +199,10 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
         # Already accepted originals are independent of Redis TTL and of an
         # uncertain new intake. Never reconstruct/ACK a missing Redis cursor.
         self._calculate_heads()
+        # A bounded intake/calculation round proves receiver liveness even while
+        # the journal still has backlog. It does not claim calculation readiness.
+        if not self.stop_requested():
+            self.on_receiving_round()
         return self._last_poll_count == limit
 
     def _ingest(self, *, limit):
@@ -250,6 +257,9 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
                                                    delivery_id=delivery.delivery_id)
                 self._retry_after_by_stream.pop(delivery.stream_id, None)
             except Exception as error:
+                # An old owner cannot mutate delivery state after losing its
+                # authority, including an otherwise harmless waiting marker.
+                self._worker.assert_owned()
                 from app.reference_trading.runtime import diagnostic_reason
                 code = failure_reason(error)
                 if diagnostic_reason(code) == "UNCLASSIFIED_FAILURE":

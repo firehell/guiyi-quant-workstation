@@ -346,3 +346,10 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 首个v2持久接收后禁止回退到旧“计算完成才ACK”的语义；只能用兼容版本或前向修复。
 0053原件非空时downgrade拒绝，禁止删除原件以完成回滚。
 接收异常持久保留并停止intake；已提交的各流原件仍可计算，health分别呈现二者。
+
+首次激活但未有自然Bar的Reference流，预热只能在完整原始flat seed、receipt、manifest及散列链验证后记为initialized，
+不能记为calculated；已计算但缺前像继续拒绝。v2每轮有界接收可发布receiving_cycle，原计算ready/blocked不改。
+原生交接仅在独立只读复核protocol/schema/owner/游标及所有当前冻结head后，分别接受durable_receiving、
+backlog或waiting_history运行模式；普通PENDING必须无错误，历史等待与worker阻断逐项全等。
+身份漂移、BLOCKED/UNKNOWN、接收异常及未证明fusion依赖仍拒绝，所有旧身份与时限Gate不变。
+DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别记录。

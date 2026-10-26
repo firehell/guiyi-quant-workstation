@@ -934,3 +934,7 @@ Feed 在闭市启动也只使用当前 Calendar 证明的交易日；先证明�
 同源周期等待不消耗attempt，不反向阻断原任务唯一一次一小时后provider未就绪重试；partial、未知提交、
 身份/质量异常与进程中断均保留READBACK_REQUIRED，不以新key、重启或重复需求绕过。
 READY依赖漂移只触发重新读回，不自动重跑已不明的生产写入。稳定状态与不可变终态归档跨发布保留。
+
+闭市启动恢复仍以既有 `MarketPhaseResolver.completed_observation_trading_day` 的最新已开始Session owner为准；
+不使用CLOSED的自然日展示字段。仅当已完成历史截止严格早于该owner交易日时准备当前合约；
+当截止已经覆盖该日时无需求，不推测下一主力或下一交易日。盘前30分钟准入和锁内同一权威复验保持。
