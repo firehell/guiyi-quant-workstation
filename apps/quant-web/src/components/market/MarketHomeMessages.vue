@@ -24,6 +24,7 @@ const validRange = computed(() => query.value.startDay <= query.value.endDay && 
 const todayCount = computed(() => page.value?.items.filter(row => row.event.trading_day === today).length ?? 0)
 const sourceIssues = computed(() => Object.entries(page.value?.sources ?? {}).filter(([, value]) => value.status !== 'ready' || value.truncated || (value.excluded_streams ?? 0) > 0))
 const periods = [{ value: '', label: '全部周期' }, { value: '1m', label: '1分钟' }, { value: '5m', label: '5分钟' }, { value: '15m', label: '15分钟' }, { value: '30m', label: '30分钟' }, { value: '60m', label: '60分钟' }, { value: '1d', label: '日线' }, { value: '1w', label: '周线' }]
+const visiblePeriods = computed(() => query.value.source === 'newow' ? periods.filter(period => ['', '60m', '1d', '1w'].includes(period.value)) : periods)
 const periodLabel = (frequency: string) => periods.find(row => row.value === frequency)?.label ?? frequency
 const strategyName = (value: string) => newowMessageStrategies.find(row => row.value === value)?.label ?? value
 const productName = (event: AlertEvent | NewowMessage) => props.options.find(row => row.symbol === event.symbol)?.name ?? event.symbol.toUpperCase()
@@ -90,6 +91,7 @@ function loadQuery(): UnifiedMessageQuery {
     if (restored.ruleCode === ALERT_RULE_CODES.HTDY || restored.source === 'all') {
       return { ...restored, source: 'alert', ruleCode: ALERT_RULE_CODES.HTDY, strategy: '', frequency: '60m' }
     }
+    if (restored.source === 'newow' && !['', '60m', '1d', '1w'].includes(restored.frequency)) restored.frequency = ''
     return restored
   } catch { return { ...defaults } }
 }
@@ -103,7 +105,7 @@ function loadQuery(): UnifiedMessageQuery {
       <button type="button" :aria-pressed="query.ruleCode === ALERT_RULE_CODES.SUBING_THS" @click="selectKind('alert', ALERT_RULE_CODES.SUBING_THS)">苏冰预警</button>
       <button v-for="strategy in newowMessageStrategies" :key="strategy.value" type="button" :aria-pressed="query.source === 'newow' && query.strategy === strategy.value" @click="selectKind('newow', null, strategy.value)">{{ strategy.label }}</button>
     </div>
-    <div v-if="query.ruleCode !== ALERT_RULE_CODES.HTDY" class="market-message-kinds" aria-label="信号周期"><button v-for="period in periods" :key="period.value" type="button" :aria-pressed="query.frequency === period.value" :disabled="query.source === 'newow' && !['', '1w', '1d', '60m'].includes(period.value)" @click="query.frequency = period.value">{{ period.label }}</button></div>
+    <div v-if="query.ruleCode !== ALERT_RULE_CODES.HTDY" class="market-message-kinds" aria-label="信号周期"><button v-for="period in visiblePeriods" :key="period.value" type="button" :aria-pressed="query.frequency === period.value" @click="query.frequency = period.value">{{ period.label }}</button></div>
     <div class="market-message-search"><input v-model="query.search" @keydown.enter.prevent="load()" maxlength="80" type="search" aria-label="搜索消息" placeholder="搜索查询范围内的品种名称/代码/合约…" /></div>
     <div class="market-message-stats"><span>今日已加载 {{ todayCount }} 条</span><span>当前已加载 {{ page?.items.length ?? 0 }} 条<span v-if="page"> · 本次可读取 {{ page.available_count }} 条{{ page.coverage === 'partial' ? '（覆盖不完整）' : '' }}</span></span></div>
     <div v-if="filtersOpen" class="market-message-filters">
