@@ -121,8 +121,7 @@ def quote_from_native(binding, row, trading_day, received_at):
     )
 
 
-def execution_input(binding, instrument, margin, commission, quote, session, now):
-    valid(binding.at, binding.valid_until, now)
+def validate_native_rate_identity(binding, margin, commission):
     for kind, row in (("margin", margin), ("commission", commission)):
         if row["InstrumentID"] != binding.native or row["BrokerID"] != "9999":
             raise ValueError("NATIVE_RATE_IDENTITY")
@@ -147,6 +146,11 @@ def execution_input(binding, instrument, margin, commission, quote, session, now
         margin["ShortMarginRatioByVolume"]
     ):
         raise ValueError("PER_LOT_MARGIN_PROFILE_UNSUPPORTED")
+
+
+def execution_input(binding, instrument, margin, commission, quote, session, now):
+    valid(binding.at, binding.valid_until, now)
+    validate_native_rate_identity(binding, margin, commission)
     mult = decimal(instrument["VolumeMultiple"], True)
     tick = decimal(instrument["PriceTick"], True)
     price = max(quote.bid, quote.ask)

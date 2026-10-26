@@ -571,3 +571,88 @@ def test_rate_scope_never_repairs_conflicting_identity(monkeypatch, tmp_path, is
     with pytest.raises(ValueError, match="NATIVE_RATE_IDENTITY"):
         cli.run(gateway, NS(), config, tmp_path)
     assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+
+
+def test_flat_transient_old_book_waits_then_uses_fresh_quote(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("filled")
+    original = gateway.query
+    books = 0
+    def intermittent(kind, instrument="", **scope):
+        nonlocal books
+        rows = original(kind, instrument, **scope)
+        if kind == "book":
+            books += 1
+            if books == 2:
+                return tuple(dict(row, ActionDay="20261026") for row in rows)
+        return rows
+    gateway.query = intermittent
+    result = cli.run(gateway, NS(CThostFtdcInputOrderField=NS, CThostFtdcInputOrderActionField=NS), config, tmp_path)
+    assert result["status"] == "CONTROLLED_RUN_ENDED"
+    assert result["empty_account_quote_waits"] == 1
+    assert result["submit_budget_used"] == 1
+    assert books >= 3
+
+
+def test_flat_old_book_until_deadline_never_submits(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    books = 0
+    def old(kind, instrument="", **scope):
+        nonlocal books
+        rows = original(kind, instrument, **scope)
+        if kind == "book":
+            books += 1
+            if books > 1:
+                return tuple(dict(row, ActionDay="20261026") for row in rows)
+        return rows
+    gateway.query = old
+    result = cli.run(gateway, NS(), config, tmp_path)
+    assert result["status"] == "CONTROLLED_RUN_ENDED"
+    assert result["empty_account_quote_waits"] > 0
+    assert result["submit_budget_used"] == 0
+    assert not result["orders"]
+    assert all(call[0] != "insert" for call in gateway.calls)
+
+
+@pytest.mark.parametrize("mode", ["future", "unknown-order", "bad-rate"])
+def test_quote_wait_never_hides_future_identity_or_pending_order(monkeypatch, tmp_path, mode):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("unknown" if mode == "unknown-order" else "filled")
+    original = gateway.query
+    books = 0
+    def invalid(kind, instrument="", **scope):
+        nonlocal books
+        rows = original(kind, instrument, **scope)
+        if mode == "bad-rate" and kind == "margin" and books >= 1:
+            return tuple(dict(row, ExchangeID="DCE") for row in rows)
+        if kind == "book":
+            books += 1
+            if (mode == "future" and books == 2) or (mode == "unknown-order" and books >= 3):
+                return tuple(dict(row, ActionDay="20261028" if mode == "future" else "20261026") for row in rows)
+        return rows
+    gateway.query = invalid
+    sdk = NS(CThostFtdcInputOrderField=NS, CThostFtdcInputOrderActionField=NS)
+    result = cli.run(gateway, sdk, config, tmp_path)
+    assert result["status"] == "CONTROLLED_RUN_REQUIRES_RECOVERY"
+    assert result["empty_account_quote_waits"] == 0
+    if mode == "unknown-order":
+        assert result["submit_budget_used"] == 1
+        assert any(not r["released"] for r in result["reservations"])
+    else:
+        assert result["submit_budget_used"] == 0
+
+
+def test_initial_old_book_still_stops_before_settlement_or_initialization(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def old(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        return tuple(dict(row, ActionDay="20261026") for row in rows) if kind == "book" else rows
+    gateway.query = old
+    with pytest.raises(ValueError, match="NATIVE_BOOK_STALE"):
+        cli.run(gateway, NS(), config, tmp_path)
+    assert not (tmp_path / "output/simnow-controlled").exists()
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)

@@ -103,6 +103,7 @@ def run(gateway, tdapi, config, root):
         native_product_id,
         quote_from_native_batch,
         execution_input,
+        validate_native_rate_identity,
         EXECUTION_INPUT_VERSION,
         MAX_BOOK_SOURCE_AGE_SECONDS,
     )
@@ -148,6 +149,7 @@ def run(gateway, tdapi, config, root):
     folder = None
     result = None
     monitor = None
+    empty_account_quote_waits = 0
     try:
         # All startup dependencies are native/authoritative reads; no default settlement write.
         first = read_snapshot(gateway.snapshot(), now=now())
@@ -411,12 +413,35 @@ def run(gateway, tdapi, config, root):
                 bindings.append(bound)
                 rate_facts.append((bound, meta, mar[0], com[0]))
             execution = []
+            wait_for_book = False
             for bound, meta, mar, com in rate_facts:
-                q = read_book(bound, snapshot.trading_day)
+                validate_native_rate_identity(bound, mar, com)
+                try:
+                    q = read_book(bound, snapshot.trading_day)
+                except ValueError as exc:
+                    current = store.current()
+                    diagnostic = getattr(gateway, "book_selection_diagnostics", {})
+                    old_source = Decimal(diagnostic.get("event_age_seconds", "-1")) > MAX_BOOK_SOURCE_AGE_SECONDS
+                    idle = (
+                        current.phase == "READY" and current.readback_valid
+                        and not current.orders and not current.positions
+                        and not current.reservations and not current.unresolved_fill_ids
+                        and not host.pending and not adapter._faulted
+                        and not any(p.must_close or p.rolling for p in current.products)
+                    )
+                    if str(exc) != "NATIVE_BOOK_STALE" or not old_source or not idle:
+                        raise
+                    empty_account_quote_waits += 1
+                    wait_for_book = True
+                    break
                 auth = market.authority(day, now(), bound.canonical)
                 execution.append(
                     execution_input(bound, meta, mar, com, q, auth.session, now())
                 )
+            if wait_for_book:
+                monitor_progress("READING")
+                time.sleep(0.2)
+                continue  # No Tick/effects with this batch; bounded deadline remains unchanged.
             adapter.drain()
             outcomes = host.tick(tuple(execution), tuple(bindings), now())
             monitor_progress("ACTIVE")
@@ -522,6 +547,8 @@ def run(gateway, tdapi, config, root):
             except Exception:
                 if result is not None:
                     result["status"] = "CONTROLLED_RUN_REQUIRES_RECOVERY"
+        if result is not None:
+            result.update(host_version="simnow_bounded_host_v2", empty_account_quote_waits=empty_account_quote_waits)
         if monitor is not None:
             monitor_progress(
                 "ERROR"
