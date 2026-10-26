@@ -82,3 +82,19 @@ def test_native_book_is_not_promoted_to_fresh_execution_input(issue):
         row["AskVolume1"] = -1
     with pytest.raises(ValueError):
         quote_from_native(binding, row, "20261027", now)
+
+
+@pytest.mark.parametrize("product,exchange,expected", [
+    ("RB", "SHFE", "rb"), ("SR", "CZCE", "SR"), ("IF", "CFFEX", "IF"),
+    ("I", "DCE", "i"), ("SC", "INE", "sc"), ("SI", "GFEX", "si"),
+])
+def test_native_product_query_scope(product, exchange, expected):
+    from guiyi_quant.simnow_execution.facts import native_product_id
+    assert native_product_id(product, exchange) == expected
+
+
+@pytest.mark.parametrize("product,exchange", [("rb", "SHFE"), ("RB", "UNKNOWN"), ("RB2701", "SHFE")])
+def test_native_product_scope_invalid_fails_closed(product, exchange):
+    from guiyi_quant.simnow_execution.facts import native_product_id
+    with pytest.raises(ValueError):
+        native_product_id(product, exchange)
