@@ -61,6 +61,8 @@ def test_entire_warmup_shares_one_deadline(monkeypatch):
         forward_source_context=lambda _: (SimpleNamespace(frequency='1d'),),
         load_checkpoint=lambda _: (None, None))
     worker = SimpleNamespace(_repository=repository, scan_live=False,
+        _enabled_keys=repository.enabled_forward_stream_ids, _work_routes=lambda key: (key,),
+        _begin_unit=lambda: None, _end_unit=lambda: None,
         _service_for=lambda name: checked.append(name), _read_input=lambda *_: None)
     @contextmanager
     def opened(**kwargs):
@@ -206,6 +208,8 @@ def test_initialized_only_warmup_is_successful_but_calculated_count_is_zero(monk
     from types import SimpleNamespace
     factory, repository, result = _initialized_route()
     worker = SimpleNamespace(_repository=repository, scan_live=False,
+        _enabled_keys=repository.enabled_forward_work_keys, _work_routes=repository.enabled_forward_work_routes,
+        _begin_unit=lambda: None, _end_unit=lambda: None,
         _service_for=lambda _: _never_evaluate_initialization(), _read_input=lambda *_: None)
     @contextmanager
     def opened(**_):

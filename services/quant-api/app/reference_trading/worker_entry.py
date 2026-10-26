@@ -372,7 +372,7 @@ if __name__ == "__main__":
 
 
 def warmup_reference_worker():
-    """Read current checkpoints and calculate candidate captures without persistence."""
+    """Validate every route while sharing raw inputs for one scheduling group."""
     deadline = monotonic() + 120.0
     with open_forward_worker(warmup=True, warmup_deadline=deadline) as (worker, _wake, _reconciliation):
         repository = worker._repository
@@ -381,37 +381,45 @@ def warmup_reference_worker():
         after = None
         while True:
             _check_warmup_deadline(deadline)
-            streams = repository.enabled_forward_stream_ids(limit=512, after=after)
-            if not streams:
+            keys = worker._enabled_keys(limit=512, after=after)
+            if not keys:
                 break
-            for stream_id in streams:
+            for key in keys:
                 _check_warmup_deadline(deadline)
-                from app.reference_trading.recording_scope import LIVE_FREQUENCIES
-                pending = repository.read_pending_capture(stream_id)
-                context = repository.forward_source_context(stream_id)
-                if (not worker.scan_live and not pending and context is not None
-                        and context[0].frequency in LIVE_FREQUENCIES):
-                    routes = worker._work_routes(worker._work_key(stream_id))
-                    if not any(repository.read_pending_capture(route) is not None for route in routes):
-                        continue
-                service = worker._service_for(stream_id)
-                token, checkpoint = repository.load_checkpoint(stream_id)
-                result = "calculated"
-                if pending:
-                    capture_id, evidence = pending
-                    service._evaluator(token, checkpoint, {**evidence, "capture_id": capture_id})
-                else:
-                    capture = worker._read_input(stream_id, "scan", None)
-                    if capture is None:
-                        result = _warmup_saved_capture(repository, stream_id, service)
-                    else:
-                        service._evaluator(token, checkpoint, {**capture.evidence(), "capture_id": "warmup"})
-                if result == "initialized":
-                    initialized += 1
-                else:
-                    count += 1
-                _check_warmup_deadline(deadline)
-            after = streams[-1]
+                try:
+                    worker._begin_unit()
+                    # The repository orders base routes before fusion and pages
+                    # distinct keys, so a group cannot straddle a page boundary.
+                    routes = worker._work_routes(key)
+                    for stream_id in routes:
+                        _check_warmup_deadline(deadline)
+                        from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+                        pending = repository.read_pending_capture(stream_id)
+                        context = repository.forward_source_context(stream_id)
+                        if (not worker.scan_live and not pending and context is not None
+                                and context[0].frequency in LIVE_FREQUENCIES):
+                            if not any(repository.read_pending_capture(route) is not None for route in routes):
+                                continue
+                        service = worker._service_for(stream_id)
+                        token, checkpoint = repository.load_checkpoint(stream_id)
+                        result = "calculated"
+                        if pending:
+                            capture_id, evidence = pending
+                            service._evaluator(token, checkpoint, {**evidence, "capture_id": capture_id})
+                        else:
+                            capture = worker._read_input(stream_id, "scan", None)
+                            if capture is None:
+                                result = _warmup_saved_capture(repository, stream_id, service)
+                            else:
+                                service._evaluator(token, checkpoint, {**capture.evidence(), "capture_id": "warmup"})
+                        if result == "initialized":
+                            initialized += 1
+                        else:
+                            count += 1
+                        _check_warmup_deadline(deadline)
+                finally:
+                    worker._end_unit()
+            after = keys[-1]
         if count + initialized == 0:
             raise RuntimeError("REFERENCE_WARMUP_SCOPE_EMPTY")
         return {"calculated": count, **({"initialized": initialized} if initialized else {})}

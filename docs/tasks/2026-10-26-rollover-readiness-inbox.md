@@ -39,3 +39,11 @@ Owner批准完整方案：自动预算内预热；顺序恢复真实原件并标
 凌晨向前修复最终完成：CLOSED通过latest-started权威Session owner准入；初始flatseed完整校验计initialized而非calculated；v2 receiving_cycle在完整有界轮结束报告，原计算ready/blocked不变，owner失权/排空不写错误状态或发布可接受报告。新原生运行证明全head精确验证、当前StreamIdentity/原件channel/revision/gen/receipt/hash、合法waiting与blocked全等、普通pending无error、active protocol/0053独立复验；legacy和原native时限不变。
 独立Review修正identity漂移P1、无效proof误标owner ready的P2后，225 passed/0 skipped。最终冻结父级组合387 passed/11.42s，含真实PG/Redis；Ruff、OpenSpec12/12、secret0、uv lock及diff通过。1.16.12待集成/发布，未提前声明运行切换。
 保留原件：retained-originals-20261027/2026-10-27.jsonl共8956条、sha256925267707e10651a88e195fda640f707c14594a40650966cb37e3e7cc6060e57；cursor1793019905299-0前后不变，tail1793039404268-4。导出仅证据，不替代正式入口或用于伪造回放。
+
+后续真实结果：PR501/502已发布v1.16.12 exact3426d89763bb107ef00ee6381b0a3e1e7da66997，正式树依赖、source roots、Web重新构建通过。原失败M/1w真实seed只读验证initialized且computed_bars=0。被动v2 request在03:58登记，旧游标前后相同；协议尚非active。
+新native cohort计划0d5754d32595e5a0ce27aa4d5332096af38b72acc09d93cf5b74c1827a684e4b在04:03仍prewarm取消，effects={}，未停服/CAS；actual-env只读Reference诊断定位REFERENCE_WARMUP_TIMEOUT。旧attempt保留不复用。
+独立Review又确认warmup遗漏现有分组input cache；现按distinct工作键begin/finallyend，逐流验证和120s不减，实际effective policy加入缓存键，未知policy不缓存。217项独立回归/0skip通过，source仅worker_entry/input_cache两文件；候选1.16.13。
+实际只读候选计时：120.033s后REFERENCE_WARMUP_TIMEOUT，lease_attempts1066、lease_busy985（约98s既有0.1s等待），cache_misses27、cache_hits54；确认缓存生效但维护锁竞争仍阻断，不延长期限、不减Scope/跳锁。并行另一个已交办历史参考资产更新进程仍运行，不干预它。
+8956条原始envelope、精确journal ID及游标证据已复制到主仓库稳定私有output/rollover-readiness-20261026/retained-originals-20261027；导出不是第二正式输入源。生产0053不重复，Runtime仍v1.16.10/gen30；新协议仅requested，尚无EG补数或过期推送。
+
+共享输入候选最终227 passed/16.20s，含实际隔离PG/Redis相关恢复；独立Review217 passed/0skip，Ruff/secret0/diff通过。实际120s预热仍因985次锁忙终止，故Runtime gate未通过；候选代码验证不替代现场运行证据。
