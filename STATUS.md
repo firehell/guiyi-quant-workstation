@@ -7,6 +7,19 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/26 主力切换准备及Reference耐久接收候选验证完成
+
+已实现正常换主力的预算准备、逐品种权威等待隔离、不可变原件与冻结投递、DB确认后ACK、
+逐流公平计算和延迟原件恢复。0053仅新增两张表与不可变保护；兼容默认旧接收协议，原生独占交接后才激活v2。
+不改变公式、换月交易、账户、通知时效或Scope。现役1080路：苏冰六周期360、Newow三周期720；HTDY未启用。
+
+CODE_COMPLETE／TEST_COMPLETE／REVIEW_COMPLETE；任务提交69420d5a5，已合并最新develop依赖，
+合并候选定向324 passed（真实隔离PG/Redis）、扩大Reference等1553 passed；独立Review允许集成develop。
+Web type/build/topology、OpenSpec12/12、secret0、Ruff及diff通过。1553扩大回归与最终324核心回归分别留证，不混称生产验收。
+生产迁移、兼容发布、Runtime及v2切换、EG真实历史/原件恢复与自然新Bar验收仍待执行；正式运行仍为下方v1.16.10/gen30。
+休市cohort要求60品种权威休市且下一Session>660秒，夜盘中不能绕过。首个v2持久接收后仅兼容恢复或前向修复，保留原件及游标。
+详情见[任务记录](docs/tasks/2026-10-26-rollover-readiness-inbox.md)。
+
 ## 10/26 苏冰六周期已发布并激活，完整历史构建与自然记录待收尾
 
 正式PR489／annotated v1.16.10／GitHub Release exact `a80753c3cf32fb2759920d26f88a1ba6cbc8ea02`，
