@@ -40,6 +40,18 @@ ENVIRONMENTS = {
 BROKER = "9999"
 SCHEMA = "simnow_readonly_inventory_v1"
 QUERY_GAP = 1.1
+
+
+def query_timeout_option(value):
+    try:
+        seconds = int(value)
+    except (ValueError, TypeError):
+        raise argparse.ArgumentTypeError("查询等待须为1..60秒整数") from None
+    if not 1 <= seconds <= 60:
+        raise argparse.ArgumentTypeError("查询等待须为1..60秒整数")
+    return seconds
+
+
 # Records retain all native position dimensions; never net LONG/SHORT or today/yesterday.
 FIELDS = {
     "funds": {
@@ -338,6 +350,10 @@ class Probe(tdapi.CThostFtdcTraderSpi):
                 "started_at": stamp(),
                 "rows": {},
                 "complete": False,
+                "response_count": 0,
+                "data_row_count": 0,
+                "terminal_response_seen": False,
+                "started_monotonic": time.monotonic(),
             }
             req = getattr(tdapi, QUERY_TYPES[kind])()
             req.BrokerID, req.InvestorID = BROKER, self.user
@@ -363,6 +379,9 @@ class Probe(tdapi.CThostFtdcTraderSpi):
             if current["kind"] != kind or current["complete"]:
                 self.fail("UNEXPECTED_QUERY_RESPONSE")
                 return
+            current["response_count"] += 1
+            current["data_row_count"] += int(row is not None)
+            current["terminal_response_seen"] = bool(last)
             if info is not None and int(info.ErrorID):
                 self.fail(
                     "QUERY_REJECTED", error_stage=kind, error_id=int(info.ErrorID)
@@ -400,6 +419,9 @@ class Probe(tdapi.CThostFtdcTraderSpi):
         self.receive("trades", row, info, request_id, last)
 
     def collect(self, gap=QUERY_GAP, query_timeout=15):
+        if type(query_timeout) is not int or not 0 <= query_timeout <= 60:
+            raise ValueError("QUERY_TIMEOUT_BOUND_INVALID")
+        self.result["query_timeout_seconds"] = query_timeout
         for round_number in (1, 2):
             record = {"round": round_number, "started_at": stamp(), "queries": {}}
             self.result["rounds"].append(record)
@@ -408,9 +430,20 @@ class Probe(tdapi.CThostFtdcTraderSpi):
                 if self.failed:
                     return
                 self.begin_query(kind, 100 + round_number * 10 + index)
-                if not self.query_done.wait(query_timeout):
+                timed_out = not self.query_done.wait(query_timeout)
+                if timed_out:
                     with self.lock:
-                        self.fail("QUERY_TIMEOUT", error_stage=kind)
+                        self.fail(
+                            "QUERY_TIMEOUT",
+                            error_stage=kind,
+                            timeout_kind=(
+                                "TERMINAL_AT_TIMEOUT_BOUNDARY"
+                                if self.current["terminal_response_seen"]
+                                else "ZERO_QUERY_CALLBACKS"
+                                if self.current["response_count"] == 0
+                                else "QUERY_TERMINATOR_MISSING"
+                            ),
+                        )
                 with self.lock:
                     if self.current:
                         current = self.current
@@ -419,6 +452,17 @@ class Probe(tdapi.CThostFtdcTraderSpi):
                             "started_at": current["started_at"],
                             "completed_at": current.get("completed_at"),
                             "rows": sorted(current["rows"].values(), key=canonical),
+                            "diagnostics": {
+                                "response_count": current["response_count"],
+                                "data_row_count": current["data_row_count"],
+                                "terminal_response_seen": current[
+                                    "terminal_response_seen"
+                                ],
+                                "timed_out": timed_out,
+                                "elapsed_seconds": round(
+                                    time.monotonic() - current["started_monotonic"], 6
+                                ),
+                            },
                         }
                     if self.failed:
                         return
@@ -574,6 +618,12 @@ def main():
         "--expected-balance", type=Decimal, help="重置目标资金，只读验收，不修改资金"
     )
     parser.add_argument("--not-before-trading-day", help="官网回执生效交易日 YYYYMMDD")
+    parser.add_argument(
+        "--query-timeout",
+        type=query_timeout_option,
+        default=15,
+        help="每个只读查询等待1..60秒；默认15，超时停止且不重发",
+    )
     options = parser.parse_args()
     if (options.expected_balance is None) != (options.not_before_trading_day is None):
         parser.error("资金目标与官网生效日必须同时提供")
@@ -622,7 +672,7 @@ def main():
                     with probe.lock:
                         probe.fail("LOGIN_TIMEOUT", error_stage=probe.result["status"])
                 if not probe.failed:
-                    probe.collect()
+                    probe.collect(query_timeout=options.query_timeout)
             except Exception as exc:
                 probe.fail(
                     "LOCAL_ERROR",

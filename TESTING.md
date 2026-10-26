@@ -2036,6 +2036,9 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 资金初始基线生效验收可在first读取时成对提供 `--expected-balance 100000 --not-before-trading-day 20261027`，
 日期取自本次官网受理回执。验收单独报告，不改变原查询状态或执行权限；旧交易日、测试副本和部分结果不能通过。
 
+只读协议回归另覆盖真实Mac SDK请求/回报结构和实际SPI方法的跨线程两轮查询、零回调/缺终态/超时边界分类，
+以及等待参数边界。账户consumer验证diagnostics不改变身份哈希且不能覆盖不完整查询；fixture不连接柜台。
+
 ## 苏冰／HTDY 实时留存参考收益面板
 
 ```sh

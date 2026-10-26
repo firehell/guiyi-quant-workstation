@@ -61,9 +61,24 @@ CTP 查询不是事务快照；两轮相等只证明有界稳定，不排除窗�
 摘要仅是身份标签，不声称可以抵抗对短账号的穷举。允许保存的交易记录仍属于本地私人账户数据，不提交Git。
 屏幕只显示结果与文件位置；原生SDK日志关闭，回调异常仅保留阶段及异常类型。
 
-查询等待每条15秒、登录等待25秒；这不是整个进程或原生 `Init/Release` 的硬截止。
+查询默认每条15秒，CLI可显式指定 `--query-timeout 1..60` 秒；登录等待25秒。
+一次只发送一条查询，超时停止，不延长后自动重发；这不是整个进程或原生 `Init/Release` 的硬截止。
 遇到原生阻塞可由用户结束该一次性进程，不产生任何交易写入；重新运行是新的显式核验，不覆写旧文件，
 不后台重试。取消、断线和部分结果不代表账户清空；下一次必须重新登录并从第一轮完整读取。
+
+## 资金查询超时诊断
+
+查询结果追加脱敏diagnostics：response_count、data_row_count、terminal_response_seen、timed_out和单调时钟elapsed_seconds。
+它们不进入账户内容哈希，不改变complete、资金事实或两轮稳定验收；有数据但无完整终态仍失败关闭。
+QUERY_TIMEOUT按事实区分ZERO_QUERY_CALLBACKS（零回调）、QUERY_TERMINATOR_MISSING（有回调但缺终态）和
+TERMINAL_AT_TIMEOUT_BOUNDARY（等待超时边界处已收到终态，仍保留失败，不称终态缺失）。不输出原始响应、账号或异常文本。
+
+例如在用户核对账号后，单次第一套只读诊断可显式使用45秒等待：
+
+    /path/to/isolated/python -I scripts/broker/simnow_readonly.py --environment first --expected-balance 100000 --not-before-trading-day 20261027 --query-timeout 45
+
+这是有界响应观测，不宣称延长等待已经修复柜台超时，也不更改原生请求参数、前置、认证、结算或交易行为。
+离线真实SDK结构和SPI方法的跨线程测试只能证明本地请求/回调处理路径，不能模拟第一套后台或传输状态。
 
 ## 验证
 
