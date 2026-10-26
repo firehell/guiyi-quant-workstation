@@ -369,74 +369,75 @@ class ReadOnlyTests(unittest.TestCase):
             self.assertFalse(result["execution_eligible"])
 
     def test_native_structs_through_actual_spi_callbacks_complete_two_rounds(self):
-        p = self.probe()
-        calls = []
-        workers = []
-        callbacks = {
-            "funds": p.OnRspQryTradingAccount,
-            "positions": p.OnRspQryInvestorPosition,
-            "orders": p.OnRspQryOrder,
-            "trades": p.OnRspQryTrade,
-        }
+        for profile in m.QUERY_ORDERS:
+            p = self.probe()
+            calls = []
+            workers = []
+            callbacks = {
+                "funds": p.OnRspQryTradingAccount,
+                "positions": p.OnRspQryInvestorPosition,
+                "orders": p.OnRspQryOrder,
+                "trades": p.OnRspQryTrade,
+            }
 
-        class NativeApi:
-            def send(self, kind, request, identity):
-                self_case.assertIsInstance(
-                    request, getattr(m.tdapi, m.QUERY_TYPES[kind])
-                )
-                self_case.assertEqual(
-                    (request.BrokerID, request.InvestorID), ("9999", USER)
-                )
-                if kind == "funds":
-                    self_case.assertEqual(request.CurrencyID, "CNY")
-                calls.append(kind)
-
-                def respond():
-                    data = None
-                    if kind == "funds":
-                        data = m.tdapi.CThostFtdcTradingAccountField()
-                        for name in m.FIELDS[kind]:
-                            setattr(data, name, getattr(row("funds"), name))
-                        data.BrokerID, data.AccountID = "9999", USER
-                    callbacks[kind](
-                        data, m.tdapi.CThostFtdcRspInfoField(), identity, True
+            class NativeApi:
+                def send(self, kind, request, identity):
+                    self_case.assertIsInstance(
+                        request, getattr(m.tdapi, m.QUERY_TYPES[kind])
                     )
+                    self_case.assertEqual(
+                        (request.BrokerID, request.InvestorID), ("9999", USER)
+                    )
+                    if kind == "funds":
+                        self_case.assertEqual(request.CurrencyID, "CNY")
+                    calls.append(kind)
 
-                worker = threading.Thread(target=respond)
-                workers.append(worker)
-                worker.start()
-                return 0
+                    def respond():
+                        data = None
+                        if kind == "funds":
+                            data = m.tdapi.CThostFtdcTradingAccountField()
+                            for name in m.FIELDS[kind]:
+                                setattr(data, name, getattr(row("funds"), name))
+                            data.BrokerID, data.AccountID = "9999", USER
+                        callbacks[kind](
+                            data, m.tdapi.CThostFtdcRspInfoField(), identity, True
+                        )
 
-            def ReqQryTradingAccount(self, request, identity):
-                return self.send("funds", request, identity)
+                    worker = threading.Thread(target=respond)
+                    workers.append(worker)
+                    worker.start()
+                    return 0
 
-            def ReqQryInvestorPosition(self, request, identity):
-                return self.send("positions", request, identity)
+                def ReqQryTradingAccount(self, request, identity):
+                    return self.send("funds", request, identity)
 
-            def ReqQryOrder(self, request, identity):
-                return self.send("orders", request, identity)
+                def ReqQryInvestorPosition(self, request, identity):
+                    return self.send("positions", request, identity)
 
-            def ReqQryTrade(self, request, identity):
-                return self.send("trades", request, identity)
+                def ReqQryOrder(self, request, identity):
+                    return self.send("orders", request, identity)
 
-        self_case = self
-        p.api = NativeApi()
-        try:
-            p.collect(gap=0, query_timeout=1)
-        finally:
-            for worker in workers:
-                worker.join(timeout=2)
-        self.assertEqual(p.result["status"], "READ_ONLY_COMPLETE")
-        self.assertEqual(calls, list(m.FIELDS) * 2)
-        for record in p.result["rounds"]:
-            for kind, query in record["queries"].items():
-                self.assertEqual(query["diagnostics"]["response_count"], 1)
-                self.assertEqual(
-                    query["diagnostics"]["data_row_count"], int(kind == "funds")
-                )
-                self.assertTrue(query["diagnostics"]["terminal_response_seen"])
-                self.assertFalse(query["diagnostics"]["timed_out"])
-        self.assertNotIn("dummy-not-a-real-password", str(p.result))
+                def ReqQryTrade(self, request, identity):
+                    return self.send("trades", request, identity)
+
+            self_case = self
+            p.api = NativeApi()
+            try:
+                p.collect(gap=0, query_timeout=1, query_order=profile)
+            finally:
+                for worker in workers:
+                    worker.join(timeout=2)
+            self.assertEqual(p.result["status"], "READ_ONLY_COMPLETE")
+            self.assertEqual(calls, list(m.QUERY_ORDERS[profile]) * 2)
+            for record in p.result["rounds"]:
+                for kind, query in record["queries"].items():
+                    self.assertEqual(query["diagnostics"]["response_count"], 1)
+                    self.assertEqual(
+                        query["diagnostics"]["data_row_count"], int(kind == "funds")
+                    )
+                    self.assertTrue(query["diagnostics"]["terminal_response_seen"])
+                    self.assertFalse(query["diagnostics"]["timed_out"])
+            self.assertNotIn("dummy-not-a-real-password", str(p.result))
 
     def test_query_timeout_is_bounded_and_invalid_value_sends_nothing(self):
         for value in ("0", "61", "-1", "inf", "text"):
@@ -447,6 +448,51 @@ class ReadOnlyTests(unittest.TestCase):
             p = self.probe()
             with self.assertRaises(ValueError):
                 p.collect(gap=0, query_timeout=value)
+            self.assertEqual(p.api.calls, [])
+
+    def test_positions_first_runs_the_same_four_queries_twice(self):
+        control = self.probe()
+        control.collect(gap=0, query_timeout=0, query_order="positions-first")
+        normal = self.probe()
+        self.collect(normal)
+        self.assertEqual(
+            control.api.calls, ["positions", "funds", "orders", "trades"] * 2
+        )
+        self.assertEqual(control.result["status"], "READ_ONLY_COMPLETE")
+        self.assertEqual(control.result["round_hashes"], normal.result["round_hashes"])
+        self.assertFalse(control.result["execution_eligible"])
+
+    def test_silent_positions_first_stops_before_any_funds_request(self):
+        p = self.probe()
+        p.api.skip_last = True
+        p.collect(gap=0, query_timeout=0, query_order="positions-first")
+        self.assertEqual(p.api.calls, ["positions"])
+        self.assertEqual(p.result["status"], "QUERY_TIMEOUT")
+        self.assertEqual(p.result["error_stage"], "positions")
+        self.assertEqual(p.result["timeout_kind"], "ZERO_QUERY_CALLBACKS")
+        self.assertNotIn("account_empty_observed", p.result)
+
+    def test_empty_complete_positions_do_not_make_partial_account_empty(self):
+        p = self.probe()
+        original = p.api.query
+
+        def selective(kind, req, identity):
+            p.api.skip_last = kind == "funds"
+            return original(kind, req, identity)
+
+        p.api.query = selective
+        p.collect(gap=0, query_timeout=0, query_order="positions-first")
+        self.assertEqual(p.api.calls, ["positions", "funds"])
+        self.assertTrue(p.result["rounds"][0]["queries"]["positions"]["complete"])
+        self.assertEqual(p.result["status"], "QUERY_TIMEOUT")
+        self.assertEqual(p.result["error_stage"], "funds")
+        self.assertNotIn("account_empty_observed", p.result)
+
+    def test_arbitrary_or_partial_query_orders_are_rejected_without_sending(self):
+        for value in ("arbitrary", ("positions",), None, ["funds"]):
+            p = self.probe()
+            with self.assertRaises(ValueError):
+                p.collect(gap=0, query_timeout=0, query_order=value)
             self.assertEqual(p.api.calls, [])
 
     def test_terminal_at_timeout_boundary_remains_failed_without_false_missing_reason(

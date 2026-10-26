@@ -82,7 +82,11 @@ def test_query_diagnostics_do_not_change_native_identity_or_override_incomplete_
     value = report()
     original = read_snapshot(value)
     value["query_timeout_seconds"] = 45
+    value["query_order"] = ["positions", "funds", "orders", "trades"]
     for record in value["rounds"]:
+        record["queries"] = {
+            kind: record["queries"][kind] for kind in value["query_order"]
+        }
         for query in record["queries"].values():
             query["diagnostics"] = dict(
                 response_count=1, terminal_response_seen=True, timed_out=False

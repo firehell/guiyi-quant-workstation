@@ -137,6 +137,10 @@ QUERY_TYPES = {
     "orders": "CThostFtdcQryOrderField",
     "trades": "CThostFtdcQryTradeField",
 }
+QUERY_ORDERS = {
+    "funds-first": tuple(FIELDS),
+    "positions-first": ("positions", "funds", "orders", "trades"),
+}
 
 
 def stamp():
@@ -418,14 +422,18 @@ class Probe(tdapi.CThostFtdcTraderSpi):
     def OnRspQryTrade(self, row, info, request_id, last):
         self.receive("trades", row, info, request_id, last)
 
-    def collect(self, gap=QUERY_GAP, query_timeout=15):
+    def collect(self, gap=QUERY_GAP, query_timeout=15, query_order="funds-first"):
         if type(query_timeout) is not int or not 0 <= query_timeout <= 60:
             raise ValueError("QUERY_TIMEOUT_BOUND_INVALID")
+        if type(query_order) is not str or query_order not in QUERY_ORDERS:
+            raise ValueError("QUERY_ORDER_PROFILE_INVALID")
+        kinds = QUERY_ORDERS[query_order]
+        self.result["query_order"] = list(kinds)
         self.result["query_timeout_seconds"] = query_timeout
         for round_number in (1, 2):
             record = {"round": round_number, "started_at": stamp(), "queries": {}}
             self.result["rounds"].append(record)
-            for index, kind in enumerate(FIELDS):
+            for index, kind in enumerate(kinds):
                 time.sleep(gap)
                 if self.failed:
                     return
@@ -624,6 +632,12 @@ def main():
         default=15,
         help="每个只读查询等待1..60秒；默认15，超时停止且不重发",
     )
+    parser.add_argument(
+        "--query-order",
+        choices=tuple(QUERY_ORDERS),
+        default="funds-first",
+        help="默认先查资金；positions-first仅用于持仓首查对照，仍逐条查询且超时停止",
+    )
     options = parser.parse_args()
     if (options.expected_balance is None) != (options.not_before_trading_day is None):
         parser.error("资金目标与官网生效日必须同时提供")
@@ -647,6 +661,7 @@ def main():
     print(
         "不下单、不撤单、不确认结算；密码不保存。测试环境结果不能代替第一套环境验收。"
     )
+    print("查询顺序：", " → ".join(QUERY_ORDERS[options.query_order]))
     user = input("投资者代码（数字）: ").strip()
     if not user.isascii() or not user.isdigit() or not 1 <= len(user) <= 15:
         raise SystemExit("投资者代码格式不合格，未连接。")
@@ -672,7 +687,10 @@ def main():
                     with probe.lock:
                         probe.fail("LOGIN_TIMEOUT", error_stage=probe.result["status"])
                 if not probe.failed:
-                    probe.collect(query_timeout=options.query_timeout)
+                    probe.collect(
+                        query_timeout=options.query_timeout,
+                        query_order=options.query_order,
+                    )
             except Exception as exc:
                 probe.fail(
                     "LOCAL_ERROR",

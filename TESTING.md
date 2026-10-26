@@ -2038,6 +2038,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 只读协议回归另覆盖真实Mac SDK请求/回报结构和实际SPI方法的跨线程两轮查询、零回调/缺终态/超时边界分类，
 以及等待参数边界。账户consumer验证diagnostics不改变身份哈希且不能覆盖不完整查询；fixture不连接柜台。
+持仓首查对照覆盖两种固定顺序、首项持仓超时不再查询资金、持仓完整零行但资金失败不判账户为空，
+以及非法profile零请求；两种顺序各两轮的经济事实哈希保持一致。
 
 ## 苏冰／HTDY 实时留存参考收益面板
 
