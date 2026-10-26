@@ -72,6 +72,19 @@ def bind_contract(canonical, exchange, rows, now, until, trading_day):
     ), row
 
 
+def quote_from_native_batch(binding, rows, trading_day, received_at):
+    """Select one exact physical identity from an already completed native batch."""
+    selected = [
+        row for row in rows
+        if row["InstrumentID"] == binding.native and row["ExchangeID"] == binding.exchange
+    ]
+    if not selected:
+        raise ValueError("NATIVE_BOOK_TARGET_MISSING")
+    if len(selected) != 1:
+        raise ValueError("NATIVE_BOOK_TARGET_AMBIGUOUS")
+    return quote_from_native(binding, selected[0], trading_day, received_at)
+
+
 def quote_from_native(binding, row, trading_day, received_at):
     if (row["InstrumentID"], row["ExchangeID"], row["TradingDay"]) != (
         binding.native,

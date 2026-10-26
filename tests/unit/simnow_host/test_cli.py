@@ -469,3 +469,45 @@ def test_monitor_publication_failure_does_not_change_controlled_execution(
     assert result["monitor_status"] == "unavailable"
     assert "private observer failure" not in str(result)
     assert len([c for c in gateway.calls if c[0] == "insert"]) == 1
+
+
+def test_preflight_batch_book_selects_exact_physical_contract(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def batch(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        if kind != "book":
+            return rows
+        # Bad/stale unrelated rows cannot substitute for or poison the exact target.
+        return tuple(dict(rows[0], InstrumentID=f"other{i}", BidPrice1=0) for i in range(32)) + rows
+    gateway.query = batch
+    result = cli.run(gateway, NS(), config, tmp_path)
+    assert result["status"] == "READ_ONLY_PREFLIGHT_COMPLETE"
+    observed = result["execution_input_observed"]
+    assert observed["contract"] == "RB2701" and observed["native_contract"] == "rb2701"
+    assert observed["bid"] == "999" and observed["ask"] == "1000"
+    assert observed["scope"] == "OBSERVED_INPUT_NOT_CURRENT_ORDER_PERMISSION"
+    diagnostic = gateway.book_selection_diagnostics
+    assert diagnostic["batch_rows"] == 33 and diagnostic["exact_identity_matches"] == 1
+    assert diagnostic["trading_day_matches"] is True
+    assert 0 <= float(diagnostic["event_age_seconds"]) <= 5
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+    assert not (tmp_path / "output/simnow-controlled").exists()
+
+
+def test_preflight_duplicate_target_book_stops_without_mutation(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = False
+    gateway = FakeGateway("unconfirmed")
+    original = gateway.query
+    def duplicate(kind, instrument="", **scope):
+        rows = original(kind, instrument, **scope)
+        return rows + rows if kind == "book" else rows
+    gateway.query = duplicate
+    with pytest.raises(ValueError, match="NATIVE_BOOK_TARGET_AMBIGUOUS"):
+        cli.run(gateway, NS(), config, tmp_path)
+    assert gateway.book_selection_diagnostics["exact_identity_matches"] == 2
+    assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+    assert not (tmp_path / "output/simnow-controlled").exists()
