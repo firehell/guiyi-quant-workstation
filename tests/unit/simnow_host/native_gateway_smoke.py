@@ -247,6 +247,23 @@ class Compatibility(unittest.TestCase):
         self.assertEqual(rows[0]["ExchangeID"], "")
         self.assertEqual(rows[0]["query_scope"]["kind"], "commission")
 
+    def test_inventory_diagnostics_exclude_account_rows_and_credentials(self):
+        self.g.result.update(status="QUERY_TIMEOUT", error_stage="funds", timeout_kind="ZERO_QUERY_CALLBACKS", authentication_passed=True, login_passed=True)
+        self.g.result["rounds"] = [dict(round=1, queries={"funds":dict(complete=False,rows=[{"AccountID":"private-account"}],diagnostics=dict(response_count=0,data_row_count=0,terminal_response_seen=False,timed_out=True,elapsed_seconds=15.0))})]
+        value = self.g.inventory_diagnostics()
+        self.assertEqual(value["status"], "QUERY_TIMEOUT")
+        self.assertEqual(value["queries"][0]["kind"], "funds")
+        self.assertEqual(value["queries"][0]["response_count"], 0)
+        self.assertNotIn("private-account", str(value))
+        self.assertNotIn("fixture-only", str(value))
+        self.assertNotIn("000000", str(value))
+        self.assertEqual(self.g.api.calls, [])
+
+    def test_inventory_diagnostics_preserve_fixed_login_and_api_stages(self):
+        for stage in ("authenticate_response", "login_response", "api_error"):
+            self.g.result.update(status="LOCAL_ERROR", error_stage=stage)
+            self.assertEqual(self.g.inventory_diagnostics()["error_stage"], stage)
+
     def test_login_native_identity_exists_before_completion_waiter(self):
         row = t.CThostFtdcRspUserLoginField()
         row.BrokerID = "9999"

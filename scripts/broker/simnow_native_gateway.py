@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 import threading
 import time
+import re
 
 _SOURCE = Path(__file__).with_name("simnow_readonly.py")
 _spec = importlib.util.spec_from_file_location("guiyi_simnow_readonly", _SOURCE)
@@ -214,6 +215,40 @@ class Gateway(_readonly.Probe):
             self.execution_adapter.disconnected(datetime.now(UTC))
         super().OnFrontDisconnected(reason)
         self.extra_done.set()
+
+    def inventory_diagnostics(self):
+        """Protocol counters only; never serialize native account rows or identities."""
+        with self.lock:
+            result = self.result
+            status = result.get("status", "UNKNOWN")
+            stage = result.get("error_stage")
+            kinds = ("funds", "positions", "orders", "trades")
+            stages = {"authenticate", "login", "connect", "disconnect", "query_send", "response_error", "authenticate_response", "login_response", "api_error"} | set(kinds) | {"query_response_" + k for k in kinds}
+            value = dict(
+                status=status if isinstance(status, str) and re.fullmatch(r"[A-Z_0-9]{1,64}", status) else "UNKNOWN",
+                authentication_passed=result.get("authentication_passed") is True,
+                login_passed=result.get("login_passed") is True,
+                error_stage=stage if stage in stages else None,
+                requests=[], queries=[],
+            )
+            for key in ("error_id", "return_code"):
+                if type(result.get(key)) is int:
+                    value[key] = result[key]
+            timeout = result.get("timeout_kind")
+            if timeout in ("ZERO_QUERY_CALLBACKS", "QUERY_TERMINATOR_MISSING", "TERMINAL_AT_TIMEOUT_BOUNDARY"):
+                value["timeout_kind"] = timeout
+            for receipt in result.get("requests", ()):
+                if receipt.get("kind") in {"authenticate", "login", *kinds}:
+                    value["requests"].append({k: receipt[k] for k in ("kind", "request_id", "accepted", "return_code") if k in receipt})
+            for record in result.get("rounds", ()):
+                for kind, query in record.get("queries", {}).items():
+                    if kind not in kinds:
+                        continue
+                    diagnostic = query.get("diagnostics", {})
+                    item = dict(round=record["round"], kind=kind, complete=query.get("complete") is True)
+                    item.update({k: diagnostic[k] for k in ("response_count", "data_row_count", "terminal_response_seen", "timed_out", "elapsed_seconds") if k in diagnostic})
+                    value["queries"].append(item)
+            return value
 
     def snapshot(self):
         if self.monitor_progress is not None:
