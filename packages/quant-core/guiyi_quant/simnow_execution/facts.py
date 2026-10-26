@@ -8,6 +8,9 @@ from .. import htdy_account_execution as a
 from ..htdy_account_execution.codec import digest
 from .model import Contract, valid
 
+EXECUTION_INPUT_VERSION = "simnow_native_input_v2"
+MAX_BOOK_SOURCE_AGE_SECONDS = 8
+
 
 def decimal(value, positive=False):
     if type(value) not in (str, int, float, Decimal):
@@ -20,6 +23,17 @@ def decimal(value, positive=False):
     ):
         raise ValueError("NATIVE_FACT_NUMBER_INVALID")
     return result
+
+
+def native_product_id(product, exchange):
+    """CTP query scope only; actual physical identity still requires bind_contract."""
+    if not isinstance(product, str) or re.fullmatch(r"[A-Z]{1,3}", product) is None:
+        raise ValueError("AUTHORITATIVE_PRODUCT_INVALID")
+    if exchange in ("CZCE", "CFFEX"):
+        return product
+    if exchange in ("SHFE", "DCE", "INE", "GFEX"):
+        return product.lower()
+    raise ValueError("NATIVE_PRODUCT_EXCHANGE_UNSUPPORTED")
 
 
 def bind_contract(canonical, exchange, rows, now, until, trading_day):
@@ -61,6 +75,19 @@ def bind_contract(canonical, exchange, rows, now, until, trading_day):
     ), row
 
 
+def quote_from_native_batch(binding, rows, trading_day, received_at):
+    """Select one exact physical identity from an already completed native batch."""
+    selected = [
+        row for row in rows
+        if row["InstrumentID"] == binding.native and row["ExchangeID"] == binding.exchange
+    ]
+    if not selected:
+        raise ValueError("NATIVE_BOOK_TARGET_MISSING")
+    if len(selected) != 1:
+        raise ValueError("NATIVE_BOOK_TARGET_AMBIGUOUS")
+    return quote_from_native(binding, selected[0], trading_day, received_at)
+
+
 def quote_from_native(binding, row, trading_day, received_at):
     if (row["InstrumentID"], row["ExchangeID"], row["TradingDay"]) != (
         binding.native,
@@ -75,7 +102,7 @@ def quote_from_native(binding, row, trading_day, received_at):
     ).replace(
         tzinfo=ZoneInfo("Asia/Shanghai"), microsecond=row["UpdateMillisec"] * 1000
     )
-    if not event <= received_at or (received_at - event).total_seconds() > 5:
+    if not event <= received_at or (received_at - event).total_seconds() > MAX_BOOK_SOURCE_AGE_SECONDS:
         raise ValueError("NATIVE_BOOK_STALE")
     for k in ("BidVolume1", "AskVolume1"):
         if type(row[k]) is not int or row[k] < 0:
@@ -84,7 +111,7 @@ def quote_from_native(binding, row, trading_day, received_at):
         binding.canonical,
         received_at,
         received_at + timedelta(seconds=3),
-        "simnow-execution-book:" + digest((row, received_at)),
+        "simnow-execution-book:" + digest((EXECUTION_INPUT_VERSION, MAX_BOOK_SOURCE_AGE_SECONDS, row, received_at)),
         decimal(row["BidPrice1"], True),
         decimal(row["AskPrice1"], True),
         row["BidVolume1"],
@@ -94,13 +121,23 @@ def quote_from_native(binding, row, trading_day, received_at):
     )
 
 
-def execution_input(binding, instrument, margin, commission, quote, session, now):
-    valid(binding.at, binding.valid_until, now)
-    for row in (margin, commission):
-        if (
-            row["InstrumentID"] != binding.native
-            or row["ExchangeID"] != binding.exchange
-            or row["BrokerID"] != "9999"
+def validate_native_rate_identity(binding, margin, commission):
+    for kind, row in (("margin", margin), ("commission", commission)):
+        if row["InstrumentID"] != binding.native or row["BrokerID"] != "9999":
+            raise ValueError("NATIVE_RATE_IDENTITY")
+        scope = row.get("query_scope")
+        if scope is not None and (
+            not isinstance(scope, dict)
+            or scope.get("schema") != "native_rate_query_scope_v1"
+            or scope.get("kind") != kind
+            or scope.get("instrument") != binding.native
+            or scope.get("exchange") != binding.exchange
+            or type(scope.get("request_id")) is not int
+            or scope["request_id"] <= 0
+        ):
+            raise ValueError("NATIVE_RATE_IDENTITY")
+        if row["ExchangeID"] != binding.exchange and not (
+            row["ExchangeID"] == "" and scope is not None
         ):
             raise ValueError("NATIVE_RATE_IDENTITY")
     if margin["HedgeFlag"] != "1" or margin["IsRelative"] != 0:
@@ -109,6 +146,11 @@ def execution_input(binding, instrument, margin, commission, quote, session, now
         margin["ShortMarginRatioByVolume"]
     ):
         raise ValueError("PER_LOT_MARGIN_PROFILE_UNSUPPORTED")
+
+
+def execution_input(binding, instrument, margin, commission, quote, session, now):
+    valid(binding.at, binding.valid_until, now)
+    validate_native_rate_identity(binding, margin, commission)
     mult = decimal(instrument["VolumeMultiple"], True)
     tick = decimal(instrument["PriceTick"], True)
     price = max(quote.bid, quote.ask)

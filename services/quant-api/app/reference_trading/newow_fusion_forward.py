@@ -153,7 +153,8 @@ def _validated_sources(stream, dependencies):
         first["bar_end"] != second["bar_end"]
         or first["source_kind"] != second["source_kind"]
         or first["input_payload"] != second["input_payload"]
-        or first["source_proof"] != second["source_proof"]
+        or {k: v for k, v in first["source_proof"].items() if k != "inbox_delivery_id"}
+        != {k: v for k, v in second["source_proof"].items() if k != "inbox_delivery_id"}
     ):
         raise ValueError("REFERENCE_FUSION_SOURCE_INPUT_CONFLICT")
     return first, tuple(actions), max(_timestamp(c["observed_at"]) for c in captures)

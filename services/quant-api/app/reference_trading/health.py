@@ -57,7 +57,8 @@ class ForwardReferenceHealth:
                 ReferenceStream.recording_mode == "forward_observation",
             ).order_by(ReferenceStream.stream_id)).all()
             keys = {(stream.product.lower(), stream.frequency) for stream in streams
-                    if stream.strategy_code.replace("-", "_").startswith("newow_")
+                    if (stream.strategy_code.replace("-", "_").startswith("newow_")
+                        or stream.strategy_code == "subing_reference")
                     and stream.frequency in FREQUENCIES}
             keys.update((product.lower(), frequency) for product in products
                         for frequency in FREQUENCIES)

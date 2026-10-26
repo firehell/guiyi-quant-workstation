@@ -552,6 +552,56 @@ class MarketReadService:
             bars=bars,
         )
 
+    def retained_contract_replay_window(self, window: MarketReadWindow, *, observations) -> CurrentContractReplayWindow:
+        """Prove a physical prefix with immutable completed originals, without Redis.
+
+        Callers supply hash-verified inbox inputs. Market ownership, overlap and
+        full lifecycle/session coverage are still decided by the shared MDS.
+        This explicit source never substitutes provider history for originals.
+        """
+        from app.market_data.live_market import _bar_from_payload
+        import json
+        frequency = _current_contract_replay_frequency(window)
+        try:
+            owner = self._market_data.dominant_segment_for_day(window.symbol, window.trading_day)
+            if owner.contract != window.contract:
+                raise ValueError("owner")
+            canonical = self._current_contract_history(symbol=window.symbol, frequency=frequency,
+                contract=window.contract, cutoff=window.cutoff, after=None, trading_day=window.trading_day)
+            merged = {bar.bar_end: bar for bar in canonical}
+            previous = None
+            for event in observations:
+                bar = _bar_from_payload(json.dumps(event.data, allow_nan=False))
+                if (not event.notification_eligible or not event.stream_id or event.confirmed_at is None
+                        or event.confirmed_at < bar.bar_end or event.source_observed_at > event.confirmed_at
+                        or event.raw_received_at is not None and event.raw_received_at > event.confirmed_at
+                        or event.channel != f"live:bar:{window.symbol}:{window.frequency}"
+                        or event.trading_day != window.trading_day or bar.trading_day != window.trading_day
+                        or event.data.get("contract") != window.contract or bar.bar_end > window.cutoff
+                        or previous is not None and bar.bar_end <= previous):
+                    raise ValueError("original")
+                previous = bar.bar_end
+                if bar.bar_end in merged and merged[bar.bar_end] != bar:
+                    raise ValueError("overlap")
+                merged[bar.bar_end] = bar
+            bars = tuple(merged[end] for end in sorted(merged))
+            if not bars or not window.bars or bars[-1] != window.bars[-1] or bars[-1].bar_end != window.cutoff:
+                raise ValueError("cutoff")
+            self._market_data.validate_contract_replay_coverage(symbol=window.symbol,
+                contract=window.contract, frequency=frequency, trading_day=window.trading_day,
+                cutoff=window.cutoff, after=None, bars=bars)
+            if self._market_data.dominant_segment_for_day(window.symbol, window.trading_day).contract != window.contract:
+                raise ValueError("owner")
+        except MarketReadWindowError:
+            raise
+        except MarketDataError as error:
+            raise MarketReadWindowError("MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE") from error
+        except (ValueError, TypeError, KeyError) as error:
+            raise MarketReadWindowError("MARKET_READ_RETAINED_ORIGINAL_INVALID") from error
+        return CurrentContractReplayWindow(symbol=window.symbol, frequency=window.frequency,
+            trading_day=window.trading_day, contract=window.contract, cutoff=window.cutoff,
+            after=None, bars=bars)
+
     def subing_direction_window(
         self, decision: MarketReadWindow, frequency: BarFrequency,
     ) -> CurrentContractReplayWindow:

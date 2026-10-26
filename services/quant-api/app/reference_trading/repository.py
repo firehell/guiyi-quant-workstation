@@ -149,6 +149,7 @@ class ReferenceRepository:
             raise TypeError("session_factory must be callable")
         self._session_factory = session_factory
         self._fault_injector = fault_injector or (lambda _stage: None)
+        self.inbox_enabled = False
 
     def ensure_stream(self, identity: StreamIdentity) -> StoredStream:
         if not isinstance(identity, StreamIdentity):
@@ -179,6 +180,24 @@ class ReferenceRepository:
         return result
 
     def capture_forward(self, capture: ForwardCapture) -> str:
+        """An uncertain write is independently read once, never retried."""
+        from sqlalchemy.exc import SQLAlchemyError
+        try:
+            return self._capture_forward(capture)
+        except SQLAlchemyError:
+            try:
+                with self._session_factory() as session:
+                    row = session.scalar(select(ReferenceBatch).where(
+                        ReferenceBatch.stream_id == capture.stream_id,
+                        ReferenceBatch.revision_id == capture.revision_id,
+                        ReferenceBatch.batch_key == capture.batch_key))
+                    if row is not None and row.kind == "capture" and row.payload_hash == capture.capture_hash:
+                        return row.batch_id
+            except SQLAlchemyError:
+                pass
+            raise RepositoryConflict("FORWARD_CAPTURE_OUTCOME_UNKNOWN") from None
+
+    def _capture_forward(self, capture: ForwardCapture) -> str:
         """Persist one immutable observation without advancing reference state."""
         if not isinstance(capture, ForwardCapture):
             raise TypeError("capture must be ForwardCapture")
@@ -795,6 +814,11 @@ class ReferenceRepository:
             if capture_row is not None:
                 capture_row.consumed_by_batch_id = batch_id
                 capture_row.outcome = "consumed"
+                if self.inbox_enabled or capture_row.source_evidence.get("forward_capture_v1", {}).get("source_proof", {}).get("inbox_delivery_id"):
+                    from app.reference_trading.inbox import complete_inbox_delivery
+                    complete_inbox_delivery(session, stream_id=stream.stream_id,
+                        revision_id=revision.revision_id, capture_row=capture_row,
+                        calculation_batch_id=batch_id, calculated_at=batch.processed_at)
             action_pks = self._insert_actions(
                 session, prepared, batch_id=batch_id, batch_seq=seq,
             )

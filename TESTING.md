@@ -2107,3 +2107,13 @@ python3 scripts/broker/native/build_control.py --headers /private/path/headers -
 ```
 
 该入口编译运行10个C++离线回调案例，再加载真实库检查版本；不证明第一套现场回报。真实对照见docs/SIMNOW_READONLY.md。
+
+
+## 正常换主力准备与Reference持久接收
+
+定向运行`tests/data_foundation/test_contract_preparation.py`、`test_contract_preparation_runtime.py`及
+`tests/reference_trading/test_inbox.py`、`test_inbox_protocol.py`、`test_inbox_runtime.py`、
+`test_inbox_wake.py`、`test_retained_replay.py`；扩展原生manager、Live、Reference和通知原时效回归。
+`test_inbox.py`的真实PostgreSQL并发/迁移测试仅使用guarded disposable
+`GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，无生产库、无host volume；SQLite通过不证明生产锁。
+现场另核schema、协议边界、原件hash、接收/计算独立进度、EG物理前缀与其他品种连续推进，不用测试代替自然验收。

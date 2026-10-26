@@ -6,6 +6,7 @@ import importlib.util
 from pathlib import Path
 import threading
 import time
+import re
 
 _SOURCE = Path(__file__).with_name("simnow_readonly.py")
 _spec = importlib.util.spec_from_file_location("guiyi_simnow_readonly", _SOURCE)
@@ -98,6 +99,7 @@ class Gateway(_readonly.Probe):
         self.extra = None
         self.extra_done = threading.Event()
         self.extra_counter = 30000
+        self.query_diagnostics = []
         self.buffer = []
         self.monitor_progress = None
 
@@ -214,6 +216,40 @@ class Gateway(_readonly.Probe):
         super().OnFrontDisconnected(reason)
         self.extra_done.set()
 
+    def inventory_diagnostics(self):
+        """Protocol counters only; never serialize native account rows or identities."""
+        with self.lock:
+            result = self.result
+            status = result.get("status", "UNKNOWN")
+            stage = result.get("error_stage")
+            kinds = ("funds", "positions", "orders", "trades")
+            stages = {"authenticate", "login", "connect", "disconnect", "query_send", "response_error", "authenticate_response", "login_response", "api_error"} | set(kinds) | {"query_response_" + k for k in kinds}
+            value = dict(
+                status=status if isinstance(status, str) and re.fullmatch(r"[A-Z_0-9]{1,64}", status) else "UNKNOWN",
+                authentication_passed=result.get("authentication_passed") is True,
+                login_passed=result.get("login_passed") is True,
+                error_stage=stage if stage in stages else None,
+                requests=[], queries=[],
+            )
+            for key in ("error_id", "return_code"):
+                if type(result.get(key)) is int:
+                    value[key] = result[key]
+            timeout = result.get("timeout_kind")
+            if timeout in ("ZERO_QUERY_CALLBACKS", "QUERY_TERMINATOR_MISSING", "TERMINAL_AT_TIMEOUT_BOUNDARY"):
+                value["timeout_kind"] = timeout
+            for receipt in result.get("requests", ()):
+                if receipt.get("kind") in {"authenticate", "login", *kinds}:
+                    value["requests"].append({k: receipt[k] for k in ("kind", "request_id", "accepted", "return_code") if k in receipt})
+            for record in result.get("rounds", ()):
+                for kind, query in record.get("queries", {}).items():
+                    if kind not in kinds:
+                        continue
+                    diagnostic = query.get("diagnostics", {})
+                    item = dict(round=record["round"], kind=kind, complete=query.get("complete") is True)
+                    item.update({k: diagnostic[k] for k in ("response_count", "data_row_count", "terminal_response_seen", "timed_out", "elapsed_seconds") if k in diagnostic})
+                    value["queries"].append(item)
+            return value
+
     def snapshot(self):
         if self.monitor_progress is not None:
             self.monitor_progress()
@@ -228,38 +264,90 @@ class Gateway(_readonly.Probe):
 
         return json.loads(json.dumps(self.result))
 
-    def query(self, kind, instrument=""):
+    def query(self, kind, instrument="", *, exchange="", product=""):
         if self.monitor_progress is not None:
             self.monitor_progress()
         if self.failed:
             raise ValueError("NATIVE_GATEWAY_FAILED")
+        if kind == "instrument" and (
+            exchange not in ("SHFE", "DCE", "CZCE", "CFFEX", "INE", "GFEX")
+            or not product.isascii() or not product.isalpha() or not 1 <= len(product) <= 3
+        ):
+            raise ValueError("BOUNDED_INSTRUMENT_QUERY_REQUIRED")
+        if kind in ("margin", "commission") and (
+            exchange not in ("SHFE", "DCE", "CZCE", "CFFEX", "INE", "GFEX")
+            or not instrument.isascii() or not instrument.isalnum() or len(instrument) > 12
+        ):
+            raise ValueError("BOUNDED_RATE_QUERY_REQUIRED")
         time.sleep(1.1)
-        self.extra_counter += 1
-        request_id = self.extra_counter
-        self.extra_done.clear()
-        self.extra = dict(kind=kind, id=request_id, rows=[], complete=False)
+        if self.failed:
+            raise ValueError("NATIVE_GATEWAY_FAILED")
         req = getattr(tdapi, _TYPES[kind])()
+        if kind in ("margin", "commission") and not hasattr(req, "ExchangeID"):
+            raise ValueError("NATIVE_RATE_REQUEST_EXCHANGE_UNSUPPORTED")
         for field, value in (
             ("BrokerID", "9999"),
             ("InvestorID", self.user),
             ("InstrumentID", instrument),
             ("HedgeFlag", "1"),
+            ("ExchangeID", exchange),
+            ("ProductID", product),
         ):
-            if hasattr(req, field):
+            if hasattr(req, field) and (field not in ("ExchangeID", "ProductID") or kind == "instrument" or (field == "ExchangeID" and kind in ("margin", "commission"))):
                 setattr(req, field, value)
-        result = getattr(self.api, _METHODS[kind])(req, request_id)
-        if (
-            result != 0
-            or not self.extra_done.wait(15)
-            or self.failed
-            or not self.extra["complete"]
-        ):
-            self.fail("NATIVE_FACT_QUERY_FAILED")
-            raise ValueError("NATIVE_FACT_QUERY_FAILED")
-        return tuple(self.extra["rows"])
+        started = time.monotonic()
+        result = None
+        timed_out = False
+        request_id = None
+        try:
+            with self.lock:
+                if self.failed:
+                    raise ValueError("NATIVE_GATEWAY_FAILED")
+                self.extra_counter += 1
+                request_id = self.extra_counter
+                self.extra_done.clear()
+                self.extra = dict(
+                    kind=kind, id=request_id, rows=[], complete=False,
+                    exchange=exchange, product=product, response_count=0,
+                    terminal_response_seen=False, callback_error=None,
+                )
+                result = getattr(self.api, _METHODS[kind])(req, request_id)
+            if result == 0:
+                timed_out = not self.extra_done.wait(15)
+            with self.lock:
+                if result != 0 or timed_out or self.failed or not self.extra["complete"]:
+                    self.fail("NATIVE_FACT_QUERY_FAILED")
+                    raise ValueError("NATIVE_FACT_QUERY_FAILED")
+                if kind in ("margin", "commission"):
+                    scope = dict(schema="native_rate_query_scope_v1", kind=kind,
+                                 instrument=instrument, exchange=exchange, request_id=request_id)
+                    return tuple(dict(row, query_scope=dict(scope)) for row in self.extra["rows"])
+                return tuple(self.extra["rows"])
+        finally:
+            with self.lock:
+                if request_id is not None:
+                    self.query_diagnostics.append(dict(
+                        kind=kind,
+                        request_id=request_id,
+                        sdk_return_code=result if type(result) is int else None,
+                        response_count=self.extra["response_count"],
+                        data_row_count=len(self.extra["rows"]),
+                        terminal_response_seen=self.extra["terminal_response_seen"],
+                        complete=self.extra["complete"],
+                        timed_out=timed_out,
+                        callback_error=self.extra["callback_error"],
+                        elapsed_seconds=round(time.monotonic()-started, 6),
+                    ))
 
     def _extra_response(self, kind, row, info, request_id, last):
+        with self.lock:
+            self._locked_extra_response(kind, row, info, request_id, last)
+
+    def _locked_extra_response(self, kind, row, info, request_id, last):
         try:
+            if self.extra is not None:
+                self.extra["response_count"] += 1
+                self.extra["terminal_response_seen"] |= bool(last)
             if (
                 self.extra is None
                 or self.extra["kind"] != kind
@@ -272,6 +360,11 @@ class Gateway(_readonly.Probe):
             if row is not None:
                 fields = _FIELDS["settlement" if kind == "confirm" else kind]
                 value = {k: getattr(row, k) for k in fields}
+                if kind == "instrument" and (
+                    value["ExchangeID"] != self.extra["exchange"]
+                    or value["ProductID"] != self.extra["product"]
+                ):
+                    raise ValueError("NATIVE_FACT_SCOPE_MISMATCH")
                 if kind in ("margin", "commission", "settlement", "confirm"):
                     all_investors = (
                         kind in ("margin", "commission")
@@ -290,7 +383,13 @@ class Gateway(_readonly.Probe):
             if last:
                 self.extra["complete"] = True
                 self.extra_done.set()
-        except Exception:
+        except Exception as exc:
+            if self.extra is not None:
+                allowed = {
+                    "NATIVE_FACT_RESPONSE_IDENTITY", "NATIVE_FACT_QUERY_REJECTED",
+                    "NATIVE_FACT_ACCOUNT_MISMATCH", "NATIVE_FACT_ROW_LIMIT", "NATIVE_FACT_SCOPE_MISMATCH",
+                }
+                self.extra["callback_error"] = str(exc) if type(exc) is ValueError and str(exc) in allowed else "NATIVE_FACT_FIELD_INVALID"
             self.fail("NATIVE_FACT_RESPONSE_INVALID")
             self.extra_done.set()
 

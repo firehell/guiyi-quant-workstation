@@ -52,7 +52,8 @@ def capabilities(request: Request):
 @router.get("/health")
 def health(request: Request):
     _keys(request, frozenset())
-    return _health.read()
+    from app.reference_trading.inbox_protocol import read_receiving_health
+    return {**_health.read(), "receiving": read_receiving_health(SessionLocal)}
 
 
 @router.get("/streams")

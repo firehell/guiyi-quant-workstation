@@ -1,4 +1,4 @@
-"""Six-table PostgreSQL schema for durable reference projections."""
+"""PostgreSQL schema for durable reference projections and source inbox."""
 
 from __future__ import annotations
 
@@ -360,3 +360,84 @@ class ReferenceMarkRow(Base):
     holding_bars: Mapped[int] = mapped_column(BigInteger, nullable=False)
     reference_return: Mapped[Decimal] = mapped_column(Numeric(), nullable=False)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+INBOX_REFERENCE_TABLES = {"reference_inbox_inputs", "reference_inbox_deliveries"}
+
+
+class ReferenceInboxInput(Base):
+    """Immutable original completed journal envelope, shared by all frozen routes."""
+
+    __tablename__ = "reference_inbox_inputs"
+    __table_args__ = (
+        UniqueConstraint("trading_day", "journal_id", name="uq_reference_inbox_journal"),
+        CheckConstraint("journal_ms >= 0 AND journal_sequence >= 0", name="ck_reference_inbox_journal_order"),
+        CheckConstraint("payload_bytes > 0 AND target_count >= 0", name="ck_reference_inbox_input_size"),
+        Index("ix_reference_inbox_day", "trading_day"),
+    )
+
+    input_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    trading_day: Mapped[date] = mapped_column(Date, nullable=False)
+    journal_id: Mapped[str] = mapped_column(String(48), nullable=False)
+    journal_ms: Mapped[Decimal] = mapped_column(Numeric(20, 0), nullable=False)
+    journal_sequence: Mapped[Decimal] = mapped_column(Numeric(20, 0), nullable=False)
+    observation_id: Mapped[str] = mapped_column(String(256), nullable=False)
+    product: Mapped[str] = mapped_column(String(32), nullable=False)
+    frequency: Mapped[str] = mapped_column(String(8), nullable=False)
+    canonical_envelope: Mapped[str] = mapped_column(Text, nullable=False)
+    envelope_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    routing_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    payload_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    target_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    bar_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    raw_received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReferenceInboxDelivery(Base):
+    """One frozen route; completion is committed with its Reference calculation."""
+
+    __tablename__ = "reference_inbox_deliveries"
+    __table_args__ = (
+        ForeignKeyConstraint(["input_id"], ["reference_inbox_inputs.input_id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["stream_id", "revision_id"],
+                             ["reference_revisions.stream_id", "reference_revisions.revision_id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["activation_receipt_id"], ["reference_activation_receipts.receipt_id"], ondelete="RESTRICT"),
+        ForeignKeyConstraint(["stream_id", "revision_id", "calculation_batch_id"],
+                             ["reference_batches.stream_id", "reference_batches.revision_id", "reference_batches.batch_id"],
+                             ondelete="RESTRICT"),
+        UniqueConstraint("input_id", "stream_id", name="uq_reference_inbox_delivery_target"),
+        ForeignKeyConstraint(["legacy_capture_batch_id"], ["reference_batches.batch_id"], ondelete="RESTRICT"),
+        UniqueConstraint("legacy_capture_batch_id", name="uq_reference_inbox_legacy_capture"),
+        UniqueConstraint("calculation_batch_id", name="uq_reference_inbox_calculation"),
+        CheckConstraint("generation > 0", name="ck_reference_inbox_delivery_generation"),
+        CheckConstraint("status IN ('PENDING','WAITING_HISTORY','COMPLETED','BLOCKED','UNKNOWN')",
+                        name="ck_reference_inbox_delivery_status"),
+        CheckConstraint("(status = 'COMPLETED' AND calculation_batch_id IS NOT NULL AND calculated_at IS NOT NULL) OR "
+                        "(status <> 'COMPLETED' AND calculation_batch_id IS NULL AND calculated_at IS NULL)",
+                        name="ck_reference_inbox_delivery_completion"),
+        Index("ix_reference_inbox_delivery_head", "stream_id", "input_id",
+              postgresql_where=text("status <> 'COMPLETED'"), sqlite_where=text("status <> 'COMPLETED'")),
+        Index("ix_reference_inbox_delivery_status", "status", "updated_at"),
+    )
+
+    delivery_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    input_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stream_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    revision_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    activation_receipt_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    activation_plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    recording_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    code: Mapped[str | None] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    waiting_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    unknown_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    legacy_capture_batch_id: Mapped[str | None] = mapped_column(String(96))
+    calculation_batch_id: Mapped[str | None] = mapped_column(String(96))
+    calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

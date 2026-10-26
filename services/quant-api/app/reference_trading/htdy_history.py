@@ -145,13 +145,19 @@ def query_htdy_history(service, query):
         raise ValueError("HTDY_SOURCE_CHANGED")
     canonical = {}
     if query.frequency == "1d":
+        # A physical contract may span multiple quality/ownership segments.
+        # Fetch its complete required prefix once, bounded by its own last Bar.
+        endpoints = {}
         for segment in segments:
-            if segment.physical_contract in canonical:
-                continue
+            for bar in segment.bars:
+                previous = endpoints.get(segment.physical_contract)
+                if previous is None or bar.bar_end > previous.bar_end:
+                    endpoints[segment.physical_contract] = bar
+        for contract, endpoint in endpoints.items():
             bars, _ = service.market_data.query_contract_replay_quality_union(
-                symbol=query.symbol, contract=segment.physical_contract,
-                through=through, cutoff=cutoff)
-            canonical[segment.physical_contract] = {bar.bar_end: bar for bar in bars}
+                symbol=query.symbol, contract=contract,
+                through=endpoint.trading_day, cutoff=endpoint.bar_end)
+            canonical[contract] = {bar.bar_end: bar for bar in bars}
     else:
         for item in raw:
             canonical[item["contract"]] = {

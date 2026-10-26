@@ -482,3 +482,102 @@ def test_cancelled_drain_retains_only_known_service(tmp_path, service, expected)
     state = json.loads((host.directory / 'cohort-release.json').read_text())
     assert state.get('failed_service') == expected
     assert 'private service value' not in json.dumps(state)
+
+
+def additive_host(tmp_path):
+    from app.runtime_schema_compatibility import ADDITION, ADDITION_BLOB, PARENT, POLICY, prove_reference_inbox_addition
+    source = {PARENT: "1" * 40, "services/quant-api/app/db/base.py": "2" * 40}
+    proof = prove_reference_inbox_addition(source, {**source, ADDITION: ADDITION_BLOB},
+        old_heads=("20261015_0052",), new_heads=("20261026_0053",), installed={"policy": POLICY,
+        "revision": "20261026_0053", "schema_sha256": "a" * 64, "database_identity_sha256": "c" * 64})
+    h = Host(tmp_path)
+    h.old = BindingRegistry(1, {key: replace(binding, contracts={**binding.contracts, "db": proof["old_db"]})
+                                for key, binding in h.old.services.items()})
+    h.registry = h.old
+    native = h.contracts
+    h.contracts = lambda root: {**native(root), "db": proof["new_db"]}
+    h.schema_compatibility = lambda old, new: {proof["old_db"]: proof}
+    h.schema_reads = 0
+    h.schema_failure_at = None
+    def check_schema(plan):
+        h.schema_reads += 1
+        if h.schema_reads == h.schema_failure_at or plan["schema_compatibility"] != {proof["old_db"]: proof}:
+            raise CohortError("COHORT_SCHEMA_PROOF_DRIFT")
+    h.check_schema_compatibility = check_schema
+    return h
+
+
+def test_exact_preinstalled_additive_schema_proof_is_frozen_and_rechecked_before_stops_and_cas(tmp_path):
+    h = additive_host(tmp_path)
+    p = plan(h)
+    assert p["schema_compatibility"]
+    assert apply_cohort(h, p)["status"] == "switched"
+    assert h.schema_reads == 3
+    assert h.calls.count("commit") == 1
+
+
+@pytest.mark.parametrize("checkpoint", (1, 2, 3))
+def test_installed_schema_drift_never_reaches_cas_and_first_checks_precede_owner_stops(tmp_path, checkpoint):
+    h = additive_host(tmp_path)
+    p = plan(h)
+    h.schema_failure_at = checkpoint
+    with pytest.raises(CohortError):
+        apply_cohort(h, p)
+    assert "commit" not in h.calls
+    assert h.registry == h.old
+    if checkpoint < 3:
+        assert "old_exited" not in h.calls
+    if checkpoint == 1:
+        assert h.calls == []
+        assert not (h.directory / "cohort-attempts").exists()
+
+
+def test_rehashed_forged_schema_readback_still_fails_fresh_native_proof(tmp_path):
+    from copy import deepcopy
+    from app.reference_trading.recovery_campaign import digest
+    h = additive_host(tmp_path)
+    p = deepcopy(plan(h))
+    transition = next(iter(p["schema_compatibility"].values()))
+    transition["installed"]["schema_sha256"] = "f" * 64
+    transition["proof_sha256"] = digest({key: value for key, value in transition.items() if key != "proof_sha256"})
+    p["plan_sha256"] = digest({key: value for key, value in p.items() if key != "plan_sha256"})
+    with pytest.raises(CohortError, match="SCHEMA_PROOF_DRIFT"):
+        apply_cohort(h, p)
+    assert h.calls == []
+
+
+def test_final_schema_read_crossing_downtime_deadline_cannot_commit(tmp_path, monkeypatch):
+    from app import runtime_cohort as module
+    h = additive_host(tmp_path)
+    p = plan(h)
+    clock = [0.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    original = h.check_schema_compatibility
+    def slow_schema(plan):
+        original(plan)
+        if h.schema_reads == 3:
+            clock[0] = 601.0
+    h.check_schema_compatibility = slow_schema
+    with pytest.raises(CohortError):
+        apply_cohort(h, p)
+    assert "commit" not in h.calls
+    assert "restore_old" in h.calls
+    assert h.registry == h.old
+
+
+def test_final_schema_read_crossing_plan_expiry_cannot_commit(tmp_path):
+    from datetime import timedelta
+    h = additive_host(tmp_path)
+    p = plan(h)
+    initial = h.now()
+    original = h.check_schema_compatibility
+    def slow_schema(plan):
+        original(plan)
+        if h.schema_reads == 3:
+            h.now = lambda: initial + timedelta(minutes=16)
+    h.check_schema_compatibility = slow_schema
+    with pytest.raises(CohortError):
+        apply_cohort(h, p)
+    assert "commit" not in h.calls
+    assert "restore_old" in h.calls
+    assert h.registry == h.old

@@ -175,7 +175,46 @@ class CohortHost(FaultRecoveryHost):
                 },
             }
 
+    def schema_compatibility(self, old, new):
+        """Known preinstalled additive schema only; this never runs a migration."""
+        from app.runtime_schema_compatibility import (
+            tracked_db_contract, prove_reference_inbox_addition,
+            verify_installed_reference_inbox, SchemaCompatibilityError,
+        )
+        from app.db.session import SessionLocal
+        try:
+            target = next(iter(new.services.values()))
+            new_files, new_heads = tracked_db_contract(Path(target.root))
+            with SessionLocal() as session:
+                installed = verify_installed_reference_inbox(session)
+            transitions = {}
+            roots = {}
+            for binding in old.services.values():
+                if binding.contracts["db"] == target.contracts["db"]:
+                    continue
+                if binding.root not in roots:
+                    roots[binding.root] = tracked_db_contract(Path(binding.root))
+                old_files, old_heads = roots[binding.root]
+                proof = prove_reference_inbox_addition(old_files, new_files,
+                    old_heads=old_heads, new_heads=new_heads, installed=installed)
+                require(proof["old_db"] == binding.contracts["db"]
+                        and proof["new_db"] == target.contracts["db"], "COHORT_CONTRACT_DRIFT")
+                prior = transitions.setdefault(binding.contracts["db"], proof)
+                require(prior == proof, "COHORT_SCHEMA_PROOF_DRIFT")
+            require(bool(transitions), "COHORT_SCHEMA_PROOF_UNEXPECTED")
+            return transitions
+        except SchemaCompatibilityError as error:
+            raise CohortError(str(error)) from None
+
+    def check_schema_compatibility(self, plan):
+        if "schema_compatibility" not in plan:
+            return
+        old, new = registry(plan["old"]), registry(plan["new"])
+        require(self.schema_compatibility(old, new) == plan["schema_compatibility"],
+                "COHORT_SCHEMA_PROOF_DRIFT")
+
     def check_plan(self, plan):
+        self.check_schema_compatibility(plan)
         assert_no_unknown_deployment(cohort_plan_sha256=plan["plan_sha256"])
         old, new = registry(plan["old"]), registry(plan["new"])
         require(
@@ -757,6 +796,7 @@ class CohortHost(FaultRecoveryHost):
                 os.unlink(temp)
 
     def commit(self, plan):
+        self.check_schema_compatibility(plan)
         old, new = registry(plan["old"]), registry(plan["new"])
         require(
             self.bindings() == old and self.binding_hash() == plan["registry_sha256"],
@@ -769,6 +809,10 @@ class CohortHost(FaultRecoveryHost):
         for binding in new.services.values():
             self.verify_release(Path(binding.root), binding.tag, binding.commit)
         self.session_proof()
+        now = self.now()
+        require(datetime.fromisoformat(plan["created_at"]) <= now < datetime.fromisoformat(plan["expires_at"]),
+                "COHORT_PLAN_EXPIRED")
+        require(monotonic() < self.deadline, "COHORT_DOWNTIME_EXCEEDED")
         return write_bindings(new, expected_sha256=plan["registry_sha256"])
 
     def start_consumers(self, plan):
