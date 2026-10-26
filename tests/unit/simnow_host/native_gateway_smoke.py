@@ -72,8 +72,10 @@ class Compatibility(unittest.TestCase):
         self.pause.stop()
 
     def test_instrument_sdk_request_and_rows(self):
-        rows = self.g.query("instrument")
+        rows = self.g.query("instrument", exchange="SHFE", product="rb")
         self.assertEqual(rows[0]["InstrumentID"], "rb2701")
+        self.assertEqual(self.g.api.calls[0][1].ProductID, "rb")
+        self.assertEqual(self.g.api.calls[0][1].ExchangeID, "SHFE")
         self.assertIsInstance(self.g.api.calls[0][1], t.CThostFtdcQryInstrumentField)
 
     def test_margin_all_investors_scope_is_explicit_and_not_another_account(self):
@@ -98,7 +100,7 @@ class Compatibility(unittest.TestCase):
         self.g.api.ReqQryInstrument = lambda req, rid: calls.append(rid) or 0
         with patch.object(self.g.extra_done, "wait", return_value=False):
             with self.assertRaisesRegex(ValueError, "NATIVE_FACT_QUERY_FAILED"):
-                self.g.query("instrument")
+                self.g.query("instrument", exchange="SHFE", product="rb")
         d = self.g.query_diagnostics[-1]
         self.assertEqual(len(calls), 1)
         self.assertTrue(d["timed_out"])
@@ -111,12 +113,14 @@ class Compatibility(unittest.TestCase):
     def test_diagnostics_partial_rows_without_terminator_remain_failed(self):
         def partial(req, rid):
             row = t.CThostFtdcInstrumentField()
+            row.ExchangeID = "SHFE"
+            row.ProductID = "rb"
             self.g.OnRspQryInstrument(row, t.CThostFtdcRspInfoField(), rid, False)
             return 0
         self.g.api.ReqQryInstrument = partial
         with patch.object(self.g.extra_done, "wait", return_value=False):
             with self.assertRaises(ValueError):
-                self.g.query("instrument")
+                self.g.query("instrument", exchange="SHFE", product="rb")
         d = self.g.query_diagnostics[-1]
         self.assertEqual(d["data_row_count"], 1)
         self.assertTrue(d["timed_out"])
@@ -127,7 +131,7 @@ class Compatibility(unittest.TestCase):
         self.g.api.ReqQryInstrument = lambda req, rid: -2
         with patch.object(self.g.extra_done, "wait") as wait:
             with self.assertRaises(ValueError):
-                self.g.query("instrument")
+                self.g.query("instrument", exchange="SHFE", product="rb")
         wait.assert_not_called()
         d = self.g.query_diagnostics[-1]
         self.assertEqual(d["sdk_return_code"], -2)
@@ -143,7 +147,7 @@ class Compatibility(unittest.TestCase):
             return 0
         self.g.api.ReqQryInstrument = rejected
         with self.assertRaises(ValueError):
-            self.g.query("instrument")
+            self.g.query("instrument", exchange="SHFE", product="rb")
         d = self.g.query_diagnostics[-1]
         self.assertEqual(d["callback_error"], "NATIVE_FACT_QUERY_REJECTED")
         self.assertEqual(d["response_count"], 1)
@@ -159,6 +163,41 @@ class Compatibility(unittest.TestCase):
         self.assertFalse(d["timed_out"])
         self.assertNotIn("000000", str(d))
         self.assertNotIn("InvestorID", str(d))
+
+    def test_unbounded_instrument_query_rejected_before_sdk(self):
+        with self.assertRaisesRegex(ValueError, "BOUNDED_INSTRUMENT_QUERY_REQUIRED"):
+            self.g.query("instrument")
+        self.assertEqual(self.g.api.calls, [])
+
+    def test_wrong_product_response_fails_closed(self):
+        def wrong(req, rid):
+            row = t.CThostFtdcInstrumentField()
+            row.ExchangeID = "SHFE"
+            row.ProductID = "cu"
+            self.g.OnRspQryInstrument(row, t.CThostFtdcRspInfoField(), rid, True)
+            return 0
+        self.g.api.ReqQryInstrument = wrong
+        with self.assertRaises(ValueError):
+            self.g.query("instrument", exchange="SHFE", product="rb")
+        d = self.g.query_diagnostics[-1]
+        self.assertEqual(d["callback_error"], "NATIVE_FACT_SCOPE_MISMATCH")
+        self.assertEqual(d["data_row_count"], 0)
+
+    def test_disconnect_during_gap_does_not_send_query(self):
+        with patch.object(m.time, "sleep", lambda _: self.g.OnFrontDisconnected(1)):
+            with self.assertRaisesRegex(ValueError, "NATIVE_GATEWAY_FAILED"):
+                self.g.query("instrument", exchange="SHFE", product="rb")
+        self.assertEqual(self.g.api.calls, [])
+
+    def test_disconnect_during_request_construction_prevents_send(self):
+        real = t.CThostFtdcQryInstrumentField
+        def construct():
+            self.g.OnFrontDisconnected(1)
+            return real()
+        with patch.object(t, "CThostFtdcQryInstrumentField", construct):
+            with self.assertRaisesRegex(ValueError, "NATIVE_GATEWAY_FAILED"):
+                self.g.query("instrument", exchange="SHFE", product="rb")
+        self.assertEqual(self.g.api.calls, [])
 
     def test_login_native_identity_exists_before_completion_waiter(self):
         row = t.CThostFtdcRspUserLoginField()

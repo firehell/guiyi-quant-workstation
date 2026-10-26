@@ -145,9 +145,10 @@ class FakeGateway:
     def attach(self, adapter, snapshot):
         self.execution_adapter = adapter
 
-    def query(self, kind, instrument=""):
+    def query(self, kind, instrument="", *, exchange="", product=""):
         self.calls.append((kind, instrument))
         if kind == "instrument":
+            assert exchange == "SHFE" and product == "rb"
             return (
                 dict(
                     InstrumentID="rb2701",

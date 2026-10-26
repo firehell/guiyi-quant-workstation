@@ -22,6 +22,17 @@ def decimal(value, positive=False):
     return result
 
 
+def native_product_id(product, exchange):
+    """CTP query scope only; actual physical identity still requires bind_contract."""
+    if not isinstance(product, str) or re.fullmatch(r"[A-Z]{1,3}", product) is None:
+        raise ValueError("AUTHORITATIVE_PRODUCT_INVALID")
+    if exchange in ("CZCE", "CFFEX"):
+        return product
+    if exchange in ("SHFE", "DCE", "INE", "GFEX"):
+        return product.lower()
+    raise ValueError("NATIVE_PRODUCT_EXCHANGE_UNSUPPORTED")
+
+
 def bind_contract(canonical, exchange, rows, now, until, trading_day):
     bare = canonical.split(".")[0]
     match = re.fullmatch(r"([A-Z]{1,3})(\d{4})", bare)
