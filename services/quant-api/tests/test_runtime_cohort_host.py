@@ -736,3 +736,35 @@ def test_preserved_journal_limit_does_not_weaken_path_or_file_security(tmp_path)
     large.symlink_to(outside)
     with pytest.raises((ValueError, OSError)):
         host.bytes(large)
+
+def test_preserve_refresh_control_uses_its_existing_bounded_reader_limit(tmp_path):
+    host = object.__new__(CohortHost)
+    host.directory = tmp_path
+    path = tmp_path / 'newow-historical-refresh-state.json'
+    payload = b'x' * 2_274_736
+    path.write_bytes(payload)
+    path.chmod(0o600)
+    assert host.bytes(path) == payload
+
+
+def test_refresh_control_larger_limit_is_exact_path_only_and_still_secure(tmp_path, monkeypatch):
+    from app.reference_trading import historical_refresh
+    monkeypatch.setattr(historical_refresh, 'MAX_REFRESH_STATE_BYTES', 2_000_000)
+    host = object.__new__(CohortHost)
+    host.directory = tmp_path
+    path = tmp_path / 'newow-historical-refresh-state.json'
+    path.write_bytes(b'x' * 2_000_001)
+    path.chmod(0o600)
+    with pytest.raises(ValueError):
+        host.bytes(path)
+    outside = tmp_path / 'other'
+    outside.mkdir(mode=0o700)
+    other = outside / path.name
+    other.write_bytes(b'x' * 1_100_000)
+    other.chmod(0o600)
+    with pytest.raises(ValueError):
+        host.bytes(other)
+    path.unlink()
+    path.symlink_to(other)
+    with pytest.raises((ValueError, OSError)):
+        host.bytes(path)

@@ -50,6 +50,14 @@ class CohortHost(FaultRecoveryHost):
 
     def bytes(self, path, *, limit=None):
         path = Path(path)
+        if (limit is None and path.parent == self.directory
+                and path.name == "newow-historical-refresh-state.json"):
+            # Preserve the original control bytes under their existing reader
+            # contract; ordinary config and other paths keep their smaller cap.
+            from app.reference_trading.historical_refresh import MAX_REFRESH_STATE_BYTES
+            from app.runtime_identity import file_snapshot
+
+            return file_snapshot(path, limit=MAX_REFRESH_STATE_BYTES)[0]
         if (
             limit is None
             and path.parent == self.directory
