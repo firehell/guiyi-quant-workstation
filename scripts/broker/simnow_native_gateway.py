@@ -239,10 +239,17 @@ class Gateway(_readonly.Probe):
             or not product.isascii() or not product.isalpha() or not 1 <= len(product) <= 3
         ):
             raise ValueError("BOUNDED_INSTRUMENT_QUERY_REQUIRED")
+        if kind in ("margin", "commission") and (
+            exchange not in ("SHFE", "DCE", "CZCE", "CFFEX", "INE", "GFEX")
+            or not instrument.isascii() or not instrument.isalnum() or len(instrument) > 12
+        ):
+            raise ValueError("BOUNDED_RATE_QUERY_REQUIRED")
         time.sleep(1.1)
         if self.failed:
             raise ValueError("NATIVE_GATEWAY_FAILED")
         req = getattr(tdapi, _TYPES[kind])()
+        if kind in ("margin", "commission") and not hasattr(req, "ExchangeID"):
+            raise ValueError("NATIVE_RATE_REQUEST_EXCHANGE_UNSUPPORTED")
         for field, value in (
             ("BrokerID", "9999"),
             ("InvestorID", self.user),
@@ -251,7 +258,7 @@ class Gateway(_readonly.Probe):
             ("ExchangeID", exchange),
             ("ProductID", product),
         ):
-            if hasattr(req, field) and (field not in ("ExchangeID", "ProductID") or kind == "instrument"):
+            if hasattr(req, field) and (field not in ("ExchangeID", "ProductID") or kind == "instrument" or (field == "ExchangeID" and kind in ("margin", "commission"))):
                 setattr(req, field, value)
         started = time.monotonic()
         result = None
@@ -276,6 +283,10 @@ class Gateway(_readonly.Probe):
                 if result != 0 or timed_out or self.failed or not self.extra["complete"]:
                     self.fail("NATIVE_FACT_QUERY_FAILED")
                     raise ValueError("NATIVE_FACT_QUERY_FAILED")
+                if kind in ("margin", "commission"):
+                    scope = dict(schema="native_rate_query_scope_v1", kind=kind,
+                                 instrument=instrument, exchange=exchange, request_id=request_id)
+                    return tuple(dict(row, query_scope=dict(scope)) for row in self.extra["rows"])
                 return tuple(self.extra["rows"])
         finally:
             with self.lock:

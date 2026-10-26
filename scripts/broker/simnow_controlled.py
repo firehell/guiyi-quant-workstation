@@ -166,8 +166,8 @@ def run(gateway, tdapi, config, root):
         confirmed = bool(
             len(settlement) == 1 and settlement[0]["ConfirmDate"] == first.trading_day
         )
-        margin = gateway.query("margin", binding.native)
-        commission = gateway.query("commission", binding.native)
+        margin = gateway.query("margin", binding.native, exchange=binding.exchange)
+        commission = gateway.query("commission", binding.native, exchange=binding.exchange)
         if len(margin) != 1 or len(commission) != 1:
             raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
         quote = read_book(binding, first.trading_day)
@@ -233,6 +233,10 @@ def run(gateway, tdapi, config, root):
                     long_margin_rate=str(facts.instrument.long_margin_rate),
                     short_margin_rate=str(facts.instrument.short_margin_rate),
                     opening_fee_budget=str(facts.instrument.open_fee),
+                    margin_exchange_observed=margin[0]["ExchangeID"],
+                    commission_exchange_observed=commission[0]["ExchangeID"],
+                    margin_exchange_binding="QUERY_SCOPE" if margin[0]["ExchangeID"] == "" else "RESPONSE_FIELD",
+                    commission_exchange_binding="QUERY_SCOPE" if commission[0]["ExchangeID"] == "" else "RESPONSE_FIELD",
                     bid=str(quote.bid), ask=str(quote.ask),
                     bid_volume=quote.bid_volume, ask_volume=quote.ask_volume,
                     quote_received_at=quote.at.isoformat(),
@@ -394,8 +398,8 @@ def run(gateway, tdapi, config, root):
                     now() + timedelta(minutes=5),
                     snapshot.trading_day,
                 )
-                mar = gateway.query("margin", bound.native)
-                com = gateway.query("commission", bound.native)
+                mar = gateway.query("margin", bound.native, exchange=bound.exchange)
+                com = gateway.query("commission", bound.native, exchange=bound.exchange)
                 if len(mar) != 1 or len(com) != 1:
                     raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
                 bindings.append(bound)

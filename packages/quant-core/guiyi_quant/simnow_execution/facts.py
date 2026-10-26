@@ -120,11 +120,22 @@ def quote_from_native(binding, row, trading_day, received_at):
 
 def execution_input(binding, instrument, margin, commission, quote, session, now):
     valid(binding.at, binding.valid_until, now)
-    for row in (margin, commission):
-        if (
-            row["InstrumentID"] != binding.native
-            or row["ExchangeID"] != binding.exchange
-            or row["BrokerID"] != "9999"
+    for kind, row in (("margin", margin), ("commission", commission)):
+        if row["InstrumentID"] != binding.native or row["BrokerID"] != "9999":
+            raise ValueError("NATIVE_RATE_IDENTITY")
+        scope = row.get("query_scope")
+        if scope is not None and (
+            not isinstance(scope, dict)
+            or scope.get("schema") != "native_rate_query_scope_v1"
+            or scope.get("kind") != kind
+            or scope.get("instrument") != binding.native
+            or scope.get("exchange") != binding.exchange
+            or type(scope.get("request_id")) is not int
+            or scope["request_id"] <= 0
+        ):
+            raise ValueError("NATIVE_RATE_IDENTITY")
+        if row["ExchangeID"] != binding.exchange and not (
+            row["ExchangeID"] == "" and scope is not None
         ):
             raise ValueError("NATIVE_RATE_IDENTITY")
     if margin["HedgeFlag"] != "1" or margin["IsRelative"] != 0:
