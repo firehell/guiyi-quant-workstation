@@ -54,3 +54,7 @@ FIFO/符号链接、损坏、越界、重复key、解码上限及失败恢复均
 23,637,634字节转为978字节描述符和12,867,765字节分片，原生dry-run确认plan hash不变，
 没有生产写入。独立高风险Review关闭FIFO问题后允许集成。正式读取端仍v1.16.7，
 升级前不生产新引用格式资产；39个已构建W1不重复执行。
+
+统一候选合入并行develop后，参考交易/苏冰与部署交接回归1206 passed、9 skipped、79 deselected；
+canonical一致性18 passed，Web类型/build/topology通过。独立合并Review另验后端69 passed/9 skipped、
+Web103 passed，允许进入release candidate；应用候选版本1.16.8，尚未声明发布或Runtime切换。
