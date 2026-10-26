@@ -32,6 +32,11 @@ interface MirrorSourceSeries {
   readonly points: readonly { readonly index: number; readonly time: Time; readonly value: number }[]
 }
 
+function mirrorTimeKey(time: Time): string {
+  if (typeof time === 'object') return `day:${time.year}-${time.month}-${time.day}`
+  return `${typeof time}:${time}`
+}
+
 /** Joins server-owned split series without collapsing repeated keys from later physical segments. */
 export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[], events?: readonly { time: Time; tentative: boolean }[]): NewowZhaoyaoMirrorDatum[] {
   type MutableRow = { time: Time; entry: number; wash: number; distribution: number; markup: number; exit: number; inducement: number; caution: number; tentative: number }
@@ -50,9 +55,9 @@ export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[
   }
   const result = [...rows.entries()].sort(([left], [right]) => left - right).map(([, row]) => ({ ...row }))
   if (events !== undefined) {
-    const byTime = new Map(events.map(e=>[String(e.time),e]))
+    const byTime = new Map(events.map(e=>[mirrorTimeKey(e.time),e]))
     for (const row of result) {
-      const event=byTime.get(String(row.time))
+      const event=byTime.get(mirrorTimeKey(row.time))
       row.caution=event&&!event.tentative?50:0
       row.tentative=event?.tentative?50:0
     }

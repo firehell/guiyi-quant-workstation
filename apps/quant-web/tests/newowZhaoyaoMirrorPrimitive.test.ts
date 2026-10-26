@@ -107,3 +107,15 @@ test('accepted display events replace raw moving candidates and expiry removes b
   assert.deepEqual(fixed.map(r=>r.tentative),[50,0])
   assert.deepEqual(buildNewowZhaoyaoMirrorData(source,[]).map(r=>[r.caution,r.tentative]),[[0,0],[0,0]])
 })
+
+test('daily and weekly business dates match only their own caution event by value', () => {
+  const times = [20, 21, 22].map(day => ({ year: 2026, month: 10, day }))
+  const source = [{ key: 'entry', points: times.map((time, index) => ({ index, time, value: 1 })) }]
+  const events = [
+    { time: { year: 2026, month: 10, day: 21 }, tentative: true },
+    { time: { year: 2026, month: 10, day: 22 }, tentative: false },
+  ]
+  const data = buildNewowZhaoyaoMirrorData(source, events)
+  assert.deepEqual(data.map(row => [row.caution, row.tentative]), [[0, 0], [0, 50], [50, 0]])
+  assert.deepEqual(buildNewowZhaoyaoMirrorData(source, []).map(row => [row.caution, row.tentative]), [[0, 0], [0, 0], [0, 0]])
+})
