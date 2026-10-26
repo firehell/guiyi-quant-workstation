@@ -79,6 +79,27 @@ Feed恢复PID40179，其余五常驻PID不变。原控制器未保留具体拒�
 1.16.9候选191部署回归及独立Review通过，仅增加失败阶段/协议码留证，不声称已修复drain。
 下一步：发布已验证诊断补丁，用全新计划定位并解决排空拒绝，再切换读端、完整历史及六周期激活。
 
+## 10/27 AL有界恢复运行正常结束；自然新Bar无方向，订单成交验收待信号
+
+本次原账户AL2612恢复通过，未重新initialize；run fc5b135dde5948ef98adabf585eb93f2 在00:14:08正常退出，
+CONTROLLED_RUN_ENDED、监控STOPPED/RELEASED。00:00自然完成60m Bar于00:00:17.768813首次处理，
+持久Signal directions=[]，没有买卖方向；没有补开23:00或历史方向，没有人为制造测试信号。
+
+累计账本317条命令（Readback190/Tick124/Disconnect1/Recover1/Signal1）纯重放与投影逐值/摘要一致，
+累计192份原生快照（包含此前初始化运行的13份）逐来源hash和非重叠时间核验通过。全部原生持仓/委托/成交零行，
+权益及可用100000、保证金/手续费/净现金流0；dispatch claim0、订单/成交/预留/待核事实及清仓义务均0。
+本轮179次循环中66次空账户旧报价等待，没有使用旧价或延长执行期限，其余正常Tick；8秒上限保持。
+
+退出时phase READY、position_projection_complete=true，最后原生快照00:13:59.053031、账户读回有效期至00:14:29，
+不代表之后当前读回有效或可以复用报价下单。代码及补丁仅develop，无发布/正式Runtime切换或持续自动交易。
+独立只读Review复核317命令、192快照、同run监控及有效期通过，0个执行effects；
+恢复/自然输入/无方向保持空仓/账本对账已实测，真实报单、撤单、成交及实际成交费用仍未发生，broker_e2e_passed=false。
+不能将本次无成交的零收益当作策略表现或订单端到端通过；后续需要新合格买卖信号窗口，不自动延长或创建新任务。
+
+原件output/simnow-controlled/run-20261026-161408-821871.json，SHA256
+0efea7fa60ec7a62528eed45b38a53523b19a2a694d3c0db4b454f838bc2bc86；独立核对
+output/simnow-controlled-al-20261026/final-independent-readback.json。此前失败和初始化账本保留，不能删除重建。
+
 ## 10/26 AL恢复在账户稳定快照前置再次停止，追加协议诊断待定位
 
 23:21:44实际恢复入口返回FAILED_NO_EXECUTION_PROOF / NATIVE_STABLE_SNAPSHOT_REQUIRED，
