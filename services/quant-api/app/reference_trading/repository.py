@@ -47,6 +47,7 @@ from app.reference_trading.contracts import (
     validate_dependency_advance,
 )
 from app.reference_trading.capture import ForwardCapture
+from app.reference_trading.manifest_storage import resolve_manifest, store_manifest
 from app.reference_trading.models import (
     ReferenceActionRow,
     ReferenceActivationReceipt,
@@ -583,7 +584,7 @@ class ReferenceRepository:
                 _checkpoint_hash(batch.checkpoint_text),
             )
             return StoredRevisionState(
-                _stored(stream), chosen, revision.status, batch.dependency_manifest,
+                _stored(stream), chosen, revision.status, resolve_manifest(session, batch),
                 revision.dependency_digest, token, batch.batch_key,
                 dict(batch.source_evidence),
             )
@@ -733,7 +734,7 @@ class ReferenceRepository:
                 advance = prepared.dependency_advance
                 try:
                     validate_dependency_advance(
-                        checkpoint_batch.dependency_manifest, advance,
+                        resolve_manifest(session, checkpoint_batch), advance,
                     )
                 except ValueError as error:
                     raise RepositoryConflict("DEPENDENCY_CONFLICT") from error
@@ -746,6 +747,11 @@ class ReferenceRepository:
                 raise RepositoryConflict("CHECKPOINT_TRANSITION_CONFLICT")
             seq = revision.last_seq + 1
             batch_id = uuid4().hex
+            stored_manifest = prepared.dependency_manifest
+            if (stream.strategy_code.replace('-', '_') == 'subing_reference'
+                    and stream.recording_mode == RecordingMode.HISTORICAL_REPLAY.value):
+                stored_manifest = store_manifest(session, checkpoint_batch, prepared.dependency_manifest,
+                    manifest_sha256(prepared.dependency_manifest))
             batch = ReferenceBatch(
                 batch_id=batch_id,
                 stream_id=stream.stream_id,
@@ -773,7 +779,7 @@ class ReferenceRepository:
                     None if prepared.checkpoint.reference_state.last_event_key is None
                     else prepared.checkpoint.reference_state.last_event_key[2]
                 ),
-                dependency_manifest=prepared.dependency_manifest,
+                dependency_manifest=stored_manifest,
                 source_evidence=prepared.source_evidence,
                 projected_action_pks=[],
                 diagnostics=[

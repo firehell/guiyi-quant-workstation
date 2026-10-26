@@ -7,7 +7,7 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
-## 10/26 苏冰参考六周期代码已集成，完整历史存储范围待定
+## 10/26 苏冰参考六周期代码已集成，完整历史存储改进验证通过
 
 苏冰参考支持5m/15m/30m/60m/1d/1w，新增5m/W1历史身份；新持续记录策略使用
 `subing_physical_prefix_forward_v2`，只预热指标、不继承历史持仓，沿用耐久journal、原子激活和原后台刷新线程。
@@ -18,14 +18,15 @@
 六周期浏览器1 passed；type/build/topology、Ruff、OpenSpec12/12、secret0和diff通过。
 
 operational60×六周期完整扫描：296份计划、64路源/预算阻断，另46份计划超过原生CLI16MiB。
-例如AG15m为22.54MiB；当前每批重复保存来源指纹，完整历史存储改进与有限首版窗口已向owner提出互斥选择，
-不绕过CLI边界、不静默缩窗。CJ2305已分类NONPOSITIVE_CLOSE周线前缀保持数据不足，不补造Bar。
+owner已选定保留2023年以来完整历史。新增有界分片计划与同版本来源清单锚点，
+保留原逻辑hash、交易口径及旧inline资产；隔离PostgreSQL等102项回归通过，独立Review允许集成。
+新格式正式写入前先升级读取端，不绕过CLI边界、不静默缩窗。CJ2305已分类NONPOSITIVE_CLOSE周线前缀保持数据不足，不补造Bar。
 
 39个W1历史资产按精确原生计划构建并独立读回READY，统一截至10/23 15:00；RB/JM历史API读回200/persisted。
 已完成项不重复构建。其余历史未写入，苏冰forward启用数独立读回为0；本地develop8002/5175已加载代码，
 正式v1.16.7及十服务保持，未发布/切Runtime，不声明自然六周期记录验收完成。
 证据：[任务记录](docs/tasks/2026-10-26-subing-six-periods.md)，实际扫描/构建原件在`output/subing-six-periods-20261026/`。
-下一步：owner确定完整历史保留与存储方案后继续剩余资产、启用、发布和运行验收。
+下一步：集成存储改进并升级读取端，再继续剩余资产、启用及运行验收。
 
 ## 10/26 原生 C++ 只读对照准备完成，第一套查询可行性仍待现场
 

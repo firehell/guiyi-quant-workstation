@@ -11,6 +11,28 @@ migration、历史 bootstrap、Canonical 写入或 Runtime enable。
 
 ## Requirements
 
+### Requirement: Lossless bounded historical plan and manifest storage
+
+Historical plan files SHALL preserve the logical plan hash. Legacy inline JSON SHALL remain
+readable with its existing 16 MiB bound. Larger plans SHALL use a bounded descriptor and
+fixed sibling compressed chunks, validating each chunk and complete compressed and decoded
+hashes before use. Decoded payloads SHALL be bounded at 256 MiB. Duplicate keys, non-finite
+numbers, symlinks, nonregular files, path escapes, incomplete publication and extra streams
+SHALL fail closed. Publication SHALL not overwrite existing evidence.
+
+SuBing historical calculation batches MAY replace large repeated source vectors with a direct
+reference to an earlier committed inline manifest in the same stream and revision. The reader
+SHALL authenticate its complete digest and retained fields and SHALL reject reference chains,
+missing anchors and identity mismatches. Logical dependency and batch payload hashes SHALL
+remain unchanged. Legacy inline assets and other strategies SHALL remain unchanged. Readers
+SHALL be upgraded before producing this storage representation. No storage change SHALL
+alter trading semantics, source coverage or formula identities.
+
+#### Scenario: Compact storage preserves full history
+- **WHEN** a SuBing history since 2023 exceeds the inline plan bound or repeats large manifests
+- **THEN** bounded storage retains the complete logical history and identities without shortening the window
+- **AND** corruption or missing evidence blocks processing without fallback or fabricated trades
+
 ### Requirement: Forward activation and capture are separate from historical publication
 
 Forward enablement SHALL require an exact, unexpired activation plan bound to stream/revision,

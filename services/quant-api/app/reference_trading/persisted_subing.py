@@ -16,6 +16,7 @@ from app.reference_trading.planning import HistoricalStreamRequest
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict, _decode
 from app.reference_trading.repository import _identity_from_row
 from app.reference_trading.source_identity import verify_saved_input_prefix
+from app.reference_trading.manifest_storage import resolve_manifest
 
 
 class PersistedSubingReference:
@@ -41,7 +42,7 @@ class PersistedSubingReference:
             ).order_by(ReferenceBatch.seq.desc()).limit(1))
             if row is None or batch is None:
                 raise QueryConflict("SNAPSHOT_CONFLICT")
-            return _identity_from_row(row), dict(batch.dependency_manifest)
+            return _identity_from_row(row), dict(resolve_manifest(session, batch))
 
     @staticmethod
     def _all_points(
