@@ -353,7 +353,7 @@ def test_live_not_ready_empty_proof_never_becomes_closed_idle(tmp_path, monkeypa
 
 def preserve_host(tmp_path, monkeypatch):
     from app.runtime_contracts import SERVICES
-    from app.market_data import operational_universe
+    from app.market_data import operational_universe, late_provider_recovery
 
     old_root, new_root = tmp_path / "release-v1.16.4", tmp_path / "release-v1.16.5"
     for root in (old_root, new_root):
@@ -375,6 +375,10 @@ def preserve_host(tmp_path, monkeypatch):
     monkeypatch.setattr(
         operational_universe, "load_operational_products", lambda: ("jm",)
     )
+    # The recovery reader binds this authority at module import. Patch its local
+    # alias too, so the isolated one-product fixture does not depend on whether
+    # another suite imported that module before this test.
+    monkeypatch.setattr(late_provider_recovery, "load_operational_products", lambda: ("jm",))
     return host, plan, attempt, old_root, new_root
 
 
@@ -768,3 +772,29 @@ def test_refresh_control_larger_limit_is_exact_path_only_and_still_secure(tmp_pa
     path.symlink_to(other)
     with pytest.raises((ValueError, OSError)):
         host.bytes(path)
+
+
+def test_native_commit_checks_deadline_after_all_schema_and_session_readbacks(tmp_path, monkeypatch):
+    from app import runtime_cohort_host as module
+    b = binding(tmp_path)
+    old = BindingRegistry(1, {"market-feed": b})
+    plan = {"old": asdict(old), "new": asdict(old), "registry_sha256": "c" * 64,
+            "created_at": NOW.isoformat(), "expires_at": (NOW + timedelta(minutes=15)).isoformat()}
+    host = object.__new__(CohortHost)
+    host.now = lambda: NOW
+    host.deadline = 600
+    clock = [0.0]
+    monkeypatch.setattr(module, "monotonic", lambda: clock[0])
+    host.check_schema_compatibility = lambda plan: None
+    host.bindings = lambda: old
+    host.binding_hash = lambda: "c" * 64
+    host.definition_absent = lambda binding: True
+    host.verify_release = lambda *args: None
+    def slow_session():
+        clock[0] = 601.0
+    host.session_proof = slow_session
+    writes = []
+    monkeypatch.setattr(module, "write_bindings", lambda *args, **kwargs: writes.append(args))
+    with pytest.raises(CohortError, match="COHORT_DOWNTIME_EXCEEDED"):
+        host.commit(plan)
+    assert writes == []

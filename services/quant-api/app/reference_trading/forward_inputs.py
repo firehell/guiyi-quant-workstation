@@ -111,6 +111,7 @@ def capture_subing_live(
     owner_segments: Callable[[StreamIdentity, str, date, datetime], tuple[str, str]],
     expected_endpoints: Callable[[StreamIdentity, str, date, datetime | None, datetime], tuple[datetime, ...]],
     owner_started_at=None, prior_owner_segment_id=None, prior_calculation_segment_id=None, observation=None, checkpoint_watermark=...,
+    retained_observations=(),
 ) -> ForwardCapture | None:
     """Capture one completed SuBing Bar only when Session continuity is proven."""
     if identity.strategy_code.replace("-", "_") != "subing_reference" or identity.frequency not in {"5m", "15m", "30m", "60m"}:
@@ -182,8 +183,24 @@ def capture_subing_live(
             frequency=identity.frequency, trading_day=bar.trading_day, contract=snapshot.contract,
             cutoff=bar.bar_end, bars=(bar,), bar_contracts=(snapshot.contract,))
         try:
-            replay = market_read.current_contract_replay_window(window, after=None)
+            replay = (market_read.retained_contract_replay_window(window, observations=retained_observations)
+                      if retained_observations else market_read.current_contract_replay_window(window, after=None))
         except MarketReadWindowError as exc:
+            if retained_observations:
+                cause = exc.__cause__
+                code = getattr(cause, "code", None)
+                if str(exc) == "MARKET_READ_RETAINED_ORIGINAL_INVALID":
+                    raise ForwardInputUnavailable("SUBING_RETAINED_ORIGINAL_CONFLICT") from exc
+                if code == "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE":
+                    missing_day = getattr(cause, "context", {}).get("first_missing_day")
+                    try:
+                        missing_day = date.fromisoformat(str(missing_day))
+                    except (ValueError, TypeError):
+                        raise ForwardInputUnavailable("SUBING_HISTORY_INPUT_INVALID") from exc
+                    if missing_day >= bar.trading_day:
+                        raise ForwardInputUnavailable("OBSERVATION_GAP", trading_day=bar.trading_day) from exc
+                elif code not in {"DATASET_OR_PARTITION_MISSING", "MAPPED_CONTRACT_DATASET_MISSING"}:
+                    raise ForwardInputUnavailable("SUBING_HISTORY_INPUT_INVALID") from exc
             raise ForwardInputUnavailable("SUBING_PHYSICAL_PREFIX_UNAVAILABLE") from exc
         if not replay.bars or replay.bars[-1] != bar:
             raise ForwardInputUnavailable("SUBING_SOURCE_IDENTITY_INVALID")

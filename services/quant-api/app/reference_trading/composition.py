@@ -124,6 +124,7 @@ def build_forward_reference_worker(
                 return capture_subing_live(
                     market_read, identity, wake_kind=kind, owner_started_at=subing_owner_started_at,
                     observation=worker.source_envelope if kind == "live_event" else None, checkpoint_watermark=computed_through,
+                    retained_observations=worker.retained_source_observations if kind == "live_event" else (),
                     prior_owner_segment_id=prior_owner_id, prior_calculation_segment_id=prior_calculation_id,
                     owner_segments=owner_segments,
                     expected_endpoints=expected_endpoints,
@@ -166,6 +167,10 @@ def build_forward_reference_worker(
                             prior_calculation_segment_id=prior_calculation_id,
                         )
         except ForwardInputUnavailable as error:
+            if worker.inbox_delivery_id is not None:
+                # A durable original gap/conflict is a blocked stream, never an
+                # implicit interruption, fresh activation or fabricated replay.
+                raise
             if recovery_policy != "interrupt_and_restart" or str(error) not in {
                 "OBSERVATION_GAP", "FIRST_SEEN_NOT_PROVEN",
             }:

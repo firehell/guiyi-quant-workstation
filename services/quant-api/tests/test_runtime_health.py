@@ -2400,3 +2400,41 @@ def test_reference_owner_health_distinguishes_work_from_durable_fault(stage, blo
     assert result["status"] == expected
     state["pid"] = 122
     assert _reference_owner_health(binding, identity, state, now)["status"] == "degraded"
+
+
+def test_runtime_live_health_exposes_preparation_separately_without_raw_error_text():
+    from app.services.runtime_health import _collect_live_market_health
+    now = datetime(2026,10,26,14,tzinfo=UTC)
+    prep = {'running':True,'error':None,'counts':{'WAITING_SOURCE':1},
+            'active':[{'product':'eg','contract':'EG2701','trading_day':'2026-10-27',
+                       'frequency':'5m','status':'WAITING_SOURCE','reason':'RQDATA_NOT_READY'}],
+            'active_truncated':False,'budgets':{'2026-10-27':{'requests':10,'bars':1000}}}
+    heartbeat = {'generated_at':now.isoformat(),'operational_count':0,'subscribed_count':0,
+                 'last_bar_at':None,'phase_counts':{},'coverage_schema_version':1,
+                 'coverage':{},'available':True,'contract_preparation':prep}
+    connection = FakeRedis(values={'live:heartbeat':json.dumps(heartbeat)})
+    payload = _collect_live_market_health(connection,now=now,configured_enabled=True,freshness_seconds=300)
+    assert payload['contract_preparation']==prep
+    prep['error']='secret=must-not-leak'
+    connection = FakeRedis(values={'live:heartbeat':json.dumps(heartbeat)})
+    payload = _collect_live_market_health(connection,now=now,configured_enabled=True,freshness_seconds=300)
+    assert 'must-not-leak' not in json.dumps(payload)
+    assert payload['contract_preparation']['error']=='CONTRACT_PREPARATION_STATUS_INVALID'
+
+
+def test_preparation_authority_wait_is_bounded_and_does_not_invent_contract():
+    from app.services.runtime_health import _public_contract_preparation
+    raw = {"running": True, "error": None, "counts": {"WAITING_AUTHORITY": 1},
+           "active": [], "active_truncated": False, "budgets": {},
+           "authority_waiting": [{"product": "eg", "status": "WAITING_AUTHORITY",
+                                  "reason": "CONTRACT_PREPARATION_AUTHORITY_UNAVAILABLE"}],
+           "authority_waiting_truncated": False}
+    result = _public_contract_preparation(raw)
+    assert result == raw
+    assert "contract" not in result["authority_waiting"][0]
+    raw["authority_waiting"][0]["reason"] = "secret=must-not-leak"
+    invalid = _public_contract_preparation(raw)
+    assert invalid["error"] == "CONTRACT_PREPARATION_STATUS_INVALID"
+    assert "must-not-leak" not in json.dumps(invalid)
+    raw["authority_waiting"] = [{}] * 17
+    assert _public_contract_preparation(raw)["error"] == "CONTRACT_PREPARATION_STATUS_INVALID"

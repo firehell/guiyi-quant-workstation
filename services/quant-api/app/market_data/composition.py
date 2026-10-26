@@ -342,8 +342,16 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
         session.rollback()  # See the committed day metadata on the next phase / rank1 read.
         return failure
 
+    from app.market_data.contract_preparation_runtime import (
+        ContractPreparationWorker, build_contract_preparation,
+    )
+    # The Market computation process owns history preparation; the dedicated
+    # quote-feed process never downloads or publishes historical partitions.
+    history_preparation = None if _feed else ContractPreparationWorker(build_contract_preparation(
+        SessionLocal, canonical_root=canonical_root(), products=products,
+    ))
     common_kwargs: dict[str, Any] = dict(
-
+        history_preparation=history_preparation,
         dominant_source=CatalogDominants(),
         prepare_trading_day=prepare_trading_day, authoritative_dominants=True,
         recovery_fetch_factory=recovery_fetch_factory,

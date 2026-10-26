@@ -611,8 +611,10 @@ class LiveMarketService:
         recovery_guard_factory: Callable[[str], ContextManager] | None = None,
         prepare_trading_day: Callable[[datetime], str | None] | None = None,
         authoritative_dominants: bool = False,
+        history_preparation=None,
     ) -> None:
         self._prepare_trading_day = prepare_trading_day
+        self._history_preparation = history_preparation
         self._metadata_preparation_error: str | None = None
         self._authoritative_dominants = authoritative_dominants
         self._provider_factory = provider_factory
@@ -1017,11 +1019,17 @@ class LiveMarketService:
 
             self._sleep = sleep
         try:
+            if self._history_preparation is not None:
+                self._history_preparation.start()
             while should_stop is None or not should_stop():
                 self.poll(self._clock())
                 self._sleep(1)
         finally:
-            self._discard_provider()
+            try:
+                if self._history_preparation is not None:
+                    self._history_preparation.stop()
+            finally:
+                self._discard_provider()
 
     def _derive(
         self,
@@ -1218,6 +1226,8 @@ class LiveMarketService:
                 "coverage_schema_version": 1,
                 "coverage": self._coverage_snapshot(now, phases),
                 "metadata_preparation_error": self._metadata_preparation_error,
+                **({"contract_preparation": self._history_preparation.snapshot()}
+                   if self._history_preparation is not None else {}),
                 **({'closed_cleaned': getattr(self, 'closed_cleaned_proof', None)}
                    if getattr(self, 'closed_cleaned_proof', None) else {}),
                 "available": (self._available and self._provider_available and bar_feed_fresh

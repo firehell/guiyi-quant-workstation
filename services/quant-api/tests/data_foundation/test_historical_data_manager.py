@@ -4562,3 +4562,78 @@ def test_audit_weekly_missing_requires_complete_daily_quality_proof(session, tmp
         assert any(f.code == 'EXPECTED_PARTITION_MISSING' for f in result.findings)
     assert provider.calls == []
     assert manager.catalog.all_partitions(weekly) == ()
+
+
+def test_contract_warmup_admission_deadline_stops_at_safe_boundary_after_source(session, tmp_path, monkeypatch):
+    manager, minute, hour, bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
+    request = historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency="60m")
+    frozen = manager.contract_warmup(request).plan
+    expired = False
+    native = manager._fetch_many
+    def fetch(requests):
+        nonlocal expired
+        result = native(requests)
+        expired = True
+        return result
+    monkeypatch.setattr(manager, "_fetch_many", fetch)
+    def check():
+        if expired:
+            raise ValueError("CONTRACT_PREPARATION_ADMISSION_TIME_EXCEEDED")
+    result = manager.contract_warmup(historical.ContractWarmupRequest(
+        "pf", "PF2611", request.through, frozen.plan_sha256, True, "60m",
+    ), check_budget=check)
+    assert result.status == "failed"
+    assert result.applied == 0
+    assert len(provider.calls) == 1
+    assert manager.catalog.all_partitions(minute) == ()
+    assert manager.catalog.all_partitions(hour) == ()
+    # Temporary callback does not leak to later native CLI/maintenance invocations.
+    manager._planning_check()
+    manager._maintenance_check()
+
+
+def test_preparation_accepts_native_no_target_noop_only_after_fresh_mds_readback(session, tmp_path):
+    from app.market_data.contract_preparation import ContractPreparation, PreparationDemand, PreparationPlan
+    from app.market_data.market_data_service import MarketDataService
+    from app.market_data.domain import ContractTradingDayQuery
+    manager, minute, hour, bars, provider = _hourly_contract_warmup_manager(session, tmp_path)
+    session.add(TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, 2), is_trading_day=True, has_night_session=False))
+    session.add(TradingSession(exchange_code="DCE", instrument_symbol="pf", session_name="day",
+                               start_time=time(9), end_time=time(10), effective_from=date(2025, 1, 2),
+                               crosses_midnight=False, is_active=True))
+    session.commit()
+    _publish_existing(manager, minute, bars)
+    request = historical.ContractWarmupRequest("pf", "PF2611", date(2025, 1, 2), frequency="60m")
+    initial = manager.contract_warmup(request).plan
+    assert manager.contract_warmup(replace(request, apply=True, expected_plan_sha256=initial.plan_sha256)).status == "passed"
+    assert manager.contract_warmup(request).plan.target_windows == ()
+    provider.calls.clear()
+    selected = PreparationDemand("pf", "PF2611", date(2025, 1, 3), date(2025, 1, 2),
+                                  date(2025, 2, 1), date(2025, 1, 2), ("60m",), "scope")
+    readbacks = []
+    statuses = []
+    def plan(item, frequency, check):
+        native = manager.contract_warmup(request).plan
+        return PreparationPlan(native.plan_sha256, native.provider_request_count, native.expected_bar_count)
+    def apply(item, frequency, frozen, reserve, check):
+        native = manager.contract_warmup(replace(request, apply=True, expected_plan_sha256=frozen.plan_sha256), before_apply=reserve)
+        statuses.append(native.status)
+        return {"status": native.status, "applied": native.applied}
+    def readback(item, frequency):
+        with Session(session.get_bind()) as fresh:
+            assert fresh is not session
+            fresh_manager = _manager(fresh, tmp_path, manager.coverage, provider)
+            assert fresh_manager.contract_warmup(request).plan.target_windows == ()
+            result = MarketDataService(fresh_manager.catalog, fresh_manager.store).query_contract_trading_days(
+                ContractTradingDayQuery("pf", "PF2611", BarFrequency.H1, selected.listed_date, selected.through))
+            readbacks.append(result.bars)
+            return result.bars == (_read_committed_month(manager, hour, 2025, 1)[0],)
+    preparation = ContractPreparation(state_path=tmp_path / "runtime.json", binding_id="isolated-catalog",
+                                      discover=lambda now: (selected,), plan=plan, apply=apply, readback=readback)
+    assert preparation.tick(datetime(2025, 1, 3, 1, tzinfo=UTC)) is None
+    unit = next(iter(preparation.snapshot()["requests"].values()))["units"]["60m"]
+    assert statuses == ["noop"]
+    assert unit["status"] == "READY"
+    assert len(readbacks) == 1
+    assert provider.calls == []
+    assert preparation.snapshot()["budgets"]["2025-01-03"]["requests"] == 0

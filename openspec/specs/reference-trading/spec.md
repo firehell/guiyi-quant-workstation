@@ -1067,6 +1067,38 @@ SuBing notification remains disabled; new reference streams SHALL NOT route to N
 - **WHEN** the requested W1 physical prefix cannot prove continuous valid input
 - **THEN** the route reports data unavailable and creates no synthetic Bar, reference trade, or return
 
+### Requirement: Durable intake is independent of ordered Reference calculation
+
+The `reference_receiving_v2` protocol SHALL persist the exact completed original and frozen stream/revision/generation
+routes atomically in PostgreSQL before acknowledging its existing Redis cursor. Intake progress SHALL mean durable
+acceptance, not completed calculation. Conflicting content and uncertain commits SHALL fail closed with exact independent
+readback; no cursor recreation, skipped originals, replacement prices or duplicate transactions are permitted.
+
+Each stream SHALL process its earliest unfinished delivery in numeric journal order. Fair bounded rotation SHALL let
+other streams proceed when one waits for physical history. Delivery completion SHALL commit with its matching Reference
+calculation. Identity drift, actual observation gaps and unknown mutations SHALL remain explicit and SHALL NOT be
+converted into automatic replay or successful history preparation.
+
+Original source/received/confirmed timestamps SHALL remain immutable. Ingestion and calculation times SHALL be separate,
+with `delivery_timing_v2` exposing delayed-original processing without changing formulas, trades or notification deadlines.
+The immutable accepted originals SHALL remain readable after Redis retention expires; missing intake cursors SHALL block
+intake, but SHALL NOT prevent calculation of already accepted deliveries. Intake failure SHALL survive restart.
+
+#### Scenario: A newly dominant contract is waiting for history
+
+- **GIVEN** one enabled stream cannot prove its new physical contract prefix
+- **WHEN** its confirmed original is accepted
+- **THEN** its delivery SHALL wait for shared normal contract preparation and other streams SHALL continue
+- **AND** after verified preparation it SHALL resume original order without sending expired notifications.
+
+#### Scenario: Intake ownership changes or the Redis journal expires
+
+- **GIVEN** version two was requested after additive schema installation
+- **WHEN** the exclusive new Runtime owner starts at the native handover boundary
+- **THEN** it SHALL freeze the existing cursor without resetting it and activate version two
+- **AND** read-only warmup SHALL NOT persist protocol state or intake failure
+- **AND** accepted originals SHALL continue calculation even if subsequent Redis intake is blocked.
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

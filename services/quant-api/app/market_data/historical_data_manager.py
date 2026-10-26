@@ -1086,6 +1086,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         self.coverage = coverage
         self.metadata = metadata
         self._planning_check = lambda: None
+        self._maintenance_check = lambda: None
         self.provider = provider
         self._ready_batches: dict[BarFetchRequest, BarBatch] | None = None
         # 同进程内已同步过的 (products, through) 不再重复拉 metadata，减少 RQData 调用。
@@ -1221,6 +1222,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
 
     @contextmanager
     def _progress(self, phase, key=None, year=None, month=None, *, symbol=None):
+        self._maintenance_check()  # Safe boundary only; never interrupt an active call.
         started = monotonic()
 
         def emit(state):
@@ -1371,6 +1373,20 @@ class HistoricalDataManager(ContractWarmupPlanner):
         return self._execute("refresh", targets, request.through, apply=request.apply)
 
     def contract_warmup(
+        self, request: ContractWarmupRequest, *,
+        before_apply: Callable[[], None] | None = None,
+        check_budget: Callable[[], None] | None = None,
+    ) -> ContractWarmupResult:
+        """Native warm-up with an optional admission deadline at safe boundaries."""
+        previous_plan, previous_maintenance = self._planning_check, self._maintenance_check
+        check = check_budget or (lambda: None)
+        self._planning_check = self._maintenance_check = check
+        try:
+            return self._contract_warmup(request, before_apply=before_apply)
+        finally:
+            self._planning_check, self._maintenance_check = previous_plan, previous_maintenance
+
+    def _contract_warmup(
         self,
         request: ContractWarmupRequest,
         *,

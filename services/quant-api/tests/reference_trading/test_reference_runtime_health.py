@@ -285,3 +285,20 @@ def test_lag_projection_preserves_failure_gates(health,endpoint,want):
     end=datetime(2026,10,23,15,tzinfo=UTC)
     stream=SimpleNamespace(enabled=True,health=health,recording_start=end)
     assert _recording_status(stream,endpoint,end)==want
+
+
+def test_subing_only_intraday_routes_supply_authoritative_endpoint_keys():
+    from app.reference_trading.models import ReferenceStream
+    from test_activation import NOW
+    factory, identity, _revision, _activation = _active()
+    with factory() as session, session.begin():
+        stream=session.get(ReferenceStream,identity.stream_id)
+        stream.strategy_code='subing_reference'
+        stream.frequency='5m'
+    calls=[]
+    def endpoints(session, keys, at):
+        calls.append(keys)
+        return {key:{'endpoint_status':'READY','expected_through':NOW.isoformat(),
+                     'expected_source':'canonical_completed'} for key in keys}
+    ForwardReferenceHealth(factory,endpoint_reader=endpoints,now=lambda:NOW).read()
+    assert calls==[(('rb','5m'),)]
