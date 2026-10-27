@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, ExitStack
+from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
 from fnmatch import fnmatchcase
@@ -213,7 +214,121 @@ class CohortHost(FaultRecoveryHost):
         require(self.schema_compatibility(old, new) == plan["schema_compatibility"],
                 "COHORT_SCHEMA_PROOF_DRIFT")
 
+    @contextmanager
+    def _reference_receiving_context(self, target):
+        from app.reference_trading.receiving_handover import target_supports_receiving_handover
+        from app.reference_trading.inbox_protocol import build_receiving_protocol
+        from app.runtime_schema_compatibility import verify_installed_reference_inbox
+        from app.market_data.observation_stream import ObservationStream
+        from app.redis_connections import get_redis_connection
+        from app.db.session import SessionLocal
+        from app.db.readonly import readonly_transaction
+        from app.reference_trading.models import ReferenceStream, ReferenceInboxInput, ReferenceInboxDelivery
+        from app.reference_trading.inbox import _digest, _aware
+        from sqlalchemy import select, func, exists
+
+        require(target_supports_receiving_handover(Path(target.root)), "COHORT_REFERENCE_TARGET_UNSUPPORTED")
+        protocol = build_receiving_protocol()
+        if protocol.read() is None:
+            yield None
+            return
+        with SessionLocal() as session:
+            schema = verify_installed_reference_inbox(session)
+        redis = get_redis_connection()
+        try:
+            journal = ObservationStream(redis, kind="completed")
+            days = journal.days()
+            with SessionLocal() as session, readonly_transaction(session, timeout_seconds=20):
+                activations = session.execute(select(ReferenceStream.stream_id, ReferenceStream.identity_hash,
+                    ReferenceStream.active_revision_id, ReferenceStream.activation_generation,
+                    ReferenceStream.recording_start, ReferenceStream.activation_plan_hash).where(
+                    ReferenceStream.enabled.is_(True), ReferenceStream.recording_mode == "forward_observation")
+                    .order_by(ReferenceStream.stream_id)).all()
+                require(all(revision is not None and type(generation) is int and generation > 0 and start is not None
+                            and isinstance(plan_hash, str) and re.fullmatch(r"[0-9a-f]{64}", plan_hash)
+                            for _stream, _identity, revision, generation, start, plan_hash in activations),
+                        "COHORT_REFERENCE_ACTIVATION_UNPROVEN")
+                fixed = [(*row[:4], _aware(row[4]).astimezone(UTC).isoformat(), row[5]) for row in activations]
+                unfinished = exists(select(1).where(ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
+                                                    ReferenceInboxDelivery.status != "COMPLETED"))
+                used = session.scalar(select(func.coalesce(func.sum(ReferenceInboxInput.payload_bytes), 0)).where(unfinished))
+                by_day = session.execute(select(ReferenceInboxInput.trading_day, func.count()).where(
+                    ReferenceInboxInput.trading_day.in_(days)).group_by(ReferenceInboxInput.trading_day)).all()
+            authority = {"schema": schema, "activation_sha256": _digest(fixed), "enabled_count": len(fixed)}
+            capacity = {"unfinished_bytes": int(used), "day_inputs": {day.isoformat(): count for day, count in by_day}}
+            yield protocol, journal, authority, capacity
+        finally:
+            redis.close()
+
+    def freeze_reference_receiving_handover(self, new):
+        from app.reference_trading.receiving_handover import target_supports_receiving_handover, freeze_receiving_intent
+        target = new.services["reference-worker"]
+        if not target_supports_receiving_handover(Path(target.root)):
+            return None  # Legacy candidates retain every original backlog gate.
+        try:
+            with self._reference_receiving_context(target) as context:
+                if context is None:
+                    return None
+                protocol, journal, authority, _capacity = context
+                return freeze_receiving_intent(protocol, journal, target=asdict(target), schema_proof=authority)
+        except Exception:
+            raise CohortError("COHORT_REFERENCE_BACKLOG_UNPROVEN") from None
+
+    def check_reference_receiving_intent(self, plan):
+        if "reference_receiving_handover" not in plan:
+            return
+        from app.reference_trading.receiving_handover import verify_receiving_intent
+        target = registry(plan["new"]).services["reference-worker"]
+        try:
+            with self._reference_receiving_context(target) as context:
+                require(context is not None, "COHORT_REFERENCE_BACKLOG_UNPROVEN")
+                protocol, journal, authority, _capacity = context
+                verify_receiving_intent(protocol, journal, plan["reference_receiving_handover"],
+                                        target=asdict(target), schema_proof=authority)
+        except Exception:
+            raise CohortError("COHORT_REFERENCE_BACKLOG_UNPROVEN") from None
+
+    def _reference_handover_budget(self, plan):
+        require(monotonic() < self.deadline, "COHORT_DOWNTIME_EXCEEDED")
+        require(datetime.fromisoformat(plan["created_at"]) <= self.now() < datetime.fromisoformat(plan["expires_at"]),
+                "COHORT_PLAN_EXPIRED")
+
+    def seal_reference_receiving_handover(self, plan, progress):
+        from app.reference_trading.receiving_handover import seal_receiving_backlog
+        target = registry(plan["new"]).services["reference-worker"]
+        try:
+            self._reference_handover_budget(plan)
+            with self._reference_receiving_context(target) as context:
+                require(context is not None, "COHORT_REFERENCE_BACKLOG_UNPROVEN")
+                protocol, journal, authority, capacity = context
+                proof = seal_receiving_backlog(protocol, journal, plan["reference_receiving_handover"],
+                    target=asdict(target), schema_proof=authority, progress=progress, capacity=capacity,
+                    check_budget=lambda: self._reference_handover_budget(plan))
+            self._reference_handover_budget(plan)
+            self._reference_receiving_drain = proof
+            return proof
+        except Exception:
+            raise CohortError("COHORT_REFERENCE_BACKLOG_UNPROVEN") from None
+
+    def check_reference_receiving_handover(self, plan, proof):
+        if "reference_receiving_handover" not in plan:
+            return
+        from app.reference_trading.receiving_handover import verify_receiving_backlog
+        target = registry(plan["new"]).services["reference-worker"]
+        try:
+            self._reference_handover_budget(plan)
+            with self._reference_receiving_context(target) as context:
+                require(context is not None, "COHORT_REFERENCE_BACKLOG_UNPROVEN")
+                protocol, journal, authority, capacity = context
+                verify_receiving_backlog(protocol, journal, plan["reference_receiving_handover"],
+                    proof["reference_receiving_handover"], target=asdict(target), schema_proof=authority,
+                    capacity=capacity, check_budget=lambda: self._reference_handover_budget(plan))
+            self._reference_handover_budget(plan)
+        except Exception:
+            raise CohortError("COHORT_REFERENCE_BACKLOG_UNPROVEN") from None
+
     def check_plan(self, plan):
+        self.check_reference_receiving_intent(plan)
         self.check_schema_compatibility(plan)
         assert_no_unknown_deployment(cohort_plan_sha256=plan["plan_sha256"])
         old, new = registry(plan["old"]), registry(plan["new"])
@@ -475,12 +590,18 @@ class CohortHost(FaultRecoveryHost):
         }
         require(
             all(
-                v["cursor"] == v["tail"]
-                for values in progress.values()
-                for v in values.values()
+                value["cursor"] == value["tail"]
+                for name, values in progress.items() if name != "reference-worker"
+                for value in values.values()
             ),
             "COHORT_OBSERVATION_BACKLOG",
         )
+        reference_handover = None
+        if "reference_receiving_handover" in plan:
+            reference_handover = self.seal_reference_receiving_handover(plan, progress["reference-worker"])
+        else:
+            require(all(value["cursor"] == value["tail"] for value in progress["reference-worker"].values()),
+                    "COHORT_OBSERVATION_BACKLOG")
         from app.db.session import SessionLocal
         from sqlalchemy import select, func
         from app.reference_trading.models import ReferenceBatch, ReferenceStream
@@ -509,6 +630,7 @@ class CohortHost(FaultRecoveryHost):
             "owners": {name: read_service_state(name) for name in CONTINUOUS},
             "progress": progress,
             "feed_close": value,
+            **({"reference_receiving_handover": reference_handover} if reference_handover is not None else {}),
         }
 
     @contextmanager
@@ -809,6 +931,9 @@ class CohortHost(FaultRecoveryHost):
         for binding in new.services.values():
             self.verify_release(Path(binding.root), binding.tag, binding.commit)
         self.session_proof()
+        if "reference_receiving_handover" in plan:
+            self.check_reference_receiving_handover(plan,
+                {"reference_receiving_handover": getattr(self, "_reference_receiving_drain", None)})
         now = self.now()
         require(datetime.fromisoformat(plan["created_at"]) <= now < datetime.fromisoformat(plan["expires_at"]),
                 "COHORT_PLAN_EXPIRED")
