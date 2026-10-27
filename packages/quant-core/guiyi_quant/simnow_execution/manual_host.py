@@ -157,7 +157,7 @@ def acceptance(state, snapshot, test_id, *, baseline=None):
         and all(r.released for r in state.reservations)
         and len(opened) == 1
         and len(opening_fills) == len(closing_fills) == 1
-        and all(type(f) is a.NativeFill for f in fills)
+        and all(type(f) in (a.NativeFill, a.CorrelatedNativeFillV1) for f in fills)
         and status.due_at is not None
         and closed
         and min(o.created_at for o in closed) >= status.due_at

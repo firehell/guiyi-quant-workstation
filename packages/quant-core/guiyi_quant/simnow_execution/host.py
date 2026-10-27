@@ -24,9 +24,16 @@ class Host:
         deadline,
         continuous=False,
         manual_test_id=None,
+        close_only=False,
+        native_validator=None,
     ):
         if type(continuous) is not bool:
             raise ValueError("HOST_MODE_INVALID")
+        if type(close_only) is not bool or (
+            getattr(adapter, "correlated_native", False)
+            and (not close_only or not callable(native_validator))
+        ):
+            raise ValueError("CLOSE_ONLY_NATIVE_VALIDATOR_REQUIRED")
         if manual_test_id is not None and (
             type(manual_test_id) is not str
             or not manual_test_id.startswith("manual:")
@@ -57,6 +64,8 @@ class Host:
         self.products = products
         self.continuous = continuous
         self.manual_test_id = manual_test_id
+        self.close_only = close_only
+        self.native_validator = native_validator
         self.max_submits = max_submits
         self.run_id = run_id
         self.deadline = deadline
@@ -72,6 +81,9 @@ class Host:
         snapshot = read_snapshot(report, now=now)
         if snapshot.account_id != self.adapter.session.account_id:
             raise ValueError("HOST_NATIVE_ACCOUNT_MISMATCH")
+        if getattr(self.adapter, "correlated_native", False):
+            self.native_validator(snapshot)
+            self.adapter.correlate_snapshot(snapshot)
         self.evidence.append(snapshot)
         data = snapshot.data
         # Collector has verified account ownership; do not forward raw private codes into persistence.
@@ -139,6 +151,10 @@ class Host:
         # Validate the whole batch before any claim or request is possible.
         if any(e.order.product not in self.products for e in effects):
             raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
+        if self.close_only and any(
+            e.kind == "SUBMIT" and e.order.offset != "CLOSE" for e in effects
+        ):
+            raise ValueError("CLOSE_ONLY_OPEN_FORBIDDEN")
         if self.continuous and any(
             e.kind == "SUBMIT" and e.order.offset == "OPEN" for e in effects
         ):

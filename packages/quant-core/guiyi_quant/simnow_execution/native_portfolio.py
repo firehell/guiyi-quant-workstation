@@ -247,9 +247,15 @@ class NativePortfolio:
             break
         return tuple(facts), tuple(bindings)
 
-    def adapter(self, store, journal, snapshot, now):
+    def adapter(self, store, journal, snapshot, now, *, close_only=False,
+                correlated_native=False):
         from datetime import datetime, time
         from zoneinfo import ZoneInfo
+
+        if type(close_only) is not bool or type(correlated_native) is not bool or (
+            correlated_native and not close_only
+        ):
+            raise ValueError("NATIVE_CAPABILITY_INVALID")
 
         settlement = self.gateway.query("settlement")
         if len(settlement) != 1 or settlement[0]["ConfirmDate"] != snapshot.trading_day:
@@ -278,6 +284,10 @@ class NativePortfolio:
                 tzinfo=ZoneInfo("Asia/Shanghai"),
             ),
         )
+        capabilities = (
+            dict(close_only=close_only, correlated_native=correlated_native)
+            if close_only or correlated_native else {}
+        )
         adapter = Adapter(
             store,
             journal,
@@ -285,7 +295,10 @@ class NativePortfolio:
             self.gateway.api,
             self.gateway.user,
             session,
+            **capabilities,
         )
+        if correlated_native:
+            adapter.correlate_snapshot(snapshot)
         self.gateway.attach(adapter, snapshot)
         return adapter
 

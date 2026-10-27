@@ -19,6 +19,7 @@ POLICY_VERSION = "htdy_60m_account_execution_v2"
 PRODUCT_RECOVERY_POLICY_VERSION = "htdy_60m_product_recovery_v1"
 MANAGED_TICK_POLICY_VERSION = "htdy_60m_managed_tick_v1"
 MANUAL_TEST_POLICY_VERSION = "htdy_simnow_rb_manual_long1_hold600_v1"
+CORRELATED_NATIVE_FILL_POLICY_VERSION = "simnow_manual_correlated_fill_v1"
 RISK_VERSION = "htdy_simnow_margin70_skip_v1"
 EXECUTION_VERSION = "htdy_simnow_opponent_reprice180_v1"
 FORMULA_VERSION = "huotian_dayou_original_v0"
@@ -87,6 +88,32 @@ class NativeFill(Fill):
             or self.recorded_at < self.request_started_at
         ):
             raise ValueError("NATIVE_FILL_PRECISION_INVALID")
+
+
+@dataclass(frozen=True)
+class CorrelatedNativeFillV1(NativeFill):
+    """Manual-only native fill whose identity proof spans distinct clock domains."""
+
+    readback_source_id: str = ""
+    native_order_ref: str = ""
+    native_front_id: int = 0
+    native_session_id: int = 0
+    correlation_policy_version: str = CORRELATED_NATIVE_FILL_POLICY_VERSION
+
+    def __post_init__(self):
+        super().__post_init__()
+        text(self.readback_source_id)
+        text(self.native_order_ref)
+        if (
+            re.fullmatch(r"[0-9]+", self.native_order_ref) is None
+            or int(self.native_order_ref) <= 0
+            or type(self.native_front_id) is not int
+            or self.native_front_id <= 0
+            or type(self.native_session_id) is not int
+            or self.native_session_id <= 0
+            or self.correlation_policy_version != CORRELATED_NATIVE_FILL_POLICY_VERSION
+        ):
+            raise ValueError("CORRELATED_NATIVE_FILL_PROOF_INVALID")
 
 
 @dataclass(frozen=True)

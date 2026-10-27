@@ -328,6 +328,28 @@ def test_friday_night_native_session_covers_monday_close(tmp_path):
     assert native.gateway.attached is adapter
 
 
+def test_correlated_adapter_binds_full_snapshot_before_buffer_attach(tmp_path):
+    from guiyi_quant.simnow_execution.inventory import read_snapshot
+
+    native = portfolio(tmp_path, at=T + timedelta(minutes=1))
+    report = native_fixture.report()
+    report["account_fingerprint"] = ACCOUNT
+    snapshot = read_snapshot(report)
+    native.gateway.query = lambda kind: [{"ConfirmDate": "20261027"}]
+    attached = []
+
+    def attach(adapter, _snapshot):
+        attached.append(adapter._correlated_snapshot is not None)
+
+    native.gateway.attach = attach
+    adapter = native.adapter(None, NS(account_id=ACCOUNT, events=lambda: ()), snapshot,
+                             T + timedelta(minutes=1), close_only=True,
+                             correlated_native=True)
+    assert adapter.close_only and adapter.correlated_native
+    assert attached == [True]
+    assert adapter._correlated_snapshot[0] == snapshot
+
+
 def test_read_journal_connection_is_sqlite_read_only(tmp_path):
     path = tmp_path / "dispatch.sqlite"
     writable = Journal(path, ACCOUNT)

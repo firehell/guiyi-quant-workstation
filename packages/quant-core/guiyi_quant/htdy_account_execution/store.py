@@ -235,6 +235,7 @@ class LocalStore:
                     m.AbortUnsent,
                     m.Fill,
                     m.NativeFill,
+                    m.CorrelatedNativeFillV1,
                     m.Disconnect,
                     m.OrderUpdate,
                 ):
@@ -245,6 +246,7 @@ class LocalStore:
                     in (
                         m.Fill,
                         m.NativeFill,
+                        m.CorrelatedNativeFillV1,
                         m.OrderUpdate,
                         m.Disconnect,
                         m.AbortUnsent,
@@ -342,6 +344,7 @@ class LocalStore:
                     not in (
                         m.Fill,
                         m.NativeFill,
+                        m.CorrelatedNativeFillV1,
                         m.OrderUpdate,
                         m.Disconnect,
                         m.AbortUnsent,

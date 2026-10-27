@@ -12,20 +12,48 @@ import tempfile
 import time
 
 
-def write_status(folder, test_id, value, *, recovery=False):
+def initial_snapshot(driver, clock, pause, close_only):
+    """Changed complete inputs may be sampled again on the same connection."""
+    until = clock() + timedelta(seconds=180)
+    while True:
+        try:
+            return driver.snapshot()
+        except ValueError as exc:
+            if (
+                not close_only
+                or str(exc) != "NATIVE_SNAPSHOT_CHANGED"
+                or driver.transport_failed
+                or clock() >= until
+            ):
+                raise
+            pause(1)
+
+
+def write_status(folder, test_id, value, *, recovery=False, close_only=False):
     target = None
     try:
         from guiyi_quant.htdy_account_execution.model import manual_test_id
 
         manual_test_id(test_id)
-        if type(recovery) is not bool:
+        if (
+            type(recovery) is not bool
+            or type(close_only) is not bool
+            or recovery
+            and close_only
+        ):
             return False
         fd, target = tempfile.mkstemp(prefix=".manual-", dir=folder)
         with os.fdopen(fd, "w") as stream:
             json.dump(value, stream, sort_keys=True, separators=(",", ":"))
             stream.flush()
             os.fsync(stream.fileno())
-        suffix = "-recovery-status.json" if recovery else "-status.json"
+        suffix = (
+            "-close-only-status.json"
+            if close_only
+            else "-recovery-status.json"
+            if recovery
+            else "-status.json"
+        )
         os.replace(target, folder / (test_id.replace(":", "-") + suffix))
         return True
     except Exception:
@@ -47,11 +75,17 @@ def run(
     clock=None,
     sleep=None,
     recover_preflight=False,
+    close_only=False,
 ):
     from guiyi_quant.htdy_account_execution.model import manual_test_id
 
     manual_test_id(test_id)
-    if type(recover_preflight) is not bool:
+    if (
+        type(recover_preflight) is not bool
+        or type(close_only) is not bool
+        or recover_preflight
+        and close_only
+    ):
         raise ValueError("MANUAL_RECOVERY_MODE_INVALID")
     from app.simnow_portfolio_market import PortfolioMarket
     from guiyi_quant import htdy_account_execution as a
@@ -90,7 +124,13 @@ def run(
     with account_lock(settings) as folder:
 
         def publish(value):
-            return write_status(folder, test_id, value, recovery=recover_preflight)
+            return write_status(
+                folder,
+                test_id,
+                value,
+                recovery=recover_preflight,
+                close_only=close_only,
+            )
 
         monitor = MonitorPublisher(
             settings.state_root, settings.account_id, test_id, "RB"
@@ -100,18 +140,35 @@ def run(
             if not plan.active or plan.trading_day is None:
                 raise ValueError("MANUAL_CONTIGUOUS_SESSION_REQUIRED")
             authority = market.authority("RB", plan.trading_day, now())
-            admission(authority, now())
+            if not close_only:
+                admission(authority, now())
             initial = a.LocalStore.inspect(folder / "account.sqlite")
-            if any(type(item.command) is a.ManualBeginV1 for item in initial.audit):
+            if not close_only and any(
+                type(item.command) is a.ManualBeginV1 for item in initial.audit
+            ):
                 raise ValueError("MANUAL_TEST_ALREADY_STARTED")
-            if (
+            if not close_only and (
                 initial.positions
                 or any(not o.reconciled for o in initial.orders)
                 or any(not r.released for r in initial.reservations)
             ):
                 raise ValueError("MANUAL_EMPTY_ACCOUNT_REQUIRED")
             stage = "LOGIN_ONCE"
-            if recover_preflight:
+            baseline = None
+            if close_only:
+                from guiyi_quant.simnow_execution.manual_close_recovery import (
+                    claim_close_only,
+                    validate_events,
+                    validate_close_inventory,
+                )
+
+                baseline, management = claim_close_only(
+                    folder, test_id, settings.account_id, now()
+                )
+                authority = market.authority(
+                    "RB", plan.trading_day, now(), management["contract"]
+                )
+            elif recover_preflight:
                 from guiyi_quant.simnow_execution.manual_recovery import claim_recovery
 
                 claim_recovery(
@@ -128,48 +185,88 @@ def run(
             )
             driver.connect()
             stage = "NATIVE_ACCOUNT_PREFLIGHT"
-            snapshot = driver.snapshot()
+            snapshot = initial_snapshot(driver, now, pause, close_only)
             if (
                 snapshot.trading_day != plan.trading_day.strftime("%Y%m%d")
                 or snapshot.account_id != settings.account_id
             ):
                 raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
-            binding, facts = driver.facts(
-                "RB", authority.contract, market, snapshot.trading_day
-            )
+            if close_only:
+                binding = driver.binding(
+                    "RB", authority.contract, market, now(), snapshot.trading_day
+                )[0]
+                facts = None
+            else:
+                binding, facts = driver.facts(
+                    "RB", authority.contract, market, snapshot.trading_day
+                )
             verify_recovery_ownership(
                 snapshot, (binding,), driver.read_journal, initial
             )
-            rb, _ = project_readback(
-                snapshot,
-                (binding,),
-                driver.read_journal,
-                initial,
-                snapshot.at + timedelta(seconds=30),
-            )
-            checked = a.apply(
-                initial, "manual-preflight:" + snapshot.source_id, a.Recover(rb, ())
-            ).state
-            owner = Owner("RB", authority.contract, now(), authority.source_id)
-            checked = a.apply(checked, test_id + ":dry-owner", owner).state
-            begin = a.ManualBeginV1(
-                test_id, "RB", authority.contract, now(), now() + timedelta(seconds=180)
-            )
-            # Dry evaluation must pass risk before settlement confirmation or ledger mutation.
-            trial = a.apply(checked, test_id + ":dry-begin", begin).state
-            trial_tick = a.apply(
-                trial, test_id + ":dry-tick", a.ManualTickV1(now(), (facts,), test_id)
-            )
-            if (
-                len(trial_tick.effects) != 1
-                or trial_tick.effects[0].order.offset != "OPEN"
-            ):
-                raise ValueError("MANUAL_FINANCIAL_PREFLIGHT_REQUIRED")
+            native_validator = None
+            if close_only:
+                validate_close_inventory(
+                    snapshot, management, driver.read_journal, binding
+                )
+
+                def native_validator(value):
+                    validate_events(market, value, authority.contract)
+
+                native_validator(snapshot)
+                begin = next(
+                    item.command
+                    for item in initial.audit
+                    if type(item.command) is a.ManualBeginV1
+                    and item.command.test_id == test_id
+                )
+            else:
+                rb, _ = project_readback(
+                    snapshot,
+                    (binding,),
+                    driver.read_journal,
+                    initial,
+                    snapshot.at + timedelta(seconds=30),
+                )
+                checked = a.apply(
+                    initial, "manual-preflight:" + snapshot.source_id, a.Recover(rb, ())
+                ).state
+                owner = Owner("RB", authority.contract, now(), authority.source_id)
+                checked = a.apply(checked, test_id + ":dry-owner", owner).state
+                begin = a.ManualBeginV1(
+                    test_id,
+                    "RB",
+                    authority.contract,
+                    now(),
+                    now() + timedelta(seconds=180),
+                )
+                # Dry evaluation must pass risk before settlement confirmation or ledger mutation.
+                trial = a.apply(checked, test_id + ":dry-begin", begin).state
+                trial_tick = a.apply(
+                    trial,
+                    test_id + ":dry-tick",
+                    a.ManualTickV1(now(), (facts,), test_id),
+                )
+                if (
+                    len(trial_tick.effects) != 1
+                    or trial_tick.effects[0].order.offset != "OPEN"
+                ):
+                    raise ValueError("MANUAL_FINANCIAL_PREFLIGHT_REQUIRED")
             stage = "SETTLEMENT_AND_RECOVERY"
             store = a.LocalStore(folder / "account.sqlite")
             journal = Journal(folder / "dispatch.sqlite", settings.account_id)
             evidence = Evidence(folder / "native-evidence.sqlite", settings.account_id)
-            adapter = driver.adapter(store, journal, snapshot, now())
+            adapter = (
+                driver.adapter(
+                    store,
+                    journal,
+                    snapshot,
+                    now(),
+                    close_only=True,
+                    correlated_native=True,
+                )
+                if close_only
+                else driver.adapter(store, journal, snapshot, now())
+            )
             host = Host(
                 store,
                 journal,
@@ -180,13 +277,25 @@ def run(
                 run_id=test_id,
                 deadline=begin.open_until,
                 manual_test_id=test_id,
+                close_only=close_only,
+                native_validator=native_validator,
             )
-            host.baseline = snapshot
+            host.baseline = baseline if close_only else snapshot
             host.reconcile(driver.report, (binding,), now())
+            recovery_until = now() + timedelta(seconds=180)
+            while (
+                close_only
+                and (host.pending or host.needs_recovery)
+                and now() < recovery_until
+            ):
+                # New readbacks settle buffered native facts; this loop cannot send.
+                snapshot = initial_snapshot(driver, now, pause, True)
+                host.reconcile(driver.report, (binding,), now())
             if host.pending or host.needs_recovery:
                 raise ValueError("MANUAL_ACCOUNT_RECONCILIATION_REQUIRED")
-            store.execute(test_id + ":owner", owner)
-            store.execute(test_id + ":begin", begin)
+            if not close_only:
+                store.execute(test_id + ":owner", owner)
+                store.execute(test_id + ":begin", begin)
             stop_at = now() + timedelta(minutes=40)
             stage = "MANUAL_EXECUTION"
             while now() < stop_at:
@@ -392,7 +501,12 @@ def main(argv=None):
     parser.add_argument("--test-id", required=True)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--recover-preflight", action="store_true")
+    parser.add_argument("--close-only", action="store_true")
     args = parser.parse_args(argv)
+    if args.close_only and (not args.execute or args.recover_preflight):
+        parser.error(
+            "close-only requires execute and cannot restart a preflight attempt"
+        )
     if args.recover_preflight and not args.execute:
         parser.error("recover-preflight requires explicit execute")
     root = Path(__file__).resolve().parents[2]
@@ -441,6 +555,7 @@ def main(argv=None):
                 bounded.connect,
                 args.test_id,
                 recover_preflight=args.recover_preflight,
+                close_only=args.close_only,
             )
     finally:
         for source, target in zip(saved, (1, 2)):

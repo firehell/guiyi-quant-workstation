@@ -170,6 +170,11 @@ def signal(state, cmd):
 
 
 def fill_follows_order(fill, order):
+    if type(fill) is m.CorrelatedNativeFillV1:
+        return (
+            fill.request_started_at >= order.created_at
+            and fill.recorded_at >= fill.request_started_at
+        )
     if type(fill) is m.NativeFill:
         return (
             fill.request_started_at >= order.created_at
@@ -187,6 +192,15 @@ def apply_fill(state, cmd):
             raise ValueError("FILL_IDENTITY_CONFLICT")
         return state, "DUPLICATE_FILL"
     o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
+    if type(cmd) is m.CorrelatedNativeFillV1 and (
+        o is None
+        or not any(
+            type(audit.command) is m.ManualBeginV1
+            and audit.command.test_id == o.signal_id
+            for audit in state.audit
+        )
+    ):
+        raise ValueError("CORRELATED_NATIVE_FILL_MANUAL_ONLY")
     if o is None:
         return cancel_opens(
             replace(
@@ -196,14 +210,10 @@ def apply_fill(state, cmd):
                 phase="BLOCKED",
             )
         ), "UNKNOWN_NATIVE_FILL_RETAINED"
-    if (
-        any(
-            type(audit.command) is m.ManualBeginV1
-            and audit.command.test_id == o.signal_id
-            for audit in state.audit
-        )
-        and type(cmd) is not m.NativeFill
-    ):
+    if any(
+        type(audit.command) is m.ManualBeginV1 and audit.command.test_id == o.signal_id
+        for audit in state.audit
+    ) and type(cmd) not in (m.NativeFill, m.CorrelatedNativeFillV1):
         raise ValueError("MANUAL_NATIVE_FILL_REQUIRED")
     if cmd.contract != o.contract or not fill_follows_order(cmd, o):
         raise ValueError("FILL_ORDER_OR_TIMING_INVALID")
@@ -1058,7 +1068,7 @@ def validate(state):
         (state.orders, m.Order),
         (state.reservations, m.Reservation),
         (state.signals, m.Signal),
-        (state.fills, (m.Fill, m.NativeFill)),
+        (state.fills, (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1)),
         (state.updates, m.OrderUpdate),
         (state.risk_decisions, m.RiskDecision),
         (state.audit, m.Audit),
@@ -1111,11 +1121,20 @@ def validate(state):
     positions = {}
     filled = set()
     for f in state.fills:
+        o = orders.get(f.order_id)
+        if type(f) is m.CorrelatedNativeFillV1 and (
+            o is None
+            or not any(
+                type(audit.command) is m.ManualBeginV1
+                and audit.command.test_id == o.signal_id
+                for audit in state.audit
+            )
+        ):
+            raise ValueError("ACCOUNT_FILL_REPLAY_INVALID")
         if f.trade_id in state.unresolved_fill_ids:
             if state.phase != "BLOCKED":
                 raise ValueError("UNRESOLVED_FILL_NOT_BLOCKED")
             continue
-        o = orders.get(f.order_id)
         if (
             o is None
             or f.order_id in filled
@@ -1173,6 +1192,7 @@ def apply(state, key, cmd):
         m.Owner,
         m.Fill,
         m.NativeFill,
+        m.CorrelatedNativeFillV1,
         m.OrderUpdate,
         m.Readback,
         m.Recover,
@@ -1195,10 +1215,16 @@ def apply(state, key, cmd):
         cmd.observed_at
         if type(cmd) is m.Signal
         else cmd.recorded_at
-        if type(cmd) in (m.Fill, m.NativeFill)
+        if type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1)
         else cmd.at
     )
-    if type(cmd) in (m.Fill, m.NativeFill, m.OrderUpdate, m.Disconnect):
+    if type(cmd) in (
+        m.Fill,
+        m.NativeFill,
+        m.CorrelatedNativeFillV1,
+        m.OrderUpdate,
+        m.Disconnect,
+    ):
         at = max(at, state.clock)
     if type(cmd) is m.Signal and any(
         (s.product, s.bar_end) == (cmd.product, cmd.bar_end) for s in state.signals
@@ -1231,7 +1257,7 @@ def apply(state, key, cmd):
         else:
             state = replace_product(state, replace(p, owner=cmd.contract))
             reason = "OWNER_VERIFIED"
-    elif type(cmd) in (m.Fill, m.NativeFill):
+    elif type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1):
         state, reason = apply_fill(state, cmd)
     elif type(cmd) is m.OrderUpdate:
         state, reason = order_update(state, cmd)

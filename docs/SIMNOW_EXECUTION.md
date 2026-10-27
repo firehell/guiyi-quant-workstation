@@ -280,3 +280,18 @@ CTP金额double的原值继续以Decimal字符串保留；仅最终权益差额�
 价格、保证金、数量、身份或时间校验，真实分币差额继续拒绝。
 Release成功后drain尾事实并重查结果，未知提交/费用/清理失败均不报告通过。执行失败保留已有实际仓位与关闭义务。
 这次受控入口不注册自动任务、不改变观察服务的observe-only模式，也不发布或切换正式十服务Runtime。
+
+### 已认领人工成交的关闭恢复
+
+`simnow_manual_close_only_v1` 仅管理同一已认领RB一手OPEN，不重开、不反手。它用独立一次管理连接预算
+（本任务累计4，前三次原件不改），绑定原三份数据库SHA、ManualBegin、原订单/成交/系统号、开仓前原生baseline；
+在Host与Adapter两层拒绝OPEN。当前完整四类原生读回先证明该订单成交及RB实际多一手，随后才恢复账本和关闭义务。
+恢复初期不要求新盘口或估计费率；实际CLOSE仍重新验证完整账户、原生费率、实时对手价与Session。
+
+新增仅供人工订单的`CorrelatedNativeFillV1`／`simnow_manual_correlated_fill_v1`。CTP原生Insert/TradeTime与本地
+request_started_at属于未校准的两个时钟域，保留全部原始值，不加秒或回写时间。新类型须由完整快照内容hash、
+同账户/交易日、已持久OrderRef/FrontID/SessionID、物理合约/方向/一手、同一非空OrderSysID/TradeID及实际费用证明；
+原生时间另经权威Calendar/Session校验。本地观察/完整证明时间不早于本地请求，建立身份因果；旧NativeFill严格时序与旧重放不变。
+未被完整快照解释的成交保持待核并阻断发送/成功，未知身份立即阻断；已知中间订单状态可由同身份终态快照覆盖。
+只在首次完整读回确认关联成交后开始600秒计时，已有confirmed_at/due_at不重置；前次回调不是完整核验，不伪造已等待事实。
+只读状态/原恢复失败原件继续保留，关闭恢复状态使用独立close-only-status。退出前仍须真实平仓、费用/权益/预留及尾回调对账。

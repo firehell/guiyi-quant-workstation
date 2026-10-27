@@ -61,6 +61,7 @@ def decode(value):
             m.Position,
             m.Fill,
             m.NativeFill,
+            m.CorrelatedNativeFillV1,
             m.Signal,
             m.Owner,
             m.RecoveryInput,
