@@ -63,6 +63,25 @@ def publish_status(folder, value):
             os.unlink(name)
 
 
+def retain_failure(folder, run_id, sequence, code, at, diagnostic):
+    """One immutable sanitized failure fact, retained before native release."""
+    path = folder / ("failure-" + run_id + "-" + str(sequence) + ".json")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w") as stream:
+        json.dump(
+            dict(
+                schema="simnow_continuous_failure_v1",
+                code=code,
+                at=at.isoformat(),
+                diagnostic=diagnostic,
+            ),
+            stream,
+            sort_keys=True,
+        )
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
 def verify_recovery_ownership(snapshot, bindings, journal, state):
     """Allow known offline fills to be replayed before position/fee projection.
 
@@ -455,7 +474,7 @@ class Supervisor:
                         )
                         code = (
                             str(exc)
-                            if type(exc) is ValueError
+                            if isinstance(exc, ValueError)
                             and str(exc)
                             in {
                                 "CONNECTION_BUDGET_EXHAUSTED",
@@ -466,6 +485,9 @@ class Supervisor:
                                 "MANAGEMENT_NATIVE_RECOVERY_REQUIRED",
                                 "NATIVE_ORDER_OUTCOME_REQUIRES_RECOVERY",
                                 "NATIVE_ADAPTER_REQUIRES_RECOVERY",
+                                "CREDENTIAL_UNAVAILABLE",
+                                "CREDENTIAL_CORRUPT",
+                                "CREDENTIAL_IDENTITY_MISMATCH",
                             }
                             else "CONTINUOUS_RECOVERY_REQUIRED"
                         )
@@ -481,6 +503,27 @@ class Supervisor:
                             if self.blocked_day or self.target_day:
                                 self.inbox.block(
                                     self.blocked_day or self.target_day, code
+                                )
+                        try:
+                            diagnostic = (
+                                self.driver.failure_diagnostics()
+                                if self.driver is not None
+                                and hasattr(self.driver, "failure_diagnostics")
+                                else dict(stage="DRIVER_UNAVAILABLE")
+                            )
+                            retain_failure(
+                                self.folder,
+                                self.run_id,
+                                count,
+                                code,
+                                self.now(),
+                                diagnostic,
+                            )
+                        except Exception:
+                            # An evidence failure cannot silently turn into a fresh login.
+                            if self.target_day:
+                                self.inbox.block(
+                                    self.target_day, "CONTINUOUS_DIAGNOSTIC_UNAVAILABLE"
                                 )
                         self.disconnect()
                         self.retry_after = self.now() + timedelta(seconds=60)

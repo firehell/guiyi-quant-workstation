@@ -17,7 +17,12 @@ from guiyi_quant.simnow_execution.credentials import (
 )
 
 
-def provision(store: CredentialStore, expected_account_id: str | None = None) -> str:
+def provision(
+    store: CredentialStore,
+    expected_account_id: str | None = None,
+    *,
+    update_existing=False,
+) -> str:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise CredentialError("LOCAL_TTY_REQUIRED")
     user = input("SimNow第一套投资者代码：").strip()
@@ -27,26 +32,37 @@ def provision(store: CredentialStore, expected_account_id: str | None = None) ->
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         password = getpass.getpass("交易密码（隐藏）：")
-    return store.save(user, password)
+    return (
+        store.update(user, password) if update_existing else store.save(user, password)
+    )
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="本机 SimNow Keychain 凭据配置")
-    parser.add_argument("action", choices=("provision", "check"))
+    parser.add_argument("action", choices=("provision", "update", "check"))
     parser.add_argument("--account-id", help="仅 check 使用，64位账户指纹")
-    parser.add_argument("--expected-account-id", help="仅 provision 使用，预期账户指纹")
+    parser.add_argument(
+        "--expected-account-id", help="provision/update 使用，预期账户指纹"
+    )
     args = parser.parse_args(argv)
-    if args.action == "provision" and args.account_id is not None:
-        parser.error("provision 不接受账户参数")
+    if args.action in ("provision", "update") and args.account_id is not None:
+        parser.error("provision/update 不接受账户参数")
+    if args.action == "update" and args.expected_account_id is None:
+        parser.error("update 需要预期账户指纹")
     if args.action == "check" and args.account_id is None:
         parser.error("check 需要账户指纹")
     if args.action == "check" and args.expected_account_id is not None:
         parser.error("check 不接受预期账户参数")
     try:
         store = CredentialStore()
-        if args.action == "provision":
-            account = provision(store, args.expected_account_id)
-            print(f"CREDENTIAL_STORED account_id={account}")
+        if args.action in ("provision", "update"):
+            account = provision(
+                store, args.expected_account_id, update_existing=args.action == "update"
+            )
+            code = (
+                "CREDENTIAL_UPDATED" if args.action == "update" else "CREDENTIAL_STORED"
+            )
+            print(f"{code} account_id={account}")
         else:
             store.load(args.account_id)
             print(f"CREDENTIAL_AVAILABLE account_id={args.account_id}")

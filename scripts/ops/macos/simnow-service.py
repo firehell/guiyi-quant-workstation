@@ -25,7 +25,7 @@ def _absolute(path, *, allow_symlink: bool = False) -> Path:
     return value
 
 
-def render_launch_agent(settings, config_path) -> bytes:
+def render_launch_agent(settings, config_path, *, home: Path | None = None) -> bytes:
     """Return a deterministic, password-free LaunchAgent plist."""
     if settings.mode != "observe":
         raise ValueError("OBSERVE_ONLY")
@@ -38,7 +38,7 @@ def render_launch_agent(settings, config_path) -> bytes:
     ):
         raise ValueError("SERVICE_ACCOUNT_INVALID")
     project_root = _absolute(settings.project_root)
-    state_root = _absolute(settings.state_root)
+    _absolute(settings.state_root)
     # Isolated venv interpreters normally link bin/python to the installed binary.
     sdk_python = _absolute(settings.sdk_python, allow_symlink=True)
     config_path = _absolute(config_path)
@@ -47,7 +47,12 @@ def render_launch_agent(settings, config_path) -> bytes:
     runner = project_root / "scripts/broker/simnow_supervisor.py"
     if not runner.is_file():
         raise ValueError("SERVICE_RUNNER_MISSING")
-    logs = state_root / ".logs"
+    # launchd opens stdout/stderr before spawning the interpreter. Keep these
+    # ordinary logs in the user's standard log root, not a protected volume.
+    logs = (
+        _absolute(home if home is not None else Path.home())
+        / "Library/Logs/GuiyiQuant/SimNow"
+    )
     value = {
         "Label": LABEL,
         "ProgramArguments": [
@@ -100,11 +105,12 @@ def install_observe(settings, config_path: Path, *, home: Path | None = None) ->
     _private_regular(config_path)
     state_root = _absolute(settings.state_root)
     _private_dir(state_root)
-    data = render_launch_agent(settings, config_path)
-    logs = state_root / ".logs"
-    logs.mkdir(mode=0o700, exist_ok=True)
+    user_home = _absolute(home if home is not None else Path.home())
+    data = render_launch_agent(settings, config_path, home=user_home)
+    logs = user_home / "Library/Logs/GuiyiQuant/SimNow"
+    logs.mkdir(mode=0o700, parents=True, exist_ok=True)
     _private_dir(logs)
-    base = _absolute(home if home is not None else Path.home()) / "Library/LaunchAgents"
+    base = user_home / "Library/LaunchAgents"
     base.mkdir(mode=0o700, parents=True, exist_ok=True)
     if base.is_symlink() or base.stat().st_uid != os.getuid():
         raise ValueError("SERVICE_TARGET_INVALID")

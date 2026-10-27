@@ -544,6 +544,41 @@ def test_transport_retry_budget_is_durable_across_runs(tmp_path):
     assert len(drivers) == 3
 
 
+def test_failure_record_write_fault_blocks_reconnect_and_still_closes_driver(
+    tmp_path, monkeypatch
+):
+    import guiyi_quant.simnow_execution.supervisor as module
+
+    settings, snapshot = setup(tmp_path, journal=False)
+    drivers = []
+    clock = Clock()
+
+    def factory(*_):
+        driver = FakeDriver(
+            snapshot, fail=ValueError("NATIVE_TRANSPORT_FAILED"), transport_failed=True
+        )
+        drivers.append(driver)
+        return driver
+
+    def fail_record(*_):
+        raise OSError("fixture disk unavailable")
+
+    monkeypatch.setattr(module, "retain_failure", fail_record)
+    host = Supervisor(
+        settings,
+        ("JM", "RB"),
+        FakeMarket(),
+        factory,
+        clock=clock.now,
+        sleep=clock.sleep,
+    )
+    assert host.run(max_cycles=3) == "STOPPED"
+    assert len(drivers) == 1 and drivers[0].closed
+    again = Supervisor(settings, ("JM", "RB"), FakeMarket(), factory, clock=clock.now)
+    assert again.run(max_cycles=1) == "STOPPED"
+    assert len(drivers) == 1
+
+
 def test_unknown_error_blocks_same_day_without_retry(tmp_path):
     settings, snapshot = setup(tmp_path, journal=False)
     drivers = []

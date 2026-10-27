@@ -52,15 +52,27 @@ class NativePortfolio:
         self.cache = {}
         self.last_facts = {}
         self.cursor = 0
+        self.stage = "NOT_CONNECTED"
 
     def connect(self):
+        self.stage = "CREDENTIAL_LOAD"
         credentials = CredentialStore().load(self.settings.account_id)
         self.gateway = self.module.Gateway(credentials.user, credentials.password)
         del credentials
         self.flow = tempfile.TemporaryDirectory(prefix="guiyi-continuous-flow-")
+        self.stage = "NATIVE_LOGIN"
         self.connector(self.gateway, self.module.tdapi, self.flow.name)
+        self.stage = "DISPATCH_IDENTITY_READ"
         self.read_journal = ReadJournal(
             self.folder / "dispatch.sqlite", self.settings.account_id
+        )
+
+    def failure_diagnostics(self):
+        return dict(
+            stage=self.stage,
+            inventory=self.gateway.inventory_diagnostics()
+            if self.gateway is not None
+            else None,
         )
 
     @property
@@ -84,6 +96,7 @@ class NativePortfolio:
         )
 
     def snapshot(self):
+        self.stage = "ACCOUNT_SNAPSHOT"
         self.gateway.query_diagnostics.clear()
         try:
             self.report = self.gateway.snapshot()

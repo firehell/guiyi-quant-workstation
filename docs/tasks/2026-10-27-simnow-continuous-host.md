@@ -81,3 +81,32 @@ PortfolioMarket定向Mypy通过，secret-scan findings=0，git diff/check通过�
 本机私有observe配置已生成且enabled=false，安全凭据本地TTY入口已打开；尚未读取/验证真实Keychain，
 未安装或加载LaunchAgent，未确认结算、报撤单或变更正式十服务Runtime。
 需本机凭据可用后再验收只读启动；自然跨日/断线、首笔订单与全品种持续新开仓各自待验。
+
+## 后续现场：后台凭据通过，第一套登录拒绝
+
+- Keychain前台加载通过。首次launchd失败为EX_CONFIG/78，系统日志明确stdout扩展卷路径error1；
+  尚未进入宿主/SDK，原plist及脱敏失败证据保留。仅改普通日志到用户Library/Logs/GuiyiQuant/SimNow，
+  账户根和observe-only不变。新日志实际可创建。
+- 随后启动前Redis AuthenticationError：文档默认URL未按现役run-local-service口径补认证。
+  修正后真实Redis与权威SessionPlan通过，60品种、TD20261027、active/connect_allowed均true、issues空；
+  此preflight无Broker请求，不代表60品种原生执行输入已通过。
+- 持续宿主attempt1在取得完整snapshot前泛化失败，原block保留；不得倒推原始具体原因。
+  已补固定阶段及原生协议白名单诊断，释放连接前独占持久化；诊断写入失败也阻断重连。
+- 同一label一次性--check-keychain/KeepAlive=False后台探针最终exit0，输出
+  CONTINUOUS_KEYCHAIN_LOAD_VERIFIED_NO_BROKER_IO。第一次探针将never exited提前判完成，属于未完成证据，
+  原记录保留；纠正后重新检查未调用Broker，attempt/block均不变。每次均bootout并逐字节恢复原plist。
+- 独立Review批准一次显式账户只读核对，保持原block、消耗attempt2、原账户锁、无Adapter/confirm/订单/循环。
+  精确入口SHA `f48e08c678cd26e7a9ec3e737460870eae203cf1d11c6b9f7eceef0c7b269835`。
+  09:34:43结果为客户端authentication_passed=true、LOGIN_REJECTED/ErrorID=3、login_passed=false；
+  auth/login各一次请求受理返回0，四类queries=[]。不能解释为资金、持仓或当前账户状态已核验。
+  原件SHA `2cc4a152b07663fe114eb2a08464ccf4efb55f43a548c50c88fc26818617ed18` 在Release前flush/fsync；
+  native_released/account_file_unchanged/original_block_unchanged均true，诊断返回2。
+- 旧账户SQLite SHA仍 `bfdfc9fcd9a20019dbcf443f8566d1f298ca9769ae4b02900e6df0442386ab11`，
+  native snapshots仍192，attempt1/2及原block保留。当前服务已卸载、enabled=false；已安装plist仍固定observe-only。
+  不清空block，不自动再次登录。owner核对交易登录凭据后可在本机隐藏更新既存Keychain项；更新仅值数据、
+  不删除/创建或改ACL，读回一致才报告本机成功，仍不能代替柜台核验。
+
+本轮源码向前修复提交：4bc54685f（日志）、c669a5d2c（依赖认证）、2367f326c（安全阶段诊断）、
+cbb4c10ac（本机既存凭据更新）。最终相关回归357 passed、Ruff/format、secret0及diff通过，
+各项独立Review无未解决Confirmed Issue；真实Keychain更新未由代理执行，凭据从未进入模型、日志或Git。
+本次不发布main/tag，不切正式Runtime，不增加新开仓或发送订单。

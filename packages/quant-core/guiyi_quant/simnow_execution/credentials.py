@@ -71,7 +71,7 @@ class Credentials:
 
 
 class CredentialStore:
-    """Backend contract: add(account, bytes), get(account)->bytes|None, delete(account)."""
+    """Fixed service; add/update/get/delete address one account fingerprint."""
 
     def __init__(self, backend=None):
         self._backend = backend if backend is not None else _NativeKeychain()
@@ -110,6 +110,23 @@ class CredentialStore:
         except (TypeError, ValueError, UnicodeDecodeError):
             raise CredentialError("CREDENTIAL_CORRUPT") from None
         return result
+
+    def update(self, user: str, password: str) -> str:
+        account = fingerprint_for(user)
+        _validate_password(password)
+        payload = json.dumps(
+            {"user": user, "password": password}, separators=(",", ":")
+        ).encode()
+        try:
+            self._backend.update(account, payload)
+        except CredentialError:
+            raise
+        except Exception:
+            raise CredentialError("CREDENTIAL_STORE_UNAVAILABLE") from None
+        verified = self.load(account)
+        if verified.user != user or verified.password != password:
+            raise CredentialError("CREDENTIAL_UPDATE_UNVERIFIED")
+        return account
 
     def delete(self, account_id: str) -> None:
         _validate_account(account_id)
@@ -172,6 +189,8 @@ class _NativeKeychain:
             self._sec.SecItemCopyMatching.restype = ctypes.c_int32
             self._sec.SecItemDelete.argtypes = [ctypes.c_void_p]
             self._sec.SecItemDelete.restype = ctypes.c_int32
+            self._sec.SecItemUpdate.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self._sec.SecItemUpdate.restype = ctypes.c_int32
             self._keys = {
                 name: ctypes.c_void_p.in_dll(self._sec, name).value
                 for name in (
@@ -268,6 +287,30 @@ class _NativeKeychain:
             return ctypes.string_at(source, length)
         finally:
             self._cf.CFRelease(output)
+
+    def update(self, account: str, data: bytes) -> None:
+        # Update only value data. Preserve the existing item identity and ACL;
+        # never delete first or create an entry when the target does not exist.
+        attrs = self._cf.CFDictionaryCreateMutable(None, 0, None, None)
+        if not attrs:
+            raise CredentialError("MACOS_KEYCHAIN_UNAVAILABLE")
+        value = None
+        try:
+            buffer = ctypes.create_string_buffer(data)
+            value = self._cf.CFDataCreate(None, buffer, len(data))
+            if not value:
+                raise CredentialError("MACOS_KEYCHAIN_UNAVAILABLE")
+            self._cf.CFDictionarySetValue(attrs, self._keys["kSecValueData"], value)
+            with self._query(account) as query:
+                status = self._sec.SecItemUpdate(query, attrs)
+        finally:
+            if value:
+                self._cf.CFRelease(value)
+            self._cf.CFRelease(attrs)
+        if status == -25300:
+            raise CredentialError("CREDENTIAL_UNAVAILABLE")
+        if status != 0:
+            raise CredentialError("CREDENTIAL_STORE_UNAVAILABLE")
 
     def delete(self, account: str) -> None:
         with self._query(account) as query:

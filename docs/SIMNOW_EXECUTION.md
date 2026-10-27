@@ -110,6 +110,9 @@ SDK使用独立同ABI Mac ARM64 `openctp-ctp==6.7.7.1`环境，`api_env`是既�
 凭据通过 `scripts/broker/simnow_credentials.py provision` 在本机TTY隐藏输入，直接存macOS Keychain；
 不保存到JSON、参数、日志或聊天，headless Keychain不可用/锁定/拒绝即停止。首次配置需要本机输入一次，
 不能从旧聊天、一次性进程或代码中复用密码。
+既存项需要更正时，使用 `update --expected-account-id <fingerprint>`；先校验身份再隐藏输入，仅通过
+SecItemUpdate修改既有项的值，不先删除、不创建缺失项、不改变ACL，写后读回匹配才报告本机成功。
+本机保存成功不等于柜台接受交易密码。
 
 `scripts/ops/macos/simnow-service.py --config ...` 默认仅render/plan；显式 `--install-observe` 才安装可选
 `com.guiyi.quant-simnow` plist，不调用launchctl，不改既有十服务。安装入口只接受enabled observe，
@@ -117,6 +120,12 @@ ProgramArguments固定 `-I ... --observe-only`；日后JSON改manage也不能使
 RunAtLoad、失败KeepAlive和60秒Throttle负责进程启动；业务恢复仍须上述完整读回、预算和耐久阻断。
 `--check`只校验配置与SDK兼容，不读Keychain、不连接Broker。关闭方式为先停止可选服务，再保持enabled=false；
 保留全部账户、claim、队列及原生证据，不能删除重建以绕过恢复。
+普通stdout/stderr位于 `~/Library/Logs/GuiyiQuant/SimNow`（0700）；launchd在启动解释器前打开日志，
+不能将其放在受保护扩展卷。账户及证据根保持原位置。启动依赖沿用既有本地启动器的认证口径：
+空或文档默认Redis URL补入既有REDIS_PASSWORD/POSTGRES_PASSWORD，自定义URL不改写，配置值不输出。
+`--check-keychain`在SDK、行情订阅或宿主创建前仅检查本进程能否读取预期Keychain项；与`--check`互斥，
+可用于一次性后台加载验收，不发起Broker请求、不解除block。启动异常只输出固定阶段和异常类；
+宿主异常在释放前以0600独占保留阶段及既有脱敏原生协议诊断。诊断记录失败同样阻断重连，不能因重启丢失。
 
 持续宿主发布私有原子 `continuous.json` 状态及现有监控索引，native来源和账本摘要分别绑定；
 发布失败不改变交易行为。观察模式未更新账户策略投影时，页面不得将旧账本预算称为当前已对账。

@@ -23,6 +23,10 @@ class FakeStore:
         self.saved = (user, password)
         return "a" * 64
 
+    def update(self, user, password):
+        self.saved = (user, password)
+        return "a" * 64
+
 
 class TtyOutput(io.StringIO):
     def isatty(self):
@@ -91,3 +95,25 @@ def test_cli_expected_account_flag_is_checked_before_store_save(monkeypatch):
     )
     assert store.saved == ("123456", "fake secret")
     assert output.getvalue().strip() == f"CREDENTIAL_STORED account_id={'a' * 64}"
+
+
+def test_update_is_tty_hidden_and_binds_expected_account(monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    output = TtyOutput()
+    monkeypatch.setattr(cli.sys, "stdout", output)
+    monkeypatch.setattr("builtins.input", lambda _: "123456")
+    monkeypatch.setattr(cli.getpass, "getpass", lambda _: "new fixture")
+    store = FakeStore()
+    store.save = lambda *_: pytest.fail("update cannot delete/add or create a new item")
+    monkeypatch.setattr(cli, "CredentialStore", lambda: store)
+    assert cli.main(["update", "--expected-account-id", fingerprint_for("123456")]) == 0
+    assert store.saved == ("123456", "new fixture")
+    assert "new fixture" not in output.getvalue()
+
+
+def test_update_requires_expected_identity_before_prompt(monkeypatch):
+    monkeypatch.setattr(
+        "builtins.input", lambda _: pytest.fail("prompted without account binding")
+    )
+    with pytest.raises(SystemExit):
+        cli.main(["update"])
