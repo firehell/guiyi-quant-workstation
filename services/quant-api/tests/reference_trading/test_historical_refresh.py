@@ -55,7 +55,8 @@ class Service:
             resume = ResumeToken(plan.plan_hash, plan.streams[0].request.identity.stream_id,
                                  'revision', 1, plan.streams[0].source_token, 'batch')
         return SimpleNamespace(streams=(SimpleNamespace(status=status, reason=reason,
-                                                       resume_token=resume),))
+                                                       completed_bars=0, last_batch_key=None,
+                                                       resume_token=resume or None),))
 
     def advance(self, plan, expected):
         assert expected == plan.plan_hash
@@ -122,8 +123,7 @@ def test_partial_rebuild_resumes_exact_plan_on_next_tick(tmp_path):
         ('blocked', 'REBUILD_REQUIRED', False), ('partial', 'INTERRUPTED', True),
         ('completed', None, False)])
     runner.tick(now=END)
-    assert len(service.calls) == 1  # rebuild is a separate bounded tick
-    runner.tick(now=END)
+    assert [call[0] for call in service.calls] == ['advance', 'rebuild']
     runner.tick(now=END)
     assert [x[0] for x in service.calls] == ['advance', 'rebuild', 'resume']
     assert service.calls[1][1] == service.calls[2][1]
@@ -150,7 +150,7 @@ def test_source_busy_does_not_block_or_execute(tmp_path):
 
 def test_rebuild_source_drift_blocks_before_rebuild_mutation(tmp_path):
     runner, planner, service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
-    runner.tick(now=END)
+    runner.tick(now=END, cancelled=lambda: bool(service.calls))
     planner.source = 'changed-source'
     runner.tick(now=END)
     assert len(service.calls) == 1

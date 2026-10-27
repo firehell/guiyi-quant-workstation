@@ -60,7 +60,7 @@ def test_claim_race_does_not_start_tick_or_fake_finish():
 
 def test_planning_cancel_keeps_pending_plan_and_cursor(tmp_path):
     runner, planner, service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
-    runner.tick(now=END)
+    runner.tick(now=END, cancelled=lambda: bool(service.calls))
     before = runner.state.read()
     cancelled = Event()
     def interrupted(_request):
@@ -74,7 +74,7 @@ def test_planning_cancel_keeps_pending_plan_and_cursor(tmp_path):
 def test_initial_service_read_cancel_keeps_complete_rebuild_plan(tmp_path):
     runner, planner, service = setup(tmp_path, [
         ('blocked', 'REBUILD_REQUIRED', False), ('partial', 'INPUT_READ_INTERRUPTED', False)])
-    runner.tick(now=END)
+    runner.tick(now=END, cancelled=lambda: bool(service.calls))
     cancelled = Event()
     original = service.rebuild
     def cancel_read(plan, expected):
@@ -117,8 +117,8 @@ def test_finish_runs_after_fatal_failure_and_never_regrants():
 def test_real_service_read_cancel_before_rebuild_mutation_is_pending(tmp_path):
     from contextlib import contextmanager, nullcontext
     from app.reference_trading.service import HistoricalReferenceService
-    runner, planner, _service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
-    runner.tick(now=END)
+    runner, planner, service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
+    runner.tick(now=END, cancelled=lambda: bool(service.calls))
     cancelled = Event()
     def read(*_args, **_kwargs):
         cancelled.set()
@@ -169,8 +169,8 @@ def test_rebuild_interrupted_without_resume_cannot_repeat_invalidation(tmp_path)
 def test_post_invalidation_read_cancel_without_resume_never_repeats(tmp_path):
     from contextlib import contextmanager, nullcontext
     from app.reference_trading.service import HistoricalReferenceService
-    runner, planner, _ = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
-    runner.tick(now=END)
+    runner, planner, service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
+    runner.tick(now=END, cancelled=lambda: bool(service.calls))
     cancelled = Event()
     mutations = []
     @contextmanager
@@ -266,8 +266,8 @@ def test_old_durable_resume_does_not_prove_later_bare_cancel_safe(tmp_path):
     from contextlib import contextmanager
     from dataclasses import asdict
     from app.reference_trading.service import ResumeToken
-    runner, planner, _ = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
-    runner.tick(now=END)
+    runner, planner, service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
+    runner.tick(now=END, cancelled=lambda: bool(service.calls))
     cancelled = Event()
     tokens = []
     @contextmanager

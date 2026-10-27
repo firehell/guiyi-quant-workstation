@@ -17,6 +17,7 @@ import re
 from hashlib import sha256
 from pathlib import Path
 from threading import Event, Thread
+from time import monotonic
 
 from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
 
@@ -207,6 +208,7 @@ class HistoricalRefresh:
     def __init__(self, *, routes, endpoint, components, state):
         self._routes, self._endpoint, self._components = routes, endpoint, components
         self.state = state
+        self.last_progress = {}
 
     def tick(self, *, now, cancelled=lambda: False, batch_limit=None):
         if batch_limit is not None and (type(batch_limit) is not int or batch_limit < 1):
@@ -266,10 +268,13 @@ class HistoricalRefresh:
             except RefreshPlanningYield:
                 state['cursor'] = previous_cursor
                 self.state.write(state)  # Keep the original plan/rebuild/resume facts.
+                self.last_progress = {**self.last_progress, 'stage': 'pending',
+                                      'reason': 'FOREGROUND_YIELD'}
             except RefreshStateError:
                 raise  # Retain the last durable inflight/resume proof; never replace it.
             except Exception as error:
                 reason = _reason(error)
+                self.last_progress = {**self.last_progress, 'stage': 'blocked', 'reason': reason}
                 if reason != 'SOURCE_BUSY':
                     state['routes'][key] = {'status': 'blocked', 'reason': reason}
                     self.state.write(state)
@@ -282,8 +287,12 @@ class HistoricalRefresh:
         storage_failure: RefreshStateError | None = None
         original_cancelled = cancelled
         committed_batches = 0
+        deadline = monotonic() + budget.max_elapsed_seconds
+        self.last_progress = {'at': now.isoformat(), 'stream_id': key,
+                              'target': endpoint.isoformat(), 'stage': 'planning'}
         def cancelled():
-            return original_cancelled() or (batch_limit is not None and committed_batches >= batch_limit)
+            return (original_cancelled() or monotonic() >= deadline
+                    or (batch_limit is not None and committed_batches >= batch_limit))
         def after_batch(stage, context):
             nonlocal storage_failure, committed_batches
             if stage == 'committed':
@@ -292,6 +301,8 @@ class HistoricalRefresh:
                 try:
                     self.state.write(state)  # Still inflight until a known report.
                     committed_batches += 1
+                    self.last_progress = {**self.last_progress, 'stage': 'committed',
+                                          'committed_batches': committed_batches}
                 except RefreshStateError as error:
                     storage_failure = error
                     raise
@@ -321,6 +332,16 @@ class HistoricalRefresh:
                     if cancelled():
                         raise RefreshPlanningYield() from None
                     raise
+            def rebuild_plan(frozen):
+                replacement = prepare(HistoricalReferenceRequest(
+                    'rebuild', (frozen.streams[0].request,), budget,
+                ))
+                before, after = frozen.streams[0], replacement.streams[0]
+                if (before.source_token != after.source_token
+                        or before.input_manifest_sha256 != after.input_manifest_sha256
+                        or before.target_completed_through != after.target_completed_through):
+                    raise ValueError('SOURCE_CHANGED')
+                return replacement
             if prior:
                 try:
                     plan = plan_from_dict(self.state.read_plan(prior['plan']))
@@ -332,15 +353,7 @@ class HistoricalRefresh:
                 if prior.get('rebuild_required'):
                     # Rebuild only the exact same endpoint and source already
                     # proven by the failed append plan. Never shrink its prefix.
-                    replacement = prepare(HistoricalReferenceRequest(
-                        'rebuild', (plan.streams[0].request,), budget,
-                    ))
-                    before, after = plan.streams[0], replacement.streams[0]
-                    if (before.source_token != after.source_token
-                            or before.input_manifest_sha256 != after.input_manifest_sha256
-                            or before.target_completed_through != after.target_completed_through):
-                        raise ValueError('SOURCE_CHANGED')
-                    plan, prior = replacement, None
+                    plan, prior = rebuild_plan(plan), None
             else:
                 plan = prepare(HistoricalReferenceRequest(
                     'rebuild' if route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED' else 'advance',
@@ -370,6 +383,36 @@ class HistoricalRefresh:
             if len(report.streams) != 1:
                 raise ValueError('REFRESH_REPORT_INVALID')
             result = report.streams[0]
+            if (plan.operation == 'advance' and result.status == 'blocked'
+                    and result.reason == 'REBUILD_REQUIRED'
+                    and result.completed_bars == 0 and result.last_batch_key is None
+                    and result.resume_token is None and committed_batches == 0):
+                # Native advance rejected before its first mutation. Persist that
+                # known boundary before planning the exact same-source rebuild.
+                # A yield retains the old recoverable contract, not a new attempt.
+                pending.update(status='pending', rebuild_required=True, reason='REBUILD_REQUIRED')
+                self.state.write(state)
+                if cancelled():
+                    self.last_progress = {**self.last_progress, 'stage': 'pending',
+                                          'reason': 'REBUILD_REQUIRED'}
+                    return
+                self.last_progress = {**self.last_progress, 'stage': 'rebuild_planning'}
+                plan = rebuild_plan(plan)
+                pending = {'status': 'inflight', 'reason': None,
+                           'plan': self.state.store_plan(plan_to_dict(plan))}
+                state['routes'][key] = pending
+                self.state.write(state)
+                if cancelled():
+                    pending['status'] = 'pending'
+                    self.state.write(state)
+                    return
+                self.last_progress = {**self.last_progress, 'stage': 'rebuilding'}
+                report = service.rebuild(plan, plan.plan_hash)
+                if storage_failure is not None:
+                    raise storage_failure
+                if len(report.streams) != 1:
+                    raise ValueError('REFRESH_REPORT_INVALID')
+                result = report.streams[0]
             if result.status in {'completed', 'noop'}:
                 del state['routes'][key]
             elif result.reason == 'INPUT_READ_INTERRUPTED' and cancelled():
@@ -379,7 +422,9 @@ class HistoricalRefresh:
             elif result.reason == 'SOURCE_BUSY' and plan.operation == 'advance':
                 pending.update(status='pending', reason='SOURCE_BUSY')
             elif result.reason == 'REBUILD_REQUIRED' and plan.operation == 'advance':
-                pending.update(status='pending', rebuild_required=True, reason='REBUILD_REQUIRED')
+                # Only the exact zero-effect result above permits conversion.
+                # Unexpected partial effects cannot become an automatic rebuild.
+                pending.update(status='blocked', reason='REFRESH_READBACK_REQUIRED')
             elif result.status == 'partial' and result.reason == 'INTERRUPTED' and (
                 result.resume_token is not None or plan.operation == 'advance'
             ):
@@ -389,6 +434,8 @@ class HistoricalRefresh:
             else:
                 pending.update(status='blocked', reason=result.reason or 'REFRESH_FAILED_READBACK_REQUIRED')
             self.state.write(state)
+            self.last_progress = {**self.last_progress, 'stage': result.status,
+                                  'reason': _reason(ValueError(result.reason)) if result.reason else None}
 
 
 class RefreshThread:
@@ -440,6 +487,9 @@ class RefreshThread:
 
     def is_alive(self):
         return self._thread.is_alive()
+
+    def diagnostic_snapshot(self):
+        return dict(getattr(self._runner, 'last_progress', {}))
 
 
 def build_historical_refresh(session_factory, *, state_path):
