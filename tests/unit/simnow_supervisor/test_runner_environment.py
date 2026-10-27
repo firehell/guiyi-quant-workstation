@@ -3,6 +3,8 @@
 import importlib.util
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+from types import SimpleNamespace
+import pytest
 
 
 SPEC = importlib.util.spec_from_file_location(
@@ -44,3 +46,60 @@ def test_explicit_redis_password_wins_over_postgres_and_empty_url_is_normalized(
         unquote(urlsplit(runner.dependency_environment(source)["REDIS_URL"]).password)
         == source["REDIS_PASSWORD"]
     )
+
+
+def test_keychain_only_check_never_bootstraps_sdk_or_market(
+    monkeypatch, tmp_path, capsys
+):
+    from guiyi_quant.simnow_execution import settings, credentials
+
+    account = "a" * 64
+    config = SimpleNamespace(
+        project_root=Path(runner.__file__).resolve().parents[2],
+        mode="observe",
+        account_id=account,
+    )
+    monkeypatch.setattr(settings, "load_settings", lambda _: config)
+
+    class Store:
+        def load(self, key):
+            assert key == account
+            return SimpleNamespace(account_id=key)
+
+    monkeypatch.setattr(credentials, "CredentialStore", Store)
+    monkeypatch.setattr(
+        runner.importlib.util,
+        "spec_from_file_location",
+        lambda *_: pytest.fail("SDK must not load"),
+    )
+    assert (
+        runner.main(
+            ["--config", str(tmp_path / "config"), "--observe-only", "--check-keychain"]
+        )
+        == 0
+    )
+    assert (
+        capsys.readouterr().out.strip()
+        == "CONTINUOUS_KEYCHAIN_LOAD_VERIFIED_NO_BROKER_IO"
+    )
+
+
+def test_keychain_check_propagates_fixed_failure_without_network(monkeypatch, tmp_path):
+    from guiyi_quant.simnow_execution import settings, credentials
+
+    config = SimpleNamespace(
+        project_root=Path(runner.__file__).resolve().parents[2],
+        mode="observe",
+        account_id="a" * 64,
+    )
+    monkeypatch.setattr(settings, "load_settings", lambda _: config)
+
+    class Store:
+        def load(self, _):
+            raise credentials.CredentialError("CREDENTIAL_UNAVAILABLE")
+
+    monkeypatch.setattr(credentials, "CredentialStore", Store)
+    with pytest.raises(credentials.CredentialError, match="CREDENTIAL_UNAVAILABLE"):
+        runner.main(
+            ["--config", str(tmp_path / "config"), "--observe-only", "--check-keychain"]
+        )

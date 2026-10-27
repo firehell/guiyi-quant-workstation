@@ -33,8 +33,14 @@ def options(argv=None):
     )
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--observe-only", action="store_true")
-    parser.add_argument(
+    checks = parser.add_mutually_exclusive_group()
+    checks.add_argument(
         "--check", action="store_true", help="仅校验配置/兼容性，不读凭据或连接"
+    )
+    checks.add_argument(
+        "--check-keychain",
+        action="store_true",
+        help="仅验证本进程Keychain加载，不连接Broker",
     )
     return parser.parse_args(argv)
 
@@ -51,6 +57,16 @@ def main(argv=None):
         args.observe_only and settings.mode != "observe"
     ):
         raise ValueError("CONTINUOUS_SOURCE_OR_MODE_INVALID")
+    if args.check_keychain:
+        _STARTUP_STAGE = "KEYCHAIN_CHECK"
+        from guiyi_quant.simnow_execution.credentials import CredentialStore
+
+        credentials = CredentialStore().load(settings.account_id)
+        if credentials.account_id != settings.account_id:
+            raise ValueError("CREDENTIAL_IDENTITY_MISMATCH")
+        del credentials
+        print("CONTINUOUS_KEYCHAIN_LOAD_VERIFIED_NO_BROKER_IO")
+        return 0
     spec = importlib.util.spec_from_file_location(
         "guiyi_bounded_composition", root / "scripts/broker/simnow_controlled.py"
     )
@@ -125,9 +141,23 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:
         # Fixed phase and exception class only; never native error text or values.
+        credential_code = (
+            str(exc)
+            if str(exc)
+            in {
+                "CREDENTIAL_UNAVAILABLE",
+                "CREDENTIAL_CORRUPT",
+                "CREDENTIAL_IDENTITY_MISMATCH",
+                "MACOS_KEYCHAIN_REQUIRED",
+                "MACOS_KEYCHAIN_UNAVAILABLE",
+            }
+            else "STARTUP_UNAVAILABLE"
+        )
         raise SystemExit(
             "CONTINUOUS_START_FAILED_NO_ORDER_PROOF phase="
             + _STARTUP_STAGE
             + " type="
             + type(exc).__name__
+            + " code="
+            + credential_code
         ) from None
