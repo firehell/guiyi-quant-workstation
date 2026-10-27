@@ -120,11 +120,12 @@ def _route_identity(row: ReferenceInboxDelivery) -> list[object]:
             row.activation_plan_hash, _aware(row.recording_start).isoformat(), row.legacy_capture_batch_id]
 
 
-def _head_query(stream_id: str):
+def _head_query(stream_id: str, resolved=()):
     return (select(ReferenceInboxDelivery)
             .join(ReferenceInboxInput, ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id)
             .where(ReferenceInboxDelivery.stream_id == stream_id,
-                   ReferenceInboxDelivery.status != "COMPLETED")
+                   ReferenceInboxDelivery.status != "COMPLETED",
+                   ReferenceInboxDelivery.delivery_id.not_in(resolved))
             .order_by(ReferenceInboxInput.trading_day, ReferenceInboxInput.journal_ms,
                       ReferenceInboxInput.journal_sequence, ReferenceInboxDelivery.delivery_id).limit(1))
 
@@ -343,9 +344,12 @@ class ReferenceInboxRepository:
                     ReferenceInboxInput.trading_day == envelope.trading_day))
                 if count >= self._daily_limit:
                     raise InboxConflict("REFERENCE_INBOX_DAILY_CAPACITY_EXCEEDED")
+                from app.reference_trading.inbox_recovery import verified_resolution_ids
+                resolved = verified_resolution_ids(session)
                 unfinished = exists(select(1).where(
                     ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
-                    ReferenceInboxDelivery.status != "COMPLETED"))
+                    ReferenceInboxDelivery.status != "COMPLETED",
+                    ReferenceInboxDelivery.delivery_id.not_in(resolved)))
                 used = session.scalar(select(func.coalesce(func.sum(ReferenceInboxInput.payload_bytes), 0)).where(unfinished))
                 if any(route.status != "COMPLETED" for route in routes) and used + size > self._unfinished_bytes_limit:
                     raise InboxConflict("REFERENCE_INBOX_UNFINISHED_CAPACITY_EXCEEDED")
@@ -386,7 +390,8 @@ class ReferenceInboxRepository:
 
     def pending_head(self, stream_id: str) -> InboxDelivery | None:
         with self._session_factory() as session, session.begin():
-            row = session.scalar(_head_query(stream_id))
+            from app.reference_trading.inbox_recovery import verified_resolution_ids
+            row = session.scalar(_head_query(stream_id, verified_resolution_ids(session, stream_ids=(stream_id,))))
             if row is None:
                 return None
             _validate_active(session, row)
@@ -395,18 +400,21 @@ class ReferenceInboxRepository:
     def next_heads(self, *, limit: int = 32, after_stream_id: str | None = None) -> tuple[InboxDelivery, ...]:
         if type(limit) is not int or not 1 <= limit <= 32:
             raise ValueError("REFERENCE_INBOX_HEAD_BUDGET_INVALID")
-        rank = select(ReferenceInboxDelivery.delivery_id,
-            func.row_number().over(partition_by=ReferenceInboxDelivery.stream_id,
-                order_by=(ReferenceInboxInput.trading_day, ReferenceInboxInput.journal_ms,
-                          ReferenceInboxInput.journal_sequence, ReferenceInboxDelivery.delivery_id)).label("position")
-        ).join(ReferenceInboxInput, ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id).where(
-            ReferenceInboxDelivery.status != "COMPLETED").subquery()
-        query = select(ReferenceInboxDelivery).join(rank,
-            rank.c.delivery_id == ReferenceInboxDelivery.delivery_id).where(rank.c.position == 1)
-        if after_stream_id is not None:
-            query = query.order_by(case((ReferenceInboxDelivery.stream_id > after_stream_id, 0), else_=1))
-        query = query.order_by(ReferenceInboxDelivery.stream_id).limit(limit)
+        from app.reference_trading.inbox_recovery import verified_resolution_ids
         with self._session_factory() as session:
+            resolved = verified_resolution_ids(session)
+            rank = select(ReferenceInboxDelivery.delivery_id,
+                func.row_number().over(partition_by=ReferenceInboxDelivery.stream_id,
+                    order_by=(ReferenceInboxInput.trading_day, ReferenceInboxInput.journal_ms,
+                              ReferenceInboxInput.journal_sequence, ReferenceInboxDelivery.delivery_id)).label("position")
+            ).join(ReferenceInboxInput, ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id).where(
+                ReferenceInboxDelivery.status != "COMPLETED",
+                ReferenceInboxDelivery.delivery_id.not_in(resolved)).subquery()
+            query = select(ReferenceInboxDelivery).join(rank,
+                rank.c.delivery_id == ReferenceInboxDelivery.delivery_id).where(rank.c.position == 1)
+            if after_stream_id is not None:
+                query = query.order_by(case((ReferenceInboxDelivery.stream_id > after_stream_id, 0), else_=1))
+            query = query.order_by(ReferenceInboxDelivery.stream_id).limit(limit)
             return tuple(_dto(session, row) for row in session.scalars(query))
 
     def validate_delivery(self, delivery_id: str) -> InboxDelivery:
@@ -467,7 +475,8 @@ class ReferenceInboxRepository:
                 ReferenceInboxDelivery.delivery_id == delivery_id).with_for_update())
             if row.status != "PENDING":
                 raise InboxConflict("REFERENCE_INBOX_STATE_CONFLICT")
-            head = session.scalar(_head_query(row.stream_id))
+            from app.reference_trading.inbox_recovery import verified_resolution_ids
+            head = session.scalar(_head_query(row.stream_id, verified_resolution_ids(session, stream_ids=(row.stream_id,))))
             if head is None or head.delivery_id != delivery_id:
                 raise InboxConflict("REFERENCE_INBOX_ORDER_CONFLICT")
             row.code, row.updated_at = code, at
@@ -498,19 +507,23 @@ class ReferenceInboxRepository:
         self._mark(delivery_id, "UNKNOWN", code, at=at)
 
     def health(self) -> dict[str, object]:
-        with self._session_factory() as session:
+        from app.reference_trading.inbox_recovery import verified_resolution_ids
+        from app.db.readonly import readonly_transaction
+        with self._session_factory() as session, readonly_transaction(session, timeout_seconds=20):
+            resolved = verified_resolution_ids(session)
+            open_delivery = ReferenceInboxDelivery.delivery_id.not_in(resolved)
             # One SQL statement uses one PostgreSQL snapshot for every aggregate.
             unfinished = exists(select(1).where(
                 ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
-                ReferenceInboxDelivery.status != "COMPLETED"))
+                (ReferenceInboxDelivery.status != "COMPLETED") & open_delivery))
             counts = select(
-                func.count().filter(ReferenceInboxDelivery.status == "PENDING").label("pending_count"),
-                func.count().filter(ReferenceInboxDelivery.status == "WAITING_HISTORY").label("waiting_history_count"),
-                func.count().filter(ReferenceInboxDelivery.status == "BLOCKED").label("blocked_count"),
-                func.count().filter(ReferenceInboxDelivery.status == "UNKNOWN").label("unknown_count"),
+                func.count().filter((ReferenceInboxDelivery.status == "PENDING") & open_delivery).label("pending_count"),
+                func.count().filter((ReferenceInboxDelivery.status == "WAITING_HISTORY") & open_delivery).label("waiting_history_count"),
+                func.count().filter((ReferenceInboxDelivery.status == "BLOCKED") & open_delivery).label("blocked_count"),
+                func.count().filter((ReferenceInboxDelivery.status == "UNKNOWN") & open_delivery).label("unknown_count"),
                 func.count().filter(ReferenceInboxDelivery.status == "COMPLETED").label("completed_count"),
-                func.count().filter((ReferenceInboxDelivery.status == "PENDING") & ReferenceInboxDelivery.code.is_not(None)).label("dependency_wait_count"),
-                func.count().filter(ReferenceInboxDelivery.status != "COMPLETED").label("unfinished_deliveries"),
+                func.count().filter(((ReferenceInboxDelivery.status == "PENDING") & open_delivery) & ReferenceInboxDelivery.code.is_not(None)).label("dependency_wait_count"),
+                func.count().filter(((ReferenceInboxDelivery.status != "COMPLETED") & open_delivery)).label("unfinished_deliveries"),
                 func.max(ReferenceInboxDelivery.calculated_at).label("last_calculated_at"),
             ).subquery()
             inputs = select(func.count().label("unfinished_inputs"),
@@ -527,11 +540,15 @@ class ReferenceInboxRepository:
             # counts only, never envelopes or credentials.
             reasons = session.execute(select(ReferenceInboxDelivery.status, ReferenceInboxDelivery.code, func.count()).where(
                 ReferenceInboxDelivery.status.in_(("WAITING_HISTORY", "BLOCKED", "UNKNOWN"))
-                | ((ReferenceInboxDelivery.status == "PENDING") & ReferenceInboxDelivery.code.is_not(None))
-            ).group_by(ReferenceInboxDelivery.status, ReferenceInboxDelivery.code)
+                | (((ReferenceInboxDelivery.status == "PENDING") & open_delivery) & ReferenceInboxDelivery.code.is_not(None))
+            ).where(open_delivery).group_by(ReferenceInboxDelivery.status, ReferenceInboxDelivery.code)
              .order_by(ReferenceInboxDelivery.status, ReferenceInboxDelivery.code).limit(385)).all()
             values["by_code"] = tuple({"status": status, "code": code, "count": count} for status, code, count in reasons[:384])
             values["codes_truncated"] = len(reasons) > 384
+            values["recovery_policy"] = "reference_inbox_recovery_v1"
+            values["recovered_calculation_count"] = len(resolved)
+            values["historical_blocked_count"] = session.scalar(select(func.count()).select_from(
+                ReferenceInboxDelivery).where(ReferenceInboxDelivery.status == "BLOCKED"))
             values.update(daily_limit=self._daily_limit, unfinished_bytes_limit=self._unfinished_bytes_limit)
             return values
 
@@ -574,7 +591,8 @@ def complete_inbox_delivery(session, stream_id: str, revision_id: str, source_ev
     _validate_active(session, row)
     if row.status not in {"PENDING", "WAITING_HISTORY"}:
         raise InboxConflict("REFERENCE_INBOX_STATE_CONFLICT")
-    head = session.scalar(_head_query(stream_id))
+    from app.reference_trading.inbox_recovery import verified_resolution_ids
+    head = session.scalar(_head_query(stream_id, verified_resolution_ids(session, stream_ids=(stream_id,))))
     if head is None or head.delivery_id != row.delivery_id:
         raise InboxConflict("REFERENCE_INBOX_ORDER_CONFLICT")
     calculation = session.get(ReferenceBatch, calculation_batch_id)

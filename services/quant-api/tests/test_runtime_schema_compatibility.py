@@ -84,7 +84,7 @@ def installed_inbox_database(isolated_postgres_engine):  # noqa: F811
     engine = None
     try:
         Base.metadata.create_all(scoped, tables=[table for table in Base.metadata.sorted_tables
-                                                if table.name not in {"reference_inbox_inputs", "reference_inbox_deliveries"}])
+                                                if not table.name.startswith("reference_inbox_")])
         with isolated_postgres_engine.begin() as connection:
             connection.exec_driver_sql(f'SET LOCAL search_path TO "{schema}"')
             migration = _migration("20261026_0053_reference_inbox.py")
@@ -212,3 +212,93 @@ def test_duplicate_or_nonliteral_invalid_revision_metadata_is_rejected(monkeypat
     monkeypatch.setattr(runtime_bindings, "_git", lambda *args: source)
     with pytest.raises(SchemaCompatibilityError):
         tracked_db_contract(Path("/unused"))
+
+
+def test_0054_transition_preserves_0053_and_requires_its_own_installed_proof():
+    from app.runtime_schema_compatibility import RECOVERY_ADDITION, RECOVERY_BLOB, RECOVERY_POLICY
+    old={PARENT:'1'*40, ADDITION:ADDITION_BLOB}
+    new={**old,RECOVERY_ADDITION:RECOVERY_BLOB}
+    evidence={'policy':RECOVERY_POLICY,'revision':'20261028_0054','schema_sha256':'a'*64,
+              'database_identity_sha256':'b'*64}
+    proof=prove_reference_inbox_addition(old,new,old_heads=('20261026_0053',),new_heads=('20261028_0054',),installed=evidence)
+    validate_transition_proof(proof,old_db=proof['old_db'],new_db=proof['new_db'])
+    with pytest.raises(SchemaCompatibilityError):
+        prove_reference_inbox_addition(old,{**new,ADDITION:'3'*40},old_heads=('20261026_0053',),new_heads=('20261028_0054',),installed=evidence)
+    with pytest.raises(SchemaCompatibilityError):
+        prove_reference_inbox_addition(old,new,old_heads=('20261026_0053',),new_heads=('20261028_0054',),installed=installed())
+
+
+@pytest.fixture
+def installed_recovery_database(installed_inbox_database):
+    from alembic.operations import Operations
+    from alembic.migration import MigrationContext
+    from tests.alembic.test_reference_forward_migration import _migration
+    from sqlalchemy import text
+    with installed_inbox_database.begin() as connection:
+        migration=_migration('20261028_0054_reference_inbox_recovery.py')
+        migration.op=Operations(MigrationContext.configure(connection));migration.upgrade()
+        connection.execute(text("UPDATE alembic_version SET version_num='20261028_0054'"))
+    return installed_inbox_database
+
+
+@pytest.mark.isolated_postgresql
+def test_actual_0054_schema_and_old_immutability_are_verified(installed_recovery_database, monkeypatch):
+    from sqlalchemy.orm import Session
+    from app.runtime_schema_compatibility import verify_installed_reference_inbox
+    with Session(installed_recovery_database) as db:
+        proof=verify_installed_reference_inbox(db)
+        assert proof['revision']=='20261028_0054'
+    from pathlib import Path
+    monkeypatch.syspath_prepend(str(Path(__file__).parent/"reference_trading"))
+    from reference_trading.test_inbox_recovery import fixture
+    from app.reference_trading.models import ReferenceInboxDelivery
+    factory,inbox,recovery,plan,evaluate=fixture(installed_recovery_database)
+    recovery.apply(plan,expected_plan_hash=plan.plan_hash,evaluator=evaluate)
+    from sqlalchemy import text
+    from sqlalchemy.exc import DBAPIError
+    for statement in ["UPDATE reference_inbox_deliveries SET status='PENDING' WHERE status='BLOCKED'",
+                      'UPDATE reference_inbox_recovery_results SET proof_sha256=proof_sha256',
+                      'DELETE FROM reference_inbox_recovery_results']:
+        with pytest.raises(DBAPIError):
+            with installed_recovery_database.begin() as connection:connection.execute(text(statement))
+    assert inbox.next_heads()==()
+
+
+@pytest.mark.isolated_postgresql
+@pytest.mark.parametrize('drift',['trigger','column','check'])
+def test_0054_result_schema_drift_is_rejected(installed_recovery_database,drift):
+    from sqlalchemy.orm import Session
+    from app.runtime_schema_compatibility import verify_installed_reference_inbox
+    changes={'trigger':'ALTER TABLE reference_inbox_recovery_results DISABLE TRIGGER reference_inbox_recovery_immutable',
+             'column':'ALTER TABLE reference_inbox_recovery_results ADD COLUMN unexpected text',
+             'check':'ALTER TABLE reference_inbox_recovery_results DROP CONSTRAINT ck_reference_inbox_recovery_progress'}
+    with installed_recovery_database.begin() as connection:connection.exec_driver_sql(changes[drift])
+    with Session(installed_recovery_database) as db,pytest.raises(SchemaCompatibilityError):verify_installed_reference_inbox(db)
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_gap_bridge_retains_original_routes(installed_recovery_database,monkeypatch):
+    from pathlib import Path
+    monkeypatch.syspath_prepend(str(Path(__file__).parent/'reference_trading'))
+    from reference_trading.test_inbox_recovery import _exercise_one_gap_bridge
+    _exercise_one_gap_bridge(installed_recovery_database)
+
+
+@pytest.mark.isolated_postgresql
+def test_postgresql_concurrent_recovery_claims_compute_at_most_once(installed_recovery_database,monkeypatch):
+    from pathlib import Path
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Lock
+    monkeypatch.syspath_prepend(str(Path(__file__).parent/'reference_trading'))
+    from reference_trading.test_inbox_recovery import fixture
+    factory,inbox,recovery,plan,evaluate=fixture(installed_recovery_database)
+    lock=Lock();calls=[]
+    def counted(*args):
+        with lock:calls.append(1)
+        return evaluate(*args)
+    def run():
+        try:return ('ok',recovery.apply(plan,expected_plan_hash=plan.plan_hash,evaluator=counted))
+        except ValueError as error:return ('rejected',str(error))
+    with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(lambda _:run(),range(2)))
+    assert any(x[0]=='ok' for x in results)
+    assert len(calls)==1 and inbox.health()['recovered_calculation_count']==1

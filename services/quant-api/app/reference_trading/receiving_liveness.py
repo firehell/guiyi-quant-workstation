@@ -187,7 +187,7 @@ def _authority(protocol, intent, source, target, schema_proof):
     return active
 
 
-def _prefix(session, events, day, check_budget, hashes):
+def _prefix(session, events, day, check_budget, hashes, *, resolved=()):
     input_hash, route_hash = hashes
     count, size = 0, 0
     for start in range(0, len(events), _BATCH):
@@ -236,7 +236,8 @@ def _prefix(session, events, day, check_budget, hashes):
                     [day.isoformat(), by_input[row.input_id].journal_id, row.stream_id]
                 )
             )
-            _validate_active(session, row, lock=False)
+            from app.reference_trading.inbox_recovery import validate_receiving_delivery
+            validate_receiving_delivery(session, row, resolved)
             stream = session.get(ReferenceStream, row.stream_id)
             identity = _identity_from_row(stream)
             item = by_input[row.input_id]
@@ -432,13 +433,15 @@ def snapshot_receiving(
                     select(exists().where(ReferenceInboxDelivery.status == "UNKNOWN"))
                 )
             )
+            from app.reference_trading.inbox_recovery import verified_resolution_ids
+            resolved = verified_resolution_ids(session)
             for text_day, old in sorted(source_proof["progress"].items()):
                 day, ack = date.fromisoformat(text_day), current[text_day]["cursor"]
                 hashes, totals = (sha256(), sha256()), [0, 0]
 
                 def accept_prefix(events):
                     count, size, _, _ = _prefix(
-                        session, events, day, check_budget, hashes
+                        session, events, day, check_budget, hashes, resolved=resolved
                     )
                     totals[0] += count
                     totals[1] += size
@@ -488,6 +491,7 @@ def snapshot_receiving(
                 select(1).where(
                     ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
                     ReferenceInboxDelivery.status != "COMPLETED",
+                    ReferenceInboxDelivery.delivery_id.not_in(resolved),
                 )
             )
             used = int(

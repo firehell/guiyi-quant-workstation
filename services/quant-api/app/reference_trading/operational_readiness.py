@@ -45,8 +45,11 @@ def valid_receiving_wait_proof(value):
 def _build(session_factory, expected_pairs):
     try:
         with session_factory() as session, readonly_transaction(session, timeout_seconds=20):
+            from app.reference_trading.inbox_recovery import verified_resolution_ids
+            resolved = verified_resolution_ids(session)
+            unresolved = ReferenceInboxDelivery.delivery_id.not_in(resolved)
             unsafe = session.scalar(select(select(1).select_from(ReferenceInboxDelivery).where(
-                ReferenceInboxDelivery.status.in_(("BLOCKED", "UNKNOWN"))).exists()))
+                ReferenceInboxDelivery.status.in_(("BLOCKED", "UNKNOWN")), unresolved).exists()))
             if unsafe:
                 return None
             rank = select(ReferenceInboxDelivery.delivery_id,
@@ -54,7 +57,7 @@ def _build(session_factory, expected_pairs):
                     order_by=(ReferenceInboxInput.trading_day, ReferenceInboxInput.journal_ms,
                               ReferenceInboxInput.journal_sequence, ReferenceInboxDelivery.delivery_id)).label("position")
             ).outerjoin(ReferenceInboxInput, ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id).where(
-                ReferenceInboxDelivery.status != "COMPLETED").subquery()
+                ReferenceInboxDelivery.status != "COMPLETED", unresolved).subquery()
             rows = session.execute(select(ReferenceInboxDelivery, ReferenceInboxInput).join(rank,
                 rank.c.delivery_id == ReferenceInboxDelivery.delivery_id).outerjoin(ReferenceInboxInput,
                 ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id).where(rank.c.position == 1)

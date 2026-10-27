@@ -649,7 +649,7 @@ class ReferenceRepository:
 
     def commit_batch(
         self, expected: CheckpointToken, prepared: PreparedBatch,
-        *, commit_guard=None,
+        *, commit_guard=None, inbox_recovery=None,
     ) -> CommitResult:
         if not isinstance(expected, CheckpointToken) or not isinstance(prepared, PreparedBatch):
             raise TypeError("expected and prepared have invalid types")
@@ -815,10 +815,14 @@ class ReferenceRepository:
                 capture_row.consumed_by_batch_id = batch_id
                 capture_row.outcome = "consumed"
                 if self.inbox_enabled or capture_row.source_evidence.get("forward_capture_v1", {}).get("source_proof", {}).get("inbox_delivery_id"):
-                    from app.reference_trading.inbox import complete_inbox_delivery
-                    complete_inbox_delivery(session, stream_id=stream.stream_id,
-                        revision_id=revision.revision_id, capture_row=capture_row,
-                        calculation_batch_id=batch_id, calculated_at=batch.processed_at)
+                    if inbox_recovery is not None:
+                        recovery, recovery_plan = inbox_recovery
+                        recovery.complete(session, recovery_plan, capture_row=capture_row, calculation=batch)
+                    else:
+                        from app.reference_trading.inbox import complete_inbox_delivery
+                        complete_inbox_delivery(session, stream_id=stream.stream_id,
+                            revision_id=revision.revision_id, capture_row=capture_row,
+                            calculation_batch_id=batch_id, calculated_at=batch.processed_at)
             action_pks = self._insert_actions(
                 session, prepared, batch_id=batch_id, batch_seq=seq,
             )
@@ -846,6 +850,8 @@ class ReferenceRepository:
             if capture_row is not None and stream.health == "RECOVERY_PENDING":
                 self._finish_bounded_recovery_health(session, stream, revision, capture_row)
             self._fault_injector("before_commit")
+            if inbox_recovery is not None:
+                inbox_recovery[0].check_external(inbox_recovery[1])
         return CommitResult("committed", prepared.revision_id, seq, post_hash)
 
     @staticmethod

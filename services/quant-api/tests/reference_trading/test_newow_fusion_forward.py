@@ -611,3 +611,65 @@ def test_fusion_shared_source_proof_excludes_only_route_local_inbox_receipt():
     result=build_fusion_capture(stream,revision_id='fusion',generation=1,after=None,
        now=case.bars[0].bar.bar_end+timedelta(minutes=1),dependencies=dependencies)
     assert result.input_payload
+
+
+def test_inbox_fusion_missing_committed_base_is_dependency_wait_not_terminal_failure():
+    from types import SimpleNamespace
+    from app.reference_trading.composition import build_forward_reference_worker
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    case, _ = sources('60m')
+    end = case.bars[0].bar.bar_end
+    stream = build_fusion_stream_identity('rb', '60m', recording_mode='forward_observation',
+                                         observation_policy_version='completed_observation_v1')
+    repo = SimpleNamespace(read_pending_capture=lambda _: None,
+        forward_source_context=lambda _: (stream, 'revision', 1, end, None, 'block', None, None))
+    worker = build_forward_reference_worker(repository=repo, market_read=None, newow_reader=None,
+        owner_segments=None, expected_endpoints=None, newow_capability_ready=lambda _: True,
+        fusion_sources=lambda *a, **kw: None, enabled=True, now=lambda: end + timedelta(seconds=2))
+    worker.source_observed_at = end + timedelta(seconds=1)
+    with pytest.raises(ForwardInputUnavailable, match='REFERENCE_FUSION_SOURCE_NOT_READY'):
+        worker.process_inbox_delivery(stream.stream_id, end, delivery_id='original-delivery')
+
+
+def _with_delivery(dependencies):
+    end = dependencies[0]['capture']['observed_at']
+    at = __import__('datetime').datetime.fromisoformat(end)
+    timing = {'protocol': 'reference_receiving_v2', 'raw_received_at': end,
+              'confirmed_at': end, 'ingested_at': end,
+              'calculated_at': (at + timedelta(seconds=45)).isoformat(),
+              'calculation_delay_seconds': 45.0, 'processing_mode': 'delayed_original'}
+    for dep in dependencies:
+        dep['delivery_timing'] = timing
+        dep['actions'] = [{**wire, 'delivery': timing} for wire in dep['actions']]
+    return dependencies
+
+
+def test_delayed_original_display_metadata_does_not_change_fusion_action_identity():
+    case, deps = sources('60m')
+    stream = build_fusion_stream_identity('rb', '60m', recording_mode='forward_observation',
+                                         observation_policy_version='completed_observation_v1')
+    kwargs = dict(revision_id='fusion', generation=1, after=None,
+                  now=case.bars[0].bar.bar_end + timedelta(minutes=1))
+    plain = build_fusion_capture(stream, dependencies=deps, **kwargs)
+    enriched = build_fusion_capture(stream, dependencies=_with_delivery(deps), **kwargs)
+    # Timing remains in provenance; the pure action passed to the reducer is unchanged.
+    from app.reference_trading.newow_fusion_forward import _validated_sources
+    assert _validated_sources(stream, deps)[1][0].signal_id == deps[0]['actions'][0]['signal_id']
+    assert enriched.bar_end == plain.bar_end
+
+
+@pytest.mark.parametrize('tamper', ['unknown', 'signal_id', 'timing', 'protocol'])
+def test_delayed_action_extraction_rejects_unknown_or_tampered_facts(tamper):
+    case, deps = sources('60m'); _with_delivery(deps)
+    action = deps[0]['actions'][0]
+    if tamper == 'unknown': action['untrusted'] = 1
+    elif tamper == 'signal_id': action['signal_id'] = 'forged'
+    elif tamper == 'timing': action['delivery'] = {**action['delivery'], 'calculation_delay_seconds': 0}
+    else:
+        timing = {**action['delivery'], 'protocol': 'unknown'}
+        action['delivery'] = timing; deps[0]['delivery_timing'] = timing
+    stream = build_fusion_stream_identity('rb', '60m', recording_mode='forward_observation',
+                                         observation_policy_version='completed_observation_v1')
+    with pytest.raises(ValueError, match='REFERENCE_FUSION_'):
+        build_fusion_capture(stream, revision_id='fusion', generation=1, after=None,
+            now=case.bars[0].bar.bar_end + timedelta(minutes=1), dependencies=deps)

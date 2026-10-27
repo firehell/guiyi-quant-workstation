@@ -441,3 +441,35 @@ class ReferenceInboxDelivery(Base):
     legacy_capture_batch_id: Mapped[str | None] = mapped_column(String(96))
     calculation_batch_id: Mapped[str | None] = mapped_column(String(96))
     calculated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReferenceInboxRecoveryResult(Base):
+    """Append-only closure of one frozen delivery; the original is never reset."""
+    __tablename__ = 'reference_inbox_recovery_results'
+    __table_args__ = (
+        ForeignKeyConstraint(['delivery_id'], ['reference_inbox_deliveries.delivery_id'], ondelete='RESTRICT'),
+        ForeignKeyConstraint(['input_id'], ['reference_inbox_inputs.input_id'], ondelete='RESTRICT'),
+        ForeignKeyConstraint(['target_receipt_id'], ['reference_activation_receipts.receipt_id'], ondelete='RESTRICT'),
+        ForeignKeyConstraint(['stream_id','target_revision_id','capture_batch_id'],
+                             ['reference_batches.stream_id','reference_batches.revision_id','reference_batches.batch_id'], ondelete='RESTRICT'),
+        ForeignKeyConstraint(['stream_id','target_revision_id','calculation_batch_id'],
+                             ['reference_batches.stream_id','reference_batches.revision_id','reference_batches.batch_id'], ondelete='RESTRICT'),
+        UniqueConstraint('calculation_batch_id', name='uq_reference_inbox_recovery_calculation'),
+        CheckConstraint('target_generation > 0 AND calculation_seq > 0', name='ck_reference_inbox_recovery_progress'),
+        CheckConstraint("outcome IN ('CALCULATED','INTERRUPTED')", name='ck_reference_inbox_recovery_outcome'),
+    )
+    delivery_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    input_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    stream_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    plan_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    original_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_receipt_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_revision_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    target_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    capture_batch_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    calculation_batch_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    calculation_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(24), nullable=False)
+    proof: Mapped[dict] = mapped_column(JsonType, nullable=False)
+    proof_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

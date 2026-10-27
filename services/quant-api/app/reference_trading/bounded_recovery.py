@@ -47,14 +47,17 @@ class BoundedRecoveryPlan:
 
 
 class BoundedForwardRecovery:
-    def __init__(self, session_factory, *, verify_gap):
+    def __init__(self, session_factory, *, verify_gap, scope_policy="newow_h1_bounded_v1"):
         """verify_gap rechecks retained envelope/hash and authoritative endpoints.
 
         It must raise on drift; it returns the exact missing endpoint tuple. No
         provider or Canonical Bar can stand in for an original forward observation.
         """
+        if scope_policy not in {"newow_h1_bounded_v1", "reference_inbox_recovery_v1"}:
+            raise ValueError("RECOVERY_SCOPE_INVALID")
         self._factory = session_factory
         self._verify_gap = verify_gap
+        self._scope_policy = scope_policy
 
     def plan(self, stream_id, *, endpoints, trading_day, observed_at, expires_at,
              journal_proof):
@@ -85,11 +88,19 @@ class BoundedForwardRecovery:
                 or batch is None or not batch.checkpoint_text or revision.status != "active"
                 or revision.last_seq != stream.latest_seq or batch.seq != revision.last_seq):
             raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
-        if receipt.recovery_policy != "block" and not consumed_bound_receipt(session, receipt, revision):
-            raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
         identity = _identity_from_row(stream)
-        if not identity.strategy_code.replace("-", "_").startswith("newow_") or identity.frequency != "60m":
+        subing = (self._scope_policy == "reference_inbox_recovery_v1"
+                  and identity.strategy_code == "subing_reference"
+                  and identity.observation_policy_version == "subing_physical_prefix_forward_v2"
+                  and identity.frequency in {"5m", "15m", "30m", "60m"})
+        if not subing and (not identity.strategy_code.replace("-", "_").startswith("newow_") or identity.frequency != "60m"):
             raise RepositoryConflict("RECOVERY_SCOPE_INVALID")
+        if self._scope_policy == "reference_inbox_recovery_v1" and journal_proof.get("recovery_scope_policy") != self._scope_policy:
+            raise RepositoryConflict("RECOVERY_SCOPE_INVALID")
+        initial_subing = (subing and receipt.recovery_policy == "interrupt_and_restart"
+                          and "bounded_recovery_capture_sha256" not in receipt.budget)
+        if receipt.recovery_policy != "block" and not initial_subing and not consumed_bound_receipt(session, receipt, revision):
+            raise RepositoryConflict("RECOVERY_PREIMAGE_INVALID")
         pending = session.scalar(select(ReferenceBatch.batch_id).where(
             ReferenceBatch.stream_id == stream_id,
             ReferenceBatch.revision_id == revision.revision_id,
