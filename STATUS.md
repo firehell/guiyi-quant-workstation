@@ -1,11 +1,18 @@
 # 当前状态
 
-本页以10/27 v1.16.14发布及08:49 postCAS独立停驻读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
+本页以10/27 controller v1.16.16发布及10:16独立停驻读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 当前版本恢复尚未闭环：已确认Live卸载，待从消费者启动继续
+
+controller v1.16.15/16已独立发布，运行绑定仍v1.16.14/gen31。controller16新计划94f864cb完成freeze后，单次Live bootout后的读回进入outcome_unknown，未进入消费者/Feed启动。10:14原生独立读回确认Live/Feed定义缺席、7个已观察PID全部退出、owner锁空闲；其余Alert/Reference/API/Web仍gen31 parked。旧owner文件中Live active是过期记录，不代表实际进程仍运行。
+10:16数据库读回：completed1031、PENDING336、WAITING_HISTORY4、BLOCKED35、UNKNOWN0；准备READY43/READBACK_REQUIRED80/WAITING_DEPENDENCY159。原件、游标、两层unknown记录均保留，尚未恢复正常采集。
+最小下一步：完成绑定此精确已确认前缀的continuation入口及反证测试/Review，发布controller17，新计划从consumers开始，禁止重复bootout；真实新Bar与完整业务验收另列。
+
 
 ## 10/27 SimNow账户只读实测通过，只读等待服务已启动
 
