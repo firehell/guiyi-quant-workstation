@@ -703,24 +703,36 @@ def receiving_snapshot_identity(value):
         raise ReceivingLivenessError(ERROR) from None
 
 
-def verify_receiving_nonregression(before, after, *, now=None):
-    """Two fresh receiving-cycle samples prove progress, never calculation health."""
+def receiving_sample_is_fresh(value, *, now):
+    """Expiry is not corruption; invalid clocks and sample integrity still fail."""
     try:
-        instant = _instant(now or datetime.now(UTC))
+        _valid_snapshot(value)
+        sampled, cycle, instant = (
+            _instant(value["sampled_at"]),
+            _instant(value["owner_cycle_at"]),
+            _instant(now),
+        )
+        _require(0 <= (sampled - cycle).total_seconds() <= 30 and instant >= sampled)
+        return (instant - cycle).total_seconds() <= 30
+    except Exception:
+        raise ReceivingLivenessError(ERROR) from None
+
+
+def verify_receiving_continuity(before, after):
+    """Preserve the full verified prefix across expiry; this grants no liveness."""
+    try:
         for value in (before, after):
             _valid_snapshot(value)
-            sampled, cycle = (
-                _instant(value["sampled_at"]),
-                _instant(value["owner_cycle_at"]),
-            )
             _require(
-                0 <= (sampled - cycle).total_seconds() <= 30
-                and 0 <= (instant - sampled).total_seconds() <= 30
-                and 0 <= (instant - cycle).total_seconds() <= 30
+                0
+                <= (
+                    _instant(value["sampled_at"]) - _instant(value["owner_cycle_at"])
+                ).total_seconds()
+                <= 30
             )
         _require(
             _instant(after["sampled_at"]) > _instant(before["sampled_at"])
-            and _instant(after["owner_cycle_at"]) > _instant(before["owner_cycle_at"])
+            and _instant(after["owner_cycle_at"]) >= _instant(before["owner_cycle_at"])
         )
         for key in (
             "intent_sha256",
@@ -785,6 +797,19 @@ def verify_receiving_nonregression(before, after, *, now=None):
         }
     except Exception:
         raise ReceivingLivenessError(ERROR) from None
+
+
+def verify_receiving_nonregression(before, after, *, now=None):
+    """Two fresh receiving-cycle samples prove progress, never calculation health."""
+    instant = now or datetime.now(UTC)
+    if not all(
+        receiving_sample_is_fresh(value, now=instant) for value in (before, after)
+    ):
+        raise ReceivingLivenessError(ERROR)
+    comparison = verify_receiving_continuity(before, after)
+    if _instant(after["owner_cycle_at"]) <= _instant(before["owner_cycle_at"]):
+        raise ReceivingLivenessError(ERROR)
+    return comparison
 
 
 def receiving_context_identity(value):

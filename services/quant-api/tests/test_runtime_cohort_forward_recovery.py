@@ -600,6 +600,14 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
     monkeypatch.setattr(m, "port_is_ready", lambda name: True)
     monkeypatch.setattr(m, "sleep", lambda seconds: None)
     monkeypatch.setattr(
+        liveness, "receiving_sample_is_fresh", lambda *args, **kwargs: True
+    )
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_continuity",
+        lambda before, after: liveness.verify_receiving_nonregression(before, after),
+    )
+    monkeypatch.setattr(
         liveness,
         "verify_receiving_nonregression",
         lambda *args, **kwargs: {"advanced_count": 1, "caught_up_idle": False},
@@ -670,6 +678,66 @@ def test_native_verify_preserves_api_version_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: Response())
     with pytest.raises(ValueError, match="FORWARD_API_VERSION_MISMATCH"):
         current.verify_forward(source, {}, lambda: None)
+    assert current._forward_diagnostic["substep"] == "api_http"
+
+
+@pytest.mark.parametrize(
+    "failed_substep", ("deployment_identity", "api_http", "web_http")
+)
+def test_native_verified_diagnostic_locates_the_actual_check_without_private_text(
+    tmp_path, monkeypatch, failed_substep
+):
+    import app.services.deployment_identity as identities
+    import urllib.request
+
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    current._await = lambda *args, **kwargs: {"mode": "durable_receiving"}
+
+    def identity(**kwargs):
+        if failed_substep == "deployment_identity":
+            raise OSError("private identity error")
+        return {
+            "services": {
+                module().IDENTITY_NAMES.get(name, name): {"status": "matched"}
+                for name in module().CONTINUOUS
+            }
+        }
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            tag = module().registry(source["new"]).services["api"].tag
+            return json.dumps({"version": tag[1:]}).encode()
+
+    def request(url, **kwargs):
+        if ("8000" in url and failed_substep == "api_http") or (
+            "5173" in url and failed_substep == "web_http"
+        ):
+            raise OSError("private network error")
+        return Response()
+
+    monkeypatch.setattr(identities, "deployment_identity_health", identity)
+    monkeypatch.setattr(urllib.request, "urlopen", request)
+    with pytest.raises(OSError):
+        current.verify_forward(source, {}, lambda: None)
+    diagnostic = module()._safe_verification_diagnostic(current)
+    assert diagnostic["substep"] == failed_substep
+    assert "private" not in json.dumps(diagnostic)
+
+
+@pytest.mark.parametrize("substep", ("private arbitrary error", [], None))
+def test_arbitrary_diagnostic_labels_are_not_persistable(tmp_path, substep):
+    current = native(tmp_path)
+    current._forward_diagnostic = {"substep": substep, "private": "hidden"}
+    assert module()._safe_verification_diagnostic(current) is None
 
 
 def test_explicit_live_teardown_is_recorded_before_any_bootout_or_resume(tmp_path):
@@ -1581,6 +1649,14 @@ def await_intake_case(tmp_path, monkeypatch):
     current._fixed = lambda *args: None
     monkeypatch.setattr(m, "port_is_ready", lambda name: True)
     monkeypatch.setattr(m, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        liveness, "receiving_sample_is_fresh", lambda *args, **kwargs: True
+    )
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_continuity",
+        lambda before, after: liveness.verify_receiving_nonregression(before, after),
+    )
     return current, source, liveness, count
 
 
@@ -1813,3 +1889,177 @@ def test_feed_drain_is_not_cancelled_when_frozen_protocol_context_changed(
     with pytest.raises(ValueError, match="COHORT_FORWARD_RECEIVING_CONTEXT_DRIFT"):
         current.resume_feed(source, audit, lambda: None)
     assert calls == []
+
+
+def timed_receiving_case(
+    tmp_path, monkeypatch, *, regress=False, offsets=(0, 31, 32), same_cycle=False
+):
+    """Use the real DB/journal proof while replacing only OS readiness and time."""
+    from tests.reference_trading.test_receiving_liveness import _setup, NOW
+    from app.reference_trading.receiving_liveness import receiving_context_identity
+
+    host, source, _, _, _, _ = fixture(tmp_path)
+    data = tmp_path / "receiving"
+    data.mkdir(mode=0o700)
+    _, _, journal, _, _, capture, sample = _setup(data)
+    current = native(host.directory)
+    elapsed = [0]
+    samples = []
+    current.monotonic = lambda: elapsed[0]
+    current.now = lambda: NOW + timedelta(seconds=elapsed[0])
+    current.recovery_window = lambda: {}
+    current._active = lambda binding: {
+        "ready": True,
+        "proof": {
+            "receiving": {"protocol_version": 2, "intake_error": None},
+            "reference_runtime": {"stage": "receiving_cycle"},
+        },
+    }
+    current._calculation_boundary = lambda **kwargs: True
+    current._fixed = lambda *args: None
+    if regress:
+        capture("11-0")
+    context = receiving_context_identity(sample())
+
+    def snapshot(*args, **kwargs):
+        index = len(samples)
+        elapsed[0] = offsets[index]
+        if index == 1:
+            if regress:
+                from tests.reference_trading.test_receiving_handover import DAY
+
+                journal.redis.values[journal.cursor_key("reference", DAY)] = "10-0"
+            else:
+                capture("11-0")
+        elif index == 2:
+            capture("12-0")
+        value = sample(elapsed[0])
+        if same_cycle:
+            from app.reference_trading.inbox import _digest
+
+            value["owner_cycle_at"] = NOW.isoformat()
+            value["snapshot_sha256"] = _digest(
+                {k: v for k, v in value.items() if k != "snapshot_sha256"}
+            )
+        samples.append(value)
+        return value
+
+    current._snapshot = snapshot
+    monkeypatch.setattr(module(), "port_is_ready", lambda name: True)
+    monkeypatch.setattr(module(), "sleep", lambda seconds: None)
+    return current, source, {"receiving_context": context}, samples
+
+
+@pytest.mark.parametrize("feed", [False, True])
+def test_old_sample_rolls_only_after_continuity_then_two_fresh_cycles_prove_liveness(
+    tmp_path, monkeypatch, feed
+):
+    current, source, audit, samples = timed_receiving_case(tmp_path, monkeypatch)
+    proof = current._await(source, audit, lambda: None, feed=feed)
+    assert proof["advanced_count"] == 1
+    assert proof["before_sha256"] == samples[1]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[2]["snapshot_sha256"]
+    assert len(samples) == 3
+
+
+def test_sample_expiry_never_erases_an_ack_regression(tmp_path, monkeypatch):
+    from app.reference_trading.receiving_liveness import ReceivingLivenessError
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, regress=True
+    )
+    with pytest.raises(ReceivingLivenessError):
+        current.await_consumers(source, audit, lambda: None)
+    assert len(samples) == 2
+
+
+def test_same_owner_cycle_cannot_hide_an_intermediate_ack_regression(
+    tmp_path, monkeypatch
+):
+    from app.reference_trading.receiving_liveness import ReceivingLivenessError
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, regress=True, offsets=(0, 1, 2), same_cycle=True
+    )
+    with pytest.raises(ReceivingLivenessError):
+        current.await_consumers(source, audit, lambda: None)
+    assert len(samples) == 2
+
+
+def test_repeated_expiry_cannot_extend_the_feed_wait_budget(tmp_path, monkeypatch):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 31, 62, 93, 124)
+    )
+    with pytest.raises(ValueError, match="COHORT_FORWARD_READY_TIMEOUT"):
+        current._await(source, audit, lambda: None, feed=True)
+    assert len(samples) == 5
+
+
+def test_fixed_identity_check_cannot_return_a_proof_that_expired_during_check(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 31, 32, 64, 65)
+    )
+    delayed = [False]
+
+    def fixed(*args):
+        if not delayed[0]:
+            delayed[0] = True
+            current.now = lambda: NOW + timedelta(seconds=63)
+
+    original_snapshot = current._snapshot
+
+    def sample(*args, **kwargs):
+        value = original_snapshot(*args, **kwargs)
+        current.now = lambda: NOW + timedelta(seconds=current.monotonic())
+        return value
+
+    current._snapshot = sample
+    current._fixed = fixed
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert proof["before_sha256"] == samples[3]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[4]["snapshot_sha256"]
+
+
+def test_verified_failure_persists_safe_substep_and_sample_times(tmp_path):
+    from app.reference_trading.receiving_liveness import ReceivingLivenessError
+
+    host, _, path, original_attempt, _, _ = fixture(tmp_path)
+    before = (original_attempt / "state.json").read_bytes()
+    frozen = module().freeze_forward_recovery(host, path)
+    target = tmp_path / "recovery.json"
+    _write(target, frozen)
+
+    def fail(*args):
+        host._forward_diagnostic = {
+            "substep": "receiving_liveness",
+            "observed_at": host.now().isoformat(),
+            "before_sampled_at": host.now().isoformat(),
+            "before_owner_cycle_at": host.now().isoformat(),
+            "current_sampled_at": host.now().isoformat(),
+            "current_owner_cycle_at": host.now().isoformat(),
+            "private": "must never persist",
+        }
+        raise ReceivingLivenessError("REFERENCE_RECEIVING_LIVENESS_UNPROVEN")
+
+    host.verify_forward = fail
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    state = json.loads(
+        (
+            host.directory
+            / "cohort-forward-recoveries"
+            / frozen["plan_sha256"]
+            / "state.json"
+        ).read_bytes()
+    )
+    assert state["failed_stage"] == "verified"
+    assert state["error_type"] == "ReceivingLivenessError"
+    assert state["error_code"] == "REFERENCE_RECEIVING_LIVENESS_UNPROVEN"
+    assert state["verified_diagnostic"]["substep"] == "receiving_liveness"
+    assert state["verified_diagnostic"]["before_sampled_at"] == host.now().isoformat()
+    assert "private" not in state["verified_diagnostic"]
+    assert (original_attempt / "state.json").read_bytes() == before
