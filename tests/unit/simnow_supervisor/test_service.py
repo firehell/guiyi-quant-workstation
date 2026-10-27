@@ -79,7 +79,12 @@ def test_installer_only_accepts_private_enabled_observe_and_never_loads(tmp_path
     target = service.install_observe(value, config, home=tmp_path / "home")
     assert target.name == "com.guiyi.quant-simnow.plist"
     assert target.stat().st_mode & 0o777 == 0o600
-    assert (value.state_root / ".logs").stat().st_mode & 0o777 == 0o700
+    logs = tmp_path / "home/Library/Logs/GuiyiQuant/SimNow"
+    assert logs.stat().st_mode & 0o777 == 0o700
+    assert plistlib.loads(target.read_bytes())["StandardOutPath"] == str(
+        logs / "supervisor.out.log"
+    )
+    assert not (value.state_root / ".logs").exists()
     with pytest.raises(ValueError, match="SERVICE_ALREADY_EXISTS"):
         service.install_observe(value, config, home=tmp_path / "home")
 
@@ -95,3 +100,16 @@ def test_installer_rejects_nonprivate_config_and_disabled_setting(tmp_path):
     value.enabled = False
     with pytest.raises(ValueError, match="OBSERVE_ENABLED_REQUIRED"):
         service.install_observe(value, config, home=tmp_path / "home")
+
+
+def test_renderer_uses_user_logs_instead_of_external_volume(tmp_path):
+    config = tmp_path / "private.json"
+    config.write_text("{}")
+    value = settings(tmp_path)
+    home = tmp_path / "home"
+    result = plistlib.loads(service.render_launch_agent(value, config, home=home))
+    logs = home / "Library/Logs/GuiyiQuant/SimNow"
+    assert result["StandardOutPath"] == str(logs / "supervisor.out.log")
+    assert result["StandardErrorPath"] == str(logs / "supervisor.err.log")
+    assert result["WorkingDirectory"] == str(value.project_root)
+    assert result["ProgramArguments"][-1] == "--observe-only"
