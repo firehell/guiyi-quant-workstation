@@ -24,6 +24,17 @@ from app.reference_trading.recovery_campaign import digest
 CONTINUOUS = ("market-feed", "live", "alert", "reference-worker", "api", "web")
 CALENDARS = ("after-market", "late-provider-recovery", "weekly-audit", "log-rotate")
 TERMINAL = frozenset({"switched", "cancelled"})
+WARMUP_SAFE_CODES = frozenset({
+    "COHORT_OPERATION_BLOCKED", "COHORT_CANDIDATE_SOURCE_IDENTITY_UNPROVEN",
+    "REFERENCE_WARMUP_TIMEOUT", "REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE",
+    "REFERENCE_WARMUP_INITIAL_SEED_INVALID", "REFERENCE_WARMUP_SCOPE_EMPTY",
+    "SUBING_REFERENCE_DATA_UNAVAILABLE", "CANONICAL_PUBLICATION_LAGGING",
+    "CANONICAL_PUBLICATION_ENDPOINT_INVALID",
+})
+WARMUP_CONDITIONS = frozenset({
+    "subprocess_timeout", "execution_failed", "output_invalid",
+    "candidate_blocked", "source_identity",
+})
 
 
 class CohortError(ValueError):
@@ -326,6 +337,11 @@ def apply_cohort(host, plan):
                 failed_service = getattr(error, "service", None)
                 if failed_service in CONTINUOUS:
                     state["failed_service"] = failed_service
+                    condition = getattr(error, "warmup_condition", None)
+                    if condition in WARMUP_CONDITIONS:
+                        code = getattr(error, "warmup_code", None)
+                        state["warmup_diagnostic"] = {"condition": condition,
+                            "code": code if code is None or isinstance(code, str) and code in WARMUP_SAFE_CODES else "COHORT_OPERATION_BLOCKED"}
             if committed:
                 try:
                     persist("outcome_unknown")
@@ -590,7 +606,11 @@ def main(argv=None):
         print(json.dumps(result, sort_keys=True))
         return 0
     except Exception as error:
-        code = str(error) if isinstance(error, CohortError) else type(error).__name__
+        warmup_code = getattr(error, "code", None)
+        if not isinstance(warmup_code, str) or warmup_code not in WARMUP_SAFE_CODES:
+            warmup_code = str(error) if str(error) in WARMUP_SAFE_CODES else None
+        code = (warmup_code if args.mode == "warmup" and warmup_code else
+                str(error) if isinstance(error, CohortError) else type(error).__name__)
         code = (
             code
             if re.fullmatch("[A-Z][A-Z0-9_]+", code or "")
