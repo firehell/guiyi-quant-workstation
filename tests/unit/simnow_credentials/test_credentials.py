@@ -28,6 +28,11 @@ class FakeBackend:
     def delete(self, account):
         self.items.pop(account, None)
 
+    def update(self, account, data):
+        if account not in self.items:
+            raise CredentialError("CREDENTIAL_UNAVAILABLE")
+        self.items[account] = data
+
 
 def test_roundtrip_uses_fixed_account_identity_and_redacts_repr():
     backend = FakeBackend()
@@ -76,3 +81,36 @@ def test_tampered_or_wrong_identity_is_rejected():
         store.load(account)
     with pytest.raises(CredentialError, match="CREDENTIAL_ACCOUNT_INVALID"):
         store.load("not-a-fingerprint")
+
+
+def test_update_keeps_identity_and_replaces_existing_data_without_delete():
+    backend = FakeBackend()
+    store = CredentialStore(backend)
+    account = store.save("123456", "old fixture")
+    backend.delete = lambda _: pytest.fail("must not delete before updating")
+    assert store.update("123456", "new fixture") == account
+    assert store.load(account).password == "new fixture"
+    assert len(backend.items) == 1
+
+
+def test_update_failure_preserves_old_item_and_never_creates_missing_item():
+    backend = FakeBackend()
+    store = CredentialStore(backend)
+    account = store.save("123456", "old fixture")
+    before = dict(backend.items)
+    with pytest.raises(CredentialError, match="CREDENTIAL_UNAVAILABLE"):
+        store.update("999", "new fixture")
+    assert backend.items == before
+    with pytest.raises(CredentialError, match="PASSWORD_FORMAT_INVALID"):
+        store.update("123456", "")
+    assert store.load(account).password == "old fixture"
+
+
+def test_update_does_not_claim_success_without_matching_readback():
+    backend = FakeBackend()
+    store = CredentialStore(backend)
+    account = store.save("123456", "old fixture")
+    backend.update = lambda *_: None
+    with pytest.raises(CredentialError, match="CREDENTIAL_UPDATE_UNVERIFIED"):
+        store.update("123456", "new fixture")
+    assert store.load(account).password == "old fixture"
