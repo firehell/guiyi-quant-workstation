@@ -41,6 +41,7 @@ def fixture(tmp_path):
         "installed_sha256": "a" * 64,
         "old_exited_sha256": "b" * 64,
         "protected": source["protected"],
+        "new_protected": {"scope": "new-frozen"},
         "owners": {"reference-worker": {"pid": 100, "generation": 29}},
         "controls": {"reference-worker": {"request_id": "c" * 32}},
         "receiving": {"kind": "test_source_proof", "cursor": 10},
@@ -53,6 +54,14 @@ def fixture(tmp_path):
         },
     }
     host._controller = lambda: deepcopy(audit["controller"])
+
+    def check_protected(source, frozen):
+        module().require(
+            audit["new_protected"] == frozen["new_protected"],
+            "COHORT_FORWARD_NEW_PROTECTED_DRIFT",
+        )
+
+    host.check_protected_forward = check_protected
     host.audit_forward = lambda source, check_budget, **kwargs: deepcopy(audit)
     host.forward_guards = lambda source: nullcontext()
     host.resume_consumers = lambda *args: (
@@ -483,6 +492,7 @@ def test_resume_releases_kernel_owner_locks_before_cancelling_parked_process(
     current._parked_owners = lambda *args, **kwargs: audit["owners"]
     current._controller = lambda: audit["controller"]
     current.bindings = lambda: m.registry(source["new"])
+    current.check_protected_forward = lambda *args: None
     current._fixed = lambda *args: fixed
     current._snapshot = lambda *args: {}
     current._old_exited = lambda *args: None
@@ -739,6 +749,7 @@ def prepared_native_stop(tmp_path, monkeypatch):
     audit["live_restart_intent"] = intent
     audit["controls"]["live"] = {"request_id": "c" * 32}
     current.forward_guards = lambda *args: nullcontext()
+    current.check_protected_forward = lambda *args: None
     current._fixed = lambda *args: {"live": {"sha256": "b" * 64}}
     audit["installed_sha256"] = m.digest(current._fixed())
     current._controls = lambda *args: audit["controls"]
@@ -979,3 +990,137 @@ def test_second_prefrozen_plan_cannot_retry_first_unknown_recovery(tmp_path):
     with pytest.raises(ValueError, match="FORWARD_RECOVERY_READBACK_REQUIRED"):
         module().apply_forward_recovery(host, b)
     assert not host.calls
+
+
+def protected_native(tmp_path):
+    import plistlib
+
+    m = module()
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    old, new = m.registry(source["old"]), m.registry(source["new"])
+    old_root, new_root = (
+        host.old.services["live"].root,
+        host.registry.services["live"].root,
+    )
+    markers = (
+        "market-runtime-enabled",
+        "alert-runtime-enabled",
+        "reference-worker-enabled",
+        "weekly-audit-enabled",
+    )
+    for root in (old_root, new_root):
+        run = __import__("pathlib").Path(root) / ".run"
+        run.mkdir()
+        for name in markers:
+            (run / name).write_bytes(b"enabled\n")
+        (run / "after-market-history.json").write_bytes(
+            ("old-original" if root == old_root else "promoted-copy").encode()
+        )
+    shared = current.directory / "private-state.json"
+    shared.write_bytes(b"private-unchanged")
+    snapshots = {}
+    for reg, root in ((old, old_root), (new, new_root)):
+        run = __import__("pathlib").Path(root) / ".run"
+        snapshots[root] = {
+            "db_scope_policy_identity_sha256": "a" * 64,
+            "files": {
+                str(path): sha256(path.read_bytes()).hexdigest()
+                for path in (*run.iterdir(), shared)
+            },
+        }
+    source["protected"] = deepcopy(snapshots[old_root])
+    current._controller = lambda: {"fixed": "controller"}
+    current.bindings = lambda: new
+    current.verify_release = lambda *args: None
+    current.contracts = lambda root: new.services["live"].contracts
+    current.protected = lambda reg: deepcopy(
+        snapshots[next(iter(reg.services.values())).root]
+    )
+    current.check_schema_compatibility = lambda source: None
+    current.path = lambda binding: current.directory / (binding.service + ".plist")
+    for binding in new.services.values():
+        current.path(binding).write_bytes(plistlib.dumps({}))
+    launcher = current.directory / "run-local-service.sh"
+    launcher.write_bytes(b"launcher")
+    source["installed"]["launcher_sha256"] = sha256(launcher.read_bytes()).hexdigest()
+    current.bytes = lambda path: __import__("pathlib").Path(path).read_bytes()
+    current.verify_plist = lambda *args: None
+    return current, source, snapshots, old_root, new_root
+
+
+def test_native_fixed_preserves_old_and_independently_pins_new_root_state(tmp_path):
+    current, source, snapshots, old_root, new_root = protected_native(tmp_path)
+    assert (
+        snapshots[old_root] != snapshots[new_root]
+    )  # History hashes may differ; identities keep real paths.
+    current._fixed(source, lambda: None)
+    current.check_protected_forward(source, {"new_protected": snapshots[new_root]})
+    assert source["protected"] == snapshots[old_root]
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "old_history",
+        "old_stable",
+        "db_scope",
+        "new_private_added",
+        "shared_missing",
+        "new_history_after_freeze",
+        "marker_bad",
+        "marker_missing",
+    ],
+)
+def test_native_protected_preimages_reject_every_non_root_drift(tmp_path, drift):
+    from pathlib import Path
+
+    current, source, snapshots, old_root, new_root = protected_native(tmp_path)
+    frozen = deepcopy(snapshots[new_root])
+    if drift == "old_history":
+        snapshots[old_root]["files"][
+            str(Path(old_root) / ".run/after-market-history.json")
+        ] = "f" * 64
+    elif drift == "old_stable":
+        snapshots[old_root]["files"][str(current.directory / "private-state.json")] = (
+            "f" * 64
+        )
+    elif drift == "db_scope":
+        snapshots[new_root]["db_scope_policy_identity_sha256"] = "f" * 64
+    elif drift == "new_private_added":
+        snapshots[new_root]["files"][
+            str(Path(new_root) / "notification-private.json")
+        ] = "f" * 64
+    elif drift == "shared_missing":
+        snapshots[new_root]["files"].pop(str(current.directory / "private-state.json"))
+    elif drift == "new_history_after_freeze":
+        snapshots[new_root]["files"][
+            str(Path(new_root) / ".run/after-market-history.json")
+        ] = "f" * 64
+    elif drift == "marker_bad":
+        (Path(new_root) / ".run/market-runtime-enabled").write_bytes(b"other\n")
+    elif drift == "marker_missing":
+        (Path(new_root) / ".run/market-runtime-enabled").unlink()
+    current._expected_new_protected = frozen
+    with pytest.raises(ValueError, match="PROTECTED|ACTIVATION"):
+        current._fixed(source, lambda: None)
+
+
+def test_new_protected_drift_after_resume_stops_before_feed_and_keeps_original(
+    tmp_path,
+):
+    host, _, path, attempt, _, audit = fixture(tmp_path)
+    original = (attempt / "state.json").read_bytes()
+    target = tmp_path / "recovery.json"
+    _write(target, module().freeze_forward_recovery(host, path))
+
+    def drift(*args):
+        host.calls.append("consumers")
+        audit["new_protected"] = {"scope": "changed"}
+        return {"resumed": True}
+
+    host.resume_consumers = drift
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    assert host.calls == ["consumers", "halt"]
+    assert (attempt / "state.json").read_bytes() == original

@@ -357,6 +357,7 @@ def apply_forward_recovery(host, recovery_plan_path):
                 _source(host, plan["source"]["plan_path"])[2] == identity,
                 "COHORT_FORWARD_SOURCE_DRIFT",
             )
+            host.check_protected_forward(source, plan["audit"])
             budget()
 
         with host.forward_guards(source):
@@ -579,6 +580,72 @@ class ForwardRecoveryHost(CohortHost):
             "tracked_sha256": digest(tracked),
         }
 
+    def _protected_preimages(self, source):
+        """Retain old evidence; current release state has its own exact preimage."""
+        old, new = registry(source["old"]), registry(source["new"])
+        previous = self.protected(old)
+        require(previous == source["protected"], "COHORT_FORWARD_PROTECTED_DRIFT")
+        current = self.protected(new)
+        require(
+            set(previous)
+            == set(current)
+            == {"db_scope_policy_identity_sha256", "files"}
+            and previous["db_scope_policy_identity_sha256"]
+            == current["db_scope_policy_identity_sha256"],
+            "COHORT_FORWARD_PROTECTED_DRIFT",
+        )
+        names = {
+            "after-market-status.json",
+            "after-market-history.json",
+            "market-runtime-enabled",
+            "alert-runtime-enabled",
+            "reference-worker-enabled",
+            "weekly-audit-enabled",
+        }
+
+        def local_keys(reg):
+            return {
+                str(Path(binding.root) / ".run" / name)
+                for binding in reg.services.values()
+                for name in names
+            }
+
+        # Compare every shared real path and every non-local key, including new
+        # private paths. No basename remapping can discard old natural evidence.
+        before, after = previous["files"], current["files"]
+        old_local, new_local = local_keys(old), local_keys(new)
+        require(
+            isinstance(before, dict)
+            and isinstance(after, dict)
+            and all(before[key] == after[key] for key in before.keys() & after.keys())
+            and {key: value for key, value in before.items() if key not in old_local}
+            == {key: value for key, value in after.items() if key not in new_local},
+            "COHORT_FORWARD_PROTECTED_DRIFT",
+        )
+        markers = {
+            "live": "market-runtime-enabled",
+            "alert": "alert-runtime-enabled",
+            "reference-worker": "reference-worker-enabled",
+            "weekly-audit": "weekly-audit-enabled",
+        }
+        for service, name in markers.items():
+            binding = new.services[service]
+            path = Path(binding.root) / ".run" / name
+            if binding.enabled:
+                require(
+                    path.exists() and self.bytes(path) == b"enabled\n",
+                    "COHORT_FORWARD_ACTIVATION_UNPROVEN",
+                )
+            else:
+                require(not os.path.lexists(path), "COHORT_FORWARD_ACTIVATION_UNPROVEN")
+        return current
+
+    def check_protected_forward(self, source, audit):
+        require(
+            self._protected_preimages(source) == audit["new_protected"],
+            "COHORT_FORWARD_NEW_PROTECTED_DRIFT",
+        )
+
     def _fixed(self, source, check_budget):
         controller = self._controller()
         require(
@@ -598,9 +665,13 @@ class ForwardRecoveryHost(CohortHost):
                 )
                 seen.add(identity)
             check_budget()
+        current_protected = self._protected_preimages(source)
         require(
-            self.protected(new) == source["protected"], "COHORT_FORWARD_PROTECTED_DRIFT"
+            current_protected
+            == getattr(self, "_expected_new_protected", current_protected),
+            "COHORT_FORWARD_NEW_PROTECTED_DRIFT",
         )
+        self._new_protected = current_protected
         self.check_schema_compatibility(source)
         import plistlib
 
@@ -803,6 +874,8 @@ class ForwardRecoveryHost(CohortHost):
     def audit_forward(self, source, check_budget, *, expected=None):
         from app.reference_trading.receiving_liveness import receiving_snapshot_identity
 
+        if expected is not None:
+            self._expected_new_protected = expected["new_protected"]
         fixed = self._fixed(source, check_budget)
         old_exited = self._old_exited(source)
         controls = self._controls(source)
@@ -845,6 +918,7 @@ class ForwardRecoveryHost(CohortHost):
             "installed_sha256": digest(fixed),
             "old_exited_sha256": old_exited,
             "protected": source["protected"],
+            "new_protected": self._new_protected,
             "owners": owners,
             "controls": controls,
             "receiving": receiving_snapshot_identity(snapshot),
@@ -1049,6 +1123,7 @@ class ForwardRecoveryHost(CohortHost):
                 self._controller() == audit["controller"],
                 "COHORT_FORWARD_CONTROLLER_DRIFT",
             )
+            self.check_protected_forward(source, audit)
             check_budget()
             self.launch("bootout", f"gui/{os.getuid()}/{binding.label}")
             end = self.monotonic() + 30
@@ -1224,6 +1299,7 @@ class ForwardRecoveryHost(CohortHost):
                     self._controller() == audit["controller"],
                     "COHORT_FORWARD_CONTROLLER_DRIFT",
                 )
+                self.check_protected_forward(source, audit)
                 check_budget()
                 cancel_drain(
                     name,
@@ -1235,6 +1311,7 @@ class ForwardRecoveryHost(CohortHost):
                         self._controller() == audit["controller"],
                         "COHORT_FORWARD_CONTROLLER_DRIFT",
                     )
+                    self.check_protected_forward(source, audit)
                     check_budget()
                     self.start(registry(source["new"]).services["live"])
         return {
@@ -1341,6 +1418,7 @@ class ForwardRecoveryHost(CohortHost):
         require(
             self._controller() == audit["controller"], "COHORT_FORWARD_CONTROLLER_DRIFT"
         )
+        self.check_protected_forward(source, audit)
         self._fixed(source, check_budget)
         self.recovery_window()
         check_budget()
@@ -1356,6 +1434,7 @@ class ForwardRecoveryHost(CohortHost):
         require(
             self._controller() == audit["controller"], "COHORT_FORWARD_CONTROLLER_DRIFT"
         )
+        self.check_protected_forward(source, audit)
         check_budget()
         return self.start(binding)
 
