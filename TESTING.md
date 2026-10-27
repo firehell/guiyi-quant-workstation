@@ -2131,3 +2131,13 @@ Feed启动后verified失败的精确三层恢复另运行`services/quant-api/tes
 主力恢复的预热共享输入定向回归：`services/quant-api/tests/reference_trading/test_prewarm_input_sharing.py`
 及`test_newow_input_cache.py`验证完整工作组、逐流计算、effective policy/after隔离及异常清理；
 不会替代真实维护锁、完整Scope或120秒原生预热验收。
+
+恢复停驻收尾与共享接收判定的最小定向组合：
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_stopped_recovery.py services/quant-api/tests/test_runtime_receiving_readiness.py services/quant-api/tests/test_runtime_cohort_forward_recovery.py services/quant-api/tests/test_runtime_cohort_host.py services/quant-api/tests/test_runtime_feed_halt_recovery.py services/quant-api/tests/reference_trading/test_receiving_liveness.py
+```
+
+真实联合项须设置本次一次性隔离PG的`GUIYI_ISOLATED_MIGRATION_DATABASE_URL`及动态非生产Redis端口
+`GUIYI_TEST_REDIS_PORT`；测试结束清理本次容器。覆盖扁平事故关联、当前drain/owner/kernel锁、原件前缀、幂等/原子确认、
+cycle覆盖和双fresh接收；不能通过重启正式服务或重放旧原件制造测试证据。
