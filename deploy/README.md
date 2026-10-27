@@ -338,6 +338,20 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 若CAS前进入`restore_unknown`，先恢复并只读核对原态；`install-local-services.sh --resolve-cohort-restored --plan <original-plan>`仅审计历史计划身份，不执行过期计划。它要求exact旧registry/SHA、原plist及loaded前像、fresh owner/实际PID/OS锁、空闲日历、Scope/config哈希与本attempt不同目标label缺席，写唯一私有恢复receipt并fsync后才更新global指针。原attempt/state.json逐字保留；postCAS unknown、新registry或任何漂移均不能使用此入口。之后切换必须全新plan/attempt，全局工作树引用另按retention核查。
 
 
+### 已完成CAS后的同版本启动恢复
+
+版本CAS已被独立证明完成、但后续启动验收失败时，保留原cohort的 `outcome_unknown` attempt，使用独立 `postcas_forward_recovery_v1` 计划和receipt恢复当前已安装generation。该入口不安装、不CAS、不改配置、不回退版本或接收语义，只取消当前generation的精确drain并按消费者、Feed、原定时服务顺序恢复。混合安装、未知writer、身份/配置漂移或不能证明已完成CAS时拒绝。
+
+恢复控制器从独立精确tag/commit的干净正式发布树执行，计划冻结控制器身份并逐阶段复验；控制器版本与运行服务版本分别记录，不能将控制器新发布冒充消费者已升级。
+
+当精确当前Live在固定drain下由launchd反复exit1重启、不能稳定停驻时，计划可显式冻结 `live_restart_intent`。只允许部署/维护锁内核对同一label、binding、安装/launcher、drain与实际进程身份后，先持久记录单次effect再发一次原生bootout；确认整个label absent、所有已观察PID退出、owner锁空闲，重验原件/数据库前缀及pending/UNKNOWN后，才可启动原Live和其他消费者。禁止kill、重复bootout、把active冒充parked，或根据未公开日志猜测内部异常。任何退出、锁或提交事实不明即停止相关恢复。
+
+同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。新计划仍有15分钟TTL、600秒总预算，部署/维护/owner锁及各阶段独立读回；只恢复原启用集合。
+
+接收存活由独立typed证明确定：原冻结SourceProof完整不变、active v2边界与原升级意图匹配、所有已ACK原件及冻结routes在数据库中逐条完整，其他分区不回退；有积压时须两次新鲜有界receiving cycle显示ACK与数据库前缀共同前进。计算等待及BLOCKED分别展示并继续逐流fence，不借此清除失败或重试；接收错误、原件/routes/身份异常、接收提交未知、恢复前未归属pending capture、失权或超时拒绝。旧尾部全部追齐是后续独立验收，不冒充启动完成条件。
+
+恢复成功写新receipt并更新全局恢复结果指针，不能把原attempt改为成功。结果未知时停止相关mutation并独立读回，不盲重试。恢复前缺失的自然原件显式记录，禁止用provider历史补成Live事实；不回放Alert或补发旧通知。
+
 ### Reference receiving v2 交接
 
 先升级0053新增两表，发布兼容版时接收协议仍为旧版；`ReceivingProtocol.request` 只在schema可读后登记
