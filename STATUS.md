@@ -1,13 +1,18 @@
 # 当前状态
 
-正式十服务于20:28:38整组切换到v1.16.24/gen33，exact3985524157bf7439f34cf58a3f3184c578563451（PR524/tag/Release）。
-Owner随后要求开盘服务优先、暂停其余修复。手工历史维护于20:43:46在下一组件入口SOURCE_BUSY安全停止（无强杀）；
-10条既有资产完成并读回闭合，下一条未进入原生计划/写入，原件/journal保护不变，无遗留inflight/unknown。
-20:46:27仅取消自有prepared token，Reference同PID12896/gen33恢复active；20:47两轮服务只读检查通过：十身份一致、六active/fresh/source/lock正确、四日历registered，API/Web200，接收追尾且UNKNOWN0。
-历史刷新公共补丁已发布，但base430仅完成10条、融合未执行，不声明参考收益资产整体恢复。
-当前发布树v23/v24并存；旧树封存清理、其余资产、Reference计算积压及数据缺口均按owner要求暂停后续人工处置。
-原有Runtime按既有Scope/Rule/调度运行，不新增维护任务、不补发通知、不改auto_order=false或独立SimNow。
-详情见[历史刷新任务](docs/tasks/2026-10-27-history-refresh-recovery.md)；旧版本统一与事故证据见下方历史记录。
+10/28收盘后恢复已执行，正式十服务原生整组切换至 **v1.16.26/gen34**，exact
+`33040c99bcb5f9899d55a50a187c08024c4180da`（PR527/528/529，annotated tag/Release）。
+六常驻身份、owner和四日历注册已独立读回；技术切换成功，**整体RUNTIME_READY仍未证实**。
+Reference融合依赖等待、延迟动作解码及不可变恢复关联已上线，0054已实际迁移。2618条原件恢复和456路有界中断均已验证；
+逻辑Inbox pending/blocked/UNKNOWN、pending capture均0，339条旧BLOCKED保持原事实。正式HTTP业务健康为960 READY、
+120 OBSERVATION_LAGGING；后者为15个日盘品种×8路，原件确缺，等待自然completed输入、原生计算及必要暖机。
+本轮历史维护完成并读回259项（258既有刷新、1项A5m完整窗口补建）；07:20现役历史末端快照为616追齐、242落后、
+32源版本变化/重建中、190未构建。末端快照不等于全部来源指纹验收；既有原生刷新继续有界推进，已知partial不计完成。
+原件、Scope、规则、Source与静态配置保护不变，实际发送726条及hash不变；启动后正常增加批次处理/过期未发送记录和游标。
+全局health仍degraded，既存Alert coverage/暖机和旧通知失败单列；不补发、不改变auto_order=false或独立SimNow。
+单次reference自动化已触发后删除；06:45后未启动剩余手工历史维护，不设后续修复/重试任务。下一自然Session验收尚未发生。
+旧v24/v25已原生封存并non-force退役，唯一正式发布树为v26；删除后历史/未决部署guard及现役身份复验通过。
+详情见[本轮恢复记录](docs/tasks/2026-10-28-reference-night-recovery.md)；此前[历史刷新记录](docs/tasks/2026-10-27-history-refresh-recovery.md)保留。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
