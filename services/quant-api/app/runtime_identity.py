@@ -62,7 +62,7 @@ def read_command(arguments: list[str], *, root: Path) -> str:
 def read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
     if re.fullmatch(
-        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker|market-feed)(?:-candidate-[0-9a-f]{32})?",
+        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker|market-feed|simnow)(?:-candidate-[0-9a-f]{32})?",
         label,
     ) is None:
         _reject("IDENTITY_UNAVAILABLE")
