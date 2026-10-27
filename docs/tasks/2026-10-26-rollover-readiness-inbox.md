@@ -70,6 +70,10 @@ Owner批准完整方案：自动预算内预热；顺序恢复真实原件并标
 
 controller16 protected修复最终334项组合回归通过；实现方179、独立Review178通过，Ruff/diff通过，无未关闭Confirmed Issue。真实old/new保护helper及new冻结值再次读回通过；正式15实际_fixed不调用通用installed(new)，单独诊断该通用入口的Live转换态错误不属于恢复执行路径，未为其扩大补丁。只修保护前像绑定，现仍未创建新恢复plan或执行生产mutation。
 
+controller16 PR511/512已集成/选择性发布main exact73051b85650a3a203b3696c87b225b36b69b6718，annotated tag/Release/干净正式树和构建来源通过。新plan94f864cbbbed9bdfecf3efc614dc3851bf857cccbcb3780a839137b614b325a0成功freeze；apply仅记录live_stop/bootout_requested后进入新outcome_unknown，error_code=COHORT_FORWARD_STEP_FAILED，未存异常类，不能倒推原异常原因。停止mutation，未重试。10:14父端原生独立readback：Live label absent、7已观察PID均退出、owner锁free；Feed absent，其余4consumer精确gen31 parked。10:16数据库completed1031/PENDING336/WAITING4/BLOCKED35/UNKNOWN0，prep43READY/80READBACK/159WAITDEP。原cohort unknown和新recovery unknown原字节保留；经独立Review认可，准备仅此已确认前缀的controller17 continuation，绑定两层字节hash+effect，从consumers继续、不调用bootout、不泛放宽unknown Gate。
+
+controller17 continuation最终冻结：357项扩大回归通过（含真实隔离PG/Redis），实现方202、独立Review201/冻结后83通过，无未关闭Confirmed Issue，Ruff/diff通过。唯一A94f的target/Live binding、六字段proof及两层字节关联、额外effects/unknown/Live再现/锁/PID/receipt漂移与重复B反证完整。真实readonly load前驱→唯一未决Gate→native确认前缀PASS，SHA6f50762afd544e74a21d1ed86ce4074ebb2c40813f76d1684b2ffded5f0dcab6；formal17 fullfreeze/apply仍待，未重试A。
+
 ### 10/27 11:50 owner交办恢复前的新鲜核对：阻塞，未重试
 
 本轮按“先恢复采集、再补历史”交办核对，实际绑定仍v1.16.14/gen31。已发布controller17 exact

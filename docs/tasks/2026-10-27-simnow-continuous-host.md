@@ -76,7 +76,7 @@ PortfolioMarket定向Mypy通过，secret-scan findings=0，git diff/check通过�
 `simnow_supervisor.py --observe-only --check`输出 `CONTINUOUS_CONFIG_SDK_COMPATIBLE_NO_BROKER_IO`。
 没有创建API实例或连接柜台。
 
-既有真实AL账户仅用SQLite mode=ro逐条验证318条命令、60产品，账户SQLite前后SHA相同。
+既有真实AL账户仅用SQLite mode=ro逐条验证317条journal命令、60产品，另1条initial receipt、合计318 receipts，账户SQLite前后SHA相同。
 当时本地投影0仓/0订单/0成交只证明旧账本，不证明当前柜台空仓或连接状态。
 本机私有observe配置已生成且enabled=false，安全凭据本地TTY入口已打开；尚未读取/验证真实Keychain，
 未安装或加载LaunchAgent，未确认结算、报撤单或变更正式十服务Runtime。
@@ -110,3 +110,29 @@ PortfolioMarket定向Mypy通过，secret-scan findings=0，git diff/check通过�
 cbb4c10ac（本机既存凭据更新）。最终相关回归357 passed、Ruff/format、secret0及diff通过，
 各项独立Review无未解决Confirmed Issue；真实Keychain更新未由代理执行，凭据从未进入模型、日志或Git。
 本次不发布main/tag，不切正式Runtime，不增加新开仓或发送订单。
+
+## 凭据更新后的第三次只读核验与等待服务
+
+owner明确回复“已更新”后，程序内Keychain加载通过；旧锁空闲，observe/enabled=false、day27 attempt2及原block均已读回，
+账户SHA仍为上述值。当前权威60品种SessionPlan再次通过，交易日20261027；未把凭据保存成功代替柜台验收。
+
+新的显式只读入口从此前f48e08...逐字节复制，唯一变化为连接预算前置1→2，原件未改；新入口SHA
+748afa69db5f472751eb2966ec06c7a48422e5fdedbef047834fb0af45f1482b经独立Review批准，消耗当日最后attempt3。
+10:15:38+08完成认证/登录及四类两轮完整稳定查询：Balance/Available均100000，CurrMargin/Commission均0，
+positions/orders/trades每轮均完整返回0条，flat_observed=true；没有结算确认、订单请求或重连循环。
+
+精确原件：output/simnow-controlled/manual-readonly-fact-f6b41a6a6a5e4fd9a85c0b7bcbd9b208.json，
+SHA f60800ca66c40ef4c6f51ea04edfab28765fa050751287536a8b904dd7130dc2。Release前flush/fsync，
+final receipt按diagnostic_sha256唯一匹配；native_released/account_file_unchanged/original_block_unchanged均true。
+独立复核已重算Native source摘要、Evidence账户/source绑定、当前193份快照及旧账本回放。
+计数更正：SQL commands实际317，state receipts318中含1条initial receipt；旧报告和代码事实保留，不改写原件。
+
+随后按原自动启动目标、经独立Review，仅激活已安装的observe-only等待服务；不删除/解除day27 block，
+不重置attempt3。10:25读回label running/PID20192、WAITING_SESSION、connection UNKNOWN、opening_enabled=false，
+native snapshots仍193、commands仍317、账户SHA未变。本机配置enabled=true；不追加第四次Broker连接。
+权威Session只读预测：10/27 20:58 connect_allowed=true、TD20261028、21:00开盘；不能将预测当自然登录或接管通过。
+当新交易日且连接窗口允许时，程序才使用新日预算先完整只读接管，启动前旧队列仍清空，新开仓始终关闭。
+
+独立事实验收及服务/调度定向27项通过；本轮未修改Python代码，仅记录真实结果并激活原有受控等待服务。
+已验：本机Keychain、一次第一套完整只读、等待启动；待验：新交易日自然接管、全品种新输入、断线与重启及真实订单闭环。
+账户资金仅代表10:15:38读回时点，不外推持续连接、后续资金状态或策略收益。
