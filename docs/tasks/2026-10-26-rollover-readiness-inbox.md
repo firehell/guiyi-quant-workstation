@@ -97,3 +97,37 @@ owner-recovery-preflight-20261027-1150.json。控制器正式树运行
 `./services/quant-api/.venv/bin/python -m pytest services/quant-api/tests/test_runtime_cohort_forward_recovery.py -q`
 实际81 passed/1.39s；该结果只证明控制器定向测试，不证明生产恢复。下一步为定位intake失败并实现、独立Review
 精确当前停驻前缀的向前恢复证明，再用全新计划恢复；不能靠等收盘、补历史或清除unknown替代。
+
+
+### 10/27 controller18发布及真实恢复：接收通过，综合验证失败后停驻
+
+owner交办“处理下一步”后完成窄范围confirmed_intake_halt：只接纳A Live-stop unknown→B
+confirmed_live_stop/consumers完成且intake失败，重新核对当前全部消费者parked、锁、配置/Scope、
+Session及完整当前ACK尾部。schema2接收快照增加current_tail/final_tail；两轮真实追齐可在盘中证明idle，
+合法零进展保留原预算等待，错误/回退不吞。旧schema1摘要以完整源/DB/routes和当前尾部证明处理。
+独立Review发现冻结context未在首样本和Feed前固定的P2，已用真实协议activated_at变更反证红→绿修复；
+复核无未关闭Confirmed Issue，恢复模块99 passed，最终扩大真实隔离PG/Redis329 passed/0 skipped/6.55s，
+独立141 passed/1 skipped（PG由主端另验）、OpenSpec12/12、uv lock/Ruff/format/diff通过，secret0。
+
+任务提交4725077fd，精确集成develop7e9626363并推送；PR517已合并main、annotated v1.16.18及GitHub Release
+exact762b4f39b323bc8e2627968132c8c0bad05be89f。宿主首次拒main merge（授权范围理解为仅修复/PR）；
+补充owner明确实施计划中的“控制器发布”原文及项目发布授权后复核允许，未绕过控制。
+正式18树干净，离线依赖重绑、API/core实际来源、Web type/build/topology通过；只发布控制器，不CAS现役服务。
+
+12:14左右新原生计划425ab52431be579089217f0ede09955e10b36dba6891dab12c10b5e6953f2f86
+（forward-recovery-03.json）freeze通过。一次apply记录consumers/resumed_generation31、intake成功
+schema2/durable_receiving_caught_up_idle/advanced0/remaining0及Feed bootstrapped。
+随后failed_stage=verified、COHORT_FORWARD_STEP_FAILED、error_type=REDACTED，原生outcome_unknown并halt。
+未写成功receipt、未更新全局成功指针，未注册日历，未重试C。不能把intake/Feed启动冒充恢复完成。
+
+12:19独立readback：绑定仍v1.16.14/gen31；原件8956/唯一8956、cursor=tail=1793039404268-4；
+COMPLETED2489/PENDING116/WAITING_HISTORY4/BLOCKED44/UNKNOWN0。原cohort/A/B公共plan和状态及binding
+七份SHA前像逐一不变。证据output/rollover-readiness-20261026/runtime-readback-recovery18-stopped.json、
+recovery18-immutable-before.json，以及原生C私有attempt目录；不重复制造原生receipt。
+
+独立只读诊断未见loopback代理或Web静态根误配证据。纯隔离已复现另一确定性缺陷：_await的旧before为t0、
+下一有效轮为t31时会在原240秒预算尚余209秒时抛ReceivingLivenessError，而同context的t31/t32可证明存活。
+C未保留verified子阶段/完整采样时间，不能据异常兼容性断言历史原因。尚未修复此采样窗口缺陷，也未发布controller19。
+当前BLOCKED：需保留完整context/ACK非回退链并独立刷新活性样本，增加verified安全分步骤诊断；
+C包含Feed effect，已超出仅A/B continuation，必须先有精确已停驻Feed与输入关闭证明，才能规划新的恢复。
+现有C不能复用，也不能递归塞入A/B入口；自然新Bar、18:05调度与今日历史缺口仍未验收。
