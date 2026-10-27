@@ -2118,6 +2118,8 @@ python3 scripts/broker/native/build_control.py --headers /private/path/headers -
 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，无生产库、无host volume；SQLite通过不证明生产锁。
 现场另核schema、协议边界、原件hash、接收/计算独立进度、EG物理前缀与其他品种连续推进，不用测试代替自然验收。
 
+精确前缀continuation及诊断隐私回归另包含 `services/quant-api/tests/test_runtime_recovery_diagnostics.py`；验证唯一前驱字节关联、确认前缀无重复bootout、成功receipt闭环及其他unknown继续拒绝。
+
 同generation恢复定向入口：`pytest -q services/quant-api/tests/reference_trading/test_receiving_liveness.py services/quant-api/tests/test_runtime_cohort_forward_recovery.py`。覆盖逐条ACK前缀/冻结routes、新append与跨旧tail、双fresh接收轮次、samegen权威启动、真实owner锁竞态、原unknown保留及单次恢复预算；使用隔离PG/Redis环境变量补真实集成验证，不能拿sqlite替代生产读回。
 
 主力恢复的预热共享输入定向回归：`services/quant-api/tests/reference_trading/test_prewarm_input_sharing.py`
