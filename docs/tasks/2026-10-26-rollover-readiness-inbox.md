@@ -211,3 +211,97 @@ controller20向前候选：隔离exiting-state样本复现旧ready式身份解�
 E每阶段pin确认字节，D不能变成第五层递归前驱。此处尚未执行新确认，不宣称全组恢复。
 controller20最终扩大真实隔离PG/Redis406 passed/0 skipped，独立四模块212 passed/0 skipped；
 Ruff/format、uv lock offline、secret0及diff通过，独立Review无Confirmed Issue，允许进入release candidate。
+
+
+### 10/27 15:00后恢复及单发布树收敛计划（待执行）
+
+Owner本轮目标：北京时间今日15:00收盘后开始修复，先让整站服务恢复可用，再将发布树及正式服务版本统一到一个。
+本节是执行方案，不是恢复成功记录。14:40现场：十服务绑定v14/gen31；五消费者parked；Feed及四日历absent；
+API/Web不可达；生产PG/Redis可读；原件8956/唯一8956，Reference cursor=tail；COMPLETED2489/PENDING116/
+WAITING_HISTORY4/BLOCKED44/UNKNOWN0。控制器v20已发布，14:11完成D新鲜只读关闭确认；D原unknown保留。
+14:13冻结但未执行的E(64b6c383...)已在14:28过期，禁止apply。STATUS旧正文尚未反映以上完成项，执行时先对齐。
+
+**选择的路线**：已发布v20恢复当前v14 → 可用性验收 → 精确恢复链收尾、发布树依赖脱离和切换验收修复 →
+一个最终补丁版本整组切换 → 删除全部无引用旧发布树。最终版本在执行时核对远端后分配，不提前宣称v21已存在。
+不选直接强启各进程：会绕过当前unknown、drain、owner及接收协议关联。不选先写完所有收敛改动再恢复：延长停服。
+15:00是开始现场检查时间，不是固定切换/完成时间；正式promotion仍需逐品种权威Session和原窗口校验，不能由钟点替代。
+
+#### 1. 15:00先冻结现场并恢复现有服务（最高优先）
+
+- [ ] 核对task/develop/main、工作区dirty及其他任务；不混入SimNow独立修改。读取当前binding、plists、loaded/PID、
+  owner/锁、cohort全局指针、C/B/A/D原件及D确认字节；核对数据库/Redis、Scope、协议和原件/ACK/routes完整连续性。
+- [ ] 只读确认过期E没有attempt/effect（不能仅凭聊天推断）；保留E原文件。确认D关闭证明仍可独立重证，生产重启或
+  新writer导致漂移时立即定位，不复用旧快照或改写原unknown。对齐STATUS真实当前状态。
+- [ ] 在v20精确干净树下，使用现有`app.runtime_cohort_recovery plan`（原cohort + C前驱 + D关闭引用）冻结全新计划，
+  使用全新输出名；TTL15分钟、总预算600秒不变。新鲜预检通过后立即一次apply，不再次bootout已关闭Feed。
+- [ ] 严格按现有`consumers → intake → feed → verified → calendars`次序恢复；不能为先开页面手工取消单个drain。
+  verified固定子步骤、时间和安全错误码留证；真实错误停止相关mutation，禁止重复apply/递归增加unknown链。
+- [ ] 独立核对recovered receipt、全局switched及原失败字节不变。API版本/health、Web及真实数据页可用，
+  五消费者active且fresh、Feed在休市可合法idle但身份/订阅/Session正确、原四日历重新注册且时间正确。
+  连续两次读回跨至少两轮，不以进程存在、单次200或数据库存活代替闭环。
+
+**失败边界**：若这次新尝试不能完成，用本次诊断定位一个具体阻断，先在隔离依赖复现/测试/Review，再形成精确向前
+修复；不移动tag、不重试effect、不不断套新前驱。该阶段未通过，不启动正式整组promotion和旧树删除。
+
+#### 2. 在已恢复服务基础上准备一次最终版本
+
+- [ ] 修复`runtime_cohort_host.py`版本交接的验收口径：复用receiving_liveness完整context/原件/routes/ACK非回退与双fresh
+  cycle证明；区分接收活性、历史积压、计算质量。核对`consumers_ready`及最终verify都使用正确合同，不能只修恢复入口。
+  合法WAITING/BLOCKED不伪装ready；未知提交、原件缺失和身份漂移仍阻断。原时间/资源预算不放宽。
+- [ ] 解决恢复历史对旧源码根的永久依赖。现`_closed_predecessors`/`_feed_close_attempt`仍会通过
+  `_feed_predecessor → _intake_predecessor → _predecessor`逐个verify_release，即恢复成功也不能直接删旧树。
+  在已有成功receipt及现场终态证明基础上，增加最小终态收尾合同：绑定原cohort/A/B/C/D/confirmation/成功计划与receipt
+  的精确字节哈希、历史tag/commit及成功时current binding；保存实际仍需读取的非Git证据于既有私有Runtime目录。
+  原始失败记录不改、不删除，不把unknown本身改成success；只将有完整成功关联的事故标记为已被该成功结果闭合。
+  以后历史闭合校验不要求旧checkout存在；当前实际部署身份仍必须验证真实checkout。未闭合或不匹配的unknown继续拒绝。
+  覆盖`_closed_predecessors`、`_feed_close_attempt`、`_source`/global指针及`_protected_preimages`等全部旧根读取路径；
+  最终cohort切换新增的old=v14前像也须在成功后闭合，不以旧A/B/C/D闭合作为可删v14的充分条件。
+  只做本事故和现有恢复合同需要的最小变更，不建立新的通用证据平台。
+- [ ] `runtime_retention.py`清理计划增加实际未闭合恢复根依赖检查：服务引用为零但仍有恢复依赖时保留；
+  终态已闭合且证据校验有效才解除依赖。扫描不能通过忽略unknown/不认识label放行；SimNow已有兼容修复保留。
+- [ ] 定向反证：旧checkout不存在后终态仍可校验；篡改任何关联字节、未闭合事故、额外unknown、归档缺失、
+  错tag/commit、并发新增effect/绑定漂移均拒绝；收尾原子写/fsync、重复调用同一结果幂等、故障注入不误关事故。
+  覆盖t0/t31活性回归、原pending/blocked不清零、新generation原件接收和最终校验，避免重现v14失败。
+- [ ] 在原有隔离PG/Redis验证上述合同，退出时删除本任务容器。做一次高风险独立Review；统一canonical、TESTING及STATUS。
+  无关Web/Broker/策略改动不纳入候选；commit/push/develop后集中形成一个最终补丁release，不按每个小修分别发布。
+
+#### 3. 处理影响真实使用的数据阻断，避免带病切换
+
+- [ ] 逐项核对4 WAITING及44 BLOCKED（38 NO_CALCULATION、6 FUSION_SOURCE_ACTION_CORRUPT）的当前真实原因；
+  通过既有MDS/maintenance入口核对EG2701主力映射、物理历史、周期/窗口、Canonical/Catalog与原件关系。
+- [ ] 先用精确dry-run冻结请求/Bar/窗口/预算/维护锁、原attempt及幂等恢复边界，再执行任务目标必需的真实修复；
+  不清表、不强移游标、不reset未知提交、不删原件、不用Live替代Canonical，不补发过期通知。
+  数据维护与Runtime mutation串行，避免再次用维护锁把交接预热拖死；18:05自然盘后任务的锁与运行边界优先核对。
+- [ ] 原件恢复后分别验计算进展、缺口、错误、历史修复与新自然输入，不把已有8956原件追齐当作停采时段完整。
+  不将所有数据准备完成设成API/Web保持停驻的条件。确有无法收敛的质量项按品种如实展示，不能以伪造ready结案。
+
+#### 4. 同一最终版本整组上线，再减到一棵树
+
+- [ ] 最终候选一次性完成定向/扩大验证、独立Review、main/tag/Release及新树构建/真实导入来源与Web版本校验。
+  freeze后只收交付阻断，不再混入新需求。核对官方远端和其他任务变化，按需最小集成。
+- [ ] 对当前运行整组先render/preflight及完整warmup；全部通过且Session/维护窗口允许时才使用原生cohort单次CAS。
+  候选未通过不停止已恢复的v14；CAS前失败保持/恢复现有服务；CAS后结果不明停止相关mutation并独立读回，不盲回滚协议。
+- [ ] 核对十服务binding、磁盘plist、loaded代码、PID来源、generation与版本相同（定时服务允许合法idle），
+  API/Web同版本且主要页面有真实行情/参考数据；共享PG/Redis仍为原正式数据，SimNow独立宿主不混入十服务版本切换。
+- [ ] 将恢复链精确终态收尾，解除历史旧树依赖。枚举全部release-*根，保留唯一现役最终根；逐棵检查
+  binding/plist/loaded/进程及恢复依赖、dirty/untracked/ignored与非Git证据。先保全必要原件/SHA和最小重建办法。
+- [ ] 生成精确删除计划、dry-run、独立复核后再读回同像，普通树逐个non-force移除，不force、不删tag/Release/行情/
+  数据库/私有配置。反查旧绝对路径不再有active引用；从最终唯一树再跑正常状态、`_no_unresolved_recovery`及
+  下一次部署只读preflight（包括本次最终cohort记录），证明无隐性旧根依赖。
+
+#### 验收与交付
+
+1. **服务可用**：API/Web和主要真实数据页面、五消费者与Feed身份/活性、原四定时服务注册分别通过；新自然Bar休市待验。
+2. **版本统一**：十服务绑定及实际执行来源统一最终exact tag/commit/root/generation；无候选残留writer或旧代码进程。
+3. **树唯一**：release-*仅剩最终一棵，恢复历史可读且不依赖旧checkout；临时测试容器已清理。
+4. **数据可信**：旧原件、ACK、配置/Scope、账户语义不丢不改；数据阻断/停采缺口分别给出实际处理结果，不能用服务200掩盖。
+5. **证据边界**：收盘后的技术可用性验收与18:05自然盘后、夜盘首根自然completed及Alert/Reference业务验收分开；
+   没发生的保持待验，不人为重放/发送制造证据。auto_order=false，不启用新Scope、Broker或通知受众。
+
+执行方式：主代理串行控制生产恢复/维护/切换/删除，代码及证据做必要独立Review；不启动重复恢复任务。
+15:00到点只触发本线程一次续办，不新增周期监控。实际耗时按每阶段结果汇报，不承诺固定恢复完成时刻。
+
+
+计划独立Review：无Confirmed Issue；已纳入最终CAS新增v14前像及全部旧根reader脱离的风险检查。
+调度边界：创建本线程15:00一次自动执行的heartbeat被宿主自动审批拒绝，原因为本轮先规划与未来后台生产操作的授权区分；
+没有创建成功的恢复自动任务，不能宣称已预约执行。该拒绝不影响本文方案和只读准备，不以其他路径绕过。
