@@ -20,7 +20,25 @@ v1.16.24/gen33，开盘期间不重启、不改配置、不发布/切换，不�
 原始Live不可重建为自然观察；该组下一交易时段的新输入另验。
 不得以整体Alert degraded或其他策略完整前缀不足推断HTDY窗口32不合格。
 
-## 验证进度
+## 验收与验证
 
-定向473 passed；固定SDK真实结构/假API零网络25 passed；Ruff通过。
-新增独立Review与最终自然60m复核、候选秘密扫描及集成尚待完成；本记录不声明已发布或Runtime Ready。
+22:00:47完成第三轮：45个夜盘品种自然1m连续、22:00完成60m完整，合并计算窗口32根及
+逐值1m聚合一致，无恢复隔离；60/60历史32根预热合格。上述15个闭市品种原始Live不可用仍阻断，
+等待下一交易时段新输入。三个轮次provider_requests/production_writes均0，first_seen_proven=false。
+本地完整清单和原件位于`output/htdy-strategy-protocol-20261027/`，不作为可重放信号。
+
+扩大回归659 passed（包括共享MDS reader）；独立固定SDK真实结构/假API零网络25 passed；
+Ruff、secret0、diff通过。高风险独立Review固定代码候选4116abcfd，另跑457项，无Confirmed Issue，允许集成。
+后续仅补SQLite实际关闭/重开恢复与持续OPEN禁令两个测试，生产代码未变。
+
+21:55及22:00跨轮保留gen33和原Feed/Live/Alert/Reference PID；行情端点持续推进。
+Reference的126个OBSERVATION_GAP与Alert其他策略的warming/lag保留，不能宣称整体健康全清。
+新增reader只读验证既有账户完整journal，前后字节相同；没有原生账户查询或账户命令写入。
+
+CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE；集成以Git记录为准。本次不发布、不切Runtime、
+不启用持续开仓、不确认结算或报撤单。自然策略首次观察、真实策略订单闭环及15品种日盘输入另验。
+
+## 可重复验证入口
+
+见TESTING.md“普通策略原生关联成交与当前分钟准入”，以及上述659项组合覆盖的
+simnow_supervisor/credentials/host/execution/monitor、htdy_execution、API输入桥/监控和共享reader测试。
