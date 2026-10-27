@@ -228,13 +228,24 @@ def test_two_fresh_receiving_cycles_prove_real_prefix_progress_before_old_tail(
     assert parked["owner_cycle_at"] is None
 
 
-@pytest.mark.parametrize("status", ("PENDING", "WAITING_HISTORY", "BLOCKED", "UNKNOWN"))
+@pytest.mark.parametrize("status", ("PENDING", "WAITING_HISTORY", "BLOCKED"))
 def test_all_calculation_statuses_are_separate_from_intake_integrity(tmp_path, status):
     factory, _, _, _, _, capture, sample = _setup(tmp_path)
     capture("11-0", status=status)
     assert sample()["acknowledged_count"] == 1
     with factory() as session:
         assert session.scalar(select(ReferenceInboxDelivery.status)) == status
+
+
+def test_unknown_delivery_cannot_grant_receiving_liveness(tmp_path):
+    factory, _, _, _, _, capture, sample = _setup(tmp_path)
+    capture("11-0", status="UNKNOWN")
+    with pytest.raises(
+        ReceivingLivenessError, match="REFERENCE_RECEIVING_LIVENESS_UNPROVEN"
+    ):
+        sample()
+    with factory() as session:
+        assert session.scalar(select(ReferenceInboxDelivery.status)) == "UNKNOWN"
 
 
 def test_db_commit_before_ack_is_retained_without_inventing_ack_progress(tmp_path):

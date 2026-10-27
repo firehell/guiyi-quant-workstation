@@ -366,6 +366,25 @@ def _source_day(journal, day, old, ack, expected, check_budget, accept_prefix):
     return metric
 
 
+def completed_receiving_report(state):
+    """Report eligibility only; never a substitute for two verified ACK snapshots."""
+    if not isinstance(state, dict):
+        return False
+    proof = state.get("proof")
+    if not isinstance(proof, dict):
+        return False
+    runtime, intake = proof.get("reference_runtime"), proof.get("receiving")
+    return (
+        isinstance(runtime, dict)
+        and runtime.get("stage") in {"cycle", "receiving_cycle"}
+        and isinstance(intake, dict)
+        and type(intake.get("protocol_version")) is int
+        and intake["protocol_version"] == 2
+        and "intake_error" in intake
+        and intake["intake_error"] is None
+    )
+
+
 def snapshot_receiving(
     session_factory,
     protocol,
@@ -408,6 +427,11 @@ def snapshot_receiving(
             session_factory() as session,
             readonly_transaction(session, timeout_seconds=20),
         ):
+            _require(
+                not session.scalar(
+                    select(exists().where(ReferenceInboxDelivery.status == "UNKNOWN"))
+                )
+            )
             for text_day, old in sorted(source_proof["progress"].items()):
                 day, ack = date.fromisoformat(text_day), current[text_day]["cursor"]
                 hashes, totals = (sha256(), sha256()), [0, 0]
@@ -880,3 +904,24 @@ def prove_receiving_liveness(before, after, *, closed_idle=False, now=None):
         }
     except Exception:
         raise ReceivingLivenessError(ERROR) from None
+
+
+def receiving_pair_candidate(before, previous, current, *, now):
+    """Roll a bounded sample window only after validating every continuous prefix.
+
+    True identifies a candidate pair, not readiness. Callers must recheck both
+    samples after their remaining identity/budget guards and then prove liveness.
+    """
+    fresh = receiving_sample_is_fresh(current, now=now)
+    if previous is not None:
+        verify_receiving_continuity(previous, current)
+    if before is None:
+        return current, False
+    if current["owner_cycle_at"] == before["owner_cycle_at"]:
+        return before, False
+    if not (fresh and receiving_sample_is_fresh(before, now=now)):
+        return current, False
+    comparison = verify_receiving_nonregression(before, current, now=now)
+    if comparison["advanced_count"] == 0 and not comparison["caught_up_idle"]:
+        return current, False
+    return before, True
