@@ -1,0 +1,19 @@
+# PVC：右侧空向与早盘多向路径验证
+
+- source_id: WRoCxx1ooa
+- url: https://weibo.com/1885745060/RoCxx1ooa
+- title: PVC：右侧空向与早盘多向路径验证
+- published_at: 2026-10-27T17:13:00+08:00
+- observed_at: 2026-10-27T22:30:48+08:00
+- category: 03-单品种分析
+- products: PVC
+- contracts: V2701
+- read_status: DETAIL_TEXT_READ_IMAGE_PENDING
+- edited: 未见
+- path: 03-单品种分析/2026-10-27/PVC/WRoCxx1ooa.md
+- related_sources: A5358325549629506
+- unknowns: 原计划事前版本;附图内容;信号时刻
+
+## 内容记录
+
+作者回述夜盘在5055–5074破位并压制后找空V+，目标5012–5045，报日内最低5040；早盘称符合另一多向分支。需回查26日原计划，不能以27日复盘证明事前发布。附图未放大。
