@@ -329,18 +329,20 @@ def test_unknown_original_prefix_suffix_identity_or_intake_is_never_liveness(
         SCHEMA["schema_sha256"] = "c" * 64
 
 
-def test_old_tail_caught_up_without_progress_only_allows_explicit_closed_idle(tmp_path):
+def test_caught_up_idle_is_based_on_current_frontiers_even_with_legacy_flag(tmp_path):
     _, _, _, _, _, capture, sample = _setup(tmp_path)
     capture("11-0")
     capture("12-0")
     first, second = sample(), sample(1)
-    with pytest.raises(ReceivingLivenessError):
-        prove_receiving_liveness(first, second, now=NOW + timedelta(seconds=1))
+    assert (
+        prove_receiving_liveness(first, second, now=NOW + timedelta(seconds=1))["mode"]
+        == "durable_receiving_caught_up_idle"
+    )
     result = prove_receiving_liveness(
         first, second, closed_idle=True, now=NOW + timedelta(seconds=1)
     )
     assert (
-        result["mode"] == "durable_receiving_closed_idle"
+        result["mode"] == "durable_receiving_caught_up_idle"
         and result["calculation_ready"] is False
     )
 
@@ -603,3 +605,86 @@ def test_postgresql_and_real_redis_prefix_proof_is_readonly_and_survives_new_fee
     )
     with factory() as session:
         assert "BLOCKED" in session.scalars(select(ReferenceInboxDelivery.status)).all()
+    idle = sample(2)
+    assert (
+        prove_receiving_liveness(second, idle, now=NOW + timedelta(seconds=2))["mode"]
+        == "durable_receiving_caught_up_idle"
+    )
+    _append(journal, "14-0")
+    pending = sample(3)
+    from app.reference_trading.receiving_liveness import verify_receiving_nonregression
+
+    assert verify_receiving_nonregression(
+        idle, pending, now=NOW + timedelta(seconds=3)
+    ) == {"advanced_count": 0, "caught_up_idle": False}
+    with pytest.raises(ReceivingLivenessError):
+        prove_receiving_liveness(
+            idle, pending, closed_idle=True, now=NOW + timedelta(seconds=3)
+        )
+
+
+def test_caught_up_fresh_cycles_prove_idle_even_during_trading(tmp_path):
+    _, _, _, _, _, capture, sample = _setup(tmp_path)
+    capture("11-0")
+    capture("12-0")
+    before, after = sample(), sample(1)
+    result = prove_receiving_liveness(before, after, now=NOW + timedelta(seconds=1))
+    assert result["mode"] == "durable_receiving_caught_up_idle"
+    assert after["days"][DAY.isoformat()]["current_tail"] == "12-0"
+    assert after["days"][DAY.isoformat()]["final_tail"] == "12-0"
+    assert result["calculation_ready"] is False
+
+
+def test_new_unacked_tail_never_counts_as_idle_even_when_closed(tmp_path):
+    _, _, journal, _, _, capture, sample = _setup(tmp_path)
+    capture("11-0")
+    capture("12-0")
+    first = sample()
+    _append(journal, "13-0")
+    second = sample(1)
+    with pytest.raises(ReceivingLivenessError):
+        prove_receiving_liveness(
+            first, second, closed_idle=True, now=NOW + timedelta(seconds=1)
+        )
+
+
+def test_nonregression_distinguishes_valid_wait_from_liveness(tmp_path):
+    from app.reference_trading.receiving_liveness import verify_receiving_nonregression
+
+    _, _, _, _, _, _, sample = _setup(tmp_path)
+    before, after = sample(), sample(1)
+    assert verify_receiving_nonregression(
+        before, after, now=NOW + timedelta(seconds=1)
+    ) == {
+        "advanced_count": 0,
+        "caught_up_idle": False,
+    }
+    with pytest.raises(ReceivingLivenessError):
+        prove_receiving_liveness(before, after, now=NOW + timedelta(seconds=1))
+
+
+def test_static_context_stays_bound_while_verified_ack_progresses(tmp_path):
+    from app.reference_trading.receiving_liveness import receiving_context_identity
+
+    _, _, _, _, _, capture, sample = _setup(tmp_path)
+    first = sample()
+    capture("11-0")
+    second = sample(1)
+    assert receiving_context_identity(first) == receiving_context_identity(second)
+    assert receiving_snapshot_identity(first) != receiving_snapshot_identity(second)
+
+
+@pytest.mark.parametrize("field", ("current_tail", "final_tail"))
+def test_resigned_invalid_frontier_is_never_idle_authority(tmp_path, field):
+    from app.reference_trading.inbox import _digest
+
+    _, _, _, _, _, capture, sample = _setup(tmp_path)
+    capture("11-0")
+    capture("12-0")
+    before, after = sample(), sample(1)
+    after["days"][DAY.isoformat()][field] = "11-0"
+    after["snapshot_sha256"] = _digest(
+        {k: v for k, v in after.items() if k != "snapshot_sha256"}
+    )
+    with pytest.raises(ReceivingLivenessError):
+        prove_receiving_liveness(before, after, now=NOW + timedelta(seconds=1))

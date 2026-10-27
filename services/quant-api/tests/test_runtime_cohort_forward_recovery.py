@@ -601,6 +601,11 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
     monkeypatch.setattr(m, "sleep", lambda seconds: None)
     monkeypatch.setattr(
         liveness,
+        "verify_receiving_nonregression",
+        lambda *args, **kwargs: {"advanced_count": 1, "caught_up_idle": False},
+    )
+    monkeypatch.setattr(
+        liveness,
         "prove_receiving_liveness",
         lambda *args, **kwargs: {
             "mode": "durable_receiving",
@@ -1439,3 +1444,372 @@ def test_self_consistent_receipt_with_false_prefix_proof_cannot_resolve_unknown(
     _write(destination / "state.json", state)
     with pytest.raises(ValueError, match="READBACK_REQUIRED"):
         module()._no_unresolved_recovery(host)
+
+
+def intake_halt_case(tmp_path):
+    host, path, a_path, a_attempt, cohort_attempt, audit = predecessor_case(tmp_path)
+    b = module().freeze_forward_recovery(host, path, predecessor_recovery_plan=a_path)
+    b_path = tmp_path / "intake-halt.json"
+    _write(b_path, b)
+    b_attempt = host.directory / "cohort-forward-recoveries" / b["plan_sha256"]
+    b_attempt.mkdir(mode=0o700)
+    _write(b_attempt / "plan.json", b)
+    _write(
+        b_attempt / "state.json",
+        {
+            "schema_version": 1,
+            "kind": module().KIND,
+            "plan_sha256": b["plan_sha256"],
+            "source": b["source"],
+            "phase": "outcome_unknown",
+            "failed_stage": "intake",
+            "effects": {
+                "consumers": {
+                    "resumed_generation": module()
+                    .registry(b["new"])
+                    .services["live"]
+                    .generation
+                }
+            },
+            "error_code": "COHORT_FORWARD_STEP_FAILED",
+        },
+    )
+    audit.pop("confirmed_live_stop")
+    audit["receiving_context"] = "f" * 64
+
+    def current_audit(source, budget, **kwargs):
+        frozen = deepcopy(audit)
+        proof = {
+            "predecessor_plan_sha256": b["plan_sha256"],
+            "owners_sha256": module().digest(frozen["owners"]),
+            "controls_sha256": module().digest(frozen["controls"]),
+            "receiving_context": frozen["receiving_context"],
+            "all_consumers_parked": True,
+            "feed_absent": True,
+            "current_tail_reached": True,
+        }
+        proof["proof_sha256"] = module().digest(proof)
+        frozen["confirmed_intake_halt"] = proof
+        return frozen
+
+    host.audit_forward = current_audit
+    return host, path, b_path, a_attempt, b_attempt, cohort_attempt, audit
+
+
+def test_intake_halt_continues_exact_two_prefixes_without_rewriting_or_bootout(
+    tmp_path,
+):
+    host, path, b_path, a_attempt, b_attempt, cohort_attempt, _ = intake_halt_case(
+        tmp_path
+    )
+    originals = {
+        p: (p / "state.json").read_bytes()
+        for p in (a_attempt, b_attempt, cohort_attempt)
+    }
+    frozen = module().freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=b_path
+    )
+    assert frozen["mode"] == "confirmed_intake_halt"
+    c_path = tmp_path / "current.json"
+    _write(c_path, frozen)
+    host.stop_draining_live = lambda *args: pytest.fail("must not bootout")
+    assert module().apply_forward_recovery(host, c_path)["status"] == "recovered"
+    assert host.calls == ["consumers", "intake", "feed", "verified", "calendars"]
+    assert all((p / "state.json").read_bytes() == raw for p, raw in originals.items())
+    module()._no_unresolved_recovery(host)
+    with pytest.raises(ValueError, match="ATTEMPT_ALREADY_EXISTS"):
+        module().apply_forward_recovery(host, c_path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "feed_effect",
+        "wrong_stage",
+        "wrong_generation",
+        "third_unknown",
+        "old_state_drift",
+    ],
+)
+def test_intake_halt_rejects_any_prefix_or_unresolved_ambiguity(tmp_path, mutation):
+    host, path, b_path, a_attempt, b_attempt, _, _ = intake_halt_case(tmp_path)
+    state = json.loads((b_attempt / "state.json").read_bytes())
+    if mutation == "feed_effect":
+        state["effects"]["feed"] = {"started": True}
+    elif mutation == "wrong_stage":
+        state["failed_stage"] = "feed"
+    elif mutation == "wrong_generation":
+        state["effects"]["consumers"]["resumed_generation"] += 1
+    elif mutation == "old_state_drift":
+        a = json.loads((a_attempt / "state.json").read_bytes())
+        a["error_code"] = "CHANGED"
+        _write(a_attempt / "state.json", a)
+    else:
+        other = b_attempt.parent / ("e" * 64)
+        other.mkdir(mode=0o700)
+        _write(other / "state.json", {"phase": "outcome_unknown"})
+    _write(b_attempt / "state.json", state)
+    with pytest.raises(ValueError):
+        module().freeze_forward_recovery(host, path, predecessor_recovery_plan=b_path)
+    assert host.calls == []
+
+
+def await_intake_case(tmp_path, monkeypatch):
+    import app.reference_trading.receiving_liveness as liveness
+
+    m = module()
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    current.now = host.now
+    current.monotonic = lambda: 0.0
+    current.recovery_window = lambda: {"closed_idle": False}
+    current._active = lambda binding: {
+        "ready": True,
+        "proof": {
+            "receiving": {"protocol_version": 2, "intake_error": None},
+            "reference_runtime": {"stage": "receiving_cycle"},
+        },
+    }
+    current._calculation_boundary = lambda **kwargs: True
+    count = [0]
+
+    def sample(*args, **kwargs):
+        count[0] += 1
+        return {"owner_cycle_at": str(count[0]), "sequence": count[0]}
+
+    current._snapshot = sample
+    current._fixed = lambda *args: None
+    monkeypatch.setattr(m, "port_is_ready", lambda name: True)
+    monkeypatch.setattr(m, "sleep", lambda seconds: None)
+    return current, source, liveness, count
+
+
+def test_intake_zero_progress_waits_then_accepts_later_real_progress(
+    tmp_path, monkeypatch
+):
+    current, source, liveness, count = await_intake_case(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_nonregression",
+        lambda before, after, **kwargs: {
+            "advanced_count": int(after["sequence"] >= 3),
+            "caught_up_idle": False,
+        },
+    )
+
+    def prove(before, after, **kwargs):
+        assert after["sequence"] >= 3, "no progress yet"
+        return {"mode": "durable_receiving"}
+
+    monkeypatch.setattr(liveness, "prove_receiving_liveness", prove)
+    assert (
+        current.await_consumers(source, {}, lambda: None)["mode"] == "durable_receiving"
+    )
+    assert count[0] == 3
+
+
+def test_intake_nonregression_failure_is_fatal_without_waiting(tmp_path, monkeypatch):
+    current, source, liveness, count = await_intake_case(tmp_path, monkeypatch)
+
+    def broken(*args, **kwargs):
+        raise liveness.ReceivingLivenessError("REFERENCE_RECEIVING_LIVENESS_UNPROVEN")
+
+    monkeypatch.setattr(liveness, "verify_receiving_nonregression", broken)
+    monkeypatch.setattr(
+        liveness, "prove_receiving_liveness", lambda *args, **kwargs: {"mode": "wrong"}
+    )
+    with pytest.raises(liveness.ReceivingLivenessError):
+        current.await_consumers(source, {}, lambda: None)
+    assert count[0] == 2
+
+
+def test_intake_pending_does_not_extend_original_budget(tmp_path, monkeypatch):
+    current, source, liveness, count = await_intake_case(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_nonregression",
+        lambda *args, **kwargs: {"advanced_count": 0, "caught_up_idle": False},
+    )
+    monkeypatch.setattr(
+        liveness,
+        "prove_receiving_liveness",
+        lambda *args, **kwargs: pytest.fail("pending is not ready"),
+    )
+    checks = [0]
+
+    def budget():
+        checks[0] += 1
+        if checks[0] >= 5:
+            raise module().CohortError("COHORT_FORWARD_DEADLINE_EXCEEDED")
+
+    with pytest.raises(ValueError, match="DEADLINE_EXCEEDED"):
+        current.await_consumers(source, {}, budget)
+    assert count[0] == 4
+
+
+@pytest.mark.parametrize("tail_gap", [False, True])
+def test_native_intake_halt_requires_current_parked_owners_and_complete_current_frontier(
+    tmp_path, monkeypatch, tail_gap
+):
+    import app.reference_trading.receiving_liveness as liveness
+
+    m = module()
+    host, path, b_path, _, _, _, audit = intake_halt_case(tmp_path)
+    audit["owners"]["live"] = {"pid": 101, "generation": 29, "phase": "parked"}
+    source, _, identity = m._source(host, path)
+    predecessor, previous = m._intake_predecessor(host, b_path, identity)
+    current = native(host.directory)
+    current.now = host.now
+    current.bindings = host.bindings
+    current.binding_hash = host.binding_hash
+    current._fixed = lambda *args: (
+        setattr(current, "_new_protected", audit["new_protected"]) or {}
+    )
+    current._old_exited = lambda *args: "old-exited"
+    current._controls = lambda *args: deepcopy(audit["controls"])
+    seen = []
+
+    def parked(*args, **kwargs):
+        seen.append(kwargs)
+        return deepcopy(audit["owners"])
+
+    current._parked_owners = parked
+    current.definition_absent = lambda binding: True
+    current._calculation_boundary = lambda **kwargs: True
+    current._snapshot = lambda *args: {
+        "old_tail_reached": True,
+        "days": {
+            "2026-10-27": {
+                "ack": "10-0",
+                "current_tail": "11-0" if tail_gap else "10-0",
+                "final_tail": "11-0" if tail_gap else "10-0",
+            }
+        },
+    }
+    current.recovery_window = lambda: {"mode": "same_generation_startup"}
+    current._controller = host._controller
+    current.confirm_live_stop = lambda *args: pytest.fail(
+        "current Live has been restarted; old absent proof is invalid"
+    )
+    monkeypatch.setattr(m, "_source", lambda *args: (source, {}, identity))
+    original = m._resolution_source
+
+    def read(path):
+        raw, value = original(path)
+        if str(path).endswith("state.json") and "cohort-attempts" in str(path):
+            value = deepcopy(value)
+            value["effects"]["drain"]["progress"] = {
+                name: {} for name in ("market-feed", "live", "alert")
+            }
+        return raw, value
+
+    monkeypatch.setattr(m, "_resolution_source", read)
+    monkeypatch.setattr(m, "_intake_predecessor", lambda *args: (predecessor, previous))
+    monkeypatch.setattr(m, "observation_progress", lambda *args: {})
+    monkeypatch.setattr(m, "progress_reached", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        liveness, "receiving_context_identity", lambda snapshot: "f" * 64
+    )
+    monkeypatch.setattr(
+        liveness, "receiving_snapshot_identity", lambda snapshot: "a" * 64
+    )
+    if tail_gap:
+        with pytest.raises(ValueError, match="LEGACY_FRONTIER_UNPROVEN"):
+            current.audit_forward(source, lambda: None, predecessor=predecessor)
+    else:
+        result = current.audit_forward(source, lambda: None, predecessor=predecessor)
+        assert m.valid_confirmed_intake_halt(
+            result["confirmed_intake_halt"], predecessor, result
+        )
+    assert seen == [{"allow_live_restart": False, "live_absent": False}]
+
+
+@pytest.mark.parametrize(
+    "drift", ["receipt", "b_state", "a_state", "public_b", "source_state"]
+)
+def test_intake_halt_closure_revalidates_all_retained_bytes(tmp_path, drift):
+    host, path, b_path, a_attempt, b_attempt, cohort_attempt, _ = intake_halt_case(
+        tmp_path
+    )
+    frozen = module().freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=b_path
+    )
+    c_path = tmp_path / "current.json"
+    _write(c_path, frozen)
+    module().apply_forward_recovery(host, c_path)
+    c_attempt = b_attempt.parent / frozen["plan_sha256"]
+    target = {
+        "receipt": c_attempt / "receipt.json",
+        "b_state": b_attempt / "state.json",
+        "a_state": a_attempt / "state.json",
+        "public_b": b_path,
+        "source_state": cohort_attempt / "state.json",
+    }[drift]
+    value = json.loads(target.read_bytes())
+    value["tampered"] = True
+    _write(target, value)
+    with pytest.raises(ValueError):
+        module()._no_unresolved_recovery(host)
+
+
+def changed_receiving_context_case(tmp_path):
+    from tests.reference_trading.test_receiving_liveness import _setup
+    from app.reference_trading.receiving_liveness import receiving_context_identity
+
+    directory = tmp_path / "receiving"
+    directory.mkdir(mode=0o700)
+    _, protocol, _, _, _, capture, sample = _setup(directory)
+    capture("11-0")
+    capture("12-0")
+    before = sample()
+    active = protocol.read()
+    active["activated_at"] = "2026-10-27T08:00:01+00:00"
+    _write(protocol.path, active)
+    return receiving_context_identity(before), sample(1), sample(2)
+
+
+def test_first_receiving_sample_cannot_replace_frozen_protocol_context(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, _, count = await_intake_case(tmp_path, monkeypatch)
+    context, first, second = changed_receiving_context_case(tmp_path)
+    samples = iter([first, second])
+    current.now = lambda: NOW + timedelta(seconds=2)
+
+    def snapshot(*args, **kwargs):
+        count[0] += 1
+        return next(samples)
+
+    current._snapshot = snapshot
+    with pytest.raises(ValueError, match="COHORT_FORWARD_RECEIVING_CONTEXT_DRIFT"):
+        current.await_consumers(source, {"receiving_context": context}, lambda: None)
+    assert count[0] == 1
+
+
+def test_feed_drain_is_not_cancelled_when_frozen_protocol_context_changed(
+    tmp_path, monkeypatch
+):
+    m = module()
+    host, source, _, _, _, audit = fixture(tmp_path)
+    context, changed, _ = changed_receiving_context_case(tmp_path)
+    audit["receiving_context"] = context
+    current = native(host.directory)
+    current._controller = host._controller
+    current._protected_preimages = lambda source: deepcopy(audit["new_protected"])
+    current._snapshot = lambda *args, **kwargs: changed
+    current._fixed = lambda *args: None
+    current.recovery_window = lambda: {"closed_idle": False}
+    current.definition_absent = lambda binding: True
+    control = {"request_id": "a" * 32}
+    audit["controls"]["market-feed"] = control
+    _write(host.directory / "market-feed.handover.json", control)
+    calls = []
+    monkeypatch.setattr(
+        m, "cancel_drain", lambda *args, **kwargs: calls.append("cancel")
+    )
+    current.start = lambda binding: calls.append("start")
+    with pytest.raises(ValueError, match="COHORT_FORWARD_RECEIVING_CONTEXT_DRIFT"):
+        current.resume_feed(source, audit, lambda: None)
+    assert calls == []
