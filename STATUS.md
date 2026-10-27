@@ -1,12 +1,13 @@
 # 当前状态
 
-正式十服务已于19:22:23整组切换到v1.16.23/gen32，exact86248ce71ebf3fd88033eda24fa57c447b5c0597。
-19:23独立跨轮确认十identity/安装/执行来源一致、六常驻active/fresh、四日历registered、API/Web两轮200。
-EG2701已按owner新增范围完成七周期修复：70目标passed/30请求，独立NOOP与12138根EG5m回放通过。
-19条历史尝试及47份原件已封存；19:32九棵旧树已非force移除，仅余release-v1.16.23；19:49删除后历史读取、F停驻确认、未决恢复及下一部署只读前置检查全部通过。
-首页60品种与RB10/27真实K线/指标可用，但RB参考收益子面板SOURCE_IDENTITY_UNVERIFIED仍保留为历史资产质量Gate，
-不声明全部页面功能健康。Reference pending63/blocked44/UNKNOWN0，新行情/推送仍待自然验收。
-历史积压/质量及新自然事件验收独立保留。下方旧任务记录是历史证据。
+正式十服务于20:28:38整组切换到v1.16.24/gen33，exact3985524157bf7439f34cf58a3f3184c578563451（PR524/tag/Release）。
+Owner随后要求开盘服务优先、暂停其余修复。手工历史维护于20:43:46在下一组件入口SOURCE_BUSY安全停止（无强杀）；
+10条既有资产完成并读回闭合，下一条未进入原生计划/写入，原件/journal保护不变，无遗留inflight/unknown。
+20:46:27仅取消自有prepared token，Reference同PID12896/gen33恢复active；20:47两轮服务只读检查通过：十身份一致、六active/fresh/source/lock正确、四日历registered，API/Web200，接收追尾且UNKNOWN0。
+历史刷新公共补丁已发布，但base430仅完成10条、融合未执行，不声明参考收益资产整体恢复。
+当前发布树v23/v24并存；旧树封存清理、其余资产、Reference计算积压及数据缺口均按owner要求暂停后续人工处置。
+原有Runtime按既有Scope/Rule/调度运行，不新增维护任务、不补发通知、不改auto_order=false或独立SimNow。
+详情见[历史刷新任务](docs/tasks/2026-10-27-history-refresh-recovery.md)；旧版本统一与事故证据见下方历史记录。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
