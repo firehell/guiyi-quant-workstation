@@ -188,3 +188,26 @@ intake halt后完成consumers/intake/Feed且在verified失败，不能递归接�
 实际观察PID40577，frontiers_sha256=802e87444d50586cbd7bdfe0cd23f0acd50f294e414aa0f051e9c74a1fed391b。
 诊断原件`output/rollover-readiness-20261026/feed-close-intent-preflight-20261027.json`；它不是关闭receipt。
 本节编写时尚未发布controller19或执行bootout，生产结果待后续实际回读。
+
+controller19后续由PR519发布，main/tag/Release exactd7fb9122f77127fd9f41152c5b0553349ad9cf24；
+正式候选395 passed/0 skipped及Web type/build/topology、API/core新根来源、Ruff/format/secret0/diff通过。
+最终独立四模块真实PG/Redis201 passed/0 skipped；无未关闭Confirmed Issue。仅控制器发布，无消费者CAS。
+
+初次只读freeze因外部包装未继承现役OBSERVATION_STREAM开关拒绝，无plan/attempt；安全绑定既有Feed
+plist两开关到本进程后，13:46:44新D plan3c8496a9301636d97856c5ff68c4c288e4d542bf7a65d4d1a610242074810d68
+成功freeze，stop_after=feed_close。一次apply记录唯一bootout_requested后以SERVICE_IDENTITY_INVALID/
+RuntimeIdentityError停为outcome_unknown，failed_stage=feed_stop_intent，无成功receipt。没有重跑D。
+13:52:23独立确认label absent、PID40577退出、OS锁free、drain未变及完整双前缀SHA802e...391b等于意图。
+D public/private SHA c95272a13822fcaf9081decadac9985d3c84a931b27f25bab6f896d2314153a2，
+state SHA2cbb853b50a17875d9ea25c43503a911b8e7bae7d06581ceff5192540bb95819；全程原字节保留。
+诊断`output/rollover-readiness-20261026/feed-close-unknown-independent-20261027T055223Z.json`，
+SHAe7de0af7fe46d7b7e51efccb75658ec617ea77f8d553d6d3d55acad8baab014d，不冒充成功receipt。
+
+controller20向前候选：隔离exiting-state样本复现旧ready式身份解析过严；仅卸载后的PID观察改为精确
+静态root/commit/tag/generation/args及header PID校验，最终仍要求label absent及PID全集退出。
+实际D未保存完整过渡state，不能据此断言其具体历史状态。新增confirm-feed-close只对该精确D及CBA
+进行历史身份校验和新鲜OS/锁/双前缀读回，不调用launch、不执行过期计划、不创建新attempt；只写一次
+精确关联D公共/私有plan和state原字节的feed-close-confirmation。D unknown不改，额外unknown继续拒绝，
+E每阶段pin确认字节，D不能变成第五层递归前驱。此处尚未执行新确认，不宣称全组恢复。
+controller20最终扩大真实隔离PG/Redis406 passed/0 skipped，独立四模块212 passed/0 skipped；
+Ruff/format、uv lock offline、secret0及diff通过，独立Review无Confirmed Issue，允许进入release candidate。

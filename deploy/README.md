@@ -356,6 +356,9 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 首次用`plan --close-feed-only --predecessor-recovery-plan <C>`冻结`stop_after=feed_close`，该终点进入plan hash。当前Feed须精确loaded且parked，冻结binding/plist/launcher/drain、所有已观察PID/后代及完整source原件/identity索引和completed DB/routes前缀。apply持部署、维护及owner锁，先耐久记录意图，仅调用一次原生bootout；等待label absent、全部观察PID退出、owner锁free及两次前缀不变，期间新增观察PID必须先入effect再验证退出。结果不明保留unknown，不重复卸载、不接纳该unknown为新前驱。
 关闭成功只生成`feed_close_readback_v1`及`feed_closed`终态，不启动任何消费者、不修改全恢复成功指针，也不把A/B/C解析为已恢复。后续正常恢复须显式`plan --predecessor-recovery-plan <C> --feed-close-plan <关闭计划>`，冻结关闭计划公共/私有plan、state和receipt字节，并重新现场证明关闭与输入前缀；这些字节在每个后续阶段继续校验。只有正常恢复最终成功才由新receipt关联闭合A/B/C，原件保持不变。缺失heartbeat或单独parked状态不代替此次进程退出关闭证明。
 
+若该close-only D仅有已记录的Feed卸载请求，随后在`feed_stop_intent`以`RuntimeIdentityError/SERVICE_IDENTITY_INVALID`停为unknown且无成功receipt，可显式运行`confirm-feed-close --plan <D>`。这是原件历史审计及新鲜只读确认，不执行过期计划、不调用launch mutation、不生成新恢复attempt。它要求精确C/B/A及D公共/私有plan、state、effect不变，当前Feed label absent、全部观察PID退出、锁free、其他消费者仍精确parked、完整双输入前缀与D意图一致且无其他unknown。仅写一次`feed-close-confirmation.json`关联D原字节和独立控制器身份；D原state及unknown保留。后续E只通过显式D引用读取该确认并逐阶段pin其字节，D不能作为额外递归前驱，任意其他unknown继续阻断。
+卸载等待中的PID采样只核对精确root/commit/tag/generation、arguments及合法header PID，不把过渡state冒充ready；最终关闭仍须独立证明label缺席及PID全集退出。新代码不能倒推旧D未留存的具体launchd过渡状态。
+
 接收快照schema2记录采样初始current_tail与结束final_tail。两个新鲜独占接收轮只有在前缀/合同不回退且ACK和DB共同前进，或两轮每分区均ack=current_tail=final_tail时才证明存活；空闲不由Session CLOSED或调用者标志推导。合法零进展且仍有积压只在原预算内等待，完整性或时序错误立即失败。
 
 30秒活性样本过期不等于前缀损坏。等待循环逐次验证全部快照（包括同一owner cycle）的静态context、原件/routes、ACK及数据库前缀非回退；只有这条连续链通过后才能滚动活性采样窗口。过期样本本身不授予活性，仍需两轮不同且新鲜的owner cycle，并在最终身份校验后重新检查样本新鲜度。原120/240秒局部预算、600秒总预算及计划期限不延长。

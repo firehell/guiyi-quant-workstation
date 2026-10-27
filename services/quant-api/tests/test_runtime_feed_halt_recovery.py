@@ -494,3 +494,143 @@ def test_closure_end_and_terminal_receipt_cannot_be_relabelled_as_recovery(
             m.freeze_forward_recovery(
                 host, path, predecessor_recovery_plan=c_path, feed_close_plan=close
             )
+
+
+def unknown_close_case(tmp_path):
+    from app.runtime_identity import RuntimeIdentityError
+
+    host, path, c_path, attempts = feed_halt_case(tmp_path)
+    frozen, close = close_plan(host, path, c_path, tmp_path)
+    original_stop = host.stop_parked_feed
+    proofs = []
+
+    def failed(source, audit, budget, record):
+        proofs.append(original_stop(source, audit, budget, record))
+        raise RuntimeIdentityError("SERVICE_IDENTITY_INVALID")
+
+    host.stop_parked_feed = failed
+    with pytest.raises(ValueError, match="OUTCOME_UNKNOWN"):
+        m.apply_forward_recovery(host, close)
+    host.confirm_feed_close_unknown = lambda *args: deepcopy(proofs[0])
+    host.calls.clear()
+    return host, path, c_path, frozen, close, attempts
+
+
+def test_readonly_confirmation_preserves_unknown_and_unblocks_only_its_exact_closure(
+    tmp_path,
+):
+    host, path, c_path, frozen, close, attempts = unknown_close_case(tmp_path)
+    attempt = host.directory / "cohort-forward-recoveries" / frozen["plan_sha256"]
+    state = (attempt / "state.json").read_bytes()
+    originals = {p: (p / "state.json").read_bytes() for p in attempts}
+    result = m.confirm_unknown_feed_close(host, close)
+    assert result["status"] == "feed_closed_confirmed"
+    assert host.calls == []
+    assert (attempt / "state.json").read_bytes() == state
+    assert not (attempt / "receipt.json").exists()
+    assert all((p / "state.json").read_bytes() == raw for p, raw in originals.items())
+    confirmation = (attempt / "feed-close-confirmation.json").read_bytes()
+    assert (
+        m.confirm_unknown_feed_close(host, close)["status"] == "feed_closed_confirmed"
+    )
+    assert (attempt / "feed-close-confirmation.json").read_bytes() == confirmation
+    resume = m.freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=c_path, feed_close_plan=close
+    )
+    assert "confirmation_bytes_sha256" in resume["audit"]["feed_close"]["attempt"]
+
+
+@pytest.mark.parametrize(
+    "wrong", ["extra_unknown", "extra_effect", "false_exit", "confirmation_drift"]
+)
+def test_readonly_confirmation_never_grants_a_generic_unknown_exception(
+    tmp_path, wrong
+):
+    host, path, c_path, frozen, close, _ = unknown_close_case(tmp_path)
+    attempt = host.directory / "cohort-forward-recoveries" / frozen["plan_sha256"]
+    if wrong == "extra_unknown":
+        p = attempt.parent / ("e" * 64)
+        p.mkdir(mode=0o700)
+        _write(p / "state.json", {"phase": "outcome_unknown"})
+    elif wrong == "extra_effect":
+        state = json.loads((attempt / "state.json").read_text())
+        state["effects"]["consumers"] = {}
+        _write(attempt / "state.json", state)
+    elif wrong == "false_exit":
+        actual = host.confirm_feed_close_unknown
+        host.confirm_feed_close_unknown = lambda *args: {
+            **actual(*args),
+            "observed_pids_exited": False,
+        }
+    else:
+        m.confirm_unknown_feed_close(host, close)
+        p = attempt / "feed-close-confirmation.json"
+        value = json.loads(p.read_text())
+        value["source_close_attempt"]["state_bytes_sha256"] = "0" * 64
+        _write(p, value)
+    with pytest.raises(ValueError):
+        m.confirm_unknown_feed_close(host, close)
+    assert host.calls == []
+
+
+def test_shutdown_observation_collects_pid_without_treating_exiting_as_ready(
+    tmp_path, monkeypatch
+):
+    import app.runtime_identity as identities
+    from app.runtime_bindings import authorized_program_arguments
+    from tests.test_runtime_cohort_forward_recovery import fixture
+
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    binding = m.registry(source["new"]).services["market-feed"]
+    arguments = "\n".join(authorized_program_arguments(binding, current.home))
+    text = f"""gui/501/{binding.label} = {{
+state = exiting
+pid = 101
+working directory = {binding.root}
+arguments = {{
+{arguments}
+}}
+environment = {{
+GUIYI_PROJECT_ROOT => {binding.root}
+GUIYI_RUNTIME_COMMIT => {binding.commit}
+GUIYI_RUNTIME_TAG => {binding.tag}
+GUIYI_RUNTIME_GENERATION => {binding.generation}
+}}
+}}"""
+    monkeypatch.setattr(
+        identities, "read_launchd_service", lambda *args, **kwargs: text
+    )
+    monkeypatch.setattr(
+        identities, "read_command", lambda *args, **kwargs: "101 1\n202 101"
+    )
+    assert current._observed_feed_pids(source, [101]) == [101, 202]
+
+
+@pytest.mark.parametrize(
+    "wrong", [None, "label_present", "busy_lock", "frontier_drift", "owner_drift"]
+)
+def test_native_unknown_confirmation_is_fresh_readback_without_any_launch(
+    tmp_path, monkeypatch, wrong
+):
+    current, source, audit, calls, recorded = native_stop_case(tmp_path, monkeypatch)
+    audit["new_protected"] = {}
+    current._old_exited = lambda *args: "f" * 64
+    current.definition_absent = lambda binding: wrong != "label_present"
+    expected = {"market-feed": {"phase": "absent", "generation": 29}}
+    current._parked_owners = lambda *args, **kwargs: (
+        {} if wrong == "owner_drift" else expected
+    )
+    if wrong == "busy_lock":
+        monkeypatch.setattr(m, "owner_lock_available", lambda *args, **kwargs: False)
+    if wrong == "frontier_drift":
+        current._feed_frontiers = lambda *args: {"changed": True}
+    plan = {"audit": audit}
+    state = {"effects": {"feed_stop": {"observed_pids": [101]}}}
+    if wrong:
+        with pytest.raises(ValueError):
+            current.confirm_feed_close_unknown(source, plan, state, lambda: None)
+    else:
+        proof = current.confirm_feed_close_unknown(source, plan, state, lambda: None)
+        assert m._valid_feed_close(proof, audit["feed_close"])
+    assert calls == [] and recorded == []
