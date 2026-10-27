@@ -1,11 +1,22 @@
 # 当前状态
 
-本轮控制器采样窗口及verified诊断修复已通过测试和独立Review，未发布或执行恢复。运行现场仍为10/27停驻态：controller v1.16.18已发布，原生恢复通过intake并启动Feed，在verified失败后重新停驻；实际绑定仍v1.16.14/gen31，原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
+controller v1.16.19已发布；精确close-only D已发出单次Feed卸载，随后身份读回失败保留unknown。13:52独立确认Feed label absent、PID40577退出、锁free及完整双前缀不变；原生只读确认候选正在验证。实际绑定仍v1.16.14/gen31，其余服务停驻、原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 controller19已发布，Feed已卸载，精确只读确认待完成
+
+PR519/main及annotated v1.16.19/GitHub Release exactd7fb9122f77127fd9f41152c5b0553349ad9cf24。
+选择性发布仅采样补丁及精确Feed关闭入口，正式候选395项真实隔离PG/Redis、Web build/type/topology及来源核验通过。
+新D plan3c8496a9301636d97856c5ff68c4c288e4d542bf7a65d4d1a610242074810d68冻结成功，唯一effect为
+feed_stop/bootout_requested；随后SERVICE_IDENTITY_INVALID进入unknown，无成功receipt，未重跑D。
+13:52独立原生证据确认Feed absent、PID40577退出、锁free，完整source原件/索引与completed DB/routes双读
+SHA802e87444d50586cbd7bdfe0cd23f0acd50f294e414aa0f051e9c74a1fed391b等于D意图；这尚不是恢复成功。
+controller20候选仅补卸载期间PID观察及该精确D的confirm-feed-close只读入口，保留D原unknown、禁止再次bootout。
+其余消费者仍v14/gen31 parked，日历未恢复。实际新确认与后续恢复计划均待正式控制器执行，旧C具体失败原因仍未知。
 
 ## 10/27 控制器采样及诊断修复验证完成，正式服务仍停驻
 

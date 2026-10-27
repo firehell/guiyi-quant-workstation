@@ -656,6 +656,64 @@ def _valid_feed_close(proof, intent):
         return False
 
 
+def _unknown_feed_close(host, path, predecessor):
+    """Only the recorded close-only identity-readback failure, never a new attempt."""
+    raw, plan = _resolution_source(Path(path))
+    _validate(plan, datetime.fromisoformat(plan["created_at"]))
+    require(
+        plan.get("mode") == "confirmed_feed_halt"
+        and plan.get("stop_after") == "feed_close"
+        and plan["predecessor"] == predecessor,
+        "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+    )
+    require(
+        _feed_predecessor(host, predecessor["plan_path"], plan["source"])[0]
+        == predecessor,
+        "COHORT_FORWARD_PREDECESSOR_DRIFT",
+    )
+    controller = plan["audit"]["controller"]
+    host.verify_release(
+        Path(controller["root"]), controller["tag"], controller["commit"]
+    )
+    attempt = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
+    _directory(attempt.parent)
+    _directory(attempt)
+    private_raw, private = _resolution_source(attempt / "plan.json")
+    state_raw, state = _resolution_source(attempt / "state.json")
+    effect = state.get("effects", {}).get("feed_stop", {})
+    pids = effect.get("observed_pids")
+    require(
+        private == plan
+        and state.get("schema_version") == 1
+        and state.get("kind") == KIND
+        and state.get("plan_sha256") == plan["plan_sha256"]
+        and state.get("source") == plan["source"]
+        and state.get("phase") == "outcome_unknown"
+        and state.get("failed_stage") == "feed_stop_intent"
+        and state.get("error_type") == "RuntimeIdentityError"
+        and state.get("error_code") == "SERVICE_IDENTITY_INVALID"
+        and set(state.get("effects", {})) == {"feed_stop"}
+        and set(effect) == {"phase", "intent", "observed_pids"}
+        and effect["phase"] in {"bootout_requested", "bootout_waiting"}
+        and effect["intent"] == plan["audit"]["feed_close"]
+        and isinstance(pids, list)
+        and 1 <= len(pids) <= 64
+        and all(type(p) is int and 1 < p <= 2**31 - 1 for p in pids)
+        and pids == sorted(set(pids))
+        and set(effect["intent"]["observed_pids"]).issubset(pids)
+        and not os.path.lexists(attempt / "receipt.json"),
+        "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+    )
+    identity = {
+        "plan_path": str(Path(path).resolve()),
+        "plan_sha256": plan["plan_sha256"],
+        "plan_bytes_sha256": sha256(raw).hexdigest(),
+        "private_plan_bytes_sha256": sha256(private_raw).hexdigest(),
+        "state_bytes_sha256": sha256(state_raw).hexdigest(),
+    }
+    return identity, plan, state, attempt
+
+
 def _feed_close_attempt(host, path, predecessor):
     raw, plan = _resolution_source(Path(path))
     _validate(plan, datetime.fromisoformat(plan["created_at"]))
@@ -678,6 +736,50 @@ def _feed_close_attempt(host, path, predecessor):
     _directory(attempt)
     private_raw, private = _resolution_source(attempt / "plan.json")
     state_raw, state = _resolution_source(attempt / "state.json")
+    if state.get("phase") == "outcome_unknown":
+        identity, _plan, original, _attempt = _unknown_feed_close(
+            host, path, predecessor
+        )
+        confirmation_raw, confirmation = _resolution_source(
+            attempt / "feed-close-confirmation.json"
+        )
+        controller = confirmation.get("controller", {})
+        require(
+            set(confirmation)
+            == {
+                "schema_version",
+                "kind",
+                "source_close_attempt",
+                "controller",
+                "feed_close",
+                "recovery_started",
+            }
+            and confirmation.get("schema_version") == 1
+            and confirmation.get("kind") == "feed_close_confirmation_v1"
+            and confirmation.get("source_close_attempt") == identity
+            and confirmation.get("recovery_started") is False
+            and _valid_feed_close(
+                confirmation.get("feed_close"), plan["audit"]["feed_close"]
+            )
+            and confirmation["feed_close"]["observed_pids"]
+            == original["effects"]["feed_stop"]["observed_pids"],
+            "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+        )
+        host.verify_release(
+            Path(controller["root"]), controller["tag"], controller["commit"]
+        )
+        return {
+            **identity,
+            "confirmation_bytes_sha256": sha256(confirmation_raw).hexdigest(),
+        }, {
+            "schema_version": 1,
+            "kind": "feed_close_readback_v1",
+            "source": plan["source"],
+            "plan_sha256": plan["plan_sha256"],
+            "feed_close": confirmation["feed_close"],
+            "recovery_started": False,
+            "original_attempt_preserved": True,
+        }
     receipt_raw, receipt = _resolution_source(attempt / "receipt.json")
     require(
         private == plan
@@ -846,7 +948,7 @@ def _permitted_predecessors(predecessor):
     )
 
 
-def _no_unresolved_recovery(host, predecessor=None):
+def _no_unresolved_recovery(host, predecessor=None, *, pending_feed_close=None):
     parent = host.directory / "cohort-forward-recoveries"
     if not parent.exists():
         require(not parent.is_symlink(), "COHORT_FORWARD_DIRECTORY_UNSAFE")
@@ -864,7 +966,22 @@ def _no_unresolved_recovery(host, predecessor=None):
         entries.append((child, state))
     closed = _closed_predecessors(host, entries)
     for child, state in entries:
-        if state.get("phase") == "feed_closed":
+        if (
+            pending_feed_close is not None
+            and child.name == pending_feed_close["plan_sha256"]
+        ):
+            require(
+                predecessor is not None
+                and predecessor.get("feed_halt") is True
+                and _unknown_feed_close(
+                    host, pending_feed_close["plan_path"], predecessor
+                )[0]
+                == pending_feed_close,
+                "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+            )
+            continue
+        confirmation_path = child / "feed-close-confirmation.json"
+        if state.get("phase") == "feed_closed" or os.path.lexists(confirmation_path):
             _raw, plan = _resolution_source(child / "plan.json")
             selected = plan.get("predecessor", {})
             require(
@@ -872,7 +989,15 @@ def _no_unresolved_recovery(host, predecessor=None):
                 or selected.get("plan_sha256") in closed,
                 "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
             )
-            _feed_close_attempt(host, child / "plan.json", selected)
+            public = child / "plan.json"
+            if state.get("phase") != "feed_closed":
+                _raw, confirmation = _resolution_source(confirmation_path)
+                public = Path(confirmation["source_close_attempt"]["plan_path"])
+            require(
+                _feed_close_attempt(host, public, selected)[0]["plan_sha256"]
+                == child.name,
+                "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+            )
             continue
         permitted = _permitted_predecessors(predecessor)
         selected = next(
@@ -1114,6 +1239,71 @@ def _exclusive_json(path, value):
     _sync_resolution_directory(path.parent)
     require(_resolution_source(path)[0] == raw, "COHORT_FORWARD_RECEIPT_WRITE_UNKNOWN")
     return sha256(raw).hexdigest()
+
+
+def confirm_unknown_feed_close(host, path):
+    """Fresh read-only closure proof; preserve the consumed unknown and never launch."""
+    raw, plan = _resolution_source(Path(path))
+    _validate(
+        plan, datetime.fromisoformat(plan["created_at"])
+    )  # Historical audit, not execution.
+    predecessor = _feed_predecessor(
+        host, plan["predecessor"]["plan_path"], plan["source"]
+    )[0]
+    with deployment_lock(runtime_dir=host.directory), host.forward_guards(plan):
+        identity, plan, state, attempt = _unknown_feed_close(host, path, predecessor)
+        _no_unresolved_recovery(host, predecessor, pending_feed_close=identity)
+        source, _original, source_identity = _source(host, plan["source"]["plan_path"])
+        require(source_identity == plan["source"], "COHORT_FORWARD_SOURCE_DRIFT")
+        controller = host._controller()
+        end = getattr(host, "monotonic", monotonic)() + 120
+
+        def budget():
+            require(
+                getattr(host, "monotonic", monotonic)() < end,
+                "COHORT_FORWARD_DEADLINE_EXCEEDED",
+            )
+
+        proof = host.confirm_feed_close_unknown(source, plan, state, budget)
+        require(
+            _valid_feed_close(proof, plan["audit"]["feed_close"])
+            and proof["observed_pids"]
+            == state["effects"]["feed_stop"]["observed_pids"],
+            "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+        )
+        require(
+            _unknown_feed_close(host, path, predecessor)[0] == identity
+            and _source(host, plan["source"]["plan_path"])[2] == source_identity
+            and host._controller() == controller,
+            "COHORT_FORWARD_FEED_CLOSE_DRIFT",
+        )
+        budget()
+        target = attempt / "feed-close-confirmation.json"
+        if os.path.lexists(target):
+            descriptor, _receipt = _feed_close_attempt(host, path, predecessor)
+            fingerprint = descriptor["confirmation_bytes_sha256"]
+        else:
+            fingerprint = _exclusive_json(
+                target,
+                {
+                    "schema_version": 1,
+                    "kind": "feed_close_confirmation_v1",
+                    "source_close_attempt": identity,
+                    "controller": controller,
+                    "feed_close": proof,
+                    "recovery_started": False,
+                },
+            )
+        require(
+            _unknown_feed_close(host, path, predecessor)[0] == identity,
+            "COHORT_FORWARD_FEED_CLOSE_DRIFT",
+        )
+        return {
+            "status": "feed_closed_confirmed",
+            "confirmation_sha256": fingerprint,
+            "original_attempt_preserved": True,
+            "recovery_started": False,
+        }
 
 
 def apply_forward_recovery(host, recovery_plan_path):
@@ -2176,7 +2366,7 @@ class ForwardRecoveryHost(CohortHost):
         from app.runtime_identity import read_command
 
         binding = registry(source["new"]).services["market-feed"]
-        loaded = self.loaded(binding, allow_idle=True)
+        loaded = self._shutdown_feed_pid(binding)
         parents = {}
         for line in read_command(
             ["/bin/ps", "-axo", "pid=,ppid="], root=Path(binding.root)
@@ -2200,6 +2390,63 @@ class ForwardRecoveryHost(CohortHost):
             if expanded == pids:
                 return sorted(pids)
             pids = expanded
+
+    def _shutdown_feed_pid(self, binding):
+        """Observe PID during teardown, without treating a transient state as ready."""
+        from app.runtime_identity import read_launchd_service, launchd_arguments
+        from app.runtime_bindings import authorized_program_arguments
+
+        output = read_launchd_service(binding.label, root=Path(binding.root))
+        if output is None:
+            return None
+        scopes, headers, environment = [], {}, {}
+        for raw in output.splitlines():
+            line = raw.strip()
+            if line.endswith((" = {", " => {")):
+                name, operator, _brace = line.rsplit(" ", 2)
+                require(scopes or operator == "=", "COHORT_FORWARD_FEED_OWNER_UNPROVEN")
+                scopes.append((name, operator))
+            elif line == "}":
+                require(bool(scopes), "COHORT_FORWARD_FEED_OWNER_UNPROVEN")
+                scopes.pop()
+            elif len(scopes) == 1:
+                match = re.fullmatch(r"(pid|working directory) = (.*)", line)
+                if match:
+                    require(
+                        match[1] not in headers, "COHORT_FORWARD_FEED_OWNER_UNPROVEN"
+                    )
+                    headers[match[1]] = match[2]
+            elif len(scopes) == 2 and scopes[-1] == ("environment", "="):
+                match = re.fullmatch(
+                    r"(GUIYI_PROJECT_ROOT|GUIYI_RUNTIME_COMMIT|GUIYI_RUNTIME_TAG|GUIYI_RUNTIME_GENERATION) => (.*)",
+                    line,
+                )
+                if match:
+                    require(
+                        match[1] not in environment,
+                        "COHORT_FORWARD_FEED_OWNER_UNPROVEN",
+                    )
+                    environment[match[1]] = match[2]
+        require(
+            not scopes
+            and headers.get("working directory") == binding.root
+            and environment
+            == {
+                "GUIYI_PROJECT_ROOT": binding.root,
+                "GUIYI_RUNTIME_COMMIT": binding.commit,
+                "GUIYI_RUNTIME_TAG": binding.tag,
+                "GUIYI_RUNTIME_GENERATION": str(binding.generation),
+            }
+            and launchd_arguments(output)
+            == authorized_program_arguments(binding, self.home),
+            "COHORT_FORWARD_FEED_OWNER_UNPROVEN",
+        )
+        pid = headers.get("pid")
+        require(
+            pid is None or re.fullmatch(r"[1-9][0-9]{0,9}", pid),
+            "COHORT_FORWARD_FEED_OWNER_UNPROVEN",
+        )
+        return pid
 
     def feed_close_intent(self, source, check_budget):
         with self._resume_owner_guards():
@@ -2259,6 +2506,62 @@ class ForwardRecoveryHost(CohortHost):
         # Keep the immutable closure-event time; the OS/prefix checks above are
         # performed afresh on every audit, not inferred from this old timestamp.
         return proof
+
+    def confirm_feed_close_unknown(self, source, plan, state, check_budget):
+        """No launch path: certify this recorded request from fresh absence and full input."""
+        self._expected_controller = self._controller()
+        self._expected_new_protected = plan["audit"]["new_protected"]
+        audit = plan["audit"]
+        intent = audit["feed_close"]
+        pids = state["effects"]["feed_stop"]["observed_pids"]
+        require(
+            digest(self._fixed(source, check_budget)) == audit["installed_sha256"]
+            and self._controls(source) == audit["controls"],
+            "COHORT_FORWARD_AUDIT_DRIFT",
+        )
+        self._old_exited(source)
+        self._calculation_boundary()
+        with self._resume_owner_guards():
+            expected = dict(audit["owners"])
+            expected["market-feed"] = {
+                "phase": "absent",
+                "generation": registry(source["new"])
+                .services["market-feed"]
+                .generation,
+            }
+            require(
+                self._parked_owners(source, held=True) == expected
+                and self._feed_exited(source, pids, check_budget),
+                "COHORT_FORWARD_FEED_EXIT_UNPROVEN",
+            )
+            frontiers = self._feed_frontiers(source, check_budget)
+            require(
+                digest(frontiers) == intent["frontiers_sha256"]
+                and self._feed_frontiers(source, check_budget) == frontiers,
+                "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+            )
+        require(
+            owner_lock_available("market-feed", runtime_dir=self.directory)
+            and self._feed_exited(source, pids, check_budget),
+            "COHORT_FORWARD_FEED_EXIT_UNPROVEN",
+        )
+        self.check_protected_forward(source, audit)
+        require(
+            self._controls(source) == audit["controls"]
+            and digest(self._fixed(source, check_budget)) == audit["installed_sha256"],
+            "COHORT_FORWARD_AUDIT_DRIFT",
+        )
+        check_budget()
+        return {
+            "kind": "feed_closed_v1",
+            "intent_sha256": digest(intent),
+            "observed_pids": pids,
+            "label_absent": True,
+            "observed_pids_exited": True,
+            "owner_lock_available": True,
+            "frontiers_sha256": intent["frontiers_sha256"],
+            "observed_at": self.now().isoformat(),
+        }
 
     def stop_parked_feed(self, source, audit, check_budget, record):
         binding = registry(source["new"]).services["market-feed"]
@@ -2983,6 +3286,8 @@ def main(argv=None):
     freeze.add_argument("--feed-close-plan", type=Path)
     apply = sub.add_parser("apply-plan")
     apply.add_argument("--plan", required=True, type=Path)
+    confirm = sub.add_parser("confirm-feed-close")
+    confirm.add_argument("--plan", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         host = ForwardRecoveryHost()
@@ -3009,6 +3314,8 @@ def main(argv=None):
                 "kind": KIND,
                 "plan_sha256": plan["plan_sha256"],
             }
+        elif args.mode == "confirm-feed-close":
+            result = confirm_unknown_feed_close(host, args.plan)
         else:
             result = apply_forward_recovery(host, args.plan)
         print(json.dumps(result, sort_keys=True))
