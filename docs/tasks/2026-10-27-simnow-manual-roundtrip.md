@@ -20,8 +20,8 @@ owner明确交办：RB权威主力开多一手，无需策略信号；开仓成�
 - [x] 增加独立人工命令/持久计时/单次开仓预算；旧State/检查点保持可重放。
 - [x] 增加精确连续Session结束身份、人工Host与本机Keychain运行入口。
 - [x] 定向/扩大测试、真实SDK无网络smoke、秘密扫描、独立执行安全Review。
-- [ ] 新鲜只读预检后实际开仓、600秒持有、平仓与原生/账本对账；失败保留真实状态。
-- [ ] 交付实际结果，集成develop；安全时恢复原observe服务。无main/tag或正式Runtime切换。
+- [x] 新鲜只读预检后实际开仓、600秒持有、平仓与原生/账本对账；失败保留真实状态。
+- [x] 交付实际结果，安全恢复原observe服务；develop集成以[PR518实际合并记录](https://github.com/firehell/guiyi-quant-workstation/pull/518)为准。无main/tag或正式Runtime切换。
 
 ## Review重点
 
@@ -64,3 +64,30 @@ OrderSysID349387，原生TradeTime13:51:51、本地请求13:51:52.785022、回�
 本任务累计4次；新三份前像与唯一claim/成交事件已独立只读确认，原signals SHA不变。
 最新454项回归、独立409项及SDK25项通过，Ruff/secret0/diff通过；独立Review允许冻结计划内关闭管理。
 尚未取得首次完整开仓读回确认，未伪造600秒已完成；真实平仓/费用/权益与清理仍待现场。
+
+## 最终实际结果（e439ff7d）
+
+关闭管理已完成，进程exit0；原生订单、成交与账本经独立只读复核一致，仅两次SUBMIT：
+
+|项目|实际事实|
+|---|---|
+|开仓|RB2701 BUY OPEN1，3035；原生13:51:51|
+|开仓费用|3.04，完整原生佣金增量|
+|首次完整确认|14:22:57.868971+08；CorrelatedNativeFillV1归账|
+|600秒到期|14:32:57.868971+08，不重置计时|
+|关闭请求|14:34:00.271888+08，SELL CLOSE_TODAY1|
+|实际平仓|3040，原生14:33:59，平仓费用3.045|
+|最终完整读回|14:34:09.741682+08，source 2ea36671fa0c3080f2b4882e777b5b235ef1f85d55971a1c0799769448a30116|
+|资金|毛利50；费用6.085；净43.915；Balance=Available=100043.915|
+|验收|native_flat/no_working_orders/capital_released/fees_reconciled/equity_reconciled=true，残差0|
+|清理|Release成功、tail_pending=false；最终回执SHA a0de76c9ed215c2e1161753aaec08c1eb70e37302538e3808dbaeb7355ee94a1由独立Review复核|
+
+实际原生持仓42分08秒；首次完整确认到CLOSE请求约11分02秒。故障恢复及等待合格完整账户/报价造成延迟，
+不能称为“开仓十分钟准时平仓”；只证明本次人工原生开平、费用和账本闭环，不证明HTDY信号或持续执行。
+原始时间、首次资金超时、回调故障、前三次预算及关闭管理第四次预算全部保留，无重复OPEN、无真实撤单发生。
+454项扩大回归、独立409项/SDK25项通过，最终账本重放与两笔费用原生增量独立复算通过。
+
+14:41后恢复原唯一observe-only label；实际status=RECOVERY_BLOCKED、mode=observe、opening_enabled=false、
+auto_order=false，原day27 attempt3/block及signals SHA80a370bf4097805c7242ab02d7f1a0013daa015517076159f07c0405bd709e8a原样。
+未新增Broker连接，不把等待服务当作连接健康、自然新日验收或自动开仓启用。正式十服务、main/tag/Runtime未切换。
+任务集成develop后归档；自然信号、反手/换月、重启/日切及通用原生成交时钟语义仍各自待验。
