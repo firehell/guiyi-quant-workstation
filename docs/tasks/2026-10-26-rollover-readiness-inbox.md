@@ -166,3 +166,25 @@ handover/deployment/schema、诊断隐私及接收前缀；初轮无隔离依赖
 Ruff/format、secret scan 0、diff通过。CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；
 Feed当前typed关闭快照与C精确恢复前缀仍是后续运行验证范围，不以本补丁关闭。
 本轮零生产数据写入、零启动/停止/恢复命令、零通知，不发布、不切换Runtime。
+
+### 10/27 含Feed启动失败前缀的精确关闭与恢复入口
+
+Owner交办补齐C精确恢复入口及新鲜关闭证明；基线09af79416，独立fix/feed-halt-recovery。
+本轮实际操作终点仅关闭已parked的Feed并取证，不启动消费者/采集、不切现役v14/gen31；
+控制器候选v1.16.19用于执行此次原生关闭，后续整组恢复仍是独立动作。
+
+新增`confirmed_feed_halt`严格验证A→B→C公共/私有plan、state、effects及保护前像。C只能是已确认
+intake halt后完成consumers/intake/Feed且在verified失败，不能递归接纳额外unknown。
+`--close-feed-only`把`stop_after=feed_close`写入plan hash；先落盘单次bootout意图，再核验所有观察PID
+及后代退出、label absent、锁free和两次完整source原件/identity索引及completed DB/routes前缀不变。
+关闭成功仅写feed_close_readback和feed_closed终态，不写全恢复指针、不解析A/B/C为已恢复。
+正常恢复计划必须显式引用该关闭计划，重新现场核验，并在每阶段保护D的公共/私有plan、state、receipt字节。
+失败D保留unknown并阻断，不补发卸载、不把第四unknown变成新前驱。
+
+独立Review发现两项P1（阶段间未重验D字节、卸载等待未覆盖新增PID）及一项P2（历史intake mode/tail
+不可能组合），均先以反证测试复现，再修正。主端扩大真实一次性PG/Redis回归395 passed/0 skipped，
+独立初轮四模块200 passed/1 skipped；该skip仅真实依赖未并发使用，不计为生产验收。
+候选真实只读feed_close_intent预检7.13秒：全部source原件/identity索引和completed DB/routes双读通过，
+实际观察PID40577，frontiers_sha256=802e87444d50586cbd7bdfe0cd23f0acd50f294e414aa0f051e9c74a1fed391b。
+诊断原件`output/rollover-readiness-20261026/feed-close-intent-preflight-20261027.json`；它不是关闭receipt。
+本节编写时尚未发布controller19或执行bootout，生产结果待后续实际回读。

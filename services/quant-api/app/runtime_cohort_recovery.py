@@ -459,11 +459,252 @@ def valid_confirmed_intake_halt(value, predecessor, audit):
 
 def _load_selected_predecessor(host, path, identity):
     _raw, plan = _resolution_source(Path(path))
+    if plan.get("mode") == "confirmed_intake_halt":
+        return _feed_predecessor(host, path, identity)
     return (
         _intake_predecessor(host, path, identity)
         if plan.get("mode") == "confirmed_live_stop"
         else _predecessor(host, path, identity)
     )
+
+
+def _valid_intake_result(value):
+    try:
+        return (
+            set(value)
+            == {
+                "schema_version",
+                "kind",
+                "mode",
+                "calculation_ready",
+                "before_sha256",
+                "after_sha256",
+                "advanced_count",
+                "remaining_count",
+                "old_tail_reached",
+            }
+            and type(value["schema_version"]) is int
+            and value["schema_version"] == 2
+            and value["kind"] == "reference_receiving_liveness_v1"
+            and value["calculation_ready"] is False
+            and all(
+                isinstance(value[k], str) and re.fullmatch(r"[0-9a-f]{64}", value[k])
+                for k in ("before_sha256", "after_sha256")
+            )
+            and value["before_sha256"] != value["after_sha256"]
+            and all(
+                type(value[k]) is int and value[k] >= 0
+                for k in ("advanced_count", "remaining_count")
+            )
+            and type(value["old_tail_reached"]) is bool
+            and (
+                (
+                    value["mode"] == "durable_receiving_caught_up_idle"
+                    and value["advanced_count"] == value["remaining_count"] == 0
+                    and value["old_tail_reached"] is True
+                )
+                or (
+                    value["advanced_count"] > 0
+                    and (
+                        (
+                            value["mode"] == "durable_receiving"
+                            and value["old_tail_reached"] is True
+                            and value["remaining_count"] == 0
+                        )
+                        or (
+                            value["mode"] == "durable_receiving_backlog_liveness"
+                            and value["old_tail_reached"] is False
+                            and value["remaining_count"] > 0
+                        )
+                    )
+                )
+            )
+        )
+    except (KeyError, TypeError):
+        return False
+
+
+def _feed_predecessor(host, path, identity):
+    """Exactly A -> B -> C, where C started Feed and failed before verified completed."""
+    raw, frozen = _resolution_source(Path(path))
+    _validate(frozen, datetime.fromisoformat(frozen["created_at"]))
+    source = _historical_source(host, identity)
+    require(
+        frozen.get("mode") == "confirmed_intake_halt"
+        and frozen["source"] == identity
+        and frozen["new"] == source["new"],
+        "COHORT_FORWARD_PREDECESSOR_INVALID",
+    )
+    ancestor, previous = _intake_predecessor(
+        host, frozen["predecessor"]["plan_path"], identity
+    )
+    require(
+        ancestor == frozen["predecessor"]
+        and frozen["audit"]["new_protected"] == previous["audit"]["new_protected"],
+        "COHORT_FORWARD_PREDECESSOR_DRIFT",
+    )
+    attempt = host.directory / "cohort-forward-recoveries" / frozen["plan_sha256"]
+    _directory(attempt.parent)
+    _directory(attempt)
+    private_raw, private = _resolution_source(attempt / "plan.json")
+    state_raw, state = _resolution_source(attempt / "state.json")
+    effects = state.get("effects", {})
+    new = registry(source["new"])
+    require(
+        private == frozen
+        and state.get("schema_version") == 1
+        and state.get("kind") == KIND
+        and state.get("plan_sha256") == frozen["plan_sha256"]
+        and state.get("source") == identity
+        and state.get("phase") == "outcome_unknown"
+        and state.get("failed_stage") == "verified"
+        and set(effects) == {"consumers", "intake", "feed"}
+        and effects["consumers"]
+        == {"resumed_generation": new.services["live"].generation}
+        and _valid_intake_result(effects["intake"])
+        and effects["feed"]
+        == {"bootstrapped": True, "label": new.services["market-feed"].label}
+        and not os.path.lexists(attempt / "receipt.json"),
+        "COHORT_FORWARD_PREDECESSOR_INVALID",
+    )
+    controller = frozen["audit"]["controller"]
+    host.verify_release(
+        Path(controller["root"]), controller["tag"], controller["commit"]
+    )
+    return {
+        "plan_path": str(Path(path).resolve()),
+        "plan_sha256": frozen["plan_sha256"],
+        "plan_bytes_sha256": sha256(raw).hexdigest(),
+        "private_plan_bytes_sha256": sha256(private_raw).hexdigest(),
+        "state_bytes_sha256": sha256(state_raw).hexdigest(),
+        "effects_sha256": digest(effects),
+        "ancestor": ancestor,
+        "feed_halt": True,
+    }, frozen
+
+
+def valid_confirmed_feed_halt(value, predecessor, audit):
+    try:
+        return (
+            isinstance(predecessor, dict)
+            and predecessor.get("feed_halt") is True
+            and set(value)
+            == {
+                "predecessor_plan_sha256",
+                "owners_sha256",
+                "controls_sha256",
+                "receiving_context",
+                "feed_close_sha256",
+                "all_consumers_parked",
+                "current_tail_reached",
+                "proof_sha256",
+            }
+            and value["predecessor_plan_sha256"] == predecessor["plan_sha256"]
+            and value["owners_sha256"] == digest(audit["owners"])
+            and value["controls_sha256"] == digest(audit["controls"])
+            and value["receiving_context"] == audit["receiving_context"]
+            and isinstance(value["receiving_context"], str)
+            and re.fullmatch(r"[0-9a-f]{64}", value["receiving_context"]) is not None
+            and value["feed_close_sha256"] == digest(audit["feed_close"])
+            and value["all_consumers_parked"] is True
+            and value["current_tail_reached"] is True
+            and value["proof_sha256"]
+            == digest({k: v for k, v in value.items() if k != "proof_sha256"})
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _valid_feed_close(proof, intent):
+    try:
+        at = datetime.fromisoformat(proof["observed_at"])
+        return (
+            set(proof)
+            == {
+                "kind",
+                "intent_sha256",
+                "observed_pids",
+                "label_absent",
+                "observed_pids_exited",
+                "owner_lock_available",
+                "frontiers_sha256",
+                "observed_at",
+            }
+            and proof["kind"] == "feed_closed_v1"
+            and intent["kind"] == "parked_feed_close_intent_v1"
+            and proof["intent_sha256"] == digest(intent)
+            and isinstance(proof["observed_pids"], list)
+            and 1 <= len(proof["observed_pids"]) <= 64
+            and all(
+                type(p) is int and 1 < p <= 2**31 - 1 for p in proof["observed_pids"]
+            )
+            and proof["observed_pids"] == sorted(set(proof["observed_pids"]))
+            and set(intent["observed_pids"]).issubset(proof["observed_pids"])
+            and all(
+                proof[k] is True
+                for k in (
+                    "label_absent",
+                    "observed_pids_exited",
+                    "owner_lock_available",
+                )
+            )
+            and proof["frontiers_sha256"] == intent["frontiers_sha256"]
+            and at.tzinfo is not None
+            and at.utcoffset() is not None
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _feed_close_attempt(host, path, predecessor):
+    raw, plan = _resolution_source(Path(path))
+    _validate(plan, datetime.fromisoformat(plan["created_at"]))
+    require(
+        plan.get("mode") == "confirmed_feed_halt"
+        and plan.get("stop_after") == "feed_close"
+        and plan["predecessor"] == predecessor,
+        "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+    )
+    selected, _previous = _feed_predecessor(
+        host, predecessor["plan_path"], plan["source"]
+    )
+    require(selected == predecessor, "COHORT_FORWARD_PREDECESSOR_DRIFT")
+    controller = plan["audit"]["controller"]
+    host.verify_release(
+        Path(controller["root"]), controller["tag"], controller["commit"]
+    )
+    attempt = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
+    _directory(attempt.parent)
+    _directory(attempt)
+    private_raw, private = _resolution_source(attempt / "plan.json")
+    state_raw, state = _resolution_source(attempt / "state.json")
+    receipt_raw, receipt = _resolution_source(attempt / "receipt.json")
+    require(
+        private == plan
+        and state.get("phase") == "feed_closed"
+        and state.get("schema_version") == receipt.get("schema_version") == 1
+        and state.get("kind") == KIND
+        and state.get("plan_sha256") == plan["plan_sha256"]
+        and state.get("source") == plan["source"]
+        and state.get("receipt_sha256") == sha256(receipt_raw).hexdigest()
+        and receipt.get("kind") == "feed_close_readback_v1"
+        and receipt.get("plan_sha256") == plan["plan_sha256"]
+        and receipt.get("source") == plan["source"]
+        and receipt.get("recovery_started") is False
+        and receipt.get("original_attempt_preserved") is True
+        and set(state.get("effects", {})) == {"feed_stop"}
+        and state["effects"]["feed_stop"] == receipt.get("feed_close")
+        and _valid_feed_close(receipt.get("feed_close"), plan["audit"]["feed_close"]),
+        "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+    )
+    return {
+        "plan_path": str(Path(path).resolve()),
+        "plan_sha256": plan["plan_sha256"],
+        "plan_bytes_sha256": sha256(raw).hexdigest(),
+        "private_plan_bytes_sha256": sha256(private_raw).hexdigest(),
+        "state_bytes_sha256": sha256(state_raw).hexdigest(),
+        "receipt_bytes_sha256": sha256(receipt_raw).hexdigest(),
+    }, receipt
 
 
 def _closed_predecessors(host, entries):
@@ -481,6 +722,40 @@ def _closed_predecessors(host, entries):
             continue
         _raw, plan = _resolution_source(child / "plan.json")
         predecessor = resolution.get("predecessor")
+        if plan.get("mode") == "confirmed_feed_halt":
+            _validate(plan, datetime.fromisoformat(plan["created_at"]))
+            require(
+                "stop_after" not in plan
+                and plan.get("predecessor") == predecessor
+                and resolution.get("kind") == "confirmed_feed_halt_resolution_v1"
+                and resolution.get("successor_plan_sha256")
+                == child.name
+                == plan["plan_sha256"]
+                == receipt.get("plan_sha256")
+                == state.get("plan_sha256")
+                and receipt.get("source") == state.get("source") == plan["source"]
+                and resolution.get("confirmation")
+                == plan["audit"].get("confirmed_feed_halt")
+                and valid_confirmed_feed_halt(
+                    resolution["confirmation"], predecessor, plan["audit"]
+                ),
+                "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+            )
+            selected, _previous = _feed_predecessor(
+                host, predecessor["plan_path"], plan["source"]
+            )
+            closure, _receipt = _feed_close_attempt(
+                host, plan["audit"]["feed_close"]["attempt"]["plan_path"], selected
+            )
+            require(
+                selected == predecessor
+                and closure == plan["audit"]["feed_close"]["attempt"],
+                "COHORT_FORWARD_PREDECESSOR_DRIFT",
+            )
+            closed.update(
+                item["plan_sha256"] for item in _permitted_predecessors(selected)
+            )
+            continue
         if plan.get("mode") == "confirmed_intake_halt":
             _validate(plan, datetime.fromisoformat(plan["created_at"]))
             require(
@@ -555,6 +830,22 @@ def _closed_predecessors(host, entries):
     return closed
 
 
+def _permitted_predecessors(predecessor):
+    if predecessor is None:
+        return []
+    if predecessor.get("feed_halt") is True:
+        return [
+            predecessor,
+            predecessor["ancestor"],
+            predecessor["ancestor"]["ancestor"],
+        ]
+    return (
+        [predecessor, predecessor["ancestor"]]
+        if "ancestor" in predecessor
+        else [predecessor]
+    )
+
+
 def _no_unresolved_recovery(host, predecessor=None):
     parent = host.directory / "cohort-forward-recoveries"
     if not parent.exists():
@@ -573,9 +864,17 @@ def _no_unresolved_recovery(host, predecessor=None):
         entries.append((child, state))
     closed = _closed_predecessors(host, entries)
     for child, state in entries:
-        permitted = [] if predecessor is None else [predecessor]
-        if predecessor is not None and "ancestor" in predecessor:
-            permitted.append(predecessor["ancestor"])
+        if state.get("phase") == "feed_closed":
+            _raw, plan = _resolution_source(child / "plan.json")
+            selected = plan.get("predecessor", {})
+            require(
+                (selected == predecessor and selected.get("feed_halt") is True)
+                or selected.get("plan_sha256") in closed,
+                "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+            )
+            _feed_close_attempt(host, child / "plan.json", selected)
+            continue
+        permitted = _permitted_predecessors(predecessor)
         selected = next(
             (item for item in permitted if child.name == item["plan_sha256"]), None
         )
@@ -643,7 +942,7 @@ def _source(host, path):
 def _validate(plan, now):
     try:
         require(
-            set(plan) - {"mode", "predecessor"}
+            set(plan) - {"mode", "predecessor", "stop_after"}
             == {
                 "schema_version",
                 "kind",
@@ -689,6 +988,35 @@ def _validate(plan, now):
                     plan.get("predecessor"),
                     plan["audit"],
                 )
+            )
+            or (
+                plan.get("mode") == "confirmed_feed_halt"
+                and "live_restart_intent" not in plan["audit"]
+                and valid_confirmed_feed_halt(
+                    plan["audit"].get("confirmed_feed_halt"),
+                    plan.get("predecessor"),
+                    plan["audit"],
+                )
+                and (
+                    (
+                        plan.get("stop_after") == "feed_close"
+                        and plan["audit"]["feed_close"].get("kind")
+                        == "parked_feed_close_intent_v1"
+                    )
+                    or (
+                        "stop_after" not in plan
+                        and plan["audit"]["feed_close"].get("kind")
+                        == "feed_close_readback_v1"
+                    )
+                )
+            ),
+            "COHORT_FORWARD_PLAN_INVALID",
+        )
+        require(
+            "stop_after" not in plan
+            or (
+                plan.get("mode") == "confirmed_feed_halt"
+                and plan["stop_after"] == "feed_close"
             ),
             "COHORT_FORWARD_PLAN_INVALID",
         )
@@ -697,7 +1025,14 @@ def _validate(plan, now):
         raise CohortError("COHORT_FORWARD_PLAN_INVALID") from None
 
 
-def freeze_forward_recovery(host, source_plan_path, *, predecessor_recovery_plan=None):
+def freeze_forward_recovery(
+    host,
+    source_plan_path,
+    *,
+    predecessor_recovery_plan=None,
+    close_feed_only=False,
+    feed_close_plan=None,
+):
     """Read-only new intent; the historical plan's elapsed budget is never reused."""
     source, _state, identity = _source(host, source_plan_path)
     predecessor = (
@@ -706,6 +1041,17 @@ def freeze_forward_recovery(host, source_plan_path, *, predecessor_recovery_plan
         else None
     )
     _no_unresolved_recovery(host, predecessor)
+    require(
+        type(close_feed_only) is bool
+        and (not close_feed_only or feed_close_plan is None)
+        and (
+            not close_feed_only
+            and feed_close_plan is None
+            or predecessor is not None
+            and predecessor.get("feed_halt") is True
+        ),
+        "COHORT_FORWARD_PLAN_INVALID",
+    )
     now = host.now()
     end = getattr(host, "monotonic", monotonic)() + 600
 
@@ -719,7 +1065,10 @@ def freeze_forward_recovery(host, source_plan_path, *, predecessor_recovery_plan
             "COHORT_FORWARD_PLAN_EXPIRED",
         )
 
-    audit = host.audit_forward(source, budget, predecessor=predecessor)
+    kwargs = {"predecessor": predecessor}
+    if predecessor is not None and predecessor.get("feed_halt") is True:
+        kwargs.update(close_feed_only=close_feed_only, feed_close_plan=feed_close_plan)
+    audit = host.audit_forward(source, budget, **kwargs)
     budget()
     require(
         _source(host, source_plan_path)[2] == identity, "COHORT_FORWARD_SOURCE_DRIFT"
@@ -741,11 +1090,15 @@ def freeze_forward_recovery(host, source_plan_path, *, predecessor_recovery_plan
             "COHORT_FORWARD_PREDECESSOR_DRIFT",
         )
         result.update(
-            mode="confirmed_intake_halt"
+            mode="confirmed_feed_halt"
+            if predecessor.get("feed_halt") is True
+            else "confirmed_intake_halt"
             if "ancestor" in predecessor
             else "confirmed_live_stop",
             predecessor=predecessor,
         )
+    if close_feed_only:
+        result["stop_after"] = "feed_close"
     result["plan_sha256"] = digest(result)
     _validate(result, host.now())
     return result
@@ -776,7 +1129,11 @@ def apply_forward_recovery(host, recovery_plan_path):
         )
         source, _state, identity = _source(host, plan["source"]["plan_path"])
         predecessor = None
-        if plan.get("mode") in {"confirmed_live_stop", "confirmed_intake_halt"}:
+        if plan.get("mode") in {
+            "confirmed_live_stop",
+            "confirmed_intake_halt",
+            "confirmed_feed_halt",
+        }:
             predecessor = _load_selected_predecessor(
                 host, plan["predecessor"]["plan_path"], identity
             )[0]
@@ -812,13 +1169,28 @@ def apply_forward_recovery(host, recovery_plan_path):
                     == predecessor,
                     "COHORT_FORWARD_PREDECESSOR_DRIFT",
                 )
+            if plan.get("mode") == "confirmed_feed_halt" and "stop_after" not in plan:
+                frozen_close = plan["audit"]["feed_close"]["attempt"]
+                require(
+                    _feed_close_attempt(host, frozen_close["plan_path"], predecessor)[0]
+                    == frozen_close,
+                    "COHORT_FORWARD_FEED_CLOSE_DRIFT",
+                )
             host.check_protected_forward(source, plan["audit"])
             budget()
 
         with host.forward_guards(source):
-            audit = host.audit_forward(
-                source, budget, expected=plan["audit"], predecessor=predecessor
-            )
+            kwargs = {"expected": plan["audit"], "predecessor": predecessor}
+            if plan.get("mode") == "confirmed_feed_halt":
+                kwargs.update(
+                    close_feed_only=plan.get("stop_after") == "feed_close",
+                    feed_close_plan=(
+                        plan["audit"]["feed_close"]["attempt"]["plan_path"]
+                        if "stop_after" not in plan
+                        else None
+                    ),
+                )
+            audit = host.audit_forward(source, budget, **kwargs)
             budget()
             require(audit == plan["audit"], "COHORT_FORWARD_AUDIT_DRIFT")
             unchanged()
@@ -868,6 +1240,43 @@ def apply_forward_recovery(host, recovery_plan_path):
                 persist(name + "_complete")
                 return result
 
+            if plan.get("stop_after") == "feed_close":
+
+                def record_feed_stop(value):
+                    journal["effects"]["feed_stop"] = value
+                    persist("feed_stop_intent")
+
+                proof = step(
+                    "feed_stop",
+                    lambda: host.stop_parked_feed(
+                        source, plan["audit"], budget, record_feed_stop
+                    ),
+                )
+                require(
+                    _valid_feed_close(proof, plan["audit"]["feed_close"]),
+                    "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+                )
+                receipt = {
+                    "schema_version": 1,
+                    "kind": "feed_close_readback_v1",
+                    "plan_sha256": plan["plan_sha256"],
+                    "source": identity,
+                    "feed_close": proof,
+                    "original_attempt_preserved": True,
+                    "recovery_started": False,
+                }
+                journal["receipt_sha256"] = _exclusive_json(
+                    attempt / "receipt.json", receipt
+                )
+                unchanged()
+                persist("feed_closed")
+                return {
+                    "status": "feed_closed",
+                    "receipt_sha256": journal["receipt_sha256"],
+                    "recovery_started": False,
+                    "original_attempt_preserved": True,
+                }
+
             if predecessor is None and "live_restart_intent" in plan["audit"]:
 
                 def record_stop(value):
@@ -906,13 +1315,17 @@ def apply_forward_recovery(host, recovery_plan_path):
             }
             if predecessor is not None:
                 receipt["predecessor_resolution"] = {
-                    "kind": "confirmed_intake_halt_resolution_v1"
+                    "kind": "confirmed_feed_halt_resolution_v1"
+                    if predecessor.get("feed_halt") is True
+                    else "confirmed_intake_halt_resolution_v1"
                     if "ancestor" in predecessor
                     else "confirmed_live_stop_resolution_v1",
                     "predecessor": predecessor,
                     "successor_plan_sha256": plan["plan_sha256"],
                     "confirmation": plan["audit"][
-                        "confirmed_intake_halt"
+                        "confirmed_feed_halt"
+                        if predecessor.get("feed_halt") is True
+                        else "confirmed_intake_halt"
                         if "ancestor" in predecessor
                         else "confirmed_live_stop"
                     ],
@@ -1014,7 +1427,7 @@ def apply_forward_recovery(host, recovery_plan_path):
             try:
                 persist("outcome_unknown" if mutated else "precondition_blocked")
             finally:
-                if mutated:
+                if mutated and plan.get("stop_after") != "feed_close":
                     try:
                         host.halt_unknown(source)
                     except Exception:
@@ -1280,13 +1693,19 @@ class ForwardRecoveryHost(CohortHost):
         return result
 
     def _parked_owners(
-        self, source, *, held=False, allow_live_restart=False, live_absent=False
+        self,
+        source,
+        *,
+        held=False,
+        allow_live_restart=False,
+        live_absent=False,
+        feed_parked=False,
     ):
         new = registry(source["new"])
         result = {}
         for name in CONTINUOUS:
             binding = new.services[name]
-            if name == "market-feed":
+            if name == "market-feed" and not feed_parked:
                 require(
                     self.definition_absent(binding),
                     "COHORT_FORWARD_FEED_ALREADY_STARTED",
@@ -1478,9 +1897,19 @@ class ForwardRecoveryHost(CohortHost):
         self._live_stopped = True
         return proof
 
-    def audit_forward(self, source, check_budget, *, expected=None, predecessor=None):
+    def audit_forward(
+        self,
+        source,
+        check_budget,
+        *,
+        expected=None,
+        predecessor=None,
+        close_feed_only=False,
+        feed_close_plan=None,
+    ):
         from app.reference_trading.receiving_liveness import receiving_snapshot_identity
 
+        feed_halt = predecessor is not None and predecessor.get("feed_halt") is True
         intake_halt = predecessor is not None and "ancestor" in predecessor
         confirmation = (
             self.confirm_live_stop(source, predecessor, check_budget)
@@ -1496,6 +1925,7 @@ class ForwardRecoveryHost(CohortHost):
             source,
             allow_live_restart=predecessor is None,
             live_absent=predecessor is not None and not intake_halt,
+            **({"feed_parked": True} if feed_halt and close_feed_only else {}),
         )
         live_intent = None
         if owners["live"]["phase"] == "draining_live_teardown":
@@ -1538,7 +1968,7 @@ class ForwardRecoveryHost(CohortHost):
 
             _raw, selected_plan = _resolution_source(Path(predecessor["plan_path"]))
             identity = _source(self, selected_plan["source"]["plan_path"])[2]
-            fresh, previous = _intake_predecessor(
+            fresh, previous = (_feed_predecessor if feed_halt else _intake_predecessor)(
                 self, predecessor["plan_path"], identity
             )
             require(
@@ -1557,17 +1987,54 @@ class ForwardRecoveryHost(CohortHost):
                 "COHORT_FORWARD_LEGACY_FRONTIER_UNPROVEN",
             )
             context = receiving_context_identity(snapshot)
-            proof = {
-                "predecessor_plan_sha256": predecessor["plan_sha256"],
-                "owners_sha256": digest(owners),
-                "controls_sha256": digest(controls),
-                "receiving_context": context,
-                "all_consumers_parked": True,
-                "feed_absent": True,
-                "current_tail_reached": True,
-            }
-            proof["proof_sha256"] = digest(proof)
-            additional = {"receiving_context": context, "confirmed_intake_halt": proof}
+            if feed_halt:
+                require(
+                    close_feed_only or feed_close_plan is not None,
+                    "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
+                )
+                if close_feed_only:
+                    feed_close = self.feed_close_intent(source, check_budget)
+                else:
+                    closure, receipt = _feed_close_attempt(
+                        self, feed_close_plan, predecessor
+                    )
+                    feed_close = {
+                        "kind": "feed_close_readback_v1",
+                        "attempt": closure,
+                        "proof": self.confirm_feed_closed(
+                            source, receipt["feed_close"], check_budget, feed_close_plan
+                        ),
+                    }
+                proof = {
+                    "predecessor_plan_sha256": predecessor["plan_sha256"],
+                    "owners_sha256": digest(owners),
+                    "controls_sha256": digest(controls),
+                    "receiving_context": context,
+                    "feed_close_sha256": digest(feed_close),
+                    "all_consumers_parked": True,
+                    "current_tail_reached": True,
+                }
+                proof["proof_sha256"] = digest(proof)
+                additional = {
+                    "receiving_context": context,
+                    "feed_close": feed_close,
+                    "confirmed_feed_halt": proof,
+                }
+            else:
+                proof = {
+                    "predecessor_plan_sha256": predecessor["plan_sha256"],
+                    "owners_sha256": digest(owners),
+                    "controls_sha256": digest(controls),
+                    "receiving_context": context,
+                    "all_consumers_parked": True,
+                    "feed_absent": True,
+                    "current_tail_reached": True,
+                }
+                proof["proof_sha256"] = digest(proof)
+                additional = {
+                    "receiving_context": context,
+                    "confirmed_intake_halt": proof,
+                }
         return {
             "registry_sha256": self.binding_hash(),
             "installed_sha256": digest(fixed),
@@ -1587,6 +2054,293 @@ class ForwardRecoveryHost(CohortHost):
                 else {}
             ),
         }
+
+    def _feed_frontiers(self, source, check_budget):
+        """Hash every retained source original/index plus fully DB-verified completed input."""
+        from app.redis_connections import get_redis_connection
+        from app.market_data.observation_stream import ObservationStream, DAILY_LIMIT
+        from app.reference_trading.receiving_liveness import receiving_snapshot_identity
+
+        client = get_redis_connection()
+        try:
+            journal = ObservationStream(client, kind="source")
+            days = journal.days()
+            require(
+                journal.registered_day("live") in days and len(days) <= 32,
+                "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+            )
+            result = {}
+            for day in days:
+                cursor, tail = journal.cursor("live", day), journal.tail(day)
+                require(cursor == tail, "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN")
+                frontier, seen, content_hash = "0-0", {}, sha256()
+                while frontier != tail:
+                    check_budget()
+                    rows = journal.read(
+                        "live", day, count=512, after=frontier, through=tail
+                    )
+                    require(bool(rows), "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN")
+                    for event in rows:
+                        raw = event.to_json()
+                        content = json.loads(raw)
+                        content.pop("source_observed_at")
+                        content.pop("raw_received_at")
+                        fingerprint = json.dumps(
+                            content,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            allow_nan=False,
+                        )
+                        require(
+                            event.observation_id not in seen
+                            and len(seen) < DAILY_LIMIT,
+                            "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+                        )
+                        seen[event.observation_id] = (event.stream_id, raw, fingerprint)
+                        content_hash.update(
+                            json.dumps(
+                                [event.stream_id, event.observation_id, raw],
+                                separators=(",", ":"),
+                            ).encode()
+                            + b"\n"
+                        )
+                        frontier = event.stream_id
+                indexed = set()
+                require(
+                    client.hlen(journal.identity_key(day)) == len(seen),
+                    "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+                )
+                for index, (key, raw) in enumerate(
+                    client.hscan_iter(journal.identity_key(day), count=512)
+                ):
+                    if index % 512 == 0:
+                        check_budget()
+                    key = key.decode() if isinstance(key, bytes) else key
+                    value = json.loads(raw)
+                    require(
+                        key in seen
+                        and key not in indexed
+                        and (
+                            value.get("id"),
+                            value.get("payload"),
+                            value.get("content"),
+                        )
+                        == seen[key],
+                        "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+                    )
+                    indexed.add(key)
+                require(
+                    indexed == set(seen)
+                    and journal.tail(day) == tail
+                    and journal.cursor("live", day) == cursor,
+                    "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+                )
+                result[day.isoformat()] = {
+                    "cursor": cursor,
+                    "tail": tail,
+                    "count": len(seen),
+                    "sha256": content_hash.hexdigest(),
+                }
+            require(journal.days() == days, "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN")
+            snapshot = self._snapshot(source, check_budget)
+            require(
+                all(
+                    v["ack"] == v["current_tail"] == v["final_tail"]
+                    for v in snapshot["days"].values()
+                ),
+                "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+            )
+            return {
+                "source": result,
+                "completed_sha256": receiving_snapshot_identity(snapshot),
+            }
+        finally:
+            client.close()
+
+    def _feed_pids(self, source):
+        binding = registry(source["new"]).services["market-feed"]
+        owner = read_service_state("market-feed", runtime_dir=self.directory)
+        loaded = self.loaded(binding)
+        require(
+            owner
+            and owner.get("phase") == "parked"
+            and owner.get("generation") == binding.generation
+            and type(owner.get("pid")) is int
+            and str(owner["pid"]) == str(loaded)
+            and owner_process_matches(owner, binding),
+            "COHORT_FORWARD_FEED_OWNER_UNPROVEN",
+        )
+        return self._observed_feed_pids(source, [owner["pid"]])
+
+    def _observed_feed_pids(self, source, previous):
+        from app.runtime_identity import read_command
+
+        binding = registry(source["new"]).services["market-feed"]
+        loaded = self.loaded(binding, allow_idle=True)
+        parents = {}
+        for line in read_command(
+            ["/bin/ps", "-axo", "pid=,ppid="], root=Path(binding.root)
+        ).splitlines():
+            fields = line.split()
+            require(
+                len(fields) == 2 and all(v.isdigit() for v in fields),
+                "COHORT_FORWARD_FEED_OWNER_UNPROVEN",
+            )
+            parents[int(fields[0])] = int(fields[1])
+        pids = set(previous)
+        if loaded is not None:
+            require(
+                str(loaded).isdigit() and 1 < int(loaded) <= 2**31 - 1,
+                "COHORT_FORWARD_FEED_OWNER_UNPROVEN",
+            )
+            pids.add(int(loaded))
+        while True:
+            expanded = pids | {pid for pid, parent in parents.items() if parent in pids}
+            require(len(expanded) <= 64, "COHORT_FORWARD_FEED_OWNER_UNPROVEN")
+            if expanded == pids:
+                return sorted(pids)
+            pids = expanded
+
+    def feed_close_intent(self, source, check_budget):
+        with self._resume_owner_guards():
+            owners = self._parked_owners(source, held=True, feed_parked=True)
+            frontiers = self._feed_frontiers(source, check_budget)
+            pids = self._feed_pids(source)
+            require(
+                self._feed_frontiers(source, check_budget) == frontiers,
+                "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+            )
+            return {
+                "kind": "parked_feed_close_intent_v1",
+                "observed_pids": pids,
+                "binding_sha256": digest(
+                    asdict(registry(source["new"]).services["market-feed"])
+                ),
+                "owners_sha256": digest(owners),
+                "controls_sha256": digest(self._controls(source)),
+                "frontiers_sha256": digest(frontiers),
+            }
+
+    def _feed_exited(self, source, pids, check_budget):
+        binding = registry(source["new"]).services["market-feed"]
+        absent = self.definition_absent(binding)
+        exited = True
+        for pid in pids:
+            check_budget()
+            try:
+                os.kill(pid, 0)
+                exited = False
+            except ProcessLookupError:
+                pass
+            except OSError:
+                raise CohortError("COHORT_FORWARD_FEED_EXIT_UNPROVEN") from None
+        return absent and exited
+
+    def confirm_feed_closed(self, source, proof, check_budget, close_plan):
+        _raw, plan = _resolution_source(Path(close_plan))
+        intent = plan["audit"]["feed_close"]
+        require(_valid_feed_close(proof, intent), "COHORT_FORWARD_FEED_CLOSE_UNPROVEN")
+        with self._resume_owner_guards():
+            self._parked_owners(source, held=True)
+            require(
+                self._feed_exited(source, proof["observed_pids"], check_budget),
+                "COHORT_FORWARD_FEED_EXIT_UNPROVEN",
+            )
+            first = self._feed_frontiers(source, check_budget)
+            require(
+                digest(first) == intent["frontiers_sha256"]
+                and self._feed_frontiers(source, check_budget) == first,
+                "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+            )
+        require(
+            owner_lock_available("market-feed", runtime_dir=self.directory),
+            "COHORT_FORWARD_FEED_EXIT_UNPROVEN",
+        )
+        # Keep the immutable closure-event time; the OS/prefix checks above are
+        # performed afresh on every audit, not inferred from this old timestamp.
+        return proof
+
+    def stop_parked_feed(self, source, audit, check_budget, record):
+        binding = registry(source["new"]).services["market-feed"]
+        self._expected_controller = audit["controller"]
+        intent = audit["feed_close"]
+        with self.forward_guards(source):
+            require(
+                self.feed_close_intent(source, check_budget) == intent,
+                "COHORT_FORWARD_FEED_INTENT_DRIFT",
+            )
+            with self._resume_owner_guards():
+                require(
+                    self._parked_owners(source, held=True, feed_parked=True)
+                    == audit["owners"]
+                    and self._controls(source) == audit["controls"]
+                    and self._feed_pids(source) == intent["observed_pids"]
+                    and digest(self._fixed(source, check_budget))
+                    == audit["installed_sha256"],
+                    "COHORT_FORWARD_AUDIT_DRIFT",
+                )
+                self.check_protected_forward(source, audit)
+                check_budget()
+                record(
+                    {
+                        "phase": "bootout_requested",
+                        "intent": intent,
+                        "observed_pids": intent["observed_pids"],
+                    }
+                )
+                require(
+                    self._feed_pids(source) == intent["observed_pids"]
+                    and self._controls(source) == audit["controls"]
+                    and self._controller() == audit["controller"],
+                    "COHORT_FORWARD_FEED_INTENT_DRIFT",
+                )
+                self.check_protected_forward(source, audit)
+                check_budget()
+                self.launch("bootout", f"gui/{os.getuid()}/{binding.label}")
+                end = self.monotonic() + 30
+                pids = intent["observed_pids"]
+                while True:
+                    observed = self._observed_feed_pids(source, pids)
+                    if observed != pids:
+                        pids = observed
+                        record(
+                            {
+                                "phase": "bootout_waiting",
+                                "intent": intent,
+                                "observed_pids": pids,
+                            }
+                        )
+                    if self._feed_exited(source, pids, check_budget):
+                        break
+                    require(self.monotonic() < end, "COHORT_FORWARD_FEED_EXIT_UNPROVEN")
+                    check_budget()
+                    sleep(0.1)
+                frontiers = self._feed_frontiers(source, check_budget)
+                require(
+                    digest(frontiers) == intent["frontiers_sha256"]
+                    and self._feed_frontiers(source, check_budget) == frontiers
+                    and self._controls(source) == audit["controls"]
+                    and digest(self._fixed(source, check_budget))
+                    == audit["installed_sha256"],
+                    "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
+                )
+                self._calculation_boundary()
+            require(
+                owner_lock_available("market-feed", runtime_dir=self.directory)
+                and self._feed_exited(source, pids, check_budget),
+                "COHORT_FORWARD_FEED_EXIT_UNPROVEN",
+            )
+            check_budget()
+            return {
+                "kind": "feed_closed_v1",
+                "intent_sha256": digest(intent),
+                "observed_pids": pids,
+                "label_absent": True,
+                "observed_pids_exited": True,
+                "owner_lock_available": True,
+                "frontiers_sha256": intent["frontiers_sha256"],
+                "observed_at": self.now().isoformat(),
+            }
 
     def _live_launchd_sample(self, source):
         from app.runtime_identity import (
@@ -2225,6 +2979,8 @@ def main(argv=None):
     freeze.add_argument("--source-plan", required=True, type=Path)
     freeze.add_argument("--output", required=True, type=Path)
     freeze.add_argument("--predecessor-recovery-plan", type=Path)
+    freeze.add_argument("--close-feed-only", action="store_true")
+    freeze.add_argument("--feed-close-plan", type=Path)
     apply = sub.add_parser("apply-plan")
     apply.add_argument("--plan", required=True, type=Path)
     args = parser.parse_args(argv)
@@ -2235,6 +2991,8 @@ def main(argv=None):
                 host,
                 args.source_plan,
                 predecessor_recovery_plan=args.predecessor_recovery_plan,
+                close_feed_only=args.close_feed_only,
+                feed_close_plan=args.feed_close_plan,
             )
             parent = args.output.parent
             info = parent.lstat()

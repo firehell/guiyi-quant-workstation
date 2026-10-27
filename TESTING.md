@@ -2124,6 +2124,8 @@ python3 scripts/broker/native/build_control.py --headers /private/path/headers -
 
 采样窗口回归包含t0/t31/t32滚动、同owner cycle中间ACK回退、过期期间context/routes篡改、身份校验期间样本过期、重复过期不延长原预算，以及verified身份/API/Web子步骤和诊断隐私。真实接收联合用例显式使用本次新建的一次性非6379端口`GUIYI_TEST_REDIS_PORT`（DB15必须为空）及guarded `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，不再默认连接旧任务的固定Redis端口。
 
+Feed启动后verified失败的精确三层恢复另运行`services/quant-api/tests/test_runtime_feed_halt_recovery.py`：覆盖C严格effects、关闭后停止的hash终点、一次bootout前意图落盘、动态PID退出、未知结果禁重试、完整source原件/索引和ACK篡改、关闭终态receipt关联及后续每阶段字节重验。测试不启停真实服务；生产关闭须由exact release控制器的新鲜计划及实际label/PID/锁/双前缀读回单独证明，不能用mock主机或缺失heartbeat替代。
+
 主力恢复的预热共享输入定向回归：`services/quant-api/tests/reference_trading/test_prewarm_input_sharing.py`
 及`test_newow_input_cache.py`验证完整工作组、逐流计算、effective policy/after隔离及异常清理；
 不会替代真实维护锁、完整Scope或120秒原生预热验收。
