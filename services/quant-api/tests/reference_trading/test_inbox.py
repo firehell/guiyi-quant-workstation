@@ -403,8 +403,7 @@ def inbox_postgresql(isolated_postgres_engine):  # noqa: F811
             tables=[
                 table
                 for table in Base.metadata.sorted_tables
-                if table.name
-                not in {"reference_inbox_inputs", "reference_inbox_deliveries"}
+                if not table.name.startswith("reference_inbox_")
             ],
         )
         with isolated_postgres_engine.begin() as connection:

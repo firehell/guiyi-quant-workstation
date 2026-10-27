@@ -1161,3 +1161,52 @@ wall time. It is interrupted evidence, never natural observation. Saved original
 require durable replay with original confirmed/raw times; missing observations
 cannot be given original first-seen times. These task-local proofs SHALL NOT
 authorize automatic failover, new Scope, notification replay or formula/return changes.
+
+## Requirement: Explicit immutable Inbox recovery closure
+
+`reference_inbox_recovery_v1` SHALL be an explicit, stopped-writer maintenance operation,
+not an automatic worker retry. `InboxRecoveryPlan` SHALL freeze the original input and
+route preimage, source and target activation receipts, checkpoint token, capture hash,
+expiry, stopped-writer fence and its fixed private attempt namespace. A delivery-level
+exclusive, no-follow, fsynced claim SHALL precede any mutation. Unknown results consume
+that claim; changing the plan or namespace SHALL NOT authorize another attempt. A complete
+independent exact readback MAY return a prior committed result without another mutation.
+
+Additive schema `20261028_0054` SHALL append `reference_inbox_recovery_results` without
+changing 0053 originals, frozen routes, BLOCKED/UNKNOWN states or immutable guards. Each
+result uniquely links one original delivery to its actual capture, committed calculation,
+sequence, target receipt/revision/generation and frozen plan. The result SHALL commit in
+the calculation/projection/checkpoint transaction. No result SHALL be inserted before
+successful calculation or by a later repair of an uncertain transaction.
+
+Ordering, health, receiving and native handover SHALL share complete closure verification.
+A valid result may exclude its preserved old delivery from unfinished-head selection;
+all other heads retain numeric journal ordering and all UNKNOWN facts remain blocking.
+Health SHALL distinguish recovered calculation counts from original completed deliveries
+and preserved historical BLOCKED records. Merely inserting a result row is insufficient:
+original, receipt, capture, calculation, checkpoint and plan hashes SHALL match. Later
+legitimate receipt disablement SHALL preserve historical closure; other receipt changes
+or disablement preceding closure SHALL fail verification.
+
+Same-generation retained-original recovery SHALL not renew activation. A separately proven
+missing prefix MAY use the existing one-shot bounded interruption and a single generation
+bridge. The exact old and new receipts and the consumed gap capture/calculation chain SHALL
+be independently verified on every closure readback. A second gap is not authority to
+bridge multiple generations or discard surviving originals. Missing source retention,
+internal holes, changed ownership or unknown commitment SHALL stop the affected stream.
+
+The explicit bounded scope policy `reference_inbox_recovery_v1`, also frozen in the journal
+proof, MAY include existing SuBing `subing_physical_prefix_forward_v2` streams at
+5m/15m/30m/60m. The default bounded entrance remains Newow H1 only. SuBing's original
+unbounded activation policy is not proof of a consumed bounded receipt; only this explicit
+first recovery may replace it with a hash-bound one-shot receipt. Later unplanned gaps
+remain blocked. Existing kernels, prices, interrupted-reference semantics and notification
+expiry remain unchanged; no historical observation, action or notification becomes newly
+first-seen.
+
+### Scenario: A delayed original recovers without resetting its old blocked fact
+
+- **GIVEN** an exact original and frozen route, a valid stopped-writer plan and an unused delivery claim
+- **WHEN** its verified calculation, projection, checkpoint and recovery result commit atomically
+- **THEN** the original BLOCKED row remains unchanged and the next ordered delivery becomes eligible
+- **AND** transaction failure or a broken bounded bridge never releases that head or sends an expired notification
