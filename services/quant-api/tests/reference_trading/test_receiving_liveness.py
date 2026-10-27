@@ -503,9 +503,9 @@ def test_ack_prefix_validation_is_streamed_through_multiple_fixed_chunks(
     sizes = []
     original = module._prefix
 
-    def observed(session, events, *args):
+    def observed(session, events, *args, **kwargs):
         sizes.append(len(events))
-        return original(session, events, *args)
+        return original(session, events, *args, **kwargs)
 
     monkeypatch.setattr(module, "_prefix", observed)
     result = sample()

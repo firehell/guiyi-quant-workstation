@@ -17,7 +17,7 @@ class ForwardReferenceService:
         self._evaluator = evaluator
         self._commit_guard = commit_guard
 
-    def process_pending(self, stream_id: str) -> CommitResult | None:
+    def process_pending(self, stream_id: str, *, inbox_recovery=None) -> CommitResult | None:
         pending = self._repository.read_pending_capture(stream_id)
         if pending is None:
             return None
@@ -61,10 +61,15 @@ class ForwardReferenceService:
                     if isinstance(point.get("value"), dict) else point
                     for point in display.get("points", [])]}
             prepared = replace(prepared, source_evidence=evidence)
+        if inbox_recovery is not None:
+            from dataclasses import replace
+            plan = inbox_recovery[1]
+            prepared = replace(prepared, source_evidence={**prepared.source_evidence,
+                "inbox_recovery_v1": {"plan_hash": plan.plan_hash, "delivery_id": plan.delivery_id}})
         try:
             if self._commit_guard is None:
-                return self._repository.commit_batch(token, prepared)
-            return self._repository.commit_batch(token, prepared, commit_guard=self._commit_guard)
+                return self._repository.commit_batch(token, prepared, inbox_recovery=inbox_recovery)
+            return self._repository.commit_batch(token, prepared, commit_guard=self._commit_guard, inbox_recovery=inbox_recovery)
         except Exception as error:
             # The transaction result is uncertain only for connection/commit failures.
             # Read back the exact batch once; never replay an unknown calculation.

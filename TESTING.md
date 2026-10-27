@@ -2146,3 +2146,25 @@ cycle覆盖和双fresh接收；不能通过重启正式服务或重放旧原件�
 及受影响的bindings/cohort/forward/stopped用例。重点为删除旧checkout后有效seal仍可读、Git对象身份、active写回拒绝、
 额外unknown/跨命名空间同名记录、篡改/原子提交故障和最终cohort旧前像。只重跑失败或新修改影响的用例；不为检查创建真实
 行情/通知。生产只做候选预检、原生单次切换、一组跨轮验收及精确退役计划的删除前同像复核。
+
+## 显式Inbox恢复与0054
+
+`test_inbox_recovery.py`覆盖旧BLOCKED保留、原子闭合、单次持久claim、unknown禁重试、
+合法停用、单代桥接及缺口链断裂、集合读取；`test_runtime_schema_compatibility.py`覆盖0053→0054
+独立additive证明、两代immutability trigger、真实PG恢复与并发claim。测试不授权生产写入。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:services/quant-api/tests:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/reference_trading/test_inbox_recovery.py \
+  services/quant-api/tests/reference_trading/test_bounded_recovery.py \
+  services/quant-api/tests/reference_trading/test_newow_fusion_forward.py \
+  services/quant-api/tests/reference_trading/test_inbox_wake.py \
+  services/quant-api/tests/reference_trading/test_receiving_liveness.py \
+  services/quant-api/tests/reference_trading/test_operational_readiness.py \
+  services/quant-api/tests/test_runtime_schema_compatibility.py
+```
+
+真实PG Gate必须显式设置`GUIYI_ISOLATED_MIGRATION_DATABASE_URL`指向本任务独立、
+含test/isolated名称的可销毁实例；真实Redis另用`GUIYI_ISOLATED_REDIS_URL`的16389/11。
+未提供变量产生的skip不算真实依赖Gate通过，不能填写生产5432/6379。

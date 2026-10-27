@@ -83,7 +83,7 @@ def require_inbox_schema(session_factory):
     from sqlalchemy import inspect
     with session_factory() as session:
         tables = set(inspect(session.connection()).get_table_names())
-        if not {"reference_inbox_inputs", "reference_inbox_deliveries"} <= tables:
+        if not {"reference_inbox_inputs", "reference_inbox_deliveries", "reference_inbox_recovery_results"} <= tables:
             raise ValueError("REFERENCE_INBOX_SCHEMA_REQUIRED")
 
 

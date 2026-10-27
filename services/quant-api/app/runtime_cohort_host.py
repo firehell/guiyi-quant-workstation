@@ -257,8 +257,13 @@ class CohortHost(FaultRecoveryHost):
                             for _stream, _identity, revision, generation, start, plan_hash in activations),
                         "COHORT_REFERENCE_ACTIVATION_UNPROVEN")
                 fixed = [(*row[:4], _aware(row[4]).astimezone(UTC).isoformat(), row[5]) for row in activations]
+                resolved = ()
+                if schema["revision"] == "20261028_0054":
+                    from app.reference_trading.inbox_recovery import verified_resolution_ids
+                    resolved = verified_resolution_ids(session)
                 unfinished = exists(select(1).where(ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
-                                                    ReferenceInboxDelivery.status != "COMPLETED"))
+                                                    ReferenceInboxDelivery.status != "COMPLETED",
+                                                    ReferenceInboxDelivery.delivery_id.not_in(resolved)))
                 used = session.scalar(select(func.coalesce(func.sum(ReferenceInboxInput.payload_bytes), 0)).where(unfinished))
                 by_day = session.execute(select(ReferenceInboxInput.trading_day, func.count()).where(
                     ReferenceInboxInput.trading_day.in_(days)).group_by(ReferenceInboxInput.trading_day)).all()

@@ -8,6 +8,7 @@ from datetime import date
 from decimal import Decimal
 from hashlib import sha256
 import json
+import math
 
 from app.reference_trading.capture import ForwardCapture
 from app.reference_trading.contracts import PreparedBatch, manifest_sha256
@@ -38,6 +39,35 @@ from guiyi_quant.reference_trading import (
     ReferenceBoundary,
     StreamIdentity,
 )
+
+
+def _source_action_fact(wire, dependency, observed):
+    """Decode only frozen action facts; timing remains separately hash-bound."""
+    fact = {key: value for key, value in wire.items() if key != "observed_at"}
+    if "delivery" not in fact:
+        return fact
+    timing = fact.pop("delivery")
+    fields = {"protocol", "raw_received_at", "confirmed_at", "ingested_at",
+              "calculated_at", "calculation_delay_seconds", "processing_mode"}
+    try:
+        if (not isinstance(timing, dict) or set(timing) != fields
+                or timing != dependency.get("delivery_timing")
+                or timing["protocol"] != "reference_receiving_v2"):
+            raise ValueError
+        confirmed = _timestamp(timing["confirmed_at"])
+        calculated = _timestamp(timing["calculated_at"])
+        raw = _timestamp(timing["raw_received_at"]) if timing["raw_received_at"] is not None else confirmed
+        ingested = _timestamp(timing["ingested_at"]) if timing["ingested_at"] is not None else confirmed
+        lag = timing["calculation_delay_seconds"]
+        if (confirmed != observed or not raw <= confirmed <= ingested <= calculated
+                or type(lag) not in (int, float)
+                or abs(lag - (calculated - confirmed).total_seconds()) > 0.000001
+                or not math.isfinite(lag)
+                or timing["processing_mode"] != ("delayed_original" if lag > 30 else "original")):
+            raise ValueError
+    except (TypeError, KeyError, ValueError, OverflowError) as error:
+        raise ValueError("REFERENCE_FUSION_DELIVERY_TIMING_CONFLICT") from error
+    return fact
 
 
 def _validated_sources(stream, dependencies):
@@ -129,7 +159,7 @@ def _validated_sources(stream, dependencies):
         for wire in source_actions:
             # observed_at is delivery metadata, outside StrategyAction's frozen identity.
             action = decode_source_action(
-                {k: v for k, v in wire.items() if k != "observed_at"}, product_identity
+                _source_action_fact(wire, dependency, observed), product_identity
             )
             if (
                 action.bar_end != end
@@ -445,6 +475,7 @@ class SavedForwardFusionSources:
                             p["value"] for p in points if p.get("kind") == "action"
                         ],
                         "availability": available[-1] if available else "WARMING",
+                        "delivery_timing": calculation.source_evidence.get("delivery_timing_v2"),
                     }
                 )
         gaps = [
