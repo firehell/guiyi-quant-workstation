@@ -2164,3 +2164,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 真实联合项须设置本次一次性隔离PG的`GUIYI_ISOLATED_MIGRATION_DATABASE_URL`及动态非生产Redis端口
 `GUIYI_TEST_REDIS_PORT`；测试结束清理本次容器。覆盖扁平事故关联、当前drain/owner/kernel锁、原件前缀、幂等/原子确认、
 cycle覆盖和双fresh接收；不能通过重启正式服务或重放旧原件制造测试证据。
+
+发布树收敛最小回归覆盖 `test_runtime_retirement.py`、`test_runtime_historical_identity.py`、`test_runtime_retention.py`
+及受影响的bindings/cohort/forward/stopped用例。重点为删除旧checkout后有效seal仍可读、Git对象身份、active写回拒绝、
+额外unknown/跨命名空间同名记录、篡改/原子提交故障和最终cohort旧前像。只重跑失败或新修改影响的用例；不为检查创建真实
+行情/通知。生产只做候选预检、原生单次切换、一组跨轮验收及精确退役计划的删除前同像复核。

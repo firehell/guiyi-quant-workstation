@@ -35,9 +35,12 @@ def require(value, code):
         raise CohortError(code)
 
 
-def registry(value):
+def registry(value, *, historical=False, history_directory=None, history_verifier=None):
+    from app.runtime_bindings import historical_binding
+    require(historical or history_verifier is None, "COHORT_HISTORY_SCOPE_INVALID")
     return BindingRegistry(
-        1, {k: ServiceBinding(**v) for k, v in value["services"].items()}
+        1, {k: historical_binding(v, directory=history_directory, verifier=history_verifier) if historical else ServiceBinding(**v)
+            for k, v in value["services"].items()}
     )
 
 
@@ -118,7 +121,7 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
     return result
 
 
-def validate(plan, now):
+def validate(plan, now, *, historical=False, history_directory=None, history_verifier=None):
     try:
         require(
             plan["schema_version"] == 1
@@ -139,7 +142,9 @@ def validate(plan, now):
             < datetime.fromisoformat(plan["expires_at"]),
             "COHORT_PLAN_EXPIRED",
         )
-        old, new = registry(plan["old"]), registry(plan["new"])
+        old, new = (registry(plan[key], historical=historical, history_directory=history_directory,
+                            history_verifier=history_verifier)
+                    for key in ("old", "new"))
         require(
             set(old.services) == set(new.services) == SERVICES,
             "COHORT_SERVICE_SET_INVALID",
@@ -246,6 +251,12 @@ def apply_cohort(host, plan):
             attempt.mkdir(mode=0o700)
         except FileExistsError:
             raise CohortError("COHORT_ATTEMPT_CONSUMED") from None
+        # Retain the exact consumed intent before the first service effect.
+        # Historical attempts are never backfilled; their original public plan
+        # remains authoritative where no private copy was created at the time.
+        _write(attempt / "plan.json", plan)
+        require(_resolution_source(attempt / "plan.json")[1] == plan,
+                "COHORT_PLAN_PERSISTENCE_UNPROVEN")
         state = {
             "schema_version": 1,
             "plan_sha256": plan["plan_sha256"],

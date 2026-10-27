@@ -400,3 +400,22 @@ DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别�
 成功receipt关联闭合该事故，旧失败不改写。收尾确认本身不代表服务恢复，也不允许重跑旧attempt。
 正常cohort与同版本恢复共用完成接收报告及双fresh前缀验证；v14的`cycle`与`receiving_cycle`均可作为完成报告，
 不同stage不互相冒充两个轮次；计算pending/blocked独立于接收活性，UNKNOWN及完整性问题仍拒绝。
+
+### 已闭合发布依赖封存与退役
+
+整组切换成功、旧进程退出且已完成现场读回后，使用同一现役版本运行：
+
+```bash
+python -m app.runtime_retention closeout-plan /exact/old-release-root ... > /private/retirement-plan.json
+python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
+python -m app.runtime_retention cleanup-plan /exact/old-release-root ...
+```
+
+closeout-plan固定本次真实退役roots、共同Git库及历史身份、原plan/state/receipt字节和必要.run证据；
+seal-closed在部署锁内重采样并原子保存于既有Runtime私有目录release-retirements，不改旧unknown，不复制源码或凭据。
+历史Git身份不再要求旧checkout存在，当前active binding/installed/process仍默认严格校验真实根；未闭合或没有有效seal的
+历史引用继续阻止清理。封存后的全局指针及binding可以随下一次合法部署变化，旧不可变证据仍须原字节匹配。
+历史对象不允许写回active registry。正常新cohort在首effect前保留私有plan，旧attempt仅使用当时原件、不回填。
+
+清理只按最后重新读回一致的精确cleanup-plan逐个non-force移除；必要证据、tag/Release、共享配置、行情和DB不删除。
+删除后从唯一现役树核对历史审计、未决恢复检查及下一部署前置条件；自然行情、盘后业务及数据质量仍单独验收。
