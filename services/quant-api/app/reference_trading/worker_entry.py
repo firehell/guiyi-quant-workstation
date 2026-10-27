@@ -212,6 +212,7 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                 def report(proof):
                     from app.reference_trading.runtime import diagnostic_reason
                     proof = {**proof, 'historical_refresh_alive': refresh.is_alive(),
+                        'historical_refresh': refresh.diagnostic_snapshot(),
                         'historical_refresh_error': None if refresh.last_error is None
                             else diagnostic_reason(refresh.last_error),
                         'notifications_alive': notifications.is_alive()}
