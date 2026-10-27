@@ -1,7 +1,7 @@
 """Exact per-service Runtime authority. No credentials or configuration are read."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import InitVar, asdict, dataclass
 import fcntl
 import hashlib
 import json
@@ -16,6 +16,7 @@ from typing import Any
 from app.runtime_contracts import SERVICES
 
 CONTRACTS = frozenset({"db", "live", "input", "formula", "reference", "launcher"})
+_HISTORY_CAPABILITY = object()
 
 
 class RuntimeBindingError(ValueError):
@@ -32,18 +33,23 @@ class ServiceBinding:
     enabled: bool
     contracts: dict[str, str]
     launchd_label: str | None = None
+    _history: InitVar[object | None] = None
 
     @property
     def label(self) -> str:
         return self.launchd_label or f"com.guiyi.quant-{self.service}"
 
-    def __post_init__(self) -> None:
+    def __post_init__(self, _history=None) -> None:
         try:
+            historical = _history is _HISTORY_CAPABILITY
+            if _history is not None and not historical:
+                raise ValueError
             path = Path(self.root)
             if (self.service not in SERVICES or not path.is_absolute()
                     or (self.launchd_label is not None and (not isinstance(self.launchd_label, str)
                         or re.fullmatch(rf"com\.guiyi\.quant-{re.escape(self.service)}-candidate-[0-9a-f]{{32}}", self.launchd_label) is None))
-                    or path != path.resolve(strict=True) or not path.is_dir()
+                    or path != path.resolve(strict=not historical)
+                    or (not historical and not path.is_dir())
                     or re.fullmatch(r"v\d+\.\d+\.\d+", self.tag) is None
                     or re.fullmatch(r"[0-9a-f]{40}", self.commit) is None
                     or type(self.generation) is not int or self.generation < 1
@@ -52,6 +58,33 @@ class ServiceBinding:
                 raise ValueError
         except (OSError, TypeError, ValueError):
             raise RuntimeBindingError("INVALID_SERVICE_BINDING") from None
+
+
+def _verify_archived_binding(root, tag, commit, directory=None):
+    from app.core.env import PROJECT_ROOT
+    from app.runtime_retirement import verify_historical_release
+
+    directory = directory or Path.home() / "Library/Application Support/GuiyiQuant"
+    verify_historical_release(directory, PROJECT_ROOT, Path(root), tag, commit)
+
+
+def historical_binding(value, *, directory=None, verifier=None):
+    """Only explicit history readers may obtain a retired identity.
+
+    The InitVar never persists. write_bindings revalidates without it and thus
+    cannot install a retired identity, even if handed this audited object.
+    """
+    try:
+        if Path(value["root"]).is_dir():
+            result = ServiceBinding(**value)
+            if verifier is not None:
+                verifier(result.root, result.tag, result.commit, directory)
+            return result
+        result = ServiceBinding(**value, _history=_HISTORY_CAPABILITY)
+        (verifier or _verify_archived_binding)(result.root, result.tag, result.commit, directory)
+        return result
+    except (OSError, TypeError, ValueError):
+        raise RuntimeBindingError("INVALID_SERVICE_BINDING") from None
 
 
 @dataclass(frozen=True)
@@ -129,6 +162,8 @@ def read_bindings(*, home: Path | None = None) -> BindingRegistry | None:
     try:
         payload = json.loads(content, object_pairs_hook=_pairs)
         if payload.keys() != {"schema_version", "services"}:
+            raise ValueError
+        if any("_history" in row for row in payload["services"].values()):
             raise ValueError
         return BindingRegistry(payload["schema_version"],
             {key: ServiceBinding(**value) for key, value in payload["services"].items()})

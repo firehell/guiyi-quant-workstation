@@ -304,11 +304,24 @@ def valid_confirmed_live_stop(value, predecessor):
         return False
 
 
+def _verify_historical_release(host, root, tag, commit):
+    """Archived identities are only available to explicitly historical readers."""
+    if root.is_dir():
+        return host.verify_release(root, tag, commit)
+    from app.core.env import PROJECT_ROOT
+    from app.runtime_retirement import verify_historical_release
+
+    return verify_historical_release(host.directory, PROJECT_ROOT, root, tag, commit)
+
+
 def _predecessor(host, path, source_identity, *, historical=False):
     """Only the one immutable failed live-stop prefix; never an allow-unknown flag."""
     raw, frozen = _resolution_source(Path(path))
     _validate(
-        frozen, datetime.fromisoformat(frozen["created_at"])
+        frozen,
+        datetime.fromisoformat(frozen["created_at"]),
+        historical=True,
+        history_directory=host.directory,
     )  # Identity audit, not replay.
     if historical:
         original, observed_identity = (
@@ -349,7 +362,13 @@ def _predecessor(host, path, source_identity, *, historical=False):
         and effect["intent"] == intent
         and compatible_live_restart_intent(intent, intent)
         and intent["binding_sha256"]
-        == digest(asdict(registry(original["new"]).services["live"]))
+        == digest(
+            asdict(
+                registry(
+                    original["new"], historical=True, history_directory=host.directory
+                ).services["live"]
+            )
+        )
         and isinstance(effect["observed_pids"], list)
         and 2 <= len(effect["observed_pids"]) <= 64
         and all(
@@ -361,8 +380,8 @@ def _predecessor(host, path, source_identity, *, historical=False):
         "COHORT_FORWARD_PREDECESSOR_INVALID",
     )
     controller = frozen["audit"]["controller"]
-    host.verify_release(
-        Path(controller["root"]), controller["tag"], controller["commit"]
+    _verify_historical_release(
+        host, Path(controller["root"]), controller["tag"], controller["commit"]
     )
     return {
         "plan_path": str(Path(path).resolve()),
@@ -378,7 +397,12 @@ def _predecessor(host, path, source_identity, *, historical=False):
 def _historical_source(host, identity):
     """Validate retained source bytes without relying on the mutable result pointer."""
     raw, source = _resolution_source(Path(identity["plan_path"]))
-    validate_cohort(source, datetime.fromisoformat(source["created_at"]))
+    validate_cohort(
+        source,
+        datetime.fromisoformat(source["created_at"]),
+        historical=True,
+        history_directory=host.directory,
+    )
     attempt = host.directory / "cohort-attempts" / source["plan_sha256"]
     _directory(attempt.parent)
     _directory(attempt)
@@ -402,7 +426,12 @@ def _historical_source(host, identity):
 def _intake_predecessor(host, path, identity):
     """Exactly A live-stop -> B consumers/intake halt; no recursive retry chain."""
     raw, frozen = _resolution_source(Path(path))
-    _validate(frozen, datetime.fromisoformat(frozen["created_at"]))
+    _validate(
+        frozen,
+        datetime.fromisoformat(frozen["created_at"]),
+        historical=True,
+        history_directory=host.directory,
+    )
     source = _historical_source(host, identity)
     require(
         frozen.get("mode") == "confirmed_live_stop"
@@ -424,7 +453,11 @@ def _intake_predecessor(host, path, identity):
     _directory(attempt)
     private_raw, private = _resolution_source(attempt / "plan.json")
     state_raw, state = _resolution_source(attempt / "state.json")
-    generation = registry(source["new"]).services["live"].generation
+    generation = (
+        registry(source["new"], historical=True, history_directory=host.directory)
+        .services["live"]
+        .generation
+    )
     require(
         private == frozen
         and state.get("schema_version") == 1
@@ -438,8 +471,8 @@ def _intake_predecessor(host, path, identity):
         "COHORT_FORWARD_PREDECESSOR_INVALID",
     )
     controller = frozen["audit"]["controller"]
-    host.verify_release(
-        Path(controller["root"]), controller["tag"], controller["commit"]
+    _verify_historical_release(
+        host, Path(controller["root"]), controller["tag"], controller["commit"]
     )
     return {
         "plan_path": str(Path(path).resolve()),
@@ -559,7 +592,12 @@ def _valid_intake_result(value):
 def _feed_predecessor(host, path, identity):
     """Exactly A -> B -> C, where C started Feed and failed before verified completed."""
     raw, frozen = _resolution_source(Path(path))
-    _validate(frozen, datetime.fromisoformat(frozen["created_at"]))
+    _validate(
+        frozen,
+        datetime.fromisoformat(frozen["created_at"]),
+        historical=True,
+        history_directory=host.directory,
+    )
     source = _historical_source(host, identity)
     require(
         frozen.get("mode") == "confirmed_intake_halt"
@@ -581,7 +619,7 @@ def _feed_predecessor(host, path, identity):
     private_raw, private = _resolution_source(attempt / "plan.json")
     state_raw, state = _resolution_source(attempt / "state.json")
     effects = state.get("effects", {})
-    new = registry(source["new"])
+    new = registry(source["new"], historical=True, history_directory=host.directory)
     require(
         private == frozen
         and state.get("schema_version") == 1
@@ -600,8 +638,8 @@ def _feed_predecessor(host, path, identity):
         "COHORT_FORWARD_PREDECESSOR_INVALID",
     )
     controller = frozen["audit"]["controller"]
-    host.verify_release(
-        Path(controller["root"]), controller["tag"], controller["commit"]
+    _verify_historical_release(
+        host, Path(controller["root"]), controller["tag"], controller["commit"]
     )
     return {
         "plan_path": str(Path(path).resolve()),
@@ -691,7 +729,12 @@ def _valid_feed_close(proof, intent):
 def _unknown_feed_close(host, path, predecessor):
     """Only the recorded close-only identity-readback failure, never a new attempt."""
     raw, plan = _resolution_source(Path(path))
-    _validate(plan, datetime.fromisoformat(plan["created_at"]))
+    _validate(
+        plan,
+        datetime.fromisoformat(plan["created_at"]),
+        historical=True,
+        history_directory=host.directory,
+    )
     require(
         plan.get("mode") == "confirmed_feed_halt"
         and plan.get("stop_after") == "feed_close"
@@ -704,8 +747,8 @@ def _unknown_feed_close(host, path, predecessor):
         "COHORT_FORWARD_PREDECESSOR_DRIFT",
     )
     controller = plan["audit"]["controller"]
-    host.verify_release(
-        Path(controller["root"]), controller["tag"], controller["commit"]
+    _verify_historical_release(
+        host, Path(controller["root"]), controller["tag"], controller["commit"]
     )
     attempt = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
     _directory(attempt.parent)
@@ -748,7 +791,12 @@ def _unknown_feed_close(host, path, predecessor):
 
 def _feed_close_attempt(host, path, predecessor):
     raw, plan = _resolution_source(Path(path))
-    _validate(plan, datetime.fromisoformat(plan["created_at"]))
+    _validate(
+        plan,
+        datetime.fromisoformat(plan["created_at"]),
+        historical=True,
+        history_directory=host.directory,
+    )
     require(
         plan.get("mode") == "confirmed_feed_halt"
         and plan.get("stop_after") == "feed_close"
@@ -760,8 +808,8 @@ def _feed_close_attempt(host, path, predecessor):
     )
     require(selected == predecessor, "COHORT_FORWARD_PREDECESSOR_DRIFT")
     controller = plan["audit"]["controller"]
-    host.verify_release(
-        Path(controller["root"]), controller["tag"], controller["commit"]
+    _verify_historical_release(
+        host, Path(controller["root"]), controller["tag"], controller["commit"]
     )
     attempt = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
     _directory(attempt.parent)
@@ -797,8 +845,8 @@ def _feed_close_attempt(host, path, predecessor):
             == original["effects"]["feed_stop"]["observed_pids"],
             "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
         )
-        host.verify_release(
-            Path(controller["root"]), controller["tag"], controller["commit"]
+        _verify_historical_release(
+            host, Path(controller["root"]), controller["tag"], controller["commit"]
         )
         return {
             **identity,
@@ -843,7 +891,14 @@ def _feed_close_attempt(host, path, predecessor):
 
 def _closed_predecessors(host, entries):
     closed = set()
+    if (host.directory / "release-retirements").exists():
+        from app.core.env import PROJECT_ROOT
+        from app.runtime_retirement import sealed_closed_attempts
+
+        closed.update(sealed_closed_attempts(host.directory, PROJECT_ROOT, entries))
     for child, state in entries:
+        if child.name in closed:
+            continue
         if state.get("phase") != "recovered" or not state.get("receipt_sha256"):
             continue
         raw, receipt = _resolution_source(child / "receipt.json")
@@ -856,7 +911,12 @@ def _closed_predecessors(host, entries):
             from app.runtime_stopped_recovery import read_confirmation, valid_plan
 
             _raw, stopped_plan = _resolution_source(child / "plan.json")
-            _validate(stopped_plan, datetime.fromisoformat(stopped_plan["created_at"]))
+            _validate(
+                stopped_plan,
+                datetime.fromisoformat(stopped_plan["created_at"]),
+                historical=True,
+                history_directory=host.directory,
+            )
             require(
                 valid_plan(stopped_plan)
                 and receipt["stopped_resolution"]
@@ -882,7 +942,12 @@ def _closed_predecessors(host, entries):
         _raw, plan = _resolution_source(child / "plan.json")
         predecessor = resolution.get("predecessor")
         if plan.get("mode") == "confirmed_feed_halt":
-            _validate(plan, datetime.fromisoformat(plan["created_at"]))
+            _validate(
+                plan,
+                datetime.fromisoformat(plan["created_at"]),
+                historical=True,
+                history_directory=host.directory,
+            )
             require(
                 "stop_after" not in plan
                 and plan.get("predecessor") == predecessor
@@ -916,7 +981,12 @@ def _closed_predecessors(host, entries):
             )
             continue
         if plan.get("mode") == "confirmed_intake_halt":
-            _validate(plan, datetime.fromisoformat(plan["created_at"]))
+            _validate(
+                plan,
+                datetime.fromisoformat(plan["created_at"]),
+                historical=True,
+                history_directory=host.directory,
+            )
             require(
                 isinstance(predecessor, dict)
                 and plan.get("predecessor") == predecessor
@@ -1030,6 +1100,8 @@ def _no_unresolved_recovery(
         entries.append((child, state))
     closed = _closed_predecessors(host, entries)
     for child, state in entries:
+        if child.name in closed:
+            continue
         if (
             pending_feed_close is not None
             and child.name == pending_feed_close["plan_sha256"]
@@ -1128,7 +1200,7 @@ def _source(host, path):
         raise CohortError("COHORT_FORWARD_SOURCE_INVALID") from None
 
 
-def _validate(plan, now):
+def _validate(plan, now, *, historical=False, history_directory=None, history_verifier=None):
     from app.runtime_stopped_recovery import valid_plan as valid_stopped_plan
 
     try:
@@ -1221,7 +1293,10 @@ def _validate(plan, now):
             ),
             "COHORT_FORWARD_PLAN_INVALID",
         )
-        registry(plan["new"])
+        registry(
+            plan["new"], historical=historical, history_directory=history_directory,
+            history_verifier=history_verifier,
+        )
     except (TypeError, KeyError, OverflowError):
         raise CohortError("COHORT_FORWARD_PLAN_INVALID") from None
 
