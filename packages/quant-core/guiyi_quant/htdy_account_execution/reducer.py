@@ -480,6 +480,54 @@ def recover(state, cmd):
     ), "RECOVERED_NO_HISTORICAL_OPEN"
 
 
+def recover_product(state, cmd):
+    if state.phase != "READY" or not state.readback_valid:
+        raise ValueError("ACCOUNT_RECOVERY_REQUIRED")
+    blocked = set(state.blocked_products)
+    if set(cmd.products) - blocked:
+        raise ValueError("PRODUCT_NOT_BLOCKED")
+    for name in cmd.products:
+        product(state, name)
+    state, reason = apply_readback(state, cmd.readback)
+    if state.phase != "READY" or not state.readback_valid:
+        return state, reason
+    proofs = {proof.product: proof for proof in cmd.inputs}
+    recovered = False
+    for name in cmd.products:
+        p = product(state, name)
+        proof = proofs.get(name)
+        if proof is None or proof.contract != p.owner:
+            continue
+        if (
+            proof.bar_end >= cmd.at
+            or p.last_bar is not None
+            and proof.bar_end < p.last_bar
+        ):
+            raise ValueError("RECOVERY_INPUT_CUTOFF_INVALID")
+        held = position(state, name)
+        qty = held.quantity if held else 0
+        close = p.must_close or p.rolling or proof.latest_direction * qty == -1
+        state = abandon(state, p)
+        p = replace(
+            product(state, name),
+            desired=0 if close else qty,
+            must_close=bool(qty) and close,
+            opening_consumed=True,
+            signal_at=cmd.at,
+            signal_id="recovery:" + proof.source_id,
+            wait_after=cmd.at,
+            last_bar=proof.bar_end,
+        )
+        state = cancel_opens(replace_product(state, p), name)
+        blocked.remove(name)
+        recovered = True
+    return replace(state, blocked_products=tuple(sorted(blocked))), (
+        "PRODUCT_RECOVERED_NO_HISTORICAL_OPEN"
+        if recovered
+        else "PRODUCT_RECOVERY_PENDING"
+    )
+
+
 def local_occupancy(state):
     coverage = {c.order_id: c for c in state.readback.coverage}
     margin = fee = ZERO
@@ -496,7 +544,15 @@ def valid(fact, at):
     return fact.at <= at < fact.valid_until
 
 
-def tick(state, cmd, key):
+def tick(
+    state,
+    cmd,
+    key,
+    *,
+    opening_allowed=True,
+    serialized_submit=False,
+    policy_version=None,
+):
     facts = {i.instrument.contract: i for i in cmd.inputs}
     effects = []
     if not valid(state.readback, cmd.at):
@@ -520,6 +576,8 @@ def tick(state, cmd, key):
         p = product(state, o.product)
         f = facts.get(o.contract)
         if o.offset == "OPEN":
+            if not opening_allowed:
+                o = replace(o, cancel_required=True)
             if (
                 f
                 and valid(f.session, cmd.at)
@@ -598,6 +656,8 @@ def tick(state, cmd, key):
             )
         else:
             continue
+        if serialized_submit and any(not order.reconciled for order in state.orders):
+            continue
         if p.signal_at is None or cmd.at <= p.signal_at:
             continue
         f = facts.get(contract)
@@ -611,6 +671,8 @@ def tick(state, cmd, key):
         if not f.session.can_trade or cmd.at >= f.session.final_close_at:
             continue
         if p.product in state.blocked_products and offset == "OPEN":
+            continue
+        if offset == "OPEN" and not opening_allowed:
             continue
         q = f.quote
         i = f.instrument
@@ -680,7 +742,7 @@ def tick(state, cmd, key):
         identity = digest(
             (
                 state.account_id,
-                m.POLICY_VERSION,
+                policy_version or m.POLICY_VERSION,
                 m.RISK_VERSION,
                 m.EXECUTION_VERSION,
                 key,
@@ -852,9 +914,11 @@ def apply(state, key, cmd):
         m.OrderUpdate,
         m.Readback,
         m.Recover,
+        m.ProductRecoveryV1,
         m.Disconnect,
         m.AbortUnsent,
         m.Tick,
+        m.ManagedTickV1,
     ):
         raise ValueError("ACCOUNT_COMMAND_INVALID")
     payload = digest(cmd)
@@ -905,6 +969,8 @@ def apply(state, key, cmd):
         state, reason = apply_readback(state, cmd)
     elif type(cmd) is m.Recover:
         state, reason = recover(state, cmd)
+    elif type(cmd) is m.ProductRecoveryV1:
+        state, reason = recover_product(state, cmd)
     elif type(cmd) is m.AbortUnsent:
         o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
         if (
@@ -943,6 +1009,15 @@ def apply(state, key, cmd):
                 )
             ),
             "DISCONNECTED",
+        )
+    elif type(cmd) is m.ManagedTickV1:
+        state, effects, reason = tick(
+            state,
+            cmd,
+            key,
+            opening_allowed=False,
+            serialized_submit=True,
+            policy_version=m.MANAGED_TICK_POLICY_VERSION,
         )
     else:
         state, effects, reason = tick(state, cmd, key)

@@ -23,6 +23,20 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 SDK环境与API服务依赖隔离，不为运行上述纯Python模块向API安装CTP依赖。真实柜台端到端与资金生效另验。
 
+## SimNow 全品种持续宿主
+
+默认observe，以下使用隔离fixture，不读Keychain、不连接Broker、不安装服务：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_credentials tests/unit/simnow_supervisor tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution services/quant-api/tests/test_simnow_portfolio_market.py services/quant-api/tests/test_simnow_controlled_market.py
+# 明确私有配置后，仅兼容性检查，无凭据/网络请求
+/path/to/isolated/python -I scripts/broker/simnow_supervisor.py --config /absolute/private.json --observe-only --check
+```
+
+覆盖单账户锁、共享队列冻结及commit-before-ACK、管理Tick禁止新OPEN/预留、局部恢复、
+Session/预开盘/午休/日切、同连接快照变化、断线预算与持久阻断、已claim离线成交真实费用对账。
+实际Keychain加载、开机启动、自然新Bar及断线/跨日另验，不由fixture替代。
+
 ## 期货双向研究
 
 纯内核/账户、输入/采集边界、冻结结果与只读API定向验证（fixture不冒充真实行情）：
