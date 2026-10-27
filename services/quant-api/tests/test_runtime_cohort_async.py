@@ -165,5 +165,5 @@ def test_restore_teardown_timeout_never_cancels_drain_or_restarts_again(
         "unresolved teardown must not start another copy"
     )
     with pytest.raises(CohortError, match="BOOTOUT_TIMEOUT"):
-        host.restore_old({"old": asdict(reg)})
+        host.restore_old({"old": asdict(reg), "installed": {}})
     assert 60 <= clock.at < 61
