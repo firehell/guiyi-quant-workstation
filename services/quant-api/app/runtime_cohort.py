@@ -109,6 +109,11 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
         verifier = getattr(host, "schema_compatibility", None)
         require(callable(verifier), "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
         result["schema_compatibility"] = verifier(previous, new)
+    freeze_reference = getattr(host, "freeze_reference_receiving_handover", None)
+    if callable(freeze_reference):
+        reference_intent = freeze_reference(new)
+        if reference_intent is not None:
+            result["reference_receiving_handover"] = reference_intent
     result["plan_sha256"] = digest(result)
     return result
 
@@ -183,6 +188,10 @@ def validate(plan, now):
                     raise CohortError("COHORT_SCHEMA_CHANGE_UNSUPPORTED") from None
         else:
             require("schema_compatibility" not in plan, "COHORT_SCHEMA_PROOF_UNEXPECTED")
+        if "reference_receiving_handover" in plan:
+            from app.reference_trading.receiving_handover import valid_receiving_handover_intent
+            require(valid_receiving_handover_intent(plan["reference_receiving_handover"],
+                    target=asdict(new.services["reference-worker"])), "COHORT_REFERENCE_BACKLOG_UNPROVEN")
         require(
             tuple(map(int, next(iter(new.services.values())).tag[1:].split(".")))
             > max(tuple(map(int, v.tag[1:].split("."))) for v in old.services.values()),
@@ -198,6 +207,13 @@ def _check_schema(host, plan):
         verifier = getattr(host, "check_schema_compatibility", None)
         require(callable(verifier), "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
         verifier(plan)
+
+
+def _check_reference_handover(host, plan, proof):
+    if "reference_receiving_handover" in plan:
+        check = getattr(host, "check_reference_receiving_handover", None)
+        require(callable(check), "COHORT_REFERENCE_BACKLOG_UNPROVEN")
+        check(plan, proof)
 
 
 def apply_cohort(host, plan):
@@ -264,6 +280,7 @@ def apply_cohort(host, plan):
             step("calendars_off", lambda: host.suspend_calendars(plan))
             proof = step("drain", lambda: host.drain(plan))
             with host.guards(plan):
+                _check_reference_handover(host, plan, proof)
                 _check_schema(host, plan)  # Fresh installed proof before any owner stop.
                 step("old_exited", lambda: host.stop_old(plan, proof))
                 step("preserve", lambda: host.preserve(plan, attempt))
@@ -271,6 +288,7 @@ def apply_cohort(host, plan):
                 validate(plan, host.now())
                 require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
                 _check_schema(host, plan)  # Revalidate after install, before CAS intent.
+                _check_reference_handover(host, plan, proof)
                 validate(plan, host.now())
                 require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
                 persist("committing")
