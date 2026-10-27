@@ -65,3 +65,7 @@ Owner批准完整方案：自动预算内预热；顺序恢复真实原件并标
 真实分组件只读preflight确认：8956原SourceProof完整，DB原件5120（与1406投递不是同一粒度），pending capture0/UNKNOWN0、60品种权威samegen startup Session/rank1/订阅/注册日均通过。09:15:37 Live exactgen31固定drain下active、launchd runs156/last exit1且PID持续变，其余消费者parked、Feed absent；公开日志只有CLI_INTERNAL_ERROR/RuntimeError，不能断言内部具体异常。独立Review认可新增严格单次native Live bootout→整个label absent/所有观察PID退出/owner锁空闲→原件/DB/身份重验→原binding startup分支；候选仍待最终Review/正式controller发布及独立恢复验收，未执行新production mutation。
 
 恢复控制器最终冻结：324项扩大回归通过（含真实隔离PG/Redis），implementer组合206通过；独立Review两P1（未owned在途PID退出集合、两份预冻结计划unknown后禁重试）均关闭，定向72通过、接收证明独立37通过；Ruff/diff通过。候选待正式v1.16.15 controller发布；目标运行仍v1.16.14/gen31，不把控制器发布冒充消费者切换。
+
+09:38 controller v1.16.15已由PR508集成develop、PR509选择性发布main exact78c04ab04cdaabc29762b34678eb38258261e43a，annotated tag/Release/干净正式树及构建来源验证通过。真实freeze只读预检以COHORT_FORWARD_PROTECTED_DRIFT拒绝，forward-recovery-01.json未创建，无attempt/bootout/启动/游标mutation。已独立证明old protected完整不变、old/new DBScope相同、34/34 files共同路径无变化；仅oldroot10与newroot14各自5个.run绝对路径不同。不得抹平或忽略，向前修正为old完整前像保留+new独立保护快照冻结/逐阶段pin；准备controller16，运行目标仍v14/gen31。独立Review已确认此根因及最小修复边界。
+
+controller16 protected修复最终334项组合回归通过；实现方179、独立Review178通过，Ruff/diff通过，无未关闭Confirmed Issue。真实old/new保护helper及new冻结值再次读回通过；正式15实际_fixed不调用通用installed(new)，单独诊断该通用入口的Live转换态错误不属于恢复执行路径，未为其扩大补丁。只修保护前像绑定，现仍未创建新恢复plan或执行生产mutation。
