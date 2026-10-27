@@ -15,6 +15,8 @@ from ..htdy_execution import (
 )
 
 POLICY_VERSION = "htdy_60m_account_execution_v2"
+PRODUCT_RECOVERY_POLICY_VERSION = "htdy_60m_product_recovery_v1"
+MANAGED_TICK_POLICY_VERSION = "htdy_60m_managed_tick_v1"
 RISK_VERSION = "htdy_simnow_margin70_skip_v1"
 EXECUTION_VERSION = "htdy_simnow_opponent_reprice180_v1"
 FORMULA_VERSION = "huotian_dayou_original_v0"
@@ -268,6 +270,24 @@ class Tick:
 
 
 @dataclass(frozen=True)
+class ManagedTickV1:
+    """Manage known obligations without granting any new OPEN intent."""
+
+    at: datetime
+    inputs: tuple[ExecutionInput, ...]
+    opening_allowed: bool = False
+    policy_version: str = MANAGED_TICK_POLICY_VERSION
+
+    def __post_init__(self):
+        Tick(self.at, self.inputs)
+        if (
+            self.opening_allowed is not False
+            or self.policy_version != MANAGED_TICK_POLICY_VERSION
+        ):
+            raise ValueError("MANAGED_TICK_POLICY_INVALID")
+
+
+@dataclass(frozen=True)
 class OrderUpdate:
     account_id: str
     order_id: str
@@ -323,6 +343,35 @@ class Recover:
             or len({i.product for i in self.inputs}) != len(self.inputs)
         ):
             raise ValueError("RECOVERY_INVALID")
+
+    @property
+    def at(self):
+        return self.readback.at
+
+
+@dataclass(frozen=True)
+class ProductRecoveryV1:
+    """Resolve only named blocked products after account readback remains sound."""
+
+    readback: Readback
+    inputs: tuple[RecoveryInput, ...]
+    products: tuple[str, ...]
+    policy_version: str = PRODUCT_RECOVERY_POLICY_VERSION
+
+    def __post_init__(self):
+        Recover(self.readback, self.inputs)
+        if (
+            type(self.products) is not tuple
+            or not self.products
+            or len(set(self.products)) != len(self.products)
+            or any(
+                type(product) is not str or re.fullmatch(r"[A-Z]{1,3}", product) is None
+                for product in self.products
+            )
+            or set(item.product for item in self.inputs) - set(self.products)
+            or self.policy_version != PRODUCT_RECOVERY_POLICY_VERSION
+        ):
+            raise ValueError("PRODUCT_RECOVERY_INVALID")
 
     @property
     def at(self):

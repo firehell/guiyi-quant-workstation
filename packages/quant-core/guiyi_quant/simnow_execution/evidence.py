@@ -62,20 +62,28 @@ class Evidence:
             "INSERT INTO snapshots VALUES (?,?)", (snapshot.source_id, payload)
         )
 
-    def snapshots(self):
+    @staticmethod
+    def _decode(payload):
+        fields = json.loads(payload)
+        fields["at"] = at(fields["at"])
+        fields["started_at"] = at(fields["started_at"])
+        return Snapshot(**fields)
+
+    def snapshots(self, after=0):
+        if type(after) is not int or after < 0:
+            raise ValueError("EVIDENCE_CURSOR_INVALID")
         result = []
         for (payload,) in self.conn.execute(
-            "SELECT payload FROM snapshots ORDER BY rowid"
+            "SELECT payload FROM snapshots WHERE rowid>? ORDER BY rowid", (after,)
         ):
-            fields = json.loads(payload)
-            fields["at"] = at(fields["at"])
-            fields["started_at"] = at(fields["started_at"])
-            result.append(Snapshot(**fields))
+            result.append(self._decode(payload))
         return tuple(result)
 
     def latest(self):
-        snapshots = self.snapshots()
-        return snapshots[-1] if snapshots else None
+        row = self.conn.execute(
+            "SELECT payload FROM snapshots ORDER BY rowid DESC LIMIT 1"
+        ).fetchone()
+        return self._decode(row[0]) if row else None
 
     def close(self):
         self.conn.close()
