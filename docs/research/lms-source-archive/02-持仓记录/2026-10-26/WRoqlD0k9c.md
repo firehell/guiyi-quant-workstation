@@ -4,15 +4,16 @@
 - url: https://weibo.com/1885745060/RoqlD0k9c
 - title: 26日10:10 5.0持仓表
 - published_at: 2026-10-26T10:10:00+08:00
-- observed_at: 2026-10-27T22:55:22+08:00
+- observed_at: 2026-10-27T23:30:31+08:00
 - category: 02-持仓记录
 - contracts: TA701;v2701;OI701;pp2701;CF701;i2701;sp2701（截图原样）
 - versions: 5.0（标题明确）
-- read_status: DETAIL_TEXT_PARTIAL_HOLDINGS_IMAGE_READ_OTHER_IMAGE_PENDING
+- read_status: DETAIL_VISIBLE_TEXT_AND_KEY_IMAGES_READ
 - edited: 未见标记
 - path: 02-持仓记录/2026-10-26/WRoqlD0k9c.md
-- images: 02-持仓记录/2026-10-26/WRoqlD0k9c-screen.png
-- sha256: c5d8379b4ef41c18c6e5085716a72cf03f4596d7ceeeaf792bb624caf7920efd
+- images: 02-持仓记录/2026-10-26/WRoqlD0k9c-screen.png;02-持仓记录/2026-10-26/RoqlD0k9c-report-screen.png
+- sha256: c5d8379b4ef41c18c6e5085716a72cf03f4596d7ceeeaf792bb624caf7920efd;9c393f6f3e82aba543bb6215767c8e7166cce20a01447d9d5894b257a08b5a2d
+- unknowns: 长文是否另有未展示内容;持仓数量;软件空表不证明当日无交易
 
 ## 内容记录
 
@@ -32,6 +33,10 @@
 
 三位郑商所月份只保存原样，不擅自当作行情映射权威。截图展示不等于成交或账户收益事实。
 
+
+续采补核：图3软件实时回报为只有表头的空表，已保存；只证明当前截图未显示订单行，不证明当天没有交易。可见长正文读至末尾逗号，图片查看器正文有展开文字，点击正文未取得新增段落；完整性未知保留，不阻断后续日期整理。
+
 ## 附件索引
 
 - [WRoqlD0k9c-screen.png](WRoqlD0k9c-screen.png)
+- [RoqlD0k9c-report-screen.png](RoqlD0k9c-report-screen.png)

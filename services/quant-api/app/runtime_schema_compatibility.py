@@ -16,6 +16,9 @@ ADDITION = "services/quant-api/alembic/versions/20261026_0053_reference_inbox.py
 ADDITION_BLOB = "91e17cb35bad5e22c06d971c9e25cc3391461e5e"
 PARENT = "services/quant-api/alembic/versions/20261015_0052_alert_delivery_v2.py"
 POLICY = "reference_inbox_preinstalled_additive_0053_v1"
+RECOVERY_POLICY = "reference_inbox_recovery_preinstalled_additive_0054_v1"
+RECOVERY_ADDITION = "services/quant-api/alembic/versions/20261028_0054_reference_inbox_recovery.py"
+RECOVERY_BLOB = "b22fb2c932b8dab968a3dfeec96b2639213dc146"
 PREFIXES = ("services/quant-api/alembic/", "services/quant-api/app/db/", "services/quant-api/app/models/")
 TABLES = ("reference_inbox_inputs", "reference_inbox_deliveries")
 
@@ -35,22 +38,26 @@ def digest(value):
 
 def installed_proof_valid(value):
     return (isinstance(value, dict) and set(value) == {"policy", "revision", "schema_sha256", "database_identity_sha256"}
-            and value["policy"] == POLICY and value["revision"] == "20261026_0053"
+            and (value["policy"], value["revision"]) in {(POLICY,"20261026_0053"),(RECOVERY_POLICY,"20261028_0054")}
             and all(isinstance(value[field], str) and re.fullmatch(r"[0-9a-f]{64}", value[field])
                     for field in ("schema_sha256", "database_identity_sha256")))
 
 
 def prove_reference_inbox_addition(old_files, new_files, *, old_heads, new_heads, installed):
     require(isinstance(old_files, dict) and isinstance(new_files, dict))
-    require(PARENT in old_files and ADDITION not in old_files and set(new_files) - set(old_files) == {ADDITION})
+    recovery = tuple(old_heads) == ("20261026_0053",) and tuple(new_heads) == ("20261028_0054",)
+    addition, blob, policy = (RECOVERY_ADDITION,RECOVERY_BLOB,RECOVERY_POLICY) if recovery else (ADDITION,ADDITION_BLOB,POLICY)
+    require((ADDITION in old_files if recovery else PARENT in old_files) and addition not in old_files
+            and set(new_files) - set(old_files) == {addition})
     require(not set(old_files) - set(new_files) and all(new_files[path] == blob for path, blob in old_files.items()))
-    require(new_files[ADDITION] == ADDITION_BLOB)
+    require(new_files[addition] == blob)
     require(all(isinstance(path, str) and path.startswith(PREFIXES) and isinstance(blob, str)
                 and re.fullmatch(r"[0-9a-f]{40}", blob) for files in (old_files, new_files) for path, blob in files.items()))
-    require(tuple(old_heads) == ("20261015_0052",) and tuple(new_heads) == ("20261026_0053",))
+    require(recovery or tuple(old_heads) == ("20261015_0052",) and tuple(new_heads) == ("20261026_0053",))
     require(installed_proof_valid(installed), "COHORT_INSTALLED_SCHEMA_UNPROVEN")
-    result = {"policy": POLICY, "added_path": ADDITION, "added_blob": ADDITION_BLOB,
-              "old_head": "20261015_0052", "new_head": "20261026_0053",
+    require(installed["policy"] == policy and installed["revision"] == tuple(new_heads)[0])
+    result = {"policy": policy, "added_path": addition, "added_blob": blob,
+              "old_head": tuple(old_heads)[0], "new_head": tuple(new_heads)[0],
               "old_db": digest(old_files), "new_db": digest(new_files), "installed": installed}
     result["proof_sha256"] = digest(result)
     return result
@@ -60,8 +67,10 @@ def validate_transition_proof(proof, *, old_db, new_db):
     try:
         require(set(proof) == {"policy", "added_path", "added_blob", "old_head", "new_head",
                               "old_db", "new_db", "installed", "proof_sha256"})
-        require(proof["policy"] == POLICY and proof["added_path"] == ADDITION and proof["added_blob"] == ADDITION_BLOB)
-        require(proof["old_head"] == "20261015_0052" and proof["new_head"] == "20261026_0053")
+        transition = ((POLICY,ADDITION,ADDITION_BLOB,"20261015_0052","20261026_0053"),
+                      (RECOVERY_POLICY,RECOVERY_ADDITION,RECOVERY_BLOB,"20261026_0053","20261028_0054"))
+        require((proof["policy"],proof["added_path"],proof["added_blob"],proof["old_head"],proof["new_head"]) in transition)
+        require(proof["installed"]["policy"] == proof["policy"] and proof["installed"]["revision"] == proof["new_head"])
         require(proof["old_db"] == old_db and proof["new_db"] == new_db and old_db != new_db)
         require(installed_proof_valid(proof["installed"]), "COHORT_INSTALLED_SCHEMA_UNPROVEN")
         require(proof["proof_sha256"] == digest({k: v for k, v in proof.items() if k != "proof_sha256"}))
@@ -171,7 +180,7 @@ def verify_installed_reference_inbox(session):
             # interpolated as SQL syntax from an external release plan.
             version_table = connection.dialect.identifier_preparer.quote_schema(schema) + ".alembic_version"
             versions = tuple(session.scalars(text("SELECT version_num FROM " + version_table)))
-            require(versions == ("20261026_0053",), "COHORT_INSTALLED_SCHEMA_UNPROVEN")
+            require(versions in (("20261026_0053",),("20261028_0054",)), "COHORT_INSTALLED_SCHEMA_UNPROVEN")
             identities = tuple(session.execute(text("""
                 SELECT current_database(), d.oid, current_schema(), n.oid,
                        inet_server_addr()::text, inet_server_port()
@@ -263,9 +272,53 @@ def verify_installed_reference_inbox(session):
                 facts[table.name] = {"table_flags": table_flags, "columns": actual, "pk": primary, "unique": unique, "fk": actual_fk,
                                      "checks": checks, "flags": [tuple(row) for row in flags], "indexes": custom,
                                      "guard": guard}
-            return {"policy": POLICY, "revision": "20261026_0053", "schema_sha256": digest(facts),
+            recovery = versions == ("20261028_0054",)
+            if recovery:
+                facts["reference_inbox_recovery_results"] = _verify_recovery_table(session,inspector,schema)
+            return {"policy": RECOVERY_POLICY if recovery else POLICY, "revision": versions[0], "schema_sha256": digest(facts),
                     "database_identity_sha256": digest(identities)}
     except SchemaCompatibilityError:
         raise
     except Exception:
         raise SchemaCompatibilityError("COHORT_INSTALLED_SCHEMA_UNPROVEN") from None
+
+
+def _verify_recovery_table(session, inspector, schema):
+    from sqlalchemy import text, UniqueConstraint, ForeignKeyConstraint
+    from sqlalchemy.dialects.postgresql import dialect
+    from app.reference_trading.models import ReferenceInboxRecoveryResult
+    table=ReferenceInboxRecoveryResult.__table__
+    require(table.name in inspector.get_table_names(schema=schema),"COHORT_RECOVERY_SCHEMA_UNPROVEN")
+    actual=[(c["name"],c["type"].compile(dialect=dialect()),c["nullable"],c.get("default"),bool(c.get("identity")),bool(c.get("computed")))
+            for c in inspector.get_columns(table.name,schema=schema)]
+    expected=[(c.name,c.type.compile(dialect=dialect()),c.nullable,None,False,False) for c in table.columns]
+    require(actual==expected,"COHORT_RECOVERY_COLUMNS_DRIFT")
+    primary=inspector.get_pk_constraint(table.name,schema=schema)
+    require(primary["constrained_columns"]==["delivery_id"],"COHORT_RECOVERY_CONSTRAINT_DRIFT")
+    unique=sorted((x["name"],tuple(x["column_names"])) for x in inspector.get_unique_constraints(table.name,schema=schema))
+    require(unique==sorted((x.name,tuple(c.name for c in x.columns)) for x in table.constraints if isinstance(x,UniqueConstraint)),"COHORT_RECOVERY_CONSTRAINT_DRIFT")
+    foreign=sorted((tuple(x["constrained_columns"]),x["referred_table"],tuple(x["referred_columns"]),x["options"].get("ondelete"),x["referred_schema"] or schema)
+                   for x in inspector.get_foreign_keys(table.name,schema=schema))
+    require(foreign==sorted((tuple(c.name for c in x.columns),x.referred_table.name,tuple(e.column.name for e in x.elements),x.ondelete,schema)
+                            for x in table.constraints if isinstance(x,ForeignKeyConstraint)),"COHORT_RECOVERY_CONSTRAINT_DRIFT")
+    checks={x["name"]:_space(x["sqltext"]) for x in inspector.get_check_constraints(table.name,schema=schema)}
+    require(checks=={
+        "ck_reference_inbox_recovery_progress":"target_generation > 0 AND calculation_seq > 0",
+        "ck_reference_inbox_recovery_outcome":"outcome::text = ANY (ARRAY['CALCULATED'::character varying, 'INTERRUPTED'::character varying]::text[])"},"COHORT_RECOVERY_CHECK_DRIFT")
+    flags=tuple(session.execute(text("SELECT c.relkind,c.relpersistence,c.relrowsecurity,c.relforcerowsecurity,c.relispartition,c.reloftype FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=:schema AND c.relname=:table"),{"schema":schema,"table":table.name}).one())
+    require(flags==("r","p",False,False,False,0),"COHORT_RECOVERY_TABLE_DRIFT")
+    guard=tuple(session.execute(text("""SELECT g.tgname,g.tgenabled,g.tgtype,g.tgnargs,g.tgqual IS NULL,g.tgattr::text,g.tgconstraint,
+        p.proname,p.pronargs,p.prorettype='pg_catalog.trigger'::regtype,l.lanname,p.prosecdef,p.proisstrict,p.proretset,
+        p.provolatile,p.proparallel,p.proconfig,p.prosrc,p.proleakproof,pns.nspname
+        FROM pg_trigger g JOIN pg_class t ON t.oid=g.tgrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+        JOIN pg_proc p ON p.oid=g.tgfoid JOIN pg_namespace pns ON pns.oid=p.pronamespace JOIN pg_language l ON l.oid=p.prolang
+        WHERE n.nspname=:schema AND t.relname=:table AND NOT g.tgisinternal"""),{"schema":schema,"table":table.name}))
+    require(len(guard)==1,"COHORT_RECOVERY_GUARD_DRIFT")
+    value=tuple(guard[0])
+    require(value[:17]==("reference_inbox_recovery_immutable","O",27,0,True,"",0,"reference_inbox_recovery_guard",0,True,"plpgsql",False,False,False,"v","u",None)
+            and _space(value[17])=="BEGIN RAISE EXCEPTION 'REFERENCE_INBOX_RECOVERY_IMMUTABLE'; END"
+            and value[18:]==(False,schema),"COHORT_RECOVERY_GUARD_DRIFT")
+    constraints=tuple(session.execute(text("SELECT contype,condeferrable,condeferred,convalidated FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname=:schema AND t.relname=:table ORDER BY c.conname"),{"schema":schema,"table":table.name}))
+    require(len(constraints)==1+len(unique)+len(foreign)+len(checks) and all(not a and not b and c for _,a,b,c in constraints),"COHORT_RECOVERY_CONSTRAINT_DRIFT")
+    require(not [x for x in inspector.get_indexes(table.name,schema=schema) if not x.get("duplicates_constraint")],"COHORT_RECOVERY_INDEX_DRIFT")
+    return {"columns":actual,"primary":primary,"unique":unique,"foreign":foreign,"checks":checks,"guard":value,"flags":flags,"constraints":[tuple(x) for x in constraints]}

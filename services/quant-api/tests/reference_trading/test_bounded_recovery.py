@@ -426,3 +426,36 @@ def test_isolated_redis_pre_new_day_outage_preserves_absent_cursor():
         if keys:
             client.delete(*keys)
         client.close()
+
+
+@pytest.mark.parametrize('period',['5m','15m','30m','60m'])
+def test_explicit_inbox_recovery_scope_supports_subing_intraday_only(period):
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from app.db.base import Base
+    from app.reference_trading.subing_activation import plan_subing_activation,apply_subing_activation
+    from app.reference_trading.repository import ReferenceRepository
+    from datetime import datetime,UTC
+    now=datetime(2026,10,27,8,tzinfo=UTC)
+    factory=sessionmaker(create_engine('sqlite+pysqlite:///:memory:'),expire_on_commit=False)
+    with factory() as db:Base.metadata.create_all(db.get_bind())
+    act=plan_subing_activation('rb',period,operational={'rb'},start=now+timedelta(seconds=1),
+        expiry=now+timedelta(milliseconds=500),now=now,host='test',environment='isolated')
+    active=apply_subing_activation(factory,act,expected_plan_hash=act['plan_hash'],operational={'rb'},now=now)
+    missing=(now+timedelta(seconds=2),)
+    proof={'kind':'SERVICE_OUTAGE','recovery_scope_policy':'reference_inbox_recovery_v1','sealed_source':'fixture'}
+    legacy=BoundedForwardRecovery(factory,verify_gap=lambda *a:missing)
+    with pytest.raises(RepositoryConflict,match='RECOVERY_SCOPE_INVALID'):
+        legacy.plan(active['stream_id'],endpoints=missing,trading_day=now.date(),observed_at=now+timedelta(seconds=5),
+            expires_at=now+timedelta(minutes=1),journal_proof=proof)
+    recovery=BoundedForwardRecovery(factory,verify_gap=lambda *a:missing,scope_policy='reference_inbox_recovery_v1')
+    plan=recovery.plan(active['stream_id'],endpoints=missing,trading_day=now.date(),observed_at=now+timedelta(seconds=5),
+        expires_at=now+timedelta(minutes=1),journal_proof=proof)
+    recovery.apply(plan,expected_plan_hash=plan.plan_hash,now=now+timedelta(seconds=5))
+    from app.reference_trading.forward_service import ForwardReferenceService
+    from app.reference_trading.recovery import evaluate_observation_gap
+    repo=ReferenceRepository(factory)
+    manifest=repo.read_state(active['stream_id']).dependency_manifest
+    ForwardReferenceService(repo,lambda token,cp,evidence:evaluate_observation_gap(
+        token,cp,evidence,dependency_manifest=manifest)).process_pending(active['stream_id'])
+    assert recovery.consumed_calculation(plan) is not None

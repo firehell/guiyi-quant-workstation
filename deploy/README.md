@@ -319,7 +319,8 @@ Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 com
 当待发布共享合同改变、不能与旧消费者并行时，使用 `install-local-services.sh --plan-cohort --candidate-root <absolute-release-root> --tag <annotated-tag> --commit <peeled-commit>` 冻结整组计划，再用 `--apply-cohort-plan --plan <absolute-plan>` 单次执行。
 仅支持现有十服务、六常驻全部启用的向前版本；数据库合同默认不变，仅已预装的0052→0053新增接收表可按
 `reference_inbox_preinstalled_additive_0053_v1`提供精确Git差异、单链head及新鲜只读schema/约束/触发器证明；
-该证明写入计划并在停服前和CAS前重验，其他schema变化不放行；保留原定时服务启用状态，不启用缺省任务。
+另允许已预装的0053→0054不可变Inbox恢复结果表，按`reference_inbox_recovery_preinstalled_additive_0054_v1`核对原表、原guard不变以及新增表完整约束/触发器；
+证明写入计划并在停服前和CAS前重验，其他schema变化不放行；保留原定时服务启用状态，不启用缺省任务。
 所有 operational 品种须由权威 Calendar/Session 证明休市、无 grace、距离下一 Session 超过660秒；未知仍阻断。
 计划有效15分钟，预热后和CAS前重新验证；停机预算600秒。预热只读Canonical，不伪造Live订阅、消费信号或发送通知。
 日历先暂停，Feed先排空，全部旧所有者退出后持维护/所有者锁，一次CAS提交全部新绑定；消费者先于Feed启动，最后仅注册原日历。

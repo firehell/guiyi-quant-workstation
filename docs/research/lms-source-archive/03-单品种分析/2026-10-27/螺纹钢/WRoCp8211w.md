@@ -4,15 +4,15 @@
 - url: https://weibo.com/1885745060/RoCp8211w
 - title: 螺纹 RB2701 节点验证与弱侧锁定
 - published_at: 2026-10-27T16:52:00+08:00
-- observed_at: 2026-10-27T22:46:02+08:00
+- observed_at: 2026-10-27T23:30:31+08:00
 - category: 03-单品种分析
 - products: 螺纹钢
 - contracts: RB2701
-- read_status: DETAIL_TEXT_READ_IMAGE_AUDIT_PENDING
+- read_status: DETAIL_TEXT_READ_NO_ATTACHED_IMAGES
 - edited: 未见标记
 - path: 03-单品种分析/2026-10-27/螺纹钢/WRoCp8211w.md
 - related_sources: A5358325549629506
-- unknowns: 3000—3018最早更新来源;附图审计
+- unknowns: 3000—3018最早更新来源;作者价位未核验
 
 ## 内容记录
 
@@ -20,3 +20,6 @@
 
 
 补核：26日17:43文章当前页可找到3048—3050与3029—3040；本次未找到额外3000—3018，保留未知。
+
+
+续采独立核对详情页正文与附件区域：当前未见附图，解除图片审计待办；3000—3018最早更新来源仍待查。

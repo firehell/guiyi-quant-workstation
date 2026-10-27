@@ -134,7 +134,10 @@ def build_forward_reference_worker(
             if code == "newow_dual_fusion":
                 if fusion_sources is None:
                     raise ForwardInputUnavailable("REFERENCE_FUSION_SOURCES_UNAVAILABLE")
-                return fusion_sources(identity, **common)
+                capture = fusion_sources(identity, **common)
+                if capture is None and worker.inbox_delivery_id is not None:
+                    raise ForwardInputUnavailable("REFERENCE_FUSION_SOURCE_NOT_READY")
+                return capture
             if code.startswith("newow_"):
                 if identity.frequency in LIVE_FREQUENCIES:
                     if kind == "live_event" and worker.source_envelope is not None:

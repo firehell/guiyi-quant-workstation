@@ -4,16 +4,16 @@
 - url: https://weibo.com/1885745060/RozNMci2y
 - title: 27日10:14：5.0早盘持仓与肥尾阶段自述
 - published_at: 2026-10-27T10:14:00+08:00
-- observed_at: 2026-10-27T22:58:05+08:00
+- observed_at: 2026-10-27T23:30:31+08:00
 - category: 02-持仓记录
 - versions: 5.0
-- read_status: DETAIL_TEXT_PARTIAL_AND_POSITION_IMAGE_READ_REPORT_IMAGE_PENDING
+- read_status: DETAIL_VISIBLE_TEXT_AND_KEY_IMAGES_READ
 - edited: 未见
 - path: 02-持仓记录/2026-10-27/WRozNMci2y.md
 - related_sources: WRoAkcEppg;U03
-- images: 02-持仓记录/2026-10-27/WRozNMci2y-position-screen.png
-- sha256: 5c2e62a2bce693f8782e7087e9b6a6254a8d7d9bf31276981f841aa94e3bff05
-- unknowns: 软件回报图;持仓数量;标准差计算;账户与收益事实
+- images: 02-持仓记录/2026-10-27/WRozNMci2y-position-screen.png;02-持仓记录/2026-10-27/RozNMci2y-report-screen.png
+- sha256: 5c2e62a2bce693f8782e7087e9b6a6254a8d7d9bf31276981f841aa94e3bff05;b4350eaace0b6aeb5b92b3ab9ca37580f0467e1cd5d2040cb8f7c49116910692
+- unknowns: 长文是否另有未展示内容;持仓数量;标准差计算;账户与收益事实
 
 ## 内容记录
 
@@ -23,6 +23,10 @@
 
 - [持仓图屏幕画面](WRozNMci2y-position-screen.png)
 
+
+续采补核：图3软件实时回报已保存并查看，22:10:35 FG2701卖开、21:09:59 PVC2701卖平、21:05:52 OI2701卖开和卖平，均显示全部成交；没有完整日期、数量和价格。截图内容与前一夜日志所见相近，不当成27日新发生4次成交。可见长正文仍以逗号结尾，不证明没有未展示段落。
+
 ## 附件索引
 
 - [WRozNMci2y-position-screen.png](WRozNMci2y-position-screen.png)
+- [RozNMci2y-report-screen.png](RozNMci2y-report-screen.png)
