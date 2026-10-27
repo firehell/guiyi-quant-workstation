@@ -109,8 +109,8 @@ def read_confirmation(host, selected):
             )
     _validate_lineage(host, value)
     controller = value["controller"]
-    host.verify_release(
-        Path(controller["root"]), controller["tag"], controller["commit"]
+    recovery._verify_historical_release(
+        host, Path(controller["root"]), controller["tag"], controller["commit"]
     )
     return value
 
@@ -124,7 +124,12 @@ def _validate_lineage(host, value):
         folder = host.directory / "cohort-forward-recoveries" / name
         _, plan = recovery._resolution_source(folder / "plan.json")
         _, state = recovery._resolution_source(folder / "state.json")
-        recovery._validate(plan, datetime.fromisoformat(plan["created_at"]))
+        recovery._validate(
+            plan,
+            datetime.fromisoformat(plan["created_at"]),
+            historical=True,
+            history_directory=host.directory,
+        )
         require(
             plan["source"] == identity
             and state.get("source") == identity
@@ -133,8 +138,8 @@ def _validate_lineage(host, value):
             and plan["plan_sha256"] == state.get("plan_sha256") == name
         )
         controller = plan["audit"]["controller"]
-        host.verify_release(
-            Path(controller["root"]), controller["tag"], controller["commit"]
+        recovery._verify_historical_release(
+            host, Path(controller["root"]), controller["tag"], controller["commit"]
         )
         plans[name] = plan
         mode = plan.get("mode")
@@ -151,7 +156,13 @@ def _validate_lineage(host, value):
                 host, _public_path(value, plan), plan["predecessor"]
             )
         elif mode in {"confirmed_feed_halt", MODE}:
-            generation = recovery.registry(plan["new"]).services["live"].generation
+            generation = (
+                recovery.registry(
+                    plan["new"], historical=True, history_directory=host.directory
+                )
+                .services["live"]
+                .generation
+            )
             require(
                 state.get("phase") == "outcome_unknown"
                 and state.get("failed_stage") == "intake"
@@ -236,7 +247,12 @@ def verify_pin(host, selected, *, own=None):
 
 def _evidence(host, path):
     raw, plan = recovery._resolution_source(Path(path))
-    recovery._validate(plan, datetime.fromisoformat(plan["created_at"]))
+    recovery._validate(
+        plan,
+        datetime.fromisoformat(plan["created_at"]),
+        historical=True,
+        history_directory=host.directory,
+    )
     source, _, identity = recovery._source(host, plan["source"]["plan_path"])
     require(identity == plan["source"] and source["new"] == plan["new"])
     attempt = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
@@ -258,8 +274,8 @@ def _evidence(host, path):
         and not os.path.lexists(attempt / "receipt.json")
     )
     controller = plan["audit"]["controller"]
-    host.verify_release(
-        Path(controller["root"]), controller["tag"], controller["commit"]
+    recovery._verify_historical_release(
+        host, Path(controller["root"]), controller["tag"], controller["commit"]
     )
     files, attempts = {}, set()
 
