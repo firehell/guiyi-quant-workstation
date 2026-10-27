@@ -9,6 +9,10 @@ import re
 from .. import htdy_account_execution as a
 from .inventory import number
 
+# CTP counters are binary doubles, retained verbatim as Decimal strings. This
+# comparison bound is one millionth of a cent; no monetary fact is rounded.
+COUNTER_RESIDUAL_BOUND = Decimal("0.00000001")
+
 
 def admission(authority, now):
     """Require one continuous window long enough for holding and exit work."""
@@ -92,17 +96,21 @@ def acceptance(state, snapshot, test_id, *, baseline=None):
     )
     no_working = all(o["OrderStatus"] in ("0", "2", "4", "5") for o in native["orders"])
     fee_total = sum((f.fee for f in fills), Decimal(0))
+    available_residual = (
+        state.readback.snapshot.available - state.readback.snapshot.balance
+    )
     capital_released = (
         state.readback.used_margin
         == state.readback.frozen_margin
         == state.readback.frozen_fee
         == 0
-        and state.readback.snapshot.available == state.readback.snapshot.balance
+        and abs(available_residual) <= COUNTER_RESIDUAL_BOUND
     )
     funds = native["funds"][0]
     fee_matches = False
     equity_matches = False
     expected_net = None
+    equity_residual = None
     equity = number(funds["Balance"], True)
     if (
         baseline is not None
@@ -125,12 +133,13 @@ def acceptance(state, snapshot, test_id, *, baseline=None):
                 iter(multipliers)
             )
             expected_net = gross - fee_total
+            equity_residual = equity - number(before["Balance"], True) - expected_net
             equity_matches = (
                 all(
                     number(funds[k]) == number(before[k])
                     for k in ("Deposit", "Withdraw")
                 )
-                and equity - number(before["Balance"], True) == expected_net
+                and abs(equity_residual) <= COUNTER_RESIDUAL_BOUND
                 and state.readback.snapshot.balance == equity
                 and number(funds["CloseProfit"], True)
                 - number(before["CloseProfit"], True)
@@ -177,6 +186,9 @@ def acceptance(state, snapshot, test_id, *, baseline=None):
         equity=str(equity),
         expected_net_profit=str(expected_net) if expected_net is not None else None,
         equity_reconciled=equity_matches,
+        equity_residual=str(equity_residual) if equity_residual is not None else None,
+        available_residual=str(available_residual),
+        counter_residual_bound=str(COUNTER_RESIDUAL_BOUND),
         native_source_id=snapshot.source_id,
         native_at=snapshot.at.isoformat(),
         orders=[

@@ -34,3 +34,5 @@ owner明确交办：RB权威主力开多一手，无需策略信号；开仓成�
 独立Review343 passed，确认无剩余阻断；原账本SHA bfdfc9fcd9a20019dbcf443f8566d1f298ca9769ae4b02900e6df0442386ab11
 只读前后不变，317条SQL命令/318receipt（含initial）。允许在现场准入通过后执行owner指定单次RB人工验收。
 13:10权威只读确认RB2701、下一Session13:30，当前午休；尚未连接柜台或报单。
+补充CTP金额double末位残差测试后，最新扩大回归418 passed、独立聚焦20 passed；最终金额容差仅1e-8元，
+原值/费用/Ledger/风险检查不变。代码Review允许执行已交办单次人工验收，实际结果仍待柜台。

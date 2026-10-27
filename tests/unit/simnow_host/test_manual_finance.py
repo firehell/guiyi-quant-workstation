@@ -6,6 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 import importlib.util
 import json
+import pytest
 
 from guiyi_quant import htdy_account_execution as a, htdy_execution as h
 from guiyi_quant.simnow_execution.inventory import Snapshot
@@ -93,3 +94,48 @@ def test_actual_roundtrip_requires_native_equity_and_fee_readback():
     assert not acceptance(encumbered, final, f.TEST_ID, baseline=baseline)[
         "broker_roundtrip_passed"
     ]
+
+
+@pytest.mark.parametrize(
+    "noise,allowed",
+    [
+        ("0.0000000001", True),
+        ("-0.0000000001", True),
+        ("0.00000001", True),
+        ("-0.00000001", True),
+        ("0.0000001", False),
+        ("-0.0000001", False),
+        ("0.01", False),
+        ("-0.01", False),
+    ],
+)
+def test_native_counter_binary_residual_does_not_rewrite_money(noise, allowed):
+    state = completed()
+    baseline = snapshot(state, "100000", "0", "0")
+    balance = Decimal("99984") + Decimal(noise)
+    rb = replace(
+        state.readback,
+        snapshot=replace(state.readback.snapshot, balance=balance, available=balance),
+    )
+    state = replace(state, readback=rb)
+    final = snapshot(state, str(balance), "6", "-10")
+    result = acceptance(state, final, f.TEST_ID, baseline=baseline)
+    assert result["broker_roundtrip_passed"] is allowed
+    assert Decimal(result["equity_residual"]) == Decimal(noise)
+    assert result["equity"] == str(balance) and result["actual_fees"] == "6"
+    assert result["expected_net_profit"] == "-16"
+    available_state = replace(
+        state,
+        readback=replace(
+            rb,
+            snapshot=replace(rb.snapshot, balance=Decimal("99984"), available=balance),
+        ),
+    )
+    result2 = acceptance(
+        available_state,
+        snapshot(available_state, "99984", "6", "-10"),
+        f.TEST_ID,
+        baseline=baseline,
+    )
+    assert result2["broker_roundtrip_passed"] is allowed
+    assert Decimal(result2["available_residual"]) == Decimal(noise)
