@@ -386,3 +386,17 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 backlog或waiting_history运行模式；普通PENDING必须无错误，历史等待与worker阻断逐项全等。
 身份漂移、BLOCKED/UNKNOWN、接收异常及未证明fusion依赖仍拒绝，所有旧身份与时限Gate不变。
 DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别记录。
+
+### 消费者恢复失败后的停驻确认
+
+`python -m app.runtime_cohort_recovery reconcile-stopped --plan <failed-plan>` 仅接纳同一安装generation、
+完成consumers后在intake超时且从未启动Feed的失败边界。部署/维护及真实owner锁内重证当前parked、Feed与日历缺席、
+观察PID退出、安装/配置前像及完整原件/routes/ACK前缀；使用当前drain，不恢复旧控制文件。追加唯一
+`stopped-confirmation.json`，保留所有原unknown/state字节，不改全局成功指针。相同事实重复确认幂等，额外effect、
+未关联unknown或漂移拒绝。历史关联按有限扁平文件哈希集合验证，不递归增加特殊前驱模式。
+
+随后使用 `plan --source-plan <original-cohort> --stopped-confirmation <confirmation> --output <new-plan>`
+冻结新15分钟计划，预算仍600秒；`apply-plan`一次恢复当前generation的消费者、接收、Feed、综合校验及原定时服务。
+成功receipt关联闭合该事故，旧失败不改写。收尾确认本身不代表服务恢复，也不允许重跑旧attempt。
+正常cohort与同版本恢复共用完成接收报告及双fresh前缀验证；v14的`cycle`与`receiving_cycle`均可作为完成报告，
+不同stage不互相冒充两个轮次；计算pending/blocked独立于接收活性，UNKNOWN及完整性问题仍拒绝。

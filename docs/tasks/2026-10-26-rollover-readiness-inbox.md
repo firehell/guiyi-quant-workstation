@@ -348,3 +348,19 @@ cycle零snapshot至虚拟240.2秒超时。真实v14 worker在poll接收/计算�
 halt已生成新drain IDs，D controls旧证明无法再次当作fresh前置；F unknown也不能直接放入C/B/A恢复模式。
 本轮到此停止生产mutation，未发布新controller或执行新plan。需先解决生命周期判定、intake可诊断性及经验证的停驻收尾，
 不能继续堆叠递归恢复模式或绕过unknown。第二步BLOCKED，服务仍停驻；版本升级和清树未开始。
+
+
+### 第二步修订实施：统一接收证明及非递归停驻收尾（控制器候选v21）
+
+Owner批准完整修订方案后实现shared completed-report/双fresh窗口，正常cohort与forward共用；v14 cycle和
+receiving_cycle按各自窗口形成双轮，跨stage仍核对全局原件/routes/ACK连续性。pending/blocked不再阻止接收，
+UNKNOWN及前缀错误仍拒绝；intake/verified保留安全子步骤、固定原因/服务/时间，不逐轮日志。
+新增reconcile-stopped只接纳consumers完成、intake READY_TIMEOUT且Feed未启动的同generation失败；
+锁内证明当前parked/Feed与日历absent/观察PID退出/双前缀完整，固定原安装与protected前像但用当前drain。
+原unknown字节保留，确认文件以扁平证据集合关联历史角色，新plan直接引用确认；成功receipt闭合已关联事故。
+同一状态确认幂等，额外unknown/effect、schema/身份/前像漂移、模式混用、原子写失败均拒绝。
+
+一次真实一次性PG16/Redis7定向组合295 passed/0 skipped/9.52s，容器已停止自动移除；后续review小修仅补测
+readiness22 passed、stopped20 passed，不机械重复全套。Ruff/uv offline lock/diff/secret0通过。
+独立高风险Review无未关闭Confirmed Issue。只读真实历史布局复核5 attempts/18 files通过；原cohort只保存public
+plan和private state，已修正不能假设其额外保存private plan的测试布局。此记录不代表已发布或已恢复。

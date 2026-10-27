@@ -1039,9 +1039,46 @@ class CohortHost(FaultRecoveryHost):
         except Exception:  # Redis failures remain a bounded unhealthy proof.
             return False
 
+    def _receiving_snapshot(self, plan, proof, state, check_budget):
+        from app.db.session import SessionLocal
+        from app.reference_trading.receiving_liveness import snapshot_receiving
+
+        target = registry(plan["new"]).services["reference-worker"]
+        with self._reference_receiving_context(target) as context:
+            require(context is not None, "COHORT_REFERENCE_SOURCE_UNPROVEN")
+            protocol, journal, authority, _capacity = context
+            snapshot = snapshot_receiving(
+                SessionLocal,
+                protocol,
+                journal,
+                intent=plan["reference_receiving_handover"],
+                source_proof=proof["reference_receiving_handover"],
+                target=asdict(target),
+                schema_proof=authority,
+                check_budget=check_budget,
+                sampled_at=self.now(),
+                owner_cycle_at=state["at"],
+            )
+            check_budget()
+            return snapshot
+
     def _await_names(self, plan, names, proof, seconds):
+        from app.reference_trading.receiving_liveness import (
+            completed_receiving_report,
+            receiving_sample_is_fresh,
+            receiving_pair_candidate,
+            prove_receiving_liveness,
+        )
+
         new = registry(plan["new"])
         end = min(self.deadline, monotonic() + seconds)
+        before = previous = None
+        by_stage = {}
+
+        def check_budget():
+            self._reference_handover_budget(plan)
+            require(monotonic() < end, "COHORT_NEW_READY_TIMEOUT")
+
         while monotonic() < end:
             matched = True
             accepted = {}
@@ -1062,7 +1099,11 @@ class CohortHost(FaultRecoveryHost):
                     ).total_seconds()
                     <= 30
                 )
-                if valid and name in proof["progress"]:
+                receiving_path = name == "reference-worker" and (
+                    "reference_receiving_handover" in plan
+                    or "receiving" in (state or {}).get("proof", {})
+                )
+                if valid and name in proof["progress"] and not receiving_path:
                     valid = progress_reached(
                         observation_progress(name),
                         proof["progress"][name],
@@ -1075,22 +1116,52 @@ class CohortHost(FaultRecoveryHost):
                     valid = self._feed_closed_healthy(binding, state, window)
                 elif valid and name == "reference-worker":
                     owner_proof = state.get("proof", {})
-                    if "receiving" in owner_proof:
-                        from app.reference_trading.operational_readiness import reference_waiting_history_mode
-                        receiving_mode = reference_waiting_history_mode(state)
-                        valid = receiving_mode is not None and monotonic() < end
+                    if receiving_path:
+                        valid = (
+                            "reference_receiving_handover" in plan
+                            and completed_receiving_report(state)
+                            and not owner_lock_available(name)
+                        )
                         if valid:
-                            mode = receiving_mode
+                            current = self._receiving_snapshot(
+                                plan, proof, state, check_budget
+                            )
+                            now = self.now()
+                            report_stage = owner_proof["reference_runtime"]["stage"]
+                            before = by_stage.get(report_stage)
+                            before, valid = receiving_pair_candidate(
+                                before, previous, current, now=now
+                            )
+                            by_stage[report_stage] = before
+                            previous = current
+                            if valid:
+                                mode = prove_receiving_liveness(
+                                    before, current, now=now
+                                )["mode"]
                     else:
                         rp = owner_proof.get("reference_runtime", {})
-                        valid = state.get("ready") is True and rp.get("stage") == "cycle" and rp.get("blocked_count") == 0
+                        valid = (
+                            state.get("ready") is True
+                            and rp.get("stage") == "cycle"
+                            and rp.get("blocked_count") == 0
+                        )
                 elif valid:
                     valid = state.get("ready") is True
                 matched = matched and valid
                 accepted[name] = mode
             if matched:
-                if any(mode.startswith("durable_receiving") for mode in accepted.values()):
+                if any(
+                    mode.startswith("durable_receiving") for mode in accepted.values()
+                ):
                     require(monotonic() < end, "COHORT_NEW_READY_TIMEOUT")
+                    if not all(
+                        receiving_sample_is_fresh(value, now=self.now())
+                        for value in (before, previous)
+                    ):
+                        before = previous
+                        by_stage[report_stage] = previous
+                        sleep(0.2)
+                        continue
                 return accepted
             sleep(0.2)
         raise CohortError("COHORT_NEW_READY_TIMEOUT")

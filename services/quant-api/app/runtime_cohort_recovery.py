@@ -92,12 +92,43 @@ def _safe_verification_diagnostic(host):
                 result[key] = at.isoformat()
         except ValueError:
             pass
+    for key, allowed in {
+        "reason": {
+            "owner_unavailable",
+            "service_not_ready",
+            "progress_pending",
+            "http_unavailable",
+            "reference_report_incomplete",
+            "receiving_pair_pending",
+            "calculation_pending",
+            "calculation_unknown",
+            "receiving_pair_expired",
+        },
+        "service": frozenset(CONTINUOUS),
+        "report_stage": {
+            "cycle",
+            "receiving_cycle",
+            "scan",
+            "draining",
+            "drained",
+            "error",
+        },
+    }.items():
+        if isinstance(value.get(key), str) and value[key] in allowed:
+            result[key] = value[key]
+    for key in ("pending_count", "unknown_count"):
+        if type(value.get(key)) is int and 0 <= value[key] <= 2**63 - 1:
+            result[key] = value[key]
     return result
 
 
-def _verification_substep(host, name, *, before=None, current=None):
+def _verification_substep(host, name, *, before=None, current=None, **facts):
     diagnostic = {
-        **(_safe_verification_diagnostic(host) or {}),
+        **{
+            key: value
+            for key, value in (_safe_verification_diagnostic(host) or {}).items()
+            if key in VERIFICATION_TIMES
+        },
         "substep": name,
         "observed_at": host.now().isoformat(),
     }
@@ -105,6 +136,7 @@ def _verification_substep(host, name, *, before=None, current=None):
         if isinstance(sample, dict):
             for key in ("sampled_at", "owner_cycle_at"):
                 diagnostic[prefix + "_" + key] = sample.get(key)
+    diagnostic.update(facts)
     host._forward_diagnostic = diagnostic
 
 
@@ -820,6 +852,31 @@ def _closed_predecessors(host, entries):
             "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
         )
         resolution = receipt.get("predecessor_resolution")
+        if receipt.get("stopped_resolution") is not None:
+            from app.runtime_stopped_recovery import read_confirmation, valid_plan
+
+            _raw, stopped_plan = _resolution_source(child / "plan.json")
+            _validate(stopped_plan, datetime.fromisoformat(stopped_plan["created_at"]))
+            require(
+                valid_plan(stopped_plan)
+                and receipt["stopped_resolution"]
+                == stopped_plan["stopped_confirmation"]
+                and receipt.get("source")
+                == state.get("source")
+                == stopped_plan["source"]
+                and receipt.get("plan_sha256")
+                == state.get("plan_sha256")
+                == child.name
+                == stopped_plan["plan_sha256"],
+                "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+            )
+            confirmation = read_confirmation(host, receipt["stopped_resolution"])
+            require(
+                confirmation["source"] == stopped_plan["source"],
+                "COHORT_FORWARD_SOURCE_DRIFT",
+            )
+            closed.update(confirmation["attempts"])
+            continue
         if resolution is None:
             continue
         _raw, plan = _resolution_source(child / "plan.json")
@@ -948,7 +1005,14 @@ def _permitted_predecessors(predecessor):
     )
 
 
-def _no_unresolved_recovery(host, predecessor=None, *, pending_feed_close=None):
+def _no_unresolved_recovery(
+    host, predecessor=None, *, pending_feed_close=None, stopped=None
+):
+    if stopped is not None:
+        from app.runtime_stopped_recovery import verify_pin
+
+        verify_pin(host, stopped)
+        return
     parent = host.directory / "cohort-forward-recoveries"
     if not parent.exists():
         require(not parent.is_symlink(), "COHORT_FORWARD_DIRECTORY_UNSAFE")
@@ -1065,9 +1129,16 @@ def _source(host, path):
 
 
 def _validate(plan, now):
+    from app.runtime_stopped_recovery import valid_plan as valid_stopped_plan
+
     try:
         require(
-            set(plan) - {"mode", "predecessor", "stop_after"}
+            ("stopped_confirmation" in plan)
+            == (plan.get("mode") == "reconciled_stopped"),
+            "COHORT_FORWARD_PLAN_INVALID",
+        )
+        require(
+            set(plan) - {"mode", "predecessor", "stop_after", "stopped_confirmation"}
             == {
                 "schema_version",
                 "kind",
@@ -1096,7 +1167,12 @@ def _validate(plan, now):
         )
         require(created <= now < expires, "COHORT_FORWARD_PLAN_EXPIRED")
         require(
-            ("mode" not in plan and "predecessor" not in plan)
+            (
+                "mode" not in plan
+                and "predecessor" not in plan
+                and "stopped_confirmation" not in plan
+            )
+            or (plan.get("mode") == "reconciled_stopped" and valid_stopped_plan(plan))
             or (
                 plan.get("mode") == "confirmed_live_stop"
                 and isinstance(plan.get("predecessor"), dict)
@@ -1157,8 +1233,19 @@ def freeze_forward_recovery(
     predecessor_recovery_plan=None,
     close_feed_only=False,
     feed_close_plan=None,
+    stopped_confirmation=None,
 ):
     """Read-only new intent; the historical plan's elapsed budget is never reused."""
+    if stopped_confirmation is not None:
+        require(
+            predecessor_recovery_plan is None
+            and not close_feed_only
+            and feed_close_plan is None,
+            "COHORT_FORWARD_PLAN_INVALID",
+        )
+        from app.runtime_stopped_recovery import freeze_stopped
+
+        return freeze_stopped(host, source_plan_path, stopped_confirmation)
     source, _state, identity = _source(host, source_plan_path)
     predecessor = (
         _load_selected_predecessor(host, predecessor_recovery_plan, identity)[0]
@@ -1330,7 +1417,9 @@ def apply_forward_recovery(host, recovery_plan_path):
             require(
                 predecessor == plan["predecessor"], "COHORT_FORWARD_PREDECESSOR_DRIFT"
             )
-        _no_unresolved_recovery(host, predecessor)
+        _no_unresolved_recovery(
+            host, predecessor, stopped=plan.get("stopped_confirmation")
+        )
         require(identity == plan["source"], "COHORT_FORWARD_SOURCE_DRIFT")
         require(source["new"] == plan["new"], "COHORT_FORWARD_REGISTRY_DRIFT")
         deadline = getattr(host, "monotonic", monotonic)() + 600
@@ -1343,6 +1432,10 @@ def apply_forward_recovery(host, recovery_plan_path):
             )
 
         def unchanged():
+            if plan.get("mode") == "reconciled_stopped":
+                from app.runtime_stopped_recovery import verify_pin
+
+                verify_pin(host, plan["stopped_confirmation"], own=plan["plan_sha256"])
             require(
                 host._controller() == plan["audit"]["controller"],
                 "COHORT_FORWARD_CONTROLLER_DRIFT",
@@ -1380,7 +1473,14 @@ def apply_forward_recovery(host, recovery_plan_path):
                         else None
                     ),
                 )
-            audit = host.audit_forward(source, budget, **kwargs)
+            if plan.get("mode") == "reconciled_stopped":
+                from app.runtime_stopped_recovery import audit_for_plan
+
+                audit = audit_for_plan(
+                    host, source, plan["stopped_confirmation"], budget
+                )
+            else:
+                audit = host.audit_forward(source, budget, **kwargs)
             budget()
             require(audit == plan["audit"], "COHORT_FORWARD_AUDIT_DRIFT")
             unchanged()
@@ -1417,7 +1517,7 @@ def apply_forward_recovery(host, recovery_plan_path):
                 nonlocal mutated
                 unchanged()
                 persist(name)
-                if name == "verified":
+                if name in {"intake", "verified"}:
                     host._forward_diagnostic = None
                 mutated = (
                     True  # An uncertain command return is never permission to retry.
@@ -1503,6 +1603,8 @@ def apply_forward_recovery(host, recovery_plan_path):
                 "natural_acceptance": "pending",
                 "original_attempt_preserved": True,
             }
+            if plan.get("mode") == "reconciled_stopped":
+                receipt["stopped_resolution"] = plan["stopped_confirmation"]
             if predecessor is not None:
                 receipt["predecessor_resolution"] = {
                     "kind": "confirmed_feed_halt_resolution_v1"
@@ -1610,10 +1712,10 @@ def apply_forward_recovery(host, recovery_plan_path):
                 if isinstance(stage, str) and re.fullmatch(r"[a-z][a-z_]{0,63}", stage)
                 else "unknown"
             )
-            if stage == "verified":
+            if stage in {"intake", "verified"}:
                 diagnostic = _safe_verification_diagnostic(host)
                 if diagnostic is not None:
-                    journal["verified_diagnostic"] = diagnostic
+                    journal[stage + "_diagnostic"] = diagnostic
             try:
                 persist("outcome_unknown" if mutated else "precondition_blocked")
             finally:
@@ -1631,6 +1733,11 @@ class ForwardRecoveryHost(CohortHost):
     """Native adapter for already-installed, parked new owners only."""
 
     monotonic = staticmethod(monotonic)
+
+    def audit_stopped(self, source, budget, *, feed_pids):
+        from app.runtime_stopped_recovery import observe_stopped
+
+        return observe_stopped(self, source, budget, feed_pids=feed_pids)
 
     def recovery_window(self):
         """Normal same-generation startup authority; never a version-CAS exception."""
@@ -1975,6 +2082,17 @@ class ForwardRecoveryHost(CohortHost):
 
     def _calculation_boundary(self, *, active=False):
         pending, unknown = self._read_calculation_boundary()
+        _verification_substep(
+            self,
+            "calculation_boundary",
+            pending_count=pending,
+            unknown_count=unknown,
+            reason="calculation_unknown"
+            if unknown
+            else "calculation_pending"
+            if pending
+            else "receiving_pair_pending",
+        )
         require(
             unknown == 0 and (active or pending == 0),
             "COHORT_FORWARD_CALCULATION_UNKNOWN",
@@ -3058,10 +3176,10 @@ class ForwardRecoveryHost(CohortHost):
 
     def _await(self, source, audit, check_budget, *, feed):
         from app.reference_trading.receiving_liveness import (
+            completed_receiving_report,
             prove_receiving_liveness,
             receiving_sample_is_fresh,
-            verify_receiving_continuity,
-            verify_receiving_nonregression,
+            receiving_pair_candidate,
         )
 
         new = registry(source["new"])
@@ -3070,6 +3188,7 @@ class ForwardRecoveryHost(CohortHost):
         )
         end = self.monotonic() + (120 if feed else 240)
         before = None
+        by_stage = {}
         previous = None
         while self.monotonic() < end:
             _verification_substep(self, "session_authority", before=before)
@@ -3083,42 +3202,62 @@ class ForwardRecoveryHost(CohortHost):
             )
             states = {name: self._active(new.services[name]) for name in names}
             if not all(states.values()):
+                _verification_substep(
+                    self,
+                    "owner_readiness",
+                    reason="owner_unavailable",
+                    service=next(name for name, state in states.items() if not state),
+                )
                 sleep(0.2)
                 continue
             okay = True
             for name, state in states.items():
                 if name == "reference-worker":
-                    rp = state.get("proof", {})
-                    receiving = rp.get("receiving", {})
-                    okay = (
-                        okay
-                        and isinstance(receiving, dict)
-                        and receiving.get("protocol_version") == 2
-                        and receiving.get("intake_error") is None
-                    )
-                    okay = (
-                        okay
-                        and rp.get("reference_runtime", {}).get("stage")
-                        == "receiving_cycle"
-                    )
-                else:
-                    okay = okay and state.get("ready") is True
-                    if name in original["effects"]["drain"]["progress"]:
-                        okay = okay and progress_reached(
-                            observation_progress(name),
-                            original["effects"]["drain"]["progress"][name],
+                    complete = completed_receiving_report(state)
+                    okay = okay and complete
+                    if not complete:
+                        _verification_substep(
+                            self,
+                            "owner_readiness",
+                            reason="reference_report_incomplete",
                             service=name,
-                            proof=state.get("proof"),
+                            report_stage=state.get("proof", {})
+                            .get("reference_runtime", {})
+                            .get("stage"),
                         )
-                    if name in {"api", "web"}:
-                        okay = okay and port_is_ready(name)
+                else:
+                    reason = None
+                    if state.get("ready") is not True:
+                        reason = "service_not_ready"
+                    elif name in original["effects"]["drain"][
+                        "progress"
+                    ] and not progress_reached(
+                        observation_progress(name),
+                        original["effects"]["drain"]["progress"][name],
+                        service=name,
+                        proof=state.get("proof"),
+                    ):
+                        reason = "progress_pending"
+                    elif name in {"api", "web"} and not port_is_ready(name):
+                        reason = "http_unavailable"
+                    if reason is not None:
+                        okay = False
+                        _verification_substep(
+                            self, "owner_readiness", reason=reason, service=name
+                        )
+                if not okay:
+                    break
             if not okay:
                 sleep(0.2)
                 continue
+            report_stage = states["reference-worker"]["proof"]["reference_runtime"][
+                "stage"
+            ]
+            before = by_stage.get(report_stage)
             _verification_substep(self, "calculation_boundary", before=before)
-            if not self._calculation_boundary(active=True):
-                sleep(0.2)
-                continue
+            self._calculation_boundary(
+                active=True
+            )  # Pending calculation is not receiving inactivity.
             _verification_substep(self, "receiving_snapshot", before=before)
             current = self._snapshot(
                 source, check_budget, state=states["reference-worker"]
@@ -3128,28 +3267,12 @@ class ForwardRecoveryHost(CohortHost):
             )
             self._check_receiving_context(source, audit, check_budget, snapshot=current)
             now = self.now()
-            current_fresh = receiving_sample_is_fresh(current, now=now)
-            if previous is not None:
-                verify_receiving_continuity(previous, current)
+            before, candidate = receiving_pair_candidate(
+                before, previous, current, now=now
+            )
+            by_stage[report_stage] = before
             previous = current
-            if before is None:
-                before = current
-            elif current["owner_cycle_at"] != before["owner_cycle_at"]:
-                if not (current_fresh and receiving_sample_is_fresh(before, now=now)):
-                    # Expiry only rolls the sampling window AFTER the entire
-                    # context/ACK/DB transition has been checked. It never
-                    # grants readiness, hides regression or extends the budget.
-                    before = current
-                    sleep(0.2)
-                    continue
-                comparison = verify_receiving_nonregression(before, current, now=now)
-                if (
-                    comparison["advanced_count"] == 0
-                    and not comparison["caught_up_idle"]
-                ):
-                    before = current
-                    sleep(0.2)
-                    continue
+            if candidate:
                 _verification_substep(
                     self, "fixed_identity", before=before, current=current
                 )
@@ -3167,6 +3290,7 @@ class ForwardRecoveryHost(CohortHost):
                 ]
                 if not all(fresh):
                     before = current
+                    by_stage[report_stage] = current
                     sleep(0.2)
                     continue
                 return prove_receiving_liveness(before, current, now=now)
@@ -3284,10 +3408,13 @@ def main(argv=None):
     freeze.add_argument("--predecessor-recovery-plan", type=Path)
     freeze.add_argument("--close-feed-only", action="store_true")
     freeze.add_argument("--feed-close-plan", type=Path)
+    freeze.add_argument("--stopped-confirmation", type=Path)
     apply = sub.add_parser("apply-plan")
     apply.add_argument("--plan", required=True, type=Path)
     confirm = sub.add_parser("confirm-feed-close")
     confirm.add_argument("--plan", required=True, type=Path)
+    stopped = sub.add_parser("reconcile-stopped")
+    stopped.add_argument("--plan", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         host = ForwardRecoveryHost()
@@ -3298,6 +3425,7 @@ def main(argv=None):
                 predecessor_recovery_plan=args.predecessor_recovery_plan,
                 close_feed_only=args.close_feed_only,
                 feed_close_plan=args.feed_close_plan,
+                stopped_confirmation=args.stopped_confirmation,
             )
             parent = args.output.parent
             info = parent.lstat()
@@ -3316,6 +3444,10 @@ def main(argv=None):
             }
         elif args.mode == "confirm-feed-close":
             result = confirm_unknown_feed_close(host, args.plan)
+        elif args.mode == "reconcile-stopped":
+            from app.runtime_stopped_recovery import reconcile_stopped
+
+            result = reconcile_stopped(host, args.plan)
         else:
             result = apply_forward_recovery(host, args.plan)
         print(json.dumps(result, sort_keys=True))
