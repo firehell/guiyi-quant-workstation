@@ -32,7 +32,11 @@ def options(argv=None):
         description="SimNow持续宿主：默认配置observe，不开放新仓"
     )
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--observe-only", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--observe-only", action="store_true")
+    modes.add_argument(
+        "--trade", action="store_true", help="仅与schema2 trade配置共同开放持续交易能力"
+    )
     checks = parser.add_mutually_exclusive_group()
     checks.add_argument(
         "--check", action="store_true", help="仅校验配置/兼容性，不读凭据或连接"
@@ -54,7 +58,9 @@ def main(argv=None):
 
     settings = load_settings(args.config)
     if settings.project_root != root or (
-        args.observe_only and settings.mode != "observe"
+        args.observe_only
+        and settings.mode != "observe"
+        or args.trade != (settings.mode == "trade")
     ):
         raise ValueError("CONTINUOUS_SOURCE_OR_MODE_INVALID")
     if args.check_keychain:

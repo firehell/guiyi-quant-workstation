@@ -26,12 +26,25 @@ class Host:
         manual_test_id=None,
         close_only=False,
         native_validator=None,
+        trade=False,
     ):
         if type(continuous) is not bool:
             raise ValueError("HOST_MODE_INVALID")
+        if (
+            type(trade) is not bool
+            or trade
+            and (
+                not continuous
+                or manual_test_id is not None
+                or close_only
+                or not getattr(adapter, "strategy_correlated_native", False)
+            )
+        ):
+            raise ValueError("HOST_TRADE_MODE_INVALID")
         strategy_native = getattr(adapter, "strategy_correlated_native", False)
         if type(close_only) is not bool or (
-            getattr(adapter, "correlated_native", False) and not strategy_native
+            getattr(adapter, "correlated_native", False)
+            and not strategy_native
             and (not close_only or not callable(native_validator))
         ):
             raise ValueError("CLOSE_ONLY_NATIVE_VALIDATOR_REQUIRED")
@@ -68,6 +81,7 @@ class Host:
         self.product = product
         self.products = products
         self.continuous = continuous
+        self.trade = trade
         self.manual_test_id = manual_test_id
         self.close_only = close_only
         self.native_validator = native_validator
@@ -161,8 +175,10 @@ class Host:
             e.kind == "SUBMIT" and e.order.offset != "CLOSE" for e in effects
         ):
             raise ValueError("CLOSE_ONLY_OPEN_FORBIDDEN")
-        if self.continuous and any(
-            e.kind == "SUBMIT" and e.order.offset == "OPEN" for e in effects
+        if (
+            self.continuous
+            and not self.trade
+            and any(e.kind == "SUBMIT" and e.order.offset == "OPEN" for e in effects)
         ):
             raise ValueError("CONTINUOUS_OPEN_NOT_AUTHORIZED")
         if self.manual_test_id is not None:
@@ -243,7 +259,11 @@ class Host:
             raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
         tx = self.store.execute(
             "host-tick:" + self.run_id + ":" + now.isoformat(),
-            a.ManagedTickV1(now, facts) if self.continuous else a.Tick(now, facts),
+            a.ContinuousTradeTickV1(now, facts)
+            if self.trade
+            else a.ManagedTickV1(now, facts)
+            if self.continuous
+            else a.Tick(now, facts),
         )
         pending = tuple(
             a.Effect("CANCEL", o)

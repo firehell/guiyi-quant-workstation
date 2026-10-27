@@ -34,6 +34,9 @@ class MonitorPublisher:
         connection="UNKNOWN",
         native_source_id=None,
         ledger_hash=None,
+        mode=None,
+        opening_enabled=False,
+        host_status=None,
     ):
         """Best effort observer only. Never change order decisions on publication error."""
         target = None
@@ -48,6 +51,16 @@ class MonitorPublisher:
                 raise MonitorError("MONITOR_INDEX_INVALID")
             if now.tzinfo is None or self.root.is_symlink():
                 raise MonitorError("MONITOR_ROOT_INVALID")
+            if (
+                mode is not None
+                and mode not in ("observe", "manage", "trade")
+                or type(opening_enabled) is not bool
+                or opening_enabled
+                and mode != "trade"
+                or host_status is not None
+                and re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", host_status) is None
+            ):
+                raise MonitorError("MONITOR_INDEX_INVALID")
             self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
             if self.root.stat().st_mode & 0o077:
                 raise MonitorError("MONITOR_ROOT_NOT_PRIVATE")
@@ -66,6 +79,11 @@ class MonitorPublisher:
                 prior = _index(self.root)
                 if prior["account_id"] != self.account_id:
                     raise MonitorError("MONITOR_ACCOUNT_CONFLICT")
+                if native_source_id is None or ledger_hash is None:
+                    # Retain a pair; never combine a new source with an unrelated
+                    # old ledger hash. Current run/connection status is separate.
+                    native_source_id = prior.get("native_source_id")
+                    ledger_hash = prior.get("ledger_hash")
             payload = dict(
                 version=VERSION,
                 account_id=self.account_id,
@@ -77,6 +95,10 @@ class MonitorPublisher:
                 native_source_id=native_source_id,
                 ledger_hash=ledger_hash,
             )
+            if mode is not None:
+                payload.update(
+                    mode=mode, opening_enabled=opening_enabled, host_status=host_status
+                )
             fd, target = tempfile.mkstemp(prefix=".monitor-", dir=self.root)
             with os.fdopen(fd, "w") as stream:
                 json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
@@ -133,6 +155,15 @@ def _index(root):
     ):
         raise MonitorError("MONITOR_INDEX_INVALID")
     at(value["published_at"])
+    if "mode" in value and (
+        value["mode"] not in ("observe", "manage", "trade")
+        or type(value.get("opening_enabled")) is not bool
+        or value["opening_enabled"]
+        and value["mode"] != "trade"
+        or value.get("host_status") is not None
+        and re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", str(value["host_status"])) is None
+    ):
+        raise MonitorError("MONITOR_INDEX_INVALID")
     return value
 
 
@@ -266,19 +297,18 @@ class MonitorReader:
         with _ro(folder / "native-evidence.sqlite") as db:
             if db.execute("SELECT account FROM owner").fetchall() != [(account,)]:
                 raise MonitorError("MONITOR_NATIVE_IDENTITY_INVALID")
-            if (
-                db.execute(
-                    "SELECT 1 FROM snapshots WHERE source=?",
-                    (index["native_source_id"],),
-                ).fetchone()
-                is None
-            ):
+            bound = db.execute(
+                "SELECT rowid FROM snapshots WHERE source=?",
+                (index["native_source_id"],),
+            ).fetchone()
+            if bound is None:
                 raise MonitorError("MONITOR_NATIVE_BINDING_INVALID")
             first = db.execute(
                 "SELECT source,payload FROM snapshots ORDER BY rowid LIMIT 1"
             ).fetchone()
             rows = db.execute(
-                "SELECT source,payload FROM snapshots ORDER BY rowid DESC LIMIT 5001"
+                "SELECT source,payload FROM snapshots WHERE rowid<=? ORDER BY rowid DESC LIMIT 5001",
+                (bound[0],),
             ).fetchall()
             snapshots = [
                 _snapshot(payload, source, account)

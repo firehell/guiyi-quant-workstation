@@ -14,6 +14,21 @@ Owner随后要求开盘服务优先、暂停其余修复。手工历史维护于
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/27 持续trade代码验收完成，运行仍关闭
+
+新增schema2显式trade与--trade双匹配、ContinuousTradeTickV1、统一候选排序及单账户全局锁，
+复用原账户根/四库/连接预算。合约费率→完整账户刷新→最后盘口；临时坏品种让出，资金拒绝永久跳过。
+冷启动撤单可从原Tick恢复instrument身份，仍须当前binding/Session；未知发送与预留不重试/不释放。
+监控保留最后核验绑定，区分当前模式与开仓资格；render/preflight只读准备，无trade安装或自动切换。
+
+568项相关Python回归、25项固定SDK结构、10项前端单测、4项桌面/移动浏览器用例及Web type/build通过；
+Ruff、secret0、diff及独立执行安全Review通过。隔离假柜台完成两品种开仓/反手与重启trade/manage闭环，
+不代表实际柜台、自然信号或持续运行验收。旧账本重放、同账户资金/预留和既有风险口径保持。
+未读取实际凭据、连接柜台、确认结算、报撤单、改正式配置、安装服务、发布或切换Runtime，auto_order=false保持。
+15个无夜盘品种沿用上一轮阻断，下一交易时段新输入另验；不宣称本轮重新审计行情。
+仅代码候选可集成develop。真实切换必须另在全部相关品种收盘后处理，先核对当前现场及原账户事实。
+详见[任务记录](docs/tasks/2026-10-27-simnow-continuous-trade.md)及[执行合同](docs/SIMNOW_EXECUTION.md#持续交易候选simnow_continuous_v2)。
+
 ## 10/27 HTDY输入复核与普通策略原生协议完成
 
 隔离代码新增StrategyCorrelatedNativeFillV1及普通有界/manage接入，保留旧NativeFill、人工关闭恢复、

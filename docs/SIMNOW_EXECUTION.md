@@ -2,7 +2,7 @@
 
 本模块实现已持久化HTDY账户提案到CTP报单/撤单请求的窄适配，以及原生回调到本地账户journal的事实接入。
 交易规则、资金预留和订单状态机见[HTDY合同](HTDY_SIMNOW_V1.md)，登录及四类只读查询见[只读合同](SIMNOW_READONLY.md)。
-只读CLI保持只读；core适配模块不自行登录或注册前置。一次性宿主与独立持续宿主显式连接固定第一套，均默认只读；新开仓入口保持关闭，`auto_order=false`。
+只读CLI保持只读；core适配模块不自行登录或注册前置。一次性宿主与独立持续宿主显式连接固定第一套，均默认只读；持续新开仓代码须显式trade双重匹配；正式启用状态只看STATUS，当前`auto_order=false`。
 
 ## 接入和事实责任
 
@@ -81,11 +81,11 @@ CTP逐笔Trade没有实际手续费字段。适配器保存待核成交，只有
 资金预留和持久信号队列，覆盖冻结的operational集合。禁止用60份单品种脚本扩展。账户根仍为
 `PROJECT_ROOT/output/simnow-controlled/<fingerprint>`，不复制、初始化或迁移已有AL账本。
 
-本阶段只提供 `observe` 与 `manage`：observe不构造交易Adapter、不确认结算、不写账户命令、不创建提案/预留；
+原v1提供 `observe` 与 `manage`：observe不构造交易Adapter、不确认结算、不写账户命令、不创建提案/预留；
 只读校验已有账本与原生快照，串行轮转检查各品种输入。manage接管已有义务，允许已知平仓/撤单，
 通过持久的 `ManagedTickV1` 在创建OPEN或预留之前禁止新开仓，Host发送前再次拒绝OPEN。
 旧Tick/Recover及v2账户hash不变；新管理Tick和按品种恢复命令各有独立版本，旧命令可逐条重放。
-首次订单预算、全品种新开仓和正式Runtime启用属于后续范围，不能由配置改成execute或启用observe推导。
+全品种新开仓的v2入口见下节；正式Runtime启用不能由配置改成execute或启用observe推导。
 
 - 一个共享RQData入口及Redis pubsub接收全部60m自然完成Bar；信号以首次观察时间、品种、来源ID排序。
   `(product, bar_end)`及来源身份冻结首次payload，重绘不覆盖；账户commit后才ACK。重启有commit的查receipt，
@@ -130,6 +130,69 @@ RunAtLoad、失败KeepAlive和60秒Throttle负责进程启动；业务恢复仍�
 持续宿主发布私有原子 `continuous.json` 状态及现有监控索引，native来源和账本摘要分别绑定；
 发布失败不改变交易行为。观察模式未更新账户策略投影时，页面不得将旧账本预算称为当前已对账。
 编码、离线验收、本机凭据/启动验收、自然跨日/断线以及首笔柜台交易分别报告。
+
+## 持续交易候选（simnow_continuous_v2）
+
+本版本增加 `trade`，仅schema2且启动参数 `--trade` 同时匹配才进入；旧观察plist仍固定
+`--observe-only`，仅改JSON不能升级。trade复用同一账户风险/预留/订单状态机，新增不可变命令
+`ContinuousTradeTickV1` / `htdy_60m_continuous_trade_v1`。observe不构造Adapter；manage仅管理义务，
+不新开、不强平。旧账本事件与hash、旧Tick和人工关闭版本的语义不改写。
+
+schema2是在schema1精确字段基础上增加 `state_project_root`：`project_root`绑定当前代码，
+`state_root`固定为既有 `state_project_root/output/simnow-controlled`。必须已有同账户四库
+account/dispatch/signals/native-evidence、正确scope、0700目录和私有单链接常规文件；只读校验拒绝WAL，
+不创建sidecar、初始化、复制或迁移账户。缺库或身份漂移即停止。新持续宿主及新版一次性执行入口
+共用用户私有账户指纹全局锁，并保留原host.lock；旧版本的既有进程仍由原账户根host.lock互斥。
+所有受支持执行入口须使用唯一已核验账户根，禁止另建目录绕过状态或预算。
+
+- 原生输入获取与状态机共用首次观察时间/品种/来源排序；已有未对账提交优先，全账户最多一个。
+  无未决订单时串行查候选的合约/保证金/手续费，再完整刷新账户并重新核对目标，最后取盘口。
+  当前候选变化则下一轮重排；临时闭市、零对手量、非tick价格或单品种输入无法证明不消耗目标，
+  继续后续合格品种。资金拒绝、最小开仓量不合格及收盘截止按原规则永久放弃该信号。
+- 每品种净持仓最多一手、70%上限、无板块和同时持仓数量上限、对手价、180自然秒撤单跟进、
+  最终收盘前一分钟放弃新开，均不改。报价来源年龄<=8秒和接收后3秒TTL不放宽；发送前重验。
+- 提案与预留先在账户事务中提交，之后发送journal领取唯一身份。未知结果不重发；撤单未知不释放预留，
+  不造替代单。正常成交完整对账后保留反手目标；断线/重启的恢复才不补历史开仓。
+  冷启动需要撤单但盘口/费率缺失时，从不可变原Tick恢复原Instrument，重核当前物理binding/Session，
+  仅构造quote=None撤单事实；旧费率不用于提交，新单仍须全套新鲜输入。
+- trade复用Keychain、权威Session、跨日结算、完整原生接管、退避及每日3次连接预算；日切不重置账本。
+  旧合约平仓使用旧合约事实。切manage后停止新开并取消本程序未完成开仓，已有仓位按义务管理。
+  本地可证明的单品种缺失/异常不拖停其他品种；原生gateway的未分类错误、身份错误及结果未知仍保守
+  阻断全账户，不把未知柜台错误擅自降级为品种问题或清除耐久block。
+- `continuous.json`升至v2；监控索引仍v1并增加可选mode/opening_enabled/host_status，兼容旧索引。
+  等待/阻断时保留最后有效native-source/hash成对绑定，财务只读到该来源，未发布来源不冒充当前核验。
+  当前运行/连接与最后核验快照分别展示；仅成功trade轮、账户新鲜且无未对账订单时声明开仓资格。
+  STOPPED/等待/数据延迟/待核时开仓资格为false；费用及跨日收益缺证据继续待核。
+
+### 收盘后部署与失败恢复（本轮仅准备，不执行）
+
+1. 先按权威Calendar/Session确认全部相关品种收盘，记录现役代码、启动参数和同账户锁/账本身份；
+   保留现有观察plist与私有配置前像。若尚有未清订单/未知回报，保留事实并先核对，不能跳过恢复。
+2. 通过正常发布流程准备固定代码候选；schema2候选配置绑定其代码目录和原账户anchor，账号指纹不变，
+   配置0600，不读取或复制Keychain秘密。首次准备可用enabled=false。API监控仍指向原state_root。
+3. 用该候选的同ABI SDK解释器执行以下无Broker命令；`--check`验证配置/SDK，不读Keychain；
+   preflight只读四库/scope及现有锁，不创建锁，缺锁或持锁时writer_idle=false，不能据此启动：
+
+   ```sh
+   /path/to/sdk/python -I /path/to/code/scripts/broker/simnow_supervisor.py --config /path/to/private-trade.json --trade --check
+   /path/to/sdk/python -I /path/to/code/scripts/ops/macos/simnow-service.py --config /path/to/private-trade.json --render-trade
+   /path/to/sdk/python -I /path/to/code/scripts/ops/macos/simnow-service.py --config /path/to/private-trade.json --preflight-trade
+   ```
+
+   render仅输出带 `--trade` 的同label候选plist；preflight的candidate_valid仅代表静态可部署，
+   execution_permitted永为false，不证明已连接或输入合格。没有trade安装/自动切换入口。
+4. 切换任务中才停止原观察进程并确认原host.lock释放、原账本未改变。首次升级若缺全局锁，
+   在该任务中离线调用共用account_lock取得再释放账户锁，仅初始化并核验锁文件，不连接Broker、不写journal；
+   然后重新preflight确认writer_idle=true并核对配置，再安装固定候选并启动；
+   仍使用同一label，不并起两份writer。按当前账户、当天结算、自然新输入逐品种准入，15个无夜盘品种
+   沿用阻断，待下一交易时段合格。启动成功不等于自然策略订单验收。
+5. 失败时停用trade入口并确认退出/锁释放，保留所有journal、claim、队列、原生与失败证据；
+   恢复前像observe入口或新代码manage（另行显式启用），不删除block、不重置attempts、不补开旧信号。
+   若账本已写入ContinuousTradeTickV1（即使尚无订单），恢复工具必须能重放新命令；旧代码若不支持新事件，不能直接重开旧账本。
+   观察入口的启动参数可恢复，代码必须选择兼容该账本的已验证版本。
+
+本轮仅开发集成及隔离假柜台闭环，未连接柜台、读取凭据、修改正式配置或安装/切换Runtime。
+真实持续开平/撤单、跨日、断线重启、换月和费用闭环仍逐项待验，不能由fixture成功推导。
 
 ## 一次性宿主与只读预检
 

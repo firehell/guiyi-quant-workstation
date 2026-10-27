@@ -2179,3 +2179,20 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 含普通多空开仓、先平后反手、原生时钟双向偏差、完整快照与费用关联、待核阻断和旧账本重放。
 真实SDK结构测试沿用独立固定SDK环境的`tests/unit/simnow_host/native_gateway_smoke.py`，
 只使用假API，不建立原生连接。输入审计v3另报当前1m，即使本Session第一根60m尚未到期。
+
+
+## 持续trade隔离验收与部署预检
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_credentials tests/unit/simnow_supervisor tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution tests/unit/simnow_monitor services/quant-api/tests/test_simnow_portfolio_market.py services/quant-api/tests/test_simnow_controlled_market.py services/quant-api/tests/test_simnow_monitor_api.py services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/data_foundation/test_htdy_closed_source_conflicts.py
+node --test apps/quant-web/tests/simnowMonitor.test.ts
+pnpm -C apps/quant-web build
+PLAYWRIGHT_PORT=5198 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/simnow-monitor.spec.mjs --workers=1
+```
+
+`test_trade_end_to_end.py`以虚拟时钟/假柜台接真实队列、政策、适配器、费用证明和监控，
+覆盖两品种先后开仓、反手以及重启trade/manage接管、不补旧目标、预算不重置；不会读Keychain或联网。
+`test_trade_inputs.py`覆盖费率→账户刷新→最后盘口、失效/零量/闭市/非tick首候选让出、冷缓存撤单。
+settings/preflight覆盖四库身份/scope、缺库零创建和WAL零sidecar；现有执行回归覆盖未知发送、重复/乱序、
+撤单成交竞态、跨日及换月失败。固定SDK smoke仍使用真实结构加假API，不能代替柜台验收。
+trade render/preflight、收盘后切换与停用步骤见[执行合同](docs/SIMNOW_EXECUTION.md#持续交易候选simnow_continuous_v2)。

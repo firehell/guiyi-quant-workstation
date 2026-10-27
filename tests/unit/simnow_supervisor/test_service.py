@@ -113,3 +113,47 @@ def test_renderer_uses_user_logs_instead_of_external_volume(tmp_path):
     assert result["StandardErrorPath"] == str(logs / "supervisor.err.log")
     assert result["WorkingDirectory"] == str(value.project_root)
     assert result["ProgramArguments"][-1] == "--observe-only"
+
+
+def test_trade_render_is_explicit_and_never_overwrites_observe_installer(tmp_path):
+    value = settings(tmp_path, mode="trade")
+    value.schema = 2
+    config = tmp_path / "trade.json"
+    config.write_text("{}")
+    config.chmod(0o600)
+    result = plistlib.loads(service.render_trade_launch_agent(value, config))
+    assert result["Label"] == "com.guiyi.quant-simnow"
+    assert result["ProgramArguments"][-1] == "--trade"
+    assert not (tmp_path / "home").exists()
+    with pytest.raises(ValueError, match="OBSERVE_ONLY"):
+        service.render_launch_agent(value, config)
+    with pytest.raises(ValueError, match="OBSERVE_ENABLED_REQUIRED"):
+        service.install_observe(value, config, home=tmp_path / "home")
+
+
+def test_trade_preflight_reads_binding_without_creating_locks_or_loading_keychain(
+    tmp_path, monkeypatch
+):
+    from test_settings import existing_v2
+    from guiyi_quant.simnow_execution.settings import load_settings
+    from guiyi_quant.simnow_execution import credentials, supervisor
+
+    config, value, folder = existing_v2(tmp_path)
+    project = Path(value["project_root"])
+    (project / "scripts/broker/simnow_supervisor.py").touch()
+    monkeypatch.setattr(
+        credentials.CredentialStore, "load", lambda *_: pytest.fail("Keychain loaded")
+    )
+    monkeypatch.setattr(
+        supervisor, "global_account_lock_directory", lambda: tmp_path / "never-created"
+    )
+    result = service.preflight_trade(load_settings(config), config, products=("RB",))
+    assert (
+        result["candidate_valid"]
+        and not result["execution_permitted"]
+        and not result["broker_io"]
+    )
+    assert (
+        not (tmp_path / "never-created").exists()
+        and not (folder / "host.lock").exists()
+    )

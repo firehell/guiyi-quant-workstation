@@ -5,6 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 from . import model as m
 from .codec import digest
+from .scheduling import ordered_products, desired_action, executable_price
 
 ZERO = Decimal(0)
 TERMINAL = ("FILLED", "CANCELLED", "REJECTED", "LOCAL_ABORTED")
@@ -186,14 +187,17 @@ def fill_follows_order(fill, order):
 def strategy_order_proven(state, order):
     if order is None or any(
         type(audit.command) is m.ManualBeginV1
-        and audit.command.test_id == order.signal_id for audit in state.audit
+        and audit.command.test_id == order.signal_id
+        for audit in state.audit
     ):
         return False
     # Recovery/rollover closes retain their own causal identity and need not
     # invent a new opening signal. Every OPEN must have the frozen real signal.
     return order.offset == "CLOSE" or any(
-        signal.source_id == order.signal_id and signal.product == order.product
-        and signal.contract == order.contract and signal.observed_at <= order.created_at
+        signal.source_id == order.signal_id
+        and signal.product == order.product
+        and signal.contract == order.contract
+        and signal.observed_at <= order.created_at
         for signal in state.signals
     )
 
@@ -207,7 +211,9 @@ def apply_fill(state, cmd):
             raise ValueError("FILL_IDENTITY_CONFLICT")
         return state, "DUPLICATE_FILL"
     o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
-    if type(cmd) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(state, o):
+    if type(cmd) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(
+        state, o
+    ):
         raise ValueError("STRATEGY_NATIVE_FILL_SIGNAL_REQUIRED")
     if type(cmd) is m.CorrelatedNativeFillV1 and (
         o is None
@@ -903,9 +909,7 @@ def tick(
             effects.append(m.Effect("CANCEL", o))
     if state.phase != "READY" or not state.readback_valid:
         return state, tuple(effects), "ACCOUNT_READBACK_REQUIRED"
-    for initial in sorted(
-        state.products, key=lambda p: (p.signal_at or state.activated_at, p.product)
-    ):
+    for initial in ordered_products(state):
         p = product(state, initial.product)
         held = position(state, p.product)
         active = [
@@ -926,25 +930,10 @@ def tick(
                 ),
             )
             continue
-        if held and (p.must_close or p.rolling or held.quantity != p.desired):
-            offset, contract, order_side = (
-                "CLOSE",
-                held.contract,
-                "SELL" if held.quantity > 0 else "BUY",
-            )
-        elif (
-            held is None
-            and p.desired
-            and not p.opening_consumed
-            and p.signal_id not in state.abandoned
-        ):
-            offset, contract, order_side = (
-                "OPEN",
-                p.owner,
-                "BUY" if p.desired > 0 else "SELL",
-            )
-        else:
+        action = desired_action(state, p)
+        if action is None:
             continue
+        offset, contract, order_side = action
         if serialized_submit and any(not order.reconciled for order in state.orders):
             continue
         if p.signal_at is None or cmd.at <= p.signal_at:
@@ -965,12 +954,8 @@ def tick(
             continue
         q = f.quote
         i = f.instrument
-        if not q or not valid(q, cmd.at) or not valid(i, cmd.at):
-            continue
-        price = q.ask if order_side == "BUY" else q.bid
-        if (
-            q.ask_volume if order_side == "BUY" else q.bid_volume
-        ) < 1 or price % i.tick_size:
+        price = executable_price(f, order_side, cmd.at)
+        if price is None:
             continue
         margin = ZERO
         if offset == "OPEN":
@@ -1085,7 +1070,15 @@ def validate(state):
         (state.orders, m.Order),
         (state.reservations, m.Reservation),
         (state.signals, m.Signal),
-        (state.fills, (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1)),
+        (
+            state.fills,
+            (
+                m.Fill,
+                m.NativeFill,
+                m.CorrelatedNativeFillV1,
+                m.StrategyCorrelatedNativeFillV1,
+            ),
+        ),
         (state.updates, m.OrderUpdate),
         (state.risk_decisions, m.RiskDecision),
         (state.audit, m.Audit),
@@ -1139,7 +1132,9 @@ def validate(state):
     filled = set()
     for f in state.fills:
         o = orders.get(f.order_id)
-        if type(f) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(state, o):
+        if type(f) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(
+            state, o
+        ):
             raise ValueError("ACCOUNT_FILL_REPLAY_INVALID")
         if type(f) is m.CorrelatedNativeFillV1 and (
             o is None
@@ -1221,6 +1216,7 @@ def apply(state, key, cmd):
         m.AbortUnsent,
         m.Tick,
         m.ManagedTickV1,
+        m.ContinuousTradeTickV1,
         m.ManualBeginV1,
         m.ManualTickV1,
     ):
@@ -1235,7 +1231,13 @@ def apply(state, key, cmd):
         cmd.observed_at
         if type(cmd) is m.Signal
         else cmd.recorded_at
-        if type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1)
+        if type(cmd)
+        in (
+            m.Fill,
+            m.NativeFill,
+            m.CorrelatedNativeFillV1,
+            m.StrategyCorrelatedNativeFillV1,
+        )
         else cmd.at
     )
     if type(cmd) in (
@@ -1253,7 +1255,7 @@ def apply(state, key, cmd):
         at = max(at, state.clock)
     if at < state.clock:
         raise ValueError("COMMAND_TIME_REGRESSION")
-    if type(cmd) in (m.Tick, m.ManagedTickV1) and any(
+    if type(cmd) in (m.Tick, m.ManagedTickV1, m.ContinuousTradeTickV1) and any(
         not manual_status(state, audit.command.test_id).terminal
         for audit in state.audit
         if type(audit.command) is m.ManualBeginV1
@@ -1278,7 +1280,12 @@ def apply(state, key, cmd):
         else:
             state = replace_product(state, replace(p, owner=cmd.contract))
             reason = "OWNER_VERIFIED"
-    elif type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1):
+    elif type(cmd) in (
+        m.Fill,
+        m.NativeFill,
+        m.CorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV1,
+    ):
         state, reason = apply_fill(state, cmd)
     elif type(cmd) is m.OrderUpdate:
         state, reason = order_update(state, cmd)
@@ -1337,6 +1344,15 @@ def apply(state, key, cmd):
             opening_allowed=False,
             serialized_submit=True,
             policy_version=m.MANAGED_TICK_POLICY_VERSION,
+        )
+    elif type(cmd) is m.ContinuousTradeTickV1:
+        state, effects, reason = tick(
+            state,
+            cmd,
+            key,
+            opening_allowed=True,
+            serialized_submit=True,
+            policy_version=m.CONTINUOUS_TRADE_POLICY_VERSION,
         )
     elif type(cmd) is m.ManualTickV1:
         state, effects, reason = manual_tick(state, cmd, key)

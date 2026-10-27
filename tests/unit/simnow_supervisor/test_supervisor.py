@@ -671,3 +671,58 @@ def test_restart_drops_uncommitted_old_signal_without_account_mutation(tmp_path)
     inbox = SignalInbox(folder / "signals.sqlite", ACCOUNT, ("JM", "RB"))
     assert inbox.pending() == ()
     inbox.close()
+
+
+def test_same_account_cannot_run_from_two_different_roots(tmp_path):
+    first = SimpleNamespace(state_root=tmp_path / "first", account_id=ACCOUNT)
+    second = SimpleNamespace(state_root=tmp_path / "second", account_id=ACCOUNT)
+    with account_lock(first):
+        with pytest.raises(ValueError, match="ACCOUNT_HOST_ALREADY_RUNNING"):
+            with account_lock(second):
+                pytest.fail("second account writer acquired")
+    with account_lock(second):
+        pass
+
+
+@pytest.mark.parametrize(
+    "code,pending,expected",
+    [
+        ("TRADING", False, True),
+        ("TRADING", True, False),
+        ("READBACK_NOT_STABLE", False, False),
+        ("ACCOUNT_RECONCILIATION_REQUIRED", False, False),
+    ],
+)
+def test_opening_status_requires_current_trade_cycle_and_no_unreconciled_order(
+    tmp_path, code, pending, expected
+):
+    import json
+
+    settings, _ = setup(tmp_path, mode="trade")
+    host = Supervisor(
+        settings, ("JM", "RB"), FakeMarket(), lambda *_: None, clock=Clock().now
+    )
+    host.folder = settings.state_root / ACCOUNT
+    host.latest_source = host.ledger_hash = None
+    host.monitor = SimpleNamespace(publish=lambda *_args, **_kwargs: True)
+    host.prepared = host.session_active = True
+    host.day = "20261027"
+    state = a.LocalStore.inspect(host.folder / "account.sqlite")
+    from dataclasses import replace
+
+    state = replace(
+        state, readback=replace(state.readback, valid_until=T + timedelta(hours=3))
+    )
+    state = SimpleNamespace(
+        **{
+            **vars(state),
+            "orders": (SimpleNamespace(reconciled=False),) if pending else (),
+        }
+    )
+    host.store = SimpleNamespace(current=lambda: state)
+    host.host = SimpleNamespace(pending=(), adapter=SimpleNamespace(_faulted=False))
+    host.status(code, connected=True)
+    assert (
+        json.loads((host.folder / "continuous.json").read_text())["opening_enabled"]
+        is expected
+    )

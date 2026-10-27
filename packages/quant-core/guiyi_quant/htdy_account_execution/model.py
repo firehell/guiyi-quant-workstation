@@ -18,6 +18,7 @@ from ..htdy_execution import (
 POLICY_VERSION = "htdy_60m_account_execution_v2"
 PRODUCT_RECOVERY_POLICY_VERSION = "htdy_60m_product_recovery_v1"
 MANAGED_TICK_POLICY_VERSION = "htdy_60m_managed_tick_v1"
+CONTINUOUS_TRADE_POLICY_VERSION = "htdy_60m_continuous_trade_v1"
 MANUAL_TEST_POLICY_VERSION = "htdy_simnow_rb_manual_long1_hold600_v1"
 CORRELATED_NATIVE_FILL_POLICY_VERSION = "simnow_manual_correlated_fill_v1"
 STRATEGY_CORRELATED_NATIVE_FILL_POLICY_VERSION = "simnow_strategy_correlated_fill_v1"
@@ -131,17 +132,27 @@ class StrategyCorrelatedNativeFillV1(NativeFill):
         # Fill/NativeFill's old validation compares broker filled_at to local
         # recorded_at. This version proves causal identity across two clocks;
         # keep the other validations, but compare only local times to each other.
-        for value in (self.trade_id, self.order_id, self.account_id, self.contract,
-                      self.dispatch_source_id, self.native_system_id):
+        for value in (
+            self.trade_id,
+            self.order_id,
+            self.account_id,
+            self.contract,
+            self.dispatch_source_id,
+            self.native_system_id,
+        ):
             text(value)
         for value in (self.filled_at, self.recorded_at, self.request_started_at):
             time(value)
         money(self.price, True)
         money(self.fee)
-        if (type(self.quantity) is not int or self.quantity != 1
+        if (
+            type(self.quantity) is not int
+            or self.quantity != 1
             or type(self.native_precision_seconds) is not int
-            or self.native_precision_seconds != 1 or self.filled_at.microsecond != 0
-            or self.recorded_at < self.request_started_at):
+            or self.native_precision_seconds != 1
+            or self.filled_at.microsecond != 0
+            or self.recorded_at < self.request_started_at
+        ):
             raise ValueError("NATIVE_FILL_PRECISION_INVALID")
         text(self.readback_source_id)
         text(self.native_order_ref)
@@ -152,7 +163,8 @@ class StrategyCorrelatedNativeFillV1(NativeFill):
             or self.native_front_id <= 0
             or type(self.native_session_id) is not int
             or self.native_session_id <= 0
-            or self.correlation_policy_version != STRATEGY_CORRELATED_NATIVE_FILL_POLICY_VERSION
+            or self.correlation_policy_version
+            != STRATEGY_CORRELATED_NATIVE_FILL_POLICY_VERSION
         ):
             raise ValueError("STRATEGY_CORRELATED_NATIVE_FILL_PROOF_INVALID")
 
@@ -355,6 +367,20 @@ class ManagedTickV1:
             or self.policy_version != MANAGED_TICK_POLICY_VERSION
         ):
             raise ValueError("MANAGED_TICK_POLICY_INVALID")
+
+
+@dataclass(frozen=True)
+class ContinuousTradeTickV1:
+    """Explicit continuous trading, serializing all submissions account-wide."""
+
+    at: datetime
+    inputs: tuple[ExecutionInput, ...]
+    policy_version: str = CONTINUOUS_TRADE_POLICY_VERSION
+
+    def __post_init__(self):
+        Tick(self.at, self.inputs)
+        if self.policy_version != CONTINUOUS_TRADE_POLICY_VERSION:
+            raise ValueError("CONTINUOUS_TRADE_POLICY_INVALID")
 
 
 def manual_test_id(value):
