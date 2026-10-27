@@ -101,7 +101,46 @@ class CohortHost(FaultRecoveryHost):
                 "COHORT_LOADED_PREIMAGE_CHANGED",
             )
             result[name]["loaded"] = loaded
+            if name in CONTINUOUS and binding.enabled:
+                state = read_service_state(name)
+                if state and state.get("phase") == "parked":
+                    from app.runtime_handover import _read
+
+                    control = _read(self.directory / f"{name}.handover.json")
+                    require(
+                        loaded and state.get("generation") == binding.generation
+                        and str(state.get("pid")) == str(result[name]["loaded_pid"])
+                        and owner_process_matches(state, binding)
+                        and owner_lock_available(name, runtime_dir=self.directory),
+                        "COHORT_PARKED_PREIMAGE_UNPROVEN",
+                    )
+                    self._check_parked_control(name, binding, control)
+                    result[name]["parked_drain"] = control
         return result
+
+    @staticmethod
+    def _check_parked_control(name, binding, control):
+        require(
+            isinstance(control, dict)
+            and set(control) == {"schema_version", "service", "generation", "request_id", "phase"}
+            and type(control["schema_version"]) is int and control["schema_version"] == 1
+            and control["service"] == name
+            and type(control["generation"]) is int and control["generation"] == binding.generation
+            and isinstance(control["request_id"], str)
+            and re.fullmatch(r"[0-9a-f]{32}", control["request_id"])
+            and control["phase"] == "drain",
+            "COHORT_PARKED_DRAIN_UNPROVEN",
+        )
+
+    def _preserved_drain(self, plan, name):
+        from app.runtime_handover import _read
+
+        control = plan["installed"].get(name, {}).get("parked_drain")
+        if control is not None:
+            self._check_parked_control(name, registry(plan["old"]).services[name], control)
+            require(_read(self.directory / f"{name}.handover.json") == control,
+                    "COHORT_PARKED_DRAIN_CHANGED")
+        return control
 
     def session_proof(self):
         from app.db.session import SessionLocal
@@ -557,7 +596,9 @@ class CohortHost(FaultRecoveryHost):
             binding = old.services[name]
             if not binding.enabled:
                 continue
-            self.drains[name] = self.request_drain(name, binding.generation)
+            preserved = self._preserved_drain(plan, name)
+            self.drains[name] = (preserved["request_id"] if preserved is not None
+                                 else self.request_drain(name, binding.generation))
             deadline = min(self.deadline, monotonic() + 10)
             while monotonic() < deadline:
                 state = read_service_state(name)
@@ -567,6 +608,8 @@ class CohortHost(FaultRecoveryHost):
                     and state.get("generation") == binding.generation
                     and str(state.get("pid"))
                     == str(self.loaded(binding, allow_idle=True))
+                    and (preserved is None or str(state.get("pid"))
+                         == str(plan["installed"][name]["loaded_pid"]))
                     and owner_lock_available(name)
                 ):
                     break
@@ -1256,6 +1299,8 @@ class CohortHost(FaultRecoveryHost):
     def restore_old(self, plan):
         old = registry(plan["old"])
         require(self.bindings() == old, "COHORT_OLD_RESTORE_REGISTRY_UNKNOWN")
+        preserved = {name: control for name in old.services
+                     if (control := self._preserved_drain(plan, name)) is not None}
         # launchctl can still report a tearing-down definition after bootout
         # returned. Do not cancel drain or mistake that definition for a live
         # restored process. Recovery has a separate finite wait budget.
@@ -1274,12 +1319,19 @@ class CohortHost(FaultRecoveryHost):
                 self.path(binding), bytes.fromhex(plan["installed"][name]["plist_hex"])
             )
         for name, request in getattr(self, "drains", {}).items():
-            cancel_drain(name, request_id=request)
+            if name not in preserved:
+                cancel_drain(name, request_id=request)
         for name, binding in old.services.items():
             preimage = plan["installed"][name]
             require(
                 type(preimage.get("loaded")) is bool, "COHORT_LOADED_PREIMAGE_MISSING"
             )
+            if name in preserved:
+                # An old reader may not understand newly committed recovery
+                # facts. Even a retained drain cannot make its startup safe:
+                # old startup can initialize a writer before checking drain.
+                # Keep a surviving owner parked; never restart an exited one.
+                continue
             target = f"gui/{os.getuid()}/{binding.label}"
             self.launch("enable" if binding.enabled else "disable", target)
             if preimage["loaded"]:
@@ -1319,11 +1371,19 @@ class CohortHost(FaultRecoveryHost):
                 if not binding.enabled:
                     continue
                 state = read_service_state(name)
+                if name in preserved:
+                    self._preserved_drain(plan, name)
+                    if self.definition_absent(binding):
+                        require(owner_lock_available(name, runtime_dir=self.directory),
+                                "COHORT_PARKED_OWNER_EXIT_UNPROVEN")
+                        continue
                 active = active and bool(
                     state
-                    and state.get("phase") == "active"
+                    and state.get("phase") == ("parked" if name in preserved else "active")
                     and state.get("generation") == binding.generation
                     and owner_process_matches(state, binding)
+                    and (name not in preserved or owner_lock_available(name, runtime_dir=self.directory))
+                    and (name not in preserved or str(state.get("pid")) == str(plan["installed"][name]["loaded_pid"]))
                 )
             if active:
                 for name, binding in old.services.items():
@@ -1333,6 +1393,8 @@ class CohortHost(FaultRecoveryHost):
                             is plan["installed"][name]["loaded"],
                             "COHORT_OLD_RESTORE_CALENDAR_UNPROVEN",
                         )
+                require(not any(self.definition_absent(old.services[name]) for name in preserved),
+                        "COHORT_PARKED_OWNER_FORWARD_RECOVERY_REQUIRED")
                 return
             sleep(0.1)
         raise CohortError("COHORT_OLD_RESTORE_OWNER_UNPROVEN")
