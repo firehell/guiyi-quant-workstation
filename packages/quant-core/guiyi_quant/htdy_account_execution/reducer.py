@@ -170,6 +170,11 @@ def signal(state, cmd):
 
 
 def fill_follows_order(fill, order):
+    if type(fill) is m.CorrelatedNativeFillV1:
+        return (
+            fill.request_started_at >= order.created_at
+            and fill.recorded_at >= fill.request_started_at
+        )
     if type(fill) is m.NativeFill:
         return (
             fill.request_started_at >= order.created_at
@@ -187,6 +192,15 @@ def apply_fill(state, cmd):
             raise ValueError("FILL_IDENTITY_CONFLICT")
         return state, "DUPLICATE_FILL"
     o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
+    if type(cmd) is m.CorrelatedNativeFillV1 and (
+        o is None
+        or not any(
+            type(audit.command) is m.ManualBeginV1
+            and audit.command.test_id == o.signal_id
+            for audit in state.audit
+        )
+    ):
+        raise ValueError("CORRELATED_NATIVE_FILL_MANUAL_ONLY")
     if o is None:
         return cancel_opens(
             replace(
@@ -196,6 +210,11 @@ def apply_fill(state, cmd):
                 phase="BLOCKED",
             )
         ), "UNKNOWN_NATIVE_FILL_RETAINED"
+    if any(
+        type(audit.command) is m.ManualBeginV1 and audit.command.test_id == o.signal_id
+        for audit in state.audit
+    ) and type(cmd) not in (m.NativeFill, m.CorrelatedNativeFillV1):
+        raise ValueError("MANUAL_NATIVE_FILL_REQUIRED")
     if cmd.contract != o.contract or not fill_follows_order(cmd, o):
         raise ValueError("FILL_ORDER_OR_TIMING_INVALID")
     if has_fill(state, o):
@@ -528,6 +547,259 @@ def recover_product(state, cmd):
     )
 
 
+def _manual_begin(state, test_id):
+    begins = [
+        audit.command
+        for audit in state.audit
+        if type(audit.command) is m.ManualBeginV1 and audit.command.test_id == test_id
+    ]
+    if len(begins) != 1:
+        raise ValueError("MANUAL_TEST_IDENTITY_INVALID")
+    return begins[0]
+
+
+def _manual_confirmed_at(state, order, fill, *, closed=False):
+    """The first successful full native readback, retained in the audit."""
+    accepted = {
+        "READBACK_RECONCILED",
+        "RECOVERED_NO_HISTORICAL_OPEN",
+        "PRODUCT_RECOVERED_NO_HISTORICAL_OPEN",
+    }
+    for audit in state.audit:
+        if audit.reason not in accepted:
+            continue
+        command = audit.command
+        readback = (
+            command
+            if type(command) is m.Readback
+            else (
+                command.readback
+                if type(command) in (m.Recover, m.ProductRecoveryV1)
+                else None
+            )
+        )
+        if readback is None or not readback.complete or readback.at < fill.recorded_at:
+            continue
+        native_order = next(
+            (
+                native
+                for native in readback.snapshot.orders
+                if native.order_id == order.order_id
+            ),
+            None,
+        )
+        native_position = any(
+            held.product == order.product
+            and held.contract == order.contract
+            and held.quantity == 1
+            for held in readback.snapshot.positions
+        )
+        if (
+            native_order is not None
+            and native_order.status == "FILLED"
+            and fill.trade_id in readback.confirmed_trade_ids
+            and (not native_position if closed else native_position)
+        ):
+            return readback.at
+    return None
+
+
+def manual_status(state, test_id):
+    m.manual_test_id(test_id)
+    begin = _manual_begin(state, test_id)
+    opens = [o for o in state.orders if o.signal_id == test_id and o.offset == "OPEN"]
+    closes = [o for o in state.orders if o.signal_id == test_id and o.offset == "CLOSE"]
+    if len(opens) > 1 or any(
+        o.product != begin.product or o.contract != begin.contract
+        for o in opens + closes
+    ):
+        raise ValueError("MANUAL_ORDER_IDENTITY_INVALID")
+    close_ids = tuple(o.order_id for o in closes)
+
+    def result(
+        phase, *, confirmed_at=None, due_at=None, terminal=False, complete=False
+    ):
+        return m.ManualStatusV1(
+            phase,
+            due_at,
+            opens[0].order_id if opens else None,
+            close_ids,
+            confirmed_at,
+            complete,
+            terminal,
+        )
+
+    if not opens:
+        if test_id in state.abandoned:
+            return result("OPEN_REJECTED", terminal=True)
+        if state.clock >= begin.open_until:
+            return result("OPEN_EXPIRED", terminal=True)
+        return result("WAIT_OPEN")
+    opening = opens[0]
+    open_fill = next((f for f in state.fills if f.order_id == opening.order_id), None)
+    if open_fill is None:
+        if opening.reconciled and opening.status in (
+            "CANCELLED",
+            "REJECTED",
+            "LOCAL_ABORTED",
+        ):
+            return result("OPEN_NO_FILL", terminal=True)
+        return result("OPEN_PENDING")
+    if not opening.reconciled:
+        return result("OPEN_UNCONFIRMED")
+    confirmed_at = _manual_confirmed_at(state, opening, open_fill)
+    if confirmed_at is None:
+        return result("OPEN_UNCONFIRMED")
+    due_at = confirmed_at + timedelta(seconds=begin.hold_seconds)
+    if closes:
+        for closing in closes:
+            close_fill = next(
+                (f for f in state.fills if f.order_id == closing.order_id), None
+            )
+            if (
+                closing.reconciled
+                and close_fill is not None
+                and _manual_confirmed_at(state, closing, close_fill, closed=True)
+                is not None
+                and not state.positions
+            ):
+                return result(
+                    "COMPLETE",
+                    confirmed_at=confirmed_at,
+                    due_at=due_at,
+                    terminal=True,
+                    complete=True,
+                )
+        return result("CLOSE_PENDING", confirmed_at=confirmed_at, due_at=due_at)
+    return result(
+        "CLOSE_DUE" if state.clock >= due_at else "HOLDING",
+        confirmed_at=confirmed_at,
+        due_at=due_at,
+    )
+
+
+def manual_begin(state, cmd):
+    if any(type(audit.command) is m.ManualBeginV1 for audit in state.audit):
+        raise ValueError("MANUAL_TEST_ALREADY_STARTED")
+    p = product(state, cmd.product)
+    if (
+        p.owner != cmd.contract
+        or state.phase != "READY"
+        or not state.readback_valid
+        or not state.readback.complete
+        or not valid(state.readback, cmd.at)
+        or state.positions
+        or state.readback.snapshot.positions
+        or any(order.offset == "OPEN" for order in state.orders)
+        or any(not order.reconciled for order in state.orders)
+        or any(not reservation.released for reservation in state.reservations)
+        or state.readback.used_margin
+        or state.readback.frozen_margin
+        or state.readback.frozen_fee
+        or state.readback.coverage
+        or state.unresolved_fill_ids
+        or any(
+            native.status not in ("FILLED", "CANCELLED", "REJECTED")
+            for native in state.readback.snapshot.orders
+        )
+    ):
+        raise ValueError("MANUAL_ACCOUNT_NOT_FLAT_READY")
+    return state, "MANUAL_TEST_BEGUN"
+
+
+def manual_tick(state, cmd, key):
+    begin = _manual_begin(state, cmd.test_id)
+    if len(cmd.inputs) > 1 or any(
+        f.instrument.contract != begin.contract for f in cmd.inputs
+    ):
+        raise ValueError("MANUAL_EXECUTION_SCOPE_INVALID")
+    if (
+        any(
+            held.product != begin.product
+            or held.contract != begin.contract
+            or held.quantity != 1
+            for held in state.positions
+        )
+        or any(not o.reconciled and o.signal_id != begin.test_id for o in state.orders)
+        or any(
+            not r.released
+            and next(
+                (o.signal_id for o in state.orders if o.order_id == r.order_id), None
+            )
+            != begin.test_id
+            for r in state.reservations
+        )
+    ):
+        raise ValueError("MANUAL_ACCOUNT_SCOPE_CHANGED")
+    status = manual_status(state, cmd.test_id)
+    if status.terminal:
+        return state, (), "MANUAL_TEST_TERMINAL"
+    if state.phase != "READY" or not state.readback_valid:
+        return state, (), "MANUAL_ACCOUNT_READBACK_REQUIRED"
+    if not valid(state.readback, cmd.at):
+        return (
+            replace(state, phase="RECOVERY_REQUIRED", readback_valid=False),
+            (),
+            "MANUAL_ACCOUNT_READBACK_REQUIRED",
+        )
+    p = product(state, begin.product)
+    if p.owner != begin.contract and status.open_order_id is None:
+        raise ValueError("MANUAL_OWNER_CHANGED_BEFORE_OPEN")
+    if status.phase == "WAIT_OPEN" and (state.positions or cmd.at >= begin.open_until):
+        return state, (), "MANUAL_OPEN_WINDOW_EXPIRED"
+    opening = status.phase == "WAIT_OPEN"
+    closing = status.phase == "CLOSE_PENDING" or (
+        status.due_at is not None and cmd.at >= status.due_at
+    )
+    shadow = replace_product(
+        state,
+        replace(
+            p,
+            desired=0 if closing else 1,
+            signal_id=begin.test_id,
+            signal_at=status.confirmed_at or begin.at,
+            opening_consumed=False
+            if opening or status.phase == "OPEN_PENDING"
+            else True,
+            must_close=closing,
+            rolling=False,
+        ),
+    )
+    # A strategy-input block is not authority over this explicit manual test.
+    # Keep the original tuple in the committed state; it must not cancel the
+    # already accepted manual OPEN on the next tick.
+    shadow = replace(
+        shadow,
+        blocked_products=tuple(
+            name for name in shadow.blocked_products if name != begin.product
+        ),
+    )
+    if status.phase == "OPEN_PENDING" and cmd.at >= begin.open_until:
+        pending = next(o for o in shadow.orders if o.order_id == status.open_order_id)
+        shadow = replace_order(shadow, replace(pending, cancel_required=True))
+    shadow, effects, _ = tick(
+        shadow,
+        cmd,
+        key,
+        opening_allowed=opening
+        or (status.phase == "OPEN_PENDING" and cmd.at < begin.open_until),
+        serialized_submit=True,
+        policy_version=m.MANUAL_TEST_POLICY_VERSION,
+    )
+    if any(
+        effect.order.signal_id != begin.test_id or effect.order.product != begin.product
+        for effect in effects
+    ):
+        raise ValueError("MANUAL_EFFECT_SCOPE_INVALID")
+    return (
+        replace(
+            shadow, products=state.products, blocked_products=state.blocked_products
+        ),
+        effects,
+        "MANUAL_TICK",
+    )
+
+
 def local_occupancy(state):
     coverage = {c.order_id: c for c in state.readback.coverage}
     margin = fee = ZERO
@@ -796,7 +1068,7 @@ def validate(state):
         (state.orders, m.Order),
         (state.reservations, m.Reservation),
         (state.signals, m.Signal),
-        (state.fills, (m.Fill, m.NativeFill)),
+        (state.fills, (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1)),
         (state.updates, m.OrderUpdate),
         (state.risk_decisions, m.RiskDecision),
         (state.audit, m.Audit),
@@ -849,11 +1121,20 @@ def validate(state):
     positions = {}
     filled = set()
     for f in state.fills:
+        o = orders.get(f.order_id)
+        if type(f) is m.CorrelatedNativeFillV1 and (
+            o is None
+            or not any(
+                type(audit.command) is m.ManualBeginV1
+                and audit.command.test_id == o.signal_id
+                for audit in state.audit
+            )
+        ):
+            raise ValueError("ACCOUNT_FILL_REPLAY_INVALID")
         if f.trade_id in state.unresolved_fill_ids:
             if state.phase != "BLOCKED":
                 raise ValueError("UNRESOLVED_FILL_NOT_BLOCKED")
             continue
-        o = orders.get(f.order_id)
         if (
             o is None
             or f.order_id in filled
@@ -911,6 +1192,7 @@ def apply(state, key, cmd):
         m.Owner,
         m.Fill,
         m.NativeFill,
+        m.CorrelatedNativeFillV1,
         m.OrderUpdate,
         m.Readback,
         m.Recover,
@@ -919,6 +1201,8 @@ def apply(state, key, cmd):
         m.AbortUnsent,
         m.Tick,
         m.ManagedTickV1,
+        m.ManualBeginV1,
+        m.ManualTickV1,
     ):
         raise ValueError("ACCOUNT_COMMAND_INVALID")
     payload = digest(cmd)
@@ -931,10 +1215,16 @@ def apply(state, key, cmd):
         cmd.observed_at
         if type(cmd) is m.Signal
         else cmd.recorded_at
-        if type(cmd) in (m.Fill, m.NativeFill)
+        if type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1)
         else cmd.at
     )
-    if type(cmd) in (m.Fill, m.NativeFill, m.OrderUpdate, m.Disconnect):
+    if type(cmd) in (
+        m.Fill,
+        m.NativeFill,
+        m.CorrelatedNativeFillV1,
+        m.OrderUpdate,
+        m.Disconnect,
+    ):
         at = max(at, state.clock)
     if type(cmd) is m.Signal and any(
         (s.product, s.bar_end) == (cmd.product, cmd.bar_end) for s in state.signals
@@ -942,6 +1232,12 @@ def apply(state, key, cmd):
         at = max(at, state.clock)
     if at < state.clock:
         raise ValueError("COMMAND_TIME_REGRESSION")
+    if type(cmd) in (m.Tick, m.ManagedTickV1) and any(
+        not manual_status(state, audit.command.test_id).terminal
+        for audit in state.audit
+        if type(audit.command) is m.ManualBeginV1
+    ):
+        raise ValueError("MANUAL_TEST_SCOPED_TICK_REQUIRED")
     effects = ()
     if type(cmd) is m.Signal:
         state, reason = signal(state, cmd)
@@ -961,7 +1257,7 @@ def apply(state, key, cmd):
         else:
             state = replace_product(state, replace(p, owner=cmd.contract))
             reason = "OWNER_VERIFIED"
-    elif type(cmd) in (m.Fill, m.NativeFill):
+    elif type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1):
         state, reason = apply_fill(state, cmd)
     elif type(cmd) is m.OrderUpdate:
         state, reason = order_update(state, cmd)
@@ -971,6 +1267,8 @@ def apply(state, key, cmd):
         state, reason = recover(state, cmd)
     elif type(cmd) is m.ProductRecoveryV1:
         state, reason = recover_product(state, cmd)
+    elif type(cmd) is m.ManualBeginV1:
+        state, reason = manual_begin(state, cmd)
     elif type(cmd) is m.AbortUnsent:
         o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
         if (
@@ -1019,6 +1317,8 @@ def apply(state, key, cmd):
             serialized_submit=True,
             policy_version=m.MANAGED_TICK_POLICY_VERSION,
         )
+    elif type(cmd) is m.ManualTickV1:
+        state, effects, reason = manual_tick(state, cmd, key)
     else:
         state, effects, reason = tick(state, cmd, key)
     state = replace(

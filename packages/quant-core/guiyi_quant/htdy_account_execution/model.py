@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import re
+from uuid import UUID
 from ..htdy_execution import (
     AccountSnapshot as AccountSnapshot,
     Fill as Fill,
@@ -17,6 +18,8 @@ from ..htdy_execution import (
 POLICY_VERSION = "htdy_60m_account_execution_v2"
 PRODUCT_RECOVERY_POLICY_VERSION = "htdy_60m_product_recovery_v1"
 MANAGED_TICK_POLICY_VERSION = "htdy_60m_managed_tick_v1"
+MANUAL_TEST_POLICY_VERSION = "htdy_simnow_rb_manual_long1_hold600_v1"
+CORRELATED_NATIVE_FILL_POLICY_VERSION = "simnow_manual_correlated_fill_v1"
 RISK_VERSION = "htdy_simnow_margin70_skip_v1"
 EXECUTION_VERSION = "htdy_simnow_opponent_reprice180_v1"
 FORMULA_VERSION = "huotian_dayou_original_v0"
@@ -85,6 +88,32 @@ class NativeFill(Fill):
             or self.recorded_at < self.request_started_at
         ):
             raise ValueError("NATIVE_FILL_PRECISION_INVALID")
+
+
+@dataclass(frozen=True)
+class CorrelatedNativeFillV1(NativeFill):
+    """Manual-only native fill whose identity proof spans distinct clock domains."""
+
+    readback_source_id: str = ""
+    native_order_ref: str = ""
+    native_front_id: int = 0
+    native_session_id: int = 0
+    correlation_policy_version: str = CORRELATED_NATIVE_FILL_POLICY_VERSION
+
+    def __post_init__(self):
+        super().__post_init__()
+        text(self.readback_source_id)
+        text(self.native_order_ref)
+        if (
+            re.fullmatch(r"[0-9]+", self.native_order_ref) is None
+            or int(self.native_order_ref) <= 0
+            or type(self.native_front_id) is not int
+            or self.native_front_id <= 0
+            or type(self.native_session_id) is not int
+            or self.native_session_id <= 0
+            or self.correlation_policy_version != CORRELATED_NATIVE_FILL_POLICY_VERSION
+        ):
+            raise ValueError("CORRELATED_NATIVE_FILL_PROOF_INVALID")
 
 
 @dataclass(frozen=True)
@@ -285,6 +314,70 @@ class ManagedTickV1:
             or self.policy_version != MANAGED_TICK_POLICY_VERSION
         ):
             raise ValueError("MANAGED_TICK_POLICY_INVALID")
+
+
+def manual_test_id(value):
+    if type(value) is not str or not value.startswith("manual:"):
+        raise ValueError("MANUAL_TEST_ID_INVALID")
+    try:
+        identity = UUID(value.removeprefix("manual:"))
+    except (ValueError, AttributeError):
+        raise ValueError("MANUAL_TEST_ID_INVALID") from None
+    if value != "manual:" + str(identity):
+        raise ValueError("MANUAL_TEST_ID_INVALID")
+
+
+@dataclass(frozen=True)
+class ManualBeginV1:
+    test_id: str
+    product: str
+    contract: str
+    at: datetime
+    open_until: datetime
+    side: int = 1
+    hold_seconds: int = 600
+    policy_version: str = MANUAL_TEST_POLICY_VERSION
+
+    def __post_init__(self):
+        manual_test_id(self.test_id)
+        contract(self.product, self.contract)
+        time(self.at)
+        time(self.open_until)
+        if (
+            self.product != "RB"
+            or type(self.side) is not int
+            or self.side != 1
+            or type(self.hold_seconds) is not int
+            or self.hold_seconds != 600
+            or not self.at < self.open_until <= self.at + timedelta(seconds=3600)
+            or self.policy_version != MANUAL_TEST_POLICY_VERSION
+        ):
+            raise ValueError("MANUAL_TEST_POLICY_INVALID")
+
+
+@dataclass(frozen=True)
+class ManualTickV1:
+    at: datetime
+    inputs: tuple[ExecutionInput, ...]
+    test_id: str
+    policy_version: str = MANUAL_TEST_POLICY_VERSION
+
+    def __post_init__(self):
+        Tick(self.at, self.inputs)
+        manual_test_id(self.test_id)
+        if self.policy_version != MANUAL_TEST_POLICY_VERSION:
+            raise ValueError("MANUAL_TEST_POLICY_INVALID")
+
+
+@dataclass(frozen=True)
+class ManualStatusV1:
+    phase: str
+    due_at: datetime | None
+    open_order_id: str | None
+    close_order_ids: tuple[str, ...]
+    confirmed_at: datetime | None
+    complete: bool
+    terminal: bool
 
 
 @dataclass(frozen=True)

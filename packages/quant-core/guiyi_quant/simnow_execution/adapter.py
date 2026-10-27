@@ -4,10 +4,12 @@ from datetime import datetime, UTC, timedelta
 from functools import wraps
 from decimal import Decimal
 import re
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 from ..htdy_account_execution import model as m
 from ..htdy_account_execution.codec import digest
 from .model import action_hash, close_offset, valid, ENVIRONMENT, FRONT
+from .inventory import Snapshot, native_hash
 
 
 def callback_guard(method):
@@ -58,7 +60,12 @@ def callback_guard(method):
 
 
 class Adapter:
-    def __init__(self, store, journal, sdk, api, user, session):
+    def __init__(self, store, journal, sdk, api, user, session, *,
+                 close_only=False, correlated_native=False):
+        if type(close_only) is not bool or type(correlated_native) is not bool or (
+            correlated_native and not close_only
+        ):
+            raise ValueError("NATIVE_CAPABILITY_INVALID")
         if re.fullmatch(r"[0-9]{1,16}", user) is None:
             raise ValueError("INVESTOR_FORMAT_INVALID")
         # The existing read-only tool's environment-scoped identity algorithm.
@@ -78,12 +85,220 @@ class Adapter:
         self.store, self.journal, self.sdk, self.api = store, journal, sdk, api
         self._user, self.session = user, session
         self._faulted = False
+        self.close_only = close_only
+        self.correlated_native = correlated_native
+        self._correlated_snapshot = None
+
+    def correlate_snapshot(self, snapshot):
+        """Bind manual callback admission to one complete native two-round readback."""
+        if not self.correlated_native:
+            raise ValueError("NATIVE_CORRELATION_NOT_ENABLED")
+        if type(snapshot) is not Snapshot or (
+            snapshot.account_id, snapshot.trading_day
+        ) != (self.session.account_id, self.session.trading_day):
+            raise ValueError("NATIVE_CORRELATION_IDENTITY_INVALID")
+        data = snapshot.data
+        expected = "ctp-inventory:" + snapshot.trading_day + ":" + native_hash((
+            snapshot.account_id, snapshot.trading_day, data, snapshot.at.isoformat()
+        ))
+        if snapshot.source_id != expected:
+            raise ValueError("NATIVE_CORRELATION_SOURCE_INVALID")
+        orders = {}
+        for row in data["orders"]:
+            try:
+                order_id = self.journal.find_ref(
+                    row["OrderRef"], row["FrontID"], row["SessionID"]
+                )
+            except ValueError:
+                continue
+            bound = self.journal.find(order_id)
+            if (
+                row["InstrumentID"], row["ExchangeID"], row["TradingDay"],
+                row["Direction"], row["CombOffsetFlag"], row["CombHedgeFlag"],
+                row["VolumeTotalOriginal"], Decimal(row["LimitPrice"]),
+            ) != (
+                bound["native"], bound["exchange"], bound["trading_day"],
+                "0" if bound["side"] == "BUY" else "1", bound["offset"],
+                "1", 1, Decimal(bound["price"]),
+            ):
+                raise ValueError("NATIVE_CORRELATION_ORDER_MISMATCH")
+            known_systems = {
+                payload["system_id"] for _, payload, _ in self.journal.events()
+                if payload["kind"] == "order" and payload["order_id"] == order_id
+                and payload["system_id"]
+            }
+            if known_systems and known_systems != {row["OrderSysID"].strip()}:
+                raise ValueError("NATIVE_CORRELATION_SYSTEM_ID_CONFLICT")
+            orders[order_id] = row
+        trades = {}
+        for row in data["trades"]:
+            matches = [
+                (order_id, order)
+                for order_id, order in orders.items()
+                if order["ExchangeID"] == row["ExchangeID"]
+                and order["OrderSysID"].strip()
+                and order["OrderSysID"].strip() == row["OrderSysID"].strip()
+            ]
+            if len(matches) > 1:
+                raise ValueError("NATIVE_CORRELATION_TRADE_AMBIGUOUS")
+            if len(matches) == 1:
+                order_id, order = matches[0]
+                if (
+                    row["TradingDay"], row["InstrumentID"], row["Direction"],
+                    row["OffsetFlag"], row["HedgeFlag"], row["Volume"],
+                ) != (
+                    snapshot.trading_day, order["InstrumentID"],
+                    order["Direction"], order["CombOffsetFlag"], "1", 1,
+                ) or not row["TradeID"].strip():
+                    raise ValueError("NATIVE_CORRELATION_TRADE_MISMATCH")
+                key = ":".join((snapshot.trading_day, row["ExchangeID"],
+                                row["TradeID"].strip(), row["Direction"]))
+                trades[key] = (order_id, row)
+        self._correlated_snapshot = snapshot, orders, trades
+        resolved = {
+            payload["pending_id"] for _, payload, _ in self.journal.events()
+            if payload["kind"] == "correlation"
+        }
+        for event_id, payload, received in self.journal.events():
+            if payload["kind"] not in ("unverified_order", "unverified_trade") or event_id in resolved:
+                continue
+            kind = payload["kind"].removeprefix("unverified_")
+            row = SimpleNamespace(**payload["fields"], BrokerID="9999", InvestorID=self._user)
+            matched = self._in_correlated_order(row) if kind == "order" else self._in_correlated_trade(row)
+            covered = (
+                kind == "order"
+                and datetime.fromisoformat(received) <= snapshot.at
+                and self._covered_intermediate_order(row, payload["order_id"])
+            )
+            if matched:
+                getattr(self, kind + "_callback")(row, datetime.fromisoformat(received))
+            if matched or covered:
+                self.journal.event(
+                    "ctp-correlation:" + event_id,
+                    dict(kind="correlation", pending_id=event_id, source_id=snapshot.source_id),
+                    snapshot.at,
+                )
+
+    def _buffer_unverified(self, kind, row, at):
+        if sum(p["kind"].startswith("unverified_") for _, p, _ in self.journal.events()) >= 10000:
+            raise ValueError("NATIVE_CALLBACK_BUFFER_LIMIT")
+        fields = (
+            ("BrokerID", "InvestorID", "TradingDay", "OrderRef", "FrontID",
+             "SessionID", "InstrumentID", "ExchangeID", "Direction",
+             "CombOffsetFlag", "CombHedgeFlag", "LimitPrice",
+             "VolumeTotalOriginal", "VolumeTraded", "VolumeTotal",
+             "OrderStatus", "OrderSubmitStatus", "OrderSysID", "InsertDate",
+             "InsertTime")
+            if kind == "order" else
+            ("BrokerID", "InvestorID", "TradingDay", "OrderRef", "InstrumentID",
+             "ExchangeID", "Direction", "OffsetFlag", "HedgeFlag", "Volume",
+             "Price", "TradeDate", "TradeTime", "TradeID", "OrderSysID")
+        )
+        captured = {name: getattr(row, name, None) for name in fields
+                    if name not in ("BrokerID", "InvestorID")}
+        order_id = self.journal.find_ref(
+            row.OrderRef, row.FrontID, row.SessionID
+        ) if kind == "order" else self.journal.find_ref(row.OrderRef)
+        if kind == "trade":
+            known = {
+                p["system_id"] for _, p, _ in self.journal.events()
+                if p["kind"] == "order" and p["order_id"] == order_id and p["system_id"]
+            }
+            if known and known != {row.OrderSysID.strip()}:
+                raise ValueError("NATIVE_TRADE_SYSTEM_ID_CONFLICT")
+        else:
+            known = {
+                p["system_id"] for _, p, _ in self.journal.events()
+                if p["kind"] == "order" and p["order_id"] == order_id and p["system_id"]
+            }
+            if known and row.OrderSysID.strip() and known != {row.OrderSysID.strip()}:
+                raise ValueError("NATIVE_ORDER_SYSTEM_ID_CONFLICT")
+        payload = dict(kind="unverified_" + kind, order_id=order_id, fields=captured)
+        self.journal.event("ctp-unverified:" + digest(payload), payload, at)
+
+    def _covered_intermediate_order(self, row, order_id):
+        if self._correlated_snapshot is None:
+            return False
+        snapshot, orders, _ = self._correlated_snapshot
+        terminal = orders.get(order_id)
+        if terminal is None:
+            return False
+        filled = (
+            terminal["OrderStatus"] == "0"
+            and terminal["VolumeTraded"] == 1
+            and terminal["VolumeTotal"] == 0
+        )
+        ended_without_fill = (
+            terminal["OrderStatus"] in ("2", "4", "5")
+            and terminal["VolumeTraded"] == 0
+            and terminal["VolumeTotal"] in (0, 1)
+        )
+        if not (filled or ended_without_fill) or (
+            row.OrderStatus not in ("3", "a")
+            or row.VolumeTraded != 0
+            or row.VolumeTotal not in (0, 1)
+        ):
+            return False
+        return all(getattr(row, field) == terminal[field] for field in (
+            "OrderRef", "FrontID", "SessionID", "InstrumentID", "ExchangeID",
+            "TradingDay", "Direction", "CombOffsetFlag", "CombHedgeFlag",
+            "VolumeTotalOriginal",
+        )) and Decimal(str(row.LimitPrice)) == Decimal(terminal["LimitPrice"]) and (
+            not row.OrderSysID.strip() or row.OrderSysID.strip() == terminal["OrderSysID"].strip()
+        )
+
+    def _in_correlated_order(self, row):
+        if self._correlated_snapshot is None:
+            return False
+        try:
+            _, orders, _ = self._correlated_snapshot
+            order_id = self.journal.find_ref(row.OrderRef, row.FrontID, row.SessionID)
+            original = orders.get(order_id)
+            return original is not None and all(
+                getattr(row, name, None) == original[name]
+                for name in (
+                    "OrderRef", "FrontID", "SessionID", "InstrumentID", "ExchangeID",
+                    "TradingDay", "Direction", "CombOffsetFlag", "CombHedgeFlag",
+                    "OrderStatus", "OrderSubmitStatus", "VolumeTotalOriginal",
+                    "VolumeTraded", "VolumeTotal", "OrderSysID", "InsertDate", "InsertTime",
+                )
+            ) and Decimal(str(row.LimitPrice)) == Decimal(original["LimitPrice"])
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return False
+
+    def _in_correlated_trade(self, row):
+        if self._correlated_snapshot is None:
+            return False
+        try:
+            _, _, trades = self._correlated_snapshot
+            key = ":".join((row.TradingDay, row.ExchangeID, row.TradeID.strip(), row.Direction))
+            match = trades.get(key)
+            return match is not None and all(
+                getattr(row, name, None) == match[1][name]
+                for name in (
+                    "TradingDay", "ExchangeID", "InstrumentID", "TradeID", "OrderSysID",
+                    "Direction", "OffsetFlag", "HedgeFlag", "TradeDate", "TradeTime", "Volume",
+                )
+            ) and Decimal(str(row.Price)) == Decimal(match[1]["Price"])
+        except (ValueError, TypeError, AttributeError, KeyError):
+            return False
 
     def _preflight(self, state, effect, binding, inventory, execution, permit, now):
+        if self.close_only and effect.order.offset == "OPEN":
+            raise ValueError("CLOSE_ONLY_NATIVE_ADAPTER")
         if self._faulted or self.journal.uncertain:
             raise ValueError("NATIVE_CALLBACK_OR_COMMIT_REQUIRES_RECOVERY")
         s = self.session
-        for identity, payload, _ in self.journal.events():
+        journal_events = self.journal.events()
+        resolved = {
+            payload["pending_id"] for _, payload, _ in journal_events
+            if payload["kind"] == "correlation"
+        }
+        for identity, payload, _ in journal_events:
+            if payload["kind"] == "correlation" or (
+                payload["kind"].startswith("unverified_") and identity in resolved
+            ):
+                continue
             intermediate = (
                 payload["kind"] == "order"
                 and payload["submit"] in ("0", "1", "2")
@@ -404,9 +619,12 @@ class Adapter:
         native_time = datetime.strptime(
             row.InsertDate + row.InsertTime, "%Y%m%d%H:%M:%S"
         ).replace(tzinfo=ZoneInfo("Asia/Shanghai"))
-        if native_time > at or native_time + timedelta(
+        if self.correlated_native and not self._in_correlated_order(row):
+            self._buffer_unverified("order", row, at)
+            return None  # Await a complete native readback; never infer from a stream.
+        if not self.correlated_native and (native_time > at or native_time + timedelta(
             seconds=1
-        ) <= datetime.fromisoformat(bound["created_at"]):
+        ) <= datetime.fromisoformat(bound["created_at"])):
             raise ValueError("NATIVE_ACCEPTANCE_TIME_INVALID")
         payload = dict(
             kind="order",
@@ -453,7 +671,7 @@ class Adapter:
         filled_at = datetime.strptime(
             row.TradeDate + row.TradeTime, "%Y%m%d%H:%M:%S"
         ).replace(tzinfo=ZoneInfo("Asia/Shanghai"))
-        if filled_at > at:
+        if not self.correlated_native and filled_at > at:
             raise ValueError("NATIVE_TRADE_TIME_INVALID")
         trade_key = ":".join(
             (
@@ -465,6 +683,9 @@ class Adapter:
         )
         if not row.TradeID.strip() or not row.OrderSysID.strip():
             raise ValueError("NATIVE_TRADE_ID_MISSING")
+        if self.correlated_native and not self._in_correlated_trade(row):
+            self._buffer_unverified("trade", row, at)
+            return None
         payload = dict(
             kind="trade",
             order_id=order_id,
@@ -494,8 +715,17 @@ class Adapter:
         """Replay staged facts idempotently into the account journal. No sends."""
         events = self.journal.events()
         fees = {p["trade_id"]: p for _, p, _ in events if p["kind"] == "fee"}
+        resolved = {
+            p["pending_id"] for _, p, _ in events if p["kind"] == "correlation"
+        }
         pending = []
         for event_id, p, received in events:
+            if p["kind"] == "correlation":
+                continue
+            if p["kind"].startswith("unverified_"):
+                if event_id not in resolved:
+                    pending.append(event_id)
+                continue
             if self.store.receipt(event_id) is not None:
                 continue
             at = datetime.fromisoformat(received)
@@ -541,6 +771,32 @@ class Adapter:
                 )
             elif p["kind"] == "trade":
                 proof = fees.get(p["trade_id"])
+                correlated = None
+                if self.correlated_native:
+                    if self._correlated_snapshot is None:
+                        pending.append(p["trade_id"])
+                        continue
+                    snapshot, orders, trades = self._correlated_snapshot
+                    correlated = trades.get(p["trade_id"])
+                    if correlated is None or correlated[0] != p["order_id"]:
+                        pending.append(p["trade_id"])
+                        continue
+                    native_order = orders[p["order_id"]]
+                    native_trade = correlated[1]
+                    if (
+                        p["system_id"] != native_order["OrderSysID"].strip()
+                        or p["system_id"] != native_trade["OrderSysID"].strip()
+                        or native_order["OrderStatus"] != "0"
+                        or native_order["VolumeTraded"] != 1
+                        or native_order["VolumeTotal"] != 0
+                        or p["filled_at"] != datetime.strptime(
+                            native_trade["TradeDate"] + native_trade["TradeTime"],
+                            "%Y%m%d%H:%M:%S",
+                        ).replace(tzinfo=ZoneInfo("Asia/Shanghai")).isoformat()
+                        or Decimal(p["price"]) != Decimal(native_trade["Price"])
+                    ):
+                        pending.append(p["trade_id"])
+                        continue
                 system_ids = {
                     v["system_id"]
                     for _, v, _ in events
@@ -570,19 +826,37 @@ class Adapter:
                     pending.append(p["trade_id"])
                     continue
                 native = self.journal.find(p["order_id"])
-                cmd = m.NativeFill(
+                fill_type = m.CorrelatedNativeFillV1 if self.correlated_native else m.NativeFill
+                correlation = {}
+                if self.correlated_native:
+                    if not proof["source_id"].startswith("ctp-commission-delta:") or (
+                        native["order_ref"], native["front_id"], native["session_id"]
+                    ) != (
+                        native_order["OrderRef"], native_order["FrontID"],
+                        native_order["SessionID"],
+                    ):
+                        pending.append(p["trade_id"])
+                        continue
+                    correlation = dict(
+                        readback_source_id=snapshot.source_id,
+                        native_order_ref=native_order["OrderRef"],
+                        native_front_id=native_order["FrontID"],
+                        native_session_id=native_order["SessionID"],
+                    )
+                cmd = fill_type(
                     p["trade_id"],
                     p["order_id"],
                     self.session.account_id,
                     self.journal.find(p["order_id"])["contract"],
                     datetime.fromisoformat(p["filled_at"]),
-                    at,
+                    max(at, snapshot.at) if self.correlated_native else at,
                     Decimal(p["price"]),
                     Decimal(proof["amount"]),
                     1,
                     datetime.fromisoformat(native["request_started_at"]),
                     "ctp-dispatch:" + str(native["request_id"]),
                     p["system_id"],
+                    **correlation,
                 )
             else:
                 continue

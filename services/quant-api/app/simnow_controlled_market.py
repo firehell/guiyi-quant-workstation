@@ -1,7 +1,7 @@
 """Read-only composition for a bounded SimNow host, never registered as Runtime."""
 
 from contextlib import contextmanager
-from datetime import timedelta, date
+from datetime import timedelta, date, datetime
 from dataclasses import dataclass, replace
 from sqlalchemy import select, text
 from app.db.session import SessionLocal
@@ -30,6 +30,7 @@ class Authority:
     trading_day: date
     session: a.Session
     source_id: str
+    contiguous_session_end: datetime | None = None
 
 
 class MarketBridge:
@@ -104,7 +105,16 @@ class MarketBridge:
                     ),
                 )
             )
-            tradable = any(w.window.start <= now < w.window.end for w in group)
+            current = tuple(
+                w.window for w in group if w.window.start <= now < w.window.end
+            )
+            tradable = bool(current)
+            contiguous_end = max((w.end for w in current), default=None)
+            if contiguous_end is not None:
+                # Adjacent/overlapping windows are one uninterrupted trading span.
+                for window in sorted((w.window for w in group), key=lambda w: w.start):
+                    if window.start <= contiguous_end and window.end > contiguous_end:
+                        contiguous_end = window.end
             close = max(w.window.end for w in group)
             source = "authority:" + digest(
                 (
@@ -133,6 +143,7 @@ class MarketBridge:
                     tradable,
                 ),
                 source,
+                contiguous_end,
             )
 
     def canonical_for_native(self, native, exchange, instruments):
