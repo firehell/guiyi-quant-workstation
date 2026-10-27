@@ -23,6 +23,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 SDK环境与API服务依赖隔离，不为运行上述纯Python模块向API安装CTP依赖。真实柜台端到端与资金生效另验。
 
+人工RB一手往返独立于策略Signal；以下真实LocalStore/Host/Adapter组合仍仅用隔离原生fixture：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/htdy_execution/test_manual_policy.py tests/unit/simnow_host/test_manual_host.py tests/unit/simnow_host/test_manual_finance.py tests/unit/simnow_host/test_manual_integration.py tests/unit/simnow_host/test_manual_runner.py tests/unit/simnow_monitor/test_manual_origin.py
+```
+
+覆盖单次OPEN、确认后600秒、平今、过期盘口仅撤单、未知发送不重试、实际费用/权益/预留、尾回调及释放失败、
+终态监控来源绑定；不能把离线通过当作实际开平成交。现场入口默认plan-only，显式execute须对应owner交办。
+
 ## SimNow 全品种持续宿主
 
 默认observe，以下使用隔离fixture，不读Keychain、不连接Broker、不安装服务：

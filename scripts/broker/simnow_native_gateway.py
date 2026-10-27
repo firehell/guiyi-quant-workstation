@@ -92,8 +92,12 @@ _METHODS = {
 
 
 class Gateway(_readonly.Probe):
-    def __init__(self, user, password):
+    def __init__(self, user, password, *, initial_funds_timeout=15):
+        if type(initial_funds_timeout) is not int or not 15 <= initial_funds_timeout <= 45:
+            raise ValueError("INITIAL_FUNDS_TIMEOUT_BOUND_INVALID")
         super().__init__(user, password, environment="first")
+        self.initial_funds_timeout = initial_funds_timeout
+        self._initial_funds_grace_pending = True
         self.execution_adapter = None
         self.native_session = None
         self.extra = None
@@ -246,7 +250,7 @@ class Gateway(_readonly.Probe):
                         continue
                     diagnostic = query.get("diagnostics", {})
                     item = dict(round=record["round"], kind=kind, complete=query.get("complete") is True)
-                    item.update({k: diagnostic[k] for k in ("response_count", "data_row_count", "terminal_response_seen", "timed_out", "elapsed_seconds") if k in diagnostic})
+                    item.update({k: diagnostic[k] for k in ("response_count", "data_row_count", "terminal_response_seen", "timed_out", "timeout_budget_seconds", "elapsed_seconds") if k in diagnostic})
                     value["queries"].append(item)
             return value
 
@@ -256,7 +260,12 @@ class Gateway(_readonly.Probe):
         if self.failed:
             raise ValueError("NATIVE_GATEWAY_FAILED")
         self.result["rounds"] = []
-        self.collect()
+        first = self._initial_funds_grace_pending
+        self._initial_funds_grace_pending = False
+        if first and self.initial_funds_timeout != 15:
+            self.collect(initial_funds_timeout=self.initial_funds_timeout)
+        else:
+            self.collect()
         if self.failed or self.result["status"] != "READ_ONLY_COMPLETE":
             raise ValueError("NATIVE_STABLE_SNAPSHOT_REQUIRED")
         # Copy sanitized values only; user/password and raw objects never leave gateway.

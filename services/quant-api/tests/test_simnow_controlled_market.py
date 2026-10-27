@@ -115,11 +115,60 @@ def test_lunch_is_not_final_close_and_uses_same_session_authority(monkeypatch):
         not authority.session.can_trade
         and authority.session.final_close_at == T + timedelta(hours=6)
     )
+    assert authority.contiguous_session_end is None
+    morning = b.authority(date(2026, 10, 27), T + timedelta(hours=2))
+    assert morning.session.can_trade
+    assert morning.session.final_close_at == T + timedelta(hours=6)
+    assert morning.contiguous_session_end == T + timedelta(hours=2.5)
+    imminent_break = b.authority(date(2026, 10, 27), T + timedelta(hours=2, minutes=20))
+    assert (
+        imminent_break.contiguous_session_end - (T + timedelta(hours=2, minutes=20))
+    ).total_seconds() == 600
+    at_break = b.authority(date(2026, 10, 27), T + timedelta(hours=2.5))
+    assert not at_break.session.can_trade and at_break.contiguous_session_end is None
     afternoon = b.authority(date(2026, 10, 27), T + timedelta(hours=5))
     assert (
         afternoon.session.can_trade
         and afternoon.session.final_close_at == T + timedelta(hours=6)
     )
+    assert afternoon.contiguous_session_end == T + timedelta(hours=6)
+    closed = b.authority(date(2026, 10, 27), T + timedelta(hours=6))
+    assert not closed.session.can_trade and closed.contiguous_session_end is None
+
+
+def test_adjacent_resolved_windows_share_one_contiguous_end(monkeypatch):
+    b = object.__new__(m.MarketBridge)
+    b.product = "RB"
+    rows = tuple(
+        NS(
+            name=name,
+            is_night=False,
+            window=NS(start=T + timedelta(hours=start), end=T + timedelta(hours=end)),
+        )
+        for name, start, end in (
+            ("first", 0, 1),
+            ("adjacent", 1, 2),
+            ("after-break", 3, 4),
+        )
+    )
+    monkeypatch.setattr(
+        m, "resolved_session_windows_for_trading_day", lambda *_a, **_k: rows
+    )
+    monkeypatch.setattr(
+        m,
+        "build_market_data_service",
+        lambda _: NS(dominant_segment_for_day=lambda *_: NS(contract="RB2701")),
+    )
+    db = NS(scalar=lambda _: NS(exchange_code="SHFE"))
+
+    @contextmanager
+    def read():
+        yield db, NS()
+
+    b.reader = read
+    authority = b.authority(date(2026, 10, 27), T + timedelta(minutes=30))
+    assert authority.session.final_close_at == T + timedelta(hours=4)
+    assert authority.contiguous_session_end == T + timedelta(hours=2)
 
 
 def test_recovery_validates_whole_gap_and_replays_only_after_frozen_bar(monkeypatch):
