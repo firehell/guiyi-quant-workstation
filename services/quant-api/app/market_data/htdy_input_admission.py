@@ -134,6 +134,48 @@ def _verify_window(market_read, product, bars, contracts, *, observation_day=Non
     )
 
 
+def current_minute_input(market_read, product, phase, at):
+    """Audit natural M1 now, even before the first H1 of a new Session is due."""
+    if phase.phase.value == "CLOSED":
+        return {"status": "WAIT_NEXT_SESSION", "next_session_start": phase.next_session_start}
+    query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, product, BarFrequency.M1,
+                            before=at + timedelta(microseconds=1), limit=1)
+    result = {"status": "BLOCKED"}
+    try:
+        day = phase.trading_day
+        if day is None:
+            raise ValueError("HTDY_ADMISSION_SESSION_UNKNOWN")
+        contract = market_read._market_data.dominant_segment_for_day(product, day).contract
+        pairs = market_read._market_data.expected_contract_replay_endpoints(
+            symbol=product, contract=contract, frequency=BarFrequency.M1,
+            trading_day=day, cutoff=at, since=day,
+        )
+        expected = tuple(point for point, owner in pairs)
+        if not expected:
+            return {"status": "NOT_DUE"}
+        end = expected[-1]
+        result.update(expected_endpoint=end, trading_day=day, contract=contract)
+        if end > at or any(owner != day for _, owner in pairs):
+            raise ValueError("HTDY_SOURCE_ENDPOINT_INVALID")
+        source = market_read._verified_live_bars(
+            trading_day=day, symbol=product, frequency=BarFrequency.M1,
+            cutoff=end, contract=contract,
+        )
+        observed = tuple(bar.bar_end for bar in source)
+        result.update(expected_count=len(expected), actual_count=len(source),
+                      missing_count=len(set(expected) - set(observed)),
+                      source_hash=sha256(repr(source).encode()).hexdigest())
+        if observed != expected or any(bar.trading_day != day for bar in source):
+            raise ValueError("LIVE_SOURCE_INCOMPLETE")
+        window = market_read.bars_until(query, trading_day=day, end=end, limit=1)
+        if window.cutoff != end or window.contract != contract:
+            raise ValueError("HTDY_CALCULATION_ENDPOINT_INVALID")
+        result.update(status="CONTINUITY_VERIFIED", recovery_fenced=not window.notification_eligible)
+    except Exception as error:
+        result.update(errors=safe_error(error))
+    return result
+
+
 def audit_product(
     market_read: MarketReadService, coverage, product: str, at: datetime,
 ) -> dict:
@@ -170,6 +212,7 @@ def audit_product(
         }
         if phase.phase.value == "UNKNOWN":
             raise ValueError("HTDY_ADMISSION_SESSION_UNKNOWN")
+        row["current_1m"] = current_minute_input(market_read, product, phase, at)
         row["latest_complete_trading_day"] = coverage.latest_complete_day((product,))
         query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, product, BarFrequency.H1,
                                 before=at + timedelta(microseconds=1), limit=32)
@@ -282,7 +325,9 @@ def audit_product(
         row["calculation_input"].update(status="BLOCKED", errors=safe_error(error))
 
     calculation_ready = row["calculation_input"]["status"] == "WINDOW32_VERIFIED"
-    live_ready = row["live"]["status"] in {"CONTINUITY_VERIFIED", "NOT_DUE"}
+    live_ready = (row["live"]["status"] in {"CONTINUITY_VERIFIED", "NOT_DUE"}
+                  and row["current_1m"]["status"] != "BLOCKED"
+                  and not row["current_1m"].get("recovery_fenced", False))
     row["status"] = ("HISTORICAL_READY_LIVE_BLOCKED" if calculation_ready and not live_ready else
                      "INPUTS_VERIFIED_WAIT_NEW_OBSERVATION" if calculation_ready else "BLOCKED")
     if calculation_ready:
@@ -314,13 +359,14 @@ def audit_product(
 def summarize(rows: list[dict], at: datetime) -> dict:
     """Produce an inspectable snapshot, retaining all three independent axes."""
     return {
-        "schema_version": "htdy_60m_input_admission_v2", "at": at,
+        "schema_version": "htdy_60m_input_admission_v3", "at": at,
         "readonly": True, "provider_requests": 0, "production_writes": 0,
         "product_count": len(rows), "operational_product_count": len(load_operational_products()),
         "counts": dict(Counter(row["status"] for row in rows)),
         "history_counts": dict(Counter(row["history"]["status"] for row in rows)),
         "calculation_counts": dict(Counter(row["calculation_input"]["status"] for row in rows)),
         "live_counts": dict(Counter(row["live"]["status"] for row in rows)),
+        "current_1m_counts": dict(Counter(row.get("current_1m", {}).get("status", "UNVERIFIED") for row in rows)),
         "closed_source_difference_count": sum(row.get("source_conflict", {}).get("status") == "CLOSED_DAY_DIFFERENCE_VERIFIED" for row in rows),
         "first_seen_proven": False, "rows": rows,
     }

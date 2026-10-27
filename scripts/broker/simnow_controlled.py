@@ -311,7 +311,19 @@ def run(gateway, tdapi, config, root):
             at=now(),
             valid_until=now() + timedelta(seconds=config.max_seconds + 120),
         )
-        adapter = b.Adapter(store, journal, tdapi, gateway.api, gateway.user, session)
+        from guiyi_quant.simnow_execution.strategy_native import validate_strategy_events
+
+        def native_validator(native):
+            def authority(product, day, raw, contract):
+                if product != config.product.upper():
+                    raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
+                return market.authority(day, raw, contract)
+
+            validate_strategy_events(native, authority, journal, store.current())
+
+        adapter = b.Adapter(store, journal, tdapi, gateway.api, gateway.user, session,
+                            strategy_correlated_native=True, native_validator=native_validator)
+        adapter.correlate_snapshot(snapshot)
         gateway.attach(adapter, snapshot)
         for prepared in store.current().orders:
             if prepared.status == "PROPOSED" and not journal.claimed(prepared.order_id):
@@ -596,7 +608,7 @@ def main(argv=None):
         password = getpass.getpass("交易密码（隐藏）：")
     if not password or len(password.encode()) > 40:
         raise ValueError("PASSWORD_FORMAT_INVALID")
-    gateway = module.Gateway(user, password)
+    gateway = module.Gateway(user, password, initial_funds_timeout=45)
     user = password = ""
     output = dict(
         status="FAILED_NO_EXECUTION_PROOF", auto_order=False, broker_e2e_passed=False

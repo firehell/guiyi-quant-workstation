@@ -29,11 +29,16 @@ class Host:
     ):
         if type(continuous) is not bool:
             raise ValueError("HOST_MODE_INVALID")
+        strategy_native = getattr(adapter, "strategy_correlated_native", False)
         if type(close_only) is not bool or (
-            getattr(adapter, "correlated_native", False)
+            getattr(adapter, "correlated_native", False) and not strategy_native
             and (not close_only or not callable(native_validator))
         ):
             raise ValueError("CLOSE_ONLY_NATIVE_VALIDATOR_REQUIRED")
+        if strategy_native and (
+            manual_test_id is not None or not callable(adapter.native_validator)
+        ):
+            raise ValueError("STRATEGY_NATIVE_VALIDATOR_REQUIRED")
         if manual_test_id is not None and (
             type(manual_test_id) is not str
             or not manual_test_id.startswith("manual:")
@@ -82,7 +87,8 @@ class Host:
         if snapshot.account_id != self.adapter.session.account_id:
             raise ValueError("HOST_NATIVE_ACCOUNT_MISMATCH")
         if getattr(self.adapter, "correlated_native", False):
-            self.native_validator(snapshot)
+            if not getattr(self.adapter, "strategy_correlated_native", False):
+                self.native_validator(snapshot)
             self.adapter.correlate_snapshot(snapshot)
         self.evidence.append(snapshot)
         data = snapshot.data

@@ -61,9 +61,12 @@ def callback_guard(method):
 
 class Adapter:
     def __init__(self, store, journal, sdk, api, user, session, *,
-                 close_only=False, correlated_native=False):
-        if type(close_only) is not bool or type(correlated_native) is not bool or (
-            correlated_native and not close_only
+                 close_only=False, correlated_native=False,
+                 strategy_correlated_native=False, native_validator=None):
+        if (type(close_only) is not bool or type(correlated_native) is not bool
+            or type(strategy_correlated_native) is not bool
+            or correlated_native and (not close_only or strategy_correlated_native)
+            or strategy_correlated_native and not callable(native_validator)
         ):
             raise ValueError("NATIVE_CAPABILITY_INVALID")
         if re.fullmatch(r"[0-9]{1,16}", user) is None:
@@ -86,11 +89,13 @@ class Adapter:
         self._user, self.session = user, session
         self._faulted = False
         self.close_only = close_only
-        self.correlated_native = correlated_native
+        self.strategy_correlated_native = strategy_correlated_native
+        self.correlated_native = correlated_native or strategy_correlated_native
+        self.native_validator = native_validator
         self._correlated_snapshot = None
 
     def correlate_snapshot(self, snapshot):
-        """Bind manual callback admission to one complete native two-round readback."""
+        """Bind callback admission to one complete native two-round readback."""
         if not self.correlated_native:
             raise ValueError("NATIVE_CORRELATION_NOT_ENABLED")
         if type(snapshot) is not Snapshot or (
@@ -103,6 +108,10 @@ class Adapter:
         ))
         if snapshot.source_id != expected:
             raise ValueError("NATIVE_CORRELATION_SOURCE_INVALID")
+        if self.strategy_correlated_native:
+            # Validate raw event dates against authoritative sessions before the
+            # snapshot can qualify any callback, including callbacks on attach.
+            self.native_validator(snapshot)
         orders = {}
         for row in data["orders"]:
             try:
@@ -724,6 +733,19 @@ class Adapter:
                 continue
             if p["kind"].startswith("unverified_"):
                 if event_id not in resolved:
+                    if self.strategy_correlated_native and p["kind"] == "unverified_trade":
+                        # A known one-lot trade report conservatively relocks a
+                        # cancelled order's occupancy. It is NOT a priced Fill:
+                        # the pending fact still blocks sends until full proof.
+                        known = next(o for o in self.store.current().orders
+                                     if o.order_id == p["order_id"])
+                        if known.status != "FILLED":
+                            identity = "ctp-known-unverified-fill:" + event_id
+                            self.store.execute(identity, m.OrderUpdate(
+                                self.session.account_id, known.order_id,
+                                max(datetime.fromisoformat(received), self.store.current().clock),
+                                identity, "FILLED",
+                            ))
                     pending.append(event_id)
                 continue
             if self.store.receipt(event_id) is not None:
@@ -826,7 +848,10 @@ class Adapter:
                     pending.append(p["trade_id"])
                     continue
                 native = self.journal.find(p["order_id"])
-                fill_type = m.CorrelatedNativeFillV1 if self.correlated_native else m.NativeFill
+                fill_type = (
+                    m.StrategyCorrelatedNativeFillV1 if self.strategy_correlated_native
+                    else m.CorrelatedNativeFillV1 if self.correlated_native else m.NativeFill
+                )
                 correlation = {}
                 if self.correlated_native:
                     if not proof["source_id"].startswith("ctp-commission-delta:") or (

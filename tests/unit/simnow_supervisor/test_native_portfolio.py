@@ -161,7 +161,7 @@ def portfolio(tmp_path, *, gateway=None, at=T):
     return value
 
 
-def test_manual_grace_is_opt_in_at_native_portfolio_boundary(monkeypatch, tmp_path):
+def test_first_funds_grace_is_default_but_old_explicit_15_still_supported(monkeypatch, tmp_path):
     from guiyi_quant.simnow_execution import native_portfolio as module
 
     calls = []
@@ -172,6 +172,10 @@ def test_manual_grace_is_opt_in_at_native_portfolio_boundary(monkeypatch, tmp_pa
     fake_module = NS(
         tdapi=object(), Gateway=lambda *args, **kwargs: calls.append(kwargs) or object()
     )
+    default = NativePortfolio(NS(account_id=ACCOUNT), tmp_path, fake_module, lambda *_: None, now=lambda: T)
+    default.connect()
+    assert calls[-1] == {"initial_funds_timeout": 45}
+    default.flow.cleanup()
     for timeout in (15, 45):
         value = NativePortfolio(
             NS(account_id=ACCOUNT),
@@ -418,3 +422,19 @@ def test_unfinished_login_wait_is_bounded_transport_timeout(tmp_path, status):
     assert native.transport_failed
     gateway.login_done.set()
     assert not native.transport_failed
+
+
+def test_strategy_adapter_validates_before_attach_without_close_only(tmp_path):
+    from guiyi_quant.simnow_execution.inventory import read_snapshot
+    native = portfolio(tmp_path, at=T + timedelta(minutes=1))
+    report = native_fixture.report()
+    report["account_fingerprint"] = ACCOUNT
+    snapshot = read_snapshot(report)
+    native.gateway.query = lambda kind: [{"ConfirmDate": "20261027"}]
+    stages = []
+    native.gateway.attach = lambda adapter, snapshot: stages.append("attach")
+    adapter = native.adapter(None, NS(account_id=ACCOUNT, events=lambda: ()), snapshot,
+        T + timedelta(minutes=1), strategy_correlated_native=True,
+        native_validator=lambda snapshot: stages.append("validate"))
+    assert stages == ["validate", "attach"]
+    assert adapter.strategy_correlated_native and not adapter.close_only

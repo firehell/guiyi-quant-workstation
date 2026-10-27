@@ -55,7 +55,7 @@ def run(output: Path, *, at: datetime, products: tuple[str, ...]) -> dict:
     report = summarize(rows, at)
     with (output / "summary.json").open("x", encoding="utf-8") as target:
         json.dump(report, target, ensure_ascii=False, sort_keys=True, default=str)
-    columns = ("product", "status", "history", "calculation_input", "live", "missing_m1", "missing_h1", "source_conflict", "next_trading_day", "future_signal")
+    columns = ("product", "status", "history", "calculation_input", "live", "current_1m", "current_1m_endpoint", "missing_m1", "missing_h1", "source_conflict", "next_trading_day", "future_signal")
     with (output / "admission.csv").open("x", encoding="utf-8", newline="") as target:
         writer = csv.DictWriter(target, fieldnames=columns)
         writer.writeheader()
@@ -64,6 +64,8 @@ def run(output: Path, *, at: datetime, products: tuple[str, ...]) -> dict:
                 "product": row["product"], "status": row["status"],
                 "history": row["history"]["status"], "live": row["live"]["status"],
                 "calculation_input": row["calculation_input"]["status"],
+                "current_1m": row.get("current_1m", {}).get("status", "UNVERIFIED"),
+                "current_1m_endpoint": row.get("current_1m", {}).get("expected_endpoint"),
                 "missing_m1": row["live"].get("source_1m", {}).get("missing_count"),
                 "missing_h1": row["live"].get("h1", {}).get("missing_count"),
                 "source_conflict": row.get("source_conflict", {}).get("status"),

@@ -72,7 +72,7 @@ Redis或RQData，不证明策略收益、全品种数据ready、OOS、成交可�
 
 ## 闭市旧日来源差异的输入诊断
 
-准入诊断版本 `htdy_60m_input_admission_v2` 将“旧日差异未解释”与“已核验差异、等待新交易日”分开。
+准入诊断版本 `htdy_60m_input_admission_v3` 将“旧日差异未解释”与“已核验差异、等待新交易日”分开。
 只有权威完整交易日已结束、Canonical最新32根预热及底层1m验证通过、同合约原件完整、两套1m各自
 聚合与各自60m一致，且具体字段差异和物理来源hash可核验时，才可记为
 `CLOSED_SOURCE_REVISION_WAIT_NEW_OBSERVATION`。该证据只证明已存两份事实不同，不反推RQData修订原因或发生时间。
@@ -142,3 +142,10 @@ Redis或RQData，不证明策略收益、全品种数据ready、OOS、成交可�
 报价、合约、Session与Readback均为显式有来源且有有效期的输入；本模块不另建行情resolver。
 SUBMIT/CANCEL仍是已持久化的惰性提案；后续[SimNow受控适配](SIMNOW_EXECUTION.md)已实现平今/平昨、原生ID绑定和回调接入，
 没有本次真实发送。原生对账、费用投影及一次性宿主代码已接通；真实资金生效、第一套环境、自然输入与持续运行分别待验。
+
+### 当前自然1m与60m准入分别核验
+
+准入v3在新Session第一根60m尚未完成时，也按既有Calendar/Session、rank1和MDS端点核对当日自然1m。
+`current_1m`独立报告完整端点、缺失数和恢复隔离；交易中的1m缺失或恢复隔离阻断后续新信号资格。
+闭市报告`WAIT_NEXT_SESSION`，不得用无夜盘当作当前采集故障；旧日原始Live不可用仍保留阻断。
+历史32根60m、完成60m连续性和当前1m是不同证据，审计始终不取得首次观察资格。

@@ -40,7 +40,7 @@ class ReadJournal(Journal):
 
 class NativePortfolio:
     def __init__(
-        self, settings, folder, module, connector, *, now, initial_funds_timeout=15
+        self, settings, folder, module, connector, *, now, initial_funds_timeout=45
     ):
         if (
             type(initial_funds_timeout) is not int
@@ -248,12 +248,15 @@ class NativePortfolio:
         return tuple(facts), tuple(bindings)
 
     def adapter(self, store, journal, snapshot, now, *, close_only=False,
-                correlated_native=False):
+                correlated_native=False, strategy_correlated_native=False,
+                native_validator=None):
         from datetime import datetime, time
         from zoneinfo import ZoneInfo
 
-        if type(close_only) is not bool or type(correlated_native) is not bool or (
-            correlated_native and not close_only
+        if (type(close_only) is not bool or type(correlated_native) is not bool
+            or type(strategy_correlated_native) is not bool
+            or correlated_native and (not close_only or strategy_correlated_native)
+            or strategy_correlated_native and not callable(native_validator)
         ):
             raise ValueError("NATIVE_CAPABILITY_INVALID")
 
@@ -288,6 +291,8 @@ class NativePortfolio:
             dict(close_only=close_only, correlated_native=correlated_native)
             if close_only or correlated_native else {}
         )
+        if strategy_correlated_native:
+            capabilities.update(strategy_correlated_native=True, native_validator=native_validator)
         adapter = Adapter(
             store,
             journal,
@@ -297,7 +302,7 @@ class NativePortfolio:
             session,
             **capabilities,
         )
-        if correlated_native:
+        if correlated_native or strategy_correlated_native:
             adapter.correlate_snapshot(snapshot)
         self.gateway.attach(adapter, snapshot)
         return adapter
