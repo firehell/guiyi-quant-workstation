@@ -7,6 +7,22 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/27 SimNow全品种持续宿主与恢复代码完成，启动现场待验
+
+实现一个账户锁/进程/CTP连接、共享60品种信号inbox及原账户资金预留，启动/日切/断线先完整原生读回，
+持久连接次数预算与未知结果阻断，不初始化或复制旧AL账本。只读observe默认；manage只接管既有平仓/撤单，
+ManagedTickV1在生成OPEN及预留前禁新仓，auto_order=false。Keychain隐藏本机配置与独立observe LaunchAgent已实现，
+自动入口固定--observe-only，不改既有十服务、不发布或切换正式Runtime。
+
+344项定向/扩大回归、29个改动Python文件Ruff/format、定向Mypy、secret0、diff通过；真实MacSDK无网络23项通过。
+独立Review固定候选无未解决Confirmed Issue，允许集成develop。旧AL账户318条命令只读重放通过且SQLite文件SHA不变；
+旧0仓/0单/0成交不证明当前柜台状态。本机持久SDK与私有observe配置已备好，enabled=false；
+已打开一次性本机Keychain配置终端，尚未验证真实凭据或安装/加载启动项，未连接Broker、确认结算或报撤单。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；本机只读启动、自然恢复与首笔订单分别待验。
+合同与验证见[SIMNOW_EXECUTION](docs/SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)、
+[任务记录](docs/tasks/2026-10-27-simnow-continuous-host.md)。
+
+
 ## 10/27 v1.16.14已发布且绑定已切换，postCAS验收阻断并停驻
 
 PR505/506已发布v1.16.14 exact5587cd1483a43ef591ee686ebd4cc53606d201b0；247项回归与独立207项/0跳过通过，8956原件完整只读扫描通过。

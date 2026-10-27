@@ -28,6 +28,29 @@ class Commit:
 
 
 class LocalStore:
+    @classmethod
+    def inspect(cls, path):
+        """Verify existing immutable journal through a SQLite read-only connection."""
+        path = Path(path)
+        if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:
+            raise StoreError("PRIVATE_LOCAL_STORE_REQUIRED")
+        with path.open("rb") as stream:
+            header = stream.read(20)
+        if header[:16] != b"SQLite format 3\x00" or header[18:20] != b"\x01\x01":
+            raise StoreError("READ_ONLY_JOURNAL_MODE_UNSUPPORTED")
+        view = cls.__new__(cls)
+        view._mutex = threading.RLock()
+        view._conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        try:
+            view._conn.execute("PRAGMA query_only=ON")
+            view._conn.execute("BEGIN")
+            view._verify()
+            return view._projection()[1]
+        except (sqlite3.Error, KeyError, TypeError, ValueError):
+            raise StoreError("LOCAL_STORE_INVALID") from None
+        finally:
+            view._conn.close()
+
     def __init__(self, path, initial=None):
         self.path = Path(path)
         self._mutex = threading.RLock()

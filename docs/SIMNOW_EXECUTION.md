@@ -2,7 +2,7 @@
 
 本模块实现已持久化HTDY账户提案到CTP报单/撤单请求的窄适配，以及原生回调到本地账户journal的事实接入。
 交易规则、资金预留和订单状态机见[HTDY合同](HTDY_SIMNOW_V1.md)，登录及四类只读查询见[只读合同](SIMNOW_READONLY.md)。
-只读CLI保持只读；core适配模块不自行登录或注册前置。独立一次性宿主显式连接固定第一套，默认只读预检；不创建持续后台任务，不修改 `auto_order=false`。
+只读CLI保持只读；core适配模块不自行登录或注册前置。一次性宿主与独立持续宿主显式连接固定第一套，均默认只读；新开仓入口保持关闭，`auto_order=false`。
 
 ## 接入和事实责任
 
@@ -73,7 +73,54 @@ CTP逐笔Trade没有实际手续费字段。适配器保存待核成交，只有
 
 真实受控端到端须完成：第一套登录与两轮账户读回、10万元生效、结算确认和原生元数据/新鲜报价绑定、
 已实现宿主的现场读回、可交易时段的新合格信号，再对精确一手订单做报单/成交或撤单核对。
-本次没有真实报撤单；一次性CLI已实现，没有持续交易宿主，不发布、不切Runtime。通过离线验证不表示可以开启全品种自动交易。
+真实报撤单及成交闭环仍单独验收；持续宿主范围见下节，不发布、不切正式Runtime。通过离线验证不表示可以开启全品种自动交易。
+
+## 全品种持续宿主（simnow_continuous_v1）
+
+`scripts/broker/simnow_supervisor.py --config <private.json>` 使用一个交易连接、同一账户锁、账本、发送journal、
+资金预留和持久信号队列，覆盖冻结的operational集合。禁止用60份单品种脚本扩展。账户根仍为
+`PROJECT_ROOT/output/simnow-controlled/<fingerprint>`，不复制、初始化或迁移已有AL账本。
+
+本阶段只提供 `observe` 与 `manage`：observe不构造交易Adapter、不确认结算、不写账户命令、不创建提案/预留；
+只读校验已有账本与原生快照，串行轮转检查各品种输入。manage接管已有义务，允许已知平仓/撤单，
+通过持久的 `ManagedTickV1` 在创建OPEN或预留之前禁止新开仓，Host发送前再次拒绝OPEN。
+旧Tick/Recover及v2账户hash不变；新管理Tick和按品种恢复命令各有独立版本，旧命令可逐条重放。
+首次订单预算、全品种新开仓和正式Runtime启用属于后续范围，不能由配置改成execute或启用observe推导。
+
+- 一个共享RQData入口及Redis pubsub接收全部60m自然完成Bar；信号以首次观察时间、品种、来源ID排序。
+  `(product, bar_end)`及来源身份冻结首次payload，重绘不覆盖；账户commit后才ACK。重启有commit的查receipt，
+  无commit旧队列丢弃，不能补做历史开仓。预开盘只准备连接，首次实际交易时段前不接信号。
+- Calendar/Session决定交易日与开盘，最多提前120秒登录；日期无法证明则不消费信号或执行。正常午休
+  保留连接与已接收信号，不当故障；各品种交易及最终收盘仍以自身Session为准。
+- 新连接/日切先原生资金、持仓、委托、成交完整读回；已claim的离线成交先验证身份、接入真实回调及费用，
+  再做完整持仓对账。已核成交跨日不要求当天查询重新返回历史记录；不伪造费用和跨日现金流。
+  manage在ownership证明后查询/必要时确认当天结算，再构造同次登录的Session。Session有效上界为已核交易日
+  次日00:00，覆盖周五夜盘归属周一，不把自然日期当作交易日。
+- 单品种warming/数据问题按品种列阻断；`ProductRecoveryV1`只恢复明确blocked产品，健康产品信号与目标保持。
+  首个待平品种报价不合格时尝试其他待平品种；全局一次最多一个未对账SUBMIT，避免多成交无法唯一归费。
+  平仓/撤单不受旧有界脚本的总次数或deadline限制，仍须新鲜账户/今昨仓/合约/Session/对手价事实。
+- 两轮快照变化只等待同连接新读回，不当空仓或重登。只有明确连接中断/超时才按60秒退避建立新连接，
+  每权威交易日最多3次连接attempt，进程重启不重置。身份错误、callback异常、未知commit或未知订单结果
+  持久阻断当日，cleanup失败同样阻断；不重发已领取动作，不释放未证明的资金。
+- 原生执行报价继续来源年龄<=8秒及接收后3秒TTL。先查费率、最后取盘口，避免批量60次查询用老价；
+  未成交3分钟及收盘前1分钟取消等规则沿用账户状态机。没有可信报价时不得重新定价。
+
+配置为0600 owner文件，精确字段：`schema=1,account_id,state_root,project_root,sdk_python,api_env,mode,enabled`。
+SDK使用独立同ABI Mac ARM64 `openctp-ctp==6.7.7.1`环境，`api_env`是既有API依赖venv目录。
+凭据通过 `scripts/broker/simnow_credentials.py provision` 在本机TTY隐藏输入，直接存macOS Keychain；
+不保存到JSON、参数、日志或聊天，headless Keychain不可用/锁定/拒绝即停止。首次配置需要本机输入一次，
+不能从旧聊天、一次性进程或代码中复用密码。
+
+`scripts/ops/macos/simnow-service.py --config ...` 默认仅render/plan；显式 `--install-observe` 才安装可选
+`com.guiyi.quant-simnow` plist，不调用launchctl，不改既有十服务。安装入口只接受enabled observe，
+ProgramArguments固定 `-I ... --observe-only`；日后JSON改manage也不能使该自动启动项升级执行。
+RunAtLoad、失败KeepAlive和60秒Throttle负责进程启动；业务恢复仍须上述完整读回、预算和耐久阻断。
+`--check`只校验配置与SDK兼容，不读Keychain、不连接Broker。关闭方式为先停止可选服务，再保持enabled=false；
+保留全部账户、claim、队列及原生证据，不能删除重建以绕过恢复。
+
+持续宿主发布私有原子 `continuous.json` 状态及现有监控索引，native来源和账本摘要分别绑定；
+发布失败不改变交易行为。观察模式未更新账户策略投影时，页面不得将旧账本预算称为当前已对账。
+编码、离线验收、本机凭据/启动验收、自然跨日/断线以及首笔柜台交易分别报告。
 
 ## 一次性宿主与只读预检
 

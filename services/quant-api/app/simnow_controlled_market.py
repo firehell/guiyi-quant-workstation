@@ -175,10 +175,23 @@ class MarketBridge:
             or trigger.frequency != BarFrequency.H1
         ):
             raise ValueError("NATURAL_TRIGGER_INVALID")
+        return self.signal_from_trigger(trigger, now, after)
+
+    def signal_from_trigger(self, trigger, observed_at, after):
+        """Apply the single-product first-seen proof to an already captured trigger."""
+        if self.started is None:
+            raise ValueError("NATURAL_SOURCE_NOT_ACTIVATED")
+        if (
+            trigger.symbol != self.product.lower()
+            or trigger.frequency != BarFrequency.H1
+        ):
+            raise ValueError("NATURAL_TRIGGER_INVALID")
         if trigger.bar.bar_end <= max(after, self.started):
             return None
+        if trigger.bar.bar_end >= observed_at:
+            raise ValueError("NATURAL_BAR_NOT_COMPLETED")
         with self.reader() as (_, reader):
-            snapshot = reader.observation_snapshot(self.identity, after, now)
+            snapshot = reader.observation_snapshot(self.identity, after, observed_at)
             if (
                 snapshot.source != "realtime"
                 or not snapshot.bars
@@ -196,7 +209,7 @@ class MarketBridge:
                 window,
                 source_id="simnow-natural:"
                 + digest((trigger.symbol, trigger.bar.bar_end, snapshot.contract)),
-                observed_at=now,
+                observed_at=observed_at,
             )
 
     def recovery(self, state, now):
