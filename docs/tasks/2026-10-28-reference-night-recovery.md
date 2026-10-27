@@ -77,6 +77,14 @@ Runtime全局health仍degraded：Alert coverage/独立暖机与旧transport失�
 删除后的历史审计/未决部署guard与十绑定已实际复验。后续仅用兼容恢复关联的读端或向前补丁，不能退回旧v24读端。
 27份原始测试日志已逐文件hash核对保存到主output。应用拒绝移除本任务primary checkout，故保留该树，不以原生删除绕过保护；普通临时补丁树已清理。
 
+收尾预算释放后仅追加20项缺失周线的纯来源核验，未创建新停驻或生产执行入口。正式planner对20项完整原窗口全部返回
+SUBING_REFERENCE_DATA_UNAVAILABLE；白名单diagnostic均为DATASET_OR_PARTITION_MISSING，19项首次失败在physical_contract_replay/W1，
+RS在actual_dominant_replay/W1。这是本地Canonical源分区缺失，不等于RQData永久没有数据，也不是合法暖机的替代说法。
+只定位了每项首个失败点，不能把19个合约当作已枚举完整维护范围；后续须完整新计划补依赖再构建。
+`weekly-source-readonly.json`与`weekly-source-diagnostics.json`均标明readonly=true/apply_allowed=false，没有claim/execute或新后台任务。
+07:40最终独立快照：逻辑积压/阻塞/UNKNOWN/capture仍0、2618恢复结果有效、原件/Scope/Source/实际发送hash不变、十身份匹配；
+历史616 CURRENT、235 LAGGING、39源版本变化/重建中、190缺失，合计仍464未追齐。190已包含这20项周线，不能重复相加。
+
 本任务定向pytest的真实日志在
 `output/reference-night-recovery-20261028/verification-original/`，核心285passed/1skipped、扩展156passed/2skipped、OpenSpec12passed。
 整组切换实际执行下列6文件合计258passed（隔离任务树PYTHONPATH指向其api/core，使用v25锁定解释器）；Ruff、secret scan零发现、diff check通过：
