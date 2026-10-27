@@ -41,3 +41,24 @@ v22 tag保持原样，修复进入v1.16.23；临近18:05时等待自然盘后任
 受影响组合221 passed；两项旧生命周期用例因默认日志目录不在sandbox内失败，使用隔离GUIYI_LOG_DIR后仅补跑两项，2 passed。
 新增CLI诊断后仅补诊断模块8 passed。Ruff、离线锁和diff检查通过。
 独立安全Review无未关闭Confirmed Issue：允许进入release candidate；publication/typed接收/预算均未放宽。
+
+v23已PR523/main/tag/Release发布，exact86248ce71ebf3fd88033eda24fa57c447b5c0597。候选API/core与Web
+版本/来源、type/build/topology通过。18:05自然源维护passed，60/60派生无失败；等原消费者审计退出，18:35:53四日历idle后
+新plan324f8ebe…一次apply。18:37:03在Alert预热candidate_blocked取消，effects={}，未停服/重跑/删树。
+
+一次Alert只读分段诊断定位EG/5m；一次此窗口直接replay读回为CONTRACT_REPLAY_COVERAGE_UNAVAILABLE /
+REPLAY_PREFIX_MISSING。完整一次Scope只读清单420=408 calculated+7 warming+5 blocked，全部EG2701。
+5m expected/actual=12138/69；15m=4046/23；30m=2112/12；60m=1234/7；1d=178/1。
+前四项缺口精确为01/28至10/26；日线缺177个上市后端点，首缺01/28。未把当日64bar当成生命周期覆盖。
+独立Review确认是真实数据Gate，未发现读取器或控制器缺陷；不能用当前任务的代码发布授权覆盖明确另列的数据修复。
+
+原生ContractWarmupPlanner只读dry-run：EG2701七周期01/28至10/27，30 direct/40 derived月目标、
+80,436根目标期望Bar、provider请求预算30，实际执行0；SHA
+a6500f465f7fbbe659cebfe75ac6f0d04289047f471933396188b2da9f9f4f19。
+数据执行须沿原生锁/原件前像/质量/原子发布/未知提交合同；当前未创建任何数据mutation attempt。
+
+18:48:46–47离场最小读回：十identity matched v14/gen31，六owner active/fresh/source_matches/lockheld，
+API200/version14与Web200精确v14；324f private/global同字节cancelled/effects={}，原binding和旧原件不变。
+报告SHAfa0aeab3e5da05d99e0e0f8aa581cec19e43e65d87279c6f52b4c6c61e4618b1。
+当前结论PARTIAL：10棵release树保留，等待owner决定是否将精确EG2701前缀修复纳入本次；未经此范围调整不下载、
+不发布数据、不绕过Gate或删除旧树。独立SimNow及账户/Scope/auto_order=false保持边界。

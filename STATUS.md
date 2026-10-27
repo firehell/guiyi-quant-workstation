@@ -1,11 +1,39 @@
 # 当前状态
 
-第二步技术恢复已完成：controller v1.16.21已发布，16:08:32新原生恢复88683cea…成功；16:12独立跨轮确认正式十服务统一v1.16.14/gen31，六常驻active/fresh、四定时服务已注册、API/Web200。旧unknown原件与绑定字节保留且事故关联闭合。历史积压/质量及新自然事件验收仍独立待办，尚未进行正式版本升级或旧发布树收敛。下方旧任务记录是历史证据。
+版本统一与发布树收敛尚未完成：v1.16.23已正式发布（86248ce71e…/PR523），正式十服务仍v1.16.14/gen31。
+v22及v23的新原生计划均在停服前取消，effects为空；旧失败原件及绑定不改。18:48独立最小读回确认十identity matched、
+六常驻active/fresh/正确来源与owner锁、API/Web200且仍为v14。420项Alert只读清单中408可计算、7合法warming、
+5项阻塞全部是EG2701的5m/15m/30m/60m/1d物理生命周期前缀缺失（01/28至10/26）。
+按本次计划“剩余数据缺口另行处理”边界未执行数据修复，未封存或删除任何旧发布树，现有10棵release树均保留。
+已生成单EG2701七周期原生只读维护计划（30次计划provider请求，实际0次），等待owner决定是否纳入本次后继续切换收敛。
+历史积压/质量及新自然事件验收独立保留。下方旧任务记录是历史证据。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 v23已发布，整组切换受EG2701物理前缀Gate阻塞
+
+PR522/v22 exactd2cc94382ba4158669d33ea549eb4d28d9a646b2发布封存能力，bf91a689…17:40:53停服前预热取消，原因未保留子步骤，不能倒推。
+一次只读Reference诊断明确SuBing forward漏用既有publication边界；共享MDS resolver与安全预热诊断已在PR523/v23
+exact86248ce71ebf3fd88033eda24fa57c447b5c0597向前发布，旧tag未改。未包含独立SimNow开发。
+定向409 passed/1 isolated-Redis skipped；必要向前修复组合221 passed，隔离日志目录仅补原两项2 passed，补充CLI诊断8 passed；
+Ruff/离线lock/diff及两次独立安全Review通过。正式候选API/core来源与Web type/build/topology通过，临时候选worktree已非force清理。
+
+18:05自然盘后源更新18:10:49 passed，60/60派生无失败；等待原消费者审计退出后，18:35:53四日历均idle。
+全新324f8ebe75dd6f454e8b351f1af9f698ffac4eefe5d80ea1f1d1cb86b815cb5e一次apply于18:37:03停服前取消，
+failed_service=alert/candidate_blocked，effects={}；未重跑两份计划，未强启服务或删除树。
+
+一次完整只读Alert inventory为408 calculated/7 warming/5 blocked，5个阻塞均EG2701，固定码
+CONTRACT_REPLAY_COVERAGE_UNAVAILABLE/REPLAY_PREFIX_MISSING。当前当日数据不足以证明上市后完整物理前缀，
+不允许缩窗、跨合约、Live替代或跳过Gate。18:48:46–47独立最小读回十身份v14/gen31、原PID active/fresh，
+API200/version1.16.14，Web200且匹配v14 dist；binding保持0e561c…257，旧文件prior_files_changed=[]。
+
+维护dry-run仅EG2701，2026-01-28至10/27，原生七周期、30个direct与40个derived月目标，计划SHA
+a6500f465f7fbbe659cebfe75ac6f0d04289047f471933396188b2da9f9f4f19；实际provider请求与apply均0。
+本次明确排除数据修复，需owner决定扩展这一具体范围后继续。详细原件与执行记录见
+[本任务记录](docs/tasks/2026-10-27-release-retirement.md)及`output/recovery-preflight-20261027/`。
 
 ## 10/27 第二步完成：v14整站恢复，控制器v21独立发布
 
