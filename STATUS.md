@@ -1,11 +1,11 @@
 # 当前状态
 
-版本统一与发布树收敛尚未完成：v1.16.23已正式发布（86248ce71e…/PR523），正式十服务仍v1.16.14/gen31。
-v22及v23的新原生计划均在停服前取消，effects为空；旧失败原件及绑定不改。18:48独立最小读回确认十identity matched、
-六常驻active/fresh/正确来源与owner锁、API/Web200且仍为v14。420项Alert只读清单中408可计算、7合法warming、
-5项阻塞全部是EG2701的5m/15m/30m/60m/1d物理生命周期前缀缺失（01/28至10/26）。
-按本次计划“剩余数据缺口另行处理”边界未执行数据修复，未封存或删除任何旧发布树，现有10棵release树均保留。
-已生成单EG2701七周期原生只读维护计划（30次计划provider请求，实际0次），等待owner决定是否纳入本次后继续切换收敛。
+正式十服务已于19:22:23整组切换到v1.16.23/gen32，exact86248ce71ebf3fd88033eda24fa57c447b5c0597。
+19:23独立跨轮确认十identity/安装/执行来源一致、六常驻active/fresh、四日历registered、API/Web两轮200。
+EG2701已按owner新增范围完成七周期修复：70目标passed/30请求，独立NOOP与12138根EG5m回放通过。
+19条历史尝试及47份原件已封存；19:32九棵旧树已非force移除，仅余release-v1.16.23；19:49删除后历史读取、F停驻确认、未决恢复及下一部署只读前置检查全部通过。
+首页60品种与RB10/27真实K线/指标可用，但RB参考收益子面板SOURCE_IDENTITY_UNVERIFIED仍保留为历史资产质量Gate，
+不声明全部页面功能健康。Reference pending63/blocked44/UNKNOWN0，新行情/推送仍待自然验收。
 历史积压/质量及新自然事件验收独立保留。下方旧任务记录是历史证据。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
@@ -13,7 +13,15 @@ v22及v23的新原生计划均在停服前取消，effects为空；旧失败原�
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
-## 10/27 v23已发布，整组切换受EG2701物理前缀Gate阻塞
+## 10/27 版本与发布树收敛完成
+
+唯一现役树为 `.worktrees/release-v1.16.23`，正式十服务统一 tag/commit/目录/gen32；独立SimNow保持独立。
+删除后从现役树验证完整封存索引、精确路径与SHA、typed闭合链和当前安装身份，结果passed；
+安装清单11项包含独立标签，正式cohort仍为10项。检查程序按现役Feed安装文件读取环境标志，未修改生产配置。
+最终只读报告 `output/recovery-preflight-20261027/controller23-final-indexed-readonly-v2.json`，
+19:48:55–19:49:01完成。技术版本/树收敛COMPLETED；历史参考资产质量与自然业务验收按上方剩余项保留。
+
+## 10/27 历史检查点：v23已发布，整组切换受EG2701物理前缀Gate阻塞
 
 PR522/v22 exactd2cc94382ba4158669d33ea549eb4d28d9a646b2发布封存能力，bf91a689…17:40:53停服前预热取消，原因未保留子步骤，不能倒推。
 一次只读Reference诊断明确SuBing forward漏用既有publication边界；共享MDS resolver与安全预热诊断已在PR523/v23

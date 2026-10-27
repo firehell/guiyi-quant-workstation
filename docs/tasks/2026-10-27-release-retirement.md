@@ -62,3 +62,55 @@ API200/version14与Web200精确v14；324f private/global同字节cancelled/effec
 报告SHAfa0aeab3e5da05d99e0e0f8aa581cec19e43e65d87279c6f52b4c6c61e4618b1。
 当前结论PARTIAL：10棵release树保留，等待owner决定是否将精确EG2701前缀修复纳入本次；未经此范围调整不下载、
 不发布数据、不绕过Gate或删除旧树。独立SimNow及账户/Scope/auto_order=false保持边界。
+
+
+## Owner扩展范围后的连续执行
+
+Owner明确选择纳入EG2701七周期物理前缀修复并继续切换清理，无需再次批准相同范围。
+第一包装仅在计划日期JSON序列化处TypeError，apply_called=false、冻结文件未创建、provider0，原报告保留。
+修正序列化后，19:14:35–19:15:09原生a6500f…f4f19锁内复核并一次apply：70 applied/0blocked/0failed，
+provider_requests=30/publications=70；Scope、其它合约、MainContractMap、Redis及通知未纳入修复。
+独立只读七周期原生plan为NOOP（79d80ffc…8b9ef），EG5m完整replay valid/12138 bars。
+仅重建EG派生首页缓存与overview，19:17:28均ready；未再次构建60品种或发送通知。
+19:18开始全新v23原生cohort，旧bf91/324f不可重跑；结果在实际完成后追加。
+
+
+19:22:23全新9abadb1bb11277e2b7f18ea6dae72cfa8ad5c2ec76ffc30e802df582c884fe7c成功switched。
+19:23:09→19:23:21独立跨轮：十identity/installed/source exact86248/gen32/root23；六owner active/fresh/
+稳定PID/正确来源/锁held；Feed closed_idle/pending0，Reference双fresh完成接收报告；四日历registered且RunAtLoadFalse。
+API两次200/version23，Web两次200且字节等于v23 dist；旧原件prior_files_changed=[]，未决恢复Gate通过。
+原件8956/唯一8956，completed2546/pending63/blocked44/UNKNOWN0，waiting/dependency0；blocked分类ACTION_CORRUPT6/
+NO_CALCULATION38，未假称积压清空或人为制造新行情/推送。
+报告independent-v23-20261027T112321Z.json，SHA5d2972cc87a9bd9cc5010955a283f9f102ea5cb53b9a2c9a2cbb32b8b7d0652a。
+原生global/private state同字节SHAe8d77eb54e704cb3fa5b5c6a0409b74be09431e8272dc84daa445fea85dddfa0；
+binding SHA89daa3ce8089bc98c8dfa30a87056eaa041d03a05f4a941e63574e916aa8ea53。
+
+19:24–19:26原生closeout/seal成功：19条闭合尝试、47份原件、54个marker路径（15存在/3个去重blob），
+保留旧unknown字节并封存本次v14前像；plan08482181357b94d1a32c618346108967f40b5d323beeef5421442b938a6840b6。
+原生cleanup-plan0fea2f31cef53bb50b6c6151644905035f680e54ea0dc0340cbcf424323ecc10认定9旧树eligible；
+19:32:15–19:32:34在部署锁内同前像复核后逐棵git worktree remove，无force：v10/v14/v16/v17/v18/v19/v20/v21/v22。
+只剩v23；develop、当前主工作区和独立SimNow树不动，tag/Release保留，临时候选已清理。
+
+浏览器：首页60真实品种/分钟已连接，EG5077，RB3040且10/27；RB真实K线、成交量、指标与参考marker已渲染。
+参考收益子面板首次及仅一次重试503，公开固定码SOURCE_IDENTITY_UNVERIFIED。相关source_identity/product_service
+v14→v23无diff，独立窄Review确认其为已存历史资产与当前来源的质量Gate，不增加旧checkout引用，不推翻技术cohort。
+不强制重建/放宽身份，也不宣称所有页面功能恢复。字段级原因尚未确定，另项保留。
+删除后唯一现役树历史seal、F确认及下一部署只读前置终验正在执行，不重启/重跑全工程。
+
+
+## 删除后最终验收与收尾
+
+19:48:55–19:49:01从唯一v23现役树执行最终只读组合，
+`controller23-final-indexed-readonly-v2.json` status=passed：release_trees=1、bindings=10/gen32、
+history_seal_valid、stopped_confirmation_valid、pending_recovery_check和next_deployment_prerequisites全部通过。
+current_installed_count=11包含独立标签，不改变正式十服务cohort；Session为closed_idle。
+历史读取采用完整验证索引、精确绝对路径/SHA及typed闭合链，涵盖本次旧v14前像；没有目录缺失fallback。
+
+旧辅助程序在完整索引已验证后又重复深读历史链，耗时过长，仅停止本任务该只读进程；
+没有停止正式服务，也没有改已发布代码，不声明旧递归读取程序成功。新组合复用合同指定的已验证索引。
+新组合首轮漏载检查进程所需Feed标志而失败，保留失败报告；v2从真实安装文件读取两项既有标志，
+仅设置检查进程环境，未改生产配置；其余历史/未决/安装/保护项复核通过。
+
+结论：版本统一及单发布树收敛COMPLETED，原失败记录、Git历史、数据和独立SimNow保留。
+参考收益子面板SOURCE_IDENTITY_UNVERIFIED、pending63/blocked44和自然新行情/推送仍独立待处理，
+不能以本次技术完成冒充所有业务健康。下一项最小工作是只读定位该历史资产身份校验失败字段。
