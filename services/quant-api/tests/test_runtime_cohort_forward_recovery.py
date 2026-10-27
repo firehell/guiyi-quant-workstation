@@ -41,6 +41,7 @@ def fixture(tmp_path):
         "installed_sha256": "a" * 64,
         "old_exited_sha256": "b" * 64,
         "protected": source["protected"],
+        "new_protected": {"scope": "new-frozen"},
         "owners": {"reference-worker": {"pid": 100, "generation": 29}},
         "controls": {"reference-worker": {"request_id": "c" * 32}},
         "receiving": {"kind": "test_source_proof", "cursor": 10},
@@ -53,6 +54,14 @@ def fixture(tmp_path):
         },
     }
     host._controller = lambda: deepcopy(audit["controller"])
+
+    def check_protected(source, frozen):
+        module().require(
+            audit["new_protected"] == frozen["new_protected"],
+            "COHORT_FORWARD_NEW_PROTECTED_DRIFT",
+        )
+
+    host.check_protected_forward = check_protected
     host.audit_forward = lambda source, check_budget, **kwargs: deepcopy(audit)
     host.forward_guards = lambda source: nullcontext()
     host.resume_consumers = lambda *args: (
@@ -483,6 +492,7 @@ def test_resume_releases_kernel_owner_locks_before_cancelling_parked_process(
     current._parked_owners = lambda *args, **kwargs: audit["owners"]
     current._controller = lambda: audit["controller"]
     current.bindings = lambda: m.registry(source["new"])
+    current.check_protected_forward = lambda *args: None
     current._fixed = lambda *args: fixed
     current._snapshot = lambda *args: {}
     current._old_exited = lambda *args: None
@@ -590,6 +600,19 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
     monkeypatch.setattr(m, "port_is_ready", lambda name: True)
     monkeypatch.setattr(m, "sleep", lambda seconds: None)
     monkeypatch.setattr(
+        liveness, "receiving_sample_is_fresh", lambda *args, **kwargs: True
+    )
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_continuity",
+        lambda before, after: liveness.verify_receiving_nonregression(before, after),
+    )
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_nonregression",
+        lambda *args, **kwargs: {"advanced_count": 1, "caught_up_idle": False},
+    )
+    monkeypatch.setattr(
         liveness,
         "prove_receiving_liveness",
         lambda *args, **kwargs: {
@@ -655,6 +678,66 @@ def test_native_verify_preserves_api_version_gate(tmp_path, monkeypatch):
     monkeypatch.setattr(urllib.request, "urlopen", lambda *args, **kwargs: Response())
     with pytest.raises(ValueError, match="FORWARD_API_VERSION_MISMATCH"):
         current.verify_forward(source, {}, lambda: None)
+    assert current._forward_diagnostic["substep"] == "api_http"
+
+
+@pytest.mark.parametrize(
+    "failed_substep", ("deployment_identity", "api_http", "web_http")
+)
+def test_native_verified_diagnostic_locates_the_actual_check_without_private_text(
+    tmp_path, monkeypatch, failed_substep
+):
+    import app.services.deployment_identity as identities
+    import urllib.request
+
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    current._await = lambda *args, **kwargs: {"mode": "durable_receiving"}
+
+    def identity(**kwargs):
+        if failed_substep == "deployment_identity":
+            raise OSError("private identity error")
+        return {
+            "services": {
+                module().IDENTITY_NAMES.get(name, name): {"status": "matched"}
+                for name in module().CONTINUOUS
+            }
+        }
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self):
+            tag = module().registry(source["new"]).services["api"].tag
+            return json.dumps({"version": tag[1:]}).encode()
+
+    def request(url, **kwargs):
+        if ("8000" in url and failed_substep == "api_http") or (
+            "5173" in url and failed_substep == "web_http"
+        ):
+            raise OSError("private network error")
+        return Response()
+
+    monkeypatch.setattr(identities, "deployment_identity_health", identity)
+    monkeypatch.setattr(urllib.request, "urlopen", request)
+    with pytest.raises(OSError):
+        current.verify_forward(source, {}, lambda: None)
+    diagnostic = module()._safe_verification_diagnostic(current)
+    assert diagnostic["substep"] == failed_substep
+    assert "private" not in json.dumps(diagnostic)
+
+
+@pytest.mark.parametrize("substep", ("private arbitrary error", [], None))
+def test_arbitrary_diagnostic_labels_are_not_persistable(tmp_path, substep):
+    current = native(tmp_path)
+    current._forward_diagnostic = {"substep": substep, "private": "hidden"}
+    assert module()._safe_verification_diagnostic(current) is None
 
 
 def test_explicit_live_teardown_is_recorded_before_any_bootout_or_resume(tmp_path):
@@ -739,6 +822,7 @@ def prepared_native_stop(tmp_path, monkeypatch):
     audit["live_restart_intent"] = intent
     audit["controls"]["live"] = {"request_id": "c" * 32}
     current.forward_guards = lambda *args: nullcontext()
+    current.check_protected_forward = lambda *args: None
     current._fixed = lambda *args: {"live": {"sha256": "b" * 64}}
     audit["installed_sha256"] = m.digest(current._fixed())
     current._controls = lambda *args: audit["controls"]
@@ -979,3 +1063,1003 @@ def test_second_prefrozen_plan_cannot_retry_first_unknown_recovery(tmp_path):
     with pytest.raises(ValueError, match="FORWARD_RECOVERY_READBACK_REQUIRED"):
         module().apply_forward_recovery(host, b)
     assert not host.calls
+
+
+def protected_native(tmp_path):
+    import plistlib
+
+    m = module()
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    old, new = m.registry(source["old"]), m.registry(source["new"])
+    old_root, new_root = (
+        host.old.services["live"].root,
+        host.registry.services["live"].root,
+    )
+    markers = (
+        "market-runtime-enabled",
+        "alert-runtime-enabled",
+        "reference-worker-enabled",
+        "weekly-audit-enabled",
+    )
+    for root in (old_root, new_root):
+        run = __import__("pathlib").Path(root) / ".run"
+        run.mkdir()
+        for name in markers:
+            (run / name).write_bytes(b"enabled\n")
+        (run / "after-market-history.json").write_bytes(
+            ("old-original" if root == old_root else "promoted-copy").encode()
+        )
+    shared = current.directory / "private-state.json"
+    shared.write_bytes(b"private-unchanged")
+    snapshots = {}
+    for reg, root in ((old, old_root), (new, new_root)):
+        run = __import__("pathlib").Path(root) / ".run"
+        snapshots[root] = {
+            "db_scope_policy_identity_sha256": "a" * 64,
+            "files": {
+                str(path): sha256(path.read_bytes()).hexdigest()
+                for path in (*run.iterdir(), shared)
+            },
+        }
+    source["protected"] = deepcopy(snapshots[old_root])
+    current._controller = lambda: {"fixed": "controller"}
+    current.bindings = lambda: new
+    current.verify_release = lambda *args: None
+    current.contracts = lambda root: new.services["live"].contracts
+    current.protected = lambda reg: deepcopy(
+        snapshots[next(iter(reg.services.values())).root]
+    )
+    current.check_schema_compatibility = lambda source: None
+    current.path = lambda binding: current.directory / (binding.service + ".plist")
+    for binding in new.services.values():
+        current.path(binding).write_bytes(plistlib.dumps({}))
+    launcher = current.directory / "run-local-service.sh"
+    launcher.write_bytes(b"launcher")
+    source["installed"]["launcher_sha256"] = sha256(launcher.read_bytes()).hexdigest()
+    current.bytes = lambda path: __import__("pathlib").Path(path).read_bytes()
+    current.verify_plist = lambda *args: None
+    return current, source, snapshots, old_root, new_root
+
+
+def test_native_fixed_preserves_old_and_independently_pins_new_root_state(tmp_path):
+    current, source, snapshots, old_root, new_root = protected_native(tmp_path)
+    assert (
+        snapshots[old_root] != snapshots[new_root]
+    )  # History hashes may differ; identities keep real paths.
+    current._fixed(source, lambda: None)
+    current.check_protected_forward(source, {"new_protected": snapshots[new_root]})
+    assert source["protected"] == snapshots[old_root]
+
+
+@pytest.mark.parametrize(
+    "drift",
+    [
+        "old_history",
+        "old_stable",
+        "db_scope",
+        "new_private_added",
+        "shared_missing",
+        "new_history_after_freeze",
+        "marker_bad",
+        "marker_missing",
+    ],
+)
+def test_native_protected_preimages_reject_every_non_root_drift(tmp_path, drift):
+    from pathlib import Path
+
+    current, source, snapshots, old_root, new_root = protected_native(tmp_path)
+    frozen = deepcopy(snapshots[new_root])
+    if drift == "old_history":
+        snapshots[old_root]["files"][
+            str(Path(old_root) / ".run/after-market-history.json")
+        ] = "f" * 64
+    elif drift == "old_stable":
+        snapshots[old_root]["files"][str(current.directory / "private-state.json")] = (
+            "f" * 64
+        )
+    elif drift == "db_scope":
+        snapshots[new_root]["db_scope_policy_identity_sha256"] = "f" * 64
+    elif drift == "new_private_added":
+        snapshots[new_root]["files"][
+            str(Path(new_root) / "notification-private.json")
+        ] = "f" * 64
+    elif drift == "shared_missing":
+        snapshots[new_root]["files"].pop(str(current.directory / "private-state.json"))
+    elif drift == "new_history_after_freeze":
+        snapshots[new_root]["files"][
+            str(Path(new_root) / ".run/after-market-history.json")
+        ] = "f" * 64
+    elif drift == "marker_bad":
+        (Path(new_root) / ".run/market-runtime-enabled").write_bytes(b"other\n")
+    elif drift == "marker_missing":
+        (Path(new_root) / ".run/market-runtime-enabled").unlink()
+    current._expected_new_protected = frozen
+    with pytest.raises(ValueError, match="PROTECTED|ACTIVATION"):
+        current._fixed(source, lambda: None)
+
+
+def test_new_protected_drift_after_resume_stops_before_feed_and_keeps_original(
+    tmp_path,
+):
+    host, _, path, attempt, _, audit = fixture(tmp_path)
+    original = (attempt / "state.json").read_bytes()
+    target = tmp_path / "recovery.json"
+    _write(target, module().freeze_forward_recovery(host, path))
+
+    def drift(*args):
+        host.calls.append("consumers")
+        audit["new_protected"] = {"scope": "changed"}
+        return {"resumed": True}
+
+    host.resume_consumers = drift
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    assert host.calls == ["consumers", "halt"]
+    assert (attempt / "state.json").read_bytes() == original
+
+
+def predecessor_case(tmp_path):
+    host, source, path, original_attempt, _, audit = fixture(tmp_path)
+    intent = {
+        "kind": "draining_live_teardown_v1",
+        "failure_code": "COHORT_FORWARD_LIVE_DRAIN_RESTART_LOOP",
+        "binding_sha256": module().digest(
+            __import__("dataclasses").asdict(
+                module().registry(source["new"]).services["live"]
+            )
+        ),
+        "installed_sha256": "b" * 64,
+        "control_sha256": "c" * 64,
+        "observed_pids": [101, 102],
+        "owned_pids": [101, 102],
+        "minimum_runs": 141,
+    }
+    audit["live_restart_intent"] = intent
+    first = module().freeze_forward_recovery(host, path)
+    a_path = tmp_path / "predecessor.json"
+    _write(a_path, first)
+    parent = host.directory / "cohort-forward-recoveries"
+    parent.mkdir(mode=0o700)
+    attempt = parent / first["plan_sha256"]
+    attempt.mkdir(mode=0o700)
+    _write(attempt / "plan.json", first)
+    state = {
+        "schema_version": 1,
+        "kind": module().KIND,
+        "plan_sha256": first["plan_sha256"],
+        "source": first["source"],
+        "phase": "outcome_unknown",
+        "effects": {
+            "live_stop": {
+                "phase": "bootout_requested",
+                "observed_pids": [101, 102, 103],
+                "intent": intent,
+            }
+        },
+        "error_code": "COHORT_FORWARD_STEP_FAILED",
+    }
+    _write(attempt / "state.json", state)
+    audit.pop("live_restart_intent")
+    proof = {
+        "predecessor_plan_sha256": first["plan_sha256"],
+        "observed_pids": [101, 102, 103],
+        "live_absent": True,
+        "observed_pids_exited": True,
+        "owner_lock_available": True,
+    }
+    proof["proof_sha256"] = module().digest(proof)
+    audit["confirmed_live_stop"] = proof
+    return host, path, a_path, attempt, original_attempt, audit
+
+
+def test_confirmed_prefix_new_attempt_continues_without_bootout_and_resolves_only_predecessor(
+    tmp_path,
+):
+    host, path, a_path, a_attempt, cohort_attempt, audit = predecessor_case(tmp_path)
+    old_a = (a_attempt / "state.json").read_bytes()
+    old_cohort = (cohort_attempt / "state.json").read_bytes()
+    frozen = module().freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=a_path
+    )
+    assert frozen["mode"] == "confirmed_live_stop"
+    b_path = tmp_path / "continuation.json"
+    _write(b_path, frozen)
+    host.stop_draining_live = lambda *args: pytest.fail(
+        "confirmed prefix must never bootout"
+    )
+    assert module().apply_forward_recovery(host, b_path)["status"] == "recovered"
+    assert host.calls == ["consumers", "intake", "feed", "verified", "calendars"]
+    assert (a_attempt / "state.json").read_bytes() == old_a
+    assert (cohort_attempt / "state.json").read_bytes() == old_cohort
+    b_attempt = host.directory / "cohort-forward-recoveries" / frozen["plan_sha256"]
+    receipt = json.loads((b_attempt / "receipt.json").read_bytes())
+    assert (
+        receipt["predecessor_resolution"]["predecessor"]["plan_sha256"]
+        == json.loads(a_path.read_bytes())["plan_sha256"]
+    )
+    module()._no_unresolved_recovery(
+        host
+    )  # Original A remains unknown, but exact B receipt proves closure.
+    calls = list(host.calls)
+    with pytest.raises(ValueError, match="ATTEMPT_ALREADY_EXISTS"):
+        module().apply_forward_recovery(host, b_path)
+    assert host.calls == calls
+    (b_attempt / "receipt.json").write_bytes(b'{"tampered":true}')
+    with pytest.raises(ValueError, match="READBACK_REQUIRED"):
+        module()._no_unresolved_recovery(host)
+
+
+def test_confirmed_prefix_rejects_another_unresolved_attempt(tmp_path):
+    host, path, a_path, _, _, _ = predecessor_case(tmp_path)
+    other = host.directory / "cohort-forward-recoveries" / ("e" * 64)
+    other.mkdir(mode=0o700)
+    _write(other / "state.json", {"phase": "outcome_unknown"})
+    with pytest.raises(ValueError, match="READBACK_REQUIRED"):
+        module().freeze_forward_recovery(host, path, predecessor_recovery_plan=a_path)
+    assert host.calls == []
+
+
+def test_confirmed_prefix_predecessor_bytes_drift_rejects_before_any_action(tmp_path):
+    host, path, a_path, a_attempt, _, _ = predecessor_case(tmp_path)
+    frozen = module().freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=a_path
+    )
+    b_path = tmp_path / "continuation.json"
+    _write(b_path, frozen)
+    state = json.loads((a_attempt / "state.json").read_bytes())
+    state["error_code"] = "CHANGED"
+    _write(a_attempt / "state.json", state)
+    with pytest.raises(ValueError, match="PREDECESSOR"):
+        module().apply_forward_recovery(host, b_path)
+    assert host.calls == []
+
+
+def test_safe_failure_diagnostics_preserve_stage_type_and_trusted_code_only(tmp_path):
+    from app.runtime_identity import RuntimeIdentityError
+
+    host, _, path, _, _, _ = fixture(tmp_path)
+    target = tmp_path / "recovery.json"
+    frozen = module().freeze_forward_recovery(host, path)
+    _write(target, frozen)
+
+    def fail(*args):
+        raise RuntimeIdentityError("IDENTITY_UNAVAILABLE")
+
+    host.await_consumers = fail
+    with pytest.raises(ValueError):
+        module().apply_forward_recovery(host, target)
+    state = json.loads(
+        (
+            host.directory
+            / "cohort-forward-recoveries"
+            / frozen["plan_sha256"]
+            / "state.json"
+        ).read_bytes()
+    )
+    assert state["failed_stage"] == "intake"
+    assert state["error_type"] == "RuntimeIdentityError"
+    assert state["error_code"] == "IDENTITY_UNAVAILABLE"
+
+
+@pytest.mark.parametrize("wrong", ["target", "intent_binding", "extra_effect"])
+def test_predecessor_requires_exact_current_target_binding_and_stop_only(
+    tmp_path, wrong
+):
+    host, path, a_path, a_attempt, _, _ = predecessor_case(tmp_path)
+    first = json.loads(a_path.read_bytes())
+    state = json.loads((a_attempt / "state.json").read_bytes())
+    if wrong == "target":
+        first["new"]["services"]["live"]["generation"] += 1
+    elif wrong == "intent_binding":
+        first["audit"]["live_restart_intent"]["binding_sha256"] = "f" * 64
+        state["effects"]["live_stop"]["intent"] = first["audit"]["live_restart_intent"]
+    else:
+        state["effects"]["consumers"] = {"unknown": True}
+    if wrong != "extra_effect":
+        first["plan_sha256"] = module().digest(
+            {k: v for k, v in first.items() if k != "plan_sha256"}
+        )
+        state["plan_sha256"] = first["plan_sha256"]
+        destination = a_attempt.parent / first["plan_sha256"]
+        a_attempt.rename(destination)
+        a_attempt = destination
+    _write(a_path, first)
+    _write(a_attempt / "plan.json", first)
+    _write(a_attempt / "state.json", state)
+    with pytest.raises(ValueError, match="PREDECESSOR"):
+        module()._predecessor(host, a_path, module()._source(host, path)[2])
+    assert not host.calls
+
+
+@pytest.mark.parametrize("wrong", ["missing", "none", "false", "hash", "pids", "id"])
+def test_confirmed_live_stop_proof_requires_complete_exact_shape(wrong):
+    pred = {"plan_sha256": "a" * 64, "observed_pids": [101, 102]}
+    proof = {
+        "predecessor_plan_sha256": "a" * 64,
+        "observed_pids": [101, 102],
+        "live_absent": True,
+        "observed_pids_exited": True,
+        "owner_lock_available": True,
+    }
+    proof["proof_sha256"] = module().digest(proof)
+    assert module().valid_confirmed_live_stop(proof, pred)
+    if wrong == "missing":
+        proof.pop("live_absent")
+    elif wrong == "none":
+        proof = None
+    elif wrong == "false":
+        proof["owner_lock_available"] = False
+    elif wrong == "hash":
+        proof["proof_sha256"] = "f" * 64
+    elif wrong == "pids":
+        proof["observed_pids"] = [101]
+    else:
+        proof["predecessor_plan_sha256"] = "b" * 64
+    assert not module().valid_confirmed_live_stop(proof, pred)
+
+
+def confirmed_native(tmp_path, monkeypatch):
+    m = module()
+    host, path, a_path, _, _, _ = predecessor_case(tmp_path)
+    source, _, identity = m._source(host, path)
+    pred, previous = m._predecessor(host, a_path, identity)
+    current = native(host.directory)
+    current.bindings = host.bindings
+    current.verify_release = lambda *args: None
+    expected = dict(previous["audit"]["owners"])
+    expected["live"] = {
+        "phase": "absent",
+        "generation": m.registry(source["new"]).services["live"].generation,
+    }
+    current.definition_absent = lambda binding: True
+    current._parked_owners = lambda *args, **kwargs: expected
+    current.check_protected_forward = lambda *args: None
+    current.check_schema_compatibility = lambda *args: None
+    current._old_exited = lambda *args: None
+    current._calculation_boundary = lambda: True
+    current._snapshot = lambda *args: {}
+    monkeypatch.setattr(m, "owner_lock_available", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        m.os, "kill", lambda *args: (_ for _ in ()).throw(ProcessLookupError())
+    )
+    import app.reference_trading.receiving_liveness as liveness
+
+    monkeypatch.setattr(
+        liveness,
+        "receiving_snapshot_identity",
+        lambda v: previous["audit"]["receiving"],
+    )
+    return current, source, pred, previous
+
+
+def test_native_confirmed_prefix_is_readonly_and_never_launches(tmp_path, monkeypatch):
+    current, source, pred, _ = confirmed_native(tmp_path, monkeypatch)
+    current.launch = lambda *args, **kwargs: pytest.fail("readback must not launch")
+    proof = current.confirm_live_stop(source, pred, lambda: None)
+    assert module().valid_confirmed_live_stop(proof, pred)
+    assert current._live_stopped is True
+
+
+@pytest.mark.parametrize(
+    "wrong",
+    ["live_present", "lock_busy", "pid_alive", "other_owner", "source", "pending"],
+)
+def test_native_confirmed_prefix_rejects_incomplete_readback(
+    tmp_path, monkeypatch, wrong
+):
+    current, source, pred, _ = confirmed_native(tmp_path, monkeypatch)
+    if wrong == "live_present":
+        current.definition_absent = lambda binding: False
+    elif wrong == "lock_busy":
+        monkeypatch.setattr(
+            module(), "owner_lock_available", lambda *args, **kwargs: False
+        )
+    elif wrong == "pid_alive":
+        monkeypatch.setattr(module().os, "kill", lambda *args: None)
+    elif wrong == "other_owner":
+        current._parked_owners = lambda *args, **kwargs: {}
+    elif wrong == "source":
+        import app.reference_trading.receiving_liveness as liveness
+
+        monkeypatch.setattr(
+            liveness, "receiving_snapshot_identity", lambda v: "changed"
+        )
+    else:
+
+        def pending():
+            raise module().CohortError("COHORT_FORWARD_CALCULATION_UNKNOWN")
+
+        current._calculation_boundary = pending
+    with pytest.raises(ValueError):
+        current.confirm_live_stop(source, pred, lambda: None)
+    assert not getattr(current, "_live_stopped", False)
+
+
+def test_self_consistent_receipt_with_false_prefix_proof_cannot_resolve_unknown(
+    tmp_path,
+):
+    host, path, a_path, _, _, _ = predecessor_case(tmp_path)
+    frozen = module().freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=a_path
+    )
+    b_path = tmp_path / "continuation.json"
+    _write(b_path, frozen)
+    module().apply_forward_recovery(host, b_path)
+    attempt = host.directory / "cohort-forward-recoveries" / frozen["plan_sha256"]
+    plan = json.loads((attempt / "plan.json").read_bytes())
+    receipt = json.loads((attempt / "receipt.json").read_bytes())
+    state = json.loads((attempt / "state.json").read_bytes())
+    confirmation = plan["audit"]["confirmed_live_stop"]
+    confirmation["live_absent"] = False
+    confirmation["proof_sha256"] = module().digest(
+        {k: v for k, v in confirmation.items() if k != "proof_sha256"}
+    )
+    plan["plan_sha256"] = module().digest(
+        {k: v for k, v in plan.items() if k != "plan_sha256"}
+    )
+    receipt["plan_sha256"] = plan["plan_sha256"]
+    receipt["predecessor_resolution"]["successor_plan_sha256"] = plan["plan_sha256"]
+    receipt["predecessor_resolution"]["confirmation"] = confirmation
+    state["plan_sha256"] = plan["plan_sha256"]
+    destination = attempt.parent / plan["plan_sha256"]
+    attempt.rename(destination)
+    _write(destination / "plan.json", plan)
+    _write(destination / "receipt.json", receipt)
+    state["receipt_sha256"] = sha256(
+        (destination / "receipt.json").read_bytes()
+    ).hexdigest()
+    _write(destination / "state.json", state)
+    with pytest.raises(ValueError, match="READBACK_REQUIRED"):
+        module()._no_unresolved_recovery(host)
+
+
+def intake_halt_case(tmp_path):
+    host, path, a_path, a_attempt, cohort_attempt, audit = predecessor_case(tmp_path)
+    b = module().freeze_forward_recovery(host, path, predecessor_recovery_plan=a_path)
+    b_path = tmp_path / "intake-halt.json"
+    _write(b_path, b)
+    b_attempt = host.directory / "cohort-forward-recoveries" / b["plan_sha256"]
+    b_attempt.mkdir(mode=0o700)
+    _write(b_attempt / "plan.json", b)
+    _write(
+        b_attempt / "state.json",
+        {
+            "schema_version": 1,
+            "kind": module().KIND,
+            "plan_sha256": b["plan_sha256"],
+            "source": b["source"],
+            "phase": "outcome_unknown",
+            "failed_stage": "intake",
+            "effects": {
+                "consumers": {
+                    "resumed_generation": module()
+                    .registry(b["new"])
+                    .services["live"]
+                    .generation
+                }
+            },
+            "error_code": "COHORT_FORWARD_STEP_FAILED",
+        },
+    )
+    audit.pop("confirmed_live_stop")
+    audit["receiving_context"] = "f" * 64
+
+    def current_audit(source, budget, **kwargs):
+        frozen = deepcopy(audit)
+        proof = {
+            "predecessor_plan_sha256": b["plan_sha256"],
+            "owners_sha256": module().digest(frozen["owners"]),
+            "controls_sha256": module().digest(frozen["controls"]),
+            "receiving_context": frozen["receiving_context"],
+            "all_consumers_parked": True,
+            "feed_absent": True,
+            "current_tail_reached": True,
+        }
+        proof["proof_sha256"] = module().digest(proof)
+        frozen["confirmed_intake_halt"] = proof
+        return frozen
+
+    host.audit_forward = current_audit
+    return host, path, b_path, a_attempt, b_attempt, cohort_attempt, audit
+
+
+def test_intake_halt_continues_exact_two_prefixes_without_rewriting_or_bootout(
+    tmp_path,
+):
+    host, path, b_path, a_attempt, b_attempt, cohort_attempt, _ = intake_halt_case(
+        tmp_path
+    )
+    originals = {
+        p: (p / "state.json").read_bytes()
+        for p in (a_attempt, b_attempt, cohort_attempt)
+    }
+    frozen = module().freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=b_path
+    )
+    assert frozen["mode"] == "confirmed_intake_halt"
+    c_path = tmp_path / "current.json"
+    _write(c_path, frozen)
+    host.stop_draining_live = lambda *args: pytest.fail("must not bootout")
+    assert module().apply_forward_recovery(host, c_path)["status"] == "recovered"
+    assert host.calls == ["consumers", "intake", "feed", "verified", "calendars"]
+    assert all((p / "state.json").read_bytes() == raw for p, raw in originals.items())
+    module()._no_unresolved_recovery(host)
+    with pytest.raises(ValueError, match="ATTEMPT_ALREADY_EXISTS"):
+        module().apply_forward_recovery(host, c_path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "feed_effect",
+        "wrong_stage",
+        "wrong_generation",
+        "third_unknown",
+        "old_state_drift",
+    ],
+)
+def test_intake_halt_rejects_any_prefix_or_unresolved_ambiguity(tmp_path, mutation):
+    host, path, b_path, a_attempt, b_attempt, _, _ = intake_halt_case(tmp_path)
+    state = json.loads((b_attempt / "state.json").read_bytes())
+    if mutation == "feed_effect":
+        state["effects"]["feed"] = {"started": True}
+    elif mutation == "wrong_stage":
+        state["failed_stage"] = "feed"
+    elif mutation == "wrong_generation":
+        state["effects"]["consumers"]["resumed_generation"] += 1
+    elif mutation == "old_state_drift":
+        a = json.loads((a_attempt / "state.json").read_bytes())
+        a["error_code"] = "CHANGED"
+        _write(a_attempt / "state.json", a)
+    else:
+        other = b_attempt.parent / ("e" * 64)
+        other.mkdir(mode=0o700)
+        _write(other / "state.json", {"phase": "outcome_unknown"})
+    _write(b_attempt / "state.json", state)
+    with pytest.raises(ValueError):
+        module().freeze_forward_recovery(host, path, predecessor_recovery_plan=b_path)
+    assert host.calls == []
+
+
+def await_intake_case(tmp_path, monkeypatch):
+    import app.reference_trading.receiving_liveness as liveness
+
+    m = module()
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    current.now = host.now
+    current.monotonic = lambda: 0.0
+    current.recovery_window = lambda: {"closed_idle": False}
+    current._active = lambda binding: {
+        "ready": True,
+        "proof": {
+            "receiving": {"protocol_version": 2, "intake_error": None},
+            "reference_runtime": {"stage": "receiving_cycle"},
+        },
+    }
+    current._calculation_boundary = lambda **kwargs: True
+    count = [0]
+
+    def sample(*args, **kwargs):
+        count[0] += 1
+        return {"owner_cycle_at": str(count[0]), "sequence": count[0]}
+
+    current._snapshot = sample
+    current._fixed = lambda *args: None
+    monkeypatch.setattr(m, "port_is_ready", lambda name: True)
+    monkeypatch.setattr(m, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        liveness, "receiving_sample_is_fresh", lambda *args, **kwargs: True
+    )
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_continuity",
+        lambda before, after: liveness.verify_receiving_nonregression(before, after),
+    )
+    return current, source, liveness, count
+
+
+def test_intake_zero_progress_waits_then_accepts_later_real_progress(
+    tmp_path, monkeypatch
+):
+    current, source, liveness, count = await_intake_case(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_nonregression",
+        lambda before, after, **kwargs: {
+            "advanced_count": int(after["sequence"] >= 3),
+            "caught_up_idle": False,
+        },
+    )
+
+    def prove(before, after, **kwargs):
+        assert after["sequence"] >= 3, "no progress yet"
+        return {"mode": "durable_receiving"}
+
+    monkeypatch.setattr(liveness, "prove_receiving_liveness", prove)
+    assert (
+        current.await_consumers(source, {}, lambda: None)["mode"] == "durable_receiving"
+    )
+    assert count[0] == 3
+
+
+def test_intake_nonregression_failure_is_fatal_without_waiting(tmp_path, monkeypatch):
+    current, source, liveness, count = await_intake_case(tmp_path, monkeypatch)
+
+    def broken(*args, **kwargs):
+        raise liveness.ReceivingLivenessError("REFERENCE_RECEIVING_LIVENESS_UNPROVEN")
+
+    monkeypatch.setattr(liveness, "verify_receiving_nonregression", broken)
+    monkeypatch.setattr(
+        liveness, "prove_receiving_liveness", lambda *args, **kwargs: {"mode": "wrong"}
+    )
+    with pytest.raises(liveness.ReceivingLivenessError):
+        current.await_consumers(source, {}, lambda: None)
+    assert count[0] == 2
+
+
+def test_intake_pending_does_not_extend_original_budget(tmp_path, monkeypatch):
+    current, source, liveness, count = await_intake_case(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        liveness,
+        "verify_receiving_nonregression",
+        lambda *args, **kwargs: {"advanced_count": 0, "caught_up_idle": False},
+    )
+    monkeypatch.setattr(
+        liveness,
+        "prove_receiving_liveness",
+        lambda *args, **kwargs: pytest.fail("pending is not ready"),
+    )
+    checks = [0]
+
+    def budget():
+        checks[0] += 1
+        if checks[0] >= 5:
+            raise module().CohortError("COHORT_FORWARD_DEADLINE_EXCEEDED")
+
+    with pytest.raises(ValueError, match="DEADLINE_EXCEEDED"):
+        current.await_consumers(source, {}, budget)
+    assert count[0] == 4
+
+
+@pytest.mark.parametrize("tail_gap", [False, True])
+def test_native_intake_halt_requires_current_parked_owners_and_complete_current_frontier(
+    tmp_path, monkeypatch, tail_gap
+):
+    import app.reference_trading.receiving_liveness as liveness
+
+    m = module()
+    host, path, b_path, _, _, _, audit = intake_halt_case(tmp_path)
+    audit["owners"]["live"] = {"pid": 101, "generation": 29, "phase": "parked"}
+    source, _, identity = m._source(host, path)
+    predecessor, previous = m._intake_predecessor(host, b_path, identity)
+    current = native(host.directory)
+    current.now = host.now
+    current.bindings = host.bindings
+    current.binding_hash = host.binding_hash
+    current._fixed = lambda *args: (
+        setattr(current, "_new_protected", audit["new_protected"]) or {}
+    )
+    current._old_exited = lambda *args: "old-exited"
+    current._controls = lambda *args: deepcopy(audit["controls"])
+    seen = []
+
+    def parked(*args, **kwargs):
+        seen.append(kwargs)
+        return deepcopy(audit["owners"])
+
+    current._parked_owners = parked
+    current.definition_absent = lambda binding: True
+    current._calculation_boundary = lambda **kwargs: True
+    current._snapshot = lambda *args: {
+        "old_tail_reached": True,
+        "days": {
+            "2026-10-27": {
+                "ack": "10-0",
+                "current_tail": "11-0" if tail_gap else "10-0",
+                "final_tail": "11-0" if tail_gap else "10-0",
+            }
+        },
+    }
+    current.recovery_window = lambda: {"mode": "same_generation_startup"}
+    current._controller = host._controller
+    current.confirm_live_stop = lambda *args: pytest.fail(
+        "current Live has been restarted; old absent proof is invalid"
+    )
+    monkeypatch.setattr(m, "_source", lambda *args: (source, {}, identity))
+    original = m._resolution_source
+
+    def read(path):
+        raw, value = original(path)
+        if str(path).endswith("state.json") and "cohort-attempts" in str(path):
+            value = deepcopy(value)
+            value["effects"]["drain"]["progress"] = {
+                name: {} for name in ("market-feed", "live", "alert")
+            }
+        return raw, value
+
+    monkeypatch.setattr(m, "_resolution_source", read)
+    monkeypatch.setattr(m, "_intake_predecessor", lambda *args: (predecessor, previous))
+    monkeypatch.setattr(m, "observation_progress", lambda *args: {})
+    monkeypatch.setattr(m, "progress_reached", lambda *args, **kwargs: True)
+    monkeypatch.setattr(
+        liveness, "receiving_context_identity", lambda snapshot: "f" * 64
+    )
+    monkeypatch.setattr(
+        liveness, "receiving_snapshot_identity", lambda snapshot: "a" * 64
+    )
+    if tail_gap:
+        with pytest.raises(ValueError, match="LEGACY_FRONTIER_UNPROVEN"):
+            current.audit_forward(source, lambda: None, predecessor=predecessor)
+    else:
+        result = current.audit_forward(source, lambda: None, predecessor=predecessor)
+        assert m.valid_confirmed_intake_halt(
+            result["confirmed_intake_halt"], predecessor, result
+        )
+    assert seen == [{"allow_live_restart": False, "live_absent": False}]
+
+
+@pytest.mark.parametrize(
+    "drift", ["receipt", "b_state", "a_state", "public_b", "source_state"]
+)
+def test_intake_halt_closure_revalidates_all_retained_bytes(tmp_path, drift):
+    host, path, b_path, a_attempt, b_attempt, cohort_attempt, _ = intake_halt_case(
+        tmp_path
+    )
+    frozen = module().freeze_forward_recovery(
+        host, path, predecessor_recovery_plan=b_path
+    )
+    c_path = tmp_path / "current.json"
+    _write(c_path, frozen)
+    module().apply_forward_recovery(host, c_path)
+    c_attempt = b_attempt.parent / frozen["plan_sha256"]
+    target = {
+        "receipt": c_attempt / "receipt.json",
+        "b_state": b_attempt / "state.json",
+        "a_state": a_attempt / "state.json",
+        "public_b": b_path,
+        "source_state": cohort_attempt / "state.json",
+    }[drift]
+    value = json.loads(target.read_bytes())
+    value["tampered"] = True
+    _write(target, value)
+    with pytest.raises(ValueError):
+        module()._no_unresolved_recovery(host)
+
+
+def changed_receiving_context_case(tmp_path):
+    from tests.reference_trading.test_receiving_liveness import _setup
+    from app.reference_trading.receiving_liveness import receiving_context_identity
+
+    directory = tmp_path / "receiving"
+    directory.mkdir(mode=0o700)
+    _, protocol, _, _, _, capture, sample = _setup(directory)
+    capture("11-0")
+    capture("12-0")
+    before = sample()
+    active = protocol.read()
+    active["activated_at"] = "2026-10-27T08:00:01+00:00"
+    _write(protocol.path, active)
+    return receiving_context_identity(before), sample(1), sample(2)
+
+
+def test_first_receiving_sample_cannot_replace_frozen_protocol_context(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, _, count = await_intake_case(tmp_path, monkeypatch)
+    context, first, second = changed_receiving_context_case(tmp_path)
+    samples = iter([first, second])
+    current.now = lambda: NOW + timedelta(seconds=2)
+
+    def snapshot(*args, **kwargs):
+        count[0] += 1
+        return next(samples)
+
+    current._snapshot = snapshot
+    with pytest.raises(ValueError, match="COHORT_FORWARD_RECEIVING_CONTEXT_DRIFT"):
+        current.await_consumers(source, {"receiving_context": context}, lambda: None)
+    assert count[0] == 1
+
+
+def test_feed_drain_is_not_cancelled_when_frozen_protocol_context_changed(
+    tmp_path, monkeypatch
+):
+    m = module()
+    host, source, _, _, _, audit = fixture(tmp_path)
+    context, changed, _ = changed_receiving_context_case(tmp_path)
+    audit["receiving_context"] = context
+    current = native(host.directory)
+    current._controller = host._controller
+    current._protected_preimages = lambda source: deepcopy(audit["new_protected"])
+    current._snapshot = lambda *args, **kwargs: changed
+    current._fixed = lambda *args: None
+    current.recovery_window = lambda: {"closed_idle": False}
+    current.definition_absent = lambda binding: True
+    control = {"request_id": "a" * 32}
+    audit["controls"]["market-feed"] = control
+    _write(host.directory / "market-feed.handover.json", control)
+    calls = []
+    monkeypatch.setattr(
+        m, "cancel_drain", lambda *args, **kwargs: calls.append("cancel")
+    )
+    current.start = lambda binding: calls.append("start")
+    with pytest.raises(ValueError, match="COHORT_FORWARD_RECEIVING_CONTEXT_DRIFT"):
+        current.resume_feed(source, audit, lambda: None)
+    assert calls == []
+
+
+def timed_receiving_case(
+    tmp_path, monkeypatch, *, regress=False, offsets=(0, 31, 32), same_cycle=False
+):
+    """Use the real DB/journal proof while replacing only OS readiness and time."""
+    from tests.reference_trading.test_receiving_liveness import _setup, NOW
+    from app.reference_trading.receiving_liveness import receiving_context_identity
+
+    host, source, _, _, _, _ = fixture(tmp_path)
+    data = tmp_path / "receiving"
+    data.mkdir(mode=0o700)
+    _, _, journal, _, _, capture, sample = _setup(data)
+    current = native(host.directory)
+    elapsed = [0]
+    samples = []
+    current.monotonic = lambda: elapsed[0]
+    current.now = lambda: NOW + timedelta(seconds=elapsed[0])
+    current.recovery_window = lambda: {}
+    current._active = lambda binding: {
+        "ready": True,
+        "proof": {
+            "receiving": {"protocol_version": 2, "intake_error": None},
+            "reference_runtime": {"stage": "receiving_cycle"},
+        },
+    }
+    current._calculation_boundary = lambda **kwargs: True
+    current._fixed = lambda *args: None
+    if regress:
+        capture("11-0")
+    context = receiving_context_identity(sample())
+
+    def snapshot(*args, **kwargs):
+        index = len(samples)
+        elapsed[0] = offsets[index]
+        if index == 1:
+            if regress:
+                from tests.reference_trading.test_receiving_handover import DAY
+
+                journal.redis.values[journal.cursor_key("reference", DAY)] = "10-0"
+            else:
+                capture("11-0")
+        elif index == 2:
+            capture("12-0")
+        value = sample(elapsed[0])
+        if same_cycle:
+            from app.reference_trading.inbox import _digest
+
+            value["owner_cycle_at"] = NOW.isoformat()
+            value["snapshot_sha256"] = _digest(
+                {k: v for k, v in value.items() if k != "snapshot_sha256"}
+            )
+        samples.append(value)
+        return value
+
+    current._snapshot = snapshot
+    monkeypatch.setattr(module(), "port_is_ready", lambda name: True)
+    monkeypatch.setattr(module(), "sleep", lambda seconds: None)
+    return current, source, {"receiving_context": context}, samples
+
+
+@pytest.mark.parametrize("feed", [False, True])
+def test_old_sample_rolls_only_after_continuity_then_two_fresh_cycles_prove_liveness(
+    tmp_path, monkeypatch, feed
+):
+    current, source, audit, samples = timed_receiving_case(tmp_path, monkeypatch)
+    proof = current._await(source, audit, lambda: None, feed=feed)
+    assert proof["advanced_count"] == 1
+    assert proof["before_sha256"] == samples[1]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[2]["snapshot_sha256"]
+    assert len(samples) == 3
+
+
+def test_sample_expiry_never_erases_an_ack_regression(tmp_path, monkeypatch):
+    from app.reference_trading.receiving_liveness import ReceivingLivenessError
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, regress=True
+    )
+    with pytest.raises(ReceivingLivenessError):
+        current.await_consumers(source, audit, lambda: None)
+    assert len(samples) == 2
+
+
+def test_same_owner_cycle_cannot_hide_an_intermediate_ack_regression(
+    tmp_path, monkeypatch
+):
+    from app.reference_trading.receiving_liveness import ReceivingLivenessError
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, regress=True, offsets=(0, 1, 2), same_cycle=True
+    )
+    with pytest.raises(ReceivingLivenessError):
+        current.await_consumers(source, audit, lambda: None)
+    assert len(samples) == 2
+
+
+def test_repeated_expiry_cannot_extend_the_feed_wait_budget(tmp_path, monkeypatch):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 31, 62, 93, 124)
+    )
+    with pytest.raises(ValueError, match="COHORT_FORWARD_READY_TIMEOUT"):
+        current._await(source, audit, lambda: None, feed=True)
+    assert len(samples) == 5
+
+
+def test_fixed_identity_check_cannot_return_a_proof_that_expired_during_check(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 31, 32, 64, 65)
+    )
+    delayed = [False]
+
+    def fixed(*args):
+        if not delayed[0]:
+            delayed[0] = True
+            current.now = lambda: NOW + timedelta(seconds=63)
+
+    original_snapshot = current._snapshot
+
+    def sample(*args, **kwargs):
+        value = original_snapshot(*args, **kwargs)
+        current.now = lambda: NOW + timedelta(seconds=current.monotonic())
+        return value
+
+    current._snapshot = sample
+    current._fixed = fixed
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert proof["before_sha256"] == samples[3]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[4]["snapshot_sha256"]
+
+
+def test_verified_failure_persists_safe_substep_and_sample_times(tmp_path):
+    from app.reference_trading.receiving_liveness import ReceivingLivenessError
+
+    host, _, path, original_attempt, _, _ = fixture(tmp_path)
+    before = (original_attempt / "state.json").read_bytes()
+    frozen = module().freeze_forward_recovery(host, path)
+    target = tmp_path / "recovery.json"
+    _write(target, frozen)
+
+    def fail(*args):
+        host._forward_diagnostic = {
+            "substep": "receiving_liveness",
+            "observed_at": host.now().isoformat(),
+            "before_sampled_at": host.now().isoformat(),
+            "before_owner_cycle_at": host.now().isoformat(),
+            "current_sampled_at": host.now().isoformat(),
+            "current_owner_cycle_at": host.now().isoformat(),
+            "private": "must never persist",
+        }
+        raise ReceivingLivenessError("REFERENCE_RECEIVING_LIVENESS_UNPROVEN")
+
+    host.verify_forward = fail
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    state = json.loads(
+        (
+            host.directory
+            / "cohort-forward-recoveries"
+            / frozen["plan_sha256"]
+            / "state.json"
+        ).read_bytes()
+    )
+    assert state["failed_stage"] == "verified"
+    assert state["error_type"] == "ReceivingLivenessError"
+    assert state["error_code"] == "REFERENCE_RECEIVING_LIVENESS_UNPROVEN"
+    assert state["verified_diagnostic"]["substep"] == "receiving_liveness"
+    assert state["verified_diagnostic"]["before_sampled_at"] == host.now().isoformat()
+    assert "private" not in state["verified_diagnostic"]
+    assert (original_attempt / "state.json").read_bytes() == before

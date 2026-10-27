@@ -508,9 +508,12 @@ def snapshot_receiving(
                 >= _id(current[day]["tail"])
                 >= _id(old["tail"])
             )
+        for day, row in days.items():
+            row["current_tail"] = current[day]["tail"]
+            row["final_tail"] = final[day]["tail"]
         acknowledged = sum(row["acknowledged_count"] for row in days.values())
         result = {
-            "schema_version": 1,
+            "schema_version": 2,
             "kind": KIND,
             "sampled_at": sampled.isoformat(),
             "owner_cycle_at": cycle.isoformat() if cycle else None,
@@ -572,7 +575,7 @@ def _valid_snapshot(value):
         and set(value) == fields
         and value.get("kind") == KIND
         and type(value.get("schema_version")) is int
-        and value["schema_version"] == 1
+        and value["schema_version"] == 2
         and _hash(value.get("snapshot_sha256"))
         and value["snapshot_sha256"]
         == _digest(
@@ -626,6 +629,8 @@ def _valid_snapshot(value):
             == {
                 "old_cursor",
                 "old_tail",
+                "current_tail",
+                "final_tail",
                 "ack",
                 "source_count",
                 "source_bytes",
@@ -640,7 +645,10 @@ def _valid_snapshot(value):
         )
         _require(
             _id(row["old_cursor"]) <= _id(row["old_tail"])
-            and _id(row["ack"]) >= _id(row["old_cursor"])
+            and _id(row["old_cursor"]) <= _id(row["ack"]) <= _id(row["current_tail"])
+            and _id(row["old_tail"])
+            <= _id(row["current_tail"])
+            <= _id(row["final_tail"])
         )
         _require(
             type(row["acknowledged_count"]) is int
@@ -695,25 +703,36 @@ def receiving_snapshot_identity(value):
         raise ReceivingLivenessError(ERROR) from None
 
 
-def prove_receiving_liveness(before, after, *, closed_idle=False, now=None):
-    """Two fresh receiving-cycle samples prove progress, never calculation health."""
+def receiving_sample_is_fresh(value, *, now):
+    """Expiry is not corruption; invalid clocks and sample integrity still fail."""
     try:
-        _require(type(closed_idle) is bool)
-        instant = _instant(now or datetime.now(UTC))
+        _valid_snapshot(value)
+        sampled, cycle, instant = (
+            _instant(value["sampled_at"]),
+            _instant(value["owner_cycle_at"]),
+            _instant(now),
+        )
+        _require(0 <= (sampled - cycle).total_seconds() <= 30 and instant >= sampled)
+        return (instant - cycle).total_seconds() <= 30
+    except Exception:
+        raise ReceivingLivenessError(ERROR) from None
+
+
+def verify_receiving_continuity(before, after):
+    """Preserve the full verified prefix across expiry; this grants no liveness."""
+    try:
         for value in (before, after):
             _valid_snapshot(value)
-            sampled, cycle = (
-                _instant(value["sampled_at"]),
-                _instant(value["owner_cycle_at"]),
-            )
             _require(
-                0 <= (sampled - cycle).total_seconds() <= 30
-                and 0 <= (instant - sampled).total_seconds() <= 30
-                and 0 <= (instant - cycle).total_seconds() <= 30
+                0
+                <= (
+                    _instant(value["sampled_at"]) - _instant(value["owner_cycle_at"])
+                ).total_seconds()
+                <= 30
             )
         _require(
             _instant(after["sampled_at"]) > _instant(before["sampled_at"])
-            and _instant(after["owner_cycle_at"]) > _instant(before["owner_cycle_at"])
+            and _instant(after["owner_cycle_at"]) >= _instant(before["owner_cycle_at"])
         )
         for key in (
             "intent_sha256",
@@ -744,6 +763,7 @@ def prove_receiving_liveness(before, after, *, closed_idle=False, now=None):
             )
             _require(
                 _id(current["ack"]) >= _id(row["ack"])
+                and _id(current["current_tail"]) >= _id(row["final_tail"])
                 and current["acknowledged_count"] >= row["acknowledged_count"]
                 and current["acknowledged_bytes"] >= row["acknowledged_bytes"]
             )
@@ -767,16 +787,88 @@ def prove_receiving_liveness(before, after, *, closed_idle=False, now=None):
                     and current["ack_routes_sha256"] != row["ack_routes_sha256"]
                 )
         advanced = after["acknowledged_count"] - before["acknowledged_count"]
-        _require(advanced > 0 or closed_idle and after["old_tail_reached"])
+        return {
+            "advanced_count": advanced,
+            "caught_up_idle": all(
+                row["ack"] == row["current_tail"] == row["final_tail"]
+                for value in (before, after)
+                for row in value["days"].values()
+            ),
+        }
+    except Exception:
+        raise ReceivingLivenessError(ERROR) from None
+
+
+def verify_receiving_nonregression(before, after, *, now=None):
+    """Two fresh receiving-cycle samples prove progress, never calculation health."""
+    instant = now or datetime.now(UTC)
+    if not all(
+        receiving_sample_is_fresh(value, now=instant) for value in (before, after)
+    ):
+        raise ReceivingLivenessError(ERROR)
+    comparison = verify_receiving_continuity(before, after)
+    if _instant(after["owner_cycle_at"]) <= _instant(before["owner_cycle_at"]):
+        raise ReceivingLivenessError(ERROR)
+    return comparison
+
+
+def receiving_context_identity(value):
+    """Static contract/source identity for comparing independently verified frontiers."""
+    try:
+        _valid_snapshot(value)
+        keys = (
+            "intent_sha256",
+            "source_proof_sha256",
+            "target_sha256",
+            "binding",
+            "protocol_sha256",
+            "boundaries_sha256",
+            "registered_day",
+            "source_count",
+            "source_bytes",
+        )
+        return _digest(
+            {
+                **{key: value[key] for key in keys},
+                "days": {
+                    day: {
+                        key: row[key]
+                        for key in (
+                            "old_cursor",
+                            "old_tail",
+                            "source_count",
+                            "source_bytes",
+                            "source_sha256",
+                        )
+                    }
+                    for day, row in value["days"].items()
+                },
+            }
+        )
+    except Exception:
+        raise ReceivingLivenessError(ERROR) from None
+
+
+def prove_receiving_liveness(before, after, *, closed_idle=False, now=None):
+    """Prove progress or an independently verified empty current queue.
+
+    The legacy closed_idle argument no longer supplies authority to accept an
+    idle receiver. Two fresh cycles and both captured current frontiers do.
+    """
+    try:
+        _require(type(closed_idle) is bool)
+        comparison = verify_receiving_nonregression(before, after, now=now)
+        advanced = comparison["advanced_count"]
+        _require(advanced > 0 or comparison["caught_up_idle"])
         mode = (
-            "durable_receiving_closed_idle"
+            "durable_receiving_caught_up_idle"
             if advanced == 0
             else "durable_receiving"
             if after["old_tail_reached"]
             else "durable_receiving_backlog_liveness"
         )
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "kind": KIND,
             "mode": mode,
             "calculation_ready": False,

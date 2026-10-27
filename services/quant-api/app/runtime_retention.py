@@ -136,7 +136,7 @@ class RetentionBackend:
                 raise RetentionError("CLEANUP_LOADED_INVENTORY_INVALID")
             if parts[2].startswith("com.guiyi.quant-"):
                 labels.add(parts[2])
-        valid_label = re.compile(r"com\.guiyi\.quant-(?:" + "|".join(re.escape(item) for item in SERVICES) + r")(?:-candidate-[0-9a-f]{32})?")
+        valid_label = re.compile(r"com\.guiyi\.quant-(?:" + "|".join(re.escape(item) for item in (*SERVICES, "simnow")) + r")(?:-candidate-[0-9a-f]{32})?")
         from app.runtime_identity import read_launchd_service as _read_launchd_service
         for label in labels:
             if not valid_label.fullmatch(label):

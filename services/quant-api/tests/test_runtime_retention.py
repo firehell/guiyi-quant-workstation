@@ -87,3 +87,37 @@ def test_foreign_repository_worktree_is_never_eligible(tmp_path, monkeypatch):
     monkeypatch.setattr("app.runtime_retention._git", lambda cwd, *args: str(foreign if cwd == root else project))
     with pytest.raises(RetentionError, match="REPOSITORY_IDENTITY_INVALID"):
         RetentionBackend().candidate_identity(root)
+
+
+def test_simnow_arguments_are_checked_as_references_without_ignoring_its_label(tmp_path, monkeypatch):
+    from app.runtime_retention import RetentionBackend
+    root = tmp_path / "release"
+    root.mkdir()
+    backend = RetentionBackend(home=tmp_path)
+    label = "com.guiyi.quant-simnow"
+    def command(args):
+        if args[0] == "/bin/launchctl":
+            return "PID\tStatus\tLabel\n42\t0\t" + label
+        if args[0] == "/usr/sbin/lsof":
+            return "p99\nfcwd\nn/unrelated"
+        return "99 /usr/bin/python unrelated"
+    monkeypatch.setattr(backend, "_command", command)
+    observed = f"{label} = {{\narguments = {{\n{root}/.sdk/bin/python\n-I\n{root}/scripts/broker/simnow_supervisor.py\n}}\nenvironment = {{\n}}\n}}"
+    monkeypatch.setattr("app.runtime_identity.read_launchd_service", lambda *args, **kwargs: observed)
+    assert backend.references_by_root((root,))[str(root)] == [f"loaded:{label}"]
+
+
+def test_native_reader_allows_only_known_simnow_label_and_still_rejects_unknown(tmp_path, monkeypatch):
+    import subprocess
+    from app import runtime_identity as identity
+    calls = []
+    def command(args, **kwargs):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, "com.guiyi.quant-simnow = {}", "")
+    monkeypatch.setattr(identity, "command_result", command)
+    assert identity.read_launchd_service("com.guiyi.quant-simnow", root=tmp_path)
+    assert calls[-1][-1].endswith("/com.guiyi.quant-simnow")
+    before = len(calls)
+    with pytest.raises(identity.RuntimeIdentityError):
+        identity.read_launchd_service("com.guiyi.quant-unrecognized", root=tmp_path)
+    assert len(calls) == before

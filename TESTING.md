@@ -2141,7 +2141,15 @@ python3 scripts/broker/native/build_control.py --headers /private/path/headers -
 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，无生产库、无host volume；SQLite通过不证明生产锁。
 现场另核schema、协议边界、原件hash、接收/计算独立进度、EG物理前缀与其他品种连续推进，不用测试代替自然验收。
 
+精确前缀continuation及诊断隐私回归另包含 `services/quant-api/tests/test_runtime_recovery_diagnostics.py`；验证唯一前驱字节关联、确认前缀无重复bootout、成功receipt闭环及其他unknown继续拒绝。
+
 同generation恢复定向入口：`pytest -q services/quant-api/tests/reference_trading/test_receiving_liveness.py services/quant-api/tests/test_runtime_cohort_forward_recovery.py`。覆盖逐条ACK前缀/冻结routes、新append与跨旧tail、双fresh接收轮次、samegen权威启动、真实owner锁竞态、原unknown保留及单次恢复预算；使用隔离PG/Redis环境变量补真实集成验证，不能拿sqlite替代生产读回。
+
+采样窗口回归包含t0/t31/t32滚动、同owner cycle中间ACK回退、过期期间context/routes篡改、身份校验期间样本过期、重复过期不延长原预算，以及verified身份/API/Web子步骤和诊断隐私。真实接收联合用例显式使用本次新建的一次性非6379端口`GUIYI_TEST_REDIS_PORT`（DB15必须为空）及guarded `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`，不再默认连接旧任务的固定Redis端口。
+
+Feed启动后verified失败的精确三层恢复另运行`services/quant-api/tests/test_runtime_feed_halt_recovery.py`：覆盖C严格effects、关闭后停止的hash终点、一次bootout前意图落盘、动态PID退出、未知结果禁重试、完整source原件/索引和ACK篡改、关闭终态receipt关联及后续每阶段字节重验。测试不启停真实服务；生产关闭须由exact release控制器的新鲜计划及实际label/PID/锁/双前缀读回单独证明，不能用mock主机或缺失heartbeat替代。
+
+同文件另验卸载过渡state的纯PID观察、精确D身份读回失败的`confirm-feed-close`只读确认、原unknown字节不变、额外unknown/extra effect/假退出/确认漂移继续拒绝，以及真实主机adapter只允许absence/全部PID退出/锁free/双前缀一致且零launch调用。过期D仅按历史创建时点校验身份，不得借确认入口重新执行其bootout。
 
 主力恢复的预热共享输入定向回归：`services/quant-api/tests/reference_trading/test_prewarm_input_sharing.py`
 及`test_newow_input_cache.py`验证完整工作组、逐流计算、effective policy/after隔离及异常清理；
