@@ -491,7 +491,7 @@ def capture_subing_canonical(
         raise ValueError('FORWARD_INPUT_TIME_INVALID')
     try:
         query = SubingReferenceQuery(identity.product.lower(), frequency=identity.frequency, as_of=now)
-        _since, through, cutoff, _as_of = service.resolve_read_window(query)
+        _since, through, cutoff, _as_of = service.resolve_forward_read_window(query)
         if cutoff < recording_start or after is not None and cutoff <= after:
             return None
         boundary = after or recording_start

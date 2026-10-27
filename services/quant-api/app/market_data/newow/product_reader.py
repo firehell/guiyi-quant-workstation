@@ -1131,35 +1131,19 @@ class NewowProductReader:
         ), policy
 
     def _forward_published_through(self, product, frequency, through, as_of):
-        """Session completion is not publication. Read the existing MDS endpoint.
-
-        Only the current natural day's unpublished tail may wait before the
-        scheduled 18:05 publication. Missing prior periods remain failures.
-        """
-        page = self._market_data.query_page(SeriesPageQuery(
-            SeriesKind.ACTUAL_DOMINANT, product, BarFrequency(frequency), limit=1,
-        ))
-        if not page.bars or page.bars[-1].bar_end > as_of:
-            raise NewowProductReadError("CANONICAL_PUBLICATION_ENDPOINT_INVALID")
-        published = page.bars[-1].trading_day
-        if published >= through:
-            return through
-        local = as_of.astimezone(_SHANGHAI)
-        waiting_today = local.time() < time(18, 5)
-        if frequency is ProductFrequency.WEEKLY:
-            candidates = self.weekly_snapshot_candidates(product, as_of=as_of, limit=2)
-            due = tuple(day for day, _ in candidates if day <= through
-                        and not (waiting_today and day == local.date()))
-        else:
-            due = self._market_data.completed_trading_days(
-                symbol=product,
-                start=datetime.combine(published, time.min, _SHANGHAI),
-                as_of=as_of, latest=through,
+        from app.market_data.canonical_publication import (
+            CanonicalPublicationError, forward_published_through,
+        )
+        try:
+            return forward_published_through(
+                self._market_data, product=product, frequency=frequency,
+                through=through, as_of=as_of,
+                weekly_candidates=lambda: self.weekly_snapshot_candidates(
+                    product, as_of=as_of, limit=2,
+                ),
             )
-            due = tuple(day for day in due if not (waiting_today and day == local.date()))
-        if any(day > published for day in due):
-            raise NewowProductReadError("CANONICAL_PUBLICATION_LAGGING")
-        return published
+        except CanonicalPublicationError as exc:
+            raise NewowProductReadError(exc.code) from exc
 
     def historical_metadata_evidence(
         self, *, product: str, since: date, through: date,

@@ -20,7 +20,7 @@ class Source:
     def __init__(self, ends=(END,)):
         self.ends = ends
         self.reads = 0
-    def resolve_read_window(self, query):
+    def resolve_forward_read_window(self, query):
         return END.date(), END.date(), self.ends[-1], END + timedelta(seconds=1)
     def _session_windows(self, symbol, day):
         from types import SimpleNamespace
@@ -79,6 +79,7 @@ def test_real_daily_quality_prefix_before_watermark_does_not_break_capture():
     market = DailyQualityMarket()
     now = datetime.combine(market.days[-1], datetime.min.time(), UTC) + timedelta(hours=7)
     from types import SimpleNamespace
+    market.query_page = lambda _: SimpleNamespace(bars=(market.bars[-1],))
     service = SubingReferenceService(market, coverage=SimpleNamespace(product_start=lambda _: market.days[0]), active_products={'rb'}, now=lambda: now)
     result = capture_subing_canonical(service, identity('1d'), revision_id='r', generation=1,
         after=market.bars[-2].bar_end, recording_start=market.bars[-2].bar_end-timedelta(days=1), now=now)
