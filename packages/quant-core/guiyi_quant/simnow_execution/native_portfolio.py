@@ -1,12 +1,17 @@
 """Serial native transport composition; SDK types are supplied by the pinned runner."""
 
 from datetime import timedelta
-from dataclasses import replace
 from pathlib import Path
 import sqlite3
+import re
 import tempfile
 
 from ..htdy_account_execution.codec import digest
+from ..htdy_account_execution.scheduling import (
+    execution_candidates,
+    desired_action,
+    executable_price,
+)
 from . import Adapter, Journal, Session
 from .credentials import CredentialStore
 from .facts import (
@@ -158,13 +163,23 @@ class NativePortfolio:
         )
 
     def facts(self, product, contract, market, day):
-        from datetime import datetime
+        return self.finish_facts(
+            self.prepare_facts(product, contract, market, day), market, day
+        )
 
+    def prepare_facts(self, product, contract, market, day):
         bound, metadata = self.binding(product, contract, market, self.now(), day)
         mar = self.gateway.query("margin", bound.native, exchange=bound.exchange)
         com = self.gateway.query("commission", bound.native, exchange=bound.exchange)
         if len(mar) != 1 or len(com) != 1:
             raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
+        return bound, metadata, mar[0], com[0]
+
+    def finish_facts(self, prepared, market, day, *, opening=False):
+        from datetime import datetime
+
+        bound, metadata, margin, commission = prepared
+        product = re.match(r"[A-Z]+", bound.canonical)[0]
         # Query book last, so rate queries cannot silently consume its three-second TTL.
         rows = self.gateway.query("book", bound.native)
         received = self.now()
@@ -172,8 +187,10 @@ class NativePortfolio:
         auth = market.authority(
             product, datetime.strptime(day, "%Y%m%d").date(), received, bound.canonical
         )
+        if opening and auth.owner != bound.canonical:
+            raise ValueError("AUTHORITATIVE_OWNER_CHANGED")
         fact = execution_input(
-            bound, metadata, mar[0], com[0], quote, auth.session, self.now()
+            bound, metadata, margin, commission, quote, auth.session, self.now()
         )
         self.last_facts[bound.canonical] = fact
         return bound, fact
@@ -190,73 +207,152 @@ class NativePortfolio:
         else:
             issues.pop(product, None)
 
-    def execution_for(self, state, market, now, day, issues):
-        # No OPEN capability this phase: query only existing obligations, one live order globally.
-        contracts = {(o.product, o.contract) for o in state.orders if not o.reconciled}
-        if not contracts:
-            closing = {p.product for p in state.products if p.must_close or p.rolling}
-            closing |= {
-                held.product
-                for held in state.positions
-                if any(
-                    p.product == held.product and p.desired != held.quantity
-                    for p in state.products
-                )
-            }
-            contracts = {
-                (p.product, p.contract) for p in state.positions if p.product in closing
-            }
+    def execution_for(
+        self, state, market, now, day, issues, *, opening_allowed=False, refresh=None
+    ):
+        if (
+            type(opening_allowed) is not bool
+            or opening_allowed
+            and not callable(refresh)
+        ):
+            raise ValueError("TRADE_ACCOUNT_REFRESH_REQUIRED")
+        candidates = execution_candidates(state, opening_allowed=opening_allowed)
         # Serialize execution, including metadata/book acquisition. A quote obtained
         # for one contract must not age behind 59 other broker queries.
-        contracts = sorted(contracts)
         bindings, facts = [], []
-        for product, contract in sorted(contracts):
+        failed = []
+        for candidate in candidates:
+            product, contract = candidate.product, candidate.contract
             try:
-                binding, fact = self.facts(product, contract, market, day)
+                if opening_allowed:
+                    prepared = self.prepare_facts(product, contract, market, day)
+                else:
+                    binding, fact = self.facts(product, contract, market, day)
             except Exception:
                 if self.transport_failed:
                     raise ValueError("NATIVE_TRANSPORT_FAILED") from None
                 issues[product] = "EXECUTION_INPUT_UNPROVEN"
-                # Cancels need current Session and proven instrument, but no new price.
-                cached = self.last_facts.get(contract)
-                if (
-                    cached is not None
-                    and self.now() < cached.instrument.valid_until
-                    and any(
-                        o.contract == contract and not o.reconciled
-                        for o in state.orders
-                    )
+                if any(
+                    o.contract == contract and not o.reconciled for o in state.orders
                 ):
-                    from datetime import datetime
-
-                    auth = market.authority(
-                        product,
-                        datetime.strptime(day, "%Y%m%d").date(),
-                        self.now(),
-                        contract,
+                    cancel_facts, cancel_bindings = self.cancel_facts(
+                        state, market, day, contract
                     )
-                    bindings.append(
-                        self.binding(product, contract, market, self.now(), day)[0]
-                    )
-                    facts.append(replace(cached, session=auth.session, quote=None))
-                    break
+                    if cancel_facts:
+                        return cancel_facts, cancel_bindings
+                failed.append(candidate)
                 continue
+            if opening_allowed:
+                # Refresh runs outside per-product error handling. Unknown account
+                # outcomes must stop the host, never masquerade as a missing quote.
+                current = refresh()
+                if current is None:
+                    return (), ()
+                current_candidates = tuple(
+                    c
+                    for c in execution_candidates(current, opening_allowed=True)
+                    if c not in failed
+                )
+                if not current_candidates or current_candidates[0] != candidate:
+                    return (
+                        (),
+                        (),
+                    )  # Target/order changed while querying; replan next cycle.
+                try:
+                    binding, fact = self.finish_facts(
+                        prepared, market, day, opening=candidate.offset == "OPEN"
+                    )
+                except Exception:
+                    if self.transport_failed:
+                        raise ValueError("NATIVE_TRANSPORT_FAILED") from None
+                    issues[product] = "EXECUTION_INPUT_UNPROVEN"
+                    failed.append(candidate)
+                    # Pending orders may still need an unpriced cancellation.
+                    if any(not o.reconciled for o in current.orders):
+                        return self.cancel_facts(current, market, day, contract)
+                    continue
+            if opening_allowed and not any(not o.reconciled for o in current.orders):
+                target = next(p for p in current.products if p.product == product)
+                action = desired_action(current, target)
+                cutoff = (
+                    candidate.offset == "OPEN"
+                    and fact.session.at <= self.now() < fact.session.valid_until
+                    and self.now()
+                    >= fact.session.final_close_at - timedelta(seconds=60)
+                )
+                if not cutoff and (
+                    action is None
+                    or executable_price(fact, action[2], self.now()) is None
+                ):
+                    issues[product] = "EXECUTION_INPUT_TEMPORARILY_UNAVAILABLE"
+                    failed.append(candidate)
+                    continue
             issues.pop(product, None)
             bindings.append(binding)
             facts.append(fact)
             break
         return tuple(facts), tuple(bindings)
 
-    def adapter(self, store, journal, snapshot, now, *, close_only=False,
-                correlated_native=False, strategy_correlated_native=False,
-                native_validator=None):
+    def cancel_facts(self, state, market, day, contract):
+        from datetime import datetime
+
+        # A CANCEL needs original identity and a current binding/Session, not
+        # refreshed rates or a price. Recover the instrument from the immutable
+        # Tick that created this order; expired historical rates are never used
+        # for a replacement submission (quote is explicitly absent).
+        order = next(
+            (o for o in state.orders if o.contract == contract and not o.reconciled),
+            None,
+        )
+        if order is None:
+            return (), ()
+        from ..htdy_account_execution import ExecutionInput
+
+        instrument = next(
+            (
+                f.instrument
+                for audit in reversed(getattr(state, "audit", ()))
+                for f in getattr(audit.command, "inputs", ())
+                if type(f) is ExecutionInput
+                and f.instrument.contract == contract
+                and f.instrument.source_id == order.instrument_source
+            ),
+            None,
+        )
+        if instrument is None:
+            return (), ()
+        auth = market.authority(
+            instrument.product,
+            datetime.strptime(day, "%Y%m%d").date(),
+            self.now(),
+            contract,
+        )
+        binding = self.binding(instrument.product, contract, market, self.now(), day)[0]
+        return (ExecutionInput(instrument, auth.session, None),), (binding,)
+
+    def adapter(
+        self,
+        store,
+        journal,
+        snapshot,
+        now,
+        *,
+        close_only=False,
+        correlated_native=False,
+        strategy_correlated_native=False,
+        native_validator=None,
+    ):
         from datetime import datetime, time
         from zoneinfo import ZoneInfo
 
-        if (type(close_only) is not bool or type(correlated_native) is not bool
+        if (
+            type(close_only) is not bool
+            or type(correlated_native) is not bool
             or type(strategy_correlated_native) is not bool
-            or correlated_native and (not close_only or strategy_correlated_native)
-            or strategy_correlated_native and not callable(native_validator)
+            or correlated_native
+            and (not close_only or strategy_correlated_native)
+            or strategy_correlated_native
+            and not callable(native_validator)
         ):
             raise ValueError("NATIVE_CAPABILITY_INVALID")
 
@@ -289,10 +385,13 @@ class NativePortfolio:
         )
         capabilities = (
             dict(close_only=close_only, correlated_native=correlated_native)
-            if close_only or correlated_native else {}
+            if close_only or correlated_native
+            else {}
         )
         if strategy_correlated_native:
-            capabilities.update(strategy_correlated_native=True, native_validator=native_validator)
+            capabilities.update(
+                strategy_correlated_native=True, native_validator=native_validator
+            )
         adapter = Adapter(
             store,
             journal,

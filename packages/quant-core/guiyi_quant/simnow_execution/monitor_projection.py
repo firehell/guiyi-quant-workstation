@@ -94,11 +94,18 @@ def _blank(now, status="not_connected"):
 
 def _pending(data):
     receipts = dict(data["state"].receipts)
+    resolved = {
+        p["pending_id"] for _, p, _ in data["events"] if p.get("kind") == "correlation"
+    }
     return [
         (identity, p, at)
         for identity, p, at in data["events"]
         if identity not in receipts
-        and p.get("kind") in ("trade", "quarantine", "fault", "disconnect", "uncertain")
+        and (
+            p.get("kind") in ("trade", "quarantine", "fault", "disconnect", "uncertain")
+            or p.get("kind") in ("unverified_order", "unverified_trade")
+            and identity not in resolved
+        )
     ]
 
 
@@ -252,7 +259,7 @@ def overview(data, now, error=False):
         else "error"
         if index["status"] == "ERROR"
         else "stale"
-        if age > 30
+        if age > 30 or index["connection"] != "LOGGED_IN"
         else "running"
     )
     metrics = {k: None for k in _blank(now)["metrics"]}
@@ -369,11 +376,20 @@ def overview(data, now, error=False):
             else "RELEASED"
             if observer_status == "stopped"
             else "UNKNOWN",
+            mode=index.get("mode"),
+            opening_enabled=bool(
+                index.get("opening_enabled")
+                and index.get("mode") == "trade"
+                and complete
+                and fresh
+                and observer_status == "running"
+            ),
+            host_status=index.get("host_status"),
         ),
         readback_at=native.at.isoformat(),
         trading_day=native.trading_day,
         readback_status="verified"
-        if complete and fresh
+        if complete and fresh and observer_status == "running"
         else "last_verified"
         if complete
         else "pending",

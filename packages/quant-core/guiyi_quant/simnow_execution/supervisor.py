@@ -10,6 +10,8 @@ from pathlib import Path
 import fcntl
 import json
 import os
+import re
+import stat
 import tempfile
 import time
 import uuid
@@ -23,10 +25,56 @@ from .evidence import Evidence
 from .monitor import MonitorPublisher
 
 
+def global_account_lock_directory():
+    return Path.home() / "Library/Application Support/GuiyiQuant/SimNowLocks"
+
+
 @contextmanager
 def account_lock(settings):
+    if re.fullmatch(r"[0-9a-f]{64}", settings.account_id) is None:
+        raise ValueError("CONTINUOUS_ACCOUNT_SCOPE_MISMATCH")
+    directory = global_account_lock_directory()
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    info = directory.stat()
+    if (
+        directory.is_symlink()
+        or directory.resolve() != directory
+        or info.st_uid != os.getuid()
+        or info.st_mode & 0o077
+    ):
+        raise ValueError("PRIVATE_ACCOUNT_ROOT_INVALID")
+    global_fd = os.open(
+        directory / (settings.account_id + ".lock"),
+        os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        info = os.fstat(global_fd)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or info.st_uid != os.getuid()
+            or info.st_mode & 0o077
+        ):
+            raise ValueError("PRIVATE_ACCOUNT_ROOT_INVALID")
+        try:
+            fcntl.flock(global_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError("ACCOUNT_HOST_ALREADY_RUNNING") from None
+        with _state_lock(settings) as folder:
+            yield folder
+    finally:
+        os.close(global_fd)
+
+
+@contextmanager
+def _state_lock(settings):
     # Same exact root/file as the existing bounded host. Resolve aliases first.
     base = Path(settings.state_root)
+    if getattr(settings, "schema", 1) == 2:
+        from .account_binding import existing_account
+
+        existing_account(base, settings.account_id)
     if base.is_symlink():
         raise ValueError("PRIVATE_ACCOUNT_ROOT_INVALID")
     base.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -119,7 +167,7 @@ class Supervisor:
         sleep=None,
         stopped=None,
     ):
-        if settings.mode not in {"observe", "manage"}:
+        if settings.mode not in {"observe", "manage", "trade"}:
             raise ValueError("CONTINUOUS_MODE_INVALID")
         self.settings, self.products, self.market = (
             settings,
@@ -141,10 +189,28 @@ class Supervisor:
         self.active_seen = False
         self.prepared = False
         self.ledger_hash = None
+        self.session_active = False
 
     def status(self, code, *, connected=False):
+        state = self.store.current() if self.store is not None else None
+        opening = bool(
+            code == "TRADING"
+            and self.settings.mode == "trade"
+            and self.settings.enabled
+            and connected
+            and self.prepared
+            and self.session_active
+            and state is not None
+            and state.phase == "READY"
+            and state.readback_valid
+            and not any(not order.reconciled for order in state.orders)
+            and state.readback.at <= self.now() < state.readback.valid_until
+            and self.host is not None
+            and not self.host.pending
+            and not self.host.adapter._faulted
+        )
         value = dict(
-            schema="simnow_continuous_v1",
+            schema="simnow_continuous_v2",
             run_id=self.run_id,
             mode=self.settings.mode,
             status=code,
@@ -153,8 +219,8 @@ class Supervisor:
             trading_day=self.day,
             products=list(self.products),
             issues={**self.market.issues, **self.issues},
-            auto_order=False,
-            opening_enabled=False,
+            auto_order=self.settings.mode == "trade" and self.settings.enabled,
+            opening_enabled=opening,
             broker_e2e_passed=False,
         )
         # Monitoring must not change a trading decision.
@@ -166,6 +232,9 @@ class Supervisor:
                 connection="LOGGED_IN" if connected else "UNKNOWN",
                 native_source_id=self.latest_source,
                 ledger_hash=self.ledger_hash,
+                mode=self.settings.mode,
+                opening_enabled=opening,
+                host_status=code,
             )
         except Exception:
             pass
@@ -224,7 +293,6 @@ class Supervisor:
         ):
             raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
         self.day = day
-        self.latest_source = snapshot.source_id
         path = self.folder / "account.sqlite"
         if not path.is_file():
             raise ValueError("EXISTING_ACCOUNT_JOURNAL_REQUIRED")
@@ -270,7 +338,10 @@ class Supervisor:
             from .strategy_native import validate_strategy_events
 
             adapter = self.driver.adapter(
-                self.store, self.journal, snapshot, self.now(),
+                self.store,
+                self.journal,
+                snapshot,
+                self.now(),
                 strategy_correlated_native=True,
                 native_validator=lambda native: validate_strategy_events(
                     native, self.market.authority, self.journal, self.store.current()
@@ -290,10 +361,16 @@ class Supervisor:
                 adapter,
                 self.products,
                 continuous=True,
+                trade=self.settings.mode == "trade",
                 run_id=self.run_id,
                 deadline=None,
             )
             self.host.reconcile(self.driver.report, bindings, self.now(), proofs)
+            if not self.store._needs_recovery:
+                self.ledger_hash = digest(self.store.current())
+        self.latest_source = (
+            snapshot.source_id
+        )  # Evidence is durable before publishing the binding.
         self.market.activate(self.now())
         self.inbox.recover_queue(self.store)
         self.prepared = True
@@ -301,6 +378,7 @@ class Supervisor:
     def cycle(self):
         now = self.now()
         plan = self.market.plan(now)
+        self.session_active = plan.active
         day = plan.trading_day.strftime("%Y%m%d") if plan.trading_day else None
         if day is None:
             self.status("CALENDAR_UNPROVEN")
@@ -420,12 +498,32 @@ class Supervisor:
         for signal in signals:
             self.inbox.enqueue(signal)
         self.inbox.deliver(self.store)
-        facts, bindings = self.driver.execution_for(
-            self.store.current(), self.market, self.now(), self.day, self.issues
-        )
-        self.host.adapter.drain()
+        if self.settings.mode == "trade":
+            facts, bindings = self.driver.execution_for(
+                self.store.current(),
+                self.market,
+                self.now(),
+                self.day,
+                self.issues,
+                opening_allowed=True,
+                refresh=self.refresh_before_book,
+            )
+        else:
+            facts, bindings = self.driver.execution_for(
+                self.store.current(), self.market, self.now(), self.day, self.issues
+            )
+        pending = self.host.adapter.drain()
         if self.host.adapter._faulted:
             raise ValueError("NATIVE_ADAPTER_REQUIRES_RECOVERY")
+        current = self.store.current()
+        if self.settings.mode == "trade" and (
+            pending
+            or not current.readback_valid
+            or current.phase != "READY"
+            or not current.readback.at <= self.now() < current.readback.valid_until
+        ):
+            self.status("ACCOUNT_RECONCILIATION_REQUIRED", connected=True)
+            return  # Slow inputs alone must not create a fake disconnection/recovery.
         outcomes = self.host.tick(facts, bindings, self.now())
         if not self.store._needs_recovery:
             self.ledger_hash = digest(self.store.current())
@@ -434,7 +532,36 @@ class Supervisor:
             for o in outcomes
         ):
             raise ValueError("NATIVE_ORDER_OUTCOME_REQUIRES_RECOVERY")
-        self.status("MANAGING_EXISTING_ONLY", connected=True)
+        self.status(
+            "TRADING" if self.settings.mode == "trade" else "MANAGING_EXISTING_ONLY",
+            connected=True,
+        )
+
+    def refresh_before_book(self):
+        """Same-connection complete readback after rates, before the final book."""
+        snapshot = self.driver.snapshot()
+        if snapshot.trading_day != self.day:
+            self.disconnect()
+            raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
+        bindings = self.driver.bindings_for(
+            self.store.current(), self.market, self.now(), self.day
+        )
+        _, state = self.host.reconcile(self.driver.report, bindings, self.now())
+        self.latest_source = snapshot.source_id
+        if state is None or not state.readback_valid or state.phase != "READY":
+            return None
+        # New messages received during the blocking read keep their genuine
+        # receipt time, after the account clock has advanced.
+        after = {p.product: p.last_bar or state.activated_at for p in state.products}
+        for signal in self.market.poll(self.now(), after) if self.active_seen else ():
+            self.inbox.enqueue(signal)
+        self.inbox.deliver(self.store)
+        current = self.store.current()
+        return (
+            current
+            if current.readback.at <= self.now() < current.readback.valid_until
+            else None
+        )
 
     def run(self, *, max_cycles=None):
         if not self.settings.enabled:
@@ -546,6 +673,9 @@ class Supervisor:
                         "STOPPED",
                         self.now(),
                         connection="RELEASED",
+                        mode=self.settings.mode,
+                        opening_enabled=False,
+                        host_status="STOPPED",
                         native_source_id=self.latest_source,
                         ledger_hash=self.ledger_hash,
                     )

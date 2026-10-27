@@ -103,3 +103,31 @@ def test_keychain_check_propagates_fixed_failure_without_network(monkeypatch, tm
         runner.main(
             ["--config", str(tmp_path / "config"), "--observe-only", "--check-keychain"]
         )
+
+
+@pytest.mark.parametrize(
+    "mode,flag",
+    [
+        ("trade", None),
+        ("trade", "--observe-only"),
+        ("observe", "--trade"),
+        ("manage", "--trade"),
+    ],
+)
+def test_trade_requires_matching_config_and_startup_flag_before_credentials(
+    monkeypatch, tmp_path, mode, flag
+):
+    from guiyi_quant.simnow_execution import settings
+
+    value = SimpleNamespace(
+        project_root=Path(runner.__file__).resolve().parents[2], mode=mode
+    )
+    monkeypatch.setattr(settings, "load_settings", lambda _: value)
+    monkeypatch.setattr(
+        runner.importlib.util,
+        "spec_from_file_location",
+        lambda *_: pytest.fail("SDK loaded"),
+    )
+    args = ["--config", str(tmp_path / "config")] + ([flag] if flag else [])
+    with pytest.raises(ValueError, match="CONTINUOUS_SOURCE_OR_MODE_INVALID"):
+        runner.main(args)

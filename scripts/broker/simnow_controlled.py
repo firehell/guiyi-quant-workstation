@@ -4,7 +4,8 @@ from datetime import datetime, UTC, timedelta
 from decimal import Decimal
 from pathlib import Path
 import argparse
-import fcntl
+from contextlib import ExitStack
+from types import SimpleNamespace
 import getpass
 import importlib.util
 import json
@@ -117,7 +118,11 @@ def run(gateway, tdapi, config, root):
     def read_book(bound, trading_day):
         rows = gateway.query("book", bound.native)
         received = now()
-        matches = [r for r in rows if r["InstrumentID"] == bound.native and r["ExchangeID"] == bound.exchange]
+        matches = [
+            r
+            for r in rows
+            if r["InstrumentID"] == bound.native and r["ExchangeID"] == bound.exchange
+        ]
         diagnostic = dict(
             requested_contract=bound.canonical,
             received_at=received.isoformat(),
@@ -132,10 +137,16 @@ def run(gateway, tdapi, config, root):
             diagnostic["trading_day_matches"] = row["TradingDay"] == trading_day
             try:
                 from zoneinfo import ZoneInfo
-                event = datetime.strptime(row["ActionDay"] + row["UpdateTime"], "%Y%m%d%H:%M:%S").replace(
-                    tzinfo=ZoneInfo("Asia/Shanghai"), microsecond=row["UpdateMillisec"] * 1000
+
+                event = datetime.strptime(
+                    row["ActionDay"] + row["UpdateTime"], "%Y%m%d%H:%M:%S"
+                ).replace(
+                    tzinfo=ZoneInfo("Asia/Shanghai"),
+                    microsecond=row["UpdateMillisec"] * 1000,
                 )
-                diagnostic["event_age_seconds"] = format((received-event).total_seconds(), ".6f")
+                diagnostic["event_age_seconds"] = format(
+                    (received - event).total_seconds(), ".6f"
+                )
             except (ValueError, TypeError, KeyError, OverflowError):
                 diagnostic["event_time_valid"] = False
         gateway.book_selection_diagnostics = diagnostic
@@ -143,7 +154,7 @@ def run(gateway, tdapi, config, root):
 
     market = MarketBridge(config.product.lower())
     store = journal = evidence = None
-    lock_fd = None
+    locks = ExitStack()
     final_snapshot = None
     host = None
     folder = None
@@ -156,7 +167,8 @@ def run(gateway, tdapi, config, root):
         day = datetime.strptime(first.trading_day, "%Y%m%d").date()
         authority = market.authority(day, now())
         instruments = gateway.query(
-            "instrument", exchange=authority.exchange,
+            "instrument",
+            exchange=authority.exchange,
             product=native_product_id(config.product.upper(), authority.exchange),
         )
         until = now() + timedelta(minutes=5)
@@ -173,7 +185,9 @@ def run(gateway, tdapi, config, root):
             len(settlement) == 1 and settlement[0]["ConfirmDate"] == first.trading_day
         )
         margin = gateway.query("margin", binding.native, exchange=binding.exchange)
-        commission = gateway.query("commission", binding.native, exchange=binding.exchange)
+        commission = gateway.query(
+            "commission", binding.native, exchange=binding.exchange
+        )
         if len(margin) != 1 or len(commission) != 1:
             raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
         quote = read_book(binding, first.trading_day)
@@ -243,10 +257,16 @@ def run(gateway, tdapi, config, root):
                     opening_fee_budget=str(facts.instrument.open_fee),
                     margin_exchange_observed=margin[0]["ExchangeID"],
                     commission_exchange_observed=commission[0]["ExchangeID"],
-                    margin_exchange_binding="QUERY_SCOPE" if margin[0]["ExchangeID"] == "" else "RESPONSE_FIELD",
-                    commission_exchange_binding="QUERY_SCOPE" if commission[0]["ExchangeID"] == "" else "RESPONSE_FIELD",
-                    bid=str(quote.bid), ask=str(quote.ask),
-                    bid_volume=quote.bid_volume, ask_volume=quote.ask_volume,
+                    margin_exchange_binding="QUERY_SCOPE"
+                    if margin[0]["ExchangeID"] == ""
+                    else "RESPONSE_FIELD",
+                    commission_exchange_binding="QUERY_SCOPE"
+                    if commission[0]["ExchangeID"] == ""
+                    else "RESPONSE_FIELD",
+                    bid=str(quote.bid),
+                    ask=str(quote.ask),
+                    bid_volume=quote.bid_volume,
+                    ask_volume=quote.ask_volume,
                     quote_received_at=quote.at.isoformat(),
                     quote_valid_until=quote.valid_until.isoformat(),
                     quote_source=quote.source_id,
@@ -260,13 +280,16 @@ def run(gateway, tdapi, config, root):
         if snapshot.trading_day < "20261027":
             raise ValueError("FUNDING_EFFECTIVE_DAY_NOT_REACHED")
         folder = private_output(root, snapshot.account_id)
-        lock_fd = os.open(
-            folder / "host.lock", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600
+        from guiyi_quant.simnow_execution.supervisor import account_lock
+
+        locks.enter_context(
+            account_lock(
+                SimpleNamespace(
+                    state_root=folder.parent,
+                    account_id=snapshot.account_id,
+                )
+            )
         )
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise ValueError("ACCOUNT_HOST_ALREADY_RUNNING") from None
         path = folder / "account.sqlite"
         if path.exists():
             if config.initialize:
@@ -311,7 +334,9 @@ def run(gateway, tdapi, config, root):
             at=now(),
             valid_until=now() + timedelta(seconds=config.max_seconds + 120),
         )
-        from guiyi_quant.simnow_execution.strategy_native import validate_strategy_events
+        from guiyi_quant.simnow_execution.strategy_native import (
+            validate_strategy_events,
+        )
 
         def native_validator(native):
             def authority(product, day, raw, contract):
@@ -321,8 +346,16 @@ def run(gateway, tdapi, config, root):
 
             validate_strategy_events(native, authority, journal, store.current())
 
-        adapter = b.Adapter(store, journal, tdapi, gateway.api, gateway.user, session,
-                            strategy_correlated_native=True, native_validator=native_validator)
+        adapter = b.Adapter(
+            store,
+            journal,
+            tdapi,
+            gateway.api,
+            gateway.user,
+            session,
+            strategy_correlated_native=True,
+            native_validator=native_validator,
+        )
         adapter.correlate_snapshot(snapshot)
         gateway.attach(adapter, snapshot)
         for prepared in store.current().orders:
@@ -433,12 +466,19 @@ def run(gateway, tdapi, config, root):
                 except ValueError as exc:
                     current = store.current()
                     diagnostic = getattr(gateway, "book_selection_diagnostics", {})
-                    old_source = Decimal(diagnostic.get("event_age_seconds", "-1")) > MAX_BOOK_SOURCE_AGE_SECONDS
+                    old_source = (
+                        Decimal(diagnostic.get("event_age_seconds", "-1"))
+                        > MAX_BOOK_SOURCE_AGE_SECONDS
+                    )
                     idle = (
-                        current.phase == "READY" and current.readback_valid
-                        and not current.orders and not current.positions
-                        and not current.reservations and not current.unresolved_fill_ids
-                        and not host.pending and not adapter._faulted
+                        current.phase == "READY"
+                        and current.readback_valid
+                        and not current.orders
+                        and not current.positions
+                        and not current.reservations
+                        and not current.unresolved_fill_ids
+                        and not host.pending
+                        and not adapter._faulted
                         and not any(p.must_close or p.rolling for p in current.products)
                     )
                     if str(exc) != "NATIVE_BOOK_STALE" or not old_source or not idle:
@@ -560,7 +600,10 @@ def run(gateway, tdapi, config, root):
                 if result is not None:
                     result["status"] = "CONTROLLED_RUN_REQUIRES_RECOVERY"
         if result is not None:
-            result.update(host_version="simnow_bounded_host_v2", empty_account_quote_waits=empty_account_quote_waits)
+            result.update(
+                host_version="simnow_bounded_host_v2",
+                empty_account_quote_waits=empty_account_quote_waits,
+            )
         if monitor is not None:
             monitor_progress(
                 "ERROR"
@@ -576,8 +619,7 @@ def run(gateway, tdapi, config, root):
         for value in (evidence, journal, store):
             if value is not None:
                 value.close()
-        if lock_fd is not None:
-            os.close(lock_fd)
+        locks.close()
 
 
 def main(argv=None):
@@ -634,7 +676,9 @@ def main(argv=None):
             finally:
                 output["inventory_diagnostics"] = gateway.inventory_diagnostics()
                 output["native_query_diagnostics"] = list(gateway.query_diagnostics)
-                output["book_selection_diagnostics"] = getattr(gateway, "book_selection_diagnostics", None)
+                output["book_selection_diagnostics"] = getattr(
+                    gateway, "book_selection_diagnostics", None
+                )
                 try:
                     if gateway.api is not None:
                         gateway.api.RegisterSpi(None)

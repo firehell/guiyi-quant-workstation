@@ -44,6 +44,7 @@ class ContinuousSettings:
     api_env: Path
     mode: str
     enabled: bool
+    state_project_root: Path | None = None
 
 
 def _path(value, *, code: str) -> Path:
@@ -91,7 +92,12 @@ def _read_private(path: Path) -> dict:
         value = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
     except (UnicodeDecodeError, json.JSONDecodeError, TypeError):
         raise SettingsError("SETTINGS_FORMAT_INVALID") from None
-    if type(value) is not dict or set(value) != _FIELDS:
+    fields = (
+        _FIELDS | {"state_project_root"}
+        if type(value) is dict and value.get("schema") == 2
+        else _FIELDS
+    )
+    if type(value) is not dict or set(value) != fields:
         raise SettingsError("SETTINGS_FIELDS_INVALID")
     return value
 
@@ -99,12 +105,17 @@ def _read_private(path: Path) -> dict:
 def load_settings(path: Path) -> ContinuousSettings:
     """Validate exact identity, private input and the one existing account root."""
     value = _read_private(Path(path))
-    if type(value["schema"]) is not int or value["schema"] != 1:
+    if type(value["schema"]) is not int or value["schema"] not in (1, 2):
         raise SettingsError("SETTINGS_SCHEMA_INVALID")
     account = value["account_id"]
     if type(account) is not str or _ACCOUNT.fullmatch(account) is None:
         raise SettingsError("SETTINGS_ACCOUNT_INVALID")
-    if value["mode"] not in ("observe", "manage") or type(value["mode"]) is not str:
+    modes = (
+        ("observe", "manage", "trade")
+        if value["schema"] == 2
+        else ("observe", "manage")
+    )
+    if value["mode"] not in modes or type(value["mode"]) is not str:
         raise SettingsError("SETTINGS_MODE_INVALID")
     if type(value["enabled"]) is not bool:
         raise SettingsError("SETTINGS_ENABLED_INVALID")
@@ -116,12 +127,19 @@ def load_settings(path: Path) -> ContinuousSettings:
         raise SettingsError("SETTINGS_PROJECT_INVALID")
     if not (project / "scripts/broker/simnow_controlled.py").is_file():
         raise SettingsError("SETTINGS_PROJECT_INVALID")
-    expected = project / "output/simnow-controlled"
+    anchor = (
+        _path(value["state_project_root"], code="SETTINGS_STATE_INVALID")
+        if value["schema"] == 2
+        else project
+    )
+    if not anchor.is_dir() or anchor.is_symlink():
+        raise SettingsError("SETTINGS_STATE_INVALID")
+    expected = anchor / "output/simnow-controlled"
     if state != expected or state.resolve(strict=False) != expected.resolve(
         strict=False
     ):
         raise SettingsError("SETTINGS_STATE_INVALID")
-    if (project / "output").is_symlink():
+    if (anchor / "output").is_symlink():
         raise SettingsError("SETTINGS_STATE_INVALID")
     if state.is_symlink():
         raise SettingsError("SETTINGS_STATE_INVALID")
@@ -137,6 +155,18 @@ def load_settings(path: Path) -> ContinuousSettings:
         raise SettingsError("SETTINGS_SDK_INVALID")
     if not api_env.is_dir():
         raise SettingsError("SETTINGS_API_ENV_INVALID")
+    if value["schema"] == 2:
+        from .account_binding import existing_account
+
+        existing_account(state, account)
     return ContinuousSettings(
-        1, account, state, project, python, api_env, value["mode"], value["enabled"]
+        value["schema"],
+        account,
+        state,
+        project,
+        python,
+        api_env,
+        value["mode"],
+        value["enabled"],
+        anchor if value["schema"] == 2 else None,
     )

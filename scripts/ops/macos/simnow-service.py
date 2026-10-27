@@ -7,6 +7,8 @@ private config remains the source of mode and account identity.
 from __future__ import annotations
 
 import argparse
+import fcntl
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -26,8 +28,21 @@ def _absolute(path, *, allow_symlink: bool = False) -> Path:
 
 
 def render_launch_agent(settings, config_path, *, home: Path | None = None) -> bytes:
+    return _render(settings, config_path, home=home, mode="observe")
+
+
+def render_trade_launch_agent(
+    settings, config_path, *, home: Path | None = None
+) -> bytes:
+    if getattr(settings, "schema", None) != 2:
+        raise ValueError("TRADE_SETTINGS_V2_REQUIRED")
+    _private_regular(Path(config_path))
+    return _render(settings, config_path, home=home, mode="trade")
+
+
+def _render(settings, config_path, *, home, mode):
     """Return a deterministic, password-free LaunchAgent plist."""
-    if settings.mode != "observe":
+    if settings.mode != mode:
         raise ValueError("OBSERVE_ONLY")
     if type(settings.enabled) is not bool:
         raise ValueError("SERVICE_ENABLED_INVALID")
@@ -61,7 +76,7 @@ def render_launch_agent(settings, config_path, *, home: Path | None = None) -> b
             str(runner),
             "--config",
             str(config_path),
-            "--observe-only",
+            "--trade" if mode == "trade" else "--observe-only",
         ],
         "WorkingDirectory": str(project_root),
         "RunAtLoad": True,
@@ -71,6 +86,49 @@ def render_launch_agent(settings, config_path, *, home: Path | None = None) -> b
         "StandardErrorPath": str(logs / "supervisor.err.log"),
     }
     return plistlib.dumps(value, fmt=plistlib.FMT_XML, sort_keys=True)
+
+
+def preflight_trade(settings, config_path, *, products=None):
+    """No broker/Keychain/launchctl calls and no files created, including locks."""
+    from guiyi_quant.simnow_execution.account_binding import existing_account
+    from guiyi_quant.simnow_execution.supervisor import global_account_lock_directory
+
+    render_trade_launch_agent(settings, config_path)
+    state = existing_account(settings.state_root, settings.account_id)
+    if products is None:
+        sys.path.insert(0, str(settings.project_root / "services/quant-api"))
+        from app.market_data.operational_universe import load_operational_products
+
+        products = tuple(p.upper() for p in load_operational_products())
+    if set(products) != {p.product for p in state.products}:
+        raise ValueError("CONTINUOUS_ACCOUNT_SCOPE_MISMATCH")
+    idle = True
+    for path in (
+        global_account_lock_directory() / (settings.account_id + ".lock"),
+        settings.state_root / settings.account_id / "host.lock",
+    ):
+        if not path.exists():
+            idle = False
+            continue
+        _private_regular(path)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                idle = False
+        finally:
+            os.close(fd)
+    return dict(
+        schema="simnow_trade_preflight_v1",
+        candidate_valid=True,
+        product_count=len(products),
+        writer_idle=idle,
+        mode="trade",
+        enabled=settings.enabled,
+        execution_permitted=False,
+        broker_io=False,
+    )
 
 
 def _private_regular(path: Path) -> None:
@@ -136,7 +194,10 @@ def main(argv=None) -> int:
         description="SimNow observe LaunchAgent (默认只读计划)"
     )
     parser.add_argument("--config", required=True, type=Path)
-    parser.add_argument("--install-observe", action="store_true")
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--install-observe", action="store_true")
+    actions.add_argument("--render-trade", action="store_true")
+    actions.add_argument("--preflight-trade", action="store_true")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(root / "packages" / "quant-core"))
@@ -144,7 +205,11 @@ def main(argv=None) -> int:
 
     try:
         settings = load_settings(args.config)
-        if args.install_observe:
+        if args.render_trade:
+            sys.stdout.buffer.write(render_trade_launch_agent(settings, args.config))
+        elif args.preflight_trade:
+            print(json.dumps(preflight_trade(settings, args.config), sort_keys=True))
+        elif args.install_observe:
             target = install_observe(settings, args.config)
             print(f"OBSERVE_AGENT_INSTALLED path={target}")
         else:

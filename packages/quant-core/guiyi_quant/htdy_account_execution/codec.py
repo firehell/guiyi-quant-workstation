@@ -41,6 +41,7 @@ def decode(value):
             m.ExecutionInput,
             m.Tick,
             m.ManagedTickV1,
+            m.ContinuousTradeTickV1,
             m.ManualBeginV1,
             m.ManualTickV1,
             m.ManualStatusV1,
