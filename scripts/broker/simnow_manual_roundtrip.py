@@ -12,18 +12,21 @@ import tempfile
 import time
 
 
-def write_status(folder, test_id, value):
+def write_status(folder, test_id, value, *, recovery=False):
     target = None
     try:
         from guiyi_quant.htdy_account_execution.model import manual_test_id
 
         manual_test_id(test_id)
+        if type(recovery) is not bool:
+            return False
         fd, target = tempfile.mkstemp(prefix=".manual-", dir=folder)
         with os.fdopen(fd, "w") as stream:
             json.dump(value, stream, sort_keys=True, separators=(",", ":"))
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(target, folder / (test_id.replace(":", "-") + "-status.json"))
+        suffix = "-recovery-status.json" if recovery else "-status.json"
+        os.replace(target, folder / (test_id.replace(":", "-") + suffix))
         return True
     except Exception:
         return False  # Observability failure never cancels the closing obligation.
@@ -35,10 +38,21 @@ def write_status(folder, test_id, value):
                 pass
 
 
-def run(settings, module, connector, test_id, *, clock=None, sleep=None):
+def run(
+    settings,
+    module,
+    connector,
+    test_id,
+    *,
+    clock=None,
+    sleep=None,
+    recover_preflight=False,
+):
     from guiyi_quant.htdy_account_execution.model import manual_test_id
 
     manual_test_id(test_id)
+    if type(recover_preflight) is not bool:
+        raise ValueError("MANUAL_RECOVERY_MODE_INVALID")
     from app.simnow_portfolio_market import PortfolioMarket
     from guiyi_quant import htdy_account_execution as a
     from guiyi_quant.htdy_execution import Owner
@@ -74,6 +88,10 @@ def run(settings, module, connector, test_id, *, clock=None, sleep=None):
     close_attempted = released = False
     result = None
     with account_lock(settings) as folder:
+
+        def publish(value):
+            return write_status(folder, test_id, value, recovery=recover_preflight)
+
         monitor = MonitorPublisher(
             settings.state_root, settings.account_id, test_id, "RB"
         )
@@ -93,8 +111,21 @@ def run(settings, module, connector, test_id, *, clock=None, sleep=None):
             ):
                 raise ValueError("MANUAL_EMPTY_ACCOUNT_REQUIRED")
             stage = "LOGIN_ONCE"
-            claim_login(folder, test_id, now(), settings.account_id)
-            driver = NativePortfolio(settings, folder, module, connector, now=now)
+            if recover_preflight:
+                from guiyi_quant.simnow_execution.manual_recovery import claim_recovery
+
+                claim_recovery(
+                    folder,
+                    test_id,
+                    settings.account_id,
+                    now(),
+                    trading_day=plan.trading_day.strftime("%Y%m%d"),
+                )
+            else:
+                claim_login(folder, test_id, now(), settings.account_id)
+            driver = NativePortfolio(
+                settings, folder, module, connector, now=now, initial_funds_timeout=45
+            )
             driver.connect()
             stage = "NATIVE_ACCOUNT_PREFLIGHT"
             snapshot = driver.snapshot()
@@ -235,9 +266,7 @@ def run(settings, module, connector, test_id, *, clock=None, sleep=None):
                         str(exc) == "NATIVE_SNAPSHOT_CHANGED"
                         and not driver.transport_failed
                     ):
-                        write_status(
-                            folder,
-                            test_id,
+                        publish(
                             dict(
                                 stage="NATIVE_SNAPSHOT_CHANGED_WAIT",
                                 at=now().isoformat(),
@@ -255,7 +284,7 @@ def run(settings, module, connector, test_id, *, clock=None, sleep=None):
                 execution_complete = result["broker_roundtrip_passed"]
                 result["broker_roundtrip_passed"] = False
                 result["cleanup_pending"] = True
-                write_status(folder, test_id, result)
+                publish(result)
                 monitor.publish(
                     "ACTIVE",
                     now(),
@@ -286,7 +315,7 @@ def run(settings, module, connector, test_id, *, clock=None, sleep=None):
             if pending:
                 result["broker_roundtrip_passed"] = False
             outcome = 0 if result["broker_roundtrip_passed"] else 2
-            write_status(folder, test_id, result)
+            publish(result)
         except Exception:
             try:
                 diagnostic = driver.failure_diagnostics() if driver else None
@@ -314,7 +343,7 @@ def run(settings, module, connector, test_id, *, clock=None, sleep=None):
                     )
                 except Exception:
                     value["last_verified"] = None
-            write_status(folder, test_id, value)
+            publish(value)
             monitor.publish("ERROR", now(), connection="UNKNOWN")
             result = value
             outcome = 2
@@ -351,7 +380,7 @@ def run(settings, module, connector, test_id, *, clock=None, sleep=None):
             )
             if outcome != 0 and result is not None:
                 result.update(broker_roundtrip_passed=False, native_released=released)
-                write_status(folder, test_id, result)
+                publish(result)
         return outcome
 
 
@@ -362,7 +391,10 @@ def main(argv=None):
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--test-id", required=True)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--recover-preflight", action="store_true")
     args = parser.parse_args(argv)
+    if args.recover_preflight and not args.execute:
+        parser.error("recover-preflight requires explicit execute")
     root = Path(__file__).resolve().parents[2]
     sys.path.insert(0, str(root / "packages/quant-core"))
     from guiyi_quant.simnow_execution.settings import load_settings
@@ -403,7 +435,13 @@ def main(argv=None):
         with open(os.devnull, "w") as sink:
             os.dup2(sink.fileno(), 1)
             os.dup2(sink.fileno(), 2)
-            result = run(settings, module, bounded.connect, args.test_id)
+            result = run(
+                settings,
+                module,
+                bounded.connect,
+                args.test_id,
+                recover_preflight=args.recover_preflight,
+            )
     finally:
         for source, target in zip(saved, (1, 2)):
             os.dup2(source, target)

@@ -83,6 +83,42 @@ class Compatibility(unittest.TestCase):
     def tearDown(self):
         self.pause.stop()
 
+    def test_first_snapshot_uses_grace_once_then_default_timeout(self):
+        calls = []
+        gateway = m.Gateway("000000", "fixture-only", initial_funds_timeout=45)
+
+        def collect(**kwargs):
+            calls.append(kwargs)
+            gateway.result["status"] = "READ_ONLY_COMPLETE"
+
+        gateway.collect = collect
+        gateway.snapshot()
+        gateway.snapshot()
+        self.assertEqual(calls, [{"initial_funds_timeout": 45}, {}])
+        ordinary = m.Gateway("000000", "fixture-only")
+        ordinary.collect = lambda **kwargs: calls.append(kwargs) or ordinary.result.update(status="READ_ONLY_COMPLETE")
+        ordinary.snapshot()
+        self.assertEqual(calls[-1], {})
+        for value in (14, 46, True, "45"):
+            with self.assertRaises(ValueError):
+                m.Gateway("000000", "fixture-only", initial_funds_timeout=value)
+
+    def test_failed_first_snapshot_cannot_reuse_extended_grace(self):
+        gateway = m.Gateway("000000", "fixture-only", initial_funds_timeout=45)
+        calls = []
+
+        def collect(**kwargs):
+            calls.append(kwargs)
+            if len(calls) == 1:
+                raise ValueError("fixture failure")
+            gateway.result["status"] = "READ_ONLY_COMPLETE"
+
+        gateway.collect = collect
+        with self.assertRaisesRegex(ValueError, "fixture failure"):
+            gateway.snapshot()
+        gateway.snapshot()
+        self.assertEqual(calls, [{"initial_funds_timeout": 45}, {}])
+
     def test_instrument_sdk_request_and_rows(self):
         rows = self.g.query("instrument", exchange="SHFE", product="rb")
         self.assertEqual(rows[0]["InstrumentID"], "rb2701")

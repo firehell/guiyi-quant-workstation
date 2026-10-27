@@ -161,6 +161,41 @@ def portfolio(tmp_path, *, gateway=None, at=T):
     return value
 
 
+def test_manual_grace_is_opt_in_at_native_portfolio_boundary(monkeypatch, tmp_path):
+    from guiyi_quant.simnow_execution import native_portfolio as module
+
+    calls = []
+    monkeypatch.setattr(
+        module.CredentialStore, "load", lambda *_: NS(user="000000", password="fixture")
+    )
+    monkeypatch.setattr(module, "ReadJournal", lambda *_: object())
+    fake_module = NS(
+        tdapi=object(), Gateway=lambda *args, **kwargs: calls.append(kwargs) or object()
+    )
+    for timeout in (15, 45):
+        value = NativePortfolio(
+            NS(account_id=ACCOUNT),
+            tmp_path,
+            fake_module,
+            lambda *_: None,
+            now=lambda: T,
+            initial_funds_timeout=timeout,
+        )
+        value.connect()
+        assert calls[-1] == ({} if timeout == 15 else {"initial_funds_timeout": 45})
+        value.flow.cleanup()
+    for invalid in (14, 46, True, "45"):
+        with pytest.raises(ValueError):
+            NativePortfolio(
+                NS(account_id=ACCOUNT),
+                tmp_path,
+                fake_module,
+                lambda *_: None,
+                now=lambda: T,
+                initial_funds_timeout=invalid,
+            )
+
+
 def state(*, desired_rb=-1, desired_jm=-1, positions=("RB", "JM"), orders=()):
     products = (
         a.Product(

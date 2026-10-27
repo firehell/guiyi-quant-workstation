@@ -450,6 +450,35 @@ class ReadOnlyTests(unittest.TestCase):
                 p.collect(gap=0, query_timeout=value)
             self.assertEqual(p.api.calls, [])
 
+    def test_initial_funds_grace_changes_only_first_of_eight_waits(self):
+        for grace, expected in ((None, [15] * 8), (45, [45] + [15] * 7)):
+            p = self.probe()
+            waits = []
+            original_wait = p.query_done.wait
+
+            def recorded_wait(seconds):
+                waits.append(seconds)
+                return original_wait(seconds)
+
+            p.query_done.wait = recorded_wait
+            p.collect(gap=0, query_timeout=15, initial_funds_timeout=grace)
+            self.assertEqual(p.result["status"], "READ_ONLY_COMPLETE")
+            self.assertEqual(waits, expected)
+            self.assertEqual(p.result["initial_funds_timeout_seconds"], expected[0])
+            budgets = [
+                q["diagnostics"]["timeout_budget_seconds"]
+                for r in p.result["rounds"]
+                for q in r["queries"].values()
+            ]
+            self.assertEqual(budgets, expected)
+
+    def test_invalid_initial_funds_grace_rejected_before_query(self):
+        for value in (0, 14, 46, True, "45", 45.0):
+            p = self.probe()
+            with self.assertRaises(ValueError):
+                p.collect(gap=0, query_timeout=15, initial_funds_timeout=value)
+            self.assertEqual(p.api.calls, [])
+
     def test_positions_first_runs_the_same_four_queries_twice(self):
         control = self.probe()
         control.collect(gap=0, query_timeout=0, query_order="positions-first")
