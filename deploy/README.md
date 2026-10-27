@@ -352,7 +352,14 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 
 `confirmed_intake_halt` 仅接纳两层原生失败记录：A为Live卸载前缀，B为已确认A后启动消费者、在intake失败并停驻的前缀。新计划同时绑定A/B的public/private plan、state和effect身份；重新证明全部当前消费者精确parked、owner锁可取、Feed与日历absent、pending capture及UNKNOWN为0、完整源/DB/routes和所有当前尾部已ACK追齐。旧接收摘要不可逆时不得用摘要不等推断漂移或直接忽略，须以完整当前前缀校验替代；新快照固定静态context并逐阶段复验。只接受此两层链，不循环接纳新的未知attempt，不执行bootout，成功receipt解析A/B且保留原字节。任一额外effect、第三未决、漂移或未ACK当前尾部均拒绝。
 
+`confirmed_feed_halt`只接纳该A/B之后的精确C：C必须为`confirmed_intake_halt`，仅有同generation的consumers、合法schema2 intake及精确label的Feed bootstrapped三个effect，在verified失败且没有成功receipt。完整冻结A/B/C公共与私有plan、state、effects和保护前像；其他或第四层unknown继续拒绝。
+首次用`plan --close-feed-only --predecessor-recovery-plan <C>`冻结`stop_after=feed_close`，该终点进入plan hash。当前Feed须精确loaded且parked，冻结binding/plist/launcher/drain、所有已观察PID/后代及完整source原件/identity索引和completed DB/routes前缀。apply持部署、维护及owner锁，先耐久记录意图，仅调用一次原生bootout；等待label absent、全部观察PID退出、owner锁free及两次前缀不变，期间新增观察PID必须先入effect再验证退出。结果不明保留unknown，不重复卸载、不接纳该unknown为新前驱。
+关闭成功只生成`feed_close_readback_v1`及`feed_closed`终态，不启动任何消费者、不修改全恢复成功指针，也不把A/B/C解析为已恢复。后续正常恢复须显式`plan --predecessor-recovery-plan <C> --feed-close-plan <关闭计划>`，冻结关闭计划公共/私有plan、state和receipt字节，并重新现场证明关闭与输入前缀；这些字节在每个后续阶段继续校验。只有正常恢复最终成功才由新receipt关联闭合A/B/C，原件保持不变。缺失heartbeat或单独parked状态不代替此次进程退出关闭证明。
+
 接收快照schema2记录采样初始current_tail与结束final_tail。两个新鲜独占接收轮只有在前缀/合同不回退且ACK和DB共同前进，或两轮每分区均ack=current_tail=final_tail时才证明存活；空闲不由Session CLOSED或调用者标志推导。合法零进展且仍有积压只在原预算内等待，完整性或时序错误立即失败。
+
+30秒活性样本过期不等于前缀损坏。等待循环逐次验证全部快照（包括同一owner cycle）的静态context、原件/routes、ACK及数据库前缀非回退；只有这条连续链通过后才能滚动活性采样窗口。过期样本本身不授予活性，仍需两轮不同且新鲜的owner cycle，并在最终身份校验后重新检查样本新鲜度。原120/240秒局部预算、600秒总预算及计划期限不延长。
+新的verified失败在原生attempt中仅补充固定子步骤与合法带时区采样时间；接收异常仅保留精确类型的固定公开码，不记录异常原文或回溯。新诊断不能用于倒推旧attempt未记录的失败原因，也不增加对未决恢复前缀的接纳范围。
 
 接收存活由独立typed证明确定：原冻结SourceProof完整不变、active v2边界与原升级意图匹配、所有已ACK原件及冻结routes在数据库中逐条完整，其他分区不回退；有积压时须两次新鲜有界receiving cycle显示ACK与数据库前缀共同前进。计算等待及BLOCKED分别展示并继续逐流fence，不借此清除失败或重试；接收错误、原件/routes/身份异常、接收提交未知、恢复前未归属pending capture、失权或超时拒绝。旧尾部全部追齐是后续独立验收，不冒充启动完成条件。
 

@@ -1,17 +1,60 @@
 # 当前状态
 
-本页以10/27 controller v1.16.16发布及10:16独立停驻读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
+本轮控制器采样窗口及verified诊断修复已通过测试和独立Review，未发布或执行恢复。运行现场仍为10/27停驻态：controller v1.16.18已发布，原生恢复通过intake并启动Feed，在verified失败后重新停驻；实际绑定仍v1.16.14/gen31，原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/27 控制器采样及诊断修复验证完成，正式服务仍停驻
+
+已复现并修复t0活性样本到t31提前失败：逐次保留全部context/原件/routes及ACK/数据库非回退链后滚动采样，
+仍须两轮不同且30秒内新鲜的cycle，最终身份校验后再次核对freshness；原120/240/600秒预算不延长。
+verified新增固定子步骤及合法时间诊断，不记录任意异常原文、不改旧unknown；上次C真实失败原因仍未确定。
+扩大369项含本次隔离PG/Redis无跳过通过；独立175项含真实依赖无跳过通过，Review允许集成develop。
+12:46–12:47独立确认Feed同v14/gen31/PID40577、parked、drain固定、锁free及两次tail/ACK稳定；
+exact v14正常parked必经reader关闭路径。关闭heartbeat当前缺失，未留存可读取的关闭快照，不冒充当前provider/订阅/缓冲的typed证明。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；本轮未发布、未启停服务或重跑恢复，不声明RUNTIME_READY。
+下一步是补齐上次含Feed effect的C失败前缀及新鲜关闭证明，再生成新的精确恢复计划；不能递归套用原A/B入口。
+证据和限制见[唯一恢复记录](docs/tasks/2026-10-26-rollover-readiness-inbox.md#1027-控制器活性采样窗口及verified诊断修复未发布未执行恢复)。
+
 ## 10/27 当前版本恢复尚未闭环：已确认Live卸载，待从消费者启动继续
 
 controller v1.16.15/16已独立发布，运行绑定仍v1.16.14/gen31。controller16新计划94f864cb完成freeze后，单次Live bootout后的读回进入outcome_unknown，未进入消费者/Feed启动。10:14原生独立读回确认Live/Feed定义缺席、7个已观察PID全部退出、owner锁空闲；其余Alert/Reference/API/Web仍gen31 parked。旧owner文件中Live active是过期记录，不代表实际进程仍运行。
 10:16数据库读回：completed1031、PENDING336、WAITING_HISTORY4、BLOCKED35、UNKNOWN0；准备READY43/READBACK_REQUIRED80/WAITING_DEPENDENCY159。原件、游标、两层unknown记录均保留，尚未恢复正常采集。
 最小下一步：完成绑定此精确已确认前缀的continuation入口及反证测试/Review，发布controller17，新计划从consumers开始，禁止重复bootout；真实新Bar与完整业务验收另列。
+
+
+## 10/27 SimNow账户只读实测通过，只读等待服务已启动
+
+实现一个账户锁/进程/CTP连接、共享60品种信号inbox及原账户资金预留，启动/日切/断线先完整原生读回，
+持久连接次数预算与未知结果阻断，不初始化或复制旧AL账本。只读observe默认；manage只接管既有平仓/撤单，
+ManagedTickV1在生成OPEN及预留前禁新仓，auto_order=false。Keychain隐藏本机配置与独立observe LaunchAgent已实现，
+自动入口固定--observe-only，不改既有十服务、不发布或切换正式Runtime。
+
+初版PR507已集成develop。现场向前修复launchd扩展卷stdout的EX_CONFIG，以及默认Redis URL漏补认证；
+私有用户日志可用、真实Redis及60品种权威Session计划通过。前台与同一launchd label的后台Keychain加载均通过，
+零Broker探针exit0，原plist已逐字节恢复。首次接管的attempt1泛化故障保留，未取得完整快照。
+09:34:43显式有界账户只读诊断消耗attempt2：客户端认证通过，柜台LOGIN_REJECTED/ErrorID=3，auth/login各一次，
+四类查询均未开始。诊断原件在Release前落盘，连接已释放；旧AL账本SHA与block行完全不变，native快照仍192。
+以上拒绝记录保留，不能被后续成功覆盖。owner在本机更新Keychain后，10:15:38显式attempt3已认证/登录成功，
+资金、持仓、委托、成交各两轮完整且内容一致：权益/可用均100000、保证金/手续费0、持仓/委托/成交返回0条。
+原件SHA f60800ca66c40ef4c6f51ea04edfab28765fa050751287536a8b904dd7130dc2已绑定同账户Evidence/source，
+独立复核通过；Release成功，native快照增至193，账户文件SHA及原block不变。
+
+独立Review允许激活已交办observe-only等待服务；已安装label单进程running，enabled=true/opening_enabled=false。
+10:25只读读回为WAITING_SESSION/connection UNKNOWN，day27 attempt3及原block保留，没有追加第四次连接。
+依当前权威Calendar/Session预测，今晚20:58进入TD20261028允许连接窗口、21:00开盘；预测不是自然运行证据。
+新日仍须重新完整原生读回，旧信号不补开；本次未启用管理/新开仓，不声明持续接管或交易闭环已通过。
+
+当前357项定向/扩大回归、Ruff/format、secret0、diff通过，分阶段独立Review允许集成；真实SDK无网络23项及既有
+账本只读重放证据保留：实际317条journal commands，另1条initial receipt，合计318 receipts（修正先前混称318条命令）。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；一次柜台完整只读核验及本机等待启动已验。
+持续宿主的新交易日自然接管、全品种新输入、断线/重启及首笔订单分别待验；未确认结算、未报撤单，
+未变更正式十服务Runtime，不声明整体RUNTIME_READY。
+合同与验证见[SIMNOW_EXECUTION](docs/SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)、
+[任务记录](docs/tasks/2026-10-27-simnow-continuous-host.md)。
 
 
 ## 10/27 v1.16.14已发布且绑定已切换，postCAS验收阻断并停驻

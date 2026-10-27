@@ -530,13 +530,18 @@ from tests.test_runtime_schema_compatibility import installed_inbox_database  # 
 
 @pytest.fixture
 def isolated_journal_redis():
+    import os
     import redis
 
-    client = redis.Redis(host="127.0.0.1", port=16389, db=15, socket_timeout=5)
+    raw_port = os.getenv("GUIYI_TEST_REDIS_PORT", "")
+    if not raw_port:
+        pytest.skip("GUIYI_TEST_REDIS_PORT must name this run's disposable Redis")
+    assert raw_port.isdigit() and 0 < int(raw_port) <= 65535 and int(raw_port) != 6379
+    client = redis.Redis(host="127.0.0.1", port=int(raw_port), db=15, socket_timeout=5)
     try:
         client.ping()
     except redis.RedisError:
-        pytest.skip("dedicated Redis test container 127.0.0.1:16389 is required")
+        pytest.fail("the configured disposable Redis is unavailable")
     assert client.dbsize() == 0, "dedicated journal fixture DB must be empty"
     journal = ObservationStream(client, kind="completed")
     keys = (
@@ -688,3 +693,54 @@ def test_resigned_invalid_frontier_is_never_idle_authority(tmp_path, field):
     )
     with pytest.raises(ReceivingLivenessError):
         prove_receiving_liveness(before, after, now=NOW + timedelta(seconds=1))
+
+
+def test_expired_continuity_is_not_a_liveness_proof(tmp_path):
+    from app.reference_trading.receiving_liveness import (
+        receiving_sample_is_fresh,
+        verify_receiving_continuity,
+    )
+
+    _, _, _, _, _, capture, sample = _setup(tmp_path)
+    first = sample()
+    capture("11-0")
+    second = sample(31)
+    now = NOW + timedelta(seconds=31)
+    assert not receiving_sample_is_fresh(first, now=now)
+    assert receiving_sample_is_fresh(second, now=now)
+    assert verify_receiving_continuity(first, second)["advanced_count"] == 1
+    with pytest.raises(ReceivingLivenessError):
+        prove_receiving_liveness(first, second, now=now)
+
+
+@pytest.mark.parametrize(
+    "field", ("protocol_sha256", "ack_inputs_sha256", "ack_routes_sha256")
+)
+def test_expiry_never_allows_a_resigned_context_or_prefix_change(tmp_path, field):
+    from app.reference_trading.inbox import _digest
+    from app.reference_trading.receiving_liveness import verify_receiving_continuity
+
+    _, _, _, _, _, capture, sample = _setup(tmp_path)
+    capture("11-0")
+    first, second = sample(), sample(31)
+    if field == "protocol_sha256":
+        second[field] = "0" * 64
+    else:
+        second["days"][DAY.isoformat()][field] = "0" * 64
+    second["snapshot_sha256"] = _digest(
+        {k: v for k, v in second.items() if k != "snapshot_sha256"}
+    )
+    with pytest.raises(ReceivingLivenessError):
+        verify_receiving_continuity(first, second)
+
+
+def test_freshness_checks_clock_and_integrity_before_returning_expired(tmp_path):
+    from app.reference_trading.receiving_liveness import receiving_sample_is_fresh
+
+    _, _, _, _, _, _, sample = _setup(tmp_path)
+    first = sample()
+    with pytest.raises(ReceivingLivenessError):
+        receiving_sample_is_fresh(first, now=NOW - timedelta(seconds=1))
+    first["acknowledged_count"] = 1
+    with pytest.raises(ReceivingLivenessError):
+        receiving_sample_is_fresh(first, now=NOW + timedelta(seconds=31))

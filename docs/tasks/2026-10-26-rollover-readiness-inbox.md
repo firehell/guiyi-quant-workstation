@@ -73,3 +73,118 @@ controller16 protected修复最终334项组合回归通过；实现方179、独�
 controller16 PR511/512已集成/选择性发布main exact73051b85650a3a203b3696c87b225b36b69b6718，annotated tag/Release/干净正式树和构建来源通过。新plan94f864cbbbed9bdfecf3efc614dc3851bf857cccbcb3780a839137b614b325a0成功freeze；apply仅记录live_stop/bootout_requested后进入新outcome_unknown，error_code=COHORT_FORWARD_STEP_FAILED，未存异常类，不能倒推原异常原因。停止mutation，未重试。10:14父端原生独立readback：Live label absent、7已观察PID均退出、owner锁free；Feed absent，其余4consumer精确gen31 parked。10:16数据库completed1031/PENDING336/WAITING4/BLOCKED35/UNKNOWN0，prep43READY/80READBACK/159WAITDEP。原cohort unknown和新recovery unknown原字节保留；经独立Review认可，准备仅此已确认前缀的controller17 continuation，绑定两层字节hash+effect，从consumers继续、不调用bootout、不泛放宽unknown Gate。
 
 controller17 continuation最终冻结：357项扩大回归通过（含真实隔离PG/Redis），实现方202、独立Review201/冻结后83通过，无未关闭Confirmed Issue，Ruff/diff通过。唯一A94f的target/Live binding、六字段proof及两层字节关联、额外effects/unknown/Live再现/锁/PID/receipt漂移与重复B反证完整。真实readonly load前驱→唯一未决Gate→native确认前缀PASS，SHA6f50762afd544e74a21d1ed86ce4074ebb2c40813f76d1684b2ffded5f0dcab6；formal17 fullfreeze/apply仍待，未重试A。
+
+### 10/27 11:50 owner交办恢复前的新鲜核对：阻塞，未重试
+
+本轮按“先恢复采集、再补历史”交办核对，实际绑定仍v1.16.14/gen31。已发布controller17 exact
+43bcd12a5仅为控制器版本，不是当前消费者版本。发现状态正文之后的两个真实恢复attempt：
+94f864cb仅记录live_stop/bootout_requested后unknown；3f493c8d在10:53记录consumers/resumed_generation31，
+失败阶段intake、公开代码COHORT_FORWARD_STEP_FAILED、异常类REDACTED，随后原生halt重新停驻。
+不能由脱敏信息推断失败根因；旧plan/attempt不改写、不重跑。
+
+11:46生产只读readback：Reference原件8956，10/27 cursor=tail=1793039404268-4；
+completed2118、PENDING487、WAITING_HISTORY4、BLOCKED44、UNKNOWN0，末次计算10:53:32北京时间。
+BLOCKED分为REFERENCE_INBOX_NO_CALCULATION38、REFERENCE_FUSION_SOURCE_ACTION_CORRUPT6。
+11:48/11:50独立原生snapshot校验8956已ACK原件及冻结routes完整、旧尾已达；这不证明实时采集或计算恢复。
+60品种same-generation startup Session/rank1/订阅/注册交易日通过（BREAK）。
+原生未决恢复Gate明确拒绝COHORT_FORWARD_RECOVERY_READBACK_REQUIRED；当前controller17不支持直接闭合
+第二个consumers→intake失败前缀。未生成第三份plan，未执行bootout、启动、配置变更、ACK或下载。
+launchd只读确认Feed、after-market、late-provider-recovery、weekly-audit、log-rotate均未加载；
+18:05盘后任务不能假定会自然运行。API/Web HTTP检查未通过，整体保持BLOCKED，不声明RUNTIME_READY。
+
+现场原件：output/rollover-readiness-20261026/runtime-readback-recovery-owner1149.json及
+owner-recovery-preflight-20261027-1150.json。控制器正式树运行
+`./services/quant-api/.venv/bin/python -m pytest services/quant-api/tests/test_runtime_cohort_forward_recovery.py -q`
+实际81 passed/1.39s；该结果只证明控制器定向测试，不证明生产恢复。下一步为定位intake失败并实现、独立Review
+精确当前停驻前缀的向前恢复证明，再用全新计划恢复；不能靠等收盘、补历史或清除unknown替代。
+
+
+### 10/27 controller18发布及真实恢复：接收通过，综合验证失败后停驻
+
+owner交办“处理下一步”后完成窄范围confirmed_intake_halt：只接纳A Live-stop unknown→B
+confirmed_live_stop/consumers完成且intake失败，重新核对当前全部消费者parked、锁、配置/Scope、
+Session及完整当前ACK尾部。schema2接收快照增加current_tail/final_tail；两轮真实追齐可在盘中证明idle，
+合法零进展保留原预算等待，错误/回退不吞。旧schema1摘要以完整源/DB/routes和当前尾部证明处理。
+独立Review发现冻结context未在首样本和Feed前固定的P2，已用真实协议activated_at变更反证红→绿修复；
+复核无未关闭Confirmed Issue，恢复模块99 passed，最终扩大真实隔离PG/Redis329 passed/0 skipped/6.55s，
+独立141 passed/1 skipped（PG由主端另验）、OpenSpec12/12、uv lock/Ruff/format/diff通过，secret0。
+
+任务提交4725077fd，精确集成develop7e9626363并推送；PR517已合并main、annotated v1.16.18及GitHub Release
+exact762b4f39b323bc8e2627968132c8c0bad05be89f。宿主首次拒main merge（授权范围理解为仅修复/PR）；
+补充owner明确实施计划中的“控制器发布”原文及项目发布授权后复核允许，未绕过控制。
+正式18树干净，离线依赖重绑、API/core实际来源、Web type/build/topology通过；只发布控制器，不CAS现役服务。
+
+12:14左右新原生计划425ab52431be579089217f0ede09955e10b36dba6891dab12c10b5e6953f2f86
+（forward-recovery-03.json）freeze通过。一次apply记录consumers/resumed_generation31、intake成功
+schema2/durable_receiving_caught_up_idle/advanced0/remaining0及Feed bootstrapped。
+随后failed_stage=verified、COHORT_FORWARD_STEP_FAILED、error_type=REDACTED，原生outcome_unknown并halt。
+未写成功receipt、未更新全局成功指针，未注册日历，未重试C。不能把intake/Feed启动冒充恢复完成。
+
+12:19独立readback：绑定仍v1.16.14/gen31；原件8956/唯一8956、cursor=tail=1793039404268-4；
+COMPLETED2489/PENDING116/WAITING_HISTORY4/BLOCKED44/UNKNOWN0。原cohort/A/B公共plan和状态及binding
+七份SHA前像逐一不变。证据output/rollover-readiness-20261026/runtime-readback-recovery18-stopped.json、
+recovery18-immutable-before.json，以及原生C私有attempt目录；不重复制造原生receipt。
+
+独立只读诊断未见loopback代理或Web静态根误配证据。纯隔离已复现另一确定性缺陷：_await的旧before为t0、
+下一有效轮为t31时会在原240秒预算尚余209秒时抛ReceivingLivenessError，而同context的t31/t32可证明存活。
+C未保留verified子阶段/完整采样时间，不能据异常兼容性断言历史原因。尚未修复此采样窗口缺陷，也未发布controller19。
+当前BLOCKED：需保留完整context/ACK非回退链并独立刷新活性样本，增加verified安全分步骤诊断；
+C包含Feed effect，已超出仅A/B continuation，必须先有精确已停驻Feed与输入关闭证明，才能规划新的恢复。
+现有C不能复用，也不能递归塞入A/B入口；自然新Bar、18:05调度与今日历史缺口仍未验收。
+
+### 10/27 控制器活性采样窗口及verified诊断修复（未发布、未执行恢复）
+
+Owner本轮仅交办采样过期提前失败修复、verified子步骤诊断及上次Feed停驻证明。
+基线58a56e69a；独立fix/recovery-validation-sampling实现，不重跑C、不新增恢复前缀模式、不改变生产配置。
+
+真实隔离snapshot复现t0→t31：原`_await`仍在120/240秒预算内，却因一直持有t0活性样本抛
+`REFERENCE_RECEIVING_LIVENESS_UNPROVEN`。回归先失败后通过。现将完整连续性与活性新鲜度分离：
+每次snapshot（包括同owner cycle）保留静态context、完整原件/routes及ACK/数据库前缀非回退链；
+样本过期只在该链验证后滚动活性窗口，必须再取得两轮不同且新鲜的cycle。最终身份检查后再次核验
+freshness，不返回检查期间已经过期的证明。完整性错误仍立即失败，120/240/600秒预算和计划期限不扩。
+
+新attempt的verified失败仅记录固定子步骤、合法带时区的样本/cycle时间；覆盖来源采样、连续性/活性、
+身份、API/Web、预算和步骤后保护复验。精确ReceivingLivenessError只保留固定公开码/类型，任意异常
+原文、SQL、回溯和自由诊断标签不进入记录。旧C未保留相应子阶段及完整采样时间，仍不能断言其实际失败
+就是此次已复现缺陷；原plan/state/unknown不改。
+
+12:46:50–12:47:00独立只读Feed证明：binding/installed/loaded均v1.16.14 exact5587cd/gen31，
+实际PID40577与parked owner一致、精确drain固定、OS owner锁free；source/completed各交易日tail/ACK
+两次读回稳定且追齐。exact v14的正常关闭路径先完成`close_verified`、listener退出及有界buffer处理，
+成功返回后才由ownership写parked，因此确认其已按既有合同完成协作停驻。原证据
+`output/rollover-readiness-20261026/feed-park-independent-20261027T044700Z.json`，SHA256
+765aaa7c36f2662b1227a39a2dbffda7cb1373a99cf9183909b86e909cc4eea6。
+短TTL关闭heartbeat当前缺失，未留存可读取的关闭快照；读取null不单独证明其消失原因。
+独立socket核对仍有一项非loopback CLOSE_WAIT；不将其误称active provider，
+也不声明所有socket FD已释放或已取得当前provider/subscription/pending完整typed快照。
+该协作停驻证明不替代下一次恢复的新鲜精确前置证明，C含Feed effect的未决边界仍保留。
+
+扩大回归369 passed/0 skipped（本次新建无持久卷、非生产端口PostgreSQL/Redis），覆盖整组恢复、
+handover/deployment/schema、诊断隐私及接收前缀；初轮无隔离依赖的skip不计入该结果。
+测试Redis fixture改为显式本次`GUIYI_TEST_REDIS_PORT`，不再复用旧任务固定端口。
+独立Review无Confirmed Issue，允许集成develop；独立真实隔离PG/Redis定向175 passed/0 skipped。
+Ruff/format、secret scan 0、diff通过。CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；
+Feed当前typed关闭快照与C精确恢复前缀仍是后续运行验证范围，不以本补丁关闭。
+本轮零生产数据写入、零启动/停止/恢复命令、零通知，不发布、不切换Runtime。
+
+### 10/27 含Feed启动失败前缀的精确关闭与恢复入口
+
+Owner交办补齐C精确恢复入口及新鲜关闭证明；基线09af79416，独立fix/feed-halt-recovery。
+本轮实际操作终点仅关闭已parked的Feed并取证，不启动消费者/采集、不切现役v14/gen31；
+控制器候选v1.16.19用于执行此次原生关闭，后续整组恢复仍是独立动作。
+
+新增`confirmed_feed_halt`严格验证A→B→C公共/私有plan、state、effects及保护前像。C只能是已确认
+intake halt后完成consumers/intake/Feed且在verified失败，不能递归接纳额外unknown。
+`--close-feed-only`把`stop_after=feed_close`写入plan hash；先落盘单次bootout意图，再核验所有观察PID
+及后代退出、label absent、锁free和两次完整source原件/identity索引及completed DB/routes前缀不变。
+关闭成功仅写feed_close_readback和feed_closed终态，不写全恢复指针、不解析A/B/C为已恢复。
+正常恢复计划必须显式引用该关闭计划，重新现场核验，并在每阶段保护D的公共/私有plan、state、receipt字节。
+失败D保留unknown并阻断，不补发卸载、不把第四unknown变成新前驱。
+
+独立Review发现两项P1（阶段间未重验D字节、卸载等待未覆盖新增PID）及一项P2（历史intake mode/tail
+不可能组合），均先以反证测试复现，再修正。主端扩大真实一次性PG/Redis回归395 passed/0 skipped，
+独立初轮四模块200 passed/1 skipped；该skip仅真实依赖未并发使用，不计为生产验收。
+候选真实只读feed_close_intent预检7.13秒：全部source原件/identity索引和completed DB/routes双读通过，
+实际观察PID40577，frontiers_sha256=802e87444d50586cbd7bdfe0cd23f0acd50f294e414aa0f051e9c74a1fed391b。
+诊断原件`output/rollover-readiness-20261026/feed-close-intent-preflight-20261027.json`；它不是关闭receipt。
+本节编写时尚未发布controller19或执行bootout，生产结果待后续实际回读。
