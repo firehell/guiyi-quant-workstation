@@ -7,7 +7,7 @@
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
-## 10/27 SimNow持续宿主代码完成，后台Keychain已验，柜台登录被拒
+## 10/27 SimNow账户只读实测通过，只读等待服务已启动
 
 实现一个账户锁/进程/CTP连接、共享60品种信号inbox及原账户资金预留，启动/日切/断线先完整原生读回，
 持久连接次数预算与未知结果阻断，不初始化或复制旧AL账本。只读observe默认；manage只接管既有平仓/撤单，
@@ -19,12 +19,21 @@ ManagedTickV1在生成OPEN及预留前禁新仓，auto_order=false。Keychain隐
 零Broker探针exit0，原plist已逐字节恢复。首次接管的attempt1泛化故障保留，未取得完整快照。
 09:34:43显式有界账户只读诊断消耗attempt2：客户端认证通过，柜台LOGIN_REJECTED/ErrorID=3，auth/login各一次，
 四类查询均未开始。诊断原件在Release前落盘，连接已释放；旧AL账本SHA与block行完全不变，native快照仍192。
-不据此宣称当前空仓、10万元资金、原生盘口或自动运行已通过。第一套交易登录凭据需要owner核对；
-已准备本机隐藏更新入口。服务已bootout、私有配置enabled=false，保留已安装observe plist、attempt1/2及当日block。
+以上拒绝记录保留，不能被后续成功覆盖。owner在本机更新Keychain后，10:15:38显式attempt3已认证/登录成功，
+资金、持仓、委托、成交各两轮完整且内容一致：权益/可用均100000、保证金/手续费0、持仓/委托/成交返回0条。
+原件SHA f60800ca66c40ef4c6f51ea04edfab28765fa050751287536a8b904dd7130dc2已绑定同账户Evidence/source，
+独立复核通过；Release成功，native快照增至193，账户文件SHA及原block不变。
+
+独立Review允许激活已交办observe-only等待服务；已安装label单进程running，enabled=true/opening_enabled=false。
+10:25只读读回为WAITING_SESSION/connection UNKNOWN，day27 attempt3及原block保留，没有追加第四次连接。
+依当前权威Calendar/Session预测，今晚20:58进入TD20261028允许连接窗口、21:00开盘；预测不是自然运行证据。
+新日仍须重新完整原生读回，旧信号不补开；本次未启用管理/新开仓，不声明持续接管或交易闭环已通过。
 
 当前357项定向/扩大回归、Ruff/format、secret0、diff通过，分阶段独立Review允许集成；真实SDK无网络23项及既有
-318条命令只读重放证据保留。CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE / EXTERNAL_GATE_PENDING。
-柜台完整只读接管、自然恢复与首笔订单分别待验；未确认结算、未报撤单、未变更正式十服务Runtime。
+账本只读重放证据保留：实际317条journal commands，另1条initial receipt，合计318 receipts（修正先前混称318条命令）。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；一次柜台完整只读核验及本机等待启动已验。
+持续宿主的新交易日自然接管、全品种新输入、断线/重启及首笔订单分别待验；未确认结算、未报撤单，
+未变更正式十服务Runtime，不声明整体RUNTIME_READY。
 合同与验证见[SIMNOW_EXECUTION](docs/SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)、
 [任务记录](docs/tasks/2026-10-27-simnow-continuous-host.md)。
 
