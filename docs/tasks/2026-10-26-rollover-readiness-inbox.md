@@ -131,3 +131,38 @@ C未保留verified子阶段/完整采样时间，不能据异常兼容性断言�
 当前BLOCKED：需保留完整context/ACK非回退链并独立刷新活性样本，增加verified安全分步骤诊断；
 C包含Feed effect，已超出仅A/B continuation，必须先有精确已停驻Feed与输入关闭证明，才能规划新的恢复。
 现有C不能复用，也不能递归塞入A/B入口；自然新Bar、18:05调度与今日历史缺口仍未验收。
+
+### 10/27 控制器活性采样窗口及verified诊断修复（未发布、未执行恢复）
+
+Owner本轮仅交办采样过期提前失败修复、verified子步骤诊断及上次Feed停驻证明。
+基线58a56e69a；独立fix/recovery-validation-sampling实现，不重跑C、不新增恢复前缀模式、不改变生产配置。
+
+真实隔离snapshot复现t0→t31：原`_await`仍在120/240秒预算内，却因一直持有t0活性样本抛
+`REFERENCE_RECEIVING_LIVENESS_UNPROVEN`。回归先失败后通过。现将完整连续性与活性新鲜度分离：
+每次snapshot（包括同owner cycle）保留静态context、完整原件/routes及ACK/数据库前缀非回退链；
+样本过期只在该链验证后滚动活性窗口，必须再取得两轮不同且新鲜的cycle。最终身份检查后再次核验
+freshness，不返回检查期间已经过期的证明。完整性错误仍立即失败，120/240/600秒预算和计划期限不扩。
+
+新attempt的verified失败仅记录固定子步骤、合法带时区的样本/cycle时间；覆盖来源采样、连续性/活性、
+身份、API/Web、预算和步骤后保护复验。精确ReceivingLivenessError只保留固定公开码/类型，任意异常
+原文、SQL、回溯和自由诊断标签不进入记录。旧C未保留相应子阶段及完整采样时间，仍不能断言其实际失败
+就是此次已复现缺陷；原plan/state/unknown不改。
+
+12:46:50–12:47:00独立只读Feed证明：binding/installed/loaded均v1.16.14 exact5587cd/gen31，
+实际PID40577与parked owner一致、精确drain固定、OS owner锁free；source/completed各交易日tail/ACK
+两次读回稳定且追齐。exact v14的正常关闭路径先完成`close_verified`、listener退出及有界buffer处理，
+成功返回后才由ownership写parked，因此确认其已按既有合同完成协作停驻。原证据
+`output/rollover-readiness-20261026/feed-park-independent-20261027T044700Z.json`，SHA256
+765aaa7c36f2662b1227a39a2dbffda7cb1373a99cf9183909b86e909cc4eea6。
+短TTL关闭heartbeat当前缺失，未留存可读取的关闭快照；读取null不单独证明其消失原因。
+独立socket核对仍有一项非loopback CLOSE_WAIT；不将其误称active provider，
+也不声明所有socket FD已释放或已取得当前provider/subscription/pending完整typed快照。
+该协作停驻证明不替代下一次恢复的新鲜精确前置证明，C含Feed effect的未决边界仍保留。
+
+扩大回归369 passed/0 skipped（本次新建无持久卷、非生产端口PostgreSQL/Redis），覆盖整组恢复、
+handover/deployment/schema、诊断隐私及接收前缀；初轮无隔离依赖的skip不计入该结果。
+测试Redis fixture改为显式本次`GUIYI_TEST_REDIS_PORT`，不再复用旧任务固定端口。
+独立Review无Confirmed Issue，允许集成develop；独立真实隔离PG/Redis定向175 passed/0 skipped。
+Ruff/format、secret scan 0、diff通过。CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；
+Feed当前typed关闭快照与C精确恢复前缀仍是后续运行验证范围，不以本补丁关闭。
+本轮零生产数据写入、零启动/停止/恢复命令、零通知，不发布、不切换Runtime。

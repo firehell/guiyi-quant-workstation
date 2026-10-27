@@ -48,6 +48,65 @@ from app.runtime_deployment import (
 
 KIND = "postcas_forward_recovery_v1"
 
+VERIFICATION_SUBSTEPS = frozenset(
+    {
+        "session_authority",
+        "owner_readiness",
+        "calculation_boundary",
+        "receiving_snapshot",
+        "receiving_continuity",
+        "receiving_liveness",
+        "fixed_identity",
+        "deployment_identity",
+        "api_http",
+        "web_http",
+        "post_step_guards",
+        "budget",
+    }
+)
+VERIFICATION_TIMES = (
+    "observed_at",
+    "before_sampled_at",
+    "before_owner_cycle_at",
+    "current_sampled_at",
+    "current_owner_cycle_at",
+)
+
+
+def _safe_verification_diagnostic(host):
+    value = getattr(host, "_forward_diagnostic", None)
+    if (
+        not isinstance(value, dict)
+        or not isinstance(value.get("substep"), str)
+        or value["substep"] not in VERIFICATION_SUBSTEPS
+    ):
+        return None
+    result = {"substep": value["substep"]}
+    for key in VERIFICATION_TIMES:
+        raw = value.get(key)
+        if not isinstance(raw, str) or len(raw) > 40:
+            continue
+        try:
+            at = datetime.fromisoformat(raw)
+            if at.tzinfo is not None and at.utcoffset() is not None:
+                result[key] = at.isoformat()
+        except ValueError:
+            pass
+    return result
+
+
+def _verification_substep(host, name, *, before=None, current=None):
+    diagnostic = {
+        **(_safe_verification_diagnostic(host) or {}),
+        "substep": name,
+        "observed_at": host.now().isoformat(),
+    }
+    for prefix, sample in (("before", before), ("current", current)):
+        if isinstance(sample, dict):
+            for key in ("sampled_at", "owner_cycle_at"):
+                diagnostic[prefix + "_" + key] = sample.get(key)
+    host._forward_diagnostic = diagnostic
+
 
 def prove_same_generation_startup(
     *, now, products, resolver, registered_day, subscriptions, dominant, sessions
@@ -796,10 +855,14 @@ def apply_forward_recovery(host, recovery_plan_path):
                 nonlocal mutated
                 unchanged()
                 persist(name)
+                if name == "verified":
+                    host._forward_diagnostic = None
                 mutated = (
                     True  # An uncertain command return is never permission to retry.
                 )
                 result = action()
+                if name == "verified":
+                    _verification_substep(host, "post_step_guards")
                 unchanged()
                 journal["effects"][name] = result
                 persist(name + "_complete")
@@ -896,6 +959,7 @@ def apply_forward_recovery(host, recovery_plan_path):
             from app.runtime_fault_recovery import FaultRecoveryError
             from app.runtime_identity import RuntimeIdentityError
             from app.runtime_deployment import DeploymentError
+            from app.reference_trading.receiving_liveness import ReceivingLivenessError
 
             # Only our typed boundary errors carry public codes. Arbitrary
             # exception text can contain credentials, SQL or provider responses.
@@ -904,6 +968,7 @@ def apply_forward_recovery(host, recovery_plan_path):
                 FaultRecoveryError,
                 RuntimeIdentityError,
                 DeploymentError,
+                ReceivingLivenessError,
             )
             candidate = getattr(error, "code", None) if trusted else None
             if trusted and not isinstance(candidate, str):
@@ -929,6 +994,7 @@ def apply_forward_recovery(host, recovery_plan_path):
                 "BlockingIOError",
                 "TimeoutExpired",
                 "CalledProcessError",
+                "ReceivingLivenessError",
             }
             error_type = type(error).__name__
             stage = journal["phase"]
@@ -941,6 +1007,10 @@ def apply_forward_recovery(host, recovery_plan_path):
                 if isinstance(stage, str) and re.fullmatch(r"[a-z][a-z_]{0,63}", stage)
                 else "unknown"
             )
+            if stage == "verified":
+                diagnostic = _safe_verification_diagnostic(host)
+                if diagnostic is not None:
+                    journal["verified_diagnostic"] = diagnostic
             try:
                 persist("outcome_unknown" if mutated else "precondition_blocked")
             finally:
@@ -1932,6 +2002,8 @@ class ForwardRecoveryHost(CohortHost):
     def _await(self, source, audit, check_budget, *, feed):
         from app.reference_trading.receiving_liveness import (
             prove_receiving_liveness,
+            receiving_sample_is_fresh,
+            verify_receiving_continuity,
             verify_receiving_nonregression,
         )
 
@@ -1941,9 +2013,12 @@ class ForwardRecoveryHost(CohortHost):
         )
         end = self.monotonic() + (120 if feed else 240)
         before = None
+        previous = None
         while self.monotonic() < end:
+            _verification_substep(self, "session_authority", before=before)
             check_budget()
             self.recovery_window()
+            _verification_substep(self, "owner_readiness", before=before)
             names = (
                 CONTINUOUS
                 if feed
@@ -1983,19 +2058,34 @@ class ForwardRecoveryHost(CohortHost):
             if not okay:
                 sleep(0.2)
                 continue
+            _verification_substep(self, "calculation_boundary", before=before)
             if not self._calculation_boundary(active=True):
                 sleep(0.2)
                 continue
+            _verification_substep(self, "receiving_snapshot", before=before)
             current = self._snapshot(
                 source, check_budget, state=states["reference-worker"]
             )
+            _verification_substep(
+                self, "receiving_continuity", before=before, current=current
+            )
             self._check_receiving_context(source, audit, check_budget, snapshot=current)
+            now = self.now()
+            current_fresh = receiving_sample_is_fresh(current, now=now)
+            if previous is not None:
+                verify_receiving_continuity(previous, current)
+            previous = current
             if before is None:
                 before = current
             elif current["owner_cycle_at"] != before["owner_cycle_at"]:
-                comparison = verify_receiving_nonregression(
-                    before, current, now=self.now()
-                )
+                if not (current_fresh and receiving_sample_is_fresh(before, now=now)):
+                    # Expiry only rolls the sampling window AFTER the entire
+                    # context/ACK/DB transition has been checked. It never
+                    # grants readiness, hides regression or extends the budget.
+                    before = current
+                    sleep(0.2)
+                    continue
+                comparison = verify_receiving_nonregression(before, current, now=now)
                 if (
                     comparison["advanced_count"] == 0
                     and not comparison["caught_up_idle"]
@@ -2003,11 +2093,26 @@ class ForwardRecoveryHost(CohortHost):
                     before = current
                     sleep(0.2)
                     continue
-                proof = prove_receiving_liveness(before, current, now=self.now())
+                _verification_substep(
+                    self, "fixed_identity", before=before, current=current
+                )
                 self._fixed(source, check_budget)
+                _verification_substep(self, "budget", before=before, current=current)
                 check_budget()
                 require(self.monotonic() < end, "COHORT_FORWARD_READY_TIMEOUT")
-                return proof
+                _verification_substep(
+                    self, "receiving_liveness", before=before, current=current
+                )
+                now = self.now()
+                fresh = [
+                    receiving_sample_is_fresh(value, now=now)
+                    for value in (before, current)
+                ]
+                if not all(fresh):
+                    before = current
+                    sleep(0.2)
+                    continue
+                return prove_receiving_liveness(before, current, now=now)
             sleep(0.2)
         raise CohortError("COHORT_FORWARD_READY_TIMEOUT")
 
@@ -2043,6 +2148,7 @@ class ForwardRecoveryHost(CohortHost):
         intake = self._await(source, audit, check_budget, feed=True)
         from app.services.deployment_identity import deployment_identity_health
 
+        _verification_substep(self, "deployment_identity")
         new = registry(source["new"])
         api = new.services["api"]
         identity = deployment_identity_health(root=Path(api.root), commit=api.commit)
@@ -2058,13 +2164,16 @@ class ForwardRecoveryHost(CohortHost):
         )
         from urllib.request import urlopen
 
+        _verification_substep(self, "api_http")
         with urlopen("http://127.0.0.1:8000/api/health", timeout=5) as response:
             require(
                 json.load(response).get("version") == api.tag[1:],
                 "COHORT_FORWARD_API_VERSION_MISMATCH",
             )
+        _verification_substep(self, "web_http")
         with urlopen("http://127.0.0.1:5173/", timeout=5) as response:
             require(response.status == 200, "COHORT_FORWARD_WEB_UNAVAILABLE")
+        _verification_substep(self, "budget")
         check_budget()
         return {
             "continuous_identity": "matched",

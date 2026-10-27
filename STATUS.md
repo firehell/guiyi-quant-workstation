@@ -1,11 +1,23 @@
 # 当前状态
 
-本页最新现场为10/27 12:19独立停驻读回：controller v1.16.18已发布，原生恢复通过intake并启动Feed，在verified失败后重新停驻；实际绑定仍v1.16.14/gen31，原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
+本轮控制器采样窗口及verified诊断修复已通过测试和独立Review，未发布或执行恢复。运行现场仍为10/27停驻态：controller v1.16.18已发布，原生恢复通过intake并启动Feed，在verified失败后重新停驻；实际绑定仍v1.16.14/gen31，原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 控制器采样及诊断修复验证完成，正式服务仍停驻
+
+已复现并修复t0活性样本到t31提前失败：逐次保留全部context/原件/routes及ACK/数据库非回退链后滚动采样，
+仍须两轮不同且30秒内新鲜的cycle，最终身份校验后再次核对freshness；原120/240/600秒预算不延长。
+verified新增固定子步骤及合法时间诊断，不记录任意异常原文、不改旧unknown；上次C真实失败原因仍未确定。
+扩大369项含本次隔离PG/Redis无跳过通过；独立175项含真实依赖无跳过通过，Review允许集成develop。
+12:46–12:47独立确认Feed同v14/gen31/PID40577、parked、drain固定、锁free及两次tail/ACK稳定；
+exact v14正常parked必经reader关闭路径。关闭heartbeat当前缺失，未留存可读取的关闭快照，不冒充当前provider/订阅/缓冲的typed证明。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；本轮未发布、未启停服务或重跑恢复，不声明RUNTIME_READY。
+下一步是补齐上次含Feed effect的C失败前缀及新鲜关闭证明，再生成新的精确恢复计划；不能递归套用原A/B入口。
+证据和限制见[唯一恢复记录](docs/tasks/2026-10-26-rollover-readiness-inbox.md#1027-控制器活性采样窗口及verified诊断修复未发布未执行恢复)。
 
 ## 10/27 当前版本恢复尚未闭环：已确认Live卸载，待从消费者启动继续
 
