@@ -324,3 +324,27 @@ binding、global及关闭确认字节SHA逐份前后比对，无变化。程序�
 15:03:26独立只读Review用exact v20原生reader复核通过：新plan/public/controller/source及全部v14/gen31目标一致，
 CBA/D descriptor与未决Gate有效、D state及confirmation/binding/global SHA不变，新旧计划均无attempt，
 Feed label absent、PID40577已退出、OS锁free。技术允许进入第二步，但本轮停在第一步，不调用apply。
+
+
+### 10/27 第二步单次apply失败：F intake超时，未恢复服务
+
+Owner明确交办第二步。15:08左右exact v20对15:02新计划09f310e6…执行一次原生apply；有效期与公共字节SHA、
+无attempt、controller精确来源均在入口校验。原生前置复验通过，consumers/resumed_generation31完成；
+之后intake在原240秒预算COHORT_FORWARD_READY_TIMEOUT，phase outcome_unknown、type CohortError；
+无Feed/verified/calendars effect及成功receipt。原生halt完成，未重试。F state SHA
+9d45e27a42f43ffa791536096fccf0eff8e8966d3855e9b16661a5fb7c73fad0。
+
+15:15:05独立停驻证据：五消费者真实PID均parked、六OS owner锁free，Feed及四日历absent，
+A/B/C/D、binding/global字节未变；source/completed两日尾部及各ACK相等。主仓库稳定私有证据
+recovery-f-stopped-independent-20261027T071505Z.json SHAba637dbced6d6eb8cfb1ca53e35ae759ffec7c1c36e09252d95412dc6d63f218。
+15:15:40独立DB读回8956/唯一8956；COMPLETED2489→2508、PENDING116→97、WAITING4/BLOCKED44/UNKNOWN0；
+最后计算15:09:52.641999。runtime-readback-f-stopped1516.json SHAde3447a8e3cfceaff320a045257d80d18edf686a7aced94641ac4438ed5be42b。
+
+隔离生命周期控制流比较（不连接生产，身份/双fresh/前缀等检查用测试替身固定成功）仅stage不同：receiving_cycle两snapshot通过，
+cycle零snapshot至虚拟240.2秒超时。真实v14 worker在poll接收/计算后报告receiving_cycle，serve再覆盖scan/cycle；
+接收活性依赖计算耗时和瞬间stage，存在结构风险。该隔离结果不能断言F实际失败子条件，因为intake没有持久该诊断。
+只读事后完整接收快照1.499秒、fixed_identity1.467秒；Session探针未继承Stream开关失败，不把包装问题当生产故障。
+
+halt已生成新drain IDs，D controls旧证明无法再次当作fresh前置；F unknown也不能直接放入C/B/A恢复模式。
+本轮到此停止生产mutation，未发布新controller或执行新plan。需先解决生命周期判定、intake可诊断性及经验证的停驻收尾，
+不能继续堆叠递归恢复模式或绕过unknown。第二步BLOCKED，服务仍停驻；版本升级和清树未开始。

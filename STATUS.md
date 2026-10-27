@@ -1,11 +1,32 @@
 # 当前状态
 
-15:02新鲜预检通过，已发布controller v1.16.20冻结新恢复计划09f310e6…（15:17:37到期），尚未apply。旧E已过期且无attempt，旧失败/确认/绑定前像不变。正式十服务仍绑定v1.16.14/gen31；五消费者parked，Feed及原四定时服务未加载，服务尚未恢复。下方旧任务记录是历史证据，不代替本轮现场。
+15:15已确认本次v20恢复F09f310e6…在intake以COHORT_FORWARD_READY_TIMEOUT失败，原生halt后独立确认五消费者parked、Feed及四日历absent、六owner锁free。正式十服务仍v1.16.14/gen31，原件8956完整，服务未恢复。F与旧失败记录保留，不能重跑或直接追加新计划。下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 第二步实际恢复失败并停驻，接收轮次及收尾边界阻塞
+
+Owner明确交办第二步后，使用exact v20对新plan09f310e603791fbd0a368916d0a0553450e165a271f79dfc363f45695f37d12e
+执行一次apply；完整前置通过，只完成consumers/resumed_generation31，随后intake以COHORT_FORWARD_READY_TIMEOUT/
+CohortError进入outcome_unknown。无Feed/verified/calendars effect，无成功receipt，未重试。
+15:15独立只读确认五消费者真实PID全部parked、六owner锁free，Feed及四日历absent；binding/global及A/B/C/D原字节未变。
+8956原件/唯一8956、两日原件尾与ACK仍追齐；COMPLETED2508/PENDING97/WAITING4/BLOCKED44/UNKNOWN0。
+本次完成19项计算不代表恢复成功；API/Web启动后已随halt停驻，不能用中途可用冒充当前可用。
+
+隔离证明另一确定性判定缺口：受控样本把身份/零pending/双fresh等检查用测试替身固定成功，仅将Reference
+stage从receiving_cycle改为正常cycle，前者两快照0.2虚拟秒通过，后者零快照至240.2虚拟秒超时。
+v14正常serve确会在接收后发布scan/cycle并覆盖receiving_cycle；慢计算也会延迟接收轮次报告。
+本次intake未保留逐轮拒绝子条件，不能断言上述缺口就是F超时的实际原因；现场停驻后完整接收快照只读计时1.499秒，
+该事后计时不代表运行中耗时或活性。Session计时探针因未继承Stream开关ValueError，不计作生产Session失败。
+
+halt生成新drain IDs，旧D确认controls前像已不等于当前状态；额外F unknown也不在现有CBA/D恢复入口支持范围。
+下一步须先修正接收生命周期判定/补intake子条件诊断，并设计经验证的当前停驻终态收尾；不能重跑F、递归套前驱、
+忽略unknown或直接复用旧关闭证明。不进行版本升级/旧树清理。当前BLOCKED，尚未完成第二步服务恢复。
+证据：主仓库output/rollover-readiness-20261026/recovery-f-stopped-independent-20261027T071505Z.json
+及runtime-readback-f-stopped1516.json；本任务output/recovery-preflight-20261027/cycle-isolation.json与readonly-timing-20261027.json。
 
 ## 10/27 15:02恢复前置核对完成，新计划已冻结、未执行
 
