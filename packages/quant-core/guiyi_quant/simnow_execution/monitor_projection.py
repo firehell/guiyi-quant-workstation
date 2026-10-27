@@ -396,6 +396,11 @@ def all_records(data):
         return []
     state = data["state"]
     rows = []
+    manual_tests = {
+        audit.command.test_id: (audit.command.product, audit.command.contract)
+        for audit in state.audit
+        if type(audit.command) is m.ManualBeginV1
+    }
 
     def row(
         kind,
@@ -409,6 +414,15 @@ def all_records(data):
         order_id=None,
         **facts,
     ):
+        manual = manual_tests.get(signal_id)
+        if (
+            kind in ("risk", "order", "fill")
+            and manual is not None
+            and product == manual[0]
+            and (not contract or contract == manual[1])
+        ):
+            label = "人工验收·" + label
+            facts["origin"] = "人工验收交易"
         rows.append(
             dict(
                 id=digest((kind, identity)),

@@ -4,6 +4,7 @@ from .model import (
     POLICY_VERSION,
     PRODUCT_RECOVERY_POLICY_VERSION,
     MANAGED_TICK_POLICY_VERSION,
+    MANUAL_TEST_POLICY_VERSION,
     RISK_VERSION,
     EXECUTION_VERSION,
     FORMULA_VERSION,
@@ -16,6 +17,9 @@ from .model import (
     ExecutionInput,
     Tick,
     ManagedTickV1,
+    ManualBeginV1,
+    ManualTickV1,
+    ManualStatusV1,
     OrderUpdate,
     Disconnect,
     Recover,
@@ -28,7 +32,7 @@ from .model import (
     Effect,
     Transition,
 )
-from .reducer import apply, start
+from .reducer import apply, start, manual_status
 from .codec import checkpoint, restore
 
 from .store import LocalStore, StoreError, Commit
@@ -40,6 +44,7 @@ __all__ = [
     "POLICY_VERSION",
     "PRODUCT_RECOVERY_POLICY_VERSION",
     "MANAGED_TICK_POLICY_VERSION",
+    "MANUAL_TEST_POLICY_VERSION",
     "RISK_VERSION",
     "EXECUTION_VERSION",
     "FORMULA_VERSION",
@@ -52,6 +57,9 @@ __all__ = [
     "ExecutionInput",
     "Tick",
     "ManagedTickV1",
+    "ManualBeginV1",
+    "ManualTickV1",
+    "ManualStatusV1",
     "OrderUpdate",
     "Disconnect",
     "Recover",
@@ -64,6 +72,7 @@ __all__ = [
     "Effect",
     "Transition",
     "apply",
+    "manual_status",
     "start",
     "checkpoint",
     "restore",

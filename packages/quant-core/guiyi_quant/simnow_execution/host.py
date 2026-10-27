@@ -23,9 +23,17 @@ class Host:
         run_id,
         deadline,
         continuous=False,
+        manual_test_id=None,
     ):
         if type(continuous) is not bool:
             raise ValueError("HOST_MODE_INVALID")
+        if manual_test_id is not None and (
+            type(manual_test_id) is not str
+            or not manual_test_id.startswith("manual:")
+            or continuous
+            or product != "RB"
+        ):
+            raise ValueError("MANUAL_TEST_SCOPE_INVALID")
         if type(max_submits) is not int or not 1 <= max_submits <= 3:
             raise ValueError("BOUNDED_SUBMIT_BUDGET_REQUIRED")
         products = (product,) if type(product) is str else product
@@ -48,6 +56,7 @@ class Host:
         self.product = product
         self.products = products
         self.continuous = continuous
+        self.manual_test_id = manual_test_id
         self.max_submits = max_submits
         self.run_id = run_id
         self.deadline = deadline
@@ -120,6 +129,7 @@ class Host:
             not tx.state.readback_valid
             or tx.state.phase != "READY"
             or not self.continuous
+            and self.manual_test_id is None
             and self.product in tx.state.blocked_products
         )
         return snapshot, tx.state
@@ -133,17 +143,33 @@ class Host:
             e.kind == "SUBMIT" and e.order.offset == "OPEN" for e in effects
         ):
             raise ValueError("CONTINUOUS_OPEN_NOT_AUTHORIZED")
+        if self.manual_test_id is not None:
+            if any(e.order.signal_id != self.manual_test_id for e in effects):
+                raise ValueError("MANUAL_TEST_SCOPE_INVALID")
+            opening = [
+                e for e in effects if e.kind == "SUBMIT" and e.order.offset == "OPEN"
+            ]
+            previous = [
+                o
+                for o in self.store.current().orders
+                if o.offset == "OPEN"
+                and o.signal_id == self.manual_test_id
+                and self.journal.claimed(o.order_id)
+            ]
+            if opening and (len(opening) != 1 or previous):
+                raise ValueError("MANUAL_OPEN_ALREADY_CLAIMED")
         outcomes = []
         for effect in effects:
             state = self.store.current()
-            if self.continuous and self.journal.claimed(
-                effect.order.order_id, effect.kind
-            ):
+            if (
+                self.continuous or self.manual_test_id is not None
+            ) and self.journal.claimed(effect.order.order_id, effect.kind):
                 outcomes.append("ALREADY_CLAIMED_NO_SEND")
                 continue
             if (
                 not self.continuous
                 and effect.kind == "SUBMIT"
+                and (self.manual_test_id is None or effect.order.offset == "OPEN")
                 and (now >= self.deadline or self.submits >= self.max_submits)
             ):
                 self.adapter.abort_unsent(
@@ -169,7 +195,9 @@ class Host:
                 now + timedelta(seconds=3),
             )
             # A claimed or unknown send consumes the bounded budget too.
-            if effect.kind == "SUBMIT":
+            if effect.kind == "SUBMIT" and (
+                self.manual_test_id is None or effect.order.offset == "OPEN"
+            ):
                 self.submits += 1
             try:
                 outcomes.append(
