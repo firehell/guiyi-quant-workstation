@@ -180,6 +180,46 @@ class SubingReferenceService:
         since, through, cutoff = self._window(query, as_of)
         return since, through, cutoff, as_of
 
+    def resolve_forward_read_window(
+        self, query: SubingReferenceQuery,
+    ) -> tuple[date, date, datetime, datetime]:
+        """Forward reads wait only for the current not-yet-due publication tail."""
+        from app.market_data.canonical_publication import (
+            CanonicalPublicationError, forward_published_through,
+        )
+        window = self.resolve_read_window(query)
+        _since, through, _cutoff, as_of = window
+        if query.frequency not in {"1d", "1w"}:
+            return window
+
+        def weekly_candidates():
+            start = self.coverage.product_start(query.symbol)
+            local_day = as_of.astimezone(SHANGHAI).date()
+            monday = local_day - timedelta(days=local_day.weekday())
+            candidates = []
+            for _ in range(20):
+                if monday + timedelta(days=6) < start or len(candidates) == 2:
+                    break
+                self.check_cancelled()
+                candidate = self.market_data.completed_calendar_week(
+                    symbol=query.symbol, week_monday=monday, as_of=as_of,
+                )
+                if candidate is not None:
+                    candidates.append(candidate)
+                monday -= timedelta(days=7)
+            return tuple(candidates)
+
+        try:
+            published = forward_published_through(
+                self.market_data, product=query.symbol, frequency=query.frequency,
+                through=through, as_of=as_of, weekly_candidates=weekly_candidates,
+            )
+        except CanonicalPublicationError as exc:
+            raise SubingReferenceError(exc.code) from exc
+        if published == through:
+            return window
+        return self.resolve_read_window(replace(query, through=published, as_of=as_of))
+
     def query(self, query: SubingReferenceQuery) -> dict[str, Any]:
         self.check_cancelled()
         now = self.now()

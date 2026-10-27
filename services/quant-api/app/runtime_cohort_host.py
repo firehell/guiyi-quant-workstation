@@ -17,7 +17,7 @@ import stat
 import subprocess
 from time import monotonic, sleep
 
-from app.runtime_cohort import CONTINUOUS, CALENDARS, CohortError, registry, require
+from app.runtime_cohort import CONTINUOUS, CALENDARS, CohortError, WARMUP_SAFE_CODES, registry, require
 from app.runtime_fault_recovery_host import FaultRecoveryHost
 from app.runtime_bindings import (
     authorized_program_arguments,
@@ -44,6 +44,14 @@ IDENTITY_NAMES = {
     "late-provider-recovery": "late_provider_recovery",
     "weekly-audit": "weekly_audit",
 }
+
+
+def _warmup_failure(service, condition, code=None):
+    error = CohortError("COHORT_CANDIDATE_WARMUP_FAILED")
+    error.service = service
+    error.warmup_condition = condition
+    error.warmup_code = code if code is None or isinstance(code, str) and code in WARMUP_SAFE_CODES else "COHORT_OPERATION_BLOCKED"
+    return error
 
 
 class CohortHost(FaultRecoveryHost):
@@ -466,19 +474,21 @@ class CohortHost(FaultRecoveryHost):
                     check=False,
                 )
                 value = json.loads(result.stdout.strip().splitlines()[-1])
-                require(
-                    result.returncode == 0
-                    and value.get("status") == "ready"
-                    and value.get("service") == service,
-                    "COHORT_CANDIDATE_WARMUP_FAILED",
-                )
-                require(
-                    self._candidate_sources(value, root, b.tag),
-                    "COHORT_CANDIDATE_SOURCE_IDENTITY_UNPROVEN",
-                )
+                if not isinstance(value, dict):
+                    raise _warmup_failure(service, "output_invalid")
+                if result.returncode != 0 or value.get("status") != "ready":
+                    raise _warmup_failure(service, "candidate_blocked", value.get("code"))
+                if value.get("service") != service or not self._candidate_sources(value, root, b.tag):
+                    raise _warmup_failure(service, "source_identity", "COHORT_CANDIDATE_SOURCE_IDENTITY_UNPROVEN")
                 proofs[service] = value.get("proof")
-            except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
-                raise CohortError("COHORT_CANDIDATE_WARMUP_FAILED") from None
+            except CohortError:
+                raise
+            except subprocess.TimeoutExpired:
+                raise _warmup_failure(service, "subprocess_timeout") from None
+            except OSError:
+                raise _warmup_failure(service, "execution_failed") from None
+            except (ValueError, IndexError):
+                raise _warmup_failure(service, "output_invalid") from None
         return proofs
 
     def suspend_calendars(self, plan):

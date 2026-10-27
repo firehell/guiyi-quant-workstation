@@ -25,4 +25,19 @@ Ruff、`uv lock --check --offline --project services/quant-api`、diff检查通�
 
 ## 现场结果
 
-候选阶段尚未切换或删除旧树；正式结果在完成实际执行后追加。
+v1.16.22已经PR522发布，exact main/tag d2cc94382ba4158669d33ea549eb4d28d9a646b2。
+一次原生计划bf91a6899a79723efb217a0e12c56ae354e3a8691ff7fbb4a8055f5c2e334f00在17:40:53
+停服前预热取消，effects为空，错误CANDIDATE_WARMUP_FAILED；未重跑该attempt。
+17:43独立读回十服务仍v14/gen31，六常驻原PID active/fresh、API/Web200且来源v14。
+旧失败原件及全部发布树保留。
+
+一次Reference只读分段诊断65.34秒，固定码SUBING_REFERENCE_DATA_UNAVAILABLE；只读metadata定位PD2612
+10/27日线physical_contract_replay/REPLAY_ENDPOINTS_MISSING。不能倒推bf91未记录的确切失败原因。
+既有canonical要求区分Session完成与18:05发布，但SuBing forward漏用Newow已有的publication边界。
+后续补丁提取共享MDS publication resolver并补SuBing forward专用窗口，普通页面窗口与预热fresh/saved/seed语义不改；
+旧欠期、物理数据、owner及质量仍fail-closed。固定服务/失败条件/白名单码写入新预热失败状态，预算不变。
+v22 tag保持原样，修复进入v1.16.23；临近18:05时等待自然盘后任务释放窗口，不抢维护锁。
+
+受影响组合221 passed；两项旧生命周期用例因默认日志目录不在sandbox内失败，使用隔离GUIYI_LOG_DIR后仅补跑两项，2 passed。
+新增CLI诊断后仅补诊断模块8 passed。Ruff、离线锁和diff检查通过。
+独立安全Review无未关闭Confirmed Issue：允许进入release candidate；publication/typed接收/预算均未放宽。
