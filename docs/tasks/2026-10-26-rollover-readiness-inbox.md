@@ -305,3 +305,22 @@ WAITING_HISTORY4/BLOCKED44/UNKNOWN0。控制器v20已发布，14:11完成D新鲜
 计划独立Review：无Confirmed Issue；已纳入最终CAS新增v14前像及全部旧根reader脱离的风险检查。
 调度边界：创建本线程15:00一次自动执行的heartbeat被宿主自动审批拒绝，原因为本轮先规划与未来后台生产操作的授权区分；
 没有创建成功的恢复自动任务，不能宣称已预约执行。该拒绝不影响本文方案和只读准备，不以其他路径绕过。
+
+
+### 10/27 15:02 owner指定第一步完成：新鲜核对及计划冻结，未apply
+
+本轮授权范围为上条五阶段表格第一步，未进入服务恢复、最终promotion或清树。task/develop同556fc7c0e、
+初始工作区干净，main为v20 exact3230936803；未混入SimNow任务。使用正式干净v20原生plan，安全加载既有配置，
+重证binding/installed/owner/锁、Session、CBA/D完整前驱、关闭确认及source/DB/routes/ACK前缀。
+旧E64b6c383…过期且其私有attempt目录不存在；保留旧E原字节。15:02:37全新计划
+09f310e603791fbd0a368916d0a0553450e165a271f79dfc363f45695f37d12e冻结成功，15:17:37到期，
+TTL15分钟、预算600秒；public bytes SHA5509a8af9dc7d64fb8c3876ac0ad90d1a4311cbaf1a2a4dc644b2e67963a4dc7。
+新文件forward-after-feed-close-20261027T070236Z.json，新attempt不存在。全体先存public/private JSON、
+binding、global及关闭确认字节SHA逐份前后比对，无变化。程序没有apply/启动/停止/ACK/配置及数据写入入口调用。
+五消费者仍v14/gen31 parked，Feed及四日历absent。状态正文补齐v20已发布、14:11关闭确认成功及当前未恢复。
+现场报告output/recovery-preflight-20261027/preflight-20261027T070249Z.json；新原生plan exit0，
+不是生产恢复receipt，不冒充服务已可用。下一步是计划有效期内的新鲜复核后执行服务恢复；若过期须另冻新计划。
+
+15:03:26独立只读Review用exact v20原生reader复核通过：新plan/public/controller/source及全部v14/gen31目标一致，
+CBA/D descriptor与未决Gate有效、D state及confirmation/binding/global SHA不变，新旧计划均无attempt，
+Feed label absent、PID40577已退出、OS锁free。技术允许进入第二步，但本轮停在第一步，不调用apply。

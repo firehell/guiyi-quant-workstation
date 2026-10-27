@@ -1,11 +1,26 @@
 # 当前状态
 
-controller v1.16.19已发布；精确close-only D已发出单次Feed卸载，随后身份读回失败保留unknown。13:52独立确认Feed label absent、PID40577退出、锁free及完整双前缀不变；原生只读确认候选正在验证。实际绑定仍v1.16.14/gen31，其余服务停驻、原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
+15:02新鲜预检通过，已发布controller v1.16.20冻结新恢复计划09f310e6…（15:17:37到期），尚未apply。旧E已过期且无attempt，旧失败/确认/绑定前像不变。正式十服务仍绑定v1.16.14/gen31；五消费者parked，Feed及原四定时服务未加载，服务尚未恢复。下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 15:02恢复前置核对完成，新计划已冻结、未执行
+
+controller20已发布exact323093680325d5a39a969042b13bc2352c3bc1e0；14:11新鲜只读确认Feed关闭成功，
+确认SHA88814cc75fe9b1848f5cda113f43c7fa4cc91e2078f98f3dab7418daab64997f，原D unknown未改。
+本轮仅执行owner指定表格第一步：现场核对及新计划，不启动服务、不切版本。
+14:13旧E64b6c383…已于14:28过期，现场确认对应私有attempt目录不存在；未执行或重用。
+15:02:37使用干净exact v20原生plan及CBA/D确认完成完整前置复验，新plan
+09f310e603791fbd0a368916d0a0553450e165a271f79dfc363f45695f37d12e，600秒执行预算，15:17:37到期。
+public文件`forward-after-feed-close-20261027T070236Z.json`位于既有私有rollover-readiness-20261027目录；
+新attempt不存在，原public/private计划与state/关闭确认/全局指针/服务绑定SHA均未变。
+五消费者仍parked，Feed及四日历absent；正式绑定仍v14/gen31，不声明服务恢复或RUNTIME_READY。
+15:03:26独立原生只读复核通过：CBA/D关联、当前未决边界、Feed absent/PID40577退出/锁free及新旧计划无attempt均确认。
+现场证据：本任务output/recovery-preflight-20261027/preflight-20261027T070249Z.json。
+后续若继续恢复须先确认此计划仍新鲜且未有attempt；过期必须重新只读核对并冻结新计划，禁止apply旧计划。
 
 ## 10/27 controller19已发布，Feed已卸载，精确只读确认待完成
 
