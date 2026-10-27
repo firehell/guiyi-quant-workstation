@@ -1,6 +1,6 @@
 # 当前状态
 
-本页以10/27 v1.16.13发布及04:42实际v1.16.10/gen30运行读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
+本页以10/27 v1.16.14发布及08:49 postCAS独立停驻读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
@@ -27,6 +27,14 @@ ManagedTickV1在生成OPEN及预留前禁新仓，auto_order=false。Keychain隐
 柜台完整只读接管、自然恢复与首笔订单分别待验；未确认结算、未报撤单、未变更正式十服务Runtime。
 合同与验证见[SIMNOW_EXECUTION](docs/SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)、
 [任务记录](docs/tasks/2026-10-27-simnow-continuous-host.md)。
+
+
+## 10/27 v1.16.14已发布且绑定已切换，postCAS验收阻断并停驻
+
+PR505/506已发布v1.16.14 exact5587cd1483a43ef591ee686ebd4cc53606d201b0；247项回归与独立207项/0跳过通过，8956原件完整只读扫描通过。
+全新原生计划完成预热/原件/schema复验并CAS十服务至v14/gen31，v2已由新owner独占active。08:49达到下一Session>660秒边界，因旧验收仍要求全部原件接收追尾，原生outcome_unknown并停驻；Feed未启动、日历未恢复，不声明Runtime切换闭环或RUNTIME_READY。
+已接收原件/游标保留：completed1031、WAITING4、BLOCKED35、PENDING336；接收无intake_error。计算阻断与准备READBACK_REQUIRED分别只读定位，不清记录、不盲重试、不回退旧语义。
+唯一下一步：完成接收存活与积压追尾分离的验证合同及postCAS独立恢复证明，按原生流程向前恢复。详见唯一任务记录。
 
 ## 10/27 主力切换向前修复已发布，Runtime交接受维护锁竞争阻断
 

@@ -1,0 +1,1476 @@
+"""Explicit forward recovery of one already-committed cohort; never replay its CAS.
+
+The consumed cohort's plan and attempt remain immutable. A separately frozen,
+finite recovery attempt resumes only the exact installed new generation and
+publishes its own receipt. Calculation failures remain independent of intake.
+"""
+
+from __future__ import annotations
+
+from dataclasses import asdict
+from datetime import datetime, timedelta
+from hashlib import sha256
+import json
+import os
+from pathlib import Path
+import re
+import stat
+from time import monotonic
+
+from app.runtime_cohort import (
+    CohortError,
+    registry,
+    require,
+    validate as validate_cohort,
+    _resolution_source,
+    _sync_resolution_directory,
+)
+from app.runtime_handover import _write, deployment_lock
+from app.reference_trading.recovery_campaign import digest
+
+from contextlib import ExitStack, contextmanager
+import fcntl
+from time import sleep
+from app.runtime_cohort import CONTINUOUS, CALENDARS
+from app.runtime_cohort_host import CohortHost, IDENTITY_NAMES
+from app.runtime_handover import (
+    _read,
+    read_service_state,
+    owner_lock_available,
+    cancel_drain,
+)
+from app.runtime_deployment import (
+    observation_progress,
+    progress_reached,
+    owner_process_matches,
+    port_is_ready,
+)
+
+KIND = "postcas_forward_recovery_v1"
+
+
+def prove_same_generation_startup(
+    *, now, products, resolver, registered_day, subscriptions, dominant, sessions
+):
+    """Read the existing normal startup facts; never initialize day or subscriptions."""
+    from app.market_data.market_phase import MarketPhase
+    from app.market_data.domain import normalize_contract_for_symbol
+
+    require(
+        now.tzinfo is not None
+        and products
+        and len(set(products)) == len(products)
+        and isinstance(subscriptions, dict)
+        and set(subscriptions) == set(products),
+        "COHORT_FORWARD_STARTUP_AUTHORITY_UNPROVEN",
+    )
+    phases, contracts = {}, {}
+    closed_idle = True
+    for product in products:
+        phase = resolver.resolve(product, now)
+        require(
+            phase.symbol == product
+            and phase.phase
+            in {MarketPhase.TRADING, MarketPhase.BREAK, MarketPhase.CLOSED},
+            "COHORT_FORWARD_SESSION_UNKNOWN",
+        )
+        if phase.phase is MarketPhase.TRADING:
+            require(
+                phase.trading_day == registered_day
+                and phase.current_session is not None
+                and phase.current_session.start <= now < phase.current_session.end,
+                "COHORT_FORWARD_REGISTERED_DAY_DRIFT",
+            )
+        elif phase.phase is MarketPhase.BREAK:
+            require(
+                phase.trading_day == registered_day and phase.current_session is None,
+                "COHORT_FORWARD_REGISTERED_DAY_DRIFT",
+            )
+        else:
+            require(
+                phase.current_session is None
+                and (
+                    phase.next_session_start is None or phase.next_session_start > now
+                ),
+                "COHORT_FORWARD_SESSION_UNKNOWN",
+            )
+            require(
+                phase.trading_day == registered_day
+                or resolver.completed_observation_trading_day(product, now)
+                == registered_day,
+                "COHORT_FORWARD_REGISTERED_DAY_DRIFT",
+            )
+        require(
+            callable(sessions) and bool(sessions(product, registered_day)),
+            "COHORT_FORWARD_SESSION_UNKNOWN",
+        )
+        contract = dominant(product, registered_day)
+        require(
+            isinstance(contract, str)
+            and normalize_contract_for_symbol(product, contract) == contract
+            and subscriptions[product] == contract,
+            "COHORT_FORWARD_SUBSCRIPTION_DRIFT",
+        )
+        phases[product] = phase.phase.value
+        contracts[product] = contract
+        closed_idle = closed_idle and phase.phase is MarketPhase.CLOSED
+    return {
+        "mode": "same_generation_startup",
+        "registered_trading_day": registered_day.isoformat(),
+        "products": len(products),
+        "phases": phases,
+        "subscriptions_sha256": digest(contracts),
+        "closed_idle": closed_idle,
+        "natural_bar_verified": False,
+    }
+
+
+def compatible_live_restart_intent(current, frozen):
+    try:
+        keys = {
+            "kind",
+            "failure_code",
+            "binding_sha256",
+            "installed_sha256",
+            "control_sha256",
+            "observed_pids",
+            "owned_pids",
+            "minimum_runs",
+        }
+        return (
+            set(current) == set(frozen) == keys
+            and current["kind"] == frozen["kind"] == "draining_live_teardown_v1"
+            and current["failure_code"]
+            == frozen["failure_code"]
+            == "COHORT_FORWARD_LIVE_DRAIN_RESTART_LOOP"
+            and all(
+                current[k] == frozen[k]
+                for k in ("binding_sha256", "installed_sha256", "control_sha256")
+            )
+            and type(current["minimum_runs"]) is int
+            and type(frozen["minimum_runs"]) is int
+            and 2 <= frozen["minimum_runs"] <= current["minimum_runs"] <= 2**31 - 1
+            and all(
+                isinstance(v["observed_pids"], list)
+                and 2 <= len(set(v["observed_pids"])) <= 64
+                and v["observed_pids"] == sorted(set(v["observed_pids"]))
+                and all(
+                    type(pid) is int and 1 < pid <= 2**31 - 1
+                    for pid in v["observed_pids"]
+                )
+                and isinstance(v["owned_pids"], list)
+                and 2 <= len(set(v["owned_pids"])) <= 64
+                and v["owned_pids"] == sorted(set(v["owned_pids"]))
+                and set(v["owned_pids"]).issubset(v["observed_pids"])
+                and all(
+                    type(pid) is int and 1 < pid <= 2**31 - 1 for pid in v["owned_pids"]
+                )
+                for v in (current, frozen)
+            )
+        )
+    except (KeyError, TypeError):
+        return False
+
+
+def _no_unresolved_recovery(host):
+    parent = host.directory / "cohort-forward-recoveries"
+    if not parent.exists():
+        require(not parent.is_symlink(), "COHORT_FORWARD_DIRECTORY_UNSAFE")
+        return
+    _directory(parent)
+    children = list(parent.iterdir())
+    require(len(children) <= 1024, "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED")
+    for child in children:
+        _directory(child)
+        require(
+            re.fullmatch(r"[0-9a-f]{64}", child.name), "COHORT_FORWARD_DIRECTORY_UNSAFE"
+        )
+        _raw, state = _resolution_source(child / "state.json")
+        require(
+            state.get("phase") == "recovered",
+            "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+        )
+
+
+def _directory(path):
+    info = path.lstat()
+    require(
+        path.resolve() == path
+        and stat.S_ISDIR(info.st_mode)
+        and info.st_uid == os.getuid()
+        and stat.S_IMODE(info.st_mode) == 0o700,
+        "COHORT_FORWARD_DIRECTORY_UNSAFE",
+    )
+
+
+def _source(host, path):
+    path = Path(path)
+    raw, plan = _resolution_source(path)
+    try:
+        created = datetime.fromisoformat(plan["created_at"])
+        require(created <= host.now(), "COHORT_FORWARD_SOURCE_INVALID")
+        _old, new = validate_cohort(plan, created)  # Historical identity audit only.
+        require(host.bindings() == new, "COHORT_FORWARD_REGISTRY_DRIFT")
+        attempt = host.directory / "cohort-attempts" / plan["plan_sha256"]
+        for directory in (attempt.parent, attempt):
+            _directory(directory)
+        global_raw, global_state = _resolution_source(
+            host.directory / "cohort-release.json"
+        )
+        attempt_raw, state = _resolution_source(attempt / "state.json")
+        require(
+            global_state == state
+            and state.get("schema_version") == 1
+            and state.get("phase") == "outcome_unknown"
+            and state.get("plan_sha256") == plan["plan_sha256"]
+            and isinstance(state.get("effects"), dict)
+            and {"drain", "install", "consumers"} <= set(state["effects"])
+            and not {"feed", "verified", "calendars_on"} & set(state["effects"]),
+            "COHORT_FORWARD_SOURCE_INVALID",
+        )
+        identity = {
+            "plan_path": str(path.resolve()),
+            "plan_sha256": plan["plan_sha256"],
+            "plan_bytes_sha256": sha256(raw).hexdigest(),
+            "attempt_bytes_sha256": sha256(attempt_raw).hexdigest(),
+            "global_bytes_sha256": sha256(global_raw).hexdigest(),
+        }
+        return plan, state, identity
+    except (KeyError, TypeError, OverflowError):
+        raise CohortError("COHORT_FORWARD_SOURCE_INVALID") from None
+
+
+def _validate(plan, now):
+    try:
+        require(
+            set(plan)
+            == {
+                "schema_version",
+                "kind",
+                "source",
+                "new",
+                "audit",
+                "created_at",
+                "expires_at",
+                "downtime_seconds",
+                "plan_sha256",
+            }
+            and type(plan["schema_version"]) is int
+            and plan["schema_version"] == 1
+            and plan["kind"] == KIND
+            and plan["downtime_seconds"] == 600
+            and plan["plan_sha256"]
+            == digest({k: v for k, v in plan.items() if k != "plan_sha256"}),
+            "COHORT_FORWARD_PLAN_INVALID",
+        )
+        created, expires = (
+            datetime.fromisoformat(plan["created_at"]),
+            datetime.fromisoformat(plan["expires_at"]),
+        )
+        require(
+            expires - created == timedelta(minutes=15), "COHORT_FORWARD_PLAN_INVALID"
+        )
+        require(created <= now < expires, "COHORT_FORWARD_PLAN_EXPIRED")
+        registry(plan["new"])
+    except (TypeError, KeyError, OverflowError):
+        raise CohortError("COHORT_FORWARD_PLAN_INVALID") from None
+
+
+def freeze_forward_recovery(host, source_plan_path):
+    """Read-only new intent; the historical plan's elapsed budget is never reused."""
+    _no_unresolved_recovery(host)
+    source, _state, identity = _source(host, source_plan_path)
+    now = host.now()
+    end = getattr(host, "monotonic", monotonic)() + 600
+
+    def budget():
+        require(
+            getattr(host, "monotonic", monotonic)() < end,
+            "COHORT_FORWARD_DEADLINE_EXCEEDED",
+        )
+        require(
+            now <= host.now() < now + timedelta(minutes=15),
+            "COHORT_FORWARD_PLAN_EXPIRED",
+        )
+
+    audit = host.audit_forward(source, budget)
+    budget()
+    require(
+        _source(host, source_plan_path)[2] == identity, "COHORT_FORWARD_SOURCE_DRIFT"
+    )
+    result = {
+        "schema_version": 1,
+        "kind": KIND,
+        "source": identity,
+        "new": source["new"],
+        "audit": audit,
+        "created_at": now.isoformat(),
+        "expires_at": (now + timedelta(minutes=15)).isoformat(),
+        "downtime_seconds": 600,
+    }
+    result["plan_sha256"] = digest(result)
+    return result
+
+
+def _exclusive_json(path, value):
+    raw = (json.dumps(value, sort_keys=True, indent=2) + "\n").encode()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(raw)
+        stream.flush()
+        os.fsync(stream.fileno())
+    _sync_resolution_directory(path.parent)
+    require(_resolution_source(path)[0] == raw, "COHORT_FORWARD_RECEIPT_WRITE_UNKNOWN")
+    return sha256(raw).hexdigest()
+
+
+def apply_forward_recovery(host, recovery_plan_path):
+    """Resume exact new owners; no install, CAS, protocol change or old restoration."""
+    _raw, plan = _resolution_source(Path(recovery_plan_path))
+    _validate(plan, host.now())
+    with deployment_lock(runtime_dir=host.directory):
+        prior_attempt = (
+            host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
+        )
+        require(
+            not os.path.lexists(prior_attempt), "COHORT_FORWARD_ATTEMPT_ALREADY_EXISTS"
+        )
+        _no_unresolved_recovery(host)
+        source, _state, identity = _source(host, plan["source"]["plan_path"])
+        require(identity == plan["source"], "COHORT_FORWARD_SOURCE_DRIFT")
+        require(source["new"] == plan["new"], "COHORT_FORWARD_REGISTRY_DRIFT")
+        deadline = getattr(host, "monotonic", monotonic)() + 600
+
+        def budget():
+            _validate(plan, host.now())
+            require(
+                getattr(host, "monotonic", monotonic)() < deadline,
+                "COHORT_FORWARD_DEADLINE_EXCEEDED",
+            )
+
+        def unchanged():
+            require(
+                host._controller() == plan["audit"]["controller"],
+                "COHORT_FORWARD_CONTROLLER_DRIFT",
+            )
+            require(
+                _source(host, plan["source"]["plan_path"])[2] == identity,
+                "COHORT_FORWARD_SOURCE_DRIFT",
+            )
+            budget()
+
+        with host.forward_guards(source):
+            audit = host.audit_forward(source, budget, expected=plan["audit"])
+            budget()
+            require(audit == plan["audit"], "COHORT_FORWARD_AUDIT_DRIFT")
+            unchanged()
+        parent = host.directory / "cohort-forward-recoveries"
+        require(not parent.is_symlink(), "COHORT_FORWARD_DIRECTORY_UNSAFE")
+        parent.mkdir(mode=0o700, exist_ok=True)
+        _directory(parent)
+        attempt = parent / plan["plan_sha256"]
+        try:
+            attempt.mkdir(mode=0o700)
+        except FileExistsError:
+            raise CohortError("COHORT_FORWARD_ATTEMPT_ALREADY_EXISTS") from None
+        _directory(attempt)
+        _sync_resolution_directory(parent)
+        _exclusive_json(attempt / "plan.json", plan)
+        journal = {
+            "schema_version": 1,
+            "kind": KIND,
+            "plan_sha256": plan["plan_sha256"],
+            "source": identity,
+            "phase": "claimed",
+            "effects": {},
+        }
+        mutated = False
+
+        def persist(phase):
+            journal["phase"] = phase
+            _write(attempt / "state.json", journal)
+
+        persist("claimed")
+        try:
+
+            def step(name, action):
+                nonlocal mutated
+                unchanged()
+                persist(name)
+                mutated = (
+                    True  # An uncertain command return is never permission to retry.
+                )
+                result = action()
+                unchanged()
+                journal["effects"][name] = result
+                persist(name + "_complete")
+                return result
+
+            if "live_restart_intent" in plan["audit"]:
+
+                def record_stop(value):
+                    journal["effects"]["live_stop"] = value
+                    persist("live_stop_intent")
+
+                step(
+                    "live_stop",
+                    lambda: host.stop_draining_live(
+                        source, plan["audit"], budget, record_stop
+                    ),
+                )
+            step(
+                "consumers",
+                lambda: host.resume_consumers(source, plan["audit"], budget),
+            )
+            intake = step(
+                "intake", lambda: host.await_consumers(source, plan["audit"], budget)
+            )
+            step("feed", lambda: host.resume_feed(source, plan["audit"], budget))
+            readback = step(
+                "verified", lambda: host.verify_forward(source, plan["audit"], budget)
+            )
+            step("calendars", lambda: host.forward_calendars(source, budget))
+            unchanged()
+            receipt = {
+                "schema_version": 1,
+                "kind": "postcas_forward_recovery_readback",
+                "plan_sha256": plan["plan_sha256"],
+                "source": identity,
+                "observed_at": host.now().isoformat(),
+                "intake": intake,
+                "readback": readback,
+                "natural_acceptance": "pending",
+                "original_attempt_preserved": True,
+            }
+            receipt_sha = _exclusive_json(attempt / "receipt.json", receipt)
+            persist("recovered")
+            unchanged()
+            # This is a new recovery result. The original attempt is never rewritten.
+            result = {
+                "schema_version": 1,
+                "kind": "postcas_forward_recovery_result",
+                "phase": "switched",
+                "source_phase": "outcome_unknown",
+                "plan_sha256": plan["plan_sha256"],
+                "source_plan_sha256": identity["plan_sha256"],
+                "receipt_sha256": receipt_sha,
+                "original_attempt_preserved": True,
+            }
+            target = host.directory / "cohort-release.json"
+            try:
+                _write(target, result)
+            except OSError:
+                require(
+                    _resolution_source(target)[1] == result,
+                    "COHORT_FORWARD_POINTER_WRITE_UNKNOWN",
+                )
+            require(
+                _resolution_source(target)[1] == result,
+                "COHORT_FORWARD_POINTER_WRITE_UNKNOWN",
+            )
+            return {
+                "status": "recovered",
+                "receipt_sha256": receipt_sha,
+                "original_attempt_preserved": True,
+                "natural_acceptance": "pending",
+            }
+        except Exception as error:
+            code = (
+                str(error)
+                if isinstance(error, CohortError)
+                and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", str(error))
+                else "COHORT_FORWARD_STEP_FAILED"
+            )
+            journal["error_code"] = code
+            try:
+                persist("outcome_unknown" if mutated else "precondition_blocked")
+            finally:
+                if mutated:
+                    try:
+                        host.halt_unknown(source)
+                    except Exception:
+                        pass
+            raise CohortError(
+                "COHORT_FORWARD_OUTCOME_UNKNOWN" if mutated else code
+            ) from None
+
+
+class ForwardRecoveryHost(CohortHost):
+    """Native adapter for already-installed, parked new owners only."""
+
+    monotonic = staticmethod(monotonic)
+
+    def recovery_window(self):
+        """Normal same-generation startup authority; never a version-CAS exception."""
+        from app.db.session import SessionLocal
+        from app.db.readonly import readonly_transaction
+        from app.market_data.composition import build_market_feed_service
+        from app.market_data.observation_stream import ObservationStream
+
+        feed = None
+        try:
+            with (
+                SessionLocal() as session,
+                readonly_transaction(session, timeout_seconds=20),
+            ):
+                feed = build_market_feed_service(
+                    session
+                )  # Composition only; no poll/provider startup.
+                products = tuple(feed._products)
+                require(len(products) == 60, "COHORT_FORWARD_SCOPE_INVALID")
+                source = feed.source_stream
+                completed = ObservationStream(source.redis, kind="completed")
+                day = source.registered_day("live")
+                require(
+                    day in source.days()
+                    and day in completed.days()
+                    and all(
+                        completed.registered_day(name) == day
+                        for name in ("alert", "reference")
+                    ),
+                    "COHORT_FORWARD_REGISTERED_DAY_DRIFT",
+                )
+                return prove_same_generation_startup(
+                    now=self.now(),
+                    products=products,
+                    resolver=feed._phase_resolver,
+                    registered_day=day,
+                    subscriptions=feed._store.subscriptions(day),
+                    dominant=feed._dominant_source.dominant_for_day,
+                    sessions=feed._coverage_session_source,
+                )
+        finally:
+            if feed is not None:
+                clients = {
+                    id(client): client
+                    for client in (feed._store._redis, feed.source_stream.redis)
+                }
+                for client in clients.values():
+                    client.close()
+
+    def _controller(self):
+        from app.runtime_bindings import _git, _tracked
+
+        root = Path(__file__).resolve().parents[3]
+        tag = root.name.removeprefix("release-")
+        require(
+            root.name == "release-" + tag
+            and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag),
+            "COHORT_FORWARD_CONTROLLER_RELEASE_REQUIRED",
+        )
+        commit = _git(root, "rev-parse", "HEAD")
+        self.verify_release(
+            root, tag, commit
+        )  # Exact annotated tag, detached HEAD, entire tree clean.
+        tracked = _tracked(root)
+        require(
+            {
+                "services/quant-api/app/runtime_cohort_recovery.py",
+                "services/quant-api/app/reference_trading/receiving_liveness.py",
+            }
+            <= set(tracked),
+            "COHORT_FORWARD_CONTROLLER_UNPROVEN",
+        )
+        return {
+            "root": str(root),
+            "tag": tag,
+            "commit": commit,
+            "source_sha256": sha256(self.bytes(Path(__file__))).hexdigest(),
+            "tracked_sha256": digest(tracked),
+        }
+
+    def _fixed(self, source, check_budget):
+        controller = self._controller()
+        require(
+            controller == getattr(self, "_expected_controller", controller),
+            "COHORT_FORWARD_CONTROLLER_DRIFT",
+        )
+        new = registry(source["new"])
+        require(self.bindings() == new, "COHORT_FORWARD_REGISTRY_DRIFT")
+        seen = set()
+        for binding in new.services.values():
+            identity = binding.root, binding.tag, binding.commit
+            if identity not in seen:
+                self.verify_release(Path(binding.root), binding.tag, binding.commit)
+                require(
+                    self.contracts(Path(binding.root)) == binding.contracts,
+                    "COHORT_FORWARD_CONTRACT_DRIFT",
+                )
+                seen.add(identity)
+            check_budget()
+        require(
+            self.protected(new) == source["protected"], "COHORT_FORWARD_PROTECTED_DRIFT"
+        )
+        self.check_schema_compatibility(source)
+        import plistlib
+
+        installed = {}
+        for name, binding in new.services.items():
+            raw = self.bytes(self.path(binding))
+            self.verify_plist(binding, plistlib.loads(raw))
+            installed[name] = {"sha256": sha256(raw).hexdigest()}
+        installed["launcher_sha256"] = sha256(
+            self.bytes(self.directory / "run-local-service.sh")
+        ).hexdigest()
+        require(
+            installed["launcher_sha256"] == source["installed"]["launcher_sha256"],
+            "COHORT_FORWARD_LAUNCHER_DRIFT",
+        )
+        check_budget()
+        return {
+            name: {"sha256": row["sha256"]}
+            for name, row in installed.items()
+            if name != "launcher_sha256"
+        } | {"launcher_sha256": installed["launcher_sha256"]}
+
+    def _old_exited(self, source):
+        _raw, state = _resolution_source(
+            self.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
+        )
+        owners = state["effects"]["drain"]["owners"]
+        require(set(owners) == set(CONTINUOUS), "COHORT_FORWARD_OLD_EXIT_UNPROVEN")
+        for owner in owners.values():
+            pid = owner.get("pid")
+            require(
+                type(pid) is int and 1 < pid <= 2**31 - 1,
+                "COHORT_FORWARD_OLD_EXIT_UNPROVEN",
+            )
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            except OSError:
+                raise CohortError("COHORT_FORWARD_OLD_EXIT_UNPROVEN") from None
+            raise CohortError("COHORT_FORWARD_OLD_EXIT_UNPROVEN")
+        return digest(owners)
+
+    def _controls(self, source):
+        new = registry(source["new"])
+        result = {}
+        for name in CONTINUOUS:
+            value = _read(self.directory / (name + ".handover.json"))
+            require(
+                isinstance(value, dict)
+                and set(value)
+                == {"schema_version", "service", "generation", "request_id", "phase"}
+                and value["schema_version"] == 1
+                and value["service"] == name
+                and type(value["generation"]) is int
+                and value["generation"] == new.services[name].generation
+                and value["phase"] == "drain"
+                and isinstance(value["request_id"], str)
+                and re.fullmatch(r"[0-9a-f]{32}", value["request_id"]),
+                "COHORT_FORWARD_DRAIN_UNPROVEN",
+            )
+            result[name] = value
+        return result
+
+    def _parked_owners(
+        self, source, *, held=False, allow_live_restart=False, live_absent=False
+    ):
+        new = registry(source["new"])
+        result = {}
+        for name in CONTINUOUS:
+            binding = new.services[name]
+            if name == "market-feed":
+                require(
+                    self.definition_absent(binding),
+                    "COHORT_FORWARD_FEED_ALREADY_STARTED",
+                )
+                result[name] = {"phase": "absent", "generation": binding.generation}
+                continue
+            if name == "live" and live_absent:
+                require(
+                    self.definition_absent(binding), "COHORT_FORWARD_LIVE_EXIT_UNPROVEN"
+                )
+                result[name] = {"phase": "absent", "generation": binding.generation}
+                continue
+            state = read_service_state(name, runtime_dir=self.directory)
+            if (
+                name == "live"
+                and allow_live_restart
+                and state
+                and state.get("phase") == "active"
+            ):
+                require(
+                    state.get("generation") == binding.generation,
+                    "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN",
+                )
+                result[name] = {
+                    "phase": "draining_live_teardown",
+                    "generation": binding.generation,
+                }
+                continue
+            require(
+                isinstance(state, dict)
+                and state.get("phase") == "parked"
+                and state.get("generation") == binding.generation
+                and type(state.get("pid")) is int
+                and state["pid"] > 1
+                and str(state["pid"]) == str(self.loaded(binding))
+                and owner_process_matches(state, binding)
+                and (held or owner_lock_available(name, runtime_dir=self.directory)),
+                "COHORT_FORWARD_OWNER_UNPROVEN",
+            )
+            result[name] = {key: state[key] for key in ("pid", "generation", "phase")}
+        return result
+
+    def _read_calculation_boundary(self):
+        from app.db.session import SessionLocal
+        from app.db.readonly import readonly_transaction
+        from app.reference_trading.models import (
+            ReferenceBatch,
+            ReferenceStream,
+            ReferenceInboxDelivery,
+        )
+        from sqlalchemy import select, func
+
+        with (
+            SessionLocal() as session,
+            readonly_transaction(session, timeout_seconds=20),
+        ):
+            pending = session.scalar(
+                select(func.count())
+                .select_from(ReferenceBatch)
+                .join(
+                    ReferenceStream,
+                    ReferenceStream.stream_id == ReferenceBatch.stream_id,
+                )
+                .where(
+                    ReferenceStream.enabled.is_(True),
+                    ReferenceBatch.revision_id == ReferenceStream.active_revision_id,
+                    ReferenceBatch.kind == "capture",
+                    ReferenceBatch.consumed_by_batch_id.is_(None),
+                )
+            )
+            unknown = session.scalar(
+                select(func.count())
+                .select_from(ReferenceInboxDelivery)
+                .where(ReferenceInboxDelivery.status == "UNKNOWN")
+            )
+        return pending, unknown
+
+    def _calculation_boundary(self, *, active=False):
+        pending, unknown = self._read_calculation_boundary()
+        require(
+            unknown == 0 and (active or pending == 0),
+            "COHORT_FORWARD_CALCULATION_UNKNOWN",
+        )
+        return pending == 0
+
+    def _snapshot(self, source, check_budget, *, state=None):
+        from app.reference_trading.receiving_liveness import (
+            snapshot_receiving,
+            ReceivingLivenessError,
+        )
+        from app.db.session import SessionLocal
+
+        _raw, original = _resolution_source(
+            self.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
+        )
+        target = registry(source["new"]).services["reference-worker"]
+        try:
+            with self._reference_receiving_context(target) as context:
+                require(context is not None, "COHORT_FORWARD_SOURCE_UNPROVEN")
+                protocol, journal, authority, _capacity = context
+                value = protocol.read()
+                require(
+                    value is not None
+                    and value.get("status") == "active"
+                    and value.get("intake_error") is None,
+                    "COHORT_FORWARD_PROTOCOL_UNPROVEN",
+                )
+                check_budget()
+                snapshot = snapshot_receiving(
+                    SessionLocal,
+                    protocol,
+                    journal,
+                    intent=source["reference_receiving_handover"],
+                    source_proof=original["effects"]["drain"][
+                        "reference_receiving_handover"
+                    ],
+                    target=asdict(target),
+                    schema_proof=authority,
+                    check_budget=check_budget,
+                    sampled_at=self.now(),
+                    owner_cycle_at=state["at"] if state else None,
+                )
+                check_budget()
+                return snapshot
+        except ReceivingLivenessError as error:
+            raise CohortError(str(error)) from None
+
+    def audit_forward(self, source, check_budget, *, expected=None):
+        from app.reference_trading.receiving_liveness import receiving_snapshot_identity
+
+        fixed = self._fixed(source, check_budget)
+        old_exited = self._old_exited(source)
+        controls = self._controls(source)
+        owners = self._parked_owners(source, allow_live_restart=True)
+        live_intent = None
+        if owners["live"]["phase"] == "draining_live_teardown":
+            live_intent = self._live_restart_intent(
+                source, fixed["live"]["sha256"], controls["live"], check_budget
+            )
+            if expected is not None:
+                require(
+                    compatible_live_restart_intent(
+                        live_intent, expected.get("live_restart_intent")
+                    ),
+                    "COHORT_FORWARD_LIVE_INTENT_DRIFT",
+                )
+                live_intent = expected["live_restart_intent"]
+        new = registry(source["new"])
+        require(
+            all(self.definition_absent(new.services[name]) for name in CALENDARS),
+            "COHORT_FORWARD_CALENDAR_ALREADY_LOADED",
+        )
+        self._calculation_boundary()
+        _raw, state = _resolution_source(
+            self.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
+        )
+        for name in ("market-feed", "live", "alert"):
+            current = observation_progress(name)
+            require(
+                progress_reached(
+                    current, state["effects"]["drain"]["progress"][name], service=name
+                ),
+                "COHORT_FORWARD_OTHER_CONSUMER_BACKLOG",
+            )
+        snapshot = self._snapshot(source, check_budget)
+        window = self.recovery_window()
+        check_budget()
+        return {
+            "registry_sha256": self.binding_hash(),
+            "installed_sha256": digest(fixed),
+            "old_exited_sha256": old_exited,
+            "protected": source["protected"],
+            "owners": owners,
+            "controls": controls,
+            "receiving": receiving_snapshot_identity(snapshot),
+            "window": window,
+            "controller": self._controller(),
+            **({"live_restart_intent": live_intent} if live_intent is not None else {}),
+        }
+
+    def _live_launchd_sample(self, source):
+        from app.runtime_identity import (
+            read_launchd_service,
+            verify_loaded_service,
+            launchd_arguments,
+        )
+        from app.runtime_bindings import authorized_program_arguments
+
+        binding = registry(source["new"]).services["live"]
+        output = read_launchd_service(binding.label, root=Path(binding.root))
+        require(output is not None, "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN")
+        numbers, headers, environment, scopes = {}, {}, {}, []
+        for raw in output.splitlines():
+            line = raw.strip()
+            if line.endswith((" = {", " => {")):
+                name, operator, _brace = line.rsplit(" ", 2)
+                require(
+                    scopes or operator == "=", "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN"
+                )
+                scopes.append((name, operator))
+            elif line == "}":
+                require(bool(scopes), "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN")
+                scopes.pop()
+            elif len(scopes) == 1:
+                match = re.fullmatch(r"(runs|last exit code) = ([0-9]+)", line)
+                if match:
+                    require(
+                        match[1] not in numbers, "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN"
+                    )
+                    numbers[match[1]] = int(match[2])
+                match = re.fullmatch(r"(state|pid|working directory) = (.*)", line)
+                if match:
+                    require(
+                        match[1] not in headers, "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN"
+                    )
+                    headers[match[1]] = match[2]
+            elif len(scopes) == 2 and scopes[-1] == ("environment", "="):
+                match = re.fullmatch(
+                    r"(GUIYI_PROJECT_ROOT|GUIYI_RUNTIME_COMMIT|GUIYI_RUNTIME_TAG|GUIYI_RUNTIME_GENERATION) => (.*)",
+                    line,
+                )
+                if match:
+                    require(
+                        match[1] not in environment,
+                        "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN",
+                    )
+                    environment[match[1]] = match[2]
+        require(
+            not scopes
+            and headers.get("working directory") == binding.root
+            and environment
+            == {
+                "GUIYI_PROJECT_ROOT": binding.root,
+                "GUIYI_RUNTIME_COMMIT": binding.commit,
+                "GUIYI_RUNTIME_TAG": binding.tag,
+                "GUIYI_RUNTIME_GENERATION": str(binding.generation),
+            }
+            and launchd_arguments(output)
+            == authorized_program_arguments(binding, self.home),
+            "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN",
+        )
+        require(
+            2 <= numbers.get("runs", 0) <= 2**31 - 1
+            and numbers.get("last exit code") == 1,
+            "COHORT_FORWARD_LIVE_LOOP_UNPROVEN",
+        )
+        if headers.get("state") == "spawn scheduled":
+            # launchd's observed KeepAlive delay has no process. It contributes
+            # no PID/ownership evidence; every identity above is still required.
+            require("pid" not in headers, "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN")
+            return {"pid": None, "observed_pid": None, "runs": numbers["runs"]}
+        fields = verify_loaded_service(
+            output, root=Path(binding.root), commit=binding.commit, allow_idle=True
+        )
+        require(
+            fields.get("state") == "running" or not fields.get("pid"),
+            "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN",
+        )
+        pid = (
+            int(fields["pid"])
+            if fields.get("state") == "running" and fields.get("pid")
+            else None
+        )
+        if pid is not None:
+            state = read_service_state("live", runtime_dir=self.directory)
+            if not (
+                state
+                and state.get("phase") == "active"
+                and state.get("pid") == pid
+                and state.get("generation") == binding.generation
+                and not owner_lock_available("live", runtime_dir=self.directory)
+            ):
+                sample = {"pid": None, "observed_pid": pid, "runs": numbers["runs"]}
+                self._remember_live_sample(source, sample)
+                return sample
+        sample = {"pid": pid, "observed_pid": pid, "runs": numbers["runs"]}
+        self._remember_live_sample(source, sample)
+        return sample
+
+    def _remember_live_sample(self, source, sample):
+        binding = digest(asdict(registry(source["new"]).services["live"]))
+        require(
+            binding == getattr(self, "_observed_live_binding", binding),
+            "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN",
+        )
+        self._observed_live_binding = binding
+        observed = set(getattr(self, "_observed_live_pids", ()))
+        pid = sample.get("observed_pid", sample.get("pid"))
+        if pid is not None:
+            require(
+                type(pid) is int and 1 < pid <= 2**31 - 1,
+                "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN",
+            )
+            observed.add(pid)
+        require(len(observed) <= 64, "COHORT_FORWARD_LIVE_IDENTITY_UNPROVEN")
+        self._observed_live_pids = observed
+
+    def _live_restart_intent(self, source, installed_sha256, control, check_budget):
+        binding = registry(source["new"]).services["live"]
+        end = self.monotonic() + 25
+        pids, runs = set(), 0
+        while self.monotonic() < end:
+            check_budget()
+            require(
+                self._controls(source)["live"] == control, "COHORT_FORWARD_DRAIN_DRIFT"
+            )
+            sample = self._live_launchd_sample(source)
+            self._remember_live_sample(source, sample)
+            require(sample["runs"] >= runs, "COHORT_FORWARD_LIVE_LOOP_UNPROVEN")
+            runs = sample["runs"]
+            if sample["pid"] is not None:
+                pids.add(sample["pid"])
+            if len(pids) >= 2:
+                return {
+                    "kind": "draining_live_teardown_v1",
+                    "failure_code": "COHORT_FORWARD_LIVE_DRAIN_RESTART_LOOP",
+                    "binding_sha256": digest(asdict(binding)),
+                    "installed_sha256": installed_sha256,
+                    "control_sha256": digest(control),
+                    "observed_pids": sorted(self._observed_live_pids),
+                    "owned_pids": sorted(pids),
+                    "minimum_runs": runs,
+                }
+            sleep(0.2)
+        raise CohortError("COHORT_FORWARD_LIVE_LOOP_UNPROVEN")
+
+    def stop_draining_live(self, source, audit, check_budget, record):
+        from app.reference_trading.receiving_liveness import receiving_snapshot_identity
+
+        binding = registry(source["new"]).services["live"]
+        self._expected_controller = audit["controller"]
+        with self.forward_guards(source):
+            fixed = self._fixed(source, check_budget)
+            require(
+                digest(fixed) == audit["installed_sha256"], "COHORT_FORWARD_AUDIT_DRIFT"
+            )
+            require(
+                self._controls(source) == audit["controls"],
+                "COHORT_FORWARD_DRAIN_DRIFT",
+            )
+            current = self._live_restart_intent(
+                source, fixed["live"]["sha256"], audit["controls"]["live"], check_budget
+            )
+            require(
+                compatible_live_restart_intent(current, audit["live_restart_intent"]),
+                "COHORT_FORWARD_LIVE_INTENT_DRIFT",
+            )
+            self._calculation_boundary()
+            require(
+                receiving_snapshot_identity(self._snapshot(source, check_budget))
+                == audit["receiving"],
+                "COHORT_FORWARD_SOURCE_DRIFT",
+            )
+            self._old_exited(source)
+            self.recovery_window()
+            pids = set(audit["live_restart_intent"]["observed_pids"]) | set(
+                current["observed_pids"]
+            )
+            latest = self._live_launchd_sample(source)
+            self._remember_live_sample(source, latest)
+            pids.update(self._observed_live_pids)
+            evidence = {
+                "phase": "bootout_requested",
+                "observed_pids": sorted(pids),
+                "intent": audit["live_restart_intent"],
+            }
+            record(evidence)  # Durable intent precedes the ONE native request.
+            require(
+                digest(self._fixed(source, check_budget)) == audit["installed_sha256"]
+                and self._controls(source) == audit["controls"],
+                "COHORT_FORWARD_AUDIT_DRIFT",
+            )
+            require(
+                self._controller() == audit["controller"],
+                "COHORT_FORWARD_CONTROLLER_DRIFT",
+            )
+            check_budget()
+            self.launch("bootout", f"gui/{os.getuid()}/{binding.label}")
+            end = self.monotonic() + 30
+            while self.monotonic() < end:
+                check_budget()
+                absent = self.definition_absent(binding)
+                if not absent:
+                    sample = self._live_launchd_sample(source)
+                    self._remember_live_sample(source, sample)
+                    new_pids = self._observed_live_pids - pids
+                    if new_pids:
+                        pids.update(new_pids)
+                        record(
+                            {
+                                **evidence,
+                                "phase": "bootout_waiting",
+                                "observed_pids": sorted(pids),
+                            }
+                        )
+                exited = True
+                for pid in pids:
+                    try:
+                        os.kill(pid, 0)
+                        exited = False
+                    except ProcessLookupError:
+                        pass
+                    except OSError:
+                        raise CohortError("COHORT_FORWARD_LIVE_EXIT_UNPROVEN") from None
+                if (
+                    absent
+                    and exited
+                    and owner_lock_available("live", runtime_dir=self.directory)
+                ):
+                    require(
+                        self._controls(source) == audit["controls"],
+                        "COHORT_FORWARD_DRAIN_DRIFT",
+                    )
+                    require(
+                        digest(self._fixed(source, check_budget))
+                        == audit["installed_sha256"],
+                        "COHORT_FORWARD_AUDIT_DRIFT",
+                    )
+                    self._old_exited(source)
+                    self._calculation_boundary()
+                    require(
+                        receiving_snapshot_identity(
+                            self._snapshot(source, check_budget)
+                        )
+                        == audit["receiving"],
+                        "COHORT_FORWARD_SOURCE_DRIFT",
+                    )
+                    expected_owners = dict(audit["owners"])
+                    if "live" in expected_owners:
+                        expected_owners["live"] = {
+                            "phase": "absent",
+                            "generation": binding.generation,
+                        }
+                    require(
+                        self._parked_owners(source, live_absent=True)
+                        == expected_owners,
+                        "COHORT_FORWARD_OWNER_UNPROVEN",
+                    )
+                    self.recovery_window()
+                    check_budget()
+                    self._live_stopped = True
+                    return {
+                        **evidence,
+                        "phase": "absent_exited",
+                        "observed_pids": sorted(pids),
+                    }
+                sleep(0.1)
+            raise CohortError("COHORT_FORWARD_LIVE_EXIT_UNPROVEN")
+
+    @contextmanager
+    def forward_guards(self, source):
+        with self.after_market_guard(), self.maintenance_guard():
+            yield
+
+    @contextmanager
+    def _resume_owner_guards(self):
+        with ExitStack() as stack:
+            descriptors = []
+            for name in CONTINUOUS:
+                path = self.directory / (name + ".owner.lock")
+                fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+                stack.callback(os.close, fd)
+                info = os.fstat(fd)
+                require(
+                    stat.S_ISREG(info.st_mode)
+                    and info.st_uid == os.getuid()
+                    and info.st_nlink == 1
+                    and not info.st_mode & 0o077,
+                    "COHORT_FORWARD_OWNER_LOCK_INVALID",
+                )
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                descriptors.append((path, fd))
+
+            def assert_held():
+                for path, fd in descriptors:
+                    disk, held = path.lstat(), os.fstat(fd)
+                    require(
+                        not stat.S_ISLNK(disk.st_mode)
+                        and (disk.st_ino, disk.st_dev) == (held.st_ino, held.st_dev),
+                        "COHORT_FORWARD_OWNER_LOCK_INVALID",
+                    )
+                return {
+                    str(path): (os.fstat(fd).st_ino, os.fstat(fd).st_dev)
+                    for path, fd in descriptors
+                }
+
+            assert_held()
+            yield assert_held
+
+    def resume_consumers(self, source, audit, check_budget):
+        # Verify under real writer locks, then RELEASE them before waking v14's
+        # nonblocking owner acquisition. Deployment/maintenance remain held.
+        self._expected_controller = audit["controller"]
+        with self.forward_guards(source):
+            with self._resume_owner_guards() as held:
+                expected_owners = dict(audit["owners"])
+                if getattr(self, "_live_stopped", False):
+                    expected_owners["live"] = {
+                        "phase": "absent",
+                        "generation": registry(source["new"])
+                        .services["live"]
+                        .generation,
+                    }
+                require(
+                    self._controls(source) == audit["controls"]
+                    and self._parked_owners(
+                        source,
+                        held=True,
+                        live_absent=getattr(self, "_live_stopped", False),
+                    )
+                    == expected_owners,
+                    "COHORT_FORWARD_AUDIT_DRIFT",
+                )
+                require(
+                    digest(self._fixed(source, check_budget))
+                    == audit["installed_sha256"],
+                    "COHORT_FORWARD_AUDIT_DRIFT",
+                )
+                from app.reference_trading.receiving_liveness import (
+                    receiving_snapshot_identity,
+                )
+
+                require(
+                    receiving_snapshot_identity(self._snapshot(source, check_budget))
+                    == audit["receiving"],
+                    "COHORT_FORWARD_SOURCE_DRIFT",
+                )
+                self._old_exited(source)
+                self._calculation_boundary()
+                self.recovery_window()
+                check_budget()
+                lock_identities = held()
+            for name in ("live", "alert", "reference-worker", "api", "web"):
+                path = self.directory / (name + ".owner.lock")
+                disk = path.lstat()
+                require(
+                    not stat.S_ISLNK(disk.st_mode)
+                    and (disk.st_ino, disk.st_dev) == lock_identities[str(path)]
+                    and owner_lock_available(name, runtime_dir=self.directory),
+                    "COHORT_FORWARD_OWNER_LOCK_INVALID",
+                )
+                require(
+                    self.bindings() == registry(source["new"])
+                    and _read(self.directory / (name + ".handover.json"))
+                    == audit["controls"][name],
+                    "COHORT_FORWARD_DRAIN_DRIFT",
+                )
+                require(
+                    self._controller() == audit["controller"],
+                    "COHORT_FORWARD_CONTROLLER_DRIFT",
+                )
+                check_budget()
+                cancel_drain(
+                    name,
+                    request_id=audit["controls"][name]["request_id"],
+                    runtime_dir=self.directory,
+                )
+                if name == "live" and getattr(self, "_live_stopped", False):
+                    require(
+                        self._controller() == audit["controller"],
+                        "COHORT_FORWARD_CONTROLLER_DRIFT",
+                    )
+                    check_budget()
+                    self.start(registry(source["new"]).services["live"])
+        return {
+            "resumed_generation": registry(source["new"])
+            .services["reference-worker"]
+            .generation
+        }
+
+    def _active(self, binding):
+        state = read_service_state(binding.service, runtime_dir=self.directory)
+        if not (
+            state
+            and state.get("phase") == "active"
+            and state.get("generation") == binding.generation
+            and owner_process_matches(state, binding)
+            and not owner_lock_available(binding.service, runtime_dir=self.directory)
+        ):
+            return None
+        try:
+            at = datetime.fromisoformat(state["at"])
+            if not 0 <= (self.now() - at).total_seconds() <= 30:
+                return None
+        except (KeyError, ValueError, TypeError):
+            return None
+        return state
+
+    def _await(self, source, audit, check_budget, *, feed):
+        from app.reference_trading.receiving_liveness import prove_receiving_liveness
+
+        new = registry(source["new"])
+        _raw, original = _resolution_source(
+            self.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
+        )
+        end = self.monotonic() + (120 if feed else 240)
+        before = None
+        while self.monotonic() < end:
+            check_budget()
+            window = self.recovery_window()
+            names = (
+                CONTINUOUS
+                if feed
+                else tuple(name for name in CONTINUOUS if name != "market-feed")
+            )
+            states = {name: self._active(new.services[name]) for name in names}
+            if not all(states.values()):
+                sleep(0.2)
+                continue
+            okay = True
+            for name, state in states.items():
+                if name == "reference-worker":
+                    rp = state.get("proof", {})
+                    receiving = rp.get("receiving", {})
+                    okay = (
+                        okay
+                        and isinstance(receiving, dict)
+                        and receiving.get("protocol_version") == 2
+                        and receiving.get("intake_error") is None
+                    )
+                    okay = (
+                        okay
+                        and rp.get("reference_runtime", {}).get("stage")
+                        == "receiving_cycle"
+                    )
+                else:
+                    okay = okay and state.get("ready") is True
+                    if name in original["effects"]["drain"]["progress"]:
+                        okay = okay and progress_reached(
+                            observation_progress(name),
+                            original["effects"]["drain"]["progress"][name],
+                            service=name,
+                            proof=state.get("proof"),
+                        )
+                    if name in {"api", "web"}:
+                        okay = okay and port_is_ready(name)
+            if not okay:
+                sleep(0.2)
+                continue
+            if not self._calculation_boundary(active=True):
+                sleep(0.2)
+                continue
+            current = self._snapshot(
+                source, check_budget, state=states["reference-worker"]
+            )
+            if before is None:
+                before = current
+            elif current["owner_cycle_at"] != before["owner_cycle_at"]:
+                proof = prove_receiving_liveness(
+                    before,
+                    current,
+                    closed_idle=window.get("closed_idle") is True,
+                    now=self.now(),
+                )
+                self._fixed(source, check_budget)
+                check_budget()
+                require(self.monotonic() < end, "COHORT_FORWARD_READY_TIMEOUT")
+                return proof
+            sleep(0.2)
+        raise CohortError("COHORT_FORWARD_READY_TIMEOUT")
+
+    def await_consumers(self, source, audit, check_budget):
+        return self._await(source, audit, check_budget, feed=False)
+
+    def resume_feed(self, source, audit, check_budget):
+        require(
+            self._controller() == audit["controller"], "COHORT_FORWARD_CONTROLLER_DRIFT"
+        )
+        self._fixed(source, check_budget)
+        self.recovery_window()
+        check_budget()
+        control = _read(self.directory / "market-feed.handover.json")
+        require(
+            control == audit["controls"]["market-feed"], "COHORT_FORWARD_DRAIN_DRIFT"
+        )
+        binding = registry(source["new"]).services["market-feed"]
+        require(self.definition_absent(binding), "COHORT_FORWARD_FEED_ALREADY_STARTED")
+        cancel_drain(
+            "market-feed", request_id=control["request_id"], runtime_dir=self.directory
+        )
+        require(
+            self._controller() == audit["controller"], "COHORT_FORWARD_CONTROLLER_DRIFT"
+        )
+        check_budget()
+        return self.start(binding)
+
+    def verify_forward(self, source, audit, check_budget):
+        intake = self._await(source, audit, check_budget, feed=True)
+        from app.services.deployment_identity import deployment_identity_health
+
+        new = registry(source["new"])
+        api = new.services["api"]
+        identity = deployment_identity_health(root=Path(api.root), commit=api.commit)
+        require(
+            all(
+                identity.get("services", {})
+                .get(IDENTITY_NAMES.get(name, name), {})
+                .get("status")
+                == "matched"
+                for name in CONTINUOUS
+            ),
+            "COHORT_FORWARD_IDENTITY_UNPROVEN",
+        )
+        from urllib.request import urlopen
+
+        with urlopen("http://127.0.0.1:8000/api/health", timeout=5) as response:
+            require(
+                json.load(response).get("version") == api.tag[1:],
+                "COHORT_FORWARD_API_VERSION_MISMATCH",
+            )
+        with urlopen("http://127.0.0.1:5173/", timeout=5) as response:
+            require(response.status == 200, "COHORT_FORWARD_WEB_UNAVAILABLE")
+        check_budget()
+        return {
+            "continuous_identity": "matched",
+            "intake": intake,
+            "calculation_ready": False,
+            "natural_acceptance": "pending",
+        }
+
+    def forward_calendars(self, source, check_budget):
+        new = registry(source["new"])
+        for name in CALENDARS:
+            self._fixed(source, check_budget)
+            self.recovery_window()
+            check_budget()
+            binding = new.services[name]
+            if binding.enabled:
+                self.start_calendar(binding)
+            else:
+                self.launch("disable", f"gui/{os.getuid()}/{binding.label}")
+            check_budget()
+        from app.services.deployment_identity import deployment_identity_health
+
+        api = new.services["api"]
+        identity = deployment_identity_health(root=Path(api.root), commit=api.commit)
+        require(
+            len(identity.get("services", {})) == len(new.services)
+            and all(
+                identity["services"]
+                .get(IDENTITY_NAMES.get(name, name), {})
+                .get("status")
+                == ("matched" if binding.enabled else "disabled")
+                for name, binding in new.services.items()
+            ),
+            "COHORT_FORWARD_IDENTITY_UNPROVEN",
+        )
+        check_budget()
+        return {"calendar_registration_only": True, "identity": "matched"}
+
+
+def main(argv=None):
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        description="Explicit exact-generation forward recovery; never a version promotion."
+    )
+    sub = parser.add_subparsers(dest="mode", required=True)
+    freeze = sub.add_parser("plan")
+    freeze.add_argument("--source-plan", required=True, type=Path)
+    freeze.add_argument("--output", required=True, type=Path)
+    apply = sub.add_parser("apply-plan")
+    apply.add_argument("--plan", required=True, type=Path)
+    args = parser.parse_args(argv)
+    try:
+        host = ForwardRecoveryHost()
+        if args.mode == "plan":
+            plan = freeze_forward_recovery(host, args.source_plan)
+            parent = args.output.parent
+            info = parent.lstat()
+            require(
+                parent.resolve() == parent
+                and stat.S_ISDIR(info.st_mode)
+                and info.st_uid == os.getuid()
+                and not info.st_mode & 0o022,
+                "COHORT_FORWARD_OUTPUT_UNSAFE",
+            )
+            _exclusive_json(args.output, plan)
+            result = {
+                "status": "planned",
+                "kind": KIND,
+                "plan_sha256": plan["plan_sha256"],
+            }
+        else:
+            result = apply_forward_recovery(host, args.plan)
+        print(json.dumps(result, sort_keys=True))
+        return 0
+    except Exception as error:
+        code = (
+            str(error)
+            if isinstance(error, CohortError)
+            and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", str(error))
+            else "COHORT_FORWARD_OPERATION_FAILED"
+        )
+        print(json.dumps({"status": "blocked", "code": code}), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
