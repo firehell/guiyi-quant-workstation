@@ -172,7 +172,171 @@ def compatible_live_restart_intent(current, frozen):
         return False
 
 
-def _no_unresolved_recovery(host):
+def valid_confirmed_live_stop(value, predecessor):
+    """Exact bounded proof of this predecessor's completed Live teardown."""
+    try:
+        fields = {
+            "predecessor_plan_sha256",
+            "observed_pids",
+            "live_absent",
+            "observed_pids_exited",
+            "owner_lock_available",
+            "proof_sha256",
+        }
+        return (
+            isinstance(value, dict)
+            and set(value) == fields
+            and value["predecessor_plan_sha256"] == predecessor["plan_sha256"]
+            and isinstance(value["predecessor_plan_sha256"], str)
+            and re.fullmatch(r"[0-9a-f]{64}", value["predecessor_plan_sha256"])
+            is not None
+            and isinstance(value["observed_pids"], list)
+            and value["observed_pids"] == predecessor["observed_pids"]
+            and 2 <= len(value["observed_pids"]) <= 64
+            and value["observed_pids"] == sorted(set(value["observed_pids"]))
+            and all(
+                type(pid) is int and 1 < pid <= 2**31 - 1
+                for pid in value["observed_pids"]
+            )
+            and all(
+                value[key] is True
+                for key in (
+                    "live_absent",
+                    "observed_pids_exited",
+                    "owner_lock_available",
+                )
+            )
+            and value["proof_sha256"]
+            == digest({k: v for k, v in value.items() if k != "proof_sha256"})
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def _predecessor(host, path, source_identity):
+    """Only the one immutable failed live-stop prefix; never an allow-unknown flag."""
+    raw, frozen = _resolution_source(Path(path))
+    _validate(
+        frozen, datetime.fromisoformat(frozen["created_at"])
+    )  # Identity audit, not replay.
+    original, _state, observed_identity = _source(host, source_identity["plan_path"])
+    require(
+        frozen.get("mode") is None
+        and frozen["source"] == source_identity == observed_identity
+        and frozen["new"] == original["new"],
+        "COHORT_FORWARD_PREDECESSOR_INVALID",
+    )
+    attempt = host.directory / "cohort-forward-recoveries" / frozen["plan_sha256"]
+    _directory(attempt.parent)
+    _directory(attempt)
+    private_raw, private = _resolution_source(attempt / "plan.json")
+    state_raw, state = _resolution_source(attempt / "state.json")
+    require(
+        private == frozen
+        and state.get("schema_version") == 1
+        and state.get("kind") == KIND
+        and state.get("plan_sha256") == frozen["plan_sha256"]
+        and state.get("source") == frozen["source"]
+        and state.get("phase") == "outcome_unknown"
+        and set(state.get("effects", {})) == {"live_stop"},
+        "COHORT_FORWARD_PREDECESSOR_INVALID",
+    )
+    effect = state["effects"]["live_stop"]
+    intent = frozen["audit"].get("live_restart_intent")
+    require(
+        isinstance(effect, dict)
+        and set(effect) == {"phase", "observed_pids", "intent"}
+        and effect["phase"] in {"bootout_requested", "bootout_waiting"}
+        and effect["intent"] == intent
+        and compatible_live_restart_intent(intent, intent)
+        and intent["binding_sha256"]
+        == digest(asdict(registry(original["new"]).services["live"]))
+        and isinstance(effect["observed_pids"], list)
+        and 2 <= len(effect["observed_pids"]) <= 64
+        and all(
+            type(pid) is int and 1 < pid <= 2**31 - 1 for pid in effect["observed_pids"]
+        )
+        and effect["observed_pids"] == sorted(set(effect["observed_pids"]))
+        and set(intent["observed_pids"]).issubset(effect["observed_pids"])
+        and not os.path.lexists(attempt / "receipt.json"),
+        "COHORT_FORWARD_PREDECESSOR_INVALID",
+    )
+    controller = frozen["audit"]["controller"]
+    host.verify_release(
+        Path(controller["root"]), controller["tag"], controller["commit"]
+    )
+    return {
+        "plan_path": str(Path(path).resolve()),
+        "plan_sha256": frozen["plan_sha256"],
+        "plan_bytes_sha256": sha256(raw).hexdigest(),
+        "private_plan_bytes_sha256": sha256(private_raw).hexdigest(),
+        "state_bytes_sha256": sha256(state_raw).hexdigest(),
+        "live_stop_sha256": digest(effect),
+        "observed_pids": effect["observed_pids"],
+    }, frozen
+
+
+def _closed_predecessors(host, entries):
+    closed = set()
+    for child, state in entries:
+        if state.get("phase") != "recovered" or not state.get("receipt_sha256"):
+            continue
+        raw, receipt = _resolution_source(child / "receipt.json")
+        require(
+            sha256(raw).hexdigest() == state["receipt_sha256"],
+            "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+        )
+        resolution = receipt.get("predecessor_resolution")
+        if resolution is None:
+            continue
+        _raw, plan = _resolution_source(child / "plan.json")
+        predecessor = resolution.get("predecessor")
+        require(
+            isinstance(predecessor, dict)
+            and plan.get("mode") == "confirmed_live_stop"
+            and plan.get("predecessor") == predecessor
+            and resolution.get("kind") == "confirmed_live_stop_resolution_v1"
+            and resolution.get("successor_plan_sha256")
+            == child.name
+            == plan.get("plan_sha256")
+            == receipt.get("plan_sha256")
+            == state.get("plan_sha256")
+            and plan["plan_sha256"]
+            == digest({k: v for k, v in plan.items() if k != "plan_sha256"})
+            and receipt.get("source") == state.get("source") == plan.get("source")
+            and resolution.get("confirmation")
+            == plan["audit"].get("confirmed_live_stop")
+            and valid_confirmed_live_stop(resolution.get("confirmation"), predecessor),
+            "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+        )
+        name = predecessor.get("plan_sha256")
+        require(
+            isinstance(name, str) and re.fullmatch(r"[0-9a-f]{64}", name),
+            "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+        )
+        previous = host.directory / "cohort-forward-recoveries" / name
+        _directory(previous)
+        previous_plan_raw, previous_plan = _resolution_source(previous / "plan.json")
+        previous_state_raw, previous_state = _resolution_source(previous / "state.json")
+        require(
+            sha256(previous_plan_raw).hexdigest()
+            == predecessor["private_plan_bytes_sha256"]
+            and sha256(previous_state_raw).hexdigest()
+            == predecessor["state_bytes_sha256"]
+            and previous_plan.get("plan_sha256")
+            == name
+            == previous_state.get("plan_sha256")
+            and previous_state.get("phase") == "outcome_unknown"
+            and previous_plan.get("source") == plan["source"]
+            and digest(previous_state["effects"]["live_stop"])
+            == predecessor["live_stop_sha256"],
+            "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+        )
+        closed.add(name)
+    return closed
+
+
+def _no_unresolved_recovery(host, predecessor=None):
     parent = host.directory / "cohort-forward-recoveries"
     if not parent.exists():
         require(not parent.is_symlink(), "COHORT_FORWARD_DIRECTORY_UNSAFE")
@@ -180,14 +344,25 @@ def _no_unresolved_recovery(host):
     _directory(parent)
     children = list(parent.iterdir())
     require(len(children) <= 1024, "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED")
+    entries = []
     for child in children:
         _directory(child)
         require(
             re.fullmatch(r"[0-9a-f]{64}", child.name), "COHORT_FORWARD_DIRECTORY_UNSAFE"
         )
         _raw, state = _resolution_source(child / "state.json")
+        entries.append((child, state))
+    closed = _closed_predecessors(host, entries)
+    for child, state in entries:
+        allowed = predecessor is not None and child.name == predecessor["plan_sha256"]
+        if allowed:
+            raw, _state = _resolution_source(child / "state.json")
+            require(
+                sha256(raw).hexdigest() == predecessor["state_bytes_sha256"],
+                "COHORT_FORWARD_PREDECESSOR_DRIFT",
+            )
         require(
-            state.get("phase") == "recovered",
+            state.get("phase") == "recovered" or child.name in closed or allowed,
             "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
         )
 
@@ -243,7 +418,7 @@ def _source(host, path):
 def _validate(plan, now):
     try:
         require(
-            set(plan)
+            set(plan) - {"mode", "predecessor"}
             == {
                 "schema_version",
                 "kind",
@@ -271,15 +446,32 @@ def _validate(plan, now):
             expires - created == timedelta(minutes=15), "COHORT_FORWARD_PLAN_INVALID"
         )
         require(created <= now < expires, "COHORT_FORWARD_PLAN_EXPIRED")
+        require(
+            ("mode" not in plan and "predecessor" not in plan)
+            or (
+                plan.get("mode") == "confirmed_live_stop"
+                and isinstance(plan.get("predecessor"), dict)
+                and "live_restart_intent" not in plan["audit"]
+                and valid_confirmed_live_stop(
+                    plan["audit"].get("confirmed_live_stop"), plan["predecessor"]
+                )
+            ),
+            "COHORT_FORWARD_PLAN_INVALID",
+        )
         registry(plan["new"])
     except (TypeError, KeyError, OverflowError):
         raise CohortError("COHORT_FORWARD_PLAN_INVALID") from None
 
 
-def freeze_forward_recovery(host, source_plan_path):
+def freeze_forward_recovery(host, source_plan_path, *, predecessor_recovery_plan=None):
     """Read-only new intent; the historical plan's elapsed budget is never reused."""
-    _no_unresolved_recovery(host)
     source, _state, identity = _source(host, source_plan_path)
+    predecessor = (
+        _predecessor(host, predecessor_recovery_plan, identity)[0]
+        if predecessor_recovery_plan is not None
+        else None
+    )
+    _no_unresolved_recovery(host, predecessor)
     now = host.now()
     end = getattr(host, "monotonic", monotonic)() + 600
 
@@ -293,7 +485,7 @@ def freeze_forward_recovery(host, source_plan_path):
             "COHORT_FORWARD_PLAN_EXPIRED",
         )
 
-    audit = host.audit_forward(source, budget)
+    audit = host.audit_forward(source, budget, predecessor=predecessor)
     budget()
     require(
         _source(host, source_plan_path)[2] == identity, "COHORT_FORWARD_SOURCE_DRIFT"
@@ -308,7 +500,14 @@ def freeze_forward_recovery(host, source_plan_path):
         "expires_at": (now + timedelta(minutes=15)).isoformat(),
         "downtime_seconds": 600,
     }
+    if predecessor is not None:
+        require(
+            _predecessor(host, predecessor["plan_path"], identity)[0] == predecessor,
+            "COHORT_FORWARD_PREDECESSOR_DRIFT",
+        )
+        result.update(mode="confirmed_live_stop", predecessor=predecessor)
     result["plan_sha256"] = digest(result)
+    _validate(result, host.now())
     return result
 
 
@@ -335,8 +534,16 @@ def apply_forward_recovery(host, recovery_plan_path):
         require(
             not os.path.lexists(prior_attempt), "COHORT_FORWARD_ATTEMPT_ALREADY_EXISTS"
         )
-        _no_unresolved_recovery(host)
         source, _state, identity = _source(host, plan["source"]["plan_path"])
+        predecessor = None
+        if plan.get("mode") == "confirmed_live_stop":
+            predecessor = _predecessor(
+                host, plan["predecessor"]["plan_path"], identity
+            )[0]
+            require(
+                predecessor == plan["predecessor"], "COHORT_FORWARD_PREDECESSOR_DRIFT"
+            )
+        _no_unresolved_recovery(host, predecessor)
         require(identity == plan["source"], "COHORT_FORWARD_SOURCE_DRIFT")
         require(source["new"] == plan["new"], "COHORT_FORWARD_REGISTRY_DRIFT")
         deadline = getattr(host, "monotonic", monotonic)() + 600
@@ -357,11 +564,19 @@ def apply_forward_recovery(host, recovery_plan_path):
                 _source(host, plan["source"]["plan_path"])[2] == identity,
                 "COHORT_FORWARD_SOURCE_DRIFT",
             )
+            if predecessor is not None:
+                require(
+                    _predecessor(host, predecessor["plan_path"], identity)[0]
+                    == predecessor,
+                    "COHORT_FORWARD_PREDECESSOR_DRIFT",
+                )
             host.check_protected_forward(source, plan["audit"])
             budget()
 
         with host.forward_guards(source):
-            audit = host.audit_forward(source, budget, expected=plan["audit"])
+            audit = host.audit_forward(
+                source, budget, expected=plan["audit"], predecessor=predecessor
+            )
             budget()
             require(audit == plan["audit"], "COHORT_FORWARD_AUDIT_DRIFT")
             unchanged()
@@ -407,7 +622,7 @@ def apply_forward_recovery(host, recovery_plan_path):
                 persist(name + "_complete")
                 return result
 
-            if "live_restart_intent" in plan["audit"]:
+            if predecessor is None and "live_restart_intent" in plan["audit"]:
 
                 def record_stop(value):
                     journal["effects"]["live_stop"] = value
@@ -443,7 +658,15 @@ def apply_forward_recovery(host, recovery_plan_path):
                 "natural_acceptance": "pending",
                 "original_attempt_preserved": True,
             }
+            if predecessor is not None:
+                receipt["predecessor_resolution"] = {
+                    "kind": "confirmed_live_stop_resolution_v1",
+                    "predecessor": predecessor,
+                    "successor_plan_sha256": plan["plan_sha256"],
+                    "confirmation": plan["audit"]["confirmed_live_stop"],
+                }
             receipt_sha = _exclusive_json(attempt / "receipt.json", receipt)
+            journal["receipt_sha256"] = receipt_sha
             persist("recovered")
             unchanged()
             # This is a new recovery result. The original attempt is never rewritten.
@@ -457,6 +680,11 @@ def apply_forward_recovery(host, recovery_plan_path):
                 "receipt_sha256": receipt_sha,
                 "original_attempt_preserved": True,
             }
+            if predecessor is not None:
+                result["predecessor_resolution"] = {
+                    "predecessor_plan_sha256": predecessor["plan_sha256"],
+                    "receipt_sha256": receipt_sha,
+                }
             target = host.directory / "cohort-release.json"
             try:
                 _write(target, result)
@@ -476,13 +704,54 @@ def apply_forward_recovery(host, recovery_plan_path):
                 "natural_acceptance": "pending",
             }
         except Exception as error:
+            from app.runtime_fault_recovery import FaultRecoveryError
+            from app.runtime_identity import RuntimeIdentityError
+            from app.runtime_deployment import DeploymentError
+
+            # Only our typed boundary errors carry public codes. Arbitrary
+            # exception text can contain credentials, SQL or provider responses.
+            trusted = type(error) in (
+                CohortError,
+                FaultRecoveryError,
+                RuntimeIdentityError,
+                DeploymentError,
+            )
+            candidate = getattr(error, "code", None) if trusted else None
+            if trusted and not isinstance(candidate, str):
+                candidate = str(error)
             code = (
-                str(error)
-                if isinstance(error, CohortError)
-                and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", str(error))
+                candidate
+                if isinstance(candidate, str)
+                and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", candidate)
                 else "COHORT_FORWARD_STEP_FAILED"
             )
+            allowed_types = {
+                "CohortError",
+                "FaultRecoveryError",
+                "RuntimeIdentityError",
+                "DeploymentError",
+                "RuntimeError",
+                "TypeError",
+                "ValueError",
+                "KeyError",
+                "OSError",
+                "PermissionError",
+                "FileNotFoundError",
+                "BlockingIOError",
+                "TimeoutExpired",
+                "CalledProcessError",
+            }
+            error_type = type(error).__name__
+            stage = journal["phase"]
             journal["error_code"] = code
+            journal["error_type"] = (
+                error_type if error_type in allowed_types else "REDACTED"
+            )
+            journal["failed_stage"] = (
+                stage
+                if isinstance(stage, str) and re.fullmatch(r"[a-z][a-z_]{0,63}", stage)
+                else "unknown"
+            )
             try:
                 persist("outcome_unknown" if mutated else "precondition_blocked")
             finally:
@@ -871,15 +1140,88 @@ class ForwardRecoveryHost(CohortHost):
         except ReceivingLivenessError as error:
             raise CohortError(str(error)) from None
 
-    def audit_forward(self, source, check_budget, *, expected=None):
+    def confirm_live_stop(self, source, predecessor, check_budget):
         from app.reference_trading.receiving_liveness import receiving_snapshot_identity
 
+        # The controller has already revalidated all predecessor bytes; read its
+        # private plan for the exact frozen receiving/protected/other-owner preimage.
+        _raw, previous = _resolution_source(
+            self.directory
+            / "cohort-forward-recoveries"
+            / predecessor["plan_sha256"]
+            / "plan.json"
+        )
+        fresh, _previous = _predecessor(
+            self, predecessor["plan_path"], previous["source"]
+        )
+        require(
+            fresh == predecessor
+            and previous["new"] == source["new"]
+            and previous["source"]["plan_sha256"] == source["plan_sha256"],
+            "COHORT_FORWARD_PREDECESSOR_DRIFT",
+        )
+        binding = registry(source["new"]).services["live"]
+        require(
+            self.definition_absent(binding)
+            and owner_lock_available("live", runtime_dir=self.directory),
+            "COHORT_FORWARD_LIVE_EXIT_UNPROVEN",
+        )
+        for pid in predecessor["observed_pids"]:
+            check_budget()
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                continue
+            except OSError:
+                raise CohortError("COHORT_FORWARD_LIVE_EXIT_UNPROVEN") from None
+            raise CohortError("COHORT_FORWARD_LIVE_EXIT_UNPROVEN")
+        owners = self._parked_owners(source, live_absent=True)
+        expected_owners = dict(previous["audit"]["owners"])
+        expected_owners["live"] = {"phase": "absent", "generation": binding.generation}
+        require(owners == expected_owners, "COHORT_FORWARD_OWNER_UNPROVEN")
+        self.check_protected_forward(source, previous["audit"])
+        self.check_schema_compatibility(source)
+        self._old_exited(source)
+        self._calculation_boundary()
+        require(
+            receiving_snapshot_identity(self._snapshot(source, check_budget))
+            == previous["audit"]["receiving"],
+            "COHORT_FORWARD_SOURCE_DRIFT",
+        )
+        check_budget()
+        proof = {
+            "predecessor_plan_sha256": predecessor["plan_sha256"],
+            "observed_pids": predecessor["observed_pids"],
+            "live_absent": True,
+            "observed_pids_exited": True,
+            "owner_lock_available": True,
+        }
+        proof["proof_sha256"] = digest(proof)
+        require(
+            valid_confirmed_live_stop(proof, predecessor),
+            "COHORT_FORWARD_PREDECESSOR_INVALID",
+        )
+        self._live_stopped = True
+        return proof
+
+    def audit_forward(self, source, check_budget, *, expected=None, predecessor=None):
+        from app.reference_trading.receiving_liveness import receiving_snapshot_identity
+
+        confirmation = (
+            self.confirm_live_stop(source, predecessor, check_budget)
+            if predecessor is not None
+            else None
+        )
         if expected is not None:
             self._expected_new_protected = expected["new_protected"]
         fixed = self._fixed(source, check_budget)
         old_exited = self._old_exited(source)
         controls = self._controls(source)
-        owners = self._parked_owners(source, allow_live_restart=True)
+        owners = self._parked_owners(
+            source,
+            allow_live_restart=predecessor is None,
+            live_absent=predecessor is not None,
+        )
         live_intent = None
         if owners["live"]["phase"] == "draining_live_teardown":
             live_intent = self._live_restart_intent(
@@ -925,6 +1267,11 @@ class ForwardRecoveryHost(CohortHost):
             "window": window,
             "controller": self._controller(),
             **({"live_restart_intent": live_intent} if live_intent is not None else {}),
+            **(
+                {"confirmed_live_stop": confirmation}
+                if confirmation is not None
+                else {}
+            ),
         }
 
     def _live_launchd_sample(self, source):
@@ -1514,13 +1861,18 @@ def main(argv=None):
     freeze = sub.add_parser("plan")
     freeze.add_argument("--source-plan", required=True, type=Path)
     freeze.add_argument("--output", required=True, type=Path)
+    freeze.add_argument("--predecessor-recovery-plan", type=Path)
     apply = sub.add_parser("apply-plan")
     apply.add_argument("--plan", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         host = ForwardRecoveryHost()
         if args.mode == "plan":
-            plan = freeze_forward_recovery(host, args.source_plan)
+            plan = freeze_forward_recovery(
+                host,
+                args.source_plan,
+                predecessor_recovery_plan=args.predecessor_recovery_plan,
+            )
             parent = args.output.parent
             info = parent.lstat()
             require(

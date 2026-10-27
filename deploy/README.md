@@ -352,6 +352,8 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 
 接收存活由独立typed证明确定：原冻结SourceProof完整不变、active v2边界与原升级意图匹配、所有已ACK原件及冻结routes在数据库中逐条完整，其他分区不回退；有积压时须两次新鲜有界receiving cycle显示ACK与数据库前缀共同前进。计算等待及BLOCKED分别展示并继续逐流fence，不借此清除失败或重试；接收错误、原件/routes/身份异常、接收提交未知、恢复前未归属pending capture、失权或超时拒绝。旧尾部全部追齐是后续独立验收，不冒充启动完成条件。
 
+若恢复attempt在单次Live卸载后进入unknown，而独立原生读回已确认label缺席、全部观察PID退出、owner锁空闲及其余消费者仍停驻，可用显式 `--predecessor-recovery-plan` 冻结仅此已确认前缀的continuation。新计划绑定原cohort及前驱operator/private plan、state、effect字节hash，前驱effects必须仅为Live卸载意图，target必须同一当前generation；从consumers开始，路径不得调用bootout。其他未决attempt仍阻断。成功的新receipt通过精确关联事实闭环此唯一前驱，两个原unknown文件都不改，不能以通用allow-unknown、清记录或重跑旧计划代替。
+
 恢复成功写新receipt并更新全局恢复结果指针，不能把原attempt改为成功。结果未知时停止相关mutation并独立读回，不盲重试。恢复前缺失的自然原件显式记录，禁止用provider历史补成Live事实；不回放Alert或补发旧通知。
 
 ### Reference receiving v2 交接
