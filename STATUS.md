@@ -1,11 +1,41 @@
 # 当前状态
 
-本页以10/27 v1.16.14发布及08:49 postCAS独立停驻读回为最新事实；下方旧任务记录是历史证据，不代替本轮现场。
+controller v1.16.19已发布；精确close-only D已发出单次Feed卸载，随后身份读回失败保留unknown。13:52独立确认Feed label absent、PID40577退出、锁free及完整双前缀不变；原生只读确认候选正在验证。实际绑定仍v1.16.14/gen31，其余服务停驻、原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 controller19已发布，Feed已卸载，精确只读确认待完成
+
+PR519/main及annotated v1.16.19/GitHub Release exactd7fb9122f77127fd9f41152c5b0553349ad9cf24。
+选择性发布仅采样补丁及精确Feed关闭入口，正式候选395项真实隔离PG/Redis、Web build/type/topology及来源核验通过。
+新D plan3c8496a9301636d97856c5ff68c4c288e4d542bf7a65d4d1a610242074810d68冻结成功，唯一effect为
+feed_stop/bootout_requested；随后SERVICE_IDENTITY_INVALID进入unknown，无成功receipt，未重跑D。
+13:52独立原生证据确认Feed absent、PID40577退出、锁free，完整source原件/索引与completed DB/routes双读
+SHA802e87444d50586cbd7bdfe0cd23f0acd50f294e414aa0f051e9c74a1fed391b等于D意图；这尚不是恢复成功。
+controller20候选仅补卸载期间PID观察及该精确D的confirm-feed-close只读入口，保留D原unknown、禁止再次bootout。
+其余消费者仍v14/gen31 parked，日历未恢复。实际新确认与后续恢复计划均待正式控制器执行，旧C具体失败原因仍未知。
+
+## 10/27 控制器采样及诊断修复验证完成，正式服务仍停驻
+
+已复现并修复t0活性样本到t31提前失败：逐次保留全部context/原件/routes及ACK/数据库非回退链后滚动采样，
+仍须两轮不同且30秒内新鲜的cycle，最终身份校验后再次核对freshness；原120/240/600秒预算不延长。
+verified新增固定子步骤及合法时间诊断，不记录任意异常原文、不改旧unknown；上次C真实失败原因仍未确定。
+扩大369项含本次隔离PG/Redis无跳过通过；独立175项含真实依赖无跳过通过，Review允许集成develop。
+12:46–12:47独立确认Feed同v14/gen31/PID40577、parked、drain固定、锁free及两次tail/ACK稳定；
+exact v14正常parked必经reader关闭路径。关闭heartbeat当前缺失，未留存可读取的关闭快照，不冒充当前provider/订阅/缓冲的typed证明。
+CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；本轮未发布、未启停服务或重跑恢复，不声明RUNTIME_READY。
+下一步是补齐上次含Feed effect的C失败前缀及新鲜关闭证明，再生成新的精确恢复计划；不能递归套用原A/B入口。
+证据和限制见[唯一恢复记录](docs/tasks/2026-10-26-rollover-readiness-inbox.md#1027-控制器活性采样窗口及verified诊断修复未发布未执行恢复)。
+
+## 10/27 当前版本恢复尚未闭环：已确认Live卸载，待从消费者启动继续
+
+controller v1.16.15/16已独立发布，运行绑定仍v1.16.14/gen31。controller16新计划94f864cb完成freeze后，单次Live bootout后的读回进入outcome_unknown，未进入消费者/Feed启动。10:14原生独立读回确认Live/Feed定义缺席、7个已观察PID全部退出、owner锁空闲；其余Alert/Reference/API/Web仍gen31 parked。旧owner文件中Live active是过期记录，不代表实际进程仍运行。
+10:16数据库读回：completed1031、PENDING336、WAITING_HISTORY4、BLOCKED35、UNKNOWN0；准备READY43/READBACK_REQUIRED80/WAITING_DEPENDENCY159。原件、游标、两层unknown记录均保留，尚未恢复正常采集。
+最小下一步：完成绑定此精确已确认前缀的continuation入口及反证测试/Review，发布controller17，新计划从consumers开始，禁止重复bootout；真实新Bar与完整业务验收另列。
+
 
 ## 10/27 SimNow独立人工验收与关闭恢复代码完成
 
