@@ -267,8 +267,14 @@ class Supervisor:
             ):
                 raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
             verify_recovery_ownership(snapshot, bindings, self.journal, state)
+            from .strategy_native import validate_strategy_events
+
             adapter = self.driver.adapter(
-                self.store, self.journal, snapshot, self.now()
+                self.store, self.journal, snapshot, self.now(),
+                strategy_correlated_native=True,
+                native_validator=lambda native: validate_strategy_events(
+                    native, self.market.authority, self.journal, self.store.current()
+                ),
             )
             for order in self.store.current().orders:
                 if order.status == "PROPOSED" and not self.journal.claimed(

@@ -2169,3 +2169,13 @@ cycle覆盖和双fresh接收；不能通过重启正式服务或重放旧原件�
 及受影响的bindings/cohort/forward/stopped用例。重点为删除旧checkout后有效seal仍可读、Git对象身份、active写回拒绝、
 额外unknown/跨命名空间同名记录、篡改/原子提交故障和最终cohort旧前像。只重跑失败或新修改影响的用例；不为检查创建真实
 行情/通知。生产只做候选预检、原生单次切换、一组跨轮验收及精确退役计划的删除前同像复核。
+
+## 普通策略原生关联成交与当前分钟准入
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_execution tests/unit/simnow_host tests/unit/simnow_supervisor tests/unit/htdy_execution services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/data_foundation/test_htdy_closed_source_conflicts.py
+```
+
+含普通多空开仓、先平后反手、原生时钟双向偏差、完整快照与费用关联、待核阻断和旧账本重放。
+真实SDK结构测试沿用独立固定SDK环境的`tests/unit/simnow_host/native_gateway_smoke.py`，
+只使用假API，不建立原生连接。输入审计v3另报当前1m，即使本Session第一根60m尚未到期。

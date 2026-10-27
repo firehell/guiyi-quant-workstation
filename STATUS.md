@@ -14,6 +14,21 @@ Owner随后要求开盘服务优先、暂停其余修复。手工历史维护于
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
 
+## 10/27 HTDY输入复核与普通策略原生协议完成
+
+隔离代码新增StrategyCorrelatedNativeFillV1及普通有界/manage接入，保留旧NativeFill、人工关闭恢复、
+账户hash与observe/manage禁止OPEN。原生时钟通过实际身份和权威Session关联；首笔资金45秒仅一次，
+待核持久化并保守重锁预留，不重发未知订单。准入v3增加当前1m，并显式报告闭市订阅缺失。
+659项相关回归、固定SDK25、Ruff/secret0/diff及独立执行安全Review通过。
+
+22:00:47全60只读复核：历史32根60m预热60/60；45个夜盘品种新1m和22:00完成60m连续，
+计算窗口与底层1m逐值一致且无恢复隔离。AP/CJ/EC/JD/LC/LH/PD/PK/PS/PT/RS/SF/SI/SM/UR
+闭市等待，旧日原始Live/订阅不可用仍阻断；下一交易时段新输入另验，不补历史信号。
+现役十服务保持v1.16.24/gen33及原PID；Reference旧OBSERVATION_GAP、其他策略warming/lag未处理。
+本次零provider/生产写入，无Broker连接、结算确认或报撤单；auto_order=false保持。
+已验证代码可集成develop，不代表已发布、运行切换或普通策略订单实测通过。开盘期间禁止发布/切换；
+如后续需部署，必须在全部相关品种收盘后处理。详见[任务记录](docs/tasks/2026-10-27-simnow-strategy-protocol.md)。
+
 ## 10/27 版本与发布树收敛完成
 
 唯一现役树为 `.worktrees/release-v1.16.23`，正式十服务统一 tag/commit/目录/gen32；独立SimNow保持独立。

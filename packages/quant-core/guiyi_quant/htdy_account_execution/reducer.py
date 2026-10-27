@@ -170,7 +170,7 @@ def signal(state, cmd):
 
 
 def fill_follows_order(fill, order):
-    if type(fill) is m.CorrelatedNativeFillV1:
+    if type(fill) in (m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1):
         return (
             fill.request_started_at >= order.created_at
             and fill.recorded_at >= fill.request_started_at
@@ -183,6 +183,21 @@ def fill_follows_order(fill, order):
     return fill.filled_at > order.created_at
 
 
+def strategy_order_proven(state, order):
+    if order is None or any(
+        type(audit.command) is m.ManualBeginV1
+        and audit.command.test_id == order.signal_id for audit in state.audit
+    ):
+        return False
+    # Recovery/rollover closes retain their own causal identity and need not
+    # invent a new opening signal. Every OPEN must have the frozen real signal.
+    return order.offset == "CLOSE" or any(
+        signal.source_id == order.signal_id and signal.product == order.product
+        and signal.contract == order.contract and signal.observed_at <= order.created_at
+        for signal in state.signals
+    )
+
+
 def apply_fill(state, cmd):
     if cmd.account_id != state.account_id:
         raise ValueError("FILL_ACCOUNT_MISMATCH")
@@ -192,6 +207,8 @@ def apply_fill(state, cmd):
             raise ValueError("FILL_IDENTITY_CONFLICT")
         return state, "DUPLICATE_FILL"
     o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
+    if type(cmd) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(state, o):
+        raise ValueError("STRATEGY_NATIVE_FILL_SIGNAL_REQUIRED")
     if type(cmd) is m.CorrelatedNativeFillV1 and (
         o is None
         or not any(
@@ -1068,7 +1085,7 @@ def validate(state):
         (state.orders, m.Order),
         (state.reservations, m.Reservation),
         (state.signals, m.Signal),
-        (state.fills, (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1)),
+        (state.fills, (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1)),
         (state.updates, m.OrderUpdate),
         (state.risk_decisions, m.RiskDecision),
         (state.audit, m.Audit),
@@ -1122,6 +1139,8 @@ def validate(state):
     filled = set()
     for f in state.fills:
         o = orders.get(f.order_id)
+        if type(f) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(state, o):
+            raise ValueError("ACCOUNT_FILL_REPLAY_INVALID")
         if type(f) is m.CorrelatedNativeFillV1 and (
             o is None
             or not any(
@@ -1193,6 +1212,7 @@ def apply(state, key, cmd):
         m.Fill,
         m.NativeFill,
         m.CorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV1,
         m.OrderUpdate,
         m.Readback,
         m.Recover,
@@ -1215,13 +1235,14 @@ def apply(state, key, cmd):
         cmd.observed_at
         if type(cmd) is m.Signal
         else cmd.recorded_at
-        if type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1)
+        if type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1)
         else cmd.at
     )
     if type(cmd) in (
         m.Fill,
         m.NativeFill,
         m.CorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV1,
         m.OrderUpdate,
         m.Disconnect,
     ):
@@ -1257,7 +1278,7 @@ def apply(state, key, cmd):
         else:
             state = replace_product(state, replace(p, owner=cmd.contract))
             reason = "OWNER_VERIFIED"
-    elif type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1):
+    elif type(cmd) in (m.Fill, m.NativeFill, m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1):
         state, reason = apply_fill(state, cmd)
     elif type(cmd) is m.OrderUpdate:
         state, reason = order_update(state, cmd)
