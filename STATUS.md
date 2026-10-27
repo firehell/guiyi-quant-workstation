@@ -1,11 +1,38 @@
 # 当前状态
 
-15:15已确认本次v20恢复F09f310e6…在intake以COHORT_FORWARD_READY_TIMEOUT失败，原生halt后独立确认五消费者parked、Feed及四日历absent、六owner锁free。正式十服务仍v1.16.14/gen31，原件8956完整，服务未恢复。F与旧失败记录保留，不能重跑或直接追加新计划。下方旧任务记录是历史证据，不代替本轮现场。
+第二步技术恢复已完成：controller v1.16.21已发布，16:08:32新原生恢复88683cea…成功；16:12独立跨轮确认正式十服务统一v1.16.14/gen31，六常驻active/fresh、四定时服务已注册、API/Web200。旧unknown原件与绑定字节保留且事故关联闭合。历史积压/质量及新自然事件验收仍独立待办，尚未进行正式版本升级或旧发布树收敛。下方旧任务记录是历史证据。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 第二步完成：v14整站恢复，控制器v21独立发布
+
+PR521/main、annotated v1.16.21和GitHub Release exact1cf26b05992de9217ffc076cc35545e5c673ef4c。
+恢复修复已集成develop7a50974cf，选择性发布不包含独立SimNow任务；v21正式树干净、离线依赖/API与core来源、
+Web type/build/topology通过。一次真实隔离PG/Redis组合295 passed/0 skipped；Review小修仅补readiness22及stopped20，
+Ruff/lock/diff/secret0通过，独立安全Review无未关闭Confirmed Issue。临时测试容器及本任务/tmp候选已清理。
+
+16:02–16:03 exact v21执行F停驻收尾：确认SHA0cb4b02e74a32e023798be216022aeae63a40bb04d12b74206b6c4f88b6367e8，
+当前drain/owner/前缀与5尝试18文件固定，原unknown/state不改。全新plan
+88683cea093e65d4e80736dda61550802ae0e26d31ea6b1792701743cc74fdc7一次apply，按consumers/intake/feed/verified/calendars
+完成，16:08:32 state recovered/global switched，成功receipt SHA
+c49470ac21fb6e7b3b92521e6065bd006c4644ab8cc83717b8e0003ad0571a10；先存文件逐份SHA无变化，未重跑旧计划或CAS。
+
+16:12:14→16:12:27独立跨轮：十服务identity matched、六常驻同PID active/fresh/正确来源且锁held；
+原四日历registered，API两次200/version1.16.14，Web两次200且body SHA等于v14 dist。Live/Feed的poll瞬间readyFalse
+不等于故障：两轮heartbeat均available=true、更新时间前进、input_failure=null、Feed pending0；休市60品种订阅0。
+Reference完成报告receiving_cycle→cycle且fresh，双轮typed接收与完整前缀valid，计算ready=False如实保留。
+原件8956/唯一8956，COMPLETED2508/PENDING97/WAITING_HISTORY4/BLOCKED44/UNKNOWN0；未宣称计算全清、停采缺口已补。
+_no_unresolved_recovery通过，binding保持原v14/gen31 SHA；旧失败记录保留，由成功receipt关联闭合。
+
+浏览器真实smoke：首页60品种与分钟连接、RB2701日线K线/指标/策略标记可读；首页显示旧成功快照、详情明确10/27
+日线待更新且完整日线截至10/26/报价过时，未以页面可用冒充数据新鲜。正式页面已打开保留。
+证据：本任务output/recovery-preflight-20261027/controller21-production-result.json、browser-smoke.json，独立
+independent-final-20261027T081227Z.json SHA47010c92624d4b2a2f8b3727f83bfefc0e6f1fa504a3c0edcb716ddb2d05467c。
+本轮结论：服务技术恢复COMPLETED；自然新Bar/Alert/18:05业务证据待实际发生，不声明整体RUNTIME_READY或数据全健康。
+正式十服务版本仍v14；controller21不是消费者升级。版本/单发布树收敛及真实数据缺口处理按后续阶段执行。
 
 ## 10/27 第二步实际恢复失败并停驻，接收轮次及收尾边界阻塞
 

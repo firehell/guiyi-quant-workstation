@@ -364,3 +364,26 @@ UNKNOWN及前缀错误仍拒绝；intake/verified保留安全子步骤、固定�
 readiness22 passed、stopped20 passed，不机械重复全套。Ruff/uv offline lock/diff/secret0通过。
 独立高风险Review无未关闭Confirmed Issue。只读真实历史布局复核5 attempts/18 files通过；原cohort只保存public
 plan和private state，已修正不能假设其额外保存private plan的测试布局。此记录不代表已发布或已恢复。
+
+
+### 第二步恢复完成：16:08成功，16:12独立跨轮验收通过
+
+PR521已发布controller v1.16.21 exact1cf26b05992de9217ffc076cc35545e5c673ef4c，正式服务未做版本CAS。
+F停驻确认0cb4b02e…固定当前drain及扁平历史前像；新plan88683cea093e65d4e80736dda61550802ae0e26d31ea6b1792701743cc74fdc7
+单次按consumers/intake/feed/verified/calendars完成，16:08:32.331023原生返回recovered，receipt
+c49470ac21fb6e7b3b92521e6065bd006c4644ab8cc83717b8e0003ad0571a10；state recovered/global switched、旧原件全部SHA未变。
+
+16:12:14→16:12:27独立一次跨轮验收：十服务matched且统一v14/gen31，六常驻同PID active/fresh/源码来源匹配及owner锁held，
+四原日历registered，API200/version1.16.14、Web200/body精确对应v14 dist。Live/Feed poll瞬时not-ready与实质故障分开：
+两轮heartbeat available=true、generated_at前进、input_failure=null、Feed pending0；60品种休市、订阅0。
+Reference receiving_cycle→cycle且fresh、原生typed接收证明valid、计算ready仍False。_no_unresolved_recovery通过，
+原binding及CBA/D/F原字节保留；未知attempt以成功receipt关联闭合而非改写原state。
+DB原件8956/唯一8956、COMPLETED2508/PENDING97/WAITING4/BLOCKED44/UNKNOWN0。
+
+浏览器实测首页60品种/分钟连接，RB2701日线3037.00及真实K线、指标、策略标记显示；页面旧快照与10/27日线待更提示
+保留，完整日线截至10/26，未把技术恢复当数据补齐。证据controller21-production-result.json、browser-smoke.json及
+independent-final-20261027T081227Z.json（SHA47010c92624d4b2a2f8b3727f83bfefc0e6f1fa504a3c0edcb716ddb2d05467c）。
+独立probe的build_version_matches=false仅HTML未含版本字面量，不是版本不符；已通过body与v14 dist精确比对，不额外GET。
+
+第二步COMPLETED：服务技术可用。自然业务、新Bar/通知及18:05盘后待自然验收，数据积压/历史缺口/质量单列。
+本轮未升级正式消费者、未清旧发布树、未改Scope/auto_order或操作Broker；测试容器与临时/tmp候选已清理。
