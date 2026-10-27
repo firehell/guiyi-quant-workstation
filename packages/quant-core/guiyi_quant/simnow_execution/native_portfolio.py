@@ -39,7 +39,14 @@ class ReadJournal(Journal):
 
 
 class NativePortfolio:
-    def __init__(self, settings, folder, module, connector, *, now):
+    def __init__(
+        self, settings, folder, module, connector, *, now, initial_funds_timeout=15
+    ):
+        if (
+            type(initial_funds_timeout) is not int
+            or not 15 <= initial_funds_timeout <= 45
+        ):
+            raise ValueError("INITIAL_FUNDS_TIMEOUT_BOUND_INVALID")
         self.settings, self.folder, self.module, self.connector = (
             settings,
             folder,
@@ -47,6 +54,7 @@ class NativePortfolio:
             connector,
         )
         self.now = now
+        self.initial_funds_timeout = initial_funds_timeout
         self.gateway = self.flow = self.read_journal = None
         self.report = None
         self.cache = {}
@@ -57,7 +65,14 @@ class NativePortfolio:
     def connect(self):
         self.stage = "CREDENTIAL_LOAD"
         credentials = CredentialStore().load(self.settings.account_id)
-        self.gateway = self.module.Gateway(credentials.user, credentials.password)
+        if self.initial_funds_timeout == 15:
+            self.gateway = self.module.Gateway(credentials.user, credentials.password)
+        else:
+            self.gateway = self.module.Gateway(
+                credentials.user,
+                credentials.password,
+                initial_funds_timeout=self.initial_funds_timeout,
+            )
         del credentials
         self.flow = tempfile.TemporaryDirectory(prefix="guiyi-continuous-flow-")
         self.stage = "NATIVE_LOGIN"
@@ -232,9 +247,15 @@ class NativePortfolio:
             break
         return tuple(facts), tuple(bindings)
 
-    def adapter(self, store, journal, snapshot, now):
+    def adapter(self, store, journal, snapshot, now, *, close_only=False,
+                correlated_native=False):
         from datetime import datetime, time
         from zoneinfo import ZoneInfo
+
+        if type(close_only) is not bool or type(correlated_native) is not bool or (
+            correlated_native and not close_only
+        ):
+            raise ValueError("NATIVE_CAPABILITY_INVALID")
 
         settlement = self.gateway.query("settlement")
         if len(settlement) != 1 or settlement[0]["ConfirmDate"] != snapshot.trading_day:
@@ -263,6 +284,10 @@ class NativePortfolio:
                 tzinfo=ZoneInfo("Asia/Shanghai"),
             ),
         )
+        capabilities = (
+            dict(close_only=close_only, correlated_native=correlated_native)
+            if close_only or correlated_native else {}
+        )
         adapter = Adapter(
             store,
             journal,
@@ -270,7 +295,10 @@ class NativePortfolio:
             self.gateway.api,
             self.gateway.user,
             session,
+            **capabilities,
         )
+        if correlated_native:
+            adapter.correlate_snapshot(snapshot)
         self.gateway.attach(adapter, snapshot)
         return adapter
 
