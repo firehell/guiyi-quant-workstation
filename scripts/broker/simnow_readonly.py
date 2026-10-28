@@ -422,23 +422,45 @@ class Probe(tdapi.CThostFtdcTraderSpi):
     def OnRspQryTrade(self, row, info, request_id, last):
         self.receive("trades", row, info, request_id, last)
 
-    def collect(self, gap=QUERY_GAP, query_timeout=15, query_order="funds-first"):
+    def collect(
+        self,
+        gap=QUERY_GAP,
+        query_timeout=15,
+        query_order="funds-first",
+        initial_funds_timeout=None,
+    ):
         if type(query_timeout) is not int or not 0 <= query_timeout <= 60:
             raise ValueError("QUERY_TIMEOUT_BOUND_INVALID")
+        if initial_funds_timeout is not None and (
+            type(initial_funds_timeout) is not int
+            or not 15 <= initial_funds_timeout <= 45
+        ):
+            raise ValueError("INITIAL_FUNDS_TIMEOUT_BOUND_INVALID")
         if type(query_order) is not str or query_order not in QUERY_ORDERS:
             raise ValueError("QUERY_ORDER_PROFILE_INVALID")
         kinds = QUERY_ORDERS[query_order]
         self.result["query_order"] = list(kinds)
         self.result["query_timeout_seconds"] = query_timeout
+        self.result["initial_funds_timeout_seconds"] = (
+            query_timeout if initial_funds_timeout is None else initial_funds_timeout
+        )
         for round_number in (1, 2):
             record = {"round": round_number, "started_at": stamp(), "queries": {}}
             self.result["rounds"].append(record)
             for index, kind in enumerate(kinds):
+                budget = (
+                    initial_funds_timeout
+                    if round_number == 1
+                    and index == 0
+                    and kind == "funds"
+                    and initial_funds_timeout is not None
+                    else query_timeout
+                )
                 time.sleep(gap)
                 if self.failed:
                     return
                 self.begin_query(kind, 100 + round_number * 10 + index)
-                timed_out = not self.query_done.wait(query_timeout)
+                timed_out = not self.query_done.wait(budget)
                 if timed_out:
                     with self.lock:
                         self.fail(
@@ -467,6 +489,7 @@ class Probe(tdapi.CThostFtdcTraderSpi):
                                     "terminal_response_seen"
                                 ],
                                 "timed_out": timed_out,
+                                "timeout_budget_seconds": budget,
                                 "elapsed_seconds": round(
                                     time.monotonic() - current["started_monotonic"], 6
                                 ),

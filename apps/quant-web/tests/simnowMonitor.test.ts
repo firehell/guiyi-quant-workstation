@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { useSimnowMonitor } from '../src/composables/useSimnowMonitor.ts'
-import { curveGeometry, monitorMoney } from '../src/utils/simnowPresentation.ts'
+import { curveGeometry, monitorMoney, observerLabel } from '../src/utils/simnowPresentation.ts'
 import { loadMarketHomeTab, saveMarketHomeTab } from '../src/utils/marketHomeTab.ts'
 import type { MonitorClient, MonitorOverview, MonitorPage, MonitorQuery } from '../src/api/simnowMonitor.ts'
 const query: MonitorQuery = { kind:'all', product:'', status:'', startDay:'2026-10-20', endDay:'2026-10-27' }
@@ -19,3 +19,11 @@ test('drawer selection protects list from new snapshots',async()=>{let snapshot=
 test('invalid date edit suppresses records until valid filter arrives',async()=>{let calls=0;const s=setup({records:async()=>{calls++;return page()}});s.monitor.start();await tick();s.monitor.setQueryValid(false);await s.monitor.refresh();assert.equal(calls,1);assert.equal(s.monitor.page.value,null);s.monitor.setQueryValid(true);s.monitor.setQuery({...query,startDay:'2026-10-21'});await tick();assert.equal(calls,2);s.monitor.dispose()})
 test('unknown is distinct from numeric zero and net curve breaks at null/day change',()=>{assert.equal(monitorMoney(null),'—');assert.equal(monitorMoney('0'),'0.00');const points=[0,1,2,3].map(i=>({at:`2026-10-2${6+i}T01:00:00Z`,equity:'100000',net_profit:i===1?null:String(i),trading_day:i<3?'20261026':'20261029'}));const g=curveGeometry(points,'net_profit');assert.equal(g.segments.length,3);assert.equal(g.dots.length,3)})
 test('home Tab storage retains simnow and degrades safely if unavailable',()=>{const values=new Map<string,string>();Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>values.set(k,v)}});saveMarketHomeTab('simnow');assert.equal(loadMarketHomeTab(),'simnow');delete (globalThis as any).sessionStorage;assert.equal(loadMarketHomeTab(),'market')})
+
+test('monitor labels distinguish observe, manage, trade and waiting without inventing connection',()=>{
+ const data=overview(); data.observer!.mode='observe';assert.equal(observerLabel(data),'只读观察中');
+ data.observer!.mode='manage';assert.equal(observerLabel(data),'仅管理已有仓位');
+ data.observer!.mode='trade';data.observer!.opening_enabled=false;assert.equal(observerLabel(data),'持续模式：开仓暂停');
+ data.observer!.opening_enabled=true;assert.equal(observerLabel(data),'持续模拟交易中');
+ data.observer!.host_status='WAITING_SESSION';data.observer!.connection='UNKNOWN';assert.equal(observerLabel(data),'等待交易时段');
+})

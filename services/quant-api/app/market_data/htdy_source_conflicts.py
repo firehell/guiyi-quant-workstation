@@ -106,7 +106,11 @@ def classify_closed_difference(
     _require(sessions and max(s.end for s in sessions) == end and end < at)
     _require(mds.dominant_segment_for_day(product, day).contract == contract)
     _require(mds.catalog.contract_fact(product, contract).provider == "rqdata")
-    _require(market_read._live_store.subscriptions(day).get(product) == contract)
+    subscriptions = market_read._live_store.subscriptions(day)
+    _require(
+        subscriptions is not None and subscriptions.get(product) == contract,
+        "HTDY_SOURCE_DIFFERENCE_SUBSCRIPTION_UNAVAILABLE",
+    )
     recovery = market_read._read_recovery_state(day, product, contract)
     next_start = phase.next_session_start
     _require(

@@ -1,4 +1,4 @@
-"""Account reconciliation and one-shot action budget; no scheduler or broker login."""
+"""Shared account reconciliation and scoped execution; no scheduler or broker login."""
 
 from datetime import timedelta
 from types import SimpleNamespace
@@ -22,9 +22,56 @@ class Host:
         max_submits=1,
         run_id,
         deadline,
+        continuous=False,
+        manual_test_id=None,
+        close_only=False,
+        native_validator=None,
+        trade=False,
     ):
+        if type(continuous) is not bool:
+            raise ValueError("HOST_MODE_INVALID")
+        if (
+            type(trade) is not bool
+            or trade
+            and (
+                not continuous
+                or manual_test_id is not None
+                or close_only
+                or not getattr(adapter, "strategy_correlated_native", False)
+            )
+        ):
+            raise ValueError("HOST_TRADE_MODE_INVALID")
+        strategy_native = getattr(adapter, "strategy_correlated_native", False)
+        if type(close_only) is not bool or (
+            getattr(adapter, "correlated_native", False)
+            and not strategy_native
+            and (not close_only or not callable(native_validator))
+        ):
+            raise ValueError("CLOSE_ONLY_NATIVE_VALIDATOR_REQUIRED")
+        if strategy_native and (
+            manual_test_id is not None or not callable(adapter.native_validator)
+        ):
+            raise ValueError("STRATEGY_NATIVE_VALIDATOR_REQUIRED")
+        if manual_test_id is not None and (
+            type(manual_test_id) is not str
+            or not manual_test_id.startswith("manual:")
+            or continuous
+            or product != "RB"
+        ):
+            raise ValueError("MANUAL_TEST_SCOPE_INVALID")
         if type(max_submits) is not int or not 1 <= max_submits <= 3:
             raise ValueError("BOUNDED_SUBMIT_BUDGET_REQUIRED")
+        products = (product,) if type(product) is str else product
+        if (
+            type(products) is not tuple
+            or not products
+            or any(type(p) is not str for p in products)
+            or len(set(products)) != len(products)
+            or set(products) - {p.product for p in store.current().products}
+            or not continuous
+            and type(product) is not str
+        ):
+            raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
         self.store, self.journal, self.evidence, self.adapter = (
             store,
             journal,
@@ -32,6 +79,12 @@ class Host:
             adapter,
         )
         self.product = product
+        self.products = products
+        self.continuous = continuous
+        self.trade = trade
+        self.manual_test_id = manual_test_id
+        self.close_only = close_only
+        self.native_validator = native_validator
         self.max_submits = max_submits
         self.run_id = run_id
         self.deadline = deadline
@@ -41,11 +94,16 @@ class Host:
         self.needs_recovery = store.current().phase != "READY"
         self.baseline = evidence.snapshots()[0] if evidence.snapshots() else None
         self.last_fee_status = "NO_NEW_TRADE"
+        self._fee_pairs_scanned = 0
 
     def reconcile(self, report, bindings, now, proofs=()):
         snapshot = read_snapshot(report, now=now)
         if snapshot.account_id != self.adapter.session.account_id:
             raise ValueError("HOST_NATIVE_ACCOUNT_MISMATCH")
+        if getattr(self.adapter, "correlated_native", False):
+            if not getattr(self.adapter, "strategy_correlated_native", False):
+                self.native_validator(snapshot)
+            self.adapter.correlate_snapshot(snapshot)
         self.evidence.append(snapshot)
         data = snapshot.data
         # Collector has verified account ownership; do not forward raw private codes into persistence.
@@ -67,13 +125,22 @@ class Host:
                 ),
                 snapshot.at,
             )
-        history = self.evidence.snapshots()
-        # Recompute deterministic proofs after crash-before-fee; no snapshot counter is lost.
-        for left, right in zip(history, history[1:]):
+        # Every new Host replays history, including crash-before-fee. A continuous
+        # Host subsequently scans only newly appended adjacent snapshot pairs.
+        first_pair = self._fee_pairs_scanned if self.continuous else 0
+        history = (
+            self.evidence.snapshots(after=first_pair)
+            if self.continuous
+            else self.evidence.snapshots()
+        )
+        for index in range(len(history) - 1):
+            left, right = history[index], history[index + 1]
             fees, reason = actual_fee(left, right, self.store.current(), self.journal)
             self.last_fee_status = reason
             for fee in fees:
                 self.adapter.fee(fee, right.at)
+            if self.continuous:
+                self._fee_pairs_scanned = first_pair + index + 1
         self.pending = self.adapter.drain()
         if self.pending:
             return snapshot, None
@@ -93,18 +160,55 @@ class Host:
         self.needs_recovery = (
             not tx.state.readback_valid
             or tx.state.phase != "READY"
-            or self.product in tx.state.blocked_products
+            or not self.continuous
+            and self.manual_test_id is None
+            and self.product in tx.state.blocked_products
         )
         return snapshot, tx.state
 
     def submit_effects(self, effects, bindings, facts, now):
+        effects = tuple(effects)
+        # Validate the whole batch before any claim or request is possible.
+        if any(e.order.product not in self.products for e in effects):
+            raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
+        if self.close_only and any(
+            e.kind == "SUBMIT" and e.order.offset != "CLOSE" for e in effects
+        ):
+            raise ValueError("CLOSE_ONLY_OPEN_FORBIDDEN")
+        if (
+            self.continuous
+            and not self.trade
+            and any(e.kind == "SUBMIT" and e.order.offset == "OPEN" for e in effects)
+        ):
+            raise ValueError("CONTINUOUS_OPEN_NOT_AUTHORIZED")
+        if self.manual_test_id is not None:
+            if any(e.order.signal_id != self.manual_test_id for e in effects):
+                raise ValueError("MANUAL_TEST_SCOPE_INVALID")
+            opening = [
+                e for e in effects if e.kind == "SUBMIT" and e.order.offset == "OPEN"
+            ]
+            previous = [
+                o
+                for o in self.store.current().orders
+                if o.offset == "OPEN"
+                and o.signal_id == self.manual_test_id
+                and self.journal.claimed(o.order_id)
+            ]
+            if opening and (len(opening) != 1 or previous):
+                raise ValueError("MANUAL_OPEN_ALREADY_CLAIMED")
         outcomes = []
         for effect in effects:
             state = self.store.current()
-            if effect.order.product != self.product:
-                raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
-            if effect.kind == "SUBMIT" and (
-                now >= self.deadline or self.submits >= self.max_submits
+            if (
+                self.continuous or self.manual_test_id is not None
+            ) and self.journal.claimed(effect.order.order_id, effect.kind):
+                outcomes.append("ALREADY_CLAIMED_NO_SEND")
+                continue
+            if (
+                not self.continuous
+                and effect.kind == "SUBMIT"
+                and (self.manual_test_id is None or effect.order.offset == "OPEN")
+                and (now >= self.deadline or self.submits >= self.max_submits)
             ):
                 self.adapter.abort_unsent(
                     effect.order.order_id, "RUN_BUDGET_EXHAUSTED", now
@@ -129,7 +233,9 @@ class Host:
                 now + timedelta(seconds=3),
             )
             # A claimed or unknown send consumes the bounded budget too.
-            if effect.kind == "SUBMIT":
+            if effect.kind == "SUBMIT" and (
+                self.manual_test_id is None or effect.order.offset == "OPEN"
+            ):
                 self.submits += 1
             try:
                 outcomes.append(
@@ -148,14 +254,21 @@ class Host:
         return tuple(outcomes)
 
     def tick(self, facts, bindings, now):
+        facts = tuple(facts)
+        if any(f.instrument.product not in self.products for f in facts):
+            raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
         tx = self.store.execute(
             "host-tick:" + self.run_id + ":" + now.isoformat(),
-            a.Tick(now, tuple(facts)),
+            a.ContinuousTradeTickV1(now, facts)
+            if self.trade
+            else a.ManagedTickV1(now, facts)
+            if self.continuous
+            else a.Tick(now, facts),
         )
         pending = tuple(
             a.Effect("CANCEL", o)
             for o in tx.state.orders
-            if o.product == self.product
+            if o.product in self.products
             and o.status == "CANCEL_PENDING"
             and o.cancel_sent
             and not o.reconciled

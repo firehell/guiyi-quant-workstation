@@ -300,3 +300,66 @@ def test_index_cannot_claim_an_unbound_source(tmp_path, field, value):
     result = reader.overview(now)
     assert result["status"] == "unavailable"
     assert result["metrics"]["equity"] is None
+
+
+def test_waiting_host_keeps_last_binding_but_never_claims_current_connection(tmp_path):
+    import json
+
+    reader, now, folder = fixture_root(tmp_path)
+    index = json.loads((tmp_path / "monitor.json").read_text())
+    publisher = MonitorPublisher(tmp_path, index["account_id"], "restarted-run")
+    assert publisher.publish(
+        "STARTING",
+        now + timedelta(seconds=1),
+        mode="trade",
+        opening_enabled=False,
+        host_status="WAITING_SESSION",
+    )
+    updated = json.loads((tmp_path / "monitor.json").read_text())
+    assert (updated["native_source_id"], updated["ledger_hash"]) == (
+        index["native_source_id"],
+        index["ledger_hash"],
+    )
+    result = reader.overview(now + timedelta(seconds=2))
+    assert result["metrics"]["equity"] == "99996.88"
+    assert result["observer"]["connection"] == "UNKNOWN"
+    assert (
+        result["observer"]["mode"] == "trade"
+        and not result["observer"]["opening_enabled"]
+    )
+    assert result["readback_status"] == "last_verified"
+
+
+def test_unverified_trade_remains_visible_as_pending(tmp_path):
+    import sqlite3
+    import json
+
+    reader, now, folder = fixture_root(tmp_path)
+    with sqlite3.connect(folder / "dispatch.sqlite") as db:
+        db.execute(
+            "INSERT INTO events(event_id,payload,received_at) VALUES (?,?,?)",
+            (
+                "pending-test",
+                json.dumps({"kind": "unverified_trade", "order_id": "unknown-linked"}),
+                now.isoformat(),
+            ),
+        )
+    result = reader.overview(now)
+    assert result["readback_status"] == "pending"
+    assert not result["position_projection_complete"] and result["issue_count"]
+
+
+def test_unpublished_new_snapshot_does_not_replace_bound_readback(tmp_path):
+    from guiyi_quant.simnow_execution.inventory import read_snapshot
+    from guiyi_quant.simnow_execution.evidence import Evidence
+    import json
+
+    reader, now, folder = fixture_root(tmp_path)
+    index = json.loads((tmp_path / "monitor.json").read_text())
+    from test_host import report_at
+
+    evidence = Evidence(folder / "native-evidence.sqlite", index["account_id"])
+    evidence.append(read_snapshot(report_at(now, index["account_id"])))
+    evidence.close()
+    result = reader.overview(now + timedelta(seconds=20))
+    assert result["metrics"]["equity"] == "99996.88"

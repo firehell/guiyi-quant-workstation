@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 import re
+from uuid import UUID
 from ..htdy_execution import (
     AccountSnapshot as AccountSnapshot,
     Fill as Fill,
@@ -15,6 +16,12 @@ from ..htdy_execution import (
 )
 
 POLICY_VERSION = "htdy_60m_account_execution_v2"
+PRODUCT_RECOVERY_POLICY_VERSION = "htdy_60m_product_recovery_v1"
+MANAGED_TICK_POLICY_VERSION = "htdy_60m_managed_tick_v1"
+CONTINUOUS_TRADE_POLICY_VERSION = "htdy_60m_continuous_trade_v1"
+MANUAL_TEST_POLICY_VERSION = "htdy_simnow_rb_manual_long1_hold600_v1"
+CORRELATED_NATIVE_FILL_POLICY_VERSION = "simnow_manual_correlated_fill_v1"
+STRATEGY_CORRELATED_NATIVE_FILL_POLICY_VERSION = "simnow_strategy_correlated_fill_v1"
 RISK_VERSION = "htdy_simnow_margin70_skip_v1"
 EXECUTION_VERSION = "htdy_simnow_opponent_reprice180_v1"
 FORMULA_VERSION = "huotian_dayou_original_v0"
@@ -83,6 +90,83 @@ class NativeFill(Fill):
             or self.recorded_at < self.request_started_at
         ):
             raise ValueError("NATIVE_FILL_PRECISION_INVALID")
+
+
+@dataclass(frozen=True)
+class CorrelatedNativeFillV1(NativeFill):
+    """Manual-only native fill whose identity proof spans distinct clock domains."""
+
+    readback_source_id: str = ""
+    native_order_ref: str = ""
+    native_front_id: int = 0
+    native_session_id: int = 0
+    correlation_policy_version: str = CORRELATED_NATIVE_FILL_POLICY_VERSION
+
+    def __post_init__(self):
+        super().__post_init__()
+        text(self.readback_source_id)
+        text(self.native_order_ref)
+        if (
+            re.fullmatch(r"[0-9]+", self.native_order_ref) is None
+            or int(self.native_order_ref) <= 0
+            or type(self.native_front_id) is not int
+            or self.native_front_id <= 0
+            or type(self.native_session_id) is not int
+            or self.native_session_id <= 0
+            or self.correlation_policy_version != CORRELATED_NATIVE_FILL_POLICY_VERSION
+        ):
+            raise ValueError("CORRELATED_NATIVE_FILL_PROOF_INVALID")
+
+
+@dataclass(frozen=True)
+class StrategyCorrelatedNativeFillV1(NativeFill):
+    """Ordinary strategy native fact with full readback identity correlation."""
+
+    readback_source_id: str = ""
+    native_order_ref: str = ""
+    native_front_id: int = 0
+    native_session_id: int = 0
+    correlation_policy_version: str = STRATEGY_CORRELATED_NATIVE_FILL_POLICY_VERSION
+
+    def __post_init__(self):
+        # Fill/NativeFill's old validation compares broker filled_at to local
+        # recorded_at. This version proves causal identity across two clocks;
+        # keep the other validations, but compare only local times to each other.
+        for value in (
+            self.trade_id,
+            self.order_id,
+            self.account_id,
+            self.contract,
+            self.dispatch_source_id,
+            self.native_system_id,
+        ):
+            text(value)
+        for value in (self.filled_at, self.recorded_at, self.request_started_at):
+            time(value)
+        money(self.price, True)
+        money(self.fee)
+        if (
+            type(self.quantity) is not int
+            or self.quantity != 1
+            or type(self.native_precision_seconds) is not int
+            or self.native_precision_seconds != 1
+            or self.filled_at.microsecond != 0
+            or self.recorded_at < self.request_started_at
+        ):
+            raise ValueError("NATIVE_FILL_PRECISION_INVALID")
+        text(self.readback_source_id)
+        text(self.native_order_ref)
+        if (
+            re.fullmatch(r"[0-9]+", self.native_order_ref) is None
+            or int(self.native_order_ref) <= 0
+            or type(self.native_front_id) is not int
+            or self.native_front_id <= 0
+            or type(self.native_session_id) is not int
+            or self.native_session_id <= 0
+            or self.correlation_policy_version
+            != STRATEGY_CORRELATED_NATIVE_FILL_POLICY_VERSION
+        ):
+            raise ValueError("STRATEGY_CORRELATED_NATIVE_FILL_PROOF_INVALID")
 
 
 @dataclass(frozen=True)
@@ -268,6 +352,102 @@ class Tick:
 
 
 @dataclass(frozen=True)
+class ManagedTickV1:
+    """Manage known obligations without granting any new OPEN intent."""
+
+    at: datetime
+    inputs: tuple[ExecutionInput, ...]
+    opening_allowed: bool = False
+    policy_version: str = MANAGED_TICK_POLICY_VERSION
+
+    def __post_init__(self):
+        Tick(self.at, self.inputs)
+        if (
+            self.opening_allowed is not False
+            or self.policy_version != MANAGED_TICK_POLICY_VERSION
+        ):
+            raise ValueError("MANAGED_TICK_POLICY_INVALID")
+
+
+@dataclass(frozen=True)
+class ContinuousTradeTickV1:
+    """Explicit continuous trading, serializing all submissions account-wide."""
+
+    at: datetime
+    inputs: tuple[ExecutionInput, ...]
+    policy_version: str = CONTINUOUS_TRADE_POLICY_VERSION
+
+    def __post_init__(self):
+        Tick(self.at, self.inputs)
+        if self.policy_version != CONTINUOUS_TRADE_POLICY_VERSION:
+            raise ValueError("CONTINUOUS_TRADE_POLICY_INVALID")
+
+
+def manual_test_id(value):
+    if type(value) is not str or not value.startswith("manual:"):
+        raise ValueError("MANUAL_TEST_ID_INVALID")
+    try:
+        identity = UUID(value.removeprefix("manual:"))
+    except (ValueError, AttributeError):
+        raise ValueError("MANUAL_TEST_ID_INVALID") from None
+    if value != "manual:" + str(identity):
+        raise ValueError("MANUAL_TEST_ID_INVALID")
+
+
+@dataclass(frozen=True)
+class ManualBeginV1:
+    test_id: str
+    product: str
+    contract: str
+    at: datetime
+    open_until: datetime
+    side: int = 1
+    hold_seconds: int = 600
+    policy_version: str = MANUAL_TEST_POLICY_VERSION
+
+    def __post_init__(self):
+        manual_test_id(self.test_id)
+        contract(self.product, self.contract)
+        time(self.at)
+        time(self.open_until)
+        if (
+            self.product != "RB"
+            or type(self.side) is not int
+            or self.side != 1
+            or type(self.hold_seconds) is not int
+            or self.hold_seconds != 600
+            or not self.at < self.open_until <= self.at + timedelta(seconds=3600)
+            or self.policy_version != MANUAL_TEST_POLICY_VERSION
+        ):
+            raise ValueError("MANUAL_TEST_POLICY_INVALID")
+
+
+@dataclass(frozen=True)
+class ManualTickV1:
+    at: datetime
+    inputs: tuple[ExecutionInput, ...]
+    test_id: str
+    policy_version: str = MANUAL_TEST_POLICY_VERSION
+
+    def __post_init__(self):
+        Tick(self.at, self.inputs)
+        manual_test_id(self.test_id)
+        if self.policy_version != MANUAL_TEST_POLICY_VERSION:
+            raise ValueError("MANUAL_TEST_POLICY_INVALID")
+
+
+@dataclass(frozen=True)
+class ManualStatusV1:
+    phase: str
+    due_at: datetime | None
+    open_order_id: str | None
+    close_order_ids: tuple[str, ...]
+    confirmed_at: datetime | None
+    complete: bool
+    terminal: bool
+
+
+@dataclass(frozen=True)
 class OrderUpdate:
     account_id: str
     order_id: str
@@ -323,6 +503,35 @@ class Recover:
             or len({i.product for i in self.inputs}) != len(self.inputs)
         ):
             raise ValueError("RECOVERY_INVALID")
+
+    @property
+    def at(self):
+        return self.readback.at
+
+
+@dataclass(frozen=True)
+class ProductRecoveryV1:
+    """Resolve only named blocked products after account readback remains sound."""
+
+    readback: Readback
+    inputs: tuple[RecoveryInput, ...]
+    products: tuple[str, ...]
+    policy_version: str = PRODUCT_RECOVERY_POLICY_VERSION
+
+    def __post_init__(self):
+        Recover(self.readback, self.inputs)
+        if (
+            type(self.products) is not tuple
+            or not self.products
+            or len(set(self.products)) != len(self.products)
+            or any(
+                type(product) is not str or re.fullmatch(r"[A-Z]{1,3}", product) is None
+                for product in self.products
+            )
+            or set(item.product for item in self.inputs) - set(self.products)
+            or self.policy_version != PRODUCT_RECOVERY_POLICY_VERSION
+        ):
+            raise ValueError("PRODUCT_RECOVERY_INVALID")
 
     @property
     def at(self):

@@ -9,7 +9,7 @@ export type MonitorMetric = 'equity' | 'available' | 'used_margin' | 'frozen_mar
 export interface MonitorOverview {
   version: string; status: 'available' | 'partial' | 'not_connected' | 'unavailable'; snapshot: string | null; generated_at: string
   account: { key: string; alias: string; environment: string; strategy: string; scope_product: string | null; policy_version: string } | null
-  observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string } | null
+  observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string; mode?: 'observe' | 'manage' | 'trade' | null; opening_enabled?: boolean; host_status?: string | null } | null
   readback_at: string | null; trading_day: string | null; readback_status: string; position_projection_complete: boolean
   metrics: Record<MonitorMetric, string | null>; positions: MonitorPosition[]; curve: { at: string; equity: string; net_profit: string | null; trading_day: string }[]
   issues: MonitorIssue[]; issue_count: number | null; coverage: string; performance_status: string; source_times: Record<string, string>
@@ -21,7 +21,10 @@ export function validateOverview(value: MonitorOverview): MonitorOverview {
   if (!value || value.version !== version || !['available', 'partial', 'not_connected', 'unavailable'].includes(value.status) || !instant(value.generated_at)
     || !value.metrics || Object.values(value.metrics).some(v => !money(v)) || !Array.isArray(value.positions) || !Array.isArray(value.curve) || !Array.isArray(value.issues)
     || typeof value.position_projection_complete !== 'boolean' || value.curve.some(v => !instant(v.at) || !money(v.equity) || !money(v.net_profit))
-    || (['available', 'partial'].includes(value.status) && (!value.account || !value.snapshot || !value.observer || !instant(value.readback_at)))) throw Error('MONITOR_RESPONSE_INVALID')
+    || (['available', 'partial'].includes(value.status) && (!value.account || !value.snapshot || !value.observer || !instant(value.readback_at)))
+    || (value.observer?.mode != null && !['observe', 'manage', 'trade'].includes(value.observer.mode))
+    || (value.observer?.opening_enabled !== undefined && typeof value.observer.opening_enabled !== 'boolean')
+    || (value.observer?.opening_enabled === true && value.observer.mode !== 'trade')) throw Error('MONITOR_RESPONSE_INVALID')
   return value
 }
 export function validatePage(value: MonitorPage): MonitorPage {

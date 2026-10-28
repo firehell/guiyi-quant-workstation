@@ -298,3 +298,35 @@ def test_no_current_endpoint_requires_complete_baseline_tail(inputs):
     assert row["live"]["status"] == "NOT_DUE"
     assert row["calculation_input"]["status"] == "BLOCKED"
     assert row["future_signal"]["status"] == "BLOCKED"
+
+
+def test_current_m1_is_checked_before_h1_due_and_closed_waits(inputs):
+    from app.market_data.htdy_input_admission import current_minute_input
+    market, _ = inputs
+    phase = SimpleNamespace(phase=SimpleNamespace(value='TRADING'), trading_day=DAY, next_session_start=None)
+    end = market.live_m1[-1].bar_end
+    market.newow_completed_observation_endpoint = lambda *_: (end, DAY, 'AG2612')
+    original_reader = market.bars_until
+    market.bars_until = lambda *_a, **_k: SimpleNamespace(
+        cutoff=end, contract='AG2612', notification_eligible=True)
+    result = current_minute_input(market, 'ag', phase, AT)
+    assert result['status'] == 'CONTINUITY_VERIFIED'
+    assert result['expected_endpoint'] == end
+    assert result['missing_count'] == 0 and not result['recovery_fenced']
+    market.live_m1 = market.live_m1[:-1]
+    result = current_minute_input(market, 'ag', phase, AT)
+    assert result['status'] == 'BLOCKED' and result['missing_count'] == 1
+    phase.phase.value = 'CLOSED'
+    assert current_minute_input(market, 'ag', phase, AT)['status'] == 'WAIT_NEXT_SESSION'
+    market.bars_until = original_reader
+
+
+def test_current_minute_recovery_and_uncompleted_endpoint_do_not_qualify(inputs):
+    from app.market_data.htdy_input_admission import current_minute_input
+    market, _ = inputs
+    phase = SimpleNamespace(phase=SimpleNamespace(value='TRADING'), trading_day=DAY, next_session_start=None)
+    end = market.live_m1[-1].bar_end
+    assert current_minute_input(market, 'ag', phase, market.sessions[DAY][0].start) == {'status': 'NOT_DUE'}
+    market.bars_until = lambda *_a, **_k: SimpleNamespace(
+        cutoff=end, contract='AG2612', notification_eligible=False)
+    assert current_minute_input(market, 'ag', phase, AT)['recovery_fenced']
