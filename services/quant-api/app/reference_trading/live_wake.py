@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from contextlib import nullcontext
 import json
 from time import monotonic
 from typing import Any
@@ -10,6 +11,7 @@ from typing import Any
 from app.market_data.domain import BarFrequency, normalize_contract_for_symbol
 from app.market_data.live_market import LIVE_BAR_CHANNEL_PREFIX
 from app.market_data.market_data_service import MarketDataError
+from app.reference_trading.work_control import ForwardWorkCancelled
 
 
 class ForwardLiveWake:
@@ -119,6 +121,8 @@ class StreamForwardLiveWake(ForwardLiveWake):
                             raise RuntimeError("REFERENCE_BUFFER_IDENTITY_INVALID")
                         end, routes = validated
                         self._worker.process_live_observation(routes, end)
+                    except ForwardWorkCancelled:
+                        return False
                     except RuntimeError as error:
                         if str(error) != "REFERENCE_BUFFER_PROCESSING_BLOCKED":
                             raise
@@ -188,6 +192,7 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
             self._block_intake(error)
 
     def poll(self, *, limit=128):
+        from app.reference_trading.work_control import ForwardWorkCancelled
         if type(limit) is not int or not 1 <= limit <= 128:
             raise ValueError("REFERENCE_OBSERVATION_POLL_BUDGET_INVALID")
         self._last_poll_count = 0
@@ -198,12 +203,22 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
                 self._block_intake(error)
         # Already accepted originals are independent of Redis TTL and of an
         # uncertain new intake. Never reconstruct/ACK a missing Redis cursor.
-        self._calculate_heads()
+        try:
+            self._calculate_heads()
+        except ForwardWorkCancelled:
+            return False
         # A bounded intake/calculation round proves receiver liveness even while
         # the journal still has backlog. It does not claim calculation readiness.
         if not self.stop_requested():
             self.on_receiving_round()
         return self._last_poll_count == limit
+
+    def _measure(self, stage):
+        timings = getattr(self._worker, 'timings', None)
+        return timings.measure(stage) if timings is not None else nullcontext()
+
+    def has_pending_work(self):
+        return self._last_poll_count == 128 or self._inbox.has_unfinished()
 
     def _ingest(self, *, limit):
         if type(limit) is not int or not 1 <= limit <= 128:
@@ -217,7 +232,9 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
                 # Ingestion itself verifies immutable identity and frozen routes.
                 # Do not validate against current routes before an idempotent reread.
                 self._worker.assert_owned()
-                self._inbox.ingest(observation, assert_owned=self._worker.assert_owned)
+                # Yield only when a real original exists, never on an idle poll.
+                with getattr(self._worker, "observation_priority", nullcontext)(), self._measure("ingest"):
+                    self._inbox.ingest(observation, assert_owned=self._worker.assert_owned)
                 self._worker.assert_owned()
                 self._stream.ack("reference", day, expected_cursor=cursor,
                                  next_id=observation.stream_id)
@@ -230,8 +247,10 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
 
     def _calculate_heads(self):
         from app.reference_trading.runtime import failure_reason
+        from app.reference_trading.work_control import ForwardWorkCancelled
         now = monotonic()
-        heads = self._inbox.next_heads(limit=32, after_stream_id=self._after_stream_id)
+        with self._measure("heads"):
+            heads = self._inbox.next_heads(limit=32, after_stream_id=self._after_stream_id)
         if not heads and self._after_stream_id is not None:
             self._after_stream_id = None
             heads = self._inbox.next_heads(limit=32)
@@ -248,7 +267,10 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
                 self._inbox.validate_delivery(delivery.delivery_id)
                 self._worker.source_envelope = observation
                 reader = getattr(self._inbox, "retained_observations", None)
-                self._worker.retained_source_observations = reader(delivery.delivery_id) if reader else ()
+                def originals(identifier=delivery.delivery_id):
+                    with self._measure("originals"):
+                        return reader(identifier)
+                self._worker.retained_source_observations = originals if reader else ()
                 self._worker.source_observed_at = observation.confirmed_at
                 self._worker.raw_received_at = observation.raw_received_at or observation.source_observed_at
                 self._worker.inbox_ingested_at = getattr(delivery, "ingested_at", None)
@@ -256,6 +278,8 @@ class InboxForwardLiveWake(StreamForwardLiveWake):
                 self._worker.process_inbox_delivery(delivery.stream_id, end,
                                                    delivery_id=delivery.delivery_id)
                 self._retry_after_by_stream.pop(delivery.stream_id, None)
+            except ForwardWorkCancelled:
+                return  # Original and any committed capture remain pending, not failed.
             except Exception as error:
                 # An old owner cannot mutate delivery state after losing its
                 # authority, including an otherwise harmless waiting marker.
