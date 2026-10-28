@@ -131,6 +131,21 @@ RunAtLoad、失败KeepAlive和60秒Throttle负责进程启动；业务恢复仍�
 发布失败不改变交易行为。观察模式未更新账户策略投影时，页面不得将旧账本预算称为当前已对账。
 编码、离线验收、本机凭据/启动验收、自然跨日/断线以及首笔柜台交易分别报告。
 
+## 独立关闭态准备（schema 3）
+
+schema 3 沿用 schema 2 的精确字段，但仅接受 `mode=observe`、`enabled=false`。
+`state_project_root` 必须是独立的0700目录，`state_root`仍为其`output/simnow-controlled`；
+该状态根只能不存在或为空，路径别名、symlink、已有账户内容均拒绝。配置为0600单链接文件。
+账号指纹只绑定未来对账对象，不证明旧账户已空仓；旧状态保持UNKNOWN，新账本保持UNINITIALIZED。
+不复制四库、不初始化余额、仓位、订单或发送记录，不修改正式监控来源。
+
+`simnow-service.py --preflight-preparation`只验证上述合同并用配置指定的SDK解释器运行
+`simnow_supervisor.py --observe-only --check`。不读Keychain、不连接Broker、不订阅行情、不创建锁/账户库、
+不安装或加载服务；SDK检查前后都重新验证配置和空状态根。结果使用`simnow_preparation_preflight_v1`，
+仅`preparation_valid=true`，账户/余额/持仓未核验，`runtime_ready=false`、`execution_permitted=false`。
+schema 3不能启动、检查Keychain、渲染/安装服务或取得账户运行锁。schema 1/2原有规则不变，
+尤其schema 2缺四库仍拒绝；准备通过不解除以后真实账户对账、账本初始化及运行准入限制。
+
 ## 持续交易候选（simnow_continuous_v2）
 
 本版本增加 `trade`，仅schema2且启动参数 `--trade` 同时匹配才进入；旧观察plist仍固定
@@ -144,6 +159,7 @@ account/dispatch/signals/native-evidence、正确scope、0700目录和私有单�
 不创建sidecar、初始化、复制或迁移账户。缺库或身份漂移即停止。新持续宿主及新版一次性执行入口
 共用用户私有账户指纹全局锁，并保留原host.lock；旧版本的既有进程仍由原账户根host.lock互斥。
 所有受支持执行入口须使用唯一已核验账户根，禁止另建目录绕过状态或预算。
+
 
 - 原生输入获取与状态机共用首次观察时间/品种/来源排序；已有未对账提交优先，全账户最多一个。
   无未决订单时串行查候选的合约/保证金/手续费，再完整刷新账户并重新核对目标，最后取盘口。

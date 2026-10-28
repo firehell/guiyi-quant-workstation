@@ -1,7 +1,8 @@
 """Exact private settings for the continuous single-account SimNow host.
 
 Loading is read-only. The supervisor creates the account state root only after
-it has taken its single-writer lock.
+it has taken its single-writer lock. Schema 3 is disabled preparation only and
+cannot enter that supervisor lifecycle or establish any account facts.
 """
 
 from __future__ import annotations
@@ -94,19 +95,25 @@ def _read_private(path: Path) -> dict:
         raise SettingsError("SETTINGS_FORMAT_INVALID") from None
     fields = (
         _FIELDS | {"state_project_root"}
-        if type(value) is dict and value.get("schema") == 2
+        if type(value) is dict and value.get("schema") in (2, 3)
         else _FIELDS
     )
     if type(value) is not dict or set(value) != fields:
         raise SettingsError("SETTINGS_FIELDS_INVALID")
+    if value["schema"] == 3 and info.st_nlink != 1:
+        raise SettingsError("SETTINGS_PRIVATE_FILE_REQUIRED")
     return value
 
 
 def load_settings(path: Path) -> ContinuousSettings:
-    """Validate exact identity, private input and the one existing account root."""
+    """Validate private identity and either existing state or disabled preparation."""
     value = _read_private(Path(path))
-    if type(value["schema"]) is not int or value["schema"] not in (1, 2):
+    if type(value["schema"]) is not int or value["schema"] not in (1, 2, 3):
         raise SettingsError("SETTINGS_SCHEMA_INVALID")
+    if value["schema"] == 3 and (
+        value["mode"] != "observe" or value["enabled"] is not False
+    ):
+        raise SettingsError("PREPARATION_ONLY")
     account = value["account_id"]
     if type(account) is not str or _ACCOUNT.fullmatch(account) is None:
         raise SettingsError("SETTINGS_ACCOUNT_INVALID")
@@ -129,7 +136,7 @@ def load_settings(path: Path) -> ContinuousSettings:
         raise SettingsError("SETTINGS_PROJECT_INVALID")
     anchor = (
         _path(value["state_project_root"], code="SETTINGS_STATE_INVALID")
-        if value["schema"] == 2
+        if value["schema"] in (2, 3)
         else project
     )
     if not anchor.is_dir() or anchor.is_symlink():
@@ -159,6 +166,22 @@ def load_settings(path: Path) -> ContinuousSettings:
         from .account_binding import existing_account
 
         existing_account(state, account)
+    if value["schema"] == 3:
+        if Path(path).resolve() != Path(path):
+            raise SettingsError("SETTINGS_PRIVATE_FILE_REQUIRED")
+        if (anchor == project or anchor.resolve() != anchor or project.resolve() != project
+                or state.is_relative_to(project / "output/simnow-controlled")):
+            raise SettingsError("PREPARATION_STATE_NOT_INDEPENDENT")
+        for directory in (anchor, anchor / "output", state):
+            if not directory.exists():
+                continue
+            info = directory.stat()
+            if (directory.is_symlink() or directory.resolve() != directory
+                    or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                    or stat.S_IMODE(info.st_mode) != 0o700):
+                raise SettingsError("PREPARATION_PRIVATE_STATE_REQUIRED")
+        if state.exists() and any(state.iterdir()):
+            raise SettingsError("PREPARATION_STATE_NOT_EMPTY")
     return ContinuousSettings(
         value["schema"],
         account,
@@ -168,5 +191,5 @@ def load_settings(path: Path) -> ContinuousSettings:
         api_env,
         value["mode"],
         value["enabled"],
-        anchor if value["schema"] == 2 else None,
+        anchor if value["schema"] in (2, 3) else None,
     )

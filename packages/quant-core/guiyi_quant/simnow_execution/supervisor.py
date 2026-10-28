@@ -31,6 +31,8 @@ def global_account_lock_directory():
 
 @contextmanager
 def account_lock(settings):
+    if getattr(settings, "schema", 1) == 3:
+        raise ValueError("PREPARATION_ONLY")
     if re.fullmatch(r"[0-9a-f]{64}", settings.account_id) is None:
         raise ValueError("CONTINUOUS_ACCOUNT_SCOPE_MISMATCH")
     directory = global_account_lock_directory()
