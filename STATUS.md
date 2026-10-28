@@ -1,5 +1,15 @@
 # 当前状态
 
+10/28 19:13：发布树已收敛为唯一 **release-v1.16.30**，正式十服务统一 **v1.16.30/gen36**，exact
+`81963702a75894f9f2d6ef52093bc66ef4a09750`；原生`cd1dbb04…`切换switched，263回归及离线构建通过。
+旧v26/v29完成原生历史封存、重复零引用扫描及non-force移除；tag/Release与运行原件保留，删除后身份和恢复guard通过。
+今日18:05盘后任务已自然运行：**18:11:35 passed，60品种、一次成功**，来源为当时现役v29；v30按原source身份保留成功记录，未重跑。
+删除前后两次独立核验720发布分区、60当日rank1映射、120个MDS 1m/D1端点均通过；消费者输入摘要与原审计一致。
+D1主图/参考180/180 READY；W1为179/180 READY、1项合法非READY；两范围审计无失败/漏检，辅助面板的合法非READY保留。
+19:13十身份matched、六owner active，Inbox pending/blocked/UNKNOWN/dependency_wait0、原件游标追尾、维护锁空；盘后health ok/retained。
+本轮收敛和盘后验收已完成；global原有degraded保留，**夜盘自然输入/吞吐/新Event留到开盘后验收**，无新增自动化或SimNow启用。
+详情见[发布树收敛与盘后验收](docs/tasks/2026-10-28-release-unification-after-market.md)。以下为先前检查点。
+
 10/28 17:17：旧v26退出阻断已解决，正式十服务已原生切换至 **v1.16.29/gen35**，exact
 `94b488896c4078c57f057bbfe73fd091c13a905d`。先让旧Reference完成当前单元，19.603秒正常parked、后台线程关闭并自行释放锁；
 新计划`c50d1af5…`继承该停驻状态，已完成旧进程退出、安装/CAS、消费者/Feed启动及原日历恢复，终态switched。
