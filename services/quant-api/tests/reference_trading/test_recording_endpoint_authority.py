@@ -32,6 +32,15 @@ def setup(monkeypatch, endpoint):
             raise endpoint
         return endpoint, date(2026, 10, 9), "RB2611"
 
+    def derive_many(identities, now):
+        result = {}
+        for identity in identities:
+            try:
+                result[(identity.symbol, identity.frequency)] = derive(identity, now)
+            except Exception:
+                result[(identity.symbol, identity.frequency)] = None
+        return result
+
     redis = SimpleNamespace(closed=False)
 
     def close():
@@ -44,7 +53,7 @@ def setup(monkeypatch, endpoint):
         composition,
         "build_market_read_service",
         lambda session, redis: SimpleNamespace(
-            newow_completed_observation_endpoint=derive
+            newow_completed_observation_endpoints=derive_many
         ),
     )
     return redis
