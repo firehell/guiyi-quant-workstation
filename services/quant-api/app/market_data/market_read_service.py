@@ -1138,12 +1138,15 @@ class MarketReadService:
             bars=tuple(bars),
         )
 
-    def _newow_completed_identity(self, identity: SeriesPageQuery, now: datetime) -> tuple[date, str]:
+    def _validate_completed_endpoint_identity(self, identity: SeriesPageQuery, now: datetime) -> None:
         if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
                 or identity.frequency not in {BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1}
                 or identity.symbol not in self._operational_products
                 or now.tzinfo is None or now.utcoffset() is None):
             raise ValueError("NEWOW_COMPLETED_OBSERVATION_IDENTITY_INVALID")
+
+    def _newow_completed_identity(self, identity: SeriesPageQuery, now: datetime) -> tuple[date, str]:
+        self._validate_completed_endpoint_identity(identity, now)
         day = self._phase_resolver.completed_observation_trading_day(identity.symbol, now)
         if day is None:
             raise ValueError("NEWOW_SESSION_DAY_UNAVAILABLE")
@@ -1158,15 +1161,57 @@ class MarketReadService:
         Missing Calendar/Session/rank1 raises; no due endpoint alone returns None.
         """
         day, contract = self._newow_completed_identity(identity, now)
+        result = self._completed_endpoint_for_owner(identity, now, day, contract)
+        if self._newow_completed_identity(identity, now) != (day, contract):
+            raise MarketObservationSnapshotError()
+        return result
+
+    def _completed_endpoint_for_owner(self, identity, now, day, contract):
         endpoints = self._market_data.expected_contract_replay_endpoints(
             symbol=identity.symbol, contract=contract, frequency=identity.frequency,
             trading_day=day, cutoff=now, since=day,
         )
         if any(item_day != day or end > now for end, item_day in endpoints):
             raise ValueError("NEWOW_SESSION_ENDPOINT_INVALID")
-        if self._newow_completed_identity(identity, now) != (day, contract):
-            raise MarketObservationSnapshotError()
         return endpoints[-1][0] if endpoints else None, day, contract
+
+    def newow_completed_observation_endpoints(
+        self, identities: tuple[SeriesPageQuery, ...], now: datetime,
+    ) -> dict[tuple[str, BarFrequency], tuple[datetime | None, date, str] | None]:
+        """Bounded request-local endpoint read; None means unproved authority.
+
+        Frequencies share the same product Session/rank1 identity. Verify that
+        identity before and after each product group, retaining per-frequency
+        endpoint validation and failure isolation. No state survives this call.
+        """
+        if len(identities) > 240:
+            raise ValueError("NEWOW_COMPLETED_ENDPOINT_BATCH_LIMIT")
+        result = {(q.symbol, q.frequency): None for q in identities}
+        groups: dict[str, list[SeriesPageQuery]] = {}
+        for identity in identities:
+            try:
+                self._validate_completed_endpoint_identity(identity, now)
+            except ValueError:
+                continue
+            groups.setdefault(identity.symbol, []).append(identity)
+        for queries in groups.values():
+            try:
+                day, contract = self._newow_completed_identity(queries[0], now)
+            except Exception:  # Unproved product authority cannot yield an endpoint.
+                continue
+            for identity in queries:
+                key = (identity.symbol, identity.frequency)
+                try:
+                    result[key] = self._completed_endpoint_for_owner(identity, now, day, contract)
+                except Exception:  # A failed frequency does not hide its siblings.
+                    result[key] = None
+            try:
+                if self._newow_completed_identity(queries[0], now) != (day, contract):
+                    raise MarketObservationSnapshotError()
+            except Exception:
+                for identity in queries:
+                    result[(identity.symbol, identity.frequency)] = None
+        return result
 
     def newow_completed_observation_snapshot(
         self, identity: SeriesPageQuery, after: datetime | None, now: datetime,

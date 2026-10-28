@@ -312,12 +312,17 @@ def read_completed_recording_endpoints(session, keys, at):
     try:
         redis = get_redis_connection()
         reader = build_market_read_service(session, redis=redis)
+        completed = reader.newow_completed_observation_endpoints(
+            tuple(SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, product, BarFrequency(frequency))
+                  for product, frequency in hourly), at,
+        )
         for key in hourly:
             prior = result[key]
             try:
-                end, _day, _contract = reader.newow_completed_observation_endpoint(
-                    SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, key[0], BarFrequency(key[1])), at,
-                )
+                value = completed[(key[0], BarFrequency(key[1]))]
+                if value is None:
+                    raise ValueError("AUTHORITATIVE_ENDPOINT_UNAVAILABLE")
+                end, _day, _contract = value
                 if end is not None:
                     if end.tzinfo is None or end > at:
                         raise ValueError("COMPLETE_PERIOD_INVALID")
