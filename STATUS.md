@@ -1,5 +1,16 @@
 # 当前状态
 
+10/28 20:54：Alert 收敛与 HTDY 60m 参考记录已通过 PR534 发布 **v1.16.31**，exact
+`dfa9b5aa7920522987ad7f1baf958970e79351c7`；原生 `2cb9255f…` 一次 switched，正式十服务统一 **gen37**。
+合法暖机与真实失败分开；分钟覆盖按同代际原件/ACK逐端点证明，未决失败跨日/重启保留。普通推送失败独立记录，不阻断计算健康。
+HTDY operational 60品种×60m 已按 `2bce2978…` 单事务启用并独立回读，统一 **20:45:24** 起点、空参考仓位；不回填旧709 Event。
+页面参考复用既有 buy开多/sell开空、反向平旧开新、同向不加仓及零费用/滑点，非账户成交，未启用SimNow。
+Reference回归1208、最终Alert/health/handover213、原生cohort/handover299及真实PG/Redis定向、独立Review通过；60路真实冻结窗口前后结果完全一致。
+20:53删除后独立读回：十身份exact、六owner active，原3天游标追尾、旧checkpoint与Event计数不变；Inbox pending/blocked/UNKNOWN/dependency_wait均0，启用参考流共1140路。
+新Alert为113路ok、7路warming_up、300路分钟unverified等新输入；global仍degraded，**夜盘自然输入/新信号/参考交易验收待发生**，不宣称全量RUNTIME_READY或手机送达。
+旧v30已原生封存63份原件/6个标记并non-force移除，唯一发布树 **release-v1.16.31**，删除后部署/恢复guard通过；无新自动化、补发或历史补写。
+详情见[Alert与HTDY参考记录交付](docs/tasks/2026-10-28-alert-reference-closeout.md)。以下为先前检查点。
+
 10/28 19:13：发布树已收敛为唯一 **release-v1.16.30**，正式十服务统一 **v1.16.30/gen36**，exact
 `81963702a75894f9f2d6ef52093bc66ef4a09750`；原生`cd1dbb04…`切换switched，263回归及离线构建通过。
 旧v26/v29完成原生历史封存、重复零引用扫描及non-force移除；tag/Release与运行原件保留，删除后身份和恢复guard通过。
