@@ -103,3 +103,9 @@ recovered2618及历史blocked339原件保留；计算水位16:30:13，维护锁�
 工程CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE/RELEASED；Runtime promotion未完成。
 下一最小动作：单独处理旧v26原生安全退出的部署阻断，保持现役边界；新版本自然吞吐待切换后再验。
 隔离PG/Redis临时容器已精确停止删除；冻结输入和结果仍保留在主工作区output。
+
+收尾：应用版本提交5ab5a6c48已同步develop并push。无引用v1.16.28按原生精确计划538cea25…
+再次扫描一致后non-force移除，4个marker原件/SHA保存在output；现役v26及本任务已发布v29保留。
+本任务临时发布分支已从已合并main上下文non-force删除。
+本会话task worktree调用Codex原生archive被宿主拒绝：`The task's primary checkout cannot be removed.`
+因此保留此树，不换工具绕过保护；primary工作区中的交付记录与Git提交可独立读取。
