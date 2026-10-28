@@ -66,3 +66,25 @@ revision2/recovered_through=23:04:06.474307使当前窗口notification_eligible=
 - 追加HTDY修正独立Astra Review固定bc8163ddf→61f13712d：无未解决Confirmed Issue、无新增代码阻断，
   reviewer另实跑38 passed/5 deselected，允许集成；现场恢复/发布/自然验收仍待闭市与开盘事实。
 - develop期间另一任务新增c09b1771c LMS研究文档，本任务保留并正常merge，不纳入选择性发布候选。
+
+## 10/29凌晨阶段交接
+
+- 精确候选`8963ae7151a52b3b17a6b8a701e44544dae1b917`，主树`.worktrees/release-v1.16.32`，
+  branch`codex/overnight-release-v1.16.32`，草稿PR535；36文件，代码/测试按两次精确择取manifest核对来源。
+  实现已合入develop7139515c1，其他任务研究保留且不在候选中。未merge main、tag、Release或Runtime切换。
+- 候选Reference/Alert/health/MDS1591 passed/116 skipped，SimNow575 passed；真实隔离PG9 passed；
+  离线锁定uv/pnpm、Web type/build/topology、SDK无网络准备、Ruff/Mypy/OpenSpec12/secret0/diff通过。
+  两个一次性测试PG均已stop/remove，无后台压测/测试/额外账户连接。
+- 23:58只读：十身份仍v31/gen37，维护锁空，pending0、blocked10、UNKNOWN0、completed10617；
+  回收历史2618、原BLOCKED累计349保留，global degraded。十条均23:00 HTDY60m：SS/NI/CU/AL/SN/SC/ZN/PB/AO/AU。
+  10/10唯一MDS窗口完整、原件eligible=true且合约/cutoff/末Bar同，当前window资格被后来的恢复through撤销。
+  证据主树output/overnight-first-four-20261028/htdy-block-context-v2.private.json及htdy-all-window-diagnosis.private.json。
+- primary output同目录已保留只读账户attempt1、两次选择性候选manifest及新schema3 release-source配置；
+  未初始化四库、未启动observe、未发布私有monitor绑定。旧账户历史UNKNOWN不改变。
+- automation-2为ACTIVE、单次02:35，已更新候选8963及10条原件恢复范围。只在fresh全部CLOSED及宽限结束后继续；
+  先核对真实时间、最新分支/dirty、远端版本占用、原生未知结果及维护竞争，按原06:30/07:00/08:00截止处理。
+- 剩余：正式发布和原生切换；10条有效原件逐条freeze计划/停writer fence/单次claim/原子闭合及独立readback，
+  随后正常原生续接；新Reference drain/resume（finally撤销精确请求）、60品种30分钟隔离真实节奏容量；
+  fresh SimNow初始化、唯一observe/两轮对账/重启/监控切源；最终服务和原日历读回，09:00后自然验收仍待发生。
+- 旧output/reference-night-recovery-20261028/executor.py/continuation.py仅可读参考，硬编码v25/旧截止/已消费attempt，
+  禁止直接执行或复用。新的原生维护须当前exact root/代次/日期与新私有attempt，未知提交先读回，不能盲重试。
