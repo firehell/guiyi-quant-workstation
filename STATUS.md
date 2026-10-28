@@ -1,5 +1,15 @@
 # 当前状态
 
+10/28收盘后Reference吞吐/安全收尾补丁已通过PR532发布 **v1.16.29**，exact
+`94b488896c4078c57f057bbfe73fd091c13a905d`，develop代码aa639e028已集成。扫描25.959秒/11731SQL→0.042秒/4SQL，
+完整240键轮转一致；恢复关联同2618ID摘要不变。1020路真实输出/checkpoint逐值一致，557项候选回归、3项真实PG/内核/MDS容量及独立Review通过。
+隔离真实节奏1800秒/60品种/360输入，每波60→0、2.27–3.22秒；这不替代正式自然吞吐验收。
+全新原生计划`6a6da51a…`完整预热通过，但旧v26 Reference未在原10秒预算内drain，已 **cancelled/COHORT_OLD_DRAIN_TIMEOUT**，未进入stop_old/install/CAS。
+独立恢复核对：原十绑定/plist/日历/Scope配置保护一致，六原PID active且持锁，unknown部署guard通过。
+实际Runtime仍 **v1.16.26/gen34**；16:53 Inbox pending/blocked/UNKNOWN/dependency_wait均0、completed8302、计算水位16:30:13；global仍degraded。
+**RELEASED，Runtime promotion阻断**；按交办边界保持现役，无强杀、扩时或再次试切换；新版本自然时段验收未完成。
+详见[Reference吞吐交付](docs/tasks/2026-10-28-reference-throughput.md)。以下为先前检查点。
+
 10/28 12:33午休修复交付：PR531发布 **v1.16.28**，exact `ed3f8aae5e8ca9d96a2b29cb40dcdf50ff44e355`，develop修复8a56dbd60已集成。默认关闭、cohort显式开启的午休Canonical预热已修复并通过真实420路验证（413计算/7合法warming），316回归及独立Review通过。
 本次原生计划`2b517dff…`预热全部通过，但旧Reference单元未在10秒drain预算内停驻，最终 **cancelled/COHORT_OLD_DRAIN_TIMEOUT**，未进入stop_old/install/CAS。独立读回registry原v26/gen34、六原PID active/持锁、四日历恢复、Scope/配置保护一致、unknown部署guard通过；无强杀、无延时放行或再次重试。
 12:33实际Inbox pending640、blocked/UNKNOWN0、completed4632（12:30为4600），计算水位推进至12:31:40；进程接收与计算均仍活动但未追齐。Feed/基础服务正常，全局仍degraded，不能据身份恢复保证13:30参考计算及时或宣称RUNTIME_READY。下一项应定位长单delivery与10秒drain不匹配，保持现役运行；本轮无新增自动化/历史修复。详见[午休预热修复交付](docs/tasks/2026-10-28-lunch-prewarm-delivery.md)。以下为先前检查点。
