@@ -202,6 +202,27 @@ def phase(product, state, day, next_start=None):
     return ProductMarketPhase(product.lower(), state, day, None, next_start)
 
 
+def test_closed_account_observation_requires_all_fresh_authority(monkeypatch):
+    from contextlib import nullcontext
+    import app.db.readonly as readonly
+    inlet, _ = make_inlet(monkeypatch)
+    monkeypatch.setattr(readonly, 'readonly_transaction', lambda *_args, **_kwargs: nullcontext())
+    chosen = [MarketPhase.CLOSED]
+    class Resolver:
+        def __init__(self, _):
+            pass
+        def resolve(self, product, at):
+            return phase(product, chosen[0] if product == 'ag' else MarketPhase.CLOSED,
+                T.date(), T + timedelta(hours=2))
+    monkeypatch.setattr(market, 'MarketPhaseResolver', Resolver)
+    assert inlet.closed_observation_allowed(T)
+    for value in (MarketPhase.UNKNOWN, MarketPhase.BREAK, MarketPhase.TRADING):
+        chosen[0] = value
+        assert not inlet.closed_observation_allowed(T)
+    chosen[0] = MarketPhase.CLOSED
+    assert not inlet.closed_observation_allowed(T + timedelta(hours=3))
+
+
 def test_friday_night_plan_uses_next_trading_day_and_preopen_120_seconds(monkeypatch):
     inlet, _ = make_inlet(monkeypatch)
     friday = datetime(2026, 10, 30, 20, 58, tzinfo=ZoneInfo("Asia/Shanghai"))

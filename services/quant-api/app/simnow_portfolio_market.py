@@ -189,6 +189,25 @@ class PortfolioMarket:
                     self.issues.pop(product)
         return tuple(result)
 
+    def closed_observation_allowed(self, now: datetime) -> bool:
+        """Fresh authority for account-only observation; never an execution permit."""
+        from app.db.readonly import readonly_transaction
+        if now.tzinfo is None or now.utcoffset() is None:
+            return False
+        try:
+            with self._session_factory() as db, readonly_transaction(db, timeout_seconds=15):
+                resolver = MarketPhaseResolver(db)
+                for product in self.products:
+                    phase = resolver.resolve(product.lower(), now)
+                    if (phase.phase is not MarketPhase.CLOSED
+                            or getattr(phase, 'current_session', None) is not None
+                            or phase.next_session_start is None
+                            or phase.next_session_start <= now):
+                        return False
+                return bool(self.products)
+        except Exception:
+            return False
+
     def plan(self, now: datetime) -> SessionPlan:
         if now.tzinfo is None or now.utcoffset() is None:
             return SessionPlan(None, False, False, None)

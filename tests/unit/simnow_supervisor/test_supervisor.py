@@ -272,6 +272,31 @@ def test_observe_never_mutates_existing_account_or_invokes_adapter(tmp_path):
     assert driver.closed and market.closed
 
 
+@pytest.mark.parametrize('mode, expected_connections', [('observe', 1), ('manage', 0), ('trade', 0)])
+def test_explicit_closed_account_readback_is_observe_only(tmp_path, mode, expected_connections):
+    settings, snapshot = setup(tmp_path, mode=mode)
+    path = settings.state_root / ACCOUNT / 'account.sqlite'
+    before = digest(path)
+    market = FakeMarket(connect_allowed=False, active=False)
+    market.closed_observation_allowed = lambda _: True
+    driver = FakeDriver(snapshot)
+    clock = Clock()
+    host = Supervisor(settings, ('JM', 'RB'), market, lambda *_: driver,
+        clock=clock.now, sleep=clock.sleep)
+    codes = []
+    status = host.status
+    def record(code, **kwargs):
+        codes.append(code)
+        return status(code, **kwargs)
+    host.status = record
+    host.run(max_cycles=1)
+    assert driver.connects == expected_connections
+    assert driver.observations == 0  # No execution-input polling while fully CLOSED.
+    assert digest(path) == before
+    if mode == 'observe':
+        assert 'OBSERVING_CLOSED' in codes
+
+
 def test_account_product_scope_mismatch_blocks_before_observation(tmp_path):
     settings, snapshot = setup(tmp_path)
     path = settings.state_root / ACCOUNT / "account.sqlite"

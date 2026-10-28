@@ -33,7 +33,14 @@ def global_account_lock_directory():
 def account_lock(settings):
     if getattr(settings, "schema", 1) == 3:
         raise ValueError("PREPARATION_ONLY")
-    if re.fullmatch(r"[0-9a-f]{64}", settings.account_id) is None:
+    with global_account_lock(settings.account_id), _state_lock(settings) as folder:
+        yield folder
+
+
+@contextmanager
+def global_account_lock(account_id):
+    """The same identity lock also excludes one-shot observe bootstrap readers."""
+    if type(account_id) is not str or re.fullmatch(r"[0-9a-f]{64}", account_id) is None:
         raise ValueError("CONTINUOUS_ACCOUNT_SCOPE_MISMATCH")
     directory = global_account_lock_directory()
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -46,7 +53,7 @@ def account_lock(settings):
     ):
         raise ValueError("PRIVATE_ACCOUNT_ROOT_INVALID")
     global_fd = os.open(
-        directory / (settings.account_id + ".lock"),
+        directory / (account_id + ".lock"),
         os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW,
         0o600,
     )
@@ -63,8 +70,7 @@ def account_lock(settings):
             fcntl.flock(global_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise ValueError("ACCOUNT_HOST_ALREADY_RUNNING") from None
-        with _state_lock(settings) as folder:
-            yield folder
+        yield
     finally:
         os.close(global_fd)
 
@@ -385,12 +391,14 @@ class Supervisor:
         if day is None:
             self.status("CALENDAR_UNPROVEN")
             return
+        closed_readback = bool(self.settings.mode == 'observe' and not plan.active
+            and getattr(self.market, 'closed_observation_allowed', lambda _now: False)(now))
         if self.driver is not None and day != (
             self.day if self.prepared else self.target_day
         ):
             self.disconnect()
         if self.driver is None:
-            if day is None or not plan.connect_allowed:
+            if day is None or not (plan.connect_allowed or closed_readback):
                 self.status("WAITING_SESSION")
                 return
             if self.inbox.blocked(day) or now < self.retry_after:
@@ -429,10 +437,11 @@ class Supervisor:
             self.evidence.append(snapshot)
             self.latest_source = snapshot.source_id
             # Serial round-robin validation; no 60 parallel broker request streams.
-            self.driver.observe_next(
-                self.products, self.market, self.now(), self.day, self.issues
-            )
-            self.status("OBSERVING", connected=True)
+            if not closed_readback:
+                self.driver.observe_next(
+                    self.products, self.market, self.now(), self.day, self.issues
+                )
+            self.status("OBSERVING_CLOSED" if closed_readback else "OBSERVING", connected=True)
             return
         bindings = self.driver.bindings_for(state, self.market, self.now(), self.day)
         recovering = self.host.needs_recovery or state.phase != "READY"

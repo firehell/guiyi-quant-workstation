@@ -42,6 +42,11 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 /path/to/isolated/python -I scripts/broker/simnow_supervisor.py --config /absolute/private.json --observe-only --check
 ```
 
+`test_observe_bootstrap.py` / `test_observe_bootstrap_cli.py` 使用临时四库和注入原生报告，覆盖真实资金
+初始化、同账户锁、账户/快照/空仓/活动委托拒绝、部分失败、重复执行、配置漂移、截止与连接清理，
+并断言只读原生API禁止结算确认/报撤单。PortfolioMarket和Supervisor覆盖fresh闭市仅允许observe
+账户读取，manage/trade不获得该许可；这些测试不连接柜台或改变正式运行状态。
+
 覆盖单账户锁、共享队列冻结及commit-before-ACK、管理Tick禁止新OPEN/预留、局部恢复、
 Session/预开盘/午休/日切、同连接快照变化、断线预算与持久阻断、已claim离线成交真实费用对账。
 实际Keychain加载、开机启动、自然新Bar及断线/跨日另验，不由fixture替代。
