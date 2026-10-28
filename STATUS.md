@@ -1,5 +1,9 @@
 # 当前状态
 
+10/28 12:33午休修复交付：PR531发布 **v1.16.28**，exact `ed3f8aae5e8ca9d96a2b29cb40dcdf50ff44e355`，develop修复8a56dbd60已集成。默认关闭、cohort显式开启的午休Canonical预热已修复并通过真实420路验证（413计算/7合法warming），316回归及独立Review通过。
+本次原生计划`2b517dff…`预热全部通过，但旧Reference单元未在10秒drain预算内停驻，最终 **cancelled/COHORT_OLD_DRAIN_TIMEOUT**，未进入stop_old/install/CAS。独立读回registry原v26/gen34、六原PID active/持锁、四日历恢复、Scope/配置保护一致、unknown部署guard通过；无强杀、无延时放行或再次重试。
+12:33实际Inbox pending640、blocked/UNKNOWN0、completed4632（12:30为4600），计算水位推进至12:31:40；进程接收与计算均仍活动但未追齐。Feed/基础服务正常，全局仍degraded，不能据身份恢复保证13:30参考计算及时或宣称RUNTIME_READY。下一项应定位长单delivery与10秒drain不匹配，保持现役运行；本轮无新增自动化/历史修复。详见[午休预热修复交付](docs/tasks/2026-10-28-lunch-prewarm-delivery.md)。以下为先前检查点。
+
 10/28 11:30单次交付：健康性能补丁已通过PR530发布 **v1.16.27**，exact `bde08514713df7d71c37267c7c104bde8908167c`；Runtime仍 **v1.16.26/gen34**。原生计划`4da18c6e…`在Alert纯预热失败后cancelled，effects为空，未停服/CAS。午休BREAK不进入closed-only Canonical预热，fallback在bars_until报`MARKET_READ_CONTRACT_UNAVAILABLE`，不放宽Gate或重试旧attempt。候选84pytest、独立Review、离线锁定构建、secret scan通过；健康只读35.6→28.6秒不代表彻底消除HTTP超时。
 11:38新鲜读回：十身份匹配、Live到11:30、Feed pending0/无输入失败；Reference新pending673（11:31为706）、dependency等待40、blocked/UNKNOWN为0，不能复用夜间零积压结论。11:39正式Reference HTTP为600 READY/480 OBSERVATION_LAGGING，上午新输入尚未全部追齐，不能沿用夜间960/120。11:30自动化已触发后删除，无后续调度。详见[午休交付](docs/tasks/2026-10-28-reference-noon-release.md)。以下夜间统计均为原检查点。
 
