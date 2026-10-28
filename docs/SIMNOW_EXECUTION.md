@@ -157,12 +157,20 @@ schema 3不能启动、检查Keychain、渲染/安装服务或取得账户运行
 只读动作不创建四库，旧账户保持UNKNOWN，新账本保持UNINITIALIZED。初始化动作必须在fresh全部
 CLOSED且确认宽限结束时重新查询，并在发布前重验闭市、配置、截止时间和30秒快照新鲜度。
 空仓、无活动或未知委托、无未解释占用均成立后，使用柜台真实资金建立独立平仓基线，不继承旧历史。
+占用字段须为零且Balance与Available一致；不猜测未采字段导致的资金差额。
 四库与disabled schema2/observe配置先在同一私有临时账户目录创建、关闭及完整验证，再原子rename
 到正式账户目录；部分失败保留临时证据，不启用、不覆盖已有账户，重复初始化拒绝。
 
 observe宿主可在fresh全部CLOSED、无当前Session且下一场仍在未来时建立账户只读连接，
 状态为`OBSERVING_CLOSED`；不领取执行输入、不构造交易Adapter。manage/trade仍沿用原交易及
 开盘前120秒连接规则。此连接许可不代表交易许可；正常schema2启动与四库完整性校验仍保留。
+闭市连接还要求已持久原生证据的交易日与计划一致；柜台尚属旧交易日时等待原开盘前连接窗口，
+不提前消耗或阻断下一交易日的连接预算。
+
+observe连续两轮真实账户对账完成后，可原子发布
+`~/Library/Application Support/GuiyiQuant/simnow-monitor.private.json`，内容为已启用schema2/observe
+私有配置副本。API逐请求使用既有严格settings及四库校验读取绑定，无需重启；文件不存在时沿用
+原监控来源，存在但无效则显式503，不静默回退。该绑定仅决定只读监控来源，不启动宿主或授予交易。
 
 ## 持续交易候选（simnow_continuous_v2）
 

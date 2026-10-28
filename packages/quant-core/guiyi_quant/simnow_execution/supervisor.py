@@ -393,6 +393,12 @@ class Supervisor:
             return
         closed_readback = bool(self.settings.mode == 'observe' and not plan.active
             and getattr(self.market, 'closed_observation_allowed', lambda _now: False)(now))
+        if closed_readback:
+            # CLOSED plan.day refers to the next session. Until native evidence
+            # has reached that day, retain the original preopen connection rule.
+            # An ordinary broker rollover must not poison tomorrow's budget/block.
+            latest = self.evidence.latest()
+            closed_readback = bool(latest and latest.trading_day == day)
         if self.driver is not None and day != (
             self.day if self.prepared else self.target_day
         ):

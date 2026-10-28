@@ -58,7 +58,7 @@ def test_initialization_rejects_open_market_before_any_broker_read(tmp_path):
     assert not load_settings(config).state_root.exists()
 
 
-@pytest.mark.parametrize('fault', ['account', 'partial', 'position', 'frozen', 'working_order', 'stale'])
+@pytest.mark.parametrize('fault', ['account', 'partial', 'position', 'frozen', 'unexplained_cash', 'working_order', 'stale'])
 def test_invalid_or_nonflat_facts_do_not_publish_an_account(tmp_path, fault):
     from guiyi_quant.simnow_execution.observe_bootstrap import initialize_observe
     config, _ = preparation(tmp_path)
@@ -76,6 +76,9 @@ def test_invalid_or_nonflat_facts_do_not_publish_an_account(tmp_path, fault):
     elif fault == 'frozen':
         funds = value['rounds'][0]['queries']['funds']['rows'][0]
         value = native.changed(value, 'funds', [{**funds, 'FrozenMargin': '10'}])
+    elif fault == 'unexplained_cash':
+        funds = value['rounds'][0]['queries']['funds']['rows'][0]
+        value = native.changed(value, 'funds', [{**funds, 'Available': '99900'}])
     elif fault == 'working_order':
         value = native.changed(value, 'orders', [dict(TradingDay='20261027',
             FrontID=1, SessionID=2, OrderRef='1', OrderStatus='3',
@@ -158,3 +161,18 @@ def test_probe_rejects_preparation_changed_during_native_read(tmp_path):
         return native.report()
     with pytest.raises(ValueError, match='CONFIG_CHANGED'):
         probe_account(config, reader, now=clock)
+
+
+def test_deadline_crossed_during_last_closure_proof_cannot_publish(tmp_path):
+    from guiyi_quant.simnow_execution.observe_bootstrap import initialize_observe
+    config, _ = preparation(tmp_path)
+    calls = []
+    def closed():
+        calls.append(1)
+        return True
+    def check():
+        if len(calls) >= 2:
+            raise ValueError('BOOTSTRAP_DEADLINE_REACHED')
+    with pytest.raises(ValueError, match='DEADLINE'):
+        initialize_observe(config, ('RB',), native.report, now=clock, assert_closed=closed, check=check)
+    assert not (load_settings(config).state_root / ('a' * 64)).exists()

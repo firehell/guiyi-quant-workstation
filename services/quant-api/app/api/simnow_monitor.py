@@ -8,11 +8,23 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 from app.core.env import PROJECT_ROOT
 from guiyi_quant.simnow_execution.monitor import MonitorReader, MonitorError
+from guiyi_quant.simnow_execution.settings import load_settings
 
 router = APIRouter(prefix="/api/simnow/monitor", tags=["simnow-monitor"])
+MONITOR_SOURCE_CONFIG = Path.home() / 'Library/Application Support/GuiyiQuant/simnow-monitor.private.json'
 
 
 def reader():
+    # Publish this exact private binding only after the observe host is verified.
+    # Read per request so promotion does not restart the market API.
+    if MONITOR_SOURCE_CONFIG.exists() or MONITOR_SOURCE_CONFIG.is_symlink():
+        try:
+            settings = load_settings(MONITOR_SOURCE_CONFIG)
+            if settings.schema != 2 or settings.mode != 'observe' or not settings.enabled:
+                raise ValueError('MONITOR_OBSERVE_BINDING_REQUIRED')
+            return MonitorReader(settings.state_root)
+        except Exception:
+            raise HTTPException(503, detail={'code': 'MONITOR_SOURCE_UNAVAILABLE'}) from None
     return MonitorReader(
         Path(
             os.environ.get(

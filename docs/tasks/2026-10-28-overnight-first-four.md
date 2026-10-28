@@ -32,3 +32,8 @@ Owner已批准完整实施；截止北京时间2026-10-29 08:00，明早09:00开
 - 旧SimNow标签存在但无PID，旧runner/config均缺失，无SDK宿主进程；本次未卸载旧定义，将在闭市启动阶段处理。
 - 首次只读CLI旧字段account_reconciled=true仅代表双轮原生一致，并未建立账本；已用红绿测试修正后续摘要为account_read_complete=true、account_reconciled=false，原attempt证据不改写。
 - 原生诊断失败的连接释放、过期next Session拒绝均RED→GREEN；同账户四库/锁/CLI/Host/执行/市场回归537 passed（43.70秒），Ruff、secret scan 0及diff检查通过。
+- 独立Review确认并修复三项：CLOSED提前毒化下一交易日预算、资金Available残差未解释、慢闭市证明跨截止仍可rename；均新增失败复现后转绿。
+- Ruling: 监控来源使用现有严格schema2配置的私有只读绑定文件——API原入口只接受启动env，若等两轮后切换需再次重启正式API——改为缺文件沿用旧源、无效503、原子发布后逐请求校验；风险为私有绑定漂移导致监控暂不可用，不影响账户及行情计算。
+- 真实隔离PG回归4 passed；扩大Reference/Alert/health组合1446 passed/115 skipped的两项失败定位为任务测试日志目录缺失，创建0700隔离目录后worker_entry全45项通过，候选上再跑组合。
+- 23:12现场只读：十服务仍v31/gen37、Session49 CLOSED/11 TRADING，pending284、BLOCKED/UNKNOWN0，completed9683，维护持锁无干预；无新增输入错误或停服。
+- Review修正及监控绑定新增后完整SimNow/账户/Host/市场/API组合548 passed（43.39秒）；新增三项均先失败再转绿，Ruff/secret0/diff通过。

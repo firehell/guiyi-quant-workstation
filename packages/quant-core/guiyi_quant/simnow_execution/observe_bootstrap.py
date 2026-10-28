@@ -69,6 +69,9 @@ def _require_flat(snapshot):
     if any(number(data['funds'][0][key]) != 0
            for key in ('CurrMargin', 'FrozenMargin', 'FrozenCommission')):
         raise ValueError('BOOTSTRAP_OCCUPANCY_UNEXPLAINED')
+    funds = data['funds'][0]
+    if number(funds['Balance'], signed=True) != number(funds['Available'], signed=True):
+        raise ValueError('BOOTSTRAP_OCCUPANCY_UNEXPLAINED')
 
 
 def _private_directory(path):
@@ -143,6 +146,7 @@ def initialize_observe(config, products, reader, *, now, assert_closed, check=la
         if target.exists() or target.is_symlink():
             raise ValueError('BOOTSTRAP_TARGET_ALREADY_EXISTS')
         _fsync_directory(stage)
+        check()
         os.rename(stage, target)
         _fsync_directory(settings.state_root)
         temporary.rmdir()
