@@ -1246,6 +1246,13 @@ the calculation/projection/checkpoint transaction. No result SHALL be inserted b
 successful calculation or by a later repair of an uncertain transaction.
 
 Ordering, health, receiving and native handover SHALL share complete closure verification.
+Receiving MAY avoid a closure read when no new unfinished route is created, or when
+capacity is sufficient even with every recovered delivery conservatively counted as
+unfinished. This upper bound SHALL NOT establish recovery success or release a head.
+Reclaiming recovered capacity SHALL still require fresh complete closure verification
+inside the existing serialized capacity transaction; no verification conclusion is
+cached across transactions. Every accepted original and its frozen routes remain durable
+before journal acknowledgement, including originals with no matching routes.
 A valid result may exclude its preserved old delivery from unfinished-head selection;
 all other heads retain numeric journal ordering and all UNKNOWN facts remain blocking.
 Health SHALL distinguish recovered calculation counts from original completed deliveries

@@ -167,6 +167,8 @@ def build_runtime_health(
         freshness_seconds=alert_freshness_seconds,
         live_coverage=components["live_market"].get("coverage", {}),
         live_runtime_generation=components["live_market"].get("runtime_generation"),
+        live_phase_by_product=components["live_market"].get("phase_by_product"),
+        live_status=components["live_market"].get("status"),
         after_market=components["after_market"],
     )
 
@@ -326,6 +328,8 @@ def _collect_alert_health(
     freshness_seconds: int,
     live_coverage: Mapping[str, object] | None = None,
     live_runtime_generation: object = None,
+    live_phase_by_product: object = None,
+    live_status: object = None,
     after_market: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     empty = {
@@ -443,6 +447,19 @@ def _collect_alert_health(
             else "ok" if coverage else "unverified"
         ),
     }
+    coverage_unhealthy = payload["coverage_state"] in {
+        "unverified", "evaluation_lagging", "data_lagging", "evaluation_failed"
+    } and not (
+        payload["coverage_state"] == "unverified"
+        and _closed_alert_unverified_exempt(
+            coverage, scope_product_count=scope_product_count,
+            alert_runtime_generation=heartbeat.get("runtime_generation"),
+            live_coverage=live_coverage,
+            live_runtime_generation=live_runtime_generation,
+            live_phase_by_product=live_phase_by_product,
+            live_status=live_status,
+        )
+    )
     stale = (
         heartbeat_at > now or (now - heartbeat_at).total_seconds() > freshness_seconds
     )
@@ -467,7 +484,7 @@ def _collect_alert_health(
             "error_type": "alert_runtime_status_invalid",
         }
     if runtime_status is None:
-        return {"status": RUNTIME_STATUS_DEGRADED if payload["coverage_state"] in {"unverified", "evaluation_lagging", "data_lagging", "evaluation_failed"} else RUNTIME_STATUS_OK, **payload}
+        return {"status": RUNTIME_STATUS_DEGRADED if coverage_unhealthy else RUNTIME_STATUS_OK, **payload}
     observed_status = (
         RUNTIME_STATUS_DEGRADED
         if (
@@ -482,11 +499,43 @@ def _collect_alert_health(
                     Mapping[str, Mapping[str, object]], runtime_status["rule_status"]
                 ).values()
             )
-            or payload["coverage_state"] in {"unverified", "evaluation_lagging", "data_lagging", "evaluation_failed"}
+            or coverage_unhealthy
         )
         else RUNTIME_STATUS_OK
     )
     return {"status": observed_status, **payload, **observation}
+
+
+def _closed_alert_unverified_exempt(
+    coverage: Mapping[str, Mapping[str, object]], *, scope_product_count: int,
+    alert_runtime_generation: object, live_coverage: Mapping[str, object] | None,
+    live_runtime_generation: object, live_phase_by_product: object, live_status: object,
+) -> bool:
+    """Only validated same-generation Live CLOSED products waive Alert uncertainty."""
+    if (not coverage or live_status != RUNTIME_STATUS_OK
+            or type(alert_runtime_generation) is not int or alert_runtime_generation <= 0
+            or live_runtime_generation != alert_runtime_generation
+            or not isinstance(live_coverage, Mapping)
+            or not isinstance(live_phase_by_product, Mapping)
+            or set(live_phase_by_product) != set(live_coverage)):
+        return False
+    symbols: set[str] = set()
+    for key, item in coverage.items():
+        symbol, rule_code, frequency = item.get("symbol"), item.get("rule_code"), item.get("frequency")
+        if (not isinstance(symbol, str) or not isinstance(rule_code, str)
+                or not isinstance(frequency, str)
+                or key != f"{rule_code}:{symbol}:{frequency}"):
+            return False
+        symbols.add(symbol)
+        if item["state"] == "unverified" and (
+            frequency not in {"1m", "5m", "15m", "30m", "60m"}
+            or live_phase_by_product.get(symbol) != "CLOSED"
+        ):
+            return False
+    return (len(symbols) == scope_product_count
+            and symbols == set(live_coverage)
+            and all(phase in {"TRADING", "BREAK", "CLOSED"}
+                    for phase in live_phase_by_product.values()))
 
 
 def _alert_coverage(
@@ -891,6 +940,7 @@ def _collect_live_market_health(
         "last_heartbeat_at": None,
         "last_bar_at": None,
         "phase_counts": {},
+        "phase_by_product": None,
         "coverage": {},
         "coverage_state": "unverified",
         "runtime_generation": None,
@@ -992,6 +1042,7 @@ def _collect_live_market_health(
             else None
         ),
         "phase_counts": phase_counts,
+        "phase_by_product": dict(product_phases) if product_phases is not None else None,
         "coverage": coverage,
         "coverage_state": (
             "lagging" if any(item["state"] == "lagging" for item in coverage.values())

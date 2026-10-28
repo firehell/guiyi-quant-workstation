@@ -14,7 +14,10 @@ from app.db.session import get_db
 from app.main import app
 from app.models import Exchange, Instrument, TradingCalendar
 from app.alerts.runtime import empty_alert_runtime_status
-from app.services.runtime_health import _evaluate_alert_coverage, _trading_week_finished, build_runtime_health
+from app.services.runtime_health import (
+    _collect_alert_health, _collect_live_market_health, _evaluate_alert_coverage,
+    _trading_week_finished, build_runtime_health,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -1110,6 +1113,166 @@ def test_mixed_live_health_exempts_only_verified_closed_products(
         assert live["coverage_state"] == "unverified"
         assert all(live["coverage"][s]["state"] == "unverified" for s in closed)
         assert all(live["coverage"][s]["state"] == "ok" for s in trading)
+
+
+def _mixed_alert_heartbeat_pair(now: datetime):
+    trading = [f"trading{index}" for index in range(45)]
+    closed = [f"closed{index}" for index in range(15)]
+    frequencies = ("1m", "5m", "15m", "30m", "60m")
+    last_session = {"start": (now - timedelta(minutes=15)).isoformat(), "end": now.isoformat()}
+    live = {
+        "generated_at": now.isoformat(), "runtime_generation": 37, "available": True,
+        "operational_count": 60, "subscribed_count": 45, "last_bar_at": now.isoformat(),
+        "phase_counts": {"TRADING": 45, "CLOSED": 15},
+        "phase_by_product": {**dict.fromkeys(trading, "TRADING"), **dict.fromkeys(closed, "CLOSED")},
+        "coverage_schema_version": 1,
+        "coverage": {
+            **{symbol: {"state": "ok", "sessions": [last_session]} for symbol in trading},
+            **{symbol: {"state": "unverified", "sessions": []} for symbol in closed},
+        },
+    }
+    alert = {
+        "generated_at": now.isoformat(), "runtime_generation": 37, "available": True,
+        "enabled_rule_count": 1, "scope_product_count": 60, "coverage_schema_version": 2,
+        "coverage": {
+            f"rule:{symbol}:{frequency}": {
+                "rule_code": "rule", "symbol": symbol, "frequency": frequency,
+                "state": "ok" if symbol in trading else "unverified",
+                "last_evaluated_bar_at": now.isoformat() if symbol in trading else None,
+            }
+            for symbol in trading + closed for frequency in frequencies
+        },
+    }
+    return live, alert, trading, closed
+
+
+def test_mixed_closed_alert_unverified_keeps_75_details_without_degrading_alert() -> None:
+    now = datetime(2026, 10, 28, 11, tzinfo=UTC)
+    live_heartbeat, alert_heartbeat, _, closed = _mixed_alert_heartbeat_pair(now)
+    redis = FakeRedis(values={"live:heartbeat": json.dumps(live_heartbeat),
+                              "alert:heartbeat": json.dumps(alert_heartbeat),
+                              "alert:runtime-status": json.dumps(empty_alert_runtime_status())})
+    with _session_factory()() as session:
+        payload = build_runtime_health(
+            session, redis_factory=lambda: redis, now=now,
+            live_runtime_enabled=True, after_market_automation_enabled=False,
+            alert_runtime_enabled=True, notification_transport_configured=True,
+            after_market_status_path=None,
+        )
+    live = payload["components"]["live_market"]
+    alert = payload["components"]["alert"]
+    assert live["status"] == "ok"
+    assert alert["status"] == "ok"
+    assert alert["coverage_state"] == "unverified"
+    assert len([item for item in alert["coverage"].values() if item["state"] == "unverified"]) == 75
+    assert all(alert["coverage"][f"rule:{symbol}:60m"]["state"] == "unverified" for symbol in closed)
+
+
+@pytest.mark.parametrize("fault", [
+    "active_unverified", "closed_evaluation_failed", "previous_unresolved",
+    "alert_evaluation_lagging",
+    "closed_live_lagging", "break_unverified", "unknown_unverified",
+    "missing_phases", "mismatched_phases", "product_mismatch",
+    "generation_mismatch", "live_stale", "live_unavailable", "current_rule_error",
+    "closed_daily_unverified", "closed_weekly_unverified",
+])
+def test_closed_alert_exemption_keeps_real_or_unproven_faults_degraded(fault) -> None:
+    now = datetime(2026, 10, 28, 11, tzinfo=UTC)
+    live_heartbeat, alert_heartbeat, trading, closed = _mixed_alert_heartbeat_pair(now)
+    current = empty_alert_runtime_status()
+    after_market = None
+    if fault == "active_unverified":
+        alert_heartbeat["coverage"][f"rule:{trading[0]}:60m"]["state"] = "unverified"
+        alert_heartbeat["coverage"][f"rule:{trading[0]}:60m"]["last_evaluated_bar_at"] = None
+        live_heartbeat["coverage"][trading[0]]["sessions"] = []
+    elif fault == "closed_evaluation_failed":
+        alert_heartbeat["coverage"][f"rule:{closed[0]}:60m"]["state"] = "evaluation_failed"
+    elif fault == "previous_unresolved":
+        alert_heartbeat["coverage"][f"rule:{closed[0]}:60m"]["previous_unresolved"] = "2026-10-27"
+    elif fault == "alert_evaluation_lagging":
+        due = now - timedelta(minutes=2)
+        live_heartbeat["coverage"][closed[0]]["sessions"] = [
+            {"start": (now - timedelta(minutes=15)).isoformat(), "end": due.isoformat()}
+        ]
+        alert_heartbeat["coverage"][f"rule:{closed[0]}:60m"]["state"] = "ok"
+        alert_heartbeat["coverage"][f"rule:{closed[0]}:60m"]["last_evaluated_bar_at"] = (now - timedelta(minutes=20)).isoformat()
+        alert_heartbeat["observation_journal"] = {
+            "runtime_generation": 37, "trading_day": now.date().isoformat(),
+            "cursor": "0-0", "tail": "1-0", "routes": {},
+            "pending_routes": {f"{closed[0]}:60m": {
+                "trading_day": now.date().isoformat(), "stream_id": "1-0",
+                "observation_id": "closed-original", "bar_end": due.isoformat(),
+            }},
+        }
+    elif fault == "closed_live_lagging":
+        live_heartbeat["coverage"][closed[0]]["state"] = "lagging"
+    elif fault in {"break_unverified", "unknown_unverified"}:
+        phase = "BREAK" if fault == "break_unverified" else "UNKNOWN"
+        live_heartbeat["phase_by_product"][closed[0]] = phase
+        live_heartbeat["phase_counts"]["CLOSED"] -= 1
+        live_heartbeat["phase_counts"][phase] = 1
+    elif fault == "missing_phases":
+        live_heartbeat.pop("phase_by_product")
+    elif fault == "mismatched_phases":
+        live_heartbeat["phase_by_product"][closed[0]] = "TRADING"
+    elif fault == "product_mismatch":
+        for frequency in ("1m", "5m", "15m", "30m", "60m"):
+            alert_heartbeat["coverage"].pop(f"rule:{closed[0]}:{frequency}")
+    elif fault == "generation_mismatch":
+        alert_heartbeat["runtime_generation"] = 38
+    elif fault == "live_stale":
+        live_heartbeat["generated_at"] = (now - timedelta(seconds=301)).isoformat()
+    elif fault == "live_unavailable":
+        live_heartbeat["available"] = False
+    elif fault == "current_rule_error":
+        current["rule_status"]["htdy_original_15m"]["error_type"] = "evaluation_failed"
+    elif fault in {"closed_daily_unverified", "closed_weekly_unverified"}:
+        frequency = "1d" if fault == "closed_daily_unverified" else "1w"
+        alert_heartbeat["coverage"][f"rule:{closed[0]}:{frequency}"] = {
+            "rule_code": "rule", "symbol": closed[0], "frequency": frequency,
+            "state": "unverified", "trading_day": now.date().isoformat(),
+            "last_evaluated_bar_at": None,
+        }
+        after_market = {"last_successful_trading_day": now.date().isoformat()}
+    redis = FakeRedis(values={"live:heartbeat": json.dumps(live_heartbeat),
+                              "alert:heartbeat": json.dumps(alert_heartbeat),
+                              "alert:runtime-status": json.dumps(current)})
+    live = _collect_live_market_health(redis, now=now, configured_enabled=True, freshness_seconds=300)
+    alert = _collect_alert_health(
+        redis, now=now, configured_enabled=True, notification={"configured": True},
+        transport_error_type=None, freshness_seconds=30,
+        live_coverage=live["coverage"], live_runtime_generation=live["runtime_generation"],
+        live_phase_by_product=live["phase_by_product"], live_status=live["status"],
+        after_market=after_market,
+    )
+    assert alert["status"] == "degraded"
+
+
+@pytest.mark.parametrize("notification_error,expected", [
+    ("notification_transport_failed", "ok"),
+    ("notification_preparation_failed", "degraded"),
+    ("notification_acceptance_invalid", "degraded"),
+])
+def test_closed_alert_exemption_preserves_notification_error_semantics(notification_error, expected) -> None:
+    now = datetime(2026, 10, 28, 11, tzinfo=UTC)
+    live_heartbeat, alert_heartbeat, _, _ = _mixed_alert_heartbeat_pair(now)
+    current = empty_alert_runtime_status()
+    current["last_notification_failure_at"] = now.isoformat()
+    current["notification_error_type"] = notification_error
+    current["consecutive_notification_failures"] = 1
+    redis = FakeRedis(values={"live:heartbeat": json.dumps(live_heartbeat),
+                              "alert:heartbeat": json.dumps(alert_heartbeat),
+                              "alert:runtime-status": json.dumps(current)})
+    live = _collect_live_market_health(redis, now=now, configured_enabled=True, freshness_seconds=300)
+    alert = _collect_alert_health(
+        redis, now=now, configured_enabled=True, notification={"configured": True},
+        transport_error_type=None, freshness_seconds=30,
+        live_coverage=live["coverage"], live_runtime_generation=live["runtime_generation"],
+        live_phase_by_product=live["phase_by_product"], live_status=live["status"],
+    )
+    assert alert["status"] == expected
+    assert alert["notification_error_type"] == notification_error
+    assert alert["consecutive_notification_failures"] == 1
 
 
 @pytest.mark.parametrize("market_failure", [None, "db", "redis", "live_market", "after_market"])

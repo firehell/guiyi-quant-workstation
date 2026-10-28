@@ -578,3 +578,25 @@ def test_verified_recovery_releases_capacity_without_rewriting_blocked():
     inbox._unfinished_bytes_limit = size + 32
     second = inbox.ingest(event('20-0', end=NOW + timedelta(seconds=12)))
     assert len(second.delivery_ids) == 1
+
+
+def test_capacity_reclaim_requires_fresh_strict_recovery_proof():
+    from app.reference_trading.models import ReferenceInboxInput, ReferenceInboxRecoveryResult
+
+    factory, inbox, recovery, plan, evaluate = fixture()
+    recovery.apply(plan, expected_plan_hash=plan.plan_hash, evaluator=evaluate)
+    with factory() as session, session.begin():
+        size = session.get(ReferenceInboxInput, plan.input_id).payload_bytes
+        # SQLite injection only: the production append-only trigger rejects it.
+        row = session.scalar(select(ReferenceInboxRecoveryResult))
+        row.proof_sha256 = "0" * 64
+    inbox._unfinished_bytes_limit = size + 32
+    with pytest.raises(ValueError, match="RECOVERY"):
+        inbox.ingest(event('20-0', end=NOW + timedelta(seconds=12)))
+    with factory() as session:
+        assert session.scalar(select(ReferenceInboxInput).where(
+            ReferenceInboxInput.journal_id == '20-0')) is None
+    with pytest.raises(ValueError, match="RECOVERY"):
+        inbox.next_heads()
+    with pytest.raises(ValueError, match="RECOVERY"):
+        inbox.health()
