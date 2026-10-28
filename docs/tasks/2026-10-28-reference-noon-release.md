@@ -1,0 +1,17 @@
+# 11:30单次Reference健康交付
+
+PR530/main/tag/Release v1.16.27 exact bde08514713df7d71c37267c7c104bde8908167c已发布；正式Runtime保持v1.16.26/gen34。选择性5文件，不含develop研究与SimNow修改。develop已集成6b0e44ead。
+
+正式候选84pytest通过、独立Review无ConfirmedIssue、Ruff/diff/secret scan0finding、uv frozen offline与锁检查通过，前端144包离线安装0下载、typecheck/build/topology通过。原性能对照35.60→28.59秒；Canonical端点19秒瓶颈保留。
+
+单次自动化11-30于触发后删除。11:31权威60品种BREAK、13:30下一Session；Feed采集至11:30、pending0/无错误。Reference pending706，有41融合依赖等待，非旧BLOCKED；维护锁有持有者。午休允许BREAK的原生session proof冻结通过，但仍须全部预热Gate。
+
+前两份临时计划放/private/tmp不满足原生私有父目录及0600文件合同，CLI在读取前拒绝，两份均无attempt且全局仍旧switched。此为准备疏漏，保留日志；未修改验证器。改为0700候选output目录与0600全新计划4da18c6eb9a5372d4697f843d43e03ad028a994ed3c2c4885b7e381844cd8a7c，实际apply在claimed/prewarm阶段被Alert拒绝，原生attempt最终cancelled、effects={}，没有进入calendar暂停/drain/stop/CAS，不重试。
+
+独立同环境纯Alert预热准确报MarketReadWindowError/MARKET_READ_CONTRACT_UNAVAILABLE，调用链composition.py warmup_alert_runtime→market_read_service.py bars_until。_CanonicalWarmupReader._closed只接受CLOSED，BREAK返回false，使预热走实时fallback。保留合同，不在午休临时放宽时序或暖机规则。下一次只能在新权威Session与fresh完整计划下处理，不能复用旧attempt。
+
+11:38独立readback十服务identity matched仍v26/gen34；Feed available/pending0/无输入失败，Live末端11:30。Reference pending673、dependency_wait40、blocked0、UNKNOWN0，计算仍推进；夜间zero-backlog只属历史。7项合法暖机、历史464与120流自然验收独立保留。原生取消不代表整体运行恢复或RUNTIME_READY。
+
+证据output/reference-noon-20261028/及私有cohort-attempts/4da18c6e…/state.json。停止本轮切换，无追加自动化或通知重发。唯一下一步：定位并验证午休预热合同适用性，再在真正满足全部Gate的窗口以新计划交接；现役保持不动。
+
+11:39正式HTTP健康实际成功返回600READY/480OBSERVATION_LAGGING，receiving pending673/dep40/blocked0/UNKNOWN0；上午尚有实时计算滞后，不能称开盘链路完整验收或沿用夜间120路结论。后续优先只读定位积压吞吐与历史后台竞争，禁止提高并发/预算掩盖问题。

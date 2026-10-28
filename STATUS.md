@@ -1,11 +1,183 @@
 # 当前状态
 
-controller v1.16.19已发布；精确close-only D已发出单次Feed卸载，随后身份读回失败保留unknown。13:52独立确认Feed label absent、PID40577退出、锁free及完整双前缀不变；原生只读确认候选正在验证。实际绑定仍v1.16.14/gen31，其余服务停驻、原定时服务未恢复。下方旧任务记录是历史证据，不代替本轮现场。
+10/28 19:13：发布树已收敛为唯一 **release-v1.16.30**，正式十服务统一 **v1.16.30/gen36**，exact
+`81963702a75894f9f2d6ef52093bc66ef4a09750`；原生`cd1dbb04…`切换switched，263回归及离线构建通过。
+旧v26/v29完成原生历史封存、重复零引用扫描及non-force移除；tag/Release与运行原件保留，删除后身份和恢复guard通过。
+今日18:05盘后任务已自然运行：**18:11:35 passed，60品种、一次成功**，来源为当时现役v29；v30按原source身份保留成功记录，未重跑。
+删除前后两次独立核验720发布分区、60当日rank1映射、120个MDS 1m/D1端点均通过；消费者输入摘要与原审计一致。
+D1主图/参考180/180 READY；W1为179/180 READY、1项合法非READY；两范围审计无失败/漏检，辅助面板的合法非READY保留。
+19:13十身份matched、六owner active，Inbox pending/blocked/UNKNOWN/dependency_wait0、原件游标追尾、维护锁空；盘后health ok/retained。
+本轮收敛和盘后验收已完成；global原有degraded保留，**夜盘自然输入/吞吐/新Event留到开盘后验收**，无新增自动化或SimNow启用。
+详情见[发布树收敛与盘后验收](docs/tasks/2026-10-28-release-unification-after-market.md)。以下为先前检查点。
+
+10/28 17:17：旧v26退出阻断已解决，正式十服务已原生切换至 **v1.16.29/gen35**，exact
+`94b488896c4078c57f057bbfe73fd091c13a905d`。先让旧Reference完成当前单元，19.603秒正常parked、后台线程关闭并自行释放锁；
+新计划`c50d1af5…`继承该停驻状态，已完成旧进程退出、安装/CAS、消费者/Feed启动及原日历恢复，终态switched。
+新Reference现场drain/resume实测 **1.337秒退出、同PID恢复、checkpoint不变**；33项原生停驻/交接回归通过。
+17:15及17:17独立读回十身份matched、Inbox pending/blocked/UNKNOWN/dependency_wait均0、全部source/completed游标追尾；六旧PID已实际退出。
+计算水位保持16:30:13，历史恢复2618及旧BLOCKED339原件保留。正式新worker扫描最大0.014806秒，后台等待最大0.085712秒。
+工程切换与现场退出验收已完成；global仍degraded，下一自然交易时段的新输入吞吐/业务验收待实际发生，不声明整体RUNTIME_READY，不新增自动化。
+详见[Reference吞吐交付](docs/tasks/2026-10-28-reference-throughput.md)。以下均为先前检查点。
+
+10/28收盘后Reference吞吐/安全收尾补丁已通过PR532发布 **v1.16.29**，exact
+`94b488896c4078c57f057bbfe73fd091c13a905d`，develop代码aa639e028已集成。扫描25.959秒/11731SQL→0.042秒/4SQL，
+完整240键轮转一致；恢复关联同2618ID摘要不变。1020路真实输出/checkpoint逐值一致，557项候选回归、3项真实PG/内核/MDS容量及独立Review通过。
+隔离真实节奏1800秒/60品种/360输入，每波60→0、2.27–3.22秒；这不替代正式自然吞吐验收。
+全新原生计划`6a6da51a…`完整预热通过，但旧v26 Reference未在原10秒预算内drain，已 **cancelled/COHORT_OLD_DRAIN_TIMEOUT**，未进入stop_old/install/CAS。
+独立恢复核对：原十绑定/plist/日历/Scope配置保护一致，六原PID active且持锁，unknown部署guard通过。
+实际Runtime仍 **v1.16.26/gen34**；16:53 Inbox pending/blocked/UNKNOWN/dependency_wait均0、completed8302、计算水位16:30:13；global仍degraded。
+**RELEASED，Runtime promotion阻断**；按交办边界保持现役，无强杀、扩时或再次试切换；新版本自然时段验收未完成。
+详见[Reference吞吐交付](docs/tasks/2026-10-28-reference-throughput.md)。以下为先前检查点。
+
+10/28 12:33午休修复交付：PR531发布 **v1.16.28**，exact `ed3f8aae5e8ca9d96a2b29cb40dcdf50ff44e355`，develop修复8a56dbd60已集成。默认关闭、cohort显式开启的午休Canonical预热已修复并通过真实420路验证（413计算/7合法warming），316回归及独立Review通过。
+本次原生计划`2b517dff…`预热全部通过，但旧Reference单元未在10秒drain预算内停驻，最终 **cancelled/COHORT_OLD_DRAIN_TIMEOUT**，未进入stop_old/install/CAS。独立读回registry原v26/gen34、六原PID active/持锁、四日历恢复、Scope/配置保护一致、unknown部署guard通过；无强杀、无延时放行或再次重试。
+12:33实际Inbox pending640、blocked/UNKNOWN0、completed4632（12:30为4600），计算水位推进至12:31:40；进程接收与计算均仍活动但未追齐。Feed/基础服务正常，全局仍degraded，不能据身份恢复保证13:30参考计算及时或宣称RUNTIME_READY。下一项应定位长单delivery与10秒drain不匹配，保持现役运行；本轮无新增自动化/历史修复。详见[午休预热修复交付](docs/tasks/2026-10-28-lunch-prewarm-delivery.md)。以下为先前检查点。
+
+10/28 11:30单次交付：健康性能补丁已通过PR530发布 **v1.16.27**，exact `bde08514713df7d71c37267c7c104bde8908167c`；Runtime仍 **v1.16.26/gen34**。原生计划`4da18c6e…`在Alert纯预热失败后cancelled，effects为空，未停服/CAS。午休BREAK不进入closed-only Canonical预热，fallback在bars_until报`MARKET_READ_CONTRACT_UNAVAILABLE`，不放宽Gate或重试旧attempt。候选84pytest、独立Review、离线锁定构建、secret scan通过；健康只读35.6→28.6秒不代表彻底消除HTTP超时。
+11:38新鲜读回：十身份匹配、Live到11:30、Feed pending0/无输入失败；Reference新pending673（11:31为706）、dependency等待40、blocked/UNKNOWN为0，不能复用夜间零积压结论。11:39正式Reference HTTP为600 READY/480 OBSERVATION_LAGGING，上午新输入尚未全部追齐，不能沿用夜间960/120。11:30自动化已触发后删除，无后续调度。详见[午休交付](docs/tasks/2026-10-28-reference-noon-release.md)。以下夜间统计均为原检查点。
+
+10/28收盘后恢复已执行，正式十服务原生整组切换至 **v1.16.26/gen34**，exact
+`33040c99bcb5f9899d55a50a187c08024c4180da`（PR527/528/529，annotated tag/Release）。
+六常驻身份、owner和四日历注册已独立读回；技术切换成功，**整体RUNTIME_READY仍未证实**。
+Reference融合依赖等待、延迟动作解码及不可变恢复关联已上线，0054已实际迁移。2618条原件恢复和456路有界中断均已验证；
+逻辑Inbox pending/blocked/UNKNOWN、pending capture均0，339条旧BLOCKED保持原事实。正式HTTP业务健康为960 READY、
+120 OBSERVATION_LAGGING；后者为15个日盘品种×8路，原件确缺，等待自然completed输入、原生计算及必要暖机。
+本轮历史维护完成并读回259项（258既有刷新、1项A5m完整窗口补建）；07:40现役历史末端快照为616追齐、235落后、
+39源版本变化/重建中、190未构建。末端快照不等于全部来源指纹验收；既有原生刷新继续有界推进，已知partial不计完成。
+190未构建中20项周线已额外只读定位为Canonical缺源：19项首次失败在物理合约W1分区，RS在actual-dominant W1源；未进入追加写入。
+原件、Scope、规则、Source与静态配置保护不变，实际发送726条及hash不变；启动后正常增加批次处理/过期未发送记录和游标。
+全局health仍degraded，既存Alert coverage/暖机和旧通知失败单列；不补发、不改变auto_order=false或独立SimNow。
+单次reference自动化已触发后删除；06:45后未启动剩余手工历史维护，不设后续修复/重试任务。下一自然Session验收尚未发生。
+旧v24/v25已原生封存并non-force退役，唯一正式发布树为v26；删除后历史/未决部署guard及现役身份复验通过。
+详情见[本轮恢复记录](docs/tasks/2026-10-28-reference-night-recovery.md)；此前[历史刷新记录](docs/tasks/2026-10-27-history-refresh-recovery.md)保留。
 历史发布、失败 attempt、数据修复和候选验收原件继续保留于 `docs/releases/`、`docs/tasks/`、
 `docs/research/` 与原 output/outputs。旧版状态正文可从 Git `3bc2db867:STATUS.md` 追溯，
 不将旧检查点的“未发布”“下一品种”或旧 PID 当作当前状态。
 产品与能力见 [PROJECT_SOURCE](PROJECT_SOURCE.md)，合同和验证见 [架构](docs/ARCHITECTURE.md)、
 [TESTING](TESTING.md)。开发完成、发布、Runtime 切换与自然业务验收分别成立。
+
+## 10/27 持续trade代码验收完成，运行仍关闭
+
+新增schema2显式trade与--trade双匹配、ContinuousTradeTickV1、统一候选排序及单账户全局锁，
+复用原账户根/四库/连接预算。合约费率→完整账户刷新→最后盘口；临时坏品种让出，资金拒绝永久跳过。
+冷启动撤单可从原Tick恢复instrument身份，仍须当前binding/Session；未知发送与预留不重试/不释放。
+监控保留最后核验绑定，区分当前模式与开仓资格；render/preflight只读准备，无trade安装或自动切换。
+
+568项相关Python回归、25项固定SDK结构、10项前端单测、4项桌面/移动浏览器用例及Web type/build通过；
+Ruff、secret0、diff及独立执行安全Review通过。隔离假柜台完成两品种开仓/反手与重启trade/manage闭环，
+不代表实际柜台、自然信号或持续运行验收。旧账本重放、同账户资金/预留和既有风险口径保持。
+未读取实际凭据、连接柜台、确认结算、报撤单、改正式配置、安装服务、发布或切换Runtime，auto_order=false保持。
+15个无夜盘品种沿用上一轮阻断，下一交易时段新输入另验；不宣称本轮重新审计行情。
+仅代码候选可集成develop。真实切换必须另在全部相关品种收盘后处理，先核对当前现场及原账户事实。
+详见[任务记录](docs/tasks/2026-10-27-simnow-continuous-trade.md)及[执行合同](docs/SIMNOW_EXECUTION.md#持续交易候选simnow_continuous_v2)。
+
+## 10/27 HTDY输入复核与普通策略原生协议完成
+
+隔离代码新增StrategyCorrelatedNativeFillV1及普通有界/manage接入，保留旧NativeFill、人工关闭恢复、
+账户hash与observe/manage禁止OPEN。原生时钟通过实际身份和权威Session关联；首笔资金45秒仅一次，
+待核持久化并保守重锁预留，不重发未知订单。准入v3增加当前1m，并显式报告闭市订阅缺失。
+659项相关回归、固定SDK25、Ruff/secret0/diff及独立执行安全Review通过。
+
+22:00:47全60只读复核：历史32根60m预热60/60；45个夜盘品种新1m和22:00完成60m连续，
+计算窗口与底层1m逐值一致且无恢复隔离。AP/CJ/EC/JD/LC/LH/PD/PK/PS/PT/RS/SF/SI/SM/UR
+闭市等待，旧日原始Live/订阅不可用仍阻断；下一交易时段新输入另验，不补历史信号。
+现役十服务保持v1.16.24/gen33及原PID；Reference旧OBSERVATION_GAP、其他策略warming/lag未处理。
+本次零provider/生产写入，无Broker连接、结算确认或报撤单；auto_order=false保持。
+已验证代码可集成develop，不代表已发布、运行切换或普通策略订单实测通过。开盘期间禁止发布/切换；
+如后续需部署，必须在全部相关品种收盘后处理。详见[任务记录](docs/tasks/2026-10-27-simnow-strategy-protocol.md)。
+
+## 10/27 版本与发布树收敛完成
+
+唯一现役树为 `.worktrees/release-v1.16.23`，正式十服务统一 tag/commit/目录/gen32；独立SimNow保持独立。
+删除后从现役树验证完整封存索引、精确路径与SHA、typed闭合链和当前安装身份，结果passed；
+安装清单11项包含独立标签，正式cohort仍为10项。检查程序按现役Feed安装文件读取环境标志，未修改生产配置。
+最终只读报告 `output/recovery-preflight-20261027/controller23-final-indexed-readonly-v2.json`，
+19:48:55–19:49:01完成。技术版本/树收敛COMPLETED；历史参考资产质量与自然业务验收按上方剩余项保留。
+
+## 10/27 历史检查点：v23已发布，整组切换受EG2701物理前缀Gate阻塞
+
+PR522/v22 exactd2cc94382ba4158669d33ea549eb4d28d9a646b2发布封存能力，bf91a689…17:40:53停服前预热取消，原因未保留子步骤，不能倒推。
+一次只读Reference诊断明确SuBing forward漏用既有publication边界；共享MDS resolver与安全预热诊断已在PR523/v23
+exact86248ce71ebf3fd88033eda24fa57c447b5c0597向前发布，旧tag未改。未包含独立SimNow开发。
+定向409 passed/1 isolated-Redis skipped；必要向前修复组合221 passed，隔离日志目录仅补原两项2 passed，补充CLI诊断8 passed；
+Ruff/离线lock/diff及两次独立安全Review通过。正式候选API/core来源与Web type/build/topology通过，临时候选worktree已非force清理。
+
+18:05自然盘后源更新18:10:49 passed，60/60派生无失败；等待原消费者审计退出后，18:35:53四日历均idle。
+全新324f8ebe75dd6f454e8b351f1af9f698ffac4eefe5d80ea1f1d1cb86b815cb5e一次apply于18:37:03停服前取消，
+failed_service=alert/candidate_blocked，effects={}；未重跑两份计划，未强启服务或删除树。
+
+一次完整只读Alert inventory为408 calculated/7 warming/5 blocked，5个阻塞均EG2701，固定码
+CONTRACT_REPLAY_COVERAGE_UNAVAILABLE/REPLAY_PREFIX_MISSING。当前当日数据不足以证明上市后完整物理前缀，
+不允许缩窗、跨合约、Live替代或跳过Gate。18:48:46–47独立最小读回十身份v14/gen31、原PID active/fresh，
+API200/version1.16.14，Web200且匹配v14 dist；binding保持0e561c…257，旧文件prior_files_changed=[]。
+
+维护dry-run仅EG2701，2026-01-28至10/27，原生七周期、30个direct与40个derived月目标，计划SHA
+a6500f465f7fbbe659cebfe75ac6f0d04289047f471933396188b2da9f9f4f19；实际provider请求与apply均0。
+本次明确排除数据修复，需owner决定扩展这一具体范围后继续。详细原件与执行记录见
+[本任务记录](docs/tasks/2026-10-27-release-retirement.md)及`output/recovery-preflight-20261027/`。
+
+## 10/27 第二步完成：v14整站恢复，控制器v21独立发布
+
+PR521/main、annotated v1.16.21和GitHub Release exact1cf26b05992de9217ffc076cc35545e5c673ef4c。
+恢复修复已集成develop7a50974cf，选择性发布不包含独立SimNow任务；v21正式树干净、离线依赖/API与core来源、
+Web type/build/topology通过。一次真实隔离PG/Redis组合295 passed/0 skipped；Review小修仅补readiness22及stopped20，
+Ruff/lock/diff/secret0通过，独立安全Review无未关闭Confirmed Issue。临时测试容器及本任务/tmp候选已清理。
+
+16:02–16:03 exact v21执行F停驻收尾：确认SHA0cb4b02e74a32e023798be216022aeae63a40bb04d12b74206b6c4f88b6367e8，
+当前drain/owner/前缀与5尝试18文件固定，原unknown/state不改。全新plan
+88683cea093e65d4e80736dda61550802ae0e26d31ea6b1792701743cc74fdc7一次apply，按consumers/intake/feed/verified/calendars
+完成，16:08:32 state recovered/global switched，成功receipt SHA
+c49470ac21fb6e7b3b92521e6065bd006c4644ab8cc83717b8e0003ad0571a10；先存文件逐份SHA无变化，未重跑旧计划或CAS。
+
+16:12:14→16:12:27独立跨轮：十服务identity matched、六常驻同PID active/fresh/正确来源且锁held；
+原四日历registered，API两次200/version1.16.14，Web两次200且body SHA等于v14 dist。Live/Feed的poll瞬间readyFalse
+不等于故障：两轮heartbeat均available=true、更新时间前进、input_failure=null、Feed pending0；休市60品种订阅0。
+Reference完成报告receiving_cycle→cycle且fresh，双轮typed接收与完整前缀valid，计算ready=False如实保留。
+原件8956/唯一8956，COMPLETED2508/PENDING97/WAITING_HISTORY4/BLOCKED44/UNKNOWN0；未宣称计算全清、停采缺口已补。
+_no_unresolved_recovery通过，binding保持原v14/gen31 SHA；旧失败记录保留，由成功receipt关联闭合。
+
+浏览器真实smoke：首页60品种与分钟连接、RB2701日线K线/指标/策略标记可读；首页显示旧成功快照、详情明确10/27
+日线待更新且完整日线截至10/26/报价过时，未以页面可用冒充数据新鲜。正式页面已打开保留。
+证据：本任务output/recovery-preflight-20261027/controller21-production-result.json、browser-smoke.json，独立
+independent-final-20261027T081227Z.json SHA47010c92624d4b2a2f8b3727f83bfefc0e6f1fa504a3c0edcb716ddb2d05467c。
+本轮结论：服务技术恢复COMPLETED；自然新Bar/Alert/18:05业务证据待实际发生，不声明整体RUNTIME_READY或数据全健康。
+正式十服务版本仍v14；controller21不是消费者升级。版本/单发布树收敛及真实数据缺口处理按后续阶段执行。
+
+## 10/27 第二步实际恢复失败并停驻，接收轮次及收尾边界阻塞
+
+Owner明确交办第二步后，使用exact v20对新plan09f310e603791fbd0a368916d0a0553450e165a271f79dfc363f45695f37d12e
+执行一次apply；完整前置通过，只完成consumers/resumed_generation31，随后intake以COHORT_FORWARD_READY_TIMEOUT/
+CohortError进入outcome_unknown。无Feed/verified/calendars effect，无成功receipt，未重试。
+15:15独立只读确认五消费者真实PID全部parked、六owner锁free，Feed及四日历absent；binding/global及A/B/C/D原字节未变。
+8956原件/唯一8956、两日原件尾与ACK仍追齐；COMPLETED2508/PENDING97/WAITING4/BLOCKED44/UNKNOWN0。
+本次完成19项计算不代表恢复成功；API/Web启动后已随halt停驻，不能用中途可用冒充当前可用。
+
+隔离证明另一确定性判定缺口：受控样本把身份/零pending/双fresh等检查用测试替身固定成功，仅将Reference
+stage从receiving_cycle改为正常cycle，前者两快照0.2虚拟秒通过，后者零快照至240.2虚拟秒超时。
+v14正常serve确会在接收后发布scan/cycle并覆盖receiving_cycle；慢计算也会延迟接收轮次报告。
+本次intake未保留逐轮拒绝子条件，不能断言上述缺口就是F超时的实际原因；现场停驻后完整接收快照只读计时1.499秒，
+该事后计时不代表运行中耗时或活性。Session计时探针因未继承Stream开关ValueError，不计作生产Session失败。
+
+halt生成新drain IDs，旧D确认controls前像已不等于当前状态；额外F unknown也不在现有CBA/D恢复入口支持范围。
+下一步须先修正接收生命周期判定/补intake子条件诊断，并设计经验证的当前停驻终态收尾；不能重跑F、递归套前驱、
+忽略unknown或直接复用旧关闭证明。不进行版本升级/旧树清理。当前BLOCKED，尚未完成第二步服务恢复。
+证据：主仓库output/rollover-readiness-20261026/recovery-f-stopped-independent-20261027T071505Z.json
+及runtime-readback-f-stopped1516.json；本任务output/recovery-preflight-20261027/cycle-isolation.json与readonly-timing-20261027.json。
+
+## 10/27 15:02恢复前置核对完成，新计划已冻结、未执行
+
+controller20已发布exact323093680325d5a39a969042b13bc2352c3bc1e0；14:11新鲜只读确认Feed关闭成功，
+确认SHA88814cc75fe9b1848f5cda113f43c7fa4cc91e2078f98f3dab7418daab64997f，原D unknown未改。
+本轮仅执行owner指定表格第一步：现场核对及新计划，不启动服务、不切版本。
+14:13旧E64b6c383…已于14:28过期，现场确认对应私有attempt目录不存在；未执行或重用。
+15:02:37使用干净exact v20原生plan及CBA/D确认完成完整前置复验，新plan
+09f310e603791fbd0a368916d0a0553450e165a271f79dfc363f45695f37d12e，600秒执行预算，15:17:37到期。
+public文件`forward-after-feed-close-20261027T070236Z.json`位于既有私有rollover-readiness-20261027目录；
+新attempt不存在，原public/private计划与state/关闭确认/全局指针/服务绑定SHA均未变。
+五消费者仍parked，Feed及四日历absent；正式绑定仍v14/gen31，不声明服务恢复或RUNTIME_READY。
+15:03:26独立原生只读复核通过：CBA/D关联、当前未决边界、Feed absent/PID40577退出/锁free及新旧计划无attempt均确认。
+现场证据：本任务output/recovery-preflight-20261027/preflight-20261027T070249Z.json。
+后续若继续恢复须先确认此计划仍新鲜且未有attempt；过期必须重新只读核对并冻结新计划，禁止apply旧计划。
 
 ## 10/27 controller19已发布，Feed已卸载，精确只读确认待完成
 
@@ -36,6 +208,17 @@ controller v1.16.15/16已独立发布，运行绑定仍v1.16.14/gen31。controll
 10:16数据库读回：completed1031、PENDING336、WAITING_HISTORY4、BLOCKED35、UNKNOWN0；准备READY43/READBACK_REQUIRED80/WAITING_DEPENDENCY159。原件、游标、两层unknown记录均保留，尚未恢复正常采集。
 最小下一步：完成绑定此精确已确认前缀的continuation入口及反证测试/Review，发布controller17，新计划从consumers开始，禁止重复bootout；真实新Bar与完整业务验收另列。
 
+
+## 10/27 SimNow独立人工验收与关闭恢复代码完成
+
+增加独立人工入口、一次性预算及只许平仓恢复，复用原账本与账户锁。新关联成交版本保留原生/本地时间，
+以完整快照、请求身份、系统号、实际费用及权威Session证明建立因果；旧NativeFill和旧重放语义保持。
+未解释回调持久待核，Host与Adapter两层禁止恢复流程新开仓。首笔资金请求可显式一次45秒宽限，其余15秒。
+
+扩大回归454项、独立409项及隔离SDK25项通过，Ruff/secret/diff通过。账户现场证据保留本机私有输出，
+仓库只记录实现与验证边界，不用本节宣称准时平仓、自然策略信号或全品种持续自动交易验收。
+独立服务入口仍observe-only，auto_order/opening_enabled保持false；不发布或切换正式十服务。
+详见[任务说明](docs/tasks/2026-10-27-simnow-manual-roundtrip.md)。
 
 ## 10/27 SimNow账户只读实测通过，只读等待服务已启动
 

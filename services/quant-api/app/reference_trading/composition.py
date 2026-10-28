@@ -110,6 +110,9 @@ def build_forward_reference_worker(
             if code == "htdy":
                 return capture_htdy_live(
                     market_read, identity, wake_kind=kind,
+                    observation=worker.source_envelope if kind == "live_event" else None,
+                    expected_endpoints=expected_endpoints,
+                    check_cancelled=worker.check_cancelled,
                     event_bar_end=event_bar_end,
                     owner_segments=owner_segments, **common,
                 )

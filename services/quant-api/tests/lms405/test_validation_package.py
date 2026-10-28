@@ -26,7 +26,11 @@ def test_existing_evidence_reports_gaps_without_fake_match_or_profit(tmp_path):
     assert report["causal"]["performance"] is None
     assert report["holdout_count"] == 0
     assert len(report["work_packages"]) == 6
-    assert any(r["reason"] == "既有索引" for r in report["failures"])
+    # Missing original formula remains a failure after source placeholders are cleaned.
+    assert any(
+        r["category"] == "UNKNOWN_ORIGINAL_RULE" and r["reason"] == "KEYBAR"
+        for r in report["failures"]
+    )
     assert all(row["effective_at"] == "UNKNOWN" for row in report["observations"])
     m.publish(report, tmp_path / "new")
     assert json.loads((tmp_path / "new/report.json").read_text()) == report

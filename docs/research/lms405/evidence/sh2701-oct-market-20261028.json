@@ -1,0 +1,33 @@
+{
+  "contract": "SH2701",
+  "frequency": "1m",
+  "window": [
+    "2026-10-26",
+    "2026-10-27"
+  ],
+  "observed_at": "2026-10-28T09:02:47.399822+00:00",
+  "source_period": "UNKNOWN",
+  "executable": false,
+  "fill": null,
+  "performance": null,
+  "purpose": "PRICE_PATH_ONLY_NOT_AUTHOR_SIGNAL_PERIOD",
+  "status": "WINDOW_READABLE",
+  "bar_count": 690,
+  "input_ohlc_sha256": "a48fea800e76457a521785ca0b82a634c232f79b7ac60e1ae29f924ee70ef3ca",
+  "coverage": [
+    "2026-10-23T13:01:00+00:00",
+    "2026-10-27T07:00:00+00:00"
+  ],
+  "calendar_day_extrema": {
+    "2026-10-26": {
+      "bar_count": 225,
+      "high": "1585.000000000000000000",
+      "low": "1511.000000000000000000"
+    },
+    "2026-10-27": {
+      "bar_count": 225,
+      "high": "1524.000000000000000000",
+      "low": "1477.000000000000000000"
+    }
+  }
+}

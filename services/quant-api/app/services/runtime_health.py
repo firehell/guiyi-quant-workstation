@@ -166,6 +166,7 @@ def build_runtime_health(
         transport_error_type=transport_error_type,
         freshness_seconds=alert_freshness_seconds,
         live_coverage=components["live_market"].get("coverage", {}),
+        live_runtime_generation=components["live_market"].get("runtime_generation"),
         after_market=components["after_market"],
     )
 
@@ -324,6 +325,7 @@ def _collect_alert_health(
     transport_error_type: str | None,
     freshness_seconds: int,
     live_coverage: Mapping[str, object] | None = None,
+    live_runtime_generation: object = None,
     after_market: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     empty = {
@@ -410,7 +412,11 @@ def _collect_alert_health(
                     weekly_cache[key] = False
             return weekly_cache[key]
         coverage = _evaluate_alert_coverage(
-            coverage, live_coverage or {}, now, after_market or {}, weekly_finished
+            coverage, live_coverage or {}, now, after_market or {}, weekly_finished,
+            coverage_schema_version=heartbeat.get("coverage_schema_version"),
+            observation_journal=heartbeat.get("observation_journal"),
+            runtime_generation=heartbeat.get("runtime_generation"),
+            live_runtime_generation=live_runtime_generation,
         )
     except ValueError:
         return {
@@ -432,6 +438,7 @@ def _collect_alert_health(
             else "unverified" if any(item["state"] == "unverified" for item in coverage.values())
             else "pending" if any(item["state"] == "pending" for item in coverage.values())
             else "waiting_canonical" if any(item["state"] == "waiting_canonical" for item in coverage.values())
+            else "warming_up" if any(item["state"] == "warming_up" for item in coverage.values())
             else "not_due" if coverage and all(item["state"] == "not_due" for item in coverage.values())
             else "ok" if coverage else "unverified"
         ),
@@ -470,7 +477,7 @@ def _collect_alert_health(
                 and observation["notification_error_type"] != NOTIFICATION_TRANSPORT_FAILURE
             )
             or any(
-                rule["error_type"] is not None
+                rule["error_type"] not in {None, "evaluation_warming_up"}
                 for rule in cast(
                     Mapping[str, Mapping[str, object]], runtime_status["rule_status"]
                 ).values()
@@ -485,7 +492,8 @@ def _collect_alert_health(
 def _alert_coverage(
     heartbeat: Mapping[str, object], enabled_rule_count: int, scope_product_count: int
 ) -> dict[str, dict[str, object]]:
-    if heartbeat.get("coverage_schema_version") != 1:
+    version = heartbeat.get("coverage_schema_version")
+    if version not in {1, 2}:
         return {}
     raw = heartbeat.get("coverage")
     if not isinstance(raw, Mapping) or len(raw) > enabled_rule_count * max(scope_product_count, 1) * 7:
@@ -497,10 +505,41 @@ def _alert_coverage(
         if not isinstance(key, str) or not isinstance(value, Mapping):
             raise ValueError("ALERT_COVERAGE_INVALID")
         state = value.get("state")
-        if state not in {"ok", "evaluation_failed", "unverified"}:
+        if state not in ({"ok", "evaluation_failed", "unverified", "warming_up"} if version == 2 else {"ok", "evaluation_failed", "unverified"}):
             raise ValueError("ALERT_COVERAGE_INVALID")
         if state == "ok" and value.get("last_evaluated_bar_at") is None:
             raise ValueError("ALERT_COVERAGE_INVALID")
+        if (state == "warming_up" and value.get("last_evaluated_bar_at") is not None
+                and value.get("last_success_at") is None):
+            raise ValueError("ALERT_COVERAGE_INVALID")
+        if version == 2:
+            warming_id = value.get("warming_observation_id")
+            warming_generation = value.get("warming_runtime_generation")
+            if (warming_id is not None and (not isinstance(warming_id, str) or not 1 <= len(warming_id) <= 160)
+                    or warming_generation is not None and (type(warming_generation) is not int or warming_generation <= 0)):
+                raise ValueError("ALERT_COVERAGE_INVALID")
+            _optional_timestamp(value.get("last_warming_bar_at"))
+            attempts = value.get("warming_attempts", [])
+            if not isinstance(attempts, list) or len(attempts) > 64 or (state != "warming_up" and attempts):
+                raise ValueError("ALERT_COVERAGE_INVALID")
+            previous_attempt: datetime | None = None
+            for attempt in attempts:
+                if not isinstance(attempt, Mapping) or set(attempt) != {"bar_end", "observation_id", "generation"}:
+                    raise ValueError("ALERT_COVERAGE_INVALID")
+                attempted_at = _required_timestamp(attempt["bar_end"])
+                observation_id = attempt["observation_id"]
+                generation = attempt["generation"]
+                if (previous_attempt is not None and attempted_at <= previous_attempt
+                        or not isinstance(observation_id, str) or not 1 <= len(observation_id) <= 160
+                        or type(generation) is not int or generation <= 0):
+                    raise ValueError("ALERT_COVERAGE_INVALID")
+                previous_attempt = attempted_at
+            if attempts and (
+                value.get("warming_observation_id") != attempts[-1]["observation_id"]
+                or _optional_timestamp(value.get("last_warming_bar_at")) != previous_attempt
+                or value.get("warming_runtime_generation") != attempts[-1]["generation"]
+            ):
+                raise ValueError("ALERT_COVERAGE_INVALID")
         result[key] = dict(value)
     return result
 
@@ -511,6 +550,11 @@ def _evaluate_alert_coverage(
     now: datetime,
     after_market: Mapping[str, object] | None = None,
     weekly_finished: Callable[[str, date], bool] | None = None,
+    *,
+    coverage_schema_version: object = 1,
+    observation_journal: object = None,
+    runtime_generation: object = None,
+    live_runtime_generation: object = None,
 ) -> dict[str, dict[str, object]]:
     result: dict[str, dict[str, object]] = {}
     for key, item in coverage.items():
@@ -558,18 +602,116 @@ def _evaluate_alert_coverage(
             else:
                 evaluated = _optional_timestamp(item.get("last_evaluated_bar_at"))
                 due = _first_session_endpoint_after(sessions, frequency, evaluated)
+                if item["state"] == "warming_up" and due is not None:
+                    warming_at = _optional_timestamp(item.get("last_warming_bar_at"))
+                    warming_id = item.get("warming_observation_id")
+                    raw_attempts = item.get("warming_attempts")
+                    attempts = raw_attempts if isinstance(raw_attempts, list) and raw_attempts else [
+                        {"bar_end": item.get("last_warming_bar_at"),
+                         "observation_id": warming_id,
+                         "generation": item.get("warming_runtime_generation")}
+                    ]
+                    proven = bool(attempts) and len(attempts) <= 64
+                    for attempt in attempts:
+                        if not isinstance(attempt, Mapping) or due is None:
+                            proven = False
+                            break
+                        attempted_at = _optional_timestamp(attempt.get("bar_end"))
+                        observation_id = attempt.get("observation_id")
+                        if (attempted_at != due or attempted_at > now
+                                or not isinstance(observation_id, str) or not observation_id
+                                or attempt.get("generation") != runtime_generation
+                                or not _journal_proves_alert_route(
+                                    observation_journal, runtime_generation, live_runtime_generation,
+                                    symbol, frequency, due, expected_observation_id=observation_id,
+                                    acknowledged_only=True, exact_bar=True,
+                                )):
+                            proven = False
+                            break
+                        due = _first_session_endpoint_after(sessions, frequency, attempted_at)
+                    if (not proven or not isinstance(warming_id, str) or not warming_id
+                            or not isinstance(attempts[-1], Mapping)
+                            or attempts[-1].get("observation_id") != warming_id
+                            or _optional_timestamp(attempts[-1].get("bar_end")) != warming_at):
+                        # Every Session endpoint since the last real success
+                        # needs its own acknowledged original observation.
+                        updated["state"] = "unverified"
+                        result[key] = updated
+                        continue
+                    if due is None or now < due + timedelta(seconds=60):
+                        updated["state"] = "warming_up"
+                        result[key] = updated
+                        continue
                 if due is None:
-                    updated["state"] = "ok" if evaluated is not None else "not_due"
+                    updated["state"] = "warming_up" if item["state"] == "warming_up" else "ok" if evaluated is not None else "not_due"
                 elif now >= due + timedelta(seconds=60):
-                    updated["state"] = (
-                        "data_lagging" if isinstance(live, Mapping) and live.get("state") == "lagging"
-                        else "evaluation_lagging"
-                    )
-                    updated["first_unresolved_bar_end"] = _iso(due)
+                    if isinstance(live, Mapping) and live.get("state") == "lagging":
+                        updated["state"] = "data_lagging"
+                    elif coverage_schema_version == 2:
+                        updated["state"] = (
+                            "evaluation_lagging"
+                            if _journal_proves_alert_route(
+                                observation_journal, runtime_generation, live_runtime_generation,
+                                symbol, frequency, due
+                            ) else "unverified"
+                        )
+                    else:
+                        updated["state"] = "evaluation_lagging"
+                    if updated["state"] != "unverified":
+                        updated["first_unresolved_bar_end"] = _iso(due)
                 elif item["state"] == "unverified":
                     updated["state"] = "pending"
         result[key] = updated
     return result
+
+
+def _journal_proves_alert_route(
+    journal: object, generation: object, live_generation: object,
+    symbol: object, frequency: object, due: datetime,
+    *, expected_observation_id: str | None = None,
+    acknowledged_only: bool = False,
+    exact_bar: bool = False,
+) -> bool:
+    """Current-generation acknowledged or bounded pending journal row proves a due route."""
+    if not isinstance(journal, Mapping) or type(generation) is not int or generation <= 0:
+        return False
+    if (journal.get("runtime_generation") != generation or live_generation != generation
+            or not isinstance(symbol, str) or not isinstance(frequency, str)):
+        return False
+    cursor, tail = journal.get("cursor"), journal.get("tail")
+    if not (isinstance(cursor, str) and isinstance(tail, str)):
+        return False
+    try:
+        cursor_id = tuple(int(part) for part in cursor.split("-"))
+        tail_id = tuple(int(part) for part in tail.split("-"))
+    except (TypeError, ValueError):
+        return False
+    if len(cursor_id) != 2 or len(tail_id) != 2 or cursor_id > tail_id:
+        return False
+    for field, acknowledged in (("route_history", True), ("routes", True), ("pending_routes", False)):
+        if acknowledged_only and not acknowledged:
+            continue
+        routes = journal.get(field)
+        raw = routes.get(f"{symbol}:{frequency}") if isinstance(routes, Mapping) else None
+        candidates = raw if field == "route_history" and isinstance(raw, list) else (raw,)
+        for route in candidates:
+            if (not isinstance(route, Mapping) or not isinstance(route.get("observation_id"), str)
+                    or not route["observation_id"] or route.get("trading_day") != journal.get("trading_day")):
+                continue
+            if expected_observation_id is not None and route["observation_id"] != expected_observation_id:
+                continue
+            stream_id = route.get("stream_id")
+            if not isinstance(stream_id, str):
+                continue
+            try:
+                route_id = tuple(int(part) for part in stream_id.split("-"))
+                observed = _required_timestamp(route.get("bar_end"))
+            except (TypeError, ValueError):
+                continue
+            if (len(route_id) == 2 and (observed == due if exact_bar else observed >= due) and
+                    ((route_id <= cursor_id) if acknowledged else (cursor_id < route_id <= tail_id))):
+                return True
+    return False
 
 
 def _trading_week_finished(session: Session, symbol: str, day: date) -> bool:
@@ -751,6 +893,7 @@ def _collect_live_market_health(
         "phase_counts": {},
         "coverage": {},
         "coverage_state": "unverified",
+        "runtime_generation": None,
         "error_type": None,
         "error_message": None,
     }
@@ -843,6 +986,11 @@ def _collect_live_market_health(
         "subscribed_count": subscribed_count,
         "last_heartbeat_at": _iso(heartbeat_at),
         "last_bar_at": _iso(last_bar_at),
+        "runtime_generation": (
+            heartbeat.get("runtime_generation")
+            if type(heartbeat.get("runtime_generation")) is int and heartbeat["runtime_generation"] > 0
+            else None
+        ),
         "phase_counts": phase_counts,
         "coverage": coverage,
         "coverage_state": (

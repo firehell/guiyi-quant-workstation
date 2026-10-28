@@ -43,16 +43,49 @@ def capture_htdy_live(
     revision_id: str, generation: int, after: datetime | None,
     now: datetime, wake_kind: str, event_bar_end: datetime | None = None,
     owner_segments: Callable[[StreamIdentity, str, date, datetime], tuple[str, str]],
+    observation=None, expected_endpoints=None, check_cancelled=lambda: None,
 ) -> ForwardCapture | None:
     """Capture one genuine live wake; scanning a missed Bar never invents first_seen."""
-    if (identity.strategy_code != "htdy" or identity.frequency != "15m"
+    check_cancelled()
+    if (identity.strategy_code != "htdy" or identity.frequency not in {"15m", "60m"}
             or wake_kind not in {"live_event", "scan"}):
         raise ValueError("FORWARD_INPUT_IDENTITY_INVALID")
+    # The accepted 60m route requires a durable original. A scanner or a current
+    # snapshot cannot establish the first-seen knowledge time of an earlier Bar.
+    if identity.frequency == "60m" and (wake_kind != "live_event" or observation is None):
+        raise ForwardInputUnavailable("FIRST_SEEN_NOT_PROVEN")
     query = SeriesPageQuery(
         SeriesKind.ACTUAL_DOMINANT, identity.product.upper(),
         BarFrequency(identity.frequency), limit=CONTEXT_BARS,
     )
-    snapshot = market_read.observation_snapshot(query, after, now)
+    journal_proof = {}
+    if observation is not None:
+        from app.market_data.live_market import _bar_from_payload
+        from app.market_data.domain import normalize_contract_for_symbol
+        from app.market_data.market_read_service import MarketObservationSnapshot
+        try:
+            raw = observation.data
+            original = _bar_from_payload(json.dumps(raw, allow_nan=False))
+            contract = raw["contract"]
+            received = observation.raw_received_at or observation.source_observed_at
+            if (observation.channel != f"live:bar:{identity.product.lower()}:{identity.frequency}"
+                    or observation.trading_day != original.trading_day
+                    or not observation.notification_eligible or not observation.stream_id
+                    or observation.confirmed_at != now or original.bar_end >= now
+                    or received > now
+                    or normalize_contract_for_symbol(identity.product.lower(), contract) != contract):
+                raise ValueError("identity")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ForwardInputUnavailable("LIVE_EVENT_IDENTITY_CONFLICT") from exc
+        if after is not None and original.bar_end <= after:
+            return None
+        snapshot = MarketObservationSnapshot(state=None, source="realtime",
+            trading_day=original.trading_day, contract=contract, bars=(original,))
+        journal_proof = {"observation_id": observation.observation_id,
+            "journal_id": observation.stream_id, "raw_received_at": received.isoformat(),
+            "confirmed_at": now.isoformat()}
+    else:
+        snapshot = market_read.observation_snapshot(query, after, now)
     if snapshot.source == "unavailable":
         raise ForwardInputUnavailable("LIVE_SOURCE_UNAVAILABLE")
     if snapshot.source == "none" or not snapshot.bars:
@@ -69,6 +102,14 @@ def capture_htdy_live(
         raise ForwardInputUnavailable(
             "LIVE_EVENT_IDENTITY_CONFLICT", trading_day=latest.trading_day,
         )
+    if identity.frequency == "60m" and expected_endpoints is None:
+        raise ForwardInputUnavailable("HTDY_ENDPOINT_AUTHORITY_REQUIRED")
+    if expected_endpoints is not None:
+        endpoints = expected_endpoints(identity, snapshot.contract, latest.trading_day, after, latest.bar_end)
+        if endpoints != (latest.bar_end,):
+            raise ForwardInputUnavailable("OBSERVATION_GAP", trading_day=latest.trading_day,
+                endpoints=endpoints or (latest.bar_end,))
+    check_cancelled()
     window = market_read.bars_until(
         query, trading_day=latest.trading_day, end=latest.bar_end,
         limit=CONTEXT_BARS,
@@ -82,6 +123,9 @@ def capture_htdy_live(
     ):
         raise ForwardInputUnavailable("HTDY_WINDOW_UNAVAILABLE")
     market_read.validate_alert_window(window, context_bars=CONTEXT_BARS)
+    if observation is not None:
+        market_read.assert_window_current(window)
+    check_cancelled()
     owner_id, calculation_id = owner_segments(
         identity, window.contract, latest.trading_day, latest.bar_end,
     )
@@ -95,11 +139,12 @@ def capture_htdy_live(
         bar_end=latest.bar_end, observed_at=now, source_kind="completed_live",
         input_payload={"bars": bars, "bar_contracts": list(window.bar_contracts),
                        "contract": window.contract,
-                       "trading_day": latest.trading_day.isoformat()},
+                       "trading_day": latest.trading_day.isoformat(),
+                       **({"bar": bars[-1]} if observation is not None else {})},
         source_proof={"window_sha256": window_hash, "owner_segment_id": owner_id,
                       "calculation_segment_id": calculation_id,
                       "source": snapshot.source, "frequency": identity.frequency,
-                      "event_bar_end": latest.bar_end.isoformat()},
+                      "event_bar_end": latest.bar_end.isoformat(), **journal_proof},
         eligibility="first_seen",
     )
 

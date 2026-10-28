@@ -23,6 +23,29 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 SDK环境与API服务依赖隔离，不为运行上述纯Python模块向API安装CTP依赖。真实柜台端到端与资金生效另验。
 
+人工RB一手往返独立于策略Signal；以下真实LocalStore/Host/Adapter组合仍仅用隔离原生fixture：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/htdy_execution/test_manual_policy.py tests/unit/simnow_host/test_manual_host.py tests/unit/simnow_host/test_manual_finance.py tests/unit/simnow_host/test_manual_integration.py tests/unit/simnow_host/test_manual_runner.py tests/unit/simnow_monitor/test_manual_origin.py
+```
+
+覆盖单次OPEN、确认后600秒、平今、过期盘口仅撤单、未知发送不重试、实际费用/权益/预留、尾回调及释放失败、
+终态监控来源绑定；不能把离线通过当作实际开平成交。现场入口默认plan-only，显式execute须对应owner交办。
+
+## SimNow 全品种持续宿主
+
+默认observe，以下使用隔离fixture，不读Keychain、不连接Broker、不安装服务：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_credentials tests/unit/simnow_supervisor tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution services/quant-api/tests/test_simnow_portfolio_market.py services/quant-api/tests/test_simnow_controlled_market.py
+# 明确私有配置后，仅兼容性检查，无凭据/网络请求
+/path/to/isolated/python -I scripts/broker/simnow_supervisor.py --config /absolute/private.json --observe-only --check
+```
+
+覆盖单账户锁、共享队列冻结及commit-before-ACK、管理Tick禁止新OPEN/预留、局部恢复、
+Session/预开盘/午休/日切、同连接快照变化、断线预算与持久阻断、已claim离线成交真实费用对账。
+实际Keychain加载、开机启动、自然新Bar及断线/跨日另验，不由fixture替代。
+
 ## 期货双向研究
 
 纯内核/账户、输入/采集边界、冻结结果与只读API定向验证（fixture不冒充真实行情）：
@@ -2146,6 +2169,33 @@ cycle覆盖和双fresh接收；不能通过重启正式服务或重放旧原件�
 及受影响的bindings/cohort/forward/stopped用例。重点为删除旧checkout后有效seal仍可读、Git对象身份、active写回拒绝、
 额外unknown/跨命名空间同名记录、篡改/原子提交故障和最终cohort旧前像。只重跑失败或新修改影响的用例；不为检查创建真实
 行情/通知。生产只做候选预检、原生单次切换、一组跨轮验收及精确退役计划的删除前同像复核。
+
+## 普通策略原生关联成交与当前分钟准入
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_execution tests/unit/simnow_host tests/unit/simnow_supervisor tests/unit/htdy_execution services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/data_foundation/test_htdy_closed_source_conflicts.py
+```
+
+含普通多空开仓、先平后反手、原生时钟双向偏差、完整快照与费用关联、待核阻断和旧账本重放。
+真实SDK结构测试沿用独立固定SDK环境的`tests/unit/simnow_host/native_gateway_smoke.py`，
+只使用假API，不建立原生连接。输入审计v3另报当前1m，即使本Session第一根60m尚未到期。
+
+
+## 持续trade隔离验收与部署预检
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_credentials tests/unit/simnow_supervisor tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution tests/unit/simnow_monitor services/quant-api/tests/test_simnow_portfolio_market.py services/quant-api/tests/test_simnow_controlled_market.py services/quant-api/tests/test_simnow_monitor_api.py services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/data_foundation/test_htdy_closed_source_conflicts.py
+node --test apps/quant-web/tests/simnowMonitor.test.ts
+pnpm -C apps/quant-web build
+PLAYWRIGHT_PORT=5198 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/simnow-monitor.spec.mjs --workers=1
+```
+
+`test_trade_end_to_end.py`以虚拟时钟/假柜台接真实队列、政策、适配器、费用证明和监控，
+覆盖两品种先后开仓、反手以及重启trade/manage接管、不补旧目标、预算不重置；不会读Keychain或联网。
+`test_trade_inputs.py`覆盖费率→账户刷新→最后盘口、失效/零量/闭市/非tick首候选让出、冷缓存撤单。
+settings/preflight覆盖四库身份/scope、缺库零创建和WAL零sidecar；现有执行回归覆盖未知发送、重复/乱序、
+撤单成交竞态、跨日及换月失败。固定SDK smoke仍使用真实结构加假API，不能代替柜台验收。
+trade render/preflight、收盘后切换与停用步骤见[执行合同](docs/SIMNOW_EXECUTION.md#持续交易候选simnow_continuous_v2)。
 
 ## 显式Inbox恢复与0054
 

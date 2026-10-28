@@ -1,0 +1,18 @@
+source_id,url,published_at,original_metadata_file,version,current_edit_marker,observed_at,reading_status,observation
+F01,https://weibo.com/1885745060/R1lYN9aE0,2026-05-27 16:46,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,当前正文确认锁定后由作者建立分水岭；附图未读；不证明建模是所有解锁的必要条件
+F03,https://weibo.com/1885745060/PBGtxroCE,2025-07-18 17:39,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,当前正文确认5m BBB保护与当时不支持连续抓M；仅2025-07-18 SH2509配置反例
+F05,https://weibo.com/1885745060/R6YXq8y3W,2026-07-03 17:11,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,正文明确顾不上交易、解锁需手动处理；持仓附图未核；明确人为等待而非市场HOLD
+F06,https://weibo.com/1885745060/R7HfFw6LJ,2026-07-08 09:57,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,正文确认人不在错过V+，当日恢复系统后等机会；持仓图未核；不改信号解释人为延迟
+F07,https://weibo.com/1885745060/RcL9GgTAt,2026-08-10 17:05,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,正文确认未完成强侧判弱而锁，转强再解锁；无信号Bar，不能解锁后转下个方向不是立即反手许可
+F08,https://weibo.com/1885745060/R0roUmhY8,2026-05-21 16:44,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,正文仍为抓M多向结束后恢复空向，方向措辞冲突保留；非完整成交链
+F09,https://weibo.com/1885745060/R2IUYCQHj,2026-06-05 17:00,author-control-20261016.csv,4.0.5与5.0分别描述,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,正文确认当次有M才允许做空及解锁抓M；5.0的1/2回补单独归属；附图未核
+F10,https://weibo.com/1885745060/R3Kdrj78Q,2026-06-12 10:09,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,当前正文确认多品种解锁；作者回复下午人不在，细节未解码；不补具体腿时刻
+F11,https://weibo.com/1885745060/R3LNq7ant,2026-06-12 14:10,author-control-20261016.csv,4.0.5,未见标记；不证明历史未改,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,当前正文说早上解锁者再次锁；不能证明F10每品种均再次锁定；附图未核
+F12,https://weibo.com/1885745060/R3Pl4qsAS,2026-06-12 23:11,author-control-20261016.csv,4.0.5与5.0分别描述,已编辑,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,当前已编辑正文指名FG/SA再次锁，短期解锁再锁视为盘整；不补短期阈值
+WRoLeVhPQ1,https://weibo.com/1885745060/RoLeVhPQ1,2026-10-28T15:22:00+08:00,../../lms-source-archive/index.csv,4.0.5;5.0;6.0分别描述,未见标记；历史修改未知,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ_WITH_IMAGE_SCOPE_IN_OBSERVATION,新读28日15:22收盘事后说明，4.0.5不能第一时间切换抓M；原因不详，附图未核
+WRoEvasxQR,https://weibo.com/1885745060/RoEvasxQR,2026-10-27T22:12:00+08:00,../../lms-source-archive/index.csv,4.0.5（正文明确）,未见标记,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ_WITH_IMAGE_SCOPE_IN_OBSERVATION,当前正文与原图放大确认SH701双腿各20、开均1492/1720、持均1492/1499；不推出账户连续性
+WRoCCdf0i5,https://weibo.com/1885745060/RoCCdf0i5,2026-10-27T17:24:00+08:00,../../lms-source-archive/index.csv,4.0.5（转述中明确）,未见,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ_WITH_IMAGE_SCOPE_IN_OBSERVATION,当前17:24条件解锁意向及风险/趋势约束确认；没有实际腿和时间
+U03,https://weibo.com/1885745060/RoBM1aahB,2026-10-27T15:16:00+08:00,../../lms-source-archive/index.csv,多系统组合；逐图归属未独立明确,是,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ_WITH_IMAGE_SCOPE_IN_OBSERVATION,当前正文及图3放大复核SH701空20开均1720持均1554，未列多不填零；可见不是策略信号图
+WRozPmaK10,https://weibo.com/1885745060/RozPmaK10,2026-10-27T10:18:00+08:00,../../lms-source-archive/index.csv,4.0.5（本帖明确）,未见标记,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ_WITH_IMAGE_SCOPE_IN_OBSERVATION,当前正文10:18、4.0.5、低1475和先锁定确认；引用图为文字节点，无OHLC时轴
+WRozNbg3en,https://weibo.com/1885745060/RozNbg3en,2026-10-27T10:13:00+08:00,../../lms-source-archive/index.csv,4.0.5（帖标题）,未见,2026-10-28T19:43:04+08:00,CURRENT_TEXT_READ_WITH_IMAGE_SCOPE_IN_OBSERVATION,当前正文、原图大图现场复核：SH701多20/空20，开均1490.1/1720，持均1490.1/1554；多腿今仓水印遮挡，账户及截图时刻未知；与既有附件可见字段一致
+E41,https://weibo.com/1885745060/Rf0dDugg8,2026-08-25 11:07,../sources.csv,4.0.5;5.0观测池,已编辑,2026-10-28T19:35:55+08:00,CURRENT_TEXT_READ,当前已编辑问答复读，等量双腿恢复方向与平反腿、短线后惯性回补概念分开；非具体执行标签

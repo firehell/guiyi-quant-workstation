@@ -112,11 +112,13 @@ def test_frozen_manifest_tamper_cannot_bypass_plan_hash():
 
 
 def test_selected_pending_plan_runs_and_blocked_capacity_does_not_retry(tmp_path):
-    runner, planner, service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False), ('completed', None, False)])
+    # Native advance->rebuild now finishes in one unit. Use an actually resumable
+    # partial report to exercise storage of a pending encoded plan across ticks.
+    runner, planner, service = setup(tmp_path, [('partial', 'INTERRUPTED', True), ('completed', None, False)])
     runner.tick(now=END)
     assert 'codec' in runner.state.read()['routes'][route().identity.stream_id]['plan']
     runner.tick(now=END)
-    assert [call[0] for call in service.calls] == ['advance', 'rebuild']
+    assert [call[0] for call in service.calls] == ['advance', 'resume']
     runner.state.write({'version': 'newow_historical_refresh_v1', 'cursor': '', 'routes': {
         route().identity.stream_id: {'status': 'blocked', 'reason': 'REFRESH_STATE_BUDGET_EXCEEDED'}}})
     runner.tick(now=END)

@@ -1,0 +1,300 @@
+{
+  "study": "LMS405_PUBLIC_CONDITIONS_V0_1",
+  "casebook_sha256": "c78d4a4c0f03ea30f8343bde23bc94600a26e4457e3fb7660179158fc5465c8c",
+  "input_kind": "SOURCE_CONDITIONS_WITHOUT_MARKET_SIGNAL_LABELS",
+  "historical_immutability_verified": false,
+  "author_signal_success_rate": null,
+  "eligible_golden_signal_samples": 0,
+  "holdout_samples": 0,
+  "executable": false,
+  "fill": null,
+  "performance": null,
+  "cases": [
+    {
+      "case_id": "RU2609_20260810_RESUME_LONG_SCENARIO",
+      "source": "https://weibo.com/1885745060/RcL9GgTAt",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "STRONG_AGAIN_AS_AUTHOR_DEFINED",
+        "POSITION_PATH_IDENTIFIED",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_LONG",
+        "sources": [
+          "https://weibo.com/1885745060/RcL9GgTAt"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "RU2609_20260810_RESUME_LONG_SCENARIO",
+        "as_of": "2026-10-28T19:35:56+08:00",
+        "routes": [
+          {
+            "checks": {
+              "STRONG_AGAIN_AS_AUTHOR_DEFINED": null,
+              "POSITION_PATH_IDENTIFIED": null,
+              "HISTORICAL_SIGNAL_TIME_IDENTIFIED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      },
+      "condition_roles": {
+        "STRONG_AGAIN_AS_AUTHOR_DEFINED": "AUTHOR_NECESSARY",
+        "POSITION_PATH_IDENTIFIED": "RESEARCH_VALIDATION",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "RESEARCH_VALIDATION"
+      },
+      "condition_meaning": {
+        "STRONG_AGAIN_AS_AUTHOR_DEFINED": "F07称转强才解锁；强侧16955–16975未完成时判弱，转强算法未知",
+        "POSITION_PATH_IDENTIFIED": "研究约束：同账户、锁定腿及此前状态被确认；这里的初始仓位仅单位假设",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "研究约束：作者周期、信号Bar及事前文本已核实，阅读时间不替代事件时间"
+      }
+    },
+    {
+      "case_id": "OI2609_20260605_GRAB_M_SHORT_SCENARIO",
+      "source": "https://weibo.com/1885745060/R2IUYCQHj",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 1,
+      "missing_original_facts": [
+        "M_PRESENT_AS_AUTHOR_DEFINED",
+        "BREAK_AND_SIGNAL_VALID",
+        "POSITION_PATH_IDENTIFIED",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_SHORT",
+        "sources": [
+          "https://weibo.com/1885745060/R2IUYCQHj"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "OI2609_20260605_GRAB_M_SHORT_SCENARIO",
+        "as_of": "2026-10-28T19:35:56+08:00",
+        "routes": [
+          {
+            "checks": {
+              "CONFIG_PERMITS_THIS_M_SCENARIO": true,
+              "M_PRESENT_AS_AUTHOR_DEFINED": null,
+              "BREAK_AND_SIGNAL_VALID": null,
+              "POSITION_PATH_IDENTIFIED": null,
+              "HISTORICAL_SIGNAL_TIME_IDENTIFIED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      },
+      "condition_roles": {
+        "CONFIG_PERMITS_THIS_M_SCENARIO": "AUTHOR_NECESSARY",
+        "M_PRESENT_AS_AUTHOR_DEFINED": "AUTHOR_NECESSARY",
+        "BREAK_AND_SIGNAL_VALID": "AUTHOR_NECESSARY",
+        "POSITION_PATH_IDENTIFIED": "RESEARCH_VALIDATION",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "RESEARCH_VALIDATION"
+      },
+      "condition_meaning": {
+        "CONFIG_PERMITS_THIS_M_SCENARIO": "F09明确当次4.0.5可解锁做空抓M；仅本次配置许可",
+        "M_PRESENT_AS_AUTHOR_DEFINED": "F09说有M才可以做空；作者判定不可由自制价格阈值替代",
+        "BREAK_AND_SIGNAL_VALID": "F09引用10273–10315附近空V+保护及当日破位，完整确认与有效期未知",
+        "POSITION_PATH_IDENTIFIED": "研究约束：同账户、锁定腿及此前状态被确认；这里的初始仓位仅单位假设",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "研究约束：作者周期、信号Bar及事前文本已核实，阅读时间不替代事件时间"
+      }
+    },
+    {
+      "case_id": "SH2701_20261027_RESUME_SHORT_SCENARIO_V2",
+      "source": "https://weibo.com/1885745060/RoCCdf0i5",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "TREND_CONTINUES_AS_AUTHOR_DEFINED",
+        "RISK_CONTROL_SATISFIED",
+        "POSITION_PATH_IDENTIFIED",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED",
+        "RESTORE_DIRECTION_IDENTIFIED"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_SHORT",
+        "sources": [
+          "https://weibo.com/1885745060/RoCCdf0i5"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "SH2701_20261027_RESUME_SHORT_SCENARIO_V2",
+        "as_of": "2026-10-28T19:35:56+08:00",
+        "routes": [
+          {
+            "checks": {
+              "TREND_CONTINUES_AS_AUTHOR_DEFINED": null,
+              "RISK_CONTROL_SATISFIED": null,
+              "POSITION_PATH_IDENTIFIED": null,
+              "HISTORICAL_SIGNAL_TIME_IDENTIFIED": null,
+              "RESTORE_DIRECTION_IDENTIFIED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      },
+      "condition_roles": {
+        "TREND_CONTINUES_AS_AUTHOR_DEFINED": "AUTHOR_NECESSARY",
+        "RISK_CONTROL_SATISFIED": "AUTHOR_NECESSARY",
+        "POSITION_PATH_IDENTIFIED": "RESEARCH_VALIDATION",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "RESEARCH_VALIDATION",
+        "RESTORE_DIRECTION_IDENTIFIED": "RESEARCH_VALIDATION"
+      },
+      "condition_meaning": {
+        "TREND_CONTINUES_AS_AUTHOR_DEFINED": "17:24称跟随空头趋势至破坏；该条件不是自动判定算法",
+        "RISK_CONTROL_SATISFIED": "17:24要求控制风控，阈值未知",
+        "POSITION_PATH_IDENTIFIED": "研究约束：同账户、锁定腿及此前状态被确认；这里的初始仓位仅单位假设",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "研究约束：作者周期、信号Bar及事前文本已核实，阅读时间不替代事件时间",
+        "RESTORE_DIRECTION_IDENTIFIED": "研究约束：来源未披露具体解锁腿，空向仅解释情景"
+      }
+    },
+    {
+      "case_id": "SH2509_20250718_CONTINUOUS_M_CONFIG_COUNTEREXAMPLE",
+      "source": "https://weibo.com/1885745060/PBGtxroCE",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 1,
+      "missing_original_facts": [
+        "POSITION_PATH_IDENTIFIED",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED"
+      ],
+      "assessment": {
+        "status": "NOT_PERMITTED",
+        "requested_action": "UNLOCK_SHORT",
+        "sources": [
+          "https://weibo.com/1885745060/PBGtxroCE"
+        ],
+        "unknown": [],
+        "failed": [
+          "public_route"
+        ],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "SH2509_20250718_CONTINUOUS_M_CONFIG_COUNTEREXAMPLE",
+        "as_of": "2026-10-28T19:35:56+08:00",
+        "routes": [
+          {
+            "checks": {
+              "CONFIG_PERMITS_CONTINUOUS_M_IN_THIS_ENVIRONMENT": false,
+              "POSITION_PATH_IDENTIFIED": null,
+              "HISTORICAL_SIGNAL_TIME_IDENTIFIED": null
+            },
+            "value": false
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      },
+      "condition_roles": {
+        "CONFIG_PERMITS_CONTINUOUS_M_IN_THIS_ENVIRONMENT": "AUTHOR_NECESSARY",
+        "POSITION_PATH_IDENTIFIED": "RESEARCH_VALIDATION",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "RESEARCH_VALIDATION"
+      },
+      "condition_meaning": {
+        "CONFIG_PERMITS_CONTINUOUS_M_IN_THIS_ENVIRONMENT": "F03明确当时4.0.5不包含该环境连续抓M；此False是披露的配置限制，不是因未观察到动作而推断",
+        "POSITION_PATH_IDENTIFIED": "研究约束：同账户、锁定腿及此前状态被确认；这里的初始仓位仅单位假设",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "研究约束：作者周期、信号Bar及事前文本已核实，阅读时间不替代事件时间"
+      }
+    },
+    {
+      "case_id": "GENERIC_SH2701_EXIT_THEN_REENTER_SHORT_EXPLANATION",
+      "source": "https://weibo.com/1885745060/Rf0dDugg8",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "EXIT_AND_FLAT_CONFIRMED",
+        "DIRECTION_AND_VERSION_APPLICABILITY",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "REENTER_SHORT",
+        "sources": [
+          "https://weibo.com/1885745060/Rf0dDugg8"
+        ],
+        "unknown": [
+          "case_version_405",
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "GENERIC_SH2701_EXIT_THEN_REENTER_SHORT_EXPLANATION",
+        "as_of": "2026-10-28T19:35:56+08:00",
+        "routes": [
+          {
+            "checks": {
+              "EXIT_AND_FLAT_CONFIRMED": null,
+              "DIRECTION_AND_VERSION_APPLICABILITY": null,
+              "HISTORICAL_SIGNAL_TIME_IDENTIFIED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      },
+      "condition_roles": {
+        "EXIT_AND_FLAT_CONFIRMED": "RESEARCH_VALIDATION",
+        "DIRECTION_AND_VERSION_APPLICABILITY": "RESEARCH_VALIDATION",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "RESEARCH_VALIDATION"
+      },
+      "condition_meaning": {
+        "EXIT_AND_FLAT_CONFIRMED": "研究约束：必须已退出且空仓；未列腿不能证明空仓",
+        "DIRECTION_AND_VERSION_APPLICABILITY": "研究约束：通用模板不能直接指定本合约空向和版本",
+        "HISTORICAL_SIGNAL_TIME_IDENTIFIED": "研究约束：作者周期、信号Bar及事前文本已核实，阅读时间不替代事件时间"
+      },
+      "source_context": {
+        "INERTIA_APPEARS_AFTER_SHORT_TERM": {
+          "relation": "RELATED_CONCEPT_NOT_A_ROUTE_GATE",
+          "meaning": "E41对短线后惯性出现再回补的概念说明；不等于SH2701专属规则；仅供解释，不是本合约作者必要门槛"
+        }
+      }
+    }
+  ]
+}

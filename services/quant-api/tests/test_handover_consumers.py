@@ -54,18 +54,22 @@ def test_reference_failed_route_keeps_input_unacked_and_source_time():
     from app.reference_trading.forward_inputs import ForwardInputUnavailable
     wake = StreamForwardLiveWake.__new__(StreamForwardLiveWake)
     wake.stop_requested = lambda: False
+    wake._retry_after = 0.0
     wake._stream = stream = Stream()
     seen = []
     def read_input(route, kind, bar_end):
         seen.append((route, kind, bar_end))
         assert worker.source_observed_at == OBSERVED and worker.raw_received_at == OBSERVED
         raise ForwardInputUnavailable('LIVE_EVENT_IDENTITY_CONFLICT')
-    worker = ForwardReferenceWorker(SimpleNamespace(read_pending_capture=lambda _: None),
+    repository = SimpleNamespace(read_pending_capture=lambda _: None,
+        enabled_forward_stream_ids=lambda **_: ('route',))
+    worker = ForwardReferenceWorker(repository,
         lambda _: SimpleNamespace(), read_input, enabled=True)
     wake._worker = worker
+    wake._repository = repository
     wake._validated_routes = lambda *_args: (OBSERVED, ('route',))
-    with pytest.raises(RuntimeError, match='PROCESSING_BLOCKED'):
-        wake.wait(0)
+    assert wake.poll() is False
+    assert wake._retry_after > 0  # A proven failure yields without ACK or re-reading.
     assert stream.acks == []
     assert wake._worker.source_observed_at is None
     assert wake._worker.raw_received_at is None
@@ -109,6 +113,7 @@ def test_alert_idle_verified_cursor_cycle_reports_ready_without_event():
         heartbeat_store=SimpleNamespace(), clock=lambda: OBSERVED,
         stop_requested=lambda: bool(stopped), mark_ready=lambda: ready.append(True))
     runtime._validate_startup_composition = lambda: None
+    runtime._prime_canonical_coverage = lambda: None
     runtime._write_heartbeat = lambda _now: None
     runtime.run_forever()
     assert ready == [True]
