@@ -1,5 +1,41 @@
 # L.M.S 4.0.5 复刻研究说明
 
+## 2026-10-29关键K近似复刻：可运行候选
+
+用户已明确允许补全未知边界；现在新增独立身份 **`lms-keybar-approx-v1`**，不再以找齐原文作为实施前提。原版公式的C类证据不足结论保留；本候选的可运行不等于原版公式已恢复，`lms-inspired-v1`不修改。
+
+[打开本地K线与逐Bar回放](evidence/keybar-approx-v1-jm2509-20261029/index.html) · [机器结果](evidence/keybar-approx-v1-jm2509-20261029/report.json) · [逐Bar CSV](evidence/keybar-approx-v1-jm2509-20261029/frames.csv) · [下一根独立观察](evidence/keybar-approx-v1-jm2509-20261029/observations.csv)。全段138根：21个ibar、5个下影pinbar、2个上影pinbar；形态可以重叠，这些不是交易数。没有优化阈值或寻找盈利参数。
+
+### 本候选的唯一规则合同
+
+- 输入为同一具体物理合约的completed **5m** Bar，必须有起止时间、合法Decimal OHLC、递增且不重叠。相邻指输入序列相邻；可跨已知休市间隔，不递归寻找母K。固定首案输入来自既有MDS冻结导出，不能用任意缺行CSV替换。核心不重新判断Session或行情质量。
+- ibar：`H[t] < H[t-1]` 且 `L[t] > L[t-1]`；任何边界相等均不成立。首根无前K为null，不冒充已知负样本。这是本候选假设，不是作者完整定义。
+- 实体=`abs(C-O)`，上影=`H-max(O,C)`，下影=`min(O,C)-L`。实体必须>0；下影≥3倍实体且上影≤实体为LONG形态，上影≥3倍实体且下影≤实体为SHORT形态；K色不限。I10只支持长影≥3倍实体的局部约束，零实体处理、另一影线限制、方向标签与适用方式均为本候选补全。LONG/SHORT为形态方向，不是订单或持仓。
+- 形态`confirmed_at=bar.end`，不提前到盘中。各Frame只含当前及前K数据；没有有效期、替代信号、持仓状态或交易许可。
+- 对每个有形态的Bar，另在**下一输入Bar收盘时**记录`C[next] > H[signal]`及`C[next] < L[signal]`；相等不算，影线穿越但收盘未越也不算。`observed_at=next.end`，不写回原Frame；同时穿越上下影线不代表两次成交或可知盘中先后。末根缺下一根时不制造观察。
+- 两高一低、两低一高仅保留作者图注/空间解释，不自动选点；ebar、tbar、环境/区域生成、锁定/解锁、收益和自动执行不在本版。
+
+### 实现、对照与运行
+
+纯函数入口为`guiyi_quant.lms_keybar_approx.classify/observe_next/replay`；独立CLI为`scripts/research/lms_keybar_approx_replay.py`。Frame与后续Observation分流，批量与逐根、任意历史前缀一致。无HTTP、数据库或Runtime改动。
+
+H06/H10局部几何可解释：本地09:10满足本候选ibar，09:15收盘低于其低点1026.5；**仅暂定视觉对应，不认定作者箭头就是09:10**。图顶1034.5与暂定本地峰1035差0.5，仍未解释。I10/J02/N03/N04缺可唯一定位的Bar或周期，无法逐根对齐；合格作者样本0、准确率null、Fill/收益null、executable=false。相似图与局部规则匹配不计为作者系统复刻成功。
+
+以下命令只读原冻结输入，输出目录必须不存在。图表用matplotlib，当前系统`python3`已安装matplotlib 3.11.2；API虚拟环境无该渲染依赖，不向其安装。纯核心和JSON构建测试不依赖绘图库：
+
+```sh
+MPLCONFIGDIR=/tmp/lms-keybar-approx-mpl PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/quant-core:scripts/research python3 scripts/research/lms_keybar_approx_replay.py --input output/lms405-jm2509-july22-20261017/market-read-authorized/JM2509_2025-07-21_2025-07-22_5m.csv --output /tmp/lms-keybar-approx-review
+```
+
+输入SHA256严格复用旧几何审计的`71c668cc3874cfdcb1c52b47c26615a89ed455977bfb5c80883a9e18b3cb91b3`，不允许换数据后沿用首案。输出HTML/SVG、两张CSV及JSON（带核心/CLI代码指纹），全部先校验/渲染，再独占创建新目录；已有目录拒绝覆盖。写盘异常可能留下新建部分目录；完整JSON最后写，失败目录不当成功，换新目录复算。不下载、不修复行情，无外部服务和后台任务。
+
+### 本轮验收
+
+核心及回放测试先因缺模块失败，再实现通过；精确边界、Decimal环境精度、双向收盘观察、前缀、批量/逐根一致、跨合约/时序拒绝、篡改输入及拒覆盖均已覆盖。最终API虚拟环境LMS回归 **100 passed, 1 skipped in 1.53s**（原74+新增26；另1项渲染测试因虚拟环境无matplotlib跳过），相关ruff通过。该渲染测试以系统python3独立实际运行 **1 passed in 0.60s**，因此必要渲染验证未缺失。独立公式/时序Review无Confirmed Issue及需本版修复风险，审查方独立100项通过，并复算JSON/CSV/HTML及SVG一致。主代理在正常Chrome打开本地HTML，目视检查全段/局部图、差异表，并实际展开138根明细表。两个新进程重建的5个产物逐字节一致；真实CLI拒覆盖返回2，5文件SHA256均未变。58个旧证据/实现/冻结输入哈希不变；来源库126记录/91图片哈希/900覆盖行检查通过。定向secret scan为0。暂存检查发现matplotlib原生SVG行尾空格，先新增真实渲染回归观察失败，再只清理渲染输出行尾；修正后渲染回归通过，SVG与此前相比仅行尾空格变化，数值与CSV不变；最终cached diff --check通过。无新增外部Gate；仅本地提交，不推送。旧输入、原图、冻结报告及旧策略保持字节不变（本规则汇总表/手册允许追加）。
+
+唯一下一步：在这个已固定定义上扩展可核验图例和结构解释，逐项报告差异；不因某笔盈利重设公式。
+
+
 ## 2026-10-28关键K准入与识别
 
 [关键K识别报告](evidence/KEYBAR_IDENTIFICATION_20261028.md)及[准入表](evidence/keybar-sample-admission-20261028.csv)：24附件记录中17行可作形态观察，重复事件合并后15组；可对齐及4.0.5验收样本均0。唯一选择JM 5m ibar，结论C：新增insidebar术语关联，包含字段、等号、确认、失效和配置仍缺；不新增信号计算器。复用旧价格审计结果一致，1034.5/1035差异保留。N04当前图“右侧”与旧摘要“左侧”差异单列，不覆盖旧记录。
