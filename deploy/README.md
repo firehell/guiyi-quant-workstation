@@ -332,6 +332,8 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 交接保存稳定历史刷新控制文件时，精确稳定目录路径复用该控制读取器既有64,000,000字节上限；原fd、防链接、owner、nlink、权限和读前后身份校验不变，普通配置与其他路径不放宽。
 
 整组预热对已有恢复journal使用限定8MiB读取（仅稳定目录直接子项的generation/deployment/scheduled-update三类），原配置文件上限、防链接及读前后身份校验不变。
+仅cohort显式午休预热可对BREAK使用Canonical：逐次fresh Session证明、无current Session、下次开市大于660秒，完整Scope计算前后须通过原生Feed静默证明；证明失败拒绝且不回退实时窗口。普通Alert读取不启用此选项。
+
 仅cohort闭市Canonical预热可将苏冰D1/W1 quality-v2的明确WARMING_UP逐路记录，不能计入calculated或声明信号就绪；原生预热默认strict，未知/质量/映射失败仍阻断。预热证据在任何停机前持久化。
 
 完整Alert scope的只读预热上限600秒，其他子服务120秒；均在停机预算开始之前。该上限不延长15分钟plan有效期，预热后计划过期仍取消，不能带过期计划停服。

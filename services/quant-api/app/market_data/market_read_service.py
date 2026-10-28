@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 import json
@@ -244,9 +244,12 @@ class MarketReadService:
             after_market_status_path or PROJECT_ROOT / ".run" / "after-market-status.json"
         )
 
-    def canonical_warmup_reader(self, now: datetime) -> _CanonicalWarmupReader:
+    def canonical_warmup_reader(
+        self, now: datetime, *, allow_break: bool = False,
+        clock: Callable[[], datetime] | None = None,
+    ) -> _CanonicalWarmupReader:
         """Internal preflight reader; never used by the running signal path."""
-        return _CanonicalWarmupReader(self, now)
+        return _CanonicalWarmupReader(self, now, allow_break=allow_break, clock=clock)
 
     def history_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
         """读取正式历史页；不直接接触 Parquet 或 Live Redis。"""
@@ -1453,7 +1456,8 @@ class _CanonicalWarmupReader(MarketReadService):
     evidence for natural observations.
     """
 
-    def __init__(self, source: MarketReadService, now: datetime) -> None:
+    def __init__(self, source: MarketReadService, now: datetime, *,
+                 allow_break: bool = False, clock: Callable[[], datetime] | None = None) -> None:
         if now.tzinfo is None or now.utcoffset() is None:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_TIMEZONE_REQUIRED")
         super().__init__(market_data=source._market_data,
@@ -1462,21 +1466,43 @@ class _CanonicalWarmupReader(MarketReadService):
                          live_store=source._live_store,
                          after_market_status_path=source._after_market_status_path)
         self._warmup_as_of = now.astimezone(UTC)
+        if type(allow_break) is not bool:
+            raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+        self._allow_break = allow_break
+        self._clock = clock or (lambda: datetime.now(UTC))
 
-    def _closed(self, symbol: str) -> bool:
-        phase = self._phase_resolver.resolve(symbol, self._warmup_as_of)
+    def _closed_proof(self, symbol: str) -> ProductMarketPhase | None:
+        at = self._clock() if self._allow_break else self._warmup_as_of
+        if (not isinstance(at, datetime) or at.tzinfo is None or at.utcoffset() is None
+                or at < self._warmup_as_of):
+            raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+        phase = self._phase_resolver.resolve(symbol, at)
         if phase.symbol != symbol or phase.phase not in {
                 MarketPhase.CLOSED, MarketPhase.TRADING, MarketPhase.BREAK}:
             raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
-        if phase.phase is not MarketPhase.CLOSED:
-            return False
+        if self._allow_break:
+            if phase.phase is MarketPhase.TRADING:
+                raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+            if (phase.phase is MarketPhase.BREAK and phase.trading_day is None
+                    or phase.next_session_start is None
+                    or phase.next_session_start.tzinfo is None
+                    or phase.next_session_start.utcoffset() is None
+                    or (phase.next_session_start - at).total_seconds() <= 660):
+                raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+        elif phase.phase is not MarketPhase.CLOSED:
+            return None
         if (phase.current_session is not None or phase.next_session_start is not None
-                and phase.next_session_start <= self._warmup_as_of):
+                and phase.next_session_start <= at):
             raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
-        return True
+        return phase
+
+    def _recheck_closed(self, symbol: str, expected: ProductMarketPhase) -> None:
+        if self._closed_proof(symbol) != expected:
+            raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
 
     def closed_window(self, identity: SeriesPageQuery, *, limit: int = 64, quality_rewarm: bool = False) -> MarketReadWindow | None:
-        if not self._closed(identity.symbol):
+        proof = self._closed_proof(identity.symbol)
+        if proof is None:
             return None
         if (identity.series_kind is not SeriesKind.ACTUAL_DOMINANT
                 or identity.contract is not None
@@ -1485,6 +1511,7 @@ class _CanonicalWarmupReader(MarketReadService):
         if quality_rewarm:
             window = self.latest_subing_quality_window_as_of(identity, as_of=self._warmup_as_of)
             self.assert_window_current(window)
+            self._recheck_closed(identity.symbol, proof)
             return window
         try:
             # Select the latest published Canonical prefix. A wall-clock
@@ -1504,10 +1531,12 @@ class _CanonicalWarmupReader(MarketReadService):
         self.assert_window_current(window)
         if identity.frequency in INTRADAY_FREQUENCIES:
             self.validate_alert_window(window, context_bars=len(bars))
+        self._recheck_closed(identity.symbol, proof)
         return window
 
     def assert_window_current(self, window: MarketReadWindow) -> None:
-        if not self._closed(window.symbol):
+        proof = self._closed_proof(window.symbol)
+        if proof is None:
             raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
         if window.input_policy_version == SUBING_QUALITY_REWARM_POLICY_V2:
             try:
@@ -1518,6 +1547,7 @@ class _CanonicalWarmupReader(MarketReadService):
             except MarketDataError as exc:
                 raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
             super().assert_window_current(window)
+            self._recheck_closed(window.symbol, proof)
             return
         try:
             page = self.history_page(SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, window.symbol,
@@ -1532,6 +1562,7 @@ class _CanonicalWarmupReader(MarketReadService):
                 raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE")
         except MarketDataError as exc:
             raise MarketReadWindowError("MARKET_READ_CONTRACT_UNAVAILABLE") from exc
+        self._recheck_closed(window.symbol, proof)
 
     def _verified_live_bars(self, **_kwargs) -> tuple[CanonicalBar, ...]:
         return ()

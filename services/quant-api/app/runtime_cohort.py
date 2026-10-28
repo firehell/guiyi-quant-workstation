@@ -570,7 +570,7 @@ def main(argv=None):
             if args.service == "alert":
                 from app.alerts.composition import warmup_alert_runtime
 
-                proof = warmup_alert_runtime(allow_closed_warming=True)
+                proof = warmup_alert_runtime(allow_closed_warming=True, allow_break=True)
             else:
                 proof = warmup_service(args.service)
             print(

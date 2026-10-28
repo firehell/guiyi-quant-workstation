@@ -238,3 +238,30 @@ def test_cohort_never_classifies_an_unknown_subclass_as_the_exact_warming_error(
     )
     with pytest.raises(UnknownWarming):
         warmup_alert_runtime(allow_closed_warming=True)
+
+
+def test_cohort_break_warmup_requires_feed_before_and_after(closed_segment, monkeypatch):
+    from app.alerts import composition
+    from app.market_data import composition as market_composition
+    calls = []
+    closed_segment.market._phase_resolver = SimpleNamespace(
+        resolve=lambda *_: phase(MarketPhase.BREAK, DAY))
+    monkeypatch.setattr(market_composition, 'build_market_feed_service', lambda session: SimpleNamespace(
+        quiescent=lambda at: calls.append(at) or True))
+    result = composition.warmup_alert_runtime(allow_closed_warming=True, allow_break=True)
+    assert calls == [NOW, NOW]
+    assert result['calculated'] == 0 and len(result['warming']) == 1
+    assert all(not sql.lstrip().upper().startswith(('INSERT', 'UPDATE', 'DELETE'))
+               for sql in closed_segment.statements)
+
+
+@pytest.mark.parametrize('proofs', [(False,), (True, False)])
+def test_cohort_break_warmup_rejects_unproved_feed(closed_segment, monkeypatch, proofs):
+    from app.alerts import composition
+    from app.market_data import composition as market_composition
+    values = iter(proofs)
+    monkeypatch.setattr(market_composition, 'build_market_feed_service', lambda session: SimpleNamespace(
+        quiescent=lambda at: next(values)))
+    with pytest.raises(MarketReadWindowError, match='MARKET_READ_PHASE_UNAVAILABLE'):
+        composition.warmup_alert_runtime(allow_closed_warming=True, allow_break=True)
+    assert closed_segment.closes == [True]

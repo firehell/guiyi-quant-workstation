@@ -650,6 +650,19 @@ Event；只有原始行情或公式无法证明才不产生原始 Event。API �
 - **WHEN** 原始信号成立但某周期输入无法证明，或已证明的方向不同
 - **THEN** 原始 Event 仍保存并分别记录 UNKNOWN 或 FAIL；重复触发不改首次快照
 
+### Requirement: Explicit cohort lunch-break prewarm
+
+Only the native cohort prewarm MAY opt into Canonical reads during a proven BREAK. Default readers SHALL retain existing behavior. Every opted-in read and source validation SHALL freshly prove no current Session, an authoritative next Session more than 660 seconds away, and unchanged product phase identity before and after reading. The scoped prewarm SHALL verify native Feed quiescence before and after all calculations. Invalid proof SHALL fail without a realtime fallback. Physical-contract, published-prefix, quality and warming rules SHALL remain unchanged; these disposable calculations SHALL NOT create Events, send notifications or advance consumption cursors.
+
+#### Scenario: Proven lunch break permits disposable cohort prewarm
+- **WHEN** only native cohort explicitly enables BREAK support and fresh Session, budget, Feed and source proofs pass before and after calculation
+- **THEN** Canonical prewarm may calculate or report legitimate warming without creating Event, delivery or cursor facts
+
+#### Scenario: Changed or insufficient rest proof blocks prewarm
+- **WHEN** the Session becomes active, identity changes, Feed is not quiescent, or the next Session is unknown or within 660 seconds
+- **THEN** prewarm fails without a realtime fallback or mutation
+
+
 ## Requirement: Durable handover observations preserve forward-only eligibility
 
 When `GUIYI_OBSERVATION_STREAM_ENABLED=1`, Alert SHALL consume the existing completed
