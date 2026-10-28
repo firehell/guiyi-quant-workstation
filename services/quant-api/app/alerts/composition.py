@@ -238,13 +238,30 @@ def build_alert_market_read_service(session):
     return market
 
 
-def warmup_alert_runtime(*, allow_closed_warming: bool = False):
+def warmup_alert_runtime(*, allow_closed_warming: bool = False, allow_break: bool = False):
     """Verify scoped Market windows and evaluate without Event or transport writes."""
     from sqlalchemy import select
     from app.alerts.models import AlertRule
     from app.alerts.evaluators import AlertEvaluationError
     from app.alerts.registry import SUBING_QUALITY_REWARM_POLICY_V2
     from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
+    from app.market_data.market_read_service import MarketReadWindowError
+
+    def prove_feed_idle(session):
+        from app.market_data.composition import build_market_feed_service
+        feed = build_market_feed_service(session)
+        try:
+            if feed.quiescent(datetime.now(UTC)) is not True:
+                raise MarketReadWindowError("MARKET_READ_PHASE_UNAVAILABLE")
+        finally:
+            clients = (getattr(getattr(feed, "_store", None), "_redis", None),
+                       getattr(getattr(feed, "source_stream", None), "redis", None))
+            closed = set()
+            for client in clients:
+                if client is not None and id(client) not in closed:
+                    closed.add(id(client))
+                    client.close()
+
     runtime = build_alert_runtime()
     count = 0
     warming = []
@@ -256,7 +273,12 @@ def warmup_alert_runtime(*, allow_closed_warming: bool = False):
                 source._stream.cursor("alert", day)
         with runtime._session_factory() as session:
             market = runtime._market_read_factory(session)
-            canonical = market.canonical_warmup_reader(datetime.now(UTC))
+            if allow_break:
+                prove_feed_idle(session)
+                canonical = market.canonical_warmup_reader(
+                    datetime.now(UTC), allow_break=True, clock=lambda: datetime.now(UTC))
+            else:
+                canonical = market.canonical_warmup_reader(datetime.now(UTC))
             for rule in session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))):
                 for symbol, frequencies in rule.scope_product_frequencies.items():
                     for frequency in frequencies:
@@ -294,6 +316,8 @@ def warmup_alert_runtime(*, allow_closed_warming: bool = False):
                             continue
                         reader.assert_window_current(window)
                         count += 1
+            if allow_break:
+                prove_feed_idle(session)
         if not count and not warming:
             raise RuntimeError("ALERT_WARMUP_SCOPE_EMPTY")
         return {"calculated": count, "total": count + len(warming), "warming": warming,
