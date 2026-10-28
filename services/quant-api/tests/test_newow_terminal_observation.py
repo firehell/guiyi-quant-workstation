@@ -181,3 +181,87 @@ def test_short_minute_completed_terminal_observation_and_due_endpoint(frequency)
     got = reader.newow_completed_observation_snapshot(query(frequency), END - timedelta(hours=1), END + timedelta(minutes=1))
     assert got.source == "realtime" and got.bars == (BAR,)
     assert reader.newow_completed_observation_endpoint(query(frequency), END + timedelta(minutes=1)) == (END, DAY, "RB2611")
+
+
+def test_batch_completed_endpoints_share_identity_but_revalidate_after_read():
+    reader = service()
+    calls = []
+    original = reader._newow_completed_identity
+    def identity(q, at):
+        calls.append(q.symbol)
+        return original(q, at)
+    reader._newow_completed_identity = identity
+    queries = tuple(query(f) for f in (BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1))
+    result = reader.newow_completed_observation_endpoints(queries, END)
+    assert all(result[(q.symbol, q.frequency)] == (END, DAY, 'RB2611') for q in queries)
+    assert calls == ['rb', 'rb']
+
+
+def test_batch_completed_endpoints_does_not_reuse_identity_across_calls():
+    reader = service()
+    assert reader.newow_completed_observation_endpoints((query(),), END)[('rb', BarFrequency.H1)] == (END, DAY, 'RB2611')
+    reader._phase_resolver.completed_observation_trading_day = lambda *_: None
+    assert reader.newow_completed_observation_endpoints((query(),), END)[('rb', BarFrequency.H1)] is None
+
+
+def test_batch_completed_endpoints_rejects_owner_drift_for_whole_product():
+    reader = service()
+    owners = iter(('RB2611', 'RB2612'))
+    reader._market_data.dominant_segment_for_day = lambda *_: SimpleNamespace(contract=next(owners))
+    result = reader.newow_completed_observation_endpoints((query(BarFrequency.M5), query()), END)
+    assert set(result.values()) == {None}
+
+
+def test_batch_completed_endpoints_keeps_frequency_failure_local():
+    reader = service()
+    def endpoints(**kw):
+        if kw['frequency'] == BarFrequency.M5:
+            raise ValueError('unavailable')
+        return ((END, DAY),)
+    reader._market_data.expected_contract_replay_endpoints = endpoints
+    result = reader.newow_completed_observation_endpoints((query(BarFrequency.M5), query()), END)
+    assert result[('rb', BarFrequency.M5)] is None
+    assert result[('rb', BarFrequency.H1)] == (END, DAY, 'RB2611')
+
+
+@pytest.mark.parametrize('frequency', [BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1])
+@pytest.mark.parametrize('due', [True, False])
+def test_batch_completed_endpoint_matches_single_reader(frequency, due):
+    market = Market()
+    if not due:
+        market.expected_contract_replay_endpoints = lambda **kw: ()
+    reader = service(market=market)
+    q = query(frequency)
+    assert reader.newow_completed_observation_endpoints((q,), END)[('rb', frequency)] == reader.newow_completed_observation_endpoint(q, END)
+
+
+@pytest.mark.parametrize('defect', ['future', 'wrong_day', 'unsupported', 'nonoperational', 'naive'])
+def test_batch_completed_endpoint_never_falls_back_for_invalid_authority(defect):
+    reader = service()
+    q, now = query(), END
+    if defect == 'future':
+        reader._market_data.expected_contract_replay_endpoints = lambda **kw: ((END + timedelta(seconds=1), DAY),)
+    elif defect == 'wrong_day':
+        reader._market_data.expected_contract_replay_endpoints = lambda **kw: ((END, date(2026, 10, 8)),)
+    elif defect == 'unsupported':
+        q = query(BarFrequency.M1)
+    elif defect == 'nonoperational':
+        q = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, 'cu', BarFrequency.H1)
+    elif defect == 'naive':
+        now = END.replace(tzinfo=None)
+    assert reader.newow_completed_observation_endpoints((q,), now)[(q.symbol, q.frequency)] is None
+
+
+def test_batch_completed_endpoint_has_fixed_work_bound():
+    with pytest.raises(ValueError, match='NEWOW_COMPLETED_ENDPOINT_BATCH_LIMIT'):
+        service().newow_completed_observation_endpoints((query(),) * 241, END)
+
+
+def test_batch_completed_endpoint_missing_product_does_not_poison_other_product():
+    reader = service()
+    reader._operational_products = frozenset(('rb', 'cu'))
+    reader._phase_resolver.completed_observation_trading_day = lambda symbol, _: DAY if symbol == 'rb' else None
+    other = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, 'cu', BarFrequency.H1)
+    result = reader.newow_completed_observation_endpoints((other, query()), END)
+    assert result[('cu', BarFrequency.H1)] is None
+    assert result[('rb', BarFrequency.H1)] == (END, DAY, 'RB2611')
