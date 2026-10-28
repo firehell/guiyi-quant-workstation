@@ -257,3 +257,83 @@ def test_closed_daily_quality_warmup_keeps_existing_asof_and_policy_contract():
     warmup.latest_subing_quality_window = lambda _query, *, trading_day: window
     assert warmup.closed_window(SeriesPageQuery('actual_dominant', 'jm', '1d'), quality_rewarm=True) == window
     assert calls == [NOW]
+
+
+def break_warmup(market, *, clock=lambda: NOW):
+    return market.canonical_warmup_reader(NOW, allow_break=True, clock=clock)
+
+
+def test_explicit_break_warmup_uses_canonical_physical_prefix_and_rechecks():
+    market, source = canonical_reader(phase(MarketPhase.BREAK, DAY))
+    warmup = break_warmup(market)
+    window = warmup.closed_window(SeriesPageQuery('actual_dominant', 'jm', '15m'))
+    assert window is not None
+    assert warmup.current_contract_replay_window(window, after=None).bars == source.bars
+    assert source.validations
+
+
+@pytest.mark.parametrize('defect', ['trading', 'unknown', 'current', 'missing_next', 'short', 'exact_budget'])
+def test_break_warmup_rejects_unproved_or_short_window(defect):
+    state = phase(MarketPhase.BREAK, DAY)
+    if defect == 'trading':
+        state = replace(state, phase=MarketPhase.TRADING)
+    if defect == 'unknown':
+        state = replace(state, phase=MarketPhase.UNKNOWN)
+    if defect == 'current':
+        state = replace(state, current_session=SessionWindow(NOW-timedelta(minutes=1), NOW+timedelta(minutes=1)))
+    if defect == 'missing_next':
+        state = replace(state, next_session_start=None)
+    if defect in {'short', 'exact_budget'}:
+        state = replace(state, next_session_start=NOW+timedelta(seconds=659 if defect == 'short' else 660))
+    market, _ = canonical_reader(state)
+    with pytest.raises(MarketReadWindowError, match='PHASE_UNAVAILABLE'):
+        break_warmup(market).closed_window(SeriesPageQuery('actual_dominant', 'jm', '15m'))
+
+
+def test_break_warmup_actual_clock_prevents_read_after_reopening():
+    market, _ = canonical_reader(phase(MarketPhase.BREAK, DAY))
+    times = iter((NOW, NOW+timedelta(days=10)))
+    warmup = break_warmup(market, clock=lambda: next(times))
+    with pytest.raises(MarketReadWindowError, match='PHASE_UNAVAILABLE'):
+        warmup.closed_window(SeriesPageQuery('actual_dominant', 'jm', '15m'))
+
+
+def test_break_warmup_rejects_identity_drift_during_read():
+    market, source = canonical_reader(phase(MarketPhase.BREAK, DAY))
+    original = source.query_page
+    def changed(query):
+        value = original(query)
+        market._phase_resolver.resolve = lambda *_: replace(phase(MarketPhase.BREAK, DAY), next_session_start=NOW+timedelta(days=11))
+        return value
+    source.query_page = changed
+    with pytest.raises(MarketReadWindowError, match='PHASE_UNAVAILABLE'):
+        break_warmup(market).closed_window(SeriesPageQuery('actual_dominant', 'jm', '15m'))
+
+
+def test_break_warmup_retains_source_quality_rejection():
+    from app.market_data.market_data_service import MarketDataError
+    market, source = canonical_reader(phase(MarketPhase.BREAK, DAY))
+    def unavailable(_): raise MarketDataError('PARTITION_HASH_MISMATCH')
+    source.query_page = unavailable
+    with pytest.raises(MarketReadWindowError, match='WINDOW_INCOMPLETE'):
+        break_warmup(market).closed_window(SeriesPageQuery('actual_dominant', 'jm', '15m'))
+
+
+@pytest.mark.parametrize('next_start', [None, NOW+timedelta(seconds=659), NOW+timedelta(seconds=660), NOW.replace(tzinfo=None)])
+def test_opt_in_closed_warmup_also_requires_proved_safe_next_session(next_start):
+    market, _ = canonical_reader(replace(phase(), next_session_start=next_start))
+    with pytest.raises(MarketReadWindowError, match='PHASE_UNAVAILABLE'):
+        break_warmup(market).closed_window(SeriesPageQuery('actual_dominant', 'jm', '15m'))
+
+
+def test_opt_in_closed_warmup_rechecks_budget_after_source_read():
+    market, source = canonical_reader(replace(phase(), next_session_start=NOW+timedelta(seconds=700)))
+    at = [NOW]
+    original = source.query_page
+    def advance(query):
+        result = original(query)
+        at[0] = NOW+timedelta(seconds=40)
+        return result
+    source.query_page = advance
+    with pytest.raises(MarketReadWindowError, match='PHASE_UNAVAILABLE'):
+        break_warmup(market, clock=lambda: at[0]).closed_window(SeriesPageQuery('actual_dominant', 'jm', '15m'))

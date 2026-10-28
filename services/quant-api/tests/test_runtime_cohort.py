@@ -403,7 +403,7 @@ def test_internal_alert_warmup_explicitly_allows_only_closed_warming(
     assert runtime_cohort.main(["warmup", "alert"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["proof"] == proof
-    assert calls == [{"allow_closed_warming": True}]
+    assert calls == [{"allow_closed_warming": True, "allow_break": True}]
 
 
 def test_cohort_retains_per_stream_warming_in_attempt_before_any_stop(tmp_path):
