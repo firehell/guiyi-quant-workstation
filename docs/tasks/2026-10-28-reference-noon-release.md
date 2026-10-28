@@ -13,3 +13,5 @@ PR530/main/tag/Release v1.16.27 exact bde08514713df7d71c37267c7c104bde8908167c�
 11:38独立readback十服务identity matched仍v26/gen34；Feed available/pending0/无输入失败，Live末端11:30。Reference pending673、dependency_wait40、blocked0、UNKNOWN0，计算仍推进；夜间zero-backlog只属历史。7项合法暖机、历史464与120流自然验收独立保留。原生取消不代表整体运行恢复或RUNTIME_READY。
 
 证据output/reference-noon-20261028/及私有cohort-attempts/4da18c6e…/state.json。停止本轮切换，无追加自动化或通知重发。唯一下一步：定位并验证午休预热合同适用性，再在真正满足全部Gate的窗口以新计划交接；现役保持不动。
+
+11:39正式HTTP健康实际成功返回600READY/480OBSERVATION_LAGGING，receiving pending673/dep40/blocked0/UNKNOWN0；上午尚有实时计算滞后，不能称开盘链路完整验收或沿用夜间120路结论。后续优先只读定位积压吞吐与历史后台竞争，禁止提高并发/预算掩盖问题。

@@ -1,7 +1,7 @@
 # 当前状态
 
 10/28 11:30单次交付：健康性能补丁已通过PR530发布 **v1.16.27**，exact `bde08514713df7d71c37267c7c104bde8908167c`；Runtime仍 **v1.16.26/gen34**。原生计划`4da18c6e…`在Alert纯预热失败后cancelled，effects为空，未停服/CAS。午休BREAK不进入closed-only Canonical预热，fallback在bars_until报`MARKET_READ_CONTRACT_UNAVAILABLE`，不放宽Gate或重试旧attempt。候选84pytest、独立Review、离线锁定构建、secret scan通过；健康只读35.6→28.6秒不代表彻底消除HTTP超时。
-11:38新鲜读回：十身份匹配、Live到11:30、Feed pending0/无输入失败；Reference新pending673（11:31为706）、dependency等待40、blocked/UNKNOWN为0，不能复用夜间零积压结论。11:30自动化已触发后删除，无后续调度。详见[午休交付](docs/tasks/2026-10-28-reference-noon-release.md)。以下夜间统计均为原检查点。
+11:38新鲜读回：十身份匹配、Live到11:30、Feed pending0/无输入失败；Reference新pending673（11:31为706）、dependency等待40、blocked/UNKNOWN为0，不能复用夜间零积压结论。11:39正式Reference HTTP为600 READY/480 OBSERVATION_LAGGING，上午新输入尚未全部追齐，不能沿用夜间960/120。11:30自动化已触发后删除，无后续调度。详见[午休交付](docs/tasks/2026-10-28-reference-noon-release.md)。以下夜间统计均为原检查点。
 
 10/28收盘后恢复已执行，正式十服务原生整组切换至 **v1.16.26/gen34**，exact
 `33040c99bcb5f9899d55a50a187c08024c4180da`（PR527/528/529，annotated tag/Release）。
