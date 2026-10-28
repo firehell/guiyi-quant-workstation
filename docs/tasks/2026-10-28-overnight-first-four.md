@@ -63,3 +63,6 @@ revision2/recovered_through=23:04:06.474307使当前窗口notification_eligible=
 - 追加修正扩大Reference/Alert/health1452 passed/116 skipped，真实隔离PG（接收+HTDY含闭合）9 passed；
   MDS/HTDY/恢复定向162 passed，Ruff、两模块Mypy、OpenSpec12、secret0/diff通过。Mypy暴露的已有
   snapshot.state=None注解不一致仅改为Optional以表达已存在原件路径，不改运行逻辑；等待独立Review。
+- 追加HTDY修正独立Astra Review固定bc8163ddf→61f13712d：无未解决Confirmed Issue、无新增代码阻断，
+  reviewer另实跑38 passed/5 deselected，允许集成；现场恢复/发布/自然验收仍待闭市与开盘事实。
+- develop期间另一任务新增c09b1771c LMS研究文档，本任务保留并正常merge，不纳入选择性发布候选。
