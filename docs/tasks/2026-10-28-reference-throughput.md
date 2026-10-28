@@ -2,7 +2,7 @@
 
 Owner 已交办实现、验证、develop 集成、向前发布及权威收盘窗口内的原生交接。
 基线 develop `84313d04eb1857c9c2763d3bc64f8adbaa57cffd`；性能对照为正式 v1.16.26/gen34。
-已发布v1.16.29，实际Runtime保持v1.16.26/gen34，部署被旧Reference的10秒drain阻断。
+已发布并实际切换v1.16.29/gen35；旧v26退出阻断已解决，现场退出/恢复验收通过，自然新输入吞吐待交易时段。
 公式、Scope、参考收益、恢复合同、通知时效及 SimNow 不变。
 
 ## 实施记录
@@ -109,3 +109,26 @@ recovered2618及历史blocked339原件保留；计算水位16:30:13，维护锁�
 本任务临时发布分支已从已合并main上下文non-force删除。
 本会话task worktree调用Codex原生archive被宿主拒绝：`The task's primary checkout cannot be removed.`
 因此保留此树，不换工具绕过保护；primary工作区中的交付记录与Git提交可独立读取。
+
+## 17:17续办：退出阻断解决并实际切换
+
+Owner继续交办解决旧v26退出、切换并验收。复用既有原生预停驻路径，无需修改或重发已发布源码。
+`test_runtime_cohort_parked.py test_runtime_handover.py`：33 passed/3.08秒。
+在60 CLOSED、Inbox/UNKNOWN/pending capture均0且未知部署guard通过后，对exact旧Reference/gen34发出一次原生drain；
+19.603秒自然停驻，历史刷新/通知线程均关闭、锁由owner自行释放；旧PID45204保持parked等待接走。
+这把旧版本完成在途工作的等待与正常交接的10秒预算分开，不强杀、不提前解锁。
+
+全新计划`c50d1af551fe920e5108991c71723d17fd58450599eeafe5b4788898e4df7309`
+冻结原request0838ce13…，单次apply终态switched；旧退出、安装/CAS、消费者/Feed及四日历恢复全部完成。
+实际十绑定为v1.16.29/gen35/exact94b488896c；六旧PID均已实际退出，原取消attempt原件保持。
+对新Reference65175/gen35做一次闭市drain/resume：1.336784秒停驻且后台资源全关；取消该精确请求后0.165秒同PID重新持锁，
+全部1080流的checkpoint指针/状态摘要不变。不是强杀，也没有重放或补发。
+17:15、17:17独立读回：身份matched、Inbox pending/blocked/UNKNOWN/dependency_wait0，completed8302，
+source及completed的Live/Alert/Reference游标全部对齐原件尾部；水位16:30:13未回退，历史恢复2618、旧BLOCKED339保留。
+新worker实测scan最大0.014806秒、背景等待最大0.085712秒；没有新自然输入时不把这些数值当作行情吞吐结论。
+第一次独立探测启动早于cohort终态，被部署guard拒绝；终态后的两次读回均通过，无未知部署。
+
+本轮仅运行原生运维及验收，没有修改公式/Scope、补历史、补发或涉及SimNow账户；没有新自动化。
+工程切换和现场退出验收完成，global原有degraded/自然业务验收继续保留。
+实际命令与新鲜证据位于`output/reference-v26-exit-20261028/`及原目录的new-runtime-after-switch/after-resume.json。
+唯一剩余验收：下一自然交易时段观察新输入是否及时处理、积压是否持续下降。

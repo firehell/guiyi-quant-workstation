@@ -1,5 +1,14 @@
 # 当前状态
 
+10/28 17:17：旧v26退出阻断已解决，正式十服务已原生切换至 **v1.16.29/gen35**，exact
+`94b488896c4078c57f057bbfe73fd091c13a905d`。先让旧Reference完成当前单元，19.603秒正常parked、后台线程关闭并自行释放锁；
+新计划`c50d1af5…`继承该停驻状态，已完成旧进程退出、安装/CAS、消费者/Feed启动及原日历恢复，终态switched。
+新Reference现场drain/resume实测 **1.337秒退出、同PID恢复、checkpoint不变**；33项原生停驻/交接回归通过。
+17:15及17:17独立读回十身份matched、Inbox pending/blocked/UNKNOWN/dependency_wait均0、全部source/completed游标追尾；六旧PID已实际退出。
+计算水位保持16:30:13，历史恢复2618及旧BLOCKED339原件保留。正式新worker扫描最大0.014806秒，后台等待最大0.085712秒。
+工程切换与现场退出验收已完成；global仍degraded，下一自然交易时段的新输入吞吐/业务验收待实际发生，不声明整体RUNTIME_READY，不新增自动化。
+详见[Reference吞吐交付](docs/tasks/2026-10-28-reference-throughput.md)。以下均为先前检查点。
+
 10/28收盘后Reference吞吐/安全收尾补丁已通过PR532发布 **v1.16.29**，exact
 `94b488896c4078c57f057bbfe73fd091c13a905d`，develop代码aa639e028已集成。扫描25.959秒/11731SQL→0.042秒/4SQL，
 完整240键轮转一致；恢复关联同2618ID摘要不变。1020路真实输出/checkpoint逐值一致，557项候选回归、3项真实PG/内核/MDS容量及独立Review通过。
