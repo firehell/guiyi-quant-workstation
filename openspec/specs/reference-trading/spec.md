@@ -160,10 +160,45 @@ No row may infer enabled Runtime from tests, a page, a script or a historical re
 |---|---|---|---|---|---|
 | Newow trend / oscillation / main-rise | 1w, 1d, 60m | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and fixtures are verified; real per-product/per-frequency data evidence remains separate | Candidate code for completed Live 60m and completed Canonical D1/W1 capture, durable projection and restart recovery; per-product capability remains gated | Disabled / no worker |
 | SuBing reference | 5m, 15m, 30m, 60m, 1d, 1w | P4 bounded historical plan/build/resume/advance/rebuild implemented over P2/P3 | Temporary Canonical/Catalog/MDS wiring and formula fixtures are verified; D1 quality/readiness remains separately gated | Completed Live 5m/15m/30m/60m and completed Canonical D1/W1 capture; activation and per-route data evidence remain separate | Disabled / no worker |
-| HTDY first-seen | observation policy frequencies | Not approved; repainting boundary | `MODEL_NOT_APPROVED`; P7 owner decision required | Candidate model and completed Live capture; owner model acceptance remains gated | Disabled / no worker |
+| HTDY first-seen | Accepted operational scope: 60m | Historical repainting remains separate | `htdy60m_first_seen_reference_v1` accepts only `htdy_first_seen_reverse_close_v1` / `latest_only_32_v1` on the exact operational 60-product scope | Durable completed-original capture, 32-Bar current-prefix evaluation and atomic forward projection | Requires exact scoped activation; actual deployment and natural acceptance are recorded in STATUS.md |
 
 All rows are disabled by default. This matrix neither opens a Scope nor authorizes Canonical, database, notification,
 release or Runtime work.
+
+#### Scenario: A supported model has no scoped activation
+
+- **WHEN** code and isolated tests support a model but its exact scope has not been activated
+- **THEN** capability remains separate from Runtime enablement and natural acceptance
+
+### Requirement: Accepted HTDY 60m first-seen reference recording
+
+The accepted operational scope SHALL use `huotian_dayou_original_v0`, `htdy_first_seen_reverse_close_v1`
+and `latest_only_32_v1` at 60m. `buy` opens LONG and `sell` opens SHORT; an opposite observation closes the
+old reference trade and opens the new side, while a same-side observation never adds. Reference prices are
+completed Bar closes with zero fees/slippage; results are non-executable page references, not broker fills.
+
+The full operational scope SHALL activate in one transaction with flat reference seeds and a common future
+recording start. Acceptance MUST remain an exact model/policy/product/frequency allowlist; other scopes remain
+`MODEL_NOT_APPROVED`. Previously stored Alert Events MUST NOT be converted into historical reference trades.
+Historical context Bars warm the current 32-Bar prefix without producing historical actions.
+
+A 60m capture MUST bind an immutable eligible journal observation, its confirmation time, physical contract,
+cutoff and exact current Bar, plus a verified 32-Bar window and hash. A scan or a later Live snapshot MUST NOT
+invent first-seen evidence. Input conflict, missing endpoints or changed window overlap MUST fail closed.
+Actions, trades, checkpoint and Inbox completion SHALL retain the existing atomic commit and unknown-result
+readback contracts. Reference recording MUST NOT create Alert Events or send notifications.
+
+#### Scenario: Delivery fails after a signal is persisted
+
+- **WHEN** a new HTDY observation produces a signal and its notification transport fails
+- **THEN** the persisted Event and separately committed reference actions/trades remain available
+- **AND** no notification retry or historical reference replay is introduced
+
+#### Scenario: HTDY commit acknowledgement is lost
+
+- **WHEN** the calculation transaction result is uncertain
+- **THEN** only exact persisted-batch readback may establish completion
+- **AND** an unproven result remains UNKNOWN without polling a second calculation
 
 #### Scenario: Historical adapter tests pass
 

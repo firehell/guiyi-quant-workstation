@@ -227,6 +227,8 @@ class AlertRuntime:
         self._handoff: BoundedNotificationHandoff | None = None
         self._notification_generation: int | None = None
         self._coverage_progress: dict[tuple[str, str, str], dict[str, object]] = {}
+        self._unresolved_coverage: dict[str, dict[str, object]] = {}
+        self._pending_unresolved: dict[str, dict[str, object]] | None = None
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
 
@@ -234,6 +236,7 @@ class AlertRuntime:
         if self.message_source is None or self.heartbeat_store is None:
             raise RuntimeError("ALERT_RUNTIME_TRANSPORT_UNAVAILABLE")
         self._current_runtime_status()
+        self._restore_unresolved_coverage()
         self._validate_startup_composition()
         try:
             generation = runtime_heartbeat_identity().get("runtime_generation")
@@ -312,6 +315,7 @@ class AlertRuntime:
                             self._write_heartbeat(current_time)
                             next_heartbeat = current_time + _HEARTBEAT_INTERVAL
                         day = now.date()
+                        window: MarketReadWindow | None = None
                         try:
                             market_read = self._market_read_factory(session)
                             key = (rule.rule_code, symbol, frequency)
@@ -346,7 +350,8 @@ class AlertRuntime:
                             self._record_rule_result(
                                 rule.rule_code, evaluated_bar_at=None, at=self._aware_now(),
                                 event_created=False, error_type=_rule_error_type(str(exc)),
-                                coverage_identity=(symbol, frequency.value, None, day),
+                                coverage_identity=(symbol, frequency.value, window.contract if window is not None else None, day),
+                                attempted_bar_at=window.cutoff if window is not None else None,
                                 input_error_code=(str(exc) if 1 <= len(str(exc)) <= 96 and all(
                                     char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789" for char in str(exc)
                                 ) else "ALERT_EVALUATION_FAILED"),
@@ -440,6 +445,7 @@ class AlertRuntime:
                 shared_window: MarketReadWindow | None = None
                 for rule in rules:
                     rule_messages: list[AlertNotificationMessage | FrozenHandoff] = []
+                    window: MarketReadWindow | None = None
                     try:
                         definition = get_alert_rule_definition(rule.rule_code)
                         evaluator = self._evaluators.get(rule.rule_code)
@@ -526,15 +532,17 @@ class AlertRuntime:
                     except (AlertEvaluationError, MarketReadWindowError) as exc:
                         if session.in_transaction():
                             session.rollback()
+                        error_type = _rule_error_type(str(exc))
                         self._record_rule_result(
                             rule.rule_code,
                             evaluated_bar_at=None,
                             at=processing_now,
                             event_created=False,
-                            error_type=_rule_error_type(str(exc)),
-                            coverage_identity=(trigger.symbol, trigger.frequency.value, None, trigger.bar.trading_day),
+                            error_type=error_type,
+                            coverage_identity=(trigger.symbol, trigger.frequency.value, window.contract if window is not None else None, trigger.bar.trading_day),
+                            attempted_bar_at=trigger.bar.bar_end,
                         )
-                        recorded_rule_result = True
+                        recorded_rule_result |= error_type != "evaluation_warming_up"
                     except Exception:
                         if session.in_transaction():
                             session.rollback()
@@ -586,6 +594,7 @@ class AlertRuntime:
                     for symbol in sorted(self._operational_products):
                         for frequency in _CANONICAL_ALERT_FREQUENCIES:
                             item_messages: list[AlertNotificationMessage | FrozenHandoff] = []
+                            window: MarketReadWindow | None = None
                             try:
                                 if frequency.value not in definition.input_frequencies:
                                     continue
@@ -662,15 +671,17 @@ class AlertRuntime:
                                 if session.in_transaction():
                                     session.rollback()
                                 try:
+                                    error_type = _rule_error_type(str(exc))
                                     self._record_rule_result(
                                         rule.rule_code,
                                         evaluated_bar_at=None,
                                         at=processing_now,
                                         event_created=False,
-                                        error_type=_rule_error_type(str(exc)),
-                                        coverage_identity=(symbol, frequency.value, None, trigger.trading_day),
+                                        error_type=error_type,
+                                        coverage_identity=(symbol, frequency.value, window.contract if window is not None else None, trigger.trading_day),
+                                        attempted_bar_at=window.cutoff if window is not None else None,
                                     )
-                                    recorded_rule_result = True
+                                    recorded_rule_result |= error_type != "evaluation_warming_up"
                                 except Exception:
                                     failed = True
                                     _LOGGER.warning("ALERT_RULE_PROCESSING_FAILED")
@@ -832,6 +843,7 @@ class AlertRuntime:
 
     def _write_heartbeat(self, now: datetime) -> None:
         assert self.heartbeat_store is not None
+        self._flush_unresolved_coverage()
         with self._session_factory() as session:
             enabled = session.scalars(
                 select(AlertRule).where(AlertRule.enabled.is_(True))
@@ -874,19 +886,96 @@ class AlertRuntime:
             }
             if session.in_transaction():
                 session.rollback()
+        identity = runtime_heartbeat_identity()
+        journal_reader = getattr(self.message_source, "coverage_snapshot", None)
+        warming_routes = frozenset(
+            f"{symbol}:{frequency}"
+            for (_, symbol, frequency), item in self._coverage_progress.items()
+            if item.get("state") == "warming_up"
+        )
+        journal = journal_reader(warming_routes=warming_routes) if callable(journal_reader) else None
+        if journal is not None:
+            journal = {**journal, "runtime_generation": identity.get("runtime_generation")}
         self.heartbeat_store.write(
             {
                 "generated_at": now.astimezone(UTC).isoformat(),
-                **runtime_heartbeat_identity(),
+                **identity,
                 "recovery_guard_enabled": self._recovery_guard_enabled,
                 "available": True,
                 "enabled_rule_count": len(enabled),
                 "scope_product_count": len(scope),
-                "coverage_schema_version": 1,
+                "coverage_schema_version": 2,
                 "coverage": coverage,
+                "observation_journal": journal,
             },
             ttl_seconds=_HEARTBEAT_TTL_SECONDS,
         )
+
+    def _restore_unresolved_coverage(self) -> None:
+        reader = getattr(self.heartbeat_store, "read_unresolved", None)
+        if not callable(reader):
+            return
+        stored = reader()
+        if not isinstance(stored, Mapping) or len(stored) > len(self._operational_products) * 14:
+            raise RuntimeError("ALERT_COVERAGE_RECOVERY_INVALID")
+        for identity, value in stored.items():
+            if not isinstance(identity, str) or not isinstance(value, Mapping):
+                raise RuntimeError("ALERT_COVERAGE_RECOVERY_INVALID")
+            pieces = identity.split(":")
+            if (len(pieces) != 3 or pieces[1] not in self._operational_products
+                    or pieces[0] not in {HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE}
+                    or pieces[2] not in {frequency.value for frequency in BarFrequency}
+                    or set(value) != {"state", "contract", "trading_day", "last_evaluated_bar_at",
+                                          "last_success_at", "error_type", "input_error_code", "previous_unresolved",
+                                          "last_warming_bar_at", "warming_observation_id", "warming_runtime_generation",
+                                          "warming_attempts"}
+                    or value.get("state") != "evaluation_failed"
+                    or not isinstance(value.get("trading_day"), str)
+                    or value.get("error_type") not in {"evaluation_input_invalid", "evaluation_failed"}
+                    or any(value.get(field) is not None for field in (
+                        "last_warming_bar_at", "warming_observation_id", "warming_runtime_generation"
+                    )) or value.get("warming_attempts") != []):
+                raise RuntimeError("ALERT_COVERAGE_RECOVERY_INVALID")
+            try:
+                day = date.fromisoformat(cast(str, value["trading_day"]))
+                if day.isoformat() != value["trading_day"]:
+                    raise ValueError
+                earlier = value.get("previous_unresolved")
+                if earlier is not None and (
+                    not isinstance(earlier, str) or date.fromisoformat(earlier) > day
+                ):
+                    raise ValueError
+                for field in ("last_evaluated_bar_at", "last_success_at"):
+                    stamp = value.get(field)
+                    if stamp is not None:
+                        if not isinstance(stamp, str) or len(stamp) > 64:
+                            raise ValueError
+                        _iso_timestamp(datetime.fromisoformat(stamp))
+                if (value.get("last_evaluated_bar_at") is None) != (value.get("last_success_at") is None):
+                    raise ValueError
+                contract = value.get("contract")
+                if contract is not None and normalize_contract_for_symbol(pieces[1], contract) != contract:
+                    raise ValueError
+                code = value.get("input_error_code")
+                if code is not None and (
+                    not isinstance(code, str) or not 1 <= len(code) <= 96
+                    or not all(char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789" for char in code)
+                ):
+                    raise ValueError
+            except (TypeError, ValueError):
+                raise RuntimeError("ALERT_COVERAGE_RECOVERY_INVALID") from None
+            self._unresolved_coverage[identity] = dict(value)
+            self._coverage_progress[(pieces[0], pieces[1], pieces[2])] = dict(value)
+
+    def _flush_unresolved_coverage(self) -> None:
+        pending = self._pending_unresolved
+        if pending is None:
+            return
+        writer = getattr(self.heartbeat_store, "write_unresolved", None)
+        if callable(writer):
+            writer(dict(pending))
+        self._unresolved_coverage = pending
+        self._pending_unresolved = None
 
     def _aware_now(self) -> datetime:
         now = self.clock()
@@ -916,13 +1005,21 @@ class AlertRuntime:
         error_type: str | None,
         coverage_identity: tuple[str, str, str | None, date] | None = None,
         input_error_code: str | None = None,
+        attempted_bar_at: datetime | None = None,
     ) -> None:
+        self._flush_unresolved_coverage()
         status = self._current_runtime_status()
         rule_status = dict(cast(Mapping[str, object], status["rule_status"]))
         current = dict(cast(Mapping[str, object], rule_status[rule_code]))
         if error_type is None:
             current["last_evaluated_bar_at"] = _iso_timestamp(evaluated_bar_at) if evaluated_bar_at else None
             current["error_type"] = None
+        elif error_type == "evaluation_warming_up":
+            # A short, otherwise valid input is readiness evidence, not a
+            # completed evaluation or a new failure. It cannot clear an
+            # unresolved real error from this Rule.
+            if current["error_type"] not in {"evaluation_input_invalid", "evaluation_failed"}:
+                current["error_type"] = error_type
         else:
             current["last_failure_at"] = _iso_timestamp(at)
             current["error_type"] = error_type
@@ -939,9 +1036,23 @@ class AlertRuntime:
                 if previous.get("state") == "evaluation_failed":
                     previous_unresolved = previous.get("trading_day")
                 previous = {}
+            preserve_failure = error_type == "evaluation_warming_up" and previous.get("state") == "evaluation_failed"
+            warming_attempts: list[dict[str, object]] = []
+            if error_type == "evaluation_warming_up" and not preserve_failure:
+                old_attempts = previous.get("warming_attempts")
+                if previous.get("state") == "warming_up" and isinstance(old_attempts, list):
+                    warming_attempts = [dict(item) for item in old_attempts if isinstance(item, Mapping)]
+                if (attempted_bar_at is not None and isinstance(self._source_observation_id, str)
+                        and type(self._notification_generation) is int):
+                    attempt = {"bar_end": _iso_timestamp(attempted_bar_at),
+                               "observation_id": self._source_observation_id,
+                               "generation": self._notification_generation}
+                    if not warming_attempts or warming_attempts[-1] != attempt:
+                        warming_attempts.append(attempt)
+                    warming_attempts = warming_attempts[-64:]
             self._coverage_progress[key] = {
-                "state": "ok" if error_type is None else "evaluation_failed",
-                "contract": contract,
+                "state": "ok" if error_type is None else "evaluation_failed" if preserve_failure or error_type != "evaluation_warming_up" else "warming_up",
+                "contract": previous.get("contract") if preserve_failure else contract,
                 "trading_day": trading_day.isoformat(),
                 "last_evaluated_bar_at": (
                     _iso_timestamp(evaluated_bar_at) if evaluated_bar_at is not None
@@ -951,10 +1062,35 @@ class AlertRuntime:
                     _iso_timestamp(at) if error_type is None
                     else previous.get("last_success_at")
                 ),
-                "error_type": error_type,
-                "input_error_code": input_error_code,
+                "error_type": previous.get("error_type") if preserve_failure else error_type,
+                "input_error_code": previous.get("input_error_code") if preserve_failure else input_error_code,
                 "previous_unresolved": previous_unresolved,
+                "last_warming_bar_at": (
+                    _iso_timestamp(attempted_bar_at)
+                    if error_type == "evaluation_warming_up" and not preserve_failure and attempted_bar_at is not None
+                    else None
+                ),
+                "warming_observation_id": (
+                    self._source_observation_id
+                    if error_type == "evaluation_warming_up" and not preserve_failure else None
+                ),
+                "warming_runtime_generation": (
+                    self._notification_generation
+                    if error_type == "evaluation_warming_up" and not preserve_failure else None
+                ),
+                "warming_attempts": warming_attempts,
             }
+            identity = ":".join(key)
+            next_unresolved = dict(self._unresolved_coverage)
+            unresolved_changed = False
+            if error_type not in {None, "evaluation_warming_up"} and identity not in next_unresolved:
+                next_unresolved[identity] = dict(self._coverage_progress[key])
+                unresolved_changed = True
+            elif error_type is None and previous_unresolved is None:
+                unresolved_changed = next_unresolved.pop(identity, None) is not None
+            if unresolved_changed:
+                self._pending_unresolved = next_unresolved
+                self._flush_unresolved_coverage()
 
     def _current_runtime_status(self) -> dict[str, object]:
         with self._status_lock:

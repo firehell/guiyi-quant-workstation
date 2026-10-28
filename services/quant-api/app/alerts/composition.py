@@ -77,6 +77,8 @@ class StreamAlertMessageSource(RedisAlertMessageSource):
         self._stream = ObservationStream(redis, kind="completed")
         self.current_observation = None
         self._expected_cursor = None
+        self._acknowledged_routes: dict[str, dict[str, object]] = {}
+        self._acknowledged_history: dict[str, list[dict[str, object]]] = {}
 
     def subscribe(self, *patterns):
         super().subscribe("market:state")
@@ -101,10 +103,62 @@ class StreamAlertMessageSource(RedisAlertMessageSource):
             raise RuntimeError("ALERT_BUFFER_ACK_INVALID")
         self._stream.ack("alert", envelope.trading_day,
                          expected_cursor=self._expected_cursor, next_id=envelope.stream_id)
+        route = self._coverage_route(envelope)
+        if route is not None:
+            key, evidence = route
+            self._acknowledged_routes[key] = evidence
+            history = self._acknowledged_history.setdefault(key, [])
+            history.append(evidence)
+            del history[:-64]
+            if len(self._acknowledged_routes) > 1024:
+                oldest = next(iter(self._acknowledged_routes))
+                self._acknowledged_routes.pop(oldest)
+                self._acknowledged_history.pop(oldest, None)
         self.current_observation = None
+
+    @staticmethod
+    def _coverage_route(envelope):
+        if not envelope.notification_eligible:
+            return None
+        parts = envelope.channel.split(":")
+        bar_end = envelope.data.get("bar_end")
+        if len(parts) != 4 or parts[:2] != ["live", "bar"] or not isinstance(bar_end, str):
+            return None
+        return f"{parts[2]}:{parts[3]}", {
+            "trading_day": envelope.trading_day.isoformat(),
+            "stream_id": envelope.stream_id,
+            "bar_end": bar_end,
+            "observation_id": envelope.observation_id,
+        }
+
+    def coverage_snapshot(self, *, warming_routes: frozenset[str] = frozenset()) -> dict[str, object]:
+        day = self._stream.registered_day("alert")
+        cursor = self._stream.cursor("alert", day)
+        for key in tuple(self._acknowledged_history):
+            if key not in warming_routes:
+                self._acknowledged_history.pop(key)
+        pending_routes: dict[str, dict[str, object]] = {}
+        for envelope in self._stream.read("alert", day, count=128):
+            route = self._coverage_route(envelope)
+            if route is not None:
+                key, evidence = route
+                pending_routes.setdefault(key, evidence)
+        history_budget = 128
+        route_history: dict[str, list[dict[str, object]]] = {}
+        for key in sorted(warming_routes):
+            rows = self._acknowledged_history.get(key, [])
+            if rows and len(rows) <= history_budget:
+                route_history[key] = list(rows)
+                history_budget -= len(rows)
+        return {"trading_day": day.isoformat(), "cursor": cursor,
+                "tail": self._stream.tail(day), "routes": dict(self._acknowledged_routes),
+                "route_history": route_history,
+                "pending_routes": pending_routes}
 
 
 class RedisAlertHeartbeatStore:
+    _UNRESOLVED_KEY = "alert:coverage-unresolved:v2"
+
     def __init__(self, redis: Any) -> None:
         self._redis = redis
 
@@ -114,6 +168,23 @@ class RedisAlertHeartbeatStore:
             json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
             ex=ttl_seconds,
         )
+
+    def read_unresolved(self) -> dict[str, object]:
+        raw = self._redis.get(self._UNRESOLVED_KEY)
+        if raw is None:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("ALERT_COVERAGE_RECOVERY_INVALID") from exc
+        if not isinstance(parsed, Mapping) or parsed.get("schema_version") != 2 or not isinstance(parsed.get("unresolved"), dict):
+            raise RuntimeError("ALERT_COVERAGE_RECOVERY_INVALID")
+        return parsed["unresolved"]
+
+    def write_unresolved(self, value: dict[str, dict[str, object]]) -> None:
+        payload = {"schema_version": 2, "unresolved": value}
+        if self._redis.set(self._UNRESOLVED_KEY, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) is not True:
+            raise RuntimeError("ALERT_COVERAGE_PERSIST_FAILED")
 
 
 class RedisAlertRuntimeStatusStore:

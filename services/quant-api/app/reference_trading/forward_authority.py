@@ -43,7 +43,7 @@ class ForwardMarketAuthority:
                 product, contract, owner.start_trading_day,
             )
             return owner_id, owner_id
-        if code == "htdy" and identity.frequency == "15m":
+        if code == "htdy" and identity.frequency in {"15m", "60m"}:
             owner_id = f"htdy:{product}:{contract}:{owner_start.isoformat()}"
             return owner_id, owner_id
         raise ForwardInputUnavailable("FORWARD_OWNER_UNSUPPORTED")

@@ -14,6 +14,7 @@ from app.alerts.evaluators import (
     AlertObservationCandidate,
     SubingThsEvaluator,
 )
+from app.alerts.composition import StreamAlertMessageSource
 from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.alerts.notification import (
     ALERT_AUDIENCE_OWNER,
@@ -35,12 +36,13 @@ from app.alerts.runtime import (
     validate_alert_runtime_status,
 )
 from app.market_data.domain import CanonicalBar
+from app.market_data.observation_stream import ObservationEnvelope
 from app.market_data.market_read_service import (
     CurrentContractReplayWindow,
     MarketReadWindow,
     MarketReadWindowError,
 )
-from app.services.runtime_health import _collect_alert_health
+from app.services.runtime_health import _alert_coverage, _collect_alert_health, _evaluate_alert_coverage
 
 
 def test_startup_composition_requires_exact_registry_evaluator_and_policy_coverage() -> None:
@@ -87,6 +89,317 @@ def test_rule_coverage_preserves_failed_product_after_peer_success() -> None:
     assert runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "ag", "15m")]["state"] == "ok"
 
 
+def test_warming_is_not_a_failed_or_successful_evaluation() -> None:
+    now = datetime(2026, 10, 28, 3, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("rs",), taxonomy={},
+    )
+    runtime._record_rule_result(
+        SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None, at=now,
+        event_created=False, error_type="evaluation_warming_up",
+        coverage_identity=("rs", "1d", "RS2701", date(2026, 10, 28)),
+    )
+    rule = runtime._current_runtime_status()["rule_status"][SUBING_THS_ALERT_RULE_CODE]
+    coverage = runtime._coverage_progress[(SUBING_THS_ALERT_RULE_CODE, "rs", "1d")]
+    assert rule["last_evaluated_bar_at"] is None
+    assert rule["last_failure_at"] is None
+    assert coverage["state"] == "warming_up"
+    assert coverage["last_evaluated_bar_at"] is None
+    assert coverage["last_success_at"] is None
+
+
+def test_warming_records_attempted_cutoff_with_original_identity_only() -> None:
+    now = datetime(2026, 9, 4, 1, 15, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("ag",), taxonomy={},
+    )
+    runtime._source_observation_id = "warm-original"
+    runtime._notification_generation = 37
+    runtime._record_rule_result(
+        HTDY_ALERT_RULE_CODE, evaluated_bar_at=None, attempted_bar_at=now, at=now,
+        event_created=False, error_type="evaluation_warming_up",
+        coverage_identity=("ag", "15m", "AG2612", now.date()),
+    )
+    coverage = runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "ag", "15m")]
+    assert coverage["last_warming_bar_at"] == now.isoformat()
+    assert coverage["warming_observation_id"] == "warm-original"
+    assert coverage["warming_runtime_generation"] == 37
+    assert coverage["last_evaluated_bar_at"] is None
+    assert coverage["last_success_at"] is None
+
+
+def test_live_warming_captures_trigger_cutoff_without_evaluation_success() -> None:
+    now = datetime(2026, 9, 4, 1, 15, tzinfo=UTC)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AlertRule.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(AlertRule(rule_code=HTDY_ALERT_RULE_CODE, enabled=True,
+                              scope_product_frequencies={"ag": ["15m"]}))
+        session.commit()
+    bar = CanonicalBar(now, now.date(), 1, 1, 1, 1, 1, None, None)
+    window = MarketReadWindow("ag", "actual_dominant", "15m", now.date(), "AG2612", now,
+                              (bar,), ("AG2612",))
+    reader = SimpleNamespace(bars_until=lambda *_args, **_kwargs: window,
+                             assert_window_current=lambda _window: None)
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine), market_read_factory=lambda _session: reader,
+        evaluators={HTDY_ALERT_RULE_CODE: SimpleNamespace(
+            evaluate_candidates=lambda *_args: (_ for _ in ()).throw(AlertEvaluationError("ALERT_EVALUATION_WARMING_UP")))},
+        sender=object(),  # type: ignore[arg-type]
+        operational_products=("ag",), taxonomy={}, clock=lambda: now + timedelta(seconds=1),
+    )
+    runtime._source_observation_id = "warm-original"
+    runtime._notification_generation = 37
+    runtime.process_message("live:bar:ag:15m", {
+        "bar_end": now.isoformat(), "trading_day": now.date().isoformat(),
+        "open": "1", "high": "1", "low": "1", "close": "1", "volume": "1",
+        "turnover": None, "open_interest": None,
+    })
+    item = runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "ag", "15m")]
+    assert item["state"] == "warming_up"
+    assert item["contract"] == "AG2612"
+    assert item["last_warming_bar_at"] == now.isoformat()
+    assert item["warming_observation_id"] == "warm-original"
+    assert runtime._current_runtime_status()["last_processing_success_at"] is None
+    engine.dispose()
+
+
+def test_consecutive_warming_records_distinct_original_attempts() -> None:
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("ag",), taxonomy={},
+    )
+    runtime._notification_generation = 37
+    for minute in (5, 10, 15):
+        at = start + timedelta(minutes=minute)
+        runtime._source_observation_id = f"warm-{minute}"
+        runtime._record_rule_result(
+            HTDY_ALERT_RULE_CODE, evaluated_bar_at=None, attempted_bar_at=at, at=at,
+            event_created=False, error_type="evaluation_warming_up",
+            coverage_identity=("ag", "5m", "AG2612", at.date()),
+        )
+    item = runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "ag", "5m")]
+    assert [attempt["observation_id"] for attempt in item["warming_attempts"]] == ["warm-5", "warm-10", "warm-15"]
+    assert item["last_evaluated_bar_at"] is None
+
+
+def test_warming_does_not_clear_unresolved_real_failure() -> None:
+    now = datetime(2026, 10, 28, 3, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("rs",), taxonomy={},
+    )
+    identity = ("rs", "1d", "RS2701", date(2026, 10, 28))
+    runtime._record_rule_result(SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None, at=now,
+                                event_created=False, error_type="evaluation_input_invalid", coverage_identity=identity)
+    runtime._record_rule_result(SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None, at=now + timedelta(minutes=1),
+                                event_created=False, error_type="evaluation_warming_up", coverage_identity=identity)
+    rule = runtime._current_runtime_status()["rule_status"][SUBING_THS_ALERT_RULE_CODE]
+    coverage = runtime._coverage_progress[(SUBING_THS_ALERT_RULE_CODE, "rs", "1d")]
+    assert rule["error_type"] == "evaluation_input_invalid"
+    assert rule["last_failure_at"] == now.isoformat()
+    assert coverage["state"] == "evaluation_failed"
+
+
+def test_warming_retains_only_a_prior_real_success_timestamp() -> None:
+    now = datetime(2026, 10, 28, 3, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("rs",), taxonomy={},
+    )
+    identity = ("rs", "1d", "RS2701", date(2026, 10, 28))
+    runtime._record_rule_result(SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=now, at=now,
+                                event_created=False, error_type=None, coverage_identity=identity)
+    runtime._record_rule_result(SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None,
+                                at=now + timedelta(minutes=1), event_created=False,
+                                error_type="evaluation_warming_up", coverage_identity=identity)
+    coverage = runtime._coverage_progress[(SUBING_THS_ALERT_RULE_CODE, "rs", "1d")]
+    assert coverage["state"] == "warming_up"
+    assert coverage["last_evaluated_bar_at"] == now.isoformat()
+    assert coverage["last_success_at"] == now.isoformat()
+    assert _alert_coverage({"coverage_schema_version": 2, "coverage": {"rs": coverage}}, 1, 1)["rs"]["state"] == "warming_up"
+
+
+def test_v2_intraday_warming_remains_visible_after_prior_success() -> None:
+    end = datetime(2026, 9, 4, 1, 15, tzinfo=UTC)
+    state = _evaluate_alert_coverage(
+        {"rule:rs:15m": {"symbol": "rs", "frequency": "15m", "state": "warming_up",
+                          "last_evaluated_bar_at": end.isoformat(), "last_success_at": end.isoformat()}},
+        {"rs": {"sessions": [{"start": (end - timedelta(minutes=15)).isoformat(), "end": end.isoformat()}]}},
+        end + timedelta(seconds=1), coverage_schema_version=2,
+    )
+    assert state["rule:rs:15m"]["state"] == "warming_up"
+
+
+def test_v2_warming_coverage_is_readiness_without_health_failure() -> None:
+    now = datetime(2026, 10, 28, 3, tzinfo=UTC)
+    status = empty_alert_runtime_status()
+    status["rule_status"][SUBING_THS_ALERT_RULE_CODE]["error_type"] = "evaluation_warming_up"
+    heartbeat = {
+        "generated_at": now.isoformat(), "available": True,
+        "enabled_rule_count": 1, "scope_product_count": 1,
+        "coverage_schema_version": 2,
+        "coverage": {f"{SUBING_THS_ALERT_RULE_CODE}:rs:1d": {
+            "rule_code": SUBING_THS_ALERT_RULE_CODE, "symbol": "rs", "frequency": "1d",
+            "state": "warming_up", "trading_day": "2026-10-28", "contract": "RS2701",
+            "last_evaluated_bar_at": None, "last_success_at": None,
+            "error_type": "evaluation_warming_up", "previous_unresolved": None,
+        }},
+    }
+    values = {"alert:heartbeat": heartbeat, "alert:runtime-status": status}
+    health = _collect_alert_health(
+        SimpleNamespace(get=lambda key: json.dumps(values[key]) if key in values else None),
+        now=now, configured_enabled=True, notification={"configured": True},
+        transport_error_type=None, freshness_seconds=30,
+    )
+    assert health["status"] == "ok"
+    assert health["coverage_state"] == "warming_up"
+    assert health["coverage"][f"{SUBING_THS_ALERT_RULE_CODE}:rs:1d"]["last_success_at"] is None
+
+
+def test_unresolved_rule_coverage_survives_restart_and_new_day_warming() -> None:
+    class CoverageStore:
+        unresolved: dict[str, dict[str, object]] = {}
+
+        def read_unresolved(self):
+            return self.unresolved
+
+        def write_unresolved(self, value):
+            self.unresolved = value
+
+        def write(self, payload, *, ttl_seconds):
+            pass
+
+    store = CoverageStore()
+    now = datetime(2026, 10, 27, 3, tzinfo=UTC)
+    def create():
+        return AlertRuntime(
+            session_factory=lambda: None,  # type: ignore[arg-type]
+            market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+            sender=None,  # type: ignore[arg-type]
+            operational_products=("rs",), taxonomy={}, heartbeat_store=store,
+        )
+    first = create()
+    first._record_rule_result(SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None, at=now,
+                              event_created=False, error_type="evaluation_input_invalid",
+                              coverage_identity=("rs", "1d", "RS2701", date(2026, 10, 27)))
+    restarted = create()
+    restarted._restore_unresolved_coverage()
+    restarted._record_rule_result(SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None,
+                                  at=now + timedelta(days=1), event_created=False,
+                                  error_type="evaluation_warming_up",
+                                  coverage_identity=("rs", "1d", "RS2701", date(2026, 10, 28)))
+    coverage = restarted._coverage_progress[(SUBING_THS_ALERT_RULE_CODE, "rs", "1d")]
+    assert coverage["previous_unresolved"] == "2026-10-27"
+    assert store.unresolved[f"{SUBING_THS_ALERT_RULE_CODE}:rs:1d"]["trading_day"] == "2026-10-27"
+
+
+def test_unresolved_write_failure_does_not_advance_in_memory_persistence_state() -> None:
+    class FlakyStore:
+        calls = 0
+        unresolved = {}
+
+        def write_unresolved(self, value):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("ALERT_COVERAGE_PERSIST_FAILED")
+            self.unresolved = value
+
+    store = FlakyStore()
+    now = datetime(2026, 10, 28, 3, tzinfo=UTC)
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("rs",), taxonomy={}, heartbeat_store=store,
+    )
+    def fail():
+        runtime._record_rule_result(
+            SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None, at=now,
+            event_created=False, error_type="evaluation_input_invalid",
+            coverage_identity=("rs", "1d", "RS2701", date(2026, 10, 28)),
+        )
+    with pytest.raises(RuntimeError, match="ALERT_COVERAGE_PERSIST_FAILED"):
+        fail()
+    fail()
+    assert store.calls == 2
+    assert store.unresolved[f"{SUBING_THS_ALERT_RULE_CODE}:rs:1d"]["state"] == "evaluation_failed"
+
+
+def test_failed_unresolved_write_is_flushed_before_next_day_warming() -> None:
+    class FlakyStore:
+        calls = 0
+        unresolved = {}
+
+        def read_unresolved(self):
+            return self.unresolved
+
+        def write_unresolved(self, value):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("ALERT_COVERAGE_PERSIST_FAILED")
+            self.unresolved = value
+
+    store = FlakyStore()
+    first_day = datetime(2026, 10, 27, 3, tzinfo=UTC)
+    def create():
+        return AlertRuntime(
+            session_factory=lambda: None,  # type: ignore[arg-type]
+            market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+            sender=None,  # type: ignore[arg-type]
+            operational_products=("rs",), taxonomy={}, heartbeat_store=store,
+        )
+    first = create()
+    with pytest.raises(RuntimeError, match="ALERT_COVERAGE_PERSIST_FAILED"):
+        first._record_rule_result(
+            SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None, at=first_day,
+            event_created=False, error_type="evaluation_input_invalid",
+            coverage_identity=("rs", "1d", "RS2701", first_day.date()),
+        )
+    first._record_rule_result(
+        SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None,
+        at=first_day + timedelta(days=1), event_created=False,
+        error_type="evaluation_warming_up",
+        coverage_identity=("rs", "1d", "RS2701", date(2026, 10, 28)),
+    )
+    assert store.calls == 2
+    restarted = create()
+    restarted._restore_unresolved_coverage()
+    assert restarted._coverage_progress[(SUBING_THS_ALERT_RULE_CODE, "rs", "1d")]["trading_day"] == "2026-10-27"
+
+
+def test_restart_rejects_unbounded_diagnostic_in_unresolved_coverage() -> None:
+    identity = f"{SUBING_THS_ALERT_RULE_CODE}:rs:1d"
+    value = {"state": "evaluation_failed", "contract": "RS2701", "trading_day": "2026-10-28",
+             "last_evaluated_bar_at": None, "last_success_at": None,
+             "error_type": "evaluation_input_invalid", "input_error_code": "unsafe=raw",
+             "previous_unresolved": None, "last_warming_bar_at": None,
+             "warming_observation_id": None, "warming_runtime_generation": None,
+             "warming_attempts": []}
+    store = SimpleNamespace(read_unresolved=lambda: {identity: value})
+    runtime = AlertRuntime(
+        session_factory=lambda: None,  # type: ignore[arg-type]
+        market_read_factory=lambda _session: None,  # type: ignore[arg-type]
+        sender=None,  # type: ignore[arg-type]
+        operational_products=("rs",), taxonomy={}, heartbeat_store=store,
+    )
+    with pytest.raises(RuntimeError, match="ALERT_COVERAGE_RECOVERY_INVALID"):
+        runtime._restore_unresolved_coverage()
+
+
 def test_alert_health_detects_one_due_unevaluated_frequency() -> None:
     now = datetime(2026, 9, 4, 1, 17, tzinfo=UTC)
     expected = now - timedelta(minutes=2)
@@ -112,6 +425,246 @@ def test_alert_health_detects_one_due_unevaluated_frequency() -> None:
     assert health["status"] == "degraded"
     assert health["coverage"]["rule:rb:15m"]["state"] == "ok"
     assert health["coverage"]["rule:ag:15m"]["state"] == "evaluation_lagging"
+
+
+def test_v2_restart_without_durable_route_proof_stays_unverified() -> None:
+    now = datetime(2026, 9, 4, 1, 17, tzinfo=UTC)
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    heartbeat = {
+        "generated_at": now.isoformat(), "available": True,
+        "enabled_rule_count": 1, "scope_product_count": 1,
+        "coverage_schema_version": 2,
+        "coverage": {"rule:ag:15m": {
+            "rule_code": "rule", "symbol": "ag", "frequency": "15m",
+            "state": "unverified", "last_evaluated_bar_at": None,
+            "source_observation_id": None,
+        }},
+    }
+    health = _collect_alert_health(
+        SimpleNamespace(get=lambda key: json.dumps(heartbeat) if key == "alert:heartbeat" else None),
+        now=now, configured_enabled=True, notification={"configured": True},
+        transport_error_type=None, freshness_seconds=30,
+        live_coverage={"ag": {"state": "ok", "last_observed_bar_end": (start + timedelta(minutes=15)).isoformat(),
+                               "sessions": [{"start": start.isoformat(), "end": (start + timedelta(minutes=15)).isoformat()}]}},
+    )
+    assert health["coverage"]["rule:ag:15m"]["state"] == "unverified"
+    assert health["status"] == "degraded"
+
+
+def test_v2_minute_lag_requires_acknowledged_current_generation_route() -> None:
+    now = datetime(2026, 9, 4, 1, 17, tzinfo=UTC)
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    due = start + timedelta(minutes=15)
+    heartbeat = {
+        "generated_at": now.isoformat(), "available": True,
+        "runtime_generation": 20, "enabled_rule_count": 1, "scope_product_count": 1,
+        "coverage_schema_version": 2,
+        "coverage": {"rule:ag:15m": {"rule_code": "rule", "symbol": "ag", "frequency": "15m",
+                                          "state": "unverified", "last_evaluated_bar_at": None}},
+        "observation_journal": {
+            "runtime_generation": 20, "trading_day": "2026-09-04", "cursor": "10-0", "tail": "10-0",
+            "routes": {"ag:15m": {"trading_day": "2026-09-04", "stream_id": "10-0",
+                                    "observation_id": "ag-15m-1", "bar_end": due.isoformat()}},
+        },
+    }
+    def health(live_generation=20):
+        return _collect_alert_health(
+            SimpleNamespace(get=lambda key: json.dumps(heartbeat) if key == "alert:heartbeat" else None),
+            now=now, configured_enabled=True, notification={"configured": True},
+            transport_error_type=None, freshness_seconds=30,
+            live_runtime_generation=live_generation,
+            live_coverage={"ag": {"state": "ok", "last_observed_bar_end": due.isoformat(),
+                                   "sessions": [{"start": start.isoformat(), "end": due.isoformat()}]}},
+        )
+    assert health()["coverage"]["rule:ag:15m"]["state"] == "evaluation_lagging"
+    heartbeat["observation_journal"]["runtime_generation"] = 19
+    assert health()["coverage"]["rule:ag:15m"]["state"] == "unverified"
+    heartbeat["observation_journal"]["runtime_generation"] = 20
+    assert health(live_generation=19)["coverage"]["rule:ag:15m"]["state"] == "unverified"
+
+
+def test_v2_unacked_bounded_journal_route_proves_evaluation_backlog() -> None:
+    now = datetime(2026, 9, 4, 1, 17, tzinfo=UTC)
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    due = start + timedelta(minutes=15)
+    heartbeat = {
+        "generated_at": now.isoformat(), "available": True, "runtime_generation": 20,
+        "enabled_rule_count": 1, "scope_product_count": 1, "coverage_schema_version": 2,
+        "coverage": {"rule:ag:15m": {"rule_code": "rule", "symbol": "ag", "frequency": "15m", "state": "unverified", "last_evaluated_bar_at": None}},
+        "observation_journal": {
+            "runtime_generation": 20, "trading_day": "2026-09-04", "cursor": "0-0", "tail": "10-0", "routes": {},
+            "pending_routes": {"ag:15m": {"trading_day": "2026-09-04", "stream_id": "10-0", "observation_id": "ag-15m-1", "bar_end": due.isoformat()}},
+        },
+    }
+    health = _collect_alert_health(
+        SimpleNamespace(get=lambda key: json.dumps(heartbeat) if key == "alert:heartbeat" else None),
+        now=now, configured_enabled=True, notification={"configured": True},
+        transport_error_type=None, freshness_seconds=30,
+        live_runtime_generation=20,
+        live_coverage={"ag": {"state": "ok", "last_observed_bar_end": due.isoformat(),
+                               "sessions": [{"start": start.isoformat(), "end": due.isoformat()}]}},
+    )
+    assert health["coverage"]["rule:ag:15m"]["state"] == "evaluation_lagging"
+
+
+def test_stream_alert_coverage_snapshot_reads_bounded_pending_without_ack() -> None:
+    now = datetime(2026, 9, 4, 1, 15, tzinfo=UTC)
+    envelope = ObservationEnvelope(
+        "ag-15m-1", now.date(), now, "live:bar:ag:15m",
+        {"bar_end": now.isoformat()}, True, stream_id="10-0",
+    )
+    class Journal:
+        calls = []
+        def registered_day(self, consumer):
+            assert consumer == "alert"
+            return now.date()
+        def cursor(self, consumer, day):
+            assert consumer == "alert" and day == now.date()
+            return "0-0"
+        def read(self, consumer, day, *, count):
+            self.calls.append((consumer, day, count))
+            return (envelope,)
+        def tail(self, day):
+            assert day == now.date()
+            return "10-0"
+    source = StreamAlertMessageSource.__new__(StreamAlertMessageSource)
+    source._stream = journal = Journal()
+    source._acknowledged_routes = {}
+    source._acknowledged_history = {}
+    snapshot = source.coverage_snapshot()
+    assert journal.calls == [("alert", now.date(), 128)]
+    assert snapshot["cursor"] == "0-0"
+    assert snapshot["pending_routes"]["ag:15m"]["stream_id"] == "10-0"
+
+
+def test_stream_alert_ack_retains_bounded_route_originals() -> None:
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    class Journal:
+        def ack(self, consumer, day, *, expected_cursor, next_id):
+            assert consumer == "alert" and day == start.date()
+            assert expected_cursor in {"0-0", "1-0"} and next_id in {"1-0", "2-0"}
+    source = StreamAlertMessageSource.__new__(StreamAlertMessageSource)
+    source._stream = Journal()
+    source._acknowledged_routes = {}
+    source._acknowledged_history = {}
+    for index, minute in enumerate((5, 10), start=1):
+        at = start + timedelta(minutes=minute)
+        source.current_observation = ObservationEnvelope(
+            f"warm-{minute}", start.date(), at, "live:bar:ag:5m",
+            {"bar_end": at.isoformat()}, True, stream_id=f"{index}-0",
+        )
+        source._expected_cursor = f"{index - 1}-0"
+        source.ack_current()
+    assert [item["observation_id"] for item in source._acknowledged_history["ag:5m"]] == ["warm-5", "warm-10"]
+
+
+def test_stream_snapshot_exports_history_only_for_warming_routes() -> None:
+    day = date(2026, 9, 4)
+    class Journal:
+        def registered_day(self, consumer):
+            assert consumer == "alert"
+            return day
+        def cursor(self, consumer, value):
+            assert consumer == "alert" and value == day
+            return "64-0"
+        def read(self, consumer, value, *, count):
+            assert consumer == "alert" and value == day and count == 128
+            return ()
+        def tail(self, value):
+            assert value == day
+            return "64-0"
+    source = StreamAlertMessageSource.__new__(StreamAlertMessageSource)
+    source._stream = Journal()
+    source._acknowledged_routes = {}
+    source._acknowledged_history = {}
+    for route_index in range(300):
+        key = f"p{route_index}:1m"
+        rows = [{"trading_day": day.isoformat(), "stream_id": f"{index + 1}-0",
+                 "bar_end": "2026-09-04T01:01:00+00:00", "observation_id": f"o{index}"}
+                for index in range(64)]
+        source._acknowledged_routes[key] = rows[-1]
+        source._acknowledged_history[key] = rows
+    all_warming = source.coverage_snapshot(warming_routes=frozenset(source._acknowledged_history))
+    assert sum(len(rows) for rows in all_warming["route_history"].values()) == 128
+    assert len(json.dumps(all_warming).encode()) < 100_000
+    snapshot = source.coverage_snapshot(warming_routes=frozenset({"p0:1m"}))
+    assert len(snapshot["routes"]) == 300
+    assert set(snapshot["route_history"]) == {"p0:1m"}
+    assert len(snapshot["route_history"]["p0:1m"]) == 64
+    assert len(json.dumps(snapshot).encode()) < 80_000
+    assert source.coverage_snapshot()["route_history"] == {}
+
+
+def _warming_minute_projection(now: datetime, *, next_pending: bool = False,
+                               warm_proof: bool = True, live_generation: int = 37):
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    warming = start + timedelta(minutes=15)
+    routes = {"ag:15m": {"trading_day": "2026-09-04", "stream_id": "1-0",
+                         "observation_id": "warm-original", "bar_end": warming.isoformat()}} if warm_proof else {}
+    pending = {"ag:15m": {"trading_day": "2026-09-04", "stream_id": "2-0",
+                          "observation_id": "next-original", "bar_end": (warming + timedelta(minutes=15)).isoformat()}} if next_pending else {}
+    journal = {"runtime_generation": 37, "trading_day": "2026-09-04", "cursor": "1-0",
+               "tail": "2-0" if next_pending else "1-0", "routes": routes, "pending_routes": pending}
+    item = {"symbol": "ag", "frequency": "15m", "state": "warming_up",
+            "last_evaluated_bar_at": None, "last_success_at": None,
+            "last_warming_bar_at": warming.isoformat(),
+            "warming_observation_id": "warm-original", "warming_runtime_generation": 37}
+    return _evaluate_alert_coverage(
+        {"rule:ag:15m": item},
+        {"ag": {"state": "ok", "sessions": [{"start": start.isoformat(),
+                                               "end": (start + timedelta(minutes=45)).isoformat()}]}},
+        now, coverage_schema_version=2, observation_journal=journal,
+        runtime_generation=37, live_runtime_generation=live_generation,
+    )["rule:ag:15m"]
+
+
+def test_current_minute_warming_with_acked_original_stays_warming() -> None:
+    assert _warming_minute_projection(datetime(2026, 9, 4, 1, 16, 1, tzinfo=UTC))["state"] == "warming_up"
+
+
+def test_next_minute_endpoint_pending_after_warming_becomes_evaluation_lag() -> None:
+    projected = _warming_minute_projection(datetime(2026, 9, 4, 1, 31, 1, tzinfo=UTC), next_pending=True)
+    assert projected["state"] == "evaluation_lagging"
+    assert projected["first_unresolved_bar_end"] == datetime(2026, 9, 4, 1, 30, tzinfo=UTC).isoformat()
+
+
+def test_minute_warming_without_matching_original_proof_is_unverified() -> None:
+    assert _warming_minute_projection(datetime(2026, 9, 4, 1, 16, 1, tzinfo=UTC), warm_proof=False)["state"] == "unverified"
+
+
+def test_minute_warming_source_generation_change_is_unverified() -> None:
+    assert _warming_minute_projection(datetime(2026, 9, 4, 1, 16, 1, tzinfo=UTC), live_generation=38)["state"] == "unverified"
+
+
+@pytest.mark.parametrize("previous_success, warm_minutes, expected", [
+    (None, (5, 10, 15), "warming_up"),
+    (5, (10, 15), "warming_up"),
+    (None, (5, 15), "unverified"),
+])
+def test_consecutive_minute_warming_acknowledgements_preserve_warming(previous_success, warm_minutes, expected) -> None:
+    start = datetime(2026, 9, 4, 1, tzinfo=UTC)
+    attempts = [{"bar_end": (start + timedelta(minutes=minute)).isoformat(),
+                 "observation_id": f"warm-{minute}", "generation": 37} for minute in warm_minutes]
+    history = [{"trading_day": "2026-09-04", "stream_id": f"{index + 1}-0",
+                "bar_end": attempt["bar_end"], "observation_id": attempt["observation_id"]}
+               for index, attempt in enumerate(attempts)]
+    last = attempts[-1]
+    item = {"symbol": "ag", "frequency": "5m", "state": "warming_up",
+            "last_evaluated_bar_at": (start + timedelta(minutes=previous_success)).isoformat() if previous_success else None,
+            "last_success_at": (start + timedelta(minutes=previous_success)).isoformat() if previous_success else None,
+            "last_warming_bar_at": last["bar_end"], "warming_observation_id": last["observation_id"],
+            "warming_runtime_generation": 37, "warming_attempts": attempts}
+    journal = {"runtime_generation": 37, "trading_day": "2026-09-04",
+               "cursor": f"{len(history)}-0", "tail": f"{len(history)}-0",
+               "routes": {"ag:5m": history[-1]}, "route_history": {"ag:5m": history}}
+    result = _evaluate_alert_coverage(
+        {"rule:ag:5m": item},
+        {"ag": {"state": "ok", "sessions": [{"start": start.isoformat(),
+                                               "end": (start + timedelta(minutes=30)).isoformat()}]}},
+        start + timedelta(minutes=16, seconds=1), coverage_schema_version=2,
+        observation_journal=journal, runtime_generation=37, live_runtime_generation=37,
+    )
+    assert result["rule:ag:5m"]["state"] == expected
 
 
 def test_alert_first_unresolved_minute_does_not_slide_with_latest_bar() -> None:
@@ -1405,6 +1958,33 @@ def test_unscoped_canonical_update_does_not_clear_processing_failure() -> None:
     assert current["last_processing_success_at"] == failed[
         "last_processing_success_at"
     ]
+
+
+def test_canonical_warming_does_not_mark_processing_success() -> None:
+    now = datetime(2026, 10, 28, 7, tzinfo=UTC)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AlertRule.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(AlertRule(rule_code=SUBING_THS_ALERT_RULE_CODE, enabled=True,
+                              scope_product_frequencies={"rs": ["1d"]}))
+        session.commit()
+    window = MarketReadWindow("rs", "actual_dominant", "1d", now.date(), "RS2701", now,
+                              (CanonicalBar(now, now.date(), 1, 1, 1, 1, 1, None, None),), ("RS2701",))
+    reader = SimpleNamespace(latest_subing_quality_window=lambda *_args, **_kwargs: window,
+                             assert_window_current=lambda _window: None)
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine), market_read_factory=lambda _session: reader,
+        evaluators={SUBING_THS_ALERT_RULE_CODE: SimpleNamespace(
+            evaluate_candidates=lambda *_args: (_ for _ in ()).throw(AlertEvaluationError("ALERT_EVALUATION_WARMING_UP")))},
+        sender=object(),  # type: ignore[arg-type]
+        operational_products=("rs",), taxonomy={}, clock=lambda: now,
+    )
+    runtime.process_message("market:state", {"reason": "canonical_updated", "trading_day": now.date().isoformat()})
+    status = runtime._current_runtime_status()
+    assert status["last_processing_success_at"] is None
+    assert status["last_processing_failure_at"] is None
+    assert status["rule_status"][SUBING_THS_ALERT_RULE_CODE]["error_type"] == "evaluation_warming_up"
+    engine.dispose()
 
 
 def test_canonical_status_failure_discards_only_its_unapproved_message() -> None:

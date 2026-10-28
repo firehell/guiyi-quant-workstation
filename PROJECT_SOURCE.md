@@ -103,6 +103,10 @@ HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m
 
 HTDY 当前实时运行与页面实时记录统一为 operational 60 品种 × `60m`；其他周期保留历史研究图表和通用审计查询能力，不自动启用。旧 Event 与发送事实保留，不补发、不转换周期。实时参考交易流须独立建立，不能由 AlertEvent 或查询能力推断其存在。
 
+HTDY 60m 实时参考采用 `htdy_first_seen_reverse_close_v1`：buy 开多、sell 开空，反向平旧开新、同向不加仓，
+以 completed Bar close 计算零手续费/滑点的页面参考收益。它独立于 AlertEvent 和 Broker Fill；从精确启用起点空仓记录，
+不回填旧信号交易。模型接受与原子启用合同见 [ReferenceTrading](openspec/specs/reference-trading/spec.md)，实际运行与自然验收看 `STATUS.md`。
+
 持久 HTDY `AlertEvent` 是 forward-only first-seen 事实，只接受触发窗口的最新 completed Bar。repaint zone 中的历史 Bar 只供 Web retrospective 研究展示，不创建 Event 或通知。Event 创建后不可变，不因后续重绘消失、重现或方向变化而改写或重发。
 
 苏冰预警是新的 observation-only 产品，身份固定为 `subing_ths_alert_15m_v1`，公式身份按六周期独立版本管理（15m 保持 `subing_ths_15m_v3`）。它消费 operational Scope 内的 completed actual_dominant 5m/15m/30m/60m/1d/1w，并按 MACD(12,26,9) exact CROSS 与 `EMA(CLOSE, 21)` 判定多头/空头预警；EMA 使用 `sma_window` seed。v3 不改变数学公式，只冻结 RQData 首分钟 session 锚点修正后的正式 Bar、时间与 Candidate。warm-up 与递归状态只在同一物理主力合约内延续，换月重新构建。零轴、Range、量能/OI、ATR、EMA 斜率与多周期共振都不是 V1 Gate。

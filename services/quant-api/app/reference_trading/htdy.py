@@ -66,6 +66,13 @@ def evaluate_htdy_capture(token, checkpoint, evidence, *, dependency_manifest):
     prior = checkpoint.reference_state
     if stream is None or prior is None:
         raise ValueError("HTDY_CHECKPOINT_INVALID")
+    if stream.frequency == "60m" and (
+        payload.get("bar") != bars_raw[-1]
+        or proof.get("frequency") != "60m"
+        or not isinstance(proof.get("observation_id"), str) or not proof["observation_id"]
+        or not isinstance(proof.get("journal_id"), str) or not proof["journal_id"]
+    ):
+        raise ValueError("HTDY_CAPTURE_IDENTITY_CONFLICT")
     current = bars[-1]
     if (
         current.bar_end != _instant(capture["bar_end"])
