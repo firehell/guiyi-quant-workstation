@@ -185,3 +185,43 @@ def test_commit_connection_loss_requires_exact_readback_or_stays_unknown(factory
         wake._calculate_heads()  # UNKNOWN is retained; it cannot be retried by polling.
         with factory() as db:
             assert db.get(ReferenceInboxDelivery, receipt.delivery_ids[0]).status == "UNKNOWN"
+
+
+def test_blocked_eligible_original_recovers_with_native_atomic_closure(factory, tmp_path):
+    from hashlib import sha256
+    from app.reference_trading.inbox_recovery import InboxRecovery, digest
+    from app.reference_trading.models import ReferenceInboxRecoveryResult
+    read = RollingRead()
+    repo, inbox, worker, _ = setup(factory, read)
+    event = original(read)
+    receipt = inbox.ingest(event)
+    identifier = receipt.delivery_ids[0]
+    inbox.mark_blocked(identifier, 'HTDY_WINDOW_UNAVAILABLE')
+    stream = htdy_identity('rb').stream_id
+    worker.source_envelope = event
+    worker.source_observed_at = event.confirmed_at
+    worker.raw_received_at = event.raw_received_at
+    capture = worker._read_input(stream, 'live_event', read.bars[-1].bar_end)
+    capture = replace(capture, source_proof={**capture.source_proof,
+        'inbox_delivery_id': identifier, 'journal_stream_id': event.stream_id,
+        'journal_envelope_sha256': sha256(event.to_json().encode()).hexdigest(),
+        'raw_received_at': event.raw_received_at.isoformat(),
+        'confirmed_at': event.confirmed_at.isoformat()})
+    attempts = tmp_path.resolve() / 'single-account-attempt'
+    recovery = InboxRecovery(factory, attempt_dir=attempts,
+        verify_fence=lambda: {'owner': 'parked', 'attempt_namespace_sha256': digest(str(attempts))},
+        verify_source=lambda plan: None,
+        now=lambda: event.confirmed_at + timedelta(seconds=30))
+    plan = recovery.plan(identifier, capture=capture,
+        expires_at=event.confirmed_at + timedelta(minutes=1))
+    result = recovery.apply(plan, expected_plan_hash=plan.plan_hash,
+        evaluator=worker._service_for(stream)._evaluator)
+    assert recovery.readback(plan) == result
+    with factory() as db:
+        original_row = db.get(ReferenceInboxDelivery, identifier)
+        assert original_row.status == 'BLOCKED' and original_row.code == 'HTDY_WINDOW_UNAVAILABLE'
+        closure = db.get(ReferenceInboxRecoveryResult, identifier)
+        assert closure.outcome == 'CALCULATED'
+        assert db.scalar(select(func.count()).select_from(AlertEvent)) == 0
+    assert inbox.pending_head(stream) is None
+    assert inbox.health()['blocked_count'] == 0

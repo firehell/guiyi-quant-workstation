@@ -1,5 +1,12 @@
 # 当前状态
 
+10/28 23:32：夜间四步开发已集成develop bc8163ddf，选择性v1.16.32候选/草稿PR535准备，尚未发布或切换。
+现役十身份仍v1.16.31/gen37，行情心跳正常；Inbox pending575、UNKNOWN0，新增1条AU60m/23:00
+HTDY_WINDOW_UNAVAILABLE，9条融合等待，不能宣称全部策略正常。已只读证明32根/合约/末Bar一致，
+原因是延迟有效原件被后来Live恢复水位反向撤销资格；正在做保持原合同的定向修正及验证，生产记录未改。
+SimNow真实只读双轮一致/空仓；未初始化、未启动。全部CLOSED及宽限结束后再发布、原生恢复与observe验收，
+06:30禁新切换、07:00冻结、08:00安全收尾；09:00自然验收另列。详见[夜间四步记录](docs/tasks/2026-10-28-overnight-first-four.md)。
+
 10/28 独立 SimNow **关闭态准备完成**：develop新增schema3，只允许observe/disabled；不再要求恢复丢失的旧四库来做准备检查。
 主工作区`output/simnow-independent-20261028`已独占生成私有配置，真实SDK无Broker预检通过；旧账户UNKNOWN、新账本UNINITIALIZED，
 未建四库、未继承余额/持仓/订单，账户未对账、Runtime未就绪、执行许可false。587项相关回归及独立安全Review通过。

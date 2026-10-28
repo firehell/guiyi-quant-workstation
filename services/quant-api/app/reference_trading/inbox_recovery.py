@@ -43,6 +43,19 @@ def require(value, code="REFERENCE_INBOX_RECOVERY_UNPROVEN"):
         raise ValueError(code)
 
 
+def _recoverable_delivery(delivery, stream):
+    if delivery.status != "BLOCKED" or delivery.code in CODES:
+        return True
+    if delivery.code != "HTDY_WINDOW_UNAVAILABLE":
+        return False
+    # A frozen eligible H1 original may have been rejected by a later recovery
+    # watermark. Only the exact accepted HTDY identity uses this explicit path;
+    # the normal source, fence, original, checkpoint and atomic closure gates stay.
+    from app.reference_trading.htdy_activation import htdy_identity
+    from app.reference_trading.repository import _identity_from_row
+    return _identity_from_row(stream) == htdy_identity(stream.product.lower())
+
+
 def digest(value):
     import json
 
@@ -492,7 +505,6 @@ class InboxRecovery:
                 delivery is not None
                 and delivery.status in {"PENDING", "WAITING_HISTORY", "BLOCKED"}
             )
-            require(delivery.status != "BLOCKED" or delivery.code in CODES)
             resolved = verified_resolution_ids(
                 session, stream_ids=(delivery.stream_id,)
             )
@@ -508,6 +520,7 @@ class InboxRecovery:
                 and stream.enabled
                 and stream.active_revision_id == delivery.revision_id
             )
+            require(_recoverable_delivery(delivery, stream))
             target = session.scalar(
                 select(ReferenceActivationReceipt).where(
                     ReferenceActivationReceipt.stream_id == stream.stream_id,
@@ -605,6 +618,7 @@ class InboxRecovery:
             "REFERENCE_INBOX_RECOVERY_PREIMAGE_DRIFT",
         )
         stream = session.get(ReferenceStream, row.stream_id)
+        require(stream is not None and _recoverable_delivery(row, stream))
         target = session.get(ReferenceActivationReceipt, plan.target_receipt_id)
         old = _receipt_binding(session, row, stream, target)
         require(
