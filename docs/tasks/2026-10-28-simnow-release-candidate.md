@@ -11,3 +11,7 @@ Owner交办第二步：固定并发布候选、无Broker预检；不切正式十
 这是独立关闭的SimNow候选，不是Market Runtime自动交易能力。代码发布与部署阻断分别记录。发布后仍需原配置/四库有来源恢复及新鲜只读核验，才能进入第三步；不从旧空仓记录推断当前柜台。
 
 本记录只证明准备候选。Reference新main完成后必须再次检查依赖交集、最终版本和精确候选验证，再合并/tag/Release。运行、自然信号及交易均未验收。
+
+## Reference先行发布后的最终候选
+
+Reference v1.16.29正式main/tag/Release为94b488896c4078c57f057bbfe73fd091c13a905d；本候选已合入该正式main，下一补丁为v1.16.30。最终源码组合568 passed、共享/health232 passed、SDK25及前端10通过，类型/build/topology通过；详见docs/releases/v1.16.30.md。原有部署阻断保持，不把发布当作开仓许可。
