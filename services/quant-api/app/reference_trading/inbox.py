@@ -272,7 +272,8 @@ def _reconcile_legacy(session, delivery, envelope, ingested_at):
 
 class ReferenceInboxRepository:
     def __init__(self, session_factory: Callable, *, daily_limit: int = DAILY_LIMIT,
-                 unfinished_bytes_limit: int = UNFINISHED_BYTES_LIMIT, fault_injector=None):
+                 unfinished_bytes_limit: int = UNFINISHED_BYTES_LIMIT, fault_injector=None,
+                 timings=None, check_cancelled=lambda: None):
         if (type(daily_limit) is not int or not 1 <= daily_limit <= DAILY_LIMIT
                 or type(unfinished_bytes_limit) is not int
                 or not 1 <= unfinished_bytes_limit <= UNFINISHED_BYTES_LIMIT):
@@ -281,6 +282,22 @@ class ReferenceInboxRepository:
         self._daily_limit = daily_limit
         self._unfinished_bytes_limit = unfinished_bytes_limit
         self._fault = fault_injector or (lambda _: None)
+        self.timings, self.check_cancelled = timings, check_cancelled
+
+    def _resolved(self, session, *, stream_ids=None, cancellable=False):
+        from contextlib import nullcontext
+        from app.reference_trading.inbox_recovery import verified_resolution_ids
+        with (self.timings.measure("recovery") if self.timings else nullcontext()):
+            return verified_resolution_ids(session, stream_ids=stream_ids,
+                check_cancelled=self.check_cancelled if cancellable else lambda: None)
+
+    def has_unfinished(self):
+        from app.db.readonly import readonly_transaction
+        with self._session_factory() as session, readonly_transaction(session, timeout_seconds=15):
+            resolved = self._resolved(session, cancellable=True)
+            return bool(session.scalar(select(select(ReferenceInboxDelivery.delivery_id).where(
+                ReferenceInboxDelivery.status != "COMPLETED",
+                ReferenceInboxDelivery.delivery_id.not_in(resolved)).exists())))
 
     def _existing(self, session, day, journal_id, canonical, envelope_hash):
         item = session.scalar(select(ReferenceInboxInput).where(
@@ -344,8 +361,7 @@ class ReferenceInboxRepository:
                     ReferenceInboxInput.trading_day == envelope.trading_day))
                 if count >= self._daily_limit:
                     raise InboxConflict("REFERENCE_INBOX_DAILY_CAPACITY_EXCEEDED")
-                from app.reference_trading.inbox_recovery import verified_resolution_ids
-                resolved = verified_resolution_ids(session)
+                resolved = self._resolved(session)
                 unfinished = exists(select(1).where(
                     ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
                     ReferenceInboxDelivery.status != "COMPLETED",
@@ -400,9 +416,8 @@ class ReferenceInboxRepository:
     def next_heads(self, *, limit: int = 32, after_stream_id: str | None = None) -> tuple[InboxDelivery, ...]:
         if type(limit) is not int or not 1 <= limit <= 32:
             raise ValueError("REFERENCE_INBOX_HEAD_BUDGET_INVALID")
-        from app.reference_trading.inbox_recovery import verified_resolution_ids
         with self._session_factory() as session:
-            resolved = verified_resolution_ids(session)
+            resolved = self._resolved(session, cancellable=True)
             rank = select(ReferenceInboxDelivery.delivery_id,
                 func.row_number().over(partition_by=ReferenceInboxDelivery.stream_id,
                     order_by=(ReferenceInboxInput.trading_day, ReferenceInboxInput.journal_ms,

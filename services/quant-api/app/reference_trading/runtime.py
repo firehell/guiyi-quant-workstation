@@ -13,6 +13,7 @@ from app.reference_trading.capture import ForwardCapture
 from app.reference_trading.forward_service import ForwardReferenceService
 from app.reference_trading.forward_inputs import ForwardInputUnavailable
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
+from app.reference_trading.work_control import ForwardWorkCancelled, StageTimings
 
 
 DIAGNOSTIC_REASONS = frozenset({
@@ -78,6 +79,9 @@ class ForwardReferenceWorker:
         self.source_observed_at: datetime | None = None
         self.raw_received_at: datetime | None = None
         self.assert_owned = lambda: None
+        self.stop_requested = lambda: False
+        self.has_foreground_work = lambda: False
+        self.timings = StageTimings()
         self.scan_live = True
         self.mark_ready = lambda: None
         self.after_healthy_round: Callable[[], None] = lambda: None
@@ -153,30 +157,39 @@ class ForwardReferenceWorker:
         return reader(limit=limit, after=after)
 
     def scan(self) -> None:
-        if not self._enabled:
+        if not self._enabled or self.stop_requested():
             return
         available = self._budget.max_pending_keys - len(self._queue)
         if available <= 0:
             return
-        keys = self._enabled_keys(limit=available, after=self._scan_after)
+        batch_reader = (getattr(self._repository, "enabled_forward_scan_work_keys", None)
+                        if not self.scan_live else None)
+        reader = batch_reader or self._enabled_keys
+        keys = reader(limit=available, after=self._scan_after)
         if not keys and self._scan_after is not None:
             self._scan_after = None
-            keys = self._enabled_keys(limit=available)
+            keys = reader(limit=available)
         for key in keys:
-            if not self.scan_live:
+            if self.stop_requested():
+                break
+            if not self.scan_live and batch_reader is None:
                 from app.reference_trading.recording_scope import LIVE_FREQUENCIES
                 routes = self._work_routes(key)
                 contexts = [self._repository.forward_source_context(route) for route in routes]
                 if any(context and context[0].frequency in LIVE_FREQUENCIES for context in contexts):
                     if not any(self._repository.read_pending_capture(route) is not None for route in routes):
+                        self._scan_after = key
                         continue
             self.wake(key, kind="scan")
-        if keys:
-            self._scan_after = keys[-1]
+            self._scan_after = key
+
+    def check_cancelled(self):
+        if self.stop_requested():
+            raise ForwardWorkCancelled()
 
     def process_live_observation(self, stream_ids: tuple[str, ...], bar_end: datetime) -> None:
         """Finish this observation's work groups without draining unrelated scans."""
-        with self.observation_priority():
+        with self.observation_priority(), self.timings.measure("foreground"):
             self._process_live_observation(stream_ids, bar_end)
 
     def _process_live_observation(self, stream_ids: tuple[str, ...], bar_end: datetime) -> None:
@@ -187,6 +200,7 @@ class ForwardReferenceWorker:
         for stream_id in stream_ids:
             self.wake(stream_id, kind="live_event", bar_end=bar_end)
         while any(key in self._queued for key in keys):
+            self.check_cancelled()
             self.assert_owned()
             self.run_round(only_keys=keys)
             if any(key in self._blocked for key in (*keys, *routes)):
@@ -202,14 +216,17 @@ class ForwardReferenceWorker:
         """
         if not self._enabled:
             raise RuntimeError("REFERENCE_WORKER_NOT_ENABLED")
-        with self.observation_priority():
+        self.check_cancelled()
+        with self.observation_priority(), self.timings.measure("foreground"):
             self.assert_owned()
             self._begin_unit()
             self.inbox_delivery_id = delivery_id
             try:
                 pending = self._repository.read_pending_capture(stream_id)
                 if pending is None:
-                    capture = self._read_input(stream_id, "live_event", bar_end)
+                    self.check_cancelled()
+                    with self.timings.measure("input"):
+                        capture = self._read_input(stream_id, "live_event", bar_end)
                     if capture is None:
                         raise RuntimeError("REFERENCE_INBOX_NO_CALCULATION")
                     proof = {**capture.source_proof, "inbox_delivery_id": delivery_id}
@@ -223,8 +240,11 @@ class ForwardReferenceWorker:
                     if self.inbox_ingested_at is not None:
                         proof["ingested_at"] = self.inbox_ingested_at.isoformat()
                     capture = replace(capture, source_proof=proof)
+                    self.check_cancelled()
                     self.assert_owned()
-                    self._repository.capture_forward(capture)
+                    with self.timings.measure("capture"):
+                        self._repository.capture_forward(capture)
+                self.check_cancelled()
                 self.assert_owned()
                 result = self._service_for(stream_id).process_pending(stream_id)
                 if result is None:
@@ -232,6 +252,8 @@ class ForwardReferenceWorker:
                 self._last_success = datetime.now(UTC)
                 self._blocked.pop(stream_id, None)
                 return result
+            except ForwardWorkCancelled:
+                raise
             except Exception as error:
                 self._blocked[stream_id] = failure_reason(error)
                 raise
@@ -263,7 +285,7 @@ class ForwardReferenceWorker:
             self._prefer_source_retry()
         completed, units = 0, 0
         for _ in range(len(self._queue)):
-            if not self._queue or units >= self._budget.max_units_per_round:
+            if self.stop_requested() or not self._queue or units >= self._budget.max_units_per_round:
                 break
             if only_keys is None:
                 key = self._queue.popleft()
@@ -282,11 +304,11 @@ class ForwardReferenceWorker:
                     self._blocked[key] = failure_reason(error)
                     continue
             self._blocked.pop(key, None)
-            started, consumed, needs_scan = monotonic(), 0, False
+            started, consumed, needs_scan, cancelled = monotonic(), 0, False, False
             self._begin_unit()
             try:
                 for stream_id in routes:
-                    if units >= self._budget.max_units_per_round:
+                    if self.stop_requested() or units >= self._budget.max_units_per_round:
                         break
                     units += 1
                     consumed += 1
@@ -300,21 +322,30 @@ class ForwardReferenceWorker:
                             if only_keys is not None and kind == "live_event" and key not in self._deferred:
                                 self._deferred[key] = (kind, event_bar_end)
                         else:
-                            capture = self._read_input(stream_id, kind, event_bar_end)
+                            with self.timings.measure("input"):
+                                capture = self._read_input(stream_id, kind, event_bar_end)
                             result = None
                             if capture is not None:
+                                self.check_cancelled()
                                 if self.raw_received_at is not None and kind == "live_event":
                                     capture = replace(capture, source_proof={**capture.source_proof,
                                         "raw_received_at": self.raw_received_at.isoformat(),
                                         "confirmed_at": capture.observed_at.isoformat()})
                                 self.assert_owned()
-                                self._repository.capture_forward(capture)
+                                with self.timings.measure("capture"):
+                                    self._repository.capture_forward(capture)
+                                self.check_cancelled()
                                 self.assert_owned()
                                 result = service.process_pending(stream_id)
                         if result is not None:
                             completed += 1
                             self._last_success = datetime.now(UTC)
                         self._blocked.pop(stream_id, None)
+                    except ForwardWorkCancelled:
+                        consumed -= 1  # This route still owns its original/pending capture.
+                        needs_scan = True
+                        cancelled = True
+                        break
                     except Exception as error:  # noqa: BLE001
                         self._blocked[stream_id] = failure_reason(error)
                     if monotonic() - started >= self._budget.max_stream_seconds:
@@ -335,6 +366,10 @@ class ForwardReferenceWorker:
                     self.wake(key, kind=deferred[0], bar_end=deferred[1])
                 elif needs_scan:
                     self.wake(key, kind="scan")
+            if cancelled:
+                raise ForwardWorkCancelled()  # Never spin a legacy target-observation loop.
+            if self.stop_requested():
+                break
             if only_keys is None and self.poll_observations():
                 break
         return completed
@@ -348,22 +383,30 @@ class ForwardReferenceWorker:
             raise ValueError("WORKER_SCAN_INTERVAL_INVALID")
         if not self._enabled:
             return
-        while not should_stop():
-            self.report_health(self.diagnostic_health(stage='scan', ready=False))
-            if self.poll_observations():
-                continue
-            self.scan()
-            if self.poll_observations():
-                continue
-            self.run_round()
-            healthy = not self.health().blocked
-            self.report_health(self.diagnostic_health(stage='cycle', ready=healthy))
-            if healthy:
-                self.mark_ready()
+        self.stop_requested = should_stop
+        try:
+            while not should_stop():
+                self.report_health(self.diagnostic_health(stage='scan', ready=False))
+                if self.poll_observations():
+                    continue
+                with self.timings.measure("scan"):
+                    self.scan()
+                if should_stop():
+                    break
+                if self.poll_observations():
+                    continue
+                self.run_round()
+                healthy = not self.health().blocked
+                self.report_health(self.diagnostic_health(stage='cycle', ready=healthy))
+                if healthy:
+                    self.mark_ready()
+                    if not should_stop():
+                        self.after_healthy_round()
                 if not should_stop():
-                    self.after_healthy_round()
+                    wait(scan_interval_seconds)
+        except ForwardWorkCancelled:
             if not should_stop():
-                wait(scan_interval_seconds)
+                raise  # A cancellation without a real stop request is not a clean drain.
 
     def diagnostic_health(self, *, stage: str, ready: bool) -> dict:
         health = self.health()
@@ -371,7 +414,8 @@ class ForwardReferenceWorker:
             'pending_keys': health.pending_keys, 'blocked_count': len(health.blocked),
             'blocked_counts': dict(sorted(Counter(diagnostic_reason(reason)
                 for _stream_id, reason in health.blocked).items())),
-            'last_success': None if health.last_success is None else health.last_success.isoformat()}
+            'last_success': None if health.last_success is None else health.last_success.isoformat(),
+            'stage_timings': self.timings.snapshot()}
 
     def health(self) -> WorkerHealth:
         return WorkerHealth(

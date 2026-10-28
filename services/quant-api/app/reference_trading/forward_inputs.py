@@ -111,7 +111,7 @@ def capture_subing_live(
     owner_segments: Callable[[StreamIdentity, str, date, datetime], tuple[str, str]],
     expected_endpoints: Callable[[StreamIdentity, str, date, datetime | None, datetime], tuple[datetime, ...]],
     owner_started_at=None, prior_owner_segment_id=None, prior_calculation_segment_id=None, observation=None, checkpoint_watermark=...,
-    retained_observations=(),
+    retained_observations=(), check_cancelled=lambda: None,
 ) -> ForwardCapture | None:
     """Capture one completed SuBing Bar only when Session continuity is proven."""
     if identity.strategy_code.replace("-", "_") != "subing_reference" or identity.frequency not in {"5m", "15m", "30m", "60m"}:
@@ -174,9 +174,12 @@ def capture_subing_live(
     if not owner_id or not calculation_id:
         raise ForwardInputUnavailable("OWNER_UNAVAILABLE")
     warmup_payload = {}
+    check_cancelled()
     if identity.observation_policy_version == "subing_physical_prefix_forward_v2" and (
         after is None or (prior_owner_segment_id, prior_calculation_segment_id) != (owner_id, calculation_id)
     ):
+        if callable(retained_observations):
+            retained_observations = retained_observations()
         from app.market_data.market_read_service import MarketReadWindow, MarketReadWindowError
         from app.reference_trading.subing_forward import subing_warmup_checkpoint
         window = MarketReadWindow(symbol=identity.product.lower(), series_kind="actual_dominant",
@@ -205,7 +208,8 @@ def capture_subing_live(
         if not replay.bars or replay.bars[-1] != bar:
             raise ForwardInputUnavailable("SUBING_SOURCE_IDENTITY_INVALID")
         warmup_payload["warmup_checkpoint"] = subing_warmup_checkpoint(
-            identity, snapshot.contract, owner_id, calculation_id, replay.bars[:-1])
+            identity, snapshot.contract, owner_id, calculation_id, replay.bars[:-1],
+            check_cancelled=check_cancelled)
     watermark = after if checkpoint_watermark is ... else checkpoint_watermark
     owner_start = None if owner_started_at is None else owner_started_at(identity, snapshot.contract, bar.trading_day)
     wire = _bar_wire(bar)
@@ -477,7 +481,7 @@ def capture_newow_canonical(
 
 def capture_subing_canonical(
     service, identity: StreamIdentity, *, revision_id: str, generation: int,
-    after: datetime | None, recording_start: datetime, now: datetime,
+    after: datetime | None, recording_start: datetime, now: datetime, check_cancelled=lambda: None,
 ) -> ForwardCapture | None:
     """Capture a single newly confirmed D1/W1 Bar through SuBing's MDS authority.
 
@@ -529,7 +533,7 @@ def capture_subing_canonical(
         warmup_payload["warmup_checkpoint"] = subing_warmup_checkpoint(identity,
             segment.physical_contract, segment.segment_id,
             segment.calculation_segment_id or segment.segment_id,
-            tuple(item for item in segment.bars if item.bar_end < bar.bar_end))
+            tuple(item for item in segment.bars if item.bar_end < bar.bar_end), check_cancelled=check_cancelled)
     return ForwardCapture(identity.stream_id, revision_id, generation,
         f'{segment.physical_contract}:{bar.bar_end.isoformat()}', bar.bar_end, now,
         'canonical_completed', {'bar': wire, 'contract': segment.physical_contract, **warmup_payload},
