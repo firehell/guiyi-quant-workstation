@@ -1,0 +1,135 @@
+{
+  "schema_version": "lms405-public-casebook-v0.1",
+  "recorded_at": "2026-10-28T17:05:20+08:00",
+  "source_kind": "EXISTING_SOURCE_RECORDS_REVIEWED_AT_RESEARCH_TIME",
+  "historical_immutability_verified": false,
+  "sample_kind": "DEVELOPMENT_NECESSARY_CONDITIONS_NOT_SUFFICIENT_ORIGINAL_RULES",
+  "cases": [
+    {
+      "id": "JM2609_20260521_RESTORE_SHORT",
+      "contract": "JM2609",
+      "source": "https://weibo.com/1885745060/R0roUmhY8",
+      "available_at": "2026-10-28T17:05:20+08:00",
+      "version_405": true,
+      "actions": [
+        "UNLOCK_SHORT"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "ORIGINAL_GATES_IDENTIFIED",
+          "AUTHOR_SHORT_VPLUS_CONFIRMED",
+          "PRIOR_LONG_PROTECTION"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "1",
+        "short": "1"
+      },
+      "action": {
+        "kind": "UNLOCK_SHORT",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "研究安全约束：同合约与当次计划适用；非作者公式",
+        "ORIGINAL_GATES_IDENTIFIED": "研究安全约束：未披露的信号、时序和持仓事实须另行证明",
+        "AUTHOR_SHORT_VPLUS_CONFIRMED": "G02分水岭附近按VPLUS次序选择空向；不能以价格触及替代",
+        "PRIOR_LONG_PROTECTION": "G07叙述锁定多单后恢复空向；此前双腿和账户连续性未确认"
+      },
+      "missing": [
+        "AUTHOR_PERIOD_AND_SIGNAL_BAR",
+        "VPLUS_FORMULA",
+        "ACCOUNT_CONTINUITY",
+        "ACTION_TIME_AND_QUANTITY",
+        "HISTORICAL_CONTENT_VERSION",
+        "G07_DIRECTION_TEXT_CONFLICT"
+      ],
+      "disclosed_conditions": []
+    },
+    {
+      "id": "SH2701_20261027_LOCK_SHORT",
+      "contract": "SH2701",
+      "source": "https://weibo.com/1885745060/RozPmaK10",
+      "available_at": "2026-10-28T17:05:20+08:00",
+      "version_405": true,
+      "actions": [
+        "LOCK"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "ORIGINAL_GATES_IDENTIFIED",
+          "WEAK_SIDE_PROTECTION_ALLOWED",
+          "AUTHOR_LOCK_TRIGGER_CONFIRMED"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "0",
+        "short": "1"
+      },
+      "action": {
+        "kind": "LOCK",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "研究安全约束：同合约与当次计划适用；非作者公式",
+        "ORIGINAL_GATES_IDENTIFIED": "研究安全约束：未披露的信号、时序和持仓事实须另行证明",
+        "WEAK_SIDE_PROTECTION_ALLOWED": "WRouYm67Bc当前文本强调弱侧评级前推，评级公式未披露",
+        "AUTHOR_LOCK_TRIGGER_CONFIRMED": "WRozPmaK10只披露先锁定，不披露触发Bar"
+      },
+      "missing": [
+        "WEAK_SIDE_RATING_FORMULA",
+        "AUTHOR_PERIOD_AND_SIGNAL_BAR",
+        "LOCK_TIME_SIDE_QUANTITY",
+        "ACCOUNT_CONTINUITY",
+        "HISTORICAL_CONTENT_VERSION",
+        "AUTHOR_LOW_1475_VS_LOCAL_1477"
+      ],
+      "disclosed_conditions": []
+    },
+    {
+      "id": "SH2701_20261027_RESTORE_SHORT_SCENARIO",
+      "contract": "SH2701",
+      "source": "https://weibo.com/1885745060/RoCCdf0i5",
+      "available_at": "2026-10-28T17:05:20+08:00",
+      "version_405": true,
+      "actions": [
+        "UNLOCK_SHORT"
+      ],
+      "alternatives": [
+        [
+          "CASE_APPLIES",
+          "ORIGINAL_GATES_IDENTIFIED",
+          "RISK_CONTROL_CONFIRMED",
+          "TREND_CONTINUATION_ALLOWED"
+        ]
+      ],
+      "precedence": [],
+      "initial_unit_position": {
+        "long": "1",
+        "short": "1"
+      },
+      "action": {
+        "kind": "UNLOCK_SHORT",
+        "quantity": "1"
+      },
+      "condition_meaning": {
+        "CASE_APPLIES": "研究安全约束：同合约与当次计划适用；非作者公式",
+        "ORIGINAL_GATES_IDENTIFIED": "研究安全约束：未披露的信号、时序和持仓事实须另行证明",
+        "RISK_CONTROL_CONFIRMED": "来源要求控制风险，但未披露阈值",
+        "TREND_CONTINUATION_ALLOWED": "来源说可解锁再博弈至空头趋势破坏；不证明实际执行"
+      },
+      "missing": [
+        "UNLOCK_SIDE_IS_SCENARIO_NOT_OBSERVATION",
+        "UNLOCK_TIME_QUANTITY",
+        "RISK_THRESHOLD",
+        "TREND_DESTRUCTION_FORMULA",
+        "AUTHOR_PERIOD",
+        "ACCOUNT_CONTINUITY"
+      ],
+      "disclosed_conditions": []
+    }
+  ]
+}

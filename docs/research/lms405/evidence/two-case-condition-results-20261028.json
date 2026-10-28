@@ -1,0 +1,155 @@
+{
+  "study": "LMS405_PUBLIC_CONDITIONS_V0_1",
+  "casebook_sha256": "aa520f0c787dcb5699c7925996784a8f2a327d5992f26d338624b4a59256373c",
+  "input_kind": "SOURCE_CONDITIONS_WITHOUT_MARKET_SIGNAL_LABELS",
+  "historical_immutability_verified": false,
+  "author_signal_success_rate": null,
+  "eligible_golden_signal_samples": 0,
+  "holdout_samples": 0,
+  "executable": false,
+  "fill": null,
+  "performance": null,
+  "cases": [
+    {
+      "case_id": "JM2609_20260521_RESTORE_SHORT",
+      "source": "https://weibo.com/1885745060/R0roUmhY8",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "AUTHOR_PERIOD_AND_SIGNAL_BAR",
+        "VPLUS_FORMULA",
+        "ACCOUNT_CONTINUITY",
+        "ACTION_TIME_AND_QUANTITY",
+        "HISTORICAL_CONTENT_VERSION",
+        "G07_DIRECTION_TEXT_CONFLICT"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_SHORT",
+        "sources": [
+          "https://weibo.com/1885745060/R0roUmhY8"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "JM2609_20260521_RESTORE_SHORT",
+        "as_of": "2026-10-28T17:05:21+08:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "ORIGINAL_GATES_IDENTIFIED": null,
+              "AUTHOR_SHORT_VPLUS_CONFIRMED": null,
+              "PRIOR_LONG_PROTECTION": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    },
+    {
+      "case_id": "SH2701_20261027_LOCK_SHORT",
+      "source": "https://weibo.com/1885745060/RozPmaK10",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "WEAK_SIDE_RATING_FORMULA",
+        "AUTHOR_PERIOD_AND_SIGNAL_BAR",
+        "LOCK_TIME_SIDE_QUANTITY",
+        "ACCOUNT_CONTINUITY",
+        "HISTORICAL_CONTENT_VERSION",
+        "AUTHOR_LOW_1475_VS_LOCAL_1477"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "LOCK",
+        "sources": [
+          "https://weibo.com/1885745060/RozPmaK10"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "SH2701_20261027_LOCK_SHORT",
+        "as_of": "2026-10-28T17:05:21+08:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "ORIGINAL_GATES_IDENTIFIED": null,
+              "WEAK_SIDE_PROTECTION_ALLOWED": null,
+              "AUTHOR_LOCK_TRIGGER_CONFIRMED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    },
+    {
+      "case_id": "SH2701_20261027_RESTORE_SHORT_SCENARIO",
+      "source": "https://weibo.com/1885745060/RoCCdf0i5",
+      "state_kind": "UNIT_SCENARIO_NOT_OBSERVED_AUTHOR_POSITION",
+      "condition_facts_supplied": 0,
+      "missing_original_facts": [
+        "UNLOCK_SIDE_IS_SCENARIO_NOT_OBSERVATION",
+        "UNLOCK_TIME_QUANTITY",
+        "RISK_THRESHOLD",
+        "TREND_DESTRUCTION_FORMULA",
+        "AUTHOR_PERIOD",
+        "ACCOUNT_CONTINUITY"
+      ],
+      "assessment": {
+        "status": "INDETERMINATE",
+        "requested_action": "UNLOCK_SHORT",
+        "sources": [
+          "https://weibo.com/1885745060/RoCCdf0i5"
+        ],
+        "unknown": [
+          "public_route"
+        ],
+        "failed": [],
+        "after": null,
+        "executable": false,
+        "original_trigger_identified": false,
+        "input_kind": "EXTERNAL_CASE_CONDITIONS",
+        "fill": null,
+        "policy_version": "lms405-public-conditions-v0.1",
+        "case_id": "SH2701_20261027_RESTORE_SHORT_SCENARIO",
+        "as_of": "2026-10-28T17:05:21+08:00",
+        "routes": [
+          {
+            "checks": {
+              "CASE_APPLIES": null,
+              "ORIGINAL_GATES_IDENTIFIED": null,
+              "RISK_CONTROL_CONFIRMED": null,
+              "TREND_CONTINUATION_ALLOWED": null
+            },
+            "value": null
+          }
+        ],
+        "public_subset_only": true,
+        "eligible_golden_signal": false,
+        "performance": null
+      }
+    }
+  ]
+}
