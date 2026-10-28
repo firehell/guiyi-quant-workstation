@@ -176,3 +176,18 @@ def test_deadline_crossed_during_last_closure_proof_cannot_publish(tmp_path):
     with pytest.raises(ValueError, match='DEADLINE'):
         initialize_observe(config, ('RB',), native.report, now=clock, assert_closed=closed, check=check)
     assert not (load_settings(config).state_root / ('a' * 64)).exists()
+
+
+def test_slow_stage_fsync_cannot_publish_an_expired_snapshot(tmp_path, monkeypatch):
+    from guiyi_quant.simnow_execution import observe_bootstrap as bootstrap
+    config, _ = preparation(tmp_path)
+    instant = [clock()]
+    original = bootstrap._fsync_directory
+    def slow(path):
+        original(path)
+        instant[0] = native.T + timedelta(seconds=45)
+    monkeypatch.setattr(bootstrap, '_fsync_directory', slow)
+    with pytest.raises(ValueError, match='SNAPSHOT_EXPIRED'):
+        bootstrap.initialize_observe(config, ('RB',), native.report,
+            now=lambda: instant[0], assert_closed=lambda: True)
+    assert not (load_settings(config).state_root / ('a' * 64)).exists()

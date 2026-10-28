@@ -25,10 +25,11 @@ def test_monitor_source_changes_only_when_private_binding_is_published(monkeypat
     binding = tmp_path / 'binding.private.json'
     new = tmp_path / 'new-account-state'
     monkeypatch.setattr(api, 'load_settings', lambda path: SimpleNamespace(
-        schema=2, mode='observe', enabled=True, state_root=new), raising=False)
+        schema=2, mode='observe', enabled=True, state_root=new, account_id='a' * 64), raising=False)
     assert api.reader().root == old
     binding.write_text('private validated binding fixture')
     assert api.reader().root == new
+    assert api.reader().expected_account_id == 'a' * 64
     binding.unlink()
     assert api.reader().root == old
 

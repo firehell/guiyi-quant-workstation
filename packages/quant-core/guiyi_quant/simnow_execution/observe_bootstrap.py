@@ -147,6 +147,7 @@ def initialize_observe(config, products, reader, *, now, assert_closed, check=la
             raise ValueError('BOOTSTRAP_TARGET_ALREADY_EXISTS')
         _fsync_directory(stage)
         check()
+        _snapshot_current(snapshot, now)
         os.rename(stage, target)
         _fsync_directory(settings.state_root)
         temporary.rmdir()

@@ -22,7 +22,7 @@ def reader():
             settings = load_settings(MONITOR_SOURCE_CONFIG)
             if settings.schema != 2 or settings.mode != 'observe' or not settings.enabled:
                 raise ValueError('MONITOR_OBSERVE_BINDING_REQUIRED')
-            return MonitorReader(settings.state_root)
+            return MonitorReader(settings.state_root, expected_account_id=settings.account_id)
         except Exception:
             raise HTTPException(503, detail={'code': 'MONITOR_SOURCE_UNAVAILABLE'}) from None
     return MonitorReader(
@@ -44,7 +44,10 @@ def query_keys(request, allowed):
 @router.get("/overview")
 def overview(request: Request):
     query_keys(request, ())
-    return reader().overview(datetime.now(UTC))
+    try:
+        return reader().overview(datetime.now(UTC))
+    except MonitorError:
+        raise HTTPException(503, detail={'code': 'MONITOR_SOURCE_UNAVAILABLE'}) from None
 
 
 @router.get("/records")

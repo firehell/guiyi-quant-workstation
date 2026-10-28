@@ -37,3 +37,5 @@ Owner已批准完整实施；截止北京时间2026-10-29 08:00，明早09:00开
 - 真实隔离PG回归4 passed；扩大Reference/Alert/health组合1446 passed/115 skipped的两项失败定位为任务测试日志目录缺失，创建0700隔离目录后worker_entry全45项通过，候选上再跑组合。
 - 23:12现场只读：十服务仍v31/gen37、Session49 CLOSED/11 TRADING，pending284、BLOCKED/UNKNOWN0，completed9683，维护持锁无干预；无新增输入错误或停服。
 - Review修正及监控绑定新增后完整SimNow/账户/Host/市场/API组合548 passed（43.39秒）；新增三项均先失败再转绿，Ruff/secret0/diff通过。
+- 最终补齐监控配置账户与索引账户exact匹配、fsync后快照TTL重验，均RED→GREEN；含monitor完整组合575 passed（43.23秒）。独立Review未发现其他Confirmed Issue，等待最终commit核对。
+- 冻结90条原件/路由及2618恢复闭环在新临时PG实测身份摘要完全相同；1m/5m接收平均959.93/950.93ms→4.75/16.03ms，p95为7.65/38.37ms。证据主树output/reference-inbox-intake-20261028/benchmark-overnight-candidate-45.json（SHA05d16946…），临时容器已stop/remove。
