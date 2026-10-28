@@ -63,6 +63,8 @@ def main(argv=None):
         or args.trade != (settings.mode == "trade")
     ):
         raise ValueError("CONTINUOUS_SOURCE_OR_MODE_INVALID")
+    if getattr(settings, "schema", 1) == 3 and not args.check:
+        raise ValueError("PREPARATION_ONLY")
     if args.check_keychain:
         _STARTUP_STAGE = "KEYCHAIN_CHECK"
         from guiyi_quant.simnow_execution.credentials import CredentialStore

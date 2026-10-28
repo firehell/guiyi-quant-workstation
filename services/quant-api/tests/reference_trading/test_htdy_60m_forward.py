@@ -79,6 +79,23 @@ def test_original_bound_60m_window_has_provenance_and_no_latest_read():
     assert read.reads == 1 and read.checks >= 1
 
 
+def test_later_recovery_watermark_cannot_revoke_a_retained_eligible_original(monkeypatch):
+    from app.market_data.live_market import LiveRecoveryState
+    read = Read()
+    event = original(read)
+    expected = capture(read, event)
+    get_window = read.bars_until
+    def after_recovery(*args, **kwargs):
+        window = get_window(*args, **kwargs)
+        return replace(window, recovery_state=LiveRecoveryState(2,
+            read.bars[-1].bar_end + timedelta(minutes=20)))
+    monkeypatch.setattr(read, 'bars_until', after_recovery)
+    actual = capture(read, event)
+    assert actual.evidence() == expected.evidence()
+    assert actual.observed_at == event.confirmed_at
+    assert read.checks >= 2
+
+
 def test_60m_scan_cannot_invent_first_seen_or_read_current_tail():
     read = Read()
     with pytest.raises(ForwardInputUnavailable, match="FIRST_SEEN_NOT_PROVEN"):

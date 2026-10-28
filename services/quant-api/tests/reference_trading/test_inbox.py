@@ -141,6 +141,29 @@ def test_capacity_fails_closed_without_partial_receipt_or_delivery():
     assert repo.pending_head(identity.stream_id).delivery_id == first.delivery_ids[0]
 
 
+def test_unrouted_original_retains_exact_receipt_without_capacity_or_recovery_read(monkeypatch):
+    from dataclasses import replace
+
+    factory, _, _, _, repo = setup(unfinished_bytes_limit=1)
+    original = replace(event(), channel=f"{LIVE_BAR_CHANNEL_PREFIX}:rb:1m")
+    monkeypatch.setattr(repo, "_resolved", lambda *_args, **_kwargs: pytest.fail("unrelated recovery read"))
+    monkeypatch.setattr(repo, "_unfinished_bytes", lambda *_args: pytest.fail("unrouted capacity read"))
+    receipt = repo.ingest(original)
+    assert not receipt.delivery_ids
+    assert repo.ingest(original).duplicate
+    with factory() as session:
+        saved = session.get(ReferenceInboxInput, receipt.input_id)
+        assert saved.canonical_envelope == original.to_json()
+        assert saved.target_count == 0
+
+
+def test_available_conservative_capacity_does_not_read_recovery(monkeypatch):
+    _, _, _, _, repo = setup()
+    monkeypatch.setattr(repo, "_resolved", lambda *_args, **_kwargs: pytest.fail("unnecessary recovery read"))
+    assert len(repo.ingest(event()).delivery_ids) == 1
+    assert len(repo.ingest(event("20-0")).delivery_ids) == 1
+
+
 def calculation(session, identity, revision, identifier, evidence):
     row = ReferenceBatch(
         batch_id=identifier,

@@ -272,6 +272,66 @@ def test_observe_never_mutates_existing_account_or_invokes_adapter(tmp_path):
     assert driver.closed and market.closed
 
 
+@pytest.mark.parametrize('mode, expected_connections', [('observe', 1), ('manage', 0), ('trade', 0)])
+def test_explicit_closed_account_readback_is_observe_only(tmp_path, mode, expected_connections):
+    from contextlib import closing
+    from guiyi_quant.simnow_execution.evidence import Evidence
+    settings, snapshot = setup(tmp_path, mode=mode)
+    with closing(Evidence(settings.state_root / ACCOUNT / 'native-evidence.sqlite', ACCOUNT)) as evidence:
+        evidence.append(snapshot)
+    path = settings.state_root / ACCOUNT / 'account.sqlite'
+    before = digest(path)
+    market = FakeMarket(connect_allowed=False, active=False)
+    market.closed_observation_allowed = lambda _: True
+    driver = FakeDriver(snapshot)
+    clock = Clock()
+    host = Supervisor(settings, ('JM', 'RB'), market, lambda *_: driver,
+        clock=clock.now, sleep=clock.sleep)
+    codes = []
+    status = host.status
+    def record(code, **kwargs):
+        codes.append(code)
+        return status(code, **kwargs)
+    host.status = record
+    host.run(max_cycles=1)
+    assert driver.connects == expected_connections
+    assert driver.observations == 0  # No execution-input polling while fully CLOSED.
+    assert digest(path) == before
+    if mode == 'observe':
+        assert 'OBSERVING_CLOSED' in codes
+
+
+def test_closed_observation_does_not_consume_or_block_next_trading_day(tmp_path):
+    from contextlib import closing
+    from guiyi_quant.simnow_execution.evidence import Evidence
+    from dataclasses import replace
+    settings, snapshot = setup(tmp_path)
+    path = settings.state_root / ACCOUNT / 'native-evidence.sqlite'
+    with closing(Evidence(path, ACCOUNT)) as evidence:
+        evidence.append(snapshot)
+    market = FakeMarket(connect_allowed=False, day=date(2026, 10, 28), active=False)
+    market.closed_observation_allowed = lambda _: True
+    drivers = []
+    def factory(*_):
+        drivers.append(FakeDriver(snapshot))
+        return drivers[-1]
+    host = Supervisor(settings, ('JM', 'RB'), market, factory, clock=Clock().now)
+    host.run(max_cycles=1)
+    assert not drivers  # Last proven native day is still the previous one.
+    box = SignalInbox(settings.state_root / ACCOUNT / 'signals.sqlite', ACCOUNT, ('JM', 'RB'))
+    assert box.conn.execute('SELECT * FROM attempts').fetchall() == []
+    assert not box.blocked('20261028')
+    box.close()
+    snapshot = replace(snapshot, trading_day='20261028',
+        source_id='ctp-inventory:20261028:' + 'c' * 64,
+        started_at=snapshot.at + timedelta(seconds=1), at=snapshot.at + timedelta(seconds=2))
+    market.active = market.connect_allowed = True
+    market.closed_observation_allowed = lambda _: False
+    resumed = Supervisor(settings, ('JM', 'RB'), market, factory, clock=Clock().now)
+    resumed.run(max_cycles=1)
+    assert len(drivers) == 1 and drivers[0].observations == 1
+
+
 def test_account_product_scope_mismatch_blocks_before_observation(tmp_path):
     settings, snapshot = setup(tmp_path)
     path = settings.state_root / ACCOUNT / "account.sqlite"

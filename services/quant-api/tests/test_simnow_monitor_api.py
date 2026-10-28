@@ -3,6 +3,13 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.api import simnow_monitor as api
+import pytest
+from types import SimpleNamespace
+
+
+@pytest.fixture(autouse=True)
+def private_monitor_binding(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, 'MONITOR_SOURCE_CONFIG', tmp_path / 'binding.private.json')
 
 
 def client(monkeypatch, tmp_path):
@@ -10,6 +17,40 @@ def client(monkeypatch, tmp_path):
     app = FastAPI()
     app.include_router(api.router)
     return TestClient(app)
+
+
+def test_monitor_source_changes_only_when_private_binding_is_published(monkeypatch, tmp_path):
+    client(monkeypatch, tmp_path)
+    old = api.reader().root
+    binding = tmp_path / 'binding.private.json'
+    new = tmp_path / 'new-account-state'
+    monkeypatch.setattr(api, 'load_settings', lambda path: SimpleNamespace(
+        schema=2, mode='observe', enabled=True, state_root=new, account_id='a' * 64), raising=False)
+    assert api.reader().root == old
+    binding.write_text('private validated binding fixture')
+    assert api.reader().root == new
+    assert api.reader().expected_account_id == 'a' * 64
+    binding.unlink()
+    assert api.reader().root == old
+
+
+@pytest.mark.parametrize('mode,enabled,schema', [('trade', True, 2), ('observe', False, 2), ('observe', True, 3)])
+def test_monitor_binding_cannot_adopt_wrong_mode_or_preparation(monkeypatch, tmp_path, mode, enabled, schema):
+    c = client(monkeypatch, tmp_path)
+    api.MONITOR_SOURCE_CONFIG.write_text('fixture')
+    monkeypatch.setattr(api, 'load_settings', lambda path: SimpleNamespace(
+        schema=schema, mode=mode, enabled=enabled, state_root=tmp_path), raising=False)
+    response = c.get('/api/simnow/monitor/overview')
+    assert response.status_code == 503
+    assert response.json() == {'detail': {'code': 'MONITOR_SOURCE_UNAVAILABLE'}}
+
+
+def test_invalid_private_binding_never_silently_reads_the_old_account(monkeypatch, tmp_path):
+    c = client(monkeypatch, tmp_path)
+    api.MONITOR_SOURCE_CONFIG.write_text('{')
+    response = c.get('/api/simnow/monitor/overview')
+    assert response.status_code == 503
+    assert str(tmp_path) not in response.text
 
 
 def test_absent_account_api_is_explicit_and_readonly(monkeypatch, tmp_path):

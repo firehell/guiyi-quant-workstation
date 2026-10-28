@@ -111,3 +111,22 @@ def test_retained_original_conflict_is_not_classified_as_history_preparation():
             now=latest.bar_end+timedelta(seconds=2),wake_kind='scan',
             owner_segments=lambda *_:('owner','calc'),expected_endpoints=lambda *_:(latest.bar_end,),
             retained_observations=(object(),))
+
+
+def test_legacy_htdy_snapshot_still_rejects_a_recovered_window(monkeypatch):
+    from dataclasses import replace
+    from app.market_data.live_market import LiveRecoveryState
+    read = _Read()
+    get_window = read.bars_until
+    def recovered(*args, **kwargs):
+        window = get_window(*args, **kwargs)
+        return replace(window, recovery_state=LiveRecoveryState(2, read.bars[-1].bar_end))
+    monkeypatch.setattr(read, 'bars_until', recovered)
+    identity = StreamIdentity(
+        'htdy', ('huotian_dayou_original_v0',), 'htdy-v1', MODEL_VERSION,
+        'actual_dominant_v1', 'RB', '15m', 'actual_dominant',
+        RecordingMode.FORWARD_OBSERVATION, 'latest_only_32_v1')
+    with pytest.raises(ForwardInputUnavailable, match='HTDY_WINDOW_UNAVAILABLE'):
+        capture_htdy_live(read, identity, revision_id='r', generation=1, after=None,
+            now=read.bars[-1].bar_end + timedelta(seconds=2), wake_kind='live_event',
+            event_bar_end=read.bars[-1].bar_end, owner_segments=lambda *_: ('owner', 'calc'))

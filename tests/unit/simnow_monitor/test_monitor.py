@@ -3,7 +3,7 @@
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
 import pytest
-from guiyi_quant.simnow_execution.monitor import MonitorReader, MonitorPublisher
+from guiyi_quant.simnow_execution.monitor import MonitorReader, MonitorPublisher, MonitorError
 
 T = datetime(2026, 10, 27, 1, tzinfo=UTC)
 
@@ -363,3 +363,13 @@ def test_unpublished_new_snapshot_does_not_replace_bound_readback(tmp_path):
     evidence.close()
     result = reader.overview(now + timedelta(seconds=20))
     assert result["metrics"]["equity"] == "99996.88"
+
+
+def test_bound_monitor_never_reads_a_different_account_index(tmp_path):
+    reader, now, folder = fixture_root(tmp_path)
+    reader = MonitorReader(tmp_path, expected_account_id='b' * 64)
+    with pytest.raises(MonitorError, match='ACCOUNT_BINDING'):
+        reader.load(now)
+    with pytest.raises(MonitorError):
+        reader.overview(now)
+    assert MonitorReader(tmp_path).overview(now)['status'] == 'available'

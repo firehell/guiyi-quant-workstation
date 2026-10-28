@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import plistlib
 import stat
+import subprocess
 import sys
 import tempfile
 
@@ -42,6 +43,8 @@ def render_trade_launch_agent(
 
 def _render(settings, config_path, *, home, mode):
     """Return a deterministic, password-free LaunchAgent plist."""
+    if getattr(settings, "schema", 1) == 3:
+        raise ValueError("PREPARATION_ONLY")
     if settings.mode != mode:
         raise ValueError("OBSERVE_ONLY")
     if type(settings.enabled) is not bool:
@@ -131,6 +134,38 @@ def preflight_trade(settings, config_path, *, products=None):
     )
 
 
+def preflight_preparation(settings, config_path):
+    """Validate a disabled, uninitialized candidate without any runtime effect."""
+    from guiyi_quant.simnow_execution.settings import load_settings
+
+    if settings.schema != 3 or settings != load_settings(Path(config_path)):
+        raise ValueError("PREPARATION_SETTINGS_REQUIRED")
+    runner = settings.project_root / "scripts/broker/simnow_supervisor.py"
+    if not runner.is_file():
+        raise ValueError("SERVICE_RUNNER_MISSING")
+    try:
+        result = subprocess.run(
+            [str(settings.sdk_python), "-I", "-B", str(runner),
+             "--config", str(config_path), "--observe-only", "--check"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise ValueError("PREPARATION_SDK_INCOMPATIBLE") from None
+    if (result.returncode != 0 or result.stdout.strip()
+            != "CONTINUOUS_CONFIG_SDK_COMPATIBLE_NO_BROKER_IO"):
+        raise ValueError("PREPARATION_SDK_INCOMPATIBLE")
+    # Check again after the subprocess: no account may have appeared meanwhile.
+    if settings != load_settings(Path(config_path)):
+        raise ValueError("PREPARATION_SETTINGS_CHANGED")
+    return dict(
+        schema="simnow_preparation_preflight_v1", preparation_valid=True,
+        old_account_state="UNKNOWN", new_account_state="UNINITIALIZED",
+        account_reconciled=False, balance_verified=False, positions_verified=False,
+        runtime_ready=False, execution_permitted=False, broker_io=False,
+        credentials_loaded=False, mode="observe", enabled=False,
+    )
+
+
 def _private_regular(path: Path) -> None:
     if path.is_symlink():
         raise ValueError("PRIVATE_PATH_REQUIRED")
@@ -157,6 +192,8 @@ def _private_dir(path: Path) -> None:
 
 def install_observe(settings, config_path: Path, *, home: Path | None = None) -> Path:
     """Install only the observe plist, without loading or starting it."""
+    if getattr(settings, "schema", 1) == 3:
+        raise ValueError("PREPARATION_ONLY")
     if settings.mode != "observe" or settings.enabled is not True:
         raise ValueError("OBSERVE_ENABLED_REQUIRED")
     config_path = _absolute(config_path)
@@ -198,6 +235,7 @@ def main(argv=None) -> int:
     actions.add_argument("--install-observe", action="store_true")
     actions.add_argument("--render-trade", action="store_true")
     actions.add_argument("--preflight-trade", action="store_true")
+    actions.add_argument("--preflight-preparation", action="store_true")
     args = parser.parse_args(argv)
     root = Path(__file__).resolve().parents[3]
     sys.path.insert(0, str(root / "packages" / "quant-core"))
@@ -205,7 +243,9 @@ def main(argv=None) -> int:
 
     try:
         settings = load_settings(args.config)
-        if args.render_trade:
+        if args.preflight_preparation:
+            print(json.dumps(preflight_preparation(settings, args.config), sort_keys=True))
+        elif args.render_trade:
             sys.stdout.buffer.write(render_trade_launch_agent(settings, args.config))
         elif args.preflight_trade:
             print(json.dumps(preflight_trade(settings, args.config), sort_keys=True))

@@ -42,6 +42,11 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 /path/to/isolated/python -I scripts/broker/simnow_supervisor.py --config /absolute/private.json --observe-only --check
 ```
 
+`test_observe_bootstrap.py` / `test_observe_bootstrap_cli.py` 使用临时四库和注入原生报告，覆盖真实资金
+初始化、同账户锁、账户/快照/空仓/活动委托拒绝、部分失败、重复执行、配置漂移、截止与连接清理，
+并断言只读原生API禁止结算确认/报撤单。PortfolioMarket和Supervisor覆盖fresh闭市仅允许observe
+账户读取，manage/trade不获得该许可；这些测试不连接柜台或改变正式运行状态。
+
 覆盖单账户锁、共享队列冻结及commit-before-ACK、管理Tick禁止新OPEN/预留、局部恢复、
 Session/预开盘/午休/日切、同连接快照变化、断线预算与持久阻断、已claim离线成交真实费用对账。
 实际Keychain加载、开机启动、自然新Bar及断线/跨日另验，不由fixture替代。
@@ -2196,6 +2201,15 @@ PLAYWRIGHT_PORT=5198 pnpm -C apps/quant-web exec playwright test -c playwright.c
 settings/preflight覆盖四库身份/scope、缺库零创建和WAL零sidecar；现有执行回归覆盖未知发送、重复/乱序、
 撤单成交竞态、跨日及换月失败。固定SDK smoke仍使用真实结构加假API，不能代替柜台验收。
 trade render/preflight、收盘后切换与停用步骤见[执行合同](docs/SIMNOW_EXECUTION.md#持续交易候选simnow_continuous_v2)。
+
+关闭态准备使用`tests/unit/simnow_supervisor/test_preparation.py`及同组`test_settings.py`，覆盖schema3只读加载、
+启动/安装/凭据读取禁止、旧schema2缺库仍拒绝、独立路径/权限/空状态根以及SDK检查期间配置或状态变化。真实准备检查为：
+
+```sh
+services/quant-api/.venv/bin/python -B scripts/ops/macos/simnow-service.py --config /absolute/continuous.disabled.private.json --preflight-preparation
+```
+
+该入口只启动指定SDK解释器进行`--check`，不启动宿主或连接柜台；通过仅表示准备有效，账户未对账、不可运行或交易。
 
 ## 显式Inbox恢复与0054
 
