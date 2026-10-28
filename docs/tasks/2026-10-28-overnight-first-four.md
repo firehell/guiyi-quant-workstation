@@ -40,4 +40,31 @@ Owner已批准完整实施；截止北京时间2026-10-29 08:00，明早09:00开
 - 最终补齐监控配置账户与索引账户exact匹配、fsync后快照TTL重验，均RED→GREEN；含monitor完整组合575 passed（43.23秒）。独立Review未发现其他Confirmed Issue，等待最终commit核对。
 - 冻结90条原件/路由及2618恢复闭环在新临时PG实测身份摘要完全相同；1m/5m接收平均959.93/950.93ms→4.75/16.03ms，p95为7.65/38.37ms。证据主树output/reference-inbox-intake-20261028/benchmark-overnight-candidate-45.json（SHA05d16946…），临时容器已stop/remove。
 - 独立Astra安全Review固定900f0da→d6ef03ec4：无未解决Confirmed Issue，无Optional Improvement，允许集成develop；现场柜台、发布/切换及自然验收由执行阶段另取实证，不以Review代替。六个生产模块定向Mypy通过。
-- 已集成并推送develop bc8163ddf；以exact v31创建release-v1.16.32候选，精确择取28个必要路径（生产/测试blob与来源一致），排除无关Web/研究。候选自身Reference/Alert/health1454 passed/115 skipped，SimNow575 passed；uv/pnpm离线锁定依赖、Web type/build/topology、SDK无网络准备、12项OpenSpec、Ruff/secret0/diff通过。
+
+## 候选准备与新发现的现场阻断
+
+草稿发布PR535，初始候选c599845b7，root为主树.worktrees/release-v1.16.32；uv/pnpm离线依赖及Web构建、
+候选Reference/Alert/health1454 passed/115 skipped、SimNow575 passed及SDK无网络准备均通过，未发布或切换。
+02:35单次续接automation-2已更新精确对象与06:30/07:00/08:00边界。
+
+23:32只读现场：十身份仍v31/gen37，行情心跳正常；pending575、UNKNOWN0，但新增1条AU60m
+23:00 HTDY_WINDOW_UNAVAILABLE（23:28:52接收、23:29:39阻断），9条融合依赖等待，旧BLOCKED累计340。
+唯一MDS只读定位：32根完整，合约/cutoff/末Bar逐值一致；原件notification_eligible=true，之后Live恢复
+revision2/recovered_through=23:04:06.474307使当前窗口notification_eligible=false。
+这违反已接受Inbox原件资格不可被后来快照替换的合同；只对已验证的60m原件保留冻结资格，仍逐次完整验证
+当前32根、physical owner、末Bar及source/recovery-current；不改变Alert/通知时效、不接受恢复生成的不合格原件、
+不放宽legacy/snapshot路径。失败复现后16项定向转绿，继续扩大回归与独立Review，作为本版交付阻断修正。
+生产BLOCKED原记录未改，闭市必须用现有reference_inbox_recovery_v1停writer、精确计划及独立读回完成原件原生续接；
+不重置状态、不伪造first_seen、不创建历史信号/通知、不直接SQL解锁。未证明恢复前不能宣称策略范围完全正常。
+- Ruling: 原显式恢复allowlist未含HTDY_WINDOW_UNAVAILABLE——仅加入exact htdy_identity(product)的已接受60m身份识别，
+  沿用原stopped-writer/原件hash/checkpoint/receipt/source/claim/原子闭合和未知禁重试，不加入自动重试或修改原BLOCKED。
+  代价为该精确身份的维护入口新增一类可验证故障；完整来源及计算仍须通过，其他策略/周期不放行。
+  临时SQLite真实HTDY内核和四类投影链已RED→GREEN，证明原BLOCKED保留且append closure后追尾、无AlertEvent。
+- 追加修正扩大Reference/Alert/health1452 passed/116 skipped，真实隔离PG（接收+HTDY含闭合）9 passed；
+  MDS/HTDY/恢复定向162 passed，Ruff、两模块Mypy、OpenSpec12、secret0/diff通过。Mypy暴露的已有
+  snapshot.state=None注解不一致仅改为Optional以表达已存在原件路径，不改运行逻辑；等待独立Review。
+- 追加HTDY修正独立Astra Review固定bc8163ddf→61f13712d：无未解决Confirmed Issue、无新增代码阻断，
+  reviewer另实跑38 passed/5 deselected，允许集成；现场恢复/发布/自然验收仍待闭市与开盘事实。
+- develop期间另一任务新增c09b1771c LMS研究文档，本任务保留并正常merge，不纳入选择性发布候选。
+- 追加修正已正常合入并推送develop7139515c1；候选择取来源20ece2c8c，新增6个必要路径，整体36文件。
+  候选Reference/Alert/health/MDS1591 passed/116 skipped，原SimNow575及离线构建保持不变；追加真实PG9通过。

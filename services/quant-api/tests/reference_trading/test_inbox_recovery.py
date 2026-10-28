@@ -600,3 +600,12 @@ def test_capacity_reclaim_requires_fresh_strict_recovery_proof():
         inbox.next_heads()
     with pytest.raises(ValueError, match="RECOVERY"):
         inbox.health()
+
+
+def test_htdy_window_recovery_does_not_admit_other_strategy_codes():
+    factory, inbox, recovery, plan, evaluate = fixture(frequency='60m')
+    with factory() as db, db.begin():
+        row = db.get(ReferenceInboxDelivery, plan.delivery_id)
+        row.code = 'HTDY_WINDOW_UNAVAILABLE'
+    with pytest.raises(ValueError, match='RECOVERY'):
+        recovery.plan(plan.delivery_id, capture=plan.capture, expires_at=plan.expires_at)

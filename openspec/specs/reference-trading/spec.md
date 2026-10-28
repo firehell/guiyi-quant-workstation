@@ -185,6 +185,10 @@ Historical context Bars warm the current 32-Bar prefix without producing histori
 A 60m capture MUST bind an immutable eligible journal observation, its confirmation time, physical contract,
 cutoff and exact current Bar, plus a verified 32-Bar window and hash. A scan or a later Live snapshot MUST NOT
 invent first-seen evidence. Input conflict, missing endpoints or changed window overlap MUST fail closed.
+A later Live recovery watermark SHALL NOT retroactively revoke an already accepted eligible 60m original.
+The current 32-Bar prefix, physical owner, exact original tail and source/recovery-current checks SHALL still
+be verified; recovery-generated ineligible originals SHALL remain rejected, and snapshot/legacy eligibility
+rules SHALL remain unchanged.
 Actions, trades, checkpoint and Inbox completion SHALL retain the existing atomic commit and unknown-result
 readback contracts. Reference recording MUST NOT create Alert Events or send notifications.
 
@@ -1237,6 +1241,10 @@ expiry, stopped-writer fence and its fixed private attempt namespace. A delivery
 exclusive, no-follow, fsynced claim SHALL precede any mutation. Unknown results consume
 that claim; changing the plan or namespace SHALL NOT authorize another attempt. A complete
 independent exact readback MAY return a prior committed result without another mutation.
+An `HTDY_WINDOW_UNAVAILABLE` delivery MAY use this same closure only for the exact accepted
+HTDY 60m identity and an original-bound capture that passes all existing source, window,
+checkpoint, receipt, fence and atomic calculation checks. Other identities and genuinely
+unavailable/conflicting windows SHALL remain blocked; the original BLOCKED row SHALL remain intact.
 
 Additive schema `20261028_0054` SHALL append `reference_inbox_recovery_results` without
 changing 0053 originals, frozen routes, BLOCKED/UNKNOWN states or immutable guards. Each

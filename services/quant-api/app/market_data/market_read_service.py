@@ -173,7 +173,7 @@ class MarketDisplaySnapshot:
 class MarketObservationSnapshot:
     """One frozen read of completed Live observation identity and Bars."""
 
-    state: MarketReadState
+    state: MarketReadState | None  # Durable originals carry their own validated identity.
     source: Literal["none", "realtime", "unavailable"]
     trading_day: date | None
     contract: str | None

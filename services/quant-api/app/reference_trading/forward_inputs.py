@@ -116,7 +116,11 @@ def capture_htdy_live(
     )
     if (
         len(window.bars) != CONTEXT_BARS
-        or not window.notification_eligible
+        # H1 eligibility was frozen in the validated completed original above.
+        # A later recovery watermark cannot revoke that first-seen evidence.
+        # Snapshot/legacy readers still need current-window eligibility.
+        or (not window.notification_eligible
+            and not (identity.frequency == "60m" and observation is not None))
         or window.contract != snapshot.contract
         or window.cutoff != latest.bar_end
         or window.bars[-1] != latest
