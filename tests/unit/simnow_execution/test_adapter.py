@@ -5,6 +5,8 @@ import json
 from datetime import datetime, UTC, timedelta
 from decimal import Decimal as D
 from types import SimpleNamespace
+from pathlib import Path
+import importlib.util
 import pytest
 from guiyi_quant import htdy_execution as h, htdy_account_execution as a
 from guiyi_quant import simnow_execution as b
@@ -425,6 +427,197 @@ def native_trade(ref="11", system="sys-1", clock="10:01:01", day="20261027"):
         TradeID="trade-review",
         OrderSysID=system,
     )
+
+
+def correlated_snapshot(adapter, effect, at, *, status="0"):
+    from guiyi_quant.simnow_execution.inventory import read_snapshot
+
+    spec = importlib.util.spec_from_file_location(
+        "correlated_inventory_fixture",
+        Path(__file__).parents[1] / "simnow_host/test_inventory.py",
+    )
+    fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    report = fixture.report()
+    report["account_fingerprint"] = ACCOUNT
+    for index, round_ in enumerate(report["rounds"]):
+        start = at + timedelta(seconds=3 + index * 10)
+        round_["started_at"] = start.isoformat()
+        round_["completed_at"] = (start + timedelta(seconds=2)).isoformat()
+        for query in round_["queries"].values():
+            query["started_at"] = start.isoformat()
+            query["completed_at"] = (start + timedelta(seconds=1)).isoformat()
+    native_order = row(adapter, effect, at - timedelta(seconds=2), status).__dict__.copy()
+    native_order.pop("BrokerID")
+    native_order.pop("InvestorID")
+    native_order["LimitPrice"] = str(native_order["LimitPrice"])
+    native_fill = native_trade(clock=(at - timedelta(seconds=2)).astimezone(
+        __import__("zoneinfo").ZoneInfo("Asia/Shanghai")
+    ).strftime("%H:%M:%S")).__dict__.copy()
+    for field in ("BrokerID", "InvestorID", "OrderRef"):
+        native_fill.pop(field)
+    native_fill["Price"] = str(native_fill["Price"])
+    report = fixture.changed(report, "orders", [native_order])
+    report = fixture.changed(report, "trades", [native_fill] if status == "0" else [])
+    return read_snapshot(report)
+
+
+def test_correlated_manual_adapter_requires_full_snapshot_and_never_opens(tmp_path):
+    ad, effect, facts, binding, permit, at, api = setup(tmp_path)
+    ad.dispatch(effect, binding, None, facts, permit, at)
+    stale_order = row(ad, effect, at - timedelta(seconds=2), "0")
+    with pytest.raises(ValueError, match="NATIVE_CALLBACK_BLOCKED"):
+        ad.order_callback(stale_order, at + timedelta(seconds=3))
+
+    class CaptureStore:
+        def __init__(self, real):
+            self.real = real
+            self.fills = []
+
+        def current(self):
+            return self.real.current()
+
+        def receipt(self, key):
+            return self.real.receipt(key)
+
+        def execute(self, key, command):
+            if type(command) is a.CorrelatedNativeFillV1:
+                self.fills.append(command)
+                return SimpleNamespace()
+            return self.real.execute(key, command)
+
+        def dispatch_guard(self):
+            return self.real.dispatch_guard()
+
+    correlated = b.Adapter(
+        CaptureStore(ad.store), ad.journal, ad.sdk, api, USER, ad.session,
+        close_only=True, correlated_native=True,
+    )
+    with pytest.raises(ValueError, match="CLOSE_ONLY_NATIVE_ADAPTER"):
+        correlated.dispatch(effect, binding, None, facts, permit, at)
+    assert len(api.calls) == 1
+    assert correlated.order_callback(stale_order, at + timedelta(seconds=3)) is None
+    assert correlated.trade_callback(native_trade(clock="10:00:58"),
+                                     at + timedelta(seconds=3)) is None
+    assert correlated.store.fills == []
+    assert sum(p["kind"].startswith("unverified_")
+               for _, p, _ in correlated.journal.events()) == 2
+
+    correlated = b.Adapter(
+        correlated.store, ad.journal, ad.sdk, api, USER, ad.session,
+        close_only=True, correlated_native=True,
+    )  # Restart has no in-memory callback buffer.
+    snapshot = correlated_snapshot(ad, effect, at)
+    correlated.correlate_snapshot(snapshot)
+    assert sum(p["kind"] == "correlation"
+               for _, p, _ in correlated.journal.events()) == 2
+    correlated.order_callback(stale_order, snapshot.at)
+    trade = native_trade(clock=(at - timedelta(seconds=2)).astimezone(
+        __import__("zoneinfo").ZoneInfo("Asia/Shanghai")
+    ).strftime("%H:%M:%S"))
+    identity = correlated.trade_callback(trade, snapshot.at)
+    assert correlated.drain() == (identity,)  # no actual fee yet
+    correlated.fee(b.Fee(identity, D(3), "ctp-commission-delta:fixture"), snapshot.at)
+    assert correlated.drain() == ()
+    fill = correlated.store.fills[0]
+    assert type(fill) is a.CorrelatedNativeFillV1
+    assert fill.filled_at < fill.request_started_at  # raw native clock is retained
+    assert fill.recorded_at == snapshot.at
+    assert fill.readback_source_id == snapshot.source_id
+    assert fill.native_order_ref == ad.journal.find(effect.order.order_id)["order_ref"]
+
+
+def test_unverified_known_trade_survives_restart_and_flat_snapshot_blocks(tmp_path):
+    from guiyi_quant.simnow_execution.inventory import read_snapshot
+
+    ad, effect, facts, binding, permit, at, api = setup(tmp_path)
+    ad.dispatch(effect, binding, None, facts, permit, at)
+    correlated = b.Adapter(ad.store, ad.journal, ad.sdk, api, USER, ad.session,
+                           close_only=True, correlated_native=True)
+    assert correlated.trade_callback(native_trade(), at + timedelta(seconds=1)) is None
+    assert any(p["kind"] == "unverified_trade" for _, p, _ in ad.journal.events())
+    restarted = b.Adapter(ad.store, ad.journal, ad.sdk, api, USER, ad.session,
+                          close_only=True, correlated_native=True)
+    spec = importlib.util.spec_from_file_location(
+        "flat_correlation_fixture", Path(__file__).parents[1] / "simnow_host/test_inventory.py"
+    )
+    fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    report = fixture.report()
+    report["account_fingerprint"] = ACCOUNT
+    for index, round_ in enumerate(report["rounds"]):
+        started = at + timedelta(seconds=3 + index * 10)
+        round_["started_at"] = started.isoformat()
+        round_["completed_at"] = (started + timedelta(seconds=2)).isoformat()
+        for query in round_["queries"].values():
+            query["started_at"] = started.isoformat()
+            query["completed_at"] = (started + timedelta(seconds=1)).isoformat()
+    restarted.correlate_snapshot(read_snapshot(report))
+    assert restarted.drain()  # a complete flat query does not erase the known callback
+    close_effect = SimpleNamespace(order=SimpleNamespace(offset="CLOSE"))
+    with pytest.raises(ValueError, match="UNDRAINED_NATIVE_FACTS"):
+        restarted._preflight(ad.store.current(), close_effect, None, None, None, None, at)
+
+
+def test_intermediate_order_can_be_covered_but_late_unproven_order_stays_pending(tmp_path):
+    ad, effect, facts, binding, permit, at, api = setup(tmp_path)
+    ad.dispatch(effect, binding, None, facts, permit, at)
+    correlated = b.Adapter(ad.store, ad.journal, ad.sdk, api, USER, ad.session,
+                           close_only=True, correlated_native=True)
+    intermediate = row(ad, effect, at - timedelta(seconds=2), "a", "0")
+    assert correlated.order_callback(intermediate, at + timedelta(seconds=1)) is None
+    snapshot = correlated_snapshot(ad, effect, at)
+    correlated.correlate_snapshot(snapshot)
+    assert correlated.drain() == ()
+    assert any(p["kind"] == "correlation" for _, p, _ in ad.journal.events())
+    late = row(ad, effect, at - timedelta(seconds=2), "3", "3")
+    assert correlated.order_callback(late, snapshot.at + timedelta(seconds=1)) is None
+    assert correlated.drain()
+
+
+def test_working_callback_covered_by_same_unfilled_cancelled_snapshot(tmp_path):
+    ad, effect, facts, binding, permit, at, api = setup(tmp_path)
+    ad.dispatch(effect, binding, None, facts, permit, at)
+    correlated = b.Adapter(ad.store, ad.journal, ad.sdk, api, USER, ad.session,
+                           close_only=True, correlated_native=True)
+    working = row(ad, effect, at - timedelta(seconds=2), "3", "3")
+    assert correlated.order_callback(working, at + timedelta(seconds=1)) is None
+    assert correlated.drain()  # persisted unresolved order blocks new sends
+    snapshot = correlated_snapshot(ad, effect, at, status="5")
+    assert snapshot.data["trades"] == []
+    correlated.correlate_snapshot(snapshot)
+    assert correlated.drain() == ()
+    assert any(p["kind"] == "correlation" for _, p, _ in ad.journal.events())
+
+
+@pytest.mark.parametrize("bad", ["account", "ref", "system"])
+def test_unexplainable_correlated_callback_faults_before_queue(tmp_path, bad):
+    ad, effect, facts, binding, permit, at, api = setup(tmp_path)
+    ad.dispatch(effect, binding, None, facts, permit, at)
+    correlated = b.Adapter(ad.store, ad.journal, ad.sdk, api, USER, ad.session,
+                           close_only=True, correlated_native=True)
+    report = native_trade(ref="999" if bad == "ref" else "11",
+                          system="" if bad == "system" else "sys-1")
+    if bad == "account":
+        report.InvestorID = "other"
+    with pytest.raises(ValueError, match="NATIVE_CALLBACK_BLOCKED"):
+        correlated.trade_callback(report, at + timedelta(seconds=1))
+    assert any(p["kind"] == "fault" for _, p, _ in ad.journal.events())
+    assert not any(p["kind"] == "unverified_trade" for _, p, _ in ad.journal.events())
+
+
+def test_unknown_account_or_ref_order_callback_faults_before_queue(tmp_path):
+    ad, effect, facts, binding, permit, at, api = setup(tmp_path)
+    ad.dispatch(effect, binding, None, facts, permit, at)
+    correlated = b.Adapter(ad.store, ad.journal, ad.sdk, api, USER, ad.session,
+                           close_only=True, correlated_native=True)
+    for field, value in (("InvestorID", "other"), ("OrderRef", "999")):
+        native = row(ad, effect, at)
+        setattr(native, field, value)
+        with pytest.raises(ValueError, match="NATIVE_CALLBACK_BLOCKED"):
+            correlated.order_callback(native, at + timedelta(seconds=1))
+    assert not any(p["kind"] == "unverified_order" for _, p, _ in ad.journal.events())
+    assert sum(p["kind"] == "fault" for _, p, _ in ad.journal.events()) == 1
 
 
 def test_same_second_fill_retains_precision_without_invented_timestamp(tmp_path):

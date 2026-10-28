@@ -342,3 +342,11 @@ def test_next_day_recovery_identity_is_read_and_fenced(closed):
         row["source_conflict"]["errors"][0]["code"]
         == "HTDY_SOURCE_DIFFERENCE_NEXT_RECOVERY_FENCED"
     )
+
+
+def test_missing_closed_subscription_has_explicit_block_reason(closed):
+    native, coverage, _mds, store, _original = closed
+    store.subscriptions = lambda _: None
+    row = audit_product(native, coverage, 'ag', AT)
+    assert row['status'] == 'BLOCKED'
+    assert row['source_conflict']['errors'][0]['code'] == 'HTDY_SOURCE_DIFFERENCE_SUBSCRIPTION_UNAVAILABLE'

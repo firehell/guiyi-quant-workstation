@@ -10,6 +10,12 @@ export function monitorMoney(value: string | null | undefined) {
 export function monitorPercent(value: string | null | undefined) { return value === null || value === undefined ? '—' : `${(Number(value) * 100).toFixed(1)}%` }
 export function observerLabel(data: MonitorOverview | null) {
   if (!data?.account) return '尚未接入监控'
+  if (data.observer?.host_status === 'WAITING_SESSION') return '等待交易时段'
+  if (data.observer?.status === 'running') {
+    if (data.observer.mode === 'observe') return '只读观察中'
+    if (data.observer.mode === 'manage') return '仅管理已有仓位'
+    if (data.observer.mode === 'trade') return data.observer.opening_enabled ? '持续模拟交易中' : '持续模式：开仓暂停'
+  }
   return ({ running: '受控运行中', stopped: '本次运行已结束', stale: '运行状态待确认', error: '本次运行异常' } as const)[data.observer?.status ?? 'stale']
 }
 export const monitorReason: Record<string, string> = { APPROVED: '资金与保证金检查通过', MARGIN_CAP: '预计保证金占用超过70%上限，本次信号跳过', AVAILABLE_FUNDS: '可用资金不足，本次信号跳过', MINIMUM_OPEN_VOLUME: '合约不支持固定一手开仓', TARGET_UPDATED: '已更新目标方向', HOLD: '没有新信号，保持仓位', FROZEN_BAR_IGNORED: '同一Bar已冻结，未重复执行', SIGNAL_CONFLICT: '同一Bar出现双向信号，不开仓或反手', PRE_ACTIVATION_OR_RECOVERY_IGNORED: '启用前或恢复期间的旧信号不补开', OBSERVATION_GAP: '自然输入不连续，暂停新开仓', OWNER_MISMATCH: '主力合约不匹配，暂停新开仓', SIGNAL_BLOCKED: '该品种输入或账户状态待核' }

@@ -1,7 +1,7 @@
 """Read-only composition for a bounded SimNow host, never registered as Runtime."""
 
 from contextlib import contextmanager
-from datetime import timedelta, date
+from datetime import timedelta, date, datetime
 from dataclasses import dataclass, replace
 from sqlalchemy import select, text
 from app.db.session import SessionLocal
@@ -30,6 +30,7 @@ class Authority:
     trading_day: date
     session: a.Session
     source_id: str
+    contiguous_session_end: datetime | None = None
 
 
 class MarketBridge:
@@ -104,7 +105,16 @@ class MarketBridge:
                     ),
                 )
             )
-            tradable = any(w.window.start <= now < w.window.end for w in group)
+            current = tuple(
+                w.window for w in group if w.window.start <= now < w.window.end
+            )
+            tradable = bool(current)
+            contiguous_end = max((w.end for w in current), default=None)
+            if contiguous_end is not None:
+                # Adjacent/overlapping windows are one uninterrupted trading span.
+                for window in sorted((w.window for w in group), key=lambda w: w.start):
+                    if window.start <= contiguous_end and window.end > contiguous_end:
+                        contiguous_end = window.end
             close = max(w.window.end for w in group)
             source = "authority:" + digest(
                 (
@@ -133,6 +143,7 @@ class MarketBridge:
                     tradable,
                 ),
                 source,
+                contiguous_end,
             )
 
     def canonical_for_native(self, native, exchange, instruments):
@@ -175,10 +186,23 @@ class MarketBridge:
             or trigger.frequency != BarFrequency.H1
         ):
             raise ValueError("NATURAL_TRIGGER_INVALID")
+        return self.signal_from_trigger(trigger, now, after)
+
+    def signal_from_trigger(self, trigger, observed_at, after):
+        """Apply the single-product first-seen proof to an already captured trigger."""
+        if self.started is None:
+            raise ValueError("NATURAL_SOURCE_NOT_ACTIVATED")
+        if (
+            trigger.symbol != self.product.lower()
+            or trigger.frequency != BarFrequency.H1
+        ):
+            raise ValueError("NATURAL_TRIGGER_INVALID")
         if trigger.bar.bar_end <= max(after, self.started):
             return None
+        if trigger.bar.bar_end >= observed_at:
+            raise ValueError("NATURAL_BAR_NOT_COMPLETED")
         with self.reader() as (_, reader):
-            snapshot = reader.observation_snapshot(self.identity, after, now)
+            snapshot = reader.observation_snapshot(self.identity, after, observed_at)
             if (
                 snapshot.source != "realtime"
                 or not snapshot.bars
@@ -196,7 +220,7 @@ class MarketBridge:
                 window,
                 source_id="simnow-natural:"
                 + digest((trigger.symbol, trigger.bar.bar_end, snapshot.contract)),
-                observed_at=now,
+                observed_at=observed_at,
             )
 
     def recovery(self, state, now):
