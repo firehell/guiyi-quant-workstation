@@ -1,8 +1,17 @@
 # 当前状态
 
-10/29 02:38：PR535已正式发布 **v1.16.32**，annotated tag/Release/main exact `f489c4478a1af4a3888e78976b809a32e5423a57`；
-全60 CLOSED与确认宽限、维护锁空及未知guard已重新通过，exact锁定构建通过。原生计划`9dce1418…`正在预热/交接，
-尚未取得switched读回，现役仍按实际binding核对v31/gen37。23:00十条HTDY原件及后续24 pending尚待原生恢复；SimNow未初始化/启动。
+10/29 04:04：PR535已正式发布 **v1.16.32**，annotated tag/Release/main exact `f489c4478a1af4a3888e78976b809a32e5423a57`；
+原生计划`9dce1418…`已switched，十服务统一 **gen38**。闭市九条HTDY原件已按原协议逐条原子计算并追加闭合，
+未改原BLOCKED；首条AL因维护source回调锁自等待已回滚、checkpoint不变，单次claim已消耗，pending capture保留。
+其余前台已恢复，同PID Reference active但仍degraded；03:33 pending2/blocked1/UNKNOWN0，completed11095，
+恢复闭合累计2627。AL同流及历史刷新仍受阻，显式回滚续接的合同变更已问owner，未答前不实施、不换namespace重试。
+SimNow fresh双轮真实资金/空仓验证后已原子初始化独立四库，唯一observe PID63796；协作重启、两轮新对账、
+逻辑账户/投递账本不变已实测。私有只读monitor绑定已发布，API 200/partial（观察不写新账本readback投影），
+auto_order/opening始终false，无结算确认/报撤单。新版本自然行情/信号/参考交易仍待09:00后事实，不能宣称全量RUNTIME_READY。
+v32现场Reference安全退出 **1.23秒**、同PID恢复、1140路checkpoint不变；隔离真实冻结SuBing 5m的60路/360输入
+连续1800秒重放通过，各波 **2.24–2.93秒、60→0**，checkpoint逐值一致。临时PG及匿名卷已清理。
+旧v31已原生封存并经两次零引用扫描后non-force移除，现役唯一发布树v32；三次独立核对通过，最后一轮在删除后确认guard/服务/游标。
+04:01行情/Alert心跳新鲜、API身份matched，原四个日历正常，60品种下一Session均09:00；仍明确保留AL/历史刷新阻断。
 
 10/29凌晨：夜间四步的盘中隔离开发与候选准备完成。草稿PR535候选 **8963ae715**（v1.16.32），
 36个必要文件，未纳入其他研究；候选1591项Reference/Alert/health/MDS、575项SimNow、9项真实隔离PG及两次独立Review通过。
