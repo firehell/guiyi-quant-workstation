@@ -365,3 +365,79 @@ def test_durable_intake_requests_refresh_yield_before_persisting_original():
     assert getattr(wake, "intake_error", None) is None
     assert timeline == ["ingested", "ack"]
     assert priority.yield_requested()  # Only the real background finish clears it.
+
+
+def test_reconciliation_propagates_drain_without_visiting_remaining_captures():
+    from contextlib import contextmanager
+    from time import monotonic
+    from app.reference_trading.refresh_priority import RefreshPriority
+    from test_scheduled_reconciliation import _live_database
+    from app.reference_trading.scheduled_reconciliation import ScheduledCanonicalReconciliation
+    from app.reference_trading.work_control import ForwardWorkCancelled
+    factory, _, _, now = _live_database(4)
+    entered = []
+    priority = RefreshPriority()
+    priority.grant()
+    assert priority.begin()
+    @contextmanager
+    def guard():
+        entered.append(1)
+        with priority.foreground():
+            raise ForwardWorkCancelled()
+            yield
+    scheduler = ScheduledCanonicalReconciliation(factory, lambda *_: None, read_guard=guard)
+    started = monotonic()
+    with pytest.raises(ForwardWorkCancelled):
+        scheduler.tick(now=now)
+    assert entered == [1]
+    assert monotonic() - started < 10
+    priority.finish()
+
+
+def test_reconciliation_checks_stop_before_scanning_or_claiming_work():
+    from app.reference_trading.scheduled_reconciliation import ScheduledCanonicalReconciliation
+    from app.reference_trading.work_control import ForwardWorkCancelled
+    def check():
+        raise ForwardWorkCancelled()
+    def factory():
+        raise AssertionError("draining must not enter a new read")
+    scheduler = ScheduledCanonicalReconciliation(factory, lambda *_: None,
+        read_guard=lambda: None, check_cancelled=check)
+    with pytest.raises(ForwardWorkCancelled):
+        scheduler.tick(now=datetime(2026, 10, 28, tzinfo=UTC))
+
+
+def test_drain_during_entered_commit_finishes_the_atomic_batch():
+    from decimal import Decimal
+    from test_forward_capture import _active, _capture
+    from app.reference_trading.repository import ReferenceRepository
+    from app.reference_trading.forward_service import ForwardReferenceService
+    from app.reference_trading.contracts import PreparedBatch
+    from app.reference_trading.presentation import envelope
+    from app.reference_trading.work_control import ForwardWorkCancelled
+    from guiyi_quant.reference_trading import CompletedReferenceBar, reduce_reference
+    from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
+    factory, identity, revision, _ = _active()
+    stopped = [False]
+    def fault(stage):
+        if stage == "before_commit":
+            stopped[0] = True
+    repository = ReferenceRepository(factory, fault_injector=fault)
+    capture = _capture(identity, revision)
+    capture_id = repository.capture_forward(capture)
+    def evaluate(token, checkpoint, evidence):
+        transition = reduce_reference(checkpoint.reference_state, completed_bar=CompletedReferenceBar(
+            "RB2610", "owner", "calc", capture.bar_end, capture.bar_end.date(), Decimal("3500")))
+        return PreparedBatch(identity.stream_id, revision, "forward:drain", token, {"source": "fixture"}, (),
+            (transition,), AdapterCheckpoint(checkpoint.strategy_state, capture.bar_end,
+                capture.capture_hash, "RB2610", "owner", "calc", identity, transition.state),
+            "newow_product_replay_v1", {"forward_capture_v1": {
+                "capture_id": capture_id, "hash": capture.capture_hash, "generation": 1},
+                "presentation_v1": envelope([])}, capture.observed_at)
+    def check():
+        if stopped[0]:
+            raise ForwardWorkCancelled()
+    result = ForwardReferenceService(repository, evaluate, check_cancelled=check).process_pending(identity.stream_id)
+    assert stopped[0] and result.seq == 2
+    assert repository.read_pending_capture(identity.stream_id) is None
+    assert repository.read_batch(identity.stream_id, revision, "forward:drain").seq == 2

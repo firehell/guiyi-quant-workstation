@@ -167,6 +167,7 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
 
             @contextmanager
             def canonical_guard():
+                worker.check_cancelled()
                 with worker.timings.measure("background_wait"), refresh_priority.foreground():
                     worker.check_cancelled()
                     session.rollback()  # Refresh Catalog after natural publication.
@@ -201,6 +202,7 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                 SessionLocal, CompletedCanonicalReader(market_data, authority.owner_segments,
                                                        source_revision_policy=True),
                 read_guard=canonical_guard,
+                check_cancelled=lambda: worker.check_cancelled(),
             )
             from app.market_data.subing_reference import SubingReferenceService
             subing_service = SubingReferenceService(
