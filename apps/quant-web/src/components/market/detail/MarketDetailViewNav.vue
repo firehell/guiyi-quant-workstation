@@ -76,7 +76,8 @@ function chooseView(view: AnalysisChoice) {
     })
     return
   }
-  emit('select', resolveViewSwitchIdentity(view, props.identity.symbol, props.identity, props.restore))
+  const identity = resolveViewSwitchIdentity(view, props.identity.symbol, props.identity, props.restore)
+  emit('select', view === 'htdy' ? { ...identity, frequency: '60m' } : identity)
 }
 
 function openAiAnalysis() {
