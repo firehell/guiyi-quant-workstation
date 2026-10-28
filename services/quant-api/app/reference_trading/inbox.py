@@ -361,14 +361,16 @@ class ReferenceInboxRepository:
                     ReferenceInboxInput.trading_day == envelope.trading_day))
                 if count >= self._daily_limit:
                     raise InboxConflict("REFERENCE_INBOX_DAILY_CAPACITY_EXCEEDED")
-                resolved = self._resolved(session)
-                unfinished = exists(select(1).where(
-                    ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
-                    ReferenceInboxDelivery.status != "COMPLETED",
-                    ReferenceInboxDelivery.delivery_id.not_in(resolved)))
-                used = session.scalar(select(func.coalesce(func.sum(ReferenceInboxInput.payload_bytes), 0)).where(unfinished))
-                if any(route.status != "COMPLETED" for route in routes) and used + size > self._unfinished_bytes_limit:
-                    raise InboxConflict("REFERENCE_INBOX_UNFINISHED_CAPACITY_EXCEEDED")
+                if any(route.status != "COMPLETED" for route in routes):
+                    # Counting recovered deliveries as unfinished is an upper
+                    # bound, not a recovery conclusion. Most receipts fit even
+                    # that bound; only reclaim capacity after strict closure
+                    # verification when the bound would reject this original.
+                    used = self._unfinished_bytes(session)
+                    if used + size > self._unfinished_bytes_limit:
+                        used = self._unfinished_bytes(session, self._resolved(session))
+                        if used + size > self._unfinished_bytes_limit:
+                            raise InboxConflict("REFERENCE_INBOX_UNFINISHED_CAPACITY_EXCEEDED")
                 input_id = _digest([envelope.trading_day.isoformat(), envelope.stream_id])
                 item = ReferenceInboxInput(
                     input_id=input_id, trading_day=envelope.trading_day, journal_id=envelope.stream_id,
@@ -403,6 +405,14 @@ class ReferenceInboxRepository:
             if existing is not None:
                 return existing
             raise InboxCommitUnknown("REFERENCE_INBOX_COMMIT_UNKNOWN") from None
+
+    @staticmethod
+    def _unfinished_bytes(session, resolved=()):
+        unfinished = exists(select(1).where(
+            ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
+            ReferenceInboxDelivery.status != "COMPLETED",
+            ReferenceInboxDelivery.delivery_id.not_in(resolved)))
+        return session.scalar(select(func.coalesce(func.sum(ReferenceInboxInput.payload_bytes), 0)).where(unfinished))
 
     def pending_head(self, stream_id: str) -> InboxDelivery | None:
         with self._session_factory() as session, session.begin():
@@ -463,7 +473,7 @@ class ReferenceInboxRepository:
                        ReferenceInboxInput.journal_sequence).limit(DAILY_LIMIT + 1)).all()
             if len(rows) > DAILY_LIMIT:
                 raise InboxConflict("REFERENCE_INBOX_RETAINED_CAPACITY_EXCEEDED")
-            unique = {}
+            unique: dict[tuple[str, str], ObservationEnvelope] = {}
             for row in rows:
                 original = _verified_input(row)
                 if not original.notification_eligible:

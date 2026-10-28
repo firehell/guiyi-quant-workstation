@@ -131,6 +131,47 @@ RunAtLoad、失败KeepAlive和60秒Throttle负责进程启动；业务恢复仍�
 发布失败不改变交易行为。观察模式未更新账户策略投影时，页面不得将旧账本预算称为当前已对账。
 编码、离线验收、本机凭据/启动验收、自然跨日/断线以及首笔柜台交易分别报告。
 
+## 独立关闭态准备（schema 3）
+
+schema 3 沿用 schema 2 的精确字段，但仅接受 `mode=observe`、`enabled=false`。
+`state_project_root` 必须是独立的0700目录，`state_root`仍为其`output/simnow-controlled`；
+该状态根只能不存在或为空，路径别名、symlink、已有账户内容均拒绝。配置为0600单链接文件。
+账号指纹只绑定未来对账对象，不证明旧账户已空仓；旧状态保持UNKNOWN，新账本保持UNINITIALIZED。
+不复制四库、不初始化余额、仓位、订单或发送记录，不修改正式监控来源。
+
+`simnow-service.py --preflight-preparation`只验证上述合同并用配置指定的SDK解释器运行
+`simnow_supervisor.py --observe-only --check`。不读Keychain、不连接Broker、不订阅行情、不创建锁/账户库、
+不安装或加载服务；SDK检查前后都重新验证配置和空状态根。结果使用`simnow_preparation_preflight_v1`，
+仅`preparation_valid=true`，账户/余额/持仓未核验，`runtime_ready=false`、`execution_permitted=false`。
+schema 3不能启动、检查Keychain、渲染/安装服务或取得账户运行锁。schema 1/2原有规则不变，
+尤其schema 2缺四库仍拒绝；准备通过不解除以后真实账户对账、账本初始化及运行准入限制。
+
+### 显式只读核验与 observe 初始化
+
+`scripts/broker/simnow_observe_bootstrap.py` 要求精确私有schema3配置、新0600输出路径、带时区
+`--deadline`，且必须二选一 `--read-only` / `--initialize-observe`。这是独立账户操作，
+不解除schema3的启动、安装及准备预检限制。两种动作先取得与正式宿主相同的全局账户互斥，
+再从既有Keychain加载凭据，通过固定SDK完成两轮资金、持仓、委托、成交查询；原生API白名单
+不含结算确认和报撤单。原生输出静默，结果及有限诊断只写私有文件；连接必须关闭。
+
+只读动作不创建四库，旧账户保持UNKNOWN，新账本保持UNINITIALIZED。初始化动作必须在fresh全部
+CLOSED且确认宽限结束时重新查询，并在发布前重验闭市、配置、截止时间和30秒快照新鲜度。
+空仓、无活动或未知委托、无未解释占用均成立后，使用柜台真实资金建立独立平仓基线，不继承旧历史。
+占用字段须为零且Balance与Available一致；不猜测未采字段导致的资金差额。
+四库与disabled schema2/observe配置先在同一私有临时账户目录创建、关闭及完整验证，再原子rename
+到正式账户目录；部分失败保留临时证据，不启用、不覆盖已有账户，重复初始化拒绝。
+
+observe宿主可在fresh全部CLOSED、无当前Session且下一场仍在未来时建立账户只读连接，
+状态为`OBSERVING_CLOSED`；不领取执行输入、不构造交易Adapter。manage/trade仍沿用原交易及
+开盘前120秒连接规则。此连接许可不代表交易许可；正常schema2启动与四库完整性校验仍保留。
+闭市连接还要求已持久原生证据的交易日与计划一致；柜台尚属旧交易日时等待原开盘前连接窗口，
+不提前消耗或阻断下一交易日的连接预算。
+
+observe连续两轮真实账户对账完成后，可原子发布
+`~/Library/Application Support/GuiyiQuant/simnow-monitor.private.json`，内容为已启用schema2/observe
+私有配置副本。API逐请求使用既有严格settings及四库校验读取绑定，无需重启；文件不存在时沿用
+原监控来源，存在但无效则显式503，不静默回退。该绑定仅决定只读监控来源，不启动宿主或授予交易。
+
 ## 持续交易候选（simnow_continuous_v2）
 
 本版本增加 `trade`，仅schema2且启动参数 `--trade` 同时匹配才进入；旧观察plist仍固定
@@ -144,6 +185,7 @@ account/dispatch/signals/native-evidence、正确scope、0700目录和私有单�
 不创建sidecar、初始化、复制或迁移账户。缺库或身份漂移即停止。新持续宿主及新版一次性执行入口
 共用用户私有账户指纹全局锁，并保留原host.lock；旧版本的既有进程仍由原账户根host.lock互斥。
 所有受支持执行入口须使用唯一已核验账户根，禁止另建目录绕过状态或预算。
+
 
 - 原生输入获取与状态机共用首次观察时间/品种/来源排序；已有未对账提交优先，全账户最多一个。
   无未决订单时串行查候选的合约/保证金/手续费，再完整刷新账户并重新核对目标，最后取盘口。

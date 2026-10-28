@@ -1,5 +1,16 @@
 # 当前状态
 
+10/28夜间：**v1.16.32候选准备中，尚未发布或切换**。以正式v31为基线，仅择取develop
+`bc8163ddf`中夜盘接收/CLOSED健康修正及独立SimNow observe必要实现、合同和测试；未整体纳入研究及无关Web改动。
+SimNow相关575项回归、真实隔离PG4项、90条冻结原件/路由一致及独立安全Review通过；六模块Mypy通过。
+候选自身Reference/Alert/health1454项及SimNow575项通过，115个条件测试skip单列；锁定离线uv/pnpm、
+Web type/build/topology、SDK无网络准备预检、12项OpenSpec、Ruff/secret0/diff通过。
+接收平均1m/5m为4.75/16.03ms，对照959.93/950.93ms；不改变公式、Scope或计算合同。
+23:12独立现场读回仍为 **v1.16.31/gen37**，exact`dfa9b5aa7920522987ad7f1baf958970e79351c7`；
+十身份一致，Live心跳正常，Inbox pending284、BLOCKED/UNKNOWN0。真实SimNow只读两轮一致、空仓，尚未初始化或启动。
+全部收盘且宽限结束后再发布/原生切换，初始化必须重新取快照；06:30后不发起新正式切换，07:00冻结，08:00安全收尾。
+新版本自然输入/信号/参考交易及09:00后跨时段验收待发生；详见[夜间四步记录](docs/tasks/2026-10-28-overnight-first-four.md)。以下为先前检查点。
+
 10/28 19:13：发布树已收敛为唯一 **release-v1.16.30**，正式十服务统一 **v1.16.30/gen36**，exact
 `81963702a75894f9f2d6ef52093bc66ef4a09750`；原生`cd1dbb04…`切换switched，263回归及离线构建通过。
 旧v26/v29完成原生历史封存、重复零引用扫描及non-force移除；tag/Release与运行原件保留，删除后身份和恢复guard通过。

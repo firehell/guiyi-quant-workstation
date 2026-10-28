@@ -214,8 +214,9 @@ def _snapshot(payload, source, account):
 
 
 class MonitorReader:
-    def __init__(self, root):
+    def __init__(self, root, *, expected_account_id=None):
         self.root = Path(root)
+        self.expected_account_id = expected_account_id
 
     def load(self, now):
         if self.root.is_symlink() or (self.root / "monitor.json").is_symlink():
@@ -223,6 +224,8 @@ class MonitorReader:
         if not (self.root / "monitor.json").exists():
             return None
         index = _index(self.root)
+        if self.expected_account_id is not None and index['account_id'] != self.expected_account_id:
+            raise MonitorError('MONITOR_ACCOUNT_BINDING_MISMATCH')
         if at(index["published_at"]) > now:
             raise MonitorError("MONITOR_FUTURE_INDEX")
         if (
@@ -347,6 +350,8 @@ class MonitorReader:
             data = self.load(now)
             return overview(data, now)
         except Exception:
+            if self.expected_account_id is not None:
+                raise MonitorError('MONITOR_SOURCE_UNAVAILABLE') from None
             return overview(None, now, error=True)
 
     def records(
