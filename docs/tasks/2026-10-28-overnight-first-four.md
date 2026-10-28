@@ -88,3 +88,10 @@ revision2/recovered_through=23:04:06.474307使当前窗口notification_eligible=
   fresh SimNow初始化、唯一observe/两轮对账/重启/监控切源；最终服务和原日历读回，09:00后自然验收仍待发生。
 - 旧output/reference-night-recovery-20261028/executor.py/continuation.py仅可读参考，硬编码v25/旧截止/已消费attempt，
   禁止直接执行或复用。新的原生维护须当前exact root/代次/日期与新私有attempt，未知提交先读回，不能盲重试。
+
+## 02:35闭市续接与正式发布
+
+- fresh Session证明60 CLOSED、确认宽限结束、注册交易日2026-10-29，维护锁空、未知部署guard通过。
+- 02:35读回v31/gen37十身份一致，pending24/blocked10/UNKNOWN0；后续pending在十条阻断之后，未修改原记录。
+- PR535按expected head合main，exact f489c4478a1af4a3888e78976b809a32e5423a57；annotated v1.16.32及GitHub Release已独立回读一致。
+- exact发布树锁定依赖/Web build完成；新原生计划9dce1418b34d3f1b393905416a24d3943eaacdb85e4a16ab3d197c094557c39b，v31/gen37→v32/gen38，正在纯预热/交接，未声明Runtime成功。
