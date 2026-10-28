@@ -65,9 +65,13 @@ def stable_receipt_hash(receipt):
 
 
 def original_digest(delivery, item):
-    from app.reference_trading.inbox import _verified_input, _aware
-
+    from app.reference_trading.inbox import _verified_input
     _verified_input(item)
+    return _original_content_digest(delivery, item)
+
+
+def _original_content_digest(delivery, item):
+    from app.reference_trading.inbox import _aware
     return digest(
         {
             "delivery": {
@@ -120,7 +124,7 @@ class InboxRecoveryPlan:
         }
 
 
-def _exact_original(capture, delivery, item, target_generation):
+def _exact_original(capture, delivery, item, target_generation, *, verified_original=None):
     from app.reference_trading.inbox import (
         _exact_legacy_capture,
         _exact_fusion_capture,
@@ -131,9 +135,10 @@ def _exact_original(capture, delivery, item, target_generation):
         **{c.name: getattr(delivery, c.name) for c in delivery.__table__.columns}
     )
     effective.generation = target_generation
+    original = verified_original if verified_original is not None else _verified_input(item)
     return _exact_legacy_capture(
-        capture, effective, _verified_input(item)
-    ) or _exact_fusion_capture(capture, effective, _verified_input(item))
+        capture, effective, original
+    ) or _exact_fusion_capture(capture, effective, original)
 
 
 def _receipt_binding(session, delivery, stream, target):
@@ -167,11 +172,16 @@ def _receipt_binding(session, delivery, stream, target):
 
 
 def _verify_stored_bridge(
-    delivery, item, old, target, row, gap_captures, gap_calculations
+    delivery, item, old, target, row, gap_captures, gap_calculations, *, cache=None
 ):
     from app.reference_trading.inbox import _aware
 
     require(target.generation == delivery.generation + 1)
+    cache_key = (old.receipt_id, target.receipt_id, row.stream_id, row.target_revision_id)
+    if cache is not None and cache_key in cache:
+        end, sequence = cache[cache_key]
+        require(end < _aware(item.bar_end) and sequence < row.calculation_seq)
+        return
     active_old = SimpleNamespace(
         **{c.name: getattr(old, c.name) for c in old.__table__.columns}
     )
@@ -238,10 +248,13 @@ def _verify_stored_bridge(
         and calculation.post_state_hash
         == sha256(calculation.checkpoint_text.encode()).hexdigest()
     )
+    if cache is not None:
+        cache[cache_key] = (reconstructed.bar_end, calculation.seq)
 
 
-def verified_resolution_ids(session, *, stream_ids=None):
+def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda: None):
     """One strict closure definition for ordering, health and native handover."""
+    check_cancelled()
     query = select(ReferenceInboxRecoveryResult)
     if stream_ids is not None:
         query = query.where(ReferenceInboxRecoveryResult.stream_id.in_(stream_ids))
@@ -321,8 +334,20 @@ def verified_resolution_ids(session, *, stream_ids=None):
                 )
             )
         }
+    # Only this exact readback may reuse receipt hashes. Later transactions must
+    # observe disablement/tampering and revalidate the entire closure again.
+    receipt_hashes = {}
+    def stable_hash(receipt):
+        if receipt.receipt_id not in receipt_hashes:
+            receipt_hashes[receipt.receipt_id] = stable_receipt_hash(receipt)
+        return receipt_hashes[receipt.receipt_id]
+    indexed_gaps = {}
+    for capture in gap_captures:
+        indexed_gaps.setdefault((capture.stream_id, capture.revision_id, capture.payload_hash), []).append(capture)
+    originals, bridge_cache = {}, {}
     ids = []
     for row in rows:
+        check_cancelled()
         delivery = deliveries.get(row.delivery_id)
         item = inputs.get(row.input_id)
         capture = batches.get(row.capture_batch_id)
@@ -333,12 +358,16 @@ def verified_resolution_ids(session, *, stream_ids=None):
             and item is not None
             and delivery.input_id == row.input_id
             and delivery.status != "UNKNOWN"
-            and original_digest(delivery, item) == row.original_sha256
         )
+        if item.input_id not in originals:
+            from app.reference_trading.inbox import _verified_input
+            originals[item.input_id] = _verified_input(item)
+        require(_original_content_digest(delivery, item) == row.original_sha256)
         proof = row.proof
+        proof_hash = digest(proof)
         require(
-            row.proof_sha256 == digest(proof)
-            and row.plan_hash == digest(proof)
+            row.proof_sha256 == proof_hash
+            and row.plan_hash == proof_hash
             and proof.get("policy") == POLICY
             and proof.get("delivery_id") == row.delivery_id
             and proof.get("input_id") == row.input_id
@@ -347,9 +376,9 @@ def verified_resolution_ids(session, *, stream_ids=None):
         old = receipts.get(delivery.activation_receipt_id)
         require(
             old is not None
-            and proof.get("source_receipt_sha256") == stable_receipt_hash(old)
+            and proof.get("source_receipt_sha256") == stable_hash(old)
             and receipt is not None
-            and proof.get("target_receipt_sha256") == stable_receipt_hash(receipt)
+            and proof.get("target_receipt_sha256") == stable_hash(receipt)
             and receipt.receipt_id == proof.get("target_receipt_id")
             and receipt.stream_id == row.stream_id == delivery.stream_id
             and receipt.revision_id == row.target_revision_id == delivery.revision_id
@@ -367,7 +396,8 @@ def verified_resolution_ids(session, *, stream_ids=None):
             and calc.outcome == "committed"
             and calc.seq == row.calculation_seq
             and proof.get("capture_sha256") == capture.payload_hash
-            and _exact_original(capture, delivery, item, row.target_generation)
+            and _exact_original(capture, delivery, item, row.target_generation,
+                                verified_original=originals[item.input_id])
         )
         linked = calc.source_evidence.get("forward_capture_v1", {})
         require(
@@ -391,7 +421,10 @@ def verified_resolution_ids(session, *, stream_ids=None):
         )
         if row.target_generation != delivery.generation:
             _verify_stored_bridge(
-                delivery, item, old, receipt, row, gap_captures, gap_calculations
+                delivery, item, old, receipt, row,
+                indexed_gaps.get((row.stream_id, row.target_revision_id,
+                    receipt.budget.get("bounded_recovery_capture_sha256")), ()), gap_calculations,
+                cache=bridge_cache,
             )
         checkpoint = proof.get("checkpoint", {})
         require(

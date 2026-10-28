@@ -121,12 +121,18 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
     from app.reference_trading.repository import ReferenceRepository
     from guiyi_quant.newow.product_contracts import ProductFrequency
 
+    worker = None
+    def check_foreground_cancelled():
+        if worker is not None:
+            worker.check_cancelled()
+
     with SessionLocal() as session:
         publish_stage('database_open')
         redis = get_redis_connection()
         try:
-            market_data = build_market_data_service(session)
-            market_read = build_market_read_service(session, redis=redis)
+            market_data = build_market_data_service(session, check_cancelled=check_foreground_cancelled)
+            market_read = build_market_read_service(session, redis=redis,
+                                                   check_cancelled=check_foreground_cancelled)
             coverage = build_database_coverage_source(session)
             products = load_active_products()
             authority = ForwardMarketAuthority(market_data)
@@ -156,11 +162,14 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                 return NewowProductReader(
                     market_data, coverage=coverage, active_products=products,
                     input_quality_policy=policy,
+                    cancelled=lambda: (worker.check_cancelled() or False),
                 )
 
             @contextmanager
             def canonical_guard():
-                with refresh_priority.foreground():
+                worker.check_cancelled()
+                with worker.timings.measure("background_wait"), refresh_priority.foreground():
+                    worker.check_cancelled()
                     session.rollback()  # Refresh Catalog after natural publication.
                     lease = _acquire_canonical_lease(catalog, deadline=warmup_deadline if warmup else None)
                     try:
@@ -173,10 +182,13 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
             refresh_priority = RefreshPriority()
 
             def history_can_run():
+                if worker.stop_requested():
+                    return False
                 if not refresh_priority.can_run():
                     return False
                 from app.reference_trading.refresh_priority import historical_rest_allowed
-                if not historical_rest_allowed(SessionLocal, products, now=datetime.now(UTC)):
+                if not historical_rest_allowed(SessionLocal, products, now=datetime.now(UTC),
+                                               cancelled=worker.stop_requested):
                     refresh_priority.withdraw()
                     return False
                 return True
@@ -190,10 +202,12 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                 SessionLocal, CompletedCanonicalReader(market_data, authority.owner_segments,
                                                        source_revision_policy=True),
                 read_guard=canonical_guard,
+                check_cancelled=lambda: worker.check_cancelled(),
             )
             from app.market_data.subing_reference import SubingReferenceService
             subing_service = SubingReferenceService(
                 market_data, coverage=coverage, active_products=products,
+                check_cancelled=lambda: worker.check_cancelled(),
             )
             worker = build_forward_reference_worker(
                 repository=repository, market_read=market_read,
@@ -256,8 +270,11 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                 from app.reference_trading.live_wake import InboxForwardLiveWake
                 from app.market_data.contract_preparation_runtime import build_contract_preparation_requester
                 wake = InboxForwardLiveWake(redis, repository, worker, market_data,
-                    inbox=ReferenceInboxRepository(SessionLocal),
+                    inbox=ReferenceInboxRepository(SessionLocal, timings=worker.timings,
+                        check_cancelled=worker.check_cancelled),
                     request_history=build_contract_preparation_requester())
+                worker.has_foreground_work = lambda: (
+                    wake.has_pending_work() or repository.has_pending_forward_capture())
                 if not warmup:
                     wake.on_intake_failure = protocol.block_intake
                 wake.intake_error = protocol.read().get("intake_error")
@@ -314,6 +331,8 @@ def close_worker_resources(notifications, refresh, wake, *, warmup):
                 refresh.stop(timeout=None)
         finally:
             wake.close()
+    if notifications.is_alive() or refresh.is_alive():
+        raise RuntimeError("REFERENCE_BACKGROUND_DRAIN_INCOMPLETE")
 
 
 def defer_historical_refresh(worker, refresh, *, should_stop, priority=None):
@@ -322,6 +341,10 @@ def defer_historical_refresh(worker, refresh, *, should_stop, priority=None):
     def after_healthy_round():
         nonlocal attempted
         if should_stop():
+            return
+        if getattr(worker, 'has_foreground_work', lambda: False)():
+            if priority is not None:
+                priority.withdraw()
             return
         if priority is not None:
             priority.grant()
@@ -356,6 +379,8 @@ def main() -> int:
             def wait(seconds):
                 if ownership:
                     ownership.assert_owned()
+                if should_stop():
+                    return
                 reconciliation.tick(now=datetime.now(UTC))
                 wake.wait(seconds)
             worker.serve(should_stop=should_stop, wait=wait)
