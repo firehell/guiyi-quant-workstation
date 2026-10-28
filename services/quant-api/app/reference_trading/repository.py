@@ -329,6 +329,34 @@ class ReferenceRepository:
                 ReferenceStream.enabled.is_(True),
             ))
 
+    def enabled_forward_scan_work_keys(self, *, limit: int = 512, after: str | None = None):
+        """Durable minutes wake from Inbox; scan only Canonical or actual pending capture groups."""
+        if type(limit) is not int or not 1 <= limit <= 512:
+            raise ValueError("limit must be between 1 and 512")
+        pending = select(ReferenceBatch.batch_id).where(
+            ReferenceBatch.stream_id == ReferenceStream.stream_id,
+            ReferenceBatch.revision_id == ReferenceStream.active_revision_id,
+            ReferenceBatch.kind == "capture", ReferenceBatch.consumed_by_batch_id.is_(None),
+        ).exists()
+        key = self._forward_work_key_expression()
+        from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+        query = select(key).where(ReferenceStream.enabled.is_(True),
+            ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+            or_(ReferenceStream.frequency.not_in(LIVE_FREQUENCIES), pending)).distinct()
+        if after is not None:
+            query = query.where(key > after)
+        with self._session_factory() as session:
+            return tuple(session.scalars(query.order_by(key).limit(limit)))
+
+    def has_pending_forward_capture(self):
+        with self._session_factory() as session:
+            return bool(session.scalar(select(select(ReferenceBatch.batch_id).join(
+                ReferenceStream, and_(ReferenceBatch.stream_id == ReferenceStream.stream_id,
+                    ReferenceBatch.revision_id == ReferenceStream.active_revision_id)).where(
+                ReferenceStream.enabled.is_(True),
+                ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
+                ReferenceBatch.kind == "capture", ReferenceBatch.consumed_by_batch_id.is_(None)).exists())))
+
     def enabled_forward_work_routes(self, key: str) -> tuple[str, ...]:
         """One group has at most four active streams, with fusion strictly last."""
         code = func.replace(ReferenceStream.strategy_code, "-", "_")

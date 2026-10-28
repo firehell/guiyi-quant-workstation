@@ -1114,6 +1114,37 @@ intake, but SHALL NOT prevent calculation of already accepted deliveries. Intake
 - **AND** every worker block SHALL match a permitted WAITING_HISTORY head, ordinary PENDING heads SHALL have no error code, and activation/identity/hash drift, BLOCKED, UNKNOWN, intake failure or unproved fusion dependency SHALL reject the proof
 - **AND** receiving, backlog and history-wait modes SHALL NOT rewrite calculation ready/blocked facts or claim that Redis is caught up.
 
+### Requirement: Bounded forward scheduling and cooperative drain
+
+Durable-minute scans SHALL discover scheduling groups from enabled stream metadata and actual pending captures;
+they SHALL NOT deserialize idle strategy checkpoints merely to discover frequency. Group completeness, fair
+rotation, per-stream numeric journal order and pending-capture recovery SHALL remain unchanged.
+
+One closure readback MAY reuse identical original, receipt and bounded-bridge proofs inside that readback only.
+Every delivery SHALL still prove its own original/plan/capture/calculation/checkpoint links and its position after
+the bridge. Later readbacks SHALL independently revalidate, including legal receipt disablement and corruption.
+Accepted originals SHALL be loaded for a physical warm-up only when that capture actually needs the prefix.
+
+Unfinished accepted deliveries or pending captures SHALL withhold new historical-refresh permission. An active
+refresh SHALL cooperate at its existing safe planning/batch boundary, without releasing a source lease early.
+Scanning, pure reads and evaluation SHALL check cooperative drain between bounded units. Cancellation before a
+new mutation SHALL preserve its original and any committed pending capture; it SHALL NOT mark BLOCKED/UNKNOWN.
+An entered commit SHALL complete or receive exact independent readback under the existing unknown-outcome rule.
+Drained status SHALL require actual background-thread and resource closure; the existing ten-second native
+handover budget SHALL NOT be enlarged. Stage timings SHALL be bounded aggregates outside immutable evidence.
+
+#### Scenario: Drain interrupts a long scan or pure preparation
+
+- **WHEN** an owned worker receives a drain request between routes or during cancellable pure work
+- **THEN** it stops claiming subsequent work and retains the unfinished route/capture for ordered continuation
+- **AND** it neither advances an uncommitted delivery nor records a calculation failure for cancellation
+
+#### Scenario: A shared bridge is valid but the next original is not after it
+
+- **GIVEN** a bounded bridge already validated within the current readback
+- **WHEN** another linked original has an invalid time or calculation sequence relative to that bridge
+- **THEN** closure verification rejects it despite reuse of the bridge's common immutable proof
+
 ## Requirement: Live observation handover preserves capture identity
 
 With the explicitly enabled completed observation journal, new Live captures SHALL

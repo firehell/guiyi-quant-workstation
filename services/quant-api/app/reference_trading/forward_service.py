@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 
 from app.reference_trading.contracts import CheckpointToken, CommitResult, PreparedBatch
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
@@ -12,12 +13,19 @@ ForwardEvaluator = Callable[[CheckpointToken, object, dict[str, object]], Prepar
 
 
 class ForwardReferenceService:
-    def __init__(self, repository: ReferenceRepository, evaluator: ForwardEvaluator, *, commit_guard=None):
+    def __init__(self, repository: ReferenceRepository, evaluator: ForwardEvaluator, *, commit_guard=None,
+                 check_cancelled=lambda: None, timings=None):
         self._repository = repository
         self._evaluator = evaluator
         self._commit_guard = commit_guard
+        self._check_cancelled = check_cancelled
+        self._timings = timings
+
+    def _measure(self, stage):
+        return self._timings.measure(stage) if self._timings is not None else nullcontext()
 
     def process_pending(self, stream_id: str, *, inbox_recovery=None) -> CommitResult | None:
+        self._check_cancelled()
         pending = self._repository.read_pending_capture(stream_id)
         if pending is None:
             return None
@@ -26,9 +34,11 @@ class ForwardReferenceService:
         capture = stored_evidence.get("forward_capture_v1")
         if not isinstance(capture, dict):
             raise RepositoryConflict("CAPTURE_CORRUPT")
-        prepared = self._evaluator(token, checkpoint, {
-            **stored_evidence, "capture_id": capture_id,
-        })
+        self._check_cancelled()
+        with self._measure("evaluate"):
+            prepared = self._evaluator(token, checkpoint, {
+                **stored_evidence, "capture_id": capture_id,
+            })
         if not isinstance(prepared, PreparedBatch):
             raise TypeError("forward evaluator must return PreparedBatch")
         proof = prepared.source_evidence.get("forward_capture_v1")
@@ -66,10 +76,12 @@ class ForwardReferenceService:
             plan = inbox_recovery[1]
             prepared = replace(prepared, source_evidence={**prepared.source_evidence,
                 "inbox_recovery_v1": {"plan_hash": plan.plan_hash, "delivery_id": plan.delivery_id}})
+        self._check_cancelled()  # Past here the atomic transaction must reach an exact outcome.
         try:
-            if self._commit_guard is None:
-                return self._repository.commit_batch(token, prepared, inbox_recovery=inbox_recovery)
-            return self._repository.commit_batch(token, prepared, commit_guard=self._commit_guard, inbox_recovery=inbox_recovery)
+            with self._measure("commit"):
+                if self._commit_guard is None:
+                    return self._repository.commit_batch(token, prepared, inbox_recovery=inbox_recovery)
+                return self._repository.commit_batch(token, prepared, commit_guard=self._commit_guard, inbox_recovery=inbox_recovery)
         except Exception as error:
             # The transaction result is uncertain only for connection/commit failures.
             # Read back the exact batch once; never replay an unknown calculation.

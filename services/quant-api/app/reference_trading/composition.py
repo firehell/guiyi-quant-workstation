@@ -78,9 +78,11 @@ def build_forward_reference_worker(
                                               "confirmed_at": timing["confirmed_at"]}})
             return prepared
 
-        return ForwardReferenceService(repository, evaluate, commit_guard=reconciliation_commit_guard)
+        return ForwardReferenceService(repository, evaluate, commit_guard=reconciliation_commit_guard,
+            check_cancelled=worker.check_cancelled, timings=worker.timings)
 
     def read_input(stream_id: str, kind: str, event_bar_end: datetime | None):
+        worker.check_cancelled()
         if reconciliation_guard is not None:
             reconciliation_guard(stream_id)
         context = repository.forward_source_context(stream_id)
@@ -120,11 +122,13 @@ def build_forward_reference_worker(
                             subing_service, identity, revision_id=revision_id,
                             generation=generation, after=computed_through,
                             recording_start=recording_start, now=observed,
+                            check_cancelled=worker.check_cancelled,
                         )
                 return capture_subing_live(
                     market_read, identity, wake_kind=kind, owner_started_at=subing_owner_started_at,
                     observation=worker.source_envelope if kind == "live_event" else None, checkpoint_watermark=computed_through,
                     retained_observations=worker.retained_source_observations if kind == "live_event" else (),
+                    check_cancelled=worker.check_cancelled,
                     prior_owner_segment_id=prior_owner_id, prior_calculation_segment_id=prior_calculation_id,
                     owner_segments=owner_segments,
                     expected_endpoints=expected_endpoints,

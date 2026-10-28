@@ -75,7 +75,7 @@ class RefreshPriority:
                 self._foreground -= 1
 
 
-def historical_rest_allowed(session_factory, products, *, now):
+def historical_rest_allowed(session_factory, products, *, now, cancelled=lambda: False):
     """Resolve the existing authority; unknown or imminent sessions defer history."""
     from datetime import timedelta
     from app.db.readonly import readonly_transaction
@@ -85,6 +85,8 @@ def historical_rest_allowed(session_factory, products, *, now):
     with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
         resolver = MarketPhaseResolver(session)
         for product in products:
+            if cancelled():
+                return False
             phase = resolver.resolve(product, now)
             if (phase.phase not in (MarketPhase.BREAK, MarketPhase.CLOSED)
                     or phase.next_session_start is None
