@@ -25,6 +25,7 @@ from app.reference_trading.models import (
 from app.reference_trading.newow_forward import _timestamp
 from app.reference_trading.reconciliation import CanonicalEvidence, ForwardReconciler
 from app.reference_trading.repository import RepositoryConflict
+from app.reference_trading.work_control import ForwardWorkCancelled
 
 
 class CompletedCanonicalReader:
@@ -242,6 +243,7 @@ class ScheduledCanonicalReconciliation:
         read_guard,
         limit=8,
         interval_seconds=60,
+        check_cancelled=lambda: None,
     ):
         if not 1 <= limit <= 64 or interval_seconds < 1:
             raise ValueError("RECONCILIATION_BUDGET_INVALID")
@@ -255,6 +257,7 @@ class ScheduledCanonicalReconciliation:
         self._limit, self._interval = limit, interval_seconds
         self._after = None
         self._last = None
+        self._check_cancelled = check_cancelled
 
     @staticmethod
     def _generation_allowed(session, capture, stream, proof):
@@ -292,6 +295,7 @@ class ScheduledCanonicalReconciliation:
             raise RepositoryConflict("RECONCILIATION_SCOPE_CONFLICT")
 
     def tick(self, *, now):
+        self._check_cancelled()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("RECONCILIATION_TIME_INVALID")
         if (
@@ -353,6 +357,7 @@ class ScheduledCanonicalReconciliation:
                 return self.tick_reset(now=now)
             captures = []
             for row in rows:
+                self._check_cancelled()
                 stream = session.get(ReferenceStream, row.stream_id)
                 evidence = row.source_evidence["forward_capture_v1"]
                 if self._generation_allowed(session, row, stream, evidence):
@@ -361,10 +366,13 @@ class ScheduledCanonicalReconciliation:
                 self._after = rows[-1].batch_id
         statuses, errors = [], []
         for capture_id in captures:
+            self._check_cancelled()
             try:
                 statuses.append(
                     (capture_id, self._reconciler.reconcile(capture_id, now=now))
                 )
+            except ForwardWorkCancelled:
+                raise
             except Exception as error:  # noqa: BLE001 - preserve other scopes, never manufacture evidence
                 errors.append((capture_id, type(error).__name__))
         return ReconciliationRound(tuple(statuses), tuple(errors))

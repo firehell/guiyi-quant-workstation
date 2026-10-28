@@ -128,9 +128,10 @@ class MarketDataService:
     依赖注入 ``MarketCatalog`` 与 ``CanonicalMonthlyStore``，自身无全局状态。
     """
 
-    def __init__(self, catalog: MarketCatalog, store: CanonicalMonthlyStore) -> None:
+    def __init__(self, catalog: MarketCatalog, store: CanonicalMonthlyStore, *, check_cancelled=None) -> None:
         self.catalog = catalog
         self.store = store
+        self._check_cancelled = check_cancelled or (lambda: None)
         self.replay_coverage: DatabaseCoverageSource | None = None
         self._weekly_replay_cache: dict[tuple[object, ...], tuple[tuple[CanonicalBar, ...], tuple[WeeklySourceInterruption, ...]]] = {}
         self._weekly_replay_cache_symbol: str | None = None
@@ -2101,12 +2102,14 @@ class MarketDataService:
 
     def _partition_bars(self, partition: CatalogPartition) -> tuple[CanonicalBar, ...]:
         """读取并验证单一 Catalog 分区，复用正常查询的完整性边界。"""
+        self._check_cancelled()
         if partition.source_quality:
             raise MarketDataError("PRICE_UNAVAILABLE")
         try:
             values = self.store.read_catalog_partition(partition)
         except StorageError as exc:
             raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+        self._check_cancelled()
         if any(
             previous.bar_end >= current.bar_end
             for previous, current in zip(values, values[1:])
@@ -2118,10 +2121,12 @@ class MarketDataService:
         self, partition: CatalogPartition,
     ) -> tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]:
         """Read one validated D1 partition without collapsing source facts into bars."""
+        self._check_cancelled()
         try:
             values, unavailable = self.store.read_catalog_partition_quality(partition)
         except StorageError as exc:
             raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+        self._check_cancelled()
         if any(
             previous.bar_end >= current.bar_end
             for previous, current in zip(values, values[1:])
@@ -2650,6 +2655,7 @@ class MarketDataService:
         - 分区 coverage 包络整个查询窗口。
         并校验每分区 ``row_count`` 与文件行数一致、bar_end 严格递增。
         """
+        self._check_cancelled()
         partitions = self.catalog.partitions(key, request.start, request.end)
         if not partitions:
             raise MarketDataError("DATASET_OR_PARTITION_MISSING")
@@ -2673,10 +2679,12 @@ class MarketDataService:
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
         bars: list[CanonicalBar] = []
         for partition in partitions:
+            self._check_cancelled()
             try:
                 values = self.store.read_catalog_partition(partition)
             except StorageError as exc:
                 raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+            self._check_cancelled()
             bars.extend(
                 bar for bar in values if request.start < bar.bar_end <= request.end
             )

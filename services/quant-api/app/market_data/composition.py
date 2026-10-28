@@ -190,11 +190,12 @@ def build_metadata_synchronizer(
     return MetadataSynchronizer(active_adapter, active_catalog)
 
 
-def build_market_data_service(session: Session) -> MarketDataService:
+def build_market_data_service(session: Session, *, check_cancelled=None) -> MarketDataService:
     """Compose the read-only Historical market service."""
 
     root = canonical_root()
-    return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
+    return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root),
+                             check_cancelled=check_cancelled)
 
 
 def build_database_coverage_source(session: Session, *, reuse_session_windows: bool = False):
@@ -247,11 +248,12 @@ def build_market_home_projection(session: Session) -> MarketHomeProjection:
     )
 
 
-def build_market_read_service(session: Session, *, redis: RedisClient | None = None) -> MarketReadService:
+def build_market_read_service(session: Session, *, redis: RedisClient | None = None,
+                              check_cancelled=None) -> MarketReadService:
     """Compose Market reads with an optional transient Redis Live overlay."""
 
     return MarketReadService(
-        market_data=build_market_data_service(session),
+        market_data=build_market_data_service(session, check_cancelled=check_cancelled),
         phase_resolver=MarketPhaseResolver(session),
         operational_products=load_operational_products(),
         live_store=RedisLiveStore(redis if redis is not None else cast(RedisClient, get_redis_connection())),
