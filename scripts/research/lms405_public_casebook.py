@@ -38,6 +38,14 @@ def report(path: Path) -> dict:
         names = set().union(*map(set, case.alternatives))
         if names != set(row["condition_meaning"]):
             raise ValueError("CONDITION_DEFINITION_MISMATCH")
+        roles = row.get("condition_roles")
+        if roles is not None and (
+            not isinstance(roles, dict)
+            or set(roles) != names
+            or any(not isinstance(v, str) or v not in {"AUTHOR_NECESSARY", "RESEARCH_VALIDATION", "AUTHOR_REPORTED_CONTEXT"}
+                   for v in roles.values())
+        ):
+            raise ValueError("CONDITION_ROLE_MISMATCH")
         position = Position(
             row["contract"],
             **{k: Decimal(v) for k, v in row["initial_unit_position"].items()},
@@ -68,6 +76,9 @@ def report(path: Path) -> dict:
                 condition_facts_supplied=len(facts),
                 missing_original_facts=row["missing"],
                 assessment=result,
+                **(dict(condition_roles=roles, condition_meaning=row["condition_meaning"])
+                   if roles is not None else {}),
+                **(dict(source_context=row["source_context"]) if "source_context" in row else {}),
             )
         )
     return dict(
