@@ -1,5 +1,14 @@
 # 当前状态
 
+10/29 22:35后：三项提前工程代码811df7602完成：盘口源年龄/查询回调时序诊断、逐品种成功证据及读取时TTL投影、
+一次性trade切换与启动前有界observe恢复工具。695项相关Python、33项固定SDK、4核心mypy、Ruff及独立Review通过。
+真实机器默认只读plan在WINDOW_UNPROVEN阻断，无intent、无停启/Broker连接，账户/dispatch/plist保持。
+现役仍v1.16.35 observe、auto_order/opening false；该版本无新成功证据，读取为60 NOT_CHECKED，不能由无错误推导成功。
+AG/J/PB/ZN旧记录无法追溯区分旧源、查询等待或未来时间，真实根因仍待新固定补丁运行后的时间样本。
+自动审批拒绝将新补丁main/tag/Release与trade切换合并为自动执行，记HOST_APPROVAL_BLOCKED，不冒充工程验证失败。
+原02:35一次性任务已加保护：未有后续明确授权及宿主认可的更新前仅只读核对，不发布/切换或退回部署旧v35。
+本轮新代码尚未发布或运行；精确范围与记录见[SimNow就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。
+
 10/29 22:01：第三步部署前输入核验已实际执行，固定v1.16.35只读审计60品种：历史32根60m预热60/60；
 45夜盘当前1m连续、22:00完成60m、物理主力/窗口及底层1m聚合逐值一致通过。原observe自然inbox
 冻结该Bar的45项评估，hash/时间/品种身份与夜盘集合一致，状态均OBSERVED，不补信号、不下单。

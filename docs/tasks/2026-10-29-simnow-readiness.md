@@ -1,5 +1,37 @@
 # SimNow晚盘前只读就绪
 
+## 22:35后：三项提前工程交付，发布与切换受宿主审批阻断
+
+Owner明确交办盘口过期定位、一次性切换流程及逐品种执行输入成功证据。工程提交
+`811df7602` 仅包含相关源码、测试、执行合同与TESTING，不含develop其他研究；尚无新tag/Release/Runtime。
+
+- 根因调查确认旧NATIVE_BOOK_STALE合并了source age>8和未来时间；旧记录缺ActionDay/源时间及
+  book目标回调/终止/返回时点，不能追溯确定AG/J/PB/ZN当时的真实柜台原因。新诊断区分源在查询前已旧、
+  查询等待跨8秒及源时间在未来；保留UTC调用/发送/目标回调/终止/返回时点和含节流总耗时。
+  未修改ActionDay、8秒门限、3秒TTL、SDK请求、连接预算或重试规则，不宣称盘口问题已现场修复。
+- 新simnow_execution_input_check_v1逐品种保留成功/失败、物理身份、五类来源与采样时点、checked/expiry。
+  明确只是输入事实，不是订单资格；持久文件不保存current fresh布尔。正式只读reader每次按当前时间/
+  宿主状态重算，过期/断线/未来宿主时点不显示fresh。旧v35实际读取为60 NOT_CHECKED，而非60失败或成功。
+- 新simnow-trade-switch.py有真实MacBackend与plan/apply/readback/有界recover-observe；冻结新旧release/SDK、
+  同账户四库、预算/block、全部native历史rowid/source/payload前缀、配置/绑定、PID/双锁和权威夜盘窗口。
+  计划60秒，停止前再验TTL；STOPPED后的offline使用冻结proof但仍要求<30秒新鲜，只有恢复observe允许
+  过期证明用于历史绑定。START_REQUESTED后结果未知不自动恢复、不重复apply。具体合同统一见SIMNOW_EXECUTION。
+- 最终相关回归695 passed（39.38秒），真实SDK结构/假API无网络33 passed；四核心模块mypy、Ruff、
+  diff-check、变更路径秘密模式扫描0通过。两路独立Review的确认问题均修正；覆盖TTL跨界、历史前缀改写/
+  删除、STOPPED清proof、过期成功误新鲜、旧SDK/runner恢复漂移及真实临时60品种四库接线。
+- 真实机器只运行默认只读plan，SDK/四库/账户/双锁后正确在WINDOW_UNPROVEN退出2；没有生成intent、
+  没有执行apply/recover/停启/Broker连接。账户/dispatch逻辑摘要及现役plist与此前前像一致。
+
+原件 `output/simnow-trade-preflight-evidence-20261029/validation.json` 及 `legacy-input-readback.json`。
+现役仍为v1.16.35 observe，新的诊断与成功证据需要新固定向前补丁才能现场生效，不能修改旧tag源码。
+
+将“新补丁main/tag/GitHub Release及trade切换”加入02:35任务的更新被自动审批拒绝，理由为现有授权
+未明确覆盖将发布和真实切换合并自动执行。未绕过或原样重试；后续更保守的任务更新已成功：保留原02:35
+一次性时刻，只读核对并在缺少后续明确授权及宿主认可时报告HOST_APPROVAL_BLOCKED/NEW_FIXED_CANDIDATE_REQUIRED，
+不发布、不切换，不退回部署缺少新证据的旧v35。该阻断与用户交办、代码测试、窗口和自然业务证据分别成立。
+需要明确确认的后续范围仅为：把已审查811df7602最小补丁形成新固定版本main/tag/Release，再只切独立SimNow；
+正式十服务、账户anchor/原四库、数据、风险语义、Scope及通知受众均不扩大。
+
 ## 22:01：第三步部署前输入核验
 
 Owner交办开始第三步验证，本次仅只读，不扩大为提前trade部署或下单。用固定v1.16.35的
