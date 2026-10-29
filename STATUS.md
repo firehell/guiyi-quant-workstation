@@ -1,5 +1,15 @@
 # 当前状态
 
+10/29 15:35：独立SimNow诊断修正已由PR537集成、PR538发布 **v1.16.34**，main/tag/Release exact
+`8d27fa548ed8750f28f221a7eb2e8001aad1642d`；独立observe已更新，新PID27497，连续两轮及独立抽核通过。
+当前 **WAITING_SESSION / connection UNKNOWN**，auto_order/opening false；正式十服务仍v1.16.33/gen39，API health200/version33，未随本次切换。
+原account/dispatch摘要、20261029 attempts=3和CONNECTION_BUDGET_EXHAUSTED block及其他服务plist均不变；无新增Broker连接/Keychain读取/报撤单。
+四库quick_check及本地账户验证通过，60品种无订单/成交/持仓/预留；末次柜台快照10:30:01，不能证明当前新鲜对账。
+旧11项输入失败的当前权威主力/Session 11/11可读，但CTP合约/费率/盘口原因仍未证；新增逐品种时间/阶段/固定code及有界原生协议诊断，不清旧失败。
+精确候选426回归、SDK26、版本入口、离线uv锁及Web构建/拓扑、secret0和独立Review通过。监控API200/partial保留；未重发信号或初始化账本。
+权威下一交易日20261030、最近开盘10/29 21:00；下一Session的新连接/账户对账/自然输入待验，不能声明OBSERVE_READY或RUNTIME_READY。
+证据在主工作区`output/simnow-observe-diagnosis-20261029/`；原监控来源配置仍保留v32引用，暂保留该树。本次无新增自动任务。以下为此前检查点。
+
 10/29 12:20：AL恢复与吞吐增量已通过PR536正式发布 **v1.16.33**，annotated tag/Release/main exact
 `d1c0e74f0a14e7edf0acc8311f8ab457da50b726`；全新原生cohort `03261e46…`终态switched，十服务统一 **gen39**。
 AL显式单次续接原子成功，新link及冻结checkpoint独立逐值一致，原BLOCKED/父claim保留；后续输入已原生追齐。
