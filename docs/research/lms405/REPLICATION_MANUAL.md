@@ -1,5 +1,26 @@
 # L.M.S 4.0.5 复刻研究说明
 
+## 2026-10-29结构图解解释：已接入本地回放
+
+[打开新增结构解释页](evidence/keybar-structures-jm2509-20261029/index.html) · [解释与回放JSON](evidence/keybar-structures-jm2509-20261029/report.json)。本轮复用既有10条结构附件记录，按事件和结构类型合并为9组：两高一低5组、两低一高4组；KB16/H12与KB17/H10同事件合并，原来源及原图身份分别保留。没有新增微博检索或把旧图核验说成今日重新读网页。
+
+页面新增两种结构的数量示意与9组来源解释卡：保护/恢复、持有/GAP延续、另做抓M、空间未满足以及跳过右侧参与分别叙述。示意中的H1/H2或L1/L2只是区分点，**不表达实际点序、相对高度、选点窗口或完成阈值**，不叠加到本地K线上。各卡保留合约、周期与版本原文身份；N04左/右侧转录差异继续显示。没有把同图出现的GAP、pinbar、ibar、跨品种背景变成统一AND条件。
+
+解释身份`lms-structure-explanation-v1`；报告升级为`lms-keybar-report-v2`，核心公式身份仍为`lms-keybar-approx-v1`。实现为`scripts/research/lms_structure_explanations.py`对既有准入表的只读投影，解说以既有sample_id关联，不另建来源库。输入准入表SHA256固定为`0be665b006c0e5bc2fedc0440ab323bc4c9f559d3e512d0e64e1c49e3a6ce2b0`；漂移即失败，不静默重标。JSON保存解释版本、来源表哈希及解说模块代码指纹。
+
+每组`selection_formula/completion_formula/local_bar_end/trading_permission=null`，`executable=false`；9组是解释案例数，不是自动检测信号数。原作者可对齐Bar样本与准确率仍为0/null。原138根形态、27条后续观察、21/5/2形态计数和旧几何审计保持一致；旧HTML/CSV/JSON/SVG原样冻结，不覆盖。两高一低/两低一高的自动选点不属于本轮实现。
+
+复用同一CLI，在不存在的新目录生成：
+
+```sh
+MPLCONFIGDIR=/tmp/lms-structure-mpl PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/quant-core:scripts/research python3 scripts/research/lms_keybar_approx_replay.py --input output/lms405-jm2509-july22-20261017/market-read-authorized/JM2509_2025-07-21_2025-07-22_5m.csv --output /tmp/lms-keybar-structures-review
+```
+
+本轮新增测试先观察缺模块失败，再实现通过；覆盖10附件到9事件去重、来源漂移拒绝、语境/参与反例分离、示意不冒充检测、旧数值回放不变。本轮完整LMS回归 **105 passed, 1 skipped in 1.46s**；渲染项因API虚拟环境无matplotlib跳过，系统python3单独真实执行该项通过（1 passed）。相关ruff通过。独立Review无Confirmed Issue或阻断风险，复核9组来源语境、去重和未知边界，并实际重建JSON/HTML/SVG一致。主代理正常Chrome目视检查结构示意/9张卡片，实际展开KB16/KB17合并卡看到两个来源入口。新5文件重复生成逐字节一致，真实CLI拒覆盖且字节不变；旧图表及两张CSV与上轮一致，旧证据和核心哈希不变。来源库126条/91图片SHA256/900覆盖行验证通过；secret scan 0 findings，最终cached diff --check通过。只本地提交，不推送、不发布或切换Runtime。
+
+唯一下一步：基于已固定ibar/pinbar及本页结构语境，制定保护与恢复的显式近似动作规则；新增规则必须用新候选身份，不能把本页人工解释卡直接当自动决策。
+
+
 ## 2026-10-29关键K近似复刻：可运行候选
 
 用户已明确允许补全未知边界；现在新增独立身份 **`lms-keybar-approx-v1`**，不再以找齐原文作为实施前提。原版公式的C类证据不足结论保留；本候选的可运行不等于原版公式已恢复，`lms-inspired-v1`不修改。

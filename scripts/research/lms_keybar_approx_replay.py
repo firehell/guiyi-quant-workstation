@@ -15,6 +15,7 @@ import sys
 from guiyi_quant.lms405 import Bar
 from guiyi_quant import lms_keybar_approx as core
 from lms405_july22_geometry import INPUT_SHA256, audit
+import lms_structure_explanations as structures
 
 SOURCE = 'https://weibo.com/1885745060/PCeX7pZ6t'
 
@@ -59,11 +60,13 @@ def build_report(path: Path) -> dict:
         )
         records.append(record)
     return dict(
+        report_version='lms-keybar-report-v2',
         rule_version=core.VERSION, contract='JM2509', frequency='5m',
         input_sha256=INPUT_SHA256, bar_count=len(bars),
         code_sha256={
             'core': hashlib.sha256(Path(core.__file__).read_bytes()).hexdigest(),
             'replay': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            'structure_explanations': hashlib.sha256(Path(structures.__file__).read_bytes()).hexdigest(),
         },
         rule_basis={
             'author_local_constraint': 'I10: long wick at least 3x body; local, not a full formula',
@@ -79,6 +82,7 @@ def build_report(path: Path) -> dict:
             pinbar_long=sum(f.pinbar == 'LONG' for f in frames),
             pinbar_short=sum(f.pinbar == 'SHORT' for f in frames),
         ),
+        structure_explanations=structures.build_explanations(),
         frames=records, next_close_observations=[_json_value(asdict(o)) for o in observations],
         terminal_pattern_pending=frames[-1].has_pattern if frames else False,
         frozen_geometry=audit(path),
@@ -160,14 +164,14 @@ def render_html(report: dict, svg: str) -> str:
     )
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <title>{core.VERSION} JM2509图解回放</title>
-<style>body{{font:15px system-ui;margin:28px auto;max-width:1400px;padding:0 20px;color:#203040}}svg{{width:100%;height:auto}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #d5dde5;padding:7px;text-align:left}}.scroll{{overflow:auto}}.note{{background:#edf3fa;padding:16px}}code{{overflow-wrap:anywhere}}</style>
+<style>body{{font:15px system-ui;margin:28px auto;max-width:1400px;padding:0 20px;color:#203040}}svg{{width:100%;height:auto}}table{{border-collapse:collapse;width:100%}}td,th{{border:1px solid #d5dde5;padding:7px;text-align:left}}.structure-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:16px}}.structure-case{{border:1px solid #d5dde5;border-radius:10px;padding:16px;overflow-wrap:anywhere}}.structure-case h3{{margin-top:0}}.scroll{{overflow:auto}}.note{{background:#edf3fa;padding:16px}}code{{overflow-wrap:anywhere}}</style>
 <h1>{core.VERSION}：JM2509 5分钟</h1>
 <p class="note">这是明确补全假设的形态研究，不是作者原版、不是交易许可。作者逐根合格样本0，准确率null；成交及收益null，executable=false。没有作者时间轴，09:10只作暂定视觉对应。</p>
 <p>输入：138根冻结Bar；哈希 <code>{report['input_sha256']}</code>。横轴按导出行排列，休市间隔压缩；时间为北京时间。没有实时数据读取。</p>
 <h2>规则与判定</h2><p>ibar：相邻K高低点严格内包，相等不成立。pinbar：实体非零、长影≥3倍实体、另一影≤实体，不要求K色。仅3倍约束有I10局部作者来源，其余是本候选补全假设；不等于完整BBB规则。两高一低等结构不自动识别。</p>
 <p>本根收盘确认形态。下一根收盘突破是独立事后观察，未写回本根；下一根指完整冻结序列中相邻行，不假定盘中触发先后。最后一根形态尚无下一根时保留待观察。</p>
 <p>形态计数（不是交易数）：{escape(json.dumps(report['local_pattern_counts'], ensure_ascii=False))}</p>
-{svg}<h2>作者图解差异</h2><table><tr><th>分类</th><th>来源</th><th>结论</th></tr>{comparisons}</table>
+{svg}{structures.render_explanations(report["structure_explanations"])}<h2>作者图解差异</h2><table><tr><th>分类</th><th>来源</th><th>结论</th></tr>{comparisons}</table>
 <h2>逐Bar形态</h2><p><a href="frames.csv">逐Bar CSV</a> · <a href="observations.csv">下一根独立观察CSV</a> · <a href="report.json">完整JSON及规则/代码指纹</a> · <a href="chart.svg">导出SVG</a></p>
 <details><summary>展开全部138根的数值与确认时间</summary><div class="scroll"><table><tr><th>Bar end</th><th>ibar</th><th>pinbar</th><th>实体</th><th>上影</th><th>下影</th><th>confirmed_at</th></tr>{rows}</table></div></details>
 </html>'''
