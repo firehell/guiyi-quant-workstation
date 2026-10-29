@@ -27,3 +27,32 @@ test('monitor labels distinguish observe, manage, trade and waiting without inve
  data.observer!.opening_enabled=true;assert.equal(observerLabel(data),'持续模拟交易中');
  data.observer!.host_status='WAITING_SESSION';data.observer!.connection='UNKNOWN';assert.equal(observerLabel(data),'等待交易时段');
 })
+
+
+test('observe reconciliation is separate from ledger and trading permission', async () => {
+ const { validateOverview } = await import('../src/api/simnowMonitor.ts');
+ const data = overview();data.status='partial';data.readback_status='pending';data.position_projection_complete=false;
+ data.observer!.mode='observe';data.observer!.opening_enabled=false;
+ data.observe_reconciliation_ready=true;data.observe_reconciliation_status='verified';
+ data.observe_reconciliation_checked_at=at;data.observe_reconciliation_valid_until='2026-10-27T01:00:30Z';
+ assert.equal(validateOverview(data).position_projection_complete,false);
+ assert.equal(observerLabel(data,Date.parse(at)),'只读对账已通过');
+ data.observer!.mode='trade';assert.throws(()=>validateOverview(data),/MONITOR_RESPONSE_INVALID/);
+ data.observer!.mode='observe';data.generated_at='2026-10-27T01:00:30Z';
+ assert.throws(()=>validateOverview(data),/MONITOR_RESPONSE_INVALID/);
+});
+
+test('observe ready expires locally and is revoked on failed refresh or hidden view', async () => {
+ const ready = overview(); ready.observer!.mode='observe';ready.observe_reconciliation_ready=true;
+ ready.observe_reconciliation_status='verified';ready.observe_reconciliation_checked_at=at;
+ ready.observe_reconciliation_valid_until='2026-10-27T01:00:30Z';
+ let now=Date.parse(at), expire:(()=>void)|undefined, broken=false;
+ const client:MonitorClient={overview:async()=>{if(broken)throw Error('offline');return structuredClone(ready)},records:async()=>page(),detail:async()=>{throw Error('unused')}};
+ const monitor=(useSimnowMonitor as any)(query,client,{set:()=>1,clear:()=>{}},{now:()=>now,set:(fn:()=>void)=>{expire=fn;return 2},clear:()=>{expire=undefined}});
+ monitor.start();await tick();assert.equal(monitor.data.value.observe_reconciliation_ready,true);
+ assert.equal(typeof expire,'function');now+=30000;expire!();assert.equal(monitor.data.value.observe_reconciliation_ready,false);
+ now=Date.parse(at);await monitor.refresh();assert.equal(monitor.data.value.observe_reconciliation_ready,true);
+ broken=true;await monitor.refresh();assert.equal(monitor.data.value.observe_reconciliation_ready,false);
+ broken=false;await monitor.refresh();monitor.setVisible(false);assert.equal(monitor.data.value.observe_reconciliation_ready,false);
+ monitor.dispose();
+});

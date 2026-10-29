@@ -1,6 +1,7 @@
 """Serial native transport composition; SDK types are supplied by the pinned runner."""
 
 from datetime import timedelta
+from contextlib import nullcontext
 from pathlib import Path
 import sqlite3
 import re
@@ -33,6 +34,7 @@ _INPUT_CODES = frozenset({
     "NATIVE_BOOK_QUANTITY", "NATIVE_RATE_IDENTITY", "NATIVE_FACT_NUMBER_INVALID",
     "ABSOLUTE_SPECULATIVE_MARGIN_REQUIRED", "PER_LOT_MARGIN_PROFILE_UNSUPPORTED",
     "NATIVE_RATE_FACTS_INCOMPLETE", "NATIVE_FACT_QUERY_FAILED", "NATIVE_GATEWAY_FAILED",
+    "NATIVE_FACT_QUERY_THROTTLED",
     "NATIVE_RATE_REQUEST_EXCHANGE_UNSUPPORTED",
 })
 
@@ -248,7 +250,10 @@ class NativePortfolio:
         self.cursor += 1
         self.stage = "OBSERVE_INPUT"
         try:
-            self.facts(product, None, market, day)
+            optional = (getattr(self.gateway, 'observe_input_queries', None)
+                        if getattr(self.settings, 'mode', None) == 'observe' else None)
+            with optional() if optional is not None else nullcontext():
+                self.facts(product, None, market, day)
         except Exception as exc:
             self.input_diagnostics[product] = {
                 "at": self.now().isoformat(), "stage": self.stage,
@@ -256,6 +261,8 @@ class NativePortfolio:
             }
             if self.transport_failed:
                 raise ValueError("NATIVE_TRANSPORT_FAILED") from None
+            if getattr(self.gateway, 'failed', False):
+                raise ValueError('NATIVE_GATEWAY_FAILED') from None
             issues[product] = "EXECUTION_INPUT_UNPROVEN"
         else:
             issues.pop(product, None)

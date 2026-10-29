@@ -1,6 +1,7 @@
 """Optional CTP gateway; imported only by isolated controlled CLI, never Runtime."""
 
 from datetime import datetime, UTC
+from contextlib import contextmanager
 from types import SimpleNamespace
 import importlib.util
 from pathlib import Path
@@ -106,6 +107,7 @@ class Gateway(_readonly.Probe):
         self.query_diagnostics = []
         self.buffer = []
         self.monitor_progress = None
+        self._observe_input_scope = False
 
     def OnRspUserLogin(self, rsp, info, request_id, last):
         if (
@@ -273,6 +275,19 @@ class Gateway(_readonly.Probe):
 
         return json.loads(json.dumps(self.result))
 
+    @contextmanager
+    def observe_input_queries(self):
+        """Optional observe inputs only; never account readback or order requests."""
+        with self.lock:
+            if self._observe_input_scope:
+                raise ValueError('NATIVE_QUERY_SCOPE_REENTRANT')
+            self._observe_input_scope = True
+        try:
+            yield
+        finally:
+            with self.lock:
+                self._observe_input_scope = False
+
     def query(self, kind, instrument="", *, exchange="", product=""):
         if self.monitor_progress is not None:
             self.monitor_progress()
@@ -324,6 +339,14 @@ class Gateway(_readonly.Probe):
             if result == 0:
                 timed_out = not self.extra_done.wait(15)
             with self.lock:
+                # Fixed SDK -2/-3 reject before acceptance. Never isolate a
+                # contradictory callback, an identity error or an uncertain send.
+                if (self._observe_input_scope and kind in {'instrument', 'margin', 'commission', 'book'}
+                        and type(result) is int and result in {-2, -3} and not self.failed
+                        and self.extra['response_count'] == 0
+                        and not self.extra['terminal_response_seen'] and not self.extra['complete']):
+                    self.extra['closed'] = True
+                    raise ValueError('NATIVE_FACT_QUERY_THROTTLED')
                 if result != 0 or timed_out or self.failed or not self.extra["complete"]:
                     self.fail("NATIVE_FACT_QUERY_FAILED")
                     raise ValueError("NATIVE_FACT_QUERY_FAILED")
@@ -362,6 +385,7 @@ class Gateway(_readonly.Probe):
                 or self.extra["kind"] != kind
                 or self.extra["id"] != request_id
                 or self.extra["complete"]
+                or self.extra.get('closed') is True
             ):
                 raise ValueError("NATIVE_FACT_RESPONSE_IDENTITY")
             if info is not None and int(info.ErrorID):
