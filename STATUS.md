@@ -8,7 +8,8 @@
 监控来源旧v32路径已更新至v34。原当日预算/block、旧失败和UNKNOWN账户事实保留，不补信号、不重置账本或连接预算。
 v32经既有封存验证后退役；v33新原生封存30次attempt、69份原件、6个运行标记，两次一致零引用扫描后non-force移除，
 删除后历史身份与未决恢复guard通过。已合并SimNow候选任务树及分支已清理，143份output原件哈希保全。
-其余历史修复、JM30研究树保留；已合并诊断树仍有ChatGPT工具进程占用，未终止或删除。
+其余历史修复、JM30研究树保留；owner随后明确交办清理已合并诊断树，3个闲置ChatGPT工具进程已TERM退出，
+诊断树及已合并分支已non-force移除，133份output原件哈希保全；SimNow同PID/config/plist/账本保护复核通过。
 全局既有degraded、历史参考基线缺口、weekly not_run与监控partial保留；新代际自然输入、SimNow新鲜柜台对账待验，
 不能宣称全量RUNTIME_READY/OBSERVE_READY。无新增自动化、通知补发或交易权限。
 本地证据与详细记录保留于`output/worktree-convergence-20261029/`及`docs/tasks/2026-10-29-release-tree-convergence.md`。以下为此前检查点。
