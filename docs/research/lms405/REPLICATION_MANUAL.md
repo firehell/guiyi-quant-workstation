@@ -1,5 +1,40 @@
 # L.M.S 4.0.5 复刻研究说明
 
+## 2026-10-29保护与恢复：显式近似建议层
+
+[打开四个状态前像的建议预览](evidence/protection-proposals-jm2509-20261029/index.html) · [全部评估CSV](evidence/protection-proposals-jm2509-20261029/proposals.csv) · [规则、输入与指纹JSON](evidence/protection-proposals-jm2509-20261029/report.json)。本轮先完成两种恢复模式共用的建议层：只输出建议，研究状态由外部明确给定，**不自动应用建议**。人工确认/自动恢复选择尚未获得用户回复，未据此新增任何自动状态推进或实际确认事件。
+
+新身份`lms-protection-proposal-v1`，底层形态仍为`lms-keybar-approx-v1`；不修改原版4.0.5工具、旧inspired候选、关键K公式或结构解释版本。E41只支持等量双腿锁定、平反向腿恢复的动作语义；F05/F06保留作者手动处理的线索，不能推广为所有年份/品种。以下触发、时序和前像约束均为本候选补全假设，不是原作者完整规则。
+
+### 规则与优先级
+
+1. 输入`ResearchState`只允许单位研究腿0/1、显式原方向LONG/SHORT、状态生效`since`及获知`known_at`。单向腿须与原方向一致，双腿状态必须保留原方向；时间须带时区且known_at≥since。单位1不是实盘手数，不引入账户、保证金、成本或Fill。
+2. 沿用已完成5m形态。只考虑**紧随形态K的下一输入Bar**收盘严格越过其高/低：ibar按突破方向；pinbar必须突破方向与形态方向一致。收盘等价、仅影线越过和反向突破pinbar均不确认该pinbar。若同一K同时为ibar和pinbar，各自列确认依据，不把未确认pinbar作为ibar的隐藏否决。
+3. 先验证物理合约、完整Bar/Frame身份与时间顺序。`as_of`必须严格晚于确认Bar收盘，且输入状态在as_of之前已知；形态K收盘必须严格晚于state.since，否则返回不可用/旧信号，不建议动作。
+4. 空仓不建议开仓。单向状态遇原方向确认保持；遇反向确认只建议LOCK，假设后像为等量双腿。锁定状态遇反向确认继续等待；只有新形成的原方向确认才建议UNLOCK_LONG/UNLOCK_SHORT，假设平掉反向单位腿。保护不反手，不另做抓M，不引入自动清仓或收益规则。
+5. 每次最多一条建议，建议ID绑定策略版本、精确状态指纹和Bar身份；as_of后移但状态/Bar相同，ID不变。`requires_human_confirmation=true`，`executable=false`；假设后像仅供阅读，函数从不改变输入Position。没有接受建议接口，也没有伪造人工确认；后续研究必须显式传入新的状态前像。
+
+实现入口`guiyi_quant.lms_protection_proposals.ResearchState/recommend`，离线预览`scripts/research/lms_protection_proposal_replay.py`。原有Position/Action仅用于校验假设转换是否合法，不生成订单、成交或已执行持仓。
+
+### 冻结首案的含义
+
+仍使用原138根JM2509 5m及同一输入SHA256。分别固定单向多、单向空、已锁原多、已锁原空四个独立前像，统一人为设置在冻结窗口开始前1微秒。每个前像检查原27条后续观察，共108项独立评估；建议数依次为5/10/10/5。**不是30次发生的交易，也不是连续30次状态转换**；每条建议未被应用，下一行仍使用同一初始前像。
+
+评估时间人为取确认Bar收盘后1微秒，只为表达strict-after研究可读性，不是作者时刻或实际执行时刻。锁定前像也是假设输入，不从持仓图/均价反推。页面、CSV和JSON都保留before、假设after、依据、状态指纹和确认要求；作者动作匹配率、Fill和收益为null。底层形态图不加“已成交”标记。
+
+```sh
+MPLCONFIGDIR=/tmp/lms-protection-mpl PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=packages/quant-core:scripts/research python3 scripts/research/lms_protection_proposal_replay.py --input output/lms405-jm2509-july22-20261017/market-read-authorized/JM2509_2025-07-21_2025-07-22_5m.csv --output /tmp/lms-protection-proposals-review
+```
+
+输出目录必须不存在，校验与渲染完成后独占创建；写盘失败可能留下新部分目录，完整JSON最后写，失败目录不得视为成功。没有下载/修复行情、HTTP、数据库、Runtime、通知或Broker改动。旧产物原样冻结。
+
+### 验证
+
+新增核心与预览测试均先观察缺模块失败，再实现通过。覆盖多空保护/原向恢复、不反手/不自动开仓、等价/仅影线、pinbar方向及重叠ibar、strict-after/状态获知/旧信号、重复建议ID、非法单位/原方向/合约、伪造Frame、静态前像不推进、前缀一致、篡改输入和拒覆盖。最终LMS回归 **127 passed, 1 skipped in 1.61s**（本轮新增22项；API虚拟环境缺matplotlib的旧渲染项另用系统python3实际运行1 passed）。相关ruff通过，两个新进程真实渲染的4产物逐字节一致，底层SVG与旧图一致；真实CLI拒覆盖返回2、原字节不变。独立公式/时序Review无Confirmed Issue或阻断风险，新增21项独立通过，JSON/HTML重建一致；主代理再补多日Bar日期显示回归，先失败后通过，并补全127项回归。正常Chrome已目视检查规则、前像和建议表，后续显示修正仅补全形态K日期。旧证据、旧核心和旧回放输入/产物哈希不变；来源库、secret和最终cached diff检查通过。
+
+唯一下一步：在用户确定恢复模式后，补对应的连续研究状态回放；仍不进入Paper、Broker或真实执行。
+
+
 ## 2026-10-29结构图解解释：已接入本地回放
 
 [打开新增结构解释页](evidence/keybar-structures-jm2509-20261029/index.html) · [解释与回放JSON](evidence/keybar-structures-jm2509-20261029/report.json)。本轮复用既有10条结构附件记录，按事件和结构类型合并为9组：两高一低5组、两低一高4组；KB16/H12与KB17/H10同事件合并，原来源及原图身份分别保留。没有新增微博检索或把旧图核验说成今日重新读网页。
