@@ -1,5 +1,16 @@
 # 当前状态
 
+10/29 10:15：AL已证回滚单次续接修复已集成并推送develop `eb417e6d15`；选择性 **v1.16.33候选**
+`122327709888b1c4d74557717c3c461387ab1f76`，草稿[PR536](https://github.com/firehell/guiyi-quant-workstation/pull/536)。
+候选1282项Reference/原生交接、8项真实隔离PG、7项health/version、冻结真实AL官方组合输出/checkpoint逐值对照、
+独立安全Review及离线锁定构建通过。仅完成候选；**未发布、未切换、未执行生产续接**，现役v1.16.32/gen38。
+09:28未解决BLOCKED1/pending2/UNKNOWN0，其他前台推进；10:12只读健康十身份matched，DB/Redis/Live/Alert处理ok，
+整体degraded保留，不能宣称AL及历史刷新恢复。盘中无正式服务重启。
+正式操作留待fresh全CLOSED及宽限结束：先发布补丁，在旧owner停写持锁下精确续接AL、独立验证并原生追齐，
+再创建新cohort计划切换，最后验收历史刷新及10秒退出恢复。任务临时15490 PG及匿名卷已删除。
+15:10一次性自动续接**未创建**：宿主自动审批拒绝未来自动执行发布/生产恢复/Runtime切换，要求明确自动化授权；
+`HOST_APPROVAL_BLOCKED`，不是生产恢复attempt失败，原continuation claim未消费。详见[AL任务记录](docs/tasks/2026-10-29-al-rollback-continuation.md)。
+
 10/29 04:04：PR535已正式发布 **v1.16.32**，annotated tag/Release/main exact `f489c4478a1af4a3888e78976b809a32e5423a57`；
 原生计划`9dce1418…`已switched，十服务统一 **gen38**。闭市九条HTDY原件已按原协议逐条原子计算并追加闭合，
 未改原BLOCKED；首条AL因维护source回调锁自等待已回滚、checkpoint不变，单次claim已消耗，pending capture保留。
