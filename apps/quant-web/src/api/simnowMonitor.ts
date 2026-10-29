@@ -10,6 +10,10 @@ export interface MonitorOverview {
   version: string; status: 'available' | 'partial' | 'not_connected' | 'unavailable'; snapshot: string | null; generated_at: string
   account: { key: string; alias: string; environment: string; strategy: string; scope_product: string | null; policy_version: string } | null
   observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string; mode?: 'observe' | 'manage' | 'trade' | null; opening_enabled?: boolean; host_status?: string | null } | null
+  observe_reconciliation_ready?: boolean
+  observe_reconciliation_status?: 'verified' | 'stale' | 'unverified'
+  observe_reconciliation_checked_at?: string | null
+  observe_reconciliation_valid_until?: string | null
   readback_at: string | null; trading_day: string | null; readback_status: string; position_projection_complete: boolean
   metrics: Record<MonitorMetric, string | null>; positions: MonitorPosition[]; curve: { at: string; equity: string; net_profit: string | null; trading_day: string }[]
   issues: MonitorIssue[]; issue_count: number | null; coverage: string; performance_status: string; source_times: Record<string, string>
@@ -20,6 +24,9 @@ const money = (v: unknown) => v === null || typeof v === 'string' && /^-?\d+(\.\
 export function validateOverview(value: MonitorOverview): MonitorOverview {
   if (!value || value.version !== version || !['available', 'partial', 'not_connected', 'unavailable'].includes(value.status) || !instant(value.generated_at)
     || !value.metrics || Object.values(value.metrics).some(v => !money(v)) || !Array.isArray(value.positions) || !Array.isArray(value.curve) || !Array.isArray(value.issues)
+    || (value.observe_reconciliation_ready !== undefined && typeof value.observe_reconciliation_ready !== 'boolean')
+    || (value.observe_reconciliation_status !== undefined && !['verified', 'stale', 'unverified'].includes(value.observe_reconciliation_status))
+    || (value.observe_reconciliation_ready === true && (value.observer?.mode !== 'observe' || value.observer.status !== 'running' || value.observer.connection !== 'LOGGED_IN' || value.observe_reconciliation_status !== 'verified' || !instant(value.observe_reconciliation_checked_at) || !instant(value.observe_reconciliation_valid_until) || Date.parse(value.observe_reconciliation_checked_at!) > Date.parse(value.generated_at) || Date.parse(value.generated_at) >= Date.parse(value.observe_reconciliation_valid_until!)))
     || typeof value.position_projection_complete !== 'boolean' || value.curve.some(v => !instant(v.at) || !money(v.equity) || !money(v.net_profit))
     || (['available', 'partial'].includes(value.status) && (!value.account || !value.snapshot || !value.observer || !instant(value.readback_at)))
     || (value.observer?.mode != null && !['observe', 'manage', 'trade'].includes(value.observer.mode))

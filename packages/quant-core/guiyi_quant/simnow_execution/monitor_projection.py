@@ -63,6 +63,10 @@ def _blank(now, status="not_connected"):
         trading_day=None,
         readback_status="unknown",
         position_projection_complete=False,
+        observe_reconciliation_ready=False,
+        observe_reconciliation_status='unverified',
+        observe_reconciliation_checked_at=None,
+        observe_reconciliation_valid_until=None,
         metrics={
             k: None
             for k in (
@@ -262,6 +266,12 @@ def overview(data, now, error=False):
         if age > 30 or index["connection"] != "LOGGED_IN"
         else "running"
     )
+    observed = data.get('observe_reconciliation')
+    observe_ready = bool(observed and observed['fresh'] and fresh
+        and observer_status == 'running' and index.get('mode') == 'observe'
+        and index.get('host_status') in {'OBSERVING', 'OBSERVING_CLOSED'}
+        and state.phase == 'READY' and not state.unresolved_fill_ids and not pending)
+    observe_status = ('verified' if observe_ready else 'stale' if observed else 'unverified')
     metrics = {k: None for k in _blank(now)["metrics"]}
     metrics.update(
         equity=_decimal(number(funds["Balance"], True)),
@@ -394,6 +404,10 @@ def overview(data, now, error=False):
         if complete
         else "pending",
         position_projection_complete=complete,
+        observe_reconciliation_ready=observe_ready,
+        observe_reconciliation_status=observe_status,
+        observe_reconciliation_checked_at=observed['checked_at'] if observed else None,
+        observe_reconciliation_valid_until=observed['valid_until'] if observed else None,
         metrics=metrics,
         positions=positions,
         curve=curve,

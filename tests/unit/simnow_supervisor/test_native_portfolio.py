@@ -505,3 +505,37 @@ def test_observe_retains_transport_failure_without_relaxing_reconnect_gate(tmp_p
     with pytest.raises(ValueError, match='NATIVE_TRANSPORT_FAILED'):
         native.observe_next(('JM',), Market(), T, '20261027', {})
     assert native.input_diagnostics['JM']['code'] == 'NATIVE_GATEWAY_FAILED'
+
+
+def test_observe_known_gateway_fatal_propagates_in_same_cycle(tmp_path):
+    native = portfolio(tmp_path)
+    native.settings.mode = 'observe'
+    native.gateway = NS(failed=True, result={'status':'NATIVE_FACT_QUERY_FAILED'},
+                        extra={'callback_error':'NATIVE_FACT_SCOPE_MISMATCH'},
+                        query_diagnostics=[{'timed_out':False}])
+    def fail(*_):
+        raise ValueError('NATIVE_FACT_QUERY_FAILED')
+    native.facts = fail
+    with pytest.raises(ValueError, match='NATIVE_GATEWAY_FAILED'):
+        native.observe_next(('RB',), Market(), T, '20261027', {})
+
+
+@pytest.mark.parametrize('mode,expected', [('observe', True), ('manage', False), ('trade', False)])
+def test_optional_product_query_scope_is_observe_only(tmp_path, mode, expected):
+    from contextlib import contextmanager
+    native = portfolio(tmp_path)
+    native.settings.mode = mode
+    active = []
+    seen = []
+    @contextmanager
+    def scope():
+        active.append(True)
+        try:
+            yield
+        finally:
+            active.pop()
+    native.gateway.observe_input_queries = scope
+    native.facts = lambda *_: seen.append(bool(active))
+    native.observe_next(('RB',), Market(), T, '20261027', {})
+    assert seen == [expected]
+    assert active == []
