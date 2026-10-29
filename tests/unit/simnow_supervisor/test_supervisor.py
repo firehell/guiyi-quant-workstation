@@ -786,3 +786,23 @@ def test_opening_status_requires_current_trade_cycle_and_no_unreconciled_order(
         json.loads((host.folder / "continuous.json").read_text())["opening_enabled"]
         is expected
     )
+
+
+def test_observe_status_retains_timestamped_diagnostic_after_disconnect(tmp_path):
+    import json
+
+    settings, _ = setup(tmp_path)
+    host = Supervisor(settings, ('JM', 'RB'), FakeMarket(), lambda *_: None, clock=Clock().now)
+    host.folder = settings.state_root / ACCOUNT
+    host.latest_source = host.ledger_hash = None
+    host.monitor = SimpleNamespace(publish=lambda *_args, **_kwargs: True)
+    detail = {'JM': {'at': T.isoformat(), 'stage': 'NATIVE_BOOK', 'code': 'NATIVE_BOOK_STALE'}}
+    host.driver = SimpleNamespace(input_diagnostics=detail)
+    host.status('OBSERVING', connected=True)
+    host.driver = None
+    host.status('RECOVERY_BLOCKED')
+    result = json.loads((host.folder / 'continuous.json').read_text())
+    assert result['input_diagnostics'] == detail
+    assert result['connection'] == 'UNKNOWN'
+    assert result['opening_enabled'] is False
+    assert result['auto_order'] is False
