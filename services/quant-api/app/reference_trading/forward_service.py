@@ -7,6 +7,7 @@ from contextlib import nullcontext
 
 from app.reference_trading.contracts import CheckpointToken, CommitResult, PreparedBatch
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
+from app.reference_trading.inbox import InboxConflict
 
 
 ForwardEvaluator = Callable[[CheckpointToken, object, dict[str, object]], PreparedBatch]
@@ -85,7 +86,7 @@ class ForwardReferenceService:
         except Exception as error:
             # The transaction result is uncertain only for connection/commit failures.
             # Read back the exact batch once; never replay an unknown calculation.
-            if isinstance(error, (RepositoryConflict, TypeError, ValueError)):
+            if isinstance(error, (RepositoryConflict, InboxConflict, TypeError, ValueError)):
                 raise
             result = self._repository.read_prepared_batch(prepared)
             if result is not None:

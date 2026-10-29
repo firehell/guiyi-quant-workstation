@@ -75,3 +75,14 @@ Owner已批准实现、测试、Review、闭市发布与现场恢复。基线dev
 最终独立Astra增量Review：operator SHA `a30e6e61829e6fb0e99db75ea5538c4f1e4a1873f2d5dc89592ad722fced37cb`
 无剩余Confirmed Issue，可以冻结执行；主树同名私有执行副本已原子更新并fsync。仅此SHA可执行，旧SHA均为过程草稿。
 Review读取native_composition真实隔离对照，未执行生产；生产恢复/发布/切换仍未完成。
+
+## 午休执行（owner已明确批准）
+
+10/29午休owner明确交办修复、发布，自动任务拒绝不影响当前人工发起turn的执行；不创建后台自动化。
+原生fresh session_proof为closed_idle/BREAK60，仍须每步fresh无当前Session、Feed宽限结束、next>660秒。
+私有operator仅将额外相位限定对齐原生CLOSED/BREAK，最终SHA513b4967a689fc379e07d210ae696c02d02db860f2941abdcba596b39559b0e3。
+新增修正：InboxConflict事务已知回滚原样保留；恢复验证SQL只投影12必要batch字段与2棵必需JSON子树，不读取无关presentation/seed，
+原件/receipt/bridge/checkpoint哈希及逐条验证保持，禁止跨事务缓存结论。先复现两项RED，再通过1284项Reference/交接回归，
+10 skipped/109 deselected；Ruff/diff通过，独立Astra增量Review允许集成。真实生产只读2627条闭合IDs摘要相同，
+验证耗时旧1.115/1.072秒，新0.747/0.856秒（仅此调用，不冒称整体吞吐同幅提升）。
+13:00不发起新正式切换，13:00—13:20仅收尾读回，保障13:30；自然新版本验收依赖下午输入。

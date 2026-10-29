@@ -609,3 +609,26 @@ def test_htdy_window_recovery_does_not_admit_other_strategy_codes():
         row.code = 'HTDY_WINDOW_UNAVAILABLE'
     with pytest.raises(ValueError, match='RECOVERY'):
         recovery.plan(plan.delivery_id, capture=plan.capture, expires_at=plan.expires_at)
+
+
+def test_closure_validation_projects_only_required_batch_evidence():
+    from sqlalchemy import event as sql_event
+    from app.reference_trading.inbox_recovery import verified_resolution_ids
+    factory, inbox, recovery, plan, evaluate = fixture()
+    recovery.apply(plan, expected_plan_hash=plan.plan_hash, evaluator=evaluate)
+    statements = []
+    engine = factory.kw["bind"]
+    def record(_conn, _cursor, statement, _parameters, _context, _many):
+        if "FROM reference_batches" in statement:
+            statements.append(statement)
+    sql_event.listen(engine, "before_cursor_execute", record)
+    try:
+        with factory() as db:
+            assert verified_resolution_ids(db) == (plan.delivery_id,)
+    finally:
+        sql_event.remove(engine, "before_cursor_execute", record)
+    assert statements
+    import re
+    assert all(not re.search(r"(?:SELECT |,\s+)reference_batches\.source_evidence(?:,| AS)", statement)
+               and "reference_batches.dependency_manifest" not in statement
+               for statement in statements)

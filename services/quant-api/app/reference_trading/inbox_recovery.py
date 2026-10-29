@@ -269,6 +269,21 @@ def _verify_stored_bridge(
         cache[cache_key] = (reconstructed.bar_end, calculation.seq)
 
 
+def _closure_batches(session, *conditions):
+    """Read every proof field, without unrelated presentation/seed payloads."""
+    b = ReferenceBatch
+    names = ("batch_id", "stream_id", "revision_id", "kind", "outcome", "payload_hash",
+             "consumed_by_batch_id", "seq", "expected_seq", "pre_state_hash",
+             "post_state_hash", "checkpoint_text")
+    query = select(*(getattr(b, name) for name in names),
+                   b.source_evidence["forward_capture_v1"].label("forward_capture"),
+                   b.source_evidence["inbox_recovery_v1"].label("inbox_recovery")).where(*conditions)
+    return [SimpleNamespace(**{name: row[name] for name in names}, source_evidence={
+        "forward_capture_v1": row["forward_capture"],
+        "inbox_recovery_v1": row["inbox_recovery"],
+    }) for row in session.execute(query).mappings()]
+
+
 def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda: None):
     """One strict closure definition for ordering, health and native handover."""
     check_cancelled()
@@ -302,9 +317,7 @@ def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda:
     }
     batches = {
         r.batch_id: r
-        for r in session.scalars(
-            select(ReferenceBatch).where(ReferenceBatch.batch_id.in_(batch_ids))
-        )
+        for r in _closure_batches(session, ReferenceBatch.batch_id.in_(batch_ids))
     }
     receipt_ids = {r.target_receipt_id for r in rows} | {
         r.activation_receipt_id for r in deliveries.values()
@@ -331,25 +344,12 @@ def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda:
             for r in bridges
             if r.target_receipt_id in receipts
         }
-        gap_captures = session.scalars(
-            select(ReferenceBatch).where(
-                ReferenceBatch.kind == "capture",
-                ReferenceBatch.payload_hash.in_(bounds),
-            )
-        ).all()
+        gap_captures = _closure_batches(session,
+            ReferenceBatch.kind == "capture", ReferenceBatch.payload_hash.in_(bounds))
         gap_calculations = {
             r.batch_id: r
-            for r in session.scalars(
-                select(ReferenceBatch).where(
-                    ReferenceBatch.batch_id.in_(
-                        [
-                            r.consumed_by_batch_id
-                            for r in gap_captures
-                            if r.consumed_by_batch_id
-                        ]
-                    )
-                )
-            )
+            for r in _closure_batches(session, ReferenceBatch.batch_id.in_(
+                [r.consumed_by_batch_id for r in gap_captures if r.consumed_by_batch_id]))
         }
     # Only this exact readback may reuse receipt hashes. Later transactions must
     # observe disablement/tampering and revalidate the entire closure again.
