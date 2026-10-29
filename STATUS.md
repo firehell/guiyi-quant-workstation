@@ -1,5 +1,10 @@
 # 当前状态
 
+10/29 22:42：owner对“02:35发布811df7602最小补丁并仅切独立SimNow trade、保留原账户和全部门禁、
+正式十服务不动”明确回复“授权处理”。原simnow-trade一次性任务已成功更新并ACTIVE，执行时仍须新的
+权威夜盘收盘、30秒账户证明、双锁及宿主逐项审批；此前HOST_APPROVAL_BLOCKED为历史检查点。
+本次只更新任务授权与计划，不发布、不切换或启用交易，现役仍v1.16.35 observe。
+
 10/29 22:35后：三项提前工程代码811df7602完成：盘口源年龄/查询回调时序诊断、逐品种成功证据及读取时TTL投影、
 一次性trade切换与启动前有界observe恢复工具。695项相关Python、33项固定SDK、4核心mypy、Ruff及独立Review通过。
 真实机器默认只读plan在WINDOW_UNPROVEN阻断，无intent、无停启/Broker连接，账户/dispatch/plist保持。
