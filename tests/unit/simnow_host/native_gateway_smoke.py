@@ -283,6 +283,13 @@ class Compatibility(unittest.TestCase):
         self.assertEqual(rows[0]["ExchangeID"], "")
         self.assertEqual(rows[0]["query_scope"]["kind"], "commission")
 
+    def test_inventory_diagnostics_bound_long_running_request_history(self):
+        self.g.result['requests'] = [dict(kind='funds', request_id=i, accepted=True, return_code=0) for i in range(100)]
+        result = self.g.inventory_diagnostics()
+        self.assertEqual(len(result['requests']), 16)
+        self.assertEqual(result['request_count'], 100)
+        self.assertEqual(result['requests'][0]['request_id'], 84)
+
     def test_inventory_diagnostics_exclude_account_rows_and_credentials(self):
         self.g.result.update(status="QUERY_TIMEOUT", error_stage="funds", timeout_kind="ZERO_QUERY_CALLBACKS", authentication_passed=True, login_passed=True)
         self.g.result["rounds"] = [dict(round=1, queries={"funds":dict(complete=False,rows=[{"AccountID":"private-account"}],diagnostics=dict(response_count=0,data_row_count=0,terminal_response_seen=False,timed_out=True,elapsed_seconds=15.0))})]

@@ -438,3 +438,70 @@ def test_strategy_adapter_validates_before_attach_without_close_only(tmp_path):
         native_validator=lambda snapshot: stages.append("validate"))
     assert stages == ["validate", "attach"]
     assert adapter.strategy_correlated_native and not adapter.close_only
+
+
+def test_observe_retains_bounded_safe_input_failure_without_changing_gate(tmp_path):
+    native = portfolio(tmp_path)
+    native.now = lambda: T
+    def stale(*args):
+        raise ValueError('NATIVE_BOOK_STALE')
+    native.facts = stale
+    issues = {}
+    native.observe_next(('JM',), Market(), T, '20261027', issues)
+    assert issues == {'JM': 'EXECUTION_INPUT_UNPROVEN'}
+    assert native.input_diagnostics['JM'] == {
+        'at': T.isoformat(), 'stage': 'OBSERVE_INPUT', 'code': 'NATIVE_BOOK_STALE'
+    }
+
+
+def test_observe_diagnostic_never_copies_unknown_exception_text(tmp_path):
+    native = portfolio(tmp_path)
+    def private(*args):
+        raise ValueError('private-password tcp://private-server')
+    native.facts = private
+    native.observe_next(('JM',), Market(), T, '20261027', {})
+    assert native.input_diagnostics['JM']['code'] == 'EXECUTION_INPUT_UNPROVEN'
+    assert 'private' not in json.dumps(native.input_diagnostics)
+
+
+def test_snapshot_preserves_native_query_failure_diagnostic(tmp_path):
+    native = portfolio(tmp_path, at=T + timedelta(seconds=20))
+    native.gateway.inventory_diagnostics = lambda: {}
+    native.gateway.query_diagnostics = [dict(kind='margin', timed_out=True)]
+    native.snapshot()
+    assert native.failure_diagnostics()['native_queries'] == [dict(kind='margin', timed_out=True)]
+
+
+def test_native_failure_diagnostic_is_bounded_and_allowlisted(tmp_path):
+    native = portfolio(tmp_path)
+    native.gateway.inventory_diagnostics = lambda: {'status': 'NATIVE_FACT_QUERY_FAILED'}
+    native.gateway.query_diagnostics = [dict(kind='margin', request_id=i, sdk_return_code=0,
+        timed_out=True, callback_error='private-password', private_field='private-password')
+        for i in range(100)]
+    result = native.failure_diagnostics()
+    assert len(result['native_queries']) == 8
+    assert result['native_queries'][-1]['request_id'] == 99
+    assert result['native_queries'][-1]['callback_error'] == 'UNKNOWN'
+    assert 'private-password' not in json.dumps(result)
+
+
+def test_successful_observe_clears_only_current_product_diagnostic(tmp_path):
+    native = portfolio(tmp_path)
+    native.input_diagnostics = {'JM': {'code': 'NATIVE_BOOK_STALE'}, 'RB': {'code': 'NATIVE_RATE_IDENTITY'}}
+    native.facts = lambda *args: None
+    issues = {'JM': 'EXECUTION_INPUT_UNPROVEN', 'RB': 'EXECUTION_INPUT_UNPROVEN'}
+    native.observe_next(('JM',), Market(), T, '20261027', issues)
+    assert native.input_diagnostics == {'RB': {'code': 'NATIVE_RATE_IDENTITY'}}
+    assert issues == {'RB': 'EXECUTION_INPUT_UNPROVEN'}
+
+
+def test_observe_retains_transport_failure_without_relaxing_reconnect_gate(tmp_path):
+    native = portfolio(tmp_path)
+    native.gateway.failed = True
+    native.gateway.result['status'] = 'QUERY_TIMEOUT'
+    def failure(*args):
+        raise ValueError('NATIVE_GATEWAY_FAILED')
+    native.facts = failure
+    with pytest.raises(ValueError, match='NATIVE_TRANSPORT_FAILED'):
+        native.observe_next(('JM',), Market(), T, '20261027', {})
+    assert native.input_diagnostics['JM']['code'] == 'NATIVE_GATEWAY_FAILED'
