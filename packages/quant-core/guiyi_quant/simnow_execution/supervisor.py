@@ -23,6 +23,7 @@ from .inbox import SignalInbox
 from .inventory import project_readback, native_order, linked_trade, trade_identity
 from .evidence import Evidence
 from .monitor import MonitorPublisher
+from .observe_reconciliation import build_proof
 
 
 def global_account_lock_directory():
@@ -247,6 +248,8 @@ class Supervisor:
                 mode=self.settings.mode,
                 opening_enabled=opening,
                 host_status=code,
+                observe_reconciliation=(getattr(self, 'observe_reconciliation', None)
+                    if connected and self.prepared and self.settings.mode == 'observe' else None),
             )
         except Exception:
             pass
@@ -281,6 +284,7 @@ class Supervisor:
                     item.close()
             self.driver = self.store = self.journal = self.host = None
             self.prepared = False
+            self.observe_reconciliation = None
             self.market.activate(self.now())
         if failed:
             if self.target_day:
@@ -328,6 +332,7 @@ class Supervisor:
                 raise ValueError("OBSERVATION_ACCOUNT_RECONCILIATION_REQUIRED")
             self.observed_state = state
             self.evidence.append(snapshot)
+            self.observe_reconciliation = build_proof(state, snapshot, tx.state, self.run_id, self.now())
         else:
             from .journal import Journal
             from .host import Host
@@ -440,11 +445,11 @@ class Supervisor:
                 state,
                 snapshot.at + timedelta(seconds=30),
             )
-            if not a.apply(
-                state, "observe:" + snapshot.source_id, rb
-            ).state.readback_valid:
+            reconciled = a.apply(state, "observe:" + snapshot.source_id, rb).state
+            if not reconciled.readback_valid:
                 raise ValueError("OBSERVATION_ACCOUNT_RECONCILIATION_REQUIRED")
             self.evidence.append(snapshot)
+            self.observe_reconciliation = build_proof(state, snapshot, reconciled, self.run_id, self.now())
             self.latest_source = snapshot.source_id
             # Serial round-robin validation; no 60 parallel broker request streams.
             if not closed_readback:

@@ -8,11 +8,11 @@ export function monitorMoney(value: string | null | undefined) {
   return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: Number(value) !== 0 && Math.abs(Number(value)) < .01 ? 8 : 2 })
 }
 export function monitorPercent(value: string | null | undefined) { return value === null || value === undefined ? '—' : `${(Number(value) * 100).toFixed(1)}%` }
-export function observerLabel(data: MonitorOverview | null) {
+export function observerLabel(data: MonitorOverview | null, now = Date.now()) {
   if (!data?.account) return '尚未接入监控'
   if (data.observer?.host_status === 'WAITING_SESSION') return '等待交易时段'
   if (data.observer?.status === 'running') {
-    if (data.observer.mode === 'observe') return '只读观察中'
+    if (data.observer.mode === 'observe') return data.observe_reconciliation_ready && now >= Date.parse(data.observe_reconciliation_checked_at ?? '') && now < Date.parse(data.observe_reconciliation_valid_until ?? '') ? '只读对账已通过' : '只读观察中'
     if (data.observer.mode === 'manage') return '仅管理已有仓位'
     if (data.observer.mode === 'trade') return data.observer.opening_enabled ? '持续模拟交易中' : '持续模式：开仓暂停'
   }
