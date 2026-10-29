@@ -9,6 +9,7 @@ from guiyi_quant.reference_trading import CompletedReferenceBar, reduce_referenc
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 
 from app.reference_trading.contracts import PreparedBatch
+from app.reference_trading.inbox import InboxConflict
 from app.reference_trading.forward_service import ForwardReferenceService
 from app.reference_trading.presentation import envelope
 from app.reference_trading.repository import ReferenceRepository
@@ -76,7 +77,8 @@ def test_pending_recovery_checks_reconciliation_before_evaluation(strategy):
     assert worker.health().blocked == ((strategy,'REFERENCE_CANONICAL_MISMATCH'),)
 
 
-def test_forward_commit_guard_rolls_back_prepared_pending_batch():
+@pytest.mark.parametrize("failure", [RepositoryConflict, InboxConflict])
+def test_forward_commit_guard_rolls_back_prepared_pending_batch(failure):
     factory, identity, revision, _ = _active()
     repository = ReferenceRepository(factory)
     capture = _capture(identity, revision)
@@ -92,8 +94,8 @@ def test_forward_commit_guard_rolls_back_prepared_pending_batch():
              'presentation_v1':envelope([])},capture.observed_at)
     def guard(session, stream):
         assert session.in_transaction() and stream == identity.stream_id
-        raise RepositoryConflict('REFERENCE_CANONICAL_MISMATCH')
-    with pytest.raises(RepositoryConflict,match='REFERENCE_CANONICAL_MISMATCH'):
+        raise failure('REFERENCE_CANONICAL_MISMATCH')
+    with pytest.raises(failure,match='REFERENCE_CANONICAL_MISMATCH'):
         ForwardReferenceService(repository,evaluate,commit_guard=guard).process_pending(identity.stream_id)
     assert repository.read_state(identity.stream_id) == before
     assert repository.read_pending_capture(identity.stream_id)[0] == capture_id

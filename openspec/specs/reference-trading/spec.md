@@ -1241,6 +1241,33 @@ expiry, stopped-writer fence and its fixed private attempt namespace. A delivery
 exclusive, no-follow, fsynced claim SHALL precede any mutation. Unknown results consume
 that claim; changing the plan or namespace SHALL NOT authorize another attempt. A complete
 independent exact readback MAY return a prior committed result without another mutation.
+A separately versioned `al_proven_rollback_v1` continuation MAY be explicitly planned only
+for the accepted AL HTDY 60m identity after stopped-writer fencing and independent proof
+that the old transactions ended, no calculation or closure committed, the checkpoint did
+not advance, and the unique original capture remains unconsumed. It SHALL retain the old
+claim and namespace, bind its parent plan/claim hashes and capture identity into the new
+JSON proof, and consume a separate exclusive fsynced continuation claim in that same
+namespace before mutation. It SHALL reuse that capture and commit the calculation,
+projections, checkpoint and closure atomically. Upgraded closure readers SHALL validate the
+continuation linkage; normal apply SHALL reject continuation plans. Recursive continuation,
+automatic retries and namespace changes SHALL NOT grant another attempt. A failed or
+unknown continuation SHALL consume its sole claim; only exact committed-result readback
+may subsequently succeed. Source verification SHALL not acquire Reference row locks in
+another session; the commit guard SHALL use the existing transaction's session.
+The continuation closure SHALL additionally require a live, one-use admission bound to
+the exact invocation, plan and successfully guarded commit Session; a durable marker alone
+SHALL NOT authorize direct service submission. Once the continuation claim exists, a
+parent plan SHALL NOT authorize another submission through the lower-level service.
+For this one closed-session AL repair, newly released maintenance code MAY write the
+closure while v1.16.32 owners are fenced, before native promotion (which requires zero
+pending captures). Unchanged v1.16.32 read-only consumers MAY use their complete v1
+receipt/capture/calculation/checkpoint validation during this bounded transition; this
+SHALL NOT be described as verification of the new linkage. The old Reference writer
+SHALL remain parked until new-code exact readback verifies the closure, or an independent
+ended-transaction/readback proof establishes no calculation committed. An unresolved
+commit SHALL keep that writer parked while Feed/Live are safely restored. Only after
+native foreground catch-up and zero pending captures may a fresh cohort plan promote
+the upgraded consumers. No new retry, Scope, formula or notification authority is granted.
 An `HTDY_WINDOW_UNAVAILABLE` delivery MAY use this same closure only for the exact accepted
 HTDY 60m identity and an original-bound capture that passes all existing source, window,
 checkpoint, receipt, fence and atomic calculation checks. Other identities and genuinely
@@ -1291,3 +1318,6 @@ first-seen.
 - **WHEN** its verified calculation, projection, checkpoint and recovery result commit atomically
 - **THEN** the original BLOCKED row remains unchanged and the next ordered delivery becomes eligible
 - **AND** transaction failure or a broken bounded bridge never releases that head or sends an expired notification
+
+本次 AL 维护的休市窗口沿用原生 cohort 的 CLOSED/BREAK 判定：无当前 Session、Feed确认宽限结束，
+距离下一Session超过660秒；BREAK不等于允许盘中执行。每次来源fence仍fresh重验，不放宽未知/互斥或退出预算。
