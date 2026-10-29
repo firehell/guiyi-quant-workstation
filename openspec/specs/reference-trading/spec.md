@@ -1248,7 +1248,7 @@ not advance, and the unique original capture remains unconsumed. It SHALL retain
 claim and namespace, bind its parent plan/claim hashes and capture identity into the new
 JSON proof, and consume a separate exclusive fsynced continuation claim in that same
 namespace before mutation. It SHALL reuse that capture and commit the calculation,
-projections, checkpoint and closure atomically. Every closure reader SHALL validate the
+projections, checkpoint and closure atomically. Upgraded closure readers SHALL validate the
 continuation linkage; normal apply SHALL reject continuation plans. Recursive continuation,
 automatic retries and namespace changes SHALL NOT grant another attempt. A failed or
 unknown continuation SHALL consume its sole claim; only exact committed-result readback
@@ -1258,6 +1258,16 @@ The continuation closure SHALL additionally require a live, one-use admission bo
 the exact invocation, plan and successfully guarded commit Session; a durable marker alone
 SHALL NOT authorize direct service submission. Once the continuation claim exists, a
 parent plan SHALL NOT authorize another submission through the lower-level service.
+For this one closed-session AL repair, newly released maintenance code MAY write the
+closure while v1.16.32 owners are fenced, before native promotion (which requires zero
+pending captures). Unchanged v1.16.32 read-only consumers MAY use their complete v1
+receipt/capture/calculation/checkpoint validation during this bounded transition; this
+SHALL NOT be described as verification of the new linkage. The old Reference writer
+SHALL remain parked until new-code exact readback verifies the closure, or an independent
+ended-transaction/readback proof establishes no calculation committed. An unresolved
+commit SHALL keep that writer parked while Feed/Live are safely restored. Only after
+native foreground catch-up and zero pending captures may a fresh cohort plan promote
+the upgraded consumers. No new retry, Scope, formula or notification authority is granted.
 An `HTDY_WINDOW_UNAVAILABLE` delivery MAY use this same closure only for the exact accepted
 HTDY 60m identity and an original-bound capture that passes all existing source, window,
 checkpoint, receipt, fence and atomic calculation checks. Other identities and genuinely
