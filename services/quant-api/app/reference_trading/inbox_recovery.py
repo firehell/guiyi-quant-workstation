@@ -659,7 +659,10 @@ class InboxRecovery:
     def complete(self, session, plan, *, capture_row, calculation):
         if plan.rollback_continuation is not None:
             from app.reference_trading.inbox_rollback import check_marker
-            check_marker(self, plan)
+            check_marker(self, plan, session=session)
+        else:
+            from app.reference_trading.inbox_rollback import reject_parent_after_continuation
+            reject_parent_after_continuation(self, plan)
         row, item = self._validate(session, plan)
         require(
             capture_row.payload_hash == plan.capture.capture_hash

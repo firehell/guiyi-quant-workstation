@@ -21,3 +21,10 @@ Owner已批准实现、测试、Review、闭市发布与现场恢复。基线dev
 - 真实隔离15490 PG：来源持行锁返回、并发单次提交、回滚/重启与既有HTDY 8 passed/5 deselected；仅合成行情夹具，无SDK。
 - 三模块定向Mypy、Ruff通过；OpenSpec12通过。全导入Mypy扫描暴露418项既有依赖错误，未宣称全仓类型通过。
 - Ruling: 正式恢复前队头后的新自然输入可能超过原2条；显式续接仍仅AL原队头，后续全部由原生顺序处理，不扩大维护修复集合。
+- 独立Review确认P1：失败后的marker可被底层service重用；已先复现失败，再新增调用级ContextVar permit，guard绑定同一Session，complete单次消费、finally撤销。
+  同时先复现父计划仍有效时的回退绕过，再拒绝存在续接marker的父计划complete；原v1无续接marker时保持原行为。
+- Review修正后Reference/handover/cohort1282 passed/10 skipped/109 deselected，真实PG8 passed；冻结真实AL原件/原capture/前置checkpoint
+  SHA775e415e…，现役v32纯计算与候选隔离PG续接输出及checkpoint逐值相同。正式原件、claim和账本未改。
+- 现场operator私有草稿output/al-rollback-20261029/closeout.py；部署锁+三owner FD锁/同inode、全CLOSED/宽限、exact bindings/控制/PID，
+  fresh证明旧215596/215597 backend不存在、绑定旧cancel intent/独立rollback证据及原claim；来源持真实stream行锁预检先于claim。
+  所有本次drain在finally精确cancel并独立确认同PID active；无runtime-pins之前不能执行，尚未运行生产续接。
