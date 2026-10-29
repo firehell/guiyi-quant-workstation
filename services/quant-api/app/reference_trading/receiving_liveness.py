@@ -25,7 +25,6 @@ from app.reference_trading.inbox import (
     _digest,
     _envelope,
     _route_identity,
-    _validate_active,
     _verified_input,
 )
 from app.reference_trading.models import (

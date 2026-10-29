@@ -1,5 +1,9 @@
 # 当前状态
 
+10/29 工作树新鲜复核：SimNow observe-readiness 会话归档后，原任务目录及Git worktree登记均已消失；
+当前仅保留develop、现役release-v1.16.35和有未合并研究的JM30三树。本次只读核对未操作正式服务，
+不以工作树清理证明新的Runtime或账户验收。下方19:50“暂留”为当时检查点。
+
 10/29 19:50：按owner要求完成旧v34原生封存及non-force移除，发布树仅保留现役
 **release-v1.16.35**（exact `82a8031470009249acccb83b9911a374af70ca00`，十服务gen41）。
 已合并Reference/AL任务树已归档，246份output原件保全；SimNow发布回合并PR542已集成develop，

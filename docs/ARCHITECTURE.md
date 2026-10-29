@@ -226,9 +226,17 @@ JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原
 `inventory/finance/evidence/host`负责稳定两轮回读投影、实际单笔费用证明、原生权益区间收益及有界动作预算；无法证明的费用、现金流或外部事实保持待核。
 无API路由、launchd或持续Runtime挂接，原只读CLI保持独立。合同见[受控执行](SIMNOW_EXECUTION.md)。
 
+## SimNow独立持续宿主
+
+`scripts/broker/simnow_supervisor.py` 在隔离SDK环境组合单一账户锁、信号队列、四库账本与连接预算；
+`scripts/ops/macos/simnow-service.py` 提供独立服务的准备、安装和身份校验。observe只读观察，
+manage/trade实现有各自执行限制，不能由observe运行推导交易开放。共享行情仍经
+`app.simnow_portfolio_market` 与既有MDS/Calendar/Session入口，原生盘口不写Historical Canonical。
+当前启用模式、exact版本和自然验收以 `STATUS.md` 为准；合同见 [SIMNOW_EXECUTION](SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)。
+
 ## SimNow首页监控
 
-受控宿主仅在原有控制流发布私有原子监控索引；simnow_execution.monitor.MonitorReader 从单一显式根
+一次性受控宿主与独立持续宿主各按既有控制流发布私有原子监控索引；simnow_execution.monitor.MonitorReader 从单一显式根
 以SQLite只读连接校验账户、账本和原生快照。纯 monitor_projection 复用现有财务/预留逻辑提供
 /api/simnow/monitor/{overview,records,records/{id}}，不导入SDK或执行恢复。
 首页第三Tab复用全局导航、白底橙色和详情返回记忆，可见时5秒读取；详情抽屉在手机全屏。

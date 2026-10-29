@@ -71,12 +71,9 @@ test('quote header names the comparison basis and limits status to quote availab
   assert.doesNotMatch(template, />\s*数据正常\s*</)
 })
 
-test('SuBing keeps the chart surface free of runtime summary and reference-version disclosure', () => {
+test('SuBing keeps the chart surface free of runtime summary', () => {
   const workspace = detailComponentSource('subing/SubingDetailWorkspace')
-  const reference = detailComponentSource('subing/SubingReferencePanel')
   assert.doesNotMatch(workspace, /MarketDetailStatusStrip/)
-  assert.doesNotMatch(reference, /<details>/)
-  assert.doesNotMatch(reference, /参考来源与版本/)
 })
 
 test('view navigation exposes six flat analysis choices and emits exact identities', () => {

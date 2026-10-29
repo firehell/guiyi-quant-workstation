@@ -1,6 +1,6 @@
 # 归一量化稳定产品面
 
-更新时间：2026-10-23
+更新时间：2026-10-29
 
 归一量化是本地、单用户的国内期货研究工作站。稳定产品边界允许可信行情、Market Web、Newow 只读策略与参考交易、通用指标、HTDY/苏冰研究观察、Alert 与人工判断，以及独立 CLI 的 JM 本地 Paper 试点；当前不提供自动交易、实盘下单、Broker 账户管理、SaaS、多用户权限或 AI 自动晋升。所有图表、参考交易和通知都是研究观察，`auto_order=false`。Paper 模型订单、成交和账本不接入现有页面事实；合同见 [Paper 试点](docs/PAPER_PILOT.md)。具体代码、Release 与 Runtime 是否已经具备这些能力，仍以代码、测试和 `STATUS.md` 为准。
 
@@ -16,7 +16,7 @@
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
-- Web 不显示模糊的“全历史策略效果”、账户收益、模拟或真实持仓、订单、成交或已退役策略事件。Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，不属于这些账户/执行事实。
+- 策略详情不显示模糊的“全历史策略效果”，不把账户收益、持仓、订单或成交混入参考交易，也不恢复已退役策略事件。首页独立 SimNow 监控可只读展示模拟账户事实；Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，与该账户事实分离。
 
 ## 期货双向策略独立研究
 
@@ -96,8 +96,8 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 ## HTDY 与 Alert
 
 HTDY 60m 固定一手双向执行规则已有独立离线状态机及显式输入适配器，合同见
-[HTDY_SIMNOW_V1](docs/HTDY_SIMNOW_V1.md)。它不接入现役 Alert/Runtime，提供独立离线账户风控、资金预留与本地命令journal，另有显式受控SimNow请求适配模块（见[订单适配](docs/SIMNOW_EXECUTION.md)），提供显式有界的一次性CLI、原生对账和费用投影，没有持续Broker宿主，
-不代表 SimNow 接入、持续 Paper、策略晋升或自动交易已启用；以下观察与参考口径保持独立。
+[HTDY_SIMNOW_V1](docs/HTDY_SIMNOW_V1.md)。它不接入现役 Alert/Runtime，提供独立离线账户风控、资金预留与本地命令journal，另有显式受控SimNow请求适配模块（见[订单适配](docs/SIMNOW_EXECUTION.md)），提供显式有界的一次性CLI、原生对账和费用投影。独立持续宿主另有 observe/manage/trade 实现及服务安装入口；当前启用模式与账户验收只看 `STATUS.md`，已有代码不等于允许开启交易。
+它不代表持续 Paper、策略晋升或自动交易已启用；以下观察与参考口径保持独立。
 
 HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency。
 
@@ -136,8 +136,8 @@ RQData -> staging + hard validation -> Canonical Parquet
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 - 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的交办范围内；数据补全或历史候选闭环无需逐批人工批准，由执行者冻结并校验 exact plan hash。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*` 与独立只读 `/api/v1/research/new-subing/*`。
-统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 仅 `data` 与 `runtime`；新苏冰离线研究使用上文专用脚本，不恢复退役研究产品。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simnow/monitor/*` 及独立只读 `/api/v1/research/new-subing/*`、`/api/v1/research/newow-futures/*`。
+统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 为 `data`、`runtime`、`reference` 与 `home`。`reference` 提供精确计划及 build/advance/rebuild/resume，`home build` 显式构建首页派生投影；写入边界仍遵守各自合同。新苏冰离线研究使用上文专用脚本，不恢复退役研究产品。
 
 ## Retired surface
 
@@ -145,10 +145,11 @@ RQData -> staging + hard validation -> Canonical Parquet
 
 Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、Multi-Candidate Robustness、RQAlpha 与 Execution Review 同样不属于 active 产品、API、CLI、Web 或 Runtime。
 
-## SimNow 一次性账户只读准备
+## SimNow 独立账户观察与监控
 
 独立交互式CLI支持固定SimNow测试环境及显式选择的第一套模拟环境认证、登录与资金/持仓/委托/成交两轮只读核验。
-本地快照与HTDY执行政策、Paper模型、页面参考收益保持独立；没有订单、账户管理、账本对账或持续Broker Runtime，
-不改变 `auto_order=false`。第一套模拟环境另验，合同见 [SIMNOW_READONLY](docs/SIMNOW_READONLY.md)。
+该一次性只读CLI不创建订单、管理账户或启动持续服务，本地快照与HTDY执行政策、Paper模型、页面参考收益保持独立。合同见 [SIMNOW_READONLY](docs/SIMNOW_READONLY.md)。
+
+独立持续宿主与一次性CLI分开：observe按现有合同读取柜台账户并核验本地账本，manage/trade有独立执行边界；支持隔离服务安装、连接预算、持久阻断和只读监控。当前部署及待验收事实只看 `STATUS.md`，不从实现或observe运行推导交易开放，`auto_order=false`保持。
 
 首页导航增加“模拟交易”：只读展示本地原生账户走势、持仓、执行链与待核事项，不提供交易操作。账户口径独立于策略参考收益，未接入或证据不足时明确待验。详见 [SimNow执行合同](docs/SIMNOW_EXECUTION.md)。
