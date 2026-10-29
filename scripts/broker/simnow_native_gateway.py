@@ -233,7 +233,7 @@ class Gateway(_readonly.Probe):
                 authentication_passed=result.get("authentication_passed") is True,
                 login_passed=result.get("login_passed") is True,
                 error_stage=stage if stage in stages else None,
-                requests=[], queries=[],
+                requests=[], queries=[], request_count=len(result.get("requests", ())),
             )
             for key in ("error_id", "return_code"):
                 if type(result.get(key)) is int:
@@ -241,7 +241,7 @@ class Gateway(_readonly.Probe):
             timeout = result.get("timeout_kind")
             if timeout in ("ZERO_QUERY_CALLBACKS", "QUERY_TERMINATOR_MISSING", "TERMINAL_AT_TIMEOUT_BOUNDARY"):
                 value["timeout_kind"] = timeout
-            for receipt in result.get("requests", ()):
+            for receipt in result.get("requests", ())[-16:]:
                 if receipt.get("kind") in {"authenticate", "login", *kinds}:
                     value["requests"].append({k: receipt[k] for k in ("kind", "request_id", "accepted", "return_code") if k in receipt})
             for record in result.get("rounds", ()):
