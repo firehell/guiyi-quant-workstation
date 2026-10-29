@@ -1,13 +1,28 @@
 import { ref } from 'vue'
 import { monitorClient, monitorQueryKey, validateOverview, validatePage, validateDetail, type MonitorClient, type MonitorOverview, type MonitorQuery, type MonitorPage, type MonitorDetail } from '../api/simnowMonitor.ts'
 
-export function useSimnowMonitor(initial: MonitorQuery, client: MonitorClient = monitorClient, timers = { set: (fn: () => void) => setTimeout(fn, 5000), clear: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) }) {
+export function useSimnowMonitor(initial: MonitorQuery, client: MonitorClient = monitorClient, timers = { set: (fn: () => void) => setTimeout(fn, 5000), clear: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) }, validity = { now: () => Date.now(), set: (fn: () => void, delay: number) => setTimeout(fn, delay), clear: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) }) {
   const data = ref<MonitorOverview | null>(null), page = ref<MonitorPage | null>(null), detail = ref<MonitorDetail | null>(null)
   const selectedId = ref<string | null>(null), loading = ref(false), recordsLoading = ref(false), loadingMore = ref(false), detailLoading = ref(false)
   const error = ref<string | null>(null), recordsError = ref<string | null>(null), detailError = ref<string | null>(null), newRecords = ref(false)
   let queryValid = true
   let query = { ...initial }, active = false, visible = true, disposed = false, paged = false
   let timer: ReturnType<typeof setTimeout> | null = null, generation = 0, recordsGeneration = 0, detailGeneration = 0
+  let expiryTimer: ReturnType<typeof setTimeout> | null = null
+  function stopExpiry() { if (expiryTimer !== null) validity.clear(expiryTimer); expiryTimer = null }
+  function revokeObserveReady() {
+    stopExpiry()
+    if (data.value?.observe_reconciliation_ready) data.value = { ...data.value, observe_reconciliation_ready: false, observe_reconciliation_status: 'stale' }
+  }
+  function armObserveExpiry() {
+    stopExpiry()
+    const value = data.value
+    if (!value?.observe_reconciliation_ready) return
+    const checked = Date.parse(value.observe_reconciliation_checked_at ?? ''), until = Date.parse(value.observe_reconciliation_valid_until ?? '')
+    const now = validity.now(), remaining = Math.min(until - now, until - Date.parse(value.generated_at))
+    if (!Number.isFinite(remaining) || now < checked || remaining <= 0) { revokeObserveReady(); return }
+    expiryTimer = validity.set(revokeObserveReady, remaining)
+  }
   let overviewAbort: AbortController | null = null, recordsAbort: AbortController | null = null, detailAbort: AbortController | null = null
   function stopTimer() { if (timer !== null) timers.clear(timer); timer = null }
   function schedule() { stopTimer(); if (active && visible && !disposed) timer = timers.set(() => { void refresh() }) }
@@ -35,13 +50,14 @@ export function useSimnowMonitor(initial: MonitorQuery, client: MonitorClient = 
       if (data.value?.account && !result.account) throw Error('MONITOR_SOURCE_UNAVAILABLE')
       if (data.value?.account && result.account?.key !== data.value.account.key) { recordsGeneration++; recordsAbort?.abort(); recordsLoading.value = false; loadingMore.value = false; newRecords.value = false; page.value = null; closeDetail(); paged = false }
       data.value = result
+      armObserveExpiry()
       if (result.status === 'unavailable') error.value = '监控来源暂不可用，未取得可核验的账户数据。'
       if (result.account) {
         const changed = page.value?.snapshot !== result.snapshot
         if (selectedId.value || paged || loadingMore.value) { if (changed) newRecords.value = true }
         else await reloadRecords()
       }
-    } catch { if (!disposed && !abort.signal.aborted && id === generation) error.value = '监控刷新失败，已保留上次快照及核验时间。' }
+    } catch { if (!disposed && !abort.signal.aborted && id === generation) { revokeObserveReady(); error.value = '监控刷新失败，已保留上次快照及核验时间。' } }
     finally { if (id === generation) { loading.value = false; schedule() } }
   }
   async function loadMore() {
@@ -74,8 +90,8 @@ export function useSimnowMonitor(initial: MonitorQuery, client: MonitorClient = 
     query = { ...value }; recordsGeneration++; recordsAbort?.abort(); page.value = null; paged = false; newRecords.value = false; loadingMore.value = false
     if (active && visible && data.value?.account) void reloadRecords()
   }
-  function setVisible(value: boolean) { if (value === visible) return; visible = value; if (value && active) void refresh(); else { stopTimer(); generation++; overviewAbort?.abort(); recordsGeneration++; recordsAbort?.abort(); loading.value = false; recordsLoading.value = false; loadingMore.value = false } }
+  function setVisible(value: boolean) { if (value === visible) return; visible = value; if (!value) revokeObserveReady(); if (value && active) void refresh(); else { stopTimer(); generation++; overviewAbort?.abort(); recordsGeneration++; recordsAbort?.abort(); loading.value = false; recordsLoading.value = false; loadingMore.value = false } }
   function start() { active = true; void refresh() }
-  function dispose() { disposed = true; active = false; stopTimer(); generation++; recordsGeneration++; detailGeneration++; overviewAbort?.abort(); recordsAbort?.abort(); detailAbort?.abort() }
+  function dispose() { revokeObserveReady(); disposed = true; active = false; stopTimer(); generation++; recordsGeneration++; detailGeneration++; overviewAbort?.abort(); recordsAbort?.abort(); detailAbort?.abort() }
   return { data, page, detail, selectedId, loading, recordsLoading, loadingMore, detailLoading, error, recordsError, detailError, newRecords, start, refresh, reloadRecords, loadMore, openDetail, closeDetail, setQuery, setQueryValid, setVisible, dispose }
 }

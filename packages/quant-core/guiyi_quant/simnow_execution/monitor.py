@@ -37,6 +37,7 @@ class MonitorPublisher:
         mode=None,
         opening_enabled=False,
         host_status=None,
+        observe_reconciliation=None,
     ):
         """Best effort observer only. Never change order decisions on publication error."""
         target = None
@@ -99,6 +100,15 @@ class MonitorPublisher:
                 payload.update(
                     mode=mode, opening_enabled=opening_enabled, host_status=host_status
                 )
+            if observe_reconciliation is not None:
+                proof = observe_reconciliation
+                if (mode != 'observe' or not isinstance(proof, dict)
+                        or proof.get('run_id') != self.run_id
+                        or proof.get('account_id') != self.account_id
+                        or proof.get('native_source_id') != native_source_id
+                        or proof.get('ledger_hash') != ledger_hash):
+                    raise MonitorError('MONITOR_OBSERVE_BINDING_INVALID')
+                payload['observe_reconciliation'] = proof
             fd, target = tempfile.mkstemp(prefix=".monitor-", dir=self.root)
             with os.fdopen(fd, "w") as stream:
                 json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
@@ -318,11 +328,20 @@ class MonitorReader:
                 for source, payload in reversed(rows[:5000])
             ]
             baseline = _snapshot(first[1], first[0], account) if first else None
+            latest_native = db.execute('SELECT source FROM snapshots ORDER BY rowid DESC LIMIT 1').fetchone()
+            if index.get('observe_reconciliation') is not None and latest_native != (index['native_source_id'],):
+                raise MonitorError('MONITOR_OBSERVE_SOURCE_CHANGED')
             truncated = truncated or len(rows) > 5000
         if not snapshots or baseline is None:
             raise MonitorError("MONITOR_NATIVE_MISSING")
         if any(s.at > now for s in snapshots):
             raise MonitorError("MONITOR_FUTURE_NATIVE")
+        from .observe_reconciliation import verify_proof
+        try:
+            observe_reconciliation = verify_proof(index.get('observe_reconciliation'), index,
+                                                   state, snapshots[-1], now)
+        except (ValueError, TypeError, KeyError):
+            raise MonitorError('MONITOR_OBSERVE_PROOF_INVALID') from None
         revision = codec.digest(
             (
                 account,
@@ -335,6 +354,7 @@ class MonitorReader:
         return dict(
             index=index,
             state=state,
+            observe_reconciliation=observe_reconciliation,
             actions=actions,
             events=events,
             snapshots=snapshots,
