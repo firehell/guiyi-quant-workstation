@@ -1,5 +1,25 @@
 # 当前状态
 
+10/29 19:00：选择性v1.16.35已发布，正式十服务通过全新原生cohort `c81c3400…`切至gen41，
+exact `82a8031470009249acccb83b9911a374af70ca00`；独立SimNow observe同版本PID76693。
+两次独立版本/进程/HTTP/Reference读回通过，1140READY、pending/BLOCKED/UNKNOWN/dependency_wait为0；
+本次旧gen40六个维护请求已精确取消，新owner同PID active。account/dispatch/旧日预算不变，交易关闭。
+SimNow仍WAITING_SESSION/UNKNOWN，新日20261030连接次数0；20:58原生窗口真实双轮验收待发生。
+自然18:05源更新passed，消费核验终态D1 incomplete/W1 audited已保留；global仍有苏冰覆盖evaluation_failed
+和weekly历史not_run，不能宣称全量RUNTIME_READY。偶发已记录推送失败不作为行情/计算异常处理，不补发。
+详见[SimNow就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。以下为此前检查点。
+
+10/29 18:36：SimNow就绪修复已由PR540集成、PR541选择性发布v1.16.35，main/annotated tag/Release exact
+`82a8031470009249acccb83b9911a374af70ca00`。独立observe已通过原安装器切至该版本，新PID76693、
+WAITING_SESSION/connection UNKNOWN；新run及两锁归属已核对，account/dispatch和旧attempts/blocks摘要不变。
+604项Python、31项固定SDK、12项Web监控、生产构建/拓扑、core五模块mypy、Ruff和独立安全Review通过。
+只读对账证明与账本投影/预算/执行输入分开；缺失/过期/失败不显示ready，不放开交易。
+今日18:05自然源更新于18:13:09 passed、60品种一次成功，但其消费核验进程尚在运行；
+原生cohort计划在installed阶段因日历非idle拒绝，尚未生成或执行新停服attempt，正式十服务仍v34/gen40。
+真实柜台双轮新鲜快照留待既有20:58窗口；无提前连接、预算重置、结算确认或报撤单。
+偶发已记录推送失败按owner口径仅保留记录，不补发、不计作行情和计算故障。
+详见[SimNow就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。以下为此前检查点。
+
 10/29 16:25：发布树收敛完成，唯一保留 **release-v1.16.34**，exact
 `8d27fa548ed8750f28f221a7eb2e8001aad1642d`。owner明确批准后，全新原生cohort `e12d7316…`
 终态switched，正式十服务统一 **v1.16.34/gen40**；六常驻owner active，删除后十身份matched，API/Web/监控HTTP200。

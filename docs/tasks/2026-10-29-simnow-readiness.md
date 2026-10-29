@@ -27,3 +27,31 @@ Owner最新口径：偶发推送失败/过期在事件及结果已落库时只�
 - 独立安全Review发现并已修正TTL后假就绪及同轮gateway fatal吞没，复核无未解决Confirmed Issue。
 - 今日18:05盘后任务自然运行，18:13:09 passed、一次成功；本任务没有重跑。
 - 以上不证明今晚柜台可用或真实账户核验完成；20:58窗口另验。
+
+
+## 发布与闭市现场（18:26—19:00）
+
+PR540已集成develop，PR541选择性合main；annotated v1.16.35和GitHub Release exact
+`82a8031470009249acccb83b9911a374af70ca00`。候选不含develop研究；自身604项Python（56.27秒）、
+SDK31及Web生产构建/拓扑再验通过。core五模块mypy及定向Ruff通过；SDK动态import的四项mypy
+错误已在v34原样复跑确认，不宣称该脚本全量类型通过。
+
+独立observe通过原安装器更新到v35：旧PID27497协作退出、双锁空闲后安装，新PID76693/run
+`b49075a59e01438a9f18bcee7e3223c9`，真实ps、两锁唯一holder与占用、状态时点均读回。
+完整账户配置及监控绑定仅改project_root；account/dispatch逻辑hash及旧attempts/blocks不变。
+新日20261030尚无连接，WAITING_SESSION/UNKNOWN，auto_order/opening false。
+
+18:05自然源更新18:13:09 passed，60品种一次成功；消费核验进程持续运行至约18:45，旧安装器
+plan在installed阶段正确拒绝，未执行停服。其终态newow_d1=incomplete/newow_w1=audited保留。
+待进程自然退出后，全新原生cohort `c81c3400d151ab3c50f09f55a1c38f7d6190be8f0d657e1625d0d01116a19e2a`
+重新证明60 CLOSED、grace结束和维护互斥，实际switched到十服务gen41。
+
+两次独立读回：API版本35、Web200、十身份matched，六新owner active；Reference 1140/1140 READY，
+pending/BLOCKED/UNKNOWN/dependency_wait为0。本次旧gen40六个精确drain经独立Review后取消，
+新owner同PID仍active，没有新drain或重启。
+
+全局仍degraded：DB/Redis/Live/盘后源更新正常，但保留苏冰Alert覆盖evaluation_failed与weekly历史
+not_run；这不是HTDY偶发推送失败，也不据此宣称全量数据/历史资产健康。本任务不扩展为历史补建或推送补发。
+
+现场证据在主树output/simnow-observe-readiness-20261029/；部署、原生cohort、精确控制收尾和
+私有验收读取脚本均分开留存。20:58前未做Broker连接，真实账户双轮新鲜证据仍待发生。
