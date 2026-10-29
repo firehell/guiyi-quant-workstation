@@ -1,11 +1,12 @@
 """Serial native transport composition; SDK types are supplied by the pinned runner."""
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from contextlib import nullcontext
 from pathlib import Path
 import sqlite3
 import re
 import tempfile
+import math
 
 from ..htdy_account_execution.codec import digest
 from ..htdy_account_execution.scheduling import (
@@ -20,6 +21,7 @@ from .facts import (
     native_product_id,
     quote_from_native_batch,
     execution_input,
+    MAX_BOOK_SOURCE_AGE_SECONDS,
 )
 from .inventory import read_snapshot
 
@@ -35,7 +37,7 @@ _INPUT_CODES = frozenset({
     "ABSOLUTE_SPECULATIVE_MARGIN_REQUIRED", "PER_LOT_MARGIN_PROFILE_UNSUPPORTED",
     "NATIVE_RATE_FACTS_INCOMPLETE", "NATIVE_FACT_QUERY_FAILED", "NATIVE_GATEWAY_FAILED",
     "NATIVE_FACT_QUERY_THROTTLED",
-    "NATIVE_RATE_REQUEST_EXCHANGE_UNSUPPORTED",
+    "NATIVE_RATE_REQUEST_EXCHANGE_UNSUPPORTED", "AUTHORITATIVE_OWNER_CHANGED",
 })
 
 
@@ -59,6 +61,19 @@ def safe_native_queries(records):
                 "NATIVE_FACT_FIELD_INVALID", "NATIVE_FACT_ACCOUNT_MISMATCH",
                 "NATIVE_FACT_SCOPE_MISMATCH", "NATIVE_FACT_ROW_LIMIT",
             } else "UNKNOWN"
+        for key in ('elapsed_seconds', 'book_total_elapsed_seconds'):
+            number = record.get(key)
+            if type(number) in (int, float) and math.isfinite(number) and 0 <= number <= 3600:
+                value[key] = float(number)
+        for key in ('book_call_started_at', 'book_request_sent_at', 'book_target_received_at',
+                    'book_terminal_received_at', 'book_returned_at'):
+            stamp = record.get(key)
+            try:
+                parsed = datetime.fromisoformat(stamp)
+                if parsed.tzinfo is not None:
+                    value[key] = parsed.isoformat()
+            except (TypeError, ValueError):
+                pass
         result.append(value)
     return result
 
@@ -105,6 +120,9 @@ class NativePortfolio:
         self.cache = {}
         self.last_facts = {}
         self.input_diagnostics = {}
+        self.input_checks = {}
+        self.book_diagnostic = {}
+        self.rate_times = {}
         self.previous_queries = []
         self.cursor = 0
         self.stage = "NOT_CONNECTED"
@@ -215,14 +233,35 @@ class NativePortfolio:
         )
 
     def prepare_facts(self, product, contract, market, day):
-        bound, metadata = self.binding(product, contract, market, self.now(), day)
-        self.stage = "NATIVE_MARGIN"
-        mar = self.gateway.query("margin", bound.native, exchange=bound.exchange)
-        self.stage = "NATIVE_COMMISSION"
-        com = self.gateway.query("commission", bound.native, exchange=bound.exchange)
-        if len(mar) != 1 or len(com) != 1:
-            raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
-        return bound, metadata, mar[0], com[0]
+        self.book_diagnostic = {}
+        try:
+            bound, metadata = self.binding(product, contract, market, self.now(), day)
+            self.stage = "NATIVE_MARGIN"
+            mar = self.gateway.query("margin", bound.native, exchange=bound.exchange)
+            margin_at = self.now()
+            self.stage = "NATIVE_COMMISSION"
+            com = self.gateway.query("commission", bound.native, exchange=bound.exchange)
+            commission_at = self.now()
+            if len(mar) != 1 or len(com) != 1:
+                raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
+            self.rate_times[bound.canonical] = dict(margin=margin_at.isoformat(),
+                commission=commission_at.isoformat())
+            return bound, metadata, mar[0], com[0]
+        except Exception as exc:
+            self._input_failure(product, exc)
+            raise
+
+    def _input_failure(self, product, exc):
+        from .input_evidence import VERSION
+        queries = safe_native_queries(self.gateway.query_diagnostics)
+        if queries:
+            self.book_diagnostic['native_query'] = queries[-1]
+        self.input_checks[product] = dict(
+            schema=VERSION, status='FAILED', checked_at=self.now().isoformat(),
+            stage=self.stage,
+            code=str(exc) if type(exc) is ValueError and str(exc) in _INPUT_CODES else 'EXECUTION_INPUT_UNPROVEN',
+            **self.book_diagnostic,
+        )
 
     def finish_facts(self, prepared, market, day, *, opening=False):
         from datetime import datetime
@@ -231,19 +270,56 @@ class NativePortfolio:
         product = re.match(r"[A-Z]+", bound.canonical)[0]
         # Query book last, so rate queries cannot silently consume its three-second TTL.
         self.stage = "NATIVE_BOOK"
-        rows = self.gateway.query("book", bound.native)
-        received = self.now()
-        quote = quote_from_native_batch(bound, rows, day, received)
-        auth = market.authority(
-            product, datetime.strptime(day, "%Y%m%d").date(), received, bound.canonical
-        )
-        if opening and auth.owner != bound.canonical:
-            raise ValueError("AUTHORITATIVE_OWNER_CHANGED")
-        fact = execution_input(
-            bound, metadata, margin, commission, quote, auth.session, self.now()
-        )
-        self.last_facts[bound.canonical] = fact
-        return bound, fact
+        self.book_diagnostic = dict(contract=bound.canonical, exchange=bound.exchange)
+        started = self.now()
+        try:
+            rows = self.gateway.query("book", bound.native)
+            received = self.now()
+            self.book_diagnostic.update(book_query_started_at=started.isoformat(),
+                book_query_seconds=(received-started).total_seconds())
+            queries = safe_native_queries(self.gateway.query_diagnostics)
+            if queries and queries[-1].get('kind') == 'book':
+                self.book_diagnostic['native_query'] = queries[-1]
+            try:
+                quote = quote_from_native_batch(bound, rows, day, received, diagnostic=self.book_diagnostic)
+            finally:
+                age = self.book_diagnostic.get('source_age_seconds')
+                if age is not None:
+                    if age < 0:
+                        reason = 'SOURCE_TIME_IN_FUTURE'
+                    elif age > MAX_BOOK_SOURCE_AGE_SECONDS:
+                        event = datetime.fromisoformat(self.book_diagnostic['source_at'])
+                        reason = ('SOURCE_OLD_BEFORE_QUERY' if (started-event).total_seconds() > MAX_BOOK_SOURCE_AGE_SECONDS
+                                  else 'QUERY_CROSSED_SOURCE_AGE_LIMIT')
+                    else:
+                        reason = 'WITHIN_SOURCE_AGE_LIMIT'
+                    self.book_diagnostic['timing_classification'] = reason
+            auth = market.authority(
+                product, datetime.strptime(day, "%Y%m%d").date(), received, bound.canonical
+            )
+            if opening and auth.owner != bound.canonical:
+                raise ValueError("AUTHORITATIVE_OWNER_CHANGED")
+            checked = self.now()
+            fact = execution_input(bound, metadata, margin, commission, quote, auth.session, checked)
+            from ..htdy_account_execution.codec import digest
+            from .input_evidence import VERSION
+            self.input_checks[product] = dict(schema=VERSION, status='VERIFIED_AT_CHECK',
+                checked_at=checked.isoformat(), valid_until=min(bound.valid_until, quote.valid_until,
+                    auth.session.valid_until).isoformat(), stage='EXECUTION_INPUT_VALIDATED',
+                session_can_trade=auth.session.can_trade, session_can_cancel=auth.session.can_cancel,
+                bid_volume=quote.bid_volume, ask_volume=quote.ask_volume,
+                qualification='FACTS_ONLY_NOT_ORDER_PERMISSION',
+                source_times=dict(instrument=bound.at.isoformat(),
+                    **self.rate_times.get(bound.canonical, {}),
+                    book=received.isoformat(), session=auth.session.at.isoformat()),
+                sources=dict(instrument=bound.source_id, margin='ctp-margin:'+digest(margin),
+                    commission='ctp-commission:'+digest(commission), book=quote.source_id,
+                    session=auth.session.source_id), **self.book_diagnostic)
+            self.last_facts[bound.canonical] = fact
+            return bound, fact
+        except Exception as exc:
+            self._input_failure(product, exc)
+            raise
 
     def observe_next(self, products, market, now, day, issues):
         product = products[self.cursor % len(products)]

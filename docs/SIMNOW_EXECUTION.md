@@ -240,6 +240,46 @@ account/dispatch/signals/native-evidence、正确scope、0700目录和私有单�
 上述持续trade首次代码交付仅开发集成及隔离假柜台闭环，未连接柜台、读取凭据、修改正式配置或安装/切换Runtime。
 真实持续开平/撤单、跨日、断线重启、换月和费用闭环仍逐项待验，不能由fixture成功推导。
 
+### 一次性切换工具
+
+`scripts/ops/macos/simnow-trade-switch.py` 默认只读生成60秒有效的精确计划；显式 `--tag vX.Y.Z`、
+`--config`、`--candidate-plist` 与私有 `--state-dir` 绑定同一候选，`--plan` 指定独占计划文件。
+候选必须是干净的 `release-<tag>` 目录、annotated tag/peeled commit/HEAD一致，SDK无Broker检查通过；
+当前observe的代码/SDK、配置、监控绑定、PID和双锁同样冻结。窗口按上节夜盘合同证明。
+本工具仅限20261030、既有60品种独立空账户接管；任何原生或账本持仓、订单、成交、未解释预留均阻断。
+不创建账户、不清空四库、不重置连接预算或block、不连接柜台取证。账户证明只读复用既有原生来源、
+归属检查及Recover，切换计划要求来源仍在30秒有效期内；旧证明不能当部署时的新鲜账户事实。
+
+`--apply --plan <exact file>` 在取证后及首次停止前复查TTL与前像，独占持久意图只消费一次；
+协作停止observe，证明STOPPED/PID退出、双锁释放及账本/预算/原生历史前缀未改，锁内安装同label，
+释放锁后启动trade并两轮核对进程/模式/代码、双锁和监控绑定。`--readback` 只读取持久阶段。
+每个原生历史rowid/source/payload摘要均受保护，计划取证期间允许合法append，不允许改写或删除。
+停止边界若遇到额外append而无法证明前像，则保守停止并保留证据，不能绕过该检查继续启动。
+
+`--recover-observe` 只适用于STOPPED/INSTALLING/INSTALLED且从未进入START_REQUESTED的失败阶段；
+恢复前重核旧release整树、runner/SDK、空账户、双锁与四库/预算及前像，只恢复原observe启动项和绑定。
+START_REQUESTED及之后、未知提交或未知启动结果禁止自动恢复或重复apply，先只读调查。
+恢复时允许冻结的旧只读证明已过期，仅用其校验历史绑定，不宣称新鲜账户恢复。工具不操作正式十服务。
+切换成功只证明宿主部署；闭市WAITING_SESSION/opening=false合法，原生接管及自然交易仍分别待验。
+
+### 执行输入诊断与成功证据
+
+`simnow_execution_input_check_v1` 在连续状态文件逐品种保存最近一次检查。成功记录包含固定物理合约、
+交易所、合约/保证金/手续费/盘口/Session的来源摘要与各自采样时点、checked_at和最早valid_until。
+它只证明输入事实已构建，明确 `FACTS_ONLY_NOT_ORDER_PERMISSION`，保留Session可交易性及买卖量，
+不代替账户、信号、资金、价格、风险和发送前门禁。未检查或旧版本没有成功证据时为NOT_CHECKED，
+不能由issues缺席推导成功；后续失败覆盖此前成功记录。状态文件不持久化可被误用的当前fresh布尔值。
+
+`scripts/broker/simnow_input_readback.py --status <private continuous.json>` 无Broker/数据库/凭据访问，
+读取时按当前时间、宿主连接/时点和有效期重算fresh；过期、宿主未来时间或断线均不能显示新鲜成功。
+输出永为 `execution_permitted=false`，只读诊断不放开订单。
+
+原 `simnow_native_input_v2` 的8秒来源年龄和接收后3秒Quote TTL不变；时间在未来也仍拒绝。
+失败诊断区分SOURCE_OLD_BEFORE_QUERY、QUERY_CROSSED_SOURCE_AGE_LIMIT、SOURCE_TIME_IN_FUTURE，
+不凭分类推断柜台根因或改写ActionDay。Gateway保留含1.1秒节流的调用起点、SDK发送、匹配目标行回调、
+终止回调、返回时点与总耗时；原elapsed_seconds不含该节流，其语义不改。诊断仅白名单时间/数量/摘要，
+无原始账户行、地址、凭据或异常原文。旧版只有NATIVE_BOOK_STALE时，无法追溯区分旧价、延迟和未来时间。
+
 ## 一次性宿主与只读预检
 
 `scripts/broker/simnow_controlled.py` 复用既有只读Probe认证/登录及四查询两轮协议；可选SDK仅在隔离Mac环境加载，API依赖以相同Python ABI的既有venv只读加载，不向API安装CTP。

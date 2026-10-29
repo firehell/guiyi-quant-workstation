@@ -75,7 +75,7 @@ def bind_contract(canonical, exchange, rows, now, until, trading_day):
     ), row
 
 
-def quote_from_native_batch(binding, rows, trading_day, received_at):
+def quote_from_native_batch(binding, rows, trading_day, received_at, *, diagnostic=None):
     """Select one exact physical identity from an already completed native batch."""
     selected = [
         row for row in rows
@@ -85,10 +85,10 @@ def quote_from_native_batch(binding, rows, trading_day, received_at):
         raise ValueError("NATIVE_BOOK_TARGET_MISSING")
     if len(selected) != 1:
         raise ValueError("NATIVE_BOOK_TARGET_AMBIGUOUS")
-    return quote_from_native(binding, selected[0], trading_day, received_at)
+    return quote_from_native(binding, selected[0], trading_day, received_at, diagnostic=diagnostic)
 
 
-def quote_from_native(binding, row, trading_day, received_at):
+def quote_from_native(binding, row, trading_day, received_at, *, diagnostic=None):
     if (row["InstrumentID"], row["ExchangeID"], row["TradingDay"]) != (
         binding.native,
         binding.exchange,
@@ -102,6 +102,14 @@ def quote_from_native(binding, row, trading_day, received_at):
     ).replace(
         tzinfo=ZoneInfo("Asia/Shanghai"), microsecond=row["UpdateMillisec"] * 1000
     )
+    if diagnostic is not None:
+        diagnostic.update(source_at=event.isoformat(), received_at=received_at.isoformat(),
+                          source_age_seconds=(received_at-event).total_seconds(),
+                          source_action_day=event.strftime('%Y%m%d'),
+                          source_update_time=event.strftime('%H:%M:%S'),
+                          source_update_millisec=row['UpdateMillisec'],
+                          source_trading_day=trading_day,
+                          max_source_age_seconds=MAX_BOOK_SOURCE_AGE_SECONDS)
     if not event <= received_at or (received_at - event).total_seconds() > MAX_BOOK_SOURCE_AGE_SECONDS:
         raise ValueError("NATIVE_BOOK_STALE")
     for k in ("BidVolume1", "AskVolume1"):
