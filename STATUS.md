@@ -1,5 +1,14 @@
 # 当前状态
 
+10/29 19:00：选择性v1.16.35已发布，正式十服务通过全新原生cohort `c81c3400…`切至gen41，
+exact `82a8031470009249acccb83b9911a374af70ca00`；独立SimNow observe同版本PID76693。
+两次独立版本/进程/HTTP/Reference读回通过，1140READY、pending/BLOCKED/UNKNOWN/dependency_wait为0；
+本次旧gen40六个维护请求已精确取消，新owner同PID active。account/dispatch/旧日预算不变，交易关闭。
+SimNow仍WAITING_SESSION/UNKNOWN，新日20261030连接次数0；20:58原生窗口真实双轮验收待发生。
+自然18:05源更新passed，消费核验终态D1 incomplete/W1 audited已保留；global仍有苏冰覆盖evaluation_failed
+和weekly历史not_run，不能宣称全量RUNTIME_READY。偶发已记录推送失败不作为行情/计算异常处理，不补发。
+详见[SimNow就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。以下为此前检查点。
+
 10/29 18:36：SimNow就绪修复已由PR540集成、PR541选择性发布v1.16.35，main/annotated tag/Release exact
 `82a8031470009249acccb83b9911a374af70ca00`。独立observe已通过原安装器切至该版本，新PID76693、
 WAITING_SESSION/connection UNKNOWN；新run及两锁归属已核对，account/dispatch和旧attempts/blocks摘要不变。
