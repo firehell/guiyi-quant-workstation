@@ -119,9 +119,10 @@ class InboxRecoveryPlan:
     expires_at: datetime
     attempt_namespace_sha256: str
     plan_hash: str
+    rollback_continuation: dict | None = None
 
     def proof(self):
-        return {
+        value = {
             "policy": POLICY,
             "delivery_id": self.delivery_id,
             "input_id": self.input_id,
@@ -135,6 +136,9 @@ class InboxRecoveryPlan:
             "expires_at": self.expires_at.isoformat(),
             "attempt_namespace_sha256": self.attempt_namespace_sha256,
         }
+        if self.rollback_continuation is not None:
+            value["rollback_continuation"] = self.rollback_continuation
+        return value
 
 
 def _exact_original(capture, delivery, item, target_generation, *, verified_original=None):
@@ -377,6 +381,12 @@ def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda:
             originals[item.input_id] = _verified_input(item)
         require(_original_content_digest(delivery, item) == row.original_sha256)
         proof = row.proof
+        if "rollback_continuation" in proof:
+            from app.reference_trading.inbox_rollback import verify_link
+            from app.reference_trading.htdy_activation import htdy_identity
+            from app.reference_trading.repository import _identity_from_row
+            require(_identity_from_row(session.get(ReferenceStream, row.stream_id)) == htdy_identity("al"))
+            verify_link(proof, row.capture_batch_id)
         proof_hash = digest(proof)
         require(
             row.proof_sha256 == proof_hash
@@ -460,11 +470,13 @@ class InboxRecovery:
         verify_fence,
         verify_source,
         now=lambda: datetime.now(UTC),
+        verify_rollback=None,
     ):
         self.factory = session_factory
         self.verify_fence = verify_fence
         self.verify_source = verify_source
         self.now = now
+        self.verify_rollback = verify_rollback
         self.attempt_dir = Path(attempt_dir)
         require(
             self.attempt_dir.is_absolute()
@@ -600,6 +612,9 @@ class InboxRecovery:
             "REFERENCE_INBOX_RECOVERY_FENCE_DRIFT",
         )
         self.verify_source(plan)
+        if plan.rollback_continuation is not None:
+            from app.reference_trading.inbox_rollback import check_external
+            check_external(self, plan)
 
     def _validate(self, session, plan):
         from app.reference_trading.inbox import _head_query
@@ -642,6 +657,9 @@ class InboxRecovery:
         return row, item
 
     def complete(self, session, plan, *, capture_row, calculation):
+        if plan.rollback_continuation is not None:
+            from app.reference_trading.inbox_rollback import check_marker
+            check_marker(self, plan)
         row, item = self._validate(session, plan)
         require(
             capture_row.payload_hash == plan.capture.capture_hash
@@ -715,6 +733,7 @@ class InboxRecovery:
         from app.reference_trading.repository import ReferenceRepository
         from app.reference_trading.forward_service import ForwardReferenceService
 
+        require(plan.rollback_continuation is None, "REFERENCE_ROLLBACK_DEDICATED_ENTRY_REQUIRED")
         require(
             expected_plan_hash == plan.plan_hash,
             "REFERENCE_INBOX_RECOVERY_PLAN_HASH_CONFLICT",
@@ -738,6 +757,17 @@ class InboxRecovery:
         result = self.readback(plan)
         require(result is not None, "REFERENCE_INBOX_RECOVERY_READBACK_REQUIRED")
         return result
+
+    def plan_rollback_continuation(self, parent, *, capture_id, expires_at):
+        from app.reference_trading.inbox_rollback import plan_continuation
+        return plan_continuation(self, parent, capture_id=capture_id, expires_at=expires_at)
+
+    def apply_rollback_continuation(self, plan, *, expected_plan_hash, evaluator,
+                                    commit_guard=None, fault_injector=None):
+        from app.reference_trading.inbox_rollback import apply_continuation
+        return apply_continuation(self, plan, expected_plan_hash=expected_plan_hash,
+                                  evaluator=evaluator, commit_guard=commit_guard,
+                                  fault_injector=fault_injector)
 
 
 def validate_receiving_delivery(session, delivery, resolved):
