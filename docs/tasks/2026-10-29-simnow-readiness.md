@@ -1,5 +1,31 @@
 # SimNow晚盘前只读就绪
 
+## 22:01：第三步部署前输入核验
+
+Owner交办开始第三步验证，本次仅只读，不扩大为提前trade部署或下单。用固定v1.16.35的
+`scripts/data/htdy_input_admission.py`，经安全配置加载后re-exec执行，冻结cutoff为
+2026-10-29 22:01:29北京时间；原件在`output/simnow-step3-20261029/admission-20261029T140129/`。
+
+- 全60历史32根60m预热通过。45夜盘当前1m及22:00完成60m连续、实际主力物理合约、计算32根窗口、
+  底层1m聚合逐值一致通过，状态为INPUTS_VERIFIED_WAIT_NEW_OBSERVATION；审计自身不是首见信号。
+- 独立只读原signals.sqlite：既有observe自然冻结22:00的45项评估（40项无方向、5项buy），
+  状态均OBSERVED，payload hash、product/bar/observed时间身份及bar_end严格早于observed通过，
+  品种集合与45夜盘完全一致。无方向同样是合法评估；buy不是订单、Fill或交易授权。
+  这些记录来自部署前observe，不能复用为之后trade的新开仓信号。
+- AP/CJ/EC/JD/LC/LH/PD/PK/PS/PT/RS/SF/SI/SM/UR历史预热通过，当前1m为WAIT_NEXT_SESSION。
+  旧日原始Live不足/订阅不可用，合并计算窗口MARKET_READ_CONTRACT_UNAVAILABLE，仍BLOCKED；
+  下一时段应重新自然验收，不能以闭市或Canonical已有历史将旧Live标为通过。
+- 22:01:29读取observe留存执行输入诊断：上述15品种及AG/J/PB/ZN最近检查为NATIVE_BOOK_STALE，
+  其检查时点在13:44—14:01 UTC范围，不把它们描述为全部当前仍失败。
+  无错误条目的其他品种缺少带来源/时点的成功证据，不能以absence推导费率/保证金/盘口通过。
+- 定向回归实际执行：HTDY input_admission、closed_source_conflicts、execution_signal及
+  SimNow trade_inputs四组，59 passed（3.05秒）；跨原件scope/数量/时间/hash核对通过。
+  provider_requests=0、production_writes=0；未建立Broker连接、改变配置/预算/账本或交易开关。
+
+第三步状态为PARTIAL：行情/计算前置45通过，15待下一交易时段；第二步部署后仍须实际trade宿主
+新鲜账户恢复、逐品种新输入门禁和即时合约费率/保证金/盘口核验。不能因此宣称只剩15或第三步完成。
+02:35第二步一次性任务按本聊天已有授权执行，两步证据分别成立，不将今晚旧信号补开。
+
 ## 21:35后：账户接管核验与固定trade候选准备
 
 Owner继续交办第一步账户接管条件核验、第二步固定trade候选准备与部署。v1.16.35
