@@ -48,3 +48,30 @@ Owner已批准实现、测试、Review、闭市发布与现场恢复。基线dev
 - v33选择性候选仅择取本任务3个提交及版本/状态更新；候选自身1282 passed/10 skipped/109 deselected、锁定离线uv/pnpm和Web类型/build/topology通过。
   09:02 fresh现场：旧v32/gen38六owner active，60 TRADING，源/完成游标追尾，Live订阅/覆盖60且ok；Alert处理ok，覆盖evaluation_lagging，无新增处理失败。
   权威60品种Session证明10/29日盘最后结束15:00；正式执行仍要fresh全CLOSED/宽限/互斥，不以时间点代替门禁。
+
+## 10:05 发布候选与闭市交接
+
+- 当前生产仍v1.16.32/gen38，AL生产续接从未执行。09:28独立读回completed11455、pending2、未解决BLOCKED1、UNKNOWN0；
+  其余前台正常推进，Live覆盖/订阅60。Alert处理正常但coverage evaluation_lagging，整体degraded保留，不称全策略健康。
+- 候选发布树`/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-v1.16.33`，分支`codex/al-release-v1.16.33`；
+  只择取本任务修复/测试/合同及版本状态，不发布develop中LMS等研究。主树develop保留其他研究。
+- 候选自身锁定离线uv安装、pnpm安装及Web类型/build/topology通过；元数据及APP_VERSION均33；
+  1282 passed/10 skipped/109 deselected、真实15490 PG 8 passed/5 deselected、health/version7 passed/17 deselected。
+- 实际官方MDS/Authority/Reconciliation/worker factory组合另用冻结真实AL在15490隔离PG重放，
+  `parity-native_composition.private.json`证实outputs_equal/checkpoint_equal=true。限定来源回调持stream行锁也能返回。
+- 最终operator补齐官方Reconciliation的read_guard，持有既有维护fence前后核对；不创建新版本Runtime enable标记。
+  六处真实构造签名检查通过，移除read_guard负向控制正确失败。实际maintenance尚未执行，runtime-pins及closeout-1未创建。
+- 权威日盘最后结束15:00，计划15:10一次性续接；时间不是门禁，须fresh全部60 CLOSED及宽限、无未知/维护竞争。
+  先发布33，再按上文有界过渡，用新发布代码修复旧32停写owner，独立验证新proof及冻结checkpoint，恢复旧owner追齐。
+  追齐后再生成全新原生部署计划，不能复用旧计划或跳过pending capture gate。若原件/claim/checkpoint/fence漂移即拒绝。
+- 正式续接必须运行主树最终SHA固定的私有operator；pins同时绑定新发布root/tag/commit和旧runtime_root/tag/commit/gen。
+  原claim目录和原BLOCKED保留，不复制隔离测试namespace至生产；续接claim消费后失败/未知不能再次提交。
+  具体私有证据目录`output/al-rollback-20261029`，原父计划/claim目录`output/overnight-first-four-20261028/htdy-native-closeout-1`。
+- 切换后两次独立readback，证明未解决BLOCKED/pending/UNKNOWN/capture归零，历史刷新线程实际启动且健康处理一轮，
+  10秒内drain/resume且finally精确撤销本次请求；自然输入/信号/参考交易仅由下一交易时段事实验收。
+- SimNow observe不改，仍只读且交易关闭；其安装与配置固定引用旧32，所以发布33后暂保留32，不能按“旧树”盲目删除。
+  全部测试完成后仅清理本任务15490临时PG及匿名卷，不碰5432/6379生产。
+
+最终独立Astra增量Review：operator SHA `a30e6e61829e6fb0e99db75ea5538c4f1e4a1873f2d5dc89592ad722fced37cb`
+无剩余Confirmed Issue，可以冻结执行；主树同名私有执行副本已原子更新并fsync。仅此SHA可执行，旧SHA均为过程草稿。
+Review读取native_composition真实隔离对照，未执行生产；生产恢复/发布/切换仍未完成。
