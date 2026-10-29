@@ -193,6 +193,7 @@ class Supervisor:
         self.observed_state = None
         self.issues = {}
         self.input_diagnostics = {}
+        self.input_checks = {}
         self.retry_after = self.now()
         self.blocked_day = None
         self.target_day = None
@@ -221,6 +222,8 @@ class Supervisor:
         )
         if self.driver is not None:
             self.input_diagnostics = dict(getattr(self.driver, "input_diagnostics", {}))
+            self.input_checks = dict(getattr(self.driver, "input_checks", {}))
+        from .input_evidence import input_check_records
         value = dict(
             schema="simnow_continuous_v2",
             run_id=self.run_id,
@@ -232,6 +235,7 @@ class Supervisor:
             products=list(self.products),
             issues={**self.market.issues, **self.issues},
             input_diagnostics=self.input_diagnostics,
+            input_checks=input_check_records(self.input_checks, products=self.products),
             auto_order=self.settings.mode == "trade" and self.settings.enabled,
             opening_enabled=opening,
             broker_e2e_passed=False,

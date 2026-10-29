@@ -303,6 +303,11 @@ class Gateway(_readonly.Probe):
             or not instrument.isascii() or not instrument.isalnum() or len(instrument) > 12
         ):
             raise ValueError("BOUNDED_RATE_QUERY_REQUIRED")
+        book_timing = None
+        if kind == "book":
+            book_timing = dict(book_call_started_at=datetime.now(UTC).isoformat(),
+                               book_target_received_at=None, book_terminal_received_at=None)
+            book_started = time.monotonic()
         time.sleep(1.1)
         if self.failed:
             raise ValueError("NATIVE_GATEWAY_FAILED")
@@ -334,7 +339,11 @@ class Gateway(_readonly.Probe):
                     kind=kind, id=request_id, rows=[], complete=False,
                     exchange=exchange, product=product, response_count=0,
                     terminal_response_seen=False, callback_error=None,
+                    book_instrument=instrument if kind == "book" else None,
+                    book_timing=book_timing,
                 )
+                if book_timing is not None:
+                    book_timing["book_request_sent_at"] = datetime.now(UTC).isoformat()
                 result = getattr(self.api, _METHODS[kind])(req, request_id)
             if result == 0:
                 timed_out = not self.extra_done.wait(15)
@@ -358,6 +367,9 @@ class Gateway(_readonly.Probe):
         finally:
             with self.lock:
                 if request_id is not None:
+                    if book_timing is not None:
+                        book_timing["book_returned_at"] = datetime.now(UTC).isoformat()
+                        book_timing["book_total_elapsed_seconds"] = round(time.monotonic()-book_started, 6)
                     self.query_diagnostics.append(dict(
                         kind=kind,
                         request_id=request_id,
@@ -369,6 +381,7 @@ class Gateway(_readonly.Probe):
                         timed_out=timed_out,
                         callback_error=self.extra["callback_error"],
                         elapsed_seconds=round(time.monotonic()-started, 6),
+                        **(book_timing or {}),
                     ))
 
     def _extra_response(self, kind, row, info, request_id, last):
@@ -388,6 +401,14 @@ class Gateway(_readonly.Probe):
                 or self.extra.get('closed') is True
             ):
                 raise ValueError("NATIVE_FACT_RESPONSE_IDENTITY")
+            if kind == "book" and self.extra.get("book_timing") is not None:
+                timing = self.extra["book_timing"]
+                received_at = datetime.now(UTC).isoformat()
+                if (row is not None and getattr(row, "InstrumentID", None) == self.extra["book_instrument"]
+                        and timing["book_target_received_at"] is None):
+                    timing["book_target_received_at"] = received_at
+                if last:
+                    timing["book_terminal_received_at"] = received_at
             if info is not None and int(info.ErrorID):
                 raise ValueError("NATIVE_FACT_QUERY_REJECTED")
             if row is not None:

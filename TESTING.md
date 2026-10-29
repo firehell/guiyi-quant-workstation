@@ -34,6 +34,17 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 ## SimNow 全品种持续宿主
 
+执行输入证据与一次性切换的离线验证（无Broker、服务停启或生产写入）：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_supervisor/test_input_evidence.py tests/unit/simnow_supervisor/test_trade_switch.py tests/unit/simnow_supervisor/test_native_portfolio.py tests/unit/simnow_supervisor/test_trade_inputs.py
+```
+
+`scripts/broker/simnow_input_readback.py --status <private continuous.json>` 只读取留存证据，按读取时刻
+重算fresh，不连接Broker或读取凭据。切换工具默认只读plan，`--apply` 和 `--recover-observe` 是真实服务操作，
+不能用于测试；合同及参数边界见[一次性切换工具](docs/SIMNOW_EXECUTION.md#一次性切换工具)。
+真实SDK结构及book回调时序继续使用上方固定SDK环境的native_gateway_smoke.py；API venv不安装CTP依赖。
+
 默认observe，以下使用隔离fixture，不读Keychain、不连接Broker、不安装服务：
 
 ```sh

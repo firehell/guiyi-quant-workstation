@@ -83,6 +83,44 @@ class Compatibility(unittest.TestCase):
     def tearDown(self):
         self.pause.stop()
 
+    def test_book_query_timing_is_bounded_and_includes_throttle(self):
+        from datetime import datetime
+        clock = [10.0]
+        def throttle(seconds):
+            self.assertEqual(seconds, 1.1)
+            clock[0] += seconds
+        with patch.object(m.time, "sleep", throttle), patch.object(m.time, "monotonic", lambda: clock[0]):
+            self.g.query("book", "rb2701")
+        diagnostic = self.g.query_diagnostics[-1]
+        self.assertEqual(diagnostic["book_total_elapsed_seconds"], 1.1)
+        self.assertEqual(diagnostic["elapsed_seconds"], 0.0)
+        names = ("book_call_started_at", "book_request_sent_at", "book_target_received_at",
+                 "book_terminal_received_at", "book_returned_at")
+        values = [datetime.fromisoformat(diagnostic[name]) for name in names]
+        self.assertEqual(values, sorted(values))
+        self.assertTrue(all(value.utcoffset().total_seconds() == 0 for value in values))
+        self.assertGreaterEqual(diagnostic["book_total_elapsed_seconds"], diagnostic["elapsed_seconds"])
+        self.assertNotIn("fixture-only", str(diagnostic))
+        self.assertNotIn("000000", str(diagnostic))
+        self.g.query("instrument", exchange="SHFE", product="rb")
+        self.assertTrue(all(not key.startswith("book_") for key in self.g.query_diagnostics[-1]))
+
+    def test_book_target_timing_ignores_other_instrument_and_retains_timeout(self):
+        def other(req, rid):
+            row = t.CThostFtdcDepthMarketDataField()
+            row.InstrumentID = "ag2612"
+            self.g.OnRspQryDepthMarketData(row, t.CThostFtdcRspInfoField(), rid, False)
+            return 0
+        self.g.api.ReqQryDepthMarketData = other
+        with patch.object(self.g.extra_done, "wait", return_value=False):
+            with self.assertRaisesRegex(ValueError, "NATIVE_FACT_QUERY_FAILED"):
+                self.g.query("book", "rb2701")
+        diagnostic = self.g.query_diagnostics[-1]
+        self.assertIsNone(diagnostic["book_target_received_at"])
+        self.assertIsNone(diagnostic["book_terminal_received_at"])
+        self.assertIsNotNone(diagnostic["book_returned_at"])
+        self.assertTrue(diagnostic["timed_out"])
+
     def test_optional_observe_throttle_is_not_a_global_connection_failure(self):
         for code in (-2, -3):
             self.g.api.ReqQryInstrument = lambda *_: code
