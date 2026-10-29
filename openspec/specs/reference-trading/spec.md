@@ -1318,3 +1318,6 @@ first-seen.
 - **WHEN** its verified calculation, projection, checkpoint and recovery result commit atomically
 - **THEN** the original BLOCKED row remains unchanged and the next ordered delivery becomes eligible
 - **AND** transaction failure or a broken bounded bridge never releases that head or sends an expired notification
+
+本次 AL 维护的休市窗口沿用原生 cohort 的 CLOSED/BREAK 判定：无当前 Session、Feed确认宽限结束，
+距离下一Session超过660秒；BREAK不等于允许盘中执行。每次来源fence仍fresh重验，不放宽未知/互斥或退出预算。

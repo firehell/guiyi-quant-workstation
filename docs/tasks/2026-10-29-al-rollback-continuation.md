@@ -92,3 +92,13 @@ https://github.com/firehell/guiyi-quant-workstation/pull/536 。未合main、未
 最终盘中Reference只读GET（私有reference-health-final.private.json）：pending436、BLOCKED1、UNKNOWN0，
 last_calculated_at=2026-10-29T02:15:47.526861Z。此为新边界后的整体积压，不能把09:28的pending2当成当前值，
 也不能未经逐流枚举就把436全部归因AL；闭市后须实际核对原生队列全量追齐。
+## 午休执行（owner已明确批准）
+
+10/29午休owner明确交办修复、发布，自动任务拒绝不影响当前人工发起turn的执行；不创建后台自动化。
+原生fresh session_proof为closed_idle/BREAK60，仍须每步fresh无当前Session、Feed宽限结束、next>660秒。
+私有operator仅将额外相位限定对齐原生CLOSED/BREAK，最终SHA513b4967a689fc379e07d210ae696c02d02db860f2941abdcba596b39559b0e3。
+新增修正：InboxConflict事务已知回滚原样保留；恢复验证SQL只投影12必要batch字段与2棵必需JSON子树，不读取无关presentation/seed，
+原件/receipt/bridge/checkpoint哈希及逐条验证保持，禁止跨事务缓存结论。先复现两项RED，再通过1284项Reference/交接回归，
+10 skipped/109 deselected；Ruff/diff通过，独立Astra增量Review允许集成。真实生产只读2627条闭合IDs摘要相同，
+验证耗时旧1.115/1.072秒，新0.747/0.856秒（仅此调用，不冒称整体吞吐同幅提升）。
+13:00不发起新正式切换，13:00—13:20仅收尾读回，保障13:30；自然新版本验收依赖下午输入。
