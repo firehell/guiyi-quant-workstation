@@ -33,3 +33,18 @@ Owner已批准实现、测试、Review、闭市发布与现场恢复。基线dev
   最终operator SHA95e31153fbc22768f30f58eb192481beecb33451b6a1a2b00c1f99399869be9d经独立AST/哈希/控制流Review通过。
   若新cohort遗留自身旧代drain，须先凭本次switched终态、原requestID及旧PID退出证明完成精确cancel收尾，不能覆盖其他请求。
 - CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；生产AL仍待下一次合法闭市窗口执行，未发布、未切换、未消费续接claim。
+- Ruling: 原生cohort的drain_old无条件要求pending capture=0（runtime_cohort_host.py），AL原capture使先切换再修复不可行。
+  不放宽该原生合同：闭市先正式发布补丁，用已发布新代码做一次停写/持锁维护，明确分离maintenance_code身份与旧runtime owner身份；
+  续接后旧owner按原生顺序追齐，证明pending/capture/未解决BLOCKED/UNKNOWN均0，再生成全新cohort计划并切换。
+  该调整不改变永久consumer绑定、公式或恢复预算；未满足停写/互斥/来源证明时不消费claim。正式恢复与Runtime切换分别读回。
+- Ruling: 仅本次AL闭市维护允许旧v32读者暂按原v1完整事实链校验读取新增JSON键；不声称其验证了新link。
+  新维护代码原子执行新link校验，且必须新代码独立读回和冻结checkpoint对照成功后才恢复旧Reference writer。
+  提交不明时仅独立读回；若无结果，须证明原事务已结束（未到提交guard则核对Reference写锁已释放）并再次读回/核对原checkpoint与capture。
+  无法证明时仅Reference保留精确drain，Feed/Live仍安全恢复，并明确报告阻断，不以旧读者代替新link证明。
+  这是生产未知结果fail-closed的必要例外，不能为满足finally全恢复而让未证实的Reference继续写入；正常与已证回滚路径仍finally精确恢复全部owner。
+- 上述过渡兼容/未知结果分支最终独立Review通过，无新增Confirmed Issue；最终operator SHA
+  dd0d6df9c345cd7d06a8faa5aa36d55a434bc0c5c3f9b21e18283e4571fa5951，执行副本保存在主树output/al-rollback-20261029/closeout.py。
+  operator异常分支经静态审查，未冒称生产故障注入；core回滚/未知/重启/并发已由真实PG与隔离测试覆盖。
+- v33选择性候选仅择取本任务3个提交及版本/状态更新；候选自身1282 passed/10 skipped/109 deselected、锁定离线uv/pnpm和Web类型/build/topology通过。
+  09:02 fresh现场：旧v32/gen38六owner active，60 TRADING，源/完成游标追尾，Live订阅/覆盖60且ok；Alert处理ok，覆盖evaluation_lagging，无新增处理失败。
+  权威60品种Session证明10/29日盘最后结束15:00；正式执行仍要fresh全CLOSED/宽限/互斥，不以时间点代替门禁。
