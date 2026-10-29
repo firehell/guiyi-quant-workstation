@@ -1,5 +1,17 @@
 # 当前状态
 
+10/30 02:54：一次性任务实际执行。选择性PR543已合main，annotated tag/GitHub Release **v1.16.36**
+exact `74d01145f4bcda1192b702f4760c9c0ce73e531a` 已发布；695项候选回归、33项固定SDK、Web构建/拓扑、
+四核心mypy、Ruff和独立发布Review通过，不含develop无关研究。正式十服务仍v35/gen41，绑定内容及API版本未变。
+独立SimNow切换attempt1在STOPPED、尚未安装/启动trade时被PREIMAGE_CHANGED阻断：停止过程中原生只读
+证据从3247增加1份，旧前缀未变，但严格offline前像不再相等。未重试apply、未放宽门禁；按正式工具显式
+恢复原v35 observe，PID71132、新run、双锁、LOGGED_IN/OBSERVING_CLOSED与新鲜只读账户核验通过。
+账户/dispatch保持，权益/可用100043.92，持仓/委托/成交0；当日连接预算2/3，未重置。auto_order/opening false。
+原SDK临时环境缺少pyvenv.cfg及4个Python/元数据文件，已按原安装RECORD精确恢复缺文件，原二进制未变，
+独立15文件hash与SDK33验证通过。**第二步PARTIAL：RELEASED，trade未部署**；后续需修正停止边界合法新增
+原生快照的完整核验后，再形成可验证的切换候选，不能复用本次意图。证据`output/simnow-trade-release-20261030/`。
+02:56再次独立读回同一恢复状态，独立Review复算原3247条前缀与account/dispatch均一致；原一次性任务已删除，未新增重试。
+
 10/29 22:42：owner对“02:35发布811df7602最小补丁并仅切独立SimNow trade、保留原账户和全部门禁、
 正式十服务不动”明确回复“授权处理”。原simnow-trade一次性任务已成功更新并ACTIVE，执行时仍须新的
 权威夜盘收盘、30秒账户证明、双锁及宿主逐项审批；此前HOST_APPROVAL_BLOCKED为历史检查点。

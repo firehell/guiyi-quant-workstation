@@ -1,5 +1,52 @@
 # SimNow晚盘前只读就绪
 
+## 10/30 02:35一次性执行：v36已发布，切换阻断并恢复observe
+
+本次按owner明确授权执行，未提前切换。02:35:44权威读回为全部60 CLOSED，其中45个夜盘全部结束、
+15无夜盘排除，交易日20261030及下一时段窗口通过。main和远端基线仍v35，无其他并发修改。
+
+### 发布与SDK恢复
+
+从origin/main隔离准备release-v1.16.36，仅移植811df7602审查过的12文件及APP_VERSION=1.16.36。
+API依赖离线独立构建，API/core来源均为新候选；Web依赖离线安装、类型/生产构建及bundle拓扑通过。
+候选695项相关Python通过（48.16秒），固定SDK33通过，四核心mypy、Ruff、offline lock、diff-check通过。
+独立发布Review验证12/12文件与工程提交逐字节一致，无其他develop研究，另跑41项测试通过。
+
+SDK第一次检查发现原临时venv缺pyvenv.cfg及METADATA、__init__.py、两份SWIG Python包装，native二进制仍在。
+先独占补PEP405元数据，进一步验证发现包文本也缺失；从公开PyPI暂存相同6.7.7.1，写入前按原RECORD
+逐文件SHA256核验，只补4个缺文件，原11个有hash文件（含.so/dylib）未改。独立复算15文件全匹配、
+无缺失/差异，SDK33重跑通过；未读取凭据、建立Broker连接或改账户。修复原件见sdk-metadata-repair.json。
+
+release PR [543](https://github.com/firehell/guiyi-quant-workstation/pull/543)已合main，annotated v1.16.36
+与远端main及peeled commit一致，GitHub Release非草稿，exact
+`74d01145f4bcda1192b702f4760c9c0ce73e531a`。main已正常回合并develop，仅带来版本35→36。
+发布不代表独立trade部署；正式十服务仍v1.16.35/gen41，旧发布树因仍有真实引用保留。
+
+### 切换、阻断与恢复
+
+为新固定候选生成0600新trade配置/plist，account/state_root/anchor/SDK不变，project_root及API环境绑定v36。
+新SDK无Broker检查、四库和60scope预检通过，独立对象Review通过；writer_idle=false与旧observe持双锁一致。
+使用正式工具生成60秒计划，02:49:42显式apply，旧PID76693协作退出、STOPPED及双锁释放已证明。
+停止过程中最后一轮既有只读账户查询完成，于02:49:54.256追加一份原生快照，历史前缀3247条未变；
+offline严格比较完整前像不再相等，返回PREIMAGE_CHANGED，阶段停在STOPPED。
+没有进入INSTALLING/START_REQUESTED，没有安装/启动trade、提交订单或改写账户账本。
+
+未重试apply或删除新增证据。按工具既有受限恢复路径，对同一attempt显式--recover-observe，重核
+旧release/SDK、原四库前缀/账户预算、配置前像和双锁后恢复原observe。持久阶段RECOVERED，结果
+OBSERVE_HOST_RESTORED，retry_permitted=false，原PREIMAGE_CHANGED记录保留。
+
+02:53和02:54独立读回：v35 observe新PID71132/run、同PID双锁、LOGGED_IN/OBSERVING_CLOSED及新鲜只读
+核验通过；原账户/dispatch逻辑摘要和原plist内容一致，权益/可用100043.92、持仓/委托/成交均0。
+当日连接预算从1到2/3，是正常observe恢复启动，未重置旧预算/block。正式十服务bindings原字节hash不变，
+仍v35/gen41；API /health200/version35。auto_order/opening保持false，不宣称trade账户接管或自然交易闭环。
+
+证据在`output/simnow-trade-release-20261030/`，包括SDK修复、candidate-preflight、switch-attempt1的
+plan/持久意图及两次readback。结论PARTIAL：发布已完成，第二步trade部署未完成。下一步应在保留
+稳定历史前缀、完整账户/预算及新鲜来源验证的前提下，修复停止边界合法在途快照的核验，再做新的候选；
+不能复用本次意图或盲目再次切换。原一次性任务执行结束后删除，不新增重试任务。
+02:56第二份独立readback保持同一PID/双锁、账户、预算及十服务身份；独立Review对原3247条历史前缀及
+account/dispatch摘要复算一致，确认PARTIAL与安全恢复结论。automation simnow-trade已实际删除，未新增任务。
+
 ## 22:42：明确授权与一次性任务更新
 
 Owner在已列明“02:35发布本轮最小补丁main/tag/GitHub Release并仅切独立SimNow trade、保留全部门禁
