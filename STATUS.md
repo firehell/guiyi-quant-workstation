@@ -1,5 +1,18 @@
 # 当前状态
 
+10/29 16:25：发布树收敛完成，唯一保留 **release-v1.16.34**，exact
+`8d27fa548ed8750f28f221a7eb2e8001aad1642d`。owner明确批准后，全新原生cohort `e12d7316…`
+终态switched，正式十服务统一 **v1.16.34/gen40**；六常驻owner active，删除后十身份matched，API/Web/监控HTTP200。
+1140条启用参考流全部READY，Inbox pending/blocked/UNKNOWN/dependency_wait均0；DB/Redis/Live/Alert正常。
+独立SimNow保持原PID27497及observe，config/plist、account/dispatch逻辑摘要逐项不变，auto_order/opening false；
+监控来源旧v32路径已更新至v34。原当日预算/block、旧失败和UNKNOWN账户事实保留，不补信号、不重置账本或连接预算。
+v32经既有封存验证后退役；v33新原生封存30次attempt、69份原件、6个运行标记，两次一致零引用扫描后non-force移除，
+删除后历史身份与未决恢复guard通过。已合并SimNow候选任务树及分支已清理，143份output原件哈希保全。
+其余历史修复、JM30研究树保留；已合并诊断树仍有ChatGPT工具进程占用，未终止或删除。
+全局既有degraded、历史参考基线缺口、weekly not_run与监控partial保留；新代际自然输入、SimNow新鲜柜台对账待验，
+不能宣称全量RUNTIME_READY/OBSERVE_READY。无新增自动化、通知补发或交易权限。
+本地证据与详细记录保留于`output/worktree-convergence-20261029/`及`docs/tasks/2026-10-29-release-tree-convergence.md`。以下为此前检查点。
+
 10/29 15:35：独立SimNow诊断修正已由PR537集成、PR538发布 **v1.16.34**，main/tag/Release exact
 `8d27fa548ed8750f28f221a7eb2e8001aad1642d`；独立observe已更新，新PID27497，连续两轮及独立抽核通过。
 当前 **WAITING_SESSION / connection UNKNOWN**，auto_order/opening false；正式十服务仍v1.16.33/gen39，API health200/version33，未随本次切换。
