@@ -1,5 +1,13 @@
 # 当前状态
 
+10/29 21:35后：独立SimNow账户接管条件由两个新鲜原生来源验证，原账本重放、归属检查与内存Recover通过；
+资金一致、无持仓/委托/成交/未知发送/待核回调/未释放预留，运行账本未改。固定v1.16.35 trade候选配置/
+同label启动项、SDK及四库身份预检已准备，654项Python与31项固定SDK验证通过，独立Review准备通过。
+当前observe PID76693独占双锁，auto_order/opening false，trade尚未安装或启动。
+owner明确将独立SimNow切换窗口限定为“夜盘品种全部收盘；无夜盘品种不参与”，不允许夜盘交易中切换；
+21:40权威45 TRADING/15 CLOSED仍阻断，最后夜盘Session预计10/30 02:30结束，届时须重新现场证明。
+不新增定时任务，不把候选准备当已部署或交易验收。详见[就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。
+
 10/29 工作树新鲜复核：SimNow observe-readiness 会话归档后，原任务目录及Git worktree登记均已消失；
 当前仅保留develop、现役release-v1.16.35和有未合并研究的JM30三树。本次只读核对未操作正式服务，
 不以工作树清理证明新的Runtime或账户验收。下方19:50“暂留”为当时检查点。

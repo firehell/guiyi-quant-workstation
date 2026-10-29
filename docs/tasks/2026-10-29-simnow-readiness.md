@@ -1,5 +1,35 @@
 # SimNow晚盘前只读就绪
 
+## 21:35后：账户接管核验与固定trade候选准备
+
+Owner继续交办第一步账户接管条件核验、第二步固定trade候选准备与部署。v1.16.35
+exact `82a8031470009249acccb83b9911a374af70ca00` 的相关执行代码与develop一致，发布树干净；
+无新版本发布、正式十服务切换或Broker报撤单。
+
+- 两个不同新鲜原生来源通过原账本重放、交易入口归属检查及内存 `Recover`；权益/可用均100043.92，
+  原生和账本持仓/委托/成交、发送claims、待核回调/成交、未释放预留均为0。未把恢复写入运行账本；
+  60个品种的新输入门禁保留，不能称trade宿主已接管。
+- 已生成0600固定schema2/trade配置及同label `--trade` plist候选，绑定既有账户anchor与原四库；
+  现役observe配置、plist、监控绑定已留前像。候选 `enabled=true` 仅为部署目标，文件只落于output，
+  未安装或启动，不改变现役 `auto_order=false`。
+- SDK无Broker `--trade --check`、四库身份与scope、render/preflight通过；`writer_idle=false`，
+  现役observe PID76693独占全局账户锁和原host.lock。账户/dispatch及attempts/blocks摘要未改变。
+- 固定候选相关Python回归654 passed（41.18秒），真实SDK结构/假API无网络31 passed；
+  独立Review另跑service/recovery ownership 13 passed，未发现确认问题。其结论为准备通过、部署未完成。
+- 初次只读窗口脚本提前导入数据库模块导致未携带安全配置；按现役supervisor加载后re-exec修正，
+  未改生产配置，未消耗Broker连接预算。21:40权威读回45 TRADING/15 CLOSED，不允许切换。
+
+Owner随后明确选择“仍等夜盘品种全部收盘后切换；无夜盘品种不参与窗口判断”。独立SimNow部署窗口
+改为 `simnow_night_only_deployment_window_v1`，以权威Session夜盘元数据确定集合，不放宽夜盘收盘、
+账户恢复、双锁或品种新输入门禁。当前夜盘最后Session计划于10/30 02:30北京时间结束；这只是窗口预测，
+必须届时新鲜核验，不能当成部署完成或自动启动许可；本次未新增定时任务。
+
+证据：`output/simnow-trade-deployment-20261029/`，第一步原件在
+`output/simnow-observe-readiness-20261029/trade-takeover-*.json`。本轮状态为候选已准备、
+实际部署等待夜盘收盘窗口。切换前重新核对账户/预算/配置前像，协作停observe、证明双锁释放并取得
+`writer_idle=true`，然后同label切换；失败保留四库/claims/block，以兼容同账本的observe或manage恢复，
+不重置预算、不补历史信号。真实新信号和开平成交仍属后续独立验收。
+
 Owner明确交办修复SimNow未就绪，目标10/29晚盘21:00前；保留observe、旧账户/dispatch、旧attempts/block，无结算确认、报撤单、Adapter或auto_order。行情/Reference/Scope不改，不用重置预算或账本取得表面就绪。
 
 当前v34/gen40、独立observe PID27497；日29预算3已用尽，日30原生preopen20:58起允许连接，柜台可用性和双轮新鲜快照必须实测。当前只准备工程，不提前绕过连接窗口。
