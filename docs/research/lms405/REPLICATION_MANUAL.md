@@ -1,8 +1,16 @@
 # L.M.S 4.0.5 复刻研究说明
 
+## 2026-10-29人工确认连续回放
+
+新流程 `lms-confirmed-replay-v1` 已实现核心、离线确认草稿及可恢复回放，规则是本项目新增研究假设。无ACCEPT不推进；下一completed输入Bar可用即过期，同刻过期优先；状态在known_at生效，不能回填形态K。确认记录精确绑定建议和当前状态，空仓不开仓、保护不反手、原方向不变。旧静态预览与历史产物保持冻结。
+
+[任务与实际验证](CONFIRMED_REPLAY_TASK_20261029.md)包含CLI用法边界、样本统计及独立Review。最终本地报告在仓库`output/lms-confirmed-final-verified-20261029/`：A138/B573/C138根，用户确认均0、转换均0；独立fixture演示不计人工市场操作。API环境158 passed、1 skipped，渲染另以系统Python验证。页面实际点击受宿主file协议限制尚未验，保留PARTIAL / EXTERNAL_GATE_PENDING，不将CLI通过表述为浏览器闭环。
+
+下一项为[首次入场与退出的独立候选合同](REMAINING_RULES.md)，不自动挑选MA/ATR、止盈、仓位、执行或OOS规则。Fill与收益保持null。
+
 ## 2026-10-29保护与恢复：显式近似建议层
 
-[打开四个状态前像的建议预览](evidence/protection-proposals-jm2509-20261029/index.html) · [全部评估CSV](evidence/protection-proposals-jm2509-20261029/proposals.csv) · [规则、输入与指纹JSON](evidence/protection-proposals-jm2509-20261029/report.json)。本轮先完成两种恢复模式共用的建议层：只输出建议，研究状态由外部明确给定，**不自动应用建议**。人工确认/自动恢复选择尚未获得用户回复，未据此新增任何自动状态推进或实际确认事件。
+[打开四个状态前像的建议预览](evidence/protection-proposals-jm2509-20261029/index.html) · [全部评估CSV](evidence/protection-proposals-jm2509-20261029/proposals.csv) · [规则、输入与指纹JSON](evidence/protection-proposals-jm2509-20261029/report.json)。本轮先完成两种恢复模式共用的建议层：只输出建议，研究状态由外部明确给定，**不自动应用建议**。用户已选择“先输出保护/恢复建议，人工确认后才改变研究状态”。连续确认流程使用独立身份 `lms-confirmed-replay-v1`，不是作者原规则；无用户确认时仍不推进。实施与验证检查点见 [本轮任务](CONFIRMED_REPLAY_TASK_20261029.md)，完整策略缺口见 [剩余规则矩阵](REMAINING_RULES.md)。
 
 新身份`lms-protection-proposal-v1`，底层形态仍为`lms-keybar-approx-v1`；不修改原版4.0.5工具、旧inspired候选、关键K公式或结构解释版本。E41只支持等量双腿锁定、平反向腿恢复的动作语义；F05/F06保留作者手动处理的线索，不能推广为所有年份/品种。以下触发、时序和前像约束均为本候选补全假设，不是原作者完整规则。
 
