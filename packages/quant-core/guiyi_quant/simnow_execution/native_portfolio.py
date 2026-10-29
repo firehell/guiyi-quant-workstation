@@ -23,6 +23,44 @@ from .facts import (
 from .inventory import read_snapshot
 
 
+_INPUT_CODES = frozenset({
+    "AUTHORITATIVE_CONTRACT_MISSING", "AUTHORITATIVE_SESSION_MISSING",
+    "AUTHORITATIVE_FOUR_DIGIT_CONTRACT_REQUIRED", "AUTHORITATIVE_PRODUCT_INVALID",
+    "NATIVE_PRODUCT_EXCHANGE_UNSUPPORTED", "NATIVE_CONTRACT_LIFECYCLE_AMBIGUOUS",
+    "NATIVE_CONTRACT_NOT_TRADABLE", "ONE_LOT_ORDER_UNSUPPORTED",
+    "NATIVE_BOOK_TARGET_MISSING", "NATIVE_BOOK_TARGET_AMBIGUOUS",
+    "NATIVE_BOOK_IDENTITY", "NATIVE_BOOK_MILLISECOND", "NATIVE_BOOK_STALE",
+    "NATIVE_BOOK_QUANTITY", "NATIVE_RATE_IDENTITY", "NATIVE_FACT_NUMBER_INVALID",
+    "ABSOLUTE_SPECULATIVE_MARGIN_REQUIRED", "PER_LOT_MARGIN_PROFILE_UNSUPPORTED",
+    "NATIVE_RATE_FACTS_INCOMPLETE", "NATIVE_FACT_QUERY_FAILED", "NATIVE_GATEWAY_FAILED",
+    "NATIVE_RATE_REQUEST_EXCHANGE_UNSUPPORTED",
+})
+
+
+def safe_native_queries(records):
+    """Bounded protocol evidence only; never copy native rows or exception text."""
+    result = []
+    for record in records[-8:]:
+        if record.get("kind") not in {"instrument", "margin", "commission", "book", "settlement", "confirm"}:
+            continue
+        value = {"kind": record["kind"]}
+        for key in ("request_id", "sdk_return_code", "response_count", "data_row_count"):
+            if type(record.get(key)) is int:
+                value[key] = record[key]
+        for key in ("terminal_response_seen", "complete", "timed_out"):
+            if type(record.get(key)) is bool:
+                value[key] = record[key]
+        if "callback_error" in record:
+            error = record["callback_error"]
+            value["callback_error"] = error if error is None or type(error) is str and error in {
+                "NATIVE_FACT_RESPONSE_IDENTITY", "NATIVE_FACT_QUERY_REJECTED",
+                "NATIVE_FACT_FIELD_INVALID", "NATIVE_FACT_ACCOUNT_MISMATCH",
+                "NATIVE_FACT_SCOPE_MISMATCH", "NATIVE_FACT_ROW_LIMIT",
+            } else "UNKNOWN"
+        result.append(value)
+    return result
+
+
 class ReadJournal(Journal):
     """Reuse dispatch identity readers with a genuinely read-only SQLite handle."""
 
@@ -64,6 +102,8 @@ class NativePortfolio:
         self.report = None
         self.cache = {}
         self.last_facts = {}
+        self.input_diagnostics = {}
+        self.previous_queries = []
         self.cursor = 0
         self.stage = "NOT_CONNECTED"
 
@@ -90,6 +130,8 @@ class NativePortfolio:
     def failure_diagnostics(self):
         return dict(
             stage=self.stage,
+            input_diagnostics=dict(self.input_diagnostics),
+            native_queries=safe_native_queries(self.gateway.query_diagnostics or self.previous_queries) if self.gateway is not None else [],
             inventory=self.gateway.inventory_diagnostics()
             if self.gateway is not None
             else None,
@@ -117,6 +159,7 @@ class NativePortfolio:
 
     def snapshot(self):
         self.stage = "ACCOUNT_SNAPSHOT"
+        self.previous_queries = safe_native_queries(self.gateway.query_diagnostics)
         self.gateway.query_diagnostics.clear()
         try:
             self.report = self.gateway.snapshot()
@@ -132,12 +175,14 @@ class NativePortfolio:
     def binding(self, product, contract, market, now, day):
         from datetime import datetime
 
+        self.stage = "MARKET_AUTHORITY"
         authority = market.authority(
             product, datetime.strptime(day, "%Y%m%d").date(), now, contract
         )
         key = (day, authority.contract)
         cached = self.cache.get(key)
         if cached is None or now >= cached[0].valid_until:
+            self.stage = "NATIVE_INSTRUMENT"
             rows = self.gateway.query(
                 "instrument",
                 exchange=authority.exchange,
@@ -169,7 +214,9 @@ class NativePortfolio:
 
     def prepare_facts(self, product, contract, market, day):
         bound, metadata = self.binding(product, contract, market, self.now(), day)
+        self.stage = "NATIVE_MARGIN"
         mar = self.gateway.query("margin", bound.native, exchange=bound.exchange)
+        self.stage = "NATIVE_COMMISSION"
         com = self.gateway.query("commission", bound.native, exchange=bound.exchange)
         if len(mar) != 1 or len(com) != 1:
             raise ValueError("NATIVE_RATE_FACTS_INCOMPLETE")
@@ -181,6 +228,7 @@ class NativePortfolio:
         bound, metadata, margin, commission = prepared
         product = re.match(r"[A-Z]+", bound.canonical)[0]
         # Query book last, so rate queries cannot silently consume its three-second TTL.
+        self.stage = "NATIVE_BOOK"
         rows = self.gateway.query("book", bound.native)
         received = self.now()
         quote = quote_from_native_batch(bound, rows, day, received)
@@ -198,14 +246,20 @@ class NativePortfolio:
     def observe_next(self, products, market, now, day, issues):
         product = products[self.cursor % len(products)]
         self.cursor += 1
+        self.stage = "OBSERVE_INPUT"
         try:
             self.facts(product, None, market, day)
-        except Exception:
+        except Exception as exc:
+            self.input_diagnostics[product] = {
+                "at": self.now().isoformat(), "stage": self.stage,
+                "code": str(exc) if type(exc) is ValueError and str(exc) in _INPUT_CODES else "EXECUTION_INPUT_UNPROVEN",
+            }
             if self.transport_failed:
                 raise ValueError("NATIVE_TRANSPORT_FAILED") from None
             issues[product] = "EXECUTION_INPUT_UNPROVEN"
         else:
             issues.pop(product, None)
+            self.input_diagnostics.pop(product, None)
 
     def execution_for(
         self, state, market, now, day, issues, *, opening_allowed=False, refresh=None
