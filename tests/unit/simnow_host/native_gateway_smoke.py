@@ -83,6 +83,66 @@ class Compatibility(unittest.TestCase):
     def tearDown(self):
         self.pause.stop()
 
+    def test_optional_observe_throttle_is_not_a_global_connection_failure(self):
+        for code in (-2, -3):
+            self.g.api.ReqQryInstrument = lambda *_: code
+            with self.g.observe_input_queries():
+                with self.assertRaisesRegex(ValueError, "NATIVE_FACT_QUERY_THROTTLED"):
+                    self.g.query("instrument", exchange="SHFE", product="rb")
+            self.assertFalse(self.g.failed)
+            self.assertFalse(self.g.query_diagnostics[-1]["complete"])
+            self.g.api = Api(self.g)
+            rows = self.g.query("instrument", exchange="SHFE", product="rb")
+            self.assertEqual(len(rows), 1)
+
+    def test_optional_observe_does_not_isolate_contradictory_or_unknown_failures(self):
+        with self.g.observe_input_queries():
+            def contradiction(req, rid):
+                Api(self.g).ReqQryInstrument(req, rid)
+                return -2
+            self.g.api.ReqQryInstrument = contradiction
+            with self.assertRaisesRegex(ValueError, "NATIVE_FACT_QUERY_FAILED"):
+                self.g.query("instrument", exchange="SHFE", product="rb")
+        self.assertTrue(self.g.failed)
+
+    def test_optional_observe_throttle_all_product_kinds_and_late_callback(self):
+        for kind, args, kwargs in [('instrument', (), dict(exchange='SHFE', product='rb')),
+                                   ('margin', ('rb2701',), dict(exchange='SHFE')),
+                                   ('commission', ('rb2701',), dict(exchange='SHFE')),
+                                   ('book', ('rb2701',), {})]:
+            for code in (-2, -3):
+                gateway = m.Gateway('000000', 'fixture-only')
+                gateway.api = NS(**{m._METHODS[kind]: lambda *_: code})
+                with gateway.observe_input_queries():
+                    with self.assertRaisesRegex(ValueError, 'NATIVE_FACT_QUERY_THROTTLED'):
+                        gateway.query(kind, *args, **kwargs)
+                self.assertFalse(gateway.failed)
+                self.assertEqual(gateway.query_diagnostics[-1]['response_count'], 0)
+                gateway._extra_response(kind, None, None, gateway.extra['id'], True)
+                self.assertTrue(gateway.failed)  # An impossible late callback is fatal.
+
+    def test_optional_observe_unknown_server_rejection_stays_fatal(self):
+        def rejected(req, rid):
+            info = t.CThostFtdcRspInfoField()
+            info.ErrorID = 7
+            self.g.OnRspQryInstrument(None, info, rid, True)
+            return 0
+        self.g.api.ReqQryInstrument = rejected
+        with self.g.observe_input_queries():
+            with self.assertRaises(ValueError):
+                self.g.query('instrument', exchange='SHFE', product='rb')
+        self.assertTrue(self.g.failed)
+
+    def test_optional_observe_disconnect_wins_over_throttle(self):
+        def disconnected(*_):
+            self.g.fail('FRONT_DISCONNECTED')
+            return -3
+        self.g.api.ReqQryInstrument = disconnected
+        with self.g.observe_input_queries():
+            with self.assertRaisesRegex(ValueError, 'NATIVE_FACT_QUERY_FAILED'):
+                self.g.query('instrument', exchange='SHFE', product='rb')
+        self.assertTrue(self.g.failed)
+
     def test_first_snapshot_uses_grace_once_then_default_timeout(self):
         calls = []
         gateway = m.Gateway("000000", "fixture-only", initial_funds_timeout=45)
