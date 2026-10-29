@@ -88,3 +88,7 @@ https://github.com/firehell/guiyi-quant-workstation/pull/536 。未合main、未
 状态HOST_APPROVAL_BLOCKED，仅阻断自动调度；人工当前交办的工程/恢复目标授权没有撤销，仍可在后续主动续接时执行。
 需owner明确批准“一次性自动续接并执行闭市发布、AL生产恢复和Runtime切换”后按宿主流程复核；
 原continuation claim、runtime-pins、closeout-1均未创建，不将调度拒绝记为业务attempt失败。
+
+最终盘中Reference只读GET（私有reference-health-final.private.json）：pending436、BLOCKED1、UNKNOWN0，
+last_calculated_at=2026-10-29T02:15:47.526861Z。此为新边界后的整体积压，不能把09:28的pending2当成当前值，
+也不能未经逐流枚举就把436全部归因AL；闭市后须实际核对原生队列全量追齐。

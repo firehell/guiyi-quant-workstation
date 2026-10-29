@@ -4,7 +4,8 @@
 `122327709888b1c4d74557717c3c461387ab1f76`，草稿[PR536](https://github.com/firehell/guiyi-quant-workstation/pull/536)。
 候选1282项Reference/原生交接、8项真实隔离PG、7项health/version、冻结真实AL官方组合输出/checkpoint逐值对照、
 独立安全Review及离线锁定构建通过。仅完成候选；**未发布、未切换、未执行生产续接**，现役v1.16.32/gen38。
-09:28未解决BLOCKED1/pending2/UNKNOWN0，其他前台推进；10:12只读健康十身份matched，DB/Redis/Live/Alert处理ok，
+最终盘中Reference只读：未解决BLOCKED1/pending436/UNKNOWN0，最近计算10:15:47；不可再用原pending2描述当前积压。
+10:12只读健康十身份matched，DB/Redis/Live/Alert处理ok，
 整体degraded保留，不能宣称AL及历史刷新恢复。盘中无正式服务重启。
 正式操作留待fresh全CLOSED及宽限结束：先发布补丁，在旧owner停写持锁下精确续接AL、独立验证并原生追齐，
 再创建新cohort计划切换，最后验收历史刷新及10秒退出恢复。任务临时15490 PG及匿名卷已删除。
