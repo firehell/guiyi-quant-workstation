@@ -4,7 +4,8 @@ The original claim is immutable. A second exclusive marker in the SAME namespace
 permits exactly one continuation; neither normal apply nor polling grants it.
 """
 
-from dataclasses import replace
+from contextvars import ContextVar
+from dataclasses import dataclass, replace
 from datetime import datetime
 from hashlib import sha256
 import json
@@ -17,6 +18,19 @@ from app.reference_trading.models import (
     ReferenceRevision as R,
     ReferenceStream as S,
     ReferenceInboxRecoveryResult as Result,
+)
+
+
+@dataclass
+class _CommitPermit:
+    recovery: object
+    plan_hash: str
+    session: object | None = None
+    used: bool = False
+
+
+_ACTIVE: ContextVar[_CommitPermit | None] = ContextVar(
+    "al_rollback_commit", default=None
 )
 
 
@@ -69,7 +83,23 @@ def _directory_fd(path):
 
 
 def _marker(recovery, delivery_id):
+    require(
+        len(delivery_id) == 64 and all(c in "0123456789abcdef" for c in delivery_id)
+    )
     return recovery.attempt_dir / (delivery_id + ".rollback-continuation.json")
+
+
+def reject_parent_after_continuation(recovery, plan):
+    target = _marker(recovery, plan.delivery_id)
+    directory_fd = _directory_fd(recovery.attempt_dir)
+    try:
+        try:
+            os.stat(target.name, dir_fd=directory_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+    finally:
+        os.close(directory_fd)
+    raise ValueError("REFERENCE_ROLLBACK_PARENT_REUSE_FORBIDDEN")
 
 
 def verify_link(proof, capture_id):
@@ -136,7 +166,17 @@ def _verify_link(proof, capture_id):
         )
 
 
-def check_marker(recovery, plan):
+def check_marker(recovery, plan, *, session):
+    permit = _ACTIVE.get()
+    if permit is None:
+        raise ValueError("REFERENCE_ROLLBACK_ACTIVE_COMMIT_REQUIRED")
+    require(
+        permit.recovery is recovery
+        and permit.plan_hash == plan.plan_hash
+        and permit.session is session
+        and not permit.used,
+        "REFERENCE_ROLLBACK_ACTIVE_COMMIT_REQUIRED",
+    )
     expected = {
         "version": "al_proven_rollback_v1",
         "plan_hash": plan.plan_hash,
@@ -147,6 +187,7 @@ def check_marker(recovery, plan):
         json.loads(_private_bytes(_marker(recovery, plan.delivery_id))) == expected,
         "REFERENCE_ROLLBACK_CLAIM_REQUIRED",
     )
+    permit.used = True
 
 
 def check_external(recovery, plan):
@@ -348,21 +389,27 @@ def apply_continuation(
         _db_proof(recovery, db, plan)
     _claim_continuation(recovery, plan)
     repo = ReferenceRepository(recovery.factory, fault_injector=fault_injector)
+    permit = _CommitPermit(recovery, plan.plan_hash)
 
     def guard(db, stream_id):
         _db_proof(recovery, db, plan)
         if commit_guard is not None:
             commit_guard(db, stream_id)
+        permit.session = db
 
+    context = _ACTIVE.set(permit)
     try:
-        ForwardReferenceService(repo, evaluator, commit_guard=guard).process_pending(
-            plan.capture.stream_id, inbox_recovery=(recovery, plan)
-        )
-    except Exception:
-        existing = recovery.readback(plan)
-        if existing is not None:
-            return existing
-        raise ValueError("REFERENCE_ROLLBACK_OUTCOME_UNKNOWN") from None
+        try:
+            ForwardReferenceService(
+                repo, evaluator, commit_guard=guard
+            ).process_pending(plan.capture.stream_id, inbox_recovery=(recovery, plan))
+        except Exception:
+            existing = recovery.readback(plan)
+            if existing is not None:
+                return existing
+            raise ValueError("REFERENCE_ROLLBACK_OUTCOME_UNKNOWN") from None
+    finally:
+        _ACTIVE.reset(context)
     result = recovery.readback(plan)
     require(result is not None, "REFERENCE_ROLLBACK_READBACK_REQUIRED")
     return result

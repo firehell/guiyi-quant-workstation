@@ -1254,6 +1254,10 @@ automatic retries and namespace changes SHALL NOT grant another attempt. A faile
 unknown continuation SHALL consume its sole claim; only exact committed-result readback
 may subsequently succeed. Source verification SHALL not acquire Reference row locks in
 another session; the commit guard SHALL use the existing transaction's session.
+The continuation closure SHALL additionally require a live, one-use admission bound to
+the exact invocation, plan and successfully guarded commit Session; a durable marker alone
+SHALL NOT authorize direct service submission. Once the continuation claim exists, a
+parent plan SHALL NOT authorize another submission through the lower-level service.
 An `HTDY_WINDOW_UNAVAILABLE` delivery MAY use this same closure only for the exact accepted
 HTDY 60m identity and an original-bound capture that passes all existing source, window,
 checkpoint, receipt, fence and atomic calculation checks. Other identities and genuinely

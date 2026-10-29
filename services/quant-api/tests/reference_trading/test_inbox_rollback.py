@@ -415,3 +415,49 @@ def test_attempt_parent_directory_cannot_be_replaced_by_symlink(tmp_path):
         )
     assert r.readback(p) is None
     assert not (moved / (parent.delivery_id + ".rollback-continuation.json")).exists()
+
+
+def test_failed_continuation_marker_cannot_authorize_direct_service_retry(tmp_path):
+    from app.reference_trading.forward_service import ForwardReferenceService
+
+    factory, repo, inbox, r, parent, cid, evaluate = prepared(tmp_path)
+    p = r.plan_rollback_continuation(
+        parent, capture_id=cid, expires_at=parent.expires_at
+    )
+
+    def fail(stage):
+        if stage == "after_actions":
+            raise RuntimeError("injected")
+
+    with pytest.raises(ValueError, match="OUTCOME_UNKNOWN"):
+        r.apply_rollback_continuation(
+            p, expected_plan_hash=p.plan_hash, evaluator=evaluate, fault_injector=fail
+        )
+    with pytest.raises(Exception):
+        ForwardReferenceService(repo, evaluate).process_pending(
+            parent.capture.stream_id, inbox_recovery=(r, p)
+        )
+    assert r.readback(p) is None
+
+
+def test_failed_continuation_cannot_fall_back_to_still_valid_parent_service(tmp_path):
+    from app.reference_trading.forward_service import ForwardReferenceService
+
+    factory, repo, inbox, r, parent, cid, evaluate = prepared(tmp_path)
+    p = r.plan_rollback_continuation(
+        parent, capture_id=cid, expires_at=parent.expires_at
+    )
+
+    def fail(stage):
+        if stage == "after_actions":
+            raise RuntimeError("injected")
+
+    with pytest.raises(ValueError, match="OUTCOME_UNKNOWN"):
+        r.apply_rollback_continuation(
+            p, expected_plan_hash=p.plan_hash, evaluator=evaluate, fault_injector=fail
+        )
+    with pytest.raises(Exception):
+        ForwardReferenceService(repo, evaluate).process_pending(
+            parent.capture.stream_id, inbox_recovery=(r, parent)
+        )
+    assert r.readback(p) is None
