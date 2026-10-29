@@ -1,5 +1,12 @@
 # 当前状态
 
+10/29 19:50：按owner要求完成旧v34原生封存及non-force移除，发布树仅保留现役
+**release-v1.16.35**（exact `82a8031470009249acccb83b9911a374af70ca00`，十服务gen41）。
+已合并Reference/AL任务树已归档，246份output原件保全；SimNow发布回合并PR542已集成develop，
+133份output原件保全，但该树被应用标记为本会话主工作区，原生工具拒绝移除，故暂留。
+JM30研究树有8个未合并提交，继续保留。没有清理行情、账户或恢复原件；现役源码根不变。
+以下为此前检查点。
+
 10/29 19:00：选择性v1.16.35已发布，正式十服务通过全新原生cohort `c81c3400…`切至gen41，
 exact `82a8031470009249acccb83b9911a374af70ca00`；独立SimNow observe同版本PID76693。
 两次独立版本/进程/HTTP/Reference读回通过，1140READY、pending/BLOCKED/UNKNOWN/dependency_wait为0；
