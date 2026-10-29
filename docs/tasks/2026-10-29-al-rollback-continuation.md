@@ -28,3 +28,8 @@ Owner已批准实现、测试、Review、闭市发布与现场恢复。基线dev
 - 现场operator私有草稿output/al-rollback-20261029/closeout.py；部署锁+三owner FD锁/同inode、全CLOSED/宽限、exact bindings/控制/PID，
   fresh证明旧215596/215597 backend不存在、绑定旧cancel intent/独立rollback证据及原claim；来源持真实stream行锁预检先于claim。
   所有本次drain在finally精确cancel并独立确认同PID active；无runtime-pins之前不能执行，尚未运行生产续接。
+- 独立Astra Review最终允许3b94bd403集成develop；operator两项P1/P2已修正：停驻前持原生after_market/catalog维护guard，
+  三个prior control仅接受None或合法cancelled终态且逐项CAS核对；finally维护guard先释放再恢复owner。
+  最终operator SHA95e31153fbc22768f30f58eb192481beecb33451b6a1a2b00c1f99399869be9d经独立AST/哈希/控制流Review通过。
+  若新cohort遗留自身旧代drain，须先凭本次switched终态、原requestID及旧PID退出证明完成精确cancel收尾，不能覆盖其他请求。
+- CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE；生产AL仍待下一次合法闭市窗口执行，未发布、未切换、未消费续接claim。
