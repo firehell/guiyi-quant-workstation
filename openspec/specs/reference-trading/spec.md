@@ -1241,6 +1241,19 @@ expiry, stopped-writer fence and its fixed private attempt namespace. A delivery
 exclusive, no-follow, fsynced claim SHALL precede any mutation. Unknown results consume
 that claim; changing the plan or namespace SHALL NOT authorize another attempt. A complete
 independent exact readback MAY return a prior committed result without another mutation.
+A separately versioned `al_proven_rollback_v1` continuation MAY be explicitly planned only
+for the accepted AL HTDY 60m identity after stopped-writer fencing and independent proof
+that the old transactions ended, no calculation or closure committed, the checkpoint did
+not advance, and the unique original capture remains unconsumed. It SHALL retain the old
+claim and namespace, bind its parent plan/claim hashes and capture identity into the new
+JSON proof, and consume a separate exclusive fsynced continuation claim in that same
+namespace before mutation. It SHALL reuse that capture and commit the calculation,
+projections, checkpoint and closure atomically. Every closure reader SHALL validate the
+continuation linkage; normal apply SHALL reject continuation plans. Recursive continuation,
+automatic retries and namespace changes SHALL NOT grant another attempt. A failed or
+unknown continuation SHALL consume its sole claim; only exact committed-result readback
+may subsequently succeed. Source verification SHALL not acquire Reference row locks in
+another session; the commit guard SHALL use the existing transaction's session.
 An `HTDY_WINDOW_UNAVAILABLE` delivery MAY use this same closure only for the exact accepted
 HTDY 60m identity and an original-bound capture that passes all existing source, window,
 checkpoint, receipt, fence and atomic calculation checks. Other identities and genuinely
