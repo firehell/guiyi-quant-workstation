@@ -1,5 +1,18 @@
 # 当前状态
 
+10/29 12:20：AL恢复与吞吐增量已通过PR536正式发布 **v1.16.33**，annotated tag/Release/main exact
+`d1c0e74f0a14e7edf0acc8311f8ab457da50b726`；全新原生cohort `03261e46…`终态switched，十服务统一 **gen39**。
+AL显式单次续接原子成功，新link及冻结checkpoint独立逐值一致，原BLOCKED/父claim保留；后续输入已原生追齐。
+12:06/12:14两次独立读回1140/1140 READY，未解决BLOCKED/pending/UNKNOWN/capture均0，原件游标全部追尾；
+六新owner active，API/Web200，DB/Redis/Live正常。v33 Reference **1.1807秒**安全退出、同PID恢复，1140路checkpoint不变，
+本次全部维护drain已精确撤销。历史刷新实际运行且v33已健康完成一批；错误分层修正、恢复校验约1.1秒→0.75–0.86秒。
+1284项Reference/交接、候选7项真实隔离PG、冻结AL逐值、独立Review、定向类型/Ruff与Web构建通过；临时PG及匿名卷已清理。
+切换后60品种本交易日至午休source1m15090/completed19945原件对权威端点：缺失/多余/重复均0。Scope/公式/通知不变，无补发/行情补写。
+当前BREAK，下午13:30新gen39自然输入/信号/参考交易与吞吐待验；Alert processing ok，300分钟路由unverified、113 ok/7 warming_up，
+global仍degraded，不能宣称全量RUNTIME_READY。weekly全历史not_run、120条苏冰历史策略基线缺失另列，不等于行情缺失或本次已补建。
+SimNow observe保持，午休WAITING_SESSION/opening=false/monitor partial；其固定引用v32，故保留该树。无新增自动化。
+详情与首轮维护锁顺序错误、安全中止及修复证据见[AL现场交付](docs/tasks/2026-10-29-al-rollback-continuation.md)。以下为此前检查点。
+
 10/29 10:15：AL已证回滚单次续接修复已集成并推送develop `eb417e6d15`；选择性 **v1.16.33候选**
 `122327709888b1c4d74557717c3c461387ab1f76`，草稿[PR536](https://github.com/firehell/guiyi-quant-workstation/pull/536)。
 候选1282项Reference/原生交接、8项真实隔离PG、7项health/version、冻结真实AL官方组合输出/checkpoint逐值对照、
