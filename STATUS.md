@@ -1,5 +1,13 @@
 # 当前状态
 
+10/30 11:10午间候选最终固定：v1.16.37候选exact `2b5c7c8de09b9beabb8223392f99770ef4c72a6c`，
+PR544已ready/mergeable，相对main12文件=11已审查源工程文件+版本元数据；源37cb281075已集成develop。
+候选自身800回归（52.13秒）、SDK33、mypy4、Ruff、离线锁、Web构建及exact候选独立Review通过。
+新私有配置/同label plist/0700 attempt1在output/simnow-midday-switch-20261030，正式只读preflight通过，
+原observe仍持锁；没有plan/intent/grant/claim，没有新增Broker连接。11:35一次性simnow任务已更新
+精确候选与owner单次例外授权，先重核现场窗口/新鲜空账户/预算与双锁，再发布切换；当前未发布v37/未切换。
+API只读source锚保持旧observe配置，实际trade模式由实时index证明；正式十服务保持v35/gen41。
+
 10/30 11:03：owner明确选方案1，仅本次午间部署额外1次连接。端到端例外已实现并通过
 800项相关回归（48.58秒）、SDK33、4模块mypy、Ruff及独立192项安全Review；原attempts3不变，
 plan v3绑定固定候选/配置/唯一intent，首次run先持久绑定、下午连接前单次持久消费，失败/重启不返还。

@@ -272,3 +272,12 @@ block不豁免，失败/重启/重复apply无第二次额度，次日普通3次�
 监控source保留原observe只读身份锚（旧API只支持旧格式），新真实mode从index读取；真实4库兼容回归通过，
 没有修改正式API源码或十服务。新候选私有config/plist/state-dir在output/simnow-midday-switch-20261030/，
 尚未生成grant或执行意图、未安装启动。等待候选重新固定验证与11:35现场窗口。
+
+11:10最终v37候选2b5c7c8de09b9beabb8223392f99770ef4c72a6c已commit/push，干净，PR544 ready且mergeable。
+相对main74d01145恰12文件，11工程文件与37cb281075逐字一致，额外仅version.py37。候选自身800passed52.13s、
+SDK33、mypy4、Ruff、uv离线锁、Web类型/构建/拓扑通过；独立候选110及最终exact身份Review通过。
+私有config --trade --check与正式service --preflight-trade通过：60/candidate_valid，writer_idle=false因原observe持锁，
+broker_io/execution_permitted=false。v37尚无tag前正式工具CANDIDATE_UNPROVEN为预期门禁，不提前造tag绕过；
+11:08新工具绑定现有固定v36仅--window midday --check已真实返回全60 TRADING/窗口未开，下一下午13:30。
+一次性heartbeat simnow已更新，11:35现场通过后发布新tag及只切独立服务，绑定新config/plist/attempt1与planv3。
+此时grant/intent/claim/plan均不存在，未新增Broker连接、未安装启动；候选发布与自然验收仍分开。
