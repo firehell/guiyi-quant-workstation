@@ -62,11 +62,11 @@ async function readProjection(resetPoll = true) {
   }
 }
 const strategy = ref<HomeStrategy>('trend')
-const expanded = ref(new Set<string>())
+const expanded = ref<string | null>(null)
 const sortedRows = computed(() => isNewowHomeSort(props.sort) ? sortNewowHomeRows(props.rows, deliveries.value, strategy.value, props.sort, props.sortDirection) : props.rows)
 const projectionColumns = [{ key: 'target', label: '目标价', rule: '按当前显示的目标或吸筹参考价' }, { key: 'daily', label: '日', rule: '降序为建仓、持有、清仓、空仓' }, { key: 'weekly', label: '周', rule: '降序为建仓、持有、清仓、空仓' }, { key: 'trend', label: '趋势', rule: '降序为向上、向下；MA60近似方向' }] as const
 function columnSortLabel(key: MarketHomeSort, label: string) { return `${label}排序，当前${props.sort === key ? props.sortDirection === 'desc' ? '降序' : '升序' : '默认'}；点击切换降序、升序、默认，缺失值置后` }
-function toggleSummary(symbol: string) { const next = new Set(expanded.value); if (next.has(symbol)) next.delete(symbol); else next.add(symbol); expanded.value = next }
+function toggleSummary(symbol: string) { expanded.value = expanded.value === symbol ? null : symbol }
 const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
 const periods = ['1d', '1w'] as const
 
@@ -116,7 +116,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
     <p v-if="summaryNotice" class="summary-notice" role="status">{{ summaryNotice }}</p>
     <slot name="status" />
     <article v-for="row in sortedRows" :key="row.symbol" class="strategy-list-item">
-      <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded.has(row.symbol)" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
+      <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded === row.symbol" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
         <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" :aria-label="`${hint.label}：${hint.title}。点击定位对应K线`" @click.stop="openChart(row.symbol,'1d',hint.focusBarEnd)">{{ hint.label }}</button><span v-if="homeCautionNotice(fact(row.symbol, '1d'))" class="row-hint-pending" role="status" :title="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined" :aria-label="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined">小心待确认</span></span></small></span></div>
         <div class="list-price" :class="priceTone(row)"><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
         <div class="list-change"><span :class="priceTone(row)">{{ change(row) }}</span></div>
@@ -138,7 +138,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
         <span v-if="pending(row.symbol)">等待最新周期更新</span>
         <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ periodDisplay(row.symbol, period).label }}</span>
       </div>
-      <section v-if="expanded.has(row.symbol)" :id="`home-summary-${row.symbol}`" class="list-composite" :aria-label="`${row.product_name}日周综合摘要`">
+      <section v-if="expanded === row.symbol" :id="`home-summary-${row.symbol}`" class="list-composite" :aria-label="`${row.product_name}日周综合摘要`">
         <div class="composite-card" :class="presentation(row.symbol).state?.toLowerCase() ?? 'pending'" role="link" tabindex="0" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}策略详情`" @click="openSummary(row)" @keydown.enter.self.prevent="openSummary(row)" @keydown.space.self.prevent="openSummary(row)">
           <p v-if="periods.some(period => periodNotice(row.symbol, period).historical)" class="summary-history" role="status"><template v-for="period in periods" :key="period"><span v-if="periodNotice(row.symbol, period).historical">{{ periodLabel(period) }}线历史：{{ periodNotice(row.symbol, period).text }} · {{ periodTime(row.symbol, period) }}</span></template></p>
           <div class="composite-heading" :title="`日线参考 · 截至 ${periodTime(row.symbol, '1d')}；周线截至 ${periodTime(row.symbol, '1w')}；策略状态，不代表账户成交`">
