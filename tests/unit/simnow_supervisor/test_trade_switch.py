@@ -55,6 +55,10 @@ class Backend:
                 scope_count=60,
                 databases=[1, 2, 3, 4],
                 scope_hash="s",
+                budget_day="20261030",
+                today_attempts=2,
+                remaining_attempts=1,
+                day_blocked=False,
                 attempts_hash="a",
                 blocks_hash="b",
                 dispatch_hash="d",
@@ -102,7 +106,9 @@ class Backend:
         self.calls.append("unguard")
 
     def offline_preflight(self, s):
-        return dict(writer_idle=True, journals_unchanged=True, preimage=s["preimage"])
+        return dict(
+            writer_idle=True, protected_state_unchanged=True, preimage=s["preimage"]
+        )
 
     def window_open(self):
         return self.window
@@ -476,17 +482,17 @@ def test_mac_snapshot_uses_pinned_sdk_no_broker_check(tmp_path):
     ]
 
 
-def test_mac_account_reads_real_four_journals_and_bound_monitor_proof(
-    tmp_path, monkeypatch
-):
+@pytest.fixture
+def real_account(tmp_path, monkeypatch):
     from dataclasses import replace
-    from datetime import timedelta
+    from datetime import datetime, UTC, timedelta
+    from types import SimpleNamespace
     from test_supervisor import setup as existing_fixture, ACCOUNT
     from guiyi_quant import htdy_account_execution as a
     from guiyi_quant.simnow_execution.journal import Journal
     from guiyi_quant.simnow_execution.inbox import SignalInbox
     from guiyi_quant.simnow_execution.evidence import Evidence
-    from guiyi_quant.simnow_execution.inventory import project_readback
+    from guiyi_quant.simnow_execution.inventory import project_readback, native_hash
     from guiyi_quant.simnow_execution.observe_reconciliation import build_proof
     from guiyi_quant.htdy_account_execution.codec import digest as state_digest
 
@@ -508,8 +514,19 @@ def test_mac_account_reads_real_four_journals_and_bound_monitor_proof(
     Journal(folder / "dispatch.sqlite", ACCOUNT).close()
     inbox = SignalInbox(folder / "signals.sqlite", ACCOUNT, products)
     inbox.close()
+    payload = original.data
+    for rows in payload.values():
+        for row in rows:
+            row["TradingDay"] = "20261030"
+    at = datetime(2026, 10, 30, 3, 30, tzinfo=UTC)
     native = replace(
-        original, trading_day="20261030", source_id="ctp-inventory:20261030:" + "c" * 64
+        original,
+        trading_day="20261030",
+        started_at=at - timedelta(seconds=2),
+        at=at,
+        payload_json=json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        source_id="ctp-inventory:20261030:"
+        + native_hash((ACCOUNT, "20261030", payload, at.isoformat())),
     )
     evidence = Evidence(folder / "native-evidence.sqlite", ACCOUNT)
     evidence.append(native)
@@ -525,8 +542,8 @@ def test_mac_account_reads_real_four_journals_and_bound_monitor_proof(
         "fixture-recover",
         a.Recover(rb, ()),
     ).state
-    now = native.at + timedelta(seconds=1)
-    proof = build_proof(state, native, recovered, "run-fixture", now)
+    clock = [native.at + timedelta(seconds=1)]
+    proof = build_proof(state, native, recovered, "run-fixture", clock[0])
     assert proof is not None
     index = dict(
         run_id="run-fixture",
@@ -534,25 +551,27 @@ def test_mac_account_reads_real_four_journals_and_bound_monitor_proof(
         mode="observe",
         native_source_id=native.source_id,
         ledger_hash=state_digest(state),
-        published_at=now.isoformat(),
+        published_at=clock[0].isoformat(),
         observe_reconciliation=proof,
+    )
+    control = dict(
+        run_id="run-fixture", mode="observe", opening_enabled=False, auto_order=False
     )
     for p, v in (
         (settings.state_root / "monitor.json", index),
-        (folder / "continuous.json", dict(run_id="run-fixture")),
+        (folder / "continuous.json", control),
     ):
         p.write_text(json.dumps(v))
         p.chmod(0o600)
 
-    class FakeDatetime:
+    class FakeDatetime(datetime):
         @staticmethod
         def now(tz):
-            return now
+            return clock[0]
 
     monkeypatch.setattr(m, "datetime", FakeDatetime)
     b = m.MacBackend.__new__(m.MacBackend)
-    b.settings = settings
-    b.folder = folder
+    b.settings, b.folder = settings, folder
     before = {
         name: (folder / name).read_bytes()
         for name in (
@@ -564,46 +583,147 @@ def test_mac_account_reads_real_four_journals_and_bound_monitor_proof(
     }
     result = b._account()
     assert result["scope_count"] == 60
-    assert not any(
-        result[k]
-        for k in (
-            "unknown_positions",
-            "unknown_orders",
-            "unknown_trades",
-            "reservations",
-        )
-    )
-    assert b.last_observe_index["observe_reconciliation"] == proof
     assert before == {name: (folder / name).read_bytes() for name in before}
-    # Freeze a real account/proof plan before STOPPED publication clears proof.
     b.code_check = lambda: None
     b._preimage = lambda: {}
+    b.locks = (tmp_path / "global.lock", folder / "host.lock")
+    for path in b.locks:
+        path.write_bytes(b"")
+        path.chmod(0o600)
     snapshot = Backend().value
+    snapshot["host"]["run_id"] = "run-fixture"
     snapshot.update(
         account=result,
         observe_index=copy.deepcopy(b.last_observe_index),
-        preimage=dict(account=result),
+        preimage=dict(
+            account=result,
+            locks=[
+                dict(path=str(p), device=p.stat().st_dev, inode=p.stat().st_ino)
+                for p in b.locks
+            ],
+        ),
     )
     b.snapshot = lambda: copy.deepcopy(snapshot)
     tmp_path.chmod(0o700)
-    coordinator = m.Coordinator(b, tmp_path, clock=lambda: now.timestamp())
+    coordinator = m.Coordinator(b, tmp_path, clock=lambda: clock[0].timestamp())
     plan = coordinator.plan()
-    assert plan["snapshot"]["observe_index"]["observe_reconciliation"] == proof
-    # STOPPED may clear proof; offline validation still requires the frozen proof fresh.
-    index.pop("observe_reconciliation")
-    (settings.state_root / "monitor.json").write_text(json.dumps(index))
-    (folder / "continuous.json").write_text(
-        json.dumps(dict(run_id="run-fixture", status="STOPPED"))
+
+    def stop(latest=native):
+        stopped_index = {
+            k: v for k, v in index.items() if k != "observe_reconciliation"
+        }
+        stopped_index.update(
+            status="STOPPED",
+            host_status="STOPPED",
+            native_source_id=latest.source_id,
+            published_at=clock[0].isoformat(),
+        )
+        (settings.state_root / "monitor.json").write_text(json.dumps(stopped_index))
+        (folder / "continuous.json").write_text(
+            json.dumps(dict(control, status="STOPPED", at=clock[0].isoformat()))
+        )
+
+    def offline():
+        with b.offline_guard(plan["snapshot"]):
+            return b.offline_preflight(plan["snapshot"])
+
+    # Only this isolated fixture's non-existent former host PID is simulated.
+    def gone(pid, sig):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(m.os, "kill", gone)
+    return SimpleNamespace(
+        b=b,
+        settings=settings,
+        folder=folder,
+        native=native,
+        state=state,
+        clock=clock,
+        plan=plan,
+        index=index,
+        stop=stop,
+        offline=offline,
+        before=before,
+        proof=proof,
     )
-    assert b.offline_preflight(plan["snapshot"])["writer_idle"] is True
-    now += timedelta(seconds=60)
+
+
+def appended(env, *, seconds=2):
+    from dataclasses import replace
+    from datetime import timedelta
+    from guiyi_quant.simnow_execution.inventory import native_hash
+
+    original = env.native
+    at = original.at + timedelta(seconds=seconds)
+    return replace(
+        original,
+        started_at=original.at,
+        at=at,
+        source_id="ctp-inventory:"
+        + original.trading_day
+        + ":"
+        + native_hash(
+            (original.account_id, original.trading_day, original.data, at.isoformat())
+        ),
+    )
+
+
+def insert_native(env, snapshot):
+    """Malformed rows are deliberately inserted only into isolated test SQLite."""
+    import sqlite3
+
+    fields = dict(
+        account_id=snapshot.account_id,
+        trading_day=snapshot.trading_day,
+        started_at=snapshot.started_at.isoformat(),
+        at=snapshot.at.isoformat(),
+        source_id=snapshot.source_id,
+        payload_json=snapshot.payload_json,
+    )
+    db = sqlite3.connect(env.folder / "native-evidence.sqlite")
+    try:
+        db.execute(
+            "INSERT INTO snapshots(source,payload) VALUES (?,?)",
+            (
+                snapshot.source_id,
+                json.dumps(fields, sort_keys=True, separators=(",", ":")),
+            ),
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_mac_account_reads_real_four_journals_and_bound_monitor_proof(real_account):
+    from datetime import timedelta
+
+    e = real_account
+    assert e.plan["snapshot"]["observe_index"]["observe_reconciliation"] == e.proof
+    e.stop()
+    assert e.offline()["writer_idle"] is True
+    e.clock[0] += timedelta(seconds=60)
     with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
-        b.offline_preflight(plan["snapshot"])
+        e.offline()
     assert (
-        b._account(restoring=True, frozen_index=plan["snapshot"]["observe_index"])[
+        e.b._account(restoring=True, frozen_index=e.plan["snapshot"]["observe_index"])[
             "account_id"
         ]
-        == ACCOUNT
+        == e.settings.account_id
+    )
+
+
+def test_stop_boundary_valid_native_append_is_accepted(real_account):
+    from datetime import timedelta
+
+    e = real_account
+    latest = appended(e)
+    insert_native(e, latest)
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    e.stop(latest)
+    assert e.offline()["protected_state_unchanged"] is True
+    assert all(
+        (e.folder / name).read_bytes() == e.before[name]
+        for name in ("account.sqlite", "dispatch.sqlite", "signals.sqlite")
     )
 
 
@@ -634,3 +754,644 @@ def test_recovery_rechecks_frozen_observe_executables(tmp_path, monkeypatch, cha
     )
     with pytest.raises(m.SwitchError, match="PREIMAGE_CHANGED"):
         b.recovery_preflight(snapshot)
+
+
+def rehash(snapshot):
+    from dataclasses import replace
+    from guiyi_quant.simnow_execution.inventory import native_hash
+
+    return replace(
+        snapshot,
+        source_id="ctp-inventory:"
+        + snapshot.trading_day
+        + ":"
+        + native_hash(
+            (
+                snapshot.account_id,
+                snapshot.trading_day,
+                snapshot.data,
+                snapshot.at.isoformat(),
+            )
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "foreign_account",
+        "trading_day",
+        "time_reversal",
+        "source_hash",
+        "nonempty_position",
+        "nonempty_order",
+        "nonempty_trade",
+        "fund_delta",
+        "stale",
+        "future",
+        "future_started",
+        "malformed_payload",
+    ],
+)
+def test_stop_boundary_rejects_invalid_appended_native(real_account, case):
+    from dataclasses import replace
+    from datetime import timedelta
+
+    e = real_account
+    latest = appended(e)
+    payload = latest.data
+    if case == "foreign_account":
+        latest = replace(latest, account_id="b" * 64)
+    if case == "trading_day":
+        latest = replace(latest, trading_day="20261102")
+        for rows in payload.values():
+            for row in rows:
+                row["TradingDay"] = latest.trading_day
+    if case == "time_reversal":
+        latest = replace(latest, started_at=e.native.at - timedelta(seconds=1))
+    if case.startswith("nonempty_"):
+        payload[
+            {
+                "nonempty_position": "positions",
+                "nonempty_order": "orders",
+                "nonempty_trade": "trades",
+            }[case]
+        ] = [{"TradingDay": latest.trading_day}]
+    if case == "fund_delta":
+        payload["funds"][0]["Balance"] = str(int(payload["funds"][0]["Balance"]) + 1)
+        payload["funds"][0]["Available"] = str(
+            int(payload["funds"][0]["Available"]) + 1
+        )
+    if case == "malformed_payload":
+        payload["extra"] = []
+    if case == "future":
+        latest = replace(latest, at=e.native.at + timedelta(seconds=10))
+    if case == "future_started":
+        latest = replace(latest, started_at=latest.at + timedelta(seconds=1))
+    latest = rehash(
+        replace(
+            latest,
+            payload_json=json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        )
+    )
+    if case == "source_hash":
+        latest = replace(latest, source_id="ctp-inventory:20261030:" + "c" * 64)
+    insert_native(e, latest)
+    e.clock[0] = e.native.at + timedelta(seconds=3)
+    if case == "stale":
+        e.clock[0] = latest.at + timedelta(seconds=31)
+    e.stop(latest)
+    with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN|PENDING_OBLIGATIONS"):
+        e.offline()
+
+
+@pytest.mark.parametrize("case", ["tamper", "deletion"])
+def test_stop_boundary_rejects_prefix_rewrite_or_deletion(real_account, case):
+    import sqlite3
+    from datetime import timedelta
+
+    e = real_account
+    latest = appended(e)
+    insert_native(e, latest)
+    db = sqlite3.connect(e.folder / "native-evidence.sqlite")
+    try:
+        db.execute("DROP TRIGGER no_update")
+        db.execute("DROP TRIGGER no_delete")
+        if case == "tamper":
+            db.execute("UPDATE snapshots SET payload=payload || ' ' WHERE rowid=1")
+        else:
+            db.execute("DELETE FROM snapshots WHERE rowid=1")
+        db.commit()
+    finally:
+        db.close()
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    e.stop(latest)
+    with pytest.raises(m.SwitchError, match="PREIMAGE_CHANGED"):
+        e.offline()
+
+
+@pytest.mark.parametrize(
+    "key,value",
+    [
+        ("run_id", "other-run"),
+        ("account_id", "b" * 64),
+        ("ledger_hash", "b" * 64),
+        ("native_source_id", "missing"),
+        ("status", "ACTIVE"),
+    ],
+)
+def test_stop_boundary_requires_latest_stopped_monitor_binding(
+    real_account, key, value
+):
+    from datetime import timedelta
+
+    e = real_account
+    latest = appended(e)
+    insert_native(e, latest)
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    e.stop(latest)
+    path = e.settings.state_root / "monitor.json"
+    index = json.loads(path.read_bytes())
+    index[key] = value
+    path.write_text(json.dumps(index))
+    with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
+        e.offline()
+
+
+def test_stop_boundary_rejects_unbound_extra_latest_snapshot(real_account):
+    from datetime import timedelta
+
+    e = real_account
+    latest = appended(e)
+    insert_native(e, latest)
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    e.stop(e.native)
+    with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
+        e.offline()
+
+
+def test_stop_boundary_valid_later_snapshot_cannot_hide_invalid_middle(real_account):
+    from dataclasses import replace
+    from datetime import timedelta
+
+    e = real_account
+    bad = appended(e)
+    payload = bad.data
+    payload["orders"] = [{"TradingDay": "20261030"}]
+    bad = rehash(replace(bad, payload_json=json.dumps(payload)))
+    insert_native(e, bad)
+    latest = appended(e, seconds=5)
+    latest = replace(latest, started_at=bad.at)
+    insert_native(e, latest)
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    e.stop(latest)
+    with pytest.raises(m.SwitchError, match="PENDING_OBLIGATIONS"):
+        e.offline()
+
+
+def test_offline_requires_real_dual_guard_and_unchanged_lock_identity(real_account):
+    e = real_account
+    e.stop()
+    with pytest.raises(m.SwitchError, match="STOP_UNPROVEN"):
+        e.b.offline_preflight(e.plan["snapshot"])
+    lock = e.b.locks[0]
+    renamed = lock.with_name("old-global.lock")
+    lock.rename(renamed)
+    lock.write_bytes(b"")
+    lock.chmod(0o600)
+    with pytest.raises(m.SwitchError, match="PREIMAGE_CHANGED"):
+        e.offline()
+
+
+@pytest.mark.parametrize("attempts,blocked", [(3, False), (2, True)])
+def test_connection_capacity_rejected_before_sigterm(setup, attempts, blocked):
+    b, c, _ = setup
+    b.value["account"].update(
+        today_attempts=attempts, remaining_attempts=3 - attempts, day_blocked=blocked
+    )
+    with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
+        c.plan()
+    assert not b.calls
+
+
+def session_rows(
+    local_now, *, phase_override=None, afternoon_hour=13, afternoon_minute=30
+):
+    from datetime import datetime, date
+    from zoneinfo import ZoneInfo
+    from types import SimpleNamespace as NS
+
+    zone = ZoneInfo("Asia/Shanghai")
+
+    def at(h, m=0):
+        return datetime(2026, 10, 30, h, m, tzinfo=zone)
+
+    windows = [
+        NS(is_night=False, window=NS(start=at(9), end=at(10, 15))),
+        NS(is_night=False, window=NS(start=at(10, 30), end=at(11, 30))),
+        NS(
+            is_night=False,
+            window=NS(start=at(afternoon_hour, afternoon_minute), end=at(15)),
+        ),
+    ]
+    next_open = next(
+        (w.window.start for w in windows if w.window.start > local_now), None
+    )
+    current = next(
+        (w.window for w in windows if w.window.start <= local_now < w.window.end), None
+    )
+    phase = (
+        "TRADING" if current else "BREAK" if at(9) <= local_now < at(15) else "CLOSED"
+    )
+    if phase_override:
+        phase = phase_override
+    return [
+        (
+            "p" + str(i),
+            NS(
+                is_trading_day=True,
+                has_night_session=i < 45,
+                trade_date=date(2026, 10, 30),
+            ),
+            copy.deepcopy(windows),
+            NS(
+                phase=phase,
+                current_session=current,
+                next_session_start=next_open,
+                trading_day=date(2026, 10, 30),
+            ),
+        )
+        for i in range(60)
+    ]
+
+
+@pytest.mark.parametrize(
+    "hour,minute,opened",
+    [
+        (9, 0, False),
+        (10, 20, False),
+        (11, 29, False),
+        (11, 30, True),
+        (11, 35, True),
+        (13, 0, True),
+        (13, 19, True),
+        (13, 20, False),
+        (13, 30, False),
+        (14, 0, False),
+    ],
+)
+def test_midday_uses_authoritative_afternoon_not_a_fixed_1300(hour, minute, opened):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 10, 30, hour, minute, tzinfo=ZoneInfo("Asia/Shanghai"))
+    result = m.window_facts(session_rows(now), now, "midday")
+    assert result["window_open"] is opened
+    assert result["policy"] == m.MIDDAY_POLICY
+    assert result["eligible_from"].startswith("2026-10-30T11:30")
+    assert result["eligible_until"].startswith("2026-10-30T13:19")
+    if opened:
+        m.validate_window(result)
+        assert set(result["phases"].values()) == {"BREAK"}
+    else:
+        with pytest.raises(m.SwitchError, match="WINDOW_UNPROVEN"):
+            m.validate_window(result)
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "unknown",
+        "missing_calendar",
+        "wrong_day",
+        "missing_afternoon",
+        "active_one",
+        "missing_current",
+        "different_next",
+        "scope",
+    ],
+)
+def test_midday_rejects_unknown_or_inconsistent_authoritative_fact(case):
+    from datetime import datetime, date, timedelta
+    from zoneinfo import ZoneInfo
+
+    now = datetime(2026, 10, 30, 11, 35, tzinfo=ZoneInfo("Asia/Shanghai"))
+    rows = session_rows(now)
+    product, calendar, windows, phase = rows[0]
+    if case == "unknown":
+        phase.phase = "UNKNOWN"
+    if case == "missing_calendar":
+        calendar.is_trading_day = False
+    if case == "wrong_day":
+        phase.trading_day = date(2026, 11, 2)
+    if case == "missing_afternoon":
+        windows.pop()
+    if case == "active_one":
+        phase.phase = "TRADING"
+    if case == "missing_current":
+        phase.current_session = windows[0].window
+    if case == "different_next":
+        phase.next_session_start += timedelta(minutes=1)
+    if case == "scope":
+        rows.pop()
+    try:
+        result = m.window_facts(rows, now, "midday")
+        m.validate_window(result)
+    except m.SwitchError as exc:
+        assert str(exc) == "WINDOW_UNPROVEN"
+    else:
+        pytest.fail("invalid session facts accepted")
+
+
+def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
+    b, c, _ = setup
+    plan = c.plan()
+    assert plan["schema"] == "simnow_trade_switch_plan_v2"
+    b.value["window"] = dict(
+        policy=m.MIDDAY_POLICY,
+        trading_day="20261030",
+        authoritative=True,
+        current_session_absent=True,
+        next_session_gap_seconds=7000,
+        product_count=60,
+        window_open=True,
+        morning_completed=True,
+        next_is_afternoon=True,
+    )
+    with pytest.raises(m.SwitchError, match="PLAN_INVALID"):
+        c.apply(plan)
+    assert not b.calls
+    assert not c.intent.exists()
+
+
+def test_v1_plan_is_not_accepted_for_new_execution(setup):
+    b, c, _ = setup
+    plan = c.plan()
+    plan["schema"] = "simnow_trade_switch_plan_v1"
+    plan["plan_hash"] = m.digest({k: v for k, v in plan.items() if k != "plan_hash"})
+    with pytest.raises(m.SwitchError, match="PLAN_INVALID"):
+        c.apply(plan)
+    assert not b.calls
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("Commission", "NaN"),
+        ("Deposit", "-1"),
+        ("Withdraw", None),
+        ("CloseProfit", "Infinity"),
+        ("PositionProfit", "changed"),
+        ("Deposit", "1"),
+        ("CloseProfit", "-1"),
+        ("Commission", 1),
+    ],
+)
+@pytest.mark.parametrize("bad_middle", [False, True])
+def test_appended_native_preserves_all_original_money_contracts(
+    real_account, field, value, bad_middle
+):
+    from dataclasses import replace
+    from datetime import timedelta
+
+    e = real_account
+    bad = appended(e)
+    payload = bad.data
+    if value is None:
+        payload["funds"][0].pop(field)
+    else:
+        payload["funds"][0][field] = value
+    bad = rehash(replace(bad, payload_json=json.dumps(payload)))
+    insert_native(e, bad)
+    latest = bad
+    if bad_middle:
+        latest = replace(appended(e, seconds=5), started_at=bad.at)
+        insert_native(e, latest)
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    e.stop(latest)
+    with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
+        e.offline()
+
+
+def test_actual_budget_and_block_are_read_without_reset(real_account):
+    import sqlite3
+
+    e = real_account
+    db = sqlite3.connect(e.folder / "signals.sqlite")
+    try:
+        db.execute("INSERT INTO attempts(day,count) VALUES (?,?)", ("20261030", 2))
+        db.commit()
+        result = e.b._account()
+        assert (
+            result["today_attempts"],
+            result["remaining_attempts"],
+            result["day_blocked"],
+        ) == (2, 1, False)
+        db.execute("UPDATE attempts SET count=3 WHERE day=?", ("20261030",))
+        db.commit()
+        result = e.b._account()
+        assert result["remaining_attempts"] == 0
+        candidate = copy.deepcopy(e.plan["snapshot"])
+        candidate["account"] = result
+        with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
+            m.validate_snapshot(candidate)
+        db.execute("UPDATE attempts SET count=2 WHERE day=?", ("20261030",))
+        db.execute(
+            "INSERT INTO blocks(day,code) VALUES (?,?)", ("20261030", "RETAINED")
+        )
+        db.commit()
+        result = e.b._account()
+        assert result["day_blocked"] is True
+        candidate["account"] = result
+        with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
+            m.validate_snapshot(candidate)
+        assert db.execute(
+            "SELECT count FROM attempts WHERE day=?", ("20261030",)
+        ).fetchone() == (2,)
+        assert db.execute(
+            "SELECT code FROM blocks WHERE day=?", ("20261030",)
+        ).fetchone() == ("RETAINED",)
+    finally:
+        db.close()
+
+
+def test_last_budget_change_is_rejected_before_os_sigterm(real_account, monkeypatch):
+    import sqlite3
+
+    e = real_account
+    e.b._stop_signals = e.b.identity(e.folder / "signals.sqlite")
+    e.b.old_config = e.folder / "not-read-by-mocked-process-proof"
+    e.b._prove = lambda *args: None
+    db = sqlite3.connect(e.folder / "signals.sqlite")
+    db.execute("INSERT INTO attempts(day,count) VALUES (?,?)", ("20261030", 3))
+    db.commit()
+    db.close()
+    monkeypatch.setattr(
+        m.os, "kill", lambda *args: pytest.fail("SIGTERM before budget readback")
+    )
+    with pytest.raises(m.SwitchError, match="PREIMAGE_CHANGED"):
+        e.b.stop(e.plan["snapshot"]["host"]["pid"])
+
+
+def test_night_policy_excludes_fifteen_no_night_phase_checks():
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace as NS
+    from zoneinfo import ZoneInfo
+
+    zone = ZoneInfo("Asia/Shanghai")
+    now = datetime(2026, 10, 30, 2, 35, tzinfo=zone)
+    rows = session_rows(now)
+    for i, (_, calendar, windows, phase) in enumerate(rows):
+        phase.phase = "CLOSED" if i < 45 else "UNKNOWN"
+        phase.current_session = None
+        phase.next_session_start = datetime(2026, 10, 30, 9, tzinfo=zone)
+        if i < 45:
+            windows.append(
+                NS(
+                    is_night=True,
+                    window=NS(
+                        start=now - timedelta(hours=5), end=now - timedelta(minutes=5)
+                    ),
+                )
+            )
+    result = m.window_facts(rows, now, "night")
+    m.validate_window(result)
+    assert result["night_count"] == 45 and result["excluded_no_night_count"] == 15
+
+
+def test_stop_boundary_only_accepts_normal_append_rowid_sequence(real_account):
+    import sqlite3
+    from datetime import timedelta
+
+    e = real_account
+    latest = appended(e)
+    fields = dict(
+        account_id=latest.account_id,
+        trading_day=latest.trading_day,
+        started_at=latest.started_at.isoformat(),
+        at=latest.at.isoformat(),
+        source_id=latest.source_id,
+        payload_json=latest.payload_json,
+    )
+    db = sqlite3.connect(e.folder / "native-evidence.sqlite")
+    db.execute(
+        "INSERT INTO snapshots(rowid,source,payload) VALUES (?,?,?)",
+        (3, latest.source_id, json.dumps(fields)),
+    )
+    db.commit()
+    db.close()
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    e.stop(latest)
+    with pytest.raises(m.SwitchError, match="PREIMAGE_CHANGED"):
+        e.offline()
+
+
+def test_expired_frozen_proof_is_only_history_when_real_latest_append_is_fresh(
+    real_account,
+):
+    from datetime import timedelta
+
+    e = real_account
+    latest = appended(e, seconds=35)
+    insert_native(e, latest)
+    e.clock[0] = latest.at + timedelta(seconds=1)
+    assert e.clock[0] > e.native.at + timedelta(seconds=30)
+    e.stop(latest)
+    result = e.offline()
+    assert result["protected_state_unchanged"] is True
+    assert result["native_appended_count"] == 1
+
+
+def test_window_rows_materialize_calendar_before_real_readonly_rollback(
+    tmp_path, monkeypatch
+):
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+    from datetime import date, datetime, time, UTC
+    from sqlalchemy.orm import Session, sessionmaker
+    from sqlalchemy.orm.exc import DetachedInstanceError
+
+    monkeypatch.syspath_prepend(str(PATH.parents[3] / "services/quant-api"))
+    monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
+    from app.db import session as db_session
+    from app.models import Exchange, Instrument, TradingCalendar, TradingSession
+    from app.db.base import Base
+    from app.market_data.operational_universe import load_operational_products
+
+    engine = sqlalchemy.create_engine(
+        "sqlite+pysqlite:///" + str(tmp_path / "window-authority.sqlite")
+    )
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            Exchange.__table__,
+            Instrument.__table__,
+            TradingCalendar.__table__,
+            TradingSession.__table__,
+        ],
+    )
+    products = load_operational_products()
+    assert len(products) == 60
+    with Session(engine) as db:
+        db.add(Exchange(code="SHFE", name="Isolated fixture exchange"))
+        for day, active in [
+            (date(2026, 10, 30), True),
+            (date(2026, 10, 31), False),
+            (date(2026, 11, 1), False),
+            (date(2026, 11, 2), True),
+        ]:
+            db.add(
+                TradingCalendar(
+                    exchange_code="SHFE",
+                    trade_date=day,
+                    is_trading_day=active,
+                    has_night_session=False,
+                )
+            )
+        for product in products:
+            db.add(
+                Instrument(
+                    symbol=product, name=product, exchange_code="SHFE", is_active=True
+                )
+            )
+            for name, start, end in [
+                ("morning1", time(9), time(10, 15)),
+                ("morning2", time(10, 30), time(11, 30)),
+                ("afternoon", time(13, 30), time(15)),
+            ]:
+                db.add(
+                    TradingSession(
+                        exchange_code="SHFE",
+                        instrument_symbol=product,
+                        session_name=name,
+                        start_time=start,
+                        end_time=end,
+                        effective_from=date(2026, 10, 1),
+                        is_active=True,
+                    )
+                )
+        db.commit()
+
+    class AuthoritySession(Session):
+        pass
+
+    captured = []
+
+    @sqlalchemy.event.listens_for(AuthoritySession, "loaded_as_persistent")
+    def capture_calendar(session, instance):
+        if isinstance(instance, TradingCalendar):
+            captured.append(instance)
+
+    monkeypatch.setattr(
+        db_session,
+        "SessionLocal",
+        sessionmaker(bind=engine, class_=AuthoritySession, expire_on_commit=True),
+    )
+    b = m.MacBackend.__new__(m.MacBackend)
+    b.window = "midday"
+    now = datetime(2026, 10, 30, 2, 0, tzinfo=UTC)
+    try:
+        facts = b._window_rows(now)
+        assert captured and all(
+            sqlalchemy.inspect(row).detached and sqlalchemy.inspect(row).expired
+            for row in captured
+        )
+        # This is the actual former failure mechanism, not a stand-in object.
+        with pytest.raises(DetachedInstanceError):
+            _ = captured[0].is_trading_day
+        result = m.window_facts(facts, now, "midday")
+        assert result["window_open"] is False
+        assert set(result["phases"].values()) == {"TRADING"}
+        with pytest.raises(m.SwitchError, match="WINDOW_UNPROVEN"):
+            m.validate_window(result)
+        from zoneinfo import ZoneInfo
+
+        assert (
+            datetime.fromisoformat(result["eligible_from"])
+            .astimezone(ZoneInfo("Asia/Shanghai"))
+            .strftime("%H:%M")
+            == "11:30"
+        )
+        with pytest.raises(AttributeError):
+            facts[0][1].is_trading_day = False
+    finally:
+        engine.dispose()
