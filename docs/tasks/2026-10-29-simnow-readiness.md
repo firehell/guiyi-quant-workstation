@@ -450,3 +450,42 @@ Web14 passed、类型/构建/拓扑通过；quant-core离线sdist/wheel构建通
 配置只是准备文件、ordinary许可未签发。后续只追加本段文档与状态，不改变已审工程blobs。
 PR547更新为本轮完整候选，仍未合main/tag/Release/生产恢复或服务切换；现役十35/SimNow38。
 结论允许进入release candidate，不以工程交付替代真实60输入采样、账户恢复和策略交易验收。
+
+
+## 10/30收盘四项实际交付
+
+四项运维COMPLETED，业务自然验收独立待验。v39发布后发现正式Reference CLI依赖加载覆盖安全Redis上下文，
+正常向前40修复；SimNow动态gap误入许可身份导致PRESTOP拒绝，正常向前41静态7字段/planv7/permitv3修复。
+所有旧tag不动；最终十一Runtime统一41 exact3007dc0078e78f98847127bdd489aab25c8a9813，正式十gen43。
+Reference单次plan/apply+status COMMITTED：48流、20原参考OPEN冲突中断、334原Inbox退役，旧记录和原状态保留。
+原恢复plan a10c9caa15557836415123b38cea18cfa64672be1e7991026ddd6e3becf51a6f，domain c1cb10be6bc96616439c270f1d59bf067f71bcc142e6ba049c5c593d45bde3ca，
+共同未来起点17:11:32.467835。没有账户交易、虚构退出价/收益或补发通知。
+
+SimNow41唯一真实bootstrap PID20559/run dc5e2e3c462d4762921ba2fad8a98440，原35秒验收早于约48秒启动准备而超时；
+未重apply/重启。独立42控制器（PR551/tag0a661b48bde8e088c8437a9d744dd90110f4eaff）按正式--reconcile-started
+持原source mutex、重型核验后最终双fresh/age<=8/closed>660，保全原raw beforeimage SHA
+9227f5d3a03880962228233e07d08d2a5f90d2bd4cfeb4acd44d3d8334d79c25，receipt实际SHA
+865be64f54b69df3a29ec37ec04c9cd0bb437682de440533fcea1f58f470a3fc，再正式COMPLETE/HOST_SWITCH_LATE_VERIFIED。
+初始error保留；grant/runclaim未改。已发布41原permit_required下一权威日只读退役验证通过，四DB前后SHA不变。
+42仅恢复控制器，十一服务没有改为42或再重启。源码完整回归最终992 passed、86部署/恢复/清理检查、
+独立223安全回归、mypy/Ruff/秘密扫描、构建/离线锁通过；跳过项沿前述127专用条件保留，不冒充通过。
+
+从运行41正式closeout/seal：5旧树35/38/39/40/42、34 closed attempts、77原件hash、30marker均校验。
+封存hash5567c604da777f524952995d4a8538268a0527e67e3da1cbe8c1587e77597344，原件和盘后历史blob已读回；
+fresh cleanup-plan c43c62fd51606be666d381db1fe46d7c7607191419e93dc7fa2957526068fb6c两次完全相等，
+18:38:49–56逐棵git worktree remove（无force）成功。仅余运行发布树41；develop和独立研究树未动。
+删除后historical reader/未决恢复Gate/旧盘后history hash均VERIFIED，旧根有效引用0、Git/tag和树外数据保留。
+
+实际正常验证入口包括候选python -m pytest的SimNow全组及相关API（最终992）、
+Reference CLI/部署/cohort/retention定向（86）、独立reconcile/switch/ordinary/deployment回归（223），
+pnpm -C apps/quant-web build、uv lock --check --offline、SDK native_gateway_smoke.py（33），
+正式retirement closeout-plan/seal-closed/cleanup-plan与原41 readonly permit_required。具体输出位于下列私有证据。
+
+最终证据：output/simnow-postclose-20261030/completion.json；
+output/htdy-window-conflict-20261030/after-close-v40-084104/（Reference）；
+output/after-close-cohort-v41-20261030/（十服务）；output/simnow-v41-switch-20261030-870a108495/（SimNow及独立closureaudit）；
+output/release-retirement-20261030-180602/（seal/两轮cleanup/逐树receipt/最终历史与有效引用读回）。
+
+闭市WAITING_SESSION/pending=true/opening=false合法，尚无新SDK连接；旧29/30各3与block保留，20261102预算未消费。
+新鲜账户接管、逐品种自然输入、真实策略成交和平仓闭环、跨日/换月分别待验。Runtime整体仍degraded，不能报全业务Ready。
+18:05原盘后主业务自然passed（18:14:28完成）；没有新增任务、受众、人工信号或订单。
