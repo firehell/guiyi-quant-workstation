@@ -243,3 +243,5 @@ Owner明确要求“你把可以先完成的完成下，等中午十一点半收
 账户新恢复、自然输入、真实策略成交仍分别待验，AG/J/PB/ZN根因等待新鲜时序样本。
 
 午间候选已固定推送f99fea8989a1d5aefc9d924f80def54be5c3651f，PR544已准备未合并；候选自身762 passed(49.64s)、离线依赖/SDK退出0、Web构建/拓扑通过，独立候选Review通过。一次性heartbeat simnow已ACTIVE，2026-10-30 11:35北京时间执行；现场失败不盲重试，结束删除。当前未main/tag发布v37、未切服务。
+
+10/30 10:12现场全60品种历史/计算32根、Live与当前1m连续性均通过，closed-source差异0；10:00自然60m的60项observe inbox逐条codec/hash/身份/时间通过，全部OBSERVED。仍非trade首次接收及费率/保证金/盘口通过。当前day30 attempts=3、无block，午间新连接预算不足；保留既有门禁，不清预算、不停服试切。09:25:17原件failure-93d4bb3789bf451d88e444530ed3f998-1902.json记录CONTINUOUS_RECOVERY_REQUIRED，尚不足以单凭此认定第三次连接根因。新只读审计及inbox证据分开留存。

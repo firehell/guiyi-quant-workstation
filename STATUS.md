@@ -1,5 +1,13 @@
 # 当前状态
 
+10/30 10:12第三步只读现场：60/60历史32根、当前计算窗口及Live/当前1m连续性通过，
+closed-source差异0；剩余15无夜盘品种数据输入已补齐本次现场证据。10:00自然completed60m
+全部60品种被observe接收、OBSERVED，逐条codec/hash/品种/物理合约/时间身份通过。
+不等于trade首见或费率/保证金/新鲜盘口验收；现役仍observe、opening/auto_order false。
+重要变化：当日连接预算现场已3/3、无当日block，午间新trade连接将被既有预算门禁阻断；
+不清预算、不先停服、不新增Broker连接。证据output/simnow-step3-20261030及
+output/simnow-step3-20261029/admission-20261030T021206/。
+
 10/30 午间准备：owner要求先完成准备，11:30收盘后一次性发布切换。停止边界原生合法append完整验证、
 显式midday窗口及SQLAlchemy只读会话生命周期修复已由4a8dff27b集成develop；762项回归、SDK33、
 独立100项及安全Review通过。v1.16.37隔离候选从main/v36仅移植四文件及版本元数据，尚未发布/切换。
