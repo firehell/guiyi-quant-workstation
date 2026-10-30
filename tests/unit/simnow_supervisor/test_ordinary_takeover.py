@@ -250,3 +250,18 @@ def test_initial_first_run_cannot_be_reused_at_night_on_same_authoritative_day(g
             start + timedelta(days=1),
             clock=lambda: start + timedelta(days=1),
         )
+
+
+def test_v1_grant_readable_but_never_activated(granted):
+    s, inbox, now, _, _, _, _ = granted
+    path = s.ordinary_takeover_permit
+    grant, _ = ordinary.read(path)
+    grant["schema"] = "simnow_ordinary_takeover_v1"
+    path.write_text(json.dumps(grant))
+    before = path.read_bytes()
+    assert ordinary.read(path)[0]["schema"] == "simnow_ordinary_takeover_v1"
+    with pytest.raises(ValueError, match="ORDINARY_TAKEOVER_INVALID"):
+        ordinary.activate(s, inbox, "1" * 32, now, clock=lambda: now)
+    assert path.read_bytes() == before
+    assert not path.with_name(path.name + ".run-claim").exists()
+    assert inbox.conn.execute("SELECT * FROM attempts").fetchall() == []
