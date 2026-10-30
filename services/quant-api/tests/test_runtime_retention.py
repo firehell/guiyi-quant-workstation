@@ -271,6 +271,7 @@ def _closed_simnow_intent(tmp_path, old, *, late=False):
                 'host': {'pid': 10, 'run_id': 'old'}, 'preimage': {
                     'old_root': str(old),
                     'release': {'root': str(tmp_path / 'current'), 'tag': 'v1.2.3', 'commit': 'a' * 40}}}
+    candidate['identities']['release'] = dict(snapshot['preimage']['release'])
     plan = {'schema': 'simnow_trade_switch_plan_v7', 'snapshot': snapshot,
             'created_at': 0, 'expires_at': 60, 'execution_permitted': False, 'broker_io': False}
     plan['plan_hash'] = _hash(plan)
@@ -327,6 +328,30 @@ def test_completed_simnow_release_identity_mismatch_blocks_even_with_matching_ha
         snapshot['candidate']['root'] = str(tmp_path / 'different')
     plan['plan_hash'] = _hash({k: v for k, v in plan.items() if k != 'plan_hash'})
     value.update(snapshot=snapshot, plan_hash=plan['plan_hash'])
+    plan_path.write_text(json.dumps(plan))
+    intent.write_text(json.dumps(value))
+    assert build_cleanup_plan((old,), backend=backend)['targets'][0]['status'] == 'blocked'
+
+
+@pytest.mark.parametrize('damage', ['intent_only_root', 'missing_plan_release', 'identity_release'])
+def test_completed_simnow_release_is_bound_to_original_plan_and_code_identity(tmp_path, monkeypatch, damage):
+    import json
+    from app.runtime_retention import _hash
+    old, config, monitor, backend = _simnow_fixture(tmp_path, monkeypatch, installed=False, loaded=False)
+    intent = _closed_simnow_intent(tmp_path, old)
+    value = json.loads(intent.read_text())
+    plan_path = intent.parent / 'switch-plan.private.json'
+    plan = json.loads(plan_path.read_text())
+    if damage == 'intent_only_root':
+        value['snapshot']['preimage']['release']['root'] = str(tmp_path / 'different')
+    elif damage == 'missing_plan_release':
+        plan['snapshot']['preimage'].pop('release')
+        plan['plan_hash'] = _hash({k: v for k, v in plan.items() if k != 'plan_hash'})
+        value['plan_hash'] = plan['plan_hash']
+    else:
+        plan['snapshot']['candidate']['identities']['release']['root'] = str(tmp_path / 'different')
+        plan['plan_hash'] = _hash({k: v for k, v in plan.items() if k != 'plan_hash'})
+        value.update(plan_hash=plan['plan_hash'], snapshot=plan['snapshot'])
     plan_path.write_text(json.dumps(plan))
     intent.write_text(json.dumps(value))
     assert build_cleanup_plan((old,), backend=backend)['targets'][0]['status'] == 'blocked'

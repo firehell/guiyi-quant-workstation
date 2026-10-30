@@ -230,12 +230,15 @@ class _SimNowReferences:
             identities = candidate.get("identities", {})
             preimage = snapshot.get("preimage")
             release = preimage.get("release") if isinstance(preimage, dict) else None
+            original_preimage = original.get("preimage")
+            frozen_release = original_preimage.get("release") if isinstance(original_preimage, dict) else None
             if (value.get("error") or value.get("native_recovery_complete") is not False
                     or type(plan.get("created_at")) not in (int, float)
                     or type(plan.get("expires_at")) not in (int, float)
                     or plan["expires_at"] - plan["created_at"] != 60
                     or plan.get("execution_permitted") is not False or plan.get("broker_io") is not False
                     or not isinstance(release, dict)
+                    or release != frozen_release
                     or not isinstance(release.get("root"), str) or not release["root"].startswith("/")
                     or release.get("tag") != candidate.get("tag")
                     or release.get("commit") != candidate.get("commit")
@@ -244,6 +247,7 @@ class _SimNowReferences:
                     or not isinstance(candidate.get("commit"), str) or not re.fullmatch(r"[0-9a-f]{40}", candidate["commit"])
                     or any(candidate.get(key) is not True for key in ("annotated_exact", "clean", "sdk_check", "preflight_valid"))
                     or not isinstance(identities, dict)
+                    or identities.get("release") != release
                     or identities.get("code") != candidate["commit"]
                     or any(not identities.get(key) for key in ("code", "sdk", "config", "plist", "old_config", "old_plist", "monitor"))):
                 raise RetentionError("CLEANUP_SIMNOW_CLOSURE_UNPROVEN")
