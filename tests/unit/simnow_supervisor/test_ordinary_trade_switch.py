@@ -20,7 +20,7 @@ def test_ordinary_v5_target_day_not_old_civil_day():
     b = Backend()
     value = anchor(b.value)
     value["ordinary_permit"] = dict(
-        schema="simnow_ordinary_takeover_v2",
+        schema="simnow_ordinary_takeover_v3",
         account_id="id",
         profile={"profile_id": "original_anchor_v1"},
         window={"trading_day": "20261102"},
@@ -45,7 +45,7 @@ def test_ordinary_v5_target_day_not_old_civil_day():
         window_open=True,
         next_session_gap_seconds=3600,
     )
-    assert m.SCHEMA == "simnow_trade_switch_plan_v6"
+    assert m.SCHEMA == "simnow_trade_switch_plan_v7"
     m.validate_snapshot(value)
 
 
@@ -56,7 +56,7 @@ def test_ordinary_v5_target_day_not_old_civil_day():
 def test_ordinary_v5_never_borrows_other_day_or_block(field, value):
     b = Backend()
     b.value["ordinary_permit"] = {
-        "schema": "simnow_ordinary_takeover_v2",
+        "schema": "simnow_ordinary_takeover_v3",
         "account_id": "id",
         "window": {"trading_day": "20261102"},
     }
@@ -84,7 +84,7 @@ def ordinary_snapshot(m):
     value = anchor(Backend().value)
     profile = {"profile_id": "original_anchor_v1"}
     value["ordinary_permit"] = dict(
-        schema="simnow_ordinary_takeover_v2",
+        schema="simnow_ordinary_takeover_v3",
         account_id="id",
         profile=profile,
         state_dir="",
