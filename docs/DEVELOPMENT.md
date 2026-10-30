@@ -193,6 +193,25 @@ API 固定读取该开发文件，不覆盖共享正式派生资产。缺失时�
 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m app.reference_trading.htdy_snapshot build --symbol jm --since 2025-10-30 --through 2026-10-30
 ```
 
-展示窗口最多一年，底层仍从权威物理前缀预热；换品种替换 `--symbol`。构建安全加载既有受保护依赖，
+普通历史查询展示窗口最多一年，底层仍从权威物理前缀预热；显式构建使用 `--full-history` 可从权威 product_start 冻结全部现有历史，换品种替换 `--symbol`。构建安全加载既有受保护依赖，
 不连接Broker、不下载行情。快照在 `.run/htdy-snapshots`，GET不会构建；未生成时明确不可用。
 主图默认回放参考，来源切换联动独立记录区；SimNow和首次观察缺公式身份时并列，不用当前常量补造历史证据。
+
+全品种现有历史回放采用单次串行队列（同上 PYTHONPATH/python 前缀）：
+
+```sh
+python -m app.reference_trading.htdy_snapshot_batch run --through 2026-10-30 --seed-jm-snapshot <已核验的JM全历史快照ID> --preflight
+python -m app.reference_trading.htdy_snapshot_batch run --through 2026-10-30 --seed-jm-snapshot <同一ID>
+```
+
+队列冻结 active/operational 同一60品种、各自权威维护起点、公式/模型/展示及相关执行文件hash；
+JM优先，其余按清单顺序。每品种600秒只读构建，进度在 `.run/htdy-full-2026-10-30.json`。
+续接先核对进度文件未被修改，且manifest与执行文件一致；只处理pending，已成功项只读核验，
+失败和中断不自动重试。单项证据失效标为interrupted，继续其他pending；finished只表示队列结束，
+只有全部60项succeeded且快照分别读回通过才可报告全品种构建完成。该入口不下载或修复行情。
+
+已定位并修正失败原因后，可显式用 `--inherit-state <旧进度绝对路径> --state <新进度绝对路径>`
+创建新尝试；必须先取得旧批次锁确认其已停止。旧文件保留，成功快照校验后继承，只有明确 failed 项恢复 pending，未知中断仍不重试。
+显式 HTDY builder 只保留每物理段全部 owned bars 及首个 owned Bar 前至少31根的整交易日上下文；
+预算预检和读取共用权威 endpoint，不改变完整历史计算区间、质量校验或普通查询默认行为。
+闭合参考收益摘要和曲线统一按退出时间及交易ID累计 Decimal，避免不同展示顺序产生尾差误报。

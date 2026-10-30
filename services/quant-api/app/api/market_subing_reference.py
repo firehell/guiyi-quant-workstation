@@ -5,6 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from threading import BoundedSemaphore
 from time import monotonic
+from typing import cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
@@ -36,13 +37,16 @@ _FIELDS = frozenset({"since", "through", "as_of", "before", "limit", "frequency"
 
 
 def _build_service(
-    session: Session, check_cancelled: Callable[[], None]
+    session: Session, check_cancelled: Callable[[], None], *, historical_window_days: int | None = 365,
+    physical_context_bars: int | None = None,
 ) -> SubingReferenceService:
     return SubingReferenceService(
         build_market_data_service(session),
         coverage=build_database_coverage_source(session),
         active_products=load_active_products(),
         check_cancelled=check_cancelled,
+        historical_window_days=historical_window_days,
+        physical_context_bars=physical_context_bars,
     )
 
 
@@ -81,9 +85,9 @@ def subing_reference(
         result = PersistedSubingReference(SessionLocal, service, check_cancelled).query(query)
         from app.reference_trading.signal_window import historical_window_navigation
         result.update(historical_window_navigation(service, symbol=symbol,
-            since=date.fromisoformat(result["performance_since"]),
-            through=date.fromisoformat(result["performance_through"]), frequency=frequency,
-            as_of=datetime.fromisoformat(result["as_of"])))
+            since=date.fromisoformat(cast(str, result["performance_since"])),
+            through=date.fromisoformat(cast(str, result["performance_through"])), frequency=frequency,
+            as_of=datetime.fromisoformat(cast(str, result["as_of"]))))
         return SubingReferenceResponse.model_validate(result)
     except QueryConflict as exc:
         status = 503 if exc.code in {

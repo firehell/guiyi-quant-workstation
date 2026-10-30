@@ -396,7 +396,7 @@ class SnapshotStore:
                         os.close(parent)
 
 
-def build_snapshot(service, query, *, store=None, query_history=None):
+def build_snapshot(service, query, *, store=None, query_history=None, full_history=False):
     """Explicit builder only. Freeze a complete independently paginated replay."""
     from fastapi.encoders import jsonable_encoder
     from app.reference_trading.htdy_history import query_htdy_history
@@ -404,6 +404,10 @@ def build_snapshot(service, query, *, store=None, query_history=None):
     read = query_history or query_htdy_history
     if query.frequency != '60m' or query.before is not None:
         raise SnapshotError('HTDY_SNAPSHOT_INVALID_QUERY')
+    if full_history:
+        if query.since is not None or service.historical_window_days is not None:
+            raise SnapshotError('HTDY_SNAPSHOT_INVALID_QUERY')
+        query = replace(query, since=service.historical_storage_start(query.symbol))
     query = replace(query, limit=200, as_of=query.as_of or service.now())
     first = jsonable_encoder(read(service, query), custom_encoder={Decimal: str})
     if first['summary']['total'] > MAX_TRADES or len(first['signals']) > MAX_SIGNALS:
@@ -419,11 +423,11 @@ def build_snapshot(service, query, *, store=None, query_history=None):
         page = jsonable_encoder(read(service, replace(query, before=cursor)), custom_encoder={Decimal: str})
         if (page['source_token'] != first['source_token'] or page['summary'] != first['summary']
                 or page['stream_id'] != first['stream_id'] or page['computed_through'] != first['computed_through']):
-            raise SnapshotError('HTDY_SNAPSHOT_SOURCE_CHANGED')
+            raise SnapshotError('HTDY_SNAPSHOT_PAGE_IDENTITY_CHANGED')
         trades.extend(page['trades'])
         cursor = page['next_cursor']
     if len(trades) != first['summary']['total'] or len({row['reference_trade_id'] for row in trades}) != len(trades):
-        raise SnapshotError('HTDY_SNAPSHOT_SOURCE_CHANGED')
+        raise SnapshotError('HTDY_SNAPSHOT_TRADE_COUNT_MISMATCH')
     signals = first['signals']
     earliest = min((datetime.fromisoformat(item['entry_bar_end']) for item in trades), default=datetime.fromisoformat(first['computed_through']))
     actions = _reference_actions(trades, signals, stream_id=first['stream_id'], from_time=earliest,
@@ -436,8 +440,10 @@ def build_snapshot(service, query, *, store=None, query_history=None):
             raise SnapshotError()
         cumulative += result
         curve.append(dict(bar_end=trade['exit_bar_end'], value=str(cumulative), reference_trade_id=trade['reference_trade_id']))
-    if first['summary']['closed'] != len(curve) or Decimal(first['summary']['sum_return_percentage_points']) != cumulative:
-        raise SnapshotError('HTDY_SNAPSHOT_SOURCE_CHANGED')
+    if first['summary']['closed'] != len(curve):
+        raise SnapshotError('HTDY_SNAPSHOT_CLOSED_COUNT_MISMATCH')
+    if Decimal(first['summary']['sum_return_percentage_points']) != cumulative:
+        raise SnapshotError('HTDY_SNAPSHOT_RETURN_SUM_MISMATCH')
     payload = {**first, 'trades': trades, 'actions': actions, 'curve': curve, 'display_projection_version': 'htdy_snapshot_display_v2'}
     for point, trade in zip(curve, sorted((item for item in trades if item['status'] == 'CLOSED'), key=lambda item: (item['exit_bar_end'], item['reference_trade_id'])), strict=True):
         point.update(date=trade['exit_trading_day'], segment=':'.join((trade['physical_contract'], trade['owner_segment_id'], trade['calculation_segment_id'])))
@@ -446,11 +452,25 @@ def build_snapshot(service, query, *, store=None, query_history=None):
     return (store or SnapshotStore(snapshot_root())).publish(payload)
 
 
+def safe_failure(exc):
+    """Existing public diagnostic classes only; never exception text or traces."""
+    code = getattr(exc, 'code', '')
+    if not isinstance(code, str) or not re.fullmatch(r'(HTDY|SUBING|MARKET|MAIN_CONTRACT|HISTORICAL)_[A-Z0-9_]{1,100}', code):
+        code = 'HTDY_SNAPSHOT_BUILD_FAILED'
+    result = {'status': 'failed', 'code': code}
+    from app.market_data.subing_reference import SubingReferenceError
+    if isinstance(exc, SubingReferenceError) and exc.diagnostic is not None:
+        result['diagnostic'] = exc.diagnostic
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=('build',))
     parser.add_argument('--symbol', required=True)
-    parser.add_argument('--since', type=date.fromisoformat)
+    extent = parser.add_mutually_exclusive_group()
+    extent.add_argument('--since', type=date.fromisoformat)
+    extent.add_argument('--full-history', action='store_true')
     parser.add_argument('--through', type=date.fromisoformat)
     parser.add_argument('--as-of', type=datetime.fromisoformat)
     args = parser.parse_args()
@@ -469,14 +489,15 @@ def main():
             if monotonic() > deadline:
                 raise SnapshotError('HTDY_SNAPSHOT_BUDGET_EXCEEDED')
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=600):
-            service = _build_service(session, check_cancelled)
+            service = _build_service(session, check_cancelled, historical_window_days=None if args.full_history else 365, physical_context_bars=32)
             result = build_snapshot(service, SubingReferenceQuery(args.symbol, args.since, args.through,
-                                    args.as_of, frequency='60m'))
+                                    args.as_of, frequency='60m'), full_history=args.full_history)
         print(json.dumps({'status': 'built', 'snapshot_id': result['snapshot_id'],
-                          'product': result['product'], 'summary': result['summary']}))
+                          'product': result['product'], 'since': result['since'], 'through': result['through'], 'source_token': result['source_token'], 'summary': result['summary']}))
     except Exception as exc:
-        code = exc.code if isinstance(exc, SnapshotError) else 'HTDY_SNAPSHOT_BUILD_FAILED'
-        raise SystemExit(code) from None
+        print(json.dumps(safe_failure(exc)), flush=True)
+        raise SystemExit(1) from None
+
 
 
 if __name__ == '__main__':

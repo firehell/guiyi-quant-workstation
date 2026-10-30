@@ -128,7 +128,7 @@ def test_changed_source_during_paging_does_not_publish(tmp_path):
             value['source_token'] = 'b' * 64
         return value
     service = SimpleNamespace(now=lambda: datetime(2026, 10, 31, tzinfo=UTC), check_cancelled=lambda: None)
-    with pytest.raises(SnapshotError, match='HTDY_SNAPSHOT_SOURCE_CHANGED'):
+    with pytest.raises(SnapshotError, match='HTDY_SNAPSHOT_PAGE_IDENTITY_CHANGED'):
         build_snapshot(service, SubingReferenceQuery('jm', frequency='60m'), store=SnapshotStore(tmp_path), query_history=query_history)
     assert not list(tmp_path.glob('*.json'))
 
@@ -300,3 +300,37 @@ def test_rejects_exit_dates_outside_window_and_signal_trade_day_mismatch(tmp_pat
         packet['signals'][0]['trading_day'] = value
     with pytest.raises(SnapshotError):
         SnapshotStore(tmp_path).publish(packet)
+
+
+def test_default_window_stays_one_year_but_explicit_full_history_uses_storage_floor():
+    from datetime import date
+    from types import SimpleNamespace
+    from app.market_data.subing_reference import SubingReferenceService, SubingReferenceQuery, SubingReferenceError
+    start, end = date(2023, 1, 3), date(2026, 10, 30)
+    market = SimpleNamespace(completed_trading_days=lambda **kw: (start, end), session_windows=lambda **kw: (SimpleNamespace(end=datetime(2026,10,30,7,tzinfo=UTC)),))
+    coverage = SimpleNamespace(product_start=lambda _: start)
+    query = SubingReferenceQuery('jm', start, end, frequency='60m')
+    default = SubingReferenceService(market, coverage=coverage, active_products=['jm'])
+    with pytest.raises(SubingReferenceError, match='SUBING_REFERENCE_INVALID_QUERY'):
+        default._window(query,datetime(2026,10,31,tzinfo=UTC))
+    full = SubingReferenceService(market, coverage=coverage, active_products=['jm'], historical_window_days=None)
+    assert full._window(query,datetime(2026,10,31,tzinfo=UTC))[:2] == (start,end)
+    assert default.historical_window_days == 365
+
+
+def test_full_history_builder_selects_storage_start_explicitly(tmp_path):
+    from datetime import date
+    from types import SimpleNamespace
+    from app.market_data.subing_reference import SubingReferenceQuery
+    from app.reference_trading.htdy_snapshot import build_snapshot
+    calls=[]
+    def query_history(_,query):
+        calls.append(query)
+        value=payload()
+        value['since']=str(query.since)
+        value['next_cursor']=None
+        return value
+    service=SimpleNamespace(now=lambda:datetime(2026,10,31,tzinfo=UTC),check_cancelled=lambda:None,historical_window_days=None,historical_storage_start=lambda _:date(2023,1,3))
+    result=build_snapshot(service,SubingReferenceQuery('jm',frequency='60m'),store=SnapshotStore(tmp_path),query_history=query_history,full_history=True)
+    assert calls[0].since == date(2023,1,3)
+    assert result['since'] == '2023-01-03'

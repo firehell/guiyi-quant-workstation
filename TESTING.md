@@ -2325,7 +2325,7 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 ### HTDY 60m 冻结快照与来源展示
 
 ```sh
-PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/reference_trading/test_htdy_snapshot.py services/quant-api/tests/reference_trading/test_htdy_history.py
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/reference_trading/test_htdy_snapshot.py services/quant-api/tests/reference_trading/test_htdy_snapshot_batch.py services/quant-api/tests/reference_trading/test_htdy_history.py services/quant-api/tests/test_htdy_physical_context.py
 cd apps/quant-web
 node --test tests/htdySnapshot.test.ts tests/useHtdySnapshot.test.ts tests/htdyUnifiedSignals.test.ts tests/htdySimnowMarkers.test.ts tests/htdySimnowRecords.test.ts
 ```
