@@ -1,5 +1,26 @@
 # 当前状态
 
+10/30 12:55：owner批准统一发布树/正式十服务切换及SimNow待恢复trade方案。PR545已合main，
+annotated tag/GitHub Release **v1.16.38** exact `e026ad367f341a2e08df4a47b229b951c9acefd3`；
+发布tree与已审查候选一致、clean detached，main已回合并develop。源与最终树SimNow各841项、
+固定SDK离线33、8模块mypy、Ruff、cohort/retention 299、Web14/类型/构建/拓扑及独立安全Review通过。
+**第二步TRADE_HOST_DEPLOYED，但统一部署目标PARTIAL。** 独立SimNow已由正式工具切到v38 --trade，
+12:54真实PID57727、同PID双锁、run `7c4ff0253c1b420cb055d847ec5c4cb0`、配置/plist绑定通过；
+WAITING_SESSION/UNKNOWN、account_takeover_pending=true、opening_enabled=false，未完成新鲜账户接管。
+原四库/历史前缀与day30计数3/block保留；唯一额外许可run已领取，attempt尚未领取，未新增Broker连接。
+仅固定本次许可可覆盖冻结的day30 CONNECTION_BUDGET_EXHAUSTED；其余block/漂移仍阻断，
+下午首次连接等待权威13:28–13:32窗口，失败/重启/过期不返还，不得重复apply或制造信号/订单。
+正式十服务cohort尝试在claimed/prewarm阶段取消，effects为空、未停服/安装/CAS，仍v35/gen41；
+身份全部matched，API/Web HTTP通过，Runtime健康未通过。Reference HTDY FU60m真实重叠窗口改值
+触发OBSERVATION_GAP：10/29 03:30Z close5418→5420、volume122620→122629，06:30Z volume110773→110764；
+31个重叠端点一致、两份均completed_live/realtime，缺dataset_revision，不能归因盘后修订或降比较门禁。
+现有source-revision机制不能解除此HTDY原窗口冲突，当前physical MDS读回亦DATASET_OR_PARTITION_MISSING。
+旧v36经两次一致零引用计划non-force移除，v37树复用为v38；仅余v35/v38两棵发布树，
+v35仍被十服务引用不能删，develop及JM30研究树保留。统一版本/单树尚未完成，
+账户恢复、逐品种trade新输入、真实策略成交及恢复验收仍分别待验。未新增定时任务或通知受众。
+证据 `output/simnow-unified-takeover-20261030/`；Reference源冲突须先按原件与权威来源解释/修复，
+再生成新的cohort计划，旧取消计划和已完成SimNow意图均不复用。以下为此前检查点。
+
 10/30 11:36：owner取消定时并要求立即处理；simnow一次性任务已删除。权威全60 BREAK、下一13:30
 及>=660秒午间窗口通过。PR544已合main，annotated tag/GitHub Release **v1.16.37** exact
 `5b4bc2004c3cce73d82757816eca9cbfdb978f25` 已发布，tree与800测试候选完全一致。

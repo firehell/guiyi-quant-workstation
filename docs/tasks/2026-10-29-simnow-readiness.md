@@ -297,3 +297,59 @@ Owner要求取消11:35任务立即处理，automation simnow已删除，不再�
 原observe PID71132保留、原启动项仍observe，正式10服务v35/gen41不动，独立只读Review同结论。
 本次状态PARTIAL/RELEASED_SWITCH_BLOCKED，额外一次仍未用，不报告TRADE_HOST_DEPLOYED。
 必须先确定受控账户恢复及预算block处理合同，不能用旧快照或额外1次授权静默放宽门禁。
+
+## 12:55 统一发布与待恢复trade实际执行
+
+Owner明确批准本轮完整方案：十服务和独立SimNow统一固定版本、单发布树，
+SimNow允许带待接管状态部署，仅对冻结day20261030预算block作本次唯一许可例外。
+这项新授权替代此前“正式十服务不动”的范围；不改变策略/账户/风险及输入年龄门禁。
+
+- PR545已合main，annotated v1.16.38/GitHub Release exact
+  `e026ad367f341a2e08df4a47b229b951c9acefd3`，候选090808bb1与发布tree相同。
+  固定发布树`.worktrees/release-v1.16.38` clean detached，main回合并develop。
+- plan v4/permit v2冻结四库/原生历史前缀/配置/SDK/预算block；全账户独占stamp和首次run/attempt持久领取，
+  不支持旧plan混用。pending从Supervisor/Host/Adapter分别阻止订单类操作；同连接结算、归属、
+  资金/持仓/委托/成交及新鲜Recover通过前不解除。旧native仅历史锚，不证明当前账户为空。
+- 源841 passed(58.76s)、固定最终树841 passed(66.06s)、真实SDK结构假API无网络33 passed、
+  mypy8模块、Ruff、cohort/retention/bindings299 passed(20.06s)、Web14/类型/构建/拓扑通过；
+  两路独立安全复核及固定候选Review无未解决Confirmed Issue。移动后重建离线venv，旧v37路径残留0，
+  config/SDK与service preflight复验通过。实际摘要在validation.json。
+
+### 分开执行结果
+
+新鲜午间全60无Session、下一下午13:30且>=660秒条件通过。正式cohort计划
+`405f1d68e5c3584a99857185989b0fc29b84db91c7bc442716214bd6a409cc6c`
+仅apply一次，在claimed/prewarm取消，effects={}、未停止或安装任何正式服务，未CAS。
+该计划已消耗/过期，不得再apply。十服务12:55实际身份均matched v35/gen41，API/Web通过，
+Runtime健康失败，不能称RUNTIME_READY。
+
+Reference预热失败已由两路只读诊断确认是HTDY FU60m `OBSERVATION_GAP`。
+checkpoint seq8/expected8、32根窗口的31个移位重叠端点一致，合约/交易日/owner/calculation segment相同；
+10/29 03:30Z close5418→5420、volume122620→122629，06:30Z volume110773→110764。
+两份原件均completed_live/realtime，均未保存dataset_revision；不是Decimal格式差异或缺Bar端点。
+当前physical MDS查询DATASET_OR_PARTITION_MISSING，不能猜测Canonical与任一窗口一致。
+`rqdata_live_history_revision_v1`的逐对修订证据不豁免原窗口冲突，现实现有适用身份亦不含HTDY；
+不得忽略volume、数值容差、reset窗口、制造中断、改原件或重放通知来强行过门禁。
+
+SimNow部分按独立失败边界继续：正式switch plan
+`c49f2326982b482fbf06a2a3771ee01a082d524cc95e112c2a002a86f5f3dffe`
+只apply一次，intent COMPLETE/HOST_SWITCH_VERIFIED。原observe PID71132协作退出后双锁释放，
+锁内历史前缀/账本/budget/前像通过；安装同label并启动v38 --trade，两轮真实读回成功。
+12:54复核PID57727、同PID双锁、run `7c4ff0253c1b420cb055d847ec5c4cb0`、实际exact版本/配置/plist绑定，
+mode=trade、WAITING_SESSION/UNKNOWN、account_takeover_pending=true、opening_enabled=false。
+API source只读身份配置已指新发布根，实际模式从实时index读取。原四库/SDK/外置账户anchor保持。
+两日原计数各3及预算block均保留；许可run-claim已领取、attempt-claim尚无，未新增连接。
+权威下午连接准入13:28–13:32；许可过期/失败/断线/重启不返还，不由本任务另建定时器或手工probe。
+部署结论仅TRADE_HOST_DEPLOYED，未通过新鲜账户接管、trade首见执行输入、真实策略开平或恢复验收。
+
+### 发布树收拢
+
+v37原候选树按原生Git worktree move成为v38；v36无非Git必要运行原件且无有效引用，
+两次一致cleanup-plan `a4192f3a1e160e41106f9f8f2a2f3aa04daa317064adeba3495f8a731a3f8998`
+均eligible/references=[]，正常non-force git worktree remove完成。
+未移动旧tag、删Git历史、账户、行情或日志；develop与JM30研究树保留。
+仍有v35/v38两棵发布树，v35承载正式十服务，不得为单树目标强删。
+
+总体PARTIAL：发布完成、SimNow待恢复trade部署完成；正式十服务切换及最终单树阻塞于Reference源冲突。
+最小下一步是基于保留原件和权威来源解决HTDY窗口改值，再在有效休市窗口生成新的cohort计划。
+证据统一在`output/simnow-unified-takeover-20261030/`，失败、发布、SimNow及Reference诊断各自留存。
