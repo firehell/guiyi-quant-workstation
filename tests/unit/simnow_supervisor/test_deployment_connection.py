@@ -16,6 +16,10 @@ from test_settings import existing_v2, write
 
 @pytest.fixture
 def granted(tmp_path):
+    yield from grant_state(tmp_path)
+
+
+def grant_state(tmp_path, *, pending=False, issue=True):
     config, value, folder = existing_v2(tmp_path)
     root = tmp_path / "release-v1.16.37"
     Path(value["project_root"]).rename(root)
@@ -51,10 +55,24 @@ def granted(tmp_path):
     out.mkdir(mode=0o700)
     path = out / "deployment-connection-permit.private.json"
     value["deployment_connection_permit"] = str(path)
+    if pending:
+        value["account_takeover_pending"] = True
     write(config, value)
     settings = load_settings(config)
+    from guiyi_quant.simnow_execution.supervisor import global_account_lock_directory
+
+    private_global = global_account_lock_directory()
+    assert private_global.is_relative_to(tmp_path), (
+        "fixture must never touch production AppSupport"
+    )
+    private_global.mkdir(mode=0o700, parents=True, exist_ok=True)
     db = sqlite3.connect(folder / "signals.sqlite")
     db.execute("INSERT INTO attempts VALUES (?,?)", ("20261030", 3))
+    if pending:
+        db.execute(
+            "INSERT INTO blocks VALUES (?,?)",
+            ("20261030", "CONNECTION_BUDGET_EXHAUSTED"),
+        )
     db.commit()
     db.close()
     now = datetime(2026, 10, 30, 3, 35, tzinfo=UTC)
@@ -62,23 +80,32 @@ def granted(tmp_path):
     binding = permit.binding(settings, config, pm, now)
     intent = out / "switch-intent.private.json"
     record = dict(
-        schema="simnow_trade_switch_plan_v3",
+        schema="simnow_trade_switch_plan_v4",
         stage="INSTALLED",
         plan_hash="a" * 64,
         window_policy="simnow_midday_deployment_window_v1",
-        snapshot=dict(connection_permit=binding),
+        snapshot=dict(
+            connection_permit=binding,
+            connection_anchor=permit.account_anchor(settings) if pending else None,
+        ),
     )
-    intent.write_text(json.dumps(record))
-    intent.chmod(0o600)
-    grant_sha = permit.issue(
-        settings, binding, "a" * 64, intent, now, clock=lambda: now
-    )
-    record["connection_grant_sha256"] = grant_sha
-    record["stage"] = "START_REQUESTED"
-    intent.write_text(json.dumps(record))
+    if issue:
+        intent.write_text(json.dumps(record))
+        intent.chmod(0o600)
+        grant_sha = permit.issue(
+            settings, binding, "a" * 64, intent, now, clock=lambda: now
+        )
+        record["connection_grant_sha256"] = grant_sha
+        record["stage"] = "START_REQUESTED"
+        intent.write_text(json.dumps(record))
     inbox = SignalInbox(folder / "signals.sqlite", settings.account_id, ("RB",))
     yield settings, inbox, now, pm, intent, record, binding
     inbox.close()
+
+
+@pytest.fixture(params=[False, True], ids=["ordinary-grant", "pending-budget-block"])
+def unissued_state(tmp_path, request):
+    yield from grant_state(tmp_path, pending=request.param, issue=False)
 
 
 def test_settings_optional_permit_and_single_run_attempt(granted):
@@ -232,16 +259,14 @@ def test_claim_fsync_failure_is_spent_and_no_factory(granted, monkeypatch):
     ).fetchone() == (3,)
 
 
-def test_coordinator_real_settings_midday_run_and_pm_once(granted, monkeypatch):
+def test_coordinator_real_settings_midday_run_and_pm_once(unissued_state, monkeypatch):
     import threading
     from types import SimpleNamespace as NS
     from datetime import date
     from test_trade_switch import Backend, m
     from guiyi_quant.simnow_execution.supervisor import Supervisor
 
-    s, inbox, now, pm, intent, record, binding = granted
-    s.deployment_connection_permit.unlink()
-    intent.unlink()
+    s, inbox, now, pm, intent, record, binding = unissued_state
     clock = [now]
     waiting = threading.Event()
     advance = threading.Event()
@@ -312,6 +337,23 @@ def test_coordinator_real_settings_midday_run_and_pm_once(granted, monkeypatch):
                 today_attempts=3, remaining_attempts=0, account_id=s.account_id
             )
             self.value["connection_permit"] = binding
+            if s.account_takeover_pending:
+                self.value["account"].update(
+                    account_takeover_pending=True,
+                    native_account_verified=False,
+                    local_obligations_clear=True,
+                    unknown_positions=None,
+                    unknown_orders=None,
+                    unknown_trades=None,
+                    day_blocked=True,
+                    day_block_code="CONNECTION_BUDGET_EXHAUSTED",
+                )
+
+        def offline_preflight(self, snapshot):
+            value = super().offline_preflight(snapshot)
+            if s.account_takeover_pending:
+                value["connection_anchor"] = permit.account_anchor(s)
+            return value
 
         def issue_connection_permit(self, snapshot, plan_hash, intent_path):
             return permit.issue(
@@ -339,6 +381,8 @@ def test_coordinator_real_settings_midday_run_and_pm_once(granted, monkeypatch):
             return dict(
                 verified=True,
                 mode="trade",
+                account_takeover_pending=host.account_takeover_pending,
+                opening_enabled=False,
                 pid=200,
                 run_id=host.run_id,
                 dual_locks_held_by_pid=True,
@@ -367,6 +411,8 @@ def test_coordinator_real_settings_midday_run_and_pm_once(granted, monkeypatch):
         if hasattr(backend, "thread"):
             backend.thread.join(10)
     assert not errors and factory_calls == [True]
+    if s.account_takeover_pending:
+        assert host.account_takeover_pending is True
     assert before == (
         inbox.conn.execute("SELECT * FROM attempts").fetchall(),
         inbox.conn.execute("SELECT * FROM blocks").fetchall(),
@@ -627,3 +673,75 @@ def test_civil_oct30_night_startup_uses_authoritative_nov2_regular_budget(grante
         == activation
     )
     assert not Path(str(s.deployment_connection_permit) + ".attempt-claim").exists()
+
+
+@pytest.mark.parametrize("failed_fsync", [1, 2, 3, 4])
+def test_global_stamp_partial_failure_is_never_refunded(
+    unissued_state, monkeypatch, failed_fsync
+):
+    s, inbox, now, pm, intent, record, binding = unissued_state
+    intent.write_text(json.dumps(record))
+    intent.chmod(0o600)
+    count = [0]
+    original = permit.os.fsync
+
+    def failure(fd):
+        count[0] += 1
+        if count[0] == failed_fsync:
+            raise OSError("fixture interrupted durability")
+        original(fd)
+
+    monkeypatch.setattr(permit.os, "fsync", failure)
+    with pytest.raises(ValueError, match="DEPLOYMENT_CONNECTION_INVALID"):
+        permit.issue(s, binding, "a" * 64, intent, now, clock=lambda: now)
+    marker = permit.global_marker(s)
+    assert marker.exists()
+    before = marker.read_bytes()
+    monkeypatch.setattr(permit.os, "fsync", original)
+    with pytest.raises(ValueError, match="DEPLOYMENT_CONNECTION_EXHAUSTED"):
+        permit.issue(s, binding, "a" * 64, intent, now, clock=lambda: now)
+    assert marker.read_bytes() == before
+
+
+def test_global_stamp_blocks_second_config_and_state_directory(granted, tmp_path):
+    s, inbox, now, pm, intent, record, binding = granted
+    marker = permit.global_marker(s)
+    original = marker.read_bytes()
+    other = tmp_path / "other-intent"
+    other.mkdir(mode=0o700)
+    cfg = json.loads(s.source_config_path.read_bytes())
+    cfg["deployment_connection_permit"] = str(other / permit.NAME)
+    config = tmp_path / "other-config.private.json"
+    write(config, cfg)
+    second = load_settings(config)
+    frozen = permit.binding(second, config, pm, now)
+    new_intent = other / "switch-intent.private.json"
+    new_intent.write_text(
+        json.dumps(
+            dict(
+                record,
+                stage="INSTALLED",
+                plan_hash="b" * 64,
+                snapshot=dict(connection_permit=frozen),
+            )
+        )
+    )
+    new_intent.chmod(0o600)
+    with pytest.raises(ValueError, match="DEPLOYMENT_CONNECTION_EXHAUSTED"):
+        permit.issue(second, frozen, "b" * 64, new_intent, now, clock=lambda: now)
+    assert (
+        marker.read_bytes() == original
+        and not second.deployment_connection_permit.exists()
+    )
+
+
+def test_missing_or_modified_global_stamp_forbids_activation(granted):
+    s, inbox, now, pm, *_ = granted
+    marker = permit.global_marker(s)
+    original = marker.read_bytes()
+    marker.write_bytes(original + b" ")
+    with pytest.raises(ValueError, match="DEPLOYMENT_CONNECTION_INVALID"):
+        permit.activate(s, inbox, "1" * 32, now, clock=lambda: now)
+    marker.unlink()
+    with pytest.raises(ValueError, match="DEPLOYMENT_CONNECTION_INVALID"):
+        permit.activate(s, inbox, "1" * 32, now, clock=lambda: now)

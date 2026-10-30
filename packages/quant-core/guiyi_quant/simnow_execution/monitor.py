@@ -38,6 +38,7 @@ class MonitorPublisher:
         opening_enabled=False,
         host_status=None,
         observe_reconciliation=None,
+        account_takeover_pending=False,
     ):
         """Best effort observer only. Never change order decisions on publication error."""
         target = None
@@ -55,6 +56,8 @@ class MonitorPublisher:
             if (
                 mode is not None
                 and mode not in ("observe", "manage", "trade")
+                or type(account_takeover_pending) is not bool
+                or (account_takeover_pending and opening_enabled)
                 or type(opening_enabled) is not bool
                 or opening_enabled
                 and mode != "trade"
@@ -98,17 +101,23 @@ class MonitorPublisher:
             )
             if mode is not None:
                 payload.update(
-                    mode=mode, opening_enabled=opening_enabled, host_status=host_status
+                    mode=mode,
+                    opening_enabled=opening_enabled,
+                    host_status=host_status,
+                    account_takeover_pending=account_takeover_pending,
                 )
             if observe_reconciliation is not None:
                 proof = observe_reconciliation
-                if (mode != 'observe' or not isinstance(proof, dict)
-                        or proof.get('run_id') != self.run_id
-                        or proof.get('account_id') != self.account_id
-                        or proof.get('native_source_id') != native_source_id
-                        or proof.get('ledger_hash') != ledger_hash):
-                    raise MonitorError('MONITOR_OBSERVE_BINDING_INVALID')
-                payload['observe_reconciliation'] = proof
+                if (
+                    mode != "observe"
+                    or not isinstance(proof, dict)
+                    or proof.get("run_id") != self.run_id
+                    or proof.get("account_id") != self.account_id
+                    or proof.get("native_source_id") != native_source_id
+                    or proof.get("ledger_hash") != ledger_hash
+                ):
+                    raise MonitorError("MONITOR_OBSERVE_BINDING_INVALID")
+                payload["observe_reconciliation"] = proof
             fd, target = tempfile.mkstemp(prefix=".monitor-", dir=self.root)
             with os.fdopen(fd, "w") as stream:
                 json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
@@ -167,6 +176,11 @@ def _index(root):
     at(value["published_at"])
     if "mode" in value and (
         value["mode"] not in ("observe", "manage", "trade")
+        or type(value.get("account_takeover_pending", False)) is not bool
+        or (
+            value.get("account_takeover_pending", False)
+            and value.get("opening_enabled")
+        )
         or type(value.get("opening_enabled")) is not bool
         or value["opening_enabled"]
         and value["mode"] != "trade"
@@ -234,8 +248,11 @@ class MonitorReader:
         if not (self.root / "monitor.json").exists():
             return None
         index = _index(self.root)
-        if self.expected_account_id is not None and index['account_id'] != self.expected_account_id:
-            raise MonitorError('MONITOR_ACCOUNT_BINDING_MISMATCH')
+        if (
+            self.expected_account_id is not None
+            and index["account_id"] != self.expected_account_id
+        ):
+            raise MonitorError("MONITOR_ACCOUNT_BINDING_MISMATCH")
         if at(index["published_at"]) > now:
             raise MonitorError("MONITOR_FUTURE_INDEX")
         if (
@@ -328,20 +345,26 @@ class MonitorReader:
                 for source, payload in reversed(rows[:5000])
             ]
             baseline = _snapshot(first[1], first[0], account) if first else None
-            latest_native = db.execute('SELECT source FROM snapshots ORDER BY rowid DESC LIMIT 1').fetchone()
-            if index.get('observe_reconciliation') is not None and latest_native != (index['native_source_id'],):
-                raise MonitorError('MONITOR_OBSERVE_SOURCE_CHANGED')
+            latest_native = db.execute(
+                "SELECT source FROM snapshots ORDER BY rowid DESC LIMIT 1"
+            ).fetchone()
+            if index.get("observe_reconciliation") is not None and latest_native != (
+                index["native_source_id"],
+            ):
+                raise MonitorError("MONITOR_OBSERVE_SOURCE_CHANGED")
             truncated = truncated or len(rows) > 5000
         if not snapshots or baseline is None:
             raise MonitorError("MONITOR_NATIVE_MISSING")
         if any(s.at > now for s in snapshots):
             raise MonitorError("MONITOR_FUTURE_NATIVE")
         from .observe_reconciliation import verify_proof
+
         try:
-            observe_reconciliation = verify_proof(index.get('observe_reconciliation'), index,
-                                                   state, snapshots[-1], now)
+            observe_reconciliation = verify_proof(
+                index.get("observe_reconciliation"), index, state, snapshots[-1], now
+            )
         except (ValueError, TypeError, KeyError):
-            raise MonitorError('MONITOR_OBSERVE_PROOF_INVALID') from None
+            raise MonitorError("MONITOR_OBSERVE_PROOF_INVALID") from None
         revision = codec.digest(
             (
                 account,
@@ -371,7 +394,7 @@ class MonitorReader:
             return overview(data, now)
         except Exception:
             if self.expected_account_id is not None:
-                raise MonitorError('MONITOR_SOURCE_UNAVAILABLE') from None
+                raise MonitorError("MONITOR_SOURCE_UNAVAILABLE") from None
             return overview(None, now, error=True)
 
     def records(

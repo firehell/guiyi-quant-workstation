@@ -402,6 +402,7 @@ def test_mac_backend_install_keeps_private_preimages_and_uses_exact_commands(tmp
         )
 
     b.run = run
+    b.settings = SimpleNamespace(account_takeover_pending=False)
     assert b.install({})
     assert calls == [
         ["/bin/launchctl", "bootout", b.label],
@@ -1087,7 +1088,7 @@ def test_midday_rejects_unknown_or_inconsistent_authoritative_fact(case):
 def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
     b, c, _ = setup
     plan = c.plan()
-    assert plan["schema"] == "simnow_trade_switch_plan_v3"
+    assert plan["schema"] == "simnow_trade_switch_plan_v4"
     b.value["window"] = dict(
         policy=m.MIDDAY_POLICY,
         trading_day="20261030",
@@ -1106,7 +1107,12 @@ def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
 
 
 @pytest.mark.parametrize(
-    "old_schema", ["simnow_trade_switch_plan_v1", "simnow_trade_switch_plan_v2"]
+    "old_schema",
+    [
+        "simnow_trade_switch_plan_v1",
+        "simnow_trade_switch_plan_v2",
+        "simnow_trade_switch_plan_v3",
+    ],
 )
 def test_v1_plan_is_not_accepted_for_new_execution(setup, old_schema):
     b, c, _ = setup

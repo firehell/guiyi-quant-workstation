@@ -44,7 +44,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 重算fresh，不连接Broker或读取凭据。切换工具默认只读plan，`--apply` 和 `--recover-observe` 是真实服务操作，
 不能用于测试；合同及参数边界见[一次性切换工具](docs/SIMNOW_EXECUTION.md#一次性切换工具)。
 停止边界回归使用真实临时60品种四库与两把真实FD锁，覆盖合法append、prefix/schema篡改、全部10维资金、
-最新/中间坏行、STOPPED身份和source绑定、真实最新快照TTL、预算/队列竞态，以及night/midday的plan v3互斥。
+最新/中间坏行、STOPPED身份和source绑定、真实最新快照TTL、预算/队列竞态，以及night/midday的plan v4互斥。
 `--window midday --check` 仅只读当前权威午间窗口，不调用Broker、创建计划或停止服务；预测不能替代执行时校验。
 `tests/unit/simnow_supervisor/test_deployment_connection.py` 使用真实私有grant/intent/claim与SQLite，
 验证单次午间例外、配置/版本/run绑定、消费前时间窗、持久占用失败、失败后不返还及原attempts=3保留。
@@ -2248,3 +2248,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:services/quant-api/tests
 真实PG Gate必须显式设置`GUIYI_ISOLATED_MIGRATION_DATABASE_URL`指向本任务独立、
 含test/isolated名称的可销毁实例；真实Redis另用`GUIYI_ISOLATED_REDIS_URL`的16389/11。
 未提供变量产生的skip不算真实依赖Gate通过，不能填写生产5432/6379。
+
+
+## SimNow待恢复trade与统一发布
+
+沿用持续trade完整相关回归及固定SDK离线smoke；新增待接管状态、旧快照不能解锁、精确预算block许可、
+其他block/漂移拒绝、先持久claim再SDK、恢复失败零submit/cancel/open、重启/过期/重复apply拒绝、
+新鲜完整Recover后才准入自然新信号以及权威跨日普通预算。原四库与block历史不清理。
+正式十服务按原cohort定向回归/CLI兼容检查，现场分别核验版本/根/cohort与SimNow同PID双锁，
+retention只读计划和删除前重扫均须通过；离线测试不等于实际切换或账户恢复通过。
+
+监控Web测试还验证待恢复trade明确显示账户待接管，错误/停止/过期不被该状态掩盖，pending与
+opening=true/非trade/错误类型的矛盾响应被拒绝；旧响应缺可选字段保持兼容。

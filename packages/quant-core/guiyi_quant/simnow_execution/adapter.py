@@ -62,8 +62,8 @@ def callback_guard(method):
 class Adapter:
     def __init__(self, store, journal, sdk, api, user, session, *,
                  close_only=False, correlated_native=False,
-                 strategy_correlated_native=False, native_validator=None):
-        if (type(close_only) is not bool or type(correlated_native) is not bool
+                 strategy_correlated_native=False, native_validator=None, account_takeover_pending=False):
+        if (type(account_takeover_pending) is not bool or type(close_only) is not bool or type(correlated_native) is not bool
             or type(strategy_correlated_native) is not bool
             or correlated_native and (not close_only or strategy_correlated_native)
             or strategy_correlated_native and not callable(native_validator)
@@ -88,6 +88,7 @@ class Adapter:
         self.store, self.journal, self.sdk, self.api = store, journal, sdk, api
         self._user, self.session = user, session
         self._faulted = False
+        self.account_takeover_pending = account_takeover_pending
         self.close_only = close_only
         self.strategy_correlated_native = strategy_correlated_native
         self.correlated_native = correlated_native or strategy_correlated_native
@@ -416,6 +417,8 @@ class Adapter:
 
     def dispatch(self, effect, binding, inventory, execution, permit, now):
         """Only once per order/action, including SDK error, crash and unknown result."""
+        if getattr(self, "account_takeover_pending", False):
+            raise ValueError("ACCOUNT_TAKEOVER_PENDING")
         with self.store.dispatch_guard() as state:
             offset = self._preflight(
                 state, effect, binding, inventory, execution, permit, now

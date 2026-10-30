@@ -536,6 +536,7 @@ class NativePortfolio:
             self.gateway.api,
             self.gateway.user,
             session,
+            account_takeover_pending=getattr(self.settings, "account_takeover_pending", False),
             **capabilities,
         )
         if correlated_native or strategy_correlated_native:
