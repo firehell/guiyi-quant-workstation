@@ -13,13 +13,14 @@ import os
 from pathlib import Path
 import re
 import stat
+import sqlite3
 import subprocess
 from zoneinfo import ZoneInfo
 
 DAY = "20261030"
 POLICY = "simnow_midday_deployment_window_v1"
-SCHEMA = "simnow_midday_one_connection_v1"
-INTENT_SCHEMA = "simnow_trade_switch_plan_v3"
+SCHEMA = "simnow_midday_one_connection_v2"
+INTENT_SCHEMA = "simnow_trade_switch_plan_v4"
 NAME = "deployment-connection-permit.private.json"
 ZONE = ZoneInfo("Asia/Shanghai")
 
@@ -197,6 +198,75 @@ def _path(settings):
     return path
 
 
+def _table_budget(conn, account):
+    if conn.execute("SELECT account FROM identity").fetchall() != [(account,)]:
+        invalid()
+    attempt_rows = conn.execute(
+        "SELECT day,count FROM attempts ORDER BY day"
+    ).fetchall()
+    block_rows = conn.execute("SELECT day,code FROM blocks ORDER BY day").fetchall()
+    today = [n for day, n in attempt_rows if day == DAY]
+    code = [code for day, code in block_rows if day == DAY]
+    if today != [3] or len(code) > 1:
+        invalid()
+    return dict(
+        account_id=account,
+        attempts_sha256=hashlib.sha256(_bytes(attempt_rows)).hexdigest(),
+        blocks_sha256=hashlib.sha256(_bytes(block_rows)).hexdigest(),
+        blocked_code=code[0] if code else None,
+    )
+
+
+def budget_binding(settings):
+    path = _private(settings.state_root / settings.account_id / "signals.sqlite")
+    conn = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+    try:
+        conn.execute("PRAGMA query_only=ON")
+        conn.execute("BEGIN")
+        result = _table_budget(conn, settings.account_id)
+    finally:
+        conn.close()
+    if result["blocked_code"] is not None and not (
+        getattr(settings, "account_takeover_pending", False)
+        and result["blocked_code"] == "CONNECTION_BUDGET_EXHAUSTED"
+    ):
+        invalid()
+    return result
+
+
+def global_marker(settings, *, create=False):
+    from .supervisor import global_account_lock_directory
+
+    if not re.fullmatch(r"[a-f0-9]{64}", settings.account_id):
+        invalid()
+    directory = global_account_lock_directory()
+    if create:
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    _private(directory, directory=True)
+    return directory / (settings.account_id + "." + DAY + ".midday-connection-v2.json")
+
+
+def account_anchor(settings):
+    from .account_binding import existing_account
+
+    existing_account(settings.state_root, settings.account_id)
+    result = {}
+    for name in (
+        "account.sqlite",
+        "dispatch.sqlite",
+        "signals.sqlite",
+        "native-evidence.sqlite",
+    ):
+        path = _private(settings.state_root / settings.account_id / name)
+        info = path.stat()
+        result[name] = dict(
+            device=info.st_dev,
+            inode=info.st_ino,
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+    return result
+
+
 @_fixed
 def binding(settings, config, pm_start, now):
     if settings.schema != 2 or settings.mode != "trade" or not settings.enabled:
@@ -224,6 +294,8 @@ def binding(settings, config, pm_start, now):
         pm_session_start=pm_start.isoformat(),
         connection_expires_at=(pm_start + timedelta(seconds=120)).isoformat(),
         planned_at=now.isoformat(),
+        budget=budget_binding(settings),
+        account_takeover_pending=getattr(settings, "account_takeover_pending", False),
     )
 
 
@@ -255,6 +327,11 @@ def issue(settings, frozen, plan_hash, intent_path, now, *, clock=None):
         <= pm - timedelta(seconds=660)
     ):
         invalid()
+    anchor = intent["snapshot"].get("connection_anchor")
+    if getattr(settings, "account_takeover_pending", False) and (
+        not anchor or account_anchor(settings) != anchor
+    ):
+        invalid()
     fresh = clock() if clock else datetime.now(UTC)
     if (
         not datetime.fromisoformat(frozen["planned_at"])
@@ -262,16 +339,33 @@ def issue(settings, frozen, plan_hash, intent_path, now, *, clock=None):
         <= pm - timedelta(seconds=660)
     ):
         invalid()
-    return _new(
-        path,
-        dict(
-            schema=SCHEMA,
-            binding=frozen,
-            plan_hash=plan_hash,
-            intent_path=str(intent_path),
-            issued_at=fresh.isoformat(),
-        ),
+    value = dict(
+        schema=SCHEMA,
+        binding=frozen,
+        plan_hash=plan_hash,
+        intent_path=str(intent_path),
+        issued_at=fresh.isoformat(),
+        account_anchor=anchor,
     )
+    # The account/day stamp is deliberately first. Any partial outcome consumes
+    # this sole exception across every config, state directory and run.
+    _new(global_marker(settings, create=True), value)
+    after_stamp = clock() if clock else datetime.now(UTC)
+    if (
+        not datetime.fromisoformat(frozen["planned_at"])
+        <= after_stamp
+        <= pm - timedelta(seconds=660)
+    ):
+        invalid()
+    sha = _new(path, value)
+    after_grant = clock() if clock else datetime.now(UTC)
+    if (
+        not datetime.fromisoformat(frozen["planned_at"])
+        <= after_grant
+        <= pm - timedelta(seconds=660)
+    ):
+        invalid()
+    return sha
 
 
 @_fixed
@@ -280,6 +374,9 @@ def _checked(settings, now):
         invalid()
     path = _path(settings)
     grant, sha = read(path, limit=64 * 1024)
+    marker, marker_sha = read(global_marker(settings), limit=64 * 1024)
+    if marker_sha != sha or marker != grant:
+        invalid()
     frozen = grant["binding"]
     intent_path = Path(grant["intent_path"])
     if (
@@ -310,6 +407,12 @@ def _checked(settings, now):
         < datetime.fromisoformat(frozen["connection_expires_at"])
     ):
         invalid()
+    if getattr(settings, "account_takeover_pending", False) and (
+        not grant.get("account_anchor")
+        or grant["account_anchor"] != intent["snapshot"].get("connection_anchor")
+        or grant["account_anchor"] != account_anchor(settings)
+    ):
+        invalid()
     return path, sha, frozen, datetime.fromisoformat(grant["issued_at"])
 
 
@@ -323,20 +426,26 @@ def attempts(inbox, day):
     return count
 
 
-def _budget(inbox):
-    if inbox.blocked(DAY) or attempts(inbox, DAY) != 3:
+def _budget(inbox, frozen):
+    actual = _table_budget(inbox.conn, frozen["account_id"])
+    if actual != frozen["budget"]:
+        invalid()
+    if actual["blocked_code"] is not None and not (
+        frozen.get("account_takeover_pending") is True
+        and actual["blocked_code"] == "CONNECTION_BUDGET_EXHAUSTED"
+    ):
         invalid()
 
 
 @_fixed
 def activate(settings, inbox, run_id, now, *, clock=None):
-    _budget(inbox)
     path, sha, frozen, issued = _checked(settings, now)
+    _budget(inbox, frozen)
     if not re.fullmatch(r"[a-f0-9]{32}", run_id):
         invalid()
     fresh = clock() if clock else datetime.now(UTC)
     _time(frozen, issued, fresh)
-    _budget(inbox)
+    _budget(inbox, frozen)
     _new(
         path.with_name(path.name + ".run-claim"),
         dict(grant_sha256=sha, run_id=run_id, pid=os.getpid(), at=fresh.isoformat()),
@@ -348,8 +457,8 @@ def activate(settings, inbox, run_id, now, *, clock=None):
 def consume(settings, inbox, run_id, day, now, *, clock=None):
     if day != DAY:
         invalid()
-    _budget(inbox)
     path, sha, frozen, issued = _checked(settings, now)
+    _budget(inbox, frozen)
     claim, _ = read(path.with_name(path.name + ".run-claim"))
     if (
         claim.get("grant_sha256") != sha
@@ -359,7 +468,7 @@ def consume(settings, inbox, run_id, day, now, *, clock=None):
         raise PermitError("DEPLOYMENT_CONNECTION_EXHAUSTED")
     fresh = clock() if clock else datetime.now(UTC)
     window = _time(frozen, issued, fresh, connecting=True)
-    _budget(inbox)
+    _budget(inbox, frozen)
     _new(
         path.with_name(path.name + ".attempt-claim"),
         dict(grant_sha256=sha, run_id=run_id, pid=os.getpid(), at=fresh.isoformat()),

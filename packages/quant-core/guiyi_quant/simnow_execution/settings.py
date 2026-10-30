@@ -50,6 +50,7 @@ class ContinuousSettings:
     deployment_connection_permit: Path | None = None
     source_config_path: Path | None = None
     source_config_sha256: str | None = None
+    account_takeover_pending: bool = False
 
 
 def _path(value, *, code: str) -> Path:
@@ -108,6 +109,12 @@ def _read_private(path: Path) -> tuple[dict, str]:
         and value.get("schema") == 2
     ):
         fields = fields | {"deployment_connection_permit"}
+    if (
+        type(value) is dict
+        and value.get("schema") == 2
+        and "account_takeover_pending" in value
+    ):
+        fields = fields | {"account_takeover_pending"}
     if type(value) is not dict or set(value) != fields:
         raise SettingsError("SETTINGS_FIELDS_INVALID")
     if value["schema"] == 3 and info.st_nlink != 1:
@@ -223,6 +230,11 @@ def load_settings(path: Path) -> ContinuousSettings:
             or stat.S_IMODE(info.st_mode) != 0o700
         ):
             raise SettingsError("DEPLOYMENT_CONNECTION_INVALID")
+    pending = value.get("account_takeover_pending", False)
+    if type(pending) is not bool or (
+        pending and (not permit or value["mode"] != "trade" or not value["enabled"])
+    ):
+        raise SettingsError("ACCOUNT_TAKEOVER_PENDING_SETTINGS_INVALID")
     return ContinuousSettings(
         value["schema"],
         account,
@@ -236,4 +248,5 @@ def load_settings(path: Path) -> ContinuousSettings:
         permit,
         Path(path) if permit else None,
         config_sha if permit else None,
+        pending,
     )

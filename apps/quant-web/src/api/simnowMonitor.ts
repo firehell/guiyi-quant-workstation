@@ -9,7 +9,7 @@ export type MonitorMetric = 'equity' | 'available' | 'used_margin' | 'frozen_mar
 export interface MonitorOverview {
   version: string; status: 'available' | 'partial' | 'not_connected' | 'unavailable'; snapshot: string | null; generated_at: string
   account: { key: string; alias: string; environment: string; strategy: string; scope_product: string | null; policy_version: string } | null
-  observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string; mode?: 'observe' | 'manage' | 'trade' | null; opening_enabled?: boolean; host_status?: string | null } | null
+  observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string; mode?: 'observe' | 'manage' | 'trade' | null; opening_enabled?: boolean; account_takeover_pending?: boolean; host_status?: string | null } | null
   observe_reconciliation_ready?: boolean
   observe_reconciliation_status?: 'verified' | 'stale' | 'unverified'
   observe_reconciliation_checked_at?: string | null
@@ -30,6 +30,8 @@ export function validateOverview(value: MonitorOverview): MonitorOverview {
     || typeof value.position_projection_complete !== 'boolean' || value.curve.some(v => !instant(v.at) || !money(v.equity) || !money(v.net_profit))
     || (['available', 'partial'].includes(value.status) && (!value.account || !value.snapshot || !value.observer || !instant(value.readback_at)))
     || (value.observer?.mode != null && !['observe', 'manage', 'trade'].includes(value.observer.mode))
+    || (value.observer?.account_takeover_pending !== undefined && typeof value.observer.account_takeover_pending !== 'boolean')
+    || (value.observer?.account_takeover_pending === true && (value.observer.mode !== 'trade' || value.observer.opening_enabled !== false))
     || (value.observer?.opening_enabled !== undefined && typeof value.observer.opening_enabled !== 'boolean')
     || (value.observer?.opening_enabled === true && value.observer.mode !== 'trade')) throw Error('MONITOR_RESPONSE_INVALID')
   return value

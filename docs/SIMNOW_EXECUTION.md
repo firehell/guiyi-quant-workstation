@@ -246,11 +246,11 @@ account/dispatch/signals/native-evidence、正确scope、0700目录和私有单�
 
 ### 一次性切换工具
 
-`scripts/ops/macos/simnow-trade-switch.py` 默认只读生成60秒有效的 `simnow_trade_switch_plan_v3` 精确计划；显式 `--tag vX.Y.Z`、
+`scripts/ops/macos/simnow-trade-switch.py` 默认只读生成60秒有效的 `simnow_trade_switch_plan_v4` 精确计划；显式 `--tag vX.Y.Z`、
 `--config`、`--candidate-plist` 与私有 `--state-dir` 绑定同一候选，`--plan` 指定独占计划文件。
 候选必须是干净的 `release-<tag>` 目录、annotated tag/peeled commit/HEAD一致，SDK无Broker检查通过；
 当前observe的代码/SDK、配置、监控绑定、PID和双锁同样冻结。窗口按上节已选night/midday合同证明；
-plan顶层window_policy与snapshot及执行backend必须一致，旧v1/v2计划和跨窗口执行均拒绝，旧失败意图只留历史读回。
+plan顶层window_policy与snapshot及执行backend必须一致，旧v1/v2/v3计划和跨窗口执行均拒绝，旧失败意图只留历史读回。
 本工具仅限20261030、既有60品种独立空账户接管；任何原生或账本持仓、订单、成交、未解释预留均阻断。
 不创建账户、不清空四库、不重置连接预算或block、不连接柜台取证。新计划及首次SIGTERM前必须证明
 当日尚有至少一次普通连接额度，或已验证下述本次午间单次连接例外，且无当日block；
@@ -287,7 +287,7 @@ Owner明确选择“仅为本次午间部署额外允许1次连接”。普通�
 不能把含例外字段的trade运行配置覆盖给旧版API读取器，也不为此升级正式API。
 
 schema2 trade配置可增加精确可选字段 `deployment_connection_permit`，路径指向本次0700独占state-dir内
-`deployment-connection-permit.private.json`，准备阶段该文件必须不存在。plan v3冻结账户/交易日/配置SHA/
+`deployment-connection-permit.private.json`，准备阶段该文件必须不存在。plan v4冻结账户/交易日/配置SHA/
 exact release/SDK/意图路径及权威下午Session；安装后先持久生成grant，再进入START_REQUESTED。
 首次startup独占绑定run；后续VERIFYING/COMPLETE阶段保留该run的首次连接资格，其他run拒绝。
 有效连接窗口为权威下午Session开始前120秒至开始后120秒，过期不续期、不消耗其他交易日预算。
@@ -513,3 +513,31 @@ request_started_at属于未校准的两个时钟域，保留全部原始值，�
 
 代码集成、发布/运行切换、自然信号及实际策略订单闭环分别验收。开盘期间仅隔离开发和只读审计，
 不发布或切换；本次不创建原生报单/撤单、不确认结算、不修改真实账户journal。
+
+
+### 20261030统一发布的待恢复trade接管
+
+Owner明确交办统一十一服务及发布树，并选择待恢复trade部署：该显式路径在切换前只重放原账本、
+冻结四库、完整native历史前缀及配置/SDK/双锁/预算block，不把旧快照解释为当前账户事实。
+原普通切换的新鲜账户门禁保持，仅此显式路径将新鲜柜台接管核验推迟到新trade宿主同一连接内完成。
+午间必须公开mode=trade/account_takeover_pending=true/opening_enabled=false；旧快照不能解除待核状态。
+
+原attempts和block历史原样保留。只允许本次固定版本/配置/账户/唯一意图/首run的额外一次连接，
+且仅覆盖20261030精确冻结的CONNECTION_BUDGET_EXHAUSTED block；其他原因、变化或未知义务均拒绝。
+许可过期不延期，失败、断线、未知或重启不返还；下午连接窗口仍由权威Session决定，不提前探测登录。
+直到该连接完成资金/持仓/委托/成交/归属、当天结算及原账本完整Recover前，submit/cancel/open全部禁止。
+新鲜完整接管通过后才解除pending，逐品种输入门禁仍独立，旧上午信号不补开；次交易日普通预算规则不改。
+
+正式十服务和SimNow使用同一新fixed release；API监控身份锚也迁向该代码根，state_project_root及四库原位。
+使用原cohort工具和独立SimNow切换工具分别执行与读回，任何一部分失败都不得为凑单树强删旧运行根。
+全部服务根统一、身份/健康读回后才能逐旧树完成证据封存、零引用复核和non-force清理；自然账户恢复、
+策略执行输入、真实成交及跨日换月验收分别记录，不把trade部署当已通过。
+
+待恢复路径须在Supervisor/Host/Adapter分别阻止订单类写入；不能把Recover的READY或now+30派生TTL
+当作原生快照新鲜。核验必须绑定本次连接source、真实snapshot.at及其30秒期限，在可能耗时的查询/
+adapter/恢复步骤后重新读时。新鲜性不足保留pending，不落成“已接管”，也不借重启/重试取得第二次许可。
+
+本次额外连接另有账户/交易日固定的O_EXCL持久标记，与本grant/plan/intent严格绑定；部分写入或fsync失败
+不返还，换config或state-dir也不能重新签发。只读plan及SIGTERM前必须拒绝已占用标记，最终issue仍以
+O_EXCL处理并发。此标记只是本次一次性授权事实，不修改用户级配置或扩展为通用额度服务。
+原生窗口查询、grant持久化及SDK校验后的最终bootstrap前均重新读时；过窗/未知不启动、不refund或重试。
