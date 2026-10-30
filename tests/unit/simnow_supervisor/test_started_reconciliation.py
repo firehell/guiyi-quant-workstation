@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+from datetime import datetime, UTC
 from types import SimpleNamespace as NS
 import pytest
 from test_trade_switch import m
@@ -14,7 +15,10 @@ def fixture(tmp_path):
     snapshot = dict(
         candidate=dict(commit="a" * 40),
         host=dict(pid=100, run_id="old"),
-        ordinary_permit={"schema": "simnow_ordinary_takeover_v3"},
+        ordinary_permit={
+            "schema": "simnow_ordinary_takeover_v3",
+            "window": {"session_start": datetime.fromtimestamp(5000, UTC).isoformat()},
+        },
         preimage={"frozen": True},
     )
     plan = dict(schema=m.SCHEMA, snapshot=snapshot, created_at=1, expires_at=61)
@@ -60,6 +64,7 @@ def fixture(tmp_path):
                 m.fail("READBACK_UNPROVEN")
             return dict(
                 verified=True,
+                status_at=datetime.fromtimestamp(self.started_at, UTC).isoformat(),
                 pid=200,
                 run_id="new",
                 mode="trade",
@@ -72,7 +77,7 @@ def fixture(tmp_path):
 
     b = Backend()
     b.calls = []
-    c = m.Coordinator(b, tmp_path, sleep=lambda _: None)
+    c = m.Coordinator(b, tmp_path, clock=lambda: 1000.0, sleep=lambda _: None)
     return c, b, intent, controller
 
 
@@ -374,7 +379,9 @@ def test_closed_original_intent_satisfies_unchanged_runtime_next_day_contract(
     claim = dict(grant_sha256=grant_sha, pid=200, run_id="new")
     claim_path = grant_path.with_name(grant_path.name + ".run-claim")
     m.write_private(claim_path, claim, exclusive=True)
-    c = m.Coordinator(backend, intent.parent, sleep=lambda _: None)
+    c = m.Coordinator(
+        backend, intent.parent, clock=lambda: now.timestamp(), sleep=lambda _: None
+    )
     c.reconcile_started("v1.16.42")
     # This is the same permit_required contract deployed in Runtime41. No
     # runtime code, budget, block, grant or original run claim is modified.
@@ -395,3 +402,105 @@ def test_real_preflight_rejects_stale_or_future_status(real_preflight, offset):
     m.write_private(p, v)
     with pytest.raises(m.SwitchError, match="READBACK_UNPROVEN"):
         backend.reconcile_preflight(snapshot)
+
+
+@pytest.mark.parametrize("drift", ["none", "pid", "run", "locks"])
+def test_slow_heavy_recheck_precedes_final_fresh_pair(tmp_path, drift):
+    from datetime import datetime, UTC
+
+    c, b, _, _ = fixture(tmp_path)
+    clock = {"value": 1000.0}
+    c.clock = lambda: clock["value"]
+    source = json.loads(c.intent.read_bytes())
+    source["snapshot"]["ordinary_permit"]["window"] = {
+        "session_start": datetime.fromtimestamp(5000, UTC).isoformat()
+    }
+    m.write_private(c.intent, source)
+    plan = json.loads((tmp_path / "switch-plan.private.json").read_bytes())
+    plan["snapshot"] = source["snapshot"]
+    plan["plan_hash"] = m.digest({k: v for k, v in plan.items() if k != "plan_hash"})
+    m.write_private(tmp_path / "switch-plan.private.json", plan)
+    source["plan_hash"] = plan["plan_hash"]
+    m.write_private(c.intent, source)
+    before = c.intent.read_bytes()
+    old = b.reconcile_preflight
+    checks = []
+
+    def heavy(snapshot):
+        result = old(snapshot)
+        checks.append(1)
+        if len(checks) == 2:
+            clock["value"] += 36
+        return result
+
+    b.reconcile_preflight = heavy
+    read = b.readback
+
+    def live(snapshot):
+        proof = read(snapshot)
+        proof["status_at"] = datetime.fromtimestamp(clock["value"], UTC).isoformat()
+        if len(checks) == 2:
+            if drift == "pid":
+                proof["pid"] = 201
+            elif drift == "run":
+                proof["run_id"] = "drifted"
+            elif drift == "locks":
+                proof["dual_locks_held_by_pid"] = False
+        return proof
+
+    b.readback = live
+    if drift == "none":
+        c.reconcile_started("v1.16.42")
+        receipt = json.loads(
+            (tmp_path / "late-started-receipt.private.json").read_bytes()
+        )
+        assert all(
+            datetime.fromisoformat(p["status_at"]).timestamp() == 1036
+            for p in receipt["proofs"]
+        )
+        assert b.calls[:2] == ["preflight", "preflight"]
+    else:
+        with pytest.raises(m.SwitchError, match="READBACK_UNPROVEN"):
+            c.reconcile_started("v1.16.42")
+        assert (
+            c.intent.read_bytes() == before
+            and not (
+                tmp_path / "late-started-reconciliation-claim.private.json"
+            ).exists()
+        )
+
+
+@pytest.mark.parametrize("kind", ["stale", "future", "first_aged_during_second"])
+def test_final_source_timestamps_are_required_and_rechecked_before_claim(
+    tmp_path, kind
+):
+    from datetime import datetime, UTC
+
+    c, b, _, _ = fixture(tmp_path)
+    clock = {"value": 1000.0}
+    c.clock = lambda: clock["value"]
+    read = b.readback
+
+    def changing(snapshot):
+        proof = read(snapshot)
+        if kind == "stale":
+            proof["status_at"] = datetime.fromtimestamp(
+                clock["value"] - 9, UTC
+            ).isoformat()
+        elif kind == "future":
+            proof["status_at"] = datetime.fromtimestamp(
+                clock["value"] + 1, UTC
+            ).isoformat()
+        elif b.reads == 2:
+            clock["value"] += 9
+            proof["status_at"] = datetime.fromtimestamp(clock["value"], UTC).isoformat()
+        return proof
+
+    b.readback = changing
+    before = c.intent.read_bytes()
+    with pytest.raises(m.SwitchError, match="READBACK_UNPROVEN"):
+        c.reconcile_started("v1.16.42")
+    assert (
+        c.intent.read_bytes() == before
+        and not (tmp_path / "late-started-reconciliation-claim.private.json").exists()
+    )
