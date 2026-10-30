@@ -583,3 +583,10 @@ START_REQUESTED以后结果不明只读核对，不能重复启动；停止阶�
 该历史锚不赋予未来交易日合约身份或订单权限。运行时许可的静态Session hash不受历史主力更新影响。
 交易入口仍只接受目标交易日权威主力、物理合约及新鲜执行输入，缺失保持fail-closed，不以旧主力代替。
 普通许可使用v2、切换计划使用v6，旧v5及旧普通许可不得混用或重新apply；历史状态仅读回。
+
+### 普通许可静态事实边界（v3 / 切换计划v7）
+
+普通许可仅冻结window的policy、trading_day、session_start、connect_after、connect_until、sessions和
+session_facts_sha256；gap/checked_at等动态读回不进入不可变许可身份。每次fresh仍重新查询全60权威
+Calendar/Session并要求当前无Session、下一场严格超过660秒，不能用冻结值代替当前窗口证明。
+旧v6计划仅历史读回，旧v2许可不激活；账本/SDK/配置/预算/双锁/历史锚及未知启动门禁保持。

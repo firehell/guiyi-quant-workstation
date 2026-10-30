@@ -265,3 +265,145 @@ def test_v1_grant_readable_but_never_activated(granted):
     assert path.read_bytes() == before
     assert not path.with_name(path.name + ".run-claim").exists()
     assert inbox.conn.execute("SELECT * FROM attempts").fetchall() == []
+
+
+def dynamic_coordinator(granted):
+    """Real private binding on every sample, plus an offline controller backend."""
+    import copy
+    from test_trade_switch import Backend, m
+
+    s, inbox, now, start, intent, record, frozen = granted
+    intent.rename(intent.with_name("fixture-historical-intent.private.json"))
+    b = Backend()
+    historical = dict(
+        policy="simnow_completed_contract_anchor_v1",
+        trading_day="20261030",
+        product_count=60,
+        sha256="a" * 64,
+    )
+    b.value.update(
+        historical_contract_anchor=historical,
+        preimage=dict(historical_contract_anchor=historical),
+    )
+    b.value["host"]["mode"] = "trade"
+    b.value["account"].update(
+        account_id=s.account_id,
+        budget_day="20261102",
+        today_attempts=0,
+        remaining_attempts=3,
+        account_takeover_pending=True,
+        native_account_verified=False,
+        local_obligations_clear=True,
+        unknown_positions=None,
+        unknown_orders=None,
+        unknown_trades=None,
+        account_profile=frozen["profile"],
+    )
+    changing = dict(gap=3600, elapsed=0, hash="c" * 64, present=False)
+
+    def snapshot():
+        value = copy.deepcopy(b.value)
+        window = copy.deepcopy(frozen["window"])
+        window.update(
+            authoritative=True,
+            product_count=60,
+            current_session_absent=not changing["present"],
+            window_open=True,
+            next_session_gap_seconds=changing["gap"],
+            checked_at=(now + timedelta(seconds=changing["elapsed"])).isoformat(),
+        )
+        window["session_facts_sha256"] = changing["hash"]
+        value["window"] = window
+        value["ordinary_permit"] = ordinary.binding(
+            s,
+            s.source_config_path,
+            window,
+            now + timedelta(seconds=changing["elapsed"]),
+        )
+        return value
+
+    b.snapshot = snapshot
+    coordinator = m.Coordinator(
+        b, intent.parent, clock=lambda: now.timestamp() + changing["elapsed"]
+    )
+    return coordinator, b, changing, m
+
+
+def test_real_binding_fresh_accepts_dynamic_gap_decrease_without_caching(granted):
+    coordinator, b, state, m = dynamic_coordinator(granted)
+    plan = coordinator.plan()
+    state.update(gap=3590, elapsed=10)
+    coordinator._fresh(plan)
+    assert b.calls == []
+    assert set(plan["snapshot"]["ordinary_permit"]["window"]) == {
+        "policy",
+        "trading_day",
+        "session_start",
+        "connect_after",
+        "connect_until",
+        "sessions",
+        "session_facts_sha256",
+    }
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        ("gap", "WINDOW_UNPROVEN"),
+        ("session", "WINDOW_UNPROVEN"),
+        ("hash", "PLAN_INVALID"),
+    ],
+)
+def test_real_binding_fresh_rejects_live_window_or_static_fact_drift_before_effects(
+    granted, change, expected
+):
+    coordinator, b, state, m = dynamic_coordinator(granted)
+    plan = coordinator.plan()
+    state["elapsed"] = 10
+    if change == "gap":
+        state["gap"] = 660
+    elif change == "session":
+        state["present"] = True
+    else:
+        state["hash"] = "d" * 64
+    with pytest.raises(m.SwitchError, match=expected):
+        coordinator.apply(plan)
+    assert b.calls == [] and not coordinator.intent.exists()
+
+
+def test_previous_ordinary_permit_version_cannot_activate(granted):
+    s, inbox, now, start, intent, record, frozen = granted
+    path = s.ordinary_takeover_permit
+    import hashlib
+
+    assert ordinary.SCHEMA == "simnow_ordinary_takeover_v3"
+    grant = json.loads(path.read_text())
+    grant["schema"] = "simnow_ordinary_takeover_v2"
+    path.write_text(json.dumps(grant))
+    # Keep the enclosing intent digest consistent: rejection must be the old
+    # grant schema itself, not a coincidental byte-hash mismatch.
+    record["ordinary_grant_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    intent.write_text(json.dumps(record))
+    with pytest.raises(ValueError):
+        ordinary.activate(s, inbox, "a" * 32, now, clock=lambda: now)
+    assert not path.with_name(path.name + ".run-claim").exists()
+
+
+def test_previous_switch_plan_is_readback_only_not_applicable(granted):
+    coordinator, b, state, m = dynamic_coordinator(granted)
+    plan = coordinator.plan()
+    assert m.SCHEMA == "simnow_trade_switch_plan_v7"
+    plan["schema"] = "simnow_trade_switch_plan_v6"
+    plan["plan_hash"] = m.digest({k: v for k, v in plan.items() if k != "plan_hash"})
+    with pytest.raises(m.SwitchError, match="PLAN_INVALID"):
+        coordinator.apply(plan)
+    assert b.calls == [] and not coordinator.intent.exists()
+    coordinator.intent.write_text(
+        json.dumps(dict(schema="simnow_trade_switch_plan_v6", stage="STOPPED"))
+    )
+    coordinator.intent.chmod(0o600)
+    historical = coordinator.readback()
+    assert (
+        historical["schema"] == "simnow_trade_switch_plan_v6"
+        and historical["mutation_performed"] is False
+    )
