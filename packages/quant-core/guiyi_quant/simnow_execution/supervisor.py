@@ -240,6 +240,7 @@ class Supervisor:
             products=list(self.products),
             issues={**self.market.issues, **self.issues},
             input_diagnostics=self.input_diagnostics,
+            dispatch_diagnostic=getattr(self.host, "last_dispatch_diagnostic", None),
             input_checks=input_check_records(self.input_checks, products=self.products),
             auto_order=self.settings.mode == "trade" and self.settings.enabled,
             opening_enabled=opening,
@@ -307,6 +308,24 @@ class Supervisor:
                 self.inbox.block(self.target_day, "CONTINUOUS_CLEANUP_UNCERTAIN")
             raise ValueError("CONTINUOUS_CLEANUP_UNCERTAIN")
 
+    def _ordinary_permit_required(self, day):
+        if not getattr(self.settings, "ordinary_takeover_permit", None):
+            return False
+        from . import ordinary_takeover
+
+        return ordinary_takeover.permit_required(self.settings, day)
+
+    def _ordinary_authority(self, day):
+        now = self.now()
+        plan = self.market.plan(now)
+        if (
+            not plan.connect_allowed
+            or plan.trading_day is None
+            or plan.trading_day.strftime("%Y%m%d") != day
+        ):
+            raise ValueError("ORDINARY_TAKEOVER_INVALID")
+        return self.market.ordinary_takeover_window(day, now)
+
     def connect(self, day):
         self.target_day = day
         self.active_seen = False
@@ -323,7 +342,20 @@ class Supervisor:
                 else "CONNECTION_BUDGET_EXHAUSTED"
             )
         permit_window = None
-        if configured and day == permit.DAY and permit.attempts(self.inbox, day) >= 3:
+        ordinary_window = None
+        if self._ordinary_permit_required(day):
+            from . import ordinary_takeover
+
+            attempt, ordinary_window = ordinary_takeover.consume(
+                self.settings,
+                self.inbox,
+                self.run_id,
+                day,
+                self.now(),
+                clock=self.now,
+                authority=lambda: self._ordinary_authority(day),
+            )
+        elif configured and day == permit.DAY and permit.attempts(self.inbox, day) >= 3:
             permit_window = permit.consume(
                 self.settings, self.inbox, self.run_id, day, self.now(), clock=self.now
             )
@@ -334,9 +366,19 @@ class Supervisor:
         self.status("CONNECTING")
         if permit_window:
             permit.connection_time(permit_window, self.now())
+        if ordinary_window:
+            ordinary_takeover.validate_connection(
+                ordinary_window, self.now(), lambda: self._ordinary_authority(day)
+            )
+            ordinary_takeover.connection_time(ordinary_window, self.now())
         self.driver = self.factory(self.settings, self.folder)
         if permit_window:
             permit.connection_time(permit_window, self.now())
+        if ordinary_window:
+            ordinary_takeover.validate_connection(
+                ordinary_window, self.now(), lambda: self._ordinary_authority(day)
+            )
+            ordinary_takeover.connection_time(ordinary_window, self.now())
         self.driver.connect()
         self.prepare(day)
         self.retry_after = self.now() + timedelta(seconds=30 * attempt)
@@ -426,6 +468,7 @@ class Supervisor:
                 deadline=None,
                 account_takeover_pending=self.account_takeover_pending,
                 takeover_clock=self.now,
+                account_profile=getattr(self.settings, "account_profile", None),
             )
             native, recovered = self.host.reconcile(
                 self.driver.report, bindings, self.now(), proofs
@@ -552,6 +595,7 @@ class Supervisor:
             or recovered.phase != "READY"
         ):
             self.inbox.recover_queue(self.store)
+            self._audit_trade_inputs(force_defer=True)
             self.status("ACCOUNT_RECONCILIATION_REQUIRED", connected=True)
             return
         if recovering:
@@ -620,20 +664,68 @@ class Supervisor:
             or current.phase != "READY"
             or not current.readback.at <= self.now() < current.readback.valid_until
         ):
+            self._audit_trade_inputs(force_defer=True)
             self.status("ACCOUNT_RECONCILIATION_REQUIRED", connected=True)
             return  # Slow inputs alone must not create a fake disconnection/recovery.
         outcomes = self.host.tick(facts, bindings, self.now())
-        if not self.store._needs_recovery:
-            self.ledger_hash = digest(self.store.current())
         if any(
             o in {"SEND_OUTCOME_UNKNOWN", "NOT_ACCEPTED_RECONCILE_REQUIRED"}
             for o in outcomes
         ):
             raise ValueError("NATIVE_ORDER_OUTCOME_REQUIRES_RECOVERY")
+        self._audit_trade_inputs()
+        if not self.store._needs_recovery:
+            self.ledger_hash = digest(self.store.current())
         self.status(
             "TRADING" if self.settings.mode == "trade" else "MANAGING_EXISTING_ONLY",
             connected=True,
         )
+
+    def _audit_trade_inputs(self, *, force_defer=False):
+        """Execution/account work wins; idle inputs are observation evidence only."""
+        audit = getattr(self.driver, "audit_next", None)
+        if self.settings.mode != "trade" or audit is None:
+            return
+        from ..htdy_account_execution.scheduling import execution_candidates
+
+        # drain() replays journaled callbacks idempotently, without sending orders.
+        pending = self.host.adapter.drain() if not force_defer else ()
+        if self.host.adapter._faulted:
+            raise ValueError("NATIVE_ADAPTER_REQUIRES_RECOVERY")
+        current = self.store.current()
+        now = self.now()
+        obligations = bool(
+            force_defer
+            or pending
+            or self.host.pending
+            or self.host.needs_recovery
+            or self.store._needs_recovery
+            or current.phase != "READY"
+            or not current.readback_valid
+            or not current.readback.at <= now < current.readback.valid_until
+            or any(not order.reconciled for order in current.orders)
+        )
+        idle = not obligations and not execution_candidates(
+            current, opening_allowed=True
+        )
+        boundary = None
+        if idle:
+            try:
+                boundary = self.market.next_audit_boundary(now)
+            except Exception:
+                boundary = None
+        audit(
+            self.products,
+            self.market,
+            self.day,
+            idle=idle,
+            obligations_pending=obligations,
+            next_boundary=boundary,
+        )
+        if self.driver.transport_failed:
+            raise ValueError("NATIVE_TRANSPORT_FAILED")
+        if getattr(self.driver.gateway, "failed", False):
+            raise ValueError("NATIVE_GATEWAY_FAILED")
 
     def refresh_before_book(self):
         """Same-connection complete readback after rates, before the final book."""
@@ -680,6 +772,23 @@ class Supervisor:
             try:
                 from . import deployment_connection as permit
 
+                if getattr(self.settings, "ordinary_takeover_permit", None):
+                    from . import ordinary_takeover
+
+                    startup_plan = self.market.plan(self.now())
+                    startup_day = (
+                        startup_plan.trading_day.strftime("%Y%m%d")
+                        if startup_plan.trading_day
+                        else None
+                    )
+                    if self._ordinary_permit_required(startup_day):
+                        ordinary_takeover.activate(
+                            self.settings,
+                            self.inbox,
+                            self.run_id,
+                            self.now(),
+                            clock=self.now,
+                        )
                 if getattr(self.settings, "deployment_connection_permit", None):
                     startup_plan = self.market.plan(self.now())
                     startup_day = (
@@ -761,6 +870,9 @@ class Supervisor:
                                 if self.driver is not None
                                 and hasattr(self.driver, "failure_diagnostics")
                                 else dict(stage="DRIVER_UNAVAILABLE")
+                            )
+                            diagnostic["dispatch"] = getattr(
+                                self.host, "last_dispatch_diagnostic", None
                             )
                             retain_failure(
                                 self.folder,

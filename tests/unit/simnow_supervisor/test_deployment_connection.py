@@ -259,7 +259,7 @@ def test_claim_fsync_failure_is_spent_and_no_factory(granted, monkeypatch):
     ).fetchone() == (3,)
 
 
-def test_coordinator_real_settings_midday_run_and_pm_once(unissued_state, monkeypatch):
+def test_historical_v38_settings_midday_run_and_pm_once(unissued_state, monkeypatch):
     import threading
     from types import SimpleNamespace as NS
     from datetime import date
@@ -319,97 +319,77 @@ def test_coordinator_real_settings_midday_run_and_pm_once(unissued_state, monkey
         sleep=sleep,
     )
 
-    class Deployment(Backend):
-        def __init__(self):
-            super().__init__()
-            self.value["window"] = dict(
-                policy=m.MIDDAY_POLICY,
-                trading_day="20261030",
-                authoritative=True,
-                product_count=60,
-                current_session_absent=True,
-                next_session_gap_seconds=6900,
-                window_open=True,
-                morning_completed=True,
-                next_is_afternoon=True,
-            )
-            self.value["account"].update(
-                today_attempts=3, remaining_attempts=0, account_id=s.account_id
-            )
-            self.value["connection_permit"] = binding
-            if s.account_takeover_pending:
-                self.value["account"].update(
-                    account_takeover_pending=True,
-                    native_account_verified=False,
-                    local_obligations_clear=True,
-                    unknown_positions=None,
-                    unknown_orders=None,
-                    unknown_trades=None,
-                    day_blocked=True,
-                    day_block_code="CONNECTION_BUDGET_EXHAUSTED",
-                )
-
-        def offline_preflight(self, snapshot):
-            value = super().offline_preflight(snapshot)
-            if s.account_takeover_pending:
-                value["connection_anchor"] = permit.account_anchor(s)
-            return value
-
-        def issue_connection_permit(self, snapshot, plan_hash, intent_path):
-            return permit.issue(
-                s,
-                snapshot["connection_permit"],
-                plan_hash,
-                intent_path,
-                clock[0],
-                clock=lambda: clock[0],
-            )
-
-        def start(self, snapshot):
-            def run():
-                try:
-                    host.run(max_cycles=3)
-                except Exception as exc:
-                    errors.append(type(exc).__name__)
-
-            self.thread = threading.Thread(target=run)
-            self.thread.start()
-            assert waiting.wait(10)
-            return True
-
-        def readback(self, snapshot):
-            return dict(
-                verified=True,
-                mode="trade",
-                account_takeover_pending=host.account_takeover_pending,
-                opening_enabled=False,
-                pid=200,
-                run_id=host.run_id,
-                dual_locks_held_by_pid=True,
-                config_bound=True,
-                monitor_bound=True,
-            )
-
-    backend = Deployment()
-    coordinator = m.Coordinator(
-        backend,
-        intent.parent,
-        clock=lambda: clock[0].timestamp(),
-        sleep=lambda seconds: None,
-    )
     before = (
         inbox.conn.execute("SELECT * FROM attempts").fetchall(),
         inbox.conn.execute("SELECT * FROM blocks").fetchall(),
     )
+    # v5 cannot mint an old extra permit, even through a generic Backend.
+    backend = Backend()
+    backend.value["connection_permit"] = binding
+    backend.value["account"].update(
+        today_attempts=3, remaining_attempts=0, account_id=s.account_id
+    )
+    backend.value["window"] = dict(
+        policy=m.MIDDAY_POLICY,
+        trading_day="20261030",
+        authoritative=True,
+        product_count=60,
+        current_session_absent=True,
+        next_session_gap_seconds=6900,
+        window_open=True,
+        morning_completed=True,
+        next_is_afternoon=True,
+    )
+    if s.account_takeover_pending:
+        backend.value["account"].update(
+            account_takeover_pending=True,
+            native_account_verified=False,
+            local_obligations_clear=True,
+            unknown_positions=None,
+            unknown_orders=None,
+            unknown_trades=None,
+            day_blocked=True,
+            day_block_code="CONNECTION_BUDGET_EXHAUSTED",
+        )
+    coordinator = m.Coordinator(backend, intent.parent, clock=lambda: now.timestamp())
+    with pytest.raises(m.SwitchError):
+        coordinator.plan()
+    assert backend.calls == [] and not intent.exists()
+    assert not s.deployment_connection_permit.exists()
+    assert not permit.global_marker(s).exists()
+    assert before == (
+        inbox.conn.execute("SELECT * FROM attempts").fetchall(),
+        inbox.conn.execute("SELECT * FROM blocks").fetchall(),
+    )
+
+    # Preserve the historical v38 consumer contract independently of the retired
+    # issuing Coordinator. The exact v4 persisted intent is its input evidence.
+    intent.write_text(json.dumps(record))
+    intent.chmod(0o600)
+    record["connection_grant_sha256"] = permit.issue(
+        s, binding, record["plan_hash"], intent, now, clock=lambda: now
+    )
+    record["stage"] = "START_REQUESTED"
+    intent.write_text(json.dumps(record))
+
+    def run():
+        try:
+            host.run(max_cycles=3)
+        except Exception as exc:
+            errors.append(type(exc).__name__)
+
+    thread = threading.Thread(target=run)
+    thread.start()
     try:
-        result = coordinator.apply(coordinator.plan())
-        assert result["stage"] == "COMPLETE" and not factory_calls
+        assert waiting.wait(10)
+        assert not factory_calls
         assert Path(str(s.deployment_connection_permit) + ".run-claim").exists()
         assert not Path(str(s.deployment_connection_permit) + ".attempt-claim").exists()
+        record["stage"] = "COMPLETE"
+        intent.write_text(json.dumps(record))
     finally:
         advance.set()
-        if hasattr(backend, "thread"):
-            backend.thread.join(10)
+        thread.join(10)
     assert not errors and factory_calls == [True]
     if s.account_takeover_pending:
         assert host.account_takeover_pending is True
@@ -427,8 +407,6 @@ def test_coordinator_real_settings_midday_run_and_pm_once(unissued_state, monkey
         )
         with pytest.raises(ValueError, match="DEPLOYMENT_CONNECTION_EXHAUSTED"):
             restart.run(max_cycles=1)
-    with pytest.raises(m.SwitchError, match="ATTEMPT_CONSUMED"):
-        coordinator.apply(coordinator.plan())
 
 
 def test_factory_failure_spends_grant_without_resetting_budget(granted):

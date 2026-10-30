@@ -2287,3 +2287,28 @@ retention只读计划和删除前重扫均须通过；离线测试不等于实�
 
 监控Web测试还验证待恢复trade明确显示账户待接管，错误/停止/过期不被该状态掩盖，pending与
 opening=true/非trade/错误类型的矛盾响应被拒绝；旧响应缺可选字段保持兼容。
+
+### SimNow原账户profile、闲时输入验收与普通预算v5升级
+
+离线定向入口（不加载凭据、不连接Broker）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  tests/unit/simnow_execution/test_account_profile.py \
+  tests/unit/htdy_execution/test_inspect_snapshot.py \
+  tests/unit/simnow_supervisor/test_upgrade_settings.py \
+  tests/unit/simnow_supervisor/test_upgrade_connect.py \
+  tests/unit/simnow_supervisor/test_idle_input_audit.py \
+  tests/unit/simnow_supervisor/test_supervisor_idle_audit.py \
+  tests/unit/simnow_supervisor/test_ordinary_takeover.py \
+  tests/unit/simnow_supervisor/test_ordinary_trade_switch.py \
+  tests/unit/simnow_supervisor/test_trade_switch.py \
+  tests/unit/simnow_supervisor/test_deployment_connection.py \
+  services/quant-api/tests/test_simnow_audit_boundary.py \
+  services/quant-api/tests/test_simnow_takeover_window.py
+```
+
+包含原账户基线摘要/错误账户拒绝、旧100k默认门禁、提交前零claim/SDK、私有副本重放和并发原库写入、
+60品种单连接单阶段audit/优先级/过期/盘口时间、普通cap3/原block保留/权威跨日、v5旧计划拒绝、
+独立stopped恢复及原协调器锁真实子进程竞态。新v5禁止重新签发历史额外许可；历史v38宿主单次消费
+测试仍独立保留。真实依赖测试只允许任务隔离PG/Redis，跳过不等于通过；部署、账户恢复与策略成交分别待验。
