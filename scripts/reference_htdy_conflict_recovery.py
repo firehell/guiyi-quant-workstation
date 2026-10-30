@@ -380,6 +380,20 @@ def load_dependencies():
     env, identity = private_dependency_settings(
         Path.home() / "Library/Application Support/GuiyiQuant/project.env"
     )
+    # Match the existing local-service controller context before API imports or
+    # re-exec. Loading project.env alone can reset Redis to its unauthenticated
+    # default. Keep the identity bound to the original private file bytes.
+    from urllib.parse import quote
+
+    env = dict(env)
+    if env.get("REDIS_URL") in (None, "", "redis://127.0.0.1:6379/0"):
+        password = env.get("REDIS_PASSWORD") or env.get("POSTGRES_PASSWORD")
+        if not isinstance(password, str) or not password:
+            fail("RECOVERY_DEPENDENCIES_INVALID")
+        env["REDIS_PASSWORD"] = password
+        env["REDIS_URL"] = "redis://:" + quote(password, safe="") + "@127.0.0.1:6379/0"
+    env["GUIYI_RUNTIME_HANDOVER_ENABLED"] = "1"
+    env["GUIYI_OBSERVATION_STREAM_ENABLED"] = "1"
     os.environ.update(env)
     del env
     if os.environ.get("GUIYI_HTDY_CONFLICT_CLI_READY") != "1":
