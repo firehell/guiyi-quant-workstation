@@ -126,6 +126,7 @@ class FakeGateway:
     def __init__(self, mode):
         self.mode = mode
         self.failed = False
+        self.result = {"account_fingerprint": f.ACCOUNT, "trading_day": "20261027"}
         self.user = f.USER
         self.front = "tcp://182.254.243.31:30001"
         self.native_session = dict(front_id=1, session_id=2, max_order_ref=10)
@@ -346,6 +347,28 @@ def test_actual_cli_success_is_native_inventory_not_reference_pnl(
     assert all(o["reconciled"] for o in result["orders"])
     assert all(r["released"] for r in result["reservations"])
     assert gateway.released and gateway.api is None
+
+
+@pytest.mark.parametrize("execute", [False, True])
+def test_cached_settlement_cannot_follow_a_changed_native_session(monkeypatch, tmp_path, execute):
+    config = configured(monkeypatch)
+    config.execute = config.initialize = execute
+    gateway = FakeGateway("filled")
+    query = gateway.query
+
+    def drift(kind, *args, **kwargs):
+        rows = query(kind, *args, **kwargs)
+        if kind == "margin":
+            gateway.native_session["session_id"] = 999
+        return rows
+
+    gateway.query = drift
+    sdk = NS(CThostFtdcInputOrderField=NS, CThostFtdcInputOrderActionField=NS)
+    with pytest.raises(ValueError, match="NATIVE_SETTLEMENT_IDENTITY_MISMATCH"):
+        cli.run(gateway, sdk, config, tmp_path)
+    assert gateway.execution_adapter is None
+    assert not {"insert", "confirm", "cancel"} & {kind for kind, _ in gateway.calls}
+    assert not (tmp_path / "output/simnow-controlled").exists()
 
 
 def test_preflight_never_confirms_settlement_or_creates_trading_state(

@@ -216,6 +216,87 @@ def test_takeover_failure_never_unblocks_any_order_capability(tmp_path, failure)
     assert not {"insert", "cancel"} & set(gateway.calls)
 
 
+@pytest.mark.parametrize(
+    "error,expected",
+    [(ValueError("NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED"), "NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED"),
+     (RuntimeError("private-account-password"), "RECOVERY_ERROR_UNCLASSIFIED")],
+)
+def test_prepare_failure_records_exact_stage_and_safe_cause_without_retry(
+    tmp_path, error, expected
+):
+    import json
+    from test_trade_end_to_end import seeded_account, Driver
+    from guiyi_quant.simnow_execution.supervisor import Supervisor
+
+    settings, folder, clock, market = seeded_account(tmp_path)
+    settings.account_takeover_pending = True
+    drivers = []
+
+    class FailedAdapter(Driver):
+        def adapter(self, *args, **kwargs):
+            raise error
+
+        def failure_diagnostics(self):
+            return {"stage": "ACCOUNT_SNAPSHOT"}
+
+    def factory(*args):
+        driver = FailedAdapter(*args, clock)
+        drivers.append(driver)
+        return driver
+
+    runtime = Supervisor(settings, ("RB", "JM"), market, factory,
+                         clock=clock.now, sleep=clock.sleep)
+    runtime.run(max_cycles=2)
+    failure = json.loads(next(folder.glob("failure-*.json")).read_text())
+    assert failure["diagnostic"]["recovery_stage"] == "ADAPTER_PREPARATION"
+    assert failure["diagnostic"]["recovery_error_code"] == expected
+    assert "private-account-password" not in json.dumps(failure)
+    assert runtime.account_takeover_pending and len(drivers) == 1
+    assert not {"insert", "cancel"} & set(drivers[0].gateway.calls)
+
+
+@pytest.mark.parametrize("failed_kind", ["settlement", "confirm"])
+def test_unknown_settlement_result_blocks_across_connections(tmp_path, failed_kind):
+    import sqlite3
+    from test_trade_end_to_end import seeded_account, Driver, Gateway
+    from guiyi_quant.simnow_execution.supervisor import Supervisor
+
+    settings, folder, clock, market = seeded_account(tmp_path)
+    settings.account_takeover_pending = True
+    drivers = []
+    calls = []
+
+    class TimeoutGateway(Gateway):
+        def query(self, kind, *args, **kwargs):
+            calls.append(kind)
+            if kind == failed_kind:
+                self.failed = True
+                self.result["status"] = "NATIVE_FACT_QUERY_FAILED"
+                self.extra = {"callback_error": None}
+                self.query_diagnostics.append(dict(kind=kind, timed_out=True))
+                raise ValueError("NATIVE_FACT_QUERY_FAILED")
+            return super().query(kind, *args, **kwargs)
+
+        def inventory_diagnostics(self):
+            return {"status": "NATIVE_FACT_QUERY_FAILED"}
+
+    def factory(*args):
+        driver = Driver(*args, clock, TimeoutGateway(clock))
+        drivers.append(driver)
+        return driver
+
+    runtime = Supervisor(settings, ("RB", "JM"), market, factory,
+                         clock=clock.now, sleep=clock.sleep)
+    runtime.run(max_cycles=2)
+    assert len(drivers) == 1 and calls.count(failed_kind) == 1
+    assert "insert" not in calls and "cancel" not in calls
+    with sqlite3.connect(folder / "signals.sqlite") as db:
+        assert db.execute("SELECT day,code FROM blocks").fetchall() == [
+            ("20261027", "CONTINUOUS_RECOVERY_REQUIRED")
+        ]
+        assert db.execute("SELECT day,count FROM attempts").fetchall() == [("20261027", 1)]
+
+
 def test_pending_monitor_publishes_explicit_unverified_state(tmp_path):
     import json
     from types import SimpleNamespace as NS
