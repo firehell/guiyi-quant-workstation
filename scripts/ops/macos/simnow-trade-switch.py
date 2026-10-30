@@ -566,6 +566,12 @@ class Coordinator:
                 fail("PLAN_INVALID")
             controller = self.backend.reconciliation_controller_identity(controller_tag)
             frozen = self.backend.reconcile_preflight(original["snapshot"])
+            if (
+                self.backend.reconcile_preflight(original["snapshot"]) != frozen
+                or self.backend.reconciliation_controller_identity(controller_tag)
+                != controller
+            ):
+                fail("PREIMAGE_CHANGED")
             proofs = []
             for _ in range(2):
                 # A new lower bound forces each proof to use a fresh status.
@@ -590,16 +596,42 @@ class Coordinator:
                     or proof.get("opening_enabled") is not False
                 ):
                     fail("READBACK_UNPROVEN")
+                try:
+                    stamp = datetime.fromisoformat(proof["status_at"])
+                    fresh_now = self.clock()
+                    if (
+                        stamp.utcoffset() is None
+                        or stamp.timestamp() < self.backend.started_at
+                        or not fresh_now - 8 <= stamp.timestamp() <= fresh_now
+                    ):
+                        fail("READBACK_UNPROVEN")
+                except (KeyError, TypeError, ValueError):
+                    fail("READBACK_UNPROVEN")
                 proofs.append(dict(proof, verified_at=self.clock()))
                 self.sleep(1)
             if (
-                self.backend.reconcile_preflight(original["snapshot"]) != frozen
-                or self.backend.reconciliation_controller_identity(controller_tag)
-                != controller
-                or private(self.intent).read_bytes() != raw
+                private(self.intent).read_bytes() != raw
                 or plan_path.read_bytes() != plan_raw
             ):
                 fail("PREIMAGE_CHANGED")
+            # Nothing heavyweight follows the final native pair. Recompute ages
+            # using actual source status times immediately before claiming.
+            fresh_now = self.clock()
+            try:
+                start = datetime.fromisoformat(
+                    original["snapshot"]["ordinary_permit"]["window"]["session_start"]
+                )
+                if start.utcoffset() is None or start.timestamp() <= fresh_now + 660:
+                    fail("WINDOW_UNPROVEN")
+                for proof in proofs:
+                    stamp = datetime.fromisoformat(proof["status_at"])
+                    if (
+                        stamp.utcoffset() is None
+                        or not fresh_now - 8 <= stamp.timestamp() <= fresh_now
+                    ):
+                        fail("READBACK_UNPROVEN")
+            except (KeyError, TypeError, ValueError):
+                fail("READBACK_UNPROVEN")
             source_sha = hashlib.sha256(raw).hexdigest()
             receipt = dict(
                 schema="simnow_late_started_reconciliation_v1",
@@ -2444,16 +2476,48 @@ class MacBackend:
                 or status.get("opening_enabled") is not False
             ):
                 fail("READBACK_UNPROVEN")
+        config_bound = self.plist.read_bytes() == self.candidate_plist.read_bytes()
+        monitor_bound = self.monitor_bound(snapshot)
+        final_pid = self._pid()
+        self._prove(final_pid, "trade", self.config)
+        final_status = json.loads(private(self.folder / "continuous.json").read_bytes())
+        final_index = json.loads(
+            private(self.settings.state_root / "monitor.json").read_bytes()
+        )
+        stamp = datetime.fromisoformat(final_status["at"])
+        fresh_now = time.time()
+        if (
+            final_pid != pid
+            or final_status.get("run_id") != status["run_id"]
+            or final_index.get("run_id") != status["run_id"]
+            or final_status.get("mode") != "trade"
+            or final_index.get("mode") != "trade"
+            or final_index.get("account_id") != self.settings.account_id
+            or final_index.get("host_status") != final_status.get("status")
+            or stamp.utcoffset() is None
+            or not max(self.started_at, fresh_now - 8) <= stamp.timestamp() <= fresh_now
+            or (
+                getattr(self.settings, "account_takeover_pending", False)
+                and (
+                    final_status.get("account_takeover_pending") is not True
+                    or final_status.get("opening_enabled") is not False
+                )
+            )
+        ):
+            fail("READBACK_UNPROVEN")
         return dict(
             verified=True,
-            account_takeover_pending=status.get("account_takeover_pending", False),
-            opening_enabled=status.get("opening_enabled", False),
-            mode=status["mode"],
-            pid=pid,
-            run_id=status["run_id"],
+            account_takeover_pending=final_status.get(
+                "account_takeover_pending", False
+            ),
+            opening_enabled=final_status.get("opening_enabled", False),
+            mode=final_status["mode"],
+            pid=final_pid,
+            run_id=final_status["run_id"],
             dual_locks_held_by_pid=True,
-            config_bound=self.plist.read_bytes() == self.candidate_plist.read_bytes(),
-            monitor_bound=self.monitor_bound(snapshot),
+            config_bound=config_bound,
+            monitor_bound=monitor_bound,
+            status_at=final_status["at"],
         )
 
 
