@@ -245,3 +245,12 @@ Owner明确要求“你把可以先完成的完成下，等中午十一点半收
 午间候选已固定推送f99fea8989a1d5aefc9d924f80def54be5c3651f，PR544已准备未合并；候选自身762 passed(49.64s)、离线依赖/SDK退出0、Web构建/拓扑通过，独立候选Review通过。一次性heartbeat simnow已ACTIVE，2026-10-30 11:35北京时间执行；现场失败不盲重试，结束删除。当前未main/tag发布v37、未切服务。
 
 10/30 10:12现场全60品种历史/计算32根、Live与当前1m连续性均通过，closed-source差异0；10:00自然60m的60项observe inbox逐条codec/hash/身份/时间通过，全部OBSERVED。仍非trade首次接收及费率/保证金/盘口通过。当前day30 attempts=3、无block，午间新连接预算不足；保留既有门禁，不清预算、不停服试切。09:25:17原件failure-93d4bb3789bf451d88e444530ed3f998-1902.json记录CONTINUOUS_RECOVERY_REQUIRED，尚不足以单凭此认定第三次连接根因。新只读审计及inbox证据分开留存。
+
+10/30 连接预算只读定位：09:25:17第二轮funds查询SDK接受但0回调、无terminal，15.028096秒超时，
+inventory QUERY_TIMEOUT/stage ACCOUNT_SNAPSHOT。现役规则将其视为transport failure，断开后退避60秒；
+同PID71132（02:51:44启动，未重启）09:26:29取得新快照，与day30计数3/3且无block一致。
+可证明直接触发为资金查询零回调超时，不能据此断言柜台/网络/SDK底层根因。下一权威交易日20261102
+预算当前0、无block；10/30今晚21:00开夜盘，现役连接准入最早20:58，不是民用午夜重置。
+该预报不证明届时Broker实际TradingDay或登录成功。现有v37切换计划/账户证明/预算硬绑定20261030，
+不能直接复用至新交易日，且20:58仅距开盘120秒不满足部署间隔660秒；下一连接窗口不等于可切换窗口。
+午间day30预算不足仍阻断，不能清预算/借新日预算/停服试切。证据output/simnow-step3-20261030/connection-budget-cause.json。
