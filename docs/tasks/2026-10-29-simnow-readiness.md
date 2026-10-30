@@ -414,3 +414,30 @@ exact候选独立Review通过；相对main38仅13文件，10工程相关blobs逐
 当前TRADING，v39仍未发布，现役十35/SimNow38。休市窗口需新鲜现场复核；旧SimNow单次许可
 精确绑定38与当前run、已消费、不返还，不可借发布39重启/迁移，当前切换工具尚无trade→trade普通预算接管路径。
 因此Reference候选就绪不代表全11统一/单发布树已完成，需分别保留真实执行与后续账户切换约束。
+
+## 10/30四项工程准备（实施中）
+
+本阶段仅离线工程准备：不连接Broker、不重启现役、不清预算/block、不发布或切换服务。
+14:30保留原命令688 Tick、689 AbortUnsent、690 Disconnect；dispatch claim0，LOCAL_ABORTED释放预留，fills0。
+原账本一致性副本实证旧profile返回INITIAL_100K_BASELINE_REQUIRED，显式original_anchor_v1匹配原始基线。
+不能从该结果声称已唯一还原当时未保留的异常或已修复所有现场时效问题。
+私有证据output/simnow-four-preparation-20261030/baseline-replay.json；无原始账户金额/身份或异常正文。
+新profile仅绑定历史初始Readback，不初始化/修改账本，不重发旧信号；旧100k缺省限制独立保留。
+15:16原run轻量读回WAITING_SESSION/UNKNOWN/pending=true/opening=false；闭市不代表账户恢复通过。
+
+工程实现验证：新增original_anchor_v1、阶段化固定诊断、私有一致性副本inspect；同一连接闲时audit
+单阶段串行，全60覆盖与20秒边界reserve；v5普通预算trade→trade及独立stopped恢复。
+独立Review发现下一权威日退役和源协调器并发恢复风险，均已修复并复核关闭；恢复全程取得原现有
+switch.lock、锁内重读phase/hash，真实子进程占锁时零claim/install/start。无剩余Confirmed Issue。
+
+本轮实际验证：完整SimNow/账户/monitor及相关API 944 passed/60.17s；Reference/cohort扩大1515 passed、
+127 skipped/69.32s（缺本次隔离PG/Redis或其他专用条件，未视为通过）；相关部署/retention73 passed；
+相关隔离PG8 passed/18.08s，独占临时实例已核标签移除，未连接生产；SDK结构假API离线33 passed；
+Web14 passed、类型/构建/拓扑通过；quant-core离线sdist/wheel构建通过；类型检查5新/受影响模块与
+另6模块通过、Ruff/diff通过。独立Review profile15、audit36、升级132项通过。
+先前组合回归3项v5旧schema预期、随后2项历史extra集成预期失败，已修正历史测试边界并重跑944全绿；
+没有以重新启用extra能力解决测试。历史v38唯一消费与重启拒绝仍保留测试。
+
+准备配置output/simnow-four-preparation-20261030/trade-v39-original-anchor.prepared.private.json
+已严格load校验、保留原账户/原四库/SDK/API；ordinary permit仅预留路径，文件未签发，未安装或启动。
+当前仅工程验证与独立Review通过；后续提交/候选exact另记，不代表部署、60真实新样本或交易闭环通过。
