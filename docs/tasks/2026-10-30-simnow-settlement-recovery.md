@@ -46,7 +46,30 @@ PR555合main `b3e1f231eb1d0ecf9f850ce73fdc66de1da4bd3d`，完整Git树等受测1
 annotated v1.16.45及GitHub Release于2026-10-30 22:06:40 CST正式完成，非draft且目标main。
 22:09原run0900f127仍RECOVERY_BLOCKED/pending=true/opening=false，原account/dispatch文件SHA
 与执行前相同，20261102 attempt1及原block保持。未停启/重连、结算确认或报撤单。
-一次正式切换只读check返回BLOCKED/RESULT_UNKNOWN；同权威入口固定20261102读回仍WINDOW_UNPROVEN，
-没有许可、plan或claim，不能归因具体Session缺口，不继续尝试切换。
+一次正式切换只读check返回BLOCKED/RESULT_UNKNOWN；当时独立诊断返回WINDOW_UNPROVEN。
+该诊断的初始化问题及更正读回见下一节；没有许可、plan或claim，未尝试切换。
 状态为RELEASED / CODE_COMPLETE_EXTERNAL_GATE_PENDING：运行仍44，正式十服务仍41；
 合法窗口/目标日权威事实及预算、新鲜接管、输入、自然交易和跨日换月仍须分别验收。
+
+## 窗口定位与下一可用目标日（只读）
+
+owner交办先处理剩余第一步：定位窗口拒绝，并核实合法休市窗口、目标交易日和连接预算。
+2026-10-30 22:49–22:52 CST，通过既有安全配置加载程序后启动全新解释器，只读权威数据库及
+原signals.sqlite；没有修改服务、账户、连接计数或阻断，没有Broker请求、RQData下载、DB写入或新后台任务。
+
+- 独立诊断原先导入应用后才加载配置，连接池缓存旧配置，其OperationalError被权威入口统一包装为
+  ORDINARY_TAKEOVER_WINDOW_UNPROVEN。正式宿主已有配置加载后重执行初始化；本次按该顺序诊断后读取正常，
+  不把此前错误推断为生产Calendar/Session缺失。正式check在市场开放时仍可能把该固定窗口拒绝显示为RESULT_UNKNOWN；
+  本轮只定位，不为诊断显示新增生产补丁。
+- 22:52:50实际读取60品种：45 TRADING、15 CLOSED、UNKNOWN为0。夜盘结束分别为当日23:00、
+  次日01:00及02:30；全部下一Session为11/2 09:00。因此当前不满足全部休市/无当前Session，切换应阻断。
+- 20261102及20261103的权威Calendar/Session均覆盖60/60。前者首Session为10/30 21:00、
+  末Session至11/2 15:00；后者首Session为11/2 21:00、末Session至11/3 15:00。不需要为窗口定位补下载。
+- 原耐久记录仍为20261102 attempt1及CONTINUOUS_RECOVERY_REQUIRED；跨自然日不消除该交易日阻断。
+  20261103尚无attempt或block记录，按现有每交易日最多3次预算当前使用0/3；未预留或授予连接许可。
+- 结合下一实际Session必须属于目标日、全60休市及距下一Session严格大于660秒合同，下一候选部署区间为
+  **11/2 15:00收盘确认后、严格早于20:49 CST**；对应20261103首Session连接窗口为
+  **11/2 20:58–21:02 CST**。上述为现有权威时段推导，必须在执行时重新校验，不能提前当作许可。
+
+第一步调查完成。下一步只在合法条件实时通过后生成原生新鲜计划/claim，将已发布v1.16.45切至独立SimNow；
+正式十服务、原账户四库、writer/双锁、预算、耐久阻断及原风险/输入门禁保持。接管、60品种输入和自然交易仍待验。
