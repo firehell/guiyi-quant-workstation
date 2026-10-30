@@ -88,3 +88,17 @@ test('futures navigation preserves mode and period for eight variants and keeps 
   assert.equal(selected.at(-1).strategyModel,undefined);assert.equal(selected.at(-1).frequency,'5m');assert.equal(selected.at(-1).newowTest,'osc-test4')
   app.unmount()
 })
+
+test('changing analysis never replaces chart contract or unsupported one-minute frequency', async () => {
+  const Nav = (await import(await compileCurveComponent(new URL('../src/components/market/detail/MarketDetailViewNav.vue', import.meta.url)))).default
+  const identity = ref<any>({ view:'free', symbol:'jm', seriesKind:'contract', contract:'JM2601', frequency:'1m' })
+  const root = element('root'), selected: any[] = []
+  const app = createRenderer(nodeOperations()).createApp({ render: () => h(Nav, { identity:identity.value, restore:{newow:{strategy:'trend',frequency:'1d'},htdy:{seriesKind:'actual_dominant',frequency:'60m'},free:{seriesKind:'actual_dominant',frequency:'15m'}},newowFrequencies:['1d','1w'], onSelect:(value:any) => { selected.push(value); identity.value=value } }) })
+  app.mount(root)
+  for (const label of ['趋势策略','火天大有','苏冰预警','自由看盘','震荡策略','双策略']) {
+    const button = findNode(root,n=>n.type==='button'&&nodeText(n)===label)!
+    ;(button.props.onClick as Function)(); await nextTick()
+    assert.equal(selected.at(-1).frequency,'1m',label); assert.equal(selected.at(-1).contract,'JM2601',label); assert.equal(selected.at(-1).seriesKind,'contract',label)
+  }
+  app.unmount()
+})

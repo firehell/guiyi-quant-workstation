@@ -111,6 +111,7 @@ export function useMarketDetailController(
   let currentDirectory: MarketProductDirectoryResponse = { items: [] }
   let directoryRequest: Promise<MarketProductDirectoryResponse> | null = null
   let activeSeriesKey: string | null = null
+  let pendingSeries: { key: string; promise: Promise<{ ok: boolean }> } | null = null
   let activeResearchKey: string | null = null
   const currentResearch = ref<ProductResearchResponse | null>(null)
   const researchError = ref(false)
@@ -130,7 +131,7 @@ export function useMarketDetailController(
 
   function canKeepHeader(previous: MarketDetailIdentity | null, next: MarketDetailIdentity): boolean {
     if (!previous || !state.value.header || seriesKey(previous) !== seriesKey(next)) return false
-    return (previous.view === 'newow') === (next.view === 'newow')
+    return true
   }
 
   async function loadDirectory(): Promise<MarketProductDirectoryResponse> {
@@ -182,11 +183,10 @@ export function useMarketDetailController(
     const generation = state.value.generation + 1
     const previousIdentity = state.value.identity
     const retainedHeader = canKeepHeader(previousIdentity, identity) ? state.value.header : null
-    const usesGenericSeries = identity.view !== 'newow'
     const nextSeriesKey = seriesKey(identity)
-    const reuseSeries = usesGenericSeries && activeSeriesKey === nextSeriesKey
+    const reuseSeries = activeSeriesKey === nextSeriesKey
     const nextResearchKey = researchKey(identity)
-    const reuseResearch = usesGenericSeries && activeResearchKey === nextResearchKey && currentResearch.value !== null
+    const reuseResearch = activeResearchKey === nextResearchKey && currentResearch.value !== null
     state.value = {
       route: { kind: 'valid', identity },
       identity,
@@ -205,21 +205,23 @@ export function useMarketDetailController(
       (value) => ({ ok: true as const, value }),
       () => ({ ok: false as const }),
     )
-    if (!usesGenericSeries && previousIdentity?.view !== 'newow') {
-      series.clearSeries()
-      activeSeriesKey = null
-    }
     // replaceSeries invalidates its previous generation synchronously. Revoke
     // the completed-key cache at the same boundary so A -> B(pending) -> A
     // cannot mistake B's cleared/in-flight source for the completed A source.
-    if (usesGenericSeries && !reuseSeries) activeSeriesKey = null
-    const seriesRequest = usesGenericSeries
-      ? reuseSeries ? Promise.resolve({ ok: true as const }) : series.replaceSeries(identity).then(
-          () => ({ ok: true as const }),
-          () => ({ ok: false as const }),
-        )
-      : Promise.resolve({ ok: true as const })
-    const researchRequest = usesGenericSeries && !reuseResearch
+    let seriesRequest: Promise<{ ok: boolean }>
+    if (reuseSeries) seriesRequest = Promise.resolve({ ok: true })
+    else if (pendingSeries?.key === nextSeriesKey) seriesRequest = pendingSeries.promise
+    else {
+      activeSeriesKey = null
+      seriesRequest = series.replaceSeries(identity).then(
+        () => ({ ok: true }),
+        () => ({ ok: false }),
+      )
+      // Only the currently owned request may be shared. Changing axis replaces
+      // this slot, so returning A -> B -> A never revives the interrupted A.
+      pendingSeries = { key: nextSeriesKey, promise: seriesRequest }
+    }
+    const researchRequest = !reuseResearch
       ? fetchResearch({
           symbol: identity.symbol,
           seriesKind: identity.seriesKind,
@@ -232,17 +234,19 @@ export function useMarketDetailController(
         seriesRequest,
       ])
       if (disposed || state.value.generation !== generation) return
+      if (pendingSeries?.promise === seriesRequest) pendingSeries = null
       const hasCurrentProduct = metadata.ok && metadata.value.items.some(
         (item) => item.product.toLowerCase() === identity.symbol.toLowerCase(),
       )
       if (!metadata.ok || !hasCurrentProduct) {
         series.clearSeries()
+        activeSeriesKey = null
         state.value.header = null
         state.value.loading = false
         state.value.error = '品种元数据不可用'
         return
       }
-      if (!seriesResult.ok) {
+      if (!seriesResult.ok && identity.view !== 'newow') {
         activeSeriesKey = null
         state.value.header = null
         state.value.loading = false
@@ -250,7 +254,7 @@ export function useMarketDetailController(
         return
       }
       if (!seriesResult.ok) series.clearSeries()
-      activeSeriesKey = usesGenericSeries && seriesResult.ok ? nextSeriesKey : null
+      activeSeriesKey = seriesResult.ok ? nextSeriesKey : null
       headerGeneration = generation
       rebuildHeader(identity)
       state.value.loading = false
@@ -280,6 +284,7 @@ export function useMarketDetailController(
   function dispose(): void {
     if (disposed) return
     disposed = true
+    pendingSeries = null
     researchController.abort()
     state.value.generation += 1
     stopSeriesWatch()

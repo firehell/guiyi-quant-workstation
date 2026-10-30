@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { ref } from 'vue'
+import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 
 import {
   defaultMarketDetailPreferences,
@@ -53,15 +55,35 @@ test('Newow accepts only its three strategies and independent completed periods'
 
   for (const query of [
     { symbol: 'rb', view: 'newow', strategy: 'private_screener', series_kind: 'actual_dominant', frequency: '1d' },
-    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'contract', contract: 'RB2610', frequency: '1d' },
+    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'contract', contract: 'JM2610', frequency: '1d' },
     { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', contract: ['RB2610'], frequency: '1d' },
-    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1m' },
+    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '2m' },
   ]) assert.equal(parseMarketDetailRoute(query).kind, 'invalid')
 
   assert.equal(parseMarketDetailRoute({
     symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant',
     frequency: '1d', focus_bar_end: '2026-09-02T07:00:00Z',
   }).kind, 'valid')
+})
+
+test('Newow contract and 1m chart identities remain valid while their analysis makes no requests', () => {
+  for (const query of [
+    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'contract', contract: 'RB2610', frequency: '1d' },
+    { symbol: 'rb', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant', frequency: '1m' },
+  ]) {
+    const route = parseMarketDetailRoute(query)
+    assert.equal(route.kind, 'valid')
+    if (route.kind !== 'valid') continue
+    assert.equal(route.identity.frequency, query.frequency)
+    assert.equal(route.identity.seriesKind, query.series_kind)
+    assert.equal(route.identity.contract, query.contract)
+    assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(route.identity)), route)
+    let requests = 0
+    const analysis = useNewowProduct({ identity: ref(route.identity), fetchSection: async () => { requests++; throw new Error('unsupported analysis must not fetch') } })
+    assert.equal(analysis.identity.value, null)
+    assert.equal(requests, 0)
+    analysis.dispose()
+  }
 })
 
 test('Newow defaults, serializes, and switches with one route identity authority', () => {
@@ -176,14 +198,16 @@ test('all RB four-period trend oscillation and dual routes are explicit identiti
   }
 })
 
-test('Newow entry defaults to daily despite a legacy 1m preference while explicit 1m stays rejected', () => {
+test('Newow entry defaults to daily despite a legacy 1m preference while explicit 1m preserves the chart', () => {
   const preferences = loadMarketDetailPreferences(storage({ [MARKET_DETAIL_PREFERENCES_KEY]: JSON.stringify({
     version: 2, newow: { strategy: 'trend', frequency: '1m' }, free: { frequency: '1m' },
   }) }))
   const restored = resolveViewSwitchIdentity('newow', 'rb', null, preferences)
   assert.equal(restored.frequency, '1d')
   assert.equal(parseMarketDetailRoute(serializeMarketDetailIdentity(restored)).kind, 'valid')
-  assert.equal(parseMarketDetailRoute({ view: 'newow', symbol: 'rb', frequency: '1m' }).kind, 'invalid')
+  const explicit = parseMarketDetailRoute({ view: 'newow', symbol: 'rb', frequency: '1m' })
+  assert.equal(explicit.kind, 'valid')
+  if (explicit.kind === 'valid') assert.equal(explicit.identity.frequency, '1m')
   assert.equal(preferences.free.frequency, '1m')
   assert.equal(parseMarketDetailRoute({ view: 'free', symbol: 'rb', series_kind: 'actual_dominant', frequency: '1m' }).kind, 'valid')
 })

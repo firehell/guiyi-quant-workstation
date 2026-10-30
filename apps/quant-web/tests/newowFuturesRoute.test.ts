@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { ref } from 'vue'
+import { useNewowProduct } from '../src/composables/useNewowProduct.ts'
 import { parseMarketDetailRoute, serializeMarketDetailIdentity, resolveViewSwitchIdentity } from '../src/utils/marketDetailRoute.ts'
 import { futuresVariant, switchFuturesModel, originalNewowCombinationSupported } from '../src/utils/newowFutures.ts'
 const base = { view:'newow', symbol:'jm', strategy:'main_rise', series_kind:'actual_dominant', frequency:'5m' }
@@ -28,5 +30,25 @@ test('test and dual variants survive refresh, product and view switches', () => 
 test('old URLs stay original and malformed model/variant identities fail closed',()=>{
   const old=parseMarketDetailRoute({...base,strategy:'trend'})
   assert.equal(old.kind,'valid');if(old.kind==='valid')assert.equal(old.identity.strategyModel,undefined)
-  for(const query of [{...base,strategy_model:'unknown'},{...base,view:'free',strategy_model:'futures_bidir_v1'},{...base,series_kind:'contract',contract:'JM2601',strategy_model:'futures_bidir_v1'},{...base,newow_test:'osc-test'},{...base,frequency:'1m',strategy_model:'futures_bidir_v1'}])assert.equal(parseMarketDetailRoute(query).kind,'invalid')
+  for(const query of [{...base,strategy_model:'unknown'},{...base,view:'free',strategy_model:'futures_bidir_v1'},{...base,series_kind:'contract',contract:'RB2601',strategy_model:'futures_bidir_v1'},{...base,newow_test:'osc-test'},{...base,frequency:'2m',strategy_model:'futures_bidir_v1'}])assert.equal(parseMarketDetailRoute(query).kind,'invalid')
+})
+
+test('futures contract and 1m URLs retain their chart identity without enabling unsupported original analysis', () => {
+  for (const query of [
+    {...base,series_kind:'contract',contract:'JM2601',strategy_model:'futures_bidir_v1'},
+    {...base,frequency:'1m',strategy_model:'futures_bidir_v1'},
+  ]) {
+    const parsed = parseMarketDetailRoute(query)
+    assert.equal(parsed.kind, 'valid')
+    if (parsed.kind !== 'valid') continue
+    assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(parsed.identity)), parsed)
+    assert.equal(parsed.identity.frequency, query.frequency)
+    assert.equal(parsed.identity.seriesKind, query.series_kind)
+    const original = switchFuturesModel(parsed.identity, false)
+    let requests = 0
+    const analysis = useNewowProduct({ identity: ref(original), fetchSection: async () => { requests++; throw new Error('unsupported analysis must not fetch') } })
+    assert.equal(analysis.identity.value, null)
+    assert.equal(requests, 0)
+    analysis.dispose()
+  }
 })

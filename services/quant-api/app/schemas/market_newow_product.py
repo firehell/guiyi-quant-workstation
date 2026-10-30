@@ -60,6 +60,12 @@ class ProductIdentityOut(_Out):
     )
 
 
+class SharedInputProofOut(_Out):
+    schema_version: Literal["newow_shared_input_proof_v1"]
+    market_input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    auxiliary_input_sha256: str | None = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ProductMetaOut(_Out):
     schema_version: Literal["newow_product_detail_v4"]
     identity: ProductIdentityOut
@@ -70,6 +76,10 @@ class ProductMetaOut(_Out):
     snapshot_token: str | None
     reference_model_version: ReferenceModelVersionValue
     futures_adaptation_version: FuturesAdaptationVersionValue
+    shared_input_proof: SharedInputProofOut | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
 
 
 class ProductBarOut(_Out):

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
 import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vue'
+import { DETAIL_CHART_SESSION, detailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
 import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
@@ -11,6 +12,7 @@ import { newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
 import { newowChartReadout, newowTimeKey } from '@/utils/newowChartReadout'
 import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
+import type { BarData } from '@/types/market'
 import { projectNewowAuxiliaryReadiness } from '@/utils/newowDetailPresentation'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
@@ -68,6 +70,9 @@ import {
 
 const props = withDefaults(defineProps<{
   response: NewowProductSectionResponse<'chart'> | null
+  priceBars?: readonly BarData[]
+  priceFrequency?: string
+  displayOnly?: boolean
   patternSelection?:PatternChoice|null
   patternWindowKey?:string|null
   strategy: NewowProductStrategy
@@ -158,6 +163,7 @@ const oscillationTrack = ref(true)
 const comparisonBackground = ref(true)
 const ACTION_LABEL_BOX = NIUWA_CALLOUT_BOX
 const container = ref<HTMLElement | null>(null)
+const detailSession = inject<DetailChartSession | null>(DETAIL_CHART_SESSION, null)
 const auxiliaryToolbar = ref<HTMLElement | null>(null)
 const followLatest = ref(true)
 const detailLabels = ref(true)
@@ -230,7 +236,7 @@ function renderVisualOverlays(): void {
   if (visualStopLine) candles.removePriceLine(visualStopLine)
   visualStopLine = null
   const value = model.value
-  if (!value || props.loading || props.strategySwitching || props.response?.status.status !== 'ready' || value.identity.strategy !== props.strategy) { retainedStop = null; return }
+  if (!value || props.displayOnly || props.loading || props.strategySwitching || props.response?.status.status !== 'ready' || value.identity.strategy !== props.strategy) { retainedStop = null; return }
   const owner = (b: NewowProductChartModel['bars'][number]) => `${b.physicalContract}:${b.segmentId}:${b.calculationSegmentId}`
   if (visualOverlays.value.donchian) {
     const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), visualOverlays.value.window)
@@ -244,7 +250,7 @@ function renderVisualOverlays(): void {
   if (!anchorModel) { retainedStop = null; return }
   const range = chart.timeScale().getVisibleLogicalRange()
   // Logical indexes belong to the primary candle axis; partner windows can begin earlier.
-  const bars = value.bars.filter((_,i) => !range || (i >= Math.ceil(range.from) && i <= Math.floor(range.to)))
+  const bars = value.bars.filter((bar,i) => { const logical = chart ? detailChartIndex(chart, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), i) : i; return !range || (logical >= Math.ceil(range.from) && logical <= Math.floor(range.to)) })
   retainedStop = retainBuildStop(retainedStop, `${identityKey(value)}:${comparisonActive.value ? 'dual' : 'single'}`, anchorModel.actions.map(a => { const b = anchorModel.bars.find(b => b.barEnd === a.barEnd && b.physicalContract === a.physicalContract && b.segmentId === a.segmentId); return { time:a.barEnd, owner:b ? owner(b) : '', price:a.referencePrice, action:a.kind } }),bars.map(b => ({time:b.barEnd,owner:owner(b)})))
   const price = retainedStopPrice(retainedStop, 0.07)
   if (price !== null) visualStopLine = candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
@@ -255,7 +261,7 @@ onMounted(async () => {
   await nextTick()
   if (container.value === null) return
   const theme = resolveChartTheme(container.value)
-  chart = adapter.createChart(container.value, {
+  chart = (detailSession?.acquire ?? adapter.createChart)(container.value, {
     width: container.value.clientWidth,
     height: container.value.clientHeight,
     layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: '#EBEDF0' } },
@@ -325,13 +331,13 @@ onUnmounted(createNewowProductChartDisposer({
   },
 }))
 
-watch([model, () => props.strategySwitching], ([value]) => { volumeScoreIndex.value = null; renderModel(value) })
+watch([model, () => props.strategySwitching, () => props.priceBars, () => props.displayOnly], ([value]) => { volumeScoreIndex.value = null; renderModel(value) })
 watch([() => props.targetPrice, () => props.absorbPrice, () => props.loading, () => props.strategy], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(showActions, () => { renderMarkers(model.value); scheduleActionProjection() })
 watch([model, allReferenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
 watch([detailLabels, showHints], scheduleActionProjection, { flush: 'post' })
-watch([() => props.loading, () => props.strategySwitching, () => props.strategy, () => props.response?.status.status], renderVisualOverlays)
+watch([() => props.loading, () => props.strategySwitching, () => props.strategy, () => props.response?.status.status, () => props.displayOnly], renderVisualOverlays)
 watch([partnerModel, trendTrack, oscillationTrack, comparisonBackground], () => renderModel(model.value))
 watch([auxiliaryModel, auxiliaryPresentation], () => { cursorRows.value = []; resize() }, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
@@ -366,7 +372,7 @@ function renderReferencePrices(): void {
     referencePriceLines.set(key, candles.createPriceLine({ price, color, title, lineWidth: 1, lineStyle: 1,
       axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' }))
   }
-  const breakout = !props.loading && !props.strategySwitching && props.strategy === model.value.identity.strategy
+  const breakout = !props.displayOnly && !props.loading && !props.strategySwitching && props.strategy === model.value.identity.strategy
     && props.response?.status.status === 'ready' ? newowOscillationBreakout(model.value) : null
   if (breakout) referencePriceLines.set('breakout', candles.createPriceLine({
     price: breakout.price, color: '#FF9800', title: `突破 ${breakout.displayScore}/7`,
@@ -394,8 +400,12 @@ function renderModel(value: NewowProductChartModel | null): void {
     }
     // Keep only the price facts while switching strategy, never its old indicators or signals.
     if (!props.strategySwitching) {
-      candleWriter.write(candles, [], 'cleared')
-      if (volume) volumeWriter.write(volume, [], 'cleared')
+      const preview = props.priceBars ?? []
+      const points = preview.map(bar => ({ time: (props.priceFrequency ?? '').endsWith('m')
+        ? Math.floor(Date.parse(bar.time) / 1000) as import('lightweight-charts').UTCTimestamp
+        : chartMarkerTime(bar.time, '1d', bar.trading_day ?? bar.time.slice(0, 10)), open: bar.open, high: bar.high, low: bar.low, close: bar.close }))
+      candleWriter.write(candles, points, 'preview')
+      if (volume) volumeWriter.write(volume, preview.map((bar, index) => ({ time: points[index]!.time, value: bar.volume, color: bar.close >= bar.open ? 'rgba(255,59,48,0.6)' : 'rgba(52,199,89,0.6)' })), 'preview')
       if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, [], 'cleared')
     }
     band.setData([])
@@ -435,7 +445,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   )
   const resetViewport = previousModel !== null && !retainsPreviousAxis
   rendering = true
-  const priceIdentity = `${value.identity.product}:${value.identity.frequency}:${value.identity.strategy}`
+  const priceIdentity = `${value.identity.product}:${value.identity.frequency}`
   candleWriter.write(candles, value.bars.map((bar) => ({
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
@@ -456,7 +466,11 @@ function renderModel(value: NewowProductChartModel | null): void {
   renderAuxiliary()
   syncMainLines(comparisonActive.value ? { ...value, mainLines: trackModels.value.flatMap(item => item.mainLines) } : value)
   renderMarkers(value)
-  if (renderedIdentity !== null && initialPreferences?.range && initialPreferences.axis === axisKey(value.bars)) {
+  const sharedViewport = detailChartViewport(chart)
+  if (sharedViewport) {
+    followLatest.value = false
+    setRange(sharedViewport)
+  } else if (renderedIdentity !== null && initialPreferences?.range && initialPreferences.axis === axisKey(value.bars)) {
     followLatest.value = false
     setRange(initialPreferences.range)
   } else if (resetViewport || previousModel === null || renderedBars.length === 0) {
@@ -511,7 +525,7 @@ function syncMainLines(value: NewowProductChartModel): void {
 
 function renderMarkers(value: NewowProductChartModel | null): void {
   if (chart === null || actionMarkers === null || value === null) return
-  if (comparisonActive.value) { actionMarkers.setMarkers([]); return }
+  if (comparisonActive.value || props.displayOnly) { actionMarkers.setMarkers([]); return }
   const actions: SeriesMarker<Time>[] = [...(showActions.value ? value.actions : [])]
     .sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
     .map((item) => ({ ...productChartMarker(
@@ -527,7 +541,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   attackOverlays.value = []
   processOverlays.value = []
   cycleCountOverlays.value = []
-  if (props.strategySwitching || chart === null || candles === null || container.value === null || value === null) {
+  if (props.displayOnly || props.strategySwitching || chart === null || candles === null || container.value === null || value === null) {
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     return
   }
@@ -674,7 +688,8 @@ function revealSignal(signalId: string): boolean {
   const width = Math.max(10, current === null ? 100 : current.to - current.from)
   followLatest.value = false
   rendering = true
-  setRange({ from: barIndex - width / 2, to: barIndex + width / 2 })
+  const logicalIndex = detailChartIndex(chart, chartMarkerTime(value.bars[barIndex]!.barEnd, value.identity.frequency, value.bars[barIndex]!.tradingDay), barIndex)
+  setRange({ from: logicalIndex - width / 2, to: logicalIndex + width / 2 })
   rendering = false
   resolvedSignalKey = key
   resolvedFocusRequestKey = requestKey
@@ -697,15 +712,20 @@ function onClick(event: MouseEventParams<Time>): void {
 
 }
 
+function firstLogicalIndex(): number {
+  const bar = model.value?.bars[0]
+  return chart && bar && model.value ? detailChartIndex(chart, chartMarkerTime(bar.barEnd, model.value.identity.frequency, bar.tradingDay), 0) : 0
+}
+
 function onRangeChange(range: LogicalRange | null): void {
   if (rendering || range === null) return
   if (range.from === programmaticRange?.from && range.to === programmaticRange.to) return
   projectActionLabels()
   renderVisualOverlays()
   if (!paginationArmed) return
-  const length = model.value?.bars.length ?? 0
+  const length = chart ? detailChartLength(chart, model.value?.bars.length ?? 0) : 0
   followLatest.value = range.to >= length - 2
-  const nearLeft = range.from < 10
+  const nearLeft = range.from < firstLogicalIndex() + 10
   if (nearLeft && !nearLeftBoundary && props.hasMoreBefore && !props.loading) emit('loadEarlier')
   nearLeftBoundary = nearLeft
 }
@@ -713,7 +733,7 @@ function onRangeChange(range: LogicalRange | null): void {
 function setRange(range: { from: number; to: number }): void {
   paginationArmed = false
   programmaticRange = range
-  nearLeftBoundary = range.from < 10
+  nearLeftBoundary = range.from < firstLogicalIndex() + 10
   chart?.timeScale().setVisibleLogicalRange(range as LogicalRange)
   armPagination()
 }
@@ -722,7 +742,7 @@ function armPagination(): void {
   const finish = () => {
     paginationArmFrame = null
     const range = chart?.timeScale().getVisibleLogicalRange()
-    nearLeftBoundary = range !== null && range !== undefined && range.from < 10
+    nearLeftBoundary = range !== null && range !== undefined && range.from < firstLogicalIndex() + 10
     paginationArmed = true
     projectActionLabels()
   }
@@ -755,10 +775,14 @@ function resize(): void {
   }
 }
 
+let renderedAuxiliaryKey: string | null = null
 function renderAuxiliary(): void {
   if (!chart) return
   const active = new Set<string>()
   const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
+  // A strategy switch does not revoke the last accepted market indicator.
+  // The new generation must prove compatibility before it can replace this layer.
+  if (value === null && (props.strategySwitching || props.auxiliaryLifecycle === 'loading')) return
   const theme = resolveChartTheme(container.value ?? document.documentElement)
   const colors: Record<string, string> = { dif: '#FF6B2C', dea: '#365AF5', var4: '#FF6B2C', ma10: '#365AF5', var3: '#9333EA', ma120: '#667085', entry: '#FF403A', wash: '#F5B726', distribution: '#22B95D', markup: '#FF6B2C', exit: '#365AF5', inducement: '#9333EA', peaks: '#B45309', caution: '#667085', band_entry: '#FF403A', rebound_entry: '#F5B726', oversold_entry: '#22B95D' }
   const mirror = value?.component === 'zhaoyao_mirror'
@@ -771,6 +795,9 @@ function renderAuxiliary(): void {
     const bar=model.value?.bars.find(b=>b.barEnd===e.bar_end)
     return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative}] : []
   })
+  const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, displayEvents, mirror || energy ? model.value?.bars : null])
+  if (nextKey === renderedAuxiliaryKey) return
+  renderedAuxiliaryKey = nextKey
   zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series, displayEvents) : [], topInset)
   upDownEnergy.setData(energy && model.value ? buildNewowUpDownEnergyData(value.series, model.value.bars) : [],
     topInset)

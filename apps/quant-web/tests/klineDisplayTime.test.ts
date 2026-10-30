@@ -12,11 +12,11 @@ const hoverSource = readFileSync(
 )
 
 describe('KlineChart opening-time presentation', () => {
-  it('uses the shared opening-time coordinate for intraday chart data', () => {
+  it('preserves opening-time coordinates outside the shared detail canvas', () => {
     assert.match(chartSource, /toKlineDisplayTimeForPeriod/)
     assert.match(
       chartSource,
-      /return toKlineDisplayTimeForPeriod\(bar, props\.period\) as Time/,
+      /toKlineDisplayTimeForPeriod\(bar, props\.period\) as Time/,
     )
   })
 

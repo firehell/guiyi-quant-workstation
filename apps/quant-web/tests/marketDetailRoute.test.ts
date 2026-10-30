@@ -47,14 +47,14 @@ test('roundtrips a completed Newow focus through the unified route', () => {
   assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(identity)), { kind: 'valid', identity })
 })
 
-test('SuBing persisted signal routes accept six actual dominant periods', () => {
+test('SuBing routes retain all chart periods while workspace validates strategy support', () => {
   for (const frequency of ['5m', '15m', '30m', '60m', '1d', '1w']) {
     const parsed = parseMarketDetailRoute({ view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', frequency })
     assert.equal(parsed.kind, 'valid')
     if (parsed.kind === 'valid') assert.equal(parsed.identity.frequency, frequency)
   }
   for (const frequency of ['1m']) {
-    assert.equal(parseMarketDetailRoute({ view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', frequency }).kind, 'invalid')
+    assert.equal(parseMarketDetailRoute({ view: 'subing', symbol: 'jm', series_kind: 'actual_dominant', frequency }).kind, 'valid')
   }
 })
 
@@ -229,4 +229,13 @@ test('legacy continuous links resolve to actual dominant before any consumer ide
   }
   assert.equal(parseMarketDetailRoute({view:'free',symbol:'jm',series_kind:['continuous'],frequency:'15m'}).kind,'invalid')
   assert.equal(parseMarketDetailRoute({view:'free',symbol:'jm',series_kind:'continuous',frequency:'2h'}).kind,'invalid')
+})
+
+test('strategy switching preserves every chart identity including unsupported analysis combinations', () => {
+  const restore = { newow: { strategy: 'oscillation' as const, frequency: '1d' as const }, htdy: { seriesKind: 'actual_dominant' as const, frequency: '60m' as const }, free: { seriesKind: 'actual_dominant' as const, frequency: '15m' as const } }
+  for (const view of ['newow', 'subing', 'htdy', 'free'] as const) {
+    const next = resolveViewSwitchIdentity(view, 'jm', { view: 'free', symbol: 'jm', seriesKind: 'contract', contract: 'JM2601', frequency: '1m' }, restore)
+    assert.equal(next.frequency, '1m'); assert.equal(next.seriesKind, 'contract'); assert.equal(next.contract, 'JM2601')
+    assert.equal(parseMarketDetailRoute(serializeMarketDetailIdentity(next)).kind, 'valid')
+  }
 })

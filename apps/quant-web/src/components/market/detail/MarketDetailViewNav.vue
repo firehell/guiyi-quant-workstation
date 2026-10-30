@@ -65,19 +65,15 @@ watch(() => props.identity, (identity) => {
 function chooseView(view: AnalysisChoice) {
   if (view === 'trend' || view === 'oscillation' || view === 'main_rise' || view === 'dual') {
     const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
-    const preferredFrequency = props.identity.view === 'newow'
-      ? props.identity.frequency
-      : (restored.frequency === '1m' || props.newowFrequencies.includes(restored.frequency)) ? restored.frequency : props.newowFrequencies[0] ?? restored.frequency
-    const frequency = preferredFrequency
     emit('select', {
-      view: 'newow', symbol: props.identity.symbol, ...(isFutures.value ? { strategyModel: 'futures_bidir_v1' as const } : {}), strategy: view === 'dual' ? 'trend' : view,
-      ...(view === 'dual' ? { newowMode: 'dual' as const } : {}),
-      seriesKind: 'actual_dominant', frequency,
+      ...restored, strategy: view === 'dual' ? 'trend' : view,
+      newowTest: undefined, newowMode: view === 'dual' ? 'dual' : undefined,
+      homeContext: undefined, focusBarEnd: undefined,
     })
     return
   }
   const identity = resolveViewSwitchIdentity(view, props.identity.symbol, props.identity, props.restore)
-  emit('select', view === 'htdy' ? { ...identity, frequency: '60m' } : identity)
+  emit('select', identity)
 }
 
 function openAiAnalysis() {

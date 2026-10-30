@@ -83,27 +83,16 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     : parseFrequency(query.frequency)
   if (!frequency) return invalid('DETAIL_FREQUENCY_INVALID', symbol, recoveryFor(viewValue, symbol))
 
-  if (fixed && (seriesKind !== fixed.seriesKind || !SUBING_FREQUENCY_SET.has(frequency))) {
-    return invalid('DETAIL_SUBING_IDENTITY_INVALID', symbol, {
-      view: viewValue, symbol, ...fixed,
-    })
-  }
-
-  if (isNewow && (seriesKind !== 'actual_dominant' || !NEWOW_FREQUENCY_SET.has(frequency))) {
-    return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
-  }
-
   const rawContract = scalar(query.contract)
-  if (isNewow && query.contract !== undefined) {
-    return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
-  }
   if (seriesKind === 'contract') {
     const contract = normalizeContract(rawContract)
     if (!contract || contract.replace(/\d+$/, '').toLowerCase() !== symbol) return invalid('DETAIL_CONTRACT_REQUIRED', symbol, recoveryFor(viewValue, symbol))
     if (hasFocus(query) && !allowsFocus(viewValue, seriesKind, frequency)) {
       return invalid('DETAIL_FOCUS_INVALID', symbol, recoveryFor(viewValue, symbol))
     }
-    return valid(viewValue, symbol, seriesKind, frequency, contract, query.focus_bar_end, strategy ?? undefined)
+    if (query.home_context !== undefined) return invalid('DETAIL_HOME_CONTEXT_INVALID', symbol, recoveryFor(viewValue, symbol))
+    const result = valid(viewValue, symbol, seriesKind, frequency, contract, query.focus_bar_end, strategy ?? undefined)
+    return applyNewowOptions(result, query)
   }
   if (query.contract !== undefined) return invalid('DETAIL_SERIES_KIND_INVALID', symbol, recoveryFor(viewValue, symbol))
   const result = valid(viewValue, symbol, seriesKind, frequency, undefined, query.focus_bar_end, strategy ?? undefined)
@@ -112,6 +101,10 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     if (!context) return invalid('DETAIL_HOME_CONTEXT_INVALID',symbol,recoveryFor(viewValue,symbol))
     result.identity.homeContext=context
   }
+  return applyNewowOptions(result, query)
+}
+
+function applyNewowOptions(result: MarketDetailRouteResult, query: Record<string, unknown>): MarketDetailRouteResult {
   if (result.kind === 'valid' && query.strategy_model === 'futures_bidir_v1') result.identity.strategyModel = 'futures_bidir_v1'
   if (result.kind === 'valid' && query.newow_test) result.identity.newowTest = query.newow_test as MarketDetailIdentity['newowTest']
   if (result.kind === 'valid' && query.newow_mode === 'dual') result.identity.newowMode = 'dual'
@@ -141,36 +134,23 @@ export function resolveViewSwitchIdentity(
   previous: MarketDetailIdentity | null,
   restore: MarketDetailViewRestore,
 ): MarketDetailIdentity {
-  if (view === 'newow') {
-    if (previous?.view === 'newow' && sameSymbol(previous.symbol, symbol) && previous.strategy
-      && NEWOW_STRATEGY_SET.has(previous.strategy) && NEWOW_FREQUENCY_SET.has(previous.frequency)) {
-      return {
-        view, symbol, strategy: previous.strategy, ...(previous.strategyModel ? { strategyModel: previous.strategyModel } : {}), ...(previous.newowTest ? { newowTest: previous.newowTest } : {}), ...(previous.newowMode ? { newowMode: previous.newowMode } : {}),
-        seriesKind: 'actual_dominant', frequency: previous.frequency,
-      }
-    }
-    return {
-      view, symbol, strategy: restore.newow.strategy,
-      seriesKind: 'actual_dominant', frequency: '1d',
-    }
+  const target = view === 'trend' ? 'newow' : view
+  const previousChart = previous && sameSymbol(previous.symbol, symbol)
+    && (previous.seriesKind !== 'contract' || previous.contract) ? previous : null
+  const chart = previousChart
+    ? { seriesKind: previousChart.seriesKind, frequency: previousChart.frequency,
+      ...(previousChart.seriesKind === 'contract' ? { contract: previousChart.contract } : {}) }
+    : target === 'newow' ? { seriesKind: 'actual_dominant' as const, frequency: '1d' as const }
+    : target === 'subing' ? FIXED_IDENTITIES.subing
+    : { ...restore[target], seriesKind: 'actual_dominant' as const }
+  if (target !== 'newow') return { view: target, symbol, ...chart }
+  const saved = previousChart?.view === 'newow' ? previousChart : restore.newow
+  return {
+    view: 'newow', symbol, ...chart, strategy: view === 'trend' ? 'trend' : saved.strategy ?? 'trend',
+    ...(saved.strategyModel ? { strategyModel: saved.strategyModel } : {}),
+    ...(view !== 'trend' && saved.newowTest ? { newowTest: saved.newowTest } : {}),
+    ...(view !== 'trend' && saved.newowMode ? { newowMode: saved.newowMode } : {}),
   }
-  if (view === 'trend') {
-    return { view: 'newow', symbol, strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' }
-  }
-  if (view === 'subing') return { view, symbol, ...FIXED_IDENTITIES.subing,
-    frequency: previous?.view === 'subing' && sameSymbol(previous.symbol, symbol) && SUBING_FREQUENCY_SET.has(previous.frequency) ? previous.frequency : '15m' }
-  if (previous?.view === view && sameSymbol(previous.symbol, symbol)) {
-    if (previous.seriesKind !== 'contract' || previous.contract) {
-      return {
-        view,
-        symbol,
-        seriesKind: previous.seriesKind === 'contract' ? 'contract' : 'actual_dominant',
-        frequency: previous.frequency,
-        ...(previous.seriesKind === 'contract' ? { contract: previous.contract } : {}),
-      }
-    }
-  }
-  return { view, symbol, ...restore[view], seriesKind: 'actual_dominant' }
 }
 
 export function marketDetailEventIdentity(event: AlertEvent): MarketDetailIdentity {

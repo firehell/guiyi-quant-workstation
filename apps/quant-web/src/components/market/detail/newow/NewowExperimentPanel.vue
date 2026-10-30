@@ -8,8 +8,9 @@ import { marketFrequencyLabel } from '@/utils/marketDisplay'
 import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
 import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import {newowReferencePoints,newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
-import {computed,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
-import {createChart,CandlestickSeries,LineSeries,createSeriesMarkers,type IChartApi,type UTCTimestamp,type ISeriesMarkersPluginApi,type Time,type IPriceLine} from 'lightweight-charts'
+import {computed,inject,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
+import {createChart,CandlestickSeries,HistogramSeries,LineSeries,createSeriesMarkers,type IChartApi,type ISeriesMarkersPluginApi,type Time,type IPriceLine} from 'lightweight-charts'
+import {DETAIL_CHART_SESSION,detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
 import {getNewowExperiment,getNewowExperimentHistory} from '@/api/newowExperiments'
 import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
 import {formatPerformancePercent} from '@/utils/marketDisplay'
@@ -17,7 +18,8 @@ import {pagePerformanceAnnualized} from '@/utils/newowPagePerformance'
 import {layoutNiuwaReferenceCallouts,type PositionedCallout} from '@/utils/referenceCalloutLayout'
 import {formatChartTimeInShanghai} from '@/utils/barTime'
 const emit=defineEmits<{ 'analyze-channel': []; context: [value: {asOf:string;physicalContract:string|null;segmentId:string|null;latestState:import('@/utils/newowExperiments').ExperimentSegment['latest_state']|null}|null] }>()
-const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null}>()
+const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null;volumeBars?:readonly {barEnd:string;physicalContract:string;volume:number}[]}>()
+const detailSession=inject<DetailChartSession|null>(DETAIL_CHART_SESSION,null)
 let retainedStop:RetainedBuildStop|null=null
 const data=shallowRef<ExperimentDetail|null>(null),loading=ref(false),error=ref<string|null>(null),container=ref<HTMLElement|null>(null)
 const visualOverlays=ref(readVisualOverlayPreferences())
@@ -67,8 +69,11 @@ async function load(){const token=generation.begin();data.value=null;selectedSeg
 watch(()=>[props.product,props.frequency,props.kind,props.asOf,range.value],load,{immediate:true})
 let chart:IChartApi|null=null,observer:ResizeObserver|null=null
 let candles:ReturnType<IChartApi['addSeries']>|null=null,upper:ReturnType<IChartApi['addSeries']>|null=null,lower:ReturnType<IChartApi['addSeries']>|null=null
+let volume:ReturnType<IChartApi['addSeries']>|null=null
 let markers:ISeriesMarkersPluginApi<Time>|null=null
-const time=(text:string)=>Math.floor(Date.parse(text)/1000) as UTCTimestamp
+const time=(text:string):Time=>detailChartTime({time:text,trading_day:formatChartTimeInShanghai(text).slice(0,10)},props.frequency)
+let resetViewport=false
+watch(selectedSegment,()=>{if(chart){resetDetailChartWindow(chart);resetViewport=true}})
 let stopLine:IPriceLine|null=null
 const visualLines:ReturnType<IChartApi['addSeries']>[]=[]
 function renderVisual(){
@@ -87,7 +92,7 @@ function renderVisual(){
   }
  }
  const range=chart.timeScale().getVisibleLogicalRange()
- const visible=bars.filter((_,i)=>!range||(i>=Math.ceil(range.from)&&i<=Math.floor(range.to)))
+ const visible=bars.filter((bar,i)=>{const index=detailChartIndex(chart!,time(bar.bar_end),i);return !range||(index>=Math.ceil(range.from)&&index<=Math.floor(range.to))})
  const pct=props.kind==='osc-test4'?0.12:0.07
  retainedStop=retainBuildStop(retainedStop, `${props.product}:${props.frequency}:${props.kind}`, chartMarkers.value.map(m=>({time:m.bar_end,owner:`${m.physical_contract}:${m.segment_id}`,price:m.reference_price,action:m.action})),visible.map(b=>({time:b.bar_end,owner:`${b.physical_contract}:${b.segment_id}`})))
  const price=retainedStopPrice(retainedStop,pct)
@@ -108,14 +113,16 @@ function projectCallouts(){
 function render(){
  if(!chart||!candles||!upper||!lower||!markers)return
  const bars=chartBars.value
- candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})))
+ const viewport=resetViewport?null:detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange();resetViewport=false
+ if(bars.length || !detailSession) candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})))
+ if(volume&&bars.length){const source=new Map((props.volumeBars??[]).map(bar=>[`${Date.parse(bar.barEnd)}:${bar.physicalContract}`,bar.volume]));volume.setData(bars.map(bar=>{const value=source.get(`${Date.parse(bar.bar_end)}:${bar.physical_contract}`);return {time:time(bar.bar_end),...(value===undefined?{}:{value,color:Number(bar.close)>=Number(bar.open)?'rgba(255,59,48,0.6)':'rgba(52,199,89,0.6)'})}}))}
  upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}))
  lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}))
  markers.setMarkers([])
- chart.timeScale().fitContent();renderVisual();projectCallouts()
+ if(viewport)chart.timeScale().setVisibleLogicalRange(viewport);else chart.timeScale().fitContent();renderVisual();projectCallouts()
 }
 watch([data,selectedSegment],render)
-onMounted(()=>{if(!container.value)return;chart=createChart(container.value,{height:440,width:container.value.clientWidth,localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f1f3f5'},horzLines:{color:'#f1f3f5'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff403a',downColor:'#22b95d',wickUpColor:'#ff403a',wickDownColor:'#22b95d',borderVisible:false});upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{renderVisual();projectCallouts()});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});projectCallouts()}});observer.observe(container.value);render()})
+onMounted(()=>{if(!container.value)return;chart=(detailSession?.acquire??createChart)(container.value,{height:440,width:container.value.clientWidth,localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f1f3f5'},horzLines:{color:'#f1f3f5'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff403a',downColor:'#22b95d',wickUpColor:'#ff403a',wickDownColor:'#22b95d',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false},1);chart.panes()[0]!.setStretchFactor(5);chart.panes()[1]!.setStretchFactor(1);upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{renderVisual();projectCallouts()});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});projectCallouts()}});observer.observe(container.value);render()})
 onBeforeUnmount(()=>{generation.clear();emit('context',null);observer?.disconnect();chart?.remove()})
 const pct=(v:unknown,signed=true)=>typeof v==='string'?formatPerformancePercent(v,signed):'—'
 const date=(v:unknown)=>typeof v==='string'?formatChartTimeInShanghai(time(v)):'—'

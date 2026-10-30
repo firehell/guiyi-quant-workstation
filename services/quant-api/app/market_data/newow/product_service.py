@@ -330,6 +330,13 @@ class SectionDelivery:
 
 
 @dataclass(frozen=True, slots=True)
+class SharedInputProof:
+    schema_version: str
+    market_input_sha256: str
+    auxiliary_input_sha256: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ProductResultMeta:
     schema_version: str
     identity: ProductIdentity
@@ -340,6 +347,7 @@ class ProductResultMeta:
     snapshot_token: str | None
     reference_model_version: str = REFERENCE_MODEL_VERSION
     futures_adaptation_version: str = FUTURES_ADAPTATION_VERSION
+    shared_input_proof: SharedInputProof | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -477,8 +485,8 @@ def _not_requested() -> SectionDelivery:
     return SectionDelivery("not_requested", None, None)
 
 
-@timed("verify")
-def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
+def _market_input_payload(read: ProductReadSet) -> dict[str, object]:
+    """Existing full read facts, shared without changing the legacy fingerprint."""
     bars = []
     for frequency in sorted(read.bars_by_frequency, key=str):
         for item in read.bars_by_frequency[frequency]:
@@ -547,6 +555,20 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
         )
         for item in values
     )
+    return {
+        **({"reference_source_evidence_sha256": read.reference_source_evidence_sha256}
+           if read.reference_source_evidence_sha256 is not None else {}),
+        "as_of": read.as_of.isoformat(),
+        "bars": bars,
+        "owners": owners,
+        "boundaries": boundaries,
+        "sources": sources,
+        "interruptions": interruptions,
+    }
+
+
+@timed("verify")
+def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
     identity_fields: tuple[object, ...] = (
         identity.product,
         identity.strategy.value,
@@ -559,19 +581,72 @@ def _fingerprint(read: ProductReadSet, identity: ProductIdentity) -> str:
     payload = json.dumps(
         {
             "identity": identity_fields,
-            **({"reference_source_evidence_sha256": read.reference_source_evidence_sha256}
-               if read.reference_source_evidence_sha256 is not None else {}),
-            "as_of": read.as_of.isoformat(),
-            "bars": bars,
-            "owners": owners,
-            "boundaries": boundaries,
-            "sources": sources,
-            "interruptions": interruptions,
+            **_market_input_payload(read),
         },
         separators=(",", ":"),
         sort_keys=True,
     )
     return sha256(payload.encode()).hexdigest()
+
+
+def _shared_input_proof(
+    read: ProductReadSet,
+    identity: ProductIdentity,
+    component: AuxiliaryComponent | None = None,
+    formula_version: str | None = None,
+) -> SharedInputProof:
+    """Prove all warm-up, owner and quality inputs; never authorize a snapshot."""
+    schema = "newow_shared_input_proof_v1"
+    payload = {
+        **_market_input_payload(read),
+        "schema_version": schema,
+        "product": identity.product,
+        "frequency": read.frequency.value,
+        "series_kind": identity.series_kind,
+        "input_quality_policy": read.input_quality_policy.value,
+        "input_quality_policies_by_frequency": {
+            frequency.value: policy.value
+            for frequency, policy in read.input_quality_policies_by_frequency.items()
+        },
+        "source_cutoffs": {
+            frequency.value: source.as_of.isoformat()
+            for frequency, source in read.sources.items()
+        },
+        "display_window": (read.display_window.since.isoformat(), read.display_window.through.isoformat()),
+        "performance_window": (read.performance_window.since.isoformat(), read.performance_window.through.isoformat()),
+        "calculation_segments": tuple(
+            (frequency.value, item.bar.bar_end.isoformat(), item.calculation_segment_id)
+            for frequency in sorted(read.bars_by_frequency, key=str)
+            for item in read.bars_by_frequency[frequency]
+        ),
+        "lifecycle_evidence": tuple(
+            (
+                frequency.value, item.product, item.physical_contract, item.segment_id,
+                item.first_bar_end.isoformat(), item.last_bar_end.isoformat(),
+                item.bar_count, item.input_sha256, item.source_identity,
+                item.verified_cutoff.isoformat(),
+            )
+            for frequency in sorted(read.lifecycle_evidence_by_frequency, key=str)
+            for item in read.lifecycle_evidence_by_frequency[frequency]
+        ),
+    }
+    market_hash = sha256(json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()).hexdigest()
+    auxiliary_hash = None
+    if component is not None:
+        if formula_version is None:
+            raise ValueError("NEWOW_AUXILIARY_PROOF_FORMULA_REQUIRED")
+        auxiliary_payload = {
+            "schema_version": schema,
+            "market_input_sha256": market_hash,
+            "component": component.value,
+            "formula_version": formula_version,
+            "macd_cache_identity": MACD_CACHE_IDENTITY if component is AuxiliaryComponent.MACD else None,
+            # Cup-handle is applicable only to trend; the other kernels share
+            # market inputs and their own formula independently of strategy.
+            "cup_handle_strategy": identity.strategy.value if component is AuxiliaryComponent.CUP_HANDLE else None,
+        }
+        auxiliary_hash = sha256(json.dumps(auxiliary_payload, separators=(",", ":"), sort_keys=True).encode()).hexdigest()
+    return SharedInputProof(schema, market_hash, auxiliary_hash)
 
 
 def _cursor(payload: Mapping[str, object]) -> str:
@@ -1055,7 +1130,7 @@ class NewowProductService:
         )
         section_key = self._section_key(
             request, window, resolved, fact_key, page_identity
-        ) + (navigable,)
+        ) + (navigable, _shared_input_proof(read, identity).market_input_sha256)
         if request.snapshot_token is not None:
             if not self._cache.token_is_compatible(
                 request.snapshot_token, common_key, proof
@@ -1126,7 +1201,7 @@ class NewowProductService:
             and self._persisted_reference is None):
             first_key = self._section_key(
                 replace(request, history_before=None), window, resolved, fact_key, page_identity,
-            ) + (navigable,)
+            ) + (navigable, section_key[-1])
             candidate = self._cache.get(common_key, first_key)
             if (isinstance(candidate, NewowProductResult)
                 and isinstance(candidate.reference.value, ReferenceSectionValue)
@@ -1143,7 +1218,7 @@ class NewowProductService:
         if (request.reference_mode is None and request.include_fusion
                 and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
                 and callable(attach_fusion)):
-            base_key = self._section_key(replace(request, include_fusion=False, fusion_before=None), window, resolved, fact_key, page_identity) + (navigable,)
+            base_key = self._section_key(replace(request, include_fusion=False, fusion_before=None), window, resolved, fact_key, page_identity) + (navigable, section_key[-1])
             candidate = self._cache.get(common_key, base_key)
             if isinstance(candidate, NewowProductResult) and isinstance(candidate.reference.value, PersistedReferenceSectionValue):
                 base = candidate
@@ -1417,6 +1492,10 @@ class NewowProductService:
             None,
             futures_adaptation_version=futures_adaptation_version(
                 request.frequency, identity.input_quality_policy
+            ),
+            shared_input_proof=_shared_input_proof(
+                read, identity, request.component,
+                layer.formula_version if request.section is ProductSection.AUXILIARY else None,
             ),
         )
         return NewowProductResult(

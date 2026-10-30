@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { DETAIL_CHART_SESSION, detailChartViewport, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
   CandlestickSeries,
   ColorType,
@@ -38,7 +39,7 @@ import {
 } from '@/utils/barTime'
 import { normalizeBarSeries } from '@/utils/barSeries'
 import { visibleRangeDetectorCount } from '@/utils/rangeDetectorStatus'
-import { initialChartLogicalRange, prependChartLogicalRange } from '@/utils/chartViewport'
+import { initialChartLogicalRange, initialNewowChartLogicalRange, prependChartLogicalRange } from '@/utils/chartViewport'
 import {
   buildKlineDerivedData,
   resolveKlineHoverContext,
@@ -93,6 +94,7 @@ const emit = defineEmits<{
 }>()
 
 const container = ref<HTMLElement>()
+const detailSession = inject<DetailChartSession | null>(DETAIL_CHART_SESSION, null)
 const positionedCallouts = ref<PositionedCallout[]>([])
 const positionedSelection = ref<Array<{ time: string; x: number; height: number }>>([])
 const isReferenceSelected = (callout: KlineReferenceCallout) => props.referenceSelection.some(selection => matchesReferenceBar(selection, callout))
@@ -184,8 +186,8 @@ const LOGICAL_RANGE_EPSILON = 0.001
 onMounted(async () => {
   await nextTick()
   if (!container.value) return
-  const theme = resolveChartTheme()
-  chart = createChart(container.value, {
+  const theme = resolveChartTheme(container.value)
+  chart = (detailSession?.acquire ?? createChart)(container.value, {
     width: container.value.clientWidth,
     height: container.value.clientHeight,
     layout: {
@@ -251,7 +253,7 @@ onMounted(async () => {
   observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
   container.value.addEventListener('pointerup', syncMacdLabelTop)
-  replaceBars(props.bars)
+  replaceBars(props.bars, detailChartViewport(chart) !== null)
 })
 
 onUnmounted(() => {
@@ -321,14 +323,15 @@ function volumeValues(bars: BarData[]) {
 }
 
 function replaceBars(bars: BarData[], preserveViewport = false): void {
-  const visibleRange = preserveViewport ? chart?.timeScale().getVisibleLogicalRange() : null
+  const visibleRange = preserveViewport && chart ? detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange() : null
   renderedBars = normalizeBarSeries(bars)
   if (!chart) return
   paginationArmed = false
   lastVisibleFrom.value = null
   renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
-  const targetRange = visibleRange ?? initialChartLogicalRange(renderedBars.length)
+  const targetRange = detailSession ? detailChartViewport(chart) ?? initialNewowChartLogicalRange(renderedBars.length, container.value?.clientWidth ?? 1000)
+    : visibleRange ?? initialChartLogicalRange(renderedBars.length)
   if (targetRange) chart.timeScale().setVisibleLogicalRange(targetRange)
   else chart.timeScale().fitContent()
   beginViewportStabilityCheck(targetRange)
@@ -387,12 +390,16 @@ function prependBars(bars: BarData[]): void {
   if (!prependedCount) return
   // An initial warm-up page can arrive before the stability RAF finishes.
   // Shift both targets, otherwise the next RAF would restore the old indices.
-  viewportStabilityTarget = prependChartLogicalRange(viewportStabilityTarget, prependedCount)
+  if (!detailSession) viewportStabilityTarget = prependChartLogicalRange(viewportStabilityTarget, prependedCount)
   viewportStableFrames = 0
   const wasArmed = paginationArmed
   paginationArmed = false
   renderAllSeries()
-  if (visibleRange) {
+  if (detailSession) {
+    const mapped = detailChartViewport(chart)
+    if (viewportStabilityTarget) viewportStabilityTarget = mapped
+    if (mapped) chart.timeScale().setVisibleLogicalRange(mapped)
+  } else if (visibleRange) {
     chart.timeScale().setVisibleLogicalRange({
       from: visibleRange.from + prependedCount,
       to: visibleRange.to + prependedCount,
@@ -428,30 +435,38 @@ function revealTime(iso: string, exact = false): boolean {
     ? renderedBars.findIndex((bar) => (bar.trading_day ?? bar.time.slice(0, 10)) === targetDay)
     : renderedBars.findIndex((bar) => Date.parse(bar.time) === parsed)
   if (index < 0) return false
+  const logicalIndex = detailChartIndex(chart, chartTime(renderedBars[index]!), index)
   if (followLatest) {
     followLatest = false
     emit('follow-latest-change', false)
   }
   const targetRange = {
-    from: Math.max(0, index - 48),
-    to: Math.min(props.bars.length - 1, index + 8),
+    from: Math.max(0, logicalIndex - 48),
+    to: Math.min(detailChartLength(chart, props.bars.length) - 1, logicalIndex + 8),
   }
   chart.timeScale().setVisibleLogicalRange(targetRange)
   beginViewportStabilityCheck(targetRange)
   return true
 }
 
+function timeAtLogical(index: number): string | null {
+  const native = chart ? detailChartTimeAt(chart, index) : null
+  if (native === null) return renderedBars[Math.max(0, Math.min(renderedBars.length - 1, Math.floor(index)))]?.time ?? null
+  const local = renderedBars.find(bar => sameChartTime(chartTime(bar), native))
+  if (local) return local.time
+  return typeof native === 'number' ? new Date(native * 1000).toISOString()
+    : typeof native === 'string' ? native : `${native.year}-${String(native.month).padStart(2, '0')}-${String(native.day).padStart(2, '0')}`
+}
 function publishRangeResult(range = chart?.timeScale().getVisibleLogicalRange() ?? null) {
-  const from = range ? renderedBars[Math.max(0, Math.min(renderedBars.length - 1, Math.floor(range.from)))]?.time ?? null : null
-  const to = range ? renderedBars[Math.max(0, Math.min(renderedBars.length - 1, Math.ceil(range.to)))]?.time ?? null : null
+  const from = range ? timeAtLogical(range.from) : null
+  const to = range ? timeAtLogical(Math.ceil(range.to)) : null
   visibleRangeCount.value = visibleRangeDetectorCount(derivedData.rangeDetector?.ranges ?? [], from, to, renderedBars.at(-1)?.time ?? null)
   emit('range-detector-result', { count: visibleRangeCount.value, calculationMs: rangeCalculationMs.value })
 }
 
 function publishVisibleFrom(range: LogicalRange | null) {
   if (!range || !renderedBars.length) return
-  const index = Math.max(0, Math.min(renderedBars.length - 1, Math.floor(range.from)))
-  const time = renderedBars[index].time
+  const time = timeAtLogical(range.from)
   if (time !== lastVisibleFrom.value) { lastVisibleFrom.value = time; emit('visible-from-change', time) }
   publishRangeResult(range)
 }
@@ -459,14 +474,15 @@ function publishVisibleFrom(range: LogicalRange | null) {
 function onVisibleLogicalRangeChange(range: LogicalRange | null) {
   scheduleReferenceCallouts()
   if (!range || !renderedBars.length) return
-  const isFollowing = range.to >= renderedBars.length - 3
+  const isFollowing = range.to >= (chart ? detailChartLength(chart, renderedBars.length) : renderedBars.length) - 3
   if (isFollowing !== followLatest) {
     followLatest = isFollowing
     emit('follow-latest-change', isFollowing)
   }
   if (!paginationArmed || props.loading) return
   publishVisibleFrom(range)
-  const nearLeftBoundary = range.from <= 20
+  const start = chart ? detailChartIndex(chart, chartTime(renderedBars[0]!), 0) : 0
+  const nearLeftBoundary = range.from <= start + 20
   if (!nearLeftBoundary) {
     isNearLeftBoundary = false
     return
@@ -647,7 +663,7 @@ function markerTimeKey(value: string): string {
 }
 
 function chartTime(bar: BarData): Time {
-  return toKlineDisplayTimeForPeriod(bar, props.period) as Time
+  return detailSession ? detailChartTime(bar, props.period) : toKlineDisplayTimeForPeriod(bar, props.period) as Time
 }
 
 function ribbonTime(iso: string): Time | null {
@@ -655,7 +671,7 @@ function ribbonTime(iso: string): Time | null {
     const day = iso.slice(0, 10)
     return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day as Time : null
   }
-  const time = toKlineDisplayTimeForPeriod({ time: iso }, props.period)
+  const time = detailSession ? detailChartTime({ time: iso }, props.period) : toKlineDisplayTimeForPeriod({ time: iso }, props.period)
   return time === 0 ? null : time as UTCTimestamp
 }
 
@@ -687,6 +703,13 @@ function syncMacdLabelTop() {
 
 function resize() {
   if (!container.value || !chart) return
+  if (detailSession) {
+    const layout = detailChartPaneLayout(container.value.clientHeight, 32)
+    const panes = chart.panes()
+    panes[0]?.setStretchFactor(layout.mainHeight)
+    panes[1]?.setStretchFactor(layout.volumeHeight)
+    panes[2]?.setStretchFactor(layout.auxiliaryHeight)
+  }
   chart.resize(container.value.clientWidth, container.value.clientHeight)
   if (viewportStabilityTarget) {
     viewportStableFrames = 0

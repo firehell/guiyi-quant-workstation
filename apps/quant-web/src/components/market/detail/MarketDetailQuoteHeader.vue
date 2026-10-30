@@ -20,6 +20,7 @@ const props = defineProps<{
   newow?: boolean
   hideExtendedFacts?: boolean
   identityKey: string
+  sourceNote?: string
 }>()
 
 const direction = computed(() => priceDirection(props.header.change))
@@ -55,8 +56,8 @@ function integer(value: number | null): string {
         {{ statusLabel }}
       </span>
     </div>
-    <div class="quote-header__meta">
-      <p v-if="!newow || header.freshness === 'stale'" class="quote-header__asof" :title="header.asOf ?? undefined">{{ quoteBasis }} · 截至 {{ asOfText }}</p>
+    <div class="quote-header__meta" :title="header.displaySource">
+      <p class="quote-header__asof" :title="header.displaySource">{{ sourceNote || `${quoteBasis} · 截至 ${asOfText}` }}</p>
       <div class="quote-header__facts-row">
         <p v-if="!newow" class="quote-header__facts-label">OHLCV · {{ quoteBasis }}</p>
         <div v-if="newow" class="quote-header__newow-facts">

@@ -97,3 +97,23 @@
 .unified-detail-light .quote-header--newow .quote-header__price--up span { color:#ff3b30; }
 .unified-detail-light .quote-header--newow .quote-header__price--down strong,
 .unified-detail-light .quote-header--newow .quote-header__price--down span { color:#34c759; }
+
+/* Match the compact source detail chart, with one geometry across analysis views. */
+.unified-detail-light .newow-product-chart-stage__chart { height:700px; min-height:700px; }
+.unified-detail-light .newow-product-chart-stage { min-height:0; }
+.unified-detail-light .kline-shell { height:700px; min-height:700px; }
+.unified-detail-light .newow-product-chart-stage, .unified-detail-light .kline-shell {
+  --gy-chart-bg:#f8f9fd; --gy-chart-text:#8e8e93; --gy-chart-grid:#e9ebf0; --gy-chart-axis:#e9ebf0;
+  background:#f8f9fd; border:0;
+}
+.unified-detail-light .quote-header__asof { font-size:11px; color:#8e8e93; line-height:1.5; }
+.unified-detail-light .newow-product-chart-stage__reference-prices { min-height:36px; box-sizing:border-box; padding:4px 12px; background:#f4f5f8; }
+.unified-detail-light .newow-product-chart-stage__auxiliary-toolbar { background:#f8f9fd; }
+.unified-detail-light .newow-product-chart-stage__chart,
+.unified-detail-light .kline-shell .chart,
+.unified-detail-light .experiment-chart { overflow:hidden; min-width:0; max-width:100%; }
+.unified-detail-light .detail-view-nav__controls { padding-block:4px; }
+@media(max-width:640px) {
+  .unified-detail-light .newow-product-chart-stage__chart { height:650px; min-height:650px; }
+  .unified-detail-light .kline-shell { height:650px; min-height:650px; }
+}
