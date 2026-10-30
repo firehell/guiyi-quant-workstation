@@ -380,6 +380,8 @@ class Gateway(_readonly.Probe):
                         complete=self.extra["complete"],
                         timed_out=timed_out,
                         callback_error=self.extra["callback_error"],
+                        **({"response_info_present": self.extra.get("response_info_present")}
+                           if kind in {"settlement", "confirm"} else {}),
                         elapsed_seconds=round(time.monotonic()-started, 6),
                         **(book_timing or {}),
                     ))
@@ -409,6 +411,8 @@ class Gateway(_readonly.Probe):
                     timing["book_target_received_at"] = received_at
                 if last:
                     timing["book_terminal_received_at"] = received_at
+            if kind in {"settlement", "confirm"}:
+                self.extra["response_info_present"] = info is not None
             if info is not None and int(info.ErrorID):
                 raise ValueError("NATIVE_FACT_QUERY_REJECTED")
             if row is not None:

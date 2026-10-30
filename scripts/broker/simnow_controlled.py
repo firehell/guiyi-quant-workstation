@@ -197,6 +197,7 @@ def run(gateway, tdapi, config, root):
         report = gateway.snapshot()
         snapshot = read_snapshot(report, now=now())
         final_snapshot = snapshot
+        confirmed = settlement.read_confirmed()  # Cached; recheck identity before any state write or success report.
         bindings = [binding]
         for position in snapshot.data["positions"]:
             if (
@@ -314,6 +315,7 @@ def run(gateway, tdapi, config, root):
         evidence = Evidence(folder / "native-evidence.sqlite", snapshot.account_id)
         if not evidence.snapshots():
             evidence.append(snapshot)
+        confirmed = settlement.read_confirmed()  # No query: later preflight work cannot carry proof to another login.
         if not confirmed:
             settlement.confirm()
             confirmed = True

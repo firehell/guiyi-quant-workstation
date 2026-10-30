@@ -53,7 +53,7 @@ def safe_native_queries(records):
         for key in ("request_id", "sdk_return_code", "response_count", "data_row_count"):
             if type(record.get(key)) is int:
                 value[key] = record[key]
-        for key in ("terminal_response_seen", "complete", "timed_out"):
+        for key in ("terminal_response_seen", "complete", "timed_out", "response_info_present"):
             if type(record.get(key)) is bool:
                 value[key] = record[key]
         if "callback_error" in record:
@@ -164,6 +164,10 @@ class NativePortfolio:
 
     @property
     def transport_failed(self):
+        # A settlement request with an unknown outcome is not a retryable
+        # transport failure. A new login would lose its one-attempt guard.
+        if self.settlement is not None and self.settlement.failed:
+            return False
         if self.gateway is None:
             return False
         status = self.gateway.result.get("status")
