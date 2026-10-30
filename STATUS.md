@@ -1,3 +1,15 @@
+10/30 22:40 发布树收敛：未启用v1.16.43 exact33cc1a224已在原生两轮同像零引用计划后non-force移除。
+发布树现只保留正式十服务v1.16.41/gen43及独立SimNow v1.16.44；已发布v1.16.45仍未运行，不为凑单树切盘中服务。
+43的output/outputs均Git tracked；唯一4个非依赖忽略启用标记共32bytes已在树外私有目录逐字节/SHA/权限保全，tag保留可恢复。
+删除前计划hash585c0a643869bb48776ec213ad25c906c8e6abf0897e52414e30511102ce9d92，两轮相同；删除后历史reader与未决恢复guard通过。
+原生cohort seal不用于为零历史引用的未用候选新增Gate，未改全局cancelled或任何旧恢复记录。
+本轮修复清理reader误读v7 candidate.root：严格绑定原plan.preimage.release/intent/candidate身份，PR556已合develop；未发布该工具修复或改运行版本。
+61项retention定向、补修仅15项、独立3项、类型/Ruff/secret0/diff通过；独立Review无剩余Confirmed Issue。
+22:40十服务绑定41/gen43不变；SimNow同run0900f127…仍RECOVERY_BLOCKED/pending=true/opening=false，输入60 NOT_CHECKED。
+原account/dispatch SHA、20261102 attempt1及耐久block保持；本轮零停启/新连接/订单/正式行情或数据库写入。
+JM30研究树8个未合并提交保留；本聊天主任务树受宿主primary保护保留，不绕过归档限制。
+精确保全及completion位于主仓output/release-v43-unused-retirement-20261030/。以下为此前检查点：
+
 10/30 22:09 SimNow结算与恢复补丁：RELEASED / CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE。
 PR554已合develop；PR555/main/annotated v1.16.45/GitHub Release已完成，exact
 `b3e1f231eb1d0ecf9f850ce73fdc66de1da4bd3d`，完整tree等受测候选1da3f901，生产实现等独立已审6307af54。
