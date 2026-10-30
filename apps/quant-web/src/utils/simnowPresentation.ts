@@ -10,6 +10,9 @@ export function monitorMoney(value: string | null | undefined) {
 export function monitorPercent(value: string | null | undefined) { return value === null || value === undefined ? '—' : `${(Number(value) * 100).toFixed(1)}%` }
 export function observerLabel(data: MonitorOverview | null, now = Date.now()) {
   if (!data?.account) return '尚未接入监控'
+  if (data.observer?.mode === 'trade' && data.observer.account_takeover_pending === true) {
+    return ({ running: '自动交易已部署，账户待接管', stopped: '本次运行已结束', stale: '运行状态待确认', error: '本次运行异常' } as const)[data.observer.status]
+  }
   if (data.observer?.host_status === 'WAITING_SESSION') return '等待交易时段'
   if (data.observer?.status === 'running') {
     if (data.observer.mode === 'observe') return data.observe_reconciliation_ready && now >= Date.parse(data.observe_reconciliation_checked_at ?? '') && now < Date.parse(data.observe_reconciliation_valid_until ?? '') ? '只读对账已通过' : '只读观察中'

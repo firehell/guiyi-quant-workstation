@@ -199,6 +199,9 @@ class Supervisor:
         self.target_day = None
         self.active_seen = False
         self.prepared = False
+        self.account_takeover_pending = getattr(
+            settings, "account_takeover_pending", False
+        )
         self.ledger_hash = None
         self.session_active = False
 
@@ -206,6 +209,7 @@ class Supervisor:
         state = self.store.current() if self.store is not None else None
         opening = bool(
             code == "TRADING"
+            and not self.account_takeover_pending
             and self.settings.mode == "trade"
             and self.settings.enabled
             and connected
@@ -239,6 +243,7 @@ class Supervisor:
             input_checks=input_check_records(self.input_checks, products=self.products),
             auto_order=self.settings.mode == "trade" and self.settings.enabled,
             opening_enabled=opening,
+            account_takeover_pending=self.account_takeover_pending,
             broker_e2e_passed=False,
         )
         # Monitoring must not change a trading decision.
@@ -253,6 +258,7 @@ class Supervisor:
                 mode=self.settings.mode,
                 opening_enabled=opening,
                 host_status=code,
+                account_takeover_pending=self.account_takeover_pending,
                 observe_reconciliation=(
                     getattr(self, "observe_reconciliation", None)
                     if connected and self.prepared and self.settings.mode == "observe"
@@ -292,6 +298,8 @@ class Supervisor:
                     item.close()
             self.driver = self.store = self.journal = self.host = None
             self.prepared = False
+            if getattr(self.settings, "account_takeover_pending", False):
+                self.account_takeover_pending = True
             self.observe_reconciliation = None
             self.market.activate(self.now())
         if failed:
@@ -305,7 +313,10 @@ class Supervisor:
         from . import deployment_connection as permit
 
         configured = getattr(self.settings, "deployment_connection_permit", None)
-        if self.inbox.blocked(day):
+        extra_candidate = bool(
+            configured and day == permit.DAY and permit.attempts(self.inbox, day) == 3
+        )
+        if self.inbox.blocked(day) and not extra_candidate:
             raise ValueError(
                 "DEPLOYMENT_CONNECTION_INVALID"
                 if configured
@@ -395,6 +406,7 @@ class Supervisor:
                     native, self.market.authority, self.journal, self.store.current()
                 ),
             )
+            adapter.account_takeover_pending = self.account_takeover_pending
             for order in self.store.current().orders:
                 if order.status == "PROPOSED" and not self.journal.claimed(
                     order.order_id
@@ -412,8 +424,15 @@ class Supervisor:
                 trade=self.settings.mode == "trade",
                 run_id=self.run_id,
                 deadline=None,
+                account_takeover_pending=self.account_takeover_pending,
+                takeover_clock=self.now,
             )
-            self.host.reconcile(self.driver.report, bindings, self.now(), proofs)
+            native, recovered = self.host.reconcile(
+                self.driver.report, bindings, self.now(), proofs
+            )
+            if self.account_takeover_pending:
+                self.host.complete_takeover(native, recovered, self.now())
+                self.account_takeover_pending = False
             if not self.store._needs_recovery:
                 self.ledger_hash = digest(self.store.current())
         self.latest_source = (
@@ -455,7 +474,17 @@ class Supervisor:
             if day is None or not (plan.connect_allowed or closed_readback):
                 self.status("WAITING_SESSION")
                 return
-            if self.inbox.blocked(day) or now < self.retry_after:
+            exception_candidate = bool(
+                getattr(self.settings, "deployment_connection_permit", None)
+                and day == "20261030"
+                and self.inbox.conn.execute(
+                    "SELECT count FROM attempts WHERE day=?", (day,)
+                ).fetchone()
+                == (3,)
+            )
+            if (
+                self.inbox.blocked(day) and not exception_candidate
+            ) or now < self.retry_after:
                 self.status("RECOVERY_BLOCKED")
                 return
             self.connect(day)
@@ -765,6 +794,7 @@ class Supervisor:
                         mode=self.settings.mode,
                         opening_enabled=False,
                         host_status="STOPPED",
+                        account_takeover_pending=self.account_takeover_pending,
                         native_source_id=self.latest_source,
                         ledger_hash=self.ledger_hash,
                     )

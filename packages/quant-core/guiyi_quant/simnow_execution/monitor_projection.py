@@ -64,7 +64,7 @@ def _blank(now, status="not_connected"):
         readback_status="unknown",
         position_projection_complete=False,
         observe_reconciliation_ready=False,
-        observe_reconciliation_status='unverified',
+        observe_reconciliation_status="unverified",
         observe_reconciliation_checked_at=None,
         observe_reconciliation_valid_until=None,
         metrics={
@@ -248,30 +248,52 @@ def overview(data, now, error=False):
     positions = _positions(data)
     matching = state.readback.source_id == native.source_id
     complete = (
-        state.readback_valid
+        not index.get("account_takeover_pending", False)
+        and state.readback_valid
         and state.phase == "READY"
         and not state.unresolved_fill_ids
         and not pending
         and matching
         and all(p["status"] == "matched" for p in positions)
     )
-    fresh = now < native.at + timedelta(seconds=30)
+    fresh = now < native.at + timedelta(seconds=30) and not index.get(
+        "account_takeover_pending", False
+    )
     age = (now - datetime.fromisoformat(index["published_at"])).total_seconds()
+    waiting_takeover = bool(
+        index.get("account_takeover_pending", False)
+        and index.get("host_status")
+        in {
+            "WAITING_SESSION",
+            "WAITING_ACCOUNT_TAKEOVER",
+            "CONNECTING",
+            "ACCOUNT_RECONCILIATION_REQUIRED",
+        }
+    )
     observer_status = (
         "stopped"
         if index["status"] == "STOPPED"
         else "error"
         if index["status"] == "ERROR"
         else "stale"
-        if age > 30 or index["connection"] != "LOGGED_IN"
+        if age > 30 or (index["connection"] != "LOGGED_IN" and not waiting_takeover)
         else "running"
     )
-    observed = data.get('observe_reconciliation')
-    observe_ready = bool(observed and observed['fresh'] and fresh
-        and observer_status == 'running' and index.get('mode') == 'observe'
-        and index.get('host_status') in {'OBSERVING', 'OBSERVING_CLOSED'}
-        and state.phase == 'READY' and not state.unresolved_fill_ids and not pending)
-    observe_status = ('verified' if observe_ready else 'stale' if observed else 'unverified')
+    observed = data.get("observe_reconciliation")
+    observe_ready = bool(
+        observed
+        and observed["fresh"]
+        and fresh
+        and observer_status == "running"
+        and index.get("mode") == "observe"
+        and index.get("host_status") in {"OBSERVING", "OBSERVING_CLOSED"}
+        and state.phase == "READY"
+        and not state.unresolved_fill_ids
+        and not pending
+    )
+    observe_status = (
+        "verified" if observe_ready else "stale" if observed else "unverified"
+    )
     metrics = {k: None for k in _blank(now)["metrics"]}
     metrics.update(
         equity=_decimal(number(funds["Balance"], True)),
@@ -389,12 +411,14 @@ def overview(data, now, error=False):
             mode=index.get("mode"),
             opening_enabled=bool(
                 index.get("opening_enabled")
+                and not index.get("account_takeover_pending", False)
                 and index.get("mode") == "trade"
                 and complete
                 and fresh
                 and observer_status == "running"
             ),
             host_status=index.get("host_status"),
+            account_takeover_pending=bool(index.get("account_takeover_pending", False)),
         ),
         readback_at=native.at.isoformat(),
         trading_day=native.trading_day,
@@ -406,8 +430,10 @@ def overview(data, now, error=False):
         position_projection_complete=complete,
         observe_reconciliation_ready=observe_ready,
         observe_reconciliation_status=observe_status,
-        observe_reconciliation_checked_at=observed['checked_at'] if observed else None,
-        observe_reconciliation_valid_until=observed['valid_until'] if observed else None,
+        observe_reconciliation_checked_at=observed["checked_at"] if observed else None,
+        observe_reconciliation_valid_until=observed["valid_until"]
+        if observed
+        else None,
         metrics=metrics,
         positions=positions,
         curve=curve,

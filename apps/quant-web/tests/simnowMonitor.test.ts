@@ -56,3 +56,24 @@ test('observe ready expires locally and is revoked on failed refresh or hidden v
  broken=false;await monitor.refresh();monitor.setVisible(false);assert.equal(monitor.data.value.observe_reconciliation_ready,false);
  monitor.dispose();
 });
+
+test('pending trade deployment is not presented as recovered or opening', async()=>{
+ const {validateOverview}=await import('../src/api/simnowMonitor.ts');
+ const data=overview(); Object.assign(data.observer!,{mode:'trade',host_status:'WAITING_SESSION',connection:'UNKNOWN',opening_enabled:false,account_takeover_pending:true});
+ assert.equal(observerLabel(data),'自动交易已部署，账户待接管');
+ assert.equal(validateOverview(data),data);
+ data.observer!.opening_enabled=true;
+ assert.throws(()=>validateOverview(data),/MONITOR_RESPONSE_INVALID/);
+ data.observer!.opening_enabled=false;
+ data.observer!.status='error';assert.equal(observerLabel(data),'本次运行异常');
+ data.observer!.status='stale';assert.equal(observerLabel(data),'运行状态待确认');
+ data.observer!.status='stopped';assert.equal(observerLabel(data),'本次运行已结束');
+});
+
+test('pending takeover flag rejects wrong modes and nonboolean responses',async()=>{
+ const {validateOverview}=await import('../src/api/simnowMonitor.ts');
+ const data=overview(); Object.assign(data.observer!,{mode:'observe',opening_enabled:false,account_takeover_pending:true});
+ assert.throws(()=>validateOverview(data),/MONITOR_RESPONSE_INVALID/);
+ Object.assign(data.observer!,{mode:'trade',account_takeover_pending:'true'});
+ assert.throws(()=>validateOverview(data),/MONITOR_RESPONSE_INVALID/);
+});

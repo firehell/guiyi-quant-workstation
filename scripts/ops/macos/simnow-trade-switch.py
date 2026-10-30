@@ -30,7 +30,7 @@ from datetime import datetime, UTC, date, timedelta
 
 sys.dont_write_bytecode = True
 
-SCHEMA = "simnow_trade_switch_plan_v3"
+SCHEMA = "simnow_trade_switch_plan_v4"
 POLICY = "simnow_night_only_deployment_window_v1"
 MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
 LABEL = "com.guiyi.quant-simnow"
@@ -173,7 +173,7 @@ def validate_snapshot(s):
         extra = s.get("connection_permit")
         exception = bool(
             extra
-            and extra.get("schema") == "simnow_midday_one_connection_v1"
+            and extra.get("schema") == "simnow_midday_one_connection_v2"
             and extra.get("account_id") == a["account_id"]
             and extra.get("trading_day") == "20261030"
             and s["window"]["policy"] == MIDDAY_POLICY
@@ -184,11 +184,29 @@ def validate_snapshot(s):
             or type(a["today_attempts"]) is not int
             or not 0 <= a["today_attempts"] <= 3
             or a["remaining_attempts"] != 3 - a["today_attempts"]
-            or a["day_blocked"] is not False
+            or (
+                a["day_blocked"] is not False
+                and not (
+                    exception
+                    and extra.get("account_takeover_pending") is True
+                    and extra.get("budget", {}).get("blocked_code")
+                    == "CONNECTION_BUDGET_EXHAUSTED"
+                    and a.get("day_block_code") == "CONNECTION_BUDGET_EXHAUSTED"
+                )
+            )
             or (a["today_attempts"] == 3 and not exception)
         ):
             fail("ACCOUNT_UNPROVEN")
-        if any(
+        pending = a.get("account_takeover_pending", False)
+        if pending:
+            if (
+                a.get("native_account_verified") is not False
+                or a.get("local_obligations_clear") is not True
+                or not s.get("connection_permit")
+                or s["connection_permit"].get("account_takeover_pending") is not True
+            ):
+                fail("ACCOUNT_UNPROVEN")
+        if not pending and any(
             a[k] is not False
             for k in (
                 "unknown_positions",
@@ -523,6 +541,9 @@ class Coordinator:
                 at=self.clock(),
                 result="UNKNOWN",
                 native_recovery_complete=False,
+                account_takeover_pending=snapshot["account"].get(
+                    "account_takeover_pending", False
+                ),
                 snapshot=snapshot,
             )
             try:
@@ -549,6 +570,12 @@ class Coordinator:
                         or evidence.get("protected_state_unchanged") is not True
                     ):
                         fail("PREIMAGE_CHANGED")
+                    if snapshot["account"].get("account_takeover_pending", False):
+                        snapshot["connection_anchor"] = evidence.get(
+                            "connection_anchor"
+                        )
+                        if not snapshot["connection_anchor"]:
+                            fail("PREIMAGE_CHANGED")
                     # Re-read authoritative calendar immediately before install.
                     if self.backend.window_open() is not True:
                         fail("WINDOW_UNPROVEN")
@@ -583,6 +610,11 @@ class Coordinator:
                         or proof.get("dual_locks_held_by_pid") is not True
                         or proof.get("config_bound") is not True
                         or proof.get("monitor_bound") is not True
+                    ):
+                        fail("READBACK_UNPROVEN")
+                    if snapshot["account"].get("account_takeover_pending", False) and (
+                        proof.get("account_takeover_pending") is not True
+                        or proof.get("opening_enabled") is not False
                     ):
                         fail("READBACK_UNPROVEN")
                     if previous and (proof["pid"], proof["run_id"]) != previous:
@@ -960,12 +992,112 @@ class MacBackend:
         ):
             fail("ACCOUNT_UNPROVEN")
 
+    def _pending_history(
+        self, rows, projection, journal, control, monitor, stopped_snapshot
+    ):
+        """Immutable historical evidence only; no current-native-account assertion."""
+        from guiyi_quant.simnow_execution.evidence import Evidence
+        from guiyi_quant.simnow_execution.inventory import native_hash, number
+
+        if (
+            any(not order.reconciled for order in projection.orders)
+            or any(not reservation.released for reservation in projection.reservations)
+            or projection.unresolved_fill_ids
+        ):
+            fail("PENDING_OBLIGATIONS")
+        known = {order.order_id: order for order in projection.orders}
+        if any(
+            identity not in known or not known[identity].reconciled
+            for (identity,) in journal.conn.execute("SELECT order_id FROM actions")
+        ):
+            fail("PENDING_OBLIGATIONS")
+        for (raw,) in journal.conn.execute("SELECT payload FROM events"):
+            if json.loads(raw).get("kind") in {"fault", "quarantine"}:
+                fail("PENDING_OBLIGATIONS")
+        previous = None
+        prior_id = None
+        for rowid, source, raw in rows:
+            value = Evidence._decode(raw)
+            datetime.strptime(value.trading_day, "%Y%m%d")
+            data = value.data
+            if (
+                rowid < 1
+                or (prior_id is not None and rowid != prior_id + 1)
+                or value.account_id != self.settings.account_id
+                or value.source_id != source
+                or not re.fullmatch(r"[0-9]{8}", value.trading_day)
+                or not value.started_at <= value.at <= datetime.now(UTC)
+                or (previous is not None and value.started_at < previous.at)
+                or source
+                != "ctp-inventory:"
+                + value.trading_day
+                + ":"
+                + native_hash(
+                    (value.account_id, value.trading_day, data, value.at.isoformat())
+                )
+                or set(data) != {"funds", "positions", "orders", "trades"}
+                or any(type(v) is not list for v in data.values())
+                or len(data["funds"]) != 1
+                or data["funds"][0]["CurrencyID"] != "CNY"
+                or any(
+                    row["TradingDay"] != value.trading_day
+                    for items in data.values()
+                    for row in items
+                )
+            ):
+                fail("ACCOUNT_UNPROVEN")
+            for key in (
+                "Balance",
+                "Available",
+                "CurrMargin",
+                "FrozenMargin",
+                "FrozenCommission",
+                "Commission",
+                "Deposit",
+                "Withdraw",
+                "CloseProfit",
+                "PositionProfit",
+            ):
+                number(
+                    data["funds"][0][key],
+                    signed=key
+                    in {"Balance", "Available", "CloseProfit", "PositionProfit"},
+                )
+            prior_id, previous = rowid, value
+        if previous is None:
+            fail("ACCOUNT_UNPROVEN")
+        if stopped_snapshot is not None:
+            prefix = stopped_snapshot.get(
+                "native_prefix",
+                stopped_snapshot["account"]["databases"]["native-evidence.sqlite"][
+                    "rows"
+                ],
+            )
+            current = [
+                [n, source, hashlib.sha256(raw.encode()).hexdigest()]
+                for n, source, raw in rows
+            ]
+            if current[: len(prefix)] != prefix:
+                fail("PREIMAGE_CHANGED")
+            if (
+                control.get("status") != "STOPPED"
+                or control.get("mode") != "observe"
+                or control.get("opening_enabled") is not False
+                or control.get("run_id") != stopped_snapshot["host"]["run_id"]
+                or monitor.get("run_id") != control["run_id"]
+                or monitor.get("account_id") != self.settings.account_id
+                or monitor.get("status") != "STOPPED"
+            ):
+                fail("ACCOUNT_UNPROVEN")
+
     def _account(self, *, restoring=False, frozen_index=None, stopped_snapshot=None):
         from guiyi_quant.simnow_execution.account_binding import existing_account
         from guiyi_quant.htdy_account_execution.store import LocalStore
         from guiyi_quant.simnow_execution.native_portfolio import ReadJournal
         from guiyi_quant.simnow_execution.evidence import Evidence
+        from guiyi_quant.htdy_account_execution.codec import digest as state_digest
 
+        pending = getattr(self.settings, "account_takeover_pending", False)
         state = existing_account(self.settings.state_root, self.settings.account_id)
         projection = LocalStore.inspect(self.folder / "account.sqlite")
         journal = ReadJournal(self.folder / "dispatch.sqlite", self.settings.account_id)
@@ -1011,10 +1143,16 @@ class MacBackend:
                 and control["run_id"] != stopped_snapshot["host"]["run_id"]
             ):
                 fail("ACCOUNT_UNPROVEN")
-            row = db.execute(
-                "SELECT payload FROM snapshots WHERE source=?",
-                (monitor["native_source_id"],),
-            ).fetchone()
+            row = (
+                db.execute(
+                    "SELECT payload FROM snapshots ORDER BY rowid DESC LIMIT 1"
+                ).fetchone()
+                if pending
+                else db.execute(
+                    "SELECT payload FROM snapshots WHERE source=?",
+                    (monitor["native_source_id"],),
+                ).fetchone()
+            )
             if row is None:
                 fail("ACCOUNT_UNPROVEN")
             snapshot = Evidence._decode(row[0])
@@ -1035,7 +1173,11 @@ class MacBackend:
         finally:
             db.close()
         try:
-            if stopped_snapshot is not None:
+            if pending:
+                self._pending_history(
+                    rows, projection, journal, control, monitor, stopped_snapshot
+                )
+            elif stopped_snapshot is not None:
                 prefix = stopped_snapshot.get(
                     "native_prefix",
                     stopped_snapshot["account"]["databases"]["native-evidence.sqlite"][
@@ -1081,13 +1223,19 @@ class MacBackend:
             attempts = row[0] if row else 0
             if type(attempts) is not int or not 0 <= attempts <= 3:
                 fail("ACCOUNT_UNPROVEN")
-            blocked = (
-                db.execute("SELECT 1 FROM blocks WHERE day=?", ("20261030",)).fetchone()
-                is not None
-            )
+            block_row = db.execute(
+                "SELECT code FROM blocks WHERE day=?", ("20261030",)
+            ).fetchone()
+            block_code = block_row[0] if block_row else None
+            blocked = block_row is not None
         finally:
             db.close()
         return dict(
+            account_takeover_pending=pending,
+            native_account_verified=not pending,
+            local_obligations_clear=True,
+            ledger_hash=state_digest(projection),
+            day_block_code=block_code,
             today_attempts=attempts,
             remaining_attempts=3 - attempts,
             day_blocked=blocked,
@@ -1101,9 +1249,15 @@ class MacBackend:
             blocks_hash=values["blocks"],
             dispatch_hash=identities["dispatch.sqlite"]["sha256"],
             account_id=self.settings.account_id,
-            unknown_positions=bool(native["positions"]) or bool(projection.positions),
-            unknown_orders=bool(native["orders"]) or bool(projection.orders),
-            unknown_trades=bool(native["trades"]) or bool(projection.fills),
+            unknown_positions=None
+            if pending
+            else bool(native["positions"]) or bool(projection.positions),
+            unknown_orders=None
+            if pending
+            else bool(native["orders"]) or bool(projection.orders),
+            unknown_trades=None
+            if pending
+            else bool(native["trades"]) or bool(projection.fills),
             reservations=bool(projection.reservations),
         )
 
@@ -1127,13 +1281,41 @@ class MacBackend:
         view.code_check()
         return dict(root=str(root), tag=tag, commit=view.exact)
 
+    def monitor_source(self):
+        value = {
+            "schema": 2,
+            "account_id": self.settings.account_id,
+            "state_root": str(self.settings.state_root),
+            "project_root": str(self.settings.project_root),
+            "sdk_python": str(self.settings.sdk_python),
+            "api_env": str(self.settings.api_env),
+            "mode": "observe",
+            "enabled": True,
+            "state_project_root": str(self.settings.state_project_root),
+        }
+        return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
+
     def _preimage(self):
         p = plistlib.loads(private(self.plist).read_bytes())
         args = p["ProgramArguments"]
         old = private(Path(args[args.index("--config") + 1]))
         old_cfg = json.loads(old.read_bytes())
+        monitor_cfg = json.loads(private(self.monitor).read_bytes())
         if (
-            old_cfg != json.loads(private(self.monitor).read_bytes())
+            monitor_cfg.get("schema") != 2
+            or monitor_cfg.get("mode") != "observe"
+            or monitor_cfg.get("enabled") is not True
+            or monitor_cfg.get("account_id") != self.settings.account_id
+            or monitor_cfg.get("state_root") != str(self.settings.state_root)
+            or monitor_cfg.get("state_project_root")
+            != str(self.settings.state_project_root)
+        ):
+            fail("PREIMAGE_CHANGED")
+        if (
+            (
+                not getattr(self.settings, "account_takeover_pending", False)
+                and old_cfg != json.loads(private(self.monitor).read_bytes())
+            )
             or old_cfg["mode"] != "observe"
             or old_cfg["account_id"] != self.settings.account_id
             or old_cfg["state_root"] != str(self.settings.state_root)
@@ -1146,6 +1328,9 @@ class MacBackend:
             fail("PREIMAGE_CHANGED")
         self.old_config = old
         return {
+            "monitor_target_sha256": hashlib.sha256(self.monitor_source()).hexdigest()
+            if getattr(self.settings, "account_takeover_pending", False)
+            else None,
             "release": dict(tag=self.tag, commit=self.exact, root=str(self.code)),
             "old_release": self.release_identity(Path(old_cfg["project_root"])),
             "old_runner": self.identity(
@@ -1242,10 +1427,19 @@ class MacBackend:
 
             if (
                 window["policy"] != MIDDAY_POLICY
-                or account["day_blocked"]
+                or (
+                    account["day_blocked"]
+                    and not (
+                        getattr(self.settings, "account_takeover_pending", False)
+                        and account.get("day_block_code")
+                        == "CONNECTION_BUDGET_EXHAUSTED"
+                    )
+                )
                 or Path(path).exists()
                 or Path(str(path) + ".run-claim").exists()
                 or Path(str(path) + ".attempt-claim").exists()
+                or permit.global_marker(self.settings).exists()
+                or permit.global_marker(self.settings).is_symlink()
             ):
                 fail("ACCOUNT_UNPROVEN")
             pm = datetime.fromisoformat(window["eligible_until"]) + timedelta(
@@ -1256,6 +1450,7 @@ class MacBackend:
             )
         identities = dict(preimage, code=exact)
         self._stop_signals = account["databases"].get("signals.sqlite")
+        self._stop_requires_permit = bool(connection_permit)
         return dict(
             connection_permit=connection_permit,
             old_config_path=str(self.old_config),
@@ -1289,6 +1484,12 @@ class MacBackend:
         # queue change must be noticed before sending the cooperative stop.
         if self.identity(self.folder / "signals.sqlite") != self._stop_signals:
             fail("PREIMAGE_CHANGED")
+        if getattr(self, "_stop_requires_permit", False):
+            from guiyi_quant.simnow_execution import deployment_connection as permit
+
+            marker = permit.global_marker(self.settings)
+            if marker.exists() or marker.is_symlink():
+                fail("ACCOUNT_UNPROVEN")
         os.kill(pid, signal.SIGTERM)
 
     def stopped(self, snapshot):
@@ -1345,7 +1546,13 @@ class MacBackend:
         unchanged = same_preimage(
             dict(account=p["account"]), dict(account=account)
         ) and all(current[k] == p[k] for k in current)
+        connection_anchor = None
+        if getattr(self.settings, "account_takeover_pending", False) and unchanged:
+            from guiyi_quant.simnow_execution import deployment_connection as permit
+
+            connection_anchor = permit.account_anchor(self.settings)
         return dict(
+            connection_anchor=connection_anchor,
             writer_idle=True,
             protected_state_unchanged=unchanged,
             native_prefix_unchanged=unchanged,
@@ -1373,6 +1580,14 @@ class MacBackend:
                 stream.flush()
                 os.fsync(stream.fileno())
         self._replace(self.plist, self.candidate_plist.read_bytes())
+        if getattr(self.settings, "account_takeover_pending", False):
+            raw = self.monitor_source()
+            if (
+                hashlib.sha256(raw).hexdigest()
+                != snapshot["preimage"]["monitor_target_sha256"]
+            ):
+                fail("PREIMAGE_CHANGED")
+            self._replace(self.monitor, raw)
         return True
 
     @staticmethod
@@ -1525,12 +1740,30 @@ class MacBackend:
             != snapshot["preimage"]["sdk"]
         ):
             fail("PREIMAGE_CHANGED")
+        if not self.window_open():
+            fail("WINDOW_UNPROVEN")
         self.started_at = time.time()
         return (
             self.run(
                 ["/bin/launchctl", "bootstrap", f"gui/{os.getuid()}", self.plist]
             ).returncode
             == 0
+        )
+
+    def monitor_bound(self, snapshot):
+        if getattr(self.settings, "account_takeover_pending", False):
+            return (
+                hashlib.sha256(private(self.monitor).read_bytes()).hexdigest()
+                == snapshot["preimage"]["monitor_target_sha256"]
+                and self.monitor.read_bytes() == self.monitor_source()
+            )
+        return (
+            self.identity(self.monitor) == snapshot["preimage"]["monitor"]
+            and json.loads(self.monitor.read_bytes())["account_id"]
+            == self.settings.account_id
+            and json.loads(self.monitor.read_bytes())["state_root"]
+            == str(self.settings.state_root)
+            and json.loads(self.monitor.read_bytes())["mode"] == "observe"
         )
 
     def readback(self, snapshot):
@@ -1561,21 +1794,34 @@ class MacBackend:
             time.sleep(0.25)
         else:
             fail("READBACK_UNPROVEN")
+        if getattr(self.settings, "account_takeover_pending", False):
+            from guiyi_quant.simnow_execution import deployment_connection as permit
+
+            claim, _ = permit.read(
+                Path(str(self.settings.deployment_connection_permit) + ".run-claim")
+            )
+            intent, _ = permit.read(
+                self.settings.deployment_connection_permit.parent
+                / "switch-intent.private.json"
+            )
+            if (
+                claim.get("run_id") != status["run_id"]
+                or claim.get("pid") != pid
+                or claim.get("grant_sha256") != intent.get("connection_grant_sha256")
+                or status.get("account_takeover_pending") is not True
+                or status.get("opening_enabled") is not False
+            ):
+                fail("READBACK_UNPROVEN")
         return dict(
             verified=True,
+            account_takeover_pending=status.get("account_takeover_pending", False),
+            opening_enabled=status.get("opening_enabled", False),
             mode=status["mode"],
             pid=pid,
             run_id=status["run_id"],
             dual_locks_held_by_pid=True,
             config_bound=self.plist.read_bytes() == self.candidate_plist.read_bytes(),
-            monitor_bound=(
-                self.identity(self.monitor) == snapshot["preimage"]["monitor"]
-                and json.loads(self.monitor.read_bytes())["account_id"]
-                == self.settings.account_id
-                and json.loads(self.monitor.read_bytes())["state_root"]
-                == str(self.settings.state_root)
-                and json.loads(self.monitor.read_bytes())["mode"] == "observe"
-            ),
+            monitor_bound=self.monitor_bound(snapshot),
         )
 
 

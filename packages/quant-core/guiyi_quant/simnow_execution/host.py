@@ -1,6 +1,6 @@
 """Shared account reconciliation and scoped execution; no scheduler or broker login."""
 
-from datetime import timedelta
+from datetime import datetime, UTC, timedelta
 from types import SimpleNamespace
 from dataclasses import asdict
 from decimal import Decimal
@@ -27,8 +27,10 @@ class Host:
         close_only=False,
         native_validator=None,
         trade=False,
+        account_takeover_pending=False,
+        takeover_clock=None,
     ):
-        if type(continuous) is not bool:
+        if type(account_takeover_pending) is not bool or type(continuous) is not bool:
             raise ValueError("HOST_MODE_INVALID")
         if (
             type(trade) is not bool
@@ -91,13 +93,24 @@ class Host:
         self.submits = 0
         self.inventory = ()
         self.pending = ()
-        self.needs_recovery = store.current().phase != "READY"
+        self.account_takeover_pending = account_takeover_pending
+        self.takeover_clock = takeover_clock or (lambda: datetime.now(UTC))
+        self.needs_recovery = (
+            account_takeover_pending or store.current().phase != "READY"
+        )
         self.baseline = evidence.snapshots()[0] if evidence.snapshots() else None
         self.last_fee_status = "NO_NEW_TRADE"
         self._fee_pairs_scanned = 0
 
     def reconcile(self, report, bindings, now, proofs=()):
         snapshot = read_snapshot(report, now=now)
+        if (
+            self.account_takeover_pending
+            and not snapshot.at
+            <= self.takeover_clock()
+            < snapshot.at + timedelta(seconds=30)
+        ):
+            raise ValueError("ACCOUNT_TAKEOVER_FRESH_READBACK_REQUIRED")
         if snapshot.account_id != self.adapter.session.account_id:
             raise ValueError("HOST_NATIVE_ACCOUNT_MISMATCH")
         if getattr(self.adapter, "correlated_native", False):
@@ -156,6 +169,13 @@ class Host:
             if self.needs_recovery or state.phase != "READY"
             else rb
         )
+        if (
+            self.account_takeover_pending
+            and not snapshot.at
+            <= self.takeover_clock()
+            < snapshot.at + timedelta(seconds=30)
+        ):
+            raise ValueError("ACCOUNT_TAKEOVER_FRESH_READBACK_REQUIRED")
         tx = self.store.execute("native-reconcile:" + snapshot.source_id, command)
         self.needs_recovery = (
             not tx.state.readback_valid
@@ -166,7 +186,43 @@ class Host:
         )
         return snapshot, tx.state
 
+    def complete_takeover(self, snapshot, state, now):
+        session = self.adapter.session
+        if (
+            state is None
+            or state != self.store.current()
+            or self.store._needs_recovery
+            or self.needs_recovery
+            or state.phase != "READY"
+            or not state.readback_valid
+            or not state.readback.complete
+            or state.readback.source_id != snapshot.source_id
+            or state.readback.snapshot.at != snapshot.at
+            or state.account_id != snapshot.account_id
+            or snapshot.trading_day != session.trading_day
+            or not snapshot.at <= now < snapshot.at + timedelta(seconds=30)
+            or not state.readback.snapshot.at <= now < state.readback.valid_until
+            or not session.at <= now < session.valid_until
+            or not session.login_source_id
+            or not session.settlement_source_id
+            or self.pending
+            or self.adapter._faulted
+            or any(not order.reconciled for order in state.orders)
+        ):
+            raise ValueError("ACCOUNT_TAKEOVER_FRESH_READBACK_REQUIRED")
+        fresh = self.takeover_clock()
+        if not (
+            snapshot.at <= fresh < snapshot.at + timedelta(seconds=30)
+            and state.readback.snapshot.at <= fresh < state.readback.valid_until
+            and session.at <= fresh < session.valid_until
+        ):
+            raise ValueError("ACCOUNT_TAKEOVER_FRESH_READBACK_REQUIRED")
+        self.adapter.account_takeover_pending = False
+        self.account_takeover_pending = False
+
     def submit_effects(self, effects, bindings, facts, now):
+        if getattr(self, "account_takeover_pending", False):
+            raise ValueError("ACCOUNT_TAKEOVER_PENDING")
         effects = tuple(effects)
         # Validate the whole batch before any claim or request is possible.
         if any(e.order.product not in self.products for e in effects):
@@ -254,6 +310,8 @@ class Host:
         return tuple(outcomes)
 
     def tick(self, facts, bindings, now):
+        if getattr(self, "account_takeover_pending", False):
+            raise ValueError("ACCOUNT_TAKEOVER_PENDING")
         facts = tuple(facts)
         if any(f.instrument.product not in self.products for f in facts):
             raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
