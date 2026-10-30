@@ -246,14 +246,15 @@ account/dispatch/signals/native-evidence、正确scope、0700目录和私有单�
 
 ### 一次性切换工具
 
-`scripts/ops/macos/simnow-trade-switch.py` 默认只读生成60秒有效的 `simnow_trade_switch_plan_v2` 精确计划；显式 `--tag vX.Y.Z`、
+`scripts/ops/macos/simnow-trade-switch.py` 默认只读生成60秒有效的 `simnow_trade_switch_plan_v3` 精确计划；显式 `--tag vX.Y.Z`、
 `--config`、`--candidate-plist` 与私有 `--state-dir` 绑定同一候选，`--plan` 指定独占计划文件。
 候选必须是干净的 `release-<tag>` 目录、annotated tag/peeled commit/HEAD一致，SDK无Broker检查通过；
 当前observe的代码/SDK、配置、监控绑定、PID和双锁同样冻结。窗口按上节已选night/midday合同证明；
-plan顶层window_policy与snapshot及执行backend必须一致，旧v1计划和跨窗口执行均拒绝，旧失败意图只留历史读回。
+plan顶层window_policy与snapshot及执行backend必须一致，旧v1/v2计划和跨窗口执行均拒绝，旧失败意图只留历史读回。
 本工具仅限20261030、既有60品种独立空账户接管；任何原生或账本持仓、订单、成交、未解释预留均阻断。
 不创建账户、不清空四库、不重置连接预算或block、不连接柜台取证。新计划及首次SIGTERM前必须证明
-当日尚有至少一次连接额度且无当日block；预算或队列身份在计划后变化也拒绝停服。账户证明只读复用既有原生来源、
+当日尚有至少一次普通连接额度，或已验证下述本次午间单次连接例外，且无当日block；
+预算或队列身份在计划后变化也拒绝停服。账户证明只读复用既有原生来源、
 归属检查及Recover，切换计划要求来源仍在30秒有效期内；旧证明不能当部署时的新鲜账户事实。
 
 `--apply --plan <exact file>` 在取证后及首次停止前复查TTL与前像，独占持久意图只消费一次；
@@ -274,6 +275,29 @@ offline结果区分protected_state_unchanged、native_prefix_unchanged与native_
 START_REQUESTED及之后、未知提交或未知启动结果禁止自动恢复或重复apply，先只读调查。
 恢复时允许冻结的旧只读证明已过期，仅用其校验历史绑定，不宣称新鲜账户恢复。工具不操作正式十服务。
 切换成功只证明宿主部署；闭市WAITING_SESSION/opening=false合法，原生接管及自然交易仍分别待验。
+
+### 20261030午间部署单次连接例外
+
+Owner明确选择“仅为本次午间部署额外允许1次连接”。普通每交易日最多3次的规则及原attempts/block
+不变，不将总上限永久提高为4。例外只适用于20261030午间部署的固定trade候选、原账户及唯一切换意图，
+不适用于observe/manage、其他配置/版本/交易日或第二次切换；已有block不能豁免。
+
+正式十服务仍运行原版本；API私有monitor源配置仅为原账户及state_root的只读身份锚，切换时保留。
+实际trade/observe、run与opening状态只从同账户monitor.json/continuous.json读取，不从该只读入口推断。
+不能把含例外字段的trade运行配置覆盖给旧版API读取器，也不为此升级正式API。
+
+schema2 trade配置可增加精确可选字段 `deployment_connection_permit`，路径指向本次0700独占state-dir内
+`deployment-connection-permit.private.json`，准备阶段该文件必须不存在。plan v3冻结账户/交易日/配置SHA/
+exact release/SDK/意图路径及权威下午Session；安装后先持久生成grant，再进入START_REQUESTED。
+首次startup独占绑定run；后续VERIFYING/COMPLETE阶段保留该run的首次连接资格，其他run拒绝。
+有效连接窗口为权威下午Session开始前120秒至开始后120秒，过期不续期、不消耗其他交易日预算。
+
+额外连接在SDK连接调用前持久消费，登录/查询失败、未知结果、断线或进程重启均不返还、不复用；
+不会给予有界observe恢复第二次额外连接。午间部署不强制提前连接柜台，宿主仍按权威Session等待
+首个下午连接准入；授权只覆盖该首次连接窗口，不能通过延长有效期变成持续重连额度。
+plan仍须现场证明空账户接管、新鲜原生证据、双锁、配置/SDK/四库前像及午间窗口，单次例外
+本身不是账户恢复、执行输入或订单许可。切换前失败可保留observe，START_REQUESTED之后未知
+仍仅只读核对，禁止重复apply或自动恢复。
 
 ### 执行输入诊断与成功证据
 

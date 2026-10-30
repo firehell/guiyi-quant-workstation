@@ -89,3 +89,50 @@ def test_source_errors_are_fixed_codes_not_raw_paths(monkeypatch, tmp_path):
         "detail": {"code": "MONITOR_SOURCE_UNAVAILABLE"}
     }
     assert str(root) not in r.text
+
+
+def test_observe_source_binding_reads_actual_trade_mode_without_api_upgrade(tmp_path, monkeypatch):
+    """The unchanged v35 reader accepts its source anchor and projects real mode."""
+    import hashlib
+    import importlib.util
+    import json
+    from datetime import timedelta
+    from pathlib import Path
+    import sys
+
+    from guiyi_quant.htdy_account_execution import LocalStore
+    from guiyi_quant.simnow_execution.inbox import SignalInbox
+    from guiyi_quant.simnow_execution.monitor import MonitorPublisher
+
+    root = Path(__file__).resolve().parents[3]
+    helper = root / 'tests/unit/simnow_monitor/test_monitor.py'
+    spec = importlib.util.spec_from_file_location('trade_monitor_compat_fixture', helper)
+    fixture_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture_module)
+    project = tmp_path / 'old-code-and-anchor'
+    (project / 'scripts/broker').mkdir(parents=True)
+    (project / 'scripts/broker/simnow_controlled.py').touch()
+    state_root = project / 'output/simnow-controlled'
+    state_root.mkdir(parents=True, mode=0o700)
+    reader, now, folder = fixture_module.fixture_root(state_root)
+    state = LocalStore.inspect(folder / 'account.sqlite')
+    SignalInbox(folder / 'signals.sqlite', state.account_id,
+                tuple(p.product for p in state.products)).close()
+    api_env = tmp_path / 'api-env'
+    api_env.mkdir()
+    source = api.MONITOR_SOURCE_CONFIG
+    source.write_text(json.dumps(dict(schema=2, account_id=state.account_id,
+        state_root=str(state_root), project_root=str(project), state_project_root=str(project),
+        sdk_python=sys.executable, api_env=str(api_env), mode='observe', enabled=True)))
+    source.chmod(0o600)
+    old_source = source.read_bytes()
+    before = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.iterdir()}
+    assert MonitorPublisher(state_root, state.account_id, 'new-trade-run').publish(
+        'STARTING', now + timedelta(seconds=1), mode='trade', opening_enabled=False,
+        host_status='WAITING_SESSION')
+    result = api.reader().overview(now + timedelta(seconds=2))
+    assert result['observer']['mode'] == 'trade'
+    assert result['observer']['host_status'] == 'WAITING_SESSION'
+    assert result['observer']['opening_enabled'] is False
+    assert source.read_bytes() == old_source
+    assert before == {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in folder.iterdir()}

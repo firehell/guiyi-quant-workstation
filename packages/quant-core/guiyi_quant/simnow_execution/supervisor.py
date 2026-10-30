@@ -224,6 +224,7 @@ class Supervisor:
             self.input_diagnostics = dict(getattr(self.driver, "input_diagnostics", {}))
             self.input_checks = dict(getattr(self.driver, "input_checks", {}))
         from .input_evidence import input_check_records
+
         value = dict(
             schema="simnow_continuous_v2",
             run_id=self.run_id,
@@ -252,8 +253,11 @@ class Supervisor:
                 mode=self.settings.mode,
                 opening_enabled=opening,
                 host_status=code,
-                observe_reconciliation=(getattr(self, 'observe_reconciliation', None)
-                    if connected and self.prepared and self.settings.mode == 'observe' else None),
+                observe_reconciliation=(
+                    getattr(self, "observe_reconciliation", None)
+                    if connected and self.prepared and self.settings.mode == "observe"
+                    else None
+                ),
             )
         except Exception:
             pass
@@ -298,9 +302,30 @@ class Supervisor:
     def connect(self, day):
         self.target_day = day
         self.active_seen = False
-        attempt = self.inbox.attempt(day)
+        from . import deployment_connection as permit
+
+        configured = getattr(self.settings, "deployment_connection_permit", None)
+        if self.inbox.blocked(day):
+            raise ValueError(
+                "DEPLOYMENT_CONNECTION_INVALID"
+                if configured
+                else "CONNECTION_BUDGET_EXHAUSTED"
+            )
+        permit_window = None
+        if configured and day == permit.DAY and permit.attempts(self.inbox, day) >= 3:
+            permit_window = permit.consume(
+                self.settings, self.inbox, self.run_id, day, self.now(), clock=self.now
+            )
+            self.deployment_connection_used = True
+            attempt = 1
+        else:
+            attempt = self.inbox.attempt(day)
         self.status("CONNECTING")
+        if permit_window:
+            permit.connection_time(permit_window, self.now())
         self.driver = self.factory(self.settings, self.folder)
+        if permit_window:
+            permit.connection_time(permit_window, self.now())
         self.driver.connect()
         self.prepare(day)
         self.retry_after = self.now() + timedelta(seconds=30 * attempt)
@@ -336,7 +361,9 @@ class Supervisor:
                 raise ValueError("OBSERVATION_ACCOUNT_RECONCILIATION_REQUIRED")
             self.observed_state = state
             self.evidence.append(snapshot)
-            self.observe_reconciliation = build_proof(state, snapshot, tx.state, self.run_id, self.now())
+            self.observe_reconciliation = build_proof(
+                state, snapshot, tx.state, self.run_id, self.now()
+            )
         else:
             from .journal import Journal
             from .host import Host
@@ -404,8 +431,13 @@ class Supervisor:
         if day is None:
             self.status("CALENDAR_UNPROVEN")
             return
-        closed_readback = bool(self.settings.mode == 'observe' and not plan.active
-            and getattr(self.market, 'closed_observation_allowed', lambda _now: False)(now))
+        closed_readback = bool(
+            self.settings.mode == "observe"
+            and not plan.active
+            and getattr(self.market, "closed_observation_allowed", lambda _now: False)(
+                now
+            )
+        )
         if closed_readback:
             # CLOSED plan.day refers to the next session. Until native evidence
             # has reached that day, retain the original preopen connection rule.
@@ -417,6 +449,9 @@ class Supervisor:
         ):
             self.disconnect()
         if self.driver is None:
+            if getattr(self, "deployment_connection_used", False) and day == "20261030":
+                self.status("RECOVERY_BLOCKED")
+                return
             if day is None or not (plan.connect_allowed or closed_readback):
                 self.status("WAITING_SESSION")
                 return
@@ -453,14 +488,18 @@ class Supervisor:
             if not reconciled.readback_valid:
                 raise ValueError("OBSERVATION_ACCOUNT_RECONCILIATION_REQUIRED")
             self.evidence.append(snapshot)
-            self.observe_reconciliation = build_proof(state, snapshot, reconciled, self.run_id, self.now())
+            self.observe_reconciliation = build_proof(
+                state, snapshot, reconciled, self.run_id, self.now()
+            )
             self.latest_source = snapshot.source_id
             # Serial round-robin validation; no 60 parallel broker request streams.
             if not closed_readback:
                 self.driver.observe_next(
                     self.products, self.market, self.now(), self.day, self.issues
                 )
-            self.status("OBSERVING_CLOSED" if closed_readback else "OBSERVING", connected=True)
+            self.status(
+                "OBSERVING_CLOSED" if closed_readback else "OBSERVING", connected=True
+            )
             return
         bindings = self.driver.bindings_for(state, self.market, self.now(), self.day)
         recovering = self.host.needs_recovery or state.phase != "READY"
@@ -610,6 +649,26 @@ class Supervisor:
             self.market.activate(self.now())
             count = 0
             try:
+                from . import deployment_connection as permit
+
+                if getattr(self.settings, "deployment_connection_permit", None):
+                    startup_plan = self.market.plan(self.now())
+                    startup_day = (
+                        startup_plan.trading_day.strftime("%Y%m%d")
+                        if startup_plan.trading_day
+                        else None
+                    )
+                    if (
+                        startup_day == permit.DAY
+                        and permit.attempts(self.inbox, permit.DAY) >= 3
+                    ):
+                        permit.activate(
+                            self.settings,
+                            self.inbox,
+                            self.run_id,
+                            self.now(),
+                            clock=self.now,
+                        )
                 while not self.stopped() and (max_cycles is None or count < max_cycles):
                     try:
                         self.cycle()

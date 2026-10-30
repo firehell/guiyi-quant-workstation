@@ -254,3 +254,21 @@ inventory QUERY_TIMEOUT/stage ACCOUNT_SNAPSHOT。现役规则将其视为transpo
 该预报不证明届时Broker实际TradingDay或登录成功。现有v37切换计划/账户证明/预算硬绑定20261030，
 不能直接复用至新交易日，且20:58仅距开盘120秒不满足部署间隔660秒；下一连接窗口不等于可切换窗口。
 午间day30预算不足仍阻断，不能清预算/借新日预算/停服试切。证据output/simnow-step3-20261030/connection-budget-cause.json。
+
+
+## 20261030午间部署额外连接授权
+
+Owner在已完整呈现两个互斥选项后直接回复“方案1”：仅本次午间部署额外1次连接，绑定固定候选和唯一意图，
+原day30计数3保持，失败不再重连，全部其他账户/盘口/风险/订单门禁保持。此为次数上限的一次明确例外，
+不等于永久改为4次或清预算。正在完成端到端消费路径、定向回归和独立Review，未验收前不得使用。
+
+11:03本轮额外1次端到端实现通过源800项相关回归(48.58s)、SDK33、4模块mypy、Ruff、diff及独立192项安全Review。
+初次全套796passed/2failed：observe_bootstrap的asdict误序列化新内部字段；已改严格9字段导出并保持loader严格。
+另修startup用民用日期误阻周五夜盘下一交易日，改权威plan交易日，真实run测试通过。
+单次grant绑定exact release/config/SDK/account/day/plan/intent/state-dir；START_REQUESTED后才可activate，
+首次run独占claim，连接前独占attemptclaim；慢取证/慢fsync/慢factory均重核窗口，过期不触发SDK。
+午间原run等待下午PM-120至PM+120的首次连接，VERIFYING/COMPLETE后资格仍绑定同run；原attempts3保持，
+block不豁免，失败/重启/重复apply无第二次额度，次日普通3次规则不改。
+监控source保留原observe只读身份锚（旧API只支持旧格式），新真实mode从index读取；真实4库兼容回归通过，
+没有修改正式API源码或十服务。新候选私有config/plist/state-dir在output/simnow-midday-switch-20261030/，
+尚未生成grant或执行意图、未安装启动。等待候选重新固定验证与11:35现场窗口。
