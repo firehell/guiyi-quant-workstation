@@ -1,3 +1,27 @@
+10/30 16:41：v1.16.40正常发布完成，PR549/main/annotated tag/Release exact
+`3b8a697e5740c2aa99024590a0785dbddf5c2c5e`，干净detached40，tree等已审3文件候选。
+候选Reference/CLI1309 passed（127专用条件跳过）、部署61、CLI25及独立Review/构建/依赖锁通过。
+40正式CLI已成功Reference停驻（after-close-v40-084104），正在同一attempt内fenced plan与单次apply，
+尚未宣称恢复通过。正式十服务35及SimNow38尚未切换；40配置/SDK与正式candidate预检通过，尚未签发普通许可。
+以下为此前检查点：
+
+10/30 收盘执行新增技术阻断：Reference正式CLI load_dependencies将安全派生RedisURL覆盖回默认无认证URL，
+两次park调用均在任何attempt目录/drain/写入前阻断；原gen41 owner active、旧handover仍cancelled。
+单独按既有wrapper环境只读check_window已通过全60 closed_idle，确认不是Session/未来映射问题。
+需正常向前补丁v1.16.40修CLI加载并重新测试/Review；不得改已发布39源码/tag或旁路加载器。
+正式十服务仍35，SimNow仍38，均未切换；新39尚未运行。以下为此前检查点：
+
+10/30 收盘后执行中：v1.16.39已发布，PR547/main/annotated tag/GitHub Release exact
+`de3356d7f7784afcb5bb0017e5dcccc7ea80492c`，release39 clean detached；tree等已审候选。
+窗口v2/普通许可v2/计划v6最小修复已集成develop，候选自身954项、源Reference/cohort/清理1537项
+（127专用条件跳过）、SDK33/类型/构建/秘密扫描与独立Review通过。
+Reference当前新鲜先验48流/20OPEN/158冲突/334待退役，尚未生产恢复完成；首次park因命令级
+OBSERVATION_STREAM_NOT_ENABLED在意图/drain前阻断，未写数据或停驻，正按既有wrapper补齐控制器环境重核。
+正式十服务尚35/gen41；SimNow尚38，39待恢复trade配置/同label plist/SDK与正式候选预检已准备，
+新配置解除旧38 APIenv依赖，原SDK/账户anchor/四库不变；未签发普通许可或切换。
+后续严格顺序：Reference成功保持parked→新cohort十服务→SimNow独立v6→双轮读回→封存/清理。
+发布不代表Runtime、新鲜账户恢复、输入或交易闭环通过。以下为此前检查点：
+
 10/30 四项工程准备：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，PR548已集成develop（98861c77f）。
 v39候选工程提交bb25a60e9已独立核验；候选自身944相关、1515 Reference/cohort（127跳过）、
 SDK离线33、Web14/构建及8模块类型通过。PR547仍未合main，未tag/Release或Runtime切换。
