@@ -136,7 +136,9 @@ class MarketBridge:
                 a.Session(
                     actual,
                     now,
-                    now + timedelta(seconds=15),
+                    min(now + timedelta(seconds=15), contiguous_end)
+                    if contiguous_end is not None
+                    else now + timedelta(seconds=15),
                     source,
                     close,
                     tradable,

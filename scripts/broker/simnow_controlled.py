@@ -102,7 +102,7 @@ def run(gateway, tdapi, config, root):
     from guiyi_quant.simnow_execution.facts import (
         bind_contract,
         native_product_id,
-        quote_from_native_batch,
+        execution_quote_from_native_batch,
         execution_input,
         validate_native_rate_identity,
         EXECUTION_INPUT_VERSION,
@@ -150,7 +150,7 @@ def run(gateway, tdapi, config, root):
             except (ValueError, TypeError, KeyError, OverflowError):
                 diagnostic["event_time_valid"] = False
         gateway.book_selection_diagnostics = diagnostic
-        return quote_from_native_batch(bound, rows, trading_day, received)
+        return execution_quote_from_native_batch(bound, rows, trading_day, received)
 
     market = MarketBridge(config.product.lower())
     store = journal = evidence = None
@@ -355,6 +355,7 @@ def run(gateway, tdapi, config, root):
             session,
             strategy_correlated_native=True,
             native_validator=native_validator,
+            clock=now,
         )
         adapter.correlate_snapshot(snapshot)
         gateway.attach(adapter, snapshot)

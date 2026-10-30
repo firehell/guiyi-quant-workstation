@@ -21,10 +21,33 @@ _DISPATCH_CODES = frozenset({
     "OPEN_EXPIRED", "OPEN_RESERVATION_REQUIRED", "OPPONENT_PRICE_DRIFT", "PERSISTED_EFFECT_REQUIRED",
     "RECONCILED_ACCOUNT_REQUIRED", "SUBMIT_NOT_QUALIFIED", "UNDRAINED_NATIVE_FACTS_REQUIRE_RECONCILIATION",
     "ACCOUNT_TAKEOVER_PENDING", "NATIVE_PRICE_PRECISION_LOSS", "NATIVE_FACT_STALE",
-    "ONE_LOT_NATIVE_INVENTORY_REQUIRED", "CLOSE_POSITION_MISMATCH",
+    "ONE_LOT_NATIVE_INVENTORY_REQUIRED", "CLOSE_POSITION_MISMATCH", "CLAIMED_NEVER_SENT_EXPIRED",
 })
 _DISPATCH_OUTCOMES = frozenset({"ALREADY_CLAIMED_NO_SEND", "REQUEST_ACCEPTED_AWAIT_NATIVE",
     "NOT_ACCEPTED_RECONCILE_REQUIRED", "SEND_OUTCOME_UNKNOWN"})
+
+
+def dispatch_clock(now, wall_clock=None):
+    """Elapsed time never goes backwards; production also samples its trusted UTC clock.
+
+    An explicit historical entry time remains usable by offline callers. NativePortfolio
+    always supplies its real clock; this is not inferred from the supplied timestamp.
+    """
+    started = monotonic()
+    last = now
+
+    def fresh():
+        nonlocal last
+        elapsed = max(0, monotonic() - started)
+        current = now + timedelta(seconds=elapsed)
+        if wall_clock is not None:
+            wall = wall_clock()
+            m.time(wall)
+            current = max(current, wall)
+        last = max(last, current)
+        return last
+
+    return fresh
 
 
 def dispatch_failure_code(error):
@@ -103,7 +126,7 @@ def callback_guard(method):
 class Adapter:
     def __init__(self, store, journal, sdk, api, user, session, *,
                  close_only=False, correlated_native=False,
-                 strategy_correlated_native=False, native_validator=None, account_takeover_pending=False, account_profile=None):
+                 strategy_correlated_native=False, native_validator=None, account_takeover_pending=False, account_profile=None, clock=None):
         if (type(account_takeover_pending) is not bool or type(close_only) is not bool or type(correlated_native) is not bool
             or type(strategy_correlated_native) is not bool
             or correlated_native and (not close_only or strategy_correlated_native)
@@ -131,6 +154,9 @@ class Adapter:
         if account_profile is not None and type(account_profile) is not AccountProfile:
             raise ValueError("ACCOUNT_PROFILE_INVALID")
         self.account_profile = account_profile
+        if clock is not None and not callable(clock):
+            raise ValueError("DISPATCH_CLOCK_INVALID")
+        self.clock = clock
         self.last_dispatch_diagnostic = None
         self._faulted = False
         self.account_takeover_pending = account_takeover_pending
@@ -459,16 +485,47 @@ class Adapter:
             return "0"
         return close_offset(binding, inventory, o.side, now)
 
+    def _freshness(self, state, effect, binding, inventory, execution, permit, now):
+        # Lightweight final admission: no projection, journal scan, or I/O follows
+        # this check before entering the SDK. Static identity/risk gates remain in
+        # _preflight under the same account writer lock.
+        for at, until in (
+            (self.session.at, self.session.valid_until),
+            (permit.issued_at, permit.expires_at),
+            (binding.at, binding.valid_until),
+            (state.readback.at, state.readback.valid_until),
+            (execution.session.at, execution.session.valid_until),
+        ):
+            valid(at, until, now)
+        if effect.kind == "CANCEL":
+            if not execution.session.can_cancel:
+                raise ValueError("CANCEL_NOT_QUALIFIED")
+            return
+        valid(execution.instrument.at, execution.instrument.valid_until, now)
+        if execution.quote is None:
+            raise ValueError("LIVE_QUOTE_REQUIRED")
+        valid(execution.quote.at, execution.quote.valid_until, now)
+        if not execution.session.can_trade:
+            raise ValueError("SUBMIT_NOT_QUALIFIED")
+        if effect.order.offset == "OPEN":
+            if (execution.session.final_close_at - now).total_seconds() <= 60:
+                raise ValueError("OPEN_EXPIRED")
+        else:
+            close_offset(binding, inventory, effect.order.side, now)
+
     @dispatch_diagnostic
     def dispatch(self, effect, binding, inventory, execution, permit, now):
         """Only once per order/action, including SDK error, crash and unknown result."""
         if getattr(self, "account_takeover_pending", False):
             raise ValueError("ACCOUNT_TAKEOVER_PENDING")
+        fresh = dispatch_clock(now, self.clock)
         self._dispatch_stage = "LEDGER_GUARD"
         with self.store.dispatch_guard() as state:
             offset = self._preflight(
-                state, effect, binding, inventory, execution, permit, now
+                state, effect, binding, inventory, execution, permit, fresh()
             )
+            self._dispatch_stage = "PREFLIGHT_FRESHNESS"
+            self._freshness(state, effect, binding, inventory, execution, permit, fresh())
             self._dispatch_stage = "REQUEST_BUILD"
             o = effect.order
             # No user/account number or SDK object enters persistent payloads.
@@ -524,6 +581,10 @@ class Adapter:
                     native["session_id"],
                 )
                 req.ActionFlag = "0"
+            self._dispatch_stage = "PRECLAIM_FRESHNESS"
+            now = fresh()
+            self._freshness(state, effect, binding, inventory, execution, permit, now)
+            payload["request_started_at"] = now.isoformat()
             self._dispatch_stage = "DISPATCH_CLAIM"
             claim = self.journal.claim(
                 effect.kind + ":" + o.order_id,
@@ -539,6 +600,14 @@ class Adapter:
             if effect.kind == "SUBMIT":
                 req.OrderRef = ref
             req.RequestID = request_id
+            # A committed claim is never refunded, even if admission expires.
+            self._dispatch_stage = "SDK_ADMISSION_FRESHNESS"
+            try:
+                self._freshness(state, effect, binding, inventory, execution, permit, fresh())
+            except ValueError:
+                outcome = "CLAIMED_NEVER_SENT_EXPIRED"
+                self.journal.result(action_id, outcome)
+                raise ValueError(outcome) from None
             self._dispatch_stage = "SDK_REQUEST"
             try:
                 result = (

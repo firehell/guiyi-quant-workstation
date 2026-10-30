@@ -317,3 +317,112 @@ def test_authority_and_recovery_delegate_without_other_subscriptions(monkeypatch
     state = NS(products=(NS(product="RB"), NS(product="AG")))
     assert tuple(item.product for item in inlet.recovery(state, T)) == ("RB", "AG")
     assert redis.pubsub_calls == 1
+
+
+def audit_inlet(monkeypatch, phases, ends):
+    import app.market_data.aggregation as aggregation
+    import app.market_data.composition as composition
+
+    inlet, _ = make_inlet(monkeypatch)
+
+    class Resolver:
+        def __init__(self, _):
+            pass
+
+        def resolve(self, product, now):
+            return phases[product]
+
+    monkeypatch.setattr(market, "MarketPhaseResolver", Resolver)
+    monkeypatch.setattr(composition, "build_market_data_service", lambda _: NS(
+        session_windows=lambda *, symbol, trading_day: symbol))
+    monkeypatch.setattr(aggregation, "expected_intraday_ends", lambda symbol, _: ends[symbol])
+    return inlet
+
+
+def test_mixed_night_scope_preserves_old_boundary_api(monkeypatch):
+    end = T + timedelta(minutes=55)
+    phases = {
+        "rb": phase("RB", MarketPhase.CLOSED, T.date(), T + timedelta(hours=12)),
+        "ag": ProductMarketPhase("ag", MarketPhase.TRADING, T.date(),
+            NS(start=T - timedelta(minutes=5), end=T + timedelta(hours=2)), None),
+    }
+    inlet = audit_inlet(monkeypatch, phases, {"ag": (end,)})
+    assert inlet.next_audit_boundary(T) == end
+    window = inlet.audit_window(T)
+    assert window.products == ("AG",)
+    assert window.trading_day == T.date()
+    assert window.boundary == end
+    # An authoritative break cannot block a product trading in another Session.
+    phases["rb"] = phase("RB", MarketPhase.BREAK, T.date(), T + timedelta(minutes=10))
+    assert inlet.audit_window(T).products == ("AG",)
+    assert inlet.next_audit_boundary(T) == T + timedelta(minutes=10)
+
+
+def test_audit_unknown_missing_boundaries_and_no_active_scope_fail_closed(monkeypatch):
+    trading = ProductMarketPhase("ag", MarketPhase.TRADING, T.date(),
+        NS(start=T - timedelta(minutes=5), end=T + timedelta(hours=2)), None)
+    phases = {"ag": trading, "rb": phase("RB", MarketPhase.UNKNOWN, None)}
+    ends = {"ag": (T + timedelta(minutes=55),)}
+    inlet = audit_inlet(monkeypatch, phases, ends)
+    assert inlet.next_audit_boundary(T) is None
+    phases["rb"] = phase("RB", MarketPhase.CLOSED, None, None)
+    assert inlet.next_audit_boundary(T) is None
+    phases["rb"] = phase("RB", MarketPhase.CLOSED, None, T + timedelta(hours=12))
+    ends["ag"] = ()
+    assert inlet.next_audit_boundary(T) is None
+    ends["ag"] = (T + timedelta(hours=3),)
+    assert inlet.next_audit_boundary(T) is None
+    phases["ag"] = phase("AG", MarketPhase.CLOSED, None, T + timedelta(hours=12))
+    assert inlet.next_audit_boundary(T) is None
+    assert inlet.audit_window(T) is None
+
+
+def test_audit_scope_tracks_2300_0100_0230_closes_and_day_reopening(monkeypatch):
+    from app.market_data.aggregation import SessionWindow
+    import app.market_data.composition as composition
+
+    local = ZoneInfo("Asia/Shanghai")
+    start = datetime(2026, 10, 30, 21, tzinfo=local)
+    day_start = datetime(2026, 11, 2, 9, tzinfo=local)
+    trading_day = day_start.date()
+    closes = {
+        "RB": start + timedelta(hours=2),
+        "CU": start + timedelta(hours=4),
+        "AG": start + timedelta(hours=5, minutes=30),
+    }
+    products = ("RB", "CU", "AG", "AP")
+    windows = {
+        p: tuple(([SessionWindow(start, closes[p])] if p in closes else [])
+            + [SessionWindow(day_start, day_start + timedelta(minutes=75))])
+        for p in products
+    }
+    inlet = object.__new__(market.PortfolioMarket)
+    inlet.products = products
+    inlet._session_factory = Session
+
+    class Resolver:
+        def __init__(self, _):
+            pass
+
+        def resolve(self, product, now):
+            sessions = windows[product.upper()]
+            current = next((w for w in sessions if w.start <= now < w.end), None)
+            next_open = min((w.start for w in sessions if w.start > now), default=None)
+            return ProductMarketPhase(product, MarketPhase.TRADING if current else MarketPhase.CLOSED,
+                trading_day, current, next_open)
+
+    monkeypatch.setattr(market, "MarketPhaseResolver", Resolver)
+    monkeypatch.setattr(composition, "build_market_data_service", lambda _: NS(
+        session_windows=lambda *, symbol, trading_day: windows[symbol.upper()]))
+    for now, active, boundary in (
+        (start + timedelta(minutes=5), ("RB", "CU", "AG"), start + timedelta(hours=1)),
+        (start + timedelta(hours=2, minutes=5), ("CU", "AG"), start + timedelta(hours=3)),
+        (start + timedelta(hours=4, minutes=5), ("AG",), start + timedelta(hours=5)),
+        (start + timedelta(hours=5, minutes=5), ("AG",), start + timedelta(hours=5, minutes=30)),
+        (day_start + timedelta(minutes=5), products, day_start + timedelta(hours=1)),
+    ):
+        window = inlet.audit_window(now)
+        assert window.products == active
+        assert window.trading_day == trading_day
+        assert window.boundary == boundary
+    assert inlet.audit_window(start + timedelta(hours=5, minutes=30)) is None

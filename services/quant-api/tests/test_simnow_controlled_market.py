@@ -226,3 +226,24 @@ def test_recovery_validates_whole_gap_and_replays_only_after_frozen_bar(monkeypa
     proofs = b.recovery(state, bars[-1].bar_end + timedelta(seconds=2))
     assert proofs[0].latest_direction == -1
     assert checked == [40] and evaluated == [bar.bar_end for bar in bars[32:]]
+
+
+@pytest.mark.parametrize('end_hours', [1.25, 2.5, 6])
+def test_active_authority_expires_at_break_or_close(monkeypatch, end_hours):
+    bridge = object.__new__(m.MarketBridge)
+    bridge.product = 'RB'
+    rows = tuple(NS(name=str(i), is_night=False,
+                    window=NS(start=T + timedelta(hours=start), end=T + timedelta(hours=end)))
+                 for i, (start, end) in enumerate(((0, 1.25), (1.5, 2.5), (4.5, 6))))
+    monkeypatch.setattr(m, 'resolved_session_windows_for_trading_day', lambda *_a, **_k: rows)
+    monkeypatch.setattr(m, 'build_market_data_service',
+        lambda _: NS(dominant_segment_for_day=lambda *_: NS(contract='RB2701')))
+    @contextmanager
+    def read():
+        yield NS(scalar=lambda _: NS(exchange_code='SHFE')), NS()
+    bridge.reader = read
+    boundary = T + timedelta(hours=end_hours)
+    authority = bridge.authority(date(2026, 10, 27), boundary - timedelta(milliseconds=500))
+    assert authority.session.can_trade and authority.session.can_cancel
+    assert authority.contiguous_session_end == boundary
+    assert authority.session.valid_until == boundary

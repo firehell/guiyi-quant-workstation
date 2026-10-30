@@ -250,6 +250,6 @@ def test_dispatch_duration_uses_monotonic_clock(tmp_path, monkeypatch):
 
     adapter, effect, facts, binding, permit, at, api = setup(tmp_path)
     ticks = iter((11, 11.12345))
-    monkeypatch.setattr(module, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(module, "monotonic", lambda: next(ticks, 11.12345))
     adapter.dispatch(effect, binding, None, facts, permit, at)
     assert adapter.last_dispatch_diagnostic["elapsed_ms"] == 123.45

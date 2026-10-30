@@ -27,6 +27,13 @@ class SessionPlan:
     next_open_at: datetime | None
 
 
+@dataclass(frozen=True, slots=True)
+class AuditWindow:
+    products: tuple[str, ...]
+    trading_day: date
+    boundary: datetime
+
+
 class PortfolioMarket:
     """Shares one Redis pubsub while retaining MarketBridge's proof per product."""
 
@@ -209,7 +216,12 @@ class PortfolioMarket:
             return False
 
     def next_audit_boundary(self, now: datetime) -> datetime | None:
-        """Fail closed unless every product has an authoritative active H1 boundary."""
+        """Compatibility inlet for callers that only need the earliest boundary."""
+        window = self.audit_window(now)
+        return window.boundary if window is not None else None
+
+    def audit_window(self, now: datetime) -> AuditWindow | None:
+        """Prove the active scope and stop before any H1/Session transition."""
         from app.market_data.aggregation import expected_intraday_ends
         from app.market_data.composition import build_market_data_service
 
@@ -221,17 +233,45 @@ class PortfolioMarket:
                 resolver = MarketPhaseResolver(db)
                 market = build_market_data_service(db)
                 boundaries = []
+                active = []
+                days = set()
                 for product in self.products:
                     phase = resolver.resolve(product.lower(), now)
-                    if phase.phase is not MarketPhase.TRADING or phase.current_session is None:
+                    if phase.phase in {MarketPhase.CLOSED, MarketPhase.BREAK}:
+                        if (
+                            phase.current_session is not None
+                            or phase.next_session_start is None
+                            or phase.next_session_start <= now
+                        ):
+                            return None
+                        # A resumed product can introduce an earlier decision;
+                        # re-resolve the scope before crossing its next open.
+                        boundaries.append(phase.next_session_start)
+                        continue
+                    if (
+                        phase.phase is not MarketPhase.TRADING
+                        or phase.trading_day is None
+                        or phase.current_session is None
+                        or not phase.current_session.start <= now < phase.current_session.end
+                    ):
                         return None
-                    ends = expected_intraday_ends(market.session_windows(
-                        symbol=product.lower(), trading_day=phase.trading_day), BarFrequency.H1)
-                    upcoming = [end for end in ends if end > now]
+                    ends = expected_intraday_ends(
+                        market.session_windows(
+                            symbol=product.lower(), trading_day=phase.trading_day
+                        ),
+                        BarFrequency.H1,
+                    )
+                    upcoming = [
+                        end for end in ends if now < end <= phase.current_session.end
+                    ]
                     if not upcoming:
                         return None
-                    boundaries.append(min(min(upcoming), phase.current_session.end))
-                return min(boundaries) if boundaries else None
+                    active.append(product)
+                    days.add(phase.trading_day)
+                    boundaries.append(min(upcoming))
+                if not active or len(days) != 1:
+                    return None
+                return AuditWindow(tuple(active), days.pop(), min(boundaries))
         except Exception:
             return None
 
