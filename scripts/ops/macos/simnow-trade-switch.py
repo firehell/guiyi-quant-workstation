@@ -30,10 +30,10 @@ from datetime import datetime, UTC, date, timedelta
 
 sys.dont_write_bytecode = True
 
-SCHEMA = "simnow_trade_switch_plan_v5"
+SCHEMA = "simnow_trade_switch_plan_v6"
 POLICY = "simnow_night_only_deployment_window_v1"
 MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
-ORDINARY_POLICY = "simnow_ordinary_next_session_v1"
+ORDINARY_POLICY = "simnow_ordinary_next_session_v2"
 LABEL = "com.guiyi.quant-simnow"
 CalendarFacts = namedtuple(
     "CalendarFacts", "trade_date is_trading_day has_night_session"
@@ -175,8 +175,17 @@ def validate_snapshot(s):
             fail("ACCOUNT_UNPROVEN")
         ordinary = s.get("ordinary_permit")
         if ordinary:
+            anchor = s.get("historical_contract_anchor", {})
             if (
-                ordinary.get("schema") != "simnow_ordinary_takeover_v1"
+                anchor.get("policy") != "simnow_completed_contract_anchor_v1"
+                or anchor.get("product_count") != 60
+                or not re.fullmatch("[a-f0-9]{64}", anchor.get("sha256", ""))
+                or not isinstance(s.get("preimage"), dict)
+                or anchor != s["preimage"].get("historical_contract_anchor")
+            ):
+                fail("ACCOUNT_UNPROVEN")
+            if (
+                ordinary.get("schema") != "simnow_ordinary_takeover_v2"
                 or ordinary.get("account_id") != a["account_id"]
                 or ordinary.get("profile") != a.get("account_profile")
                 or a["budget_day"] != ordinary["window"]["trading_day"]
@@ -1484,6 +1493,15 @@ class MacBackend:
         }
         return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
+    def _historical_anchor(self):
+        from app.simnow_takeover_window import historical_contract_anchor
+
+        return historical_contract_anchor(datetime.now(UTC))
+
+    def _verify_historical_anchor(self, snapshot):
+        if self._historical_anchor() != snapshot.get("historical_contract_anchor"):
+            fail("PREIMAGE_CHANGED")
+
     def _preimage(self):
         p = plistlib.loads(private(self.plist).read_bytes())
         args = p["ProgramArguments"]
@@ -1624,6 +1642,11 @@ class MacBackend:
                 for p in self.locks
             ],
         )
+        historical_anchor = (
+            self._historical_anchor() if getattr(self, "ordinary", False) else None
+        )
+        if historical_anchor is not None:
+            preimage["historical_contract_anchor"] = historical_anchor
         window = self._window()
         connection_permit = None
         ordinary_permit = None
@@ -1671,9 +1694,11 @@ class MacBackend:
         self._stop_signals = account["databases"].get("signals.sqlite")
         self._stop_requires_permit = bool(connection_permit)
         self._stop_ordinary = ordinary_permit
+        self._stop_historical_anchor = historical_anchor
         return dict(
             connection_permit=connection_permit,
             ordinary_permit=ordinary_permit,
+            historical_contract_anchor=historical_anchor,
             old_config_path=str(self.old_config),
             observe_index=self.last_observe_index,
             candidate=dict(
@@ -1705,6 +1730,7 @@ class MacBackend:
         if not getattr(self, "ordinary", False):
             fail("CANDIDATE_UNPROVEN")
         self._recovery = True
+        self._verify_historical_anchor(source)
         if (
             self.identity(self.settings.sdk_python, interpreter=True)
             != source["preimage"]["sdk"]
@@ -1767,6 +1793,7 @@ class MacBackend:
             if Path(self.settings.ordinary_takeover_permit).exists():
                 fail("ATTEMPT_CONSUMED")
             preimage.update(
+                historical_contract_anchor=source["historical_contract_anchor"],
                 account=account,
                 locks=source["preimage"]["locks"],
                 host_pid=source["host"]["pid"],
@@ -1783,6 +1810,7 @@ class MacBackend:
                     identities=dict(preimage, code=exact),
                 ),
                 account=account,
+                historical_contract_anchor=source["historical_contract_anchor"],
                 ordinary_permit=permit,
                 connection_permit=None,
                 window=window,
@@ -1814,6 +1842,11 @@ class MacBackend:
             )
             if fresh != self._stop_ordinary:
                 fail("PREIMAGE_CHANGED")
+        if (
+            getattr(self, "_stop_historical_anchor", None) is not None
+            and self._historical_anchor() != self._stop_historical_anchor
+        ):
+            fail("PREIMAGE_CHANGED")
         os.kill(pid, signal.SIGTERM)
 
     def stopped(self, snapshot):
@@ -1851,6 +1884,8 @@ class MacBackend:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     fail("WRITER_NOT_IDLE")
+            if snapshot.get("ordinary_permit"):
+                self._verify_historical_anchor(snapshot)
             self._offline_held = True
             yield
         finally:
@@ -1865,6 +1900,11 @@ class MacBackend:
             fail("STOP_UNPROVEN")
         self.code_check()
         current = self._preimage()
+        if snapshot.get("ordinary_permit"):
+            self._verify_historical_anchor(snapshot)
+            current["historical_contract_anchor"] = snapshot[
+                "historical_contract_anchor"
+            ]
         account = self._account(stopped_snapshot=snapshot)
         p = snapshot["preimage"]
         unchanged = same_preimage(
@@ -2071,6 +2111,7 @@ class MacBackend:
         return profile_binding(self.settings)
 
     def issue_ordinary_permit(self, snapshot, plan_hash, intent_path):
+        self._verify_historical_anchor(snapshot)
         from guiyi_quant.simnow_execution import ordinary_takeover as ordinary
 
         return ordinary.issue(
@@ -2095,6 +2136,8 @@ class MacBackend:
         )
 
     def start(self, snapshot):
+        if snapshot.get("ordinary_permit"):
+            self._verify_historical_anchor(snapshot)
         self.code_check()
         if (
             self.identity(self.settings.sdk_python, interpreter=True)
