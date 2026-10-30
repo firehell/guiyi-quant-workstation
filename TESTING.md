@@ -2321,3 +2321,13 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 60品种单连接单阶段audit/优先级/过期/盘口时间、普通cap3/原block保留/权威跨日、v5旧计划拒绝、
 独立stopped恢复及原协调器锁真实子进程竞态。新v5禁止重新签发历史额外许可；历史v38宿主单次消费
 测试仍独立保留。真实依赖测试只允许任务隔离PG/Redis，跳过不等于通过；部署、账户恢复与策略成交分别待验。
+
+### HTDY 60m 冻结快照与来源展示
+
+```sh
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/reference_trading/test_htdy_snapshot.py services/quant-api/tests/reference_trading/test_htdy_history.py
+cd apps/quant-web
+node --test tests/htdySnapshot.test.ts tests/useHtdySnapshot.test.ts tests/htdyUnifiedSignals.test.ts tests/htdySimnowMarkers.test.ts tests/htdySimnowRecords.test.ts
+```
+
+验证不可变版本、受控读取、完整统计、来源身份/冲突、异步取消、原始成交时间与独立统计；现场页面须另行核对。

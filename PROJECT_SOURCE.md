@@ -117,7 +117,7 @@ HTDY 60m 实时参考采用 `htdy_first_seen_reverse_close_v1`：buy 开多、se
 
 苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；15m 沿用 `subing_ths_15m_v3`，30m/60m/1d 使用各自版本身份、历史参考与六周期正式 Event 独立。它不创建或补发 AlertEvent。15m/30m/60m 参考模型保持 `subing_reference_reverse_close_v1`；D1 候选合同使用 `subing_reference_reverse_close_quality_segment_v2`，只接受 Market Fact 权威的有效 Bar 与 typed quality break，每个 break 后重新预热，质量中断单列为 `DATA_INTERRUPTED`，不制造退出价、收益或当前浮动。第 1–33 根有效日线为预热，第 34 根指标已就绪但不可评价 exact CROSS，第 35 根起才可评价。公式仍为 `subing_ths_1d_v1`。历史资产独立标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
 
-苏冰与 HTDY 详情收益区仅消费 `forward_observation` 实时留存参考交易：共用曲线、快捷窗口、最近三笔卡片、按需分页及有界快照缓存；不在该区展示历史重算或 HTDY 重绘交易。缺失实时流时明确不可用，实际 AlertEvent 审计独立折叠，不以预警条数推算完整交易收益。历史研究 API 和资产仍独立保留，不改写已有事实。合同见 [Reference Trading](openspec/specs/reference-trading/spec.md#requirement-retained-forward-reference-performance-panel)。
+苏冰详情与 HTDY 的“实时参考”来源仅消费 `forward_observation` 实时留存参考交易：共用曲线、快捷窗口、最近三笔卡片、按需分页及有界快照缓存；不在该区展示历史重算或 HTDY 重绘交易。缺失实时流时明确不可用，实际 AlertEvent 审计独立折叠，不以预警条数推算完整交易收益。历史研究 API 和资产仍独立保留，不改写已有事实。合同见 [Reference Trading](openspec/specs/reference-trading/spec.md#requirement-retained-forward-reference-performance-panel)。
 
 Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 
@@ -153,3 +153,8 @@ Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N St
 独立持续宿主与一次性CLI分开：observe按现有合同读取柜台账户并核验本地账本，manage/trade有独立执行边界；支持隔离服务安装、连接预算、持久阻断和只读监控。当前部署及待验收事实只看 `STATUS.md`，不从实现或observe运行推导交易开放，`auto_order=false`保持。
 
 首页导航增加“模拟交易”：只读展示本地原生账户走势、持仓、执行链与待核事项，不提供交易操作。账户口径独立于策略参考收益，未接入或证据不足时明确待验。详见 [SimNow执行合同](docs/SIMNOW_EXECUTION.md)。
+
+HTDY 60m 默认展示独立冻结的历史回放参考动作及收益，可切换“实时参考”和“SimNow记录”。
+回放只使用截至每根已完成Bar的32根窗口末根信号，复用既有参考配对，不展示最终重绘历史信号。
+精确关联的实际记录优先；缺公式版本/周期、冲突或无法定位的记录分别保留，不覆盖回放或伪造成交。
+回放补充、首次观察和SimNow信号/风控/订单/成交各保留独立身份与统计；不拼接收益、不改变运行交易规则。

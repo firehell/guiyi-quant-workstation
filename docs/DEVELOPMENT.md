@@ -184,3 +184,15 @@ DB、Canonical 和 Redis 依赖，不输出或修改配置；按正式启动器�
 API 固定读取该开发文件，不覆盖共享正式派生资产。缺失时显示未发布，GET 不自动构建。
 首页日周图标旁的“历史”及展开原因说明发布有效性；正常已完成日周线不会因分钟报价变化而重算。
 参考收益显示累计页面收益与笔数；距离始终按日线参考收盘价计算，正常卡片在悬停说明中提供基准及日周各自截至时间；历史／失败状态保留可见原因。
+
+### HTDY 60m 冻结历史参考联调
+
+独立 develop API 与 Web 启动方式沿用上节。首次显式构建（只读行情、写开发派生目录）：
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m app.reference_trading.htdy_snapshot build --symbol jm --since 2025-10-30 --through 2026-10-30
+```
+
+展示窗口最多一年，底层仍从权威物理前缀预热；换品种替换 `--symbol`。构建安全加载既有受保护依赖，
+不连接Broker、不下载行情。快照在 `.run/htdy-snapshots`，GET不会构建；未生成时明确不可用。
+主图默认回放参考，来源切换联动独立记录区；SimNow和首次观察缺公式身份时并列，不用当前常量补造历史证据。

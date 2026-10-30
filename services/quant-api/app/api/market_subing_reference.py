@@ -213,3 +213,22 @@ def historical_reference_signals(
         raise HTTPException(409, detail={"code": "SIGNAL_WINDOW_SOURCE_CONFLICT"}) from None
     finally:
         _GATE.release()
+
+
+@router.get('/{symbol}/htdy/snapshot')
+def htdy_frozen_snapshot(
+    request: Request, symbol: str,
+    snapshot_id: str | None = Query(None, max_length=64),
+    before: str | None = Query(None, max_length=80),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Read an explicitly built snapshot; no DB, replay, provider or mutation."""
+    from app.reference_trading.htdy_snapshot import SnapshotError, SnapshotStore, snapshot_root
+    keys = [key for key, _ in request.query_params.multi_items()]
+    if set(keys) - {'snapshot_id', 'before', 'limit'} or len(keys) != len(set(keys)):
+        raise HTTPException(422, detail={'code': 'HTDY_SNAPSHOT_INVALID_QUERY'})
+    try:
+        return SnapshotStore(snapshot_root()).read(symbol, snapshot_id=snapshot_id, before=before, limit=limit)
+    except SnapshotError as exc:
+        status = 422 if exc.code == 'HTDY_SNAPSHOT_INVALID_QUERY' else 503 if exc.code == 'HTDY_SNAPSHOT_NOT_BUILT' else 409
+        raise HTTPException(status, detail={'code': exc.code}) from None

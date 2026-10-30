@@ -1059,8 +1059,8 @@ The cache SHALL NOT be a historical fact authority and SHALL NOT write Redis or 
 
 ### Requirement: Retained forward reference performance panel
 
-SuBing and HTDY detail performance SHALL use only `forward_observation` retained
-reference streams. Historical replay and HTDY repainting SHALL NOT fill missing
+SuBing detail performance and the HTDY realtime-reference source SHALL use only `forward_observation` retained
+reference streams. HTDY 60m MAY separately expose the frozen historical and SimNow sources defined below. Historical replay and HTDY repainting SHALL NOT fill missing
 forward trades, summaries, curves or action labels. These are zero-cost reference
 facts, not Paper or broker fills. An absent, disabled, ambiguous or unsupported
 stream SHALL display its actual unavailable state, never a zero-performance claim.
@@ -1232,6 +1232,34 @@ handover budget SHALL NOT be enlarged. Stage timings SHALL be bounded aggregates
 - **GIVEN** a bounded bridge already validated within the current readback
 - **WHEN** another linked original has an invalid time or calculation sequence relative to that bridge
 - **THEN** closure verification rejects it despite reuse of the bridge's common immutable proof
+
+### Requirement: HTDY 60m frozen replay and actual evidence are independently presented
+
+HTDY 60m SHALL default to frozen completed-prefix historical reference actions, with explicit historical/forward/SimNow source selection. Other periods retain their existing behavior. All chart actions, trade pages and historical summary SHALL identify the same immutable snapshot. The display policy is htdy_snapshot_display_v2; v1 artifacts from the initial build remain independently readable without rewriting their bytes.
+
+An explicit `python -m app.reference_trading.htdy_snapshot build --symbol jm --since YYYY-MM-DD --through YYYY-MM-DD` SHALL reuse the existing window32 reader and reference action pairing. Storage defaults to the develop-only `.run/htdy-snapshots` or explicit GUIYI_HTDY_SNAPSHOT_ROOT. It SHALL use bounded read-only MDS/Catalog reads, freeze model/formula/input/owner/quality/cutoff identity, and publish content-addressed immutable files with atomic latest selection. Changed input creates a new snapshot. GET, pagination, chart loading and source selection SHALL NOT build, replay or write. No AlertEvent, forward stream, Canonical, broker connection or account mutation is permitted.
+
+`GET /api/v1/market/{symbol}/htdy/snapshot` SHALL accept only snapshot_id, before and limit (1..200), fixed 60m. It SHALL return snapshot_id/generated_at, the existing historical reference response, all bounded actions/closed curve points and a snapshot-bound trade page. Maximums are 10,000 trades, 40,000 signals, 20,000 actions and 32 MiB; corrupt/foreign/symlink inputs or changed cursors fail closed. Summary and Decimal curve use the complete selected trade set; curve retains calculation/physical segments. OPEN and interrupted trades are excluded from completed returns.
+
+The display aggregate SHALL associate stable evidence identities only after exact strategy/formula/frequency/contract/signal-time verification. Unknown versions or conflicting directions SHALL remain separately labeled; wall-clock proximity cannot establish linkage. Actual observation may replace same-direction replay display when association is proven, without changing either trade history. Local SimNow signal/risk/order/fill chains preserve their own IDs and statuses; orders are not fills. Replay supplementation cannot enter forward or SimNow performance.
+
+SimNow fills SHALL preserve original fill time/price and multi-fill identity. Exact plot coordinates require authoritative matching time and physical Bar ownership; insufficient timestamp precision or unmappable times remain in the list with explicit unlocated status. Account PnL SHALL NOT be allocated to product/strategy without proof. The existing source records lacking historical formula/frequency remain unverified, even if current code constants are known.
+
+#### Scenario: A later source revision produces another replay
+- **WHEN** a source revision changes the explicit replay build
+- **THEN** a new immutable snapshot is selected for new reads and the prior ID remains readable
+- **AND** record pagination pins the original ID and cannot mix the new result
+
+#### Scenario: A locally retained observation or execution cannot be fully associated
+- **WHEN** formula/frequency identity is absent, direction conflicts, or a fill cannot be located precisely
+- **THEN** the actual record remains separately visible with its original identity and no replay record is silently overwritten
+- **AND** unavailable actual sources do not become an empty complete history or a simulated fill
+
+#### Scenario: Historical chart coverage extends across a rollover
+- **WHEN** earlier chart Bars load or a trade ends at a quality/owner boundary
+- **THEN** chart visibility filters the frozen action set by exact physical ownership without recomputation
+- **AND** trade IDs, returns and pagination remain unchanged and interrupted trades stay excluded from completed statistics
+
 
 ## Requirement: Live observation handover preserves capture identity
 
