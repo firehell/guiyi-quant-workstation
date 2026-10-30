@@ -656,3 +656,30 @@ def test_initial_old_book_still_stops_before_settlement_or_initialization(monkey
         cli.run(gateway, NS(), config, tmp_path)
     assert not (tmp_path / "output/simnow-controlled").exists()
     assert all(c[0] not in ("confirm", "insert", "cancel") for c in gateway.calls)
+
+
+def test_bounded_execution_injects_clock_and_blocks_elapsed_preflight(monkeypatch, tmp_path):
+    config = configured(monkeypatch)
+    gateway = FakeGateway('filled')
+    original_attach = gateway.attach
+    claims = []
+    def attach(adapter, snapshot):
+        original_attach(adapter, snapshot)
+        original_claim = adapter.journal.claim
+        def claim(*args):
+            claims.append(args[0])
+            return original_claim(*args)
+        adapter.journal.claim = claim
+        original = adapter._preflight
+        def preflight(*args):
+            result = original(*args)
+            Clock.current += timedelta(seconds=6)
+            return result
+        adapter._preflight = preflight
+    monkeypatch.setattr(gateway, 'attach', attach)
+    sdk = NS(CThostFtdcInputOrderField=NS, CThostFtdcInputOrderActionField=NS)
+    result = cli.run(gateway, sdk, config, tmp_path)
+    assert callable(gateway.execution_adapter.clock)
+    assert claims == []
+    assert not any(call[0] == 'insert' for call in gateway.calls)
+    assert result['broker_e2e_passed'] is False

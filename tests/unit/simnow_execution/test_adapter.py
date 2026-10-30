@@ -631,7 +631,8 @@ def test_same_second_fill_retains_precision_without_invented_timestamp(tmp_path)
     ad.drain()
     fill = ad.store.current().fills[0]
     assert fill.filled_at == at and fill.native_precision_seconds == 1
-    assert fill.request_started_at == at and fill.dispatch_source_id
+    assert at <= fill.request_started_at <= at + timedelta(milliseconds=100)
+    assert fill.dispatch_source_id
     assert ad.store.replay() == ad.store.current()
 
 
@@ -695,7 +696,7 @@ def test_subsecond_proposal_accepts_native_insert_second_interval(
     ad.drain()
     assert len(ad.store.current().fills) == 1
     assert ad.store.current().fills[0].filled_at.microsecond == 0
-    assert ad.store.current().fills[0].request_started_at.microsecond == 250000
+    assert at <= ad.store.current().fills[0].request_started_at <= at + timedelta(milliseconds=100)
 
 
 def test_unbound_trade_keeps_whitelisted_native_fact_and_blocks_dispatch(tmp_path):

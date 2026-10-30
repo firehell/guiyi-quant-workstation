@@ -19,7 +19,7 @@ from .credentials import CredentialStore
 from .facts import (
     bind_contract,
     native_product_id,
-    quote_from_native_batch,
+    execution_quote_from_native_batch,
     execution_input,
     MAX_BOOK_SOURCE_AGE_SECONDS,
 )
@@ -282,7 +282,7 @@ class NativePortfolio:
             if queries and queries[-1].get('kind') == 'book':
                 self.book_diagnostic['native_query'] = queries[-1]
             try:
-                quote = quote_from_native_batch(bound, rows, day, received, diagnostic=self.book_diagnostic)
+                quote = execution_quote_from_native_batch(bound, rows, day, received, diagnostic=self.book_diagnostic)
             finally:
                 age = self.book_diagnostic.get('source_age_seconds')
                 if age is not None:
@@ -548,6 +548,7 @@ class NativePortfolio:
             session,
             account_takeover_pending=getattr(self.settings, "account_takeover_pending", False),
             account_profile=getattr(self.settings, "account_profile", None),
+            clock=self.now,
             **capabilities,
         )
         if correlated_native or strategy_correlated_native:

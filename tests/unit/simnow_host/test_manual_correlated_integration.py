@@ -134,7 +134,7 @@ def test_unknown_open_raw_clock_skew_recovers_then_only_closes(tmp_path):
     ) == ("SEND_OUTCOME_UNKNOWN",)
     assert len(api.calls) == 1 and api.calls[0][0] == "insert"
     claimed_open = journal.find(opening.order.order_id)
-    assert claimed_open["request_started_at"] == open_at.isoformat()
+    assert open_at <= datetime.fromisoformat(claimed_open["request_started_at"]) < open_at + timedelta(seconds=1)
 
     raw_at = open_at - timedelta(seconds=2)
     native_order = _native_order(strict_adapter, opening, raw_at)

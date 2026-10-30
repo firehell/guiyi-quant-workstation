@@ -229,3 +229,118 @@ def test_expired_partial_binding_stops_before_book(tmp_path):
     assert turn(native)["status"] == "FAILED"
     assert native.input_checks["JM"]["code"] == "AUDIT_BINDING_EXPIRED"
     assert len(native.gateway.queries) == before
+
+
+class ScopedMarket(Market):
+    active = ("AG",)
+    boundary = T + timedelta(minutes=30)
+    trading_day = T.date()
+
+    def audit_window(self, now):
+        from types import SimpleNamespace as NS
+        if self.active is None:
+            return None
+        return NS(products=self.active, boundary=self.boundary, trading_day=self.trading_day)
+
+
+def scoped_turn(native, market, products=("AG", "AP", "PB"), **overrides):
+    args = dict(idle=True, obligations_pending=False,
+        next_boundary=T + timedelta(minutes=30))
+    args.update(overrides)
+    return native.audit_next(products, market, "20261027", **args)
+
+
+def test_night_audit_only_queries_authoritative_active_products(tmp_path):
+    native = portfolio(tmp_path)
+    market = ScopedMarket()
+    market.active = ("AG", "PB")
+    completed = []
+    for _ in range(8):
+        result = scoped_turn(native, market)
+        if result["status"] == "CHECKED":
+            completed.append(result["product"])
+    assert completed == ["AG", "PB"]
+    assert set(native.input_checks) == {"AG", "PB"}
+    assert not native.last_facts
+
+
+@pytest.mark.parametrize("reason", ["unknown", "empty", "boundary", "wrong_day", "foreign"])
+def test_scoped_audit_defers_without_query_when_authority_unproven(tmp_path, reason):
+    native = portfolio(tmp_path)
+    market = ScopedMarket()
+    if reason == "unknown":
+        market.active = None
+    if reason == "empty":
+        market.active = ()
+    if reason == "boundary":
+        market.boundary = T + timedelta(seconds=20)
+    if reason == "wrong_day":
+        market.trading_day = T.date() + timedelta(days=1)
+    if reason == "foreign":
+        market.active = ("CU",)
+    assert scoped_turn(native, market)["status"] == "DEFERRED"
+    assert native.gateway.queries == []
+
+
+def test_scope_change_drops_closed_partial_and_retains_rotation_until_day_resumes(tmp_path):
+    native = portfolio(tmp_path)
+    market = ScopedMarket()
+    market.active = ("AG", "AP", "PB")
+    assert scoped_turn(native, market)["product"] == "AG"
+    # This product's Session ends while its staged audit is pending. No more
+    # rates/book queries may be sent for it, and the next active cursor wins.
+    market.active = ("PB",)
+    for _ in range(4):
+        result = scoped_turn(native, market)
+    assert result["status"] == "CHECKED" and result["product"] == "PB"
+    assert [kind for kind, _ in native.gateway.queries] == [
+        "instrument", "instrument", "margin", "commission", "book"]
+    # Session resumes in day trading. Rotation is against the stable full scope.
+    market.active = ("AG", "AP", "PB")
+    assert scoped_turn(native, market)["product"] == "AG"
+    assert "AP" not in native.input_checks
+
+
+def test_45_night_products_audited_without_querying_15_closed_products(tmp_path):
+    from pathlib import Path
+
+    products = tuple((Path(__file__).parents[3] / "data/universe/operational_products.txt")
+        .read_text().upper().split())
+    native = portfolio(tmp_path)
+    market = ScopedMarket()
+    market.active = products[15:]
+    complete = []
+    for _ in range(4 * 45):
+        result = scoped_turn(native, market, products)
+        if result["status"] == "CHECKED":
+            complete.append(result["product"])
+    assert complete == list(market.active)
+    assert set(native.input_checks) == set(market.active)
+    assert {p for _, p in native.gateway.queries} == set(market.active)
+
+
+def test_other_product_closing_does_not_restart_pending_active_audit(tmp_path):
+    native = portfolio(tmp_path)
+    market = ScopedMarket()
+    market.active = ("AG", "AP", "PB")
+    assert scoped_turn(native, market)["stage"] == "margin"
+    market.active = ("AG", "PB")
+    assert scoped_turn(native, market)["stage"] == "commission"
+    assert scoped_turn(native, market)["stage"] == "book"
+    assert scoped_turn(native, market)["status"] == "CHECKED"
+    assert scoped_turn(native, market)["product"] == "PB"
+
+
+def test_slow_authority_read_consumes_reserve_before_any_native_query(tmp_path):
+    native = portfolio(tmp_path)
+    clock = [T]
+    native.now = lambda: clock[0]
+    market = ScopedMarket()
+
+    def delayed(now):
+        clock[0] = T + timedelta(minutes=30, seconds=-19)
+        return ScopedMarket.audit_window(market, now)
+
+    market.audit_window = delayed
+    assert scoped_turn(native, market)["status"] == "DEFERRED"
+    assert native.gateway.queries == []

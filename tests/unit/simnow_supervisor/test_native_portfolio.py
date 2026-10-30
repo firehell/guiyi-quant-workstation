@@ -330,6 +330,7 @@ def test_friday_night_native_session_covers_monday_close(tmp_path):
     assert adapter.session.at == friday_night
     assert monday_close < adapter.session.valid_until == next_midnight
     assert native.gateway.attached is adapter
+    assert adapter.clock is native.now
 
 
 def test_correlated_adapter_binds_full_snapshot_before_buffer_attach(tmp_path):
@@ -539,3 +540,12 @@ def test_optional_product_query_scope_is_observe_only(tmp_path, mode, expected):
     native.observe_next(('RB',), Market(), T, '20261027', {})
     assert seen == [expected]
     assert active == []
+
+
+def test_execution_quote_retains_source_eight_second_deadline(tmp_path):
+    received = T + timedelta(seconds=7, milliseconds=500)
+    native = portfolio(tmp_path, at=received)
+    bound, facts = native.facts('RB', 'RB2701', Market(), '20261027')
+    assert facts.quote.at == received
+    assert facts.quote.valid_until == T + timedelta(seconds=8)
+    assert native.input_checks['RB']['valid_until'] == facts.quote.valid_until.isoformat()
