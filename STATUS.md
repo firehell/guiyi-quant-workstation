@@ -1,5 +1,18 @@
 # 当前状态
 
+10/30 14:04：开盘保障已真实取证至14:02，Live持续60/60、SimNow同run LOGGED_IN/TRADING、
+pending=false/opening=true，账本READY且无订单/成交/预留/未核订单/blocked product。
+60m执行输入仍NOT_CHECKED，当前无新策略订单，不以账户接管替代逐品种输入和真实交易验收。
+HTDY冲突恢复已由PR546集成develop，源`32058485475da839cc65e83c133188d3fe9428e3`。
+v1.16.39固定候选`01194e1b801101438dd5888297f0eaa6fc4bbddd` clean，PR547已准备未合main，
+相对main/v38恰13文件；10个工程/测试/canonical/TESTING blob逐字等已审源，额外两状态文档仅本轮及版本元数据。
+候选自身Reference/CLI1305 passed、真实隔离PG8、SDK离线33、Web14/类型/构建/拓扑、4模块mypy、Ruff/diff通过；
+独立安全及exact候选Review无剩余Confirmed Issue。14:03候选真实只读来源预检48路/158冲突/238待退役原件通过，
+仅诊断、未持writer fence、未生成恢复plan。临时测试PG容器已清理，正式DB/Redis未改。
+CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，未发布v39、未park/应用恢复、未切正式服务，仍十35/SimNow38。
+当前TRADING，不在交易中强切；休市后仍须重新通过全60/下一Session>660秒、fence/单次claim/cohort现场校验。
+SimNow38已消费的唯一连接许可不支持迁移或trade→trade重启，保留现役root38；全11统一和单树仍未完成。
+
 10/30 13:33：owner要求优先保障下午开盘，发布/Reference恢复操作暂停，未park或重启现役。
 正式十服务仍v35/gen41、身份matched；API/Web、DB/Redis正常，无维护drain，发布根35/38 tracked clean。
 13:31首根自然1m及13:33连续自然1m均全部60/60收到，TRADING60、订阅60、Live coverage60ok；

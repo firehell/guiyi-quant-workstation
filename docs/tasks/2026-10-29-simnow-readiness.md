@@ -403,3 +403,14 @@ cohort/部署/retention286 passed。初次扩大两项worker日志路径不隔�
 当前仅CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，允许集成develop/进入候选，未发布v39、未生产恢复。
 新候选从main/v38仅移植本次补丁及必要版本元数据，不带develop其他UI/研究。
 交易期间保留现役35/38；正式切换仍须现场休市与cohort/新鲜接收证明，不能用实现完成替代。
+
+14:04固定交付：PR546已合develop（merge788c9bff35），源320584854；隔离发布候选
+01194e1b801101438dd5888297f0eaa6fc4bbddd clean，PR547待合main。
+候选自身1305 Reference/CLI、真实隔离PG8、SDK离线33、Web14/类型/构建/拓扑及4模块mypy/Ruff/diff通过，
+exact候选独立Review通过；相对main38仅13文件，10工程相关blobs逐字等已审源，不带develop无关研究。
+14:03候选真实只读来源预检48路/158变化/238待退役原件通过，未plan/park/恢复或切换。
+14:02复核Live持续60/60、SimNow同run已登录、pending=false/opening=true，原账本READY且订单/成交/预留0；
+全部执行输入NOT_CHECKED、未有新策略订单，不虚报第三/第四步已通过。临时隔离PG测试容器已移除。
+当前TRADING，v39仍未发布，现役十35/SimNow38。休市窗口需新鲜现场复核；旧SimNow单次许可
+精确绑定38与当前run、已消费、不返还，不可借发布39重启/迁移，当前切换工具尚无trade→trade普通预算接管路径。
+因此Reference候选就绪不代表全11统一/单发布树已完成，需分别保留真实执行与后续账户切换约束。
