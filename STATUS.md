@@ -1,5 +1,21 @@
 # 当前状态
 
+10/30 13:33：owner要求优先保障下午开盘，发布/Reference恢复操作暂停，未park或重启现役。
+正式十服务仍v35/gen41、身份matched；API/Web、DB/Redis正常，无维护drain，发布根35/38 tracked clean。
+13:31首根自然1m及13:33连续自然1m均全部60/60收到，TRADING60、订阅60、Live coverage60ok；
+日内Alert非ok项0，日/周线既有warming/历史evaluation_failed保留，Runtime总体仍degraded。
+**SimNow v38同PID57727/run保持，13:28:02唯一额外连接自然消费，账户接管已通过。**
+13:31原账本只读重放phase READY/readback_valid=true，订单/成交/预留/未核订单/blocked products均0；
+13:33独立复核真实同PID双锁，新native13:33:19约8秒、持仓/委托/成交0，LOGGED_IN/TRADING、
+account_takeover_pending=false、opening_enabled=true，原普通预算3及预算block保留，无手工probe/重连。
+opening只表示宿主准入能力，逐品种新鲜执行输入、14:00以后自然60m信号与真实开平成交仍分别待验。
+Reference48路冲突仍阻断，不能报全服务健康；owner已选保留旧原件、20笔参考OPEN数据冲突中断，
+48受影响流以新修订FLAT/未来起点重建。48路158Bar/213字段变化均与当前Canonical匹配；
+旧未解决Inbox238项须精确追加退役证据，另5项已真实CALCULATED不重复处理。
+恢复代码仅主开发任务分支在写/测试/Review，未发布/未应用，不在交易中强切，SimNow许可不迁移到新版本。
+开盘证据 `output/opening-service-check-20261030/`，源诊断 `output/htdy-window-conflict-20261030/`。
+以下为此前检查点。
+
 10/30 12:55：owner批准统一发布树/正式十服务切换及SimNow待恢复trade方案。PR545已合main，
 annotated tag/GitHub Release **v1.16.38** exact `e026ad367f341a2e08df4a47b229b951c9acefd3`；
 发布tree与已审查候选一致、clean detached，main已回合并develop。源与最终树SimNow各841项、
