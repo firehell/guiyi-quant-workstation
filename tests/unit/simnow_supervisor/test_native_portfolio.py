@@ -74,7 +74,8 @@ class Gateway:
         self.fail_product = fail_product
         self.queries = []
         self.failed = False
-        self.result = {"status": "READ_ONLY_COMPLETE"}
+        self.result = {"status": "READ_ONLY_COMPLETE", "account_fingerprint": ACCOUNT,
+                       "trading_day": "20261027"}
         self.extra = {}
         self.query_diagnostics = []
         self.login_done = Event()
@@ -321,6 +322,7 @@ def test_friday_night_native_session_covers_monday_close(tmp_path):
     friday_night = datetime(2026, 10, 30, 21, tzinfo=ZoneInfo("Asia/Shanghai"))
     native = portfolio(tmp_path, at=friday_night)
     snapshot = NS(account_id=ACCOUNT, trading_day="20261102")
+    native.gateway.result["trading_day"] = "20261102"
     journal = NS(account_id=ACCOUNT)
     adapter = native.adapter(None, journal, snapshot, friday_night)
     monday_close = datetime(2026, 11, 2, 15, tzinfo=ZoneInfo("Asia/Shanghai"))
@@ -331,6 +333,30 @@ def test_friday_night_native_session_covers_monday_close(tmp_path):
     assert monday_close < adapter.session.valid_until == next_midnight
     assert native.gateway.attached is adapter
     assert adapter.clock is native.now
+
+
+@pytest.mark.parametrize(
+    "trading_day,confirm_date",
+    [("20261027", "20261026"), ("20261102", "20261030")],
+)
+def test_successful_night_confirmation_does_not_require_civil_date_equal_trading_day(
+    tmp_path, trading_day, confirm_date
+):
+    native = portfolio(tmp_path)
+    native.gateway.result.update(account_fingerprint=ACCOUNT, trading_day=trading_day)
+    calls = []
+
+    def query(kind):
+        calls.append(kind)
+        return [{"ConfirmDate": confirm_date, "ConfirmTime": "20:59:13"}]
+
+    native.gateway.query = query
+    snapshot = NS(account_id=ACCOUNT, trading_day=trading_day)
+    adapter = native.adapter(None, NS(account_id=ACCOUNT), snapshot, T)
+    assert adapter.session.trading_day == trading_day
+    assert adapter.session.settlement_source_id.startswith("native-settlement:v2:")
+    assert native.gateway.attached is adapter
+    assert calls == ["settlement", "confirm"]
 
 
 def test_correlated_adapter_binds_full_snapshot_before_buffer_attach(tmp_path):

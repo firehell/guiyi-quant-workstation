@@ -24,6 +24,7 @@ from .facts import (
     MAX_BOOK_SOURCE_AGE_SECONDS,
 )
 from .inventory import read_snapshot
+from .settlement import SettlementConfirmation
 
 
 _INPUT_CODES = frozenset({
@@ -52,7 +53,7 @@ def safe_native_queries(records):
         for key in ("request_id", "sdk_return_code", "response_count", "data_row_count"):
             if type(record.get(key)) is int:
                 value[key] = record[key]
-        for key in ("terminal_response_seen", "complete", "timed_out"):
+        for key in ("terminal_response_seen", "complete", "timed_out", "response_info_present"):
             if type(record.get(key)) is bool:
                 value[key] = record[key]
         if "callback_error" in record:
@@ -127,8 +128,10 @@ class NativePortfolio:
         self.previous_queries = []
         self.cursor = 0
         self.stage = "NOT_CONNECTED"
+        self.settlement = None
 
     def connect(self):
+        self.settlement = None
         self.stage = "CREDENTIAL_LOAD"
         credentials = CredentialStore().load(self.settings.account_id)
         if self.initial_funds_timeout == 15:
@@ -151,6 +154,7 @@ class NativePortfolio:
     def failure_diagnostics(self):
         return dict(
             stage=self.stage,
+            settlement=dict(self.settlement.diagnostic) if self.settlement is not None else None,
             input_diagnostics=dict(self.input_diagnostics),
             native_queries=safe_native_queries(self.gateway.query_diagnostics or self.previous_queries) if self.gateway is not None else [],
             inventory=self.gateway.inventory_diagnostics()
@@ -160,6 +164,10 @@ class NativePortfolio:
 
     @property
     def transport_failed(self):
+        # A settlement request with an unknown outcome is not a retryable
+        # transport failure. A new login would lose its one-attempt guard.
+        if self.settlement is not None and self.settlement.failed:
+            return False
         if self.gateway is None:
             return False
         status = self.gateway.result.get("status")
@@ -503,14 +511,15 @@ class NativePortfolio:
         ):
             raise ValueError("NATIVE_CAPABILITY_INVALID")
 
-        settlement = self.gateway.query("settlement")
-        if len(settlement) != 1 or settlement[0]["ConfirmDate"] != snapshot.trading_day:
-            settlement = self.gateway.query("confirm")
-            if (
-                len(settlement) != 1
-                or settlement[0]["ConfirmDate"] != snapshot.trading_day
-            ):
-                raise ValueError("NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED")
+        self.stage = "SETTLEMENT_QUERY"
+        if self.settlement is None:
+            self.settlement = SettlementConfirmation(
+                self.gateway, snapshot.account_id, snapshot.trading_day
+            )
+        if not self.settlement.read_confirmed():
+            self.stage = "SETTLEMENT_CONFIRMATION"
+            self.settlement.confirm()
+        self.stage = "ADAPTER_CONSTRUCTION"
         session = Session(
             snapshot.account_id,
             "SIMNOW_FIRST",
@@ -521,7 +530,7 @@ class NativePortfolio:
             + digest(
                 (snapshot.account_id, snapshot.trading_day, self.gateway.native_session)
             ),
-            settlement_source_id="native-settlement:" + digest(settlement),
+            settlement_source_id=self.settlement.source_id,
             at=self.now(),
             valid_until=datetime.combine(
                 datetime.strptime(snapshot.trading_day, "%Y%m%d").date()
@@ -553,6 +562,7 @@ class NativePortfolio:
         )
         if correlated_native or strategy_correlated_native:
             adapter.correlate_snapshot(snapshot)
+        self.stage = "NATIVE_CALLBACK_ATTACH"
         self.gateway.attach(adapter, snapshot)
         return adapter
 

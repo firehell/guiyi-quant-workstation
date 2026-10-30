@@ -10,6 +10,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 ## SimNow 受控订单适配
 
+结算证明与恢复阶段诊断仅离线：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider tests/unit/simnow_execution/test_settlement.py tests/unit/simnow_supervisor/test_native_portfolio.py tests/unit/simnow_supervisor/test_pending_takeover.py tests/unit/simnow_supervisor/test_trade_end_to_end.py tests/unit/simnow_host/test_cli.py tests/unit/simnow_supervisor/test_supervisor.py
+```
+
+覆盖夜盘/周末日期、同连接确认至多一次、身份漂移、只读无确认、准确失败阶段、未知原因脱敏，
+以及原接管时效/预算/block/未核订单门禁；不登录柜台或写原账户。候选实现相同则复用结果，后续只补跑变化影响用例。
+
 合同见[订单适配](docs/SIMNOW_EXECUTION.md)。纯离线CTP回报fixture与账户journal端到端，不连接柜台。
 
 ```sh

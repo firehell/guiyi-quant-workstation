@@ -241,6 +241,23 @@ class Compatibility(unittest.TestCase):
         self.g.query("settlement")
         self.assertEqual([v[0] for v in self.g.api.calls], ["settlement"])
 
+    def test_settlement_diagnostic_preserves_response_info_presence(self):
+        for present in (False, True):
+            gateway = m.Gateway("000000", "fixture-only")
+
+            def response(req, rid):
+                row = t.CThostFtdcSettlementInfoConfirmField()
+                row.BrokerID = "9999"
+                row.InvestorID = "000000"
+                row.ConfirmDate = "20261030"
+                info = t.CThostFtdcRspInfoField() if present else None
+                gateway.OnRspSettlementInfoConfirm(row, info, rid, True)
+                return 0
+
+            gateway.api = NS(ReqSettlementInfoConfirm=response)
+            gateway.query("confirm")
+            self.assertEqual(gateway.query_diagnostics[-1]["response_info_present"], present)
+
     def test_diagnostics_zero_callback_timeout_stops_without_retry(self):
         calls = []
         self.g.api.ReqQryInstrument = lambda req, rid: calls.append(rid) or 0
