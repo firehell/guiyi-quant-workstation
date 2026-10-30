@@ -1,3 +1,15 @@
+10/30 22:09 SimNow结算与恢复补丁：RELEASED / CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE。
+PR554已合develop；PR555/main/annotated v1.16.45/GitHub Release已完成，exact
+`b3e1f231eb1d0ecf9f850ce73fdc66de1da4bd3d`，完整tree等受测候选1da3f901，生产实现等独立已审6307af54。
+统一结算证明并修夜盘日期误拒、未知结算跨连接重试、有界缓存身份漂移；恢复诊断保留准确阶段与白名单原因。
+基础定向144项、仅影响补修11/18/36+2项、独立4项、SDK无网络34项，以及类型/Ruff/secret0、版本/锁/打包/Web构建通过。
+正式十服务仍v1.16.41/gen43，独立SimNow仍v1.16.44/run0900f1274a7a4b8e8c1ed04139a84c01；本轮无停启、重连或订单。
+22:09现场pending=true/opening=false/RECOVERY_BLOCKED，原account/dispatch SHA不变；20261102 attempt1和耐久block原样保留。
+正式只读切换check返回BLOCKED/RESULT_UNKNOWN，同一权威入口诊断WINDOW_UNPROVEN，未生成plan/claim或切换。
+不为当前交易日新增恢复例外；后续须合法窗口、目标日权威Session/预算通过，再切独立SimNow并分别验新鲜接管/输入/自然交易。
+实际旧ConfirmDate未留存，不将离线缺陷当已证实现场根因；空RspInfo仍是既有协议待验证风险，仅补presence诊断。
+详见docs/tasks/2026-10-30-simnow-settlement-recovery.md。以下为此前检查点：
+
 10/30 夜盘基础健康口径修复：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，待正式运行切换。
 顶层status改为基础服务运行健康，策略样本不足/主力切换暖机保持等待，原组件业务状态、coverage、
 历史失败及严格计算/预热/交易Gate保留；未知原因不冒充样本不足。真实心跳/身份/处理循环/接收故障仍降级。
