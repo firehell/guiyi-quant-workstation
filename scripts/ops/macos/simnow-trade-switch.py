@@ -30,7 +30,7 @@ from datetime import datetime, UTC, date, timedelta
 
 sys.dont_write_bytecode = True
 
-SCHEMA = "simnow_trade_switch_plan_v6"
+SCHEMA = "simnow_trade_switch_plan_v7"
 POLICY = "simnow_night_only_deployment_window_v1"
 MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
 ORDINARY_POLICY = "simnow_ordinary_next_session_v2"
@@ -185,7 +185,7 @@ def validate_snapshot(s):
             ):
                 fail("ACCOUNT_UNPROVEN")
             if (
-                ordinary.get("schema") != "simnow_ordinary_takeover_v2"
+                ordinary.get("schema") != "simnow_ordinary_takeover_v3"
                 or ordinary.get("account_id") != a["account_id"]
                 or ordinary.get("profile") != a.get("account_profile")
                 or a["budget_day"] != ordinary["window"]["trading_day"]
@@ -391,7 +391,7 @@ def validate_window(w):
             or w["product_count"] != 60
             or w["current_session_absent"] is not True
             or w["window_open"] is not True
-            or w["next_session_gap_seconds"] < 660
+            or w["next_session_gap_seconds"] <= 660
         ):
             fail("WINDOW_UNPROVEN")
         return

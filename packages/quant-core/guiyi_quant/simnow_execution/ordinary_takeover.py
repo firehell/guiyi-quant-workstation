@@ -15,8 +15,8 @@ import sqlite3
 from typing import NamedTuple
 from . import deployment_connection as io
 
-SCHEMA = "simnow_ordinary_takeover_v2"
-INTENT_SCHEMA = "simnow_trade_switch_plan_v6"
+SCHEMA = "simnow_ordinary_takeover_v3"
+INTENT_SCHEMA = "simnow_trade_switch_plan_v7"
 POLICY = "simnow_ordinary_next_session_v2"
 NAME = "ordinary-takeover-permit.private.json"
 release_identity = io.release_identity
@@ -235,7 +235,21 @@ def binding(settings, config, window, now):
         config_sha256=config_sha,
         release=release_identity(settings.project_root),
         sdk=sdk_identity(settings.sdk_python),
-        window=window,
+        # Only static Session identity belongs to the immutable permit. Fresh
+        # deployment eligibility (including decreasing gap) is checked separately
+        # by the deployment backend on every sample and before each effect.
+        window={
+            key: window[key]
+            for key in (
+                "policy",
+                "trading_day",
+                "session_start",
+                "connect_after",
+                "connect_until",
+                "sessions",
+                "session_facts_sha256",
+            )
+        },
         budget=budget_binding(settings, window["trading_day"]),
         planned_at=now.isoformat(),
     )
