@@ -1,5 +1,22 @@
 # SimNow受控订单适配 v2
 
+## 当前连接结算证明（native_settlement_confirmation_v2）
+
+连续、人工与有界入口共用结算证明。Gateway先验证请求ID、账户身份、完整终止回报并拒绝已报告的SDK/响应错误；
+证明再绑定原账户、登录交易日和原生连接身份，查询/确认前后漂移均拒绝。已确认查询仅在确认日期与
+交易日一致时沿用保守shortcut；否则在账户/归属和执行预检通过后最多确认一次。
+成功的本次确认回报不要求`ConfirmDate == TradingDay`：确认日期原样保留，不改写成交易日，
+周五夜盘与下周一交易日分别表达。Session仅新增`native-settlement:v2:`来源身份，不改旧记录重放。
+只读预检不确认；缺失/多行/身份冲突/失败/未知结果不生成证明，不重试确认或连接。
+
+恢复失败沿用`simnow_continuous_failure_v1`，可选增加`recovery_stage`、白名单
+`recovery_error_code`和结算状态/日期/请求摘要。Supervisor阶段与原生driver阶段分别保留，未知异常为
+`RECOVERY_ERROR_UNCLASSIFIED`，不输出异常正文、原生账户行、地址或凭据。新查询清除旧请求/日期摘要，
+失败的确认不能借用前一查询的request ID。既有block、预算、30秒新鲜接管及发送屏障保持。
+结算查询/确认失败优先作为未知恢复结果，不能借transport重连丢弃至多一次保护；有界入口在只读成功/
+任何状态写入前及构造Session前重验缓存身份，不增加查询。结算回调可选记录`response_info_present`；
+本版保留既有空RspInfo处理，厂商/现场是否允许其表示成功仍待验证，不将此字段单独作为执行许可。
+
 本模块实现已持久化HTDY账户提案到CTP报单/撤单请求的窄适配，以及原生回调到本地账户journal的事实接入。
 交易规则、资金预留和订单状态机见[HTDY合同](HTDY_SIMNOW_V1.md)，登录及四类只读查询见[只读合同](SIMNOW_READONLY.md)。
 只读CLI保持只读；core适配模块不自行登录或注册前置。一次性宿主与独立持续宿主显式连接固定第一套，均默认只读；持续新开仓代码须显式trade双重匹配；正式启用状态只看STATUS，当前`auto_order=false`。
