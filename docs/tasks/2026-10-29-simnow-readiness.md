@@ -281,3 +281,19 @@ broker_io/execution_permitted=false。v37尚无tag前正式工具CANDIDATE_UNPRO
 11:08新工具绑定现有固定v36仅--window midday --check已真实返回全60 TRADING/窗口未开，下一下午13:30。
 一次性heartbeat simnow已更新，11:35现场通过后发布新tag及只切独立服务，绑定新config/plist/attempt1与planv3。
 此时grant/intent/claim/plan均不存在，未新增Broker连接、未安装启动；候选发布与自然验收仍分开。
+
+
+## 11:31立即执行及实际阻断
+
+Owner要求取消11:35任务立即处理，automation simnow已删除，不再等待定时。新鲜权威窗口all60 BREAK、
+下一13:30通过，距下一Session>660秒。发布前只读_account返回ACCOUNT_UNPROVEN：最后native10:28:04已过期、
+实时observe proof无，host WAITING_SESSION/UNKNOWN；10:28:21 NATIVE_MARGIN/NATIVE_FACT_QUERY_FAILED后
+断开，10:29:24 CONNECTION_BUDGET_EXHAUSTED形成day30持久block（此前10:12无block为当时快照）。
+已批准单次例外不能豁免现有block或新鲜账户门禁，未继续切换、未clear预算/block、未新增连接。
+
+独立发布已完成：PR544 main merge、annotated v1.16.37与GitHub Release exact
+5b4bc2004c3cce73d82757816eca9cbfdb978f25，发布tree与已800回归候选2b5c7c8de完全一致，发布树clean detached。
+新固定版本正式默认只读plan再次返回ACCOUNT_UNPROVEN、exit2，无plan文件/intent/grant/claim，未调用apply。
+原observe PID71132保留、原启动项仍observe，正式10服务v35/gen41不动，独立只读Review同结论。
+本次状态PARTIAL/RELEASED_SWITCH_BLOCKED，额外一次仍未用，不报告TRADE_HOST_DEPLOYED。
+必须先确定受控账户恢复及预算block处理合同，不能用旧快照或额外1次授权静默放宽门禁。

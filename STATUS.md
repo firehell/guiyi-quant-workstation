@@ -1,5 +1,15 @@
 # 当前状态
 
+10/30 11:36：owner取消定时并要求立即处理；simnow一次性任务已删除。权威全60 BREAK、下一13:30
+及>=660秒午间窗口通过。PR544已合main，annotated tag/GitHub Release **v1.16.37** exact
+`5b4bc2004c3cce73d82757816eca9cbfdb978f25` 已发布，tree与800测试候选完全一致。
+**第二步PARTIAL：RELEASED，trade未切换。** 新鲜账户门禁实际ACCOUNT_UNPROVEN：原observe
+10:28:21保证金查询超时后断开，10:29:24预算耗尽并持久day30 CONNECTION_BUDGET_EXHAUSTED block；
+最后native10:28:04，已过期、observe proof缺失，现役PID71132/observe WAITING_SESSION/UNKNOWN。
+方案1不豁免block和30秒账户门禁，未生成plan/intent/grant/claim、未apply/停服/新增连接，额外1次未用。
+正式十服务仍v35/gen41，独立Review复核阻断正确。不得清block或借过期快照切换，需先确定新的受控账户恢复方案。
+证据output/simnow-midday-switch-20261030/midday-result.json。
+
 10/30 11:10午间候选最终固定：v1.16.37候选exact `2b5c7c8de09b9beabb8223392f99770ef4c72a6c`，
 PR544已ready/mergeable，相对main12文件=11已审查源工程文件+版本元数据；源37cb281075已集成develop。
 候选自身800回归（52.13秒）、SDK33、mypy4、Ruff、离线锁、Web构建及exact候选独立Review通过。
