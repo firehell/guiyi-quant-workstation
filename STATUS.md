@@ -1,8 +1,31 @@
+10/30 v1.16.41已正常发布，PR550/main/annotated tag/Release exact
+`3007dc0078e78f98847127bdd489aab25c8a9813`，干净detached41/tree等已审7文件最小候选。
+候选960 SimNow、86部署/ReferenceCLI/清理检查、独立191项、SDK/构建/离线锁/打包及秘密扫描通过。
+静态许可修复planv7/permitv3，动态当前休市/>660仍fresh校验。正式十服务40/gen42正执行新cohort对齐41；
+SimNow仍38，41新配置/API/SDK/正式候选预检通过，原29/30各3次及blocks未变，目标20261102仍0。
+Reference48/20/334已COMMITTED，不重复恢复；十一服务双读回前不封存/删除旧35/38/39/40。
+以下为此前检查点：
+
+10/30 17:00后SimNow仍PRESTOP：首次PLAN_EXPIRED、第二次新意图PLAN_INVALID均未intent/grant/停启，
+原PID57727/run及两日3次计数/block保留，目标20261102仍0。确认ordinary许可误冻结动态gap造成fresh必漂移，
+正在最小向前补丁41修静态许可事实（planv7/permitv3），不放宽当前Session/660/账户/锁门禁，不改已发布40。
+正式十服务40/gen42已switched，Reference48/20/334恢复已COMMITTED，不重复恢复；最终需十一服务同41。
+以下为此前检查点：
+
+10/30 16:52：正式十服务单次cohort切换成功（switched），两轮真实loaded身份均matched
+v1.16.40/gen42/exact3b8a697e5740c2aa99024590a0785dbddf5c2c5e；六owner同PID且时间推进。
+Reference接收waiting/pending/blocked=0，计算ready=false/pending_keys238独立待进。
+API40/Web/单独Runtime请求200；Runtime仍degraded，脚本内5秒Runtime失败及Reference重型健康超时保留，
+不宣称整体Runtime Ready。证据output/after-close-cohort-v40-20261030/final-summary.json。
+SimNow独立v6切换现获准开始，仍需单次计划/apply及两轮真实PID双锁/run/monitor读回；未提前报部署成功。
+旧35/38/39未清理，必须等十一服务同40读回后封存精确移除。以下为此前检查点：
+
 10/30 16:41：v1.16.40正常发布完成，PR549/main/annotated tag/Release exact
 `3b8a697e5740c2aa99024590a0785dbddf5c2c5e`，干净detached40，tree等已审3文件候选。
 候选Reference/CLI1309 passed（127专用条件跳过）、部署61、CLI25及独立Review/构建/依赖锁通过。
-40正式CLI已成功Reference停驻（after-close-v40-084104），正在同一attempt内fenced plan与单次apply，
-尚未宣称恢复通过。正式十服务35及SimNow38尚未切换；40配置/SDK与正式candidate预检通过，尚未签发普通许可。
+40正式CLI的Reference单次恢复COMMITTED且status已回验：48流、20OPEN冲突中断、334原Inbox退役，
+旧原件保留，未来共同起点17:11:32（after-close-v40-084104）；Reference原gen41/PID84298保持parked。
+正式十服务新cohort正准备/执行，尚未宣称切换成功；SimNow38未切，40配置/SDK/正式candidate预检通过，尚未签发普通许可。
 以下为此前检查点：
 
 10/30 收盘执行新增技术阻断：Reference正式CLI load_dependencies将安全派生RedisURL覆盖回默认无认证URL，
