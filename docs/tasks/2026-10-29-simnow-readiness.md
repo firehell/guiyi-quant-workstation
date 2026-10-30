@@ -353,3 +353,53 @@ v37原候选树按原生Git worktree move成为v38；v36无非Git必要运行原
 总体PARTIAL：发布完成、SimNow待恢复trade部署完成；正式十服务切换及最终单树阻塞于Reference源冲突。
 最小下一步是基于保留原件和权威来源解决HTDY窗口改值，再在有效休市窗口生成新的cohort计划。
 证据统一在`output/simnow-unified-takeover-20261030/`，失败、发布、SimNow及Reference诊断各自留存。
+
+## 13:33 下午开盘保障及自然账户接管
+
+Owner要求先保障13:30开盘，未进行Reference park/恢复或发布切换。正式十服务v35/gen41身份均matched，
+所有常驻owner仍active，无当前代际drain；API/Web、DB/Redis正常，v35/v38固定源码tracked clean。
+13:31首根自然1m及13:33连续性检查均60/60真实收到，订阅60、TRADING60、Live coverage60ok。
+日内Alert无失败项；周线60条既有evaluation_failed与日线1条warming未冒充通过，整体Runtime仍degraded。
+
+SimNow保持同PID57727/run `7c4ff0253c1b420cb055d847ec5c4cb0`；13:28:02.849771
+按既有许可唯一消费额外attempt，未手工Broker probe/重连/重启。
+13:30后账户接管pending已由真实同连接恢复清除。13:31原账本只读重放通过，phase READY/readback_valid=true，
+新native13:30:59、有效期30秒，订单/成交/预留/未核订单/blocked products均0。
+13:33:28独立复核global SimNowLocks和原host.lock真实排他锁均为PID57727，monitor/runclaim/attemptclaim
+同PID/run；native13:33:19约8秒且持仓/委托/成交0，TRADING/LOGGED_IN、pending=false、opening=true。
+普通day30次数仍3，原CONNECTION_BUDGET_EXHAUSTED block未清，grant不返还/迁移。
+
+结论：开盘行情链路和SimNow新鲜账户恢复已真实取证；逐品种trade新输入、自然60m信号与真实策略
+开平成交仍待发生，不能以opening=true或账户恢复代替第四/第五步。
+Reference48旧窗口冲突仍独立阻断。Owner已选择冲突处中断20笔参考OPEN、保留旧原件并以48条
+新修订FLAT/未来起点恢复；实现仍只在开发分支，未生产执行，交易期间不强切。
+本轮证据 `output/opening-service-check-20261030/`，没有新增自动任务或通知受众。
+
+## HTDY冲突中断重建：实现及候选验证
+
+Owner明确选择中断重建，保留所有旧记录，20笔参考OPEN明确数据冲突，48受影响流以空仓、
+未来起点的新修订恢复。原始差异不是时间缺口：158根/213字段变化全部等于新捕获窗口与当前Canonical，
+48路1m/60m物理hash、质量和发布来源通过；此前MISSING系游标超已发布coverage，未认作分区损坏。
+真正未解决Inbox为238条（48 BLOCKED/OBSERVATION_GAP、190 PENDING），另5条真实CALCULATED独立保留。
+
+新增正式`htdy_conflict_recovery_v1`模块、原生MDS验证器及独占计划CLI；固定48流和20个OPEN stream
+digest，并冻结20笔稳定trade ID/旧revision/checkpoint/open payload hash，拒绝漏项/第21笔/等数量替换。
+旧OPEN通过真实typed控制边界追加DATA_INTERRUPTED版本并记录DATA_CONFLICT原因，无退出价格、收益、
+新action、旧capture消费或Inbox CALCULATED。旧trade全版本及新增MVCC整行严格绑定；新修订FLAT、
+空策略窗口、未来共同起点、普通block策略。旧原件/状态不改，typed退役独立验证后仅退出未处理排序，
+新修订正常依赖推进后仍保持历史证明有效。UNKNOWN、晚于未来起点的原件、receipt/源/前像漂移均拒绝。
+
+CLI默认无动作，不加载凭据。真实park/plan/apply需干净annotated exact tag、全60休市且fresh clock
+距下一Session>660秒、Reference stopped writer真FD锁和MDS维护lease；单次持久claim前无业务写入，
+unknown只读核对，不重试。恢复成功仍保持Reference parked，交由支持typed退役的新cohort接管。
+SimNow38当前run/已消费许可不迁移、不返还；代码修复不授权或制造额外账户连接。
+
+定向最终64 passed，独立安全Review81 passed且无剩余Confirmed Issue；来源13项、CLI21项通过。
+扩大Reference1281 passed/10 skipped/113 deselected（非本次隔离/人工Gate不冒充通过），
+cohort/部署/retention286 passed。初次扩大两项worker日志路径不隔离导致RUNTIME_LOG_UNSAFE，
+显式任务私有测试日志目录后worker45项及扩大回归均通过，未修改生产日志权限。
+真实PG任务隔离16489的既有0053/0054触发器上8 passed，验证48路原子/全回滚/UNKNOWN/原件不可变、
+真实OPEN中断及价格/holding/旧valid_to篡改拒绝。4模块mypy、Ruff、diff检查通过。
+当前仅CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，允许集成develop/进入候选，未发布v39、未生产恢复。
+新候选从main/v38仅移植本次补丁及必要版本元数据，不带develop其他UI/研究。
+交易期间保留现役35/38；正式切换仍须现场休市与cohort/新鲜接收证明，不能用实现完成替代。

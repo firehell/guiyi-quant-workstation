@@ -284,8 +284,8 @@ def _closure_batches(session, *conditions):
     }) for row in session.execute(query).mappings()]
 
 
-def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda: None):
-    """One strict closure definition for ordering, health and native handover."""
+def _verified_calculation_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda: None):
+    """Verify actual calculation closures without granting conflict retirement."""
     check_cancelled()
     query = select(ReferenceInboxRecoveryResult)
     if stream_ids is not None:
@@ -459,6 +459,25 @@ def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda:
         )
         ids.append(row.delivery_id)
     return tuple(ids)
+
+
+def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda: None):
+    """Share exact calculation and explicit terminal-boundary proofs across readers.
+
+    A retired original is excluded from ordering, never reported as calculated.
+    Its immutable delivery status and all prior calculations remain unchanged.
+    """
+    from app.reference_trading.htdy_conflict_recovery import retired_delivery_ids
+
+    calculated = _verified_calculation_resolution_ids(
+        session, stream_ids=stream_ids, check_cancelled=check_cancelled,
+    )
+    retired = retired_delivery_ids(
+        session, stream_ids=stream_ids, check_cancelled=check_cancelled,
+    )
+    require(not set(calculated).intersection(retired))
+    require(len(calculated) + len(retired) <= MAX_RESULTS)
+    return tuple(calculated) + tuple(retired)
 
 
 class InboxRecovery:

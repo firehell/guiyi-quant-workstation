@@ -2249,6 +2249,33 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:services/quant-api/tests
 含test/isolated名称的可销毁实例；真实Redis另用`GUIYI_ISOLATED_REDIS_URL`的16389/11。
 未提供变量产生的skip不算真实依赖Gate通过，不能填写生产5432/6379。
 
+## HTDY窗口冲突中断重建
+
+`htdy_conflict_recovery_v1`只处理本次冻结的48路HTDY 60m，不放宽正常窗口重叠比较。
+定向测试覆盖原始capture/32窗/Session/owner/Canonical来源、48路原子中断与FLAT未来起点、
+原件/旧状态不改、20笔参考OPEN的无退出价中断、typed退役与真实CALCULATED分离、
+UNKNOWN/原件漂移/边界漂移/过期/慢核验/丢锁拒绝，以及后续修订推进时旧退役证明仍有效。
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/reference_trading/test_htdy_conflict_source.py \
+  services/quant-api/tests/reference_trading/test_htdy_conflict_recovery.py \
+  services/quant-api/tests/reference_trading/test_inbox_recovery.py \
+  tests/unit/test_reference_htdy_conflict_cli.py
+```
+
+`test_htdy_conflict_postgres.py`要求显式隔离PostgreSQL变量，使用独占schema及实际0053/0054
+原件不可变触发器，验证原子48路、完整回滚、UNKNOWN及原件保留；无环境skip不计通过。
+新功能不增加数据库迁移；隔离测试执行既有迁移不等于修改生产schema。
+
+`scripts/reference_htdy_conflict_recovery.py`默认无动作、只读，不加载凭据或park服务。
+正式`--park`/`--plan`/`--apply`要求干净exact annotated tag、固定inventory/scope、原私有配置，
+全60权威休市且下一Session>660秒、Reference真实parked/owner锁和Canonical维护租约。
+0600计划绑定0700独占attempt目录；apply前独占持久claim，unknown只用`--status`精确核对。
+成功恢复保持Reference parked，必须由支持typed退役的新正式cohort接管，不能恢复旧版reader。
+本入口不升级SimNow、不迁移或返还其单次连接许可、不连接Broker、不重放原信号或通知。
+
 
 ## SimNow待恢复trade与统一发布
 

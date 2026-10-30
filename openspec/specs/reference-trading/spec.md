@@ -210,6 +210,55 @@ readback contracts. Reference recording MUST NOT create Alert Events or send not
 - **THEN** only that row's historical code support and fixture evidence may be recorded
 - **AND** its Runtime remains disabled until a separate Runtime authorization and readback exist
 
+### Requirement: Explicit HTDY context conflict retirement and future flat restart
+
+`htdy_conflict_recovery_v1` SHALL be an explicit maintenance operation for the exact owner-selected
+48 HTDY 60m streams affected by the 2026-10-30 context conflict. It SHALL NOT relax the normal overlap
+comparison, change the formula or observation policy, replay an original or grant a broker operation.
+The native MDS verifier SHALL prove immutable original/capture/checkpoint hashes, the exact 32-Bar
+windows, unchanged overlapping endpoint/physical-owner identities, Calendar/Session continuity and
+finite numeric differences. Every changed Bar SHALL match the current verified physical Canonical
+content and its RQData 1m / Canonical-derived 60m publication provenance. Unknown or changed facts block.
+
+Planning and applying SHALL hold the existing Reference stopped-writer fence and Canonical maintenance
+lease. They SHALL freeze the complete exact scope, old revisions/checkpoints/receipts, batches, reference
+trade projections and all unresolved Inbox originals/routes. UNKNOWN or a changed preimage blocks the
+operation. The authoritative rest window SHALL exclude active Sessions and leave at least 660 seconds
+before the next Session; a later valid window requires a new plan. Applying revalidates source and fence
+inside one transaction, checks time after slow verification, and consumes a durable exclusive attempt
+before any business write. Failed or unknown attempts are not reused; only exact readback proves commit.
+
+The operation SHALL invalidate each old revision with `DATA_CONFLICT`, append its exact conflict boundary
+and retain every old Capture, original, action, reconciliation and actual processing timestamp. An old OPEN
+reference trade SHALL receive an appended `DATA_INTERRUPTED` projection with explicit `DATA_CONFLICT`
+boundary evidence, without an exit price, realized return or fictitious CLOSE action. No old trade carries
+into the successor. All selected successors SHALL atomically activate with empty strategy windows, FLAT
+reference state, a common future recording start and ordinary `block` recovery policy. The remaining
+unaffected streams and all broker/account state SHALL remain unchanged.
+
+An independent typed retirement proof SHALL bind each unresolved old delivery's complete immutable
+original and frozen route to the exact old/new revisions, receipts, boundary and future seed. Such a
+delivery is terminal for that conflict interval, not successfully calculated: its original status, timestamps
+and bytes SHALL remain unchanged, and no CALCULATED recovery result is fabricated. The existing actual
+CALCULATED proof remains separately verified; already resolved deliveries SHALL NOT be retired again.
+Ordering, capacity, health, readiness and handover SHALL share the exact union of these two independently
+verified sets. Generic diagnostics, superseded revision identity or a status string SHALL NOT grant closure.
+Later natural successor progress or a legitimate subsequent activation SHALL NOT invalidate a historical
+terminal proof. Missing, duplicate, partial, altered or UNKNOWN retirement facts SHALL fail closed.
+
+#### Scenario: An old blocked head is explicitly retired
+- **GIVEN** the exact stopped-writer plan proves a context conflict and all old unresolved originals
+- **WHEN** the atomic future flat restart commits with complete typed retirement evidence
+- **THEN** the old blocked head is excluded from new processing without changing its original status
+- **AND** the new stream waits for a genuine completed original after its future recording start
+- **AND** no past signal, notification or account order is replayed
+
+#### Scenario: Retirement evidence is incomplete or the successor later progresses
+- **GIVEN** a retired interval with a verified successor seed and receipt
+- **WHEN** a bound original or boundary is missing or changed
+- **THEN** closure fails rather than hiding the unresolved original
+- **AND** ordinary later successor progress alone does not reintroduce a valid retired head
+
 ### Requirement: Durable revisions commit atomically and idempotently
 
 ReferenceTrading persistence SHALL use disabled streams, isolated candidate revisions and a monotonic commit sequence.
