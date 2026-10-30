@@ -8,6 +8,7 @@ from .. import htdy_account_execution as a
 from .inventory import read_snapshot, project_readback, native_order, linked_trade
 from .finance import actual_fee, performance
 from .model import Permit, action_hash
+from .account_profile import AccountProfile, validate_profile
 
 
 class Host:
@@ -29,6 +30,7 @@ class Host:
         trade=False,
         account_takeover_pending=False,
         takeover_clock=None,
+        account_profile=None,
     ):
         if type(account_takeover_pending) is not bool or type(continuous) is not bool:
             raise ValueError("HOST_MODE_INVALID")
@@ -80,6 +82,13 @@ class Host:
             evidence,
             adapter,
         )
+        if (account_profile is not None and type(account_profile) is not AccountProfile
+            or (account_profile or AccountProfile()) != (getattr(adapter, "account_profile", None) or AccountProfile())):
+            raise ValueError("ACCOUNT_PROFILE_HOST_MISMATCH")
+        if account_profile is not None:
+            validate_profile(account_profile, store.current())
+        self.account_profile = account_profile
+        self.last_dispatch_diagnostic = None
         self.product = product
         self.products = products
         self.continuous = continuous
@@ -299,7 +308,9 @@ class Host:
                         effect, binding, inventory, execution, permit, now
                     )
                 )
+                self.last_dispatch_diagnostic = getattr(self.adapter, "last_dispatch_diagnostic", None)
             except Exception:
+                self.last_dispatch_diagnostic = getattr(self.adapter, "last_dispatch_diagnostic", None)
                 if effect.kind == "SUBMIT" and not self.journal.claimed(
                     effect.order.order_id
                 ):

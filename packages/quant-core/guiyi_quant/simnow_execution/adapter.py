@@ -2,6 +2,7 @@
 
 from datetime import datetime, UTC, timedelta
 from functools import wraps
+from time import monotonic
 from decimal import Decimal
 import re
 from types import SimpleNamespace
@@ -10,6 +11,46 @@ from ..htdy_account_execution import model as m
 from ..htdy_account_execution.codec import digest
 from .model import action_hash, close_offset, valid, ENVIRONMENT, FRONT
 from .inventory import Snapshot, native_hash
+from .account_profile import AccountProfile, validate_profile
+
+
+_DISPATCH_CODES = frozenset({
+    "ACCOUNT_PROFILE_INVALID", "ACCOUNT_PROFILE_ANCHOR_MISMATCH", "ACCOUNT_PROFILE_HOST_MISMATCH", "INITIAL_100K_BASELINE_REQUIRED",
+    "ACTION_PLAN_DRIFT", "CANCEL_NOT_QUALIFIED", "CLOSE_ONLY_NATIVE_ADAPTER", "DISPATCH_IDENTITY_MISMATCH",
+    "EXECUTION_CONTRACT_MISMATCH", "LIVE_QUOTE_REQUIRED", "NATIVE_CALLBACK_OR_COMMIT_REQUIRES_RECOVERY",
+    "OPEN_EXPIRED", "OPEN_RESERVATION_REQUIRED", "OPPONENT_PRICE_DRIFT", "PERSISTED_EFFECT_REQUIRED",
+    "RECONCILED_ACCOUNT_REQUIRED", "SUBMIT_NOT_QUALIFIED", "UNDRAINED_NATIVE_FACTS_REQUIRE_RECONCILIATION",
+    "ACCOUNT_TAKEOVER_PENDING", "NATIVE_PRICE_PRECISION_LOSS", "NATIVE_FACT_STALE",
+    "ONE_LOT_NATIVE_INVENTORY_REQUIRED", "CLOSE_POSITION_MISMATCH",
+})
+_DISPATCH_OUTCOMES = frozenset({"ALREADY_CLAIMED_NO_SEND", "REQUEST_ACCEPTED_AWAIT_NATIVE",
+    "NOT_ACCEPTED_RECONCILE_REQUIRED", "SEND_OUTCOME_UNKNOWN"})
+
+
+def dispatch_failure_code(error):
+    """Only enumerated local failure codes may cross the diagnostic boundary."""
+    if type(error) is ValueError and len(error.args) == 1 and type(error.args[0]) is str and error.args[0] in _DISPATCH_CODES:
+        return error.args[0]
+    return "DISPATCH_FAILED"
+
+
+def dispatch_diagnostic(method):
+    @wraps(method)
+    def measured(self, *args, **kwargs):
+        started = monotonic()
+        self._dispatch_stage = "DISPATCH_START"
+        code = "DISPATCH_FAILED"
+        try:
+            result = method(self, *args, **kwargs)
+            code = result if result in _DISPATCH_OUTCOMES else "DISPATCH_COMPLETED"
+            return result
+        except Exception as error:
+            code = dispatch_failure_code(error)
+            raise
+        finally:
+            self.last_dispatch_diagnostic = {"stage": self._dispatch_stage, "code": code,
+                "elapsed_ms": round(max(0, monotonic() - started) * 1000, 3)}
+    return measured
 
 
 def callback_guard(method):
@@ -62,7 +103,7 @@ def callback_guard(method):
 class Adapter:
     def __init__(self, store, journal, sdk, api, user, session, *,
                  close_only=False, correlated_native=False,
-                 strategy_correlated_native=False, native_validator=None, account_takeover_pending=False):
+                 strategy_correlated_native=False, native_validator=None, account_takeover_pending=False, account_profile=None):
         if (type(account_takeover_pending) is not bool or type(close_only) is not bool or type(correlated_native) is not bool
             or type(strategy_correlated_native) is not bool
             or correlated_native and (not close_only or strategy_correlated_native)
@@ -87,6 +128,10 @@ class Adapter:
             raise ValueError("ACCOUNT_FINGERPRINT_MISMATCH")
         self.store, self.journal, self.sdk, self.api = store, journal, sdk, api
         self._user, self.session = user, session
+        if account_profile is not None and type(account_profile) is not AccountProfile:
+            raise ValueError("ACCOUNT_PROFILE_INVALID")
+        self.account_profile = account_profile
+        self.last_dispatch_diagnostic = None
         self._faulted = False
         self.account_takeover_pending = account_takeover_pending
         self.close_only = close_only
@@ -294,6 +339,7 @@ class Adapter:
             return False
 
     def _preflight(self, state, effect, binding, inventory, execution, permit, now):
+        self._dispatch_stage = "NATIVE_FACT_DRAIN"
         if self.close_only and effect.order.offset == "OPEN":
             raise ValueError("CLOSE_ONLY_NATIVE_ADAPTER")
         if self._faulted or self.journal.uncertain:
@@ -320,9 +366,13 @@ class Adapter:
                 and self.store.receipt(identity) is None
             ):
                 raise ValueError("UNDRAINED_NATIVE_FACTS_REQUIRE_RECONCILIATION")
+        self._dispatch_stage = "SESSION_FRESHNESS"
         valid(s.at, s.valid_until, now)
+        self._dispatch_stage = "PERMIT_FRESHNESS"
         valid(permit.issued_at, permit.expires_at, now)
+        self._dispatch_stage = "BINDING_FRESHNESS"
         valid(binding.at, binding.valid_until, now)
+        self._dispatch_stage = "ACCOUNT_IDENTITY"
         if (
             (s.environment, s.front) != (ENVIRONMENT, FRONT)
             or s.account_id != state.account_id
@@ -330,19 +380,9 @@ class Adapter:
             or permit.trading_day != s.trading_day
         ):
             raise ValueError("DISPATCH_IDENTITY_MISMATCH")
-        baseline = state.initial_readback
-        if (
-            baseline.snapshot.balance != Decimal("100000")
-            or (
-                baseline.source_id.split(":")[1]
-                if baseline.source_id.startswith("ctp-inventory:")
-                else baseline.snapshot.at.astimezone(
-                    ZoneInfo("Asia/Shanghai")
-                ).strftime("%Y%m%d")
-            )
-            < "20261027"
-        ):
-            raise ValueError("INITIAL_100K_BASELINE_REQUIRED")
+        self._dispatch_stage = "ACCOUNT_PROFILE"
+        validate_profile(self.account_profile, state)
+        self._dispatch_stage = "ACCOUNT_READBACK"
         if (
             state.phase != "READY"
             or not state.readback_valid
@@ -351,6 +391,7 @@ class Adapter:
         ):
             raise ValueError("RECONCILED_ACCOUNT_REQUIRED")
         valid(state.readback.at, state.readback.valid_until, now)
+        self._dispatch_stage = "PERSISTED_EFFECT"
         o = effect.order
         if (
             effect.kind not in ("SUBMIT", "CANCEL")
@@ -364,11 +405,14 @@ class Adapter:
             or execution.session.contract != o.contract
         ):
             raise ValueError("EXECUTION_CONTRACT_MISMATCH")
+        self._dispatch_stage = "EXECUTION_FRESHNESS"
         valid(execution.session.at, execution.session.valid_until, now)
+        self._dispatch_stage = "ACTION_PLAN"
         if permit.action_hash != action_hash(
             state, effect, s, binding, inventory, execution
         ):
             raise ValueError("ACTION_PLAN_DRIFT")
+        self._dispatch_stage = "ORDER_QUALIFICATION"
         if effect.kind == "CANCEL":
             if (
                 not o.cancel_sent
@@ -415,14 +459,17 @@ class Adapter:
             return "0"
         return close_offset(binding, inventory, o.side, now)
 
+    @dispatch_diagnostic
     def dispatch(self, effect, binding, inventory, execution, permit, now):
         """Only once per order/action, including SDK error, crash and unknown result."""
         if getattr(self, "account_takeover_pending", False):
             raise ValueError("ACCOUNT_TAKEOVER_PENDING")
+        self._dispatch_stage = "LEDGER_GUARD"
         with self.store.dispatch_guard() as state:
             offset = self._preflight(
                 state, effect, binding, inventory, execution, permit, now
             )
+            self._dispatch_stage = "REQUEST_BUILD"
             o = effect.order
             # No user/account number or SDK object enters persistent payloads.
             payload = dict(
@@ -477,6 +524,7 @@ class Adapter:
                     native["session_id"],
                 )
                 req.ActionFlag = "0"
+            self._dispatch_stage = "DISPATCH_CLAIM"
             claim = self.journal.claim(
                 effect.kind + ":" + o.order_id,
                 o.order_id,
@@ -491,6 +539,7 @@ class Adapter:
             if effect.kind == "SUBMIT":
                 req.OrderRef = ref
             req.RequestID = request_id
+            self._dispatch_stage = "SDK_REQUEST"
             try:
                 result = (
                     self.api.ReqOrderInsert
@@ -504,6 +553,7 @@ class Adapter:
                 )
             except Exception:
                 outcome = "SEND_OUTCOME_UNKNOWN"
+            self._dispatch_stage = "DISPATCH_RESULT"
             self.journal.result(action_id, outcome)
             if outcome != "REQUEST_ACCEPTED_AWAIT_NATIVE":
                 self.journal.event(

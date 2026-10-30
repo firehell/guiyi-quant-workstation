@@ -27,6 +27,7 @@ from .inventory import read_snapshot
 
 
 _INPUT_CODES = frozenset({
+    "AUDIT_BINDING_EXPIRED", "AUDIT_WINDOW_ELAPSED",
     "AUTHORITATIVE_CONTRACT_MISSING", "AUTHORITATIVE_SESSION_MISSING",
     "AUTHORITATIVE_FOUR_DIGIT_CONTRACT_REQUIRED", "AUTHORITATIVE_PRODUCT_INVALID",
     "NATIVE_PRODUCT_EXCHANGE_UNSUPPORTED", "NATIVE_CONTRACT_LIFECYCLE_AMBIGUOUS",
@@ -251,19 +252,19 @@ class NativePortfolio:
             self._input_failure(product, exc)
             raise
 
-    def _input_failure(self, product, exc):
+    def _input_failure(self, product, exc, *, purpose="execution"):
         from .input_evidence import VERSION
         queries = safe_native_queries(self.gateway.query_diagnostics)
         if queries:
             self.book_diagnostic['native_query'] = queries[-1]
         self.input_checks[product] = dict(
-            schema=VERSION, status='FAILED', checked_at=self.now().isoformat(),
+            schema=VERSION, status='FAILED', checked_at=self.now().isoformat(), purpose=purpose,
             stage=self.stage,
             code=str(exc) if type(exc) is ValueError and str(exc) in _INPUT_CODES else 'EXECUTION_INPUT_UNPROVEN',
             **self.book_diagnostic,
         )
 
-    def finish_facts(self, prepared, market, day, *, opening=False):
+    def finish_facts(self, prepared, market, day, *, opening=False, purpose="execution"):
         from datetime import datetime
 
         bound, metadata, margin, commission = prepared
@@ -303,7 +304,7 @@ class NativePortfolio:
             fact = execution_input(bound, metadata, margin, commission, quote, auth.session, checked)
             from ..htdy_account_execution.codec import digest
             from .input_evidence import VERSION
-            self.input_checks[product] = dict(schema=VERSION, status='VERIFIED_AT_CHECK',
+            self.input_checks[product] = dict(schema=VERSION, status='VERIFIED_AT_CHECK', purpose=purpose,
                 checked_at=checked.isoformat(), valid_until=min(bound.valid_until, quote.valid_until,
                     auth.session.valid_until).isoformat(), stage='EXECUTION_INPUT_VALIDATED',
                 session_can_trade=auth.session.can_trade, session_can_cancel=auth.session.can_cancel,
@@ -315,11 +316,20 @@ class NativePortfolio:
                 sources=dict(instrument=bound.source_id, margin='ctp-margin:'+digest(margin),
                     commission='ctp-commission:'+digest(commission), book=quote.source_id,
                     session=auth.session.source_id), **self.book_diagnostic)
-            self.last_facts[bound.canonical] = fact
+            if purpose == "execution":
+                self.last_facts[bound.canonical] = fact
             return bound, fact
         except Exception as exc:
-            self._input_failure(product, exc)
+            self._input_failure(product, exc, purpose=purpose)
             raise
+
+    def audit_next(self, products, market, day, *, idle, obligations_pending, next_boundary):
+        """Caller must finish execution/account reconciliation first; never connects."""
+        from .idle_input_audit import IdleInputAudit
+        if not hasattr(self, "_idle_input_audit"):
+            self._idle_input_audit = IdleInputAudit()
+        return self._idle_input_audit.next(self, products, market, day, idle=idle,
+            obligations_pending=obligations_pending, next_boundary=next_boundary)
 
     def observe_next(self, products, market, now, day, issues):
         product = products[self.cursor % len(products)]
@@ -537,6 +547,7 @@ class NativePortfolio:
             self.gateway.user,
             session,
             account_takeover_pending=getattr(self.settings, "account_takeover_pending", False),
+            account_profile=getattr(self.settings, "account_profile", None),
             **capabilities,
         )
         if correlated_native or strategy_correlated_native:

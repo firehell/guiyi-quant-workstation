@@ -208,6 +208,37 @@ class PortfolioMarket:
         except Exception:
             return False
 
+    def next_audit_boundary(self, now: datetime) -> datetime | None:
+        """Fail closed unless every product has an authoritative active H1 boundary."""
+        from app.market_data.aggregation import expected_intraday_ends
+        from app.market_data.composition import build_market_data_service
+
+        if now.tzinfo is None or now.utcoffset() is None:
+            return None
+        try:
+            with self._session_factory() as db:
+                db.execute(text("SET TRANSACTION READ ONLY"))
+                resolver = MarketPhaseResolver(db)
+                market = build_market_data_service(db)
+                boundaries = []
+                for product in self.products:
+                    phase = resolver.resolve(product.lower(), now)
+                    if phase.phase is not MarketPhase.TRADING or phase.current_session is None:
+                        return None
+                    ends = expected_intraday_ends(market.session_windows(
+                        symbol=product.lower(), trading_day=phase.trading_day), BarFrequency.H1)
+                    upcoming = [end for end in ends if end > now]
+                    if not upcoming:
+                        return None
+                    boundaries.append(min(min(upcoming), phase.current_session.end))
+                return min(boundaries) if boundaries else None
+        except Exception:
+            return None
+
+    def ordinary_takeover_window(self, day, now: datetime):
+        from app.simnow_takeover_window import authoritative_window
+        return authoritative_window(now, target_day=day)
+
     def plan(self, now: datetime) -> SessionPlan:
         if now.tzinfo is None or now.utcoffset() is None:
             return SessionPlan(None, False, False, None)
