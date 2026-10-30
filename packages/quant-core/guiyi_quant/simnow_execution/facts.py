@@ -88,6 +88,22 @@ def quote_from_native_batch(binding, rows, trading_day, received_at, *, diagnost
     return quote_from_native(binding, selected[0], trading_day, received_at, diagnostic=diagnostic)
 
 
+def execution_quote_from_native_batch(binding, rows, trading_day, received_at, *, diagnostic=None):
+    """Keep raw receipt qualification separate from remaining execution lifetime."""
+    from dataclasses import replace
+
+    timing = diagnostic if diagnostic is not None else {}
+    quote = quote_from_native_batch(
+        binding, rows, trading_day, received_at, diagnostic=timing
+    )
+    source_until = datetime.fromisoformat(timing["source_at"]) + timedelta(
+        seconds=MAX_BOOK_SOURCE_AGE_SECONDS
+    )
+    if source_until <= quote.at:
+        raise ValueError("NATIVE_BOOK_STALE")
+    return replace(quote, valid_until=min(quote.valid_until, source_until))
+
+
 def quote_from_native(binding, row, trading_day, received_at, *, diagnostic=None):
     if (row["InstrumentID"], row["ExchangeID"], row["TradingDay"]) != (
         binding.native,

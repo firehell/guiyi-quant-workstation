@@ -54,12 +54,42 @@ class IdleInputAudit:
         ):
             self.pending = None
             return dict(status="DEFERRED", purpose="audit", execution_permitted=False)
+        active = products
+        audit_window = getattr(market, "audit_window", None)
+        if audit_window is not None:
+            try:
+                authority = audit_window(now)
+                active = tuple(authority.products)
+                if (
+                    not active
+                    or len(set(active)) != len(active)
+                    or not set(active).issubset(products)
+                    or authority.trading_day.strftime("%Y%m%d") != day
+                ):
+                    raise ValueError("AUDIT_SCOPE_UNPROVEN")
+                next_boundary = min(next_boundary, authority.boundary)
+                # Authority reads can take time; reserve the full query budget
+                # against the current clock, not the pre-read instant.
+                if native.now() >= next_boundary - timedelta(
+                    seconds=AUDIT_STAGE_RESERVE_SECONDS
+                ):
+                    raise ValueError("AUDIT_WINDOW_UNPROVEN")
+            except Exception:
+                self.pending = None
+                return dict(status="DEFERRED", purpose="audit", execution_permitted=False)
         if self.scope != products or self.day != day:
             self.pending = None
             self.scope, self.day, self.cursor = products, day, 0
+        if self.pending is not None and self.pending["product"] not in active:
+            self.pending = None
         if self.pending is None:
-            product = products[self.cursor % len(products)]
-            self.cursor += 1
+            # Keep the cursor in the stable configured universe. Session closes
+            # and reopenings must neither reset rotation nor retain closed work.
+            while True:
+                product = products[self.cursor % len(products)]
+                self.cursor += 1
+                if product in active:
+                    break
             self.pending = dict(product=product, stage="instrument")
             native.book_diagnostic = {}
             native.stage = "AUDIT_INPUT"

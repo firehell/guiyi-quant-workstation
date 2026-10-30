@@ -45,7 +45,7 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 最新发布树兼作正式服务源码根，不另建Application Support中的runtime克隆；安全配置、共享launcher和日志保持Git外既有位置。
 外接卷launchd访问须通过宿主权限与真实启动/读回验证，安装器沿用`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`选项并核对所有required服务。
 
-保留所有仍被 service-bindings、磁盘 plist 或现场进程引用的发布树；解除全部引用并完成现场读回后才清理。只读 `python -m app.runtime_retention cleanup-plan /exact/root...` 汇总 binding/plist/loaded/进程引用；未知结果阻止清理，删除前重新扫描。未引用旧树不作为常驻回滚树。
+保留所有仍被 service-bindings、磁盘 plist 或现场进程引用的发布树；解除全部引用并完成现场读回后才清理。 SimNow还须检查installed/loaded的`--config`私有配置、稳定monitor身份锚中的API环境/SDK/账户根及许可路径；未知结构、不可读、链接或读前后漂移阻止清理。限定路径下的未决SimNow切换/恢复意图同样保留依赖；只有完整计划及正式终态证明闭合的记录才能作为历史，不能仅凭COMPLETE字样放行。只读 `python -m app.runtime_retention cleanup-plan /exact/root...` 汇总 binding/plist/loaded/进程引用；未知结果阻止清理，删除前重新扫描。未引用旧树不作为常驻回滚树。
 创建新树、构建、render/preflight、切换和健康读回完成后，逐树核对精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务与进程引用；有用户修改或引用时停止该树清理。
 保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
 应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。

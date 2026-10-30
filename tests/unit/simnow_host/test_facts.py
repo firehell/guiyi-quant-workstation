@@ -155,3 +155,23 @@ def test_owner_eight_second_source_age_limit(age, accepted):
     else:
         with pytest.raises(ValueError, match="NATIVE_BOOK_STALE"):
             quote_from_native_batch(rb_binding(), [rb_book()], "20261027", now)
+
+
+def test_shared_quote_keeps_absolute_source_deadline_after_batch_receive():
+    from guiyi_quant.simnow_execution.facts import execution_quote_from_native_batch
+    received = T + timedelta(seconds=7, milliseconds=500)
+    quote = execution_quote_from_native_batch(rb_binding(), [rb_book()], '20261027', received)
+    assert quote.valid_until == T + timedelta(seconds=8)
+    raw = quote_from_native(rb_binding(), rb_book(), '20261027', received)
+    assert quote.source_id == raw.source_id  # Existing source identity bytes stay intact.
+
+
+def test_exact_eight_second_raw_receipt_has_no_remaining_execution_lifetime():
+    from guiyi_quant.simnow_execution.facts import (
+        quote_from_native_batch, execution_quote_from_native_batch,
+    )
+    received = T + timedelta(seconds=8)
+    raw = quote_from_native_batch(rb_binding(), [rb_book()], '20261027', received)
+    assert raw.at == received
+    with pytest.raises(ValueError, match='NATIVE_BOOK_STALE'):
+        execution_quote_from_native_batch(rb_binding(), [rb_book()], '20261027', received)

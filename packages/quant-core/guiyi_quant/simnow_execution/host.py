@@ -8,6 +8,7 @@ from .. import htdy_account_execution as a
 from .inventory import read_snapshot, project_readback, native_order, linked_trade
 from .finance import actual_fee, performance
 from .model import Permit, action_hash
+from .adapter import dispatch_clock
 from .account_profile import AccountProfile, validate_profile
 
 
@@ -232,6 +233,7 @@ class Host:
     def submit_effects(self, effects, bindings, facts, now):
         if getattr(self, "account_takeover_pending", False):
             raise ValueError("ACCOUNT_TAKEOVER_PENDING")
+        fresh = dispatch_clock(now, getattr(self.adapter, "clock", None))
         effects = tuple(effects)
         # Validate the whole batch before any claim or request is possible.
         if any(e.order.product not in self.products for e in effects):
@@ -264,19 +266,17 @@ class Host:
         outcomes = []
         for effect in effects:
             state = self.store.current()
-            if (
-                self.continuous or self.manual_test_id is not None
-            ) and self.journal.claimed(effect.order.order_id, effect.kind):
+            if self.journal.claimed(effect.order.order_id, effect.kind):
                 outcomes.append("ALREADY_CLAIMED_NO_SEND")
                 continue
             if (
                 not self.continuous
                 and effect.kind == "SUBMIT"
                 and (self.manual_test_id is None or effect.order.offset == "OPEN")
-                and (now >= self.deadline or self.submits >= self.max_submits)
+                and (fresh() >= self.deadline or self.submits >= self.max_submits)
             ):
                 self.adapter.abort_unsent(
-                    effect.order.order_id, "RUN_BUDGET_EXHAUSTED", now
+                    effect.order.order_id, "RUN_BUDGET_EXHAUSTED", fresh()
                 )
                 outcomes.append("RUN_BUDGET_EXHAUSTED_NO_SEND")
                 continue
@@ -305,7 +305,7 @@ class Host:
             try:
                 outcomes.append(
                     self.adapter.dispatch(
-                        effect, binding, inventory, execution, permit, now
+                        effect, binding, inventory, execution, permit, fresh()
                     )
                 )
                 self.last_dispatch_diagnostic = getattr(self.adapter, "last_dispatch_diagnostic", None)
@@ -315,7 +315,7 @@ class Host:
                     effect.order.order_id
                 ):
                     self.adapter.abort_unsent(
-                        effect.order.order_id, "LOCAL_PREFLIGHT_FAILED", now
+                        effect.order.order_id, "LOCAL_PREFLIGHT_FAILED", fresh()
                     )
                 raise
         return tuple(outcomes)
@@ -323,6 +323,7 @@ class Host:
     def tick(self, facts, bindings, now):
         if getattr(self, "account_takeover_pending", False):
             raise ValueError("ACCOUNT_TAKEOVER_PENDING")
+        fresh = dispatch_clock(now, getattr(self.adapter, "clock", None))
         facts = tuple(facts)
         if any(f.instrument.product not in self.products for f in facts):
             raise ValueError("CONTROLLED_PRODUCT_SCOPE_VIOLATION")
@@ -344,7 +345,7 @@ class Host:
             and not self.journal.claimed(o.order_id, "CANCEL")
             and all(e.order.order_id != o.order_id for e in tx.effects)
         )
-        return self.submit_effects(tx.effects + pending, bindings, facts, now)
+        return self.submit_effects(tx.effects + pending, bindings, facts, fresh())
 
     def summary(self, snapshot):
         state = self.store.current()
