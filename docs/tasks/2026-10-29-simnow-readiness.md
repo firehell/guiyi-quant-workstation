@@ -145,7 +145,7 @@ exact候选独立Review通过；相对main38仅13文件，10工程相关blobs逐
 精确绑定38与当前run、已消费、不返还，不可借发布39重启/迁移，当前切换工具尚无trade→trade普通预算接管路径。
 因此Reference候选就绪不代表全11统一/单发布树已完成，需分别保留真实执行与后续账户切换约束。
 
-## 10/30四项工程准备（实施中）
+## 10/30四项工程准备（已验证并集成）
 
 本阶段仅离线工程准备：不连接Broker、不重启现役、不清预算/block、不发布或切换服务。
 14:30保留原命令688 Tick、689 AbortUnsent、690 Disconnect；dispatch claim0，LOCAL_ABORTED释放预留，fills0。
@@ -171,3 +171,12 @@ Web14 passed、类型/构建/拓扑通过；quant-core离线sdist/wheel构建通
 准备配置output/simnow-four-preparation-20261030/trade-v39-original-anchor.prepared.private.json
 已严格load校验、保留原账户/原四库/SDK/API；ordinary permit仅预留路径，文件未签发，未安装或启动。
 当前仅工程验证与独立Review通过；后续提交/候选exact另记，不代表部署、60真实新样本或交易闭环通过。
+
+最终工程集成：PR548已合develop，merge98861c77fb67a779314aabe2cd551221d9c1e108，
+源ffe3ed63accf45584660f63c7077aae632a53936。候选工程提交bb25a60e9353fc759afcd9a53af0f46ce140f151
+正常向前追加；相对main38恰38文件，24本轮非文档工程blob等已审源，原Reference8工程blob等旧候选。
+候选自身944 passed/66.49s，Reference/cohort1515 passed+127 skipped/72.54s，SDK离线33、Web14、
+类型/构建/拓扑、8模块mypy、diff通过；相同源码的隔离PG8及独立Review证据保留。
+配置只是准备文件、ordinary许可未签发。后续只追加本段文档与状态，不改变已审工程blobs。
+PR547更新为本轮完整候选，仍未合main/tag/Release/生产恢复或服务切换；现役十35/SimNow38。
+结论允许进入release candidate，不以工程交付替代真实60输入采样、账户恢复和策略交易验收。
