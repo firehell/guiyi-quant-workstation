@@ -15,9 +15,9 @@ import sqlite3
 from typing import NamedTuple
 from . import deployment_connection as io
 
-SCHEMA = "simnow_ordinary_takeover_v1"
-INTENT_SCHEMA = "simnow_trade_switch_plan_v5"
-POLICY = "simnow_ordinary_next_session_v1"
+SCHEMA = "simnow_ordinary_takeover_v2"
+INTENT_SCHEMA = "simnow_trade_switch_plan_v6"
+POLICY = "simnow_ordinary_next_session_v2"
 NAME = "ordinary-takeover-permit.private.json"
 release_identity = io.release_identity
 sdk_identity = io.sdk_identity

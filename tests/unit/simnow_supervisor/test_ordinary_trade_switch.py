@@ -4,11 +4,23 @@ from test_trade_switch import m, Backend
 import pytest
 
 
+def anchor(value):
+    historical = dict(
+        policy="simnow_completed_contract_anchor_v1",
+        trading_day="20261030",
+        product_count=60,
+        sha256="a" * 64,
+    )
+    value["historical_contract_anchor"] = historical
+    value["preimage"] = {"historical_contract_anchor": historical}
+    return value
+
+
 def test_ordinary_v5_target_day_not_old_civil_day():
     b = Backend()
-    value = b.value
+    value = anchor(b.value)
     value["ordinary_permit"] = dict(
-        schema="simnow_ordinary_takeover_v1",
+        schema="simnow_ordinary_takeover_v2",
         account_id="id",
         profile={"profile_id": "original_anchor_v1"},
         window={"trading_day": "20261102"},
@@ -25,7 +37,7 @@ def test_ordinary_v5_target_day_not_old_civil_day():
     )
     value["host"]["mode"] = "trade"
     value["window"] = dict(
-        policy="simnow_ordinary_next_session_v1",
+        policy="simnow_ordinary_next_session_v2",
         trading_day="20261102",
         authoritative=True,
         product_count=60,
@@ -33,7 +45,7 @@ def test_ordinary_v5_target_day_not_old_civil_day():
         window_open=True,
         next_session_gap_seconds=3600,
     )
-    assert m.SCHEMA == "simnow_trade_switch_plan_v5"
+    assert m.SCHEMA == "simnow_trade_switch_plan_v6"
     m.validate_snapshot(value)
 
 
@@ -44,7 +56,7 @@ def test_ordinary_v5_target_day_not_old_civil_day():
 def test_ordinary_v5_never_borrows_other_day_or_block(field, value):
     b = Backend()
     b.value["ordinary_permit"] = {
-        "schema": "simnow_ordinary_takeover_v1",
+        "schema": "simnow_ordinary_takeover_v2",
         "account_id": "id",
         "window": {"trading_day": "20261102"},
     }
@@ -53,12 +65,15 @@ def test_ordinary_v5_never_borrows_other_day_or_block(field, value):
         m.validate_snapshot(b.value)
 
 
-def test_v4_plan_is_historical_only(tmp_path):
+@pytest.mark.parametrize(
+    "schema", ["simnow_trade_switch_plan_v4", "simnow_trade_switch_plan_v5"]
+)
+def test_old_plan_is_historical_only(tmp_path, schema):
     tmp_path.chmod(0o700)
     b = Backend()
     c = m.Coordinator(b, tmp_path, clock=lambda: 1000)
     p = c.plan()
-    p["schema"] = "simnow_trade_switch_plan_v4"
+    p["schema"] = schema
     p["plan_hash"] = m.digest({k: v for k, v in p.items() if k != "plan_hash"})
     with pytest.raises(m.SwitchError, match="PLAN_INVALID"):
         c.apply(p)
@@ -66,10 +81,10 @@ def test_v4_plan_is_historical_only(tmp_path):
 
 
 def ordinary_snapshot(m):
-    value = Backend().value
+    value = anchor(Backend().value)
     profile = {"profile_id": "original_anchor_v1"}
     value["ordinary_permit"] = dict(
-        schema="simnow_ordinary_takeover_v1",
+        schema="simnow_ordinary_takeover_v2",
         account_id="id",
         profile=profile,
         state_dir="",
@@ -87,7 +102,7 @@ def ordinary_snapshot(m):
     )
     value["host"]["mode"] = "trade"
     value["window"] = dict(
-        policy="simnow_ordinary_next_session_v1",
+        policy="simnow_ordinary_next_session_v2",
         trading_day="20261102",
         authoritative=True,
         product_count=60,
@@ -232,7 +247,43 @@ def test_real_recovery_backend_rejects_drift_before_candidate_or_install(
             config={"sha256": hashlib.sha256(original.read_bytes()).hexdigest()},
         ),
     )
+    b._historical_anchor = lambda: None
     if changed == "target_config":
         b.cfg["mode"] = "observe"
     with pytest.raises(m.SwitchError):
         b.recovery_snapshot(source)
+
+
+def test_historical_anchor_drift_refuses_real_backend_before_stop():
+    b = m.MacBackend.__new__(m.MacBackend)
+    b._historical_anchor = lambda: {"sha256": "changed"}
+    with pytest.raises(m.SwitchError, match="PREIMAGE_CHANGED"):
+        b._verify_historical_anchor(
+            {"historical_contract_anchor": {"sha256": "frozen"}}
+        )
+
+
+def test_ordinary_snapshot_requires_frozen_historical_anchor():
+    value = ordinary_snapshot(m)
+    value["historical_contract_anchor"] = dict(
+        value["historical_contract_anchor"], sha256="b" * 64
+    )
+    with pytest.raises(m.SwitchError, match="ACCOUNT_UNPROVEN"):
+        m.validate_snapshot(value)
+
+
+@pytest.mark.parametrize("phase", ["STOPPED", "START_REQUESTED", "COMPLETE"])
+def test_v5_intent_remains_readable_without_mutation(tmp_path, phase):
+    import json
+
+    tmp_path.chmod(0o700)
+    intent = tmp_path / "switch-intent.private.json"
+    intent.write_text(
+        json.dumps(dict(schema="simnow_trade_switch_plan_v5", stage=phase, snapshot={}))
+    )
+    intent.chmod(0o600)
+    before = intent.read_bytes()
+    value = m.Coordinator(None, tmp_path).readback()
+    assert value["schema"] == "simnow_trade_switch_plan_v5"
+    assert value["mutation_performed"] is False and not value["retry_permitted"]
+    assert intent.read_bytes() == before

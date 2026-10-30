@@ -1089,7 +1089,7 @@ def test_midday_rejects_unknown_or_inconsistent_authoritative_fact(case):
 def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
     b, c, _ = setup
     plan = c.plan()
-    assert plan["schema"] == "simnow_trade_switch_plan_v5"
+    assert plan["schema"] == "simnow_trade_switch_plan_v6"
     b.value["window"] = dict(
         policy=m.MIDDAY_POLICY,
         trading_day="20261030",
