@@ -441,7 +441,7 @@ def test_mac_snapshot_uses_pinned_sdk_no_broker_check(tmp_path):
         json.dumps(dict(mode="observe", opening_enabled=False, run_id="run"))
     )
     status.chmod(0o600)
-    b.settings = SimpleNamespace(sdk_python=tmp_path / "sdk-python")
+    b.settings = SimpleNamespace(sdk_python=tmp_path / "sdk-python", state_root=tmp_path, account_id="a"*64)
     b.locks = []
     b.tag = "v1.16.35"
     b.exact = "82a8031470009249acccb83b9911a374af70ca00"
@@ -1407,3 +1407,15 @@ def test_window_rows_materialize_calendar_before_real_readonly_rollback(
             facts[0][1].is_trading_day = False
     finally:
         engine.dispose()
+
+
+def test_mac_account_uses_single_fully_verified_ledger_state(real_account, monkeypatch):
+    from guiyi_quant.htdy_account_execution.store import LocalStore
+    original = LocalStore.inspect
+    calls = []
+    def inspect(path):
+        calls.append(path)
+        return original(path)
+    monkeypatch.setattr(LocalStore, "inspect", inspect)
+    real_account.b._account()
+    assert len(calls) == 1

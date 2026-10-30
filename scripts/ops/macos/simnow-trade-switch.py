@@ -1443,7 +1443,6 @@ class MacBackend:
 
     def _account(self, *, restoring=False, frozen_index=None, stopped_snapshot=None):
         from guiyi_quant.simnow_execution.account_binding import existing_account
-        from guiyi_quant.htdy_account_execution.store import LocalStore
         from guiyi_quant.simnow_execution.native_portfolio import ReadJournal
         from guiyi_quant.simnow_execution.evidence import Evidence
         from guiyi_quant.htdy_account_execution.codec import digest as state_digest
@@ -1455,7 +1454,7 @@ class MacBackend:
             else "20261030"
         )
         state = existing_account(self.settings.state_root, self.settings.account_id)
-        projection = LocalStore.inspect(self.folder / "account.sqlite")
+        projection = state
         journal = ReadJournal(self.folder / "dispatch.sqlite", self.settings.account_id)
         identities = {}
         for name in (
@@ -1781,6 +1780,12 @@ class MacBackend:
         return exact, preflight
 
     def snapshot(self):
+        from guiyi_quant.simnow_execution.account_binding import _snapshot_account_proof
+
+        with _snapshot_account_proof(self.settings.state_root, self.settings.account_id):
+            return self._snapshot()
+
+    def _snapshot(self):
         exact, preflight = self._candidate()
         preimage = self._preimage()
         account = self._account()
