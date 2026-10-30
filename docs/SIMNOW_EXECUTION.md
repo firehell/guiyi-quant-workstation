@@ -590,3 +590,15 @@ START_REQUESTED以后结果不明只读核对，不能重复启动；停止阶�
 session_facts_sha256；gap/checked_at等动态读回不进入不可变许可身份。每次fresh仍重新查询全60权威
 Calendar/Session并要求当前无Session、下一场严格超过660秒，不能用冻结值代替当前窗口证明。
 旧v6计划仅历史读回，旧v2许可不激活；账本/SDK/配置/预算/双锁/历史锚及未知启动门禁保持。
+
+### 已启动宿主的晚到验收闭合
+
+`--reconcile-started`只核验已发送唯一START_REQUESTED且仍处VERIFYING/START_REQUESTED的既有宿主，
+不执行stop/install/start/issue或SDK连接。独立exact恢复控制器与实际Runtime版本分别绑定和报告。
+该入口限尚未连接柜台、目标日预算未消费、账户pending/opening关闭、全60休市且下一Session>660秒；
+持原有switch.lock并重核原plan/config/release/SDK/四库前缀、grant/runclaim及旧PID退出。
+双轮新鲜真实命令/同PID双锁/run/config/monitor一致后才独占领取闭合claim，保存原失败字节前像与SHA、
+独立receipt并由正式状态机记录COMPLETE/HOST_SWITCH_LATE_VERIFIED，初始失败证据不删除。
+任一未知或漂移不完成，claim后失败不重试，绝不借闭合重发启动或订单。receipt/前像位于发布树外；
+清理前独立核验闭合与Runtime原许可后续门禁，不能仅凭旧retention未识别新记录而判定完成。
+正常新部署的进程读回等待上限为90秒；与原计划60秒有效期、读回新鲜度及全部交易门禁相互独立。

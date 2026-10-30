@@ -524,6 +524,167 @@ class Coordinator:
             recovery_required=value["stage"] not in {"COMPLETE", "RECOVERED"},
         )
 
+    def reconcile_started(self, controller_tag):
+        """Close a proven late startup; no stop/install/start/grant operations."""
+        with self._source_guard(self.intent):
+            paths = {
+                name: self.root / name
+                for name in (
+                    "late-started-reconciliation-claim.private.json",
+                    "late-started-beforeimage.private.json",
+                    "late-started-receipt.private.json",
+                )
+            }
+            if any(path.exists() or path.is_symlink() for path in paths.values()):
+                fail("ATTEMPT_CONSUMED")
+            raw = private(self.intent).read_bytes()
+            original = json.loads(raw)
+            if (
+                original.get("schema") != SCHEMA
+                or original.get("stage") not in {"START_REQUESTED", "VERIFYING"}
+                or original.get("native_recovery_complete") is not False
+                or not original.get("snapshot", {}).get("ordinary_permit")
+            ):
+                fail("UNKNOWN_STAGE")
+            plan_path = private(self.root / "switch-plan.private.json")
+            plan_raw = plan_path.read_bytes()
+            plan = json.loads(plan_raw)
+            if (
+                plan.get("schema") != SCHEMA
+                or plan.get("plan_hash") != original.get("plan_hash")
+                or digest({k: v for k, v in plan.items() if k != "plan_hash"})
+                != plan["plan_hash"]
+                or plan["snapshot"].get("candidate")
+                != original["snapshot"].get("candidate")
+                or plan["snapshot"].get("host") != original["snapshot"].get("host")
+                or plan["snapshot"].get("ordinary_permit")
+                != original["snapshot"].get("ordinary_permit")
+                or not same_preimage(
+                    plan["snapshot"]["preimage"], original["snapshot"]["preimage"]
+                )
+            ):
+                fail("PLAN_INVALID")
+            controller = self.backend.reconciliation_controller_identity(controller_tag)
+            frozen = self.backend.reconcile_preflight(original["snapshot"])
+            if (
+                self.backend.reconcile_preflight(original["snapshot"]) != frozen
+                or self.backend.reconciliation_controller_identity(controller_tag)
+                != controller
+            ):
+                fail("PREIMAGE_CHANGED")
+            proofs = []
+            for _ in range(2):
+                # A new lower bound forces each proof to use a fresh status.
+                self.backend.started_at = self.clock()
+                proof = self.backend.readback(original["snapshot"])
+                if (
+                    proof.get("verified") is not True
+                    or proof.get("mode") != "trade"
+                    or proof.get("pid") != frozen["pid"]
+                    or proof.get("run_id") != frozen["run_id"]
+                    or proof.get("pid") == original["snapshot"]["host"]["pid"]
+                    or proof.get("run_id") == original["snapshot"]["host"]["run_id"]
+                    or any(
+                        proof.get(key) is not True
+                        for key in (
+                            "dual_locks_held_by_pid",
+                            "config_bound",
+                            "monitor_bound",
+                            "account_takeover_pending",
+                        )
+                    )
+                    or proof.get("opening_enabled") is not False
+                ):
+                    fail("READBACK_UNPROVEN")
+                try:
+                    stamp = datetime.fromisoformat(proof["status_at"])
+                    fresh_now = self.clock()
+                    if (
+                        stamp.utcoffset() is None
+                        or stamp.timestamp() < self.backend.started_at
+                        or not fresh_now - 8 <= stamp.timestamp() <= fresh_now
+                    ):
+                        fail("READBACK_UNPROVEN")
+                except (KeyError, TypeError, ValueError):
+                    fail("READBACK_UNPROVEN")
+                proofs.append(dict(proof, verified_at=self.clock()))
+                self.sleep(1)
+            if (
+                private(self.intent).read_bytes() != raw
+                or plan_path.read_bytes() != plan_raw
+            ):
+                fail("PREIMAGE_CHANGED")
+            # Nothing heavyweight follows the final native pair. Recompute ages
+            # using actual source status times immediately before claiming.
+            fresh_now = self.clock()
+            try:
+                start = datetime.fromisoformat(
+                    original["snapshot"]["ordinary_permit"]["window"]["session_start"]
+                )
+                if start.utcoffset() is None or start.timestamp() <= fresh_now + 660:
+                    fail("WINDOW_UNPROVEN")
+                for proof in proofs:
+                    stamp = datetime.fromisoformat(proof["status_at"])
+                    if (
+                        stamp.utcoffset() is None
+                        or not fresh_now - 8 <= stamp.timestamp() <= fresh_now
+                    ):
+                        fail("READBACK_UNPROVEN")
+            except (KeyError, TypeError, ValueError):
+                fail("READBACK_UNPROVEN")
+            source_sha = hashlib.sha256(raw).hexdigest()
+            receipt = dict(
+                schema="simnow_late_started_reconciliation_v1",
+                controller=controller,
+                target=original["snapshot"]["candidate"],
+                original_intent_sha256=source_sha,
+                original_plan_sha256=hashlib.sha256(plan_raw).hexdigest(),
+                plan_hash=plan["plan_hash"],
+                chain=frozen,
+                proofs=proofs,
+                initial_stage=original["stage"],
+                initial_error=original.get("error"),
+                at=self.clock(),
+                runtime_restart=False,
+            )
+            # All facts are known before the unique durable intent is claimed.
+            write_private(
+                paths["late-started-reconciliation-claim.private.json"],
+                dict(source_sha256=source_sha, receipt_hash=digest(receipt)),
+                exclusive=True,
+            )
+            before = paths["late-started-beforeimage.private.json"]
+            fd = os.open(
+                before, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+            )
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+            directory_fd = os.open(self.root, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+            write_private(
+                paths["late-started-receipt.private.json"], receipt, exclusive=True
+            )
+            self.record = original
+            self._phase(
+                "COMPLETE",
+                result="HOST_SWITCH_LATE_VERIFIED",
+                pid=frozen["pid"],
+                run_id=frozen["run_id"],
+                initial_failure=dict(path=str(before), sha256=source_sha),
+                reconciliation_receipt=dict(
+                    path=str(paths["late-started-receipt.private.json"]),
+                    sha256=hashlib.sha256(
+                        paths["late-started-receipt.private.json"].read_bytes()
+                    ).hexdigest(),
+                ),
+            )
+            return self.readback()
+
     def _phase(self, stage, **fields):
         self.record.update(stage=stage, at=self.clock(), **fields)
         write_private(self.intent, self.record)
@@ -2154,6 +2315,96 @@ class MacBackend:
             == 0
         )
 
+    def reconciliation_controller_identity(self, tag):
+        root = Path(__file__).resolve().parents[3]
+        if root.name != "release-" + str(tag) or root == self.code:
+            fail("CANDIDATE_UNPROVEN")
+        return self.release_identity(root)
+
+    def reconcile_preflight(self, snapshot):
+        """Strictly pre-connect late startup inspection; no lifecycle effects."""
+        from guiyi_quant.simnow_execution import ordinary_takeover as ordinary
+        from guiyi_quant.simnow_execution import deployment_connection as io
+
+        if not self.ordinary or not self.settings.account_takeover_pending:
+            fail("ACCOUNT_UNPROVEN")
+        self._verify_historical_anchor(snapshot)
+        exact, _ = self._candidate()
+        p = snapshot["preimage"]
+        if (
+            exact != snapshot["candidate"]["commit"]
+            or self.tag != snapshot["candidate"]["tag"]
+            or any(
+                self.identity(path, interpreter=interpreter) != p[key]
+                for key, path, interpreter in (
+                    ("sdk", self.settings.sdk_python, True),
+                    ("config", self.config, False),
+                    ("plist", self.candidate_plist, False),
+                    ("runner", self.code / "scripts/broker/simnow_supervisor.py", True),
+                )
+            )
+            or self.plist.read_bytes() != self.candidate_plist.read_bytes()
+            or not self.monitor_bound(snapshot)
+        ):
+            fail("PREIMAGE_CHANGED")
+        try:
+            os.kill(snapshot["host"]["pid"], 0)
+        except ProcessLookupError:
+            pass
+        else:
+            fail("HOST_UNPROVEN")
+        window = self._window()
+        validate_window(window)
+        day = snapshot["ordinary_permit"]["window"]["trading_day"]
+        if window["trading_day"] != day:
+            fail("WINDOW_UNPROVEN")
+        now = datetime.now(UTC)
+        path, grant_sha, frozen, _ = ordinary._checked(self.settings, now, initial=True)
+        if frozen != snapshot["ordinary_permit"]:
+            fail("PREIMAGE_CHANGED")
+        if any(path.parent.glob(path.name + ".attempt-*")):
+            fail("ACCOUNT_UNPROVEN")
+        budget = ordinary.budget_binding(self.settings, day)
+        if budget != frozen["budget"] or budget["initial_count"] != 0:
+            fail("ACCOUNT_UNPROVEN")
+        account = self._account()
+        if (
+            account["today_attempts"] != 0
+            or account["day_blocked"]
+            or not same_preimage(
+                dict(account=snapshot["account"]), dict(account=account)
+            )
+        ):
+            fail("PREIMAGE_CHANGED")
+        claim, claim_sha = io.read(path.with_name(path.name + ".run-claim"))
+        status = json.loads(private(self.folder / "continuous.json").read_bytes())
+        pid = self._pid()
+        self._prove(pid, "trade", self.config)
+        stamp = datetime.fromisoformat(status["at"]).timestamp()
+        fresh = time.time()
+        if (
+            claim.get("grant_sha256") != grant_sha
+            or claim.get("pid") != pid
+            or claim.get("run_id") != status.get("run_id")
+            or status.get("status") != "WAITING_SESSION"
+            or status.get("connection") != "UNKNOWN"
+            or status.get("account_takeover_pending") is not True
+            or status.get("opening_enabled") is not False
+            or not fresh - 8 <= stamp <= fresh
+            or pid == snapshot["host"]["pid"]
+        ):
+            fail("READBACK_UNPROVEN")
+        return dict(
+            pid=pid,
+            run_id=claim["run_id"],
+            grant_sha256=grant_sha,
+            run_claim_sha256=claim_sha,
+            account_anchor_sha256=digest(io.account_anchor(self.settings)),
+            budget_sha256=digest(budget),
+            target_release=self.release_identity(self.code),
+            config_sha256=hashlib.sha256(self.config.read_bytes()).hexdigest(),
+        )
+
     def monitor_bound(self, snapshot):
         if getattr(self.settings, "account_takeover_pending", False):
             return (
@@ -2171,7 +2422,7 @@ class MacBackend:
         )
 
     def readback(self, snapshot):
-        deadline = time.monotonic() + 35
+        deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             try:
                 pid = self._pid()
@@ -2225,16 +2476,48 @@ class MacBackend:
                 or status.get("opening_enabled") is not False
             ):
                 fail("READBACK_UNPROVEN")
+        config_bound = self.plist.read_bytes() == self.candidate_plist.read_bytes()
+        monitor_bound = self.monitor_bound(snapshot)
+        final_pid = self._pid()
+        self._prove(final_pid, "trade", self.config)
+        final_status = json.loads(private(self.folder / "continuous.json").read_bytes())
+        final_index = json.loads(
+            private(self.settings.state_root / "monitor.json").read_bytes()
+        )
+        stamp = datetime.fromisoformat(final_status["at"])
+        fresh_now = time.time()
+        if (
+            final_pid != pid
+            or final_status.get("run_id") != status["run_id"]
+            or final_index.get("run_id") != status["run_id"]
+            or final_status.get("mode") != "trade"
+            or final_index.get("mode") != "trade"
+            or final_index.get("account_id") != self.settings.account_id
+            or final_index.get("host_status") != final_status.get("status")
+            or stamp.utcoffset() is None
+            or not max(self.started_at, fresh_now - 8) <= stamp.timestamp() <= fresh_now
+            or (
+                getattr(self.settings, "account_takeover_pending", False)
+                and (
+                    final_status.get("account_takeover_pending") is not True
+                    or final_status.get("opening_enabled") is not False
+                )
+            )
+        ):
+            fail("READBACK_UNPROVEN")
         return dict(
             verified=True,
-            account_takeover_pending=status.get("account_takeover_pending", False),
-            opening_enabled=status.get("opening_enabled", False),
-            mode=status["mode"],
-            pid=pid,
-            run_id=status["run_id"],
+            account_takeover_pending=final_status.get(
+                "account_takeover_pending", False
+            ),
+            opening_enabled=final_status.get("opening_enabled", False),
+            mode=final_status["mode"],
+            pid=final_pid,
+            run_id=final_status["run_id"],
             dual_locks_held_by_pid=True,
-            config_bound=self.plist.read_bytes() == self.candidate_plist.read_bytes(),
-            monitor_bound=self.monitor_bound(snapshot),
+            config_bound=config_bound,
+            monitor_bound=monitor_bound,
+            status_at=final_status["at"],
         )
 
 
@@ -2273,6 +2556,8 @@ def main(argv=None):
     actions.add_argument("--recover-observe", action="store_true")
     actions.add_argument("--plan-stopped-recovery", action="store_true")
     actions.add_argument("--recover-pending-trade", action="store_true")
+    actions.add_argument("--reconcile-started", action="store_true")
+    parser.add_argument("--controller-tag")
     parser.add_argument("--source-intent", type=Path)
     parser.add_argument("--recovery-intent", action="store_true")
     args = parser.parse_args(argv)
@@ -2300,7 +2585,15 @@ def main(argv=None):
                 ],
             )
         coordinator = Coordinator(backend, args.state_dir)
-        if args.plan_stopped_recovery:
+        if args.reconcile_started:
+            if not args.controller_tag:
+                fail("PLAN_INVALID")
+            print(
+                json.dumps(
+                    coordinator.reconcile_started(args.controller_tag), sort_keys=True
+                )
+            )
+        elif args.plan_stopped_recovery:
             if not args.source_intent or not args.plan:
                 fail("PLAN_INVALID")
             result = coordinator.plan_recovery(args.source_intent)
