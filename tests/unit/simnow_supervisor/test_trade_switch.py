@@ -408,7 +408,8 @@ def test_mac_backend_install_keeps_private_preimages_and_uses_exact_commands(tmp
         ["/bin/launchctl", "print", b.label],
     ]
     assert (
-        b.plist.read_bytes() == b"new-plist" and b.monitor.read_bytes() == b"new-config"
+        b.plist.read_bytes() == b"new-plist"
+        and b.monitor.read_bytes() == b"old-monitor"
     )
     assert (
         b.plist.with_name("live.plist.trade-switch-preimage").read_bytes()
@@ -1086,7 +1087,7 @@ def test_midday_rejects_unknown_or_inconsistent_authoritative_fact(case):
 def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
     b, c, _ = setup
     plan = c.plan()
-    assert plan["schema"] == "simnow_trade_switch_plan_v2"
+    assert plan["schema"] == "simnow_trade_switch_plan_v3"
     b.value["window"] = dict(
         policy=m.MIDDAY_POLICY,
         trading_day="20261030",
@@ -1104,10 +1105,13 @@ def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
     assert not c.intent.exists()
 
 
-def test_v1_plan_is_not_accepted_for_new_execution(setup):
+@pytest.mark.parametrize(
+    "old_schema", ["simnow_trade_switch_plan_v1", "simnow_trade_switch_plan_v2"]
+)
+def test_v1_plan_is_not_accepted_for_new_execution(setup, old_schema):
     b, c, _ = setup
     plan = c.plan()
-    plan["schema"] = "simnow_trade_switch_plan_v1"
+    plan["schema"] = old_schema
     plan["plan_hash"] = m.digest({k: v for k, v in plan.items() if k != "plan_hash"})
     with pytest.raises(m.SwitchError, match="PLAN_INVALID"):
         c.apply(plan)

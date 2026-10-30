@@ -5,7 +5,6 @@ settlement action, position recovery or default capital exists in this module.
 The four journals and disabled runtime config become visible in one directory rename.
 """
 from contextlib import closing
-from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
 import json
@@ -91,7 +90,11 @@ def _fsync_directory(path):
 
 
 def _write_config(path, settings):
-    value = {key: str(v) if isinstance(v, Path) else v for key, v in asdict(settings).items()}
+    # This is a schema-2 observe config, not a serialization of runtime metadata
+    # or a transfer of an unrelated trade deployment capability.
+    fields = ("account_id", "state_root", "project_root", "sdk_python", "api_env", "state_project_root")
+    value = {key: str(v) if isinstance(v, Path) else v
+             for key in fields for v in (getattr(settings, key),)}
     value.update(schema=2, enabled=False, mode='observe')
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, 'w') as stream:

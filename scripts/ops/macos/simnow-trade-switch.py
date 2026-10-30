@@ -30,7 +30,7 @@ from datetime import datetime, UTC, date, timedelta
 
 sys.dont_write_bytecode = True
 
-SCHEMA = "simnow_trade_switch_plan_v2"
+SCHEMA = "simnow_trade_switch_plan_v3"
 POLICY = "simnow_night_only_deployment_window_v1"
 MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
 LABEL = "com.guiyi.quant-simnow"
@@ -170,12 +170,22 @@ def validate_snapshot(s):
             or not a["account_id"]
         ):
             fail("ACCOUNT_UNPROVEN")
+        extra = s.get("connection_permit")
+        exception = bool(
+            extra
+            and extra.get("schema") == "simnow_midday_one_connection_v1"
+            and extra.get("account_id") == a["account_id"]
+            and extra.get("trading_day") == "20261030"
+            and s["window"]["policy"] == MIDDAY_POLICY
+            and a["today_attempts"] == 3
+        )
         if (
             a["budget_day"] != "20261030"
             or type(a["today_attempts"]) is not int
-            or not 0 <= a["today_attempts"] < 3
+            or not 0 <= a["today_attempts"] <= 3
             or a["remaining_attempts"] != 3 - a["today_attempts"]
             or a["day_blocked"] is not False
+            or (a["today_attempts"] == 3 and not exception)
         ):
             fail("ACCOUNT_UNPROVEN")
         if any(
@@ -374,6 +384,10 @@ class Coordinator:
     def plan(self):
         snapshot = self.backend.snapshot()
         validate_snapshot(snapshot)
+        if snapshot.get("connection_permit") and snapshot["connection_permit"][
+            "state_dir"
+        ] != str(self.root):
+            fail("PLAN_INVALID")
         now = self.clock()
         value = dict(
             schema=SCHEMA,
@@ -433,6 +447,16 @@ class Coordinator:
             fail("PLAN_INVALID")
         if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
             fail("PLAN_EXPIRED")
+        prior_permit = plan["snapshot"].get("connection_permit")
+        current_permit = current.get("connection_permit")
+        if bool(prior_permit) != bool(current_permit):
+            fail("PLAN_INVALID")
+        if prior_permit:
+            if prior_permit["state_dir"] != str(self.root) or {
+                k: v for k, v in prior_permit.items() if k != "planned_at"
+            } != {k: v for k, v in current_permit.items() if k != "planned_at"}:
+                fail("PLAN_INVALID")
+            current["connection_permit"] = prior_permit
         # Dynamic checked_at and monotonically decreasing gap are excluded by
         # the backend's immutable preimage, never by accepting stale calendar.
         old = plan["snapshot"]["preimage"]
@@ -534,7 +558,14 @@ class Coordinator:
                     self._phase("INSTALLED")
                 if self.backend.window_open() is not True:
                     fail("WINDOW_UNPROVEN")
-                self._phase("START_REQUESTED")
+                grant_fields = {}
+                if snapshot.get("connection_permit"):
+                    grant_fields["connection_grant_sha256"] = (
+                        self.backend.issue_connection_permit(
+                            snapshot, plan["plan_hash"], self.intent
+                        )
+                    )
+                self._phase("START_REQUESTED", **grant_fields)
                 if self.backend.start(snapshot) is not True:
                     fail("START_UNPROVEN")
                 self._phase("VERIFYING")
@@ -1203,9 +1234,30 @@ class MacBackend:
                 for p in self.locks
             ],
         )
+        window = self._window()
+        connection_permit = None
+        path = getattr(self.settings, "deployment_connection_permit", None)
+        if path and account["today_attempts"] == 3:
+            from guiyi_quant.simnow_execution import deployment_connection as permit
+
+            if (
+                window["policy"] != MIDDAY_POLICY
+                or account["day_blocked"]
+                or Path(path).exists()
+                or Path(str(path) + ".run-claim").exists()
+                or Path(str(path) + ".attempt-claim").exists()
+            ):
+                fail("ACCOUNT_UNPROVEN")
+            pm = datetime.fromisoformat(window["eligible_until"]) + timedelta(
+                seconds=660
+            )
+            connection_permit = permit.binding(
+                self.settings, self.config, pm, datetime.now(UTC)
+            )
         identities = dict(preimage, code=exact)
         self._stop_signals = account["databases"].get("signals.sqlite")
         return dict(
+            connection_permit=connection_permit,
             old_config_path=str(self.old_config),
             observe_index=self.last_observe_index,
             candidate=dict(
@@ -1227,7 +1279,7 @@ class MacBackend:
                 dual_locks_held_by_pid=True,
                 command_identity=digest(command),
             ),
-            window=self._window(),
+            window=window,
             preimage=preimage,
         )
 
@@ -1321,7 +1373,6 @@ class MacBackend:
                 stream.flush()
                 os.fsync(stream.fileno())
         self._replace(self.plist, self.candidate_plist.read_bytes())
-        self._replace(self.monitor, self.config.read_bytes())
         return True
 
     @staticmethod
@@ -1381,6 +1432,8 @@ class MacBackend:
             account = self._account(
                 restoring=True, frozen_index=snapshot["observe_index"]
             )
+            if account["remaining_attempts"] < 1 or account["day_blocked"]:
+                fail("ACCOUNT_UNPROVEN")
             if not same_preimage(
                 dict(account=snapshot["account"]), dict(account=account)
             ):
@@ -1453,6 +1506,18 @@ class MacBackend:
             time.sleep(1)
         fail("READBACK_UNPROVEN")
 
+    def issue_connection_permit(self, snapshot, plan_hash, intent_path):
+        from guiyi_quant.simnow_execution import deployment_connection as permit
+
+        return permit.issue(
+            self.settings,
+            snapshot["connection_permit"],
+            plan_hash,
+            intent_path,
+            datetime.now(UTC),
+            clock=lambda: datetime.now(UTC),
+        )
+
     def start(self, snapshot):
         self.code_check()
         if (
@@ -1503,7 +1568,14 @@ class MacBackend:
             run_id=status["run_id"],
             dual_locks_held_by_pid=True,
             config_bound=self.plist.read_bytes() == self.candidate_plist.read_bytes(),
-            monitor_bound=self.monitor.read_bytes() == self.config.read_bytes(),
+            monitor_bound=(
+                self.identity(self.monitor) == snapshot["preimage"]["monitor"]
+                and json.loads(self.monitor.read_bytes())["account_id"]
+                == self.settings.account_id
+                and json.loads(self.monitor.read_bytes())["state_root"]
+                == str(self.settings.state_root)
+                and json.loads(self.monitor.read_bytes())["mode"] == "observe"
+            ),
         )
 
 
