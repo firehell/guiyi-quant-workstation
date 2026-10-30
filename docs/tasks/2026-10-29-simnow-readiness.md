@@ -214,3 +214,30 @@ not_run；这不是HTDY偶发推送失败，也不据此宣称全量数据/历�
 - JM30 Notion/苏冰研究树保留8个未合并提交，含独立JM30模型、风险2000场景比较、
   冻结案例及Notion规则映射，不属于本次可清理的已完成工程。
 - 本次只删已退役源码/已合并分支，tag、Git历史、恢复原件、Canonical、账户和生产配置保持。
+
+
+## 2026-10-30 午间切换准备
+
+Owner明确要求“你把可以先完成的完成下，等中午十一点半收盘我们一次性发布切换”。
+不在上午发布或切换；安排11:35重新核验权威午间窗口后执行。源补丁4a8dff27b已集成develop，
+范围只有switch工具、其测试、SIMNOW_EXECUTION与TESTING；v1.16.37候选基于main74d01145，
+额外仅version.py。此前v36已发布但trade切换未完成，旧意图RECOVERED且禁止复用。
+
+修复包含：真实STOPPED及双FD锁内核验新增原生尾部，所有十项资金/身份/时序/空仓义务逐条验证，
+旧native前缀及其余保护状态不变；最新停止证明必须新鲜，不能用过期证明代替。schema v2显式
+--window midday，与夜盘政策互斥、不自动fallback。all60权威上午Session结束、当前无Session、
+下一实际下午Session>=660秒，才允许计划/应用；day30预算剩余>=1且无block，停服前再次核对。
+真实只读发现Calendar ORM detached错误，已在事务内复制不可变facts，并加真实SQLAlchemy回归。
+
+源回归762 passed(40.40s)，固定SDK离线33，独立定向100无skip，Ruff/diff通过，独立安全Review无未解决Confirmed Issue。
+证据output/simnow-midday-preparation-20261030/validation-final.json。08:35真实只读midday --check
+成功返回WINDOW_PREFLIGHT/窗口未开，非RESULT_UNKNOWN；只是预报，execution_permitted=false，无Broker I/O。
+权威预报11:30/11:35 all60 BREAK、下一Session13:30，现场执行必须重新取证。
+
+午间从新固定候选正常main merge、annotated新tag、GitHub Release，再只切独立SimNow同label --trade；
+正式十服务v35/gen41不动，原账户anchor/四库/SDK不变，不清budget/block，不造信号订单，不补旧开仓。
+新0600私有schema2配置和plist、新0700独占state-dir及60秒内新plan；使用新tag自带正式工具，
+显式--window midday。单次持久意图不复用；START_REQUESTED之后结果未知只读核对，不自动恢复/重试。
+之前阶段失败按工具有界recover-observe，禁止换工具绕过。宿主拒绝则HOST_APPROVAL_BLOCKED。
+成功两轮核验真实ps/exact版本/配置/同PID双锁/run/mode/monitor；只报告TRADE_HOST_DEPLOYED，
+账户新恢复、自然输入、真实策略成交仍分别待验，AG/J/PB/ZN根因等待新鲜时序样本。
