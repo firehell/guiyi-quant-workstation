@@ -468,15 +468,27 @@ change the notification failure record, or send messages.
 - **THEN** Alert health identifies that Rule, product and frequency as evaluation lagging despite the first product succeeding
 
 聚合Alert health MUST 检查两条Rule当前error_type；任一Rule仍为evaluation_failed等当前错误时，
-不能因进程运行或aggregate旧字段为ok而显示整体健康。后续成功eval清空当前error_type后可以回绿，
+不能因进程运行或aggregate旧字段为ok而显示Alert组件业务健康。后续成功eval清空当前error_type后可以回绿，
 Rule的last_failure_at MUST 保留，现有全局失败事实继续按原合同保存；不新增Rule历史分类或计数字段。
 不得用历史失败永久阻止回绿，也不得把回绿宣称自然Event或通知已完成。
+
+Runtime health 顶层 `status` SHALL 表达基础服务运行健康；Alert 的 `components.alert.status`、
+Rule、coverage、已保存事件与发送状态仍按本规范分别表达业务结果。有效输入经固定算法确认的
+`evaluation_warming_up` / `warming_up` 是等待样本积累，不是基础服务故障，也不是计算成功。
+仅知道 `DATA_UNAVAILABLE`、`MARKET_READ_WINDOW_INCOMPLETE` 或 `previous_unresolved` 时，
+不得推断为正常样本不足；原业务错误、未验证状态与历史事实保持不变。
+新鲜、身份匹配的 Reference owner 所报告的路线等待、数据不足或隔离同样不证明其进程失败，
+原 component/proof 的 ready、阻断计数和诊断保持严格。基础服务 `ok` 不构成策略就绪、
+预热通过、自然验收、通知送达、Runtime promotion 或交易准入；这些 consumer MUST 继续核验
+各自既有的 component/input/proof Gate，不能只用顶层状态替代。
+心跳缺失、过期、格式错误、owner/loaded身份不可证、处理循环失败、后台线程失败及无效通知配置
+仍使基础健康降级；DB、Redis、Live采集与盘后主业务的既有异常语义不变。
 
 #### Scenario: Successful evaluation follows a previous failure
 
 - **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
 - **WHEN** 计算聚合health
-- **THEN** 允许当前health为ok并继续呈现历史失败；若error_type仍存在则不能回绿
+- **THEN** 允许当前Alert组件health为ok并继续呈现历史失败；若error_type仍存在则组件不能回绿
 
 #### Scenario: A failed or warming SuBing cutoff is delivered again
 

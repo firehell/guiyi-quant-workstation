@@ -576,7 +576,8 @@ def test_alert_health_acknowledges_failure_without_erasing_failure_facts() -> No
         )
 
     alert = health["components"]["alert"]
-    assert health["status"] == "degraded"
+    # A legacy heartbeat leaves strategy coverage unverified, not the service down.
+    assert health["status"] == "ok"
     assert alert["status"] == "degraded"
     assert alert["notification_state"] == "acknowledged"
     assert alert["last_notification_failure_at"] == failure_at.isoformat()
@@ -2517,7 +2518,7 @@ def test_local_runtime_does_not_probe_host(monkeypatch):
 
 
 @pytest.mark.parametrize("diagnostic", ["weekly_audit", "reference_worker", "alert"])
-def test_optional_or_alert_identity_does_not_redefine_market_health(monkeypatch, diagnostic):
+def test_unknown_alert_identity_is_service_failure_while_optional_diagnostics_stay_separate(monkeypatch, diagnostic):
     import app.services.runtime_health as module
     monkeypatch.setenv("GUIYI_RUNTIME_COMMIT", "a" * 40)
     services = {name: {"status": "matched"} for name in ("live_market", "after_market")}
@@ -2529,7 +2530,7 @@ def test_optional_or_alert_identity_does_not_redefine_market_health(monkeypatch,
             live_runtime_enabled=False, after_market_automation_enabled=False,
             alert_runtime_enabled=False, weekly_audit_enabled=False,
             notification_transport_configured=False)
-    assert result["status"] == "ok"
+    assert result["status"] == ("degraded" if diagnostic == "alert" else "ok")
     assert result["runtime_identity"]["services"][diagnostic]["status"] == "unknown"
 
 

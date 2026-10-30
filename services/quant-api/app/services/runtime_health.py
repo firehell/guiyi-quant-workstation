@@ -172,9 +172,11 @@ def build_runtime_health(
         after_market=components["after_market"],
     )
 
-    # Observation and notification failures must be visible at the top level.
+    # The top level describes service operation. Strategy input/readiness and
+    # retained evaluation failures remain on their existing component fields.
     overall = _overall_status(
-        components[name] for name in ("db", "redis", "live_market", "after_market", "alert")
+        {"status": _service_health_status(name, components[name])}
+        for name in ("db", "redis", "live_market", "after_market", "alert")
     )
     # Historical audit is optional and does not redefine operational service health.
     components["weekly_audit"] = weekly_audit_health(weekly_audit_status_path,
@@ -204,7 +206,8 @@ def build_runtime_health(
             overall = RUNTIME_STATUS_DEGRADED
     components["reference_worker"] = _collect_reference_owner_health(current_time, runtime_identity)
     observed_overall = _overall_status(
-        components[name] for name in ("db", "redis", "live_market", "after_market", "alert", "reference_worker")
+        {"status": _service_health_status(name, components[name])}
+        for name in ("db", "redis", "live_market", "after_market", "alert", "reference_worker")
     )
     if observed_overall == RUNTIME_STATUS_FAILED or (observed_overall == RUNTIME_STATUS_DEGRADED and overall != RUNTIME_STATUS_FAILED):
         overall = observed_overall
@@ -218,6 +221,36 @@ def build_runtime_health(
         "would_send_notifications": False,
         "components": components,
     }
+
+
+def _service_health_status(name: str, component: Mapping[str, object]) -> str:
+    """Project service liveness without rewriting strict business diagnostics.
+
+    A short validated strategy prefix is waiting, never a computation success.
+    Unknown data errors, quarantines and prior failures still block their
+    component; they do not prove that its owning process has failed. Consumers
+    needing calculation readiness must inspect the component/proof as before.
+    """
+    status = str(component.get("status", RUNTIME_STATUS_UNKNOWN))
+    if status not in {RUNTIME_STATUS_OK, RUNTIME_STATUS_PENDING, RUNTIME_STATUS_DEGRADED,
+                      RUNTIME_STATUS_FAILED, RUNTIME_STATUS_DISABLED}:
+        # _overall_status historically ignores unknown; this new projection
+        # must never turn missing/invalid service identity into operational ok.
+        return RUNTIME_STATUS_DEGRADED
+    if status not in {RUNTIME_STATUS_OK, RUNTIME_STATUS_PENDING, RUNTIME_STATUS_DEGRADED}:
+        return status
+    if name == "alert":
+        delivery_invalid = (
+            component.get("notification_state") == "failed"
+            and component.get("notification_error_type") != NOTIFICATION_TRANSPORT_FAILURE
+        )
+        if (component.get("error_type") is None
+                and component.get("processing_state") != "failed" and not delivery_invalid):
+            return RUNTIME_STATUS_OK
+    elif name == "reference_worker":
+        if component.get("error_type") in {None, "reference_routes_blocked"}:
+            return RUNTIME_STATUS_OK
+    return status
 
 
 def _collect_reference_owner_health(now, runtime_identity):
@@ -264,9 +297,21 @@ def _reference_owner_health(binding, identity, state, now):
             not isinstance(k, str) or type(v) is not int or v < 0 for k, v in counts.items())
             or sum(counts.values()) != blocked):
         return unavailable
-    fault = blocked > 0 or proof.get("failure_code") is not None
+    receiving = outer_proof.get("receiving")
+    intake_failed = receiving is not None and (
+        not isinstance(receiving, Mapping) or receiving.get("intake_error") is not None
+    )
+    worker_failed = (
+        proof.get("failure_code") is not None
+        # refresh may legitimately be deferred until foreground work is idle;
+        # alive=False alone cannot prove it started and then died.
+        or proof.get("notifications_alive") is False
+        or proof.get("historical_refresh_error") is not None
+        or intake_failed
+    )
+    fault = blocked > 0 or worker_failed
     return {"status": "degraded" if fault else "ok" if state.get("ready") is True else "pending",
-            "error_type": "reference_routes_blocked" if fault else None,
+            "error_type": "reference_worker_failed" if worker_failed else "reference_routes_blocked" if fault else None,
             "last_heartbeat_at": _iso(stamp), "stage": proof.get("stage"),
             "blocked_count": blocked, "blocked_counts": dict(counts),
             "quarantined_route_count": counts.get("REFERENCE_CANONICAL_MISMATCH", 0)}

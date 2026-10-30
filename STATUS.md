@@ -1,3 +1,13 @@
+10/30 夜盘基础健康口径修复：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，待正式运行切换。
+顶层status改为基础服务运行健康，策略样本不足/主力切换暖机保持等待，原组件业务状态、coverage、
+历史失败及严格计算/预热/交易Gate保留；未知原因不冒充样本不足。真实心跳/身份/处理循环/接收故障仍降级。
+相关回归251 passed/2 isolated PostgreSQL条件跳过，独立健康回归161 passed；Ruff/Mypy/OpenSpec12/secret/diff通过。
+本轮仅health实现/测试及canonical文档，未改行情、公式、Scope、SimNow或部署门禁，未发布或切Runtime。
+现役十服务仍v1.16.41/gen43、独立SimNow仍v1.16.44；当前夜盘45 TRADING，最新共享合同与41不兼容，
+正常整组切换仍须休市窗口及Reference预热通过。不得为健康显示回退main、改已发布树或绕过预热门禁。
+EXTERNAL_GATE_PENDING表示现场尚未应用新口径，不是要求owner重复批准。
+以下为此前检查点：
+
 10/30 21:02 自然开盘读回（PARTIAL）：45夜盘TRADING/订阅45/逐品种coverage ok45，15无夜盘CLOSED/coverage unverified，最新1m Bar至21:01；不是60品种全时段验收。
 API/Web200，六owner原PID/active心跳推进。Alert processing_state=ok但总coverage=evaluation_failed，15m规则最新仍白盘15:00，须待21:15自然完成Bar；不伪造实时策略完成证明。
 SimNow在20:59:13已自然登录并完成两轮原账户查询、结算/确认查询，但随后CONTINUOUS_RECOVERY_REQUIRED并RECOVERY_BLOCKED，21:02仍pending=true/opening=false。诊断标签ACCOUNT_SNAPSHOT可能陈旧，不能据此归因具体失败函数。
