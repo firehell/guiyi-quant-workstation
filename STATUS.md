@@ -1,3 +1,33 @@
+10/30 21:02 自然开盘读回（PARTIAL）：45夜盘TRADING/订阅45/逐品种coverage ok45，15无夜盘CLOSED/coverage unverified，最新1m Bar至21:01；不是60品种全时段验收。
+API/Web200，六owner原PID/active心跳推进。Alert processing_state=ok但总coverage=evaluation_failed，15m规则最新仍白盘15:00，须待21:15自然完成Bar；不伪造实时策略完成证明。
+SimNow在20:59:13已自然登录并完成两轮原账户查询、结算/确认查询，但随后CONTINUOUS_RECOVERY_REQUIRED并RECOVERY_BLOCKED，21:02仍pending=true/opening=false。诊断标签ACCOUNT_SNAPSHOT可能陈旧，不能据此归因具体失败函数。
+未重复连接、重启、清预算/block或订单操作；正在仅用既有证据离线定位，不以查询完成代替新鲜接管通过。
+独立20:57:32审计确认64snapshot与Catalog逐事实相同（35Calendar/450Session/60主力），旧Feed状态/绑定/配置SHA及六PID未变；获批BZ/EG旧文件SHA和质量事实保留。
+证据/private/tmp/guiyi-independent-four-metadata-125732.private.json，SHA26d24434f9e97064765e17d5e2ac57e5c5972e5de3b3a0a460c4302825c0362a。
+以下为此前检查点：
+
+10/30 20:57 开盘前优先恢复检查（PARTIAL）：此前18:45同一版本/唯一发布树结论已被后续操作取代。
+正式十服务保持v1.16.41 exact3007dc0078e78f98847127bdd489aab25c8a9813/gen43，未在临近开盘强切。
+独立SimNow已按正式工具切到v1.16.44 exact7b1723e6b5df53091cdb3cd7e1b438b95717208f，
+PID1733/run0900f1274a7a4b8e8c1ed04139a84c01，COMPLETE/HOST_SWITCH_VERIFIED；
+20:56真实状态trade/WAITING_SESSION/UNKNOWN，account_takeover_pending=true、opening_enabled=false。
+原账户/四库/SDK/历史计数/block及一手/70%/来源8秒/Quote3秒门禁保留；尚不能宣称账户恢复或自然交易通过。
+v43/v44均已正常main/tag/Release；修复执行时效、夜盘输入验收范围、发布树引用及单次快照重放性能，
+v44候选1171项相关回归通过，独立执行安全Review通过。正式十cohort预热因Reference W1连续前缀合同阻断，
+新计划均在任何服务停启/CAS前安全取消，effects为空；当前保留41/43/44发布树，不删除仍有引用的旧树。
+owner批准BZ2611/EG2611的2026-10 D1/W1共4请求已逐次成功发布；旧不可变文件/质量事实保留。
+其余8合约已有完整分类并集，合法W1中断按当前canonical仍须DATA_UNAVAILABLE，不能降级放行或重复下载。
+owner另批准原60品种20261102/rank1/rule2最多64次元数据请求、零价格请求。
+经24项离线测试和独立Review，单次采集64次，来源与精确plan校验后单事务新增60主力映射、225 Session、30 Calendar；
+原Feed一次性状态未改。独立20:56:30读回60/60物理映射可解析、全部CLOSED，API/Web HTTP200，六owner同PID心跳推进。
+元数据snapshot c1baeaa97c5803a4c3b34e7ec8d6d0d2046326508e189403377e6eec0ce00a34；
+plan878ce03da2b6b2b1a9a364c721e419ea66efa0b281bdfca27a217191bb4e6438。
+证据/private/tmp/guiyi-nov2-metadata-prepare-37ebea6ea8db/、/private/tmp/guiyi-w1-ten-plans-20261030-123447/、
+output/simnow-review-fixes-20261030/、output/simnow-v44-switch-20261030-f8da3616fb/。
+整体Runtime仍degraded（Alert/周审计），不能报告全部计算或RUNTIME_READY；开盘后自然实时行情、策略计算、
+SimNow新鲜接管/逐品种输入/自然开平成交以及跨日换月仍分别待验。
+以下为此前检查点：
+
 10/30 18:45 收盘四项工作COMPLETED：发布、Reference恢复、十一服务统一切换及发布树收拢均已实际读回。
 唯一运行发布树`.worktrees/release-v1.16.41` clean detached，exact
 `3007dc0078e78f98847127bdd489aab25c8a9813`；正式十服务gen43，双fresh身份/接收验收通过。
