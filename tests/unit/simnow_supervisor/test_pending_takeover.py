@@ -216,6 +216,45 @@ def test_takeover_failure_never_unblocks_any_order_capability(tmp_path, failure)
     assert not {"insert", "cancel"} & set(gateway.calls)
 
 
+@pytest.mark.parametrize(
+    "error,expected",
+    [(ValueError("NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED"), "NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED"),
+     (RuntimeError("private-account-password"), "RECOVERY_ERROR_UNCLASSIFIED")],
+)
+def test_prepare_failure_records_exact_stage_and_safe_cause_without_retry(
+    tmp_path, error, expected
+):
+    import json
+    from test_trade_end_to_end import seeded_account, Driver
+    from guiyi_quant.simnow_execution.supervisor import Supervisor
+
+    settings, folder, clock, market = seeded_account(tmp_path)
+    settings.account_takeover_pending = True
+    drivers = []
+
+    class FailedAdapter(Driver):
+        def adapter(self, *args, **kwargs):
+            raise error
+
+        def failure_diagnostics(self):
+            return {"stage": "ACCOUNT_SNAPSHOT"}
+
+    def factory(*args):
+        driver = FailedAdapter(*args, clock)
+        drivers.append(driver)
+        return driver
+
+    runtime = Supervisor(settings, ("RB", "JM"), market, factory,
+                         clock=clock.now, sleep=clock.sleep)
+    runtime.run(max_cycles=2)
+    failure = json.loads(next(folder.glob("failure-*.json")).read_text())
+    assert failure["diagnostic"]["recovery_stage"] == "ADAPTER_PREPARATION"
+    assert failure["diagnostic"]["recovery_error_code"] == expected
+    assert "private-account-password" not in json.dumps(failure)
+    assert runtime.account_takeover_pending and len(drivers) == 1
+    assert not {"insert", "cancel"} & set(drivers[0].gateway.calls)
+
+
 def test_pending_monitor_publishes_explicit_unverified_state(tmp_path):
     import json
     from types import SimpleNamespace as NS

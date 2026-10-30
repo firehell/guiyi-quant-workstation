@@ -126,6 +126,7 @@ class FakeGateway:
     def __init__(self, mode):
         self.mode = mode
         self.failed = False
+        self.result = {"account_fingerprint": f.ACCOUNT, "trading_day": "20261027"}
         self.user = f.USER
         self.front = "tcp://182.254.243.31:30001"
         self.native_session = dict(front_id=1, session_id=2, max_order_ref=10)

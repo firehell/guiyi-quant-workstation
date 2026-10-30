@@ -127,7 +127,8 @@ class Gateway:
         self.front = "tcp://182.254.243.31:30001"
         self.native_session = dict(front_id=1, session_id=2, max_order_ref=10)
         self.failed = False
-        self.result = {"status": "READ_ONLY_COMPLETE"}
+        self.result = {"status": "READ_ONLY_COMPLETE", "account_fingerprint": ACCOUNT,
+                       "trading_day": "20261027"}
         self.query_diagnostics = []
         self.orders = []
         self.trades = []

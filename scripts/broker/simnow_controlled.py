@@ -99,6 +99,7 @@ def run(gateway, tdapi, config, root):
     from guiyi_quant.simnow_execution.inventory import read_snapshot, project_readback
     from guiyi_quant.simnow_execution.evidence import Evidence
     from guiyi_quant.simnow_execution.host import Host
+    from guiyi_quant.simnow_execution.settlement import SettlementConfirmation
     from guiyi_quant.simnow_execution.facts import (
         bind_contract,
         native_product_id,
@@ -180,10 +181,8 @@ def run(gateway, tdapi, config, root):
             until,
             first.trading_day,
         )
-        settlement = gateway.query("settlement")
-        confirmed = bool(
-            len(settlement) == 1 and settlement[0]["ConfirmDate"] == first.trading_day
-        )
+        settlement = SettlementConfirmation(gateway, first.account_id, first.trading_day)
+        confirmed = settlement.read_confirmed()
         margin = gateway.query("margin", binding.native, exchange=binding.exchange)
         commission = gateway.query(
             "commission", binding.native, exchange=binding.exchange
@@ -316,9 +315,7 @@ def run(gateway, tdapi, config, root):
         if not evidence.snapshots():
             evidence.append(snapshot)
         if not confirmed:
-            settlement = gateway.query("confirm")
-            if len(settlement) != 1:
-                raise ValueError("NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED")
+            settlement.confirm()
             confirmed = True
         session = b.Session(
             snapshot.account_id,
@@ -330,7 +327,7 @@ def run(gateway, tdapi, config, root):
             + digest(
                 (snapshot.account_id, snapshot.trading_day, gateway.native_session)
             ),
-            settlement_source_id="native-settlement:" + digest(settlement),
+            settlement_source_id=settlement.source_id,
             at=now(),
             valid_until=now() + timedelta(seconds=config.max_seconds + 120),
         )

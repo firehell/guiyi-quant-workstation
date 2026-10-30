@@ -164,6 +164,20 @@ def verify_recovery_ownership(snapshot, bindings, journal, state):
             raise ValueError("UNEXPLAINED_NATIVE_TRADE")
 
 
+_RECOVERY_ERRORS = frozenset({
+    "NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED", "NATIVE_SETTLEMENT_IDENTITY_MISMATCH",
+    "NATIVE_FACT_QUERY_FAILED", "NATIVE_GATEWAY_FAILED", "NATIVE_READBACK_INVALID",
+    "NATIVE_SESSION_IDENTITY_MISMATCH", "CONTINUOUS_ACCOUNT_SCOPE_MISMATCH",
+    "ACCOUNT_TAKEOVER_FRESH_READBACK_REQUIRED", "ACCOUNT_PROFILE_ANCHOR_MISMATCH",
+    "ACCOUNT_PROFILE_HOST_MISMATCH", "HOST_NATIVE_ACCOUNT_MISMATCH",
+    "NATIVE_FUTURE_READBACK", "NATIVE_QUERY_INCOMPLETE", "NATIVE_READBACK_CHANGED_OR_HASH_INVALID",
+    "UNEXPLAINED_NATIVE_POSITION", "NATIVE_POSITION_MARGIN_UNEXPLAINED",
+    "NATIVE_FROZEN_WITHOUT_PENDING_ORDER", "LOCAL_STORE_INVALID", "NATIVE_RECOVERY_REQUIRED",
+    "NATIVE_FACT_QUERY_REJECTED", "NATIVE_FACT_RESPONSE_IDENTITY", "NATIVE_FACT_ACCOUNT_MISMATCH",
+    "NATIVE_SNAPSHOT_CHANGED", "EXISTING_ACCOUNT_JOURNAL_REQUIRED",
+})
+
+
 class Supervisor:
     def __init__(
         self,
@@ -199,6 +213,7 @@ class Supervisor:
         self.target_day = None
         self.active_seen = False
         self.prepared = False
+        self.recovery_stage = "NOT_STARTED"
         self.account_takeover_pending = getattr(
             settings, "account_takeover_pending", False
         )
@@ -384,6 +399,7 @@ class Supervisor:
         self.retry_after = self.now() + timedelta(seconds=30 * attempt)
 
     def prepare(self, day):
+        self.recovery_stage = "ACCOUNT_SNAPSHOT"
         snapshot = self.driver.snapshot()
         if (
             snapshot.account_id != self.settings.account_id
@@ -394,14 +410,17 @@ class Supervisor:
         path = self.folder / "account.sqlite"
         if not path.is_file():
             raise ValueError("EXISTING_ACCOUNT_JOURNAL_REQUIRED")
+        self.recovery_stage = "JOURNAL_INSPECTION"
         state = a.LocalStore.inspect(path)
         self.ledger_hash = digest(state)
         if state.account_id != snapshot.account_id or set(
             p.product for p in state.products
         ) != set(self.products):
             raise ValueError("CONTINUOUS_ACCOUNT_SCOPE_MISMATCH")
+        self.recovery_stage = "ACCOUNT_BINDINGS"
         bindings = self.driver.bindings_for(state, self.market, self.now(), day)
         if self.settings.mode == "observe":
+            self.recovery_stage = "OBSERVE_RECONCILIATION"
             rb, _ = project_readback(
                 snapshot,
                 bindings,
@@ -421,6 +440,7 @@ class Supervisor:
             from .journal import Journal
             from .host import Host
 
+            self.recovery_stage = "STORE_OPEN"
             if self.store is None:
                 self.store = a.LocalStore(path)
             if self.journal is None:
@@ -428,16 +448,20 @@ class Supervisor:
                     self.folder / "dispatch.sqlite", snapshot.account_id
                 )
             # Full native account/ownership validation precedes settlement confirmation.
+            self.recovery_stage = "MARKET_RECOVERY"
             proofs = self.market.recovery(state, self.now())
+            self.recovery_stage = "ACCOUNT_REFRESH"
             snapshot = self.driver.snapshot()
             if (
                 snapshot.account_id != self.settings.account_id
                 or snapshot.trading_day != day
             ):
                 raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
+            self.recovery_stage = "OWNERSHIP_VALIDATION"
             verify_recovery_ownership(snapshot, bindings, self.journal, state)
             from .strategy_native import validate_strategy_events
 
+            self.recovery_stage = "ADAPTER_PREPARATION"
             adapter = self.driver.adapter(
                 self.store,
                 self.journal,
@@ -449,6 +473,7 @@ class Supervisor:
                 ),
             )
             adapter.account_takeover_pending = self.account_takeover_pending
+            self.recovery_stage = "UNSENT_ORDER_RECOVERY"
             for order in self.store.current().orders:
                 if order.status == "PROPOSED" and not self.journal.claimed(
                     order.order_id
@@ -456,6 +481,7 @@ class Supervisor:
                     adapter.abort_unsent(
                         order.order_id, "RESTART_VERIFIED_NEVER_CLAIMED", self.now()
                     )
+            self.recovery_stage = "HOST_CONSTRUCTION"
             self.host = Host(
                 self.store,
                 self.journal,
@@ -470,10 +496,12 @@ class Supervisor:
                 takeover_clock=self.now,
                 account_profile=getattr(self.settings, "account_profile", None),
             )
+            self.recovery_stage = "ACCOUNT_RECONCILIATION"
             native, recovered = self.host.reconcile(
                 self.driver.report, bindings, self.now(), proofs
             )
             if self.account_takeover_pending:
+                self.recovery_stage = "TAKEOVER_COMPLETION"
                 self.host.complete_takeover(native, recovered, self.now())
                 self.account_takeover_pending = False
             if not self.store._needs_recovery:
@@ -481,9 +509,11 @@ class Supervisor:
         self.latest_source = (
             snapshot.source_id
         )  # Evidence is durable before publishing the binding.
+        self.recovery_stage = "QUEUE_RECOVERY"
         self.market.activate(self.now())
         self.inbox.recover_queue(self.store)
         self.prepared = True
+        self.recovery_stage = "READY"
 
     def cycle(self):
         now = self.now()
@@ -873,6 +903,11 @@ class Supervisor:
                             )
                             diagnostic["dispatch"] = getattr(
                                 self.host, "last_dispatch_diagnostic", None
+                            )
+                            diagnostic["recovery_stage"] = self.recovery_stage
+                            diagnostic["recovery_error_code"] = (
+                                str(exc) if isinstance(exc, ValueError) and str(exc) in _RECOVERY_ERRORS
+                                else "RECOVERY_ERROR_UNCLASSIFIED"
                             )
                             retain_failure(
                                 self.folder,
