@@ -263,11 +263,14 @@ def _closed_simnow_intent(tmp_path, old, *, late=False):
         return path
     def digest(path):
         return hashlib.sha256(path.read_bytes()).hexdigest()
-    candidate = dict(root=str(tmp_path / 'current'), tag='v1.2.3', commit='a' * 40,
+    candidate = dict(tag='v1.2.3', commit='a' * 40,
         annotated_exact=True, clean=True, sdk_check=True, preflight_valid=True,
         identities={key: 'a' * 64 for key in ('code', 'sdk', 'config', 'plist', 'old_config', 'old_plist', 'monitor')})
+    candidate['identities']['code'] = 'a' * 40
     snapshot = {'candidate': candidate,
-                'host': {'pid': 10, 'run_id': 'old'}, 'preimage': {'old_root': str(old)}}
+                'host': {'pid': 10, 'run_id': 'old'}, 'preimage': {
+                    'old_root': str(old),
+                    'release': {'root': str(tmp_path / 'current'), 'tag': 'v1.2.3', 'commit': 'a' * 40}}}
     plan = {'schema': 'simnow_trade_switch_plan_v7', 'snapshot': snapshot,
             'created_at': 0, 'expires_at': 60, 'execution_permitted': False, 'broker_io': False}
     plan['plan_hash'] = _hash(plan)
@@ -300,6 +303,33 @@ def test_proven_completed_simnow_intent_is_history_not_permanent_pin(tmp_path, m
     old, config, monitor, backend = _simnow_fixture(tmp_path, monkeypatch, installed=False, loaded=False)
     _closed_simnow_intent(tmp_path, old, late=late)
     assert build_cleanup_plan((old,), backend=backend)['targets'][0]['status'] == 'eligible'
+
+
+@pytest.mark.parametrize('field', ['missing_release', 'relative_root', 'tag', 'commit', 'code', 'legacy_root'])
+def test_completed_simnow_release_identity_mismatch_blocks_even_with_matching_hashes(tmp_path, monkeypatch, field):
+    import json
+    from app.runtime_retention import _hash
+    old, config, monitor, backend = _simnow_fixture(tmp_path, monkeypatch, installed=False, loaded=False)
+    intent = _closed_simnow_intent(tmp_path, old)
+    value = json.loads(intent.read_text())
+    plan_path = intent.parent / 'switch-plan.private.json'
+    plan = json.loads(plan_path.read_text())
+    snapshot = plan['snapshot']
+    if field == 'missing_release':
+        snapshot['preimage'].pop('release')
+    elif field == 'relative_root':
+        snapshot['preimage']['release']['root'] = 'relative/root'
+    elif field in {'tag', 'commit'}:
+        snapshot['preimage']['release'][field] = 'v9.9.9' if field == 'tag' else 'b' * 40
+    elif field == 'code':
+        snapshot['candidate']['identities']['code'] = 'b' * 40
+    else:
+        snapshot['candidate']['root'] = str(tmp_path / 'different')
+    plan['plan_hash'] = _hash({k: v for k, v in plan.items() if k != 'plan_hash'})
+    value.update(snapshot=snapshot, plan_hash=plan['plan_hash'])
+    plan_path.write_text(json.dumps(plan))
+    intent.write_text(json.dumps(value))
+    assert build_cleanup_plan((old,), backend=backend)['targets'][0]['status'] == 'blocked'
 
 
 @pytest.mark.parametrize('artifact', ['switch-plan.private.json', 'late-started-receipt.private.json',
