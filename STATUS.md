@@ -1,3 +1,13 @@
+10/30 SimNow结算与恢复补丁：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，v1.16.45候选，尚未发布/切换。
+精确实现6307af54已由PR554集成develop；独立Review两P1已闭合，未发现剩余Confirmed Issue。
+统一当前连接结算证明、修复夜盘日期误拒及未知结算跨连接重试、有界缓存身份漂移，并补准确恢复诊断。
+基础定向144项、补修11/18/36+2项、独立4项及固定SDK无网络34项通过；类型/Ruff/secret0通过。
+正式十服务仍v1.16.41/gen43，独立SimNow仍v1.16.44/run0900f127…；夜盘不开盘中切换。
+原账户四库、20261102 attempt1与CONTINUOUS_RECOVERY_REQUIRED block保持，pending=true/opening=false。
+实际ConfirmDate旧证据缺失，不把离线缺陷当作当晚已证实根因；空RspInfo协议含义继续待验证。
+合法部署窗口/目标日预算、新鲜接管、执行输入、自然开平成交及跨日换月分别待验，不新增同日例外或后台任务。
+详见docs/tasks/2026-10-30-simnow-settlement-recovery.md。以下为此前检查点：
+
 10/30 四项工程准备：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，PR548已集成develop（98861c77f）。
 v39候选工程提交bb25a60e9已独立核验；候选自身944相关、1515 Reference/cohort（127跳过）、
 SDK离线33、Web14/构建及8模块类型通过。PR547仍未合main，未tag/Release或Runtime切换。

@@ -26,7 +26,12 @@
 - 补修受影响定向运行36 passed，另外两条漂移用例仅调整为既有precheck抛固定错误的验收方式后2 passed；
   固定SDK无网络结构/协议34项通过。未重跑六文件。未知错误不泄密；结算响应信息presence仅增诊断，
   空RspInfo是否允许表示成功仍为既有协议待验证风险，不据假设改变Gateway生产处理。
-- 修订候选等待同一独立审查者增量复核；不另外派实现或Review代理。
+- 同一独立审查者已对`6307af54d39c68d061de672e264809da5a56a3ca`增量复核，两P1关闭；
+  独立仅跑4项反例通过（0.27s），无剩余Confirmed Issue，允许集成develop及release candidate。
+  PR554已实际合入develop `beeeed3f77365027d1498ed554c105668272a2ff`。
+- v1.16.45仅增加版本与交付状态，生产实现逐blob等已审候选；版本一致性1项、离线uv lock、
+  Core/API sdist+wheel、Web type/build/topology通过。初次无隔离打包因测试venv缺hatchling停止，
+  随后使用标准离线隔离缓存成功，未安装到现役venv或修改依赖。Web保留既有大chunk提示，不改无关UI。
 
 ## 部署边界
 
