@@ -140,8 +140,8 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
       </div>
       <section v-if="expanded.has(row.symbol)" :id="`home-summary-${row.symbol}`" class="list-composite" :aria-label="`${row.product_name}日周综合摘要`">
         <div class="composite-card" :class="presentation(row.symbol).state?.toLowerCase() ?? 'pending'" role="link" tabindex="0" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}策略详情`" @click="openSummary(row)" @keydown.enter.self.prevent="openSummary(row)" @keydown.space.self.prevent="openSummary(row)">
-          <p class="summary-dates"><span v-for="period in periods" :key="period">{{ periodLabel(period) }}线截至 {{ periodTime(row.symbol, period) }}<template v-if="periodNotice(row.symbol, period).historical"> · 历史：{{ periodNotice(row.symbol, period).text }}</template></span></p>
-          <div class="composite-heading">
+          <p v-if="periods.some(period => periodNotice(row.symbol, period).historical)" class="summary-history" role="status"><template v-for="period in periods" :key="period"><span v-if="periodNotice(row.symbol, period).historical">{{ periodLabel(period) }}线历史：{{ periodNotice(row.symbol, period).text }} · {{ periodTime(row.symbol, period) }}</span></template></p>
+          <div class="composite-heading" :title="`日线参考 · 截至 ${periodTime(row.symbol, '1d')}；周线截至 ${periodTime(row.symbol, '1w')}；策略状态，不代表账户成交`">
             <strong>{{ presentation(row.symbol).prefix }} <span v-if="presentation(row.symbol).price !== '--'" class="composite-price">{{ presentation(row.symbol).price }}</span><span v-else class="composite-price pending">—</span> {{ presentation(row.symbol).suffix }}</strong>
             <span class="composite-signal" :class="presentation(row.symbol).state?.toLowerCase() ?? 'pending'"><span aria-hidden="true">{{ presentation(row.symbol).glyph }}</span> {{ presentation(row.symbol).signal }}</span>
           </div>
@@ -152,8 +152,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
               <span v-else class="stage-idle" aria-hidden="true">{{ index < presentation(row.symbol).stageIndex ? '✓' : '−' }}</span><span>{{ stage.label }}</span>
             </div>
           </div>
-          <p class="summary-basis">距离基准：日线收盘价 {{ newowReferencePrice(fact(row.symbol, '1d')?.reference_current) }} · {{ periodTime(row.symbol, '1d') }}；阶段仅表示策略状态</p>
-          <div class="composite-footer"><div class="composite-tags"><span class="control-tag">{{ homeControlLabel(fact(row.symbol, '1d')) }}</span><span class="performance-tag" :title="performance(row.symbol) ? `页面普通参考收益 · ${performance(row.symbol)?.trade_count} 笔参考交易 · ${performance(row.symbol)?.since} 至 ${performance(row.symbol)?.through} · 零手续费与滑点` : '日线页面参考收益暂不可用'"><template v-if="performance(row.symbol)">日线参考收益 {{ performance(row.symbol)?.trade_count ? formatMarketPercent(performance(row.symbol)?.cum_return_percent, 'percentage_points', true) : '—' }} · {{ performance(row.symbol)?.trade_count }}笔</template><template v-else>{{ performanceNotice(row.symbol) }}</template></span></div><strong v-if="space(row.symbol).value != null" :class="space(row.symbol).target ? 'space-up' : 'space-down'">{{ space(row.symbol).target ? '日线距目标价' : '日线距吸筹价' }} {{ formatMarketPercent(space(row.symbol).value, 'percentage_points', true) }}</strong><span v-else>空间待确认</span></div>
+          <div class="composite-footer"><div class="composite-tags"><span class="control-tag">{{ homeControlLabel(fact(row.symbol, '1d')) }}</span><span class="performance-tag" :title="performance(row.symbol) ? `页面普通参考收益 · ${performance(row.symbol)?.trade_count} 笔参考交易 · ${performance(row.symbol)?.since} 至 ${performance(row.symbol)?.through} · 零手续费与滑点` : '日线页面参考收益暂不可用'"><template v-if="performance(row.symbol)">日线参考收益 {{ performance(row.symbol)?.trade_count ? formatMarketPercent(performance(row.symbol)?.cum_return_percent, 'percentage_points', true) : '—' }} · {{ performance(row.symbol)?.trade_count }}笔</template><template v-else>{{ performanceNotice(row.symbol) }}</template></span></div><strong v-if="space(row.symbol).value != null" :title="`距离基准：日线收盘价 ${newowReferencePrice(fact(row.symbol, '1d')?.reference_current)} · ${periodTime(row.symbol, '1d')}`" :class="space(row.symbol).target ? 'space-up' : 'space-down'">{{ space(row.symbol).target ? '日线距目标价' : '日线距吸筹价' }} {{ formatMarketPercent(space(row.symbol).value, 'percentage_points', true) }}</strong><span v-else>空间待确认</span></div>
         </div>
       </section>
     </article>
@@ -161,7 +160,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 </template>
 
 <style scoped>
-.summary-notice{margin:0;padding:8px 12px;background:#fafafa;color:#8a622c;font-size:12px}.summary-dates,.summary-basis{font-size:11px;color:var(--gy-text-secondary);line-height:1.6;margin:0 0 8px}.summary-dates{display:flex;flex-wrap:wrap;gap:4px 16px}.history-badge{display:block;font-size:9px;color:#8a622c;line-height:12px}.list-periods>span{position:relative}.history-badge{position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap}
+.summary-notice{margin:0;padding:8px 12px;background:#fafafa;color:#8a622c;font-size:12px}.summary-history{font-size:11px;color:var(--gy-text-secondary);line-height:1.6;margin:0 0 8px}.summary-history{display:flex;flex-wrap:wrap;gap:4px 16px}.history-badge{display:block;font-size:9px;color:#8a622c;line-height:12px}.list-periods>span{position:relative}.history-badge{position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap}
 
 .strategy-list-toolbar{display:flex;align-items:center;justify-content:space-between;min-height:32px;padding:0 12px;background:#fafafa;color:var(--gy-text-muted);font-size:12px}
 .strategy-switch{display:flex;gap:14px}.strategy-switch button{border:0;background:none;padding:6px 0;color:var(--gy-text-muted);font-size:12px;cursor:pointer}.strategy-switch button[aria-pressed=true]{color:#ff6535}

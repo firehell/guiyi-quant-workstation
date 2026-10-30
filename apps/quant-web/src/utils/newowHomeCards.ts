@@ -168,7 +168,7 @@ export function homeCardPresentation(day?: HomePeriodFact, week?: HomePeriodFact
   }
   if (state === 'HOLD') return { state, prefix:'当前持股，目标看', price:target, suffix:'', signal:'持股信号', glyph:'✓',
     context:weeklyLead ? `周线持股，目标看${goal}` : `日线持股（周线未确认），目标看${goal}`, stageIndex:2 }
-  if (state === 'CLEAR') return { state, prefix:'日线参考收盘价', price:price(day?.reference_current), suffix:'，策略处于清仓阶段', signal:'卖出信号', glyph:'▼',
+  if (state === 'CLEAR') return { state, prefix:'当前', price:price(day?.reference_current), suffix:'已出现卖出信号', signal:'卖出信号', glyph:'▼',
     context:`${day?.state === 'CLEAR' || day?.current_event?.kind === 'CLEAR' ? '日线' : '周线'}卖出，等待新的买入信号`, stageIndex:3 }
   return { state, prefix:'预估当前', price:absorb, suffix:'附近可以关注', signal:'空仓信号', glyph:'×',
     context:absorb === '--' ? '日周空仓，等待买入信号；日线吸筹价待确认' : `日周空仓，等待买入信号；关注${absorb}（日线吸筹价）`, stageIndex:0 }
