@@ -1,4 +1,53 @@
+10/30 四项工程准备：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，PR548已集成develop（98861c77f）。
+v39候选工程提交bb25a60e9已独立核验；候选自身944相关、1515 Reference/cohort（127跳过）、
+SDK离线33、Web14/构建及8模块类型通过。PR547仍未合main，未tag/Release或Runtime切换。
+完整相关944、Reference/cohort1515（127跳过）、隔离PG8、SDK离线33、Web14/构建、类型与Ruff通过；
+升级恢复并发P1及下一权威日预算退役已修复并独立复核，无剩余Confirmed Issue。
+14:30原run出现Tick→AbortUnsent→Disconnect，dispatch提交0、LOCAL_ABORTED预留已释放、成交0；
+已在原账本一致性副本确认旧10万元profile与原账户初始基线不匹配，不改资金/原账本。
+新增显式原账户profile、闲时60品种输入验收、普通预算trade→trade待恢复升级已完成独立Review。
+15:16轻量读回现役38同run WAITING_SESSION/UNKNOWN、pending=true/opening=false；旧额外许可已消费，
+未重连/重启/清预算或block。本阶段owner仅交办工程准备，不发布main/tag/Release或切服务。
+以下为此前检查点，不作为当前已接管或开仓许可：
+
 # 当前状态
+
+10/30 13:33：owner要求优先保障下午开盘，发布/Reference恢复操作暂停，未park或重启现役。
+正式十服务仍v35/gen41、身份matched；API/Web、DB/Redis正常，无维护drain，发布根35/38 tracked clean。
+13:31首根自然1m及13:33连续自然1m均全部60/60收到，TRADING60、订阅60、Live coverage60ok；
+日内Alert非ok项0，日/周线既有warming/历史evaluation_failed保留，Runtime总体仍degraded。
+**SimNow v38同PID57727/run保持，13:28:02唯一额外连接自然消费，账户接管已通过。**
+13:31原账本只读重放phase READY/readback_valid=true，订单/成交/预留/未核订单/blocked products均0；
+13:33独立复核真实同PID双锁，新native13:33:19约8秒、持仓/委托/成交0，LOGGED_IN/TRADING、
+account_takeover_pending=false、opening_enabled=true，原普通预算3及预算block保留，无手工probe/重连。
+opening只表示宿主准入能力，逐品种新鲜执行输入、14:00以后自然60m信号与真实开平成交仍分别待验。
+Reference48路冲突仍阻断，不能报全服务健康；owner已选保留旧原件、20笔参考OPEN数据冲突中断，
+48受影响流以新修订FLAT/未来起点重建。48路158Bar/213字段变化均与当前Canonical匹配；
+旧未解决Inbox238项须精确追加退役证据，另5项已真实CALCULATED不重复处理。
+恢复代码仅主开发任务分支在写/测试/Review，未发布/未应用，不在交易中强切，SimNow许可不迁移到新版本。
+开盘证据 `output/opening-service-check-20261030/`，源诊断 `output/htdy-window-conflict-20261030/`。
+以下为此前检查点。
+
+10/30 12:55：owner批准统一发布树/正式十服务切换及SimNow待恢复trade方案。PR545已合main，
+annotated tag/GitHub Release **v1.16.38** exact `e026ad367f341a2e08df4a47b229b951c9acefd3`；
+发布tree与已审查候选一致、clean detached，main已回合并develop。源与最终树SimNow各841项、
+固定SDK离线33、8模块mypy、Ruff、cohort/retention 299、Web14/类型/构建/拓扑及独立安全Review通过。
+**第二步TRADE_HOST_DEPLOYED，但统一部署目标PARTIAL。** 独立SimNow已由正式工具切到v38 --trade，
+12:54真实PID57727、同PID双锁、run `7c4ff0253c1b420cb055d847ec5c4cb0`、配置/plist绑定通过；
+WAITING_SESSION/UNKNOWN、account_takeover_pending=true、opening_enabled=false，未完成新鲜账户接管。
+原四库/历史前缀与day30计数3/block保留；唯一额外许可run已领取，attempt尚未领取，未新增Broker连接。
+仅固定本次许可可覆盖冻结的day30 CONNECTION_BUDGET_EXHAUSTED；其余block/漂移仍阻断，
+下午首次连接等待权威13:28–13:32窗口，失败/重启/过期不返还，不得重复apply或制造信号/订单。
+正式十服务cohort尝试在claimed/prewarm阶段取消，effects为空、未停服/安装/CAS，仍v35/gen41；
+身份全部matched，API/Web HTTP通过，Runtime健康未通过。Reference HTDY FU60m真实重叠窗口改值
+触发OBSERVATION_GAP：10/29 03:30Z close5418→5420、volume122620→122629，06:30Z volume110773→110764；
+31个重叠端点一致、两份均completed_live/realtime，缺dataset_revision，不能归因盘后修订或降比较门禁。
+现有source-revision机制不能解除此HTDY原窗口冲突，当前physical MDS读回亦DATASET_OR_PARTITION_MISSING。
+旧v36经两次一致零引用计划non-force移除，v37树复用为v38；仅余v35/v38两棵发布树，
+v35仍被十服务引用不能删，develop及JM30研究树保留。统一版本/单树尚未完成，
+账户恢复、逐品种trade新输入、真实策略成交及恢复验收仍分别待验。未新增定时任务或通知受众。
+证据 `output/simnow-unified-takeover-20261030/`；Reference源冲突须先按原件与权威来源解释/修复，
+再生成新的cohort计划，旧取消计划和已完成SimNow意图均不复用。以下为此前检查点。
 
 10/29 18:20：SimNow只读就绪修复已通过隔离测试与独立安全Review，选择性进入v1.16.35候选。
 账户只读对账证明与账本投影、预算、执行输入分开；可选产品查询仅隔离未接受且无回调的SDK -2/-3。

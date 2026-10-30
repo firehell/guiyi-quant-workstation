@@ -30,9 +30,10 @@ from datetime import datetime, UTC, date, timedelta
 
 sys.dont_write_bytecode = True
 
-SCHEMA = "simnow_trade_switch_plan_v4"
+SCHEMA = "simnow_trade_switch_plan_v6"
 POLICY = "simnow_night_only_deployment_window_v1"
 MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
+ORDINARY_POLICY = "simnow_ordinary_next_session_v2"
 LABEL = "com.guiyi.quant-simnow"
 CalendarFacts = namedtuple(
     "CalendarFacts", "trade_date is_trading_day has_night_session"
@@ -132,6 +133,8 @@ def write_private(path, value, *, exclusive=False):
 
 
 def validate_snapshot(s):
+    if s.get("connection_permit"):
+        fail("CANDIDATE_UNPROVEN")
     """Backend must obtain these from live read-only facts, not a saved receipt."""
     try:
         candidate = s["candidate"]
@@ -170,7 +173,49 @@ def validate_snapshot(s):
             or not a["account_id"]
         ):
             fail("ACCOUNT_UNPROVEN")
+        ordinary = s.get("ordinary_permit")
+        if ordinary:
+            anchor = s.get("historical_contract_anchor", {})
+            if (
+                anchor.get("policy") != "simnow_completed_contract_anchor_v1"
+                or anchor.get("product_count") != 60
+                or not re.fullmatch("[a-f0-9]{64}", anchor.get("sha256", ""))
+                or not isinstance(s.get("preimage"), dict)
+                or anchor != s["preimage"].get("historical_contract_anchor")
+            ):
+                fail("ACCOUNT_UNPROVEN")
+            if (
+                ordinary.get("schema") != "simnow_ordinary_takeover_v2"
+                or ordinary.get("account_id") != a["account_id"]
+                or ordinary.get("profile") != a.get("account_profile")
+                or a["budget_day"] != ordinary["window"]["trading_day"]
+                or s["window"]["trading_day"] != a["budget_day"]
+                or type(a["today_attempts"]) is not int
+                or not 0 <= a["today_attempts"] < 3
+                or a["remaining_attempts"] != 3 - a["today_attempts"]
+                or a["day_blocked"] is not False
+                or not a.get("account_takeover_pending")
+                or a.get("native_account_verified") is not False
+                or a.get("local_obligations_clear") is not True
+            ):
+                fail("ACCOUNT_UNPROVEN")
+            h = s["host"]
+            if (
+                h["label"] != LABEL
+                or h["mode"] not in {"trade", "observe"}
+                or h["unique"] is not True
+                or type(h["pid"]) is not int
+                or h["pid"] <= 1
+                or not h["run_id"]
+                or h["dual_locks_held_by_pid"] is not True
+                or not h["command_identity"]
+            ):
+                fail("HOST_UNPROVEN")
+            validate_window(s["window"])
+            return
         extra = s.get("connection_permit")
+        if extra:
+            fail("PLAN_INVALID")
         exception = bool(
             extra
             and extra.get("schema") == "simnow_midday_one_connection_v2"
@@ -339,6 +384,17 @@ def window_facts(rows, now, mode):
 
 
 def validate_window(w):
+    if w.get("policy") == ORDINARY_POLICY:
+        datetime.strptime(w["trading_day"], "%Y%m%d")
+        if (
+            w["authoritative"] is not True
+            or w["product_count"] != 60
+            or w["current_session_absent"] is not True
+            or w["window_open"] is not True
+            or w["next_session_gap_seconds"] < 660
+        ):
+            fail("WINDOW_UNPROVEN")
+        return
     if (
         w["trading_day"] != "20261030"
         or w["authoritative"] is not True
@@ -402,9 +458,8 @@ class Coordinator:
     def plan(self):
         snapshot = self.backend.snapshot()
         validate_snapshot(snapshot)
-        if snapshot.get("connection_permit") and snapshot["connection_permit"][
-            "state_dir"
-        ] != str(self.root):
+        permit = snapshot.get("ordinary_permit") or snapshot.get("connection_permit")
+        if permit and permit["state_dir"] != str(self.root):
             fail("PLAN_INVALID")
         now = self.clock()
         value = dict(
@@ -423,6 +478,26 @@ class Coordinator:
         fd = os.open(self.mutex, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
         try:
             private(self.mutex)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                fail("SWITCH_BUSY")
+            yield
+        finally:
+            os.close(fd)
+
+    @contextlib.contextmanager
+    def _source_guard(self, source_path):
+        # The original writer owns this exact existing inode throughout apply.
+        path = private(Path(source_path).parent / "switch.lock")
+        fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+        try:
+            observed, current = os.fstat(fd), os.stat(path, follow_symlinks=False)
+            if not stat.S_ISREG(observed.st_mode) or (
+                observed.st_dev,
+                observed.st_ino,
+            ) != (current.st_dev, current.st_ino):
+                fail("SWITCH_BUSY")
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
@@ -465,8 +540,13 @@ class Coordinator:
             fail("PLAN_INVALID")
         if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
             fail("PLAN_EXPIRED")
-        prior_permit = plan["snapshot"].get("connection_permit")
-        current_permit = current.get("connection_permit")
+        permit_key = (
+            "ordinary_permit"
+            if plan["snapshot"].get("ordinary_permit")
+            else "connection_permit"
+        )
+        prior_permit = plan["snapshot"].get(permit_key)
+        current_permit = current.get(permit_key)
         if bool(prior_permit) != bool(current_permit):
             fail("PLAN_INVALID")
         if prior_permit:
@@ -474,7 +554,7 @@ class Coordinator:
                 k: v for k, v in prior_permit.items() if k != "planned_at"
             } != {k: v for k, v in current_permit.items() if k != "planned_at"}:
                 fail("PLAN_INVALID")
-            current["connection_permit"] = prior_permit
+            current[permit_key] = prior_permit
         # Dynamic checked_at and monotonically decreasing gap are excluded by
         # the backend's immutable preimage, never by accepting stale calendar.
         old = plan["snapshot"]["preimage"]
@@ -490,32 +570,123 @@ class Coordinator:
             )
         return current
 
-    def recover(self):
-        """Explicit bounded restore, only before any start request was persisted."""
+    def _recovery_source(self, path):
+        path = private(Path(path))
+        raw = path.read_bytes()
+        value = json.loads(raw)
+        if (
+            value.get("schema") != SCHEMA
+            or value.get("stage") not in {"STOPPED", "INSTALLING", "INSTALLED"}
+            or value.get("operation") == "stopped_pending_recovery"
+            or not value.get("snapshot", {}).get("ordinary_permit")
+        ):
+            fail("UNKNOWN_STAGE")
+        if path.parent == self.root:
+            fail("PLAN_INVALID")
+        claim = path.parent / "pending-trade-recovery-claim.private.json"
+        if claim.exists() or claim.is_symlink():
+            fail("ATTEMPT_CONSUMED")
+        return value, dict(path=str(path), sha256=hashlib.sha256(raw).hexdigest())
+
+    def plan_recovery(self, source_path):
+        self._recovery_source(source_path)
+        with self._source_guard(source_path):
+            source, identity = self._recovery_source(source_path)
+            snapshot = self.backend.recovery_snapshot(source["snapshot"])
+            validate_snapshot(snapshot)
+            if snapshot["ordinary_permit"]["state_dir"] != str(self.root):
+                fail("PLAN_INVALID")
+            now = self.clock()
+            value = dict(
+                schema=SCHEMA,
+                operation="stopped_pending_recovery",
+                source_intent=identity,
+                created_at=now,
+                expires_at=now + 60,
+                snapshot=snapshot,
+                window_policy=snapshot["window"]["policy"],
+                execution_permitted=False,
+                broker_io=False,
+            )
+            return dict(value, plan_hash=digest(value))
+
+    def recover_pending_trade(self, plan):
+        self.intent = self.root / "ordinary-recovery-intent.private.json"
         with self._guard():
-            self.readback()
-            private(self.intent)
-            record = json.loads(self.intent.read_bytes())
-            if record["stage"] not in {"STOPPED", "INSTALLING", "INSTALLED"}:
-                fail("UNKNOWN_STAGE")
-            self.record = record
-            snapshot = record["snapshot"]
-            # Backend proves absent label, idle dual locks and immutable journals
-            # before any restore. Failure is not retried automatically.
-            self.backend.recovery_preflight(snapshot)
-            self._phase("RESTORE_REQUESTED")
-            try:
-                proof = self.backend.recover(snapshot)
-                if proof.get("verified") is not True or proof.get("mode") != "observe":
-                    fail("READBACK_UNPROVEN")
-                self._phase(
-                    "RECOVERED",
-                    result="OBSERVE_HOST_RESTORED",
-                    native_recovery_complete=False,
+            if self.intent.exists():
+                fail("ATTEMPT_CONSUMED")
+            raw = {k: v for k, v in plan.items() if k != "plan_hash"}
+            if (
+                raw.get("schema") != SCHEMA
+                or raw.get("operation") != "stopped_pending_recovery"
+                or digest(raw) != plan.get("plan_hash")
+                or raw["expires_at"] - raw["created_at"] != 60
+            ):
+                fail("PLAN_INVALID")
+            if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
+                fail("PLAN_EXPIRED")
+            with self._source_guard(plan["source_intent"]["path"]):
+                source, identity = self._recovery_source(plan["source_intent"]["path"])
+                if identity != plan["source_intent"]:
+                    fail("PREIMAGE_CHANGED")
+                fresh = self.backend.recovery_snapshot(source["snapshot"])
+                validate_snapshot(fresh)
+                old = plan["snapshot"]
+                if (
+                    not same_preimage(old["preimage"], fresh["preimage"])
+                    or fresh["window"]["policy"] != plan["window_policy"]
+                    or {
+                        k: v
+                        for k, v in fresh["ordinary_permit"].items()
+                        if k != "planned_at"
+                    }
+                    != {
+                        k: v
+                        for k, v in old["ordinary_permit"].items()
+                        if k != "planned_at"
+                    }
+                ):
+                    fail("PREIMAGE_CHANGED")
+                fresh["ordinary_permit"] = old["ordinary_permit"]
+                if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
+                    fail("PLAN_EXPIRED")
+                write_private(
+                    Path(identity["path"]).parent
+                    / "pending-trade-recovery-claim.private.json",
+                    dict(
+                        source_sha256=identity["sha256"],
+                        plan_hash=plan["plan_hash"],
+                        recovery_intent=str(self.intent),
+                    ),
+                    exclusive=True,
                 )
-                return self.readback()
-            except Exception:
-                fail("RESULT_UNKNOWN")
+                self.record = dict(
+                    schema=SCHEMA,
+                    operation="stopped_pending_recovery",
+                    window_policy=plan["window_policy"],
+                    stage="STOPPED",
+                    source_intent=identity,
+                    plan_hash=plan["plan_hash"],
+                    snapshot=fresh,
+                    at=self.clock(),
+                    native_recovery_complete=False,
+                    result="UNKNOWN",
+                )
+                write_private(self.intent, self.record, exclusive=True)
+                try:
+                    return self._finish(fresh, plan["plan_hash"])
+                except Exception as exc:
+                    code = (
+                        str(exc)
+                        if isinstance(exc, SwitchError) and str(exc) in CODES
+                        else "RESULT_UNKNOWN"
+                    )
+                    self.record["error"] = code
+                    write_private(self.intent, self.record)
+                    fail(code)
+
+    def recover(self):
+        fail("UNKNOWN_STAGE")
 
     def apply(self, plan):
         with self._guard():
@@ -523,6 +694,8 @@ class Coordinator:
                 self.readback()  # Unknown stages remain explicitly unknown.
                 fail("ATTEMPT_CONSUMED")
             try:
+                if plan.get("operation"):
+                    fail("PLAN_INVALID")
                 raw = {k: v for k, v in plan.items() if k != "plan_hash"}
                 if (
                     raw["schema"] != SCHEMA
@@ -561,74 +734,7 @@ class Coordinator:
                         fail("STOP_TIMEOUT")
                     self.sleep(0.25)
                 self._phase("STOPPED")
-                with self.backend.offline_guard(snapshot):
-                    evidence = self.backend.offline_preflight(snapshot)
-                    if evidence.get("writer_idle") is not True:
-                        fail("WRITER_NOT_IDLE")
-                    if (
-                        evidence.get("preimage") != snapshot["preimage"]
-                        or evidence.get("protected_state_unchanged") is not True
-                    ):
-                        fail("PREIMAGE_CHANGED")
-                    if snapshot["account"].get("account_takeover_pending", False):
-                        snapshot["connection_anchor"] = evidence.get(
-                            "connection_anchor"
-                        )
-                        if not snapshot["connection_anchor"]:
-                            fail("PREIMAGE_CHANGED")
-                    # Re-read authoritative calendar immediately before install.
-                    if self.backend.window_open() is not True:
-                        fail("WINDOW_UNPROVEN")
-                    self._phase("INSTALLING")
-                    if self.backend.install(snapshot) is not True:
-                        fail("INSTALL_UNPROVEN")
-                    self._phase("INSTALLED")
-                if self.backend.window_open() is not True:
-                    fail("WINDOW_UNPROVEN")
-                grant_fields = {}
-                if snapshot.get("connection_permit"):
-                    grant_fields["connection_grant_sha256"] = (
-                        self.backend.issue_connection_permit(
-                            snapshot, plan["plan_hash"], self.intent
-                        )
-                    )
-                self._phase("START_REQUESTED", **grant_fields)
-                if self.backend.start(snapshot) is not True:
-                    fail("START_UNPROVEN")
-                self._phase("VERIFYING")
-                previous = None
-                for _ in range(2):
-                    proof = self.backend.readback(snapshot)
-                    if (
-                        proof.get("verified") is not True
-                        or proof.get("mode") != "trade"
-                        or proof.get("pid") == snapshot["host"]["pid"]
-                        or type(proof.get("pid")) is not int
-                        or proof["pid"] <= 1
-                        or not proof.get("run_id")
-                        or proof["run_id"] == snapshot["host"]["run_id"]
-                        or proof.get("dual_locks_held_by_pid") is not True
-                        or proof.get("config_bound") is not True
-                        or proof.get("monitor_bound") is not True
-                    ):
-                        fail("READBACK_UNPROVEN")
-                    if snapshot["account"].get("account_takeover_pending", False) and (
-                        proof.get("account_takeover_pending") is not True
-                        or proof.get("opening_enabled") is not False
-                    ):
-                        fail("READBACK_UNPROVEN")
-                    if previous and (proof["pid"], proof["run_id"]) != previous:
-                        fail("READBACK_UNPROVEN")
-                    previous = proof["pid"], proof["run_id"]
-                    self.sleep(1)
-                self._phase(
-                    "COMPLETE",
-                    result="HOST_SWITCH_VERIFIED",
-                    pid=previous[0],
-                    run_id=previous[1],
-                    native_recovery_complete=False,
-                )
-                return self.readback()
+                return self._finish(snapshot, plan["plan_hash"])
             except Exception as exc:
                 # Preserve last durable intent phase. Never automatic rollback:
                 # a new trade journal event can make old observe code incompatible.
@@ -637,12 +743,84 @@ class Coordinator:
                 write_private(self.intent, self.record)
                 fail(self.record["error"])
 
+    def _finish(self, snapshot, plan_hash):
+        with self.backend.offline_guard(snapshot):
+            evidence = self.backend.offline_preflight(snapshot)
+            if evidence.get("writer_idle") is not True:
+                fail("WRITER_NOT_IDLE")
+            if (
+                evidence.get("preimage") != snapshot["preimage"]
+                or evidence.get("protected_state_unchanged") is not True
+            ):
+                fail("PREIMAGE_CHANGED")
+            if snapshot["account"].get("account_takeover_pending", False):
+                snapshot["connection_anchor"] = evidence.get("connection_anchor")
+                if not snapshot["connection_anchor"]:
+                    fail("PREIMAGE_CHANGED")
+            # Re-read authoritative calendar immediately before install.
+            if self.backend.window_open() is not True:
+                fail("WINDOW_UNPROVEN")
+            self._phase("INSTALLING")
+            if self.backend.install(snapshot) is not True:
+                fail("INSTALL_UNPROVEN")
+            self._phase("INSTALLED")
+        if self.backend.window_open() is not True:
+            fail("WINDOW_UNPROVEN")
+        grant_fields = {}
+        if snapshot.get("ordinary_permit"):
+            grant_fields["ordinary_grant_sha256"] = self.backend.issue_ordinary_permit(
+                snapshot, plan_hash, self.intent
+            )
+        elif snapshot.get("connection_permit"):
+            grant_fields["connection_grant_sha256"] = (
+                self.backend.issue_connection_permit(snapshot, plan_hash, self.intent)
+            )
+        self._phase("START_REQUESTED", **grant_fields)
+        if self.backend.start(snapshot) is not True:
+            fail("START_UNPROVEN")
+        self._phase("VERIFYING")
+        previous = None
+        for _ in range(2):
+            proof = self.backend.readback(snapshot)
+            if (
+                proof.get("verified") is not True
+                or proof.get("mode") != "trade"
+                or proof.get("pid") == snapshot["host"]["pid"]
+                or type(proof.get("pid")) is not int
+                or proof["pid"] <= 1
+                or not proof.get("run_id")
+                or proof["run_id"] == snapshot["host"]["run_id"]
+                or proof.get("dual_locks_held_by_pid") is not True
+                or proof.get("config_bound") is not True
+                or proof.get("monitor_bound") is not True
+            ):
+                fail("READBACK_UNPROVEN")
+            if snapshot["account"].get("account_takeover_pending", False) and (
+                proof.get("account_takeover_pending") is not True
+                or proof.get("opening_enabled") is not False
+            ):
+                fail("READBACK_UNPROVEN")
+            if previous and (proof["pid"], proof["run_id"]) != previous:
+                fail("READBACK_UNPROVEN")
+            previous = proof["pid"], proof["run_id"]
+            self.sleep(1)
+        self._phase(
+            "COMPLETE",
+            result="HOST_SWITCH_VERIFIED",
+            pid=previous[0],
+            run_id=previous[1],
+            native_recovery_complete=False,
+        )
+        return self.readback()
+
 
 class MacBackend:
     """Pinned native LaunchAgent backend; no shell, credential or Broker calls."""
 
-    def __init__(self, candidate, candidate_plist, *, tag, home=None, window="night"):
-        if window not in {"night", "midday"}:
+    def __init__(
+        self, candidate, candidate_plist, *, tag, home=None, window="ordinary"
+    ):
+        if window not in {"night", "midday", "ordinary"}:
             fail("WINDOW_UNPROVEN")
         self.window = window
         self.home = Path.home() if home is None else Path(home)
@@ -685,6 +863,14 @@ class MacBackend:
         )
 
         self.settings = load_settings(self.config)
+        self.ordinary = bool(getattr(self.settings, "ordinary_takeover_permit", None))
+        if (
+            self.window != "ordinary"
+            or not self.ordinary
+            or not self.settings.account_takeover_pending
+            or getattr(self.settings, "deployment_connection_permit", None)
+        ):
+            fail("CANDIDATE_UNPROVEN")
         self.folder = self.settings.state_root / self.settings.account_id
         self.locks = (
             global_account_lock_directory() / (self.settings.account_id + ".lock"),
@@ -828,6 +1014,10 @@ class MacBackend:
             return tuple(rows)
 
     def _window(self):
+        if getattr(self, "ordinary", False):
+            from app.simnow_takeover_window import authoritative_window
+
+            return authoritative_window(datetime.now(UTC), require_closed=True)
         now = datetime.now(UTC)
         rows = self._window_rows(now)
         return window_facts(rows, datetime.now(UTC), self.window)
@@ -1081,7 +1271,7 @@ class MacBackend:
                 fail("PREIMAGE_CHANGED")
             if (
                 control.get("status") != "STOPPED"
-                or control.get("mode") != "observe"
+                or control.get("mode") != stopped_snapshot["host"]["mode"]
                 or control.get("opening_enabled") is not False
                 or control.get("run_id") != stopped_snapshot["host"]["run_id"]
                 or monitor.get("run_id") != control["run_id"]
@@ -1098,6 +1288,11 @@ class MacBackend:
         from guiyi_quant.htdy_account_execution.codec import digest as state_digest
 
         pending = getattr(self.settings, "account_takeover_pending", False)
+        budget_day = (
+            self._window()["trading_day"]
+            if getattr(self, "ordinary", False)
+            else "20261030"
+        )
         state = existing_account(self.settings.state_root, self.settings.account_id)
         projection = LocalStore.inspect(self.folder / "account.sqlite")
         journal = ReadJournal(self.folder / "dispatch.sqlite", self.settings.account_id)
@@ -1218,13 +1413,13 @@ class MacBackend:
                     db.execute("SELECT * FROM " + table + " ORDER BY rowid").fetchall()
                 )
             row = db.execute(
-                "SELECT count FROM attempts WHERE day=?", ("20261030",)
+                "SELECT count FROM attempts WHERE day=?", (budget_day,)
             ).fetchone()
             attempts = row[0] if row else 0
             if type(attempts) is not int or not 0 <= attempts <= 3:
                 fail("ACCOUNT_UNPROVEN")
             block_row = db.execute(
-                "SELECT code FROM blocks WHERE day=?", ("20261030",)
+                "SELECT code FROM blocks WHERE day=?", (budget_day,)
             ).fetchone()
             block_code = block_row[0] if block_row else None
             blocked = block_row is not None
@@ -1239,7 +1434,10 @@ class MacBackend:
             today_attempts=attempts,
             remaining_attempts=3 - attempts,
             day_blocked=blocked,
-            budget_day="20261030",
+            budget_day=budget_day,
+            account_profile=self._profile()
+            if getattr(self, "ordinary", False)
+            else None,
             existing=True,
             same_account_anchor=True,
             scope_count=len(state.products),
@@ -1295,6 +1493,15 @@ class MacBackend:
         }
         return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
+    def _historical_anchor(self):
+        from app.simnow_takeover_window import historical_contract_anchor
+
+        return historical_contract_anchor(datetime.now(UTC))
+
+    def _verify_historical_anchor(self, snapshot):
+        if self._historical_anchor() != snapshot.get("historical_contract_anchor"):
+            fail("PREIMAGE_CHANGED")
+
     def _preimage(self):
         p = plistlib.loads(private(self.plist).read_bytes())
         args = p["ProgramArguments"]
@@ -1316,17 +1523,24 @@ class MacBackend:
                 not getattr(self.settings, "account_takeover_pending", False)
                 and old_cfg != json.loads(private(self.monitor).read_bytes())
             )
-            or old_cfg["mode"] != "observe"
+            or old_cfg["mode"]
+            not in (
+                {"observe", "trade"}
+                if getattr(self, "ordinary", False)
+                else {"observe"}
+            )
             or old_cfg["account_id"] != self.settings.account_id
             or old_cfg["state_root"] != str(self.settings.state_root)
             or old_cfg.get("state_project_root")
             != str(self.settings.state_project_root)
-            or "--observe-only" not in args
-            or "--trade" in args
+            or ("--trade" if old_cfg["mode"] == "trade" else "--observe-only")
+            not in args
+            or ("--observe-only" if old_cfg["mode"] == "trade" else "--trade") in args
             or p["Label"] != LABEL
         ):
             fail("PREIMAGE_CHANGED")
         self.old_config = old
+        self.old_mode = old_cfg["mode"]
         return {
             "monitor_target_sha256": hashlib.sha256(self.monitor_source()).hexdigest()
             if getattr(self.settings, "account_takeover_pending", False)
@@ -1375,7 +1589,7 @@ class MacBackend:
             fail("CANDIDATE_UNPROVEN")
         return exact
 
-    def snapshot(self):
+    def _candidate(self):
         exact = self.code_check()
         runner = self.code / "scripts/broker/simnow_supervisor.py"
         r = self.run(
@@ -1403,12 +1617,21 @@ class MacBackend:
         ):
             fail("CANDIDATE_UNPROVEN")
         preflight = self.service.preflight_trade(self.settings, self.config)
+        return exact, preflight
+
+    def snapshot(self):
+        exact, preflight = self._candidate()
         preimage = self._preimage()
         account = self._account()
         pid = self._pid()
-        command = self._prove(pid, "observe", self.old_config)
+        command = self._prove(
+            pid, getattr(self, "old_mode", "observe"), self.old_config
+        )
         control = json.loads(private(self.folder / "continuous.json").read_bytes())
-        if control["mode"] != "observe" or control["opening_enabled"]:
+        if (
+            control["mode"] != getattr(self, "old_mode", "observe")
+            or control["opening_enabled"]
+        ):
             fail("HOST_UNPROVEN")
         preimage.update(
             account=account,
@@ -1419,8 +1642,27 @@ class MacBackend:
                 for p in self.locks
             ],
         )
+        historical_anchor = (
+            self._historical_anchor() if getattr(self, "ordinary", False) else None
+        )
+        if historical_anchor is not None:
+            preimage["historical_contract_anchor"] = historical_anchor
         window = self._window()
         connection_permit = None
+        ordinary_permit = None
+        if getattr(self, "ordinary", False):
+            from guiyi_quant.simnow_execution import ordinary_takeover as ordinary
+
+            ordinary_permit = ordinary.binding(
+                self.settings, self.config, window, datetime.now(UTC)
+            )
+            path = Path(self.settings.ordinary_takeover_permit)
+            if (
+                path.exists()
+                or path.is_symlink()
+                or Path(str(path) + ".run-claim").exists()
+            ):
+                fail("ATTEMPT_CONSUMED")
         path = getattr(self.settings, "deployment_connection_permit", None)
         if path and account["today_attempts"] == 3:
             from guiyi_quant.simnow_execution import deployment_connection as permit
@@ -1451,8 +1693,12 @@ class MacBackend:
         identities = dict(preimage, code=exact)
         self._stop_signals = account["databases"].get("signals.sqlite")
         self._stop_requires_permit = bool(connection_permit)
+        self._stop_ordinary = ordinary_permit
+        self._stop_historical_anchor = historical_anchor
         return dict(
             connection_permit=connection_permit,
+            ordinary_permit=ordinary_permit,
+            historical_contract_anchor=historical_anchor,
             old_config_path=str(self.old_config),
             observe_index=self.last_observe_index,
             candidate=dict(
@@ -1467,7 +1713,7 @@ class MacBackend:
             account=account,
             host=dict(
                 label=LABEL,
-                mode="observe",
+                mode=getattr(self, "old_mode", "observe"),
                 unique=True,
                 pid=pid,
                 run_id=control["run_id"],
@@ -1478,8 +1724,103 @@ class MacBackend:
             preimage=preimage,
         )
 
+    def recovery_snapshot(self, source):
+        from guiyi_quant.simnow_execution import ordinary_takeover as ordinary
+
+        if not getattr(self, "ordinary", False):
+            fail("CANDIDATE_UNPROVEN")
+        self._recovery = True
+        self._verify_historical_anchor(source)
+        if (
+            self.identity(self.settings.sdk_python, interpreter=True)
+            != source["preimage"]["sdk"]
+            or self.identity(private(Path(source["old_config_path"])))
+            != source["preimage"]["old_config"]
+        ):
+            fail("PREIMAGE_CHANGED")
+        if (
+            source["candidate"]["commit"] != self.exact
+            or source["candidate"]["tag"] != self.tag
+            or source["preimage"]["release"]["root"] != str(self.code)
+        ):
+            fail("PREIMAGE_CHANGED")
+        original_path = private(Path(source["ordinary_permit"]["config_path"]))
+        original = json.loads(original_path.read_bytes())
+        if (
+            hashlib.sha256(original_path.read_bytes()).hexdigest()
+            != source["preimage"]["config"]["sha256"]
+        ):
+            fail("PREIMAGE_CHANGED")
+        if {k: v for k, v in original.items() if k != "ordinary_takeover_permit"} != {
+            k: v for k, v in self.cfg.items() if k != "ordinary_takeover_permit"
+        }:
+            fail("PREIMAGE_CHANGED")
+        if not self.stopped(source):
+            fail("STOP_UNPROVEN")
+        loaded = self._label_loaded()
+        if loaded is not None and re.search(r"^\s*pid = (\d+)", loaded.stdout, re.M):
+            fail("HOST_UNPROVEN")
+        for path, allowed in (
+            (
+                self.plist,
+                {
+                    source["preimage"]["old_plist"]["sha256"],
+                    source["preimage"]["plist"]["sha256"],
+                },
+            ),
+            (
+                self.monitor,
+                {
+                    source["preimage"]["monitor"]["sha256"],
+                    source["preimage"].get("monitor_target_sha256"),
+                },
+            ),
+        ):
+            if hashlib.sha256(private(path).read_bytes()).hexdigest() not in allowed:
+                fail("PREIMAGE_CHANGED")
+        exact, preflight = self._candidate()
+        with self.offline_guard(source):
+            preimage = self._preimage()
+            account = self._account(stopped_snapshot=source)
+            if not same_preimage(
+                dict(account=source["account"]), dict(account=account)
+            ):
+                fail("PREIMAGE_CHANGED")
+            window = self._window()
+            permit = ordinary.binding(
+                self.settings, self.config, window, datetime.now(UTC)
+            )
+            if Path(self.settings.ordinary_takeover_permit).exists():
+                fail("ATTEMPT_CONSUMED")
+            preimage.update(
+                historical_contract_anchor=source["historical_contract_anchor"],
+                account=account,
+                locks=source["preimage"]["locks"],
+                host_pid=source["host"]["pid"],
+                host_run_id=source["host"]["run_id"],
+            )
+            return dict(
+                candidate=dict(
+                    tag=self.tag,
+                    commit=exact,
+                    annotated_exact=True,
+                    clean=True,
+                    sdk_check=True,
+                    preflight_valid=preflight["candidate_valid"],
+                    identities=dict(preimage, code=exact),
+                ),
+                account=account,
+                historical_contract_anchor=source["historical_contract_anchor"],
+                ordinary_permit=permit,
+                connection_permit=None,
+                window=window,
+                host=source["host"],
+                preimage=preimage,
+                old_config_path=str(self.old_config),
+            )
+
     def stop(self, pid):
-        self._prove(pid, "observe", self.old_config)
+        self._prove(pid, getattr(self, "old_mode", "observe"), self.old_config)
         # Observe may reconnect while plan/preflight runs. A last budget/block or
         # queue change must be noticed before sending the cooperative stop.
         if self.identity(self.folder / "signals.sqlite") != self._stop_signals:
@@ -1490,6 +1831,22 @@ class MacBackend:
             marker = permit.global_marker(self.settings)
             if marker.exists() or marker.is_symlink():
                 fail("ACCOUNT_UNPROVEN")
+        if getattr(self, "_stop_ordinary", None):
+            from guiyi_quant.simnow_execution import ordinary_takeover as ordinary
+
+            fresh = ordinary.binding(
+                self.settings,
+                self.config,
+                self._stop_ordinary["window"],
+                datetime.fromisoformat(self._stop_ordinary["planned_at"]),
+            )
+            if fresh != self._stop_ordinary:
+                fail("PREIMAGE_CHANGED")
+        if (
+            getattr(self, "_stop_historical_anchor", None) is not None
+            and self._historical_anchor() != self._stop_historical_anchor
+        ):
+            fail("PREIMAGE_CHANGED")
         os.kill(pid, signal.SIGTERM)
 
     def stopped(self, snapshot):
@@ -1527,6 +1884,8 @@ class MacBackend:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     fail("WRITER_NOT_IDLE")
+            if snapshot.get("ordinary_permit"):
+                self._verify_historical_anchor(snapshot)
             self._offline_held = True
             yield
         finally:
@@ -1541,6 +1900,11 @@ class MacBackend:
             fail("STOP_UNPROVEN")
         self.code_check()
         current = self._preimage()
+        if snapshot.get("ordinary_permit"):
+            self._verify_historical_anchor(snapshot)
+            current["historical_contract_anchor"] = snapshot[
+                "historical_contract_anchor"
+            ]
         account = self._account(stopped_snapshot=snapshot)
         p = snapshot["preimage"]
         unchanged = same_preimage(
@@ -1564,13 +1928,29 @@ class MacBackend:
         )
 
     def install(self, snapshot):
-        r = self.run(["/bin/launchctl", "bootout", self.label])
-        if r.returncode or self._label_loaded() is not None:
-            fail("INSTALL_UNPROVEN")
+        if getattr(self, "ordinary", False):
+            loaded = self._label_loaded()
+            if loaded is None and not getattr(self, "_recovery", False):
+                fail("INSTALL_UNPROVEN")
+            if loaded is not None:
+                r = self.run(["/bin/launchctl", "bootout", self.label])
+                if r.returncode or self._label_loaded() is not None:
+                    fail("INSTALL_UNPROVEN")
+        else:
+            r = self.run(["/bin/launchctl", "bootout", self.label])
+            if r.returncode or self._label_loaded() is not None:
+                fail("INSTALL_UNPROVEN")
         # Private preimages are retained by the prepared deployment directory.
         # Durable intent makes any intermediate cross-file state non-retryable.
         for original in (self.plist, self.monitor, self.old_config):
-            backup = original.with_name(original.name + ".trade-switch-preimage")
+            suffix = (
+                ".ordinary-"
+                + hashlib.sha256(self.config.read_bytes()).hexdigest()[:16]
+                + ".preimage"
+                if getattr(self, "ordinary", False)
+                else ".trade-switch-preimage"
+            )
+            backup = original.with_name(original.name + suffix)
             raw = original.read_bytes()
             fd = os.open(
                 backup, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
@@ -1616,6 +1996,8 @@ class MacBackend:
         return source
 
     def recovery_preflight(self, snapshot):
+        if getattr(self, "ordinary", False):
+            fail("UNKNOWN_STAGE")
         self.old_config = Path(snapshot["old_config_path"])
         self.code_check()
         old_cfg = json.loads(private(self.old_config).read_bytes())
@@ -1661,6 +2043,8 @@ class MacBackend:
                 self._restore_source(original, identity)
 
     def recover(self, snapshot):
+        if getattr(self, "ordinary", False):
+            fail("UNKNOWN_STAGE")
         self.recovery_preflight(snapshot)
         with self.offline_guard(snapshot):
             loaded = self._label_loaded()
@@ -1721,6 +2105,24 @@ class MacBackend:
             time.sleep(1)
         fail("READBACK_UNPROVEN")
 
+    def _profile(self):
+        from guiyi_quant.simnow_execution.ordinary_takeover import profile_binding
+
+        return profile_binding(self.settings)
+
+    def issue_ordinary_permit(self, snapshot, plan_hash, intent_path):
+        self._verify_historical_anchor(snapshot)
+        from guiyi_quant.simnow_execution import ordinary_takeover as ordinary
+
+        return ordinary.issue(
+            self.settings,
+            snapshot["ordinary_permit"],
+            plan_hash,
+            intent_path,
+            datetime.now(UTC),
+            clock=lambda: datetime.now(UTC),
+        )
+
     def issue_connection_permit(self, snapshot, plan_hash, intent_path):
         from guiyi_quant.simnow_execution import deployment_connection as permit
 
@@ -1734,6 +2136,8 @@ class MacBackend:
         )
 
     def start(self, snapshot):
+        if snapshot.get("ordinary_permit"):
+            self._verify_historical_anchor(snapshot)
         self.code_check()
         if (
             self.identity(self.settings.sdk_python, interpreter=True)
@@ -1797,17 +2201,26 @@ class MacBackend:
         if getattr(self.settings, "account_takeover_pending", False):
             from guiyi_quant.simnow_execution import deployment_connection as permit
 
-            claim, _ = permit.read(
-                Path(str(self.settings.deployment_connection_permit) + ".run-claim")
-            )
+            ordinary_path = getattr(self.settings, "ordinary_takeover_permit", None)
+            permit_path = ordinary_path or self.settings.deployment_connection_permit
+            claim, _ = permit.read(Path(str(permit_path) + ".run-claim"))
             intent, _ = permit.read(
-                self.settings.deployment_connection_permit.parent
-                / "switch-intent.private.json"
+                Path(permit_path).parent
+                / (
+                    "ordinary-recovery-intent.private.json"
+                    if getattr(self, "_recovery", False)
+                    else "switch-intent.private.json"
+                )
             )
             if (
                 claim.get("run_id") != status["run_id"]
                 or claim.get("pid") != pid
-                or claim.get("grant_sha256") != intent.get("connection_grant_sha256")
+                or claim.get("grant_sha256")
+                != intent.get(
+                    "ordinary_grant_sha256"
+                    if ordinary_path
+                    else "connection_grant_sha256"
+                )
                 or status.get("account_takeover_pending") is not True
                 or status.get("opening_enabled") is not False
             ):
@@ -1848,7 +2261,9 @@ def main(argv=None):
     parser.add_argument("--state-dir", required=True, type=Path)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--tag")
-    parser.add_argument("--window", choices=("night", "midday"), default="night")
+    parser.add_argument(
+        "--window", choices=("ordinary", "night", "midday"), default="ordinary"
+    )
     parser.add_argument("--candidate-plist", type=Path)
     parser.add_argument("--plan", type=Path)
     actions = parser.add_mutually_exclusive_group()
@@ -1856,6 +2271,10 @@ def main(argv=None):
     actions.add_argument("--readback", action="store_true")
     actions.add_argument("--apply", action="store_true")
     actions.add_argument("--recover-observe", action="store_true")
+    actions.add_argument("--plan-stopped-recovery", action="store_true")
+    actions.add_argument("--recover-pending-trade", action="store_true")
+    parser.add_argument("--source-intent", type=Path)
+    parser.add_argument("--recovery-intent", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.readback:
@@ -1881,7 +2300,32 @@ def main(argv=None):
                 ],
             )
         coordinator = Coordinator(backend, args.state_dir)
-        if args.check:
+        if args.plan_stopped_recovery:
+            if not args.source_intent or not args.plan:
+                fail("PLAN_INVALID")
+            result = coordinator.plan_recovery(args.source_intent)
+            write_private(args.plan, result, exclusive=True)
+            print(
+                json.dumps(
+                    dict(
+                        status="RECOVERY_PLAN_READY",
+                        plan_hash=result["plan_hash"],
+                        broker_io=False,
+                    )
+                )
+            )
+        elif args.recover_pending_trade:
+            if not args.plan:
+                fail("PLAN_INVALID")
+            print(
+                json.dumps(
+                    coordinator.recover_pending_trade(
+                        json.loads(private(args.plan).read_bytes())
+                    ),
+                    sort_keys=True,
+                )
+            )
+        elif args.check:
             result = backend._window()
             print(
                 json.dumps(

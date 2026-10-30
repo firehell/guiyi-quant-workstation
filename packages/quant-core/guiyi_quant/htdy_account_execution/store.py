@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import sqlite3
 import threading
+import tempfile
+from time import monotonic
 from . import codec, model as m
 from .reducer import apply, validate
 
@@ -30,6 +32,47 @@ class Commit:
 class LocalStore:
     @classmethod
     def inspect(cls, path):
+        """Verify a consistent private copy; never replay under a live reader lock."""
+        path = Path(path)
+        if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:
+            raise StoreError("PRIVATE_LOCAL_STORE_REQUIRED")
+        with path.open("rb") as stream:
+            header = stream.read(20)
+        if header[:16] != b"SQLite format 3\x00" or header[18:20] != b"\x01\x01":
+            raise StoreError("READ_ONLY_JOURNAL_MODE_UNSUPPORTED")
+        identity = path.stat()
+        started = monotonic()
+
+        def progress(*_):
+            if monotonic() - started > 3:
+                raise StoreError("READ_ONLY_SNAPSHOT_BUSY")
+
+        with tempfile.TemporaryDirectory(prefix="guiyi-account-readback-") as directory:
+            target = Path(directory) / "account.sqlite"
+            fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.close(fd)
+            source = sqlite3.connect(
+                path.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.1
+            )
+            copy = sqlite3.connect(target)
+            try:
+                source.execute("PRAGMA query_only=ON")
+                source.backup(copy, pages=32, progress=progress, sleep=0.005)
+            except sqlite3.Error:
+                raise StoreError("READ_ONLY_SNAPSHOT_BUSY") from None
+            finally:
+                source.close()
+                copy.close()
+            current = path.lstat()
+            if path.is_symlink() or (current.st_dev, current.st_ino) != (
+                identity.st_dev,
+                identity.st_ino,
+            ):
+                raise StoreError("PRIVATE_LOCAL_STORE_REQUIRED")
+            return cls._inspect_frozen(target)
+
+    @classmethod
+    def _inspect_frozen(cls, path):
         """Verify existing immutable journal through a SQLite read-only connection."""
         path = Path(path)
         if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:

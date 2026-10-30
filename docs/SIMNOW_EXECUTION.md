@@ -541,3 +541,45 @@ adapter/恢复步骤后重新读时。新鲜性不足保留pending，不落成�
 不返还，换config或state-dir也不能重新签发。只读plan及SIGTERM前必须拒绝已占用标记，最终issue仍以
 O_EXCL处理并发。此标记只是本次一次性授权事实，不修改用户级配置或扩展为通用额度服务。
 原生窗口查询、grant持久化及SDK校验后的最终bootstrap前均重新读时；过窗/未知不启动、不refund或重试。
+
+### 原账户 profile、闲时输入验收与普通预算升级
+
+原账户自动交易使用显式 `original_anchor_v1` profile，schema2 私有配置中的
+`account_profile` 精确绑定既有 account_id 和原始 initial_readback 的完整规范摘要。
+该配置不改变资金、账本或历史。缺省仍是 `legacy_100k_v1`，保持原10万元基线限制；
+错误账户、摘要或宿主与Adapter profile不一致均在dispatch claim/SDK发送前拒绝。
+已AbortUnsent/LOCAL_ABORTED的旧信号不恢复发送。dispatch诊断只保留固定阶段、固定错误分类和单调耗时，
+不输出异常正文、SQL或秘密。完整账本inspect在私有一致性副本上重放；原文件只参与有界只读快照，
+现场轻量监控不以全历史重放挤占执行。
+
+全品种输入验收复用trade宿主的原SDK连接，每次只执行一个串行查询阶段，沿用限速；
+回调、订单、账户对账及新自然信号优先。未决义务、恢复未完成、未知Session边界或距下一60m/Session
+边界不足20秒时暂停并丢弃部分采样。每品种保存来源、采样、有效期和失败原因，
+`purpose=audit` 不产生执行事实或统一全品种开仓Gate。来源8秒、Quote TTL3秒保持，
+读回重算新鲜度；NOT_CHECKED、失败、断线和成功后过期均不能作为当前合格。
+报单重新核验，audit成功不代表允许报单。AG/J/PB/ZN历史缺完整时序的失败仍须新样本区分根因。
+
+trade→trade使用新计划和普通预算待恢复接管。冻结原账户profile、四库历史前缀、原生锚、配置、SDK、
+原PID/双锁及预算/block；未知发送、待核成交及未解释预留继续拒绝。
+普通许可与历史额外连接许可互斥，不迁移或返还旧许可、不清任何历史计数/block。
+目标交易日与可连接窗口由统一权威Session入口确定；唯一意图及首次run先持久绑定，
+每次连接仍使用原普通attempt计数。固定事实漂移、目标日block、预算不足、过期、重启复用和未知状态拒绝。
+新宿主公开pending=true/opening=false；同一连接的新鲜结算、资金/持仓/委托/成交及原账本Recover
+完成前禁止订单类动作，随后只接收自然新信号。下一权威交易日恢复原普通预算，不借其他日期额度。
+START_REQUESTED以后结果不明只读核对，不能重复启动；停止阶段恢复使用独立明确意图，
+不能自动重启已消费额外许可的旧run。代码/离线验证、固定候选、发布、切换和自然验收分别记录。
+
+停止阶段恢复使用独立0700目录、新私有配置中的ordinary permit路径，先以
+`--plan-stopped-recovery --source-intent <旧intent> --plan <新plan>`生成60秒计划，再以`--recover-pending-trade --plan <新plan>`执行。
+恢复需非阻塞取得原意图目录现有`switch.lock`并持至完成，在源锁内重新读取原phase/hash；
+原协调器仍活、锁被替换或原phase已到START_REQUESTED时零claim/安装/启动。
+原源claim与新恢复意图分别独占，不允许恢复链式重试。
+
+### 收盘部署窗口与执行合约分离（普通接管v2）
+
+`simnow_ordinary_next_session_v2`部署窗口只冻结权威Calendar/Session及全60品种范围：当前均无Session、
+下一场严格超过660秒，目标交易日按实际下一Session确定。未来交易日主力映射缺失不作为休市判定输入。
+最新已完成交易日的全60物理映射通过独立历史锚进入部署前像，切换和停止阶段恢复须重新比对；
+该历史锚不赋予未来交易日合约身份或订单权限。运行时许可的静态Session hash不受历史主力更新影响。
+交易入口仍只接受目标交易日权威主力、物理合约及新鲜执行输入，缺失保持fail-closed，不以旧主力代替。
+普通许可使用v2、切换计划使用v6，旧v5及旧普通许可不得混用或重新apply；历史状态仅读回。

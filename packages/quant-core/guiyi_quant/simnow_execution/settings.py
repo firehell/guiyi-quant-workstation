@@ -51,6 +51,8 @@ class ContinuousSettings:
     source_config_path: Path | None = None
     source_config_sha256: str | None = None
     account_takeover_pending: bool = False
+    account_profile: object | None = None
+    ordinary_takeover_permit: Path | None = None
 
 
 def _path(value, *, code: str) -> Path:
@@ -115,6 +117,8 @@ def _read_private(path: Path) -> tuple[dict, str]:
         and "account_takeover_pending" in value
     ):
         fields = fields | {"account_takeover_pending"}
+    if type(value) is dict and value.get("schema") == 2:
+        fields = fields | ({"account_profile", "ordinary_takeover_permit"} & set(value))
     if type(value) is not dict or set(value) != fields:
         raise SettingsError("SETTINGS_FIELDS_INVALID")
     if value["schema"] == 3 and info.st_nlink != 1:
@@ -230,9 +234,40 @@ def load_settings(path: Path) -> ContinuousSettings:
             or stat.S_IMODE(info.st_mode) != 0o700
         ):
             raise SettingsError("DEPLOYMENT_CONNECTION_INVALID")
+    ordinary = None
+    if "ordinary_takeover_permit" in value:
+        if permit or value["mode"] != "trade" or not value["enabled"]:
+            raise SettingsError("ORDINARY_TAKEOVER_INVALID")
+        ordinary = _path(
+            value["ordinary_takeover_permit"], code="ORDINARY_TAKEOVER_INVALID"
+        )
+        if (
+            ordinary.resolve(strict=False) != ordinary
+            or ordinary.name != "ordinary-takeover-permit.private.json"
+        ):
+            raise SettingsError("ORDINARY_TAKEOVER_INVALID")
+        info = ordinary.parent.stat()
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700
+        ):
+            raise SettingsError("ORDINARY_TAKEOVER_INVALID")
+    profile = None
+    if "account_profile" in value:
+        from .account_profile import AccountProfile
+
+        profile = AccountProfile.from_dict(value["account_profile"])
+        if profile.account_id != account or value["mode"] != "trade":
+            raise SettingsError("ACCOUNT_PROFILE_IDENTITY_INVALID")
     pending = value.get("account_takeover_pending", False)
+    if ordinary and not pending:
+        raise SettingsError("ORDINARY_TAKEOVER_INVALID")
     if type(pending) is not bool or (
-        pending and (not permit or value["mode"] != "trade" or not value["enabled"])
+        pending
+        and (
+            not (permit or ordinary) or value["mode"] != "trade" or not value["enabled"]
+        )
     ):
         raise SettingsError("ACCOUNT_TAKEOVER_PENDING_SETTINGS_INVALID")
     return ContinuousSettings(
@@ -246,7 +281,9 @@ def load_settings(path: Path) -> ContinuousSettings:
         value["enabled"],
         anchor if value["schema"] in (2, 3) else None,
         permit,
-        Path(path) if permit else None,
-        config_sha if permit else None,
+        Path(path) if permit or ordinary or profile else None,
+        config_sha if permit or ordinary or profile else None,
         pending,
+        profile,
+        ordinary,
     )

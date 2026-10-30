@@ -359,8 +359,9 @@ def test_explicit_prestart_restore_and_unknown_start_denied(setup, stage):
     b.recovery_preflight = lambda s: b.calls.append("recovery_preflight")
     b.recover = lambda s: dict(verified=True, mode="observe")
     m.write_private(c.intent, dict(stage=stage, snapshot=snapshot), exclusive=True)
-    assert c.recover()["stage"] == "RECOVERED"
-    assert b.calls == ["recovery_preflight"]
+    with pytest.raises(m.SwitchError,match="UNKNOWN_STAGE"):
+        c.recover()
+    assert b.calls == []
 
 
 def test_restore_after_start_request_is_forbidden(setup):
@@ -1088,7 +1089,7 @@ def test_midday_rejects_unknown_or_inconsistent_authoritative_fact(case):
 def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
     b, c, _ = setup
     plan = c.plan()
-    assert plan["schema"] == "simnow_trade_switch_plan_v4"
+    assert plan["schema"] == "simnow_trade_switch_plan_v6"
     b.value["window"] = dict(
         policy=m.MIDDAY_POLICY,
         trading_day="20261030",
@@ -1112,6 +1113,7 @@ def test_plan_v2_policy_cannot_be_switched_between_plan_and_apply(setup):
         "simnow_trade_switch_plan_v1",
         "simnow_trade_switch_plan_v2",
         "simnow_trade_switch_plan_v3",
+        "simnow_trade_switch_plan_v4",
     ],
 )
 def test_v1_plan_is_not_accepted_for_new_execution(setup, old_schema):

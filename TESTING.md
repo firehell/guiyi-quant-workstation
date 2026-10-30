@@ -2249,6 +2249,33 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:services/quant-api/tests
 含test/isolated名称的可销毁实例；真实Redis另用`GUIYI_ISOLATED_REDIS_URL`的16389/11。
 未提供变量产生的skip不算真实依赖Gate通过，不能填写生产5432/6379。
 
+## HTDY窗口冲突中断重建
+
+`htdy_conflict_recovery_v1`只处理本次冻结的48路HTDY 60m，不放宽正常窗口重叠比较。
+定向测试覆盖原始capture/32窗/Session/owner/Canonical来源、48路原子中断与FLAT未来起点、
+原件/旧状态不改、20笔参考OPEN的无退出价中断、typed退役与真实CALCULATED分离、
+UNKNOWN/原件漂移/边界漂移/过期/慢核验/丢锁拒绝，以及后续修订推进时旧退役证明仍有效。
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q \
+  services/quant-api/tests/reference_trading/test_htdy_conflict_source.py \
+  services/quant-api/tests/reference_trading/test_htdy_conflict_recovery.py \
+  services/quant-api/tests/reference_trading/test_inbox_recovery.py \
+  tests/unit/test_reference_htdy_conflict_cli.py
+```
+
+`test_htdy_conflict_postgres.py`要求显式隔离PostgreSQL变量，使用独占schema及实际0053/0054
+原件不可变触发器，验证原子48路、完整回滚、UNKNOWN及原件保留；无环境skip不计通过。
+新功能不增加数据库迁移；隔离测试执行既有迁移不等于修改生产schema。
+
+`scripts/reference_htdy_conflict_recovery.py`默认无动作、只读，不加载凭据或park服务。
+正式`--park`/`--plan`/`--apply`要求干净exact annotated tag、固定inventory/scope、原私有配置，
+全60权威休市且下一Session>660秒、Reference真实parked/owner锁和Canonical维护租约。
+0600计划绑定0700独占attempt目录；apply前独占持久claim，unknown只用`--status`精确核对。
+成功恢复保持Reference parked，必须由支持typed退役的新正式cohort接管，不能恢复旧版reader。
+本入口不升级SimNow、不迁移或返还其单次连接许可、不连接Broker、不重放原信号或通知。
+
 
 ## SimNow待恢复trade与统一发布
 
@@ -2260,3 +2287,28 @@ retention只读计划和删除前重扫均须通过；离线测试不等于实�
 
 监控Web测试还验证待恢复trade明确显示账户待接管，错误/停止/过期不被该状态掩盖，pending与
 opening=true/非trade/错误类型的矛盾响应被拒绝；旧响应缺可选字段保持兼容。
+
+### SimNow原账户profile、闲时输入验收与普通预算v5升级
+
+离线定向入口（不加载凭据、不连接Broker）：
+
+```bash
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q \
+  tests/unit/simnow_execution/test_account_profile.py \
+  tests/unit/htdy_execution/test_inspect_snapshot.py \
+  tests/unit/simnow_supervisor/test_upgrade_settings.py \
+  tests/unit/simnow_supervisor/test_upgrade_connect.py \
+  tests/unit/simnow_supervisor/test_idle_input_audit.py \
+  tests/unit/simnow_supervisor/test_supervisor_idle_audit.py \
+  tests/unit/simnow_supervisor/test_ordinary_takeover.py \
+  tests/unit/simnow_supervisor/test_ordinary_trade_switch.py \
+  tests/unit/simnow_supervisor/test_trade_switch.py \
+  tests/unit/simnow_supervisor/test_deployment_connection.py \
+  services/quant-api/tests/test_simnow_audit_boundary.py \
+  services/quant-api/tests/test_simnow_takeover_window.py
+```
+
+包含原账户基线摘要/错误账户拒绝、旧100k默认门禁、提交前零claim/SDK、私有副本重放和并发原库写入、
+60品种单连接单阶段audit/优先级/过期/盘口时间、普通cap3/原block保留/权威跨日、v5旧计划拒绝、
+独立stopped恢复及原协调器锁真实子进程竞态。新v5禁止重新签发历史额外许可；历史v38宿主单次消费
+测试仍独立保留。真实依赖测试只允许任务隔离PG/Redis，跳过不等于通过；部署、账户恢复与策略成交分别待验。
