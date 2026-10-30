@@ -358,3 +358,84 @@ def test_native_slow_session_proof_rejects_remaining_less_than_660(
         runner.park(now + timedelta(minutes=5))
     assert calls == ["session"]
     assert not runner.directory.exists()
+
+
+@pytest.mark.parametrize(
+    "values,expected",
+    [
+        (
+            {
+                "REDIS_URL": "redis://127.0.0.1:6379/0",
+                "POSTGRES_PASSWORD": "fixture-p@ss",
+            },
+            "redis://:fixture-p%40ss@127.0.0.1:6379/0",
+        ),
+        (
+            {"POSTGRES_PASSWORD": "fallback", "REDIS_PASSWORD": "fixture-primary"},
+            "redis://:fixture-primary@127.0.0.1:6379/0",
+        ),
+        (
+            {
+                "REDIS_URL": "redis://:fixture-explicit@127.0.0.1:6379/0",
+                "POSTGRES_PASSWORD": "fallback",
+            },
+            "redis://:fixture-explicit@127.0.0.1:6379/0",
+        ),
+    ],
+)
+def test_dependencies_derive_wrapper_redis_idempotently_before_reexec(
+    cli, monkeypatch, capsys, values, expected
+):
+    import os
+    import sys
+    from types import ModuleType
+
+    private = ModuleType("app.private_settings")
+    private.private_dependency_settings = lambda _: (
+        dict(values),
+        {"config_sha256": "b" * 64},
+    )
+    monkeypatch.setitem(sys.modules, "app.private_settings", private)
+    for key in (
+        "GUIYI_HTDY_CONFLICT_CLI_READY",
+        "REDIS_URL",
+        "REDIS_PASSWORD",
+        "POSTGRES_PASSWORD",
+        "PGOPTIONS",
+        "GUIYI_OBSERVATION_STREAM_ENABLED",
+        "GUIYI_RUNTIME_HANDOVER_ENABLED",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    observed = []
+
+    def execv(*args):
+        observed.append(
+            dict(url=os.environ["REDIS_URL"], readonly=os.environ.get("PGOPTIONS"))
+        )
+
+    monkeypatch.setattr(cli.os, "execv", execv)
+    assert cli.load_dependencies() == "b" * 64
+    assert observed == [dict(url=expected, readonly=None)]
+    assert cli.load_dependencies() == "b" * 64
+    assert os.environ["REDIS_URL"] == expected and len(observed) == 1
+    assert os.environ["GUIYI_OBSERVATION_STREAM_ENABLED"] == "1"
+    assert os.environ["GUIYI_RUNTIME_HANDOVER_ENABLED"] == "1"
+    assert capsys.readouterr().out == ""
+
+
+def test_dependencies_missing_default_password_fails_without_reexec_or_secret_output(
+    cli, monkeypatch, capsys
+):
+    import sys
+    from types import ModuleType
+
+    private = ModuleType("app.private_settings")
+    private.private_dependency_settings = lambda _: (
+        {"REDIS_URL": "redis://127.0.0.1:6379/0"},
+        {"config_sha256": "b" * 64},
+    )
+    monkeypatch.setitem(sys.modules, "app.private_settings", private)
+    monkeypatch.setattr(cli.os, "execv", lambda *_: pytest.fail("must not reexec"))
+    with pytest.raises(ValueError, match="^RECOVERY_DEPENDENCIES_INVALID$"):
+        cli.load_dependencies()
+    assert capsys.readouterr().out == ""
