@@ -8,6 +8,7 @@ credential store or broker adapter is constructed by this tool.
 from __future__ import annotations
 
 import argparse
+from collections import namedtuple
 from dataclasses import replace
 import contextlib
 import fcntl
@@ -29,9 +30,13 @@ from datetime import datetime, UTC, date, timedelta
 
 sys.dont_write_bytecode = True
 
-SCHEMA = "simnow_trade_switch_plan_v1"
+SCHEMA = "simnow_trade_switch_plan_v2"
 POLICY = "simnow_night_only_deployment_window_v1"
+MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
 LABEL = "com.guiyi.quant-simnow"
+CalendarFacts = namedtuple(
+    "CalendarFacts", "trade_date is_trading_day has_night_session"
+)
 STAGES = frozenset(
     {
         "INTENT",
@@ -165,6 +170,14 @@ def validate_snapshot(s):
             or not a["account_id"]
         ):
             fail("ACCOUNT_UNPROVEN")
+        if (
+            a["budget_day"] != "20261030"
+            or type(a["today_attempts"]) is not int
+            or not 0 <= a["today_attempts"] < 3
+            or a["remaining_attempts"] != 3 - a["today_attempts"]
+            or a["day_blocked"] is not False
+        ):
+            fail("ACCOUNT_UNPROVEN")
         if any(
             a[k] is not False
             for k in (
@@ -187,20 +200,141 @@ def validate_snapshot(s):
             or not h["command_identity"]
         ):
             fail("HOST_UNPROVEN")
-        w = s["window"]
-        if (
-            w["policy"] != POLICY
-            or w["trading_day"] != "20261030"
-            or w["authoritative"] is not True
-            or w["night_count"] != 45
-            or w["excluded_no_night_count"] != 15
-            or w["all_closed"] is not True
-            or w["current_session_absent"] is not True
-            or w["next_session_gap_seconds"] < 660
-        ):
-            fail("WINDOW_UNPROVEN")
+        validate_window(s["window"])
     except (KeyError, TypeError, ValueError):
         fail("SNAPSHOT_UNPROVEN")
+
+
+def window_facts(rows, now, mode):
+    """Classify authoritative resolved sessions; civil noon only names day halves."""
+    from zoneinfo import ZoneInfo
+
+    shanghai = ZoneInfo("Asia/Shanghai")
+    if (
+        mode not in {"night", "midday"}
+        or now.tzinfo is None
+        or len(rows) != 60
+        or len({r[0] for r in rows}) != 60
+    ):
+        fail("WINDOW_UNPROVEN")
+    gaps, starts, ends, phases = [], [], [], {}
+    night_count, excluded = 0, 0
+    opened = True
+    for product, calendar, windows, phase in rows:
+        if not calendar.is_trading_day or calendar.trade_date != date(2026, 10, 30):
+            fail("WINDOW_UNPROVEN")
+        phases[product] = str(phase.phase)
+        if mode == "night":
+            nights = [
+                x.window for x in windows if x.is_night and calendar.has_night_session
+            ]
+            if not nights:
+                excluded += 1
+                continue
+            if phase.phase not in {"TRADING", "BREAK", "CLOSED"}:
+                fail("WINDOW_UNPROVEN")
+            night_count += 1
+            start = max(w.end for w in nights)
+            following = phase.next_session_start
+            opened &= (
+                phase.phase == "CLOSED"
+                and phase.current_session is None
+                and now >= start
+            )
+        else:
+            if phase.phase not in {"TRADING", "BREAK", "CLOSED"}:
+                fail("WINDOW_UNPROVEN")
+            days = [x.window for x in windows if not x.is_night]
+            if not days or any(
+                w.start.tzinfo is None
+                or w.end.tzinfo is None
+                or w.start >= w.end
+                or w.start.astimezone(shanghai).date() != date(2026, 10, 30)
+                or w.end.astimezone(shanghai).date() != date(2026, 10, 30)
+                for w in days
+            ):
+                fail("WINDOW_UNPROVEN")
+            morning = [w for w in days if w.start.astimezone(shanghai).hour < 12]
+            afternoon = [w for w in days if w.start.astimezone(shanghai).hour >= 12]
+            if not morning or not afternoon:
+                fail("WINDOW_UNPROVEN")
+            start = max(w.end for w in morning)
+            following = min(w.start for w in afternoon)
+            if start >= following:
+                fail("WINDOW_UNPROVEN")
+            opened &= (
+                phase.phase in {"BREAK", "CLOSED"}
+                and phase.current_session is None
+                and phase.trading_day == date(2026, 10, 30)
+                and start <= now < following
+                and phase.next_session_start == following
+            )
+        if following is None or following.tzinfo is None:
+            fail("WINDOW_UNPROVEN")
+        gap = (following - now).total_seconds()
+        opened &= gap >= 660
+        gaps.append(gap)
+        starts.append(start)
+        ends.append(following - timedelta(seconds=660))
+    if not starts:
+        fail("WINDOW_UNPROVEN")
+    policy = POLICY if mode == "night" else MIDDAY_POLICY
+    result = dict(
+        policy=policy,
+        trading_day="20261030",
+        authoritative=True,
+        product_count=60,
+        current_session_absent=all(
+            r[3].current_session is None
+            for r in rows
+            if mode == "midday"
+            or any(x.is_night and r[1].has_night_session for x in r[2])
+        ),
+        next_session_gap_seconds=min(gaps),
+        window_open=bool(opened),
+        phases=phases,
+        checked_at=now.isoformat(),
+        eligible_from=max(starts).isoformat(),
+        eligible_until=min(ends).isoformat(),
+    )
+    if mode == "night":
+        result.update(
+            night_count=night_count,
+            excluded_no_night_count=excluded,
+            all_closed=bool(opened),
+        )
+    else:
+        result.update(
+            morning_completed=all(now >= t for t in starts), next_is_afternoon=True
+        )
+    return result
+
+
+def validate_window(w):
+    if (
+        w["trading_day"] != "20261030"
+        or w["authoritative"] is not True
+        or w["current_session_absent"] is not True
+        or w["next_session_gap_seconds"] < 660
+    ):
+        fail("WINDOW_UNPROVEN")
+    if w["policy"] == POLICY:
+        if (
+            w["night_count"] != 45
+            or w["excluded_no_night_count"] != 15
+            or w["all_closed"] is not True
+        ):
+            fail("WINDOW_UNPROVEN")
+    elif w["policy"] == MIDDAY_POLICY:
+        if (
+            w["product_count"] != 60
+            or w["window_open"] is not True
+            or w["morning_completed"] is not True
+            or w["next_is_afternoon"] is not True
+        ):
+            fail("WINDOW_UNPROVEN")
+    else:
+        fail("WINDOW_UNPROVEN")
 
 
 def same_preimage(old, fresh):
@@ -243,6 +377,7 @@ class Coordinator:
         now = self.clock()
         value = dict(
             schema=SCHEMA,
+            window_policy=snapshot["window"]["policy"],
             created_at=now,
             expires_at=now + 60,
             snapshot=snapshot,
@@ -291,6 +426,11 @@ class Coordinator:
             fail("PLAN_EXPIRED")
         current = self.backend.snapshot()
         validate_snapshot(current)
+        if (
+            current["window"]["policy"] != plan["window_policy"]
+            or plan["snapshot"]["window"]["policy"] != plan["window_policy"]
+        ):
+            fail("PLAN_INVALID")
         if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
             fail("PLAN_EXPIRED")
         # Dynamic checked_at and monotonically decreasing gap are excluded by
@@ -299,6 +439,13 @@ class Coordinator:
         fresh = current["preimage"]
         if not same_preimage(old, fresh):
             fail("PREIMAGE_CHANGED")
+        if isinstance(plan["snapshot"].get("account", {}).get("databases"), dict):
+            current["native_prefix"] = plan["snapshot"].get(
+                "native_prefix",
+                plan["snapshot"]["account"]["databases"]["native-evidence.sqlite"][
+                    "rows"
+                ],
+            )
         return current
 
     def recover(self):
@@ -346,6 +493,8 @@ class Coordinator:
                 fail("PLAN_INVALID")
             self.record = dict(
                 stage="INTENT",
+                schema=SCHEMA,
+                window_policy=plan["window_policy"],
                 plan_hash=plan["plan_hash"],
                 at=self.clock(),
                 result="UNKNOWN",
@@ -373,7 +522,7 @@ class Coordinator:
                         fail("WRITER_NOT_IDLE")
                     if (
                         evidence.get("preimage") != snapshot["preimage"]
-                        or evidence.get("journals_unchanged") is not True
+                        or evidence.get("protected_state_unchanged") is not True
                     ):
                         fail("PREIMAGE_CHANGED")
                     # Re-read authoritative calendar immediately before install.
@@ -429,7 +578,10 @@ class Coordinator:
 class MacBackend:
     """Pinned native LaunchAgent backend; no shell, credential or Broker calls."""
 
-    def __init__(self, candidate, candidate_plist, *, tag, home=None):
+    def __init__(self, candidate, candidate_plist, *, tag, home=None, window="night"):
+        if window not in {"night", "midday"}:
+            fail("WINDOW_UNPROVEN")
+        self.window = window
         self.home = Path.home() if home is None else Path(home)
         self.config = private(Path(candidate))
         self.candidate_plist = private(Path(candidate_plist))
@@ -561,10 +713,10 @@ class MacBackend:
                 os.close(fd)
         return expected
 
-    def _window(self):
+    def _window_rows(self, now):
         from app.db.session import SessionLocal
         from app.db.readonly import readonly_transaction
-        from app.market_data.market_phase import MarketPhaseResolver, MarketPhase
+        from app.market_data.market_phase import MarketPhaseResolver
         from app.market_data.operational_universe import load_operational_products
         from app.market_data.session_clock import (
             resolved_session_windows_for_trading_day,
@@ -572,12 +724,11 @@ class MacBackend:
         from app.models import Instrument, TradingCalendar
         from sqlalchemy import select
 
-        now = datetime.now(UTC)
-        night, excluded, gaps = {}, [], []
+        rows = []
         with SessionLocal() as db, readonly_transaction(db, timeout_seconds=20):
             resolver = MarketPhaseResolver(db)
             products = load_operational_products()
-            if len(products) != 60:
+            if len(products) != 60 or len(set(products)) != 60:
                 fail("WINDOW_UNPROVEN")
             for product in products:
                 exchange = db.scalar(
@@ -585,13 +736,13 @@ class MacBackend:
                         Instrument.symbol == product, Instrument.is_active.is_(True)
                     )
                 )
-                cal = db.scalar(
+                calendar = db.scalar(
                     select(TradingCalendar).where(
                         TradingCalendar.exchange_code == exchange,
                         TradingCalendar.trade_date == date(2026, 10, 30),
                     )
                 )
-                if not exchange or not cal or not cal.is_trading_day:
+                if not exchange or not calendar:
                     fail("WINDOW_UNPROVEN")
                 windows = resolved_session_windows_for_trading_day(
                     db,
@@ -599,42 +750,186 @@ class MacBackend:
                     symbol=product,
                     trading_day=date(2026, 10, 30),
                 )
-                nights = [
-                    x.window for x in windows if x.is_night and cal.has_night_session
-                ]
-                if not nights:
-                    excluded.append(product)
-                    continue
-                phase = resolver.resolve(product, now)
-                if (
-                    phase.phase != MarketPhase.CLOSED
-                    or phase.current_session is not None
-                    or phase.next_session_start is None
-                    or now < max(x.end for x in nights)
-                ):
-                    fail("WINDOW_UNPROVEN")
-                night[product] = max(x.end for x in nights).isoformat()
-                gaps.append((phase.next_session_start - now).total_seconds())
-        return dict(
-            policy=POLICY,
-            trading_day="20261030",
-            authoritative=True,
-            night_count=len(night),
-            excluded_no_night_count=len(excluded),
-            all_closed=True,
-            current_session_absent=True,
-            next_session_gap_seconds=min(gaps) if gaps else 0,
-        )
+                rows.append(
+                    (
+                        product,
+                        CalendarFacts(
+                            calendar.trade_date,
+                            calendar.is_trading_day,
+                            calendar.has_night_session,
+                        ),
+                        windows,
+                        resolver.resolve(product, now),
+                    )
+                )
+            return tuple(rows)
+
+    def _window(self):
+        now = datetime.now(UTC)
+        rows = self._window_rows(now)
+        return window_facts(rows, datetime.now(UTC), self.window)
 
     def window_open(self):
-        w = self._window()
-        return (
-            w["night_count"] == 45
-            and w["excluded_no_night_count"] == 15
-            and w["next_session_gap_seconds"] >= 660
-        )
+        try:
+            validate_window(self._window())
+            return True
+        except SwitchError:
+            return False
 
-    def _account(self, *, restoring=False, frozen_index=None):
+    def _native_readback(
+        self, snapshot, projection, journal, *, previous=None, fresh=False
+    ):
+        """Validate a real durable Snapshot, never manufacture a native report."""
+        from guiyi_quant.simnow_execution.inventory import (
+            native_hash,
+            project_readback,
+            number,
+        )
+        from guiyi_quant.simnow_execution.supervisor import verify_recovery_ownership
+        from guiyi_quant import htdy_account_execution as a
+
+        try:
+            now = datetime.now(UTC)
+            data = snapshot.data
+            expected = (
+                "ctp-inventory:"
+                + snapshot.trading_day
+                + ":"
+                + native_hash(
+                    (
+                        snapshot.account_id,
+                        snapshot.trading_day,
+                        data,
+                        snapshot.at.isoformat(),
+                    )
+                )
+            )
+            if (
+                snapshot.account_id != self.settings.account_id
+                or snapshot.trading_day != "20261030"
+                or snapshot.source_id != expected
+                or not snapshot.started_at <= snapshot.at <= now
+                or (
+                    previous is not None
+                    and (
+                        snapshot.started_at < previous.at or snapshot.at <= previous.at
+                    )
+                )
+                or (fresh and not 0 <= (now - snapshot.at).total_seconds() < 30)
+                or set(data) != {"funds", "positions", "orders", "trades"}
+                or any(type(rows) is not list for rows in data.values())
+                or len(data["funds"]) != 1
+                or data["funds"][0]["CurrencyID"] != "CNY"
+                or any(
+                    row["TradingDay"] != snapshot.trading_day
+                    for rows in data.values()
+                    for row in rows
+                )
+            ):
+                fail("ACCOUNT_UNPROVEN")
+            signed = {"Balance", "Available", "CloseProfit", "PositionProfit"}
+            for field in (
+                "Balance",
+                "Available",
+                "CurrMargin",
+                "FrozenMargin",
+                "FrozenCommission",
+                "Commission",
+                "Deposit",
+                "Withdraw",
+                "CloseProfit",
+                "PositionProfit",
+            ):
+                value = number(data["funds"][0][field], signed=field in signed)
+                if previous is not None and value != number(
+                    previous.data["funds"][0][field], signed=field in signed
+                ):
+                    fail("ACCOUNT_UNPROVEN")
+            if (
+                data["positions"]
+                or data["orders"]
+                or data["trades"]
+                or projection.positions
+                or projection.orders
+                or projection.fills
+                or projection.reservations
+                or projection.unresolved_fill_ids
+            ):
+                fail("PENDING_OBLIGATIONS")
+            verify_recovery_ownership(snapshot, (), journal, projection)
+            rb, inventory = project_readback(
+                snapshot, (), journal, projection, snapshot.at + timedelta(seconds=30)
+            )
+            transition = a.apply(
+                replace(projection, phase="RECOVERY_REQUIRED", readback_valid=False),
+                "switch-check:" + snapshot.source_id,
+                a.Recover(rb, ()),
+            )
+            if (
+                inventory
+                or transition.effects
+                or transition.state.phase != "READY"
+                or not transition.state.readback_valid
+                or not rb.complete
+                or rb.used_margin
+                or rb.frozen_margin
+                or rb.frozen_fee
+                or rb.snapshot.balance != projection.readback.snapshot.balance
+                or rb.snapshot.available != projection.readback.snapshot.available
+            ):
+                fail("ACCOUNT_UNPROVEN")
+        except (KeyError, TypeError, ValueError, ArithmeticError):
+            fail("ACCOUNT_UNPROVEN")
+
+    def _stopped_native(
+        self, snapshot, monitor, control, rows, prefix, projection, journal
+    ):
+        """Prove the unchanged prefix and every stop-boundary append while offline."""
+        from guiyi_quant.simnow_execution.evidence import Evidence
+        from guiyi_quant.htdy_account_execution.codec import digest as state_digest
+
+        identities = [
+            [n, source, hashlib.sha256(raw.encode()).hexdigest()]
+            for n, source, raw in rows
+        ]
+        if not prefix or identities[: len(prefix)] != prefix:
+            fail("PREIMAGE_CHANGED")
+        if (
+            control.get("status") != "STOPPED"
+            or control.get("mode") != "observe"
+            or control.get("opening_enabled") is not False
+            or control.get("auto_order") is not False
+            or monitor.get("status") != "STOPPED"
+            or monitor.get("mode") != "observe"
+            or monitor.get("host_status") != "STOPPED"
+            or monitor.get("account_id") != self.settings.account_id
+            or monitor.get("ledger_hash") != state_digest(projection)
+            or monitor.get("native_source_id") != rows[-1][1]
+            or snapshot.source_id != rows[-1][1]
+        ):
+            fail("ACCOUNT_UNPROVEN")
+        previous = None
+        previous_rowid = None
+        # The final frozen row anchors time ordering; older prefix rows are hash-frozen.
+        for n, source, raw in rows[len(prefix) - 1 :]:
+            if previous_rowid is not None and n != previous_rowid + 1:
+                fail("PREIMAGE_CHANGED")
+            previous_rowid = n
+            value = Evidence._decode(raw)
+            if value.source_id != source:
+                fail("ACCOUNT_UNPROVEN")
+            self._native_readback(
+                value, projection, journal, previous=previous, fresh=n == rows[-1][0]
+            )
+            previous = value
+        now = datetime.now(UTC)
+        if (
+            not snapshot.at <= datetime.fromisoformat(control["at"]) <= now
+            or not snapshot.at <= datetime.fromisoformat(monitor["published_at"]) <= now
+        ):
+            fail("ACCOUNT_UNPROVEN")
+
+    def _account(self, *, restoring=False, frozen_index=None, stopped_snapshot=None):
         from guiyi_quant.simnow_execution.account_binding import existing_account
         from guiyi_quant.htdy_account_execution.store import LocalStore
         from guiyi_quant.simnow_execution.native_portfolio import ReadJournal
@@ -666,6 +961,7 @@ class MacBackend:
         )
         try:
             db.execute("PRAGMA query_only=ON")
+            db.execute("BEGIN")
             if db.execute("SELECT account FROM owner").fetchall() != [
                 (self.settings.account_id,)
             ]:
@@ -679,7 +975,10 @@ class MacBackend:
                 )
             )
             self.last_observe_index = monitor
-            if monitor["run_id"] != control["run_id"]:
+            if monitor["run_id"] != control["run_id"] or (
+                stopped_snapshot is not None
+                and control["run_id"] != stopped_snapshot["host"]["run_id"]
+            ):
                 fail("ACCOUNT_UNPROVEN")
             row = db.execute(
                 "SELECT payload FROM snapshots WHERE source=?",
@@ -693,64 +992,48 @@ class MacBackend:
             ).fetchall()
             if len(rows) > 100000:
                 fail("ACCOUNT_UNPROVEN")
+            identities["native-evidence.sqlite"]["schema_hash"] = digest(
+                db.execute(
+                    "SELECT type,name,sql FROM sqlite_master ORDER BY type,name"
+                ).fetchall()
+            )
             identities["native-evidence.sqlite"]["rows"] = [
                 [n, source, hashlib.sha256(payload.encode()).hexdigest()]
                 for n, source, payload in rows
             ]
         finally:
             db.close()
-        # Conservative gate: no native exposure can be silently assumed known.
-        # Startup separately performs full ownership recovery before opening.
-        native = snapshot.data
-        if (
-            snapshot.trading_day != "20261030"
-            or snapshot.account_id != self.settings.account_id
-            or (
-                not restoring
-                and not 0 <= (datetime.now(UTC) - snapshot.at).total_seconds() < 30
-            )
-        ):
-            journal.close()
-            fail("ACCOUNT_UNPROVEN")
-        from guiyi_quant.simnow_execution.observe_reconciliation import verify_proof
-
-        proof = verify_proof(
-            monitor.get("observe_reconciliation"),
-            monitor,
-            projection,
-            snapshot,
-            datetime.now(UTC),
-        )
-        if proof is None or (not restoring and proof.get("fresh") is not True):
-            journal.close()
-            fail("ACCOUNT_UNPROVEN")
-        from guiyi_quant.simnow_execution.supervisor import verify_recovery_ownership
-        from guiyi_quant.simnow_execution.inventory import project_readback
-        from guiyi_quant import htdy_account_execution as a
-
         try:
-            verify_recovery_ownership(snapshot, (), journal, projection)
-            rb, _ = project_readback(
-                snapshot, (), journal, projection, snapshot.at + timedelta(seconds=30)
-            )
-            transition = a.apply(
-                replace(projection, phase="RECOVERY_REQUIRED", readback_valid=False),
-                "switch-check:" + snapshot.source_id,
-                a.Recover(rb, ()),
-            )
-            if (
-                transition.effects
-                or transition.state.phase != "READY"
-                or not transition.state.readback_valid
-                or rb.used_margin
-                or rb.frozen_margin
-                or rb.frozen_fee
-                or rb.snapshot.balance != projection.readback.snapshot.balance
-                or rb.snapshot.available != projection.readback.snapshot.available
-            ):
-                fail("ACCOUNT_UNPROVEN")
+            if stopped_snapshot is not None:
+                prefix = stopped_snapshot.get(
+                    "native_prefix",
+                    stopped_snapshot["account"]["databases"]["native-evidence.sqlite"][
+                        "rows"
+                    ],
+                )
+                self._stopped_native(
+                    snapshot, monitor, control, rows, prefix, projection, journal
+                )
+            else:
+                from guiyi_quant.simnow_execution.observe_reconciliation import (
+                    verify_proof,
+                )
+
+                proof = verify_proof(
+                    monitor.get("observe_reconciliation"),
+                    monitor,
+                    projection,
+                    snapshot,
+                    datetime.now(UTC),
+                )
+                if proof is None or (not restoring and proof.get("fresh") is not True):
+                    fail("ACCOUNT_UNPROVEN")
+                self._native_readback(
+                    snapshot, projection, journal, fresh=not restoring
+                )
         finally:
             journal.close()
+        native = snapshot.data
         values = {}
         db = sqlite3.connect(
             (self.folder / "signals.sqlite").as_uri() + "?mode=ro", uri=True
@@ -761,9 +1044,23 @@ class MacBackend:
                 values[table] = digest(
                     db.execute("SELECT * FROM " + table + " ORDER BY rowid").fetchall()
                 )
+            row = db.execute(
+                "SELECT count FROM attempts WHERE day=?", ("20261030",)
+            ).fetchone()
+            attempts = row[0] if row else 0
+            if type(attempts) is not int or not 0 <= attempts <= 3:
+                fail("ACCOUNT_UNPROVEN")
+            blocked = (
+                db.execute("SELECT 1 FROM blocks WHERE day=?", ("20261030",)).fetchone()
+                is not None
+            )
         finally:
             db.close()
         return dict(
+            today_attempts=attempts,
+            remaining_attempts=3 - attempts,
+            day_blocked=blocked,
+            budget_day="20261030",
             existing=True,
             same_account_anchor=True,
             scope_count=len(state.products),
@@ -907,6 +1204,7 @@ class MacBackend:
             ],
         )
         identities = dict(preimage, code=exact)
+        self._stop_signals = account["databases"].get("signals.sqlite")
         return dict(
             old_config_path=str(self.old_config),
             observe_index=self.last_observe_index,
@@ -935,6 +1233,10 @@ class MacBackend:
 
     def stop(self, pid):
         self._prove(pid, "observe", self.old_config)
+        # Observe may reconnect while plan/preflight runs. A last budget/block or
+        # queue change must be noticed before sending the cooperative stop.
+        if self.identity(self.folder / "signals.sqlite") != self._stop_signals:
+            fail("PREIMAGE_CHANGED")
         os.kill(pid, signal.SIGTERM)
 
     def stopped(self, snapshot):
@@ -952,31 +1254,53 @@ class MacBackend:
     @contextlib.contextmanager
     def offline_guard(self, snapshot):
         fds = []
+        expected = snapshot["preimage"]["locks"]
+        if len(self.locks) != 2 or [str(p) for p in self.locks] != [
+            v["path"] for v in expected
+        ]:
+            fail("PREIMAGE_CHANGED")
         try:
-            for path in self.locks:
+            for path, identity in zip(self.locks, expected, strict=True):
                 private(path)
                 fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
                 fds.append(fd)
+                info = os.fstat(fd)
+                if (info.st_dev, info.st_ino) != (
+                    identity["device"],
+                    identity["inode"],
+                ):
+                    fail("PREIMAGE_CHANGED")
                 try:
                     fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 except BlockingIOError:
                     fail("WRITER_NOT_IDLE")
+            self._offline_held = True
             yield
         finally:
+            self._offline_held = False
             for fd in reversed(fds):
                 os.close(fd)
 
     def offline_preflight(self, snapshot):
         # preflight_trade tests lock idleness itself, so call before holding the
         # guard would race. Guard proves idle and serializes this exact check.
+        if not getattr(self, "_offline_held", False) or not self.stopped(snapshot):
+            fail("STOP_UNPROVEN")
         self.code_check()
         current = self._preimage()
-        account = self._account(frozen_index=snapshot["observe_index"])
+        account = self._account(stopped_snapshot=snapshot)
         p = snapshot["preimage"]
-        unchanged = account == p["account"] and all(current[k] == p[k] for k in current)
+        unchanged = same_preimage(
+            dict(account=p["account"]), dict(account=account)
+        ) and all(current[k] == p[k] for k in current)
         return dict(
             writer_idle=True,
-            journals_unchanged=unchanged,
+            protected_state_unchanged=unchanged,
+            native_prefix_unchanged=unchanged,
+            native_appended_count=len(
+                account["databases"]["native-evidence.sqlite"]["rows"]
+            )
+            - len(p["account"]["databases"]["native-evidence.sqlite"]["rows"]),
             preimage=p if unchanged else None,
         )
 
@@ -1206,9 +1530,11 @@ def main(argv=None):
     parser.add_argument("--state-dir", required=True, type=Path)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--tag")
+    parser.add_argument("--window", choices=("night", "midday"), default="night")
     parser.add_argument("--candidate-plist", type=Path)
     parser.add_argument("--plan", type=Path)
     actions = parser.add_mutually_exclusive_group()
+    actions.add_argument("--check", action="store_true")
     actions.add_argument("--readback", action="store_true")
     actions.add_argument("--apply", action="store_true")
     actions.add_argument("--recover-observe", action="store_true")
@@ -1221,7 +1547,9 @@ def main(argv=None):
             return 0
         if not args.config or not args.candidate_plist or not args.tag:
             fail("PLAN_INVALID")
-        backend = MacBackend(args.config, args.candidate_plist, tag=args.tag)
+        backend = MacBackend(
+            args.config, args.candidate_plist, tag=args.tag, window=args.window
+        )
         if os.environ.get("GUIYI_SIMNOW_SWITCH_DEPENDENCIES_READY") != "1":
             dependency_environment(backend.code)
             os.environ["GUIYI_SIMNOW_SWITCH_DEPENDENCIES_READY"] = "1"
@@ -1235,7 +1563,23 @@ def main(argv=None):
                 ],
             )
         coordinator = Coordinator(backend, args.state_dir)
-        if args.recover_observe:
+        if args.check:
+            result = backend._window()
+            print(
+                json.dumps(
+                    dict(
+                        status="WINDOW_PREFLIGHT",
+                        code="WINDOW_OPEN"
+                        if result["window_open"]
+                        else "WINDOW_UNPROVEN",
+                        execution_permitted=False,
+                        broker_io=False,
+                        **result,
+                    ),
+                    sort_keys=True,
+                )
+            )
+        elif args.recover_observe:
             print(json.dumps(coordinator.recover(), sort_keys=True))
         elif args.apply:
             if args.plan is None:
@@ -1252,6 +1596,8 @@ def main(argv=None):
                 json.dumps(
                     dict(
                         status="PLAN_READY",
+                        schema=SCHEMA,
+                        window_policy=result["window_policy"],
                         plan_hash=result["plan_hash"],
                         expires_at=result["expires_at"],
                         broker_io=False,

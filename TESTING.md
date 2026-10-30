@@ -43,6 +43,9 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 `scripts/broker/simnow_input_readback.py --status <private continuous.json>` 只读取留存证据，按读取时刻
 重算fresh，不连接Broker或读取凭据。切换工具默认只读plan，`--apply` 和 `--recover-observe` 是真实服务操作，
 不能用于测试；合同及参数边界见[一次性切换工具](docs/SIMNOW_EXECUTION.md#一次性切换工具)。
+停止边界回归使用真实临时60品种四库与两把真实FD锁，覆盖合法append、prefix/schema篡改、全部10维资金、
+最新/中间坏行、STOPPED身份和source绑定、真实最新快照TTL、预算/队列竞态，以及night/midday的plan v2互斥。
+`--window midday --check` 仅只读当前权威午间窗口，不调用Broker、创建计划或停止服务；预测不能替代执行时校验。
 真实SDK结构及book回调时序继续使用上方固定SDK环境的native_gateway_smoke.py；API venv不安装CTP依赖。
 
 默认observe，以下使用隔离fixture，不读Keychain、不连接Broker、不安装服务：
