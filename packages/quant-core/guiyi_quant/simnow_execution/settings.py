@@ -8,6 +8,7 @@ cannot enter that supervisor lifecycle or establish any account facts.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,9 @@ class ContinuousSettings:
     mode: str
     enabled: bool
     state_project_root: Path | None = None
+    deployment_connection_permit: Path | None = None
+    source_config_path: Path | None = None
+    source_config_sha256: str | None = None
 
 
 def _path(value, *, code: str) -> Path:
@@ -67,7 +71,7 @@ def _object(pairs):
     return result
 
 
-def _read_private(path: Path) -> dict:
+def _read_private(path: Path) -> tuple[dict, str]:
     if not path.is_absolute() or path.is_symlink():
         raise SettingsError("SETTINGS_PRIVATE_FILE_REQUIRED")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -98,16 +102,22 @@ def _read_private(path: Path) -> dict:
         if type(value) is dict and value.get("schema") in (2, 3)
         else _FIELDS
     )
+    if (
+        type(value) is dict
+        and "deployment_connection_permit" in value
+        and value.get("schema") == 2
+    ):
+        fields = fields | {"deployment_connection_permit"}
     if type(value) is not dict or set(value) != fields:
         raise SettingsError("SETTINGS_FIELDS_INVALID")
     if value["schema"] == 3 and info.st_nlink != 1:
         raise SettingsError("SETTINGS_PRIVATE_FILE_REQUIRED")
-    return value
+    return value, hashlib.sha256(raw).hexdigest()
 
 
 def load_settings(path: Path) -> ContinuousSettings:
     """Validate private identity and either existing state or disabled preparation."""
-    value = _read_private(Path(path))
+    value, config_sha = _read_private(Path(path))
     if type(value["schema"]) is not int or value["schema"] not in (1, 2, 3):
         raise SettingsError("SETTINGS_SCHEMA_INVALID")
     if value["schema"] == 3 and (
@@ -169,19 +179,50 @@ def load_settings(path: Path) -> ContinuousSettings:
     if value["schema"] == 3:
         if Path(path).resolve() != Path(path):
             raise SettingsError("SETTINGS_PRIVATE_FILE_REQUIRED")
-        if (anchor == project or anchor.resolve() != anchor or project.resolve() != project
-                or state.is_relative_to(project / "output/simnow-controlled")):
+        if (
+            anchor == project
+            or anchor.resolve() != anchor
+            or project.resolve() != project
+            or state.is_relative_to(project / "output/simnow-controlled")
+        ):
             raise SettingsError("PREPARATION_STATE_NOT_INDEPENDENT")
         for directory in (anchor, anchor / "output", state):
             if not directory.exists():
                 continue
             info = directory.stat()
-            if (directory.is_symlink() or directory.resolve() != directory
-                    or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
-                    or stat.S_IMODE(info.st_mode) != 0o700):
+            if (
+                directory.is_symlink()
+                or directory.resolve() != directory
+                or not stat.S_ISDIR(info.st_mode)
+                or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o700
+            ):
                 raise SettingsError("PREPARATION_PRIVATE_STATE_REQUIRED")
         if state.exists() and any(state.iterdir()):
             raise SettingsError("PREPARATION_STATE_NOT_EMPTY")
+    permit = None
+    if "deployment_connection_permit" in value:
+        if (
+            value["schema"] != 2
+            or value["mode"] != "trade"
+            or value["enabled"] is not True
+        ):
+            raise SettingsError("DEPLOYMENT_CONNECTION_INVALID")
+        permit = _path(
+            value["deployment_connection_permit"], code="DEPLOYMENT_CONNECTION_INVALID"
+        )
+        if (
+            permit.resolve(strict=False) != permit
+            or permit.name != "deployment-connection-permit.private.json"
+        ):
+            raise SettingsError("DEPLOYMENT_CONNECTION_INVALID")
+        info = permit.parent.stat()
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700
+        ):
+            raise SettingsError("DEPLOYMENT_CONNECTION_INVALID")
     return ContinuousSettings(
         value["schema"],
         account,
@@ -192,4 +233,7 @@ def load_settings(path: Path) -> ContinuousSettings:
         value["mode"],
         value["enabled"],
         anchor if value["schema"] in (2, 3) else None,
+        permit,
+        Path(path) if permit else None,
+        config_sha if permit else None,
     )

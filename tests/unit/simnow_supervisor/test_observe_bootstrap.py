@@ -3,6 +3,7 @@ from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 import importlib.util
+import json
 
 import pytest
 
@@ -38,6 +39,9 @@ def test_initialize_uses_actual_balance_and_atomically_publishes_four_journals(t
     funds = value['rounds'][0]['queries']['funds']['rows'][0]
     value = native.changed(value, 'funds', [{**funds, 'Balance': '92345.67', 'Available': '92345.67'}])
     result = initialize_observe(config, ('JM', 'RB'), lambda: value, now=clock, assert_closed=lambda: True)
+    published = json.loads(Path(result['config_path']).read_bytes())
+    assert set(published) == {'schema', 'account_id', 'state_root', 'project_root', 'sdk_python',
+                              'api_env', 'mode', 'enabled', 'state_project_root'}
     runtime = load_settings(Path(result['config_path']))
     state = existing_account(runtime.state_root, runtime.account_id)
     assert runtime.schema == 2 and runtime.mode == 'observe' and not runtime.enabled
@@ -191,3 +195,17 @@ def test_slow_stage_fsync_cannot_publish_an_expired_snapshot(tmp_path, monkeypat
         bootstrap.initialize_observe(config, ('RB',), native.report,
             now=lambda: instant[0], assert_closed=lambda: True)
     assert not (load_settings(config).state_root / ('a' * 64)).exists()
+
+
+def test_observe_config_excludes_inmemory_metadata_and_trade_permit(tmp_path):
+    from dataclasses import replace
+    from guiyi_quant.simnow_execution.observe_bootstrap import _write_config
+    config, _ = preparation(tmp_path)
+    settings = replace(load_settings(config), source_config_path=tmp_path / "source.private.json",
+                       source_config_sha256="a" * 64,
+                       deployment_connection_permit=tmp_path / "deployment-connection-permit.private.json")
+    target = tmp_path / "observe-only.private.json"
+    _write_config(target, settings)
+    published = json.loads(target.read_bytes())
+    assert published['schema'] == 2 and published['mode'] == 'observe' and not published['enabled']
+    assert {'source_config_path', 'source_config_sha256', 'deployment_connection_permit'}.isdisjoint(published)
