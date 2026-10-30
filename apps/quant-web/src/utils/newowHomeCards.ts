@@ -66,7 +66,7 @@ export interface HomePeriodFact {
 }
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
 export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[]; restored?: boolean }
-export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string; projectionStatus?: import('./newowHomeProjection.ts').ProjectionStatus }
+export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string; periodStatus?: import('./newowHomeProjection.ts').HomeProjectionItem['period_status']; periodReasons?: import('./newowHomeProjection.ts').HomeProjectionItem['period_reason_codes']; projectionStatus?: import('./newowHomeProjection.ts').ProjectionStatus }
 
 export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
 export const homeStateIcons = { BUILD: '▲', HOLD: '✓', CLEAR: '↘', FLAT: '○' } as const
@@ -168,7 +168,7 @@ export function homeCardPresentation(day?: HomePeriodFact, week?: HomePeriodFact
   }
   if (state === 'HOLD') return { state, prefix:'当前持股，目标看', price:target, suffix:'', signal:'持股信号', glyph:'✓',
     context:weeklyLead ? `周线持股，目标看${goal}` : `日线持股（周线未确认），目标看${goal}`, stageIndex:2 }
-  if (state === 'CLEAR') return { state, prefix:'当前', price:price(day?.reference_current), suffix:'已出现卖出信号', signal:'卖出信号', glyph:'▼',
+  if (state === 'CLEAR') return { state, prefix:'日线参考收盘价', price:price(day?.reference_current), suffix:'，策略处于清仓阶段', signal:'卖出信号', glyph:'▼',
     context:`${day?.state === 'CLEAR' || day?.current_event?.kind === 'CLEAR' ? '日线' : '周线'}卖出，等待新的买入信号`, stageIndex:3 }
   return { state, prefix:'预估当前', price:absorb, suffix:'附近可以关注', signal:'空仓信号', glyph:'×',
     context:absorb === '--' ? '日周空仓，等待买入信号；日线吸筹价待确认' : `日周空仓，等待买入信号；关注${absorb}（日线吸筹价）`, stageIndex:0 }
@@ -262,4 +262,18 @@ export function homeCautionNotice(day?: HomePeriodFact): string | null {
   if (hints.status!=='ready' || hints.page_parity!==false || hints.executable!==false || hints.bar_end!==day.bar_end || hints.physical_contract!==day.physical_contract || hints.calculation_segment_id!==day.calculation_segment_id || !Array.isArray(hints.items)) return cautionDisplayTitle(null,'资料时点或合约来源尚未核对')
   if (hints.items.some(i=>i.kind==='caution') && !homeRowHints(day).some(i=>i.label==='小心')) return cautionDisplayTitle(null,'事件状态或时间资料尚未通过核验')
   return null
+}
+
+/** Publication validity is independent from completed-period market freshness. */
+export function homePeriodNotice(delivery: CardDelivery | undefined, period: HomePeriod) {
+  const card = delivery?.card as import('./newowHomeProjection.ts').HomeProjectionItem | undefined
+  const state = delivery?.failed ? 'failed' : delivery?.loading && delivery.stale ? 'stale' : delivery?.periodStatus?.[period] ?? delivery?.projectionStatus ?? card?.period_status?.[period] ?? (delivery?.stale ? 'stale' : 'ready')
+  const reasons: Record<string, string> = {
+    SOURCE_VERSION_CHANGED: '来源版本已变化，等待重建', SOURCE_VERSION_UNAVAILABLE: '来源版本暂不可验证',
+    PERIOD_PENDING_UPDATE: '周期发布待更新', SUMMARY_MISSING: '尚无已发布摘要',
+    SUMMARY_BUILD_FAILED: '摘要更新失败', SUMMARY_BUILDING: '摘要更新中', SUMMARY_BUILD_INTERRUPTED: '摘要构建中断',
+  }
+  const reason = delivery?.loading ? null : delivery?.periodReasons?.[period] ?? card?.period_reason_codes?.[period]
+  const text = delivery?.failed ? '摘要读取或更新失败' : reason && reasons[reason] || ({stale:'历史摘要待验证',failed:'摘要更新失败',missing:'尚无已发布摘要',updating:'摘要更新中',ready:'已发布摘要'} as const)[state]
+  return { historical: Boolean(delivery?.card) && state !== 'ready', text }
 }

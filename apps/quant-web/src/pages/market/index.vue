@@ -188,7 +188,7 @@ onBeforeUnmount(() => {
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
       <section class="market-home-main">
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>
-      <p v-else-if="overviewOutdated && !loading" class="market-dashboard-page__error" role="alert">{{ home.overview.stale.value ? '行情刷新失败；正在展示上一份成功快照。' : '行情结果待更新；正在展示上一份成功快照。' }}</p>
+      <p v-else-if="overviewOutdated && !loading" class="market-dashboard-page__error" role="alert">{{ home.overview.stale.value ? '日线概览刷新失败；正在展示上一份成功快照。' : '日线概览待更新；正在展示上一份成功快照。' }}</p>
       <p v-if="home.overview.stale.value && loading" class="market-home-cache-status" role="status">本地快照 · {{ new Date(home.overview.updatedAt.value ?? 0).toLocaleString() }} · 正在重新验证</p>
       <MarketHomeSkeleton v-if="loading && !home.overview.data.value" />
       <template v-else>

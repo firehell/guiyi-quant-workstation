@@ -435,3 +435,17 @@ Existing unconditional derived-projection reads remain unchanged. An overview re
 - **THEN** 显示预热中及已有根数，不借用旧段数据
 - **WHEN** 公式版本变化
 - **THEN** 持久投影变为待更新，显式构建后发布新事实
+
+### Requirement: Home cards disclose publication validity and daily display basis
+
+首页 SHALL 在日周图标旁紧凑标识历史结果，展开显示各自截至时间及受控失效原因；
+重复历史提示不占折叠行。全局摘要状态与分钟连接状态独立，正常已完成周期不得因报价变化失效。
+投影可增补 period_reason_codes，值限于 SOURCE_VERSION_CHANGED、SOURCE_VERSION_UNAVAILABLE、
+PERIOD_PENDING_UPDATE、SUMMARY_MISSING、SUMMARY_BUILD_FAILED、SUMMARY_BUILDING、SUMMARY_BUILD_INTERRUPTED 或 null；不得暴露内部异常。
+卡片 SHALL 明示日线参考收益及参考交易笔数，不称最佳准确率；距离使用摘要日线收盘价，标记日线距离、基准价及截至时间。
+阶段条只表示策略状态，清仓参考价格不称实时价或真实卖出价。
+
+#### Scenario: Live prices advance while completed strategy facts stay unchanged
+- **WHEN** 分钟报价推进但已发布的日周输入及版本未变化
+- **THEN** 报价独立刷新，日周状态、参考收益及日线距离不变
+- **AND** 卡片继续标注日线距离基准和各周期截至时间

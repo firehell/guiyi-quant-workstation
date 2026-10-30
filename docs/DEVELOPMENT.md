@@ -166,7 +166,7 @@ Web 正确性随对应功能版本完成，不能延后到视觉优化；体验�
 在 develop checkout 的仓库根目录启动独立 API：
 
 ```sh
-PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m uvicorn app.main:app --app-dir services/quant-api --host 127.0.0.1 --port 8002 --workers 1
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m app.develop_preview api
 ```
 
 在同一 checkout 的 `apps/quant-web` 运行 `npm run dev:develop`，页面为 `http://localhost:5175/market`，HTTP 与 WebSocket 默认代理到同一 develop API8002。正式5173/8000不随此命令切换。
@@ -177,3 +177,10 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 首页策略联调先显式执行 `guiyi home build --output <开发派生文件>`，启动8002 API时设置
 `GUIYI_HOME_PROJECTION_PATH` 指向该文件。首页GET只读投影，首次缺失不会自动计算。
 正式默认投影与开发文件分离；不要为预览启用盘后任务或切换正式Runtime。
+
+开发预览入口使用既有严格读取器加载 `~/Library/Application Support/GuiyiQuant/project.env` 的
+DB、Canonical 和 Redis 依赖，不输出或修改配置；按正式启动器规则补齐 Redis URL 认证。
+先运行同前缀的 `python -m app.develop_preview build`，显式构建 `.run/develop-newow-home.json`；
+API 固定读取该开发文件，不覆盖共享正式派生资产。缺失时显示未发布，GET 不自动构建。
+首页日周图标旁的“历史”及展开原因说明发布有效性；正常已完成日周线不会因分钟报价变化而重算。
+参考收益显示累计页面收益与笔数；距离始终按日线参考收盘价计算，展开显示基准及日周各自截至时间。

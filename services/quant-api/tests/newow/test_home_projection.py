@@ -232,3 +232,15 @@ def test_overview_recovers_when_failed_source_returns_to_lastgood_identity(tmp_p
     assert result['overview_status'] == 'ready'
     assert result['overview'] == {'target_as_of': 'recovered'}
     assert recovered == [True]
+
+
+def test_publication_reasons_distinguish_versions_from_completed_periods(tmp_path):
+    service, versions, _ = fixture(tmp_path)
+    service.build()
+    assert service.read()['items'][0]['period_reason_codes'] == {'1d': None, '1w': None}
+    versions['rb:1d'] = 'changed'
+    item = service.read()['items'][0]
+    assert item['period_reason_codes']['1d'] == 'SOURCE_VERSION_CHANGED'
+    assert item['period_status']['1w'] == 'ready'
+    service.versions = lambda: {}
+    assert service.read()['items'][0]['period_reason_codes']['1w'] == 'SOURCE_VERSION_UNAVAILABLE'

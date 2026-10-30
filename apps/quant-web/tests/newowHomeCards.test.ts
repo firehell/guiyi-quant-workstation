@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { homeCardsReloadIdentity, normalizeHomeCards, type CardDelivery, type HomeCardsResponse } from '../src/utils/newowHomeCards.ts'
+import { homePeriodNotice, homeCardsReloadIdentity, normalizeHomeCards, type CardDelivery, type HomeCardsResponse } from '../src/utils/newowHomeCards.ts'
 import { marketHomeUnifiedProductChartQuery } from '../src/utils/marketHomeRoutes.ts'
 
 const response = (products: string[]): HomeCardsResponse => ({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: products.map(product => ({ product, strategies: { trend: { '1d': { status: 'warming', state: null }, '1w': { status: 'unavailable', state: null } }, oscillation: { '1d': { status: 'warming', state: null }, '1w': { status: 'warming', state: null } } } })) })
@@ -24,4 +24,20 @@ test('unchanged overview readback does not cancel the bounded strategy queue', (
   assert.equal(homeCardsReloadIdentity(data), homeCardsReloadIdentity({ ...data, items: [...data.items].reverse() }))
   assert.notEqual(homeCardsReloadIdentity(data), homeCardsReloadIdentity({ ...data, items: [{ ...data.items[0]!, actual_contract: 'RB2705' }, data.items[1]!] }))
   assert.notEqual(homeCardsReloadIdentity(data), homeCardsReloadIdentity({ ...data, target_as_of: '2026-10-12' }))
+})
+
+test('historical publication disclosure survives cached cards and read failures', () => {
+  const card = response(['rb']).items[0]!
+  const delivery: CardDelivery = {card, stale: true, loading: false, failed: false}
+  assert.equal(homePeriodNotice(delivery, '1d').historical, true)
+  assert.match(homePeriodNotice({...delivery, failed:true}, '1w').text, /失败/)
+  assert.equal(homePeriodNotice({...delivery, stale:false, projectionStatus:'ready'}, '1d').historical, false)
+})
+
+test('current per-period validity overrides retained cached publication metadata', () => {
+ const card = {...response(['rb']).items[0]!, period_status: {'1d':'ready','1w':'ready'}}
+ const delivery: CardDelivery = {card, stale:true, failed:false, loading:false, projectionStatus:'failed', periodStatus:{'1d':'ready','1w':'failed'},periodReasons:{'1w':'SUMMARY_BUILD_FAILED'}}
+ assert.equal(homePeriodNotice(delivery,'1d').historical,false)
+ assert.match(homePeriodNotice(delivery,'1w').text,/失败/)
+ assert.equal(homePeriodNotice({...delivery,projectionStatus:'missing',periodStatus:{'1d':'missing','1w':'missing'}},'1d').historical,true)
 })
