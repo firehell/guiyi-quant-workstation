@@ -215,6 +215,15 @@ readback contracts. Reference recording MUST NOT create Alert Events or send not
 `htdy_conflict_recovery_v1` SHALL be an explicit maintenance operation for the exact owner-selected
 48 HTDY 60m streams affected by the 2026-10-30 context conflict. It SHALL NOT relax the normal overlap
 comparison, change the formula or observation policy, replay an original or grant a broker operation.
+The separately selected `htdy_conflict_recovery_20261031_v1` SHALL cover only HC, SS and ZN 60m
+from the 2026-10-31 deployment diagnosis. Its native controller SHALL require the frozen inventory
+SHA256 `b52df9f680afaea1a974bfc11c7d79b96a1f837f6813977ca7645bbf37bd8788`, the three exact stream
+identities, generation 1 and each exact old revision/pending Capture identity. SS SHALL be the sole OPEN
+reference stream in that incident. A different scope, OPEN set, old revision, Capture or generation blocks;
+the original 48-stream/20-OPEN controller profile and its historical plan schema SHALL remain unchanged.
+The separate incident SHALL reuse the same source proof, atomic boundary and future FLAT restart below,
+not introduce a generic overlap exemption. Its private plan/attempt schema SHALL be distinct from the
+original incident, and native readback SHALL also require its exact three-stream scope.
 The native MDS verifier SHALL prove immutable original/capture/checkpoint hashes, the exact 32-Bar
 windows, unchanged overlapping endpoint/physical-owner identities, Calendar/Session continuity and
 finite numeric differences. Every changed Bar SHALL match the current verified physical Canonical

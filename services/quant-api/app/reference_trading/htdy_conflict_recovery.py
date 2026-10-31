@@ -17,6 +17,12 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.reference_trading.contracts import SeedChunk, manifest_sha256
 from app.reference_trading.htdy_activation import htdy_identity, SCHEMA, POLICY
+from app.reference_trading.htdy_conflict_incidents import (
+    ORIGINAL_VERSION as VERSION,
+    OCT31_VERSION,
+    OCT31_BINDINGS,
+    OCT31_OPEN_STREAM,
+)
 from app.reference_trading.models import (
     ReferenceActivationReceipt,
     ReferenceBatch,
@@ -36,7 +42,6 @@ from guiyi_quant.reference_trading.strategy_checkpoint import (
 )
 
 KEY = "htdy_conflict_boundary_v1"
-VERSION = "htdy_conflict_recovery_v1"
 
 
 def _wire(value):
@@ -282,7 +287,11 @@ def _verify_proof(proof, binding, checkpoint):
 class HtdyConflictRecovery:
     """Atomic domain transaction; caller owns durable one-shot attempt fencing."""
 
-    def __init__(self, factory, *, verify_source, assert_fenced, clock=None):
+    def __init__(
+        self, factory, *, verify_source, assert_fenced, clock=None, incident=VERSION
+    ):
+        if incident not in (VERSION, OCT31_VERSION):
+            raise ValueError("HTDY_CONFLICT_INCIDENT_INVALID")
         if not callable(verify_source) or not callable(assert_fenced):
             raise ValueError("HTDY_CONFLICT_VERIFIER_REQUIRED")
         self.factory, self.verify_source, self.assert_fenced = (
@@ -291,13 +300,16 @@ class HtdyConflictRecovery:
             assert_fenced,
         )
         self.clock = clock
+        self.incident = incident
 
     def _freeze(self, session, ids, start, *, lock=False):
         from app.reference_trading.inbox_recovery import (
             _verified_calculation_resolution_ids,
         )
 
-        if len(ids) != 48 or len(set(ids)) != 48:
+        if (self.incident == VERSION and (len(ids) != 48 or len(set(ids)) != 48)) or (
+            self.incident == OCT31_VERSION and sorted(ids) != sorted(OCT31_BINDINGS)
+        ):
             raise RepositoryConflict("HTDY_CONFLICT_SCOPE_INVALID")
         resolved = set(_verified_calculation_resolution_ids(session, stream_ids=ids))
         items, records = [], []
@@ -406,6 +418,16 @@ class HtdyConflictRecovery:
                 "batches_sha256": _hash([_row(b) for b in batches]),
                 "receipts_sha256": _receipt_hash(receipt),
             }
+            if self.incident == OCT31_VERSION:
+                if (
+                    stream.activation_generation != 1
+                    or len(binding["captures"]) != 1
+                    or (rev.revision_id, binding["captures"][0]["batch_id"])
+                    != OCT31_BINDINGS[sid]
+                    or (checkpoint.reference_state.open_trade is not None)
+                    != (sid == OCT31_OPEN_STREAM)
+                ):
+                    raise RepositoryConflict("HTDY_CONFLICT_INCIDENT_PREIMAGE_DRIFT")
             proof = self.verify_source(identity, binding, old.dependency_manifest)
             _verify_proof(proof, binding, checkpoint)
             end = datetime.fromisoformat(proof["boundary_end"])
@@ -442,7 +464,7 @@ class HtdyConflictRecovery:
         with self.factory() as session:
             items, _ = self._freeze(session, list(stream_ids), start)
         payload = {
-            "version": VERSION,
+            "version": self.incident,
             "items": items,
             "recording_start": start.isoformat(),
             "expires_at": expiry.isoformat(),
@@ -450,10 +472,14 @@ class HtdyConflictRecovery:
         return {**payload, "plan_hash": _hash(payload)}
 
     def readback(self, plan):
-        if plan.get("version") != VERSION or _hash(
+        if plan.get("version") != self.incident or _hash(
             {k: v for k, v in plan.items() if k != "plan_hash"}
         ) != plan.get("plan_hash"):
             raise RepositoryConflict("PLAN_HASH_CONFLICT")
+        if self.incident == OCT31_VERSION and sorted(
+            item["binding"]["stream_id"] for item in plan["items"]
+        ) != sorted(OCT31_BINDINGS):
+            raise RepositoryConflict("HTDY_CONFLICT_SCOPE_INVALID")
         with self.factory() as session:
             ids = [item["binding"]["stream_id"] for item in plan["items"]]
             receipts = session.scalars(
@@ -499,7 +525,7 @@ class HtdyConflictRecovery:
 
     def apply(self, plan, *, expected_plan_hash, now):
         if (
-            plan.get("version") != VERSION
+            plan.get("version") != self.incident
             or expected_plan_hash != plan.get("plan_hash")
             or _hash({k: v for k, v in plan.items() if k != "plan_hash"})
             != expected_plan_hash

@@ -20,6 +20,7 @@ from app.runtime_bindings import (
 )
 from app.runtime_handover import _read, _write, deployment_lock
 from app.reference_trading.recovery_campaign import digest
+from app.runtime_cohort_errors import CohortError
 
 CONTINUOUS = ("market-feed", "live", "alert", "reference-worker", "api", "web")
 CALENDARS = ("after-market", "late-provider-recovery", "weekly-audit", "log-rotate")
@@ -35,10 +36,6 @@ WARMUP_CONDITIONS = frozenset({
     "subprocess_timeout", "execution_failed", "output_invalid",
     "candidate_blocked", "source_identity",
 })
-
-
-class CohortError(ValueError):
-    pass
 
 
 def require(value, code):

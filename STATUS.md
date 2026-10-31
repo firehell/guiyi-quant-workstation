@@ -1,3 +1,38 @@
+10/31 owner已明确批准HC/SS/ZN三条精确恢复并继续统一十服务：保留原件、旧参考中断、无退出价/收益、未来FLAT。
+v1.16.48补丁候选新增固定20261031 incident，绑定三stream/gen1/旧revision/capture及仅SS OPEN，旧48流默认合同不变。
+103项相关回归、真实隔离PG旧8/新三流1项、最新轻导入17项、Ruff/Mypy/OpenSpec/secret0/diff/uv lock通过；
+独立Review无Confirmed Issue，允许发布main/tag。此检查点尚未执行生产恢复或新cohort，实际现役仍十服务41/gen43与SimNow44。
+后续依次完成正式补丁发布、三流精确原生恢复/readback、新鲜cohort预检和切换，再按引用证明收敛旧树；自然业务分别待验。
+以下为此前检查点：
+
+10/31 11:10 十服务统一仍阻塞；v1.16.47已发布，首次cohort在Reference预热中安全取消，尚未切换。
+自然09:00周审计已于10:42:21完成passed/60品种/零provider及数据写入；不再是当前占锁阻断。
+候选plan 9d5b0bb4218a9cbd1afad079db1677d4b8db7243ae1ef8bf1b2effabbd1fd9e1已cancelled，effects={}，不得复用。
+新阻断为HC/SS/ZN三条HTDY60m pending OBSERVATION_GAP：两根旧重叠Bar发生源修订，三条原件/checkpoint完整，
+原生HtdyConflictSource已只读验证SOURCE_PROVEN，匹配当前物理Canonical及发布来源；不是苏冰W1分类中断豁免。
+三条generation1不属于既有48流冻结恢复范围；SS另有1笔OPEN参考交易。已请求owner选择三条精确恢复：
+保留原件，旧参考中断（不造退出价/收益），未来FLAT重启；当前尚未收到选择，未做恢复、回放或业务DB写入。
+本轮唯一drain 8cc988c5979f453490060f283b73e748已精确cancel，原PID18707恢复active/receiving_cycle；无停启/CAS。
+十服务现场绑定仍41/gen43，独立SimNow仍44及原恢复block；发布树41/44/47，活动引用未删除，不报RUNTIME_READY。
+另修复python -m入口与package的CohortError类身份分裂，避免预热错误被吞为通用诊断；仅共享异常定义，未放宽Gate。
+97项cohort/host/入口回归及Ruff/secret0/diff通过，独立Review无Confirmed Issue（另8项失败路径通过）；该修复尚未发布或运行。
+私有证据见output/release-unification-20261031/cohort-v47-20261031/及htdy-three-source-diagnosis/。
+最小下一步：owner选择上述三条恢复方案；若采用，补丁须测试/独立Review及原生精确恢复后，新计划统一十服务。
+以下为此前检查点：
+
+10/31 苏冰W1分路由部署预检修复已发布v1.16.47；十服务切换仍被现有自然周审计占锁阻断。
+PR558已合develop、PR559/main/annotated tag/GitHub Release已完成，exact
+`f758b646e6e9d1f747f900cd8f305183b3c88510`；完整tree等受测bfceac300，正式47树clean detached，独立依赖/Web构建/render通过。
+owner明确采用`subing_weekly_unavailable_deployment_v1`：仅cohort对SuBing W1 v2完整物理前缀质量并集及rank1一致性证明分路由验收，
+仍DATA_UNAVAILABLE、不计calculated、不生成capture/交易；普通读取/预热、pending原件及saved seed/capture/evaluator完整性仍strict，未知/冲突/超时仍整组阻断。
+最新MDS只读REPEATABLE READ复验PF/PD/PG/PK/PL/PR/PX/SF八合约全部typed union完整，共65个质量中断；零provider/写入，不代替正式cohort预热。
+核心定向87项、部署/forward105项（6专用条件skip）、Review补修后16项，独立MDS/质量19项，Ruff/Mypy/OpenSpec12/secret0/锁/Web构建通过。
+现役十服务保持41/gen43，SimNow保持44/原run及账户恢复block；本轮Reference唯一协作drain已精确cancel，同PID18707恢复active receiving_cycle，无launchctl重启。
+47原生前置检查全60休市通过，仅weekly-audit idle=false，`COHORT_CALENDAR_BUSY`；自然09:00全历史只读审计仍在运行，未强停或解锁。
+未用45/46已按两轮同像零引用hash483e63eb7763526c29b0e25517552d3ded7b39b94a97fc858e9bc457d8c7a77b non-force移除，45四个标记32bytes树外保全。
+当前发布树41/44/47；运行旧树尚有引用不删除，历史tag/Git/行情/账户/安全配置保留。当前前台等待自然审计结束，之后须新鲜cohort计划及实际双轮读回，不报RUNTIME_READY。
+本次执行记录和清理证据见output/release-unification-20261031/（私有本地evidence，不纳入源码）。以下为此前检查点：
+
 10/31 周末SimNow四项准备完成；运行切换和自然业务仍待验。
 固定候选v1.16.45 exact b3e1f231eb1d0ecf9f850ce73fdc66de1da4bd3d，detached标准发布树已建立。
 沿用原SDK/API依赖及schema2原账户配置，仅渲染候选plist；SDK --check、--preflight-trade及render均exit0。
