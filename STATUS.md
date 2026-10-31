@@ -1,3 +1,17 @@
+10/31 周末SimNow四项准备完成；运行切换和自然业务仍待验。
+固定候选v1.16.45 exact b3e1f231eb1d0ecf9f850ce73fdc66de1da4bd3d，detached标准发布树已建立。
+沿用原SDK/API依赖及schema2原账户配置，仅渲染候选plist；SDK --check、--preflight-trade及render均exit0。
+API依赖复用原44环境，不修改现役venv；SDK位于/private/tmp，部署前必须重验。许可文件不存在，无plan/claim/安装/启动。
+只读原账本60品种、1个已核订单、未核订单/未释放预留/未解释成交均0，dispatch actions0/events1。
+双锁均由原PID1733持有；同run0900f127保持，宿主WAITING_SESSION/pending=true/opening=false并不解除恢复阻断。
+审计前后四库SHA完全一致；29/30各3次及原block、20261102 attempt1/CONTINUOUS_RECOVERY_REQUIRED保持；20261103无记录。
+一次固定截点2026-10-31T00:41:04.231255Z审计：60/60 WINDOW32_VERIFIED及物理1m聚合EXACT；45 INPUTS_VERIFIED_WAIT_NEW_OBSERVATION、15 BLOCKED。
+15为AP/CJ/EC/JD/LC/LH/PD/PK/PS/PT/RS/SF/SI/SM/UR：历史已验证，保留Live来源/订阅证据不足和MARKET_READ_CONTRACT_UNAVAILABLE，
+不能当作Canonical历史缺口，也不改成实时合格；待各自日盘新输入验收。审计exit2表示保留阻断，非审计中断。
+无provider请求、生产写入、Broker连接、服务切换或新调度。初始系统Python缺SQLAlchemy时审计尚未启动，改API解释器后仅运行一次60品种审计。
+私有候选及原生JSON/CSV位于主仓output/simnow-v45-weekend-20261031/；无生产代码变更，复用原测试/Review。
+详情及现场验收顺序见docs/tasks/2026-10-30-simnow-settlement-recovery.md。以下为此前检查点：
+
 10/30 22:52 SimNow窗口定位完成（只读）：权威Calendar/Session读取正常，当前45品种TRADING、15 CLOSED；
 当前休市切换条件不成立，不是已证实的元数据缺口。20261102及20261103均有60/60 Session事实。
 此前独立诊断先导入应用再加载私有配置，连接池缓存旧配置导致数据库错误被包装成WINDOW_UNPROVEN；
