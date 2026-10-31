@@ -7,7 +7,7 @@ are hashed; results consume the existing snapshot cache's shared budget.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from hashlib import sha256
 
 from guiyi_quant.newow.product_adapters import replay_strategy
@@ -23,7 +23,7 @@ from .snapshot_cache import SnapshotCache
 def verified_replay(
     cache: SnapshotCache,
     identity: ProductIdentity,
-    bars: tuple[ProductBar, ...],
+    bars: Sequence[ProductBar],
     *,
     lifecycle_evidence: tuple[LifecycleReplayEvidence, ...] = (),
     data_interruptions: tuple[DataInterruption, ...] = (),

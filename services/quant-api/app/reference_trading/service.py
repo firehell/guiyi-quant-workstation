@@ -5,12 +5,13 @@ from __future__ import annotations
 from app.reference_trading.checkpoint import checkpoint_watermark
 
 from collections.abc import Callable
-from contextlib import ExitStack, nullcontext
+from contextlib import contextmanager, ExitStack, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import date, datetime
 from functools import partial
 from hashlib import sha256
+from itertools import islice
 import json
 from time import monotonic
 from typing import Literal, cast
@@ -47,6 +48,9 @@ from app.reference_trading.planning import (
     HistoricalReferencePlan,
     HistoricalStreamPlan,
     canonical_sha256,
+)
+from app.reference_trading.page_material_storage import (
+    build_final_batch_material, input_integrity_binding,
 )
 from app.reference_trading.presentation import envelope, presentation_point
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
@@ -125,6 +129,105 @@ def _source_guard(reader: object, request: object, source_token: str):
     if factory is None:
         return nullcontext()
     return factory(request, expected_source_token=source_token)
+
+
+@contextmanager
+def _pin_stream_inputs(reader: object, stream_plan: HistoricalStreamPlan):
+    from app.reference_trading.manifest_storage import verified_manifest_scope
+    with ExitStack() as lease:
+        verified = getattr(reader, "pin_verified_stream", None)
+        if callable(verified):
+            source = verified(stream_plan.request, expected_manifest=stream_plan.input_manifest,
+                expected_source_token=stream_plan.source_token)
+        else:
+            pin = getattr(reader, "pin_stream", None)
+            source = pin(stream_plan.request) if callable(pin) else nullcontext()
+        lease.enter_context(source)
+        # Clear validated DB bytes before releasing the Canonical input lease.
+        lease.enter_context(verified_manifest_scope(
+            stream_plan.input_manifest, stream_plan.dependency_digest,
+        ))
+        yield
+
+
+def verify_seed_only_resume(plan_hash, stream_id, resume, state, checkpoint, receipt) -> None:
+    """Prove a candidate stopped after seal, before any calculation commit."""
+    seed_text = json.dumps(
+        {"plan_hash": plan_hash, "stream_id": stream_id},
+        sort_keys=True, separators=(",", ":"),
+    )
+    root = sha256(seed_text.encode()).hexdigest()
+    if (
+        resume.stream_id != stream_id
+        or resume.revision_id != state.revision_id
+        or resume.plan_hash != plan_hash
+        or resume.next_input_index != 0
+        or resume.last_batch_key != "seed:" + root
+        or checkpoint != state.checkpoint
+        or checkpoint.seq != 1
+        or state.checkpoint_batch_key != "seed-seal:" + checkpoint.state_hash
+        or state.source_evidence != {"seed_root_hash": root}
+        or receipt is None
+        or receipt.revision_id != resume.revision_id
+        or receipt.seq != 1
+        or receipt.checkpoint_hash != checkpoint.state_hash
+    ):
+        raise ValueError("REFERENCE_RESUME_RECEIPT_CONFLICT")
+
+
+def _rebuild_preserves_active_prefix(current, snapshot) -> bool:
+    """Keep a verified old Newow revision readable while its replacement builds."""
+    from app.reference_trading.fingerprint_proof import SEMANTIC_READERS, fingerprint_count
+    from app.reference_trading.query import QueryConflict
+    from app.reference_trading.source_identity import verify_saved_input_prefix
+
+    if (current.revision_status != "active"
+        or current.stream.active_revision_id != current.revision_id
+        or not snapshot.stream.strategy_code.replace("-", "_").startswith("newow_")
+        or snapshot.stream.strategy_code.replace("-", "_") == "newow_dual_fusion"):
+        return False
+    prior = current.dependency_manifest
+    observed = snapshot.dependency_manifest
+    if (prior.get("reader") not in SEMANTIC_READERS
+        or observed.get("reader") not in SEMANTIC_READERS):
+        return False
+    required = (
+        "query_since", "input_fingerprints", "calendar_session_effective_fingerprints",
+        "calendar_session_source_evidence", "rank1", "boundaries",
+        "data_interruptions", "lifecycle_owners", "quality_policy",
+        "market_source_identity", "input_policy_version", "formula_versions",
+        "reference_model_version",
+    )
+    if any(key not in prior or key not in observed for key in required):
+        return False
+    for key in ("reference_boundary_policy_version", "quality_policy_version"):
+        if (key in prior) != (key in observed) or prior.get(key) != observed.get(key):
+            return False
+    try:
+        old_count = fingerprint_count(prior["input_fingerprints"])
+        new_count = fingerprint_count(observed["input_fingerprints"])
+        old_calendar_count = fingerprint_count(prior["calendar_session_effective_fingerprints"])
+        new_calendar_count = fingerprint_count(observed["calendar_session_effective_fingerprints"])
+        rank = prior["rank1"]
+        if (not 0 < old_count <= new_count == len(snapshot.bars)
+            or not 0 < old_calendar_count <= new_calendar_count
+            or ("input_count" in prior and prior["input_count"] != old_count)
+            or not isinstance(rank, list) or not rank
+            or not isinstance(rank[-1], list) or len(rank[-1]) != 3):
+            return False
+        old_actual_day = date.fromisoformat(rank[-1][2])
+        owner_keys = set()
+        strategy_count = 0
+        for item in islice(snapshot.bars, old_count):
+            if item.strategy_input:
+                strategy_count += 1
+                owner_keys.add((item.physical_contract, item.owner_segment_id))
+        if strategy_count != old_calendar_count or not owner_keys:
+            return False
+        verify_saved_input_prefix(observed, prior, old_actual_day, frozenset(owner_keys))
+    except (QueryConflict, TypeError, ValueError, KeyError, IndexError, OSError):
+        return False
+    return True
 
 
 def _seed_checkpoint(stream: StreamIdentity) -> tuple[AdapterCheckpoint[object], str]:
@@ -661,15 +764,17 @@ class HistoricalReferenceService:
     def _rebuild_stream(self, plan, stream_plan, deadline):
         from app.market_data.newow.product_reader import NewowProductReadCancelled
         stream_id = stream_plan.request.identity.stream_id
-        pin = getattr(self._reader, "pin_stream", None)
         with ExitStack() as inputs:
             # Acquire and verify the exact frozen source before changing the old
             # active revision. The same lease and snapshot serve the whole build.
             try:
-                inputs.enter_context(pin(stream_plan.request) if callable(pin) else nullcontext())
+                inputs.enter_context(_pin_stream_inputs(self._reader, stream_plan))
                 snapshot = self._reader.load_stream(
                     stream_plan.request, expected_source_token=stream_plan.source_token,
                 )
+                release = getattr(self._reader, "release_snapshot", None)
+                if callable(release):
+                    inputs.callback(release, snapshot)
             except NewowProductReadCancelled:
                 # This boundary precedes invalidation, candidate/seed creation,
                 # and every batch mutation. Later read cancellation has no such proof.
@@ -682,10 +787,11 @@ class HistoricalReferenceService:
                 )
             try:
                 current = self._repository.read_state(stream_id)
-                self._repository.invalidate_revision(
-                    stream_id, current.revision_id, current.stream.row_version,
-                    "P4_SOURCE_REVISION_REBUILD",
-                )
+                if not _rebuild_preserves_active_prefix(current, snapshot):
+                    self._repository.invalidate_revision(
+                        stream_id, current.revision_id, current.stream.row_version,
+                        "P4_SOURCE_REVISION_REBUILD",
+                    )
             except RepositoryConflict as error:
                 return StreamBatchReport(
                     stream_id, "blocked", str(error), 0, None, None, None, None,
@@ -773,10 +879,9 @@ class HistoricalReferenceService:
         deadline: float,
     ) -> StreamBatchReport:
         from app.market_data.newow.product_reader import NewowProductReadCancelled
-        pin = getattr(self._reader, "pin_stream", None)
         with ExitStack() as inputs:
             try:
-                inputs.enter_context(pin(stream_plan.request) if callable(pin) else nullcontext())
+                inputs.enter_context(_pin_stream_inputs(self._reader, stream_plan))
             except NewowProductReadCancelled:
                 return StreamBatchReport(
                     stream_plan.request.identity.stream_id, "partial", "INPUT_READ_INTERRUPTED",
@@ -820,6 +925,16 @@ class HistoricalReferenceService:
                     None if resume is None else resume.revision_id, None,
                     None if resume is None else resume.last_batch_key, resume,
                 )
+        try:
+            return self._build_stream_from_snapshot(
+                plan, stream_plan, resume, deadline, stream, snapshot,
+            )
+        finally:
+            release = getattr(self._reader, "release_snapshot", None)
+            if callable(release):
+                release(snapshot)
+
+    def _build_stream_from_snapshot(self, plan, stream_plan, resume, deadline, stream, snapshot):
         if not self._snapshot_matches(stream_plan, snapshot):
             return StreamBatchReport(
                 stream.stream_id, "blocked", "SOURCE_CHANGED",
@@ -899,6 +1014,36 @@ class HistoricalReferenceService:
                         chunk[0].fingerprint, chunk[-1].fingerprint,
                     ], separators=(",", ":"),
                 ).encode()).hexdigest()
+                source_evidence = {
+                    "source_token": stream_plan.source_token,
+                    "first_fingerprint": chunk[0].fingerprint,
+                    "last_fingerprint": chunk[-1].fingerprint,
+                    "start_input_index": index,
+                    "end_input_index": index + len(chunk),
+                    "presentation_v1": envelope(presentation),
+                }
+                integrity = input_integrity_binding(
+                    snapshot, stream_plan.request, stream_id=stream.stream_id,
+                    revision_id=revision_id, seq=token.seq + 1,
+                    manifest_sha256=stream_plan.input_manifest_sha256,
+                )
+                if integrity is not None:
+                    source_evidence["input_integrity_v1"] = integrity
+                    if index + len(chunk) == len(snapshot.bars):
+                        try:
+                            source_evidence["page_material_v1"] = build_final_batch_material(
+                                snapshot, stream_plan.request, stream_id=stream.stream_id,
+                                revision_id=revision_id, seq=token.seq + 1,
+                                manifest_sha256=stream_plan.input_manifest_sha256,
+                                end_input_index=index + len(chunk),
+                                cancelled=lambda: self._cancelled() or self._clock() >= deadline,
+                            )
+                        except ValueError as error:
+                            if str(error) == "REFERENCE_PAGE_MATERIAL_INTERRUPTED":
+                                raise ServiceInterrupted("cancelled") from error
+                            raise
+                if self._cancelled() or self._clock() >= deadline:
+                    raise ServiceInterrupted("budget exhausted")
                 prepared = PreparedBatch(
                     stream.stream_id,
                     revision_id,
@@ -909,14 +1054,7 @@ class HistoricalReferenceService:
                     transitions,
                     next_checkpoint,
                     schema,
-                    {
-                        "source_token": stream_plan.source_token,
-                        "first_fingerprint": chunk[0].fingerprint,
-                        "last_fingerprint": chunk[-1].fingerprint,
-                        "start_input_index": index,
-                        "end_input_index": index + len(chunk),
-                        "presentation_v1": envelope(presentation),
-                    },
+                    source_evidence,
                 )
                 with _source_guard(
                     self._reader, stream_plan.request, stream_plan.source_token,
@@ -1041,18 +1179,14 @@ class HistoricalReferenceService:
         token, _checkpoint = self._repository.load_checkpoint(
             stream.stream_id, resume.revision_id,
         )
-        if state.checkpoint_batch_key.startswith("seed:"):
+        if state.checkpoint_batch_key.startswith("seed-seal:"):
             current_index = 0
-            seed_text = json.dumps(
-                {"plan_hash": plan.plan_hash, "stream_id": stream.stream_id},
-                sort_keys=True, separators=(",", ":"),
+            verify_seed_only_resume(
+                plan.plan_hash, stream.stream_id, resume, state, token,
+                self._repository.read_batch(
+                    stream.stream_id, resume.revision_id, state.checkpoint_batch_key,
+                ),
             )
-            expected_batch_key = "seed:" + sha256(seed_text.encode()).hexdigest()
-            if (
-                token.seq != 1
-                or state.checkpoint_batch_key != expected_batch_key
-            ):
-                raise ValueError("REFERENCE_RESUME_RECEIPT_CONFLICT")
         else:
             current_raw = state.source_evidence.get("end_input_index")
             start_raw = state.source_evidence.get("start_input_index")
@@ -1101,6 +1235,14 @@ class HistoricalReferenceService:
         self, plan: HistoricalReferencePlan, stream_plan: HistoricalStreamPlan,
         deadline: float,
     ) -> StreamBatchReport:
+        with ExitStack() as inputs:
+            inputs.enter_context(_pin_stream_inputs(self._reader, stream_plan))
+            return self._advance_stream_impl(plan, stream_plan, deadline)
+
+    def _advance_stream_impl(
+        self, plan: HistoricalReferencePlan, stream_plan: HistoricalStreamPlan,
+        deadline: float,
+    ) -> StreamBatchReport:
         stream = stream_plan.request.identity
         try:
             state = self._repository.read_state(stream.stream_id)
@@ -1116,6 +1258,14 @@ class HistoricalReferenceService:
         snapshot = self._reader.load_stream(
             stream_plan.request, expected_source_token=stream_plan.source_token,
         )
+        try:
+            return self._advance_stream_loaded(plan, stream_plan, deadline, stream, state, snapshot)
+        finally:
+            release = getattr(self._reader, "release_snapshot", None)
+            if callable(release):
+                release(snapshot)
+
+    def _advance_stream_loaded(self, plan, stream_plan, deadline, stream, state, snapshot):
         if not self._snapshot_matches(stream_plan, snapshot):
             return StreamBatchReport(
                 stream.stream_id, "blocked", "SOURCE_CHANGED", 0,
@@ -1135,11 +1285,111 @@ class HistoricalReferenceService:
                 stream.stream_id, "blocked", "REBUILD_REQUIRED", 0,
                 state.revision_id, state.revision_id, None, None,
             )
-        tail = snapshot.bars[processed:]
+        tail_count = len(snapshot.bars) - processed
         dependency_advance: DependencyAdvance | None
         if state.dependency_manifest == stream_plan.input_manifest:
             dependency_advance = None
-            if not tail:
+            if not tail_count:
+                if snapshot.source_integrity is not None:
+                    from app.market_data.newow.product_reader import NewowProductReadCancelled
+                    from app.reference_trading.query import QueryConflict
+
+                    if self._cancelled() or self._clock() >= deadline:
+                        return StreamBatchReport(
+                            stream.stream_id, "partial", "INTERRUPTED", 0,
+                            state.revision_id, state.revision_id, None, None,
+                        )
+                    record = input_integrity_binding(
+                        snapshot, stream_plan.request, stream_id=stream.stream_id,
+                        revision_id=state.revision_id, seq=token.seq,
+                        manifest_sha256=stream_plan.input_manifest_sha256,
+                    )
+                    try:
+                        with _source_guard(
+                            self._reader, stream_plan.request, stream_plan.source_token,
+                        ):
+                            if self._cancelled() or self._clock() >= deadline:
+                                return StreamBatchReport(
+                                    stream.stream_id, "partial", "INTERRUPTED", 0,
+                                    state.revision_id, state.revision_id, None, None,
+                                )
+                            if not self._reader.revalidate(
+                                stream_plan.request,
+                                expected_source_token=stream_plan.source_token,
+                            ):
+                                raise RepositoryConflict("SOURCE_CHANGED")
+                            if self._cancelled() or self._clock() >= deadline:
+                                return StreamBatchReport(
+                                    stream.stream_id, "partial", "INTERRUPTED", 0,
+                                    state.revision_id, state.revision_id, None, None,
+                                )
+                            from app.reference_trading.models import (
+                                ReferenceBatch, ReferenceRevision, ReferenceStream,
+                            )
+                            from app.reference_trading.page_material_query import latest_input_integrity
+
+                            with self._repository._session_factory() as session:
+                                active = session.get(ReferenceStream, stream.stream_id)
+                                revision = session.get(
+                                    ReferenceRevision, (stream.stream_id, state.revision_id),
+                                )
+                                batch = None if revision is None else session.get(
+                                    ReferenceBatch, revision.checkpoint_batch_id,
+                                )
+                                if (
+                                    active is None or revision is None or batch is None
+                                    or active.active_revision_id != state.revision_id
+                                    or active.health != "READY"
+                                    or active.recording_mode != "historical_replay"
+                                    or active.row_version != token.row_version
+                                    or active.latest_seq != token.seq
+                                    or revision.status != "active"
+                                    or revision.last_seq != token.seq
+                                    or revision.dependency_digest != stream_plan.dependency_digest
+                                    or batch.kind != "calculation"
+                                    or batch.outcome != "committed"
+                                    or batch.seq != token.seq
+                                    or batch.post_state_hash != token.state_hash
+                                ):
+                                    raise RepositoryConflict("STALE_CHECKPOINT")
+                                already_verified = latest_input_integrity(session, batch) == record
+                            if not already_verified:
+                                self._repository.record_diagnostic(
+                                    stream.stream_id, state.revision_id,
+                                    "source-verify:" + sha256((
+                                        record["binding_sha256"] + str(token.row_version)
+                                    ).encode()).hexdigest(),
+                                    {"input_integrity_v1": record},
+                                    "CANONICAL_INPUTS_REVERIFIED",
+                                    expected_checkpoint=token,
+                                )
+                    except NewowProductReadCancelled:
+                        return StreamBatchReport(
+                            stream.stream_id, "partial", "INPUT_READ_INTERRUPTED", 0,
+                            state.revision_id, state.revision_id, None, None,
+                        )
+                    except RepositoryConflict as error:
+                        return StreamBatchReport(
+                            stream.stream_id, "blocked", str(error) or "SOURCE_CHANGED", 0,
+                            state.revision_id, state.revision_id, None, None,
+                        )
+                    except QueryConflict:
+                        return StreamBatchReport(
+                            stream.stream_id, "blocked", "SOURCE_IDENTITY_UNVERIFIED", 0,
+                            state.revision_id, state.revision_id, None, None,
+                        )
+                    except ValueError:
+                        return StreamBatchReport(
+                            stream.stream_id, "blocked", "SOURCE_CHANGED", 0,
+                            state.revision_id, state.revision_id, None, None,
+                        )
+                    except Exception:
+                        # A diagnostic transport failure has no committed receipt
+                        # contract. Keep the control state pending for readback.
+                        return StreamBatchReport(
+                            stream.stream_id, "blocked", "SOURCE_REVERIFY_OUTCOME_UNKNOWN", 0,
+                            state.revision_id, state.revision_id, None, None,
+                        )
                 return StreamBatchReport(
                     stream.stream_id, "noop", None, 0, state.revision_id,
                     state.revision_id, None, None,
@@ -1147,24 +1397,34 @@ class HistoricalReferenceService:
                 )
         else:
             try:
+                manifest_fingerprints = stream_plan.input_manifest.get("input_fingerprints")
+                appended = (
+                    tuple(manifest_fingerprints[processed:])
+                    if isinstance(manifest_fingerprints, list)
+                    and len(manifest_fingerprints) == len(snapshot.bars)
+                    else tuple(
+                        snapshot.bars[position].fingerprint
+                        for position in range(processed, len(snapshot.bars))
+                    )
+                )
                 dependency_advance = prove_dependency_append(
                     state.dependency_manifest,
                     stream_plan.input_manifest,
-                    appended_ranges=tuple(item.fingerprint for item in tail),
+                    appended_ranges=appended,
                 )
             except ValueError:
                 return StreamBatchReport(
                     stream.stream_id, "blocked", "REBUILD_REQUIRED", 0,
                     state.revision_id, state.revision_id, None, None,
                 )
-            if not tail:
+            if not tail_count:
                 return StreamBatchReport(
                     stream.stream_id, "blocked", "REBUILD_REQUIRED", 0,
                     state.revision_id, state.revision_id, None, None,
                 )
         index = 0
         last_batch_key: str | None = None
-        while index < len(tail):
+        while index < tail_count:
             if (
                 self._cancelled()
                 or self._clock() >= deadline
@@ -1176,7 +1436,9 @@ class HistoricalReferenceService:
             token, checkpoint = self._repository.load_checkpoint(
                 stream.stream_id, state.revision_id,
             )
-            chunk = tail[index:index + plan.batch_size]
+            chunk = snapshot.bars[
+                processed + index:processed + index + plan.batch_size
+            ]
             presentation: list[dict[str, object]] = []
             next_checkpoint, sources, transitions, schema = _advance_batch(
                 stream, checkpoint, chunk, presentation,
@@ -1188,6 +1450,42 @@ class HistoricalReferenceService:
                     chunk[0].fingerprint, chunk[-1].fingerprint,
                 ], separators=(",", ":"),
             ).encode()).hexdigest()
+            source_evidence = {
+                "source_token": stream_plan.source_token,
+                "first_fingerprint": chunk[0].fingerprint,
+                "last_fingerprint": chunk[-1].fingerprint,
+                "start_input_index": processed + index,
+                "end_input_index": processed + index + len(chunk),
+                "presentation_v1": envelope(presentation),
+            }
+            integrity = input_integrity_binding(
+                snapshot, stream_plan.request, stream_id=stream.stream_id,
+                revision_id=state.revision_id, seq=token.seq + 1,
+                manifest_sha256=stream_plan.input_manifest_sha256,
+            )
+            if integrity is not None:
+                source_evidence["input_integrity_v1"] = integrity
+                if index + len(chunk) == tail_count:
+                    try:
+                        source_evidence["page_material_v1"] = build_final_batch_material(
+                            snapshot, stream_plan.request, stream_id=stream.stream_id,
+                            revision_id=state.revision_id, seq=token.seq + 1,
+                            manifest_sha256=stream_plan.input_manifest_sha256,
+                            end_input_index=processed + index + len(chunk),
+                            cancelled=lambda: self._cancelled() or self._clock() >= deadline,
+                        )
+                    except ValueError as error:
+                        if str(error) == "REFERENCE_PAGE_MATERIAL_INTERRUPTED":
+                            return StreamBatchReport(
+                                stream.stream_id, "partial", "INTERRUPTED", index,
+                                state.revision_id, state.revision_id, last_batch_key, None,
+                            )
+                        raise
+            if self._cancelled() or self._clock() >= deadline:
+                return StreamBatchReport(
+                    stream.stream_id, "partial", "INTERRUPTED", index,
+                    state.revision_id, state.revision_id, last_batch_key, None,
+                )
             prepared = PreparedBatch(
                 stream.stream_id,
                 state.revision_id,
@@ -1198,14 +1496,7 @@ class HistoricalReferenceService:
                 transitions,
                 next_checkpoint,
                 schema,
-                {
-                    "source_token": stream_plan.source_token,
-                    "first_fingerprint": chunk[0].fingerprint,
-                    "last_fingerprint": chunk[-1].fingerprint,
-                    "start_input_index": processed + index,
-                    "end_input_index": processed + index + len(chunk),
-                    "presentation_v1": envelope(presentation),
-                },
+                source_evidence,
                 dependency_advance=dependency_advance if index == 0 else None,
             )
             try:

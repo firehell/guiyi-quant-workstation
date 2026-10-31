@@ -202,6 +202,7 @@ def test_hot_reference_cache_rechecks_generation(current_seq):
     from app.reference_trading.query import QueryConflict
     from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
     saved = PersistedNewowReference(lambda: None)
+    saved._manifest = lambda *_args: (None, {"reader": "newow_product_reader_intraday_v3"})
     saved._query = SimpleNamespace(summary=lambda *_a, **_kw: {'revision_id':'revision', 'seq':current_seq})
     delivery = SectionDelivery('delivered', None, PersistedReferenceSectionValue({'performance_since':'2023-01-01','performance_through':'2026-09-24','reference_cutoff':'2026-09-24T07:00:00+00:00'}, ('stream','revision',7)))
     if current_seq == 7:

@@ -1,17 +1,27 @@
 from dataclasses import replace
 from datetime import timedelta
+import json
+from types import MappingProxyType
 from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
-from app.market_data.newow.page_performance_adapter import project_page_performance
+from app.market_data.newow.page_performance_adapter import (
+    build_page_material, project_page_material, project_page_performance,
+)
+from app.reference_trading.json_spool import (
+    JsonSpoolSequence, decode_product_bar, encode_product_bar,
+)
 from app.market_data.newow.product_reader import ResolvedPerformanceWindow
+from app.market_data.market_data_service import MarketReplayChunk
 from app.market_data.newow.product_service import NewowProductService, ProductServiceQuery, _has_unresolved_tail_gap
 from app.reference_trading.persisted_newow import PersistedNewowReference
+from app.reference_trading.query import QueryConflict
 from app.schemas.market_newow_product import PagePerformanceOut, ProductMetaOut, ReferenceValueOut
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_adapters import label_calculation_segments
+from guiyi_quant.newow.product_adapters import replay_strategy
 from guiyi_quant.newow.product_contracts import ActionKind, DataInterruption, ProductStrategy, StrategyAction, TradeEligibility
 
 
@@ -50,11 +60,114 @@ def test_adapter_window_uses_exit_membership_and_full_prefix(product_cases):
     assert all(day == through.isoformat() for day in narrow["ordinary"]["trading_days"])
 
 
+@pytest.mark.parametrize("fusion", (False, True))
+def test_adapter_sealed_sequence_matches_tuple_page_and_fusion(
+    product_cases, fusion,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=80, frequency="60m")
+    read = reader.load(query, fake.as_of)
+    identity = build_product_identity("rb", "trend", "60m")
+    resolved = ResolvedPerformanceWindow(query.since, query.through,
+                                        query.through, fake.as_of)
+    supplied = None
+    if fusion:
+        supplied = {
+            strategy: replay_strategy(
+                build_product_identity("rb", strategy, "60m"), read.replay_bars,
+                lifecycle_evidence=read.lifecycle_evidence,
+                data_interruptions=read.data_interruptions,
+            ) for strategy in (ProductStrategy.OSCILLATION, ProductStrategy.TREND)
+        }
+    expected = project_page_performance(read, identity, resolved,
+                                        fusion=fusion, replays=supplied)
+    spool = JsonSpoolSequence(encode=encode_product_bar, decode=decode_product_bar)
+    try:
+        for item in read.replay_bars:
+            spool.append(item)
+        spool.seal()
+        sealed_read = replace(read, bars_by_frequency=MappingProxyType({read.frequency: spool}))
+        actual = project_page_performance(sealed_read, identity, resolved, fusion=fusion)
+        assert actual == expected
+        material = build_page_material(sealed_read, identity, resolved, fusion=fusion)
+        restored = json.loads(json.dumps(material, sort_keys=True, allow_nan=False))
+        assert project_page_material(
+            restored, since=resolved.requested_since.isoformat(),
+            through=resolved.requested_through.isoformat(),
+        ) == expected
+    finally:
+        spool.close()
+
+
+def test_material_build_cancellation_closes_provisional_page_spools(
+    product_cases, monkeypatch,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=300, frequency="60m")
+    read = reader.load(query, fake.as_of)
+    identity = build_product_identity("rb", "trend", "60m")
+    resolved = ResolvedPerformanceWindow(query.since, query.through, query.through,
+                                         fake.as_of)
+    import app.market_data.newow.page_performance_adapter as adapter
+
+    created = []
+    native = adapter._new_page_spool
+
+    def tracked():
+        spool = native()
+        created.append(spool)
+        return spool
+
+    monkeypatch.setattr(adapter, "_new_page_spool", tracked)
+    checks = 0
+
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return checks >= 3
+
+    with pytest.raises(ValueError, match="REFERENCE_PAGE_MATERIAL_INTERRUPTED"):
+        build_page_material(read, identity, resolved, cancelled=cancelled)
+    assert created and all(not spool.sealed for spool in created)
+
+
+def test_material_envelope_freezes_quality_coverage_without_changing_page_result(
+    product_cases,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=80, frequency="1d")
+    read = reader.load(query, fake.as_of)
+    last = read.replay_bars[-1].bar
+    gap = DataInterruption(
+        "rb", read.frequency, last.physical_contract, last.segment_id,
+        last.trading_day, last.bar_end + timedelta(microseconds=1), "source:v1",
+    )
+    with_gap = replace(read, data_interruptions_by_frequency={read.frequency: (gap,)})
+    resolved = ResolvedPerformanceWindow(query.since, query.through, query.through,
+                                         fake.as_of)
+    identity = build_product_identity("rb", "trend", "1d")
+    envelope = build_page_material(with_gap, identity, resolved)
+    assert envelope["coverage"] == {"data_interruptions": [{
+        "product": gap.product,
+        "frequency": gap.frequency.value,
+        "physical_contract": gap.physical_contract,
+        "segment_id": gap.segment_id,
+        "trading_day": gap.trading_day.isoformat(),
+        "effective_at": gap.effective_at.isoformat(),
+        "source_identity": gap.source_identity,
+    }]}
+    projected = project_page_material(
+        envelope, since=query.since.isoformat(), through=query.through.isoformat(),
+    )
+    assert "coverage" not in projected
+    assert envelope["has_unresolved_tail_gap"] is True
+
+
 def test_persisted_empty_scope_decodes_cached_full_prefix_after_source_proof(product_cases, monkeypatch):
     reader, query, fake = product_cases.paged_reader(prefix_bars=80, frequency="60m")
     read = reader.load(query, fake.as_of)
     calls = []
     native_load = reader.load
+    # This test covers the legacy reader cache fallback; the bounded reader
+    # path has its own streamed input fixtures.
+    reader.load_historical = None
     reader.load = lambda request, cutoff: (calls.append(request), native_load(request, cutoff))[1]
     reader.historical_source_evidence = lambda **_: {"verified": "source"}
     proofs = []
@@ -74,6 +187,65 @@ def test_persisted_empty_scope_decodes_cached_full_prefix_after_source_proof(pro
     assert full.reference_source_evidence_sha256
 
 
+def test_persisted_v3_bounded_read_is_fresh_verified_and_closes_own_spool(
+    product_cases, monkeypatch,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=80, frequency="60m")
+    baseline = reader.load(query, fake.as_of)
+
+    def chunks(*, symbol, owner, frequency, through, cutoff, quality_policy, max_rows):
+        assert symbol == "rb" and max_rows <= 2000
+        physical = tuple(
+            bar for bar in fake.physical[(owner.contract, frequency)]
+            if bar.trading_day <= through and bar.bar_end <= cutoff
+        )
+        for index in range(0, len(physical), 7):
+            yield MarketReplayChunk(physical[index:index + 7])
+
+    monkeypatch.setattr(fake, "iter_actual_dominant_owner_replay_chunks", chunks,
+                        raising=False)
+    # The current v3 implementation must never select the old unbounded loader.
+    reader.load = lambda *_args: pytest.fail("unbounded page read selected")
+    evidence = {"revision": "first"}
+    reader.historical_source_evidence = lambda **_kwargs: dict(evidence)
+
+    def verify(_manifest, current):
+        if current != {"revision": "first"}:
+            raise ValueError("source bytes changed")
+
+    monkeypatch.setattr(
+        "app.reference_trading.persisted_newow.verify_saved_compact_source", verify,
+    )
+    manifest = {
+        "reader": "newow_product_reader_intraday_v3",
+        "query_since": query.since.isoformat(),
+        "query_through": query.through.isoformat(),
+        "query_as_of": fake.as_of.isoformat(),
+    }
+    resolved = ResolvedPerformanceWindow(query.since, query.through, query.through,
+                                         fake.as_of)
+    request = ProductServiceQuery("rb", "trend", "60m", section="reference")
+    saved = PersistedNewowReference(lambda: None)
+    first = saved._page_read(request, reader, manifest, resolved)
+    second = saved._page_read(request, reader, manifest, resolved)
+    try:
+        assert first is not second
+        assert first.replay_bars.sealed and second.replay_bars.sealed
+        assert tuple(first.replay_bars) == baseline.replay_bars
+        assert tuple(second.replay_bars) == baseline.replay_bars
+        assert not saved._page_reads
+        first.close()
+        assert not first.replay_bars.sealed
+        assert second.replay_bars.sealed
+        evidence["revision"] = "changed"
+        with pytest.raises(QueryConflict, match="SOURCE_IDENTITY_UNVERIFIED"):
+            saved._page_read(request, reader, manifest, resolved)
+    finally:
+        first.close()
+        second.close()
+    assert not second.replay_bars.sealed
+
+
 def test_persisted_full_read_preserves_unresolved_tail_gap_for_readiness(product_cases, monkeypatch):
     reader, query, fake = product_cases.paged_reader(prefix_bars=80, frequency="60m")
     original = reader.load(query, fake.as_of)
@@ -84,6 +256,7 @@ def test_persisted_full_read_preserves_unresolved_tail_gap_for_readiness(product
                            last.bar_end + timedelta(microseconds=1), "owned:tail-gap")
     full_source = replace(original, as_of=cutoff,
                           data_interruptions_by_frequency={original.frequency: (gap,)})
+    reader.load_historical = None
     reader.load = lambda *_args: full_source
     reader.historical_source_evidence = lambda **_kwargs: {"verified": "source"}
     monkeypatch.setattr("app.reference_trading.persisted_newow.verify_saved_compact_source",

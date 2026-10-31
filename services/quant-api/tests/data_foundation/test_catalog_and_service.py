@@ -723,6 +723,97 @@ def test_contract_weekly_quality_read_has_no_bar_for_proven_price_gap(session, t
         )
 
 
+@pytest.mark.parametrize(
+    ("frequency", "quality_kind", "policy"),
+    (
+        ("1d", "price", "newow_input_quality_v1"),
+        ("1d", "nonpositive", "newow_daily_input_quality_v2"),
+        ("1w", "price", "newow_input_quality_v1"),
+        ("1w", "nonpositive", "newow_weekly_input_quality_v2"),
+    ),
+)
+def test_published_reference_endpoint_accepts_only_proven_quality_tail(
+    session, tmp_path, frequency, quality_kind, policy,
+):
+    session.scalar(select(TradingSession)).is_active = False
+    _add_page_contract(session, listed=date(2025, 1, 1))
+    for day in (date(2024, 12, 30), date(2024, 12, 31), date(2025, 1, 1),
+                date(2025, 1, 4), date(2025, 1, 5)):
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=day, is_trading_day=False,
+        ))
+    for day in (2, 3):
+        trade_date = date(2025, 1, day)
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="day",
+            start_time=time(9), end_time=time(15),
+            effective_from=trade_date, effective_to=trade_date,
+            is_active=True, provider="rqdata",
+        ))
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=trade_date, is_trading_day=True,
+        ))
+        session.add(MainContractMap(
+            symbol="jm", trade_date=trade_date, contract_code="JM2509",
+            rank=1, rule="volume_open_interest",
+        ))
+    session.commit()
+    end = datetime(2025, 1, 3, 7, tzinfo=UTC)
+    if quality_kind == "price":
+        gap = PriceUnavailableFact(
+            end, date(2025, 1, 3), Decimal(0), Decimal(0), Decimal(0),
+            Decimal(100), Decimal(2), Decimal(200), Decimal(10),
+            "a" * 64, "b" * 64, datetime(2026, 9, 15, tzinfo=UTC),
+        )
+        quality = {"price_unavailable": (gap,)}
+    else:
+        gap = NonpositiveCloseFact(
+            end, date(2025, 1, 3), Decimal(0), Decimal(0), Decimal(0),
+            Decimal(0), Decimal(0), Decimal(0), Decimal(10),
+            "c" * 64, "d" * 64, datetime(2026, 9, 15, tzinfo=UTC),
+        )
+        quality = {"nonpositive_close": (gap,)}
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    valid = _bar(2, 100)
+    catalog.register_partition(store.publish(PublishRequest(
+        DatasetKey("contract", "jm", "JM2509", "1d"),
+        2025, 1, (valid,), (valid.bar_end, end), **quality,
+    )))
+    session.commit()
+    market = MarketDataService(catalog, store)
+    assert market.published_reference_endpoint(
+        symbol="jm", frequency=BarFrequency(frequency),
+        as_of=end + timedelta(microseconds=1), quality_policy=policy,
+    ) == (end, date(2025, 1, 3))
+
+
+def test_published_reference_endpoint_rejects_unpublished_calendar_tail(session, tmp_path):
+    _add_page_contract(session, listed=date(2025, 1, 1))
+    for day in (2, 3):
+        session.add(TradingCalendar(
+            exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+        ))
+        session.add(MainContractMap(
+            symbol="jm", trade_date=date(2025, 1, day), contract_code="JM2509",
+            rank=1, rule="volume_open_interest",
+        ))
+    session.commit()
+    store = CanonicalMonthlyStore(tmp_path)
+    catalog = MarketCatalog(session, tmp_path)
+    valid = _bar(2, 100)
+    catalog.register_partition(store.publish(PublishRequest(
+        DatasetKey("contract", "jm", "JM2509", "1d"),
+        2025, 1, (valid,), (valid.bar_end,),
+    )))
+    session.commit()
+    market = MarketDataService(catalog, store)
+    assert market.published_reference_endpoint(
+        symbol="jm", frequency=BarFrequency.D1,
+        as_of=datetime(2025, 1, 3, 8, tzinfo=UTC),
+        quality_policy="newow_daily_input_quality_v2",
+    ) == (valid.bar_end, valid.trading_day)
+
 def test_contract_weekly_quality_v2_opt_in_accepts_proven_nonpositive_close(session, tmp_path):
     session.scalar(select(TradingSession)).is_active = False
     session.add(Contract(

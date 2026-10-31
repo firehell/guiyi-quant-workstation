@@ -205,6 +205,31 @@ def test_exact_saved_manifest_count_type_is_required(monkeypatch):
         list(query.historical_actions(stream.stream_id, **params, input_count=1))
 
 
+def test_v5_historical_actions_rejects_partial_base_despite_full_manifest(monkeypatch):
+    from app.reference_trading.packed_fingerprints import pack_fingerprints
+
+    query, factory, stream, params = saved_actions(monkeypatch)
+    with factory() as session:
+        batches = session.scalars(select(ReferenceBatch).where(
+            ReferenceBatch.kind == "calculation",
+        )).all()
+        for batch in batches:
+            batch.dependency_manifest = {
+                "reader": "newow_product_reader_prefix_v5",
+                "input_count": 3,
+                "input_fingerprints": pack_fingerprints(["a" * 64] * 3),
+            }
+        session.commit()
+    cutoff = datetime(2026, 9, 19, 7, tzinfo=UTC)
+    params["cutoff"] = cutoff
+    params["snapshot_token"] = query.summary(
+        stream.stream_id, since=date(2026, 9, 19),
+        through=date(2026, 9, 19), cutoff=cutoff,
+    )["snapshot"]
+    with pytest.raises(QueryConflict, match="REFERENCE_FUSION_SOURCE_NOT_READY"):
+        list(query.historical_actions(stream.stream_id, **params, input_count=3))
+
+
 def test_saved_fusion_sources_keep_actions_and_dependencies_and_close_on_decode_error(
     monkeypatch,
 ):
@@ -280,7 +305,7 @@ def test_saved_fusion_sources_keep_actions_and_dependencies_and_close_on_decode_
         as_of=datetime(2026, 9, 19, 7, tzinfo=UTC),
     )
     actions, deps = loader(request, manifest)
-    actual = [action for values in actions.values() for action in values]
+    actual = [action for _, values in actions.items() for action in values]
     assert sorted((_wire(a) for a in actual), key=lambda a: a["signal_id"]) == sorted(
         (_wire(a) for values in expected.values() for a in values),
         key=lambda a: a["signal_id"],
@@ -291,6 +316,7 @@ def test_saved_fusion_sources_keep_actions_and_dependencies_and_close_on_decode_
     )
     assert all(c["since"] == date.min and c["input_count"] == 2 for c in calls)
     assert set(closed) == {"newow_trend", "newow_oscillation"}
+    actions.close()
     closed.clear()
     import app.reference_trading.newow_fusion as module
 
@@ -301,3 +327,26 @@ def test_saved_fusion_sources_keep_actions_and_dependencies_and_close_on_decode_
     with pytest.raises(ValueError, match="decode-corrupt"):
         loader(request, manifest)
     assert closed == ["newow_trend"]
+
+    from app.reference_trading import fusion_action_spool
+
+    created = []
+    base_spool = fusion_action_spool.FusionActionSpool
+
+    class TrackingSpool(base_spool):
+        def __init__(self):
+            super().__init__()
+            created.append(self)
+
+    class Cancelled(BaseException):
+        pass
+
+    def cancel(*_args):
+        raise Cancelled()
+
+    monkeypatch.setattr(fusion_action_spool, "FusionActionSpool", TrackingSpool)
+    monkeypatch.setattr(module, "decode_source_action", cancel)
+    with pytest.raises(Cancelled):
+        loader(request, manifest)
+    assert len(created) == 1 and not created[0]._path.exists()
+    assert closed[-1] == "newow_trend"

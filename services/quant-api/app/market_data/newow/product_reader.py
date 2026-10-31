@@ -11,13 +11,14 @@ from decimal import Decimal
 from hashlib import sha256
 import json
 from types import MappingProxyType
-from typing import Protocol
+from typing import Protocol, cast
 from zoneinfo import ZoneInfo
 
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_contracts import (
     DataInterruption,
     LIFECYCLE_REPLAY_EVIDENCE_SOURCE,
+    LifecycleInputDigest,
     LifecycleReplayEvidence,
     OwnerBoundary,
     ProductBar,
@@ -53,7 +54,9 @@ from app.market_data.domain import (
     normalize_contract_for_symbol,
 )
 from app.market_data.market_data_service import MarketDataError, MarketDataService
-from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
+from app.market_data.source_quality import (
+    NonpositiveCloseFact, PriceUnavailableFact, source_quality_semantic_sha256,
+)
 from app.market_data.weekly_quality import WeeklySourceInterruption
 
 from .product_query import NewowProductQuery, ProductReadWindow
@@ -65,6 +68,15 @@ _FORWARD_INCREMENTAL_MAX_DAYS = timedelta(days=45)
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _CANONICAL_SOURCE = LIFECYCLE_REPLAY_EVIDENCE_SOURCE
 _OWNER_SOURCE = "main_contract_map:rank1:calendar_session_v1"
+
+
+def has_unresolved_source_tail(interruptions, *, as_of, latest_bar_end):
+    """One source-tail rule shared by saved and live page delivery."""
+    return any(
+        gap.effective_at <= as_of
+        and (latest_bar_end is None or gap.effective_at > latest_bar_end)
+        for gap in interruptions
+    )
 
 
 class NewowProductReadError(ValueError):
@@ -112,6 +124,41 @@ def _quality_source_identity(
     raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
 
 
+def _semantic_quality_gap_sha256(
+    product: str, frequency: ProductFrequency,
+    owner: ResolvedContractSegment, segment_id: str,
+    policy: InputQualityPolicy,
+    gap: PriceUnavailableFact | NonpositiveCloseFact | WeeklySourceInterruption,
+) -> str | None:
+    """Stable numeric break proof, separate from transport/source witness IDs.
+
+    Owner start binds a repeated physical contract to its current calculation
+    lifecycle. Owner end is deliberately excluded: later rank1 extension must
+    not rewrite an already observed prefix gap.
+    """
+    if frequency is ProductFrequency.WEEKLY and isinstance(gap, WeeklySourceInterruption):
+        fact_sha256 = gap.semantic_sha256
+    elif frequency is ProductFrequency.DAILY and isinstance(
+        gap, (PriceUnavailableFact, NonpositiveCloseFact),
+    ):
+        fact_sha256 = source_quality_semantic_sha256(gap)
+    else:
+        raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
+    if (not isinstance(fact_sha256, str) or len(fact_sha256) != 64
+        or any(letter not in "0123456789abcdef" for letter in fact_sha256)):
+        return None
+    return sha256(json.dumps({
+        "schema": "newow_owner_quality_semantic_v1",
+        "product": product,
+        "frequency": frequency.value,
+        "physical_contract": owner.contract,
+        "owner_start_trading_day": owner.start_trading_day.isoformat(),
+        "segment_id": segment_id,
+        "input_policy_version": input_policy_version(frequency.value, policy),
+        "gap_sha256": fact_sha256,
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 class ProductCoverage(Protocol):
     """Existing DatabaseCoverageSource read facts, injectable without a database."""
 
@@ -146,7 +193,7 @@ class ResolvedPerformanceWindow:
 @dataclass(frozen=True, slots=True)
 class ProductReadSet:
     frequency: ProductFrequency
-    bars_by_frequency: Mapping[ProductFrequency, tuple[ProductBar, ...]]
+    bars_by_frequency: Mapping[ProductFrequency, Sequence[ProductBar]]
     owners: tuple[ResolvedContractSegment, ...]
     boundaries: tuple[OwnerBoundary, ...]
     display_window: ProductReadWindow
@@ -162,11 +209,21 @@ class ProductReadSet:
     input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
     reference_source_evidence_sha256: str | None = None
     input_quality_policies_by_frequency: Mapping[ProductFrequency, InputQualityPolicy] = field(default_factory=dict)
+    semantic_gap_hashes_by_frequency: Mapping[
+        ProductFrequency, tuple[str | None, ...]
+    ] = field(default_factory=lambda: MappingProxyType({}))
 
     @property
-    def replay_bars(self) -> tuple[ProductBar, ...]:
+    def replay_bars(self) -> Sequence[ProductBar]:
         """Segment-ordered inputs; each segment has its own lifecycle prefix."""
         return self.bars_by_frequency[self.frequency]
+
+    def close(self) -> None:
+        """Release request-owned historical spools after all consumers finish."""
+        for bars in self.bars_by_frequency.values():
+            close = getattr(bars, "close", None)
+            if close is not None:
+                close()
 
     @property
     def lifecycle_evidence(self) -> tuple[LifecycleReplayEvidence, ...]:
@@ -175,6 +232,18 @@ class ProductReadSet:
     @property
     def data_interruptions(self) -> tuple[DataInterruption, ...]:
         return self.data_interruptions_by_frequency.get(self.frequency, ())
+
+    @property
+    def semantic_gap_hashes(self) -> tuple[str, ...]:
+        """V5 ordered gap proof; absent legacy weekly inputs fail closed."""
+        values = self.semantic_gap_hashes_by_frequency.get(self.frequency, ())
+        if len(values) != len(self.data_interruptions) or any(
+            not isinstance(value, str) or len(value) != 64
+            or any(letter not in "0123456789abcdef" for letter in value)
+            for value in values
+        ):
+            raise NewowProductReadError("NEWOW_SEMANTIC_QUALITY_PROOF_MISSING")
+        return cast(tuple[str, ...], values)
 
 
 class _AsOfSegmentLoader(ActualDominantResearchSegmentLoader):
@@ -586,6 +655,291 @@ class NewowProductReader:
         return ProductReadWindow(days[max(0, len(days) - day_count)], days[-1])
 
     @timed("read")
+    def load_historical(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
+        """Seal verified physical prefixes without retaining full Bar arrays.
+
+        This is the historical/reference path. The ordinary Web ``load`` keeps
+        its existing API and results. No provisional spool escapes on failure.
+        """
+        from app.reference_trading.json_spool import (
+            JsonSpoolSequence, decode_product_bar, encode_product_bar,
+        )
+
+        if not isinstance(query, NewowProductQuery):
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        cutoff = utc_timestamp(query.as_of if query.as_of is not None else as_of)
+        if cutoff > utc_timestamp(self._now()):
+            raise NewowProductReadError("NEWOW_INVALID_AS_OF")
+        if query.product not in self._active_products:
+            raise NewowProductReadError("NEWOW_INVALID_PRODUCT")
+        self._check_cancelled()
+        release_cache = getattr(self._market_data, "release_decoded_read_caches", None)
+        if callable(release_cache):
+            release_cache()
+        policy = input_quality_policy(query.frequency.value, self._input_quality_policy)
+        performance_since = query.performance_since or self._coverage.product_start(query.product)
+        lower = min(query.since, performance_since)
+        session_cache: dict[date, tuple[SessionWindow, ...]] = {}
+
+        def sessions(day: date) -> tuple[SessionWindow, ...]:
+            if day not in session_cache:
+                self._check_cancelled()
+                value = self._market_data.session_windows(symbol=query.product, trading_day=day)
+                if not value:
+                    raise ActualDominantResearchSegmentIdentityError(
+                        "rank1 TradingSession identity is missing or inconsistent"
+                    )
+                session_cache[day] = value
+            return session_cache[day]
+
+        start = datetime.combine(
+            min(lower, cutoff.astimezone(_SHANGHAI).date()), time.min, _SHANGHAI,
+        )
+        day_windows = self._market_data.session_windows_overlapping_window(
+            symbol=query.product, start=start, end=cutoff + _MICROSECOND,
+        )
+        session_cache.update(day_windows)
+        days = tuple(day for day, _ in day_windows)
+        if not days or any(current <= previous for previous, current in zip(days, days[1:])):
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+        performance_through = query.performance_through
+        if performance_through is None:
+            latest = self._coverage.latest_complete_day((query.product,))
+            if latest <= cutoff.astimezone(_SHANGHAI).date() and latest not in days:
+                raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+            performance_through = next((
+                day for day in reversed(days)
+                if day <= latest and max(window.end for window in sessions(day)) <= cutoff
+            ), None)
+            if performance_through is None:
+                raise NewowProductReadError("NEWOW_COMPLETE_TRADING_DAY_MISSING")
+        performance = ProductReadWindow(performance_since, performance_through)
+        replay_through = max(query.through, performance.through)
+        frequencies = tuple(dict.fromkeys((query.frequency, *self._context_frequencies)))
+        quality_policies = {
+            frequency: policy if frequency is query.frequency else
+            self._context_quality_policy(query.product, frequency)
+            if self._context_quality_policy else InputQualityPolicy.V1
+            for frequency in frequencies
+        }
+
+        def resolve_owners(last_day: date) -> tuple[ResolvedContractSegment, ...]:
+            return self.dependency_owners(query.product, lower, last_day)
+
+        try:
+            owners = resolve_owners(days[-1])
+        except MarketDataError as exc:
+            completed_days = tuple(
+                day for day in days
+                if max(window.end for window in sessions(day)) <= cutoff
+            )
+            if (query.frequency is not ProductFrequency.WEEKLY
+                or exc.code != "MAIN_CONTRACT_MAP_MISSING"
+                or not completed_days or completed_days[-1] == days[-1]):
+                raise
+            days = completed_days
+            owners = resolve_owners(days[-1])
+        starts = tuple(
+            min(window.start for window in sessions(owner.start_trading_day))
+            for owner in owners
+        )
+        if (any(start > cutoff for start in starts)
+            or any(current <= previous for previous, current in zip(starts, starts[1:]))
+            or any(sum(owner.start_trading_day <= day <= owner.end_trading_day
+                       for owner in owners) != 1 for day in days if day >= lower)):
+            raise ActualDominantResearchSegmentIdentityError(
+                "rank1 segment identity is missing or inconsistent"
+            )
+        segment_ids = tuple(
+            build_segment_id(query.product, owner.contract, owner_start)
+            for owner, owner_start in zip(owners, starts, strict=True)
+        )
+        boundaries = tuple(
+            OwnerBoundary(
+                query.product, old.contract, new.contract,
+                segment_ids[index], segment_ids[index + 1],
+                new.start_trading_day, starts[index + 1], _OWNER_SOURCE,
+            ) for index, (old, new) in enumerate(zip(owners, owners[1:]))
+        )
+        grouped: dict[ProductFrequency, Sequence[ProductBar]] = {}
+        sources: dict[ProductFrequency, ProductReadSource] = {}
+        lifecycle_evidence: dict[ProductFrequency, tuple[LifecycleReplayEvidence, ...]] = {}
+        interruptions_by_frequency: dict[ProductFrequency, tuple[DataInterruption, ...]] = {}
+        semantic_gaps_by_frequency: dict[ProductFrequency, tuple[str | None, ...]] = {}
+        try:
+            for frequency in frequencies:
+                frequency_policy = quality_policies[frequency]
+                output = JsonSpoolSequence[ProductBar](
+                    encode=encode_product_bar, decode=decode_product_bar,
+                )
+                try:
+                    grouped[frequency] = output
+                except BaseException:
+                    output.close()
+                    raise
+                raw_bar_count = no_trade_bar_count = 0
+                source_last_bar: datetime | None = None
+                semantic_pairs: list[tuple[DataInterruption, str | None]] = []
+                evidence: list[LifecycleReplayEvidence] = []
+                for owner, segment_id in zip(owners, segment_ids, strict=True):
+                    self._check_cancelled()
+                    # The shared ranked loader truncates every frequency at
+                    # replay_through even when as_of and the owner map extend
+                    # later. Keep later owners as identity boundaries only.
+                    read_through = min(owner.end_trading_day, replay_through)
+                    if read_through < owner.start_trading_day:
+                        continue
+                    owner_session_end = max(window.end for window in sessions(read_through))
+                    read_cutoff = min(cutoff, owner_session_end)
+                    if read_cutoff < min(window.start for window in sessions(owner.start_trading_day)):
+                        continue
+                    # This disposable owner spool lets W1 and intraday choose
+                    # the exact last owned endpoint only after full validation.
+                    provisional = JsonSpoolSequence[ProductBar](
+                        encode=encode_product_bar, decode=decode_product_bar,
+                    )
+                    try:
+                        owner_raw: dict[date, int] = {}
+                        owner_no_trade: dict[date, int] = {}
+                        last_end_by_day: dict[date, datetime] = {}
+                        owner_last_bar: datetime | None = None
+                        owner_gaps: list[PriceUnavailableFact | NonpositiveCloseFact | WeeklySourceInterruption] = []
+                        prefix_gaps: list[PriceUnavailableFact | NonpositiveCloseFact | WeeklySourceInterruption] = []
+                        for chunk in self._market_data.iter_actual_dominant_owner_replay_chunks(
+                            symbol=query.product, owner=owner,
+                            frequency=BarFrequency(frequency), through=read_through,
+                            cutoff=read_cutoff, quality_policy=frequency_policy,
+                            max_rows=_PAGE_SIZE,
+                        ):
+                            self._check_cancelled()
+                            for bar in chunk.bars:
+                                owner_raw[bar.trading_day] = owner_raw.get(bar.trading_day, 0) + 1
+                                last_end_by_day[bar.trading_day] = bar.bar_end
+                                if owner.start_trading_day <= bar.trading_day <= owner.end_trading_day:
+                                    owner_last_bar = bar.bar_end
+                                    source_last_bar = max(source_last_bar or bar.bar_end, bar.bar_end)
+                                if _is_strict_no_trade_fact(bar):
+                                    owner_no_trade[bar.trading_day] = owner_no_trade.get(bar.trading_day, 0) + 1
+                                    continue
+                                provisional.append(_product_bar(
+                                    query.product, frequency, owner.contract, segment_id,
+                                    bar, bar.trading_day >= owner.start_trading_day,
+                                ))
+                            for gap in chunk.source_quality:
+                                prefix_gaps.append(gap)
+                                if owner.start_trading_day <= gap.trading_day <= owner.end_trading_day:
+                                    owner_gaps.append(gap)
+                        provisional.seal()
+                        if frequency is ProductFrequency.DAILY:
+                            completed = tuple(
+                                day for day in days
+                                if owner.start_trading_day <= day <= owner.end_trading_day
+                                and day <= replay_through
+                                and max(window.end for window in sessions(day)) <= cutoff
+                            )
+                            owner_cutoff = (
+                                max(window.end for window in sessions(completed[-1]))
+                                if completed else None
+                            )
+                        else:
+                            owner_cutoff = owner_last_bar
+                            if frequency is ProductFrequency.WEEKLY:
+                                owner_cutoff = max(
+                                    (value for value in (
+                                        owner_cutoff,
+                                        *(gap.bar_end for gap in owner_gaps),
+                                    ) if value is not None),
+                                    default=None,
+                                )
+                        if owner_cutoff is None or (
+                            owner_last_bar is None and frequency not in (ProductFrequency.DAILY, ProductFrequency.WEEKLY)
+                        ):
+                            continue
+                        gaps = tuple(gap for gap in prefix_gaps if gap.bar_end <= owner_cutoff)
+                        owner_digest = LifecycleInputDigest()
+                        first: ProductBar | None = None
+                        last: ProductBar | None = None
+                        segment_count = 0
+                        for item in provisional:
+                            if item.bar.bar_end > owner_cutoff:
+                                continue
+                            output.append(item)
+                            owner_digest.add(item)
+                            first = first or item
+                            last = item
+                            segment_count += 1
+                        raw_bar_count += sum(
+                            count for day, count in owner_raw.items()
+                            if last_end_by_day[day] <= owner_cutoff
+                        )
+                        no_trade_bar_count += sum(
+                            count for day, count in owner_no_trade.items()
+                            if last_end_by_day[day] <= owner_cutoff
+                        )
+                        for gap in gaps:
+                            semantic_pairs.append((
+                                DataInterruption(
+                                    product=query.product, frequency=frequency,
+                                    physical_contract=owner.contract, segment_id=segment_id,
+                                    trading_day=gap.trading_day, effective_at=gap.bar_end,
+                                    source_identity=_quality_source_identity(frequency, gap),
+                                ),
+                                _semantic_quality_gap_sha256(
+                                    query.product, frequency, owner, segment_id,
+                                    frequency_policy, gap,
+                                ),
+                            ))
+                        if first is not None and last is not None and not gaps:
+                            evidence.append(LifecycleReplayEvidence(
+                                product=query.product, frequency=frequency,
+                                physical_contract=owner.contract, segment_id=segment_id,
+                                first_bar_end=first.bar.bar_end,
+                                last_bar_end=last.bar.bar_end,
+                                bar_count=segment_count,
+                                input_sha256=owner_digest.hexdigest(),
+                                source_identity=_CANONICAL_SOURCE,
+                                verified_cutoff=last.bar.bar_end,
+                            ))
+                    finally:
+                        provisional.close()
+                output.seal()
+                if source_last_bar is None and frequency is not ProductFrequency.WEEKLY:
+                    raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+                ordered_pairs = tuple(sorted(
+                    semantic_pairs, key=lambda pair: pair[0].effective_at,
+                ))
+                interruptions_by_frequency[frequency] = tuple(
+                    pair[0] for pair in ordered_pairs
+                )
+                semantic_gaps_by_frequency[frequency] = tuple(
+                    pair[1] for pair in ordered_pairs
+                )
+                lifecycle_evidence[frequency] = tuple(evidence)
+                sources[frequency] = ProductReadSource(
+                    frequency, _CANONICAL_SOURCE, source_last_bar, cutoff,
+                    input_policy_version(frequency.value, frequency_policy),
+                    raw_bar_count, len(output), no_trade_bar_count,
+                    len(ordered_pairs),
+                )
+            self._check_cancelled()
+            return ProductReadSet(
+                query.frequency, MappingProxyType(grouped), owners, boundaries,
+                ProductReadWindow(query.since, query.through), performance,
+                MappingProxyType(sources), cutoff,
+                MappingProxyType(lifecycle_evidence),
+                MappingProxyType(interruptions_by_frequency),
+                input_quality_policy=policy,
+                input_quality_policies_by_frequency=MappingProxyType(quality_policies),
+                semantic_gap_hashes_by_frequency=MappingProxyType(semantic_gaps_by_frequency),
+            )
+        except BaseException:
+            for value in grouped.values():
+                close = getattr(value, "close", None)
+                if close is not None:
+                    close()
+            raise
+
+    @timed("read")
     def load(self, query: NewowProductQuery, as_of: datetime) -> ProductReadSet:
         """Freeze one read; context periods are optional and never frequency fallbacks."""
         if not isinstance(query, NewowProductQuery):
@@ -751,6 +1105,7 @@ class NewowProductReader:
         interruptions_by_frequency: dict[
             ProductFrequency, tuple[DataInterruption, ...]
         ] = {}
+        semantic_gaps_by_frequency: dict[ProductFrequency, tuple[str | None, ...]] = {}
         for frequency in frequencies:
             frequency_policy = quality_policies[frequency]
             frequency_gaps = segment_loader.price_unavailable_by_frequency.get(
@@ -858,7 +1213,7 @@ class NewowProductReader:
             segment_outputs: list[tuple[ProductBar, ...]] = []
             raw_bar_count = 0
             no_trade_bar_count = 0
-            interruptions: list[DataInterruption] = []
+            semantic_pairs: list[tuple[DataInterruption, str | None]] = []
             verified_segments: list[bool] = []
             for owner, segment_id, rank_bars, owner_cutoff in zip(
                 owners, segment_ids, ranked, owner_cutoffs, strict=True
@@ -905,19 +1260,32 @@ class NewowProductReader:
                 output.extend(converted)
                 segment_outputs.append(converted)
                 verified_segments.append(not gaps)
-                interruptions.extend(DataInterruption(
-                    product=query.product, frequency=frequency,
-                    physical_contract=owner.contract, segment_id=segment_id,
-                    trading_day=gap.trading_day, effective_at=gap.bar_end,
-                    source_identity=_quality_source_identity(frequency, gap),
-                ) for gap in gaps)
+                for gap in gaps:
+                    semantic_pairs.append((
+                        DataInterruption(
+                            product=query.product, frequency=frequency,
+                            physical_contract=owner.contract, segment_id=segment_id,
+                            trading_day=gap.trading_day, effective_at=gap.bar_end,
+                            source_identity=_quality_source_identity(frequency, gap),
+                        ),
+                        _semantic_quality_gap_sha256(
+                            query.product, frequency, owner, segment_id,
+                            frequency_policy, gap,
+                        ),
+                    ))
             for contract, prefix in prefixes.items():
                 if not quality_prefix:
                     self._validate_prefix(query.product, contract, frequency, prefix[-1].bar_end, prefix)
             grouped[frequency] = tuple(output)
-            interruptions_by_frequency[frequency] = tuple(sorted(
-                interruptions, key=lambda gap: gap.effective_at,
+            ordered_pairs = tuple(sorted(
+                semantic_pairs, key=lambda pair: pair[0].effective_at,
             ))
+            interruptions_by_frequency[frequency] = tuple(
+                pair[0] for pair in ordered_pairs
+            )
+            semantic_gaps_by_frequency[frequency] = tuple(
+                pair[1] for pair in ordered_pairs
+            )
             lifecycle_evidence[frequency] = tuple(
                 LifecycleReplayEvidence(
                     product=query.product,
@@ -945,7 +1313,7 @@ class NewowProductReader:
                 raw_bar_count,
                 len(output),
                 no_trade_bar_count,
-                len(interruptions),
+                len(ordered_pairs),
             )
         self._check_cancelled()
         return ProductReadSet(
@@ -961,6 +1329,7 @@ class NewowProductReader:
             MappingProxyType(interruptions_by_frequency),
             input_quality_policy=policy,
             input_quality_policies_by_frequency=MappingProxyType(quality_policies),
+            semantic_gap_hashes_by_frequency=MappingProxyType(semantic_gaps_by_frequency),
         )
 
     def reference_owned_points(self, product, points, owners):
@@ -1164,8 +1533,18 @@ class NewowProductReader:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         facts = []
         start = since
+        selected_frequency = BarFrequency(frequency)
+        frequencies: tuple[BarFrequency, ...]
+        if selected_frequency in (BarFrequency.D1, BarFrequency.W1):
+            frequencies = ((BarFrequency.D1,) if selected_frequency is BarFrequency.D1
+                           else (BarFrequency.D1, BarFrequency.W1))
+            schema = "newow_completed_source_evidence_v1"
+        else:
+            # Preserve the existing intraday evidence bytes and schema.
+            frequencies = tuple(dict.fromkeys((BarFrequency.M1, selected_frequency)))
+            schema = "newow_intraday_source_evidence_v1"
         for owner in owners:
-            for selected in dict.fromkeys((BarFrequency.M1, BarFrequency(frequency))):
+            for selected in frequencies:
                 evidence = self._market_data.contract_source_evidence(
                     symbol=product, contract=owner.contract, frequency=selected,
                     before=as_of,
@@ -1173,7 +1552,7 @@ class NewowProductReader:
                 start = min(start, date.fromisoformat(evidence["listed_date"]))
                 facts.append(evidence)
         return {
-            "schema": "newow_intraday_source_evidence_v1",
+            "schema": schema,
             "product": product, "frequency": frequency,
             "since": since.isoformat(), "through": through.isoformat(),
             "as_of": as_of.isoformat(),
@@ -1224,6 +1603,184 @@ class NewowProductReader:
             endpoint_count += len(endpoints)
         max_events = endpoint_count * 2 + len(owners)
         return max_events, max_events * 4096
+
+    def historical_spool_bound(
+        self, *, product: str, frequency: str, since: date, through: date,
+        as_of: datetime, formula_versions: Sequence[str],
+        reference_model_version: str, fusion: bool = False,
+    ) -> tuple[int, int]:
+        """Preflight the historical spool's logical event and input-byte budget.
+
+        This does not estimate resident memory or physical spool file bytes.
+        The final snapshot is still checked against the plan budget after its
+        authoritative read. Each owner prefix is counted separately because a
+        later owner can warm up with Bars already read for an earlier owner.
+        """
+        from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+        from app.reference_trading.packed_fingerprints import PackedFingerprintBuilder
+        from app.reference_trading.query import MAX_TOKEN_CHARS
+
+        if (not formula_versions or any(not isinstance(value, str) or not value
+                                        for value in formula_versions)
+            or not isinstance(reference_model_version, str)
+            or not reference_model_version or type(fusion) is not bool):
+            raise NewowProductReadError("NEWOW_INVALID_QUERY")
+        selected_frequency = ProductFrequency(frequency)
+        cutoff_as_of = utc_timestamp(as_of)
+        start = datetime.combine(
+            min(since, cutoff_as_of.astimezone(_SHANGHAI).date()),
+            time.min, _SHANGHAI,
+        )
+        day_windows = self._market_data.session_windows_overlapping_window(
+            symbol=product, start=start, end=cutoff_as_of + _MICROSECOND,
+        )
+        days = tuple(day for day, _ in day_windows)
+        if not days or any(current <= previous for previous, current in zip(days, days[1:])):
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+        session_cache = dict(day_windows)
+
+        def sessions(day: date) -> tuple[SessionWindow, ...]:
+            if day not in session_cache:
+                session_cache[day] = self._market_data.session_windows(
+                    symbol=product, trading_day=day,
+                )
+            return session_cache[day]
+
+        horizon = days[-1]
+        try:
+            owners = self.dependency_owners(product, since, horizon)
+        except MarketDataError as exc:
+            completed_days = tuple(
+                day for day in days
+                if max(window.end for window in sessions(day)) <= cutoff_as_of
+            )
+            if (selected_frequency is not ProductFrequency.WEEKLY
+                or exc.code != "MAIN_CONTRACT_MAP_MISSING"
+                or not completed_days or completed_days[-1] == horizon):
+                raise
+            horizon = completed_days[-1]
+            owners = self.dependency_owners(product, since, horizon)
+        endpoint_count = 0
+        starts: list[datetime] = []
+        lifecycle_starts: list[date] = []
+        for owner in owners:
+            self._check_cancelled()
+            own_last = min(owner.end_trading_day, through)
+            first_sessions = sessions(owner.start_trading_day)
+            last_sessions = sessions(own_last) if own_last >= owner.start_trading_day else ()
+            if not first_sessions:
+                raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+            starts.append(min(window.start for window in first_sessions))
+            lifecycle_starts.append(self._market_data.contract_lifecycle_start(
+                symbol=product, contract=owner.contract,
+            ))
+            if not last_sessions:
+                continue  # Owner is after the requested replay window.
+            cutoff = min(cutoff_as_of, max(window.end for window in last_sessions))
+            if cutoff < starts[-1]:
+                continue  # Future mapped owner contributes identity, no input.
+            endpoints = self._market_data.expected_contract_replay_endpoints(
+                symbol=product, contract=owner.contract,
+                frequency=BarFrequency(selected_frequency),
+                trading_day=own_last, cutoff=cutoff, after=None,
+            )
+            endpoint_count += len(endpoints)
+        if endpoint_count <= 0:
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+        # There is at most one ProductBar per physical endpoint; source-quality
+        # gaps and NO_TRADE consume endpoints without adding a Bar. A gap can
+        # add one boundary-only event, while a rollover adds at most one more.
+        # Same-Bar boundaries change a fingerprint but add no event.
+        max_events = endpoint_count + len(owners) - 1
+
+        metadata = self.historical_metadata_evidence(
+            product=product, since=min(lifecycle_starts), through=horizon,
+        )
+        if not isinstance(metadata, dict) or not metadata:
+            raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
+        metadata = {key: value for key, value in metadata.items() if key != "through"}
+        quality_policies = [InputQualityPolicy.V1]
+        if selected_frequency is ProductFrequency.DAILY:
+            quality_policies.append(InputQualityPolicy.DAILY_V2)
+        elif selected_frequency is ProductFrequency.WEEKLY:
+            quality_policies.append(InputQualityPolicy.WEEKLY_V2)
+        quality_name = max((item.value for item in quality_policies), key=len)
+        input_version = max((
+            input_policy_version(selected_frequency.value, item)
+            for item in quality_policies
+        ), key=len)
+        owner_rows = [
+            [owner.contract, owner.start_trading_day.isoformat(),
+             min(owner.end_trading_day, horizon).isoformat()]
+            for owner in owners
+        ]
+        lifecycle_rows = [
+            [owner.contract, build_segment_id(product, owner.contract, start)]
+            for owner, start in zip(owners, starts, strict=True)
+        ]
+        # Keep every non-leaf field in the same canonical manifest shape as
+        # _finish_newow_snapshot. All owner rows and the wider Calendar/Session
+        # interval dominate any actual prefix ending by ``through``.
+        empty_proof = PackedFingerprintBuilder().finish()
+        skeleton: dict[str, object] = {
+            "reader": "newow_product_reader_prefix_v5",
+            "query_since": since.isoformat(),
+            "input_fingerprints": empty_proof,
+            "calendar_session_effective_fingerprints": empty_proof,
+            "calendar_session_source_evidence": metadata,
+            "rank1": owner_rows,
+            "boundaries": [],
+            "data_interruptions": [],
+            "lifecycle_owners": lifecycle_rows,
+            "quality_policy": quality_name,
+            "market_source_identity": _CANONICAL_SOURCE,
+            "input_policy_version": input_version,
+            "formula_versions": list(formula_versions),
+            "reference_model_version": reference_model_version,
+        }
+        if selected_frequency is ProductFrequency.DAILY:
+            skeleton["reference_boundary_policy_version"] = NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+        packed_vectors = 2
+        if fusion:
+            # The source reader is a saved Newow stream: stream_id is a fixed
+            # SHA identity; revision/digest columns are at most 64 chars; seq
+            # is signed BIGINT; query snapshot tokens are capped at 2048 chars.
+            max_dependency = {
+                "stream_id": "reference-stream:" + "a" * 64,
+                "revision_id": "a" * 64,
+                "seq": 9_223_372_036_854_775_807,
+                "dependency_digest": "a" * 64,
+                "snapshot": "a" * MAX_TOKEN_CHARS,
+            }
+            skeleton.update({
+                "reader": "newow_fusion_saved_sources_v3",
+                "query_through": through.isoformat(),
+                "query_as_of": cutoff_as_of.isoformat(),
+                "input_count": max_events,
+                "source_reader": "newow_product_reader_prefix_v5",
+                "source_dependencies": [max_dependency, max_dependency],
+                "input_sha256": "a" * 64,
+                "source_input_fingerprints": empty_proof,
+            })
+            packed_vectors = 3
+        encoder = json.JSONEncoder(
+            sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            default=lambda value: value.isoformat()
+            if hasattr(value, "isoformat") else str(value),
+        )
+        skeleton_bytes = sum(len(part.encode()) for part in encoder.iterencode(skeleton))
+        # One packed leaf adds at most 67 bytes to the blocks JSON (a single
+        # SHA256's 32 bytes become at most 44 base64 chars plus quotes/comma).
+        # The empty v5 wire header is already in the skeleton. Its count=0 has
+        # one digit; the actual count can grow to len(str(max_events)) digits.
+        # Gap and rollover SHA arrays use at most 67 bytes per member too.
+        # Ordinary proofs have at most 2N combined leaves/array members;
+        # fusion adds one full-length source-input packed proof.
+        max_input_bytes = (
+            skeleton_bytes + (256 + 67 * packed_vectors) * max_events
+            + packed_vectors * (len(str(max_events)) - 1)
+        )
+        return max_events, max_input_bytes
 
     def check_dependency(
         self, product: str, frequency: ProductFrequency,

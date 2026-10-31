@@ -37,12 +37,13 @@ export function useNewowReferenceParts(
   let historyController: AbortController | null = null
   let pollTimer: ReturnType<typeof setTimeout> | null = null
   let pollAttempts = 0
+  let pendingUpdate = false
   const pageVisible = () => visible.value && (typeof document === 'undefined' || document.visibilityState !== 'hidden')
   function stopPoll() { if (pollTimer !== null) clearTimeout(pollTimer); pollTimer = null }
   function schedulePoll() {
     stopPoll()
-    if (!pageVisible() || error.value || pollAttempts >= 20
-      || overview.value?.value?.reference_status?.status !== 'updating') return
+    if (!pageVisible() || pollAttempts >= 20
+      || !pendingUpdate && (error.value || overview.value?.value?.reference_status?.status !== 'updating')) return
     pollTimer = setTimeout(() => {
       pollTimer = null
       if (!pageVisible()) return
@@ -87,7 +88,7 @@ export function useNewowReferenceParts(
   }
   function clear() {
     generation++
-    stopPoll(); pollAttempts = 0
+    stopPoll(); pollAttempts = 0; pendingUpdate = false
     controller?.abort(); historyController?.abort()
     overview.value = null; curve.value = null; history.value = null; historyRows.value = []; historyTruncated.value = false
     loading.value = false; historyLoading.value = false; error.value = null; historyError.value = null
@@ -103,11 +104,15 @@ export function useNewowReferenceParts(
     if (!request) return
     controller = new AbortController()
     const active = controller
-    loading.value = true
+    loading.value = true; error.value = null; pendingUpdate = false
     try {
       const first = await fetchPart(request, { signal: active.signal })
       if (own !== generation || active.signal.aborted) return
-      if (!first.value) { overview.value = null; curve.value = null; history.value = null; historyRows.value = []; error.value = partUnavailable(first, '参考统计'); return }
+      if (!first.value) {
+        overview.value = null; curve.value = null; history.value = null; historyRows.value = []
+        pendingUpdate = first.status.reason_code === 'REFERENCE_UPDATE_PENDING'
+        error.value = partUnavailable(first, '参考统计'); return
+      }
       if (first.value.reference_part !== 'panel' || first.value.curve.mode !== request.mode
         || first.value.reference_mode !== request.mode) throw Error('NEWOW_REFERENCE_PART_CONFLICT')
       if (previous && !sameNewowReferenceResult(previous, first)) {
@@ -121,6 +126,7 @@ export function useNewowReferenceParts(
     } catch (cause) {
       if (own === generation && !active.signal.aborted && !isCancelled(cause)) {
         overview.value = null; curve.value = null; history.value = null; historyRows.value = []
+        pendingUpdate = cause instanceof NewowProductRequestError && cause.code === 'REFERENCE_UPDATE_PENDING'
         error.value = isConflict(cause) ? '参考快照已变化，请刷新图表后重试。'
           : `参考曲线暂不可用${failureDetail(cause) ? `：${failureDetail(cause)}` : ''}，请重试。`
       }

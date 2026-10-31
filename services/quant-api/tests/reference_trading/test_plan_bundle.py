@@ -144,3 +144,20 @@ def test_fifo_is_rejected_before_any_blocking_read(tmp_path, monkeypatch, where)
     with pytest.raises(ValueError):
         codec.read_plan(path)
     assert monotonic() - start < 1
+
+
+def test_bundle_streams_large_value_without_canonical_byte_copy(tmp_path, monkeypatch):
+    original = codec.canonical_bytes
+    value = {'input_fingerprints': ['a' * 64] * 2049}
+    expected_size, expected_digest = codec.canonical_size_digest(value)
+
+    def small_header_only(item):
+        assert 'input_fingerprints' not in item
+        return original(item)
+
+    monkeypatch.setattr(codec, 'canonical_bytes', small_header_only)
+    path = tmp_path / 'streamed.json'
+    codec.write_plan(path, value, force_bundle=True)
+    head = json.loads(path.read_text())
+    assert (head['decoded_bytes'], head['decoded_sha256']) == (expected_size, expected_digest)
+    assert codec.read_plan(path) == value

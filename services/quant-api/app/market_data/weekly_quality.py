@@ -16,6 +16,8 @@ from app.market_data.source_quality import (
     NonpositiveCloseFact,
     PriceUnavailableFact,
     SourceQualityFact,
+    semantic_decimal,
+    source_quality_semantic_payload,
 )
 
 
@@ -60,6 +62,7 @@ class WeeklySourceInterruption:
     source_identity: str
     classification_version: str = WEEKLY_SOURCE_CLASSIFICATION_VERSION
     quality_classifications: tuple[str, ...] = ()
+    semantic_sha256: str | None = None
 
     @property
     def bar_end(self) -> datetime:
@@ -162,6 +165,36 @@ def classify_weekly_source(
     source_identity = hashlib.sha256(json.dumps(
         identity_input, sort_keys=True, separators=(",", ":"),
     ).encode()).hexdigest()
+    semantic_input = {
+        "schema": "weekly_source_numeric_semantic_v1",
+        "classification_version": classification_version,
+        "product": product,
+        "physical_contract": physical_contract,
+        "iso_year": week.year,
+        "iso_week": week.week,
+        "week_end": expected[-1][0].isoformat(),
+        "expected_daily_endpoints": [
+            (end.isoformat(), day.isoformat()) for end, day in expected
+        ],
+        "daily_bars": [
+            {
+                "bar_end": bar.bar_end.isoformat(),
+                "trading_day": bar.trading_day.isoformat(),
+                "open": semantic_decimal(bar.open),
+                "high": semantic_decimal(bar.high),
+                "low": semantic_decimal(bar.low),
+                "close": semantic_decimal(bar.close),
+                "volume": semantic_decimal(bar.volume),
+                "turnover": semantic_decimal(bar.turnover),
+                "open_interest": semantic_decimal(bar.open_interest),
+            }
+            for bar in bars
+        ],
+        "quality": [source_quality_semantic_payload(gap) for gap in ordered_gaps],
+    }
+    semantic_sha256 = hashlib.sha256(json.dumps(
+        semantic_input, sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
     return WeeklySourceCoverage((), WeeklySourceInterruption(
         product=product,
         physical_contract=physical_contract,
@@ -175,6 +208,7 @@ def classify_weekly_source(
         source_identity=source_identity,
         classification_version=classification_version,
         quality_classifications=tuple(gap.classification for gap in ordered_gaps),
+        semantic_sha256=semantic_sha256,
     ))
 
 

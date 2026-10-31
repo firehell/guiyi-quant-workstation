@@ -224,6 +224,7 @@ def test_persisted_daily_weekly_availability_uses_authoritative_owner(monkeypatc
         "calculation_segment_id": f"calculation-{index}", "status": "ready",
     }} for index, owner in enumerate(owners)]
     cutoff = datetime(2026, 9, 10, 7, 0, 1, tzinfo=UTC)
+    monkeypatch.setattr("app.reference_trading.page_material_query.select_page_material", lambda *_args, **_kw: None)
     saved = PersistedNewowReference(lambda: None)
     page = {"snapshot": "snapshot", "revision_id": "revision", "seq": 2,
             "items": [], "next_cursor": None}

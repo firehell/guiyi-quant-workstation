@@ -1,4 +1,5 @@
 """Public history chooses one Canonical identity and never admits observed fallback."""
+from contextlib import contextmanager
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -103,6 +104,9 @@ def test_shared_saved_source_gate_rejects_earlier_prefix_revision(monkeypatch):
     class Reader:
         def __init__(self, **kwargs): pass
         def plan_stream(self, request): return SimpleNamespace(dependency_manifest=current)
+        @contextmanager
+        def planned_stream(self, request):
+            yield self.plan_stream(request)
     monkeypatch.setattr(persisted_subing, 'MarketDataHistoricalInputReader', Reader)
     args = dict(stream_id='saved', revision_id='revision', seq=3,
         through=date(2026, 10, 23), as_of=datetime(2026, 10, 23, 7, tzinfo=UTC))
