@@ -531,6 +531,7 @@ def capture_newow_canonical(
 def capture_subing_canonical(
     service, identity: StreamIdentity, *, revision_id: str, generation: int,
     after: datetime | None, recording_start: datetime, now: datetime, check_cancelled=lambda: None,
+    prove_classified_weekly_unavailable: bool = False,
 ) -> ForwardCapture | None:
     """Capture a single newly confirmed D1/W1 Bar through SuBing's MDS authority.
 
@@ -542,6 +543,7 @@ def capture_subing_canonical(
         raise ValueError('FORWARD_INPUT_IDENTITY_INVALID')
     if now.tzinfo is None or recording_start.tzinfo is None or recording_start > now:
         raise ValueError('FORWARD_INPUT_TIME_INVALID')
+    window_resolved = False
     try:
         query = SubingReferenceQuery(identity.product.lower(), frequency=identity.frequency, as_of=now)
         _since, through, cutoff, _as_of = service.resolve_forward_read_window(query)
@@ -549,11 +551,19 @@ def capture_subing_canonical(
             return None
         boundary = after or recording_start
         since = min(boundary.date(), through)
+        window_resolved = True
         segments, inputs, quality, loaded_cutoff = service.load_historical_inputs(
             symbol=identity.product.lower(), frequency=BarFrequency(identity.frequency),
             since=since, through=through, as_of=now,
         )
     except SubingReferenceError as exc:
+        if (prove_classified_weekly_unavailable and window_resolved
+                and identity.frequency == '1w' and exc.code == 'SUBING_REFERENCE_DATA_UNAVAILABLE'):
+            from app.reference_trading.prewarm_quality import ClassifiedWeeklyUnavailable, prove_weekly_unavailable
+            check_cancelled()
+            proof = prove_weekly_unavailable(service, identity, since=since, through=through, cutoff=cutoff)
+            check_cancelled()
+            raise ClassifiedWeeklyUnavailable(proof) from exc
         raise ForwardInputUnavailable(exc.code) from exc
     if loaded_cutoff != cutoff or cutoff > now:
         raise ForwardInputUnavailable('SUBING_SOURCE_IDENTITY_INVALID')
