@@ -4,9 +4,9 @@ import { toChartTimeForPeriod } from './barTime.ts'
 
 export const DETAIL_CHART_SESSION = Symbol('detail-chart-session')
 export type DetailChartSession = ReturnType<typeof createDetailChartSession>
-export function detailChartPaneLayout(chartHeight: number, toolbarHeight: number) {
+export function detailChartPaneLayout(chartHeight: number, toolbarHeight: number, indicatorHeight = 150) {
   const topInset = Math.max(44, toolbarHeight + 12)
-  const auxiliaryHeight = topInset + 165
+  const auxiliaryHeight = topInset + indicatorHeight + 15
   const volumeHeight = Math.max(60, Math.min(100, chartHeight * 0.1))
   return { topInset, auxiliaryHeight, volumeHeight, mainHeight: Math.max(1, chartHeight - 30 - volumeHeight - auxiliaryHeight) }
 }

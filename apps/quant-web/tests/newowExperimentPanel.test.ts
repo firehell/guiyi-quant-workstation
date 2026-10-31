@@ -8,12 +8,13 @@ import ts from 'typescript'
 import {createRenderer,defineComponent,h,nextTick,ref} from 'vue'
 const mockUrl=`data:text/javascript;base64,${Buffer.from(`export const calls=[],history=[];export function getNewowExperimentHistory(request,panel,signal){return new Promise((resolve,reject)=>history.push({request,panel,signal,resolve,reject}))};export function getNewowExperiment(request,signal){return new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))}`).toString('base64')}`
 const mock=await import(mockUrl)
-const chartUrl=`data:text/javascript;base64,${Buffer.from(`export const prices=new Set(),series=[];export const CandlestickSeries={type:'Candlestick'},HistogramSeries={type:'Histogram'},LineSeries={type:'Line'};export function createSeriesMarkers(){return {setMarkers(){}}};export function createChart(){return {panes(){return [{setStretchFactor(){}},{setStretchFactor(){}}]},addSeries(definition,options){const record={definition,options,data:[]};series.push(record);return {setData(data){record.data=data},priceToCoordinate(price){return 220-price/2},createPriceLine(options){const line={...options};prices.add(line);return line},removePriceLine(line){prices.delete(line)}}},removeSeries(){},timeScale(){return {fitContent(){},timeToCoordinate(t){return (typeof t==='number'?t:Date.UTC(t.year,t.month-1,t.day)/1000)%200+100},getVisibleLogicalRange(){return null},subscribeVisibleLogicalRangeChange(){}}},applyOptions(){},remove(){prices.clear()}}}`).toString('base64')}`
+const chartUrl=`data:text/javascript;base64,${Buffer.from(`export const prices=new Set(),series=[],charts=[];export const CandlestickSeries={type:'Candlestick'},HistogramSeries={type:'Histogram'},LineSeries={type:'Line'};export function createSeriesMarkers(){return {setMarkers(){}}};export function createChart(){let range=null,rangeListener=null,cursorListener=null,hasData=false;const scale={fitContent(){},timeToCoordinate(t){return 100},getVisibleLogicalRange(){return null},getVisibleRange(){return range},setVisibleRange(value){if(!hasData)throw Error('cannot project range without bars');range=api.clampRange??value;rangeListener?.()},subscribeVisibleLogicalRangeChange(fn){rangeListener=fn}};const api={emitRange(value){range=value;rangeListener?.()},emitCursor(time){cursorListener?.({time})},setCrosshairPosition(value,time){api.cursor=time},clearCrosshairPosition(){api.cursor=null},subscribeCrosshairMove(fn){cursorListener=fn},resize(){},panes(){return [{setStretchFactor(){}},{setStretchFactor(){}}]},addSeries(definition,options){const record={definition,options,data:[]};series.push(record);return {attachPrimitive(){},detachPrimitive(){},setData(data){record.data=data;hasData=data.length>0},priceToCoordinate(price){return 220-price/2},createPriceLine(options){const line={...options};prices.add(line);return line},removePriceLine(line){prices.delete(line)}}},removeSeries(){},timeScale(){return {fitContent(){},timeToCoordinate(t){return (typeof t==='number'?t:Date.UTC(t.year,t.month-1,t.day)/1000)%200+100},getVisibleLogicalRange(){return null},subscribeVisibleLogicalRangeChange(){}}},applyOptions(){},remove(){prices.clear()}};api.timeScale=()=>scale;charts.push(api);return api}`).toString('base64')}`
 const chartMock=await import(chartUrl)
 async function compiledModule(url:URL):Promise<string>{
  const source=readFileSync(url,'utf8'),compiled=compileScript(parse(source,{filename:url.pathname}).descriptor,{id:'experiment',inlineTemplate:true})
  const root=fileURLToPath(new URL('../src/',import.meta.url))
  let code=ts.transpileModule(compiled.content,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/from ['"]vue['"]/g,`from '${import.meta.resolve('vue')}'`).replace(/from ['"]lightweight-charts['"]/g,`from '${chartUrl}'`).replace(/from ['"]@\/api\/newowExperiments['"]/g,`from '${mockUrl}'`).replace(/from ['"]@\/([^'"]+)['"]/g,(_m,s)=>`from '${pathToFileURL(resolve(root,s+'.ts')).href}'`)
+ code=code.replace(/from ['"](\.\/[^'"]+)['"]/g,(_m,s)=>s.endsWith('.vue')?_m:`from '${new URL(s+'.ts',url).href}'`)
  for(const match of [...code.matchAll(/from ['"]([^'"]+\.vue)['"]/g)])code=code.replace(match[0],`from '${await compiledModule(new URL(match[1]!,url))}'`)
  return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 }
@@ -127,5 +128,53 @@ test('snapshot conflict clears experiment panel and exposes explicit fresh retry
  const retry=findNode(root,n=>n.type==='button'&&nodeText(n).trim()==='重试')!;assert.ok(retry);(retry.props.onClick as ()=>void)();await flush()
  assert.equal(mock.calls.length,base+2,'only explicit retry starts a fresh panel request')
  assert.equal(mock.calls.at(-1).request.snapshot_token,undefined)
+ app.unmount()
+})
+
+
+test('experiment slot links viewport and cursor in both directions and revokes them on owner switch',async()=>{
+ globalThis.ResizeObserver=class{observe(){}disconnect(){}} as any
+ const Panel=await component(),root=element('root'),base=mock.calls.length,chartBase=chartMock.charts.length,kind=ref('osc-test')
+ let bridge:any
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Panel,{product:'rb',frequency:'1d',kind:kind.value,asOf:'2026-10-08T07:00:00Z'},{'chart-auxiliary':(value:any)=>{bridge=value;return h('span','linked')}})}))
+ app.mount(root);await flush()
+ const bars=['2026-09-01','2026-09-02'].map(date=>({bar_end:date+'T07:00:00Z',trading_day:date,physical_contract:'RB2701',segment_id:'a',open:'100',high:'120',low:'90',close:'110',channel_high:'120',channel_low:'90'}))
+ mock.calls[base].resolve({bars,markers:[],segments:[],readiness:{status:'READY'},formula_version:'test',as_of:'2026-10-08T07:00:00Z'});await flush()
+ const chart=chartMock.charts[chartBase],range={from:{year:2026,month:9,day:1},to:{year:2026,month:9,day:2}}
+ chart.emitRange(range);await flush();assert.deepEqual(bridge.viewport,range)
+ const subRange={from:range.to,to:range.to};bridge.onViewport(subRange);await flush();assert.deepEqual(chart.timeScale().getVisibleRange(),subRange)
+ chart.emitCursor(range.from);await flush();assert.deepEqual(bridge.cursor,range.from)
+ bridge.onCursor(range.to);await flush();assert.deepEqual(chart.cursor,range.to)
+ bridge.onCursor(null);await flush();assert.equal(chart.cursor,null)
+ kind.value='osc-test2';await flush();assert.equal(bridge.viewport,null);assert.equal(bridge.cursor,null)
+ chart.emitRange(range);chart.emitCursor(range.from);await flush();assert.equal(bridge.viewport,null);assert.equal(bridge.cursor,null)
+ app.unmount()
+})
+
+
+test('shared auxiliary accepts a pending chart with a main viewport without projecting into an empty scale',async()=>{
+ globalThis.ResizeObserver=class{observe(){}disconnect(){}} as any
+ const Shared=(await import(await compiledModule(new URL('../src/components/market/detail/newow/NewowSharedAuxiliaryStage.vue',import.meta.url)))).default
+ const root=element('root'),viewport=ref({from:'2026-09-01',to:'2026-09-02'}),cursor=ref('2026-09-01')
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Shared,{chart:null,auxiliary:null,viewport:viewport.value,cursor:cursor.value})}))
+ app.mount(root);await flush()
+ viewport.value={from:'2026-09-02',to:'2026-09-03'};cursor.value='2026-09-02';await flush()
+ app.unmount()
+})
+
+
+test('shared auxiliary writes newly arrived bars before viewport and suppresses clamped projection echoes',async()=>{
+ globalThis.ResizeObserver=class{observe(){}disconnect(){}} as any
+ const Shared=(await import(await compiledModule(new URL('../src/components/market/detail/newow/NewowSharedAuxiliaryStage.vue',import.meta.url)))).default
+ const source=ref<any>(null),viewport=ref<any>(null),events:any[]=[],base=chartMock.charts.length
+ const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Shared,{chart:source.value,auxiliary:null,viewport:viewport.value,onViewport:(v:any)=>events.push(v)})}))
+ app.mount(element('root'));await flush()
+ const chart=chartMock.charts[base],requested={from:'2026-09-01',to:'2026-09-03'},clamped={from:'2026-09-02',to:'2026-09-03'}
+ chart.clampRange=clamped
+ source.value={meta:{identity:{product:'rb',strategy:'oscillation',frequency:'1d'}},value:{bars:['2026-09-02','2026-09-03'].map(day=>({bar_end:day+'T07:00:00Z',trading_day:day,physical_contract:'RB2701',segment_id:'a',calculation_segment_id:'a',source_identity:'fixed',open:'100',high:'110',low:'90',close:'105',volume:1})),frames:[],actions:[],hints:[],trend_channel:null,next_before:null}}
+ viewport.value=requested;await flush();assert.deepEqual(chart.timeScale().getVisibleRange(),clamped)
+ assert.equal(events.length,0,'synchronous projection never feeds a clamped range back')
+ chart.emitRange(clamped);await flush();assert.equal(events.length,0,'asynchronous clamped echo remains suppressed')
+ const userRange={from:'2026-09-03',to:'2026-09-03'};chart.emitRange(userRange);await flush();assert.deepEqual(events,[userRange])
  app.unmount()
 })
