@@ -99,6 +99,8 @@ def test_current_chart_reuses_resolver_result_and_serializes_snapshot(monkeypatc
     assert body["snapshot_context"]["as_of"] == body["meta"]["as_of"]
     assert body["snapshot_context"]["freshness"] == "current"
     assert calls == [("rb", 120)]
+    assert "display_events" in body["chart"]["value"]
+    assert all(e["executable"] is False and e["quantity_effect"] == "none" for e in body["chart"]["value"]["display_events"])
 
 
 @pytest.mark.parametrize("extra", [

@@ -1,3 +1,4 @@
+import {normalizeDisplayEvents,type NewowDisplayEvent} from './newowDisplayEvents.ts'
 import { previewInstant } from './candidatePreviewInstant.ts';
 export const EXPERIMENT_OPTIONS = [
     { kind: 'osc-test', label: '测试1', description: '震荡策略 · 7%止损；止损优先，同根不再建仓' },
@@ -23,6 +24,7 @@ export interface ExperimentRequest {
     all_history?: boolean;
 }
 export interface ExperimentBar {
+    calculation_segment_id?: string;
     bar_end: string;
     trading_day: string;
     physical_contract: string;
@@ -69,6 +71,7 @@ export interface ExperimentSegment {
     theoretical: Record<string, unknown> | null;
 }
 export interface ExperimentDetail extends ExperimentRequest {
+    display_events?: NewowDisplayEvent[];
     schema_version: 'newow_experiment_detail_v2';
     meta: {
       identity: {product:string;frequency:string;kind:ExperimentKind;strategy:ExperimentKind;series_kind:'actual_dominant';as_of:string;formula_version:string;profile_id:string;input_policy_version:string};
@@ -230,7 +233,7 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
             fail();
         ids.add(m.marker_id);
     }
-    return v;
+    return {...v,display_events:normalizeDisplayEvents(v.display_events??[],v.bars,v.frequency,v.as_of)};
 }
 /** A generation token also rejects responses from transports that ignore AbortSignal. */
 export class ExperimentRequestGeneration {

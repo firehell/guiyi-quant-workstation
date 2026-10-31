@@ -1800,3 +1800,27 @@ Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading
 `openspec/specs/market-home-overview/spec.md` 的首页投影合同。首页摘要与普通页面参考收益在显式
 构建中复用本域原计算；不保留短期snapshot token，不改变详情独立校验或收益口径。
 旧进程展示缓存及home-card-display-cache入口已退出，不保留兼容reader。
+
+
+### Requirement: Keep public chart display events independent
+
+The existing chart and experiment responses expose `display_events` under
+`newow_public_display_v3431_v1`, independently of actions, hints and reference
+trades. Each event owns its formula, frequency, completed Bar, physical contract
+and calculation segment. Breakdown events also identify the source chart BUILD,
+its threshold and observed close as decimal strings. Events SHALL never affect
+BUILD/CLEAR, stops, quantity, scoring, reference trades or performance.
+
+Calculate the authenticated full prefix before window/pagination filtering. A
+CLEAR/stop precedes BUILD; a new BUILD resets the first-breakdown latch. Compare
+positive prices with public JS `Math.round(Number(price)*100)` and render close
+with two decimal places; this page display rule SHALL NOT become a futures tick
+or execution rule. Fusion uses only its oscillation leg's threshold. Four
+experiments use their chart-state path, not their reference-return replay.
+
+Cross-view reduce-J uses the existing main-rise kernel and defers to same-Bar
+ZLGJ `j_warning`; the two formula/source identities remain distinct. Badge state
+uses the existing reversal rebound/adjust arrays and current-period Bar counts,
+with no copied WR algorithm. Both caution and breakdown remain directly visible
+per owner instruction; no new hide preference is introduced. Completed display
+events are page-parity, non-executable and have `quantity_effect=none`.

@@ -9,7 +9,7 @@ export function sharedChartForOwner(chart: NewowProductSectionResponse<'chart'> 
   const bars = chart.value.bars.filter(bar => bar.physical_contract === owner.physicalContract && (bar.segment_id === owner.segmentId || bar.calculation_segment_id === owner.segmentId))
   if (!bars.length || new Set(bars.map(bar => bar.segment_id)).size !== 1) return null
   const times = new Set(bars.map(bar => bar.bar_end))
-  return { ...chart, value: { ...chart.value, bars, frames: chart.value.frames.filter(frame => times.has(frame.bar_end)) } }
+  return { ...chart, value: { ...chart.value, bars, display_events: chart.value.display_events?.filter(e=>bars.some(b=>b.bar_end===e.bar_end&&b.physical_contract===e.physical_contract&&b.segment_id===e.segment_id&&b.calculation_segment_id===e.calculation_segment_id)), frames: chart.value.frames.filter(frame => times.has(frame.bar_end)) } }
 }
 
 export function sharedDecisionForOwner(value: NewowDecisionV2 | null, owner: NewowDisplayOwner | null, axis: 'trend' | 'oscillation'): boolean {

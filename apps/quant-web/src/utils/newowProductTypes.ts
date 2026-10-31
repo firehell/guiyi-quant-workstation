@@ -1,3 +1,4 @@
+import {normalizeDisplayEvents} from './newowDisplayEvents.ts'
 import { normalizeCautionDisplay } from './newowCautionDisplay.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
 import { normalizePagePerformance } from './newowPagePerformance.ts'
@@ -265,8 +266,8 @@ function normalizeSectionValue(section: NewowProductSection, payload: unknown, m
 
 function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartValue {
   const source = record(payload, 'chart.value')
-  const value = exactRecord({ next_older_window: null, price_reference: null, caution_events: [], ...source }, 'chart.value', [
-    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'caution_events', 'bars', 'frames', 'actions', 'hints',
+  const value = exactRecord({ next_older_window: null, price_reference: null, caution_events: [], display_events: [], ...source }, 'chart.value', [
+    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'display_events', 'caution_events', 'bars', 'frames', 'actions', 'hints',
     'trend_channel', 'price_reference', 'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
   ])
   const chartFrom = day(value.chart_from, 'chart_from')
@@ -312,6 +313,7 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
     return {...e,bar_end:bar!.bar_end} as unknown as import('../types/newowProduct').NewowCautionEvent
   })
   return {
+    display_events: normalizeDisplayEvents(value.display_events, bars, meta.identity.frequency, meta.as_of),
     caution_events: cautionEvents,
     chart_from: chartFrom, chart_through: chartThrough, page_identity: sha256(value.page_identity, 'chart.page_identity'), price_unavailable_days: priceUnavailableDays,
     bars, frames, trend_channel: trendChannel, price_reference: priceReference, actions, hints, diagnostics: stringArray(value.diagnostics, 'chart.diagnostics'),

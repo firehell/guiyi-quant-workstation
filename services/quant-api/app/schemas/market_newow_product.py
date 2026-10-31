@@ -238,7 +238,30 @@ class CautionDisplayEventOut(_Out):
         return self
 
 
+class DisplayEventOut(_Out):
+    event_id: str
+    display_version: Literal["newow_public_display_v3431_v1"]
+    kind: Literal["OSC_BREAKDOWN", "MAIN_RISE_J", "ZLGJ_J", "TREND_REVERSAL"]
+    source_strategy: str
+    formula_version: str
+    frequency: str
+    bar_end: datetime
+    known_at: datetime
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str
+    source_build_id: str | None
+    build_bar_end: datetime | None
+    build_threshold: str | None
+    observed_close: str
+    signal_kind: Literal["rebound", "adjust"] | None
+    page_parity: Literal[True]
+    executable: Literal[False]
+    quantity_effect: Literal["none"]
+
+
 class ChartValueOut(_Out):
+    display_events: list[DisplayEventOut] = Field(default_factory=list)
     caution_events: list[CautionDisplayEventOut] = Field(default_factory=list)
     chart_from: date
     chart_through: date
