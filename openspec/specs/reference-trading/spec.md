@@ -1155,6 +1155,34 @@ SuBing notification remains disabled; new reference streams SHALL NOT route to N
 - **WHEN** the requested W1 physical prefix cannot prove continuous valid input
 - **THEN** the route reports data unavailable and creates no synthetic Bar, reference trade, or return
 
+### Requirement: Deployment prewarm distinguishes proved weekly unavailability
+
+Only stopped-world cohort preflight MAY opt into
+`subing_weekly_unavailable_deployment_v1` for SuBing `1w`
+`subing_physical_prefix_forward_v2` scan routes. Ordinary readers, captures and
+warmup remain strict. The route SHALL remain `DATA_UNAVAILABLE`, without a new
+capture, checkpoint, action, trade or return, and SHALL NOT count as calculated.
+The deployment proof SHALL separately record stream identity, source digest,
+cutoff, physical owners, endpoint counts and quality interruptions.
+
+MDS MUST prove every requested owner's full physical prefix: valid stored W1 Bars
+and `weekly-d1-quality-v2` interruptions form an exact disjoint union of authoritative
+Calendar/Session endpoints, with complete D1 revisions and quality evidence.
+The separate rank1 quality series MUST equal those physical owner facts.
+At least one proven interruption is required; unknown/missing endpoints, duplicate
+facts, invalid prices, source/owner/identity conflicts and timeout still block the
+whole deployment. Pending durable originals and evaluator failures SHALL NOT use
+this exemption. Existing seed/capture integrity and saved evaluator checks MUST
+still pass, independently of classified source unavailability. Normal Runtime
+still reports the blocked route; deployment proof
+does not promote source, Scope, calculation readiness or natural business evidence.
+
+#### Scenario: A classified weekly route cannot produce a continuous prefix
+
+- **WHEN** cohort preflight proves the complete versioned quality union and rank1 identity
+- **THEN** it records that route separately as unavailable, produces no reference result and may continue deployment
+- **AND** unknown or conflicting source evidence still blocks deployment
+
 ### Requirement: Durable intake is independent of ordered Reference calculation
 
 The `reference_receiving_v2` protocol SHALL persist the exact completed original and frozen stream/revision/generation

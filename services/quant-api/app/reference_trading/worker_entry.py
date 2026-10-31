@@ -398,13 +398,16 @@ if __name__ == "__main__":
     raise SystemExit(main())
 
 
-def warmup_reference_worker():
+def warmup_reference_worker(*, allow_classified_weekly_unavailable=False):
     """Validate every route while sharing raw inputs for one scheduling group."""
     deadline = monotonic() + 120.0
     with open_forward_worker(warmup=True, warmup_deadline=deadline) as (worker, _wake, _reconciliation):
+        from app.reference_trading.prewarm_quality import ClassifiedWeeklyUnavailable
+        worker._deployment_quality_preflight = allow_classified_weekly_unavailable
         repository = worker._repository
         count = 0
         initialized = 0
+        unavailable = []
         after = None
         while True:
             _check_warmup_deadline(deadline)
@@ -434,7 +437,19 @@ def warmup_reference_worker():
                             capture_id, evidence = pending
                             service._evaluator(token, checkpoint, {**evidence, "capture_id": capture_id})
                         else:
-                            capture = worker._read_input(stream_id, "scan", None)
+                            try:
+                                capture = worker._read_input(stream_id, "scan", None)
+                            except ClassifiedWeeklyUnavailable as error:
+                                if (not allow_classified_weekly_unavailable
+                                        or error.proof['stream_id'] != stream_id):
+                                    raise
+                                # Source unavailability never exempts the saved
+                                # activation seed, original capture or evaluator.
+                                # This validates existing facts without commit.
+                                _warmup_saved_capture(repository, stream_id, service)
+                                _check_warmup_deadline(deadline)
+                                unavailable.append(error.proof)
+                                continue
                             if capture is None:
                                 result = _warmup_saved_capture(repository, stream_id, service)
                             else:
@@ -447,9 +462,10 @@ def warmup_reference_worker():
                 finally:
                     worker._end_unit()
             after = keys[-1]
-        if count + initialized == 0:
+        if count + initialized + len(unavailable) == 0:
             raise RuntimeError("REFERENCE_WARMUP_SCOPE_EMPTY")
-        return {"calculated": count, **({"initialized": initialized} if initialized else {})}
+        return {"calculated": count, **({"initialized": initialized} if initialized else {}),
+                **({'unavailable': unavailable} if unavailable else {})}
 
 
 def _warmup_saved_capture(repository, stream_id, service):
