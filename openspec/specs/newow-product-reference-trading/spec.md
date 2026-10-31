@@ -1766,6 +1766,36 @@ the display policy version so previous policy output cannot survive as fresh cac
 - **THEN** it cannot establish or replace the current event anchor
 - **AND** a future peak/cutoff or missing display policy is rejected, never converted to confirmed
 
+### Requirement: Keep public chart display events independent
+
+The existing chart and experiment responses expose `display_events` under
+`newow_public_display_v3431_v1`, independently of actions, hints and reference
+trades. Each event owns its formula, frequency, completed Bar, physical contract
+and calculation segment. Breakdown events also identify the source chart BUILD,
+its threshold and observed close as decimal strings. Events SHALL never affect
+BUILD/CLEAR, stops, quantity, scoring, reference trades or performance.
+
+Calculate the authenticated full prefix before window/pagination filtering. A
+CLEAR/stop precedes BUILD; a new BUILD resets the first-breakdown latch. Compare
+positive prices with public JS `Math.round(Number(price)*100)` and render close
+with two decimal places; this page display rule SHALL NOT become a futures tick
+or execution rule. Fusion uses only its oscillation leg's threshold. Four
+experiments use their chart-state path, not their reference-return replay.
+
+Cross-view reduce-J uses the existing main-rise kernel and defers to same-Bar
+ZLGJ `j_warning`; the two formula/source identities remain distinct. Badge state
+uses the existing reversal rebound/adjust arrays and current-period Bar counts,
+with no copied WR algorithm. Both caution and breakdown remain directly visible
+per owner instruction; no new hide preference is introduced. Completed display
+events are page-parity, non-executable and have `quantity_effect=none`.
+
+#### Scenario: Public display events remain separate from reference trades
+- **GIVEN** completed inputs with matching physical owner and calculation segment
+- **WHEN** the chart emits a caution or first-breakdown display event
+- **THEN** it exposes the public display identity and `quantity_effect=none`
+- **AND** actions, reference trade pairing and performance remain unchanged
+
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
@@ -1800,27 +1830,3 @@ Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading
 `openspec/specs/market-home-overview/spec.md` 的首页投影合同。首页摘要与普通页面参考收益在显式
 构建中复用本域原计算；不保留短期snapshot token，不改变详情独立校验或收益口径。
 旧进程展示缓存及home-card-display-cache入口已退出，不保留兼容reader。
-
-
-### Requirement: Keep public chart display events independent
-
-The existing chart and experiment responses expose `display_events` under
-`newow_public_display_v3431_v1`, independently of actions, hints and reference
-trades. Each event owns its formula, frequency, completed Bar, physical contract
-and calculation segment. Breakdown events also identify the source chart BUILD,
-its threshold and observed close as decimal strings. Events SHALL never affect
-BUILD/CLEAR, stops, quantity, scoring, reference trades or performance.
-
-Calculate the authenticated full prefix before window/pagination filtering. A
-CLEAR/stop precedes BUILD; a new BUILD resets the first-breakdown latch. Compare
-positive prices with public JS `Math.round(Number(price)*100)` and render close
-with two decimal places; this page display rule SHALL NOT become a futures tick
-or execution rule. Fusion uses only its oscillation leg's threshold. Four
-experiments use their chart-state path, not their reference-return replay.
-
-Cross-view reduce-J uses the existing main-rise kernel and defers to same-Bar
-ZLGJ `j_warning`; the two formula/source identities remain distinct. Badge state
-uses the existing reversal rebound/adjust arrays and current-period Bar counts,
-with no copied WR algorithm. Both caution and breakdown remain directly visible
-per owner instruction; no new hide preference is introduced. Completed display
-events are page-parity, non-executable and have `quantity_effect=none`.
