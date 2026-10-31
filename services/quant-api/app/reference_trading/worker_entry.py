@@ -137,6 +137,7 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
             products = load_active_products()
             authority = ForwardMarketAuthority(market_data)
             catalog = MarketCatalog(session, canonical_root())
+            catalog.maintenance_caller = "reference-forward"
             repository = ReferenceRepository(SessionLocal)
 
             def capability_ready(identity):
@@ -183,14 +184,22 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
 
             def history_can_run():
                 if worker.stop_requested():
+                    refresh.wait_reason = "STOP_REQUESTED"
+                    return False
+                if worker.has_foreground_work():
+                    refresh.wait_reason = "FOREGROUND_PENDING"
+                    refresh_priority.withdraw()
                     return False
                 if not refresh_priority.can_run():
+                    refresh.wait_reason = "FOREGROUND_PERMISSION_PENDING"
                     return False
                 from app.reference_trading.refresh_priority import historical_rest_allowed
                 if not historical_rest_allowed(SessionLocal, products, now=datetime.now(UTC),
                                                cancelled=worker.stop_requested):
+                    refresh.wait_reason = "REST_WINDOW_UNAVAILABLE"
                     refresh_priority.withdraw()
                     return False
+                refresh.wait_reason = None
                 return True
 
             from app.reference_trading.newow_fusion_forward import SavedForwardFusionSources
@@ -282,6 +291,7 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                     worker.diagnostic_health(stage='receiving_cycle', ready=False))
             else:
                 wake = wake_type(redis, repository, worker, market_data)
+                worker.has_foreground_work = repository.has_pending_forward_capture
             if durable_observations:
                 wake.stop_requested = ownership.should_drain if ownership else lambda: False
                 worker.poll_observations = wake.poll
@@ -337,7 +347,7 @@ def close_worker_resources(notifications, refresh, wake, *, warmup):
 
 
 def defer_historical_refresh(worker, refresh, *, should_stop, priority=None):
-    """The first committed healthy foreground proof precedes background startup."""
+    """Grant work after bounded foreground rounds, independently of strategy health."""
     attempted = False
     def after_healthy_round():
         nonlocal attempted
@@ -354,6 +364,7 @@ def defer_historical_refresh(worker, refresh, *, should_stop, priority=None):
         attempted = True  # A failed/unknown thread start is never retried.
         refresh.start()
     worker.after_healthy_round = after_healthy_round
+    worker.after_foreground_round = after_healthy_round
 
 
 def main() -> int:

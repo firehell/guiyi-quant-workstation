@@ -1,165 +1,85 @@
 # 个人开发与本地验证
 
-本文提供日常开发导航、任务收敛与版本交付规则。任务边界与外部操作规则见 `AGENTS.md`；当前状态见
-`STATUS.md`；产品和数据边界见 `PROJECT_SOURCE.md`、`DECISIONS.md` 及对应 deep
-canonical；可执行命令见 `TESTING.md`。
+任务边界与协作方式只看 [AGENTS.md](../AGENTS.md)，当前状态看 [STATUS.md](../STATUS.md)。
+本页保留代码定位、必要验证和本地联调入口，不另设开发阶段或审批流程。
 
 ## 讨论、开发与真实操作
 
-任务授权、GPT交接、停止条件和真实操作范围统一见 [执行规则](../AGENTS.md)。本页只说明实施方法、代码定位和验证入口，不复制审批流程或当前交付状态。
+owner 控制任务、架构与节奏，Codex 负责定位、实现、必要验证和交付。目标清楚就直接推进；
+已讨论方案交办实施后不重开设计审批。只读、讨论、Plan-only 或仅编码限制继续有效。
 
 ## Codex 模型调度
 
-项目级新线程默认是 **GPT-6 Sol Medium**。模型路由只优化质量、吞吐与 Codex 用量，不改变任务边界、
-测试标准或必要 Review；明确的单次任务选择优先于项目默认。
+新线程默认 **GPT-6 Sol Medium**，单次显式选择优先。按任务需要选模型，不固定分工接力。
 
-| 任务类型 | 默认模型 / 推理强度 | 使用边界 |
-|---|---|---|
-| 边界明确的小修、测试补齐、文档同步、格式/类型、简单前端与重复机械工作 | GPT-6 Luna / Medium | 适合 focused、高吞吐任务；出现跨模块语义、根因不明或合同变化立即升级 |
-| 普通常规工程、API/Web、任务/预警、数据处理、可回滚重构 | GPT-6 Sol / Medium | 日常主力；默认新线程即使用这一档 |
-| 根因复杂、跨多模块、并发/幂等/恢复、复杂策略工程 | GPT-6 Sol / High | 先取证再实施；必要时独立高风险 Review |
-| 架构设计、跨域合同、重要业务语义、高风险独立 Review | GPT-6 Astra / Medium 或 High | 架构与 Review 为主，不拿来替代已经明确的常规实现 |
-| 前述模型两轮仍无法可靠收敛、存在重大架构争议或极端复杂综合问题 | Ultra | 例外使用，不作为日常实现模型 |
+| 任务 | 默认模型 / 推理强度 |
+|---|---|
+| 边界清楚的机械修改、文档和简单测试 | GPT-6 Luna / Medium |
+| 普通工程、指标与策略实现 | GPT-6 Sol / Medium |
+| 根因复杂、并发/恢复、OOS/Walk-forward、未来函数、重绘、参数稳定性与候选评价 | GPT-6 Sol / High |
+| 架构、跨域语义争议、高风险独立 Review | GPT-6 Astra / Medium 或 High |
+| 上述层级仍无法可靠收敛的极端复杂问题 | Ultra，例外使用 |
 
-量化研究单独收紧：机械数据整理/测试可用 Luna；正常策略、指标与回测实现至少使用 Sol Medium；
-OOS、Walk-forward、未来函数、数据泄漏、重绘、参数稳定性、候选晋升/淘汰使用 Sol High；
-研究方法论或跨系统架构存在争议时再升 Astra High。真实写入、可信口径、策略公式、
-撮合/成本/成交时序、migration、release 与 Runtime promotion，按任务风险选择较强模型与独立 Review，
-不因模型等级增设 owner 审批。
-
-可将一次交付拆成“Sol 实现主体 → Luna 做机械测试/文档/收尾 → Sol High/Astra 做必要语义 Review”，
-但不要为了省用量把共享合同、高风险逻辑或根因未知问题降到 Luna。GPT-5.6 Sol/Terra 仅用于历史会话续接、
-兼容性对照或 GPT-6 回归备用，新任务不再默认选择。
+量化公式与回测实现至少 Sol Medium；研究方法争议用 Astra High。GPT-5.6 Sol/Terra 仅作历史续接或回归备用。
+模型等级不增设 owner 审批，也不替代必要测试。
 
 ## 日常 develop 流程
 
 ```text
-develop
--> 检查 branch、worktree、dirty state 与最近提交
--> 保留并避开其他任务或用户已有修改
--> 只修改当前任务范围
--> 按影响运行本地验证
--> 自审；高风险改动或任务要求时独立 Review
--> 提交并按交办目标集成 develop
+交办 → 快速核对工作区与相关实现 → 开发 → 必要测试与自审 → 提交/按目标发布 → 确认实际生效
 ```
 
-普通源码、测试、文档和仓库内普通删除可按上述流程执行。删除前先关闭 active
-references；历史恢复使用 Git，不建立 archive、backup 或 legacy-copy。
+- 默认使用合适的现有工作区；有实际冲突再从 develop 隔离。不固定要求 task branch/worktree、Issue、PR 或分支收尾。
+  遵守远端实际限制，保留用户与其他任务修改，不全量暂存无关内容；集成后顺手清理本任务临时资源。
+- 不设候选冻结、解冻或 release candidate 阶段，不因修复产生新 commit 重走整套验收。
+  owner 控制本次范围；Codex 补验受影响部分，普通发布不等待未受影响历史数据或全部自然业务场景。
+- 小任务用聊天和 diff，复杂架构才写必要设计；不固定写 Spec/Plan、验收矩阵、报告与收尾清单。
+  工具需要的精确输入和执行记录保留，不再另做同内容材料。
+- 先定位代码、数据、运行或证据问题，再修对应原因；不能用页面默认值掩盖不足，不能以体验修复名义顺带改公式或收益。
+  实际缺陷要修，不将其改名为“已知限制”。新增需求说明影响，重要范围或语义变化由 owner 决定。
+- 实现者负责必要验证和自审；仅实际高风险或任务要求时独立 Review。不强制多代理、固定 TDD 或全仓测试套餐。
+  独立工作可并行，共享生产状态、补数与运行切换按依赖和锁串行，不抢占自然维护。
 
 ## 文档与版本的唯一入口
 
-- [文档导航](../README.md#工程入口)只索引现役文档；任务边界在 `AGENTS.md`，当前发布、Runtime、待验收与下一步在 `STATUS.md`。
-- 稳定产品面在 `PROJECT_SOURCE.md`，依赖在 `docs/ARCHITECTURE.md`，领域语义在 accepted OpenSpec/deep canonical，验证入口在 `TESTING.md`。其他文档引用这些入口，不复制完成状态或规则。
-- 已完成且被现役合同取代的执行计划可删除，先检查引用；旧过程从 Git 查找。来源材料、公式审计、数据 journal、失败恢复及发布 evidence 不能仅因任务完成而删除。
-- 牛哇公开公式、复刻规则和最新对照只维护[一份手册正文](research/newow-v3.2.82/REPLICATION_MANUAL.md)。历史目录名不代表版本，不新增版本手册、公式卷、审计卷或常驻 PDF；任务记录只保存对应实现与验收证据，引用正文，不另复制公式。其他领域同样沿用现有唯一入口；历史证据明确标记冻结日期，不作为当前合同或待办。
-- **应用发布版本只改 `services/quant-api/app/version.py` 的 `APP_VERSION`**。API/OpenAPI/health 直接读取；Hatch 从同一文件生成 Python 包版本；Vite 从同一文件注入 `import.meta.env.VITE_APP_VERSION`。私有前端 package.json 不保存另一份发布版本。
-- `services/quant-api/uv.lock` 的 editable API 采用动态元数据，不再固化发布版本。修改版本后运行 `uv lock --check --offline --project services/quant-api`、版本一致性测试与前端 build；重新构建、安装和启动后消费者才使用新版本，已运行进程不会被修改源码自动升级。
-- 核心库版本、公式/profile/schema/capability 版本各有独立语义；已发布 tag、receipt 与历史 evidence 绑定当时身份，不能随应用版本替换。当前实际发布与 Runtime 身份仍以 `STATUS.md` 为准。
-
-## 任务收敛与版本冻结
-
-阶段顺序和当前出口统一看 [STATUS.md](../STATUS.md) 的“已接受的后续交付规划”，
-不在本页另存阶段完成状态或建立平行路线图。
-
-每个可独立交付的任务明确目标、范围和验收；有依赖或外部 Gate 时说明即可，小任务不强制另写 Spec/Plan。
-低冲突任务可在正确工作区 Direct；需要隔离或可能与其他工作冲突时从 develop 创建
-task branch/worktree，不按任务大小或 Lane 标签强制。保留用户已有修改，按协作需要选择 PR 或可追溯的集成记录，不强制 Issue/PR 仪式。
-确认提交已进入 develop 后，
-才清理本任务的临时 worktree 和已合并 branch；不清理其他任务或 main/runtime 工作区。
-本页不另设权限，普通文档更新可沿用上述日常 develop 流程。
-
-### 冻结后只处理交付阻断
-
-候选冻结精确 commit、真实 diff、声明支持范围与验收矩阵。已接受的集成不为追求“最小补丁”
-反向重拆；冻结后不再接收无关需求。确需修正阻断项时更新精确候选并补跑受影响验证，
-不能让旧 commit 的验收结论自动覆盖新候选。
-
-数据错误、结果误导、旧响应污染、无法部署、故障状态不可信，以及适用检查失败，
-是该次交付的阻断候选；按实际影响和证据判定。未开放范围的历史不足、纯视觉改进、
-新研究想法不自动进入当前版本。已披露限制只有在不破坏共享完整性和声明支持范围时才可后置，
-不得把应修缺陷改写成“已知限制”来绕过 Gate。范围实质变化须重新明确任务与验收。
-
-### 问题分类，不混修
-
-| 类型 | 处理方式 | 不允许的替代 |
-|---|---|---|
-| 代码缺陷 | 在最新精确基线复现；已合入修复先验证，未解决的定向修复并保留回归 | 未复现就写成生产根因，或重复重写已修逻辑 |
-| 历史缺口/质量异常 | 复用 readiness/MDS，明确物理合约、窗口、原因和单批处理范围 | 因页面空白同时改数据、公式、API 与 Web；造数、缩窗、跨频回退 |
-| 证据不足/正常样本不足 | 分别披露并保持原策略结果与证据状态 | 以无信号、0 分、示例值或默认值掩盖不足 |
-| 发布/现场状态问题 | 核对 exact 版本、现场证据、部署条件与恢复路径，独立完成对应 Gate | 用测试通过、旧成功记录或收尾 interrupted 宣称当前运行成功 |
-| 新版需求 | 独立任务、合同和验收；涉及语义变化先审计划 | 以显示修复、数据恢复或体验优化名义顺带改评分/公式/通知 |
-
-### 并行与测试边界
-
-子代理的八类常用职责、分派输入与交付格式统一见 [项目角色清单](AGENT_ROLES.md)；
-按任务调用，小任务可直接完成。角色清单引用既有合同，不另存权限、模型表或阶段状态。
-
-不设固定任务数量上限；AI 按文件冲突、依赖、共享状态和机器资源安排独立源码工作并行；
-生产补数、旧事故收尾和 Runtime 切换串行，共享锁或数据依赖的现场操作不能并行推进。
-审计、受控补数与自然维护复用既有锁和资源边界，不抢占自然盘后任务。
-
-Web 正确性随对应功能版本完成，不能延后到视觉优化；体验任务不顺带改公式、统计窗口和来源。
-后续纯 Web 版本不等待 60m 历史补齐；数据准备完成也不自动开放 60m 产品。
-测试嵌入每项修复、功能和候选验收，不另开无明确出口的全面测试重构；不放宽质量断言、
-未来函数保护或截图阈值制造通过。
-
-### 发布与运行验收分开
-
-工程验证、develop 集成、main/tag/release、Runtime promotion、自然运行验收分别记录。
-交办目标包含发布或上线时，Codex 在各阶段校验通过后连续完成；单纯 develop 集成不证明后续阶段已发生。
-旧事故收尾不等于数据维护完成；日常成功不等于全历史完整；数据就绪不等于策略/页面已开放。
-
-发布前确认候选与所有消费者的兼容性及可用恢复路径；生产已产生 hash URI 时，
-不得将只支持固定 URI 的旧版本作为通用回退。切换后才采集对应 exact 版本的自然业务证据；
-尚未发生或未验证的场景如实保持待验收。真实写入、失败后的重试与跨会话继续遵守 `AGENTS.md` 的
-任务目标和范围校验；只读查询自主完成，规划文档本身不扩展交办目标。
-
-## 修改前检查
-
-- 确认当前任务目标、允许范围、验收标准和禁止范围。
-- 数据、策略、回测、Alert、Runtime 或发布语义有冲突时 fail-closed，并以对应
-  canonical 和 `STATUS.md` 为准。
-- 不向模型上下文、输出、提交或日志暴露凭据；允许既有程序安全加载。不覆盖、不清理无关 dirty paths。
+- [README](../README.md#工程入口)索引现役入口；执行、状态、产品、架构、业务与验证各归原有权威文档，不复制规则或待办。
+- 被现役合同取代的计划、实现笔记和旧代码先检查消费者/引用再删除，历史从 Git 找，不建 archive、backup 或 legacy-copy。
+  已完成 OpenSpec change 的 delta 同步到 active spec、实现集成后移除；来源、研究输入/结果、账本及必要恢复记录按用途保留。
+- 牛哇公式与最新对照只维护[唯一手册](research/newow-v3.2.82/REPLICATION_MANUAL.md)，不因应用发版另建版本手册或常驻导出件。
+- 只维护当前应用实现，不维护旧应用兼容矩阵、历史发布分支或常驻回滚源码。旧发布树解除实际运行与恢复引用后清理，
+  具体引用检查见 [部署合同](../deploy/README.md#发布工作树存储)，不固定执行完整封存链。
+- 应用版本唯一来源仍为 `services/quant-api/app/version.py` 的 `APP_VERSION`，API、包与 Web 共用。
+  编号、现有工具要求的 tag/commit 和对应构建检查由 Codex 随发布处理，不单开版本管理任务或等待 owner 指定编号。
+  改版本时运行版本一致性检查、`uv lock --check --offline --project services/quant-api` 和受影响构建。
+- 不移动已发布 tag、不将 dirty 源码冒充原版本。运行代码保留可核对的 commit；公式、数据和账户历史所需身份继续保留，
+  不为此维护旧应用代码或人工版本材料。研究比较固定输入、规则和评价口径；普通工程不套用研究冻结流程。
 
 ## 按影响验证
 
-- 文档或注释：引用检查、`git diff --check`，以及适用的 OpenSpec/secret scan。
-- Web：定向 unit/E2E，再按风险运行完整 Web unit、Playwright 和 build。
-- 后端：定向 pytest，再按风险运行模块/完整 pytest、Ruff 和 Mypy。
-- 数据身份、策略、migration、Runtime、live 或通知：追加对应领域测试；isolated
-  PostgreSQL 只按 `TESTING.md` 使用专用可销毁数据库。
-- 任何必要检查失败时只报告失败，不声明完成。
+- 文档/注释：引用与格式、`git diff --check`，按内容做 secret/OpenSpec 检查；不跑无关业务测试。
+- Web/API/后端：先验证直接受影响功能，再决定是否扩大 unit、E2E、pytest、lint、typecheck、build 或 smoke。
+- 数据、公式、migration、并发、成交与账本：保留对应正确性、隔离集成和必要独立 Review；隔离库按 [TESTING](../TESTING.md) 使用。
+- 不固定 TDD 顺序，不重复验证未受影响部分，不放宽质量断言或截图阈值制造通过。
+  当前实际运行身份和功能需现场确认，fixture、dry-run、health 与历史成功不能替代真实业务结果。
 
-测试、fake runner、route intercept、render-only、dry-run 和只读 health 只证明各自范围；
-真实 RQData、Canonical、DB、Redis、Scope、Runtime、通知或发布操作仍须属于交办目标并通过现场校验。
+## 发布与运行确认
+
+目标包含发布或上线就连续完成，不另停在候选阶段。工程、发布、服务生效及自然业务结果如实说明即可，
+不强制逐级状态枚举或分阶段报告。普通发布确认新代码和受影响功能/服务生效即可交付；自然行情或通知尚未发生单独注明，
+仅当本任务明确以自然闭环为验收目标时等待对应事实，不拖住无关工作，不擅自补发或重放。
+
+问题默认在当前代码向前修复再发布，不常驻维护回滚版本。数据和账本变更仍要有可验证恢复办法；
+生产结果不明先查清，现有安装器的原子失败恢复、互斥、幂等和禁重试合同不因流程简化取消。
 
 ## 按任务定位
 
-- Web、Vue、图表或浏览器问题：从 `apps/quant-web/src/`、相关 Market API/OpenSpec 和现有 unit/E2E 定位。
-- FastAPI、Pydantic、应用数据库域、Redis、Alert、Runtime 或 CLI：从 `services/quant-api/app/`、
-  `docs/ARCHITECTURE.md` 和对应 OpenSpec 定位；Alembic 只有涉及 Market/Catalog 时才归入数据任务。
-- RQData、Canonical、Catalog、MainContractMap、数据质量或 `guiyi data`：使用项目 `futures-data` skill，
-  以 `docs/DATA_CENTER.md` 和相关 data OpenSpec 为合同。
-- release candidate、main/tag/Release、Runtime switch 或 worktree 清理：使用项目 `release-agent` skill，
-  并读取 `deploy/README.md`；发布和 Runtime promotion 始终分开。
-- 测试命令从 `TESTING.md` 选择，先定向、后按影响扩展；不为无关改动机械运行全仓库验证。
+- Web/图表：`apps/quant-web/src/`、相关 API/OpenSpec 与 unit/E2E。
+- 后端/CLI/仓储/Runtime：`services/quant-api/app/`、[架构](ARCHITECTURE.md)及对应业务 canonical。
+- RQData、Canonical、Catalog、MainContractMap 或 `guiyi data`：项目 futures-data skill 和 [数据合同](DATA_CENTER.md)。
+- 发布、运行切换、发布树清理：项目 release-agent skill 和 [部署合同](../deploy/README.md)。
+- 验证命令只从 [TESTING](../TESTING.md) 选本次需要的部分；按需协作见 [角色清单](AGENT_ROLES.md)，不强制角色组合。
 
-任务内真实操作与持续运行的精确判断只看 `AGENTS.md` 及其指向的领域 canonical；当前状态只看
-`STATUS.md`。本页不复制权限清单或业务合同。
-
-## 相关入口
-
-- 工程规则：`AGENTS.md`
-- 当前状态：`STATUS.md`
-- 产品与长期决策：`PROJECT_SOURCE.md`、`DECISIONS.md`
-- 架构与数据：`docs/ARCHITECTURE.md`、`docs/DATA_CENTER.md`
-- active OpenSpec：`openspec/specs/`
-- 验证命令：`TESTING.md`
-- 本机部署导航：`deploy/README.md`
-
-已完成的实现笔记只从 Git history 追溯，不把 `docs/superpowers/` 或 `.superpowers/` 当当前设计源。
-已完成 OpenSpec change 在确认全部 delta 已同步到 `openspec/specs/`、实现已集成后移除，历史从 Git 追溯。
-研究报告、原始截图和冻结验收脚本按证据用途保留；本机 `node_modules` 目录或符号链接不进入 Git。
+## 本地联调
 
 ### 独立 develop 首页联调
 

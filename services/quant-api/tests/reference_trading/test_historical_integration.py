@@ -204,7 +204,7 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
         session.commit()
 
         by_frequency: dict[str, tuple[CanonicalBar, ...]] = {}
-        for frequency, minutes in (("15m", 15), ("30m", 30), ("60m", 60)):
+        for frequency, minutes in (("1m", 1), ("15m", 15), ("30m", 30), ("60m", 60)):
             count = 240 // minutes
             by_frequency[frequency] = tuple(
                 _bar(
@@ -391,6 +391,31 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
         built = HistoricalReferenceService(repository, reader).execute(
             plan, plan.plan_hash,
         )
+        # Real persisted page reads must keep the verified old window usable
+        # while newly published inputs are ahead, including the provenance-only
+        # intraday scope path (which intentionally has no replay_bars).
+        def updating_reader_factory(context, cancelled):
+            return NewowProductReader(market_data, coverage=coverage, active_products=("rb",),
+                context_frequencies=context, cancelled=cancelled, now=lambda: as_of,
+                input_quality_policy=selected_policy)
+        from app.market_data.newow.product_service import ReferenceMode, ReferencePart
+        for frequency in (ProductFrequency.DAILY, ProductFrequency.HOURLY):
+            selected_policy = InputQualityPolicy.DAILY_V2 if frequency is ProductFrequency.DAILY else InputQualityPolicy.V1
+            for mode in (ReferenceMode.PAGE_ORDINARY, ReferenceMode.HOLDING, ReferenceMode.THEORETICAL):
+                pending_query = ProductServiceQuery(product="rb", strategy=ProductStrategy.TREND,
+                    frequency=frequency, section=ProductSection.REFERENCE,
+                    performance_since=first, performance_through=last, as_of=as_of,
+                    reference_part=ReferencePart.PANEL, reference_mode=mode)
+                pending = _product_response(NewowProductService(
+                    updating_reader_factory, now=lambda: as_of, quality_policy=selected_policy,
+                    persisted_reference=PersistedNewowReference(factory).section,
+                ).query(pending_query), reference_part="panel", reference_mode=mode.value)
+                value = pending.reference.value
+                assert value.reference_status.status == "updating"
+                assert value.performance_through == prior_day
+                assert value.reference_cutoff < as_of
+                assert value.reference_status.result_through == value.reference_cutoff
+                assert value.reference_status.market_through == as_of - timedelta(seconds=1)
         advance_request = HistoricalReferenceRequest(
             "advance", streams, request.budget, batch_size=256,
         )
@@ -527,6 +552,11 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
             expected = legacy_newow.reference.value.model_dump()
             actual.pop("storage_mode")
             expected.pop("storage_mode", None)
+            # Additive persisted freshness metadata does not change numerical parity.
+            status = actual.pop("reference_status")
+            assert status["status"] == "current"
+            assert status["result_through"] == status["market_through"]
+            expected.pop("reference_status", None)
             assert actual["coverage_intervals"][0] == expected["coverage_intervals"][0]
             differences = {
                 key: (actual[key][:3] if isinstance(actual[key], list) else actual[key],

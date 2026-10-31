@@ -795,7 +795,9 @@ class ReferenceRepository:
             seq = revision.last_seq + 1
             batch_id = uuid4().hex
             stored_manifest = prepared.dependency_manifest
-            if (stream.strategy_code.replace('-', '_') == 'subing_reference'
+            semantic_newow = (prepared.dependency_manifest.get("reader") == "newow_product_reader_prefix_v4"
+                or prepared.dependency_manifest.get("source_reader") == "newow_product_reader_prefix_v4")
+            if ((stream.strategy_code.replace('-', '_') == 'subing_reference' or semantic_newow)
                     and stream.recording_mode == RecordingMode.HISTORICAL_REPLAY.value):
                 stored_manifest = store_manifest(session, checkpoint_batch, prepared.dependency_manifest,
                     manifest_sha256(prepared.dependency_manifest))

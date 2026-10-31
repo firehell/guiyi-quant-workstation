@@ -260,7 +260,8 @@ def test_actual_strategy_service_advances_same_window(tmp_path, request, backend
 
 @pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
 @pytest.mark.parametrize("activate", [False, True])
-def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, request, backend, activate):
+@pytest.mark.parametrize("reader_version", ["newow_product_reader_prefix_v4", "newow_product_reader_intraday_v3", "newow_product_reader_v2"])
+def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, request, backend, activate, reader_version):
     from app.reference_trading.historical_refresh import build_historical_refresh
     from tests.reference_trading.test_newow_bootstrap import setup_source, plan_for, NOW
     from app.reference_trading.newow_bootstrap import NewowForwardBootstrap
@@ -271,7 +272,7 @@ def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, req
     with factory.begin() as session:
         rev = session.get(ReferenceRevision, (identity.stream_id, revision))
         batch = session.get(ReferenceBatch, rev.checkpoint_batch_id)
-        manifest = {**batch.dependency_manifest, 'query_since': '2023-01-01'}
+        manifest = {**batch.dependency_manifest, 'query_since': '2023-01-01', 'reader': reader_version}
         batch.dependency_manifest = manifest
         rev.dependency_digest = manifest_sha256(manifest)
     if activate:
@@ -282,7 +283,7 @@ def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, req
     routes = runner._routes()
     assert len(routes) == 1
     assert routes[0].identity == identity
-    assert routes[0].reason is None
+    assert routes[0].reason == (None if reader_version == "newow_product_reader_prefix_v4" else "INPUT_PROOF_UPGRADE_REQUIRED")
     assert routes[0].since == date(2023, 1, 1)
     assert routes[0].computed_through == checkpoint.computed_through
 
@@ -558,3 +559,12 @@ def test_refresh_waits_for_new_permission_but_does_not_add_thirty_seconds_per_ba
     refresh._stop = Stop()
     refresh._run()
     assert waits == [expected_wait]
+
+
+def test_proof_upgrade_rebuilds_even_when_endpoint_has_not_advanced(tmp_path):
+    changed = replace(route(watermark=END), reason='INPUT_PROOF_UPGRADE_REQUIRED')
+    runner, planner, service = setup(tmp_path, [('completed', None, False)], (changed,))
+    runner.tick(now=END)
+    assert service.calls[0][0] == 'rebuild'
+    assert planner.requests[0].operation == 'rebuild'
+    assert runner.state.read()['routes'] == {}

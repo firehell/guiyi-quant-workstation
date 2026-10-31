@@ -3,43 +3,27 @@ name: release-agent
 description: Use when the user asks to publish a Guiyi Quant release, deploy its local services, or assess and clean release and development worktrees.
 ---
 
-# 归一量化发布智能体
+# 归一量化发布与运行
 
-将“发布”视为一次受控的 release 编排，不把合入、tag、服务切换或只读 health 混称为发布完成或 `RUNTIME_READY`。
+按 [AGENTS.md](../../../AGENTS.md) 的目标连续交付，默认向前修复；不设候选冻结、版本收尾或逐阶段批准。
 
-## 输入与预检
+## 实施
 
-从交办目标和现场解析精确版本、release candidate、目标工作站与操作范围；不要求 owner 预先提供实施后
-才确定的 commit。服务清单以现有部署合同、activation marker 和任务目标为准；不得把未启用的可选模板
-变成 required service。若关键对象仍无法唯一确定，先报告缺口，不猜测。
+- 从任务与 [STATUS.md](../../../STATUS.md) 确定目标工作站、待发布代码与实际启用服务；只读取本次相关的
+  [开发规则](../../../docs/DEVELOPMENT.md)、[测试入口](../../../TESTING.md)和[部署合同](../../../deploy/README.md)。
+  快速核对工作区、运行 root/commit 与已有完成项，保留其他修改，不重复执行。
+- 必要测试与自审通过后，按目标连续集成、发布、构建、切换与现场确认；高风险变化追加针对性独立 Review。
+  现有工具要求的应用编号、annotated tag 和精确 commit 由 Codex 处理，不要求 owner 预先指定，不生成另一套候选材料。
+  只交办编码、发布或只读时不推导额外运行操作。
+- 普通发布确认新代码、受影响功能和必要服务实际生效即可交付，不机械等待所有自然行情、推送或盘后场景。
+  本任务明确要求的自然闭环仍须实际发生；未发生项如实注明，不能拿 health、fixture 或旧记录冒充。
+- 有问题在当前代码向前修复再发布，不维护旧版兼容矩阵或常驻回滚树，不移动旧 tag、不在运行树临时改源码冒充原版本。
+  结果未知先只读查清，保留安装器原子失败恢复、锁、幂等与禁重试条件，不补发、不擅改 Scope。
 
-读取 `AGENTS.md`、`STATUS.md`、`docs/DEVELOPMENT.md`、`TESTING.md`、`deploy/README.md`；只读核对候选 ref、
-worktree/dirty state、现役 root/commit、已有 tag/Release 和 Runtime Gate。
+## 清理与交付
 
-## 发布流程
+旧发布树先查实际运行与恢复引用，无引用且必要证据保全后 non-force 清理；已有历史索引复用，
+只有实际恢复依赖需要时才封存，不固定串联 closeout/seal/cleanup。精确路径与检查入口见
+[发布工作树存储](../../../deploy/README.md#发布工作树存储)，不动用户修改、其他任务、数据、账本或安全配置。
 
-1. 在候选上定位版本事实源，只记录当前 evidence 支持的 release 事实，不预写 Runtime 或自然 evidence；
-   运行与变动匹配的测试及适用工程检查。
-   交办目标按 `AGENTS.md` 跨会话持续有效，恢复前核对身份与已完成项。
-2. 交办目标包含发布时，在候选验证通过后连续完成 `main` merge、annotated tag 与 GitHub Release；
-   只要求候选的任务停在已验证候选。记录 tag、peeled commit、Release target 和版本身份的一致性。
-3. 交办目标包含上线或运行切换时，按 `deploy/README.md` 验证现役消费者、候选兼容性和实际 required service，
-   再完成 render-only、preflight 与 Runtime switch。仅要求发布时不推导运行切换；发布与切换仍分别留证。
-4. 默认向前修复，不常驻保留回滚工作树。失败或结果不明先停止相关 mutation 并只读核对；在最新发布树的修复分支处理问题，测试后创建新补丁版本并绑定新的运行 commit，不移动已发布 tag、不将 dirty 源码冒充原版本。安装器自身的原子失败恢复机制仍保留；必要时可从 Git history 重建精确版本，但不留下常驻旧树。不得盲目重试、补发或改变 Scope。
-5. 发布后只可报告 `RELEASED`。首根自然 completed Live Bar、必要 heartbeat、连续状态读回及受影响的自然
-   业务 evidence 未完成前，`RUNTIME_READY` 保持未证实；历史 evidence 不冒充新版本 evidence。
-
-## 按影响验收
-
-纯文档运行引用与 diff 检查，按影响选择工程测试、OpenSpec 或 secret scan，不机械重跑自然行情；数据、身份、兼容性、
-状态、通知或拓扑变化保留对应定向、readback 与自然 Gate。API/DOM/fixture、render-only、preflight、health
-和历史 evidence 各自只证明声明范围，不能互相替代。
-
-## 发布树位置与清理
-
-位置、保留策略、精确清理条件与恢复方式统一见 [部署合同：发布工作树存储](../../../deploy/README.md#发布工作树存储)。
-按该合同核对候选和现役引用后执行，技能不另存一份发布树政策。
-
-## 交付
-
-简述版本/commit 身份、实际验证和发布/Runtime/清理结果，披露未完成 Gate 与风险；不强制固定段落或结论口号。
+一次简短说明关键改动、实际验证、发布/运行是否发生及剩余问题；引用已有工具结果，不重复制作报告或收尾材料。

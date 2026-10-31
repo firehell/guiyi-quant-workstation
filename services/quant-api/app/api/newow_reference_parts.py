@@ -21,7 +21,7 @@ _MAX_POINTS = 2000
 _SHANGHAI = ZoneInfo("Asia/Shanghai")
 _COMMON = (
     "performance_since", "performance_through", "actual_available_through",
-    "reference_cutoff", "reference_input_sha256", "history_coverage",
+    "reference_cutoff", "reference_input_sha256", "history_coverage", "reference_status",
     "storage_mode", "executable", "auto_order", "allowed_uses",
     "record_since", "records_window_limited",
 )

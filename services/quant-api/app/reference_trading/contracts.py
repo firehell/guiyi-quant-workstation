@@ -52,7 +52,47 @@ def manifest_sha256(value: object) -> str:
     return sha256(_canonical_manifest(value).encode()).hexdigest()
 
 
+def _semantic_fusion_pair(prior: object, new: object) -> bool:
+    return (isinstance(prior, dict) and isinstance(new, dict)
+            and prior.get("reader") == new.get("reader") == "newow_fusion_saved_sources_v2"
+            and prior.get("source_reader") == new.get("source_reader") == "newow_product_reader_prefix_v4")
+
+
+def _fusion_static(manifest):
+    # These values are derived from the verified ordered execution/source inputs,
+    # or name their immutable saved generations; they are not extra signal gates.
+    return {key: value for key, value in manifest.items() if key not in {
+        "query_through", "query_as_of", "input_count", "input_sha256", "source_dependencies"}}
+
+
+def _fusion_dependencies_extend(prior, new):
+    for manifest in (prior, new):
+        inputs = manifest.get("input_fingerprints")
+        shadow = manifest.get("source_input_fingerprints")
+        if (not isinstance(inputs, list) or not inputs or not isinstance(shadow, list)
+                or len(inputs) != len(shadow) or manifest.get("input_count") != len(inputs)
+                or manifest.get("input_sha256") != manifest_sha256(inputs)):
+            return False
+    a, b = prior.get("source_dependencies"), new.get("source_dependencies")
+    if not isinstance(a, list) or not isinstance(b, list):
+        return False
+    if len(a) != 2 or len(b) != 2:
+        return False
+    for old, current in zip(a, b):
+        if (not isinstance(old, dict) or not isinstance(current, dict)
+                or old.get("stream_id") != current.get("stream_id")
+                or type(old.get("seq")) is not int or type(current.get("seq")) is not int
+                or current["seq"] < 1
+                or old.get("revision_id") == current.get("revision_id") and current["seq"] < old["seq"]):
+            return False
+    return True
+
+
 def _append_only(prior: object, new: object) -> bool:
+    if _semantic_fusion_pair(prior, new):
+        a, b = _fusion_static(prior), _fusion_static(new)
+        return (_fusion_dependencies_extend(prior, new)
+                and all(key in b and _append_only(value, b[key]) for key, value in a.items()))
     if isinstance(prior, dict) and isinstance(new, dict):
         return all(key in new and _append_only(value, new[key]) for key, value in prior.items())
     if isinstance(prior, list) and isinstance(new, list):
@@ -73,6 +113,9 @@ def _append_only(prior: object, new: object) -> bool:
 
 def _prior_projection(prior: object, new: object) -> object:
     """Project the new manifest onto the exact prior prefix after validation."""
+    if _semantic_fusion_pair(prior, new):
+        a, b = _fusion_static(prior), _fusion_static(new)
+        return {**prior, **{key: _prior_projection(value, b[key]) for key, value in a.items()}}
     if isinstance(prior, dict) and isinstance(new, dict):
         return {key: _prior_projection(value, new[key]) for key, value in prior.items()}
     if isinstance(prior, list) and isinstance(new, list):

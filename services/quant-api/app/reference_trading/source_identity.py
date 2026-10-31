@@ -11,6 +11,12 @@ def verify_saved_input_prefix(
     saved: dict[str, object], current: dict[str, object], through: date,
     observed_owner_keys: frozenset[tuple[str, str]] = frozenset(),
 ) -> None:
+    if saved.get("reader") == "newow_product_reader_prefix_v4":
+        required = ("reader", "query_since", "quality_policy", "market_source_identity",
+                    "input_policy_version", "formula_versions", "reference_model_version")
+        if any(key not in current or saved.get(key) is None or saved[key] != current[key]
+               for key in required):
+            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
     if saved.get("reader") == "newow_product_reader_intraday_v3":
         for key in ("reader", "source_evidence_sha256", "input_sha256", "input_count"):
             if saved.get(key) is None or saved.get(key) != current.get(key):

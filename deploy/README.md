@@ -2,6 +2,8 @@
 
 本页描述安装顺序、现场校验和恢复条件；是否执行由 `AGENTS.md` 的交办任务范围决定。
 文中“执行意图”指已交办目标与当前精确对象一致，不要求每个 phase 再向 owner 请示。
+日常交付不设候选冻结或版本收尾：完成必要验证后按目标连续发布、切换并确认生效，问题向前修复。
+下文的 plan/hash、锁和状态校验用于绑定实际副作用，不是独立管理阶段；只有本次适用的步骤才执行。
 
 仓库唯一 active 运维链为：Mac launchd 受监督 Runtime → FRPC 本地隧道 → 腾讯云 FRPS → Nginx
 HTTPS/Basic Auth 公网入口。腾讯云不运行第二套 API/Web 应用副本。
@@ -11,7 +13,7 @@ Newow 的 snapshot token、重型门禁与在途去重都由该进程持有；�
 不属于当前支持拓扑，不能依靠连接粘滞或增加重试弥补。单进程仍通过既有同步路由线程池处理并发请求。
 进程重启后旧 token 失效，返回既有分类 409，由客户端按既有规则清除关联状态并最多重建一次。
 缓存和逐事实校验、取消、重型预算保持不变。启动参数检查不代替真实多连接 HTTP、浏览器和负载响应验收。
-更改部署契约须进入新补丁候选；不得挪动旧 tag 或临时修改 Runtime checkout。切换后仍须核对实际进程与请求链路。
+部署契约变更提交并验证后直接按目标发布；不挪动旧 tag 或临时修改 Runtime checkout。切换后核对实际进程与受影响请求链路。
 
 ## 三段只读检查
 
@@ -51,7 +53,7 @@ SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.rele
 保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
 应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。
 
-修复默认向前发布补丁，不移动旧tag；需要恢复时可从Git重建精确旧版本。后续修复复用最新发布树的修复分支，发布新版本后改为对应版本名称；正式服务始终绑定已验证commit，不能把dirty源码冒充原版本。
+只维护当前应用实现，不维护旧版兼容矩阵或常驻回滚源码。修复在开发工作区完成、提交并验证后向前发布；现有工具要求的编号/tag由Codex处理，不单开版本管理任务。正式服务绑定受测commit，不移动旧tag或把dirty源码冒充原版本；必要历史源码从Git恢复。
 安装器的原子失败恢复、preflight、身份校验继续保留；结果不明先停止相关mutation并只读核对，不能因清理而盲目重试。
 
 ## 按服务连续交接
@@ -89,8 +91,9 @@ API 始终一个进程，短暂重启会失效旧 snapshot token。UI/API 发布
 全部正式副作用受 OS 锁与新代次二次核对约束；TTL、健康标签或候选预热不授予发送权。
 新绑定存在后，旧一根安装器的 mutation 模式拒绝执行；只读状态按各服务根检查，不能用 API 根代表全部 Runtime。
 
-工程测试、发布、现场交接及自然连续性验收分别记录。专用 Redis/PostgreSQL 测试不发送真实推送；
-自然信号未发生时保留待验收，不能宣布 `RUNTIME_READY`。
+一次交付简述实际测试、发布与运行结果，不为每个阶段重复生成报告。普通发布确认新代码与受影响功能/服务生效即可交付；
+自然信号尚未发生单独注明，仅当交办目标要求自然闭环时以该事实验收，不拖住无关任务。
+专用 Redis/PostgreSQL 测试不发送真实推送，也不能用启动或health冒充自然业务完成。
 
 ## 配置与变更 Gate
 
@@ -418,19 +421,24 @@ DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别�
 
 ### 已闭合发布依赖封存与退役
 
-整组切换成功、旧进程退出且已完成现场读回后，使用同一现役版本运行：
+常规清理先运行一次只读引用扫描，不固定执行“closeout → seal → cleanup”全套流程：
+
+```bash
+python -m app.runtime_retention cleanup-plan /exact/old-release-root ...
+```
+
+只清理精确列为 eligible、必要证据已保全且删除前重查身份/引用未变的目标，逐个 non-force 移除。
+仍在运行、存在未决恢复、用户修改或引用未知的树保留；不为可能回退而保留无引用源码。
+不删除tag/Release、行情、DB、账本、安全配置或其他任务。
+
+只有扫描发现实际历史恢复引用、且闭合证明需要树内非Git原件时，才使用已有封存入口：
 
 ```bash
 python -m app.runtime_retention closeout-plan /exact/old-release-root ... > /private/retirement-plan.json
 python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
-python -m app.runtime_retention cleanup-plan /exact/old-release-root ...
 ```
 
-closeout-plan固定本次真实退役roots、共同Git库及历史身份、原plan/state/receipt字节和必要.run证据；
-seal-closed在部署锁内重采样并原子保存于既有Runtime私有目录release-retirements，不改旧unknown，不复制源码或凭据。
-历史Git身份不再要求旧checkout存在，当前active binding/installed/process仍默认严格校验真实根；未闭合或没有有效seal的
-历史引用继续阻止清理。封存后的全局指针及binding可以随下一次合法部署变化，旧不可变证据仍须原字节匹配。
-历史对象不允许写回active registry。正常新cohort在首effect前保留私有plan，旧attempt仅使用当时原件、不回填。
-
-清理只按最后重新读回一致的精确cleanup-plan逐个non-force移除；必要证据、tag/Release、共享配置、行情和DB不删除。
-删除后从唯一现役树核对历史审计、未决恢复检查及下一部署前置条件；自然行情、盘后业务及数据质量仍单独验收。
+已有有效索引与原件保全直接复用，不为普通发版重新制作封存材料。seal仍校验精确原件、历史闭合与提交时漂移，
+不以终态字样或人工说明跳过机器验证；未闭合恢复继续阻止清理。旧unknown/state/plan不改写，历史对象不写回active registry。
+封存后重查待删树当前引用再清理；删除后确认现役服务与必要历史reader仍可用，一次记录结果即可。
+该工具是实际恢复依赖的处理手段，不是每次开发、发布或删旧代码的前置流程。

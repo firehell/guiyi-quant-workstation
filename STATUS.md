@@ -1,3 +1,38 @@
+10/31 独立SimNow最后统一步骤已准备，实际切换安排为11/2 15:05（北京时间）一次性执行。
+48私有候选配置/SDK兼容/无Broker预检/render通过；现场原生window check全60休市、目标20261102通过，
+但原生plan返回RESULT_UNKNOWN，独立原生snapshot诊断明确定位ordinary_takeover.budget_binding拒绝：
+20261102 attempt1/CONTINUOUS_RECOVERY_REQUIRED原block仍在。没有switch plan、许可、claim、停启、重连或账户写入。
+四账本SHA、原44/PID1733/run0900f127…保持，pending=true/opening=false。候选及证据位于output/release-unification-20261031/simnow-v48-final/。
+只读未来Calendar/Session及预算复验：20261103 attempt0/无block，全60来源齐备；推导部署窗口11/2 15:00后至严格早于20:49，
+连接窗口20:58–21:02；这些未来facts不代替届时fresh窗口/预算/账户预检，旧block不删除。
+宿主首次拒绝未明确授权的定时生产副作用后，owner明确回复“授权这次定时执行（推荐）”；
+一次性heartbeat automation `simnow`已实际创建ACTIVE并回读，附当前聊天，11/2周一15:05触发、COUNT=1。
+届时fresh原生检查通过才单次切换SimNow、实际读回并解除44引用后non-force清理；失败停止、不自动重试或新增后续任务。
+当前仍是正式十服务48/gen44 + 独立SimNow44两发布树，不能提前声明单树或账户恢复完成。
+最小下一步：由上述已授权一次性任务在合法窗口实际完成切换及清理，无需owner重复下指令。
+以下为此前检查点：
+
+10/31 HC/SS/ZN三流精确恢复、十服务统一及无引用旧树41/47清理均已实际完成。
+PR560/develop、PR561/main、annotated v1.16.48/GitHub Release已完成，exact
+`85ed0eca5cf4fb339fdba6f3b6586d855516fa30`，完整tree等受测06f17392ff；正式48树clean detached、独立冻结依赖/Web build/render通过。
+原生三流恢复plan 6a58bbd211df8deb087cd485cbcc13088ece4a762b5597e62f21254e2a49fec8单次COMMITTED；
+原生status与独立只读逐条回验通过：10个旧Inbox路由及Capture原件不变，SS仅追加DATA_INTERRUPTED，退出价/收益均空，
+三successor均generation2/空窗口/FLAT，共同未来recording_start=2026-10-31T03:37:19.264986Z；未造CLOSE、回放或账户交易。
+新cohort b11f4b61e2d38683bfe495882c1d9b355d05145017522d94afe14590a251bd89已switched：
+正式十服务同48/gen44，双fresh loaded身份matched，Reference durable_receiving_caught_up_idle；原定时启用集合保持。
+11:32额外现场读回六owner心跳新鲜，API/Web/Runtime HTTP200，API版本1.16.48，顶层health/runtime均ok；
+SimNow原44/PID1733、配置及四账本SHA不变，旧run/账户恢复block仍保留，本轮无Broker操作。
+实际Canonical预热Alert 414/420、6路合法暖机；Reference calculated590、10路完整证明的SuBing W1 DATA_UNAVAILABLE，
+不计calculated、不生成capture/交易。reference_ready=false，natural_acceptance=PENDING，不报整体RUNTIME_READY。
+独立Review另复核生产计划/receipt/readback/binding一致及SimNow原SHA不变。代码验证103项、真实隔离PG9项、轻入口17项及工程检查通过。
+41/47全部21个.run文件共723395bytes已逐字节/SHA/权限树外保全；原生closeout-plan已通过87份历史原件核验。
+owner明确要求简化单人项目流程、直接删和切，故终止seal-closed重复collect；以已验证事实复核原件/当前引用，
+保留原生历史reader所需索引后直接non-force移除41/47，未改任何旧state/plan。删前/删后原生_load_index通过，
+当前binding/plist/loaded/进程/cwd及SimNow配置别名/monitor/intents均不引用被删树。
+发布树现仅48（正式十服务）和44（仍运行的独立SimNow），不是为回退保留旧版本。私有证据位于output/release-unification-20261031/v48-execution/。
+最小下一步：在合法窗口按既有账户恢复/预算合同处理独立SimNow，解除44真实引用后即可收拢为单发布树；48自然业务另待验收。
+以下为此前检查点：
+
 10/31 owner已明确批准HC/SS/ZN三条精确恢复并继续统一十服务：保留原件、旧参考中断、无退出价/收益、未来FLAT。
 v1.16.48补丁候选新增固定20261031 incident，绑定三stream/gen1/旧revision/capture及仅SS OPEN，旧48流默认合同不变。
 103项相关回归、真实隔离PG旧8/新三流1项、最新轻导入17项、Ruff/Mypy/OpenSpec/secret0/diff/uv lock通过；

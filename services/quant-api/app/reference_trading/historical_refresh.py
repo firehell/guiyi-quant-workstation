@@ -221,6 +221,9 @@ class HistoricalRefresh:
 
     def _tick(self, now, cancelled, batch_limit):
         state = self.state.read()
+        self.last_progress = {**self.last_progress,
+            'backlog_count': sum(item['status'] != 'blocked' for item in state['routes'].values()),
+            'blocked_route_count': sum(item['status'] == 'blocked' for item in state['routes'].values())}
         # An unknown process exit may have happened between a commit and its
         # callback. A saved older resume token cannot prove the last outcome.
         for item in state['routes'].values():
@@ -245,7 +248,7 @@ class HistoricalRefresh:
             state['cursor'] = key
             if prior and prior['status'] == 'blocked':
                 continue
-            source_changed = route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED'
+            source_changed = route.reason in {'CANONICAL_SOURCE_REVISION_CHANGED', 'INPUT_PROOF_UPGRADE_REQUIRED'}
             if (route.reason and not source_changed and not prior) or not _canonical_identity(identity) or route.since is None:
                 state['routes'][key] = {'status': 'blocked', 'reason': route.reason or 'SOURCE_IDENTITY_UNVERIFIED'}
                 self.state.write(state)
@@ -262,9 +265,12 @@ class HistoricalRefresh:
                 if _strategy(identity) == 'dual_fusion':
                     base = [item for item in routes if item.identity.product == identity.product
                             and item.identity.frequency == identity.frequency
-                            and _strategy(item.identity) in {'trend', 'oscillation', 'main_rise'}]
-                    if (len(base) != 3 or any(item.computed_through is None or item.computed_through < endpoint
-                                            for item in base)):
+                            and _strategy(item.identity) in {'trend', 'oscillation'}]
+                    if (len(base) != 2 or any(item.reason is not None or item.computed_through is None
+                                            or item.computed_through < endpoint for item in base)):
+                        self.last_progress = {'at': now.isoformat(), 'stream_id': key,
+                            'stage': 'waiting', 'reason': 'BASE_DEPENDENCIES_PENDING',
+                            'target': endpoint.isoformat()}
                         continue
                 self._execute(route, endpoint, trading_day, prior, state, now, cancelled, batch_limit)
             except RefreshPlanningYield:
@@ -291,7 +297,9 @@ class HistoricalRefresh:
         committed_batches = 0
         deadline = monotonic() + budget.max_elapsed_seconds
         self.last_progress = {'at': now.isoformat(), 'stream_id': key,
-                              'target': endpoint.isoformat(), 'stage': 'planning'}
+                              'target': endpoint.isoformat(), 'stage': 'planning',
+                              'backlog_count': self.last_progress.get('backlog_count', 0),
+                              'blocked_route_count': self.last_progress.get('blocked_route_count', 0)}
         def cancelled():
             return (original_cancelled() or monotonic() >= deadline
                     or (batch_limit is not None and committed_batches >= batch_limit))
@@ -374,7 +382,7 @@ class HistoricalRefresh:
                     plan, prior = rebuild_plan(plan), None
             else:
                 plan = prepare(HistoricalReferenceRequest(
-                    'rebuild' if route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED' else 'advance',
+                    'rebuild' if route.reason in {'CANONICAL_SOURCE_REVISION_CHANGED', 'INPUT_PROOF_UPGRADE_REQUIRED'} else 'advance',
                     (HistoricalStreamRequest(route.identity, route.since,
                                                         trading_day, endpoint),), budget,
                 ))
@@ -468,6 +476,9 @@ class RefreshThread:
         self._batch_limit = batch_limit
         self._stop = Event()
         self.last_error = None
+        self.wait_reason = None
+        self.last_attempt_at = None
+        self.last_success_at = None
         # Cancellation normally completes shutdown. Daemon is a bounded final
         # exit fallback; any unfinished mutation stays inflight and blocks restart.
         self._started = False
@@ -485,15 +496,20 @@ class RefreshThread:
                     self._stop.wait(.1)
                     continue
                 try:
+                    attempt_now = self._now()
+                    self.last_attempt_at = attempt_now.isoformat()
                     previous_progress = getattr(self._runner, 'last_progress', None)
                     options = {} if self._batch_limit is None else {'batch_limit': self._batch_limit}
-                    self._runner.tick(now=self._now(), cancelled=lambda:
+                    self._runner.tick(now=attempt_now, cancelled=lambda:
                         self._stop.is_set() or self._yield_requested(), **options)
                 finally:
                     self._on_tick_finished()
             except Exception as error:
                 self.last_error = _reason(error)
                 return  # Invalid state/storage never gets blindly overwritten.
+            if (getattr(self._runner, "last_progress", {}).get("at") == self.last_attempt_at
+                    and getattr(self._runner, "last_progress", {}).get("stage") in {"completed", "noop"}):
+                self.last_success_at = self.last_attempt_at
             progressed = previous_progress != getattr(self._runner, 'last_progress', None)
             self._stop.wait(self._interval if progressed else self._idle_interval)
 
@@ -510,7 +526,9 @@ class RefreshThread:
         return self._thread.is_alive()
 
     def diagnostic_snapshot(self):
-        return dict(getattr(self._runner, 'last_progress', {}))
+        return {**dict(getattr(self._runner, 'last_progress', {})),
+                "wait_reason": self.wait_reason, "last_attempt_at": self.last_attempt_at,
+                "last_success_at": self.last_success_at}
 
 
 def _history_route_supported(identity):
@@ -579,6 +597,8 @@ def build_historical_refresh(session_factory, *, state_path):
                 ReferenceBatch.computed_through,
                 ReferenceBatch.dependency_manifest['query_since'].as_string(),
                 ReferenceRevision.invalid_reason,
+                ReferenceBatch.dependency_manifest['reader'].as_string(),
+                ReferenceBatch.dependency_manifest['source_reader'].as_string(),
             ).join(ReferenceRevision, (ReferenceRevision.stream_id == ReferenceStream.stream_id)
                    & (ReferenceRevision.revision_id == ReferenceStream.active_revision_id))
               .join(ReferenceBatch, ReferenceBatch.batch_id == ReferenceRevision.checkpoint_batch_id)
@@ -590,7 +610,7 @@ def build_historical_refresh(session_factory, *, state_path):
             if value is None or value[2] is None:
                 result.append(RefreshRoute(identity, None, None, 'HISTORY_SOURCE_MISSING'))
                 continue
-            status, watermark, since, invalid_reason = value
+            status, watermark, since, invalid_reason, reader_version, source_reader_version = value
             # SQLite drops timezone metadata; PostgreSQL retains it.
             if watermark is not None and watermark.tzinfo is None:
                 watermark = watermark.replace(tzinfo=UTC)
@@ -598,6 +618,13 @@ def build_historical_refresh(session_factory, *, state_path):
                 'CANONICAL_SOURCE_REVISION_CHANGED'
                 if status == 'invalid' and invalid_reason == 'P4_SOURCE_REVISION_REBUILD'
                 else 'HISTORY_NOT_PUBLISHED')
+            if (reason is None and _strategy(identity) in {'trend', 'oscillation', 'main_rise'}
+                    and reader_version != 'newow_product_reader_prefix_v4'):
+                reason = 'INPUT_PROOF_UPGRADE_REQUIRED'
+            if (reason is None and _strategy(identity) == 'dual_fusion'
+                    and (reader_version != 'newow_fusion_saved_sources_v2'
+                         or source_reader_version != 'newow_product_reader_prefix_v4')):
+                reason = 'INPUT_PROOF_UPGRADE_REQUIRED'
             result.append(RefreshRoute(identity, date.fromisoformat(since), watermark, reason))
         return result
 

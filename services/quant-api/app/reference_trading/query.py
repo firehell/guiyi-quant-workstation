@@ -657,7 +657,7 @@ class HistoricalReferenceQuery:
             ).order_by(ReferenceBatch.seq.desc()).limit(1))
             manifest = None if manifest_batch is None else resolve_manifest(session, manifest_batch)
             saved_count = manifest.get("input_count") if isinstance(manifest, dict) else None
-            if saved_count is None and isinstance(manifest, dict) and manifest.get("reader") == "newow_product_reader_v2":
+            if saved_count is None and isinstance(manifest, dict) and manifest.get("reader") in {"newow_product_reader_v2", "newow_product_reader_prefix_v4"}:
                 fingerprints = manifest.get("input_fingerprints")
                 if isinstance(fingerprints, list) and fingerprints and all(
                     isinstance(value, str) and len(value) == 64

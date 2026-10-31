@@ -1,5 +1,6 @@
 """A proven no-write append rejection does not wait a full route rotation."""
 from tests.reference_trading.test_historical_refresh import setup, END, route
+from guiyi_quant.newow.product_identity import InputQualityPolicy
 
 
 def test_append_rejection_rebuilds_same_route_in_one_quantum(tmp_path):
@@ -74,3 +75,41 @@ def test_progress_redacts_raw_failure_and_snapshot_is_detached(tmp_path):
     assert snapshot['reason'] == 'REFRESH_FAILED_READBACK_REQUIRED'
     snapshot['reason'] = 'changed'
     assert runner.last_progress['reason'] == 'REFRESH_FAILED_READBACK_REQUIRED'
+
+
+def test_fusion_proof_upgrade_waits_for_both_current_semantic_bases(tmp_path):
+    from dataclasses import replace
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    from app.reference_trading.historical_refresh import RefreshRoute
+    from datetime import date
+    fusion = RefreshRoute(build_fusion_stream_identity('rb', '1d', input_quality_policy=InputQualityPolicy.DAILY_V2), date(2023, 1, 1), END,
+                          'INPUT_PROOF_UPGRADE_REQUIRED')
+    trend = replace(route('trend', END), reason='INPUT_PROOF_UPGRADE_REQUIRED')
+    oscillator = route('oscillation', END)
+    runner, planner, service = setup(tmp_path, [], routes=(fusion, trend, oscillator))
+    ids = sorted(item.identity.stream_id for item in (fusion, trend, oscillator))
+    state = runner.state.read()
+    state['cursor'] = ids[ids.index(fusion.identity.stream_id) - 1]
+    runner.state.write(state)
+    # Restrict the turn to fusion: an unchanged endpoint on old base proof cannot authorize it.
+    runner._execute = lambda *args: (_ for _ in ()).throw(AssertionError('fusion must wait'))
+    runner.tick(now=END, cancelled=lambda: runner.last_progress.get('reason') == 'BASE_DEPENDENCIES_PENDING')
+    assert runner.last_progress['reason'] == 'BASE_DEPENDENCIES_PENDING'
+    assert not service.calls
+
+
+def test_fusion_proof_upgrade_at_same_endpoint_uses_native_rebuild(tmp_path):
+    from datetime import date
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    from app.reference_trading.historical_refresh import RefreshRoute
+    fusion = RefreshRoute(build_fusion_stream_identity('rb', '1d', input_quality_policy=InputQualityPolicy.DAILY_V2), date(2023, 1, 1), END,
+                          'INPUT_PROOF_UPGRADE_REQUIRED')
+    runner, planner, service = setup(tmp_path, [('completed', None, False)],
+        routes=(fusion, route('trend', END), route('oscillation', END)))
+    ids = sorted(item.identity.stream_id for item in (fusion, route('trend', END), route('oscillation', END)))
+    state = runner.state.read()
+    state['cursor'] = ids[ids.index(fusion.identity.stream_id) - 1]
+    runner.state.write(state)
+    runner.tick(now=END)
+    assert [call[0] for call in service.calls] == ['rebuild']
+    assert planner.requests[0].streams[0].identity == fusion.identity

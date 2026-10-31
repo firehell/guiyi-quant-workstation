@@ -1,170 +1,122 @@
 # 归一量化执行规则
 
-本文件是项目全局任务边界与执行规则的唯一入口，取代旧版长篇执行指引；领域 canonical 定义业务合同，
-不重复设置人工审批流程。旧文档或技能的流程要求与本文件冲突时按本文件执行，机器校验不因此取消。当前
-release、Runtime、Scope、evidence 和 pending Gate 只看 `STATUS.md`，不得用聊天记忆替代仓库事实。
+本文件是项目任务边界与开发方式的唯一入口。owner 把控方向、架构、任务与节奏；Codex 负责范围内的工程判断和完整交付。
+旧指引或技能与本文件冲突时按本文件执行；不修改全局配置，也不绕过宿主安全控制。
 
 ## 项目定位与事实源
 
-归一量化是本地、单用户的国内期货研究与策略运行工作站，采用模块化单体。owner 决定方向并交办任务；
-Codex 负责范围内的研究、工程和实际执行。当前 `auto_order=false`，不能从研究结果自行决定无人值守真实交易。
+归一量化是本地、单用户的国内期货研究与策略运行工作站，采用模块化单体。当前 `auto_order=false`，研究结果不授权无人值守真实交易。
 
-- 用户明确交办的目标和边界就是该任务的执行授权，不再为任务内的每个阶段、命令或新会话重复请示；代码、测试和真实 evidence 决定实现事实；accepted canonical 与
-  `DECISIONS.md` 决定长期合同；当前阶段以 `STATUS.md` 为准。
-- 开始任务先核对 branch、HEAD、worktree、dirty state、相关实现、测试和当前 develop 依赖。保留并避开
-  用户或其他任务修改，不覆盖、回滚、批量清理或全量暂存无关内容。
-- `PROJECT_SOURCE.md` 只定义稳定产品面，`docs/ARCHITECTURE.md` 只定义 active 依赖，业务语义由对应
-  OpenSpec/deep canonical 定义；`TESTING.md` 保存稳定验证入口，任务说明可记录实际执行命令。
+- 开工快速核对 branch、HEAD、worktree、dirty state 和相关依赖；保留用户及其他任务修改，不覆盖、回滚或全量暂存无关内容。
+- 代码、测试和实际运行决定实现事实；`STATUS.md` 记录当前发布、Runtime 与待验事项；`PROJECT_SOURCE.md` 定义稳定产品面，
+  `docs/ARCHITECTURE.md` 定义 active 依赖，accepted canonical 和 `DECISIONS.md` 定义业务合同，`TESTING.md` 提供验证入口。
+  其他文档引用这些入口，不另存一套状态、规则或路线图。
 
 ## AI 开发与 owner 决策
 
-- owner 负责产品方向和重要架构取舍；Codex 负责已交办目标的完整交付，包括必要的生产操作、发布和运行切换。
-- 用户要求讨论、比较方案、只读审计或 Plan-only 时，只产出分析；明确要求实现且目标、范围、验收清楚时，
-  连续完成实现、必要局部重构、测试、修复、自审、commit/push 和交办目标所需的集成、发布、Runtime 与验收，不重复申请批准。
-- 小任务直接执行；复杂任务先说明简短计划再推进。检查后续动作是否仍服务于交办目标、是否改变产品或业务语义；
-  未偏离就继续。只有无法依据任务与仓库事实决定的重要取舍才请 owner 决策，不因任务跨阶段或换会话停下。
-- 内部模块、文件、函数和算法实现可按目标调整；改变领域职责、外部合同、公式、收益或风险语义、
-  引入基础设施或扩大产品范围时先说明取舍。调查先取证定位，不以无关重构代替根因修复。
-- branch、worktree、PR、并行协作与独立 Review 按冲突、共享状态、资源及风险选择，不是固定仪式。
-  普通改动自审；数据时序、公式、并发、迁移、执行安全等高风险改动做独立 Review。
-- 小任务使用聊天说明和 Git diff；复杂任务才落必要设计文档，不重复制造 Spec、Plan、report 和 receipt。
-  设计遵循本地单用户、简单可维护原则，不为假设需求建通用框架。
-- 项目新建 Codex 线程默认使用 `gpt-6-sol` + `medium`，由 `.codex/config.toml` 固定；单次任务在 Codex App/CLI 中显式选择模型或推理强度时可覆盖。
-- 任务级模型路由见 `docs/DEVELOPMENT.md`：GPT-6 Luna 处理边界明确、高吞吐的小任务；GPT-6 Sol 是默认工程模型；GPT-6 Astra 用于架构、跨域设计和高风险独立 Review；Ultra 只用于前述层级仍无法可靠收敛的极端复杂问题。模型选择不改变必要的验证和任务边界。
-- GPT-5.6 Sol/Terra 只作为历史会话续接、兼容性对照或 GPT-6 回归时的备用，不作为新任务默认。确定性检查优先使用代码和工具。
-- 技能是执行工具。已交办且目标、范围、验收清楚时，不因技能要求重复批准设计或计划；
-  TDD、计划文件、分支收尾等步骤按风险采用，必要回归、独立 Review 和完成验证仍需落实。
-  本规则不修改全局技能、用户级配置或宿主安全控制。
+默认流程：**owner 交办 → 定位并开发 → 必要测试与自审 → 提交、按目标发布或切换 → 确认实际生效**。
+
+- 目标和边界清楚就连续完成，不因阶段、命令、新 commit/hash 或换会话重复请示。只要求讨论、只读或 Plan-only 时按该限制交付。
+- 不设日常候选冻结、解冻、release candidate 或版本收尾阶段；发现问题向前修复。任务节奏和本次范围由 owner 把控，
+  实现中的必要调整由 Codex 完成，新增需求说明影响，不把每次修复变成新一轮设计审批。
+- 默认在合适的现有工作区开发；有实际冲突才隔离。不强制 task branch/worktree、Issue、PR、多角色接力或专门分支收尾；
+  遵守远端实际规则，提交并按目标集成后顺手清理本任务临时资源，不清理其他任务。
+- 普通任务用聊天说明与 Git diff，不固定生成 Spec、Plan、manifest、report、receipt 或验收矩阵。
+  重要架构取舍才写必要设计；工具执行、复算或恢复确实需要的记录保留，避免人工重复材料。
+- 普通改动自审；公式、数据时序、并发、迁移、成交或账本等高风险变化做针对性独立 Review。
+  测试按影响选择，不固定 TDD 顺序、不机械跑全仓测试，也不靠降低断言制造通过。
+- 只维护当前应用实现，默认向前修复与发布。旧实现先查消费者再删除，历史从 Git 找，不养兼容分支、备用源码或常驻回滚树。
+  应用编号、tag 及现有部署工具要求的身份由 Codex 随发布处理，不形成 owner 要管理的版本流程；已发布历史不改写。
+- 保留最小运行 commit 身份，确保受测代码与运行代码一致。研究比较需固定输入、规则和评价口径，历史结果、订单与账本保留当时身份；
+  这些正确性要求不扩展为每次普通开发的冻结仪式。
+- 设计保持本地单用户、简单可维护，不顺带扩建平台。新线程默认 `gpt-6-sol` + `medium`，单次显式选择优先；
+  模型按 `docs/DEVELOPMENT.md` 调度，不为省用量降低验证，也不为模型切换增加工序。
+- 技能用于完成任务，不重新引入上述已取消的流程；不改用户级或全局技能、配置与宿主控制。
 
 ## GPT 讨论与 Codex 交接
 
-owner 将 GPT 中已讨论确定的方案交办给 Codex 实施时，方案方向与任务范围视为已确定；Codex 先读取
-任务引用的方案/交接、仓库事实与 accepted canonical，再直接进入实现。必要的实施细化和计划由 Codex
-自审后推进，不重新要求 owner 批准同一设计、书面 Spec、Implementation Plan 或选择执行方式。
-缺少 GPT 对话记录不意味着必须重新讨论；先从交办内容、引用文档与当前实现补齐上下文，只有无法确定的
-重要取舍才按下节停止条件处理。owner 明确交办讨论、比较、只读审计或 Plan-only 时仍只交付相应结果。
-
-临时子代理、并行方式、风险适用的独立 Review、隔离工作区和普通分支收尾由主代理按任务决定；
-遵守 owner 已指定的工作区与交付方式，不因技能中的重复审批、worktree 同意、合并菜单或发送前再次确认
-而暂停已有授权范围内的工作。通知对象和内容范围必须可确定；该规则不授权新增受众或未交办的发送。
-本节只调整本项目如何采用技能，不改全局技能文件，不绕过宿主、工具或更高层约束。
+已讨论方案交办实施后，读取引用材料与现有实现直接推进，不要求再次批准同一设计、书面计划或执行方式。
+缺少原对话先依据交办内容和仓库补齐；重要且无法推导的取舍才请 owner 决定。
+子代理按具体需要调用，不强制角色组合、分派模板或统一六段交付；交回结果、实际验证及未解决问题即可。
 
 ## 需要停止相关动作的条件
 
-只在受影响部分出现以下情况时停止并请 owner 决定；其余独立、安全且符合任务目标的工作继续：
+只在受影响部分出现以下情况时请 owner 决定，其余可独立工作继续：
 
-- 仓库事实无法消除、会改变产品或架构的重要歧义；
-- 必须改变目标、验收、业务合同或真实操作范围；
-- 必须覆盖、删除或改写不属于本任务的用户修改；
-- 必须扩大工具权限、修改用户级/全局配置，或受到宿主安全控制阻断；不得以 owner 同意为由绕过控制；
-- 必须执行明显超出交办目标的外部操作，或无法从目标、现场与既有合同确定其对象和影响。
+- 无法从仓库消除的重要歧义，涉及架构、领域职责、外部合同、公式、收益、风险或真实交易范围；
+- 必须改变交办目标、扩大产品或真实操作范围、引入基础设施；
+- 必须覆盖、删除或改写其他任务或用户修改；
+- 必须扩大权限、修改用户级/全局配置，或受到宿主控制阻断。
 
-需要 owner 决策时先完成可独立推进的调查与准备，说明已核对的事实、无法决定的事项、影响与建议，
-不把内部命名、实现细节、可避开的文件冲突或常规修复升级成方向性审批。研究候选晋升、改变交易阶段或
-真实账户操作仍按产品/领域合同由 owner 明确交办，不能从普通开发或盈利结果推导授权。
+先给事实、影响和建议，不把内部命名、常规修复、可避免冲突或缺少形式材料升级为 owner 决策。
+研究候选晋升、交易阶段变化、真实账户操作仍须 owner 明确交办，不能从普通开发或盈利结果推导。
 
 ## 任务授权与验证 Gate
 
-Gate 默认表示必须通过的验证或证据条件，不自动表示需要 owner 再次批准。测试、独立 Review、dry-run、
-exact identity、plan hash、preflight、质量、幂等、恢复与现场 readback 由 Codex 在已交办范围内完成；
-阶段校验通过后继续下一步。仅因进入新阶段、生成新 commit/hash、分包、分派或换会话，不暂停重复授权。
+Gate 表示必要的机器校验或事实条件，不是固定人工审批阶段。已交办范围内由 Codex 完成，满足后连续推进。
 
-owner 交办“补齐数据”“完成品种历史候选闭环”等实际交付目标时，授权覆盖该目标所需的真实 RQData
-查询/下载、Canonical 聚合/发布、Catalog/生产 DB 写入及候选资产构建；不要求再回复“授权了”或批准
-每份精确维护计划。Codex 自行生成并冻结 symbol、physical contract、周期、窗口、预算、plan hash、
-attempt 和恢复边界，通过现场校验后连续执行。只读、Plan-only 或仅编码的明确限制仍优先。
-文档中的“精确计划”“单次执行意图”和 `--apply` 表示机器执行边界，不是新增人工批准步骤；
-失败 attempt 不复用，禁重试与未知提交合同不因任务授权改变。
-
-宿主审批请求须如实说明交办目标、授权来源、精确对象、实际副作用和已通过的校验，不将真实下载或
-生产写入描述为只读。若宿主仅因授权不明拒绝，先核对是否已有覆盖该操作的用户指令；有新授权或
-能补充可核验的授权证据时，按宿主流程提交复核，不索取相同范围的重复批准。不得原样盲重试、换工具
-绕过、关闭安全控制或修改拒绝记录；拒绝未解除时报告 `HOST_APPROVAL_BLOCKED`，与任务未授权、
-数据质量失败和提交结果未知分开，不把它虚报为数据维护 attempt 失败。
-
-检查失败时定位并修复可证明的问题，补跑受影响验证；无法收敛时报告具体技术阻断，不请求 owner 批准跳过。
-生产结果未知时停止相关 mutation 并只读核对；安全重试无法证明或业务合同禁重试时，owner 再次同意也不能
-替代幂等、预算和恢复证明。自然业务尚未发生时保留待验收，不伪造结果、不误报为等待人工审批，
-不自行新增定时监控、通知或后台任务；其余符合目标的工作继续。
-宿主/工具审批或禁止规则单独遵守，项目授权与验证 Gate 不能覆盖它们。
+- “补齐数据”“完成历史候选闭环”等目标覆盖所需 RQData 查询/下载、Canonical 聚合/发布和 Catalog/生产 DB 写入。
+  Codex 确定精确品种、物理合约、周期、窗口、预算和恢复边界；现有工具需要 plan hash/attempt 时直接生成校验，不要求 owner 逐份批准。
+- 不把真实下载或写入描述为只读。宿主拒绝时补充已有授权与可核验证据，按宿主流程复核；不盲重试、换工具绕过或改拒绝记录。
+  未解除时报告 `HOST_APPROVAL_BLOCKED`，与质量失败、任务未授权、提交未知区分。
+- 校验失败就定位修复并补验受影响部分，不请求批准跳过。生产结果不明先只读查清，不能证明安全或合同禁重试就停止相关 mutation；
+  不清空旧状态、不复用失败 attempt，不以再次同意替代幂等、次数和预算约束。
+- 自然业务未发生就如实列为待观察，不拖住无关开发与发布，不擅自新建监控、通知或后台任务，不伪造验收。
 
 ## 任务内的真实操作
 
-交办目标包含真实数据修复、数据库变更、通知、发布、Runtime 切换或 Broker 操作时，交办本身覆盖为完成该目标
-所需的连续步骤；Codex 不再索取第二次人工授权，也不要求 owner 在执行前指定后来才能确定的 commit、plan hash
-或每个分包。Codex 从当前事实和既有合同推导精确对象，执行前核对目标、环境、范围和影响，按结果继续或停止。
-只要求讨论、编码、候选设计或只读审计的任务，不自动扩大为生产执行；明确交办历史候选闭环时，
-按上节包含必要数据修复与候选构建。实现完成也不虚报已发布或已运行。
+交办目标包含数据修复、数据库变更、通知、发布、Runtime 或 Broker 操作时，覆盖完成该目标的连续步骤。
+执行前核对对象、环境和影响；只要求编码或分析不自动扩大为生产操作。
 
-- RQData 查询/下载、Canonical/primary 与 Catalog/生产 DB 修复、migration、Scope/Redis 写入等，
-  在交办目标需要且精确计划与机器校验通过时连续执行；覆盖、迁移和删除须有可验证恢复办法。
-- 任务目标包含发布或上线时，Codex 可按已验证候选完成 main merge、annotated tag、GitHub Release、
-  Runtime promotion 与必要的现场回读。发布、切换和自然验收仍分别记录，不能以一个阶段的成功冒充另一个。
-- 任务目标包含真实通知或接入 Broker 时，先确定收件范围、账户与具体动作；不得根据研究结论自行新增受众、
-  创建订单或改变 `auto_order=false`。未交办的真实交易不在任务范围内。
-- 历史重写、force update、GitHub rules、远端或仓库归属变更属于方向性操作；只有交办目标确实需要时才做，
-  不作为普通开发和发布的顺手步骤。本项目普通推送目标为 `origin = git@github.com:firehell/guiyi-quant-workstation.git`。
-- 跨会话继续时核对任务目标、已完成步骤和现场状态；既已完成的操作不重复执行。生产结果不明先停止受影响
-  mutation 并只读核对；只有确认重试安全且符合既有幂等、次数、预算和恢复约束时才继续。不能证明安全时报告阻断，
-  不盲目重试；Alert one-shot 等业务禁重试合同仍有效。
+- 覆盖、删除或迁移生产数据前明确精确目标、影响、dry-run、可验证恢复与幂等边界；保留维护锁、质量校验和原子提交。
+- 发布或上线任务由 Codex 连续完成所需集成、main/tag/Release、构建、切换和现场确认，不另设冻结候选与重复批准。
+  只发布不推导 Runtime 切换；未实际发布或运行不能宣称已发生。
+- 通知/Broker 任务先确定受众、账户和动作；不得新增未交办受众、订单或改变 `auto_order=false`。
+  Alert one-shot 等禁重试合同继续有效。
+- 普通推送目标为 `origin = git@github.com:firehell/guiyi-quant-workstation.git`；历史重写、force update、远端/GitHub rules 变更不属日常收尾。
+- 跨会话先查已完成项与现场，不重复执行；测试、dry-run、health 不代替实际副作用的读回。
 
-测试、dry-run、health 或配置存在只证明各自范围，不代替真实操作读回。input validation、preflight、exact plan hash、
-维护锁、质量校验、幂等提交、原子性与失败恢复是执行条件，不是新的人工审批环节。
-
-不得将凭据读取到模型上下文、显示、提交或记录；允许既有程序通过安全配置加载使用。
-生产 `.env` 仅在交办目标需要配置变更时通过不暴露秘密的方式修改。
-外部输入须在敏感操作前校验类型、范围、身份和关联字段；系统命令使用固定 executable 与离散参数，
-SQL 使用参数绑定或既有 ORM；输入派生路径规范化后必须仍在允许根内。
-错误输出不得暴露凭据、内部地址、SQL 或 stack trace。失败、质量异常或安全开关缺失时 fail-closed。
-生产数据删除、覆盖、迁移前明确精确目标、影响、dry-run、可验证恢复办法与幂等边界；不触碰无关修改。
-仓库指引不能覆盖宿主或工具的安全控制。
+质量失败、安全开关缺失或必要事实不明时停止相关操作，不因省流程而绕过。
+凭据不进入模型上下文、日志、文档或提交，允许程序安全加载；生产配置仅在任务需要时修改。
+敏感操作前校验外部输入与路径边界，命令使用固定 executable 与离散参数，SQL 参数绑定；错误不暴露凭据、内部地址、SQL 或 stack trace。
+宿主安全控制不因项目授权而取消。
 
 ## 持续 Runtime 边界
 
-当前启用状态只看 `STATUS.md` 和实际 readback；交办新的运行目标时 Codex 按该目标完成必要的配置、切换和验证：
+当前启用集合只看 `STATUS.md` 和实际读回；现有运行不会自行扩大授权：
 
-- Market Runtime 只对 `operational_products.txt` 订阅当日 rank1 completed 1m；每日 18:05 及最多一次一小时后
-  retry 只对同一集合运行 `HistoricalDataManager.update`。盘后主业务失败最多向 owner 发起一次既有运维通知；
-  `missed/stuck` 只进入 health。
-- 已启用的 Alert Runtime 只按既有 Rule、Scope、audience 和 transport 处理新的 completed observation；Event
-  先提交，transport 最多一次。不得自动新增 Scope、Rule、收件人、retry、replay、backfill、fallback 或订单。
-- 默认关闭的 Live recovery、weekly audit 或其他可选任务不因模板存在而启用。已启用的既有定时任务按合同
-  自然运行；新增任务、Scope、数据范围或 Runtime 版本须属于交办目标，不能从模板或旧成功记录推导。
-- 持续运行不会自行扩大到其他生产数据、发布或交易，也不授权失败后的盲目重试。Market/Live/盘后细则见 `docs/DATA_CENTER.md`，Alert 细则见
-  `openspec/specs/subing-ths-alert/spec.md`，安装、服务清单和 promotion 合同见 `deploy/README.md`。
+- Market 只订阅 `operational_products.txt` 当日 rank1 completed 1m；既有盘后每日 18:05 及最多一次一小时后 retry 处理同一集合。
+  主业务失败最多发送一次既有运维通知，`missed/stuck` 只进 health。
+- Alert 按既有 Rule、Scope、audience、transport 处理新 completed observation；Event 先提交，transport 最多一次。
+  不自动新增 Scope、Rule、受众、retry、replay、backfill、fallback 或订单。
+- 可选任务不因模板存在而启用；新增运行目标、Scope、数据范围与切换须服务于交办目标。
+  细则见 `docs/DATA_CENTER.md`、`openspec/specs/subing-ths-alert/spec.md`、`deploy/README.md`。
 
 ## 跨模块硬约束
 
-1. 唯一 Historical 链为 `RQData -> staging + hard validation -> Canonical Parquet -> 八表 Catalog +
-   MainContractMap -> MarketDataService`；consumer 不得 glob、自选 active、自判主力、绕过质量或跨频回退。
-2. Historical Canonical 与 Live observation 分离；未确认 Bar 只用于 preview，不进入正式历史、信号或决策，
-   Live 不直接晋升 Canonical。
-3. 映射、Session、分区、coverage、身份或物理完整性不能证明时显式失败；不造数、插值、缩窗、替代或建立
-   第二套缺口事实。`active_products.txt` 与 `operational_products.txt` 不合并。
-4. 策略与研究保留 causality、strict-before、future-leak、prefix invariance、golden parity、warm-up、
-   合约切换、成交时序和 OOS/Walk-forward 边界；回看重绘与历史当时可知事实必须分开。
-5. 已退役能力不恢复 active API、CLI、Web、Runtime、Scope 或兼容 reader；新策略使用新身份、合同和版本。
-6. 数据、策略、成交、成本、风险或账户语义变化时更新对应 canonical 和版本；交易数值使用 `Decimal`。
+1. 唯一 Historical 链：`RQData -> staging + hard validation -> Canonical Parquet -> 八表 Catalog + MainContractMap -> MarketDataService`。
+   consumer 不 glob、自选 active、自判主力、绕过质量或跨频回退。
+2. Historical Canonical 与 Live observation 分离；未确认 Bar 仅 preview，不进入正式历史、信号或决策，Live 不直接晋升 Canonical。
+3. 映射、Session、分区、coverage、身份或完整性不能证明时显式失败，不造数、插值、缩窗或替代。
+   `active_products.txt` 与 `operational_products.txt` 不合并。
+4. 保留 causality、strict-before、future-leak、prefix invariance、golden parity、warm-up、合约切换、成交时序与 OOS/Walk-forward 边界。
+   回看重绘与历史当时可知事实分开。
+5. 已退役能力不恢复 active API、CLI、Web、Runtime、Scope 或兼容 reader；不再使用的入口查清引用后删除。
+6. 数据、策略、成交、成本、风险或账户语义变化更新对应合同、语义版本与历史身份，历史事实不改写；交易数值使用 `Decimal`。
 
 ## 验证与交付
 
-- 按风险先跑定向测试，再扩展模块测试、lint、typecheck、build 或 smoke；不机械运行与改动无关的全量检查。
-  数据、策略、migration、Runtime、通知和发布保留各自必要 Gate。
-- 文档/指引改动先做引用与格式检查及 `git diff --check`；按内容选择工程测试、OpenSpec 或 secret scan，
-  纯文字改动不触发无关测试，不以固定措辞断言代替业务行为验证。
-- 必须区分 `CODE_COMPLETE`、`TEST_COMPLETE`、`REVIEW_COMPLETE`、`EXTERNAL_GATE_PENDING`、
-  `RELEASED` 与 `RUNTIME_READY`；历史 evidence 不证明新版本，只有实际命令和运行证据支持完成声明。
-- Review 仅按 `Confirmed Issue`、`Risk / Needs Verification`、`Optional Improvement` 分类，不以 finding 数量为目标。
-  重要项说明证据、触发条件、实际影响、严重程度、建议验证方式及是否值得本版修复；不为充数建议无意义重构。
-- 交付简述结果、关键改动、实际验证及剩余风险/Gate；普通讨论直接回答，不强制固定段落、状态枚举或结论口号。
+- 先定向、再按实际风险扩展；文档只做引用、格式、diff 和适用 secret 检查，不触发无关业务测试。
+- 普通发布确认代码身份、受影响功能与必要服务实际生效即可交付；尚未发生的自然业务单独注明，不为等待它阻塞无关任务。
+- 如实区分已开发、已验证、已发布、已运行与自然业务待观察，不强制逐级状态枚举、固定格式或结论口号。
+  历史通过记录、fixture、health 和 provider accepted 不证明新版本业务完成或用户收到。
+- Review 说明确认问题、待验证风险与可选建议，给出实际影响；不追求 finding 数量或重复复核未受影响部分。
+- 一次简短交付说明结果、关键改动、实际验证与剩余问题即可；已有日志/工具结果可引用，不重复制造报告。
 
 ## 领域导航
 
-- 日常开发、任务定位和按影响验证：`docs/DEVELOPMENT.md`
-- 子代理职责、分派输入和统一交付格式：`docs/AGENT_ROLES.md`
-- 数据、Catalog、维护、Live 与盘后合同：`docs/DATA_CENTER.md` 及相关 data OpenSpec
-- HTDY 产品面与七周期入口：`PROJECT_SOURCE.md`、`DECISIONS.md`；共享 Alert Runtime、SuBing 身份、公式、
-  Event、Scope、migration 和兼容 Gate：`openspec/specs/subing-ths-alert/spec.md`
-- active 依赖与产品边界：`docs/ARCHITECTURE.md`、`PROJECT_SOURCE.md`、`DECISIONS.md`
-- release、服务、promotion 与 worktree：`.agents/skills/release-agent/SKILL.md`、`deploy/README.md`
-- 可执行验证命令：`TESTING.md`
+- 开发与验证：`docs/DEVELOPMENT.md`、`TESTING.md`；按需协作：`docs/AGENT_ROLES.md`
+- 产品与依赖：`PROJECT_SOURCE.md`、`DECISIONS.md`、`docs/ARCHITECTURE.md`
+- 行情与维护：`docs/DATA_CENTER.md`、相关 data OpenSpec、`.agents/skills/futures-data/SKILL.md`
+- SuBing/Alert：`openspec/specs/subing-ths-alert/spec.md`；其他业务按对应 accepted canonical
+- 发布与运行：`.agents/skills/release-agent/SKILL.md`、`deploy/README.md`

@@ -94,7 +94,7 @@ def test_invalid_anchor_never_falls_back(corrupt):
     "backend",
     ["sqlite", pytest.param("postgresql", marks=pytest.mark.isolated_postgresql)],
 )
-def test_real_subing_pipeline_reads_compact_manifests_and_preserves_legacy_newow(
+def test_real_historical_pipeline_reads_compact_subing_and_semantic_newow_manifests(
     tmp_path, monkeypatch, request, backend
 ):
     from sqlalchemy import create_engine, select
@@ -127,9 +127,12 @@ def test_real_subing_pipeline_reads_compact_manifests_and_preserves_legacy_newow
         ]
         assert compact
         assert all(
-            strategy.replace("-", "_") == "subing_reference"
+            (strategy.replace("-", "_") == "subing_reference"
+             or storage.resolve_manifest(session, row).get("reader") == "newow_product_reader_prefix_v4")
             for row, strategy in rows
             if storage.REF in row.dependency_manifest
         )
+        assert any(strategy.startswith("newow_") and storage.REF in row.dependency_manifest
+                   for row, strategy in rows)
         for row in compact:
             assert storage.resolve_manifest(session, row)["input_fingerprints"]

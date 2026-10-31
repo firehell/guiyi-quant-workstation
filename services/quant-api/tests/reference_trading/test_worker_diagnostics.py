@@ -150,7 +150,7 @@ def test_saved_capture_summary_identity_drift_rejected(field, bad):
         worker_entry._saved_capture_evidence(session, stream, latest, previous)
 
 
-def test_refresh_deferred_until_committed_healthy_round_then_started_once():
+def test_refresh_starts_after_bounded_round_even_when_strategy_is_blocked():
     from app.reference_trading.runtime import ForwardReferenceWorker
     from app.reference_trading.forward_inputs import ForwardInputUnavailable
     events, rounds, blocked = [], [0], [True]
@@ -169,7 +169,10 @@ def test_refresh_deferred_until_committed_healthy_round_then_started_once():
         rounds[0] += 1
         blocked[0] = False
     worker.serve(should_stop=lambda: rounds[0] >= 2, wait=wait)
-    assert events.index(('proof', True)) < events.index(('refresh', True))
+    # A SOURCE_BUSY strategy must not prevent independent historical maintenance.
+    assert events.index(('proof', False)) < events.index(('refresh', True))
+    assert events.index(('refresh', True)) < events.index(('proof', True))
+    assert events.count(('refresh', True)) == 1
     assert ('proof', False) in events and events.count(('refresh', True)) == 1
     worker.after_healthy_round()
     assert events.count(('refresh', True)) == 1

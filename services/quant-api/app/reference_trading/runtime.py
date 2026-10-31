@@ -85,6 +85,7 @@ class ForwardReferenceWorker:
         self.scan_live = True
         self.mark_ready = lambda: None
         self.after_healthy_round: Callable[[], None] = lambda: None
+        self.after_foreground_round: Callable[[], None] = lambda: None
         self.poll_observations: Callable[[], bool] = lambda: False
         from contextlib import nullcontext
         self.observation_priority = nullcontext
@@ -402,6 +403,8 @@ class ForwardReferenceWorker:
                     self.mark_ready()
                     if not should_stop():
                         self.after_healthy_round()
+                if not should_stop():
+                    self.after_foreground_round()
                 if not should_stop():
                     wait(scan_interval_seconds)
         except ForwardWorkCancelled:

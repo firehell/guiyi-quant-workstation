@@ -476,7 +476,14 @@ class TheoreticalReferenceOut(_Out):
     mean_return_pct: str | None
 
 
+class ReferenceUpdateStatusOut(_Out):
+    status: Literal["current", "updating"]
+    result_through: datetime
+    market_through: datetime
+
+
 class ReferenceValueOut(_Out):
+    reference_status: ReferenceUpdateStatusOut | None = Field(default=None, exclude_if=lambda value: value is None)
     page_performance: PagePerformanceOut
     holding_curve: HoldingCurveOut | None = Field(default=None, exclude_if=lambda value: value is None)
     theoretical: TheoreticalReferenceOut | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -518,6 +525,7 @@ class ReferenceCurveOut(_Out):
 
 
 class ReferenceSplitValueOut(_Out):
+    reference_status: ReferenceUpdateStatusOut | None = Field(default=None, exclude_if=lambda value: value is None)
     reference_part: Literal["overview", "curve", "history", "panel"]
     reference_mode: ReferenceModeValue | None = Field(default=None, exclude_if=lambda value: value is None)
     performance_since: date

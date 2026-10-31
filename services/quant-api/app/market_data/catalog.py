@@ -76,13 +76,24 @@ class _PostgresMaintenanceLease(MaintenanceLease):
     def __init__(self, connection: Connection, *, close_on_release: bool) -> None:
         self._connection = connection
         self._close_on_release = close_on_release
+        self._released = False
 
     def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
         try:
-            self._connection.execute(
+            released = self._connection.execute(
                 text("SELECT pg_advisory_unlock(:key)"),
                 {"key": _MAINTENANCE_LOCK_KEY},
-            )
+            ).scalar_one()
+            if released is not True:
+                raise RuntimeError("MAINTENANCE_LEASE_RELEASE_UNVERIFIED")
+        except BaseException:
+            # A rollback/close alone returns a session-level lock to the pool.
+            # Discard the DBAPI connection whenever unlock was not proved.
+            self._connection.invalidate()
+            raise
         finally:
             if self._close_on_release:
                 self._connection.close()
@@ -132,18 +143,25 @@ class MarketCatalog:
     def __init__(self, session: Session, canonical_root: Path) -> None:
         self.session = session
         self.canonical_root = canonical_root.resolve()
+        self.maintenance_caller = "market-catalog"
 
-    def acquire_maintenance_lock(self) -> MaintenanceLease | None:
+    def acquire_maintenance_lock(self, *, caller: str | None = None) -> MaintenanceLease | None:
         """尝试获取全局维护锁；未获取到返回 ``None``（另一维护任务进行中）。
 
         PostgreSQL 使用 session 级 advisory lock；非 PG 方言返回 noop 租约便于单测。
         """
+        caller = self.maintenance_caller if caller is None else caller
+        if not caller or len(caller) > 40 or any(c not in "abcdefghijklmnopqrstuvwxyz0123456789-_" for c in caller):
+            raise ValueError("MAINTENANCE_CALLER_INVALID")
         bind = self.session.get_bind()
         if bind.dialect.name != "postgresql":
             return _NoopMaintenanceLease()
         connection = bind.connect() if isinstance(bind, Engine) else bind
         close_on_release = isinstance(bind, Engine)
         try:
+            if close_on_release:
+                connection.execute(text("SELECT set_config('application_name', :name, true)"),
+                                   {"name": "guiyi-maintenance:" + caller})
             acquired = connection.execute(
                 text("SELECT pg_try_advisory_lock(:key)"),
                 {"key": _MAINTENANCE_LOCK_KEY},
@@ -156,7 +174,8 @@ class MarketCatalog:
                 connection,
                 close_on_release=close_on_release,
             )
-        except Exception:
+        except BaseException:
+            connection.invalidate()
             if close_on_release:
                 connection.close()
             raise
