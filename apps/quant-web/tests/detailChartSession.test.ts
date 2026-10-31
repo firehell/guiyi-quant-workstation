@@ -113,3 +113,16 @@ test('changed history replaces facts and maps the viewport by common bar time', 
   assert.deepEqual(f.session.viewport(), { from: 200, to: 299 })
   f.session.dispose()
 })
+
+
+test('crosshair forwarding unwraps leased series and rejects writes after release',()=>{
+ const f=fixture();f.session.setIdentity('rb:60m')
+ const original=f.raw.addSeries.bind(f.raw);let nativeSeries:any,received:any[]=[]
+ f.raw.addSeries=(...args:any[])=>{nativeSeries=original(...args);return nativeSeries}
+ f.raw.setCrosshairPosition=(price:any,time:any,series:any)=>received.push([price,time,series])
+ const lease=f.session.acquire(f.container(),{}),wrapped=lease.addSeries(f.candle)
+ lease.setCrosshairPosition(105,123 as any,wrapped)
+ assert.equal(received.length,1);assert.equal(received[0][2]===nativeSeries,true)
+ lease.remove();lease.setCrosshairPosition(110,124 as any,wrapped);assert.equal(received.length,1)
+ f.session.dispose()
+})

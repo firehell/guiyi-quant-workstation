@@ -218,6 +218,9 @@ export function createDetailChartSession(dependencies: {
         } else raw.applyOptions(settings ?? {})
         return wrapSeries(raw, role ?? undefined)
       }
+      if (property === 'setCrosshairPosition') return (price: number, time: Time, item: ISeriesApi<SeriesType, Time>) => {
+        if (active) target.setCrosshairPosition(price, time, wrappers.get(item) ?? item)
+      }
       if (property === 'removeSeries') return (item: ISeriesApi<SeriesType, Time>) => {
         const raw = wrappers.get(item) ?? item
         if (active && series.delete(raw)) target.removeSeries(raw)

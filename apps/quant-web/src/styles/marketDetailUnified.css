@@ -120,7 +120,8 @@
 
 /* Newow's public light PC chart surface; other analysis views keep their theme. */
 .unified-detail-light .newow-product-chart-stage {
-  --gy-chart-bg:#fff; --gy-chart-grid:#f0f0f0; --gy-chart-axis:#e1e1e1;
+  --gy-chart-bg:#fff; --gy-chart-text:#333; --gy-chart-grid:#f0f0f0; --gy-chart-axis:#e5e5e5;
+  --gy-chart-candle-up:#ff3b30; --gy-chart-candle-down:#34c759;
   background:#fff;
 }
 .unified-detail-light .newow-product-chart-stage__reference-prices { background:#fafafa; }

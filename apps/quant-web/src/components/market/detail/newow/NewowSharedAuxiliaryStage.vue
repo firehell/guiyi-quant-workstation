@@ -7,9 +7,9 @@ import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from './newo
 import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from './newowUpDownEnergyPrimitive'
 import { NewowMainForceControlPrimitive, buildNewowMainForceData } from './newowMainForceControlPrimitive'
 import { NewowTrendReversalPrimitive, buildNewowTrendReversalData } from './newowTrendReversalPrimitive'
-import { formatChartAxisTimeInShanghai } from '@/utils/barTime'
+import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 
-const props = defineProps<{ chart: NewowProductSectionResponse<'chart'> | null; auxiliary: NewowProductSectionResponse<'auxiliary'> | null; error?: string | null; viewport?: IRange<Time>|null; cursor?: Time|null }>()
+const props = defineProps<{ chart: NewowProductSectionResponse<'chart'> | null; auxiliary: NewowProductSectionResponse<'auxiliary'> | null; error?: string | null; rightScaleWidth?: number; viewport?: IRange<Time>|null; cursor?: Time|null }>()
 const emit=defineEmits<{viewport:[value:IRange<Time>|null];cursor:[value:Time|null]}>()
 const container = ref<HTMLElement | null>(null)
 const aligned = computed(() => alignNewowAuxiliaryChartModel(props.chart, props.auxiliary))
@@ -35,6 +35,7 @@ function render() {
   if (!series || !chart) return
   const model = props.chart ? buildNewowProductChartModel(props.chart) : null
   const value = aligned.value
+  if(model)chart.applyOptions({timeScale:{timeVisible:model.identity.frequency.endsWith('m')}})
   series.setData(model?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, model.identity.frequency, bar.tradingDay), value: 0 })) ?? [])
   mirror.setData(value?.component === 'zhaoyao_mirror' ? buildNewowZhaoyaoMirrorData(value.series) : [], 12)
   energy.setData(value?.component === 'up_down_energy' && model ? buildNewowUpDownEnergyData(value.series, model.bars) : [], 12)
@@ -46,7 +47,7 @@ function render() {
 }
 onMounted(() => {
   if (!container.value) return
-  chart = createChart(container.value, { height: 138, width: container.value.clientWidth, layout: { textColor: '#8e8e93', fontSize: 11, background: { color: '#fff' } }, rightPriceScale: { visible: false }, timeScale: { tickMarkFormatter: formatChartAxisTimeInShanghai }, grid: { vertLines: { visible: false }, horzLines: { visible: false } } })
+  chart = createChart(container.value, { height: 138, width: container.value.clientWidth, localization:{timeFormatter:formatChartTimeInShanghai}, layout: { textColor: '#8e8e93', fontSize: 11, background: { color: '#fff' } }, rightPriceScale: { visible: false }, timeScale: { tickMarkFormatter: formatChartAxisTimeInShanghai }, grid: { vertLines: { visible: false }, horzLines: { visible: false } } })
   series = chart.addSeries(LineSeries, { color: 'transparent', lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false })
   for (const primitive of [mirror, energy, control, reversal]) series.attachPrimitive(primitive)
   observer = new ResizeObserver(() => { if (chart && container.value) chart.resize(container.value.clientWidth, 138) })
@@ -67,7 +68,7 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.remove(); chart = null; s
     <p v-else-if="!aligned" role="status">当前合约段的辅助指标未就绪。</p>
     <!-- Only actual auxiliary gestures may drive the main viewport. LWC applies
          programmatic ranges asynchronously and may clamp them to loaded data. -->
-    <div ref="container" class="shared-auxiliary__canvas" @wheel.passive="armViewportGesture" @pointerdown="startViewportGesture" @pointermove="draggingViewport && armViewportGesture()" @pointerup="draggingViewport=false" @pointercancel="draggingViewport=false" @pointerleave="draggingViewport=false" />
+    <div ref="container" class="shared-auxiliary__canvas" :style="{width:'calc(100% - '+(rightScaleWidth??0)+'px)'}" @wheel.capture.passive="armViewportGesture" @pointerdown.capture="startViewportGesture" @pointermove.capture="draggingViewport && armViewportGesture()" @pointerup="draggingViewport=false" @pointercancel="draggingViewport=false" @pointerleave="draggingViewport=false" />
   </section>
 </template>
 <style scoped>
