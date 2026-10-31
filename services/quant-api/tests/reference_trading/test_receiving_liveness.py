@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import json
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
 from app.db.base import Base
@@ -400,6 +400,40 @@ def test_budget_failure_does_not_mutate_protocol_ack_or_rows(tmp_path):
     with pytest.raises(ReceivingLivenessError):
         sample(check_budget=expired)
     assert (protocol.path.read_bytes(), journal.redis.values) == before
+
+
+def test_payload_free_control_abort_preserves_rollback(tmp_path):
+    from app.reference_trading.receiving_liveness import ReceivingControlAbort
+
+    factory, protocol, journal, _, _, _, sample = _setup(tmp_path)
+    before = protocol.path.read_bytes(), deepcopy(journal.redis.values)
+    calls = [0]
+
+    def abort_on_third_check():
+        calls[0] += 1
+        if calls[0] == 3:
+            raise ReceivingControlAbort
+
+    with pytest.raises(ReceivingControlAbort):
+        sample(check_budget=abort_on_third_check)
+    assert calls == [3]
+    assert (protocol.path.read_bytes(), journal.redis.values) == before
+    with factory() as session:
+        assert session.scalar(text("PRAGMA query_only")) == 0
+
+
+def test_source_cohort_error_is_still_redacted(tmp_path, monkeypatch):
+    from app.reference_trading import receiving_liveness as liveness
+    from app.runtime_cohort import CohortError
+
+    _, _, _, _, _, _, sample = _setup(tmp_path)
+
+    def source_failure(*_args, **_kwargs):
+        raise CohortError("COHORT_FORWARD_DEADLINE_EXCEEDED")
+
+    monkeypatch.setattr(liveness, "_authority", source_failure)
+    with pytest.raises(ReceivingLivenessError, match="REFERENCE_RECEIVING_LIVENESS_UNPROVEN"):
+        sample()
 
 
 def _append(journal, identifier):

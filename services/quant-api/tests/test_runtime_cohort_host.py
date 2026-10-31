@@ -1,5 +1,6 @@
 """Fault injection against the real Mac cohort adapter, without host mutations."""
 
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,39 @@ from app.runtime_cohort import CohortError
 from app.runtime_cohort_host import CohortHost
 
 NOW = datetime(2026, 10, 26, 1, tzinfo=UTC)
+
+
+def test_original_cohort_snapshot_preserves_trusted_budget_abort(tmp_path, monkeypatch):
+    from app.reference_trading import receiving_liveness as liveness
+
+    target = binding(tmp_path, "reference-worker")
+    host = object.__new__(CohortHost)
+    host.now = lambda: NOW
+    host._reference_receiving_context = lambda _target: nullcontext(
+        (object(), object(), object(), None)
+    )
+    plan = {
+        "new": asdict(BindingRegistry(1, {"reference-worker": target})),
+        "reference_receiving_handover": {},
+    }
+    calls = [0]
+
+    def budget():
+        calls[0] += 1
+        if calls[0] == 3:
+            raise CohortError("COHORT_NEW_READY_TIMEOUT")
+
+    def aborted_snapshot(*_args, check_budget, **_kwargs):
+        for _ in range(3):
+            check_budget()
+
+    monkeypatch.setattr(liveness, "snapshot_receiving", aborted_snapshot)
+    with pytest.raises(CohortError, match="COHORT_NEW_READY_TIMEOUT"):
+        host._receiving_snapshot(
+            plan, {"reference_receiving_handover": {}},
+            {"at": NOW.isoformat()}, budget,
+        )
+    assert calls == [3]
 
 
 def binding(tmp_path, service="market-feed", **kwargs):

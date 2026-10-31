@@ -2,6 +2,69 @@ import pytest
 from app import runtime_retirement as m
 
 
+@pytest.mark.parametrize("omit_close_resolution", (False, True))
+def test_archive_post_feed_stopped_chain_requires_unique_close_resolution(
+    tmp_path, monkeypatch, omit_close_resolution
+):
+    from app import runtime_cohort as cohort, runtime_cohort_recovery as recovery
+    from app.runtime_handover import _write
+    from tests.test_runtime_stopped_recovery import recover_after_feed_failure
+
+    host, failed, fresh = recover_after_feed_failure(tmp_path, monkeypatch)
+    if omit_close_resolution:
+        folder = host.directory / "cohort-forward-recoveries" / fresh["plan_sha256"]
+        receipt = m._json(folder / "receipt.json")
+        del receipt["feed_close_resolution"]
+        _write(folder / "receipt.json", receipt)
+        state = m._json(folder / "state.json")
+        state["receipt_sha256"] = m.sha((folder / "receipt.json").read_bytes())
+        _write(folder / "state.json", state)
+    terminal = host.directory / "cohort-attempts" / ("f" * 64)
+    terminal.mkdir(mode=0o700)
+    _write(
+        terminal / "plan.json",
+        {"plan_sha256": terminal.name, "created_at": fresh["created_at"], "new": {}},
+    )
+    _write(
+        terminal / "state.json",
+        {
+            "schema_version": 1,
+            "plan_sha256": terminal.name,
+            "phase": "switched",
+            "effects": {
+                "verified": {"continuous_identity": "matched"},
+                "calendars_on": {
+                    "calendar_registration_only": True,
+                    "identity": "matched",
+                },
+            },
+        },
+    )
+    previous = m._json(failed["stopped_confirmation"]["path"])
+    assert len(previous["attempts"]) == 2
+    expected = set(previous["attempts"]) | {
+        fresh["plan_sha256"],
+        failed["plan_sha256"],
+        fresh["closed_feed"]["plan_sha256"],
+        failed["source"]["plan_sha256"],
+        terminal.name,
+    }
+    monkeypatch.setattr(cohort, "validate", lambda *a, **k: None)
+    monkeypatch.setattr(recovery, "_validate", lambda *a, **k: None)
+    seal = {
+        "directory": str(host.directory),
+        "releases": [],
+        "terminal_cohort": terminal.name,
+        "closed_attempts": sorted(expected),
+        "originals": {str(p): m.sha(p.read_bytes()) for p in tmp_path.rglob("*.json")},
+    }
+    if omit_close_resolution:
+        with pytest.raises(ValueError):
+            m._closed_history(seal, tmp_path)
+    else:
+        assert m._closed_history(seal, tmp_path) == expected
+
+
 def test_archive_original_intake_timeout_closed_by_stopped_recovery(
     tmp_path, monkeypatch
 ):
