@@ -238,6 +238,15 @@ def native(tmp_path):
     return host
 
 
+def bounded_window(host, proof=None):
+    value = {} if proof is None else proof
+
+    def read(*, with_valid_until=False):
+        return (value, host.now() + timedelta(seconds=60)) if with_valid_until else value
+
+    return read
+
+
 def test_native_parked_proof_requires_actual_matching_pid_and_free_lock(
     tmp_path, monkeypatch
 ):
@@ -347,6 +356,61 @@ def test_samegen_startup_accepts_authoritative_current_day_without_promotion_res
     )
     assert result["mode"] == "same_generation_startup"
     assert result["registered_trading_day"] == date.isoformat(day)
+
+
+def test_bounded_startup_window_preserves_proof_and_stops_at_session_end(tmp_path):
+    from types import SimpleNamespace
+    from app.market_data.market_phase import MarketPhase
+
+    now = Host(tmp_path).now()
+    day = now.date()
+    session = SimpleNamespace(
+        start=now - timedelta(minutes=1), end=now + timedelta(seconds=1)
+    )
+    phase = SimpleNamespace(
+        symbol="rb", phase=MarketPhase.TRADING, trading_day=day,
+        current_session=session, next_session_start=None,
+    )
+    kwargs = dict(
+        now=now, products=("rb",),
+        resolver=SimpleNamespace(resolve=lambda *_: phase),
+        registered_day=day, subscriptions={"rb": "RB2701"},
+        dominant=lambda *_: "RB2701", sessions=lambda *_: (session,),
+    )
+    proof = module().prove_same_generation_startup(**kwargs)
+    bounded, valid_until = module().prove_same_generation_startup(
+        **kwargs, with_valid_until=True,
+    )
+    assert bounded == proof
+    assert valid_until == session.end
+
+
+@pytest.mark.parametrize("hour", (6, 18))
+def test_bounded_startup_window_stops_at_missing_calendar_threshold(hour):
+    from datetime import datetime
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+    from app.market_data.market_phase import MarketPhase
+
+    zone = ZoneInfo("Asia/Shanghai")
+    now = datetime(2026, 10, 30, hour - 1, 59, 59, 500000, tzinfo=zone)
+    day = now.date()
+    session = SimpleNamespace(
+        start=now.replace(hour=0), end=now.replace(hour=1),
+    )
+    phase = SimpleNamespace(
+        symbol="rb", phase=MarketPhase.CLOSED, trading_day=day,
+        current_session=None, next_session_start=None,
+    )
+    proof, valid_until = module().prove_same_generation_startup(
+        now=now, products=("rb",),
+        resolver=SimpleNamespace(resolve=lambda *_: phase),
+        registered_day=day, subscriptions={"rb": "RB2701"},
+        dominant=lambda *_: "RB2701", sessions=lambda *_: (session,),
+        with_valid_until=True,
+    )
+    assert proof["phases"] == {"rb": "CLOSED"}
+    assert valid_until == now.replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
 @pytest.mark.parametrize(
@@ -576,10 +640,9 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
     current = native(host.directory)
     current.now = host.now
     current.monotonic = lambda: 0.0
-    current.recovery_window = lambda: {
-        "mode": "same_generation_startup",
-        "closed_idle": False,
-    }
+    current.recovery_window = bounded_window(
+        current, {"mode": "same_generation_startup", "closed_idle": False}
+    )
     current._active = lambda binding: {
         "phase": "active",
         "ready": True,
@@ -1634,7 +1697,7 @@ def await_intake_case(tmp_path, monkeypatch):
     current = native(host.directory)
     current.now = host.now
     current.monotonic = lambda: 0.0
-    current.recovery_window = lambda: {"closed_idle": False}
+    current.recovery_window = bounded_window(current, {"closed_idle": False})
     current._active = lambda binding: {
         "ready": True,
         "proof": {
@@ -1914,7 +1977,7 @@ def timed_receiving_case(
     samples = []
     current.monotonic = lambda: elapsed[0]
     current.now = lambda: NOW + timedelta(seconds=elapsed[0])
-    current.recovery_window = lambda: {}
+    current.recovery_window = bounded_window(current)
     current._active = lambda binding: {
         "ready": True,
         "proof": {
@@ -1955,6 +2018,48 @@ def timed_receiving_case(
     monkeypatch.setattr(module(), "port_is_ready", lambda name: True)
     monkeypatch.setattr(module(), "sleep", lambda seconds: None)
     return current, source, {"receiving_context": context}, samples
+
+
+def test_native_snapshot_preserves_only_its_trusted_budget_abort(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+    from app.reference_trading import receiving_liveness as liveness
+
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    current.now = host.now
+    current._reference_receiving_context = lambda _target: nullcontext(
+        (SimpleNamespace(read=lambda: {"status": "active", "intake_error": None}),
+         object(), object(), None)
+    )
+    source["reference_receiving_handover"] = {}
+    attempt = host.directory / "cohort-attempts" / source["plan_sha256"]
+    _, original = module()._resolution_source(attempt / "state.json")
+    original["effects"]["drain"]["reference_receiving_handover"] = {}
+    _write(attempt / "state.json", original)
+    calls = [0]
+
+    def budget():
+        calls[0] += 1
+        if calls[0] == 4:  # Third callback inside snapshot_receiving.
+            raise module().CohortError("COHORT_FORWARD_DEADLINE_EXCEEDED")
+
+    def aborted_snapshot(*_args, check_budget, **_kwargs):
+        for _ in range(3):
+            check_budget()
+
+    monkeypatch.setattr(liveness, "snapshot_receiving", aborted_snapshot)
+    with pytest.raises(ValueError, match="COHORT_FORWARD_DEADLINE_EXCEEDED"):
+        current._snapshot(source, budget, state={"at": host.now().isoformat()})
+    assert calls == [4]
+
+    monkeypatch.setattr(
+        liveness, "snapshot_receiving",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(liveness.ReceivingControlAbort()),
+    )
+    with pytest.raises(ValueError, match="REFERENCE_RECEIVING_LIVENESS_UNPROVEN"):
+        current._snapshot(source, lambda: None, state={"at": host.now().isoformat()})
 
 
 @pytest.mark.parametrize("feed", [False, True])
@@ -2010,39 +2115,26 @@ def test_await_samples_live_ready_before_expensive_session_proof(
                 state["ready"] = False
         return state
 
-    def session_proof():
+    def session_proof(*, with_valid_until=False):
         session_reads.append(live_reads[0])
         assert live_reads[0] >= 2
-        return {}
+        value = {}
+        return (value, current.now() + timedelta(seconds=60)) if with_valid_until else value
 
     current._active = transient_live
     current.recovery_window = session_proof
     proof = current.await_consumers(source, audit, lambda: None)
     assert proof["advanced_count"] == 1
     assert session_reads == [3]
-    assert live_reads[0] == 4  # One transient miss, two samples, final recheck.
+    assert live_reads[0] == 5  # One transient miss, two samples, two final reads.
 
 
-def test_final_live_poll_does_not_discard_valid_receiving_pair(
+def test_transient_final_live_poll_reuses_verified_candidate(
     tmp_path, monkeypatch
 ):
-    from app.reference_trading.inbox import _digest
-
     current, source, audit, samples = timed_receiving_case(
-        tmp_path, monkeypatch, offsets=(0, 1, 2)
+        tmp_path, monkeypatch, offsets=(0, 1)
     )
-    snapshot = current._snapshot
-
-    def same_latest_cycle(*args, **kwargs):
-        value = snapshot(*args, **kwargs)
-        if len(samples) == 3:
-            value["owner_cycle_at"] = samples[1]["owner_cycle_at"]
-            value["snapshot_sha256"] = _digest(
-                {key: item for key, item in value.items() if key != "snapshot_sha256"}
-            )
-        return value
-
-    current._snapshot = same_latest_cycle
     active = current._active
     live_reads = [0]
     session_reads = [0]
@@ -2056,14 +2148,38 @@ def test_final_live_poll_does_not_discard_valid_receiving_pair(
         return state
 
     current._active = transient_live
-    current.recovery_window = lambda: session_reads.__setitem__(
-        0, session_reads[0] + 1
-    )
+    def session_proof(*, with_valid_until=False):
+        session_reads[0] += 1
+        value = {}
+        return (value, current.now() + timedelta(seconds=60)) if with_valid_until else value
+
+    current.recovery_window = session_proof
     proof = current.await_consumers(source, audit, lambda: None)
     assert proof["before_sha256"] == samples[0]["snapshot_sha256"]
-    assert proof["after_sha256"] == samples[2]["snapshot_sha256"]
-    assert session_reads == [2]
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+    assert session_reads == [1]
     assert live_reads == [5]
+
+
+def test_session_boundary_drops_candidate_before_full_resample(
+    tmp_path, monkeypatch
+):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1, 2)
+    )
+    windows = [0]
+
+    def session_proof(*, with_valid_until=False):
+        windows[0] += 1
+        proof = {}
+        valid_until = current.now() if windows[0] == 1 else current.now() + timedelta(seconds=60)
+        return (proof, valid_until) if with_valid_until else proof
+
+    current.recovery_window = session_proof
+    result = current.await_consumers(source, audit, lambda: None)
+    assert result["after_sha256"] == samples[2]["snapshot_sha256"]
+    assert len(samples) == 3
+    assert windows == [2]
 
 
 def test_sample_expiry_never_erases_an_ack_regression(tmp_path, monkeypatch):
