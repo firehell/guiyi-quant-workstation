@@ -1,3 +1,17 @@
+10/31 独立SimNow最后统一步骤已准备，实际切换安排为11/2 15:05（北京时间）一次性执行。
+48私有候选配置/SDK兼容/无Broker预检/render通过；现场原生window check全60休市、目标20261102通过，
+但原生plan返回RESULT_UNKNOWN，独立原生snapshot诊断明确定位ordinary_takeover.budget_binding拒绝：
+20261102 attempt1/CONTINUOUS_RECOVERY_REQUIRED原block仍在。没有switch plan、许可、claim、停启、重连或账户写入。
+四账本SHA、原44/PID1733/run0900f127…保持，pending=true/opening=false。候选及证据位于output/release-unification-20261031/simnow-v48-final/。
+只读未来Calendar/Session及预算复验：20261103 attempt0/无block，全60来源齐备；推导部署窗口11/2 15:00后至严格早于20:49，
+连接窗口20:58–21:02；这些未来facts不代替届时fresh窗口/预算/账户预检，旧block不删除。
+宿主首次拒绝未明确授权的定时生产副作用后，owner明确回复“授权这次定时执行（推荐）”；
+一次性heartbeat automation `simnow`已实际创建ACTIVE并回读，附当前聊天，11/2周一15:05触发、COUNT=1。
+届时fresh原生检查通过才单次切换SimNow、实际读回并解除44引用后non-force清理；失败停止、不自动重试或新增后续任务。
+当前仍是正式十服务48/gen44 + 独立SimNow44两发布树，不能提前声明单树或账户恢复完成。
+最小下一步：由上述已授权一次性任务在合法窗口实际完成切换及清理，无需owner重复下指令。
+以下为此前检查点：
+
 10/31 HC/SS/ZN三流精确恢复、十服务统一及无引用旧树41/47清理均已实际完成。
 PR560/develop、PR561/main、annotated v1.16.48/GitHub Release已完成，exact
 `85ed0eca5cf4fb339fdba6f3b6586d855516fa30`，完整tree等受测06f17392ff；正式48树clean detached、独立冻结依赖/Web build/render通过。
