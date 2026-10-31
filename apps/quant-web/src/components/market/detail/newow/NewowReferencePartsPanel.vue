@@ -29,6 +29,7 @@ const recordElements = new Map<string, HTMLElement>()
 const overview = computed(() => props.state.overview.value?.value?.reference_part === 'overview' ? props.state.overview.value.value : null)
 const curve = computed(() => props.state.curve.value?.value?.reference_part === 'curve' ? props.state.curve.value.value.curve : null)
 const history = computed(() => props.state.history.value?.value?.reference_part === 'history' ? props.state.history.value.value : null)
+const updateStatus = computed(() => overview.value?.reference_status ?? null)
 const anchor = computed(() => overview.value?.actual_available_through ?? '')
 const floor = ref<string | null>(null)
 watch(() => props.chart?.meta.snapshot_token, () => { floor.value = null; selectedId.value = null; ideal.value = props.state.mode.value.includes('page_ideal'); preset.value = ideal.value ? 'ideal' : 'all'; fact.value = 'page' })
@@ -149,7 +150,7 @@ const segmentAnnuals = computed(() => curve.value?.segment_annuals ?? [])
 const segmentField = (segment: Readonly<Record<string, unknown>>, key: string) => segment[key] == null ? null : String(segment[key])
 const annualLabel = computed(() => curve.value?.annualized_pct == null ? '不可计算' : `${Number(curve.value.annualized_pct).toFixed(2)}%`)
 const waiting = computed(() => {
-  if (!props.state.chartCompatible.value || !overview.value || overview.value.summary.open_count !== 0) return null
+  if (!props.state.chartCompatible.value || !overview.value || updateStatus.value?.status === 'updating' || overview.value.summary.open_count !== 0) return null
   const bar = props.chart?.value?.bars.at(-1)
   const frame = props.chart?.value?.frames.find(item => item.bar_end === bar?.bar_end)
   return bar?.completed && bar.observation_eligible && frame?.status.status === 'ready'
@@ -186,6 +187,7 @@ const historyCards = computed(() => records.value.filter(row => !waitingRecord.v
         <div><dt>{{ pageMode ? '参考次数' : '已完成交易数' }}</dt><dd>{{ metrics.closed_count }}</dd></div>
       </dl><p v-if="metrics.closed_count === 0">{{ pageMode ? '暂无页面参考交易或期末估值' : '暂无已完成参考交易' }}；统计指标不是 0%。</p></section>
       <p v-else-if="curve" role="status">完整统计暂不可用，不能从采样曲线推算收益或回撤。</p>
+      <p v-if="updateStatus" role="status" data-testid="newow-reference-update-status">参考结果截至 {{ formatBeijingInstant(updateStatus.result_through) }}<template v-if="updateStatus.status === 'updating'">，正在更新至 {{ formatBeijingInstant(updateStatus.market_through) }}。当前统计、曲线与记录使用已验证结果。</template></p>
       <header class="newow-reference__records-heading"><h3>历史参考记录</h3><span>历史参考推演，仅供参考，不作为实时买卖提示</span></header>
       <article v-if="waiting" :id="waitingRecord && isTrade(waitingRecord) ? `reference-trade-${waitingRecord.reference_trade_id}` : undefined" :ref="element => { if (element && waitingRecord && isTrade(waitingRecord)) recordElements.set(waitingRecord.reference_trade_id, element as HTMLElement) }" class="newow-reference__card newow-reference__waiting" data-testid="newow-reference-waiting">
         <header class="newow-reference__record-top"><div class="newow-reference__record-meta"><strong class="newow-reference__period is-waiting">空仓等待中</strong><span :title="formatBeijingInstant(waiting.bar_end)">{{ waitingRecord ? formatBeijingInstant(card(waitingRecord).exitDate).slice(0, 10) + ' → 至今' : '策略空仓 · ' + waiting.physical_contract }}</span></div><b v-if="waitingRecord" class="newow-reference__record-return" :data-direction="referencePercentDisplay(card(waitingRecord).pct).direction">盈亏 {{ referencePercentDisplay(card(waitingRecord).pct).text }}</b></header>

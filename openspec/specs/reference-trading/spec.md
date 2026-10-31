@@ -1442,3 +1442,27 @@ first-seen.
 
 本次 AL 维护的休市窗口沿用原生 cohort 的 CLOSED/BREAK 判定：无当前 Session、Feed确认宽限结束，
 距离下一Session超过660秒；BREAK不等于允许盘中执行。每次来源fence仍fresh重验，不放宽未知/互斥或退出预算。
+
+
+### Newow historical prefix refresh and read availability
+
+Historical Newow assets use a versioned semantic input-prefix proof, independently of
+Canonical partition byte fingerprints. A normal same-partition append SHALL preserve
+the saved completed input prefix; OHLC, physical owner, effective Calendar/Session,
+quality, boundary, formula or reference-model changes inside that prefix SHALL fail
+closed and require a new revision. Owner intervals SHALL be clipped to the actual
+computed cutoff. Legacy evidence SHALL NOT be relabelled as a new proof.
+
+Reference reads MAY expose a verified earlier result while historical refresh catches
+up. Successful responses disclose current/updating, result_through and market_through.
+Statistics, curves, marks and paginated records SHALL share the same saved generation
+and result cutoff, including dual-strategy dependency generations. GET performs no
+asset construction or mutation. Missing or unverifiable inputs remain explicit errors.
+
+Historical refresh permission SHALL depend on foreground work and durable pending
+observations/captures, not global strategy calculation readiness. Existing rest-window,
+maintenance-lock and safe-batch boundaries remain mandatory. A blocked strategy cannot
+starve unrelated historical routes; actual unfinished observations/captures still take
+precedence. Lock release failure SHALL discard the owning database connection rather
+than return an unverified session-level advisory lock to the pool. No timeout authorizes
+automatic lock takeover.

@@ -229,7 +229,7 @@ def test_persisted_daily_weekly_availability_uses_authoritative_owner(monkeypatc
             "items": [], "next_cursor": None}
     saved._query = SimpleNamespace(streams=lambda **kwargs: [{"stream_id": "stream"}],
                                    trades=lambda *args, **kwargs: page,
-                                   summary=lambda *args, **kwargs: {})
+                                   summary=lambda *args, **kwargs: {"revision_id": "revision", "seq": 2})
     manifest = {"query_since": day.isoformat(), "query_through": "2026-09-10",
                 "query_as_of": cutoff.isoformat(), "reader": "newow_product_reader_intraday_v3"}
     saved._manifest = lambda *args: (None, manifest)

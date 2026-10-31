@@ -481,7 +481,8 @@ class PersistedFusionComparison:
         for strategy, dependency in zip(
             (ProductStrategy.TREND, ProductStrategy.OSCILLATION), dependencies
         ):
-            if expected_source_generation is not None and strategy.value == expected_source_generation[0]:
+            if (manifest.get("source_reader") != "newow_product_reader_prefix_v4"
+                    and expected_source_generation is not None and strategy.value == expected_source_generation[0]):
                 if (dependency.get("stream_id"), dependency.get("revision_id"), dependency.get("seq")) != tuple(expected_source_generation[1:]):
                     raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             bases = self._query.streams(
@@ -491,8 +492,8 @@ class PersistedFusionComparison:
                 bases[0].get(key) != dependency.get(other)
                 for key, other in (
                     ("stream_id", "stream_id"),
-                    ("active_revision_id", "revision_id"),
-                    ("latest_seq", "seq"),
+                    *(((("active_revision_id", "revision_id"), ("latest_seq", "seq")))
+                      if manifest.get("source_reader") != "newow_product_reader_prefix_v4" else ()),
                 )
             ):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
@@ -501,8 +502,15 @@ class PersistedFusionComparison:
             )
             if manifest_sha256(saved) != dependency.get("dependency_digest"):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+            from app.reference_trading.query import _decode, _encode
+            snapshot_options = {}
+            if manifest.get("source_reader") == "newow_product_reader_prefix_v4":
+                token = _decode(dependency["snapshot"], kind="snapshot")
+                token.update(since=since.isoformat(), through=through.isoformat(), cutoff=cutoff.isoformat())
+                snapshot_options["snapshot_token"] = _encode(token)
             base = self._query.summary(
-                dependency["stream_id"], since=since, through=through, cutoff=cutoff
+                dependency["stream_id"], since=since, through=through, cutoff=cutoff,
+                **snapshot_options,
             )
             if base["revision_id"] != dependency["revision_id"] or base["seq"] != dependency["seq"]:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")

@@ -335,7 +335,14 @@ export interface NewowReferencePartRequest {
   readonly historyLimit?: number
 }
 
+export interface NewowReferenceUpdateStatus {
+  readonly status: 'current' | 'updating'
+  readonly result_through: string
+  readonly market_through: string
+}
+
 export interface NewowReferencePartCommon {
+  readonly reference_status?: NewowReferenceUpdateStatus
   readonly reference_part: NewowReferencePart
   readonly reference_mode: NewowReferenceMode
   readonly performance_since: string

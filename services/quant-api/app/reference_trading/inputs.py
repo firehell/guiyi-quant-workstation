@@ -781,7 +781,7 @@ class MarketDataHistoricalInputReader:
         metadata_evidence = metadata_reader(
             product=query.product,
             since=min(bar.trading_day for bar in bars),
-            through=request.through,
+            through=max(bar.trading_day for bar in bars),
         )
         if not isinstance(metadata_evidence, dict) or not metadata_evidence:
             raise ValueError("REFERENCE_METADATA_EVIDENCE_MISSING")
@@ -823,23 +823,20 @@ class MarketDataHistoricalInputReader:
         if frequency is ProductFrequency.DAILY:
             manifest["reference_boundary_policy_version"] = NEWOW_D1_REFERENCE_BOUNDARY_POLICY
         if self._compact_intraday_inputs and frequency.value in {"1m", "5m", "15m", "30m", "60m"}:
-            evidence = newow_reader.historical_source_evidence(
-                product=query.product, frequency=frequency.value,
-                since=request.since, through=request.through, as_of=request.as_of,
-            )
-            manifest = {
-                "reader": "newow_product_reader_intraday_v3",
-                "query_since": request.since.isoformat(),
-                "query_through": request.through.isoformat(),
-                "query_as_of": request.as_of.isoformat(),
-                "source_evidence_sha256": sha256(_canonical(evidence).encode()).hexdigest(),
-                "input_sha256": sha256(_canonical(manifest).encode()).hexdigest(),
-                "input_count": len(bars),
-                "quality_policy": read.input_quality_policy.value,
-                "formula_versions": list(request.identity.formula_versions),
-                "reference_model_version": request.identity.reference_model_version,
-                "lifecycle_owners": manifest["lifecycle_owners"],
-            }
+            # Verify current immutable partition bytes without treating their
+            # whole-month hash as the identity of an earlier completed prefix.
+            newow_reader.historical_source_evidence(product=query.product,
+                frequency=frequency.value, since=request.since,
+                through=request.through, as_of=request.as_of)
+        # Versioned semantic proof: partition bytes remain verified by MDS, but
+        # appending to a monthly partition must not invalidate an old input prefix.
+        manifest["reader"] = "newow_product_reader_prefix_v4"
+        actual_day = max(bar.trading_day for bar in bars)
+        manifest["rank1"] = [
+            [owner.contract, owner.start_trading_day.isoformat(),
+             min(owner.end_trading_day, actual_day).isoformat()]
+            for owner in read.owners if owner.start_trading_day <= actual_day
+        ]
         token = sha256(_canonical(manifest).encode()).hexdigest()
         return HistoricalInputSnapshot(
             request.identity,

@@ -471,3 +471,37 @@ def test_retry_resolver_failure_is_fail_closed_and_never_clears_busy():
     with pytest.raises(ValueError, match='resolver-unavailable'):
         worker.run_round()
     assert (tuple(worker._queue), dict(worker._queued), worker.health().blocked) == before
+
+
+def test_history_opportunity_is_independent_of_strategy_health():
+    from app.reference_trading.worker_entry import defer_historical_refresh
+    from app.reference_trading.refresh_priority import RefreshPriority
+    from types import SimpleNamespace
+    starts = []
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(),
+        lambda *_: (_ for _ in ()).throw(ValueError('SOURCE_BUSY')), enabled=True)
+    priority = RefreshPriority()
+    defer_historical_refresh(worker, SimpleNamespace(start=lambda: starts.append(True)),
+                             should_stop=lambda: False, priority=priority)
+    stop = []
+    worker.serve(should_stop=lambda: bool(stop), wait=lambda _: stop.append(True))
+    assert worker.health().blocked
+    assert starts == [True]
+    assert priority.can_run()
+
+
+def test_pending_foreground_withholds_history_even_after_unhealthy_round():
+    from app.reference_trading.worker_entry import defer_historical_refresh
+    from app.reference_trading.refresh_priority import RefreshPriority
+    from types import SimpleNamespace
+    starts = []
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(),
+        lambda *_: (_ for _ in ()).throw(ValueError('SOURCE_BUSY')), enabled=True)
+    worker.has_foreground_work = lambda: True
+    priority = RefreshPriority()
+    defer_historical_refresh(worker, SimpleNamespace(start=lambda: starts.append(True)),
+                             should_stop=lambda: False, priority=priority)
+    stop = []
+    worker.serve(should_stop=lambda: bool(stop), wait=lambda _: stop.append(True))
+    assert starts == []
+    assert not priority.can_run()

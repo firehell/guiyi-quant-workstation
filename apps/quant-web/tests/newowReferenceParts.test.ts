@@ -253,3 +253,130 @@ test('superseded automatic closed read cannot continue pagination on a new chart
   assert.equal(state.historyError.value, null)
   scope.stop()
 })
+
+test('successful update status binds the verified reference cutoff and rejects inverted or inconsistent times', () => {
+  const payload = wire({ ...common, reference_part: 'history', items: [], next_before: null,
+    reference_status: { status: 'updating', result_through: request.asOf, market_through: '2026-10-16T15:00:00+08:00' } })
+  const historyRequest = { ...request, part: 'history' as const }
+  assert.equal(normalizeNewowReferencePartResponse(payload, historyRequest).value?.reference_status?.status, 'updating')
+  for (const reference_status of [
+    { status: 'current', result_through: request.asOf, market_through: '2026-10-16T15:00:00+08:00' },
+    { status: 'updating', result_through: request.asOf, market_through: request.asOf },
+    { status: 'updating', result_through: '2026-10-14T15:00:00+08:00', market_through: request.asOf },
+    { status: 'updating', result_through: request.asOf, market_through: '2026-10-14T15:00:00+08:00' },
+  ]) assert.throws(() => normalizeNewowReferencePartResponse(wire({ ...payload.reference.value, reference_status }), historyRequest))
+})
+
+test('updating results poll only while visible and a new generation discards old history', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] })
+  const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d')
+  const visible = ref(true), scope = effectScope()
+  let calls = 0, version = 0
+  const drain = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+  const state = scope.run(() => useNewowReferenceParts(ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart }),
+    visible, ref(false), async requested => {
+      calls++
+      const base = { ...common, reference_mode: requested.mode, result_hash: String(version).repeat(64),
+        reference_status: { status: version === 2 ? 'current' : 'updating', result_through: request.asOf,
+          market_through: version === 2 ? request.asOf : '2026-10-16T15:00:00+08:00' } }
+      return { meta: raw.meta, section: 'reference', status: { status: 'ready' }, value: requested.part === 'panel'
+        ? { ...base, reference_part: 'panel', summary: {}, recent_items: [], coverage_intervals: [], unavailable_days: [], page_summaries: {},
+          curve: { mode: requested.mode, points: [], total_points: 0, sampled: false } }
+        : { ...base, reference_part: 'history', items: [], next_before: 'old-page' } } as any
+    }))!
+  try {
+    await drain(); await state.loadHistory()
+    assert.equal(calls, 2); assert.ok(state.history.value)
+    visible.value = false
+    context.mock.timers.tick(60000); await drain()
+    assert.equal(calls, 2)
+    visible.value = true
+    version = 1
+    context.mock.timers.tick(30000); await drain()
+    assert.equal(calls, 3)
+    assert.equal(state.history.value, null)
+    assert.equal(state.overview.value?.value?.result_hash, '1'.repeat(64))
+    version = 2
+    context.mock.timers.tick(30000); await drain()
+    assert.equal(calls, 4)
+    context.mock.timers.tick(60000); await drain()
+    assert.equal(calls, 4, 'current results stop polling')
+  } finally { scope.stop(); context.mock.timers.reset() }
+})
+
+test('updating polling is capped and unmount cancels the scheduled read', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] })
+  const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d')
+  let calls = 0
+  const scope = effectScope()
+  scope.run(() => useNewowReferenceParts(ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart }), ref(true), ref(true), async requested => {
+    calls++
+    return { meta: raw.meta, section: 'reference', status: { status: 'ready' }, value: {
+      ...common, reference_mode: requested.mode, reference_part: 'panel', summary: {}, recent_items: [], coverage_intervals: [], unavailable_days: [], page_summaries: {},
+      reference_status: { status: 'updating', result_through: request.asOf, market_through: '2026-10-16T15:00:00+08:00' },
+      curve: { mode: requested.mode, points: [], total_points: 0, sampled: false },
+    } } as any
+  }))
+  const drain = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+  try {
+    await drain()
+    for (let i = 0; i < 25; i++) { context.mock.timers.tick(30000); await drain() }
+    assert.equal(calls, 21, 'one initial read and at most twenty update reads')
+    scope.stop(); context.mock.timers.tick(60000); await drain()
+    assert.equal(calls, 21)
+  } finally { scope.stop(); context.mock.timers.reset() }
+})
+
+test('an updating window may end at the saved available day but cannot silently shrink an arbitrary requested window', () => {
+  const historyRequest = { ...request, part: 'history' as const, performanceThrough: '2026-10-16' }
+  const value = { ...common, reference_part: 'history', items: [], next_before: null,
+    reference_status: { status: 'updating', result_through: request.asOf, market_through: '2026-10-16T15:00:00+08:00' } }
+  assert.equal(normalizeNewowReferencePartResponse(wire(value), historyRequest).value?.performance_through, '2026-10-15')
+  assert.throws(() => normalizeNewowReferencePartResponse(wire({ ...value, performance_through: '2026-10-14' }), historyRequest))
+  assert.throws(() => normalizeNewowReferencePartResponse(wire({ ...value, reference_status: undefined }), historyRequest))
+})
+
+test('a changed history generation discards its cursor and reloads one atomic panel', async () => {
+  const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d')
+  const scope = effectScope(), requests: NewowReferencePartRequest[] = []
+  let version = 0
+  const state = scope.run(() => useNewowReferenceParts(ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart }), ref(true), ref(false), async requested => {
+    requests.push(requested)
+    const base = { ...common, reference_mode: requested.mode, result_hash: String(version).repeat(64) }
+    return { meta: raw.meta, section: 'reference', status: { status: 'ready' }, value: requested.part === 'panel'
+      ? { ...base, reference_part: 'panel', summary: {}, recent_items: [], coverage_intervals: [], unavailable_days: [], page_summaries: {},
+        curve: { mode: requested.mode, points: [], total_points: 0, sampled: false } }
+      : { ...base, reference_part: 'history', items: [], next_before: requested.historyBefore ? null : 'old-cursor' } } as any
+  }))!
+  const drain = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+  try {
+    await drain(); await state.loadHistory(); version = 1
+    await state.loadMore(); await drain()
+    assert.deepEqual(requests.map(item => item.part), ['panel', 'history', 'history', 'panel'])
+    assert.equal(state.history.value, null)
+    assert.equal(state.historyRows.value.length, 0)
+    assert.equal(state.overview.value?.value?.result_hash, '1'.repeat(64))
+  } finally { scope.stop() }
+})
+
+test('an update source failure removes old results and never polls the terminal error', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] })
+  const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d'), scope = effectScope()
+  let calls = 0
+  const state = scope.run(() => useNewowReferenceParts(ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart }), ref(true), ref(false), async requested => {
+    calls++
+    if (calls > 1) throw Error('SOURCE_IDENTITY_UNVERIFIED')
+    return { meta: raw.meta, section: 'reference', status: { status: 'ready' }, value: {
+      ...common, reference_mode: requested.mode, reference_part: 'panel', summary: {}, recent_items: [], coverage_intervals: [], unavailable_days: [], page_summaries: {},
+      reference_status: { status: 'updating', result_through: request.asOf, market_through: '2026-10-16T15:00:00+08:00' },
+      curve: { mode: requested.mode, points: [], total_points: 0, sampled: false },
+    } } as any
+  }))!
+  const drain = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+  try {
+    await drain(); assert.ok(state.overview.value)
+    context.mock.timers.tick(30000); await drain()
+    assert.equal(state.overview.value, null); assert.equal(state.curve.value, null); assert.ok(state.error.value)
+    context.mock.timers.tick(60000); await drain(); assert.equal(calls, 2)
+  } finally { scope.stop(); context.mock.timers.reset() }
+})

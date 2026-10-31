@@ -60,7 +60,7 @@ class _BorrowedSession:
         return self.session.begin_nested()
 
 
-def _terminal_boundary_proven(batch, checkpoint):
+def _terminal_boundary_proven(batch, checkpoint, manifest=None):
     """A reference boundary advances its cursor without inventing a strategy Bar."""
     from app.reference_trading.inputs import _canonical
     from app.reference_trading.presentation import require_envelope
@@ -106,7 +106,7 @@ def _terminal_boundary_proven(batch, checkpoint):
             "bar_end": end, "trading_day": datetime.fromisoformat(point["trading_day"]).date(),
         }).encode()).hexdigest())
         previous = end
-    fingerprints = batch.dependency_manifest.get("input_fingerprints", [])
+    fingerprints = (manifest if manifest is not None else batch.dependency_manifest).get("input_fingerprints", [])
     return (previous == checkpoint.computed_through
             and hashes[-1] == checkpoint.last_fingerprint
             and batch.source_evidence.get("last_fingerprint") == checkpoint.last_fingerprint
@@ -141,14 +141,16 @@ class NewowForwardBootstrap:
             raise RepositoryConflict("BOOTSTRAP_HISTORY_NOT_PUBLISHED")
         query = select(ReferenceBatch).where(ReferenceBatch.batch_id == revision.checkpoint_batch_id)
         batch = session.scalar(query.with_for_update(read=True) if lock else query)
+        from app.reference_trading.manifest_storage import resolve_manifest
+        manifest = resolve_manifest(session, batch) if batch is not None else {}
         if (batch is None or not batch.checkpoint_text or batch.strategy_schema != SCHEMAS[strategy]
                 or batch.seq != revision.last_seq or row.latest_seq != revision.last_seq
                 or batch.post_state_hash != sha256(batch.checkpoint_text.encode()).hexdigest()
-                or manifest_sha256(batch.dependency_manifest) != revision.dependency_digest):
+                or manifest_sha256(manifest) != revision.dependency_digest):
             raise RepositoryConflict("BOOTSTRAP_HISTORY_CHECKPOINT_INVALID")
         if identity.frequency == "1d":
             from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
-            if batch.dependency_manifest.get("reference_boundary_policy_version") != NEWOW_D1_REFERENCE_BOUNDARY_POLICY:
+            if manifest.get("reference_boundary_policy_version") != NEWOW_D1_REFERENCE_BOUNDARY_POLICY:
                 raise RepositoryConflict("BOOTSTRAP_HISTORY_BOUNDARY_POLICY_CONFLICT")
         checkpoint = adapter_checkpoint_from_json(batch.checkpoint_text, expected_stream=identity,
             expected_strategy_schema=batch.strategy_schema)
@@ -161,14 +163,14 @@ class NewowForwardBootstrap:
             or checkpoint.strategy_state.calculation_segment_id != checkpoint.calculation_segment_id
             or (not any(progress[0] == checkpoint.computed_through
                         for progress in checkpoint.strategy_state.input_progress.values())
-                and not _terminal_boundary_proven(batch, checkpoint))
+                and not _terminal_boundary_proven(batch, checkpoint, manifest))
         ):
             raise RepositoryConflict("BOOTSTRAP_WARMUP_NOT_PROVEN")
         binding = {"stream_id": stream_id, "revision_id": revision.revision_id,
             "seq": revision.last_seq, "checkpoint_hash": batch.post_state_hash,
             "dependency_digest": revision.dependency_digest,
             "computed_through": checkpoint.computed_through.isoformat()}
-        return identity, checkpoint, batch.strategy_schema, dict(batch.dependency_manifest), binding
+        return identity, checkpoint, batch.strategy_schema, dict(manifest), binding
 
     def plan(self, historical_stream_id: str, *, recording_start: datetime, expires_at: datetime,
              host: str, environment: str, now: datetime, recovery_policy: str = "block") -> dict:

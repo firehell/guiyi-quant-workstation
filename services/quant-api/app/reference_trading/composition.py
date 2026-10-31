@@ -233,6 +233,7 @@ def open_historical_reference_components(*, session_factory=None, cancelled=lamb
         coverage = build_database_coverage_source(session)
         products = load_active_products()
         catalog = MarketCatalog(session, canonical_root())
+        catalog.maintenance_caller = "reference-history"
 
         @contextmanager
         def guard():

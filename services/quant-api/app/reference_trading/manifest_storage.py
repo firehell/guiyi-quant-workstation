@@ -5,7 +5,7 @@ from app.reference_trading.models import ReferenceBatch
 
 REF = "_reference_dependency_manifest_v1"
 LARGE_KEYS = frozenset(
-    {"input_fingerprints", "calendar_session_effective_fingerprints"}
+    {"input_fingerprints", "calendar_session_effective_fingerprints", "source_input_fingerprints"}
 )
 MIN_BYTES = 64_000
 
@@ -60,7 +60,7 @@ def resolve_manifest(session, batch):
 
 
 def store_manifest(session, prior_batch, full, digest):
-    """Only called for a new SuBing historical calculation after logical validation."""
+    """Store a validated historical calculation without repeating its large arrays."""
     if REF in full:
         raise ManifestStorageError()
     # Fingerprints are fixed-width hex, so this bound avoids serializing a

@@ -2337,3 +2337,16 @@ node --test tests/htdySnapshot.test.ts tests/useHtdySnapshot.test.ts tests/htdyU
 ```
 
 验证不可变版本、受控读取、完整统计、来源身份/冲突、异步取消、原始成交时间与独立统计；现场页面须另行核对。
+
+## 牛哇历史参考前缀与增量更新
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/reference_trading/test_source_identity.py services/quant-api/tests/reference_trading/test_dependency_advance.py services/quant-api/tests/reference_trading/test_historical_refresh.py services/quant-api/tests/reference_trading/test_refresh_priority.py services/quant-api/tests/reference_trading/test_forward_runtime.py services/quant-api/tests/data_foundation/test_catalog_lease_cleanup.py services/quant-api/tests/data_foundation/test_catalog_lease_postgresql.py
+node --test apps/quant-web/tests/newowReferenceParts.test.ts apps/quant-web/tests/newowReferenceErrors.test.ts apps/quant-web/tests/newowDataDiagnostics.test.ts
+```
+
+真实 PostgreSQL 项使用既有 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL` guard；未设置时 skip 不算真实集成通过。
+新 reader `newow_product_reader_prefix_v4` 区分不可变分区字节完整性与 completed 语义前缀；
+旧 reader 由原生新 revision 重建升级，不能只改旧 manifest 标签。覆盖同分区追加、rank1 截止、
+源改写阻断、前台未就绪仍可调度且真实 pending 工作优先、解锁失败丢弃连接，以及 updating 结果统一截止和分页 generation。
+页面通过不等于正式资产已迁移或自然盘后已发生；发布和自然盘后分别实际读回。

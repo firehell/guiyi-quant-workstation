@@ -35,6 +35,21 @@ export function useNewowReferenceParts(
   let generation = 0
   let controller: AbortController | null = null
   let historyController: AbortController | null = null
+  let pollTimer: ReturnType<typeof setTimeout> | null = null
+  let pollAttempts = 0
+  const pageVisible = () => visible.value && (typeof document === 'undefined' || document.visibilityState !== 'hidden')
+  function stopPoll() { if (pollTimer !== null) clearTimeout(pollTimer); pollTimer = null }
+  function schedulePoll() {
+    stopPoll()
+    if (!pageVisible() || error.value || pollAttempts >= 20
+      || overview.value?.value?.reference_status?.status !== 'updating') return
+    pollTimer = setTimeout(() => {
+      pollTimer = null
+      if (!pageVisible()) return
+      pollAttempts++
+      void load(false, true)
+    }, 30000)
+  }
 
   const proof = computed(() => {
     const response = chart.value
@@ -72,13 +87,18 @@ export function useNewowReferenceParts(
   }
   function clear() {
     generation++
+    stopPoll(); pollAttempts = 0
     controller?.abort(); historyController?.abort()
     overview.value = null; curve.value = null; history.value = null; historyRows.value = []; historyTruncated.value = false
     loading.value = false; historyLoading.value = false; error.value = null; historyError.value = null
   }
-  async function load(explicit = false) {
-    if ((!visible.value && !explicit) || !proof.value) return
-    clear()
+  async function load(explicit = false, refresh = false) {
+    if ((!pageVisible() && !explicit) || !proof.value) return
+    const previous = overview.value
+    if (refresh) {
+      generation++; stopPoll(); controller?.abort(); historyController?.abort()
+      historyLoading.value = false
+    } else clear()
     const own = generation, request = baseRequest('panel')
     if (!request) return
     controller = new AbortController()
@@ -87,9 +107,12 @@ export function useNewowReferenceParts(
     try {
       const first = await fetchPart(request, { signal: active.signal })
       if (own !== generation || active.signal.aborted) return
-      if (!first.value) { error.value = partUnavailable(first, '参考统计'); return }
+      if (!first.value) { overview.value = null; curve.value = null; history.value = null; historyRows.value = []; error.value = partUnavailable(first, '参考统计'); return }
       if (first.value.reference_part !== 'panel' || first.value.curve.mode !== request.mode
         || first.value.reference_mode !== request.mode) throw Error('NEWOW_REFERENCE_PART_CONFLICT')
+      if (previous && !sameNewowReferenceResult(previous, first)) {
+        history.value = null; historyRows.value = []; historyTruncated.value = false; historyError.value = null
+      }
       const { curve: selected, ...summary } = first.value
       overview.value = { ...first, value: { ...summary, reference_part: 'overview' } }
       const { summary: _summary, recent_items: _recent, page_summaries: _page,
@@ -97,11 +120,11 @@ export function useNewowReferenceParts(
       curve.value = { ...first, value: { ...common, reference_part: 'curve', curve: selected } }
     } catch (cause) {
       if (own === generation && !active.signal.aborted && !isCancelled(cause)) {
-        overview.value = null; curve.value = null
+        overview.value = null; curve.value = null; history.value = null; historyRows.value = []
         error.value = isConflict(cause) ? '参考快照已变化，请刷新图表后重试。'
           : `参考曲线暂不可用${failureDetail(cause) ? `：${failureDetail(cause)}` : ''}，请重试。`
       }
-    } finally { if (own === generation) loading.value = false }
+    } finally { if (own === generation) { loading.value = false; schedulePoll() } }
   }
   async function loadHistory(own = generation, source = overview.value) {
     if (!source?.value || own !== generation || historyLoading.value) return
@@ -143,7 +166,7 @@ export function useNewowReferenceParts(
         historyLimit: 50, historyBefore: cursor }, { signal: active.signal })
       if (own !== generation || active.signal.aborted) return
       if (!next.value || next.value.reference_part !== 'history' || !sameNewowReferenceResult(current, next)
-        || next.value.next_before === cursor) throw Error('NEWOW_REFERENCE_CURSOR_CONFLICT')
+        || next.value.next_before === cursor) throw new NewowProductRequestError('NEWOW_CURSOR_GENERATION_CONFLICT', 'conflict')
       const recordKey = (row: NewowReferenceRecord) => 'reference_trade_id' in row ? row.reference_trade_id
         : JSON.stringify([row.buyDate, row.buyPrice, row.sellDate, row.sellPrice, row.pct, row.segment_id])
       const existing = new Set(historyRows.value.map(recordKey))
@@ -154,7 +177,7 @@ export function useNewowReferenceParts(
       history.value = next
     } catch (cause) {
       if (own === generation && !active.signal.aborted && !isCancelled(cause)) {
-        if (isConflict(cause)) { history.value = null; historyRows.value = [] }
+        if (isConflict(cause)) { history.value = null; historyRows.value = []; void load(false, true) }
         historyError.value = '记录快照已变化或读取失败，请刷新后重试。'
       }
     } finally { if (own === generation) historyLoading.value = false }
@@ -193,8 +216,19 @@ export function useNewowReferenceParts(
     if (visible.value) void load()
   }
   watch(proof, reset, { immediate: true, flush: 'sync' })
-  watch(visible, shown => { if (shown && overview.value === null && !loading.value && error.value === null) void load() })
-  onScopeDispose(clear, true)
+  function visibilityChanged() {
+    if (!pageVisible()) {
+      stopPoll(); generation++; controller?.abort(); historyController?.abort()
+      loading.value = false; historyLoading.value = false
+    } else if (overview.value === null && !loading.value && error.value === null) void load()
+    else schedulePoll()
+  }
+  watch(visible, visibilityChanged, { flush: 'sync' })
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibilityChanged)
+  onScopeDispose(() => {
+    clear()
+    if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged)
+  }, true)
   return { mode, overview, curve, history, historyRows, trades, complete, historyCapped, chartCompatible, loading, historyLoading,
     error, historyError, requestedWindow, load, loadHistory, loadMore, loadCompleteClosed, select, reset, clear }
 }

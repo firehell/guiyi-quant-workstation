@@ -76,6 +76,14 @@ export function normalizeNewowReferencePartResponse(payload: unknown, request: N
     || value.executable !== false || value.auto_order !== false
     || !Array.isArray(value.allowed_uses)
     || value.allowed_uses.join('|') !== 'page_parity_reference|research_display') throw Error('reference part contract invalid')
+  if (value.reference_status !== undefined) {
+    const update = object(value.reference_status)
+    const resultAt = Date.parse(instant(update.result_through))
+    const marketAt = Date.parse(instant(update.market_through))
+    if (!['current', 'updating'].includes(text(update.status)) || resultAt > marketAt
+      || (update.status === 'updating') !== (resultAt < marketAt)
+      || resultAt !== Date.parse(instant(value.reference_cutoff))) throw Error('reference update status invalid')
+  }
   const since = day(value.performance_since), through = day(value.performance_through), recordSince = day(value.record_since)
   const fullWindowRecords = request.mode.includes('page_') || request.identity.frequency === '1d' || request.identity.frequency === '1w'
   const independentFusionRecords = request.mode.startsWith('fusion_') && !fullWindowRecords
@@ -87,6 +95,8 @@ export function normalizeNewowReferencePartResponse(payload: unknown, request: N
     || (!independentFusionRecords && recordSince < since)
     || request.performanceSince !== undefined && since !== request.performanceSince
     || request.performanceThrough !== undefined && through !== request.performanceThrough
+      && !(value.reference_status && object(value.reference_status).status === 'updating'
+        && through === value.actual_available_through && through < request.performanceThrough)
     || !['FULL', 'PARTIAL'].includes(text(value.history_coverage))) throw Error('reference window conflict')
   if (request.part === 'panel') {
     // Validate each existing contract against the same envelope, without a

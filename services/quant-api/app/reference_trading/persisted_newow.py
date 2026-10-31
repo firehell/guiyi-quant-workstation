@@ -9,7 +9,7 @@ import json
 from threading import Lock
 from typing import Any
 from contextlib import closing
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -20,6 +20,20 @@ from app.reference_trading.planning import HistoricalStreamRequest
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict, _decode, _encode
 from app.reference_trading.repository import _identity_from_row
 from app.reference_trading.source_identity import verify_saved_input_prefix, verify_saved_compact_source, ReferenceReadConflict, verified_saved_extension
+
+
+def _completed_reference_window(read, cutoff):
+    """Use owned completed facts, including the provider's night trading day."""
+    bars = [item.bar for item in getattr(read, "replay_bars", ())
+            if item.bar.bar_end <= cutoff and item.bar.observation_eligible]
+    if not bars:
+        # Intraday reference scope intentionally contains provenance only. Its
+        # selected-frequency Session endpoint is authoritative for market lag;
+        # resolving an old result's trading day still requires a completed read.
+        source = getattr(read, "sources", {}).get(getattr(read, "frequency", None))
+        endpoint = getattr(source, "bar_end", None)
+        return (endpoint if endpoint is not None and endpoint <= cutoff else None), None
+    return max(bar.bar_end for bar in bars), max(bar.trading_day for bar in bars)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,7 +73,11 @@ class PersistedNewowReference:
             ).order_by(ReferenceBatch.seq.desc()).limit(1))
             if stream is None or batch is None:
                 raise QueryConflict("SNAPSHOT_CONFLICT")
-            return _identity_from_row(stream), _SavedManifest(batch.dependency_manifest, batch.computed_through)
+            from app.reference_trading.manifest_storage import resolve_manifest
+            endpoint = batch.computed_through
+            if endpoint is not None and endpoint.tzinfo is None:
+                endpoint = endpoint.replace(tzinfo=UTC)
+            return _identity_from_row(stream), _SavedManifest(resolve_manifest(session, batch), endpoint)
 
     def _page_read(self, request, reader, manifest, resolved):
         """Decode the authoritative prefix only after saved source proof passes.
@@ -70,6 +88,29 @@ class PersistedNewowReference:
         """
         from dataclasses import replace
         from app.market_data.newow.product_query import NewowProductQuery
+        if manifest.get("reader") == "newow_product_reader_prefix_v4":
+            from app.reference_trading.planning import HistoricalStreamRequest
+            stream = self._query.streams(strategy=f"newow_{request.strategy.value}",
+                product=request.product, frequency=request.frequency.value, mode="historical_replay")
+            if len(stream) != 1:
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            # Semantic verification is repeated around the bounded display read.
+            identity, _ = self._manifest(stream[0]["stream_id"], stream[0]["active_revision_id"], stream[0]["latest_seq"])
+            def semantic_verify():
+                source = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None).plan_stream(
+                    HistoricalStreamRequest(identity, date.fromisoformat(manifest["query_since"]),
+                        resolved.actual_through, resolved.cutoff))
+                verify_saved_input_prefix(manifest, source.dependency_manifest, resolved.actual_through,
+                    frozenset((bar.physical_contract, bar.owner_segment_id) for bar in source.bars if bar.strategy_input))
+                return source.source_token
+            before = semantic_verify()
+            query = NewowProductQuery(request.product, request.strategy, request.frequency,
+                date.fromisoformat(manifest["query_since"]), resolved.actual_through,
+                date.fromisoformat(manifest["query_since"]), resolved.actual_through, resolved.cutoff)
+            full = reader.load(query, resolved.cutoff)
+            if semantic_verify() != before:
+                raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+            return full
         if manifest.get("reader") != "newow_product_reader_intraday_v3":
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
         try:
@@ -247,7 +288,7 @@ class PersistedNewowReference:
         }
         with closing(self._query.historical_actions(
             stream_id, snapshot_token=snapshot, since=since, through=through,
-            cutoff=cutoff, input_count=manifest.get("input_count"),
+            cutoff=cutoff, input_count=manifest.get("input_count", len(manifest.get("input_fingerprints", []))),
             check_cancelled=check_cancelled,
         )) as actions:
             for point in actions:
@@ -267,6 +308,15 @@ class PersistedNewowReference:
         current = self._query.summary(saved[0], since=since, through=through, cutoff=cutoff)
         if (current["revision_id"], current["seq"]) != (saved[1], saved[2]):
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+        if reader is not None:
+            source_identity, source_manifest = self._manifest(*saved)
+            if source_manifest.get("reader") == "newow_product_reader_prefix_v4":
+                source = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None).plan_stream(
+                    HistoricalStreamRequest(source_identity, date.fromisoformat(source_manifest["query_since"]),
+                        date.fromisoformat(payload["actual_available_through"]), cutoff))
+                verify_saved_input_prefix(source_manifest, source.dependency_manifest,
+                    date.fromisoformat(payload["actual_available_through"]),
+                    frozenset((bar.physical_contract, bar.owner_segment_id) for bar in source.bars if bar.strategy_input))
         fusion = payload.get("fusion_comparison")
         if fusion is None:
             return
@@ -285,12 +335,20 @@ class PersistedNewowReference:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         for strategy, dependency in zip(("trend", "oscillation"), dependencies):
             base = self._query.streams(strategy="newow_" + strategy, product=fusion["product"], frequency=fusion["frequency"], mode="historical_replay")
-            if len(base) != 1 or (base[0]["stream_id"], base[0]["active_revision_id"], base[0]["latest_seq"]) != (dependency["stream_id"], dependency["revision_id"], dependency["seq"]):
+            semantic_fusion = manifest.get("source_reader") == "newow_product_reader_prefix_v4"
+            if (len(base) != 1 or base[0]["stream_id"] != dependency["stream_id"]
+                or not semantic_fusion and (base[0]["active_revision_id"], base[0]["latest_seq"]) != (dependency["revision_id"], dependency["seq"])):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             _, dependency_manifest = self._manifest(dependency["stream_id"], dependency["revision_id"], dependency["seq"])
             if manifest_sha256(dependency_manifest) != dependency.get("dependency_digest"):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
-            dependency_summary = self._query.summary(dependency["stream_id"], since=since, through=through, cutoff=cutoff)
+            snapshot_options = {}
+            if semantic_fusion:
+                dependency_token = _decode(dependency["snapshot"], kind="snapshot")
+                dependency_token.update(since=since.isoformat(), through=through.isoformat(), cutoff=cutoff.isoformat())
+                snapshot_options["snapshot_token"] = _encode(dependency_token)
+            dependency_summary = self._query.summary(dependency["stream_id"], since=since, through=through, cutoff=cutoff,
+                **snapshot_options)
             if (dependency_summary["revision_id"], dependency_summary["seq"]) != (dependency["revision_id"], dependency["seq"]):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         if reader is not None:
@@ -413,6 +471,42 @@ class PersistedNewowReference:
         since, through, cutoff = (
             resolved.requested_since, resolved.requested_through, resolved.cutoff,
         )
+        market_cutoff = cutoff
+        head = self._query.summary(stream_id, since=since, through=through, cutoff=cutoff)
+        _, head_manifest = self._manifest(stream_id, head["revision_id"], head["seq"])
+        saved_endpoint = getattr(head_manifest, "computed_through", None)
+        selected_mode = getattr(getattr(request, "reference_mode", None), "value", "") or ""
+        if getattr(request, "include_fusion", False) and (not selected_mode or selected_mode.startswith("fusion_")):
+            fusion_streams = self._query.streams(strategy="newow_dual_fusion", product=request.product,
+                frequency=request.frequency.value, mode="historical_replay")
+            if len(fusion_streams) != 1:
+                raise QueryConflict("NOT_BUILT")
+            fusion_head = self._query.summary(fusion_streams[0]["stream_id"], since=since, through=through, cutoff=cutoff)
+            _, fusion_manifest = self._manifest(fusion_streams[0]["stream_id"], fusion_head["revision_id"], fusion_head["seq"])
+            fusion_endpoint = getattr(fusion_manifest, "computed_through", None)
+            if fusion_endpoint is not None and saved_endpoint is not None:
+                saved_endpoint = min(saved_endpoint, fusion_endpoint)
+        market_endpoint, _ = _completed_reference_window(read, cutoff)
+        updating = (saved_endpoint is not None and market_endpoint is not None
+                    and saved_endpoint < market_endpoint)
+        if updating:
+            from dataclasses import replace
+            cutoff = saved_endpoint
+            # Resolve the actual trading day from completed MDS inputs. Neither
+            # UTC date nor a manifest's planned rank1 tail proves a night-session
+            # or partially committed batch's actual end day.
+            from app.market_data.newow.product_query import NewowProductQuery
+            read = reader.load(NewowProductQuery(request.product, request.strategy, request.frequency,
+                date.fromisoformat(head_manifest["query_since"]), through,
+                since, through, cutoff), cutoff)
+            _, saved_day = _completed_reference_window(read, cutoff)
+            if saved_day is None:
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            through = min(through, saved_day)
+            resolved = replace(resolved, requested_through=through,
+                actual_through=min(resolved.actual_through, through), cutoff=cutoff)
+        reference_status = {"status": "updating" if updating else "current",
+            "result_through": cutoff.isoformat(), "market_through": market_cutoff.isoformat()}
         minute = request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)
         saved_snapshot = None
         if request.history_before is not None:
@@ -518,7 +612,7 @@ class PersistedNewowReference:
                         materials["availability"], materials["boundaries"],
                     )
             delivery = SectionDelivery("delivered", cached.status, PersistedReferenceSectionValue(
-                {**cached.payload, **extra, "items": items, "next_before": page["next_cursor"]}, generation,
+                {**cached.payload, **extra, "reference_status": reference_status, "items": items, "next_before": page["next_cursor"]}, generation,
             ))
             self.validate_cached_generation(delivery, reader=reader)
             if selected_missing and self._cache is not None:
@@ -619,6 +713,7 @@ class PersistedNewowReference:
             if since <= gap.trading_day <= resolved.actual_through
         })
         payload = {
+            "reference_status": reference_status,
             "performance_since": since.isoformat(),
             "performance_through": through.isoformat(),
             "actual_available_through": resolved.actual_through.isoformat(),
