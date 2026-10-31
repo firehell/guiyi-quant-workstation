@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from app.reference_trading.query import QueryConflict
 
@@ -102,3 +102,35 @@ def verify_saved_compact_source(saved: dict[str, object], current_evidence: dict
         or saved.get("source_evidence_sha256") != sha256(_canonical(current_evidence).encode()).hexdigest()
     ):
         raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+
+
+class ReferenceReadConflict(QueryConflict):
+    """Safe optional reference-read status; never contains data or stream tokens."""
+    def __init__(self, code: str, *, saved_through: datetime | None, requested_through: datetime):
+        super().__init__(code)
+        self.reference_status = {
+            "reason": code,
+            "result_through": saved_through.isoformat() if saved_through else None,
+            "market_through": requested_through.isoformat(),
+        }
+
+
+def verified_saved_extension(saved, current, saved_through: date) -> bool:
+    """Classify append lag only after every saved-prefix invariant passes."""
+    a, b = saved.get("input_fingerprints"), current.get("input_fingerprints")
+    if not isinstance(a, list) or not isinstance(b, list) or not a or len(b) <= len(a):
+        return False
+    for key in ("reader", "market_source_identity", "quality_policy_version", "quality_policy",
+                "input_policy_version", "formula_versions", "reference_model_version",
+                "reference_boundary_policy_version"):
+        if (key in saved) != (key in current) or saved.get(key) != current.get(key):
+            return False
+    owners = saved.get("lifecycle_owners", [])
+    if not isinstance(owners, list):
+        return False
+    try:
+        observed = frozenset(tuple(owner) for owner in owners if isinstance(owner, list) and len(owner) == 2)
+        verify_saved_input_prefix(current, saved, saved_through, observed)
+    except (QueryConflict, TypeError, ValueError):
+        return False
+    return True

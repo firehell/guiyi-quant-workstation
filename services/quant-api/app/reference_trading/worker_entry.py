@@ -288,7 +288,8 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
             from app.reference_trading.historical_refresh import build_historical_refresh, RefreshThread
             refresh = RefreshThread(build_historical_refresh(
                 SessionLocal, state_path=historical_refresh_state_path(),
-            ), batch_limit=1, can_run=history_can_run, yield_requested=refresh_priority.yield_requested,
+            ), batch_limit=1, interval=1, idle_interval=30,
+                can_run=history_can_run, yield_requested=refresh_priority.yield_requested,
                 on_tick_started=refresh_priority.begin, on_tick_finished=refresh_priority.finish)
             from app.notifications.newow import NewowNotificationDispatcher
             from app.notifications.newow_thread import NotificationThread

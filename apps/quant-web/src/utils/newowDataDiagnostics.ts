@@ -27,6 +27,22 @@ export interface NewowDataDiagnostic {
 
 export function newowErrorDisplay(error: string | null): string | null {
   if (error === null) return null
+  const referenceLabels: Record<string, string> = {
+    REFERENCE_UPDATE_PENDING: '参考结果更新中',
+    NOT_BUILT: '参考历史尚未建立',
+    STALE_INVALID: '参考结果来源已修订，等待重新校验',
+    SOURCE_IDENTITY_UNVERIFIED: '参考结果与当前输入身份校验未通过',
+    PRESENTATION_NOT_MATERIALIZED: '参考展示结果尚未生成',
+    PRESENTATION_BUDGET_EXCEEDED: '参考展示超出读取预算',
+    REFERENCE_SCHEMA_UNAVAILABLE: '参考存储暂不可用',
+  }
+  const [referenceCode, saved, market, ...extra] = error.split('|')
+  if (referenceCode !== undefined && Object.hasOwn(referenceLabels, referenceCode)) {
+    const instant = (x: string | undefined) => x !== undefined && x.length <= 40 && /^\d{4}-\d{2}-\d{2}T[0-9:.+Z-]+$/.test(x) && Number.isFinite(Date.parse(x))
+    const dates = extra.length === 0 && (saved === '' || instant(saved)) && instant(market)
+      ? `（结果截止：${saved || '未知'}；行情截止：${market}）` : ''
+    return `${referenceLabels[referenceCode]}${dates}（技术码 ${referenceCode}）`
+  }
   const labels: Record<string, string> = {
     NEWOW_DATA_UNAVAILABLE: '数据暂不可用，可重试本面板',
     NEWOW_API_UNAVAILABLE: '服务暂不可用，可重试本面板',

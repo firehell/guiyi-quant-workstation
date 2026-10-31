@@ -27,6 +27,8 @@ const CONFLICT_CODES = new Set([
   'NEWOW_SNAPSHOT_GENERATION_CONFLICT', 'NEWOW_CURSOR_GENERATION_CONFLICT', 'NEWOW_CURSOR_INVALID',
   'NEWOW_REFERENCE_PAIRING_CONFLICT', 'NEWOW_PAGE_COMPARATOR_CONFLICTING_FACT',
 ])
+const REFERENCE_ERRORS = new Set(['REFERENCE_UPDATE_PENDING', 'NOT_BUILT', 'STALE_INVALID', 'SOURCE_IDENTITY_UNVERIFIED', 'PRESENTATION_NOT_MATERIALIZED', 'PRESENTATION_BUDGET_EXCEEDED', 'REFERENCE_SCHEMA_UNAVAILABLE'])
+
 const UNAVAILABLE_CODES = new Set([
   'NEWOW_DATA_UNAVAILABLE', 'NEWOW_SOURCE_NONPOSITIVE_PRICE', 'NEWOW_COMPLETE_TRADING_DAY_MISSING',
   'NEWOW_COMPLETE_PERIOD_MISSING', 'NEWOW_HISTORICAL_SNAPSHOT_UNAVAILABLE',
@@ -37,13 +39,16 @@ export class NewowProductRequestError extends Error {
   readonly code: string
   readonly classification: NewowProductErrorClassification
   readonly diagnostic: NewowDataDiagnostic | null
+  readonly referenceStatus: { resultThrough: string | null; marketThrough: string } | null
 
-  constructor(code: string, classification: NewowProductErrorClassification, diagnostic: NewowDataDiagnostic | null = null) {
+  constructor(code: string, classification: NewowProductErrorClassification, diagnostic: NewowDataDiagnostic | null = null, referenceStatus: { resultThrough: string | null; marketThrough: string } | null = null) {
     super(diagnostic === null ? code : formatNewowDataDiagnostic(diagnostic))
     this.name = 'NewowProductRequestError'
     this.code = code
     this.classification = classification
     this.diagnostic = diagnostic
+    this.referenceStatus = referenceStatus
+    if (referenceStatus !== null) this.message = `${code}|${referenceStatus.resultThrough ?? ""}|${referenceStatus.marketThrough}`
   }
 }
 
@@ -385,16 +390,17 @@ export function classifyTransportError(error: unknown): NewowProductRequestError
   const detail = httpDetail(error)
   if (detail && [429,503].includes(detail.status) && ['NEWOW_RESOURCE_BUSY','NEWOW_SERVICE_BUSY'].includes(detail?.code ?? '')) return new NewowProductRequestError(detail.code, 'busy')
   if (detail?.status === 429 && detail.code === 'NEWOW_REQUEST_CANCELLED') return new NewowProductRequestError(detail.code, 'cancelled')
+  if (detail && [409, 503].includes(detail.status) && REFERENCE_ERRORS.has(detail.code)) return new NewowProductRequestError(detail.code, 'unavailable', null, detail.referenceStatus)
   if (detail?.status === 409 && UNAVAILABLE_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'unavailable', detail.diagnostic)
   if (detail?.status === 409 && CONFLICT_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'conflict')
   if (detail?.status === 422 && INVALID_CODES.has(detail.code)) return new NewowProductRequestError(detail.code, 'invalid')
   return new NewowProductRequestError('NEWOW_API_UNAVAILABLE', 'unavailable')
 }
 
-function httpDetail(error: unknown): { status: number; code: string; diagnostic: NewowDataDiagnostic | null } | null {
+function httpDetail(error: unknown): { status: number; code: string; diagnostic: NewowDataDiagnostic | null; referenceStatus: { resultThrough: string | null; marketThrough: string } | null } | null {
   try {
     if (!isRecord(error) || !isRecord(error.response) || typeof error.response.status !== 'number' || !isRecord(error.response.data) || !isRecord(error.response.data.detail) || typeof error.response.data.detail.code !== 'string') return null
-    return { status: error.response.status, code: error.response.data.detail.code, diagnostic: parseNewowDataDiagnostic(error.response.data.detail.diagnostic) }
+    return { status: error.response.status, code: error.response.data.detail.code, diagnostic: parseNewowDataDiagnostic(error.response.data.detail.diagnostic), referenceStatus: parseReferenceStatus(error.response.data.detail.reference_status, error.response.data.detail.code) }
   } catch { return null }
 }
 
@@ -420,4 +426,10 @@ function homeSnapshot(identity: NewowProductRequest['identity']): NewowDailySnap
     if (identity.frequency === '1w' && isWeeklySnapshot(context, identity)) return context
     return undefined
   })
+}
+
+function parseReferenceStatus(value: unknown, code: string): { resultThrough: string | null; marketThrough: string } | null {
+  const instant = (x: unknown): x is string => typeof x === 'string' && x.length <= 40 && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(x) && Number.isFinite(Date.parse(x))
+  if (!isRecord(value) || value.reason !== code || !REFERENCE_ERRORS.has(code) || !instant(value.market_through) || (value.result_through !== null && !instant(value.result_through))) return null
+  return { resultThrough: value.result_through as string | null, marketThrough: value.market_through }
 }
