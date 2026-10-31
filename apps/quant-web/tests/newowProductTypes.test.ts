@@ -82,6 +82,24 @@ test('unwraps only the delivered requested section and preserves every Decimal a
   assert.throws(() => chartCoordinate('1e999'), /finite chart coordinate/)
 })
 
+test('accepts optional exact shared input proof without upgrading legacy responses', () => {
+  const wire = chartWire()
+  assert.equal(normalizeNewowProductResponse(wire, expected).meta.shared_input_proof, undefined)
+  wire.meta.shared_input_proof = {
+    schema_version: 'newow_shared_input_proof_v1',
+    market_input_sha256: 'a'.repeat(64), auxiliary_input_sha256: null,
+  }
+  const parsed = normalizeNewowProductResponse(wire, expected)
+  assert.deepEqual(parsed.meta.shared_input_proof, wire.meta.shared_input_proof)
+  assert.equal(Object.isFrozen(parsed.meta.shared_input_proof), true)
+  for (const proof of [null, {}, { ...wire.meta.shared_input_proof, schema_version: 'unknown' },
+    { ...wire.meta.shared_input_proof, market_input_sha256: 'invalid' },
+    { ...wire.meta.shared_input_proof, auxiliary_input_sha256: 'invalid' },
+    { ...wire.meta.shared_input_proof, extra: true }]) {
+    assert.throws(() => normalizeNewowProductResponse({ ...wire, meta: { ...wire.meta, shared_input_proof: proof } }, expected))
+  }
+})
+
 test('accepts the versioned daily quality identity only on D1', () => {
   const wire = chartWire()
   wire.meta.identity.input_quality_policy = 'newow_daily_input_quality_v2'

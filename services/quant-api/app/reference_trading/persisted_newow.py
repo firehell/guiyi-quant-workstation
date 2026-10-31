@@ -19,7 +19,7 @@ from app.reference_trading.models import ReferenceBatch, ReferenceStream
 from app.reference_trading.planning import HistoricalStreamRequest
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict, _decode, _encode
 from app.reference_trading.repository import _identity_from_row
-from app.reference_trading.source_identity import verify_saved_input_prefix, verify_saved_compact_source
+from app.reference_trading.source_identity import verify_saved_input_prefix, verify_saved_compact_source, ReferenceReadConflict, verified_saved_extension
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +31,13 @@ class _CompletePresentation:
     status: Any
     generation: tuple[str, str, int]
     materials: dict[str, Any] | None = None
+
+
+class _SavedManifest(dict):
+    """Keep read watermark alongside, never inside the saved manifest proof."""
+    def __init__(self, manifest, computed_through):
+        super().__init__(manifest)
+        self.computed_through = computed_through
 
 
 class PersistedNewowReference:
@@ -52,7 +59,7 @@ class PersistedNewowReference:
             ).order_by(ReferenceBatch.seq.desc()).limit(1))
             if stream is None or batch is None:
                 raise QueryConflict("SNAPSHOT_CONFLICT")
-            return _identity_from_row(stream), dict(batch.dependency_manifest)
+            return _identity_from_row(stream), _SavedManifest(batch.dependency_manifest, batch.computed_through)
 
     def _page_read(self, request, reader, manifest, resolved):
         """Decode the authoritative prefix only after saved source proof passes.
@@ -428,6 +435,7 @@ class PersistedNewowReference:
         stream_identity, manifest = self._manifest(
             stream_id, page["revision_id"], page["seq"],
         )
+        saved_endpoint = getattr(manifest, "computed_through", None)
         storage_start = manifest.get("query_since")
         if not isinstance(storage_start, str):
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
@@ -435,14 +443,17 @@ class PersistedNewowReference:
             try:
                 source_through = date.fromisoformat(manifest["query_through"])
                 source_as_of = datetime.fromisoformat(manifest["query_as_of"])
-                if resolved.actual_through > source_through or cutoff > source_as_of:
-                    raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
                 evidence = reader.historical_source_evidence(
                     product=request.product, frequency=request.frequency.value,
                     since=date.fromisoformat(storage_start), through=source_through,
                     as_of=source_as_of,
                 )
                 verify_saved_compact_source(manifest, evidence)
+                if resolved.actual_through > source_through or cutoff > source_as_of:
+                    raise ReferenceReadConflict("REFERENCE_UPDATE_PENDING",
+                        saved_through=source_as_of, requested_through=cutoff)
+            except ReferenceReadConflict:
+                raise
             except (KeyError, TypeError, ValueError) as exc:
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
         else:
@@ -456,11 +467,20 @@ class PersistedNewowReference:
                 ).plan_stream(source_request)
             except (TypeError, ValueError) as exc:
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
-            verify_saved_input_prefix(
-                manifest, source.dependency_manifest, resolved.actual_through,
-                frozenset((bar.physical_contract, bar.owner_segment_id)
-                          for bar in source.bars if bar.strategy_input),
-            )
+            try:
+                verify_saved_input_prefix(
+                    manifest, source.dependency_manifest, resolved.actual_through,
+                    frozenset((bar.physical_contract, bar.owner_segment_id)
+                              for bar in source.bars if bar.strategy_input),
+                )
+            except QueryConflict:
+                if saved_endpoint is not None and verified_saved_extension(
+                    manifest, source.dependency_manifest, saved_endpoint.date(),
+                ):
+                    raise ReferenceReadConflict("REFERENCE_UPDATE_PENDING",
+                        saved_through=saved_endpoint, requested_through=cutoff) from None
+                raise ReferenceReadConflict("SOURCE_IDENTITY_UNVERIFIED",
+                    saved_through=saved_endpoint, requested_through=cutoff) from None
         # A cache hit is useful only after a fresh saved-generation and source
         # validation above. The process cache is never an authority for either.
         generation = (stream_id, page["revision_id"], page["seq"])

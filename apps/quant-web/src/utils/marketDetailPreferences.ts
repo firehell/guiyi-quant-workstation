@@ -5,6 +5,7 @@ import {
   NEWOW_STRATEGIES,
   type FlexibleViewRestore,
   type MarketDetailView,
+  type MarketDetailViewRestore,
   type NewowFrequency,
   type NewowStrategy,
 } from '../types/marketDetail.ts'
@@ -25,7 +26,7 @@ export interface FlexibleDetailPreferences extends FlexibleViewRestore {
 export interface MarketDetailPreferences {
   version: 2
   lastView: Exclude<MarketDetailView, 'trend'>
-  newow: { strategy: NewowStrategy; frequency: NewowFrequency | '1m' }
+  newow: MarketDetailViewRestore['newow']
   htdy: FlexibleDetailPreferences
   free: FlexibleDetailPreferences
 }
@@ -86,7 +87,7 @@ export function replaceHtdyDetailPreferences(
 
 export function replaceNewowDetailPreferences(
   current: MarketDetailPreferences,
-  newow: { strategy: unknown; frequency: unknown },
+  newow: { strategy: unknown; frequency: unknown; strategyModel?: unknown; newowTest?: unknown; newowMode?: unknown },
 ): MarketDetailPreferences {
   return { ...current, newow: normalizeNewow(newow) }
 }
@@ -148,7 +149,11 @@ function normalizeNewow(value: unknown): MarketDetailPreferences['newow'] {
     strategy: typeof value.strategy === 'string' && NEWOW_STRATEGY_SET.has(value.strategy)
       ? value.strategy as NewowStrategy
       : 'trend',
-    // Keep a legacy 1m selection visible to route validation; never silently choose D1.
+    ...(value.strategyModel === 'futures_bidir_v1' ? { strategyModel: 'futures_bidir_v1' as const } : {}),
+    ...(value.strategy === 'oscillation' && typeof value.newowTest === 'string' && ['osc-test','osc-test2','osc-test3','osc-test4'].includes(value.newowTest)
+      ? { newowTest: value.newowTest as MarketDetailViewRestore['newow']['newowTest'] } : {}),
+    ...(value.strategy === 'trend' && value.newowMode === 'dual' ? {newowMode:'dual' as const} : {}),
+    // Keep the selected chart period even when the analysis is unsupported.
     frequency: typeof value.frequency === 'string' && (NEWOW_FREQUENCY_SET.has(value.frequency) || value.frequency === '1m')
       ? value.frequency as NewowFrequency | '1m'
       : '1d',

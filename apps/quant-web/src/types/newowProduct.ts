@@ -104,12 +104,19 @@ export interface NewowFeatureStatus {
   readonly reason_code: string | null
 }
 
+export interface NewowSharedInputProof {
+  readonly schema_version: 'newow_shared_input_proof_v1'
+  readonly market_input_sha256: string
+  readonly auxiliary_input_sha256: string | null
+}
+
 export interface NewowProductMeta {
   readonly schema_version: 'newow_product_detail_v4'
   readonly identity: NewowProductWireIdentity
   readonly as_of: string
   readonly read_at: string
   readonly input_content_sha256: string
+  readonly shared_input_proof?: NewowSharedInputProof
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
   readonly reference_model_version: 'newow_marker_reference_zero_cost_v4'

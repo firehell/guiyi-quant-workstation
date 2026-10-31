@@ -22,7 +22,7 @@ from guiyi_quant.reference_trading.htdy import (
 
 # Pure derived results only. Every caller still loads and verifies MDS content;
 # elapsed time/TTL never proves source validity. Nothing here is authoritative.
-_REPLAY_CACHE = OrderedDict()
+_REPLAY_CACHE: OrderedDict[str, tuple] = OrderedDict()
 _CACHE_LOCK = Lock()
 _CACHE_KEYS = 4
 _CACHE_POINTS = 40000
@@ -160,13 +160,19 @@ def query_htdy_history(service, query):
             canonical[contract] = {bar.bar_end: bar for bar in bars}
     else:
         for item in raw:
-            canonical[item["contract"]] = {
-                datetime.fromisoformat(bar["bar_end"]) if isinstance(bar["bar_end"], str) else bar["bar_end"]:
-                CanonicalBar(
-                    bar_end=datetime.fromisoformat(bar["bar_end"]) if isinstance(bar["bar_end"], str) else bar["bar_end"],
-                    trading_day=date.fromisoformat(bar["trading_day"]) if isinstance(bar["trading_day"], str) else bar["trading_day"],
-                    **{key: None if bar[key] is None else Decimal(str(bar[key])) for key in ("open", "high", "low", "close", "volume", "turnover", "open_interest")})
-                for bar in item["bars"]}
+            # A physical contract may return as rank 1 after another owner.
+            # Bounded prefixes are per segment, so retain their exact union.
+            by_end = canonical.setdefault(item["contract"], {})
+            for raw_bar in item["bars"]:
+                bar = CanonicalBar(
+                    bar_end=datetime.fromisoformat(raw_bar["bar_end"]) if isinstance(raw_bar["bar_end"], str) else raw_bar["bar_end"],
+                    trading_day=date.fromisoformat(raw_bar["trading_day"]) if isinstance(raw_bar["trading_day"], str) else raw_bar["trading_day"],
+                    **{key: None if raw_bar[key] is None else Decimal(str(raw_bar[key])) for key in ("open", "high", "low", "close", "volume", "turnover", "open_interest")})
+                previous = by_end.get(bar.bar_end)
+                if previous is not None and previous != bar:
+                    raise ValueError("HTDY_SOURCE_CHANGED")
+                by_end[bar.bar_end] = bar
+
     loaded = []
     for segment in segments:
         bars = tuple(canonical[segment.physical_contract][bar.bar_end] for bar in segment.bars)
@@ -200,7 +206,10 @@ def query_htdy_history(service, query):
             raise ValueError("HTDY_CURSOR_CONFLICT")
         offset = int(parts[1])
     page = selected[offset:offset + query.limit]
-    closed = [trade for trade in selected if trade.status.value == "CLOSED"]
+    # Decimal precision is finite: summary and curve must use the same stable
+    # exit-time sequence rather than reverse-entry presentation pagination.
+    closed = sorted((trade for trade in selected if trade.status.value == "CLOSED"),
+                    key=lambda trade: (trade.exit_bar_end, trade.reference_trade_id))
     returns = [trade.reference_return for trade in closed if trade.reference_return is not None]
     total = sum(returns, Decimal(0))
     wins = sum(value > 0 for value in returns)

@@ -74,7 +74,7 @@ test('keeps navigation and one workspace slot mounted while source data changes 
   assert.match(template, /<main class="market-detail-page unified-detail-light"/)
   assert.doesNotMatch(template, /'newow-detail-light': isNewowView/)
   assert.match(template, /<MarketDetailQuoteHeader[^>]+:unified="isWorkspacePreview"/)
-  assert.match(template, /<MarketDetailQuoteHeader[^>]+:newow="isNewowView"/)
+  assert.match(template, /<MarketDetailQuoteHeader[^>]+:newow="true"/)
   assert.doesNotMatch(source, /\.newow-detail-light/)
   assert.match(template, /<MarketDetailViewNav[\s\S]+<section\s+class="market-detail-page__workspace"/)
   assert.match(template, /data-detail-section="workspace-slot"/)
@@ -105,11 +105,12 @@ test('accepted Newow chart defers reference research until visible', () => {
   assert.match(workspace, /<MarketDetailUnavailable v-if="chartResponse === null/)
 })
 
-test('historical Newow mode hides the independent current quote and contract header', () => {
+test('historical Newow mode binds the independent quote to its trusted cutoff', () => {
   const { source, template } = page()
   const workspace = readFileSync(newowWorkspaceUrl, 'utf8')
   assert.match(source, /const newowHistoricalAsOf = ref<string \| null>\(null\)/)
-  assert.match(template, /MarketDetailQuoteHeader v-if="!isFuturesMode && !controller.state.value.error && header && !\(isNewowView && newowHistoricalAsOf\)"/)
+  assert.match(template, /MarketDetailQuoteHeader v-if="header"/)
+  assert.match(source, /snapshotBefore: computed\(\(\) => newowHistoricalAsOf\.value\)/)
   assert.match(template, /@snapshot-mode="newowHistoricalAsOf = \$event"/)
   assert.doesNotMatch(workspace, /查看最近可用历史快照|newow-product-workspace__read-state/)
   assert.match(workspace, /重试加载/)

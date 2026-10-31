@@ -469,6 +469,8 @@ def _product_response(
         payload["meta"]["identity"]["input_quality_policy"] = (
             identity.input_quality_policy.value
         )
+    if meta.shared_input_proof is not None:
+        payload["meta"]["shared_input_proof"] = _json_value(meta.shared_input_proof)
     return NewowProductResponse.model_validate(payload)
 
 

@@ -5,10 +5,10 @@ Unknown commits and interrupted processes require readback instead of blind retr
 """
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES as NEWOW_MAX_ROUTES, recording_route_supported
+from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES as NEWOW_MAX_ROUTES
 
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 import fcntl
 import json
@@ -240,9 +240,11 @@ class HistoricalRefresh:
             identity = route.identity
             key = identity.stream_id
             prior = state['routes'].get(key)
+            # Persist scan progress even when this bounded page contains only
+            # blocked streams; otherwise later routes starve forever.
+            state['cursor'] = key
             if prior and prior['status'] == 'blocked':
                 continue
-            state['cursor'] = key
             source_changed = route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED'
             if (route.reason and not source_changed and not prior) or not _canonical_identity(identity) or route.since is None:
                 state['routes'][key] = {'status': 'blocked', 'reason': route.reason or 'SOURCE_IDENTITY_UNVERIFIED'}
@@ -276,7 +278,7 @@ class HistoricalRefresh:
                 reason = _reason(error)
                 self.last_progress = {**self.last_progress, 'stage': 'blocked', 'reason': reason}
                 if reason != 'SOURCE_BUSY':
-                    state['routes'][key] = {'status': 'blocked', 'reason': reason}
+                    state['routes'][key] = {**state['routes'].get(key, {}), 'status': 'blocked', 'reason': reason}
                     self.state.write(state)
             return  # One selected stream per tick, even when planning fails.
         self.state.write(state)
@@ -350,7 +352,23 @@ class HistoricalRefresh:
                 if (len(plan.streams) != 1 or plan.streams[0].request.identity != route.identity
                         or plan.streams[0].request.since != route.since):
                     raise ValueError('REFRESH_PLAN_SCOPE_DRIFT')
-                if prior.get('rebuild_required'):
+                if getattr(service, '_reader', None) is not None:
+                    from app.reference_trading.refresh_recovery import prepare_source_recovery, install_source_recovery
+                    from app.market_data.newow.product_reader import NewowProductReadCancelled
+                    try:
+                        with prepare_source_recovery(route, prior, plan, planner=planner, service=service,
+                                                     endpoint=endpoint, trading_day=trading_day) as recovery:
+                            if recovery is not None:
+                                try:
+                                    plan = install_source_recovery(self.state, state, recovery)
+                                except OSError as error:
+                                    raise RefreshStateError('REFRESH_RECOVERY_WRITE_UNKNOWN') from error
+                                prior = None
+                    except NewowProductReadCancelled:
+                        if cancelled():
+                            raise RefreshPlanningYield() from None
+                        raise
+                if prior and prior.get('rebuild_required'):
                     # Rebuild only the exact same endpoint and source already
                     # proven by the failed append plan. Never shrink its prefix.
                     plan, prior = rebuild_plan(plan), None
@@ -442,8 +460,9 @@ class RefreshThread:
     """Single cancellable worker; foreground observation never joins each tick."""
     def __init__(self, runner, *, interval=30, now=lambda: datetime.now(UTC),
                  can_run=lambda: True, yield_requested=lambda: False,
-                 on_tick_started=lambda: True, on_tick_finished=lambda: None, batch_limit=None):
+                 on_tick_started=lambda: True, on_tick_finished=lambda: None, batch_limit=None, idle_interval=None):
         self._runner, self._interval, self._now = runner, interval, now
+        self._idle_interval = interval if idle_interval is None else idle_interval
         self._can_run, self._yield_requested = can_run, yield_requested
         self._on_tick_started, self._on_tick_finished = on_tick_started, on_tick_finished
         self._batch_limit = batch_limit
@@ -466,6 +485,7 @@ class RefreshThread:
                     self._stop.wait(.1)
                     continue
                 try:
+                    previous_progress = getattr(self._runner, 'last_progress', None)
                     options = {} if self._batch_limit is None else {'batch_limit': self._batch_limit}
                     self._runner.tick(now=self._now(), cancelled=lambda:
                         self._stop.is_set() or self._yield_requested(), **options)
@@ -474,7 +494,8 @@ class RefreshThread:
             except Exception as error:
                 self.last_error = _reason(error)
                 return  # Invalid state/storage never gets blindly overwritten.
-            self._stop.wait(self._interval)
+            progressed = previous_progress != getattr(self._runner, 'last_progress', None)
+            self._stop.wait(self._interval if progressed else self._idle_interval)
 
     def start(self):
         self._thread.start()
@@ -490,6 +511,37 @@ class RefreshThread:
 
     def diagnostic_snapshot(self):
         return dict(getattr(self._runner, 'last_progress', {}))
+
+
+def _history_route_supported(identity):
+    """Maintain only existing canonical histories in the public page scope."""
+    if identity.recording_mode is not RecordingMode.HISTORICAL_REPLAY or not _canonical_identity(identity):
+        return False
+    strategy = _strategy(identity)
+    if strategy == 'subing_reference':
+        return (identity.strategy_code == 'subing_reference'
+                and identity.series_kind == 'actual_dominant'
+                and identity.frequency in FREQUENCIES)
+    if (identity.strategy_code != f'newow_{strategy}'
+            or identity.product != identity.product.lower()
+            or identity.series_kind != 'actual_dominant'
+            or strategy not in STRATEGIES):
+        return False
+    from app.market_data.newow.product_release import (
+        OPEN_FREQUENCIES, OPEN_INTRADAY_PRODUCTS, OPEN_WEEKLY_PRODUCTS,
+        MAIN_RISE_FREQUENCIES,
+    )
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+    frequency = ProductFrequency(identity.frequency)
+    if frequency not in OPEN_FREQUENCIES:
+        return False
+    if strategy == 'main_rise' and frequency not in MAIN_RISE_FREQUENCIES:
+        return False
+    if frequency is ProductFrequency.WEEKLY:
+        return identity.product in OPEN_WEEKLY_PRODUCTS
+    if identity.frequency in {'5m', '15m', '30m', '60m'}:
+        return identity.product in OPEN_INTRADAY_PRODUCTS
+    return True
 
 
 def build_historical_refresh(session_factory, *, state_path):
@@ -510,15 +562,15 @@ def build_historical_refresh(session_factory, *, state_path):
     def routes():
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             rows = session.scalars(select(ReferenceStream).where(
-                ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
-                ReferenceStream.enabled.is_(True), func.lower(ReferenceStream.product).in_(products),
+                ReferenceStream.recording_mode == RecordingMode.HISTORICAL_REPLAY.value,
+                func.lower(ReferenceStream.product).in_(products),
                 ReferenceStream.frequency.in_(FREQUENCIES),
             )).all()
-            identities = [_identity_from_row(row) for row in rows
-                          if recording_route_supported(_strategy(_identity_from_row(row)), row.frequency)
-                          or (_strategy(_identity_from_row(row)) == "subing_reference" and row.frequency in FREQUENCIES)]
-        historical = [replace(identity, recording_mode=RecordingMode.HISTORICAL_REPLAY,
-                              observation_policy_version=None) for identity in identities]
+            # A page history asset is maintained independently of observation
+            # activation. Exact canonical identity excludes superseded formulas
+            # and quality policies; no forward stream is enabled or created.
+            historical = [identity for row in rows
+                          if _history_route_supported(identity := _identity_from_row(row))]
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             # Fetch only the current endpoint and original query boundary. Reading
             # 720 strategy checkpoints/manifests here would replay history per tick.

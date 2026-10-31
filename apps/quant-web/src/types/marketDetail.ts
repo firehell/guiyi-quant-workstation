@@ -18,7 +18,10 @@ export interface FlexibleViewRestore {
 export interface MarketDetailViewRestore {
   newow: {
     strategy: NewowStrategy
-    /** Retain legacy 1m only so restored routes fail closed instead of changing period. */
+    strategyModel?: MarketDetailIdentity['strategyModel']
+    newowTest?: MarketDetailIdentity['newowTest']
+    newowMode?: MarketDetailIdentity['newowMode']
+    /** Chart period survives switching even when this strategy cannot evaluate it. */
     frequency: NewowFrequency | '1m'
   }
   htdy: FlexibleViewRestore

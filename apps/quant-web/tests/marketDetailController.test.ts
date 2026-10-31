@@ -201,7 +201,7 @@ test('keeps the quote header and cached metadata while switching Newow strategie
   assert.equal(controller.state.value.loading, false)
   await switching
   assert.equal(metadataCalls, 1)
-  assert.equal(series.clearCalls, 1)
+  assert.equal(series.clearCalls, 0)
   assert.equal(controller.state.value.identity?.strategy, 'oscillation')
 })
 
@@ -221,6 +221,50 @@ test('reuses one generic source when only the analysis view changes', async () =
   assert.equal(series.replaceCalls, 1)
   assert.equal(controller.state.value.header?.close, retainedHeader?.close)
   assert.equal(controller.state.value.identity?.view, 'htdy')
+})
+
+test('pending prices are shared across same-axis strategy and analysis view switches', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const { series, requests } = deferredSeries()
+  const controller = useMarketDetailController({
+    routeQuery: () => ({}), createSeries: () => series,
+    fetchDirectory: async () => ({ items: [dominant('jm')] }),
+    fetchResearch: async () => research('jm'),
+  })
+  const first = controller.switchIdentity(newowIdentity)
+  const second = controller.switchIdentity({ ...newowIdentity, strategy: 'oscillation' })
+  const third = controller.switchIdentity({ ...newowIdentity, view: 'free', strategy: undefined })
+  assert.equal(requests.length, 1, 'pending shared prices must not be aborted and downloaded again')
+  requests[0]!.gate.resolve()
+  await Promise.all([first, second, third])
+  assert.equal(controller.state.value.identity?.view, 'free')
+  assert.equal(controller.state.value.header?.close, 100)
+  assert.equal(controller.state.value.generation, 3)
+  controller.dispose()
+})
+
+test('pending A -> B -> A prices reload the interrupted axis and reject late old writers', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const { series, requests } = deferredSeries()
+  const controller = useMarketDetailController({
+    routeQuery: () => ({}), createSeries: () => series,
+    fetchDirectory: async () => ({ items: [dominant('jm')] }),
+    fetchResearch: async () => research('jm'),
+  })
+  const first = controller.switchIdentity(newowIdentity)
+  const second = controller.switchIdentity({ ...newowIdentity, frequency: '60m' })
+  const third = controller.switchIdentity({ ...newowIdentity, strategy: 'oscillation' })
+  assert.deepEqual(requests.map(request => request.identity.frequency), ['1d', '60m', '1d'])
+  requests[2]!.gate.resolve()
+  await third
+  const header = controller.state.value.header
+  requests[0]!.gate.resolve()
+  requests[1]!.gate.resolve()
+  await Promise.all([first, second])
+  assert.equal(controller.state.value.identity?.frequency, '1d')
+  assert.equal(controller.state.value.identity?.strategy, 'oscillation')
+  assert.equal(controller.state.value.header, header)
+  controller.dispose()
 })
 
 test('an incompatible product identity clears the old header immediately', async () => {
@@ -475,7 +519,8 @@ test('Newow chart starts while generic series is still pending', async () => {
   await nextTick()
 
   assert.equal(chartRequests, 1)
-  assert.equal(genericRequests, 0, 'Newow must not request an unused generic series')
+  assert.equal(genericRequests, 1, 'Newow shares the page-owned price source')
+  generic.resolve()
   await switched
   assert.equal(controller.state.value.loading, false)
   assert.equal(controller.state.value.header?.productName, '焦煤')
@@ -526,7 +571,7 @@ test('generic series failure does not suppress an otherwise valid Newow workspac
 
   await controller.switchIdentity(newowIdentity)
 
-  assert.equal(genericRequests, 0, 'Newow must not request an unused generic series')
+  assert.equal(genericRequests, 1, 'Newow shares the page-owned price source')
   assert.equal(controller.state.value.error, null)
   assert.equal(controller.state.value.header?.productName, '焦煤')
   controller.dispose()

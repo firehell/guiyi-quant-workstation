@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { homeContextChanged } from '@/utils/newowHomeContext'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
-import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
+import { DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
+import { canShareNewowAuxiliary } from '@/utils/newowSharedLayers'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
 import type { DetailPricePreview as PricePreviewState } from '@/composables/useDetailPricePreview'
 import { newowComparisonCompatible, newowComparisonWindow } from '@/utils/newowComparison'
 import { newowDualDominance } from '@/utils/newowDualChartDisplay'
@@ -77,6 +78,7 @@ watch(identity, (next, previous) => {
 }, { flush: 'sync' })
 const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31', 'newow_product_capabilities_v32'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency) && !props.capabilities.latest_completed_frequencies?.some(frequency => frequency === identity.value.frequency))
 const pricePreview = props.pricePreview
+const pageOwnsChart = inject(DETAIL_CHART_SESSION, null) !== null
 const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : candidatePreviewNow() })
 const comparisonSelected = ref(false)
 const comparisonEnabled = computed(() => !experimentKind.value && (dualMode.value || comparisonSelected.value) && !loader.fusionRecoveryActive.value)
@@ -104,6 +106,7 @@ const chartResponse = computed(() => (
     ? loader.sections.chart.data.value as NewowProductSectionResponse<'chart'>
     : null
 ))
+const displayChartResponse = computed(() => chartResponse.value ?? loader.retainedChart.value)
 const experimentSharedChart = computed(() => sharedChartForOwner(chartResponse.value, experimentContext.value))
 const experimentDisplayOwner = computed(() => {
   const bar = experimentSharedChart.value?.value?.bars.at(-1)
@@ -209,7 +212,8 @@ const retainedPaneCompatible = computed(() => dialogKind.value === 'cup_handle' 
   && retainedPane.value.component === selectedAuxiliary.value)
 const requiredAuxiliaryComponent = computed<NewowAuxiliaryComponent>(() => dialogKind.value === 'cup_handle' ? 'cup_handle' : selectedAuxiliary.value)
 const currentAuxiliaryResponse = computed(() => {
-  const response = dialogKind.value === 'cup_handle' ? auxiliaryResponse.value : retainedPaneCompatible.value ? retainedPane.value!.response : auxiliaryResponse.value
+  const response = dialogKind.value === 'cup_handle' ? auxiliaryResponse.value : retainedPaneCompatible.value ? retainedPane.value!.response : auxiliaryResponse.value ?? loader.sharedAuxiliary.value
+  if (Boolean(canShareNewowAuxiliary(chartResponse.value, response, requiredAuxiliaryComponent.value))) return response
   const lifecycle = dialogKind.value === 'cup_handle' ? loader.sections.auxiliary.state.value : retainedPaneCompatible.value ? retainedPane.value!.lifecycle : loader.sections.auxiliary.state.value
   const acceptedWindow = loader.acceptedAuxiliaryWindow.value
   return (lifecycle === 'ready' || lifecycle === 'warming')
@@ -219,6 +223,7 @@ const currentAuxiliaryResponse = computed(() => {
     && newowChartSnapshotKey(response) === newowChartSnapshotKey(chartResponse.value) ? response : null
 })
 const currentAuxiliaryLifecycle = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? 'input_conflict'
+  : currentAuxiliaryResponse.value && loader.sharedAuxiliary.value === currentAuxiliaryResponse.value ? 'ready'
   : dialogKind.value === 'cup_handle' ? loader.sections.auxiliary.state.value
   : retainedPaneCompatible.value ? retainedPane.value!.lifecycle : loader.sections.auxiliary.state.value)
 const currentAuxiliaryError = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? loader.sections.auxiliary.error.value
@@ -414,7 +419,7 @@ function retryChart(): void { loader.refreshCurrent() }
 watch(selectedAuxiliary, value => rememberNewowUiPreferences(identityKey.value, { auxiliary: value }))
 watch(identityKey, async (_key, previous) => {
   if (previous) rememberNewowUiPreferences(previous, { auxiliary: selectedAuxiliary.value, scrollTop: scrollOwner()?.scrollTop ?? 0 })
-  restoredScroll = strategySwitching.value
+  restoredScroll = pageOwnsChart || strategySwitching.value
   comparisonSelection.value = null; ++locateRequest.value; chartFocusRequestId.value = 0; pendingLocate.value = null; locatedTradeId.value = null; selectedSignalId.value = null; selectedHintId.value = null; retainedPane.value = null
   if (!strategySwitching.value) selectedAuxiliary.value = restoredAuxiliary()
   dialogKind.value = null; locateMessage.value = null
@@ -484,7 +489,7 @@ function scrollOwner(): HTMLElement | null {
   }
   return document.scrollingElement as HTMLElement | null
 }
-let restoredScroll = false
+let restoredScroll = pageOwnsChart
 watch(chartResponse, async value => {
   if (!value?.value || restoredScroll) return
   restoredScroll = true
@@ -512,7 +517,6 @@ onBeforeUnmount(() => {
       </details>
     </Teleport>
     <p v-if="homeContextNotice" role="status">{{homeContextNotice}}</p>
-    <DetailPricePreview v-if="chartResponse === null" :identity="identity" :preview="pricePreview" />
     <template v-if="experimentKind && chartResponse">
       <NewowDecisionV2Panel :show-price-sources="false" v-if="experimentSharedChart" :response="experimentSharedChart" display-strategy="oscillation" :path-strategy="experimentKind" background-label="震荡背景" :expected-owner="experimentDisplayOwner" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
       <p v-else role="status">震荡背景不可用或正在读取 · 仅显示同一截止时间与合约段的背景事实</p>
@@ -521,10 +525,10 @@ onBeforeUnmount(() => {
       <NewowDecisionV2Panel :show-price-sources="false" v-if="chartResponse?.value" :historical="loader.historicalChartWindow.value" :response="chartResponse" :chart-sources="chartPriceSources(chartResponse, summary)" :display-strategy="dualMode ? 'dual' : selectedStrategy" :main-rise-background="selectedStrategy === 'main_rise'" :background-label="selectedStrategy === 'main_rise' ? '趋势日周背景' : undefined" :current-state="selectedStrategy === 'main_rise' ? describeNewowState(summary.status.state, summary.status.historical) : undefined" :expected-owner="selectedStrategy === 'main_rise' ? mainRiseOwner : undefined" :dominant="decisionDominant" :dominant-ready="decisionDominantReady" :dominant-as-of="chartResponse.meta.as_of" :latest-completed-frequencies="capabilities.latest_completed_frequencies" :show-path="false" @path-context="pathContext=$event" />
       <div v-else-if="strategySwitching" class="newow-product-workspace__decision-loading" role="status">正在更新策略概览…</div>
     </template>
-    <div v-if="experimentKind || chartResponse === null" class="newow-product-workspace__toolbar">
+    <div v-if="experimentKind" class="newow-product-workspace__toolbar">
       <slot name="chart-frequency" />
     </div>
-    <NewowExperimentPanel @analyze-channel="openDialog('comparator')" @context="experimentContext=$event" v-if="experimentKind && chartResponse" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :as-of="chartResponse?.meta.as_of??null">
+    <NewowExperimentPanel @analyze-channel="openDialog('comparator')" @context="experimentContext=$event" v-if="experimentKind && chartResponse" :product="identity.symbol" :frequency="identity.frequency" :kind="experimentKind" :volume-bars="chartModel?.bars ?? []" :as-of="chartResponse?.meta.as_of??null">
       <template #overview>
         <div class="newow-product-workspace__comparison-controls" aria-label="震荡背景参考价格"><span>目标 {{ newowReferencePrice(experimentDecision?.prices?.shared.target?.display_value ?? experimentDecision?.prices?.shared.target?.raw) }}</span><span>吸筹 {{ newowReferencePrice(experimentDecision?.prices?.shared.absorb?.display_value ?? experimentDecision?.prices?.shared.absorb?.raw) }}</span><span>当前测试 {{ experimentContext?.latestState ? (experimentContext.latestState.holding ? '持有' : '空仓') : '不可用' }}</span></div>
       </template>
@@ -536,9 +540,10 @@ onBeforeUnmount(() => {
       <template #path><NewowDailyWeeklyPath :decision="experimentSharedChart ? experimentDecision : null" :loading="pathContext.loading" :error="experimentSharedChart ? pathContext.error : '同一合约段的震荡背景不可用'" /></template>
     </NewowExperimentPanel>
     <template v-else-if="!experimentKind">
+    <p v-if="!chartResponse && displayChartResponse" class="newow-product-workspace__load-notice" role="status">历史图层预览 · 正在核验当前策略数据</p>
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="重试加载" :can-recover="true" :can-return-market="false" @recover="retryChart" />
     <NewowDailyWeeklyPath :key="identityKey" :decision="pathContext.decision" :loading="pathContext.loading" :error="pathContext.error" />
-    <div v-if="chartResponse !== null" ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :show-tools="false" :channel-controls-target="channelControlsTarget" :response="chartResponse" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartStatsPrimary.chartCompatible.value ? chartStatsPrimary.trades.value : referenceParts.chartCompatible.value ? referenceParts.trades.value : []" :reference-trades-complete="comparisonEnabled && comparison.response.value ? chartReferenceStatsComplete : primaryReferenceComplete" :reference-stats-loading="chartReferenceStatsLoading" :reference-stats-error="chartReferenceStatsError ?? chartStatsPrimary.error.value ?? chartStatsPrimary.historyError.value" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="chartStatsPartner.complete.value ? chartStatsPartner.trades.value : []" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @load-reference-stats="loadChartReferenceStats" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
+    <div ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :show-tools="false" :channel-controls-target="channelControlsTarget" :response="displayChartResponse" :display-only="!chartResponse" :price-bars="pricePreview.bars.value" :price-frequency="identity.frequency" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartStatsPrimary.chartCompatible.value ? chartStatsPrimary.trades.value : referenceParts.chartCompatible.value ? referenceParts.trades.value : []" :reference-trades-complete="comparisonEnabled && comparison.response.value ? chartReferenceStatsComplete : primaryReferenceComplete" :reference-stats-loading="chartReferenceStatsLoading" :reference-stats-error="chartReferenceStatsError ?? chartStatsPrimary.error.value ?? chartStatsPrimary.historyError.value" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="chartStatsPartner.complete.value ? chartStatsPartner.trades.value : []" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @load-reference-stats="loadChartReferenceStats" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #frequency-controls><div class="newow-product-workspace__toolbar"><slot name="chart-frequency" /></div></template>
     <template #main-controls><div class="newow-product-workspace__comparison-controls"><button v-if="selectedStrategy === 'main_rise'" @click="openDialog('magic11')">11周期 · 解读</button><button v-if="!dualMode" type="button" :disabled="selectedStrategy === 'main_rise'" :title="selectedStrategy === 'main_rise' ? '双策略对照由趋势与震荡组成，请切换到其中一个策略' : '读取相同时间与物理合约的另一策略，不合并收益'" :aria-pressed="comparisonEnabled && selectedStrategy !== 'main_rise'" @click="comparisonSelected = !comparisonSelected">双策略对照</button><span v-if="comparisonEnabled && selectedStrategy !== 'main_rise' && comparison.state.value !== 'ready'" role="status">{{ newowUiStateLabel(comparison.state.value) }} · {{ dualMode ? '下方统计为独立融合参考模型' : '参考统计仍属于 ' + newowDisplayLabel(selectedStrategy) }}</span><span v-if="comparison.referenceError.value" role="status">{{ comparison.referenceError.value }}</span><span v-if="comparison.error.value" role="status">{{ comparison.error.value }} <button @click="comparison.reload">重试对照</button></span></div></template>
     <template #auxiliary-controls>

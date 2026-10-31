@@ -229,3 +229,93 @@ def test_http_preserves_decimal_lexemes(monkeypatch):
         "entry_reference_price": "1417.00",
         "reference_return": "0.1234567890123456789",
     }
+
+
+def test_summary_uses_curve_exit_order_with_exact_decimal_arithmetic(monkeypatch):
+    from dataclasses import dataclass
+    from random import Random
+    from types import SimpleNamespace
+    from guiyi_quant.reference_trading import ReturnPolicy, Side, TradeStatus
+    from guiyi_quant.reference_trading.reducer import _return
+    from app.market_data.subing_reference import SubingReferenceQuery
+    from app.reference_trading import htdy_history
+    @dataclass
+    class Trade:
+        reference_trade_id: str
+        entry_trading_day: date
+        entry_bar_end: datetime
+        exit_bar_end: datetime
+        status: TradeStatus
+        reference_return: Decimal
+    random = Random(0)
+    values = [_return(Decimal(random.randrange(6000,10000))/2,
+                      Decimal(random.randrange(6000,10000))/2,
+                      Side.LONG, ReturnPolicy.RATIO_MINUS_ONE) for _ in range(50)]
+    ascending, descending = sum(values,Decimal(0)), sum(reversed(values),Decimal(0))
+    assert ascending != descending  # genuine regression fixture, no tolerance
+    trades=tuple(Trade(str(i),date(2026,9,1),START+timedelta(minutes=60*i),START+timedelta(minutes=60*i+30),TradeStatus.CLOSED,value) for i,value in enumerate(values))
+    cutoff=START+timedelta(days=10)
+    service=SimpleNamespace(resolve_read_window=lambda _: (date(2026,9,1),date(2026,9,10),cutoff,cutoff),
+        historical_storage_start=lambda _:date(2026,9,1),historical_input_bound=lambda **_: (0,0),
+        historical_metadata_evidence=lambda **_: {},load_historical_inputs=lambda **_: ([],[],{},cutoff),check_cancelled=lambda:None)
+    monkeypatch.setattr(htdy_history,'_cached_replay',lambda *_: (trades,(),None))
+    value=htdy_history.query_htdy_history(service,SubingReferenceQuery('jm',frequency='60m'))
+    assert value['summary']['sum_return_percentage_points'] == ascending
+    assert value['summary']['mean_return_pct'] == ascending/Decimal(50)
+    assert value['trades'][0]['reference_trade_id'] == '49'  # pagination remains reverse-entry
+
+
+def returning_contract_fixture():
+    from math import sin
+    from types import SimpleNamespace
+    from guiyi_quant.subing_reference import ReferenceBar, ReferenceSegment
+    def bars(start, end, phase):
+        result = []
+        for index in range(start, end):
+            instant = START + timedelta(hours=index)
+            close = Decimal(str(round(100 + 30*sin(index*.2 + phase),3)))
+            open_ = Decimal(str(round(100 + 30*sin((index-1)*.2 + phase),3)))
+            result.append(CanonicalBar(instant,instant.date(),open_,max(open_,close)+1,min(open_,close)-1,close,Decimal(10),None,None))
+        return tuple(result)
+    definitions = (('JM2701', 'a1', bars(0,96,0), START.date(), (START+timedelta(hours=95)).date()),
+                   ('JM2705', 'b', bars(65,192,1), (START+timedelta(hours=96)).date(), (START+timedelta(hours=191)).date()),
+                   ('JM2701', 'a2', bars(161,288,0), (START+timedelta(hours=192)).date(), (START+timedelta(hours=287)).date()))
+    replay_segments=[]
+    reference_segments=[]
+    raw=[]
+    for index,(contract,owner,values,since,through) in enumerate(definitions):
+        interruption=values[-1].bar_end+timedelta(microseconds=1) if index<2 else None
+        replay_segments.append(HtdyReplaySegment(contract,owner,owner,since,through,values,interruption))
+        reference_segments.append(ReferenceSegment(contract,owner,tuple(ReferenceBar(b.bar_end,b.trading_day,b.close) for b in values),since,through,interrupted_at=interruption,calculation_segment_id=owner))
+        raw.append({'contract':contract,'bars':[bar.as_record() for bar in values]})
+    cutoff=replay_segments[-1].bars[-1].bar_end
+    service=SimpleNamespace(check_cancelled=lambda:None,historical_storage_start=lambda _:START.date(),
+        historical_metadata_evidence=lambda **_: {'revision':'returning-contract'},historical_input_bound=lambda **_: (1000,4096000),
+        resolve_read_window=lambda _: (START.date(),cutoff.date(),cutoff,cutoff),
+        load_historical_inputs=lambda **_: (tuple(reference_segments),raw,{},cutoff))
+    return service,replay_segments,raw
+
+
+def test_bounded_32_prefixes_preserve_a_b_a_contract_history_with_real_signals():
+    from app.market_data.subing_reference import SubingReferenceQuery
+    from app.reference_trading.htdy_history import query_htdy_history
+    service,segments,_=returning_contract_fixture()
+    expected_trades,expected_signals,_=replay_htdy(history_identity('jm','60m'),segments)
+    assert expected_signals and expected_trades
+    assert {signal['segment_id'] for signal in expected_signals} == {'a1','b','a2'}
+    value=query_htdy_history(service,SubingReferenceQuery('jm',frequency='60m',limit=200))
+    assert value['signals'] == list(expected_signals)
+    assert len(value['trades']) == len(expected_trades)
+    assert {trade['owner_segment_id'] for trade in value['trades']} == {'a1','b','a2'}
+
+
+def test_duplicate_contract_bar_disagreement_fails_closed():
+    from app.market_data.subing_reference import SubingReferenceQuery
+    from app.reference_trading.htdy_history import query_htdy_history
+    service,_,raw=returning_contract_fixture()
+    from copy import deepcopy
+    duplicate=deepcopy(raw[0])
+    duplicate['bars'][0]['close']=str(Decimal(duplicate['bars'][0]['close'])+1)
+    raw.append(duplicate)
+    with pytest.raises(ValueError,match='HTDY_SOURCE_CHANGED'):
+        query_htdy_history(service,SubingReferenceQuery('jm',frequency='60m'))

@@ -83,3 +83,10 @@ test('current continuous preferences migrate without losing period and indicator
   loadMarketDetailPreferences(target,()=>{notices++})
   assert.equal(notices,1)
 })
+
+test('Newow strategy model and presentation identity survive leaving and restoring its view', () => {
+  const target=storage(), current=defaultMarketDetailPreferences()
+  saveMarketDetailPreferences({...current,newow:{strategy:'oscillation',frequency:'1m',strategyModel:'futures_bidir_v1',newowTest:'osc-test4'}},target)
+  const restored=loadMarketDetailPreferences(target)
+  assert.deepEqual(restored.newow,{strategy:'oscillation',frequency:'1m',strategyModel:'futures_bidir_v1',newowTest:'osc-test4'})
+})

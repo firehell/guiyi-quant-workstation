@@ -259,7 +259,8 @@ def test_actual_strategy_service_advances_same_window(tmp_path, request, backend
 
 
 @pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
-def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, request, backend):
+@pytest.mark.parametrize("activate", [False, True])
+def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, request, backend, activate):
     from app.reference_trading.historical_refresh import build_historical_refresh
     from tests.reference_trading.test_newow_bootstrap import setup_source, plan_for, NOW
     from app.reference_trading.newow_bootstrap import NewowForwardBootstrap
@@ -273,9 +274,10 @@ def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, req
         manifest = {**batch.dependency_manifest, 'query_since': '2023-01-01'}
         batch.dependency_manifest = manifest
         rev.dependency_digest = manifest_sha256(manifest)
-    bootstrap = NewowForwardBootstrap(factory)
-    plan = plan_for(bootstrap, identity)
-    bootstrap.apply(plan, expected_plan_hash=plan['plan_hash'], now=NOW)
+    if activate:
+        bootstrap = NewowForwardBootstrap(factory)
+        plan = plan_for(bootstrap, identity)
+        bootstrap.apply(plan, expected_plan_hash=plan['plan_hash'], now=NOW)
     runner = build_historical_refresh(factory, state_path=tmp_path / 'refresh.json')
     routes = runner._routes()
     assert len(routes) == 1
@@ -472,3 +474,87 @@ def test_subing_full_history_uses_separate_bounded_budget(tmp_path):
     assert planner.requests[0].budget.max_input_bars == 2_000_000
     assert planner.requests[0].budget.max_input_bytes == 8_192_000_000
     assert len(service.calls) == 1
+
+
+def test_blocked_scan_page_advances_cursor_to_allow_later_history_progress(tmp_path):
+    routes = tuple(replace(route(), identity=replace(route().identity, product=f'p{index:03}'))
+                   for index in range(40))
+    runner, planner, service = setup(tmp_path, [('completed', None, False)], routes)
+    blocked = {item.identity.stream_id: {'status': 'blocked', 'reason': 'REFRESH_READBACK_REQUIRED'}
+               for item in routes[:32]}
+    runner.state.write({'version': 'newow_historical_refresh_v1', 'cursor': '', 'routes': blocked})
+    runner.tick(now=END)
+    assert not planner.requests and not service.calls
+    assert runner.state.read()['cursor'] == routes[31].identity.stream_id
+    runner.tick(now=END)
+    assert len(service.calls) == 1
+    assert service.calls[0][1].streams[0].request.identity == routes[32].identity
+    assert runner.state.read()['routes'] == blocked
+
+
+@pytest.mark.parametrize('frequency', ['5m', '15m', '30m', '60m', '1d', '1w'])
+def test_page_history_scope_accepts_current_identity_without_observation_activation(frequency):
+    from app.reference_trading.historical_refresh import _history_route_supported
+    from guiyi_quant.reference_trading import RecordingMode
+    identity = _newow('jm', ProductStrategy.TREND, frequency, forward=False)
+    assert _history_route_supported(identity)
+    assert not _history_route_supported(replace(identity, formula_versions=('superseded_formula',)))
+    assert not _history_route_supported(replace(identity, recording_mode=RecordingMode.FORWARD_OBSERVATION,
+                                                observation_policy_version='completed_canonical_v1'))
+
+
+def test_pending_old_endpoint_finishes_before_fresh_catchup_plan(tmp_path):
+    runner, planner, service = setup(tmp_path, [
+        ('partial', 'INTERRUPTED', True), ('completed', None, False), ('completed', None, False)])
+    runner.tick(now=END)
+    frozen = service.calls[0][1]
+    latest = END + timedelta(days=1)
+    runner._endpoint = lambda _route, _now: (latest, latest.date())
+    runner.tick(now=latest)
+    assert service.calls[1][0] == 'resume'
+    assert service.calls[1][1] == frozen
+    assert not runner.state.read()['routes']
+    assert len(planner.requests) == 1
+    original = planner.plan
+    def latest_plan(request):
+        plan = original(request)
+        revised = replace(plan.streams[0], target_completed_through=latest)
+        updated = replace(plan, streams=(revised,), plan_hash='')
+        return replace(updated, plan_hash=canonical_sha256(updated))
+    planner.plan = latest_plan
+    runner._routes = lambda: (replace(route(), computed_through=END),)
+    runner.tick(now=latest)
+    assert len(planner.requests) == 2
+    assert planner.requests[-1].streams[0].as_of == latest
+    assert service.calls[-1][1].streams[0].target_completed_through == latest
+
+
+def test_history_scope_keeps_subing_uppercase_and_rejects_legacy_aliases():
+    from app.reference_trading.historical_refresh import _history_route_supported
+    from scripts.reference_trading_p9_manifest import _subing
+    subing = _subing('jm', '1d', forward=False)
+    assert subing.product == 'JM' and _history_route_supported(subing)
+    assert not _history_route_supported(replace(subing, product='jm'))
+    newow = _newow('jm', ProductStrategy.TREND, '1d', forward=False)
+    assert not _history_route_supported(replace(newow, product='JM'))
+    assert not _history_route_supported(replace(newow, strategy_code='newow-trend'))
+
+
+@pytest.mark.parametrize('progressed,expected_wait', [(True, 1), (False, 30)])
+def test_refresh_waits_for_new_permission_but_does_not_add_thirty_seconds_per_batch(progressed, expected_wait):
+    waits = []
+    class Stop:
+        stopped = False
+        def is_set(self): return self.stopped
+        def wait(self, seconds):
+            waits.append(seconds)
+            self.stopped = True
+    runner = SimpleNamespace(last_progress={})
+    def tick(**_):
+        if progressed:
+            runner.last_progress = {'stage': 'committed'}
+    runner.tick = tick
+    refresh = RefreshThread(runner, interval=1, idle_interval=30)
+    refresh._stop = Stop()
+    refresh._run()
+    assert waits == [expected_wait]

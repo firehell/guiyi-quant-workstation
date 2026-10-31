@@ -1,43 +1,37 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import PerformancePanel from '@/components/performance/PerformancePanel.vue'
-import MarketDetailDrawer from '@/components/market/detail/MarketDetailDrawer.vue'
-import type { HtdyHistoricalResponse } from '@/types/htdyReference'
+import { computed, ref } from 'vue'
+import type { HtdySnapshot } from '@/types/htdySnapshot'
 import type { ReferenceTradeView } from '@/types/referenceTrading'
-import { formatBeijingInstant, formatMarketDecimal, formatMarketPercent } from '@/utils/marketDisplay'
-import { referenceTone, referenceDecimalDisplay } from '@/utils/subingReference'
-const props = defineProps<{ stale?: boolean; result: HtdyHistoricalResponse | null; loading: boolean; error: string | null; focusError: string | null }>()
-const emit = defineEmits<{ more: []; retry: []; window: [window: { since: string; through: string }]; focus: [trade: ReferenceTradeView] }>()
-const since = ref(''), through = ref(''), selected = ref<ReferenceTradeView | null>(null)
-const invalidRange = computed(() => Boolean(since.value && through.value && since.value > through.value))
-const statusLabels: Record<string, string> = { OPEN: '未平参考', CLOSED: '已平参考', ROLLOVER_INTERRUPTED: '换月中断', DATA_INTERRUPTED: '数据中断', DATA_CONFLICT: '数据冲突' }
-const text = (value: unknown) => typeof value === 'string' ? value : null
-const percent = (value: unknown) => formatMarketPercent(text(value), 'percentage_points', true)
-const tradeReturn = (trade: ReferenceTradeView) => trade.reference_return ?? text(trade.mark_return)
-watch(() => props.result, result => { if (result) { since.value = result.since; through.value = result.through }; selected.value = null }, { immediate: true })
-function readWindow() { if (!invalidRange.value) { if (since.value && through.value) emit('window', { since: since.value, through: through.value }); else emit('retry') } }
+import { formatBeijingInstant, formatDecimalText, formatMarketDecimal } from '@/utils/marketDisplay'
+import { returnCurveLayout } from '@/utils/returnCurveLayout'
+import ReturnCurveSvg from '@/components/charts/ReturnCurveSvg.vue'
+const props=defineProps<{data:HtdySnapshot|null;rows:ReferenceTradeView[];loading:boolean;moreLoading:boolean;error:string|null}>()
+const emit=defineEmits<{read:[];more:[];focus:[identity:{barEnd:string;physicalContract:string}]}>()
+const all=ref(false)
+const visible=computed(()=>all.value?props.rows:props.rows.slice(0,3))
+const plot=computed(()=>returnCurveLayout((props.data?.curve??[]).map(p=>({...p,date:p.date??p.bar_end.slice(0,10),segment:p.segment??p.reference_trade_id,position:Date.parse(p.bar_end),value:Number(p.value)})),{headroom:1.1,areaBaseline:'zero',valueUnit:'percentage_points',singlePoint:'start'}))
+const pct=(v:unknown)=>typeof v==='string'?`${formatDecimalText(v,{maximumFractionDigits:2,signed:true})}%`:'—'
+const labels:Record<string,string>={CLOSED:'已平参考',OPEN:'未平参考',ROLLOVER_INTERRUPTED:'换月中断',DATA_INTERRUPTED:'质量中断'}
+function focus(row:ReferenceTradeView){if(typeof row.physical_contract==='string')emit('focus',{barEnd:row.entry_bar_end,physicalContract:row.physical_contract})}
 </script>
 <template>
-  <PerformancePanel class="htdy-history reference-history" title="策略收益与参考记录" kind="已完成参考交易" :since="result?.since" :through="result?.through" :loading="loading" :error="error" description="按入场交易日窗口统计；零手续费、零滑点，非账户收益。">
-    <header><div><h3>历史重算参考</h3><p>历史重算·乐观参考｜零费用/零滑点</p></div><span>{{ result?.frequency ?? '当前周期' }} · 双向反手 · 非可执行</span></header>
-    <form @submit.prevent="readWindow"><label>开始交易日<input v-model="since" type="date" aria-label="参考开始交易日"></label><label>结束交易日<input v-model="through" type="date" aria-label="参考结束交易日"></label><button type="submit" :disabled="loading || invalidRange">{{ loading ? '读取中…' : '读取参考' }}</button></form>
-    <p v-if="invalidRange" class="reference-history__validation" role="alert">开始交易日不能晚于结束交易日。</p>
-    <p v-if="stale" role="status">已有更新的完成K线，当前历史参考已过期；请重新读取。</p>
-    <p v-if="error"><button type="button" :disabled="loading" @click="emit('retry')">重试</button></p>
-    <p v-if="focusError" role="status">{{ focusError }}</p>
-    <template v-if="result">
-      <p v-if="result.loaded_history_since" class="reference-history__note">已载记录展示区间 {{ result.loaded_history_since }} — {{ result.through }}；统计仍为上方原始窗口。各历史窗口独立来源，不是同一快照。</p>
-      <p v-if="result.history_capped" role="status">已达本页记录容量；请通过日期选择切换更早窗口继续读取。</p>
-      <div class="reference-history__summary"><span>已平 <b>{{ result.summary.closed }}</b></span><span>胜 / 负 / 平 <b>{{ result.summary.wins ?? '—' }} / {{ result.summary.losses ?? '—' }} / {{ result.summary.flat ?? '—' }}</b></span><span>胜率 <b>{{ formatMarketPercent(result.summary.win_rate_pct, 'percentage_points') }}</b></span><span>平均参考收益 <b :class="referenceTone(result.summary.mean_return_pct ?? null)">{{ percent(result.summary.mean_return_pct) }}</b></span><span>累计参考收益（百分点） <b :class="referenceTone(result.summary.sum_return_percentage_points ?? null)">{{ referenceDecimalDisplay(result.summary.sum_return_percentage_points ?? null) }} 百分点</b></span></div>
-      <p class="reference-history__note">统计按所选交易日固定，不随图表缩放或翻页变化。未平 {{ result.summary.open }} · 中断 {{ result.summary.interrupted ?? '—' }}；未平和中断不计入已平收益。百分比之和不是账户复利收益。</p>
-      <div class="reference-history__table"><table><thead><tr><th>方向 / 状态</th><th>物理合约</th><th>建仓参考</th><th>清仓参考</th><th>持有 Bar</th><th>参考收益 / 浮动</th><th>操作</th></tr></thead><tbody>
-        <tr v-for="trade in result.trades" :key="trade.reference_trade_id"><td>{{ trade.side === 'LONG' ? '多' : '空' }} · {{ statusLabels[trade.status] ?? trade.status }}</td><td>{{ trade.physical_contract }}</td><td>{{ formatMarketDecimal(trade.entry_reference_price) }}<small>{{ formatBeijingInstant(trade.entry_bar_end) }}</small></td><td>{{ formatMarketDecimal(trade.exit_reference_price) }}<small>{{ trade.exit_bar_end ? formatBeijingInstant(trade.exit_bar_end) : trade.status === 'OPEN' ? '尚无反向信号' : '已中断，未配对平仓' }}</small></td><td>{{ trade.holding_bars }}</td><td :class="referenceTone(tradeReturn(trade))">{{ percent(tradeReturn(trade)) }}{{ trade.status === 'OPEN' && tradeReturn(trade) !== null ? ' · 参考浮动' : '' }}</td><td class="reference-history__actions"><button type="button" @click="emit('focus', trade)">定位图表</button><button type="button" @click="selected = trade">查看详情</button></td></tr>
-      </tbody></table></div>
-      <p v-if="!result.trades.length">已完成计算，所选窗口暂无历史参考记录。</p>
-      <button v-if="(result.next_cursor || result.previous_window) && !result.history_capped" type="button" :disabled="loading" @click="emit('more')">{{ loading ? '读取中…' : '读取更多 / 更早参考记录' }}</button>
-      <p class="reference-history__note">历史来源截止 {{ formatBeijingInstant(result.computed_through) }} · {{ result.since }} — {{ result.through }}</p>
-    </template>
-    <MarketDetailDrawer :open="selected !== null" title="火天大有历史参考详情" @close="selected = null"><template v-if="selected"><p>{{ selected.physical_contract }} · {{ selected.side === 'LONG' ? '多' : '空' }} · {{ statusLabels[selected.status] ?? selected.status }}</p><p>建仓参考 {{ formatMarketDecimal(selected.entry_reference_price) }} · {{ formatBeijingInstant(selected.entry_bar_end) }}</p><p>清仓参考 {{ formatMarketDecimal(selected.exit_reference_price) }} · {{ selected.exit_bar_end ? formatBeijingInstant(selected.exit_bar_end) : '尚未配对平仓' }}</p><p>持有 {{ selected.holding_bars }} 根 Bar · 参考收益 / 浮动 {{ percent(tradeReturn(selected)) }}</p><p>历史重算｜零费用/零滑点，非账户成交。</p><p>{{ selected.reference_trade_id }}</p></template></MarketDetailDrawer>
-  </PerformancePanel>
+ <section class="htdy-history-panel performance-panel" aria-label="历史回放参考交易">
+  <header><h3>历史回放参考</h3><button type="button" :disabled="loading" @click="emit('read')">重新读取快照</button></header>
+  <p class="note">逐根完成K线回放 · 信号收盘参考价 · 零费用／零滑点 · 非账户收益</p>
+  <p v-if="loading" role="status">正在读取历史快照…</p>
+  <p v-if="error" role="alert">{{ error }}</p>
+  <template v-if="data">
+   <p class="note">{{ data.since }} → {{ data.through }} · 计算至 {{ formatBeijingInstant(data.computed_through) }} <span :title="data.snapshot_id">· 冻结快照 {{ data.snapshot_id.slice(0,12) }}</span></p>
+   <ReturnCurveSvg v-if="plot.points.length" :plot="plot" label="历史回放参考累计收益百分点曲线" area zero-line />
+   <p v-else>此快照暂无已完成参考交易。</p>
+   <p v-if="plot.message" role="status">{{ plot.message }}</p>
+   <dl><div><dt>累计参考收益</dt><dd>{{ data.summary.sum_return_percentage_points == null ? '—' : formatDecimalText(data.summary.sum_return_percentage_points,{maximumFractionDigits:2,signed:true})+' 百分点' }}</dd></div><div><dt>参考胜率</dt><dd>{{ pct(data.summary.win_rate_pct) }}</dd></div><div><dt>已平参考交易</dt><dd>{{ data.summary.closed }}</dd></div></dl>
+   <div class="trades"><article v-for="row in visible" :key="row.reference_trade_id"><header><strong>{{ labels[row.status]??'中断' }} · {{ row.side==='LONG'?'多':'空' }} · {{ row.physical_contract }}</strong><b>{{ pct(row.reference_return) }}</b></header><p>建仓参考 {{ formatMarketDecimal(row.entry_reference_price) }} · {{ formatBeijingInstant(row.entry_bar_end) }}</p><p v-if="row.exit_bar_end">平仓参考 {{ formatMarketDecimal(row.exit_reference_price) }} · {{ formatBeijingInstant(row.exit_bar_end) }}</p><p v-else>{{ row.status==='OPEN'?'保留未平参考，不计已平收益':'中断记录，不计已平收益' }}</p><button type="button" @click="focus(row)">定位图表</button></article></div>
+   <button v-if="!all && rows.length>3" type="button" @click="all=true">查看全部已加载记录</button><button v-if="all && data.next_cursor" type="button" :disabled="loading||moreLoading" @click="emit('more')">{{ moreLoading?'读取中…':'读取更多' }}</button>
+   <p class="note">未平 {{ data.summary.open }} · 中断 {{ data.summary.interrupted??0 }}；收益仅统计本快照已平参考交易，不与实时参考或 SimNow 拼接。</p>
+  </template>
+ </section>
 </template>
-<style scoped src="@/styles/referenceHistory.css"></style>
+<style scoped>
+.htdy-history-panel{padding:16px;min-width:0;border:1px solid var(--gy-border);border-radius:12px}header,dl{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}h3{margin:0;font-size:16px}p{font-size:12px;line-height:1.6}.note{color:var(--gy-text-muted)}dl>div{flex:1;min-width:100px}dt{font-size:12px;color:var(--gy-text-muted)}dd{margin:6px 0}.trades{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}article{padding:12px;border:1px solid var(--gy-border);border-radius:8px}article header{font-size:12px}button{padding:6px 10px;margin:4px 6px 4px 0;border:1px solid var(--gy-border);border-radius:6px;background:var(--gy-bg-panel);color:var(--gy-text-primary);cursor:pointer}
+</style>

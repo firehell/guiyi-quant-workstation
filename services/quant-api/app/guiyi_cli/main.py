@@ -1,7 +1,8 @@
 """归一量化统一 CLI 入口（``uv run guiyi``）。
 
 子域：``data``（历史数据 audit/update/refresh）与 ``runtime``（健康、前台
-Live、Alert 与显式 canary）。
+Live、Alert 与显式 canary）、``reference``（计划、构建和续接）及
+``home``（首页派生投影构建）。
 默认 JSON 输出至 stdout；参数错误与异常经 output 模块脱敏后写 stderr。
 """
 

@@ -68,7 +68,17 @@ class SubingReferenceService:
         active_products: Collection[str],
         now: Callable[[], datetime] | None = None,
         check_cancelled: Callable[[], None] | None = None,
+        historical_window_days: int | None = 365,
+        physical_context_bars: int | None = None,
     ):
+        if historical_window_days is not None and (type(historical_window_days) is not int or historical_window_days != 365):
+            raise ValueError("HISTORICAL_WINDOW_POLICY_INVALID")
+        self.historical_window_days = historical_window_days
+        if physical_context_bars is not None and (
+            type(physical_context_bars) is not int or physical_context_bars != 32
+        ):
+            raise ValueError("PHYSICAL_CONTEXT_POLICY_INVALID")
+        self.physical_context_bars = physical_context_bars
         self.market_data = market_data
         self.coverage = coverage
         self.active_products = frozenset(active_products)
@@ -142,11 +152,37 @@ class SubingReferenceService:
                 continue
             if not endpoints:
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+            endpoints = self._physical_replay_endpoints(
+                endpoints, owner.start_trading_day, bar_frequency
+            )
             endpoint_count += len(endpoints)
         # One interruption per physical endpoint plus one owner boundary is a
         # conservative ceiling for the typed replay event stream.
         max_events = endpoint_count * 2 + len(owners)
         return max_events, max_events * 4096
+
+    def _physical_replay_endpoints(
+        self, endpoints: tuple[tuple[datetime, date], ...],
+        owner_since: date, frequency: BarFrequency,
+    ) -> tuple[tuple[datetime, date], ...]:
+        """Admit a whole-day physical prefix sufficient for fixed-window HTDY.
+
+        Both the budget and reader use these authoritative MDS endpoints.  Day
+        rounding preserves the exact endpoint contract of the day-based reader;
+        missing expected context is still rejected by its quality/equality gates.
+        """
+        if self.physical_context_bars is None:
+            return endpoints
+        if frequency is not BarFrequency.H1:
+            raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
+        first_owned = next(
+            (index for index, (_, day) in enumerate(endpoints) if day >= owner_since),
+            None,
+        )
+        if first_owned is None:
+            raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+        first_day = endpoints[max(0, first_owned - self.physical_context_bars + 1)][1]
+        return tuple(endpoint for endpoint in endpoints if endpoint[1] >= first_day)
 
     def read_daily_quality_presentation(
         self, *, symbol: str, since: date, through: date, cutoff: datetime,
@@ -358,10 +394,9 @@ class SubingReferenceService:
         latest = as_of.astimezone(SHANGHAI).date()
         if query.through is not None and query.through > latest:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
-        start = max(
-            self.coverage.product_start(query.symbol),
-            (query.through or latest) - timedelta(days=365),
-        )
+        start = self.coverage.product_start(query.symbol)
+        if self.historical_window_days is not None:
+            start = max(start, (query.through or latest) - timedelta(days=self.historical_window_days))
         if query.since is not None and query.since < start:
             raise SubingReferenceError("SUBING_REFERENCE_INVALID_QUERY")
         calendar_as_of = as_of
@@ -490,6 +525,9 @@ class SubingReferenceService:
             )
             if not expected or expected[-1] != (end, own_last_day):
                 raise SubingReferenceError("SUBING_REFERENCE_DATA_UNAVAILABLE")
+            expected = self._physical_replay_endpoints(
+                expected, owner.start_trading_day, frequency
+            )
             self.check_cancelled()
             try:
                 physical = self.market_data.query_contract_trading_days(

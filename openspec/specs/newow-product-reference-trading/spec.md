@@ -9,11 +9,42 @@ ReferenceTrade、乐观参考摘要、多周期解释、证据状态和回看图
 
 ## Requirements
 
+### Requirement: Unified detail chart and independent quote presentation
+
+The unified detail page SHALL own one native main chart, candle series and volume series across
+Newow, SuBing, HTDY and Free view changes. A view switch SHALL preserve a valid market identity,
+including its period and explicit physical contract, while unsupported analysis remains unavailable
+without issuing an invalid strategy request. This navigation identity does not enable Newow 1m or
+contract analysis. Shared detail minute coordinates SHALL use the formal completed Bar end; standalone
+legacy chart consumers retain their existing interval-opening presentation. Neither presentation changes Bar facts.
+
+An identical verified shorter price suffix SHALL retain already loaded history; changed facts SHALL
+replace it, mapping the visible range by common time rather than assuming equal local array indices.
+Action location, visible-time and follow-latest logic SHALL use the native shared axis. Explicit experiment
+segment selection SHALL replace its window. Strategy leases SHALL release their own overlays, primitives,
+price lines and listeners without destroying the page chart; stale leases SHALL NOT mutate current resources.
+
+The quote header SHALL use the existing home completed-minute quote and its own price baseline,
+independent of strategy and period. D1 OHLCV SHALL retain its own date and physical owner; unavailable
+quote facts SHALL NOT be replaced with selected-chart values. Historical snapshot cutoffs and explicit
+contracts SHALL prevent borrowing incompatible current-owner quotes. Quote data SHALL NOT enter strategy inputs.
+
+Retained same-strategy chart layers SHALL be explicitly historical preview during fresh verification;
+old actions, caution, process hints and action-derived stop/breakout levels SHALL remain hidden. Shared
+auxiliary display requires the full compatible input proof below and never rewrites snapshot tokens.
+Newow keeps its selected auxiliary across its own strategies; SuBing/HTDY and Free retain their own indicator defaults.
+
+#### Scenario: Shorter adapter locates the same physical-time Bar
+- **WHEN** a verified 500-Bar chart is followed by its identical 300-Bar suffix in another analysis view
+- **THEN** the loaded 500-Bar prices and visible time range remain intact
+- **AND** locating a record uses its actual native time index, not its index in the 300-Bar adapter array.
+
 ### Requirement: RB historical intraday candidate preserves independent period and model identities
 
 The default-off RB candidate SHALL recognize `5m / 15m / 30m / 60m` for trend and oscillation,
 and an independent persisted dual-fusion reference model. Canonical 1m SHALL remain an aggregation
-source only in this version; Newow 1m routes, saved preferences and API entry SHALL fail closed,
+source only in this version; Newow 1m calculation identities and API entry SHALL fail closed,
+while the unified detail route MAY retain a valid 1m market-chart identity without issuing Newow analysis requests,
 without deleting historical 1m assets or altering generic Market 1m readers. Formal daily/weekly capability and
 its deferred 60m gate SHALL remain unchanged. In this frozen RB candidate only, minute main-rise SHALL be rejected before kernel
 execution; candidate recognition SHALL NOT enable Runtime, observation, notification or orders.
@@ -907,6 +938,16 @@ API、clean-room 与归一期货适配 SHALL 分开标识；页面 API 与前端
 `data_revision_identity` MUST 为 null；`input_content_sha256` 仅为真实输入指纹，不是 Canonical revision 或
 历史 PIT 快照。跨 section 拼接只能在共同依赖逐字段一致且相关来源版本兼容时发生。
 
+Optional `meta.shared_input_proof` SHALL use schema `newow_shared_input_proof_v1`, with
+`market_input_sha256` and nullable `auxiliary_input_sha256`. The market proof SHALL bind the complete
+authoritative read, including physical warm-up Bars, owner mapping/boundaries, calculation and quality
+segments/policies, lifecycle evidence, cutoff and exact display/statistics windows, independently of
+strategy and strategy formula. Auxiliary proof SHALL additionally bind the selected component and its
+own formula/parameter/adapter identity; strategy-dependent applicability MUST remain distinct.
+Responses without this optional proof remain valid legacy responses, but SHALL NOT authorize
+cross-strategy display reuse. Matching proof permits only shared market/auxiliary display reuse; it
+does not replace existing snapshot validation, cursor identity or strategy-specific result identity.
+
 客户端可省略 snapshot token；服务端 snapshot/cache 机制仍是 P4 必做。token MUST 是有界、进程内、不透明
 且非权限凭证，绑定 product/strategy/frequency/series/as-of、共同 owner/Bar 逐事实证明和来源版本；entry namespace
 只使用规范化查询身份，entry 内保存并扩充已验证的共同事实集合。跨 section 时 MUST 至少存在共同事实，且相同
@@ -1728,6 +1769,12 @@ the display policy version so previous policy output cannot survive as fresh cac
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
+
+#### Historical page refresh coverage and availability
+
+Existing canonical historical reference assets in the current public product/strategy/frequency scope SHALL be maintained independently of forward observation activation. Historical maintenance SHALL NOT enable observation streams, notifications or orders. Bounded scans SHALL persist their cursor across blocked routes so later eligible histories cannot starve. Missing assets SHALL remain explicit until built through the existing exact-plan maintenance contract; durable pending, blocked and unknown-commit evidence SHALL NOT be cleared merely to restart maintenance.
+
+Reference reads SHALL continue to verify saved input identity and SHALL NOT return an older result as current or synchronously rebuild during a page request. Only verified append-only lag may be reported as updating; source revisions, missing history and insufficient data SHALL retain distinct reasons. Safe availability details MAY expose saved and requested cutoff dates. A reference failure SHALL remain isolated from the accepted quote and price chart.
 
 #### Frozen intraday reference input evidence
 

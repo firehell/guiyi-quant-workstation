@@ -13,6 +13,77 @@ import { resolveNewowPanelRenderState } from '../src/utils/newowProductViewModel
 
 const AS_OF = '2026-08-15T07:00:00.000Z'
 
+test('same-strategy revisit restores only a stale chart visual while current requests revalidate', async () => {
+  newowSessionResources.invalidate()
+  const identity = ref(newowIdentity('trend', '1d'))
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity, now: () => AS_OF, fetchSection: controlled(pending) })
+  pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+  identity.value = newowIdentity('oscillation', '1d')
+  assert.equal(state.retainedChart.value, null)
+  identity.value = newowIdentity('trend', '1d')
+  assert.equal(state.retainedChart.value?.meta.identity.strategy, 'trend')
+  assert.equal(state.sections.chart.data.value, null)
+  assert.equal(state.currentChartWindow.value, false)
+  assert.equal(pending.length, 3)
+  assert.equal(pending[2]!.request.snapshotToken, undefined)
+  pending[1]!.resolve(normalizedChart(pending[1]!.request)); await flush()
+  assert.equal(state.sections.chart.data.value, null, 'late previous strategy cannot become current')
+  pending[2]!.resolve(normalizedChart(pending[2]!.request)); await flush()
+  assert.equal(state.sections.chart.state.value, 'ready')
+  assert.equal(state.retainedChart.value, null)
+  state.dispose(); newowSessionResources.invalidate()
+})
+
+test('strategy switch shares proven auxiliary display but still fetches its current token', async () => {
+  newowSessionResources.invalidate()
+  const identity = ref(newowIdentity('trend', '1d'))
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity, now: () => AS_OF, fetchSection: controlled(pending) })
+  const proven = (response, auxiliary = false, market = 'a') => ({ ...response, meta: { ...response.meta,
+    shared_input_proof: { schema_version: 'newow_shared_input_proof_v1', market_input_sha256: market.repeat(64), auxiliary_input_sha256: auxiliary ? 'b'.repeat(64) : null } } })
+  pending[0]!.resolve(proven(normalizedChart(pending[0]!.request))); await flush()
+  const firstAuxiliary = state.loadAuxiliary('main_force_control')
+  pending[1]!.resolve(proven(normalizedAuxiliary(pending[1]!.request), true)); await firstAuxiliary
+  identity.value = newowIdentity('oscillation', '1d')
+  assert.equal(state.sharedAuxiliary.value, null, 'no chart proof has been accepted yet')
+  pending[2]!.resolve(proven(normalizedChart(pending[2]!.request, { token: 'snapshot-b' }))); await flush()
+  const currentAuxiliary = state.loadAuxiliary('main_force_control')
+  assert.equal(state.sharedAuxiliary.value?.meta.identity.strategy, 'trend')
+  assert.equal(state.sharedAuxiliary.value?.meta.snapshot_token, 'snapshot-a')
+  assert.equal(state.sections.auxiliary.data.value, null)
+  assert.equal(pending[3]!.request.snapshotToken, 'snapshot-b')
+  pending[3]!.resolve(proven(normalizedAuxiliary(pending[3]!.request, 'snapshot-b'), true)); await currentAuxiliary
+  assert.equal(state.sections.auxiliary.data.value?.meta.identity.strategy, 'oscillation')
+  state.dispose(); newowSessionResources.invalidate()
+})
+
+for (const changed of ['legacy', 'warmup', 'quality', 'cutoff'] as const) {
+  test(`strategy switch never shares auxiliary after ${changed} proof changes`, async () => {
+    newowSessionResources.invalidate()
+    const identity = ref(newowIdentity('trend', '1d'))
+    const pending: Pending[] = []
+    const state = useNewowProduct({ identity, now: () => AS_OF, fetchSection: controlled(pending) })
+    const proof = { schema_version: 'newow_shared_input_proof_v1', market_input_sha256: 'a'.repeat(64), auxiliary_input_sha256: null }
+    const proven = (response, auxiliary = false) => ({ ...response, meta: { ...response.meta,
+      ...(changed === 'legacy' ? {} : { shared_input_proof: { ...proof, auxiliary_input_sha256: auxiliary ? 'b'.repeat(64) : null } }) } })
+    pending[0]!.resolve(proven(normalizedChart(pending[0]!.request))); await flush()
+    const auxiliary = state.loadAuxiliary('main_force_control')
+    pending[1]!.resolve(proven(normalizedAuxiliary(pending[1]!.request), true)); await auxiliary
+    identity.value = newowIdentity('oscillation', '1d')
+    const next = structuredClone(proven(normalizedChart(pending[2]!.request)))
+    if (changed === 'warmup') next.meta.shared_input_proof.market_input_sha256 = 'c'.repeat(64)
+    if (changed === 'quality') { next.meta.identity.input_quality_policy = 'newow_daily_input_quality_v2'; next.meta.futures_adaptation_version = 'newow_futures_daily_quality_segment_v4' }
+    if (changed === 'cutoff') next.meta.as_of = '2026-08-15T07:00:00.000001Z'
+    pending[2]!.resolve(next); await flush()
+    const current = state.loadAuxiliary('main_force_control')
+    assert.equal(state.sharedAuxiliary.value, null)
+    assert.equal(pending.length, 4, 'sharing is never a substitute for current verification')
+    pending[3]!.resolve(normalizedAuxiliary(pending[3]!.request)); await current
+    state.dispose(); newowSessionResources.invalidate()
+  })
+}
+
 test('home context and stored detail bodies remain separate from current verification', async () => {
   newowSessionResources.invalidate()
   const identity = { product: 'jm', strategy: 'trend' as const, frequency: '1d' as const, seriesKind: 'actual_dominant' as const }

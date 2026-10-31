@@ -1,4 +1,5 @@
-import { invalidateNewowProduct } from '../utils/newowSessionResources.ts'
+import { invalidateNewowProduct, newowSessionResources, newowResourceIdentity } from '../utils/newowSessionResources.ts'
+import { canShareNewowAuxiliary, newowAuxiliaryDisplayCacheKey, newowChartDisplayCacheKey, ownsNewowIdentity } from '../utils/newowSharedLayers.ts'
 import { computed, readonly, shallowRef, watch, type Ref, type ShallowRef } from 'vue'
 
 import { getNewowDailySnapshot, getNewowWeeklySnapshot, getNewowHistoricalSnapshot, getNewowProductSection, NewowProductRequestError } from '../api/newowProduct.ts'
@@ -91,6 +92,18 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const acceptedCurrentChartWindow = shallowRef(false)
   const acceptedHistoricalChartWindow = shallowRef(false)
   const acceptedAuxiliaryWindow = shallowRef<{ from: string; through: string } | null>(null)
+  const retainedChart = shallowRef<NewowProductSectionResponse<'chart'> | null>(null)
+  const selectedAuxiliaryComponent = shallowRef<NewowAuxiliaryComponent | null>(null)
+  const sharedAuxiliary = computed(() => {
+    const chart = resources.chart.data.value
+    const component = selectedAuxiliaryComponent.value
+    if (resources.auxiliary.state.value === 'input_conflict' || chart?.section !== 'chart' || component === null) return null
+    return newowSessionResources.find<NewowProductSectionResponse<'auxiliary'>>(value => {
+      const response = value as NewowProductSectionResponse | null
+      return response?.section === 'auxiliary' && response.meta && response.value
+        && canShareNewowAuxiliary(chart, response, component) ? response : undefined
+    }) ?? null
+  })
   let chartWindow: { from: string; through: string } | null = null
   let chartFingerprint: string | null = null
   let acceptedChartGenerationSignature: string | null = null
@@ -127,6 +140,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     historicalError.value = null
     currentIdentity.value = validatedIdentity(options.identity.value)
     asOf.value = currentIdentity.value === null ? null : validNow(now())
+    restoreRetainedChart()
     if (!disposed && currentIdentity.value !== null) void loadCurrent()
   }
 
@@ -241,6 +255,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     if (fusionRecoveryActive.value) return
     const common = requestCommon('auxiliary')
     if (common === null) return
+    selectedAuxiliaryComponent.value = component
     const request = { ...common, section: 'auxiliary' as const, component, ...load }
     const cacheKey = auxiliaryCacheKey(request)
     const cached = auxiliaryCache.get(cacheKey)
@@ -503,6 +518,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
         acceptedHistoricalChartWindow.value = !acceptedCurrentChartWindow.value
       }
       resource.data.value = accepted
+      retainedChart.value = null
       acceptedChartGenerationSignature = nextGeneration
     } else if (section === 'reference' && response.section === 'reference' && response.value !== null) {
       const accepted = acceptReference(response, request)
@@ -514,6 +530,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     resource.state.value = response.status.status
     resource.error.value = null
+    if (section === 'chart' && resource.data.value?.section === 'chart'
+      && response.status.status === 'ready' && currentIdentity.value !== null) {
+      newowSessionResources.put(newowChartDisplayCacheKey(currentIdentity.value), resource.data.value, newowResourceIdentity(resource.data.value))
+    }
     if (section === 'auxiliary' && request.section === 'auxiliary') {
       auxiliaryRebuildAttempts.delete(auxiliaryRebuildKey(request))
     }
@@ -521,7 +541,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       acceptedAuxiliaryWindow.value = request.from !== undefined && request.through !== undefined
         ? { from: request.from, through: request.through }
         : null
-      if (response.status.status === 'ready') cacheAuxiliary(response, request)
+      if (response.status.status === 'ready') {
+        cacheAuxiliary(response, request)
+        if (response.meta.shared_input_proof?.auxiliary_input_sha256) {
+          newowSessionResources.put(newowAuxiliaryDisplayCacheKey(response), response, newowResourceIdentity(response))
+        }
+      }
     }
   }
 
@@ -672,6 +697,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   }
 
   function failConflict(section: NewowProductSection, code: string): void {
+    if (currentIdentity.value) newowSessionResources.invalidate(`newow:${currentIdentity.value.product}:display:`)
+    retainedChart.value = null
     invalidateAuxiliaryCache()
     const dependent = section === 'chart' || section === 'reference' || section === 'explanation'
       ? (['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const)
@@ -682,7 +709,10 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   function compatibleToken(section: NewowProductSection): string | null {
     for (const candidate of ['chart', 'reference', 'explanation', 'auxiliary', 'comparator'] as const) {
       if (candidate === section) continue
-      const token = resources[candidate].data.value?.meta.snapshot_token
+      const response = resources[candidate].data.value
+      if (!response || currentIdentity.value === null || asOf.value === null
+        || !ownsNewowIdentity(response, currentIdentity.value, asOf.value)) continue
+      const token = response.meta.snapshot_token
       if (token) return token
     }
     return null
@@ -723,6 +753,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     }
     inFlightSnapshotTokens.delete(section)
     resources[section].data.value = null
+    if (section === 'chart') retainedChart.value = null
     if (section === 'auxiliary') acceptedAuxiliaryWindow.value = null
     if (section === 'chart' || section === 'reference') resetPagination(section)
     resources[section].state.value = options.state ?? 'not_requested'
@@ -787,6 +818,8 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     && resources.chart.data.value?.section === 'chart' && resources.chart.data.value.value !== null)
 
   return {
+    retainedChart: readonly(retainedChart),
+    sharedAuxiliary: readonly(sharedAuxiliary),
     chartReference: readonly(chartReference),
     acceptedAuxiliaryWindow: readonly(acceptedAuxiliaryWindow),
     currentChartWindow: readonly(currentChartWindow),
@@ -812,6 +845,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     for (const section of ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const) invalidateSection(section)
     invalidateAuxiliaryCache()
     auxiliaryRebuildAttempts.clear()
+  }
+  function restoreRetainedChart(): void {
+    if (currentIdentity.value === null) return
+    const cached = newowSessionResources.peek<NewowProductSectionResponse<'chart'>>(newowChartDisplayCacheKey(currentIdentity.value))
+    if (cached?.section === 'chart' && cached.value !== null && cached.status.status === 'ready'
+      && ownsNewowIdentity(cached, currentIdentity.value)) retainedChart.value = cached
   }
   function cacheAuxiliary(response: NewowProductSectionResponse<'auxiliary'>, request: Extract<NewowProductRequest, { section: 'auxiliary' }>): void {
     if (response.value?.component === undefined) return

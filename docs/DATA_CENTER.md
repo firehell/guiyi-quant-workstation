@@ -462,9 +462,14 @@ coverage/RQData/update 尝试之前写入 `current_run`，白名单化保留 `at
 启动在新 run 建立前被拒绝；纯文件 reader 物理上无法观测这次未留下任何字节变化的尝试。`last_run.failure_notification`
 只允许 `{attempted_at,state=provider_accepted|failed,error_type}` 公开字段，不保存 provider reference。
 
-Runtime operational health v2 只由行情运行链的 `db`、`redis`、`live_market` 与 `after_market`
-共同决定。Alert 处理、Rule、coverage 和通知失败仍公开在独立组件中，不影响顶层 health；
-可选 weekly audit 同样不参与。Live 已启用、心跳新鲜且 available=true，所有 operational 品种
+Runtime health 顶层 `status` 表达基础服务运行：行情链的 `db`、`redis`、`live_market` 与
+`after_market` 保持既有严格语义；已启用 Alert、Reference owner 的身份、心跳、处理循环和
+后台线程故障也参与。策略输入、Rule、coverage、Reference路线阻断和通知历史仍公开在原组件中，
+不因策略未就绪而把可运行的基础服务报为故障；可选 weekly audit 不参与。
+只有 typed `evaluation_warming_up` 能证明有效样本尚不足，按 `warming_up` 等待积累；笼统数据不可用、
+未识别失败和 prior unresolved 不改写成正常等待。顶层 `ok` 不表示各策略可计算、通知送达或
+Runtime promotion/交易准入，预热与执行继续核验原 component/input/proof Gate。
+Live 已启用、心跳新鲜且 available=true，所有 operational 品种
 明确为 CLOSED（计数完整且无其他 phase）时，cleanup 或休市重启后的 `coverage=unverified`
 不再使 Live operational health 降级。混合开市/休市时，仅在 `phase_by_product` 的品种集合、phase 与
 汇总计数完整一致时，逐品种豁免明确 CLOSED 的未验证 coverage；开市品种仍须保持正常 coverage。

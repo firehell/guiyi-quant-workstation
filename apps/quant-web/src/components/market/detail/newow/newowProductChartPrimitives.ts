@@ -16,6 +16,7 @@ import type {
   NewowResourceLifecycle,
 } from '../../../../types/newowProduct.ts'
 import { chartCoordinate } from '../../../../utils/newowProductTypes.ts'
+import { canShareNewowAuxiliary } from '../../../../utils/newowSharedLayers.ts'
 import { newowReferencePrice } from '../../../../utils/newowPagePresentation.ts'
 
 export interface NewowProductChartBar {
@@ -565,7 +566,8 @@ export function alignNewowAuxiliaryChartModel(
   auxiliary: NewowProductSectionResponse<'auxiliary'> | null,
 ): NewowAlignedAuxiliaryChartModel | null {
   const proof = newowChartSnapshotKey(chart)
-  if (proof === null || proof !== newowChartSnapshotKey(auxiliary) || !chart?.value || !auxiliary?.value) return null
+  const sameSnapshot = proof !== null && proof === newowChartSnapshotKey(auxiliary)
+  if ((!sameSnapshot && !canShareNewowAuxiliary(chart, auxiliary)) || !chart?.value || !auxiliary?.value) return null
   const raw = buildNewowAuxiliaryChartModel(auxiliary.value)
   const series: NewowAlignedAuxiliaryChartModel['series'][number][] = []
   for (const source of raw.series) {

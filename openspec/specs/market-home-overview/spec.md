@@ -357,8 +357,7 @@ phase，以及最新有效 completed 1m close。未完成 Bar、heartbeat、其�
 之间的 limit 和 opaque before；日期范围最多366天。响应保留查询身份、typed Event items 和
 next_before；不提供无法由该查询证明的全量/未读数量。空结果为 ready 空列表，失败为安全 typed error。
 
-消息 Tab SHALL 提供单个全局、有界、只读的历史查询，支持日期范围、品种与 registry Rule 筛选，以及
-稳定游标分页。日期范围和 page size MUST 校验上下界；分页排序 SHALL 绑定 detected_at、bar_end
+消息 Tab SHALL 提供单个全局、有界、只读的历史查询，使用默认七个自然日与全部品种，支持消息分类、周期和搜索以及稳定游标分页；隐藏的旧日期和品种筛选不得在页面恢复时生效。API 继续支持日期范围、品种与 registry Rule 筛选。日期范围和 page size MUST 校验上下界；分页排序 SHALL 绑定 detected_at、bar_end
 及唯一 Event id，游标与筛选条件绑定，不能对当前最近30条本地筛选后冒充全量历史结果或总数。
 
 消息 SHALL 按全部、火天大有、苏冰分类，只有真实 registry-owned immutable Event 可以成为消息。
@@ -378,8 +377,8 @@ Runtime health 包装成不存在的历史系统消息。
 
 - **WHEN** 用户从已经加载的第二页或后续页消息进入详情，再返回首页
 - **THEN** 页面按查询身份先恢复成功列表、next cursor 与真实滚动位置，能够继续分页；不得先清空再只重取第一页
-- **AND** 消息缓存具有数量与时间上限，有效缓存不重复读取；失效缓存可保留结果后台刷新，人工刷新显式重新查询
-- **AND** 后台或人工刷新重新确定第一页与游标期间暂停续页请求；刷新前已发出的旧分页响应不得覆盖或追加到新结果，刷新失败仍保留可继续分页的旧完整结果
+- **AND** 消息缓存具有数量与时间上限，有效缓存不重复读取；失效缓存可保留结果后台刷新，页面重新进入时按缓存有效性重新查询
+- **AND** 后台或其他已有刷新入口重新确定第一页与游标期间暂停续页请求；刷新前已发出的旧分页响应不得覆盖或追加到新结果，刷新失败仍保留可继续分页的旧完整结果
 
 #### Scenario: Event storage is unavailable
 
@@ -435,3 +434,17 @@ Existing unconditional derived-projection reads remain unchanged. An overview re
 - **THEN** 显示预热中及已有根数，不借用旧段数据
 - **WHEN** 公式版本变化
 - **THEN** 持久投影变为待更新，显式构建后发布新事实
+
+### Requirement: Home cards disclose publication validity and daily display basis
+
+首页 SHALL 在日周图标旁紧凑标识历史结果，仅历史结果展开显示各自截至时间及受控失效原因，正常结果的时间放入悬停说明；
+重复历史提示不占折叠行。全局摘要状态与分钟连接状态独立，正常已完成周期不得因报价变化失效。
+投影可增补 period_reason_codes，值限于 SOURCE_VERSION_CHANGED、SOURCE_VERSION_UNAVAILABLE、
+PERIOD_PENDING_UPDATE、SUMMARY_MISSING、SUMMARY_BUILD_FAILED、SUMMARY_BUILDING、SUMMARY_BUILD_INTERRUPTED 或 null；不得暴露内部异常。
+卡片 SHALL 明示日线参考收益及参考交易笔数，不称最佳准确率；距离使用摘要日线收盘价，标记日线距离，基准价及截至时间放入距离的悬停说明，不增加常驻解释行。
+阶段条只表示策略状态，清仓主句采用“当前某参考价已出现卖出信号”，悬停说明该价格属于日线参考，不能解释为实时价或真实卖出价。
+
+#### Scenario: Live prices advance while completed strategy facts stay unchanged
+- **WHEN** 分钟报价推进但已发布的日周输入及版本未变化
+- **THEN** 报价独立刷新，日周状态、参考收益及日线距离不变
+- **AND** 卡片悬停说明继续提供日线距离基准和各周期截至时间

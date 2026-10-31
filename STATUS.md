@@ -1,12 +1,193 @@
-10/30 SimNow结算与恢复补丁：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，v1.16.45候选，尚未发布/切换。
-精确实现6307af54已由PR554集成develop；独立Review两P1已闭合，未发现剩余Confirmed Issue。
-统一当前连接结算证明、修复夜盘日期误拒及未知结算跨连接重试、有界缓存身份漂移，并补准确恢复诊断。
-基础定向144项、补修11/18/36+2项、独立4项及固定SDK无网络34项通过；类型/Ruff/secret0通过。
-正式十服务仍v1.16.41/gen43，独立SimNow仍v1.16.44/run0900f127…；夜盘不开盘中切换。
-原账户四库、20261102 attempt1与CONTINUOUS_RECOVERY_REQUIRED block保持，pending=true/opening=false。
-实际ConfirmDate旧证据缺失，不把离线缺陷当作当晚已证实根因；空RspInfo协议含义继续待验证。
-合法部署窗口/目标日预算、新鲜接管、执行输入、自然开平成交及跨日换月分别待验，不新增同日例外或后台任务。
+10/31 周末SimNow四项准备完成；运行切换和自然业务仍待验。
+固定候选v1.16.45 exact b3e1f231eb1d0ecf9f850ce73fdc66de1da4bd3d，detached标准发布树已建立。
+沿用原SDK/API依赖及schema2原账户配置，仅渲染候选plist；SDK --check、--preflight-trade及render均exit0。
+API依赖复用原44环境，不修改现役venv；SDK位于/private/tmp，部署前必须重验。许可文件不存在，无plan/claim/安装/启动。
+只读原账本60品种、1个已核订单、未核订单/未释放预留/未解释成交均0，dispatch actions0/events1。
+双锁均由原PID1733持有；同run0900f127保持，宿主WAITING_SESSION/pending=true/opening=false并不解除恢复阻断。
+审计前后四库SHA完全一致；29/30各3次及原block、20261102 attempt1/CONTINUOUS_RECOVERY_REQUIRED保持；20261103无记录。
+一次固定截点2026-10-31T00:41:04.231255Z审计：60/60 WINDOW32_VERIFIED及物理1m聚合EXACT；45 INPUTS_VERIFIED_WAIT_NEW_OBSERVATION、15 BLOCKED。
+15为AP/CJ/EC/JD/LC/LH/PD/PK/PS/PT/RS/SF/SI/SM/UR：历史已验证，保留Live来源/订阅证据不足和MARKET_READ_CONTRACT_UNAVAILABLE，
+不能当作Canonical历史缺口，也不改成实时合格；待各自日盘新输入验收。审计exit2表示保留阻断，非审计中断。
+无provider请求、生产写入、Broker连接、服务切换或新调度。初始系统Python缺SQLAlchemy时审计尚未启动，改API解释器后仅运行一次60品种审计。
+私有候选及原生JSON/CSV位于主仓output/simnow-v45-weekend-20261031/；无生产代码变更，复用原测试/Review。
+详情及现场验收顺序见docs/tasks/2026-10-30-simnow-settlement-recovery.md。以下为此前检查点：
+
+10/30 22:52 SimNow窗口定位完成（只读）：权威Calendar/Session读取正常，当前45品种TRADING、15 CLOSED；
+当前休市切换条件不成立，不是已证实的元数据缺口。20261102及20261103均有60/60 Session事实。
+此前独立诊断先导入应用再加载私有配置，连接池缓存旧配置导致数据库错误被包装成WINDOW_UNPROVEN；
+采用与正式宿主一致的配置加载后重执行初始化，已读回上述事实。正式check的RESULT_UNKNOWN不作为缺数据证据。
+保留20261102 attempt1/CONTINUOUS_RECOVERY_REQUIRED；下一未阻断候选20261103目前attempt0、无block，上限3。
+按现存权威时段推导：11/2 15:00收盘确认后至严格早于20:49为候选部署区间，20:58–21:02为候选连接窗口（CST）。
+这只是未来条件推导，不是当前许可或预算预留；届时须重新证明全60休市/无当前Session、下一Session>660秒、
+目标日一致及原账户预算/block，之后才能生成新鲜计划/claim。未补下载、写DB、生成许可、停启、重连或报撤单。
+v1.16.45已发布未运行，十服务41/独立SimNow44保持；最小下一步为上述窗口内原生预检通过后仅切独立SimNow。
+详见[结算恢复任务记录](docs/tasks/2026-10-30-simnow-settlement-recovery.md#窗口定位与下一可用目标日只读)。以下为此前检查点：
+
+10/30 22:40 发布树收敛：未启用v1.16.43 exact33cc1a224已在原生两轮同像零引用计划后non-force移除。
+发布树现只保留正式十服务v1.16.41/gen43及独立SimNow v1.16.44；已发布v1.16.45仍未运行，不为凑单树切盘中服务。
+43的output/outputs均Git tracked；唯一4个非依赖忽略启用标记共32bytes已在树外私有目录逐字节/SHA/权限保全，tag保留可恢复。
+删除前计划hash585c0a643869bb48776ec213ad25c906c8e6abf0897e52414e30511102ce9d92，两轮相同；删除后历史reader与未决恢复guard通过。
+原生cohort seal不用于为零历史引用的未用候选新增Gate，未改全局cancelled或任何旧恢复记录。
+本轮修复清理reader误读v7 candidate.root：严格绑定原plan.preimage.release/intent/candidate身份，PR556已合develop；未发布该工具修复或改运行版本。
+61项retention定向、补修仅15项、独立3项、类型/Ruff/secret0/diff通过；独立Review无剩余Confirmed Issue。
+22:40十服务绑定41/gen43不变；SimNow同run0900f127…仍RECOVERY_BLOCKED/pending=true/opening=false，输入60 NOT_CHECKED。
+原account/dispatch SHA、20261102 attempt1及耐久block保持；本轮零停启/新连接/订单/正式行情或数据库写入。
+JM30研究树8个未合并提交保留；本聊天主任务树受宿主primary保护保留，不绕过归档限制。
+精确保全及completion位于主仓output/release-v43-unused-retirement-20261030/。以下为此前检查点：
+
+10/30 22:09 SimNow结算与恢复补丁：RELEASED / CODE_COMPLETE / TEST_COMPLETE / REVIEW_COMPLETE。
+PR554已合develop；PR555/main/annotated v1.16.45/GitHub Release已完成，exact
+`b3e1f231eb1d0ecf9f850ce73fdc66de1da4bd3d`，完整tree等受测候选1da3f901，生产实现等独立已审6307af54。
+统一结算证明并修夜盘日期误拒、未知结算跨连接重试、有界缓存身份漂移；恢复诊断保留准确阶段与白名单原因。
+基础定向144项、仅影响补修11/18/36+2项、独立4项、SDK无网络34项，以及类型/Ruff/secret0、版本/锁/打包/Web构建通过。
+正式十服务仍v1.16.41/gen43，独立SimNow仍v1.16.44/run0900f1274a7a4b8e8c1ed04139a84c01；本轮无停启、重连或订单。
+22:09现场pending=true/opening=false/RECOVERY_BLOCKED，原account/dispatch SHA不变；20261102 attempt1和耐久block原样保留。
+正式只读切换check返回BLOCKED/RESULT_UNKNOWN，同一权威入口诊断WINDOW_UNPROVEN，未生成plan/claim或切换。
+不为当前交易日新增恢复例外；后续须合法窗口、目标日权威Session/预算通过，再切独立SimNow并分别验新鲜接管/输入/自然交易。
+实际旧ConfirmDate未留存，不将离线缺陷当已证实现场根因；空RspInfo仍是既有协议待验证风险，仅补presence诊断。
 详见docs/tasks/2026-10-30-simnow-settlement-recovery.md。以下为此前检查点：
+
+10/30 夜盘基础健康口径修复：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，待正式运行切换。
+顶层status改为基础服务运行健康，策略样本不足/主力切换暖机保持等待，原组件业务状态、coverage、
+历史失败及严格计算/预热/交易Gate保留；未知原因不冒充样本不足。真实心跳/身份/处理循环/接收故障仍降级。
+相关回归251 passed/2 isolated PostgreSQL条件跳过，独立健康回归161 passed；Ruff/Mypy/OpenSpec12/secret/diff通过。
+本轮仅health实现/测试及canonical文档，未改行情、公式、Scope、SimNow或部署门禁，未发布或切Runtime。
+现役十服务仍v1.16.41/gen43、独立SimNow仍v1.16.44；当前夜盘45 TRADING，最新共享合同与41不兼容，
+正常整组切换仍须休市窗口及Reference预热通过。不得为健康显示回退main、改已发布树或绕过预热门禁。
+EXTERNAL_GATE_PENDING表示现场尚未应用新口径，不是要求owner重复批准。
+以下为此前检查点：
+
+10/30 21:02 自然开盘读回（PARTIAL）：45夜盘TRADING/订阅45/逐品种coverage ok45，15无夜盘CLOSED/coverage unverified，最新1m Bar至21:01；不是60品种全时段验收。
+API/Web200，六owner原PID/active心跳推进。Alert processing_state=ok但总coverage=evaluation_failed，15m规则最新仍白盘15:00，须待21:15自然完成Bar；不伪造实时策略完成证明。
+SimNow在20:59:13已自然登录并完成两轮原账户查询、结算/确认查询，但随后CONTINUOUS_RECOVERY_REQUIRED并RECOVERY_BLOCKED，21:02仍pending=true/opening=false。诊断标签ACCOUNT_SNAPSHOT可能陈旧，不能据此归因具体失败函数。
+未重复连接、重启、清预算/block或订单操作；正在仅用既有证据离线定位，不以查询完成代替新鲜接管通过。
+独立20:57:32审计确认64snapshot与Catalog逐事实相同（35Calendar/450Session/60主力），旧Feed状态/绑定/配置SHA及六PID未变；获批BZ/EG旧文件SHA和质量事实保留。
+证据/private/tmp/guiyi-independent-four-metadata-125732.private.json，SHA26d24434f9e97064765e17d5e2ac57e5c5972e5de3b3a0a460c4302825c0362a。
+以下为此前检查点：
+
+10/30 20:57 开盘前优先恢复检查（PARTIAL）：此前18:45同一版本/唯一发布树结论已被后续操作取代。
+正式十服务保持v1.16.41 exact3007dc0078e78f98847127bdd489aab25c8a9813/gen43，未在临近开盘强切。
+独立SimNow已按正式工具切到v1.16.44 exact7b1723e6b5df53091cdb3cd7e1b438b95717208f，
+PID1733/run0900f1274a7a4b8e8c1ed04139a84c01，COMPLETE/HOST_SWITCH_VERIFIED；
+20:56真实状态trade/WAITING_SESSION/UNKNOWN，account_takeover_pending=true、opening_enabled=false。
+原账户/四库/SDK/历史计数/block及一手/70%/来源8秒/Quote3秒门禁保留；尚不能宣称账户恢复或自然交易通过。
+v43/v44均已正常main/tag/Release；修复执行时效、夜盘输入验收范围、发布树引用及单次快照重放性能，
+v44候选1171项相关回归通过，独立执行安全Review通过。正式十cohort预热因Reference W1连续前缀合同阻断，
+新计划均在任何服务停启/CAS前安全取消，effects为空；当前保留41/43/44发布树，不删除仍有引用的旧树。
+owner批准BZ2611/EG2611的2026-10 D1/W1共4请求已逐次成功发布；旧不可变文件/质量事实保留。
+其余8合约已有完整分类并集，合法W1中断按当前canonical仍须DATA_UNAVAILABLE，不能降级放行或重复下载。
+owner另批准原60品种20261102/rank1/rule2最多64次元数据请求、零价格请求。
+经24项离线测试和独立Review，单次采集64次，来源与精确plan校验后单事务新增60主力映射、225 Session、30 Calendar；
+原Feed一次性状态未改。独立20:56:30读回60/60物理映射可解析、全部CLOSED，API/Web HTTP200，六owner同PID心跳推进。
+元数据snapshot c1baeaa97c5803a4c3b34e7ec8d6d0d2046326508e189403377e6eec0ce00a34；
+plan878ce03da2b6b2b1a9a364c721e419ea66efa0b281bdfca27a217191bb4e6438。
+证据/private/tmp/guiyi-nov2-metadata-prepare-37ebea6ea8db/、/private/tmp/guiyi-w1-ten-plans-20261030-123447/、
+output/simnow-review-fixes-20261030/、output/simnow-v44-switch-20261030-f8da3616fb/。
+整体Runtime仍degraded（Alert/周审计），不能报告全部计算或RUNTIME_READY；开盘后自然实时行情、策略计算、
+SimNow新鲜接管/逐品种输入/自然开平成交以及跨日换月仍分别待验。
+以下为此前检查点：
+
+10/30 18:45 收盘四项工作COMPLETED：发布、Reference恢复、十一服务统一切换及发布树收拢均已实际读回。
+唯一运行发布树`.worktrees/release-v1.16.41` clean detached，exact
+`3007dc0078e78f98847127bdd489aab25c8a9813`；正式十服务gen43，双fresh身份/接收验收通过。
+SimNow同41 --trade，PID20559/run dc5e2e3c462d4762921ba2fad8a98440，同PID双锁/配置/monitor已证；
+待恢复账户、WAITING_SESSION/UNKNOWN、pending=true/opening=false，原四库/SDK/一手/70%/年龄门禁、计数/block保持。
+Reference48流/20参考OPEN/334原Inbox单次恢复COMMITTED，原件保留，未来起点17:11:32。
+独立恢复控制器42（exact0a661b48bde8e088c8437a9d744dd90110f4eaff）仅闭合晚到启动验收，未重启十一41；
+原READBACK_UNPROVEN字节前像与SHA保全，正式COMPLETE/HOST_SWITCH_LATE_VERIFIED，独立闭合/旧41次日许可契约回验通过。
+封存sealed5567c604...97344；删除前两次cleanup-plan c43c62fd...8fb6c相等，旧35/38/39/40/临时42均nonforce移除；
+删除后历史reader、未决恢复Gate、封存盘后历史hash均通过，旧根有效引用0，develop/研究树/Git/tag/树外账户行情日志保留。
+自然18:05盘后主业务passed（18:14完成）。API/Web/Runtime HTTP200，但整体Runtime仍degraded（既有Alert/周审计状态），
+不报RUNTIME_READY；新鲜账户恢复、60品种自然输入、真实策略开平闭环、跨日/换月分别待验。
+最终证据output/simnow-postclose-20261030/completion.json，清理证据output/release-retirement-20261030-180602/，
+SimNow闭合output/simnow-v41-switch-20261030-870a108495/，正式cohort output/after-close-cohort-v41-20261030/。
+唯一下一步：由已部署宿主在合法连接窗口完成新鲜账户恢复，再按原门禁接收自然新输入；不补旧信号、不手工制造订单。
+以下为此前检查点：
+
+10/30 收盘四项运维已完成主要执行，最终独立收尾读回中：十一运行服务统一v1.16.41 exact
+`3007dc0078e78f98847127bdd489aab25c8a9813`（正式十gen43；SimNow PID20559/run dc5e2e3c462d4762921ba2fad8a98440）。
+Reference48流/20原OPEN/334原Inbox单次恢复COMMITTED；SimNow启动晚到验收由独立42控制器正式闭合
+COMPLETE/HOST_SWITCH_LATE_VERIFIED，原失败原字节与初始error保留，无重启/SDK连接/预算改写。
+封存hash5567c604da777f524952995d4a8538268a0527e67e3da1cbe8c1587e77597344已两轮采样并正式sealed；
+fresh cleanup hashc43c62fd51606be666d381db1fe46d7c7607191419e93dc7fa2957526068fb6c两次一致，
+35/38/39/40/临时42于18:38:49–56逐棵nonforce移除，唯一运行发布树41 clean；develop/研究树/Git/tag和树外数据保留。
+SimNow仍WAITING_SESSION/UNKNOWN/pending=true/opening=false，账户恢复及全品种新输入/自然策略交易/跨日换月待验。
+整体Runtime仍degraded，不将十身份matched/HTTP200或部署完成冒充全部业务Ready；18:05原自然盘后主业务passed（18:14完成）。
+证据output/release-retirement-20261030-180602/、output/simnow-v41-switch-20261030-870a108495/、
+output/after-close-cohort-v41-20261030/。控制器42已封存退役，仅保Git身份；运行版本不是42。
+以下为此前检查点：
+
+10/30 独立恢复控制器v1.16.42已正常发布（PR551），exact
+`0a661b48bde8e088c8437a9d744dd90110f4eaff`；tree等最终受测d0c候选，仅4文件控制器/测试/canonical/版本。
+候选992 SimNow、86部署/ReferenceCLI/retention、独立223安全回归及mypy/构建/秘密扫描通过。
+十一Runtime保持v1.16.41（正式十gen43、SimNow PID20559），本控制器不升级或重启运行服务。
+42正式--reconcile-started已单次执行，仍在重型只读校验，事实全部通过后才唯一claim/保全原失败/receipt/正规闭合；
+此时不能提前宣称COMPLETE或删除旧树。待独立闭合回验后封存旧35/38/39/40及临时42，仅留运行41。
+以下为此前检查点：
+
+10/30 17:27：SimNow v41已实际部署，PID20559/run dc5e2e3c462d4762921ba2fad8a98440，
+晚到双轮正式只读readback verified，命令/config/exact/同PID双锁/monitor绑定一致，WAITING_SESSION/
+account_takeover_pending=true/opening=false，预算未新增连接。原35秒启动验收早于约48秒runclaim而超时，
+原intent保持VERIFYING/READBACK_UNPROVEN未改，未重启/重复apply。正在独立42恢复控制器补正式晚到验收闭合，
+保存原失败原字节与独立receipt，不停启、不改Runtime41或预算。十一服务实际已同41/gen43（SimNow独立run），
+但事故闭合及旧35/38/39/40/临时42树封存清理未完成；此时不能当原COMPLETE或整体RuntimeReady。
+以下为此前检查点：
+
+10/30 17:21：正式十服务已单次cohort switched至v1.16.41/gen43，双轮真实loaded身份全matched，
+六常驻owner同PID且时间推进；Reference接收waiting/pending/blocked=0，无intake_error。
+API41/Web/独立Runtime均200，但Runtime body仍degraded，因此状态脚本的blocked是未达整体ok，
+不能归因为该Runtime脚本超时；此前明确超时仅重Reference健康请求。旧周线60evaluation_failed、日线1warming、
+盘内重启unverified待自然bar、Reference计算pending_keys236/readyfalse均独立保留，不报整体Runtime Ready。
+证据output/after-close-cohort-v41-20261030/final-summary.json。SimNow41 v7/v3新计划/单次apply现开始，
+未提前报成功；原预算/block保持，未Brokerprobe/人工单。旧35/38/39/40仍在，待十一同41双读回后封存清理。
+以下为此前检查点：
+
+10/30 v1.16.41已正常发布，PR550/main/annotated tag/Release exact
+`3007dc0078e78f98847127bdd489aab25c8a9813`，干净detached41/tree等已审7文件最小候选。
+候选960 SimNow、86部署/ReferenceCLI/清理检查、独立191项、SDK/构建/离线锁/打包及秘密扫描通过。
+静态许可修复planv7/permitv3，动态当前休市/>660仍fresh校验。正式十服务40/gen42正执行新cohort对齐41；
+SimNow仍38，41新配置/API/SDK/正式候选预检通过，原29/30各3次及blocks未变，目标20261102仍0。
+Reference48/20/334已COMMITTED，不重复恢复；十一服务双读回前不封存/删除旧35/38/39/40。
+以下为此前检查点：
+
+10/30 17:00后SimNow仍PRESTOP：首次PLAN_EXPIRED、第二次新意图PLAN_INVALID均未intent/grant/停启，
+原PID57727/run及两日3次计数/block保留，目标20261102仍0。确认ordinary许可误冻结动态gap造成fresh必漂移，
+正在最小向前补丁41修静态许可事实（planv7/permitv3），不放宽当前Session/660/账户/锁门禁，不改已发布40。
+正式十服务40/gen42已switched，Reference48/20/334恢复已COMMITTED，不重复恢复；最终需十一服务同41。
+以下为此前检查点：
+
+10/30 16:52：正式十服务单次cohort切换成功（switched），两轮真实loaded身份均matched
+v1.16.40/gen42/exact3b8a697e5740c2aa99024590a0785dbddf5c2c5e；六owner同PID且时间推进。
+Reference接收waiting/pending/blocked=0，计算ready=false/pending_keys238独立待进。
+API40/Web/单独Runtime请求200；Runtime仍degraded，脚本内5秒Runtime失败及Reference重型健康超时保留，
+不宣称整体Runtime Ready。证据output/after-close-cohort-v40-20261030/final-summary.json。
+SimNow独立v6切换现获准开始，仍需单次计划/apply及两轮真实PID双锁/run/monitor读回；未提前报部署成功。
+旧35/38/39未清理，必须等十一服务同40读回后封存精确移除。以下为此前检查点：
+
+10/30 16:41：v1.16.40正常发布完成，PR549/main/annotated tag/Release exact
+`3b8a697e5740c2aa99024590a0785dbddf5c2c5e`，干净detached40，tree等已审3文件候选。
+候选Reference/CLI1309 passed（127专用条件跳过）、部署61、CLI25及独立Review/构建/依赖锁通过。
+40正式CLI的Reference单次恢复COMMITTED且status已回验：48流、20OPEN冲突中断、334原Inbox退役，
+旧原件保留，未来共同起点17:11:32（after-close-v40-084104）；Reference原gen41/PID84298保持parked。
+正式十服务新cohort正准备/执行，尚未宣称切换成功；SimNow38未切，40配置/SDK/正式candidate预检通过，尚未签发普通许可。
+以下为此前检查点：
+
+10/30 收盘执行新增技术阻断：Reference正式CLI load_dependencies将安全派生RedisURL覆盖回默认无认证URL，
+两次park调用均在任何attempt目录/drain/写入前阻断；原gen41 owner active、旧handover仍cancelled。
+单独按既有wrapper环境只读check_window已通过全60 closed_idle，确认不是Session/未来映射问题。
+需正常向前补丁v1.16.40修CLI加载并重新测试/Review；不得改已发布39源码/tag或旁路加载器。
+正式十服务仍35，SimNow仍38，均未切换；新39尚未运行。以下为此前检查点：
+
+10/30 收盘后执行中：v1.16.39已发布，PR547/main/annotated tag/GitHub Release exact
+`de3356d7f7784afcb5bb0017e5dcccc7ea80492c`，release39 clean detached；tree等已审候选。
+窗口v2/普通许可v2/计划v6最小修复已集成develop，候选自身954项、源Reference/cohort/清理1537项
+（127专用条件跳过）、SDK33/类型/构建/秘密扫描与独立Review通过。
+Reference当前新鲜先验48流/20OPEN/158冲突/334待退役，尚未生产恢复完成；首次park因命令级
+OBSERVATION_STREAM_NOT_ENABLED在意图/drain前阻断，未写数据或停驻，正按既有wrapper补齐控制器环境重核。
+正式十服务尚35/gen41；SimNow尚38，39待恢复trade配置/同label plist/SDK与正式候选预检已准备，
+新配置解除旧38 APIenv依赖，原SDK/账户anchor/四库不变；未签发普通许可或切换。
+后续严格顺序：Reference成功保持parked→新cohort十服务→SimNow独立v6→双轮读回→封存/清理。
+发布不代表Runtime、新鲜账户恢复、输入或交易闭环通过。以下为此前检查点：
 
 10/30 四项工程准备：CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，PR548已集成develop（98861c77f）。
 v39候选工程提交bb25a60e9已独立核验；候选自身944相关、1515 Reference/cohort（127跳过）、
@@ -21,6 +202,19 @@ SDK离线33、Web14/构建及8模块类型通过。PR547仍未合main，未tag/R
 以下为此前检查点，不作为当前已接管或开仓许可：
 
 # 当前状态
+
+10/30 14:04：开盘保障已真实取证至14:02，Live持续60/60、SimNow同run LOGGED_IN/TRADING、
+pending=false/opening=true，账本READY且无订单/成交/预留/未核订单/blocked product。
+60m执行输入仍NOT_CHECKED，当前无新策略订单，不以账户接管替代逐品种输入和真实交易验收。
+HTDY冲突恢复已由PR546集成develop，源`32058485475da839cc65e83c133188d3fe9428e3`。
+v1.16.39固定候选`01194e1b801101438dd5888297f0eaa6fc4bbddd` clean，PR547已准备未合main，
+相对main/v38恰13文件；10个工程/测试/canonical/TESTING blob逐字等已审源，额外两状态文档仅本轮及版本元数据。
+候选自身Reference/CLI1305 passed、真实隔离PG8、SDK离线33、Web14/类型/构建/拓扑、4模块mypy、Ruff/diff通过；
+独立安全及exact候选Review无剩余Confirmed Issue。14:03候选真实只读来源预检48路/158冲突/238待退役原件通过，
+仅诊断、未持writer fence、未生成恢复plan。临时测试PG容器已清理，正式DB/Redis未改。
+CODE_COMPLETE/TEST_COMPLETE/REVIEW_COMPLETE，未发布v39、未park/应用恢复、未切正式服务，仍十35/SimNow38。
+当前TRADING，不在交易中强切；休市后仍须重新通过全60/下一Session>660秒、fence/单次claim/cohort现场校验。
+SimNow38已消费的唯一连接许可不支持迁移或trade→trade重启，保留现役root38；全11统一和单树仍未完成。
 
 10/30 13:33：owner要求优先保障下午开盘，发布/Reference恢复操作暂停，未park或重启现役。
 正式十服务仍v35/gen41、身份matched；API/Web、DB/Redis正常，无维护drain，发布根35/38 tracked clean。
@@ -59,33 +253,224 @@ v35仍被十服务引用不能删，develop及JM30研究树保留。统一版本
 证据 `output/simnow-unified-takeover-20261030/`；Reference源冲突须先按原件与权威来源解释/修复，
 再生成新的cohort计划，旧取消计划和已完成SimNow意图均不复用。以下为此前检查点。
 
-10/29 18:20：SimNow只读就绪修复已通过隔离测试与独立安全Review，选择性进入v1.16.35候选。
-账户只读对账证明与账本投影、预算、执行输入分开；可选产品查询仅隔离未接受且无回调的SDK -2/-3。
-604项Python、31项固定SDK、12项Web监控、Web类型/构建/拓扑、core五模块mypy及定向Ruff通过。
-此处仅记录候选；当前正式服务仍v34/gen40，真实柜台验收须等原生20:58窗口，不重置旧预算或账本。
-偶发已记录推送失败按owner口径保留记录，不补发、不计作行情和计算故障。
+10/30 11:36：owner取消定时并要求立即处理；simnow一次性任务已删除。权威全60 BREAK、下一13:30
+及>=660秒午间窗口通过。PR544已合main，annotated tag/GitHub Release **v1.16.37** exact
+`5b4bc2004c3cce73d82757816eca9cbfdb978f25` 已发布，tree与800测试候选完全一致。
+**第二步PARTIAL：RELEASED，trade未切换。** 新鲜账户门禁实际ACCOUNT_UNPROVEN：原observe
+10:28:21保证金查询超时后断开，10:29:24预算耗尽并持久day30 CONNECTION_BUDGET_EXHAUSTED block；
+最后native10:28:04，已过期、observe proof缺失，现役PID71132/observe WAITING_SESSION/UNKNOWN。
+方案1不豁免block和30秒账户门禁，未生成plan/intent/grant/claim、未apply/停服/新增连接，额外1次未用。
+正式十服务仍v35/gen41，独立Review复核阻断正确。不得清block或借过期快照切换，需先确定新的受控账户恢复方案。
+证据output/simnow-midday-switch-20261030/midday-result.json。
 
+10/30 11:10午间候选最终固定：v1.16.37候选exact `2b5c7c8de09b9beabb8223392f99770ef4c72a6c`，
+PR544已ready/mergeable，相对main12文件=11已审查源工程文件+版本元数据；源37cb281075已集成develop。
+候选自身800回归（52.13秒）、SDK33、mypy4、Ruff、离线锁、Web构建及exact候选独立Review通过。
+新私有配置/同label plist/0700 attempt1在output/simnow-midday-switch-20261030，正式只读preflight通过，
+原observe仍持锁；没有plan/intent/grant/claim，没有新增Broker连接。11:35一次性simnow任务已更新
+精确候选与owner单次例外授权，先重核现场窗口/新鲜空账户/预算与双锁，再发布切换；当前未发布v37/未切换。
+API只读source锚保持旧observe配置，实际trade模式由实时index证明；正式十服务保持v35/gen41。
 
-10/29 AL修复发布前检查点：选择性 **v1.16.33候选** 仅包含已批准的已证回滚单次续接、来源锁隔离与对应验证。
-代码已通过独立安全Review；1282项Reference/原生交接回归、8项真实隔离PG及冻结真实AL输出/checkpoint对照通过。
-正式现场仍 **v1.16.32/gen38**；09:02原AL有1 BLOCKED及后续2 pending，历史刷新受阻。本候选尚未发布或切换，
-未消费生产续接claim；只在重新证明全部CLOSED/宽限、维护互斥和原生身份后推进。以下为此前检查点。
+10/30 11:03：owner明确选方案1，仅本次午间部署额外1次连接。端到端例外已实现并通过
+800项相关回归（48.58秒）、SDK33、4模块mypy、Ruff及独立192项安全Review；原attempts3不变，
+plan v3绑定固定候选/配置/唯一intent，首次run先持久绑定、下午连接前单次持久消费，失败/重启不返还。
+午间trade可WAITING_SESSION，实际首连仍按权威PM窗口；次日按权威交易日恢复普通额度。
+正式API保留旧observe只读账户入口，实际模式从实时index读trade，正式十服务不升级。
+兼容回归初次发现的observe导出字段及夜盘交易日startup问题已修复复验。当前未发布/未切换，
+正在更新v37固定候选及11:35一次性任务；旧f99fea898候选不含例外，禁止据旧head发布。
 
-10/28夜间：**v1.16.32候选准备中，尚未发布或切换**。以正式v31为基线，仅择取develop
-`bc8163ddf`及追加`20ece2c8c`中夜盘接收/CLOSED健康、HTDY原件资格修正及独立SimNow observe必要实现、合同和测试；未整体纳入研究及无关Web改动。
-SimNow相关575项回归、真实隔离PG4项、90条冻结原件/路由一致及独立安全Review通过；六模块Mypy通过。
-候选自身Reference/Alert/health/MDS1591项及SimNow575项通过，116个条件测试skip单列；锁定离线uv/pnpm、
-Web type/build/topology、SDK无网络准备预检、12项OpenSpec、Ruff/secret0/diff通过。
-接收平均1m/5m为4.75/16.03ms，对照959.93/950.93ms；不改变公式、Scope或计算合同。
-23:12独立现场读回仍为 **v1.16.31/gen37**，exact`dfa9b5aa7920522987ad7f1baf958970e79351c7`；
-十身份一致，Live心跳正常，Inbox pending284、BLOCKED/UNKNOWN0。真实SimNow只读两轮一致、空仓，尚未初始化或启动。
-全部收盘且宽限结束后再发布/原生切换，初始化必须重新取快照；06:30后不发起新正式切换，07:00冻结，08:00安全收尾。
-新版本自然输入/信号/参考交易及09:00后跨时段验收待发生；详见[夜间四步记录](docs/tasks/2026-10-28-overnight-first-four.md)。以下为先前检查点。
+10/30 10:27预算原因核验：09:25:17第二轮资金查询15秒零回调超时，现役宿主同PID按transport规则
+退避60秒后重连，09:26:29新账户快照；因此day30预算3/3。底层柜台/网络原因未证实。
+下一权威交易日20261102预算当前0，今晚21:00夜盘、最早20:58连接；这不是可部署窗口，
+现有切换工具硬绑定day30且要求距下一Session>=660秒，不能直接复用。午间切换保持预算阻断。
 
-23:32现役v31新增AU60m/23:00的HTDY_WINDOW_UNAVAILABLE：有效原件被之后23:04恢复水位反向撤销资格。
-本候选保留已接受原件的冻结资格，仍完整验证窗口/末Bar/physical/source-current；legacy及不合格恢复原件保持拒绝。
-exact HTDY60m故障可用原reference_inbox_recovery_v1停writer计划原子闭合，原BLOCKED不改，未知禁重试。
-1452项组合、9项真实隔离PG、162项MDS定向及追加独立安全Review通过。现场原件尚未恢复，不宣称策略范围全正常。
+10/30 10:12第三步只读现场：60/60历史32根、当前计算窗口及Live/当前1m连续性通过，
+closed-source差异0；剩余15无夜盘品种数据输入已补齐本次现场证据。10:00自然completed60m
+全部60品种被observe接收、OBSERVED，逐条codec/hash/品种/物理合约/时间身份通过。
+不等于trade首见或费率/保证金/新鲜盘口验收；现役仍observe、opening/auto_order false。
+重要变化：当日连接预算现场已3/3、无当日block，午间新trade连接将被既有预算门禁阻断；
+不清预算、不先停服、不新增Broker连接。证据output/simnow-step3-20261030及
+output/simnow-step3-20261029/admission-20261030T021206/。
+
+10/30 午间准备：owner要求先完成准备，11:30收盘后一次性发布切换。停止边界原生合法append完整验证、
+显式midday窗口及SQLAlchemy只读会话生命周期修复已由4a8dff27b集成develop；762项回归、SDK33、
+独立100项及安全Review通过。v1.16.37隔离候选从main/v36仅移植四文件及版本元数据，尚未发布/切换。
+预计11:35执行，届时重新证明全部60品种上午结束、无当前Session、下一权威Session间隔>=660秒，
+以及当天连接至少剩1次、原四库/账户/双锁；历史失败意图不可复用。详见任务文档午间记录。
+
+10/30 02:54：一次性任务实际执行。选择性PR543已合main，annotated tag/GitHub Release **v1.16.36**
+exact `74d01145f4bcda1192b702f4760c9c0ce73e531a` 已发布；695项候选回归、33项固定SDK、Web构建/拓扑、
+四核心mypy、Ruff和独立发布Review通过，不含develop无关研究。正式十服务仍v35/gen41，绑定内容及API版本未变。
+独立SimNow切换attempt1在STOPPED、尚未安装/启动trade时被PREIMAGE_CHANGED阻断：停止过程中原生只读
+证据从3247增加1份，旧前缀未变，但严格offline前像不再相等。未重试apply、未放宽门禁；按正式工具显式
+恢复原v35 observe，PID71132、新run、双锁、LOGGED_IN/OBSERVING_CLOSED与新鲜只读账户核验通过。
+账户/dispatch保持，权益/可用100043.92，持仓/委托/成交0；当日连接预算2/3，未重置。auto_order/opening false。
+原SDK临时环境缺少pyvenv.cfg及4个Python/元数据文件，已按原安装RECORD精确恢复缺文件，原二进制未变，
+独立15文件hash与SDK33验证通过。**第二步PARTIAL：RELEASED，trade未部署**；后续需修正停止边界合法新增
+原生快照的完整核验后，再形成可验证的切换候选，不能复用本次意图。证据`output/simnow-trade-release-20261030/`。
+02:56再次独立读回同一恢复状态，独立Review复算原3247条前缀与account/dispatch均一致；原一次性任务已删除，未新增重试。
+
+10/29 22:42：owner对“02:35发布811df7602最小补丁并仅切独立SimNow trade、保留原账户和全部门禁、
+正式十服务不动”明确回复“授权处理”。原simnow-trade一次性任务已成功更新并ACTIVE，执行时仍须新的
+权威夜盘收盘、30秒账户证明、双锁及宿主逐项审批；此前HOST_APPROVAL_BLOCKED为历史检查点。
+本次只更新任务授权与计划，不发布、不切换或启用交易，现役仍v1.16.35 observe。
+
+10/29 22:35后：三项提前工程代码811df7602完成：盘口源年龄/查询回调时序诊断、逐品种成功证据及读取时TTL投影、
+一次性trade切换与启动前有界observe恢复工具。695项相关Python、33项固定SDK、4核心mypy、Ruff及独立Review通过。
+真实机器默认只读plan在WINDOW_UNPROVEN阻断，无intent、无停启/Broker连接，账户/dispatch/plist保持。
+现役仍v1.16.35 observe、auto_order/opening false；该版本无新成功证据，读取为60 NOT_CHECKED，不能由无错误推导成功。
+AG/J/PB/ZN旧记录无法追溯区分旧源、查询等待或未来时间，真实根因仍待新固定补丁运行后的时间样本。
+自动审批拒绝将新补丁main/tag/Release与trade切换合并为自动执行，记HOST_APPROVAL_BLOCKED，不冒充工程验证失败。
+原02:35一次性任务已加保护：未有后续明确授权及宿主认可的更新前仅只读核对，不发布/切换或退回部署旧v35。
+本轮新代码尚未发布或运行；精确范围与记录见[SimNow就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。
+
+10/29 22:01：第三步部署前输入核验已实际执行，固定v1.16.35只读审计60品种：历史32根60m预热60/60；
+45夜盘当前1m连续、22:00完成60m、物理主力/窗口及底层1m聚合逐值一致通过。原observe自然inbox
+冻结该Bar的45项评估，hash/时间/品种身份与夜盘集合一致，状态均OBSERVED，不补信号、不下单。
+15无夜盘品种历史通过，当前1m WAIT_NEXT_SESSION；旧日原始Live/订阅及合并窗口仍BLOCKED，不作豁免。
+observe留存AG/J/PB/ZN最近一次执行输入NATIVE_BOOK_STALE；其他品种无报错不等于新鲜成功证明。
+59项定向回归通过；trade尚未部署，交易宿主新输入/开仓门禁及即时费率/盘口仍未验，第三步仅部分完成。
+原件`output/simnow-step3-20261029/`；02:35第二步定时任务仍独立，以上不替代其新鲜现场核验。
+
+10/29 21:35后：独立SimNow账户接管条件由两个新鲜原生来源验证，原账本重放、归属检查与内存Recover通过；
+资金一致、无持仓/委托/成交/未知发送/待核回调/未释放预留，运行账本未改。固定v1.16.35 trade候选配置/
+同label启动项、SDK及四库身份预检已准备，654项Python与31项固定SDK验证通过，独立Review准备通过。
+当前observe PID76693独占双锁，auto_order/opening false，trade尚未安装或启动。
+owner明确将独立SimNow切换窗口限定为“夜盘品种全部收盘；无夜盘品种不参与”，不允许夜盘交易中切换；
+21:40权威45 TRADING/15 CLOSED仍阻断，最后夜盘Session预计10/30 02:30结束，届时须重新现场证明。
+不新增定时任务，不把候选准备当已部署或交易验收。详见[就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。
+
+10/29 工作树新鲜复核：SimNow observe-readiness 会话归档后，原任务目录及Git worktree登记均已消失；
+当前仅保留develop、现役release-v1.16.35和有未合并研究的JM30三树。本次只读核对未操作正式服务，
+不以工作树清理证明新的Runtime或账户验收。下方19:50“暂留”为当时检查点。
+
+10/29 19:50：按owner要求完成旧v34原生封存及non-force移除，发布树仅保留现役
+**release-v1.16.35**（exact `82a8031470009249acccb83b9911a374af70ca00`，十服务gen41）。
+已合并Reference/AL任务树已归档，246份output原件保全；SimNow发布回合并PR542已集成develop，
+133份output原件保全，但该树被应用标记为本会话主工作区，原生工具拒绝移除，故暂留。
+JM30研究树有8个未合并提交，继续保留。没有清理行情、账户或恢复原件；现役源码根不变。
+以下为此前检查点。
+
+10/29 19:00：选择性v1.16.35已发布，正式十服务通过全新原生cohort `c81c3400…`切至gen41，
+exact `82a8031470009249acccb83b9911a374af70ca00`；独立SimNow observe同版本PID76693。
+两次独立版本/进程/HTTP/Reference读回通过，1140READY、pending/BLOCKED/UNKNOWN/dependency_wait为0；
+本次旧gen40六个维护请求已精确取消，新owner同PID active。account/dispatch/旧日预算不变，交易关闭。
+SimNow仍WAITING_SESSION/UNKNOWN，新日20261030连接次数0；20:58原生窗口真实双轮验收待发生。
+自然18:05源更新passed，消费核验终态D1 incomplete/W1 audited已保留；global仍有苏冰覆盖evaluation_failed
+和weekly历史not_run，不能宣称全量RUNTIME_READY。偶发已记录推送失败不作为行情/计算异常处理，不补发。
+详见[SimNow就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。以下为此前检查点。
+
+10/29 18:36：SimNow就绪修复已由PR540集成、PR541选择性发布v1.16.35，main/annotated tag/Release exact
+`82a8031470009249acccb83b9911a374af70ca00`。独立observe已通过原安装器切至该版本，新PID76693、
+WAITING_SESSION/connection UNKNOWN；新run及两锁归属已核对，account/dispatch和旧attempts/blocks摘要不变。
+604项Python、31项固定SDK、12项Web监控、生产构建/拓扑、core五模块mypy、Ruff和独立安全Review通过。
+只读对账证明与账本投影/预算/执行输入分开；缺失/过期/失败不显示ready，不放开交易。
+今日18:05自然源更新于18:13:09 passed、60品种一次成功，但其消费核验进程尚在运行；
+原生cohort计划在installed阶段因日历非idle拒绝，尚未生成或执行新停服attempt，正式十服务仍v34/gen40。
+真实柜台双轮新鲜快照留待既有20:58窗口；无提前连接、预算重置、结算确认或报撤单。
+偶发已记录推送失败按owner口径仅保留记录，不补发、不计作行情和计算故障。
+详见[SimNow就绪交付](docs/tasks/2026-10-29-simnow-readiness.md)。以下为此前检查点。
+
+10/29 16:25：发布树收敛完成，唯一保留 **release-v1.16.34**，exact
+`8d27fa548ed8750f28f221a7eb2e8001aad1642d`。owner明确批准后，全新原生cohort `e12d7316…`
+终态switched，正式十服务统一 **v1.16.34/gen40**；六常驻owner active，删除后十身份matched，API/Web/监控HTTP200。
+1140条启用参考流全部READY，Inbox pending/blocked/UNKNOWN/dependency_wait均0；DB/Redis/Live/Alert正常。
+独立SimNow保持原PID27497及observe，config/plist、account/dispatch逻辑摘要逐项不变，auto_order/opening false；
+监控来源旧v32路径已更新至v34。原当日预算/block、旧失败和UNKNOWN账户事实保留，不补信号、不重置账本或连接预算。
+v32经既有封存验证后退役；v33新原生封存30次attempt、69份原件、6个运行标记，两次一致零引用扫描后non-force移除，
+删除后历史身份与未决恢复guard通过。已合并SimNow候选任务树及分支已清理，143份output原件哈希保全。
+其余历史修复、JM30研究树保留；owner随后明确交办清理已合并诊断树，3个闲置ChatGPT工具进程已TERM退出，
+诊断树及已合并分支已non-force移除，133份output原件哈希保全；SimNow同PID/config/plist/账本保护复核通过。
+全局既有degraded、历史参考基线缺口、weekly not_run与监控partial保留；新代际自然输入、SimNow新鲜柜台对账待验，
+不能宣称全量RUNTIME_READY/OBSERVE_READY。无新增自动化、通知补发或交易权限。
+本地证据与详细记录保留于`output/worktree-convergence-20261029/`及`docs/tasks/2026-10-29-release-tree-convergence.md`。以下为此前检查点。
+
+10/29 15:35：独立SimNow诊断修正已由PR537集成、PR538发布 **v1.16.34**，main/tag/Release exact
+`8d27fa548ed8750f28f221a7eb2e8001aad1642d`；独立observe已更新，新PID27497，连续两轮及独立抽核通过。
+当前 **WAITING_SESSION / connection UNKNOWN**，auto_order/opening false；正式十服务仍v1.16.33/gen39，API health200/version33，未随本次切换。
+原account/dispatch摘要、20261029 attempts=3和CONNECTION_BUDGET_EXHAUSTED block及其他服务plist均不变；无新增Broker连接/Keychain读取/报撤单。
+四库quick_check及本地账户验证通过，60品种无订单/成交/持仓/预留；末次柜台快照10:30:01，不能证明当前新鲜对账。
+旧11项输入失败的当前权威主力/Session 11/11可读，但CTP合约/费率/盘口原因仍未证；新增逐品种时间/阶段/固定code及有界原生协议诊断，不清旧失败。
+精确候选426回归、SDK26、版本入口、离线uv锁及Web构建/拓扑、secret0和独立Review通过。监控API200/partial保留；未重发信号或初始化账本。
+权威下一交易日20261030、最近开盘10/29 21:00；下一Session的新连接/账户对账/自然输入待验，不能声明OBSERVE_READY或RUNTIME_READY。
+证据在主工作区`output/simnow-observe-diagnosis-20261029/`；原监控来源配置仍保留v32引用，暂保留该树。本次无新增自动任务。以下为此前检查点。
+
+10/29 12:20：AL恢复与吞吐增量已通过PR536正式发布 **v1.16.33**，annotated tag/Release/main exact
+`d1c0e74f0a14e7edf0acc8311f8ab457da50b726`；全新原生cohort `03261e46…`终态switched，十服务统一 **gen39**。
+AL显式单次续接原子成功，新link及冻结checkpoint独立逐值一致，原BLOCKED/父claim保留；后续输入已原生追齐。
+12:06/12:14两次独立读回1140/1140 READY，未解决BLOCKED/pending/UNKNOWN/capture均0，原件游标全部追尾；
+六新owner active，API/Web200，DB/Redis/Live正常。v33 Reference **1.1807秒**安全退出、同PID恢复，1140路checkpoint不变，
+本次全部维护drain已精确撤销。历史刷新实际运行且v33已健康完成一批；错误分层修正、恢复校验约1.1秒→0.75–0.86秒。
+1284项Reference/交接、候选7项真实隔离PG、冻结AL逐值、独立Review、定向类型/Ruff与Web构建通过；临时PG及匿名卷已清理。
+切换后60品种本交易日至午休source1m15090/completed19945原件对权威端点：缺失/多余/重复均0。Scope/公式/通知不变，无补发/行情补写。
+当前BREAK，下午13:30新gen39自然输入/信号/参考交易与吞吐待验；Alert processing ok，300分钟路由unverified、113 ok/7 warming_up，
+global仍degraded，不能宣称全量RUNTIME_READY。weekly全历史not_run、120条苏冰历史策略基线缺失另列，不等于行情缺失或本次已补建。
+SimNow observe保持，午休WAITING_SESSION/opening=false/monitor partial；其固定引用v32，故保留该树。无新增自动化。
+详情与首轮维护锁顺序错误、安全中止及修复证据见[AL现场交付](docs/tasks/2026-10-29-al-rollback-continuation.md)。以下为此前检查点。
+
+10/29 10:15：AL已证回滚单次续接修复已集成并推送develop `eb417e6d15`；选择性 **v1.16.33候选**
+`122327709888b1c4d74557717c3c461387ab1f76`，草稿[PR536](https://github.com/firehell/guiyi-quant-workstation/pull/536)。
+候选1282项Reference/原生交接、8项真实隔离PG、7项health/version、冻结真实AL官方组合输出/checkpoint逐值对照、
+独立安全Review及离线锁定构建通过。仅完成候选；**未发布、未切换、未执行生产续接**，现役v1.16.32/gen38。
+最终盘中Reference只读：未解决BLOCKED1/pending436/UNKNOWN0，最近计算10:15:47；不可再用原pending2描述当前积压。
+10:12只读健康十身份matched，DB/Redis/Live/Alert处理ok，
+整体degraded保留，不能宣称AL及历史刷新恢复。盘中无正式服务重启。
+正式操作留待fresh全CLOSED及宽限结束：先发布补丁，在旧owner停写持锁下精确续接AL、独立验证并原生追齐，
+再创建新cohort计划切换，最后验收历史刷新及10秒退出恢复。任务临时15490 PG及匿名卷已删除。
+15:10一次性自动续接**未创建**：宿主自动审批拒绝未来自动执行发布/生产恢复/Runtime切换，要求明确自动化授权；
+`HOST_APPROVAL_BLOCKED`，不是生产恢复attempt失败，原continuation claim未消费。详见[AL任务记录](docs/tasks/2026-10-29-al-rollback-continuation.md)。
+
+10/29 04:04：PR535已正式发布 **v1.16.32**，annotated tag/Release/main exact `f489c4478a1af4a3888e78976b809a32e5423a57`；
+原生计划`9dce1418…`已switched，十服务统一 **gen38**。闭市九条HTDY原件已按原协议逐条原子计算并追加闭合，
+未改原BLOCKED；首条AL因维护source回调锁自等待已回滚、checkpoint不变，单次claim已消耗，pending capture保留。
+其余前台已恢复，同PID Reference active但仍degraded；03:33 pending2/blocked1/UNKNOWN0，completed11095，
+恢复闭合累计2627。AL同流及历史刷新仍受阻，显式回滚续接的合同变更已问owner，未答前不实施、不换namespace重试。
+SimNow fresh双轮真实资金/空仓验证后已原子初始化独立四库，唯一observe PID63796；协作重启、两轮新对账、
+逻辑账户/投递账本不变已实测。私有只读monitor绑定已发布，API 200/partial（观察不写新账本readback投影），
+auto_order/opening始终false，无结算确认/报撤单。新版本自然行情/信号/参考交易仍待09:00后事实，不能宣称全量RUNTIME_READY。
+v32现场Reference安全退出 **1.23秒**、同PID恢复、1140路checkpoint不变；隔离真实冻结SuBing 5m的60路/360输入
+连续1800秒重放通过，各波 **2.24–2.93秒、60→0**，checkpoint逐值一致。临时PG及匿名卷已清理。
+旧v31已原生封存并经两次零引用扫描后non-force移除，现役唯一发布树v32；三次独立核对通过，最后一轮在删除后确认guard/服务/游标。
+04:01行情/Alert心跳新鲜、API身份matched，原四个日历正常，60品种下一Session均09:00；仍明确保留AL/历史刷新阻断。
+
+10/29凌晨：夜间四步的盘中隔离开发与候选准备完成。草稿PR535候选 **8963ae715**（v1.16.32），
+36个必要文件，未纳入其他研究；候选1591项Reference/Alert/health/MDS、575项SimNow、9项真实隔离PG及两次独立Review通过。
+23:58现役仍 **v1.16.31/gen37**，十身份一致、行情心跳正常；pending0/UNKNOWN0，但10条23:00 HTDY原件
+保持BLOCKED，global仍degraded。逐项唯一MDS只读证明10/10原件资格及32根/合约/cutoff/末Bar一致，代码修正已纳入候选，
+现场恢复尚未执行，不能宣称全部策略正常。SimNow仅真实只读核验成功，四库未初始化、observe未启动。
+本任务一次性02:35续接已安排，fresh全部CLOSED及宽限结束后发布/原生切换、显式原件闭合、fresh账户初始化与observe验收。
+06:30禁新正式切换、07:00冻结、08:00安全收尾；09:00新版本自然行情验收另列。
+详情见[夜间四步记录](docs/tasks/2026-10-28-overnight-first-four.md)；以下为过程检查点。
+
+10/28 23:32：夜间四步开发已集成develop bc8163ddf，选择性v1.16.32候选/草稿PR535准备，尚未发布或切换。
+现役十身份仍v1.16.31/gen37，行情心跳正常；Inbox pending575、UNKNOWN0，新增1条AU60m/23:00
+HTDY_WINDOW_UNAVAILABLE，9条融合等待，不能宣称全部策略正常。已只读证明32根/合约/末Bar一致，
+原因是延迟有效原件被后来Live恢复水位反向撤销资格；正在做保持原合同的定向修正及验证，生产记录未改。
+SimNow真实只读双轮一致/空仓；未初始化、未启动。全部CLOSED及宽限结束后再发布、原生恢复与observe验收，
+06:30禁新切换、07:00冻结、08:00安全收尾；09:00自然验收另列。详见[夜间四步记录](docs/tasks/2026-10-28-overnight-first-four.md)。
+
+10/28 独立 SimNow **关闭态准备完成**：develop新增schema3，只允许observe/disabled；不再要求恢复丢失的旧四库来做准备检查。
+主工作区`output/simnow-independent-20261028`已独占生成私有配置，真实SDK无Broker预检通过；旧账户UNKNOWN、新账本UNINITIALIZED，
+未建四库、未继承余额/持仓/订单，账户未对账、Runtime未就绪、执行许可false。587项相关回归及独立安全Review通过。
+**未发布、未切换、未安装服务、未读凭据、未连接柜台或交易**；旧配置/状态及正式绑定未变，原v1.16.31六进程连续运行。
+账户只读对账、真实快照初始化、启动与交易仍为后续任务；详见[关闭态准备记录](docs/tasks/2026-10-28-simnow-independent-preparation.md)。
+
+10/28 夜盘开发候选：已修复 Inbox 每条接收重复全量恢复验证的吞吐瓶颈，以及 CLOSED 分钟覆盖误降级。
+2618 条真实恢复历史下，1m/5m 接收平均约 960/951ms 降至 4.2/10.7ms，90 条原件/路由逐值一致；
+并发容量、恢复损坏、休市与真实失败边界回归及独立 Review 通过。**仅代码，不发布、不切换、不重启**；
+正式版本仍为下述 v1.16.31/gen37，积压持续下降和自然端到端验收仍待后续现场证明。
+详见[夜盘接收修正](docs/tasks/2026-10-28-night-inbox-intake.md)。
+
+10/28 20:54：Alert 收敛与 HTDY 60m 参考记录已通过 PR534 发布 **v1.16.31**，exact
+`dfa9b5aa7920522987ad7f1baf958970e79351c7`；原生 `2cb9255f…` 一次 switched，正式十服务统一 **gen37**。
+合法暖机与真实失败分开；分钟覆盖按同代际原件/ACK逐端点证明，未决失败跨日/重启保留。普通推送失败独立记录，不阻断计算健康。
+HTDY operational 60品种×60m 已按 `2bce2978…` 单事务启用并独立回读，统一 **20:45:24** 起点、空参考仓位；不回填旧709 Event。
+页面参考复用既有 buy开多/sell开空、反向平旧开新、同向不加仓及零费用/滑点，非账户成交，未启用SimNow。
+Reference回归1208、最终Alert/health/handover213、原生cohort/handover299及真实PG/Redis定向、独立Review通过；60路真实冻结窗口前后结果完全一致。
+20:53删除后独立读回：十身份exact、六owner active，原3天游标追尾、旧checkpoint与Event计数不变；Inbox pending/blocked/UNKNOWN/dependency_wait均0，启用参考流共1140路。
+新Alert为113路ok、7路warming_up、300路分钟unverified等新输入；global仍degraded，**夜盘自然输入/新信号/参考交易验收待发生**，不宣称全量RUNTIME_READY或手机送达。
+旧v30已原生封存63份原件/6个标记并non-force移除，唯一发布树 **release-v1.16.31**，删除后部署/恢复guard通过；无新自动化、补发或历史补写。
+详情见[Alert与HTDY参考记录交付](docs/tasks/2026-10-28-alert-reference-closeout.md)。以下为先前检查点。
 
 10/28 19:13：发布树已收敛为唯一 **release-v1.16.30**，正式十服务统一 **v1.16.30/gen36**，exact
 `81963702a75894f9f2d6ef52093bc66ef4a09750`；原生`cd1dbb04…`切换switched，263回归及离线构建通过。

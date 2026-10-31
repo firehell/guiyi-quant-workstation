@@ -168,9 +168,11 @@ function normalizeExpected(request: NewowProductRequest | FlatExpected): Normali
 }
 
 function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMeta {
+  const raw = record(payload, 'meta')
   const value = exactRecord(payload, 'meta', [
     'schema_version', 'identity', 'as_of', 'read_at', 'input_content_sha256', 'data_revision_identity',
     'snapshot_token', 'reference_model_version', 'futures_adaptation_version',
+    ...('shared_input_proof' in raw ? ['shared_input_proof'] : []),
   ])
   requireExact(value.schema_version, 'newow_product_detail_v4', 'meta.schema_version')
   const normalizedIdentity = normalizeWireIdentity(value.identity, 'meta.identity', expected)
@@ -192,12 +194,23 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
       ? 'newow_futures_daily_quality_segment_v4'
       : 'newow_futures_quality_segment_v3'
   requireExact(value.futures_adaptation_version, adaptationVersion, 'meta.futures_adaptation_version')
+  let sharedInputProof: NewowProductMeta['shared_input_proof']
+  if ('shared_input_proof' in value) {
+    const proof = exactRecord(value.shared_input_proof, 'meta.shared_input_proof', ['schema_version', 'market_input_sha256', 'auxiliary_input_sha256'])
+    requireExact(proof.schema_version, 'newow_shared_input_proof_v1', 'meta.shared_input_proof.schema_version')
+    sharedInputProof = {
+      schema_version: 'newow_shared_input_proof_v1',
+      market_input_sha256: sha256(proof.market_input_sha256, 'meta.shared_input_proof.market_input_sha256'),
+      auxiliary_input_sha256: proof.auxiliary_input_sha256 === null ? null : sha256(proof.auxiliary_input_sha256, 'meta.shared_input_proof.auxiliary_input_sha256'),
+    }
+  }
   return {
     schema_version: 'newow_product_detail_v4',
     identity: normalizedIdentity,
     as_of: asOf, read_at: readAt, input_content_sha256: inputHash, data_revision_identity: revision,
     snapshot_token: token, reference_model_version: 'newow_marker_reference_zero_cost_v4',
     futures_adaptation_version: adaptationVersion,
+    ...(sharedInputProof ? { shared_input_proof: sharedInputProof } : {}),
   }
 }
 

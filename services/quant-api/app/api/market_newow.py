@@ -821,10 +821,11 @@ def newow_strategy_detail(
         ) from exc
     except QueryConflict as exc:
         status = 503 if exc.code in {
-            "NOT_BUILT", "STALE_INVALID", "SOURCE_IDENTITY_UNVERIFIED",
+            "NOT_BUILT", "STALE_INVALID", "SOURCE_IDENTITY_UNVERIFIED", "REFERENCE_UPDATE_PENDING",
             "PRESENTATION_NOT_MATERIALIZED", "PRESENTATION_BUDGET_EXCEEDED",
         } else 409
-        raise HTTPException(status_code=status, detail={"code": exc.code}) from None
+        raise HTTPException(status_code=status, detail={"code": exc.code,
+            **({"reference_status": exc.reference_status} if hasattr(exc, "reference_status") else {})}) from None
     except PresentationUnavailable as exc:
         raise HTTPException(status_code=503, detail={"code": str(exc)}) from None
     except SQLAlchemyError:

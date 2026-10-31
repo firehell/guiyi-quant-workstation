@@ -9,8 +9,8 @@ import { previewInstant } from './src/utils/candidatePreviewInstant.ts'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode, command }) => {
-  const apiProxyTarget = process.env.VITE_PROXY_API_TARGET || (mode === 'develop' ? 'http://127.0.0.1:8002' : 'http://127.0.0.1:8000')
-  const wsProxyTarget = process.env.VITE_PROXY_WS_TARGET || apiProxyTarget.replace(/^http/, 'ws')
+  const apiProxyTarget = mode === 'develop' ? 'http://127.0.0.1:8002' : process.env.VITE_PROXY_API_TARGET || 'http://127.0.0.1:8000'
+  const wsProxyTarget = mode === 'develop' ? 'ws://127.0.0.1:8002' : process.env.VITE_PROXY_WS_TARGET || apiProxyTarget.replace(/^http/, 'ws')
   const candidate = mode === 'candidate-preview'
   const cutoff = process.env.GUIYI_PREVIEW_AS_OF || ''
   const defaultWeekly = candidate && process.env.GUIYI_PREVIEW_DEFAULT_WEEKLY === '1'
@@ -36,6 +36,10 @@ export default defineConfig(({ mode, command }) => {
       'import.meta.env.VITE_PREVIEW_AS_OF': JSON.stringify(candidate ? cutoff : ''),
       'import.meta.env.VITE_PREVIEW_DEFAULT_WEEKLY': JSON.stringify(defaultWeekly ? '1' : '0'),
       'import.meta.env.VITE_PREVIEW_CODE_SHA': JSON.stringify(codeSha),
+      ...(mode === 'develop' ? {
+        'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api/v1'),
+        'import.meta.env.VITE_MARKET_WS_URL': JSON.stringify(''),
+      } : {}),
       ...(candidate ? {
         'import.meta.env.VITE_PREVIEW_CANDIDATE_ORIGIN': JSON.stringify(candidateOrigin),
         'import.meta.env.VITE_API_BASE_URL': JSON.stringify('/api/v1'),

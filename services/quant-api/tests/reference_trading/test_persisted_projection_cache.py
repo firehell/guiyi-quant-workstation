@@ -137,3 +137,21 @@ def test_persisted_fusion_cache_hit_rechecks_saved_source_and_dependencies(monke
     delivery = saved.section(request, None, None, reader, "a" * 64, None, resolved)
     assert delivery.value.payload["fusion_comparison"]["reference_revision"] == revision
     assert len(proofs) == 1 and proofs[0][1]["reader"] is reader
+
+
+def test_lagging_compact_reference_verifies_saved_source_before_reporting_update(monkeypatch):
+    saved, request, reader, resolved = _saved(monkeypatch)
+    resolved.cutoff += timedelta(days=1)
+    resolved.actual_through += timedelta(days=1)
+    with pytest.raises(QueryConflict, match="REFERENCE_UPDATE_PENDING") as exc:
+        saved.section(request, None, None, reader, "a" * 64, None, resolved)
+    assert exc.value.reference_status == {
+        "reason": "REFERENCE_UPDATE_PENDING",
+        "result_through": "2026-09-10T07:00:00+00:00",
+        "market_through": "2026-09-11T07:00:00+00:00",
+    }
+    def reject(*_args):
+        raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+    monkeypatch.setattr("app.reference_trading.persisted_newow.verify_saved_compact_source", reject)
+    with pytest.raises(QueryConflict, match="SOURCE_IDENTITY_UNVERIFIED"):
+        saved.section(request, None, None, reader, "a" * 64, None, resolved)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import date, datetime
-from decimal import Decimal, ROUND_HALF_EVEN, localcontext
+from decimal import Decimal
 from enum import StrEnum
 from hashlib import sha256
 import json
@@ -293,15 +293,6 @@ def _lifecycle_frame_fingerprint(frame: StrategyFrame) -> str:
     })
 
 
-def _reference_return(entry: Decimal, exit_: Decimal) -> Decimal:
-    _price(entry)
-    _price(exit_)
-    with localcontext() as context:
-        context.prec = 28
-        context.rounding = ROUND_HALF_EVEN
-        return (exit_ / entry - Decimal("1")) * Decimal("100")
-
-
 def _dedupe_actions(actions: tuple[StrategyAction, ...]) -> tuple[StrategyAction, ...]:
     seen: dict[str, StrategyAction] = {}
     unique: list[StrategyAction] = []
@@ -581,34 +572,6 @@ def _effective_boundaries(
             raise ValueError("NEWOW_REFERENCE_INVALID_BOUNDARIES")
         effective[owner] = boundary
     return effective
-
-
-def _latest_owner_mark(
-    replay: StrategyReplay,
-    owner: tuple[str, str],
-    entry: StrategyAction,
-    through: datetime,
-    as_of: datetime,
-) -> tuple[datetime, Decimal, int] | None:
-    result: tuple[datetime, Decimal, int] | None = None
-    position = 0
-    for frame in replay.frames:
-        product_bar = frame.bar
-        bar = product_bar.bar
-        if (
-            product_bar.frequency != replay.identity.frequency
-            or bar.physical_contract != owner[0]
-            or bar.segment_id != owner[1]
-            or bar.bar_end > as_of
-            or not bar.observation_eligible
-            or bar.completed is not True
-        ):
-            continue
-        if entry.bar_end <= bar.bar_end <= through:
-            _price(bar.close)
-            result = (bar.bar_end, bar.close, position)
-        position += 1
-    return result
 
 
 def _visible_hints(replay: StrategyReplay, as_of: datetime) -> tuple[StrategyHint, ...]:

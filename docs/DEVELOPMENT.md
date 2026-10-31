@@ -166,7 +166,7 @@ Web 正确性随对应功能版本完成，不能延后到视觉优化；体验�
 在 develop checkout 的仓库根目录启动独立 API：
 
 ```sh
-PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m uvicorn app.main:app --app-dir services/quant-api --host 127.0.0.1 --port 8002 --workers 1
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m app.develop_preview api
 ```
 
 在同一 checkout 的 `apps/quant-web` 运行 `npm run dev:develop`，页面为 `http://localhost:5175/market`，HTTP 与 WebSocket 默认代理到同一 develop API8002。正式5173/8000不随此命令切换。
@@ -177,3 +177,41 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 首页策略联调先显式执行 `guiyi home build --output <开发派生文件>`，启动8002 API时设置
 `GUIYI_HOME_PROJECTION_PATH` 指向该文件。首页GET只读投影，首次缺失不会自动计算。
 正式默认投影与开发文件分离；不要为预览启用盘后任务或切换正式Runtime。
+
+开发预览入口使用既有严格读取器加载 `~/Library/Application Support/GuiyiQuant/project.env` 的
+DB、Canonical 和 Redis 依赖，不输出或修改配置；按正式启动器规则补齐 Redis URL 认证。
+先运行同前缀的 `python -m app.develop_preview build`，显式构建 `.run/develop-newow-home.json`；
+API 固定读取该开发文件，不覆盖共享正式派生资产。缺失时显示未发布，GET 不自动构建。
+首页日周图标旁的“历史”及展开原因说明发布有效性；正常已完成日周线不会因分钟报价变化而重算。
+参考收益显示累计页面收益与笔数；距离始终按日线参考收盘价计算，正常卡片在悬停说明中提供基准及日周各自截至时间；历史／失败状态保留可见原因。
+
+### HTDY 60m 冻结历史参考联调
+
+独立 develop API 与 Web 启动方式沿用上节。首次显式构建（只读行情、写开发派生目录）：
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m app.reference_trading.htdy_snapshot build --symbol jm --since 2025-10-30 --through 2026-10-30
+```
+
+普通历史查询展示窗口最多一年，底层仍从权威物理前缀预热；显式构建使用 `--full-history` 可从权威 product_start 冻结全部现有历史，换品种替换 `--symbol`。构建安全加载既有受保护依赖，
+不连接Broker、不下载行情。快照在 `.run/htdy-snapshots`，GET不会构建；未生成时明确不可用。
+主图默认回放参考，来源切换联动独立记录区；SimNow和首次观察缺公式身份时并列，不用当前常量补造历史证据。
+
+全品种现有历史回放采用单次串行队列（同上 PYTHONPATH/python 前缀）：
+
+```sh
+python -m app.reference_trading.htdy_snapshot_batch run --through 2026-10-30 --seed-jm-snapshot <已核验的JM全历史快照ID> --preflight
+python -m app.reference_trading.htdy_snapshot_batch run --through 2026-10-30 --seed-jm-snapshot <同一ID>
+```
+
+队列冻结 active/operational 同一60品种、各自权威维护起点、公式/模型/展示及相关执行文件hash；
+JM优先，其余按清单顺序。每品种600秒只读构建，进度在 `.run/htdy-full-2026-10-30.json`。
+续接先核对进度文件未被修改，且manifest与执行文件一致；只处理pending，已成功项只读核验，
+失败和中断不自动重试。单项证据失效标为interrupted，继续其他pending；finished只表示队列结束，
+只有全部60项succeeded且快照分别读回通过才可报告全品种构建完成。该入口不下载或修复行情。
+
+已定位并修正失败原因后，可显式用 `--inherit-state <旧进度绝对路径> --state <新进度绝对路径>`
+创建新尝试；必须先取得旧批次锁确认其已停止。旧文件保留，成功快照校验后继承，只有明确 failed 项恢复 pending，未知中断仍不重试。
+显式 HTDY builder 只保留每物理段全部 owned bars 及首个 owned Bar 前至少31根的整交易日上下文；
+预算预检和读取共用权威 endpoint，不改变完整历史计算区间、质量校验或普通查询默认行为。
+闭合参考收益摘要和曲线统一按退出时间及交易ID累计 Decimal，避免不同展示顺序产生尾差误报。

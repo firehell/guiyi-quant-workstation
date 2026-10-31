@@ -1,0 +1,353 @@
+{
+  "schema": "newow_public_audit_evidence_v1",
+  "observed_on": "2026-10-31 Asia/Shanghai",
+  "develop_commit": "dd9718f33a500b807efd803aa1a0363014f7280f",
+  "working_tree_at_start": "clean",
+  "versions": {
+    "index": "3.4.40",
+    "detail": "3.4.31",
+    "index_asset_query": "3.4.15",
+    "detail_asset_query": "3.4.11"
+  },
+  "scope_excludes": [
+    "push",
+    "messages",
+    "screener",
+    "month_k",
+    "time_sharing_chart"
+  ],
+  "sources": [
+    {
+      "file": "index.html",
+      "url": "https://www.v8848.cn/index.html",
+      "exit": 0,
+      "sha256": "36a9111fd6a4d6f280fd4588436bf8f7d5834c039c6ec4c65d3ba8864a090a37"
+    },
+    {
+      "file": "stock_detail.html",
+      "url": "https://www.v8848.cn/stock_detail.html?code=688702.SH",
+      "exit": 0,
+      "sha256": "76ee34e9dda29e9ff239a515511344d669341d2e5e3a0dbb86b5025265caebf7"
+    },
+    {
+      "file": "index--api-config.js",
+      "page": "index",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+    },
+    {
+      "file": "index--api-shim.js",
+      "page": "index",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+    },
+    {
+      "file": "index--strategy-calc.js",
+      "page": "index",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+    },
+    {
+      "file": "index--position_kernel.js",
+      "page": "index",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.0.0",
+      "exit": 0,
+      "sha256": "31e133d5288ed2b9f89ec084384871e5907afb8cb30acc2cee6629ee882e754d"
+    },
+    {
+      "file": "stock_detail--api-config.js",
+      "page": "stock_detail",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+    },
+    {
+      "file": "stock_detail--api-shim.js",
+      "page": "stock_detail",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+    },
+    {
+      "file": "stock_detail--strategy-calc.js",
+      "page": "stock_detail",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+    },
+    {
+      "file": "stock_detail--composite-decision-v2.js",
+      "page": "stock_detail",
+      "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2"
+    },
+    {
+      "file": "stock_detail--position_kernel.js",
+      "page": "stock_detail",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.0.0",
+      "exit": 0,
+      "sha256": "31e133d5288ed2b9f89ec084384871e5907afb8cb30acc2cee6629ee882e754d"
+    },
+    {
+      "file": "stock_detail--trend-reversal-core.js",
+      "page": "stock_detail",
+      "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80"
+    }
+  ],
+  "api": [
+    {
+      "file": "kline-day.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=day&strategy=huanglantai&startdate=2025-10-01&enddate=2026-10-31",
+      "exit": 0,
+      "status": "200",
+      "sha256": "7d593acb2841b801588a5f5c37c76418dfe5e37a0302470aa267996c2e1f0ab3",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 64,
+      "rows": 600,
+      "first": "2024-05-13",
+      "last": "2026-10-30"
+    },
+    {
+      "file": "kline-week.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=week&strategy=huanglantai&startdate=2024-06-01&enddate=2026-10-31",
+      "exit": 0,
+      "status": "200",
+      "sha256": "906a88139621a4fd4254961f971611e0351887497ddd51dc9b6e2edd3834d7b2",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 12,
+      "rows": 161,
+      "first": "2023-09-15",
+      "last": "2026-10-30"
+    },
+    {
+      "file": "kline-5min.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=5min&strategy=zhushenglang&startdate=2026-10-01&enddate=2026-10-31",
+      "exit": 0,
+      "status": "200",
+      "sha256": "bfcb93ef10579af218df1dc661c914620db349197ab74a75466fb4eafff24ce1",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source",
+        "_filtered"
+      ],
+      "errorcode": 0,
+      "signals": 56,
+      "rows": 800,
+      "first": "2026-10-08 10:55:00",
+      "last": "2026-10-30 15:00:00"
+    },
+    {
+      "file": "batch.json",
+      "url": "https://www.v8848.cn/api/batch?codes=688702.SH",
+      "exit": 0,
+      "status": "200",
+      "sha256": "a5f805c4e449b780b701d9d9c5c3ac8a03dc78834762ce82e46c6a1b9249b052",
+      "top_keys": [
+        "stocks",
+        "_source",
+        "signalStale",
+        "quoteAge"
+      ],
+      "errorcode": null,
+      "signals": 0,
+      "rows": 0,
+      "first": null,
+      "last": null
+    }
+  ],
+  "core_comparison": {
+    "cases": true,
+    "ma_sum_witness": true,
+    "window_witness": true,
+    "fusion_witness": true,
+    "fusion_order_witness": true,
+    "cdv2_cases": true
+  },
+  "source_checks": {
+    "declaration_count": 24,
+    "core_declaration_digest": "7f67bfffb1a70335673a1166165af7241debef88f3c7e8b9f11bde6d87e3f986",
+    "previous_digest": "50c4d019f330ea683dbf37c087061dff75a40683e8de0456e322e80653b8bb0d",
+    "core_digest_changed": true,
+    "by_function_sha256": {
+      "calcMAFrom": "d847233bd23a87959c0628b598e17a7718a426adc660b6eef8cc20ab6b7b377f",
+      "calcEMAFrom": "df6445b3ae3776bbda77e6f00f9cbd8865829dfe976c372996d6dc38e6db5b0b",
+      "calcVolumeMA": "28fd0131ff2bb85e19a15d5cf4678533d12f7ae9f640949dfe2b14407f01817b",
+      "calcYellowBlueBand": "87f34c8055e306de9e0ea96a5c5977f6dc8e8ae4005ae9b9891b04c7f5b6df4b",
+      "calcMainRiseBand": "d61e7bb9191e901121cc1a1858fac228701dd461e64236dd51e5fb2cfb5df446",
+      "runOscBacktest": "7f2290645869d6868bbc65eeafde01321a0e94e5e8c89d5049725fe17a1c6d4c",
+      "runTrendBacktest": "6023757a7b7632c649d896ac47a788c4bda7c45836a3ce537c4bdd6fe8fd2d19",
+      "_computeAllSignals": "19591b1ab0baea0204f6c5b15b63169ff608273846aec695f4490b82613b88f3",
+      "_isOscFamily": "5e35735d6d88e7b4595ed37b8b9cf83996edba9371ef70907e98483d4e06ce2b",
+      "_isOscTest": "868a8d654200692028d436038fc1327b8f3ebc1b3f46b9f52b0d1506e8038612",
+      "_isOscTargetExit": "3f190a2e3a75ce7920d01d31c49c67f922a0fcff97d0c557c8e7a70266189447",
+      "_isOscMaGate": "04a9edb6fca0e6f05aa7be62172055327e0601fff2cb21a686e723027f5e8c8d",
+      "_isOscConfirmExit": "23d5db3a6ea3ec7a76d17407fb12118f2ac7cd11c6f4d78da314b344db802a9e",
+      "_oscStopPct": "afa1089807b7ed30af5b8ea4f72a4a8baf3b5a61fbea43adf647e6ef6b45df31",
+      "localXichouLagaoBacktestIdeal": "d00f7054c7ed69cf40947bf325118bdf6d593dd7bcd2d6636c52b1202f59488f",
+      "localHuangLantaiBacktestIdeal": "07105ee212e20103699fab29d2f4e8abcbc89af3a0fdc08dd4ff47f807b7f9eb",
+      "localZhushenglangBacktest": "077ddccfde932ac14051309a54fad9bfffb295200e7c0ada84613dcb1b221083",
+      "localZhushenglangBacktestIdeal": "f7632ca11da24c4b8fecb7974f214be9a5df65829c07b5e64d6351be64a874e4",
+      "filterBacktestByDate": "2663fd2c0c8fd743242a8851242db3301919276e6fccb10353ac33e8a1f2f92c",
+      "calcHHV": "fd21b4dbeefb6a2d27354d2b3dff2d18744f44077707fc61ef1986c360e4db31",
+      "calcLLV": "200ac73aa87756c1eb43c4dd72daf8f5b3d0d64b2935634fb13b7076b7299dc6",
+      "_groupFusionByBar": "8beac1c2600fca91e0558f07bd4e0c63ea9df867e66733ffd508432197eaf2ef",
+      "runDualFusionBacktest": "34674a0d84ad543acb54a9fe930aa1e7f92bba8287fbb0a42d3ab1dbf02efc60",
+      "runDualFusionBacktestIdeal": "d925e1b2ad4f19047a09b57b405104a19352d27296193f62bbb97e1991519d03"
+    },
+    "stable_adapters": {
+      "calcZhaoyaoMirror": {
+        "sha256": "26ab20dcebc00800e4b6ae7cdd4717930913553123adaf30f5cbd30fada8e828",
+        "same_as_v3407": true
+      },
+      "readMainForceInputs": {
+        "sha256": "056f0c7b1891fc873085b9fd6fdba18e47c712f4855bfaddfe4bf948fd7b1db8",
+        "same_as_v3407": true
+      },
+      "nwPathTrades": {
+        "sha256": "b4ccba9108058df6e7ed505f79000e8bbbd3db026a9f1adb6c6aee918ccf0e0a",
+        "same_as_v3407": true
+      },
+      "nwPathETA": {
+        "sha256": "25367d7ef8efeced04aba696d0df579eb30363a53fbaefa557e74f62c4e1dfcf",
+        "same_as_v3407": true
+      },
+      "nwPathRenderTrend": {
+        "sha256": "451018aa79b5c16be41d125e3ff7bd62c76a4068eb7e9c839bfa184d7c3ab18a",
+        "same_as_v3407": true
+      }
+    },
+    "scoreCombos_sha256": "d9cb5044e8b797558a091f1647fe4bebc942729b822457a254eee0da1733d2c2",
+    "same_input_ai_summaries_equal": true,
+    "same_input_ai_scores_equal": true,
+    "experimental_cases_equal": 5,
+    "breakdown_witness": {
+      "indexes": [
+        10,
+        14
+      ],
+      "events": [
+        {
+          "index": 10,
+          "date": "2026-01-11",
+          "close": 99.994,
+          "buyPrice": 100,
+          "pct": -0.005999999999994898
+        },
+        {
+          "index": 14,
+          "date": "2026-01-15",
+          "close": 79.99,
+          "buyPrice": 80,
+          "pct": -0.012500000000004174
+        }
+      ],
+      "trade_marker_counts": {
+        "buy": 2,
+        "sell": 1
+      },
+      "rounded_equal_does_not_trigger": true,
+      "sell_bar_does_not_emit_breakdown": true
+    },
+    "badge_witness": [
+      {
+        "signalIndex": 4,
+        "classes": [
+          "has-tr-signal"
+        ]
+      },
+      {
+        "signalIndex": 3,
+        "classes": [
+          "has-tr-signal",
+          "tr-state-gone"
+        ]
+      },
+      {
+        "signalIndex": 2,
+        "classes": [
+          "has-tr-signal",
+          "tr-state-gone"
+        ]
+      },
+      {
+        "signalIndex": 1,
+        "classes": []
+      }
+    ],
+    "limitations": [
+      "Constructed input witnesses, not market/OOS proof",
+      "Browser DOM not executed; badge has isolated mock rendering sink only",
+      "No account/message/push APIs used"
+    ]
+  },
+  "checks": {
+    "web_passed": 197,
+    "web_failed": 0,
+    "web_skipped": 0,
+    "python_engineering_passed": 68,
+    "python_engineering_failed": 0,
+    "manual_links_and_fences": "passed",
+    "unique_current_anchors": "passed",
+    "frozen_source_api_hashes_verified": 16,
+    "secret_findings": 0,
+    "diff_check": "passed"
+  },
+  "browser_visual_status": "NOT_VERIFIED_IAB_UNAVAILABLE_CHROME_TARGET_NOT_FOUND",
+  "delivered_not_gaps": [
+    "care",
+    "fixed completed caution anchors",
+    "caution explanation and home focus",
+    "historical path and ETA",
+    "basis and channel interactions",
+    "theory tabs",
+    "experiment history identity",
+    "main-rise six frequencies v35",
+    "four home column sorting",
+    "shared chart and quote session"
+  ],
+  "new_gaps": [
+    "independent first oscillation breakdown display",
+    "cross-strategy main-rise reduce-J display",
+    "trend reversal active/gone badge",
+    "independent caution/breakdown main-chart preferences"
+  ],
+  "recommendations_not_implemented": [
+    "Decimal instrument-price profile for futures breakdown; no new stop-loss",
+    "same source/cutoff/owner provenance for cross-strategy hints",
+    "partial batch freshness and error semantics; reuse current loaders",
+    "paired-pixel, device gesture and accessibility validation"
+  ],
+  "limitations": [
+    "Bounded source execution and sample API structure do not prove all-market, OOS, Runtime or private algorithm parity.",
+    "No current DOM/screenshot/native app evidence; live visual and performance unverified.",
+    "No message/push/account endpoints or icon-states POST called.",
+    "Original HTML versions differ by page; source SHA256 is authoritative for this audit.",
+    "24-declaration digest changed; 9 retained cases and 729 CDV2 cases agree; do not claim all source unchanged.",
+    "Third-party full sources and raw stock responses remain outside Git in temporary storage."
+  ],
+  "validation_commands": {
+    "web": "NEWOW_PUBLIC_SOURCE=/private/tmp/newow-weekly-20261031/stock_detail.html node --test tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
+    "python": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/newow/test_subplots_page_v1.py services/quant-api/tests/newow/test_historical_path.py services/quant-api/tests/newow/test_daily_weekly_path.py tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py",
+    "source": "Temporary inspected-source-bound copies of tools/build_newow_v3379_audit.mjs, build_newow_experiments_oracle.mjs and build_newow_ai_oracle.mjs; source-check.mjs uses isolated constructed witnesses. Original tools and frozen fixtures unchanged."
+  }
+}

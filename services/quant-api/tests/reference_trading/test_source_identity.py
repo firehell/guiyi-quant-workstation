@@ -59,3 +59,15 @@ def test_compact_intraday_source_proof_requires_exact_content_and_scope():
             verify_saved_input_prefix(saved, changed, date(2026, 9, 24))
     with pytest.raises(QueryConflict, match="SOURCE_IDENTITY_UNVERIFIED"):
         verify_saved_input_prefix(saved, {}, date(2026, 9, 24))
+
+
+def test_verified_extension_rejects_changed_prefix_and_formula():
+    from app.reference_trading.source_identity import verified_saved_extension
+    saved = {"reader": "newow_product_reader_v2", "input_fingerprints": ["a"],
+             "calendar_session_effective_fingerprints": ["x"], "formula_versions": ["v1"]}
+    current = {**saved, "input_fingerprints": ["a", "b"],
+               "calendar_session_effective_fingerprints": ["x", "y"]}
+    assert verified_saved_extension(saved, current, date(2026, 10, 26))
+    assert not verified_saved_extension(saved, {**current, "formula_versions": ["v2"]}, date(2026, 10, 26))
+    assert not verified_saved_extension(saved, {**current, "input_fingerprints": ["revised", "b"]}, date(2026, 10, 26))
+    assert not verified_saved_extension(saved, saved, date(2026, 10, 26))

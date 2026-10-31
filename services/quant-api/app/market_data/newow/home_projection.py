@@ -167,28 +167,36 @@ class HomeProjection:
             item = data['items'].get(product, {})
             periods = item.get('periods', {})
             states = {}
+            reasons = {}
             strategies = {s: {} for s in STRATEGIES}
             for period in PERIODS:
                 entry = periods.get(period)
                 state = 'missing' if not entry else 'ready'
+                reason = 'SUMMARY_MISSING' if not entry else None
                 if entry and (not versions.get(f'{product}:{period}') or entry.get('version') != versions.get(f'{product}:{period}')):
                     state = 'stale'
+                    reason = 'SOURCE_VERSION_UNAVAILABLE' if not versions.get(f'{product}:{period}') else 'SOURCE_VERSION_CHANGED'
                 if entry and any(value.get('freshness') == 'pending_update' for value in entry['facts'].values()):
                     state = 'stale'
+                    reason = 'PERIOD_PENDING_UPDATE'
                 if item.get('failures', {}).get(period):
                     state = 'failed'
+                    reason = 'SUMMARY_BUILD_FAILED'
                 if building and (state != 'ready' or item.get('building')):
                     state = 'updating'
+                    reason = 'SUMMARY_BUILDING'
                 elif item.get('building'):
                     state = 'failed'
+                    reason = 'SUMMARY_BUILD_INTERRUPTED'
                 states[period] = state
+                reasons[period] = reason
                 for strategy in STRATEGIES:
                     strategies[strategy][period] = deepcopy(entry['facts'][strategy]) if entry else {'status': 'unavailable', 'state': None}
                     if entry:
                         strategies[strategy][period]['display_as_of'] = item.get('computed_at')
             status = next((value for value in ('updating', 'failed', 'missing', 'stale') if value in states.values()), 'ready')
             output.append({'product': product, 'strategies': strategies, 'projection_status': status,
-                           'period_status': states, 'computed_at': item.get('computed_at'),
+                           'period_status': states, 'period_reason_codes': reasons, 'computed_at': item.get('computed_at'),
                            'source_versions': {p: periods.get(p, {}).get('version') for p in PERIODS}})
         return {'schema_version': SCHEMA, 'generated_at': data.get('generated_at'),
                 'requested_at': self.now().isoformat(), 'page_parity': True, 'executable': False,
