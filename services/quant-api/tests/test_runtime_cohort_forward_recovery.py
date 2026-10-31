@@ -570,6 +570,7 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
 ):
     from app import runtime_cohort_recovery as m
     import app.reference_trading.receiving_liveness as liveness
+    from tests.reference_trading.test_receiving_liveness import NOW
 
     host, source, _, _, _, _ = fixture(tmp_path)
     current = native(host.directory)
@@ -593,7 +594,9 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
 
     def snapshot(*args, **kwargs):
         count[0] += 1
-        return {"owner_cycle_at": str(count[0])}
+        return {
+            "owner_cycle_at": (NOW + timedelta(seconds=count[0])).isoformat()
+        }
 
     current._snapshot = snapshot
     current._fixed = lambda *args: None
@@ -1624,6 +1627,7 @@ def test_intake_halt_rejects_any_prefix_or_unresolved_ambiguity(tmp_path, mutati
 
 def await_intake_case(tmp_path, monkeypatch):
     import app.reference_trading.receiving_liveness as liveness
+    from tests.reference_trading.test_receiving_liveness import NOW
 
     m = module()
     host, source, _, _, _, _ = fixture(tmp_path)
@@ -1643,7 +1647,10 @@ def await_intake_case(tmp_path, monkeypatch):
 
     def sample(*args, **kwargs):
         count[0] += 1
-        return {"owner_cycle_at": str(count[0]), "sequence": count[0]}
+        return {
+            "owner_cycle_at": (NOW + timedelta(seconds=count[0])).isoformat(),
+            "sequence": count[0],
+        }
 
     current._snapshot = sample
     current._fixed = lambda *args: None
@@ -1960,6 +1967,103 @@ def test_old_sample_rolls_only_after_continuity_then_two_fresh_cycles_prove_live
     assert proof["before_sha256"] == samples[1]["snapshot_sha256"]
     assert proof["after_sha256"] == samples[2]["snapshot_sha256"]
     assert len(samples) == 3
+
+
+def test_await_accepts_26_second_cycles_after_six_second_snapshot(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 26)
+    )
+    snapshot = current._snapshot
+
+    def slow_snapshot(*args, **kwargs):
+        value = snapshot(*args, **kwargs)
+        if len(samples) == 2:
+            current.now = lambda: NOW + timedelta(seconds=32)
+        return value
+
+    current._snapshot = slow_snapshot
+    proof = current.await_consumers(source, audit, lambda: None)
+    assert proof["advanced_count"] == 1
+    assert proof["before_sha256"] == samples[0]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+
+
+def test_await_samples_live_ready_before_expensive_session_proof(
+    tmp_path, monkeypatch
+):
+    current, source, audit, _samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    active = current._active
+    live_reads = [0]
+    session_reads = []
+
+    def transient_live(binding):
+        state = active(binding)
+        if binding.service == "live":
+            live_reads[0] += 1
+            if live_reads[0] == 1:
+                state["ready"] = False
+        return state
+
+    def session_proof():
+        session_reads.append(live_reads[0])
+        assert live_reads[0] >= 2
+        return {}
+
+    current._active = transient_live
+    current.recovery_window = session_proof
+    proof = current.await_consumers(source, audit, lambda: None)
+    assert proof["advanced_count"] == 1
+    assert session_reads == [3]
+    assert live_reads[0] == 4  # One transient miss, two samples, final recheck.
+
+
+def test_final_live_poll_does_not_discard_valid_receiving_pair(
+    tmp_path, monkeypatch
+):
+    from app.reference_trading.inbox import _digest
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1, 2)
+    )
+    snapshot = current._snapshot
+
+    def same_latest_cycle(*args, **kwargs):
+        value = snapshot(*args, **kwargs)
+        if len(samples) == 3:
+            value["owner_cycle_at"] = samples[1]["owner_cycle_at"]
+            value["snapshot_sha256"] = _digest(
+                {key: item for key, item in value.items() if key != "snapshot_sha256"}
+            )
+        return value
+
+    current._snapshot = same_latest_cycle
+    active = current._active
+    live_reads = [0]
+    session_reads = [0]
+
+    def transient_live(binding):
+        state = active(binding)
+        if binding.service == "live":
+            live_reads[0] += 1
+            if live_reads[0] == 3:
+                state["ready"] = False  # First candidate's final owner check.
+        return state
+
+    current._active = transient_live
+    current.recovery_window = lambda: session_reads.__setitem__(
+        0, session_reads[0] + 1
+    )
+    proof = current.await_consumers(source, audit, lambda: None)
+    assert proof["before_sha256"] == samples[0]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[2]["snapshot_sha256"]
+    assert session_reads == [2]
+    assert live_reads == [5]
 
 
 def test_sample_expiry_never_erases_an_ack_regression(tmp_path, monkeypatch):

@@ -837,14 +837,13 @@ def verify_receiving_continuity(before, after):
 
 
 def verify_receiving_nonregression(before, after, *, now=None):
-    """Two fresh receiving-cycle samples prove progress, never calculation health."""
+    """Two bounded cycles and a fresh latest sample prove receiving progress."""
     instant = now or datetime.now(UTC)
-    if not all(
-        receiving_sample_is_fresh(value, now=instant) for value in (before, after)
-    ):
-        raise ReceivingLivenessError(ERROR)
     comparison = verify_receiving_continuity(before, after)
-    if _instant(after["owner_cycle_at"]) <= _instant(before["owner_cycle_at"]):
+    cycle_gap = (
+        _instant(after["owner_cycle_at"]) - _instant(before["owner_cycle_at"])
+    ).total_seconds()
+    if not 0 < cycle_gap <= 30 or not receiving_sample_is_fresh(after, now=instant):
         raise ReceivingLivenessError(ERROR)
     return comparison
 
@@ -922,8 +921,9 @@ def prove_receiving_liveness(before, after, *, closed_idle=False, now=None):
 def receiving_pair_candidate(before, previous, current, *, now):
     """Roll a bounded sample window only after validating every continuous prefix.
 
-    True identifies a candidate pair, not readiness. Callers must recheck both
-    samples after their remaining identity/budget guards and then prove liveness.
+    True identifies a candidate pair, not readiness. Each sample must have
+    followed its owner cycle within 30 seconds, the cycles must be at most 30
+    seconds apart, and the latest cycle must remain fresh at final proof.
     """
     fresh = receiving_sample_is_fresh(current, now=now)
     if previous is not None:
@@ -932,7 +932,12 @@ def receiving_pair_candidate(before, previous, current, *, now):
         return current, False
     if current["owner_cycle_at"] == before["owner_cycle_at"]:
         return before, False
-    if not (fresh and receiving_sample_is_fresh(before, now=now)):
+    if previous is None:
+        verify_receiving_continuity(before, current)
+    cycle_gap = (
+        _instant(current["owner_cycle_at"]) - _instant(before["owner_cycle_at"])
+    ).total_seconds()
+    if cycle_gap > 30 or not fresh:
         return current, False
     comparison = verify_receiving_nonregression(before, current, now=now)
     if comparison["advanced_count"] == 0 and not comparison["caught_up_idle"]:

@@ -2,6 +2,84 @@ import pytest
 from app import runtime_retirement as m
 
 
+def test_archive_original_intake_timeout_closed_by_stopped_recovery(
+    tmp_path, monkeypatch
+):
+    from app import runtime_cohort as cohort, runtime_cohort_recovery as recovery
+    from app.runtime_stopped_recovery import reconcile_stopped
+    from app.runtime_handover import _write
+    from tests.test_runtime_stopped_recovery import original_failed_consumers
+
+    host, failed_path, failed, _ = original_failed_consumers(tmp_path, monkeypatch)
+    selected = reconcile_stopped(host, failed_path)["confirmation"]
+    plan = recovery.freeze_forward_recovery(
+        host, failed["source"]["plan_path"], stopped_confirmation=selected["path"]
+    )
+    intake = {
+        "schema_version": 2,
+        "kind": "reference_receiving_liveness_v1",
+        "mode": "durable_receiving_caught_up_idle",
+        "calculation_ready": False,
+        "before_sha256": "a" * 64,
+        "after_sha256": "b" * 64,
+        "advanced_count": 0,
+        "remaining_count": 0,
+        "old_tail_reached": True,
+    }
+    host.await_consumers = lambda *args: intake
+    host.verify_forward = lambda *args: {
+        "continuous_identity": "matched",
+        "calculation_ready": False,
+        "intake": intake,
+    }
+    host.forward_calendars = lambda *args: {
+        "calendar_registration_only": True,
+        "identity": "matched",
+    }
+    path = tmp_path / "stopped-fresh.json"
+    _write(path, plan)
+    recovery.apply_forward_recovery(host, path)
+    # A later successful version switch remains required before retirement.
+    terminal = host.directory / "cohort-attempts" / ("f" * 64)
+    terminal.mkdir(mode=0o700)
+    _write(
+        terminal / "plan.json",
+        {"plan_sha256": terminal.name, "created_at": plan["created_at"], "new": {}},
+    )
+    _write(
+        terminal / "state.json",
+        {
+            "schema_version": 1,
+            "plan_sha256": terminal.name,
+            "phase": "switched",
+            "effects": {
+                "verified": {"continuous_identity": "matched"},
+                "calendars_on": {
+                    "calendar_registration_only": True,
+                    "identity": "matched",
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(cohort, "validate", lambda *a, **k: None)
+    monkeypatch.setattr(recovery, "_validate", lambda *a, **k: None)
+    expected = {
+        plan["plan_sha256"],
+        failed["plan_sha256"],
+        failed["original_close"]["plan_sha256"],
+        failed["source"]["plan_sha256"],
+        terminal.name,
+    }
+    seal = {
+        "directory": str(host.directory),
+        "releases": [],
+        "terminal_cohort": terminal.name,
+        "closed_attempts": sorted(expected),
+        "originals": {str(p): m.sha(p.read_bytes()) for p in tmp_path.rglob("*.json")},
+    }
+    assert m._closed_history(seal, tmp_path) == expected
+
+
 @pytest.mark.parametrize(
     "damage", (None, "source", "close_receipt", "close_effect", "resolution")
 )

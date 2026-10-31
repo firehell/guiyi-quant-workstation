@@ -709,6 +709,7 @@ def test_resigned_invalid_frontier_is_never_idle_authority(tmp_path, field):
 
 def test_expired_continuity_is_not_a_liveness_proof(tmp_path):
     from app.reference_trading.receiving_liveness import (
+        receiving_pair_candidate,
         receiving_sample_is_fresh,
         verify_receiving_continuity,
     )
@@ -721,8 +722,24 @@ def test_expired_continuity_is_not_a_liveness_proof(tmp_path):
     assert not receiving_sample_is_fresh(first, now=now)
     assert receiving_sample_is_fresh(second, now=now)
     assert verify_receiving_continuity(first, second)["advanced_count"] == 1
+    assert receiving_pair_candidate(first, first, second, now=now) == (second, False)
     with pytest.raises(ReceivingLivenessError):
         prove_receiving_liveness(first, second, now=now)
+
+
+def test_bounded_cycles_keep_latest_fresh_after_slow_snapshot(tmp_path):
+    _, _, _, _, _, capture, sample = _setup(tmp_path)
+    before = sample()
+    capture("11-0")
+    after = sample(26)
+    now = NOW + timedelta(seconds=32)
+    from app.reference_trading.receiving_liveness import receiving_sample_is_fresh
+
+    assert not receiving_sample_is_fresh(before, now=now)
+    assert receiving_sample_is_fresh(after, now=now)
+    assert prove_receiving_liveness(before, after, now=now)["advanced_count"] == 1
+    with pytest.raises(ReceivingLivenessError):
+        prove_receiving_liveness(before, after, now=NOW + timedelta(seconds=57))
 
 
 @pytest.mark.parametrize(

@@ -11,6 +11,99 @@ from app.runtime_handover import _write
 from tests.test_runtime_feed_halt_recovery import feed_halt_case, close_plan
 
 
+def original_failed_consumers(tmp_path, monkeypatch):
+    from tests.test_runtime_cohort_original_feed_recovery import original_fixture
+
+    host, _, source, _, _, _ = original_fixture(tmp_path, monkeypatch)
+    close = recovery.freeze_forward_recovery(
+        host, source, original_verified_feed_halt=True, close_feed_only=True
+    )
+    close_path = tmp_path / "original-close.json"
+    _write(close_path, close)
+    recovery.apply_forward_recovery(host, close_path)
+    frozen = recovery.freeze_forward_recovery(
+        host, source, original_verified_feed_halt=True, feed_close_plan=close_path
+    )
+    generation = recovery.registry(frozen["new"]).services["live"].generation
+    host.resume_consumers = lambda *args: {"resumed_generation": generation}
+    path = tmp_path / "original-failed.json"
+    _write(path, frozen)
+
+    def fail(*args):
+        raise recovery.CohortError("COHORT_FORWARD_READY_TIMEOUT")
+
+    host.await_consumers = fail
+    with pytest.raises(ValueError, match="OUTCOME_UNKNOWN"):
+        recovery.apply_forward_recovery(host, path)
+    audit = {
+        key: deepcopy(value)
+        for key, value in frozen["audit"].items()
+        if key not in {"feed_close", "original_verified_feed_halt"}
+    }
+    audit.update(
+        feed_exited_pids=[1234],
+        controls={"fresh": "halt-controls"},
+        owners={"current": "parked"},
+    )
+    host.audit_stopped = lambda *args, **kwargs: deepcopy(audit)
+    return host, path, frozen, audit
+
+
+def test_original_consumer_only_timeout_reuses_stopped_frontier_without_replay(
+    tmp_path, monkeypatch
+):
+    from app.runtime_stopped_recovery import reconcile_stopped, read_confirmation
+
+    host, failed_path, failed, _ = original_failed_consumers(tmp_path, monkeypatch)
+    folder = host.directory / "cohort-forward-recoveries" / failed["plan_sha256"]
+    original = (folder / "state.json").read_bytes()
+    pointer = (host.directory / "cohort-release.json").read_bytes()
+    result = reconcile_stopped(host, failed_path)
+    assert result == reconcile_stopped(host, failed_path)
+    selected = result["confirmation"]
+    confirmation = read_confirmation(host, selected)
+    assert set(confirmation["attempts"]) == {
+        failed["plan_sha256"],
+        failed["original_close"]["plan_sha256"],
+    }
+    assert (folder / "state.json").read_bytes() == original
+    assert (host.directory / "cohort-release.json").read_bytes() == pointer
+    fresh = recovery.freeze_forward_recovery(
+        host, failed["source"]["plan_path"], stopped_confirmation=selected["path"]
+    )
+    assert fresh["mode"] == "reconciled_stopped"
+    fresh_path = tmp_path / "original-fresh.json"
+    _write(fresh_path, fresh)
+    host.await_consumers = lambda *args: {"kind": "typed_receiver"}
+    assert recovery.apply_forward_recovery(host, fresh_path)["status"] == "recovered"
+    recovery._no_unresolved_recovery(host)
+    assert (folder / "state.json").read_bytes() == original
+
+
+@pytest.mark.parametrize("damage", ("feed", "error", "other_unknown", "close_receipt"))
+def test_original_stopped_frontier_rejects_unproven_work(tmp_path, monkeypatch, damage):
+    from app.runtime_stopped_recovery import reconcile_stopped
+
+    host, failed_path, failed, _ = original_failed_consumers(tmp_path, monkeypatch)
+    folder = host.directory / "cohort-forward-recoveries" / failed["plan_sha256"]
+    if damage == "other_unknown":
+        extra = folder.parent / ("f" * 64)
+        extra.mkdir(mode=0o700)
+        _write(extra / "state.json", {"phase": "outcome_unknown"})
+    elif damage == "close_receipt":
+        close_dir = folder.parent / failed["original_close"]["plan_sha256"]
+        (close_dir / "receipt.json").write_text("{}")
+    else:
+        state = json.loads((folder / "state.json").read_text())
+        if damage == "feed":
+            state["effects"]["feed"] = {"bootstrapped": True}
+        else:
+            state["error_type"] = "OtherError"
+        _write(folder / "state.json", state)
+    with pytest.raises(ValueError):
+        reconcile_stopped(host, failed_path)
+
+
 def failed_consumers(tmp_path):
     host, source, c_path, _ = feed_halt_case(tmp_path)
     _, close = close_plan(host, source, c_path, tmp_path)
