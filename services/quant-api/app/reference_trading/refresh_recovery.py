@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 from dataclasses import asdict
+from hashlib import sha256
 
 from app.reference_trading.planning import (
     HistoricalReferenceRequest, HistoricalStreamRequest, canonical_sha256,
@@ -72,6 +73,29 @@ def _plan_wire_shared_manifest(plan):
         'batch_size': plan.batch_size,
         'plan_hash': plan.plan_hash,
     }
+
+
+@contextmanager
+def _verified_plan_input(item, service):
+    """Keep the one authoritative source pin through the recovery decision."""
+    reader = service._reader
+    with ExitStack() as inputs:
+        verified_pin = getattr(reader, 'pin_verified_stream', None)
+        if callable(verified_pin):
+            inputs.enter_context(verified_pin(
+                item.request, expected_manifest=item.input_manifest,
+                expected_source_token=item.source_token,
+            ))
+        inputs.enter_context(reader.source_guard(
+            item.request, expected_source_token=item.source_token,
+        ))
+        snapshot = reader.load_stream(item.request, expected_source_token=item.source_token)
+        release = getattr(reader, 'release_snapshot', None)
+        if callable(release):
+            inputs.callback(release, snapshot)
+        if not service._snapshot_matches(item, snapshot):
+            raise ValueError('SOURCE_CHANGED')
+        yield
 
 
 def _readback(repository, old_plan, prior):
@@ -149,23 +173,7 @@ def prepare_source_recovery(route, prior, old_plan, *, planner, service, endpoin
     new = new_plan.streams[0]
     if new.target_completed_through != endpoint:
         raise ValueError('AUTHORITATIVE_ENDPOINT_CONFLICT')
-    reader = service._reader
-    with ExitStack() as inputs:
-        verified_pin = getattr(reader, 'pin_verified_stream', None)
-        if callable(verified_pin):
-            inputs.enter_context(verified_pin(
-                new.request, expected_manifest=new.input_manifest,
-                expected_source_token=new.source_token,
-            ))
-        inputs.enter_context(reader.source_guard(
-            new.request, expected_source_token=new.source_token,
-        ))
-        snapshot = reader.load_stream(new.request, expected_source_token=new.source_token)
-        release = getattr(reader, 'release_snapshot', None)
-        if callable(release):
-            inputs.callback(release, snapshot)
-        if not service._snapshot_matches(new, snapshot):
-            raise ValueError('SOURCE_CHANGED')
+    with _verified_plan_input(new, service):
         after = _readback(service._repository, old_plan, prior)
         if before != after:
             raise ValueError('REFRESH_RECOVERY_READBACK_CHANGED')
@@ -178,9 +186,69 @@ def prepare_source_recovery(route, prior, old_plan, *, planner, service, endpoin
         yield value
 
 
+def _planning_failure_readback(repository, route, endpoint):
+    """Prove the existing published checkpoint and absence of an unknown candidate."""
+    from sqlalchemy import select
+    from datetime import UTC
+    from app.reference_trading.models import ReferenceBatch, ReferenceRevision
+
+    stream_id = route.identity.stream_id
+    active = repository.read_state(stream_id)
+    if (active.revision_status not in {'active', 'invalid'}
+            or active.stream.stream_id != stream_id
+            or active.stream.active_revision_id != active.revision_id
+            or active.stream.latest_seq != active.checkpoint.seq
+            or active.checkpoint.seq < 1
+            or active.dependency_manifest.get('query_since') != route.since.isoformat()):
+        raise ValueError('REFRESH_RECOVERY_READBACK_REQUIRED')
+    progress = _progress(repository, active)
+    with repository._session_factory() as session:
+        revisions = session.execute(select(
+            ReferenceRevision.revision_id, ReferenceRevision.status,
+            ReferenceRevision.last_seq, ReferenceRevision.checkpoint_batch_id,
+            ReferenceRevision.dependency_digest,
+        ).where(ReferenceRevision.stream_id == stream_id)
+            .order_by(ReferenceRevision.revision_id)).all()
+        active_rows = [row for row in revisions if row[0] == active.revision_id]
+        if len(active_rows) != 1 or active_rows[0][3] is None:
+            raise ValueError('REFRESH_RECOVERY_READBACK_REQUIRED')
+        committed_through = session.execute(select(ReferenceBatch.computed_through).where(
+            ReferenceBatch.batch_id == active_rows[0][3],
+        )).scalar_one_or_none()
+    if committed_through is not None and committed_through.tzinfo is None:
+        committed_through = committed_through.replace(tzinfo=UTC)
+    if (committed_through is None or committed_through != route.computed_through
+            or endpoint < committed_through):
+        raise ValueError('REFRESH_RECOVERY_READBACK_REQUIRED')
+    if (not revisions or any(row[1] == 'candidate' for row in revisions)
+            or not any(row[0] == active.revision_id
+                       and row[1] == active.revision_status
+                       and row[2] == active.checkpoint.seq
+                       for row in revisions)):
+        raise ValueError('REFRESH_RECOVERY_READBACK_REQUIRED')
+    return {
+        'active': _state_readback(active), 'active_progress': progress,
+        'revisions': [list(row) for row in revisions],
+    }
+
+
+def _archive_recovery(store, recovery):
+    from app.reference_trading.plan_bundle import canonical_size_digest, read_plan, write_plan
+
+    size, digest = canonical_size_digest(recovery)
+    target = store.path.with_name(store.path.name + '.recovery-' + digest + '.json')
+    if target.exists():
+        if canonical_size_digest(read_plan(target, trusted_root=store.path.parent)) != (size, digest):
+            raise ValueError('REFRESH_RECOVERY_ARCHIVE_CONFLICT')
+    else:
+        write_plan(target, recovery, trusted_root=store.path.parent)
+    if canonical_size_digest(read_plan(target, trusted_root=store.path.parent)) != (size, digest):
+        raise ValueError('REFRESH_RECOVERY_ARCHIVE_CONFLICT')
+    return digest
+
+
 def install_source_recovery(store, state, recovery):
     """CAS state only after immutable archival; never mutates saved candidates."""
-    from app.reference_trading.plan_bundle import canonical_size_digest, read_plan, write_plan
     stream_id = recovery['stream_id']
     current = store.read()
     if (current['version'] != state['version'] or current['routes'] != state['routes']
@@ -192,19 +260,124 @@ def install_source_recovery(store, state, recovery):
             or old.streams[0].request.identity != new.streams[0].request.identity
             or old.streams[0].request.since != new.streams[0].request.since or new.operation != 'rebuild'):
         raise ValueError('REFRESH_RECOVERY_PLAN_CONFLICT')
-    size, digest = canonical_size_digest(recovery)
-    target = store.path.with_name(store.path.name + '.recovery-' + digest + '.json')
-    if target.exists():
-        if canonical_size_digest(read_plan(target, trusted_root=store.path.parent)) != (size, digest):
-            raise ValueError('REFRESH_RECOVERY_ARCHIVE_CONFLICT')
-    else:
-        write_plan(target, recovery, trusted_root=store.path.parent)
-    if canonical_size_digest(read_plan(target, trusted_root=store.path.parent)) != (size, digest):
-        raise ValueError('REFRESH_RECOVERY_ARCHIVE_CONFLICT')
+    digest = _archive_recovery(store, recovery)
     state['routes'][stream_id] = {'status': 'pending', 'reason': None,
         'plan': store.store_plan(recovery['new_plan']), 'recovery_archive_sha256': digest}
     store.write(state)
     return new
+
+
+def install_planning_failure_recovery(store, state, recovery):
+    """Archive one known pre-plan failure before installing a native pending plan."""
+    if (not isinstance(recovery, dict) or set(recovery) != {
+            'version', 'stream_id', 'prior',
+            'readback', 'readback_sha256', 'since', 'endpoint', 'trading_day',
+            'new_plan', 'new_plan_hash',
+        } or recovery['version'] != 'reference_refresh_planning_failure_recovery_v1'
+            or recovery['prior'] != {
+                'status': 'blocked', 'reason': 'REFERENCE_BUDGET_EXCEEDED',
+            } or canonical_sha256(recovery['readback']) != recovery['readback_sha256']):
+        raise ValueError('REFRESH_RECOVERY_PLAN_CONFLICT')
+    stream_id = recovery['stream_id']
+    current = store.read()
+    if current != state or current['routes'].get(stream_id) != recovery['prior']:
+        raise ValueError('REFRESH_RECOVERY_STATE_CHANGED')
+    # This byte guard covers non-cooperating writers during this one locked
+    # apply; it is deliberately absent from the dry-run recovery identity.
+    if not store.path.exists():
+        raise ValueError('REFRESH_RECOVERY_STATE_CHANGED')
+    state_bytes_sha256 = sha256(store.path.read_bytes()).hexdigest()
+    plan = plan_from_dict(recovery['new_plan'])
+    if (plan.plan_hash != recovery['new_plan_hash'] or plan.operation != 'rebuild'
+            or len(plan.streams) != 1
+            or plan.streams[0].request.identity.stream_id != stream_id
+            or recovery['readback']['active']['stream']['stream_id'] != stream_id
+            or plan.streams[0].request.since.isoformat() != recovery['since']
+            or plan.streams[0].request.through.isoformat() != recovery['trading_day']
+            or plan.streams[0].target_completed_through.isoformat() != recovery['endpoint']):
+        raise ValueError('REFRESH_RECOVERY_PLAN_CONFLICT')
+    digest = _archive_recovery(store, recovery)
+    if (not store.path.exists()
+            or sha256(store.path.read_bytes()).hexdigest() != state_bytes_sha256):
+        raise ValueError('REFRESH_RECOVERY_STATE_CHANGED')
+    updated = deepcopy(current)
+    plan_ref = store.store_plan(recovery['new_plan'])
+    if (not store.path.exists()
+            or sha256(store.path.read_bytes()).hexdigest() != state_bytes_sha256):
+        raise ValueError('REFRESH_RECOVERY_STATE_CHANGED')
+    updated['routes'][stream_id] = {
+        'status': 'pending', 'reason': None,
+        'plan': plan_ref,
+        'recovery_archive_sha256': digest,
+    }
+    store.write(updated)
+    return plan
+
+
+def recover_blocked_planning(runner, stream_id, *, now, apply=False,
+                             expected_recovery_sha256=None, cancelled=lambda: False):
+    """Dry-run/CAS one Newow budget failure that occurred before any plan existed."""
+    from datetime import date
+    from app.reference_trading.historical_refresh import BUDGET, _history_route_supported, _strategy
+
+    with runner.state.exclusive() as acquired:
+        if not acquired:
+            raise ValueError('SOURCE_BUSY')
+        state = runner.state.read()
+        prior = state['routes'].get(stream_id)
+        if prior != {'status': 'blocked', 'reason': 'REFERENCE_BUDGET_EXCEEDED'}:
+            raise ValueError('REFRESH_RECOVERY_NOT_ELIGIBLE')
+        routes = [route for route in runner._routes() if route.identity.stream_id == stream_id]
+        if len(routes) != 1:
+            raise ValueError('REFRESH_RECOVERY_SCOPE_CONFLICT')
+        route = routes[0]
+        if (not _history_route_supported(route.identity)
+                or _strategy(route.identity) not in {'trend', 'oscillation', 'main_rise', 'dual_fusion'}
+                or route.since is None or route.computed_through is None
+                or route.reason not in {None, 'INPUT_PROOF_UPGRADE_REQUIRED',
+                                         'CANONICAL_SOURCE_REVISION_CHANGED'}):
+            raise ValueError('REFRESH_RECOVERY_NOT_ELIGIBLE')
+        endpoint, trading_day = runner._endpoint(route, now)
+        if (endpoint.tzinfo is None or endpoint.utcoffset() is None
+                or endpoint > now or type(trading_day) is not date):
+            raise ValueError('AUTHORITATIVE_ENDPOINT_UNAVAILABLE')
+        with runner._components(cancelled=cancelled, now=lambda: now) as (planner, service):
+            if [fresh for fresh in runner._routes()
+                    if fresh.identity.stream_id == stream_id] != [route]:
+                raise ValueError('REFRESH_RECOVERY_ROUTE_CHANGED')
+            before = _planning_failure_readback(service._repository, route, endpoint)
+            plan = planner.plan(HistoricalReferenceRequest(
+                'rebuild', (HistoricalStreamRequest(
+                    route.identity, route.since, trading_day, endpoint,
+                ),), BUDGET,
+            ))
+            item = plan.streams[0]
+            if (len(plan.streams) != 1 or item.request.identity != route.identity
+                    or item.request.since != route.since
+                    or item.target_completed_through != endpoint):
+                raise ValueError('AUTHORITATIVE_ENDPOINT_CONFLICT')
+            with _verified_plan_input(item, service):
+                after = _planning_failure_readback(service._repository, route, endpoint)
+                if before != after:
+                    raise ValueError('REFRESH_RECOVERY_READBACK_CHANGED')
+                recovery = {
+                    'version': 'reference_refresh_planning_failure_recovery_v1',
+                    'stream_id': stream_id, 'prior': deepcopy(prior),
+                    'readback': before, 'readback_sha256': canonical_sha256(before),
+                    'since': route.since.isoformat(),
+                    'endpoint': endpoint.isoformat(), 'trading_day': trading_day.isoformat(),
+                    'new_plan': _plan_wire_shared_manifest(plan),
+                    'new_plan_hash': plan.plan_hash,
+                }
+                digest = canonical_sha256(recovery)
+                if apply:
+                    if expected_recovery_sha256 != digest:
+                        raise ValueError('REFRESH_RECOVERY_HASH_CONFLICT')
+                    install_planning_failure_recovery(runner.state, state, recovery)
+                return {
+                    'status': 'installed' if apply else 'ready',
+                    'recovery_sha256': digest, 'recovery': recovery,
+                }
 
 
 def recover_pending_source(runner, stream_id, *, now, apply=False, expected_recovery_sha256=None):
