@@ -1,3 +1,4 @@
+import type {NewowChartDisplayTheme} from './newowChartDisplayTheme.ts'
 import type { NewowProductChartModel } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
 
 export interface NewowVolumeScore {
@@ -44,7 +45,8 @@ export function newowVolumeScores(model: NewowProductChartModel, index: number):
   })
 }
 /** Page-only color decoration from Niuwa's public scoreBar; no signal or return changes. */
-export function newowVolumeColors(model: NewowProductChartModel, up: string, down: string): readonly string[] {
+export function newowVolumeColors(model: NewowProductChartModel, up: string, down: string, theme:NewowChartDisplayTheme='light'): readonly string[] {
+  const breakoutColor=theme==='dark'?'#FFD60A':'#D9A400'
   return model.bars.map((bar, index) => newowVolumeScores(model, index).some(score => score.total >= 4)
-    ? 'rgba(255,215,0,0.7)' : bar.close >= bar.open ? up : down)
+    ? breakoutColor : bar.close >= bar.open ? up : down)
 }
