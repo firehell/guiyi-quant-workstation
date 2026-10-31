@@ -2408,3 +2408,21 @@ test(`main-rise ${frequency} switch aborts old pagination and rejects late snaps
   state.dispose()
 })
 }
+
+
+test('older chart pagination preserves independent J, breakdown and current badge events', async()=>{
+ const pending:Pending[]=[],state=useNewowProduct({identity:ref(newowIdentity('trend','1d')),now:()=>new Date(AS_OF),fetchSection:controlled(pending)})
+ const attach=(response:any,id:string,kind='MAIN_RISE_J')=>{
+  response={...response,value:{...response.value}};const b=response.value.bars[0];response.value.display_events=[{event_id:id.repeat(64),display_version:'newow_public_display_v3431_v1',kind,
+  source_strategy:kind==='TREND_REVERSAL'?'trend_reversal':'main_rise',formula_version:'formula',frequency:'1d',bar_end:b.bar_end,known_at:b.bar_end,
+  physical_contract:b.physical_contract,segment_id:b.segment_id,calculation_segment_id:b.calculation_segment_id,
+  source_build_id:null,build_bar_end:null,build_threshold:null,observed_close:b.close,signal_kind:kind==='TREND_REVERSAL'?'rebound':null,page_parity:true,executable:false,quantity_effect:'none'}];return response
+ }
+ pending[0]!.resolve(attach(normalizedChartPage(pending[0]!.request,'2026-08-14','older-chart'),'a','TREND_REVERSAL'));await flush()
+ const page=state.loadNextChartPage()
+ pending[1]!.resolve(attach(normalizedChartPage(pending[1]!.request,'2026-08-13',null),'b'));await page
+ const value=state.sections.chart.data.value?.value as any
+ assert.deepEqual(value.display_events.map((e:any)=>e.event_id),['b'.repeat(64),'a'.repeat(64)])
+ assert.equal(value.display_events.at(-1).kind,'TREND_REVERSAL')
+ state.dispose()
+})

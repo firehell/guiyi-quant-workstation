@@ -265,6 +265,7 @@ class ChartSectionValue:
     price_unavailable_days: tuple[tuple[date, str, str], ...] = ()
     home_summary: dict[str, object] | None = None
     caution_events: tuple[dict, ...] = ()
+    display_events: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -691,7 +692,9 @@ def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
         identity.profile_id,
         identity.formula_versions,
     )
+    from .display_events import DISPLAY_VERSION
     contract: tuple[object, ...] = (
+        DISPLAY_VERSION,
         SCHEMA_VERSION,
         REFERENCE_MODEL_VERSION,
         futures_adaptation_version(
@@ -1615,6 +1618,8 @@ class NewowProductService:
              f.bar.bar.segment_id, f.bar.calculation_segment_id)
             for f in selected
         }
+        from .display_events import project_display_events
+        display_events = project_display_events(replay)
         return SectionDelivery(
             "delivered",
             status,
@@ -1627,6 +1632,8 @@ class NewowProductService:
                 page_identity,
                 channel if identity.strategy is ProductStrategy.TREND else None,
                 price_reference,
+                display_events=tuple(e for e in display_events
+                    if (e["bar_end"], e["physical_contract"], e["segment_id"], e["calculation_segment_id"]) in visible_caution_owners),
                 caution_events=tuple(e for e in project_caution_events(replay)
                     if (e["bar_end"], e["physical_contract"], e["segment_id"], e["calculation_segment_id"]) in visible_caution_owners),
                 home_summary=project_home_summary(replay, anchor, status, price_reference, shared_home),

@@ -6,8 +6,8 @@ import { buildStatusCard } from '@/utils/newowStatusCardPresentation'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { decisionFactAge } from '@/utils/newowDecisionV2Presentation'
-const props=defineProps<{ decision:NewowDecisionV2|null; strategy:string; loading:boolean; error:string; background?:boolean; backgroundLabel?:string; currentState?:string; mainRiseBackground?:boolean; basis?:'week'|'day'; dominant?:'trend'|'oscillation'|null; basisDecision?:ReturnType<typeof deriveBasisDecision> }>()
-const emit=defineEmits<{retry:[]}>()
+const props=defineProps<{ decision:NewowDecisionV2|null; strategy:string; loading:boolean; error:string; background?:boolean; backgroundLabel?:string; currentState?:string; mainRiseBackground?:boolean; magic11Ready?:boolean; basis?:'week'|'day'; dominant?:'trend'|'oscillation'|null; basisDecision?:ReturnType<typeof deriveBasisDecision> }>()
+const emit=defineEmits<{retry:[];magic11:[]}>()
 const bodyId=useId(), explanationId=useId()
 function preference() { try { return typeof localStorage!=='undefined'&&localStorage.getItem('guiyi_newow_status_card_collapsed')==='1' } catch { return false } }
 const collapsed=ref(preference()), expanded=ref(false)
@@ -55,6 +55,7 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
      <p v-if="decision">截至 {{ formatBeijingInstant(decision.cdv2.as_of) }} · 价格来自同合约 Canonical 通道；主力状态及未证实的探底试盘分支不作推断。</p>
     </div>
    </template>
+   <div v-if="mainRiseBackground && magic11Ready" class="newow-status-card__magic11"><button type="button" @click="emit('magic11')">11周期 · 解读</button></div>
   </div>
  </section>
 </template>
@@ -70,7 +71,7 @@ watch(()=>[props.strategy,props.decision?.cdv2.as_of],()=>{expanded.value=false}
 .newow-status-card__risk i { width:8px; height:8px; background:var(--status-color); border-radius:50%; }
 .newow-status-card__arrow { font-size:11px; color:var(--gy-text-muted); transition:transform .2s; margin-left:4px; }
 .newow-status-card__arrow.collapsed { transform:rotate(-90deg); }
-.newow-status-card__body { padding:0 14px 10px; display:flex; flex-direction:column; gap:4px; }
+.newow-status-card__body { padding:0 14px 12px; display:flex; flex-direction:column; gap:4px; }
 p { margin:0; font-size:12px; color:var(--gy-text-muted); line-height:1.5; }
 .newow-status-card__advice { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .newow-status-card__prices { display:flex; align-items:center; gap:6px; height:24px; color:var(--gy-text-muted); font-size:12px; }
@@ -91,6 +92,11 @@ p { margin:0; font-size:12px; color:var(--gy-text-muted); line-height:1.5; }
 .newow-status-card__period b[data-state=buy],.newow-status-card__period b[data-state=hold] { color:#ff3b30; }
 .newow-status-card__period b[data-state=sell] { color:#34c759; }
 .newow-status-card__retry { border:1px solid var(--gy-border); background:var(--gy-bg-panel); border-radius:5px; cursor:pointer; color:var(--gy-accent); }
+.newow-status-card__magic11{display:flex;justify-content:flex-end}
+.newow-status-card__magic11 button{font-size:11px;line-height:normal;padding:2px 8px;border:1px solid #007aff;border-radius:10px;background:transparent;color:#007aff;cursor:pointer;transition:all .2s}
+.newow-status-card__magic11 button:hover{background:#007aff;color:#fff}
+:global([data-theme=dark]) .newow-status-card__magic11 button{color:var(--gy-text-muted);border-color:#5a5a5c}
+:global([data-theme=dark]) .newow-status-card__magic11 button:hover{background:#007aff;color:#fff}
 button:focus-visible { outline:2px solid var(--gy-accent); outline-offset:2px; }
 @media(max-width:600px) { .newow-status-card__prices { flex-wrap:wrap; height:auto; } .newow-status-card__track { order:3; flex-basis:100%; margin:8px 0; } .newow-status-card__prices>span:last-child { margin-left:auto; } .newow-status-card__advice { white-space:normal; } }
 @media(prefers-reduced-motion:reduce) { .newow-status-card__arrow { transition:none; } }

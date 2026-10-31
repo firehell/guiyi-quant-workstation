@@ -200,6 +200,7 @@ def _product_response(
                 }
                 for frame in value.replay.frames
             ],
+            "display_events": _json_value(value.display_events),
             "caution_events": _json_value(value.caution_events),
             "trend_channel": None
             if value.trend_channel is None
