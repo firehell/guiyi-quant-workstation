@@ -126,6 +126,7 @@ def build_forward_reference_worker(
                             generation=generation, after=computed_through,
                             recording_start=recording_start, now=observed,
                             check_cancelled=worker.check_cancelled,
+                            prove_classified_weekly_unavailable=getattr(worker, '_deployment_quality_preflight', False),
                         )
                 return capture_subing_live(
                     market_read, identity, wake_kind=kind, owner_started_at=subing_owner_started_at,

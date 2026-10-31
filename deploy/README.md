@@ -338,6 +338,12 @@ CAS前失败仅在旧绑定明确未变时恢复原定义；CAS开始后未知�
 仅cohort闭市Canonical预热可将苏冰D1/W1 quality-v2的明确WARMING_UP逐路记录，不能计入calculated或声明信号就绪；原生预热默认strict，未知/质量/映射失败仍阻断。预热证据在任何停机前持久化。
 
 完整Alert scope的只读预热上限600秒，其他子服务120秒；均在停机预算开始之前。该上限不延长15分钟plan有效期，预热后计划过期仍取消，不能带过期计划停服。
+
+仅cohort Reference预热可对SuBing W1 v2 scan使用`subing_weekly_unavailable_deployment_v1`：
+MDS须证明每个owner完整物理前缀的有效W1与`weekly-d1-quality-v2`中断互斥覆盖全部权威端点，
+并与独立rank1质量读取一致。明确中断路由仅记录`DATA_UNAVAILABLE`及来源hash，不计calculated、不生成capture/交易；
+普通读取/预热、pending原件和evaluator不采用该例外；已保存seed/capture及evaluator完整性仍须通过原验证。
+未知缺口、冲突、超时或证明失败仍阻断整组部署。
 新的预热失败状态保留固定service/condition及白名单公开码，区分子进程超时、无效输出和候选拒绝；不保存异常原文。
 Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已发布，18:05前仅当日未发布尾部可等待；
 旧欠期、物理源、owner及质量异常仍阻断，W1仍使用完整自然周。普通页面窗口及真实前像/seed预热不变。

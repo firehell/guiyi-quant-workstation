@@ -571,6 +571,9 @@ def main(argv=None):
                 from app.alerts.composition import warmup_alert_runtime
 
                 proof = warmup_alert_runtime(allow_closed_warming=True, allow_break=True)
+            elif args.service == 'reference-worker':
+                from app.reference_trading.worker_entry import warmup_reference_worker
+                proof = warmup_reference_worker(allow_classified_weekly_unavailable=True)
             else:
                 proof = warmup_service(args.service)
             print(
