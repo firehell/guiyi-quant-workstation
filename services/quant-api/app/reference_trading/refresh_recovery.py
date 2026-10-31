@@ -98,10 +98,67 @@ def _verified_plan_input(item, service):
         yield
 
 
-def _readback(repository, old_plan, prior):
+_FUSION_PROOF_UPGRADE = 'newow_fusion_saved_source_proof_upgrade_v1'
+_LEGACY_FUSION_SOURCE_READERS = frozenset({
+    'newow_product_reader_v1', 'newow_product_reader_v2',
+    'newow_product_reader_intraday_v3', 'newow_product_reader_prefix_v4',
+})
+
+
+def _legacy_fusion_proof_upgrade(route, old_plan):
+    from app.reference_trading.historical_refresh import _history_route_supported
+
+    old = old_plan.streams[0]
+    manifest = old.input_manifest
+    return (route.reason in {'INPUT_PROOF_UPGRADE_REQUIRED', 'CANONICAL_SOURCE_REVISION_CHANGED'}
+            and route.identity.strategy_code == 'newow_dual_fusion'
+            and _history_route_supported(route.identity)
+            and _legacy_fusion_manifest(manifest))
+
+
+def _legacy_fusion_manifest(manifest):
+    reader = manifest.get('reader')
+    source_reader = manifest.get('source_reader')
+    if reader == 'newow_fusion_saved_sources_v1' and source_reader is None:
+        source_reader = 'newow_product_reader_intraday_v3'
+    return (reader in {'newow_fusion_saved_sources_v1', 'newow_fusion_saved_sources_v2'}
+            and source_reader in _LEGACY_FUSION_SOURCE_READERS
+            and (reader == 'newow_fusion_saved_sources_v1'
+                 or isinstance(manifest.get('source_input_fingerprints'), list))
+            and not isinstance(manifest.get('source_input_fingerprints'), dict))
+
+
+def _proof_upgrade_record(old, new):
+    manifest = old.input_manifest
+    source_reader = manifest.get('source_reader')
+    if manifest.get('reader') == 'newow_fusion_saved_sources_v1' and source_reader is None:
+        source_reader = 'newow_product_reader_intraday_v3'
+    return {
+        'policy': _FUSION_PROOF_UPGRADE,
+        'old_reader': manifest['reader'], 'old_source_reader': source_reader,
+        'old_target_completed_through': old.target_completed_through.isoformat(),
+        'old_frozen_source_token': old.source_token,
+        'new_reader': new.input_manifest['reader'],
+        'new_source_reader': new.input_manifest['source_reader'],
+        'new_target_completed_through': new.target_completed_through.isoformat(),
+        'new_rebuild_source_token': new.source_token,
+    }
+
+
+def _readback(repository, old_plan, prior, *, proof_upgrade_route=None):
     item = old_plan.streams[0]
     stream_id = item.request.identity.stream_id
     active = repository.read_state(stream_id)
+    if proof_upgrade_route is not None:
+        expected_status = ('invalid' if proof_upgrade_route.reason == 'CANONICAL_SOURCE_REVISION_CHANGED'
+                           else 'active')
+        if (active.revision_status != expected_status
+                or active.stream.stream_id != stream_id
+                or active.stream.active_revision_id != active.revision_id
+                or active.stream.latest_seq != active.checkpoint.seq
+                or active.dependency_manifest.get('query_since') != proof_upgrade_route.since.isoformat()
+                or not _legacy_fusion_manifest(active.dependency_manifest)):
+            raise ValueError('REFRESH_RECOVERY_READBACK_REQUIRED')
     result = {'active': _state_readback(active), 'active_progress': _progress(repository, active)}
     resume = prior.get('resume')
     if resume is None:
@@ -149,40 +206,66 @@ def _readback(repository, old_plan, prior):
 
 
 @contextmanager
-def prepare_source_recovery(route, prior, old_plan, *, planner, service, endpoint, trading_day):
+def prepare_source_recovery(route, prior, old_plan, *, planner, service, endpoint, trading_day,
+                            route_recheck=None):
     """Dry-run proof held under the new source guard until caller installs it.
 
     Caller owns the refresh-state exclusive lock and native component scope.
-    Only a successful authoritative replan of the OLD request can establish a
-    changed source; a timeout/missing input/False revalidate cannot establish it.
+    A legacy Fusion proof-format upgrade uses the current authoritative request
+    and exact old readback; all other routes require OLD-request revalidation.
     """
     if (prior.get('status') != 'pending' or prior.get('reason') not in {None, 'INTERRUPTED', 'SOURCE_BUSY', 'REBUILD_REQUIRED'}
             or len(old_plan.streams) != 1 or old_plan.streams[0].request.identity != route.identity
             or old_plan.streams[0].request.since != route.since):
         raise ValueError('REFRESH_RECOVERY_NOT_ELIGIBLE')
     old = old_plan.streams[0]
-    observed = planner.plan(HistoricalReferenceRequest('rebuild', (old.request,), old_plan.budget))
-    observed_source_token = observed.streams[0].source_token
-    del observed
-    if observed_source_token == old.source_token:
-        yield None
-        return
-    before = _readback(service._repository, old_plan, prior)
+    proof_upgrade = _legacy_fusion_proof_upgrade(route, old_plan)
+    if proof_upgrade:
+        if (route_recheck is None
+                or [fresh for fresh in route_recheck()
+                    if fresh.identity.stream_id == route.identity.stream_id] != [route]):
+            raise ValueError('REFRESH_RECOVERY_ROUTE_CHANGED')
+        if (route.computed_through is None or endpoint < route.computed_through
+                or endpoint < old.target_completed_through):
+            raise ValueError('AUTHORITATIVE_ENDPOINT_CONFLICT')
+        before = _readback(service._repository, old_plan, prior, proof_upgrade_route=route)
+    else:
+        observed = planner.plan(HistoricalReferenceRequest('rebuild', (old.request,), old_plan.budget))
+        observed_source_token = observed.streams[0].source_token
+        del observed
+        if observed_source_token == old.source_token:
+            yield None
+            return
+        before = _readback(service._repository, old_plan, prior)
     new_plan = planner.plan(HistoricalReferenceRequest('rebuild', (
         HistoricalStreamRequest(route.identity, route.since, trading_day, endpoint),), old_plan.budget))
+    if len(new_plan.streams) != 1:
+        raise ValueError('AUTHORITATIVE_ENDPOINT_CONFLICT')
     new = new_plan.streams[0]
-    if new.target_completed_through != endpoint:
+    if (new_plan.operation != 'rebuild'
+            or new.request.identity != route.identity or new.request.since != route.since
+            or new.request.through != trading_day or new.request.as_of != endpoint
+            or new.target_completed_through != endpoint
+            or proof_upgrade and (
+                new.input_manifest.get('reader') != 'newow_fusion_saved_sources_v3'
+                or new.input_manifest.get('source_reader') != 'newow_product_reader_prefix_v5'
+                or new.source_token == old.source_token)):
         raise ValueError('AUTHORITATIVE_ENDPOINT_CONFLICT')
     with _verified_plan_input(new, service):
-        after = _readback(service._repository, old_plan, prior)
+        after = _readback(service._repository, old_plan, prior,
+                          proof_upgrade_route=route if proof_upgrade else None)
         if before != after:
             raise ValueError('REFRESH_RECOVERY_READBACK_CHANGED')
-        value = {'version': 'reference_refresh_source_recovery_v2',
+        value = {'version': ('reference_refresh_fusion_proof_upgrade_v1' if proof_upgrade
+                             else 'reference_refresh_source_recovery_v2'),
                  'stream_id': route.identity.stream_id, 'prior': prior,
                  'old_plan': _plan_wire_shared_manifest(old_plan), 'old_plan_hash': old_plan.plan_hash,
                  'readback': before, 'readback_sha256': canonical_sha256(before),
-                 'source_change': {'old': old.source_token, 'current': observed_source_token},
                  'new_plan': _plan_wire_shared_manifest(new_plan), 'new_plan_hash': new_plan.plan_hash}
+        if proof_upgrade:
+            value['proof_upgrade'] = _proof_upgrade_record(old, new)
+        else:
+            value['source_change'] = {'old': old.source_token, 'current': observed_source_token}
         yield value
 
 
@@ -260,6 +343,21 @@ def install_source_recovery(store, state, recovery):
             or old.streams[0].request.identity != new.streams[0].request.identity
             or old.streams[0].request.since != new.streams[0].request.since or new.operation != 'rebuild'):
         raise ValueError('REFRESH_RECOVERY_PLAN_CONFLICT')
+    if recovery.get('version') == 'reference_refresh_fusion_proof_upgrade_v1':
+        old_item, new_item = old.streams[0], new.streams[0]
+        expected_upgrade = _proof_upgrade_record(old_item, new_item)
+        if (set(recovery) != {'version', 'stream_id', 'prior', 'old_plan', 'old_plan_hash',
+                             'readback', 'readback_sha256', 'new_plan', 'new_plan_hash',
+                             'proof_upgrade'}
+                or recovery.get('proof_upgrade') != expected_upgrade
+                or expected_upgrade['policy'] != _FUSION_PROOF_UPGRADE
+                or old_item.request.identity.strategy_code != 'newow_dual_fusion'
+                or not _legacy_fusion_manifest(old_item.input_manifest)
+                or expected_upgrade['new_reader'] != 'newow_fusion_saved_sources_v3'
+                or expected_upgrade['new_source_reader'] != 'newow_product_reader_prefix_v5'
+                or old_item.target_completed_through > new_item.target_completed_through
+                or old_item.source_token == new_item.source_token):
+            raise ValueError('REFRESH_RECOVERY_PLAN_CONFLICT')
     digest = _archive_recovery(store, recovery)
     state['routes'][stream_id] = {'status': 'pending', 'reason': None,
         'plan': store.store_plan(recovery['new_plan']), 'recovery_archive_sha256': digest}
@@ -403,7 +501,8 @@ def recover_pending_source(runner, stream_id, *, now, apply=False, expected_reco
             raise ValueError('AUTHORITATIVE_ENDPOINT_UNAVAILABLE')
         with runner._components(now=lambda: now) as (planner, service):
             with prepare_source_recovery(route, prior, old, planner=planner, service=service,
-                                         endpoint=endpoint, trading_day=trading_day) as recovery:
+                                         endpoint=endpoint, trading_day=trading_day,
+                                         route_recheck=runner._routes) as recovery:
                 if recovery is None:
                     return {'status': 'source_unchanged', 'stream_id': stream_id}
                 digest = canonical_sha256(recovery)

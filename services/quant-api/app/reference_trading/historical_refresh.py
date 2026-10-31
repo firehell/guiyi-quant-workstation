@@ -368,7 +368,8 @@ class HistoricalRefresh:
                     from app.market_data.newow.product_reader import NewowProductReadCancelled
                     try:
                         with prepare_source_recovery(route, prior, plan, planner=planner, service=service,
-                                                     endpoint=endpoint, trading_day=trading_day) as recovery:
+                                                     endpoint=endpoint, trading_day=trading_day,
+                                                     route_recheck=self._routes) as recovery:
                             if recovery is not None:
                                 try:
                                     plan = install_source_recovery(self.state, state, recovery)
