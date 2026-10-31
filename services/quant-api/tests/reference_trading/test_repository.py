@@ -5,6 +5,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from hashlib import sha256
 import json
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
@@ -43,7 +44,7 @@ def _digest(value: object) -> str:
     return sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def _seed_repository(*, fault=None, sqlite_path=None):
+def _seed_repository(*, fault=None, sqlite_path=None, dependency_manifest=None):
     engine = create_engine(
         f"sqlite+pysqlite:///{sqlite_path}" if sqlite_path is not None
         else "sqlite+pysqlite:///:memory:"
@@ -53,7 +54,7 @@ def _seed_repository(*, fault=None, sqlite_path=None):
     repository = ReferenceRepository(factory, fault_injector=fault)
     stream = _stream()
     stored = repository.ensure_stream(stream)
-    manifest = {"dataset_revision": "fixture-v1"}
+    manifest = dependency_manifest or {"dataset_revision": "fixture-v1"}
     revision = repository.create_revision(stream.stream_id, stored.row_version, _digest(manifest))
     checkpoint = AdapterCheckpoint(
         seed_replay_state(), stream=stream, reference_state=ReferenceState.flat(stream),
@@ -110,6 +111,74 @@ def test_commit_batch_is_atomic_durable_and_idempotent_before_cas() -> None:
     loaded, checkpoint = repository.load_checkpoint(stream.stream_id, revision)
     assert loaded.seq == 2
     assert checkpoint.reference_state == prepared.checkpoint.reference_state
+
+
+def test_source_reverification_is_ordered_cas_diagnostic_without_reference_advance() -> None:
+    from sqlalchemy import select
+    from app.reference_trading.models import ReferenceBatch, ReferenceStream
+    from app.reference_trading.page_material_query import latest_input_integrity
+    from app.reference_trading.page_material_storage import input_integrity_binding
+
+    manifest = {"query_since": "2026-09-01", "dataset_revision": "fixture-v1"}
+    repository, factory, stream, revision, manifest, seed = _seed_repository(
+        dependency_manifest=manifest,
+    )
+    repository.commit_batch(seed, _open_batch(stream, revision, manifest, seed))
+    current, _ = repository.load_checkpoint(stream.stream_id, revision)
+    repository.publish_revision(stream.stream_id, revision, current.row_version, _digest(manifest))
+    request = SimpleNamespace(identity=stream, since=date(2026, 9, 1),
+                              through=date(2026, 9, 19), as_of=AT)
+
+    def record(source_hash, token):
+        source_request = {"product": "rb", "frequency": "1d", "since": "2026-09-01",
+                          "through": "2026-09-19", "as_of": AT.isoformat()}
+        source = {"schema": "reference_mds_source_integrity_v1",
+                  "source_schema": "newow_completed_source_evidence_v1",
+                  "request": source_request, "evidence_sha256": source_hash}
+        result = input_integrity_binding(SimpleNamespace(
+            source_integrity=source, source_token=_digest(manifest),
+        ), request, stream_id=stream.stream_id, revision_id=revision,
+            seq=token.seq, manifest_sha256=_digest(manifest))
+        key = "source-verify:" + sha256((
+            result["binding_sha256"] + str(token.row_version)
+        ).encode()).hexdigest()
+        return key, result
+
+    first = repository.load_checkpoint(stream.stream_id, revision)[0]
+    key1, h1 = record("a" * 64, first)
+    repository.record_diagnostic(stream.stream_id, revision, key1,
+        {"input_integrity_v1": h1}, "CANONICAL_INPUTS_REVERIFIED", expected_checkpoint=first)
+    repository.record_diagnostic(stream.stream_id, revision, key1,
+        {"input_integrity_v1": h1}, "CANONICAL_INPUTS_REVERIFIED", expected_checkpoint=first)
+    second = repository.load_checkpoint(stream.stream_id, revision)[0]
+    assert second.seq == first.seq and second.state_hash == first.state_hash
+    assert second.row_version == first.row_version + 1
+    with pytest.raises(RepositoryConflict, match="STALE_CHECKPOINT"):
+        key2, h2 = record("b" * 64, first)
+        repository.record_diagnostic(stream.stream_id, revision, key2,
+            {"input_integrity_v1": h2}, "CANONICAL_INPUTS_REVERIFIED", expected_checkpoint=first)
+    key2, h2 = record("b" * 64, second)
+    repository.record_diagnostic(stream.stream_id, revision, key2,
+        {"input_integrity_v1": h2}, "CANONICAL_INPUTS_REVERIFIED", expected_checkpoint=second)
+    third = repository.load_checkpoint(stream.stream_id, revision)[0]
+    key3, h1_again = record("a" * 64, third)
+    repository.record_diagnostic(stream.stream_id, revision, key3,
+        {"input_integrity_v1": h1_again}, "CANONICAL_INPUTS_REVERIFIED", expected_checkpoint=third)
+    with factory() as session:
+        batch = session.scalar(select(ReferenceBatch).where(
+            ReferenceBatch.stream_id == stream.stream_id,
+            ReferenceBatch.revision_id == revision,
+            ReferenceBatch.seq == first.seq,
+        ))
+        assert latest_input_integrity(session, batch) == h1_again
+        diagnostics = session.scalars(select(ReferenceBatch).where(
+            ReferenceBatch.kind == "diagnostic",
+            ReferenceBatch.stream_id == stream.stream_id,
+        )).all()
+        assert len(diagnostics) == 3
+        assert {row.expected_seq for row in diagnostics} == {first.seq}
+        assert all(row.seq is None for row in diagnostics)
+        assert session.get(ReferenceStream, stream.stream_id).latest_seq == first.seq
 
 
 def test_same_batch_identity_with_changed_payload_conflicts() -> None:
@@ -290,3 +359,31 @@ def test_checkpoint_watermark_cannot_move_backwards() -> None:
 
     with pytest.raises(RepositoryConflict, match="CHECKPOINT_WATERMARK_REGRESSION"):
         repository.commit_batch(token, prepared)
+
+
+def test_checkpoint_read_does_not_load_historical_manifest_or_page_material():
+    from sqlalchemy import event
+    repository, factory, stream, revision, _manifest, expected = _seed_repository()
+    engine = factory.kw["bind"]
+    selects = []
+    def capture(_connection, _cursor, statement, _parameters, _context, _many):
+        if statement.lstrip().upper().startswith("SELECT") and "reference_batches" in statement:
+            selects.append(statement.lower().split(" from ")[0])
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        token, checkpoint = repository.load_checkpoint(stream.stream_id, revision)
+        assert token == expected
+        assert checkpoint.stream == stream
+        assert selects
+        assert all("dependency_manifest" not in statement and "source_evidence" not in statement
+                   for statement in selects)
+        state = repository.read_state(stream.stream_id, revision)
+        selects.clear()
+        receipt = repository.read_batch(stream.stream_id, revision, state.checkpoint_batch_key)
+        assert receipt.seq == token.seq
+        assert receipt.checkpoint_hash == token.state_hash
+        assert selects
+        assert all("dependency_manifest" not in statement and "source_evidence" not in statement
+                   for statement in selects)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)

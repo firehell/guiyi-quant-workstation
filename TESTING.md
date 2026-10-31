@@ -2351,3 +2351,16 @@ node --test apps/quant-web/tests/newowReferenceParts.test.ts apps/quant-web/test
 旧 reader 由原生新 revision 重建升级，不能只改旧 manifest 标签。覆盖同分区追加、rank1 截止、
 源改写阻断、前台未就绪仍可调度且真实 pending 工作优先、解锁失败丢弃连接，以及 updating 结果统一截止和分页 generation。
 页面通过不等于正式资产已迁移或自然盘后已发生；发布和自然盘后分别实际读回。
+
+### Newow 大历史内存回归
+
+大历史加载、计划编解码、最终页面材料和原生执行必须串行实测 RSS 与物理内存占用，
+保持完整输入窗口和既有公式。逻辑输入字节预算不能代替进程内存验收。参考模块全量回归
+按测试文件启动独立进程，避免 pytest 长驻进程累计 fixture/cache 超出 512MiB 目标；
+不并行运行多个大样本。只运行一个测试进程并不能证明真实大历史内存已受控。
+
+定向入口：`test_bounded_replay_chunks.py`、`test_spooled_input_bound.py`、
+`test_json_spool.py`、`test_packed_fingerprints.py`、`test_page_material_storage.py`、
+`test_newow_native_append_parity.py`。原生追加回归验证 GET 在禁止历史 replay 时仍能
+读出保存的普通/理想页面结果，并覆盖同端点来源复核、未知回执和旧前缀价格修订。
+PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过。

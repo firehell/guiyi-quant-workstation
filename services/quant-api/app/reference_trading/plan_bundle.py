@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import tempfile
 from uuid import uuid4
 import zlib
 
@@ -46,16 +47,36 @@ def _loads(raw):
     return value
 
 
-def canonical_bytes(value):
+def _canonical_chunks(value):
+    if not isinstance(value, dict):
+        raise PlanBundleError()
+    size = 0
     try:
-        raw = json.dumps(
-            value, sort_keys=True, separators=(",", ":"), allow_nan=False
-        ).encode()
+        encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), allow_nan=False)
+        for part in encoder.iterencode(value):
+            data = part.encode()
+            size += len(data)
+            if size > MAX_DECODED_BYTES:
+                raise PlanBundleError()
+            yield data
     except (ValueError, TypeError, RecursionError) as error:
         raise PlanBundleError() from error
-    if not isinstance(value, dict) or not 0 < len(raw) <= MAX_DECODED_BYTES:
+    if not size:
         raise PlanBundleError()
-    return raw
+
+
+def canonical_size_digest(value):
+    digest = sha256()
+    size = 0
+    for data in _canonical_chunks(value):
+        size += len(data)
+        digest.update(data)
+    return size, digest.hexdigest()
+
+
+def canonical_bytes(value):
+    # Kept for small callers and historical codec tests; large callers stream.
+    return b"".join(_canonical_chunks(value))
 
 
 @contextmanager
@@ -133,51 +154,61 @@ def _publish(fd, name, data):
 
 
 def write_plan(path, value, *, force_bundle=False, trusted_root=None):
-    raw = canonical_bytes(value)
-    with _parent(path, trusted_root) as (fd, name):
-        # No replacement, even for a prior partial write. A new exact filename
-        # is required after inspection of an incomplete attempt.
-        try:
-            os.stat(name, dir_fd=fd, follow_symlinks=False)
-        except FileNotFoundError:
-            pass
-        else:
-            raise PlanBundleError()
-        if len(raw) <= INLINE_BYTES and not force_bundle:
-            _publish(fd, name, raw)
-            return
-        compressed = zlib.compress(raw)
-        if (
-            len(compressed) > MAX_DECODED_BYTES
-            or (len(compressed) + CHUNK_BYTES - 1) // CHUNK_BYTES > MAX_CHUNKS
-        ):
-            raise PlanBundleError()
-        os.mkdir(name + ".parts", mode=0o700, dir_fd=fd)
-        parts = os.open(
-            name + ".parts", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd
-        )
-        chunks = []
-        try:
-            for index, offset in enumerate(range(0, len(compressed), CHUNK_BYTES)):
-                data = compressed[offset : offset + CHUNK_BYTES]
-                digest = sha256(data).hexdigest()
-                chunk_name = f"{index:04d}-{digest}.bin"
-                _new_file(parts, chunk_name, data)
-                chunks.append(
-                    {"name": chunk_name, "bytes": len(data), "sha256": digest}
-                )
-            os.fsync(parts)
-        finally:
-            os.close(parts)
-        head = dict(
-            codec=CODEC,
-            decoded_bytes=len(raw),
-            decoded_sha256=sha256(raw).hexdigest(),
-            compressed_bytes=len(compressed),
-            compressed_sha256=sha256(compressed).hexdigest(),
-            chunks=chunks,
-        )
-        _publish(fd, name, canonical_bytes(head))
+    # Keep JSON and compression buffers bounded even for a full-history plan.
+    with tempfile.TemporaryFile() as source:
+        decoded_hash = sha256()
+        decoded_bytes = 0
+        for data in _canonical_chunks(value):
+            source.write(data)
+            decoded_hash.update(data)
+            decoded_bytes += len(data)
+        source.seek(0)
+        with _parent(path, trusted_root) as (fd, name):
+            try:
+                os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise PlanBundleError()
+            if decoded_bytes <= INLINE_BYTES and not force_bundle:
+                _publish(fd, name, source.read(INLINE_BYTES + 1))
+                return
+            os.mkdir(name + ".parts", mode=0o700, dir_fd=fd)
+            parts = os.open(name + ".parts", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            chunks = []
+            pending = bytearray()
+            compressed_hash = sha256()
+            compressed_bytes = 0
+            encoder = zlib.compressobj()
+
+            def consume(data, *, final=False):
+                nonlocal compressed_bytes
+                compressed_bytes += len(data)
+                if compressed_bytes > MAX_DECODED_BYTES:
+                    raise PlanBundleError()
+                compressed_hash.update(data)
+                pending.extend(data)
+                while len(pending) >= CHUNK_BYTES or final and pending:
+                    if len(chunks) >= MAX_CHUNKS:
+                        raise PlanBundleError()
+                    batch = bytes(pending[:CHUNK_BYTES])
+                    del pending[:CHUNK_BYTES]
+                    digest = sha256(batch).hexdigest()
+                    chunk_name = f"{len(chunks):04d}-{digest}.bin"
+                    _new_file(parts, chunk_name, batch)
+                    chunks.append({"name": chunk_name, "bytes": len(batch), "sha256": digest})
+            try:
+                while data := source.read(CHUNK_BYTES):
+                    consume(encoder.compress(data))
+                consume(encoder.flush(), final=True)
+                os.fsync(parts)
+            finally:
+                os.close(parts)
+            head = dict(codec=CODEC, decoded_bytes=decoded_bytes,
+                        decoded_sha256=decoded_hash.hexdigest(),
+                        compressed_bytes=compressed_bytes,
+                        compressed_sha256=compressed_hash.hexdigest(), chunks=chunks)
+            _publish(fd, name, canonical_bytes(head))
 
 
 def read_plan(path, *, trusted_root=None):
@@ -216,7 +247,11 @@ def read_plan(path, *, trusted_root=None):
         compressed_hash = sha256()
         decoded_hash = sha256()
         decoded_size = compressed_size = 0
-        output = []
+        try:
+            output = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+        except BaseException:
+            os.close(parts)
+            raise
         try:
             for index, chunk in enumerate(head["chunks"]):
                 if (
@@ -236,18 +271,21 @@ def read_plan(path, *, trusted_root=None):
                 compressed_size += len(data)
                 if compressed_size > head["compressed_bytes"]:
                     raise PlanBundleError()
-                raw = decoder.decompress(data, head["decoded_bytes"] - decoded_size + 1)
-                decoded_size += len(raw)
-                if (
-                    decoded_size > head["decoded_bytes"]
-                    or decoder.unused_data
-                    or decoder.unconsumed_tail
-                ):
-                    raise PlanBundleError()
-                decoded_hash.update(raw)
-                output.append(raw)
-        except zlib.error as error:
+                pending = data
+                while pending:
+                    raw = decoder.decompress(pending, min(CHUNK_BYTES, head["decoded_bytes"] - decoded_size + 1))
+                    decoded_size += len(raw)
+                    if decoded_size > head["decoded_bytes"] or decoder.unused_data:
+                        raise PlanBundleError()
+                    decoded_hash.update(raw)
+                    output.write(raw.decode("ascii"))
+                    pending = decoder.unconsumed_tail
+        except (zlib.error, UnicodeError, OSError) as error:
+            output.close()
             raise PlanBundleError() from error
+        except BaseException:
+            output.close()
+            raise
         finally:
             os.close(parts)
         if (
@@ -257,5 +295,16 @@ def read_plan(path, *, trusted_root=None):
             or decoded_hash.hexdigest() != head["decoded_sha256"]
             or compressed_hash.hexdigest() != head["compressed_sha256"]
         ):
+            output.close()
             raise PlanBundleError()
-        return _loads(b"".join(output))
+        try:
+            output.seek(0)
+            value = json.load(output, object_pairs_hook=_pairs,
+                              parse_constant=lambda _: (_ for _ in ()).throw(PlanBundleError()))
+            if not isinstance(value, dict):
+                raise PlanBundleError()
+            return value
+        except (ValueError, UnicodeError, RecursionError) as error:
+            raise PlanBundleError() from error
+        finally:
+            output.close()

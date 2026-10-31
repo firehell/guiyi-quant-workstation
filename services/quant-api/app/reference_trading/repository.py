@@ -9,13 +9,12 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
 from hashlib import sha256
-import json
 from uuid import uuid4
 
 from dataclasses import fields, is_dataclass, replace
 
 from sqlalchemy import and_, case, func, literal, or_, select, tuple_
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, defer
 
 from guiyi_quant.reference_trading import (
     ActionKind,
@@ -47,7 +46,9 @@ from app.reference_trading.contracts import (
     validate_dependency_advance,
 )
 from app.reference_trading.capture import ForwardCapture
-from app.reference_trading.manifest_storage import resolve_manifest, store_manifest
+from app.reference_trading.manifest_storage import (
+    has_verified_manifest_scope, resolve_manifest, store_manifest,
+)
 from app.reference_trading.models import (
     ReferenceActionRow,
     ReferenceActivationReceipt,
@@ -66,18 +67,8 @@ class RepositoryConflict(RuntimeError):
     """Stable fail-closed repository error without SQL or connection details."""
 
 
-def _canonical(value: object) -> str:
-    try:
-        return json.dumps(
-            value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
-            allow_nan=False,
-        )
-    except (TypeError, ValueError) as error:
-        raise ValueError("manifest must be finite canonical JSON") from error
-
-
 def _digest(value: object) -> str:
-    return sha256(_canonical(value).encode()).hexdigest()
+    return manifest_sha256(value)
 
 
 def _wire(value: object) -> object:
@@ -588,7 +579,11 @@ class ReferenceRepository:
                 raise RepositoryConflict("SNAPSHOT_INVALIDATED")
             if revision.checkpoint_batch_id is None:
                 raise RepositoryConflict("SEED_NOT_SEALED")
-            batch = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+            # Checkpoints are bounded kernel state. Loading the full batch here
+            # would also decode a potentially large source manifest/material.
+            batch = session.execute(select(
+                ReferenceBatch.checkpoint_text, ReferenceBatch.strategy_schema,
+            ).where(ReferenceBatch.batch_id == revision.checkpoint_batch_id)).one_or_none()
             if batch is None or batch.checkpoint_text is None or batch.strategy_schema is None:
                 raise RepositoryConflict("CHECKPOINT_CORRUPT")
             identity = _identity_from_row(stream)
@@ -619,7 +614,10 @@ class ReferenceRepository:
                 raise RepositoryConflict("REVISION_NOT_FOUND")
             if revision.checkpoint_batch_id is None:
                 raise RepositoryConflict("SEED_NOT_SEALED")
-            batch = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+            options = ([defer(ReferenceBatch.dependency_manifest)]
+                       if session.get_bind().dialect.name == "postgresql" else None)
+            batch = session.get(ReferenceBatch, revision.checkpoint_batch_id,
+                                options=options)
             if (
                 batch is None
                 or batch.checkpoint_text is None
@@ -750,7 +748,11 @@ class ReferenceRepository:
                 or expected.row_version != stream.row_version
             ):
                 raise RepositoryConflict("STALE_CHECKPOINT")
-            checkpoint_batch = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+            options = ([defer(ReferenceBatch.dependency_manifest)]
+                       if has_verified_manifest_scope(session) else None)
+            checkpoint_batch = session.get(
+                ReferenceBatch, revision.checkpoint_batch_id, options=options,
+            )
             if (
                 checkpoint_batch is None
                 or checkpoint_batch.checkpoint_text is None
@@ -774,8 +776,9 @@ class ReferenceRepository:
             self._validate_open_projection(
                 session, prepared.stream_id, prepared.revision_id, prior_state.open_trade,
             )
+            prepared_manifest_digest = manifest_sha256(prepared.dependency_manifest)
             if prepared.dependency_advance is None:
-                if revision.dependency_digest != _digest(prepared.dependency_manifest):
+                if revision.dependency_digest != prepared_manifest_digest:
                     raise RepositoryConflict("DEPENDENCY_CONFLICT")
             else:
                 advance = prepared.dependency_advance
@@ -787,7 +790,7 @@ class ReferenceRepository:
                     raise RepositoryConflict("DEPENDENCY_CONFLICT") from error
                 if (
                     revision.dependency_digest != advance.expected_prior_digest
-                    or manifest_sha256(prepared.dependency_manifest) != advance.new_digest
+                    or prepared_manifest_digest != advance.new_digest
                 ):
                     raise RepositoryConflict("DEPENDENCY_CONFLICT")
             if prepared.transitions[-1].state != prepared.checkpoint.reference_state:
@@ -795,12 +798,12 @@ class ReferenceRepository:
             seq = revision.last_seq + 1
             batch_id = uuid4().hex
             stored_manifest = prepared.dependency_manifest
-            semantic_newow = (prepared.dependency_manifest.get("reader") == "newow_product_reader_prefix_v4"
-                or prepared.dependency_manifest.get("source_reader") == "newow_product_reader_prefix_v4")
+            semantic_newow = (prepared.dependency_manifest.get("reader") in {"newow_product_reader_prefix_v4", "newow_product_reader_prefix_v5"}
+                or prepared.dependency_manifest.get("source_reader") in {"newow_product_reader_prefix_v4", "newow_product_reader_prefix_v5"})
             if ((stream.strategy_code.replace('-', '_') == 'subing_reference' or semantic_newow)
                     and stream.recording_mode == RecordingMode.HISTORICAL_REPLAY.value):
                 stored_manifest = store_manifest(session, checkpoint_batch, prepared.dependency_manifest,
-                    manifest_sha256(prepared.dependency_manifest))
+                    prepared_manifest_digest, dependency_advance=prepared.dependency_advance)
             batch = ReferenceBatch(
                 batch_id=batch_id,
                 stream_id=stream.stream_id,
@@ -921,11 +924,13 @@ class ReferenceRepository:
         *, expected_payload_hash: str | None = None,
     ) -> CommitResult | None:
         with self._session_factory() as session:
-            row = session.execute(select(ReferenceBatch).where(
+            row = session.execute(select(
+                ReferenceBatch.payload_hash, ReferenceBatch.seq, ReferenceBatch.post_state_hash,
+            ).where(
                 ReferenceBatch.stream_id == stream_id,
                 ReferenceBatch.revision_id == revision_id,
                 ReferenceBatch.batch_key == batch_key,
-            )).scalar_one_or_none()
+            )).one_or_none()
             if row is None:
                 return None
             if expected_payload_hash is not None and row.payload_hash != expected_payload_hash:
@@ -1358,21 +1363,102 @@ class ReferenceRepository:
         batch_key: str,
         evidence: dict[str, object],
         code: str,
+        *, expected_checkpoint: CheckpointToken | None = None,
     ) -> None:
-        payload_hash = _digest({"evidence": evidence, "code": code})
+        source_reverification = code == "CANONICAL_INPUTS_REVERIFIED"
+        if source_reverification != (expected_checkpoint is not None):
+            raise RepositoryConflict("SOURCE_VERIFICATION_CHECKPOINT_REQUIRED")
         with self._session_factory() as session, session.begin():
-            revision = session.get(ReferenceRevision, (stream_id, revision_id))
+            if source_reverification:
+                stream = session.execute(select(ReferenceStream).where(
+                    ReferenceStream.stream_id == stream_id,
+                ).with_for_update()).scalar_one_or_none()
+                if stream is None:
+                    raise RepositoryConflict("STREAM_NOT_FOUND")
+                revision = session.execute(select(ReferenceRevision).where(
+                    ReferenceRevision.stream_id == stream_id,
+                    ReferenceRevision.revision_id == revision_id,
+                ).with_for_update()).scalar_one_or_none()
+            else:
+                revision = session.get(ReferenceRevision, (stream_id, revision_id))
             if revision is None:
                 raise RepositoryConflict("REVISION_NOT_FOUND")
+            stored_evidence = evidence
+            if source_reverification:
+                record = evidence.get("input_integrity_v1") if isinstance(evidence, dict) else None
+                if (not isinstance(evidence, dict)
+                        or set(evidence) != {"input_integrity_v1"}
+                        or not isinstance(record, dict)
+                        or not isinstance(expected_checkpoint, CheckpointToken)
+                        or expected_checkpoint.stream_id != stream_id
+                        or expected_checkpoint.revision_id != revision_id
+                        or batch_key != "source-verify:" + sha256((
+                            str(record.get("binding_sha256")) + str(expected_checkpoint.row_version)
+                        ).encode()).hexdigest()):
+                    raise RepositoryConflict("SOURCE_VERIFICATION_BINDING_INVALID")
+                stored_evidence = {**evidence,
+                    "source_verification_row_version": expected_checkpoint.row_version + 1}
+            payload_hash = _digest({"evidence": stored_evidence, "code": code})
             existing = session.execute(select(ReferenceBatch).where(
                 ReferenceBatch.stream_id == stream_id,
                 ReferenceBatch.revision_id == revision_id,
                 ReferenceBatch.batch_key == batch_key,
             )).scalar_one_or_none()
             if existing is not None:
-                if existing.payload_hash == payload_hash:
+                if (existing.payload_hash == payload_hash
+                        and existing.kind == "diagnostic"
+                        and existing.diagnostics == [code]
+                        and existing.source_evidence == stored_evidence
+                        and (not source_reverification
+                             or (isinstance(expected_checkpoint, CheckpointToken)
+                                 and existing.expected_seq == expected_checkpoint.seq))):
                     return
                 raise RepositoryConflict("BATCH_CONTENT_CONFLICT")
+            if source_reverification:
+                if (stream is None or not isinstance(expected_checkpoint, CheckpointToken)
+                        or not isinstance(record, dict)):
+                    raise RepositoryConflict("SOURCE_VERIFICATION_BINDING_INVALID")
+                if (stream.active_revision_id != revision_id
+                        or stream.recording_mode != RecordingMode.HISTORICAL_REPLAY.value
+                        or stream.health != "READY"
+                        or revision.status != "active"
+                        or stream.latest_seq != expected_checkpoint.seq
+                        or revision.last_seq != expected_checkpoint.seq
+                        or stream.row_version != expected_checkpoint.row_version):
+                    raise RepositoryConflict("STALE_CHECKPOINT")
+                checkpoint = session.get(ReferenceBatch, revision.checkpoint_batch_id)
+                if (checkpoint is None or checkpoint.kind != "calculation"
+                        or checkpoint.outcome != "committed"
+                        or checkpoint.seq != expected_checkpoint.seq
+                        or checkpoint.checkpoint_text is None
+                        or checkpoint.post_state_hash != expected_checkpoint.state_hash
+                        or _checkpoint_hash(checkpoint.checkpoint_text) != expected_checkpoint.state_hash):
+                    raise RepositoryConflict("STALE_CHECKPOINT")
+                manifest = resolve_manifest(session, checkpoint)
+                manifest_digest = manifest_sha256(manifest)
+                if (revision.dependency_digest != manifest_digest
+                        or record.get("manifest_sha256") != manifest_digest):
+                    raise RepositoryConflict("SOURCE_VERIFICATION_BINDING_INVALID")
+                from app.reference_trading.page_material_storage import validate_input_integrity
+                expected_binding = {
+                    "schema": "reference_input_integrity_v1",
+                    "stream_id": stream_id, "revision_id": revision_id,
+                    "seq": expected_checkpoint.seq,
+                    "manifest_sha256": manifest_digest,
+                    "source_token": manifest_digest,
+                    "source_integrity": record.get("source_integrity"),
+                    "request": record.get("request"),
+                }
+                try:
+                    validate_input_integrity(record, expected_binding=expected_binding)
+                except (TypeError, ValueError, KeyError) as error:
+                    raise RepositoryConflict("SOURCE_VERIFICATION_BINDING_INVALID") from error
+                request = record["request"]
+                if (request["product"] != stream.product.lower()
+                        or request["frequency"] != stream.frequency
+                        or request["since"] != manifest.get("query_since")):
+                    raise RepositoryConflict("SOURCE_VERIFICATION_BINDING_INVALID")
+                stream.row_version += 1
             session.add(ReferenceBatch(
                 batch_id=uuid4().hex,
                 stream_id=stream_id,
@@ -1384,7 +1470,7 @@ class ReferenceRepository:
                 seq=None,
                 expected_seq=revision.last_seq,
                 dependency_manifest={},
-                source_evidence=evidence,
+                source_evidence=stored_evidence,
                 projected_action_pks=[],
                 diagnostics=[code],
                 processed_at=datetime.now(UTC),

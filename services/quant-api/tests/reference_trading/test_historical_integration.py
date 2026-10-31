@@ -558,6 +558,50 @@ def _verify_historical_pipeline(engine: Engine, tmp_path, monkeypatch) -> None:
             assert status["result_through"] == status["market_through"]
             expected.pop("reference_status", None)
             assert actual["coverage_intervals"][0] == expected["coverage_intervals"][0]
+            # Saved material carries its independently verified MDS provenance;
+            # the live legacy projection has no saved source evidence identity.
+            saved_page = actual["page_performance"]
+            legacy_page = expected["page_performance"]
+            assert isinstance(saved_page["source_evidence_sha256"], str)
+            assert len(saved_page["source_evidence_sha256"]) == 64
+            from app.reference_trading.page_material_query import (
+                latest_input_integrity, select_page_material,
+            )
+            daily_trend = next(
+                item for item in streams
+                if item.identity.strategy_code == "newow_trend"
+                and item.identity.frequency == "1d"
+            )
+            saved_material = select_page_material(
+                factory, daily_trend.identity.stream_id, cutoff=as_of,
+            )
+            assert saved_material is not None
+            with factory() as evidence_session:
+                saved_batch = evidence_session.scalar(select(ReferenceBatch).where(
+                    ReferenceBatch.stream_id == saved_material.stream_id,
+                    ReferenceBatch.revision_id == saved_material.revision_id,
+                    ReferenceBatch.seq == saved_material.seq,
+                    ReferenceBatch.kind == "calculation",
+                ))
+                assert saved_batch is not None
+                input_integrity = latest_input_integrity(evidence_session, saved_batch)
+            assert input_integrity is not None
+            saved_source_hash = saved_material.field["binding"]["source_integrity"][
+                "evidence_sha256"
+            ]
+            assert saved_page["source_evidence_sha256"] == saved_source_hash
+            assert saved_source_hash == input_integrity["source_integrity"][
+                "evidence_sha256"
+            ]
+            assert legacy_page["source_evidence_sha256"] is None
+            actual["page_performance"] = {
+                key: value for key, value in saved_page.items()
+                if key != "source_evidence_sha256"
+            }
+            expected["page_performance"] = {
+                key: value for key, value in legacy_page.items()
+                if key != "source_evidence_sha256"
+            }
             differences = {
                 key: (actual[key][:3] if isinstance(actual[key], list) else actual[key],
                       expected[key][:3] if isinstance(expected[key], list) else expected[key])

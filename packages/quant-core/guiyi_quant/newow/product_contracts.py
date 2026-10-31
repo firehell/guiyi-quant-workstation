@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -190,13 +191,19 @@ class ProductBar:
         )
 
 
-def lifecycle_input_sha256(bars: tuple[ProductBar, ...]) -> str:
-    """Bind every ordered lifecycle input fact without re-running a formula."""
-    values = tuple(bars)
-    if not values or not all(isinstance(item, ProductBar) for item in values):
-        raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-    payload = [
-        {
+class LifecycleInputDigest:
+    """Incremental form of the persisted lifecycle canonical JSON array proof."""
+
+    def __init__(self) -> None:
+        self._digest = hashlib.sha256(b"[")
+        self._count = 0
+
+    def add(self, item: ProductBar) -> None:
+        if not isinstance(item, ProductBar):
+            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+        if self._count:
+            self._digest.update(b",")
+        payload = {
             "product": item.bar.product,
             "frequency": item.frequency.value,
             "series_kind": item.series_kind,
@@ -214,11 +221,25 @@ def lifecycle_input_sha256(bars: tuple[ProductBar, ...]) -> str:
             "observation_eligible": item.bar.observation_eligible,
             "completed": item.bar.completed,
         }
-        for item in values
-    ]
-    return hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+        self._digest.update(json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode())
+        self._count += 1
+
+    def hexdigest(self) -> str:
+        if not self._count:
+            raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
+        final = self._digest.copy()
+        final.update(b"]")
+        return final.hexdigest()
+
+
+def lifecycle_input_sha256(bars: Iterable[ProductBar]) -> str:
+    """Hash the same canonical JSON array with one input fact resident at a time."""
+    digest = LifecycleInputDigest()
+    for item in bars:
+        digest.add(item)
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,39 +285,59 @@ class LifecycleReplayEvidence:
             raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
 
 
+@dataclass(slots=True)
+class _LifecycleProofState:
+    first: datetime
+    last: datetime
+    count: int
+    digest: LifecycleInputDigest
+
+
 def validate_lifecycle_replay_evidence(
     identity: ProductIdentity,
-    bars: tuple[ProductBar, ...],
+    bars: Iterable[ProductBar],
     evidence: tuple[LifecycleReplayEvidence, ...],
 ) -> frozenset[tuple[str, str]]:
     """Validate supplied evidence against exact, untrimmed segment-local inputs."""
     if not isinstance(identity, ProductIdentity):
         raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-    inputs = tuple(bars)
     supplied = tuple(evidence)
-    grouped: dict[tuple[str, str], list[ProductBar]] = {}
-    for item in inputs:
+    requested = {
+        (item.physical_contract, item.segment_id)
+        for item in supplied if isinstance(item, LifecycleReplayEvidence)
+    }
+    # Retain only each owner's proof state, never its complete Bar objects.
+    grouped: dict[tuple[str, str], _LifecycleProofState] = {}
+    for item in bars:
         if not isinstance(item, ProductBar):
             raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
-        grouped.setdefault(
-            (item.bar.physical_contract, item.bar.segment_id), []
-        ).append(item)
+        owner = (item.bar.physical_contract, item.bar.segment_id)
+        if owner not in requested:
+            continue
+        if owner not in grouped:
+            grouped[owner] = _LifecycleProofState(
+                item.bar.bar_end, item.bar.bar_end, 0, LifecycleInputDigest(),
+            )
+        summary = grouped[owner]
+        summary.last = item.bar.bar_end
+        summary.count += 1
+        summary.digest.add(item)
     verified: set[tuple[str, str]] = set()
     for evidence_item in supplied:
         if not isinstance(evidence_item, LifecycleReplayEvidence):
             raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
         owner = (evidence_item.physical_contract, evidence_item.segment_id)
-        segment_bars = tuple(grouped.get(owner, ()))
+        recorded = grouped.get(owner)
         if (
             owner in verified
             or evidence_item.product != identity.product
             or evidence_item.frequency is not identity.frequency
             or evidence_item.source_identity != LIFECYCLE_REPLAY_EVIDENCE_SOURCE
-            or not segment_bars
-            or segment_bars[0].bar.bar_end != evidence_item.first_bar_end
-            or segment_bars[-1].bar.bar_end != evidence_item.last_bar_end
-            or len(segment_bars) != evidence_item.bar_count
-            or lifecycle_input_sha256(segment_bars) != evidence_item.input_sha256
+            or recorded is None
+            or recorded.first != evidence_item.first_bar_end
+            or recorded.last != evidence_item.last_bar_end
+            or recorded.count != evidence_item.bar_count
+            or recorded.digest.hexdigest() != evidence_item.input_sha256
         ):
             raise ValueError("NEWOW_PRODUCT_INVALID_LIFECYCLE_EVIDENCE")
         verified.add(owner)

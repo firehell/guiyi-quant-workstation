@@ -140,10 +140,13 @@ def _wire(value: object) -> object:
 
 
 def canonical_sha256(value: object) -> str:
-    encoded = json.dumps(
-        _wire(value), sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+    digest = sha256()
+    encoder = json.JSONEncoder(
+        sort_keys=True, separators=(",", ":"), ensure_ascii=True,
     )
-    return sha256(encoded.encode()).hexdigest()
+    for part in encoder.iterencode(_wire(value)):
+        digest.update(part.encode())
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,33 +329,38 @@ class HistoricalReferencePlanner:
                 ):
                     raise ValueError("REFERENCE_BUDGET_EXCEEDED")
             snapshot = self._reader.plan_stream(stream_request)
-            if self._clock() >= deadline:
-                raise ValueError("REFERENCE_BUDGET_EXCEEDED")
-            if snapshot.stream != identity:
-                raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
-            if not snapshot.bars or snapshot.completed_through is None:
-                raise ValueError("REFERENCE_INPUT_INCOMPLETE")
-            if snapshot.completed_through > stream_request.as_of:
-                raise ValueError("REFERENCE_INPUT_NOT_COMPLETED")
-            total_bars += len(snapshot.bars)
-            total_bytes += snapshot.input_bytes
-            if (
-                total_bars > request.budget.max_input_bars
-                or total_bytes > request.budget.max_input_bytes
-            ):
-                raise ValueError("REFERENCE_BUDGET_EXCEEDED")
-            digest = canonical_sha256(snapshot.dependency_manifest)
-            planned.append(HistoricalStreamPlan(
-                request=stream_request,
-                storage_start=snapshot.storage_start,
-                target_completed_through=snapshot.completed_through,
-                input_count=len(snapshot.bars),
-                input_bytes=snapshot.input_bytes,
-                input_manifest=snapshot.dependency_manifest,
-                input_manifest_sha256=digest,
-                dependency_digest=digest,
-                source_token=snapshot.source_token,
-            ))
+            try:
+                if self._clock() >= deadline:
+                    raise ValueError("REFERENCE_BUDGET_EXCEEDED")
+                if snapshot.stream != identity:
+                    raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
+                if not snapshot.bars or snapshot.completed_through is None:
+                    raise ValueError("REFERENCE_INPUT_INCOMPLETE")
+                if snapshot.completed_through > stream_request.as_of:
+                    raise ValueError("REFERENCE_INPUT_NOT_COMPLETED")
+                total_bars += len(snapshot.bars)
+                total_bytes += snapshot.input_bytes
+                if (
+                    total_bars > request.budget.max_input_bars
+                    or total_bytes > request.budget.max_input_bytes
+                ):
+                    raise ValueError("REFERENCE_BUDGET_EXCEEDED")
+                digest = canonical_sha256(snapshot.dependency_manifest)
+                planned.append(HistoricalStreamPlan(
+                    request=stream_request,
+                    storage_start=snapshot.storage_start,
+                    target_completed_through=snapshot.completed_through,
+                    input_count=len(snapshot.bars),
+                    input_bytes=snapshot.input_bytes,
+                    input_manifest=snapshot.dependency_manifest,
+                    input_manifest_sha256=digest,
+                    dependency_digest=digest,
+                    source_token=snapshot.source_token,
+                ))
+            finally:
+                release = getattr(self._reader, "release_snapshot", None)
+                if callable(release):
+                    release(snapshot)
         draft = HistoricalReferencePlan(
             "historical_reference_plan_v1", request.operation, tuple(planned),
             request.budget, request.batch_size, "",

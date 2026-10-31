@@ -35,6 +35,10 @@ class HistoricalMarketReadCache:
             try:
                 yield
             finally:
+                for value in self._values.values():
+                    close = getattr(value, "close", None)
+                    if close is not None:
+                        close()
                 self._values.clear()
                 self._product = None
                 self._active = False
@@ -66,6 +70,18 @@ class HistoricalMarketReadCache:
             self._values[key] = operation()
         return deepcopy(self._values[key]) if mutable else self._values[key]
 
+    def _read_uncached(self, product, operation):
+        if self._cancelled():
+            from app.market_data.newow.product_reader import NewowProductReadCancelled
+
+            raise NewowProductReadCancelled("NEWOW_READ_CANCELLED")
+        if self._active:
+            if self._product is None:
+                self._product = product
+            if product != self._product:
+                raise ValueError("REFERENCE_INPUT_LEASE_PRODUCT_CONFLICT")
+        return operation()
+
     def reader(self, reader, *, policy_key):
         """Wrap pure market methods, with explicit quality/context policy identity.
 
@@ -91,6 +107,15 @@ class HistoricalMarketReadCache:
                 )
                 return cache._read(
                     query.product, key, lambda: reader.load(query, as_of)
+                )
+
+            def load_historical(self, query, as_of):
+                # The result owns a sealed disk spool. A count-bounded cache
+                # cannot bound spool bytes, so each historical consumer owns
+                # and closes its own read set.
+                return cache._read_uncached(
+                    query.product,
+                    lambda: getattr(reader, "load_historical", reader.load)(query, as_of),
                 )
 
             def historical_input_bound(self, **kwargs):

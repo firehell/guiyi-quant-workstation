@@ -8,6 +8,10 @@ from hashlib import sha256
 import json
 from typing import Generic, Literal, TypeVar
 
+from app.reference_trading.fingerprint_proof import (
+    SEMANTIC_READERS, fingerprint_count, fingerprints_prefix,
+)
+
 from guiyi_quant.reference_trading import (
     RecordingMode,
     ReferenceAction,
@@ -38,24 +42,27 @@ def _sha256(value: object, name: str) -> str:
     return text
 
 
-def _canonical_manifest(value: object) -> str:
+def manifest_sha256(value: object) -> str:
+    """Hash finite canonical JSON without allocating a second full manifest."""
+    digest = sha256()
     try:
-        return json.dumps(
-            value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+        encoder = json.JSONEncoder(
+            sort_keys=True, separators=(",", ":"), ensure_ascii=True,
             allow_nan=False,
         )
+        for part in encoder.iterencode(value):
+            digest.update(part.encode())
     except (TypeError, ValueError) as error:
         raise ValueError("manifest must be finite canonical JSON") from error
-
-
-def manifest_sha256(value: object) -> str:
-    return sha256(_canonical_manifest(value).encode()).hexdigest()
+    return digest.hexdigest()
 
 
 def _semantic_fusion_pair(prior: object, new: object) -> bool:
     return (isinstance(prior, dict) and isinstance(new, dict)
-            and prior.get("reader") == new.get("reader") == "newow_fusion_saved_sources_v2"
-            and prior.get("source_reader") == new.get("source_reader") == "newow_product_reader_prefix_v4")
+            and prior.get("reader") == new.get("reader")
+            and prior.get("reader") in {"newow_fusion_saved_sources_v2", "newow_fusion_saved_sources_v3"}
+            and prior.get("source_reader") == new.get("source_reader")
+            and prior.get("source_reader") in SEMANTIC_READERS)
 
 
 def _fusion_static(manifest):
@@ -69,9 +76,14 @@ def _fusion_dependencies_extend(prior, new):
     for manifest in (prior, new):
         inputs = manifest.get("input_fingerprints")
         shadow = manifest.get("source_input_fingerprints")
-        if (not isinstance(inputs, list) or not inputs or not isinstance(shadow, list)
-                or len(inputs) != len(shadow) or manifest.get("input_count") != len(inputs)
-                or manifest.get("input_sha256") != manifest_sha256(inputs)):
+        try:
+            count = fingerprint_count(inputs)
+            valid = (count > 0 and count == fingerprint_count(shadow)
+                     and manifest.get("input_count") == count
+                     and manifest.get("input_sha256") == manifest_sha256(inputs))
+        except (TypeError, ValueError):
+            valid = False
+        if not valid:
             return False
     a, b = prior.get("source_dependencies"), new.get("source_dependencies")
     if not isinstance(a, list) or not isinstance(b, list):
@@ -89,6 +101,10 @@ def _fusion_dependencies_extend(prior, new):
 
 
 def _append_only(prior: object, new: object) -> bool:
+    if isinstance(prior, dict) and prior.get("encoding") == "sha256-leaves-b64-v1":
+        return (isinstance(new, dict)
+                and new.get("encoding") == "sha256-leaves-b64-v1"
+                and fingerprints_prefix(prior, new))
     if _semantic_fusion_pair(prior, new):
         a, b = _fusion_static(prior), _fusion_static(new)
         return (_fusion_dependencies_extend(prior, new)
@@ -113,6 +129,9 @@ def _append_only(prior: object, new: object) -> bool:
 
 def _prior_projection(prior: object, new: object) -> object:
     """Project the new manifest onto the exact prior prefix after validation."""
+    if isinstance(prior, dict) and prior.get("encoding") == "sha256-leaves-b64-v1":
+        # Append validation already proved every old leaf, including a partial block.
+        return prior
     if _semantic_fusion_pair(prior, new):
         a, b = _fusion_static(prior), _fusion_static(new)
         return {**prior, **{key: _prior_projection(value, b[key]) for key, value in a.items()}}

@@ -765,3 +765,21 @@ def test_newow_step_older_failure_does_not_mutate_state(product_cases):
     with pytest.raises(ValueError, match="older"):
         replay_step(case.identity, state, case.bars[0])
     assert repr(state) == snapshot
+
+
+@pytest.mark.parametrize('strategy', ('trend', 'oscillation', 'main_rise'))
+@pytest.mark.parametrize('frequency', ('60m', '1d', '1w'))
+def test_streamed_frames_preserve_original_primitive_outputs(product_cases, strategy, frequency):
+    case = product_cases.primitive_input(strategy, frequency)
+    oracle = case.run_original_primitive()
+    steps = adapters.iter_replay_strategy_steps(case.identity, case.bars)
+    frames = tuple(frame for frame, _ in steps)
+    assert tuple((frame.bar.bar.bar_end, frame.main_state, frame.main_values, frame.actions) for frame in frames) == oracle.main_values
+
+
+def test_streamed_frames_validate_future_input_before_emitting(product_cases):
+    case = product_cases.primitive_input('trend', '1d')
+    wrong = replace(case.bars[-1], frequency=ProductFrequency.WEEKLY)
+    frames = adapters.iter_replay_strategy_steps(case.identity, (*case.bars[:-1], wrong))
+    with pytest.raises(ValueError, match='INPUT_IDENTITY_INVALID'):
+        next(frames)

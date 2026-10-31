@@ -169,18 +169,20 @@ def test_rebuild_interrupted_without_resume_cannot_repeat_invalidation(tmp_path)
 def test_post_invalidation_read_cancel_without_resume_never_repeats(tmp_path):
     from contextlib import contextmanager, nullcontext
     from app.reference_trading.service import HistoricalReferenceService
+    from tests.reference_trading.test_historical_service_read_interrupt import changed_prefix_rebuild_state
     runner, planner, service = setup(tmp_path, [('blocked', 'REBUILD_REQUIRED', False)])
     runner.tick(now=END, cancelled=lambda: bool(service.calls))
     cancelled = Event()
     mutations = []
+    current, changed = changed_prefix_rebuild_state()
     @contextmanager
     def components(**_kwargs):
         service = HistoricalReferenceService.__new__(HistoricalReferenceService)
         service._clock = lambda: 0
-        service._reader = SimpleNamespace(pin_stream=lambda _: nullcontext(), load_stream=lambda *_args, **_kwargs: object())
+        service._reader = SimpleNamespace(pin_stream=lambda _: nullcontext(), load_stream=lambda *_args, **_kwargs: changed)
         service._snapshot_matches = lambda *_: True
         service._repository = SimpleNamespace(
-            read_state=lambda _: SimpleNamespace(revision_id='old', stream=SimpleNamespace(row_version=1)),
+            read_state=lambda _: current,
             invalidate_revision=lambda *_: mutations.append('invalidate'))
         def after_invalidation(*_args, **_kwargs):
             mutations.append('seed-stage')

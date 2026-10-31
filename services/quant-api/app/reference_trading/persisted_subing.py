@@ -80,12 +80,13 @@ class PersistedSubingReference:
             source_request = HistoricalStreamRequest(
                 identity, date.fromisoformat(storage_start), through, as_of,
             )
-            source = MarketDataHistoricalInputReader(
+            input_reader = MarketDataHistoricalInputReader(
                 newow_reader=None, subing_service=self._market,
-            ).plan_stream(source_request)
+            )
+            with input_reader.planned_stream(source_request) as source:
+                verify_saved_input_prefix(manifest, source.dependency_manifest, through)
         except (TypeError, ValueError) as exc:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from exc
-        verify_saved_input_prefix(manifest, source.dependency_manifest, through)
 
     def query(self, request: SubingReferenceQuery) -> dict[str, object]:
         self._check_cancelled()

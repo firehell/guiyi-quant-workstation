@@ -13,7 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 from math import floor, isfinite
-from typing import Any, Sequence, cast
+from typing import Any, Callable, Sequence, cast
 
 from .ai_analysis import fixed
 
@@ -61,16 +61,28 @@ def _sum_js(values) -> float:
     return total
 
 
-def _ma(values: list[float], n: int) -> list[float]:
-    return [
-        _sum_js(reversed(values[max(0, i - n + 1) : i + 1])) / min(i + 1, n)
-        for i in range(len(values))
-    ]
+def _check_cancelled(cancelled: Callable[[], bool] | None) -> None:
+    if cancelled is not None and cancelled():
+        raise ValueError("REFERENCE_PAGE_MATERIAL_INTERRUPTED")
+
+
+def _ma(values: list[float], n: int,
+        cancelled: Callable[[], bool] | None = None) -> list[float]:
+    output = []
+    for i in range(len(values)):
+        if i % 256 == 0:
+            _check_cancelled(cancelled)
+        output.append(
+            _sum_js(reversed(values[max(0, i - n + 1):i + 1])) / min(i + 1, n)
+        )
+    return output
 
 
 def _segment(
-    segment: PageSegment, strategy: str, ideal: bool, period: str, terminal: bool
+    segment: PageSegment, strategy: str, ideal: bool, period: str, terminal: bool,
+    cancelled: Callable[[], bool] | None = None,
 ) -> dict | None:
+    _check_cancelled(cancelled)
     bars = segment.bars
     minimum, start = (
         (2, 0)
@@ -81,20 +93,41 @@ def _segment(
     )
     if len(bars) < minimum or (strategy == "fusion" and not segment.actions):
         return None
-    rows = [(float(b.high), float(b.low), float(b.close)) for b in bars]
-    jj = [(close + high + low) / 3 for high, low, close in rows]
-    b10, ma35, ma45 = _ma(jj, 10), _ma(jj, 35), _ma(jj, 45)
-    states = (
-        [c >= b for (_, _, c), b in zip(rows, b10)]
-        if strategy != "main_rise"
-        else [a >= b for a, b in zip(ma35, ma45)]
+    rows = []
+    for index, bar in enumerate(bars):
+        if index % 256 == 0:
+            _check_cancelled(cancelled)
+        rows.append((float(bar.high), float(bar.low), float(bar.close)))
+    jj = []
+    for index, (high, low, close) in enumerate(rows):
+        if index % 256 == 0:
+            _check_cancelled(cancelled)
+        jj.append((close + high + low) / 3)
+    b10, ma35, ma45 = (
+        _ma(jj, 10, cancelled), _ma(jj, 35, cancelled), _ma(jj, 45, cancelled)
     )
-    hhv = [max(h for h, _, _ in rows[max(0, i - 9) : i + 1]) for i in range(len(rows))]
-    llv = [
-        min(low for _, low, _ in rows[max(0, i - 9) : i + 1]) for i in range(len(rows))
-    ]
+    states = []
+    if strategy != "main_rise":
+        for index, ((_, _, close), average) in enumerate(zip(rows, b10)):
+            if index % 256 == 0:
+                _check_cancelled(cancelled)
+            states.append(close >= average)
+    else:
+        for index, (slow, fast) in enumerate(zip(ma35, ma45)):
+            if index % 256 == 0:
+                _check_cancelled(cancelled)
+            states.append(slow >= fast)
+    hhv = []
+    llv = []
+    for i in range(len(rows)):
+        if i % 256 == 0:
+            _check_cancelled(cancelled)
+        hhv.append(max(h for h, _, _ in rows[max(0, i - 9):i + 1]))
+        llv.append(min(low for _, low, _ in rows[max(0, i - 9):i + 1]))
     by_date: dict[str, dict[str, list[float]]] = {}
-    for action in segment.actions:
+    for action_index, action in enumerate(segment.actions):
+        if action_index % 256 == 0:
+            _check_cancelled(cancelled)
         by_date.setdefault(action.date, {"buy": [], "sell": []})[action.type].append(
             float(action.price)
         )
@@ -130,6 +163,8 @@ def _segment(
         buy = None
 
     for i in range(start, len(rows)):
+        if i % 256 == 0:
+            _check_cancelled(cancelled)
         if not bars[i].observation_eligible:
             continue
         high, low, close = rows[i]
@@ -183,6 +218,7 @@ def _segment(
     interrupted = buy is not None and not (terminal and not ideal)
     if buy is not None and terminal and not ideal and bars[-1].observation_eligible:
         exit_(len(bars) - 1, rows[-1][2], True)
+    _check_cancelled(cancelled)
     return {
         "period": period,
         "drawdown_kind": "maximum_trade_loss" if ideal else "peak_difference",
@@ -255,34 +291,30 @@ def filter_page_by_date(
     return result
 
 
-def compute_page_performance(
+PAGE_MATERIAL_SCHEMA = "newow_page_material_v1"
+
+
+def build_page_performance_material(
     segments: Sequence[PageSegment],
     strategy: str,
     *,
     period: str = "day",
-    since: str | None = None,
-    through: str | None = None,
-    selected_mode: str | None = None,
+    cancelled: Callable[[], bool] | None = None,
 ) -> dict:
-    """Compute independent source ordinary/ideal pairing from validated owners.
+    """Compute both source modes once from validated, complete owner segments.
 
     The unified reader adapter must establish completed/session/quality segment
     identity and terminal eligibility. This function never reads data or emits
     strategy actions, ReferenceTrades, account fills, or Runtime decisions.
     """
-    if (
-        (since is not None and (not isinstance(since, str) or not since))
-        or (through is not None and (not isinstance(through, str) or not through))
-        or (since is not None and through is not None and since > through)
-    ):
-        raise ValueError("NEWOW_INVALID_QUERY")
     if strategy not in ("trend", "oscillation", "main_rise", "fusion"):
         raise ValueError("NEWOW_INVALID_QUERY")
-    if selected_mode not in (None, "ordinary", "ideal"):
-        raise ValueError("NEWOW_INVALID_QUERY")
+    _check_cancelled(cancelled)
     last_eligible_date = None
+    last_eligible_day = None
     owners = set()
     for segment in segments:
+        _check_cancelled(cancelled)
         if not isinstance(segment, PageSegment):
             raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
         if (
@@ -296,7 +328,9 @@ def compute_page_performance(
         dates = set()
         last_date = None
         seen_eligible = False
-        for bar in segment.bars:
+        for bar_index, bar in enumerate(segment.bars):
+            if bar_index % 256 == 0:
+                _check_cancelled(cancelled)
             if not isinstance(bar, PageBar):
                 raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
             if (
@@ -309,15 +343,17 @@ def compute_page_performance(
                 seen_eligible and not bar.observation_eligible
             ):
                 raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
-            if bar.observation_eligible:
-                if last_eligible_date is not None and bar.date <= last_eligible_date:
-                    raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
-                last_eligible_date = bar.date
             seen_eligible = seen_eligible or bar.observation_eligible
             if bar.trading_day is not None and (
                 not isinstance(bar.trading_day, str) or not bar.trading_day
             ):
                 raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
+            if bar.observation_eligible:
+                if last_eligible_date is not None and bar.date <= last_eligible_date:
+                    raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
+                last_eligible_date = bar.date
+                source_day = bar.trading_day or bar.date
+                last_eligible_day = max(last_eligible_day or source_day, source_day)
             for value in (bar.high, bar.low, bar.close):
                 if (
                     not isinstance(value, Decimal)
@@ -331,7 +367,9 @@ def compute_page_performance(
                 raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
             last_date = bar.date
             dates.add(bar.date)
-        for action in segment.actions:
+        for action_index, action in enumerate(segment.actions):
+            if action_index % 256 == 0:
+                _check_cancelled(cancelled)
             if not isinstance(action, PageAction):
                 raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
             if (
@@ -344,21 +382,91 @@ def compute_page_performance(
                 or float(action.price) <= 0
             ):
                 raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
+    material_segments = []
+    for index, segment in enumerate(segments):
+        _check_cancelled(cancelled)
+        day_map = {}
+        for bar_index, bar in enumerate(segment.bars):
+            if bar_index % 256 == 0:
+                _check_cancelled(cancelled)
+            day_map[bar.date] = bar.trading_day or bar.date
+        modes = {}
+        for ideal in (False, True):
+            _check_cancelled(cancelled)
+            result = _segment(
+                segment, strategy, ideal, period,
+                index == len(segments) - 1 and segment.terminal_eligible,
+                cancelled,
+            )
+            if result is not None:
+                trading_days = []
+                for day_index, day in enumerate(result["dates"]):
+                    if day_index % 256 == 0:
+                        _check_cancelled(cancelled)
+                    trading_days.append(day_map[day])
+                result["trading_days"] = trading_days
+                result["segment_ids"] = [segment.owner] * len(result["dates"])
+                for trade_index, trade in enumerate(result["trades"]):
+                    if trade_index % 256 == 0:
+                        _check_cancelled(cancelled)
+                    trade["segment_id"] = segment.owner
+            modes["ideal" if ideal else "ordinary"] = result
+            _check_cancelled(cancelled)
+        material_segments.append({"owner": segment.owner, **modes})
+    _check_cancelled(cancelled)
+    return {
+        "schema": PAGE_MATERIAL_SCHEMA,
+        "page_version": PAGE_PERFORMANCE_VERSION,
+        "strategy": strategy,
+        "period": period,
+        "segment_count": len(segments),
+        "last_eligible_day": last_eligible_day,
+        "segments": material_segments,
+    }
+
+
+def project_page_performance_material(
+    material: dict, *, since: str | None = None, through: str | None = None,
+    selected_mode: str | None = None,
+) -> dict:
+    """Apply the original public window and aggregation rules to frozen modes."""
+    if (
+        (since is not None and (not isinstance(since, str) or not since))
+        or (through is not None and (not isinstance(through, str) or not through))
+        or (since is not None and through is not None and since > through)
+        or selected_mode not in (None, "ordinary", "ideal")
+    ):
+        raise ValueError("NEWOW_INVALID_QUERY")
+    if (not isinstance(material, dict)
+        or material.get("schema") != PAGE_MATERIAL_SCHEMA
+        or material.get("page_version") != PAGE_PERFORMANCE_VERSION
+        or material.get("strategy") not in ("trend", "oscillation", "main_rise", "fusion")
+        or type(material.get("segment_count")) is not int
+        or material["segment_count"] < 0
+        or not isinstance(material.get("period"), str)
+        or not material["period"]
+        or not isinstance(material.get("segments"), list)
+        or len(material["segments"]) != material["segment_count"]
+        or (material.get("last_eligible_day") is not None
+            and not isinstance(material["last_eligible_day"], str))):
+        raise ValueError("NEWOW_PAGE_MATERIAL_INVALID")
+    segments = material["segments"]
+    period = material["period"]
     output = {
         "version": PAGE_PERFORMANCE_VERSION,
         "source_version": "3.3.79",
         "source_sha256": PAGE_SOURCE_SHA256,
         "page_parity": True,
         "executable": False,
-        "strategy": strategy,
-        "segment_count": len(segments),
+        "strategy": material["strategy"],
+        "segment_count": material["segment_count"],
     }
     # Public no-match fallback belongs to the full source sequence, not to
     # each physical owner. Once the overall input reaches the requested start,
     # ended owners must not re-enter the window through that fallback.
-    window_start_matched = since is not None and any(
-        bar.observation_eligible and (bar.trading_day or bar.date) >= since
-        for segment in segments for bar in segment.bars
+    window_start_matched = (
+        since is not None and material["last_eligible_day"] is not None
+        and material["last_eligible_day"] >= since
     )
     for ideal in ((False, True) if selected_mode is None else (selected_mode == "ideal",)):
         aggregate: dict[str, Any] = {
@@ -372,25 +480,18 @@ def compute_page_performance(
         drawdown_kinds: set[str] = set()
         cum = dd = 0.0
         wins = interrupted = used = 0
-        for i, segment in enumerate(segments):
-            result = _segment(
-                segment,
-                strategy,
-                ideal,
-                period,
-                i == len(segments) - 1 and segment.terminal_eligible,
-            )
+        for segment in segments:
+            if not isinstance(segment, dict) or not isinstance(segment.get("owner"), str):
+                raise ValueError("NEWOW_PAGE_MATERIAL_INVALID")
+            result = segment.get("ideal" if ideal else "ordinary")
             if result is None:
                 continue
-            day_map = {b.date: b.trading_day or b.date for b in segment.bars}
-            result["trading_days"] = [day_map[d] for d in result["dates"]]
+            if not isinstance(result, dict) or not isinstance(result.get("trading_days"), list):
+                raise ValueError("NEWOW_PAGE_MATERIAL_INVALID")
             if (window_start_matched and result["trading_days"]
                     and result["trading_days"][-1] < since):
                 continue
             used += 1
-            result["segment_ids"] = [segment.owner] * len(result["dates"])
-            for trade in result["trades"]:
-                trade["segment_id"] = segment.owner
             raw_cum, raw_wins, raw_dd = (
                 result["_cum"],
                 result["_wins"],
@@ -426,3 +527,22 @@ def compute_page_performance(
             interrupted
         )
     return output
+
+
+def compute_page_performance(
+    segments: Sequence[PageSegment], strategy: str, *, period: str = "day",
+    since: str | None = None, through: str | None = None,
+    selected_mode: str | None = None,
+) -> dict:
+    """Current page formula, now shared with frozen material projection."""
+    if (
+        (since is not None and (not isinstance(since, str) or not since))
+        or (through is not None and (not isinstance(through, str) or not through))
+        or (since is not None and through is not None and since > through)
+        or selected_mode not in (None, "ordinary", "ideal")
+    ):
+        raise ValueError("NEWOW_INVALID_QUERY")
+    return project_page_performance_material(
+        build_page_performance_material(segments, strategy, period=period),
+        since=since, through=through, selected_mode=selected_mode,
+    )
