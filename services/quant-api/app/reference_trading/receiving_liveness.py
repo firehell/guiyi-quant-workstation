@@ -60,6 +60,10 @@ class ReceivingCycleStale(ReceivingLivenessError):
     """A correctly ordered owner cycle expired before its ACK snapshot was sampled."""
 
 
+class ReceivingControlAbort(Exception):
+    """Payload-free escape for a trusted controller budget callback."""
+
+
 def _require(condition):
     if not condition:
         raise ReceivingLivenessError(ERROR)
@@ -579,6 +583,8 @@ def snapshot_receiving(
         check_budget()
         return result
     except ReceivingCycleStale:
+        raise
+    except ReceivingControlAbort:
         raise
     except Exception:
         raise ReceivingLivenessError(ERROR) from None

@@ -1099,24 +1099,43 @@ class CohortHost(FaultRecoveryHost):
 
     def _receiving_snapshot(self, plan, proof, state, check_budget):
         from app.db.session import SessionLocal
-        from app.reference_trading.receiving_liveness import snapshot_receiving
+        from app.reference_trading.receiving_liveness import (
+            ReceivingControlAbort,
+            ReceivingLivenessError,
+            snapshot_receiving,
+        )
 
         target = registry(plan["new"]).services["reference-worker"]
+        control_error = None
+
+        def trusted_budget():
+            nonlocal control_error
+            try:
+                check_budget()
+            except CohortError as error:
+                control_error = error
+                raise ReceivingControlAbort from None
+
         with self._reference_receiving_context(target) as context:
             require(context is not None, "COHORT_REFERENCE_SOURCE_UNPROVEN")
             protocol, journal, authority, _capacity = context
-            snapshot = snapshot_receiving(
-                SessionLocal,
-                protocol,
-                journal,
-                intent=plan["reference_receiving_handover"],
-                source_proof=proof["reference_receiving_handover"],
-                target=asdict(target),
-                schema_proof=authority,
-                check_budget=check_budget,
-                sampled_at=self.now(),
-                owner_cycle_at=state["at"],
-            )
+            try:
+                snapshot = snapshot_receiving(
+                    SessionLocal,
+                    protocol,
+                    journal,
+                    intent=plan["reference_receiving_handover"],
+                    source_proof=proof["reference_receiving_handover"],
+                    target=asdict(target),
+                    schema_proof=authority,
+                    check_budget=trusted_budget,
+                    sampled_at=self.now(),
+                    owner_cycle_at=state["at"],
+                )
+            except ReceivingControlAbort:
+                if control_error is None:
+                    raise ReceivingLivenessError("REFERENCE_RECEIVING_LIVENESS_UNPROVEN") from None
+                raise control_error from None
             check_budget()
             return snapshot
 

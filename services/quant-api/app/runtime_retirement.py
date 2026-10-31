@@ -217,6 +217,7 @@ def _closed_history(seal, repo_root):
     This reader has no dependency on live bindings/global state or other seals.
     """
     from app import runtime_cohort as cohort, runtime_cohort_recovery as recovery
+    from app.runtime_stopped_recovery import failure_feed_state, valid_parked_feed_audit
     from app.reference_trading.recovery_campaign import digest
 
     directory = Path(seal["directory"])
@@ -396,6 +397,9 @@ def _closed_history(seal, repo_root):
         effects = state.get("effects", {})
         mode = plan.get("mode")
         generation = plan["new"]["services"]["live"]["generation"]
+        if mode == "reconciled_stopped" and plan.get("stop_after") == "feed_close":
+            stopped_close(name, identity, plan["new"], plan["stopped_confirmation"])
+            return
         if (
             mode == recovery.ORIGINAL_FEED_MODE
             and plan.get("stop_after") == "feed_close"
@@ -438,6 +442,19 @@ def _closed_history(seal, repo_root):
                     and receipt.get("plan_sha256") == name
                     and receipt.get("recovery_started") is False
                     and recovery._valid_feed_close(receipt.get("feed_close"), intent)
+                )
+            return
+        if mode in {
+            "reconciled_stopped",
+            recovery.ORIGINAL_FEED_MODE,
+            "confirmed_feed_halt",
+        }:
+            require(str(path.parent / "receipt.json") not in originals)
+            failure_feed_state(plan, state)
+            if mode == recovery.ORIGINAL_FEED_MODE:
+                require(
+                    state.get("error_type") == "CohortError"
+                    and "stop_after" not in plan
                 )
             return
         require(
@@ -499,6 +516,40 @@ def _closed_history(seal, repo_root):
 
     visiting = set()
 
+    def stopped_close(name, identity, new, selected):
+        path, state = states[name]
+        plan = plans[name]
+        receipt = read(path.parent / "receipt.json")
+        require(
+            plan.get("mode") == "reconciled_stopped"
+            and plan.get("stop_after") == "feed_close"
+            and plan.get("new") == new
+            and plan.get("source") == state.get("source") == identity
+            and plan.get("stopped_confirmation") == selected
+            and state.get("kind") == recovery.KIND
+            and state.get("phase") == "feed_closed"
+            and state.get("receipt_sha256")
+            == originals[str(path.parent / "receipt.json")]
+            and receipt.get("schema_version") == 1
+            and receipt.get("kind") == "feed_close_readback_v1"
+            and receipt.get("plan_sha256") == name
+            and receipt.get("source") == identity
+            and receipt.get("original_attempt_preserved") is True
+            and receipt.get("recovery_started") is False
+            and set(state.get("effects", {})) == {"feed_stop"}
+            and state["effects"]["feed_stop"] == receipt.get("feed_close")
+            and recovery._valid_feed_close(
+                receipt.get("feed_close"), plan["audit"]["feed_close"]
+            )
+        )
+        confirmation(selected, identity)
+        prior = read(selected["path"])
+        require(
+            prior["audit"].get("feed_state") == "parked"
+            and valid_parked_feed_audit(prior["audit"], new)
+            and prior["audit"]["feed_close"] == plan["audit"]["feed_close"]
+        )
+
     def confirmation(selected, identity):
         path = selected["path"]
         require(path not in visiting and originals.get(path) == selected["sha256"])
@@ -517,6 +568,12 @@ def _closed_history(seal, repo_root):
         require(name in plans and read(value["failed_plan_path"]) == plans[name])
         failed(name, identity)
         plan = plans[name]
+        require(
+            value["audit"].get("feed_state", "absent")
+            == failure_feed_state(plan, states[name][1])
+        )
+        if value["audit"].get("feed_state") == "parked":
+            require(valid_parked_feed_audit(value["audit"], plan["new"]))
         if plan.get("mode") == recovery.ORIGINAL_FEED_MODE:
             require("stop_after" not in plan)
             member = descriptor(plan["original_close"], identity)
@@ -524,6 +581,12 @@ def _closed_history(seal, repo_root):
             expected = {member, name}
         elif plan.get("mode") == "reconciled_stopped":
             expected = confirmation(plan["stopped_confirmation"], identity) | {name}
+            if "closed_feed" in plan:
+                member = descriptor(plan["closed_feed"], identity)
+                stopped_close(
+                    member, identity, plan["new"], plan["stopped_confirmation"]
+                )
+                expected.add(member)
         else:
             require(
                 plan.get("mode") == "confirmed_feed_halt" and "stop_after" not in plan
@@ -596,6 +659,13 @@ def _closed_history(seal, repo_root):
         elif plan.get("mode") == "reconciled_stopped":
             require(receipt.get("stopped_resolution") == plan["stopped_confirmation"])
             closed.update(confirmation(plan["stopped_confirmation"], identity))
+            require(receipt.get("feed_close_resolution") == plan.get("closed_feed"))
+            if "closed_feed" in plan:
+                member = descriptor(plan["closed_feed"], identity)
+                stopped_close(
+                    member, identity, plan["new"], plan["stopped_confirmation"]
+                )
+                closed.add(member)
         elif "predecessor" in plan:
             resolution = receipt["predecessor_resolution"]
             require(
@@ -1019,9 +1089,10 @@ class RetirementBackend:
                     require(
                         root.is_absolute()
                         and root == root.resolve()
-                        and root.name == "release-" + identity["tag"]
                     )
                     _verify_git(self.repo_root, identity)
+                    if os.path.lexists(root):
+                        _verify_present_release(self.repo_root, identity)
                     previous = historical_identities.get(identity["root"])
                     require(previous is None or previous == identity)
                     historical_identities[identity["root"]] = identity
