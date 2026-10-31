@@ -56,6 +56,10 @@ class ReceivingLivenessError(ValueError):
     """Unknown input, authority or progress; contains no source/secret details."""
 
 
+class ReceivingCycleStale(ReceivingLivenessError):
+    """A correctly ordered owner cycle expired before its ACK snapshot was sampled."""
+
+
 def _require(condition):
     if not condition:
         raise ReceivingLivenessError(ERROR)
@@ -406,9 +410,13 @@ def snapshot_receiving(
     """
     try:
         check_budget()
-        sampled = _instant(sampled_at or datetime.now(UTC))
+        sampled = _instant(datetime.now(UTC) if sampled_at is None else sampled_at)
         cycle = _instant(owner_cycle_at) if owner_cycle_at is not None else None
-        _require(cycle is None or 0 <= (sampled - cycle).total_seconds() <= 30)
+        if cycle is not None:
+            age = (sampled - cycle).total_seconds()
+            _require(age >= 0)
+            if age > 30:
+                raise ReceivingCycleStale("REFERENCE_RECEIVING_CYCLE_STALE")
         active = _authority(protocol, intent, source_proof, target, schema_proof)
         registered, current = _progress(journal)
         _require(
@@ -570,6 +578,8 @@ def snapshot_receiving(
         result["snapshot_sha256"] = _digest(result)
         check_budget()
         return result
+    except ReceivingCycleStale:
+        raise
     except Exception:
         raise ReceivingLivenessError(ERROR) from None
 

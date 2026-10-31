@@ -1122,6 +1122,7 @@ class CohortHost(FaultRecoveryHost):
 
     def _await_names(self, plan, names, proof, seconds):
         from app.reference_trading.receiving_liveness import (
+            ReceivingCycleStale,
             completed_receiving_report,
             receiving_sample_is_fresh,
             receiving_pair_candidate,
@@ -1181,21 +1182,25 @@ class CohortHost(FaultRecoveryHost):
                             and not owner_lock_available(name)
                         )
                         if valid:
-                            current = self._receiving_snapshot(
-                                plan, proof, state, check_budget
-                            )
-                            now = self.now()
-                            report_stage = owner_proof["reference_runtime"]["stage"]
-                            before = by_stage.get(report_stage)
-                            before, valid = receiving_pair_candidate(
-                                before, previous, current, now=now
-                            )
-                            by_stage[report_stage] = before
-                            previous = current
-                            if valid:
-                                mode = prove_receiving_liveness(
-                                    before, current, now=now
-                                )["mode"]
+                            try:
+                                current = self._receiving_snapshot(
+                                    plan, proof, state, check_budget
+                                )
+                            except ReceivingCycleStale:
+                                valid = False
+                            else:
+                                now = self.now()
+                                report_stage = owner_proof["reference_runtime"]["stage"]
+                                before = by_stage.get(report_stage)
+                                before, valid = receiving_pair_candidate(
+                                    before, previous, current, now=now
+                                )
+                                by_stage[report_stage] = before
+                                previous = current
+                                if valid:
+                                    mode = prove_receiving_liveness(
+                                        before, current, now=now
+                                    )["mode"]
                     else:
                         rp = owner_proof.get("reference_runtime", {})
                         valid = (
