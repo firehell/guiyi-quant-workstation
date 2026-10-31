@@ -230,9 +230,11 @@ def test_current_v3_or_non_upgrade_route_never_uses_legacy_migration(tmp_path, k
         runner.state.write(state)
     else:
         runner._routes = lambda: (replace(dual, reason=None),)
-    with pytest.raises(ValueError, match='REFERENCE_FUSION_SOURCE_NOT_READY'):
+    expected = ('READBACK_REQUIRED' if kind == 'current_v3'
+                else 'REFERENCE_FUSION_SOURCE_NOT_READY')
+    with pytest.raises(ValueError, match=expected):
         recover_pending_source(runner, dual.identity.stream_id, now=END)
-    assert planner.requests[0].streams[0].as_of != END
+    assert len(planner.requests) == (0 if kind == 'current_v3' else 1)
     assert not list(tmp_path.glob('*.recovery-*.json'))
 
 
