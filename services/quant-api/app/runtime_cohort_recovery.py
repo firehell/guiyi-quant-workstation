@@ -1841,6 +1841,8 @@ def apply_forward_recovery(host, recovery_plan_path):
     """Resume exact new owners; no install, CAS, protocol change or old restoration."""
     _raw, plan = _resolution_source(Path(recovery_plan_path))
     _validate(plan, host.now())
+    valid_from = datetime.fromisoformat(plan["created_at"])
+    valid_until = datetime.fromisoformat(plan["expires_at"])
     with deployment_lock(runtime_dir=host.directory):
         prior_attempt = (
             host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
@@ -1887,13 +1889,17 @@ def apply_forward_recovery(host, recovery_plan_path):
         deadline = getattr(host, "monotonic", monotonic)() + 600
 
         def budget():
-            _validate(plan, host.now())
+            require(
+                valid_from <= host.now() < valid_until,
+                "COHORT_FORWARD_PLAN_EXPIRED",
+            )
             require(
                 getattr(host, "monotonic", monotonic)() < deadline,
                 "COHORT_FORWARD_DEADLINE_EXCEEDED",
             )
 
         def unchanged():
+            _validate(plan, host.now())
             if plan.get("mode") == "reconciled_stopped":
                 from app.runtime_stopped_recovery import verify_pin
 

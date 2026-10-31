@@ -2,7 +2,7 @@
 
 from contextlib import nullcontext
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from hashlib import sha256
 import json
 
@@ -228,6 +228,124 @@ def test_slow_fresh_audit_cannot_cross_budget_then_resume(tmp_path):
     with pytest.raises(ValueError, match="FORWARD_DEADLINE_EXCEEDED"):
         module().apply_forward_recovery(host, target)
     assert host.calls == []
+
+
+def test_full_plan_validation_does_not_scale_with_budget_callbacks(
+    tmp_path, monkeypatch,
+):
+    prepared = []
+    for callback_count in (10, 1000):
+        directory = tmp_path / str(callback_count)
+        directory.mkdir(mode=0o700)
+        host, _, source_path, _, _, audit = fixture(directory)
+        target = directory / "recovery.json"
+        _write(target, module().freeze_forward_recovery(host, source_path))
+
+        def audit_with_callbacks(
+            _source, check_budget, *, count=callback_count, proof=audit, **_kwargs
+        ):
+            for _ in range(count):
+                check_budget()
+            return deepcopy(proof)
+
+        host.audit_forward = audit_with_callbacks
+        prepared.append((host, target))
+
+    validate = module()._validate
+    calls = [0]
+
+    def counted(*args, **kwargs):
+        calls[0] += 1
+        return validate(*args, **kwargs)
+
+    monkeypatch.setattr(module(), "_validate", counted)
+    totals = []
+    for host, target in prepared:
+        before = calls[0]
+        assert module().apply_forward_recovery(host, target)["status"] == "recovered"
+        totals.append(calls[0] - before)
+    assert totals[0] == totals[1]
+    assert 1 < totals[0] < 30
+
+
+def test_action_plan_mutation_is_rejected_before_next_stage(tmp_path, monkeypatch):
+    host, _, source_path, _, _, _ = fixture(tmp_path)
+    target = tmp_path / "recovery.json"
+    frozen = module().freeze_forward_recovery(host, source_path)
+    _write(target, frozen)
+    resolution_source = module()._resolution_source
+    captured = {}
+
+    def capture(path):
+        raw, value = resolution_source(path)
+        if path == target:
+            captured["plan"] = value
+        return raw, value
+
+    monkeypatch.setattr(module(), "_resolution_source", capture)
+
+    def mutate(_source, _audit, check_budget):
+        check_budget()
+        host.calls.append("consumers")
+        captured["plan"]["audit"]["controller"]["tag"] = "changed"
+        return {"resumed": True}
+
+    host.resume_consumers = mutate
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    assert host.calls == ["consumers", "halt"]
+    state_path = (
+        host.directory
+        / "cohort-forward-recoveries"
+        / frozen["plan_sha256"]
+        / "state.json"
+    )
+    state = json.loads(state_path.read_bytes())
+    assert state["error_code"] == "COHORT_FORWARD_PLAN_INVALID"
+    assert state["failed_stage"] == "consumers"
+
+
+@pytest.mark.parametrize(
+    ("clock", "error_code"),
+    (
+        ("wall", "COHORT_FORWARD_PLAN_EXPIRED"),
+        ("monotonic", "COHORT_FORWARD_DEADLINE_EXCEEDED"),
+    ),
+)
+def test_hot_budget_still_aborts_mid_action_at_original_limits(
+    tmp_path, clock, error_code
+):
+    host, _, source_path, _, _, _ = fixture(tmp_path)
+    target = tmp_path / "recovery.json"
+    frozen = module().freeze_forward_recovery(host, source_path)
+    _write(target, frozen)
+    expires = datetime.fromisoformat(frozen["expires_at"])
+    ticks = [0.0]
+    host.monotonic = lambda: ticks[0]
+
+    def cross_limit(_source, _audit, check_budget):
+        check_budget()
+        host.calls.append("consumers")
+        if clock == "wall":
+            host.now = lambda: expires
+        else:
+            ticks[0] = 600.0
+        check_budget()
+        return {"resumed": True}
+
+    host.resume_consumers = cross_limit
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    assert host.calls == ["consumers", "halt"]
+    state_path = (
+        host.directory
+        / "cohort-forward-recoveries"
+        / frozen["plan_sha256"]
+        / "state.json"
+    )
+    state = json.loads(state_path.read_bytes())
+    assert state["error_code"] == error_code
+    assert state["failed_stage"] == "consumers"
 
 
 def native(tmp_path):
