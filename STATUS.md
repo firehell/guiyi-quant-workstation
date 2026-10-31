@@ -1,3 +1,18 @@
+10/31 11:10 十服务统一仍阻塞；v1.16.47已发布，首次cohort在Reference预热中安全取消，尚未切换。
+自然09:00周审计已于10:42:21完成passed/60品种/零provider及数据写入；不再是当前占锁阻断。
+候选plan 9d5b0bb4218a9cbd1afad079db1677d4b8db7243ae1ef8bf1b2effabbd1fd9e1已cancelled，effects={}，不得复用。
+新阻断为HC/SS/ZN三条HTDY60m pending OBSERVATION_GAP：两根旧重叠Bar发生源修订，三条原件/checkpoint完整，
+原生HtdyConflictSource已只读验证SOURCE_PROVEN，匹配当前物理Canonical及发布来源；不是苏冰W1分类中断豁免。
+三条generation1不属于既有48流冻结恢复范围；SS另有1笔OPEN参考交易。已请求owner选择三条精确恢复：
+保留原件，旧参考中断（不造退出价/收益），未来FLAT重启；当前尚未收到选择，未做恢复、回放或业务DB写入。
+本轮唯一drain 8cc988c5979f453490060f283b73e748已精确cancel，原PID18707恢复active/receiving_cycle；无停启/CAS。
+十服务现场绑定仍41/gen43，独立SimNow仍44及原恢复block；发布树41/44/47，活动引用未删除，不报RUNTIME_READY。
+另修复python -m入口与package的CohortError类身份分裂，避免预热错误被吞为通用诊断；仅共享异常定义，未放宽Gate。
+97项cohort/host/入口回归及Ruff/secret0/diff通过，独立Review无Confirmed Issue（另8项失败路径通过）；该修复尚未发布或运行。
+私有证据见output/release-unification-20261031/cohort-v47-20261031/及htdy-three-source-diagnosis/。
+最小下一步：owner选择上述三条恢复方案；若采用，补丁须测试/独立Review及原生精确恢复后，新计划统一十服务。
+以下为此前检查点：
+
 10/31 苏冰W1分路由部署预检修复已发布v1.16.47；十服务切换仍被现有自然周审计占锁阻断。
 PR558已合develop、PR559/main/annotated tag/GitHub Release已完成，exact
 `f758b646e6e9d1f747f900cd8f305183b3c88510`；完整tree等受测bfceac300，正式47树clean detached，独立依赖/Web构建/render通过。
