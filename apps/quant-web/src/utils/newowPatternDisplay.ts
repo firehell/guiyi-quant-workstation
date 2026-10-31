@@ -1,6 +1,6 @@
 import type { NewowProductChartBar } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
 import type { NewowPublicPattern } from './newowPublicPatterns.ts'
-import type { NewowProductFrequency } from '../types/newowProduct.ts'
+import type { MarketFrequency } from '../types/market.ts'
 export const NEWOW_PATTERN_WORKER_FACTORY = Symbol('newow-pattern-worker-factory')
 export const NEWOW_PATTERN_NAMES: Record<NewowPublicPattern['type'],string> = {'cup-handle':'杯柄',saucer:'浅碟','double-bottom':'双底','flat-base':'平台','ascending-base':'递升',consolidation:'盘整','tight-area':'窄幅'}
 export interface PatternOwner {key:string;bars:readonly NewowProductChartBar[]}
@@ -29,8 +29,8 @@ export class PatternScanSession {
  }
 }
 export interface PatternPoint {barEnd:string;tradingDay:string;price:number}
-export interface PatternGeometry {label:string;frequency:NewowProductFrequency;lines:{points:PatternPoint[];dashed:boolean;curve?:'cup'|'saucer'}[];anchors:(PatternPoint&{label:string})[]}
-export function buildNewowPatternGeometry(choice:Pick<PatternChoice,'bars'|'pattern'>,frequency:NewowProductFrequency):PatternGeometry {
+export interface PatternGeometry {label:string;frequency:MarketFrequency;lines:{points:PatternPoint[];dashed:boolean;curve?:'cup'|'saucer'}[];anchors:(PatternPoint&{label:string})[]}
+export function buildNewowPatternGeometry(choice:Pick<PatternChoice,'bars'|'pattern'>,frequency:MarketFrequency):PatternGeometry {
  const {bars,pattern}=choice;const p=pattern.params
  const num=(key:string)=>{const n=p[key];if(typeof n!=='number'||!Number.isFinite(n))throw Error('pattern value');return n}
  const point=(i:number,price:number):PatternPoint=>{const b=bars[i];if(!Number.isInteger(i)||!b)throw Error('pattern index');if(!Number.isFinite(price)||price<=0)throw Error('pattern price');return {barEnd:b.barEnd,tradingDay:b.tradingDay,price}}

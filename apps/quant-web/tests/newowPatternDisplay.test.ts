@@ -40,3 +40,17 @@ test('pattern primitive paints time/price lines and stops after detachment', asy
  assert.deepEqual(lines,[[10,102],[10,98]])
  primitive.detached();primitive.paneViews()[0]!.renderer()!.draw(target);assert.equal(lines.length,2)
 })
+
+test('free chart pattern uses the host chart time mapping and clears on hide', async()=>{
+ const {NewowPublicPatternPrimitive}=await import('../src/components/market/detail/newow/newowPublicPatternPrimitive.ts')
+ const times:any[]=[]
+ const primitive=new NewowPublicPatternPrimitive(()=>12345 as any)
+ primitive.attached({chart:{timeScale:()=>({timeToCoordinate:(time:any)=>{times.push(time);return 10}})},series:{priceToCoordinate:()=>20},requestUpdate(){}} as any)
+ const ctx:any={save(){},restore(){},beginPath(){},setLineDash(){},moveTo(){},lineTo(){},stroke(){},fillText(){}}
+ const target:any={useMediaCoordinateSpace(fn:any){fn({context:ctx,mediaSize:{width:200,height:200}})}}
+ primitive.setData({label:'平台',frequency:'1m',lines:[{dashed:false,points:[{barEnd:'2026-10-30T01:01:00Z',tradingDay:'2026-10-30',price:100}]}],anchors:[]})
+ primitive.paneViews()[0]!.renderer()!.draw(target)
+ assert.ok(times.length>0);assert.ok(times.every(time=>time===12345))
+ const count=times.length;primitive.setData(null);primitive.paneViews()[0]!.renderer()!.draw(target)
+ assert.equal(times.length,count)
+})

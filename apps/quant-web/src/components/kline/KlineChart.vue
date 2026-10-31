@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
+import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { DETAIL_CHART_SESSION, detailChartViewport, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
@@ -52,6 +54,7 @@ import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitiv
 import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
 
 const props = withDefaults(defineProps<{
+  patternGeometry?: PatternGeometry | null
   bars: BarData[]
   loading?: boolean
   error?: string | null
@@ -153,6 +156,8 @@ let htdyZd1: ISeriesApi<'Line'> | null = null
 let htdyZd2: ISeriesApi<'Line'> | null = null
 let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
+const publicPatternPrimitive = new NewowPublicPatternPrimitive(point => chartTime({ time: point.barEnd, trading_day: point.tradingDay } as BarData))
+watch(() => props.patternGeometry, value => publicPatternPrimitive.setData(value ?? null))
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
@@ -233,6 +238,8 @@ onMounted(async () => {
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
   candles.attachPrimitive(rangeDetectorPrimitive)
+  candles.attachPrimitive(publicPatternPrimitive)
+  publicPatternPrimitive.setData(props.patternGeometry ?? null)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
   htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }, 0)
   htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)

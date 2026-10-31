@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { computed } from 'vue'
 
 import MarketKlineStage from '@/components/market/detail/MarketKlineStage.vue'
@@ -8,6 +9,7 @@ import { markersForDetailView } from '@/utils/marketDetailMarkers'
 
 const props = withDefaults(defineProps<{
   hasMoreBefore?: boolean; loadingBefore?: boolean; historyError?: string | null
+  patternGeometry?: PatternGeometry | null
   bars: BarData[]
   mutation: MarketSeriesMutation
   loading: boolean
@@ -34,6 +36,7 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
 <template>
   <MarketKlineStage :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars"
+    :pattern-geometry="patternGeometry"
     :mutation="mutation"
     :loading="loading"
     :error="error"
