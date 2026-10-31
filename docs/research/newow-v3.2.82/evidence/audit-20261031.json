@@ -410,5 +410,77 @@
       "Full workstation historical-segment manual clicking not done",
       "No market/OOS or Runtime evidence"
     ]
+  },
+  "full_pc_chart_acceptance": {
+    "observed_on": "2026-10-31 Asia/Shanghai",
+    "develop_baseline": "ef5c7ed2a87d32f5f3a62168f9822b0ccd76fe4d",
+    "tested_implementation": "dc7aaf56a069b076b32b85ed27f3f7635821248d",
+    "cutoff": "2026-10-31T08:00:00Z",
+    "mode": "local_candidate_readonly",
+    "sample": "real RB Canonical via read-only candidate; original 688702.SH for visual reference, not same-market numerical parity",
+    "pc_viewports": [
+      [
+        1366,
+        900
+      ],
+      [
+        1920,
+        1080
+      ]
+    ],
+    "fixes": [
+      "resolve_current query retains fixed request.state clock without injecting conflicting as_of",
+      "experiment bidirectional time viewport and cursor",
+      "series wrapper unwrapping for crosshair with expired lease rejection",
+      "actual price scale width reserved in auxiliary canvas",
+      "Shanghai minute cursor formatter",
+      "Newow-only light surface, candle colors, tab spacing, 110px auxiliary plot"
+    ],
+    "native_ui_checks": [
+      "trend switch revokes oscillation breakdown",
+      "fusion J de-duplicated",
+      "main-rise own hint layer",
+      "day/week/60m switching",
+      "four experiment loads and stale event removal",
+      "test1 historical RB2605 ownership and source dialog",
+      "test4 60m first auxiliary wheel and drag move main range",
+      "main/aux cursor same x and 2026-10-13 14:30 Shanghai",
+      "no horizontal overflow at 1366 and 1920"
+    ],
+    "screenshots": [
+      {
+        "file": "newow-pc-linkage-final-1366.jpg",
+        "sha256": "851ada254fbe5d3a55012b8a237ca4dcadf79b0bb68c67c440dc2acdffe08bf2"
+      },
+      {
+        "file": "newow-pc-aux-pan-final-1366.jpg",
+        "sha256": "fc6b28b30c8144eb6513b997e4fcdecda9efe3f5b777048f765925283c65f789"
+      },
+      {
+        "file": "newow-mainrise-pc-final-1920.jpg",
+        "sha256": "5ecda1e2dbc5c82563a6edd4aab41a868771219950bddaa39f122b3e6652cdb7"
+      },
+      {
+        "file": "newow-source-pc-final-1920.jpg",
+        "sha256": "19879f40af0e8e9c0c80cd06fdd49be395951c7c0c20b0d2be1e68cccdc71be7"
+      }
+    ],
+    "validation": {
+      "backend_candidate_passed": 253,
+      "frontend_passed": 61,
+      "typecheck_build_bundle": "passed",
+      "ruff": "passed",
+      "build_heap_cap_mb": 1024,
+      "build_peak_rss_bytes": 1105510400,
+      "candidate_peak_rss_kib": 414656
+    },
+    "limitations": [
+      "ordinary reference SOURCE_IDENTITY_UNVERIFIED: reference chart and rows not accepted",
+      "candidate quote intentionally unavailable; no route whitelist expansion",
+      "some explanation reads 503",
+      "not all products, periods, zoom or DPR; no P95 result",
+      "original independent breakdown overlay may overlap BUILD text; no global collision-free claim",
+      "no data writes, release or Runtime switch"
+    ]
   }
 }

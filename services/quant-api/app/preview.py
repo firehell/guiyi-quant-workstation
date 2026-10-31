@@ -224,7 +224,15 @@ def create_preview_app(
             }.get(raw_path)
             if _SUBING_REFERENCE_PATH.fullmatch(raw_path):
                 field = "as_of"
-            if field:
+            # The current D1/W1 resolver consumes candidate_preview_as_of as
+            # its clock. Its public query explicitly forbids an as_of parameter.
+            resolving_current = (
+                raw_path == "/api/v1/market/newow/strategy-detail"
+                and values.get("resolve_current", "").lower() in {"true", "1", "on", "yes"}
+                and values.get("frequency") in {"1d", "1w"}
+                and values.get("section", "chart") == "chart"
+            )
+            if field and not resolving_current:
                 request_cutoff = cutoff or datetime.now(UTC)
                 requested = _instant(values[field]) if field in values else request_cutoff
                 values[field] = min(requested, request_cutoff).isoformat()

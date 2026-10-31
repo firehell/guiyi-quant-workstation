@@ -538,8 +538,8 @@ onBeforeUnmount(() => {
       <template #overview>
         <div class="newow-product-workspace__comparison-controls" aria-label="震荡背景参考价格"><span>目标 {{ newowReferencePrice(experimentDecision?.prices?.shared.target?.display_value ?? experimentDecision?.prices?.shared.target?.raw) }}</span><span>吸筹 {{ newowReferencePrice(experimentDecision?.prices?.shared.absorb?.display_value ?? experimentDecision?.prices?.shared.absorb?.raw) }}</span><span>当前测试 {{ experimentContext?.latestState ? (experimentContext.latestState.holding ? '持有' : '空仓') : '不可用' }}</span></div>
       </template>
-      <template #chart-auxiliary>
-        <NewowSharedAuxiliaryStage :chart="experimentSharedChart" :auxiliary="currentAuxiliaryResponse" :error="currentAuxiliaryError">
+      <template #chart-auxiliary="{viewport,onViewport,cursor,onCursor,rightScaleWidth}">
+        <NewowSharedAuxiliaryStage :right-scale-width="rightScaleWidth" :viewport="viewport" @viewport="onViewport" :cursor="cursor" @cursor="onCursor" :chart="experimentSharedChart" :auxiliary="currentAuxiliaryResponse" :error="currentAuxiliaryError">
           <template #controls><div class="newow-product-workspace__auxiliary-controls"><button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" :title="option.id==='trend_reversal' ? trendBadge?.title : undefined" :aria-label="option.id==='trend_reversal' ? trendBadge?.title : undefined" @click="toggleAuxiliary(option.id)">{{ option.label }}<NewowTrendReversalBadge v-if="option.id==='trend_reversal' && selectedAuxiliary!==option.id && trendBadge" :state="trendBadge.state" /></button><button @click="openDialog('indicator')">指标解读</button></div></template>
         </NewowSharedAuxiliaryStage>
       </template>
