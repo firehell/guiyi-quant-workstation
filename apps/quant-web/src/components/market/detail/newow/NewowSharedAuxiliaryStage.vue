@@ -16,12 +16,14 @@ const aligned = computed(() => alignNewowAuxiliaryChartModel(props.chart, props.
 let chart: IChartApi | null = null, series: ISeriesApi<'Line'> | null = null, observer: ResizeObserver | null = null
 const mirror = new NewowZhaoyaoMirrorPrimitive(), energy = new NewowUpDownEnergyPrimitive(), control = new NewowMainForceControlPrimitive(), reversal = new NewowTrendReversalPrimitive()
 let writtenChart:typeof props.chart=null,hasWrittenBars=false,projectingRange=false,projectingCursor=false
-let projectedRange:IRange<Time>|null=null
+let userRangePending=false,draggingViewport=false
+function armViewportGesture(){userRangePending=true}
+function startViewportGesture(){draggingViewport=true;armViewportGesture()}
 function syncViewport(){
  if(!chart||!hasWrittenBars||writtenChart!==props.chart)return
- projectingRange=true
+ projectingRange=true;userRangePending=false
  try{if(props.viewport)chart.timeScale().setVisibleRange(props.viewport);else chart.timeScale().fitContent()}
- finally{projectedRange=chart.timeScale().getVisibleRange();projectingRange=false}
+ finally{projectingRange=false}
 }
 function syncCursor(){
  if(!chart||!series||writtenChart!==props.chart)return
@@ -39,7 +41,7 @@ function render() {
   control.setData(value?.component === 'main_force_control' && props.auxiliary?.value?.component === 'main_force_control' ? buildNewowMainForceData(value.series, props.auxiliary.value.segments) : [], 12)
   reversal.setData(value?.component === 'trend_reversal' ? buildNewowTrendReversalData(value.series) : [], 12)
   writtenChart=props.chart;hasWrittenBars=Boolean(model?.bars.length)
-  if(!hasWrittenBars){projectedRange=null;chart.clearCrosshairPosition();return}
+  if(!hasWrittenBars){userRangePending=false;chart.clearCrosshairPosition();return}
   syncViewport();syncCursor()
 }
 onMounted(() => {
@@ -49,7 +51,7 @@ onMounted(() => {
   for (const primitive of [mirror, energy, control, reversal]) series.attachPrimitive(primitive)
   observer = new ResizeObserver(() => { if (chart && container.value) chart.resize(container.value.clientWidth, 138) })
   observer.observe(container.value)
-  chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(projectingRange||!hasWrittenBars||writtenChart!==props.chart)return;const value=chart?.timeScale().getVisibleRange()??null;if(JSON.stringify(value)!==JSON.stringify(projectedRange)&&JSON.stringify(value)!==JSON.stringify(props.viewport??null))emit('viewport',value)})
+  chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{if(projectingRange||!userRangePending||!hasWrittenBars||writtenChart!==props.chart)return;userRangePending=false;const value=chart?.timeScale().getVisibleRange()??null;if(JSON.stringify(value)!==JSON.stringify(props.viewport??null))emit('viewport',value)})
   chart.subscribeCrosshairMove(param=>{if(projectingCursor||!hasWrittenBars||writtenChart!==props.chart)return;const next=param.time??null;if(JSON.stringify(next)!==JSON.stringify(props.cursor??null))emit('cursor',next)})
   render()
 })
@@ -63,7 +65,9 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.remove(); chart = null; s
     <slot name="controls" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-else-if="!aligned" role="status">当前合约段的辅助指标未就绪。</p>
-    <div ref="container" class="shared-auxiliary__canvas" />
+    <!-- Only actual auxiliary gestures may drive the main viewport. LWC applies
+         programmatic ranges asynchronously and may clamp them to loaded data. -->
+    <div ref="container" class="shared-auxiliary__canvas" @wheel.passive="armViewportGesture" @pointerdown="startViewportGesture" @pointermove="draggingViewport && armViewportGesture()" @pointerup="draggingViewport=false" @pointercancel="draggingViewport=false" @pointerleave="draggingViewport=false" />
   </section>
 </template>
 <style scoped>
