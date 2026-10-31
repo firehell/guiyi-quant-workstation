@@ -30,6 +30,24 @@ def descriptor(path):
     return {"path": str(Path(path).resolve()), "sha256": sha256(raw).hexdigest()}
 
 
+def historical_source(host, identity):
+    if identity.get("kind") == recovery.ORIGINAL_FEED_SOURCE:
+        source, _, current = recovery._original_verified_feed_source(
+            host, identity["plan_path"], historical=True
+        )
+        require(current == identity)
+        return source
+    return recovery._historical_source(host, identity)
+
+
+def current_source(host, path, identity):
+    source, _, current = recovery._source(
+        host, path, allow_original=identity.get("kind") == recovery.ORIGINAL_FEED_SOURCE
+    )
+    require(current == identity)
+    return source
+
+
 def valid_plan(plan):
     value = plan.get("stopped_confirmation")
     return (
@@ -51,11 +69,16 @@ def _inventory(host, allowed, *, own=None):
     recovery._directory(parent)
     children = list(parent.iterdir())
     require(len(children) <= 1024)
-    found = set()
+    entries = []
     for child in children:
         recovery._directory(child)
         require(recovery.re.fullmatch(r"[0-9a-f]{64}", child.name) is not None)
-        require(child.name in allowed or child.name == own)
+        _, state = recovery._resolution_source(child / "state.json")
+        entries.append((child, state))
+    closed = recovery._closed_predecessors(host, entries)
+    found = set()
+    for child, _ in entries:
+        require(child.name in allowed or child.name == own or child.name in closed)
         found.add(child.name)
     require(set(allowed) <= found)
 
@@ -96,7 +119,7 @@ def read_confirmation(host, selected):
         and isinstance(value["files"], dict)
         and 1 <= len(value["files"]) <= 8192
     )
-    recovery._historical_source(host, value["source"])
+    historical_source(host, value["source"])
     for name, fingerprint in value["files"].items():
         data, _ = recovery._resolution_source(Path(name))
         require(sha256(data).hexdigest() == fingerprint)
@@ -155,7 +178,14 @@ def _validate_lineage(host, value):
             recovery._feed_close_attempt(
                 host, _public_path(value, plan), plan["predecessor"]
             )
-        elif mode in {"confirmed_feed_halt", MODE}:
+        elif (
+            mode == recovery.ORIGINAL_FEED_MODE
+            and plan.get("stop_after") == "feed_close"
+        ):
+            recovery._original_feed_close_attempt(
+                host, _public_path(value, plan), identity
+            )
+        elif mode in {"confirmed_feed_halt", MODE, recovery.ORIGINAL_FEED_MODE}:
             generation = (
                 recovery.registry(
                     plan["new"], historical=True, history_directory=host.directory
@@ -171,6 +201,12 @@ def _validate_lineage(host, value):
                 == {"consumers": {"resumed_generation": generation}}
                 and not os.path.lexists(folder / "receipt.json")
             )
+            if mode == recovery.ORIGINAL_FEED_MODE:
+                require(
+                    "stop_after" not in plan
+                    and state.get("error_type") == "CohortError"
+                    and identity.get("kind") == recovery.ORIGINAL_FEED_SOURCE
+                )
         else:
             require(False)
     failed = plans[value["failed_plan_sha256"]]
@@ -194,6 +230,12 @@ def _validate_lineage(host, value):
             for item in recovery._permitted_predecessors(predecessor)
         }
         expected.update((close["plan_sha256"], failed["plan_sha256"]))
+    elif failed.get("mode") == recovery.ORIGINAL_FEED_MODE:
+        close, _ = recovery._original_feed_close_attempt(
+            host, failed["original_close"]["plan_path"], identity
+        )
+        require(close == failed["original_close"])
+        expected = {close["plan_sha256"], failed["plan_sha256"]}
     elif failed.get("mode") == MODE:
         selected = failed["stopped_confirmation"]
         raw, parent = recovery._resolution_source(Path(selected["path"]))
@@ -253,7 +295,8 @@ def _evidence(host, path):
         historical=True,
         history_directory=host.directory,
     )
-    source, _, identity = recovery._source(host, plan["source"]["plan_path"])
+    identity = plan["source"]
+    source = current_source(host, identity["plan_path"], identity)
     require(identity == plan["source"] and source["new"] == plan["new"])
     attempt = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
     recovery._directory(attempt.parent)
@@ -308,6 +351,14 @@ def _evidence(host, path):
             retain_attempt(item)
         retain_attempt(closure)
         pids = receipt["feed_close"]["observed_pids"]
+    elif plan.get("mode") == recovery.ORIGINAL_FEED_MODE:
+        require("stop_after" not in plan and state.get("error_type") == "CohortError")
+        closure, receipt = recovery._original_feed_close_attempt(
+            host, plan["original_close"]["plan_path"], identity
+        )
+        require(closure == plan["original_close"])
+        retain_attempt(closure)
+        pids = receipt["feed_close"]["observed_pids"]
     elif plan.get("mode") == MODE:
         previous = read_confirmation(host, plan["stopped_confirmation"])
         require(previous["source"] == identity)
@@ -322,6 +373,10 @@ def _evidence(host, path):
     retain(attempt / "state.json")
     attempts.add(plan["plan_sha256"])
     retain(Path(identity["plan_path"]))
+    if identity.get("kind") == recovery.ORIGINAL_FEED_SOURCE:
+        retain(
+            host.directory / "cohort-attempts" / identity["plan_sha256"] / "plan.json"
+        )
     retain(host.directory / "cohort-attempts" / identity["plan_sha256"] / "state.json")
     _inventory(host, attempts)
     require(pids and all(type(pid) is int and 1 < pid <= 2**31 - 1 for pid in pids))
@@ -462,7 +517,7 @@ def reconcile_stopped(host, path):
 
 def audit_for_plan(host, source, selected, budget):
     value = verify_pin(host, selected)
-    require(source["new"] == recovery._historical_source(host, value["source"])["new"])
+    require(source["new"] == historical_source(host, value["source"])["new"])
     host._expected_new_protected = value["audit"]["new_protected"]
     current = host.audit_stopped(
         source, budget, feed_pids=value["audit"]["feed_exited_pids"]
@@ -478,9 +533,10 @@ def audit_for_plan(host, source, selected, budget):
 
 
 def freeze_stopped(host, source_path, confirmation):
-    source, _, identity = recovery._source(host, source_path)
     selected = descriptor(Path(confirmation))
     value = verify_pin(host, selected)
+    identity = value["source"]
+    source = current_source(host, source_path, identity)
     require(value["source"] == identity)
     now = host.now()
     end = host.monotonic() + 600

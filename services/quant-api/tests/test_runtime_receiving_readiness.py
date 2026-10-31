@@ -218,7 +218,9 @@ def test_recovery_two_phases_of_one_poll_are_not_two_receiving_rounds(
     active = host._active
     stages = ("receiving_cycle", "cycle", "receiving_cycle")
     host._active = lambda b: (
-        report(stages[len(samples)]) if b.service == "reference-worker" else active(b)
+        report(stages[min(len(samples), len(stages) - 1)])
+        if b.service == "reference-worker"
+        else active(b)
     )
     proof = host.await_consumers(source, audit, lambda: None)
     assert len(samples) == 3

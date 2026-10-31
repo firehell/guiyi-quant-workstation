@@ -1547,9 +1547,12 @@ def _validate(plan, now, *, historical=False, history_directory=None, history_ve
             "COHORT_FORWARD_PLAN_INVALID",
         )
         require(
-            (isinstance(plan.get("source"), dict)
+            (plan.get("mode") != ORIGINAL_FEED_MODE
+             or isinstance(plan.get("source"), dict)
              and plan["source"].get("kind") == ORIGINAL_FEED_SOURCE)
-            == (plan.get("mode") == ORIGINAL_FEED_MODE)
+            and (not isinstance(plan.get("source"), dict)
+                 or plan["source"].get("kind") != ORIGINAL_FEED_SOURCE
+                 or plan.get("mode") in {ORIGINAL_FEED_MODE, "reconciled_stopped"})
             and ("original_close" not in plan
                  or plan.get("mode") == ORIGINAL_FEED_MODE),
             "COHORT_FORWARD_PLAN_INVALID",
@@ -1780,8 +1783,12 @@ def apply_forward_recovery(host, recovery_plan_path):
             not os.path.lexists(prior_attempt), "COHORT_FORWARD_ATTEMPT_ALREADY_EXISTS"
         )
         original_halt = plan.get("mode") == ORIGINAL_FEED_MODE
+        original_source = (
+            isinstance(plan.get("source"), dict)
+            and plan["source"].get("kind") == ORIGINAL_FEED_SOURCE
+        )
         source, _state, identity = _source(
-            host, plan["source"]["plan_path"], allow_original=original_halt,
+            host, plan["source"]["plan_path"], allow_original=original_source,
         )
         predecessor = None
         if plan.get("mode") in {
@@ -1831,7 +1838,7 @@ def apply_forward_recovery(host, recovery_plan_path):
             require(
                 _source(
                     host, plan["source"]["plan_path"],
-                    allow_original=original_halt,
+                    allow_original=original_source,
                 )[2] == identity,
                 "COHORT_FORWARD_SOURCE_DRIFT",
             )
@@ -3664,16 +3671,14 @@ class ForwardRecoveryHost(CohortHost):
         before = None
         by_stage = {}
         previous = None
-        while self.monotonic() < end:
-            _verification_substep(self, "session_authority", before=before)
-            check_budget()
-            self.recovery_window()
+        names = (
+            CONTINUOUS
+            if feed
+            else tuple(name for name in CONTINUOUS if name != "market-feed")
+        )
+
+        def ready_states():
             _verification_substep(self, "owner_readiness", before=before)
-            names = (
-                CONTINUOUS
-                if feed
-                else tuple(name for name in CONTINUOUS if name != "market-feed")
-            )
             states = {name: self._active(new.services[name]) for name in names}
             if not all(states.values()):
                 _verification_substep(
@@ -3682,13 +3687,10 @@ class ForwardRecoveryHost(CohortHost):
                     reason="owner_unavailable",
                     service=next(name for name, state in states.items() if not state),
                 )
-                sleep(0.2)
-                continue
-            okay = True
+                return None
             for name, state in states.items():
                 if name == "reference-worker":
                     complete = completed_receiving_report(state)
-                    okay = okay and complete
                     if not complete:
                         _verification_substep(
                             self,
@@ -3699,6 +3701,7 @@ class ForwardRecoveryHost(CohortHost):
                             .get("reference_runtime", {})
                             .get("stage"),
                         )
+                        return None
                 else:
                     reason = None
                     if state.get("ready") is not True:
@@ -3715,13 +3718,16 @@ class ForwardRecoveryHost(CohortHost):
                     elif name in {"api", "web"} and not port_is_ready(name):
                         reason = "http_unavailable"
                     if reason is not None:
-                        okay = False
                         _verification_substep(
                             self, "owner_readiness", reason=reason, service=name
                         )
-                if not okay:
-                    break
-            if not okay:
+                        return None
+            return states
+
+        while self.monotonic() < end:
+            check_budget()
+            states = ready_states()
+            if states is None:
                 sleep(0.2)
                 continue
             report_stage = states["reference-worker"]["proof"]["reference_runtime"][
@@ -3755,6 +3761,12 @@ class ForwardRecoveryHost(CohortHost):
             by_stage[report_stage] = before
             previous = current
             if candidate:
+                _verification_substep(self, "session_authority", before=before, current=current)
+                self.recovery_window()
+                check_budget()
+                if ready_states() is None:
+                    sleep(0.2)
+                    continue
                 _verification_substep(
                     self, "fixed_identity", before=before, current=current
                 )
@@ -3766,11 +3778,7 @@ class ForwardRecoveryHost(CohortHost):
                     self, "receiving_liveness", before=before, current=current
                 )
                 now = self.now()
-                fresh = [
-                    receiving_sample_is_fresh(value, now=now)
-                    for value in (before, current)
-                ]
-                if not all(fresh):
+                if not receiving_sample_is_fresh(current, now=now):
                     before = current
                     by_stage[report_stage] = current
                     sleep(0.2)
