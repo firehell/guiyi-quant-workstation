@@ -239,6 +239,6 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 一次性受控宿主与独立持续宿主各按既有控制流发布私有原子监控索引；simnow_execution.monitor.MonitorReader 从单一显式根
 以SQLite只读连接校验账户、账本和原生快照。纯 monitor_projection 复用现有财务/预留逻辑提供
 /api/simnow/monitor/{overview,records,records/{id}}，不导入SDK或执行恢复。
-首页第三Tab复用全局导航、白底橙色和详情返回记忆，可见时5秒读取；详情抽屉在手机全屏。
+首页第三Tab复用全局导航、白底橙色和详情返回记忆，可见时5秒读取；详情抽屉按 PC Web 显示与交互验收。
 监控失败不影响宿主决策；原生/账本来源时点不同保留待核，不创建新的账户事实权威。
 合同见 [SIMNOW_EXECUTION](SIMNOW_EXECUTION.md#首页只读监控simnow_monitor_v1)。
