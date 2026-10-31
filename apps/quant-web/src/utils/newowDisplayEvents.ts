@@ -49,14 +49,14 @@ export function layoutDisplayLabels(points:readonly DisplayPoint[], measure:(lab
 }
 export function drawDisplayLabels(ctx:CanvasRenderingContext2D, labels:readonly DisplayLabel[], dark:boolean):void {
   ctx.save();ctx.textAlign='center'
-  // Public source paints reduce-J first, breakdown pills afterwards.
+  // Oscillation source paints ZLGJ, then reduce-J, then breakdown pills.
+  for(const p of labels.filter(p=>p.event.kind==='ZLGJ_J')) {
+    ctx.font=REDUCE_J_FONT;ctx.textBaseline='alphabetic';ctx.fillStyle='#34c759';ctx.fillText('J',p.x,p.y)
+  }
   for(const p of labels.filter(p=>p.event.kind==='MAIN_RISE_J')) {
     ctx.font=REDUCE_J_FONT;ctx.textBaseline='bottom';ctx.lineJoin='round';ctx.lineWidth=2.4
     ctx.strokeStyle=dark?'rgba(0,0,0,0.78)':'rgba(255,255,255,0.92)';ctx.strokeText('J',p.x,p.y)
     ctx.fillStyle='#00FF00';ctx.fillText('J',p.x,p.y)
-  }
-  for(const p of labels.filter(p=>p.event.kind==='ZLGJ_J')) {
-    ctx.font=REDUCE_J_FONT;ctx.textBaseline='alphabetic';ctx.fillStyle='#34c759';ctx.fillText('J',p.x,p.y)
   }
   for(const p of labels.filter(p=>p.event.kind==='OSC_BREAKDOWN')) {
     ctx.font=BREAKDOWN_FONT;ctx.textBaseline='middle';ctx.beginPath();ctx.roundRect(p.x-p.width/2,p.y,p.width,16,8)

@@ -15,8 +15,8 @@ async function component(path:string){
 const node=(type:string,text='')=>({type,text,props:{} as any,style:{display:''},children:[] as any[],parent:null as any})
 const find=(n:any,p:(n:any)=>boolean):any=>p(n)?n:n.children.map((c:any)=>find(c,p)).find(Boolean)
 const text=(n:any):string=>n.text+n.children.map(text).join('')
-function renderer(){return createRenderer<any,any>({
- createElement:node,createText:(t)=>node('#text',t),createComment:(t)=>node('#comment',t),
+function renderer(makeElement=node){return createRenderer<any,any>({
+ createElement:makeElement,createText:(t)=>node('#text',t),createComment:(t)=>node('#comment',t),
  setText:(n,t)=>{n.text=t},setElementText:(n,t)=>{n.text=t;n.children=[]},patchProp:(n,k,_o,v)=>{n.props[k]=v},
  insert:(n,p,a)=>{n.parent=p;const i=a?p.children.indexOf(a):-1;if(i<0)p.children.push(n);else p.children.splice(i,0,n)},
  remove:(n)=>{if(n.parent)n.parent.children=n.parent.children.filter((c:any)=>c!==n)},parentNode:n=>n.parent,nextSibling:()=>null,
@@ -33,4 +33,22 @@ test('11-cycle help lives in expanded main-rise status card, emits existing dial
  ready.value=false;await nextTick();assert.equal(help(),undefined)
  ready.value=true;main.value=false;await nextTick();assert.equal(help(),undefined)
  app.unmount()
+})
+
+test('display canvas follows body theme before root, repaints on change, replaces old points and cleans up',async()=>{
+ const Overlay=await component('../src/components/market/detail/newow/NewowDisplayOverlay.vue')
+ const previousDocument=globalThis.document,previousObserver=globalThis.MutationObserver
+ let theme='light',disconnects=0;const callbacks:Array<()=>void>=[],strokes:string[]=[],texts:string[]=[]
+ const ctx=new Proxy({},{set:(_o,k,v)=>{if(k==='strokeStyle')strokes.push(v);return true},get:(_o,k)=>k==='measureText'?()=>({width:6}):k==='fillText'?(t:string)=>texts.push(t):()=>{}})
+ globalThis.document={body:{getAttribute:()=>theme},documentElement:{getAttribute:()=> 'dark'}} as unknown as Document
+ globalThis.MutationObserver=class {constructor(cb:()=>void){callbacks.push(cb)}observe(){}disconnect(){disconnects++}} as unknown as typeof MutationObserver
+ const points=ref([{event:{event_id:'a'.repeat(64),kind:'MAIN_RISE_J',formula_version:'test',bar_end:'2026-10-31T07:00:00Z'},x:50,y:30}])
+ const root=node('root'),app=renderer((type:string)=>Object.assign(node(type),type==='canvas'?{getContext:()=>ctx}:{})).createApp(defineComponent({setup:()=>()=>h(Overlay,{points:points.value,width:200,height:100})}))
+ try{
+  app.mount(root);await nextTick();assert.equal(strokes.at(-1),'rgba(255,255,255,0.92)');assert.equal(texts.at(-1),'J')
+  theme='dark';callbacks.forEach(cb=>cb());await nextTick();assert.equal(strokes.at(-1),'rgba(0,0,0,0.78)')
+  // Parent update, scheduled canvas redraw, then label-button render.
+  points.value=[];await nextTick();await nextTick();await nextTick();assert.ok(!find(root,n=>n.type==='button'),'old buttons removed')
+ }finally{app.unmount();globalThis.document=previousDocument;globalThis.MutationObserver=previousObserver}
+ assert.equal(disconnects,1)
 })
