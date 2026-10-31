@@ -2199,10 +2199,11 @@ class ForwardRecoveryHost(CohortHost):
         from app.runtime_bindings import _git, _tracked
 
         root = Path(__file__).resolve().parents[3]
-        tag = root.name.removeprefix("release-")
+        # Managed worktrees retain the repository directory name. The exact
+        # annotated tag, detached commit and clean full tree are authoritative.
+        tag = _git(root, "describe", "--exact-match", "--match", "v[0-9]*", "HEAD")
         require(
-            root.name == "release-" + tag
-            and re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag),
+            re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag),
             "COHORT_FORWARD_CONTROLLER_RELEASE_REQUIRED",
         )
         commit = _git(root, "rev-parse", "HEAD")
