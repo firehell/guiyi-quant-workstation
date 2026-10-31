@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 from datetime import timedelta
+from hashlib import sha256
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +24,22 @@ from guiyi_quant.newow.product_identity import (
 from guiyi_quant.reference_trading import BoundaryReason, StreamIdentity
 
 POLICY = "owner_eligible_quality_boundary_v1"
+
+
+def _fixture_semantic_gap(gap: DataInterruption) -> str:
+    """Explicit fixture numeric proof; the opaque witness is not a v5 input."""
+    return sha256(json.dumps({
+        "schema": "daily_boundary_fixture_numeric_v1",
+        "product": gap.product,
+        "frequency": gap.frequency.value,
+        "contract": gap.physical_contract,
+        "segment_id": gap.segment_id,
+        "trading_day": gap.trading_day.isoformat(),
+        "effective_at": gap.effective_at.isoformat(),
+        "classification": "PRICE_UNAVAILABLE",
+        "close": "100e0",
+        "volume": "1e0",
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def snapshot(frequency="1d", owner_start_index=2):
@@ -55,6 +73,7 @@ def snapshot(frequency="1d", owner_start_index=2):
     read = SimpleNamespace(
         replay_bars=bars,
         data_interruptions=gaps,
+        semantic_gap_hashes=tuple(_fixture_semantic_gap(gap) for gap in gaps),
         boundaries=(),
         owners=(owner,),
         lifecycle_evidence=(),

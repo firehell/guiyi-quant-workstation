@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from hashlib import sha256
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -23,6 +25,23 @@ from guiyi_quant.newow.product_identity import (
     futures_adaptation_version,
 )
 from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
+
+
+def _fixture_semantic_gap(gap: DataInterruption) -> str:
+    """Explicit synthetic D1 proof for a W1 fixture with no daily source rows."""
+    return sha256(json.dumps({
+        "schema": "empty_weekly_owner_fixture_numeric_v1",
+        "product": gap.product,
+        "frequency": gap.frequency.value,
+        "contract": gap.physical_contract,
+        "segment_id": gap.segment_id,
+        "trading_day": gap.trading_day.isoformat(),
+        "effective_at": gap.effective_at.isoformat(),
+        "expected_daily_endpoint": gap.effective_at.isoformat(),
+        "classification": "PRICE_UNAVAILABLE",
+        "daily_close": "100e0",
+        "daily_volume": "1e0",
+    }, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def _request(
@@ -77,6 +96,7 @@ def _read_set(
     return SimpleNamespace(
         replay_bars=(replay_bar,), boundaries=boundaries,
         data_interruptions=gaps, lifecycle_evidence=(),
+        semantic_gap_hashes=tuple(_fixture_semantic_gap(gap) for gap in gaps),
         input_quality_policy=policy,
         owners=(
             SimpleNamespace(contract="RB2605", start_trading_day=date(2026, 1, 5),
@@ -152,6 +172,9 @@ def test_quality_boundary_before_any_eligible_owner_bar_keeps_source_evidence() 
         date(2026, 1, 15), datetime(2026, 1, 15, 7, tzinfo=UTC),
         "quality:test",
     ),)
+    changed.semantic_gap_hashes = tuple(
+        _fixture_semantic_gap(gap) for gap in changed.data_interruptions
+    )
     changed_snapshot = MarketDataHistoricalInputReader(
         newow_reader=_Reader(changed), subing_service=None,
     ).plan_stream(_request())

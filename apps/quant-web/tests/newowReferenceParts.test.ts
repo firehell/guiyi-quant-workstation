@@ -380,3 +380,23 @@ test('an update source failure removes old results and never polls the terminal 
     context.mock.timers.tick(60000); await drain(); assert.equal(calls, 2)
   } finally { scope.stop(); context.mock.timers.reset() }
 })
+
+test('pending source verification retries within the visible polling bound and stops on terminal failure', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] })
+  const raw = buildNewowFixtureEnvelopeForTest('chart', 'trend', '1d'), scope = effectScope()
+  let calls = 0
+  const state = scope.run(() => useNewowReferenceParts(ref({ meta: raw.meta, section: 'chart' as const, ...raw.chart }),
+    ref(true), ref(false), async () => {
+      calls++
+      return { meta: raw.meta, section: 'reference', value: null,
+        status: { status: 'data_unavailable', reason_code: calls < 3 ? 'REFERENCE_UPDATE_PENDING' : 'SOURCE_IDENTITY_UNVERIFIED' } } as any
+    }))!
+  const drain = async () => { for (let i = 0; i < 12; i++) await Promise.resolve() }
+  try {
+    await drain(); assert.equal(calls, 1); assert.equal(state.overview.value, null)
+    context.mock.timers.tick(30000); await drain(); assert.equal(calls, 2)
+    context.mock.timers.tick(30000); await drain(); assert.equal(calls, 3)
+    context.mock.timers.tick(60000); await drain(); assert.equal(calls, 3)
+    assert.equal(state.curve.value, null)
+  } finally { scope.stop(); context.mock.timers.reset() }
+})

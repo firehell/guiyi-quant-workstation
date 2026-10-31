@@ -11,6 +11,7 @@ from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrateg
 
 
 def _saved(monkeypatch, latest_seq=7):
+    monkeypatch.setattr("app.reference_trading.page_material_query.select_page_material", lambda *_args, **_kw: None)
     cutoff = datetime(2026, 9, 10, 7, tzinfo=UTC)
     manifest = {
         "query_since": "2025-01-01", "query_through": "2026-09-10",

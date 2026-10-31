@@ -14,7 +14,6 @@ import fcntl
 import json
 import os
 import re
-from hashlib import sha256
 from pathlib import Path
 from threading import Event, Thread
 from time import monotonic
@@ -35,7 +34,8 @@ VERSION = 'newow_historical_refresh_v1'
 PLAN_FILE_CODEC = 'reference_refresh_plan_file_v1'
 STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion', 'subing_reference')
 MAX_ROUTES = NEWOW_MAX_ROUTES + 60 * 6
-BUDGET = WorkBudget(1, 500_000, 1800, 512_000_000)
+# Logical input volume stays capped; bounded Newow reads separately avoid full residency.
+BUDGET = WorkBudget(1, 1_000_000, 1800, 512_000_000)
 SUBING_BUDGET = WorkBudget(1, 2_000_000, 1800, 8_192_000_000)
 
 
@@ -105,17 +105,16 @@ class RefreshStateStore:
             raise RefreshPlanCodecError()
 
     def store_plan(self, value):
-        from app.reference_trading.plan_bundle import canonical_bytes, write_plan, read_plan, _parent
+        from app.reference_trading.plan_bundle import canonical_size_digest, write_plan, read_plan, _parent
         if value.get('codec') == PLAN_FILE_CODEC:
             self._validate_file_ref(value)
             return value
         if 'codec' in value:
             validate_encoded_plan(value)
             return value
-        raw = canonical_bytes(value)
-        if len(raw) <= 64_000:
+        size, digest = canonical_size_digest(value)
+        if size <= 64_000:
             return encode_plan(value)
-        digest = sha256(raw).hexdigest()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         folder = self.path.with_name(self.path.name+'.plans')
         with _parent(self.path) as (fd, name):
@@ -135,7 +134,7 @@ class RefreshStateStore:
                 os.close(check)
         target = folder/(digest+'.json')
         if exists:
-            if sha256(canonical_bytes(read_plan(target, trusted_root=self.path.parent))).hexdigest() != digest:
+            if canonical_size_digest(read_plan(target, trusted_root=self.path.parent))[1] != digest:
                 raise RefreshPlanCodecError()
         else:
             write_plan(target, value, force_bundle=True, trusted_root=self.path.parent)
@@ -144,11 +143,11 @@ class RefreshStateStore:
     def read_plan(self, value):
         if value.get('codec') != PLAN_FILE_CODEC:
             return decode_plan(value)
-        from app.reference_trading.plan_bundle import canonical_bytes, read_plan
+        from app.reference_trading.plan_bundle import canonical_size_digest, read_plan
         self._validate_file_ref(value)
         target = self.path.with_name(self.path.name+'.plans')/value['file']
         result = read_plan(target, trusted_root=self.path.parent)
-        if sha256(canonical_bytes(result)).hexdigest() != value['sha256']:
+        if canonical_size_digest(result)[1] != value['sha256']:
             raise RefreshPlanCodecError()
         return result
 
@@ -205,8 +204,10 @@ class RefreshStateStore:
 
 
 class HistoricalRefresh:
-    def __init__(self, *, routes, endpoint, components, state):
+    def __init__(self, *, routes, endpoint, components, state,
+                 needs_source_verification=None):
         self._routes, self._endpoint, self._components = routes, endpoint, components
+        self._needs_source_verification = needs_source_verification
         self.state = state
         self.last_progress = {}
 
@@ -261,7 +262,9 @@ class HistoricalRefresh:
                 if (endpoint.tzinfo is None or endpoint > now or type(trading_day) is not date):
                     raise ValueError('AUTHORITATIVE_ENDPOINT_UNAVAILABLE')
                 if not prior and not source_changed and route.computed_through is not None and endpoint <= route.computed_through:
-                    continue
+                    if (self._needs_source_verification is None
+                            or not self._needs_source_verification(route, now, cancelled)):
+                        continue
                 if _strategy(identity) == 'dual_fusion':
                     base = [item for item in routes if item.identity.product == identity.product
                             and item.identity.frequency == identity.frequency
@@ -619,11 +622,11 @@ def build_historical_refresh(session_factory, *, state_path):
                 if status == 'invalid' and invalid_reason == 'P4_SOURCE_REVISION_REBUILD'
                 else 'HISTORY_NOT_PUBLISHED')
             if (reason is None and _strategy(identity) in {'trend', 'oscillation', 'main_rise'}
-                    and reader_version != 'newow_product_reader_prefix_v4'):
+                    and reader_version != 'newow_product_reader_prefix_v5'):
                 reason = 'INPUT_PROOF_UPGRADE_REQUIRED'
             if (reason is None and _strategy(identity) == 'dual_fusion'
-                    and (reader_version != 'newow_fusion_saved_sources_v2'
-                         or source_reader_version != 'newow_product_reader_prefix_v4')):
+                    and (reader_version != 'newow_fusion_saved_sources_v3'
+                         or source_reader_version != 'newow_product_reader_prefix_v5')):
                 reason = 'INPUT_PROOF_UPGRADE_REQUIRED'
             result.append(RefreshRoute(identity, date.fromisoformat(since), watermark, reason))
         return result
@@ -631,20 +634,32 @@ def build_historical_refresh(session_factory, *, state_path):
     def endpoint(route, now):
         from app.market_data.composition import build_market_data_service
         from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
-        with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
-            page = build_market_data_service(session).query_page(SeriesPageQuery(
-                SeriesKind.ACTUAL_DOMINANT, route.identity.product.lower(), BarFrequency(route.identity.frequency),
-                # Discover the Catalog-published tail, rather than requiring
-                # historical coverage through wall-clock Live time. Prepared
-                # Calendar/Session/MainMap facts do not publish Canonical bars.
-                # _tick separately rejects a future endpoint; the planner then
-                # validates the complete prefix through this exact endpoint.
-                before=None, limit=1,
-            ))
-            if not page.bars:
-                raise ValueError('AUTHORITATIVE_ENDPOINT_UNAVAILABLE')
-            bar = page.bars[-1]
-            return bar.bar_end, bar.trading_day
+        from app.market_data.newow.product_release import candidate_input_quality_policy
+        with session_factory() as session:
+            market = build_market_data_service(session)
+            lease = market.catalog.acquire_maintenance_lock(caller='reference-endpoint')
+            if lease is None:
+                raise ValueError('SOURCE_BUSY')
+            try:
+                with readonly_transaction(session, timeout_seconds=15):
+                    if _strategy(route.identity) == 'subing_reference':
+                        page = market.query_page(SeriesPageQuery(
+                            SeriesKind.ACTUAL_DOMINANT, route.identity.product.lower(),
+                            BarFrequency(route.identity.frequency), before=None, limit=1,
+                        ))
+                        if not page.bars:
+                            raise ValueError('AUTHORITATIVE_ENDPOINT_UNAVAILABLE')
+                        return page.bars[-1].bar_end, page.bars[-1].trading_day
+                    return market.published_reference_endpoint(
+                        symbol=route.identity.product.lower(),
+                        frequency=BarFrequency(route.identity.frequency), as_of=now,
+                        quality_policy=candidate_input_quality_policy(
+                            route.identity.product.lower(), route.identity.frequency,
+                            candidate_weekly=False,
+                        ).value,
+                    )
+            finally:
+                lease.release()
 
     @contextmanager
     def components(**kwargs):
@@ -653,5 +668,77 @@ def build_historical_refresh(session_factory, *, state_path):
         ) as value:
             yield value
 
+    def needs_source_verification(route, now, cancelled):
+        """Recheck the committed source under the usual Canonical lease.
+
+        A changed byte proof enters the native advance path, which decides
+        whether the semantic prefix is unchanged or requires a new revision.
+        """
+        from app.reference_trading.contracts import manifest_sha256
+        from app.reference_trading.manifest_storage import resolve_manifest
+        from app.reference_trading.models import ReferenceStream, ReferenceRevision, ReferenceBatch
+        from app.reference_trading.page_material_query import latest_input_integrity
+        from app.reference_trading.page_material_storage import (
+            validate_input_integrity, verify_source_integrity,
+        )
+        if _strategy(route.identity) == 'subing_reference':
+            return False
+        if cancelled():
+            raise RefreshPlanningYield()
+        with components(cancelled=cancelled, after_batch=None, now=lambda: now) as (_planner, service):
+            # components() holds the same maintenance lease used by planning.
+            with session_factory() as session, readonly_transaction(session, timeout_seconds=30):
+                stream = session.get(ReferenceStream, route.identity.stream_id)
+                revision = (session.get(ReferenceRevision, (stream.stream_id, stream.active_revision_id))
+                            if stream is not None and stream.active_revision_id is not None else None)
+                batch = (session.get(ReferenceBatch, revision.checkpoint_batch_id)
+                         if revision is not None and revision.checkpoint_batch_id is not None else None)
+                if (stream is None or revision is None or batch is None
+                        or revision.status != 'active' or stream.health != 'READY'
+                        or stream.latest_seq != revision.last_seq
+                        or batch.stream_id != stream.stream_id
+                        or batch.revision_id != revision.revision_id
+                        or batch.seq != revision.last_seq or batch.kind != 'calculation'
+                        or batch.outcome != 'committed'):
+                    raise ValueError('SOURCE_IDENTITY_UNVERIFIED')
+                saved_through = batch.computed_through
+                if saved_through is not None and saved_through.tzinfo is None:
+                    saved_through = saved_through.replace(tzinfo=UTC)
+                if saved_through != route.computed_through:
+                    raise ValueError('SOURCE_IDENTITY_UNVERIFIED')
+                manifest = resolve_manifest(session, batch)
+                digest = manifest_sha256(manifest)
+                record = latest_input_integrity(session, batch)
+                if (digest != revision.dependency_digest or not isinstance(record, dict)
+                        or route.since is None or manifest.get('query_since') != route.since.isoformat()):
+                    raise ValueError('SOURCE_IDENTITY_UNVERIFIED')
+                request = record.get('request')
+                expected = {
+                    'schema': 'reference_input_integrity_v1',
+                    'stream_id': stream.stream_id, 'revision_id': revision.revision_id,
+                    'seq': batch.seq, 'manifest_sha256': digest, 'source_token': digest,
+                    'source_integrity': record.get('source_integrity'), 'request': request,
+                }
+                try:
+                    validate_input_integrity(record, expected_binding=expected)
+                except (TypeError, ValueError, KeyError) as error:
+                    raise ValueError('SOURCE_IDENTITY_UNVERIFIED') from error
+                if (request['product'] != route.identity.product.lower()
+                        or request['frequency'] != route.identity.frequency
+                        or request['since'] != route.since.isoformat()):
+                    raise ValueError('SOURCE_IDENTITY_UNVERIFIED')
+                source = record['source_integrity']
+            if cancelled():
+                raise RefreshPlanningYield()
+            reader = service._reader._newow_for(route.identity)
+            try:
+                unchanged = verify_source_integrity(reader, source)
+            except (TypeError, ValueError, KeyError) as error:
+                raise ValueError('SOURCE_IDENTITY_UNVERIFIED') from error
+            if cancelled():
+                raise RefreshPlanningYield()
+            return not unchanged
+
     return HistoricalRefresh(routes=routes, endpoint=endpoint, components=components,
-                             state=RefreshStateStore(state_path))
+                             state=RefreshStateStore(state_path),
+                             needs_source_verification=needs_source_verification)

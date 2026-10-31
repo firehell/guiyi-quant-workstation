@@ -32,6 +32,23 @@ def test_publish_writes_only_one_validated_month_parquet(tmp_path) -> None:
     assert not tuple(tmp_path.rglob("*.bak"))
 
 
+def test_bounded_catalog_reader_matches_tuple_reader(tmp_path) -> None:
+    store = CanonicalMonthlyStore(tmp_path)
+    result = store.publish(_request((_bar(1), _bar(2))))
+    partition = _partition(result)
+    chunks = tuple(store.iter_catalog_partition_quality_chunks(partition, max_rows=1))
+    assert chunks == ((_bar(1),), (_bar(2),))
+    assert tuple(bar for chunk in chunks for bar in chunk) == store.read_catalog_partition(partition)
+
+
+def test_bounded_catalog_reader_rejects_tampered_content_before_yield(tmp_path) -> None:
+    store = CanonicalMonthlyStore(tmp_path)
+    result = store.publish(_request((_bar(1), _bar(2))))
+    result.parquet_path.write_bytes(b"tampered")
+    with pytest.raises(StorageError, match="PARTITION_CONTENT_HASH_MISMATCH"):
+        next(store.iter_catalog_partition_quality_chunks(_partition(result), max_rows=1))
+
+
 def test_publish_rejects_invalid_or_incomplete_month(tmp_path) -> None:
     store = CanonicalMonthlyStore(tmp_path)
     with pytest.raises(StorageError, match="BAR_END_NOT_STRICTLY_INCREASING"):
@@ -472,3 +489,23 @@ def test_publication_validation_cache_never_bypasses_another_boundary_authority(
     rejecting = CanonicalMonthlyStore(tmp_path, boundary_validator=lambda *_args: False)
     with pytest.raises(StorageError, match="SESSION_BOUNDARY_INVALID"):
         rejecting.read_catalog_partition(partition)
+
+
+def test_releasing_read_caches_preserves_pinned_facts_and_revalidates(tmp_path, monkeypatch):
+    import app.market_data.storage as storage
+    store = CanonicalMonthlyStore(tmp_path)
+    result = store.publish(_request((_bar(1), _bar(2))))
+    partition = _partition(result)
+    pinned = store.read_catalog_partition(partition)
+    assert storage._DECODE_CACHE and storage._PARTITION_VALIDATION_CACHE
+    store.release_decoded_read_caches()
+    assert not storage._DECODE_CACHE and not storage._PARTITION_VALIDATION_CACHE
+    assert pinned == (_bar(1), _bar(2))
+    validations = []
+    original = store._validate
+    def checked(request):
+        validations.append(request)
+        return original(request)
+    monkeypatch.setattr(store, "_validate", checked)
+    assert store.read_catalog_partition(partition) == pinned
+    assert len(validations) == 1

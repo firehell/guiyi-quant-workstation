@@ -111,3 +111,93 @@ def test_pinned_input_is_discarded_on_failure():
             assert reader._read(request).source_token == "1"
             raise RuntimeError("interrupted")
     assert reader._read(request).source_token == "2"
+
+
+def test_verified_pin_shares_exact_plan_manifest_and_closes_one_snapshot():
+    from contextlib import nullcontext
+    from app.reference_trading.inputs import MarketDataHistoricalInputReader
+
+    reader = MarketDataHistoricalInputReader(
+        newow_reader=None, subing_service=None, read_guard=nullcontext,
+        pin_verified_inputs=True,
+    )
+    expected = {"reader": "newow_product_reader_prefix_v5", "leaves": ["a" * 64]}
+    fresh = dict(expected)
+    closes = []
+    snapshot = SimpleNamespace(
+        source_token="frozen", dependency_manifest=fresh,
+        close=lambda: closes.append("closed"),
+    )
+    reads = []
+    reader._read_uncached = lambda request: reads.append(request) or snapshot
+    request = object()
+    with reader.pin_verified_stream(
+        request, expected_manifest=expected, expected_source_token="frozen",
+    ):
+        assert reader.load_stream(request, expected_source_token="frozen") is snapshot
+        assert snapshot.dependency_manifest is expected
+        reader.release_snapshot(snapshot)
+        assert not closes and reads == [request]
+    assert closes == ["closed"]
+    assert reader._pinned_snapshot is None
+
+
+def test_verified_pin_rejects_token_or_manifest_drift_and_closes_fresh_input():
+    from contextlib import nullcontext
+    from app.reference_trading.inputs import MarketDataHistoricalInputReader
+    import pytest
+
+    reader = MarketDataHistoricalInputReader(
+        newow_reader=None, subing_service=None, read_guard=nullcontext,
+        pin_verified_inputs=True,
+    )
+    closes = []
+    request = object()
+    for source_token, manifest in (("changed", {"bar": 1}), ("frozen", {"bar": 2})):
+        snapshot = SimpleNamespace(
+            source_token=source_token, dependency_manifest=manifest,
+            close=lambda: closes.append("closed"),
+        )
+        reader._read_uncached = lambda _request: snapshot
+        with pytest.raises(ValueError, match="^SOURCE_CHANGED$"):
+            with reader.pin_verified_stream(
+                request, expected_manifest={"bar": 1}, expected_source_token="frozen",
+            ):
+                pytest.fail("unverified snapshot became visible")
+        assert reader._pinned_snapshot is None
+        assert reader._pinned_request is None
+    assert closes == ["closed", "closed"]
+
+
+def test_verified_pin_rejects_python_equal_but_canonically_distinct_manifest():
+    from contextlib import nullcontext
+    import pytest
+    from app.reference_trading.inputs import (
+        MarketDataHistoricalInputReader, _stream_manifest_sha256,
+    )
+
+    reader = MarketDataHistoricalInputReader(
+        newow_reader=None, subing_service=None, read_guard=nullcontext,
+        pin_verified_inputs=True,
+    )
+    fresh = {"input_count": 1}
+    fresh_token = _stream_manifest_sha256(fresh)[0]
+    closed = []
+    for replacement in (1.0, True):
+        snapshot = SimpleNamespace(
+            source_token=fresh_token, dependency_manifest=fresh,
+            close=lambda: closed.append(True),
+        )
+        reader._read_uncached = lambda _request: snapshot
+        planned = {"input_count": replacement}
+        assert fresh == planned
+        assert _stream_manifest_sha256(fresh) != _stream_manifest_sha256(planned)
+        with pytest.raises(ValueError, match="^SOURCE_CHANGED$"):
+            with reader.pin_verified_stream(
+                object(), expected_manifest=planned,
+                expected_source_token=fresh_token,
+            ):
+                pytest.fail("different canonical manifest became pinned")
+        assert reader._pinned_snapshot is None
+        assert reader._pinned_request is None
+    assert closed == [True, True]

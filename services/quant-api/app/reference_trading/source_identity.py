@@ -5,14 +5,20 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from app.reference_trading.query import QueryConflict
+from app.reference_trading.fingerprint_proof import (
+    SEMANTIC_READERS, fingerprint_count, fingerprints_prefix,
+)
 
 
 def verify_saved_input_prefix(
     saved: dict[str, object], current: dict[str, object], through: date,
     observed_owner_keys: frozenset[tuple[str, str]] = frozenset(),
 ) -> None:
-    if saved.get("reader") == "newow_product_reader_prefix_v4":
-        required = ("reader", "query_since", "quality_policy", "market_source_identity",
+    semantic_pair = saved.get("reader") in SEMANTIC_READERS and current.get("reader") in SEMANTIC_READERS
+    if saved.get("reader") in SEMANTIC_READERS:
+        if not semantic_pair:
+            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+        required = ("query_since", "quality_policy", "market_source_identity",
                     "input_policy_version", "formula_versions", "reference_model_version")
         if any(key not in current or saved.get(key) is None or saved[key] != current[key]
                for key in required):
@@ -22,18 +28,27 @@ def verify_saved_input_prefix(
             if saved.get(key) is None or saved.get(key) != current.get(key):
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
         return
+    for candidate in (saved, current):
+        version = candidate.get("reader")
+        for key in ("input_fingerprints", "calendar_session_effective_fingerprints"):
+            value = candidate.get(key)
+            if (version == "newow_product_reader_prefix_v4" and not isinstance(value, list)
+                    or version == "newow_product_reader_prefix_v5" and not isinstance(value, dict)):
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
     for key in ("input_fingerprints", "calendar_session_effective_fingerprints"):
         stored = saved.get(key)
         observed = current.get(key)
-        if (
-            not isinstance(stored, list) or not isinstance(observed, list)
-            or not observed or len(observed) > len(stored)
-            or stored[:len(observed)] != observed
-        ):
+        try:
+            valid = fingerprint_count(observed) > 0 and fingerprints_prefix(observed, stored)
+        except (TypeError, ValueError):
+            valid = False
+        if not valid:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
     for key in ("reader", "market_source_identity", "quality_policy_version",
                 "quality_policy", "input_policy_version", "formula_versions",
                 "reference_model_version"):
+        if key == "reader" and semantic_pair:
+            continue
         if key in saved and key in current and saved[key] != current[key]:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
     if "calendar_session_source_evidence" in saved or "calendar_session_source_evidence" in current:
@@ -124,11 +139,16 @@ class ReferenceReadConflict(QueryConflict):
 def verified_saved_extension(saved, current, saved_through: date) -> bool:
     """Classify append lag only after every saved-prefix invariant passes."""
     a, b = saved.get("input_fingerprints"), current.get("input_fingerprints")
-    if not isinstance(a, list) or not isinstance(b, list) or not a or len(b) <= len(a):
+    try:
+        if fingerprint_count(a) == 0 or fingerprint_count(b) <= fingerprint_count(a):
+            return False
+    except (TypeError, ValueError):
         return False
     for key in ("reader", "market_source_identity", "quality_policy_version", "quality_policy",
                 "input_policy_version", "formula_versions", "reference_model_version",
                 "reference_boundary_policy_version"):
+        if key == "reader" and saved.get(key) in SEMANTIC_READERS and current.get(key) in SEMANTIC_READERS:
+            continue
         if (key in saved) != (key in current) or saved.get(key) != current.get(key):
             return False
     owners = saved.get("lifecycle_owners", [])

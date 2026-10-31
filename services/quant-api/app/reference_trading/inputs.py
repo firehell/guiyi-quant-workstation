@@ -9,12 +9,21 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
+from collections.abc import Sequence
 from contextlib import AbstractContextManager, contextmanager, nullcontext
 from hashlib import sha256
 import json
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 from guiyi_quant.reference_trading import ReferenceBoundary, StreamIdentity
+from app.reference_trading.json_spool import JsonSpoolSequence, encode_product_bar, decode_product_bar
+from app.reference_trading.packed_fingerprints import (
+    PackedFingerprintBuilder, packed_fingerprints_sha256,
+)
+
+if TYPE_CHECKING:
+    from app.market_data.newow.product_reader import ResolvedPerformanceWindow
+    from guiyi_quant.newow.product_contracts import ProductIdentity
 
 NEWOW_D1_REFERENCE_BOUNDARY_POLICY = "owner_eligible_quality_boundary_v1"
 
@@ -62,18 +71,85 @@ class HistoricalInputBar:
             raise ValueError("boundary-only input must contain a boundary")
 
 
+class ProductBarView(Sequence):
+    """Read only strategy inputs from a sealed historical snapshot."""
+
+    def __init__(self, bars: Sequence[HistoricalInputBar], count: int):
+        if type(count) is not int or count < 0:
+            raise ValueError("REFERENCE_PROJECTION_INPUT_COUNT_INVALID")
+        self._bars = bars
+        self._count = count
+
+    def __len__(self) -> int:
+        return self._count
+
+    def __iter__(self):
+        for item in self._bars:
+            if item.strategy_input:
+                yield item.payload.bar
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self._count)
+            positions = range(start, stop, step)
+            if len(positions) > 256:
+                raise ValueError("REFERENCE_PROJECTION_SLICE_EXCEEDED")
+            return tuple(self[position] for position in positions)
+        if type(index) is not int:
+            raise TypeError("projection index must be an integer")
+        if index < 0:
+            index += self._count
+        if not 0 <= index < self._count:
+            raise IndexError(index)
+        for position, bar in enumerate(self):
+            if position == index:
+                return bar
+        raise ValueError("REFERENCE_PROJECTION_INPUT_COUNT_CONFLICT")
+
+
+@dataclass(frozen=True, slots=True)
+class NewowProjectionContext:
+    """Small market metadata; the replay Bar view is constructed on demand."""
+
+    page_identity: ProductIdentity
+    resolved: ResolvedPerformanceWindow
+    owners: tuple[object, ...]
+    boundaries: tuple[object, ...]
+    data_interruptions: tuple[object, ...]
+    lifecycle_evidence: tuple[object, ...]
+    sources: object
+    input_quality_policy: object
+    reference_source_evidence_sha256: str
+    strategy_input_count: int
+
+    def read_view(self, bars: Sequence[HistoricalInputBar]):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            replay_bars=ProductBarView(bars, self.strategy_input_count),
+            as_of=self.resolved.cutoff, frequency=self.page_identity.frequency,
+            owners=self.owners, boundaries=self.boundaries,
+            data_interruptions=self.data_interruptions,
+            lifecycle_evidence=self.lifecycle_evidence, sources=self.sources,
+            input_quality_policy=self.input_quality_policy,
+            reference_source_evidence_sha256=self.reference_source_evidence_sha256,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class HistoricalInputSnapshot:
     stream: StreamIdentity
     storage_start: date
     completed_through: datetime | None
-    bars: tuple[HistoricalInputBar, ...]
+    bars: Sequence[HistoricalInputBar]
     dependency_manifest: dict[str, object]
     source_token: str
     input_bytes: int
+    projection_context: NewowProjectionContext | None = None
+    source_integrity: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "bars", tuple(self.bars))
+        if not isinstance(self.bars, HistoricalInputSpool):
+            object.__setattr__(self, "bars", tuple(self.bars))
         if not isinstance(self.stream, StreamIdentity):
             raise TypeError("stream must be StreamIdentity")
         if type(self.storage_start) is not date:
@@ -89,26 +165,42 @@ class HistoricalInputSnapshot:
             raise ValueError("source_token must be non-empty text")
         if type(self.input_bytes) is not int or self.input_bytes < 0:
             raise ValueError("input_bytes must be a non-negative integer")
-        previous_by_segment: dict[tuple[str, str, str], datetime] = {}
-        fingerprints: set[str] = set()
-        for bar in self.bars:
-            if not isinstance(bar, HistoricalInputBar):
-                raise TypeError("bars must contain HistoricalInputBar")
-            key = (
-                bar.physical_contract, bar.owner_segment_id,
-                bar.calculation_segment_id,
-            )
-            previous = previous_by_segment.get(key)
-            if previous is not None and bar.bar_end <= previous:
-                raise ValueError("calculation-segment inputs must be strictly ordered")
-            if bar.fingerprint in fingerprints:
-                raise ValueError("historical input fingerprints must be unique")
-            previous_by_segment[key] = bar.bar_end
-            fingerprints.add(bar.fingerprint)
-        if self.bars and self.completed_through != max(
-            bar.bar_end for bar in self.bars
+        if self.projection_context is not None and not isinstance(
+            self.projection_context, NewowProjectionContext
         ):
+            raise TypeError("projection_context must be NewowProjectionContext")
+        if (self.projection_context is None) != (self.source_integrity is None):
+            raise ValueError("projection context and source integrity must occur together")
+        if isinstance(self.bars, HistoricalInputSpool):
+            if not self.bars.sealed:
+                raise ValueError("historical input spool must be sealed")
+            latest = self.bars.latest_bar_end
+        else:
+            previous_by_segment: dict[tuple[str, str, str], datetime] = {}
+            fingerprints: set[str] = set()
+            latest = None
+            for bar in self.bars:
+                if not isinstance(bar, HistoricalInputBar):
+                    raise TypeError("bars must contain HistoricalInputBar")
+                key = (
+                    bar.physical_contract, bar.owner_segment_id,
+                    bar.calculation_segment_id,
+                )
+                previous = previous_by_segment.get(key)
+                if previous is not None and bar.bar_end <= previous:
+                    raise ValueError("calculation-segment inputs must be strictly ordered")
+                if bar.fingerprint in fingerprints:
+                    raise ValueError("historical input fingerprints must be unique")
+                previous_by_segment[key] = bar.bar_end
+                fingerprints.add(bar.fingerprint)
+                latest = max(latest, bar.bar_end) if latest is not None else bar.bar_end
+        if self.bars and self.completed_through != latest:
             raise ValueError("completed_through must equal the latest input event")
+
+    def close(self) -> None:
+        close = getattr(self.bars, "close", None)
+        if callable(close):
+            close()
 
 
 class HistoricalInputReader(Protocol):
@@ -128,6 +220,200 @@ def _canonical(value: object) -> str:
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
         default=lambda item: item.isoformat() if hasattr(item, "isoformat") else str(item),
     )
+
+
+def _stream_manifest_sha256(value: object) -> tuple[str, int]:
+    """Same canonical bytes as _canonical without a second whole-manifest string."""
+    encoder = json.JSONEncoder(
+        sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+        default=lambda item: item.isoformat() if hasattr(item, "isoformat") else str(item),
+    )
+    digest = sha256()
+    count = 0
+    for part in encoder.iterencode(value):
+        chunk = part.encode()
+        digest.update(chunk)
+        count += len(chunk)
+    return digest.hexdigest(), count
+
+
+def _identity_wire(identity):
+    return {
+        "product": identity.product, "strategy": identity.strategy.value,
+        "frequency": identity.frequency.value,
+        "formula_versions": list(identity.formula_versions),
+        "series_kind": identity.series_kind, "profile_id": identity.profile_id,
+        "input_quality_policy": identity.input_quality_policy.value,
+    }
+
+
+def _identity_from_wire(raw):
+    from guiyi_quant.newow.product_contracts import ProductIdentity
+    if not isinstance(raw, dict) or set(raw) != {
+        "product", "strategy", "frequency", "formula_versions", "series_kind",
+        "profile_id", "input_quality_policy",
+    }:
+        raise ValueError("REFERENCE_SPOOL_CODEC_INVALID")
+    return ProductIdentity(**{**raw, "formula_versions": tuple(raw["formula_versions"])})
+
+
+def _action_wire(action):
+    return {
+        "identity": _identity_wire(action.identity),
+        "physical_contract": action.physical_contract,
+        "segment_id": action.segment_id,
+        "bar_end": action.bar_end.isoformat(),
+        "trading_day": action.trading_day.isoformat(),
+        "kind": action.kind.value,
+        "reference_price": str(action.reference_price),
+        "anchor_price": None if action.anchor_price is None else str(action.anchor_price),
+        "sequence": action.sequence,
+        "related_build_id": action.related_build_id,
+        "source_marker_id": action.source_marker_id,
+        "source_related_marker_ids": list(action.source_related_marker_ids),
+        "trade_eligibility": action.trade_eligibility.value,
+        "calculation_segment_id": action.calculation_segment_id,
+        "signal_id": action.signal_id,
+    }
+
+
+def _action_from_wire(raw):
+    from guiyi_quant.newow.product_contracts import StrategyAction
+    if not isinstance(raw, dict) or set(raw) != {
+        "identity", "physical_contract", "segment_id", "bar_end", "trading_day",
+        "kind", "reference_price", "anchor_price", "sequence", "related_build_id",
+        "source_marker_id", "source_related_marker_ids", "trade_eligibility",
+        "calculation_segment_id", "signal_id",
+    }:
+        raise ValueError("REFERENCE_SPOOL_CODEC_INVALID")
+    action = StrategyAction(
+        identity=_identity_from_wire(raw["identity"]),
+        physical_contract=raw["physical_contract"], segment_id=raw["segment_id"],
+        bar_end=datetime.fromisoformat(raw["bar_end"]),
+        trading_day=date.fromisoformat(raw["trading_day"]),
+        kind=raw["kind"], reference_price=Decimal(raw["reference_price"]),
+        anchor_price=None if raw["anchor_price"] is None else Decimal(raw["anchor_price"]),
+        sequence=raw["sequence"], related_build_id=raw["related_build_id"],
+        source_marker_id=raw["source_marker_id"],
+        source_related_marker_ids=tuple(raw["source_related_marker_ids"]),
+        trade_eligibility=raw["trade_eligibility"],
+        calculation_segment_id=raw["calculation_segment_id"],
+    )
+    if action.signal_id != raw["signal_id"]:
+        raise ValueError("REFERENCE_SPOOL_CODEC_INVALID")
+    return action
+
+
+def _historical_bar_wire(item: HistoricalInputBar):
+    from app.reference_trading.service import NewowHistoricalPayload
+    from app.reference_trading.newow_fusion import FusionHistoricalPayload
+    if item.payload is None:
+        payload = None
+    elif isinstance(item.payload, NewowHistoricalPayload):
+        payload = {"kind": "newow", "identity": _identity_wire(item.payload.identity),
+                   "bar": encode_product_bar(item.payload.bar),
+                   "verified_lifecycle": item.payload.verified_lifecycle}
+    elif isinstance(item.payload, FusionHistoricalPayload):
+        payload = {"kind": "fusion", "bar": encode_product_bar(item.payload.bar),
+                   "source_actions": [_action_wire(action) for action in item.payload.source_actions]}
+    else:
+        raise TypeError("REFERENCE_SPOOL_PAYLOAD_UNSUPPORTED")
+    return {
+        "v": 1, "bar_end": item.bar_end.isoformat(),
+        "trading_day": item.trading_day.isoformat(),
+        "physical_contract": item.physical_contract,
+        "owner_segment_id": item.owner_segment_id,
+        "calculation_segment_id": item.calculation_segment_id,
+        "reference_price": str(item.reference_price),
+        "fingerprint": item.fingerprint,
+        "payload": payload,
+        "boundaries": [{
+            "reason": boundary.reason.value,
+            "physical_contract": boundary.physical_contract,
+            "owner_segment_id": boundary.owner_segment_id,
+            "calculation_segment_id": boundary.calculation_segment_id,
+            "bar_end": boundary.bar_end.isoformat(),
+            "trading_day": boundary.trading_day.isoformat(),
+        } for boundary in item.boundaries],
+        "strategy_input": item.strategy_input,
+    }
+
+
+def _historical_bar_from_wire(raw, stream: StreamIdentity):
+    from app.reference_trading.service import NewowHistoricalPayload
+    from app.reference_trading.newow_fusion import FusionHistoricalPayload
+    if not isinstance(raw, dict) or raw.get("v") != 1 or set(raw) != {
+        "v", "bar_end", "trading_day", "physical_contract", "owner_segment_id",
+        "calculation_segment_id", "reference_price", "fingerprint", "payload",
+        "boundaries", "strategy_input",
+    }:
+        raise ValueError("REFERENCE_SPOOL_CODEC_INVALID")
+    payload_raw = raw["payload"]
+    payload: object
+    if payload_raw is None:
+        payload = None
+    elif payload_raw.get("kind") == "newow" and set(payload_raw) == {
+        "kind", "identity", "bar", "verified_lifecycle",
+    }:
+        payload = NewowHistoricalPayload(
+            _identity_from_wire(payload_raw["identity"]),
+            decode_product_bar(payload_raw["bar"]),
+            payload_raw["verified_lifecycle"],
+        )
+    elif payload_raw.get("kind") == "fusion" and set(payload_raw) == {
+        "kind", "bar", "source_actions",
+    }:
+        payload = FusionHistoricalPayload(
+            decode_product_bar(payload_raw["bar"]),
+            tuple(_action_from_wire(action) for action in payload_raw["source_actions"]),
+        )
+    else:
+        raise ValueError("REFERENCE_SPOOL_CODEC_INVALID")
+    boundaries = tuple(ReferenceBoundary(
+        stream, boundary["reason"], boundary["physical_contract"],
+        boundary["owner_segment_id"], boundary["calculation_segment_id"],
+        datetime.fromisoformat(boundary["bar_end"]),
+        date.fromisoformat(boundary["trading_day"]),
+    ) for boundary in raw["boundaries"])
+    return HistoricalInputBar(
+        datetime.fromisoformat(raw["bar_end"]),
+        date.fromisoformat(raw["trading_day"]), raw["physical_contract"],
+        raw["owner_segment_id"], raw["calculation_segment_id"],
+        Decimal(raw["reference_price"]), raw["fingerprint"], payload,
+        boundaries, raw["strategy_input"],
+    )
+
+
+class HistoricalInputSpool(JsonSpoolSequence[HistoricalInputBar]):
+    """Validated, uniquely indexed replay bars with bounded process memory."""
+
+    def __init__(self, stream: StreamIdentity):
+        self.latest_bar_end: datetime | None = None
+        self.min_trading_day: date | None = None
+        self.max_trading_day: date | None = None
+        self._previous_by_segment: dict[tuple[str, str, str], datetime] = {}
+        super().__init__(
+            encode=_historical_bar_wire,
+            decode=lambda raw: _historical_bar_from_wire(raw, stream),
+            unique_key=lambda item: item.fingerprint,
+        )
+
+    def append(self, item: HistoricalInputBar) -> None:
+        if not isinstance(item, HistoricalInputBar):
+            raise TypeError("bars must contain HistoricalInputBar")
+        key = (item.physical_contract, item.owner_segment_id,
+               item.calculation_segment_id)
+        previous = self._previous_by_segment.get(key)
+        if previous is not None and item.bar_end <= previous:
+            raise ValueError("calculation-segment inputs must be strictly ordered")
+        super().append(item)
+        self._previous_by_segment[key] = item.bar_end
+        self.latest_bar_end = (max(self.latest_bar_end, item.bar_end)
+                               if self.latest_bar_end is not None else item.bar_end)
+        self.min_trading_day = (min(self.min_trading_day, item.trading_day)
+                                if self.min_trading_day is not None else item.trading_day)
+        self.max_trading_day = (max(self.max_trading_day, item.trading_day)
+                                if self.max_trading_day is not None else item.trading_day)
 
 
 def _newow_input_fingerprint(
@@ -211,10 +497,11 @@ def _daily_owner_reference_boundaries(boundaries, labeled_bars, owners):
     from guiyi_quant.reference_trading import BoundaryReason
 
     first_eligible = {}
-    known_owners = {(item.bar.physical_contract, item.bar.segment_id) for item in labeled_bars}
+    known_owners = set()
     for item in labeled_bars:
+        key = (item.bar.physical_contract, item.bar.segment_id)
+        known_owners.add(key)
         if item.bar.observation_eligible:
-            key = (item.bar.physical_contract, item.bar.segment_id)
             first_eligible[key] = min(first_eligible.get(key, item.bar.trading_day), item.bar.trading_day)
     result = []
     for boundary in boundaries:
@@ -298,6 +585,66 @@ def _insert_boundaries(
     return output
 
 
+def _iter_insert_boundaries(bars, boundaries):
+    """Preserve _insert_boundaries order without holding all replay inputs."""
+    by_owner = {}
+    for boundary in sorted(boundaries, key=lambda item: item.bar_end):
+        by_owner.setdefault((boundary.physical_contract,
+                             boundary.owner_segment_id), []).append(boundary)
+    positions = {owner: 0 for owner in by_owner}
+    current_owner = None
+    anchor = None
+    seen_owners = set()
+
+    def normalize(boundary, source):
+        return ReferenceBoundary(
+            boundary.stream, boundary.reason, boundary.physical_contract,
+            boundary.owner_segment_id, source.calculation_segment_id,
+            boundary.bar_end, boundary.trading_day,
+        )
+
+    def finish(owner, prior):
+        if owner is None:
+            return
+        pending = by_owner.get(owner, ())
+        for boundary in pending[positions.get(owner, 0):]:
+            if prior is None or boundary.bar_end <= prior.bar_end:
+                raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+            yield _boundary_input(prior, normalize(boundary, prior))
+        positions[owner] = len(pending)
+
+    for bar in bars:
+        if not bar.strategy_input:
+            raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+        owner = (bar.physical_contract, bar.owner_segment_id)
+        if owner != current_owner:
+            yield from finish(current_owner, anchor)
+            if owner in seen_owners:
+                raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+            seen_owners.add(owner)
+            current_owner = owner
+            anchor = None
+        pending = by_owner.get(owner, ())
+        position = positions.get(owner, 0)
+        while position < len(pending) and pending[position].bar_end < bar.bar_end:
+            if anchor is None:
+                raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+            yield _boundary_input(anchor, normalize(pending[position], anchor))
+            position += 1
+        while position < len(pending) and pending[position].bar_end == bar.bar_end:
+            boundary = normalize(pending[position], bar)
+            bar = replace(bar,
+                fingerprint=_boundary_fingerprint(bar.fingerprint, boundary),
+                boundaries=(*bar.boundaries, boundary))
+            position += 1
+        positions[owner] = position
+        yield bar
+        anchor = bar
+    yield from finish(current_owner, anchor)
+    if any(positions[owner] != len(items) for owner, items in by_owner.items()):
+        raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
+
+
 def _raw_bar_fingerprints(raw_inputs: object) -> dict[tuple[str, str, str], str]:
     """Index complete MDS bar records while retaining their source segment identity."""
     output: dict[tuple[str, str, str], str] = {}
@@ -359,25 +706,56 @@ class MarketDataHistoricalInputReader:
         return nullcontext() if self._pinned_snapshot is not None else self._read_guard()
 
     @contextmanager
-    def pin_stream(self, request):
+    def pin_stream(self, request, *, expected_manifest=None, expected_source_token=None):
         """Reuse immutable inputs only while the Canonical maintenance lease is held.
 
         No cache survives the lease or an interrupted build. The production
         composition enables this only with the authoritative maintenance lock.
         """
+        if (expected_manifest is None) != (expected_source_token is None):
+            raise ValueError("REFERENCE_INPUT_PIN_PROOF_INCOMPLETE")
+        if expected_manifest is not None and (
+            not isinstance(expected_manifest, dict)
+            or not isinstance(expected_source_token, str)
+            or not expected_source_token
+        ):
+            raise ValueError("REFERENCE_INPUT_PIN_PROOF_INVALID")
         if not self._pin_verified_inputs:
             yield
             return
         if self._pinned_snapshot is not None:
             raise ValueError("REFERENCE_INPUT_LEASE_ALREADY_HELD")
         with self._read_guard():
+            snapshot = None
             try:
+                snapshot = self._read_uncached(request)
+                if expected_manifest is not None:
+                    if (
+                        snapshot.source_token != expected_source_token
+                        or snapshot.dependency_manifest != expected_manifest
+                        or _stream_manifest_sha256(snapshot.dependency_manifest)
+                        != _stream_manifest_sha256(expected_manifest)
+                    ):
+                        raise ValueError("SOURCE_CHANGED")
+                    # The fresh read has proved the plan's exact manifest. Rebind
+                    # the snapshot instead of retaining a second large v5 vector.
+                    object.__setattr__(snapshot, "dependency_manifest", expected_manifest)
                 self._pinned_request = request
-                self._pinned_snapshot = self._read_uncached(request)
+                self._pinned_snapshot = snapshot
                 yield
             finally:
+                if snapshot is not None:
+                    close = getattr(snapshot, "close", None)
+                    if callable(close):
+                        close()
                 self._pinned_snapshot = None
                 self._pinned_request = None
+
+    def pin_verified_stream(self, request, *, expected_manifest, expected_source_token):
+        return self.pin_stream(
+            request, expected_manifest=expected_manifest,
+            expected_source_token=expected_source_token,
+        )
 
     def _newow_for(self, identity: StreamIdentity) -> object:
         return self._newow(identity) if callable(self._newow) else self._newow
@@ -385,6 +763,14 @@ class MarketDataHistoricalInputReader:
     def plan_stream(self, request: object) -> HistoricalInputSnapshot:
         with self._guard():
             return self._read(request)
+
+    @contextmanager
+    def planned_stream(self, request: object):
+        snapshot = self.plan_stream(request)
+        try:
+            yield snapshot
+        finally:
+            self.release_snapshot(snapshot)
 
     def estimate_stream(self, request: object) -> tuple[int, int]:
         """Conservative pre-materialization ceiling for explicit work budgets."""
@@ -395,18 +781,26 @@ class MarketDataHistoricalInputReader:
         normalized = request.identity.strategy_code.replace("-", "_")
         if normalized == "subing_reference":
             bound_reader = getattr(self._subing, "historical_input_bound", None)
-            arguments = {
+            arguments: dict[str, object] = {
                 "symbol": request.identity.product.lower(),
                 "frequency": request.identity.frequency,
             }
         elif normalized.startswith("newow_"):
-            bound_reader = getattr(
-                self._newow_for(request.identity), "historical_input_bound", None,
-            )
+            market_reader = self._newow_for(request.identity)
+            bound_reader = getattr(market_reader, "historical_spool_bound", None)
+            bounded_spool = callable(bound_reader)
+            if not bounded_spool:
+                bound_reader = getattr(market_reader, "historical_input_bound", None)
             arguments = {
                 "product": request.identity.product.lower(),
                 "frequency": request.identity.frequency,
             }
+            if bounded_spool:
+                arguments.update(
+                    formula_versions=request.identity.formula_versions,
+                    reference_model_version=request.identity.reference_model_version,
+                    fusion=normalized == "newow_dual_fusion",
+                )
         else:
             raise ValueError("REFERENCE_CAPABILITY_UNSUPPORTED")
         if not callable(bound_reader):
@@ -434,12 +828,23 @@ class MarketDataHistoricalInputReader:
         with self._guard():
             snapshot = self._read(request)
         if snapshot.source_token != expected_source_token:
+            self.release_snapshot(snapshot)
             raise ValueError("SOURCE_CHANGED")
         return snapshot
 
+    def release_snapshot(self, snapshot: HistoricalInputSnapshot) -> None:
+        if snapshot is not self._pinned_snapshot:
+            close = getattr(snapshot, "close", None)
+            if callable(close):
+                close()
+
     def revalidate(self, request: object, *, expected_source_token: str) -> bool:
         try:
-            return self._read(request).source_token == expected_source_token
+            snapshot = self._read(request)
+            try:
+                return snapshot.source_token == expected_source_token
+            finally:
+                self.release_snapshot(snapshot)
         except (TypeError, ValueError):
             return False
 
@@ -450,9 +855,17 @@ class MarketDataHistoricalInputReader:
             def __enter__(self):
                 self._guard = reader._guard()
                 self._guard.__enter__()
-                if reader._read(request).source_token != expected_source_token:
-                    self._guard.__exit__(None, None, None)
-                    raise ValueError("SOURCE_CHANGED")
+                try:
+                    snapshot = reader._read(request)
+                    try:
+                        matches = snapshot.source_token == expected_source_token
+                    finally:
+                        reader.release_snapshot(snapshot)
+                    if not matches:
+                        raise ValueError("SOURCE_CHANGED")
+                except BaseException as error:
+                    self._guard.__exit__(type(error), error, error.__traceback__)
+                    raise
                 return self
 
             def __exit__(self, exc_type, exc, tb):
@@ -483,46 +896,92 @@ class MarketDataHistoricalInputReader:
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
         from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
-        from app.reference_trading.newow_fusion import FusionHistoricalPayload, fusion_input_policy
+        from app.reference_trading.newow_fusion import fusion_input_policy
         if not callable(self._fusion_sources) or not self._compact_intraday_inputs:
             raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
         policy = fusion_input_policy(request.identity)
         product = build_product_identity(request.identity.product,ProductStrategy.TREND,ProductFrequency(request.identity.frequency),input_quality_policy=policy)
         shadow_identity = replace(request.identity,strategy_code="newow_trend",formula_versions=product.formula_versions,profile_id=product.profile_id,reference_model_version=REFERENCE_MODEL_VERSION,futures_adaptation_version=futures_adaptation_version(request.identity.frequency,policy))
         shadow = self._read_newow(replace(request,identity=shadow_identity))
+        try:
+            return self._read_fusion_loaded(request, shadow, policy, shadow_identity)
+        finally:
+            shadow.close()
+
+    def _read_fusion_loaded(self, request, shadow, policy, shadow_identity):
+        from guiyi_quant.newow.product_adapters import build_product_identity
+        from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+        from app.reference_trading.newow_fusion import FusionHistoricalPayload
+
+        if (
+            shadow.dependency_manifest.get("reader") != "newow_product_reader_prefix_v5"
+            or not isinstance(shadow.dependency_manifest.get("input_fingerprints"), dict)
+        ):
+            raise ValueError("REFERENCE_FUSION_SOURCE_REBUILD_REQUIRED")
         source_manifests = {"trend": shadow.dependency_manifest}
+        oscillator_snapshot = None
         if "input_fingerprints" in shadow.dependency_manifest:
             oscillator = build_product_identity(request.identity.product,ProductStrategy.OSCILLATION,
                 ProductFrequency(request.identity.frequency),input_quality_policy=policy)
             oscillator_identity = replace(shadow_identity,strategy_code="newow_oscillation",
                 formula_versions=oscillator.formula_versions,profile_id=oscillator.profile_id)
             oscillator_snapshot = self._read_newow(replace(request,identity=oscillator_identity))
-            # Boundary fingerprints include the stream identity. Verify each
-            # saved strategy against its own authoritative replay, with common
-            # market lineage still identical under the same maintenance lease.
-            for key in ("calendar_session_effective_fingerprints", "calendar_session_source_evidence",
-                        "rank1", "boundaries", "data_interruptions", "lifecycle_owners",
-                        "market_source_identity", "input_policy_version", "quality_policy",
-                        "reference_boundary_policy_version"):
-                if oscillator_snapshot.dependency_manifest.get(key) != shadow.dependency_manifest.get(key):
+            try:
+                if oscillator_snapshot.source_integrity != shadow.source_integrity:
                     raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
-            source_manifests["oscillation"] = oscillator_snapshot.dependency_manifest
+                # Boundary fingerprints include the stream identity. Verify each
+                # saved strategy against its own authoritative replay.
+                for key in ("calendar_session_effective_fingerprints", "calendar_session_source_evidence",
+                            "rank1", "boundaries", "data_interruptions", "lifecycle_owners",
+                            "market_source_identity", "input_policy_version", "quality_policy",
+                            "reference_boundary_policy_version"):
+                    if oscillator_snapshot.dependency_manifest.get(key) != shadow.dependency_manifest.get(key):
+                        raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
+                source_manifests["oscillation"] = oscillator_snapshot.dependency_manifest
+            finally:
+                oscillator_snapshot.close()
+        target_day = (shadow.projection_context.resolved.actual_through
+            if shadow.projection_context is not None else
+            max((item.trading_day for item in shadow.bars), default=None))
         actions, dependencies = self._fusion_sources(request,shadow.dependency_manifest,
-            source_manifests=source_manifests)
-        bars=[]
-        for item in shadow.bars:
-            source_actions=tuple(actions.get((item.bar_end,item.physical_contract,item.owner_segment_id,item.calculation_segment_id),())) if item.strategy_input else ()
-            payload=FusionHistoricalPayload(item.payload.bar,source_actions) if item.strategy_input else item.payload
-            fingerprint=sha256(_canonical([item.fingerprint,[(action.signal_id,str(action.reference_price),action.trade_eligibility.value) for action in source_actions]]).encode()).hexdigest()
-            bars.append(replace(item,payload=payload,fingerprint=fingerprint,boundaries=tuple(replace(boundary,stream=request.identity) for boundary in item.boundaries)))
-        manifest={**shadow.dependency_manifest,"query_through":request.through.isoformat(),"query_as_of":request.as_of.isoformat(),"input_count":len(bars),"source_reader":shadow.dependency_manifest["reader"],"reader":"newow_fusion_saved_sources_v1","source_dependencies":dependencies,"formula_versions":list(request.identity.formula_versions),"reference_model_version":request.identity.reference_model_version,"input_sha256":sha256(_canonical([bar.fingerprint for bar in bars]).encode()).hexdigest()}
-        if "input_fingerprints" in manifest:
-            # Full manifests bind execution inputs, not the shadow market
-            # inputs from which fusion payloads and fingerprints were derived.
-            manifest["source_input_fingerprints"] = manifest["input_fingerprints"]
-            manifest["input_fingerprints"] = [bar.fingerprint for bar in bars]
-            manifest["reader"] = "newow_fusion_saved_sources_v2"
-        return HistoricalInputSnapshot(request.identity,shadow.storage_start,shadow.completed_through,tuple(bars),manifest,sha256(_canonical(manifest).encode()).hexdigest(),len(_canonical(manifest).encode())+len(bars)*256)
+            source_manifests=source_manifests, source_integrity=shadow.source_integrity,
+            target_completed_through=shadow.completed_through, target_trading_day=target_day)
+        source_manifests.clear()
+        oscillator_snapshot = None  # Release its large manifest before fusion projection.
+        bars = None
+        try:
+            bars = HistoricalInputSpool(request.identity)
+            execution_fingerprints = PackedFingerprintBuilder()
+            for item in shadow.bars:
+                source_actions=tuple(actions.get((item.bar_end,item.physical_contract,item.owner_segment_id,item.calculation_segment_id),())) if item.strategy_input else ()
+                payload=FusionHistoricalPayload(item.payload.bar,source_actions) if item.strategy_input else item.payload
+                fingerprint=sha256(_canonical([item.fingerprint,[(action.signal_id,str(action.reference_price),action.trade_eligibility.value) for action in source_actions]]).encode()).hexdigest()
+                bars.append(replace(item,payload=payload,fingerprint=fingerprint,boundaries=tuple(replace(boundary,stream=request.identity) for boundary in item.boundaries)))
+                execution_fingerprints.add(fingerprint)
+            bars.seal()
+            execution_proof = execution_fingerprints.finish()
+            return self._finish_fusion_snapshot(request, shadow, bars, execution_proof, dependencies)
+        except BaseException:
+            if bars is not None:
+                bars.close()
+            raise
+        finally:
+            if isinstance(actions, dict):
+                actions.clear()  # Existing small fixture adapters use a plain mapping.
+            else:
+                actions.close()
+
+    def _finish_fusion_snapshot(self, request, shadow, bars, execution_proof, dependencies):
+        manifest={**shadow.dependency_manifest,"query_through":request.through.isoformat(),"query_as_of":request.as_of.isoformat(),"input_count":len(bars),"source_reader":shadow.dependency_manifest["reader"],"reader":"newow_fusion_saved_sources_v3","source_dependencies":dependencies,"formula_versions":list(request.identity.formula_versions),"reference_model_version":request.identity.reference_model_version,"input_sha256":packed_fingerprints_sha256(execution_proof)}
+        # Full manifests bind execution inputs and their exact source leaves.
+        manifest["source_input_fingerprints"] = manifest["input_fingerprints"]
+        manifest["input_fingerprints"] = execution_proof
+        token, manifest_bytes = _stream_manifest_sha256(manifest)
+        return HistoricalInputSnapshot(
+            request.identity, shadow.storage_start, shadow.completed_through,
+            bars, manifest, token, manifest_bytes + len(bars) * 256,
+            shadow.projection_context, shadow.source_integrity,
+        )
 
     def _read_subing(self, request):
         from app.market_data.domain import BarFrequency
@@ -660,15 +1119,8 @@ class MarketDataHistoricalInputReader:
         )
 
     def _read_newow(self, request):
-        from guiyi_quant.newow.product_adapters import (
-            build_product_identity,
-            label_calculation_segments,
-        )
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
-        from guiyi_quant.newow.product_identity import futures_adaptation_version
-        from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
         from app.market_data.newow.product_query import NewowProductQuery
-        from app.reference_trading.service import NewowHistoricalPayload
 
         strategy = ProductStrategy(request.identity.strategy_code.replace("-", "_").removeprefix("newow_"))
         frequency = ProductFrequency(request.identity.frequency)
@@ -678,7 +1130,28 @@ class MarketDataHistoricalInputReader:
             request.since, request.through, request.as_of,
         )
         newow_reader = self._newow_for(request.identity)
-        read = newow_reader.load(query, request.as_of)
+        historical = getattr(newow_reader, "load_historical", None)
+        read = historical(query, request.as_of) if callable(historical) else newow_reader.load(query, request.as_of)
+        try:
+            return self._read_newow_loaded(
+                request, query, newow_reader, read, frequency, strategy,
+                production_historical=callable(historical),
+            )
+        finally:
+            close = getattr(read, "close", None)
+            if callable(close):
+                close()
+
+    def _read_newow_loaded(self, request, query, newow_reader, read, frequency, strategy,
+                           *, production_historical):
+        from guiyi_quant.newow.product_adapters import (
+            build_product_identity, iter_label_calculation_segments,
+        )
+        from guiyi_quant.newow.product_contracts import ProductFrequency
+        from guiyi_quant.newow.product_identity import futures_adaptation_version
+        from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
+        from app.reference_trading.service import NewowHistoricalPayload
+
         identity = build_product_identity(
             query.product, strategy, frequency,
             input_quality_policy=read.input_quality_policy,
@@ -716,29 +1189,13 @@ class MarketDataHistoricalInputReader:
             (item.physical_contract, item.segment_id)
             for item in read.lifecycle_evidence
         }
-        labeled_bars = label_calculation_segments(
-            identity, read.replay_bars, read.data_interruptions,
-        )
-        fingerprints = _newow_replay_fingerprints(
-            labeled_bars, read.input_quality_policy.value,
-        )
-        bars = [HistoricalInputBar(
-            item.bar.bar_end,
-            item.bar.trading_day,
-            item.bar.physical_contract,
-            item.bar.segment_id,
-            item.calculation_segment_id,
-            item.bar.close,
-            fingerprints[index],
-            NewowHistoricalPayload(
-                identity,
-                item,
-                (item.bar.physical_contract, item.bar.segment_id) in evidence_owners,
-            ),
-        ) for index, item in enumerate(labeled_bars)]
+        def labeled_bars():
+            return iter_label_calculation_segments(
+                identity, read.replay_bars, read.data_interruptions,
+            )
         if frequency is ProductFrequency.WEEKLY:
             first_eligible: dict[tuple[str, str], datetime] = {}
-            for item in labeled_bars:
+            for item in labeled_bars():
                 if item.bar.observation_eligible:
                     owner = (item.bar.physical_contract, item.bar.segment_id)
                     first_eligible[owner] = min(
@@ -773,15 +1230,68 @@ class MarketDataHistoricalInputReader:
                 ):
                     raise ValueError("REFERENCE_BOUNDARY_CONTEXT_MISSING")
         if frequency is ProductFrequency.DAILY:
-            boundaries = _daily_owner_reference_boundaries(boundaries, labeled_bars, read.owners)
-        bars = _insert_boundaries(bars, tuple(boundaries))
+            boundaries = _daily_owner_reference_boundaries(boundaries, labeled_bars(), read.owners)
+        def raw_bars():
+            for item in labeled_bars():
+                yield HistoricalInputBar(
+                    item.bar.bar_end, item.bar.trading_day,
+                    item.bar.physical_contract, item.bar.segment_id,
+                    item.calculation_segment_id, item.bar.close,
+                    _newow_input_fingerprint(
+                        source_bar_sha256=item.source_bar_sha256,
+                        bar_end=item.bar.bar_end,
+                        physical_contract=item.bar.physical_contract,
+                        owner_segment_id=item.bar.segment_id,
+                        calculation_segment_id=item.calculation_segment_id,
+                        quality_policy=read.input_quality_policy.value,
+                    ),
+                    NewowHistoricalPayload(
+                        identity, item,
+                        (item.bar.physical_contract, item.bar.segment_id) in evidence_owners,
+                    ),
+                )
+        bars = HistoricalInputSpool(request.identity)
+        input_fingerprints = PackedFingerprintBuilder()
+        calendar_fingerprints = PackedFingerprintBuilder()
+        try:
+            for item in _iter_insert_boundaries(raw_bars(), tuple(boundaries)):
+                bars.append(item)
+                input_fingerprints.add(item.fingerprint)
+                if item.strategy_input:
+                    calendar_fingerprints.add(sha256(
+                        _canonical((item.bar_end, item.trading_day)).encode()
+                    ).hexdigest())
+            bars.seal()
+        except Exception:
+            bars.close()
+            raise
+        if not bars:
+            bars.close()
+            raise ValueError("REFERENCE_INPUT_INCOMPLETE")
+        try:
+            input_proof = input_fingerprints.finish()
+            calendar_proof = calendar_fingerprints.finish()
+            return self._finish_newow_snapshot(
+                request, query, newow_reader, read, frequency, bars,
+                input_proof, calendar_proof, identity,
+                production_historical=production_historical,
+            )
+        except BaseException:
+            bars.close()
+            raise
+
+    def _finish_newow_snapshot(self, request, query, newow_reader, read, frequency, bars,
+                                input_proof, calendar_proof, identity,
+                                *, production_historical):
+        from guiyi_quant.newow.product_contracts import ProductFrequency
+
         metadata_reader = getattr(newow_reader, "historical_metadata_evidence", None)
         if not callable(metadata_reader):
             raise ValueError("REFERENCE_METADATA_EVIDENCE_MISSING")
         metadata_evidence = metadata_reader(
             product=query.product,
-            since=min(bar.trading_day for bar in bars),
-            through=max(bar.trading_day for bar in bars),
+            since=bars.min_trading_day,
+            through=bars.max_trading_day,
         )
         if not isinstance(metadata_evidence, dict) or not metadata_evidence:
             raise ValueError("REFERENCE_METADATA_EVIDENCE_MISSING")
@@ -792,11 +1302,8 @@ class MarketDataHistoricalInputReader:
         manifest = {
             "reader": "newow_product_reader_v2",
             "query_since": request.since.isoformat(),
-            "input_fingerprints": [bar.fingerprint for bar in bars],
-            "calendar_session_effective_fingerprints": [
-                sha256(_canonical((bar.bar_end, bar.trading_day)).encode()).hexdigest()
-                for bar in bars if bar.strategy_input
-            ],
+            "input_fingerprints": input_proof,
+            "calendar_session_effective_fingerprints": calendar_proof,
             "calendar_session_source_evidence": metadata_evidence,
             "rank1": [
                 [owner.contract, owner.start_trading_day.isoformat(), owner.end_trading_day.isoformat()]
@@ -822,28 +1329,85 @@ class MarketDataHistoricalInputReader:
         }
         if frequency is ProductFrequency.DAILY:
             manifest["reference_boundary_policy_version"] = NEWOW_D1_REFERENCE_BOUNDARY_POLICY
-        if self._compact_intraday_inputs and frequency.value in {"1m", "5m", "15m", "30m", "60m"}:
-            # Verify current immutable partition bytes without treating their
-            # whole-month hash as the identity of an earlier completed prefix.
-            newow_reader.historical_source_evidence(product=query.product,
-                frequency=frequency.value, since=request.since,
-                through=request.through, as_of=request.as_of)
+        source_integrity = None
+        projection_context = None
+        if production_historical:
+            from app.market_data.newow.product_reader import ResolvedPerformanceWindow
+
+            source_request = {
+                "product": query.product, "frequency": frequency.value,
+                "since": request.since.isoformat(),
+                "through": request.through.isoformat(),
+                "as_of": request.as_of.isoformat(),
+            }
+            source_evidence = newow_reader.historical_source_evidence(
+                product=query.product, frequency=frequency.value,
+                since=request.since, through=request.through, as_of=request.as_of,
+            )
+            if not isinstance(source_evidence, dict) or not isinstance(
+                source_evidence.get("schema"), str
+            ):
+                raise ValueError("REFERENCE_SOURCE_INTEGRITY_MISSING")
+            evidence_sha256, _ = _stream_manifest_sha256(source_evidence)
+            source_integrity = {
+                "schema": "reference_mds_source_integrity_v1",
+                "source_schema": source_evidence["schema"],
+                "request": source_request,
+                "evidence_sha256": evidence_sha256,
+            }
+            projection_context = NewowProjectionContext(
+                page_identity=identity,
+                resolved=ResolvedPerformanceWindow(
+                    request.since, request.through, bars.max_trading_day,
+                    bars.latest_bar_end, True,
+                ),
+                owners=tuple(read.owners), boundaries=tuple(read.boundaries),
+                data_interruptions=tuple(read.data_interruptions),
+                lifecycle_evidence=tuple(read.lifecycle_evidence),
+                sources=read.sources,
+                input_quality_policy=read.input_quality_policy,
+                reference_source_evidence_sha256=evidence_sha256,
+                strategy_input_count=calendar_proof["count"],
+            )
+        elif self._compact_intraday_inputs and frequency.value in {"1m", "5m", "15m", "30m", "60m"}:
+            # Preserve the historical fixture path's source check.
+            newow_reader.historical_source_evidence(
+                product=query.product, frequency=frequency.value,
+                since=request.since, through=request.through, as_of=request.as_of,
+            )
         # Versioned semantic proof: partition bytes remain verified by MDS, but
         # appending to a monthly partition must not invalidate an old input prefix.
-        manifest["reader"] = "newow_product_reader_prefix_v4"
-        actual_day = max(bar.trading_day for bar in bars)
+        manifest["reader"] = "newow_product_reader_prefix_v5"
+        if read.data_interruptions:
+            semantic_gaps = getattr(read, "semantic_gap_hashes", None)
+            if (
+                not isinstance(semantic_gaps, tuple)
+                or len(semantic_gaps) != len(read.data_interruptions)
+                or any(
+                    not isinstance(value, str) or len(value) != 64
+                    or any(char not in "0123456789abcdef" for char in value)
+                    for value in semantic_gaps
+                )
+            ):
+                raise ValueError("REFERENCE_SEMANTIC_QUALITY_PROOF_MISSING")
+            manifest["data_interruptions"] = list(semantic_gaps)
+        else:
+            manifest["data_interruptions"] = []
+        actual_day = bars.max_trading_day
         manifest["rank1"] = [
             [owner.contract, owner.start_trading_day.isoformat(),
              min(owner.end_trading_day, actual_day).isoformat()]
             for owner in read.owners if owner.start_trading_day <= actual_day
         ]
-        token = sha256(_canonical(manifest).encode()).hexdigest()
+        token, manifest_bytes = _stream_manifest_sha256(manifest)
         return HistoricalInputSnapshot(
             request.identity,
-            min(bar.trading_day for bar in bars),
-            max((bar.bar_end for bar in bars), default=None),
-            tuple(bars),
+            bars.min_trading_day,
+            bars.latest_bar_end,
+            bars,
             manifest,
             token,
-            len(_canonical(manifest).encode()) + len(bars) * 256,
+            manifest_bytes + len(bars) * 256,
+            projection_context,
+            source_integrity,
         )

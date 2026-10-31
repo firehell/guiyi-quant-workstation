@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from bisect import bisect_right
+from collections.abc import Iterator, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -143,7 +144,14 @@ def _unavailable(code: str) -> FeatureStatus:
     return FeatureStatus(FeatureRuntimeStatus.UNAVAILABLE, _ACTIVE, code)
 
 
-def _validate_inputs(identity: ProductIdentity, bars: tuple[ProductBar, ...]) -> None:
+def _validate_inputs(identity: ProductIdentity, bars: Sequence[ProductBar]) -> None:
+    for _ in _iter_validated_inputs(identity, bars):
+        pass
+
+
+def _iter_validated_inputs(
+    identity: ProductIdentity, bars: Sequence[ProductBar],
+) -> Iterator[ProductBar]:
     if not isinstance(identity, ProductIdentity):
         raise ValueError("NEWOW_PRODUCT_INVALID_IDENTITY")
     if frozenset(identity.formula_versions) != _EXPECTED_FORMULAS[identity.strategy]:
@@ -177,6 +185,7 @@ def _validate_inputs(identity: ProductIdentity, bars: tuple[ProductBar, ...]) ->
         ):
             raise ValueError("NEWOW_PRODUCT_INPUT_ORDER")
         previous_bar = bar
+        yield product_bar
 
 
 def _new_action(
@@ -768,12 +777,19 @@ def _main_rise_frame(
 
 def label_calculation_segments(
     identity: ProductIdentity,
-    bars: tuple[ProductBar, ...],
+    bars: Sequence[ProductBar],
     data_interruptions: tuple[DataInterruption, ...] = (),
 ) -> tuple[ProductBar, ...]:
     """Attach stable calculation identities without changing physical-owner facts."""
-    inputs = tuple(bars)
-    _validate_inputs(identity, inputs)
+    return tuple(iter_label_calculation_segments(identity, bars, data_interruptions))
+
+
+def iter_label_calculation_segments(
+    identity: ProductIdentity,
+    bars: Sequence[ProductBar],
+    data_interruptions: tuple[DataInterruption, ...] = (),
+) -> Iterator[ProductBar]:
+    """Yield the same labels while keeping a verified input sequence bounded."""
     gaps = tuple(data_interruptions)
     if gaps and identity.frequency not in (ProductFrequency.DAILY, ProductFrequency.WEEKLY):
         raise ValueError("NEWOW_PRODUCT_INVALID_DATA_INTERRUPTION")
@@ -793,21 +809,19 @@ def label_calculation_segments(
         gaps_by_owner.setdefault(
             (gap.physical_contract, gap.segment_id), []
         ).append(gap.effective_at)
-    labeled: list[ProductBar] = []
-    for product_bar in inputs:
+    for product_bar in _iter_validated_inputs(identity, bars):
         # Inputs are owner ordered, not globally chronological: each physical
         # lifecycle prefix can rewind behind the previous owner's last bar.
         owner = (product_bar.bar.physical_contract, product_bar.bar.segment_id)
         owner_gaps = gaps_by_owner.get(owner, [])
         gap_index = bisect_right(owner_gaps, product_bar.bar.bar_end)
         gap_at = owner_gaps[gap_index - 1] if gap_index else None
-        labeled.append(replace(
+        yield replace(
             product_bar,
             calculation_segment_id=build_calculation_segment_id(
                 owner[1], gap_at, identity.input_quality_policy
             ),
-        ))
-    return tuple(labeled)
+        )
 
 
 def seed_replay_state() -> ProductReplayState:
@@ -915,9 +929,26 @@ def replay_step(
     return working, frame, diagnostics
 
 
+def iter_replay_strategy_steps(
+    identity: ProductIdentity,
+    bars: Sequence[ProductBar],
+    *,
+    lifecycle_evidence: tuple[LifecycleReplayEvidence, ...] = (),
+    data_interruptions: tuple[DataInterruption, ...] = (),
+) -> Iterator[tuple[StrategyFrame, tuple[str, ...]]]:
+    """Run the original validated kernel without retaining its output frames."""
+    _validate_inputs(identity, bars)
+    validate_lifecycle_replay_evidence(identity, bars, lifecycle_evidence)
+    state = seed_replay_state()
+    for product_bar in iter_label_calculation_segments(identity, bars, data_interruptions):
+        state, frame, found = _replay_step_mutating(identity, state, product_bar)
+        assert frame is not None
+        yield frame, found
+
+
 def replay_strategy(
     identity: ProductIdentity,
-    bars: tuple[ProductBar, ...],
+    bars: Sequence[ProductBar],
     *,
     lifecycle_evidence: tuple[LifecycleReplayEvidence, ...] = (),
     data_interruptions: tuple[DataInterruption, ...] = (),
@@ -931,14 +962,9 @@ def replay_strategy(
     labeled_inputs = label_calculation_segments(identity, inputs, gaps)
     frames: list[StrategyFrame] = []
     diagnostics: list[str] = []
-    state = seed_replay_state()
-    for product_bar in labeled_inputs:
-        # Batch ordering, identity and lifecycle were validated above. This
-        # fresh state belongs exclusively to this call and never escapes, so
-        # the public step's defensive deepcopy and duplicate-input hashes are
-        # unnecessary. Keep its exact formula/pairing/rollover transition.
-        state, frame, found = _replay_step_mutating(identity, state, product_bar)
-        assert frame is not None
+    for frame, found in iter_replay_strategy_steps(
+        identity, inputs, lifecycle_evidence=evidence, data_interruptions=gaps,
+    ):
         frames.append(frame)
         diagnostics.extend(found)
 

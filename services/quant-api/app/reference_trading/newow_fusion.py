@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app.reference_trading.fingerprint_proof import (
+    SEMANTIC_READERS, fingerprint_count,
+)
+
 from app.reference_trading.checkpoint import checkpoint_watermark
 
 from dataclasses import dataclass
@@ -287,14 +291,22 @@ class SavedFusionSources:
         self._persisted = PersistedNewowReference(session_factory)
         self._query = self._persisted._query
 
-    def __call__(self, request, market_manifest, *, source_manifests=None):
-        from datetime import date
+    def __call__(self, request, market_manifest, *, source_manifests=None,
+                 source_integrity=None, target_completed_through=None,
+                 target_trading_day=None):
+        from contextlib import nullcontext
+        from datetime import date, datetime
         from guiyi_quant.newow.product_contracts import ProductFrequency
+        from app.reference_trading.fusion_action_spool import FusionActionSpool
+        from app.reference_trading.manifest_storage import verified_manifest_scope
 
-        actions = {}
+        target_cutoff = target_completed_through or request.as_of
+        actions = FusionActionSpool()
         dependencies = []
-        for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION):
-            expected_manifest = (source_manifests or {}).get(strategy.value, market_manifest)
+
+        # The per-source frame releases its manifest and page material before
+        # the next strategy starts; only actions and small dependency proofs remain.
+        def read_one(strategy, expected_manifest):
             streams = self._query.streams(
                 strategy=f"newow_{strategy.value}",
                 product=request.identity.product,
@@ -307,11 +319,60 @@ class SavedFusionSources:
                 stream_id,
                 since=request.since,
                 through=request.through,
-                cutoff=request.as_of,
+                cutoff=target_cutoff,
             )
             source_identity, manifest = self._persisted._manifest(
                 stream_id, summary["revision_id"], summary["seq"]
             )
+            if expected_manifest.get("reader") == "newow_product_reader_prefix_v5":
+                from app.reference_trading.page_material_query import select_page_material
+                from app.reference_trading.page_material_storage import validate_input_integrity
+
+                if (not isinstance(target_completed_through, datetime)
+                        or target_completed_through.tzinfo is None
+                        or target_completed_through.utcoffset() is None
+                        or type(target_trading_day) is not date
+                        or target_completed_through > request.as_of):
+                    raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
+                count = fingerprint_count(manifest.get("input_fingerprints"))
+                material = select_page_material(
+                    self._persisted._factory, stream_id, cutoff=target_cutoff,
+                    generation=(summary["revision_id"], summary["seq"]),
+                )
+                record = getattr(manifest, "input_integrity", None)
+                digest = manifest_sha256(manifest)
+                if (material is None or material.cutoff != target_cutoff
+                        or material.through != target_trading_day
+                        or material.seq != summary["seq"]
+                        or material.revision_id != summary["revision_id"]
+                        or type(manifest.get("input_count", count)) is not int
+                        or manifest.get("input_count", count) != count
+                        or count <= 0 or not isinstance(record, dict)
+                        or source_integrity is None
+                        or record.get("source_integrity") != source_integrity):
+                    raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
+                expected_binding = {
+                    "schema": "reference_input_integrity_v1",
+                    "stream_id": stream_id, "revision_id": summary["revision_id"],
+                    "seq": summary["seq"], "manifest_sha256": digest,
+                    "source_token": digest,
+                    "source_integrity": source_integrity,
+                    "request": {
+                        "product": request.identity.product.lower(),
+                        "frequency": request.identity.frequency,
+                        "since": request.since.isoformat(),
+                        "through": request.through.isoformat(),
+                        "as_of": request.as_of.isoformat(),
+                    },
+                }
+                try:
+                    validate_input_integrity(record, expected_binding=expected_binding)
+                    envelope = material.envelope(manifest, source_identity)
+                    if material.field["binding"]["end_input_index"] != count:
+                        raise ValueError("incomplete final material")
+                    del envelope
+                except (KeyError, TypeError, ValueError) as error:
+                    raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY") from error
             required = ("reader", "query_since", "quality_policy")
             if request.identity.frequency == "1d":
                 from app.reference_trading.inputs import NEWOW_D1_REFERENCE_BOUNDARY_POLICY
@@ -353,20 +414,26 @@ class SavedFusionSources:
                 snapshot_token=summary["snapshot"],
                 since=date.min,
                 through=request.through,
-                cutoff=request.as_of,
-                input_count=manifest.get("input_count", len(manifest.get("input_fingerprints", []))),
+                cutoff=target_cutoff,
+                input_count=manifest.get("input_count", fingerprint_count(manifest.get("input_fingerprints", []))),
                 check_cancelled=self._check_cancelled,
             )) as facts:
                 for point in facts:
                     action = decode_source_action(point["value"], identity)
-                    key = (
-                        action.bar_end,
-                        action.physical_contract,
-                        action.segment_id,
-                        action.calculation_segment_id,
-                    )
-                    actions.setdefault(key, []).append(action)
-        return actions, dependencies
+                    actions.append(action)
+
+        try:
+            for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION):
+                expected_manifest = (source_manifests or {}).get(strategy.value, market_manifest)
+                scope = (verified_manifest_scope(expected_manifest, manifest_sha256(expected_manifest))
+                         if expected_manifest.get("reader") == "newow_product_reader_prefix_v5"
+                         else nullcontext())
+                with scope:
+                    read_one(strategy, expected_manifest)
+            return actions, dependencies
+        except BaseException:
+            actions.close()
+            raise
 
 
 class PersistedFusionComparison:
@@ -379,18 +446,39 @@ class PersistedFusionComparison:
         self._query = self._persisted._query
 
     @staticmethod
-    def verify_saved_source(identity, manifest, *, product, frequency, through, cutoff, reader):
+    def verify_saved_source(identity, manifest, *, product, frequency, through, cutoff, reader, persisted=None):
         """Freshly verify the saved fusion source for calculations and cache hits."""
         from datetime import date, datetime
         from app.reference_trading.query import QueryConflict
         from app.reference_trading.source_identity import verify_saved_compact_source
 
+        if manifest.get("source_reader") == "newow_product_reader_prefix_v5":
+            from app.reference_trading.page_material_query import PageMaterialSnapshot
+            generation = getattr(manifest, "generation", None)
+            field = getattr(manifest, "page_material", None)
+            if persisted is None or generation is None or not isinstance(field, dict):
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            try:
+                binding = field["binding"]
+                material = PageMaterialSnapshot(*generation,
+                    datetime.fromisoformat(binding["cutoff"]),
+                    date.fromisoformat(binding["result_trading_day"]), field)
+                if material.cutoff != cutoff:
+                    raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+                envelope = material.envelope(manifest, identity)
+                persisted._verify_material_source(identity, manifest, reader,
+                    owner_keys=persisted._material_owner_keys(envelope),
+                    saved_through=material.cutoff, saved_day=material.through,
+                    requested_through=cutoff)
+                return
+            except (KeyError, TypeError, ValueError) as error:
+                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from error
         try:
             source_through = date.fromisoformat(manifest["query_through"])
             source_cutoff = datetime.fromisoformat(manifest["query_as_of"])
             if (
                 manifest.get("reader") not in {
-                    "newow_fusion_saved_sources_v1", "newow_fusion_saved_sources_v2"
+                    "newow_fusion_saved_sources_v1", "newow_fusion_saved_sources_v2", "newow_fusion_saved_sources_v3"
                 }
                 or through > source_through
                 or cutoff > source_cutoff
@@ -416,29 +504,30 @@ class PersistedFusionComparison:
                 source_stream = replace(identity, strategy_code="newow_trend",
                     formula_versions=base_identity.formula_versions, profile_id=base_identity.profile_id,
                     reference_model_version=REFERENCE_MODEL_VERSION)
-                source = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None).plan_stream(
-                    HistoricalStreamRequest(source_stream, date.fromisoformat(manifest["query_since"]),
-                        through, cutoff))
-                source_manifest = {**manifest, "reader": source_reader,
-                    "formula_versions": list(base_identity.formula_versions),
-                    "reference_model_version": source_stream.reference_model_version}
-                if manifest["reader"] == "newow_fusion_saved_sources_v2":
-                    from hashlib import sha256
-                    from app.reference_trading.inputs import _canonical
-                    execution = manifest.get("input_fingerprints")
-                    shadow = manifest.get("source_input_fingerprints")
-                    if (
-                        not isinstance(execution, list) or not execution
-                        or not isinstance(shadow, list) or len(shadow) != len(execution)
-                        or type(manifest.get("input_count")) is not int
-                        or manifest["input_count"] != len(execution)
-                        or manifest.get("input_sha256") != sha256(_canonical(execution).encode()).hexdigest()
-                    ):
-                        raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
-                    source_manifest["input_fingerprints"] = shadow
-                verify_saved_input_prefix(source_manifest,
-                    source.dependency_manifest, through,
-                    frozenset((bar.physical_contract, bar.owner_segment_id) for bar in source.bars if bar.strategy_input))
+                input_reader = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None)
+                with input_reader.planned_stream(HistoricalStreamRequest(
+                    source_stream, date.fromisoformat(manifest["query_since"]),
+                    through, cutoff,
+                )) as source:
+                    source_manifest = {**manifest, "reader": source_reader,
+                        "formula_versions": list(base_identity.formula_versions),
+                        "reference_model_version": source_stream.reference_model_version}
+                    if manifest["reader"] in {"newow_fusion_saved_sources_v2", "newow_fusion_saved_sources_v3"}:
+                        from app.reference_trading.inputs import _stream_manifest_sha256
+                        execution = manifest.get("input_fingerprints")
+                        shadow = manifest.get("source_input_fingerprints")
+                        if (
+                            fingerprint_count(execution) == 0
+                            or fingerprint_count(shadow) != fingerprint_count(execution)
+                            or type(manifest.get("input_count")) is not int
+                            or manifest["input_count"] != fingerprint_count(execution)
+                            or manifest.get("input_sha256") != _stream_manifest_sha256(execution)[0]
+                        ):
+                            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+                        source_manifest["input_fingerprints"] = shadow
+                    verify_saved_input_prefix(source_manifest,
+                        source.dependency_manifest, through,
+                        frozenset((bar.physical_contract, bar.owner_segment_id) for bar in source.bars if bar.strategy_input))
         except (KeyError, TypeError, ValueError) as error:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from error
 
@@ -454,6 +543,7 @@ class PersistedFusionComparison:
         limit=200,
         cursor=None,
         expected_source_generation=None,
+        snapshot_token=None,
     ):
         from datetime import date, timedelta
         from app.reference_trading.query import QueryConflict, _decode, _encode
@@ -467,13 +557,14 @@ class PersistedFusionComparison:
             )
         stream = matches[0]
         stats = self._query.summary(
-            stream["stream_id"], since=since, through=through, cutoff=cutoff
+            stream["stream_id"], since=since, through=through, cutoff=cutoff,
+            **({"snapshot_token": snapshot_token} if snapshot_token is not None else {}),
         )
         identity, manifest = self._persisted._manifest(
             stream["stream_id"], stats["revision_id"], stats["seq"]
         )
         self.verify_saved_source(identity, manifest, product=product, frequency=frequency,
-                                 through=through, cutoff=cutoff, reader=reader)
+                                 through=through, cutoff=cutoff, reader=reader, persisted=self._persisted)
         dependencies = manifest.get("source_dependencies")
         if not isinstance(dependencies, list) or len(dependencies) != 2:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
@@ -481,7 +572,7 @@ class PersistedFusionComparison:
         for strategy, dependency in zip(
             (ProductStrategy.TREND, ProductStrategy.OSCILLATION), dependencies
         ):
-            if (manifest.get("source_reader") != "newow_product_reader_prefix_v4"
+            if (manifest.get("source_reader") not in SEMANTIC_READERS
                     and expected_source_generation is not None and strategy.value == expected_source_generation[0]):
                 if (dependency.get("stream_id"), dependency.get("revision_id"), dependency.get("seq")) != tuple(expected_source_generation[1:]):
                     raise QueryConflict("SOURCE_GENERATION_CONFLICT")
@@ -493,7 +584,7 @@ class PersistedFusionComparison:
                 for key, other in (
                     ("stream_id", "stream_id"),
                     *(((("active_revision_id", "revision_id"), ("latest_seq", "seq")))
-                      if manifest.get("source_reader") != "newow_product_reader_prefix_v4" else ()),
+                      if manifest.get("source_reader") not in SEMANTIC_READERS else ()),
                 )
             ):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
@@ -502,9 +593,8 @@ class PersistedFusionComparison:
             )
             if manifest_sha256(saved) != dependency.get("dependency_digest"):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
-            from app.reference_trading.query import _decode, _encode
             snapshot_options = {}
-            if manifest.get("source_reader") == "newow_product_reader_prefix_v4":
+            if manifest.get("source_reader") in SEMANTIC_READERS:
                 token = _decode(dependency["snapshot"], kind="snapshot")
                 token.update(since=since.isoformat(), through=through.isoformat(), cutoff=cutoff.isoformat())
                 snapshot_options["snapshot_token"] = _encode(token)

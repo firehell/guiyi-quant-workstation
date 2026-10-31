@@ -107,10 +107,16 @@ def _terminal_boundary_proven(batch, checkpoint, manifest=None):
         }).encode()).hexdigest())
         previous = end
     fingerprints = (manifest if manifest is not None else batch.dependency_manifest).get("input_fingerprints", [])
+    from app.reference_trading.fingerprint_proof import fingerprint_sequence
+    try:
+        sequence = fingerprint_sequence(fingerprints)
+        tail = [sequence[index] for index in range(max(0, len(sequence) - len(hashes)), len(sequence))]
+    except (TypeError, ValueError):
+        return False
     return (previous == checkpoint.computed_through
             and hashes[-1] == checkpoint.last_fingerprint
             and batch.source_evidence.get("last_fingerprint") == checkpoint.last_fingerprint
-            and fingerprints[-len(hashes):] == hashes)
+            and tail == hashes)
 
 
 class NewowForwardBootstrap:
