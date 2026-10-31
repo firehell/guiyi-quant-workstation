@@ -1,3 +1,21 @@
+10/31 HC/SS/ZN三流精确恢复及十服务统一已实际完成；旧41/47封存清理仍在原生只读核验中。
+PR560/develop、PR561/main、annotated v1.16.48/GitHub Release已完成，exact
+`85ed0eca5cf4fb339fdba6f3b6586d855516fa30`，完整tree等受测06f17392ff；正式48树clean detached、独立冻结依赖/Web build/render通过。
+原生三流恢复plan 6a58bbd211df8deb087cd485cbcc13088ece4a762b5597e62f21254e2a49fec8单次COMMITTED；
+原生status与独立只读逐条回验通过：10个旧Inbox路由及Capture原件不变，SS仅追加DATA_INTERRUPTED，退出价/收益均空，
+三successor均generation2/空窗口/FLAT，共同未来recording_start=2026-10-31T03:37:19.264986Z；未造CLOSE、回放或账户交易。
+新cohort b11f4b61e2d38683bfe495882c1d9b355d05145017522d94afe14590a251bd89已switched：
+正式十服务同48/gen44，双fresh loaded身份matched，Reference durable_receiving_caught_up_idle；原定时启用集合保持。
+11:32额外现场读回六owner心跳新鲜，API/Web/Runtime HTTP200，API版本1.16.48，顶层health/runtime均ok；
+SimNow原44/PID1733、配置及四账本SHA不变，旧run/账户恢复block仍保留，本轮无Broker操作。
+实际Canonical预热Alert 414/420、6路合法暖机；Reference calculated590、10路完整证明的SuBing W1 DATA_UNAVAILABLE，
+不计calculated、不生成capture/交易。reference_ready=false，natural_acceptance=PENDING，不报整体RUNTIME_READY。
+独立Review另复核生产计划/receipt/readback/binding一致及SimNow原SHA不变。代码验证103项、真实隔离PG9项、轻入口17项及工程检查通过。
+41/47全部21个.run文件共723395bytes已逐字节/SHA/权限树外保全；原生closeout-plan在核对旧恢复链，尚未封存或删除。
+仍保留SimNow实际引用44，不为单树目标跳过其合法窗口/账户恢复合同。私有证据位于output/release-unification-20261031/v48-execution/。
+最小下一步：原生封存及两次同像零引用cleanup计划通过后non-force移除41/47；48自然业务另待验收。
+以下为此前检查点：
+
 10/31 owner已明确批准HC/SS/ZN三条精确恢复并继续统一十服务：保留原件、旧参考中断、无退出价/收益、未来FLAT。
 v1.16.48补丁候选新增固定20261031 incident，绑定三stream/gen1/旧revision/capture及仅SS OPEN，旧48流默认合同不变。
 103项相关回归、真实隔离PG旧8/新三流1项、最新轻导入17项、Ruff/Mypy/OpenSpec/secret0/diff/uv lock通过；
