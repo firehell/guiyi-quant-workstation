@@ -10,6 +10,42 @@ from app.runtime_handover import _write
 from tests.test_runtime_cohort_forward_recovery import fixture
 
 
+@pytest.mark.parametrize("tag", ("v1.16.53", "not-a-release"))
+def test_controller_uses_exact_tag_authority_in_managed_worktree(tmp_path, monkeypatch, tag):
+    from app import runtime_bindings
+
+    calls = []
+
+    def git(root, *args):
+        calls.append(args)
+        return "a" * 40 if args == ("rev-parse", "HEAD") else tag
+
+    monkeypatch.setattr(runtime_bindings, "_git", git)
+    monkeypatch.setattr(
+        runtime_bindings,
+        "_tracked",
+        lambda root: {
+            "services/quant-api/app/runtime_cohort_recovery.py": "b" * 40,
+            "services/quant-api/app/reference_trading/receiving_liveness.py": "c" * 40,
+        },
+    )
+    host = object.__new__(recovery.ForwardRecoveryHost)
+    host.directory = tmp_path
+    verified = []
+    host.verify_release = lambda root, actual_tag, commit: verified.append(
+        (root, actual_tag, commit)
+    )
+    if tag == "not-a-release":
+        with pytest.raises(ValueError, match="CONTROLLER_RELEASE_REQUIRED"):
+            host._controller()
+        assert not verified
+    else:
+        result = host._controller()
+        assert result["tag"] == tag
+        assert verified == [(recovery.Path(result["root"]), tag, "a" * 40)]
+        assert calls[0] == ("describe", "--exact-match", "--match", "v[0-9]*", "HEAD")
+
+
 def original_fixture(tmp_path, monkeypatch):
     host, source, path, attempt, _old_state, base_audit = fixture(tmp_path)
     _write(attempt / "plan.json", source)
