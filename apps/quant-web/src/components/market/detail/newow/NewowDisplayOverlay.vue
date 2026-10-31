@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {ref,watch,onMounted,nextTick,onBeforeUnmount} from 'vue'
+import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
 import {BREAKDOWN_FONT,layoutDisplayLabels,drawDisplayLabels,displayEventTitle,type DisplayPoint,type DisplayLabel,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 const props=defineProps<{points:readonly DisplayPoint[];width:number;height:number}>()
 const emit=defineEmits<{'select-display':[event:NewowDisplayEvent]}>()
@@ -11,8 +12,7 @@ function draw(){
  const ctx=el.getContext?.('2d');if(!ctx)return
  ctx.scale(dpr,dpr);ctx.font=BREAKDOWN_FONT
  labels.value=layoutDisplayLabels(props.points,text=>ctx.measureText(text).width)
- const theme=document.documentElement.getAttribute('data-theme')??document.body.getAttribute('data-theme')
- drawDisplayLabels(ctx,labels.value,theme==='dark')
+ drawDisplayLabels(ctx,labels.value,readNewowChartDisplayTheme()==='dark')
 }
 watch(()=>[props.points,props.width,props.height],()=>void nextTick(draw),{deep:true})
 onMounted(()=>{draw();if(typeof MutationObserver!=='undefined'){observer=new MutationObserver(draw);observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','class']});observer.observe(document.body,{attributes:true,attributeFilter:['data-theme','class']})}if(typeof window!=='undefined')window.addEventListener('resize',draw)})

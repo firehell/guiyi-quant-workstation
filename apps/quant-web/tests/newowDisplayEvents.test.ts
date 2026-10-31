@@ -46,3 +46,12 @@ test('logical window includes partially visible edge and final Bar',()=>{
  assert.equal(displayIndexVisible(4,{from:.4,to:3.4}),true)
  assert.equal(displayIndexVisible(5,{from:.4,to:3.4}),false)
 })
+
+test('ZLGJ paints before neighbouring reduce-J, then breakdown, independent of transport order',()=>{
+ const z={...event(0,'MAIN_RISE_J'),kind:'ZLGJ_J',source_strategy:'oscillation_attack'} as NewowDisplayEvent
+ const labels=layoutDisplayLabels([{event:event(1),x:54,y:110},{event:event(2,'MAIN_RISE_J'),x:52,y:82},{event:z,x:50,y:83}],()=>53)
+ const fills:Array<{label:string;color:unknown}>=[];let color:unknown
+ const ctx=new Proxy({},{set:(_o,k,v)=>{if(k==='fillStyle')color=v;return true},get:(_o,k)=>k==='fillText'?(label:string)=>fills.push({label,color}):()=>{}}) as CanvasRenderingContext2D
+ drawDisplayLabels(ctx,labels,false)
+ assert.deepEqual(fills,[{label:'J',color:'#34c759'},{label:'J',color:'#00FF00'},{label:'↓破位3797.24',color:'#003300'}])
+})

@@ -349,5 +349,66 @@
     "web": "NEWOW_PUBLIC_SOURCE=/private/tmp/newow-weekly-20261031/stock_detail.html node --test tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
     "python": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/newow/test_subplots_page_v1.py services/quant-api/tests/newow/test_historical_path.py services/quant-api/tests/newow/test_daily_weekly_path.py tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py",
     "source": "Temporary inspected-source-bound copies of tools/build_newow_v3379_audit.mjs, build_newow_experiments_oracle.mjs and build_newow_ai_oracle.mjs; source-check.mjs uses isolated constructed witnesses. Original tools and frozen fixtures unchanged."
+  },
+  "three_display_pc_acceptance": {
+    "observed_on": "2026-10-31 Asia/Shanghai",
+    "develop_baseline": "74a86df2a973fb7f5fad5d87dbd031220c6e27cf",
+    "detail_url": "https://www.v8848.cn/stock_detail.html",
+    "detail_sha256": "76ee34e9dda29e9ff239a515511344d669341d2e5e3a0dbb86b5025265caebf7",
+    "detail_version": "3.4.31",
+    "sample_kind": "constructed fixed coordinates and signals; not market evidence",
+    "browser": "Chrome",
+    "dpr": 2,
+    "rgba_channel_differences": {
+      "light": 0,
+      "dark": 0
+    },
+    "badge_dom_css_px": {
+      "width": 6,
+      "height": 6,
+      "top": 3,
+      "right": 3,
+      "gone_border": 1.5
+    },
+    "badge_title_aria_equal": true,
+    "click_checks": [
+      "active",
+      "gone age 1",
+      "gone age 2",
+      "expired",
+      "selected subpanel hidden",
+      "old display buttons revoked"
+    ],
+    "screenshots": [
+      {
+        "file": "newow-three-original-pc.jpg",
+        "sha256": "486121ff7f673f6b899a95b7a1bf16dd632f6d3957c16f322d00772836d80fd6"
+      },
+      {
+        "file": "newow-three-display-pc.jpg",
+        "sha256": "b9feaef060e608b7d3ddce75af046728b70c484120bf08b59f9bb3db3c4583d3"
+      },
+      {
+        "file": "newow-three-display-dark-pc.jpg",
+        "sha256": "eca0d729bb39d196159be1a5c17437670958d74ad9cddbd538ced455fc423a72"
+      }
+    ],
+    "corrections": [
+      "Reuse body-first existing theme reader",
+      "Paint ZLGJ-J before main-rise reduce-J, breakdown last"
+    ],
+    "validation": {
+      "backend_passed": 164,
+      "frontend_passed": 144,
+      "cleaned_test_rerun_passed": 7,
+      "typecheck_build_bundle": "passed with Node heap cap 1024MB",
+      "build_maximum_rss_bytes": 1085915136
+    },
+    "limitations": [
+      "Not all PC sizes, zoom levels or DPRs",
+      "No whole-page dark theme parity claim",
+      "Full workstation historical-segment manual clicking not done",
+      "No market/OOS or Runtime evidence"
+    ]
   }
 }
