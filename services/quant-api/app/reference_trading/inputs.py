@@ -491,7 +491,7 @@ class MarketDataHistoricalInputReader:
         shadow_identity = replace(request.identity,strategy_code="newow_trend",formula_versions=product.formula_versions,profile_id=product.profile_id,reference_model_version=REFERENCE_MODEL_VERSION,futures_adaptation_version=futures_adaptation_version(request.identity.frequency,policy))
         shadow = self._read_newow(replace(request,identity=shadow_identity))
         source_manifests = {"trend": shadow.dependency_manifest}
-        if request.identity.frequency in {"1d", "1w"}:
+        if "input_fingerprints" in shadow.dependency_manifest:
             oscillator = build_product_identity(request.identity.product,ProductStrategy.OSCILLATION,
                 ProductFrequency(request.identity.frequency),input_quality_policy=policy)
             oscillator_identity = replace(shadow_identity,strategy_code="newow_oscillation",

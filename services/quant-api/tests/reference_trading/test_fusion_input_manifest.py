@@ -212,3 +212,42 @@ def test_persisted_fusion_v2_page_checks_both_execution_and_source_sequences(
             "oscillation",
             "fusion",
         ]
+
+
+@pytest.mark.parametrize("frequency", ("1m", "5m", "15m", "30m", "60m", "1d", "1w"))
+def test_full_semantic_fusion_sources_keep_each_strategys_boundary_identity(frequency):
+    """Full v4 proofs contain stream-boundary hashes even on minute periods.
+
+    Shared market lineage must agree, but an oscillator's boundary fingerprint
+    is checked against its own replay rather than a trend replay fingerprint.
+    """
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+    at = datetime(2026, 10, 30, 7, tzinfo=UTC)
+    day = date(2026, 10, 30)
+    stream = build_fusion_stream_identity("rb", frequency)
+    calls = []
+    reader = object.__new__(MarketDataHistoricalInputReader)
+    reader._compact_intraday_inputs = True
+    def snapshot(request):
+        strategy = request.identity.strategy_code.removeprefix('newow_')
+        calls.append(strategy)
+        fingerprint = ('a' if strategy == 'trend' else 'b') * 64
+        bar = HistoricalInputBar(at, day, 'RB2701', 'owner', 'calc', Decimal('3500'),
+            fingerprint, SimpleNamespace(bar=SimpleNamespace()))
+        manifest = {'reader': 'newow_product_reader_prefix_v4',
+            'input_fingerprints': [fingerprint], 'rank1': [['RB2701', '2026-10-01', '2026-10-30']],
+            'calendar_session_effective_fingerprints': ['c' * 64], 'quality_policy': 'fixed'}
+        return HistoricalInputSnapshot(request.identity, day, at, (bar,), manifest,
+            'token-' + strategy, 1024)
+    reader._read_newow = snapshot
+    def sources(request, market_manifest, *, source_manifests):
+        assert set(source_manifests) == {'trend', 'oscillation'}
+        assert source_manifests['trend']['input_fingerprints'] == ['a' * 64]
+        assert source_manifests['oscillation']['input_fingerprints'] == ['b' * 64]
+        assert source_manifests['trend']['rank1'] == source_manifests['oscillation']['rank1']
+        return {}, []
+    reader._fusion_sources = sources
+    result = reader._read_fusion(HistoricalStreamRequest(stream, day, day, at))
+    assert calls == ['trend', 'oscillation']
+    assert result.dependency_manifest['source_input_fingerprints'] == ['a' * 64]
