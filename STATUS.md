@@ -1,4 +1,4 @@
-10/31 HC/SS/ZN三流精确恢复及十服务统一已实际完成；旧41/47封存清理仍在原生只读核验中。
+10/31 HC/SS/ZN三流精确恢复、十服务统一及无引用旧树41/47清理均已实际完成。
 PR560/develop、PR561/main、annotated v1.16.48/GitHub Release已完成，exact
 `85ed0eca5cf4fb339fdba6f3b6586d855516fa30`，完整tree等受测06f17392ff；正式48树clean detached、独立冻结依赖/Web build/render通过。
 原生三流恢复plan 6a58bbd211df8deb087cd485cbcc13088ece4a762b5597e62f21254e2a49fec8单次COMMITTED；
@@ -11,9 +11,12 @@ SimNow原44/PID1733、配置及四账本SHA不变，旧run/账户恢复block仍�
 实际Canonical预热Alert 414/420、6路合法暖机；Reference calculated590、10路完整证明的SuBing W1 DATA_UNAVAILABLE，
 不计calculated、不生成capture/交易。reference_ready=false，natural_acceptance=PENDING，不报整体RUNTIME_READY。
 独立Review另复核生产计划/receipt/readback/binding一致及SimNow原SHA不变。代码验证103项、真实隔离PG9项、轻入口17项及工程检查通过。
-41/47全部21个.run文件共723395bytes已逐字节/SHA/权限树外保全；原生closeout-plan在核对旧恢复链，尚未封存或删除。
-仍保留SimNow实际引用44，不为单树目标跳过其合法窗口/账户恢复合同。私有证据位于output/release-unification-20261031/v48-execution/。
-最小下一步：原生封存及两次同像零引用cleanup计划通过后non-force移除41/47；48自然业务另待验收。
+41/47全部21个.run文件共723395bytes已逐字节/SHA/权限树外保全；原生closeout-plan已通过87份历史原件核验。
+owner明确要求简化单人项目流程、直接删和切，故终止seal-closed重复collect；以已验证事实复核原件/当前引用，
+保留原生历史reader所需索引后直接non-force移除41/47，未改任何旧state/plan。删前/删后原生_load_index通过，
+当前binding/plist/loaded/进程/cwd及SimNow配置别名/monitor/intents均不引用被删树。
+发布树现仅48（正式十服务）和44（仍运行的独立SimNow），不是为回退保留旧版本。私有证据位于output/release-unification-20261031/v48-execution/。
+最小下一步：在合法窗口按既有账户恢复/预算合同处理独立SimNow，解除44真实引用后即可收拢为单发布树；48自然业务另待验收。
 以下为此前检查点：
 
 10/31 owner已明确批准HC/SS/ZN三条精确恢复并继续统一十服务：保留原件、旧参考中断、无退出价/收益、未来FLAT。
