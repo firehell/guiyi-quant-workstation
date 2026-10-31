@@ -32,6 +32,10 @@ NOW = datetime(2026, 10, 30, 8, tzinfo=UTC)
 
 @pytest.fixture
 def setup(engine=None):
+    return conflict_setup(engine=engine)
+
+
+def conflict_setup(engine=None, products=None):
     engine = (
         engine if engine is not None else create_engine("sqlite+pysqlite:///:memory:")
     )
@@ -39,10 +43,13 @@ def setup(engine=None):
     factory = sessionmaker(engine)
     # Real accepted identities, exact production-sized conflict scope.
     products = (
-        "a ag al ao ap au b bb bc br bu c cf cj cs cu eb ec eg fb fg fu hc "
-        "i ic if ih im j jd jm l lc lh lu m ma ni nr oi p pb pf pg pk pp ps rb"
-    ).split()
-    assert len(products) == 48
+        products
+        if products is not None
+        else (
+            "a ag al ao ap au b bb bc br bu c cf cj cs cu eb ec eg fb fg fu hc "
+            "i ic if ih im j jd jm l lc lh lu m ma ni nr oi p pb pf pg pk pp ps rb"
+        ).split()
+    )
     plan = plan_htdy_activation(
         operational=products,
         recording_start=NOW - timedelta(days=4),
@@ -275,8 +282,7 @@ def test_unknown_inbox_cannot_be_retired(setup):
         )
 
 
-@pytest.mark.parametrize("mutation", [None, "entry_price", "holding", "old_valid_to"])
-def test_open_trade_is_interrupted_without_close_price_or_new_action(setup, mutation):
+def add_open_trade(factory, product="rb"):
     from decimal import Decimal
     from app.reference_trading.models import ReferenceActionRow, ReferenceTradeRow
     from guiyi_quant.reference_trading import (
@@ -285,8 +291,7 @@ def test_open_trade_is_interrupted_without_close_price_or_new_action(setup, muta
         reduce_reference,
     )
 
-    factory, recovery, ids = setup
-    identity = htdy_identity("rb")
+    identity = htdy_identity(product)
     with factory() as session, session.begin():
         stream = session.get(ReferenceStream, identity.stream_id)
         revision = session.get(
@@ -364,7 +369,16 @@ def test_open_trade_is_interrupted_without_close_price_or_new_action(setup, muta
             content,
             sha256(content.encode()).hexdigest(),
         )
-        old_revision = revision.revision_id
+        return revision.revision_id
+
+
+@pytest.mark.parametrize("mutation", [None, "entry_price", "holding", "old_valid_to"])
+def test_open_trade_is_interrupted_without_close_price_or_new_action(setup, mutation):
+    from decimal import Decimal
+    from app.reference_trading.models import ReferenceActionRow, ReferenceTradeRow
+
+    factory, recovery, ids = setup
+    old_revision = add_open_trade(factory)
     plan = recovery.plan(
         ids,
         recording_start=NOW + timedelta(hours=1),

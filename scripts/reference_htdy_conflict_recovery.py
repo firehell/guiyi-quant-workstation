@@ -20,7 +20,32 @@ from time import monotonic, sleep
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "services/quant-api"), str(ROOT / "packages/quant-core")]
+from app.reference_trading.htdy_conflict_incidents import (  # noqa: E402 - local CLI bootstrap
+    ORIGINAL_VERSION as ORIGINAL_INCIDENT,
+    OCT31_VERSION,
+    OCT31_BINDINGS,
+    OCT31_OPEN_STREAM,
+    OCT31_INVENTORY_SHA256,
+)
+
 VERSION = "reference_htdy_conflict_cli_v1"
+
+
+def schema(incident):
+    if incident == ORIGINAL_INCIDENT:
+        return VERSION
+    if incident == OCT31_VERSION:
+        return "reference_htdy_conflict_cli_20261031_v1"
+    raise ValueError("RECOVERY_INCIDENT_INVALID")
+
+
+def inventory_sha(incident):
+    schema(incident)
+    return (
+        OCT31_INVENTORY_SHA256 if incident == OCT31_VERSION else FROZEN_INVENTORY_SHA256
+    )
+
+
 FROZEN_INVENTORY_SHA256 = (
     "190ec36403d5fb0cb7617bd64ce88d117098acc628588b29b5b4258af0c19c16"
 )
@@ -89,8 +114,13 @@ def put(path, value):
         os.close(fd)
 
 
-def checked_scope(ids):
+def checked_scope(ids, *, incident=ORIGINAL_INCIDENT):
+    schema(incident)
     result = tuple(sorted(ids))
+    if incident == OCT31_VERSION:
+        if result != tuple(sorted(OCT31_BINDINGS)):
+            fail("RECOVERY_FROZEN_SCOPE_REQUIRED")
+        return result
     if (
         len(result) != 48
         or len(set(result)) != 48
@@ -100,11 +130,21 @@ def checked_scope(ids):
     return result
 
 
-def frozen_scope(path):
+def frozen_scope(path, *, incident=ORIGINAL_INCIDENT):
     raw = read_private(path)
-    if sha256(raw).hexdigest() != FROZEN_INVENTORY_SHA256:
+    if sha256(raw).hexdigest() != inventory_sha(incident):
         fail("RECOVERY_INVENTORY_DRIFT")
     value = json.loads(raw)
+    if incident == OCT31_VERSION:
+        rows = value["pending"]
+        ids = checked_scope((r["stream_id"] for r in rows), incident=incident)
+        if any(
+            (r["revision_id"], r["capture_id"]) != OCT31_BINDINGS[r["stream_id"]]
+            or r.get("code") != "OBSERVATION_GAP"
+            for r in rows
+        ):
+            fail("RECOVERY_INVENTORY_DRIFT")
+        return ids
     rows = [r for r in value["items"] if r["pending"]]
     opened = sorted(r["stream_id"] for r in rows if r["reference_open"] is True)
     if len(opened) != 20 or digest(opened) != FROZEN_OPEN_SCOPE_SHA256:
@@ -118,7 +158,8 @@ def frozen_scope(path):
     return checked_scope(r["stream_id"] for r in rows)
 
 
-def frozen_open_trades(domain):
+def frozen_open_trades(domain, *, incident=ORIGINAL_INCIDENT):
+    schema(incident)
     result = []
     for item in domain["items"]:
         binding = item["binding"]
@@ -139,17 +180,31 @@ def frozen_open_trades(domain):
         )
     result.sort(key=lambda row: row["stream_id"])
     if (
-        len(result) != 20
-        or len({r["reference_trade_id"] for r in result}) != 20
-        or digest([r["stream_id"] for r in result]) != FROZEN_OPEN_SCOPE_SHA256
+        incident == ORIGINAL_INCIDENT
+        and (
+            len(result) != 20
+            or len({r["reference_trade_id"] for r in result}) != 20
+            or digest([r["stream_id"] for r in result]) != FROZEN_OPEN_SCOPE_SHA256
+        )
+    ) or (
+        incident == OCT31_VERSION
+        and [r["stream_id"] for r in result] != [OCT31_OPEN_STREAM]
     ):
         fail("RECOVERY_OPEN_SCOPE_DRIFT")
     return result
 
 
 class Coordinator:
-    def __init__(self, backend, directory, *, clock=lambda: datetime.now(UTC)):
+    def __init__(
+        self,
+        backend,
+        directory,
+        *,
+        clock=lambda: datetime.now(UTC),
+        incident=ORIGINAL_INCIDENT,
+    ):
         self.backend, self.directory, self.clock = backend, Path(directory), clock
+        self.incident, self.schema = incident, schema(incident)
 
     def _directory(self, *, create=False):
         p = self.directory
@@ -159,7 +214,7 @@ class Coordinator:
             p.mkdir(mode=0o700)
             put(
                 p / "identity.json",
-                dict(schema=VERSION, identity=self.backend.identity()),
+                dict(schema=self.schema, identity=self.backend.identity()),
             )
         info = p.stat()
         if (
@@ -174,7 +229,7 @@ class Coordinator:
         if not self.directory.exists():
             self._directory(create=True)
         prior = self._directory()
-        if prior != {"schema": VERSION, "identity": self.backend.identity()}:
+        if prior != {"schema": self.schema, "identity": self.backend.identity()}:
             fail("RECOVERY_ATTEMPT_IDENTITY_DRIFT")
 
     def _fresh(self, p):
@@ -192,21 +247,25 @@ class Coordinator:
 
     def _load(self, path, expected=None, *, historical=False):
         p = json.loads(read_private(path))
-        if p.get("schema") != VERSION or digest(
+        if p.get("schema") != self.schema or digest(
             {k: v for k, v in p.items() if k != "plan_hash"}
         ) != p.get("plan_hash"):
             fail("RECOVERY_PLAN_INVALID")
         if expected is not None and expected != p["plan_hash"]:
             fail("RECOVERY_PLAN_HASH_CONFLICT")
-        checked_scope(p["stream_ids"])
-        if p["inventory_sha256"] != FROZEN_INVENTORY_SHA256 or p["attempt_dir"] != str(
-            self.directory
-        ):
+        checked_scope(p["stream_ids"], incident=self.incident)
+        if p["inventory_sha256"] != inventory_sha(self.incident) or p[
+            "attempt_dir"
+        ] != str(self.directory):
             fail("RECOVERY_PLAN_SCOPE_DRIFT")
         domain_ids = [v["binding"]["stream_id"] for v in p["domain_plan"]["items"]]
-        if checked_scope(domain_ids) != checked_scope(p["stream_ids"]):
+        if checked_scope(domain_ids, incident=self.incident) != checked_scope(
+            p["stream_ids"], incident=self.incident
+        ):
             fail("RECOVERY_PLAN_SCOPE_DRIFT")
-        if p.get("open_trades") != frozen_open_trades(p["domain_plan"]):
+        if p.get("open_trades") != frozen_open_trades(
+            p["domain_plan"], incident=self.incident
+        ):
             fail("RECOVERY_OPEN_SCOPE_DRIFT")
         current = self.backend.identity()
         keys = (
@@ -223,10 +282,10 @@ class Coordinator:
         return p
 
     def plan(self, path, ids, *, inventory_sha256, recording_start, expires_at):
-        ids = checked_scope(ids)
+        ids = checked_scope(ids, incident=self.incident)
         now = self.clock()
         if (
-            inventory_sha256 != FROZEN_INVENTORY_SHA256
+            inventory_sha256 != inventory_sha(self.incident)
             or not now < expires_at <= recording_start
         ):
             fail("RECOVERY_PLAN_INVALID")
@@ -246,7 +305,7 @@ class Coordinator:
                 fail("RECOVERY_PLAN_EXPIRED")
             self._ensure_attempt()
             value = dict(
-                schema=VERSION,
+                schema=self.schema,
                 identity=self.backend.identity(),
                 stream_ids=list(ids),
                 inventory_sha256=inventory_sha256,
@@ -255,7 +314,7 @@ class Coordinator:
                 expires_at=expires_at.isoformat(),
                 recording_start=recording_start.isoformat(),
                 domain_plan=domain,
-                open_trades=frozen_open_trades(domain),
+                open_trades=frozen_open_trades(domain, incident=self.incident),
             )
             result = {**value, "plan_hash": digest(value)}
             put(
@@ -273,7 +332,7 @@ class Coordinator:
             put(
                 self.directory / "apply-claim.json",
                 dict(
-                    schema=VERSION,
+                    schema=self.schema,
                     plan_hash=p["plan_hash"],
                     identity=p["identity"],
                     at=self.clock().isoformat(),
@@ -308,7 +367,7 @@ class Coordinator:
             if any(
                 claim.get(k) != v
                 for k, v in {
-                    "schema": VERSION,
+                    "schema": self.schema,
                     "plan_hash": p["plan_hash"],
                     "identity": p["identity"],
                 }.items()
@@ -335,7 +394,7 @@ class Coordinator:
         put(
             self.directory / "park-intent.json",
             dict(
-                schema=VERSION,
+                schema=self.schema,
                 identity=self.backend.identity(),
                 expires_at=expires_at.isoformat(),
             ),
@@ -411,6 +470,8 @@ class MacBackend:
         from app.runtime_handover import runtime_directory
 
         self.args = args
+        self.incident = getattr(args, "incident", ORIGINAL_INCIDENT)
+        schema(self.incident)
         self.directory = runtime_directory()
         self.binding = resolve_service_binding("reference-worker")
         if self.binding is None or not self.binding.enabled:
@@ -499,6 +560,7 @@ class MacBackend:
                         ),
                         assert_fenced=fenced,
                         clock=lambda: datetime.now(UTC),
+                        incident=self.incident,
                     )
                 finally:
                     lease.release()
@@ -517,7 +579,10 @@ class MacBackend:
             fail("READBACK_MUTATION_FORBIDDEN")
 
         return HtdyConflictRecovery(
-            factory, verify_source=forbidden, assert_fenced=forbidden
+            factory,
+            verify_source=forbidden,
+            assert_fenced=forbidden,
+            incident=self.incident,
         ).readback(plan)
 
     def park(self, expires_at):
@@ -574,6 +639,11 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group()
     for action in ("plan", "apply", "status", "park"):
         modes.add_argument("--" + action, action="store_true")
+    parser.add_argument(
+        "--incident",
+        choices=(ORIGINAL_INCIDENT, OCT31_VERSION),
+        default=ORIGINAL_INCIDENT,
+    )
     parser.add_argument("--exact-root", type=Path)
     parser.add_argument("--exact-commit")
     parser.add_argument("--tag")
@@ -598,7 +668,7 @@ def main(argv=None):
         verify_code(args.exact_root, args.exact_commit, args.tag)
         config_sha = load_dependencies()
         backend = MacBackend(args, config_sha)
-        runner = Coordinator(backend, args.attempt_dir)
+        runner = Coordinator(backend, args.attempt_dir, incident=args.incident)
         if args.park:
             if not args.expires_at:
                 fail("RECOVERY_ARGUMENTS_REQUIRED")
@@ -615,8 +685,8 @@ def main(argv=None):
                     fail("RECOVERY_ARGUMENTS_REQUIRED")
                 result = runner.plan(
                     args.plan_file,
-                    frozen_scope(args.inventory),
-                    inventory_sha256=FROZEN_INVENTORY_SHA256,
+                    frozen_scope(args.inventory, incident=args.incident),
+                    inventory_sha256=inventory_sha(args.incident),
                     recording_start=instant(args.recording_start),
                     expires_at=instant(args.expires_at),
                 )

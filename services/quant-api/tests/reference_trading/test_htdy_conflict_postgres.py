@@ -23,13 +23,17 @@ from app.reference_trading.repository import RepositoryConflict
 from app.reference_trading.inbox import ReferenceInboxRepository
 from app.reference_trading.inbox_recovery import verified_resolution_ids
 from tests.alembic.test_reference_forward_migration import _migration
-from tests.reference_trading.test_htdy_conflict_recovery import setup, _inbox, NOW
+from tests.reference_trading.test_htdy_conflict_recovery import (
+    conflict_setup,
+    _inbox,
+    NOW,
+)
 
 pytestmark = pytest.mark.isolated_postgresql
 
 
 @pytest.fixture
-def pg_setup():
+def pg_setup(request):
     import os
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
@@ -64,7 +68,7 @@ def pg_setup():
                 migration = _migration(name)
                 migration.op = Operations(MigrationContext.configure(connection))
                 migration.upgrade()
-        yield setup.__wrapped__(engine)
+        yield conflict_setup(engine, products=getattr(request, "param", None))
     finally:
         engine.dispose()
         with admin.begin() as connection:
@@ -163,3 +167,46 @@ def test_real_open_projection_preservation_and_tamper_rejection(pg_setup, mutati
     )
 
     check_open(pg_setup, mutation)
+
+
+@pytest.mark.parametrize("pg_setup", [["hc", "ss", "zn", "rb"]], indirect=True)
+def test_real_three_scope_atomic_original_trigger_and_ss_interruption(
+    pg_setup, monkeypatch
+):
+    from tests.reference_trading.test_htdy_three_conflict_scope import configure_three
+    from app.reference_trading.models import ReferenceTradeRow, ReferenceActionRow
+    from app.reference_trading.htdy_conflict_recovery import _row
+    from tests.reference_trading.test_inbox import event
+    from dataclasses import replace
+
+    factory, recovery, _ = pg_setup
+    factory, recovery, ids = configure_three(factory, recovery, monkeypatch)
+    original_event = event(end=NOW - timedelta(minutes=30))
+    item = replace(
+        original_event,
+        channel="live:bar:ss:60m",
+        data={**original_event.data, "contract": "SS2612"},
+    )
+    delivery_id = (
+        ReferenceInboxRepository(factory).ingest(item, ingested_at=NOW).delivery_ids[0]
+    )
+    with factory() as db:
+        original_delivery = _row(db.get(ReferenceInboxDelivery, delivery_id))
+        originals = {b.batch_id: _row(b) for b in db.scalars(select(ReferenceBatch))}
+    frozen = plan(recovery, ids)
+    result = recovery.apply(frozen, expected_plan_hash=frozen["plan_hash"], now=NOW)
+    assert len(result) == 3 and recovery.readback(frozen) == result
+    with factory() as db:
+        assert all(_row(db.get(ReferenceBatch, k)) == v for k, v in originals.items())
+        assert _row(db.get(ReferenceInboxDelivery, delivery_id)) == original_delivery
+        assert delivery_id in verified_resolution_ids(db)
+        rows = db.scalars(
+            select(ReferenceTradeRow).order_by(ReferenceTradeRow.valid_from_seq)
+        ).all()
+        assert [r.status for r in rows] == ["OPEN", "DATA_INTERRUPTED"]
+        assert rows[1].exit_reference_price is None and rows[1].reference_return is None
+        assert len(db.scalars(select(ReferenceActionRow)).all()) == 1
+        input_id = db.get(ReferenceInboxDelivery, delivery_id).input_id
+    with pytest.raises(DBAPIError):
+        with factory() as db, db.begin():
+            db.get(ReferenceInboxInput, input_id).canonical_envelope = "tampered"
