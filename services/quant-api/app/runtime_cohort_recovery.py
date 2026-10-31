@@ -143,6 +143,19 @@ def _verification_substep(host, name, *, before=None, current=None, **facts):
     host._forward_diagnostic = diagnostic
 
 
+def _registered_next_session(windows, next_start, now):
+    """A prepared day may precede the first Session of day-only products."""
+    try:
+        return (
+            next_start is not None
+            and bool(windows)
+            and all(now < window.start < window.end for window in windows)
+            and min(window.start for window in windows) == next_start
+        )
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 def prove_same_generation_startup(
     *, now, products, resolver, registered_day, subscriptions, dominant, sessions
 ):
@@ -162,6 +175,8 @@ def prove_same_generation_startup(
     closed_idle = True
     for product in products:
         phase = resolver.resolve(product, now)
+        windows = sessions(product, registered_day) if callable(sessions) else ()
+        require(bool(windows), "COHORT_FORWARD_SESSION_UNKNOWN")
         require(
             phase.symbol == product
             and phase.phase
@@ -191,13 +206,10 @@ def prove_same_generation_startup(
             require(
                 phase.trading_day == registered_day
                 or resolver.completed_observation_trading_day(product, now)
-                == registered_day,
+                == registered_day
+                or _registered_next_session(windows, phase.next_session_start, now),
                 "COHORT_FORWARD_REGISTERED_DAY_DRIFT",
             )
-        require(
-            callable(sessions) and bool(sessions(product, registered_day)),
-            "COHORT_FORWARD_SESSION_UNKNOWN",
-        )
         contract = dominant(product, registered_day)
         require(
             isinstance(contract, str)

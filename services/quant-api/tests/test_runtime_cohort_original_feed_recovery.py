@@ -10,8 +10,62 @@ from app.runtime_handover import _write
 from tests.test_runtime_cohort_forward_recovery import fixture
 
 
+@pytest.mark.parametrize(
+    "damage", (None, "wrong_next", "started", "missing", "invalid")
+)
+def test_closed_day_only_registered_future_session_is_proven_without_day_write(
+    tmp_path, damage
+):
+    from datetime import timedelta
+    from types import SimpleNamespace
+    from app.market_data.market_phase import MarketPhase
+    from tests.test_runtime_cohort import Host
+
+    now = Host(tmp_path).now()
+    day = now.date() + timedelta(days=2)
+    start = now + timedelta(days=2)
+    windows = (SimpleNamespace(start=start, end=start + timedelta(hours=1)),)
+    if damage == "started":
+        windows = (SimpleNamespace(start=now - timedelta(seconds=1), end=start),)
+    elif damage == "missing":
+        windows = ()
+    elif damage == "invalid":
+        windows = (object(),)
+    resolver = SimpleNamespace(
+        resolve=lambda *args: SimpleNamespace(
+            symbol="ap",
+            phase=MarketPhase.CLOSED,
+            trading_day=None,
+            current_session=None,
+            next_session_start=start + timedelta(seconds=1)
+            if damage == "wrong_next"
+            else start,
+        ),
+        completed_observation_trading_day=lambda *args: now.date(),
+    )
+    kwargs = dict(
+        now=now,
+        products=("ap",),
+        resolver=resolver,
+        registered_day=day,
+        subscriptions={"ap": "AP2701"},
+        dominant=lambda *args: "AP2701",
+        sessions=lambda *args: windows,
+    )
+    if damage:
+        with pytest.raises(ValueError):
+            recovery.prove_same_generation_startup(**kwargs)
+    else:
+        proof = recovery.prove_same_generation_startup(**kwargs)
+        assert proof["registered_trading_day"] == str(day)
+        assert proof["closed_idle"] is True
+        assert proof["natural_bar_verified"] is False
+
+
 @pytest.mark.parametrize("tag", ("v1.16.53", "not-a-release"))
-def test_controller_uses_exact_tag_authority_in_managed_worktree(tmp_path, monkeypatch, tag):
+def test_controller_uses_exact_tag_authority_in_managed_worktree(
+    tmp_path, monkeypatch, tag
+):
     from app import runtime_bindings
 
     calls = []
