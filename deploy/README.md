@@ -364,6 +364,11 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 
 恢复控制器从独立精确tag/commit的干净正式发布树执行，计划冻结控制器身份并逐阶段复验；控制器版本与运行服务版本分别记录，不能将控制器新发布冒充消费者已升级。
 
+原cohort已启动Feed、仅在verified以`ReceivingLivenessError`停驻且完整十项effect可证明时，可显式使用
+`plan --original-verified-feed-halt --close-feed-only`关闭原Feed，随后以同标志及`--feed-close-plan`生成新的同代恢复计划。
+两步各单次执行，绑定原public/private plan、state、global与effect字节；关闭必须证明精确Feed、全部PID退出、owner锁空闲及完整来源/ACK前缀。
+关闭receipt不表示恢复完成；只有后续正常恢复成功receipt才关联闭合原attempt与唯一关闭attempt。额外unknown、来源漂移或关闭结果不明均阻断，不循环接纳新失败、不修改原件。
+
 当精确当前Live在固定drain下由launchd反复exit1重启、不能稳定停驻时，计划可显式冻结 `live_restart_intent`。只允许部署/维护锁内核对同一label、binding、安装/launcher、drain与实际进程身份后，先持久记录单次effect再发一次原生bootout；确认整个label absent、所有已观察PID退出、owner锁空闲，重验原件/数据库前缀及pending/UNKNOWN后，才可启动原Live和其他消费者。禁止kill、重复bootout、把active冒充parked，或根据未公开日志猜测内部异常。任何退出、锁或提交事实不明即停止相关恢复。
 
 同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。新计划仍有15分钟TTL、600秒总预算，部署/维护/owner锁及各阶段独立读回；只恢复原启用集合。
@@ -380,6 +385,7 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 接收快照schema2记录采样初始current_tail与结束final_tail。两个新鲜独占接收轮只有在前缀/合同不回退且ACK和DB共同前进，或两轮每分区均ack=current_tail=final_tail时才证明存活；空闲不由Session CLOSED或调用者标志推导。合法零进展且仍有积压只在原预算内等待，完整性或时序错误立即失败。
 
 30秒活性样本过期不等于前缀损坏。等待循环逐次验证全部快照（包括同一owner cycle）的静态context、原件/routes、ACK及数据库前缀非回退；只有这条连续链通过后才能滚动活性采样窗口。过期样本本身不授予活性，仍需两轮不同且新鲜的owner cycle，并在最终身份校验后重新检查样本新鲜度。原120/240秒局部预算、600秒总预算及计划期限不延长。
+若owner检查后在完整快照采样前刚超过30秒，仅专用`ReceivingCycleStale`进入上述等待；未来时间、无效时间及任何完整性异常仍立即失败，已形成的快照仍必须通过连续前缀校验。
 新的verified失败在原生attempt中仅补充固定子步骤与合法带时区采样时间；接收异常仅保留精确类型的固定公开码，不记录异常原文或回溯。新诊断不能用于倒推旧attempt未记录的失败原因，也不增加对未决恢复前缀的接纳范围。
 
 接收存活由独立typed证明确定：原冻结SourceProof完整不变、active v2边界与原升级意图匹配、所有已ACK原件及冻结routes在数据库中逐条完整，其他分区不回退；有积压时须两次新鲜有界receiving cycle显示ACK与数据库前缀共同前进。计算等待及BLOCKED分别展示并继续逐流fence，不借此清除失败或重试；接收错误、原件/routes/身份异常、接收提交未知、恢复前未归属pending capture、失权或超时拒绝。旧尾部全部追齐是后续独立验收，不冒充启动完成条件。
