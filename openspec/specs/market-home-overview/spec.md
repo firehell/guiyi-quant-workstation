@@ -75,8 +75,7 @@ independent strict read with no D1 substitution. Missing W1 history disables onl
 
 An item with a valid target-day D1 Bar SHALL remain a participant even when its historical window
 contains source exceptions. Its `reason_codes` SHALL include `daily_price_interrupted`, and
-`daily_rewarming` when the post-interruption daily trend is not ready. Desktop and mobile SHALL
-show the interruption disclosure.
+`daily_rewarming` when the post-interruption daily trend is not ready. PC desktop Web SHALL show the interruption disclosure.
 If D1 history has unknown missing endpoints, a separately verified target-day quote MAY remain
 visible, but ALL D1 metrics MUST be null/unavailable and `daily_history_unavailable` MUST be shown,
 never normal rewarming. This does not repair the historical data or prove strategy readiness.
@@ -203,7 +202,7 @@ Runtime 正常静默。品种目录只使用上述单一批量目录读取；日
 generic overview及共享默认图标的业务文案只能使用上行、周期同向、下行、中性、日周未同向、数据不足，不得据此推断交易状态。下文独立身份的Newow策略卡可展示其已验证的页面买入、持股、卖出、空仓状态，不代表账户成交或订单。
 
 日周不同向 SHALL 使用浅灰底分向图标与“日周未同向”可访问语义，不使用无解释横线；数据不足
-MUST 保持独立图标与状态，不得改写为未同向。桌面与窄屏 SHALL 使用一致映射。
+MUST 保持独立图标与状态，不得改写为未同向。PC Web SHALL 使用一致映射。
 
 #### Scenario: A user reads a state icon without color
 

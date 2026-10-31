@@ -1,5 +1,7 @@
 # 测试与验证命令
 
+Web 支持范围见 [开发规范](docs/DEVELOPMENT.md#web-支持与验收范围)：仅验收 PC 浏览器显示与交互。以下浏览器命令按桌面用例选择；既有移动视口用例和历史截图不再作为必验项或交付阻断。
+
 ## HTDY 60分钟离线执行规则
 
 合同见[执行规则](docs/HTDY_SIMNOW_V1.md)。覆盖冻结v1、新版70%账户风控/预留/状态机、本地journal事务与恢复重放、原生回报fixture及共享公式适配；不连接账号或启用交易。
@@ -105,7 +107,7 @@ NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-we
 ## Web 隐藏主连
 
 旧主连链接与偏好在请求前迁移到真实主力；页面无主连入口，底层 API 和数据能力保留。
-定向单元覆盖路由、偏好与统计身份，浏览器检查桌面/390px、同身份旧链接、返回和指定合约。
+定向单元覆盖路由、偏好与统计身份，浏览器检查 PC 桌面窗口、同身份旧链接、返回和指定合约。
 验证串行，保持单元并发1、浏览器单worker；fixture不证明Runtime或策略收益。
 
 ```sh
@@ -540,7 +542,7 @@ PYTHONPATH=services/quant-api:packages/quant-core uv run --project services/quan
   services/quant-api/tests/newow/test_page_comparator.py
 ```
 
-等待卡片验证覆盖同快照当前 FLAT、空/分页历史、筛选、stale/历史窗口、跨身份与 OPEN 冲突；日期覆盖日周、同日时分与跨年夜盘。浏览器用本地 fixture，1440/390px 截图只证明显示，不证明原站新版 parity、真实数据恢复或生产启用。沿用测试默认 5182 端口，不接入生产服务。源码-only 隔离 worktree 可使用已存在的 Python 环境并显式设置上述 PYTHONPATH，避免为定向验证重新安装依赖。
+等待卡片验证覆盖同快照当前 FLAT、空/分页历史、筛选、stale/历史窗口、跨身份与 OPEN 冲突；日期覆盖日周、同日时分与跨年夜盘。浏览器用本地 fixture，1440px PC 截图只证明显示，不证明原站新版 parity、真实数据恢复或生产启用。沿用测试默认 5182 端口，不接入生产服务。源码-only 隔离 worktree 可使用已存在的 Python 环境并显式设置上述 PYTHONPATH，避免为定向验证重新安装依赖。
 
 ## Newow 公式、参考交易与显示合同专项复核
 
@@ -831,8 +833,7 @@ pnpm -C apps/quant-web build
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/market-detail.spec.mjs
 ```
 
-WebSocket 验证使用 fake clients 和受控阻塞，不访问生产；浏览器使用 route fixtures。桌面与390px
-截图、键盘操作用于工程验收，不能替代用户关键页面视觉审查，也不授权发布或 Runtime 切换。
+WebSocket 验证使用 fake clients 和受控阻塞，不访问生产；浏览器使用 route fixtures。PC 桌面截图、键盘操作用于工程验收，不能替代用户关键页面视觉审查，也不授权发布或 Runtime 切换。
 
 ## 后端
 
@@ -1679,7 +1680,7 @@ pnpm --dir apps/quant-web test
 pnpm --dir apps/quant-web build
 ```
 
-Newow P6 浏览器验收使用 tracked route-intercept fixture，覆盖九个 strategy×frequency 组合、409 单次恢复、429 不循环重试、参考分页/精确信号定位、解释 evidence-required、既有详情/Home 回归，以及桌面和 `390×844` 移动视口：
+Newow P6 浏览器验收使用 tracked route-intercept fixture，覆盖九个 strategy×frequency 组合、409 单次恢复、429 不循环重试、参考分页/精确信号定位、解释 evidence-required、既有详情/Home 回归，以及 PC 桌面视口：
 
 ```bash
 pnpm --dir apps/quant-web exec playwright test -c playwright.config.mjs \
@@ -1707,7 +1708,7 @@ pnpm --dir apps/quant-web build
 pnpm --dir apps/quant-web test:e2e
 ```
 
-Market Home targeted contracts、1280/1440/1920/2560 桌面与390兼容截图、60品种本地排序及三资源请求约束（受控 fixture，不连接生产）。`newow-product` fixture 严格限制默认 origin `http://127.0.0.1:5182`，与其合跑时不覆盖端口；仅首页/详情可使用独立测试端口：
+Market Home targeted contracts、1280/1440/1920/2560 PC 桌面截图、60品种本地排序及三资源请求约束（受控 fixture，不连接生产）。`newow-product` fixture 严格限制默认 origin `http://127.0.0.1:5182`，与其合跑时不覆盖端口；仅首页/详情可使用独立测试端口：
 
 ```bash
 pnpm -C apps/quant-web exec node --test \
@@ -1776,7 +1777,7 @@ pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec playwright 
 ```
 
 冻结 fixture 记录 v3.2.82 两份源码 SHA-256 与 30 组逐值输出；测试本身不读取 Git 外冻结包、不联网、
-不连接 MDS/RQData/production DB/Redis/Runtime/通知。五档视觉基线为 1280、1440、1920、2560 与 390。
+不连接 MDS/RQData/production DB/Redis/Runtime/通知。PC 桌面视觉基线为 1280、1440、1920、2560。
 
 苏冰当日缺口、恢复水位、只读诊断及日志：
 
@@ -2124,7 +2125,7 @@ node --test apps/quant-web/tests/forwardPanelCache.test.ts apps/quant-web/tests/
 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-reference.spec.mjs --workers=1
 ```
 
-浏览器用隔离fixture验 UI、三笔卡片、延迟分页、移动端与缺失状态，不代表实际运行收益。
+浏览器用隔离fixture验 UI、三笔卡片、延迟分页、PC 窗口显示与缺失状态，不代表实际运行收益。
 真实页面只读 `forward_observation`；缺少留存流时不以历史重算／重绘补齐。
 
 ## 首页SimNow只读监控
