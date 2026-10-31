@@ -23,6 +23,7 @@ from app.reference_trading.receiving_handover import (
     seal_receiving_backlog,
 )
 from app.reference_trading.receiving_liveness import (
+    ReceivingCycleStale,
     ReceivingLivenessError,
     snapshot_receiving,
     prove_receiving_liveness,
@@ -755,3 +756,35 @@ def test_freshness_checks_clock_and_integrity_before_returning_expired(tmp_path)
     first["acknowledged_count"] = 1
     with pytest.raises(ReceivingLivenessError):
         receiving_sample_is_fresh(first, now=NOW + timedelta(seconds=31))
+
+
+def test_owner_cycle_crosses_expiry_only_at_actual_snapshot_sample(tmp_path):
+    factory, protocol, journal, intent, source, _, _ = _setup(tmp_path)
+    owner_at = NOW.isoformat()
+
+    def capture(sampled_at, cycle_at=owner_at):
+        return snapshot_receiving(
+            factory,
+            protocol,
+            journal,
+            intent=intent,
+            source_proof=source,
+            target=TARGET,
+            schema_proof=SCHEMA,
+            sampled_at=sampled_at,
+            owner_cycle_at=cycle_at,
+        )
+
+    assert capture(NOW + timedelta(seconds=29))["owner_cycle_at"] == owner_at
+    with pytest.raises(ReceivingCycleStale, match="REFERENCE_RECEIVING_CYCLE_STALE"):
+        capture(NOW + timedelta(seconds=32))
+
+    for sampled_at, cycle_at in (
+        (NOW - timedelta(seconds=1), owner_at),
+        ("invalid", owner_at),
+        ("", owner_at),
+        (NOW, "invalid"),
+    ):
+        with pytest.raises(ReceivingLivenessError) as error:
+            capture(sampled_at, cycle_at)
+        assert not isinstance(error.value, ReceivingCycleStale)

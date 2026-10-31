@@ -1,8 +1,15 @@
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from 'lightweight-charts'
 import type { PatternGeometry, PatternPoint } from '../../../../utils/newowPatternDisplay.ts'
-import { chartMarkerTime } from './newowProductChartPrimitives.ts'
+import type { MarketFrequency } from '../../../../types/market.ts'
+function chartMarkerTime(barEnd:string, frequency:MarketFrequency, tradingDay:string):Time {
+ if(frequency.endsWith('m')) return Math.floor(Date.parse(barEnd)/1000) as Time
+ const [year,month,day]=tradingDay.split('-').map(Number)
+ return {year:year!,month:month!,day:day!}
+}
 /** Hindsight decoration only; always anchored to the accepted chart time/price scales. */
 export class NewowPublicPatternPrimitive implements ISeriesPrimitive<Time> {
+ private readonly resolveTime?: (point:PatternPoint) => Time
+ constructor(resolveTime?: (point:PatternPoint) => Time) { this.resolveTime = resolveTime }
  private attachment:SeriesAttachedParameter<Time>|null=null
  private data:PatternGeometry|null=null
  private view:IPrimitivePaneView={zOrder:()=> 'normal',renderer:()=>({draw:target=>this.draw(target)})}
@@ -13,7 +20,7 @@ export class NewowPublicPatternPrimitive implements ISeriesPrimitive<Time> {
  private draw(target:Parameters<IPrimitivePaneRenderer['draw']>[0]){
  const attachment=this.attachment,data=this.data;if(!attachment||!data)return
  target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
- const xy=(p:PatternPoint)=>{const x=attachment.chart.timeScale().timeToCoordinate(chartMarkerTime(p.barEnd,data.frequency,p.tradingDay)),y=attachment.series.priceToCoordinate(p.price);return x===null||y===null?null:{x,y}}
+ const xy=(p:PatternPoint)=>{const x=attachment.chart.timeScale().timeToCoordinate((this.resolveTime?.(p) ?? chartMarkerTime(p.barEnd,data.frequency,p.tradingDay))),y=attachment.series.priceToCoordinate(p.price);return x===null||y===null?null:{x,y}}
  ctx.save();ctx.beginPath();ctx.rect?.(0,0,mediaSize.width,mediaSize.height);ctx.clip?.();ctx.strokeStyle='#1b5e20';ctx.fillStyle='#1b5e20';ctx.lineWidth=2;ctx.lineJoin='round';ctx.lineCap='round'
  for(const line of data.lines){const ps=line.points.map(xy);if(ps.some(p=>p===null)||!ps.length)continue
  const a=ps[0]!;ctx.setLineDash(line.dashed?[6,4]:[]);ctx.beginPath();ctx.moveTo(a.x,a.y)

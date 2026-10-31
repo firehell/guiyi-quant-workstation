@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 
+import NewowPublicPatternsPanel from '@/components/market/detail/newow/NewowPublicPatternsPanel.vue'
+import { buildNewowPatternGeometry, type PatternChoice } from '@/utils/newowPatternDisplay'
+import type { NewowProductChartBar } from '@/components/market/detail/newow/newowProductChartPrimitives'
 import FreeChartStage from '@/components/market/detail/free/FreeChartStage.vue'
 import { rangeDetectorStatusText } from '@/utils/rangeDetectorStatus'
 import { useRangeDetectorOverlayWarmup } from '@/composables/useRangeDetectorOverlayWarmup'
@@ -29,8 +32,24 @@ const emit = defineEmits<{
 }>()
 
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([...props.preferences.optionalEmaIndicators])
-const showRangeDetector = ref(props.preferences.showRangeDetector)
 const sourceIdentity = computed(() => [props.identity.seriesKind, props.identity.symbol, props.identity.contract ?? '', props.identity.frequency].join(':'))
+const showPatterns = ref(false)
+const patternSelection = shallowRef<PatternChoice | null>(null)
+const patternBars = computed<NewowProductChartBar[]>(() => props.bars.some(bar => !bar.physicalContract || !bar.trading_day) ? [] : props.bars.map(bar => ({
+  ...bar, barEnd: bar.time, tradingDay: bar.trading_day ?? '',
+  physicalContract: bar.physicalContract ?? '', segmentId: bar.calculationSegmentId ?? '',
+  calculationSegmentId: bar.calculationSegmentId ?? '', sourceIdentity: sourceIdentity.value,
+})))
+const patternRevision = ref(0)
+watch(() => props.mutation, () => { patternRevision.value++ }, { deep: true, flush: 'sync' })
+const patternWindowKey = computed(() => JSON.stringify([sourceIdentity.value, patternRevision.value]))
+const patternGeometry = computed(() => {
+  const choice = patternSelection.value
+  if (!showPatterns.value || props.loading || props.error || !choice || choice.windowKey !== patternWindowKey.value) return null
+  try { return buildNewowPatternGeometry(choice, props.identity.frequency) } catch { return null }
+})
+watch([showPatterns, patternWindowKey], () => { patternSelection.value = null }, { flush: 'sync' })
+const showRangeDetector = ref(props.preferences.showRangeDetector)
 const visibleFrom = ref<string | null>(null)
 const rangeCount = ref(0)
 watch(sourceIdentity, () => { visibleFrom.value = null; rangeCount.value = 0 }, { flush: 'sync' })
@@ -128,11 +147,17 @@ function loadEarlier() { void props.loadEarlier() }
         {{ rangeIndicatorLabel }}
         <span v-if="showRangeDetector" class="indicator-chip__check" aria-hidden="true">✓</span>
       </button>
+      <button class="indicator-chip indicator-chip--patterns" :class="{ 'indicator-chip--active': showPatterns }" type="button" :aria-pressed="showPatterns" @click="showPatterns = !showPatterns">
+        <span class="indicator-chip__dot" aria-hidden="true" />形态识别
+        <span v-if="showPatterns" class="indicator-chip__check" aria-hidden="true">✓</span>
+      </button>
     </div>
+    <NewowPublicPatternsPanel v-if="showPatterns" :bars="patternBars" :period="identity.frequency" :window-key="patternWindowKey" @select="patternSelection = $event" @preview="patternSelection = $event" @clear="patternSelection = null" />
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
     <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
     <FreeChartStage
       :bars="bars"
+      :pattern-geometry="patternGeometry"
       :mutation="mutation" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
       :loading="loading"
       :error="error"
@@ -164,6 +189,7 @@ function loadEarlier() { void props.loadEarlier() }
 .indicator-chip--ema10 { --indicator-color: #2563eb; }
 .indicator-chip--ema21 { --indicator-color: #f59e0b; }
 .indicator-chip--ema60 { --indicator-color: #7c3aed; }
+.indicator-chip--patterns { --indicator-color: #15803d; }
 .indicator-chip--range { --indicator-color: #2563eb; }
 @media (max-width: 640px) { .free-workspace__indicators { align-items: flex-start; flex-wrap: wrap; } .free-workspace__indicators-title { width: 100%; } }
 .free-workspace__hint { margin: 0; color: var(--gy-text-muted); font-size: var(--gy-font-size-sm); }

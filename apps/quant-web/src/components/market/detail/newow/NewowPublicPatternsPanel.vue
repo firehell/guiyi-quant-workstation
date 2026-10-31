@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { NewowProductChartModel } from './newowProductChartPrimitives'
+import type { NewowProductChartBar, NewowProductChartModel } from './newowProductChartPrimitives'
 import { NEWOW_PATTERN_NAMES, NEWOW_PATTERN_WORKER_FACTORY, PatternScanSession, splitNewowPatternOwners, type PatternChoice, type PatternWorker } from '@/utils/newowPatternDisplay'
 import { NEWOW_PUBLIC_PATTERNS_METADATA, type NewowPublicPattern } from '@/utils/newowPublicPatterns'
-const props=defineProps<{model:NewowProductChartModel|null;windowKey:string|null}>()
+const props=defineProps<{model?:NewowProductChartModel|null;bars?:readonly NewowProductChartBar[];period?:string;windowKey:string|null}>()
 const emit=defineEmits<{select:[choice:PatternChoice];preview:[choice:PatternChoice];clear:[]}>()
-const groups=computed(()=>splitNewowPatternOwners(props.model?.bars??[]))
+const groups=computed(()=>splitNewowPatternOwners(props.bars??props.model?.bars??[]))
 const selectedOwner=ref(''),patterns=ref<NewowPublicPattern[]>([]),busy=ref(false),error=ref<string|null>(null)
 const factory=inject<()=>PatternWorker>(NEWOW_PATTERN_WORKER_FACTORY,()=>new Worker(new URL('../../../../workers/newowPublicPatterns.worker.ts',import.meta.url),{type:'module'}) as unknown as PatternWorker)
 let mounted=false
@@ -16,9 +16,9 @@ const session=new PatternScanSession(factory,result=>{
 const owner=computed(()=>groups.value.find(group=>group.key===selectedOwner.value))
 function choice(pattern:NewowPublicPattern):PatternChoice|null{return owner.value&&props.windowKey?{key:JSON.stringify([props.windowKey,owner.value.key,pattern.type]),windowKey:props.windowKey,ownerKey:owner.value.key,bars:owner.value.bars,pattern}:null}
 function scan(){session.cancel();patterns.value=[];error.value=null;emit('clear');if(!mounted||!owner.value||!props.windowKey){busy.value=false;return}busy.value=true
- try{session.run({key:props.windowKey,period:props.model?.identity.frequency==='1w'?'week':'day',groups:[owner.value]})}catch{busy.value=false;error.value='形态计算不可用，请重试'}
+ try{session.run({key:props.windowKey,period:(props.period??props.model?.identity.frequency)==='1w'?'week':'day',groups:[owner.value]})}catch{busy.value=false;error.value='形态计算不可用，请重试'}
 }
-watch(()=>[props.model,props.windowKey] as const,()=>{selectedOwner.value=groups.value.at(-1)?.key??'';scan()},{immediate:true})
+watch(()=>[props.model,props.bars,props.period,props.windowKey] as const,()=>{selectedOwner.value=groups.value.at(-1)?.key??'';scan()},{immediate:true})
 watch(selectedOwner,scan)
 onMounted(()=>{mounted=true;scan()})
 onBeforeUnmount(()=>{mounted=false;session.cancel()})

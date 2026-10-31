@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
@@ -8,6 +9,7 @@ import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 
 const props = withDefaults(defineProps<{
+  patternGeometry?: PatternGeometry | null
   bars: BarData[]
   mutation: MarketSeriesMutation
   loading: boolean
@@ -105,6 +107,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
+    :pattern-geometry="patternGeometry"
       :loading="loading"
       :error="error"
       :period="period"
