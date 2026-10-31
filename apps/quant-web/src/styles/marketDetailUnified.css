@@ -117,3 +117,29 @@
   .unified-detail-light .newow-product-chart-stage__chart { height:650px; min-height:650px; }
   .unified-detail-light .kline-shell { height:650px; min-height:650px; }
 }
+
+/* Newow's public light PC chart surface; other analysis views keep their theme. */
+.unified-detail-light .newow-product-chart-stage {
+  --gy-chart-bg:#fff; --gy-chart-text:#333; --gy-chart-grid:#f0f0f0; --gy-chart-axis:#e5e5e5;
+  --gy-chart-candle-up:#ff3b30; --gy-chart-candle-down:#34c759;
+  background:#fff;
+}
+.unified-detail-light .newow-product-chart-stage__reference-prices { background:#fafafa; }
+.unified-detail-light .newow-product-chart-stage__auxiliary-toolbar { background:#fff; }
+.unified-detail-light .newow-product-workspace__auxiliary-controls { padding:6px 16px 0; border-top:0; }
+.unified-detail-light .newow-product-workspace__auxiliary-tabs button {
+  min-height:0; padding:6px 14px; font-size:13px; font-weight:500; line-height:normal;
+  color:#8e8e93; border-bottom:2px solid transparent;
+}
+.unified-detail-light .newow-product-workspace__auxiliary-tabs button[aria-pressed="true"] {
+  color:#1d1d1f; font-weight:600; border-bottom-color:#ff6b35;
+}
+.unified-detail-light .newow-product-workspace__auxiliary-legend-row {
+  flex-wrap:nowrap; gap:10px; min-height:0; padding:6px 16px 4px;
+}
+.unified-detail-light .newow-product-workspace__auxiliary-legend-row > .newow-mirror-legend {
+  width:auto; flex:1 1 auto; padding:0; background:#fff;
+}
+.unified-detail-light .newow-product-workspace__auxiliary-legend-row > .newow-trend-reversal-legend {
+  flex:1 1 auto; min-width:0; background:#fff;
+}

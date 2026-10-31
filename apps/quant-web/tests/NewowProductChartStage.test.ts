@@ -981,3 +981,28 @@ test('independent caution layer survives auxiliary selection and clears on strat
   assert.equal(findNode(root,n=>n.props['data-testid']==='newow-caution-explanation'),undefined)
   app.unmount()
 })
+
+test('page theme repaints breakout volume without a market request and disconnects observers',async()=>{
+  const previousDocument=globalThis.document,previousObserver=globalThis.MutationObserver
+  let theme='light',observations=0,disconnected=0
+  const callbacks:Array<()=>void>=[]
+  const body={getAttribute:(name:string)=>name==='data-theme'?theme:null}
+  globalThis.document={body,documentElement:{getAttribute:()=>null},addEventListener(){},removeEventListener(){}} as unknown as Document
+  globalThis.MutationObserver=class {constructor(callback:()=>void){callbacks.push(callback)}observe(){observations++}disconnect(){disconnected++}} as unknown as typeof MutationObserver
+  let volumes:Array<{color:string}>=[]
+  try{
+    const Stage=await loadComponent(),response=chartResponse(),value=response.value!
+    const template=value.frames[0]!
+    value.bars=Array.from({length:10},(_,i)=>({...bar(`2026-08-${String(i+6).padStart(2,'0')}T07:00:00Z`,`2026-08-${String(i+6).padStart(2,'0')}`),volume:100}))
+    value.bars[9]={...value.bars[9]!,open:'90',close:'108',volume:200}
+    value.frames=value.bars.map(b=>({...template,bar_end:b.bar_end,action_ids:b===value.bars[9]?['build-stable']:[],hint_ids:b===value.bars[9]?['hint-stable']:[]}))
+    const scale={width:()=>500,timeToCoordinate:()=>210,fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>null,scrollToRealTime(){},subscribeVisibleLogicalRangeChange(){},unsubscribeVisibleLogicalRangeChange(){}}
+    const fakeChart={addSeries:(_definition:unknown,options:any)=>({setData(data:any){if(options?.priceFormat?.type==='volume')volumes=data},update(row:any){if(options?.priceFormat?.type==='volume'){const i=volumes.findIndex(v=>(v as any).time===row.time);if(i<0)volumes.push(row);else volumes[i]=row}},createPriceLine(){},attachPrimitive(){},detachPrimitive(){},priceToCoordinate:(p:number)=>p*2}),removeSeries(){},panes:()=>[400,100,100].map(height=>({getHeight:()=>height,setStretchFactor(){}})),timeScale:()=>scale,subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
+    const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response,strategy:'oscillation',selectedSignalId:null})}))
+    app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart));app.mount(element('root'));await nextTick();await nextTick()
+    assert.equal(volumes.at(-1)?.color,'#D9A400');assert.ok(observations>=2)
+    theme='dark';for(const callback of callbacks)callback();await nextTick();await nextTick()
+    assert.equal(volumes.at(-1)?.color,'#FFD60A')
+    app.unmount();assert.equal(disconnected,callbacks.length)
+  }finally{globalThis.document=previousDocument;globalThis.MutationObserver=previousObserver}
+})

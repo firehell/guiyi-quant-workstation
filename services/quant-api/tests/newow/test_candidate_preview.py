@@ -747,3 +747,32 @@ def test_p7_candidate_rejects_multi_product_preview_scope(monkeypatch, raw):
     monkeypatch.setenv('GUIYI_INTRADAY_PREVIEW_PRODUCTS', raw)
     with pytest.raises(ValueError, match='PREVIEW_SCOPE_INVALID'):
         _intraday_preview_products()
+
+
+@pytest.mark.parametrize("frequency", ["1d", "1w"])
+def test_current_chart_resolver_uses_preview_clock_without_injected_as_of(preview, monkeypatch, frequency):
+    from app.api import market_newow
+
+    seen = []
+
+    class Resolver:
+        def resolve_with_chart(self, product, strategy, period, **kwargs):
+            seen.append((product, period.value))
+            raise ValueError("NEWOW_SOURCE_UNAVAILABLE")
+
+    def factory(session, cancelled, now, policy, **kwargs):
+        assert now() == datetime(2026, 9, 3, 8, tzinfo=UTC)
+        return Resolver()
+
+    monkeypatch.setattr(market_newow, "_build_daily_resolver" if frequency == "1d" else "_build_weekly_resolver", factory)
+    params = {"product": "rb", "strategy": "trend", "frequency": frequency,
+              "section": "chart", "resolve_current": "true"}
+    with TestClient(preview[0]) as client:
+        response = client.get("/api/v1/market/newow/strategy-detail", params=params)
+        assert response.status_code != 422
+        assert seen == [("rb", frequency)]
+        seen.clear()
+        invalid = client.get("/api/v1/market/newow/strategy-detail", params={**params, "as_of": "2026-09-03T08:00:00Z"})
+        assert invalid.status_code == 422
+        assert invalid.json()["detail"]["code"] == "NEWOW_INVALID_QUERY"
+        assert seen == []

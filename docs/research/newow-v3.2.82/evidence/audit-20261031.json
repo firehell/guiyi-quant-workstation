@@ -349,5 +349,138 @@
     "web": "NEWOW_PUBLIC_SOURCE=/private/tmp/newow-weekly-20261031/stock_detail.html node --test tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
     "python": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_home_cards.py services/quant-api/tests/newow/test_subplots_page_v1.py services/quant-api/tests/newow/test_historical_path.py services/quant-api/tests/newow/test_daily_weekly_path.py tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py",
     "source": "Temporary inspected-source-bound copies of tools/build_newow_v3379_audit.mjs, build_newow_experiments_oracle.mjs and build_newow_ai_oracle.mjs; source-check.mjs uses isolated constructed witnesses. Original tools and frozen fixtures unchanged."
+  },
+  "three_display_pc_acceptance": {
+    "observed_on": "2026-10-31 Asia/Shanghai",
+    "develop_baseline": "74a86df2a973fb7f5fad5d87dbd031220c6e27cf",
+    "detail_url": "https://www.v8848.cn/stock_detail.html",
+    "detail_sha256": "76ee34e9dda29e9ff239a515511344d669341d2e5e3a0dbb86b5025265caebf7",
+    "detail_version": "3.4.31",
+    "sample_kind": "constructed fixed coordinates and signals; not market evidence",
+    "browser": "Chrome",
+    "dpr": 2,
+    "rgba_channel_differences": {
+      "light": 0,
+      "dark": 0
+    },
+    "badge_dom_css_px": {
+      "width": 6,
+      "height": 6,
+      "top": 3,
+      "right": 3,
+      "gone_border": 1.5
+    },
+    "badge_title_aria_equal": true,
+    "click_checks": [
+      "active",
+      "gone age 1",
+      "gone age 2",
+      "expired",
+      "selected subpanel hidden",
+      "old display buttons revoked"
+    ],
+    "screenshots": [
+      {
+        "file": "newow-three-original-pc.jpg",
+        "sha256": "486121ff7f673f6b899a95b7a1bf16dd632f6d3957c16f322d00772836d80fd6"
+      },
+      {
+        "file": "newow-three-display-pc.jpg",
+        "sha256": "b9feaef060e608b7d3ddce75af046728b70c484120bf08b59f9bb3db3c4583d3"
+      },
+      {
+        "file": "newow-three-display-dark-pc.jpg",
+        "sha256": "eca0d729bb39d196159be1a5c17437670958d74ad9cddbd538ced455fc423a72"
+      }
+    ],
+    "corrections": [
+      "Reuse body-first existing theme reader",
+      "Paint ZLGJ-J before main-rise reduce-J, breakdown last"
+    ],
+    "validation": {
+      "backend_passed": 164,
+      "frontend_passed": 144,
+      "cleaned_test_rerun_passed": 7,
+      "typecheck_build_bundle": "passed with Node heap cap 1024MB",
+      "build_maximum_rss_bytes": 1085915136
+    },
+    "limitations": [
+      "Not all PC sizes, zoom levels or DPRs",
+      "No whole-page dark theme parity claim",
+      "Full workstation historical-segment manual clicking not done",
+      "No market/OOS or Runtime evidence"
+    ]
+  },
+  "full_pc_chart_acceptance": {
+    "observed_on": "2026-10-31 Asia/Shanghai",
+    "develop_baseline": "ef5c7ed2a87d32f5f3a62168f9822b0ccd76fe4d",
+    "tested_implementation": "dc7aaf56a069b076b32b85ed27f3f7635821248d",
+    "cutoff": "2026-10-31T08:00:00Z",
+    "mode": "local_candidate_readonly",
+    "sample": "real RB Canonical via read-only candidate; original 688702.SH for visual reference, not same-market numerical parity",
+    "pc_viewports": [
+      [
+        1366,
+        900
+      ],
+      [
+        1920,
+        1080
+      ]
+    ],
+    "fixes": [
+      "resolve_current query retains fixed request.state clock without injecting conflicting as_of",
+      "experiment bidirectional time viewport and cursor",
+      "series wrapper unwrapping for crosshair with expired lease rejection",
+      "actual price scale width reserved in auxiliary canvas",
+      "Shanghai minute cursor formatter",
+      "Newow-only light surface, candle colors, tab spacing, 110px auxiliary plot"
+    ],
+    "native_ui_checks": [
+      "trend switch revokes oscillation breakdown",
+      "fusion J de-duplicated",
+      "main-rise own hint layer",
+      "day/week/60m switching",
+      "four experiment loads and stale event removal",
+      "test1 historical RB2605 ownership and source dialog",
+      "test4 60m first auxiliary wheel and drag move main range",
+      "main/aux cursor same x and 2026-10-13 14:30 Shanghai",
+      "no horizontal overflow at 1366 and 1920"
+    ],
+    "screenshots": [
+      {
+        "file": "newow-pc-linkage-final-1366.jpg",
+        "sha256": "851ada254fbe5d3a55012b8a237ca4dcadf79b0bb68c67c440dc2acdffe08bf2"
+      },
+      {
+        "file": "newow-pc-aux-pan-final-1366.jpg",
+        "sha256": "fc6b28b30c8144eb6513b997e4fcdecda9efe3f5b777048f765925283c65f789"
+      },
+      {
+        "file": "newow-mainrise-pc-final-1920.jpg",
+        "sha256": "5ecda1e2dbc5c82563a6edd4aab41a868771219950bddaa39f122b3e6652cdb7"
+      },
+      {
+        "file": "newow-source-pc-final-1920.jpg",
+        "sha256": "19879f40af0e8e9c0c80cd06fdd49be395951c7c0c20b0d2be1e68cccdc71be7"
+      }
+    ],
+    "validation": {
+      "backend_candidate_passed": 253,
+      "frontend_passed": 61,
+      "typecheck_build_bundle": "passed",
+      "ruff": "passed",
+      "build_heap_cap_mb": 1024,
+      "build_peak_rss_bytes": 1105510400,
+      "candidate_peak_rss_kib": 414656
+    },
+    "limitations": [
+      "ordinary reference SOURCE_IDENTITY_UNVERIFIED: reference chart and rows not accepted",
+      "candidate quote intentionally unavailable; no route whitelist expansion",
+      "some explanation reads 503",
+      "not all products, periods, zoom or DPR; no P95 result",
+      "original independent breakdown overlay may overlap BUILD text; no global collision-free claim",
+      "no data writes, release or Runtime switch"
+    ]
   }
 }

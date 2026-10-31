@@ -582,6 +582,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     const frames = mergeTimelineUnique(value.frames, priorValue.frames, (item) => item.bar_end)
     const actions = mergeUnique(value.actions, priorValue.actions, (item) => item.signal_id)
     const hints = mergeUnique(value.hints, priorValue.hints, (item) => item.hint_id)
+    const displayEvents = mergeUnique(value.display_events ?? [], priorValue.display_events ?? [], (item) => item.event_id)
     let trendChannel: NewowChartValue['trend_channel'] = null
     let trendChannelConflict = false
     if (value.trend_channel === null || priorValue.trend_channel === null) {
@@ -601,7 +602,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       if (points === null) trendChannelConflict = true
       else trendChannel = { ...value.trend_channel, points }
     }
-    if ([bars, frames, actions, hints].some((items) => items === null) || trendChannelConflict) {
+    if ([bars, frames, actions, hints, displayEvents].some((items) => items === null) || trendChannelConflict) {
       failConflict('chart', 'NEWOW_CHART_PAGE_CONFLICT')
       return null
     }
@@ -633,6 +634,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
         price_reference: priorValue.price_reference,
         bars: boundedBars, frames: boundedFrames, trend_channel: boundedTrendChannel,
         actions: boundedActions, hints: boundedHints,
+        display_events: displayEvents!.filter(e=>boundedBars.some(b=>b.bar_end===e.bar_end&&b.physical_contract===e.physical_contract&&b.segment_id===e.segment_id&&b.calculation_segment_id===e.calculation_segment_id)).sort((a,b)=>Date.parse(a.bar_end)-Date.parse(b.bar_end)||a.kind.localeCompare(b.kind)),
         diagnostics: [...new Set([...priorValue.diagnostics, ...value.diagnostics])],
         next_before: bars!.length >= MAX_ACCUMULATED_CHART_ROWS ? null : value.next_before,
         next_older_window: bars!.length >= MAX_ACCUMULATED_CHART_ROWS ? null : value.next_older_window,

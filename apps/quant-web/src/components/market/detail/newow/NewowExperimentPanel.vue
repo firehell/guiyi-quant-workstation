@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
+import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { MAX_ACCUMULATED_REFERENCE_TRADES } from '@/utils/newowReferenceParts'
 import PerformancePanel from '../../../performance/PerformancePanel.vue'
 import ReturnCurveSvg from '../../../charts/ReturnCurveSvg.vue'
@@ -9,7 +11,7 @@ import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
 import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import {newowReferencePoints,newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,inject,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
-import {createChart,CandlestickSeries,HistogramSeries,LineSeries,createSeriesMarkers,type IChartApi,type ISeriesMarkersPluginApi,type Time,type IPriceLine} from 'lightweight-charts'
+import {createChart,CandlestickSeries,HistogramSeries,LineSeries,createSeriesMarkers,type IChartApi,type ISeriesMarkersPluginApi,type Time,type IPriceLine,type IRange} from 'lightweight-charts'
 import {DETAIL_CHART_SESSION,detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
 import {getNewowExperiment,getNewowExperimentHistory} from '@/api/newowExperiments'
 import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
@@ -17,7 +19,7 @@ import {formatPerformancePercent} from '@/utils/marketDisplay'
 import {pagePerformanceAnnualized} from '@/utils/newowPagePerformance'
 import {layoutNiuwaReferenceCallouts,type PositionedCallout} from '@/utils/referenceCalloutLayout'
 import {formatChartTimeInShanghai} from '@/utils/barTime'
-const emit=defineEmits<{ 'analyze-channel': []; context: [value: {asOf:string;physicalContract:string|null;segmentId:string|null;latestState:import('@/utils/newowExperiments').ExperimentSegment['latest_state']|null}|null] }>()
+const emit=defineEmits<{'select-display':[event:NewowDisplayEvent]; 'analyze-channel': []; context: [value: {asOf:string;physicalContract:string|null;segmentId:string|null;latestState:import('@/utils/newowExperiments').ExperimentSegment['latest_state']|null}|null] }>()
 const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null;volumeBars?:readonly {barEnd:string;physicalContract:string;volume:number}[]}>()
 const detailSession=inject<DetailChartSession|null>(DETAIL_CHART_SESSION,null)
 let retainedStop:RetainedBuildStop|null=null
@@ -72,7 +74,21 @@ let candles:ReturnType<IChartApi['addSeries']>|null=null,upper:ReturnType<IChart
 let volume:ReturnType<IChartApi['addSeries']>|null=null
 let markers:ISeriesMarkersPluginApi<Time>|null=null
 const time=(text:string):Time=>detailChartTime({time:text,trading_day:formatChartTimeInShanghai(text).slice(0,10)},props.frequency)
+const sharedViewport=shallowRef<IRange<Time>|null>(null),sharedCursor=shallowRef<Time|null>(null),sharedRightScaleWidth=ref(0)
+function publishViewport(){sharedRightScaleWidth.value=chart?.priceScale?.('right').width?.()??0;sharedViewport.value=chartBars.value.length?chart?.timeScale().getVisibleRange?.()??null:null}
+function applySharedViewport(value:IRange<Time>|null){
+ if(!chart||!value||!chartBars.value.length)return
+ if(JSON.stringify(chart.timeScale().getVisibleRange?.())!==JSON.stringify(value))chart.timeScale().setVisibleRange(value)
+}
+function applySharedCursor(value:Time|null){
+ if(JSON.stringify(sharedCursor.value)===JSON.stringify(value))return
+ sharedCursor.value=value
+ const bar=chartBars.value.find(b=>JSON.stringify(time(b.bar_end))===JSON.stringify(value))
+ if(value!==null&&bar&&candles)chart?.setCrosshairPosition(Number(bar.close),value,candles)
+ else chart?.clearCrosshairPosition()
+}
 let resetViewport=false
+watch([data,selectedSegment],()=>{sharedViewport.value=null;sharedCursor.value=null})
 watch(selectedSegment,()=>{if(chart){resetDetailChartWindow(chart);resetViewport=true}})
 let stopLine:IPriceLine|null=null
 const visualLines:ReturnType<IChartApi['addSeries']>[]=[]
@@ -99,9 +115,20 @@ function renderVisual(){
  if(price!==null)stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
 }
 const callouts=shallowRef<PositionedCallout[]>([])
+const displayPoints=ref<DisplayPoint[]>([]),displayWidth=ref(0),displayHeight=ref(0)
 function projectCallouts(){
+ displayPoints.value=[]
  if(!chart||!candles||!container.value)return
- const scale=chart.timeScale(),width=scale.width?.()??container.value.clientWidth,height=414
+ const scale=chart.timeScale(),width=scale.width?.()??container.value.clientWidth,height=chart.panes()[0]?.getHeight?.()??414
+ displayWidth.value=width;displayHeight.value=height
+ const bars=chartBars.value
+ displayPoints.value=(data.value?.display_events??[]).flatMap(event=>{
+  if(event.kind==='TREND_REVERSAL')return []
+  const bar=bars.find(b=>b.bar_end===event.bar_end&&b.physical_contract===event.physical_contract&&b.segment_id===event.segment_id)
+  if(!bar)return []
+  const x=scale.timeToCoordinate(time(bar.bar_end)),y=candles!.priceToCoordinate(Number(event.kind==='OSC_BREAKDOWN'?bar.low:event.kind==='ZLGJ_J'?String(Number(bar.high)*1.01):bar.high))
+  return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y}]:[]
+ })
  callouts.value=layoutNiuwaReferenceCallouts(chartMarkers.value.flatMap(m=>{
   const x=scale.timeToCoordinate?.(time(m.bar_end)),y=candles?.priceToCoordinate?.(Number(m.reference_price))
   if(x===null||x===undefined||y===null||y===undefined)return []
@@ -119,10 +146,10 @@ function render(){
  upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}))
  lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}))
  markers.setMarkers([])
- if(viewport)chart.timeScale().setVisibleLogicalRange(viewport);else chart.timeScale().fitContent();renderVisual();projectCallouts()
+ if(viewport)chart.timeScale().setVisibleLogicalRange(viewport);else chart.timeScale().fitContent();publishViewport();renderVisual();projectCallouts()
 }
 watch([data,selectedSegment],render)
-onMounted(()=>{if(!container.value)return;chart=(detailSession?.acquire??createChart)(container.value,{height:440,width:container.value.clientWidth,localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f1f3f5'},horzLines:{color:'#f1f3f5'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff403a',downColor:'#22b95d',wickUpColor:'#ff403a',wickDownColor:'#22b95d',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false},1);chart.panes()[0]!.setStretchFactor(5);chart.panes()[1]!.setStretchFactor(1);upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{renderVisual();projectCallouts()});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});projectCallouts()}});observer.observe(container.value);render()})
+onMounted(()=>{if(!container.value)return;chart=(detailSession?.acquire??createChart)(container.value,{height:500,width:container.value.clientWidth,layout:{background:{color:'#fff'},textColor:'#333',fontSize:12},localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff3b30',downColor:'#34c759',wickUpColor:'#ff3b30',wickDownColor:'#34c759',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false},1);chart.panes()[0]!.setStretchFactor(5);chart.panes()[1]!.setStretchFactor(1);upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{publishViewport();renderVisual();projectCallouts()});chart.subscribeCrosshairMove?.(param=>{const next=chartBars.value.length?(param.time??null):null;if(JSON.stringify(sharedCursor.value)!==JSON.stringify(next))sharedCursor.value=next});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});publishViewport();projectCallouts()}});observer.observe(container.value);render()})
 onBeforeUnmount(()=>{generation.clear();emit('context',null);observer?.disconnect();chart?.remove()})
 const pct=(v:unknown,signed=true)=>typeof v==='string'?formatPerformancePercent(v,signed):'—'
 const date=(v:unknown)=>typeof v==='string'?formatChartTimeInShanghai(time(v)):'—'
@@ -139,10 +166,10 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <p v-if="loading" role="status">正在读取实验策略…</p><p v-else-if="error" role="alert">{{error}} <button @click="load">重试</button></p><p v-else-if="!asOf" role="status">等待当前周期行情快照…</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='DATA_INSUFFICIENT'" role="status">当前合约段数据不足，暂时没有实验结果。</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='WARMUP'" role="status">当前合约段正在预热。</p>
 <slot name="overview" />
 <div class="experiment-chart-controls"><slot name="chart-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /></div>
-<div class="experiment-chart-wrap"><div ref="container" class="experiment-chart" />
+<div class="experiment-chart-wrap"><NewowDisplayOverlay :points="displayPoints" :width="displayWidth" :height="displayHeight" @select-display="emit('select-display',$event)" /><div ref="container" class="experiment-chart" />
 <div class="experiment-callouts" aria-label="实验策略参考动作"><svg aria-hidden="true"><polyline v-for="item in callouts" :key="item.callout.id" :points="`${item.x},${item.y} ${item.x},${(item.y+item.lineY)/2} ${item.lineX},${(item.y+item.lineY)/2} ${item.lineX},${item.lineY}`" fill="none" /></svg>
 <div v-for="item in callouts" :key="item.callout.id" class="experiment-callout" :class="{'is-compact':item.compact}" :style="{left:`${item.left}px`,top:`${item.top}px`,width:`${item.width}px`,height:`${item.height}px`}" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :title="`${item.callout.title} ${newowReferencePrice(item.callout.price)} · ${item.callout.time} · ${item.callout.physicalContract}`"><template v-if="!item.compact"><strong>{{item.callout.title}}</strong><span>{{newowReferencePrice(item.callout.price)}}</span></template><template v-else>{{item.callout.above?'▽':'△'}}</template></div></div></div>
-<slot name="chart-auxiliary" />
+<slot name="chart-auxiliary" :viewport="sharedViewport" :on-viewport="applySharedViewport" :right-scale-width="sharedRightScaleWidth" :cursor="sharedCursor" :on-cursor="applySharedCursor" />
 <PerformancePanel kind="页面参考" :since="data?.window?.since" :through="data?.window?.through" :cutoff="data?.as_of" :version="data?.formula_version" :loading="loading" :error="error" description="实验策略 · 按合约计算段统计 · 零费用与滑点 · 非可执行收益"><header class="newow-reference__returns-heading"><span class="newow-reference__annualized" title="当前模式及合约段的页面曲线自然日年化">年化 {{annualizedText(visibleSegments[0]?.[mode] ?? null)}}</span></header>
 <div class="newow-reference__presets experiment-mode" aria-label="页面统计快捷窗口"><button v-for="r in [{id:'3m',label:'近3月'},{id:'1y',label:'近1年'},{id:'3y',label:'近3年'},{id:'year',label:'今年'}]" :key="r.id" type="button" :aria-pressed="mode==='ordinary' && range===r.id" @click="selectRange(r.id as ExperimentRange)">{{r.label}}</button><button type="button" class="newow-reference__ideal" :aria-pressed="mode==='theoretical'" @click="selectRange('ideal')">理论值</button><button type="button" :aria-pressed="mode==='ordinary' && range==='all'" @click="selectRange('all')">全部</button></div>
 <template v-if="data"><label class="experiment-contract">合约计算段 <select v-model="selectedSegment"><option :value="null">当前计算段 · {{data.segments.at(-1)?.physical_contract}}</option><option v-for="s in data.segments.slice(0,-1)" :key="s.segment_id" :value="s.segment_id">{{s.physical_contract}} · {{date(s.statistics_window?.through)}}</option></select></label></template>
@@ -161,5 +188,5 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 </template>
 <style scoped src="./newowReferencePanel.css"></style>
 <style scoped>
-.experiment-panel{min-width:0;background:var(--gy-bg-panel);padding:10px;border-radius:8px;gap:8px}.experiment-heading,.experiment-chart-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}.experiment-panel p,.experiment-contract,.experiment-basis{font-size:12px;color:var(--gy-text-muted)}.experiment-chart-wrap{position:relative;min-width:0}.experiment-chart{height:440px;min-width:0}.experiment-curve{height:180px}.experiment-mode{justify-content:center}.experiment-mode button[aria-pressed="true"]{color:#ff6b2c;border-color:#ff6b2c}.experiment-contract{align-self:flex-end}.experiment-segment-status{margin:4px 0}.experiment-callouts{position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden}.experiment-callouts svg{position:absolute;inset:0;width:100%;height:100%;stroke:#9B8169;stroke-width:1}.experiment-callout{position:absolute;display:grid;place-content:center;box-sizing:border-box;overflow:hidden;border:1.5px solid #AD5734;border-radius:8px;background:var(--gy-bg-panel);color:#665044;font-size:11px;line-height:13px;text-align:center;padding:1px 4px}.experiment-callout strong,.experiment-callout span{white-space:nowrap}.experiment-callout.is-compact{padding:0}.experiment-records-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;margin:14px 0 8px}.experiment-records-heading span,.experiment-record-line time{font-size:11px;color:var(--gy-text-muted)}.newow-reference__card{margin:8px 0}.newow-reference__card header,.experiment-record-line{display:flex;justify-content:space-between;align-items:center;gap:8px}.experiment-record-line{margin:6px 0}.experiment-buy,[data-direction="up"]{color:#ff403a}.experiment-sell,[data-direction="down"]{color:#34c759}.experiment-badge{background:#ff9500;border-radius:3px;padding:3px 7px;color:white;font-size:11px}.experiment-record-count{text-align:center}.experiment-show-all{display:block;margin:8px auto;padding:7px 22px;border:1px solid var(--gy-border);background:white;border-radius:20px;font-size:12px}.experiment-basis summary{cursor:pointer}@media(max-width:600px){.experiment-mode{gap:5px}.experiment-records-heading span{max-width:50%;text-align:right}.experiment-record-line time{max-width:44%;text-align:right}}
+.experiment-panel{min-width:0;background:var(--gy-bg-panel);padding:10px;border-radius:8px;gap:8px}.experiment-heading,.experiment-chart-controls{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between}.experiment-panel p,.experiment-contract,.experiment-basis{font-size:12px;color:var(--gy-text-muted)}.experiment-chart-wrap{position:relative;min-width:0}.experiment-chart{height:500px;min-width:0}.experiment-curve{height:180px}.experiment-mode{justify-content:center}.experiment-mode button[aria-pressed="true"]{color:#ff6b2c;border-color:#ff6b2c}.experiment-contract{align-self:flex-end}.experiment-segment-status{margin:4px 0}.experiment-callouts{position:absolute;inset:0;pointer-events:none;z-index:4;overflow:hidden}.experiment-callouts svg{position:absolute;inset:0;width:100%;height:100%;stroke:#9B8169;stroke-width:1}.experiment-callout{position:absolute;display:grid;place-content:center;box-sizing:border-box;overflow:hidden;border:1.5px solid #AD5734;border-radius:8px;background:var(--gy-bg-panel);color:#665044;font-size:11px;line-height:13px;text-align:center;padding:1px 4px}.experiment-callout strong,.experiment-callout span{white-space:nowrap}.experiment-callout.is-compact{padding:0}.experiment-records-heading{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;margin:14px 0 8px}.experiment-records-heading span,.experiment-record-line time{font-size:11px;color:var(--gy-text-muted)}.newow-reference__card{margin:8px 0}.newow-reference__card header,.experiment-record-line{display:flex;justify-content:space-between;align-items:center;gap:8px}.experiment-record-line{margin:6px 0}.experiment-buy,[data-direction="up"]{color:#ff403a}.experiment-sell,[data-direction="down"]{color:#34c759}.experiment-badge{background:#ff9500;border-radius:3px;padding:3px 7px;color:white;font-size:11px}.experiment-record-count{text-align:center}.experiment-show-all{display:block;margin:8px auto;padding:7px 22px;border:1px solid var(--gy-border);background:white;border-radius:20px;font-size:12px}.experiment-basis summary{cursor:pointer}@media(max-width:600px){.experiment-mode{gap:5px}.experiment-records-heading span{max-width:50%;text-align:right}.experiment-record-line time{max-width:44%;text-align:right}}
 </style>

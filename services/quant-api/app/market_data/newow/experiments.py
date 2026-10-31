@@ -209,7 +209,8 @@ class NewowExperimentService:
             or tail_rollover
             or (resolved is not None and not resolved.complete)
         )
-        segments, chart, markers = [], [], []
+        from .display_events import breakdown_events, shared_events, DISPLAY_VERSION
+        segments, chart, markers, display_events = [], [], [], []
         seen, previous = set(), None
         for index, (identity, wrapped) in enumerate(groups):
             if self.cancelled is not None and self.cancelled():
@@ -243,6 +244,11 @@ class NewowExperimentService:
             steps = calculate_experiment_series(
                 bars, query.kind, check_cancelled=self._check_cancelled
             )
+            display_bars = tuple(replace(b, bar=raw) for b, raw in zip(values, bars, strict=True))
+            display_events.extend(shared_events(display_bars, include_zlgj=True))
+            shadow = calculate_experiment_series(tuple(replace(b, observation_eligible=True) for b in bars), query.kind, check_cancelled=self._check_cancelled)
+            display_events.extend(breakdown_events(display_bars, (s.signals for s in shadow), query.kind.value, query.kind.formula_version,
+                lambda i, seq: sha256(f"{query.kind}:{query.frequency}:{bars[i].segment_id}:{bars[i].bar_end.isoformat()}:{seq}:BUILD".encode()).hexdigest()))
             eligible = tuple(b for b in bars if b.observation_eligible)
             if not any(
                 window.since <= bar.trading_day <= window.through for bar in eligible
@@ -260,6 +266,7 @@ class NewowExperimentService:
                         trading_day=bar.trading_day.isoformat(),
                         physical_contract=bar.physical_contract,
                         segment_id=bar.segment_id,
+                        calculation_segment_id=identity[1],
                         open=str(bar.open),
                         high=str(bar.high),
                         low=str(bar.low),
@@ -367,6 +374,7 @@ class NewowExperimentService:
         ready = segments[-1]["readiness"]["status"] == "READY"
         from .product_service import _fingerprint
         return dict(
+            display_version=DISPLAY_VERSION,
             data_revision_identity=_fingerprint(read, product_identity),
             schema_version="newow_experiment_detail_v1",
             product=query.product,
@@ -391,6 +399,7 @@ class NewowExperimentService:
                 status="READY" if ready else "WARMUP",
                 reason_code=None if ready else "NEWOW_EXPERIMENT_WARMUP",
             ),
+            display_events=[e for e in display_events if e["bar_end"] in {b["bar_end"] for b in chart[-query.chart_limit :]}],
             bars=chart[-query.chart_limit :],
             markers=[
                 marker
