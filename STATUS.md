@@ -1,3 +1,10 @@
+10/31 owner已明确批准HC/SS/ZN三条精确恢复并继续统一十服务：保留原件、旧参考中断、无退出价/收益、未来FLAT。
+v1.16.48补丁候选新增固定20261031 incident，绑定三stream/gen1/旧revision/capture及仅SS OPEN，旧48流默认合同不变。
+103项相关回归、真实隔离PG旧8/新三流1项、最新轻导入17项、Ruff/Mypy/OpenSpec/secret0/diff/uv lock通过；
+独立Review无Confirmed Issue，允许发布main/tag。此检查点尚未执行生产恢复或新cohort，实际现役仍十服务41/gen43与SimNow44。
+后续依次完成正式补丁发布、三流精确原生恢复/readback、新鲜cohort预检和切换，再按引用证明收敛旧树；自然业务分别待验。
+以下为此前检查点：
+
 10/31 11:10 十服务统一仍阻塞；v1.16.47已发布，首次cohort在Reference预热中安全取消，尚未切换。
 自然09:00周审计已于10:42:21完成passed/60品种/零provider及数据写入；不再是当前占锁阻断。
 候选plan 9d5b0bb4218a9cbd1afad079db1677d4b8db7243ae1ef8bf1b2effabbd1fd9e1已cancelled，effects={}，不得复用。

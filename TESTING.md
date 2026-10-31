@@ -2278,6 +2278,12 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 原件不可变触发器，验证原子48路、完整回滚、UNKNOWN及原件保留；无环境skip不计通过。
 新功能不增加数据库迁移；隔离测试执行既有迁移不等于修改生产schema。
 
+另以`htdy_conflict_recovery_20261031_v1`固定HC/SS/ZN三条旧revision/capture及仅SS OPEN，
+不扩大旧48流scope。新增`test_htdy_three_conflict_scope.py`及
+`tests/unit/test_reference_htdy_three_conflict_cli.py`验证独立incident身份、精确前像拒绝、
+原子三流/SS无退出价中断、FLAT未来起点和未选流不变；真实PG项同样要求显式隔离库。
+CLI显式选择`--incident htdy_conflict_recovery_20261031_v1`，不能复用旧incident计划或attempt。
+
 `scripts/reference_htdy_conflict_recovery.py`默认无动作、只读，不加载凭据或park服务。
 正式`--park`/`--plan`/`--apply`要求干净exact annotated tag、固定inventory/scope、原私有配置，
 全60权威休市且下一Session>660秒、Reference真实parked/owner锁和Canonical维护租约。
