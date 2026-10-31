@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import NewowMainRiseProcessLabels from './NewowMainRiseProcessLabels.vue'
+import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
+import {layoutMainRiseProcessLabels} from '@/utils/newowProcessHintDisplay'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
@@ -123,6 +126,8 @@ function actionTitle(callout: KlineReferenceCallout, strategy = props.strategy) 
 function actionWidth(callout: KlineReferenceCallout, strategy = props.strategy): number {
   return Math.max(ACTION_LABEL_BOX.width, Math.min(180, Math.max(actionTitle(callout, strategy).length, actionDisplay(callout, strategy).text.length) * 7 + 14))
 }
+const pageTheme=ref(readNewowChartDisplayTheme())
+let themeObserver:MutationObserver|null=null
 const displayPoints=ref<DisplayPoint[]>([])
 const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;title:string}>>([])
 const selectedCautionKey = ref<string | null>(null)
@@ -156,7 +161,7 @@ const actionOverlayHeight = ref(0)
 const actionOverlayLeft = ref(0)
 const actionOverlayWidth = ref(0)
 const cycleCountOverlays = ref<Array<{ x: number; top: number; height: number; color: string; barEnd: string }>>([])
-const processOverlays = ref<Array<{ id: string; kind: string; anchorPrice: string | null; x: number; y: number; text: string; color: string; below: boolean; cycle?: boolean }>>([])
+const processOverlays = ref<Array<{ id: string; kind: string; anchorPrice: string | null; barEnd:string; x: number; y: number; text: string; color: string; below: boolean; cycle?: boolean }>>([])
 const attackOverlays = ref<Array<{ id: string; kind: string; x: number; y: number; height: number; width: number }>>([])
 const positionedActions = ref<PositionedCallout[]>([])
 const positionedComparison = ref<Array<PositionedCallout & { origin: 'trend' | 'oscillation' }>>([])
@@ -264,6 +269,11 @@ const mainLines = new Map<string, ISeriesApi<'Line'>>()
 onMounted(async () => {
   await nextTick()
   if (container.value === null) return
+  pageTheme.value=readNewowChartDisplayTheme()
+  if(typeof MutationObserver!=='undefined'&&typeof document!=='undefined'){
+    themeObserver=new MutationObserver(()=>{pageTheme.value=readNewowChartDisplayTheme();renderVolume(model.value)})
+    for(const target of [document.documentElement,document.body])if(target)themeObserver.observe(target,{attributes:true,attributeFilter:['data-theme']})
+  }
   const theme = resolveChartTheme(container.value)
   chart = (detailSession?.acquire ?? adapter.createChart)(container.value, {
     width: container.value.clientWidth,
@@ -314,6 +324,7 @@ onUnmounted(createNewowProductChartDisposer({
   unsubscribeClick: () => chart?.unsubscribeClick(onClick),
   disconnectResizeObserver: () => observer?.disconnect(),
   removeChart: () => {
+    themeObserver?.disconnect();themeObserver=null
     chart?.unsubscribeCrosshairMove?.(onCrosshair)
     rememberViewport()
     if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
@@ -388,6 +399,11 @@ const candleWriter = createPriceSeriesWriter<CandlestickData<Time>>()
 const volumeWriter = createPriceSeriesWriter<HistogramData<Time>>()
 const anchorWriter = createPriceSeriesWriter<{ time: Time }>()
 
+function renderVolume(value:NewowProductChartModel|null):void {
+  if(!volume||!value||props.strategySwitching||props.displayOnly)return
+  const colors=newowVolumeColors(value,'rgba(255,59,48,0.6)','rgba(52,199,89,0.6)',pageTheme.value)
+  volumeWriter.write(volume,value.bars.map((bar,index)=>({time:chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay),value:bar.volume,color:colors[index]})),`${value.identity.product}:${value.identity.frequency}`)
+}
 function renderModel(value: NewowProductChartModel | null): void {
   processOverlays.value = []
   cycleCountOverlays.value = []
@@ -454,8 +470,7 @@ function renderModel(value: NewowProductChartModel | null): void {
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
   })), priceIdentity)
-  const volumeColors = newowVolumeColors(value, 'rgba(255,59,48,0.6)', 'rgba(52,199,89,0.6)')
-  if (volume) volumeWriter.write(volume, value.bars.map((bar, index) => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), value: bar.volume, color: volumeColors[index] })), priceIdentity)
+  renderVolume(value)
   if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
   const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')
   band.setData(showStructure.value ? comparisonActive.value ? trendModel?.bandAreas ?? [] : value.bandAreas : [])
@@ -574,7 +589,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay))
     const y=priceToCoordinate.call(candles,bar.close)
     if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
-      cautionOverlays.value.push({x,y:Math.max(3,y-22),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
+      cautionOverlays.value.push({x,y:Math.max(3,y-26),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
   }
   const displayEvents=[...(props.response?.value?.display_events??[]),...(comparisonActive.value ? props.comparisonResponse?.value?.display_events??[] : [])]
   const seenDisplay=new Set<string>()
@@ -598,15 +613,21 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
       return [{ x, top: Math.min(high, low), height: Math.abs(low - high), color, barEnd: bar.barEnd }]
     })
     const bars = new Map(value.bars.map(bar => [bar.barEnd, bar]))
-    processOverlays.value = value.hints.flatMap(hint => {
+    const projected = value.hints.flatMap(hint => {
       const bar = bars.get(hint.barEnd)
       const display = bar ? newowProcessHintDisplay(hint, bar) : null
       if (!bar || !display) return []
       const x = timeToCoordinate.call(scale, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay))
       const y = priceToCoordinate.call(candles, display.displayPrice)
-      if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > width || y < 0 || y > height) return []
-      return [{ ...display, id: hint.id, kind: hint.kind, anchorPrice: hint.anchorPrice, x, y: y + (display.below ? display.padding : -display.padding) }]
+      if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) return []
+      const range=scale.getVisibleLogicalRange()
+      if(value.identity.strategy==='main_rise'&&range){
+        const index=detailChartIndex(chart!,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay),value.bars.indexOf(bar))
+        if(index<Math.floor(range.from)||index>Math.ceil(range.to)||(display.cycle&&index>=Math.ceil(range.to)))return []
+      }else if(x<0||x>width||y<0||y>height)return []
+      return [{ ...display, id: hint.id, kind: hint.kind, barEnd:bar.barEnd, anchorPrice: hint.anchorPrice, x, y: y + (display.below ? display.padding : -display.padding) }]
     })
+    processOverlays.value=value.identity.strategy==='main_rise'?layoutMainRiseProcessLabels(projected):projected
   }
   if (showHints.value && value.identity.strategy === 'oscillation') {
     const range = scale.getVisibleLogicalRange()
@@ -926,8 +947,8 @@ defineExpose({ revealSignal, scrollToLatest })
       @dblclick="scheduleActionProjection"
     />
     <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" />
-    <div class="newow-caution-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
-      <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null">小心</button>
+    <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
+      <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg v-if="item.tentative" aria-hidden="true" width="100%" height="16"><rect x="0" y="0" width="100%" height="16" rx="8" /></svg><span>小心</span></button>
     </div>
     <aside v-if="selectedCaution" class="newow-caution-explanation" data-testid="newow-caution-explanation" role="region" aria-label="小心说明" @pointerdown.stop @keydown.esc.stop="selectedCautionKey = null">
       <header><strong>{{ selectedCaution.tentative ? '暂定峰' : '已确认峰' }}</strong><button type="button" aria-label="关闭小心说明" @click="selectedCautionKey = null">关闭</button></header>
@@ -935,7 +956,8 @@ defineExpose({ revealSignal, scrollToLatest })
     </aside>
     <div v-if="showHints && (processOverlays.length || cycleCountOverlays.length)" class="newow-process-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="主图过程提示，非成交">
       <i v-for="item in cycleCountOverlays" :key="item.barEnd" class="newow-cycle-count" :data-cycle-count-bar="item.barEnd" :style="{ left: `${item.x}px`, top: `${item.top}px`, height: `${item.height}px`, background: item.color }" />
-      <span v-for="item in processOverlays" :key="item.id" :data-process-hint-id="item.id" :data-hint-kind="item.kind" :data-anchor-price="item.anchorPrice" :class="{ below: item.below, cycle: item.cycle }" :style="{ left: `${item.x}px`, top: `${item.y}px`, color: item.color }">{{ item.text }}</span>
+      <NewowMainRiseProcessLabels v-if="strategy==='main_rise'" :points="processOverlays" :width="actionOverlayWidth" :height="actionOverlayHeight" :dark="pageTheme==='dark'" />
+      <span v-for="item in processOverlays" :key="item.id" :data-process-hint-id="item.id" :data-hint-kind="item.kind" :data-anchor-price="item.anchorPrice" :class="{ below: item.below, cycle: item.cycle, 'canvas-only':strategy==='main_rise' }" :style="{ left: `${item.x}px`, top: `${item.y}px`, color: item.color }">{{ item.text }}</span>
     </div>
     <div v-if="showHints && attackOverlays.length" class="newow-attack-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="震荡辅助攻击线提示">
       <span v-for="item in attackOverlays" :key="item.id" :data-hint-kind="item.kind" :style="{ left: `${item.x}px`, top: `${item.y}px`, width: item.kind === 'OSCILLATION_J' ? '12px' : `${item.width}px`, height: item.kind === 'OSCILLATION_J' ? '14px' : `${item.height}px` }" :class="item.kind">{{ item.kind === 'OSCILLATION_J' ? 'J' : '' }}</span>
@@ -975,7 +997,7 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
-.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:1px 6px;background:#00ff00;color:#111;font-size:11px;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
+.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:0 6px;height:16px;min-height:16px;max-height:16px;box-sizing:border-box;background:#00ff00;color:#003300;font:bold 10px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
 
 .newow-product-chart-stage__reference-prices { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; padding:5px 12px; border-bottom:1px solid #eef0f3; background:#fafafa; font-size:11px; font-weight:600; }
 .newow-product-chart-stage__reference-controls { margin-left:auto; display:flex; align-items:center; gap:8px; }
@@ -1033,6 +1055,7 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-process-overlay span { position:absolute; transform:translate(-50%,-100%); white-space:nowrap; font:15px Arial,sans-serif; line-height:18px; }
 .newow-process-overlay span.below { transform:translateX(-50%); }
 .newow-process-overlay span.cycle { font-size:18px; line-height:21px; font-weight:700; }
+.newow-process-overlay span.canvas-only{width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
 .newow-attack-overlay { position:absolute; pointer-events:none; overflow:hidden; z-index:3; }
 .newow-attack-overlay span { position:absolute; transform:translateX(-50%); box-sizing:border-box; }
 .newow-attack-overlay .ZLGJ_BUY { background:#f00; border:1px solid white; }
@@ -1041,7 +1064,12 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 </style>
 
 <style scoped>
-.newow-caution-overlay .tentative { background:transparent; border:1px dashed #00b800; color:#008800; }
+.newow-caution-overlay button>span{position:relative;top:.5px}
+.newow-caution-overlay .tentative { background:transparent; color:#00A03E; }
+.newow-caution-overlay .tentative svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.newow-caution-overlay .tentative rect{fill:rgba(0,230,118,.08);stroke:#00A03E;stroke-width:1.5;stroke-dasharray:3 2}
+.newow-caution-overlay.dark .tentative{color:#00E676}
+.newow-caution-overlay.dark .tentative rect{stroke:#00E676}
 
 .newow-caution-overlay button:focus-visible { outline:2px solid #365af5; outline-offset:2px; }
 .newow-caution-explanation { position:absolute; top:56px; right:8px; z-index:15; max-width:min(340px,calc(100% - 16px)); box-sizing:border-box; padding:10px 12px; border:1px solid #d0d5dd; border-radius:8px; background:var(--gy-bg-panel,#fff); color:var(--gy-text-primary,#1d2939); box-shadow:0 4px 16px #0002; font-size:12px; line-height:1.6; }
