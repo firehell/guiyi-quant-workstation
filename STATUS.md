@@ -1,3 +1,10 @@
+11/1 市场与策略展示修复已发布 v1.16.63，exact 5eed44ca847f282bf2efe5fc5112c0f3651395b0，PR #592 / annotated tag / GitHub Release 完成。
+包含首页周线质量读取、恢复提示收敛、共享参考价/周期栏及生命周期修复、苏冰实时参考收益与界面精简；不改公式、账户或原始交易。
+定向后端87通过/1跳过、前端24通过、浏览器24通过，版本/锁检查、正式树类型与构建、secret/diff通过；既有基线失败不计入通过。
+正式树 .worktrees/release-v1.16.63 已构建；原生计划 f1d716856b0b77d0d3bb53dc1e4a3d7cb63f20f5008738f056256e81fd25cd34 因reference合同变化要求十服务整组交接。
+宿主自动审批拒绝执行交接，理由为本次发布授权未明确涵盖Runtime promotion；未执行切换，不复用过期计划。正式仍为v1.16.62/gen51。
+当前状态 RELEASED / HOST_APPROVAL_BLOCKED（仅Runtime切换）；独立SimNow与原定时安排未操作，后续明确授权后须生成fresh计划再执行。
+
 11/1 开盘前修复已发布 v1.16.62，exact 4c44e63e1be7a954d8ba82b478e28577503ac5e1，PR #591 / annotated tag / GitHub Release 已完成。
 正式十服务经原生cohort f7283e8fbd50a17aae82f73a3e3903b27e9ed8b2e216f7780f471c15fe77a0e5单次切换成功，gen51；现场十项matched、API/Web/Runtime全部通过。
 正式root改为普通Git树 .worktrees/release-v1.16.62，不再使用聊天托管工作树；部署文档已记录防止归档移除运行目录的约束。
