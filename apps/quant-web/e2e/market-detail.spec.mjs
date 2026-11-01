@@ -964,6 +964,19 @@ for (const view of ['htdy', 'subing', 'free']) {
       await page.goto(`/market/chart?symbol=rb&view=${view}&series_kind=actual_dominant&frequency=60m`)
       const toolbar = page.getByLabel('主图参考价格', { exact: true })
       await expect(toolbar).toHaveCount(1)
+      await expect(page.locator('.detail-view-nav .chart-reference-toolbar')).toHaveCount(0)
+      await expect(page.locator(`#detail-chart-reference-toolbar .chart-reference-toolbar`)).toHaveCount(1)
+      if (view === 'htdy') {
+        const layout = await page.locator('.htdy-workspace').evaluate(el => {
+          const surface = el.querySelector('.htdy-workspace__chart-surface')
+          const toolbar = surface.querySelector('.chart-reference-toolbar').getBoundingClientRect()
+          const chart = surface.children[1].getBoundingClientRect()
+          const source = el.querySelector('.htdy-workspace__source').getBoundingClientRect()
+          return { sourceBefore: source.bottom <= toolbar.top, gap: chart.top - toolbar.bottom }
+        })
+        expect(layout.sourceBefore).toBe(true)
+        expect(Math.abs(layout.gap)).toBeLessThanOrEqual(1)
+      }
       await expect(toolbar).toContainText('目标价: 3600.00')
       await expect(toolbar).toContainText('吸筹价: 3400.00')
       const periods = toolbar.getByRole('group', { name: '周期', exact: true })

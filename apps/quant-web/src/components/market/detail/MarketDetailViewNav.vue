@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
   newowFrequencies: readonly MarketFrequency[]
+  frequencyControlsTarget?: string
   targetPrice?: string | null
   absorbPrice?: string | null
   referencePriceStatus?: string
@@ -140,6 +141,7 @@ function periodLabel(value: MarketFrequency) {
 
 
 
+    <Teleport defer :to="frequencyControlsTarget ?? 'body'" :disabled="!frequencyControlsTarget">
     <ChartReferenceToolbar v-if="showFrequencyControls" :target-price="targetPrice" :absorb-price="absorbPrice" :status="referencePriceStatus">
       <div class="newow-chart-frequency" role="group" aria-label="周期">
         <button v-for="frequency in availableFrequencies" :key="frequency" type="button"
@@ -147,6 +149,7 @@ function periodLabel(value: MarketFrequency) {
           @click="chooseFrequency(frequency)">{{ periodLabel(frequency) }}</button>
       </div>
     </ChartReferenceToolbar>
+    </Teleport>
   </nav>
 </template>
 

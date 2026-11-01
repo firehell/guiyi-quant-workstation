@@ -326,6 +326,7 @@ onUnmounted(() => chartSession.dispose())
         :target-price="toolbarPriceSummary.target?.display_value ?? null"
         :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null"
         :reference-price-status="toolbarPriceStatus"
+        :frequency-controls-target="controller.state.value.header && !controller.state.value.loading && !controller.state.value.error && workspaceVisible && ['htdy', 'subing', 'free'].includes(routeResult.identity.view) && !(routeResult.identity.view === 'subing' && (routeResult.identity.frequency === '1m' || routeResult.identity.seriesKind !== 'actual_dominant')) ? '#detail-chart-reference-toolbar' : undefined"
         :newow-frequency-in-workspace="!isFuturesMode && workspaceVisible && routeResult.identity.view === 'newow' && !!newowCapabilities.capabilities.value && newowFrequencyOpen"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
