@@ -1,3 +1,7 @@
+11/1 修正健康诊断结论：10/31周审计并非从未执行，保全v41 09:00-10:42及v48 12:00-13:44均60/60 passed、findings0、through10/30；之后v50 15:00-15:21在第8个BU发生DATABASE_ERROR（7/60），不能仅报告早期passed。当前正式weekly缺本版本证据保持missed，旧记录未改写或移植冒充当前运行。原生BU单品种全历史只读复核本次skipped_busy（0/1），未抢锁或自动重试，不计通过。
+Alert共同误判路径已复现：权威MDS证明10/29全60品种周线尚未完成，旧canonical D1触发路径将其转成generic evaluation_failed。新增typed MARKET_READ_WEEK_NOT_COMPLETED，仅在完整Calendar和当前已完成开市日Session双重证明后skip；未知/缺失/矛盾仍fail-closed，不产生成功、失败、Event或通知，不清旧unresolved。真实60品种修正后只读回验60 typed_not_due。原始失败仅保留泛化错误，不能据复现宣称逐条还原当时异常或自动消除旧60条。
+扩展市场读取/health/Alert/quality回归385项通过、evaluator52项通过，Ruff/secret/diff通过；独立Review112项通过，首轮指出Calendar空周歧义已补开市日证明及回归。仅集成develop，未发布/切换；正式v64与明日15:05 SimNow固定目标保持，旧Alert降级、周审计未完整新验及SimNow恢复仍未完成。其他任务未跟踪研究文件未触及。
+
 11/1 健康核对后修复盘后历史接续：10/30自然盘后原件实际passed（18:05:06至18:14:28），此前v64缺after-market-history并非证明当日未执行。六份保全副本逐值一致，经现役v64原封read_history、源commit和SHA核验后，部署锁内使用publish_history原子接回；未重跑盘后、下载、改Canonical/DB或通知。源文件与当前after-market-status散列保持；19项after_market_history测试通过。
 独立HTTP读回after_market=ok/completed、last_successful_trading_day=2026-10-30、error_type=null；db/redis/live均ok，总体仍degraded。Alert的60项evaluation_failed全部为苏冰1w，previous_unresolved=2026-10-29；持久原始记录60条均只有evaluation_failed、无input_error_code/物理合约/成功端点，当前成功不能按合同抹掉旧未解决边界，未改Redis、重放Event或补发。10/29实际失败原因尚不能由现有错误投影证明。weekly仍missed，未重跑全历史审计；全历史无缺口与自然自动交易未获新证据。
 
