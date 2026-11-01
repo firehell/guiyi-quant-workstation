@@ -292,3 +292,35 @@ def test_no_break_preserves_full_physical_warmup_before_rank1_takeover():
     )
     assert window.bars == bars
     assert reader.physical_args["contract"] == "RB2610"
+
+
+@pytest.mark.parametrize("outcome", ["unfinished", "missing_calendar", "wrong_endpoint", "holiday_week", "holiday_day", "missing_session"])
+def test_weekly_not_due_is_distinct_from_missing_authority(outcome):
+    from app.market_data.market_read_service import MarketReadWindowNotDue
+    bars = tuple(_bar(i, weekly=True) for i in range(4))
+    reader = _QualityReader(bars, (), frequency=BarFrequency.W1)
+    def completed(**kwargs):
+        if outcome == "missing_calendar":
+            raise MarketReadWindowError("TRADING_CALENDAR_MISSING")
+        return None if outcome == "unfinished" else (DAY, END)
+    reader.completed_calendar_week = completed
+    reader.calendar_week_facts = lambda **kwargs: tuple(
+        (kwargs["week_monday"] + timedelta(days=i), True) for i in range(7)
+    )
+    if outcome in {"holiday_week", "holiday_day"}:
+        reader.completed_calendar_week = lambda **kwargs: None
+        reader.completed_trading_days = lambda **kwargs: ()
+    original_sessions = reader.session_windows
+    reader.session_windows = lambda **kwargs: (
+        () if outcome == "missing_session" else tuple(
+            SimpleNamespace(start=x.end - timedelta(hours=1), end=x.end)
+            for x in original_sessions(**kwargs)
+        )
+    )
+    expected = MarketReadWindowNotDue if outcome == "unfinished" else MarketReadWindowError
+    with pytest.raises(expected) as error:
+        _service(reader).latest_subing_quality_window(
+            SeriesPageQuery("actual_dominant", "rb", "1w"), trading_day=bars[-1].trading_day,
+        )
+    assert isinstance(error.value, MarketReadWindowNotDue) == (outcome == "unfinished")
+    assert reader.calls == []

@@ -1,3 +1,5 @@
+11/1 v1.16.65发布修复范围：从正式v64基线仅接入已独立Review的93f20b90a/0c72784de Alert未到期周线误判及原子诊断关闭，不包含develop苏冰研究/账户公式改动。60品种全历史只读审计通过、225未验证路线及180输入窗口核查通过；正式60条旧失败将在本版本owner取证后原子归档，当前尚未发布/切换，不提前宣称应用。独立SimNow不切换。
+
 11/1 开盘前修复已发布 v1.16.62，exact 4c44e63e1be7a954d8ba82b478e28577503ac5e1，PR #591 / annotated tag / GitHub Release 已完成。
 正式十服务经原生cohort f7283e8fbd50a17aae82f73a3e3903b27e9ed8b2e216f7780f471c15fe77a0e5单次切换成功，gen51；现场十项matched、API/Web/Runtime全部通过。
 正式root改为普通Git树 .worktrees/release-v1.16.62，不再使用聊天托管工作树；部署文档已记录防止归档移除运行目录的约束。

@@ -48,7 +48,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
     normalize_contract_for_symbol,
 )
-from app.market_data.market_read_service import MarketReadService, MarketReadWindow, MarketReadWindowError
+from app.market_data.market_read_service import MarketReadService, MarketReadWindow, MarketReadWindowError, MarketReadWindowNotDue
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.errors import InfrastructureError
 from app.market_data.product_retirement import normalize_symbol
@@ -229,6 +229,7 @@ class AlertRuntime:
         self._coverage_progress: dict[tuple[str, str, str], dict[str, object]] = {}
         self._unresolved_coverage: dict[str, dict[str, object]] = {}
         self._pending_unresolved: dict[str, dict[str, object]] | None = None
+        self._coverage_closeout_pending = False
         self.clock = clock or (lambda: datetime.now(UTC))
         self.stop_requested = stop_requested or (lambda: False)
 
@@ -247,6 +248,7 @@ class AlertRuntime:
                     raise RuntimeError("ALERT_HANDOFF_SENDER_INVALID")
                 self.assert_owned()
                 self._notification_generation = generation
+                self._close_not_due_coverage()
                 self._handoff = BoundedNotificationHandoff(
                     session_factory=self._session_factory, sender=self._sender,
                     assert_owned=self.assert_owned, clock=self._aware_now, generation=generation,
@@ -263,6 +265,8 @@ class AlertRuntime:
                     self._handoff.check_health()
                 now = self._aware_now()
                 if now >= next_heartbeat:
+                    if self._coverage_closeout_pending:
+                        self._close_not_due_coverage()
                     self._write_heartbeat(now)
                     next_heartbeat = now + _HEARTBEAT_INTERVAL
                 runtime_message = self.message_source.get_message(timeout_seconds=1.0)
@@ -664,7 +668,7 @@ class AlertRuntime:
                                 )
                                 messages.extend(item_messages)
                                 recorded_rule_result = True
-                            except AlertEvaluationSkipped:
+                            except (AlertEvaluationSkipped, MarketReadWindowNotDue):
                                 if session.in_transaction():
                                     session.rollback()
                             except (AlertEvaluationError, MarketReadWindowError) as exc:
@@ -911,6 +915,73 @@ class AlertRuntime:
             ttl_seconds=_HEARTBEAT_TTL_SECONDS,
         )
 
+    def _close_not_due_coverage(self) -> None:
+        """Owner-only startup maintenance; never replays Events or clears real errors."""
+        writer = getattr(self.heartbeat_store, "close_not_due", None)
+        if not self._unresolved_coverage or not callable(writer):
+            return
+        if self._pending_unresolved is not None:
+            raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_PENDING_UNKNOWN")
+        snapshot = getattr(self.message_source, "coverage_snapshot", None)
+        if callable(snapshot):
+            warming = frozenset(f"{symbol}:{frequency}" for (_, symbol, frequency), row
+                                in self._coverage_progress.items() if row.get("state") == "warming_up")
+            frontier = snapshot(warming_routes=warming)
+            cursor, tail = frontier.get("cursor"), frontier.get("tail")
+            if not isinstance(cursor, str) or not isinstance(tail, str):
+                raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_JOURNAL_INVALID")
+            if cursor != tail:
+                self._coverage_closeout_pending = True
+                return
+        from app.alerts.coverage_closeout import propose_closeout
+        from app.db.readonly import readonly_transaction
+
+        identity = runtime_heartbeat_identity()
+        with self._session_factory() as session:
+            reader = self._market_read_factory(session)
+            with reader.coverage_closeout_guard() as held:
+                if not held:
+                    self._coverage_closeout_pending = True
+                    return
+                self._coverage_closeout_pending = False
+                with readonly_transaction(session):
+                    resolutions = propose_closeout(
+                        self._unresolved_coverage, reader, now=self._aware_now(), identity=identity,
+                    )
+                    if not resolutions:
+                        return
+                    next_progress = dict(self._coverage_progress)
+                    replacements = {}
+                    for route in resolutions:
+                        key = tuple(route.split(":"))
+                        current = next_progress.get(key)
+                        old = self._unresolved_coverage[route]
+                        if current == old:
+                            next_progress.pop(key)
+                        elif current is not None:
+                            current = dict(current)
+                            if current.get("previous_unresolved") == old["trading_day"]:
+                                current["previous_unresolved"] = None
+                            next_progress[key] = current
+                            if current.get("state") == "evaluation_failed":
+                                replacements[route] = current
+                            elif current.get("previous_unresolved") is not None:
+                                # A later success/warming is current evidence, but
+                                # cannot erase an intervening unresolved failure.
+                                retained = dict(current)
+                                retained.update(
+                                    state="evaluation_failed", error_type="evaluation_failed",
+                                    input_error_code="ALERT_PREVIOUS_UNRESOLVED",
+                                    last_warming_bar_at=None, warming_observation_id=None,
+                                    warming_runtime_generation=None, warming_attempts=[],
+                                )
+                                replacements[route] = retained
+                    self.assert_owned()
+                    remaining = writer(self._unresolved_coverage, resolutions,
+                                       assert_owned=self.assert_owned, replacements=replacements)
+                self._unresolved_coverage = remaining
+                self._coverage_progress = next_progress
+
     def _restore_unresolved_coverage(self) -> None:
         reader = getattr(self.heartbeat_store, "read_unresolved", None)
         if not callable(reader):
@@ -971,8 +1042,11 @@ class AlertRuntime:
         pending = self._pending_unresolved
         if pending is None:
             return
+        atomic_writer = getattr(self.heartbeat_store, "replace_unresolved", None)
         writer = getattr(self.heartbeat_store, "write_unresolved", None)
-        if callable(writer):
+        if callable(atomic_writer):
+            atomic_writer(dict(pending), expected=self._unresolved_coverage, assert_owned=self.assert_owned)
+        elif callable(writer):
             writer(dict(pending))
         self._unresolved_coverage = pending
         self._pending_unresolved = None
@@ -1083,9 +1157,11 @@ class AlertRuntime:
             identity = ":".join(key)
             next_unresolved = dict(self._unresolved_coverage)
             unresolved_changed = False
-            if error_type not in {None, "evaluation_warming_up"} and identity not in next_unresolved:
-                next_unresolved[identity] = dict(self._coverage_progress[key])
-                unresolved_changed = True
+            if error_type not in {None, "evaluation_warming_up"}:
+                latest_failure = dict(self._coverage_progress[key])
+                if next_unresolved.get(identity) != latest_failure:
+                    next_unresolved[identity] = latest_failure
+                    unresolved_changed = True
             elif error_type is None and previous_unresolved is None:
                 unresolved_changed = next_unresolved.pop(identity, None) is not None
             if unresolved_changed:

@@ -449,6 +449,34 @@ Coverage heartbeat v2 SHALL distinguish typed `evaluation_warming_up` as `warmin
 without manufacturing an evaluation success, current successful cutoff or failure timestamp. A prior actual
 input/evaluation error MUST remain unresolved through warming, peer successes, day changes and restarts.
 The bounded unresolved projection is diagnostic only; it does not replace Event persistence or the journal.
+`alert_week_not_due_closeout_v1` MAY close a historical generic W1 diagnostic only
+when it has no contract, successful cutoff, specific input error, prior unresolved
+boundary or warming evidence, and fresh rank1/complete seven-day Calendar/Session
+facts prove its claimed date was a completed trading day before that week's last
+trading day. The owner SHALL retain the exact original record, input facts/hash,
+checked time and Runtime identity in `alert:coverage-closeouts:v1` atomically with
+removal from `alert:coverage-unresolved:v2`. Maintenance locking SHALL cover proof
+and CAS; both Redis keys are watched and ownership rechecked before commit.
+Missing/conflicting evidence, due weeks, identity drift, CAS conflicts and unknown
+commit results MUST NOT clear the diagnostic or manufacture success. Busy proof
+acquisition MAY defer to an owner heartbeat; failed/unknown mutations do not retry.
+This closes a non-applicable weekly boundary, not the original historical failure
+fact: runtime failure status, Events, cursors and notification records remain unchanged.
+Any later real failure SHALL remain in the same atomic unresolved projection. If
+a later successful/warming progress still references an intervening unresolved
+date, the durable replacement SHALL carry `ALERT_PREVIOUS_UNRESOLVED`, preserving
+that boundary and paired success/cutoff; this is not a new evaluation failure.
+Current progress retains its successful/warming semantics, and historical Events
+and runtime failure status are untouched. Such a retained boundary is ineligible
+for the not-due closeout policy after restart.
+New real failures on an already unresolved route SHALL be durably replaced before
+ACK, with each superseded original retained atomically in
+`alert:coverage-failure-history:v1`; this history is not a resolution or Event.
+The original prior boundary remains in the latest unresolved record. CAS or
+unknown persistence failures MUST stop processing without changing the memory
+commit state. A pending observation-journal frontier SHALL defer closeout until
+the original observations have been handled; a restart cannot erase an intervening
+failure merely because the older diagnostic was eligible for not-due closeout.
 The health reader SHALL continue accepting v1 heartbeats and MUST NOT reinterpret absent evidence as success.
 
 For minute routes after restart, an evaluation-lag claim SHALL bind authoritative Session endpoints to actual
@@ -485,6 +513,14 @@ Rule、coverage、已保存事件与发送状态仍按本规范分别表达业�
 仍使基础健康降级；DB、Redis、Live采集与盘后主业务的既有异常语义不变。
 
 #### Scenario: Successful evaluation follows a previous failure
+
+Canonical D1 publication before the end of a trading week SHALL NOT create a W1
+evaluation failure when the authoritative complete Calendar and Session prove
+that the week is unfinished. The reader exposes `MARKET_READ_WEEK_NOT_COMPLETED`
+as a typed not-due result; Alert skips that endpoint without recording success,
+failure, Event or notification. Missing Calendar/Session, a mismatched completed
+endpoint, and incomplete published W1 input remain errors. This skip MUST NOT
+clear existing unresolved coverage or alter historical failures.
 
 - **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
 - **WHEN** 计算聚合health
