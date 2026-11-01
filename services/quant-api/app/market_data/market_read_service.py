@@ -217,6 +217,10 @@ class MarketReadWindowError(RuntimeError):
     """Alert 窗口不能被唯一、完整解析时的稳定失败。"""
 
 
+class MarketReadWindowNotDue(MarketReadWindowError):
+    """A complete authoritative calendar proves the weekly endpoint is not due."""
+
+
 class MarketObservationSnapshotError(RuntimeError):
     """Live observation authority changed while its Bars were being read."""
 
@@ -865,7 +869,18 @@ class MarketReadService:
                     symbol=identity.symbol, week_monday=monday,
                     as_of=cutoff + timedelta(microseconds=1),
                 )
-                if complete is None or complete[0] != trading_day:
+                if complete is None:
+                    completed_days = self._market_data.completed_trading_days(
+                        symbol=identity.symbol,
+                        start=min(item.start for item in sessions),
+                        as_of=cutoff + timedelta(microseconds=1),
+                        latest=trading_day,
+                        calendar_since=trading_day,
+                    )
+                    if completed_days != (trading_day,):
+                        raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+                    raise MarketReadWindowNotDue("MARKET_READ_WEEK_NOT_COMPLETED")
+                if complete[0] != trading_day:
                     raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
             expected = self._market_data.expected_contract_replay_endpoints(
                 symbol=identity.symbol, contract=owner.contract,

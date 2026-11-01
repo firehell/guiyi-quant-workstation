@@ -486,6 +486,14 @@ Rule、coverage、已保存事件与发送状态仍按本规范分别表达业�
 
 #### Scenario: Successful evaluation follows a previous failure
 
+Canonical D1 publication before the end of a trading week SHALL NOT create a W1
+evaluation failure when the authoritative complete Calendar and Session prove
+that the week is unfinished. The reader exposes `MARKET_READ_WEEK_NOT_COMPLETED`
+as a typed not-due result; Alert skips that endpoint without recording success,
+failure, Event or notification. Missing Calendar/Session, a mismatched completed
+endpoint, and incomplete published W1 input remain errors. This skip MUST NOT
+clear existing unresolved coverage or alter historical failures.
+
 - **GIVEN** Rule保留last_failure_at，但成功eval已清空当前error_type
 - **WHEN** 计算聚合health
 - **THEN** 允许当前Alert组件health为ok并继续呈现历史失败；若error_type仍存在则组件不能回绿

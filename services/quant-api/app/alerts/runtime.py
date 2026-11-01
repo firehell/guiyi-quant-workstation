@@ -48,7 +48,7 @@ from app.market_data.domain import (
     SeriesPageQuery,
     normalize_contract_for_symbol,
 )
-from app.market_data.market_read_service import MarketReadService, MarketReadWindow, MarketReadWindowError
+from app.market_data.market_read_service import MarketReadService, MarketReadWindow, MarketReadWindowError, MarketReadWindowNotDue
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.errors import InfrastructureError
 from app.market_data.product_retirement import normalize_symbol
@@ -664,7 +664,7 @@ class AlertRuntime:
                                 )
                                 messages.extend(item_messages)
                                 recorded_rule_result = True
-                            except AlertEvaluationSkipped:
+                            except (AlertEvaluationSkipped, MarketReadWindowNotDue):
                                 if session.in_transaction():
                                     session.rollback()
                             except (AlertEvaluationError, MarketReadWindowError) as exc:

@@ -2626,3 +2626,44 @@ def test_live_rules_share_one_cutoff_window_and_recheck_authority(frequency):
     assert len(reads) == 1
     assert len(checks) == 4  # Before and after each rule; reuse does not bypass current ownership.
     engine.dispose()
+
+
+@pytest.mark.parametrize("not_due", [True, False])
+@pytest.mark.parametrize("prior_failure", [False, True])
+def test_canonical_unfinished_week_skips_only_typed_not_due(not_due, prior_failure):
+    from app.market_data.market_read_service import MarketReadWindowNotDue
+    now = datetime(2026, 10, 29, 7, tzinfo=UTC)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    AlertRule.__table__.create(engine)
+    with OrmSession(engine) as session:
+        session.add(AlertRule(rule_code=SUBING_THS_ALERT_RULE_CODE, enabled=True,
+                             scope_product_frequencies={"rb": ["1w"]}))
+        session.commit()
+    def window(*args, **kwargs):
+        error = MarketReadWindowNotDue if not_due else MarketReadWindowError
+        raise error("MARKET_READ_WEEK_NOT_COMPLETED" if not_due else "TRADING_CALENDAR_MISSING")
+    runtime = AlertRuntime(
+        session_factory=lambda: OrmSession(engine),
+        market_read_factory=lambda session: SimpleNamespace(latest_subing_quality_window=window),
+        evaluators={SUBING_THS_ALERT_RULE_CODE: object()}, sender=object(),
+        operational_products=("rb",), taxonomy={}, clock=lambda: now,
+    )
+    if prior_failure:
+        runtime._record_rule_result(
+            SUBING_THS_ALERT_RULE_CODE, evaluated_bar_at=None, at=now,
+            event_created=False, error_type="evaluation_failed",
+            coverage_identity=("rb", "1w", None, date(2026, 10, 28)),
+        )
+    previous_progress = dict(runtime._coverage_progress)
+    previous_unresolved = dict(runtime._unresolved_coverage)
+    previous_status = runtime._current_runtime_status()
+    runtime.process_message("market:state", {"reason": "canonical_updated", "trading_day": "2026-10-29"})
+    status = runtime._current_runtime_status()
+    if not_due:
+        assert runtime._coverage_progress == previous_progress
+        assert runtime._unresolved_coverage == previous_unresolved
+        assert status["last_processing_success_at"] == previous_status["last_processing_success_at"]
+        assert status["last_processing_failure_at"] == previous_status["last_processing_failure_at"]
+    else:
+        assert runtime._coverage_progress[(SUBING_THS_ALERT_RULE_CODE, "rb", "1w")]["state"] == "evaluation_failed"
+    engine.dispose()
