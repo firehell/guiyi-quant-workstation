@@ -68,7 +68,7 @@ def observations(bars, factor_rows, sessions):
                 ema21=None if p['ema21'] is None else str(p['ema21']), low=str(r['low']),
                 near_zero_golden=r['macd']['near_zero_golden'],
                 minute_angle=None if r['angle'] is None else str(r['angle']),
-                above_ema=p['above_ema'], volume_effective=r['volume_factor']['effective'],
+                above_ema=p['above_ema'], volume_tier=r['volume_factor']['tier'], volume_effective=r['volume_factor']['effective'],
                 below_previous_low=x['below_previous_low'], high_death=x['high_death'],
                 below_ema=p['below_ema'], qualified_pullback=pullback['qualified_hold'],
                 pullback_high=str(pullback['armed_high']) if pullback['qualified_hold'] else None,

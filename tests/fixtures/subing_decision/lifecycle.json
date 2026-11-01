@@ -36,7 +36,8 @@
         "above_previous_high": false,
         "qualified_rebound": false,
         "rebound_low": null,
-        "rebound_invalidated": true
+        "rebound_invalidated": true,
+        "volume_tier": "TIER_2"
       },
       "event_id": "event-1",
       "contract": "JM2609",
@@ -85,7 +86,8 @@
         "above_previous_high": false,
         "qualified_rebound": false,
         "rebound_low": null,
-        "rebound_invalidated": true
+        "rebound_invalidated": true,
+        "volume_tier": "TIER_2"
       },
       "event_id": "event-3",
       "contract": "JM2609",
@@ -153,7 +155,8 @@
         "above_previous_high": false,
         "qualified_rebound": false,
         "rebound_low": null,
-        "rebound_invalidated": true
+        "rebound_invalidated": true,
+        "volume_tier": "TIER_2"
       },
       "event_id": "event-6",
       "contract": "JM2609",
@@ -221,7 +224,8 @@
         "above_previous_high": false,
         "qualified_rebound": false,
         "rebound_low": null,
-        "rebound_invalidated": true
+        "rebound_invalidated": true,
+        "volume_tier": "TIER_2"
       },
       "event_id": "event-9",
       "contract": "JM2609",
@@ -273,7 +277,8 @@
         "above_previous_high": false,
         "qualified_rebound": false,
         "rebound_low": null,
-        "rebound_invalidated": true
+        "rebound_invalidated": true,
+        "volume_tier": "TIER_2"
       },
       "event_id": "event-11",
       "contract": "JM2609",
@@ -372,7 +377,8 @@
         "above_previous_high": false,
         "qualified_rebound": false,
         "rebound_low": null,
-        "rebound_invalidated": true
+        "rebound_invalidated": true,
+        "volume_tier": "TIER_2"
       },
       "event_id": "event-16",
       "contract": "JM2609",

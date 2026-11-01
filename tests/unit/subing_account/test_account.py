@@ -24,7 +24,7 @@ def inputs(prices, *, frames=None):
         xs.append(ExecutionBar(bar,facts))
         m=None
         if i in frames:
-            m=dict(high='140',near_zero_death=False,low_golden=False,above_previous_high=False,qualified_rebound=False,rebound_low=None,rebound_invalidated=True,ema21='90',low='80',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
+            m=dict(high='140',near_zero_death=False,low_golden=False,above_previous_high=False,qualified_rebound=False,rebound_low=None,rebound_invalidated=True,ema21='90',low='80',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,volume_tier='TIER_2',
                 below_previous_low=False,high_death=False,below_ema=False,
                 qualified_pullback=False,pullback_high=None,pullback_invalidated=False)
             m.update(frames[i])

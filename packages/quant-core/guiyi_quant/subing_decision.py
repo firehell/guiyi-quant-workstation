@@ -14,7 +14,7 @@ import re
 
 from .indicators.subing_conditions import EntryWindow, observe_entry
 
-VERSION = 'subing_jm30_decision_v5'
+VERSION = 'subing_jm30_decision_v6'
 
 
 def _time(value):
@@ -113,6 +113,7 @@ class DecisionModel:
         self.round_started_at = None
         self.pullback = None
         self.initial_stop = None
+        self.entry_volume_tier = None
         self.risk_distance = None
         self.profit_target = None
         self.completed_m30 = 0
@@ -137,7 +138,7 @@ class DecisionModel:
             clear_reasons=self.clear_reasons, exit_layers=self.exit_layers,
             side=self.side, last_flat_at=self.last_flat_at, latest_frame=self.latest_frame, latest_frame_at=self.latest_frame_at,
             round_started_at=self.round_started_at, pullback=self.pullback,
-            initial_stop=self.initial_stop, risk_distance=self.risk_distance, profit_target=self.profit_target,
+            initial_stop=self.initial_stop, entry_volume_tier=self.entry_volume_tier, risk_distance=self.risk_distance, profit_target=self.profit_target,
             completed_m30=self.completed_m30, fast_deadline=self.fast_deadline,
             profit_taken=self.profit_taken, profit_targets=self.profit_targets,
             reset_after=self.reset_after, trading_day=self.day,
@@ -211,11 +212,13 @@ class DecisionModel:
         raw = e['m30']
         m = raw
         if m is not None:
-            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated ema21 low ' + SHORT_FIELDS)
+            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective volume_tier below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated ema21 low ' + SHORT_FIELDS)
             for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'):
                 _flag(m[key], nullable=True)
             for key in ('near_zero_death', 'low_golden', 'above_previous_high', 'qualified_rebound'):
                 _flag(m[key], nullable=True)
+            if m['volume_tier'] not in (None, 'NOT_EXPANDED', 'ZERO_BASELINE', 'TIER_1', 'TIER_2', 'TIER_3'):
+                raise ValueError('VOLUME_TIER_INVALID')
             _flag(m['rebound_invalidated'])
             _number(m['high'], nullable=True, positive=True)
             rebound_low = _number(m['rebound_low'], nullable=True, positive=True)
@@ -290,7 +293,11 @@ class DecisionModel:
             fast = self.completed_m30 < 3 or (self.fast_deadline is not None and at <= self.fast_deadline)
             eligible = [layer['layer_id'] for layer in reversed(self.layers) if layer['kind'] == 'ADD'
                 and layer_nets.get(layer['layer_id']) is not None and layer_nets[layer['layer_id']] > 0]
-            self.profit_targets = eligible if fast else eligible[:1]
+            if self.entry_volume_tier == 'TIER_1':
+                self.clear_reasons = list(dict.fromkeys(self.clear_reasons + ['PROFIT_1R_TIER1_CLEAR']))
+                self.profit_targets = []
+            else:
+                self.profit_targets = eligible if fast else eligible[:1]
         protected = [layer['layer_id'] for layer in self.layers if layer['kind'] == 'ADD' and at > layer['at'] and sign * (close - layer['price']) < 0]
         if self.clear_reasons:
             self.exit_layers = [layer['layer_id'] for layer in self.layers]
@@ -352,6 +359,8 @@ class DecisionModel:
         if entry and entry['met'] is True and not self.layers:
             if self.last_flat_at is not None and at <= self.last_flat_at:
                 blocked.append('SAME_OBSERVATION_AS_CLEAR')
+            if signal_frame['volume_tier'] not in ('TIER_1', 'TIER_2', 'TIER_3'):
+                blocked.append('ENTRY_VOLUME_TIER_NOT_PROVEN')
             ema = _number(signal_frame['ema21'], nullable=True, positive=True)
             extreme = _number(signal_frame['low'], nullable=True, positive=True)
             stop = ((min(ema, extreme) - Decimal('13')) if side == 'LONG' else (max(ema, extreme) + Decimal('13'))) if ema is not None and extreme is not None else None
@@ -363,6 +372,8 @@ class DecisionModel:
                 action = self._intent(at, 'OPEN', [], ['ENTRY_MET'], side=side)
                 self.pending['signal_at'] = self.latest_frame_at
                 action['signal_at'] = self.latest_frame_at
+                self.pending['entry_volume_tier'] = signal_frame['volume_tier']
+                action['entry_volume_tier'] = signal_frame['volume_tier']
                 self.pending['initial_stop'] = stop
                 action['initial_stop'] = stop
                 actions.append(action)
@@ -417,6 +428,7 @@ class DecisionModel:
             if kind == 'OPEN':
                 self.side = self.pending['side']
                 self.initial_stop = self.pending['initial_stop']
+                self.entry_volume_tier = self.pending['entry_volume_tier']
                 self.risk_distance = sign * (price - self.initial_stop)
                 self.profit_target = price + sign * self.risk_distance
                 self.completed_m30 = 0
@@ -446,6 +458,7 @@ class DecisionModel:
                 self.windows = {side: EntryWindow(self.contract, w.last_end) for side, w in self.windows.items()}
                 self.round_started_at = None
                 self.initial_stop = self.risk_distance = self.profit_target = None
+                self.entry_volume_tier = None
                 self.completed_m30 = 0
                 self.fast_deadline = None
                 self.profit_taken = False

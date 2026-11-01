@@ -10,7 +10,7 @@ from .new_subing import ExecutionBar
 from .subing_decision import DecisionModel, _wire, candidate_side, daily_allows, directional_frame, direction_sign
 
 D = Decimal
-VERSION = 'subing_jm30_account_next1m_close_v4'
+VERSION = 'subing_jm30_account_next1m_close_v5'
 INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
 

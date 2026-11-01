@@ -78,7 +78,7 @@ def test_html_escapes_untrusted_source_and_uses_text_content():
 
 def test_m30_qualification_keeps_decimal_high_and_ignores_display_breakout():
     row = dict(frequency='30m', owned=True, time=END.isoformat(), angle=3.2, direction='NEUTRAL', low=Decimal('99.5'), high=Decimal('101'),
-        macd={'near_zero_golden':False,'near_zero_death':False,'low_golden':False}, volume_factor={'effective':True},
+        macd={'near_zero_golden':False,'near_zero_death':False,'low_golden':False}, volume_factor={'effective':True,'tier':'TIER_2'},
         price_factor={'ema21':Decimal('100'),'above_ema':True,'below_ema':False,
             'rebound':{'qualified_hold':False,'armed_high':None},
             'pullback':{'qualified_hold':True,'armed_high':Decimal('1234.5'),'breakout':True,'invalidated':False}},

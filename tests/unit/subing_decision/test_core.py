@@ -13,7 +13,7 @@ def observation(n, *, m30=False, **changes):
         contract='JM2609', trading_day='2026-07-13', close='130', daily_direction='UP',
         daily_at=(BASE-timedelta(days=1)).isoformat(), day_end_window=False,
         admission=True, round_loss=False, day_loss=False, remaining_net='100', base_net='100', layer_nets={}, reconciled=True,
-        m30=dict(high='140',near_zero_death=False,low_golden=False,above_previous_high=False,qualified_rebound=False,rebound_low=None,rebound_invalidated=True,ema21='30',low='30',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
+        m30=dict(high='140',near_zero_death=False,low_golden=False,above_previous_high=False,qualified_rebound=False,rebound_low=None,rebound_invalidated=True,ema21='30',low='30',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,volume_tier='TIER_2',
             below_previous_low=False,high_death=False,below_ema=False,
             qualified_pullback=False,pullback_high=None,pullback_invalidated=False) if m30 else None)
     e.update(changes)

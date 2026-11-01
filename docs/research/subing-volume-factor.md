@@ -33,3 +33,6 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 复用2.1只读加载及来源校验，--volume独立可选，默认2.1/2.2不附加量能输出。旧产物保留不覆盖。
 新产物包含独立量能版本、输入来源hash及源码路径hash。验证入口为tests/unit/subing_volume、
 tests/unit/subing_trend以及既有MACD与指标kernel测试。
+
+
+阶段四决策v6开始消费实际首仓信号30m档位：第一档首次到1R全清，第二/三档沿用原仓位规则。因子仍只输出量档，不生成交易动作；冻结与清仓职责在决策/账户域，见[持仓合同](subing-position-decisions.md#第一档首仓达到1r全清v6)。
