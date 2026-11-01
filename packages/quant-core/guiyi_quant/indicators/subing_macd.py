@@ -7,7 +7,7 @@ import math
 from .macd import initial_macd_state, step_macd
 from .models import MacdState
 
-VERSION = 'subing_macd12_26_9_segment_cross_v1'
+VERSION = 'subing_macd12_26_9_segment_cross_v2'
 
 
 @dataclass(frozen=True)
@@ -37,7 +37,7 @@ def cross_point(previous: tuple[float, float] | None, dif: float, dea: float) ->
     fraction = -a/(b-a)
     height = p + fraction*(d-p)
     return CrossPoint(dif=dif, dea=dea, cross=cross, height=float(height), fraction=float(fraction),
-                      near_zero_golden=cross == 'GOLDEN' and -5 <= height <= 5,
+                      near_zero_golden=cross == 'GOLDEN' and -4 <= height <= 4,
                       high_death=cross == 'DEATH' and height > 17, reason=None)
 
 

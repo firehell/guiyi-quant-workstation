@@ -4,7 +4,7 @@ import pytest
 from guiyi_quant.indicators.subing_macd import cross_point, initial_state, step
 
 
-@pytest.mark.parametrize('h,near', [(-5,True),(5,True),(-5.000001,False),(5.000001,False)])
+@pytest.mark.parametrize('h,near', [(-4,True),(4,True),(-4.000001,False),(4.000001,False),(-5,False),(5,False)])
 def test_golden_height_bounds(h,near):
     p=cross_point((h-1,h),h+1,h)
     assert p.cross=='GOLDEN' and p.fraction==.5
@@ -21,7 +21,7 @@ def test_geometry_is_not_current_endpoint_or_average():
     p=cross_point((-8,-2),8,0)
     assert p.fraction==pytest.approx(3/7)
     assert p.height==pytest.approx(-8/7)
-    assert p.near_zero_golden  # current DIF is outside [-5,5]
+    assert p.near_zero_golden  # current DIF is outside [-4,4]
 
 
 def test_equal_touch_and_departure():
@@ -74,9 +74,9 @@ def test_invalid_reset_and_identity_time():
 
 
 def test_nonterminating_fraction_exact_height_boundary():
-    p=cross_point((-15,-14),15,13)
-    assert p.height==-5 and p.near_zero_golden is True
-    p=cross_point((15,14),-15,-13)
-    assert p.height==5 and p.high_death is False
+    p=cross_point((-14,-13),16,14)
+    assert p.height==-4 and p.near_zero_golden is True
+    p=cross_point((14,13),-16,-14)
+    assert p.height==4 and p.high_death is False
     p=cross_point((27,26),-3,-1)
     assert p.height==17 and p.high_death is False

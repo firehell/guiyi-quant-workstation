@@ -1,6 +1,6 @@
 <section class="card" style="margin-top:16px" id="macdPanel">
 <h2>2.2 · 30分钟 MACD 金死叉</h2>
-<p>MACD 12/26/9；蓝线 DIF，橙线 DEA，柱值 2×(DIF−DEA)。相邻已完成K线的连线交点高度 h：<b>金叉 −5≤h≤5；高位死叉 h&gt;17</b>。这是独立条件，不代表完整开仓或减仓信号。</p>
+<p>MACD 12/26/9；蓝线 DIF，橙线 DEA，柱值 2×(DIF−DEA)。相邻已完成K线的连线交点高度 h：<b>金叉 −4≤h≤4；高位死叉 h&gt;17</b>。这是独立条件，不代表完整开仓或减仓信号。</p>
 <p class="muted">连线交点用于衡量高度，交叉到本根收盘后才确认，不把插值位置当作盘中时间。前根DIF≤DEA、本根DIF&gt;DEA为金叉；死叉反之。相等当根不触发，下一根严格分开时判断；相等后同侧离开也按此规则记录，待案例核对。</p>
 <div><button id="prevCross">上一个交叉</button><button id="nextCross">下一个交叉</button></div>
 <canvas id="macdChart"></canvas><pre id="macdFacts"></pre>
@@ -13,11 +13,11 @@ function drawMacd(){
  const r=rows[index],m=r.macd;if(!m)return;
  $('macdFacts').textContent=`${r.contract} · 确认时点 ${r.label}\nDIF ${num(m.dif)}　DEA ${num(m.dea)}　柱 ${num(m.histogram)}\n${crossNames[m.cross]}　交点高度 ${num(m.height)}　线段比例 ${num(m.fraction)}\n零轴附近金叉：${m.near_zero_golden===null?'未知':m.near_zero_golden?'满足':'不满足'}　高位死叉：${m.high_death===null?'未知':m.high_death?'满足':'不满足'}${m.reason?'\n'+m.reason:''}`;
  const rs=rows.slice(Math.max(0,index-79),index+1),[g,w,h]=setup('macdChart');
- const values=rs.flatMap(r=>[r.macd.dif,r.macd.dea,r.macd.histogram]).filter(v=>v!==null).concat([-5,0,5,17]);
+ const values=rs.flatMap(r=>[r.macd.dif,r.macd.dea,r.macd.histogram]).filter(v=>v!==null).concat([-4,0,4,17]);
  let lo=Math.min(...values),hi=Math.max(...values),pad=(hi-lo)*.08||1;lo-=pad;hi+=pad;
  const y=v=>h-30-(v-lo)/(hi-lo)*(h-55),dx=(w-75)/rs.length,x=i=>12+(i+.5)*dx;
  g.clearRect(0,0,w,h);g.font='11px system-ui';
- for(const v of [-5,0,5,17]){g.setLineDash(v===0?[]:[5,5]);g.strokeStyle='#adb6c3';g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke();g.fillStyle='#667';g.fillText(String(v),w-55,y(v)+4)}g.setLineDash([]);
+ for(const v of [-4,0,4,17]){g.setLineDash(v===0?[]:[5,5]);g.strokeStyle='#adb6c3';g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke();g.fillStyle='#667';g.fillText(String(v),w-55,y(v)+4)}g.setLineDash([]);
  rs.forEach((r,i)=>{let v=r.macd.histogram;if(v===null)return;g.fillStyle=v>=0?'#e8525260':'#22a46c60';g.fillRect(x(i)-dx*.3,Math.min(y(v),y(0)),Math.max(1,dx*.6),Math.max(1,Math.abs(y(v)-y(0))))});
  for(const [key,color] of [['dif','#4167cb'],['dea','#e6a02c']]){g.strokeStyle=color;g.lineWidth=2;g.beginPath();let active=false;rs.forEach((r,i)=>{let v=r.macd[key];if(v===null){active=false;return}if(active)g.lineTo(x(i),y(v));else g.moveTo(x(i),y(v));active=true});g.stroke()}g.lineWidth=1;
  rs.forEach((r,i)=>{const m=r.macd;if(m.height===null)return;g.fillStyle=m.cross==='GOLDEN'?'#c33':'#198754';g.beginPath();g.arc(x(i),y(m.height),4,0,2*Math.PI);g.fill();g.fillText(m.cross==='GOLDEN'?'金':'死',x(i)+4,y(m.height)-6)});
