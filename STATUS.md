@@ -1,3 +1,6 @@
+11/1 健康核对后修复盘后历史接续：10/30自然盘后原件实际passed（18:05:06至18:14:28），此前v64缺after-market-history并非证明当日未执行。六份保全副本逐值一致，经现役v64原封read_history、源commit和SHA核验后，部署锁内使用publish_history原子接回；未重跑盘后、下载、改Canonical/DB或通知。源文件与当前after-market-status散列保持；19项after_market_history测试通过。
+独立HTTP读回after_market=ok/completed、last_successful_trading_day=2026-10-30、error_type=null；db/redis/live均ok，总体仍degraded。Alert的60项evaluation_failed全部为苏冰1w，previous_unresolved=2026-10-29；持久原始记录60条均只有evaluation_failed、无input_error_code/物理合约/成功端点，当前成功不能按合同抹掉旧未解决边界，未改Redis、重放Event或补发。10/29实际失败原因尚不能由现有错误投影证明。weekly仍missed，未重跑全历史审计；全历史无缺口与自然自动交易未获新证据。
+
 11/1 按owner授权，原生cleanup-plan 625c51932d5896f760166c20c65c773a3b49f39525725e6a39f3a2f7db1fd92f证明v62 eligible、references=[]；部署锁内fresh计划散列/身份一致后，已非强制git worktree remove .worktrees/release-v1.16.62。v1.16.62 annotated tag及commit4c44e63e1be7a954d8ba82b478e28577503ac5e1保留，未删除历史提交或原始恢复证据。
 复用既有bc563612…封存；删除后现役v64原封_load_index校验通过。工作树仅主develop、v44独立SimNow、v64正式服务；原SimNow PID1733保持。十项正式服务均matched v64/gen53，API/Web通过；Runtime health HTTP200、status=degraded（db/redis/live_market ok，after_market degraded、weekly missed、alert degraded），不宣称业务全绿。本次未切服务或执行恢复，明日15:05既有v64安排保持。
 
