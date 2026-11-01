@@ -1,19 +1,32 @@
 <section class="card" style="margin-top:16px" id="pricePanel">
-<h2>2.4 · 30分钟价格与 EMA21</h2>
-<p>收盘价 &gt; EMA21 表示在均线上方；收盘价 &lt; EMA21 表示收盘位于均线下方；等于时单独标记。<b>回踩确认：最低价位于 EMA21±0.2ATR（含边界），且收盘高于 EMA21。</b>新回踩替换旧资格；收盘≤EMA21失效；后续首次严格突破回踩K高点消费资格。这些是独立事实，不直接代表开仓、加仓或清仓成交。</p>
-<div><button id="pricePrev">上一个回踩/突破</button> <button id="priceNext">下一个回踩/突破</button></div>
-<canvas id="priceDistance"></canvas><pre id="priceFacts"></pre>
-<p class="muted">突破仅为本根收盘后可知的高点事实，不代表成交；同根先突破后收盘失效可同时出现。新回踩只对后续K有效。蓝线为收盘价减EMA21的有符号价差，虚线为0与10点。复用2.1同一EMA21值；不加入量能或MACD隐藏条件。</p>
+<h2>2.4 · 上涨背景 → 回踩支撑 → 后续突破</h2>
+<p>先有30m向上趋势（斜率&gt;5°），且收盘高于 EMA21+0.2ATR；后续最低价低于背景收盘价、进入 EMA21±0.2ATR 区域，并收盘站上 EMA21，标记为<b>有效回踩</b>。中性趋势保留背景，向下趋势清除背景。</p>
+<div><button id="pricePrev">上一个有效回踩/突破</button> <button id="priceNext">下一个有效回踩/突破</button></div>
+<canvas id="priceDistance" style="height:360px"></canvas>
+<p class="muted">青线：EMA21；浅青带：±0.2ATR；灰点：普通触及；蓝色“回”：有效回踩；紫色“破”：突破旧回踩高点。橙色虚线：所选时点仍有效的突破参考线。图表仅显示所选时点及以前。</p>
+<pre id="priceFacts"></pre>
+<p class="muted">新有效回踩替换旧资格；收盘≤EMA21取消旧资格，但保留尚未转为向下的背景，允许随后重新守住。首次突破消费旧资格。同根突破与收盘失效可并存，均为收盘后可知事实，不代表盘中成交。原10点距离仅作参考。</p>
 <pre id="priceSource"></pre>
 </section>
 <script>
-const priceNum=v=>v===null?'—':Number(v).toFixed(6),priceBool=v=>v===null?'未知':v?'满足':'不满足';
-function drawPrice(){const r=rows[index];if(!r?.price_factor)return;const p=r.price_factor;
-$('priceFacts').textContent=`${r.contract} · ${r.label}\n收盘 ${priceNum(p.close)}　EMA21 ${priceNum(p.ema21)}　价差 ${priceNum(p.distance)} 点\n收盘高于均线：${priceBool(p.above_ema)}\n旧10点距离参考（不参与资格）：${priceBool(p.near_above_ema)}\n收盘低于均线：${priceBool(p.below_ema)}${p.relation==='ON'?'\n收盘恰好等于均线，非上方也非下方':''}${p.reason?'\n'+p.reason:''}`;
-const b=p.pullback;if(b){$('priceFacts').textContent+=`\n\n触及区域：${priceBool(b.touch)}　守住确认：${priceBool(b.hold)}\n区域下沿 ${priceNum(b.lower)} / 上沿 ${priceNum(b.upper)}\n本根曾突破旧回踩高点：${priceBool(b.breakout)}${b.breakout?'\n来源 '+b.breakout_source+' / 高点 '+priceNum(b.breakout_high):''}\n收盘后有效回踩：${b.armed_at||'无'} / 高点 ${priceNum(b.armed_high)}\n旧资格收盘失效：${b.invalidated?'是':'否'}　新回踩替换：${b.replaced?'是':'否'}`;}
-const rs=rows.slice(Math.max(0,index-79),index+1),[g,w,h]=setup('priceDistance'),values=rs.map(r=>r.price_factor.distance).filter(v=>v!==null).map(Number).concat([0,10]);let lo=Math.min(...values),hi=Math.max(...values),pad=(hi-lo)*.08||1;lo-=pad;hi+=pad;const y=v=>h-30-(v-lo)/(hi-lo)*(h-55),dx=(w-75)/rs.length,x=i=>12+(i+.5)*dx;
-g.clearRect(0,0,w,h);g.font='11px system-ui';g.fillStyle='#667';for(let n=0;n<=4;n++){let v=lo+(hi-lo)*n/4;g.strokeStyle='#e9edf2';g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke();g.fillText(v.toFixed(1),w-55,y(v)+4)}g.setLineDash([5,5]);g.strokeStyle='#b87b37';for(const v of [0,10]){g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke()}g.setLineDash([]);g.strokeStyle='#4167cb';g.lineWidth=2;g.beginPath();let active=false;rs.forEach((r,i)=>{let v=r.price_factor.distance;if(v===null){active=false;return}if(active)g.lineTo(x(i),y(Number(v)));else g.moveTo(x(i),y(Number(v)));active=true});g.stroke();g.lineWidth=1;g.fillText(rs[0].label,10,h-8);g.fillText(rs.at(-1).label,Math.max(10,w-190),h-8)}
-$('priceSource').textContent=`因子版本 ${D.price_version}；仅计算已完成K线事实。`;
-for(const [id,step] of [['pricePrev',-1],['priceNext',1]])$(id).onclick=()=>{for(let i=index+step;i>=0&&i<rows.length;i+=step){const p=rows[i].price_factor?.pullback;if(p&&(p.hold||p.breakout)){index=i;draw();break;}}};
+const priceNum=v=>v==null?'—':Number(v).toFixed(6),priceBool=v=>v==null?'未知':v?'是':'否';
+function drawPrice(){
+ const r=rows[index];if(!r?.price_factor)return;const p=r.price_factor,b=p.pullback;
+ $('priceFacts').textContent=`${r.contract} · ${r.label}\n当前30m趋势：${names[r.direction]} / ${priceNum(r.angle)}°\n收盘 ${priceNum(p.close)}　EMA21 ${priceNum(p.ema21)}　价差 ${priceNum(p.distance)} 点\n旧10点距离参考（不参与资格）：${priceBool(p.near_above_ema)}`;
+ if(b)$('priceFacts').textContent+=`\n\n进入本根前的上涨背景：${b.background_at||'无'} / 收盘 ${priceNum(b.background_close)}\n最低价低于背景价：${priceBool(b.from_above)}\n基础触及：${priceBool(b.touch)}　基础站回：${priceBool(b.hold)}\n有效回踩：${priceBool(b.qualified_hold)}\n区域 ${priceNum(b.lower)} ～ ${priceNum(b.upper)}\n本根曾突破旧回踩高点：${priceBool(b.breakout)}${b.breakout?'\n回踩来源 '+b.breakout_source+' / 高点 '+priceNum(b.breakout_high):''}\n收盘后有效回踩：${b.armed_at||'无'} / 高点 ${priceNum(b.armed_high)}\n旧资格失效：${priceBool(b.invalidated)}　新回踩替换：${priceBool(b.replaced)}\n向下趋势清除背景：${priceBool(b.background_reset)}\n收盘后背景：${b.next_background_at||'无'}${b.reason?'\n不可判定：'+b.reason:''}`;
+ const rs=rows.slice(0,index+1).filter(x=>x.contract===r.contract).slice(-65),[g,w,h]=setup('priceDistance');
+ const vals=rs.flatMap(x=>[x.low,x.high,x.ema21,x.price_factor?.pullback?.lower,x.price_factor?.pullback?.upper]).filter(v=>v!=null).map(Number);if(b?.armed_high!=null)vals.push(Number(b.armed_high));
+ let lo=Math.min(...vals),hi=Math.max(...vals),pad=(hi-lo)*.12||1;lo-=pad;hi+=pad;
+ const y=v=>h-30-(Number(v)-lo)/(hi-lo)*(h-65),dx=(w-85)/rs.length,x=i=>12+(i+.5)*dx;
+ g.clearRect(0,0,w,h);g.font='11px system-ui';
+ for(let n=0;n<=4;n++){let v=lo+(hi-lo)*n/4;g.strokeStyle='#e9edf2';g.beginPath();g.moveTo(8,y(v));g.lineTo(w-65,y(v));g.stroke();g.fillStyle='#667';g.fillText(v.toFixed(1),w-60,y(v)+4)}
+ rs.forEach((q,i)=>{let pb=q.price_factor?.pullback;if(pb?.lower!=null&&pb?.upper!=null){g.fillStyle='rgba(26,155,150,.14)';g.fillRect(x(i)-dx/2,y(pb.upper),dx,y(pb.lower)-y(pb.upper))}});
+ g.strokeStyle='#199b96';g.lineWidth=2;g.beginPath();let active=false;rs.forEach((q,i)=>{if(q.ema21==null){active=false;return}if(active)g.lineTo(x(i),y(q.ema21));else g.moveTo(x(i),y(q.ema21));active=true});g.stroke();g.lineWidth=1;
+ rs.forEach((q,i)=>{g.strokeStyle=g.fillStyle=q.close>=q.open?'#c54b53':'#39866c';g.beginPath();g.moveTo(x(i),y(q.high));g.lineTo(x(i),y(q.low));g.stroke();g.fillRect(x(i)-Math.max(2,dx*.28),Math.min(y(q.open),y(q.close)),Math.max(3,dx*.56),Math.max(1,Math.abs(y(q.close)-y(q.open))));let pb=q.price_factor?.pullback;if(pb?.touch){g.fillStyle='#999';g.beginPath();g.arc(x(i),y(q.low)+5,2,0,7);g.fill()}if(pb?.qualified_hold){g.fillStyle='#245ce0';g.fillText('回',x(i)-5,y(q.low)+19)}if(pb?.breakout){g.fillStyle='#9027ba';g.fillText('破',x(i)-5,y(q.high)-8)}});
+ if(b?.armed_high!=null){const first=rs.findIndex(q=>q.time===b.armed_at);g.strokeStyle='#c78a22';g.setLineDash([5,4]);g.beginPath();g.moveTo(first<0?8:x(first),y(b.armed_high));g.lineTo(w-65,y(b.armed_high));g.stroke();g.setLineDash([])}
+ g.fillStyle='#667';g.fillText(rs[0].label,10,h-8);g.fillText(rs.at(-1).label,Math.max(10,w-200),h-8);
+}
+$('priceSource').textContent=`因子版本 ${D.price_version}；本轮研究解释：上涨背景保留至向下趋势，无额外到期根数。不是完整开仓或加仓策略。`;
+for(const [id,step] of [['pricePrev',-1],['priceNext',1]])$(id).onclick=()=>{for(let i=index+step;i>=0&&i<rows.length;i+=step){const p=rows[i].price_factor?.pullback;if(p&&(p.qualified_hold||p.breakout)){index=i;draw();break;}}};
 drawPrice();
 </script>

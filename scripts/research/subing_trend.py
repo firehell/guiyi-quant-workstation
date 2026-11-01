@@ -69,7 +69,7 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                     price = subing_price.price_point(bar.close, Decimal(str(point.ema21)) if point.ema21 is not None else None)
                     price_state, pullback = subing_price.observe(price_state, contract=owner.contract,
                         bar_end=bar.bar_end, high=bar.high, low=bar.low, close=bar.close,
-                        ema21=price.ema21, atr14=Decimal(str(point.atr14)) if point.atr14 is not None else None)
+                        ema21=price.ema21, trend_direction=point.direction, atr14=Decimal(str(point.atr14)) if point.atr14 is not None else None)
                     cross_fields['price_factor'] = {**asdict(price), 'pullback': pullback}
                 # D1 pre-owner data is visible only as physical warm-up context, never as an owned signal.
                 if bar.trading_day >= start or frequency is BarFrequency.D1:
