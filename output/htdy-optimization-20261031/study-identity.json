@@ -1,0 +1,365 @@
+{
+  "files": {
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/engine_base.py": "95c9f06ccbecbae74016da00252c977bbf18927a0a9dc87f9b422238eeb9e251",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/replay.py": "48b5b1e13d7d4f51fc7d7d297020bc31eecd49a55bb6e3b87ed24e3a96edf0fd",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/bounded.py": "6bfda8a32acdb1302e6a14d617ad1938874ebef37428af54d32dcbc5e5751799",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/spool.py": "1db465856054b0906f38e7dc34b8758f1d40eb8160a13b4d077cbcc56119e859",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/capture-boundary.json": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/capture-summary.json": "de5db7d4ca1b0f98c55e9733fe03262ebacef523d05ea74637e6f6407e1941a3",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/execution-errors.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/execution-gaps.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/facts.json": "b94545048344b5a9c44ed0addece7a2d26118479b157aca6073d1b0348b8a5f8",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/fee-TA2701-20261026-original.json": "0d0ccd4bd35c6fe259320ca1d9fce1395bc3398d5519ec61883c349be57e8d08",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/fee-TA2701-20261026-readback.json": "b04747c679b147160eb0c07b679403ba08d4402b81307230c0bd2775003efcfd",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/identity.json": "40df3165184a0b782d47e41547ec72de1bb792ae6a626357b49ae5f62ad01bc8",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/local-readback.json": "40702fbb542526e038cff4e4548479560dd6c9d27a73e4f2983b698a99947515",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/metadata.json": "31df4d5a28af66ce9fb7e4b0418392b787c956c41b83bd6ebfc29ea3fd1e949b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/original-execution-gaps.json": "392c51d8c5036ff1030670350b0180994ca4e9c72b04858f89afcf55c17ebe0f",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/owners.json": "c9e71e6f3ae2e7cb043f7ab7525a5e4c9a64fc0e8943f4477d3fa24f19ac7a9d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2305-summary.json": "051b281b78d6757ef5f25bd0dedca0644c7cd63af21abf9fa69e502760828f95",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2309-summary.json": "8f64d7f4dfa3fd2b54f70044e2957f55eaf0a3c98cf336c05c8592745b86490e",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2401-summary.json": "ef22e7796ef3804629b7e091280c32ea464f8303c8ecf82ff007c75299c3bc34",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2405-summary.json": "24fa12ca3c89009acf1daae08fe0d46d8bfc18e8eab195ad4130d4e51e12b70d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2409-summary.json": "dce95b4d07bc544788458a703a115aa2d408ff4dd0bf92df504e4e580c9fcbd5",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2501-summary.json": "7ee367542eba3782edb13ec51a11d2975ef98d3b1d255712ef0f5f293d8316e0",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2505-summary.json": "48d38649e3ac944bc1f4913b40b195a0601e6d82eed75384ff94ab240b44b942",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2509-summary.json": "8d662e47d27a32b4c812d80b6afedcc570a0d1beeb2719eeaad543b942a913a3",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2601-summary.json": "197059f8e2c9c475b4817bfb97f13867f06b8b5ede2d8d3ac590e945b979c734",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2605-summary.json": "3f09b1f2403476178c583e41fcdad5bae54221c2abb62eb1df56cd021ffe4941",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2609-summary.json": "24086617f5c655488fe25e0d6ef783ed03499529e01feb766536d08a4521fc0b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/parameters-TA2701-summary.json": "7ee6206ed51d95837f642a40f58cea88989a3ab95364bfe078f7ff98993e4c10",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2305.json": "c1af7533be10bdab16bc54f9fba585886658c9b8fd6571b3864b9a68d12d145e",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2309.json": "73bfebdce4b5d6eb63cb1b32653fc036ca385a95c2d349a00732655c7e73937d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2401.json": "2e33da11201fb3c7833bc7879f78dd5fa95f328166bf92bdd8a7b1151210df96",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2405.json": "68ea2fdf707a3a5c8ffc5ba428d577469c2e08b58ae27bde40bc94622675b60e",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2409.json": "e319a8a07f36d73679661dedfc207c0ca0c6370d7d6b0cf20ba7b52a223c0fec",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2501.json": "473a588f848f31e1a4dcc43a46fd08dadc43af0b8bd763fcf05f1a38c875aca5",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2505.json": "fbb46c82f434ea81de4c5dae12e3245705cccef93518f2c45fcd8a3e61f2557b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2509.json": "1588219d8363ef08e6509063cdc5e20017bd3dacf181989bb992aaf40beceb2c",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2601.json": "a4da73da3610bffd3e2f839f6db71f7c7c13777be40508d73744380f97e44fbe",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2605.json": "20ad4b12dcc3590b37e7c8d109e03e2a83ca24a242d2a1d73765e4d884896645",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2609.json": "46057a27385b77bab870fd7b3851736c56dfa6a527fc53be06832632a0a90c3c",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/quota-TA2701.json": "36d6319b70881b7824018f86af40a2d8d2629515a38caca5a1cb916de034eb92",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/source-proofs.json": "4554e091504725c11b74146b90e3807e8005e2f325cf111cccfc327ea79d77ef",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/spans.json": "68b6112910c9b27137c4ecb8660a18fca1a11dccd85092bc25300aa6e9bf647d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/supplement-summary.json": "a2742f50b395553249705c47d4509f120da2503595372e71932941e6883e64b6",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/tick-index.json": "c169620c59ced63f1e69910082dc400658c470e4617429aece355a4947f3ac80",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/TA/evidence/execution.sqlite": "11ca2faf4c979297e7629f50ce33c54a160910dcee4037de665669401febff9f",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/common/public-fees.json": "efc7521b7d9a1bb261d00fc873d1fa87c464be5db6c5e80fdb53ad476d4f749b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-ta-60m-70pct-20261031/common/margin_snapshot.csv": "afe3e6089986e044ac06682600093f86d19146aec2a29968733c46d20bbca1f5",
+    "output/htdy-60m-full-replay-20261025/tick-supplement-003/TA2701-2026-09-23.parquet": "a689a42610dcefcce9b4f8bf1dcc17f18f5f41f70256ee79c2aa1ef91b794fc5",
+    "output/htdy-60m-full-replay-20261025/tick-supplement-003/TA2701-2026-10-08.parquet": "aa071c863217041bf32649335c32e472617615d5a9387771e3d7ea43cec1efc9",
+    "output/htdy-60m-full-replay-20261025/tick-supplement-003/TA2701-2026-10-15.parquet": "68d54bfd9d8f33556e284f96c26dadb59bb1150e419a0cebe2db97039538d5e9",
+    "output/htdy-60m-full-replay-20261025/tick-supplement-003/TA2701-2026-10-19.parquet": "ff028c49047d3bd52d771a064f138672048694eefc35a5c4d51d4308c7f8b493",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/newow-60m-capital-20261031/evidence/ticks/TA2701-2026-10-23.parquet": "b708974bf5acfc6d8dafeb0bd4290e77bd3375465856c889651af9af83c7d084",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/TA-features.json": "367fc94ca3ba4bf6d2b596ab8b31cdbee9d32eddc6b8ae2aa17c9ddf241916d7",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/capture-boundary.json": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/capture-summary.json": "f268554267c0eadc45db1ae0d1d450ed6237c1884accfca27b8433f939e8f7a4",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/execution-errors.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/execution-gaps.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/facts.json": "c5bca70315163278f38a7ddd47eb174ac8338ad6fd5a1ce16521ab06b361a77c",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/identity.json": "1a491754bae7c42622f6732baa8796ddbdb8a96101aeccbb299f77789e32ea65",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/metadata.json": "0b08ca11ede02788d0ce34dc0a4d617b0c8f710584d3858fc5da0f36a46dfa17",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/original-execution-gaps.json": "9d18b91db0e372e12154f4d3e29922fbecb5bb8086f3c92b2a6c6a2a052ecf79",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/owners.json": "cda2ff8fc342453e648613a7bc12b262a9503b19db12b6f6a0f84edc09b0d0ab",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2305-summary.json": "1f4364c0628eb986aa1b834004b7e98c8b00bce1f894d60267178f0c5c000d4d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2309-summary.json": "7aed521b7a406ccfce43847865b43ab70dca729696d75978df5589ee648fea7d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2401-summary.json": "936676c1c2158b958a63e8eefb610f5b878c9a573c9c4661acfe7eccbe202b5c",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2405-summary.json": "9e2b2faf223ada2f01be8386e57884cbb78024960a3367dd2c60a8afcb737c4c",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2409-summary.json": "29ac46663349767f3b4ac69dedbe20d4cd96426180b8855d0f4edc166f53abf3",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2501-summary.json": "fab7d7762bf13c344062548564229c853f05a62f123ba85430a671f36c3ed875",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2505-summary.json": "9dab77650dc3b8d3c21f3e273c136883dabfa7ad485d4e4e9c7b5e5be93c2615",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2509-summary.json": "0ddb3dc162cf71f78f046a5d8a176d344239085abe90cba1ccc62c4fb8271b03",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2601-summary.json": "d8b8042b8c49d2959dcb97956458538b2544a9c0437c6a5ea6644248a6f5cd6c",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2605-summary.json": "5fc3fe9fc47c496a48cb288444a8dd82a374a9bae4850be0f880e8c513fb8fc3",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2609-summary.json": "ba345e927f008c725153979b42054c11d7d76bc906d90f0f471982ecad80149a",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2610-summary.json": "77ae04f81caec37579c72ff346ecdc98e19eb3ae0e0d8b2f7607f433298e324d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2611-summary.json": "3a2d41a32f653bdf7e45b91ded2003efe9d84c3a30111cab47f221ad1cf41481",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/parameters-MA2701-summary.json": "a629cc3d21590fa5d9a48fdec3fbf19a717bcb622ed84d91b0aea0d83cabbb9b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2305.json": "36947335b7b8a1ea98cc045c88f2964c6e81226320e88a4ffd1a231afd6893b7",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2309.json": "794d6e6df9fc7757cc81eaf91cac813db7641570508cf34bd9241c37265986cc",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2401.json": "d06eeef41f959e3048556945f48864561e36677957e3b9d6e52bc804fb13b33d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2405.json": "08339997c583fe453dec90a7dbd8ba9b327e4f9d4fabe8b874280c4d63d6cc56",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2409.json": "b51b21c6eb7fa6ce6187fe67e61dd8473254389380e937a490800c5189cccc81",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2501.json": "cb24a09c049bfbe798f807ff5adfe8737194c1567bbc834914c04c2ce25e9428",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2505.json": "6ec1d0ea7baf77287485c570e38c1aee294bbd6b9874440c9f4e0ef03a38c3a4",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2509.json": "9bc8053ace2375313157e800abae098774e15b48d602069fc32a8e339684de67",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2601.json": "bdc360dc440de704abcdbe32b77fde043f8d1d205bbb11ebd457d9830d8d840a",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2605.json": "71dd2cb2a39168d9a4224986ed9985d85cf16b52369403028f35102efea56719",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2609.json": "28dd9d1c78580731fe21f98792a08af35ef06c86e764ada5911dddb94bd63b00",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2610.json": "8ef96802741c8ee9cc47cbb695a530443b1ea4920c28e2cf4c0ecb62ea91915a",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/quota-MA2701.json": "65d2eee47af3c37fbefb937d1d178ba6f3ab22c94d8af78265ee79b3f61dbe3e",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/source-proofs.json": "8f887c870b2f31aa084f229bf297acbb85c3cad524f4bf522bc9d468a4d49ebd",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/spans.json": "129c9c5e1ea3b331cf0e92fea5678bc3998300bec1eaa9f6c01635faf3415e13",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/supplement-summary.json": "63a18e2ada73ed0b8d3d9f1d500c3eb5b343da3e0bc5f84f3ba7b9d39766df4a",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/tick-index.json": "88c5150cb107d74f14bf326877b5c1b2f2d8ff82035b4e5d2de8fd94b0d0dbba",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/MA/evidence/execution.sqlite": "bbbfb070361721b317a0e6be8bf94af0be2f0a325a5d353a931287b5258cfef4",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/common/public-fees.json": "efc7521b7d9a1bb261d00fc873d1fa87c464be5db6c5e80fdb53ad476d4f749b",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/ma_data/common/margin_snapshot.csv": "afe3e6089986e044ac06682600093f86d19146aec2a29968733c46d20bbca1f5",
+    "output/htdy-60m-full-replay-20261025/evidence-002/ticks/MA2611-2026-09-28.parquet": "1bb1f70a1261703e01c1f949226cf0779264691df5fd22ce40b193246474c602",
+    "output/htdy-60m-full-replay-20261025/evidence-002/ticks/MA2611-2026-10-09.parquet": "16eb889cfcba12321d56d4cebd0e7e123f1d2ac1dbbcf7b377d4c2f81b28bd2e",
+    "output/htdy-60m-full-replay-20261025/evidence-002/ticks/MA2611-2026-10-15.parquet": "0690ea0c9a7d21d891c5396bdec75557dda09c396a3d17bb8f5822c1f8036f03",
+    "output/htdy-60m-full-replay-20261025/evidence-002/ticks/MA2701-2026-10-19.parquet": "9f1b009f17826f9568caa9aa723d9e9b7826dddc1860748841555f7725533bec",
+    "output/htdy-60m-full-replay-20261025/evidence-002/ticks/MA2701-2026-10-23.parquet": "e3a3e5368e8b768ba524381efdd7125cc732d090c93ae412c96c8c8a3f903bad",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/MA-features.json": "8c42b07ff1808671ce5ef48564df78ed328ea15d98391909ecb5e9c8a192b0de",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/baseline_audit.py": "f0830cd85745a9ab91d5c5fdd24d13516b50cdce5f853a0e205058f3f2730a7e",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/baseline_final.py": "19cbbbfead94f1e2a2bbf6c55be3f232dcd7e49ca19c6ab867a423752114f2cf",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/build_report.py": "9d94585f161071334ac2148ab61ef66ac71fac18201a66ce4e8185e68e975eb7",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/compare.py": "e7ce7e73301771018430a0b4b21e17eee21704532e9490c1d8fc89683ee0e1fa",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/experiment.py": "85c0726b5b2ca500bc847f159b433a1e719284f57d26f6b0ef0fe917d37f023d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/feature_final.py": "5efe8c09e02a5d7bc72dd5372b918f696ebf94dc9b9294b8b59b7994c25f99f0",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/features.py": "007d1a4a702c52674e7ebda7d5ba6532c283fdf00e31931b35c26750e4692593",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/finish.py": "5dcafe2c4cb0c8a732af40d857ac8fe5c328702c0e34d9ccb5541328b9ba23b4",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/matrix.py": "c749dcfaca59e0ecd18c9d0f8df40dfc85f40c1dcc6dcb86fed75f5cb330942e",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/study_identity.py": "a5b381894b8a47c3acf29df6f5d407428832288c6d80bf2acbd0cf47b7848129",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/summarize.py": "8b0e0b1dae74b85258c34bb29c371e7328a74fe23f33192300fed2b10455dd62",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/test_experiment.py": "7fbd54f98e5daff19bffb12bda555eaf489d8bf54dd05d1bf18dc4c5ffbc8698",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/test_review.py": "72647fd1d168cc04b6e4bd4956ee0dfb581b1ac530a1ceb8c85de5b3a51f6be8",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/verify_review.py": "c9d21ba7a51374e545a610a0b6c3463f4aeddb4a48d0382df7c95f6c9a27709d",
+    "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/verify_valuations.py": "b6074bb994323f40184935968378bc387c7667ae919b4affe43271861d2fb83d"
+  },
+  "accepted_runs": {
+    "MA_atr2_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_atr2_slip1/summary.json",
+      "summary_sha256": "046bb5010ab2e6bb685e8e694fa21030d4ed0c4649a417f64d83fd4b8d3e8b5f",
+      "input_hash": "79e5288c55db121ae8e27133b280e9a65c708c1235a160dd8402ffeacf3ffada",
+      "status": "COMPLETED"
+    },
+    "MA_atr2_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_atr2_slip2/summary.json",
+      "summary_sha256": "550717bb5f75a983e407060de2aabde717408dd92a7f0e516e7603393f969b8b",
+      "input_hash": "607e809eda2801fe89fa4d33c1f92b70618c59131d2f8959b8a281206fae3aa2",
+      "status": "COMPLETED"
+    },
+    "MA_atr3_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_atr3_slip1/summary.json",
+      "summary_sha256": "1fa91e00084b4a0502b2f15294b804ea248486eeba7b8d54498660f42ce784e5",
+      "input_hash": "dd5ed4b57f3f34448e33c57494c7deec4e9ea81f6e52176026607b9c65ae8bd9",
+      "status": "COMPLETED"
+    },
+    "MA_atr3_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_atr3_slip2/summary.json",
+      "summary_sha256": "49d8bd4acf2874f0826e598f0d608a6a82ca4136c4a127ba4b4c074b1b402a27",
+      "input_hash": "c777ed29b081834b4f5af82e657b46c8853f1136963df8c801e4c6f011f9ae35",
+      "status": "COMPLETED"
+    },
+    "MA_atr_matched_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_atr_matched_slip1/summary.json",
+      "summary_sha256": "ec336e5ea0f772bec61f71a2dcf1224d6080c4f8b8fa99823a896fdf4410ef82",
+      "input_hash": "507aa4760a056e9d15af750bf8d6487b21479e79cee4ad7b307b6af8ba0174d5",
+      "status": "COMPLETED"
+    },
+    "MA_atr_matched_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_atr_matched_slip2/summary.json",
+      "summary_sha256": "a6043489e1e7ab0218ac2db517117e1a5713044b96c1e19fd8c2d325869a4853",
+      "input_hash": "d8f23d5167a189ef4eb052ca9ac8c85d01383373c8cddc510f5d5fc6bf25c476",
+      "status": "COMPLETED"
+    },
+    "MA_long_flat_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_long_flat_slip1/summary.json",
+      "summary_sha256": "d9d6d605731da2bb7530d78870f98b49540dd09093d37ced76f4ed2e9557f26f",
+      "input_hash": "136c621cbd00c60dfd7f8e083cc4032d1c18a980cc10838355410f52620e16db",
+      "status": "COMPLETED"
+    },
+    "MA_long_flat_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_long_flat_slip2/summary.json",
+      "summary_sha256": "23cd73683c9177660306e850d10428344682ce659acf8e60180c400d5e416236",
+      "input_hash": "0cd53cc6477ae34b0090c07ce470fbb3d845747aa8e54165b2800f0dd26ba6ec",
+      "status": "COMPLETED"
+    },
+    "MA_newow_dual_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_newow_dual_slip1/summary.json",
+      "summary_sha256": "0d7245b7c106bf30ac3354342a742217d665ad0c6d6b17d85361854a258503ce",
+      "input_hash": "5561226392ee1981e434c072aac3fad500047cefb45d31f99c4a5ee584cef953",
+      "status": "COMPLETED"
+    },
+    "MA_newow_dual_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_newow_dual_slip2/summary.json",
+      "summary_sha256": "3d2e909afe77818a4922171a4d8cd5db1f950208b77e1a19599fe21e81a57f4b",
+      "input_hash": "266ca11308b95ff10218272f5769e395160d87facaa7d0d86461526ec3e80d6a",
+      "status": "COMPLETED"
+    },
+    "MA_newow_oscillation_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_newow_oscillation_slip1/summary.json",
+      "summary_sha256": "2f11223e4916a97c694365a49c769ada268b56cc9300b80010da9a3ed8dff730",
+      "input_hash": "bde7ce0714e03f3a5f773859310eef3d0564241d8f3e6cef628d59211fa1df86",
+      "status": "COMPLETED"
+    },
+    "MA_newow_oscillation_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_newow_oscillation_slip2/summary.json",
+      "summary_sha256": "a2cbb2fdc810d3bb858f7694d998b0a6eef92c099d365a18a14bb3bf03c95df6",
+      "input_hash": "3eeb275060694788afcbd099ccab9f7ad0b0ee3efa8ceead6124aaab17904e8b",
+      "status": "COMPLETED"
+    },
+    "MA_newow_trend_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_newow_trend_slip1/summary.json",
+      "summary_sha256": "78deee22c892df1fbe1e007214564cbcf30bdf5015c8a6e2eb7382ce07ccee14",
+      "input_hash": "dd51835f567991c1fd2eee573cd5ddbcfbe9b954112f9e751fed90029abbfdc3",
+      "status": "COMPLETED"
+    },
+    "MA_newow_trend_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_newow_trend_slip2/summary.json",
+      "summary_sha256": "34722550e91c2517bab77d2e8bd67a6f6c205e445804a11aac96998d60bc8c9c",
+      "input_hash": "052d7d194c62ec6d9dc59c14bcad1616ee3301dc00915c7fa842f5a8ab53e8e9",
+      "status": "COMPLETED"
+    },
+    "MA_original_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_original_slip1/summary.json",
+      "summary_sha256": "7cc6ee7909cbfefca0de5b7e8e9bf0fc7ec17368b47e9de7959c05745a6a0af0",
+      "input_hash": "f54ae75c30d2230555e47cdc859f1f7bc9e95c53ee3d9a63a7b048b2810d1d36",
+      "status": "COMPLETED"
+    },
+    "MA_original_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_original_slip2/summary.json",
+      "summary_sha256": "7e1e5ba299124964ebb9881464b38e82af304115f16cc651dc04f6ba9c5c6687",
+      "input_hash": "4474f5c80c25dd06b5bbb880931bed01da2951ee611d8207af6cac21f2a4f303",
+      "status": "COMPLETED"
+    },
+    "MA_osc_exit_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_osc_exit_slip1/summary.json",
+      "summary_sha256": "64b8b0b944e8c71fffbf17d016e5d7bd11a2f8b271f8045e86f53b041260492f",
+      "input_hash": "6356a4fc7f45e362c88daf886880809e29876e04907522af8bbf0a0c358e0aab",
+      "status": "COMPLETED"
+    },
+    "MA_osc_exit_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_osc_exit_slip2/summary.json",
+      "summary_sha256": "d1fbf9ca9768de8e2fa725342c707d09ad43b39a836f44eb868110f6844054c2",
+      "input_hash": "7500415fd71aa15a5ab66ababb609cabd1c552f2a711e53c2b4ac7e20e3fe6f6",
+      "status": "COMPLETED"
+    },
+    "MA_trend_filter_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_trend_filter_slip1/summary.json",
+      "summary_sha256": "f53e06b7a59bfccfea7ce0f1f605729cd205dfe11f45b40ba1a022746f2289eb",
+      "input_hash": "4596684b04aea2997cbca0fd24f6edb26287330741e48126db037100b85cff92",
+      "status": "COMPLETED"
+    },
+    "MA_trend_filter_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/MA_trend_filter_slip2/summary.json",
+      "summary_sha256": "4c4d235c9cf44c86664f17e6ebe2bd3b10305ced1d332ebec1bf6b4538cc2db0",
+      "input_hash": "7ee0386ec5ffe363d87efc1f5043f19df98e1f417fe523cd6e519599c5c50765",
+      "status": "COMPLETED"
+    },
+    "TA_atr2_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_atr2_slip1/summary.json",
+      "summary_sha256": "15c219c28ecac7206a766be188cd6a1b764e5425a247bb081dcddc43d0753f23",
+      "input_hash": "585e9621dd10e7f390ba5975a37a199f17e5e7e2243bf905662645a4d2bdd411",
+      "status": "COMPLETED"
+    },
+    "TA_atr2_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_atr2_slip2/summary.json",
+      "summary_sha256": "62b0a96f5cca055c46fd9efa971c16ef65b717c0b1824a4b291845be19f1ae4d",
+      "input_hash": "5ffd228b75c584fdd01bf08241ea309cb02e0f921f385c0ec98109d5360dfe94",
+      "status": "COMPLETED"
+    },
+    "TA_atr3_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_atr3_slip1/summary.json",
+      "summary_sha256": "37c845cb134ab462578981c82486d83b090e125c018174b246ea9f069fb882a5",
+      "input_hash": "ae48345f7c4a7a9cad82fabecbec0675b16ba557b0bc4cb53ae168a7eb081aae",
+      "status": "COMPLETED"
+    },
+    "TA_atr3_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_atr3_slip2/summary.json",
+      "summary_sha256": "bfee07cd1b2d976333eb310ba3db48069ba4785a87d8614431953734aa4fc660",
+      "input_hash": "87483423c4cfdcb54f3b7f55df2387bc9ee4555ad327b79b70c893e67cecc140",
+      "status": "COMPLETED"
+    },
+    "TA_atr_matched_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_atr_matched_slip1/summary.json",
+      "summary_sha256": "58cedd53463f1b2934dfd70252d734b38a75439419cff0a0363e69bbfcf6aab4",
+      "input_hash": "c63d803b488021ecc506d3ce663f2acf5ad419903d63c0ec38e571cf00e40aab",
+      "status": "COMPLETED"
+    },
+    "TA_atr_matched_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_atr_matched_slip2/summary.json",
+      "summary_sha256": "03b60d53e09f589117af640ad57c99fbba5dbab5a5005afd69558b34069a427a",
+      "input_hash": "881255e0dbb75bb07f18ea04bae71996bafca610fde492311b391f208283aff2",
+      "status": "COMPLETED"
+    },
+    "TA_long_flat_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_long_flat_slip1/summary.json",
+      "summary_sha256": "bf59fa5b5fa1daebd0c3ed79cdce1bec1770c5d7d2013ebb09c1fec4917c75d6",
+      "input_hash": "af3129b1c70715095f5e83a5969a7d4cf948c60aad36ad0408aeb7756383e12d",
+      "status": "COMPLETED"
+    },
+    "TA_long_flat_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_long_flat_slip2/summary.json",
+      "summary_sha256": "a56b9437ca8c105b0bd9218942e21a7c1dad8edf26b5abd711e922eca88ffc63",
+      "input_hash": "05a818f902855de7a403389f0478d6376d29cdfec969f5c6128b066c23e7dbd8",
+      "status": "COMPLETED"
+    },
+    "TA_newow_dual_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_newow_dual_slip1/summary.json",
+      "summary_sha256": "5cf411013a9dcea518ad228f7bdddf0bfc46185463e4564fe3d614d068c2bbe9",
+      "input_hash": "56ca6c828de68554a9e338dfb98bc597dce910925c1a282636ba575920e697bd",
+      "status": "COMPLETED"
+    },
+    "TA_newow_dual_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_newow_dual_slip2/summary.json",
+      "summary_sha256": "5a160ffbd8661ba7eca1e40e7dd44353c6e3079b767ebaddc90fd22cd435f8ad",
+      "input_hash": "5168acdedc47e1a189435374cc67dcc01ab9f2955b6f5c91fa541a5da8047b6c",
+      "status": "COMPLETED"
+    },
+    "TA_newow_oscillation_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_newow_oscillation_slip1/summary.json",
+      "summary_sha256": "a4042898c96ff1ec12c18d4d48246f6a66f84fc312ab934348bf7b4a712aac83",
+      "input_hash": "a6164c3da002b4f50ad30bfd68d80577cdf937adee95eb2df282700c3647117a",
+      "status": "COMPLETED"
+    },
+    "TA_newow_oscillation_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_newow_oscillation_slip2/summary.json",
+      "summary_sha256": "176bc76cbe9f47416bd07db4a6d1cf0cbdc50a47eab1ffbd93adeb37afbe24a0",
+      "input_hash": "0d52bce8ed0f32012110b2b7c159dbbaaabb106aa268a41e8bbf92c06492e347",
+      "status": "COMPLETED"
+    },
+    "TA_newow_trend_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_newow_trend_slip1/summary.json",
+      "summary_sha256": "afbf43f0af294f5db7c6dc7070724fbf4ddcddddeea67d683db88c6084303c22",
+      "input_hash": "af12045fcccb307a9c69c39141048cebad61123be95effff84f41deec118c30b",
+      "status": "COMPLETED"
+    },
+    "TA_newow_trend_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_newow_trend_slip2/summary.json",
+      "summary_sha256": "5b5aba1648b88cdab502872258948e899dfe5e9cfa75474e4b7ab2572165d27f",
+      "input_hash": "80e9d82e6c1c5cca3ed84511f20bcf8bdd8808a5f7e4c37500783a0d7215a47a",
+      "status": "COMPLETED"
+    },
+    "TA_original_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/baseline-final/runs/TA_original_slip1/summary.json",
+      "summary_sha256": "40af6ea5e27af35a84121323b0f34397102eec6c1219ab7c8d6c2278d920fcbf",
+      "input_hash": "3a09d678e225c8ab1af6b27cf4d513e703e9419e41c0c6d94960a5b7e9027dd0",
+      "status": "COMPLETED"
+    },
+    "TA_original_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_original_slip2/summary.json",
+      "summary_sha256": "e01590381cdc0afcdd58a620c524fcdcf703fa9777cf01e1cc1d2ea37ce69980",
+      "input_hash": "37428100343fd65c630876a011ba2744a3fc562c8083d862d7a1ea1e4ab90dd6",
+      "status": "COMPLETED"
+    },
+    "TA_osc_exit_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_osc_exit_slip1/summary.json",
+      "summary_sha256": "70e5864aabd45598739df759d9b844f4eef7085242124ac4c20fdfe148fa53c6",
+      "input_hash": "3a5877bee4417e64e83c6bf301789e9999457883fc26cc411285c8ffa2adab54",
+      "status": "COMPLETED"
+    },
+    "TA_osc_exit_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_osc_exit_slip2/summary.json",
+      "summary_sha256": "de517c9f1e3f12aca16fcb8649d69f79f375a194199bfeef74949288e7135039",
+      "input_hash": "b143221dad67d60dabbc2a5dfe0ef2475cd8c1d380b3524128fb651f96462511",
+      "status": "COMPLETED"
+    },
+    "TA_trend_filter_slip1": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_trend_filter_slip1/summary.json",
+      "summary_sha256": "c8b79e565573fc3762d86595ae729aa9c24967f219a2b17e110ff5911d31714f",
+      "input_hash": "e96665cfca5dd20352c95db5d3c333bb9f2445060f3afa4fc6666650cf2eddce",
+      "status": "COMPLETED"
+    },
+    "TA_trend_filter_slip2": {
+      "summary_path": "/Volumes/\u6269\u5c55\u76d8/guiyi-quant-workstation/output/htdy-optimization-20261031/runs/TA_trend_filter_slip2/summary.json",
+      "summary_sha256": "b3accd1c405aa459c9d3e0be5d3472bd101cb03361a7b035deff9e67ed955deb",
+      "input_hash": "b1ceaccb1b6e48f71903d4fca6691b7d65570e71ea6571fa881777d1415a1d85",
+      "status": "COMPLETED"
+    }
+  },
+  "early_TA_original_slip1": "preserved at runs/TA_original_slip1; superseded by baseline-final attempt",
+  "TA_feature_equivalence": "TA-feature-equivalence.json"
+}
