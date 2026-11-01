@@ -10,7 +10,7 @@ from .new_subing import ExecutionBar
 from .subing_decision import DecisionModel, _wire
 
 D = Decimal
-VERSION = 'subing_jm30_account_next1m_close_v2'
+VERSION = 'subing_jm30_account_next1m_close_v3'
 INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
 
@@ -86,14 +86,16 @@ def _replay(executions, observations, run_id):
         prospective_margin = (len(layers)+1) * max(mark + facts.tick_size, facts.prev_settlement) * multiplier * facts.long_margin_ratio
         round_net = eq-round_start if round_start is not None else D('0')
         day_net = eq-day_start
-        remainder = sum(((mark-layer['price'])*multiplier-layer['open_fee']-close_fee(layer,mark,facts)[0]
-            for layer in layers.values()), D('0'))
+        layer_nets = {key: (mark-layer['price'])*multiplier-layer['open_fee']-close_fee(layer,mark,facts)[0]
+            for key, layer in layers.items()}
+        remainder = sum(layer_nets.values(), D('0'))
+        base_net = next((layer_nets[key] for key, layer in layers.items() if layer['kind'] == 'OPEN'), None)
         allowed = (len(layers) < 3 and prospective_equity > 0 and prospective_margin <= prospective_equity*D('.70')
             and prospective_margin <= prospective_equity and round_net > D('-2000') and day_net > D('-5000')
             and (round_start is None or prospective_equity-round_start > D('-2000'))
             and prospective_equity-day_start > D('-5000'))
         return dict(equity=eq, cash=cash, margin=used, available=eq-used,
-            round_net=round_net, day_net=day_net, remaining_net=remainder,
+            round_net=round_net, day_net=day_net, remaining_net=remainder, base_net=base_net, layer_nets=layer_nets,
             admission=allowed, round_loss=round_net <= D('-2000'), day_loss=day_net <= D('-5000'))
 
     for index, execution in enumerate(executions):
@@ -110,10 +112,12 @@ def _replay(executions, observations, run_id):
             current_exit = current_frame is not None and any(current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death'))
             protected_layer = any(layer['kind'] == 'ADD' and b.close < layer['price'] for layer in layers.values())
             frame_unknown = current_frame is not None and (current_frame.get('minute_angle') is None or any(current_frame.get(key) is None for key in ('near_zero_golden','above_ema','volume_effective','below_previous_low','high_death','below_ema','qualified_pullback')))
+            fixed_stop = model.initial_stop is not None and b.close <= model.initial_stop
+            profit_hit = model.profit_target is not None and not model.profit_taken and b.close >= model.profit_target
             reject = None
             if opening and pending['cancel_requested']:
                 reject = 'CANCEL_REQUESTED'
-            elif opening and (current_exit or protected_layer):
+            elif opening and (current_exit or protected_layer or fixed_stop or profit_hit):
                 reject = 'EXIT_PRIORITY_AT_EXECUTION'
             elif opening and frame_unknown:
                 reject = 'TECHNICAL_FACTS_UNKNOWN_AT_EXECUTION'
@@ -121,6 +125,12 @@ def _replay(executions, observations, run_id):
                 reject = 'OPENING_CONTEXT_CHANGED'
             elif opening and ((model.day_halted and model.day == b.trading_day) or not pre['admission']):
                 reject = 'OPENING_FINANCIAL_RECHECK'
+            elif pending['kind'] == 'ADD' and (pre['base_net'] is None or pre['base_net'] <= 0):
+                reject = 'BASE_NET_NOT_POSITIVE_AT_EXECUTION'
+            elif pending['kind'] == 'ADD' and b.close <= pending['breakout_high']:
+                reject = 'PULLBACK_BREAKOUT_LOST_AT_EXECUTION'
+            elif pending['kind'] == 'OPEN' and price <= pending['initial_stop']:
+                reject = 'INITIAL_STOP_INVALID_AT_EXECUTION'
             elif b.volume <= 0:
                 reject = 'ZERO_VOLUME'
             elif not b.low <= price <= b.high:
@@ -177,7 +187,8 @@ def _replay(executions, observations, run_id):
             raise ValueError('ACCOUNT_CASH_RECONCILIATION')
         now = finance(b.close,f)
         event = dict(technical,admission=now['admission'],round_loss=now['round_loss'],day_loss=now['day_loss'],
-            remaining_net=str(now['remaining_net']),reconciled=True)
+            remaining_net=str(now['remaining_net']),base_net=None if now['base_net'] is None else str(now['base_net']),
+            layer_nets={k: str(v) for k,v in now['layer_nets'].items()},reconciled=True)
         result = model.apply(event)
         result['finance'] = _wire(now)
         if result['actions'] or technical['m30'] is not None:

@@ -60,7 +60,8 @@ def observations(bars, factor_rows, sessions):
         if r is not None:
             p, x = r['price_factor'], r['joint']['exits']
             pullback = p['pullback']
-            frame = dict(near_zero_golden=r['macd']['near_zero_golden'],
+            frame = dict(ema21=None if p['ema21'] is None else str(p['ema21']), low=str(r['low']),
+                near_zero_golden=r['macd']['near_zero_golden'],
                 minute_angle=None if r['angle'] is None else str(r['angle']),
                 above_ema=p['above_ema'], volume_effective=r['volume_factor']['effective'],
                 below_previous_low=x['below_previous_low'], high_death=x['high_death'],

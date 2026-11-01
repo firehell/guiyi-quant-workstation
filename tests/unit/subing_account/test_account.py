@@ -24,7 +24,7 @@ def inputs(prices, *, frames=None):
         xs.append(ExecutionBar(bar,facts))
         m=None
         if i in frames:
-            m=dict(near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
+            m=dict(ema21='90',low='80',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
                 below_previous_low=False,high_death=False,below_ema=False,
                 qualified_pullback=False,pullback_high=None,pullback_invalidated=False)
             m.update(frames[i])
@@ -82,7 +82,7 @@ def test_close_failure_keeps_position_and_retries():
 def test_round_loss_uses_equity_including_fees():
     xs,obs=inputs([100,101,60,59],frames={0:dict(near_zero_golden=True)})
     r=replay(xs,obs,'r')
-    assert r['fills'][-1]['reasons']==['ROUND_LOSS']
+    assert r['fills'][-1]['reasons']==['ROUND_LOSS','FIXED_STOP']
     assert D(r['closed_rounds'][0]['net_pnl']) < D('-2000')
 
 
@@ -142,7 +142,7 @@ def test_next_trading_day_uses_previous_equity_and_close_yesterday_fee():
 def test_day_loss_halts_after_final_fill():
     xs,obs=inputs([100,101,10,9],frames={0:dict(near_zero_golden=True)})
     r=replay(xs,obs,'r')
-    assert r['fills'][-1]['reasons']==['DAY_LOSS','ROUND_LOSS']
+    assert r['fills'][-1]['reasons']==['DAY_LOSS','ROUND_LOSS','FIXED_STOP']
     assert r['decision_state']['day_halted'] is True
     assert r['summary']['open_quantity']==0
 
@@ -211,3 +211,79 @@ def test_pending_reduction_upgrades_to_clear_at_first_executable_minute(capacity
     assert all(f['decision_id']==closes[0]['decision_id'] for f in closes)
     assert r['open_layers']==[] and r['pending'] is None
     assert DecisionModel.restore(r['decision_checkpoint']).checkpoint()==r['decision_checkpoint']
+
+
+@pytest.mark.parametrize('last,reason',[(101.5,'BASE_NET_NOT_POSITIVE_AT_EXECUTION'),(103,'PULLBACK_BREAKOUT_LOST_AT_EXECUTION')])
+def test_add_execution_rechecks_base_net_and_frozen_breakout(last,reason):
+    high='101' if last==101.5 else '103'
+    xs,obs=inputs([100,101,102,104,last,106],frames={0:dict(near_zero_golden=True),
+        2:dict(qualified_pullback=True,pullback_high=high)})
+    r=replay(xs,obs,'r')
+    assert [f['action'] for f in r['fills']]==['OPEN']
+    assert r['execution_events'][0]['reason']==reason
+    assert r['pending'] is None and r['decision_state']['pullback'] is None
+
+
+def test_add_request_rejects_gross_profit_erased_by_fees():
+    # Open at 101.5, same marked price is gross flat and net -6. No add.
+    xs,obs=inputs([100,101,101,101.5,102],frames={0:dict(near_zero_golden=True),
+        2:dict(qualified_pullback=True,pullback_high='101')})
+    r=replay(xs,obs,'r')
+    row=next(t for t in r['trace'] if t['facts']['event_id']=='o3')
+    assert row['finance']['base_net']=='-6.0'
+    assert row['actions'][0]['reasons']==['BASE_NET_NOT_POSITIVE']
+    assert len(r['fills'])==1
+
+
+def test_fixed_stop_checks_close_not_intrabar_low_and_fills_later():
+    xs,obs=inputs([100,100,88,87,86],frames={0:dict(near_zero_golden=True,ema21='101',low='100')})
+    xs[2]=replace(xs[2],bar=replace(xs[2].bar,low=D('85')))
+    r=replay(xs,obs,'r')
+    assert r['fills'][-1]['reasons']==['FIXED_STOP']
+    assert r['fills'][-1]['decision_at']==xs[3].bar.bar_end.isoformat()
+    assert r['fills'][-1]['fill_at']==xs[4].bar.bar_end.isoformat()
+    assert r['fills'][-1]['price']=='85.5'
+
+
+def test_nonpositive_r_at_execution_cancels_open():
+    xs,obs=inputs([100,86,100],frames={0:dict(near_zero_golden=True,ema21='100',low='100')})
+    r=replay(xs,obs,'r')
+    assert not r['fills']
+    assert r['execution_events'][0]['reason']=='INITIAL_STOP_INVALID_AT_EXECUTION'
+
+
+def test_profit_target_cancels_pending_add_before_new_exposure():
+    xs,obs=inputs([100,100,102,103,114,115],frames={
+        0:dict(near_zero_golden=True,ema21='100',low='100'),
+        2:dict(qualified_pullback=True,pullback_high='102')})
+    r=replay(xs,obs,'r')
+    assert len(r['fills'])==1
+    assert r['execution_events'][0]['reason']=='EXIT_PRIORITY_AT_EXECUTION'
+    assert r['decision_state']['profit_taken']
+
+
+def test_profit_exit_uses_fee_adjusted_layers_and_retains_base():
+    xs,obs=inputs([100,100,102,103,104,114,115],frames={
+        0:dict(near_zero_golden=True,ema21='100',low='100'),
+        2:dict(qualified_pullback=True,pullback_high='102')})
+    r=replay(xs,obs,'r')
+    assert [f['action'] for f in r['fills']]==['OPEN','ADD','CLOSE']
+    assert r['fills'][-1]['reasons']==['PROFIT_1R']
+    assert r['fills'][-1]['layer_ids']==[r['fills'][1]['decision_id']]
+    assert r['decision_state']['initial_stop']=='87'
+    assert r['decision_state']['risk_distance']=='13.5'
+    assert r['decision_state']['profit_target']=='114.0'
+    assert len(r['open_layers'])==1 and r['open_layers'][0]['kind']=='OPEN'
+    assert DecisionModel.restore(r['decision_checkpoint']).state()==r['decision_state']
+
+
+def test_fixed_stop_cancels_pending_add_before_execution_then_clears_base():
+    xs,obs=inputs([100,100,102,103,87,86],frames={
+        0:dict(near_zero_golden=True,ema21='100',low='100'),
+        2:dict(qualified_pullback=True,pullback_high='102')})
+    r=replay(xs,obs,'r')
+    assert [f['action'] for f in r['fills']]==['OPEN','CLOSE']
+    assert r['execution_events'][0]['reason']=='EXIT_PRIORITY_AT_EXECUTION'
+    assert r['fills'][-1]['reasons']==['FIXED_STOP']
+    assert r['fills'][-1]['decision_at']==xs[4].bar.bar_end.isoformat()
+    assert r['fills'][-1]['fill_at']==xs[5].bar.bar_end.isoformat()

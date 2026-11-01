@@ -27,10 +27,14 @@
         "below_ema": false,
         "qualified_pullback": false,
         "pullback_high": null,
-        "pullback_invalidated": false
+        "pullback_invalidated": false,
+        "ema21": "30",
+        "low": "30"
       },
       "event_id": "event-1",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "ack",
@@ -65,10 +69,14 @@
         "below_ema": false,
         "qualified_pullback": true,
         "pullback_high": "105",
-        "pullback_invalidated": false
+        "pullback_invalidated": false,
+        "ema21": "30",
+        "low": "30"
       },
       "event_id": "event-3",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "observe",
@@ -85,7 +93,9 @@
       "reconciled": true,
       "m30": null,
       "event_id": "event-4",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "ack",
@@ -120,10 +130,14 @@
         "below_ema": false,
         "qualified_pullback": true,
         "pullback_high": "110",
-        "pullback_invalidated": false
+        "pullback_invalidated": false,
+        "ema21": "30",
+        "low": "30"
       },
       "event_id": "event-6",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "observe",
@@ -140,7 +154,9 @@
       "reconciled": true,
       "m30": null,
       "event_id": "event-7",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "ack",
@@ -175,10 +191,14 @@
         "below_ema": false,
         "qualified_pullback": false,
         "pullback_high": null,
-        "pullback_invalidated": false
+        "pullback_invalidated": false,
+        "ema21": "30",
+        "low": "30"
       },
       "event_id": "event-9",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "ack",
@@ -216,10 +236,14 @@
         "below_ema": false,
         "qualified_pullback": true,
         "pullback_high": "119",
-        "pullback_invalidated": false
+        "pullback_invalidated": false,
+        "ema21": "30",
+        "low": "30"
       },
       "event_id": "event-11",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "observe",
@@ -236,7 +260,9 @@
       "reconciled": true,
       "m30": null,
       "event_id": "event-12",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "ack",
@@ -263,7 +289,9 @@
       "reconciled": true,
       "m30": null,
       "event_id": "event-14",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "ack",
@@ -300,10 +328,14 @@
         "below_ema": false,
         "qualified_pullback": true,
         "pullback_high": "112",
-        "pullback_invalidated": false
+        "pullback_invalidated": false,
+        "ema21": "30",
+        "low": "30"
       },
       "event_id": "event-16",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "observe",
@@ -320,7 +352,9 @@
       "reconciled": true,
       "m30": null,
       "event_id": "event-17",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "observe",
@@ -337,7 +371,9 @@
       "reconciled": true,
       "m30": null,
       "event_id": "event-18",
-      "contract": "JM2609"
+      "contract": "JM2609",
+      "base_net": "100",
+      "layer_nets": {}
     },
     {
       "kind": "ack",

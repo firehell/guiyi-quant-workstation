@@ -14,7 +14,7 @@ import re
 
 from .indicators.subing_conditions import EntryWindow, observe_entry
 
-VERSION = 'subing_jm30_decision_v3'
+VERSION = 'subing_jm30_decision_v4'
 
 
 def _time(value):
@@ -77,6 +77,13 @@ class DecisionModel:
         self.cooldown_ended_at = None
         self.round_started_at = None
         self.pullback = None
+        self.initial_stop = None
+        self.risk_distance = None
+        self.profit_target = None
+        self.completed_m30 = 0
+        self.fast_deadline = None
+        self.profit_taken = False
+        self.profit_targets = []
         self.reset_after = None
         self.day = None
         self.day_halted = False
@@ -95,6 +102,9 @@ class DecisionModel:
             clear_reasons=self.clear_reasons, exit_layers=self.exit_layers,
             cooldown=self.cooldown, cooldown_ended_at=self.cooldown_ended_at,
             round_started_at=self.round_started_at, pullback=self.pullback,
+            initial_stop=self.initial_stop, risk_distance=self.risk_distance, profit_target=self.profit_target,
+            completed_m30=self.completed_m30, fast_deadline=self.fast_deadline,
+            profit_taken=self.profit_taken, profit_targets=self.profit_targets,
             reset_after=self.reset_after, trading_day=self.day,
             day_halted=self.day_halted, day_reconciled=self.day_reconciled,
             last_at=self.last_at, last_observation=self.last_observation, technical_ready=self.technical_ready,
@@ -139,7 +149,7 @@ class DecisionModel:
         return deepcopy(self.pending)
 
     def _observe(self, e, at):
-        _fields(e, 'event_id kind at contract trading_day close daily_direction daily_at day_end_window admission round_loss day_loss remaining_net reconciled m30')
+        _fields(e, 'event_id kind at contract trading_day close daily_direction daily_at day_end_window admission round_loss day_loss remaining_net base_net layer_nets reconciled m30')
         if e['kind'] != 'observe' or (self.last_observation is not None and at <= self.last_observation):
             raise ValueError('OBSERVATION_TIME_INVALID')
         day = date.fromisoformat(e['trading_day'])
@@ -147,6 +157,12 @@ class DecisionModel:
             raise ValueError('TRADING_DAY_REVERSED')
         close = _number(e['close'], positive=True)
         remaining_net = _number(e['remaining_net'], nullable=True)
+        base_net = _number(e['base_net'], nullable=True)
+        if type(e['layer_nets']) is not dict or any(not isinstance(k, str) for k in e['layer_nets']):
+            raise ValueError('LAYER_NETS_INVALID')
+        layer_nets = {k: _number(v, nullable=True) for k, v in e['layer_nets'].items()}
+        if not set(layer_nets) <= {layer['layer_id'] for layer in self.layers}:
+            raise ValueError('LAYER_NETS_IDENTITY')
         for key in ('day_end_window', 'reconciled'):
             _flag(e[key])
         for key in ('admission', 'round_loss', 'day_loss'):
@@ -159,10 +175,12 @@ class DecisionModel:
             raise ValueError('DAILY_SOURCE_MISSING')
         m = e['m30']
         if m is not None:
-            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated')
+            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated ema21 low')
             for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'):
                 _flag(m[key], nullable=True)
             _flag(m['pullback_invalidated'])
+            ema21 = _number(m['ema21'], nullable=True, positive=True)
+            low = _number(m['low'], nullable=True, positive=True)
             angle = _number(m['minute_angle'], nullable=True)
             high = _number(m['pullback_high'], nullable=True, positive=True)
             if m['qualified_pullback'] is True and high is None:
@@ -185,6 +203,8 @@ class DecisionModel:
             reasons.append('DAY_LOSS')
         if e['round_loss'] is True:
             reasons.append('ROUND_LOSS')
+        if self.layers and self.initial_stop is not None and close <= self.initial_stop:
+            reasons.append('FIXED_STOP')
         if m and m['below_ema'] is True:
             reasons.append('EMA_CLEAR')
         if self.layers and e['day_end_window'] and remaining_net is not None and remaining_net <= 0:
@@ -195,6 +215,10 @@ class DecisionModel:
         entry = None
         was_cooling = self.cooldown > 0
         if m:
+            if self.round_started_at is not None and at > self.round_started_at:
+                self.completed_m30 += 1
+                if self.completed_m30 == 3:
+                    self.fast_deadline = at
             self.technical_ready = angle is not None and all(m[key] is not None for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'))
             self.window, entry = observe_entry(self.window, contract=self.contract, bar_end=at,
                 near_zero_golden=m['near_zero_golden'], daily_direction=e['daily_direction'],
@@ -207,6 +231,14 @@ class DecisionModel:
                     self.cooldown_ended_at = at
             if m['pullback_invalidated'] or not self.technical_ready:
                 self.pullback = None
+        profit_trigger = bool(self.layers and self.profit_target is not None and not self.profit_taken
+            and at > self.round_started_at and close >= self.profit_target)
+        if profit_trigger:
+            self.profit_taken = True
+            fast = self.completed_m30 < 3 or (self.fast_deadline is not None and at <= self.fast_deadline)
+            eligible = [layer['layer_id'] for layer in reversed(self.layers) if layer['kind'] == 'ADD'
+                and layer_nets.get(layer['layer_id']) is not None and layer_nets[layer['layer_id']] > 0]
+            self.profit_targets = eligible if fast else eligible[:1]
         protected = [layer['layer_id'] for layer in self.layers if layer['kind'] == 'ADD' and at > layer['at'] and close < layer['price']]
         if self.clear_reasons:
             self.exit_layers = [layer['layer_id'] for layer in self.layers]
@@ -217,35 +249,38 @@ class DecisionModel:
             count = min(reductions, max(0, len(remaining) - 1))
             if count:
                 self.exit_layers += [layer['layer_id'] for layer in reversed(remaining[-count:])]
+            self.exit_layers = list(dict.fromkeys(self.exit_layers + self.profit_targets))
         exit_now = bool(self.exit_layers or self.clear_reasons)
         reduction_trigger = bool(m and (m['below_previous_low'] is True or m['high_death'] is True))
-        if protected or reduction_trigger:
+        if protected or reduction_trigger or profit_trigger:
             self.pullback = None
             self.reset_after = at
         # Breakout is a completed 1m close, never the phase-two 30m high flag.
+        breakout_high = self.pullback['high'] if self.pullback is not None else None
         breakout = self.pullback is not None and at > self.pullback['at'] and close > self.pullback['high']
         if breakout:
             self.pullback = None
         actions = []
         if self.pending:
-            if self.pending['kind'] == 'CLOSE' and self.clear_reasons and (
-                    set(self.pending['layer_ids']) != set(self.exit_layers)
-                    or self.pending['reasons'] != self.clear_reasons):
+            if self.pending['kind'] == 'CLOSE' and (
+                    not set(self.exit_layers) <= set(self.pending['layer_ids'])
+                    or (self.clear_reasons and self.pending['reasons'] != self.clear_reasons)):
                 # Offline intent replacement, not a broker cancel acknowledgement.
                 # A fresh identity/time preserves the original request and makes
                 # new targets executable only strictly after this observation.
                 superseded = self.pending['decision_id']
-                replacement = self._intent(at, 'CLOSE', self.exit_layers, self.clear_reasons)
+                replacement = self._intent(at, 'CLOSE', self.exit_layers, self.clear_reasons or
+                    list(dict.fromkeys(self.pending['reasons'] + (['PROFIT_1R'] if self.profit_targets else []) + (['ADD_PROTECTION'] if protected else []))))
                 replacement['supersedes_decision_id'] = superseded
                 actions.append(replacement)
-            if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and reduction_trigger) or e['day_end_window'] or e['daily_direction'] not in ('UP', 'NEUTRAL') or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
+            if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and (reduction_trigger or profit_trigger or base_net is None or base_net <= 0 or close <= self.pending['breakout_high'])) or e['day_end_window'] or e['daily_direction'] not in ('UP', 'NEUTRAL') or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
                 if not self.pending['cancel_requested']:
                     self.pending['cancel_requested'] = True
                     actions.append(dict(kind='CANCEL', decision_id=self.pending['decision_id'], reason='OPENING_NO_LONGER_ALLOWED'))
             return actions
         if self.exit_layers:
             actions.append(self._intent(at, 'CLOSE', self.exit_layers,
-                self.clear_reasons or (['ADD_PROTECTION'] if protected else []) + (['ORDINARY_REDUCTION'] if m else []) or ['EXIT_OBLIGATION']))
+                self.clear_reasons or (['ADD_PROTECTION'] if protected else []) + (['PROFIT_1R'] if self.profit_targets else []) + (['ORDINARY_REDUCTION'] if reduction_trigger else []) or ['EXIT_OBLIGATION']))
             return actions
         if self.clear_reasons and not self.layers:
             self.clear_reasons = []
@@ -268,11 +303,21 @@ class DecisionModel:
             source = _time(entry['window']['source_end'].isoformat())
             if self.cooldown_ended_at is not None and source <= self.cooldown_ended_at:
                 blocked.append('OLD_GOLDEN')
+            stop = min(ema21, low) - Decimal('13') if ema21 is not None and low is not None else None
+            if stop is None or stop <= 0 or stop >= close:
+                blocked.append('INITIAL_STOP_NOT_PROVEN')
             if blocked:
                 actions.append(dict(kind='REJECT', opportunity='OPEN', reasons=blocked))
             else:
-                actions.append(self._intent(at, 'OPEN', [], ['ENTRY_MET']))
+                action = self._intent(at, 'OPEN', [], ['ENTRY_MET'])
+                self.pending['initial_stop'] = stop
+                action['initial_stop'] = stop
+                actions.append(action)
         elif breakout:
+            if base_net is None or base_net <= 0:
+                blocked.append('BASE_NET_NOT_POSITIVE')
+            if profit_trigger:
+                blocked.append('PROFIT_EXIT_PRIORITY')
             if len(self.layers) >= 3:
                 blocked.append('MAX_THREE_LAYERS')
             if not self.layers:
@@ -282,8 +327,11 @@ class DecisionModel:
             if blocked:
                 actions.append(dict(kind='REJECT', opportunity='ADD', reasons=blocked))
             else:
-                actions.append(self._intent(at, 'ADD', [], ['PULLBACK_BREAKOUT']))
-        if m and self.layers and not exit_now and not reduction_trigger and self.technical_ready and m['qualified_pullback'] is True:
+                action = self._intent(at, 'ADD', [], ['PULLBACK_BREAKOUT'])
+                self.pending['breakout_high'] = breakout_high
+                action['breakout_high'] = breakout_high
+                actions.append(action)
+        if m and self.layers and not exit_now and not reduction_trigger and not profit_trigger and self.technical_ready and m['qualified_pullback'] is True:
             threshold = self.reset_after or self.round_started_at
             if threshold is not None and at > threshold:
                 self.pullback = dict(at=at, high=high)
@@ -309,8 +357,17 @@ class DecisionModel:
         if kind in ('OPEN', 'ADD'):
             if e['layer_ids'] or len(self.layers) >= 3 or (kind == 'OPEN' and self.layers) or (kind == 'ADD' and not self.layers):
                 raise ValueError('ACK_POSITION_INVALID')
+            if kind == 'OPEN' and price <= self.pending['initial_stop']:
+                raise ValueError('INITIAL_STOP_INVALID_AT_FILL')
             self.layers.append(dict(layer_id=e['decision_id'], kind=kind, price=price, at=at))
             if kind == 'OPEN':
+                self.initial_stop = self.pending['initial_stop']
+                self.risk_distance = price - self.initial_stop
+                self.profit_target = price + self.risk_distance
+                self.completed_m30 = 0
+                self.fast_deadline = None
+                self.profit_taken = False
+                self.profit_targets = []
                 self.round_started_at = at
                 self.reset_after = at
                 self.pullback = None
@@ -320,6 +377,7 @@ class DecisionModel:
                 raise ValueError('ACK_TARGETS_INVALID')
             self.layers = [layer for layer in self.layers if layer['layer_id'] not in e['layer_ids']]
             self.exit_layers = [x for x in self.exit_layers if x not in e['layer_ids']]
+            self.profit_targets = [x for x in self.profit_targets if x not in e['layer_ids']]
             self.pending['layer_ids'] = [x for x in self.pending['layer_ids'] if x not in e['layer_ids']]
             if not self.pending['layer_ids']:
                 self.pending = None
@@ -331,6 +389,11 @@ class DecisionModel:
                 self.exit_layers = []
                 self.window = EntryWindow(self.contract, self.window.last_end)
                 self.round_started_at = None
+                self.initial_stop = self.risk_distance = self.profit_target = None
+                self.completed_m30 = 0
+                self.fast_deadline = None
+                self.profit_taken = False
+                self.profit_targets = []
         return [dict(kind='ACK_FILLED', decision_id=e['decision_id'], layer_ids=e['layer_ids'], price=price)]
 
     def checkpoint(self):

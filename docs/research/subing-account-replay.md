@@ -48,3 +48,18 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 账户模型`subing_jm30_account_next1m_close_v2`配合决策v3，执行升级后的完整退出目标；已知全清义务不再被旧减仓请求串行阻塞。成交价、费用、阈值及成交量约束不变。修复后的完整窗口使用新的输出目录，旧回放保留。
 
 修复后已对同一7段167145根1m完整复算：28轮及92笔成交、费用、每日权益和全事件状态与修复前一致，仅语义版本与检查点校验值不同。比较原件：`output/subing-account-exit-upgrade-20261101/comparison.json`。193项相关回归及独立124项验证通过，未决减仓升级全清缺陷已关闭。
+
+## 阶段四账户适配
+
+账户v3与决策v4落实[阶段四政策](subing-position-decisions.md#阶段四固定初始止损1r主动止盈与加仓复核)。账户在请求时提供逐层扣除已发生开费和按当前价预计平费的净浮盈，成交前再次检查底仓盈利及冻结回踩突破，明确记录 `BASE_NET_NOT_POSITIVE_AT_EXECUTION` / `PULLBACK_BREAKOUT_LOST_AT_EXECUTION` 等取消原因。固定止损或首次1R目标已触发时，不执行排队的新增加仓。所有止损、止盈仍先确认完成行情，再于严格后续可执行1m成交，原撮合与费用模型不变。原阶段三输出保留，修订版必须写入新目录，结果变化不作为OOS或收益改善证明。
+
+2026-11-01本次实现验证：决策、账户及五因子定向测试218 passed，独立Review的决策/账户99 passed；Ruff F/E9、secret及diff检查通过。测试覆盖第三根30m及后一分钟边界、仅底仓首次达标后再加仓不重复止盈、未决退出扩展、部分成交恢复及执行前取消。
+
+同窗口2024-10-14至2026-10-19的7段167145根1m经MDS只读预检后完整回放；执行事实使用SHA为`86bf8ec9c0da6e284325ff0a94000798223828d844ddfd11bef8af13d9a7b715`的原快照。新旧source evidence和执行事实完全一致，新代码SHA核对通过。新结果：`output/subing-stage4-1r-20261101/replay.json`，逐段比较及全部检查点恢复核对：同目录`comparison.json`。28轮保持闭合，成交92→74、加仓18→9；现金恒等式、严格后续成交及期末空仓/无未决通过。各物理段独立账户，不拼接资金曲线。
+
+8轮首次达到1R时均只有底仓（快涨2、慢涨6），所以实际1R减仓成交为0；只证明历史触发及保底仓行为，不证明主动减仓的经济效果。首次达标消耗机会，之后新增层不重复1R退出。JM2505在2025-01-23 09:42的浮亏加仓已被`BASE_NET_NOT_POSITIVE`拒绝；固定止损在JM2605的2026-02-03 10:44触发，10:45模型成交。各段结果有升有降，不以频率或盈亏变化宣称策略有效。未发布、未切Runtime。
+
+本次定向验证命令：
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -p no:cacheprovider tests/unit/subing_decision tests/unit/subing_account tests/unit/subing_conditions tests/unit/subing_trend tests/unit/subing_macd tests/unit/subing_volume tests/unit/subing_price -q
+```
