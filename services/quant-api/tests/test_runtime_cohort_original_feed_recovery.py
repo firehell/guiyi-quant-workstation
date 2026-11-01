@@ -100,7 +100,7 @@ def test_controller_uses_exact_tag_authority_in_managed_worktree(
         assert calls[0] == ("describe", "--exact-match", "--match", "v[0-9]*", "HEAD")
 
 
-def original_fixture(tmp_path, monkeypatch):
+def original_fixture(tmp_path, monkeypatch, *, new_ready_timeout=False):
     host, source, path, attempt, _old_state, base_audit = fixture(tmp_path)
     _write(attempt / "plan.json", source)
     services = host.registry.services
@@ -131,6 +131,9 @@ def original_fixture(tmp_path, monkeypatch):
         "error_type": "ReceivingLivenessError",
         "effects": effects,
     }
+    if new_ready_timeout:
+        state["error_type"] = "CohortError"
+        state["error_code"] = "COHORT_NEW_READY_TIMEOUT"
     _write(attempt / "state.json", state)
     _write(host.directory / "cohort-release.json", state)
     original_bytes = (attempt / "state.json").read_bytes()
@@ -215,13 +218,16 @@ def original_fixture(tmp_path, monkeypatch):
     return host, source, path, attempt, original_bytes, identity
 
 
+@pytest.mark.parametrize("new_ready_timeout", (False, True))
 def test_original_verified_feed_halt_closes_once_then_normal_recovery(
     tmp_path,
     monkeypatch,
+    new_ready_timeout,
 ):
     host, source, source_path, attempt, original_bytes, identity = original_fixture(
         tmp_path,
         monkeypatch,
+        new_ready_timeout=new_ready_timeout,
     )
     with pytest.raises(ValueError, match="FORWARD_SOURCE_INVALID"):
         recovery.freeze_forward_recovery(host, source_path)
@@ -282,6 +288,29 @@ def test_original_verified_feed_halt_closes_once_then_normal_recovery(
         == "switched"
     )
     recovery._no_unresolved_recovery(host)
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ("wrong_code", "missing_code", "extra_field", "receiving_with_code"),
+)
+def test_original_verified_feed_timeout_requires_exact_native_error_shape(
+    tmp_path, monkeypatch, damage,
+):
+    host, source, _path, attempt, _bytes, _identity = original_fixture(
+        tmp_path, monkeypatch, new_ready_timeout=True,
+    )
+    state = json.loads((attempt / "state.json").read_bytes())
+    assert recovery.valid_original_verified_feed_state(source, state)
+    if damage == "wrong_code":
+        state["error_code"] = "COHORT_OTHER_TIMEOUT"
+    elif damage == "missing_code":
+        del state["error_code"]
+    elif damage == "extra_field":
+        state["failed_service"] = "live"
+    else:
+        state["error_type"] = "ReceivingLivenessError"
+    assert not recovery.valid_original_verified_feed_state(source, state)
 
 
 @pytest.mark.parametrize(
