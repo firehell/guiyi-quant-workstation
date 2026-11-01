@@ -9,7 +9,7 @@
 <pre id="jointSource"></pre>
 </section>
 <script>
-const jointLabels={daily_allows_long:'日线同向或中性，允许继续检查',minute_up:'30m趋势向上（>5°）',above_ema:'本根收盘 > EMA21',new_near_zero_golden:'本根新金叉且交点在 [-4,4]',volume_expanded:'本根成交量 > 前根'};
+const jointLabels={daily_allows_long:'日线同向或中性，允许继续检查',minute_positive:'30m计算角度 >0°（首仓条件）',above_ema:'本根收盘 > EMA21',new_near_zero_golden:'本根新金叉且交点在 [-4,4]',volume_expanded:'本根成交量 > 前根'};
 const jointBool=v=>v==null?'未知':v?'满足':'不满足';
 const jointTime=v=>v?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'无';
 function drawJoint(){const r=rows[index],j=r?.joint;if(!j)return;
@@ -18,7 +18,7 @@ function drawJoint(){const r=rows[index],j=r?.joint;if(!j)return;
  $('jointChecks').replaceChildren();for(const [key,value] of Object.entries(j.entry.checks)){const tr=document.createElement('tr');for(const text of [jointLabels[key],jointBool(value)]){const td=document.createElement('td');td.textContent=text;tr.appendChild(td)}$('jointChecks').appendChild(tr)}
  $('jointSummary').textContent=`当前物理合约窗口（事后统计）：近轴金叉 ${rows.filter(q=>q.macd?.near_zero_golden===true).length} 次；首仓技术条件齐全 ${rows.filter(q=>q.joint?.entry.met===true).length} 次。可逐个核对缺少哪项条件。`;
  const e=j.exits,b=r.price_factor.pullback;
- $('jointFacts').textContent=`日线背景：${jointTime(j.daily_time)} / ${names[j.daily_direction]}\n\n普通减仓依据（不代表实际减仓）：\n收盘 < 前根最低价：${jointBool(e.below_previous_low)}\n前根完成：${jointTime(e.previous_end)} / 最低价 ${priceNum(e.previous_low)}\n本根高位死叉（h>17）：${jointBool(e.high_death)}\n\n技术清仓依据：\n收盘 < EMA21：${jointBool(e.below_ema)}\n\n回踩管理依据：\n有效回踩：${jointBool(b.qualified_hold)}\n本根曾突破旧回踩高点：${jointBool(b.breakout)}\n\n这些依据可以同时发生；减仓手数、保留底仓、动作优先级与成交时序在阶段三组合。`;
+ $('jointFacts').textContent=`30m当前计算角度：${priceNum(r.angle)}°（严格>0；不改变±5°趋势分类）\n日线背景：${jointTime(j.daily_time)} / ${names[j.daily_direction]}\n\n普通减仓依据（不代表实际减仓）：\n收盘 < 前根最低价：${jointBool(e.below_previous_low)}\n前根完成：${jointTime(e.previous_end)} / 最低价 ${priceNum(e.previous_low)}\n本根高位死叉（h>17）：${jointBool(e.high_death)}\n\n技术清仓依据：\n收盘 < EMA21：${jointBool(e.below_ema)}\n\n回踩管理依据：\n有效回踩：${jointBool(b.qualified_hold)}\n本根曾突破旧回踩高点：${jointBool(b.breakout)}\n\n这些依据可以同时发生；减仓手数、保留底仓、动作优先级与成交时序在阶段三组合。`;
 }
 for(const [id,step] of [['jointPrev',-1],['jointNext',1]])$(id).onclick=()=>{for(let i=index+step;i>=0&&i<rows.length;i+=step){if(rows[i].joint?.entry.met===true){index=i;draw();break;}}};
 for(const [id,step] of [['jointGoldenPrev',-1],['jointGoldenNext',1]])$(id).onclick=()=>{for(let i=index+step;i>=0&&i<rows.length;i+=step){if(rows[i].macd?.near_zero_golden===true){index=i;draw();break;}}};

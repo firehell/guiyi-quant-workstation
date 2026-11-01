@@ -4,7 +4,7 @@ from guiyi_quant.indicators.subing_conditions import entry_conditions, exit_fact
 
 
 def entry(**kwargs):
-    values=dict(daily_direction='UP', minute_direction='UP', above_ema=True,
+    values=dict(daily_direction='UP', minute_angle=D('1'), above_ema=True,
                 near_zero_golden=True, volume_effective=True)
     return entry_conditions(**(values | kwargs))
 
@@ -14,7 +14,7 @@ def test_daily_permission(daily,met):
     assert entry(daily_direction=daily)['met'] is met
 
 
-@pytest.mark.parametrize('key,value', [('minute_direction','NEUTRAL'),('above_ema',False),
+@pytest.mark.parametrize('key,value', [('minute_angle',D('0')),('above_ema',False),
                                      ('near_zero_golden',False),('volume_effective',False)])
 def test_each_gate_is_required_on_same_bar(key,value):
     assert entry(**{key:value})['met'] is False
@@ -46,3 +46,12 @@ def test_missing_or_invalid_facts_stay_independent():
     assert r['below_previous_low'] is None and r['below_ema'] is True
     r=exit_facts(close=D('NaN'),previous_low=D('100'),ema21=D('100'),high_death=True)
     assert r['below_previous_low'] is None and r['below_ema'] is None and r['high_death'] is True
+
+
+@pytest.mark.parametrize('angle,met', [('-0.860449',False),('-0.000001',False),('0',False),('0.000001',True),('4.99',True),('5',True),('NaN',None),('Infinity',None)])
+def test_minute_entry_angle_zero_boundary(angle,met):
+    assert entry(minute_angle=D(angle))['met'] is met
+
+
+def test_missing_angle_is_unknown():
+    assert entry(minute_angle=None)['met'] is None

@@ -1,7 +1,7 @@
 """Research-only condition explanations. No position, action, order or fill."""
 from decimal import Decimal
 
-VERSION = 'subing_joint_conditions_v1'
+VERSION = 'subing_joint_conditions_v2'
 
 
 def _positive(value):
@@ -18,7 +18,7 @@ def exit_facts(*, close, previous_low, ema21, high_death):
     )
 
 
-def entry_conditions(*, daily_direction, minute_direction, above_ema, near_zero_golden, volume_effective):
+def entry_conditions(*, daily_direction, minute_angle, above_ema, near_zero_golden, volume_effective):
     """All minute gates refer to this completed bar; D1 is strict-before upstream.
 
     UNKNOWN is retained even with another failed gate, never silently accepted.
@@ -26,7 +26,7 @@ def entry_conditions(*, daily_direction, minute_direction, above_ema, near_zero_
     """
     checks = dict(
         daily_allows_long=(daily_direction != 'DOWN') if daily_direction in ('UP', 'NEUTRAL', 'DOWN') else None,
-        minute_up=(minute_direction == 'UP') if minute_direction in ('UP', 'NEUTRAL', 'DOWN') else None,
+        minute_positive=(minute_angle > 0) if isinstance(minute_angle, Decimal) and minute_angle.is_finite() else None,
         above_ema=above_ema if type(above_ema) is bool else None,
         new_near_zero_golden=near_zero_golden if type(near_zero_golden) is bool else None,
         volume_expanded=volume_effective if type(volume_effective) is bool else None,

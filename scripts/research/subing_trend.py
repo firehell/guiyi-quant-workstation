@@ -86,7 +86,7 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                     exits['previous_end'] = previous_bar.bar_end if previous_bar else None
                     entry = subing_conditions.entry_conditions(
                         daily_direction=daily['direction'] if daily else None,
-                        minute_direction=point.direction, above_ema=price.above_ema,
+                        minute_angle=Decimal(str(point.angle)) if point.angle is not None else None, above_ema=price.above_ema,
                         near_zero_golden=cross.near_zero_golden, volume_effective=volume_point.effective)
                     cross_fields['joint'] = dict(entry=entry, exits=exits,
                         daily_time=daily['time'] if daily else None,
