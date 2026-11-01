@@ -1,3 +1,11 @@
+10/31 当前部署恢复中：v1.16.51 已发布 main/tag/GitHub Release，exact 90fba4bd1869d0929b79300aaa54629dde824a80。
+原生 cohort d7bb069a… 已提交十服务绑定为51/gen46，但在 Feed 启动后的 verified 阶段出现 ReceivingLivenessError，
+原 attempt 保持 outcome_unknown，现由安全流程停驻；正式 API8000/Web5173 当前不可用，不能声明 Runtime Ready。
+完整停驻来源/ACK快照只读检查通过；现有恢复器不接纳此失败边界，正在独立干净修复树补有限恢复支持与新鲜度竞态修复。
+不重跑旧计划、不回滚绑定、不改原 unknown。内存有界历史改造仍在原开发区，未包含于本次51发布。
+44（运行SimNow）、48（11/2一次性任务）、50（当前恢复原件依赖）、51均暂留，未清理其恢复事实。
+以下为此前检查点：
+
 10/31 独立SimNow最后统一步骤已准备，实际切换安排为11/2 15:05（北京时间）一次性执行。
 48私有候选配置/SDK兼容/无Broker预检/render通过；现场原生window check全60休市、目标20261102通过，
 但原生plan返回RESULT_UNKNOWN，独立原生snapshot诊断明确定位ordinary_takeover.budget_binding拒绝：
