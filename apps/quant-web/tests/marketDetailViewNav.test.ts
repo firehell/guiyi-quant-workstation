@@ -39,6 +39,10 @@ test('every detail view uses the same frequency labels and exact supported choic
     const labels = findNodes(controls,n=>n.type==='button').map(nodeText)
     assert.ok(labels.includes('日线')); assert.ok(labels.includes('周线'))
     assert.equal(labels.includes('日K'),false)
+    if (view==='htdy' || view==='subing') assert.equal(labels.includes('1分钟'), false)
+    if (view==='free') assert.equal(labels.includes('1分钟'), true)
+    assert.ok(nodeText(root).includes('目标价:'))
+    assert.ok(nodeText(root).includes('吸筹价:'))
     if (view==='newow') assert.deepEqual(labels,['60分钟','日线','周线'])
     const week = findNode(controls,n=>n.type==='button'&&nodeText(n)==='周线')!
     ;(week.props.onClick as Function)()

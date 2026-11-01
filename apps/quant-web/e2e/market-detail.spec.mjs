@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
+import { buildNewowSplitFixtureEnvelopeForTest, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 import {
   detailBar,
@@ -938,3 +938,45 @@ test('cancelled older migration cannot activate its identity after a newer route
   await expect(page.locator('.detail-topbar__name')).toHaveText('螺纹钢')
   expect(requests.filter(url => url.pathname.endsWith('/bars/page') && url.searchParams.get('symbol') === 'jm')).toHaveLength(0)
 })
+
+
+for (const view of ['htdy', 'subing', 'free']) {
+  for (const width of [1188, 390]) {
+    test(`shared price and period toolbar ${view} width ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await installNewowProductFixtures(page)
+      await page.route('**/api/v1/market/newow/strategy-detail**', route => {
+        const url = new URL(route.request().url())
+        if (url.searchParams.get('section') !== 'chart') return route.fallback()
+        const raw = buildNewowSplitFixtureEnvelopeForTest(url)
+        const value = raw.chart.value, bar = value.bars.at(-1)
+        value.price_reference = {
+          surface: 'chart_legend', frequency: raw.meta.identity.frequency, as_of: raw.meta.as_of,
+          anchor_bar_end: bar.bar_end, physical_contract: bar.physical_contract,
+          segment_id: bar.segment_id, calculation_segment_id: bar.calculation_segment_id,
+          input_sha256: 'a'.repeat(64), formula_version: 'newow_chart_legend_hhv_llv10_page_v1',
+          adapter_version: 'newow_chart_price_projection_v1',
+          target: { raw: '3600', display: '3600.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
+          absorb: { raw: '3400', display: '3400.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
+        }
+        return route.fulfill({ json: raw })
+      })
+      await page.goto(`/market/chart?symbol=rb&view=${view}&series_kind=actual_dominant&frequency=60m`)
+      const toolbar = page.getByLabel('主图参考价格', { exact: true })
+      await expect(toolbar).toHaveCount(1)
+      await expect(toolbar).toContainText('目标价: 3600.00')
+      await expect(toolbar).toContainText('吸筹价: 3400.00')
+      const periods = toolbar.getByRole('group', { name: '周期', exact: true })
+      await expect(periods.getByRole('button', { name: '1分钟', exact: true })).toHaveCount(view === 'free' ? 1 : 0)
+      const selected = periods.getByRole('button', { name: '60分钟', exact: true })
+      await expect(selected).toHaveAttribute('aria-pressed', 'true')
+      const colors = await selected.evaluate(el => ({ background: getComputedStyle(el).backgroundColor, height: getComputedStyle(el).height }))
+      expect(colors.background).toBe('rgb(255, 255, 255)')
+      expect(colors.height).toBe('22px')
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await periods.getByRole('button', { name: '5分钟', exact: true }).click()
+      await expect.poll(() => new URL(page.url()).searchParams.get('frequency')).toBe('5m')
+      await expect(toolbar).toContainText('目标价: 3600.00')
+    })
+  }
+}

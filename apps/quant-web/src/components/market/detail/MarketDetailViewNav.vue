@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChartReferenceToolbar from './ChartReferenceToolbar.vue'
 import { computed, ref, watch } from 'vue'
 
 import { type MarketProductDirectoryItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
@@ -18,6 +19,9 @@ const props = withDefaults(defineProps<{
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
   newowFrequencies: readonly MarketFrequency[]
+  targetPrice?: string | null
+  absorbPrice?: string | null
+  referencePriceStatus?: string
   newowFrequencyInWorkspace?: boolean
 }>(), {
   seriesKinds: () => ['actual_dominant', 'contract'],
@@ -53,7 +57,7 @@ const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'new
   ? props.identity.newowMode === 'dual' ? 'dual' : props.identity.strategy ?? 'trend'
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
 const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInWorkspace) || ['subing', 'htdy', 'free'].includes(props.identity.view))
-const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : props.identity.view === 'subing' ? ['5m', '15m', '30m', '60m', '1d', '1w'] as MarketFrequency[] : props.frequencies)
+const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : ['subing', 'htdy'].includes(props.identity.view) ? ['5m', '15m', '30m', '60m', '1d', '1w'] as MarketFrequency[] : props.frequencies)
 const symbol = ref(props.identity.symbol)
 const contract = ref(props.identity.contract ?? '')
 
@@ -136,18 +140,13 @@ function periodLabel(value: MarketFrequency) {
 
 
 
-    <div v-if="showFrequencyControls" class="detail-view-nav__controls">
-      <div v-if="showFrequencyControls" class="detail-view-nav__group" role="group" aria-label="周期">
-        <button
-          v-for="frequency in availableFrequencies"
-          :key="frequency"
-          type="button"
-          :aria-pressed="identity.frequency === frequency"
-          :class="{ 'is-active': identity.frequency === frequency }"
-          @click="chooseFrequency(frequency)"
-        >{{ periodLabel(frequency) }}</button>
+    <ChartReferenceToolbar v-if="showFrequencyControls" :target-price="targetPrice" :absorb-price="absorbPrice" :status="referencePriceStatus">
+      <div class="newow-chart-frequency" role="group" aria-label="周期">
+        <button v-for="frequency in availableFrequencies" :key="frequency" type="button"
+          :aria-pressed="identity.frequency === frequency" :class="{ 'is-active': identity.frequency === frequency }"
+          @click="chooseFrequency(frequency)">{{ periodLabel(frequency) }}</button>
       </div>
-    </div>
+    </ChartReferenceToolbar>
   </nav>
 </template>
 

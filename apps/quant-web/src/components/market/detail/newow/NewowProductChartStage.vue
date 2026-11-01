@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ChartReferenceToolbar from '../ChartReferenceToolbar.vue'
 import NewowMainRiseProcessLabels from './NewowMainRiseProcessLabels.vue'
 import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
 import {layoutMainRiseProcessLabels} from '@/utils/newowProcessHintDisplay'
@@ -894,10 +895,7 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-selected-signal-id="selectedSignalId ?? ''"
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
   >
-    <div class="newow-product-chart-stage__reference-prices" aria-label="主图参考价格">
-      <span class="is-target" :title="targetPrice == null ? referencePriceStatus : '页面目标参考，非委托价格'">目标价: {{ newowReferencePrice(targetPrice) }}<small v-if="targetPrice == null"> · {{ referencePriceStatus }}</small></span>
-      <span class="is-absorb" :title="absorbPrice == null ? referencePriceStatus : '页面吸筹参考，非委托价格'">吸筹价: {{ newowReferencePrice(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ referencePriceStatus }}</small></span>
-      <div class="newow-product-chart-stage__reference-controls">
+    <ChartReferenceToolbar :target-price="targetPrice" :absorb-price="absorbPrice" :status="referencePriceStatus">
         <slot name="frequency-controls" />
         <slot name="reference-controls" />
         <details v-if="showTools" class="newow-product-chart-stage__tools">
@@ -927,8 +925,7 @@ defineExpose({ revealSignal, scrollToLatest })
             <p v-if="!comparisonActive && referenceTradesComplete === false" class="newow-product-chart-stage__reference-record-status" role="status">单笔参考收益仅显示已核对记录；未显示收益不代表没有交易。下方参考记录可按需加载。</p>
           </div>
         </details>
-      </div>
-    </div>
+    </ChartReferenceToolbar>
     <p v-if="!comparisonActive && referenceStatsError" class="newow-product-chart-stage__reference-record-status" role="status">清仓参考收益读取未完成：{{ referenceStatsError }} <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">重试</button></p>
     <div v-if="comparisonActive" class="newow-product-chart-stage__dual-summary" aria-label="双策略本视图摘要" :title="referenceTradesComplete === false ? '历史记录按需分页，未证明覆盖全部图表信号；仅显示已核对单笔。' : `统计仅含已绘制清仓标签对应的 ${comparisonStats.samples} 笔已完成参考交易，不含融合配对收益`">主导：{{ comparisonDominant === 'trend' ? '趋势' : comparisonDominant === 'oscillation' ? '震荡' : '—' }} · 上=趋势 下=震荡 · 本视图 {{ comparisonStats.count }} 个信号 · <template v-if="referenceTradesComplete !== false">平均盈亏 {{ comparisonStats.average }} · 胜率 {{ comparisonStats.winRate }} · 最大 {{ comparisonStats.maximum }}</template><template v-else>参考收益需完整记录，当前不显示统计 <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">{{ referenceStatsLoading ? '正在核对完整记录…' : '读取完整参考统计' }}</button><span v-if="referenceStatsError" role="alert">{{ referenceStatsError }}</span></template> · 背景深色=趋势蓝带</div>
     <Teleport defer :to="channelControlsTarget ?? 'body'" :disabled="!channelControlsTarget || fullscreen">
@@ -999,13 +996,8 @@ defineExpose({ revealSignal, scrollToLatest })
 <style scoped>
 .newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:0 6px;height:16px;min-height:16px;max-height:16px;box-sizing:border-box;background:#00ff00;color:#003300;font:bold 10px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
 
-.newow-product-chart-stage__reference-prices { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; padding:5px 12px; border-bottom:1px solid #eef0f3; background:#fafafa; font-size:11px; font-weight:600; }
-.newow-product-chart-stage__reference-controls { margin-left:auto; display:flex; align-items:center; gap:8px; }
 .newow-product-chart-stage__tools > summary { min-height:22px; padding:0 6px; line-height:22px; cursor:pointer; white-space:nowrap; }
 .newow-product-chart-stage__tools-body { position:absolute; right:0; top:100%; width:min(560px,calc(100vw - 48px)); padding:8px; border:1px solid var(--gy-border); border-radius:6px; background:var(--gy-bg-panel); box-shadow:0 4px 14px #0002; font-weight:400; }
-.newow-product-chart-stage__reference-prices .is-target { color:#ff6935; }
-.newow-product-chart-stage__reference-prices .is-absorb { color:#34c759; }
-.newow-product-chart-stage__reference-prices small { font-weight:400; }
 
 .newow-product-chart-stage { --gy-chart-bg:var(--gy-bg-panel); --gy-chart-text:var(--gy-text-muted); --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:auto; min-height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:var(--gy-bg-panel); }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
