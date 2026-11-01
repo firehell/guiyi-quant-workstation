@@ -158,6 +158,7 @@ class StreamAlertMessageSource(RedisAlertMessageSource):
 
 class RedisAlertHeartbeatStore:
     _UNRESOLVED_KEY = "alert:coverage-unresolved:v2"
+    _CLOSEOUT_KEY = "alert:coverage-closeouts:v1"
 
     def __init__(self, redis: Any) -> None:
         self._redis = redis
@@ -185,6 +186,31 @@ class RedisAlertHeartbeatStore:
         payload = {"schema_version": 2, "unresolved": value}
         if self._redis.set(self._UNRESOLVED_KEY, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) is not True:
             raise RuntimeError("ALERT_COVERAGE_PERSIST_FAILED")
+
+    def close_not_due(self, expected, resolutions, *, assert_owned, replacements=None):
+        from app.alerts.coverage_closeout import merge_closeout
+        with self._redis.pipeline() as pipe:
+            pipe.watch(self._UNRESOLVED_KEY, self._CLOSEOUT_KEY)
+            raw = pipe.get(self._UNRESOLVED_KEY)
+            if raw is not None and len(raw) > 4 * 1024 * 1024:
+                raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_INVALID")
+            if raw is None or json.loads(raw) != {"schema_version": 2, "unresolved": expected}:
+                raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_STALE")
+            raw_archive = pipe.get(self._CLOSEOUT_KEY)
+            if raw_archive is not None and len(raw_archive) > 8 * 1024 * 1024:
+                raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_INVALID")
+            archive = json.loads(raw_archive) if raw_archive is not None else {"schema_version": 1, "resolutions": {}}
+            remaining, archive = merge_closeout(expected, resolutions, archive, replacements=replacements)
+            encoded_archive = json.dumps(archive)
+            if len(encoded_archive.encode()) > 8 * 1024 * 1024:
+                raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_INVALID")
+            assert_owned()
+            pipe.multi()
+            pipe.set(self._UNRESOLVED_KEY, json.dumps({"schema_version": 2, "unresolved": remaining}))
+            pipe.set(self._CLOSEOUT_KEY, encoded_archive)
+            if pipe.execute() != [True, True]:
+                raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_UNKNOWN")
+        return remaining
 
 
 class RedisAlertRuntimeStatusStore:

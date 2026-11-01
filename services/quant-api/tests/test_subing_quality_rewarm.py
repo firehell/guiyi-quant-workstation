@@ -304,6 +304,9 @@ def test_weekly_not_due_is_distinct_from_missing_authority(outcome):
             raise MarketReadWindowError("TRADING_CALENDAR_MISSING")
         return None if outcome == "unfinished" else (DAY, END)
     reader.completed_calendar_week = completed
+    reader.calendar_week_facts = lambda **kwargs: tuple(
+        (kwargs["week_monday"] + timedelta(days=i), True) for i in range(7)
+    )
     if outcome in {"holiday_week", "holiday_day"}:
         reader.completed_calendar_week = lambda **kwargs: None
         reader.completed_trading_days = lambda **kwargs: ()
