@@ -16,31 +16,34 @@ INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
 
 
-def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1, execution_model: str = 'completed_close') -> dict:
+def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1, execution_model: str = 'completed_close', research_profile: str | None = None) -> dict:
     """Replay verified complete 1m input; observations contain no financial overrides.
 
     Historical confirmation is assumed at bar end. Fills use the strictly later
     completed minute's close +/- slippage ticks, inside OHLC and daily limits.
     theoretical_open instead assumes up to three lots at a strictly later minute
     start, using open plus adverse slippage without future OHLCV filtering.
-    Its liquidity is assumed, not evidenced.
+    Its liquidity is assumed, not evidenced. Fixed research_profile scenarios
+    alter only the declared decision parameters and carry separate identities.
     The caller proves coverage, rank1 ownership and historical execution sources.
     """
     if type(slippage_ticks) is not int or slippage_ticks not in (1, 2, 3):
         raise ValueError('ACCOUNT_SLIPPAGE_SCENARIO_INVALID')
     if execution_model not in ('completed_close', 'theoretical_open'):
         raise ValueError('ACCOUNT_EXECUTION_MODEL_INVALID')
+    if research_profile is not None and execution_model != 'theoretical_open':
+        raise ValueError('ACCOUNT_RESEARCH_PROFILE_REQUIRES_THEORETICAL_OPEN')
     with localcontext() as ctx:
         ctx.prec = 28
-        return _replay(executions, observations, run_id, slippage_ticks, execution_model)
+        return _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile)
 
 
-def _replay(executions, observations, run_id, slippage_ticks, execution_model):
+def _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile):
     at_open = execution_model == 'theoretical_open'
     if not executions:
         raise ValueError('ACCOUNT_INPUT_EMPTY')
     contract = executions[0].bar.physical_contract
-    model = DecisionModel(contract, run_id)
+    model = DecisionModel(contract, run_id, research_profile=research_profile)
     prior = None
     observation_ids = set()
     multiplier = executions[0].facts.multiplier
@@ -223,7 +226,12 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model):
         else:
             daily.append(row)
     last = executions[-1]
-    return _wire(dict(version=f'subing_jm30_account_theoretical_open_v2_slip{slippage_ticks}' if at_open else (VERSION if slippage_ticks == 1 else f'{VERSION}_research_slip{slippage_ticks}'),contract=contract,run_id=run_id,
+    version = f'subing_jm30_account_theoretical_open_v2_slip{slippage_ticks}' if at_open else (VERSION if slippage_ticks == 1 else f'{VERSION}_research_slip{slippage_ticks}')
+    identity = {}
+    if research_profile is not None:
+        version += f'_parameter_stability_v1_{research_profile}'
+        identity = dict(research_profile=research_profile, research_parameters=dict(window_max_age=model.window_age, stop_buffer=model.stop_buffer, target_r=model.target_r))
+    return _wire(dict(version=version,contract=contract,run_id=run_id, **identity,
         status='OPEN' if layers else 'PENDING' if model.pending else 'COMPLETED',
         summary=dict(cash=cash,equity=last_equity,net_pnl=last_equity-INITIAL_CASH,fees=fees,open_quantity=len(layers),fill_count=len(fills),closed_round_count=len(closed_rounds)),
         initial_cash=INITIAL_CASH,cash=cash,equity=last_equity,unrealized=last_equity-cash,fees=fees,

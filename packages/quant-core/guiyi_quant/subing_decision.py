@@ -11,10 +11,21 @@ from decimal import Decimal
 from hashlib import sha256
 import json
 import re
+from types import MappingProxyType
 
 from .indicators.subing_conditions import EntryWindow, observe_entry
 
 VERSION = 'subing_jm30_decision_v6'
+RESEARCH_VERSION = VERSION + '_parameter_stability_v1'
+# Fixed one-at-a-time scenarios. Values are (window age, stop points, target R).
+RESEARCH_PROFILES = MappingProxyType({
+    'window4': (4, Decimal('13'), Decimal('1')),
+    'window6': (6, Decimal('13'), Decimal('1')),
+    'stop11': (5, Decimal('11'), Decimal('1')),
+    'stop15': (5, Decimal('15'), Decimal('1')),
+    'target0_8': (5, Decimal('13'), Decimal('0.8')),
+    'target1_2': (5, Decimal('13'), Decimal('1.2')),
+})
 
 
 def _time(value):
@@ -96,11 +107,17 @@ def daily_allows(direction, side):
 
 
 class DecisionModel:
-    def __init__(self, contract: str, run_id: str):
+    def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None):
         if not isinstance(contract, str) or not re.fullmatch(r'JM[0-9]{4}', contract):
             raise ValueError('CONTRACT_INVALID')
         if not isinstance(run_id, str) or not run_id.strip():
             raise ValueError('RUN_INVALID')
+        if research_profile is not None and (type(research_profile) is not str or research_profile not in RESEARCH_PROFILES):
+            raise ValueError('DECISION_RESEARCH_PROFILE_INVALID')
+        self.research_profile = research_profile
+        self.window_age, self.stop_buffer, self.target_r = RESEARCH_PROFILES.get(research_profile, (5, Decimal('13'), Decimal('1')))
+        self.version = RESEARCH_VERSION if research_profile is not None else VERSION
+        self.profit_reason = 'PROFIT_1R' if self.target_r == 1 else 'PROFIT_' + str(self.target_r).replace('.', '_') + 'R'
         self.contract, self.run_id = contract, run_id
         self.layers = []
         self.pending = None
@@ -132,8 +149,11 @@ class DecisionModel:
         self.sequence = 0
         self.events, self.results, self.fingerprints = [], {}, {}
 
+    def _research_fields(self):
+        return {'research_profile': self.research_profile} if self.research_profile is not None else {}
+
     def state(self):
-        return _wire(dict(contract=self.contract, run_id=self.run_id, version=VERSION,
+        return _wire(dict(contract=self.contract, run_id=self.run_id, version=self.version, **self._research_fields(),
             layers=self.layers, quantity=len(self.layers), pending=self.pending,
             clear_reasons=self.clear_reasons, exit_layers=self.exit_layers,
             side=self.side, last_flat_at=self.last_flat_at, latest_frame=self.latest_frame, latest_frame_at=self.latest_frame_at,
@@ -280,7 +300,7 @@ class DecisionModel:
                 self.windows[entry_side], candidate = observe_entry(self.windows[entry_side], contract=self.contract, bar_end=at,
                     near_zero_golden=view['near_zero_golden'], daily_direction=daily,
                     minute_angle=_number(view['minute_angle'], nullable=True), above_ema=view['above_ema'],
-                    volume_effective=view['volume_effective'])
+                    volume_effective=view['volume_effective'], max_age=self.window_age)
                 if entry_side == side:
                     entry = candidate
             if m['pullback_invalidated'] or not self.technical_ready:
@@ -294,7 +314,7 @@ class DecisionModel:
             eligible = [layer['layer_id'] for layer in reversed(self.layers) if layer['kind'] == 'ADD'
                 and layer_nets.get(layer['layer_id']) is not None and layer_nets[layer['layer_id']] > 0]
             if self.entry_volume_tier == 'TIER_1':
-                self.clear_reasons = list(dict.fromkeys(self.clear_reasons + ['PROFIT_1R_TIER1_CLEAR']))
+                self.clear_reasons = list(dict.fromkeys(self.clear_reasons + [self.profit_reason + '_TIER1_CLEAR']))
                 self.profit_targets = []
             else:
                 self.profit_targets = eligible if fast else eligible[:1]
@@ -329,7 +349,7 @@ class DecisionModel:
                 # new targets executable only strictly after this observation.
                 superseded = self.pending['decision_id']
                 replacement = self._intent(at, 'CLOSE', self.exit_layers, self.clear_reasons or
-                    list(dict.fromkeys(self.pending['reasons'] + (['PROFIT_1R'] if self.profit_targets else []) + (['ADD_PROTECTION'] if protected else []))))
+                    list(dict.fromkeys(self.pending['reasons'] + ([self.profit_reason] if self.profit_targets else []) + (['ADD_PROTECTION'] if protected else []))))
                 replacement['supersedes_decision_id'] = superseded
                 actions.append(replacement)
             if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and (reduction_trigger or profit_trigger or base_net is None or base_net <= 0 or sign * (close - self.pending['breakout_level']) <= 0)) or e['day_end_window'] or not daily_allows(e['daily_direction'], side) or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
@@ -339,7 +359,7 @@ class DecisionModel:
             return actions
         if self.exit_layers:
             actions.append(self._intent(at, 'CLOSE', self.exit_layers,
-                self.clear_reasons or (['ADD_PROTECTION'] if protected else []) + (['PROFIT_1R'] if self.profit_targets else []) + (['ORDINARY_REDUCTION'] if reduction_trigger else []) or ['EXIT_OBLIGATION']))
+                self.clear_reasons or (['ADD_PROTECTION'] if protected else []) + ([self.profit_reason] if self.profit_targets else []) + (['ORDINARY_REDUCTION'] if reduction_trigger else []) or ['EXIT_OBLIGATION']))
             return actions
         if self.clear_reasons and not self.layers:
             self.clear_reasons = []
@@ -363,7 +383,7 @@ class DecisionModel:
                 blocked.append('ENTRY_VOLUME_TIER_NOT_PROVEN')
             ema = _number(signal_frame['ema21'], nullable=True, positive=True)
             extreme = _number(signal_frame['low'], nullable=True, positive=True)
-            stop = ((min(ema, extreme) - Decimal('13')) if side == 'LONG' else (max(ema, extreme) + Decimal('13'))) if ema is not None and extreme is not None else None
+            stop = ((min(ema, extreme) - self.stop_buffer) if side == 'LONG' else (max(ema, extreme) + self.stop_buffer)) if ema is not None and extreme is not None else None
             if stop is None or stop <= 0 or sign * (close - stop) <= 0:
                 blocked.append('INITIAL_STOP_NOT_PROVEN')
             if blocked:
@@ -430,7 +450,7 @@ class DecisionModel:
                 self.initial_stop = self.pending['initial_stop']
                 self.entry_volume_tier = self.pending['entry_volume_tier']
                 self.risk_distance = sign * (price - self.initial_stop)
-                self.profit_target = price + sign * self.risk_distance
+                self.profit_target = price + sign * self.risk_distance * self.target_r
                 self.completed_m30 = 0
                 self.fast_deadline = None
                 self.profit_taken = False
@@ -466,16 +486,18 @@ class DecisionModel:
         return [dict(kind='ACK_FILLED', decision_id=e['decision_id'], layer_ids=e['layer_ids'], price=price)]
 
     def checkpoint(self):
-        payload = dict(version=VERSION, contract=self.contract, run_id=self.run_id, events=deepcopy(self.events))
+        payload = dict(version=self.version, contract=self.contract, run_id=self.run_id, events=deepcopy(self.events), **self._research_fields())
         return {**payload, 'sha256': _digest(payload)}
 
     @classmethod
     def restore(cls, checkpoint):
-        _fields(checkpoint, 'version contract run_id events sha256')
+        extra = ' research_profile' if type(checkpoint) is dict and 'research_profile' in checkpoint else ''
+        _fields(checkpoint, 'version contract run_id events sha256' + extra)
         payload = {k: v for k, v in checkpoint.items() if k != 'sha256'}
-        if checkpoint['version'] != VERSION or _digest(payload) != checkpoint['sha256'] or type(checkpoint['events']) is not list:
+        expected_version = RESEARCH_VERSION if extra else VERSION
+        if (extra and checkpoint['research_profile'] is None) or checkpoint['version'] != expected_version or _digest(payload) != checkpoint['sha256'] or type(checkpoint['events']) is not list:
             raise ValueError('CHECKPOINT_INVALID')
-        model = cls(checkpoint['contract'], checkpoint['run_id'])
+        model = cls(checkpoint['contract'], checkpoint['run_id'], research_profile=checkpoint.get('research_profile'))
         for event in checkpoint['events']:
             model.apply(event)
         return model

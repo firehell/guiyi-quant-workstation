@@ -49,12 +49,16 @@ class EntryWindow:
 
 
 def observe_entry(state, *, contract, bar_end, near_zero_golden, daily_direction,
-                  minute_angle, above_ema, volume_effective):
-    """One research opportunity per near-axis cross; ages 0..5 inclusive.
+                  minute_angle, above_ema, volume_effective, max_age=5):
+    """One research opportunity per near-axis cross; default ages 0..5 inclusive.
+
+    max_age 4/6 is for explicitly identified research profiles only.
 
     Caller supplies complete, validated consecutive physical 30m bars. Session
     breaks do not count as bars. No unapproved early price/volume/death-cross gate.
     """
+    if type(max_age) is not int or max_age not in (4, 5, 6):
+        raise ValueError('ENTRY_RESEARCH_WINDOW_INVALID')
     if not contract or state.contract != contract:
         raise ValueError('ENTRY_IDENTITY_CHANGED')
     if bar_end.tzinfo is None or bar_end.utcoffset() is None or (state.last_end is not None and bar_end <= state.last_end):
@@ -68,16 +72,16 @@ def observe_entry(state, *, contract, bar_end, near_zero_golden, daily_direction
         valid = None
     else:
         if near_zero_golden:
-            replaced = source is not None and age <= 5
+            replaced = source is not None and age <= max_age
             source, age = bar_end, 0
-        if source is not None and age > 5:
+        if source is not None and age > max_age:
             source, age = None, None
         valid = source is not None
     result = entry_conditions(daily_direction=daily_direction, minute_angle=minute_angle,
         above_ema=above_ema, golden_window=valid, volume_effective=volume_effective)
     consumed = result['met'] is True
-    expired = valid is True and age == 5 and not consumed
-    result['window'] = dict(source_end=source, age=age, remaining=5-age if age is not None else None,
+    expired = valid is True and age == max_age and not consumed
+    result['window'] = dict(source_end=source, age=age, remaining=max_age-age if age is not None else None,
         consumed=consumed, replaced=replaced, expired_after_bar=expired,
         reason='MACD_UNKNOWN' if valid is None else None)
     if consumed or expired:
