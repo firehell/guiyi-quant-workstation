@@ -14,7 +14,7 @@ import re
 
 from .indicators.subing_conditions import EntryWindow, observe_entry
 
-VERSION = 'subing_jm30_decision_v2'
+VERSION = 'subing_jm30_decision_v3'
 
 
 def _time(value):
@@ -228,6 +228,16 @@ class DecisionModel:
             self.pullback = None
         actions = []
         if self.pending:
+            if self.pending['kind'] == 'CLOSE' and self.clear_reasons and (
+                    set(self.pending['layer_ids']) != set(self.exit_layers)
+                    or self.pending['reasons'] != self.clear_reasons):
+                # Offline intent replacement, not a broker cancel acknowledgement.
+                # A fresh identity/time preserves the original request and makes
+                # new targets executable only strictly after this observation.
+                superseded = self.pending['decision_id']
+                replacement = self._intent(at, 'CLOSE', self.exit_layers, self.clear_reasons)
+                replacement['supersedes_decision_id'] = superseded
+                actions.append(replacement)
             if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and reduction_trigger) or e['day_end_window'] or e['daily_direction'] not in ('UP', 'NEUTRAL') or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
                 if not self.pending['cancel_requested']:
                     self.pending['cancel_requested'] = True

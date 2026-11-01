@@ -193,3 +193,21 @@ def test_add_fill_minute_does_not_reuse_prefill_close_for_protection():
     add_at=r['fills'][-1]['fill_at']
     same=[x for x in r['trace'] if x['facts']['at']==add_at and x['facts']['kind']=='observe']
     assert not same or all(not x['actions'] for x in same)
+
+
+@pytest.mark.parametrize('capacity', ['100', '1'])
+def test_pending_reduction_upgrades_to_clear_at_first_executable_minute(capacity):
+    xs,obs=inputs([100,101,102,103,104,105,106,107,108,109,70,71,72,73],frames={
+        0:dict(near_zero_golden=True),2:dict(qualified_pullback=True,pullback_high='102'),
+        5:dict(qualified_pullback=True,pullback_high='105'),9:dict(below_previous_low=True)})
+    xs[10]=replace(xs[10],bar=replace(xs[10].bar,volume=D('0')))
+    xs[11]=replace(xs[11],bar=replace(xs[11].bar,volume=D(capacity)))
+    r=replay(xs,obs,'upgrade')
+    closes=[f for f in r['fills'] if f['action']=='CLOSE']
+    assert closes[0]['quantity']==min(int(capacity),3)
+    assert closes[0]['fill_at']==xs[11].bar.bar_end.isoformat()
+    assert closes[0]['reasons']==['DAY_LOSS','ROUND_LOSS']
+    assert closes[0]['decision_at']==xs[10].bar.bar_end.isoformat()
+    assert all(f['decision_id']==closes[0]['decision_id'] for f in closes)
+    assert r['open_layers']==[] and r['pending'] is None
+    assert DecisionModel.restore(r['decision_checkpoint']).checkpoint()==r['decision_checkpoint']

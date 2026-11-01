@@ -1,6 +1,6 @@
 # 焦煤苏冰3.2：持仓决策与离线动作回放
 
-本轮实现独立离线决策内核 `subing_jm30_decision_v2`。只处理JM多头、固定30m技术条件与完成1m检查，首仓1手、每次加1手、最多3手。
+本轮实现独立离线决策内核 `subing_jm30_decision_v3`。只处理JM多头、固定30m技术条件与完成1m检查，首仓1手、每次加1手、最多3手。
 不创建Broker订单，不接正式Runtime，不计算历史收益；完整执行、费用及账户事实适配见[3.3历史账户回放](subing-account-replay.md)。
 
 ## 输入与职责
@@ -47,3 +47,5 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 
 验证入口：`tests/unit/subing_decision`；回归范围：`subing_conditions`、`subing_trend`、`subing_macd`、`subing_volume`、`subing_price`。
 3.2本身仅证明决策回放；实际行情、费用及账户验证由[3.3历史账户回放](subing-account-replay.md)提供。v2进一步明确加仓保护必须来自成交后严格更晚的完成1m，旧v1日志保留其原身份，不用当前版本冒充原回放。
+
+v3修复未决减仓升级全清：全清观察以新的CLOSE意图替换旧未决CLOSE，动作保留`supersedes_decision_id`关联，时间为本次全清观察；全部当前剩余层在严格后续可成交1m一起参与执行，仍受成交量约束。已成交层不会重新退出，相同义务不会反复替换。此为离线意图原子替换，不表示Broker撤单或确认；旧意图ACK因身份失效拒绝，不能据此接入真实异步订单。旧v2检查点保留原身份，不冒充v3恢复。

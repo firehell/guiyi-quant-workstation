@@ -279,3 +279,50 @@ def test_current_unreconciled_observation_blocks_despite_earlier_success():
     result=m.apply(e)
     assert result['actions'][0]['kind']=='REJECT'
     assert 'RECONCILIATION_REQUIRED' in result['actions'][0]['reasons']
+
+
+@pytest.mark.parametrize('cause', ['round_loss', 'day_loss', 'below_ema', 'day_end'])
+def test_pending_close_superseded_by_full_clear_with_fresh_identity(cause):
+    m=three_layers()
+    m.apply(frame(90,below_previous_low=True))
+    old=dict(m.pending)
+    e=observation(91,close='200')
+    if cause in ('round_loss','day_loss'):e[cause]=True
+    elif cause=='below_ema':e=frame(91,below_ema=True)
+    else:e.update(day_end_window=True,remaining_net='0')
+    result=m.apply(e)
+    new=dict(m.pending)
+    assert new['decision_id']!=old['decision_id']
+    assert new['at']>old['at']
+    assert set(new['layer_ids'])=={l['layer_id'] for l in m.layers}
+    assert result['actions'][0]['supersedes_decision_id']==old['decision_id']
+    assert result['actions'][0]['kind']=='CLOSE'
+    assert m.apply(e)==result
+    restored=DecisionModel.restore(m.checkpoint())
+    assert restored.checkpoint()==m.checkpoint()
+    stale=ack(m,92,targets=old['layer_ids']);stale['decision_id']=old['decision_id']
+    checkpoint=m.checkpoint()
+    with pytest.raises(ValueError):m.apply(stale)
+    assert m.checkpoint()==checkpoint
+    with pytest.raises(ValueError):m.apply(ack(m,91))
+    a=ack(m,92,targets=[new['layer_ids'][0]])
+    m.apply(a);restored.apply(a)
+    assert restored.checkpoint()==m.checkpoint()
+    assert len(m.layers)==2 and len(m.pending['layer_ids'])==2
+    assert m.pending['decision_id']==new['decision_id']
+
+
+def test_clear_upgrade_preserves_partial_fills_and_does_not_repeat():
+    m=three_layers()
+    m.apply(frame(90,below_previous_low=True,high_death=True))
+    old_id=m.pending['decision_id']
+    already=m.pending['layer_ids'][0]
+    m.apply(ack(m,91,targets=[already]))
+    result=m.apply(observation(92,close='200',round_loss=True))
+    assert result['actions'][0]['supersedes_decision_id']==old_id
+    new_id=m.pending['decision_id']
+    assert len(m.pending['layer_ids'])==2 and already not in m.pending['layer_ids']
+    assert m.apply(observation(93,close='200',round_loss=True))['actions']==[]
+    assert m.pending['decision_id']==new_id
+    m.apply(ack(m,94))
+    assert not m.layers and m.cooldown==10
