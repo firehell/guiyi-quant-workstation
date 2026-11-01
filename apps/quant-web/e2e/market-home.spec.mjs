@@ -705,7 +705,7 @@ for (const width of [1440, 390]) {
     const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
     await expect(row).toBeVisible()
     const quality = row.locator('.list-quality-note')
-    await expect(quality).toHaveText('历史日线有缺价；日趋势重新预热中')
+    await expect(quality).toHaveText('历史日线曾有无效价格；日趋势重新预热中')
     await expect(quality).toBeVisible()
     expect((await quality.boundingBox()).height).toBeGreaterThan(15)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -841,3 +841,22 @@ test('a changed background message snapshot waits for clicking the update notice
   await expect(page.locator('.market-message-list time')).not.toHaveAttribute('datetime', firstTime)
   expect(requests.pageErrors).toEqual([])
 })
+
+
+for (const width of [1440, 390]) {
+  for (const rewarming of [false, true]) {
+    test(`weekly source quality disclosure rewarming=${rewarming} at width ${width}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      const reasons = ['weekly_price_interrupted', ...(rewarming ? ['weekly_rewarming'] : [])]
+      await mockMarketHomeApi(page, [], events(), overviewWithDailyGap(reasons))
+      await page.goto('/market')
+      const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
+      const quality = row.locator('.list-quality-note')
+      await expect(quality).toHaveText(rewarming
+        ? '历史周线曾受源价格异常影响；周趋势重新预热中'
+        : '历史周线曾受源价格异常影响；当前周趋势使用异常后的连续数据')
+      await expect(quality).toBeVisible()
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+    })
+  }
+}

@@ -70,8 +70,19 @@ missing endpoints MUST fail the affected history read; corrupt partitions or mis
 The last authoritative D1 source-exception endpoint, including `PRICE_UNAVAILABLE` and
 `NONPOSITIVE_CLOSE`, is a calculation boundary. D1 metrics SHALL use only the continuous suffix
 after that endpoint and retain their existing warm-up/null rules. No price is synthesized and no
-older valid Bars are fetched to replace exceptional endpoints. W1 remains an
-independent strict read with no D1 substitution. Missing W1 history disables only weekly metrics and emits `weekly_history_unavailable`; source-price failures emit `weekly_price_unavailable`. Newow formulas and reference trades are unchanged.
+older valid Bars are fetched to replace exceptional endpoints. W1 SHALL use the existing MDS `query_contract_weekly_replay_quality` with
+`weekly-d1-quality-v2` for the same physical owner and authoritative target-day Session close.
+The full lifecycle quality window SHALL be validated before retaining the last 80 weekly
+endpoints (normal Bars and interruptions together). Only persisted W1 Bars matching their
+complete D1 source are accepted; no W1 Bar is synthesized. The latest proved anomalous week
+is a calculation boundary. Weekly metrics use only the continuous suffix after that boundary,
+with unchanged EMA21 readiness (22 valid consecutive weeks for adjacent EMA comparison).
+The metric cache identity SHALL include the validated W1 Bars and interruption evidence.
+Unknown missing endpoints disable weekly metrics; duplicate/extra endpoints, missing authority
+or contradictory source values SHALL fail closed. HTTP reads SHALL NOT rebuild projections.
+An interruption emits `weekly_price_interrupted`; insufficient post-interruption input also emits
+`weekly_rewarming`. PC Web SHALL distinguish recovered historical source anomalies from
+rewarming and unexplained missing history. Missing W1 history disables only weekly metrics and emits `weekly_history_unavailable`; source-price failures emit `weekly_price_unavailable`. Newow formulas and reference trades are unchanged.
 
 An item with a valid target-day D1 Bar SHALL remain a participant even when its historical window
 contains source exceptions. Its `reason_codes` SHALL include `daily_price_interrupted`, and
@@ -79,10 +90,11 @@ contains source exceptions. Its `reason_codes` SHALL include `daily_price_interr
 If D1 history has unknown missing endpoints, a separately verified target-day quote MAY remain
 visible, but ALL D1 metrics MUST be null/unavailable and `daily_history_unavailable` MUST be shown,
 never normal rewarming. This does not repair the historical data or prove strategy readiness.
-Only an error with both code and reason `DATASET_OR_PARTITION_MISSING` is eligible; extra, duplicate,
+For the D1 quote-only fallback, only an error with both code and reason
+`DATASET_OR_PARTITION_MISSING` is eligible; extra, duplicate,
 wrong-day endpoints and missing Calendar/Session remain integrity failures. The headline SHALL identify participants as target-day D1 quote
 availability, not Newow strategy readiness or complete historical indicator coverage.
-The metric policy identity SHALL be `physical_owner_quality_v4`, invalidating older projections
+The metric policy identity SHALL be `physical_owner_quality_v5`, invalidating older projections
 without rewriting production data or projection files from HTTP reads.
 
 #### Scenario: A historical gap is followed by a valid target-day quote

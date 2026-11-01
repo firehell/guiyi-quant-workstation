@@ -30,11 +30,20 @@ test('volume ratios use two decimals without exposing binary arithmetic noise', 
 test('source interruption disclosure keeps recovered prices distinct from strategy readiness', async () => {
   const { marketHomeQualityNotice } = await import('../src/utils/marketHomePresentation.ts')
   assert.equal(marketHomeQualityNotice([]), null)
-  assert.equal(marketHomeQualityNotice(['daily_price_interrupted']), '历史日线有缺价；日线指标仅使用缺价后的连续数据')
-  assert.equal(marketHomeQualityNotice(['daily_price_interrupted', 'daily_rewarming']), '历史日线有缺价；日趋势重新预热中')
+  assert.equal(marketHomeQualityNotice(['daily_price_interrupted']), '历史日线曾有无效价格；当前指标使用异常后的连续数据')
+  assert.equal(marketHomeQualityNotice(['daily_price_interrupted', 'daily_rewarming']), '历史日线曾有无效价格；日趋势重新预热中')
 })
 
 test('missing history stays unavailable rather than being labeled normal warmup', async () => {
   const { marketHomeQualityNotice } = await import('../src/utils/marketHomePresentation.ts')
   assert.equal(marketHomeQualityNotice(['daily_history_unavailable', 'weekly_history_unavailable']), '日线历史不完整；日线指标不可用。周线历史不完整；周趋势不可用')
+})
+
+
+test('weekly quality distinguishes recovery, rewarming and missing history', async () => {
+  const { marketHomeQualityNotice } = await import('../src/utils/marketHomePresentation.ts')
+  assert.equal(marketHomeQualityNotice(['weekly_price_interrupted']), '历史周线曾受源价格异常影响；当前周趋势使用异常后的连续数据')
+  assert.equal(marketHomeQualityNotice(['weekly_price_interrupted', 'weekly_rewarming']), '历史周线曾受源价格异常影响；周趋势重新预热中')
+  assert.equal(marketHomeQualityNotice(['weekly_history_unavailable', 'weekly_price_interrupted', 'weekly_rewarming']), '周线历史不完整；周趋势不可用')
+  assert.equal(marketHomeQualityNotice(['daily_price_interrupted', 'weekly_price_interrupted', 'weekly_rewarming']), '历史日线曾有无效价格；当前指标使用异常后的连续数据。历史周线曾受源价格异常影响；周趋势重新预热中')
 })

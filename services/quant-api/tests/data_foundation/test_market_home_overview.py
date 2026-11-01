@@ -727,6 +727,22 @@ class _FakeMarketDataService:
             symbol=symbol, contract=contract, trading_day=trading_day, limit=limit,
         )
 
+    def session_windows(self, *, symbol, trading_day):
+        from types import SimpleNamespace
+        return (SimpleNamespace(end=datetime.combine(trading_day, datetime.min.time(), UTC)),)
+
+    def query_contract_weekly_replay_quality(
+        self, *, symbol, contract, through, cutoff, classification_version,
+    ):
+        from app.market_data.domain import BarFrequency
+        assert classification_version == "weekly-d1-quality-v2"
+        assert cutoff == datetime.combine(through, datetime.min.time(), UTC)
+        bars = self.query_physical_bars_as_of(
+            symbol=symbol, contract=contract, frequency=BarFrequency.W1,
+            trading_day=through, limit=80,
+        )
+        return tuple(bar for bar in bars if bar.bar_end <= cutoff), getattr(self, "weekly_gaps", {}).get(symbol, ())
+
     def list_latest_dominants(self) -> tuple[DominantContractSummary, ...]:
         self.dominant_reads += 1
         return self.dominants
@@ -932,8 +948,8 @@ def test_verified_metric_cache_requires_current_complete_inputs(monkeypatch, cha
         last = source["jm"][-1]
         source["jm"] = source["jm"][:-1] + (replace(last, volume=last.volume + 1),)
     elif change == "quality":
-        query = module._query_through_target
-        monkeypatch.setattr(module, "_query_through_target", lambda *args, **kwargs: (query(*args, **kwargs)[0], ("weekly_price_unavailable",)))
+        query = module._query_weekly_through_target
+        monkeypatch.setattr(module, "_query_weekly_through_target", lambda *args, **kwargs: (*query(*args, **kwargs)[:2], ("weekly_price_unavailable",)))
     elif change == "contract":
         market.target_owners = {"jm": "JM2509"}
     elif change == "version":
@@ -989,3 +1005,99 @@ def test_verified_metric_calculation_coalesces_and_is_bounded(monkeypatch):
         service.snapshot()
     assert len(cache._entries) == 1
     assert cache._bytes <= cache._max_bytes
+
+
+@pytest.mark.parametrize("classification", ["PRICE_UNAVAILABLE", "NONPOSITIVE_CLOSE"])
+@pytest.mark.parametrize("suffix_count", [0, 21, 22])
+def test_weekly_quality_boundary_preserves_warmup(classification, suffix_count):
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+    from app.market_data.weekly_quality import WeeklySourceInterruption
+    from app.market_data.research_metrics import calculate_research_metrics
+
+    weekly = _bars(40, end=TARGET)
+    boundary = weekly[-suffix_count - 1]
+    gap = WeeklySourceInterruption(
+        product="jm", physical_contract="JM2505", iso_year=2025, iso_week=1,
+        week_end=boundary.bar_end,
+        expected_daily_endpoints=((boundary.bar_end, boundary.trading_day),),
+        unavailable_days=(boundary.trading_day,), quality_source_hashes=(("a" * 64, "b" * 64),),
+        daily_revision_sha256="c" * 64, source_identity="d" * 64,
+        classification_version="weekly-d1-quality-v2", quality_classifications=(classification,),
+    )
+    market = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)},
+        weekly={"jm": tuple(bar for bar in weekly if bar != boundary)},
+        dominants=(DominantContractSummary("jm", "焦煤", "black", "DCE", "JM2505", TARGET),),
+    )
+    market.weekly_gaps = {"jm": (gap,)}
+    item = MarketHomeOverviewService(
+        market_data=market, products=("jm",), taxonomy={"jm": _taxonomy()["jm"]},
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot().items[0]
+    suffix = tuple(bar for bar in weekly if bar.bar_end > boundary.bar_end)
+    assert item.weekly_trend == calculate_research_metrics((), suffix).weekly_trend
+    assert "weekly_price_interrupted" in item.reason_codes
+    assert ("weekly_rewarming" in item.reason_codes) == (suffix_count < 22)
+    assert "weekly_history_unavailable" not in item.reason_codes
+
+
+@pytest.mark.parametrize("reason", ["DATASET_OR_PARTITION_MISSING", "REPLAY_ENDPOINTS_MISSING", "REPLAY_PREFIX_MISSING"])
+def test_weekly_quality_unexplained_missing_is_unavailable(reason):
+    from app.market_data.market_home_overview import MarketHomeOverviewService
+    market = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)}, weekly={"jm": ()},
+        dominants=(DominantContractSummary("jm", "焦煤", "black", "DCE", "JM2505", TARGET),),
+        failures={("jm", "1w"): MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason=reason)},
+    )
+    item = MarketHomeOverviewService(
+        market_data=market, products=("jm",), taxonomy={"jm": _taxonomy()["jm"]},
+        latest_complete_day=_TargetDay(TARGET),
+    ).snapshot().items[0]
+    assert item.weekly_trend == "unavailable"
+    assert "weekly_history_unavailable" in item.reason_codes
+    assert "weekly_rewarming" not in item.reason_codes
+
+
+@pytest.mark.parametrize("code,reason", [
+    ("WEEKLY_SOURCE_BAR_CONFLICT", "WEEKLY_SOURCE_BAR_CONFLICT"),
+    ("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", "REPLAY_ENDPOINTS_EXTRA"),
+    ("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", "DATA_INTEGRITY_INVALID"),
+    ("TRADING_SESSION_MISSING", "TRADING_SESSION_MISSING"),
+])
+def test_weekly_quality_integrity_conflicts_fail_closed(code, reason):
+    from app.market_data.market_home_overview import MarketHomeOverviewService, MarketHomeOverviewError
+    market = _FakeMarketDataService(
+        daily={"jm": _bars(30, end=TARGET)}, weekly={"jm": ()},
+        dominants=(DominantContractSummary("jm", "焦煤", "black", "DCE", "JM2505", TARGET),),
+        failures={("jm", "1w"): MarketDataError(code, reason=reason)},
+    )
+    with pytest.raises(MarketHomeOverviewError, match="MARKET_HOME_DATA_INTEGRITY_ERROR"):
+        MarketHomeOverviewService(
+            market_data=market, products=("jm",), taxonomy={"jm": _taxonomy()["jm"]},
+            latest_complete_day=_TargetDay(TARGET),
+        ).snapshot()
+
+
+def test_weekly_quality_window_counts_interruptions_before_limiting():
+    from app.market_data.market_home_overview import _query_weekly_through_target
+    from app.market_data.weekly_quality import WeeklySourceInterruption
+    weekly = _bars(100, end=TARGET)
+    def gap(index):
+        bar = weekly[index]
+        return WeeklySourceInterruption(
+            product="jm", physical_contract="JM2505", iso_year=2025, iso_week=1,
+            week_end=bar.bar_end, expected_daily_endpoints=((bar.bar_end, bar.trading_day),),
+            unavailable_days=(bar.trading_day,), quality_source_hashes=(("a" * 64, "b" * 64),),
+            daily_revision_sha256="c" * 64, source_identity="d" * 64,
+            classification_version="weekly-d1-quality-v2", quality_classifications=("NONPOSITIVE_CLOSE",),
+        )
+    outside, inside = gap(19), gap(20)
+    market = _FakeMarketDataService(daily={}, weekly={"jm": weekly[:19] + weekly[21:]})
+    market.weekly_gaps = {"jm": (outside, inside)}
+    bars, gaps, reasons = _query_weekly_through_target(
+        market, symbol="jm", contract="JM2505", limit=80, target_as_of=TARGET,
+    )
+    assert len(bars) == 79
+    assert bars == weekly[21:]
+    assert gaps == (inside,)
+    assert reasons == ()

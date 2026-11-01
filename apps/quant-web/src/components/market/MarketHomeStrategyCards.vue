@@ -140,7 +140,6 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
       </div>
       <section v-if="expanded === row.symbol" :id="`home-summary-${row.symbol}`" class="list-composite" :aria-label="`${row.product_name}日周综合摘要`">
         <div class="composite-card" :class="presentation(row.symbol).state?.toLowerCase() ?? 'pending'" role="link" tabindex="0" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}策略详情`" @click="openSummary(row)" @keydown.enter.self.prevent="openSummary(row)" @keydown.space.self.prevent="openSummary(row)">
-          <p v-if="periods.some(period => periodNotice(row.symbol, period).historical)" class="summary-history" role="status"><template v-for="period in periods" :key="period"><span v-if="periodNotice(row.symbol, period).historical">{{ periodLabel(period) }}线历史：{{ periodNotice(row.symbol, period).text }} · {{ periodTime(row.symbol, period) }}</span></template></p>
           <div class="composite-heading" :title="`日线参考 · 截至 ${periodTime(row.symbol, '1d')}；周线截至 ${periodTime(row.symbol, '1w')}；策略状态，不代表账户成交`">
             <strong>{{ presentation(row.symbol).prefix }} <span v-if="presentation(row.symbol).price !== '--'" class="composite-price">{{ presentation(row.symbol).price }}</span><span v-else class="composite-price pending">—</span> {{ presentation(row.symbol).suffix }}</strong>
             <span class="composite-signal" :class="presentation(row.symbol).state?.toLowerCase() ?? 'pending'"><span aria-hidden="true">{{ presentation(row.symbol).glyph }}</span> {{ presentation(row.symbol).signal }}</span>
@@ -160,7 +159,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 </template>
 
 <style scoped>
-.summary-notice{margin:0;padding:8px 12px;background:#fafafa;color:#8a622c;font-size:12px}.summary-history{font-size:11px;color:var(--gy-text-secondary);line-height:1.6;margin:0 0 8px}.summary-history{display:flex;flex-wrap:wrap;gap:4px 16px}.history-badge{display:block;font-size:9px;color:#8a622c;line-height:12px}.list-periods>span{position:relative}.history-badge{position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap}
+.summary-notice{margin:0;padding:8px 12px;background:#fafafa;color:#8a622c;font-size:12px}.history-badge{display:block;font-size:9px;color:#8a622c;line-height:12px}.list-periods>span{position:relative}.history-badge{position:absolute;top:100%;left:50%;transform:translateX(-50%);white-space:nowrap}
 
 .strategy-list-toolbar{display:flex;align-items:center;justify-content:space-between;min-height:32px;padding:0 12px;background:#fafafa;color:var(--gy-text-muted);font-size:12px}
 .strategy-switch{display:flex;gap:14px}.strategy-switch button{border:0;background:none;padding:6px 0;color:var(--gy-text-muted);font-size:12px;cursor:pointer}.strategy-switch button[aria-pressed=true]{color:#ff6535}

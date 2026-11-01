@@ -22,9 +22,12 @@ export function marketHomeQualityNotice(reasons: readonly string[]): string | nu
   const notices: string[] = []
   if (reasons.includes('daily_history_unavailable')) notices.push('日线历史不完整；日线指标不可用')
   else if (reasons.includes('daily_price_interrupted')) notices.push(reasons.includes('daily_rewarming')
-    ? '历史日线有缺价；日趋势重新预热中'
-    : '历史日线有缺价；日线指标仅使用缺价后的连续数据')
+    ? '历史日线曾有无效价格；日趋势重新预热中'
+    : '历史日线曾有无效价格；当前指标使用异常后的连续数据')
   if (reasons.includes('weekly_history_unavailable')) notices.push('周线历史不完整；周趋势不可用')
-  if (reasons.includes('weekly_price_unavailable')) notices.push('周线价格不可用；周趋势不可用')
+  else if (reasons.includes('weekly_price_interrupted')) notices.push(reasons.includes('weekly_rewarming')
+    ? '历史周线曾受源价格异常影响；周趋势重新预热中'
+    : '历史周线曾受源价格异常影响；当前周趋势使用异常后的连续数据')
+  else if (reasons.includes('weekly_price_unavailable')) notices.push('周线价格不可用；周趋势不可用')
   return notices.length ? notices.join('。') : null
 }
