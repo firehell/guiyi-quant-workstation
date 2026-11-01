@@ -1,3 +1,18 @@
+11/1 工作树收敛最新现场：正式十服务已切至已发布 v1.16.61，exact 8d65cd042c8fb2e1bb58874e874dd04cb6ea918c，gen50。
+原生 cohort ffd9901f2cbf85445f223d1567ba3e994494178e6656e24886e136afdfe736c9 已 switched；最终 status 十项 matched、API/Web/Runtime HTTP 全通过。
+保留正式目录 worktree/runtime-timeout-recovery/guiyi-quant-workstation；未新增应用版本、tag 或工作树。
+SimNow v1.16.44 原 PID1733、配置及四账本清理前后 SHA 完全一致；账户、恢复 block、验证安排及 auto_order=false 均保持。
+现有 automation simnow 已绑定保留的 v61 目录与当前收敛会话，11/2 15:05 北京时间、COUNT=1、原账户/动作/预算不变；v48 候选仅历史参考，届时必须重新验证当前来源。
+旧发布树48/50/51/54/55/56/57/59/60九处已实际删除；必要历史53个已关闭 attempt、129份原件已由原生工具封存。
+封存索引 f90612e7171f6198677fc4c1965fb54effe58d394e17fe720c0b1a5d5a38327f；九树删除后，冻结v61历史reader逐项读取验证通过。
+清理工具改动已在 develop 完成：定向38项通过并独立Review，无新增正式版本；未完成有界读取改造及用户stash保留。
+prewarm 树已原生归档；Subing 的8个未合并提交及49份研究文件（173568746 bytes）已保存到 output/worktree-archive-20261101/subing-jm30-notion-spec，bundle verify和逐文件SHA通过，未集成策略。
+当前 Git worktree 实际仍有四处：主项目 develop、正式v61、SimNow v44，以及 subing-jm30-notion-spec；三处收敛尚未完成。
+最后一棵Subing任务树原生归档被宿主明确拒绝 The task's primary checkout cannot be removed；保留原树，不以shell删除或修改宿主元数据绕过。
+下一步仅需在宿主解除该聊天主checkout关联后原生归档Subing。牛哇剩余资产恢复/分钟双策略持有与理论曲线/大历史读取、自然盘后闭环仍是独立未完工作；未以本轮服务健康冒充业务验收。
+
+以下为此前检查点：
+
 11/1 运维恢复补丁1.16.61：仅扩展原cohort verified阶段CohortError/COHORT_NEW_READY_TIMEOUT精确日志形状，复用既有单次关闭及同代恢复入口，不重放CAS、不改原件或放宽ACK/来源/进程/锁校验。
 60已发布775156244478b383d77f089866b3305383ed1cd5，正式绑定已提交gen49，但最终就绪超时后六owner保护停驻、四定时服务未恢复。服务恢复须以后续原生receipt与现场读回为准。
 只读快照已证明2026-10-29/30和11-02全部ACK达完整尾部；大历史读取/holding/theoretical未发布改造仍保全于stash9315cc65，原任务恢复与自然盘后验收仍待。auto_order=false。
