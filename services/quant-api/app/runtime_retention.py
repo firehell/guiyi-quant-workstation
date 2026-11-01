@@ -465,8 +465,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=["cleanup-plan", "closeout-plan", "seal-closed"])
     parser.add_argument("roots", nargs="*", type=Path)
     parser.add_argument("--plan", type=Path)
+    parser.add_argument("--include-latest-recoveries", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.include_latest_recoveries and args.command != "closeout-plan":
+            raise ValueError
         if args.command != "seal-closed" and args.plan is not None:
             raise ValueError
         if args.command == "cleanup-plan":
@@ -474,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from app.runtime_retirement import build_closeout_plan, seal_closed, _json
             if args.command == "closeout-plan":
-                payload = build_closeout_plan(tuple(args.roots))
+                payload = build_closeout_plan(tuple(args.roots), include_latest_recoveries=args.include_latest_recoveries)
             else:
                 if args.roots or args.plan is None:
                     raise ValueError

@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 import stat
 import tempfile
+import subprocess
 
 from app.runtime_bindings import _git
 
@@ -118,13 +119,21 @@ def _verify_git(repo_root, identity):
     )
 
 
-def build_closeout_plan(roots, backend=None):
+COMPLETE_HISTORY = "complete_closed_forward_history_v1"
+
+
+def build_closeout_plan(roots, backend=None, *, include_latest_recoveries=False):
     backend = backend or RetirementBackend()
     roots = tuple(Path(root) for root in roots)
     require(roots and len(set(roots)) == len(roots))
     for root in roots:
         require(root.is_absolute() and root == root.resolve(strict=True))
-    facts = backend.collect(roots)
+    require(type(include_latest_recoveries) is bool)
+    facts = (backend.collect(roots, include_latest_recoveries=True)
+             if include_latest_recoveries else backend.collect(roots))
+    if include_latest_recoveries:
+        facts["collection_policy"] = COMPLETE_HISTORY
+        facts["reader_identity"] = backend.active_reader_identity()
     plan = {
         "schema_version": 1,
         "kind": "closed_release_retirement_v1",
@@ -132,10 +141,14 @@ def build_closeout_plan(roots, backend=None):
         "roots": [str(root) for root in roots],
     }
     plan["plan_sha256"] = _digest(plan)
+    if include_latest_recoveries:
+        backend.verify_active_reader(plan)
     return plan
 
 
 def _valid_plan(plan):
+    require(isinstance(plan, dict))
+    require(plan.get("collection_policy") in (None, COMPLETE_HISTORY))
     require(
         isinstance(plan, dict)
         and plan.get("schema_version") == 1
@@ -163,9 +176,14 @@ def _seal_closed(plan, backend):
     directory = Path(plan["directory"])
     parent = directory / "release-retirements"
     target = parent / plan["plan_sha256"]
+    complete = plan.get("collection_policy") == COMPLETE_HISTORY
+    if complete:
+        backend.verify_active_reader(plan)
     if target.exists():
         _load_index(target, Path(plan["repo_root"]))
         require(_json(target / "index.json")["plan"] == plan)
+        if complete:
+            backend.verify_active_reader(plan, folder=target)
         return {
             "status": "sealed",
             "plan_sha256": plan["plan_sha256"],
@@ -173,7 +191,8 @@ def _seal_closed(plan, backend):
         }
     require(
         build_closeout_plan(
-            tuple(Path(root) for root in plan["roots"]), backend=backend
+            tuple(Path(root) for root in plan["roots"]), backend=backend,
+            include_latest_recoveries=complete,
         )
         == plan
     )
@@ -193,7 +212,8 @@ def _seal_closed(plan, backend):
             _write(blob, raw)
     require(
         build_closeout_plan(
-            tuple(Path(root) for root in plan["roots"]), backend=backend
+            tuple(Path(root) for root in plan["roots"]), backend=backend,
+            include_latest_recoveries=complete,
         )
         == plan
     )
@@ -204,6 +224,8 @@ def _seal_closed(plan, backend):
     os.rename(staging, target)
     _sync(parent)
     _load_index(target, Path(plan["repo_root"]))
+    if complete:
+        backend.verify_active_reader(plan, folder=target)
     return {
         "status": "sealed",
         "plan_sha256": plan["plan_sha256"],
@@ -1015,7 +1037,7 @@ def recovery_references(directory, repo_root, roots):
     return result
 
 
-def _forward_terminal_subset(directory, current, entries, plan_paths, host, bindings):
+def _forward_terminal_subset(directory, current, entries, plan_paths, host, bindings, *, include_latest_recoveries=False):
     """Prove the live forward result, then leave its new-source chain unsealed.
 
     The deployed v1.16.60 historical reader cannot validate the later native
@@ -1121,6 +1143,8 @@ def _forward_terminal_subset(directory, current, entries, plan_paths, host, bind
             host, close["plan_path"], source_identity,
         )[0] == close
     )
+    if include_latest_recoveries:
+        return _ordinary_ancestor(source_plan["old"], entries, plan_paths), set()
     candidates = [
         candidate for candidate, candidate_state in entries
         if candidate.parent.name == "cohort-attempts"
@@ -1151,6 +1175,70 @@ def _forward_terminal_subset(directory, current, entries, plan_paths, host, bind
     return terminal.name, excluded
 
 
+def _ordinary_ancestor(target, entries, plan_paths):
+    """Follow exact installed identities; every member is typed/hash verified later."""
+    by_id = {child.name: child for child, _state in entries}
+    require(len(by_id) == len(entries))
+    visited = set()
+    for _ in range(len(entries) + 1):
+        matches = []
+        for child, state in entries:
+            plan = _json(plan_paths[child])
+            if plan.get("new") != target:
+                continue
+            if (child.parent.name == "cohort-attempts" and state.get("phase") == "switched"
+                    or child.parent.name == "cohort-forward-recoveries" and state.get("phase") == "recovered"):
+                matches.append((child, state, plan))
+        require(len(matches) == 1)
+        child, state, plan = matches[0]
+        require(child.name not in visited)
+        visited.add(child.name)
+        effects = state.get("effects", {})
+        if child.parent.name == "cohort-attempts":
+            require(effects.get("verified", {}).get("continuous_identity") == "matched"
+                    and effects.get("calendars_on") == {"calendar_registration_only": True, "identity": "matched"})
+            return child.name
+        receipt_raw = _read(child / "receipt.json")
+        receipt = _json(child / "receipt.json")
+        require(sha(receipt_raw) == state.get("receipt_sha256")
+                and receipt.get("plan_sha256") == child.name
+                and receipt.get("source") == plan.get("source")
+                and receipt.get("original_attempt_preserved") is True
+                and receipt.get("readback") == effects.get("verified")
+                and effects.get("verified", {}).get("continuous_identity") == "matched"
+                and effects.get("calendars") == {"calendar_registration_only": True, "identity": "matched"})
+        identity = plan.get("source")
+        require(isinstance(identity, dict) and state.get("source") == identity)
+        source_child = by_id.get(identity.get("plan_sha256"))
+        require(source_child is not None and source_child.parent.name == "cohort-attempts")
+        source = _json(plan_paths[source_child])
+        require(source.get("new") == target and source_child.name not in visited)
+        visited.add(source_child.name)
+        old, new = source["old"]["services"], source["new"]["services"]
+        require(set(old) == set(new) and all(
+            type(old[name]["generation"]) is int and type(new[name]["generation"]) is int
+            and new[name]["generation"] == old[name]["generation"] + 1 for name in old))
+        target = source["old"]
+    raise RetirementError("RETIREMENT_EVIDENCE_UNPROVEN")
+
+
+_ACTIVE_READER_PROBE = r"""
+import json,sys
+from pathlib import Path
+request=json.load(sys.stdin)
+root=Path(request['identity']['root'])
+sys.path[:0]=[str(root/'services/quant-api'),str(root/'packages/quant-core')]
+from app import runtime_retirement as reader
+assert Path(reader.__file__).resolve()==root/'services/quant-api/app/runtime_retirement.py'
+plan=request['plan']
+reader._valid_plan(plan)
+if request['folder'] is not None:
+    assert reader._load_index(Path(request['folder']),root)==plan
+closed=reader._closed_history(plan,root)
+print(json.dumps({'plan_sha256':plan['plan_sha256'],'closed_attempts':sorted(closed)}))
+"""
+
+
 class RetirementBackend:
     def __init__(self, directory=None, repo_root=None):
         from app.runtime_handover import runtime_directory
@@ -1159,7 +1247,34 @@ class RetirementBackend:
         self.directory = runtime_directory() if directory is None else Path(directory)
         self.repo_root = PROJECT_ROOT if repo_root is None else Path(repo_root)
 
-    def collect(self, roots):
+    def active_reader_identity(self):
+        from app.runtime_bindings import read_bindings, verify_release
+        bindings = read_bindings()
+        require(bindings is not None)
+        identities = {(row.root, row.tag, row.commit) for row in bindings.services.values()}
+        require(len(identities) == 1)
+        root, tag, commit = identities.pop()
+        verify_release(Path(root), tag, commit)
+        return {"root": root, "tag": tag, "commit": commit}
+
+    def verify_active_reader(self, plan, *, folder=None):
+        identity = self.active_reader_identity()
+        require(identity == plan["reader_identity"])
+        root = Path(identity["root"])
+        try:
+            result = subprocess.run(
+                [str(root / "services/quant-api/.venv/bin/python"), "-I", "-c", _ACTIVE_READER_PROBE],
+                input=json.dumps({"identity": identity, "plan": plan, "folder": str(folder) if folder else None}),
+                cwd=root, env=dict(os.environ), capture_output=True, text=True, timeout=120, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            raise RetirementError("RETIREMENT_ACTIVE_READER_UNPROVEN") from None
+        require(result.returncode == 0)
+        proof = json.loads(result.stdout)
+        require(proof == {"plan_sha256": plan["plan_sha256"], "closed_attempts": plan["closed_attempts"]})
+        require(self.active_reader_identity() == identity)
+
+    def collect(self, roots, *, include_latest_recoveries=False):
         from app.runtime_retention import RetentionBackend
         from app.runtime_bindings import read_bindings
         from app.runtime_cohort_recovery import (
@@ -1196,6 +1311,7 @@ class RetirementBackend:
         if current.get("kind") == "postcas_forward_recovery_result":
             current_id, excluded = _forward_terminal_subset(
                 self.directory, current, all_entries, all_plan_paths, host, bindings,
+                include_latest_recoveries=include_latest_recoveries,
             )
         else:
             terminal = self.directory / "cohort-attempts" / current_id

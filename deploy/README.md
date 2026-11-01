@@ -55,6 +55,8 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.release`，须与原plan同字段及candidate的release身份逐值相等，tag/commit须与candidate及其code身份相等；candidate本身不要求存在root字段，若存在则须相等。原意图/plan/hash及完整闭合条件不变，不修改历史记录来解除引用。
 创建新树、构建、render/preflight、切换和健康读回完成后，逐树核对精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务与进程引用；有用户修改或引用时停止该树清理。
 保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
+当当前运行结果为连续已成功的同代恢复、旧collector无法找到直接普通交接锚时，可显式使用 `runtime_retention closeout-plan --include-latest-recoveries /exact/retired-root`。该入口沿完整binding身份有界追溯唯一成功锚，并保持原v1封存与读取合同；候选、写入前后均由当前干净正式树的原封读取器独立校验，不能用修改后的reader自行宣称兼容。`seal-closed --plan`沿候选绑定的收集政策重新核对，不改原失败记录；仅当后续cleanup-plan零引用才non-force删除源码，删后再次用正式reader核验。公开计划/回执目录仍属原件引用，不随源码清理。
+
 应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。
 
 只维护当前应用实现，不维护旧版兼容矩阵或常驻回滚源码。修复在开发工作区完成、提交并验证后向前发布；现有工具要求的编号/tag由Codex处理，不单开版本管理任务。正式服务绑定受测commit，不移动旧tag或把dirty源码冒充原版本；必要历史源码从Git恢复。
