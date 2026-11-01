@@ -85,3 +85,22 @@ def test_invalid_execution_model_rejected():
     xs,obs=inputs([100])
     with pytest.raises(ValueError,match='ACCOUNT_EXECUTION_MODEL_INVALID'):
         replay(xs,obs,'r',execution_model='open')
+
+
+def test_consumed_exit_event_is_not_reapplied_at_gap_open():
+    xs,obs=inputs([100,101],frames={0:dict(near_zero_golden=True,below_previous_low=True)})
+    old=xs[1].bar; end=old.bar_end+timedelta(hours=1)
+    xs[1]=replace(xs[1],bar=replace(old,bar_end=end,confirmed_at=end,
+        session_open_at=end-timedelta(minutes=1),session_close_at=end+timedelta(hours=1)))
+    o=obs.pop(old.bar_end);o['at']=end.isoformat();obs[end]=o
+    r=run(xs,obs)
+    assert len(r['fills'])==1
+    assert r['fills'][0]['action']=='OPEN'
+    assert 'theoretical_open_v2' in r['version']
+
+
+def test_new_completed_exit_event_still_cancels_pending_entry():
+    xs,obs=inputs([100,101,102],frames={0:dict(near_zero_golden=True),1:dict(below_ema=True)})
+    r=run(xs,obs)
+    assert not r['fills']
+    assert r['execution_events'][0]['reason']=='CANCEL_REQUESTED'

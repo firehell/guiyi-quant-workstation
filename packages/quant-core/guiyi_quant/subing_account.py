@@ -128,7 +128,9 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model):
             price = mark + (f.tick_size if buying else -f.tick_size) * slippage_ticks
             pre = finance(mark,f,side)
             current_frame = directional_frame(known['m30'], side)
-            current_exit = current_frame is not None and any(current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death'))
+            # At open, prior completed technical events have already been consumed
+            # by DecisionModel; pending cancellation/exit obligations carry their effect.
+            current_exit = not at_open and current_frame is not None and any(current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death'))
             protected_layer = any(layer['kind'] == 'ADD' and sign * (mark - layer['price']) < 0 for layer in layers.values())
             frame_unknown = current_frame is not None and (current_frame.get('minute_angle') is None or any(current_frame.get(key) is None for key in ('near_zero_golden','above_ema','volume_effective','below_previous_low','high_death','below_ema','qualified_pullback')))
             fixed_stop = model.initial_stop is not None and sign * (mark - model.initial_stop) <= 0
@@ -221,7 +223,7 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model):
         else:
             daily.append(row)
     last = executions[-1]
-    return _wire(dict(version=f'subing_jm30_account_theoretical_open_v1_slip{slippage_ticks}' if at_open else (VERSION if slippage_ticks == 1 else f'{VERSION}_research_slip{slippage_ticks}'),contract=contract,run_id=run_id,
+    return _wire(dict(version=f'subing_jm30_account_theoretical_open_v2_slip{slippage_ticks}' if at_open else (VERSION if slippage_ticks == 1 else f'{VERSION}_research_slip{slippage_ticks}'),contract=contract,run_id=run_id,
         status='OPEN' if layers else 'PENDING' if model.pending else 'COMPLETED',
         summary=dict(cash=cash,equity=last_equity,net_pnl=last_equity-INITIAL_CASH,fees=fees,open_quantity=len(layers),fill_count=len(fills),closed_round_count=len(closed_rounds)),
         initial_cash=INITIAL_CASH,cash=cash,equity=last_equity,unrealized=last_equity-cash,fees=fees,
@@ -231,4 +233,4 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model):
         fills=fills,execution_events=execution_events,daily_equity=daily,trace=trace,pending=model.pending,
         decision_state=model.state(),decision_checkpoint=model.checkpoint(),
         valuation_at=last.bar.bar_end,valuation_price=last.bar.close,
-        assumptions=(f'THEORETICAL ONLY; liquidity unverified; minute start strictly after decision; open +/-{slippage_ticks} tick; capacity assumed up to 3 lots; no future OHLCV fill filter; no terminal liquidation; no broker fills' if at_open else f'retrospective confirmation=bar_end; later completed 1m close +/-{slippage_ticks} tick; no terminal liquidation; single physical contract; no broker fills')))
+        assumptions=(f'THEORETICAL ONLY; liquidity unverified; minute start strictly after decision; open +/-{slippage_ticks} tick; capacity assumed up to 3 lots; completed technical exit events consumed once; no future OHLCV fill filter; no terminal liquidation; no broker fills' if at_open else f'retrospective confirmation=bar_end; later completed 1m close +/-{slippage_ticks} tick; no terminal liquidation; single physical contract; no broker fills')))
