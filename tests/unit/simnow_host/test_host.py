@@ -126,6 +126,38 @@ def test_multiple_new_trades_preserve_pending_and_block_new_send(tmp_path):
     assert len(host.evidence.snapshots()) == 2
 
 
+def test_recovery_fee_scan_does_not_reload_account_for_each_snapshot(tmp_path, monkeypatch):
+    ad, e, facts, b, permit, at, api = f.setup(tmp_path)
+    book = Evidence(tmp_path / "evidence.db", ad.session.account_id)
+    for index in range(64):
+        book.append(read_snapshot(report_at(
+            at - timedelta(seconds=20 * (64 - index)), ad.session.account_id
+        )))
+    host = Host(
+        ad.store, ad.journal, book, ad, "RB", run_id="history-recovery",
+        deadline=at + timedelta(minutes=10), continuous=True,
+    )
+    ad.dispatch(e, b, None, facts, permit, at)
+    current = ad.store.current
+    reads = []
+
+    def counted_current():
+        reads.append(1)
+        return current()
+
+    monkeypatch.setattr(ad.store, "current", counted_current)
+    _, state = host.reconcile(filled_report(ad, e, at), (b,), at + timedelta(seconds=20))
+    # Fee callbacks only stage journal events; account changes happen in drain.
+    # A large retained history must not consume the 30-second takeover window
+    # by repeatedly decoding the unchanged account projection.
+    assert len(reads) < 16
+    assert state.phase == "READY" and state.readback_valid
+    assert state.fills[0].fee == D("3.12")
+    assert state.orders[0].reconciled and state.reservations[0].released
+    assert ad.store.replay() == state
+    assert len(api.calls) == 1
+
+
 def test_restart_after_snapshot_before_fee_reconstructs_actual_proof(tmp_path):
     host, ad, e, facts, b, at, api = host_setup(tmp_path)
     report = filled_report(ad, e, at)

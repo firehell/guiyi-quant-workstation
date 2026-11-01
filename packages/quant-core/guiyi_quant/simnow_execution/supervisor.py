@@ -517,6 +517,10 @@ class Supervisor:
         self.recovery_stage = "READY"
 
     def cycle(self):
+        # Keep an attempt's day through its cleanup/error handling, but do not
+        # attribute a later disconnected cycle to that historical connection.
+        if self.driver is None:
+            self.target_day = None
         now = self.now()
         plan = self.market.plan(now)
         self.session_active = plan.active
@@ -885,16 +889,17 @@ class Supervisor:
                         self.status(code)
                         # Only transport failures may reconnect. Unknown account/commit/dispatch stops this day.
                         if not transport_failure:
-                            plan = self.market.plan(self.now())
-                            self.blocked_day = (
-                                plan.trading_day.strftime("%Y%m%d")
-                                if plan.trading_day
-                                else self.day
-                            )
-                            if self.blocked_day or self.target_day:
-                                self.inbox.block(
-                                    self.blocked_day or self.target_day, code
+                            # The failed attempt owns this block even when the
+                            # calendar has advanced while native calls waited.
+                            self.blocked_day = self.target_day
+                            if self.blocked_day is None:
+                                plan = self.market.plan(self.now())
+                                self.blocked_day = (
+                                    plan.trading_day.strftime("%Y%m%d")
+                                    if plan.trading_day else None
                                 )
+                            if self.blocked_day:
+                                self.inbox.block(self.blocked_day, code)
                         try:
                             diagnostic = (
                                 self.driver.failure_diagnostics()

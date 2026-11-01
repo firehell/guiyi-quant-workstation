@@ -674,6 +674,79 @@ def test_unknown_error_blocks_same_day_without_retry(tmp_path):
     box.close()
 
 
+@pytest.mark.parametrize("calendar_unavailable", [False, True])
+@pytest.mark.parametrize("factory_failure", [False, True])
+def test_connection_failure_keeps_attempt_day_when_calendar_advances(
+    tmp_path, calendar_unavailable, factory_failure
+):
+    settings, snapshot = setup(tmp_path)
+    market = FakeMarket()
+    clock = Clock()
+
+    class FailingDriver(FakeDriver):
+        def connect(self):
+            market.day = date(2026, 10, 28)
+            if calendar_unavailable:
+                def unavailable(_now):
+                    raise ValueError("MARKET_INPUT_UNPROVEN")
+                market.plan = unavailable
+            raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
+
+    driver = FailingDriver(snapshot)
+
+    def factory(*_):
+        if factory_failure:
+            driver.connect()
+        return driver
+
+    host = Supervisor(
+        settings, ("JM", "RB"), market, factory,
+        clock=clock.now, sleep=clock.sleep,
+    )
+    assert host.run(max_cycles=1) == "STOPPED"
+    with sqlite3.connect(settings.state_root / ACCOUNT / "signals.sqlite") as conn:
+        assert conn.execute("SELECT day,count FROM attempts").fetchall() == [
+            ("20261027", 1)
+        ]
+        assert conn.execute("SELECT day,code FROM blocks").fetchall() == [
+            ("20261027", "NATIVE_SESSION_IDENTITY_MISMATCH")
+        ]
+    assert driver.closed is (not factory_failure)
+
+
+def test_disconnected_cycle_does_not_inherit_previous_attempt_day(tmp_path, monkeypatch):
+    settings, snapshot = setup(tmp_path)
+    market = FakeMarket()
+    clock = Clock()
+
+    class TransportDriver(FakeDriver):
+        def close(self):
+            super().close()
+            market.day = date(2026, 10, 28)
+
+    driver = TransportDriver(
+        snapshot, fail=ValueError("NATIVE_TRANSPORT_FAILED"), transport_failed=True
+    )
+    original_blocked = SignalInbox.blocked
+
+    def blocked(inbox, day):
+        if day == "20261028":
+            raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
+        return original_blocked(inbox, day)
+
+    monkeypatch.setattr(SignalInbox, "blocked", blocked)
+    host = Supervisor(
+        settings, ("JM", "RB"), market, lambda *_: driver,
+        clock=clock.now, sleep=clock.sleep,
+    )
+    assert host.run(max_cycles=2) == "STOPPED"
+    with sqlite3.connect(settings.state_root / ACCOUNT / "signals.sqlite") as conn:
+        assert conn.execute("SELECT day,count FROM attempts").fetchall() == [("20261027", 1)]
+        assert conn.execute("SELECT day,code FROM blocks").fetchall() == [
+            ("20261028", "NATIVE_SESSION_IDENTITY_MISMATCH")
+        ]
+
+
 def test_transport_cleanup_failure_persists_block_across_runs(tmp_path):
     settings, snapshot = setup(tmp_path, journal=False)
     drivers = []
