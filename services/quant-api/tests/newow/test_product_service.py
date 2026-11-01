@@ -1807,6 +1807,37 @@ def test_saved_fusion_split_uses_selected_persisted_path_without_legacy_attach(p
     assert calls == ["fusion_page_ordinary"]
 
 
+def test_daily_fusion_split_uses_saved_generation_instead_of_pure_replay(product_cases):
+    from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
+
+    reader, source_query, fake = product_cases.paged_reader(prefix_bars=80, frequency="1d")
+    calls = []
+    validations = []
+
+    class Persisted:
+        def section(self, request, *_args):
+            calls.append(request.reference_mode.value)
+            return SectionDelivery("delivered", FeatureStatus(
+                FeatureRuntimeStatus.READY, EvidenceStatus.ACTIVE_CODE_VERIFIED),
+                PersistedReferenceSectionValue({"reference_input_sha256": "a" * 64}))
+
+        def validate_cached_generation(self, *_args, **_kwargs):
+            validations.append(True)
+
+    service = NewowProductService(lambda *_args: reader,
+        persisted_reference=Persisted().section, now=lambda: fake.as_of)
+    request = ProductServiceQuery("rb", "trend", "1d", section="reference",
+        performance_since=source_query.performance_since,
+        performance_through=source_query.performance_through,
+        as_of=fake.as_of, include_fusion=True,
+        reference_part="overview", reference_mode="fusion_page_ordinary")
+    result = service.query(request)
+    assert result.reference.delivery == "delivered"
+    assert calls == ["fusion_page_ordinary"]
+    assert service.query(request).reference.delivery == "delivered"
+    assert validations
+
+
 def test_rejected_result_keeps_token_only_when_entire_read_proof_is_saved(product_cases, monkeypatch):
     from app.market_data.newow.snapshot_cache import SnapshotCache
 
