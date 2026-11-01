@@ -293,3 +293,25 @@ def test_record_window_filter_does_not_change_initial_holding_projection(monkeyp
     assert len(full["items"])==1
     assert records["items"]==[]
     assert records["snapshot"]==full["snapshot"]
+
+
+@pytest.mark.parametrize('corrupt_envelope', [False, True])
+def test_historical_subing_keeps_strict_boundary_and_envelope_validation(monkeypatch, corrupt_envelope):
+    original = _seed_repository.__globals__['_stream']
+    monkeypatch.setitem(_seed_repository.__globals__, '_stream',
+                        lambda: replace(original(), strategy_code='subing_reference'))
+    repository, factory, stream, revision, manifest, seed = _seed_repository()
+    proof = {'presentation_v1': envelope([presentation_point(
+        kind='boundary', trading_day=date(2026,9,19), formula_versions=stream.formula_versions,
+        value={'bar_end':datetime(2026,9,19,7,tzinfo=UTC),'reason':'OBSERVATION_INTERRUPTED'},
+    )])}
+    repository.commit_batch(seed, _open_batch(stream, revision, manifest, seed, evidence=proof))
+    token, _ = repository.load_checkpoint(stream.stream_id, revision)
+    repository.publish_revision(stream.stream_id, revision, token.row_version, _digest(manifest))
+    if corrupt_envelope:
+        with factory.begin() as session:
+            row = session.scalar(select(ReferenceBatch).where(ReferenceBatch.revision_id==revision, ReferenceBatch.kind=='calculation'))
+            row.source_evidence = {'presentation_v1': {**proof['presentation_v1'], 'points':'broken'}}
+    monkeypatch.setattr(HistoricalReferenceQuery,'_registered',staticmethod(lambda _row:True))
+    with pytest.raises(ValueError, match='PRESENTATION_CORRUPT'):
+        HistoricalReferenceQuery(factory).summary(stream.stream_id,since=date(2026,9,19),through=date(2026,9,19))

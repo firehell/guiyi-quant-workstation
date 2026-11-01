@@ -387,7 +387,8 @@ class HistoricalReferenceQuery:
                 }
             interruption_keys = (
                 self._boundary_keys(session, snapshot, since, through, cutoff)
-                if row.strategy_code.replace("-", "_") == "subing_reference"
+                if row.recording_mode == "historical_replay"
+                and row.strategy_code.replace("-", "_") == "subing_reference"
                 else frozenset()
             )
             page = self._repository.query_historical_trades(
@@ -456,6 +457,25 @@ class HistoricalReferenceQuery:
             return [{"trade_id": row.trade_id, "bar_end": row.bar_end.isoformat(),
                 "trading_day": row.trading_day.isoformat(), "holding_bars": row.holding_bars,
                 "reference_return": str(row.reference_return)} for row in rows]
+
+    @staticmethod
+    def _assert_forward_presentations(session: Session, snapshot: SnapshotIdentity) -> None:
+        # Observation boundaries have no historical segment identity. Still validate
+        # every retained envelope; omitting the historical lookup must not hide corruption.
+        proofs = session.execute(select(ReferenceBatch.source_evidence["presentation_v1"]).where(
+            ReferenceBatch.stream_id == snapshot.stream_id,
+            ReferenceBatch.revision_id == snapshot.revision_id,
+            ReferenceBatch.kind == "calculation",
+            ReferenceBatch.seq <= snapshot.seq,
+        ).execution_options(yield_per=32)).scalars()
+        for proof in proofs:
+            for point in require_envelope(proof):
+                if point.get("kind") != "boundary":
+                    continue
+                value = point.get("value")
+                if not isinstance(value, dict) or _instant(value.get("bar_end")) is None:
+                    raise QueryConflict("PRESENTATION_CORRUPT")
+                _day(point.get("trading_day"))
 
     @staticmethod
     def _boundary_keys(
@@ -922,9 +942,12 @@ class HistoricalReferenceQuery:
                 cutoff=cutoff, encoded=snapshot_token,
             )
             self._assert_presentations(session, snapshot)
+            if row.recording_mode == "forward_observation" and row.strategy_code.replace("-", "_") == "subing_reference":
+                self._assert_forward_presentations(session, snapshot)
             boundary_keys = (
                 self._boundary_keys(session, snapshot, since, through, cutoff)
-                if row.strategy_code.replace("-", "_") == "subing_reference"
+                if row.recording_mode == "historical_replay"
+                and row.strategy_code.replace("-", "_") == "subing_reference"
                 else frozenset()
             )
             trade = ReferenceTradeRow

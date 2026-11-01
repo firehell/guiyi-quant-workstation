@@ -183,3 +183,74 @@ def _assert_forward_window_summary_matches_trade_page(monkeypatch, engine=None):
     )
     assert later_summary["initial_count"] == 0
     assert later_summary["closed_count"] == 0
+
+
+@pytest.mark.parametrize('corrupt_envelope', [False, True])
+def test_subing_forward_observation_boundary_does_not_require_historical_identity(monkeypatch, corrupt_envelope):
+    import test_repository as fixtures
+    from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
+    from app.reference_trading.forward_panel import forward_panel
+    original = fixtures._stream
+    monkeypatch.setattr(fixtures, '_stream', lambda: replace(original(), strategy_code='subing_reference'))
+    factory, identity, revision, _activation = _active()
+    repository = ReferenceRepository(factory)
+    capture = _capture(identity, revision)
+    capture_id = repository.capture_forward(capture)
+    token, checkpoint = repository.load_checkpoint(identity.stream_id)
+    action = ReferenceAction(
+        stream=identity, source_action_id='forward-build', sequence=0,
+        kind=ActionKind.OPEN_LONG, physical_contract='RB2610',
+        owner_segment_id='owner', calculation_segment_id='calc',
+        bar_end=capture.bar_end, trading_day=capture.bar_end.date(), reference_price=Decimal('3500'),
+    )
+    transition = reduce_reference(checkpoint.reference_state, actions=(action,))
+    repository.commit_batch(token, PreparedBatch(
+        identity.stream_id, revision, 'forward:build', token, {'source':'fixture'},
+        (SourceAction(action, capture.observed_at),), (transition,),
+        AdapterCheckpoint(checkpoint.strategy_state, capture.bar_end, capture.capture_hash,
+                          'RB2610', 'owner', 'calc', identity, transition.state),
+        'newow_product_replay_v1',
+        {'forward_capture_v1': {'capture_id':capture_id,'hash':capture.capture_hash,'generation':1},
+         'presentation_v1':envelope([])}, capture.observed_at,
+    ))
+    gap = replace(capture, source_key='gap', bar_end=capture.bar_end+timedelta(days=1),
+                  observed_at=capture.observed_at+timedelta(days=1))
+    gap_id = repository.capture_forward(gap)
+    token, checkpoint = repository.load_checkpoint(identity.stream_id)
+    boundary = ReferenceBoundary(identity, BoundaryReason.OBSERVATION_INTERRUPTED,
+                                 'RB2610','owner','calc',gap.bar_end,gap.bar_end.date())
+    interrupted = reduce_reference(checkpoint.reference_state, boundaries=(boundary,))
+    presentation = envelope([presentation_point(
+        kind='boundary', trading_day=gap.bar_end.date(), formula_versions=identity.formula_versions,
+        value={'bar_end':gap.bar_end,'observed_at':gap.observed_at,
+               'reason':'OBSERVATION_INTERRUPTED','gap_code':'OBSERVATION_GAP'},
+    )])
+    repository.commit_batch(token, PreparedBatch(
+        identity.stream_id, revision, 'forward:gap', token, {'source':'fixture'}, (), (interrupted,),
+        AdapterCheckpoint(checkpoint.strategy_state,gap.bar_end,'observation-gap:'+gap.capture_hash,None,None,None,identity,interrupted.state),
+        'newow_product_replay_v1',
+        {'forward_capture_v1':{'capture_id':gap_id,'hash':gap.capture_hash,'generation':1},
+         'presentation_v1':presentation}, gap.observed_at,
+    ))
+    monkeypatch.setattr(HistoricalReferenceQuery,'_registered',staticmethod(lambda _row:True))
+    query = HistoricalReferenceQuery(factory)
+    params = dict(since=capture.bar_end.date(), through=gap.bar_end.date())
+    if corrupt_envelope:
+        from app.reference_trading.models import ReferenceBatch
+        from sqlalchemy import select
+        with factory.begin() as session:
+            row = session.scalar(select(ReferenceBatch).where(ReferenceBatch.batch_key == 'forward:gap'))
+            row.source_evidence = {**row.source_evidence, 'presentation_v1': {**presentation, 'points':'broken'}}
+        with pytest.raises(ValueError, match='PRESENTATION_CORRUPT'):
+            query.summary(identity.stream_id, **params)
+        return
+    page = query.trades(identity.stream_id, **params)
+    assert [row['status'] for row in page['items']] == ['OBSERVATION_INTERRUPTED']
+    summary = query.summary(identity.stream_id, **params)
+    assert summary['closed_count'] == summary['open_count'] == 0
+    assert summary['interrupted_count'] == 1
+    assert summary['sum_return_percentage_points'] == '0'
+    assert summary['win_rate_pct'] is None
+    panel = forward_panel(query, identity.stream_id, **params)
+    assert panel['curve'] == []
+    assert panel['drawdown_percentage_points'] is None
