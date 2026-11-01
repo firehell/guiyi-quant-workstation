@@ -1,3 +1,5 @@
+11/1 按owner仅处理第一步，维护锁本次已取得，正式v64原生run_weekly_audit对BU全历史只读复核通过：19:35:54至19:38:29，products=[bu]、1/1、through2026-10-30、findings0且完整、provider_requests/data_writes均0；此前BU DATABASE_ERROR未重现，不据此断言历史错误原因或全60数据正常。独立证据output/health-diagnosis-20261101/bu-audit-113554.json已完成并重新读回断言；正式weekly状态未覆盖，未下载、修行情或改Alert/SimNow。其余59品种全历史新审计仍未执行。
+
 11/1 修正健康诊断结论：10/31周审计并非从未执行，保全v41 09:00-10:42及v48 12:00-13:44均60/60 passed、findings0、through10/30；之后v50 15:00-15:21在第8个BU发生DATABASE_ERROR（7/60），不能仅报告早期passed。当前正式weekly缺本版本证据保持missed，旧记录未改写或移植冒充当前运行。原生BU单品种全历史只读复核本次skipped_busy（0/1），未抢锁或自动重试，不计通过。
 Alert共同误判路径已复现：权威MDS证明10/29全60品种周线尚未完成，旧canonical D1触发路径将其转成generic evaluation_failed。新增typed MARKET_READ_WEEK_NOT_COMPLETED，仅在完整Calendar和当前已完成开市日Session双重证明后skip；未知/缺失/矛盾仍fail-closed，不产生成功、失败、Event或通知，不清旧unresolved。真实60品种修正后只读回验60 typed_not_due。原始失败仅保留泛化错误，不能据复现宣称逐条还原当时异常或自动消除旧60条。
 扩展市场读取/health/Alert/quality回归385项通过、evaluator52项通过，Ruff/secret/diff通过；独立Review112项通过，首轮指出Calendar空周歧义已补开市日证明及回归。仅集成develop，未发布/切换；正式v64与明日15:05 SimNow固定目标保持，旧Alert降级、周审计未完整新验及SimNow恢复仍未完成。其他任务未跟踪研究文件未触及。
