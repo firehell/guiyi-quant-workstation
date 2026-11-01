@@ -1,3 +1,6 @@
+11/1 按owner“清理可以清理的”交办，完成全部.worktrees原生只读扫描；当前eligible_roots为空，未删除发布树或历史证据。v64现役、v44独立SimNow实际运行，v62仍被ACTIVE一次性SimNow任务及恢复记录引用，v63仍有恢复记录引用。
+已逐项核对OID、origin/main祖先关系及worktree绑定，以非强制git branch -d清理134个完全合入main且无工作树的本地历史任务分支；main/develop提交身份、全部tag、发布源码及未合并分支保持。另两个非Git历史研究/恢复证据目录未删；其他任务未提交修改保留。
+
 11/1 按owner授权，十项正式服务已统一至v1.16.64/gen53，exact3e8229fe8cf2da1bd9f14d5035a32136199c0025，正式根.worktrees/release-v1.16.64。
 Web离线依赖/类型/构建/拓扑通过；最终原生status十项matched，API/Web/Runtime检查全部通过。正式首页60品种ready、投影ready、过期与不可用均0，沿用已授权重建文件。
 原cohort5ae1507b…在verified以COHORT_NEW_READY_TIMEOUT保护停驻；未重跑或回滚。原生Feed关闭9eca8329…成功（回执e68ebc4b…），新同代恢复fa0c9920…已recovered，回执273b887d5606c90fd5600551cf64d50b840ee9edbedca9b73b491f2ab0384860；全部原失败记录保留。
