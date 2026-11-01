@@ -458,3 +458,58 @@ def test_unrelated_unknown_recovery_blocks_original_second_stage(tmp_path, monke
             original_verified_feed_halt=True,
             feed_close_plan=close_path,
         )
+
+
+@pytest.mark.parametrize("damage", [None, "old_status", "old_history", "new_status", "new_history", "protected", "index_hash", "index_missing", "index_claim"])
+def test_native_no_history_requires_pinned_absence(tmp_path, monkeypatch, damage):
+    from hashlib import sha256
+    host, source, path, attempt, _raw, _identity = original_fixture(tmp_path, monkeypatch, new_ready_timeout=True)
+    old_root, new_root = tmp_path / "old-root", tmp_path / "new-root"
+    for root in (old_root, new_root):
+        (root / ".run").mkdir(parents=True)
+    source["old"]["services"]["after-market"]["root"] = str(old_root)
+    source["new"]["services"]["after-market"]["root"] = str(new_root)
+    source["protected"] = {"files": {}}
+    _write(path, source)
+    _write(attempt / "plan.json", source)
+    originals = attempt / "originals"
+    originals.mkdir(mode=0o700)
+    _write(originals / "index.json", {"schema_version": 1, "files": []})
+    state = json.loads((attempt / "state.json").read_bytes())
+    state["effects"]["preserve"] = {"history_retained": False, "original_index_sha256": sha256((originals / "index.json").read_bytes()).hexdigest()}
+    if damage in ("old_status", "old_history", "new_status", "new_history"):
+        root = old_root if damage.startswith("old") else new_root
+        name = "after-market-history.json" if damage.endswith("history") else "after-market-status.json"
+        (root / ".run" / name).write_text("{}")
+    elif damage == "protected":
+        source["protected"]["files"][str(old_root / ".run/after-market-status.json")] = "a" * 64
+        _write(path, source)
+        _write(attempt / "plan.json", source)
+    elif damage == "index_claim":
+        _write(originals / "index.json", {"schema_version": 1, "files": [{"source": str(old_root / ".run/after-market-status.json"), "present": True}]})
+        state["effects"]["preserve"]["original_index_sha256"] = sha256((originals / "index.json").read_bytes()).hexdigest()
+    elif damage == "index_hash":
+        state["effects"]["preserve"]["original_index_sha256"] = "0" * 64
+    elif damage == "index_missing":
+        (originals / "index.json").unlink()
+    _write(attempt / "state.json", state)
+    _write(host.directory / "cohort-release.json", state)
+    if damage:
+        with pytest.raises(ValueError):
+            recovery._source(host, path, allow_original=True)
+    else:
+        assert recovery._source(host, path, allow_original=True)[1] == state
+        # Natural writes after a successful recovery must not invalidate frozen history.
+        (new_root / ".run/after-market-status.json").write_text("{}")
+        (new_root / ".run/after-market-history.json").write_text("{}")
+        assert recovery._original_verified_feed_source(host, path, historical=True)[1] == state
+        with pytest.raises(ValueError):
+            recovery._source(host, path, allow_original=True)
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "false"])
+def test_history_preservation_requires_boolean(tmp_path, monkeypatch, value):
+    _host, source, _path, attempt, _raw, _identity = original_fixture(tmp_path, monkeypatch, new_ready_timeout=True)
+    state = json.loads((attempt / "state.json").read_bytes())
+    state["effects"]["preserve"]["history_retained"] = value
+    assert not recovery.valid_original_verified_feed_state(source, state)

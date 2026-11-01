@@ -372,6 +372,8 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 `plan --original-verified-feed-halt --close-feed-only`关闭原Feed，随后以同标志及`--feed-close-plan`生成新的同代恢复计划。
 两步各单次执行，绑定原public/private plan、state、global与effect字节；关闭必须证明精确Feed、全部PID退出、owner锁空闲及完整来源/ACK前缀。
 关闭receipt不表示恢复完成；只有后续正常恢复成功receipt才关联闭合原attempt与唯一关闭attempt。额外unknown、来源漂移或关闭结果不明均阻断，不循环接纳新失败、不修改原件。
+原cohort合法记录history_retained=false时，恢复只接受原保全索引散列一致、旧/新盘后status与history均缺席、原protected无此两路径的严格缺席分支；非布尔值、文件存在或证据缺失仍拒绝。原记录不改写，控制器与运行服务版本分别核对。
+
 
 当精确当前Live在固定drain下由launchd反复exit1重启、不能稳定停驻时，计划可显式冻结 `live_restart_intent`。只允许部署/维护锁内核对同一label、binding、安装/launcher、drain与实际进程身份后，先持久记录单次effect再发一次原生bootout；确认整个label absent、所有已观察PID退出、owner锁空闲，重验原件/数据库前缀及pending/UNKNOWN后，才可启动原Live和其他消费者。禁止kill、重复bootout、把active冒充parked，或根据未公开日志猜测内部异常。任何退出、锁或提交事实不明即停止相关恢复。
 
