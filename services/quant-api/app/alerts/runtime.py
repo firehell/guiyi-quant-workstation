@@ -922,6 +922,17 @@ class AlertRuntime:
             return
         if self._pending_unresolved is not None:
             raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_PENDING_UNKNOWN")
+        snapshot = getattr(self.message_source, "coverage_snapshot", None)
+        if callable(snapshot):
+            warming = frozenset(f"{symbol}:{frequency}" for (_, symbol, frequency), row
+                                in self._coverage_progress.items() if row.get("state") == "warming_up")
+            frontier = snapshot(warming_routes=warming)
+            cursor, tail = frontier.get("cursor"), frontier.get("tail")
+            if not isinstance(cursor, str) or not isinstance(tail, str):
+                raise RuntimeError("ALERT_COVERAGE_CLOSEOUT_JOURNAL_INVALID")
+            if cursor != tail:
+                self._coverage_closeout_pending = True
+                return
         from app.alerts.coverage_closeout import propose_closeout
         from app.db.readonly import readonly_transaction
 
@@ -1031,8 +1042,11 @@ class AlertRuntime:
         pending = self._pending_unresolved
         if pending is None:
             return
+        atomic_writer = getattr(self.heartbeat_store, "replace_unresolved", None)
         writer = getattr(self.heartbeat_store, "write_unresolved", None)
-        if callable(writer):
+        if callable(atomic_writer):
+            atomic_writer(dict(pending), expected=self._unresolved_coverage, assert_owned=self.assert_owned)
+        elif callable(writer):
             writer(dict(pending))
         self._unresolved_coverage = pending
         self._pending_unresolved = None
@@ -1143,9 +1157,11 @@ class AlertRuntime:
             identity = ":".join(key)
             next_unresolved = dict(self._unresolved_coverage)
             unresolved_changed = False
-            if error_type not in {None, "evaluation_warming_up"} and identity not in next_unresolved:
-                next_unresolved[identity] = dict(self._coverage_progress[key])
-                unresolved_changed = True
+            if error_type not in {None, "evaluation_warming_up"}:
+                latest_failure = dict(self._coverage_progress[key])
+                if next_unresolved.get(identity) != latest_failure:
+                    next_unresolved[identity] = latest_failure
+                    unresolved_changed = True
             elif error_type is None and previous_unresolved is None:
                 unresolved_changed = next_unresolved.pop(identity, None) is not None
             if unresolved_changed:
