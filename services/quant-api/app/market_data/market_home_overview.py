@@ -15,7 +15,6 @@ from statistics import median
 from typing import Literal, cast
 
 from app.market_data.domain import (
-    BarFrequency,
     CanonicalBar,
     normalize_contract_for_symbol,
 )
@@ -30,11 +29,14 @@ from app.market_data.product_taxonomy import ProductTaxonomyEntry
 from app.market_data.research_metrics import ResearchMetrics, Trend, calculate_research_metrics
 from app.market_data.newow.snapshot_cache import SnapshotCache
 from app.market_data.source_quality import SourceQualityFact
+from app.market_data.weekly_quality import (
+    WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2, WeeklySourceInterruption,
+)
 
 
 MarketHomeStatus = Literal["ready", "degraded"]
 MarketHomeFreshness = Literal["fresh", "stale", "unavailable"]
-METRIC_POLICY_VERSION = "physical_owner_quality_v4"
+METRIC_POLICY_VERSION = "physical_owner_quality_v5"
 
 # Results only: every caller first reads current owner, complete D1/W1 and
 # quality facts through MDS. TTL bounds retention, never proves authority.
@@ -186,18 +188,17 @@ class MarketHomeOverviewService:
             if daily[-1].trading_day != target_as_of:
                 stale_count += 1
                 continue
-            weekly, weekly_reasons = _query_through_target(
+            weekly, weekly_gaps, weekly_reasons = _query_weekly_through_target(
                 self._market_data,
                 symbol=symbol,
                 contract=owner.contract,
-                frequency=BarFrequency.W1,
                 limit=80,
                 target_as_of=target_as_of,
             )
             metric_key = sha256(repr((
                 METRIC_POLICY_VERSION, symbol, target_as_of, owner,
                 dominants[symbol], self._taxonomy[symbol], checked_daily,
-                gaps, history_missing, weekly, weekly_reasons,
+                gaps, history_missing, weekly, weekly_gaps, weekly_reasons,
             )).encode("utf-8")).hexdigest()
 
             @timed("compute")
@@ -205,7 +206,11 @@ class MarketHomeOverviewService:
                 cached = _METRIC_CACHE.get(metric_key, ("metrics",))
                 if cached is not None:
                     return cast(ResearchMetrics, cached)
-                value = calculate_research_metrics(() if history_missing else daily, weekly)
+                weekly_input = weekly
+                if weekly_gaps:
+                    boundary = max(gap.bar_end for gap in weekly_gaps)
+                    weekly_input = tuple(bar for bar in weekly if bar.bar_end > boundary)
+                value = calculate_research_metrics(() if history_missing else daily, weekly_input)
                 _METRIC_CACHE.put(metric_key, ("metrics",), value)
                 return value
 
@@ -213,6 +218,10 @@ class MarketHomeOverviewService:
                 metric_key, lambda _cancelled: calculate(),
             )
             quality_reasons = weekly_reasons
+            if weekly_gaps:
+                quality_reasons += ("weekly_price_interrupted",)
+                if metrics.weekly_trend == "unavailable":
+                    quality_reasons += ("weekly_rewarming",)
             if history_missing:
                 quality_reasons += ("daily_history_unavailable",)
             if gaps:
@@ -346,32 +355,41 @@ def _missing_history(exc: MarketDataError) -> bool:
     return exc.code == exc.reason == "DATASET_OR_PARTITION_MISSING"
 
 
-def _query_through_target(
+def _query_weekly_through_target(
     market_data: MarketDataService,
     *,
     symbol: str,
     contract: str,
-    frequency: BarFrequency,
     limit: int,
     target_as_of: date,
-) -> tuple[tuple[CanonicalBar, ...], tuple[str, ...]]:
+) -> tuple[tuple[CanonicalBar, ...], tuple[WeeklySourceInterruption, ...], tuple[str, ...]]:
     try:
-        bars = market_data.query_physical_bars_as_of(
-            symbol=symbol,
-            contract=contract,
-            frequency=frequency,
-            trading_day=target_as_of,
-            limit=limit,
+        cutoff = max(window.end for window in market_data.session_windows(
+            symbol=symbol, trading_day=target_as_of,
+        ))
+        bars, gaps = market_data.query_contract_weekly_replay_quality(
+            symbol=symbol, contract=contract, through=target_as_of, cutoff=cutoff,
+            classification_version=WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
         )
     except MarketDataError as exc:
         if exc.code == "QUERY_WINDOW_EMPTY":
-            return (), ()
-        if _missing_history(exc):
-            return (), ("weekly_history_unavailable",)
+            return (), (), ()
+        if _missing_history(exc) or (
+            exc.code == "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE"
+            and exc.reason in {"DATASET_OR_PARTITION_MISSING", "REPLAY_ENDPOINTS_MISSING", "REPLAY_PREFIX_MISSING"}
+        ):
+            return (), (), ("weekly_history_unavailable",)
         if exc.code == "PRICE_UNAVAILABLE":
-            return (), ("weekly_price_unavailable",)
+            return (), (), ("weekly_price_unavailable",)
         raise MarketHomeOverviewError("MARKET_HOME_DATA_INTEGRITY_ERROR") from exc
-    return _through_target(bars, target_as_of), ()
+    # Validate the full lifecycle above before retaining the bounded metric window.
+    endpoints = sorted({bar.bar_end for bar in bars} | {gap.bar_end for gap in gaps})
+    selected = set(endpoints[-limit:])
+    return (
+        tuple(bar for bar in bars if bar.bar_end in selected),
+        tuple(gap for gap in gaps if gap.bar_end in selected),
+        (),
+    )
 
 
 def _reason_codes(metrics) -> tuple[str, ...]:

@@ -8,7 +8,7 @@ export function newowTimeKey(time: Time): string {
   if (typeof time === 'string') return time
   return `${time.year}-${String(time.month).padStart(2, '0')}-${String(time.day).padStart(2, '0')}`
 }
-/** Exact time matching only; absence is shown rather than carrying a previous value. */
+/** Exact time matching only; omit unavailable auxiliary values without carrying a previous value. */
 export function newowChartReadout(model: NewowProductChartModel | null, auxiliary: NewowAlignedAuxiliaryChartModel | null, time: Time | null): string[] {
   if (!model || time === null) return []
   const key = newowTimeKey(time)
@@ -21,9 +21,7 @@ export function newowChartReadout(model: NewowProductChartModel | null, auxiliar
   for (const label of labels) {
     const points = (auxiliary?.series ?? []).filter(series => series.label === label)
       .flatMap(series => series.points.filter(item => newowTimeKey(item.time) === key))
-    rows.push(`${label} ${points.length === 1 ? number(points[0]!.value) : '—（该 Bar 缺值 / 预热）'}`)
+    if (points.length === 1 && Number.isFinite(points[0]!.value)) rows.push(`${label} ${number(points[0]!.value)}`)
   }
-  if (!auxiliary) rows.push('副图不可用 / 预热')
-  if (auxiliary && rows.length === 4) rows.push('该 Bar 无副图读数 / 预热')
   return rows
 }

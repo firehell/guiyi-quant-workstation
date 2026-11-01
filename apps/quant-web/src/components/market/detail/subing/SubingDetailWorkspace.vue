@@ -7,8 +7,6 @@ import ObservedReferenceRecords from '@/components/market/detail/ObservedReferen
 import { actualEventsToOwnedMarkers } from '@/utils/historicalSignalMerge'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import MarketDetailDrawer from '@/components/market/detail/MarketDetailDrawer.vue'
-import MarketDetailInsightDeck from '@/components/market/detail/MarketDetailInsightDeck.vue'
-import MarketDetailSectionTabs from '@/components/market/detail/MarketDetailSectionTabs.vue'
 import { getAlertEvents, getProductAlerts } from '@/api/alerts'
 import { getRuntimeHealth } from '@/api/runtime'
 import { usePersistentAlertMarkers } from '@/composables/usePersistentAlertMarkers'
@@ -38,7 +36,6 @@ const visibleMarkers = computed(() => actualSignals.value.map(item => item.marke
 const selectedEventRecord = computed(() => visibleEvents.value.find(event => event.id === selectedEvent.value) ?? null)
 function alignmentLabel(status: string | undefined) { return status === 'PASS' ? '六周期同向' : status === 'FAIL' ? '未全部同向' : status === 'UNKNOWN' ? '无法判断' : '未记录' }
 
-const activeTab = ref<string | null>(null)
 const loader = usePersistentAlertMarkers({ fetchEvents: getAlertEvents }, { resolveRuleCodes: () => [ALERT_RULE_CODES.SUBING_THS] })
 const alertFacts = useSubingAlertFacts({ fetchRuntime: getRuntimeHealth, fetchProductAlerts: getProductAlerts })
 const identityKey = computed(() => [props.identity.seriesKind, props.identity.symbol, props.identity.contract ?? '', props.identity.frequency].join(':'))
@@ -75,13 +72,10 @@ onBeforeUnmount(() => { focusGeneration++; loader.dispose(); alertFacts.dispose(
 <template>
   <section class="subing-workspace" data-detail-workspace="subing">
     <p v-if="identityWarning" class="subing-workspace__hint" role="status">{{ identityWarning }}</p>
-    <div ref="chartRegion" class="subing-workspace__chart"><SubingChartStage :allow-historical-markers="false" :bars="bars" :mutation="mutation" :loading="loading" :error="error" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :period="identity.frequency" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="[]" :reference-indicators="[]" :quality-breaks="[]" :focus-request-id="referenceFocusRequestId" :reference-selection="[]" :markers="visibleMarkers" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlierChart" @focus-resolved="emit('focus-resolved', $event)" /></div>
+    <div ref="chartRegion" class="subing-workspace__chart"><slot name="chart-toolbar" /><SubingChartStage :allow-historical-markers="false" :bars="bars" :mutation="mutation" :loading="loading" :error="error" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :period="identity.frequency" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="[]" :reference-indicators="[]" :quality-breaks="[]" :focus-request-id="referenceFocusRequestId" :reference-selection="[]" :markers="visibleMarkers" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlierChart" @focus-resolved="emit('focus-resolved', $event)" /></div>
     <p v-if="referencePanelSupported('subing-reference', identity.frequency, identity.seriesKind)" class="subing-workspace__reference-source">实时留存参考交易｜首次记录，不以盘后重算补齐；零费用／零滑点，非账户成交</p>
     <ObservedReferenceRecords strategy="subing-reference" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :series-kind="identity.seriesKind" :through="bars.at(-1)?.trading_day" :events="visibleEvents" :unavailable="loader.unavailable.value" @focus="focusObservation" />
     <p v-if="referenceFocusNotice" role="status">{{ referenceFocusNotice }}</p>
-    <MarketDetailSectionTabs :tabs="[]" :active-id="activeTab" :history="model.history" history-selectable @select="activeTab = $event" @history-select="selectedEvent = Number($event.id.replace('subing-event:', ''))">
-      <template #default><MarketDetailInsightDeck :identity-key="identityKey" :sections="model.disclosureSections" :default-open="true" /></template>
-    </MarketDetailSectionTabs>
     <MarketDetailDrawer :open="selectedHistory !== null" title="苏冰预警详情" @close="selectedEvent = null">
       <p v-if="selectedHistory">{{ selectedHistory.label }} · {{ formatBeijingInstant(selectedHistory.barEnd) }} · {{ selectedHistory.contract }}</p>
     <template v-if="selectedEventRecord"><p>{{ alignmentLabel(selectedEventRecord.subing_alignment?.status) }}</p><template v-if="selectedEventRecord.subing_alignment"><p>快照 {{ formatBeijingInstant(selectedEventRecord.subing_alignment.as_of) }} · {{ selectedEventRecord.subing_alignment.policy_version }}</p><div class="subing-workspace__snapshot"><table><thead><tr><th>周期</th><th>合约 / 已完成 Bar</th><th>收盘价</th><th>EMA21</th><th>方向</th></tr></thead><tbody><tr v-for="period in selectedEventRecord.subing_alignment.periods" :key="period.frequency"><td>{{ period.frequency }}</td><td>{{ period.contract }} · {{ formatBeijingInstant(period.bar_end) }}</td><td>{{ period.close ?? '—' }}</td><td>{{ period.ema21 ?? '—' }}</td><td>{{ period.direction === 'LONG' ? '均线上方' : period.direction === 'SHORT' ? '均线下方' : period.direction === 'FLAT' ? '等于均线' : '无法判断' }}{{ period.reason ? ` · ${period.reason}` : '' }}</td></tr></tbody></table></div></template></template></MarketDetailDrawer>
@@ -96,6 +90,7 @@ onBeforeUnmount(() => { focusGeneration++; loader.dispose(); alertFacts.dispose(
 .subing-workspace__snapshot { overflow-x: auto; }
 .subing-workspace__snapshot table { width: 100%; border-collapse: collapse; font-size: var(--gy-font-size-sm); }
 .subing-workspace__snapshot th, .subing-workspace__snapshot td { padding: 8px; text-align: left; border-bottom: 1px solid var(--gy-border); }
+.subing-workspace :deep(.detail-section-tabs__content:empty) { display: none; }
 .subing-workspace { display: grid; gap: var(--gy-space-4); }
 .subing-workspace__semantic { margin: 0; padding: var(--gy-space-3); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); color: var(--gy-text-primary); background: var(--gy-bg-panel); }
 .subing-workspace__reference-source { margin: 0; padding: 8px 12px; border-left: 2px solid var(--gy-accent); background: var(--gy-accent-soft); color: var(--gy-text-secondary); font-size: 12px; } .subing-workspace__reference-source span { margin-left: 12px; color: var(--gy-text-muted); }

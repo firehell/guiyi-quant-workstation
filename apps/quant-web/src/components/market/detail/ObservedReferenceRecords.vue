@@ -12,7 +12,7 @@ const events = computed(() => [...props.events].sort((a, b) => Date.parse(b.bar_
 <template>
   <section class="observed-records" aria-label="实时首次事件审计" data-actual-reference-source="forward_observation">
     <ReferenceTradePanel :strategy="strategy" :product="product" :frequency="frequency" :through="through" :series-kind="seriesKind" @focus="emit('focus', $event)" />
-    <details class="observed-records__audit"><summary>实际观察／预警审计（{{ events.length }}）</summary>
+    <details v-if="strategy !== 'subing-reference'" class="observed-records__audit"><summary>实际观察／预警审计（{{ events.length }}）</summary>
     <h3>实际观察／预警记录</h3>
     <p>当前图表范围读到 {{ events.length }} 条实际记录；首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史；版本未记录时明确标注。</p>
     <p v-if="unavailable" role="status">实际预警读取未完成或失败，当前实际覆盖尚不能确认。</p>

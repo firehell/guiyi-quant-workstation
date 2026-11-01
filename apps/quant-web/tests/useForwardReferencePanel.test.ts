@@ -53,3 +53,23 @@ test('invalid HTTP success is not cached and next refresh retries transport', as
   assert.equal(calls, 2); assert.equal(state.error.value, null)
   state.dispose()
 })
+
+
+test('a late panel cannot overwrite a newly accepted product or window', async () => {
+  let release!: (value: unknown) => void
+  let started!: () => void
+  const pending = new Promise<void>(resolve => { started = resolve })
+  const newer = {since:'2026-10-02',through:'2026-10-23'}
+  const state = useForwardReferencePanel(client({panel: async (_id:string, range:typeof window) => {
+    if (range.since === window.since) { started(); return new Promise(resolve => {release = resolve}) }
+    return {version:'forward_reference_panel_v1',page:{...first,window:newer,items:[{reference_trade_id:'new-product'}]},summary:{snapshot:'exact'},curve:[]}
+  }}))
+  const old = state.refresh({...identity, product:'OLD'},window,true)
+  await pending
+  await state.refresh({...identity,product:'NEW'},newer,true)
+  release({version:'forward_reference_panel_v1',page:first,summary:{snapshot:'exact'},curve:[]})
+  await old
+  assert.equal(state.rows.value[0]?.reference_trade_id,'new-product')
+  assert.equal(state.data.value?.page.window.since,newer.since)
+  state.dispose()
+})

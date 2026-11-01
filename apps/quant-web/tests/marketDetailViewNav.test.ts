@@ -39,6 +39,10 @@ test('every detail view uses the same frequency labels and exact supported choic
     const labels = findNodes(controls,n=>n.type==='button').map(nodeText)
     assert.ok(labels.includes('日线')); assert.ok(labels.includes('周线'))
     assert.equal(labels.includes('日K'),false)
+    if (view==='htdy' || view==='subing') assert.equal(labels.includes('1分钟'), false)
+    if (view==='free') assert.equal(labels.includes('1分钟'), true)
+    assert.ok(nodeText(root).includes('目标价:'))
+    assert.ok(nodeText(root).includes('吸筹价:'))
     if (view==='newow') assert.deepEqual(labels,['60分钟','日线','周线'])
     const week = findNode(controls,n=>n.type==='button'&&nodeText(n)==='周线')!
     ;(week.props.onClick as Function)()
@@ -54,7 +58,7 @@ test('Newow navigation restores frequency choices whenever the workspace does no
   const app = createRenderer(nodeOperations()).createApp({ render: () => h(Nav, {
     identity: { view:view.value, symbol:'jm', strategy:'trend', seriesKind:'actual_dominant', frequency:'1d' },
     restore: { newow:{ strategy:'trend', frequency:'1d' } },
-    newowFrequencies:['60m','1d','1w'], seriesKinds:['actual_dominant'], newowFrequencyInWorkspace:inWorkspace.value,
+    newowFrequencies:['60m','1d','1w'], seriesKinds:['actual_dominant'], frequencyInWorkspace:inWorkspace.value,
     onSelect:(value:any)=>selected.push(value),
   }) })
   app.mount(root)
@@ -66,7 +70,9 @@ test('Newow navigation restores frequency choices whenever the workspace does no
   assert.equal(selected.at(-1).frequency,'60m')
   assert.equal(selected.at(-1).symbol,'jm')
   inWorkspace.value = true; view.value = 'free'; await nextTick()
-  assert.ok(controls(), 'other analysis views always retain their frequency controls')
+  assert.equal(controls(), undefined, 'workspace owns the only frequency controls')
+  inWorkspace.value = false; await nextTick()
+  assert.ok(controls(), 'fallback navigation retains controls without a workspace')
   app.unmount()
 })
 

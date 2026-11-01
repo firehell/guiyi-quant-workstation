@@ -1,3 +1,15 @@
+11/1 开盘前修复已发布 v1.16.62，exact 4c44e63e1be7a954d8ba82b478e28577503ac5e1，PR #591 / annotated tag / GitHub Release 已完成。
+正式十服务经原生cohort f7283e8fbd50a17aae82f73a3e3903b27e9ed8b2e216f7780f471c15fe77a0e5单次切换成功，gen51；现场十项matched、API/Web/Runtime全部通过。
+正式root改为普通Git树 .worktrees/release-v1.16.62，不再使用聊天托管工作树；部署文档已记录防止归档移除运行目录的约束。
+已修复历史费用扫描重复读取与跨日失败block归属；沿用受影响812项及独立76项验证，本轮API/core构建、Web类型/构建/拓扑及版本测试通过。
+独立SimNow仍为原v44/PID1733，配置与四账本校验不变；没有切换、创建许可、清block、退款预算或初始化账户。
+v62候选位于output/simnow-preopen-20261101/simnow-v62，SDK兼容、无网络native smoke及60品种候选预检通过，execution_permitted=false。
+SDK已从临时目录另备至output/simnow-sdk/6.7.7.1-py313，7个SDK文件与原包SHA一致；原进程SDK保持。
+owner在本聊天明确授权后，11/2 15:05北京时间一次性heartbeat任务simnow已原生创建并读回ACTIVE、COUNT=1，绑定当前主项目聊天。
+届时fresh检查20261103窗口/预算/原账户，通过才单次切换v62及解除引用后清理旧树；失败停止、不自动重试，20261102旧attempt及block保留。
+历史输入60/60通过；15品种仍需各自日盘自然Live输入，全品种自然验收不能在11/2夜盘一次完成。监控overview约8秒仍为已知延迟。
+旧v61恢复树暂留；未重复归档或删除其他会话工作区。以下为此前检查点：
+
 11/1 SimNow开盘前检查：修复已推送develop 21ed7feb1964374a0bc5b29af4325526afbfa897，尚未发布或进入独立SimNow。
 修复恢复费用扫描逐快照重复解码账户，以及连接失败跨交易日误写block；保留30秒接管时效、原预算和历史block。
 基线SimNow/账户/监控/输入1059项通过；修复后受影响812项、独立76项通过，Ruff/Mypy/secret/diff通过。
