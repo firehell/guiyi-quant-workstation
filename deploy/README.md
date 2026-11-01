@@ -45,6 +45,9 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 发布与正式运行源码统一使用扩展盘的linked worktree，默认路径为
 `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-vX.Y.Z`，按版本命名。
 最新发布树兼作正式服务源码根，不另建Application Support中的runtime克隆；安全配置、共享launcher和日志保持Git外既有位置。
+常驻正式服务使用普通Git发布工作树，不把可随聊天归档删除的宿主管理任务树作为运行根；定时任务绑定主项目会话。
+归档聊天前也必须核对其关联工作树的运行引用。聊天归档可能同时移除工作树和heartbeat，源码快照不保证保留被忽略的
+`.run`启用配置或构建依赖；恢复源码不等于恢复服务或定时任务，须分别读回验证。
 宿主管理的linked worktree可采用其原生目录结构；新布局须与当前工作站共用Git common目录，并继续校验精确annotated tag、detached commit、完整clean源码与真实路径，目录名不充当版本身份。
 外接卷launchd访问须通过宿主权限与真实启动/读回验证，安装器沿用`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`选项并核对所有required服务。
 
