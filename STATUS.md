@@ -1,3 +1,7 @@
+11/1 第三步Alert旧周线失败：关闭实现及证据校验已完成，正式60条尚未应用（留既定第5步发布）。新增alert_week_not_due_closeout_v1，仅owner在维护锁/只读事务下证明旧date开市且周未完成，保全精确原记录、完整Calendar/Session/owner事实及SHA、Runtime身份；WATCH两键原子归档到alert:coverage-closeouts:v1并移出未解决投影。缺失/矛盾/到期周/真实或未知错误均保留，不清runtime-status、不评估/重放Event、不改游标或通知。
+真实60条dry-run全部有证明（closable60、remaining0），最终代码独立验证通过，原unresolved/closeouts/runtime-status前后字节不变；output/health-diagnosis-20261101/alert-closeout-dry-run.json明确applied=false并绑定最终代码文件SHA，不作为未来执行许可。部署锁忙延至heartbeat只重做未写入证明；CAS冲突或写不明不更新缓存。
+独立Review指出并已修复两类延后跨日竞态：新真实失败与旧关闭同CAS保留；失败后再成功/暖机仍有旧边界时，以ALERT_PREVIOUS_UNRESOLVED耐久保留边界，当前进展与runtime-status不变，重启不误关。最终相关市场读取/Alert/health及一次性隔离Redis真实CAS/owner/并发/重启回归471项通过，Ruff/secret/diff通过，独立Review通过。专用16389测试容器已停止并自动删除。仅集成develop，未发布、未切现役v64、未改明日SimNow计划或生产Redis；第三步正式状态关闭仍依赖第5步发布应用，不能宣称全绿。
+
 11/1 按owner交办完成60品种全历史只读审计：首次19:46因reference-history维护锁占用skipped_busy（0/60，不计通过），只读确认释放后新发一次原生审计。正式v64/exact3e8229fe8cf2da1bd9f14d5035a32136199c0025于19:47:45至21:19:51完成，operational精确60/60、through2026-10-30、status=passed、finding_count=partial_finding_count=0、findings_complete=true、findings=[]、provider_requests=data_writes=0。
 独立读回完整产品集合并用现役原封weekly_audit_health验证passed，报告字节前后不变；output/health-diagnosis-20261101/full60-audit-114745.json，SHA256 ee3ef5f9167b058ff82eb4456ccd076603c7ce079a52d9052dd8f4b579d3670a。原生维护锁及只读事务正常结束；此次未重现此前BU数据库错误，未下载、修行情、发送通知或覆写正式weekly状态。该结果是本次手动审计，不冒充10/31定时任务或改变历史失败；Alert旧60条及225项未验证、SimNow原账户恢复仍另待处理，未发布或切服务。
 

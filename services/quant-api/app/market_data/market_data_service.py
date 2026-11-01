@@ -620,6 +620,12 @@ class MarketDataService:
             if day <= latest and max(window.end for window in sessions) <= as_of
         )
 
+    def calendar_week_facts(self, *, symbol: str, week_monday: date):
+        """Return the complete authoritative week, including closed days."""
+        if week_monday.isoweekday() != 1:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        return self._exact_calendar(symbol, week_monday, week_monday + timedelta(days=6))
+
     def completed_calendar_week(
         self, *, symbol: str, week_monday: date, as_of: datetime,
     ) -> tuple[date, datetime] | None:

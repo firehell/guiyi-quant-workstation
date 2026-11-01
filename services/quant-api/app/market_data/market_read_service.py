@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 import json
@@ -47,6 +48,8 @@ class MarketPageReader(Protocol):
     def completed_calendar_week(
         self, *, symbol: str, week_monday: date, as_of: datetime,
     ) -> tuple[date, datetime] | None: ...
+
+    def calendar_week_facts(self, *, symbol: str, week_monday: date): ...
 
     def rank1_quality_endpoint_published(
         self, *, symbol: str, frequency: BarFrequency, trading_day: date,
@@ -219,6 +222,10 @@ class MarketReadWindowError(RuntimeError):
 
 class MarketReadWindowNotDue(MarketReadWindowError):
     """A complete authoritative calendar proves the weekly endpoint is not due."""
+
+    def __init__(self, code: str, *, evidence: dict | None = None):
+        super().__init__(code)
+        self.evidence = evidence
 
 
 class MarketObservationSnapshotError(RuntimeError):
@@ -831,6 +838,21 @@ class MarketReadService:
             bar_contracts=bar_contracts,
         )
 
+    @contextmanager
+    def coverage_closeout_guard(self):
+        """Freeze Calendar/Session facts through the diagnostic CAS commit."""
+        catalog = getattr(self._market_data, "catalog", None)
+        if catalog is None:
+            raise MarketReadWindowError("MARKET_READ_CLOSEOUT_GUARD_UNAVAILABLE")
+        lease = catalog.acquire_maintenance_lock(caller="alert-coverage-closeout")
+        if lease is None:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            lease.release()
+
     def latest_subing_quality_window(
         self,
         identity: SeriesPageQuery,
@@ -879,7 +901,19 @@ class MarketReadService:
                     )
                     if completed_days != (trading_day,):
                         raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
-                    raise MarketReadWindowNotDue("MARKET_READ_WEEK_NOT_COMPLETED")
+                    calendar = self._market_data.calendar_week_facts(
+                        symbol=identity.symbol, week_monday=monday,
+                    )
+                    trading_days = tuple(day for day, trades in calendar if trades)
+                    if trading_day not in trading_days or trading_days[-1] <= trading_day:
+                        raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
+                    raise MarketReadWindowNotDue("MARKET_READ_WEEK_NOT_COMPLETED", evidence={
+                        "symbol": identity.symbol, "trading_day": trading_day.isoformat(),
+                        "owner_contract": owner.contract,
+                        "calendar": [[day.isoformat(), trades] for day, trades in calendar],
+                        "sessions": [[item.start.isoformat(), item.end.isoformat()] for item in sessions],
+                        "cutoff": cutoff.isoformat(),
+                    })
                 if complete[0] != trading_day:
                     raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
             expected = self._market_data.expected_contract_replay_endpoints(

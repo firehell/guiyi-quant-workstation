@@ -449,6 +449,26 @@ Coverage heartbeat v2 SHALL distinguish typed `evaluation_warming_up` as `warmin
 without manufacturing an evaluation success, current successful cutoff or failure timestamp. A prior actual
 input/evaluation error MUST remain unresolved through warming, peer successes, day changes and restarts.
 The bounded unresolved projection is diagnostic only; it does not replace Event persistence or the journal.
+`alert_week_not_due_closeout_v1` MAY close a historical generic W1 diagnostic only
+when it has no contract, successful cutoff, specific input error, prior unresolved
+boundary or warming evidence, and fresh rank1/complete seven-day Calendar/Session
+facts prove its claimed date was a completed trading day before that week's last
+trading day. The owner SHALL retain the exact original record, input facts/hash,
+checked time and Runtime identity in `alert:coverage-closeouts:v1` atomically with
+removal from `alert:coverage-unresolved:v2`. Maintenance locking SHALL cover proof
+and CAS; both Redis keys are watched and ownership rechecked before commit.
+Missing/conflicting evidence, due weeks, identity drift, CAS conflicts and unknown
+commit results MUST NOT clear the diagnostic or manufacture success. Busy proof
+acquisition MAY defer to an owner heartbeat; failed/unknown mutations do not retry.
+This closes a non-applicable weekly boundary, not the original historical failure
+fact: runtime failure status, Events, cursors and notification records remain unchanged.
+Any later real failure SHALL remain in the same atomic unresolved projection. If
+a later successful/warming progress still references an intervening unresolved
+date, the durable replacement SHALL carry `ALERT_PREVIOUS_UNRESOLVED`, preserving
+that boundary and paired success/cutoff; this is not a new evaluation failure.
+Current progress retains its successful/warming semantics, and historical Events
+and runtime failure status are untouched. Such a retained boundary is ineligible
+for the not-due closeout policy after restart.
 The health reader SHALL continue accepting v1 heartbeats and MUST NOT reinterpret absent evidence as success.
 
 For minute routes after restart, an evaluation-lag claim SHALL bind authoritative Session endpoints to actual
