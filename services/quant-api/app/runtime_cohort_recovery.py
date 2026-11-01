@@ -1374,17 +1374,24 @@ def valid_original_verified_feed_state(plan, state):
     """Pure, exact original-journal shape for recovery and retirement audit."""
     try:
         effects = state["effects"]
+        base_keys = {
+            "schema_version", "plan_sha256", "phase", "effects",
+            "failed_phase", "error_type",
+        }
+        failure = (
+            state["error_type"] == "ReceivingLivenessError"
+            and set(state) == base_keys
+            or state["error_type"] == "CohortError"
+            and state.get("error_code") == "COHORT_NEW_READY_TIMEOUT"
+            and set(state) == base_keys | {"error_code"}
+        )
         return (
             type(plan) is dict and type(state) is dict
-            and set(state) == {
-                "schema_version", "plan_sha256", "phase", "effects",
-                "failed_phase", "error_type",
-            }
+            and failure
             and state["schema_version"] == 1
             and state["plan_sha256"] == plan["plan_sha256"]
             and state["phase"] == "outcome_unknown"
             and state["failed_phase"] == "verified"
-            and state["error_type"] == "ReceivingLivenessError"
             and type(effects) is dict
             and set(effects) == {
                 "prewarm", "calendars_off", "drain", "old_exited",
