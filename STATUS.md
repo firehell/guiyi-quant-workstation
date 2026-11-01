@@ -1,3 +1,32 @@
+11/1 SimNow开盘前检查：修复已推送develop 21ed7feb1964374a0bc5b29af4325526afbfa897，尚未发布或进入独立SimNow。
+修复恢复费用扫描逐快照重复解码账户，以及连接失败跨交易日误写block；保留30秒接管时效、原预算和历史block。
+基线SimNow/账户/监控/输入1059项通过；修复后受影响812项、独立76项通过，Ruff/Mypy/secret/diff通过。
+原5649份快照的实际Host历史费用扫描只读探针0.091秒、账户读取1次、四库SHA不变；不代表完整Recover或柜台验收。
+最新60品种只读审计：历史WINDOW32_VERIFIED及物理1m聚合EXACT为60/60；45等待新观察、15保留Live输入阻断。
+审计output/simnow-preopen-20261101/inputs，零provider/生产写入，15品种待各自日盘自然输入，未补造信号。
+检查发现正式v61聊天归档导致运行目录消失、十服务引用失效；owner批准后已原生恢复原目录/exact61及离线依赖构建，
+按原成功cohort/binding证据以原生方法恢复四启用标记，未改gen50或旧cohort；十项matched、API/Web/Runtime检查通过。
+SimNow原v44/PID1733、配置与四账本保持，pending=true/opening=false；20261102 attempt1及CONTINUOUS_RECOVERY_REQUIRED未清除。
+原11/2 15:05一次性automation随归档已缺失，不能沿用下方“已安排”历史结论；恢复定时任务及发布修复版尚待本轮owner选择。
+监控HTTP已恢复，但完整账本重放使overview约8秒；只读展示计算约0.26秒，不用跳过完整性校验换取提速。
+
+以下为此前检查点：
+
+11/1 工作树收敛最新现场：正式十服务已切至已发布 v1.16.61，exact 8d65cd042c8fb2e1bb58874e874dd04cb6ea918c，gen50。
+原生 cohort ffd9901f2cbf85445f223d1567ba3e994494178e6656e24886e136afdfe736c9 已 switched；最终 status 十项 matched、API/Web/Runtime HTTP 全通过。
+保留正式目录 worktree/runtime-timeout-recovery/guiyi-quant-workstation；未新增应用版本、tag 或工作树。
+SimNow v1.16.44 原 PID1733、配置及四账本清理前后 SHA 完全一致；账户、恢复 block、验证安排及 auto_order=false 均保持。
+现有 automation simnow 已绑定保留的 v61 目录与当前收敛会话，11/2 15:05 北京时间、COUNT=1、原账户/动作/预算不变；v48 候选仅历史参考，届时必须重新验证当前来源。
+旧发布树48/50/51/54/55/56/57/59/60九处已实际删除；必要历史53个已关闭 attempt、129份原件已由原生工具封存。
+封存索引 f90612e7171f6198677fc4c1965fb54effe58d394e17fe720c0b1a5d5a38327f；九树删除后，冻结v61历史reader逐项读取验证通过。
+清理工具改动已在 develop 完成：定向38项通过并独立Review，无新增正式版本；未完成有界读取改造及用户stash保留。
+prewarm 树已原生归档；Subing 的8个未合并提交及49份研究文件（173568746 bytes）已保存到 output/worktree-archive-20261101/subing-jm30-notion-spec，bundle verify和逐文件SHA通过，未集成策略。
+owner后续交办解除关联后，已通过原生 set_thread_archived 归档苏冰聊天，宿主随后完成工作树快照与移除；未执行shell强删、Git状态迁移或修改宿主元数据。
+最终现场 Git worktree 列表恰好三处：主项目 develop、正式v61、SimNow v44；prewarm及Subing两个任务目录均已不存在，未合并提交和必要研究输出保全。
+工作树收敛已完成。牛哇剩余资产恢复/分钟双策略持有与理论曲线/大历史读取、自然盘后闭环仍是独立未完工作；未以本轮服务健康冒充业务验收。
+
+以下为此前检查点：
+
 11/1 运维恢复补丁1.16.61：仅扩展原cohort verified阶段CohortError/COHORT_NEW_READY_TIMEOUT精确日志形状，复用既有单次关闭及同代恢复入口，不重放CAS、不改原件或放宽ACK/来源/进程/锁校验。
 60已发布775156244478b383d77f089866b3305383ed1cd5，正式绑定已提交gen49，但最终就绪超时后六owner保护停驻、四定时服务未恢复。服务恢复须以后续原生receipt与现场读回为准。
 只读快照已证明2026-10-29/30和11-02全部ACK达完整尾部；大历史读取/holding/theoretical未发布改造仍保全于stash9315cc65，原任务恢复与自然盘后验收仍待。auto_order=false。

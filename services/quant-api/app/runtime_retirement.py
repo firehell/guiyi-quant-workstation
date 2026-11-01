@@ -1006,13 +1006,149 @@ def recovery_references(directory, repo_root, roots):
             if not os.path.lexists(path):
                 continue
             value = _json(path)
-            encoded = json.dumps(value, sort_keys=True)
+            encoded = json.dumps(value, sort_keys=True, ensure_ascii=False)
             for root in roots:
                 if str(root) in encoded:
                     result[str(root)].append(
                         f"recovery:{child.parent.name}:{child.name}"
                     )
     return result
+
+
+def _forward_terminal_subset(directory, current, entries, plan_paths, host, bindings):
+    """Prove the live forward result, then leave its new-source chain unsealed.
+
+    The deployed v1.16.60 historical reader cannot validate the later native
+    COHORT_NEW_READY_TIMEOUT source shape. Its v1 seal therefore contains only
+    the independently closed history through the preceding ordinary cohort.
+    """
+    from app import runtime_cohort as cohort, runtime_cohort_recovery as recovery
+
+    require(
+        set(current) == {
+            "schema_version", "kind", "phase", "source_phase",
+            "plan_sha256", "source_plan_sha256", "receipt_sha256",
+            "original_attempt_preserved", "original_feed_halt_resolution",
+        }
+        and current["schema_version"] == 1
+        and current["kind"] == "postcas_forward_recovery_result"
+        and current["phase"] == "switched"
+        and current["source_phase"] == "outcome_unknown"
+        and current["original_attempt_preserved"] is True
+    )
+    name = current["plan_sha256"]
+    child = directory / "cohort-forward-recoveries" / name
+    require(child in plan_paths and plan_paths[child] == child / "plan.json")
+    plan = _json(child / "plan.json")
+    state = _json(child / "state.json")
+    receipt_raw = _read(child / "receipt.json")
+    receipt = _json(child / "receipt.json")
+    recovery._validate(
+        plan, datetime.fromisoformat(plan["created_at"]), historical=True,
+        history_directory=directory,
+    )
+    require(
+        set(state) == {
+            "schema_version", "kind", "phase", "plan_sha256", "source",
+            "receipt_sha256", "effects",
+        }
+        and state["schema_version"] == 1
+        and state["kind"] == recovery.KIND
+        and state["phase"] == "recovered"
+        and state["plan_sha256"] == name == plan["plan_sha256"]
+        and state["source"] == plan["source"]
+        and state["receipt_sha256"] == current["receipt_sha256"] == sha(receipt_raw)
+        and set(state["effects"])
+        == {"consumers", "intake", "feed", "verified", "calendars"}
+        and state["effects"]["consumers"] == {
+            "resumed_generation": plan["new"]["services"]["live"]["generation"],
+        }
+        and state["effects"]["feed"]
+        == {"bootstrapped": True, "label": "com.guiyi.quant-market-feed"}
+        and set(receipt) == {
+            "schema_version", "kind", "plan_sha256", "source",
+            "observed_at", "intake", "readback", "natural_acceptance",
+            "original_attempt_preserved", "original_feed_halt_resolution",
+        }
+        and receipt["schema_version"] == 1
+        and receipt["kind"] == "postcas_forward_recovery_readback"
+        and receipt["plan_sha256"] == name
+        and receipt["source"] == plan["source"]
+        and receipt["original_attempt_preserved"] is True
+        and receipt["natural_acceptance"] == "pending"
+        and receipt["intake"] == state["effects"]["intake"]
+        and receipt["readback"] == state["effects"]["verified"]
+        and recovery._valid_intake_result(receipt["intake"])
+        and receipt["readback"].get("continuous_identity") == "matched"
+        and receipt["readback"].get("calculation_ready") is False
+        and recovery._valid_intake_result(receipt["readback"].get("intake"))
+        and state["effects"]["calendars"]
+        == {"calendar_registration_only": True, "identity": "matched"}
+        and plan.get("mode") == recovery.ORIGINAL_FEED_MODE
+        and "stop_after" not in plan
+        and "predecessor" not in plan
+    )
+    source_plan, _source_state, source_identity = (
+        recovery._original_verified_feed_source(
+            host, plan["source"]["plan_path"], historical=True,
+        )
+    )
+    require(
+        source_identity == plan["source"]
+        and source_identity["plan_sha256"] == current["source_plan_sha256"]
+        and source_plan["new"] == plan["new"]
+        and bindings == cohort.registry(plan["new"])
+    )
+    resolution = receipt["original_feed_halt_resolution"]
+    close = plan["original_close"]
+    require(
+        set(resolution) == {"kind", "source", "feed_close", "confirmation"}
+        and resolution["kind"]
+        == "original_cohort_verified_feed_halt_resolution_v1"
+        and resolution["source"] == source_identity
+        and resolution["feed_close"] == close
+        and resolution["confirmation"]
+        == plan["audit"]["original_verified_feed_halt"]
+        and recovery.valid_original_verified_feed_halt(
+            resolution["confirmation"], source_identity, plan["audit"],
+        )
+        and current["original_feed_halt_resolution"] == {
+            "source_plan_sha256": source_identity["plan_sha256"],
+            "feed_close_plan_sha256": close["plan_sha256"],
+            "receipt_sha256": current["receipt_sha256"],
+        }
+        and recovery._original_feed_close_attempt(
+            host, close["plan_path"], source_identity,
+        )[0] == close
+    )
+    candidates = [
+        candidate for candidate, candidate_state in entries
+        if candidate.parent.name == "cohort-attempts"
+        and candidate_state.get("phase") == "switched"
+        and _json(plan_paths[candidate]).get("new") == source_plan["old"]
+    ]
+    require(len(candidates) == 1)
+    terminal = candidates[0]
+    excluded = {
+        source_identity["plan_sha256"], child.name, close["plan_sha256"],
+    }
+    for candidate, _candidate_state in entries:
+        if candidate.parent.name != "cohort-forward-recoveries":
+            continue
+        candidate_source = _json(plan_paths[candidate]).get("source")
+        if (isinstance(candidate_source, dict)
+                and candidate_source.get("plan_sha256")
+                == source_identity["plan_sha256"]):
+            require(candidate_source == source_identity
+                    and candidate.name in excluded)
+    require(
+        child.name in excluded
+        and close["plan_sha256"] in excluded
+        and any(candidate.name == source_identity["plan_sha256"]
+                and candidate.parent.name == "cohort-attempts"
+                for candidate, _state in entries)
+    )
+    return terminal.name, excluded
 
 
 class RetirementBackend:
@@ -1040,31 +1176,7 @@ class RetirementBackend:
         require(
             isinstance(current_id, str) and re.fullmatch(r"[0-9a-f]{64}", current_id)
         )
-        terminal = self.directory / "cohort-attempts" / current_id
-        plan = _json(terminal / "plan.json")
-        validate(
-            plan,
-            datetime.fromisoformat(plan["created_at"]),
-            historical=True,
-            history_directory=self.directory,
-        )
-        require(_read(terminal / "state.json") == global_raw)
-        require(
-            current.get("schema_version") == 1
-            and plan.get("plan_sha256") == current_id
-            and current.get("effects", {})
-            .get("verified", {})
-            .get("continuous_identity")
-            == "matched"
-            and current.get("effects", {}).get("calendars_on", {}).get("identity")
-            == "matched"
-            and current.get("effects", {})
-            .get("calendars_on", {})
-            .get("calendar_registration_only")
-            is True
-        )
         bindings = read_bindings()
-        require(bindings == registry(plan["new"]))
         require(
             len({(row.root, row.tag, row.commit) for row in bindings.services.values()})
             == 1
@@ -1078,32 +1190,73 @@ class RetirementBackend:
         host = ForwardRecoveryHost()
         host.directory = self.directory
         _no_unresolved_recovery(host)
-        entries = _entries(self.directory)
-        plan_paths = _plan_paths(entries, self.directory, self.repo_root)
+        all_entries = _entries(self.directory)
+        all_plan_paths = _plan_paths(all_entries, self.directory, self.repo_root)
+        excluded = set()
+        if current.get("kind") == "postcas_forward_recovery_result":
+            current_id, excluded = _forward_terminal_subset(
+                self.directory, current, all_entries, all_plan_paths, host, bindings,
+            )
+        else:
+            terminal = self.directory / "cohort-attempts" / current_id
+            plan = _json(terminal / "plan.json")
+            validate(
+                plan,
+                datetime.fromisoformat(plan["created_at"]),
+                historical=True,
+                history_directory=self.directory,
+            )
+            require(_read(terminal / "state.json") == global_raw)
+            require(
+                current.get("schema_version") == 1
+                and "kind" not in current
+                and plan.get("plan_sha256") == current_id
+                and current.get("effects", {})
+                .get("verified", {})
+                .get("continuous_identity")
+                == "matched"
+                and current.get("effects", {})
+                .get("calendars_on", {})
+                .get("identity")
+                == "matched"
+                and current.get("effects", {})
+                .get("calendars_on", {})
+                .get("calendar_registration_only")
+                is True
+                and bindings == registry(plan["new"])
+            )
+        entries = [
+            (child, state) for child, state in all_entries
+            if child.name not in excluded
+        ]
+        plan_paths = {child: all_plan_paths[child] for child, _state in entries}
         historical_identities = {}
+        verified_identities = set()
+
+        def verify_identity(identity):
+            root = Path(identity["root"])
+            require(root.is_absolute() and root == root.resolve())
+            previous = historical_identities.get(identity["root"])
+            require(previous is None or previous == identity)
+            key = (identity["root"], identity["tag"], identity["commit"])
+            if key not in verified_identities:
+                _verify_git(self.repo_root, identity)
+                if os.path.lexists(root):
+                    _verify_present_release(self.repo_root, identity)
+                verified_identities.add(key)
+            historical_identities[identity["root"]] = identity
+
         for path in plan_paths.values():
             for item in _walk(_json(path)):
                 if isinstance(item, dict) and {"root", "tag", "commit"} <= set(item):
                     identity = {key: item[key] for key in ("root", "tag", "commit")}
-                    root = Path(identity["root"])
-                    require(
-                        root.is_absolute()
-                        and root == root.resolve()
-                    )
-                    _verify_git(self.repo_root, identity)
-                    if os.path.lexists(root):
-                        _verify_present_release(self.repo_root, identity)
-                    previous = historical_identities.get(identity["root"])
-                    require(previous is None or previous == identity)
-                    historical_identities[identity["root"]] = identity
+                    verify_identity(identity)
 
         def history_verifier(root, tag, commit, directory):
             require(Path(directory) == self.directory)
             identity = {"root": str(root), "tag": tag, "commit": commit}
             require(historical_identities.get(str(root)) == identity)
-            _verify_git(self.repo_root, identity)
-            if os.path.lexists(root):
-                _verify_present_release(self.repo_root, identity)
+            verify_identity(identity)
 
         originals, markers = {}, {}
         recovered_sources = set()
@@ -1190,6 +1343,7 @@ class RetirementBackend:
                     datetime.fromisoformat(private["created_at"]),
                     historical=True,
                     history_directory=self.directory,
+                    history_verifier=history_verifier,
                 )
             for leaf in LEAVES:
                 path = child / leaf
@@ -1256,6 +1410,13 @@ class RetirementBackend:
                             )
                             require(expected == actual)
                             markers[str(candidate)] = actual
+        for path in originals:
+            require(not excluded.intersection(Path(path).parts))
+            require(not any(
+                item in excluded
+                for item in _walk(_json(path))
+                if isinstance(item, str)
+            ))
         for root in roots:
             for name in MARKERS:
                 path = root / ".run" / name
@@ -1275,10 +1436,7 @@ class RetirementBackend:
         )
         identities = [retention.candidate_identity(root) for root in roots]
         for identity in identities:
-            _verify_git(self.repo_root, identity)
-            previous = historical_identities.get(identity["root"])
-            require(previous is None or previous == identity)
-            historical_identities[identity["root"]] = identity
+            verify_identity(identity)
         result = {
             "directory": str(self.directory),
             "repo_root": str(self.repo_root),

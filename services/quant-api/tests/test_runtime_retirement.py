@@ -359,8 +359,9 @@ def test_missing_or_changed_seal_never_authorizes_history(
         )
 
 
-def test_unsealed_pending_recovery_pins_root(tmp_path):
-    root = tmp_path / "release"
+@pytest.mark.parametrize("relative_root", ("release", "扩展盘/release"))
+def test_unsealed_pending_recovery_pins_root(tmp_path, monkeypatch, relative_root):
+    root = tmp_path / relative_root
     directory = tmp_path / "runtime"
     child = directory / "cohort-forward-recoveries" / ("a" * 64)
     child.mkdir(parents=True, mode=0o700)
@@ -369,6 +370,9 @@ def test_unsealed_pending_recovery_pins_root(tmp_path):
     m._write(child / "plan.json", m._encoded({"controller": {"root": str(root)}}))
     result = m.recovery_references(directory, tmp_path, (root,))
     assert result[str(root)] == ["recovery:cohort-forward-recoveries:" + "a" * 64]
+    monkeypatch.setattr(m, "sealed_closed_attempts",
+                        lambda *_args: {child.name})
+    assert m.recovery_references(directory, tmp_path, (root,))[str(root)] == []
 
 
 def test_future_checkout_same_repository_can_read_seal_but_other_repo_cannot(
@@ -496,6 +500,288 @@ def test_native_collector_accepts_only_hash_bound_restore_readback(
     receipt = m._json(old / "recovery-readback.json")
     receipt["source_attempt_sha256"] = "f" * 64
     (old / "recovery-readback.json").write_bytes(m._encoded(receipt))
+    with pytest.raises(ValueError):
+        m.build_closeout_plan((root,), backend=backend)
+
+
+def test_collector_verifies_each_release_once_per_call_and_history_independently(
+    tmp_path, monkeypatch,
+):
+    from app import runtime_cohort
+
+    backend, root, _old, terminal = native_case(tmp_path, monkeypatch)
+    identity = {"root": str(root), "tag": "v1.2.3", "commit": "a" * 40}
+    plan_path = terminal / "plan.json"
+    plan = m._json(plan_path)
+    plan["releases"] = [identity] * 12
+    plan_path.write_bytes(m._encoded(plan))
+
+    def validate(value, _created, **kwargs):
+        verifier = kwargs.get("history_verifier")
+        if verifier is not None:
+            for item in value.get("releases", ()):
+                verifier(
+                    item["root"], item["tag"], item["commit"], backend.directory,
+                )
+
+    monkeypatch.setattr(runtime_cohort, "validate", validate)
+    git_calls, present_calls = [], []
+    monkeypatch.setattr(m, "_verify_git", lambda *args: git_calls.append(args))
+    monkeypatch.setattr(
+        m, "_verify_present_release",
+        lambda *args: present_calls.append(args),
+    )
+    first = m.build_closeout_plan((root,), backend=backend)
+    assert len(git_calls) == len(present_calls) == 2
+    assert m.build_closeout_plan((root,), backend=backend) == first
+    assert len(git_calls) == len(present_calls) == 4
+
+
+def test_collector_rejects_conflicting_identity_for_same_root_before_reuse(
+    tmp_path, monkeypatch,
+):
+    backend, root, _old, terminal = native_case(tmp_path, monkeypatch)
+    plan_path = terminal / "plan.json"
+    plan = m._json(plan_path)
+    plan["releases"] = [
+        {"root": str(root), "tag": "v1.2.3", "commit": "a" * 40},
+        {"root": str(root), "tag": "v1.2.4", "commit": "b" * 40},
+    ]
+    plan_path.write_bytes(m._encoded(plan))
+    calls = []
+    monkeypatch.setattr(m, "_verify_git", lambda *args: calls.append(args))
+    with pytest.raises(ValueError):
+        m.build_closeout_plan((root,), backend=backend)
+    assert len(calls) == 1
+
+
+def test_collector_passes_verified_history_to_forward_private_validator(
+    tmp_path, monkeypatch,
+):
+    from app import runtime_cohort_recovery as recovery
+
+    backend, root, old, _terminal = native_case(tmp_path, monkeypatch)
+    parent = backend.directory / "cohort-forward-recoveries"
+    parent.mkdir(mode=0o700)
+    child = parent / ("e" * 64)
+    child.mkdir(mode=0o700)
+    identity = {"root": str(root), "tag": "v1.2.3", "commit": "a" * 40}
+    source = {"plan_sha256": old.name}
+    m._write(child / "plan.json", m._encoded({
+        "plan_sha256": child.name,
+        "created_at": "2026-10-27T00:00:00+00:00",
+        "source": source, "new": {"services": {"live": identity}},
+    }))
+    receipt = {
+        "plan_sha256": child.name, "source": source,
+        "kind": "postcas_forward_recovery_readback",
+        "original_attempt_preserved": True,
+        "intake": {}, "readback": {},
+    }
+    m._write(child / "receipt.json", m._encoded(receipt))
+    m._write(child / "state.json", m._encoded({
+        "plan_sha256": child.name, "phase": "recovered", "source": source,
+        "receipt_sha256": m.sha(m._encoded(receipt)),
+        "effects": {
+            "consumers": {}, "intake": {}, "feed": {},
+            "verified": {}, "calendars": {},
+        },
+    }))
+    calls = []
+
+    def validate(_plan, _created, **kwargs):
+        verifier = kwargs.get("history_verifier")
+        assert kwargs["historical"] is True
+        assert verifier is not None
+        verifier(root, identity["tag"], identity["commit"], backend.directory)
+        calls.append(1)
+
+    monkeypatch.setattr(recovery, "_validate", validate)
+    monkeypatch.setattr(
+        m, "_closed_history", lambda seal, _repo: set(seal["closed_attempts"]),
+    )
+    m.build_closeout_plan((root,), backend=backend)
+    assert calls == [1]
+
+
+def forward_terminal_case(tmp_path, monkeypatch):
+    from app import runtime_cohort_recovery as recovery
+
+    backend, root, old, anchor = native_case(tmp_path, monkeypatch)
+    parent = backend.directory / "cohort-forward-recoveries"
+    parent.mkdir(mode=0o700)
+    source = backend.directory / "cohort-attempts" / ("c" * 64)
+    close = parent / ("e" * 64)
+    normal = parent / ("f" * 64)
+    for child in (source, close, normal):
+        child.mkdir(mode=0o700)
+    new = {"services": {"live": {"generation": 49}}}
+    source_plan = {
+        "plan_sha256": source.name, "created_at": "2026-10-27T00:00:00+00:00",
+        "old": {}, "new": new,
+    }
+    source_state = {
+        "schema_version": 1, "plan_sha256": source.name,
+        "phase": "outcome_unknown", "effects": {},
+    }
+    identity = {
+        "kind": recovery.ORIGINAL_FEED_SOURCE,
+        "plan_sha256": source.name, "plan_path": str(source / "plan.json"),
+    }
+    close_descriptor = {
+        "plan_sha256": close.name, "plan_path": str(close / "plan.json"),
+    }
+    m._write(source / "plan.json", m._encoded(source_plan))
+    m._write(source / "state.json", m._encoded(source_state))
+    m._write(close / "plan.json", m._encoded({
+        "plan_sha256": close.name, "created_at": source_plan["created_at"],
+        "source": identity, "new": new,
+    }))
+    m._write(close / "state.json", m._encoded({
+        "schema_version": 1, "plan_sha256": close.name, "phase": "feed_closed",
+    }))
+    confirmation = {"verified": True}
+    plan = {
+        "plan_sha256": normal.name, "created_at": source_plan["created_at"],
+        "mode": recovery.ORIGINAL_FEED_MODE, "source": identity,
+        "new": new, "original_close": close_descriptor,
+        "audit": {"original_verified_feed_halt": confirmation},
+    }
+    intake = {"schema_version": 2}
+    readback = {
+        "continuous_identity": "matched", "calculation_ready": False,
+        "intake": intake,
+    }
+    receipt = {
+        "schema_version": 1, "kind": "postcas_forward_recovery_readback",
+        "plan_sha256": normal.name, "source": identity,
+        "observed_at": "2026-10-27T00:00:00+00:00",
+        "intake": intake, "readback": readback, "natural_acceptance": "pending",
+        "original_attempt_preserved": True,
+        "original_feed_halt_resolution": {
+            "kind": "original_cohort_verified_feed_halt_resolution_v1",
+            "source": identity, "feed_close": close_descriptor,
+            "confirmation": confirmation,
+        },
+    }
+    state = {
+        "schema_version": 1, "kind": recovery.KIND, "phase": "recovered",
+        "plan_sha256": normal.name, "source": identity,
+        "receipt_sha256": m.sha(m._encoded(receipt)),
+        "effects": {
+            "consumers": {"resumed_generation": 49},
+            "intake": intake,
+            "feed": {"bootstrapped": True, "label": "com.guiyi.quant-market-feed"},
+            "verified": readback,
+            "calendars": {"calendar_registration_only": True, "identity": "matched"},
+        },
+    }
+    m._write(normal / "plan.json", m._encoded(plan))
+    m._write(normal / "receipt.json", m._encoded(receipt))
+    m._write(normal / "state.json", m._encoded(state))
+    pointer = {
+        "schema_version": 1, "kind": "postcas_forward_recovery_result",
+        "phase": "switched", "source_phase": "outcome_unknown",
+        "plan_sha256": normal.name, "source_plan_sha256": source.name,
+        "receipt_sha256": state["receipt_sha256"],
+        "original_attempt_preserved": True,
+        "original_feed_halt_resolution": {
+            "source_plan_sha256": source.name,
+            "feed_close_plan_sha256": close.name,
+            "receipt_sha256": state["receipt_sha256"],
+        },
+    }
+    (backend.directory / "cohort-release.json").write_bytes(m._encoded(pointer))
+    monkeypatch.setattr(recovery, "_validate", lambda *a, **k: None)
+    monkeypatch.setattr(
+        recovery, "_original_verified_feed_source",
+        lambda *a, **k: (source_plan, source_state, identity),
+    )
+    monkeypatch.setattr(
+        recovery, "_original_feed_close_attempt",
+        lambda *a, **k: (close_descriptor, {}),
+    )
+    monkeypatch.setattr(recovery, "valid_original_verified_feed_halt",
+                        lambda *a, **k: True)
+    monkeypatch.setattr(recovery, "_valid_intake_result", lambda *a: True)
+    return backend, root, old, anchor, source, close, normal
+
+
+def test_forward_terminal_collector_seals_only_old_reader_compatible_history(
+    tmp_path, monkeypatch,
+):
+    backend, root, old, anchor, source, close, normal = forward_terminal_case(
+        tmp_path, monkeypatch,
+    )
+    plan = m.build_closeout_plan((root,), backend=backend)
+    assert plan["terminal_cohort"] == anchor.name
+    assert set(plan["closed_attempts"]) == {old.name, anchor.name}
+    assert all(
+        excluded not in path
+        for path in plan["originals"]
+        for excluded in (source.name, close.name, normal.name)
+    )
+    assert m._closed_history(plan, backend.repo_root) == {
+        old.name, anchor.name,
+    }
+    assert plan["guards"]["global_sha256"] == m.sha(
+        m._read(backend.directory / "cohort-release.json")
+    )
+
+
+@pytest.mark.parametrize("damage", (
+    "pointer_extra", "receipt_hash", "source_hash", "readback",
+    "close_resolution", "source_generation", "second_anchor",
+    "extra_source_recovery",
+))
+def test_forward_terminal_collector_rejects_changed_causal_link(
+    tmp_path, monkeypatch, damage,
+):
+    backend, root, _old, anchor, _source, _close, normal = forward_terminal_case(
+        tmp_path, monkeypatch,
+    )
+    pointer_path = backend.directory / "cohort-release.json"
+    pointer = m._json(pointer_path)
+    if damage == "pointer_extra":
+        pointer["unknown"] = True
+    elif damage == "receipt_hash":
+        pointer["receipt_sha256"] = "a" * 64
+    elif damage == "source_hash":
+        pointer["source_plan_sha256"] = "a" * 64
+    elif damage == "readback":
+        state_path = normal / "state.json"
+        state = m._json(state_path)
+        state["effects"]["verified"]["continuous_identity"] = "unmatched"
+        state_path.write_bytes(m._encoded(state))
+    elif damage == "close_resolution":
+        pointer["original_feed_halt_resolution"]["feed_close_plan_sha256"] = (
+            "a" * 64
+        )
+    elif damage == "source_generation":
+        plan_path = normal / "plan.json"
+        changed = m._json(plan_path)
+        changed["new"]["services"]["live"]["generation"] = 50
+        plan_path.write_bytes(m._encoded(changed))
+    elif damage == "second_anchor":
+        extra = backend.directory / "cohort-attempts" / ("a" * 64)
+        extra.mkdir(mode=0o700)
+        m._write(extra / "plan.json", m._read(anchor / "plan.json"))
+        state = m._json(anchor / "state.json")
+        state["plan_sha256"] = extra.name
+        m._write(extra / "state.json", m._encoded(state))
+    else:
+        extra = backend.directory / "cohort-forward-recoveries" / ("a" * 64)
+        extra.mkdir(mode=0o700)
+        extra_plan = m._json(normal / "plan.json")
+        extra_plan["plan_sha256"] = extra.name
+        m._write(extra / "plan.json", m._encoded(extra_plan))
+        m._write(extra / "state.json", m._encoded({
+            "schema_version": 1, "plan_sha256": extra.name,
+            "phase": "recovered", "source": extra_plan["source"],
+        }))
+    if damage in {"pointer_extra", "receipt_hash", "source_hash",
+                  "close_resolution"}:
+        pointer_path.write_bytes(m._encoded(pointer))
     with pytest.raises(ValueError):
         m.build_closeout_plan((root,), backend=backend)
 

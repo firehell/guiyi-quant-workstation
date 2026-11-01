@@ -156,9 +156,13 @@ class Host:
             if self.continuous
             else self.evidence.snapshots()
         )
+        # Native callbacks and fee() only stage dispatch-journal facts. The
+        # account stays unchanged until drain(), so decode its verified state
+        # once rather than once per retained snapshot pair during recovery.
+        fee_state = self.store.current()
         for index in range(len(history) - 1):
             left, right = history[index], history[index + 1]
-            fees, reason = actual_fee(left, right, self.store.current(), self.journal)
+            fees, reason = actual_fee(left, right, fee_state, self.journal)
             self.last_fee_status = reason
             for fee in fees:
                 self.adapter.fee(fee, right.at)
