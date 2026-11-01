@@ -1,0 +1,362 @@
+[
+  {
+    "status": "PASS",
+    "scenario": "MA_atr2_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 122,
+    "fills": 244,
+    "equity": "88277.3800000000000000000000",
+    "net": "-11722.6200000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_atr2_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 122,
+    "fills": 244,
+    "equity": "85727.5250000000000000000000",
+    "net": "-14272.4750000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_atr3_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 122,
+    "fills": 244,
+    "equity": "86498.0900000000000000000000",
+    "net": "-13501.9100000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_atr3_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 122,
+    "fills": 244,
+    "equity": "84108.2350000000000000000000",
+    "net": "-15891.7650000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_atr_matched_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 121,
+    "fills": 243,
+    "equity": "89794.4200000000000000000000",
+    "net": "-7569.4900000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_atr_matched_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 121,
+    "fills": 243,
+    "equity": "87404.4150000000000000000000",
+    "net": "-9959.4950000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_long_flat_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 61,
+    "fills": 122,
+    "equity": "100726.6750000000000000000000",
+    "net": "726.6750000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_long_flat_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 61,
+    "fills": 122,
+    "equity": "99526.6750000000000000000000",
+    "net": "-473.3250000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_newow_dual_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 439,
+    "fills": 879,
+    "equity": "86731.7600000000000000000000",
+    "net": "-12890.6600000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_newow_dual_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 439,
+    "fills": 879,
+    "equity": "77951.7600000000000000000000",
+    "net": "-21660.6550000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_newow_oscillation_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 187,
+    "fills": 374,
+    "equity": "96922.2950000000000000000000",
+    "net": "-3077.7050000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_newow_oscillation_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 187,
+    "fills": 374,
+    "equity": "93192.3000000000000000000000",
+    "net": "-6807.7000000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_newow_trend_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 383,
+    "fills": 767,
+    "equity": "90920.9200000000000000000000",
+    "net": "-8701.5000000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_newow_trend_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 383,
+    "fills": 767,
+    "equity": "83250.9150000000000000000000",
+    "net": "-16361.5000000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_original_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 121,
+    "fills": 243,
+    "equity": "89794.4200000000000000000000",
+    "net": "-7569.4900000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_original_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 121,
+    "fills": 243,
+    "equity": "87404.4150000000000000000000",
+    "net": "-9959.4950000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_osc_exit_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 121,
+    "fills": 243,
+    "equity": "86965.8350000000000000000000",
+    "net": "-10398.0750000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_osc_exit_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 121,
+    "fills": 243,
+    "equity": "84565.8350000000000000000000",
+    "net": "-12798.0750000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_trend_filter_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 11,
+    "fills": 23,
+    "equity": "97577.6200000000000000000000",
+    "net": "-1235.5650000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "MA_trend_filter_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 11,
+    "fills": 23,
+    "equity": "97347.6250000000000000000000",
+    "net": "-1455.5650000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_atr2_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "95175.000000000000000000",
+    "net": "-4490.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_atr2_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "92915.000000000000000000",
+    "net": "-6740.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_atr3_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "102695.000000000000000000",
+    "net": "3030.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_atr3_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "99165.000000000000000000",
+    "net": "-490.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_atr_matched_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "109325.000000000000000000",
+    "net": "9700.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_atr_matched_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "106535.000000000000000000",
+    "net": "6920.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_long_flat_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 71,
+    "fills": 142,
+    "equity": "106310.000000000000000000",
+    "net": "6310.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_long_flat_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 71,
+    "fills": 142,
+    "equity": "104910.000000000000000000",
+    "net": "4910.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_newow_dual_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 465,
+    "fills": 931,
+    "equity": "71395.000000000000000000",
+    "net": "-28780.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_newow_dual_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 465,
+    "fills": 931,
+    "equity": "62135.000000000000000000",
+    "net": "-38030.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_newow_oscillation_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 187,
+    "fills": 374,
+    "equity": "88670.000000000000000000",
+    "net": "-11330.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_newow_oscillation_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 187,
+    "fills": 374,
+    "equity": "84950.000000000000000000",
+    "net": "-15050.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_newow_trend_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 417,
+    "fills": 835,
+    "equity": "76345.000000000000000000",
+    "net": "-23830.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_newow_trend_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 417,
+    "fills": 835,
+    "equity": "68035.000000000000000000",
+    "net": "-32130.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_original_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "109325.000000000000000000",
+    "net": "9700.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_original_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "106535.000000000000000000",
+    "net": "6920.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_osc_exit_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "102595.000000000000000000",
+    "net": "2930.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_osc_exit_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 141,
+    "fills": 283,
+    "equity": "99805.000000000000000000",
+    "net": "150.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_trend_filter_slip1",
+    "run_status": "COMPLETED",
+    "closed_trades": 14,
+    "fills": 28,
+    "equity": "98710.000000000000000000",
+    "net": "-1290.000000000000000000"
+  },
+  {
+    "status": "PASS",
+    "scenario": "TA_trend_filter_slip2",
+    "run_status": "COMPLETED",
+    "closed_trades": 14,
+    "fills": 28,
+    "equity": "98430.000000000000000000",
+    "net": "-1570.000000000000000000"
+  }
+]

@@ -1177,7 +1177,7 @@ class NewowProductService:
                 request.snapshot_token is None or request.snapshot_token == cached_token
             ):
                 validator = getattr(getattr(self._persisted_reference, "__self__", None), "validate_cached_generation", None)
-                if request.section is ProductSection.REFERENCE and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(validator):
+                if request.section is ProductSection.REFERENCE and callable(validator):
                     validator(cached.reference, reader=reader)
                 self._check_cancelled(cancelled)
                 # Bounded readiness memoizes inputs for its pinned lifecycle;
@@ -1473,7 +1473,7 @@ class NewowProductService:
             assert resolved is not None
             deliveries[request.section] = (
                 self._reference(request, read, identity, fact_key, page_identity, resolved, cancelled=cancelled)
-                if self._persisted_reference is None or (request.include_fusion and request.frequency not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE)) else
+                if self._persisted_reference is None else
                 self._persisted_reference(
                     request, read, identity, reader, fact_key, page_identity, resolved,
                 )

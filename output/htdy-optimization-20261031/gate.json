@@ -1,0 +1,234 @@
+[
+  {
+    "symbol": "TA",
+    "policy": "atr2",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  },
+  {
+    "symbol": "TA",
+    "policy": "atr3",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  },
+  {
+    "symbol": "TA",
+    "policy": "trend_filter",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": false,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": false,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  },
+  {
+    "symbol": "TA",
+    "policy": "osc_exit",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": false,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": false,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  },
+  {
+    "symbol": "MA",
+    "policy": "atr2",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  },
+  {
+    "symbol": "MA",
+    "policy": "atr3",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": false,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": false,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  },
+  {
+    "symbol": "MA",
+    "policy": "trend_filter",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": false,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": false,
+          "mdd_lower": true,
+          "worst_improved": true,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  },
+  {
+    "symbol": "MA",
+    "policy": "osc_exit",
+    "checks": [
+      {
+        "slip": 1,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": false,
+          "worst_improved": false,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      },
+      {
+        "slip": 2,
+        "criteria": {
+          "complete": true,
+          "n_ge_30": true,
+          "mdd_lower": false,
+          "worst_improved": false,
+          "expectancy_not_lower": false
+        },
+        "pass": false
+      }
+    ],
+    "pass": false
+  }
+]
