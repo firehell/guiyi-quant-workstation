@@ -81,12 +81,13 @@ The metric cache identity SHALL include the validated W1 Bars and interruption e
 Unknown missing endpoints disable weekly metrics; duplicate/extra endpoints, missing authority
 or contradictory source values SHALL fail closed. HTTP reads SHALL NOT rebuild projections.
 An interruption emits `weekly_price_interrupted`; insufficient post-interruption input also emits
-`weekly_rewarming`. PC Web SHALL distinguish recovered historical source anomalies from
-rewarming and unexplained missing history. Missing W1 history disables only weekly metrics and emits `weekly_history_unavailable`; source-price failures emit `weekly_price_unavailable`. Newow formulas and reference trades are unchanged.
+`weekly_rewarming`. PC Web SHALL show only current rewarming or unavailable-history notices. Recovered
+historical source anomalies SHALL NOT display a notice or be moved into a detail disclosure. Missing W1 history disables only weekly metrics and emits `weekly_history_unavailable`; source-price failures emit `weekly_price_unavailable`. Newow formulas and reference trades are unchanged.
 
 An item with a valid target-day D1 Bar SHALL remain a participant even when its historical window
 contains source exceptions. Its `reason_codes` SHALL include `daily_price_interrupted`, and
-`daily_rewarming` when the post-interruption daily trend is not ready. PC desktop Web SHALL show the interruption disclosure.
+`daily_rewarming` when the post-interruption daily trend is not ready. PC desktop Web SHALL show interruption notices only while the affected trend is rewarming;
+recovered interruptions remain in reason codes but SHALL NOT display a notice.
 If D1 history has unknown missing endpoints, a separately verified target-day quote MAY remain
 visible, but ALL D1 metrics MUST be null/unavailable and `daily_history_unavailable` MUST be shown,
 never normal rewarming. This does not repair the historical data or prove strategy readiness.

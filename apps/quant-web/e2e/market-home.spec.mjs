@@ -852,10 +852,12 @@ for (const width of [1440, 390]) {
       await page.goto('/market')
       const row = page.locator('.strategy-list-item').filter({ hasText: '白银' })
       const quality = row.locator('.list-quality-note')
-      await expect(quality).toHaveText(rewarming
-        ? '历史周线曾受源价格异常影响；周趋势重新预热中'
-        : '历史周线曾受源价格异常影响；当前周趋势使用异常后的连续数据')
-      await expect(quality).toBeVisible()
+      if (rewarming) {
+        await expect(quality).toHaveText('历史周线曾受源价格异常影响；周趋势重新预热中')
+        await expect(quality).toBeVisible()
+      } else {
+        await expect(quality).toHaveCount(0)
+      }
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     })
   }
