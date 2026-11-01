@@ -159,6 +159,7 @@ class StreamAlertMessageSource(RedisAlertMessageSource):
 class RedisAlertHeartbeatStore:
     _UNRESOLVED_KEY = "alert:coverage-unresolved:v2"
     _CLOSEOUT_KEY = "alert:coverage-closeouts:v1"
+    _HISTORY_KEY = "alert:coverage-failure-history:v1"
 
     def __init__(self, redis: Any) -> None:
         self._redis = redis
@@ -186,6 +187,42 @@ class RedisAlertHeartbeatStore:
         payload = {"schema_version": 2, "unresolved": value}
         if self._redis.set(self._UNRESOLVED_KEY, json.dumps(payload, ensure_ascii=False, separators=(",", ":"))) is not True:
             raise RuntimeError("ALERT_COVERAGE_PERSIST_FAILED")
+
+    def replace_unresolved(self, value, *, expected, assert_owned):
+        """Persist a new failure before ACK; retain superseded facts, not resolutions."""
+        from app.alerts.coverage_closeout import digest
+        with self._redis.pipeline() as pipe:
+            pipe.watch(self._UNRESOLVED_KEY, self._HISTORY_KEY)
+            raw = pipe.get(self._UNRESOLVED_KEY)
+            if raw is not None and len(raw) > 4 * 1024 * 1024:
+                raise RuntimeError("ALERT_COVERAGE_PERSIST_INVALID")
+            actual = json.loads(raw) if raw is not None else {"schema_version": 2, "unresolved": {}}
+            if actual != {"schema_version": 2, "unresolved": expected}:
+                raise RuntimeError("ALERT_COVERAGE_PERSIST_STALE")
+            raw_history = pipe.get(self._HISTORY_KEY)
+            if raw_history is not None and len(raw_history) > 8 * 1024 * 1024:
+                raise RuntimeError("ALERT_COVERAGE_HISTORY_INVALID")
+            history = json.loads(raw_history) if raw_history is not None else {"schema_version": 1, "originals": {}}
+            if (not isinstance(history, dict) or set(history) != {"schema_version", "originals"}
+                    or history["schema_version"] != 1 or not isinstance(history["originals"], dict)):
+                raise RuntimeError("ALERT_COVERAGE_HISTORY_INVALID")
+            for identifier, row in history["originals"].items():
+                if not isinstance(row, dict) or set(row) != {"route", "original"} or digest(row) != identifier:
+                    raise RuntimeError("ALERT_COVERAGE_HISTORY_INVALID")
+            for route, row in expected.items():
+                if row != value.get(route):
+                    original = {"route": route, "original": row}
+                    history["originals"].setdefault(digest(original), original)
+            encoded = json.dumps(history)
+            encoded_value = json.dumps({"schema_version": 2, "unresolved": value})
+            if len(encoded.encode()) > 8 * 1024 * 1024 or len(encoded_value.encode()) > 4 * 1024 * 1024:
+                raise RuntimeError("ALERT_COVERAGE_HISTORY_INVALID")
+            assert_owned()
+            pipe.multi()
+            pipe.set(self._UNRESOLVED_KEY, encoded_value)
+            pipe.set(self._HISTORY_KEY, encoded)
+            if pipe.execute() != [True, True]:
+                raise RuntimeError("ALERT_COVERAGE_PERSIST_UNKNOWN")
 
     def close_not_due(self, expected, resolutions, *, assert_owned, replacements=None):
         from app.alerts.coverage_closeout import merge_closeout

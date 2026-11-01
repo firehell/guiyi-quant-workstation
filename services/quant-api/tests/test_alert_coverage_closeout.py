@@ -320,7 +320,7 @@ def test_busy_deployment_defers_until_owner_heartbeat_can_obtain_guard(monkeypat
     "error_type",
     [None, "evaluation_warming_up", "evaluation_input_invalid", "evaluation_failed"],
 )
-def test_busy_then_new_progress_is_preserved_and_real_failure_survives_restart(
+def test_legacy_busy_progress_is_preserved_and_real_failure_survives_restart(
     monkeypatch, error_type
 ):
     from contextlib import nullcontext
@@ -375,6 +375,9 @@ def test_busy_then_new_progress_is_preserved_and_real_failure_survives_restart(
         else None,
         coverage_identity=("jm", "1w", "JM2701", date(2026, 10, 30)),
     )
+    # Explicit legacy snapshot: the v64 producer persisted only the first failure.
+    # The new producer has separate real-Redis crash/restart coverage below.
+    runtime._unresolved_coverage = deepcopy(persisted)
     runtime._close_not_due_coverage()
     current = runtime._coverage_progress[(SUBING_THS_ALERT_RULE_CODE, "jm", "1w")]
     assert current["trading_day"] == "2026-10-30"
@@ -401,7 +404,7 @@ def test_busy_then_new_progress_is_preserved_and_real_failure_survives_restart(
 
 @pytest.mark.parametrize("later_error", [None, "evaluation_warming_up"])
 @pytest.mark.parametrize("unknown_commit", [False, True])
-def test_intervening_failure_remains_durable_after_later_success_or_warming(
+def test_legacy_intervening_failure_remains_durable_after_later_success_or_warming(
     monkeypatch, later_error, unknown_commit
 ):
     from contextlib import nullcontext
@@ -464,6 +467,8 @@ def test_intervening_failure_remains_durable_after_later_success_or_warming(
         error_type=later_error,
         coverage_identity=("jm", "1w", "JM2701", date(2026, 10, 31)),
     )
+    # Exercise old-v64 cache/projection divergence independently of the new writer.
+    runtime._unresolved_coverage = deepcopy(persisted)
     before_progress = deepcopy(runtime._coverage_progress)
     before_status = deepcopy(runtime._current_runtime_status())
     if unknown_commit:
@@ -488,3 +493,117 @@ def test_intervening_failure_remains_durable_after_later_success_or_warming(
     assert runtime._coverage_progress == before_progress
     assert runtime._current_runtime_status() == before_status
     engine.dispose()
+
+
+@pytest.mark.parametrize("unknown_after_commit", [False, True])
+def test_real_failure_before_closeout_is_durable_across_restart(
+    monkeypatch, unknown_after_commit
+):
+    import os
+    import json
+    from uuid import uuid4
+    from datetime import date
+    from redis import Redis
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+    from contextlib import nullcontext
+    from app.alerts.runtime import AlertRuntime
+    from app.alerts.composition import RedisAlertHeartbeatStore
+    import app.alerts.runtime as module
+
+    if os.environ.get("GUIYI_TEST_REDIS_PORT") != "16389":
+        pytest.skip("dedicated ephemeral Redis required")
+    c = Redis(host="127.0.0.1", port=16389, db=15)
+    prefix = "test:closeout-restart:" + uuid4().hex
+
+    class Store(RedisAlertHeartbeatStore):
+        _UNRESOLVED_KEY = prefix + ":unresolved"
+        _CLOSEOUT_KEY = prefix + ":closed"
+        _HISTORY_KEY = prefix + ":history"
+
+    store = Store(c)
+    store.write_unresolved({ROUTE: original()})
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    source = reader()
+    source.coverage_closeout_guard = lambda: nullcontext(True)
+    monkeypatch.setattr(module, "runtime_heartbeat_identity", lambda: dict(IDENTITY))
+
+    def runtime():
+        result = AlertRuntime(
+            session_factory=lambda: Session(engine),
+            market_read_factory=lambda s: source,
+            sender=object(),
+            operational_products=("jm",),
+            taxonomy={},
+            heartbeat_store=store,
+            clock=lambda: NOW,
+        )
+        result._restore_unresolved_coverage()
+        return result
+
+    try:
+        owner = runtime()
+        original_write = store.replace_unresolved
+
+        def replacement(value, **kwargs):
+            original_write(value, **kwargs)
+            if unknown_after_commit:
+                raise RuntimeError("UNKNOWN_COMMIT")
+
+        monkeypatch.setattr(store, "replace_unresolved", replacement)
+
+        def fail():
+            owner._record_rule_result(
+                SUBING_THS_ALERT_RULE_CODE,
+                evaluated_bar_at=None,
+                at=NOW,
+                event_created=False,
+                error_type="evaluation_input_invalid",
+                input_error_code="TRADING_SESSION_MISSING",
+                coverage_identity=("jm", "1w", "JM2701", date(2026, 10, 30)),
+            )
+
+        if unknown_after_commit:
+            with pytest.raises(RuntimeError, match="UNKNOWN_COMMIT"):
+                fail()
+            assert owner._unresolved_coverage[ROUTE] == original()
+        else:
+            fail()
+        fresh = runtime()
+        fresh._close_not_due_coverage()
+        retained = fresh._unresolved_coverage[ROUTE]
+        assert retained["input_error_code"] == "TRADING_SESSION_MISSING"
+        assert retained["trading_day"] == "2026-10-30"
+        assert retained["previous_unresolved"] == "2026-10-29"
+        history = json.loads(c.get(store._HISTORY_KEY))
+        assert next(iter(history["originals"].values())) == {
+            "route": ROUTE,
+            "original": original(),
+        }
+        assert c.get(store._CLOSEOUT_KEY) is None
+    finally:
+        c.delete(store._UNRESOLVED_KEY, store._CLOSEOUT_KEY, store._HISTORY_KEY)
+        c.close()
+        engine.dispose()
+
+
+def test_unacknowledged_observations_defer_closeout_without_touching_projection():
+    from app.alerts.runtime import AlertRuntime
+
+    runtime = AlertRuntime(
+        session_factory=lambda: pytest.fail("must wait for pending input"),
+        market_read_factory=lambda s: None,
+        sender=object(),
+        operational_products=("jm",),
+        taxonomy={},
+        heartbeat_store=SimpleNamespace(
+            close_not_due=lambda *a, **k: pytest.fail("must not write")
+        ),
+        message_source=SimpleNamespace(
+            coverage_snapshot=lambda **kwargs: {"cursor": "0-0", "tail": "1-0"}
+        ),
+    )
+    runtime._unresolved_coverage = {ROUTE: original()}
+    runtime._close_not_due_coverage()
+    assert runtime._coverage_closeout_pending
+    assert runtime._unresolved_coverage == {ROUTE: original()}

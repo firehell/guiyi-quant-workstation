@@ -469,6 +469,14 @@ that boundary and paired success/cutoff; this is not a new evaluation failure.
 Current progress retains its successful/warming semantics, and historical Events
 and runtime failure status are untouched. Such a retained boundary is ineligible
 for the not-due closeout policy after restart.
+New real failures on an already unresolved route SHALL be durably replaced before
+ACK, with each superseded original retained atomically in
+`alert:coverage-failure-history:v1`; this history is not a resolution or Event.
+The original prior boundary remains in the latest unresolved record. CAS or
+unknown persistence failures MUST stop processing without changing the memory
+commit state. A pending observation-journal frontier SHALL defer closeout until
+the original observations have been handled; a restart cannot erase an intervening
+failure merely because the older diagnostic was eligible for not-due closeout.
 The health reader SHALL continue accepting v1 heartbeats and MUST NOT reinterpret absent evidence as success.
 
 For minute routes after restart, an evaluation-lag claim SHALL bind authoritative Session endpoints to actual
