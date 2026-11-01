@@ -51,6 +51,7 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
             state = initial_state(owner.contract, frequency.value)
             cross_state = subing_macd.initial_state(owner.contract, frequency.value) if include_macd and frequency is BarFrequency.M30 else None
             volume_state = subing_volume.initial_state(owner.contract, frequency.value) if include_volume else None
+            price_state = subing_price.PullbackState(owner.contract)
             for bar in result.bars:
                 state, point = step(state, contract=owner.contract, frequency=frequency.value,
                     bar_end=bar.bar_end, high=float(bar.high), low=float(bar.low), close=float(bar.close))
@@ -66,7 +67,10 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                 if include_price and frequency is BarFrequency.M30:
                     from decimal import Decimal
                     price = subing_price.price_point(bar.close, Decimal(str(point.ema21)) if point.ema21 is not None else None)
-                    cross_fields['price_factor'] = asdict(price)
+                    price_state, pullback = subing_price.observe(price_state, contract=owner.contract,
+                        bar_end=bar.bar_end, high=bar.high, low=bar.low, close=bar.close,
+                        ema21=price.ema21, atr14=Decimal(str(point.atr14)) if point.atr14 is not None else None)
+                    cross_fields['price_factor'] = {**asdict(price), 'pullback': pullback}
                 # D1 pre-owner data is visible only as physical warm-up context, never as an owned signal.
                 if bar.trading_day >= start or frequency is BarFrequency.D1:
                     rows.append(dict(contract=owner.contract, frequency=frequency.value,

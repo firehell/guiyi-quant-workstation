@@ -3,7 +3,7 @@
 当前范围为JM已完成30m的价格关系纯函数。复用2.1同一条EMA21，不重算第二套EMA；
 不改变已核对的趋势、MACD或量能规则，不生成持仓或交易动作。
 
-版本 `subing_price_ema21_distance10_v1`，输入原始收盘Decimal及共享6位EMA值转为Decimal：
+基础距离参考字段（历史v1），输入原始收盘Decimal及共享6位EMA值转为Decimal：
 
 - close>EMA21：above_ema=true；close<EMA21：below_ema=true。
 - close=EMA21：relation=ON，上方与下方都为false。
@@ -15,19 +15,18 @@
 
 completed、物理身份、前缀、时序和coverage由现有MDS加载层校验。页面只显示所选时点及以前的事实。
 
-## 尚待确认的突破资格
+## 回踩资格（owner 已确认）
 
-本轮已向owner集中询问：连续新回踩替换还是保留原回踩、资格失效条件、首次突破后是否消费。
-这些会影响加仓语义，在回复前不实现资格状态机，不输出突破或加仓条件。
-原先阶段一确定盘中严格突破回踩K高点；只有30m OHLC时，只能在收盘后证明本根曾突破，
-无法证明精确盘中触发时间或成交价格。后续必须区分历史Bar高点事实和实时/更细周期可执行触发。
+版本 `subing_price_ema21_atr02_pullback_v2`。复用2.1的EMA21与ATR14。
+最低价在 [EMA21−0.2ATR, EMA21+0.2ATR] 闭区间为触及；触及且收盘>EMA21为守住确认。
+原0<收盘距离<10仅保留参考字段，不参与资格。没有额外趋势、阳线、量能、MACD或前根位置门槛。
 
-## 使用
+确认K收盘后记录其物理合约、时间、高点。后续K高点严格大于资格高点，记录一次突破并消费旧资格；
+收盘≤EMA21取消资格；新的确认K替换旧资格。当前K不能突破自身刚确认的高点。
+同根先检查旧资格的高点突破，再处理收盘失效和新确认，因此突破事实与收盘失效可并存。
+如果本根也确认了新的回踩，其新资格从下一根开始生效。突破不是订单或成交，
+30m OHLC不能给出盘中精确发生时刻或成交价格；组合策略另行处理执行优先级。
+无固定到期根数；切换物理合约拒绝继承；非法输入或指标未就绪清空资格并返回未知。
 
-复用独立导出开关`--price`，可与`--macd --volume`组合。输出新目录不覆盖旧产物；保留价格因子版本及源码hash。
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/subing_trend.py --since 2026-07-13 --through 2026-09-11 --macd --volume --price --output output/subing-trend-20261101/price24
-```
-
-验证入口：tests/unit/subing_price、tests/unit/subing_trend和既有趋势/MACD/量能及共享kernel测试。
+导出使用 --price（可组合 --macd --volume），输出新目录，保留版本与源码hash。
+验证入口为 tests/unit/subing_price 和 tests/unit/subing_trend。
