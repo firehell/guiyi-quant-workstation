@@ -9,7 +9,7 @@ from .atr import initial_atr_state, step_atr
 from .ema import initial_ema_state, step_ema
 from .models import AtrState, EmaState
 
-VERSION = 'subing_ema21_ols5_atr14_v1'
+VERSION = 'subing_ema21_ols5_atr14_v2'
 
 
 @dataclass(frozen=True)
@@ -33,8 +33,8 @@ def slope_point(values: tuple[float, ...], atr: float) -> TrendPoint:
     slope = sum((i - 2) * (v - mean) for i, v in enumerate(values)) / 10
     normalized = slope / atr
     angle = math.degrees(math.atan(normalized))
-    # Compare unrounded angle: exactly +/-20 belongs to the neutral interval.
-    direction = 'UP' if angle > 20 else 'DOWN' if angle < -20 else 'NEUTRAL'
+    # Compare unrounded angle: exactly +/-5 belongs to the neutral interval.
+    direction = 'UP' if angle > 5 else 'DOWN' if angle < -5 else 'NEUTRAL'
     return TrendPoint(values[-1], atr, slope, normalized, angle, direction, None)
 
 

@@ -11,7 +11,7 @@ def test_ols_uses_middle_points():
     assert p.direction == 'UP'
 
 
-@pytest.mark.parametrize('angle,direction', [(20,'NEUTRAL'),(-20,'NEUTRAL'),(20.01,'UP'),(-20.01,'DOWN'),(0,'NEUTRAL')])
+@pytest.mark.parametrize('angle,direction', [(5,'NEUTRAL'),(-5,'NEUTRAL'),(5.01,'UP'),(-5.01,'DOWN'),(4.99,'NEUTRAL'),(-4.99,'NEUTRAL'),(10,'UP'),(-10,'DOWN'),(0,'NEUTRAL')])
 def test_boundaries(angle, direction):
     b = math.tan(math.radians(angle))
     assert slope_point(tuple(i*b for i in range(5)), 1).direction == direction

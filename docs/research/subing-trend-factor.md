@@ -1,14 +1,16 @@
 # 苏冰2.1：EMA21标准化趋势因子
 
-独立研究工具，不改现役苏冰公式、Scope、订单、风险或Runtime。20°为候选阈值，须由owner核对案例，
+独立研究工具，不改现役苏冰公式、Scope、订单、风险或Runtime。5°为owner指定的新候选阈值，须由owner核对案例，
 不是图表像素角度，也不是收益有效性结论。首版只分析焦煤D1/30m。
+
+原v1使用±20°，历史导出保留；v2只调整分类阈值，角度计算不变，日线与30分钟统一使用±5°。
 
 ## 计算合同
 
-版本`subing_ema21_ols5_atr14_v1`。复用EMA21 SMA-window seed及ATR14 `wilder_sma_seed`，
+版本`subing_ema21_ols5_atr14_v2`。复用EMA21 SMA-window seed及ATR14 `wilder_sma_seed`，
 沿用基础指标6位舍入。最近5个已完成EMA21以x=0..4拟合OLS直线，
 `b=sum((i-2)*(EMA[i]-mean(EMA)))/10`，`s=b/ATR14[t]`，`angle=atan(s)*180/pi`。
-角度不按展示舍入分类：>20 UP、<-20 DOWN、其余NEUTRAL。预热不足、ATR非正或无效输入UNKNOWN，
+角度不按展示舍入分类：>5 UP、<-5 DOWN、其余NEUTRAL。预热不足、ATR非正或无效输入UNKNOWN，
 不能当作中性放行；非法OHLC清空计算状态并重新预热。合约/周期混用、重复或倒序时间拒绝。
 
 MDS验证完整同合约生命周期前缀，质量或端点缺失失败，不缩窗、不补数。rank1决定展示区间；
