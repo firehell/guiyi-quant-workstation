@@ -504,6 +504,106 @@ def test_native_collector_accepts_only_hash_bound_restore_readback(
         m.build_closeout_plan((root,), backend=backend)
 
 
+def test_collector_verifies_each_release_once_per_call_and_history_independently(
+    tmp_path, monkeypatch,
+):
+    from app import runtime_cohort
+
+    backend, root, _old, terminal = native_case(tmp_path, monkeypatch)
+    identity = {"root": str(root), "tag": "v1.2.3", "commit": "a" * 40}
+    plan_path = terminal / "plan.json"
+    plan = m._json(plan_path)
+    plan["releases"] = [identity] * 12
+    plan_path.write_bytes(m._encoded(plan))
+
+    def validate(value, _created, **kwargs):
+        verifier = kwargs.get("history_verifier")
+        if verifier is not None:
+            for item in value.get("releases", ()):
+                verifier(
+                    item["root"], item["tag"], item["commit"], backend.directory,
+                )
+
+    monkeypatch.setattr(runtime_cohort, "validate", validate)
+    git_calls, present_calls = [], []
+    monkeypatch.setattr(m, "_verify_git", lambda *args: git_calls.append(args))
+    monkeypatch.setattr(
+        m, "_verify_present_release",
+        lambda *args: present_calls.append(args),
+    )
+    first = m.build_closeout_plan((root,), backend=backend)
+    assert len(git_calls) == len(present_calls) == 2
+    assert m.build_closeout_plan((root,), backend=backend) == first
+    assert len(git_calls) == len(present_calls) == 4
+
+
+def test_collector_rejects_conflicting_identity_for_same_root_before_reuse(
+    tmp_path, monkeypatch,
+):
+    backend, root, _old, terminal = native_case(tmp_path, monkeypatch)
+    plan_path = terminal / "plan.json"
+    plan = m._json(plan_path)
+    plan["releases"] = [
+        {"root": str(root), "tag": "v1.2.3", "commit": "a" * 40},
+        {"root": str(root), "tag": "v1.2.4", "commit": "b" * 40},
+    ]
+    plan_path.write_bytes(m._encoded(plan))
+    calls = []
+    monkeypatch.setattr(m, "_verify_git", lambda *args: calls.append(args))
+    with pytest.raises(ValueError):
+        m.build_closeout_plan((root,), backend=backend)
+    assert len(calls) == 1
+
+
+def test_collector_passes_verified_history_to_forward_private_validator(
+    tmp_path, monkeypatch,
+):
+    from app import runtime_cohort_recovery as recovery
+
+    backend, root, old, _terminal = native_case(tmp_path, monkeypatch)
+    parent = backend.directory / "cohort-forward-recoveries"
+    parent.mkdir(mode=0o700)
+    child = parent / ("e" * 64)
+    child.mkdir(mode=0o700)
+    identity = {"root": str(root), "tag": "v1.2.3", "commit": "a" * 40}
+    source = {"plan_sha256": old.name}
+    m._write(child / "plan.json", m._encoded({
+        "plan_sha256": child.name,
+        "created_at": "2026-10-27T00:00:00+00:00",
+        "source": source, "new": {"services": {"live": identity}},
+    }))
+    receipt = {
+        "plan_sha256": child.name, "source": source,
+        "kind": "postcas_forward_recovery_readback",
+        "original_attempt_preserved": True,
+        "intake": {}, "readback": {},
+    }
+    m._write(child / "receipt.json", m._encoded(receipt))
+    m._write(child / "state.json", m._encoded({
+        "plan_sha256": child.name, "phase": "recovered", "source": source,
+        "receipt_sha256": m.sha(m._encoded(receipt)),
+        "effects": {
+            "consumers": {}, "intake": {}, "feed": {},
+            "verified": {}, "calendars": {},
+        },
+    }))
+    calls = []
+
+    def validate(_plan, _created, **kwargs):
+        verifier = kwargs.get("history_verifier")
+        assert kwargs["historical"] is True
+        assert verifier is not None
+        verifier(root, identity["tag"], identity["commit"], backend.directory)
+        calls.append(1)
+
+    monkeypatch.setattr(recovery, "_validate", validate)
+    monkeypatch.setattr(
+        m, "_closed_history", lambda seal, _repo: set(seal["closed_attempts"]),
+    )
+    m.build_closeout_plan((root,), backend=backend)
+    assert calls == [1]
+
+
 def forward_terminal_case(tmp_path, monkeypatch):
     from app import runtime_cohort_recovery as recovery
 

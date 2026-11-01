@@ -1231,29 +1231,32 @@ class RetirementBackend:
         ]
         plan_paths = {child: all_plan_paths[child] for child, _state in entries}
         historical_identities = {}
+        verified_identities = set()
+
+        def verify_identity(identity):
+            root = Path(identity["root"])
+            require(root.is_absolute() and root == root.resolve())
+            previous = historical_identities.get(identity["root"])
+            require(previous is None or previous == identity)
+            key = (identity["root"], identity["tag"], identity["commit"])
+            if key not in verified_identities:
+                _verify_git(self.repo_root, identity)
+                if os.path.lexists(root):
+                    _verify_present_release(self.repo_root, identity)
+                verified_identities.add(key)
+            historical_identities[identity["root"]] = identity
+
         for path in plan_paths.values():
             for item in _walk(_json(path)):
                 if isinstance(item, dict) and {"root", "tag", "commit"} <= set(item):
                     identity = {key: item[key] for key in ("root", "tag", "commit")}
-                    root = Path(identity["root"])
-                    require(
-                        root.is_absolute()
-                        and root == root.resolve()
-                    )
-                    _verify_git(self.repo_root, identity)
-                    if os.path.lexists(root):
-                        _verify_present_release(self.repo_root, identity)
-                    previous = historical_identities.get(identity["root"])
-                    require(previous is None or previous == identity)
-                    historical_identities[identity["root"]] = identity
+                    verify_identity(identity)
 
         def history_verifier(root, tag, commit, directory):
             require(Path(directory) == self.directory)
             identity = {"root": str(root), "tag": tag, "commit": commit}
             require(historical_identities.get(str(root)) == identity)
-            _verify_git(self.repo_root, identity)
-            if os.path.lexists(root):
-                _verify_present_release(self.repo_root, identity)
+            verify_identity(identity)
 
         originals, markers = {}, {}
         recovered_sources = set()
@@ -1340,6 +1343,7 @@ class RetirementBackend:
                     datetime.fromisoformat(private["created_at"]),
                     historical=True,
                     history_directory=self.directory,
+                    history_verifier=history_verifier,
                 )
             for leaf in LEAVES:
                 path = child / leaf
@@ -1432,10 +1436,7 @@ class RetirementBackend:
         )
         identities = [retention.candidate_identity(root) for root in roots]
         for identity in identities:
-            _verify_git(self.repo_root, identity)
-            previous = historical_identities.get(identity["root"])
-            require(previous is None or previous == identity)
-            historical_identities[identity["root"]] = identity
+            verify_identity(identity)
         result = {
             "directory": str(self.directory),
             "repo_root": str(self.repo_root),
