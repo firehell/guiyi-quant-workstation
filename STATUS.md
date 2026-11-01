@@ -5,8 +5,8 @@
 独立SimNow仍为原v44/PID1733，配置与四账本校验不变；没有切换、创建许可、清block、退款预算或初始化账户。
 v62候选位于output/simnow-preopen-20261101/simnow-v62，SDK兼容、无网络native smoke及60品种候选预检通过，execution_permitted=false。
 SDK已从临时目录另备至output/simnow-sdk/6.7.7.1-py313，7个SDK文件与原包SHA一致；原进程SDK保持。
-原11/2 15:05一次性任务仍缺失：宿主两次拒绝恢复定时生产切换及旧树清理，要求本聊天直接确认，当前HOST_APPROVAL_BLOCKED，不能声明已安排。
-待直接确认后恢复一次性任务，届时fresh检查20261103窗口/预算/原账户，通过才切换；20261102旧attempt及block保留。
+owner在本聊天明确授权后，11/2 15:05北京时间一次性heartbeat任务simnow已原生创建并读回ACTIVE、COUNT=1，绑定当前主项目聊天。
+届时fresh检查20261103窗口/预算/原账户，通过才单次切换v62及解除引用后清理旧树；失败停止、不自动重试，20261102旧attempt及block保留。
 历史输入60/60通过；15品种仍需各自日盘自然Live输入，全品种自然验收不能在11/2夜盘一次完成。监控overview约8秒仍为已知延迟。
 旧v61恢复树暂留；未重复归档或删除其他会话工作区。以下为此前检查点：
 
