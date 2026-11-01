@@ -55,6 +55,7 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
             cross_state = subing_macd.initial_state(owner.contract, frequency.value) if include_macd and frequency is BarFrequency.M30 else None
             volume_state = subing_volume.initial_state(owner.contract, frequency.value) if include_volume else None
             price_state = subing_price.PullbackState(owner.contract)
+            rebound_state = subing_price.PullbackState(owner.contract, side="SHORT")
             entry_state = subing_conditions.EntryWindow(owner.contract)
             previous_bar = None
             daily_rows = [r for r in rows if r['contract'] == owner.contract and r['frequency'] == '1d']
@@ -77,13 +78,18 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                     price_state, pullback = subing_price.observe(price_state, contract=owner.contract,
                         bar_end=bar.bar_end, high=bar.high, low=bar.low, close=bar.close,
                         ema21=price.ema21, trend_direction=point.direction, atr14=Decimal(str(point.atr14)) if point.atr14 is not None else None)
-                    cross_fields['price_factor'] = {**asdict(price), 'pullback': pullback}
+                    rebound_state, rebound = subing_price.observe(rebound_state, contract=owner.contract,
+                        bar_end=bar.bar_end, high=bar.high, low=bar.low, close=bar.close,
+                        ema21=price.ema21, trend_direction=point.direction,
+                        atr14=Decimal(str(point.atr14)) if point.atr14 is not None else None, side='SHORT')
+                    cross_fields['price_factor'] = {**asdict(price), 'pullback': pullback, 'rebound': rebound}
                 if include_joint and frequency is BarFrequency.M30:
                     daily_index = bisect_left(daily_times, bar.bar_end) - 1
                     daily = daily_rows[daily_index] if daily_index >= 0 else None
                     exits = subing_conditions.exit_facts(close=bar.close,
                         previous_low=previous_bar.low if previous_bar else None,
                         ema21=price.ema21, high_death=cross.high_death)
+                    exits['above_previous_high'] = bar.close > previous_bar.high if previous_bar else None
                     exits['previous_end'] = previous_bar.bar_end if previous_bar else None
                     entry_state, entry = subing_conditions.observe_entry(entry_state,
                         contract=owner.contract, bar_end=bar.bar_end,

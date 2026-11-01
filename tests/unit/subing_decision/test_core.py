@@ -13,7 +13,7 @@ def observation(n, *, m30=False, **changes):
         contract='JM2609', trading_day='2026-07-13', close='130', daily_direction='UP',
         daily_at=(BASE-timedelta(days=1)).isoformat(), day_end_window=False,
         admission=True, round_loss=False, day_loss=False, remaining_net='100', base_net='100', layer_nets={}, reconciled=True,
-        m30=dict(ema21='30',low='30',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
+        m30=dict(high='140',near_zero_death=False,low_golden=False,above_previous_high=False,qualified_rebound=False,rebound_low=None,rebound_invalidated=True,ema21='30',low='30',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
             below_previous_low=False,high_death=False,below_ema=False,
             qualified_pullback=False,pullback_high=None,pullback_invalidated=False) if m30 else None)
     e.update(changes)
@@ -113,25 +113,22 @@ def test_clear_dominates_and_partial_ack_keeps_obligation():
     result=m.apply({**frame(90,below_ema=True,below_previous_low=True,high_death=True),'round_loss':True})
     assert result['actions'][0]['reasons']==['ROUND_LOSS','EMA_CLEAR']
     m.apply(ack(m,91,targets=['test:3']))
-    assert len(m.layers)==2 and m.pending['layer_ids']==['test:1','test:2'] and m.cooldown==0
+    assert len(m.layers)==2 and m.pending['layer_ids']==['test:1','test:2']
     m.apply(ack(m,92))
-    assert len(m.layers)==0 and m.cooldown==10
+    assert len(m.layers)==0 and m.side is None
 
 
-def test_cooldown_tenth_bar_cannot_seed_early_golden():
+def test_no_cooldown_but_consumed_cross_is_not_replayed():
     m=opened()
     m.apply(frame(30,below_ema=True)); m.apply(ack(m,31))
-    for i in range(1,11):
-        assert m.apply(frame(30+30*i,near_zero_golden=True))['after']['pending'] is None
-    assert m.cooldown==0
-    assert m.apply(frame(360))['actions']==[]
-    assert m.apply(frame(390,near_zero_golden=True))['actions'][0]['kind']=='OPEN'
+    assert m.apply(frame(60))['actions']==[]
+    assert m.apply(frame(90,near_zero_golden=True))['actions'][0]['kind']=='OPEN'
 
 
-def test_clear_ack_same_time_as_m30_does_not_count_bar():
+def test_clear_ack_resets_both_windows_without_waiting_ten_bars():
     m=opened(); m.apply(observation(29,round_loss=True)); m.apply(ack(m,30))
     m.apply(frame(30))
-    assert m.cooldown==10
+    assert m.side is None and all(w.source_end is None for w in m.windows.values())
 
 
 def test_entry_wait_window_uses_shared_factor_and_rejected_not_replayed():
@@ -218,7 +215,7 @@ def test_older_event_and_nonpositive_price():
 def test_cancelled_close_keeps_exit_obligation():
     m=opened();m.apply(frame(30,below_ema=True))
     m.apply(ack(m,31,status='CANCELLED',price=None,targets=[]))
-    assert len(m.layers)==1 and m.cooldown==0
+    assert len(m.layers)==1
     result=m.apply(observation(32))
     assert result['actions'][0]['kind']=='CLOSE'
 
@@ -325,4 +322,4 @@ def test_clear_upgrade_preserves_partial_fills_and_does_not_repeat():
     assert m.apply(observation(93,close='200',round_loss=True))['actions']==[]
     assert m.pending['decision_id']==new_id
     m.apply(ack(m,94))
-    assert not m.layers and m.cooldown==10
+    assert not m.layers and m.side is None

@@ -8,7 +8,7 @@
 
 ## 研究计算口径
 
-版本 `subing_macd12_26_9_segment_cross_v2`。复用共享MACD12/26/9、EMA SMA-window种子、6位精度，柱值2×(DIF−DEA)。
+当前版本 `subing_macd12_26_9_segment_cross_v3`。复用共享MACD12/26/9、EMA SMA-window种子、6位精度，柱值2×(DIF−DEA)。
 完整同物理合约前缀计算，先完成34根预热获得有效DIF/DEA，再有连续两个有效点才能判交叉；无效输入重置预热。
 仅支持30m；合约切换独立计算，拒绝重复/倒序时间和身份混用。行情coverage与completed由现有MDS导出层验证。
 
@@ -38,3 +38,6 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 输出目录不得存在；保留2.1旧导出。新产物保留input_hash、趋势版本、MACD版本和代码hash。
 
 验证：`tests/unit/subing_macd`、`tests/unit/subing_trend`、共享indicator kernel与MACD/ATR测试。
+
+
+v3按阶段四owner镜像做空授权，额外输出DEATH且−4≤h≤4的`near_zero_death`与GOLDEN且h<−17的`low_golden`。复用同一交点高度，无交叉为false，未知为null；原多头条件不变。图表既有多头标记不冒充空头成交展示，双向动作以账户回放为准。

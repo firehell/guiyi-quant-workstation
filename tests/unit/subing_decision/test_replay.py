@@ -40,9 +40,9 @@ def test_explicit_lifecycle_preserves_pending_and_per_layer_positions():
     assert rows[16]['actions'][0]['kind'] == 'REJECT'
     assert 'DAY_END_NO_OPEN' in rows[16]['actions'][0]['reasons']
     assert rows[-2]['after']['quantity'] == 1
-    assert rows[-2]['after']['cooldown'] == 0
+    assert rows[-2]['after']['side'] == 'LONG'
     assert rows[-1]['after']['quantity'] == 0
-    assert rows[-1]['after']['cooldown'] == 10
+    assert rows[-1]['after']['side'] is None
     assert 'performance' not in result
 
 

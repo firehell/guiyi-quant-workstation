@@ -16,7 +16,7 @@
 - 模型价格：下一根完成1m收盘，买入加1tick、卖出减1tick。若执行时新出现清仓、减仓或已有加仓层保护条件，优先取消新增。必须在该Bar高低区间和当日涨跌停内；零量、封板等不可执行。此为可复算假设，不证明真实排队、盘口或成交能力。
 - 新增请求只尝试下一根，拒绝即取消并消耗机会。平仓未成保持退出义务，后续完成1m继续尝试；成交量限制本次平仓手数。
 - 成交才改变仓位。加仓保护仅使用严格晚于该层成交的完成1m，不能拿定价同一根收盘立即保护退出。逐手记录实际模型价格、开仓交易日、开费，按交易日决定平今/平昨费。模型账户与决策层逐层核对，现金满足初始现金加已实现毛损益减全部已发生费用。
-- 权益为现金加未实现损益。保证金采用`手数 × max(当前标记价, 前结算价) × 乘数 × 历史多头保证金率`的保守模型；新增后仍须不超过权益70%，决策及成交均重查。
+- 权益为现金加未实现损益。保证金采用`手数 × max(当前标记价, 前结算价) × 乘数 × 历史当前持仓方向保证金率（多头long、空头short）`的保守模型；新增后仍须不超过权益70%，决策及成交均重查。
 - 整轮净损益从首仓前权益起算；交易日净损益从前交易日末权益起算。均包含已实现、未实现和已发生手续费，分别达到-2000、-5000触发退出；日停开随Session交易日切换，不随自然午夜重置。
 - 14:50至当日日盘结束禁止新增。剩余仓位净浮盈扣除其开仓费用和按当前价估计的平仓费用，非正即发出退出请求；15:00的请求不会伪造成15:00成交。
 - 期末保留持仓、未决动作和MTM，不制造强平。换月标记`ROLLOVER_INTERRUPTED`，后续物理段使用独立10万元诊断账户；不累计成跨合约连续账户收益。
@@ -63,3 +63,17 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -p no:cacheprovider tests/unit/subing_decision tests/unit/subing_account tests/unit/subing_conditions tests/unit/subing_trend tests/unit/subing_macd tests/unit/subing_volume tests/unit/subing_price -q
 ```
+
+
+## 取消冷却与镜像做空账户适配（v4）
+
+配合决策v5，持仓、模型成交和轮次均显式记录LONG/SHORT。多头买开卖平，空头卖开买平；BUY加1tick、SELL减1tick，成交区间和封板判断随订单买卖方向处理。已实现、未实现及逐层净浮盈乘以持仓方向符号；空头准入及执行重查使用历史short_margin_ratio，费用仍按开仓/平今/平昨实际类型计算。
+
+清仓后不再等待10根30m，清空旧机会后等待新的有效交叉；清仓成交同时间观察不得生成新OPEN。owner已撤回本次尾盘提前开仓要求，原14:50起禁止新增和日终非正净浮盈退出保持。新结果单独输出，旧研究证据不覆盖，不接Runtime或Broker。
+
+
+2026-11-01最终验证：上述7组定向测试237 passed；独立Review对决策/账户113 passed，无阻塞缺陷。Ruff F/E9、diff与secret检查通过。原2024-10-14至2026-10-19窗口、7个物理段、167145根1m及执行事实SHA保持不变。最终回放为`output/subing-stage4-bidirectional-final-20261101/replay.json`（SHA256 `1148fbb84d2532ca6a48aa01a02de326affb57ee9f6185ed8f995e4f6154a9db`），原多头v4输出未覆盖。
+
+新结果73轮闭合（多31、空42）、182笔模型成交；多空各9次加仓，7段期末均空仓且无未决。`verification.json`记录输入来源与执行事实一致、实际源码hash一致、全部检查点恢复一致；逐笔方向损益、逐轮净损益、费用、现金恒等式和最多3手独立复算通过，复核入口为同目录`verify.py`（在仓库根目录、`PYTHONPATH=packages/quant-core`运行）。首次完整复算目录`output/subing-stage4-bidirectional-20261101`也保留，最终目录对应清理未用局部变量后的源码。
+
+以上只完成新规则的工程与历史行为复核，阶段四仍需owner核对代表性空头和取消冷却后的案例；未开展稳定性/OOS/Walk-forward，未发布或切换Runtime，各物理段仍独立账户，不拼接成连续收益。

@@ -14,7 +14,7 @@ import re
 
 from .indicators.subing_conditions import EntryWindow, observe_entry
 
-VERSION = 'subing_jm30_decision_v4'
+VERSION = 'subing_jm30_decision_v5'
 
 
 def _time(value):
@@ -62,6 +62,39 @@ def _digest(value):
     return sha256(json.dumps(value, sort_keys=True, allow_nan=False, separators=(',', ':')).encode()).hexdigest()
 
 
+SHORT_FIELDS = 'near_zero_death low_golden above_previous_high high qualified_rebound rebound_low rebound_invalidated'
+
+
+def direction_sign(side):
+    if side not in ('LONG', 'SHORT'):
+        raise ValueError('SIDE_INVALID')
+    return Decimal(1 if side == 'LONG' else -1)
+
+
+def candidate_side(frame):
+    return 'SHORT' if frame and frame['minute_angle'] is not None and Decimal(frame['minute_angle']) < 0 else 'LONG'
+
+
+def directional_frame(frame, side):
+    """Shared policy view: positive angle/above/breakout mean favorable to side.
+
+    Wire facts remain explicitly named for their actual market direction. The
+    long-named internal keys below express the mirrored policy, never wire prices.
+    """
+    if frame is None or side == 'LONG':
+        return frame
+    return dict(frame, near_zero_golden=frame['near_zero_death'],
+        minute_angle=None if frame['minute_angle'] is None else str(-Decimal(frame['minute_angle'])),
+        above_ema=frame['below_ema'], below_ema=frame['above_ema'],
+        below_previous_low=frame['above_previous_high'], high_death=frame['low_golden'],
+        qualified_pullback=frame['qualified_rebound'], pullback_high=frame['rebound_low'],
+        pullback_invalidated=frame['rebound_invalidated'], low=frame['high'])
+
+
+def daily_allows(direction, side):
+    return direction in (('UP', 'NEUTRAL') if side == 'LONG' else ('DOWN', 'NEUTRAL'))
+
+
 class DecisionModel:
     def __init__(self, contract: str, run_id: str):
         if not isinstance(contract, str) or not re.fullmatch(r'JM[0-9]{4}', contract):
@@ -73,8 +106,10 @@ class DecisionModel:
         self.pending = None
         self.clear_reasons = []
         self.exit_layers = []
-        self.cooldown = 0
-        self.cooldown_ended_at = None
+        self.side = None
+        self.last_flat_at = None
+        self.latest_frame = None
+        self.latest_frame_at = None
         self.round_started_at = None
         self.pullback = None
         self.initial_stop = None
@@ -91,7 +126,7 @@ class DecisionModel:
         self.day_reconciled = False
         self.last_at = None
         self.last_observation = None
-        self.window = EntryWindow(contract)
+        self.windows = {side: EntryWindow(contract) for side in ('LONG', 'SHORT')}
         self.technical_ready = False
         self.sequence = 0
         self.events, self.results, self.fingerprints = [], {}, {}
@@ -100,7 +135,7 @@ class DecisionModel:
         return _wire(dict(contract=self.contract, run_id=self.run_id, version=VERSION,
             layers=self.layers, quantity=len(self.layers), pending=self.pending,
             clear_reasons=self.clear_reasons, exit_layers=self.exit_layers,
-            cooldown=self.cooldown, cooldown_ended_at=self.cooldown_ended_at,
+            side=self.side, last_flat_at=self.last_flat_at, latest_frame=self.latest_frame, latest_frame_at=self.latest_frame_at,
             round_started_at=self.round_started_at, pullback=self.pullback,
             initial_stop=self.initial_stop, risk_distance=self.risk_distance, profit_target=self.profit_target,
             completed_m30=self.completed_m30, fast_deadline=self.fast_deadline,
@@ -108,7 +143,7 @@ class DecisionModel:
             reset_after=self.reset_after, trading_day=self.day,
             day_halted=self.day_halted, day_reconciled=self.day_reconciled,
             last_at=self.last_at, last_observation=self.last_observation, technical_ready=self.technical_ready,
-            entry_window=dict(source_end=self.window.source_end, age=self.window.age)))
+            entry_windows={side: dict(source_end=w.source_end, age=w.age) for side, w in self.windows.items()}))
 
     def apply(self, event):
         if type(event) is not dict or not isinstance(event.get('event_id'), str) or not event['event_id']:
@@ -142,10 +177,10 @@ class DecisionModel:
             self.__dict__ = {**backup, **journals}
             raise
 
-    def _intent(self, at, kind, targets, reasons):
+    def _intent(self, at, kind, targets, reasons, side=None):
         self.sequence += 1
         self.pending = dict(decision_id=f'{self.run_id}:{self.sequence}', kind=kind,
-            at=at, layer_ids=list(targets), reasons=list(reasons), cancel_requested=False)
+            at=at, side=side or self.side, layer_ids=list(targets), reasons=list(reasons), cancel_requested=False)
         return deepcopy(self.pending)
 
     def _observe(self, e, at):
@@ -173,18 +208,34 @@ class DecisionModel:
             raise ValueError('DAILY_NOT_STRICT_BEFORE')
         if e['daily_direction'] != 'UNKNOWN' and e['daily_at'] is None:
             raise ValueError('DAILY_SOURCE_MISSING')
-        m = e['m30']
+        raw = e['m30']
+        m = raw
         if m is not None:
-            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated ema21 low')
+            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated ema21 low ' + SHORT_FIELDS)
             for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'):
                 _flag(m[key], nullable=True)
+            for key in ('near_zero_death', 'low_golden', 'above_previous_high', 'qualified_rebound'):
+                _flag(m[key], nullable=True)
+            _flag(m['rebound_invalidated'])
+            _number(m['high'], nullable=True, positive=True)
+            rebound_low = _number(m['rebound_low'], nullable=True, positive=True)
+            if m['qualified_rebound'] is True and rebound_low is None:
+                raise ValueError('REBOUND_LOW_MISSING')
             _flag(m['pullback_invalidated'])
-            ema21 = _number(m['ema21'], nullable=True, positive=True)
-            low = _number(m['low'], nullable=True, positive=True)
-            angle = _number(m['minute_angle'], nullable=True)
+            _number(m['ema21'], nullable=True, positive=True)
+            _number(m['low'], nullable=True, positive=True)
+            _number(m['minute_angle'], nullable=True)
             high = _number(m['pullback_high'], nullable=True, positive=True)
             if m['qualified_pullback'] is True and high is None:
                 raise ValueError('PULLBACK_HIGH_MISSING')
+        if raw is not None:
+            self.latest_frame, self.latest_frame_at = deepcopy(raw), at
+        side = self.side or (self.pending['side'] if self.pending else candidate_side(self.latest_frame))
+        sign = direction_sign(side)
+        m = directional_frame(raw, side)
+        if m:
+            _number(m['minute_angle'], nullable=True)
+            high = _number(m['pullback_high'], nullable=True, positive=True)
         if self.day != day:
             self.day = day
             self.day_reconciled = e['reconciled']
@@ -203,7 +254,7 @@ class DecisionModel:
             reasons.append('DAY_LOSS')
         if e['round_loss'] is True:
             reasons.append('ROUND_LOSS')
-        if self.layers and self.initial_stop is not None and close <= self.initial_stop:
+        if self.layers and self.initial_stop is not None and sign * (close - self.initial_stop) <= 0:
             reasons.append('FIXED_STOP')
         if m and m['below_ema'] is True:
             reasons.append('EMA_CLEAR')
@@ -213,33 +264,34 @@ class DecisionModel:
             self.clear_reasons = list(dict.fromkeys(self.clear_reasons + reasons))
             self.pullback = None
         entry = None
-        was_cooling = self.cooldown > 0
+        readiness = directional_frame(self.latest_frame, side)
+        self.technical_ready = readiness is not None and readiness['minute_angle'] is not None and all(readiness[key] is not None for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'))
         if m:
             if self.round_started_at is not None and at > self.round_started_at:
                 self.completed_m30 += 1
                 if self.completed_m30 == 3:
                     self.fast_deadline = at
-            self.technical_ready = angle is not None and all(m[key] is not None for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'))
-            self.window, entry = observe_entry(self.window, contract=self.contract, bar_end=at,
-                near_zero_golden=m['near_zero_golden'], daily_direction=e['daily_direction'],
-                minute_angle=angle, above_ema=m['above_ema'], volume_effective=m['volume_effective'])
-            if was_cooling:
-                if self.reset_after is not None and at > self.reset_after:
-                    self.cooldown -= 1
-                self.window = EntryWindow(self.contract, at)
-                if not self.cooldown:
-                    self.cooldown_ended_at = at
+            for entry_side in ('LONG', 'SHORT'):
+                view = directional_frame(raw, entry_side)
+                daily = e['daily_direction'] if entry_side == 'LONG' else {'UP': 'DOWN', 'DOWN': 'UP'}.get(e['daily_direction'], e['daily_direction'])
+                self.windows[entry_side], candidate = observe_entry(self.windows[entry_side], contract=self.contract, bar_end=at,
+                    near_zero_golden=view['near_zero_golden'], daily_direction=daily,
+                    minute_angle=_number(view['minute_angle'], nullable=True), above_ema=view['above_ema'],
+                    volume_effective=view['volume_effective'])
+                if entry_side == side:
+                    entry = candidate
             if m['pullback_invalidated'] or not self.technical_ready:
                 self.pullback = None
+        signal_frame = m
         profit_trigger = bool(self.layers and self.profit_target is not None and not self.profit_taken
-            and at > self.round_started_at and close >= self.profit_target)
+            and at > self.round_started_at and sign * (close - self.profit_target) >= 0)
         if profit_trigger:
             self.profit_taken = True
             fast = self.completed_m30 < 3 or (self.fast_deadline is not None and at <= self.fast_deadline)
             eligible = [layer['layer_id'] for layer in reversed(self.layers) if layer['kind'] == 'ADD'
                 and layer_nets.get(layer['layer_id']) is not None and layer_nets[layer['layer_id']] > 0]
             self.profit_targets = eligible if fast else eligible[:1]
-        protected = [layer['layer_id'] for layer in self.layers if layer['kind'] == 'ADD' and at > layer['at'] and close < layer['price']]
+        protected = [layer['layer_id'] for layer in self.layers if layer['kind'] == 'ADD' and at > layer['at'] and sign * (close - layer['price']) < 0]
         if self.clear_reasons:
             self.exit_layers = [layer['layer_id'] for layer in self.layers]
         else:
@@ -256,8 +308,8 @@ class DecisionModel:
             self.pullback = None
             self.reset_after = at
         # Breakout is a completed 1m close, never the phase-two 30m high flag.
-        breakout_high = self.pullback['high'] if self.pullback is not None else None
-        breakout = self.pullback is not None and at > self.pullback['at'] and close > self.pullback['high']
+        breakout_high = self.pullback['level'] if self.pullback is not None else None
+        breakout = self.pullback is not None and at > self.pullback['at'] and sign * (close - self.pullback['level']) > 0
         if breakout:
             self.pullback = None
         actions = []
@@ -273,7 +325,7 @@ class DecisionModel:
                     list(dict.fromkeys(self.pending['reasons'] + (['PROFIT_1R'] if self.profit_targets else []) + (['ADD_PROTECTION'] if protected else []))))
                 replacement['supersedes_decision_id'] = superseded
                 actions.append(replacement)
-            if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and (reduction_trigger or profit_trigger or base_net is None or base_net <= 0 or close <= self.pending['breakout_high'])) or e['day_end_window'] or e['daily_direction'] not in ('UP', 'NEUTRAL') or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
+            if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and (reduction_trigger or profit_trigger or base_net is None or base_net <= 0 or sign * (close - self.pending['breakout_level']) <= 0)) or e['day_end_window'] or not daily_allows(e['daily_direction'], side) or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
                 if not self.pending['cancel_requested']:
                     self.pending['cancel_requested'] = True
                     actions.append(dict(kind='CANCEL', decision_id=self.pending['decision_id'], reason='OPENING_NO_LONGER_ALLOWED'))
@@ -293,23 +345,24 @@ class DecisionModel:
             blocked.append('DAY_HALTED')
         if e['day_end_window']:
             blocked.append('DAY_END_NO_OPEN')
-        if e['daily_direction'] not in ('UP', 'NEUTRAL'):
+        if not daily_allows(e['daily_direction'], side):
             blocked.append('DAILY_NOT_ALLOWED')
         if e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False:
             blocked.append('ADMISSION_OR_RISK_NOT_PROVEN')
-        if was_cooling or self.cooldown:
-            blocked.append('COOLDOWN')
         if entry and entry['met'] is True and not self.layers:
-            source = _time(entry['window']['source_end'].isoformat())
-            if self.cooldown_ended_at is not None and source <= self.cooldown_ended_at:
-                blocked.append('OLD_GOLDEN')
-            stop = min(ema21, low) - Decimal('13') if ema21 is not None and low is not None else None
-            if stop is None or stop <= 0 or stop >= close:
+            if self.last_flat_at is not None and at <= self.last_flat_at:
+                blocked.append('SAME_OBSERVATION_AS_CLEAR')
+            ema = _number(signal_frame['ema21'], nullable=True, positive=True)
+            extreme = _number(signal_frame['low'], nullable=True, positive=True)
+            stop = ((min(ema, extreme) - Decimal('13')) if side == 'LONG' else (max(ema, extreme) + Decimal('13'))) if ema is not None and extreme is not None else None
+            if stop is None or stop <= 0 or sign * (close - stop) <= 0:
                 blocked.append('INITIAL_STOP_NOT_PROVEN')
             if blocked:
-                actions.append(dict(kind='REJECT', opportunity='OPEN', reasons=blocked))
+                actions.append(dict(kind='REJECT', opportunity='OPEN', side=side, reasons=blocked))
             else:
-                action = self._intent(at, 'OPEN', [], ['ENTRY_MET'])
+                action = self._intent(at, 'OPEN', [], ['ENTRY_MET'], side=side)
+                self.pending['signal_at'] = self.latest_frame_at
+                action['signal_at'] = self.latest_frame_at
                 self.pending['initial_stop'] = stop
                 action['initial_stop'] = stop
                 actions.append(action)
@@ -328,13 +381,13 @@ class DecisionModel:
                 actions.append(dict(kind='REJECT', opportunity='ADD', reasons=blocked))
             else:
                 action = self._intent(at, 'ADD', [], ['PULLBACK_BREAKOUT'])
-                self.pending['breakout_high'] = breakout_high
-                action['breakout_high'] = breakout_high
+                self.pending['breakout_level'] = breakout_high
+                action['breakout_level'] = breakout_high
                 actions.append(action)
         if m and self.layers and not exit_now and not reduction_trigger and not profit_trigger and self.technical_ready and m['qualified_pullback'] is True:
             threshold = self.reset_after or self.round_started_at
             if threshold is not None and at > threshold:
-                self.pullback = dict(at=at, high=high)
+                self.pullback = dict(at=at, level=high)
         return actions
 
     def _ack(self, e, at):
@@ -357,13 +410,15 @@ class DecisionModel:
         if kind in ('OPEN', 'ADD'):
             if e['layer_ids'] or len(self.layers) >= 3 or (kind == 'OPEN' and self.layers) or (kind == 'ADD' and not self.layers):
                 raise ValueError('ACK_POSITION_INVALID')
-            if kind == 'OPEN' and price <= self.pending['initial_stop']:
+            sign = direction_sign(self.pending['side'])
+            if kind == 'OPEN' and sign * (price - self.pending['initial_stop']) <= 0:
                 raise ValueError('INITIAL_STOP_INVALID_AT_FILL')
-            self.layers.append(dict(layer_id=e['decision_id'], kind=kind, price=price, at=at))
+            self.layers.append(dict(layer_id=e['decision_id'], kind=kind, side=self.pending['side'], price=price, at=at))
             if kind == 'OPEN':
+                self.side = self.pending['side']
                 self.initial_stop = self.pending['initial_stop']
-                self.risk_distance = price - self.initial_stop
-                self.profit_target = price + self.risk_distance
+                self.risk_distance = sign * (price - self.initial_stop)
+                self.profit_target = price + sign * self.risk_distance
                 self.completed_m30 = 0
                 self.fast_deadline = None
                 self.profit_taken = False
@@ -384,10 +439,11 @@ class DecisionModel:
             self.pullback = None
             self.reset_after = at
             if not self.layers:
-                self.cooldown = 10
+                self.side = None
+                self.last_flat_at = at
                 self.clear_reasons = []
                 self.exit_layers = []
-                self.window = EntryWindow(self.contract, self.window.last_end)
+                self.windows = {side: EntryWindow(self.contract, w.last_end) for side, w in self.windows.items()}
                 self.round_started_at = None
                 self.initial_stop = self.risk_distance = self.profit_target = None
                 self.completed_m30 = 0

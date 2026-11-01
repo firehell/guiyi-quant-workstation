@@ -38,3 +38,10 @@ completed、物理身份、前缀、时序和coverage由现有MDS加载层校验
 
 导出使用 --price（可组合 --macd --volume），输出新目录，保留版本与源码hash。
 验证入口为 tests/unit/subing_price 和 tests/unit/subing_trend。
+
+
+## 镜像反弹（v4）
+
+当前版本 `subing_price_ema21_atr02_context_v4` 增加空头镜像，使用同一方向参数化算法，方向进入状态身份，禁止混用。DOWN背景且close<EMA−0.2ATR；后续high高于已有背景收盘，high触及同一EMA±0.2ATR带且close<EMA，当前趋势非UP时确认有效反弹。冻结反弹low，后续向下突破；UP清空背景和资格，close≥EMA仅取消资格。预热、未知、同根不可自建背景/自突破等边界与多头一致。
+
+导出`price_factor.rebound`使用共享结构，其中`armed_high`字段在该子结构表示空头冻结的反弹低点（历史共享结构命名）；账户适配明确转为`rebound_low`，决策意图使用无方向歧义的`breakout_level`。原`price_factor.pullback`仍为多头回踩，旧输出保留原版本。

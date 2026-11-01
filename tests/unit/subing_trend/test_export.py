@@ -129,7 +129,7 @@ def test_all_factors_share_one_input_and_separate_versions():
     data=load(m,m.day,m.day,include_macd=True,include_volume=True)
     assert len(data['code_hashes'])==7
     assert data['volume_version']=='subing_volume_d1_gt1_m30_tiers_v2'
-    assert data['macd_version']=='subing_macd12_26_9_segment_cross_v2'
+    assert data['macd_version']=='subing_macd12_26_9_segment_cross_v3'
     page=render(data)
     assert '2.1 + 2.2 + 2.3' in page
     assert '__MACD_PANEL__' not in page and '__VOLUME_PANEL__' not in page

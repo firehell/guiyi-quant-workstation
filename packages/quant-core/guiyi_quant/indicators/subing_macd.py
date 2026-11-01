@@ -7,7 +7,7 @@ import math
 from .macd import initial_macd_state, step_macd
 from .models import MacdState
 
-VERSION = 'subing_macd12_26_9_segment_cross_v2'
+VERSION = 'subing_macd12_26_9_segment_cross_v3'
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,8 @@ class CrossPoint:
     fraction: float | None = None
     near_zero_golden: bool | None = None
     high_death: bool | None = None
+    near_zero_death: bool | None = None
+    low_golden: bool | None = None
     reason: str | None = 'WARMUP'
 
 
@@ -33,12 +35,14 @@ def cross_point(previous: tuple[float, float] | None, dif: float, dea: float) ->
     a, b = p-q, d-e
     cross = 'GOLDEN' if a <= 0 < b else 'DEATH' if a >= 0 > b else 'NONE'
     if cross == 'NONE':
-        return CrossPoint(dif=dif, dea=dea, cross=cross, near_zero_golden=False, high_death=False, reason=None)
+        return CrossPoint(dif=dif, dea=dea, cross=cross, near_zero_golden=False, high_death=False, near_zero_death=False, low_golden=False, reason=None)
     fraction = -a/(b-a)
     height = p + fraction*(d-p)
     return CrossPoint(dif=dif, dea=dea, cross=cross, height=float(height), fraction=float(fraction),
                       near_zero_golden=cross == 'GOLDEN' and -4 <= height <= 4,
-                      high_death=cross == 'DEATH' and height > 17, reason=None)
+                      high_death=cross == 'DEATH' and height > 17,
+                      near_zero_death=cross == 'DEATH' and -4 <= height <= 4,
+                      low_golden=cross == 'GOLDEN' and height < -17, reason=None)
 
 
 @dataclass(frozen=True)

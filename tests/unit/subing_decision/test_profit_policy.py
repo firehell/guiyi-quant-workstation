@@ -79,7 +79,7 @@ def test_pending_add_cancels_on_base_loss_or_breakout_equal():
         m.apply(observation(31,close='113'))
         result=m.apply(observation(32,close='114',**changes) if 'close' not in changes else observation(32,**changes))
         assert result['actions'][0]['kind']=='CANCEL'
-        assert m.pending['breakout_high']==D('112')
+        assert m.pending['breakout_level']==D('112')
 
 
 def test_fast_third_bar_inclusive_lifo_partial_restore_once():

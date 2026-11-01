@@ -59,8 +59,13 @@ def observations(bars, factor_rows, sessions):
         frame = None
         if r is not None:
             p, x = r['price_factor'], r['joint']['exits']
-            pullback = p['pullback']
-            frame = dict(ema21=None if p['ema21'] is None else str(p['ema21']), low=str(r['low']),
+            pullback, rebound = p['pullback'], p['rebound']
+            frame = dict(high=str(r['high']), near_zero_death=r['macd']['near_zero_death'],
+                low_golden=r['macd']['low_golden'], above_previous_high=x['above_previous_high'],
+                qualified_rebound=rebound['qualified_hold'],
+                rebound_low=str(rebound['armed_high']) if rebound['qualified_hold'] else None,
+                rebound_invalidated=p['below_ema'] is not True or r['direction'] in ('UP', 'UNKNOWN'),
+                ema21=None if p['ema21'] is None else str(p['ema21']), low=str(r['low']),
                 near_zero_golden=r['macd']['near_zero_golden'],
                 minute_angle=None if r['angle'] is None else str(r['angle']),
                 above_ema=p['above_ema'], volume_effective=r['volume_factor']['effective'],

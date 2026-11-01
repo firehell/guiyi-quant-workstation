@@ -24,7 +24,7 @@ def inputs(prices, *, frames=None):
         xs.append(ExecutionBar(bar,facts))
         m=None
         if i in frames:
-            m=dict(ema21='90',low='80',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
+            m=dict(high='140',near_zero_death=False,low_golden=False,above_previous_high=False,qualified_rebound=False,rebound_low=None,rebound_invalidated=True,ema21='90',low='80',near_zero_golden=False,minute_angle='2',above_ema=True,volume_effective=True,
                 below_previous_low=False,high_death=False,below_ema=False,
                 qualified_pullback=False,pullback_high=None,pullback_invalidated=False)
             m.update(frames[i])
@@ -155,7 +155,7 @@ def test_insufficient_minute_volume_partially_closes_then_continues():
     r=replay(xs,obs,'r')
     assert [x['quantity'] for x in r['fills']]==[1,1,1,1]
     assert r['fills'][-1]['decision_id']==r['fills'][-2]['decision_id']
-    assert r['decision_state']['cooldown']==10
+    assert r['decision_state']['side'] is None
 
 
 def test_unknown_daily_prevents_pending_open_execution():
