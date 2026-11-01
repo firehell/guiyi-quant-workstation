@@ -1,7 +1,7 @@
 # 焦煤苏冰3.2：持仓决策与离线动作回放
 
-本轮实现独立离线决策内核 `subing_jm30_decision_v1`。只处理JM多头、固定30m技术条件与完成1m检查，首仓1手、每次加1手、最多3手。
-不创建Broker订单，不接正式Runtime，不计算历史收益；完整执行、费用及账户事实适配留在3.3。
+本轮实现独立离线决策内核 `subing_jm30_decision_v2`。只处理JM多头、固定30m技术条件与完成1m检查，首仓1手、每次加1手、最多3手。
+不创建Broker订单，不接正式Runtime，不计算历史收益；完整执行、费用及账户事实适配见[3.3历史账户回放](subing-account-replay.md)。
 
 ## 输入与职责
 
@@ -23,7 +23,7 @@
 ## 动作合同
 
 1. 清仓优先于减仓，减仓优先于加仓。同一时点发生退出不加回。
-2. 完成1m收盘低于加仓层实际确认价，退出该层；不受保留一手限制。
+2. 成交之后严格更晚的完成1m收盘低于加仓层实际确认价，退出该层；不受保留一手限制。
 3. 30m收盘跌破前根low、高位死叉h>17各减1手；先排除保护退出层，再从剩余仓位最近层减，普通减仓保留至少1手。
 4. 收盘破EMA、整轮亏损、日亏或日终非正净浮盈形成清仓义务；原因并列、仓位不重复退出。
 5. 日线DOWN/UNKNOWN、日终区间、日停开、对账未通过及风险未知均禁止新增。已挂起开仓失去资格时发出取消请求，等明确确认后才解除未决状态。
@@ -46,4 +46,4 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 其他输入使用相同JSON封包（kind、contract、run_id、source_note、events）；允许ENGINEERING_SCENARIO或EXPLICIT_OBSERVATION_REPLAY，后者也不证明来源真实性。
 
 验证入口：`tests/unit/subing_decision`；回归范围：`subing_conditions`、`subing_trend`、`subing_macd`、`subing_volume`、`subing_price`。
-3.3仍需验证实际行情到事件适配、物理合约成交与费用、账户对账和真实历史方法一致性；本阶段不宣称这些完成。
+3.2本身仅证明决策回放；实际行情、费用及账户验证由[3.3历史账户回放](subing-account-replay.md)提供。v2进一步明确加仓保护必须来自成交后严格更晚的完成1m，旧v1日志保留其原身份，不用当前版本冒充原回放。

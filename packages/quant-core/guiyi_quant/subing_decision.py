@@ -14,7 +14,7 @@ import re
 
 from .indicators.subing_conditions import EntryWindow, observe_entry
 
-VERSION = 'subing_jm30_decision_v1'
+VERSION = 'subing_jm30_decision_v2'
 
 
 def _time(value):
@@ -109,7 +109,11 @@ class DecisionModel:
             if self.fingerprints[identity] != fingerprint:
                 raise ValueError('EVENT_ID_CONFLICT')
             return deepcopy(self.results[identity])
-        backup = deepcopy(self.__dict__)
+        # Journals are append-only after successful transition; copying them per
+        # minute made historical replay quadratic. Only transactional state is copied.
+        journal_keys = ('events', 'results', 'fingerprints')
+        journals = {key: self.__dict__[key] for key in journal_keys}
+        backup = deepcopy({key: value for key, value in self.__dict__.items() if key not in journal_keys})
         try:
             at = _time(event.get('at'))
             if event.get('contract') != self.contract:
@@ -125,7 +129,7 @@ class DecisionModel:
             self.results[identity] = deepcopy(result)
             return result
         except Exception:
-            self.__dict__ = backup
+            self.__dict__ = {**backup, **journals}
             raise
 
     def _intent(self, at, kind, targets, reasons):
@@ -203,7 +207,7 @@ class DecisionModel:
                     self.cooldown_ended_at = at
             if m['pullback_invalidated'] or not self.technical_ready:
                 self.pullback = None
-        protected = [layer['layer_id'] for layer in self.layers if layer['kind'] == 'ADD' and close < layer['price']]
+        protected = [layer['layer_id'] for layer in self.layers if layer['kind'] == 'ADD' and at > layer['at'] and close < layer['price']]
         if self.clear_reasons:
             self.exit_layers = [layer['layer_id'] for layer in self.layers]
         else:
