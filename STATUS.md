@@ -1,3 +1,6 @@
+11/1 按owner授权，原生cleanup-plan 625c51932d5896f760166c20c65c773a3b49f39525725e6a39f3a2f7db1fd92f证明v62 eligible、references=[]；部署锁内fresh计划散列/身份一致后，已非强制git worktree remove .worktrees/release-v1.16.62。v1.16.62 annotated tag及commit4c44e63e1be7a954d8ba82b478e28577503ac5e1保留，未删除历史提交或原始恢复证据。
+复用既有bc563612…封存；删除后现役v64原封_load_index校验通过。工作树仅主develop、v44独立SimNow、v64正式服务；原SimNow PID1733保持。十项正式服务均matched v64/gen53，API/Web通过；Runtime health HTTP200、status=degraded（db/redis/live_market ok，after_market degraded、weekly missed、alert degraded），不宣称业务全绿。本次未切服务或执行恢复，明日15:05既有v64安排保持。
+
 11/1 按owner交办，已准备v1.16.64原账户接管候选 output/simnow-preopen-20261101/simnow-v64，exact3e8229fe8cf2da1bd9f14d5035a32136199c0025。仅替换代码/API环境/未来许可路径，原账户身份、状态根、SDK与账户profile保持。
 候选SDK原生--trade --check与plist渲染通过；使用候选API依赖环境运行原生--preflight-trade通过：60品种、candidate_valid=true、writer_idle=false（原服务持锁）、execution_permitted=false、broker_io=false。独立SDK缺python-dotenv导致的首次完整预检失败已定位，未跳过校验。
 既有ACTIVE一次性automation simnow已原生更新并读回：11/2 15:05、COUNT=1、目标v64及上述候选，保留原账户/四账本/预算/block、20261103 fresh窗口和失败即停止边界；未新建任务。许可尚不存在，须届时fresh生成。本次未连接柜台、未切换SimNow或创建订单，运行与自然交易仍待现场核验。
