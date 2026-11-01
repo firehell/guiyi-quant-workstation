@@ -5,7 +5,7 @@ from guiyi_quant.indicators.subing_conditions import entry_conditions, exit_fact
 
 def entry(**kwargs):
     values=dict(daily_direction='UP', minute_angle=D('1'), above_ema=True,
-                near_zero_golden=True, volume_effective=True)
+                golden_window=True, volume_effective=True)
     return entry_conditions(**(values | kwargs))
 
 
@@ -15,11 +15,11 @@ def test_daily_permission(daily,met):
 
 
 @pytest.mark.parametrize('key,value', [('minute_angle',D('0')),('above_ema',False),
-                                     ('near_zero_golden',False),('volume_effective',False)])
+                                     ('golden_window',False),('volume_effective',False)])
 def test_each_gate_is_required_on_same_bar(key,value):
     assert entry(**{key:value})['met'] is False
     assert entry()['met'] is True
-    assert entry(near_zero_golden=False)['met'] is False  # no old cross reused
+    assert entry(golden_window=False)['met'] is False  # no valid window
 
 
 def test_missing_does_not_become_permission_or_known_false():
@@ -55,3 +55,72 @@ def test_minute_entry_angle_zero_boundary(angle,met):
 
 def test_missing_angle_is_unknown():
     assert entry(minute_angle=None)['met'] is None
+
+
+from datetime import datetime, timedelta, timezone
+from guiyi_quant.indicators.subing_conditions import EntryWindow, observe_entry
+
+
+def step(state, n, **kw):
+    args=dict(contract='JM2701',bar_end=datetime(2026,8,26,15,tzinfo=timezone.utc)+timedelta(minutes=30*n),
+              near_zero_golden=False,daily_direction='UP',minute_angle=D('1'),above_ema=True,volume_effective=True)
+    return observe_entry(state, **(args|kw))
+
+
+def test_cross_bar_consumes_once():
+    s,p=step(EntryWindow('JM2701'),0,near_zero_golden=True)
+    assert p['met'] and p['window']['age']==0 and p['window']['consumed']
+    s,p=step(s,1)
+    assert p['met'] is False and s.source_end is None
+
+
+def test_fifth_later_bar_allowed_sixth_not_allowed():
+    s=EntryWindow('JM2701')
+    for n in range(5):s,p=step(s,n,near_zero_golden=n==0,minute_angle=D('0'))
+    checkpoint=s
+    s,p=step(s,5)
+    assert p['met'] and p['window']['age']==5
+    s,p=step(checkpoint,5,volume_effective=False)
+    assert not p['met'] and p['window']['expired_after_bar'] and s.source_end is None
+    s,p=step(s,6)
+    assert not p['met']
+
+
+def test_waiting_volume_price_and_daily_failure_do_not_consume():
+    s,p=step(EntryWindow('JM2701'),0,near_zero_golden=True,minute_angle=D('-0.86'))
+    s,p=step(s,1,volume_effective=False,above_ema=False,daily_direction='DOWN')
+    assert not p['met'] and s.source_end is not None
+    s,p=step(s,2,volume_effective=None)
+    assert p['met'] is None and s.source_end is not None
+    s,p=step(s,3)
+    assert p['met'] and p['window']['age']==3
+
+
+def test_new_cross_replaces_window_and_macd_unknown_clears():
+    s,p=step(EntryWindow('JM2701'),0,near_zero_golden=True,volume_effective=False)
+    s,p=step(s,3,near_zero_golden=True,volume_effective=False)
+    assert p['window']['replaced'] and p['window']['age']==0
+    s,p=step(s,4,near_zero_golden=None)
+    assert p['met'] is None and s.source_end is None
+    s,p=step(s,5)
+    assert not p['met']
+
+
+def test_identity_time_restart_prefix_and_session_gap():
+    import pickle
+    s,_=step(EntryWindow('JM2701'),0,near_zero_golden=True,volume_effective=False)
+    assert step(s,1)==step(pickle.loads(pickle.dumps(s)),1)
+    with pytest.raises(ValueError):step(s,0)
+    with pytest.raises(ValueError):step(s,1,contract='JM2609')
+    with pytest.raises(ValueError):step(s,1,bar_end=datetime(2026,8,27))
+    # Overnight gap advances by one completed bar, not elapsed half hours.
+    _,p=step(s,1,bar_end=datetime(2026,8,27,1,30,tzinfo=timezone.utc))
+    assert p['window']['age']==1
+    def replay(count):
+        state=EntryWindow('JM2701');out=[]
+        for n in range(count):
+            state,p=step(state,n,near_zero_golden=n==0,volume_effective=n>=4)
+            out.append(p)
+        return out
+    full=replay(9)
+    for n in range(1,10):assert replay(n)==full[:n]
