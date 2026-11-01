@@ -76,7 +76,7 @@ for (const frequency of ['5m', '15m', '30m', '60m', '1d', '1w']) {
     page.on('request', r => { if (new URL(r.url()).pathname.endsWith('/api/alerts/events')) eventReads.push(new URL(r.url())) })
     await page.goto(`/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=${frequency}`)
     await expect(page.locator('[data-detail-workspace="subing"] .market-kline-stage')).toBeVisible()
-    await expect(page.locator('.observed-records__audit')).toBeVisible()
+    await expect(page.locator('.observed-records__audit')).toHaveCount(0)
     const panel = page.getByRole('region', { name: '实时参考收益与记录', exact: true })
     if (['5m', '15m', '30m', '60m', '1d', '1w'].includes(frequency)) {
       await expect(panel.locator('.newow-reference__card')).toHaveCount(3)
@@ -109,6 +109,9 @@ for (const width of [1188,390]) {
     const requests=await setup(page)
     await page.goto('/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=60m')
     await expect(page.locator('[data-detail-workspace="subing"] .detail-insight-deck')).toHaveCount(0)
+    await expect(page.locator('.forward-reference details')).toHaveCount(0)
+    await expect(page.locator('.observed-records__audit')).toHaveCount(0)
+    await expect(page.getByRole('tablist',{name:'详情内容'})).toHaveCount(0)
     const panel=page.getByRole('region',{name:'实时参考收益与记录',exact:true})
     await expect(panel.locator('.newow-reference__card')).toHaveCount(3)
     await expect(panel.getByRole('button',{name:'近3月',exact:true})).toHaveAttribute('aria-pressed','true')
