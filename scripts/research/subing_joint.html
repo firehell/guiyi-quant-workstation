@@ -1,0 +1,27 @@
+<section class="card" style="margin-top:16px" id="jointPanel">
+<h2>联合案例核对 · 首仓条件与退出事实</h2>
+<p>首仓条件全部满足仅表示技术条件成立，尚未检查持仓、清仓后等待10根、14:50限制、风险和可成交性。不会生成订单、成交或收益。</p>
+<div><button id="jointPrev">上一个首仓条件成立</button> <button id="jointNext">下一个首仓条件成立</button></div>
+<div><button id="jointGoldenPrev">上一个近轴金叉</button> <button id="jointGoldenNext">下一个近轴金叉</button></div><p id="jointSummary"></p>
+<h3 id="jointStatus"></h3><table id="jointChecks"></table>
+<pre id="jointFacts"></pre>
+<p class="muted">日线只取同物理合约、严格早于当前30m结束时点的最后完成日线。日线量能和30m放量档位是辅助说明，不增加首仓门槛。回踩用于加仓依据，不是首仓必需条件。所有30m首仓条件须在金叉当根同时满足，不沿用旧金叉。</p>
+<pre id="jointSource"></pre>
+</section>
+<script>
+const jointLabels={daily_allows_long:'日线同向或中性，允许继续检查',minute_up:'30m趋势向上（>5°）',above_ema:'本根收盘 > EMA21',new_near_zero_golden:'本根新金叉且交点在 [-4,4]',volume_expanded:'本根成交量 > 前根'};
+const jointBool=v=>v==null?'未知':v?'满足':'不满足';
+const jointTime=v=>v?new Date(v).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'无';
+function drawJoint(){const r=rows[index],j=r?.joint;if(!j)return;
+ for(const [id,step,kind] of [['jointPrev',-1,'entry'],['jointNext',1,'entry'],['jointGoldenPrev',-1,'golden'],['jointGoldenNext',1,'golden']])$(id).disabled=!rows.some((q,i)=>(step<0?i<index:i>index)&&(kind==='entry'?q.joint?.entry.met===true:q.macd?.near_zero_golden===true));
+ $('jointStatus').textContent=`${r.contract} · ${r.label} — ${j.entry.met===null?'资料不足':j.entry.met?'首仓技术条件全部满足':'首仓技术条件未齐'}`;
+ $('jointChecks').replaceChildren();for(const [key,value] of Object.entries(j.entry.checks)){const tr=document.createElement('tr');for(const text of [jointLabels[key],jointBool(value)]){const td=document.createElement('td');td.textContent=text;tr.appendChild(td)}$('jointChecks').appendChild(tr)}
+ $('jointSummary').textContent=`当前物理合约窗口（事后统计）：近轴金叉 ${rows.filter(q=>q.macd?.near_zero_golden===true).length} 次；首仓技术条件齐全 ${rows.filter(q=>q.joint?.entry.met===true).length} 次。可逐个核对缺少哪项条件。`;
+ const e=j.exits,b=r.price_factor.pullback;
+ $('jointFacts').textContent=`日线背景：${jointTime(j.daily_time)} / ${names[j.daily_direction]}\n\n普通减仓依据（不代表实际减仓）：\n收盘 < 前根最低价：${jointBool(e.below_previous_low)}\n前根完成：${jointTime(e.previous_end)} / 最低价 ${priceNum(e.previous_low)}\n本根高位死叉（h>17）：${jointBool(e.high_death)}\n\n技术清仓依据：\n收盘 < EMA21：${jointBool(e.below_ema)}\n\n回踩管理依据：\n有效回踩：${jointBool(b.qualified_hold)}\n本根曾突破旧回踩高点：${jointBool(b.breakout)}\n\n这些依据可以同时发生；减仓手数、保留底仓、动作优先级与成交时序在阶段三组合。`;
+}
+for(const [id,step] of [['jointPrev',-1],['jointNext',1]])$(id).onclick=()=>{for(let i=index+step;i>=0&&i<rows.length;i+=step){if(rows[i].joint?.entry.met===true){index=i;draw();break;}}};
+for(const [id,step] of [['jointGoldenPrev',-1],['jointGoldenNext',1]])$(id).onclick=()=>{for(let i=index+step;i>=0&&i<rows.length;i+=step){if(rows[i].macd?.near_zero_golden===true){index=i;draw();break;}}};
+$('jointSource').textContent=`联合条件版本 ${D.joint_version}；导航仅用于事后案例检查，不参与当前计算。`;
+drawJoint();
+</script>

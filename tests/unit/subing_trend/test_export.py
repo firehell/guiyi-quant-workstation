@@ -151,3 +151,39 @@ def test_price_uses_shared_ema_and_is_optional():
     assert 'id="pricePanel"' not in render(plain)
     assert '__PRICE_PANEL__' not in render(data)
     assert len(data['code_hashes'])==5
+
+
+def test_joint_uses_strict_before_daily_and_physical_predecessor():
+    m=Market()
+    data=load(m,m.day,m.day,include_joint=True)
+    r=next(r for r in data['rows'] if r['frequency']=='30m')
+    j=r['joint']
+    assert datetime.fromisoformat(j['daily_time'])==m.end-timedelta(days=1)
+    assert j['exits']['previous_end']==m.end-timedelta(days=1)
+    assert j['exits']['previous_low']==Decimal('98')
+    assert j['exits']['below_previous_low'] is False
+    assert j['entry']['checks']['daily_allows_long'] is True
+    assert data['price_version'] and data['volume_version'] and data['macd_version']
+    assert 'id="jointPanel"' in render(data)
+    plain=load(m,m.day,m.day)
+    assert 'id="jointPanel"' not in render(plain) and '__JOINT_PANEL__' not in render(plain)
+    assert all('joint' not in r for r in plain['rows'])
+    assert 'joint' not in next(r for r in data['rows'] if r['frequency']=='1d')
+    assert data['input_hash']==plain['input_hash']
+
+
+def test_joint_excludes_same_timestamp_daily_even_when_it_changes():
+    from dataclasses import replace
+    m=Market()
+    original=m.query_contract_trading_days
+    before=load(m,m.day,m.day,include_joint=True)
+    def changed(request):
+        result=original(request)
+        if request.frequency.value=='1d':
+            result.bars=(*result.bars[:-1],replace(result.bars[-1],high=Decimal('500'),close=Decimal('500')))
+        return result
+    m.query_contract_trading_days=changed
+    after=load(m,m.day,m.day,include_joint=True)
+    a=next(r['joint'] for r in before['rows'] if r['frequency']=='30m')
+    b=next(r['joint'] for r in after['rows'] if r['frequency']=='30m')
+    assert a==b

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime
+from bisect import bisect_left
 import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -27,8 +28,10 @@ def diagnostic(exc):
     return safe_diagnostic(exc, product='jm', stage='trend_factor')
 
 
-def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False):
-    from guiyi_quant.indicators import subing_macd, subing_volume, subing_price
+def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False):
+    from guiyi_quant.indicators import subing_macd, subing_volume, subing_price, subing_conditions
+    if include_joint:
+        include_macd = include_volume = include_price = True
     from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
     from app.market_data.domain import BarFrequency, ContractTradingDayQuery
     from app.market_data.new_subing_research import payload_hash, validate_series
@@ -52,6 +55,9 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
             cross_state = subing_macd.initial_state(owner.contract, frequency.value) if include_macd and frequency is BarFrequency.M30 else None
             volume_state = subing_volume.initial_state(owner.contract, frequency.value) if include_volume else None
             price_state = subing_price.PullbackState(owner.contract)
+            previous_bar = None
+            daily_rows = [r for r in rows if r['contract'] == owner.contract and r['frequency'] == '1d']
+            daily_times = [datetime.fromisoformat(r['time']) for r in daily_rows]
             for bar in result.bars:
                 state, point = step(state, contract=owner.contract, frequency=frequency.value,
                     bar_end=bar.bar_end, high=float(bar.high), low=float(bar.low), close=float(bar.close))
@@ -71,6 +77,21 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                         bar_end=bar.bar_end, high=bar.high, low=bar.low, close=bar.close,
                         ema21=price.ema21, trend_direction=point.direction, atr14=Decimal(str(point.atr14)) if point.atr14 is not None else None)
                     cross_fields['price_factor'] = {**asdict(price), 'pullback': pullback}
+                if include_joint and frequency is BarFrequency.M30:
+                    daily_index = bisect_left(daily_times, bar.bar_end) - 1
+                    daily = daily_rows[daily_index] if daily_index >= 0 else None
+                    exits = subing_conditions.exit_facts(close=bar.close,
+                        previous_low=previous_bar.low if previous_bar else None,
+                        ema21=price.ema21, high_death=cross.high_death)
+                    exits['previous_end'] = previous_bar.bar_end if previous_bar else None
+                    entry = subing_conditions.entry_conditions(
+                        daily_direction=daily['direction'] if daily else None,
+                        minute_direction=point.direction, above_ema=price.above_ema,
+                        near_zero_golden=cross.near_zero_golden, volume_effective=volume_point.effective)
+                    cross_fields['joint'] = dict(entry=entry, exits=exits,
+                        daily_time=daily['time'] if daily else None,
+                        daily_direction=daily['direction'] if daily else 'UNKNOWN')
+                previous_bar = bar
                 # D1 pre-owner data is visible only as physical warm-up context, never as an owned signal.
                 if bar.trading_day >= start or frequency is BarFrequency.D1:
                     rows.append(dict(contract=owner.contract, frequency=frequency.value,
@@ -103,7 +124,10 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
     if include_price:
         for p in (Path(subing_price.__file__), Path(__file__).with_name('subing_price.html')):
             code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
-    return dict(price_version=subing_price.VERSION if include_price else None, volume_version=subing_volume.VERSION if include_volume else None, volume_enabled=include_volume, macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
+    if include_joint:
+        for p in (Path(subing_conditions.__file__), Path(__file__).with_name('subing_joint.html')):
+            code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
+    return dict(joint_version=subing_conditions.VERSION if include_joint else None, price_version=subing_price.VERSION if include_price else None, volume_version=subing_volume.VERSION if include_volume else None, volume_enabled=include_volume, macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
         input_hash=payload_hash(sources), time_model='retrospective completed bars; D1 strictly earlier than selected 30m',
         source_note='Full same-contract lifecycle prefix, EMA SMA seed and Wilder ATR SMA seed, both rounded to 6 decimals.')
 
@@ -124,6 +148,8 @@ def render(data):
         template = template.replace('</small>', ' + 2.4</small>', 1)
         template = template.replace('焦煤 · 苏冰趋势与MACD因子核对', '焦煤 · 苏冰因子核对').replace('焦煤 · 苏冰趋势因子核对', '焦煤 · 苏冰因子核对')
     template = template.replace('__PRICE_PANEL__', price_fragment)
+    joint_fragment = Path(__file__).with_name('subing_joint.html').read_text() if data.get('joint_version') else ''
+    template = template.replace('__JOINT_PANEL__', joint_fragment)
     return template.replace('__DATA__', json.dumps(data, ensure_ascii=False, default=str, allow_nan=False).replace('<', '\\u003c'))
 
 
@@ -135,6 +161,7 @@ def main():
     parser.add_argument('--macd', action='store_true', help='Include phase 2.2 completed 30m MACD cross inspection')
     parser.add_argument('--volume', action='store_true', help='Include phase 2.3 completed volume inspection')
     parser.add_argument('--price', action='store_true', help='Include phase 2.4 completed price/EMA facts')
+    parser.add_argument('--joint', action='store_true', help='Include all factors, entry checks and exit facts (no trades)')
     args = parser.parse_args()
     if args.since > args.through or args.output.exists():
         raise TrendExportError('TREND_REQUEST_INVALID')
@@ -151,7 +178,7 @@ def main():
     try:
         with Session(engine,autoflush=False) as session, readonly_transaction(session,timeout_seconds=900):
             root = Path(settings['GUIYI_CANONICAL_DATA_ROOT'])
-            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through,include_macd=args.macd,include_volume=args.volume,include_price=args.price)
+            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through,include_macd=args.macd,include_volume=args.volume,include_price=args.price,include_joint=args.joint)
     finally:
         engine.dispose()
     args.output.mkdir(parents=True,exist_ok=False)
