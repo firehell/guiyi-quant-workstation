@@ -7,9 +7,9 @@ SimNow v1.16.44 原 PID1733、配置及四账本清理前后 SHA 完全一致；
 封存索引 f90612e7171f6198677fc4c1965fb54effe58d394e17fe720c0b1a5d5a38327f；九树删除后，冻结v61历史reader逐项读取验证通过。
 清理工具改动已在 develop 完成：定向38项通过并独立Review，无新增正式版本；未完成有界读取改造及用户stash保留。
 prewarm 树已原生归档；Subing 的8个未合并提交及49份研究文件（173568746 bytes）已保存到 output/worktree-archive-20261101/subing-jm30-notion-spec，bundle verify和逐文件SHA通过，未集成策略。
-当前 Git worktree 实际仍有四处：主项目 develop、正式v61、SimNow v44，以及 subing-jm30-notion-spec；三处收敛尚未完成。
-最后一棵Subing任务树原生归档被宿主明确拒绝 The task's primary checkout cannot be removed；保留原树，不以shell删除或修改宿主元数据绕过。
-下一步仅需在宿主解除该聊天主checkout关联后原生归档Subing。牛哇剩余资产恢复/分钟双策略持有与理论曲线/大历史读取、自然盘后闭环仍是独立未完工作；未以本轮服务健康冒充业务验收。
+owner后续交办解除关联后，已通过原生 set_thread_archived 归档苏冰聊天，宿主随后完成工作树快照与移除；未执行shell强删、Git状态迁移或修改宿主元数据。
+最终现场 Git worktree 列表恰好三处：主项目 develop、正式v61、SimNow v44；prewarm及Subing两个任务目录均已不存在，未合并提交和必要研究输出保全。
+工作树收敛已完成。牛哇剩余资产恢复/分钟双策略持有与理论曲线/大历史读取、自然盘后闭环仍是独立未完工作；未以本轮服务健康冒充业务验收。
 
 以下为此前检查点：
 
