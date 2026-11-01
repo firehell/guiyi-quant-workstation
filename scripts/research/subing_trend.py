@@ -27,7 +27,8 @@ def diagnostic(exc):
     return safe_diagnostic(exc, product='jm', stage='trend_factor')
 
 
-def load(market, since, through):
+def load(market, since, through, *, include_macd=False):
+    from guiyi_quant.indicators import subing_macd
     from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
     from app.market_data.domain import BarFrequency, ContractTradingDayQuery
     from app.market_data.new_subing_research import payload_hash, validate_series
@@ -48,15 +49,21 @@ def load(market, since, through):
                 'jm', owner.contract, frequency, expected[0][1], end))
             validate_series(result, product='jm', contract=owner.contract, frequency=frequency, expected=expected)
             state = initial_state(owner.contract, frequency.value)
+            cross_state = subing_macd.initial_state(owner.contract, frequency.value) if include_macd and frequency is BarFrequency.M30 else None
             for bar in result.bars:
                 state, point = step(state, contract=owner.contract, frequency=frequency.value,
                     bar_end=bar.bar_end, high=float(bar.high), low=float(bar.low), close=float(bar.close))
+                cross_fields = {}
+                if cross_state is not None:
+                    cross_state, cross = subing_macd.step(cross_state, contract=owner.contract, frequency=frequency.value,
+                        bar_end=bar.bar_end, close=float(bar.close))
+                    cross_fields['macd'] = asdict(cross)
                 # D1 pre-owner data is visible only as physical warm-up context, never as an owned signal.
                 if bar.trading_day >= start or frequency is BarFrequency.D1:
                     rows.append(dict(contract=owner.contract, frequency=frequency.value,
                         time=bar.bar_end.isoformat(), label=bar.bar_end.astimezone(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M'),
                         day=bar.trading_day.isoformat(), owned=start <= bar.trading_day <= end,
-                        open=float(bar.open),high=float(bar.high),low=float(bar.low),close=float(bar.close), **asdict(point)))
+                        open=float(bar.open),high=float(bar.high),low=float(bar.low),close=float(bar.close), **asdict(point), **cross_fields))
             after = market.contract_source_evidence(symbol='jm', contract=owner.contract, frequency=frequency, before=cutoff)
             if before != after:
                 raise TrendExportError('TREND_SOURCE_CHANGED')
@@ -72,14 +79,22 @@ def load(market, since, through):
         raise TrendExportError('TREND_MAPPING_CHANGED')
     from hashlib import sha256
     from guiyi_quant.indicators import subing_trend
-    code_hashes = {p.name: sha256(p.read_bytes()).hexdigest() for p in (Path(__file__), Path(__file__).with_suffix('.html'), Path(subing_trend.__file__))}
-    return dict(code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
+    repo_root = Path(__file__).resolve().parents[2]
+    code_hashes = {p.resolve().relative_to(repo_root).as_posix(): sha256(p.read_bytes()).hexdigest() for p in (Path(__file__), Path(__file__).with_suffix('.html'), Path(subing_trend.__file__))}
+    if include_macd:
+        for p in (Path(subing_macd.__file__), Path(__file__).with_name('subing_macd.html')):
+            code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
+    return dict(macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
         input_hash=payload_hash(sources), time_model='retrospective completed bars; D1 strictly earlier than selected 30m',
         source_note='Full same-contract lifecycle prefix, EMA SMA seed and Wilder ATR SMA seed, both rounded to 6 decimals.')
 
 
 def render(data):
     template = Path(__file__).with_suffix('.html').read_text()
+    fragment = Path(__file__).with_name('subing_macd.html').read_text() if data.get('macd_version') else ''
+    if fragment:
+        template = template.replace('焦煤 · 苏冰趋势因子核对', '焦煤 · 苏冰趋势与MACD因子核对').replace('<small>2.1</small>', '<small>2.1 + 2.2</small>')
+    template = template.replace('__MACD_PANEL__', fragment)
     return template.replace('__DATA__', json.dumps(data, ensure_ascii=False, default=str, allow_nan=False).replace('<', '\\u003c'))
 
 
@@ -88,6 +103,7 @@ def main():
     parser.add_argument('--since', type=date.fromisoformat, required=True)
     parser.add_argument('--through', type=date.fromisoformat, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--macd', action='store_true', help='Include phase 2.2 completed 30m MACD cross inspection')
     args = parser.parse_args()
     if args.since > args.through or args.output.exists():
         raise TrendExportError('TREND_REQUEST_INVALID')
@@ -104,7 +120,7 @@ def main():
     try:
         with Session(engine,autoflush=False) as session, readonly_transaction(session,timeout_seconds=900):
             root = Path(settings['GUIYI_CANONICAL_DATA_ROOT'])
-            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through)
+            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through,include_macd=args.macd)
     finally:
         engine.dispose()
     args.output.mkdir(parents=True,exist_ok=False)
