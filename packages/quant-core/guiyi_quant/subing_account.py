@@ -15,19 +15,21 @@ INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
 
 
-def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str) -> dict:
+def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1) -> dict:
     """Replay verified complete 1m input; observations contain no financial overrides.
 
     Historical confirmation is assumed at bar end. Fills use the strictly later
     completed minute's close +/- one tick, only if inside OHLC and daily limits.
     The caller proves coverage, rank1 ownership and historical execution sources.
     """
+    if type(slippage_ticks) is not int or slippage_ticks not in (1, 2, 3):
+        raise ValueError('ACCOUNT_SLIPPAGE_SCENARIO_INVALID')
     with localcontext() as ctx:
         ctx.prec = 28
-        return _replay(executions, observations, run_id)
+        return _replay(executions, observations, run_id, slippage_ticks)
 
 
-def _replay(executions, observations, run_id):
+def _replay(executions, observations, run_id, slippage_ticks):
     if not executions:
         raise ValueError('ACCOUNT_INPUT_EMPTY')
     contract = executions[0].bar.physical_contract
@@ -83,9 +85,9 @@ def _replay(executions, observations, run_id):
         ratio = facts.long_margin_ratio if side == 'LONG' else facts.short_margin_ratio
         eq = equity(mark)
         used = len(layers) * max(mark, facts.prev_settlement) * multiplier * ratio
-        estimated_open_fee = facts.fees.amount('open', mark + sign * facts.tick_size, multiplier)
-        prospective_equity = eq - facts.tick_size * multiplier - estimated_open_fee
-        prospective_margin = (len(layers)+1) * max(mark + sign * facts.tick_size, facts.prev_settlement) * multiplier * ratio
+        estimated_open_fee = facts.fees.amount('open', mark + sign * facts.tick_size * slippage_ticks, multiplier)
+        prospective_equity = eq - facts.tick_size * slippage_ticks * multiplier - estimated_open_fee
+        prospective_margin = (len(layers)+1) * max(mark + sign * facts.tick_size * slippage_ticks, facts.prev_settlement) * multiplier * ratio
         round_net = eq-round_start if round_start is not None else D('0')
         day_net = eq-day_start
         layer_nets = {key: direction_sign(layer['side'])*(mark-layer['price'])*multiplier-layer['open_fee']-close_fee(layer,mark,facts)[0]
@@ -111,7 +113,7 @@ def _replay(executions, observations, run_id):
         if pending is not None and b.bar_end > pending['at']:
             opening = pending['kind'] in ('OPEN','ADD')
             buying = (opening and side == 'LONG') or (not opening and side == 'SHORT')
-            price = b.close + (f.tick_size if buying else -f.tick_size)
+            price = b.close + (f.tick_size if buying else -f.tick_size) * slippage_ticks
             pre = finance(b.close,f,side)
             current_frame = directional_frame(technical['m30'], side)
             current_exit = current_frame is not None and any(current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death'))
@@ -207,7 +209,7 @@ def _replay(executions, observations, run_id):
         else:
             daily.append(row)
     last = executions[-1]
-    return _wire(dict(version=VERSION,contract=contract,run_id=run_id,
+    return _wire(dict(version=VERSION if slippage_ticks == 1 else f'{VERSION}_research_slip{slippage_ticks}',contract=contract,run_id=run_id,
         status='OPEN' if layers else 'PENDING' if model.pending else 'COMPLETED',
         summary=dict(cash=cash,equity=last_equity,net_pnl=last_equity-INITIAL_CASH,fees=fees,open_quantity=len(layers),fill_count=len(fills),closed_round_count=len(closed_rounds)),
         initial_cash=INITIAL_CASH,cash=cash,equity=last_equity,unrealized=last_equity-cash,fees=fees,
@@ -217,4 +219,4 @@ def _replay(executions, observations, run_id):
         fills=fills,execution_events=execution_events,daily_equity=daily,trace=trace,pending=model.pending,
         decision_state=model.state(),decision_checkpoint=model.checkpoint(),
         valuation_at=last.bar.bar_end,valuation_price=last.bar.close,
-        assumptions='retrospective confirmation=bar_end; later completed 1m close +/-1 tick; no terminal liquidation; single physical contract; no broker fills'))
+        assumptions=f'retrospective confirmation=bar_end; later completed 1m close +/-{slippage_ticks} tick; no terminal liquidation; single physical contract; no broker fills'))
