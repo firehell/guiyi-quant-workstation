@@ -14,6 +14,7 @@ class Bar:
     high: Decimal = Decimal('102')
     low: Decimal = Decimal('98')
     close: Decimal = Decimal('101')
+    volume: Decimal = Decimal('100')
 
 
 class Market:
@@ -101,3 +102,34 @@ def test_macd_uses_full_prefix_and_is_opt_in():
     assert 'id="macdPanel"' in render(data)
     assert 'id="macdPanel"' not in render(plain)
     assert '__MACD_PANEL__' not in render(data)
+
+
+def test_volume_predecessor_is_from_physical_prefix():
+    m=Market()
+    plain=load(m,m.day,m.day)
+    data=load(m,m.day,m.day,include_volume=True)
+    assert data['input_hash']==plain['input_hash']
+    assert all('volume_factor' not in r for r in plain['rows'])
+    owned=[r for r in data['rows'] if r['owned']]
+    assert len(owned)==2
+    for r in owned:
+        v=r['volume_factor']
+        assert v['current']==Decimal('100') and v['previous']==Decimal('100')
+        assert v['previous_end']==m.end-timedelta(days=1)
+        assert v['ratio']==1 and v['reason'] is None
+        assert v['effective'] is False
+    assert 'id="volumePanel"' in render(data)
+    assert 'id="volumePanel"' not in render(plain)
+    assert '__VOLUME_PANEL__' not in render(data)
+    assert 'packages/quant-core/guiyi_quant/indicators/subing_volume.py' in data['code_hashes']
+
+
+def test_all_factors_share_one_input_and_separate_versions():
+    m=Market()
+    data=load(m,m.day,m.day,include_macd=True,include_volume=True)
+    assert len(data['code_hashes'])==7
+    assert data['volume_version']=='subing_volume_d1_gt1_m30_ge2_v1'
+    assert data['macd_version']=='subing_macd12_26_9_segment_cross_v2'
+    page=render(data)
+    assert '2.1 + 2.2 + 2.3' in page
+    assert '__MACD_PANEL__' not in page and '__VOLUME_PANEL__' not in page
