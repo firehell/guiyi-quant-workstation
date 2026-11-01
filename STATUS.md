@@ -1,3 +1,7 @@
+11/1 按owner交办，已准备v1.16.64原账户接管候选 output/simnow-preopen-20261101/simnow-v64，exact3e8229fe8cf2da1bd9f14d5035a32136199c0025。仅替换代码/API环境/未来许可路径，原账户身份、状态根、SDK与账户profile保持。
+候选SDK原生--trade --check与plist渲染通过；使用候选API依赖环境运行原生--preflight-trade通过：60品种、candidate_valid=true、writer_idle=false（原服务持锁）、execution_permitted=false、broker_io=false。独立SDK缺python-dotenv导致的首次完整预检失败已定位，未跳过校验。
+既有ACTIVE一次性automation simnow已原生更新并读回：11/2 15:05、COUNT=1、目标v64及上述候选，保留原账户/四账本/预算/block、20261103 fresh窗口和失败即停止边界；未新建任务。许可尚不存在，须届时fresh生成。本次未连接柜台、未切换SimNow或创建订单，运行与自然交易仍待现场核验。
+
 11/1 按owner交办，已解除v1.16.63恢复凭证对源码树依赖，并以非强制git worktree remove实际删除 .worktrees/release-v1.16.63；原annotated tag/commit保留。
 修复仅在封存收集器新增显式完整闭合恢复链政策，现役v64的_closed_history/_load_index原封未改；160项相关测试、Ruff/secret/diff和独立160项Review通过，实现已集成develop 3b5e652cf。
 原生索引release-retirements/bc56361242fb660fdb3c9dcb187df4453425afc1f2cca4e65ad8875694b8408b/index.json已sealed：60条已闭合attempt、151份原计划/state/receipt散列，6个受控marker原子保全。原件及descriptor引用的public临时计划目录均保持原位，不随源码删除。
