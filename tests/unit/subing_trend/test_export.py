@@ -133,3 +133,21 @@ def test_all_factors_share_one_input_and_separate_versions():
     page=render(data)
     assert '2.1 + 2.2 + 2.3' in page
     assert '__MACD_PANEL__' not in page and '__VOLUME_PANEL__' not in page
+
+
+def test_price_uses_shared_ema_and_is_optional():
+    m=Market()
+    plain=load(m,m.day,m.day)
+    data=load(m,m.day,m.day,include_price=True)
+    assert data['input_hash']==plain['input_hash']
+    assert all('price_factor' not in r for r in plain['rows'])
+    assert all('price_factor' not in r for r in data['rows'] if r['frequency']=='1d')
+    r=next(r for r in data['rows'] if r['frequency']=='30m')
+    assert r['price_factor']['ema21']==Decimal(str(r['ema21']))
+    assert r['price_factor']['relation']=='ON'
+    assert r['price_factor']['near_above_ema'] is False
+    assert r['price_factor']['below_ema'] is False
+    assert 'id="pricePanel"' in render(data)
+    assert 'id="pricePanel"' not in render(plain)
+    assert '__PRICE_PANEL__' not in render(data)
+    assert len(data['code_hashes'])==5

@@ -27,8 +27,8 @@ def diagnostic(exc):
     return safe_diagnostic(exc, product='jm', stage='trend_factor')
 
 
-def load(market, since, through, *, include_macd=False, include_volume=False):
-    from guiyi_quant.indicators import subing_macd, subing_volume
+def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False):
+    from guiyi_quant.indicators import subing_macd, subing_volume, subing_price
     from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
     from app.market_data.domain import BarFrequency, ContractTradingDayQuery
     from app.market_data.new_subing_research import payload_hash, validate_series
@@ -63,6 +63,10 @@ def load(market, since, through, *, include_macd=False, include_volume=False):
                     volume_state, volume_point = subing_volume.observe(volume_state, contract=owner.contract, frequency=frequency.value,
                         bar_end=bar.bar_end, volume=bar.volume)
                     cross_fields['volume_factor'] = asdict(volume_point)
+                if include_price and frequency is BarFrequency.M30:
+                    from decimal import Decimal
+                    price = subing_price.price_point(bar.close, Decimal(str(point.ema21)) if point.ema21 is not None else None)
+                    cross_fields['price_factor'] = asdict(price)
                 # D1 pre-owner data is visible only as physical warm-up context, never as an owned signal.
                 if bar.trading_day >= start or frequency is BarFrequency.D1:
                     rows.append(dict(contract=owner.contract, frequency=frequency.value,
@@ -92,7 +96,10 @@ def load(market, since, through, *, include_macd=False, include_volume=False):
     if include_volume:
         for p in (Path(subing_volume.__file__), Path(__file__).with_name('subing_volume.html')):
             code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
-    return dict(volume_version=subing_volume.VERSION if include_volume else None, volume_enabled=include_volume, macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
+    if include_price:
+        for p in (Path(subing_price.__file__), Path(__file__).with_name('subing_price.html')):
+            code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
+    return dict(price_version=subing_price.VERSION if include_price else None, volume_version=subing_volume.VERSION if include_volume else None, volume_enabled=include_volume, macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
         input_hash=payload_hash(sources), time_model='retrospective completed bars; D1 strictly earlier than selected 30m',
         source_note='Full same-contract lifecycle prefix, EMA SMA seed and Wilder ATR SMA seed, both rounded to 6 decimals.')
 
@@ -108,6 +115,11 @@ def render(data):
         template = template.replace('<small>2.1 + 2.2</small>', '<small>2.1 + 2.2 + 2.3</small>').replace('<small>2.1</small>', '<small>2.1 + 2.3</small>')
         template = template.replace('焦煤 · 苏冰趋势与MACD因子核对', '焦煤 · 苏冰因子核对').replace('焦煤 · 苏冰趋势因子核对', '焦煤 · 苏冰因子核对')
     template = template.replace('__VOLUME_PANEL__', volume_fragment)
+    price_fragment = Path(__file__).with_name('subing_price.html').read_text() if data.get('price_version') else ''
+    if price_fragment:
+        template = template.replace('</small>', ' + 2.4</small>', 1)
+        template = template.replace('焦煤 · 苏冰趋势与MACD因子核对', '焦煤 · 苏冰因子核对').replace('焦煤 · 苏冰趋势因子核对', '焦煤 · 苏冰因子核对')
+    template = template.replace('__PRICE_PANEL__', price_fragment)
     return template.replace('__DATA__', json.dumps(data, ensure_ascii=False, default=str, allow_nan=False).replace('<', '\\u003c'))
 
 
@@ -118,6 +130,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--macd', action='store_true', help='Include phase 2.2 completed 30m MACD cross inspection')
     parser.add_argument('--volume', action='store_true', help='Include phase 2.3 completed volume inspection')
+    parser.add_argument('--price', action='store_true', help='Include phase 2.4 completed price/EMA facts')
     args = parser.parse_args()
     if args.since > args.through or args.output.exists():
         raise TrendExportError('TREND_REQUEST_INVALID')
@@ -134,7 +147,7 @@ def main():
     try:
         with Session(engine,autoflush=False) as session, readonly_transaction(session,timeout_seconds=900):
             root = Path(settings['GUIYI_CANONICAL_DATA_ROOT'])
-            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through,include_macd=args.macd,include_volume=args.volume)
+            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through,include_macd=args.macd,include_volume=args.volume,include_price=args.price)
     finally:
         engine.dispose()
     args.output.mkdir(parents=True,exist_ok=False)

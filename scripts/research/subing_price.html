@@ -1,0 +1,16 @@
+<section class="card" style="margin-top:16px" id="pricePanel">
+<h2>2.4 · 30分钟价格与 EMA21</h2>
+<p>收盘价 &gt; EMA21 表示在均线上方；收盘价 &lt; EMA21 表示收盘跌破；等于时单独标记。<b>回踩距离条件：0 &lt; 收盘价−EMA21 &lt; 10个价格点。</b>这些是独立事实，不直接代表开仓、加仓或清仓成交。</p>
+<canvas id="priceDistance"></canvas><pre id="priceFacts"></pre>
+<p class="muted">蓝线为收盘价减EMA21的有符号价差，虚线为0与10点。复用2.1同一EMA21值；不加入量能或MACD隐藏条件。</p>
+<pre id="priceSource"></pre>
+</section>
+<script>
+const priceNum=v=>v===null?'—':Number(v).toFixed(6),priceBool=v=>v===null?'未知':v?'满足':'不满足';
+function drawPrice(){const r=rows[index];if(!r?.price_factor)return;const p=r.price_factor;
+$('priceFacts').textContent=`${r.contract} · ${r.label}\n收盘 ${priceNum(p.close)}　EMA21 ${priceNum(p.ema21)}　价差 ${priceNum(p.distance)} 点\n收盘高于均线：${priceBool(p.above_ema)}\n回踩距离条件：${priceBool(p.near_above_ema)}\n收盘低于均线：${priceBool(p.below_ema)}${p.relation==='ON'?'\n收盘恰好等于均线，非上方也非下方':''}${p.reason?'\n'+p.reason:''}`;
+const rs=rows.slice(Math.max(0,index-79),index+1),[g,w,h]=setup('priceDistance'),values=rs.map(r=>r.price_factor.distance).filter(v=>v!==null).map(Number).concat([0,10]);let lo=Math.min(...values),hi=Math.max(...values),pad=(hi-lo)*.08||1;lo-=pad;hi+=pad;const y=v=>h-30-(v-lo)/(hi-lo)*(h-55),dx=(w-75)/rs.length,x=i=>12+(i+.5)*dx;
+g.clearRect(0,0,w,h);g.font='11px system-ui';g.fillStyle='#667';for(let n=0;n<=4;n++){let v=lo+(hi-lo)*n/4;g.strokeStyle='#e9edf2';g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke();g.fillText(v.toFixed(1),w-55,y(v)+4)}g.setLineDash([5,5]);g.strokeStyle='#b87b37';for(const v of [0,10]){g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke()}g.setLineDash([]);g.strokeStyle='#4167cb';g.lineWidth=2;g.beginPath();let active=false;rs.forEach((r,i)=>{let v=r.price_factor.distance;if(v===null){active=false;return}if(active)g.lineTo(x(i),y(Number(v)));else g.moveTo(x(i),y(Number(v)));active=true});g.stroke();g.lineWidth=1;g.fillText(rs[0].label,10,h-8);g.fillText(rs.at(-1).label,Math.max(10,w-190),h-8)}
+$('priceSource').textContent=`因子版本 ${D.price_version}；仅计算已完成K线事实。`;
+drawPrice();
+</script>
