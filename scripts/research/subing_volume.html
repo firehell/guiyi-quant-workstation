@@ -1,18 +1,21 @@
 <section class="card" style="margin-top:16px" id="volumePanel">
 <h2>2.3 · 成交量因子</h2>
-<p><b id="volumeRuleText">日线：本根 &gt; 前根；30m：本根 ≥ 前根×2，等于2倍有效。</b> 这里只判断量能条件，必须与其他因子组合才可能构成开仓条件；不会单独产生开仓信号。</p>
+<p><b id="volumeRuleText">日线：本根 &gt; 前根；30m：本根 &gt; 前根即有效；第一档 1&lt;倍数&lt;2，第二档 2≤倍数&lt;3，第三档 倍数≥3。</b> 这里只判断量能条件，必须与其他因子组合才可能构成开仓条件；不会单独产生开仓信号。</p>
 <p class="muted">本根与前根均为同周期、同物理合约的已完成K线，直接比较成交量，不按时段或时长归一化。日线取当前所选时刻之前最后完成的一根；本日未收盘日线不参与。</p>
 <div class="grid"><div><h3>30分钟成交量</h3><canvas id="volumeMinute"></canvas><pre id="volumeMinuteFacts"></pre></div><div><h3>当时已完成日线成交量</h3><canvas id="volumeDaily"></canvas><pre id="volumeDailyFacts"></pre></div></div>
-<p class="muted">蓝色柱表示量能条件满足，灰色表示不满足，橙色表示未知。倍数仅供查看，判定直接比较原始量；前根为零时倍数留空，仍按上述不等式判断（30m两根均为零也满足算术条件，但不代表可开仓）。缺少或无效输入显示未知，不替换为零。</p>
-<table id="volumeStats"></table><pre id="volumeSource"></pre>
+<p class="muted">30m浅蓝、蓝、紫分别为第一、二、三档；日线蓝色表示量能条件满足。灰色表示不满足，橙色表示未知或零基数未分档。判定直接比较原始量；前根为零时倍数留空，本根增加仍有效，但不编造有限倍数档位。缺少或无效输入显示未知，不替换为零。</p>
+<table id="volumeStats"></table><p id="volumeTiers"></p><pre id="volumeSource"></pre>
 </section>
 <script>
+const volumeTierNames={NOT_EXPANDED:'未放量（本根≤前根）',TIER_1:'第一档（>1且<2倍）',TIER_2:'第二档（≥2且<3倍）',TIER_3:'第三档（≥3倍）',ZERO_BASELINE:'前根为零，无法按有限倍数分档'};
+const volumeTierColors={TIER_1:'#80b9e8',TIER_2:'#4167cb',TIER_3:'#8b4cc7',ZERO_BASELINE:'#c98b29',NOT_EXPANDED:'#75869e'};
 const volumeNumber=v=>v===null?'—':String(v).replace(/(\.\d*?[1-9])0+$|\.0+$/,'$1');
-function volumeFacts(r){if(!r)return '当时无可用日线';const v=r.volume_factor;return `${r.contract} · ${r.label}\n本根成交量 ${volumeNumber(v.current)}　前根成交量 ${volumeNumber(v.previous)}\n本根/前根 ${v.ratio===null?'—':Number(v.ratio).toFixed(6)}\n量能条件：${v.effective===null?'未知':v.effective?'满足':'不满足'}\n前根完成时点 ${v.previous_end?new Date(v.previous_end).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—'}${v.reason?'\n'+v.reason:''}`}
-function volumeChart(id,rs){const[g,w,h]=setup(id);g.clearRect(0,0,w,h);if(!rs.length){g.fillText('当时无可用数据',20,40);return}const values=rs.map(r=>r.volume_factor.current).filter(v=>v!==null).map(Number),hi=Math.max(1,...values)*1.1,dx=(w-75)/rs.length,y=v=>h-30-v/hi*(h-55),x=i=>12+(i+.5)*dx;g.font='11px system-ui';g.fillStyle='#667';for(let i=0;i<=4;i++){let v=hi*i/4;g.strokeStyle='#e9edf2';g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke();g.fillText(v.toFixed(0),w-55,y(v)+4)}rs.forEach((r,i)=>{const v=r.volume_factor.current;if(v===null)return;g.fillStyle=r.volume_factor.effective===null?'#c98b29':r.volume_factor.effective?'#4167cb':'#75869e';g.fillRect(x(i)-dx*.3,y(Number(v)),Math.max(1,dx*.6),h-30-y(Number(v)))});g.fillStyle='#667';g.fillText(rs[0].label,10,h-8);g.fillText(rs.at(-1).label,Math.max(10,w-190),h-8)}
+function volumeFacts(r){if(!r)return '当时无可用日线';const v=r.volume_factor;return `${r.contract} · ${r.label}\n本根成交量 ${volumeNumber(v.current)}　前根成交量 ${volumeNumber(v.previous)}\n本根/前根 ${v.ratio===null?'—':Number(v.ratio).toFixed(6)}\n量能条件：${v.effective===null?'未知':v.effective?'满足':'不满足'}${r.frequency==='30m'?'\n放量档位：'+(volumeTierNames[v.tier]??'未知'):''}\n前根完成时点 ${v.previous_end?new Date(v.previous_end).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—'}${v.reason?'\n'+v.reason:''}`}
+function volumeChart(id,rs){const[g,w,h]=setup(id);g.clearRect(0,0,w,h);if(!rs.length){g.fillText('当时无可用数据',20,40);return}const values=rs.map(r=>r.volume_factor.current).filter(v=>v!==null).map(Number),hi=Math.max(1,...values)*1.1,dx=(w-75)/rs.length,y=v=>h-30-v/hi*(h-55),x=i=>12+(i+.5)*dx;g.font='11px system-ui';g.fillStyle='#667';for(let i=0;i<=4;i++){let v=hi*i/4;g.strokeStyle='#e9edf2';g.beginPath();g.moveTo(8,y(v));g.lineTo(w-60,y(v));g.stroke();g.fillText(v.toFixed(0),w-55,y(v)+4)}rs.forEach((r,i)=>{const v=r.volume_factor.current;if(v===null)return;g.fillStyle=r.frequency==='30m'?(volumeTierColors[r.volume_factor.tier]??'#c98b29'):r.volume_factor.effective===null?'#c98b29':r.volume_factor.effective?'#4167cb':'#75869e';g.fillRect(x(i)-dx*.3,y(Number(v)),Math.max(1,dx*.6),h-30-y(Number(v)))});g.fillStyle='#667';g.fillText(rs[0].label,10,h-8);g.fillText(rs.at(-1).label,Math.max(10,w-190),h-8)}
 function drawVolume(){const r=rows[index];if(!r?.volume_factor)return;const ms=rows.slice(Math.max(0,index-79),index+1),ds=D.rows.filter(d=>d.contract===r.contract&&d.frequency==='1d'&&Date.parse(d.time)<Date.parse(r.time)).slice(-60);volumeChart('volumeMinute',ms);volumeChart('volumeDaily',ds);$('volumeMinuteFacts').textContent=volumeFacts(r);$('volumeDailyFacts').textContent=volumeFacts(ds.at(-1))}
 $('volumeSource').textContent=`因子版本 ${D.volume_version}；成交量使用MDS原始Decimal，倍数不参与分类。`;
 $('volumeStats').innerHTML='<tr><th>周期（全窗口rank1区间）</th><th>满足</th><th>不满足</th><th>未知</th></tr>';
 for(const f of ['1d','30m']){const rs=D.rows.filter(r=>r.frequency===f&&r.owned),tr=document.createElement('tr');for(const v of [f,...[true,false,null].map(s=>rs.filter(r=>r.volume_factor.effective===s).length)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('volumeStats').append(tr)}
+const minuteOwned=D.rows.filter(r=>r.frequency==='30m'&&r.owned);$('volumeTiers').textContent='30m全窗口分档：'+Object.entries(volumeTierNames).map(([k,label])=>label+' '+minuteOwned.filter(r=>r.volume_factor.tier===k).length+'根').join('；');
 drawVolume();
 </script>

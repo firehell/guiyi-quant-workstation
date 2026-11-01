@@ -53,9 +53,9 @@ def test_identity_and_time():
 
 @pytest.mark.parametrize('frequency,previous,current,effective',[
     ('1d','100','100',False),('1d','100','100.000001',True),('1d','100','99',False),
-    ('30m','100','199.999999',False),('30m','100','200',True),('30m','100','200.000001',True),
-    ('30m','100','150',False),('30m','100','300',True),
-    ('1d','0','0',False),('1d','0','1',True),('30m','0','0',True),('30m','0','1',True),
+    ('30m','100','199.999999',True),('30m','100','200',True),('30m','100','200.000001',True),
+    ('30m','100','150',True),('30m','100','300',True),
+    ('1d','0','0',False),('1d','0','1',True),('30m','0','0',False),('30m','0','1',True),
 ])
 def test_frequency_rules_without_ratio_rounding(frequency,previous,current,effective):
     _,out=run([Decimal(previous),Decimal(current)],frequency=frequency)
@@ -68,4 +68,24 @@ def test_daily_and_minute_are_independent():
     _,daily=run(list(map(Decimal,['100','150'])),'1d')
     _,minute=run(list(map(Decimal,['100','150'])),'30m')
     assert daily[-1].effective is True
-    assert minute[-1].effective is False
+    assert minute[-1].effective is True
+    assert daily[-1].tier is None
+    assert minute[-1].tier == 'TIER_1'
+
+
+@pytest.mark.parametrize('current,tier',[
+    ('0','NOT_EXPANDED'),('99','NOT_EXPANDED'),('100','NOT_EXPANDED'),
+    ('100.000001','TIER_1'),('199.999999','TIER_1'),('200','TIER_2'),
+    ('299.999999','TIER_2'),('300','TIER_3'),('300.000001','TIER_3'),
+])
+def test_minute_tiers_exact_boundaries(current,tier):
+    _,out=run([Decimal('100'),Decimal(current)])
+    assert out[-1].tier==tier
+    assert out[-1].effective is (tier!='NOT_EXPANDED')
+    assert out[0].tier is None
+
+
+def test_zero_baseline_is_not_a_finite_multiplier_tier():
+    _,out=run([Decimal('0'),Decimal('10')])
+    assert out[-1].effective is True
+    assert out[-1].ratio is None and out[-1].tier=='ZERO_BASELINE'

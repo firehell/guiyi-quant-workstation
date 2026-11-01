@@ -128,7 +128,7 @@ def test_all_factors_share_one_input_and_separate_versions():
     m=Market()
     data=load(m,m.day,m.day,include_macd=True,include_volume=True)
     assert len(data['code_hashes'])==7
-    assert data['volume_version']=='subing_volume_d1_gt1_m30_ge2_v1'
+    assert data['volume_version']=='subing_volume_d1_gt1_m30_tiers_v2'
     assert data['macd_version']=='subing_macd12_26_9_segment_cross_v2'
     page=render(data)
     assert '2.1 + 2.2 + 2.3' in page

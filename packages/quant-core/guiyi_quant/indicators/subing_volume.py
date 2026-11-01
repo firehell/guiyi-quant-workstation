@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 
-VERSION = 'subing_volume_d1_gt1_m30_ge2_v1'
+VERSION = 'subing_volume_d1_gt1_m30_tiers_v2'
 
 
 @dataclass(frozen=True)
@@ -15,6 +15,7 @@ class VolumeObservation:
     previous_end: datetime | None
     reason: str | None
     effective: bool | None = None
+    tier: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,5 +44,17 @@ def observe(state: VolumeState, *, contract: str, frequency: str, bar_end: datet
     if state.previous is None:
         return new, VolumeObservation(volume, None, None, state.last_end, 'PREVIOUS_UNAVAILABLE')
     ratio = volume/state.previous if state.previous > 0 else None
-    effective = volume > state.previous if frequency == '1d' else volume >= state.previous * Decimal('2')
-    return new, VolumeObservation(volume, state.previous, ratio, state.last_end, None, effective)
+    effective = volume > state.previous
+    tier = None
+    if frequency == '30m':
+        if not effective:
+            tier = 'NOT_EXPANDED'
+        elif state.previous == 0:
+            tier = 'ZERO_BASELINE'
+        elif volume < state.previous * Decimal('2'):
+            tier = 'TIER_1'
+        elif volume < state.previous * Decimal('3'):
+            tier = 'TIER_2'
+        else:
+            tier = 'TIER_3'
+    return new, VolumeObservation(volume, state.previous, ratio, state.last_end, None, effective, tier)
