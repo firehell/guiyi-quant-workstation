@@ -1,3 +1,7 @@
+11/1 owner明确授权后，已使用正式v1.16.63/exact5eed44ca847f282bf2efe5fc5112c0f3651395b0原生guiyi home build重建正式 .derived/newow-home.json。
+构建passed：60/60 ready，failed/missing/stale/updating均0，overview ready；正式API独立读回status及projection_status均ready，60品种、stale_count=unavailable_count=0，数据截至2026-10-30。
+仅更新首页派生投影；未修改Canonical、交易原件、服务绑定或独立SimNow。此前首页正式投影审批待办已完成。
+
 11/1 十项正式服务已恢复至 v1.16.63/gen52，exact 5eed44ca847f282bf2efe5fc5112c0f3651395b0；最终十项matched、API/Web/Runtime HTTP全部通过。正式5173焦煤60m苏冰收益与删减页面已现场读回：未平1、中断1、已平0。
 owner明确授权后，PR #593已合并并发布v1.16.64恢复控制器（运行服务仍v63）。原cohort d01d783b…失败记录逐字保留；Feed关闭计划09757af0…已feed_closed，回执3984f166…；新同代恢复计划13e34f1e…成功recovered，回执999c3d742b399eced7531eac67cf8a827bed79f7698c37a7fd5ef96f8ae080d7。
 独立SimNow启动plist、私有配置哈希及原PID1733前后一致；未改账户、许可或定时安排。自然业务另待真实事件，不能由恢复成功推定自然验收。
