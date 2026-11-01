@@ -1,3 +1,9 @@
+11/1 按owner交办，已解除v1.16.63恢复凭证对源码树依赖，并以非强制git worktree remove实际删除 .worktrees/release-v1.16.63；原annotated tag/commit保留。
+修复仅在封存收集器新增显式完整闭合恢复链政策，现役v64的_closed_history/_load_index原封未改；160项相关测试、Ruff/secret/diff和独立160项Review通过，实现已集成develop 3b5e652cf。
+原生索引release-retirements/bc56361242fb660fdb3c9dcb187df4453425afc1f2cca4e65ad8875694b8408b/index.json已sealed：60条已闭合attempt、151份原计划/state/receipt散列，6个受控marker原子保全。原件及descriptor引用的public临时计划目录均保持原位，不随源码删除。
+fresh cleanup计划72157dd8…证明v63零引用/clean后才删除；删除前后都通过现役v64原封reader校验，删后历史身份、封存marker和_no_unresolved_recovery真实验证通过。151原件及服务/SimNow配置等共156文件哈希不变，SimNow原PID1733保持。
+现场十项正式服务仍v1.16.64/gen53、全部matched，API/Web/Runtime HTTP检查通过；未切服务、未改数据库/行情/账户/SimNow或定时任务。发布树现仅v44（独立SimNow）、v62（ACTIVE一次性任务依赖）、v64（正式现役），这两项外部依赖不在本次清理范围。
+
 11/1 按owner“清理可以清理的”交办，完成全部.worktrees原生只读扫描；当前eligible_roots为空，未删除发布树或历史证据。v64现役、v44独立SimNow实际运行，v62仍被ACTIVE一次性SimNow任务及恢复记录引用，v63仍有恢复记录引用。
 已逐项核对OID、origin/main祖先关系及worktree绑定，以非强制git branch -d清理134个完全合入main且无工作树的本地历史任务分支；main/develop提交身份、全部tag、发布源码及未合并分支保持。另两个非Git历史研究/恢复证据目录未删；其他任务未提交修改保留。
 
