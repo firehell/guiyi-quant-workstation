@@ -1,3 +1,17 @@
+11/1 SimNow开盘前检查：修复已推送develop 21ed7feb1964374a0bc5b29af4325526afbfa897，尚未发布或进入独立SimNow。
+修复恢复费用扫描逐快照重复解码账户，以及连接失败跨交易日误写block；保留30秒接管时效、原预算和历史block。
+基线SimNow/账户/监控/输入1059项通过；修复后受影响812项、独立76项通过，Ruff/Mypy/secret/diff通过。
+原5649份快照的实际Host历史费用扫描只读探针0.091秒、账户读取1次、四库SHA不变；不代表完整Recover或柜台验收。
+最新60品种只读审计：历史WINDOW32_VERIFIED及物理1m聚合EXACT为60/60；45等待新观察、15保留Live输入阻断。
+审计output/simnow-preopen-20261101/inputs，零provider/生产写入，15品种待各自日盘自然输入，未补造信号。
+检查发现正式v61聊天归档导致运行目录消失、十服务引用失效；owner批准后已原生恢复原目录/exact61及离线依赖构建，
+按原成功cohort/binding证据以原生方法恢复四启用标记，未改gen50或旧cohort；十项matched、API/Web/Runtime检查通过。
+SimNow原v44/PID1733、配置与四账本保持，pending=true/opening=false；20261102 attempt1及CONTINUOUS_RECOVERY_REQUIRED未清除。
+原11/2 15:05一次性automation随归档已缺失，不能沿用下方“已安排”历史结论；恢复定时任务及发布修复版尚待本轮owner选择。
+监控HTTP已恢复，但完整账本重放使overview约8秒；只读展示计算约0.26秒，不用跳过完整性校验换取提速。
+
+以下为此前检查点：
+
 11/1 工作树收敛最新现场：正式十服务已切至已发布 v1.16.61，exact 8d65cd042c8fb2e1bb58874e874dd04cb6ea918c，gen50。
 原生 cohort ffd9901f2cbf85445f223d1567ba3e994494178e6656e24886e136afdfe736c9 已 switched；最终 status 十项 matched、API/Web/Runtime HTTP 全通过。
 保留正式目录 worktree/runtime-timeout-recovery/guiyi-quant-workstation；未新增应用版本、tag 或工作树。
