@@ -1,3 +1,9 @@
+11/1 按owner授权，十项正式服务已统一至v1.16.64/gen53，exact3e8229fe8cf2da1bd9f14d5035a32136199c0025，正式根.worktrees/release-v1.16.64。
+Web离线依赖/类型/构建/拓扑通过；最终原生status十项matched，API/Web/Runtime检查全部通过。正式首页60品种ready、投影ready、过期与不可用均0，沿用已授权重建文件。
+原cohort5ae1507b…在verified以COHORT_NEW_READY_TIMEOUT保护停驻；未重跑或回滚。原生Feed关闭9eca8329…成功（回执e68ebc4b…），新同代恢复fa0c9920…已recovered，回执273b887d5606c90fd5600551cf64d50b840ee9edbedca9b73b491f2ab0384860；全部原失败记录保留。
+独立SimNow原PID1733、plist/私有配置及一次性automation哈希前后一致，未改账户、许可或安排。自然业务仍另待事件，Runtime内部盘后pending/weekly missed/Alert degraded不由发布成功消除。
+统一后原生cleanup-plan复查v62/v63均retained、eligible_roots为空：v63仍有恢复凭证引用，v62另有既有11/2一次性SimNow任务引用，均未删除；v64为唯一正式服务运行根。
+
 11/1 owner明确授权后，已使用正式v1.16.63/exact5eed44ca847f282bf2efe5fc5112c0f3651395b0原生guiyi home build重建正式 .derived/newow-home.json。
 构建passed：60/60 ready，failed/missing/stale/updating均0，overview ready；正式API独立读回status及projection_status均ready，60品种、stale_count=unavailable_count=0，数据截至2026-10-30。
 仅更新首页派生投影；未修改Canonical、交易原件、服务绑定或独立SimNow。此前首页正式投影审批待办已完成。
