@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from decimal import Decimal, localcontext
 from typing import Mapping, Sequence
+from zoneinfo import ZoneInfo
 
 from .new_subing import ExecutionBar
 from .subing_decision import DecisionModel, _wire, candidate_side, daily_allows, directional_frame, direction_sign
@@ -15,21 +16,27 @@ INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
 
 
-def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1) -> dict:
+def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1, execution_model: str = 'completed_close') -> dict:
     """Replay verified complete 1m input; observations contain no financial overrides.
 
     Historical confirmation is assumed at bar end. Fills use the strictly later
-    completed minute's close +/- one tick, only if inside OHLC and daily limits.
+    completed minute's close +/- slippage ticks, inside OHLC and daily limits.
+    theoretical_open instead assumes up to three lots at a strictly later minute
+    start, using open plus adverse slippage without future OHLCV filtering.
+    Its liquidity is assumed, not evidenced.
     The caller proves coverage, rank1 ownership and historical execution sources.
     """
     if type(slippage_ticks) is not int or slippage_ticks not in (1, 2, 3):
         raise ValueError('ACCOUNT_SLIPPAGE_SCENARIO_INVALID')
+    if execution_model not in ('completed_close', 'theoretical_open'):
+        raise ValueError('ACCOUNT_EXECUTION_MODEL_INVALID')
     with localcontext() as ctx:
         ctx.prec = 28
-        return _replay(executions, observations, run_id, slippage_ticks)
+        return _replay(executions, observations, run_id, slippage_ticks, execution_model)
 
 
-def _replay(executions, observations, run_id, slippage_ticks):
+def _replay(executions, observations, run_id, slippage_ticks, execution_model):
+    at_open = execution_model == 'theoretical_open'
     if not executions:
         raise ValueError('ACCOUNT_INPUT_EMPTY')
     contract = executions[0].bar.physical_contract
@@ -110,17 +117,22 @@ def _replay(executions, observations, run_id, slippage_ticks):
         side = model.side or (model.pending['side'] if model.pending else candidate_side(technical['m30'] or model.latest_frame))
         sign = direction_sign(side)
         pending = deepcopy(model.pending)
-        if pending is not None and b.bar_end > pending['at']:
+        execution_at = b.bar_end - timedelta(minutes=1) if at_open else b.bar_end
+        mark = b.open if at_open else b.close
+        known = observations[executions[index-1].bar.bar_end] if at_open and index else technical
+        local_execution = execution_at.astimezone(ZoneInfo('Asia/Shanghai'))
+        end_window = (local_execution.date() == b.trading_day and local_execution.time() >= time(14, 50)) if at_open else known['day_end_window']
+        if pending is not None and execution_at > pending['at']:
             opening = pending['kind'] in ('OPEN','ADD')
             buying = (opening and side == 'LONG') or (not opening and side == 'SHORT')
-            price = b.close + (f.tick_size if buying else -f.tick_size) * slippage_ticks
-            pre = finance(b.close,f,side)
-            current_frame = directional_frame(technical['m30'], side)
+            price = mark + (f.tick_size if buying else -f.tick_size) * slippage_ticks
+            pre = finance(mark,f,side)
+            current_frame = directional_frame(known['m30'], side)
             current_exit = current_frame is not None and any(current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death'))
-            protected_layer = any(layer['kind'] == 'ADD' and sign * (b.close - layer['price']) < 0 for layer in layers.values())
+            protected_layer = any(layer['kind'] == 'ADD' and sign * (mark - layer['price']) < 0 for layer in layers.values())
             frame_unknown = current_frame is not None and (current_frame.get('minute_angle') is None or any(current_frame.get(key) is None for key in ('near_zero_golden','above_ema','volume_effective','below_previous_low','high_death','below_ema','qualified_pullback')))
-            fixed_stop = model.initial_stop is not None and sign * (b.close - model.initial_stop) <= 0
-            profit_hit = model.profit_target is not None and not model.profit_taken and sign * (b.close - model.profit_target) >= 0
+            fixed_stop = model.initial_stop is not None and sign * (mark - model.initial_stop) <= 0
+            profit_hit = model.profit_target is not None and not model.profit_taken and sign * (mark - model.profit_target) >= 0
             reject = None
             if opening and pending['cancel_requested']:
                 reject = 'CANCEL_REQUESTED'
@@ -128,48 +140,48 @@ def _replay(executions, observations, run_id, slippage_ticks):
                 reject = 'EXIT_PRIORITY_AT_EXECUTION'
             elif opening and frame_unknown:
                 reject = 'TECHNICAL_FACTS_UNKNOWN_AT_EXECUTION'
-            elif opening and (technical['day_end_window'] or not daily_allows(technical['daily_direction'], side)):
+            elif opening and (end_window or not daily_allows(known['daily_direction'], side)):
                 reject = 'OPENING_CONTEXT_CHANGED'
             elif opening and ((model.day_halted and model.day == b.trading_day) or not pre['admission']):
                 reject = 'OPENING_FINANCIAL_RECHECK'
             elif pending['kind'] == 'ADD' and (pre['base_net'] is None or pre['base_net'] <= 0):
                 reject = 'BASE_NET_NOT_POSITIVE_AT_EXECUTION'
-            elif pending['kind'] == 'ADD' and sign * (b.close - pending['breakout_level']) <= 0:
+            elif pending['kind'] == 'ADD' and sign * (mark - pending['breakout_level']) <= 0:
                 reject = 'PULLBACK_BREAKOUT_LOST_AT_EXECUTION'
             elif pending['kind'] == 'OPEN' and sign * (price - pending['initial_stop']) <= 0:
                 reject = 'INITIAL_STOP_INVALID_AT_EXECUTION'
-            elif b.volume <= 0:
+            elif not at_open and b.volume <= 0:
                 reject = 'ZERO_VOLUME'
-            elif not b.low <= price <= b.high:
+            elif not at_open and not b.low <= price <= b.high:
                 reject = 'SLIPPAGE_OUTSIDE_BAR'
             elif not f.limit_down <= price <= f.limit_up:
                 reject = 'EXCHANGE_LIMIT'
-            elif (buying and b.low == f.limit_up) or (not buying and b.high == f.limit_down):
+            elif (buying and (b.open if at_open else b.low) == f.limit_up) or (not buying and (b.open if at_open else b.high) == f.limit_down):
                 reject = 'LOCKED_LIMIT'
-            targets = [] if opening else pending['layer_ids'][:int(b.volume)]
+            targets = [] if opening else pending['layer_ids'][:3 if at_open else int(b.volume)]
             if not opening and not targets and reject is None:
                 reject = 'INSUFFICIENT_VOLUME'
             if reject:
-                execution_events.append(dict(at=b.bar_end,decision_id=pending['decision_id'],kind='CANCEL' if opening else 'UNFILLED',reason=reject))
+                execution_events.append(dict(at=execution_at,decision_id=pending['decision_id'],kind='CANCEL' if opening else 'UNFILLED',reason=reject))
                 if opening:
-                    result = model.apply(dict(event_id=f'account:cancel:{index}',kind='ack',at=b.bar_end.isoformat(),contract=contract,
+                    result = model.apply(dict(event_id=f'account:cancel:{index}',kind='ack',at=execution_at.isoformat(),contract=contract,
                         decision_id=pending['decision_id'],status='CANCELLED',price=None,layer_ids=[]))
                     trace.append(result)
             else:
-                if opening and b.volume < 1:
+                if opening and not at_open and b.volume < 1:
                     raise ValueError('ACCOUNT_FRACTIONAL_VOLUME')
                 fee_parts = [(f.fees.amount('open',price,multiplier),'open')] if opening else [close_fee(layers[key],price,f) for key in targets]
                 fee = sum((part[0] for part in fee_parts),D('0'))
                 quantity = 1 if opening else len(targets)
-                result = model.apply(dict(event_id=f'account:fill:{index}',kind='ack',at=b.bar_end.isoformat(),contract=contract,
+                result = model.apply(dict(event_id=f'account:fill:{index}',kind='ack',at=execution_at.isoformat(),contract=contract,
                     decision_id=pending['decision_id'],status='FILLED',price=str(price),layer_ids=targets))
                 trace.append(result)
                 gross = D('0')
                 if opening:
                     if not layers:
-                        round_start, round_at, round_fills = cash, b.bar_end, []
+                        round_start, round_at, round_fills = cash, execution_at, []
                     layers[pending['decision_id']] = dict(layer_id=pending['decision_id'],kind=pending['kind'],side=side,price=price,
-                        at=b.bar_end,trading_day=b.trading_day,open_fee=fee)
+                        at=execution_at,trading_day=b.trading_day,open_fee=fee)
                 else:
                     gross = sum((direction_sign(layers[key]['side'])*(price-layers[key]['price'])*multiplier for key in targets),D('0'))
                     for key in targets:
@@ -178,13 +190,13 @@ def _replay(executions, observations, run_id, slippage_ticks):
                 fees += fee
                 gross_realized += gross
                 fill = dict(fill_id=f'{run_id}:fill:{len(fills)+1}',decision_id=pending['decision_id'],decision_at=pending['at'],
-                    fill_at=b.bar_end,contract=contract,trading_day=b.trading_day,action=pending['kind'],side=side,order_side='BUY' if buying else 'SELL',quantity=quantity,
+                    fill_at=execution_at,contract=contract,trading_day=b.trading_day,action=pending['kind'],side=side,order_side='BUY' if buying else 'SELL',quantity=quantity,
                     price=price,fee=fee,fee_kinds=[part[1] for part in fee_parts],gross_realized=gross,
                     layer_ids=[pending['decision_id']] if opening else targets,reasons=pending['reasons'],
                     execution_source=f.source_id,fee_source=f.fees.source_id,bar_source=b.source_identity)
                 fills.append(fill);round_fills.append(fill['fill_id'])
                 if not layers:
-                    closed_rounds.append(dict(side=side,entry_at=round_at,exit_at=b.bar_end,net_pnl=cash-round_start,
+                    closed_rounds.append(dict(side=side,entry_at=round_at,exit_at=execution_at,net_pnl=cash-round_start,
                         fills=list(round_fills)))
                     round_start,round_at,round_fills = None,None,[]
         # Both state machines must agree before granting reconciliation/admission.
@@ -209,7 +221,7 @@ def _replay(executions, observations, run_id, slippage_ticks):
         else:
             daily.append(row)
     last = executions[-1]
-    return _wire(dict(version=VERSION if slippage_ticks == 1 else f'{VERSION}_research_slip{slippage_ticks}',contract=contract,run_id=run_id,
+    return _wire(dict(version=f'subing_jm30_account_theoretical_open_v1_slip{slippage_ticks}' if at_open else (VERSION if slippage_ticks == 1 else f'{VERSION}_research_slip{slippage_ticks}'),contract=contract,run_id=run_id,
         status='OPEN' if layers else 'PENDING' if model.pending else 'COMPLETED',
         summary=dict(cash=cash,equity=last_equity,net_pnl=last_equity-INITIAL_CASH,fees=fees,open_quantity=len(layers),fill_count=len(fills),closed_round_count=len(closed_rounds)),
         initial_cash=INITIAL_CASH,cash=cash,equity=last_equity,unrealized=last_equity-cash,fees=fees,
@@ -219,4 +231,4 @@ def _replay(executions, observations, run_id, slippage_ticks):
         fills=fills,execution_events=execution_events,daily_equity=daily,trace=trace,pending=model.pending,
         decision_state=model.state(),decision_checkpoint=model.checkpoint(),
         valuation_at=last.bar.bar_end,valuation_price=last.bar.close,
-        assumptions=f'retrospective confirmation=bar_end; later completed 1m close +/-{slippage_ticks} tick; no terminal liquidation; single physical contract; no broker fills'))
+        assumptions=(f'THEORETICAL ONLY; liquidity unverified; minute start strictly after decision; open +/-{slippage_ticks} tick; capacity assumed up to 3 lots; no future OHLCV fill filter; no terminal liquidation; no broker fills' if at_open else f'retrospective confirmation=bar_end; later completed 1m close +/-{slippage_ticks} tick; no terminal liquidation; single physical contract; no broker fills')))
