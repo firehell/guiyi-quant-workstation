@@ -1,14 +1,18 @@
 """A missing weekly price is explainable only by a complete D1 source proof."""
 
-from datetime import UTC, date, datetime
-from decimal import Decimal
+from dataclasses import replace
+from datetime import UTC, date, datetime, timedelta
+from decimal import ROUND_DOWN, ROUND_UP, Decimal, localcontext
 import hashlib
 import json
 
 import pytest
 
 from app.market_data.domain import CanonicalBar
-from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
+from app.market_data.source_quality import (
+    NonpositiveCloseFact, PriceUnavailableFact, source_quality_semantic_sha256,
+    semantic_decimal,
+)
 from app.market_data.weekly_quality import classify_weekly_source
 
 
@@ -173,3 +177,81 @@ def test_daily_revision_change_invalidates_weekly_interruption_identity():
     ).interruption
     assert first is not None and second is not None
     assert first.source_identity != second.source_identity
+    assert first.semantic_sha256 == second.semantic_sha256
+
+
+def test_weekly_semantic_gap_ignores_transport_and_unrelated_month_revision():
+    first = _classify(gaps=(_unavailable(9),)).interruption
+    changed_transport = replace(
+        _unavailable(9), request_sha256="e" * 64,
+        response_sha256="f" * 64,
+        observed_at=_end(9) + timedelta(hours=1),
+    )
+    second = classify_weekly_source(
+        product="au", physical_contract="AU2612",
+        expected_daily_endpoints=_expected(7, 8, 9, 10, 11),
+        daily_bars=tuple(_bar(day) for day in (7, 8, 10, 11)),
+        price_unavailable=(changed_transport,),
+        daily_revision_sha256="d" * 64,
+    ).interruption
+    assert first is not None and second is not None
+    assert first.source_identity != second.source_identity
+    assert first.semantic_sha256 == second.semantic_sha256
+
+
+def test_weekly_semantic_gap_changes_with_price_quality_or_session_endpoint():
+    baseline = _classify(gaps=(_unavailable(9),)).interruption
+    changed_price = _classify(
+        bars=tuple(
+            replace(_bar(day), close=Decimal("10.5")) if day == 8 else _bar(day)
+            for day in (7, 8, 10, 11)
+        ), gaps=(_unavailable(9),),
+    ).interruption
+    changed_quality = _classify(
+        gaps=(replace(_unavailable(9), volume=Decimal(2)),),
+    ).interruption
+    moved_end = _end(11) + timedelta(minutes=1)
+    changed_session = _classify(
+        expected=(*_expected(7, 8, 9, 10), (moved_end, date(2026, 9, 11))),
+        bars=(*(_bar(day) for day in (7, 8, 10)),
+              replace(_bar(11), bar_end=moved_end)),
+        gaps=(_unavailable(9),),
+    ).interruption
+    assert baseline is not None
+    for changed in (changed_price, changed_quality, changed_session):
+        assert changed is not None
+        assert changed.semantic_sha256 != baseline.semantic_sha256
+
+
+def test_daily_semantic_quality_ignores_transport_and_decimal_text():
+    fact = _unavailable(9)
+    same_number = replace(
+        fact, volume=Decimal("1.00"), request_sha256="e" * 64,
+        response_sha256="f" * 64,
+        observed_at=fact.observed_at + timedelta(hours=1),
+    )
+    assert source_quality_semantic_sha256(fact) == source_quality_semantic_sha256(same_number)
+    assert source_quality_semantic_sha256(fact) != source_quality_semantic_sha256(
+        replace(fact, volume=Decimal(2)),
+    )
+
+
+def test_semantic_decimal_is_lossless_across_context_precision_and_rounding():
+    left = Decimal("1234567890123456789012345678.1")
+    right = Decimal("1234567890123456789012345678.2")
+    source = _unavailable(9)
+    values = []
+    for precision, rounding in ((8, ROUND_DOWN), (28, ROUND_UP), (60, ROUND_DOWN)):
+        with localcontext() as context:
+            context.prec = precision
+            context.rounding = rounding
+            values.append((
+                semantic_decimal(left),
+                semantic_decimal(Decimal("1.2000")),
+                source_quality_semantic_sha256(replace(source, close=left)),
+                source_quality_semantic_sha256(replace(source, close=right)),
+            ))
+    assert values[0] == values[1] == values[2]
+    assert values[0][0] != semantic_decimal(right)
+    assert values[0][1] == semantic_decimal(Decimal("1.2"))
+    assert values[0][2] != values[0][3]

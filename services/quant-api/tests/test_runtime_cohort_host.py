@@ -1,5 +1,6 @@
 """Fault injection against the real Mac cohort adapter, without host mutations."""
 
+from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,39 @@ from app.runtime_cohort import CohortError
 from app.runtime_cohort_host import CohortHost
 
 NOW = datetime(2026, 10, 26, 1, tzinfo=UTC)
+
+
+def test_original_cohort_snapshot_preserves_trusted_budget_abort(tmp_path, monkeypatch):
+    from app.reference_trading import receiving_liveness as liveness
+
+    target = binding(tmp_path, "reference-worker")
+    host = object.__new__(CohortHost)
+    host.now = lambda: NOW
+    host._reference_receiving_context = lambda _target: nullcontext(
+        (object(), object(), object(), None)
+    )
+    plan = {
+        "new": asdict(BindingRegistry(1, {"reference-worker": target})),
+        "reference_receiving_handover": {},
+    }
+    calls = [0]
+
+    def budget():
+        calls[0] += 1
+        if calls[0] == 3:
+            raise CohortError("COHORT_NEW_READY_TIMEOUT")
+
+    def aborted_snapshot(*_args, check_budget, **_kwargs):
+        for _ in range(3):
+            check_budget()
+
+    monkeypatch.setattr(liveness, "snapshot_receiving", aborted_snapshot)
+    with pytest.raises(CohortError, match="COHORT_NEW_READY_TIMEOUT"):
+        host._receiving_snapshot(
+            plan, {"reference_receiving_handover": {}},
+            {"at": NOW.isoformat()}, budget,
+        )
+    assert calls == [3]
 
 
 def binding(tmp_path, service="market-feed", **kwargs):
@@ -107,6 +141,118 @@ def awaiting_host(tmp_path, monkeypatch, *, ready=True, hb=None, owner_proof=Non
     monkeypatch.setattr(redis_connections, "get_redis_connection", Redis)
     plan = {"new": asdict(BindingRegistry(1, {"market-feed": b}))}
     return host, plan, state, calls
+
+
+def receiving_await_host(tmp_path, monkeypatch):
+    from app import runtime_cohort_host as module
+    from app.reference_trading import receiving_liveness
+
+    b = binding(tmp_path, "reference-worker")
+    host = object.__new__(CohortHost)
+    host.deadline = 10
+    clock = [NOW + timedelta(seconds=29)]
+    host.now = lambda: clock[0]
+    host.session_proof = lambda: {}
+    host._reference_handover_budget = lambda _: None
+    state = {
+        "phase": "active",
+        "generation": b.generation,
+        "pid": 123,
+        "at": NOW.isoformat(),
+        "ready": True,
+        "proof": {"reference_runtime": {"stage": "receiving_cycle"}, "receiving": {}},
+    }
+    monkeypatch.setattr(module, "read_service_state", lambda _: state)
+    monkeypatch.setattr(module, "owner_process_matches", lambda *_: True)
+    monkeypatch.setattr(module, "owner_lock_available", lambda _: False)
+    monkeypatch.setattr(receiving_liveness, "completed_receiving_report", lambda _: True)
+    monkeypatch.setattr(receiving_liveness, "receiving_sample_is_fresh", lambda *_args, **_kwargs: True)
+    tick = [0.0]
+
+    def monotonic():
+        tick[0] += 0.01
+        return tick[0]
+
+    monkeypatch.setattr(module, "monotonic", monotonic)
+    polls = [0]
+
+    def sleep(_seconds):
+        polls[0] += 1
+        clock[0] = NOW + timedelta(seconds=32 + polls[0])
+        state["at"] = clock[0].isoformat()
+
+    monkeypatch.setattr(module, "sleep", sleep)
+    plan = {
+        "new": asdict(BindingRegistry(1, {"reference-worker": b})),
+        "reference_receiving_handover": {},
+    }
+    proof = {"progress": {}, "reference_receiving_handover": {}}
+    return host, plan, proof, state, clock, polls
+
+
+def test_receiving_wait_discards_sample_that_expires_inside_context_then_needs_two_fresh_cycles(
+    tmp_path, monkeypatch
+):
+    from app.reference_trading.receiving_liveness import snapshot_receiving
+    from app.reference_trading import receiving_liveness
+
+    host, plan, proof, state, clock, polls = receiving_await_host(tmp_path, monkeypatch)
+    calls = []
+    pairs = []
+    fresh = ({"cycle": 1}, {"cycle": 2})
+
+    def snapshot(_plan, _proof, _state, _check_budget):
+        calls.append(state["at"])
+        if len(calls) == 1:
+            assert (clock[0] - datetime.fromisoformat(state["at"])).total_seconds() == 29
+            clock[0] += timedelta(seconds=3)
+            return snapshot_receiving(
+                None,
+                None,
+                None,
+                intent=None,
+                source_proof=None,
+                target=None,
+                schema_proof=None,
+                sampled_at=clock[0],
+                owner_cycle_at=state["at"],
+            )
+        return fresh[len(calls) - 2]
+
+    def pair(before, previous, current, *, now):
+        pairs.append((before, previous, current))
+        if before is None:
+            return current, False
+        return before, True
+
+    host._receiving_snapshot = snapshot
+    monkeypatch.setattr(receiving_liveness, "receiving_pair_candidate", pair)
+    monkeypatch.setattr(
+        receiving_liveness,
+        "prove_receiving_liveness",
+        lambda *_args, **_kwargs: {"mode": "durable_receiving"},
+    )
+    assert host._await_names(plan, ("reference-worker",), proof, 1) == {
+        "reference-worker": "durable_receiving"
+    }
+    assert len(calls) == 3
+    assert polls == [2]
+    assert pairs == [(None, None, fresh[0]), (fresh[0], fresh[0], fresh[1])]
+
+
+def test_receiving_wait_does_not_swallow_prefix_conflict(tmp_path, monkeypatch):
+    from app.reference_trading import receiving_liveness
+    from app.reference_trading.receiving_liveness import ReceivingLivenessError
+
+    host, plan, proof, _, _, _ = receiving_await_host(tmp_path, monkeypatch)
+    host._receiving_snapshot = lambda *_args: {"cycle": 1}
+
+    def conflict(*_args, **_kwargs):
+        raise ReceivingLivenessError("REFERENCE_RECEIVING_LIVENESS_UNPROVEN")
+
+    monkeypatch.setattr(receiving_liveness, "receiving_pair_candidate", conflict)
+    with pytest.raises(ReceivingLivenessError, match="REFERENCE_RECEIVING_LIVENESS_UNPROVEN"):
+        host._await_names(plan, ("reference-worker",), proof, 1)
 
 
 def test_feed_ready_requires_independent_heartbeat_and_preserves_closed_idle_semantics(

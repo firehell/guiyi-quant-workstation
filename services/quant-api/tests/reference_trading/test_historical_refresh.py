@@ -69,7 +69,7 @@ class Service:
         return self.invoke('resume', plan, token)
 
 
-def setup(tmp_path, results, routes=None):
+def setup(tmp_path, results, routes=None, needs_source_verification=None):
     planner, service = Planner(), Service(results)
     @contextmanager
     def components(**kwargs):
@@ -78,6 +78,7 @@ def setup(tmp_path, results, routes=None):
         routes=lambda: routes or (route(),),
         endpoint=lambda _route, _now: (END, date(2026, 10, 8)),
         components=components, state=RefreshStateStore(tmp_path / 'refresh.json'),
+        needs_source_verification=needs_source_verification,
     )
     return runner, planner, service
 
@@ -85,6 +86,32 @@ def setup(tmp_path, results, routes=None):
 def test_no_changed_endpoint_never_opens_full_input(tmp_path):
     runner, planner, service = setup(tmp_path, [], (route(watermark=END),))
     runner.tick(now=END)
+    assert not planner.requests and not service.calls
+
+
+def test_same_endpoint_verified_source_change_uses_native_advance(tmp_path):
+    checked = []
+    def source_changed(item, now, cancelled):
+        checked.append((item.identity.stream_id, now, cancelled()))
+        return True
+    runner, planner, service = setup(
+        tmp_path, [('completed', None, False)], (route(watermark=END),),
+        needs_source_verification=source_changed,
+    )
+    runner.tick(now=END)
+    assert checked == [(route().identity.stream_id, END, False)]
+    assert len(planner.requests) == len(service.calls) == 1
+    assert service.calls[0][0] == 'advance'
+
+
+def test_same_endpoint_verified_source_unchanged_skips_planning(tmp_path):
+    checked = []
+    runner, planner, service = setup(
+        tmp_path, [], (route(watermark=END),),
+        needs_source_verification=lambda item, _now, _cancelled: checked.append(item) or False,
+    )
+    runner.tick(now=END)
+    assert len(checked) == 1
     assert not planner.requests and not service.calls
 
 
@@ -113,7 +140,7 @@ def test_one_stream_per_tick_base_order_and_budget(tmp_path):
         runner.tick(now=END)
     assert [x[1].streams[0].request.identity.strategy_code for x in service.calls] == [
         'newow_trend', 'newow_oscillation', 'newow_main_rise']
-    assert all(x.budget.max_input_bars == 500_000 and x.budget.max_input_bytes == 512_000_000
+    assert all(x.budget.max_input_bars == 1_000_000 and x.budget.max_input_bytes == 512_000_000
                and x.budget.max_elapsed_seconds == 1800 and x.budget.max_streams == 1
                for x in planner.requests)
 
@@ -260,7 +287,7 @@ def test_actual_strategy_service_advances_same_window(tmp_path, request, backend
 
 @pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
 @pytest.mark.parametrize("activate", [False, True])
-@pytest.mark.parametrize("reader_version", ["newow_product_reader_prefix_v4", "newow_product_reader_intraday_v3", "newow_product_reader_v2"])
+@pytest.mark.parametrize("reader_version", ["newow_product_reader_prefix_v5", "newow_product_reader_prefix_v4", "newow_product_reader_intraday_v3", "newow_product_reader_v2"])
 def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, request, backend, activate, reader_version):
     from app.reference_trading.historical_refresh import build_historical_refresh
     from tests.reference_trading.test_newow_bootstrap import setup_source, plan_for, NOW
@@ -283,7 +310,7 @@ def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, req
     routes = runner._routes()
     assert len(routes) == 1
     assert routes[0].identity == identity
-    assert routes[0].reason == (None if reader_version == "newow_product_reader_prefix_v4" else "INPUT_PROOF_UPGRADE_REQUIRED")
+    assert routes[0].reason == (None if reader_version == "newow_product_reader_prefix_v5" else "INPUT_PROOF_UPGRADE_REQUIRED")
     assert routes[0].since == date(2023, 1, 1)
     assert routes[0].computed_through == checkpoint.computed_through
 
@@ -316,6 +343,209 @@ def test_endpoint_reads_share_product_frequency_and_idle_scan_is_bounded(tmp_pat
     assert len(calls) <= 11
     assert len(set(calls)) == len(calls)
     assert not planner.requests and not service.calls
+
+
+def test_endpoint_maintenance_busy_waits_without_blocking_route(tmp_path, monkeypatch):
+    from app.market_data.catalog import MarketCatalog
+
+    runner, item, *_ = _published_endpoint_fixture(tmp_path, monkeypatch, '1d')
+    runner._routes = lambda: (item,)
+    monkeypatch.setattr(MarketCatalog, 'acquire_maintenance_lock',
+                        lambda self, *, caller=None: None)
+    with pytest.raises(ValueError, match='SOURCE_BUSY'):
+        runner._endpoint(item, END)
+    runner.tick(now=END)
+    assert item.identity.stream_id not in runner.state.read()['routes']
+    assert runner.last_progress['reason'] == 'SOURCE_BUSY'
+
+
+def test_endpoint_releases_lease_and_keeps_quality_failure_closed(tmp_path, monkeypatch):
+    from app.market_data.catalog import MarketCatalog
+    from app.market_data.market_data_service import MarketDataService
+
+    runner, item, *_ = _published_endpoint_fixture(tmp_path, monkeypatch, '1d')
+    runner._routes = lambda: (item,)
+    releases = []
+
+    class Lease:
+        def release(self):
+            releases.append(1)
+
+    monkeypatch.setattr(MarketCatalog, 'acquire_maintenance_lock',
+                        lambda self, *, caller=None: Lease())
+
+    def missing(self, **_kwargs):
+        raise ValueError('PHYSICAL_DATA_MISSING')
+
+    monkeypatch.setattr(MarketDataService, 'published_reference_endpoint', missing)
+    with pytest.raises(ValueError, match='PHYSICAL_DATA_MISSING'):
+        runner._endpoint(item, END)
+    assert releases == [1]
+    runner.tick(now=END)
+    assert releases == [1, 1]
+    assert runner.state.read()['routes'][item.identity.stream_id] == {
+        'status': 'blocked', 'reason': 'PHYSICAL_DATA_MISSING'}
+
+
+def test_endpoint_acquires_maintenance_lease_before_readonly_snapshot(tmp_path, monkeypatch):
+    from app.reference_trading.historical_refresh import build_historical_refresh
+    import app.db.readonly as readonly
+    import app.market_data.composition as composition
+    import app.market_data.operational_universe as universe
+    import app.market_data.newow.product_release as release
+    import app.reference_trading.newow_bootstrap as bootstrap
+
+    order = []
+
+    @contextmanager
+    def session_factory():
+        order.append('session')
+        try:
+            yield object()
+        finally:
+            order.append('session-close')
+
+    @contextmanager
+    def read_snapshot(_session, *, timeout_seconds):
+        assert timeout_seconds == 15
+        order.append('snapshot')
+        try:
+            yield
+        finally:
+            order.append('snapshot-close')
+
+    class Lease:
+        def release(self):
+            order.append('lease-release')
+
+    class Catalog:
+        def acquire_maintenance_lock(self, *, caller):
+            assert caller == 'reference-endpoint'
+            order.append('lease-acquire')
+            return Lease()
+
+    def market(_session):
+        order.append('market-build')
+        return SimpleNamespace(
+            catalog=Catalog(),
+            published_reference_endpoint=lambda **_kwargs: (
+                order.append('query') or (END, END.date())),
+        )
+
+    monkeypatch.setattr(readonly, 'readonly_transaction', read_snapshot)
+    monkeypatch.setattr(composition, 'build_market_data_service', market)
+    monkeypatch.setattr(universe, 'load_operational_products', lambda: ())
+    monkeypatch.setattr(universe, 'load_active_products', lambda: ())
+    monkeypatch.setattr(bootstrap, 'validate_product_scope', lambda *_args: ('rb',))
+    monkeypatch.setattr(release, 'candidate_input_quality_policy',
+                        lambda *_args, **_kwargs: SimpleNamespace(value='strict'))
+    runner = build_historical_refresh(session_factory, state_path=tmp_path / 'refresh.json')
+    assert runner._endpoint(route(), END) == (END, END.date())
+    assert order == ['session', 'market-build', 'lease-acquire', 'snapshot',
+                     'query', 'snapshot-close', 'lease-release', 'session-close']
+
+
+@pytest.mark.isolated_postgresql
+def test_pg_endpoint_respects_external_maintenance_lease(
+    tmp_path, monkeypatch, reference_postgresql,  # noqa: F811
+):
+    from sqlalchemy.orm import Session, sessionmaker
+    from app.market_data.catalog import MarketCatalog
+    from app.reference_trading.historical_refresh import build_historical_refresh
+    import app.market_data.composition as composition
+    import app.reference_trading.newow_bootstrap as bootstrap
+
+    monkeypatch.setattr(bootstrap, 'validate_product_scope', lambda *_args: ('rb',))
+    calls = []
+
+    def market(session):
+        return SimpleNamespace(
+            catalog=MarketCatalog(session, tmp_path),
+            published_reference_endpoint=lambda **_kwargs: calls.append(1) or (END, END.date()),
+        )
+
+    monkeypatch.setattr(composition, 'build_market_data_service', market)
+    runner = build_historical_refresh(sessionmaker(reference_postgresql),
+                                      state_path=tmp_path / 'refresh.json')
+    with Session(reference_postgresql) as session:
+        lease = MarketCatalog(session, tmp_path).acquire_maintenance_lock(caller='test-maintenance')
+        assert lease is not None
+        try:
+            with pytest.raises(ValueError, match='SOURCE_BUSY'):
+                runner._endpoint(route(), END)
+            assert calls == []
+        finally:
+            lease.release()
+    assert runner._endpoint(route(), END) == (END, END.date())
+    assert calls == [1]
+
+
+@pytest.mark.isolated_postgresql
+def test_pg_endpoint_snapshot_starts_after_publication_releases_lease(
+    tmp_path, monkeypatch, reference_postgresql,  # noqa: F811
+):
+    from sqlalchemy import Column, DateTime, Integer, MetaData, Table, insert, select, update
+    from sqlalchemy.orm import Session, sessionmaker
+    from app.market_data.catalog import MarketCatalog
+    from app.reference_trading.historical_refresh import build_historical_refresh
+    import app.db.readonly as readonly
+    import app.market_data.composition as composition
+    import app.reference_trading.newow_bootstrap as bootstrap
+
+    sentinel = Table('reference_endpoint_snapshot_probe', MetaData(),
+                     Column('id', Integer, primary_key=True),
+                     Column('bar_end', DateTime(timezone=True), nullable=False))
+    sentinel.create(reference_postgresql)
+    old = END - timedelta(days=1)
+    new = END
+    with reference_postgresql.begin() as connection:
+        connection.execute(insert(sentinel).values(id=1, bar_end=old))
+
+    original_readonly = readonly.readonly_transaction
+    observed = []
+
+    @contextmanager
+    def capture_snapshot(session, *, timeout_seconds):
+        with original_readonly(session, timeout_seconds=timeout_seconds):
+            observed.append(session.scalar(select(sentinel.c.bar_end).where(sentinel.c.id == 1)))
+            yield
+
+    monkeypatch.setattr(readonly, 'readonly_transaction', capture_snapshot)
+    original_lock = MarketCatalog.acquire_maintenance_lock
+    publisher_session = Session(reference_postgresql)
+    blocker = MarketCatalog(publisher_session, tmp_path).acquire_maintenance_lock(
+        caller='test-publication')
+    assert blocker is not None
+    published = []
+
+    def acquire_after_publication(self, *, caller=None):
+        if caller == 'reference-endpoint' and not published:
+            with reference_postgresql.begin() as connection:
+                connection.execute(update(sentinel).where(sentinel.c.id == 1)
+                                   .values(bar_end=new))
+            published.append(1)
+            blocker.release()
+        return original_lock(self, caller=caller)
+
+    monkeypatch.setattr(MarketCatalog, 'acquire_maintenance_lock', acquire_after_publication)
+    monkeypatch.setattr(bootstrap, 'validate_product_scope', lambda *_args: ('rb',))
+
+    def market(session):
+        def endpoint(**_kwargs):
+            value = session.scalar(select(sentinel.c.bar_end).where(sentinel.c.id == 1))
+            return value, value.date()
+        return SimpleNamespace(catalog=MarketCatalog(session, tmp_path),
+                               published_reference_endpoint=endpoint)
+
+    monkeypatch.setattr(composition, 'build_market_data_service', market)
+    try:
+        runner = build_historical_refresh(sessionmaker(reference_postgresql),
+                                          state_path=tmp_path / 'refresh.json')
+        assert runner._endpoint(route(), END + timedelta(seconds=1)) == (new, new.date())
+        assert observed == [new] and published == [1]
+    finally:
+        blocker.release()
+        publisher_session.close()
 
 
 def _published_endpoint_fixture(tmp_path, monkeypatch, frequency, *, published_day=8):

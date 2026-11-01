@@ -56,6 +56,14 @@ class ReceivingLivenessError(ValueError):
     """Unknown input, authority or progress; contains no source/secret details."""
 
 
+class ReceivingCycleStale(ReceivingLivenessError):
+    """A correctly ordered owner cycle expired before its ACK snapshot was sampled."""
+
+
+class ReceivingControlAbort(Exception):
+    """Payload-free escape for a trusted controller budget callback."""
+
+
 def _require(condition):
     if not condition:
         raise ReceivingLivenessError(ERROR)
@@ -406,9 +414,13 @@ def snapshot_receiving(
     """
     try:
         check_budget()
-        sampled = _instant(sampled_at or datetime.now(UTC))
+        sampled = _instant(datetime.now(UTC) if sampled_at is None else sampled_at)
         cycle = _instant(owner_cycle_at) if owner_cycle_at is not None else None
-        _require(cycle is None or 0 <= (sampled - cycle).total_seconds() <= 30)
+        if cycle is not None:
+            age = (sampled - cycle).total_seconds()
+            _require(age >= 0)
+            if age > 30:
+                raise ReceivingCycleStale("REFERENCE_RECEIVING_CYCLE_STALE")
         active = _authority(protocol, intent, source_proof, target, schema_proof)
         registered, current = _progress(journal)
         _require(
@@ -570,6 +582,10 @@ def snapshot_receiving(
         result["snapshot_sha256"] = _digest(result)
         check_budget()
         return result
+    except ReceivingCycleStale:
+        raise
+    except ReceivingControlAbort:
+        raise
     except Exception:
         raise ReceivingLivenessError(ERROR) from None
 
@@ -827,14 +843,13 @@ def verify_receiving_continuity(before, after):
 
 
 def verify_receiving_nonregression(before, after, *, now=None):
-    """Two fresh receiving-cycle samples prove progress, never calculation health."""
+    """Two bounded cycles and a fresh latest sample prove receiving progress."""
     instant = now or datetime.now(UTC)
-    if not all(
-        receiving_sample_is_fresh(value, now=instant) for value in (before, after)
-    ):
-        raise ReceivingLivenessError(ERROR)
     comparison = verify_receiving_continuity(before, after)
-    if _instant(after["owner_cycle_at"]) <= _instant(before["owner_cycle_at"]):
+    cycle_gap = (
+        _instant(after["owner_cycle_at"]) - _instant(before["owner_cycle_at"])
+    ).total_seconds()
+    if not 0 < cycle_gap <= 30 or not receiving_sample_is_fresh(after, now=instant):
         raise ReceivingLivenessError(ERROR)
     return comparison
 
@@ -912,8 +927,9 @@ def prove_receiving_liveness(before, after, *, closed_idle=False, now=None):
 def receiving_pair_candidate(before, previous, current, *, now):
     """Roll a bounded sample window only after validating every continuous prefix.
 
-    True identifies a candidate pair, not readiness. Callers must recheck both
-    samples after their remaining identity/budget guards and then prove liveness.
+    True identifies a candidate pair, not readiness. Each sample must have
+    followed its owner cycle within 30 seconds, the cycles must be at most 30
+    seconds apart, and the latest cycle must remain fresh at final proof.
     """
     fresh = receiving_sample_is_fresh(current, now=now)
     if previous is not None:
@@ -922,7 +938,12 @@ def receiving_pair_candidate(before, previous, current, *, now):
         return current, False
     if current["owner_cycle_at"] == before["owner_cycle_at"]:
         return before, False
-    if not (fresh and receiving_sample_is_fresh(before, now=now)):
+    if previous is None:
+        verify_receiving_continuity(before, current)
+    cycle_gap = (
+        _instant(current["owner_cycle_at"]) - _instant(before["owner_cycle_at"])
+    ).total_seconds()
+    if cycle_gap > 30 or not fresh:
         return current, False
     comparison = verify_receiving_nonregression(before, current, now=now)
     if comparison["advanced_count"] == 0 and not comparison["caught_up_idle"]:

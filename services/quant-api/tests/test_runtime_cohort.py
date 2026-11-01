@@ -152,6 +152,42 @@ def plan(h):
     return freeze_cohort(h, candidate_root=h.root, tag="v1.16.5", commit="e" * 40)
 
 
+@pytest.mark.parametrize("foreign", (None, "candidate", "previous"))
+def test_managed_release_roots_use_same_repository_without_naming_authority(
+    tmp_path, monkeypatch, foreign
+):
+    from app import runtime_bindings, runtime_cohort
+
+    h = Host(tmp_path)
+    managed = tmp_path / "managed" / "guiyi-quant-workstation"
+    managed.mkdir(parents=True)
+    common, other = tmp_path / "common", tmp_path / "foreign"
+    common.mkdir()
+    other.mkdir()
+    old_root = next(iter(h.old.services.values())).root
+
+    def git(root, *args):
+        assert args == ("rev-parse", "--path-format=absolute", "--git-common-dir")
+        bad = (foreign == "candidate" and str(root) == str(managed)) or (
+            foreign == "previous" and str(root) == old_root
+        )
+        return str(other if bad else common)
+
+    monkeypatch.setattr(runtime_bindings, "_git", git)
+    if foreign:
+        with pytest.raises(CohortError, match="COHORT_RELEASE_ROOT_INVALID"):
+            freeze_cohort(h, candidate_root=managed, tag="v1.16.5", commit="e" * 40)
+        assert h.calls == []
+    else:
+        frozen = freeze_cohort(
+            h, candidate_root=managed, tag="v1.16.5", commit="e" * 40
+        )
+        runtime_cohort.validate(frozen, h.now())
+        assert {row["root"] for row in frozen["new"]["services"].values()} == {
+            str(managed)
+        }
+
+
 def test_all_ten_commit_once_after_old_exit_and_consume_before_feed(tmp_path):
     h = Host(tmp_path)
     p = plan(h)
@@ -445,69 +481,113 @@ def test_cohort_retains_per_stream_warming_in_attempt_before_any_stop(tmp_path):
     assert state["effects"]["prewarm"] == proof
     assert json.loads(attempt.read_text())["effects"]["prewarm"] == proof
 
-@pytest.mark.parametrize('error,expected', [
-    (CohortError('COHORT_FEED_CLOSE_UNPROVEN'), 'COHORT_FEED_CLOSE_UNPROVEN'),
-    (RuntimeError('PRIVATE_CONNECTION_VALUE'), None),
-    (CohortError('private value with credentials'), None),
-])
-def test_cancelled_attempt_retains_phase_and_only_bounded_cohort_code(tmp_path, error, expected):
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (CohortError("COHORT_FEED_CLOSE_UNPROVEN"), "COHORT_FEED_CLOSE_UNPROVEN"),
+        (RuntimeError("PRIVATE_CONNECTION_VALUE"), None),
+        (CohortError("private value with credentials"), None),
+    ],
+)
+def test_cancelled_attempt_retains_phase_and_only_bounded_cohort_code(
+    tmp_path, error, expected
+):
     import json
+
     host = Host(tmp_path)
-    plan = freeze_cohort(host, candidate_root=host.root, tag='v1.16.5', commit='e' * 40)
+    plan = freeze_cohort(host, candidate_root=host.root, tag="v1.16.5", commit="e" * 40)
+
     def fail(_plan):
         raise error
-    host.drain = fail
-    with pytest.raises(CohortError, match='COHORT_PRECONDITION_CANCELLED'):
-        apply_cohort(host, plan)
-    state = json.loads((host.directory / 'cohort-release.json').read_text())
-    assert state['phase'] == 'cancelled'
-    assert state['failed_phase'] == 'drain'
-    assert state.get('error_code') == expected
-    assert host.registry == host.old and 'commit' not in host.calls
-    assert 'PRIVATE_CONNECTION_VALUE' not in json.dumps(state)
-    assert 'private value with credentials' not in json.dumps(state)
 
-@pytest.mark.parametrize('service,expected', [('web', 'web'), ('private service value', None)])
+    host.drain = fail
+    with pytest.raises(CohortError, match="COHORT_PRECONDITION_CANCELLED"):
+        apply_cohort(host, plan)
+    state = json.loads((host.directory / "cohort-release.json").read_text())
+    assert state["phase"] == "cancelled"
+    assert state["failed_phase"] == "drain"
+    assert state.get("error_code") == expected
+    assert host.registry == host.old and "commit" not in host.calls
+    assert "PRIVATE_CONNECTION_VALUE" not in json.dumps(state)
+    assert "private value with credentials" not in json.dumps(state)
+
+
+@pytest.mark.parametrize(
+    "service,expected", [("web", "web"), ("private service value", None)]
+)
 def test_cancelled_drain_retains_only_known_service(tmp_path, service, expected):
     import json
+
     host = Host(tmp_path)
-    plan = freeze_cohort(host, candidate_root=host.root, tag='v1.16.5', commit='e' * 40)
-    error = CohortError('COHORT_OLD_DRAIN_TIMEOUT')
+    plan = freeze_cohort(host, candidate_root=host.root, tag="v1.16.5", commit="e" * 40)
+    error = CohortError("COHORT_OLD_DRAIN_TIMEOUT")
     error.service = service
+
     def fail(_plan):
         raise error
+
     host.drain = fail
     with pytest.raises(CohortError):
         apply_cohort(host, plan)
-    state = json.loads((host.directory / 'cohort-release.json').read_text())
-    assert state.get('failed_service') == expected
-    assert 'private service value' not in json.dumps(state)
+    state = json.loads((host.directory / "cohort-release.json").read_text())
+    assert state.get("failed_service") == expected
+    assert "private service value" not in json.dumps(state)
 
 
 def additive_host(tmp_path):
-    from app.runtime_schema_compatibility import ADDITION, ADDITION_BLOB, PARENT, POLICY, prove_reference_inbox_addition
+    from app.runtime_schema_compatibility import (
+        ADDITION,
+        ADDITION_BLOB,
+        PARENT,
+        POLICY,
+        prove_reference_inbox_addition,
+    )
+
     source = {PARENT: "1" * 40, "services/quant-api/app/db/base.py": "2" * 40}
-    proof = prove_reference_inbox_addition(source, {**source, ADDITION: ADDITION_BLOB},
-        old_heads=("20261015_0052",), new_heads=("20261026_0053",), installed={"policy": POLICY,
-        "revision": "20261026_0053", "schema_sha256": "a" * 64, "database_identity_sha256": "c" * 64})
+    proof = prove_reference_inbox_addition(
+        source,
+        {**source, ADDITION: ADDITION_BLOB},
+        old_heads=("20261015_0052",),
+        new_heads=("20261026_0053",),
+        installed={
+            "policy": POLICY,
+            "revision": "20261026_0053",
+            "schema_sha256": "a" * 64,
+            "database_identity_sha256": "c" * 64,
+        },
+    )
     h = Host(tmp_path)
-    h.old = BindingRegistry(1, {key: replace(binding, contracts={**binding.contracts, "db": proof["old_db"]})
-                                for key, binding in h.old.services.items()})
+    h.old = BindingRegistry(
+        1,
+        {
+            key: replace(
+                binding, contracts={**binding.contracts, "db": proof["old_db"]}
+            )
+            for key, binding in h.old.services.items()
+        },
+    )
     h.registry = h.old
     native = h.contracts
     h.contracts = lambda root: {**native(root), "db": proof["new_db"]}
     h.schema_compatibility = lambda old, new: {proof["old_db"]: proof}
     h.schema_reads = 0
     h.schema_failure_at = None
+
     def check_schema(plan):
         h.schema_reads += 1
-        if h.schema_reads == h.schema_failure_at or plan["schema_compatibility"] != {proof["old_db"]: proof}:
+        if h.schema_reads == h.schema_failure_at or plan["schema_compatibility"] != {
+            proof["old_db"]: proof
+        }:
             raise CohortError("COHORT_SCHEMA_PROOF_DRIFT")
+
     h.check_schema_compatibility = check_schema
     return h
 
 
-def test_exact_preinstalled_additive_schema_proof_is_frozen_and_rechecked_before_stops_and_cas(tmp_path):
+def test_exact_preinstalled_additive_schema_proof_is_frozen_and_rechecked_before_stops_and_cas(
+    tmp_path,
+):
     h = additive_host(tmp_path)
     p = plan(h)
     assert p["schema_compatibility"]
@@ -517,7 +597,9 @@ def test_exact_preinstalled_additive_schema_proof_is_frozen_and_rechecked_before
 
 
 @pytest.mark.parametrize("checkpoint", (1, 2, 3))
-def test_installed_schema_drift_never_reaches_cas_and_first_checks_precede_owner_stops(tmp_path, checkpoint):
+def test_installed_schema_drift_never_reaches_cas_and_first_checks_precede_owner_stops(
+    tmp_path, checkpoint
+):
     h = additive_host(tmp_path)
     p = plan(h)
     h.schema_failure_at = checkpoint
@@ -535,28 +617,38 @@ def test_installed_schema_drift_never_reaches_cas_and_first_checks_precede_owner
 def test_rehashed_forged_schema_readback_still_fails_fresh_native_proof(tmp_path):
     from copy import deepcopy
     from app.reference_trading.recovery_campaign import digest
+
     h = additive_host(tmp_path)
     p = deepcopy(plan(h))
     transition = next(iter(p["schema_compatibility"].values()))
     transition["installed"]["schema_sha256"] = "f" * 64
-    transition["proof_sha256"] = digest({key: value for key, value in transition.items() if key != "proof_sha256"})
-    p["plan_sha256"] = digest({key: value for key, value in p.items() if key != "plan_sha256"})
+    transition["proof_sha256"] = digest(
+        {key: value for key, value in transition.items() if key != "proof_sha256"}
+    )
+    p["plan_sha256"] = digest(
+        {key: value for key, value in p.items() if key != "plan_sha256"}
+    )
     with pytest.raises(CohortError, match="SCHEMA_PROOF_DRIFT"):
         apply_cohort(h, p)
     assert h.calls == []
 
 
-def test_final_schema_read_crossing_downtime_deadline_cannot_commit(tmp_path, monkeypatch):
+def test_final_schema_read_crossing_downtime_deadline_cannot_commit(
+    tmp_path, monkeypatch
+):
     from app import runtime_cohort as module
+
     h = additive_host(tmp_path)
     p = plan(h)
     clock = [0.0]
     monkeypatch.setattr(module, "monotonic", lambda: clock[0])
     original = h.check_schema_compatibility
+
     def slow_schema(plan):
         original(plan)
         if h.schema_reads == 3:
             clock[0] = 601.0
+
     h.check_schema_compatibility = slow_schema
     with pytest.raises(CohortError):
         apply_cohort(h, p)
@@ -567,14 +659,17 @@ def test_final_schema_read_crossing_downtime_deadline_cannot_commit(tmp_path, mo
 
 def test_final_schema_read_crossing_plan_expiry_cannot_commit(tmp_path):
     from datetime import timedelta
+
     h = additive_host(tmp_path)
     p = plan(h)
     initial = h.now()
     original = h.check_schema_compatibility
+
     def slow_schema(plan):
         original(plan)
         if h.schema_reads == 3:
             h.now = lambda: initial + timedelta(minutes=16)
+
     h.check_schema_compatibility = slow_schema
     with pytest.raises(CohortError):
         apply_cohort(h, p)

@@ -20,11 +20,13 @@ from app.market_data.actual_dominant_research import (
 from app.market_data.aggregation import SessionWindow
 from app.market_data.domain import (
     BarFrequency,
+    CanonicalBar,
     ResolvedContractSegment,
     SeriesKind,
     SeriesPageCursorMode,
 )
 from app.market_data.market_data_service import MarketDataError
+from app.market_data.market_data_service import MarketReplayChunk
 from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
 from app.market_data.weekly_quality import classify_weekly_source
 from app.market_data.newow.product_query import NewowProductQuery
@@ -33,8 +35,230 @@ from app.market_data.newow.product_reader import (
     NewowProductReader,
     NewowProductReadError,
     _product_bar,
+    _semantic_quality_gap_sha256,
 )
 from app.market_data.newow.product_service import _owned_display_interruptions
+
+
+def _bounded_stream_fixture(fake, monkeypatch, *, quality=()):
+    """Adapt the fixture's exact physical rows to the bounded MDS seam."""
+    def stream(*, symbol, owner, frequency, through, cutoff, quality_policy, max_rows):
+        assert symbol == "rb" and max_rows <= 2000
+        events = sorted((
+            *(
+                bar for bar in fake.physical.get((owner.contract, frequency), ())
+                if bar.trading_day <= through and bar.bar_end <= cutoff
+            ),
+            *(
+                gap for gap in quality
+                if gap.bar_end <= cutoff and gap.trading_day <= through
+                and getattr(gap, "physical_contract", owner.contract) == owner.contract
+            ),
+        ), key=lambda item: item.bar_end)
+        for offset in range(0, len(events), 2):
+            batch = events[offset:offset + 2]
+            yield MarketReplayChunk(
+                tuple(item for item in batch if isinstance(item, CanonicalBar)),
+                tuple(item for item in batch if not isinstance(item, CanonicalBar)),
+            )
+
+    monkeypatch.setattr(fake, "iter_actual_dominant_owner_replay_chunks", stream,
+                        raising=False)
+
+
+def _assert_bounded_read_equal(expected, bounded):
+    assert bounded.owners == expected.owners
+    assert bounded.boundaries == expected.boundaries
+    assert bounded.display_window == expected.display_window
+    assert bounded.performance_window == expected.performance_window
+    assert bounded.sources == expected.sources
+    assert bounded.lifecycle_evidence_by_frequency == expected.lifecycle_evidence_by_frequency
+    assert bounded.data_interruptions_by_frequency == expected.data_interruptions_by_frequency
+    assert bounded.semantic_gap_hashes_by_frequency == expected.semantic_gap_hashes_by_frequency
+    assert bounded.input_quality_policies_by_frequency == expected.input_quality_policies_by_frequency
+    assert set(bounded.bars_by_frequency) == set(expected.bars_by_frequency)
+    for frequency in bounded.bars_by_frequency:
+        assert tuple(bounded.bars_by_frequency[frequency]) == expected.bars_by_frequency[frequency]
+    assert bounded.replay_bars.sealed
+
+
+@pytest.mark.parametrize("frequency", ["60m", "1d", "1w"])
+def test_historical_bounded_read_matches_legacy_single_owner(
+    product_cases, monkeypatch, frequency,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=12, frequency=frequency)
+    expected = reader.load(query, fake.as_of)
+    _bounded_stream_fixture(fake, monkeypatch)
+    bounded = reader.load_historical(query, fake.as_of)
+    try:
+        _assert_bounded_read_equal(expected, bounded)
+    finally:
+        bounded.close()
+
+
+@pytest.mark.parametrize("frequency", ["60m", "1d", "1w"])
+def test_historical_bounded_read_stops_at_requested_through_before_as_of(
+    product_cases, monkeypatch, frequency,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=16, frequency=frequency)
+    physical = fake.physical[("RB2605", BarFrequency(frequency))]
+    earlier = physical[11 if frequency == "60m" else 8].trading_day
+    assert earlier < fake.as_of.date()
+    query = replace(query, through=earlier, performance_through=earlier)
+    expected = reader.load(query, fake.as_of)
+    _bounded_stream_fixture(fake, monkeypatch)
+    bounded = reader.load_historical(query, fake.as_of)
+    try:
+        _assert_bounded_read_equal(expected, bounded)
+        assert bounded.sources[ProductFrequency(frequency)].bar_end <= physical[
+            11 if frequency == "60m" else 8
+        ].bar_end
+    finally:
+        bounded.close()
+
+
+def test_historical_bounded_read_matches_reentered_physical_weekly_owner(
+    product_cases, monkeypatch,
+):
+    reader, query, fake = _weekly_reader(product_cases)
+    fake.segments = (*fake.segments[:2], replace(fake.segments[2], contract="RB2605"))
+    fake.physical[("RB2605", BarFrequency.W1)] = fake.physical.pop(
+        ("RB2610", BarFrequency.W1)
+    )
+    fake.expected_physical = dict(fake.physical)
+    expected = reader.load(query, fake.as_of)
+    _bounded_stream_fixture(fake, monkeypatch)
+    bounded = reader.load_historical(query, fake.as_of)
+    try:
+        _assert_bounded_read_equal(expected, bounded)
+    finally:
+        bounded.close()
+
+
+def test_historical_bounded_read_matches_daily_quality_break(
+    product_cases, monkeypatch,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=12, frequency="1d")
+    contract = "RB2605"
+    original = fake.physical[(contract, BarFrequency.D1)]
+    missing = original[5]
+    kept = tuple(bar for bar in original if bar != missing)
+    fake.physical[(contract, BarFrequency.D1)] = kept
+    fake.actual[BarFrequency.D1] = tuple(
+        bar for bar in fake.actual[BarFrequency.D1] if bar != missing
+    )
+    gap = PriceUnavailableFact(
+        missing.bar_end, missing.trading_day,
+        Decimal(0), Decimal(0), Decimal(0), missing.close,
+        Decimal(1), Decimal(0), missing.open_interest,
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+    monkeypatch.setattr(fake, "query_actual_dominant_trading_days_quality",
+        lambda request: (fake.query_actual_dominant_trading_days(request),
+                         ((contract, gap),)), raising=False)
+    monkeypatch.setattr(fake, "query_contract_replay_quality",
+        lambda **kwargs: (tuple(bar for bar in kept if bar.bar_end <= kwargs["cutoff"]),
+                          (gap,)), raising=False)
+    expected = reader.load(query, fake.as_of)
+    _bounded_stream_fixture(fake, monkeypatch, quality=(gap,))
+    bounded = reader.load_historical(query, fake.as_of)
+    try:
+        _assert_bounded_read_equal(expected, bounded)
+    finally:
+        bounded.close()
+
+
+def test_historical_bounded_read_keeps_night_session_owner_identity(
+    product_cases, monkeypatch,
+):
+    reader, query, fake = product_cases.paged_reader(prefix_bars=12, frequency="60m")
+    first_day = fake.segments[0].start_trading_day
+    fake.sessions[first_day] = (
+        SessionWindow(
+            datetime.combine(first_day - timedelta(days=1), datetime.min.time(), UTC)
+            + timedelta(hours=21),
+            datetime.combine(first_day, datetime.min.time(), UTC)
+            + timedelta(hours=7),
+        ),
+    )
+    fake.as_of = datetime.combine(first_day, datetime.min.time(), UTC) + timedelta(hours=4)
+    expected = reader.load(query, fake.as_of)
+    _bounded_stream_fixture(fake, monkeypatch)
+    bounded = reader.load_historical(query, fake.as_of)
+    try:
+        _assert_bounded_read_equal(expected, bounded)
+    finally:
+        bounded.close()
+
+
+def test_historical_bounded_read_matches_weekly_gap_and_empty_owner(
+    product_cases, monkeypatch,
+):
+    reader, query, fake = _weekly_reader(product_cases)
+    first, last = fake.actual[BarFrequency.W1]
+    fact = PriceUnavailableFact(
+        first.bar_end, first.trading_day,
+        Decimal(0), Decimal(0), Decimal(0), first.close,
+        Decimal(1), Decimal(0), first.open_interest,
+        "a" * 64, "b" * 64, fake.as_of,
+    )
+    gap = classify_weekly_source(
+        product="rb", physical_contract="RB2605",
+        expected_daily_endpoints=((first.bar_end, first.trading_day),),
+        daily_bars=(), price_unavailable=(fact,), daily_revision_sha256="c" * 64,
+    ).interruption
+    assert gap is not None
+    fake.actual[BarFrequency.W1] = (last,)
+    fake.physical[("RB2605", BarFrequency.W1)] = ()
+    fake.query_actual_dominant_trading_days_quality = lambda request: (
+        fake.query_actual_dominant_trading_days(request), (("RB2605", gap),),
+    )
+    fake.query_contract_weekly_replay_quality = lambda **kwargs: (
+        tuple(bar for bar in fake.physical.get((kwargs["contract"], BarFrequency.W1), ())
+              if bar.bar_end <= kwargs["cutoff"]),
+        (gap,) if kwargs["contract"] == "RB2605" and gap.bar_end <= kwargs["cutoff"] else (),
+    )
+    expected = reader.load(query, fake.as_of)
+    _bounded_stream_fixture(fake, monkeypatch, quality=(gap,))
+    bounded = reader.load_historical(query, fake.as_of)
+    try:
+        _assert_bounded_read_equal(expected, bounded)
+        assert len(bounded.semantic_gap_hashes) == 1
+        with pytest.raises(NewowProductReadError, match="NEWOW_SEMANTIC_QUALITY_PROOF_MISSING"):
+            _ = replace(
+                bounded,
+                semantic_gap_hashes_by_frequency={ProductFrequency.WEEKLY: (None,)},
+            ).semantic_gap_hashes
+    finally:
+        bounded.close()
+
+
+def test_semantic_quality_gap_binds_owner_and_policy_without_transport_identity():
+    owner = ResolvedContractSegment("RB2605", date(2026, 9, 7), date(2026, 9, 11))
+    fact = PriceUnavailableFact(
+        datetime(2026, 9, 9, 7, tzinfo=UTC), date(2026, 9, 9),
+        Decimal(0), Decimal(0), Decimal(0), Decimal(10),
+        Decimal(1), Decimal(0), None,
+        "a" * 64, "b" * 64, datetime(2026, 9, 9, 8, tzinfo=UTC),
+    )
+    def digest(current_owner, policy, current_fact):
+        return _semantic_quality_gap_sha256(
+            "rb", ProductFrequency.DAILY, current_owner, "owner-segment",
+            policy, current_fact,
+        )
+
+    baseline = digest(owner, InputQualityPolicy.V1, fact)
+    assert baseline is not None
+    assert baseline == digest(
+        replace(owner, end_trading_day=date(2026, 9, 18)),
+        InputQualityPolicy.V1,
+        replace(fact, request_sha256="c" * 64, response_sha256="d" * 64),
+    )
+    assert baseline != digest(
+        replace(owner, start_trading_day=date(2026, 9, 8)),
+        InputQualityPolicy.V1, fact,
+    )
+    assert baseline != digest(owner, InputQualityPolicy.DAILY_V2, fact)
 
 
 def test_reader_source_digest_changes_when_only_turnover_changes(product_cases):

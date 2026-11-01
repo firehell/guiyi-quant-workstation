@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 import json
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 
 from app.db.base import Base
@@ -23,6 +23,7 @@ from app.reference_trading.receiving_handover import (
     seal_receiving_backlog,
 )
 from app.reference_trading.receiving_liveness import (
+    ReceivingCycleStale,
     ReceivingLivenessError,
     snapshot_receiving,
     prove_receiving_liveness,
@@ -401,6 +402,40 @@ def test_budget_failure_does_not_mutate_protocol_ack_or_rows(tmp_path):
     assert (protocol.path.read_bytes(), journal.redis.values) == before
 
 
+def test_payload_free_control_abort_preserves_rollback(tmp_path):
+    from app.reference_trading.receiving_liveness import ReceivingControlAbort
+
+    factory, protocol, journal, _, _, _, sample = _setup(tmp_path)
+    before = protocol.path.read_bytes(), deepcopy(journal.redis.values)
+    calls = [0]
+
+    def abort_on_third_check():
+        calls[0] += 1
+        if calls[0] == 3:
+            raise ReceivingControlAbort
+
+    with pytest.raises(ReceivingControlAbort):
+        sample(check_budget=abort_on_third_check)
+    assert calls == [3]
+    assert (protocol.path.read_bytes(), journal.redis.values) == before
+    with factory() as session:
+        assert session.scalar(text("PRAGMA query_only")) == 0
+
+
+def test_source_cohort_error_is_still_redacted(tmp_path, monkeypatch):
+    from app.reference_trading import receiving_liveness as liveness
+    from app.runtime_cohort import CohortError
+
+    _, _, _, _, _, _, sample = _setup(tmp_path)
+
+    def source_failure(*_args, **_kwargs):
+        raise CohortError("COHORT_FORWARD_DEADLINE_EXCEEDED")
+
+    monkeypatch.setattr(liveness, "_authority", source_failure)
+    with pytest.raises(ReceivingLivenessError, match="REFERENCE_RECEIVING_LIVENESS_UNPROVEN"):
+        sample()
+
+
 def _append(journal, identifier):
     from dataclasses import replace
 
@@ -708,6 +743,7 @@ def test_resigned_invalid_frontier_is_never_idle_authority(tmp_path, field):
 
 def test_expired_continuity_is_not_a_liveness_proof(tmp_path):
     from app.reference_trading.receiving_liveness import (
+        receiving_pair_candidate,
         receiving_sample_is_fresh,
         verify_receiving_continuity,
     )
@@ -720,8 +756,24 @@ def test_expired_continuity_is_not_a_liveness_proof(tmp_path):
     assert not receiving_sample_is_fresh(first, now=now)
     assert receiving_sample_is_fresh(second, now=now)
     assert verify_receiving_continuity(first, second)["advanced_count"] == 1
+    assert receiving_pair_candidate(first, first, second, now=now) == (second, False)
     with pytest.raises(ReceivingLivenessError):
         prove_receiving_liveness(first, second, now=now)
+
+
+def test_bounded_cycles_keep_latest_fresh_after_slow_snapshot(tmp_path):
+    _, _, _, _, _, capture, sample = _setup(tmp_path)
+    before = sample()
+    capture("11-0")
+    after = sample(26)
+    now = NOW + timedelta(seconds=32)
+    from app.reference_trading.receiving_liveness import receiving_sample_is_fresh
+
+    assert not receiving_sample_is_fresh(before, now=now)
+    assert receiving_sample_is_fresh(after, now=now)
+    assert prove_receiving_liveness(before, after, now=now)["advanced_count"] == 1
+    with pytest.raises(ReceivingLivenessError):
+        prove_receiving_liveness(before, after, now=NOW + timedelta(seconds=57))
 
 
 @pytest.mark.parametrize(
@@ -755,3 +807,35 @@ def test_freshness_checks_clock_and_integrity_before_returning_expired(tmp_path)
     first["acknowledged_count"] = 1
     with pytest.raises(ReceivingLivenessError):
         receiving_sample_is_fresh(first, now=NOW + timedelta(seconds=31))
+
+
+def test_owner_cycle_crosses_expiry_only_at_actual_snapshot_sample(tmp_path):
+    factory, protocol, journal, intent, source, _, _ = _setup(tmp_path)
+    owner_at = NOW.isoformat()
+
+    def capture(sampled_at, cycle_at=owner_at):
+        return snapshot_receiving(
+            factory,
+            protocol,
+            journal,
+            intent=intent,
+            source_proof=source,
+            target=TARGET,
+            schema_proof=SCHEMA,
+            sampled_at=sampled_at,
+            owner_cycle_at=cycle_at,
+        )
+
+    assert capture(NOW + timedelta(seconds=29))["owner_cycle_at"] == owner_at
+    with pytest.raises(ReceivingCycleStale, match="REFERENCE_RECEIVING_CYCLE_STALE"):
+        capture(NOW + timedelta(seconds=32))
+
+    for sampled_at, cycle_at in (
+        (NOW - timedelta(seconds=1), owner_at),
+        ("invalid", owner_at),
+        ("", owner_at),
+        (NOW, "invalid"),
+    ):
+        with pytest.raises(ReceivingLivenessError) as error:
+            capture(sampled_at, cycle_at)
+        assert not isinstance(error.value, ReceivingCycleStale)

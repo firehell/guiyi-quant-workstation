@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -8,7 +9,9 @@ from guiyi_quant.newow.page_performance import (
     PageAction,
     PageBar,
     PageSegment,
+    build_page_performance_material,
     compute_page_performance,
+    project_page_performance_material,
 )
 
 ORACLE = json.loads(
@@ -71,7 +74,27 @@ def test_fusion_source_full_projection():
     assert numeric(result["ordinary"]) == numeric(case["terminal"])
 
 
-def test_selected_page_mode_matches_full_result_without_calculating_other_mode():
+@pytest.mark.parametrize("strategy", ("trend", "oscillation", "main_rise"))
+def test_material_json_roundtrip_preserves_oracle_and_window(strategy):
+    case = ORACLE["cases"][0]
+    segment = PageSegment("owner", tuple(map(bar, case["bars"])), True)
+    material = build_page_performance_material([segment], strategy)
+    restored = json.loads(json.dumps(material, sort_keys=True, allow_nan=False))
+    assert restored == material
+    full = project_page_performance_material(restored)
+    for mode in ("ordinary", "ideal"):
+        assert numeric(full[mode]) == numeric(case[mode][strategy])
+    since = case["bars"][len(case["bars"]) // 2]["date"]
+    narrowed = project_page_performance_material(restored, since=since)
+    for mode in ("ordinary", "ideal"):
+        assert numeric(narrowed[mode]) == numeric(case["windows"][mode][strategy])
+        selected = project_page_performance_material(restored, since=since,
+                                                     selected_mode=mode)
+        assert selected[mode] == narrowed[mode]
+        assert ("ideal" if mode == "ordinary" else "ordinary") not in selected
+
+
+def test_selected_page_mode_matches_full_result_without_emitting_other_mode():
     case = ORACLE["fusion_witness"]
     rows = [PageSegment("owner", tuple(map(bar, case["bars"])), True)]
     complete = compute_page_performance(rows, "trend")
@@ -330,6 +353,53 @@ def _window_owner(owner, year, *, eligible=True, open_only=False):
     if not open_only:
         actions += (PageAction(dates[1], "sell", Decimal("105")),)
     return PageSegment(owner, bars, True, actions)
+
+
+@pytest.mark.parametrize("since,through", (
+    (None, None),
+    ("2025-06-01", "2026-01-03"),
+    ("2026-01-03", "2026-01-03"),
+    ("2027-01-01", None),
+))
+def test_material_multiowner_break_and_fusion_window_parity(since, through):
+    # A changed calculation owner is the page kernel's boundary for a proven
+    # quality break. It cannot pair a prior owner's entry with the next one.
+    owners = [
+        _window_owner("same-contract|first-calculation", 2025, open_only=True),
+        _window_owner("same-contract|after-quality-break", 2026),
+    ]
+    material = build_page_performance_material(owners, "fusion", period="1d")
+    restored = json.loads(json.dumps(material, sort_keys=True, allow_nan=False))
+    actual = project_page_performance_material(restored, since=since, through=through)
+    expected = compute_page_performance(owners, "fusion", period="1d",
+                                        since=since, through=through)
+    assert actual == expected
+    for mode in ("ordinary", "ideal"):
+        selected = project_page_performance_material(
+            restored, since=since, through=through, selected_mode=mode,
+        )
+        assert selected[mode] == actual[mode]
+
+
+def test_material_build_cancels_during_long_segment_without_partial_result():
+    rows = tuple(
+        PageBar((datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=index)).isoformat(),
+                Decimal("110"), Decimal("90"), Decimal("100"), True,
+                "2026-01-01")
+        for index in range(300)
+    )
+    checks = 0
+
+    def cancelled():
+        nonlocal checks
+        checks += 1
+        return checks >= 10
+
+    with pytest.raises(ValueError, match="REFERENCE_PAGE_MATERIAL_INTERRUPTED"):
+        build_page_performance_material(
+            [PageSegment("owner", rows, True)], "trend", cancelled=cancelled,
+        )
+    assert checks >= 10
 
 
 @pytest.mark.parametrize("since,through", [

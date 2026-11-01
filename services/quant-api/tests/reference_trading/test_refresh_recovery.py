@@ -6,8 +6,10 @@ import pytest
 
 from app.reference_trading.contracts import CheckpointToken, CommitResult, StoredRevisionState, StoredStream
 from app.reference_trading.historical_refresh import BUDGET, HistoricalRefresh, RefreshStateStore
-from app.reference_trading.planning import HistoricalReferenceRequest, HistoricalStreamRequest, plan_to_dict
-from app.reference_trading.refresh_recovery import recover_pending_source, install_source_recovery
+from app.reference_trading.planning import HistoricalReferenceRequest, HistoricalStreamRequest, canonical_sha256, plan_to_dict
+from app.reference_trading.refresh_recovery import (
+    _plan_wire_shared_manifest, recover_pending_source, install_source_recovery,
+)
 from app.reference_trading.service import HistoricalReferenceService, ResumeToken
 from tests.reference_trading.test_historical_refresh import Planner, Service, route, END
 
@@ -21,10 +23,11 @@ def prepared(tmp_path, *, resume=True):
         {'plan_hash': old.plan_hash, 'stream_id': item.identity.stream_id},
         sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     batch_key = 'seed:' + seed
+    seal_key = 'seed-seal:' + 'c' * 64
     token = CheckpointToken(item.identity.stream_id, 'candidate', 1, 2, 'c' * 64)
     stream = StoredStream(item.identity.stream_id, False, 'old-active', 1, 2, 'STALE_INVALID')
     candidate = StoredRevisionState(stream, 'candidate', 'candidate', old.streams[0].input_manifest,
-        old.streams[0].dependency_digest, token, batch_key, {})
+        old.streams[0].dependency_digest, token, seal_key, {'seed_root_hash': seed})
     active = replace(candidate, revision_id='old-active', revision_status='invalid')
     receipt = CommitResult('committed', 'candidate', 1, 'c' * 64)
     class ReadSession:
@@ -33,7 +36,7 @@ def prepared(tmp_path, *, resume=True):
         def scalar(self, _query): return 1
     repository = SimpleNamespace(_session_factory=ReadSession, read_state=lambda _sid, rid=None: active if rid is None else candidate,
         load_checkpoint=lambda *_: (token, SimpleNamespace(stream=item.identity)),
-        read_batch=lambda *_: receipt)
+        read_batch=lambda _sid, _rid, key: receipt if key == seal_key else None)
     guarded = []
     @contextmanager
     def guard(*_args, **_kwargs):
@@ -78,6 +81,16 @@ def test_exact_dryrun_and_apply_preserve_original_intent_and_candidate(tmp_path,
     assert result['status'] == 'ready' and runner.state.path.read_bytes() == original
     assert not service.calls
     saved = result['recovery']
+    assert saved['version'] == 'reference_refresh_source_recovery_v2'
+    active = service._repository.read_state(item.identity.stream_id)
+    assert saved['readback']['active']['dependency_manifest'] == {
+        'schema': 'reference_manifest_canonical_digest_v1',
+        'canonical_bytes': len(__import__('json').dumps(
+            active.dependency_manifest, sort_keys=True, separators=(',', ':'),
+        ).encode()),
+        'sha256': canonical_sha256(active.dependency_manifest),
+    }
+    assert saved['readback']['active']['source_evidence'] == active.source_evidence
     recover_pending_source(runner, item.identity.stream_id, now=END, apply=True,
                            expected_recovery_sha256=result['recovery_sha256'])
     restored = runner.state.read()['routes'][item.identity.stream_id]
@@ -89,12 +102,101 @@ def test_exact_dryrun_and_apply_preserve_original_intent_and_candidate(tmp_path,
     assert not service.calls  # Installing is NOT execution or candidate deletion.
 
 
+def test_recovery_plan_wire_is_exact_without_copying_manifest(tmp_path):
+    runner, item, _, _ = prepared(tmp_path)
+    raw = runner.state.read_plan(runner.state.read()['routes'][item.identity.stream_id]['plan'])
+    from app.reference_trading.planning import plan_from_dict
+
+    plan = plan_from_dict(raw)
+    shared = _plan_wire_shared_manifest(plan)
+    assert shared == plan_to_dict(plan)
+    assert shared['streams'][0]['input_manifest'] is plan.streams[0].input_manifest
+
+
+def test_recovery_uses_verified_pin_with_exact_new_manifest(tmp_path):
+    runner, item, planner, service = prepared(tmp_path)
+    events = []
+    frozen = planner.plan(HistoricalReferenceRequest('rebuild', (
+        HistoricalStreamRequest(item.identity, item.since, END.date(), END),
+    ), BUDGET)).streams[0]
+
+    @contextmanager
+    def pin(_request, *, expected_manifest, expected_source_token):
+        assert expected_manifest == frozen.input_manifest
+        assert canonical_sha256(expected_manifest) == frozen.dependency_digest
+        assert expected_source_token == frozen.source_token
+        events.append('pin')
+        try:
+            yield
+        finally:
+            events.append('release')
+
+    original_load = service._reader.load_stream
+
+    def load(*args, **kwargs):
+        assert events == ['pin']
+        return original_load(*args, **kwargs)
+
+    service._reader.pin_verified_stream = pin
+    service._reader.load_stream = load
+    assert recover_pending_source(runner, item.identity.stream_id, now=END)['status'] == 'ready'
+    assert events == ['pin', 'release']
+
+
+def test_recovery_legacy_archive_payload_remains_installable(tmp_path):
+    runner, item, _, service = prepared(tmp_path)
+    result = recover_pending_source(runner, item.identity.stream_id, now=END)
+    compact = result['recovery']['readback']
+    legacy_readback = {
+        'active': asdict(service._repository.read_state(item.identity.stream_id)),
+        'active_progress': compact['active_progress'],
+        'candidate': asdict(service._repository.read_state(item.identity.stream_id, 'candidate')),
+        'candidate_progress': compact['candidate_progress'],
+    }
+    legacy = {**result['recovery'], 'version': 'reference_refresh_source_recovery_v1',
+              'readback': legacy_readback,
+              'readback_sha256': canonical_sha256(legacy_readback)}
+    state = runner.state.read()
+    installed = install_source_recovery(runner.state, state, legacy)
+    assert installed.operation == 'rebuild'
+    assert runner.state.read()['routes'][item.identity.stream_id]['status'] == 'pending'
+
+
 def test_unchanged_source_retains_pending_exactly(tmp_path):
     runner, item, planner, _ = prepared(tmp_path)
     planner.source = 'same-source'
     original = runner.state.path.read_bytes()
     assert recover_pending_source(runner, item.identity.stream_id, now=END)['status'] == 'source_unchanged'
     assert runner.state.path.read_bytes() == original
+
+
+def test_source_changed_after_seed_only_cancel_keeps_original_dryrun(tmp_path):
+    runner, item, _, service = prepared(tmp_path, resume=True)
+    original = runner.state.path.read_bytes()
+    old_candidate = service._repository.read_state(item.identity.stream_id, 'candidate')
+    result = recover_pending_source(runner, item.identity.stream_id, now=END)
+    assert result['status'] == 'ready'
+    assert result['recovery']['readback']['candidate_progress']['max_committed_seq'] == 1
+    assert result['recovery']['readback']['candidate']['checkpoint_batch_key'].startswith('seed-seal:')
+    assert runner.state.path.read_bytes() == original
+    assert service._repository.read_state(item.identity.stream_id, 'candidate') == old_candidate
+    assert not service.calls
+    assert not list(tmp_path.glob('*.recovery-*'))
+
+
+def test_seed_only_claim_with_changed_root_blocks_without_archive(tmp_path):
+    runner, item, _, service = prepared(tmp_path, resume=True)
+    old_candidate = service._repository.read_state(item.identity.stream_id, 'candidate')
+    broken = replace(old_candidate, source_evidence={'seed_root_hash': '0' * 64})
+    original_read = service._repository.read_state
+    service._repository.read_state = lambda stream_id, revision_id=None: (
+        broken if revision_id == 'candidate' else original_read(stream_id, revision_id)
+    )
+    original = runner.state.path.read_bytes()
+    with pytest.raises(ValueError, match='READBACK_REQUIRED'):
+        recover_pending_source(runner, item.identity.stream_id, now=END)
+    assert runner.state.path.read_bytes() == original
+    assert not list(tmp_path.glob('*.recovery-*'))
 
 
 @pytest.mark.parametrize('status,reason', [('inflight', 'INTERRUPTED'), ('pending', 'COMMIT_OUTCOME_UNKNOWN'),

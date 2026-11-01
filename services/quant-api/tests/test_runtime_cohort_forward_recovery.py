@@ -2,7 +2,7 @@
 
 from contextlib import nullcontext
 from copy import deepcopy
-from datetime import timedelta
+from datetime import datetime, timedelta
 from hashlib import sha256
 import json
 
@@ -230,12 +230,139 @@ def test_slow_fresh_audit_cannot_cross_budget_then_resume(tmp_path):
     assert host.calls == []
 
 
+def test_full_plan_validation_does_not_scale_with_budget_callbacks(
+    tmp_path, monkeypatch,
+):
+    prepared = []
+    for callback_count in (10, 1000):
+        directory = tmp_path / str(callback_count)
+        directory.mkdir(mode=0o700)
+        host, _, source_path, _, _, audit = fixture(directory)
+        target = directory / "recovery.json"
+        _write(target, module().freeze_forward_recovery(host, source_path))
+
+        def audit_with_callbacks(
+            _source, check_budget, *, count=callback_count, proof=audit, **_kwargs
+        ):
+            for _ in range(count):
+                check_budget()
+            return deepcopy(proof)
+
+        host.audit_forward = audit_with_callbacks
+        prepared.append((host, target))
+
+    validate = module()._validate
+    calls = [0]
+
+    def counted(*args, **kwargs):
+        calls[0] += 1
+        return validate(*args, **kwargs)
+
+    monkeypatch.setattr(module(), "_validate", counted)
+    totals = []
+    for host, target in prepared:
+        before = calls[0]
+        assert module().apply_forward_recovery(host, target)["status"] == "recovered"
+        totals.append(calls[0] - before)
+    assert totals[0] == totals[1]
+    assert 1 < totals[0] < 30
+
+
+def test_action_plan_mutation_is_rejected_before_next_stage(tmp_path, monkeypatch):
+    host, _, source_path, _, _, _ = fixture(tmp_path)
+    target = tmp_path / "recovery.json"
+    frozen = module().freeze_forward_recovery(host, source_path)
+    _write(target, frozen)
+    resolution_source = module()._resolution_source
+    captured = {}
+
+    def capture(path):
+        raw, value = resolution_source(path)
+        if path == target:
+            captured["plan"] = value
+        return raw, value
+
+    monkeypatch.setattr(module(), "_resolution_source", capture)
+
+    def mutate(_source, _audit, check_budget):
+        check_budget()
+        host.calls.append("consumers")
+        captured["plan"]["audit"]["controller"]["tag"] = "changed"
+        return {"resumed": True}
+
+    host.resume_consumers = mutate
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    assert host.calls == ["consumers", "halt"]
+    state_path = (
+        host.directory
+        / "cohort-forward-recoveries"
+        / frozen["plan_sha256"]
+        / "state.json"
+    )
+    state = json.loads(state_path.read_bytes())
+    assert state["error_code"] == "COHORT_FORWARD_PLAN_INVALID"
+    assert state["failed_stage"] == "consumers"
+
+
+@pytest.mark.parametrize(
+    ("clock", "error_code"),
+    (
+        ("wall", "COHORT_FORWARD_PLAN_EXPIRED"),
+        ("monotonic", "COHORT_FORWARD_DEADLINE_EXCEEDED"),
+    ),
+)
+def test_hot_budget_still_aborts_mid_action_at_original_limits(
+    tmp_path, clock, error_code
+):
+    host, _, source_path, _, _, _ = fixture(tmp_path)
+    target = tmp_path / "recovery.json"
+    frozen = module().freeze_forward_recovery(host, source_path)
+    _write(target, frozen)
+    expires = datetime.fromisoformat(frozen["expires_at"])
+    ticks = [0.0]
+    host.monotonic = lambda: ticks[0]
+
+    def cross_limit(_source, _audit, check_budget):
+        check_budget()
+        host.calls.append("consumers")
+        if clock == "wall":
+            host.now = lambda: expires
+        else:
+            ticks[0] = 600.0
+        check_budget()
+        return {"resumed": True}
+
+    host.resume_consumers = cross_limit
+    with pytest.raises(ValueError, match="FORWARD_OUTCOME_UNKNOWN"):
+        module().apply_forward_recovery(host, target)
+    assert host.calls == ["consumers", "halt"]
+    state_path = (
+        host.directory
+        / "cohort-forward-recoveries"
+        / frozen["plan_sha256"]
+        / "state.json"
+    )
+    state = json.loads(state_path.read_bytes())
+    assert state["error_code"] == error_code
+    assert state["failed_stage"] == "consumers"
+
+
 def native(tmp_path):
     from app.runtime_cohort_recovery import ForwardRecoveryHost
 
     host = ForwardRecoveryHost()
     host.directory = tmp_path
     return host
+
+
+def bounded_window(host, proof=None):
+    value = {} if proof is None else proof
+
+    def read(*, with_valid_until=False):
+        return (value, host.now() + timedelta(seconds=60)) if with_valid_until else value
+
+    return read
 
 
 def test_native_parked_proof_requires_actual_matching_pid_and_free_lock(
@@ -347,6 +474,61 @@ def test_samegen_startup_accepts_authoritative_current_day_without_promotion_res
     )
     assert result["mode"] == "same_generation_startup"
     assert result["registered_trading_day"] == date.isoformat(day)
+
+
+def test_bounded_startup_window_preserves_proof_and_stops_at_session_end(tmp_path):
+    from types import SimpleNamespace
+    from app.market_data.market_phase import MarketPhase
+
+    now = Host(tmp_path).now()
+    day = now.date()
+    session = SimpleNamespace(
+        start=now - timedelta(minutes=1), end=now + timedelta(seconds=1)
+    )
+    phase = SimpleNamespace(
+        symbol="rb", phase=MarketPhase.TRADING, trading_day=day,
+        current_session=session, next_session_start=None,
+    )
+    kwargs = dict(
+        now=now, products=("rb",),
+        resolver=SimpleNamespace(resolve=lambda *_: phase),
+        registered_day=day, subscriptions={"rb": "RB2701"},
+        dominant=lambda *_: "RB2701", sessions=lambda *_: (session,),
+    )
+    proof = module().prove_same_generation_startup(**kwargs)
+    bounded, valid_until = module().prove_same_generation_startup(
+        **kwargs, with_valid_until=True,
+    )
+    assert bounded == proof
+    assert valid_until == session.end
+
+
+@pytest.mark.parametrize("hour", (6, 18))
+def test_bounded_startup_window_stops_at_missing_calendar_threshold(hour):
+    from datetime import datetime
+    from types import SimpleNamespace
+    from zoneinfo import ZoneInfo
+    from app.market_data.market_phase import MarketPhase
+
+    zone = ZoneInfo("Asia/Shanghai")
+    now = datetime(2026, 10, 30, hour - 1, 59, 59, 500000, tzinfo=zone)
+    day = now.date()
+    session = SimpleNamespace(
+        start=now.replace(hour=0), end=now.replace(hour=1),
+    )
+    phase = SimpleNamespace(
+        symbol="rb", phase=MarketPhase.CLOSED, trading_day=day,
+        current_session=None, next_session_start=None,
+    )
+    proof, valid_until = module().prove_same_generation_startup(
+        now=now, products=("rb",),
+        resolver=SimpleNamespace(resolve=lambda *_: phase),
+        registered_day=day, subscriptions={"rb": "RB2701"},
+        dominant=lambda *_: "RB2701", sessions=lambda *_: (session,),
+        with_valid_until=True,
+    )
+    assert proof["phases"] == {"rb": "CLOSED"}
+    assert valid_until == now.replace(hour=hour, minute=0, second=0, microsecond=0)
 
 
 @pytest.mark.parametrize(
@@ -570,15 +752,15 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
 ):
     from app import runtime_cohort_recovery as m
     import app.reference_trading.receiving_liveness as liveness
+    from tests.reference_trading.test_receiving_liveness import NOW
 
     host, source, _, _, _, _ = fixture(tmp_path)
     current = native(host.directory)
     current.now = host.now
     current.monotonic = lambda: 0.0
-    current.recovery_window = lambda: {
-        "mode": "same_generation_startup",
-        "closed_idle": False,
-    }
+    current.recovery_window = bounded_window(
+        current, {"mode": "same_generation_startup", "closed_idle": False}
+    )
     current._active = lambda binding: {
         "phase": "active",
         "ready": True,
@@ -593,7 +775,9 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
 
     def snapshot(*args, **kwargs):
         count[0] += 1
-        return {"owner_cycle_at": str(count[0])}
+        return {
+            "owner_cycle_at": (NOW + timedelta(seconds=count[0])).isoformat()
+        }
 
     current._snapshot = snapshot
     current._fixed = lambda *args: None
@@ -1624,13 +1808,14 @@ def test_intake_halt_rejects_any_prefix_or_unresolved_ambiguity(tmp_path, mutati
 
 def await_intake_case(tmp_path, monkeypatch):
     import app.reference_trading.receiving_liveness as liveness
+    from tests.reference_trading.test_receiving_liveness import NOW
 
     m = module()
     host, source, _, _, _, _ = fixture(tmp_path)
     current = native(host.directory)
     current.now = host.now
     current.monotonic = lambda: 0.0
-    current.recovery_window = lambda: {"closed_idle": False}
+    current.recovery_window = bounded_window(current, {"closed_idle": False})
     current._active = lambda binding: {
         "ready": True,
         "proof": {
@@ -1643,7 +1828,10 @@ def await_intake_case(tmp_path, monkeypatch):
 
     def sample(*args, **kwargs):
         count[0] += 1
-        return {"owner_cycle_at": str(count[0]), "sequence": count[0]}
+        return {
+            "owner_cycle_at": (NOW + timedelta(seconds=count[0])).isoformat(),
+            "sequence": count[0],
+        }
 
     current._snapshot = sample
     current._fixed = lambda *args: None
@@ -1907,7 +2095,7 @@ def timed_receiving_case(
     samples = []
     current.monotonic = lambda: elapsed[0]
     current.now = lambda: NOW + timedelta(seconds=elapsed[0])
-    current.recovery_window = lambda: {}
+    current.recovery_window = bounded_window(current)
     current._active = lambda binding: {
         "ready": True,
         "proof": {
@@ -1950,6 +2138,48 @@ def timed_receiving_case(
     return current, source, {"receiving_context": context}, samples
 
 
+def test_native_snapshot_preserves_only_its_trusted_budget_abort(
+    tmp_path, monkeypatch
+):
+    from types import SimpleNamespace
+    from app.reference_trading import receiving_liveness as liveness
+
+    host, source, _, _, _, _ = fixture(tmp_path)
+    current = native(host.directory)
+    current.now = host.now
+    current._reference_receiving_context = lambda _target: nullcontext(
+        (SimpleNamespace(read=lambda: {"status": "active", "intake_error": None}),
+         object(), object(), None)
+    )
+    source["reference_receiving_handover"] = {}
+    attempt = host.directory / "cohort-attempts" / source["plan_sha256"]
+    _, original = module()._resolution_source(attempt / "state.json")
+    original["effects"]["drain"]["reference_receiving_handover"] = {}
+    _write(attempt / "state.json", original)
+    calls = [0]
+
+    def budget():
+        calls[0] += 1
+        if calls[0] == 4:  # Third callback inside snapshot_receiving.
+            raise module().CohortError("COHORT_FORWARD_DEADLINE_EXCEEDED")
+
+    def aborted_snapshot(*_args, check_budget, **_kwargs):
+        for _ in range(3):
+            check_budget()
+
+    monkeypatch.setattr(liveness, "snapshot_receiving", aborted_snapshot)
+    with pytest.raises(ValueError, match="COHORT_FORWARD_DEADLINE_EXCEEDED"):
+        current._snapshot(source, budget, state={"at": host.now().isoformat()})
+    assert calls == [4]
+
+    monkeypatch.setattr(
+        liveness, "snapshot_receiving",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(liveness.ReceivingControlAbort()),
+    )
+    with pytest.raises(ValueError, match="REFERENCE_RECEIVING_LIVENESS_UNPROVEN"):
+        current._snapshot(source, lambda: None, state={"at": host.now().isoformat()})
+
+
 @pytest.mark.parametrize("feed", [False, True])
 def test_old_sample_rolls_only_after_continuity_then_two_fresh_cycles_prove_liveness(
     tmp_path, monkeypatch, feed
@@ -1960,6 +2190,114 @@ def test_old_sample_rolls_only_after_continuity_then_two_fresh_cycles_prove_live
     assert proof["before_sha256"] == samples[1]["snapshot_sha256"]
     assert proof["after_sha256"] == samples[2]["snapshot_sha256"]
     assert len(samples) == 3
+
+
+def test_await_accepts_26_second_cycles_after_six_second_snapshot(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 26)
+    )
+    snapshot = current._snapshot
+
+    def slow_snapshot(*args, **kwargs):
+        value = snapshot(*args, **kwargs)
+        if len(samples) == 2:
+            current.now = lambda: NOW + timedelta(seconds=32)
+        return value
+
+    current._snapshot = slow_snapshot
+    proof = current.await_consumers(source, audit, lambda: None)
+    assert proof["advanced_count"] == 1
+    assert proof["before_sha256"] == samples[0]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+
+
+def test_await_samples_live_ready_before_expensive_session_proof(
+    tmp_path, monkeypatch
+):
+    current, source, audit, _samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    active = current._active
+    live_reads = [0]
+    session_reads = []
+
+    def transient_live(binding):
+        state = active(binding)
+        if binding.service == "live":
+            live_reads[0] += 1
+            if live_reads[0] == 1:
+                state["ready"] = False
+        return state
+
+    def session_proof(*, with_valid_until=False):
+        session_reads.append(live_reads[0])
+        assert live_reads[0] >= 2
+        value = {}
+        return (value, current.now() + timedelta(seconds=60)) if with_valid_until else value
+
+    current._active = transient_live
+    current.recovery_window = session_proof
+    proof = current.await_consumers(source, audit, lambda: None)
+    assert proof["advanced_count"] == 1
+    assert session_reads == [3]
+    assert live_reads[0] == 5  # One transient miss, two samples, two final reads.
+
+
+def test_transient_final_live_poll_reuses_verified_candidate(
+    tmp_path, monkeypatch
+):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    active = current._active
+    live_reads = [0]
+    session_reads = [0]
+
+    def transient_live(binding):
+        state = active(binding)
+        if binding.service == "live":
+            live_reads[0] += 1
+            if live_reads[0] == 3:
+                state["ready"] = False  # First candidate's final owner check.
+        return state
+
+    current._active = transient_live
+    def session_proof(*, with_valid_until=False):
+        session_reads[0] += 1
+        value = {}
+        return (value, current.now() + timedelta(seconds=60)) if with_valid_until else value
+
+    current.recovery_window = session_proof
+    proof = current.await_consumers(source, audit, lambda: None)
+    assert proof["before_sha256"] == samples[0]["snapshot_sha256"]
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+    assert session_reads == [1]
+    assert live_reads == [5]
+
+
+def test_session_boundary_drops_candidate_before_full_resample(
+    tmp_path, monkeypatch
+):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1, 2)
+    )
+    windows = [0]
+
+    def session_proof(*, with_valid_until=False):
+        windows[0] += 1
+        proof = {}
+        valid_until = current.now() if windows[0] == 1 else current.now() + timedelta(seconds=60)
+        return (proof, valid_until) if with_valid_until else proof
+
+    current.recovery_window = session_proof
+    result = current.await_consumers(source, audit, lambda: None)
+    assert result["after_sha256"] == samples[2]["snapshot_sha256"]
+    assert len(samples) == 3
+    assert windows == [2]
 
 
 def test_sample_expiry_never_erases_an_ack_regression(tmp_path, monkeypatch):

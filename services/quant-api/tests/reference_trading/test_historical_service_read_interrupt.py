@@ -12,11 +12,35 @@ from app.reference_trading.service import ResumeToken
 from tests.reference_trading.test_historical_refresh import Planner, END, route
 
 
+def changed_prefix_rebuild_state():
+    """An active v4 revision and a v5 snapshot with changed first-bar OHLC."""
+    from app.reference_trading.service import _rebuild_preserves_active_prefix
+    from tests.reference_trading.test_rebuild_active_prefix import _FormatReader, _plan
+
+    reader = _FormatReader()
+    request = _plan(reader, 'rebuild').streams[0].request
+    old = reader._snapshot(request)
+    reader.reader_version = 5
+    unchanged = reader._snapshot(request)
+    reader.changed_price = True
+    changed = reader._snapshot(request)
+    assert old.bars[0].fingerprint != changed.bars[0].fingerprint
+    current = SimpleNamespace(
+        revision_id='old', revision_status='active',
+        stream=SimpleNamespace(active_revision_id='old', row_version=1),
+        dependency_manifest=old.dependency_manifest,
+    )
+    assert _rebuild_preserves_active_prefix(current, unchanged)
+    assert not _rebuild_preserves_active_prefix(current, changed)
+    return current, changed
+
+
 def prepared(operation, *, cancel_stage=None, error_type=NewowProductReadCancelled):
     item = route()
     plan = Planner().plan(HistoricalReferenceRequest(operation, (HistoricalStreamRequest(
         item.identity, item.since, END.date(), END),), BUDGET))
     effects = []
+    current, changed = changed_prefix_rebuild_state() if operation == 'rebuild' and cancel_stage is None else (None, None)
     @contextmanager
     def pin(_request):
         effects.append('pin')
@@ -30,12 +54,12 @@ def prepared(operation, *, cancel_stage=None, error_type=NewowProductReadCancell
         effects.append('load')
         if cancel_stage == 'load':
             raise error_type('NEWOW_READ_CANCELLED')
-        return object()
+        return changed if changed is not None else object()
     service = HistoricalReferenceService.__new__(HistoricalReferenceService)
     service._clock = lambda: 0
     service._reader = SimpleNamespace(pin_stream=pin, load_stream=load)
     service._repository = SimpleNamespace(
-        read_state=lambda _: SimpleNamespace(revision_id='old', stream=SimpleNamespace(row_version=1)),
+        read_state=lambda _: current,
         invalidate_revision=lambda *_: effects.append('invalidate'))
     service._snapshot_matches = lambda *_: True
     def build(*_args, **_kwargs):

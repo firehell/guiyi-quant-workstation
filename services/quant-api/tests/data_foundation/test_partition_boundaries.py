@@ -85,6 +85,13 @@ def test_d1_all_exception_month_uses_real_authority_boundary(authority):
     assert published.source_quality == (fact,)
     assert PriceUnavailableFact.from_record(fact.to_record()) == fact
     assert fact.to_record()["classification_version"] == "rqdata-d1-zero-ohl-v1"
+    assert tuple(store.iter_catalog_partition_quality_chunks(
+        replace(_partition(published), source_quality=(fact,),
+                source_quality_sha256=published.source_quality_sha256,
+                source_coverage_start=published.source_coverage_start,
+                source_coverage_end=published.source_coverage_end),
+        max_rows=1,
+    )) == ()
 
 
 def test_d1_all_exception_month_uses_production_composition(authority):

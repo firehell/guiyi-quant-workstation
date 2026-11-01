@@ -3,6 +3,8 @@
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
+from hashlib import sha256
+import json
 
 from sqlalchemy import select
 
@@ -24,12 +26,29 @@ from app.reference_trading.original_conflict_warm_seed import (
 )
 from app.reference_trading.inputs import HistoricalInputSnapshot
 from app.reference_trading.planning import HistoricalStreamRequest, _canonical_identity
-from app.reference_trading.repository import _identity_from_row
+from app.reference_trading.repository import _identity_from_row, _wire
 from app.reference_trading.retained_observation_authority import read_retained_interval
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_contracts import ProductBar
 
 BASES = frozenset(("newow_trend", "newow_oscillation", "newow_main_rise"))
+
+
+def _hash_rows(rows):
+    """Same canonical list hash as _hash without materializing the whole list."""
+    digest = sha256()
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+                               allow_nan=False)
+    digest.update(b"[")
+    first = True
+    for row in rows:
+        if not first:
+            digest.update(b",")
+        first = False
+        for part in encoder.iterencode(_wire(row)):
+            digest.update(part.encode())
+    digest.update(b"]")
+    return digest.hexdigest()
 
 
 class RetainedWarmSourceLoader:
@@ -116,188 +135,22 @@ class RetainedWarmSourceLoader:
             datetime.fromisoformat(saved["query_as_of"]),
         )
         snapshot = self.reader.plan_stream(request)
-        interval_owner, transition = self._interval_owner(identity, cp, saved)
-        # Prove full suffix through the future boundary using the baseline's actual
-        # physical contract. A different current owner cannot make this pass.
-        ends = self.authority.expected_endpoints(
-            identity,
-            interval_owner[0],
-            self.day,
-            cp.computed_through,
-            self.start - timedelta(microseconds=1),
-        )
-        require(
-            transition is None or bool(ends),
-            "RETAINED_OWNER_TRANSITION_NEW_INPUT_REQUIRED",
-        )
-        originals = read_retained_interval(
-            self.journal,
-            product=identity.product,
-            day=self.day,
-            after=cp.computed_through,
-            before=self.start,
-            expected_endpoints=ends,
-            knowledge_at=self.known,
-        )
-        metadata = self.market.historical_metadata_evidence(
-            symbol=identity.product, since=cp.computed_through.date(), through=self.day
-        )
-        baseline_proof = {
-            "kind": "canonical_baseline",
-            "stream_id": identity.stream_id,
-            "input_sha256": snapshot.dependency_manifest["input_sha256"],
-            "input_count": len(snapshot.bars),
-            "source_evidence_sha256": snapshot.dependency_manifest[
-                "source_evidence_sha256"
-            ],
-            "computed_through": snapshot.completed_through.isoformat(),
-            "range_sha256": _hash(snapshot.bars),
-            "physical_sha256": _hash(
-                [
-                    (
-                        b.physical_contract,
-                        b.owner_segment_id,
-                        b.calculation_segment_id,
-                        b.bar_end.isoformat(),
-                    )
-                    for b in snapshot.bars
-                ]
-            ),
-            "session_sha256": _hash(
-                snapshot.dependency_manifest.get(
-                    "calendar_session_effective_fingerprints"
-                )
-            ),
-            "quality_sha256": _hash(snapshot.dependency_manifest),
-        }
-        inputs, proofs = [], {}
-        previous = cp.computed_through
-        previous_owner = (
-            cp.physical_contract,
-            cp.owner_segment_id,
-            cp.calculation_segment_id,
-        )
-        for original, original_proof in originals:
-            capture = capture_newow_envelope(
-                original,
-                identity,
-                revision_id=binding["revision_id"],
-                generation=1,
-                after=previous,
-                now=original.confirmed_at,
-                owner_segments=self.authority.owner_segments,
-                expected_endpoints=self.authority.expected_endpoints,
-                capability_ready=self.capability_ready,
-            )
-            require(capture is not None, "WARM_SEED_INPUT_INVALID")
-            payload, source = capture.input_payload, capture.source_proof
-            owner = (
-                payload["contract"],
-                source["owner_segment_id"],
-                source["calculation_segment_id"],
-            )
-            require(
-                owner == interval_owner,
-                "WARM_SEED_OWNER_BOUNDARY_REQUIRED",
-            )
-            raw = payload["bar"]
-            bar = ProductBar(
-                NewowDailyBar(
-                    identity.product,
-                    owner[0],
-                    owner[1],
-                    original.trading_day,
-                    capture.bar_end,
-                    Decimal(raw["open"]),
-                    Decimal(raw["high"]),
-                    Decimal(raw["low"]),
-                    Decimal(raw["close"]),
-                    _whole_number(raw["volume"]),
-                    None
-                    if raw["open_interest"] is None
-                    else _whole_number(raw["open_interest"]),
-                    payload["source_identity"],
-                    True,
-                    True,
-                ),
-                identity.frequency,
-                calculation_segment_id=owner[2],
-                source_bar_sha256=payload["source_bar_sha256"],
-            )
-            item = WarmInput(bar, "completed_live", original.confirmed_at, {})
-            proof = {
-                **_input_facts(item),
-                **original_proof,
-                "expected_endpoint": capture.bar_end.isoformat(),
-                "previous_watermark": previous.isoformat(),
-                "expected_endpoints": [capture.bar_end.isoformat()],
-                "source_manifest_sha256": _hash(source),
-                "owner_sha256": _hash(owner),
-                "session_sha256": _hash(metadata),
-                "quality_sha256": _hash({"validated_capture": capture.input_payload}),
-                "rollover": owner != previous_owner,
-            }
-            if transition is not None:
-                proof["owner_transition"] = transition
-            inputs.append(replace(item, source_proof=proof))
-            proofs[capture.bar_end] = proof
-            previous = capture.bar_end
-            previous_owner = owner
-        cutoff = previous
-        require(
-            not self.authority.expected_endpoints(
+        try:
+            interval_owner, transition = self._interval_owner(identity, cp, saved)
+            # Prove full suffix through the future boundary using the baseline's actual
+            # physical contract. A different current owner cannot make this pass.
+            ends = self.authority.expected_endpoints(
                 identity,
                 interval_owner[0],
                 self.day,
-                cutoff,
+                cp.computed_through,
                 self.start - timedelta(microseconds=1),
-            ),
-            "WARM_SEED_FINAL_FRONTIER_INCOMPLETE",
-        )
-        interval = {
-            "kind": "completed_warm_interval" if inputs else "completed_empty_interval",
-            "stream_id": identity.stream_id,
-            "previous_watermark": cp.computed_through.isoformat(),
-            "cutoff": cutoff.isoformat(),
-            "recording_start": self.start.isoformat(),
-            "knowledge_at": self.known.isoformat(),
-            "stage": "final_observation",
-            "physical_contract": cp.physical_contract,
-            "owner_segment_id": cp.owner_segment_id,
-            "calculation_segment_id": cp.calculation_segment_id,
-            "expected_endpoints": [end.isoformat() for end in ends],
-            "computed_through": cutoff.isoformat(),
-            "remaining_endpoints_before_start": [],
-            "session_sha256": _hash(metadata),
-            "owner_sha256": _hash(
-                (cp.physical_contract, cp.owner_segment_id, cp.calculation_segment_id)
-            ),
-            "quality_sha256": _hash(
-                [proof["quality_sha256"] for proof in proofs.values()]
-            ),
-        }
-
-        def verify(value):
-            self.assert_fenced()
-            if isinstance(value, HistoricalInputSnapshot):
-                return baseline_proof
-            if isinstance(value, WarmInterval):
-                return interval
-            require(isinstance(value, WarmInput), "WARM_SEED_INPUT_AUTHORITY_INVALID")
-            return proofs[value.product_bar.bar.bar_end]
-
-        result = materialize_retained_warm_seed(
-            WarmBaseline(identity, cp, schema, saved, binding),
-            fresh_snapshot=snapshot,
-            inputs=tuple(inputs),
-            expected_endpoints=ends,
-            recording_start=self.start,
-            cutoff=cutoff,
-            knowledge_at=self.known,
-            verify_authority=verify,
-        )
-        require(
-            read_retained_interval(
+            )
+            require(
+                transition is None or bool(ends),
+                "RETAINED_OWNER_TRANSITION_NEW_INPUT_REQUIRED",
+            )
+            originals = read_retained_interval(
                 self.journal,
                 product=identity.product,
                 day=self.day,
@@ -306,21 +159,192 @@ class RetainedWarmSourceLoader:
                 expected_endpoints=ends,
                 knowledge_at=self.known,
             )
-            == originals,
-            "WARM_SEED_SOURCE_DRIFT",
-        )
-        require(
-            self.reader.revalidate(
-                request, expected_source_token=snapshot.source_token
-            ),
-            "WARM_SEED_BASELINE_DRIFT",
-        )
-        require(
-            self._interval_owner(identity, cp, saved) == (interval_owner, transition),
-            "WARM_SEED_OWNER_TRANSITION_DRIFT",
-        )
-        self.assert_fenced()
-        return result
+            metadata = self.market.historical_metadata_evidence(
+                symbol=identity.product, since=cp.computed_through.date(), through=self.day
+            )
+            baseline_proof = {
+                "kind": "canonical_baseline",
+                "stream_id": identity.stream_id,
+                "input_sha256": snapshot.dependency_manifest["input_sha256"],
+                "input_count": len(snapshot.bars),
+                "source_evidence_sha256": snapshot.dependency_manifest[
+                    "source_evidence_sha256"
+                ],
+                "computed_through": snapshot.completed_through.isoformat(),
+                "range_sha256": _hash_rows(snapshot.bars),
+                "physical_sha256": _hash_rows(
+                    (
+                        (
+                            b.physical_contract,
+                            b.owner_segment_id,
+                            b.calculation_segment_id,
+                            b.bar_end.isoformat(),
+                        )
+                        for b in snapshot.bars
+                    )
+                ),
+                "session_sha256": _hash(
+                    snapshot.dependency_manifest.get(
+                        "calendar_session_effective_fingerprints"
+                    )
+                ),
+                "quality_sha256": _hash(snapshot.dependency_manifest),
+            }
+            inputs, proofs = [], {}
+            previous = cp.computed_through
+            previous_owner = (
+                cp.physical_contract,
+                cp.owner_segment_id,
+                cp.calculation_segment_id,
+            )
+            for original, original_proof in originals:
+                capture = capture_newow_envelope(
+                    original,
+                    identity,
+                    revision_id=binding["revision_id"],
+                    generation=1,
+                    after=previous,
+                    now=original.confirmed_at,
+                    owner_segments=self.authority.owner_segments,
+                    expected_endpoints=self.authority.expected_endpoints,
+                    capability_ready=self.capability_ready,
+                )
+                require(capture is not None, "WARM_SEED_INPUT_INVALID")
+                payload, source = capture.input_payload, capture.source_proof
+                owner = (
+                    payload["contract"],
+                    source["owner_segment_id"],
+                    source["calculation_segment_id"],
+                )
+                require(
+                    owner == interval_owner,
+                    "WARM_SEED_OWNER_BOUNDARY_REQUIRED",
+                )
+                raw = payload["bar"]
+                bar = ProductBar(
+                    NewowDailyBar(
+                        identity.product,
+                        owner[0],
+                        owner[1],
+                        original.trading_day,
+                        capture.bar_end,
+                        Decimal(raw["open"]),
+                        Decimal(raw["high"]),
+                        Decimal(raw["low"]),
+                        Decimal(raw["close"]),
+                        _whole_number(raw["volume"]),
+                        None
+                        if raw["open_interest"] is None
+                        else _whole_number(raw["open_interest"]),
+                        payload["source_identity"],
+                        True,
+                        True,
+                    ),
+                    identity.frequency,
+                    calculation_segment_id=owner[2],
+                    source_bar_sha256=payload["source_bar_sha256"],
+                )
+                item = WarmInput(bar, "completed_live", original.confirmed_at, {})
+                proof = {
+                    **_input_facts(item),
+                    **original_proof,
+                    "expected_endpoint": capture.bar_end.isoformat(),
+                    "previous_watermark": previous.isoformat(),
+                    "expected_endpoints": [capture.bar_end.isoformat()],
+                    "source_manifest_sha256": _hash(source),
+                    "owner_sha256": _hash(owner),
+                    "session_sha256": _hash(metadata),
+                    "quality_sha256": _hash({"validated_capture": capture.input_payload}),
+                    "rollover": owner != previous_owner,
+                }
+                if transition is not None:
+                    proof["owner_transition"] = transition
+                inputs.append(replace(item, source_proof=proof))
+                proofs[capture.bar_end] = proof
+                previous = capture.bar_end
+                previous_owner = owner
+            cutoff = previous
+            require(
+                not self.authority.expected_endpoints(
+                    identity,
+                    interval_owner[0],
+                    self.day,
+                    cutoff,
+                    self.start - timedelta(microseconds=1),
+                ),
+                "WARM_SEED_FINAL_FRONTIER_INCOMPLETE",
+            )
+            interval = {
+                "kind": "completed_warm_interval" if inputs else "completed_empty_interval",
+                "stream_id": identity.stream_id,
+                "previous_watermark": cp.computed_through.isoformat(),
+                "cutoff": cutoff.isoformat(),
+                "recording_start": self.start.isoformat(),
+                "knowledge_at": self.known.isoformat(),
+                "stage": "final_observation",
+                "physical_contract": cp.physical_contract,
+                "owner_segment_id": cp.owner_segment_id,
+                "calculation_segment_id": cp.calculation_segment_id,
+                "expected_endpoints": [end.isoformat() for end in ends],
+                "computed_through": cutoff.isoformat(),
+                "remaining_endpoints_before_start": [],
+                "session_sha256": _hash(metadata),
+                "owner_sha256": _hash(
+                    (cp.physical_contract, cp.owner_segment_id, cp.calculation_segment_id)
+                ),
+                "quality_sha256": _hash(
+                    [proof["quality_sha256"] for proof in proofs.values()]
+                ),
+            }
+
+            def verify(value):
+                self.assert_fenced()
+                if isinstance(value, HistoricalInputSnapshot):
+                    return baseline_proof
+                if isinstance(value, WarmInterval):
+                    return interval
+                require(isinstance(value, WarmInput), "WARM_SEED_INPUT_AUTHORITY_INVALID")
+                return proofs[value.product_bar.bar.bar_end]
+
+            result = materialize_retained_warm_seed(
+                WarmBaseline(identity, cp, schema, saved, binding),
+                fresh_snapshot=snapshot,
+                inputs=tuple(inputs),
+                expected_endpoints=ends,
+                recording_start=self.start,
+                cutoff=cutoff,
+                knowledge_at=self.known,
+                verify_authority=verify,
+            )
+            require(
+                read_retained_interval(
+                    self.journal,
+                    product=identity.product,
+                    day=self.day,
+                    after=cp.computed_through,
+                    before=self.start,
+                    expected_endpoints=ends,
+                    knowledge_at=self.known,
+                )
+                == originals,
+                "WARM_SEED_SOURCE_DRIFT",
+            )
+            require(
+                self.reader.revalidate(
+                    request, expected_source_token=snapshot.source_token
+                ),
+                "WARM_SEED_BASELINE_DRIFT",
+            )
+            require(
+                self._interval_owner(identity, cp, saved) == (interval_owner, transition),
+                "WARM_SEED_OWNER_TRANSITION_DRIFT",
+            )
+            self.assert_fenced()
+            return result
+        finally:
+            release = getattr(self.reader, "release_snapshot", None)
+            if callable(release):
+                release(snapshot)
 
 
 class Rank1TransitionRetainedWarmSourceLoader(RetainedWarmSourceLoader):

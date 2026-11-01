@@ -7,7 +7,7 @@ from app.read_timings import timed
 from guiyi_quant.newow.product_contracts import LEGACY_PRODUCT_FREQUENCIES, INTRADAY_PRODUCT_FREQUENCIES
 
 from base64 import urlsafe_b64decode, urlsafe_b64encode
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
@@ -82,6 +82,7 @@ from .product_reader import (
     NewowProductReader,
     ProductReadSet,
     ResolvedPerformanceWindow,
+    has_unresolved_source_tail,
 )
 from .inflight import InFlightCoordinator, NewowComputationCancelled
 from .resource_gate import HeavyResourceGate
@@ -382,11 +383,8 @@ def _ready(
 def _has_unresolved_tail_gap(read: ProductReadSet) -> bool:
     """A stale pre-gap frame cannot represent the current completed D1 state."""
     latest_bar = max((item.bar.bar_end for item in read.replay_bars), default=None)
-    return any(
-        gap.effective_at <= read.as_of
-        and (latest_bar is None or gap.effective_at > latest_bar)
-        for gap in read.data_interruptions
-    )
+    return has_unresolved_source_tail(read.data_interruptions,
+        as_of=read.as_of, latest_bar_end=latest_bar)
 
 
 def _owned_display_interruptions(read: ProductReadSet) -> tuple[DataInterruption, ...]:
@@ -1513,7 +1511,7 @@ class NewowProductService:
 
     @timed("replay")
     def _replay_strategy(
-        self, identity: ProductIdentity, bars: tuple[ProductBar, ...], *,
+        self, identity: ProductIdentity, bars: Sequence[ProductBar], *,
         lifecycle_evidence: tuple = (), data_interruptions: tuple = (),
         cancelled: Callable[[], bool] | None = None,
     ) -> StrategyReplay:

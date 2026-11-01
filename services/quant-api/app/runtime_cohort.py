@@ -25,17 +25,28 @@ from app.runtime_cohort_errors import CohortError
 CONTINUOUS = ("market-feed", "live", "alert", "reference-worker", "api", "web")
 CALENDARS = ("after-market", "late-provider-recovery", "weekly-audit", "log-rotate")
 TERMINAL = frozenset({"switched", "cancelled"})
-WARMUP_SAFE_CODES = frozenset({
-    "COHORT_OPERATION_BLOCKED", "COHORT_CANDIDATE_SOURCE_IDENTITY_UNPROVEN",
-    "REFERENCE_WARMUP_TIMEOUT", "REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE",
-    "REFERENCE_WARMUP_INITIAL_SEED_INVALID", "REFERENCE_WARMUP_SCOPE_EMPTY",
-    "SUBING_REFERENCE_DATA_UNAVAILABLE", "CANONICAL_PUBLICATION_LAGGING",
-    "CANONICAL_PUBLICATION_ENDPOINT_INVALID",
-})
-WARMUP_CONDITIONS = frozenset({
-    "subprocess_timeout", "execution_failed", "output_invalid",
-    "candidate_blocked", "source_identity",
-})
+WARMUP_SAFE_CODES = frozenset(
+    {
+        "COHORT_OPERATION_BLOCKED",
+        "COHORT_CANDIDATE_SOURCE_IDENTITY_UNPROVEN",
+        "REFERENCE_WARMUP_TIMEOUT",
+        "REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE",
+        "REFERENCE_WARMUP_INITIAL_SEED_INVALID",
+        "REFERENCE_WARMUP_SCOPE_EMPTY",
+        "SUBING_REFERENCE_DATA_UNAVAILABLE",
+        "CANONICAL_PUBLICATION_LAGGING",
+        "CANONICAL_PUBLICATION_ENDPOINT_INVALID",
+    }
+)
+WARMUP_CONDITIONS = frozenset(
+    {
+        "subprocess_timeout",
+        "execution_failed",
+        "output_invalid",
+        "candidate_blocked",
+        "source_identity",
+    }
+)
 
 
 def require(value, code):
@@ -45,11 +56,61 @@ def require(value, code):
 
 def registry(value, *, historical=False, history_directory=None, history_verifier=None):
     from app.runtime_bindings import historical_binding
+
     require(historical or history_verifier is None, "COHORT_HISTORY_SCOPE_INVALID")
     return BindingRegistry(
-        1, {k: historical_binding(v, directory=history_directory, verifier=history_verifier) if historical else ServiceBinding(**v)
-            for k, v in value["services"].items()}
+        1,
+        {
+            k: historical_binding(
+                v, directory=history_directory, verifier=history_verifier
+            )
+            if historical
+            else ServiceBinding(**v)
+            for k, v in value["services"].items()
+        },
     )
+
+
+def _release_layout(candidate_root, tag, previous, *, historical=False):
+    """Accept managed worktree paths by repository identity, never by a guessed tag."""
+    candidate = Path(candidate_root)
+    roots = {candidate, *(Path(row.root) for row in previous.services.values())}
+    if candidate.name == "release-" + tag and all(
+        root.parent == candidate.parent for root in roots
+    ):
+        return  # Preserve the historical layout accepted by existing plans.
+    try:
+        from app.core.env import PROJECT_ROOT
+        from app.runtime_bindings import _git
+
+        common = Path(
+            _git(
+                PROJECT_ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir"
+            )
+        ).resolve(strict=True)
+        for root in roots:
+            require(
+                root.is_absolute() and root == root.resolve(),
+                "COHORT_RELEASE_ROOT_INVALID",
+            )
+            if root.exists():
+                require(
+                    Path(
+                        _git(
+                            root,
+                            "rev-parse",
+                            "--path-format=absolute",
+                            "--git-common-dir",
+                        )
+                    ).resolve(strict=True)
+                    == common,
+                    "COHORT_RELEASE_ROOT_INVALID",
+                )
+            else:
+                # registry(historical=True) independently requires its archive proof.
+                require(historical, "COHORT_RELEASE_ROOT_INVALID")
+    except (OSError, ValueError):
+        raise CohortError("COHORT_RELEASE_ROOT_INVALID") from None
 
 
 def freeze_cohort(host, *, candidate_root, tag, commit):
@@ -63,14 +124,7 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
         state is None or state.get("phase") in TERMINAL,
         "COHORT_RECOVERY_READBACK_REQUIRED",
     )
-    require(
-        Path(candidate_root).name == "release-" + tag
-        and all(
-            Path(v.root).parent == Path(candidate_root).parent
-            for v in previous.services.values()
-        ),
-        "COHORT_RELEASE_ROOT_INVALID",
-    )
+    _release_layout(candidate_root, tag, previous)
     host.verify_release(candidate_root, tag, commit)
 
     def version(value):
@@ -116,7 +170,9 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
         "expires_at": (now + timedelta(minutes=15)).isoformat(),
         "downtime_seconds": 600,
     }
-    if any(value.contracts["db"] != contracts["db"] for value in previous.services.values()):
+    if any(
+        value.contracts["db"] != contracts["db"] for value in previous.services.values()
+    ):
         verifier = getattr(host, "schema_compatibility", None)
         require(callable(verifier), "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
         result["schema_compatibility"] = verifier(previous, new)
@@ -129,7 +185,9 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
     return result
 
 
-def validate(plan, now, *, historical=False, history_directory=None, history_verifier=None):
+def validate(
+    plan, now, *, historical=False, history_directory=None, history_verifier=None
+):
     try:
         require(
             plan["schema_version"] == 1
@@ -150,9 +208,15 @@ def validate(plan, now, *, historical=False, history_directory=None, history_ver
             < datetime.fromisoformat(plan["expires_at"]),
             "COHORT_PLAN_EXPIRED",
         )
-        old, new = (registry(plan[key], historical=historical, history_directory=history_directory,
-                            history_verifier=history_verifier)
-                    for key in ("old", "new"))
+        old, new = (
+            registry(
+                plan[key],
+                historical=historical,
+                history_directory=history_directory,
+                history_verifier=history_verifier,
+            )
+            for key in ("old", "new")
+        )
         require(
             set(old.services) == set(new.services) == SERVICES,
             "COHORT_SERVICE_SET_INVALID",
@@ -167,14 +231,7 @@ def validate(plan, now, *, historical=False, history_directory=None, history_ver
         }
         require(len(targets) == 1, "COHORT_TARGET_INVALID")
         target = next(iter(new.services.values()))
-        require(
-            Path(target.root).name == "release-" + target.tag
-            and all(
-                Path(v.root).parent == Path(target.root).parent
-                for v in old.services.values()
-            ),
-            "COHORT_RELEASE_ROOT_INVALID",
-        )
+        _release_layout(target.root, target.tag, old, historical=historical)
         for key, value in new.services.items():
             require(
                 value.enabled == old.services[key].enabled
@@ -188,23 +245,47 @@ def validate(plan, now, *, historical=False, history_directory=None, history_ver
             == 1,
             "COHORT_TARGET_CONTRACTS_INVALID",
         )
-        changed = {value.contracts["db"] for key, value in old.services.items()
-                   if new.services[key].contracts["db"] != value.contracts["db"]}
+        changed = {
+            value.contracts["db"]
+            for key, value in old.services.items()
+            if new.services[key].contracts["db"] != value.contracts["db"]
+        }
         if changed:
-            from app.runtime_schema_compatibility import validate_transition_proof, SchemaCompatibilityError
+            from app.runtime_schema_compatibility import (
+                validate_transition_proof,
+                SchemaCompatibilityError,
+            )
+
             proof = plan.get("schema_compatibility")
-            require(isinstance(proof, dict) and set(proof) == changed, "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
+            require(
+                isinstance(proof, dict) and set(proof) == changed,
+                "COHORT_SCHEMA_CHANGE_UNSUPPORTED",
+            )
             for fingerprint in changed:
                 try:
-                    validate_transition_proof(proof[fingerprint], old_db=fingerprint, new_db=target.contracts["db"])
+                    validate_transition_proof(
+                        proof[fingerprint],
+                        old_db=fingerprint,
+                        new_db=target.contracts["db"],
+                    )
                 except SchemaCompatibilityError:
                     raise CohortError("COHORT_SCHEMA_CHANGE_UNSUPPORTED") from None
         else:
-            require("schema_compatibility" not in plan, "COHORT_SCHEMA_PROOF_UNEXPECTED")
+            require(
+                "schema_compatibility" not in plan, "COHORT_SCHEMA_PROOF_UNEXPECTED"
+            )
         if "reference_receiving_handover" in plan:
-            from app.reference_trading.receiving_handover import valid_receiving_handover_intent
-            require(valid_receiving_handover_intent(plan["reference_receiving_handover"],
-                    target=asdict(new.services["reference-worker"])), "COHORT_REFERENCE_BACKLOG_UNPROVEN")
+            from app.reference_trading.receiving_handover import (
+                valid_receiving_handover_intent,
+            )
+
+            require(
+                valid_receiving_handover_intent(
+                    plan["reference_receiving_handover"],
+                    target=asdict(new.services["reference-worker"]),
+                ),
+                "COHORT_REFERENCE_BACKLOG_UNPROVEN",
+            )
         require(
             tuple(map(int, next(iter(new.services.values())).tag[1:].split(".")))
             > max(tuple(map(int, v.tag[1:].split("."))) for v in old.services.values()),
@@ -263,8 +344,10 @@ def apply_cohort(host, plan):
         # Historical attempts are never backfilled; their original public plan
         # remains authoritative where no private copy was created at the time.
         _write(attempt / "plan.json", plan)
-        require(_resolution_source(attempt / "plan.json")[1] == plan,
-                "COHORT_PLAN_PERSISTENCE_UNPROVEN")
+        require(
+            _resolution_source(attempt / "plan.json")[1] == plan,
+            "COHORT_PLAN_PERSISTENCE_UNPROVEN",
+        )
         state = {
             "schema_version": 1,
             "plan_sha256": plan["plan_sha256"],
@@ -300,13 +383,17 @@ def apply_cohort(host, plan):
             proof = step("drain", lambda: host.drain(plan))
             with host.guards(plan):
                 _check_reference_handover(host, plan, proof)
-                _check_schema(host, plan)  # Fresh installed proof before any owner stop.
+                _check_schema(
+                    host, plan
+                )  # Fresh installed proof before any owner stop.
                 step("old_exited", lambda: host.stop_old(plan, proof))
                 step("preserve", lambda: host.preserve(plan, attempt))
                 step("install", lambda: host.install(plan, attempt))
                 validate(plan, host.now())
                 require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
-                _check_schema(host, plan)  # Revalidate after install, before CAS intent.
+                _check_schema(
+                    host, plan
+                )  # Revalidate after install, before CAS intent.
                 _check_reference_handover(host, plan, proof)
                 validate(plan, host.now())
                 require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
@@ -329,7 +416,9 @@ def apply_cohort(host, plan):
             state["failed_phase"] = state["phase"]
             # Preserve only our bounded protocol code, never arbitrary exception
             # text (which can contain private connection or provider details).
-            if isinstance(error, CohortError) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", str(error)):
+            if isinstance(error, CohortError) and re.fullmatch(
+                r"[A-Z][A-Z0-9_]{0,127}", str(error)
+            ):
                 state["error_code"] = str(error)
                 failed_service = getattr(error, "service", None)
                 if failed_service in CONTINUOUS:
@@ -337,8 +426,14 @@ def apply_cohort(host, plan):
                     condition = getattr(error, "warmup_condition", None)
                     if condition in WARMUP_CONDITIONS:
                         code = getattr(error, "warmup_code", None)
-                        state["warmup_diagnostic"] = {"condition": condition,
-                            "code": code if code is None or isinstance(code, str) and code in WARMUP_SAFE_CODES else "COHORT_OPERATION_BLOCKED"}
+                        state["warmup_diagnostic"] = {
+                            "condition": condition,
+                            "code": code
+                            if code is None
+                            or isinstance(code, str)
+                            and code in WARMUP_SAFE_CODES
+                            else "COHORT_OPERATION_BLOCKED",
+                        }
             if committed:
                 try:
                     persist("outcome_unknown")
@@ -567,10 +662,15 @@ def main(argv=None):
             if args.service == "alert":
                 from app.alerts.composition import warmup_alert_runtime
 
-                proof = warmup_alert_runtime(allow_closed_warming=True, allow_break=True)
-            elif args.service == 'reference-worker':
+                proof = warmup_alert_runtime(
+                    allow_closed_warming=True, allow_break=True
+                )
+            elif args.service == "reference-worker":
                 from app.reference_trading.worker_entry import warmup_reference_worker
-                proof = warmup_reference_worker(allow_classified_weekly_unavailable=True)
+
+                proof = warmup_reference_worker(
+                    allow_classified_weekly_unavailable=True
+                )
             else:
                 proof = warmup_service(args.service)
             print(
@@ -609,8 +709,13 @@ def main(argv=None):
         warmup_code = getattr(error, "code", None)
         if not isinstance(warmup_code, str) or warmup_code not in WARMUP_SAFE_CODES:
             warmup_code = str(error) if str(error) in WARMUP_SAFE_CODES else None
-        code = (warmup_code if args.mode == "warmup" and warmup_code else
-                str(error) if isinstance(error, CohortError) else type(error).__name__)
+        code = (
+            warmup_code
+            if args.mode == "warmup" and warmup_code
+            else str(error)
+            if isinstance(error, CohortError)
+            else type(error).__name__
+        )
         code = (
             code
             if re.fullmatch("[A-Z][A-Z0-9_]+", code or "")

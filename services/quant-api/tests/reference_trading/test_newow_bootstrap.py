@@ -409,7 +409,8 @@ def test_real_terminal_boundary_can_seed_without_faking_strategy_progress(strate
             presentation_point(kind="hint", trading_day=end.date(), formula_versions=identity.formula_versions, value=[]),
             presentation_point(kind="diagnostic", trading_day=end.date(), formula_versions=identity.formula_versions, value={"reason":"NO_TIMED_BAR"}),
             point])}
-        batch.dependency_manifest = {**batch.dependency_manifest,"input_fingerprints":[source.last_fingerprint,item.fingerprint]}
+        from app.reference_trading.packed_fingerprints import pack_fingerprints
+        batch.dependency_manifest = {**batch.dependency_manifest,"input_fingerprints":pack_fingerprints([source.last_fingerprint,item.fingerprint])}
         rev.dependency_digest = manifest_sha256(batch.dependency_manifest)
     service = NewowForwardBootstrap(factory)
     plan = plan_for(service, identity)
@@ -429,7 +430,7 @@ def test_real_terminal_boundary_can_seed_without_faking_strategy_progress(strate
         if tamper == "receipt":
             evidence["last_fingerprint"] = "0" * 64
         elif tamper == "manifest_tail":
-            manifest["input_fingerprints"][-1] = "0" * 64
+            manifest["input_fingerprints"] = pack_fingerprints([source.last_fingerprint, "0" * 64])
         elif tamper == "identity":
             evidence["presentation_v1"]["points"][-1]["value"]["physical_contract"] = "RB2701"
         elif tamper == "reason":

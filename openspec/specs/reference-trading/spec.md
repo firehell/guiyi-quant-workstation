@@ -22,9 +22,17 @@ SHALL fail closed. Publication SHALL not overwrite existing evidence.
 
 SuBing historical calculation batches MAY replace large repeated source vectors with a direct
 reference to an earlier committed inline manifest in the same stream and revision. The reader
-SHALL authenticate its complete digest and retained fields and SHALL reject reference chains,
-missing anchors and identity mismatches. Logical dependency and batch payload hashes SHALL
-remain unchanged. Legacy inline assets and other strategies SHALL remain unchanged. Readers
+SHALL authenticate its complete digest and retained fields and SHALL reject v1-to-v1 chains,
+missing anchors and identity mismatches. For Newow v5 packed manifests, a calculation batch MAY
+store an internal ref-v2 only after a validated same-stream/revision `DependencyAdvance` and strict
+prefix proof for every packed vector. Ref-v2 SHALL retain the complete new head, parent proof-anchor
+identity and canonical digest, new canonical digest, old/new vector counts, the complete replacement
+partial tail block and appended blocks. Resolution SHALL reconstruct the exact full manifest and
+verify every ancestor's current identity and server body hash within the operation; any changed,
+missing or invalid ancestor SHALL fail closed. Ref-v2 chains SHALL stop at depth 12 and payloads
+above 1 MiB SHALL become full inline anchors. Unchanged digests SHALL retain v1 references.
+Logical dependency and batch payload hashes SHALL remain unchanged. Existing records, legacy inline
+assets and non-v5 strategies SHALL remain unchanged. Readers
 SHALL be upgraded before producing this storage representation. No storage change SHALL
 alter trading semantics, source coverage or formula identities.
 
@@ -1466,3 +1474,67 @@ starve unrelated historical routes; actual unfinished observations/captures stil
 precedence. Lock release failure SHALL discard the owning database connection rather
 than return an unverified session-level advisory lock to the pool. No timeout authorizes
 automatic lock takeover.
+
+Historical Newow input loading SHALL bound the resident working set independently
+of total history length. Catalog-pinned partitions and complete physical warm-up
+prefixes SHALL be consumed in bounded chunks; paging followed by accumulation of
+all pages does not satisfy this requirement. Disposable sealed input files MAY
+hold derived replay inputs, but SHALL NOT become market-fact authority or replace
+fresh source validation. Provisional, corrupted or incompletely validated inputs
+SHALL NOT reach the reference kernel or publication. Cancellation, failed reads
+and completed leases SHALL close their files and release temporary storage.
+Streaming and materialized proofs of the same format SHALL retain identical
+canonical bytes, ordering, segment identity, source-quality handling and formula/model versions.
+Memory acceptance SHALL measure process RSS for large base and dual-strategy reads
+and execution; count/serialized-byte estimates alone do not establish a memory bound.
+
+New historical writes use `newow_product_reader_prefix_v5` and fusion
+`newow_fusion_saved_sources_v3`. Ordered SHA256 leaves are losslessly packed in
+canonical base64 blocks of at most 256 leaves; blocks are not substitute hashes.
+Every old leaf, including a partial final block, remains subject to prefix
+comparison. Packed vectors validate encoding, count, block size and exact length.
+Legacy v4 arrays retain their original manifests and hashes. Read-only validation
+may compare their exact leaves with current v5 inputs; changing proof format
+requires the existing new-revision rebuild/publication path and is never an
+append to the old revision. Formula and reference-model versions do not change.
+Logical input byte/count budgets and measured resident process memory are distinct;
+both remain bounded, and serialized input size is not resident-memory evidence.
+
+The v5 quality-interruption proof SHALL bind completed effective endpoints,
+physical owner/segment, input policy, actual daily OHLCV and quality numeric facts,
+and the classification version. Whole-month file revisions, provider transport
+hashes and observation timestamps remain provenance witnesses and SHALL NOT
+invalidate an unchanged semantic prefix. Existing v4 interruption hashes retain
+their original meaning; insufficient legacy proof requires native revision migration.
+
+Final calculation batches SHALL atomically save the original per-segment Newow
+page-performance material with their exact revision, seq, input proof, dependency
+proofs and actual result cutoff. Ordinary and ideal arithmetic and window filtering
+remain the existing page model. GET SHALL project this saved material using the
+original per-segment window filter and aggregation, rather than replay full history.
+Intermediate advance batches SHALL NOT mix new reference rows or marks with old
+page material. A material's terminal valuation SHALL NOT be reused at an earlier
+cutoff. The existing query snapshot and cursor bind every visible projection.
+
+Source integrity is separate from the semantic prefix. A changed source witness
+at an unchanged endpoint SHALL be checked by the existing advance path. An
+unchanged semantic input records only a CAS-ordered verification diagnostic;
+reference seq, trades, marks and returns remain unchanged. Unknown diagnostic
+commit outcomes remain blocked until exact readback. A GET may use that committed
+verification after fresh source validation; a stale witness alone does not authorize
+serving an unverified result or rebuilding on GET.
+
+A pinned historical operation MAY reuse an exact database manifest after a full
+content comparison with its verified input plan. The initial full value and its
+PostgreSQL content witness SHALL come from the same SQL snapshot. Reuse SHALL
+recheck database/anchor identity, seq, reference header and the current database
+content witness inside each transaction. This witness is not the canonical
+manifest digest. Any mismatch fails closed. Reuse SHALL retain only a constant
+number of entries and clear on rollback, exception and lease exit; it SHALL NOT
+become a permanent source cache or change persisted payload hash semantics.
+
+Historical reads MAY release reclaimable decoded read caches before allocating
+their working set. This does not change already returned immutable market facts,
+Catalog selection, partition validation or file ownership. Cache eviction alone
+is not evidence that process memory is bounded; complete-path RSS and physical
+footprint measurements remain required in both isolation and the running service.

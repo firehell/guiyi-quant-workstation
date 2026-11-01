@@ -10,12 +10,12 @@ from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import Iterator
 from binascii import Error as Base64Error
 from dataclasses import replace
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 import json
 
 from sqlalchemy import and_, false, func, or_, select, text, tuple_
-from sqlalchemy.orm import Session, aliased
+from sqlalchemy.orm import Session, aliased, defer
 
 from app.db.readonly import readonly_transaction
 from app.reference_trading.manifest_storage import resolve_manifest
@@ -266,7 +266,7 @@ class HistoricalReferenceQuery:
 
     @staticmethod
     def _manifest_digest(session: Session, stream_id: str, revision_id: str, seq: int) -> str:
-        batch = session.scalar(select(ReferenceBatch).where(
+        batch = session.scalar(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
             ReferenceBatch.stream_id == stream_id,
             ReferenceBatch.revision_id == revision_id,
             ReferenceBatch.seq <= seq,
@@ -295,7 +295,7 @@ class HistoricalReferenceQuery:
             ~ReferenceBatch.batch_key.like("forward:observation-gap:%"),
             ReferenceBatch.seq <= snapshot.seq,
         )).one()
-        gap = session.scalar(select(ReferenceBatch).where(
+        gap = session.scalar(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
             ReferenceBatch.stream_id == snapshot.stream_id,
             ReferenceBatch.revision_id == snapshot.revision_id,
             ReferenceBatch.kind == "calculation",
@@ -462,7 +462,7 @@ class HistoricalReferenceQuery:
         session: Session, snapshot: SnapshotIdentity,
         since: date, through: date, cutoff: datetime | None,
     ) -> frozenset[tuple[str, str, str]]:
-        batches = session.execute(select(ReferenceBatch).where(
+        batches = session.execute(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
             ReferenceBatch.stream_id == snapshot.stream_id,
             ReferenceBatch.revision_id == snapshot.revision_id,
             ReferenceBatch.kind == "calculation",
@@ -515,7 +515,7 @@ class HistoricalReferenceQuery:
             )).scalars().all())
         if {action.source_action_id for action in actions} != requested | exits:
             raise QueryConflict("TRADE_ACTION_CORRUPT")
-        batches = session.execute(select(ReferenceBatch).where(
+        batches = session.execute(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
             ReferenceBatch.stream_id == snapshot.stream_id,
             ReferenceBatch.revision_id == snapshot.revision_id,
             ReferenceBatch.batch_id.in_({
@@ -649,7 +649,7 @@ class HistoricalReferenceQuery:
                 session, row, since=saved_since, through=saved_through,
                 cutoff=cutoff, encoded=snapshot_token,
             )
-            manifest_batch = session.scalar(select(ReferenceBatch).where(
+            manifest_batch = session.scalar(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
                 ReferenceBatch.stream_id == stream_id,
                 ReferenceBatch.revision_id == snapshot.revision_id,
                 ReferenceBatch.seq <= snapshot.seq,
@@ -657,9 +657,15 @@ class HistoricalReferenceQuery:
             ).order_by(ReferenceBatch.seq.desc()).limit(1))
             manifest = None if manifest_batch is None else resolve_manifest(session, manifest_batch)
             saved_count = manifest.get("input_count") if isinstance(manifest, dict) else None
-            if saved_count is None and isinstance(manifest, dict) and manifest.get("reader") in {"newow_product_reader_v2", "newow_product_reader_prefix_v4"}:
+            if saved_count is None and isinstance(manifest, dict) and manifest.get("reader") in {"newow_product_reader_v2", "newow_product_reader_prefix_v4", "newow_product_reader_prefix_v5"}:
                 fingerprints = manifest.get("input_fingerprints")
-                if isinstance(fingerprints, list) and fingerprints and all(
+                if manifest.get("reader") == "newow_product_reader_prefix_v5":
+                    from app.reference_trading.packed_fingerprints import PackedFingerprints
+                    try:
+                        saved_count = len(PackedFingerprints(fingerprints))
+                    except (TypeError, ValueError) as error:
+                        raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from error
+                elif isinstance(fingerprints, list) and fingerprints and all(
                     isinstance(value, str) and len(value) == 64
                     and all(char in "0123456789abcdef" for char in value)
                     for value in fingerprints
@@ -667,6 +673,38 @@ class HistoricalReferenceQuery:
                     saved_count = len(fingerprints)
             if type(saved_count) is not int or saved_count != input_count:
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+            if isinstance(manifest, dict) and manifest.get("reader") == "newow_product_reader_prefix_v5":
+                # A full semantic manifest is fixed at the first committed
+                # advance batch. Its action rows can still be only a prefix.
+                # Fusion construction may consume them only at a final page
+                # material for this exact calculation seq and cutoff.
+                from app.reference_trading.page_material_query import PageMaterialSnapshot
+                from app.reference_trading.repository import _identity_from_row
+                if (manifest_batch.kind != "calculation" or manifest_batch.seq != snapshot.seq
+                        or manifest_batch.outcome != "committed" or cutoff is None):
+                    raise QueryConflict("REFERENCE_FUSION_SOURCE_NOT_READY")
+                computed = manifest_batch.computed_through
+                if computed is not None and computed.tzinfo is None:
+                    computed = computed.replace(tzinfo=UTC)
+                if computed != cutoff:
+                    raise QueryConflict("REFERENCE_FUSION_SOURCE_NOT_READY")
+                evidence = manifest_batch.source_evidence
+                field = evidence.get("page_material_v1") if isinstance(evidence, dict) else None
+                if not isinstance(field, dict):
+                    raise QueryConflict("REFERENCE_FUSION_SOURCE_NOT_READY")
+                try:
+                    binding = field["binding"]
+                    material = PageMaterialSnapshot(
+                        stream_id, snapshot.revision_id, snapshot.seq,
+                        datetime.fromisoformat(binding["cutoff"]),
+                        date.fromisoformat(binding["result_trading_day"]), field,
+                    )
+                    if (material.cutoff != cutoff
+                            or binding["end_input_index"] != saved_count):
+                        raise ValueError("incomplete source material")
+                    material.envelope(manifest, _identity_from_row(row))
+                except (KeyError, TypeError, ValueError) as error:
+                    raise QueryConflict("REFERENCE_FUSION_SOURCE_NOT_READY") from error
             self._assert_presentations(session, snapshot)
             batches = session.execute(select(ReferenceBatch.source_evidence).where(
                 ReferenceBatch.stream_id == stream_id,
@@ -811,7 +849,7 @@ class HistoricalReferenceQuery:
                     raise QueryConflict("CURSOR_CONFLICT")
                 after_seq, after_index = value["seq"], value["index"]
             self._assert_presentations(session, snapshot)
-            batches = session.execute(select(ReferenceBatch).where(
+            batches = session.execute(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
                 ReferenceBatch.stream_id == stream_id,
                 ReferenceBatch.revision_id == snapshot.revision_id,
                 ReferenceBatch.kind == "calculation",

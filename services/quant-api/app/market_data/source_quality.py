@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Literal
+from hashlib import sha256
+import json
+from typing import Literal, cast
 
 PRICE_UNAVAILABLE_CLASSIFICATION_VERSION = "rqdata-d1-zero-ohl-v1"
 NONPOSITIVE_CLOSE_CLASSIFICATION_VERSION = "rqdata-d1-nonpositive-close-v1"
@@ -189,6 +191,48 @@ class NonpositiveCloseFact:
 
 
 SourceQualityFact = PriceUnavailableFact | NonpositiveCloseFact
+
+
+def semantic_decimal(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, Decimal) or not value.is_finite():
+        raise ValueError("SOURCE_QUALITY_SEMANTIC_INVALID")
+    if value.is_zero():
+        return "0"
+    sign, digits, exponent = value.as_tuple()
+    exponent = cast(int, exponent)
+    count = len(digits)
+    while count > 1 and digits[count - 1] == 0:
+        count -= 1
+        exponent += 1
+    return f"{'-' if sign else ''}{''.join(str(digit) for digit in digits[:count])}e{exponent}"
+
+
+def source_quality_semantic_payload(fact: SourceQualityFact) -> dict[str, object]:
+    """Numeric source fact, excluding provider transport and observation metadata."""
+    if not isinstance(fact, (PriceUnavailableFact, NonpositiveCloseFact)):
+        raise ValueError("SOURCE_QUALITY_SEMANTIC_INVALID")
+    return {
+        "classification": fact.classification,
+        "classification_version": fact.classification_version,
+        "bar_end": fact.bar_end.isoformat(),
+        "trading_day": fact.trading_day.isoformat(),
+        "open": semantic_decimal(fact.open),
+        "high": semantic_decimal(fact.high),
+        "low": semantic_decimal(fact.low),
+        "close": semantic_decimal(fact.close),
+        "volume": semantic_decimal(fact.volume),
+        "turnover": semantic_decimal(fact.turnover),
+        "open_interest": semantic_decimal(fact.open_interest),
+    }
+
+
+def source_quality_semantic_sha256(fact: SourceQualityFact) -> str:
+    return sha256(json.dumps(
+        {"schema": "source_quality_numeric_v1", "fact": source_quality_semantic_payload(fact)},
+        sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
 
 
 def source_quality_fact_from_record(

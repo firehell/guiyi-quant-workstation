@@ -13,7 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Iterable
+from itertools import groupby
+from typing import Iterable, Iterator
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
@@ -122,6 +123,14 @@ class DominantContractSegmentSummary:
     end_trading_day: date
 
 
+@dataclass(frozen=True, slots=True)
+class MarketReplayChunk:
+    """A provisional, bounded physical replay batch in ascending endpoint order."""
+
+    bars: tuple[CanonicalBar, ...]
+    source_quality: tuple[SourceQualityFact | WeeklySourceInterruption, ...] = ()
+
+
 class MarketDataService:
     """V2 历史市场数据查询服务：Catalog 定位 + Parquet 读取 + 主力拼接。
 
@@ -137,6 +146,10 @@ class MarketDataService:
         self._weekly_replay_cache_symbol: str | None = None
         self._daily_replay_cache: dict[tuple[object, ...], tuple[tuple[CanonicalBar, ...], tuple[SourceQualityFact, ...]]] = {}
         self._daily_replay_cache_symbol: str | None = None
+
+    def release_decoded_read_caches(self) -> None:
+        """Make room for bounded historical work without changing market facts."""
+        self.store.release_decoded_read_caches()
 
     def contract_source_evidence(
         self, *, symbol: str, contract: str, frequency: BarFrequency,
@@ -168,6 +181,19 @@ class MarketDataService:
                 for part in partitions
             ],
         }
+
+    def contract_lifecycle_start(self, *, symbol: str, contract: str) -> date:
+        """Expose the Catalog physical listing boundary without reading Bar files."""
+        try:
+            assert_not_retired(symbol)
+            return self.catalog.contract_fact(symbol, contract).listed_date
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        except CatalogError as exc:
+            code = ("CONTRACT_METADATA_MISSING"
+                    if exc.code in {"CONTRACT_NOT_FOUND", "CONTRACT_SYMBOL_MISMATCH",
+                                    "CONTRACT_METADATA_MISSING"} else exc.code)
+            raise MarketDataError(code) from exc
 
     def query(self, request: SeriesQuery) -> MarketSeriesResult:
         """执行序列查询；``actual_dominant`` 走拼接路径，其余读单一物理数据集。"""
@@ -689,6 +715,141 @@ class MarketDataService:
             )
         except CatalogError as exc:
             raise MarketDataError(exc.code) from exc
+
+    def published_reference_endpoint(
+        self, *, symbol: str, frequency: BarFrequency | str,
+        as_of: datetime, quality_policy: str,
+    ) -> tuple[datetime, date]:
+        """Latest published rank-1 price or proved D1/W1 quality endpoint.
+
+        Catalog quality rows nominate endpoints; the existing quality replay
+        validates owner, Calendar/Session and the typed source fact. A calendar
+        completion alone never publishes a reference endpoint.
+        """
+        from guiyi_quant.newow.product_identity import (
+            InputQualityPolicy, input_quality_policy, source_classification_version,
+        )
+
+        if not isinstance(as_of, datetime) or as_of.tzinfo is None or as_of.utcoffset() is None:
+            raise MarketDataError("AUTHORITATIVE_ENDPOINT_UNAVAILABLE")
+        normalized = BarFrequency(frequency)
+        if normalized in {BarFrequency.D1, BarFrequency.W1}:
+            try:
+                policy = input_quality_policy(normalized.value, quality_policy)
+            except ValueError as exc:
+                raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID") from exc
+        else:
+            policy = None
+        page_error = None
+        try:
+            page = self.query_page(SeriesPageQuery(
+                SeriesKind.ACTUAL_DOMINANT, symbol, normalized, before=None, limit=1,
+            ))
+            price = page.bars[-1] if page.bars else None
+            if price is not None and price.bar_end > as_of.astimezone(UTC):
+                raise MarketDataError("AUTHORITATIVE_ENDPOINT_UNAVAILABLE")
+        except MarketDataError as exc:
+            if ((normalized is BarFrequency.D1 and exc.code in {
+                    "PRICE_UNAVAILABLE", "SOURCE_QUALITY_CLASSIFICATION_UNSUPPORTED",
+                }) or (normalized is BarFrequency.W1 and exc.code in {
+                    "MAPPED_CONTRACT_DATASET_MISSING", "ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT",
+                })):
+                page_error = exc
+                price = None
+            else:
+                raise
+        if normalized not in {BarFrequency.D1, BarFrequency.W1}:
+            if price is None:
+                raise MarketDataError("AUTHORITATIVE_ENDPOINT_UNAVAILABLE")
+            return price.bar_end, price.trading_day
+        if policy is None:
+            raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
+
+        try:
+            partitions = self.catalog.contract_partitions_before(
+                symbol, BarFrequency.D1, as_of.astimezone(UTC) + timedelta(microseconds=1),
+            )
+        except CatalogError as exc:
+            raise MarketDataError(exc.code) from exc
+        candidates = sorted(
+            ((fact.bar_end, fact.trading_day, row.dataset.series_or_contract)
+             for row in partitions for fact in row.source_quality
+             if fact.bar_end <= as_of.astimezone(UTC)),
+            reverse=True,
+        )
+        quality_endpoint = None
+        seen_weeks: set[tuple[int, int, str]] = set()
+        for _fact_end, fact_day, contract in candidates:
+            if normalized is BarFrequency.D1:
+                day, end = fact_day, _fact_end
+            else:
+                week = (*fact_day.isocalendar()[:2], contract)
+                if week in seen_weeks:
+                    continue
+                seen_weeks.add(week)
+                monday = fact_day - timedelta(days=fact_day.weekday())
+                complete = self.completed_calendar_week(
+                    symbol=symbol, week_monday=monday, as_of=as_of,
+                )
+                if complete is None:
+                    continue
+                day, cutoff = complete
+                end = cutoff - timedelta(microseconds=1)
+            if price is not None and end <= price.bar_end:
+                break
+            if not self.rank1_quality_endpoint_published(
+                symbol=symbol, frequency=normalized, trading_day=day,
+            ):
+                continue
+            request = ActualDominantTradingDayQuery(
+                symbol, normalized,
+                day if normalized is BarFrequency.D1 else day - timedelta(days=day.weekday()),
+                day,
+            )
+            if normalized is BarFrequency.D1:
+                result, gaps = (
+                    self.query_actual_dominant_trading_days_quality_union(request)
+                    if policy is InputQualityPolicy.DAILY_V2
+                    else self.query_actual_dominant_trading_days_quality(request)
+                )
+            else:
+                result, gaps = self.query_actual_dominant_trading_days_quality(
+                    request,
+                    weekly_classification_version=source_classification_version(
+                        normalized.value, policy,
+                    ),
+                )
+            if (any(bar.bar_end == end for bar in result.bars)
+                    and not any(gap.bar_end == end for _owner, gap in gaps)):
+                # This Catalog fact belongs to a non-owner contract.
+                continue
+            if any(owner == contract and gap.bar_end == end and gap.trading_day == day
+                   for owner, gap in gaps):
+                quality_endpoint = (end, day)
+                break
+            if any(gap.bar_end == end for _owner, gap in gaps):
+                # A different owner's published interruption is still a
+                # valid endpoint; its own Catalog fact must be present too.
+                continue
+        if quality_endpoint is not None:
+            if page_error is not None and normalized is BarFrequency.W1:
+                # A later published W1 partition is an unresolved source
+                # failure, not permission to fall back to an older D1 gap.
+                try:
+                    weekly_rows = self.catalog.contract_partitions_before(
+                        symbol, BarFrequency.W1, None,
+                    )
+                except CatalogError as exc:
+                    raise MarketDataError(exc.code) from exc
+                if any((row.source_coverage_end or row.coverage_end) > quality_endpoint[0]
+                       for row in weekly_rows):
+                    raise page_error
+            return quality_endpoint
+        if page_error is not None:
+            raise page_error
+        if price is None:
+            raise MarketDataError("AUTHORITATIVE_ENDPOINT_UNAVAILABLE")
+        return price.bar_end, price.trading_day
 
     @staticmethod
     def _partition_covers_endpoint(row: CatalogPartition, endpoint: datetime) -> bool:
@@ -1395,6 +1556,196 @@ class MarketDataService:
         raise MarketDataError(
             "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE", reason=reason, context=context
         )
+
+    def iter_actual_dominant_owner_replay_chunks(
+        self, *, symbol: str, owner: ResolvedContractSegment,
+        frequency: BarFrequency, through: date, cutoff: datetime,
+        quality_policy: str = "newow_input_quality_v1", max_rows: int = 2000,
+    ) -> Iterator[MarketReplayChunk]:
+        """Stream one rank-1 owner's validated physical lifecycle prefix.
+
+        Every batch is provisional until the iterator is exhausted. The owner
+        mapping is checked by the same resolver used by ordinary series queries.
+        No strategy or consumer may select a different physical dataset here.
+        """
+        if (type(max_rows) is not int or not 1 <= max_rows <= 2000
+            or type(through) is not date or through < owner.start_trading_day
+            or through > owner.end_trading_day):
+            raise MarketDataError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        resolved = self.actual_dominant_segments(symbol, owner.start_trading_day, through)
+        if (len(resolved) != 1 or resolved[0].contract != owner.contract
+            or resolved[0].start_trading_day > owner.start_trading_day
+            or resolved[0].end_trading_day < through):
+            raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
+        yield from self.iter_contract_replay_chunks(
+            symbol=symbol, contract=owner.contract, frequency=frequency,
+            through=through, cutoff=cutoff, quality_policy=quality_policy,
+            max_rows=max_rows,
+        )
+
+    def iter_contract_replay_chunks(
+        self, *, symbol: str, contract: str, frequency: BarFrequency,
+        through: date, cutoff: datetime,
+        quality_policy: str = "newow_input_quality_v1", max_rows: int = 2000,
+    ) -> Iterator[MarketReplayChunk]:
+        """Read a full physical prefix using bounded months and existing quality rules."""
+        if type(max_rows) is not int or not 1 <= max_rows <= 2000:
+            raise MarketDataError("MARKET_READ_IDENTITY_UNSUPPORTED")
+        try:
+            assert_not_retired(symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        frequency = BarFrequency(frequency)
+        policy = str(quality_policy)
+        if policy not in {"newow_input_quality_v1", "newow_daily_input_quality_v2",
+                          "newow_weekly_input_quality_v2"} or (
+            policy == "newow_daily_input_quality_v2" and frequency is not BarFrequency.D1
+        ) or (
+            policy == "newow_weekly_input_quality_v2" and frequency is not BarFrequency.W1
+        ):
+            raise MarketDataError("SOURCE_QUALITY_SCOPE_INVALID")
+        try:
+            fact = self.catalog.contract_fact(symbol, contract)
+        except CatalogError as exc:
+            code = ("CONTRACT_METADATA_MISSING"
+                    if exc.code in {"CONTRACT_NOT_FOUND", "CONTRACT_SYMBOL_MISMATCH",
+                                    "CONTRACT_METADATA_MISSING"} else exc.code)
+            raise MarketDataError(code) from exc
+        if not fact.listed_date <= through < fact.expired_date:
+            raise MarketDataError("CONTRACT_ACTIVE_WINDOW_MISSING")
+        _, last_session_end = self._trading_day_window(
+            symbol=symbol, since=fact.listed_date, through=through,
+        )
+        if (cutoff.tzinfo is None or cutoff.utcoffset() is None
+            or cutoff > last_session_end):
+            raise MarketDataError("CONTRACT_REPLAY_CUTOFF_INVALID")
+        calendar = self._exact_calendar(symbol, fact.listed_date, through)
+        days = tuple(day for day, trading in calendar if trading)
+        if not days:
+            raise MarketDataError("TRADING_CALENDAR_MISSING")
+        key = DatasetKey(DatasetKind.CONTRACT, symbol, contract, frequency)
+        partition_records = self.catalog.all_partitions(key)
+        partitions_by_month = {(row.year, row.month): row for row in partition_records}
+        if len(partitions_by_month) != len(partition_records):
+            raise MarketDataError("PARTITION_INTEGRITY_INVALID")
+        emitted = False
+        had_expected = False
+        for month, month_days_iter in groupby(days, key=lambda day: (day.year, day.month)):
+            self._check_cancelled()
+            month_days = tuple(month_days_iter)
+            first_day, last_day = month_days[0], month_days[-1]
+            month_cutoff = min(
+                cutoff,
+                max(window.end for window in self.session_windows(
+                    symbol=symbol, trading_day=last_day,
+                )),
+            )
+            expected = self.expected_contract_replay_endpoints(
+                symbol=symbol, contract=contract, frequency=frequency,
+                trading_day=last_day, cutoff=month_cutoff, since=first_day,
+            )
+            if not expected:
+                partition = partitions_by_month.get(month)
+                if partition is not None:
+                    try:
+                        if any(fact.bar_end <= cutoff for fact in partition.source_quality):
+                            raise MarketDataError(
+                                "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                reason="REPLAY_ENDPOINTS_EXTRA",
+                            )
+                        for partition_rows in self.store.iter_catalog_partition_quality_chunks(
+                            partition, max_rows=max_rows,
+                        ):
+                            if any(bar.bar_end <= cutoff for bar in partition_rows):
+                                raise MarketDataError(
+                                    "CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                    reason="REPLAY_ENDPOINTS_EXTRA",
+                                )
+                    except StorageError as exc:
+                        raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+                continue
+            had_expected = True
+            if frequency is BarFrequency.D1:
+                reader = (self.query_contract_replay_quality_union
+                          if policy == "newow_daily_input_quality_v2"
+                          else self.query_contract_replay_quality)
+                bars, gaps = reader(symbol=symbol, contract=contract,
+                                    through=last_day, cutoff=month_cutoff, since=first_day)
+                events = sorted((item for item in (*bars, *gaps)
+                                 if first_day <= item.trading_day <= last_day
+                                 and item.bar_end <= month_cutoff),
+                                key=lambda value: value.bar_end)
+                if tuple((item.bar_end, item.trading_day) for item in events) != expected:
+                    raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                          reason="REPLAY_ENDPOINTS_MISSING")
+                for start in range(0, len(events), max_rows):
+                    batch = events[start:start + max_rows]
+                    emitted = True
+                    yield MarketReplayChunk(
+                        tuple(item for item in batch if isinstance(item, CanonicalBar)),
+                        tuple(item for item in batch if not isinstance(item, CanonicalBar)),
+                    )
+                continue
+            if frequency is BarFrequency.W1:
+                classification = (WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2
+                                  if policy == "newow_weekly_input_quality_v2"
+                                  else WEEKLY_SOURCE_CLASSIFICATION_VERSION)
+                bars, weekly_gaps = self.query_contract_weekly_replay_quality(
+                    symbol=symbol, contract=contract, through=last_day,
+                    cutoff=month_cutoff, since=first_day,
+                    classification_version=classification,
+                )
+                # The weekly classifier expands ``since`` to Monday to prove
+                # the boundary week. Only this month's exact requested owner
+                # endpoints may escape to the lifecycle stream.
+                weekly_inputs: tuple[CanonicalBar | WeeklySourceInterruption, ...] = (*bars, *weekly_gaps)
+                weekly_events = sorted((item for item in weekly_inputs
+                                 if first_day <= item.trading_day <= last_day
+                                 and item.bar_end <= month_cutoff),
+                                key=lambda value: value.bar_end)
+                if tuple((item.bar_end, item.trading_day) for item in weekly_events) != expected:
+                    raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                          reason="REPLAY_ENDPOINTS_MISSING")
+                for start in range(0, len(weekly_events), max_rows):
+                    weekly_batch = weekly_events[start:start + max_rows]
+                    emitted = True
+                    yield MarketReplayChunk(
+                        tuple(item for item in weekly_batch if isinstance(item, CanonicalBar)),
+                        tuple(item for item in weekly_batch if not isinstance(item, CanonicalBar)),
+                    )
+                continue
+
+            partition = partitions_by_month.get(month)
+            if partition is None:
+                raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                      reason="DATASET_OR_PARTITION_MISSING")
+            if partition.source_quality:
+                raise MarketDataError("PRICE_UNAVAILABLE")
+            index = 0
+            try:
+                for rows in self.store.iter_catalog_partition_quality_chunks(
+                    partition, max_rows=max_rows,
+                ):
+                    self._check_cancelled()
+                    # Include every physical row in the Catalog month up to the
+                    # request cutoff. A weekend, pre-listing or post-session row
+                    # must conflict with expected endpoints, not be filtered away.
+                    chunk_bars = tuple(bar for bar in rows if bar.bar_end <= cutoff)
+                    for bar in chunk_bars:
+                        if index >= len(expected) or (bar.bar_end, bar.trading_day) != expected[index]:
+                            raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                                  reason="REPLAY_ENDPOINTS_EXTRA")
+                        index += 1
+                    if chunk_bars:
+                        emitted = True
+                        yield MarketReplayChunk(chunk_bars)
+            except StorageError as exc:
+                raise MarketDataError("PARTITION_INTEGRITY_INVALID") from exc
+            if index != len(expected):
+                raise MarketDataError("CONTRACT_REPLAY_COVERAGE_UNAVAILABLE",
+                                      reason="REPLAY_ENDPOINTS_MISSING")
+        if not emitted and (had_expected or frequency is not BarFrequency.W1):
+            raise MarketDataError("QUERY_WINDOW_EMPTY")
 
     def expected_contract_replay_endpoints(
         self,
@@ -2671,11 +3022,16 @@ class MarketDataService:
                 max(partition_months),
             ):
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
-            if (
-                min((partition.source_coverage_start or partition.coverage_start) for partition in partitions)
-                > request.start
-                or max((partition.source_coverage_end or partition.coverage_end) for partition in partitions) < request.end
-            ):
+            coverage_starts: list[datetime] = []
+            coverage_ends: list[datetime] = []
+            for partition in partitions:
+                checked_start = partition.source_coverage_start or partition.coverage_start
+                checked_end = partition.source_coverage_end or partition.coverage_end
+                if checked_start is None or checked_end is None:
+                    raise MarketDataError("DATASET_OR_PARTITION_MISSING")
+                coverage_starts.append(checked_start)
+                coverage_ends.append(checked_end)
+            if min(coverage_starts) > request.start or max(coverage_ends) < request.end:
                 raise MarketDataError("DATASET_OR_PARTITION_MISSING")
         bars: list[CanonicalBar] = []
         for partition in partitions:

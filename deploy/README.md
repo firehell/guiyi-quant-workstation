@@ -45,6 +45,7 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 发布与正式运行源码统一使用扩展盘的linked worktree，默认路径为
 `/Volumes/扩展盘/guiyi-quant-workstation/.worktrees/release-vX.Y.Z`，按版本命名。
 最新发布树兼作正式服务源码根，不另建Application Support中的runtime克隆；安全配置、共享launcher和日志保持Git外既有位置。
+宿主管理的linked worktree可采用其原生目录结构；新布局须与当前工作站共用Git common目录，并继续校验精确annotated tag、detached commit、完整clean源码与真实路径，目录名不充当版本身份。
 外接卷launchd访问须通过宿主权限与真实启动/读回验证，安装器沿用`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`选项并核对所有required服务。
 
 保留所有仍被 service-bindings、磁盘 plist 或现场进程引用的发布树；解除全部引用并完成现场读回后才清理。 SimNow还须检查installed/loaded的`--config`私有配置、稳定monitor身份锚中的API环境/SDK/账户根及许可路径；未知结构、不可读、链接或读前后漂移阻止清理。限定路径下的未决SimNow切换/恢复意图同样保留依赖；只有完整计划及正式终态证明闭合的记录才能作为历史，不能仅凭COMPLETE字样放行。只读 `python -m app.runtime_retention cleanup-plan /exact/root...` 汇总 binding/plist/loaded/进程引用；未知结果阻止清理，删除前重新扫描。未引用旧树不作为常驻回滚树。
@@ -364,6 +365,11 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 
 恢复控制器从独立精确tag/commit的干净正式发布树执行，计划冻结控制器身份并逐阶段复验；控制器版本与运行服务版本分别记录，不能将控制器新发布冒充消费者已升级。
 
+原cohort已启动Feed、仅在verified以`ReceivingLivenessError`停驻且完整十项effect可证明时，可显式使用
+`plan --original-verified-feed-halt --close-feed-only`关闭原Feed，随后以同标志及`--feed-close-plan`生成新的同代恢复计划。
+两步各单次执行，绑定原public/private plan、state、global与effect字节；关闭必须证明精确Feed、全部PID退出、owner锁空闲及完整来源/ACK前缀。
+关闭receipt不表示恢复完成；只有后续正常恢复成功receipt才关联闭合原attempt与唯一关闭attempt。额外unknown、来源漂移或关闭结果不明均阻断，不循环接纳新失败、不修改原件。
+
 当精确当前Live在固定drain下由launchd反复exit1重启、不能稳定停驻时，计划可显式冻结 `live_restart_intent`。只允许部署/维护锁内核对同一label、binding、安装/launcher、drain与实际进程身份后，先持久记录单次effect再发一次原生bootout；确认整个label absent、所有已观察PID退出、owner锁空闲，重验原件/数据库前缀及pending/UNKNOWN后，才可启动原Live和其他消费者。禁止kill、重复bootout、把active冒充parked，或根据未公开日志猜测内部异常。任何退出、锁或提交事实不明即停止相关恢复。
 
 同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。新计划仍有15分钟TTL、600秒总预算，部署/维护/owner锁及各阶段独立读回；只恢复原启用集合。
@@ -379,7 +385,12 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 
 接收快照schema2记录采样初始current_tail与结束final_tail。两个新鲜独占接收轮只有在前缀/合同不回退且ACK和DB共同前进，或两轮每分区均ack=current_tail=final_tail时才证明存活；空闲不由Session CLOSED或调用者标志推导。合法零进展且仍有积压只在原预算内等待，完整性或时序错误立即失败。
 
-30秒活性样本过期不等于前缀损坏。等待循环逐次验证全部快照（包括同一owner cycle）的静态context、原件/routes、ACK及数据库前缀非回退；只有这条连续链通过后才能滚动活性采样窗口。过期样本本身不授予活性，仍需两轮不同且新鲜的owner cycle，并在最终身份校验后重新检查样本新鲜度。原120/240秒局部预算、600秒总预算及计划期限不延长。
+30秒活性样本过期不等于前缀损坏。等待循环逐次验证全部快照（包括同一owner cycle）的静态context、原件/routes、ACK及数据库前缀非回退；只有这条连续链通过后才能滚动活性采样窗口。两份样本采集时均须在各自owner cycle后30秒内，cycle严格递增且间隔不超过30秒，最终身份核验后最新样本仍须在30秒内；不接受任意旧基线。原120/240秒局部预算、600秒总预算及计划期限不延长。
+若owner检查后在完整快照采样前刚超过30秒，仅专用`ReceivingCycleStale`进入上述等待；未来时间、无效时间及任何完整性异常仍立即失败，已形成的快照仍必须通过连续前缀校验。
+接收等待先快速采样owner真实就绪，形成完整候选后重证Session、owner、身份及最新时效；Live正常poll暂时not_ready不清除已验证基线，也不授予就绪。
+完整候选只在最新30秒、原预算及权威Session/民用日/06:00和18:00边界内做最多1秒的真实就绪短轮询；不缓存或合成ready。控制器预算中断与来源校验错误分别保留，不把预算回调异常改写为来源冲突。
+原cohort Feed关闭已完整证明后，若其正常恢复仅启动同代消费者、以明确intake READY_TIMEOUT停驻且Feed未启动，可复用`reconcile-stopped`生成新鲜停止确认。原close和失败normal的公共/私有plan、state、receipt逐字绑定，额外effect或未决记录拒绝；已闭合历史仅通过原生typed闭合证明排除。该确认不表示旧失败成功，也不执行启动；后续仍为独立的既有stopped恢复计划。
+若该恢复已经完成合法schema2 intake并启动精确Feed，仅在只读verified阶段以已知控制/接收错误停驻，则同一入口可确认`feed_state=parked`，不能把它当作已退出。必须显式`plan --stopped-confirmation <确认> --close-feed-only`并单次执行原生关闭；取得完整PID退出/锁/双前缀关闭回执后，再以同一确认及`--feed-close-plan <关闭计划>`生成普通stopped恢复计划。关闭结果不明、额外effect/unknown、来源或身份漂移均阻断，旧记录不改写。
 新的verified失败在原生attempt中仅补充固定子步骤与合法带时区采样时间；接收异常仅保留精确类型的固定公开码，不记录异常原文或回溯。新诊断不能用于倒推旧attempt未记录的失败原因，也不增加对未决恢复前缀的接纳范围。
 
 接收存活由独立typed证明确定：原冻结SourceProof完整不变、active v2边界与原升级意图匹配、所有已ACK原件及冻结routes在数据库中逐条完整，其他分区不回退；有积压时须两次新鲜有界receiving cycle显示ACK与数据库前缀共同前进。计算等待及BLOCKED分别展示并继续逐流fence，不借此清除失败或重试；接收错误、原件/routes/身份异常、接收提交未知、恢复前未归属pending capture、失权或超时拒绝。旧尾部全部追齐是后续独立验收，不冒充启动完成条件。

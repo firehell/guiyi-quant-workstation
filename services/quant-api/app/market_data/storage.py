@@ -6,7 +6,7 @@ an explicitly selected offline repair shadow; normal publication never replaces.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -145,6 +145,13 @@ class CanonicalMonthlyStore:
             raise StorageError("CANONICAL_ROOT_ESCAPE")
         # 可选：按交易 session 边界拒绝越界 bar（维护管道注入）
         self.boundary_validator = boundary_validator
+
+    @staticmethod
+    def release_decoded_read_caches() -> None:
+        """Drop reclaimable read reuse; already returned immutable facts stay valid."""
+        with _DECODE_CACHE_LOCK:
+            _PARTITION_VALIDATION_CACHE.clear()
+            _DECODE_CACHE.clear()
 
     def publish(self, request: PublishRequest) -> PublishedPartition:
         """Install a validated immutable candidate without changing any Catalog pointer."""
@@ -411,7 +418,7 @@ class CanonicalMonthlyStore:
         if path.parent != directory or not re.fullmatch(r"part(?:\.[0-9a-f]{64})?\.parquet", path.name):
             raise StorageError("PARTITION_CATALOG_MISMATCH")
         values = self._read_path(path)
-        exceptions = tuple(partition.source_quality)
+        exceptions = self._catalog_source_quality(partition)
         # The file snapshot was verified above. Reuse its already completed
         # publication validation only for exactly the same Catalog contract.
         # Holding values in the entry prevents id reuse while this key exists.
@@ -463,6 +470,122 @@ class CanonicalMonthlyStore:
                        sum(len(item[0]) for item in _PARTITION_VALIDATION_CACHE.values()) > _DECODE_CACHE_BARS):
                     _PARTITION_VALIDATION_CACHE.popitem(last=False)
         return values, exceptions
+
+    @staticmethod
+    def _catalog_source_quality(partition: CatalogPartitionLike) -> tuple[SourceQualityFact, ...]:
+        """The same Catalog quality contract for tuple and bounded readers."""
+        exceptions = tuple(partition.source_quality)
+        if exceptions and (partition.dataset.frequency is not BarFrequency.D1
+                           or partition.dataset.kind is not DatasetKind.CONTRACT):
+            raise StorageError("SOURCE_QUALITY_FREQUENCY_INVALID")
+        if any(not isinstance(item, (PriceUnavailableFact, NonpositiveCloseFact)) for item in exceptions):
+            raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
+        if partition.source_quality_sha256 != (_quality_sha256(exceptions) if exceptions else None):
+            raise StorageError("SOURCE_QUALITY_EVIDENCE_INVALID")
+        return exceptions
+
+    def iter_catalog_partition_quality_chunks(
+        self, partition: CatalogPartitionLike, *, max_rows: int = 2000,
+    ) -> Iterator[tuple[CanonicalBar, ...]]:
+        """Verify a Catalog-selected month before yielding bounded decoded batches.
+
+        The caller must treat yielded batches as provisional until exhaustion:
+        a concurrent change to the opened file is checked after every batch.
+        The ordinary tuple reader remains available for short queries.
+        """
+        if type(max_rows) is not int or not 1 <= max_rows <= 2000:
+            raise StorageError("PARTITION_READ_BATCH_INVALID")
+        directory = self._month_directory(partition.dataset, partition.year, partition.month)
+        path = partition.file_path
+        if path.parent != directory or not re.fullmatch(r"part(?:\.[0-9a-f]{64})?\.parquet", path.name):
+            raise StorageError("PARTITION_CATALOG_MISMATCH")
+        exceptions = self._catalog_source_quality(partition)
+
+        directory_fd = self._directory_fd(directory)
+        try:
+            file_fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                              dir_fd=directory_fd)
+        except OSError as exc:
+            raise StorageError("PARTITION_UNREADABLE") from exc
+        finally:
+            os.close(directory_fd)
+        try:
+            with os.fdopen(file_fd, "rb") as stream:
+                initial = os.fstat(stream.fileno())
+                if not stat.S_ISREG(initial.st_mode):
+                    raise StorageError("PARTITION_UNREADABLE")
+                digest = hashlib.sha256()
+                while data := stream.read(1024 * 1024):
+                    digest.update(data)
+                if path.name != "part.parquet" and path.name != f"part.{digest.hexdigest()}.parquet":
+                    raise StorageError("PARTITION_CONTENT_HASH_MISMATCH")
+                if _file_identity(os.fstat(stream.fileno())) != _file_identity(initial):
+                    raise StorageError("PARTITION_UNREADABLE")
+
+                def batches() -> Iterator[tuple[CanonicalBar, ...]]:
+                    stream.seek(0)
+                    parquet = pq.ParquetFile(stream)
+                    if not parquet.schema_arrow.equals(CANONICAL_SCHEMA, check_metadata=False):
+                        raise StorageError("PHYSICAL_CONSISTENCY_INVALID")
+                    for batch in parquet.iter_batches(batch_size=max_rows):
+                        table = pa.Table.from_batches([batch])
+                        ends = table.column("bar_end").cast(pa.timestamp("us")).to_pylist()
+                        records = table.drop(["bar_end"]).to_pylist()
+                        yield tuple(CanonicalBar(bar_end=end.replace(tzinfo=UTC), **record)
+                                    for end, record in zip(ends, records, strict=True))
+
+                count = 0
+                first: datetime | None = None
+                last: datetime | None = None
+                source_ends = [fact.bar_end for fact in exceptions]
+                for rows in batches():
+                    # DatabaseCoverageSource.valid_boundaries checks each fact's
+                    # lifecycle, Calendar and Session endpoint membership. Those
+                    # predicates are conjunctive, so checking every bounded batch
+                    # and the typed quality facts is equivalent to the month tuple.
+                    if rows and self.boundary_validator is not None and not self.boundary_validator(partition.dataset, rows):
+                        raise StorageError("SESSION_BOUNDARY_INVALID")
+                    for bar in rows:
+                        if bar.trading_day.year != partition.year or bar.trading_day.month != partition.month:
+                            raise StorageError("PARTITION_MONTH_MISMATCH")
+                        if last is not None and bar.bar_end <= last:
+                            raise StorageError("BAR_END_NOT_STRICTLY_INCREASING")
+                        first = first or bar.bar_end
+                        last = bar.bar_end
+                        if exceptions:
+                            source_ends.append(bar.bar_end)
+                        count += 1
+                if not count and not exceptions:
+                    raise StorageError("PARTITION_EMPTY")
+                if count != partition.row_count:
+                    raise StorageError("PARTITION_ROW_COUNT_MISMATCH")
+                delta = _frequency_delta(partition.dataset.frequency)
+                if partition.coverage_start != (first - delta if first else None) or partition.coverage_end != last:
+                    raise StorageError("PARTITION_COVERAGE_MISMATCH")
+                for fact in exceptions:
+                    if fact.trading_day.year != partition.year or fact.trading_day.month != partition.month:
+                        raise StorageError("PARTITION_MONTH_MISMATCH")
+                if exceptions and self.boundary_validator is not None and not self.boundary_validator(partition.dataset, exceptions):
+                    raise StorageError("SESSION_BOUNDARY_INVALID")
+                if exceptions:
+                    source_ends.sort()
+                    if any(left >= right for left, right in zip(source_ends, source_ends[1:])):
+                        raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+                source_first = min((item for item in (first, *(fact.bar_end for fact in exceptions)) if item is not None), default=None)
+                source_last = max((item for item in (last, *(fact.bar_end for fact in exceptions)) if item is not None), default=None)
+                if exceptions and (source_first is None or partition.source_coverage_start != source_first - delta
+                                   or partition.source_coverage_end != source_last):
+                    raise StorageError("SOURCE_QUALITY_COVERAGE_INVALID")
+                if _file_identity(os.fstat(stream.fileno())) != _file_identity(initial):
+                    raise StorageError("PARTITION_UNREADABLE")
+                for rows in batches():
+                    if _file_identity(os.fstat(stream.fileno())) != _file_identity(initial):
+                        raise StorageError("PARTITION_UNREADABLE")
+                    yield rows
+                if _file_identity(os.fstat(stream.fileno())) != _file_identity(initial):
+                    raise StorageError("PARTITION_UNREADABLE")
+        except (OSError, pa.ArrowException, ContractError, TypeError, ValueError) as exc:
+            raise StorageError("PARTITION_UNREADABLE") from exc
 
     def month_path(self, dataset: DatasetKey, year: int, month: int) -> Path:
         """Return only the legacy fixed path; active readers must use the Catalog URI."""
