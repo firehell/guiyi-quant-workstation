@@ -1403,7 +1403,7 @@ def valid_original_verified_feed_state(plan, state):
             and effects["old_exited"].get("old_pids_exited") is True
             and effects["old_exited"].get("bootout_requests")
             == effects["bootout_requests"]
-            and effects["preserve"].get("history_retained") is True
+            and type(effects["preserve"].get("history_retained")) is bool
             and set(effects["install"].get("installed", ()))
             == set(plan["new"]["services"])
             and set(effects["consumers_ready"])
@@ -1415,6 +1415,26 @@ def valid_original_verified_feed_state(plan, state):
         )
     except (AttributeError, KeyError, TypeError, ValueError):
         return False
+
+
+def _assert_absent_preserved_history(host, plan, state, attempt, *, historical=False):
+    """Accept native no-history preservation only with pinned absence evidence."""
+    if state["effects"]["preserve"]["history_retained"] is True:
+        return
+    code = "COHORT_FORWARD_HISTORY_ABSENCE_UNPROVEN"
+    raw, index = _resolution_source(attempt / "originals" / "index.json")
+    require(sha256(raw).hexdigest() == state["effects"]["preserve"].get("original_index_sha256"), code)
+    require(isinstance(index, dict) and index.get("schema_version") == 1
+            and isinstance(index.get("files"), list), code)
+    paths = [Path(plan[side]["services"]["after-market"]["root"]) / ".run" / name
+             for side in ("old", "new")
+             for name in ("after-market-status.json", "after-market-history.json")]
+    require(all(str(path) not in plan["protected"]["files"] for path in paths), code)
+    if not historical:
+        require(all(not os.path.lexists(path) for path in paths), code)
+    for row in index["files"]:
+        require(isinstance(row, dict) and isinstance(row.get("source"), str), code)
+        require(row["source"] not in {str(path) for path in paths} or row.get("present") is False, code)
 
 
 def _original_verified_feed_source(host, path, *, historical=False):
@@ -1445,6 +1465,7 @@ def _original_verified_feed_source(host, path, *, historical=False):
             and valid_original_verified_feed_state(plan, state),
             "COHORT_FORWARD_SOURCE_INVALID",
         )
+        _assert_absent_preserved_history(host, plan, state, attempt, historical=historical)
         effects = state["effects"]
         identity = {
             "kind": ORIGINAL_FEED_SOURCE,
