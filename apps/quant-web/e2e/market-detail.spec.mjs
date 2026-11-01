@@ -524,28 +524,32 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   const subingAudit = page.locator('[data-detail-workspace="subing"] .observed-records')
   await subingAudit.locator('summary').click()
   await expect(subingAudit).toContainText('首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史')
-  await expect(page.getByText(/S↑ 多头预警/).first()).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   await page.getByRole('tab', { name: '历史记录', exact: true }).click()
   await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('Bar 2026-09-03 10:45 北京时间')
+  await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('S↑ 多头预警')
   expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
 })
 
-test('SuBing projects Rule-specific runtime warm-up and failure states', async ({ page }) => {
+test('SuBing omits removed disclosure cards and empty history for all runtime states', async ({ page }) => {
   let errorType = 'evaluation_warming_up'
   await mockDetailDailyQuote(page, {
     alertRules: [subingRule()],
     subingRuntimeRuleStatus: () => ({ error_type: errorType }),
   })
-  await page.goto('/market/chart?symbol=jm&view=subing')
-  const runtimeSection = page.locator('.detail-insight-deck').getByText(/正在 warm-up/)
-  await expect(runtimeSection).toBeVisible()
-
-  errorType = 'evaluation_failed'
-  await page.reload()
-  await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-  await expect(page.locator('.detail-insight-deck').getByText(/评估失败/)).toBeVisible()
+  for (const state of ['evaluation_warming_up', 'evaluation_failed']) {
+    errorType = state
+    await page.goto('/market/chart?symbol=jm&view=subing')
+    await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
+    const workspace = page.locator('[data-detail-workspace="subing"]')
+    await expect(workspace.locator('.observed-records__audit')).toBeVisible()
+    await expect(workspace.locator('.detail-insight-deck')).toHaveCount(0)
+    for (const title of ['最新已保存预警', '触发口径', '运行与通知']) {
+      await expect(workspace.getByRole('button', {name: new RegExp(title)})).toHaveCount(0)
+    }
+    await expect(workspace.getByRole('tab', {name:'历史记录',exact:true})).toHaveCount(0)
+  }
 })
 
 test('SuBing current MACD and immutable history remain usable on desktop and mobile', async ({ page }) => {

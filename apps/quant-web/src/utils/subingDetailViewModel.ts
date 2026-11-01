@@ -44,11 +44,7 @@ export function buildSubingDetailViewModel(input: {
       { id: 'global-evaluation', label: '全局最近评估', value: evaluationAt ? `${formatBeijingInstant(evaluationAt)} · 不代表 ${input.identity.symbol.toUpperCase()} 已评估` : input.runtimeUnavailable ? '全局评估状态不可用' : '全局尚无已评估 Bar', tone: input.runtimeUnavailable ? 'unavailable' : 'default', source: 'runtime' },
       { id: 'exact-event', label: '当前品种已保存 Event', value: signal ? `${signal} · ${formatBeijingInstant(latest!.bar_end)} · ${latest!.contract}${stale ? '（展示上一份成功快照）' : ''}` : unavailable ? '当前品种 Event 数据不可用' : '当前已读取窗口无已保存 Event；不代表中性信号', tone: signal ? (latest!.result_codes[0] === 'buy' ? 'up' : 'down') : unavailable ? 'unavailable' : 'default', source: 'alert_event' },
     ],
-    disclosureSections: [
-      { id: 'subing-latest', title: '最新已保存预警', summary: signal ?? (unavailable ? '预警数据不可用' : '当前窗口暂无已保存苏冰预警'), updatedAt: latest?.detected_at ?? null, tone: unavailable ? 'unavailable' : stale ? 'warning' : 'default', rows: latest ? [{ label: 'AlertEvent', value: `${signal} · ${formatBeijingInstant(latest.bar_end)} · ${latest.contract}`, source: 'alert_event' }] : [] },
-      { id: 'subing-formula', title: '触发口径', summary: latest?.formula_version ?? '未记录', updatedAt: null, tone: 'default', rows: [{ label: '固定展示身份', value: 'actual_dominant / 5m、15m、30m、60m、日线、周线 / completed_only · 正式苏冰：MACD(12,26,9) CROSS + EMA(CLOSE,21)；副图 MA21 金死叉为独立观察', source: 'generic_indicator' }] },
-      { id: 'subing-runtime', title: '运行与通知', summary: status, updatedAt: input.runtime?.rule_status.subing_ths_alert_15m_v1.last_evaluated_bar_at ?? null, tone: runtimeTone(input.runtime, input.runtimeUnavailable), rows: runtimeRows(input.runtime) },
-    ], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
+    disclosureSections: [], history, dataStatus: unavailable ? 'unavailable' : stale ? 'stale' : 'ready',
   }
 }
 
@@ -64,22 +60,4 @@ function runtimeText(runtime: RuntimeAlertProjection | null, unavailable: boolea
   if (runtime.status === 'failed') return `Runtime 运行失败 · Rule ${ruleText}`
   if (runtime.status !== 'ok' && runtime.status !== 'healthy') return `Runtime 状态未知 · Rule ${ruleText}`
   return `全局正常 · ${ruleText}`
-}
-
-function runtimeTone(runtime: RuntimeAlertProjection | null, unavailable: boolean): 'default' | 'warning' | 'unavailable' {
-  if (unavailable || !runtime || runtime.status === 'disabled' || runtime.status === 'failed') return 'unavailable'
-  return runtime.status === 'ok' || runtime.status === 'healthy' ? 'default' : 'warning'
-}
-
-function runtimeRows(runtime: RuntimeAlertProjection | null) {
-  if (!runtime) return [{ label: 'Runtime', value: '不可用', source: 'runtime' as const }]
-  const rule = runtime.rule_status.subing_ths_alert_15m_v1
-  return [
-    { label: '全局状态', value: runtime.status, source: 'runtime' as const },
-    { label: 'Rule 已评估 Bar', value: formatBeijingInstant(rule.last_evaluated_bar_at), source: 'runtime' as const },
-    { label: 'Rule 最近 Event', value: formatBeijingInstant(rule.last_event_at), source: 'runtime' as const },
-    { label: 'Rule 最近失败', value: formatBeijingInstant(rule.last_failure_at), source: 'runtime' as const },
-    { label: 'Rule 错误类型', value: rule.error_type ?? '—', source: 'runtime' as const },
-    { label: '通知说明', value: '六周期静默记录；同向判断读取信号当时保存的快照。', source: 'runtime' as const },
-  ]
 }

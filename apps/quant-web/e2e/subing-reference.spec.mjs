@@ -108,6 +108,7 @@ for (const width of [1188,390]) {
     await page.setViewportSize({width,height:900})
     const requests=await setup(page)
     await page.goto('/market/chart?symbol=jm&view=subing&series_kind=actual_dominant&frequency=60m')
+    await expect(page.locator('[data-detail-workspace="subing"] .detail-insight-deck')).toHaveCount(0)
     const panel=page.getByRole('region',{name:'实时参考收益与记录',exact:true})
     await expect(panel.locator('.newow-reference__card')).toHaveCount(3)
     await expect(panel.getByRole('button',{name:'近3月',exact:true})).toHaveAttribute('aria-pressed','true')
