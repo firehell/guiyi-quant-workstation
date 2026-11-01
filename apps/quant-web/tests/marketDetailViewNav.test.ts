@@ -58,7 +58,7 @@ test('Newow navigation restores frequency choices whenever the workspace does no
   const app = createRenderer(nodeOperations()).createApp({ render: () => h(Nav, {
     identity: { view:view.value, symbol:'jm', strategy:'trend', seriesKind:'actual_dominant', frequency:'1d' },
     restore: { newow:{ strategy:'trend', frequency:'1d' } },
-    newowFrequencies:['60m','1d','1w'], seriesKinds:['actual_dominant'], newowFrequencyInWorkspace:inWorkspace.value,
+    newowFrequencies:['60m','1d','1w'], seriesKinds:['actual_dominant'], frequencyInWorkspace:inWorkspace.value,
     onSelect:(value:any)=>selected.push(value),
   }) })
   app.mount(root)
@@ -70,7 +70,9 @@ test('Newow navigation restores frequency choices whenever the workspace does no
   assert.equal(selected.at(-1).frequency,'60m')
   assert.equal(selected.at(-1).symbol,'jm')
   inWorkspace.value = true; view.value = 'free'; await nextTick()
-  assert.ok(controls(), 'other analysis views always retain their frequency controls')
+  assert.equal(controls(), undefined, 'workspace owns the only frequency controls')
+  inWorkspace.value = false; await nextTick()
+  assert.ok(controls(), 'fallback navigation retains controls without a workspace')
   app.unmount()
 })
 

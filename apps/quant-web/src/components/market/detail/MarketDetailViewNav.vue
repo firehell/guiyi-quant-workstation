@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import ChartReferenceToolbar from './ChartReferenceToolbar.vue'
+import DetailChartToolbar from './DetailChartToolbar.vue'
 import { computed, ref, watch } from 'vue'
 
 import { type MarketProductDirectoryItem, MARKET_FREQUENCIES, type MarketFrequency, type SeriesKind } from '@/types/market'
@@ -19,16 +19,15 @@ const props = withDefaults(defineProps<{
   seriesKinds?: readonly SeriesKind[]
   frequencies?: readonly MarketFrequency[]
   newowFrequencies: readonly MarketFrequency[]
-  frequencyControlsTarget?: string
   targetPrice?: string | null
   absorbPrice?: string | null
   referencePriceStatus?: string
-  newowFrequencyInWorkspace?: boolean
+  frequencyInWorkspace?: boolean
 }>(), {
   seriesKinds: () => ['actual_dominant', 'contract'],
   frequencies: () => MARKET_FREQUENCIES,
   products: () => [],
-  newowFrequencyInWorkspace: false,
+  frequencyInWorkspace: false,
 })
 
 const emit = defineEmits<{
@@ -57,8 +56,8 @@ function chooseTest(choice: MarketDetailIdentity['newowTest'] | 'main_rise') {
 const activeChoice = computed<AnalysisChoice>(() => props.identity.view === 'newow'
   ? props.identity.newowMode === 'dual' ? 'dual' : props.identity.strategy ?? 'trend'
   : props.identity.view === 'trend' ? 'trend' : props.identity.view)
-const showFrequencyControls = computed(() => (props.identity.view === 'newow' && !props.newowFrequencyInWorkspace) || ['subing', 'htdy', 'free'].includes(props.identity.view))
-const availableFrequencies = computed(() => props.identity.view === 'newow' ? props.newowFrequencies : ['subing', 'htdy'].includes(props.identity.view) ? ['5m', '15m', '30m', '60m', '1d', '1w'] as MarketFrequency[] : props.frequencies)
+const showFrequencyControls = computed(() => !props.frequencyInWorkspace && ['newow', 'subing', 'htdy', 'free'].includes(props.identity.view))
+
 const symbol = ref(props.identity.symbol)
 const contract = ref(props.identity.contract ?? '')
 
@@ -108,9 +107,7 @@ function chooseSymbol(nextValue = symbol.value) {
 
 defineExpose({ selectSymbol: chooseSymbol })
 
-function periodLabel(value: MarketFrequency) {
-  return value === '1d' ? '日线' : value === '1w' ? '周线' : value.replace('m', '分钟')
-}
+
 </script>
 
 <template>
@@ -141,15 +138,9 @@ function periodLabel(value: MarketFrequency) {
 
 
 
-    <Teleport defer :to="frequencyControlsTarget ?? 'body'" :disabled="!frequencyControlsTarget">
-    <ChartReferenceToolbar v-if="showFrequencyControls" :target-price="targetPrice" :absorb-price="absorbPrice" :status="referencePriceStatus">
-      <div class="newow-chart-frequency" role="group" aria-label="周期">
-        <button v-for="frequency in availableFrequencies" :key="frequency" type="button"
-          :aria-pressed="identity.frequency === frequency" :class="{ 'is-active': identity.frequency === frequency }"
-          @click="chooseFrequency(frequency)">{{ periodLabel(frequency) }}</button>
-      </div>
-    </ChartReferenceToolbar>
-    </Teleport>
+    <DetailChartToolbar v-if="showFrequencyControls" :identity="identity"
+      :frequencies="identity.view === 'newow' ? newowFrequencies : frequencies"
+      :target-price="targetPrice" :absorb-price="absorbPrice" :status="referencePriceStatus" @select="chooseFrequency" />
   </nav>
 </template>
 

@@ -948,24 +948,13 @@ for (const view of ['htdy', 'subing', 'free']) {
       await page.route('**/api/v1/market/newow/strategy-detail**', route => {
         const url = new URL(route.request().url())
         if (url.searchParams.get('section') !== 'chart') return route.fallback()
-        const raw = buildNewowSplitFixtureEnvelopeForTest(url)
-        const value = raw.chart.value, bar = value.bars.at(-1)
-        value.price_reference = {
-          surface: 'chart_legend', frequency: raw.meta.identity.frequency, as_of: raw.meta.as_of,
-          anchor_bar_end: bar.bar_end, physical_contract: bar.physical_contract,
-          segment_id: bar.segment_id, calculation_segment_id: bar.calculation_segment_id,
-          input_sha256: 'a'.repeat(64), formula_version: 'newow_chart_legend_hhv_llv10_page_v1',
-          adapter_version: 'newow_chart_price_projection_v1',
-          target: { raw: '3600', display: '3600.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
-          absorb: { raw: '3400', display: '3400.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
-        }
-        return route.fulfill({ json: raw })
+        return route.fulfill({ json: toolbarChartEnvelope(url) })
       })
       await page.goto(`/market/chart?symbol=rb&view=${view}&series_kind=actual_dominant&frequency=60m`)
       const toolbar = page.getByLabel('主图参考价格', { exact: true })
       await expect(toolbar).toHaveCount(1)
       await expect(page.locator('.detail-view-nav .chart-reference-toolbar')).toHaveCount(0)
-      await expect(page.locator(`#detail-chart-reference-toolbar .chart-reference-toolbar`)).toHaveCount(1)
+      await expect(page.locator(`[data-detail-workspace] .chart-reference-toolbar`)).toHaveCount(1)
       if (view === 'htdy') {
         const layout = await page.locator('.htdy-workspace').evaluate(el => {
           const surface = el.querySelector('.htdy-workspace__chart-surface')
@@ -993,3 +982,130 @@ for (const view of ['htdy', 'subing', 'free']) {
     })
   }
 }
+
+
+for (const width of [1188, 390]) {
+  test(`chart toolbar survives client-side strategy roundtrip width ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 })
+    await installNewowProductFixtures(page)
+    await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=60m')
+    const toolbar = page.getByLabel('主图参考价格', { exact: true })
+    for (const [view, label] of [['htdy','火天大有'],['subing','苏冰预警'],['free','自由看盘'],['htdy','火天大有']]) {
+      await page.getByRole('tab', { name: label, exact: true }).click()
+      await expect(page.locator(`[data-detail-workspace="${view}"] .chart-reference-toolbar`)).toBeVisible()
+      await expect(toolbar).toHaveCount(1)
+      await expect(toolbar.getByRole('button', { name:'60分钟', exact:true })).toHaveAttribute('aria-pressed','true')
+    }
+    await page.goBack()
+    await expect(page.locator('[data-detail-workspace="free"] .chart-reference-toolbar')).toBeVisible()
+    await page.goForward()
+    await expect(page.locator('[data-detail-workspace="htdy"] .chart-reference-toolbar')).toBeVisible()
+    await page.reload()
+    await expect(page.locator('[data-detail-workspace="htdy"] .chart-reference-toolbar')).toBeVisible()
+  })
+}
+
+function toolbarChartEnvelope(url, target = '3600') {
+  const raw = buildNewowSplitFixtureEnvelopeForTest(url)
+  const value = raw.chart.value, bar = value.bars.at(-1)
+  value.price_reference = {
+    surface: 'chart_legend', frequency: raw.meta.identity.frequency, as_of: raw.meta.as_of,
+    anchor_bar_end: bar.bar_end, physical_contract: bar.physical_contract,
+    segment_id: bar.segment_id, calculation_segment_id: bar.calculation_segment_id,
+    input_sha256: 'a'.repeat(64), formula_version: 'newow_chart_legend_hhv_llv10_page_v1',
+    adapter_version: 'newow_chart_price_projection_v1',
+    target: { raw: target, display: Number(target).toFixed(2), status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
+    absorb: { raw: '3400', display: '3400.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
+  }
+  return raw
+}
+
+
+test('chart toolbar remains usable through delayed prices, rapid switching and stale responses', async ({ page }) => {
+  await installNewowProductFixtures(page)
+  let release, started, finished
+  const gate = new Promise(resolve => { release = resolve })
+  const requestStarted = new Promise(resolve => { started = resolve })
+  const requestFinished = new Promise(resolve => { finished = resolve })
+  await page.route('**/api/v1/market/newow/strategy-detail**', async route => {
+    const url = new URL(route.request().url())
+    if (url.searchParams.get('section') !== 'chart') return route.fallback()
+    if (url.searchParams.get('frequency') === '5m') {
+      started(); await gate
+      try { await route.fulfill({ json: toolbarChartEnvelope(url, '3700') }) } finally { finished() }
+      return
+    }
+    return route.fulfill({ json: toolbarChartEnvelope(url, url.searchParams.get('frequency') === '30m' ? '3800' : '3600') })
+  })
+  await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=60m')
+  const toolbar = page.getByLabel('主图参考价格', { exact:true })
+  await expect(toolbar).toContainText('目标价: 3600.00')
+  await toolbar.getByRole('button', {name:'5分钟',exact:true}).click()
+  await requestStarted
+  await expect(toolbar).not.toContainText('3600.00')
+  for (const name of ['苏冰预警','自由看盘','火天大有']) {
+    await page.getByRole('tab',{name,exact:true}).click()
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toHaveCount(1)
+  }
+  await toolbar.getByRole('button',{name:'30分钟',exact:true}).click()
+  await expect(toolbar).toContainText('目标价: 3800.00')
+  release(); await requestFinished
+  await expect(toolbar).toContainText('目标价: 3800.00')
+  await expect(toolbar.getByRole('button',{name:'30分钟',exact:true})).toHaveAttribute('aria-pressed','true')
+})
+
+test('chart toolbar supports all analysis tabs without reload', async ({ page }) => {
+  await installNewowProductFixtures(page)
+  await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=1d')
+  for (const name of ['趋势策略','震荡策略','双策略','火天大有','苏冰预警','自由看盘','趋势策略']) {
+    await page.getByRole('tab',{name,exact:true}).click()
+    const toolbar = page.getByLabel('主图参考价格',{exact:true})
+    await expect(toolbar).toBeVisible()
+    await expect(toolbar).toHaveCount(1)
+    await expect(toolbar.getByRole('button',{name:'日线',exact:true})).toHaveAttribute('aria-pressed','true')
+    await expect(page.locator('.detail-view-nav .chart-reference-toolbar')).toHaveCount(0)
+  }
+})
+
+test('chart toolbar survives price failures, market failures, product changes and unsupported periods', async ({ page }) => {
+  const failures = []
+  page.on('pageerror', error => failures.push(error.message))
+  await mockMarketDetail(page)
+  await page.route('**/api/v1/market/newow/strategy-detail**', route => route.fulfill({status:503,json:{detail:{code:'NEWOW_DATA_UNAVAILABLE'}}}))
+  await page.route('**/api/v1/market/bars/page**', route => route.fulfill({status:503,json:{detail:{code:'DATASET_OR_PARTITION_MISSING'}}}))
+  await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=60m')
+  const toolbar = page.getByLabel('主图参考价格',{exact:true})
+  await expect(toolbar).toBeVisible()
+  await expect(toolbar).toHaveCount(1)
+  await expect(toolbar).toContainText('不可用')
+  await toolbar.getByRole('button',{name:'5分钟',exact:true}).click()
+  await expect.poll(()=>new URL(page.url()).searchParams.get('frequency')).toBe('5m')
+  await expect(toolbar).toBeVisible()
+  const search = page.getByRole('combobox',{name:'搜索60品种'})
+  await search.fill('rb'); await search.press('Enter')
+  await expect.poll(()=>new URL(page.url()).searchParams.get('symbol')).toBe('rb')
+  await expect(toolbar).toContainText('不可用')
+  await page.getByRole('tab',{name:'自由看盘',exact:true}).click()
+  await toolbar.getByRole('button',{name:'1分钟',exact:true}).click()
+  await page.getByRole('tab',{name:'苏冰预警',exact:true}).click()
+  await expect(page.getByText('苏冰预警不支持当前周期或指定合约，行情与当前周期已保留。')).toBeVisible()
+  await expect(toolbar).toBeVisible()
+  await expect(toolbar.getByRole('button',{name:'1分钟',exact:true})).toHaveCount(0)
+  await toolbar.getByRole('button',{name:'15分钟',exact:true}).click()
+  await expect.poll(()=>new URL(page.url()).searchParams.get('frequency')).toBe('15m')
+  await expect(toolbar).toBeVisible()
+  expect(failures).toEqual([])
+})
+
+test('HTDY source descriptions remain above the native chart toolbar', async ({ page }) => {
+  await installNewowProductFixtures(page)
+  await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=60m')
+  await page.getByRole('button',{name:'实时参考',exact:true}).click()
+  const workspace = page.locator('[data-detail-workspace="htdy"]')
+  const before = () => workspace.evaluate(el => el.querySelector('.htdy-workspace__source').getBoundingClientRect().bottom <= el.querySelector('.chart-reference-toolbar').getBoundingClientRect().top)
+  await expect.poll(before).toBe(true)
+  await workspace.getByRole('button',{name:'5分钟',exact:true}).click()
+  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+  await expect.poll(before).toBe(true)
+})

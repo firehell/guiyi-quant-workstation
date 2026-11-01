@@ -14,6 +14,7 @@ import ProductSelector from '@/components/market/ProductSelector.vue'
 import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuoteHeader.vue'
 import MarketDetailTopBar from '@/components/market/detail/MarketDetailTopBar.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
+import DetailChartToolbar from '@/components/market/detail/DetailChartToolbar.vue'
 import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.vue'
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
@@ -326,8 +327,7 @@ onUnmounted(() => chartSession.dispose())
         :target-price="toolbarPriceSummary.target?.display_value ?? null"
         :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null"
         :reference-price-status="toolbarPriceStatus"
-        :frequency-controls-target="controller.state.value.header && !controller.state.value.loading && !controller.state.value.error && workspaceVisible && ['htdy', 'subing', 'free'].includes(routeResult.identity.view) && !(routeResult.identity.view === 'subing' && (routeResult.identity.frequency === '1m' || routeResult.identity.seriesKind !== 'actual_dominant')) ? '#detail-chart-reference-toolbar' : undefined"
-        :newow-frequency-in-workspace="!isFuturesMode && workspaceVisible && routeResult.identity.view === 'newow' && !!newowCapabilities.capabilities.value && newowFrequencyOpen"
+        :frequency-in-workspace="workspaceVisible && ((routeResult.identity.view === 'newow' && !isFuturesMode && !!newowCapabilities.capabilities.value && newowFrequencyOpen) || (!!header && (['htdy', 'free'].includes(routeResult.identity.view) || (routeResult.identity.view === 'subing' && routeResult.identity.frequency !== '1m' && routeResult.identity.seriesKind === 'actual_dominant'))))"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
@@ -414,7 +414,13 @@ onUnmounted(() => chartSession.dispose())
             :identity-warning="identityWarning"
             @update-preferences="updateFreePreferences"
             @focus-resolved="resolveFocus"
-          />
+          >
+            <template #chart-toolbar>
+              <DetailChartToolbar :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
+                :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null" :status="toolbarPriceStatus"
+                @select="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })" />
+            </template>
+          </FreeChartWorkspace>
           <HtdyDetailWorkspace
             v-else-if="routeResult.identity.view === 'htdy' && header"
             ref="htdyWorkspace"
@@ -433,7 +439,13 @@ onUnmounted(() => chartSession.dispose())
             @update-preferences="updateHtdyPreferences"
             @history-availability="hasHtdyHistory = $event"
             @focus-resolved="resolveFocus"
-          />
+          >
+            <template #chart-toolbar>
+              <DetailChartToolbar :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
+                :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null" :status="toolbarPriceStatus"
+                @select="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })" />
+            </template>
+          </HtdyDetailWorkspace>
           <SubingDetailWorkspace
             v-else-if="routeResult.identity.view === 'subing' && header"
             ref="subingWorkspace"
@@ -451,7 +463,13 @@ onUnmounted(() => chartSession.dispose())
             :identity-warning="identityWarning"
             @history-availability="hasSubingHistory = $event"
             @focus-resolved="resolveFocus"
-          />
+          >
+            <template #chart-toolbar>
+              <DetailChartToolbar :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
+                :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null" :status="toolbarPriceStatus"
+                @select="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })" />
+            </template>
+          </SubingDetailWorkspace>
           </template>
         </section>
     </template>

@@ -155,7 +155,7 @@ function loadEarlier() { void props.loadEarlier() }
     <NewowPublicPatternsPanel v-if="showPatterns" :bars="patternBars" :period="identity.frequency" :window-key="patternWindowKey" @select="patternSelection = $event" @preview="patternSelection = $event" @clear="patternSelection = null" />
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
     <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
-    <div class="free-workspace__chart-surface"><div id="detail-chart-reference-toolbar" />
+    <div class="free-workspace__chart-surface"><slot name="chart-toolbar" />
     <FreeChartStage
       :bars="bars"
       :pattern-geometry="patternGeometry"
