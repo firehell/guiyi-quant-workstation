@@ -1,3 +1,9 @@
+11/1 十项正式服务已恢复至 v1.16.63/gen52，exact 5eed44ca847f282bf2efe5fc5112c0f3651395b0；最终十项matched、API/Web/Runtime HTTP全部通过。正式5173焦煤60m苏冰收益与删减页面已现场读回：未平1、中断1、已平0。
+owner明确授权后，PR #593已合并并发布v1.16.64恢复控制器（运行服务仍v63）。原cohort d01d783b…失败记录逐字保留；Feed关闭计划09757af0…已feed_closed，回执3984f166…；新同代恢复计划13e34f1e…成功recovered，回执999c3d742b399eced7531eac67cf8a827bed79f7698c37a7fd5ef96f8ae080d7。
+独立SimNow启动plist、私有配置哈希及原PID1733前后一致；未改账户、许可或定时安排。自然业务另待真实事件，不能由恢复成功推定自然验收。
+正式首页GET可读60品种，但projection_status=stale；显式home build被宿主拒绝，理由为早期任务仅允许独立预览派生、不覆盖正式投影。该正式派生文件未写入，需owner另行明确授权更新；不影响已完成服务恢复。
+v62旧树仍为既有一次性SimNow安排/历史恢复引用，v63现役、v64控制器均保留；不清理这些真实依赖。
+
 11/1 owner明确授权十服务切换v1.16.63、独立SimNow不动。原生cohort d01d783bc1b5e566ec5569973cdd20aad5986c9dd2330f7bf03233bcf0d13584 已提交v63/gen52绑定，但verified以COHORT_NEW_READY_TIMEOUT进入outcome_unknown并保护停驻；不能声明切换完成或Runtime Ready。
 旧v62与新v63源码及全部原失败记录保留；独立SimNow plist/config哈希和原PID1733前后一致，未操作。
 现有同代恢复入口因合法history_retained=false被SOURCE_INVALID拒绝，未创建恢复attempt或关闭Feed。必要严格缺席证据修复位于PR #593/codex/v63-recovery-history commit14692f4c5；194项测试及独立159项Review通过，原件不改写。
