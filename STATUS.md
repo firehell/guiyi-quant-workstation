@@ -1,3 +1,9 @@
+11/1 owner明确授权十服务切换v1.16.63、独立SimNow不动。原生cohort d01d783bc1b5e566ec5569973cdd20aad5986c9dd2330f7bf03233bcf0d13584 已提交v63/gen52绑定，但verified以COHORT_NEW_READY_TIMEOUT进入outcome_unknown并保护停驻；不能声明切换完成或Runtime Ready。
+旧v62与新v63源码及全部原失败记录保留；独立SimNow plist/config哈希和原PID1733前后一致，未操作。
+现有同代恢复入口因合法history_retained=false被SOURCE_INVALID拒绝，未创建恢复attempt或关闭Feed。必要严格缺席证据修复位于PR #593/codex/v63-recovery-history commit14692f4c5；194项测试及独立159项Review通过，原件不改写。
+宿主自动审批拒绝合并PR及发布v1.16.64恢复控制器，理由为owner只明确授权v1.16.63服务切换、未授权新控制器正式发布。v64尚无tag/Release或正式运行树。
+当前HOST_APPROVAL_BLOCKED：需owner明确授权发布该恢复控制器后，按原生Feed单次关闭及同代恢复继续；运行服务仍保持v63，不能重跑原cohort、回滚绑定或操作SimNow。
+
 11/1 市场与策略展示修复已发布 v1.16.63，exact 5eed44ca847f282bf2efe5fc5112c0f3651395b0，PR #592 / annotated tag / GitHub Release 完成。
 包含首页周线质量读取、恢复提示收敛、共享参考价/周期栏及生命周期修复、苏冰实时参考收益与界面精简；不改公式、账户或原始交易。
 定向后端87通过/1跳过、前端24通过、浏览器24通过，版本/锁检查、正式树类型与构建、secret/diff通过；既有基线失败不计入通过。
