@@ -1,3 +1,5 @@
+11/1 v65发布后独立读回补验：正式仍v64/gen53，十项matched、API/Web/Runtime HTTP均通过；原60诊断、closeout/failure-history、runtime-status、5526条Event及两条Rule整行摘要和日志cursor/tail均与切换前一致。原生692b5ab6…cohort-attempt目录不存在，证明宿主在创建执行进程前阻止，非未知Runtime写入。独立SimNow六文件（含四账本）SHA及PID1733保持；明日ACTIVE/COUNT=1/15:05任务仍v64，未误更新。隔离Redis测试容器已停止删除；宿主将本聊天临时发布验证树标为primary、拒绝归档，保持原位未绕过，正式v65源码另位于普通.worktrees/release-v1.16.65，不依赖该聊天树。
+
 11/1 Alert健康修复已发布v1.16.65/exact614e382c9db4c50bb6f52d9b2fd87f165a995c0f，PR594/main/annotated tag/GitHub Release完成。从v64仅发布Alert未到期误判/旧诊断原子关闭及新失败崩溃持久化修复，未带入苏冰研究或账户公式。最终599项相关回归、版本一致性、独立148项Review、API/Web离线依赖/类型/构建/拓扑通过。
 宿主自动审批拒绝十服务v65 Runtime promotion，理由为当前发布/复核授权未明确覆盖该次运行时切换；进程未创建，无apply输出/attempt，未换入口绕过。正式仍v64/gen53，原生status十项matched且API/Web/Runtime HTTP通过；业务旧60失败未关闭。新鲜计划692b5ab6…已生成但未执行，后续授权须重新生成fresh计划。
 v65原账户SimNow候选已原生SDK/render/60品种preflight通过，execution_permitted=false、writer_idle=false、无许可；原SimNow六文件/四账本散列与PID1733保持。既有11/2 15:05任务仍v64，正式未切前不将其改为v65，避免漂移。当前RELEASED/HOST_APPROVAL_BLOCKED（仅Runtime切换），待明确授权十项切v65、独立SimNow不动。
