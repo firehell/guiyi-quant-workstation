@@ -82,3 +82,37 @@ def test_progress_direction_change_resets_confirmation_and_preserves_clear_refer
     assert points[-1]['direction_count']==2
     assert points[-1]['reference']=='TREND_UP'
     assert points[-1]['reason']=='PRICE_PATH_REFERENCE'
+
+
+def test_ablation_does_not_change_original_evidence():
+    from scripts.research.regime_path_candidate import evidence
+    xs=[100.+i*.1 for i in range(30)]+[103,102,102.8,102.4,102.9,102.2,102.7,102.3,102.6,102.1,102.5,102.4]
+    old=evidence(xs,1.,'original')
+    new=evidence(xs,1.,'no_overlap')
+    assert old['reference']==new['reference']
+    assert old['direction']==new['direction']
+    assert not old['plateau'] or new['plateau']
+
+
+@pytest.mark.parametrize('variant',['no_overlap','confirm_exit','combined'])
+def test_variant_restart_prefix_and_reset(variant):
+    xs=[100+i*.2+(i%5)*.1 for i in range(100)]+[120.]*30
+    initial=initial_state('AG1','60m',variant)
+    end,full=replay(xs,initial)
+    state,head=replay(xs[:70],initial)
+    final,tail=replay(xs[70:],pickle.loads(pickle.dumps(state)),70)
+    assert final==end and head+tail==full
+    clean,p=step(end,contract='AG1',frequency='60m',time=end.last_time+timedelta(hours=1),close=120.,atr=None)
+    assert p['label']=='UNKNOWN' and clean.confirmed_label=='UNKNOWN'
+    assert clean.variant==variant
+
+
+def test_transition_requires_three_consecutive_same_targets():
+    from dataclasses import replace
+    state,_=replay([100+i for i in range(60)],initial_state('AG1','60m','confirm_exit'))
+    assert state.confirmed_label=='TREND_UP'
+    # A different target and old pending streak cannot be carried into a new direction.
+    state=replace(state,confirmed_label='RANGE',pending_label='TREND_DOWN',pending_count=2)
+    state,points=replay([160.,161.,162.],state,60)
+    assert [p['pending_count'] for p in points]==[1,2,3]
+    assert [p['label'] for p in points]==['RANGE','RANGE','TREND_UP']

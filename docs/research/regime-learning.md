@@ -118,3 +118,24 @@ python3 scripts/research/regime_review.py summarize --directory output/regime-ca
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/regime_path_experiment.py --output output/regime-path-experiment-new-run
 ```
+
+### 盘整消融与时点信息缺口
+
+`path_progress_plateau_ablation_v2` 预先固定4组：原候选、去重叠条件、所有标签切换3根确认、二者结合。
+114卡一致/冲突/未决依次74/5/23、72/8/22、58/6/38、62/7/33；另12人工不确定。
+同20264根前缀切换2736、3387、1437、1608，参考2132。后三组均未通过逐轮计数不劣条件。
+确认层对初次确认及所有进入/退出生效，不能仅描述为退出防抖。四组是已见开发消融，非四份OOS验证。
+
+停止在端点标签上继续调参：现有114回答未记录“从哪根开始盘整已确认”，缺少确认延迟的人工口径。
+`regime_boundary_review.py/.html` 从同快照构建4个已有AG/RB/SS/EC分歧，完整物理EMA预热，
+从40根开始逐根记录25个趋势/震荡/不确定状态，直到64根，允许多次转换；第40根状态按左截断处理。
+AG实图在40根已震荡、后有趋势再震荡，故首次range即停止不能定位末端边界。独立身份不改原回答。
+页面明确已见开发而非独立测试，答案不能自动扩标或训练。时点记录至多说明本次逐根复核的状态轨迹，
+不能冒充未见场景实时能力。导出验证用该模块的validate，不能用普通分类复核的summarize。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/regime_boundary_review.py --output output/regime-boundary-review-new-run
+python3 scripts/research/regime_review.py serve --directory output/regime-boundary-review-20261102-final --port 5178
+```
+
+证据：`output/regime-path-ablation-20261102/report.md`。状态为等待owner补时点信息，训练未开始。

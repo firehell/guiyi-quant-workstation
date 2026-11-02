@@ -17,7 +17,7 @@ from scripts.research.regime_label_diagnosis import tally
 from scripts.research.regime_review import validate_review
 
 
-def run(root, output):
+def run(root, output, variant='original'):
     dataset = root/'regime-learning-20261102-final'
     snapshot = json.loads((dataset/'snapshot.json').read_text())
     source_run = json.loads((dataset/'run.json').read_text())
@@ -29,7 +29,7 @@ def run(root, output):
     answer_hashes = {str(p):sha256(p.read_bytes()).hexdigest() for p in answer_paths}
     output.mkdir(parents=True, exist_ok=False)
     code = sha256(Path(candidate.__file__).read_bytes()).hexdigest()
-    protocol = dict(version=candidate.VERSION, policy=candidate.POLICY, code_hash=code,
+    protocol = dict(version=candidate.VERSION, variant=variant, policy=candidate.POLICY, code_hash=code,
         role='DEVELOPMENT_NOT_OOS', trials=1, source_dataset_id=source_run['dataset_id'],
         dependency_hashes=dependency_hashes, answer_hashes=answer_hashes,
         acceptance='Combined and each round: conflicts no greater, agreements no fewer, abstentions no greater than original reference. Passing only permits further validation.',
@@ -75,12 +75,13 @@ def run(root, output):
                     raise ValueError('SEALED_FORBIDDEN')
                 if b['segment'] != segment:
                     segment, recent, previous = b['segment'], [], None
-                    state = candidate.initial_state(b['contract'], b['frequency'])
+                    state = candidate.initial_state(b['contract'], b['frequency'], variant)
                     atr_state = initial_atr_state(14, smoothing_policy='wilder_sma_seed')
                 atr_state, ap = step_atr(atr_state, high=b['high'], low=b['low'], close=b['close'], bar_end=b['time'])
                 state, point = candidate.step(state, contract=b['contract'], frequency=b['frequency'], time=datetime.fromisoformat(b['time']), close=b['close'], atr=ap.value if ap.ready else None)
                 recent = (*recent, {k:b[k] for k in ('time','day','open','high','low','close')})[-64:]
-                if b['owned'] and point['label'] != 'UNKNOWN':
+                if b['owned'] and 'reference' in point:
+                    # Count all ready reference bars, including candidates awaiting confirmation.
                     transitions.append(dict(frequency=b['frequency'], candidate_change=previous is not None and previous[0]!=point['label'], reference_change=previous is not None and previous[1]!=point['reference']))
                     previous = (point['label'],point['reference'])
                 query = (b['contract'],b['time'])
@@ -115,7 +116,8 @@ def run(root, output):
 
 if __name__ == '__main__':
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--variant', choices=candidate.VARIANTS, default='original')
     p.add_argument('--root',type=Path,default=Path('output'))
     p.add_argument('--output',type=Path,required=True)
     args=p.parse_args()
-    run(args.root,args.output)
+    run(args.root,args.output,args.variant)
