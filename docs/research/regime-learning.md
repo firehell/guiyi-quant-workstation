@@ -100,3 +100,21 @@ python3 scripts/research/regime_review.py summarize --directory output/regime-ca
 
 完成条件：新片段人工复核后，对明确的分歧有可解释处理，自动标签规则另行版本化并完成因果性验证。
 本轮尚未得到可用于大规模训练的标签规则；不凭自动规则与自身标签一致来完成此Gate，不根据封存测试调参。
+
+### 两轮复核后的固定规则试验
+
+第二轮24/24已导入，人工7上涨/6下跌/11震荡；原参考明确18份全部一致，6份未决为5震荡/1上涨。
+两轮共114份（12人工不确定），原参考73一致/5冲突/24未决，仍非OOS。
+
+`regime_path_candidate.py` 的 `path_progress_plateau_v1` 固定试验保留20/40弱参考，
+新增12根范围重叠与低位移的连续3根盘整确认，以及仅在DISPUTED时使用8/20同向连续2根确认。
+`regime_path_experiment.py` 在计算前记录协议、回答与依赖hash，验证两轮各自及合并计数，使用同物理前缀。
+
+实跑只改善原90中的1张BU日线（合计74/5/23），新增24无改善，114个端点没有触发盘整分支。
+抽样主力开发前缀20264根含未决的切换次数2132→2736（+28.33%），不是全市场误切换率。
+逐轮计数不劣的初筛通过不代表规则成立；结论为改善证据不足，不用于扩标、训练或active替换。
+报告：`output/regime-path-experiment-20261102-final/report.md`；当前无需新增人工复核。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/regime_path_experiment.py --output output/regime-path-experiment-new-run
+```
