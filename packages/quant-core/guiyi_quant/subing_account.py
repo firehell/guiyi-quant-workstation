@@ -8,7 +8,7 @@ from typing import Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from .new_subing import ExecutionBar
-from .subing_decision import RISK_RESEARCH_PROFILES, DecisionModel, _wire, candidate_side, daily_allows, directional_frame, direction_sign
+from .subing_decision import _contract_version, RISK_RESEARCH_PROFILES, DecisionModel, _wire, candidate_side, daily_allows, directional_frame, direction_sign
 
 D = Decimal
 VERSION = 'subing_jm30_account_next1m_close_v5'
@@ -43,6 +43,9 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
     if not executions:
         raise ValueError('ACCOUNT_INPUT_EMPTY')
     contract = executions[0].bar.physical_contract
+    product = executions[0].bar.product.lower()
+    if product not in ('jm', 'ma', 'ta') or not contract.startswith(product.upper()):
+        raise ValueError('ACCOUNT_PHYSICAL_IDENTITY_CHANGED')
     model = DecisionModel(contract, run_id, research_profile=research_profile, risk_research_profile=risk_research_profile)
     round_limit, day_limit, margin_fraction, _ = RISK_RESEARCH_PROFILES.get(risk_research_profile, (D('2000'), D('5000'), D('.70'), True))
     prior = None
@@ -52,7 +55,7 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
         if type(execution) is not ExecutionBar:
             raise ValueError('ACCOUNT_EXECUTION_TYPE')
         b, f = execution.bar, execution.facts
-        if b.physical_contract != contract or b.product.lower() != 'jm' or f.multiplier != multiplier:
+        if b.physical_contract != contract or b.product.lower() != product or f.multiplier != multiplier:
             raise ValueError('ACCOUNT_PHYSICAL_IDENTITY_CHANGED')
         if b.volume != b.volume.to_integral_value():
             raise ValueError('ACCOUNT_FRACTIONAL_VOLUME')
@@ -235,6 +238,7 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
     if risk_research_profile is not None:
         version += f'_risk_stability_v1_{risk_research_profile}'
         identity = dict(risk_research_profile=risk_research_profile, research_parameters=dict(round_loss_limit=round_limit, day_loss_limit=day_limit, margin_fraction=margin_fraction, add_protection=model.add_protection))
+    version = _contract_version(version, contract)
     return _wire(dict(version=version,contract=contract,run_id=run_id, **identity,
         status='OPEN' if layers else 'PENDING' if model.pending else 'COMPLETED',
         summary=dict(cash=cash,equity=last_equity,net_pnl=last_equity-INITIAL_CASH,fees=fees,open_quantity=len(layers),fill_count=len(fills),closed_round_count=len(closed_rounds)),

@@ -41,6 +41,12 @@ RESEARCH_PROFILES = MappingProxyType({
 })
 
 
+def _contract_version(version, contract):
+    if not isinstance(contract, str) or not re.fullmatch(r'(JM|MA|TA)[0-9]{4}', contract):
+        raise ValueError('CONTRACT_INVALID')
+    return version if contract.startswith('JM') else version.replace('jm30', contract[:2].lower() + '30') + '_transfer_v1'
+
+
 def _time(value):
     if not isinstance(value, str):
         raise ValueError('TIME_INVALID')
@@ -121,7 +127,7 @@ def daily_allows(direction, side):
 
 class DecisionModel:
     def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None, risk_research_profile: str | None = None):
-        if not isinstance(contract, str) or not re.fullmatch(r'JM[0-9]{4}', contract):
+        if not isinstance(contract, str) or not re.fullmatch(r'(JM|MA|TA)[0-9]{4}', contract):
             raise ValueError('CONTRACT_INVALID')
         if not isinstance(run_id, str) or not run_id.strip():
             raise ValueError('RUN_INVALID')
@@ -131,11 +137,14 @@ class DecisionModel:
             raise ValueError('DECISION_RISK_RESEARCH_PROFILE_INVALID')
         if research_profile is not None and risk_research_profile is not None:
             raise ValueError('RESEARCH_PROFILE_COMBINATION_UNSUPPORTED')
+        if not contract.startswith('JM') and (research_profile is not None or risk_research_profile is not None):
+            raise ValueError('CROSS_PRODUCT_PARAMETER_SEARCH_UNSUPPORTED')
         self.risk_research_profile = risk_research_profile
         self.add_protection = RISK_RESEARCH_PROFILES.get(risk_research_profile, (Decimal('2000'), Decimal('5000'), Decimal('.70'), True))[3]
         self.research_profile = research_profile
         self.window_age, self.stop_buffer, self.target_r = RESEARCH_PROFILES.get(research_profile, (5, Decimal('13'), Decimal('1')))
         self.version = RISK_RESEARCH_VERSION if risk_research_profile is not None else RESEARCH_VERSION if research_profile is not None else VERSION
+        self.version = _contract_version(self.version, contract)
         self.profit_reason = 'PROFIT_1R' if self.target_r == 1 else 'PROFIT_' + str(self.target_r).replace('.', '_') + 'R'
         self.contract, self.run_id = contract, run_id
         self.layers = []
@@ -518,6 +527,7 @@ class DecisionModel:
         parameter = checkpoint.get('research_profile')
         risk = checkpoint.get('risk_research_profile')
         expected_version = RISK_RESEARCH_VERSION if risk is not None else RESEARCH_VERSION if parameter is not None else VERSION
+        expected_version = _contract_version(expected_version, checkpoint['contract'])
         if (any(checkpoint[k] is None for k in extra.split()) or checkpoint['version'] != expected_version
                 or _digest(payload) != checkpoint['sha256'] or type(checkpoint['events']) is not list):
             raise ValueError('CHECKPOINT_INVALID')

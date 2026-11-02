@@ -3,6 +3,8 @@
 本轮实现独立离线决策内核 `subing_jm30_decision_v6`。处理JM多空镜像、同一时刻只持一个方向、固定30m技术条件与完成1m检查，首仓1手、每次加1手、最多3手。
 不创建Broker订单，不接正式Runtime，不计算历史收益；完整执行、费用及账户事实适配见[3.3历史账户回放](subing-account-replay.md)。
 
+2026-11-02按owner要求，离线内核增加MA/TA原数值迁移研究：分别使用`subing_ma30_decision_v6_transfer_v1`、`subing_ta30_decision_v6_transfer_v1`身份并绑定真实物理合约。规则与默认JM行为不变，不允许在本迁移入口混入参数变体；品种执行事实、回测结果及限制见[账户研究记录](subing-account-replay.md#当前规则跨品种回测甲醇与pta2026-11-02)。这不扩大正式Runtime品种或策略Scope。
+
 ## 输入与职责
 
 `DecisionModel(contract, run_id).apply(event)`接受显式观察或确认事件，返回before、facts、actions、after。

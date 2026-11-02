@@ -84,28 +84,30 @@ def observations(bars, factor_rows, sessions):
     return result
 
 
-def load(market, raw_facts, since, through, *, factor_research_profile=None):
+def load(market, raw_facts, since, through, *, factor_research_profile=None, product="jm"):
+    if product not in ('jm', 'ma', 'ta'):
+        raise NewSubingInputError('RESEARCH_PRODUCT_UNSUPPORTED')
     if since > through:
         raise NewSubingInputError('REQUEST_WINDOW_INVALID')
-    owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol='jm', since=since, through=through)
-    factors = load_factors(market, since, through, include_joint=True, research_profile=factor_research_profile)
+    owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol=product, since=since, through=through)
+    factors = load_factors(market, since, through, include_joint=True, research_profile=factor_research_profile, product=product)
     segments, sources, sessions = [], [], {}
     for owner in owners:
         start, end = max(since, owner.start_trading_day), min(through, owner.end_trading_day)
-        cutoff = max(w.end for w in market.session_windows(symbol='jm', trading_day=end))
-        before = market.contract_source_evidence(symbol='jm', contract=owner.contract, frequency=BarFrequency.M1, before=cutoff)
-        expected = market.expected_contract_replay_endpoints(symbol='jm', contract=owner.contract,
+        cutoff = max(w.end for w in market.session_windows(symbol=product, trading_day=end))
+        before = market.contract_source_evidence(symbol=product, contract=owner.contract, frequency=BarFrequency.M1, before=cutoff)
+        expected = market.expected_contract_replay_endpoints(symbol=product, contract=owner.contract,
             frequency=BarFrequency.M1, trading_day=end, cutoff=cutoff, since=start)
         if not expected:
             raise NewSubingInputError('EXECUTION_INPUT_EMPTY')
-        result = market.query_contract_trading_days(ContractTradingDayQuery('jm', owner.contract, BarFrequency.M1, expected[0][1], end))
-        validate_series(result, product='jm', contract=owner.contract, frequency=BarFrequency.M1, expected=expected)
+        result = market.query_contract_trading_days(ContractTradingDayQuery(product, owner.contract, BarFrequency.M1, expected[0][1], end))
+        validate_series(result, product=product, contract=owner.contract, frequency=BarFrequency.M1, expected=expected)
         bars = []
         for b in result.bars:
             if not start <= b.trading_day <= end:
                 raise NewSubingInputError('EXECUTION_OWNER_CONFLICT')
             if b.trading_day not in sessions:
-                ws = tuple(market.session_windows(symbol='jm', trading_day=b.trading_day))
+                ws = tuple(market.session_windows(symbol=product, trading_day=b.trading_day))
                 if not ws or any(w.start >= w.end for w in ws) or any(a.end > z.start for a, z in zip(ws, ws[1:])):
                     raise NewSubingInputError('SESSION_CONFLICT')
                 sessions[b.trading_day] = ws
@@ -113,22 +115,22 @@ def load(market, raw_facts, since, through, *, factor_research_profile=None):
             containing = [w for w in ws if w.start < b.bar_end <= w.end]
             if len(containing) != 1:
                 raise NewSubingInputError('SESSION_CONFLICT')
-            bars.append(StrategyBar(product='jm', physical_contract=owner.contract, frequency='1m',
+            bars.append(StrategyBar(product=product, physical_contract=owner.contract, frequency='1m',
                 source_identity=payload_hash([before, asdict(b)]), confirmed_at=b.bar_end,
                 session_open_at=containing[0].start, session_close_at=max(w.end for w in ws),
                 **{k:v for k,v in asdict(b).items() if k != 'turnover'}))
         selected = select_facts(raw_facts, bars)
-        executions, facts_hash = load_execution_facts(selected, product='jm', bars=bars)
+        executions, facts_hash = load_execution_facts(selected, product=product, bars=bars)
         rows = [r for r in factors['rows'] if r['contract'] == owner.contract]
         segments.append(dict(contract=owner.contract, since=str(start), through=str(end), executions=executions,
             observations=observations(bars, rows, sessions), facts_hash=facts_hash))
         sources.append(dict(contract=owner.contract, frequency='1m', cutoff=cutoff, source=before,
             count=len(bars), bars_hash=payload_hash([asdict(b) for b in bars])))
     for s in [*factors['sources'], *sources]:
-        if s['source'] != market.contract_source_evidence(symbol='jm', contract=s['contract'],
+        if s['source'] != market.contract_source_evidence(symbol=product, contract=s['contract'],
                 frequency=BarFrequency(s['frequency']), before=s['cutoff']):
             raise NewSubingInputError('INPUT_SOURCE_CHANGED')
-    if owners != ActualDominantResearchSegmentLoader(market).owner_segments(symbol='jm', since=since, through=through):
+    if owners != ActualDominantResearchSegmentLoader(market).owner_segments(symbol=product, since=since, through=through):
         raise NewSubingInputError('OWNER_MAPPING_CHANGED')
     evidence = dict(since=str(since), through=str(through), sources=[*factors['sources'], *sources],
         source_facts_hash=payload_hash(raw_facts), factors_input_hash=factors['input_hash'],
@@ -137,6 +139,8 @@ def load(market, raw_facts, since, through, *, factor_research_profile=None):
     if factor_research_profile is not None:
         evidence.update(factor_research_profile=factor_research_profile,
                         factor_research_parameters=factors['research_parameters'])
+    if product != 'jm':
+        evidence['transfer_product'] = product
     return segments, evidence
 
 

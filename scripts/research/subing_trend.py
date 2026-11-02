@@ -43,7 +43,11 @@ def diagnostic(exc):
     return safe_diagnostic(exc, product='jm', stage='trend_factor')
 
 
-def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False, research_profile=None):
+def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False, research_profile=None, product="jm"):
+    if product not in ('jm', 'ma', 'ta'):
+        raise TrendExportError('RESEARCH_PRODUCT_UNSUPPORTED')
+    if product != 'jm' and research_profile is not None:
+        raise TrendExportError('CROSS_PRODUCT_PARAMETER_SEARCH_UNSUPPORTED')
     from guiyi_quant.indicators import subing_macd, subing_volume, subing_price, subing_conditions
     if research_profile is not None and (type(research_profile) is not str or research_profile not in PERIOD_PROFILES):
         raise TrendExportError('FACTOR_RESEARCH_PROFILE_INVALID')
@@ -55,22 +59,22 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
     from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
     from app.market_data.domain import BarFrequency, ContractTradingDayQuery
     from app.market_data.new_subing_research import payload_hash, validate_series
-    owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol='jm', since=since, through=through)
+    owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol=product, since=since, through=through)
     if len({o.contract for o in owners}) != len(owners):
         raise TrendExportError('TREND_REPEATED_OWNER_UNSUPPORTED')
     rows, sources = [], []
     for owner in owners:
         start, end = max(since, owner.start_trading_day), min(through, owner.end_trading_day)
-        cutoff = max(w.end for w in market.session_windows(symbol='jm', trading_day=end))
+        cutoff = max(w.end for w in market.session_windows(symbol=product, trading_day=end))
         for frequency in (BarFrequency.D1, BarFrequency.M30):
-            before = market.contract_source_evidence(symbol='jm', contract=owner.contract, frequency=frequency, before=cutoff)
-            expected = market.expected_contract_replay_endpoints(symbol='jm', contract=owner.contract,
+            before = market.contract_source_evidence(symbol=product, contract=owner.contract, frequency=frequency, before=cutoff)
+            expected = market.expected_contract_replay_endpoints(symbol=product, contract=owner.contract,
                 frequency=frequency, trading_day=end, cutoff=cutoff)
             if not expected:
                 raise TrendExportError('TREND_INPUT_EMPTY')
             result = market.query_contract_trading_days(ContractTradingDayQuery(
-                'jm', owner.contract, frequency, expected[0][1], end))
-            validate_series(result, product='jm', contract=owner.contract, frequency=frequency, expected=expected)
+                product, owner.contract, frequency, expected[0][1], end))
+            validate_series(result, product=product, contract=owner.contract, frequency=frequency, expected=expected)
             state = initial_state(owner.contract, frequency.value, ema_period=daily_period if frequency is BarFrequency.D1 else minute_period)
             cross_state = subing_macd.initial_state(owner.contract, frequency.value, periods=macd_periods) if include_macd and frequency is BarFrequency.M30 else None
             volume_state = subing_volume.initial_state(owner.contract, frequency.value) if include_volume else None
@@ -126,7 +130,7 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                         time=bar.bar_end.isoformat(), label=bar.bar_end.astimezone(ZoneInfo('Asia/Shanghai')).strftime('%Y-%m-%d %H:%M'),
                         day=bar.trading_day.isoformat(), owned=start <= bar.trading_day <= end,
                         open=float(bar.open),high=float(bar.high),low=float(bar.low),close=float(bar.close), **asdict(point), **cross_fields))
-            after = market.contract_source_evidence(symbol='jm', contract=owner.contract, frequency=frequency, before=cutoff)
+            after = market.contract_source_evidence(symbol=product, contract=owner.contract, frequency=frequency, before=cutoff)
             if before != after:
                 raise TrendExportError('TREND_SOURCE_CHANGED')
             sources.append(dict(contract=owner.contract,frequency=frequency.value,cutoff=cutoff,
@@ -134,10 +138,10 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                 bars_hash=payload_hash([asdict(b) for b in result.bars])))
     # Recheck earlier reads after the entire export, not only after each frequency.
     for source in sources:
-        if source['source'] != market.contract_source_evidence(symbol='jm',contract=source['contract'],
+        if source['source'] != market.contract_source_evidence(symbol=product,contract=source['contract'],
                 frequency=BarFrequency(source['frequency']),before=source['cutoff']):
             raise TrendExportError('TREND_SOURCE_CHANGED')
-    if owners != ActualDominantResearchSegmentLoader(market).owner_segments(symbol='jm', since=since, through=through):
+    if owners != ActualDominantResearchSegmentLoader(market).owner_segments(symbol=product, since=since, through=through):
         raise TrendExportError('TREND_MAPPING_CHANGED')
     from hashlib import sha256
     from guiyi_quant.indicators import subing_trend
@@ -162,6 +166,8 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
         payload.update(research_profile=research_profile, research_parameters=dict(daily_ema=daily_period, minute_ema=minute_period, macd=macd_periods),
                        research_version='subing_factor_period_stability_v1',
                        research_field_note='ema21 field carries the selected research EMA; original OHLCV unchanged')
+    if product != 'jm':
+        payload['transfer_product'] = product
     return payload
 
 
