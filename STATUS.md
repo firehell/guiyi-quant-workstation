@@ -3,7 +3,7 @@
 实际一次SDK连接完成登录、结算与原账户恢复；原1条终结订单、1条已释放预留、60条signal、1条risk、fills0的历史digest逐项相等，dispatch整文件及原5649条native前缀逐行SHA保持。当前无未核订单/预留、持仓、成交或unresolved fill，资金margin/frozen三项为0；未发送订单/撤单，不初始化账本。带符号Session订单/Fill合同尚未补齐，三层hold不得解除。
 69首次预检仅因旧GC证明92秒超90秒在所有效果前拒绝，无state/grant/claim及四库/宿主变化；原计划逐字节保存在pre-native-resume/plan-preflight-only-001.private.json。新计划在apply前刷新只读GC证明，原60/90秒界限不变，停止旧PID15437并单次启动69。控制器180秒等待先超时，child state继续VERIFYING/UNKNOWN且原SHA不改；实际宿主随后自然就绪。本轮未把超时回执改为成功。
 最终同版readback_held在自然发布后两次严格通过（完整重放各6.333/6.180秒），独立审计00:56:32严格通过：进程/双锁/plist/monitor/发布身份一致，control/monitor末端年龄5.712/5.711秒≤8秒，账户读回≤30秒，monitor source/ledger hash等于完整重放。迟到验收在稳定私有目录simnow-preparation-recovery-20261103/pre-native-resume/late-readback.private.json；这证明实际账户恢复held，不改变父/child UNKNOWN记录。
-隔离受测树相关1101项通过（71.88秒），最后部署定向35项通过；独立Review组合106项、末端14项及core112项通过。API/core构建、uv lock、Ruff F、secret scan零发现及diff通过。main69已回合develop，其他研究修改保留。当前69运行根为宿主管理树worktree/release-v1-16-69，仍有真实运行引用，不能清理或随本聊天归档；后续稳定运行根迁移须遵守下一合法窗口及既有连接上限，不能为迁移再消耗当天连接。
+隔离受测树相关1101项通过（71.88秒），最后部署定向35项通过；独立Review组合106项、末端14项及core112项通过。API/core构建、uv lock、Ruff F及diff通过。首次secret scan未覆盖未跟踪新测试；纳入跟踪后命中凭据延迟测试的假密码夹具，已改为扫描器既定test-only占位值，develop定向36项及secret零发现复验通过，不含真实凭据、无运行代码变化，旧tag不改写。main69已回合develop，其他研究修改保留。当前69运行根为宿主管理树worktree/release-v1-16-69，仍有真实运行引用，不能清理或随本聊天归档；后续稳定运行根迁移须遵守下一合法窗口及既有连接上限，不能为迁移再消耗当天连接。
 
 11/2 v1.16.66发布补丁范围：在已发布v65基础上，仅修复Reference预热历史manifest有界分块传输和saved replay重复读取未使用manifest；不改变公式、历史记录、来源完整性校验或120秒预算，不包含develop苏冰研究/账户改动。
 真实600路只读预热：v65基线107.718秒；补丁85.509/91.048秒。三次均590路calculated、10路有完整质量证明的周线不可用，质量证明摘要一致、DML尝试0；163项相关/扩展回归及独立Review35项通过。
