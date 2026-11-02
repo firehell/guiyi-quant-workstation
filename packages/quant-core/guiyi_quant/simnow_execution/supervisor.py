@@ -184,6 +184,7 @@ _RECOVERY_ERRORS = frozenset({
     "EVIDENCE_ACCOUNT_MISMATCH", "NATIVE_EVENT_SESSION_UNPROVEN",
     "NATIVE_EVENT_OWNERSHIP_UNPROVEN",
     "NATIVE_SESSION_ID_INVALID",
+    "PREPARATION_RECOVERY_INVALID", "PREPARATION_RECOVERY_CONSUMED",
 })
 
 
@@ -439,7 +440,7 @@ class Supervisor:
             ordinary_takeover.connection_time(ordinary_window, self.now())
         if recovery_window:
             preparation_recovery.validate_connection(
-                recovery_window, self.now(), lambda: self._preparation_authority(day)
+                recovery_window, self.now(), lambda: self._preparation_authority(day), clock=self.now
             )
         self.driver = self.factory(self.settings, self.folder)
         if permit_window:
@@ -450,9 +451,12 @@ class Supervisor:
             )
             ordinary_takeover.connection_time(ordinary_window, self.now())
         if recovery_window:
-            preparation_recovery.validate_connection(
-                recovery_window, self.now(), lambda: self._preparation_authority(day)
-            )
+            install_guard = getattr(self.driver, "set_pre_native_guard", None)
+            if not callable(install_guard):
+                raise ValueError("PREPARATION_RECOVERY_INVALID")
+            install_guard(lambda: preparation_recovery.validate_connection(
+                recovery_window, self.now(), lambda: self._preparation_authority(day), clock=self.now
+            ))
         self.driver.connect()
         self.prepare(day)
         self.retry_after = self.now() + timedelta(seconds=30 * attempt)
@@ -890,10 +894,26 @@ class Supervisor:
                 if self._preparation_permit():
                     from . import preparation_recovery
 
-                    preparation_recovery.activate(
-                        self.settings, self.inbox, self.run_id, self.now(), clock=self.now,
-                        authority=lambda: self._preparation_authority(preparation_recovery.DAY),
-                    )
+                    try:
+                        preparation_recovery.activate(
+                            self.settings, self.inbox, self.run_id, self.now(), clock=self.now,
+                            authority=lambda: self._preparation_authority(preparation_recovery.DAY),
+                        )
+                    except Exception as exc:
+                        # Startup guards precede the cycle handler and every native
+                        # factory. Retain their fixed diagnosis without altering blocks.
+                        try:
+                            retain_failure(
+                                self.folder, self.run_id, 0, "CONTINUOUS_RECOVERY_REQUIRED", self.now(),
+                                dict(stage="DRIVER_UNAVAILABLE", recovery_stage=self.recovery_stage,
+                                     dispatch=None,
+                                     recovery_error_code=(str(exc) if isinstance(exc, ValueError)
+                                         and str(exc) in _RECOVERY_ERRORS else "RECOVERY_ERROR_UNCLASSIFIED"),
+                                     safe_guard_diagnostics=preparation_recovery.guard_diagnostic()),
+                            )
+                        except Exception:
+                            pass
+                        raise
                 if getattr(self.settings, "ordinary_takeover_permit", None):
                     from . import ordinary_takeover
 
@@ -1005,6 +1025,10 @@ class Supervisor:
                                 str(exc) if isinstance(exc, ValueError) and str(exc) in _RECOVERY_ERRORS
                                 else "RECOVERY_ERROR_UNCLASSIFIED"
                             )
+                            if self._preparation_permit():
+                                from . import preparation_recovery
+
+                                diagnostic["safe_guard_diagnostics"] = preparation_recovery.guard_diagnostic()
                             retain_failure(
                                 self.folder,
                                 self.run_id,
