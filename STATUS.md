@@ -1,3 +1,8 @@
+11/2 15:05一次性SimNow切v64任务已执行预检但未切换：60品种candidate_valid=true、execution_permitted=false、broker_io=false，正式十项身份均v64/gen53 matched；API/Web可用，Runtime health未通过。
+原生fresh plan返回BLOCKED/PLAN_INVALID：本次调用错误地使用output/simnow-switch-20261102-v64作为state-dir，而ordinary.binding的state_dir固定为候选许可所在simnow-v64目录；Coordinator.plan在目录一致性校验拒绝。
+失败发生于计划生成，计划/intent/许可均未创建，无apply/stop/install/start；原v44/PID1733、配置及四账本SHA与保全基线完全一致，block/预算未变，旧树未清理。
+遵守owner失败即停止、不自动重试：未修参重跑，已删除一次性automation simnow，无后续任务。再次执行须owner明确交办，使用候选许可父目录作为state-dir并重新fresh校验；不能沿用旧计划或将本次预检当作切换完成。
+
 11/2 预热读取补丁v1.16.66已发布，exact764b39339e1f4f4f0dba1d3858daafd6ba0c4e5d，PR595/main/annotated tag/GitHub Release完成；正式十服务仍v64/gen53，独立SimNow及既有15:05任务不变。
 11/2 v1.16.66发布补丁范围：在已发布v65基础上，仅修复Reference预热历史manifest有界分块传输和saved replay重复读取未使用manifest；不改变公式、历史记录、来源完整性校验或120秒预算，不包含develop苏冰研究/账户改动。
 真实600路只读预热：v65基线107.718秒；补丁85.509/91.048秒。三次均590路calculated、10路有完整质量证明的周线不可用，质量证明摘要一致、DML尝试0；163项相关/扩展回归及独立Review35项通过。
