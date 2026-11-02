@@ -276,3 +276,32 @@ def test_native_fact_precedes_release_and_success_receipt_requires_all_cleanup_c
     assert gateway.user == gateway.password == ""
     assert (tmp_path / "claim.private.json").exists()
     assert dict(diagnostic.database(inbox, ACCOUNT)["budget"]["attempts"])[diagnostic.DAY] == 2
+
+
+def test_api_environment_is_added_before_application_imports_without_sdk_io(tmp_path, monkeypatch):
+    site = tmp_path / "lib" / ("python" + str(sys.version_info.major) + "." +
+                               str(sys.version_info.minor)) / "site-packages"
+    site.mkdir(parents=True)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    before = list(sys.path)
+    sdk_was_loaded = "openctp_ctp" in sys.modules
+    diagnostic.api_dependencies(SimpleNamespace(api_env=tmp_path))
+    assert sys.path == before + [str(site)]
+    assert ("openctp_ctp" in sys.modules) is sdk_was_loaded
+
+
+def test_bootstrap_failure_reports_fixed_phase_without_private_exception_text(monkeypatch, capsys):
+    from guiyi_quant.simnow_execution import settings
+    value = SimpleNamespace(schema=2, mode="trade", enabled=True, account_takeover_pending=True,
+                            project_root=diagnostic.ROOT / ".worktrees/release-v1.16.64",
+                            sdk_python=Path(sys.executable))
+    monkeypatch.setattr(settings, "load_settings", lambda *args: value)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    monkeypatch.setenv("PGOPTIONS", "test_restore")
+    def missing(*args):
+        raise ModuleNotFoundError("private content must never cross the boundary")
+    monkeypatch.setattr(diagnostic, "api_dependencies", missing)
+    assert diagnostic.main(["plan"]) == 2
+    result = json.loads(capsys.readouterr().out)
+    assert result == dict(status="SESSION_DIAGNOSTIC_STOPPED", phase="API_DEPENDENCIES",
+                          error_category="ModuleNotFoundError")

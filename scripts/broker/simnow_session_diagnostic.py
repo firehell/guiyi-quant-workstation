@@ -36,6 +36,7 @@ FAILURE_SHA = "e226869bbf4705518db57504503466330c42d126e21df998caa50e6cb27b7cf7"
 DATABASES = ("account.sqlite", "dispatch.sqlite", "signals.sqlite", "native-evidence.sqlite")
 METHODS = {"ReqAuthenticate": 1, "ReqUserLogin": 1, "ReqQryTradingAccount": 2,
            "ReqQryInvestorPosition": 2, "ReqQryOrder": 2, "ReqQryTrade": 2}
+_STAGE = "START"
 
 
 class DiagnosticError(ValueError):
@@ -374,22 +375,30 @@ def code_binding():
 
 
 def make_plan(guard):
+    global _STAGE
+    _STAGE = "STATE_PARENT_CHECK"
     private(guard.state.parent, directory=True)
+    _STAGE = "STATE_CREATE"
     guard.state.mkdir(mode=0o700)
     private(guard.state, directory=True)
+    _STAGE = "PREIMAGE_CAPTURE"
     before = guard.snapshot(copies=guard.state)
     budget = before["databases"]["signals.sqlite"]["budget"]
     if dict(budget["attempts"]).get(DAY) != 1 or dict(budget["blocks"]).get(DAY) != BLOCK:
         invalid()
     at = now()
+    _STAGE = "AUTHORITATIVE_SESSION"
     end = authoritative_window(before["control"]["products"], at)
     if end - at < timedelta(seconds=310):
         invalid()
+    _STAGE = "FRESH_DRIVER_PROOF"
+    proof = probe_binding(guard.probe, before["host"], at)
     plan = dict(schema="simnow_session_diagnostic_v1", run=RUN, day=DAY, pid=PID,
                 planned_at=at.isoformat(), expires_at=(at + timedelta(seconds=60)).isoformat(),
                 operation_until=(at + timedelta(seconds=300)).isoformat(), session_end=end.isoformat(),
                 state=str(guard.state), config=str(guard.config), before=before,
-                probe=probe_binding(guard.probe, before["host"], at), code=code_binding())
+                probe=proof, code=code_binding())
+    _STAGE = "PLAN_PERSIST"
     new_file(guard.state / "plan.private.json", encoded(plan))
     return plan
 
@@ -471,6 +480,15 @@ def load_gateway(settings):
     finally:
         del credentials
     return gateway, module
+
+
+def api_dependencies(settings):
+    """Expose the existing API environment before application imports; no SDK I/O."""
+    site = settings.api_env / "lib" / ("python" + str(sys.version_info.major) + "." +
+                                     str(sys.version_info.minor)) / "site-packages"
+    if not site.is_dir() or site.is_symlink():
+        invalid()
+    sys.path.append(str(site))
 
 
 def apply(guard):
@@ -555,10 +573,12 @@ def apply(guard):
 
 
 def main(argv=None):
+    global _STAGE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("plan", "apply"))
     options = parser.parse_args(argv)
     try:
+        _STAGE = "SETTINGS_LOAD"
         # Private-settings imports can transitively initialize the application engine.
         # Enforce read-only connections before those imports, then re-exec if the
         # validated dependencies differ from the environment used by that engine.
@@ -566,29 +586,44 @@ def main(argv=None):
         sys.path[:0] = [str(ROOT / "packages/quant-core"), str(ROOT / "services/quant-api")]
         from guiyi_quant.simnow_execution.settings import load_settings
         settings = load_settings(CONFIG)
+        _STAGE = "SETTINGS_IDENTITY"
         if (settings.schema != 2 or settings.mode != "trade" or not settings.enabled
                 or not settings.account_takeover_pending or settings.project_root != ROOT / ".worktrees/release-v1.16.64"
                 or Path(sys.executable).resolve() != settings.sdk_python.resolve()):
             invalid()
+        _STAGE = "API_DEPENDENCIES"
+        api_dependencies(settings)
+        _STAGE = "PRIVATE_DEPENDENCIES"
         from app.private_settings import private_dependency_settings
         environment, unused = private_dependency_settings(Path.home() / "Library/Application Support/GuiyiQuant/project.env")
         environment["PGOPTIONS"] = "-c default_transaction_read_only=on"
         changed = any(os.environ.get(key) != value for key, value in environment.items())
         os.environ.update(environment)
         if changed:
+            _STAGE = "PRIVATE_DEPENDENCIES_REEXEC"
             os.execv(sys.executable, [sys.executable, "-I", str(Path(__file__).resolve()), options.action])
         from app.runtime_handover import deployment_lock
-        with deployment_lock(), switch_lock(CONFIG.parent / "switch.lock") as identity:
-            guard = Guard(settings, CONFIG, STATE, PROBE, identity)
-            if options.action == "plan":
-                make_plan(guard)
-                result = dict(status="PLANNED_NO_BROKER_IO")
-            else:
-                result = apply(guard)
+        _STAGE = "DEPLOYMENT_LOCK"
+        with deployment_lock():
+            _STAGE = "SWITCH_LOCK"
+            with switch_lock(CONFIG.parent / "switch.lock") as identity:
+                guard = Guard(settings, CONFIG, STATE, PROBE, identity)
+                if options.action == "plan":
+                    make_plan(guard)
+                    result = dict(status="PLANNED_NO_BROKER_IO")
+                else:
+                    _STAGE = "CLAIMED_APPLY"
+                    result = apply(guard)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except Exception:
-        print('{"status":"SESSION_DIAGNOSTIC_STOPPED"}')
+    except Exception as error:
+        category = type(error).__name__
+        if category not in {"DiagnosticError", "SettingsError", "PrivateSettingsError", "HandoverError",
+                            "ModuleNotFoundError", "ImportError", "FileExistsError", "FileNotFoundError",
+                            "PermissionError", "BlockingIOError", "OperationalError", "DatabaseError"}:
+            category = "UNCLASSIFIED"
+        print(json.dumps(dict(status="SESSION_DIAGNOSTIC_STOPPED", phase=_STAGE,
+                              error_category=category), sort_keys=True))
         return 2
 
 
