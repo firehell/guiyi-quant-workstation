@@ -351,6 +351,15 @@ class MarketFeedService(LiveMarketService):
         if isolation is not None and not isolation.retired and isolation.provider is not None:
             now = max(now, self._clock())
         phases = self._phases(now)
+        # A retired old-day reader still owns next-session metadata preparation.
+        # Run it before either CLOSED cleanup return, without recreating the old
+        # subscription or admitting a provider whose retirement is unproven.
+        if isolation is not None and phases and all(
+                phase.phase is MarketPhase.CLOSED for phase in phases.values()):
+            failure = self._prepare_metadata(now)
+            if failure is not None:
+                return failure
+            phases = self._phases(now)
         proof = _closed_cleaned_idle_proof(self, self.source_stream, now, phases)
         if proof is not None:
             if hasattr(self, 'assert_owned'):

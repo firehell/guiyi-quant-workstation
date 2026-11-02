@@ -878,6 +878,8 @@ volume=1、turnover=34525、OI=1684时，仅high改为6910。不是米筐确认�
 Market Live 的既有前台 poll（包括 CLOSED tick）在开始新交易日订阅前运行正常准备 hook；
 它直接复用 MarketPhaseResolver 的 Calendar/Session 权威，在当前交易或距离开盘 30 分钟内选择
 唯一 trading_day，夜盘使用 Session 所属交易日，不使用本机自然日期推断主力。
+独立Feed在旧reader已验证退役后，必须先运行该准备hook，再进入CLOSED_CLEANED或旧日清理fence；
+这不重建旧订阅、不接收旧buffer。退役结果未知仍先阻断，metadata失败不得标记Feed ready。
 范围固定为 operational 60；已经完整的 Catalog rank1、物理合约身份和 Session 不开启 provider。
 缺失时，在全局 maintenance lease 内先持久化单次 capture 意图，再调用
 MetadataSynchronizer.capture_current_day，冻结 snapshot 和经过共享 exact-diff 校验的 plan，

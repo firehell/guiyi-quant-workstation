@@ -219,6 +219,15 @@ def test_takeover_failure_never_unblocks_any_order_capability(tmp_path, failure)
 @pytest.mark.parametrize(
     "error,expected",
     [(ValueError("NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED"), "NATIVE_SETTLEMENT_CONFIRMATION_REQUIRED"),
+     (ValueError("NATIVE_INTEGER_INVALID"), "NATIVE_INTEGER_INVALID"),
+     (ValueError("NATIVE_CAPABILITY_INVALID"), "NATIVE_CAPABILITY_INVALID"),
+     (ValueError("INVESTOR_FORMAT_INVALID"), "INVESTOR_FORMAT_INVALID"),
+     (ValueError("SIMNOW_FIRST_REQUIRED"), "SIMNOW_FIRST_REQUIRED"),
+     (ValueError("ACCOUNT_FINGERPRINT_MISMATCH"), "ACCOUNT_FINGERPRINT_MISMATCH"),
+     (ValueError("ACCOUNT_PROFILE_INVALID"), "ACCOUNT_PROFILE_INVALID"),
+     (ValueError("NATIVE_CORRELATION_SOURCE_INVALID"), "NATIVE_CORRELATION_SOURCE_INVALID"),
+     (ValueError("NATIVE_CORRELATION_IDENTITY_INVALID"), "NATIVE_CORRELATION_IDENTITY_INVALID"),
+     (ValueError("private-account-password"), "RECOVERY_ERROR_UNCLASSIFIED"),
      (RuntimeError("private-account-password"), "RECOVERY_ERROR_UNCLASSIFIED")],
 )
 def test_prepare_failure_records_exact_stage_and_safe_cause_without_retry(

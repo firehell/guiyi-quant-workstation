@@ -122,6 +122,46 @@ def test_natural_closed_unsubscribe_then_cleanup_retires_existing_provider(monke
     assert client.close_calls == (0 if durable else 1)
 
 
+@pytest.mark.parametrize('proof_available', [True, False])
+def test_cleaned_feed_prepares_metadata_before_closed_idle_fence(monkeypatch, proof_available):
+    service, store, _, client = make_service(monkeypatch)
+    store.cleaned = True
+    if not proof_available:
+        service.closed_cleanup_evidence = lambda *_: None
+    calls = []
+    service._prepare_trading_day = lambda now: calls.append(now)
+
+    result = service.poll(NOW)
+
+    assert calls == [NOW]
+    assert result == (None if proof_available else 'OBSERVATION_CLEANUP_UNPROVEN')
+    assert service._provider is None
+    assert client.close_calls == 1
+    assert store.subscriptions(DAY) is None
+
+
+def test_cleaned_feed_metadata_failure_never_claims_ready(monkeypatch):
+    service, store, _, _ = make_service(monkeypatch)
+    store.cleaned = True
+    service._prepare_trading_day = lambda now: 'METADATA_PREPARATION_READBACK_REQUIRED'
+
+    assert service.poll(NOW) == 'METADATA_PREPARATION_READBACK_REQUIRED'
+    assert service.closed_cleaned_proof is None
+    assert store.heartbeats[-1]['available'] is False
+    assert store.subscriptions(DAY) is None
+
+
+def test_unknown_retirement_never_starts_metadata_preparation(monkeypatch):
+    service, store, provider, _ = make_service(monkeypatch)
+    store.cleaned = True
+    provider._buffer_message({'late': 'must remain retained'})
+    service._prepare_trading_day = lambda now: pytest.fail('unknown retirement must stay blocked')
+
+    assert service.poll(NOW) is not None
+    assert service._input_failure == 'LIVE_PROVIDER_CLOSE_UNKNOWN'
+    assert len(provider._messages) == 1
+
+
 @pytest.mark.parametrize('arrival', ['before_close', 'during_close'])
 def test_feed_late_buffer_is_preserved_and_never_written(monkeypatch, arrival):
     service, store, provider, client = make_service(monkeypatch)
