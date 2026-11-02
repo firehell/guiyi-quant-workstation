@@ -9,12 +9,18 @@ from ..htdy_account_execution.codec import digest
 
 ENVIRONMENT = "SIMNOW_FIRST"
 FRONT = "tcp://182.254.243.31:30001"
-VERSION = "simnow_ctp_controlled_v2"
+VERSION = "simnow_ctp_controlled_v3"
 
 
 def integer(value, minimum=0):
     if type(value) is not int or value < minimum:
         raise ValueError("NATIVE_INTEGER_INVALID")
+
+
+def session_identifier(value):
+    """The native CTP signed int identity; zero remains an unproven sentinel."""
+    if type(value) is not int or value == 0 or not -(2**31) <= value < 2**31:
+        raise ValueError("NATIVE_SESSION_ID_INVALID")
 
 
 def valid(at, until, now):
@@ -122,7 +128,8 @@ class Session:
         if self.trading_day < "20261027":
             raise ValueError("FUNDING_EFFECTIVE_DAY_NOT_REACHED")
         integer(self.front_id, 1)
-        integer(self.session_id, 1)
+        # CTP SessionID is a signed 32-bit identifier, not a positive quantity.
+        session_identifier(self.session_id)
         integer(self.max_order_ref)
         valid(self.at, self.valid_until, self.at)
 

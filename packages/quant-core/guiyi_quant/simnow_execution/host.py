@@ -32,8 +32,9 @@ class Host:
         account_takeover_pending=False,
         takeover_clock=None,
         account_profile=None,
+        execution_hold=False,
     ):
-        if type(account_takeover_pending) is not bool or type(continuous) is not bool:
+        if type(execution_hold) is not bool or type(account_takeover_pending) is not bool or type(continuous) is not bool:
             raise ValueError("HOST_MODE_INVALID")
         if (
             type(trade) is not bool
@@ -89,6 +90,7 @@ class Host:
         if account_profile is not None:
             validate_profile(account_profile, store.current())
         self.account_profile = account_profile
+        self.execution_hold = execution_hold
         self.last_dispatch_diagnostic = None
         self.product = product
         self.products = products
@@ -235,6 +237,8 @@ class Host:
         self.account_takeover_pending = False
 
     def submit_effects(self, effects, bindings, facts, now):
+        if getattr(self, "execution_hold", False):
+            raise ValueError("ACCOUNT_RECOVERY_HOLD")
         if getattr(self, "account_takeover_pending", False):
             raise ValueError("ACCOUNT_TAKEOVER_PENDING")
         fresh = dispatch_clock(now, getattr(self.adapter, "clock", None))
@@ -325,6 +329,8 @@ class Host:
         return tuple(outcomes)
 
     def tick(self, facts, bindings, now):
+        if getattr(self, "execution_hold", False):
+            raise ValueError("ACCOUNT_RECOVERY_HOLD")
         if getattr(self, "account_takeover_pending", False):
             raise ValueError("ACCOUNT_TAKEOVER_PENDING")
         fresh = dispatch_clock(now, getattr(self.adapter, "clock", None))

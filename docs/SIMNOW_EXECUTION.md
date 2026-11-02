@@ -1,4 +1,24 @@
-# SimNow受控订单适配 v2
+# SimNow受控订单适配 v3
+
+
+## 第七步的带符号会话与账户恢复屏障
+
+CTP原始`TThostFtdcSessionIDType`是有符号int；20261103新独立只读取证实际返回负值，旧正数量校验拒绝。
+`simnow_ctp_controlled_v3`将SessionID接受条件改为非零signed32，保留原值，不取绝对值、不截断或回绕；
+FrontID、OrderRef、数量与其余门禁不变。诊断证明的是新连接条件，旧20:59的缺失原值仍UNKNOWN。
+原始类型依据为OpenCTP上游`ctpapi-python/CTPAPI/linux/ThostFtdcUserApiDataType.h`，blob
+`30c2288929611a8677afcb01636b48fb80732707`；当前固定Mac SDK结构赋值及原生新会话均另有本地验证。
+
+`simnow_adapter_preparation_recovery_v1`仅用于20261103、原构造失败且无未核义务的原账户。新许可绑定
+失败原件、单次独立诊断及完整释放回执、原四库/预算/block/原PID退出、精确受测tag/SDK/配置/profile。
+唯一claim、事务与UPDATE-only authorizer仅允许原普通attempt从2增至3，所有旧block及其他表保留；
+任何失败/提交未知都消耗claim，无退款、续期、自动重连或跨日额度。控制器继承既有停止、双锁、离线前像、
+安装和启动机械步骤；不借全60休市的普通许可冒充盘中例外，不清理原账本中的已终结订单或已释放预留。
+
+配置`account_recovery_hold=true`使Supervisor/Host/Adapter持续禁止订单。即使原账户Recover成功、
+`pending=false`且实际READY，也只保持完整原生读回与对账，公开`ACCOUNT_RECOVERED_HELD`、
+`auto_order=false/opening_enabled=false`，不消费新旧信号、执行或输入审计。全新订单阶段须单独交办。
+本轮不改历史correlated Fill V1的正数身份合同；有符号Session的后续订单/Fill准入须独立补齐后才能解除hold。
 
 ## 当前连接结算证明（native_settlement_confirmation_v2）
 
@@ -26,7 +46,7 @@
 对账或接管成功，也不改变首份收益baseline；跨日资金连续性不足仍为`CASHFLOW_CONTINUITY_REQUIRED`。
 原生driver依次区分`SESSION_CONSTRUCTION`、`ADAPTER_CONSTRUCTION`、`NATIVE_SNAPSHOT_CORRELATION`和
 `NATIVE_CALLBACK_ATTACH`。可选`native_adapter_preparation_v1`仅记录三个原生会话字段是否存在、整数/正数/
-非负/有符号32位等固定布尔分类，不记录字段值。它是诊断证据，不改变Session正数合同、发送屏障或恢复许可；
+非负/有符号32位等固定布尔分类，不记录字段值。它是诊断证据，本身不改变Session接受条件、发送屏障或恢复许可；
 旧失败缺少这些字段时保持原因UNKNOWN，不用新诊断回填历史。
 
 本模块实现已持久化HTDY账户提案到CTP报单/撤单请求的窄适配，以及原生回调到本地账户journal的事实接入。

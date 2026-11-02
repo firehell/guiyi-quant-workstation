@@ -60,7 +60,7 @@ def test_session_classification_is_bounded_and_contains_no_values(value):
 @pytest.mark.parametrize(
     "case,stage,error",
     [
-        ("session", "SESSION_CONSTRUCTION", "NATIVE_INTEGER_INVALID"),
+        ("session", "SESSION_CONSTRUCTION", "NATIVE_SESSION_ID_INVALID"),
         ("adapter", "ADAPTER_CONSTRUCTION", "INVESTOR_FORMAT_INVALID"),
         ("correlation", "NATIVE_SNAPSHOT_CORRELATION", "RECOVERY_ERROR_UNCLASSIFIED"),
     ],
@@ -76,7 +76,7 @@ def test_failed_preparation_retains_native_source_and_original_account_without_r
     gateway = Gateway(clock)
     gateway.inventory_diagnostics = lambda: {"status": "READ_ONLY_COMPLETE"}
     if case == "session":
-        gateway.native_session["session_id"] = -1
+        gateway.native_session["session_id"] = 0
     if case == "correlation":
 
         def fail(*args):
@@ -113,7 +113,12 @@ def test_failed_preparation_retains_native_source_and_original_account_without_r
     assert "confirm" in gateway.calls
     if case == "session":
         flags = failure["diagnostic"]["adapter_preparation"]["fields"]["session_id"]
-        assert flags["integer"] and flags["signed_int32"] and not flags["positive"]
+        assert (
+            flags["integer"]
+            and flags["signed_int32"]
+            and flags["nonnegative"]
+            and not flags["positive"]
+        )
     with sqlite3.connect(folder / "signals.sqlite") as db:
         assert db.execute("SELECT count FROM attempts").fetchall() == [(1,)]
         assert db.execute("SELECT code FROM blocks").fetchall() == [

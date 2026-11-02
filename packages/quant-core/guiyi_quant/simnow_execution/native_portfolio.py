@@ -581,6 +581,7 @@ class NativePortfolio:
             session,
             account_takeover_pending=getattr(self.settings, "account_takeover_pending", False),
             account_profile=getattr(self.settings, "account_profile", None),
+            execution_hold=getattr(self.settings, "account_recovery_hold", False),
             clock=self.now,
             **capabilities,
         )
