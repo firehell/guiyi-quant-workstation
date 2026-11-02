@@ -150,3 +150,15 @@ def test_exact_last_published_endpoint_uses_inclusive_cursor():
     result=query(m,50,99)
     assert len(result['points'])==50
     assert result['points'][-1]['time']==m.bars[-1].bar_end.isoformat()
+
+
+def test_sixty_minute_prefix_is_available_and_stable():
+    m=Market()
+    original=m.contract_source_evidence
+    m.contract_source_evidence=lambda **kw:{**original(**kw),'frequency':'60m'}
+    def window(start,end):
+        return chart_window(m,symbol='jm',contract='JM2701',frequency='60m',
+                            start=m.expected[start].bar_end,end=m.expected[end].bar_end)
+    a,b=window(50,80),window(30,90)
+    assert a['frequency']=='60m' and a['version']=='subing_dynamic_range_v2'
+    assert a['points']==b['points'][20:51]

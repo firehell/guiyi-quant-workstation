@@ -17,7 +17,7 @@ class DynamicRangeError(ValueError):
 
 def chart_window(market, *, symbol: str, contract: str, frequency: str,
                  start: datetime, end: datetime, check: Callable[[], None] = lambda: None) -> dict:
-    if frequency not in ('30m', '1d'):
+    if frequency not in ('30m', '60m', '1d'):
         raise DynamicRangeError('DYNAMIC_RANGE_FREQUENCY_UNSUPPORTED')
     if any(t.tzinfo is None or t.utcoffset() is None for t in (start, end)) or start > end:
         raise DynamicRangeError('DYNAMIC_RANGE_WINDOW_INVALID')

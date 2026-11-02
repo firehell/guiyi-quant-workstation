@@ -48,7 +48,7 @@ class TrendState:
 
 
 def initial_state(contract: str, frequency: str, *, ema_period: int = 21) -> TrendState:
-    if not contract or frequency not in ('30m', '1d'):
+    if not contract or frequency not in ('30m', '60m', '1d'):
         raise ValueError('TREND_IDENTITY_INVALID')
     if type(ema_period) is not int or ema_period not in (19, 21, 23):
         raise ValueError("TREND_RESEARCH_PERIOD_INVALID")

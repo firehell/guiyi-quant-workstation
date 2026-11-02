@@ -51,3 +51,11 @@ test('hidden prefix revisions block mixing even when displayed OHLC is unchanged
  enabled.value=false;await settle();enabled.value=true;await settle()
  assert.equal(state.points.value.length,2);scope.stop()
 })
+
+test('60m is supported and stays separate from unsupported periods',async()=>{
+ const scope=effectScope(),bars=ref([makeBar(3)]),frequency=ref('60m'),identity=ref('jm:60m'),calls:RangeQuery[]=[]
+ const state=scope.run(()=>useDynamicRange({enabled:ref(true),bars,canonicalEnd:ref(bars.value[0].time),identity,symbol:ref('jm'),frequency,fetch:async q=>{calls.push(q);return body(q,bars.value)}}))!
+ await settle();assert.equal(state.supported.value,true);assert.equal(state.points.value.length,1);assert.equal(calls[0].frequency,'60m')
+ frequency.value='15m';identity.value='jm:15m';await settle();assert.equal(state.supported.value,false);assert.equal(state.points.value.length,0);assert.equal(calls.length,1)
+ scope.stop()
+})

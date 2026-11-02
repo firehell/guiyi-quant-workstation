@@ -1,7 +1,7 @@
 # 震荡／趋势与动态箱体研究因子
 
 独立研究身份 `subing_dynamic_range_v2`，复用现有 `subing_ema21_ols5_atr14_v2` 的方向和ATR14。
-只支持当前研究页的焦煤 D1/30m，不改变 Lux Range、现役策略、订单、Alert 或 Runtime。
+只支持当前研究页的D1/30m/60m，不改变 Lux Range、现役策略、订单、Alert 或 Runtime。
 这是依据 owner 交办方案实现的自定义研究算法，不宣称复刻任何 TradingView 私有公式。
 
 ## 市场状态与箱体分别表达
@@ -69,7 +69,7 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 
 ## 自由看盘
 
-自由看盘的“震荡／趋势”开关是独立研究显示，当前支持30m/1d；不替代既有带回画语义的Lux“箱体识别”。
+自由看盘的“震荡／趋势”开关是独立研究显示，当前支持30m/60m/1d；不替代既有带回画语义的Lux“箱体识别”。
 主图按根着色（蓝震荡、红上涨、绿下跌），每根只画当时有效的上下沿。悬停显示状态、阶段、ER、CHOP和当时箱体。
 向左分页自动请求缺少的历史结果，既有点不因可见窗口起点改变而重算。
 

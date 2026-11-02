@@ -83,7 +83,7 @@ class State:
 
 
 def initial_state(contract: str, frequency: str, *, profile: str = 'bounded_confirmed') -> State:
-    if not contract or frequency not in ('1d', '30m') or profile not in PROFILES:
+    if not contract or frequency not in ('1d', '30m', '60m') or profile not in PROFILES:
         raise ValueError('RANGE_IDENTITY_INVALID')
     return State((contract, frequency), profile)
 

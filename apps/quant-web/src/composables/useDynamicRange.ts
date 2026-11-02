@@ -14,7 +14,7 @@ export function useDynamicRange(options: {
   identity: Readonly<Ref<string>>; symbol: Readonly<Ref<string>>; frequency: Readonly<Ref<string>>
 }) {
   const points = shallowRef<DynamicRangePoint[]>([]), loading = ref(false), error = ref<string | null>(null)
-  const supported = computed(() => ['30m','1d'].includes(options.frequency.value))
+  const supported = computed(() => ['30m','60m','1d'].includes(options.frequency.value))
   const eligible = computed(() => options.canonicalEnd.value ? options.bars.value.filter(b => Date.parse(b.time) <= Date.parse(options.canonicalEnd.value!)) : [])
   let blocked = false
   let proofs = new Map<string,RangeSourceProof>()
