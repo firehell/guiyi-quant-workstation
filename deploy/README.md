@@ -364,6 +364,19 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 
 ### 已完成CAS后的同版本启动恢复
 
+#### 已关闭且空缓冲的原Feed受限恢复
+
+`python -m app.runtime_feed_session_recovery plan|apply --directory <runtime>/feed-session-recovery-20261103 --plan <directory>/plan.private.json`
+仅处理v1.16.64/gen53原PID1772的本次已完成client close但保留retirement失败的现场，不是通用重启或版本promotion。
+控制器自身须为exact annotated release的干净源码。先用只读LLDB/CPython debug_offsets取得双fresh证明：
+固定PID出生和实际代码、同service/provider对象、client close成功、两个listener不存活、raw及pending均0，
+隔离原day/contracts一致；不执行目标函数、不写内存、不输出地址、凭据或raw buffer。未知诊断禁止继续。
+部署锁内冻结原cancelled控制前像、配置和完整source/completed注册、identity、payload及ACK前缀，原件私有归档。
+独占耐久意图先于唯一drain；原异常退出不称parked，必须等待原PID退出、新冷进程在精确drain下真实parked、
+owner锁free及两轮完整前缀/保护文件不变，才允许唯一cancel恢复同版本Feed。未知即停止，不重试close、
+drain、bootout或kickstart，不重放或清cursor。旧retirement失败、SimNow许可/账本/block/预算均保持。
+实际完成以新唯一writer、fresh Feed heartbeat、正常目标日注册/前缀接续和元数据读回证明，不以fixture或退出本身替代。
+
 版本CAS已被独立证明完成、但后续启动验收失败时，保留原cohort的 `outcome_unknown` attempt，使用独立 `postcas_forward_recovery_v1` 计划和receipt恢复当前已安装generation。该入口不安装、不CAS、不改配置、不回退版本或接收语义，只取消当前generation的精确drain并按消费者、Feed、原定时服务顺序恢复。混合安装、未知writer、身份/配置漂移或不能证明已完成CAS时拒绝。
 
 旧cohort的完整保护快照仍按原old根逐字校验；当前运行根的完整保护快照独立冻结进新audit并逐阶段固定，共同真实路径、私有配置、DB/Scope及已启用marker均须保持权威，不按basename抹平两个根的历史状态。
