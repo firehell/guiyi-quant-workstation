@@ -15,6 +15,18 @@ FrontID、OrderRef、数量与其余门禁不变。诊断证明的是新连接�
 任何失败/提交未知都消耗claim，无退款、续期、自动重连或跨日额度。控制器继承既有停止、双锁、离线前像、
 安装和启动机械步骤；不借全60休市的普通许可冒充盘中例外，不清理原账本中的已终结订单或已释放预留。
 
+v68原许可已创建run claim，但在SDK factory前失败；原状态保留`VERIFYING/UNKNOWN`，原attempt仍2，
+没有attempt claim。`simnow_adapter_preparation_pre_native_resume_v1`仅允许这次精确失败的一次继续：
+绑定原v68许可、不可变intent、UNKNOWN状态、两处一致run claim和`DRIVER_UNAVAILABLE/NOT_STARTED`失败原件；
+原四库字节、预算2及所有block必须仍一致，父attempt claim必须不存在，不允许递归续行。
+新许可位于原恢复目录的`pre-native-resume`，使用独立全局claim，绑定旧进程PID及出生身份；
+先以固定SDK纯校验，再合作停止旧进程、证明双锁释放和前像不变，才创建新许可。
+消费后的factory前、connect前及Keychain/本地准备后实际SDK连接前，均重新采时并校验三账本字节、
+signals inode/schema/非attempt表、唯一claim及预算3一致；不把入口旧时间当作末端有效期证明。
+所有旧许可、claim、失败和UNKNOWN状态保留；不延长旧许可、不退款或增加额度。
+失败诊断仅输出固定阶段、错误类别和布尔检查结果，凭据、路径及异常正文不进入公开记录。
+当前检查无法复现v68当时的拒绝原因，该历史原因继续UNKNOWN。
+
 配置`account_recovery_hold=true`使Supervisor/Host/Adapter持续禁止订单。即使原账户Recover成功、
 `pending=false`且实际READY，也只保持完整原生读回与对账，公开`ACCOUNT_RECOVERED_HELD`、
 `auto_order=false/opening_enabled=false`，不消费新旧信号、执行或输入审计。全新订单阶段须单独交办。

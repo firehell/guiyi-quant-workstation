@@ -121,7 +121,8 @@ class ReadJournal(Journal):
 
 class NativePortfolio:
     def __init__(
-        self, settings, folder, module, connector, *, now, initial_funds_timeout=45
+        self, settings, folder, module, connector, *, now, initial_funds_timeout=45,
+        pre_native_guard=None,
     ):
         if (
             type(initial_funds_timeout) is not int
@@ -134,6 +135,9 @@ class NativePortfolio:
             module,
             connector,
         )
+        if pre_native_guard is not None and not callable(pre_native_guard):
+            raise ValueError("PREPARATION_RECOVERY_INVALID")
+        self.pre_native_guard = pre_native_guard
         self.now = now
         self.initial_funds_timeout = initial_funds_timeout
         self.gateway = self.flow = self.read_journal = None
@@ -150,7 +154,14 @@ class NativePortfolio:
         self.settlement = None
         self.adapter_preparation = None
 
+    def set_pre_native_guard(self, guard):
+        if not callable(guard):
+            raise ValueError("PREPARATION_RECOVERY_INVALID")
+        self.pre_native_guard = guard
+
     def connect(self):
+        if getattr(self.settings, "preparation_recovery_permit", None) and not callable(self.pre_native_guard):
+            raise ValueError("PREPARATION_RECOVERY_INVALID")
         self.adapter_preparation = None
         self.settlement = None
         self.stage = "CREDENTIAL_LOAD"
@@ -165,6 +176,9 @@ class NativePortfolio:
             )
         del credentials
         self.flow = tempfile.TemporaryDirectory(prefix="guiyi-continuous-flow-")
+        if self.pre_native_guard is not None:
+            self.stage = "PRE_NATIVE_GUARD"
+            self.pre_native_guard()
         self.stage = "NATIVE_LOGIN"
         self.connector(self.gateway, self.module.tdapi, self.flow.name)
         self.stage = "DISPATCH_IDENTITY_READ"

@@ -30,7 +30,7 @@ def ready(tmp_path, monkeypatch, request):
     global_root.mkdir(mode=0o700)
     from guiyi_quant.simnow_execution import supervisor
     monkeypatch.setattr(supervisor, "global_account_lock_directory", lambda: global_root)
-    monkeypatch.setattr(recovery, "release_identity", lambda root: dict(root=str(root), tag="v1.16.99", commit="a" * 40))
+    monkeypatch.setattr(recovery, "release_identity", lambda root: dict(root=str(root), tag="v1.16.68" if getattr(request, "param", None) == "parent_v68" else "v1.16.99", commit="a" * 40))
     state = existing_account(Path(value["state_root"]), value["account_id"])
     value.update(enabled=True, account_takeover_pending=True, account_recovery_hold=True,
                  preparation_recovery_permit=str(private / recovery.NAME),
@@ -98,7 +98,7 @@ def test_one_attempt_updates_only_two_to_three_and_retains_every_old_block(ready
     assert recovery.available(f.s, f.inbox, RUN, recovery.DAY, NOW, authority=f.authority)
     count, window = consume(f)
     assert count == 3
-    recovery.validate_connection(window, NOW, f.authority)
+    recovery.validate_connection(window, NOW, f.authority, clock=lambda: NOW)
     after = recovery._tables(f.inbox.conn, f.s.account_id)
     assert after == {**before, "attempts": [["20261102", 3], [recovery.DAY, 3]]}
     assert not recovery.available(f.s, f.inbox, RUN, recovery.DAY, NOW, authority=f.authority)
@@ -294,7 +294,9 @@ def test_supervisor_failure_uses_last_attempt_once_and_never_rewrites_original_b
     calls = []
     market = NS(issues={}, plan=lambda _: NS(trading_day=date(2026,11,3), active=True, connect_allowed=True),
                 ordinary_takeover_window=lambda *_: f.source["window"], activate=lambda _: None, close=lambda: None)
+    native_guard = NS(call=None)
     def connect():
+        native_guard.call()
         calls.append("connect")
         raise ValueError("NATIVE_TRANSPORT_FAILED")
     def close():
@@ -304,6 +306,7 @@ def test_supervisor_failure_uses_last_attempt_once_and_never_rewrites_original_b
     def factory(*_):
         calls.append("factory")
         return NS(connect=connect, close=close, transport_failed=True,
+                  set_pre_native_guard=lambda guard: setattr(native_guard, "call", guard),
                   failure_diagnostics=lambda: {"stage": "TEST"})
     sup = Supervisor(f.s, ("RB",), market, factory, clock=lambda: NOW, sleep=lambda _: None)
     sup.run_id = RUN
