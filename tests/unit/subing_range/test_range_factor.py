@@ -78,7 +78,7 @@ def test_expansion_limits_reference_atr_and_wide_invalid():
     state, p = tick(state, high='101.6', atr=D('100'))
     assert p.box == old  # no growing volatility budget
     _, p = tick(state, high='110')
-    assert p.regime == 'UNKNOWN' and p.reason == 'BOX_WIDTH_EXCEEDED'
+    assert p.regime == 'RANGE' and p.reason == 'BOX_WIDTH_EXCEEDED'
 
 
 def test_broad_disorder_is_range_without_box():
@@ -104,13 +104,13 @@ def test_direct_trend_and_slow_breakout_cannot_be_swallowed():
     assert p.regime=='TREND_DOWN' and p.box is None
 
 
-def test_direction_must_match_efficiency_and_repeat():
+def test_direction_is_independent_of_efficiency_but_candidate_is_not():
     state=initial_state('JM2701','30m')
     for i in range(30):
         state,p=tick(state,str(100+i),str(101+i),str(99+i),trend_direction='DOWN')
-    assert p.regime=='RANGE' and not p.trend_candidate
+    assert p.regime=='TREND_DOWN' and not p.trend_candidate
     state,p=tick(state,'130','131','129',trend_direction='UP')
-    assert p.regime=='RANGE'
+    assert p.regime=='TREND_DOWN'
     state,p=tick(state,'131','132','130',trend_direction='UP')
     assert p.regime=='TREND_UP'
 
@@ -191,3 +191,56 @@ def test_restart_at_every_mixed_lifecycle_boundary():
             restored,p=tick(restored,c,h,low)
             tail.append(p)
         assert tail==out[i:] and restored==state
+
+
+@pytest.mark.parametrize('direction', ['UP', 'DOWN'])
+def test_low_efficiency_direction_neutral_exit_and_reversal(direction):
+    state, _ = box()
+    opposite = 'DOWN' if direction == 'UP' else 'UP'
+    state, first = tick(state, trend_direction=direction)
+    state, confirmed = tick(state, trend_direction=direction)
+    assert first.regime == 'RANGE'
+    assert confirmed.regime == 'TREND_'+direction and confirmed.er < D('.55')
+    assert not confirmed.trend_candidate
+    for _ in range(2):
+        state, p = tick(state)
+        assert p.regime == confirmed.regime
+    state, p = tick(state, trend_direction=direction)
+    assert p.regime == confirmed.regime and state.neutral_count == 0
+    state, p = tick(state, trend_direction=opposite)
+    assert p.regime == confirmed.regime
+    state, p = tick(state, trend_direction=opposite)
+    assert p.regime == 'TREND_'+opposite
+    for _ in range(3):
+        state, p = tick(state)
+    assert p.regime == 'RANGE' and state.confirmed_side is None
+
+
+def test_alternating_direction_does_not_confirm_and_invalid_resets_hold():
+    state, _ = box()
+    for i in range(20):
+        state, p = tick(state, trend_direction='UP' if i % 2 else 'DOWN')
+        assert p.regime == 'RANGE'
+    for _ in range(2):
+        state, p = tick(state, trend_direction='DOWN')
+    assert p.regime == 'TREND_DOWN'
+    state, p = tick(state, trend_direction='UNKNOWN')
+    assert p.regime == 'UNKNOWN' and state.confirmed_side is None
+    state, p = tick(state, trend_direction='DOWN')
+    assert p.regime == 'RANGE'
+
+
+def test_directional_prefix_and_restart_at_every_transition():
+    initial, _ = box()
+    sequence = ['UP']*4 + ['NEUTRAL']*2 + ['DOWN'] + ['UP'] + ['DOWN']*3 + ['NEUTRAL']*3 + ['UP']*3
+    def run(state, directions):
+        out = []
+        for direction in directions:
+            state, p = tick(state, trend_direction=direction)
+            out.append(p)
+        return state, out
+    final, full = run(initial, sequence)
+    for cut in range(len(sequence)+1):
+        state, prefix = run(initial, sequence[:cut])
+        restored, tail = run(pickle.loads(pickle.dumps(state)), sequence[cut:])
+        assert prefix == full[:cut] and prefix+tail == full and restored == final

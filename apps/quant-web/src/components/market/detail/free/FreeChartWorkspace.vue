@@ -163,7 +163,7 @@ function loadEarlier() { void props.loadEarlier() }
     </div>
     <p v-if="showDynamicRange" class="free-workspace__hint" role="status" data-testid="dynamic-range-status">
       <template v-if="!dynamicRange.supported.value">震荡／趋势研究指标目前支持30分钟、日线，请切换周期。</template>
-      <template v-else>震荡蓝色／上涨红色／下跌绿色；每根保留当时边界，向左加载不会重算显示起点。仅历史已归档完成K线，实时部分待归档。研究参数尚待核对。
+      <template v-else>震荡蓝色／上涨红色／下跌绿色；每根保留当时边界，向左加载不会重算显示起点。仅历史已归档完成K线，实时部分待归档。研究v2：方向连续2根确认，连续3根中性退出；ER仅衡量效率。
         <span v-if="dynamicRange.loading.value">正在计算历史前缀…</span>
         <span v-else>已计算 {{ dynamicRange.points.value.length }} 根。</span>
         <span v-if="dynamicRange.error.value">{{ dynamicRange.error.value }} <button type="button" @click="dynamicRange.refresh">重试指标</button></span>

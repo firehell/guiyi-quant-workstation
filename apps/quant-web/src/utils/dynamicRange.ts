@@ -18,7 +18,7 @@ export function matchesRangeBar(p: DynamicRangePoint, b: BarData) {
 /** Fail closed on wire identity, gaps or source disagreement; never backfill estimates. */
 export function normalizeRangeResponse(raw: unknown, symbol: string, frequency: string, bars: BarData[]): DynamicRangePoint[] {
   const r = raw as Record<string, any>
-  if (!r || r.version !== 'subing_dynamic_range_v1' || r.trend_version !== 'subing_ema21_ols5_atr14_v2'
+  if (!r || r.version !== 'subing_dynamic_range_v2' || r.trend_version !== 'subing_ema21_ols5_atr14_v2'
       || r.profile !== 'bounded_confirmed' || r.symbol !== symbol || r.frequency !== frequency
       || r.contract !== bars[0]?.physicalContract || !Array.isArray(r.points) || r.points.length !== bars.length
       || !/^[a-f0-9]{64}$/.test(r.source_hash) || !Number.isFinite(Date.parse(r.prefix_start))

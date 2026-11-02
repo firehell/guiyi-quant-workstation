@@ -4,7 +4,7 @@ import { effectScope, nextTick, ref } from 'vue'
 import { useDynamicRange, type RangeQuery } from '../src/composables/useDynamicRange.ts'
 import type { BarData } from '../src/types/market.ts'
 const makeBar=(day:number,contract='JM2701'):BarData=>({time:`2026-01-${String(day).padStart(2,'0')}T07:00:00Z`,physicalContract:contract,open:100,high:102,low:98,close:101,volume:1})
-const body=(q:RangeQuery,bs:BarData[])=>({version:'subing_dynamic_range_v1',trend_version:'subing_ema21_ols5_atr14_v2',profile:'bounded_confirmed',symbol:q.symbol,contract:q.contract,frequency:q.frequency,source_proof:{lifecycle_hash:'c'.repeat(64),partitions:{'2026-1':'d'.repeat(64)}},source_hash:'a'.repeat(64),prefix_start:'2025-01-01T00:00:00Z',points:bs.map(b=>({...b,contract:q.contract,phase:'SEARCHING',regime:'RANGE',reason:null,er:.2,chop:60,trend_candidate:false,break_side:null,box:null}))})
+const body=(q:RangeQuery,bs:BarData[])=>({version:'subing_dynamic_range_v2',trend_version:'subing_ema21_ols5_atr14_v2',profile:'bounded_confirmed',symbol:q.symbol,contract:q.contract,frequency:q.frequency,source_proof:{lifecycle_hash:'c'.repeat(64),partitions:{'2026-1':'d'.repeat(64)}},source_hash:'a'.repeat(64),prefix_start:'2025-01-01T00:00:00Z',points:bs.map(b=>({...b,contract:q.contract,phase:'SEARCHING',regime:'RANGE',reason:null,er:.2,chop:60,trend_candidate:false,break_side:null,box:null}))})
 async function settle(){await nextTick();await new Promise(r=>setTimeout(r,0));await nextTick()}
 test('prepend requests only missing history and never recalculates previously shown points',async()=>{
  const scope=effectScope(),bars=ref([makeBar(3),makeBar(4)]),enabled=ref(true),calls:RangeQuery[]=[]

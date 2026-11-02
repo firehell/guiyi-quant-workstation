@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 import math
 
-VERSION = 'subing_dynamic_range_v1'
+VERSION = 'subing_dynamic_range_v2'
 D = Decimal
 
 
@@ -14,6 +14,8 @@ D = Decimal
 class Profile:
     name: str = 'bounded_confirmed'
     window: int = 20
+    direction_bars: int = 2
+    neutral_bars: int = 3
     formation_bars: int = 2
     break_bars: int = 2
     expansion: Decimal = D('0.25')
@@ -75,6 +77,8 @@ class State:
     pending_count: int = 0
     directional_side: str | None = None
     directional_count: int = 0
+    confirmed_side: str | None = None
+    neutral_count: int = 0
     retired: bool = False
 
 
@@ -111,7 +115,7 @@ def step(state: State, *, contract: str, frequency: str, bar_end: datetime,
     new = replace(state, samples=samples, last_end=bar_end)
     if (atr is None or trend_direction == 'UNKNOWN' or len(samples) < cfg.window+1):
         return replace(new, box=None, forming=0, pending_side=None, pending_count=0,
-                       directional_side=None, directional_count=0, retired=False), Point(bar_end)
+                       directional_side=None, directional_count=0, confirmed_side=None, neutral_count=0, retired=False), Point(bar_end)
     if not isinstance(atr, Decimal) or not atr.is_finite() or atr <= 0 or trend_direction not in ('UP', 'DOWN', 'NEUTRAL'):
         return clean, Point(bar_end, reason='FACTOR_INPUT_INVALID')
     window = samples[-cfg.window:]
@@ -124,12 +128,22 @@ def step(state: State, *, contract: str, frequency: str, bar_end: datetime,
     chop = 100.0 if width == 0 else max(0.0, min(100.0,
         100 * math.log10(float(sum((b.tr for b in window), D(0))/width))/math.log10(cfg.window)))
     side = ('UP' if displacement > 0 else 'DOWN') if displacement else None
-    directional = side if er >= cfg.trend_er and trend_direction == side else None
-    count = state.directional_count+1 if directional and directional == state.directional_side else int(directional is not None)
-    new = replace(new, directional_side=directional, directional_count=count)
-    regime = ('TREND_'+directional) if directional and count >= 2 else 'RANGE'
+    # Direction describes the market; efficiency only qualifies strong candidates.
+    directional = trend_direction if trend_direction in ('UP', 'DOWN') else None
+    count = min(cfg.direction_bars, state.directional_count+1) if directional and directional == state.directional_side else int(directional is not None)
+    neutral_count = min(cfg.neutral_bars, state.neutral_count+1) if directional is None else 0
+    confirmed = state.confirmed_side
+    if directional and count >= cfg.direction_bars:
+        confirmed = directional
+    elif neutral_count >= cfg.neutral_bars:
+        confirmed = None
+    new = replace(new, directional_side=directional, directional_count=count,
+                  confirmed_side=confirmed, neutral_count=neutral_count)
+    regime = 'TREND_'+confirmed if confirmed else 'RANGE'
+    strong = bool(confirmed and directional == confirmed and count >= cfg.direction_bars
+                  and side == confirmed and er >= cfg.trend_er)
     point = Point(bar_end, regime=regime, reason=None, er=er, chop=chop,
-                  trend_candidate=regime.startswith('TREND_'))
+                  trend_candidate=strong)
     box = None if state.retired else state.box
     if box is None:
         qualifies = er <= cfg.range_er and chop >= cfg.chop_min and width <= cfg.initial_width*atr
@@ -150,7 +164,7 @@ def step(state: State, *, contract: str, frequency: str, bar_end: datetime,
             return replace(new, pending_count=n, retired=confirmed), replace(point,
                 box=box, break_side=breakout,
                 phase='BREAK_CONFIRMED' if confirmed else 'BREAK_PENDING',
-                trend_candidate=confirmed and directional == breakout and count >= 2)
+                trend_candidate=confirmed and strong and directional == breakout)
         return replace(new, pending_side=None, pending_count=0), replace(point,
             phase='BREAK_FAILED', box=box, break_side=state.pending_side, trend_candidate=False)
     if breakout:
@@ -158,14 +172,14 @@ def step(state: State, *, contract: str, frequency: str, bar_end: datetime,
         return replace(new, pending_side=breakout, pending_count=1, retired=confirmed), replace(point,
             box=box, break_side=breakout,
             phase='BREAK_CONFIRMED' if confirmed else 'BREAK_PENDING',
-            trend_candidate=confirmed and directional == breakout and count >= 2)
+            trend_candidate=confirmed and strong and directional == breakout)
     # A close just outside the boundary is a test, never absorbed into the box.
     if not box.lower <= close <= box.upper:
         return new, replace(point, phase='BOUNDARY_TEST', box=box, trend_candidate=False)
     lo, hi = min(low, box.lower), max(high, box.upper)
     if lo != box.lower or hi != box.upper:
         if hi-lo > cfg.max_width*box.atr_reference:
-            return replace(new, box=None, forming=0), replace(point, regime='UNKNOWN',
+            return replace(new, box=None, forming=0), replace(point,
                 phase='SEARCHING', reason='BOX_WIDTH_EXCEEDED', box=box, trend_candidate=False)
         can_expand = (box.lower-lo <= cfg.expansion*box.atr_reference and
                       hi-box.upper <= cfg.expansion*box.atr_reference and

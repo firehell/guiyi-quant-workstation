@@ -5,7 +5,7 @@ import { mergeRangePoints, normalizeRangeResponse, matchesRangeBar, type Dynamic
 const bar={time:'2026-07-20T07:00:00Z',physicalContract:'JM2609',open:100,high:102,low:98,close:101,volume:1}
 const point: DynamicRangePoint={time:bar.time,contract:'JM2609',open:100,high:102,low:98,close:101,regime:'RANGE',phase:'RANGE_ACTIVE',reason:null,er:.1,chop:65,trend_candidate:false,break_side:null,
   box:{box_id:'box',confirmed_at:'2026-07-19T07:00:00Z',lower:98,upper:102,atr_reference:2,revision:0}}
-const response=()=>({version:'subing_dynamic_range_v1',trend_version:'subing_ema21_ols5_atr14_v2',profile:'bounded_confirmed',symbol:'jm',frequency:'30m',contract:'JM2609',source_proof:{lifecycle_hash:'c'.repeat(64),partitions:{'2026-1':'d'.repeat(64)}},source_hash:'a'.repeat(64),prefix_start:'2026-01-01T00:00:00Z',points:[point]})
+const response=()=>({version:'subing_dynamic_range_v2',trend_version:'subing_ema21_ols5_atr14_v2',profile:'bounded_confirmed',symbol:'jm',frequency:'30m',contract:'JM2609',source_proof:{lifecycle_hash:'c'.repeat(64),partitions:{'2026-1':'d'.repeat(64)}},source_hash:'a'.repeat(64),prefix_start:'2026-01-01T00:00:00Z',points:[point]})
 test('display data is matched to physical candles and normalized without recalculation',()=>{
  const p=normalizeRangeResponse(response(),'jm','30m',[bar])[0]
  assert.deepEqual(p,point)
