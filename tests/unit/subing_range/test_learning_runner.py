@@ -95,3 +95,13 @@ def test_code_drift_prevents_final_snapshot_and_review_page(harness,monkeypatch,
     with pytest.raises(ValueError,match='RESEARCH_CODE_CHANGED'):
         runner.run(out,date(2023,6,30))
     assert not (out/'index.html').exists() and not (out/'snapshot.json').exists()
+
+
+def test_saved_snapshot_roundtrip_preserves_original_identity(tmp_path):
+    from datetime import datetime,timezone
+    from decimal import Decimal
+    from app.market_data.new_subing_research import payload_hash
+    snapshot={'date':date(2026,10,30),'timestamp':datetime(2026,10,30,7,tzinfo=timezone.utc),'value':Decimal('1.25')}
+    path=tmp_path/'snapshot.json'
+    runner.dump(path,snapshot)
+    assert payload_hash(json.loads(path.read_text()))==payload_hash(snapshot)

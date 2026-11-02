@@ -9,7 +9,7 @@ import argparse
 from copy import deepcopy
 from collections import Counter
 from dataclasses import asdict, replace
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 import gzip
 from hashlib import sha256
@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def dump(path, value):
-    path.write_text(json.dumps(value, ensure_ascii=False, default=str, allow_nan=False, indent=2))
+    path.write_text(json.dumps(value, ensure_ascii=False, default=lambda value: value.isoformat() if isinstance(value, (date, datetime)) else str(value), allow_nan=False, indent=2))
 
 
 def raw_bar(bar):
