@@ -1,3 +1,11 @@
+11/2 预热读取补丁v1.16.66已发布，exact764b39339e1f4f4f0dba1d3858daafd6ba0c4e5d，PR595/main/annotated tag/GitHub Release完成；正式十服务仍v64/gen53，独立SimNow及既有15:05任务不变。
+11/2 v1.16.66发布补丁范围：在已发布v65基础上，仅修复Reference预热历史manifest有界分块传输和saved replay重复读取未使用manifest；不改变公式、历史记录、来源完整性校验或120秒预算，不包含develop苏冰研究/账户改动。
+真实600路只读预热：v65基线107.718秒；补丁85.509/91.048秒。三次均590路calculated、10路有完整质量证明的周线不可用，质量证明摘要一致、DML尝试0；163项相关/扩展回归及独立Review35项通过。
+v65此前cohort因Reference预热超时安全取消，effects为空；当前正式十服务仍v64/gen53，本次仅发布补丁，不切换正式服务或独立SimNow，不改15:05任务目标。
+
+
+以下为此前检查点：
+
 11/1 v65发布后独立读回补验：正式仍v64/gen53，十项matched、API/Web/Runtime HTTP均通过；原60诊断、closeout/failure-history、runtime-status、5526条Event及两条Rule整行摘要和日志cursor/tail均与切换前一致。原生692b5ab6…cohort-attempt目录不存在，证明宿主在创建执行进程前阻止，非未知Runtime写入。独立SimNow六文件（含四账本）SHA及PID1733保持；明日ACTIVE/COUNT=1/15:05任务仍v64，未误更新。隔离Redis测试容器已停止删除；宿主将本聊天临时发布验证树标为primary、拒绝归档，保持原位未绕过，正式v65源码另位于普通.worktrees/release-v1.16.65，不依赖该聊天树。
 
 11/1 Alert健康修复已发布v1.16.65/exact614e382c9db4c50bb6f52d9b2fd87f165a995c0f，PR594/main/annotated tag/GitHub Release完成。从v64仅发布Alert未到期误判/旧诊断原子关闭及新失败崩溃持久化修复，未带入苏冰研究或账户公式。最终599项相关回归、版本一致性、独立148项Review、API/Web离线依赖/类型/构建/拓扑通过。
