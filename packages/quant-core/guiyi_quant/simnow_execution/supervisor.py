@@ -179,6 +179,10 @@ _RECOVERY_ERRORS = frozenset({
     "NATIVE_FROZEN_WITHOUT_PENDING_ORDER", "LOCAL_STORE_INVALID", "NATIVE_RECOVERY_REQUIRED",
     "NATIVE_FACT_QUERY_REJECTED", "NATIVE_FACT_RESPONSE_IDENTITY", "NATIVE_FACT_ACCOUNT_MISMATCH",
     "NATIVE_SNAPSHOT_CHANGED", "EXISTING_ACCOUNT_JOURNAL_REQUIRED",
+    "NATIVE_FACT_STALE", "TRADING_DAY_INVALID", "FUNDING_EFFECTIVE_DAY_NOT_REACHED",
+    "DISPATCH_CLOCK_INVALID", "NATIVE_EVIDENCE_CONFLICT", "NATIVE_EVIDENCE_OVERLAP",
+    "EVIDENCE_ACCOUNT_MISMATCH", "NATIVE_EVENT_SESSION_UNPROVEN",
+    "NATIVE_EVENT_OWNERSHIP_UNPROVEN",
 })
 
 
@@ -465,6 +469,13 @@ class Supervisor:
             verify_recovery_ownership(snapshot, bindings, self.journal, state)
             from .strategy_native import validate_strategy_events
 
+            self.recovery_stage = "RECOVERY_SNAPSHOT_VALIDATION"
+            validate_strategy_events(
+                snapshot, self.market.authority, self.journal, state
+            )
+            self.recovery_stage = "RECOVERY_SNAPSHOT_RETENTION"
+            self.evidence.append(snapshot)
+            # Raw source retention does not reconcile the account or clear pending.
             self.recovery_stage = "ADAPTER_PREPARATION"
             adapter = self.driver.adapter(
                 self.store,

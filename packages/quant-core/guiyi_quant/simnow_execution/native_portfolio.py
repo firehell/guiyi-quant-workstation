@@ -80,6 +80,25 @@ def safe_native_queries(records):
     return result
 
 
+def session_diagnostic(session):
+    """Only bounded classifications, never native identifiers or reprs."""
+    expected = {"front_id", "session_id", "max_order_ref"}
+    fields = session if type(session) is dict else {}
+    checks = {}
+    for name in sorted(expected):
+        value = fields.get(name)
+        checks[name] = {
+            "present": name in fields,
+            "integer": type(value) is int,
+            "positive": type(value) is int and value > 0,
+            "nonnegative": type(value) is int and value >= 0,
+            "signed_int32": type(value) is int and -(2**31) <= value < 2**31,
+        }
+    return {"schema": "native_adapter_preparation_v1",
+            "exact_fields": type(session) is dict and set(session) == expected,
+            "fields": checks}
+
+
 class ReadJournal(Journal):
     """Reuse dispatch identity readers with a genuinely read-only SQLite handle."""
 
@@ -129,8 +148,10 @@ class NativePortfolio:
         self.cursor = 0
         self.stage = "NOT_CONNECTED"
         self.settlement = None
+        self.adapter_preparation = None
 
     def connect(self):
+        self.adapter_preparation = None
         self.settlement = None
         self.stage = "CREDENTIAL_LOAD"
         credentials = CredentialStore().load(self.settings.account_id)
@@ -154,6 +175,7 @@ class NativePortfolio:
     def failure_diagnostics(self):
         return dict(
             stage=self.stage,
+            adapter_preparation=self.adapter_preparation,
             settlement=dict(self.settlement.diagnostic) if self.settlement is not None else None,
             input_diagnostics=dict(self.input_diagnostics),
             native_queries=safe_native_queries(self.gateway.query_diagnostics or self.previous_queries) if self.gateway is not None else [],
@@ -519,7 +541,8 @@ class NativePortfolio:
         if not self.settlement.read_confirmed():
             self.stage = "SETTLEMENT_CONFIRMATION"
             self.settlement.confirm()
-        self.stage = "ADAPTER_CONSTRUCTION"
+        self.adapter_preparation = session_diagnostic(self.gateway.native_session)
+        self.stage = "SESSION_CONSTRUCTION"
         session = Session(
             snapshot.account_id,
             "SIMNOW_FIRST",
@@ -548,6 +571,7 @@ class NativePortfolio:
             capabilities.update(
                 strategy_correlated_native=True, native_validator=native_validator
             )
+        self.stage = "ADAPTER_CONSTRUCTION"
         adapter = Adapter(
             store,
             journal,
@@ -561,6 +585,7 @@ class NativePortfolio:
             **capabilities,
         )
         if correlated_native or strategy_correlated_native:
+            self.stage = "NATIVE_SNAPSHOT_CORRELATION"
             adapter.correlate_snapshot(snapshot)
         self.stage = "NATIVE_CALLBACK_ATTACH"
         self.gateway.attach(adapter, snapshot)

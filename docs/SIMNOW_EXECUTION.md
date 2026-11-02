@@ -21,6 +21,14 @@
 任何状态写入前及构造Session前重验缓存身份，不增加查询。结算回调可选记录`response_info_present`；
 本版保留既有空RspInfo处理，厂商/现场是否允许其表示成功仍待验证，不将此字段单独作为执行许可。
 
+恢复的第二轮稳定Snapshot在账户归属及既有`validate_strategy_events`事件Session校验后、结算及Adapter构造前，
+通过原`Evidence.append`幂等保留；保留失败或结果未知仍阻断，不继续确认、构造或重试。保留原始来源不等于账户
+对账或接管成功，也不改变首份收益baseline；跨日资金连续性不足仍为`CASHFLOW_CONTINUITY_REQUIRED`。
+原生driver依次区分`SESSION_CONSTRUCTION`、`ADAPTER_CONSTRUCTION`、`NATIVE_SNAPSHOT_CORRELATION`和
+`NATIVE_CALLBACK_ATTACH`。可选`native_adapter_preparation_v1`仅记录三个原生会话字段是否存在、整数/正数/
+非负/有符号32位等固定布尔分类，不记录字段值。它是诊断证据，不改变Session正数合同、发送屏障或恢复许可；
+旧失败缺少这些字段时保持原因UNKNOWN，不用新诊断回填历史。
+
 本模块实现已持久化HTDY账户提案到CTP报单/撤单请求的窄适配，以及原生回调到本地账户journal的事实接入。
 交易规则、资金预留和订单状态机见[HTDY合同](HTDY_SIMNOW_V1.md)，登录及四类只读查询见[只读合同](SIMNOW_READONLY.md)。
 只读CLI保持只读；core适配模块不自行登录或注册前置。一次性宿主与独立持续宿主显式连接固定第一套，均默认只读；持续新开仓代码须显式trade双重匹配；正式启用状态只看STATUS，当前`auto_order=false`。
