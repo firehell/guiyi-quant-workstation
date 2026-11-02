@@ -7,7 +7,7 @@ import re
 from types import SimpleNamespace
 
 from sqlalchemy import BigInteger, Text, and_, case, cast, event, func, literal, literal_column, or_, select, true, union_all
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, aggregate_order_by
 from sqlalchemy.orm import Session
 
 from app.reference_trading.contracts import (
@@ -328,12 +328,17 @@ def _pg_packed_rows(batch_id, vector_limits, *, legacy_arrays=False):
             size = case((value_type == "string", func.octet_length(decoded)), else_=-1)
             safe_leaf = case((and_(value_type == "string", size <= 64),
                               decoded), else_=null_text)
+            # Keep every legacy SHA and its order, but do not send a SQL row
+            # (and cursor round trip overhead) per leaf. Invalid/oversized
+            # values become null and are rejected by the client validator.
+            block_index = (leaf.c.ordinality - 1).self_group().op("/")(literal(BLOCK_SIZE)) + 1
             branches.append(row(
-                literal("leaf"), literal(key), leaf.c.ordinality,
-                empty_json, safe_leaf, value_type, size, null_int,
+                literal("legacy_block"), literal(key), block_index,
+                func.jsonb_agg(aggregate_order_by(safe_leaf, leaf.c.ordinality)),
+                null_text, null_text, null_int, func.count(),
                 null_text, null_text, null_text, null_text, null_text,
                 null_int, null_text, empty_json,
-            ).select_from(body.join(leaf, true())))
+            ).select_from(body.join(leaf, true())).group_by(block_index))
             continue
         blocks = vector.op("->")("blocks")
         vector_type = func.jsonb_typeof(vector)
@@ -596,17 +601,21 @@ def _pg_construct_legacy_arrays(session, batch_id, probe, keys):
                         or item.block_count != counts[key]):
                     raise ManifestStorageError()
                 seen_meta[key] = True
-            elif item.row_kind == "leaf":
+            elif item.row_kind == "legacy_block":
                 ordinal = item.ordinal
                 if (type(ordinal) is not int
-                        or not 1 <= ordinal <= counts[key]
-                        or slots[key][ordinal - 1] is not None
-                        or item.value_type != "string"
-                        or item.value_length != 64
-                        or type(item.block) is not str
-                        or _HEX_LEAF.fullmatch(item.block) is None):
+                        or not 1 <= ordinal <= (counts[key] + BLOCK_SIZE - 1) // BLOCK_SIZE):
                     raise ManifestStorageError()
-                slots[key][ordinal - 1] = item.block
+                start = (ordinal - 1) * BLOCK_SIZE
+                expected = min(BLOCK_SIZE, counts[key] - start)
+                values = item.metadata
+                if (type(values) is not list or len(values) != expected
+                        or type(item.block_count) is not int or item.block_count != expected
+                        or any(value is not None for value in slots[key][start:start + expected])
+                        or any(type(value) is not str or _HEX_LEAF.fullmatch(value) is None
+                               for value in values)):
+                    raise ManifestStorageError()
+                slots[key][start:start + expected] = values
             else:
                 raise ManifestStorageError()
     finally:
