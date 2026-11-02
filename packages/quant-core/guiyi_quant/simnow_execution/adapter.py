@@ -20,7 +20,7 @@ _DISPATCH_CODES = frozenset({
     "EXECUTION_CONTRACT_MISMATCH", "LIVE_QUOTE_REQUIRED", "NATIVE_CALLBACK_OR_COMMIT_REQUIRES_RECOVERY",
     "OPEN_EXPIRED", "OPEN_RESERVATION_REQUIRED", "OPPONENT_PRICE_DRIFT", "PERSISTED_EFFECT_REQUIRED",
     "RECONCILED_ACCOUNT_REQUIRED", "SUBMIT_NOT_QUALIFIED", "UNDRAINED_NATIVE_FACTS_REQUIRE_RECONCILIATION",
-    "ACCOUNT_TAKEOVER_PENDING", "NATIVE_PRICE_PRECISION_LOSS", "NATIVE_FACT_STALE",
+    "ACCOUNT_RECOVERY_HOLD", "ACCOUNT_TAKEOVER_PENDING", "NATIVE_PRICE_PRECISION_LOSS", "NATIVE_FACT_STALE",
     "ONE_LOT_NATIVE_INVENTORY_REQUIRED", "CLOSE_POSITION_MISMATCH", "CLAIMED_NEVER_SENT_EXPIRED",
 })
 _DISPATCH_OUTCOMES = frozenset({"ALREADY_CLAIMED_NO_SEND", "REQUEST_ACCEPTED_AWAIT_NATIVE",
@@ -126,8 +126,8 @@ def callback_guard(method):
 class Adapter:
     def __init__(self, store, journal, sdk, api, user, session, *,
                  close_only=False, correlated_native=False,
-                 strategy_correlated_native=False, native_validator=None, account_takeover_pending=False, account_profile=None, clock=None):
-        if (type(account_takeover_pending) is not bool or type(close_only) is not bool or type(correlated_native) is not bool
+                 strategy_correlated_native=False, native_validator=None, account_takeover_pending=False, account_profile=None, clock=None, execution_hold=False):
+        if (type(execution_hold) is not bool or type(account_takeover_pending) is not bool or type(close_only) is not bool or type(correlated_native) is not bool
             or type(strategy_correlated_native) is not bool
             or correlated_native and (not close_only or strategy_correlated_native)
             or strategy_correlated_native and not callable(native_validator)
@@ -154,6 +154,7 @@ class Adapter:
         if account_profile is not None and type(account_profile) is not AccountProfile:
             raise ValueError("ACCOUNT_PROFILE_INVALID")
         self.account_profile = account_profile
+        self.execution_hold = execution_hold
         if clock is not None and not callable(clock):
             raise ValueError("DISPATCH_CLOCK_INVALID")
         self.clock = clock
@@ -516,6 +517,8 @@ class Adapter:
     @dispatch_diagnostic
     def dispatch(self, effect, binding, inventory, execution, permit, now):
         """Only once per order/action, including SDK error, crash and unknown result."""
+        if getattr(self, "execution_hold", False):
+            raise ValueError("ACCOUNT_RECOVERY_HOLD")
         if getattr(self, "account_takeover_pending", False):
             raise ValueError("ACCOUNT_TAKEOVER_PENDING")
         fresh = dispatch_clock(now, self.clock)
