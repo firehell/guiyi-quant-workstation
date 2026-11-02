@@ -1,3 +1,7 @@
+11/2 20:31–20:35 第六步未通过，按owner“遇问题停止推进”停在此处：只读权威查询20261103 MainContractMap为0/60、全部MAIN_CONTRACT_MAP_MISSING，Calendar/Session选日与20:58–21:02连接窗口可证明，durable metadata day记录仍None，目标日attempt0/无block。
+确认代码缺陷并独立Review复现：现役v64/develop的MarketFeedService.poll在CLOSED_CLEANED及旧日cleanup fence可提前return，绕过父类_prepare_metadata；独立Live已禁用该回调，没有第二owner补做。前轮20:30资格判断漏查上游分支，不能再承诺届时自然准备；隔离分支探针metadata调用0、零provider/生产写入。现场Feed owner PID1772/active/gen53但ready=false、专用heartbeat缺席；具体现场内部路径及缺心跳原因尚未证明，不把控制分支反例冒充运行栈。
+SimNow仍v64/run4af489ca… WAITING_SESSION/pending=true/opening=false，未停启/重连、取数重试、改许可或清预算block。未手动推进第七步；既有宿主仍按原许可等待窗口，空账户接管不被断言必失败，品种执行仍需目标日权威事实。证据output/simnow-full-check-20261102/authority-2030.json、step6-closed-cleaned-diagnosis.json及step6-summary.json；后续先修复/核验Feed准备路径与实际ready问题，再重新读回第六步。
+
 11/2 18:28 发布树清理：原生全量扫描v44/v64/v65/v66后，对v44两次同像零引用计划14451fe6…确认eligible，部署锁内已non-force git worktree remove .worktrees/release-v1.16.44；v44 annotated tag/commit及树外切换/恢复原件保留。
 删除前后现役v64原封reader均验证11份历史索引通过；service-bindings、SimNow监控身份配置/plist/候选配置及四账本SHA保持，API v64健康，SimNow同run4af489ca… WAITING_SESSION/pending=true/opening=false。证据output/simnow-full-check-20261102/release-cleanup，未切服务、未改账户或连接预算。
 当前发布树剩v64（正式十服务与SimNow现役）、v65（仍有f4e48999…恢复引用）、v66（最新已发布候选，尚未运行）。v65封存失败已只读定位：当前cohort-release指向effects为空的cancelled预热失败，而collector要求phase=switched；未改写旧状态或强删。其他聊天的alert-health-v65工作区及三个未跟踪研究文件未触及。
