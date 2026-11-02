@@ -187,3 +187,22 @@ def test_joint_excludes_same_timestamp_daily_even_when_it_changes():
     a=next(r['joint'] for r in before['rows'] if r['frequency']=='30m')
     b=next(r['joint'] for r in after['rows'] if r['frequency']=='30m')
     assert a==b
+
+
+def test_range_uses_full_prefix_shared_factors_and_is_opt_in():
+    m = Market()
+    plain = load(m,m.day,m.day)
+    data = load(m,m.day,m.day,include_range=True)
+    assert data['input_hash'] == plain['input_hash']
+    assert all('range_factor' not in r for r in plain['rows'])
+    owned=[r for r in data['rows'] if r['owned']]
+    assert len(owned)==2
+    assert all(r['range_factor']['regime']=='RANGE' for r in owned)
+    assert all(r['range_factor']['box']['confirmed_at'] < m.end for r in owned)
+    assert 'id="rangePanel"' in render(data)
+    assert 'id="rangePanel"' not in render(plain)
+    assert '__RANGE_PANEL__' not in render(plain)
+    assert data['range_profile']['name']=='bounded_confirmed'
+    assert 'packages/quant-core/guiyi_quant/indicators/subing_range.py' in data['code_hashes']
+    with pytest.raises(ValueError,match='RANGE_PERIOD_VARIANT_UNSUPPORTED'):
+        load(m,m.day,m.day,include_range=True,include_joint=True,research_profile='daily_ema19')

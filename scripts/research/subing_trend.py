@@ -43,12 +43,16 @@ def diagnostic(exc):
     return safe_diagnostic(exc, product='jm', stage='trend_factor')
 
 
-def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False, research_profile=None, product="jm"):
+def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False, include_range=False, range_profile="bounded_confirmed", research_profile=None, product="jm"):
     if product not in ('jm', 'ma', 'ta'):
         raise TrendExportError('RESEARCH_PRODUCT_UNSUPPORTED')
     if product != 'jm' and research_profile is not None:
         raise TrendExportError('CROSS_PRODUCT_PARAMETER_SEARCH_UNSUPPORTED')
-    from guiyi_quant.indicators import subing_macd, subing_volume, subing_price, subing_conditions
+    from guiyi_quant.indicators import subing_macd, subing_volume, subing_price, subing_conditions, subing_range
+    if include_range and research_profile is not None:
+        raise TrendExportError('RANGE_PERIOD_VARIANT_UNSUPPORTED')
+    if include_range and range_profile not in subing_range.PROFILES:
+        raise TrendExportError('RANGE_PROFILE_INVALID')
     if research_profile is not None and (type(research_profile) is not str or research_profile not in PERIOD_PROFILES):
         raise TrendExportError('FACTOR_RESEARCH_PROFILE_INVALID')
     daily_period, minute_period, macd_periods = PERIOD_PROFILES.get(research_profile, (21, 21, (12, 26, 9)))
@@ -81,6 +85,7 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
             price_state = subing_price.PullbackState(owner.contract)
             rebound_state = subing_price.PullbackState(owner.contract, side="SHORT")
             entry_state = subing_conditions.EntryWindow(owner.contract)
+            range_state = subing_range.initial_state(owner.contract, frequency.value, profile=range_profile) if include_range else None
             previous_bar = None
             daily_rows = [r for r in rows if r['contract'] == owner.contract and r['frequency'] == '1d']
             daily_times = [datetime.fromisoformat(r['time']) for r in daily_rows]
@@ -88,6 +93,14 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                 state, point = step(state, contract=owner.contract, frequency=frequency.value,
                     bar_end=bar.bar_end, high=float(bar.high), low=float(bar.low), close=float(bar.close))
                 cross_fields = {}
+                if range_state is not None:
+                    from decimal import Decimal
+                    range_state, range_point = subing_range.step(range_state,
+                        contract=owner.contract, frequency=frequency.value, bar_end=bar.bar_end,
+                        high=bar.high, low=bar.low, close=bar.close,
+                        atr=Decimal(str(point.atr14)) if point.atr14 is not None else None,
+                        trend_direction=point.direction)
+                    cross_fields['range_factor'] = asdict(range_point)
                 if cross_state is not None:
                     cross_state, cross = subing_macd.step(cross_state, contract=owner.contract, frequency=frequency.value,
                         bar_end=bar.bar_end, close=float(bar.close))
@@ -159,9 +172,14 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
     if include_joint:
         for p in (Path(subing_conditions.__file__), Path(__file__).with_name('subing_joint.html')):
             code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
+    if include_range:
+        for p in (Path(subing_range.__file__), Path(__file__).with_name('subing_range.html')):
+            code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
     payload = dict(joint_version=subing_conditions.VERSION if include_joint else None, price_version=subing_price.VERSION if include_price else None, volume_version=subing_volume.VERSION if include_volume else None, volume_enabled=include_volume, macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
         input_hash=payload_hash(sources), time_model='retrospective completed bars; D1 strictly earlier than selected 30m',
         source_note='Full same-contract lifecycle prefix, EMA SMA seed and Wilder ATR SMA seed, both rounded to 6 decimals.')
+    if include_range:
+        payload.update(range_version=subing_range.VERSION, range_profile=asdict(subing_range.PROFILES[range_profile]))
     if research_profile is not None:
         payload.update(research_profile=research_profile, research_parameters=dict(daily_ema=daily_period, minute_ema=minute_period, macd=macd_periods),
                        research_version='subing_factor_period_stability_v1',
@@ -189,6 +207,7 @@ def render(data):
     template = template.replace('__PRICE_PANEL__', price_fragment)
     joint_fragment = Path(__file__).with_name('subing_joint.html').read_text() if data.get('joint_version') else ''
     template = template.replace('__JOINT_PANEL__', joint_fragment)
+    template = template.replace('__RANGE_PANEL__', Path(__file__).with_name('subing_range.html').read_text() if data.get('range_version') else '')
     return template.replace('__DATA__', json.dumps(data, ensure_ascii=False, default=str, allow_nan=False).replace('<', '\\u003c'))
 
 
@@ -201,6 +220,8 @@ def main():
     parser.add_argument('--volume', action='store_true', help='Include phase 2.3 completed volume inspection')
     parser.add_argument('--price', action='store_true', help='Include phase 2.4 completed price/EMA facts')
     parser.add_argument('--joint', action='store_true', help='Include all factors, entry checks and exit facts (no trades)')
+    parser.add_argument('--range', action='store_true', help='Include causal regime and dynamic boxes (research only)')
+    parser.add_argument('--range-profile', choices=('fixed','bounded','bounded_confirmed'), default='bounded_confirmed')
     args = parser.parse_args()
     if args.since > args.through or args.output.exists():
         raise TrendExportError('TREND_REQUEST_INVALID')
@@ -217,7 +238,7 @@ def main():
     try:
         with Session(engine,autoflush=False) as session, readonly_transaction(session,timeout_seconds=900):
             root = Path(settings['GUIYI_CANONICAL_DATA_ROOT'])
-            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through,include_macd=args.macd,include_volume=args.volume,include_price=args.price,include_joint=args.joint)
+            data = load(MarketDataService(MarketCatalog(session,root),CanonicalMonthlyStore(root)),args.since,args.through,include_macd=args.macd,include_volume=args.volume,include_price=args.price,include_joint=args.joint,include_range=args.range,range_profile=args.range_profile)
     finally:
         engine.dispose()
     args.output.mkdir(parents=True,exist_ok=False)
