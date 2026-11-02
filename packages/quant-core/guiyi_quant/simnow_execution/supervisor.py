@@ -179,6 +179,11 @@ _RECOVERY_ERRORS = frozenset({
     "NATIVE_FROZEN_WITHOUT_PENDING_ORDER", "LOCAL_STORE_INVALID", "NATIVE_RECOVERY_REQUIRED",
     "NATIVE_FACT_QUERY_REJECTED", "NATIVE_FACT_RESPONSE_IDENTITY", "NATIVE_FACT_ACCOUNT_MISMATCH",
     "NATIVE_SNAPSHOT_CHANGED", "EXISTING_ACCOUNT_JOURNAL_REQUIRED",
+    "NATIVE_FACT_STALE", "TRADING_DAY_INVALID", "FUNDING_EFFECTIVE_DAY_NOT_REACHED",
+    "DISPATCH_CLOCK_INVALID", "NATIVE_EVIDENCE_CONFLICT", "NATIVE_EVIDENCE_OVERLAP",
+    "EVIDENCE_ACCOUNT_MISMATCH", "NATIVE_EVENT_SESSION_UNPROVEN",
+    "NATIVE_EVENT_OWNERSHIP_UNPROVEN",
+    "NATIVE_SESSION_ID_INVALID",
 })
 
 
@@ -223,11 +228,14 @@ class Supervisor:
         )
         self.ledger_hash = None
         self.session_active = False
+        self.account_recovery_hold = getattr(settings, "account_recovery_hold", False)
+        self.preparation_recovery_attempted = False
 
     def status(self, code, *, connected=False):
         state = self.store.current() if self.store is not None else None
         opening = bool(
             code == "TRADING"
+            and not self.account_recovery_hold
             and not self.account_takeover_pending
             and self.settings.mode == "trade"
             and self.settings.enabled
@@ -261,9 +269,10 @@ class Supervisor:
             input_diagnostics=self.input_diagnostics,
             dispatch_diagnostic=getattr(self.host, "last_dispatch_diagnostic", None),
             input_checks=input_check_records(self.input_checks, products=self.products),
-            auto_order=self.settings.mode == "trade" and self.settings.enabled,
+            auto_order=self.settings.mode == "trade" and self.settings.enabled and not self.account_recovery_hold,
             opening_enabled=opening,
             account_takeover_pending=self.account_takeover_pending,
+            account_recovery_hold=self.account_recovery_hold,
             broker_e2e_passed=False,
         )
         # Monitoring must not change a trading decision.
@@ -311,7 +320,8 @@ class Supervisor:
                     self.host.adapter.drain()
                 except Exception:
                     failed = True
-            self.inbox.recover_queue(self.store)
+            if not self.account_recovery_hold:
+                self.inbox.recover_queue(self.store)
         finally:
             for item in (self.store, self.journal):
                 if item is not None:
@@ -323,9 +333,32 @@ class Supervisor:
             self.observe_reconciliation = None
             self.market.activate(self.now())
         if failed:
-            if self.target_day:
+            if self.target_day and not self._preparation_permit():
                 self.inbox.block(self.target_day, "CONTINUOUS_CLEANUP_UNCERTAIN")
             raise ValueError("CONTINUOUS_CLEANUP_UNCERTAIN")
+
+    def _preparation_permit(self):
+        return bool(getattr(self.settings, "preparation_recovery_permit", None))
+
+    def _preparation_authority(self, day):
+        now = self.now()
+        plan = self.market.plan(now)
+        if (not plan.active or not plan.connect_allowed or plan.trading_day is None
+            or plan.trading_day.strftime("%Y%m%d") != day):
+            raise ValueError("PREPARATION_RECOVERY_INVALID")
+        window = self.market.ordinary_takeover_window(day, now)
+        return {**{k: window[k] for k in ("trading_day", "sessions", "session_facts_sha256")},
+                "active": True}
+
+    def _preparation_available(self, day, now):
+        if not self._preparation_permit() or self.preparation_recovery_attempted:
+            return False
+        from . import preparation_recovery
+
+        return preparation_recovery.available(
+            self.settings, self.inbox, self.run_id, day, now,
+            authority=lambda: self._preparation_authority(day),
+        )
 
     def _ordinary_permit_required(self, day):
         if not getattr(self.settings, "ordinary_takeover_permit", None):
@@ -351,10 +384,14 @@ class Supervisor:
         from . import deployment_connection as permit
 
         configured = getattr(self.settings, "deployment_connection_permit", None)
+        recovery = self._preparation_permit()
+        recovery_candidate = self._preparation_available(day, self.now()) if recovery else False
         extra_candidate = bool(
             configured and day == permit.DAY and permit.attempts(self.inbox, day) == 3
         )
-        if self.inbox.blocked(day) and not extra_candidate:
+        if recovery and not recovery_candidate:
+            raise ValueError("PREPARATION_RECOVERY_CONSUMED")
+        if self.inbox.blocked(day) and not (extra_candidate or recovery_candidate):
             raise ValueError(
                 "DEPLOYMENT_CONNECTION_INVALID"
                 if configured
@@ -362,7 +399,17 @@ class Supervisor:
             )
         permit_window = None
         ordinary_window = None
-        if self._ordinary_permit_required(day):
+        recovery_window = None
+        if recovery:
+            from . import preparation_recovery
+
+            # This local latch is terminal even when consumption fails before SQL.
+            self.preparation_recovery_attempted = True
+            attempt, recovery_window = preparation_recovery.consume(
+                self.settings, self.inbox, self.run_id, day, self.now(), clock=self.now,
+                authority=lambda: self._preparation_authority(day),
+            )
+        elif self._ordinary_permit_required(day):
             from . import ordinary_takeover
 
             attempt, ordinary_window = ordinary_takeover.consume(
@@ -390,6 +437,10 @@ class Supervisor:
                 ordinary_window, self.now(), lambda: self._ordinary_authority(day)
             )
             ordinary_takeover.connection_time(ordinary_window, self.now())
+        if recovery_window:
+            preparation_recovery.validate_connection(
+                recovery_window, self.now(), lambda: self._preparation_authority(day)
+            )
         self.driver = self.factory(self.settings, self.folder)
         if permit_window:
             permit.connection_time(permit_window, self.now())
@@ -398,6 +449,10 @@ class Supervisor:
                 ordinary_window, self.now(), lambda: self._ordinary_authority(day)
             )
             ordinary_takeover.connection_time(ordinary_window, self.now())
+        if recovery_window:
+            preparation_recovery.validate_connection(
+                recovery_window, self.now(), lambda: self._preparation_authority(day)
+            )
         self.driver.connect()
         self.prepare(day)
         self.retry_after = self.now() + timedelta(seconds=30 * attempt)
@@ -465,6 +520,13 @@ class Supervisor:
             verify_recovery_ownership(snapshot, bindings, self.journal, state)
             from .strategy_native import validate_strategy_events
 
+            self.recovery_stage = "RECOVERY_SNAPSHOT_VALIDATION"
+            validate_strategy_events(
+                snapshot, self.market.authority, self.journal, state
+            )
+            self.recovery_stage = "RECOVERY_SNAPSHOT_RETENTION"
+            self.evidence.append(snapshot)
+            # Raw source retention does not reconcile the account or clear pending.
             self.recovery_stage = "ADAPTER_PREPARATION"
             adapter = self.driver.adapter(
                 self.store,
@@ -477,9 +539,10 @@ class Supervisor:
                 ),
             )
             adapter.account_takeover_pending = self.account_takeover_pending
+            adapter.execution_hold = self.account_recovery_hold
             self.recovery_stage = "UNSENT_ORDER_RECOVERY"
             for order in self.store.current().orders:
-                if order.status == "PROPOSED" and not self.journal.claimed(
+                if not self.account_recovery_hold and order.status == "PROPOSED" and not self.journal.claimed(
                     order.order_id
                 ):
                     adapter.abort_unsent(
@@ -499,6 +562,7 @@ class Supervisor:
                 account_takeover_pending=self.account_takeover_pending,
                 takeover_clock=self.now,
                 account_profile=getattr(self.settings, "account_profile", None),
+                execution_hold=self.account_recovery_hold,
             )
             self.recovery_stage = "ACCOUNT_RECONCILIATION"
             native, recovered = self.host.reconcile(
@@ -515,7 +579,8 @@ class Supervisor:
         )  # Evidence is durable before publishing the binding.
         self.recovery_stage = "QUEUE_RECOVERY"
         self.market.activate(self.now())
-        self.inbox.recover_queue(self.store)
+        if not self.account_recovery_hold:
+            self.inbox.recover_queue(self.store)
         self.prepared = True
         self.recovery_stage = "READY"
 
@@ -563,8 +628,10 @@ class Supervisor:
                 ).fetchone()
                 == (3,)
             )
+            recovery_candidate = self._preparation_available(day, now) if self._preparation_permit() else False
             if (
-                self.inbox.blocked(day) and not exception_candidate
+                self._preparation_permit() and not recovery_candidate
+                or self.inbox.blocked(day) and not (exception_candidate or recovery_candidate)
             ) or now < self.retry_after:
                 self.status("RECOVERY_BLOCKED")
                 return
@@ -626,6 +693,14 @@ class Supervisor:
             self.driver.report, bindings, self.now(), proofs if recovering else ()
         )
         self.latest_source = snapshot.source_id
+        if self.account_recovery_hold:
+            if (recovered is None or not recovered.readback_valid or recovered.phase != "READY"):
+                self.status("ACCOUNT_RECONCILIATION_REQUIRED", connected=True)
+            else:
+                if not self.store._needs_recovery:
+                    self.ledger_hash = digest(self.store.current())
+                self.status("ACCOUNT_RECOVERED_HELD", connected=True)
+            return
         self.host.adapter.expire_unacknowledged(self.now())
         if (
             recovered is None
@@ -722,7 +797,7 @@ class Supervisor:
     def _audit_trade_inputs(self, *, force_defer=False):
         """Execution/account work wins; idle inputs are observation evidence only."""
         audit = getattr(self.driver, "audit_next", None)
-        if self.settings.mode != "trade" or audit is None:
+        if getattr(self, "account_recovery_hold", False) or self.settings.mode != "trade" or audit is None:
             return
         from ..htdy_account_execution.scheduling import execution_candidates
 
@@ -767,6 +842,8 @@ class Supervisor:
 
     def refresh_before_book(self):
         """Same-connection complete readback after rates, before the final book."""
+        if self.account_recovery_hold:
+            raise ValueError("ACCOUNT_RECOVERY_HOLD")
         snapshot = self.driver.snapshot()
         if snapshot.trading_day != self.day:
             self.disconnect()
@@ -810,6 +887,13 @@ class Supervisor:
             try:
                 from . import deployment_connection as permit
 
+                if self._preparation_permit():
+                    from . import preparation_recovery
+
+                    preparation_recovery.activate(
+                        self.settings, self.inbox, self.run_id, self.now(), clock=self.now,
+                        authority=lambda: self._preparation_authority(preparation_recovery.DAY),
+                    )
                 if getattr(self.settings, "ordinary_takeover_permit", None):
                     from . import ordinary_takeover
 
@@ -849,8 +933,11 @@ class Supervisor:
                     try:
                         self.cycle()
                     except Exception as exc:
+                        if self._preparation_permit():
+                            self.preparation_recovery_attempted = True
                         if (
-                            type(exc) is ValueError
+                            not self._preparation_permit()
+                            and type(exc) is ValueError
                             and str(exc) == "NATIVE_SNAPSHOT_CHANGED"
                         ):
                             self.status("READBACK_NOT_STABLE", connected=True)
@@ -891,7 +978,7 @@ class Supervisor:
                         )
                         self.status(code)
                         # Only transport failures may reconnect. Unknown account/commit/dispatch stops this day.
-                        if not transport_failure:
+                        if not transport_failure or self._preparation_permit():
                             # The failed attempt owns this block even when the
                             # calendar has advanced while native calls waited.
                             self.blocked_day = self.target_day
@@ -901,7 +988,7 @@ class Supervisor:
                                     plan.trading_day.strftime("%Y%m%d")
                                     if plan.trading_day else None
                                 )
-                            if self.blocked_day:
+                            if self.blocked_day and not self._preparation_permit():
                                 self.inbox.block(self.blocked_day, code)
                         try:
                             diagnostic = (
@@ -928,7 +1015,7 @@ class Supervisor:
                             )
                         except Exception:
                             # An evidence failure cannot silently turn into a fresh login.
-                            if self.target_day:
+                            if self.target_day and not self._preparation_permit():
                                 self.inbox.block(
                                     self.target_day, "CONTINUOUS_DIAGNOSTIC_UNAVAILABLE"
                                 )
