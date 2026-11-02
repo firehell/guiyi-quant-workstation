@@ -398,6 +398,7 @@ onUnmounted(() => chartSession.dispose())
           </template>
           <FreeChartWorkspace
             v-else-if="routeResult.identity.view === 'free' && header"
+            :canonical-end="controller.canonicalCoverage.value?.end ?? null"
             :identity="routeResult.identity"
             :header="header"
             :bars="controller.bars.value"

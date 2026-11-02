@@ -165,22 +165,28 @@ class MarketDataService:
         partitions = self.catalog.partitions_before(key, before)
         if not partitions:
             raise MarketDataError("PHYSICAL_DATA_MISSING")
+        proofs = []
+        for part in partitions:
+            self._check_cancelled()
+            proof = {
+                "year": part.year, "month": part.month,
+                "content_sha256": self.store.verified_partition_fingerprint(part),
+                "row_count": part.row_count,
+                "coverage_start": part.coverage_start.isoformat() if part.coverage_start else None,
+                "coverage_end": part.coverage_end.isoformat() if part.coverage_end else None,
+                "source_coverage_start": part.source_coverage_start.isoformat() if part.source_coverage_start else None,
+                "source_coverage_end": part.source_coverage_end.isoformat() if part.source_coverage_end else None,
+                "quality_sha256": part.source_quality_sha256,
+            }
+            self._check_cancelled()
+            proofs.append(proof)
         return {
             "contract": contract, "frequency": frequency.value,
             "listed_date": fact.listed_date.isoformat(),
             "expired_date": fact.expired_date.isoformat(),
-            "partitions": [
-                {"year": part.year, "month": part.month,
-                 "content_sha256": self.store.verified_partition_fingerprint(part),
-                 "row_count": part.row_count,
-                 "coverage_start": part.coverage_start.isoformat() if part.coverage_start else None,
-                 "coverage_end": part.coverage_end.isoformat() if part.coverage_end else None,
-                 "source_coverage_start": part.source_coverage_start.isoformat() if part.source_coverage_start else None,
-                 "source_coverage_end": part.source_coverage_end.isoformat() if part.source_coverage_end else None,
-                 "quality_sha256": part.source_quality_sha256}
-                for part in partitions
-            ],
+            "partitions": proofs,
         }
+
 
     def contract_lifecycle_start(self, *, symbol: str, contract: str) -> date:
         """Expose the Catalog physical listing boundary without reading Bar files."""

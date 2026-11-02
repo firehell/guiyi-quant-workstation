@@ -62,3 +62,28 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core se
 
 覆盖前缀一致、逐根接续、混合生命周期恢复、宽幅无序、缓慢单边、箱内方向、上下突破、假突破、
 扩展上限、未知/数据缺口重置以及导出前缀与现有因子隔离。合成样例验证算法合同，不证明真实行情识别准确率。
+
+## 自由看盘
+
+自由看盘的“震荡／趋势”开关是独立研究显示，当前支持30m/1d；不替代既有带回画语义的Lux“箱体识别”。
+主图按根着色（蓝震荡、红上涨、绿下跌），每根只画当时有效的上下沿。悬停显示状态、阶段、ER、CHOP和当时箱体。
+向左分页自动请求缺少的历史结果，既有点不因可见窗口起点改变而重算。
+
+只读入口`GET /api/v1/market/indicators/dynamic-range`按symbol、physical contract、frequency、start/end查询。
+使用MDS精确inclusive端点和权威交易日，完整同合约生命周期预热，再裁出请求显示区间；不从页面首根或固定520根开始计算。
+每次最多返回2000点、完整前缀最多30000点，单个串行计算，分区读/校验和计算循环协作检查25秒预算。
+缺端点、质量失败、前缀不足或预算不足均显式不可用，不缩窗、插值、下载或写入。
+
+浏览器检查每根物理身份及OHLC；跨请求同时校验生命周期与重叠分区hash。
+行情前缀变化就停止显示，关闭再开启才接受新的来源快照。即使仅同月归档追加导致分区hash变化，也可能要求重新开启；
+这是保守来源隔离，不属于自动跟随归档更新。相同输入前缀的左拉、追加显示和重新计算须逐点一致。
+当前只为Historical Canonical返回状态，Live未归档部分留空，页面明确提示；不据已完成Live直接晋升Canonical。
+
+开发预览使用既有8002 API与5175 Web，不改变正式服务。新增验证入口：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_dynamic_range.py tests/unit/subing_range tests/unit/subing_trend services/quant-api/tests/data_foundation/test_catalog_and_service.py
+cd apps/quant-web
+node --test tests/dynamicRange.test.ts tests/useDynamicRange.test.ts tests/marketDetailController.test.ts tests/marketSeries.test.ts tests/rangeDetectorStatus.test.ts
+npm run build
+```

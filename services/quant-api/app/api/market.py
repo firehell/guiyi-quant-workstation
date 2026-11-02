@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from typing import cast
+from threading import BoundedSemaphore
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -41,6 +43,7 @@ from app.schemas.market import (
 )
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
+_DYNAMIC_RANGE_GATE = BoundedSemaphore(1)
 
 
 @router.get("/research/home-overview", response_model=MarketHomeOverviewResponse)
@@ -219,3 +222,43 @@ def product_research(
             for bar in snapshot.recent_daily
         ],
     )
+
+
+@router.get('/indicators/dynamic-range')
+def dynamic_range_indicator(
+    symbol: str, contract: str, frequency: str, start: str, end: str,
+    session: Session = Depends(get_db),
+):
+    """Optional research display; no writes, live promotion or trading consumers."""
+    from datetime import datetime, timezone
+    from time import monotonic
+    from fastapi.encoders import jsonable_encoder
+    from app.db.readonly import readonly_transaction
+    from app.market_data.dynamic_range import chart_window, DynamicRangeError
+    from app.market_data.new_subing_research import NewSubingInputError
+
+    if not _DYNAMIC_RANGE_GATE.acquire(blocking=False):
+        raise HTTPException(503, detail={'code': 'DYNAMIC_RANGE_BUSY'})
+    deadline = monotonic()+25
+
+    def check():
+        if monotonic() > deadline:
+            raise DynamicRangeError('DYNAMIC_RANGE_BUDGET_EXCEEDED')
+
+    try:
+        first = parse_rfc3339_instant(start, field='start')
+        last = parse_rfc3339_instant(end, field='end')
+        if last > datetime.now(timezone.utc):
+            raise DynamicRangeError('DYNAMIC_RANGE_WINDOW_INVALID')
+        with readonly_transaction(session, timeout_seconds=25):
+            result = chart_window(build_market_data_service(session, check_cancelled=check), symbol=symbol,
+                contract=contract, frequency=frequency, start=first, end=last, check=check)
+        return jsonable_encoder(result, custom_encoder={Decimal: str})
+    except ContractError:
+        raise HTTPException(422, detail={'code': 'DYNAMIC_RANGE_QUERY_INVALID'}) from None
+    except (DynamicRangeError, MarketDataError, NewSubingInputError) as exc:
+        raise HTTPException(409, detail={'code': exc.code}) from None
+    except Exception:
+        raise HTTPException(503, detail={'code': 'DYNAMIC_RANGE_UNAVAILABLE'}) from None
+    finally:
+        _DYNAMIC_RANGE_GATE.release()

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DynamicRangePoint } from '@/utils/dynamicRange'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { computed } from 'vue'
 
@@ -9,6 +10,8 @@ import { markersForDetailView } from '@/utils/marketDetailMarkers'
 
 const props = withDefaults(defineProps<{
   hasMoreBefore?: boolean; loadingBefore?: boolean; historyError?: string | null
+  dynamicRangePoints?: DynamicRangePoint[]
+  dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
   mutation: MarketSeriesMutation
@@ -36,6 +39,8 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
 <template>
   <MarketKlineStage :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars"
+    :dynamic-range-points="dynamicRangePoints"
+    :dynamic-range-enabled="dynamicRangeEnabled"
     :pattern-geometry="patternGeometry"
     :mutation="mutation"
     :loading="loading"

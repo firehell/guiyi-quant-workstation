@@ -94,6 +94,7 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 - EMA21 斜率只保留 10K primitive：输入恰好 10 个 EMA21 值，以首尾差除以 9 个 bar interval，再除以当前 EMA21，输出 bps/bar。
 - 不保留 Daily Watch 大方向过滤，也不保留 5m/15m 正式因子。
 - Range Detector 只允许 `range_detector_readonly_display`，不能作为正式策略、Alert 或 Runtime 输入。
+- 自由看盘可选“震荡／趋势”研究显示（30m/1d），使用独立 `subing_dynamic_range_v1`；完整物理前缀计算、逐根不可回写边界，仅 Historical Canonical，Live 未归档部分留空。向左分页校验来源后补充历史点，不作为正式入场过滤器；合同见 [震荡因子](docs/research/subing-range-factor.md)。
 
 ## HTDY 与 Alert
 

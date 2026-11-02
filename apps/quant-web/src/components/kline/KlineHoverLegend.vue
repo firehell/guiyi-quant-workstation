@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { regimeLabel, phaseLabel } from '@/utils/dynamicRange'
 import type { Time } from 'lightweight-charts'
 import type { HoverKlineContext } from '@/types/market'
 import { formatChartTimeInShanghai, toKlineDisplayTimeForPeriod } from '@/utils/barTime'
@@ -31,6 +32,14 @@ function displayTime(context: HoverKlineContext): string {
     </span>
     <span v-if="context.marker?.tooltip" data-testid="kline-hover-marker">
       {{ context.marker.tooltip }}
+    </span>
+    <span v-if="context.dynamicRangeEnabled" data-testid="kline-hover-dynamic-range">
+      <template v-if="context.dynamicRange">{{ regimeLabel[context.dynamicRange.regime] }} · {{ phaseLabel[context.dynamicRange.phase] }}
+        ER {{ formatKlineHoverValue(context.dynamicRange.er) }} / CHOP {{ formatKlineHoverValue(context.dynamicRange.chop) }}
+        <template v-if="context.dynamicRange.box"> / 当时箱体 {{ formatKlineHoverValue(context.dynamicRange.box.lower) }}～{{ formatKlineHoverValue(context.dynamicRange.box.upper) }}</template>
+        <template v-if="context.dynamicRange.reason"> / {{ context.dynamicRange.reason }}</template>
+      </template>
+      <template v-else>震荡／趋势：尚无已验证历史结果</template>
     </span>
     <template v-if="context.rangeDetector">
       <span data-testid="kline-hover-range-detector">

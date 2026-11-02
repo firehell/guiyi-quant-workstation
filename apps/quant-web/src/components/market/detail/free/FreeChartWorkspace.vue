@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
+import { useDynamicRange } from '@/composables/useDynamicRange'
 
 import NewowPublicPatternsPanel from '@/components/market/detail/newow/NewowPublicPatternsPanel.vue'
 import { buildNewowPatternGeometry, type PatternChoice } from '@/utils/newowPatternDisplay'
@@ -13,6 +14,7 @@ import type { MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/mark
 import type { FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
 
 const props = defineProps<{
+  canonicalEnd?: string | null
   identity: MarketDetailIdentity
   header: MarketDetailHeaderModel
   bars: BarData[]
@@ -54,6 +56,11 @@ const visibleFrom = ref<string | null>(null)
 const rangeCount = ref(0)
 watch(sourceIdentity, () => { visibleFrom.value = null; rangeCount.value = 0 }, { flush: 'sync' })
 const bars = computed(() => props.bars)
+const showDynamicRange = ref(false)
+const dynamicRange = useDynamicRange({ enabled: showDynamicRange, bars,
+  canonicalEnd: computed(() => props.canonicalEnd ?? null), identity: sourceIdentity,
+  symbol: computed(() => props.identity.symbol), frequency: computed(() => props.identity.frequency),
+})
 const hasMoreBefore = computed(() => props.hasMoreBefore)
 const rangeWarmup = useRangeDetectorOverlayWarmup({
   bars,
@@ -151,13 +158,25 @@ function loadEarlier() { void props.loadEarlier() }
         <span class="indicator-chip__dot" aria-hidden="true" />形态识别
         <span v-if="showPatterns" class="indicator-chip__check" aria-hidden="true">✓</span>
       </button>
+      <button class="indicator-chip indicator-chip--range" :class="{ 'indicator-chip--active': showDynamicRange }"
+        type="button" :aria-pressed="showDynamicRange" @click="showDynamicRange = !showDynamicRange">震荡／趋势 <span v-if="showDynamicRange">✓</span></button>
     </div>
+    <p v-if="showDynamicRange" class="free-workspace__hint" role="status" data-testid="dynamic-range-status">
+      <template v-if="!dynamicRange.supported.value">震荡／趋势研究指标目前支持30分钟、日线，请切换周期。</template>
+      <template v-else>震荡蓝色／上涨红色／下跌绿色；每根保留当时边界，向左加载不会重算显示起点。仅历史已归档完成K线，实时部分待归档。研究参数尚待核对。
+        <span v-if="dynamicRange.loading.value">正在计算历史前缀…</span>
+        <span v-else>已计算 {{ dynamicRange.points.value.length }} 根。</span>
+        <span v-if="dynamicRange.error.value">{{ dynamicRange.error.value }} <button type="button" @click="dynamicRange.refresh">重试指标</button></span>
+      </template>
+    </p>
     <NewowPublicPatternsPanel v-if="showPatterns" :bars="patternBars" :period="identity.frequency" :window-key="patternWindowKey" @select="patternSelection = $event" @preview="patternSelection = $event" @clear="patternSelection = null" />
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
     <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
     <div class="free-workspace__chart-surface"><slot name="chart-toolbar" />
     <FreeChartStage
       :bars="bars"
+      :dynamic-range-points="dynamicRange.points.value"
+      :dynamic-range-enabled="showDynamicRange && dynamicRange.supported.value"
       :pattern-geometry="patternGeometry"
       :mutation="mutation" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
       :loading="loading"

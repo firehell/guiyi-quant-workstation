@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { DynamicRangePrimitive } from '@/components/kline/dynamicRangePrimitive'
+import { matchesRangeBar, pointKey, type DynamicRangePoint } from '@/utils/dynamicRange'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -54,6 +56,8 @@ import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitiv
 import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
 
 const props = withDefaults(defineProps<{
+  dynamicRangePoints?: DynamicRangePoint[]
+  dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
   loading?: boolean
@@ -72,6 +76,8 @@ const props = withDefaults(defineProps<{
   referenceSelection?: KlineReferenceSelection[]
   qualityBreaks?: KlineQualityBreak[]
 }>(), {
+  dynamicRangePoints: () => [],
+  dynamicRangeEnabled: false,
   loading: false,
   error: null,
   period: '15m',
@@ -159,6 +165,7 @@ const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 const publicPatternPrimitive = new NewowPublicPatternPrimitive(point => chartTime({ time: point.barEnd, trading_day: point.tradingDay } as BarData))
 watch(() => props.patternGeometry, value => publicPatternPrimitive.setData(value ?? null))
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
+const dynamicRangePrimitive = new DynamicRangePrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 const rangeCalculationMs = ref(0)
@@ -238,6 +245,7 @@ onMounted(async () => {
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
   candles.attachPrimitive(rangeDetectorPrimitive)
+  candles.attachPrimitive(dynamicRangePrimitive)
   candles.attachPrimitive(publicPatternPrimitive)
   publicPatternPrimitive.setData(props.patternGeometry ?? null)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
@@ -282,6 +290,7 @@ watch(() => props.period, () => {
 watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
 }, { deep: true })
+watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); hoverContext.value=null })
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
 
@@ -330,6 +339,7 @@ function volumeValues(bars: BarData[]) {
 }
 
 function replaceBars(bars: BarData[], preserveViewport = false): void {
+  const previousSessionViewport = chart ? detailChartViewport(chart) : null
   const visibleRange = preserveViewport && chart ? detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange() : null
   renderedBars = normalizeBarSeries(bars)
   if (!chart) return
@@ -337,7 +347,8 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   lastVisibleFrom.value = null
   renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
-  const targetRange = detailSession ? detailChartViewport(chart) ?? initialNewowChartLogicalRange(renderedBars.length, container.value?.clientWidth ?? 1000)
+  const mappedSessionViewport = previousSessionViewport !== null ? detailChartViewport(chart) : null
+  const targetRange = detailSession ? mappedSessionViewport ?? initialNewowChartLogicalRange(renderedBars.length, container.value?.clientWidth ?? 1000)
     : visibleRange ?? initialChartLogicalRange(renderedBars.length)
   if (targetRange) chart.timeScale().setVisibleLogicalRange(targetRange)
   else chart.timeScale().fitContent()
@@ -516,6 +527,11 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
       markersForHoverContext(),
     )
     : null
+  if (nextContext && props.dynamicRangeEnabled) {
+    const point=props.dynamicRangePoints.find(p => matchesRangeBar(p, nextContext.bar))
+    nextContext.dynamicRange=point ?? null
+    nextContext.dynamicRangeEnabled=true
+  }
   hoverContext.value = nextContext
   emit('crosshair-change', nextContext)
 }
@@ -535,8 +551,16 @@ function renderAllSeries(): void {
   renderDerivedSeries()
 }
 
+function renderDynamicRange(): void {
+  const bars = new Map(renderedBars.map(b => [pointKey(b.physicalContract ?? '',b.time),b]))
+  dynamicRangePrimitive.setData(props.dynamicRangeEnabled ? props.dynamicRangePoints.filter(p => {
+    const b=bars.get(pointKey(p.contract,p.time)); return b && matchesRangeBar(p,b)
+  }).map(p => ({...p,time:bars.get(pointKey(p.contract,p.time))!.time})) : [], ribbonTime)
+}
+
 function renderDerivedSeries(): void {
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
+  renderDynamicRange()
   const calculationStarted = performance.now()
   const rangeEnabled = props.visibleMainIndicators.includes('range_detector') && Boolean(props.rangeDetectorSourceIdentity) && Boolean(props.rangeDetectorAnchorTime)
   const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])

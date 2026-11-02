@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DynamicRangePoint } from '@/utils/dynamicRange'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
@@ -9,6 +10,8 @@ import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 
 const props = withDefaults(defineProps<{
+  dynamicRangePoints?: DynamicRangePoint[]
+  dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
   mutation: MarketSeriesMutation
@@ -104,9 +107,12 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       <span v-if="historyError">{{ historyError }}</span>
     </div>
     <KlineChart
+      :key="identityKey"
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
+    :dynamic-range-points="dynamicRangePoints"
+    :dynamic-range-enabled="dynamicRangeEnabled"
     :pattern-geometry="patternGeometry"
       :loading="loading"
       :error="error"

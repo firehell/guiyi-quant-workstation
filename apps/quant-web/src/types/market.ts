@@ -314,6 +314,8 @@ export interface MainIndicatorValue {
 }
 
 export interface HoverKlineContext {
+  dynamicRange?: import('../utils/dynamicRange').DynamicRangePoint | null
+  dynamicRangeEnabled?: boolean
   time: string
   bar: BarData
   mainIndicators?: MainIndicatorValue[]
