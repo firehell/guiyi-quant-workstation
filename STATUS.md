@@ -1,3 +1,7 @@
+11/2 18:21 第五步盘后核验完成：现役v64自然任务18:05:07–18:07:21首次passed，精确operational60/60、720条historical_publications，last_successful_trading_day=2026-11-02、current_run/last_failure为空。正式rank1与原Live snapshot摘要一致，原生cleanup_verified、剩余Bar键0、当日订阅已清。
+只读核验Canonical最新60m物理前缀32根为60/60 VERIFIED，逐物理日1m聚合EXACT；最新已完成日11/2。维护锁初查有1持有者，18:20 fresh复查0且盘后文件锁FREE；盘后原status SHA前后不变。证据output/simnow-full-check-20261102/step5-canonical.json，未重跑任务、provider/生产写入/Broker请求均0。
+SimNow仍原v64/run4af489ca…，WAITING_SESSION/pending=true/opening=false；db/redis/Live健康正常，全60 CLOSED。整体health仍degraded（Alert evaluation_failed），Newow D1/W1消费者not_verified另列，不冒充全业务验收；初次实时bars_until被已清除订阅拒绝，不作为Canonical缺口。下一步约20:30核验20261103自然metadata/60品种主力映射，未新增自动任务。
+
 11/2 15:25 第三步独立SimNow切换完成：owner明确交办后，原生fresh v7计划ffa45a2f…单次apply，持久stage=COMPLETE/result=HOST_SWITCH_VERIFIED；旧v44/PID1733退出，新v64 exact3e8229fe8cf2da1bd9f14d5035a32136199c0025、PID15566、run4af489cab654450db267587ee3b5c0f7，正式十服务未操作。
 独立原生readback verified=true，进程命令/SDK/config、同PID双锁、grant/runclaim及monitor均吻合；宿主WAITING_SESSION、pending=true/opening=false。account/dispatch/signals三库SHA与fresh计划一致，native-evidence5649份完整前缀逐行SHA一致；原预算及历史block保持，20261103仍attempt0/无block。
 仅生成绑定原账户/固定版本/首run及20261103权威20:58–21:02窗口的普通预算许可，未连接Broker、确认结算或报撤单；不重放历史信号。切换和独立读回证据在output/simnow-preopen-20261101/simnow-v64，未清旧运行树、未新增定时任务。部署完成不等于账户接管或自然交易完成；今晚目标日metadata、真实接管及自然成交仍待验。
