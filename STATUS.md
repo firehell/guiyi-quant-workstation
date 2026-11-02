@@ -1,3 +1,7 @@
+11/2 15:25 第三步独立SimNow切换完成：owner明确交办后，原生fresh v7计划ffa45a2f…单次apply，持久stage=COMPLETE/result=HOST_SWITCH_VERIFIED；旧v44/PID1733退出，新v64 exact3e8229fe8cf2da1bd9f14d5035a32136199c0025、PID15566、run4af489cab654450db267587ee3b5c0f7，正式十服务未操作。
+独立原生readback verified=true，进程命令/SDK/config、同PID双锁、grant/runclaim及monitor均吻合；宿主WAITING_SESSION、pending=true/opening=false。account/dispatch/signals三库SHA与fresh计划一致，native-evidence5649份完整前缀逐行SHA一致；原预算及历史block保持，20261103仍attempt0/无block。
+仅生成绑定原账户/固定版本/首run及20261103权威20:58–21:02窗口的普通预算许可，未连接Broker、确认结算或报撤单；不重放历史信号。切换和独立读回证据在output/simnow-preopen-20261101/simnow-v64，未清旧运行树、未新增定时任务。部署完成不等于账户接管或自然交易完成；今晚目标日metadata、真实接管及自然成交仍待验。
+
 11/2 15:16 按owner本轮“前两步”交办完成fresh部署前检查：修正只读plan的state-dir为候选许可父目录，原生v7计划PLAN_READY（5f8c704f…），全60当前无Session、部署窗口open、目标日20261103、11/2历史主力锚60/60；候选exact v64/SDK/配置、原账户四库与本地义务、原PID1733双锁均通过。
 目标日attempt0/剩余3/无block，旧交易日block保留；execution_permitted=false、broker_io=false，未apply/停服/安装/启动，intent/许可/run-claim均不存在。原预检计划仅60秒有效，后续切换须重新fresh生成，不能沿用。
 正式十服务仍v64/gen53全部matched、API/Web可用；15:17 Runtime health为degraded：db/redis正常、全60 CLOSED、Live coverage lagging、Alert evaluation_failed，不能声称全绿。15:05一次性任务因此前参数失败已删除，无后续任务；前两步检查完成，第三步独立SimNow实际切换尚未执行。
