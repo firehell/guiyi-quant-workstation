@@ -57,6 +57,73 @@ def _pg_anchor(engine, *, packed=False, fusion=False, leaf_count=1500,
 
 
 @pytest.mark.isolated_postgresql
+@pytest.mark.parametrize('leaf_count', (1024, 1025, 32769))
+def test_pg_legacy_transport_is_bounded_blocks_with_exact_digest(
+    reference_postgresql, leaf_count,  # noqa: F811
+):
+    from sqlalchemy.orm import Session, defer
+
+    full, digest, _, _, anchor_id = _pg_anchor(reference_postgresql, leaf_count=leaf_count)
+    with Session(reference_postgresql) as session:
+        rows = session.execute(storage._pg_packed_rows(anchor_id, {
+            'input_fingerprints': leaf_count,
+            'calendar_session_effective_fingerprints': leaf_count,
+        }, legacy_arrays=True)).all()
+        blocks = [row for row in rows if row.row_kind == 'legacy_block']
+        assert len(rows) == 3 + 2 * ((leaf_count + storage.BLOCK_SIZE - 1) // storage.BLOCK_SIZE)
+        assert all(0 < len(row.metadata) <= storage.BLOCK_SIZE for row in blocks)
+        anchor = session.get(ReferenceBatch, anchor_id,
+                             options=[defer(ReferenceBatch.dependency_manifest)])
+        restored = storage.resolve_manifest(session, anchor)
+        assert restored == full
+        assert manifest_sha256(restored) == digest
+
+
+@pytest.mark.parametrize('tamper', (
+    None, 'missing', 'duplicate', 'short', 'long', 'bool_count', 'bad_sha', 'bad_ordinal',
+))
+def test_legacy_blocks_require_complete_unique_exact_valid_leaves(tamper):
+    head = {'reader': 'newow_product_reader_prefix_v4'}
+    keys = {'input_fingerprints'}
+    counts = {key: 257 if key in keys else -1 for key in storage.LARGE_KEYS}
+    presence = {key: key in keys for key in storage.LARGE_KEYS}
+    probe = ('batch', 'stream', 'revision', 'seed_seal', 'committed', 1,
+             head, 'digest', None, presence, 'array', counts)
+    header = SimpleNamespace(row_kind='header', batch_id='batch', stream_id='stream',
+        revision_id='revision', batch_kind='seed_seal', outcome='committed', seq=1,
+        server_hash='digest', metadata=head, presence=presence)
+    vector = SimpleNamespace(row_kind='vector', vector_key='input_fingerprints',
+        value_type='array', block_count=257)
+    def block(ordinal, values, count):
+        return SimpleNamespace(row_kind='legacy_block', vector_key='input_fingerprints',
+            ordinal=ordinal, metadata=values, block_count=count)
+    first = block(1, ['a' * 64] * 256, 256)
+    last = block(2, ['b' * 64], 1)
+    blocks = [last, first]  # SQL group result order is deliberately irrelevant.
+    if tamper == 'missing': blocks.pop()
+    elif tamper == 'duplicate': blocks.append(first)
+    elif tamper == 'short': first.metadata.pop()
+    elif tamper == 'long': last.metadata.append('c' * 64)
+    elif tamper == 'bool_count': last.block_count = True
+    elif tamper == 'bad_sha': last.metadata[0] = 'A' * 64
+    elif tamper == 'bad_ordinal': last.ordinal = True
+    class Result:
+        closed = False
+        def __iter__(self): return iter([header, vector, *blocks])
+        def close(self): self.closed = True
+    result = Result()
+    session = SimpleNamespace(execute=lambda _: result)
+    if tamper is None:
+        assert storage._pg_construct_legacy_arrays(session, 'batch', probe, keys) == {
+            **head, 'input_fingerprints': ['a' * 64] * 256 + ['b' * 64],
+        }
+    else:
+        with pytest.raises(storage.ManifestStorageError):
+            storage._pg_construct_legacy_arrays(session, 'batch', probe, keys)
+    assert result.closed
+
+
+@pytest.mark.isolated_postgresql
 @pytest.mark.parametrize('manifest', (
     {'htdy60m_first_seen_reference_v1': {'product': 'JM'},
      'scope_plan_hash': 'a' * 64},

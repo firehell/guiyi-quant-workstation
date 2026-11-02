@@ -336,7 +336,19 @@ def test_saved_warmup_keeps_two_batch_replay_and_exact_capture_linkage():
         revision.last_seq, revision.checkpoint_batch_id, stream.latest_seq = 2, "real-calculation", 2
     evaluated = []
     service = SimpleNamespace(_evaluator=lambda token, checkpoint, evidence: evaluated.append((token, checkpoint, evidence)))
-    assert worker_entry._warmup_saved_capture(repository, result["stream_id"], service) == "calculated"
+    from sqlalchemy import event
+    statements = []
+    engine = factory.kw['bind']
+    def observe(_connection, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+    event.listen(engine, 'before_cursor_execute', observe)
+    try:
+        assert worker_entry._warmup_saved_capture(repository, result["stream_id"], service) == "calculated"
+    finally:
+        event.remove(engine, 'before_cursor_execute', observe)
+    # The evaluator receives the same original capture and checkpoint; replay
+    # must not also decode unused, potentially multi-megabyte manifest columns.
+    assert statements and not any('dependency_manifest' in sql for sql in statements)
     assert len(evaluated) == 1
     assert evaluated[0][0].seq == 1
     assert evaluated[0][2] == {**capture.evidence(), "capture_id": identifier}

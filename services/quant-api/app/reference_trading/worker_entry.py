@@ -482,6 +482,7 @@ def warmup_reference_worker(*, allow_classified_weekly_unavailable=False):
 def _warmup_saved_capture(repository, stream_id, service):
     """Replay a real calculation, or verify a never-calculated activation seed."""
     from sqlalchemy import select, text
+    from sqlalchemy.orm import defer
     from app.reference_trading.models import ReferenceBatch, ReferenceStream
     from app.reference_trading.contracts import CheckpointToken
     from app.reference_trading.repository import _checkpoint_hash, _identity_from_row
@@ -493,7 +494,13 @@ def _warmup_saved_capture(repository, stream_id, service):
         stream = session.get(ReferenceStream, stream_id)
         if stream is None or stream.active_revision_id is None:
             raise RuntimeError("REFERENCE_WARMUP_PREIMAGE_UNAVAILABLE")
-        batches = session.scalars(select(ReferenceBatch).where(
+        # Replay consumes checkpoint and capture proof, not either batch's
+        # historical manifest. Its exact dependency proof was already loaded
+        # by service_for through the verified manifest resolver. Initial seed
+        # validation below still loads and checks its manifest when required.
+        batches = session.scalars(select(ReferenceBatch).options(
+            defer(ReferenceBatch.dependency_manifest),
+        ).where(
             ReferenceBatch.stream_id == stream_id,
             ReferenceBatch.revision_id == stream.active_revision_id,
             ReferenceBatch.outcome == "committed", ReferenceBatch.checkpoint_text.is_not(None),
@@ -604,10 +611,12 @@ def _saved_capture_evidence(session, stream, latest, previous):
     """Resolve compact calculation proof to its exact immutable capture fact."""
     from app.reference_trading.capture import ForwardCapture
     from app.reference_trading.models import ReferenceBatch
+    from sqlalchemy.orm import defer
     proof = latest.source_evidence.get('forward_capture_v1')
     if not isinstance(proof, dict) or not isinstance(proof.get('capture_id'), str):
         raise RuntimeError('REFERENCE_WARMUP_CAPTURE_UNAVAILABLE')
-    row = session.get(ReferenceBatch, proof['capture_id'])
+    row = session.get(ReferenceBatch, proof['capture_id'],
+                      options=[defer(ReferenceBatch.dependency_manifest)])
     if (row is None or row.kind != 'capture' or row.outcome != 'consumed'
             or row.stream_id != stream.stream_id or row.revision_id != stream.active_revision_id
             or row.consumed_by_batch_id != latest.batch_id or latest.kind != 'calculation'
