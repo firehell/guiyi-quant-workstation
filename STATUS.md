@@ -1,3 +1,7 @@
+11/2 18:28 发布树清理：原生全量扫描v44/v64/v65/v66后，对v44两次同像零引用计划14451fe6…确认eligible，部署锁内已non-force git worktree remove .worktrees/release-v1.16.44；v44 annotated tag/commit及树外切换/恢复原件保留。
+删除前后现役v64原封reader均验证11份历史索引通过；service-bindings、SimNow监控身份配置/plist/候选配置及四账本SHA保持，API v64健康，SimNow同run4af489ca… WAITING_SESSION/pending=true/opening=false。证据output/simnow-full-check-20261102/release-cleanup，未切服务、未改账户或连接预算。
+当前发布树剩v64（正式十服务与SimNow现役）、v65（仍有f4e48999…恢复引用）、v66（最新已发布候选，尚未运行）。v65封存失败已只读定位：当前cohort-release指向effects为空的cancelled预热失败，而collector要求phase=switched；未改写旧状态或强删。其他聊天的alert-health-v65工作区及三个未跟踪研究文件未触及。
+
 11/2 18:21 第五步盘后核验完成：现役v64自然任务18:05:07–18:07:21首次passed，精确operational60/60、720条historical_publications，last_successful_trading_day=2026-11-02、current_run/last_failure为空。正式rank1与原Live snapshot摘要一致，原生cleanup_verified、剩余Bar键0、当日订阅已清。
 只读核验Canonical最新60m物理前缀32根为60/60 VERIFIED，逐物理日1m聚合EXACT；最新已完成日11/2。维护锁初查有1持有者，18:20 fresh复查0且盘后文件锁FREE；盘后原status SHA前后不变。证据output/simnow-full-check-20261102/step5-canonical.json，未重跑任务、provider/生产写入/Broker请求均0。
 SimNow仍原v64/run4af489ca…，WAITING_SESSION/pending=true/opening=false；db/redis/Live健康正常，全60 CLOSED。整体health仍degraded（Alert evaluation_failed），Newow D1/W1消费者not_verified另列，不冒充全业务验收；初次实时bars_until被已清除订阅拒绝，不作为Canonical缺口。下一步约20:30核验20261103自然metadata/60品种主力映射，未新增自动任务。
