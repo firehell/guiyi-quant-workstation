@@ -53,10 +53,13 @@ class CrossState:
     last_end: datetime | None = None
 
 
-def initial_state(contract: str, frequency: str) -> CrossState:
+def initial_state(contract: str, frequency: str, *, periods: tuple[int, int, int] = (12, 26, 9)) -> CrossState:
     if not contract or frequency != '30m':
         raise ValueError('MACD_FACTOR_IDENTITY_INVALID')
-    return CrossState((contract, frequency), initial_macd_state(12,26,9,
+    if (type(periods) is not tuple or len(periods) != 3 or any(type(p) is not int for p in periods)
+            or periods not in ((12,26,9), (10,26,9), (14,26,9), (12,24,9), (12,28,9), (12,26,7), (12,26,11))):
+        raise ValueError("MACD_RESEARCH_PERIOD_INVALID")
+    return CrossState((contract, frequency), initial_macd_state(*periods,
         ema_seed_policy='sma_window',histogram_scale=2))
 
 
@@ -67,7 +70,7 @@ def step(state: CrossState, *, contract: str, frequency: str, bar_end: datetime,
     if bar_end.tzinfo is None or (state.last_end is not None and bar_end <= state.last_end):
         raise ValueError('MACD_FACTOR_TIME_INVALID')
     if not math.isfinite(close) or close <= 0:
-        return replace(initial_state(contract,frequency),last_end=bar_end), CrossPoint(reason='INPUT_INVALID')
+        return replace(initial_state(contract,frequency, periods=(state.macd.fast.period, state.macd.slow.period, state.macd.signal.period)),last_end=bar_end), CrossPoint(reason='INPUT_INVALID')
     macd, (dif,dea,histogram) = step_macd(state.macd,close,bar_end=bar_end.isoformat())
     if not all(p.ready and p.valid and p.value is not None for p in (dif,dea,histogram)):
         return CrossState(state.identity,macd,None,bar_end), CrossPoint(dif=dif.value,dea=dea.value)

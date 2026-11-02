@@ -84,11 +84,11 @@ def observations(bars, factor_rows, sessions):
     return result
 
 
-def load(market, raw_facts, since, through):
+def load(market, raw_facts, since, through, *, factor_research_profile=None):
     if since > through:
         raise NewSubingInputError('REQUEST_WINDOW_INVALID')
     owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol='jm', since=since, through=through)
-    factors = load_factors(market, since, through, include_joint=True)
+    factors = load_factors(market, since, through, include_joint=True, research_profile=factor_research_profile)
     segments, sources, sessions = [], [], {}
     for owner in owners:
         start, end = max(since, owner.start_trading_day), min(through, owner.end_trading_day)
@@ -130,10 +130,14 @@ def load(market, raw_facts, since, through):
             raise NewSubingInputError('INPUT_SOURCE_CHANGED')
     if owners != ActualDominantResearchSegmentLoader(market).owner_segments(symbol='jm', since=since, through=through):
         raise NewSubingInputError('OWNER_MAPPING_CHANGED')
-    return segments, dict(since=str(since), through=str(through), sources=[*factors['sources'], *sources],
+    evidence = dict(since=str(since), through=str(through), sources=[*factors['sources'], *sources],
         source_facts_hash=payload_hash(raw_facts), factors_input_hash=factors['input_hash'],
         factor_versions={k:v for k,v in factors.items() if k.endswith('version')},
         factor_code_hashes=factors['code_hashes'])
+    if factor_research_profile is not None:
+        evidence.update(factor_research_profile=factor_research_profile,
+                        factor_research_parameters=factors['research_parameters'])
+    return segments, evidence
 
 
 def render(data):

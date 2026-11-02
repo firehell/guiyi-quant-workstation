@@ -8,9 +8,24 @@ from bisect import bisect_left
 import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from types import MappingProxyType
 
 from guiyi_quant.indicators.subing_trend import VERSION, initial_state, step
 
+
+# Explicit single-parameter research variants; default formulas remain unchanged.
+PERIOD_PROFILES = MappingProxyType({
+    'daily_ema19': (19, 21, (12, 26, 9)),
+    'daily_ema23': (23, 21, (12, 26, 9)),
+    'minute_ema19': (21, 19, (12, 26, 9)),
+    'minute_ema23': (21, 23, (12, 26, 9)),
+    'macd_fast10': (21, 21, (10, 26, 9)),
+    'macd_fast14': (21, 21, (14, 26, 9)),
+    'macd_slow24': (21, 21, (12, 24, 9)),
+    'macd_slow28': (21, 21, (12, 28, 9)),
+    'macd_signal7': (21, 21, (12, 26, 7)),
+    'macd_signal11': (21, 21, (12, 26, 11)),
+})
 
 class TrendExportError(ValueError):
     def __init__(self, code):
@@ -28,8 +43,13 @@ def diagnostic(exc):
     return safe_diagnostic(exc, product='jm', stage='trend_factor')
 
 
-def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False):
+def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False, research_profile=None):
     from guiyi_quant.indicators import subing_macd, subing_volume, subing_price, subing_conditions
+    if research_profile is not None and (type(research_profile) is not str or research_profile not in PERIOD_PROFILES):
+        raise TrendExportError('FACTOR_RESEARCH_PROFILE_INVALID')
+    daily_period, minute_period, macd_periods = PERIOD_PROFILES.get(research_profile, (21, 21, (12, 26, 9)))
+    if research_profile is not None and not include_joint:
+        raise TrendExportError('FACTOR_RESEARCH_REQUIRES_JOINT')
     if include_joint:
         include_macd = include_volume = include_price = True
     from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
@@ -51,8 +71,8 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
             result = market.query_contract_trading_days(ContractTradingDayQuery(
                 'jm', owner.contract, frequency, expected[0][1], end))
             validate_series(result, product='jm', contract=owner.contract, frequency=frequency, expected=expected)
-            state = initial_state(owner.contract, frequency.value)
-            cross_state = subing_macd.initial_state(owner.contract, frequency.value) if include_macd and frequency is BarFrequency.M30 else None
+            state = initial_state(owner.contract, frequency.value, ema_period=daily_period if frequency is BarFrequency.D1 else minute_period)
+            cross_state = subing_macd.initial_state(owner.contract, frequency.value, periods=macd_periods) if include_macd and frequency is BarFrequency.M30 else None
             volume_state = subing_volume.initial_state(owner.contract, frequency.value) if include_volume else None
             price_state = subing_price.PullbackState(owner.contract)
             rebound_state = subing_price.PullbackState(owner.contract, side="SHORT")
@@ -135,9 +155,14 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
     if include_joint:
         for p in (Path(subing_conditions.__file__), Path(__file__).with_name('subing_joint.html')):
             code_hashes[p.resolve().relative_to(repo_root).as_posix()] = sha256(p.read_bytes()).hexdigest()
-    return dict(joint_version=subing_conditions.VERSION if include_joint else None, price_version=subing_price.VERSION if include_price else None, volume_version=subing_volume.VERSION if include_volume else None, volume_enabled=include_volume, macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
+    payload = dict(joint_version=subing_conditions.VERSION if include_joint else None, price_version=subing_price.VERSION if include_price else None, volume_version=subing_volume.VERSION if include_volume else None, volume_enabled=include_volume, macd_version=subing_macd.VERSION if include_macd else None, code_hashes=code_hashes, version=VERSION, since=str(since),through=str(through),rows=rows,sources=sources,
         input_hash=payload_hash(sources), time_model='retrospective completed bars; D1 strictly earlier than selected 30m',
         source_note='Full same-contract lifecycle prefix, EMA SMA seed and Wilder ATR SMA seed, both rounded to 6 decimals.')
+    if research_profile is not None:
+        payload.update(research_profile=research_profile, research_parameters=dict(daily_ema=daily_period, minute_ema=minute_period, macd=macd_periods),
+                       research_version='subing_factor_period_stability_v1',
+                       research_field_note='ema21 field carries the selected research EMA; original OHLCV unchanged')
+    return payload
 
 
 def render(data):

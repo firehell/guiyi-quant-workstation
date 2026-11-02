@@ -47,10 +47,12 @@ class TrendState:
     last_end: datetime | None = None
 
 
-def initial_state(contract: str, frequency: str) -> TrendState:
+def initial_state(contract: str, frequency: str, *, ema_period: int = 21) -> TrendState:
     if not contract or frequency not in ('30m', '1d'):
         raise ValueError('TREND_IDENTITY_INVALID')
-    return TrendState((contract, frequency), initial_ema_state(21),
+    if type(ema_period) is not int or ema_period not in (19, 21, 23):
+        raise ValueError("TREND_RESEARCH_PERIOD_INVALID")
+    return TrendState((contract, frequency), initial_ema_state(ema_period),
                       initial_atr_state(14, smoothing_policy='wilder_sma_seed'))
 
 
@@ -62,7 +64,7 @@ def step(state: TrendState, *, contract: str, frequency: str, bar_end: datetime,
     if bar_end.tzinfo is None or (state.last_end is not None and bar_end <= state.last_end):
         raise ValueError('TREND_TIME_INVALID')
     if not all(math.isfinite(v) and v > 0 for v in (high, low, close)) or not low <= close <= high:
-        clean = replace(initial_state(contract, frequency), last_end=bar_end)
+        clean = replace(initial_state(contract, frequency, ema_period=state.ema.period), last_end=bar_end)
         return clean, TrendPoint(reason='INPUT_INVALID')
     ema, ep = step_ema(state.ema, close, bar_end=bar_end.isoformat())
     atr, ap = step_atr(state.atr, high=high, low=low, close=close, bar_end=bar_end.isoformat())

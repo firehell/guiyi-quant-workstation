@@ -17,6 +17,19 @@ from .indicators.subing_conditions import EntryWindow, observe_entry
 
 VERSION = 'subing_jm30_decision_v6'
 RESEARCH_VERSION = VERSION + '_parameter_stability_v1'
+RISK_RESEARCH_VERSION = VERSION + '_risk_stability_v1'
+# (round loss, daily loss, maximum margin fraction, add-price protection).
+RISK_RESEARCH_PROFILES = MappingProxyType({
+    'round1500': (Decimal('1500'), Decimal('5000'), Decimal('.70'), True),
+    'round2500': (Decimal('2500'), Decimal('5000'), Decimal('.70'), True),
+    'day4000': (Decimal('2000'), Decimal('4000'), Decimal('.70'), True),
+    'day6000': (Decimal('2000'), Decimal('6000'), Decimal('.70'), True),
+    'margin60': (Decimal('2000'), Decimal('5000'), Decimal('.60'), True),
+    'margin80': (Decimal('2000'), Decimal('5000'), Decimal('.80'), True),
+    'without_add_protection': (Decimal('2000'), Decimal('5000'), Decimal('.70'), False),
+    'round1500_day4000': (Decimal('1500'), Decimal('4000'), Decimal('.70'), True),
+    'round2500_day6000': (Decimal('2500'), Decimal('6000'), Decimal('.70'), True),
+})
 # Fixed one-at-a-time scenarios. Values are (window age, stop points, target R).
 RESEARCH_PROFILES = MappingProxyType({
     'window4': (4, Decimal('13'), Decimal('1')),
@@ -107,16 +120,22 @@ def daily_allows(direction, side):
 
 
 class DecisionModel:
-    def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None):
+    def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None, risk_research_profile: str | None = None):
         if not isinstance(contract, str) or not re.fullmatch(r'JM[0-9]{4}', contract):
             raise ValueError('CONTRACT_INVALID')
         if not isinstance(run_id, str) or not run_id.strip():
             raise ValueError('RUN_INVALID')
         if research_profile is not None and (type(research_profile) is not str or research_profile not in RESEARCH_PROFILES):
             raise ValueError('DECISION_RESEARCH_PROFILE_INVALID')
+        if risk_research_profile is not None and (type(risk_research_profile) is not str or risk_research_profile not in RISK_RESEARCH_PROFILES):
+            raise ValueError('DECISION_RISK_RESEARCH_PROFILE_INVALID')
+        if research_profile is not None and risk_research_profile is not None:
+            raise ValueError('RESEARCH_PROFILE_COMBINATION_UNSUPPORTED')
+        self.risk_research_profile = risk_research_profile
+        self.add_protection = RISK_RESEARCH_PROFILES.get(risk_research_profile, (Decimal('2000'), Decimal('5000'), Decimal('.70'), True))[3]
         self.research_profile = research_profile
         self.window_age, self.stop_buffer, self.target_r = RESEARCH_PROFILES.get(research_profile, (5, Decimal('13'), Decimal('1')))
-        self.version = RESEARCH_VERSION if research_profile is not None else VERSION
+        self.version = RISK_RESEARCH_VERSION if risk_research_profile is not None else RESEARCH_VERSION if research_profile is not None else VERSION
         self.profit_reason = 'PROFIT_1R' if self.target_r == 1 else 'PROFIT_' + str(self.target_r).replace('.', '_') + 'R'
         self.contract, self.run_id = contract, run_id
         self.layers = []
@@ -150,6 +169,8 @@ class DecisionModel:
         self.events, self.results, self.fingerprints = [], {}, {}
 
     def _research_fields(self):
+        if self.risk_research_profile is not None:
+            return {'risk_research_profile': self.risk_research_profile}
         return {'research_profile': self.research_profile} if self.research_profile is not None else {}
 
     def state(self):
@@ -318,7 +339,7 @@ class DecisionModel:
                 self.profit_targets = []
             else:
                 self.profit_targets = eligible if fast else eligible[:1]
-        protected = [layer['layer_id'] for layer in self.layers if layer['kind'] == 'ADD' and at > layer['at'] and sign * (close - layer['price']) < 0]
+        protected = [layer['layer_id'] for layer in self.layers if self.add_protection and layer['kind'] == 'ADD' and at > layer['at'] and sign * (close - layer['price']) < 0]
         if self.clear_reasons:
             self.exit_layers = [layer['layer_id'] for layer in self.layers]
         else:
@@ -491,13 +512,16 @@ class DecisionModel:
 
     @classmethod
     def restore(cls, checkpoint):
-        extra = ' research_profile' if type(checkpoint) is dict and 'research_profile' in checkpoint else ''
+        extra = ''.join(' ' + name for name in ('research_profile', 'risk_research_profile') if type(checkpoint) is dict and name in checkpoint)
         _fields(checkpoint, 'version contract run_id events sha256' + extra)
         payload = {k: v for k, v in checkpoint.items() if k != 'sha256'}
-        expected_version = RESEARCH_VERSION if extra else VERSION
-        if (extra and checkpoint['research_profile'] is None) or checkpoint['version'] != expected_version or _digest(payload) != checkpoint['sha256'] or type(checkpoint['events']) is not list:
+        parameter = checkpoint.get('research_profile')
+        risk = checkpoint.get('risk_research_profile')
+        expected_version = RISK_RESEARCH_VERSION if risk is not None else RESEARCH_VERSION if parameter is not None else VERSION
+        if (any(checkpoint[k] is None for k in extra.split()) or checkpoint['version'] != expected_version
+                or _digest(payload) != checkpoint['sha256'] or type(checkpoint['events']) is not list):
             raise ValueError('CHECKPOINT_INVALID')
-        model = cls(checkpoint['contract'], checkpoint['run_id'], research_profile=checkpoint.get('research_profile'))
+        model = cls(checkpoint['contract'], checkpoint['run_id'], research_profile=parameter, risk_research_profile=risk)
         for event in checkpoint['events']:
             model.apply(event)
         return model

@@ -8,7 +8,7 @@ from typing import Mapping, Sequence
 from zoneinfo import ZoneInfo
 
 from .new_subing import ExecutionBar
-from .subing_decision import DecisionModel, _wire, candidate_side, daily_allows, directional_frame, direction_sign
+from .subing_decision import RISK_RESEARCH_PROFILES, DecisionModel, _wire, candidate_side, daily_allows, directional_frame, direction_sign
 
 D = Decimal
 VERSION = 'subing_jm30_account_next1m_close_v5'
@@ -16,7 +16,7 @@ INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
 
 
-def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1, execution_model: str = 'completed_close', research_profile: str | None = None) -> dict:
+def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1, execution_model: str = 'completed_close', research_profile: str | None = None, risk_research_profile: str | None = None) -> dict:
     """Replay verified complete 1m input; observations contain no financial overrides.
 
     Historical confirmation is assumed at bar end. Fills use the strictly later
@@ -31,19 +31,20 @@ def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, d
         raise ValueError('ACCOUNT_SLIPPAGE_SCENARIO_INVALID')
     if execution_model not in ('completed_close', 'theoretical_open'):
         raise ValueError('ACCOUNT_EXECUTION_MODEL_INVALID')
-    if research_profile is not None and execution_model != 'theoretical_open':
+    if (research_profile is not None or risk_research_profile is not None) and execution_model != 'theoretical_open':
         raise ValueError('ACCOUNT_RESEARCH_PROFILE_REQUIRES_THEORETICAL_OPEN')
     with localcontext() as ctx:
         ctx.prec = 28
-        return _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile)
+        return _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile)
 
 
-def _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile):
+def _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile):
     at_open = execution_model == 'theoretical_open'
     if not executions:
         raise ValueError('ACCOUNT_INPUT_EMPTY')
     contract = executions[0].bar.physical_contract
-    model = DecisionModel(contract, run_id, research_profile=research_profile)
+    model = DecisionModel(contract, run_id, research_profile=research_profile, risk_research_profile=risk_research_profile)
+    round_limit, day_limit, margin_fraction, _ = RISK_RESEARCH_PROFILES.get(risk_research_profile, (D('2000'), D('5000'), D('.70'), True))
     prior = None
     observation_ids = set()
     multiplier = executions[0].facts.multiplier
@@ -104,13 +105,13 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
             for key, layer in layers.items()}
         remainder = sum(layer_nets.values(), D('0'))
         base_net = next((layer_nets[key] for key, layer in layers.items() if layer['kind'] == 'OPEN'), None)
-        allowed = (len(layers) < 3 and prospective_equity > 0 and prospective_margin <= prospective_equity*D('.70')
-            and prospective_margin <= prospective_equity and round_net > D('-2000') and day_net > D('-5000')
-            and (round_start is None or prospective_equity-round_start > D('-2000'))
-            and prospective_equity-day_start > D('-5000'))
+        allowed = (len(layers) < 3 and prospective_equity > 0 and prospective_margin <= prospective_equity*margin_fraction
+            and prospective_margin <= prospective_equity and round_net > -round_limit and day_net > -day_limit
+            and (round_start is None or prospective_equity-round_start > -round_limit)
+            and prospective_equity-day_start > -day_limit)
         return dict(equity=eq, cash=cash, margin=used, available=eq-used,
             round_net=round_net, day_net=day_net, remaining_net=remainder, base_net=base_net, layer_nets=layer_nets,
-            admission=allowed, round_loss=round_net <= D('-2000'), day_loss=day_net <= D('-5000'))
+            admission=allowed, round_loss=round_net <= -round_limit, day_loss=day_net <= -day_limit)
 
     for index, execution in enumerate(executions):
         b, f = execution.bar, execution.facts
@@ -134,7 +135,7 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
             # At open, prior completed technical events have already been consumed
             # by DecisionModel; pending cancellation/exit obligations carry their effect.
             current_exit = not at_open and current_frame is not None and any(current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death'))
-            protected_layer = any(layer['kind'] == 'ADD' and sign * (mark - layer['price']) < 0 for layer in layers.values())
+            protected_layer = model.add_protection and any(layer['kind'] == 'ADD' and sign * (mark - layer['price']) < 0 for layer in layers.values())
             frame_unknown = current_frame is not None and (current_frame.get('minute_angle') is None or any(current_frame.get(key) is None for key in ('near_zero_golden','above_ema','volume_effective','below_previous_low','high_death','below_ema','qualified_pullback')))
             fixed_stop = model.initial_stop is not None and sign * (mark - model.initial_stop) <= 0
             profit_hit = model.profit_target is not None and not model.profit_taken and sign * (mark - model.profit_target) >= 0
@@ -231,6 +232,9 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
     if research_profile is not None:
         version += f'_parameter_stability_v1_{research_profile}'
         identity = dict(research_profile=research_profile, research_parameters=dict(window_max_age=model.window_age, stop_buffer=model.stop_buffer, target_r=model.target_r))
+    if risk_research_profile is not None:
+        version += f'_risk_stability_v1_{risk_research_profile}'
+        identity = dict(risk_research_profile=risk_research_profile, research_parameters=dict(round_loss_limit=round_limit, day_loss_limit=day_limit, margin_fraction=margin_fraction, add_protection=model.add_protection))
     return _wire(dict(version=version,contract=contract,run_id=run_id, **identity,
         status='OPEN' if layers else 'PENDING' if model.pending else 'COMPLETED',
         summary=dict(cash=cash,equity=last_equity,net_pnl=last_equity-INITIAL_CASH,fees=fees,open_quantity=len(layers),fill_count=len(fills),closed_round_count=len(closed_rounds)),
