@@ -5,9 +5,11 @@
 
 ## 当前交付边界
 
-已实现第一阶段数据准备、独立参考标签、90个盲审片段及复核导入工具。**训练尚未启动**。首轮90份人工复核已导入，标签标准仍在校准，不能自动扩标。
-后续逻辑回归、梯度提升树、TCN、三随机种子复验、板块留出、模型评价与候选页面/实时接入均须继续实施；
-不可把本阶段参考标签或v2输出说成学习模型的结果。
+已完成数据准备、114份静态复核和4段100个逐根判断，并完成**开发区模型训练比较**：
+9组v2参数；逻辑回归/梯度提升树/TCN各1配置、三周期三折；分钟TCN三种子和三个板块留出。
+当前结论为**证据不足，保留v2**：弱参考拟合改善不能冒充人工判断准确率改善。
+封存测试、最终全开发训练、候选看盘与Live观察尚未进入；没有切换active因子或Runtime。
+完整结果与限制见`output/regime-model-development-20261102/report.md`。
 
 60m已接入同一共享v2算法及自由看盘只读API；日线、30m参数与算法不变。这是新增周期支持，不是模型训练升级。
 
@@ -139,3 +141,22 @@ python3 scripts/research/regime_review.py serve --directory output/regime-bounda
 ```
 
 证据：`output/regime-path-ablation-20261102/report.md`。状态为等待owner补时点信息，训练未开始。
+
+## 开发区学习实验入口
+
+研究依赖单独安装在`output/regime-ml-env`，不修改正式服务环境；锁定版本见实验目录requirements.lock。
+`regime_ml_data.py`只导出开发区，三周期原始输入快照与归属合同不变；同segment64根、统一日期purge。
+`regime_ml_core.py`统一划分与品种等权指标，延迟配对不跨segment，漏识别单列。
+`regime_ml_train.py`保存当折权重与预处理；`regime_ml_manual.py`只允许严格匹配当折validation indices的人工配对。
+`regime_rule_variants.py`使用共享direction_transition做有界参数对照，默认值必须与存档v2逐值相等。
+`regime_ml_sector.py`测试农业/化工/有色三个留出；`regime_ml_uncertainty.py`做共同月份块与品种配对重采样。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/regime_ml_data.py --dataset output/regime-learning-20261102-final --output output/regime-ml-data-new
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. output/regime-ml-env/bin/python scripts/research/regime_ml_train.py --cache output/regime-ml-data-new --output output/regime-ml-train-new --seed 17
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=. output/regime-ml-env/bin/python -m unittest tests.unit.subing_range.test_ml -v
+```
+
+本轮共45次拟合，不能称45组配置。标签仍为独立弱参考，人工只作分条件开发诊断，不替模型补造方向。
+三个种子在同36个分钟级逐根点一致数32/34/34，v2为33；不是稳定人工改善，也不是独立测试。
+当前需owner决定是否继续扩大独立人工时序证据；不自动消耗sealed test或晋升候选。

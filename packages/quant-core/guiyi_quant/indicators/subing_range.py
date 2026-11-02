@@ -82,6 +82,25 @@ class State:
     retired: bool = False
 
 
+
+def direction_transition(previous_side: str | None, previous_count: int,
+                         previous_confirmed: str | None, previous_neutral: int,
+                         trend_direction: str, *, direction_bars: int = 2,
+                         neutral_bars: int = 3) -> tuple[str | None, int, str | None, int]:
+    """Shared regime-only transition; caller handles warmup, identity and coverage."""
+    if trend_direction not in ('UP', 'DOWN', 'NEUTRAL') or direction_bars < 1 or neutral_bars < 1:
+        raise ValueError('DIRECTION_TRANSITION_INVALID')
+    directional = trend_direction if trend_direction in ('UP', 'DOWN') else None
+    count = min(direction_bars, previous_count+1) if directional and directional == previous_side else int(directional is not None)
+    neutral_count = min(neutral_bars, previous_neutral+1) if directional is None else 0
+    confirmed = previous_confirmed
+    if directional and count >= direction_bars:
+        confirmed = directional
+    elif neutral_count >= neutral_bars:
+        confirmed = None
+    return directional, count, confirmed, neutral_count
+
+
 def initial_state(contract: str, frequency: str, *, profile: str = 'bounded_confirmed') -> State:
     if not contract or frequency not in ('1d', '30m', '60m') or profile not in PROFILES:
         raise ValueError('RANGE_IDENTITY_INVALID')
@@ -129,14 +148,9 @@ def step(state: State, *, contract: str, frequency: str, bar_end: datetime,
         100 * math.log10(float(sum((b.tr for b in window), D(0))/width))/math.log10(cfg.window)))
     side = ('UP' if displacement > 0 else 'DOWN') if displacement else None
     # Direction describes the market; efficiency only qualifies strong candidates.
-    directional = trend_direction if trend_direction in ('UP', 'DOWN') else None
-    count = min(cfg.direction_bars, state.directional_count+1) if directional and directional == state.directional_side else int(directional is not None)
-    neutral_count = min(cfg.neutral_bars, state.neutral_count+1) if directional is None else 0
-    confirmed = state.confirmed_side
-    if directional and count >= cfg.direction_bars:
-        confirmed = directional
-    elif neutral_count >= cfg.neutral_bars:
-        confirmed = None
+    directional, count, confirmed, neutral_count = direction_transition(
+        state.directional_side, state.directional_count, state.confirmed_side, state.neutral_count,
+        trend_direction, direction_bars=cfg.direction_bars, neutral_bars=cfg.neutral_bars)
     new = replace(new, directional_side=directional, directional_count=count,
                   confirmed_side=confirmed, neutral_count=neutral_count)
     regime = 'TREND_'+confirmed if confirmed else 'RANGE'
