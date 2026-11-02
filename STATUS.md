@@ -1,3 +1,7 @@
+11/2 15:16 按owner本轮“前两步”交办完成fresh部署前检查：修正只读plan的state-dir为候选许可父目录，原生v7计划PLAN_READY（5f8c704f…），全60当前无Session、部署窗口open、目标日20261103、11/2历史主力锚60/60；候选exact v64/SDK/配置、原账户四库与本地义务、原PID1733双锁均通过。
+目标日attempt0/剩余3/无block，旧交易日block保留；execution_permitted=false、broker_io=false，未apply/停服/安装/启动，intent/许可/run-claim均不存在。原预检计划仅60秒有效，后续切换须重新fresh生成，不能沿用。
+正式十服务仍v64/gen53全部matched、API/Web可用；15:17 Runtime health为degraded：db/redis正常、全60 CLOSED、Live coverage lagging、Alert evaluation_failed，不能声称全绿。15:05一次性任务因此前参数失败已删除，无后续任务；前两步检查完成，第三步独立SimNow实际切换尚未执行。
+
 11/2 15:05一次性SimNow切v64任务已执行预检但未切换：60品种candidate_valid=true、execution_permitted=false、broker_io=false，正式十项身份均v64/gen53 matched；API/Web可用，Runtime health未通过。
 原生fresh plan返回BLOCKED/PLAN_INVALID：本次调用错误地使用output/simnow-switch-20261102-v64作为state-dir，而ordinary.binding的state_dir固定为候选许可所在simnow-v64目录；Coordinator.plan在目录一致性校验拒绝。
 失败发生于计划生成，计划/intent/许可均未创建，无apply/stop/install/start；原v44/PID1733、配置及四账本SHA与保全基线完全一致，block/预算未变，旧树未清理。
