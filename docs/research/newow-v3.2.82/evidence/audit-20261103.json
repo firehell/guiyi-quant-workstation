@@ -504,5 +504,44 @@
       ]
     },
     "validation": "node /private/tmp/newow-check-20261103/branch-followup.mjs: 4 paths and all assertions passed"
+  },
+  "limited_pc_followup": {
+    "develop_commit": "6eb81741ec7b3e3bef38784d1bc3813205ee1115",
+    "method": "cua native Chrome accessibility and screenshot observation; browser tab API unstable",
+    "url": "https://www.v8848.cn/stock_detail.html?code=399006.SZ",
+    "version": "3.4.49",
+    "actions": [
+      "Open T menu",
+      "Select test5",
+      "Observe chart and ordinary all-range performance",
+      "Select ordinary oscillation and compare visible metrics"
+    ],
+    "test5_menu_and_chart": "PASS",
+    "observed_labels": [
+      "false breakout 08-17 to 08-18",
+      "false breakout 10-22 to 10-23",
+      "true down 09-02 to 09-03",
+      "true down 10-30 to 11-02"
+    ],
+    "both_strategies_visible_metrics": {
+      "annualized_pct": 6.8,
+      "cumulative_pct": 62.04,
+      "win_rate_pct": 62,
+      "max_drawdown_pct": 41.87,
+      "trade_count": 53
+    },
+    "reference_only": true,
+    "kernel_detail": "UNKNOWN; URL absence not proof disabled; storage/config not read or changed",
+    "unverified": [
+      "shape detail modal",
+      "pending/secondary wick",
+      "minute and weekly UI",
+      "mobile",
+      "new layer plot synchronization",
+      "P95",
+      "actual trueup runtime branch"
+    ],
+    "screenshot_persistence": "Rejected by automatic review because full Chrome window includes unrelated UI; no screenshot file persisted",
+    "other_mutations": "No strategy, production data, Runtime, notification, or preference changes"
   }
 }
