@@ -384,5 +384,125 @@
     "web": "NODE_OPTIONS=--max-old-space-size=384 NEWOW_PUBLIC_SOURCE=/private/tmp/newow-check-20261103/stock_detail.html node --test --test-concurrency=1 tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
     "engineering": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py",
     "source": "Temporary source-bound core-oracle.mjs (legacy fallback only), and new-rules.mjs for pure A/B, regime, priceDigits/readiness and UMD kernel none/trueup witnesses; no original fixtures modified."
+  },
+  "same_day_followup": {
+    "develop_commit": "1ce4013a1dc841e57e36d3b31c631b6c34ceddaf",
+    "dirty_preserved": [
+      "docs/research/subing-trading-demands.md"
+    ],
+    "detail_url": "https://www.v8848.cn/stock_detail.html?code=399006.SZ",
+    "detail_sha256": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb",
+    "browser": "iab and Chrome connection timed out; no DOM or screenshot; no user preferences read or changed",
+    "home_callsite_correction": "calcXichouSignals only called by excluded alert pipeline in this snapshot; not proof home cards use trueup",
+    "source_witness": {
+      "kind": "synthetic source-call-path witness, not live UI",
+      "rows": [
+        {
+          "strategy": "xichou-lagao",
+          "enabled": false,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 120
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        },
+        {
+          "strategy": "xichou-lagao",
+          "enabled": true,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-13",
+              "type": "sell",
+              "price": 121
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        },
+        {
+          "strategy": "osc-test5",
+          "enabled": false,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 120
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        },
+        {
+          "strategy": "osc-test5",
+          "enabled": true,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-13",
+              "type": "sell",
+              "price": 121
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        }
+      ]
+    },
+    "validation": "node /private/tmp/newow-check-20261103/branch-followup.mjs: 4 paths and all assertions passed"
   }
 }
