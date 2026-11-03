@@ -31,7 +31,8 @@ def _references(value: str, root: Path) -> bool:
 class _SimNowReferences:
     """Only named SimNow configuration anchors; never load settings or Broker code."""
     PATH_FIELDS = frozenset({"project_root", "api_env", "sdk_python", "state_root",
-        "state_project_root", "ordinary_takeover_permit", "deployment_connection_permit"})
+        "state_project_root", "ordinary_takeover_permit", "deployment_connection_permit",
+        "preparation_recovery_permit"})
 
     def __init__(self, roots, result):
         self.roots, self.result = roots, result
@@ -141,10 +142,11 @@ class _SimNowReferences:
             raise RetentionError("CLEANUP_SIMNOW_CONFIG_UNPROVEN")
         if schema in (2, 3):
             required.add("state_project_root")
-        optional = {"account_profile", "account_takeover_pending", "ordinary_takeover_permit", "deployment_connection_permit"} if schema == 2 else set()
+        optional = {"account_profile", "account_takeover_pending", "ordinary_takeover_permit", "deployment_connection_permit", "account_recovery_hold", "preparation_recovery_permit"} if schema == 2 else set()
         if (not required <= value.keys() or value.keys() - (required | optional)
                 or not isinstance(value["account_id"], str) or not re.fullmatch(r"[0-9a-f]{64}", value["account_id"])
                 or type(value["enabled"]) is not bool
+                or type(value.get("account_recovery_hold", False)) is not bool
                 or value["mode"] not in (("observe", "manage", "trade") if schema == 2 else ("observe", "manage"))
                 or schema == 3 and (value["mode"] != "observe" or value["enabled"] is not False)):
             raise RetentionError("CLEANUP_SIMNOW_CONFIG_UNPROVEN")
@@ -160,6 +162,51 @@ class _SimNowReferences:
             self.dependencies[dependency] = observed
             paths.extend((item, observed[0], *(entry for entry, _identity in observed[1])))
         self.pin([str(path), *paths], reason)
+
+    def candidate_plist(self, path, reason):
+        """An uninstalled executable candidate still pins its code and config."""
+        path = Path(path)
+        snapshot = self.snapshot(path, limit=1024 * 1024)
+        if path in self.snapshots and self.snapshots[path] != snapshot:
+            raise RetentionError("CLEANUP_SIMNOW_PRIVATE_DRIFT")
+        self.snapshots[path], self.limits[path] = snapshot, 1024 * 1024
+        try:
+            value = plistlib.loads(snapshot[0])
+            arguments = value["ProgramArguments"]
+            directory = value["WorkingDirectory"]
+            indices = [i for i, item in enumerate(arguments) if item == "--config"]
+            allowed = {"Label", "ProgramArguments", "WorkingDirectory", "RunAtLoad", "KeepAlive",
+                       "ThrottleInterval", "StandardOutPath", "StandardErrorPath"}
+            if (set(value) - allowed or value.get("Label") != "com.guiyi.quant-simnow"
+                or type(arguments) is not list or len(arguments) != 6
+                or arguments[1] != "-I" or arguments[3] != "--config"
+                or arguments[5] not in {"--trade", "--observe-only"}
+                or "KeepAlive" in value and value["KeepAlive"] != {"SuccessfulExit": False}
+                or any(type(item) is not str for item in arguments)
+                or type(directory) is not str or not directory.startswith("/")
+                or len(indices) != 1 or indices[0] + 1 >= len(arguments)
+                or Path(arguments[indices[0] + 1]) != path.parent / "candidate.private.json"):
+                raise ValueError
+        except (KeyError, TypeError, ValueError, plistlib.InvalidFileException):
+            raise RetentionError("CLEANUP_SIMNOW_CONFIG_UNPROVEN") from None
+        self.config(Path(arguments[indices[0] + 1]), reason + ":config")
+        values = [directory, *arguments]
+        for key in ("StandardOutPath", "StandardErrorPath"):
+            if key in value:
+                item = value[key]
+                if type(item) is not str or not item.startswith("/"):
+                    raise RetentionError("CLEANUP_SIMNOW_CONFIG_UNPROVEN")
+                values.append(item)
+        for item in tuple(values):
+            if not item.startswith("/"):
+                continue
+            dependency = Path(item)
+            observed = self.dependency_snapshot(dependency)
+            if dependency in self.dependencies and self.dependencies[dependency] != observed:
+                raise RetentionError("CLEANUP_SIMNOW_ALIAS_DRIFT")
+            self.dependencies[dependency] = observed
+            values.extend((observed[0], *(entry for entry, identity in observed[1])))
+        self.pin(values, reason)
 
     def arguments(self, arguments, label, source):
         if not re.fullmatch(r"com\.guiyi\.quant-simnow(?:-candidate-[0-9a-f]{32})?", label):
@@ -181,7 +228,62 @@ class _SimNowReferences:
             if self.service_seen:
                 raise RetentionError("CLEANUP_SIMNOW_MONITOR_UNPROVEN")
 
-    def intents(self, repo_root):
+    def private_intents(self, home):
+        """Bounded named evidence only; stable UNKNOWN/complete words never unpin."""
+        if home is None:
+            return set()
+        base = Path(home) / "Library/Application Support/GuiyiQuant"
+        if not base.exists():
+            return set()
+        pattern = re.compile(
+            r"(?:simnow-(?:preparation-recovery|session-diagnostic)|feed-session-recovery)-[0-9]{8}"
+            r"|simnow-stable-migration-candidate-v[0-9]+(?:\.[0-9]+){0,2}")
+        parents = []
+        for number, path in enumerate(base.iterdir()):
+            if number >= 4096:
+                raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
+            if pattern.fullmatch(path.name):
+                parents.append(path)
+                if len(parents) > 32:
+                    raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
+        result = set()
+        examined = 0
+        from app.runtime_identity import safe_directory
+        for parent in parents:
+            directories = [parent]
+            resume = parent / "pre-native-resume"
+            if os.path.lexists(resume):
+                directories.append(resume)
+            for directory in directories:
+                if directory != directory.resolve(strict=True):
+                    raise RetentionError("CLEANUP_SIMNOW_PRIVATE_INVALID")
+                with safe_directory(directory):
+                    pass
+                observed = self.dependency_snapshot(directory)
+                if directory in self.dependencies and self.dependencies[directory] != observed:
+                    raise RetentionError("CLEANUP_SIMNOW_PRIVATE_DRIFT")
+                self.dependencies[directory] = observed
+                for path in directory.iterdir():
+                    examined += 1
+                    if examined > 1024:
+                        raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
+                    if path.is_dir() and path != resume:
+                        raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
+                    if path.is_dir() and directory != parent:
+                        raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
+                    name = path.name
+                    # Logs, compressed source copies and SQLite backups are not
+                    # executable recovery authority. Config preimages are JSON.
+                    if (name.endswith(".private.json") or name in {"state.json", "candidate.private.plist"}
+                        or name.endswith((".run-claim", ".attempt-claim"))
+                        or name in {"config.before", "failure.before"}
+                        or name.startswith("candidate.private.json.") and name.endswith(".preimage")):
+                        result.add(path)
+        if len(result) > 1024:
+            raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
+        return result
+
+    def intents(self, repo_root, *, home=None):
         """Inspect only operator SimNow switch artifacts at their documented paths."""
         locations = {repo_root}
         if os.path.lexists(repo_root / ".git"):
@@ -192,12 +294,25 @@ class _SimNowReferences:
             for location in locations:
                 for leaf in ("switch-intent.private.json", "ordinary-recovery-intent.private.json"):
                     paths.update((location / "output").glob(f"simnow*/{leaf}"))
+            private_paths = self.private_intents(home)
+            self.private_intent_paths = private_paths
+            paths.update(private_paths)
             if len(paths) > 1024:
                 raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
             return paths
         self.intent_inventory = inventory
         self.intent_paths = inventory()
         for path in sorted(self.intent_paths):
+            if path in self.private_intent_paths:
+                reason = f"simnow-private:{path.parent.name}:{path.name}"
+                if path.name == "candidate.private.plist":
+                    self.candidate_plist(path, reason)
+                elif path.name in {"candidate.private.json", "config.before"} or path.name.endswith(".preimage"):
+                    self.config(path, reason)
+                else:
+                    value = self.read(path)
+                    self.pin([json.dumps(value, sort_keys=True, ensure_ascii=False)], reason)
+                continue
             value = self.read(path)
             if self.closed_intent(path, value):
                 continue
@@ -450,7 +565,7 @@ class RetentionBackend:
                 raise RetentionError("CLEANUP_CWD_INVENTORY_INVALID")
         from app.core.env import PROJECT_ROOT
         from app.runtime_retirement import recovery_references
-        simnow.intents(PROJECT_ROOT)
+        simnow.intents(PROJECT_ROOT, home=self.home)
         recovery = recovery_references(self.home / "Library/Application Support/GuiyiQuant", PROJECT_ROOT, roots)
         for root, reasons in recovery.items():
             result[root].extend(reasons)
