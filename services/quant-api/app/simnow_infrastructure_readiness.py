@@ -3,7 +3,9 @@
 from datetime import UTC, datetime
 from hashlib import sha256
 import json
+import os
 import re
+import stat
 from time import monotonic, sleep
 
 
@@ -75,8 +77,19 @@ def recovery_window(day, now, *, redis=None):
     pids = {}
     completed = {}
     last_seen = {}
-    waiting = False
-    deadline = monotonic() + 3
+    owner_states = {}
+
+    def lock_identity(name):
+        value = _path(runtime_directory(), name, "owner.lock").lstat()
+        require(
+            stat.S_ISREG(value.st_mode)
+            and value.st_uid == os.getuid()
+            and not value.st_mode & 0o077
+            and value.st_nlink == 1
+        )
+        return value.st_dev, value.st_ino, value.st_uid, value.st_mode
+
+    locks = {name: lock_identity(name) for name in names}
 
     def fixed():
         require(
@@ -85,8 +98,7 @@ def recovery_window(day, now, *, redis=None):
             and controls() == frozen_controls
         )
 
-    def owners():
-        nonlocal waiting
+    def owners(*, record=True):
         stamps = []
         for name in names:
             state = read_service_state(name)
@@ -105,9 +117,10 @@ def recovery_window(day, now, *, redis=None):
                 pids[name] = state["pid"]
             require(
                 state["pid"] == pids[name]
-                and owner_process_matches(state, binding)
                 and not owner_lock_available(name)
+                and lock_identity(name) == locks[name]
             )
+            owner_states[name] = state
             stamp = datetime.fromisoformat(state["at"])
             require(0 <= (datetime.now(UTC) - stamp).total_seconds() <= 30)
             require(name not in last_seen or stamp >= last_seen[name])
@@ -126,20 +139,29 @@ def recovery_window(day, now, *, redis=None):
                     frontier = tuple(map(int, frontier.split("-")))
                     if name in completed:
                         require(frontier >= completed[name][1])
-                    completed[name] = (stamp, frontier)
+                    if record:
+                        completed[name] = (stamp, frontier)
                 else:
                     require(proof.get("cycle_ok") is True)
-                    completed[name] = (stamp, None)
+                    if record:
+                        completed[name] = (stamp, None)
             else:
                 # Only the exact normal poll-start marker is resampled. A
                 # diagnostic, unknown proof or a replacement owner is terminal.
                 require(proof == {})
-                waiting = True
             stamps.append(stamp)
         return stamps
 
+    def loaded_owners():
+        owners(record=False)
+        for name in names:
+            require(owner_process_matches(owner_states[name], bindings.services[name]))
+        # The actual loaded-service checks may be slow. They cannot conceal a
+        # replacement PID, changed lock or explicit diagnostic during the check.
+        owners(record=False)
+        fixed()
+
     def inputs():
-        nonlocal waiting
         heartbeats = {
             name: json.loads(client.get(key) or "null")
             for name, key in (
@@ -168,7 +190,6 @@ def recovery_window(day, now, *, redis=None):
         require(heartbeats["market-feed"].get("input_failure") is None)
         pending = heartbeats["market-feed"].get("input_pending_count")
         require(type(pending) is int and pending >= 0)
-        waiting = waiting or pending > 0
         coverage = heartbeats["live"].get("coverage", {})
         require(
             all(
@@ -182,10 +203,15 @@ def recovery_window(day, now, *, redis=None):
 
     client = redis if redis is not None else get_redis_connection()
     try:
+        fixed()
+        inputs()
+        loaded_owners()
+        deadline = monotonic() + 3
+        loaded_after = False
         while True:
             fixed()
             inputs()  # Explicit provider/coverage failures never enter a wait.
-            stamps = owners()
+            stamps = owners(record=not loaded_after)
             clear, input_stamps = inputs()
             fixed()
             final = datetime.now(UTC)
@@ -200,25 +226,20 @@ def recovery_window(day, now, *, redis=None):
                 )
             )
             if len(completed) == 2 and clear:
-                # A new normal poll may have started after the completed-cycle
-                # proof. Recheck its owner identity without demanding a
-                # simultaneous ready=True from both independent workers.
-                owners()
-                fixed()
-                clear, input_stamps = inputs()
-                final = datetime.now(UTC)
-                require(
-                    all(
-                        0 <= (final - stamp).total_seconds() <= 30
-                        for stamp in (
-                            *input_stamps,
-                            *(v[0] for v in completed.values()),
-                        )
-                    )
-                )
-                if clear:
-                    require(not waiting or monotonic() <= deadline)
-                    break
+                remaining = deadline-monotonic()
+                require(remaining > 0)
+                if not loaded_after:
+                    loaded_owners()
+                    require(all(0 <= (datetime.now(UTC)-stamp).total_seconds() <= 30
+                                for stamp, _ in completed.values()))
+                    loaded_after = True
+                    # Only actual proof/input sampling spends the three-second
+                    # allowance. Loaded-service verification retains its own
+                    # existing timeout; all samples must still be <=30s old and
+                    # the caller rechecks the native permit's real final clock.
+                    deadline = monotonic()+remaining
+                    continue
+                break
             remaining = deadline - monotonic()
             require(remaining > 0)
             sleep(min(0.05, remaining))
