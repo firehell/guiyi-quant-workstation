@@ -1,3 +1,6 @@
+11/3 11:02 v1.16.70已正式发布：PR599/main/annotated tag/GitHub Release读回完成，exact8f34e5bf6c305451c05b088c86342de3aa5155b6，main源码树等于1251项回归及构建受测树。发布根`.worktrees/release-v1.16.70`同源普通Git/detached/完整clean，冻结Python59包及Web144包离线安装、Web构建/拓扑及uv锁通过；稳定根固定SDK纯检查4.116秒，无Broker I/O。原冻结2722条账本在发布代码重放3.368秒（旧91.834秒），checkpoint/hash/DB原字节完全一致。最后稳定根原账户inspect完整性通过3.882秒，但该次fresh=false，未计作新鲜账户或迁移验收。
+本次仅发布，发布前后逐项保护比对通过：正式十服务仍v64/gen53、原进程身份不变，SimNow仍v69/PID29975/run c24bbcb3…、ACCOUNT_RECOVERED_HELD/hold=true/auto_order=false；16份绑定/plist/配置/监控锚/父child UNKNOWN及预算摘要一致。未切换、停启、重连、签发许可、创建订单或写原账本。main已回合develop，其他研究修改保留。临时托管v70树已clean且不运行，但宿主以primary checkout拒绝归档，原位保留未绕过；后续服务切换须另按合法窗口及预算处理。
+
 11/3 v1.16.70发布内容仅从已发布v69基线纳入held迁移保护、恢复/候选引用盘点及完整账本重放提速；其他develop研究不在范围。隔离发布树1251项账户/宿主/迁移/保留扫描/health回归通过（63.47秒），独立集成Review通过；冻结依赖离线安装、API/core sdist+wheel、Web类型/构建/拓扑和共享版本检查、Ruff F/secret零发现/diff均通过。原账本2722条命令重放与旧checkpoint逐字节一致，原45/8/30秒门槛不变。
 本次只发布，不切换、停启或重连任何正式服务/SimNow，不创建许可或订单。发布前只读保护快照：十服务仍v64/gen53，SimNow原v69/PID29975、ACCOUNT_RECOVERED_HELD/hold=true/auto_order=false；正式绑定、11份plist、私有配置、监控锚、父/child UNKNOWN和连接预算均保全，发布后须按同一快照复核。发布完成以实际main/tag/GitHub Release为准，尚未部署的新代码不冒充现役修复。
 
