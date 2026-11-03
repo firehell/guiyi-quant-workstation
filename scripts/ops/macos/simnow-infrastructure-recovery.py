@@ -12,6 +12,28 @@ from pathlib import Path
 import sys
 import time
 
+PREFLIGHT_TTL_SECONDS = 180
+
+
+def safe_error_code(exc, switch=None):
+    code = str(exc)
+    own_codes = {
+        "INFRASTRUCTURE_RECOVERY_INVALID",
+        "INFRASTRUCTURE_RECOVERY_MARKET_UNPROVEN",
+        "READBACK_UNPROVEN",
+        "ATTEMPT_CONSUMED",
+        "PLAN_EXPIRED",
+        "PREIMAGE_CHANGED",
+        "CANDIDATE_UNPROVEN",
+        "HOST_UNPROVEN",
+        "WINDOW_UNPROVEN",
+    }
+    if isinstance(exc, ValueError) and code in own_codes:
+        return code
+    if switch is not None and type(exc) is switch.SwitchError and code in switch.CODES:
+        return code
+    return "INFRASTRUCTURE_RECOVERY_FAILED"
+
 
 def module(path, name):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -275,7 +297,7 @@ def backend_type(switch, preparation):
                 != self.identity(self.settings.sdk_python, interpreter=True)["sha256"]
                 or not 0
                 <= time.time() - datetime.fromisoformat(proof["checked_at"]).timestamp()
-                < 60
+                < PREFLIGHT_TTL_SECONDS
             ):
                 switch.fail("CANDIDATE_UNPROVEN")
 
@@ -472,7 +494,7 @@ class Coordinator:
         value = dict(
             schema=permit.SCHEMA,
             created_at=now,
-            expires_at=now + 60,
+            expires_at=now + PREFLIGHT_TTL_SECONDS,
             snapshot=snapshot,
             sdk_preflight=proof,
         )
@@ -487,7 +509,7 @@ class Coordinator:
         if (
             raw.get("schema") != permit.SCHEMA
             or self.switch.digest(raw) != plan.get("plan_hash")
-            or plan["expires_at"] - plan["created_at"] != 60
+            or plan["expires_at"] - plan["created_at"] != PREFLIGHT_TTL_SECONDS
             or not plan["created_at"] <= self.clock() < plan["expires_at"]
         ):
             self.switch.fail("PLAN_INVALID")
@@ -712,23 +734,7 @@ def main():
         print(json.dumps(dict(status=value["result"], stage=value["stage"])))
         return 0
     except Exception as exc:
-        code = (
-            str(exc)
-            if isinstance(exc, ValueError)
-            and str(exc)
-            in {
-                "INFRASTRUCTURE_RECOVERY_INVALID",
-                "INFRASTRUCTURE_RECOVERY_MARKET_UNPROVEN",
-                "READBACK_UNPROVEN",
-                "ATTEMPT_CONSUMED",
-                "PLAN_EXPIRED",
-                "PREIMAGE_CHANGED",
-                "CANDIDATE_UNPROVEN",
-                "HOST_UNPROVEN",
-                "WINDOW_UNPROVEN",
-            }
-            else "INFRASTRUCTURE_RECOVERY_FAILED"
-        )
+        code = safe_error_code(exc, locals().get("switch"))
         print(json.dumps(dict(status="READBACK_REQUIRED", code=code)))
         return 1
 
