@@ -521,6 +521,22 @@ class NativePortfolio:
         binding = self.binding(instrument.product, contract, market, self.now(), day)[0]
         return (ExecutionInput(instrument, auth.session, None),), (binding,)
 
+    def ensure_settlement(self, snapshot):
+        """Prepare this login once; later adapter construction only rechecks it."""
+        self.stage = "SETTLEMENT_QUERY"
+        if self.settlement is None:
+            self.settlement = SettlementConfirmation(
+                self.gateway, snapshot.account_id, snapshot.trading_day
+            )
+        elif (self.settlement.account_id, self.settlement.trading_day) != (
+            snapshot.account_id,
+            snapshot.trading_day,
+        ):
+            raise ValueError("NATIVE_SETTLEMENT_IDENTITY_MISMATCH")
+        if not self.settlement.read_confirmed():
+            self.stage = "SETTLEMENT_CONFIRMATION"
+            self.settlement.confirm()
+
     def adapter(
         self,
         store,
@@ -547,14 +563,7 @@ class NativePortfolio:
         ):
             raise ValueError("NATIVE_CAPABILITY_INVALID")
 
-        self.stage = "SETTLEMENT_QUERY"
-        if self.settlement is None:
-            self.settlement = SettlementConfirmation(
-                self.gateway, snapshot.account_id, snapshot.trading_day
-            )
-        if not self.settlement.read_confirmed():
-            self.stage = "SETTLEMENT_CONFIRMATION"
-            self.settlement.confirm()
+        self.ensure_settlement(snapshot)
         self.adapter_preparation = session_diagnostic(self.gateway.native_session)
         self.stage = "SESSION_CONSTRUCTION"
         session = Session(

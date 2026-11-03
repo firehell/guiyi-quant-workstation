@@ -349,8 +349,17 @@ def test_supervisor_resume_reaches_exactly_one_factory_and_login_then_real_host_
             return ()
         def disconnected(self, _):
             pass
-    class Driver:
+    from guiyi_quant.simnow_execution.native_portfolio import NativePortfolio
+    class Driver(NativePortfolio):
         transport_failed = False
+        def __init__(self):
+            self.settlement = None
+            self.gateway = NS(
+                failed=False, front=FRONT,
+                native_session=dict(front_id=1, session_id=-123, max_order_ref=0),
+                result=dict(account_fingerprint=f.s.account_id, trading_day=recovery.DAY),
+                query=lambda kind: [{"ConfirmDate": recovery.DAY}],
+            )
         def set_pre_native_guard(self, guard):
             self.pre_native_guard = guard
         def connect(self):

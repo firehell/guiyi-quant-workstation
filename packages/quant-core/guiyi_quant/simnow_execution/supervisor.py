@@ -543,6 +543,26 @@ class Supervisor:
             self.recovery_stage = "RECOVERY_SNAPSHOT_RETENTION"
             self.evidence.append(snapshot)
             # Raw source retention does not reconcile the account or clear pending.
+            self.recovery_stage = "SETTLEMENT_PREPARATION"
+            self.driver.ensure_settlement(snapshot)
+            # Successful settlement queries may consume the old readback's TTL.
+            # Refresh on this same login before Session/callback admission; never
+            # repeat confirmation or extend the takeover freshness contract.
+            self.recovery_stage = "POST_SETTLEMENT_ACCOUNT_REFRESH"
+            snapshot = self.driver.snapshot()
+            if (
+                snapshot.account_id != self.settings.account_id
+                or snapshot.trading_day != day
+            ):
+                raise ValueError("NATIVE_SESSION_IDENTITY_MISMATCH")
+            self.recovery_stage = "POST_SETTLEMENT_OWNERSHIP_VALIDATION"
+            verify_recovery_ownership(snapshot, bindings, self.journal, state)
+            self.recovery_stage = "POST_SETTLEMENT_SNAPSHOT_VALIDATION"
+            validate_strategy_events(
+                snapshot, self.market.authority, self.journal, state
+            )
+            self.recovery_stage = "POST_SETTLEMENT_SNAPSHOT_RETENTION"
+            self.evidence.append(snapshot)
             self.recovery_stage = "ADAPTER_PREPARATION"
             adapter = self.driver.adapter(
                 self.store,
