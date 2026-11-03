@@ -35,6 +35,9 @@ POLICY = "simnow_night_only_deployment_window_v1"
 MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
 ORDINARY_POLICY = "simnow_ordinary_next_session_v2"
 AUTO_ORDER_ENABLE_POLICY = "simnow_owner_auto_order_enable_v1"
+HELD_READONLY_HANDOFF_POLICY = "simnow_held_readonly_handoff_v1"
+HELD_READONLY_SOURCE_COMMIT = "7794c49ff2381fd989d839c079a53d4caef321cb"
+HELD_READONLY_SOURCE_PID = 29975
 LABEL = "com.guiyi.quant-simnow"
 CalendarFacts = namedtuple(
     "CalendarFacts", "trade_date is_trading_day has_night_session"
@@ -187,6 +190,23 @@ def validate_snapshot(s):
                 fail("CANDIDATE_UNPROVEN")
         elif dropping_hold:
             fail("CANDIDATE_UNPROVEN")
+        held_failure = s["preimage"].get("held_readonly_handoff") if isinstance(s.get("preimage"), dict) else None
+        if held_failure is not None:
+            if (not transition or not ordinary
+                or held_failure.get("policy") != HELD_READONLY_HANDOFF_POLICY
+                or held_failure.get("source_release", {}).get("tag") != "v1.16.69"
+                or held_failure["source_release"].get("commit") != HELD_READONLY_SOURCE_COMMIT
+                or held_failure.get("source_process", {}).get("pid") != HELD_READONLY_SOURCE_PID
+                or held_failure["source_process"].get("run_id") != s["host"].get("run_id")
+                or held_failure.get("source_day") != "20261103"
+                or held_failure.get("target_day") != s["window"]["trading_day"]
+                or held_failure["target_day"] <= held_failure["source_day"]
+                or held_failure.get("cleanup_returned") is not True
+                or held_failure.get("authority_sha256") != digest({k:s["window"][k] for k in ("trading_day","sessions","session_facts_sha256")})
+                or held_failure.get("ledger", {}).get("ledger_hash") != a["ledger_hash"]
+                or held_failure.get("budget", {}).get("attempts_hash") != a["attempts_hash"]
+                or held_failure["budget"].get("blocks_hash") != a["blocks_hash"]):
+                fail("HOST_UNPROVEN")
         if ordinary:
             anchor = s.get("historical_contract_anchor", {})
             if (
@@ -468,9 +488,16 @@ class Coordinator:
         self.intent = self.root / "switch-intent.private.json"
         self.mutex = self.root / "switch.lock"
 
+    def _held_readonly_authorization(self, snapshot):
+        proof = snapshot.get("preimage", {}).get("held_readonly_handoff") if isinstance(snapshot.get("preimage"), dict) else None
+        explicit = getattr(self.backend, "recover_held_readonly_source", False)
+        if bool(proof) != explicit or proof and getattr(self.backend, "enable_auto_order", False) is not True:
+            fail("PLAN_INVALID")
+
     def plan(self):
         snapshot = self.backend.snapshot()
         validate_snapshot(snapshot)
+        self._held_readonly_authorization(snapshot)
         permit = snapshot.get("ordinary_permit") or snapshot.get("connection_permit")
         if permit and permit["state_dir"] != str(self.root):
             fail("PLAN_INVALID")
@@ -705,8 +732,10 @@ class Coordinator:
     def _fresh(self, plan):
         if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
             fail("PLAN_EXPIRED")
+        self._held_readonly_authorization(plan["snapshot"])
         current = self.backend.snapshot()
         validate_snapshot(current)
+        self._held_readonly_authorization(current)
         if (
             current["window"]["policy"] != plan["window_policy"]
             or plan["snapshot"]["window"]["policy"] != plan["window_policy"]
@@ -768,6 +797,7 @@ class Coordinator:
             source, identity = self._recovery_source(source_path)
             snapshot = self.backend.recovery_snapshot(source["snapshot"])
             validate_snapshot(snapshot)
+            self._held_readonly_authorization(snapshot)
             if snapshot["ordinary_permit"]["state_dir"] != str(self.root):
                 fail("PLAN_INVALID")
             now = self.clock()
@@ -799,12 +829,14 @@ class Coordinator:
                 fail("PLAN_INVALID")
             if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
                 fail("PLAN_EXPIRED")
+            self._held_readonly_authorization(plan["snapshot"])
             with self._source_guard(plan["source_intent"]["path"]):
                 source, identity = self._recovery_source(plan["source_intent"]["path"])
                 if identity != plan["source_intent"]:
                     fail("PREIMAGE_CHANGED")
                 fresh = self.backend.recovery_snapshot(source["snapshot"])
                 validate_snapshot(fresh)
+                self._held_readonly_authorization(fresh)
                 old = plan["snapshot"]
                 if (
                     not same_preimage(old["preimage"], fresh["preimage"])
@@ -918,6 +950,7 @@ class Coordinator:
                 fail(self.record["error"])
 
     def _finish(self, snapshot, plan_hash):
+        self._held_readonly_authorization(snapshot)
         with self.backend.offline_guard(snapshot):
             evidence = self.backend.offline_preflight(snapshot)
             if evidence.get("writer_idle") is not True:
@@ -1007,13 +1040,17 @@ class MacBackend:
 
     def __init__(
         self, candidate, candidate_plist, *, tag, home=None, window="ordinary",
-        enable_auto_order=False,
+        enable_auto_order=False, recover_held_readonly_source=False,
     ):
         if window not in {"night", "midday", "ordinary"}:
             fail("WINDOW_UNPROVEN")
         if type(enable_auto_order) is not bool:
             fail("CANDIDATE_UNPROVEN")
+        if (type(recover_held_readonly_source) is not bool
+            or recover_held_readonly_source and not enable_auto_order):
+            fail("CANDIDATE_UNPROVEN")
         self.enable_auto_order = enable_auto_order
+        self.recover_held_readonly_source = recover_held_readonly_source
         self.window = window
         self.home = Path.home() if home is None else Path(home)
         self.config = private(Path(candidate))
@@ -1704,12 +1741,83 @@ class MacBackend:
         if self._historical_anchor() != snapshot.get("historical_contract_anchor"):
             fail("PREIMAGE_CHANGED")
 
+    def _recovery_file(self, path):
+        path = private(Path(path))
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            before = os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid()
+                or before.st_nlink != 1 or before.st_mode & 0o077
+                or not 0 < before.st_size <= 16*1024*1024):
+                fail("PREIMAGE_CHANGED")
+            raw = b""
+            while len(raw) < before.st_size:
+                chunk = os.read(fd, before.st_size-len(raw))
+                if not chunk:
+                    fail("PREIMAGE_CHANGED")
+                raw += chunk
+            def signature(info):
+                return tuple(getattr(info, key) for key in (
+                    "st_dev","st_ino","st_uid","st_mode","st_nlink","st_size","st_mtime_ns","st_ctime_ns"))
+            if signature(before) != signature(os.fstat(fd)) or signature(before) != signature(path.lstat()):
+                fail("PREIMAGE_CHANGED")
+            return raw, dict(path=str(path), identity=dict(device=before.st_dev, inode=before.st_ino,
+                size=before.st_size, sha256=hashlib.sha256(raw).hexdigest()))
+        finally:
+            os.close(fd)
+
+    def _recovery_source_files(self, source):
+        """A virtual old view, with separately bound real file/backup identities."""
+        p = source["preimage"]
+        target_config = private(Path(source["ordinary_permit"]["config_path"]))
+        original, target_identity = self._recovery_file(target_config)
+        if (target_identity["identity"]["sha256"] != p["config"]["sha256"]
+            or {k:v for k,v in json.loads(original).items() if k != "ordinary_takeover_permit"}
+                != {k:v for k,v in self.cfg.items() if k != "ordinary_takeover_permit"}
+            or json.loads(private(self.config).read_bytes()) != self.cfg):
+            fail("PREIMAGE_CHANGED")
+        suffix = ".ordinary-" + p["config"]["sha256"][:16] + ".preimage"
+        selected, physical = {}, {}
+        for name, path, target_sha in (
+            ("old_plist", self.plist, p["plist"]["sha256"]),
+            ("monitor", self.monitor, p.get("monitor_target_sha256")),
+            ("old_config", Path(source["old_config_path"]), None),
+        ):
+            raw, current = self._recovery_file(path)
+            old = p[name]
+            if name == "old_config":
+                if current["identity"] != old:
+                    fail("PREIMAGE_CHANGED")
+            elif current["identity"]["sha256"] not in {old["sha256"], target_sha}:
+                fail("PREIMAGE_CHANGED")
+            backup = path.with_name(path.name + suffix)
+            saved = None
+            if os.path.lexists(backup):
+                saved_raw, saved = self._recovery_file(backup)
+                if saved["identity"]["sha256"] != old["sha256"]:
+                    fail("PREIMAGE_CHANGED")
+            elif current["identity"]["sha256"] != old["sha256"]:
+                fail("PREIMAGE_CHANGED")
+            selected[name] = raw if name == "old_config" or saved is None else saved_raw
+            physical[name] = dict(current=current, backup=saved,
+                read_from=current if name == "old_config" or saved is None else saved)
+        return selected, dict(source_preimage_sha256=digest(p), target_config=target_identity, files=physical)
+
     def _preimage(self):
-        p = plistlib.loads(private(self.plist).read_bytes())
+        source = getattr(self, "_recovery_source_anchor", None)
+        physical = None
+        if source is not None:
+            files, physical = self._recovery_source_files(source)
+            p = plistlib.loads(files["old_plist"])
+            monitor_cfg = json.loads(files["monitor"])
+        else:
+            p = plistlib.loads(private(self.plist).read_bytes())
+            monitor_cfg = json.loads(private(self.monitor).read_bytes())
         args = p["ProgramArguments"]
         old = private(Path(args[args.index("--config") + 1]))
-        old_cfg = json.loads(old.read_bytes())
-        monitor_cfg = json.loads(private(self.monitor).read_bytes())
+        if source is not None and old != Path(source["old_config_path"]):
+            fail("PREIMAGE_CHANGED")
+        old_cfg = json.loads(files["old_config"] if source is not None else old.read_bytes())
         old_hold = old_cfg.get("account_recovery_hold", False)
         new_hold = self.cfg.get("account_recovery_hold", False)
         transition = self._hold_transition(old_hold, new_hold)
@@ -1776,6 +1884,18 @@ class MacBackend:
         }
         if transition:
             result["auto_order_transition"] = transition
+        if source is not None:
+            for key in ("old_plist", "monitor", "old_config"):
+                if result[key] != physical["files"][key]["current"]["identity"]:
+                    fail("PREIMAGE_CHANGED")
+            for key in ("old_release", "old_runner", "old_sdk", "old_config"):
+                if result[key] != source["preimage"][key]:
+                    fail("PREIMAGE_CHANGED")
+            # These are the immutable historical source identities. The physical
+            # backup/current FD identities are recorded separately, never relabeled.
+            result["old_plist"] = source["preimage"]["old_plist"]
+            result["monitor"] = source["preimage"]["monitor"]
+            result["recovery_source_anchor"] = physical
         return result
 
     def _hold_transition(self, old_hold, new_hold):
@@ -1810,12 +1930,18 @@ class MacBackend:
             fail("HOST_UNPROVEN")
         self._hold_transition(held, getattr(self.settings, "account_recovery_hold", False))
         if getattr(self, "enable_auto_order", False):
-            if (type(control.get("account_takeover_pending")) is not bool
-                or control.get("status") not in {"ACCOUNT_RECOVERED_HELD", "WAITING_SESSION"}
-                or (control["status"] == "ACCOUNT_RECOVERED_HELD"
-                    and control["account_takeover_pending"] is not False)):
-                fail("HOST_UNPROVEN")
-            self._auto_source_run_clear(control)
+            if getattr(self, "recover_held_readonly_source", False):
+                if (control.get("status") not in {"RECOVERY_BLOCKED", "WAITING_SESSION"}
+                    or control.get("account_takeover_pending") is not True):
+                    fail("HOST_UNPROVEN")
+                self._held_readonly_failure(control)
+            else:
+                if (type(control.get("account_takeover_pending")) is not bool
+                    or control.get("status") not in {"ACCOUNT_RECOVERED_HELD", "WAITING_SESSION"}
+                    or (control["status"] == "ACCOUNT_RECOVERED_HELD"
+                        and control["account_takeover_pending"] is not False)):
+                    fail("HOST_UNPROVEN")
+                self._auto_source_run_clear(control)
         if held and (control.get("auto_order") is not False
                      or control.get("opening_enabled") is not False):
             fail("HOST_UNPROVEN")
@@ -1846,6 +1972,230 @@ class MacBackend:
         finally:
             if fd is not None:
                 os.close(fd)
+
+    def _held_readonly_failure(self, control):
+        """Read the sole current-run failure through stable private directory/file FDs."""
+        run = control.get("run_id")
+        if not isinstance(run, str) or re.fullmatch("[a-f0-9]{32}", run) is None:
+            fail("HOST_UNPROVEN")
+        dfd = fd = None
+        try:
+            private(self.folder, directory=True)
+            if self.folder.resolve() != self.folder:
+                fail("HOST_UNPROVEN")
+            dfd = os.open(self.folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            directory = os.fstat(dfd)
+            if stat.S_IMODE(directory.st_mode) != 0o700 or directory.st_uid != os.getuid():
+                fail("HOST_UNPROVEN")
+            def names():
+                with os.scandir(dfd) as entries:
+                    return sorted(e.name for e in entries if e.name.startswith("failure-" + run + "-"))
+            found = names()
+            if len(found) != 1 or re.fullmatch("failure-" + run + "-[0-9]+[.]json", found[0]) is None:
+                fail("HOST_UNPROVEN")
+            fd = os.open(found[0], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dfd)
+            info = os.fstat(fd)
+            def signature(st):
+                return (st.st_dev, st.st_ino, st.st_uid, st.st_mode, st.st_nlink,
+                        st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                or not 0 < info.st_size <= 1024*1024):
+                fail("HOST_UNPROVEN")
+            raw = b""
+            while len(raw) < info.st_size:
+                piece = os.read(fd, info.st_size - len(raw))
+                if not piece:
+                    fail("HOST_UNPROVEN")
+                raw += piece
+            if (signature(info) != signature(os.fstat(fd))
+                or signature(info) != signature(os.stat(found[0], dir_fd=dfd, follow_symlinks=False))
+                or found != names()
+                or (directory.st_dev, directory.st_ino, directory.st_mode, directory.st_uid)
+                    != tuple(getattr(self.folder.lstat(), k) for k in ("st_dev","st_ino","st_mode","st_uid"))):
+                fail("HOST_UNPROVEN")
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError()
+                    result[key] = value
+                return result
+            value = json.loads(raw, object_pairs_hook=unique)
+            diagnostic = value["diagnostic"]
+            if (value.get("schema") != "simnow_continuous_failure_v1"
+                or value.get("code") != "CONTINUOUS_RECOVERY_REQUIRED"
+                or diagnostic.get("stage") != "ACCOUNT_SNAPSHOT"
+                or diagnostic.get("recovery_stage") != "READY"
+                or diagnostic.get("recovery_error_code") != "RECOVERY_ERROR_UNCLASSIFIED"
+                or diagnostic.get("dispatch") is not None):
+                fail("HOST_UNPROVEN")
+            return value, dict(path=str(self.folder/found[0]), sha256=hashlib.sha256(raw).hexdigest())
+        except (OSError, ValueError, KeyError, TypeError):
+            fail("HOST_UNPROVEN")
+        finally:
+            if fd is not None:
+                os.close(fd)
+            if dfd is not None:
+                os.close(dfd)
+
+    def _held_readonly_source_proof(self, control, preimage, account, window, *, stopped_snapshot=None):
+        """An exact v69 held read-only failure is a pending next-day handoff only."""
+        from contextlib import closing
+        from guiyi_quant.simnow_execution.account_binding import existing_account
+        from guiyi_quant.simnow_execution.evidence import Evidence
+        from guiyi_quant.htdy_account_execution.codec import digest as ledger_digest
+
+        if (getattr(self, "recover_held_readonly_source", False) is not True
+            or getattr(self, "enable_auto_order", False) is not True
+            or getattr(self, "ordinary", False) is not True):
+            fail("HOST_UNPROVEN")
+        failure, failure_identity = self._held_readonly_failure(control)
+        old = json.loads(private(self.old_config).read_bytes())
+        release = preimage["old_release"]
+        if (release.get("tag") != "v1.16.69" or release.get("commit") != HELD_READONLY_SOURCE_COMMIT
+            or release.get("root") != old.get("project_root")
+            or self.identity(self.old_config) != preimage["old_config"]
+            or old.get("schema") != 2 or old.get("mode") != "trade" or old.get("enabled") is not True
+            or old.get("account_recovery_hold") is not True or old.get("account_takeover_pending") is not True
+            or old.get("account_id") != self.settings.account_id
+            or old.get("state_root") != str(self.settings.state_root)
+            or old.get("account_profile") != self._profile()
+            or self.identity(Path(old["project_root"])/"scripts/broker/simnow_supervisor.py", interpreter=True) != preimage["old_runner"]
+            or self.identity(Path(old["sdk_python"]), interpreter=True) != preimage["old_sdk"]
+            or control.get("schema") != "simnow_continuous_v2"
+            or control.get("mode") != "trade" or control.get("account_recovery_hold") is not True
+            or control.get("auto_order") is not False or control.get("opening_enabled") is not False
+            or control.get("account_takeover_pending") is not True
+            or control.get("trading_day") != "20261103"):
+            fail("HOST_UNPROVEN")
+        failed_at, observed = datetime.fromisoformat(failure["at"]), datetime.fromisoformat(control["at"])
+        now = datetime.now(UTC)
+        if (failed_at.tzinfo is None or observed.tzinfo is None or not failed_at < observed <= now):
+            fail("HOST_UNPROVEN")
+        if stopped_snapshot is None:
+            if (control.get("status") not in {"RECOVERY_BLOCKED", "WAITING_SESSION"}
+                or self._pid() != HELD_READONLY_SOURCE_PID
+                or preimage["host_pid"] != HELD_READONLY_SOURCE_PID
+                or preimage["host_run_id"] != control["run_id"]):
+                fail("HOST_UNPROVEN")
+            birth = self.run(["/bin/ps", "-p", str(HELD_READONLY_SOURCE_PID), "-o", "lstart="])
+            if birth.returncode or not birth.stdout.strip() or "\n" in birth.stdout.strip():
+                fail("HOST_UNPROVEN")
+            process = dict(pid=HELD_READONLY_SOURCE_PID, run_id=control["run_id"],
+                           identity=hashlib.sha256(f"{HELD_READONLY_SOURCE_PID}:{birth.stdout.strip()}".encode()).hexdigest())
+        else:
+            if (not getattr(self, "_offline_held", False) or not self.stopped(stopped_snapshot)
+                or control.get("status") != "STOPPED" or control.get("run_id") != stopped_snapshot["host"]["run_id"]):
+                fail("STOP_UNPROVEN")
+            process = stopped_snapshot["preimage"]["held_readonly_handoff"]["source_process"]
+            if (stopped_snapshot["host"]["pid"] != HELD_READONLY_SOURCE_PID
+                or process.get("pid") != HELD_READONLY_SOURCE_PID
+                or process.get("run_id") != control["run_id"]
+                or not re.fullmatch("[a-f0-9]{64}", process.get("identity", ""))):
+                fail("STOP_UNPROVEN")
+        validate_window(window)
+        if (window["policy"] != ORDINARY_POLICY or window["trading_day"] <= "20261103"
+            or not re.fullmatch("[a-f0-9]{64}", window.get("session_facts_sha256", ""))
+            or not isinstance(window.get("sessions"), list) or not window["sessions"]
+            or account["budget_day"] != window["trading_day"] or account["day_blocked"] is not False
+            or type(account["today_attempts"]) is not int or not 0 <= account["today_attempts"] < 3
+            or account["remaining_attempts"] != 3-account["today_attempts"]):
+            fail("ACCOUNT_UNPROVEN")
+        for name in ("account.sqlite", "dispatch.sqlite", "signals.sqlite"):
+            if self.identity(self.folder/name) != account["databases"][name]:
+                fail("PREIMAGE_CHANGED")
+        state = existing_account(self.settings.state_root, self.settings.account_id)
+        if (ledger_digest(state) != account["ledger_hash"] or state.positions or state.fills or state.unresolved_fill_ids
+            or len(state.orders) != 1 or any(o.status != "LOCAL_ABORTED" or not o.reconciled for o in state.orders)
+            or any(not r.released for r in state.reservations)):
+            fail("PENDING_OBLIGATIONS")
+        with closing(sqlite3.connect((self.folder/"dispatch.sqlite").as_uri()+"?mode=ro", uri=True)) as db:
+            db.execute("PRAGMA query_only=ON")
+            db.execute("BEGIN")
+            if (db.execute("SELECT account,schema FROM identity").fetchall() != [(self.settings.account_id,"simnow_dispatch_v1")]
+                or db.execute("SELECT COUNT(*) FROM actions").fetchone() != (0,)
+                or db.execute("SELECT COUNT(*) FROM results").fetchone() != (0,)):
+                fail("PENDING_OBLIGATIONS")
+            events = db.execute("SELECT event_id,payload,received_at FROM events ORDER BY rowid").fetchall()
+            if len(events) != 2 or any(json.loads(raw) != {"kind":"disconnect"} or key != "ctp-disconnect:"+stamp
+                for key,raw,stamp in events):
+                fail("PENDING_OBLIGATIONS")
+            last_disconnect = datetime.fromisoformat(events[-1][2])
+            if not failed_at <= last_disconnect <= observed:
+                fail("HOST_UNPROVEN")
+        with closing(sqlite3.connect((self.folder/"native-evidence.sqlite").as_uri()+"?mode=ro", uri=True)) as db:
+            db.execute("PRAGMA query_only=ON")
+            db.execute("BEGIN")
+            rows = db.execute("SELECT rowid,source,payload FROM snapshots ORDER BY rowid").fetchall()
+            if ([ [n,source,hashlib.sha256(raw.encode()).hexdigest()] for n,source,raw in rows ]
+                != account["databases"]["native-evidence.sqlite"]["rows"]
+                or digest(db.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall())
+                    != account["databases"]["native-evidence.sqlite"]["schema_hash"]):
+                fail("PREIMAGE_CHANGED")
+            row = rows[-1] if rows else None
+            if row is None:
+                fail("ACCOUNT_UNPROVEN")
+            latest = Evidence._decode(row[2])
+            from guiyi_quant.simnow_execution.inventory import number
+            if any(number(latest.data["funds"][0][key]) != 0 for key in (
+                "CurrMargin", "FrozenMargin", "FrozenCommission")):
+                fail("PENDING_OBLIGATIONS")
+            if (latest.account_id != self.settings.account_id or latest.trading_day != "20261103"
+                or not latest.at < failed_at or any(latest.data[k] for k in ("positions","orders","trades"))
+                or account["databases"]["native-evidence.sqlite"]["rows"][-1]
+                    != [row[0],row[1],hashlib.sha256(row[2].encode()).hexdigest()]):
+                fail("ACCOUNT_UNPROVEN")
+        with closing(sqlite3.connect((self.folder/"signals.sqlite").as_uri()+"?mode=ro", uri=True)) as db:
+            db.execute("PRAGMA query_only=ON")
+            db.execute("BEGIN")
+            attempts = db.execute("SELECT * FROM attempts ORDER BY rowid").fetchall()
+            blocks = db.execute("SELECT * FROM blocks ORDER BY rowid").fetchall()
+            if (digest(attempts) != account["attempts_hash"] or digest(blocks) != account["blocks_hash"]
+                or dict(attempts).get("20261103") != 3
+                or dict(blocks).get("20261103") != "CONTINUOUS_RECOVERY_REQUIRED"
+                or dict(attempts).get(window["trading_day"], 0) != account["today_attempts"]
+                or window["trading_day"] in dict(blocks)):
+                fail("ACCOUNT_UNPROVEN")
+            budget_content = digest(dict(identity=db.execute("SELECT * FROM identity").fetchall(),
+                attempts=attempts, blocks=blocks,
+                schema=db.execute("SELECT type,name,sql FROM sqlite_master ORDER BY type,name").fetchall()))
+        for name in ("account.sqlite", "dispatch.sqlite", "signals.sqlite"):
+            if self.identity(self.folder/name) != account["databases"][name]:
+                fail("PREIMAGE_CHANGED")
+        final_control = control
+        if stopped_snapshot is None:
+            birth = self.run(["/bin/ps", "-p", str(HELD_READONLY_SOURCE_PID), "-o", "lstart="])
+            if (self._pid() != HELD_READONLY_SOURCE_PID or birth.returncode or not birth.stdout.strip()
+                or hashlib.sha256(f"{HELD_READONLY_SOURCE_PID}:{birth.stdout.strip()}".encode()).hexdigest() != process["identity"]):
+                fail("HOST_UNPROVEN")
+            # Account verification may take seconds. Require a real new control
+            # read after that work, not an extended lifetime for the entry sample.
+            final_control = json.loads(private(self.folder/"continuous.json").read_bytes())
+            final_at = datetime.fromisoformat(final_control["at"])
+            if (final_control.get("status") not in {"RECOVERY_BLOCKED", "WAITING_SESSION"}
+                or any(final_control.get(k) != control.get(k) for k in (
+                    "schema","run_id","mode","account_recovery_hold","auto_order","opening_enabled",
+                    "account_takeover_pending","trading_day"))
+                or final_at.tzinfo is None or not observed <= final_at
+                or not failed_at < final_at <= datetime.now(UTC)):
+                fail("HOST_UNPROVEN")
+        if self._held_readonly_failure(final_control)[1] != failure_identity:
+            fail("PREIMAGE_CHANGED")
+        if stopped_snapshot is None and not 0 <= (datetime.now(UTC)-final_at).total_seconds() < 8:
+            fail("HOST_UNPROVEN")
+        history = tuple((name,getattr(state,name)) for name in ("activated_at","initial_readback","orders","fills",
+                        "positions","reservations","signals","updates","abandoned","risk_decisions","receipts"))
+        return dict(policy=HELD_READONLY_HANDOFF_POLICY, source_release=release,
+            source_config=preimage["old_config"], source_runner=preimage["old_runner"], source_sdk=preimage["old_sdk"],
+            source_process=process, failure=failure_identity, source_day="20261103", target_day=window["trading_day"],
+            cleanup_returned=True, authority_sha256=digest({k:window[k] for k in ("trading_day","sessions","session_facts_sha256")}),
+            ledger=dict(identity=account["databases"]["account.sqlite"],
+                ledger_hash=account["ledger_hash"], historical_fields_sha256=ledger_digest(history)),
+            dispatch=dict(identity=self.identity(self.folder/"dispatch.sqlite"), events_sha256=digest(events), actions=0, results=0),
+            native=dict(prefix=account["databases"]["native-evidence.sqlite"], last_source=latest.source_id),
+            budget=dict(identity=account["databases"]["signals.sqlite"], attempts_hash=account["attempts_hash"],
+                        blocks_hash=account["blocks_hash"], contents_sha256=budget_content, target_attempts=account["today_attempts"]))
 
     def code_check(self):
         exact = self.exact
@@ -1939,6 +2289,9 @@ class MacBackend:
         if historical_anchor is not None:
             preimage["historical_contract_anchor"] = historical_anchor
         window = self._window()
+        if getattr(self, "recover_held_readonly_source", False):
+            preimage["held_readonly_handoff"] = self._held_readonly_source_proof(control, preimage, account, window)
+            self._stop_held_readonly_handoff = preimage["held_readonly_handoff"]
         connection_permit = None
         ordinary_permit = None
         if getattr(self, "ordinary", False):
@@ -2016,12 +2369,36 @@ class MacBackend:
             preimage=preimage,
         )
 
+    def _ordinary_unspent(self, path):
+        path = Path(path)
+        private(path.parent, directory=True)
+        if os.path.lexists(path):
+            fail("ATTEMPT_CONSUMED")
+        fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            with os.scandir(fd) as entries:
+                if any(entry.name.startswith((path.name+".run-", path.name+".attempt")) for entry in entries):
+                    fail("ATTEMPT_CONSUMED")
+        finally:
+            os.close(fd)
+
+    def _ordinary_source_unspent(self, source):
+        try:
+            permit = source["ordinary_permit"]
+            path = Path(permit["permit_path"])
+            if path.name != "ordinary-takeover-permit.private.json" or path.parent != Path(permit["state_dir"]):
+                fail("PREIMAGE_CHANGED")
+            self._ordinary_unspent(path)
+        except (KeyError, TypeError, ValueError, OSError):
+            fail("PREIMAGE_CHANGED")
+
     def recovery_snapshot(self, source):
         from guiyi_quant.simnow_execution import ordinary_takeover as ordinary
 
         if not getattr(self, "ordinary", False):
             fail("CANDIDATE_UNPROVEN")
         self._recovery = True
+        self._ordinary_source_unspent(source)
         self._verify_historical_anchor(source)
         if (
             self.identity(self.settings.sdk_python, interpreter=True)
@@ -2071,7 +2448,9 @@ class MacBackend:
             if hashlib.sha256(private(path).read_bytes()).hexdigest() not in allowed:
                 fail("PREIMAGE_CHANGED")
         exact, preflight = self._candidate()
+        self._recovery_source_anchor = json.loads(json.dumps(source))
         with self.offline_guard(source):
+            self._ordinary_source_unspent(source)
             preimage = self._preimage()
             account = self._account(stopped_snapshot=source)
             if not same_preimage(
@@ -2082,8 +2461,14 @@ class MacBackend:
             permit = ordinary.binding(
                 self.settings, self.config, window, datetime.now(UTC)
             )
-            if Path(self.settings.ordinary_takeover_permit).exists():
-                fail("ATTEMPT_CONSUMED")
+            self._ordinary_unspent(self.settings.ordinary_takeover_permit)
+            if source["preimage"].get("held_readonly_handoff"):
+                proof = self._held_readonly_source_proof(
+                    json.loads(private(self.folder/"continuous.json").read_bytes()),
+                    preimage, account, window, stopped_snapshot=source)
+                if proof != source["preimage"]["held_readonly_handoff"]:
+                    fail("PREIMAGE_CHANGED")
+                preimage["held_readonly_handoff"] = proof
             preimage.update(
                 historical_contract_anchor=source["historical_contract_anchor"],
                 account=account,
@@ -2140,7 +2525,15 @@ class MacBackend:
         ):
             fail("PREIMAGE_CHANGED")
         if getattr(self, "enable_auto_order", False):
-            self._source_hold(json.loads(private(self.folder / "continuous.json").read_bytes()))
+            control = json.loads(private(self.folder / "continuous.json").read_bytes())
+            self._source_hold(control)
+            if getattr(self, "recover_held_readonly_source", False):
+                current = self._preimage()
+                account = self._account()
+                current.update(host_pid=pid, host_run_id=control["run_id"])
+                proof = self._held_readonly_source_proof(control, current, account, self._window())
+                if proof != getattr(self, "_stop_held_readonly_handoff", None):
+                    fail("PREIMAGE_CHANGED")
         if expires_at is not None and not clock() < expires_at:
             fail("PLAN_EXPIRED")
         os.kill(pid, signal.SIGTERM)
@@ -2195,10 +2588,13 @@ class MacBackend:
         if not getattr(self, "_offline_held", False) or not self.stopped(snapshot):
             fail("STOP_UNPROVEN")
         self.code_check()
-        if snapshot["preimage"].get("auto_order_transition"):
+        if snapshot["preimage"].get("auto_order_transition") and not snapshot["preimage"].get("held_readonly_handoff"):
             self._auto_source_run_clear(
                 json.loads(private(self.folder / "continuous.json").read_bytes())
             )
+        if getattr(self, "_recovery_source_anchor", None) is not None:
+            self._ordinary_source_unspent(self._recovery_source_anchor)
+            self._ordinary_unspent(self.settings.ordinary_takeover_permit)
         current = self._preimage()
         if snapshot.get("ordinary_permit"):
             self._verify_historical_anchor(snapshot)
@@ -2207,6 +2603,10 @@ class MacBackend:
             ]
         account = self._account(stopped_snapshot=snapshot)
         p = snapshot["preimage"]
+        if p.get("held_readonly_handoff"):
+            current["held_readonly_handoff"] = self._held_readonly_source_proof(
+                json.loads(private(self.folder / "continuous.json").read_bytes()),
+                current, account, self._window(), stopped_snapshot=snapshot)
         unchanged = same_preimage(
             dict(account=p["account"]), dict(account=account)
         ) and all(current[k] == p[k] for k in current)
@@ -2715,6 +3115,8 @@ def main(argv=None):
         "--enable-auto-order", action="store_true",
         help="Explicit owner-authorized held-to-auto SimNow takeover; native recovery still precedes trading",
     )
+    parser.add_argument("--recover-held-readonly-source", action="store_true",
+        help="Exact v69 held read-only failure only; requires --enable-auto-order on both plan and apply")
     parser.add_argument("--controller-tag")
     parser.add_argument("--source-intent", type=Path)
     parser.add_argument("--recovery-intent", action="store_true")
@@ -2730,6 +3132,7 @@ def main(argv=None):
         backend = MacBackend(
             args.config, args.candidate_plist, tag=args.tag, window=args.window,
             enable_auto_order=args.enable_auto_order,
+            recover_held_readonly_source=args.recover_held_readonly_source,
         )
         if os.environ.get("GUIYI_SIMNOW_SWITCH_DEPENDENCIES_READY") != "1":
             dependency_environment(backend.code)

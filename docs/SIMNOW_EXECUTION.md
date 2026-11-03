@@ -40,7 +40,8 @@ signals inode/schema/非attempt表、唯一claim及预算3一致；不把入口�
 原profile/SDK允许该路径；目标`account_recovery_hold=false/account_takeover_pending=true`。
 源磁盘及实际hold必须为true，auto/opening必须为false。实际`ACCOUNT_RECOVERED_HELD`要求pending=false；
 正常收盘断开后的`WAITING_SESSION`允许pending重新为true，但源完整历史、未决义务及当前精确run的
-失败原件检查必须通过。RECOVERY_BLOCKED、待对账或当前run存在任何failure均拒绝，不改旧失败记录。
+失败原件检查必须通过。默认RECOVERY_BLOCKED、待对账或当前run存在任何failure均拒绝，不改旧失败记录；
+仅下节显式、精确的只读失败交接policy可以处理本次v69来源。
 transition绑定到preimage及计划hash，SIGTERM前和源退出后的离线阶段再次检查；不从目标配置或旧计划隐式推导授权。
 
 权威下一交易日窗口、普通连接预算和历史block保持；不清账本、不退款、不补旧信号。所有有效ordinary许可
@@ -48,6 +49,32 @@ transition绑定到preimage及计划hash，SIGTERM前和源退出后的离线阶
 新宿主的双读回须hold=false/auto_order=true/pending=true/opening=false；该部署回执仍只证明
 HOST_SWITCH_VERIFIED。新连接的完整Snapshot、结算、归属及账户Recover、complete_takeover均通过后才允许
 消费自然新信号。部署、配置许可、可执行状态、订单、成交和对账分别验收，不能互相替代。
+
+## 原held宿主的精确只读失败交接
+
+`simnow_held_readonly_handoff_v1`仅对应本次原v1.16.69／exact
+`7794c49ff2381fd989d839c079a53d4caef321cb`、PID29975的只读失败。
+计划、apply及其恢复步骤均须同时显式指定`--enable-auto-order --recover-held-readonly-source`；
+缺任一旗标或任何前像漂移均拒绝，默认失败阻断合同不变。
+
+原配置必须全程held，唯一当前run failure必须是`ACCOUNT_SNAPSHOT/READY/RECOVERY_ERROR_UNCLASSIFIED`，
+保留其UNKNOWN含义和原件；不能将其标成已确认transport故障。固定源代码中，failure之后同birth/run的新鲜
+RECOVERY_BLOCKED／WAITING只可能在driver已清理后公开；清理异常不会回到该循环。证明绑定故障SHA、
+代码/配置/SDK、PID出生/run、原账本、全部预算、完整native前缀和dispatch，要求零actions/results、精确两条
+纯disconnect、LOCAL_ABORTED已核销历史/预留已释放、空native三表及保证金/冻结保证金/冻结手续费均为0。
+
+目标只能使用权威下一交易日普通预算，不修改20261103的count3/block或父child UNKNOWN。重工作完成后
+重新核PID/birth并真实重读同run控制，末端仍须新鲜8秒内；SIGTERM前再验。STOPPED离线阶段须原PID已退出、
+双锁实际释放并由协调器持有、同故障/账本/预算/前缀不变，不假用live新鲜度。新宿主仍pending=true，
+所有新连接归属、结算、Recover及complete_takeover屏障保持；此证明不是新账户事实或成交证明。
+
+已STOPPED、INSTALLING或INSTALLED但尚无grant/claim的中途失败，沿既有新目录恢复协议处理。
+每次重建原源视图均从原target配置SHA派生精确`.ordinary-<sha前16位>.preimage`路径，旧配置必须仍为
+原路径/原inode/完整身份；plist/monitor当前文件只接受原source或原target哈希。备份存在则验证真实FD/inode/SHA，
+缺少必要备份、外来当前文件或后续漂移均拒；物理anchor单独冻结，不把备份inode冒充原inode。
+新候选除ordinary许可路径外必须保持原目标语义；STOPPED及双锁下重算原handoff proof一致后才能续行。
+原目录中只要旧ordinary grant、run-claim或任意attempt痕迹已经存在，即使阶段仍INSTALLED也拒绝再授权；
+START_REQUESTED以后不走此恢复分支。原intent/UNKNOWN及所有旧原件不改写，真实安装/许可生成仅一次。
 
 ## 当前连接结算证明（native_settlement_confirmation_v2）
 
