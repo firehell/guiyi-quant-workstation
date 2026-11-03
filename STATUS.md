@@ -1,3 +1,5 @@
+11/3 18:43 v1.16.76恢复校验修复准备：v75首次停止审计在inventory拒绝旧gen55已恢复根07c6…，未生成停止确认、未恢复服务。修复仅在历史plan/source/receipt SHA、完整五effects及typed readback、stopped confirmation和closed feed全部证实后，将该成功根自身纳入已闭合集合；其他UNKNOWN仍阻断。正式十服务仍v73/gen56 parked，原SimNow仍v72等待夜盘，18:05任务未运行。待新控制器发布后执行新停止审计和同代恢复，再迁移SimNow结算后刷新修复；不重放旧apply，不改旧状态。
+
 11/3 18:25 v1.16.75恢复入口修复准备：另一聊天留下的原40864b…及forward4a141…均UNKNOWN；后者恰完成consumers/intake/feed/verified，在calendars以REDACTED/COHORT_FORWARD_STEP_FAILED失败且无receipt。现已停止其他聊天的服务/SimNow/删树操作；只读确认当前v73/gen56六owner全parked、四calendar定义全absent，18:05未运行，after-market-status缺席、history仅Nov2passed。v75仅让此严格四effects/双typed intake/完整verified前缀进入既有当前停止审计；两处ORIGINAL lineage也仅接受同组合。旧状态和原件不改，不推断过去没有副作用，所有锁/保护前像/pending/ACK/日历缺席检查保持，后续须新关闭及新同代恢复。
 相关stopped/original-feed/feed-halt/forward四组263 passed，独立Review及22项定向通过；API/Web构建、冻结依赖、版本、Ruff/diff/secret检查通过。前一慢结算修复已正式发布v74/exact935a4b8e2a0b3497fe8f1b9b6ee321c283c3ac98，仍未切宿主；v75包含同一已验证修复，不再另推十服务版本。恢复gen56后先确认服务/原定时任务，再处理漏跑盘后输入及独立SimNow升级；目标日60条rank1和20:30自然准备、实际登录/账户接管/委托成交分别待验。
 
