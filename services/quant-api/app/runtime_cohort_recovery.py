@@ -3862,6 +3862,15 @@ class ForwardRecoveryHost(CohortHost):
                 for name in names
             )
 
+        def owner_samples_fresh(states, now):
+            try:
+                return all(
+                    0 <= (now - datetime.fromisoformat(state["at"])).total_seconds() <= 30
+                    for state in states.values()
+                )
+            except (KeyError, TypeError, ValueError):
+                return False
+
         def transient_poll(reason, service):
             return reason == "service_not_ready" and service in {
                 "live", "market-feed",
@@ -3921,6 +3930,9 @@ class ForwardRecoveryHost(CohortHost):
                         and valid_until.tzinfo is not None,
                         "COHORT_FORWARD_SESSION_UNKNOWN",
                     )
+                    # Bound transient poll retries, not successful validation.
+                    # Full identity and owner checks may take longer than one
+                    # second; their proofs retain the normal freshness limits.
                     burst_end = min(end, self.monotonic() + 1)
                     retry_window = True
                     for _ in range(5):
@@ -3951,8 +3963,6 @@ class ForwardRecoveryHost(CohortHost):
                                 "COHORT_FORWARD_READY_TIMEOUT",
                             )
                             now = self.now()
-                            if self.monotonic() >= burst_end:
-                                break
                             if now >= valid_until or not receiving_sample_is_fresh(
                                 current, now=now
                             ):
@@ -3963,11 +3973,16 @@ class ForwardRecoveryHost(CohortHost):
                                 retry_window = False
                                 break
                             if final_reason is None:
+                                check_budget()
+                                require(
+                                    self.monotonic() < end,
+                                    "COHORT_FORWARD_READY_TIMEOUT",
+                                )
                                 now = self.now()
-                                if self.monotonic() >= burst_end:
-                                    break
-                                if now >= valid_until or not receiving_sample_is_fresh(
-                                    current, now=now
+                                if (
+                                    not owner_samples_fresh(final, now)
+                                    or now >= valid_until
+                                    or not receiving_sample_is_fresh(current, now=now)
                                 ):
                                     retry_window = False
                                     break
