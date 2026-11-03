@@ -2364,3 +2364,9 @@ node --test apps/quant-web/tests/newowReferenceParts.test.ts apps/quant-web/test
 `test_newow_native_append_parity.py`。原生追加回归验证 GET 在禁止历史 replay 时仍能
 读出保存的普通/理想页面结果，并覆盖同端点来源复核、未知回执和旧前缀价格修订。
 PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过。
+
+### 账户重放摘要一致性
+
+`tests/unit/htdy_execution/test_replay_digest.py`覆盖原codec逐状态摘要/检查点字节一致性、Decimal scale/负零/时区偏移、
+追加tuple身份、上下文变化、可变值与预算回退、异常/嵌套/跨线程隔离，以及SQLite命令、effects、chain、恢复模式和projection篡改拒绝。
+性能验证使用原账本的只读一致性副本，须统计真实reducer次数并与旧实现比较完整checkpoint和数据库SHA；不得以跳过命令或projection替代重放。
