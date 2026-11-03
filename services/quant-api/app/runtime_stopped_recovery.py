@@ -48,8 +48,20 @@ def current_source(host, path, identity):
     return source
 
 
+def _calendar_failure_error(state):
+    return (
+        state.get("failed_stage") == "calendars"
+        and state.get("error_type") == "REDACTED"
+        and state.get("error_code") == "COHORT_FORWARD_STEP_FAILED"
+    )
+
+
 def failure_feed_state(plan, state):
-    """Classify only completed startup effects; verification itself is read-only."""
+    """Classify retained prefixes; current audit proves any stopped frontier.
+
+    A calendar failure may have had effects before its exception. Its historical
+    outcome stays unknown; admission never certifies that registration did nothing.
+    """
     generation = plan["new"]["services"]["live"]["generation"]
     consumers = {"resumed_generation": generation}
     require(state.get("phase") == "outcome_unknown")
@@ -64,6 +76,24 @@ def failure_feed_state(plan, state):
         plan["new"]["services"]["market-feed"].get("launchd_label")
         or "com.guiyi.quant-market-feed"
     )
+    if state.get("failed_stage") == "calendars":
+        verified = effects.get("verified")
+        require(
+            _calendar_failure_error(state)
+            and set(effects) == {"consumers", "intake", "feed", "verified"}
+            and effects["consumers"] == consumers
+            and recovery._valid_intake_result(effects["intake"])
+            and effects["feed"] == {"bootstrapped": True, "label": label}
+            and type(verified) is dict
+            and set(verified) == {
+                "continuous_identity", "calculation_ready", "intake", "natural_acceptance"
+            }
+            and verified["continuous_identity"] == "matched"
+            and verified["calculation_ready"] is False
+            and verified["natural_acceptance"] == "pending"
+            and recovery._valid_intake_result(verified["intake"])
+        )
+        return "parked"
     require(
         state.get("failed_stage") == "verified"
         and state.get("error_type") == "CohortError"
@@ -349,7 +379,10 @@ def _validate_lineage(host, value):
             if mode == recovery.ORIGINAL_FEED_MODE:
                 require(
                     "stop_after" not in plan
-                    and state.get("error_type") == "CohortError"
+                    and (
+                        state.get("error_type") == "CohortError"
+                        or _calendar_failure_error(state)
+                    )
                     and identity.get("kind") == recovery.ORIGINAL_FEED_SOURCE
                 )
         else:
@@ -512,7 +545,13 @@ def _evidence(host, path):
         retain_attempt(closure)
         pids = receipt["feed_close"]["observed_pids"]
     elif plan.get("mode") == recovery.ORIGINAL_FEED_MODE:
-        require("stop_after" not in plan and state.get("error_type") == "CohortError")
+        require(
+            "stop_after" not in plan
+            and (
+                state.get("error_type") == "CohortError"
+                or _calendar_failure_error(state)
+            )
+        )
         closure, receipt = recovery._original_feed_close_attempt(
             host, plan["original_close"]["plan_path"], identity
         )

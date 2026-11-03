@@ -25,14 +25,30 @@ def typed_intake():
     }
 
 
-def failed_after_feed(tmp_path, monkeypatch):
+def failed_after_feed(tmp_path, monkeypatch, *, calendars=False, original=False):
     from app import runtime_stopped_recovery as stopped
 
-    host, failed_path, failed, _ = original_failed_consumers(tmp_path, monkeypatch)
-    selected = stopped.reconcile_stopped(host, failed_path)["confirmation"]
-    plan = recovery.freeze_forward_recovery(
-        host, failed["source"]["plan_path"], stopped_confirmation=selected["path"]
-    )
+    if original:
+        from tests.test_runtime_cohort_original_feed_recovery import original_fixture
+
+        host, _, source, _, _, _ = original_fixture(tmp_path, monkeypatch)
+        close = recovery.freeze_forward_recovery(
+            host, source, original_verified_feed_halt=True, close_feed_only=True
+        )
+        close_path = tmp_path / "original-close.json"
+        _write(close_path, close)
+        recovery.apply_forward_recovery(host, close_path)
+        plan = recovery.freeze_forward_recovery(
+            host, source, original_verified_feed_halt=True, feed_close_plan=close_path
+        )
+    else:
+        host, failed_path, failed, _ = original_failed_consumers(tmp_path, monkeypatch)
+        selected = stopped.reconcile_stopped(host, failed_path)["confirmation"]
+        plan = recovery.freeze_forward_recovery(
+            host, failed["source"]["plan_path"], stopped_confirmation=selected["path"]
+        )
+    generation = plan["new"]["services"]["live"]["generation"]
+    host.resume_consumers = lambda *args: {"resumed_generation": generation}
     host.await_consumers = lambda *args: typed_intake()
     host.resume_feed = lambda *args: {
         "bootstrapped": True,
@@ -42,7 +58,24 @@ def failed_after_feed(tmp_path, monkeypatch):
     def fail(*args):
         raise recovery.CohortError("REFERENCE_RECEIVING_LIVENESS_UNPROVEN")
 
-    host.verify_forward = fail
+    if calendars:
+        host.verify_forward = lambda *args: {
+            "continuous_identity": "matched",
+            "calculation_ready": False,
+            "intake": typed_intake(),
+            "natural_acceptance": "pending",
+        }
+
+        class UnclassifiedCalendarFailure(Exception):
+            pass
+
+        def fail_calendar(*args):
+            host.calls.append("calendar_registration_attempted")
+            raise UnclassifiedCalendarFailure("private failure text")
+
+        host.forward_calendars = fail_calendar
+    else:
+        host.verify_forward = fail
     path = tmp_path / "failed-after-feed.json"
     _write(path, plan)
     with pytest.raises(ValueError, match="OUTCOME_UNKNOWN"):
@@ -51,7 +84,9 @@ def failed_after_feed(tmp_path, monkeypatch):
     parked = {
         k: deepcopy(v)
         for k, v in plan["audit"].items()
-        if k not in {"stopped_confirmation", "feed_exited_pids"}
+        if k not in {
+            "stopped_confirmation", "feed_exited_pids", "original_verified_feed_halt"
+        }
     }
     parked.update(
         feed_state="parked",
@@ -111,10 +146,12 @@ def failed_after_feed(tmp_path, monkeypatch):
     return host, path, plan, parked, closed
 
 
-def recover_after_feed_failure(tmp_path, monkeypatch):
+def recover_after_feed_failure(tmp_path, monkeypatch, *, calendars=False, original=False):
     from app import runtime_stopped_recovery as stopped
 
-    host, path, failed, _, closed = failed_after_feed(tmp_path, monkeypatch)
+    host, path, failed, _, closed = failed_after_feed(
+        tmp_path, monkeypatch, calendars=calendars, original=original
+    )
     folder = host.directory / "cohort-forward-recoveries" / failed["plan_sha256"]
     original = (folder / "state.json").read_bytes()
     selected = stopped.reconcile_stopped(host, path)["confirmation"]
@@ -159,6 +196,102 @@ def test_stopped_post_feed_failure_closes_once_then_recovers_same_generation(
     tmp_path, monkeypatch
 ):
     recover_after_feed_failure(tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize("original", (False, True))
+def test_calendar_failure_preserves_unknown_then_uses_new_close_and_resume(
+    tmp_path, monkeypatch, original
+):
+    recover_after_feed_failure(
+        tmp_path, monkeypatch, calendars=True, original=original
+    )
+
+
+def test_calendar_confirmation_retains_source_closure_and_failure_bytes(tmp_path, monkeypatch):
+    from app import runtime_stopped_recovery as stopped
+
+    host, path, plan, _, _ = failed_after_feed(
+        tmp_path, monkeypatch, calendars=True, original=True
+    )
+    folder = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
+    originals = {
+        p: p.read_bytes()
+        for p in host.directory.rglob("*.json")
+        if p.name != "stopped-confirmation.json"
+    }
+    originals[path] = path.read_bytes()
+    source = Path(plan["source"]["plan_path"])
+    originals[source] = source.read_bytes()
+    closure = Path(plan["original_close"]["plan_path"])
+    originals[closure] = closure.read_bytes()
+    calls = list(host.calls)
+    result = stopped.reconcile_stopped(host, path)
+    assert host.calls == calls  # No claim about historical calendar side effects.
+    assert result["original_attempt_preserved"] and not result["recovery_started"]
+    assert all(p.read_bytes() == raw for p, raw in originals.items())
+    value = stopped.read_confirmation(host, result["confirmation"])
+    state = json.loads((folder / "state.json").read_bytes())
+    assert state["phase"] == "outcome_unknown"
+    assert state["error_type"] == "REDACTED"
+    assert state["error_code"] == "COHORT_FORWARD_STEP_FAILED"
+    assert set(state["effects"]) == {"consumers", "intake", "feed", "verified"}
+    assert str(folder / "state.json") in value["files"]
+    assert not (folder / "receipt.json").exists()
+
+
+@pytest.mark.parametrize(
+    "damage",
+    (
+        "missing_verified", "intake_schema", "verified_schema", "intake_hash",
+        "verified_hash", "extra_effect", "identity", "calculation", "natural",
+        "extra_verified", "error_type", "error_code", "receipt",
+        "protected", "new_protected",
+    ),
+)
+def test_calendar_failure_rejects_unproven_completion_or_drift(
+    tmp_path, monkeypatch, damage
+):
+    from app import runtime_stopped_recovery as stopped
+
+    host, path, plan, audit, _ = failed_after_feed(
+        tmp_path, monkeypatch, calendars=True, original=True
+    )
+    folder = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
+    state = json.loads((folder / "state.json").read_bytes())
+    if damage in {"protected", "new_protected"}:
+        audit[damage] = {"after-market-status.json": "new unexpected output"}
+    elif damage == "receipt":
+        _write(folder / "receipt.json", {})
+    else:
+        effects = state["effects"]
+        if damage == "missing_verified":
+            del effects["verified"]
+        elif damage == "intake_schema":
+            effects["intake"]["schema_version"] = 1
+        elif damage == "verified_schema":
+            effects["verified"]["intake"]["schema_version"] = 1
+        elif damage == "intake_hash":
+            effects["intake"]["before_sha256"] = "bad"
+        elif damage == "verified_hash":
+            effects["verified"]["intake"]["after_sha256"] = "bad"
+        elif damage == "extra_effect":
+            effects["calendars"] = {"identity": "matched"}
+        elif damage == "identity":
+            effects["verified"]["continuous_identity"] = "unknown"
+        elif damage == "calculation":
+            effects["verified"]["calculation_ready"] = True
+        elif damage == "natural":
+            effects["verified"]["natural_acceptance"] = "complete"
+        elif damage == "extra_verified":
+            effects["verified"]["extra"] = True
+        elif damage == "error_type":
+            state["error_type"] = "CohortError"
+        else:
+            state["error_code"] = "OTHER_UNKNOWN"
+        _write(folder / "state.json", state)
+    with pytest.raises(ValueError):
+        stopped.reconcile_stopped(host, path)
+    assert not (folder / "stopped-confirmation.json").exists()
 
 
 @pytest.mark.parametrize("damage", ("false_exit", "extra_effect", "wrong_confirmation"))
@@ -497,7 +630,8 @@ def test_stopped_confirmation_is_never_an_extra_field_on_legacy_modes(tmp_path, 
 
 
 @pytest.mark.parametrize(
-    "failure", [None, "feed_reappeared", "owner_changed", "prefix_changed"]
+    "failure", [None, "feed_reappeared", "owner_changed", "prefix_changed",
+                "calendar_loaded", "calculation_pending"]
 )
 @pytest.mark.parametrize("feed_parked", (False, True))
 def test_native_stopped_observer_pins_kernel_locks_and_rejects_drift(
@@ -529,7 +663,7 @@ def test_native_stopped_observer_pins_kernel_locks_and_rejects_drift(
 
     current._parked_owners = parked
     current._controls = lambda *args: {"fresh": "current"}
-    current.definition_absent = lambda *args: True
+    current.definition_absent = lambda *args: failure != "calendar_loaded"
     current._feed_exited = lambda *args: failure != "feed_reappeared"
     pid_reads = [0]
 
@@ -538,7 +672,7 @@ def test_native_stopped_observer_pins_kernel_locks_and_rejects_drift(
         return [40578] if failure == "feed_reappeared" and pid_reads[0] > 1 else [40577]
 
     current._feed_pids = feed_pids
-    current._calculation_boundary = lambda: True
+    current._calculation_boundary = lambda: failure != "calculation_pending"
     current._snapshot = lambda *args: {
         "old_tail_reached": True,
         "days": {"day": {"ack": "1-0", "current_tail": "1-0", "final_tail": "1-0"}},
