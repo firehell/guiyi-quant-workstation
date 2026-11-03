@@ -116,6 +116,9 @@ def ready(tmp_path, monkeypatch):
     monkeypatch.setattr(runtime_bindings, "read_bindings", lambda: bindings)
     monkeypatch.setattr(runtime_bindings, "registry_path", lambda: registry)
     monkeypatch.setattr(runtime_handover, "read_service_state", lambda p: states[p])
+    monkeypatch.setattr(runtime_handover, "runtime_directory", lambda: tmp_path)
+    for name in states:
+        (tmp_path/(name+'.owner.lock')).touch(mode=0o600)
     monkeypatch.setattr(runtime_handover, "_read", lambda p: None)
     monkeypatch.setattr(runtime_handover, "owner_lock_available", lambda p: False)
     monkeypatch.setattr(runtime_deployment, "owner_process_matches", lambda s, b: True)
@@ -141,6 +144,7 @@ def ready(tmp_path, monkeypatch):
         registry=registry,
         elapsed=elapsed,
         tick=tick,
+        runtime=tmp_path,
     )
 
 
@@ -239,7 +243,9 @@ def test_final_normal_poll_start_keeps_prior_fresh_completed_cycle(ready, monkey
     def state(name):
         calls[name] += 1
         value = dict(f.states[name])
-        if calls[name] > 1:
+        # Initial loaded verification reads twice without admitting a proof;
+        # the third read is the actual fast sampling window.
+        if calls[name] != 3:
             value.update(ready=False, proof={})
         return value
 
@@ -291,7 +297,7 @@ def test_explicit_drift_during_normal_wait_is_terminal(ready, monkeypatch, drift
     assert 0 < f.elapsed[0] < 3
 
 
-def test_completed_cycle_observed_after_wait_deadline_does_not_extend_it(
+def test_slow_final_loaded_identity_does_not_consume_proof_sampling_time(
     ready, monkeypatch
 ):
     from app import runtime_deployment
@@ -309,6 +315,120 @@ def test_completed_cycle_observed_after_wait_deadline_does_not_extend_it(
         return True
 
     monkeypatch.setattr(runtime_deployment, "owner_process_matches", kernel)
+    assert module.recovery_window("20261104", NOW, redis=f.redis)['active']
+    assert f.elapsed[0] > 3
+
+
+def test_slow_loaded_identity_wraps_fast_independent_ready_markers(ready, monkeypatch):
+    from app import runtime_deployment, runtime_handover
+
+    f = ready
+    calls = []
+
+    def kernel(state, binding):
+        calls.append(state["service"])
+        f.elapsed[0] += 1
+        return True
+
+    initial = [None]
+
+    def owner(name):
+        value = dict(f.states[name])
+        if initial[0] is None:
+            initial[0] = f.elapsed[0]
+        relative = f.elapsed[0] - 2
+        if not (
+            1 <= relative <= 1.08 if name == "market-feed" else 1.1 <= relative <= 1.18
+        ):
+            value.update(ready=False, proof={})
+        return value
+
+    monkeypatch.setattr(runtime_deployment, "owner_process_matches", kernel)
+    monkeypatch.setattr(runtime_handover, "read_service_state", owner)
+    assert module.recovery_window("20261104", NOW, redis=f.redis)["active"]
+    assert calls == ["market-feed", "live", "market-feed", "live"]
+    assert f.elapsed[0] > 4
+
+
+def test_fast_sample_io_cannot_run_past_its_three_second_deadline(ready, monkeypatch):
+    from app import runtime_handover
+
+    f = ready
+    proof = f.states["live"]["proof"]
+    f.states["live"].update(ready=False, proof={})
+    f.tick[0] = lambda: f.states["live"].update(ready=True, proof=proof)
+    delayed = [False]
+
+    def owner(name):
+        if f.elapsed[0] > 0 and not delayed[0]:
+            f.elapsed[0] += 3
+            delayed[0] = True
+        return f.states[name]
+
+    monkeypatch.setattr(runtime_handover, "read_service_state", owner)
     with pytest.raises(ValueError):
         module.recovery_window("20261104", NOW, redis=f.redis)
-    assert f.elapsed[0] > 3
+
+
+@pytest.mark.parametrize("drift", ["lock_inode", "lock_free"])
+def test_lock_drift_during_fast_sampling_is_terminal(ready, monkeypatch, drift):
+    from app import runtime_handover
+
+    f = ready
+    f.states["live"].update(ready=False, proof={})
+    changed = [False]
+
+    def tick():
+        changed[0] = True
+        if drift == "lock_inode":
+            path = f.runtime / "live.owner.lock"
+            other = f.runtime / "replacement.lock"
+            other.touch(mode=0o600)
+            other.replace(path)
+
+    f.tick[0] = tick
+    if drift == "lock_free":
+        monkeypatch.setattr(
+            runtime_handover, "owner_lock_available", lambda name: changed[0]
+        )
+    with pytest.raises(ValueError):
+        module.recovery_window("20261104", NOW, redis=f.redis)
+    assert 0 < f.elapsed[0] < 3
+
+
+def test_final_loaded_identity_failure_rejects_completed_proofs(ready, monkeypatch):
+    from app import runtime_deployment
+
+    calls = []
+
+    def kernel(state, binding):
+        calls.append(state["service"])
+        return len(calls) < 3
+
+    monkeypatch.setattr(runtime_deployment, "owner_process_matches", kernel)
+    with pytest.raises(ValueError):
+        module.recovery_window("20261104", NOW, redis=ready.redis)
+    assert len(calls) == 3
+
+
+def test_slow_final_identity_cannot_make_completed_proofs_older_than_thirty_seconds(
+    ready, monkeypatch
+):
+    from app import runtime_deployment
+
+    f = ready
+    calls = []
+
+    def kernel(state, binding):
+        calls.append(state["service"])
+        if len(calls) == 3:
+            f.elapsed[0] += 31
+            for value in f.states.values():
+                value["at"] = (NOW + timedelta(seconds=31)).isoformat()
+            for value in f.hb.values():
+                value["generated_at"] = (NOW + timedelta(seconds=31)).isoformat()
+        return True
+
+    monkeypatch.setattr(runtime_deployment, "owner_process_matches", kernel)
+    with pytest.raises(ValueError):
+        module.recovery_window("20261104", NOW, redis=f.redis)
