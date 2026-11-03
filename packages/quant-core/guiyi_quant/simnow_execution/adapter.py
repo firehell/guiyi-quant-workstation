@@ -974,7 +974,7 @@ class Adapter:
                     continue
                 native = self.journal.find(p["order_id"])
                 fill_type = (
-                    m.StrategyCorrelatedNativeFillV1 if self.strategy_correlated_native
+                    m.StrategyCorrelatedNativeFillV2 if self.strategy_correlated_native
                     else m.CorrelatedNativeFillV1 if self.correlated_native else m.NativeFill
                 )
                 correlation = {}

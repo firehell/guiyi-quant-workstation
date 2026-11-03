@@ -251,8 +251,8 @@ class Gateway:
         row = dict(
             TradingDay="20261027",
             OrderRef=request.OrderRef,
-            FrontID=1,
-            SessionID=2,
+            FrontID=self.native_session["front_id"],
+            SessionID=self.native_session["session_id"],
             InstrumentID=native,
             ExchangeID=request.ExchangeID,
             Direction=request.Direction,
@@ -357,14 +357,22 @@ def seeded_account(tmp_path):
     return settings, folder, clock, market
 
 
+@pytest.mark.parametrize("session_id", [2, -2], ids=["positive-session", "negative-session"])
 def test_continuous_host_queue_actual_policy_native_fee_and_monitor_closed_loop(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, session_id
 ):
     from guiyi_quant.simnow_execution.credentials import CredentialStore
 
     monkeypatch.setattr(
         CredentialStore, "load", lambda *_: pytest.fail("real Keychain accessed")
     )
+    original_gateway_init = Gateway.__init__
+
+    def signed_gateway_init(self, clock):
+        original_gateway_init(self, clock)
+        self.native_session["session_id"] = session_id
+
+    monkeypatch.setattr(Gateway, "__init__", signed_gateway_init)
     settings, folder, clock, market = seeded_account(tmp_path)
     root = settings.state_root
     drivers = []
@@ -390,7 +398,8 @@ def test_continuous_host_queue_actual_policy_native_fee_and_monitor_closed_loop(
         "CLOSE",
         "OPEN",
     ], json.loads((folder / "continuous.json").read_text())
-    assert all(type(fill) is a.StrategyCorrelatedNativeFillV1 for fill in final.fills)
+    assert all(type(fill) is a.StrategyCorrelatedNativeFillV2 for fill in final.fills)
+    assert all(fill.native_session_id == session_id for fill in final.fills)
     assert {p.product: p.quantity for p in final.positions} == {"JM": 1, "RB": -1}
     assert len(drivers) == 1
     assert len(final.signals) == 3 and len(final.risk_decisions) == 3

@@ -280,6 +280,7 @@ class LocalStore:
                     m.NativeFill,
                     m.CorrelatedNativeFillV1,
                     m.StrategyCorrelatedNativeFillV1,
+                    m.StrategyCorrelatedNativeFillV2,
                     m.Disconnect,
                     m.OrderUpdate,
                 ):
@@ -292,6 +293,7 @@ class LocalStore:
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,
                         m.StrategyCorrelatedNativeFillV1,
+                        m.StrategyCorrelatedNativeFillV2,
                         m.OrderUpdate,
                         m.Disconnect,
                         m.AbortUnsent,
@@ -392,6 +394,7 @@ class LocalStore:
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,
                         m.StrategyCorrelatedNativeFillV1,
+                        m.StrategyCorrelatedNativeFillV2,
                         m.OrderUpdate,
                         m.Disconnect,
                         m.AbortUnsent,

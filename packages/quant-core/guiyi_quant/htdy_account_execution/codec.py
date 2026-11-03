@@ -79,6 +79,7 @@ def _classes():
             m.NativeFill,
             m.CorrelatedNativeFillV1,
             m.StrategyCorrelatedNativeFillV1,
+            m.StrategyCorrelatedNativeFillV2,
             m.Signal,
             m.Owner,
             m.RecoveryInput,

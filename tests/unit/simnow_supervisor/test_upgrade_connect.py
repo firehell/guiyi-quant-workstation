@@ -29,7 +29,7 @@ def fixture(monkeypatch):
     s.status = lambda *a: None
     s.prepare = lambda day: calls.append("prepare")
     s.factory = lambda *a: (
-        calls.append("factory") or NS(connect=lambda: calls.append("SDK"))
+        calls.append("factory") or NS(connect=lambda: calls.append("SDK"), set_pre_native_guard=lambda guard: None)
     )
     monkeypatch.setattr(ordinary, "permit_required", lambda *a: True)
     monkeypatch.setattr(
