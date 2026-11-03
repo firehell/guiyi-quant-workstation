@@ -439,3 +439,73 @@ def test_dependencies_missing_default_password_fails_without_reexec_or_secret_ou
     with pytest.raises(ValueError, match="^RECOVERY_DEPENDENCIES_INVALID$"):
         cli.load_dependencies()
     assert capsys.readouterr().out == ""
+
+
+def test_nov03_cli_is_exact_separate_and_keeps_old_schemas(cli):
+    assert cli.schema(cli.NOV03_VERSION) == "reference_htdy_conflict_cli_20261103_v1"
+    assert cli.schema(cli.ORIGINAL_INCIDENT) == "reference_htdy_conflict_cli_v1"
+    assert cli.schema(cli.OCT31_VERSION) == "reference_htdy_conflict_cli_20261031_v1"
+    ids = tuple(sorted(cli.NOV03_BINDINGS))
+    assert len(ids) == 11 and cli.checked_scope(ids, incident=cli.NOV03_VERSION) == ids
+    with pytest.raises(ValueError):
+        cli.checked_scope(ids, incident=cli.OCT31_VERSION)
+    with pytest.raises(ValueError):
+        cli.checked_scope((*ids[:-1], "outside"), incident=cli.NOV03_VERSION)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        None,
+        "raw_sha",
+        "revision",
+        "capture",
+        "generation",
+        "checkpoint",
+        "open_id",
+        "open_flag",
+        "endpoint",
+    ],
+)
+def test_nov03_inventory_exact_bytes_and_values(cli, tmp_path, monkeypatch, change):
+    import hashlib
+
+    rows = [
+        dict(
+            stream_id=sid,
+            revision_id=v[0],
+            capture_id=v[1],
+            activation_generation=v[2],
+            checkpoint_batch_id=v[3],
+            reference_trade_id=v[4],
+            reference_open=v[4] is not None,
+            endpoint_shift_equal=True,
+            code="OBSERVATION_GAP",
+        )
+        for sid, v in cli.NOV03_BINDINGS.items()
+    ]
+    if change not in (None, "raw_sha"):
+        key = {
+            "revision": "revision_id",
+            "capture": "capture_id",
+            "generation": "activation_generation",
+            "checkpoint": "checkpoint_batch_id",
+            "open_id": "reference_trade_id",
+            "open_flag": "reference_open",
+            "endpoint": "endpoint_shift_equal",
+        }[change]
+        rows[0][key] = False if change in {"open_flag", "endpoint"} else "foreign"
+    raw = json.dumps({"pending": rows}).encode()
+    path = tmp_path / "inventory.json"
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    monkeypatch.setattr(cli, "NOV03_INVENTORY_SHA256", hashlib.sha256(raw).hexdigest())
+    if change == "raw_sha":
+        path.write_bytes(raw + b" ")
+    if change is None:
+        assert cli.frozen_scope(path, incident=cli.NOV03_VERSION) == tuple(
+            sorted(cli.NOV03_BINDINGS)
+        )
+    else:
+        with pytest.raises(ValueError):
+            cli.frozen_scope(path, incident=cli.NOV03_VERSION)

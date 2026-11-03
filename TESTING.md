@@ -2370,3 +2370,7 @@ PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过�
 `tests/unit/htdy_execution/test_replay_digest.py`覆盖原codec逐状态摘要/检查点字节一致性、Decimal scale/负零/时区偏移、
 追加tuple身份、上下文变化、可变值与预算回退、异常/嵌套/跨线程隔离，以及SQLite命令、effects、chain、恢复模式和projection篡改拒绝。
 性能验证使用原账本的只读一致性副本，须统计真实reducer次数并与旧实现比较完整checkpoint和数据库SHA；不得以跳过命令或projection替代重放。
+
+20261103 HTDY精确11流恢复另验证`test_htdy_eleven_conflict_scope.py`及同组`test_htdy_conflict_postgres.py`：
+原3/48流入口不变，mixed generation/5OPEN、未选流保持、精确inventory与旧revision/capture/checkpoint/tradeID漂移拒绝，
+以及真实旧退休→后继capture/calculation→二次退休的typed proof并集、旧proof篡改拒绝。生产执行仍需新鲜原生source/停止写入围栏和单次attempt，测试不替代恢复读回。
