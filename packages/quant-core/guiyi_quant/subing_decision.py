@@ -18,6 +18,8 @@ from .indicators.subing_conditions import EntryWindow, observe_entry
 VERSION = 'subing_jm30_decision_v6'
 RESEARCH_VERSION = VERSION + '_parameter_stability_v1'
 RISK_RESEARCH_VERSION = VERSION + '_risk_stability_v1'
+REGIME_RESEARCH_VERSION = VERSION + '_regime_add_v1'
+REGIME_PROFILE = 'same_direction_fresh_pullback_v1'
 # (round loss, daily loss, maximum margin fraction, add-price protection).
 RISK_RESEARCH_PROFILES = MappingProxyType({
     'round1500': (Decimal('1500'), Decimal('5000'), Decimal('.70'), True),
@@ -126,7 +128,7 @@ def daily_allows(direction, side):
 
 
 class DecisionModel:
-    def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None, risk_research_profile: str | None = None):
+    def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None, risk_research_profile: str | None = None, regime_research_profile: str | None = None):
         if not isinstance(contract, str) or not re.fullmatch(r'(JM|MA|TA)[0-9]{4}', contract):
             raise ValueError('CONTRACT_INVALID')
         if not isinstance(run_id, str) or not run_id.strip():
@@ -139,11 +141,21 @@ class DecisionModel:
             raise ValueError('RESEARCH_PROFILE_COMBINATION_UNSUPPORTED')
         if not contract.startswith('JM') and (research_profile is not None or risk_research_profile is not None):
             raise ValueError('CROSS_PRODUCT_PARAMETER_SEARCH_UNSUPPORTED')
+        if regime_research_profile is not None:
+            if regime_research_profile != REGIME_PROFILE or not contract.startswith('JM'):
+                raise ValueError('REGIME_RESEARCH_PROFILE_INVALID')
+            if research_profile is not None or risk_research_profile is not None:
+                raise ValueError('RESEARCH_PROFILE_COMBINATION_UNSUPPORTED')
+        self.regime_research_profile = regime_research_profile
+        self.regime = 'UNKNOWN'
+        self.regime_since = None
         self.risk_research_profile = risk_research_profile
         self.add_protection = RISK_RESEARCH_PROFILES.get(risk_research_profile, (Decimal('2000'), Decimal('5000'), Decimal('.70'), True))[3]
         self.research_profile = research_profile
         self.window_age, self.stop_buffer, self.target_r = RESEARCH_PROFILES.get(research_profile, (5, Decimal('13'), Decimal('1')))
         self.version = RISK_RESEARCH_VERSION if risk_research_profile is not None else RESEARCH_VERSION if research_profile is not None else VERSION
+        if regime_research_profile is not None:
+            self.version = REGIME_RESEARCH_VERSION
         self.version = _contract_version(self.version, contract)
         self.profit_reason = 'PROFIT_1R' if self.target_r == 1 else 'PROFIT_' + str(self.target_r).replace('.', '_') + 'R'
         self.contract, self.run_id = contract, run_id
@@ -178,12 +190,18 @@ class DecisionModel:
         self.events, self.results, self.fingerprints = [], {}, {}
 
     def _research_fields(self):
+        if self.regime_research_profile is not None:
+            return {'regime_research_profile': self.regime_research_profile}
         if self.risk_research_profile is not None:
             return {'risk_research_profile': self.risk_research_profile}
         return {'research_profile': self.research_profile} if self.research_profile is not None else {}
 
+    def regime_allows_add(self, side):
+        return self.regime_research_profile is None or self.regime == ('TREND_UP' if side == 'LONG' else 'TREND_DOWN')
+
     def state(self):
         return _wire(dict(contract=self.contract, run_id=self.run_id, version=self.version, **self._research_fields(),
+            **(dict(regime=self.regime, regime_since=self.regime_since) if self.regime_research_profile is not None else {}),
             layers=self.layers, quantity=len(self.layers), pending=self.pending,
             clear_reasons=self.clear_reasons, exit_layers=self.exit_layers,
             side=self.side, last_flat_at=self.last_flat_at, latest_frame=self.latest_frame, latest_frame_at=self.latest_frame_at,
@@ -262,7 +280,7 @@ class DecisionModel:
         raw = e['m30']
         m = raw
         if m is not None:
-            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective volume_tier below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated ema21 low ' + SHORT_FIELDS)
+            _fields(m, 'near_zero_golden minute_angle above_ema volume_effective volume_tier below_previous_low high_death below_ema qualified_pullback pullback_high pullback_invalidated ema21 low ' + SHORT_FIELDS + (' regime' if self.regime_research_profile is not None else ''))
             for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'):
                 _flag(m[key], nullable=True)
             for key in ('near_zero_death', 'low_golden', 'above_previous_high', 'qualified_rebound'):
@@ -281,6 +299,13 @@ class DecisionModel:
             high = _number(m['pullback_high'], nullable=True, positive=True)
             if m['qualified_pullback'] is True and high is None:
                 raise ValueError('PULLBACK_HIGH_MISSING')
+        if raw is not None and self.regime_research_profile is not None:
+            if raw['regime'] not in ('TREND_UP', 'TREND_DOWN', 'RANGE', 'UNKNOWN'):
+                raise ValueError('REGIME_INVALID')
+            if raw['regime'] != self.regime:
+                self.regime_since = at
+                self.pullback = None
+            self.regime = raw['regime']
         if raw is not None:
             self.latest_frame, self.latest_frame_at = deepcopy(raw), at
         side = self.side or (self.pending['side'] if self.pending else candidate_side(self.latest_frame))
@@ -382,7 +407,7 @@ class DecisionModel:
                     list(dict.fromkeys(self.pending['reasons'] + ([self.profit_reason] if self.profit_targets else []) + (['ADD_PROTECTION'] if protected else []))))
                 replacement['supersedes_decision_id'] = superseded
                 actions.append(replacement)
-            if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and (reduction_trigger or profit_trigger or base_net is None or base_net <= 0 or sign * (close - self.pending['breakout_level']) <= 0)) or e['day_end_window'] or not daily_allows(e['daily_direction'], side) or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
+            if self.pending['kind'] in ('OPEN', 'ADD') and (exit_now or (self.pending['kind'] == 'ADD' and (not self.regime_allows_add(side) or reduction_trigger or profit_trigger or base_net is None or base_net <= 0 or sign * (close - self.pending['breakout_level']) <= 0)) or e['day_end_window'] or not daily_allows(e['daily_direction'], side) or not e['reconciled'] or not self.technical_ready or e['admission'] is not True or e['round_loss'] is not False or e['day_loss'] is not False):
                 if not self.pending['cancel_requested']:
                     self.pending['cancel_requested'] = True
                     actions.append(dict(kind='CANCEL', decision_id=self.pending['decision_id'], reason='OPENING_NO_LONGER_ALLOWED'))
@@ -428,6 +453,8 @@ class DecisionModel:
                 action['initial_stop'] = stop
                 actions.append(action)
         elif breakout:
+            if not self.regime_allows_add(side):
+                blocked.append('REGIME_NOT_SAME_DIRECTION')
             if base_net is None or base_net <= 0:
                 blocked.append('BASE_NET_NOT_POSITIVE')
             if profit_trigger:
@@ -445,7 +472,7 @@ class DecisionModel:
                 self.pending['breakout_level'] = breakout_high
                 action['breakout_level'] = breakout_high
                 actions.append(action)
-        if m and self.layers and not exit_now and not reduction_trigger and not profit_trigger and self.technical_ready and m['qualified_pullback'] is True:
+        if m and self.layers and not exit_now and not reduction_trigger and not profit_trigger and self.technical_ready and m['qualified_pullback'] is True and self.regime_allows_add(side) and (self.regime_research_profile is None or (self.regime_since is not None and at > self.regime_since)):
             threshold = self.reset_after or self.round_started_at
             if threshold is not None and at > threshold:
                 self.pullback = dict(at=at, level=high)
@@ -521,17 +548,18 @@ class DecisionModel:
 
     @classmethod
     def restore(cls, checkpoint):
-        extra = ''.join(' ' + name for name in ('research_profile', 'risk_research_profile') if type(checkpoint) is dict and name in checkpoint)
+        extra = ''.join(' ' + name for name in ('research_profile', 'risk_research_profile', 'regime_research_profile') if type(checkpoint) is dict and name in checkpoint)
         _fields(checkpoint, 'version contract run_id events sha256' + extra)
         payload = {k: v for k, v in checkpoint.items() if k != 'sha256'}
         parameter = checkpoint.get('research_profile')
         risk = checkpoint.get('risk_research_profile')
-        expected_version = RISK_RESEARCH_VERSION if risk is not None else RESEARCH_VERSION if parameter is not None else VERSION
+        regime = checkpoint.get('regime_research_profile')
+        expected_version = REGIME_RESEARCH_VERSION if regime is not None else RISK_RESEARCH_VERSION if risk is not None else RESEARCH_VERSION if parameter is not None else VERSION
         expected_version = _contract_version(expected_version, checkpoint['contract'])
         if (any(checkpoint[k] is None for k in extra.split()) or checkpoint['version'] != expected_version
                 or _digest(payload) != checkpoint['sha256'] or type(checkpoint['events']) is not list):
             raise ValueError('CHECKPOINT_INVALID')
-        model = cls(checkpoint['contract'], checkpoint['run_id'], research_profile=parameter, risk_research_profile=risk)
+        model = cls(checkpoint['contract'], checkpoint['run_id'], research_profile=parameter, risk_research_profile=risk, regime_research_profile=regime)
         for event in checkpoint['events']:
             model.apply(event)
         return model

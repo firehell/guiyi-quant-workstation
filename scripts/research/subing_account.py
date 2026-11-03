@@ -45,7 +45,7 @@ def select_facts(raw, bars):
     return selected
 
 
-def observations(bars, factor_rows, sessions):
+def observations(bars, factor_rows, sessions, *, include_range=False):
     daily = [r for r in factor_rows if r['frequency'] == '1d']
     times = [datetime.fromisoformat(r['time']) for r in daily]
     m30 = {datetime.fromisoformat(r['time']): r for r in factor_rows if r['frequency'] == '30m' and r['owned']}
@@ -73,6 +73,8 @@ def observations(bars, factor_rows, sessions):
                 below_ema=p['below_ema'], qualified_pullback=pullback['qualified_hold'],
                 pullback_high=str(pullback['armed_high']) if pullback['qualified_hold'] else None,
                 pullback_invalidated=p['above_ema'] is not True or r['direction'] in ('DOWN', 'UNKNOWN'))
+        if frame is not None and include_range:
+            frame['regime'] = r['range_factor']['regime']
         local = b.bar_end.astimezone(SHANGHAI)
         day_end = max(w.end for w in sessions[b.trading_day])
         in_end = local.date() == b.trading_day and local.time() >= time(14, 50) and b.bar_end <= day_end
@@ -84,13 +86,13 @@ def observations(bars, factor_rows, sessions):
     return result
 
 
-def load(market, raw_facts, since, through, *, factor_research_profile=None, product="jm"):
+def load(market, raw_facts, since, through, *, factor_research_profile=None, product="jm", include_range=False):
     if product not in ('jm', 'ma', 'ta'):
         raise NewSubingInputError('RESEARCH_PRODUCT_UNSUPPORTED')
     if since > through:
         raise NewSubingInputError('REQUEST_WINDOW_INVALID')
     owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol=product, since=since, through=through)
-    factors = load_factors(market, since, through, include_joint=True, research_profile=factor_research_profile, product=product)
+    factors = load_factors(market, since, through, include_joint=True, research_profile=factor_research_profile, product=product, include_range=include_range)
     segments, sources, sessions = [], [], {}
     for owner in owners:
         start, end = max(since, owner.start_trading_day), min(through, owner.end_trading_day)
@@ -123,7 +125,9 @@ def load(market, raw_facts, since, through, *, factor_research_profile=None, pro
         executions, facts_hash = load_execution_facts(selected, product=product, bars=bars)
         rows = [r for r in factors['rows'] if r['contract'] == owner.contract]
         segments.append(dict(contract=owner.contract, since=str(start), through=str(end), executions=executions,
-            observations=observations(bars, rows, sessions), facts_hash=facts_hash))
+            observations=observations(bars, rows, sessions, include_range=include_range), facts_hash=facts_hash))
+        if include_range:
+            segments[-1]['range_context'] = [dict(time=r['time'], frequency=r['frequency'], owned=r['owned'], range_factor=r['range_factor']) for r in rows]
         sources.append(dict(contract=owner.contract, frequency='1m', cutoff=cutoff, source=before,
             count=len(bars), bars_hash=payload_hash([asdict(b) for b in bars])))
     for s in [*factors['sources'], *sources]:

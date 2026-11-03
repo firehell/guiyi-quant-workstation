@@ -16,7 +16,7 @@ INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
 
 
-def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1, execution_model: str = 'completed_close', research_profile: str | None = None, risk_research_profile: str | None = None) -> dict:
+def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int = 1, execution_model: str = 'completed_close', research_profile: str | None = None, risk_research_profile: str | None = None, regime_research_profile: str | None = None) -> dict:
     """Replay verified complete 1m input; observations contain no financial overrides.
 
     Historical confirmation is assumed at bar end. Fills use the strictly later
@@ -31,14 +31,14 @@ def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, d
         raise ValueError('ACCOUNT_SLIPPAGE_SCENARIO_INVALID')
     if execution_model not in ('completed_close', 'theoretical_open'):
         raise ValueError('ACCOUNT_EXECUTION_MODEL_INVALID')
-    if (research_profile is not None or risk_research_profile is not None) and execution_model != 'theoretical_open':
+    if (research_profile is not None or risk_research_profile is not None or regime_research_profile is not None) and execution_model != 'theoretical_open':
         raise ValueError('ACCOUNT_RESEARCH_PROFILE_REQUIRES_THEORETICAL_OPEN')
     with localcontext() as ctx:
         ctx.prec = 28
-        return _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile)
+        return _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile, regime_research_profile)
 
 
-def _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile):
+def _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile, regime_research_profile):
     at_open = execution_model == 'theoretical_open'
     if not executions:
         raise ValueError('ACCOUNT_INPUT_EMPTY')
@@ -46,7 +46,7 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
     product = executions[0].bar.product.lower()
     if product not in ('jm', 'ma', 'ta') or not contract.startswith(product.upper()):
         raise ValueError('ACCOUNT_PHYSICAL_IDENTITY_CHANGED')
-    model = DecisionModel(contract, run_id, research_profile=research_profile, risk_research_profile=risk_research_profile)
+    model = DecisionModel(contract, run_id, research_profile=research_profile, risk_research_profile=risk_research_profile, regime_research_profile=regime_research_profile)
     round_limit, day_limit, margin_fraction, _ = RISK_RESEARCH_PROFILES.get(risk_research_profile, (D('2000'), D('5000'), D('.70'), True))
     prior = None
     observation_ids = set()
@@ -153,6 +153,8 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
                 reject = 'OPENING_CONTEXT_CHANGED'
             elif opening and ((model.day_halted and model.day == b.trading_day) or not pre['admission']):
                 reject = 'OPENING_FINANCIAL_RECHECK'
+            elif pending['kind'] == 'ADD' and not model.regime_allows_add(side):
+                reject = 'REGIME_NOT_SAME_DIRECTION_AT_EXECUTION'
             elif pending['kind'] == 'ADD' and (pre['base_net'] is None or pre['base_net'] <= 0):
                 reject = 'BASE_NET_NOT_POSITIVE_AT_EXECUTION'
             elif pending['kind'] == 'ADD' and sign * (mark - pending['breakout_level']) <= 0:
@@ -238,6 +240,9 @@ def _replay(executions, observations, run_id, slippage_ticks, execution_model, r
     if risk_research_profile is not None:
         version += f'_risk_stability_v1_{risk_research_profile}'
         identity = dict(risk_research_profile=risk_research_profile, research_parameters=dict(round_loss_limit=round_limit, day_loss_limit=day_limit, margin_fraction=margin_fraction, add_protection=model.add_protection))
+    if regime_research_profile is not None:
+        version += '_regime_add_v1'
+        identity = dict(regime_research_profile=regime_research_profile)
     version = _contract_version(version, contract)
     return _wire(dict(version=version,contract=contract,run_id=run_id, **identity,
         status='OPEN' if layers else 'PENDING' if model.pending else 'COMPLETED',

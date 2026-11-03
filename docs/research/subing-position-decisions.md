@@ -95,3 +95,67 @@ TIER_2、TIER_3仍按v5规则：快涨/快跌选全部盈利加仓层最多2手�
 首档触发使用`PROFIT_1R_TIER1_CLEAR`持久全清义务，和已知风控原因并列；扩展已有减仓目标，取消未成交ADD，晚到加仓确认仍纳入后续全清。部分成交、未成交重试与检查点恢复不丢失退出义务。执行仍在严格后续可执行1m，不保证以1R目标价成交，也不保证每个加仓层盈利。
 
 UNKNOWN、ZERO_BASELINE（前根零量）、NOT_EXPANDED不能证明三档首仓政策，OPEN拒绝并记录`ENTRY_VOLUME_TIER_NOT_PROVEN`；不把零基数伪归第一档或第三档。原量能因子定义不变。v5检查点保留旧身份，不用v6恢复冒充历史。
+
+## 独立研究候选：v2 同向趋势加仓（2026-11-03）
+
+owner已确认八项组合选择。本候选使用 `subing_jm30_decision_v6_regime_add_v1`，
+显式profile `same_direction_fresh_pullback_v1`，只用于焦煤多空镜像的离线对照。
+默认v6、其他研究profile、跨品种迁移和正式Runtime均不切换；本候选禁止与参数或风险profile混搭。
+
+- 首仓仍用原联合条件，v2不增加首仓门槛。
+- 加仓要求最新已完成30m的固定 `subing_dynamic_range_v2` 与持仓同向：多头TREND_UP、空头TREND_DOWN。
+  RANGE、反向和UNKNOWN均禁止新增，并清除旧回踩资格。
+- 状态切换时记录确认时间。恢复同向趋势当根不重挂回踩，必须在严格后续完成30m新确认回踩／反弹；
+  此后仍须严格后续完成1m突破及原底仓盈利、风险、手数等条件。不补发暂停期间的旧机会。
+- 未成交ADD失去资格时申请取消，等待原确认流程；已成交仓位继续原退出规则。
+  现有ADD每次1手，部分成交保留原则不引入新的多手执行模型。
+- 震荡或反向不额外减仓、清仓，不阻断原退出义务。原优先级、止损、量档1R、日终规则不变。
+- 日线v2和箱体仅作环境标注，日线标注strict-before；60m本轮不引入新输入或Gate。
+
+研究加载器通过原MDS完整物理前缀，在既有趋势计算旁调用共享v2，不复制算法。
+候选30m frame携带regime；1m之间持有最近确认状态。理论开盘执行先处理此前已知决策，
+不能读取当前分钟末未来30m状态。非法枚举/缺字段拒绝，明确UNKNOWN禁加但不影响已知退出。
+状态、版本及profile进入checkpoint并通过事件重放恢复；默认结果不增加候选字段。
+
+复算入口：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/subing_regime_comparison.py --output output/<新的研究目录>
+```
+
+固定复用2024-10-14至2026-10-19七段焦煤输入和既有RQData执行事实，独立10万元物理账户，
+原费用、理论严格后续开盘1/2/3tick。先核对7个旧完成收盘基线和21个旧开盘基线逐字段一致，
+再完整回放21个候选；逐层复算费用、损益、事件顺序盯市回撤和checkpoint。
+只记录和比较已见开发样本，不重新宣称OOS。相同首仓规则不保证后续首仓路径不变：
+加仓改变账户、退出和风险状态。原有加仓在候选中缺席的旧损益仅用于归因，不冒充独立反事实收益。
+
+本轮结果：`output/subing-regime-add-20261103-001/report.md`，完成42组全路径回放、
+28个旧完整基线逐字段一致及21份候选checkpoint精确恢复。七段来源和原执行事实一致。
+结果是独立物理账户净额合计，不能除以单个10万元当作连续组合收益率。
+
+|滑点|原净额合计|候选净额合计|改善|原/候选加仓数|原/候选最差单段收盘盯市回撤|
+|---|---:|---:|---:|---:|---:|
+|1tick|29668.833|30274.698|605.865|22 / 15|8.647% / 8.486%|
+|2tick|20818.743|21784.614|965.871|22 / 15|9.122% / 8.902%|
+|3tick|13693.158|15064.338|1371.180|23 / 15|9.863% / 9.584%|
+
+每档均为JM2505、JM2605、JM2609改善，其余四段不变；改善并非七段普遍出现。
+1tick缺席的7次原加仓均净亏，合计-605.865元；原/候选已闭合加仓净贡献为772.542/1378.407元。
+该样本未发现缺席的盈利加仓，但不能保证未来不丢失盈利机会。3tick候选加仓净贡献仍为-1591.812元，
+并没有消除成本敏感性。保留独立研究候选，不替换默认v6，不修改已结束的v2学习研究。
+
+最终定向验证入口：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_decision tests/unit/subing_account tests/unit/subing_range tests/unit/subing_trend tests/unit/subing_conditions tests/unit/subing_price tests/unit/subing_volume tests/unit/subing_macd services/quant-api/tests/test_dynamic_range.py
+```
+
+实跑468 passed、1 skipped（正式服务虚拟环境无可选Torch，既有学习模型测试跳过；本候选不使用Torch）。
+新增覆盖同向准入、UNKNOWN、恢复后新资格、取消未成交加仓、镜像做空、退出不受阻、
+checkpoint、理论开盘不得读取当前分钟末未来状态及日线标注strict-before。
+
+独立Review无阻塞问题：另从原facts复算42结果、1002870根完成观察、1256笔成交，
+费用、方向损益、逐事件layer_nets/remaining_net、现金权益、最大收盘盯市回撤及加仓贡献均匹配。
+21候选全部57个ADD申请满足同向状态、回踩确认严格晚于趋势恢复、申请严格晚于回踩；
+成交与申请关联核验通过。脚本和读回结果保留在研究目录`independent-review.py/.txt`。
+研究代码可集成develop，默认策略及正式运行不切换；OOS与真实成交仍未证明。
