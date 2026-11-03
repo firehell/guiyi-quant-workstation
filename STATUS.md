@@ -1,3 +1,7 @@
+11/3 18:08 开盘前检查与v1.16.74修复准备：原生普通许可/账户锚/60品种Session静态绑定实际通过，目标日20261104预算仍0/3且无block；日历推演20:58可连接、21:00交易，推演不当作Broker实证。实际8195份原生证据全解码0.028秒、费用相邻对扫描0.051秒，原账本完整重放5.494秒。机器AC供电、系统sleep=0、磁盘空间充足。
+已用隔离真实Supervisor/NativePortfolio/SettlementConfirmation/Host/SQLite复现两次合法慢结算响应合计超过30秒后旧snapshot接管失败。最小修复在结算成功后同连接完整refresh，重验账户/交易日、ownership、strategy事件并先保留，Session/correlation/attach/Host/latest_source统一使用新快照；确认至多一次、原30秒/预算/未知结果屏障不变。全部Supervisor770 passed及执行/人工host303 passed，独立Review与33项定向通过；API/Web构建、冻结依赖、版本及Ruff/diff通过，尚未运行此修复。
+只读发现目标日60条rank1均MAIN_CONTRACT_MAP_MISSING，45夜盘Session齐；既有Feed按开盘前30分钟准备目标日，20:30实际准备及18:05盘后增量仍须现场读回，不把health当作数据已齐。另一清理聊天已将正式服务切到v73/gen56，但原40864b…cohort最终超时UNKNOWN，正用同代恢复；用户已授权协调，其余SimNow迁移/删树暂停，由本聊天统一夜盘修复部署。SimNow仍v72/PID32692/run945db906…、WAITING_SESSION/auto_order=true/hold=false/pending=true/opening=false，原账本和旧UNKNOWN不动；未连接Broker。
+
 11/3 16:45 v1.16.73修复准备：原生同代恢复的一秒窗口仅限制临时poll重试，不再错误拒绝耗时超过一秒但仍有效的完整身份/最终owner校验；保留总预算、Session与receiving时效，并在最终同一时刻重核全部owner≤30秒。慢身份、慢owner、跨总截止、末端owner过期/未来/缺失反例通过；cohort/forward/stopped/host/schema等七组342 passed、13项原有隔离PG条件跳过，Ruff/diff/secret零发现及API/Web构建和版本检查通过，独立Review通过。
 v72已正式发布main/tag/Release，十服务绑定已CAS至v72/gen55；原cohort7615…及第二阶段b943…最终ready超时均保留UNKNOWN，服务已安全停驻。已确认Feed在恢复过程中实际available=true、60品种、pending=0；本次补丁仅作正式恢复controller，后续仍恢复原v72/gen55，不另做版本CAS。原SimNow v69/PID29975仍held，候选v72已准备但未切换、未签发许可、夜盘预算0/3且无block；不得把部署或测试作为账户核对/自然交易成功。
 

@@ -100,6 +100,10 @@ START_REQUESTED以后不走此恢复分支。原intent/UNKNOWN及所有旧原件
 恢复的第二轮稳定Snapshot在账户归属及既有`validate_strategy_events`事件Session校验后、结算及Adapter构造前，
 通过原`Evidence.append`幂等保留；保留失败或结果未知仍阻断，不继续确认、构造或重试。保留原始来源不等于账户
 对账或接管成功，也不改变首份收益baseline；跨日资金连续性不足仍为`CASHFLOW_CONTINUITY_REQUIRED`。
+连续宿主的非observe恢复在结算成功后，同连接重新取得完整稳定Snapshot，再次验证账户/交易日、
+订单持仓归属与strategy事件并保留来源；Session、correlation、callback attach、Host和monitor均绑定该新快照。
+`ensure_settlement`复用同一连接的既有证明，只做幂等身份复核，不重复查询或确认。新读回失败、
+身份漂移、归属不明或保留失败仍阻断，不重登、不退款、不延长原30秒接管时限；独立人工/有界入口行为不变。
 原生driver依次区分`SESSION_CONSTRUCTION`、`ADAPTER_CONSTRUCTION`、`NATIVE_SNAPSHOT_CORRELATION`和
 `NATIVE_CALLBACK_ATTACH`。可选`native_adapter_preparation_v1`仅记录三个原生会话字段是否存在、整数/正数/
 非负/有符号32位等固定布尔分类，不记录字段值。它是诊断证据，本身不改变Session接受条件、发送屏障或恢复许可；

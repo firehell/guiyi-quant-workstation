@@ -107,7 +107,7 @@ def test_failed_preparation_retains_native_source_and_original_account_without_r
     assert len(drivers) == 1 and runtime.account_takeover_pending
     assert protected(folder) == before
     after = history(folder)
-    assert after[: len(originals)] == originals and len(after) == len(originals) + 1
+    assert after[: len(originals)] == originals and len(after) == len(originals) + 2
     assert after[-1][0] == read_snapshot(drivers[0].report).source_id
     assert not {"insert", "cancel"} & set(gateway.calls)
     assert "confirm" in gateway.calls
@@ -217,7 +217,7 @@ def test_successful_reconciliation_reuses_retained_source_once(tmp_path, monkeyp
     )
     runtime.run(max_cycles=1)
     after = history(folder)
-    assert witnessed[0] == (True, len(originals) + 1, len(originals) + 1)
+    assert witnessed[0] == (True, len(originals) + 2, len(originals) + 2)
     assert after[: len(originals)] == originals
     assert len(after) == len({row[0] for row in after})
     assert completed == [True]
