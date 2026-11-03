@@ -1,0 +1,388 @@
+{
+  "schema": "newow_public_audit_evidence_v1",
+  "observed_on": "2026-11-03 Asia/Shanghai",
+  "develop_commit": "8fb6128d9ceab9ffd3d494f638db69419e2952ff",
+  "working_tree_at_start": "clean",
+  "versions": {
+    "index": "3.4.51",
+    "detail": "3.4.49",
+    "position_kernel": "1.1.1"
+  },
+  "scope_excludes": [
+    "messages",
+    "push",
+    "screener",
+    "month_k",
+    "time_sharing_chart"
+  ],
+  "sources": [
+    {
+      "file": "index.html",
+      "url": "https://www.v8848.cn/index.html",
+      "exit": 0,
+      "sha256": "9c842b1ef73f491b9ff3a963141670dbb79cf1d7b0e2536130b6bc97e72f4c2b"
+    },
+    {
+      "file": "stock_detail.html",
+      "url": "https://www.v8848.cn/stock_detail.html?code=688702.SH",
+      "exit": 0,
+      "sha256": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb"
+    },
+    {
+      "file": "index--api-config.js",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+    },
+    {
+      "file": "index--api-shim.js",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+    },
+    {
+      "file": "index--strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+    },
+    {
+      "file": "index--position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+      "exit": 0,
+      "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036"
+    },
+    {
+      "file": "stock_detail--api-config.js",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+    },
+    {
+      "file": "stock_detail--api-shim.js",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+    },
+    {
+      "file": "stock_detail--strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+    },
+    {
+      "file": "stock_detail--composite-decision-v2.js",
+      "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2"
+    },
+    {
+      "file": "stock_detail--position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+      "exit": 0,
+      "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036"
+    },
+    {
+      "file": "stock_detail--trend-reversal-core.js",
+      "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80"
+    }
+  ],
+  "api": [
+    {
+      "file": "kline-day.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=day&strategy=huanglantai&startdate=2025-11-01&enddate=2026-11-03",
+      "exit": 0,
+      "status": "200",
+      "sha256": "7a0ddbcf1d417fba4fca294c291455217a647cd107711690c9b3f331bbeb6b15",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 32,
+      "rows": 243,
+      "first": "2025-11-03",
+      "last": "2026-11-03"
+    },
+    {
+      "file": "kline-week.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=week&strategy=huanglantai&startdate=2024-06-01&enddate=2026-11-03",
+      "exit": 0,
+      "status": "200",
+      "sha256": "542c3aea35715c6f5595053f730e59149dfc4bfac6d912bbe9dc48d4d291e59b",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 8,
+      "rows": 126,
+      "first": "2024-06-03",
+      "last": "2026-11-02"
+    },
+    {
+      "file": "kline-5min.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=5min&strategy=zhushenglang&startdate=2026-10-01&enddate=2026-11-03",
+      "exit": 0,
+      "status": "200",
+      "sha256": "2744479dd13c9a03694d81405879faa12c4101ce8741c348493ac540b21ecd34",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source",
+        "_filtered"
+      ],
+      "errorcode": 0,
+      "signals": 53,
+      "rows": 800,
+      "first": "2026-10-12 10:55:00",
+      "last": "2026-11-03 15:00:00"
+    },
+    {
+      "file": "batch.json",
+      "url": "https://www.v8848.cn/api/batch?codes=688702.SH",
+      "exit": 0,
+      "status": "200",
+      "sha256": "21deb49224cc0500bd670dc5f67fa74e1240b0c1a6350d9369acc1141c06695c",
+      "top_keys": [
+        "stocks",
+        "_source",
+        "signalStale",
+        "quoteAge"
+      ],
+      "errorcode": null,
+      "signals": 0,
+      "rows": 0,
+      "first": null,
+      "last": null
+    }
+  ],
+  "legacy_fallback_comparison": {
+    "cases": true,
+    "ma_sum_witness": true,
+    "window_witness": true,
+    "fusion_witness": true,
+    "fusion_order_witness": true,
+    "cdv2_cases": true
+  },
+  "legacy_fallback_not_trueup_parity": true,
+  "new_rules_witnesses": {
+    "page_source_sha256": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb",
+    "position_kernel_sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036",
+    "kernel_version": "1.1.1",
+    "defaults": {
+      "volK": 1.5,
+      "doubt": false,
+      "volWeak": false,
+      "density": false
+    },
+    "menu_test5": true,
+    "test5_family": {
+      "family": true,
+      "hardStop": false,
+      "falseBreakMark": true
+    },
+    "false_breakout_cases": {
+      "true_up": [
+        {
+          "kind": "true_up",
+          "i": 11,
+          "occur": 10,
+          "side": "up",
+          "B": 0.6545454545454544
+        }
+      ],
+      "false_up": [
+        {
+          "kind": "false_up",
+          "i": 11,
+          "occur": 10,
+          "side": "up",
+          "B": 0.6545454545454544
+        }
+      ],
+      "true_down": [
+        {
+          "kind": "true_down",
+          "i": 11,
+          "occur": 10,
+          "side": "down",
+          "B": 0.6545454545454544
+        }
+      ],
+      "false_down": [
+        {
+          "kind": "false_down",
+          "i": 11,
+          "occur": 10,
+          "side": "down",
+          "B": 0.6545454545454544
+        }
+      ],
+      "pending_up": [
+        {
+          "kind": "pending",
+          "i": 11,
+          "occur": 11,
+          "side": "up",
+          "B": 0.6499999999999999
+        }
+      ],
+      "pending_down": [
+        {
+          "kind": "pending",
+          "i": 11,
+          "occur": 11,
+          "side": "down",
+          "B": 0.6499999999999999
+        }
+      ],
+      "wick": [
+        {
+          "kind": "fake_up_ib",
+          "i": 10,
+          "occur": 10,
+          "side": "up",
+          "B": 0.7636363636363636
+        },
+        {
+          "kind": "fake_dn_ib",
+          "i": 10,
+          "occur": 10,
+          "side": "down",
+          "B": 0.7636363636363636
+        }
+      ]
+    },
+    "regime_warmup_and_directions": {
+      "up": [
+        "unknown",
+        "up",
+        "up"
+      ],
+      "down": [
+        "unknown",
+        "down",
+        "down"
+      ],
+      "osc": [
+        "unknown",
+        "osc",
+        "osc"
+      ]
+    },
+    "kernel_witness": {
+      "legacy": [
+        {
+          "i": 10,
+          "price": 120,
+          "ref": 120,
+          "trueUp": null
+        }
+      ],
+      "trueup": [
+        {
+          "i": 12,
+          "price": 121,
+          "ref": 121,
+          "trueUp": true
+        }
+      ],
+      "falseup": [
+        {
+          "i": 11,
+          "price": 119,
+          "ref": 110,
+          "trueUp": false
+        }
+      ],
+      "note": "source text calls false-breakout clear limit at L, event price actually current high"
+    },
+    "display_digits": [
+      3,
+      3,
+      2,
+      1,
+      0
+    ],
+    "home_readiness": [
+      false,
+      false,
+      true,
+      false,
+      true
+    ],
+    "function_hashes": {
+      "_fbComputeLevels": "aff19bc8bc1cb5e88b1a5fcd7e3840c57331665db8a9df9b69a04b2462a270ff",
+      "computeFalseBreakoutEvents": "dbc8fdb99551c3de69062ec1c094900c5372254c8f30fe5540c0bdb46d66660f",
+      "computeRegimeSeries": "eb470516ec52e138387b6f557080b5144bd9d7dde941a6becb0e3e5ac8c3beea",
+      "priceDigits": "3b58c103b01f55009cc8a210daa7ce55d7d55eb8e0d759d9a9850df9d0f90c62",
+      "_isOscFamily": "3bef203a60544d61262618f33b7d34bb7728e042a6bf60bac1e7a143bfa9072b",
+      "_isOscTest": "868a8d654200692028d436038fc1327b8f3ebc1b3f46b9f52b0d1506e8038612",
+      "_isOscFalseBreakMark": "7bf4bdd56d33d48ae8b3bfd75db10b2ea973e5421caed97407d9421b50925358"
+    },
+    "limitations": [
+      "Isolated synthetic source witnesses, not live UI or market/OOS proof",
+      "kernel_detail enabled/disabled are distinct paths; user persistent flag not inspected",
+      "No message or notification APIs called"
+    ]
+  },
+  "browser_visual_status": "NO_TARGET_TAB_CREATE_TIMEOUT",
+  "current_delivered_not_gaps": [
+    "oscillation breakdown",
+    "cross-strategy main-rise J",
+    "trend reversal badge",
+    "completed caution anchor",
+    "historical path",
+    "six frequencies v35",
+    "four home sorting columns",
+    "limited historical PC visual acceptance"
+  ],
+  "new_gaps": [
+    "gated trueup trading semantics",
+    "test5 and false-breakout A/B display layer",
+    "regime disclosure",
+    "new display preferences and precision review"
+  ],
+  "checks": {
+    "web_passed": 197,
+    "web_failed": 0,
+    "web_skipped": 0,
+    "web_heap_mb": 384,
+    "web_concurrency": 1,
+    "engineering_passed": 28,
+    "engineering_failed": 1,
+    "baseline_failure": {
+      "test": "test_active_market_route_inventory_is_exact_and_uniquely_owned",
+      "actual": 22,
+      "expected": 21,
+      "extra": "GET /api/v1/market/indicators/dynamic-range",
+      "unrelated_code_changed": false
+    },
+    "manual_links_and_fences": "passed",
+    "unique_current_anchors": "passed",
+    "source_api_hashes_verified": 16,
+    "secret_findings": 0,
+    "diff_check": "passed"
+  },
+  "limitations": [
+    "Public HTML enables kernel_index but not kernel_detail; no persistent user flag inspected or changed.",
+    "Fallback oracle parity does not establish trueup parity; kernel witnesses show different CLEAR bars/prices.",
+    "Public shape algorithm and position kernel have distinct ATR/buffer/comparison rules.",
+    "No live DOM, screenshot, private messages/account, notifications or icon-states POST.",
+    "No strategy implementation, production data, Runtime, release or trading changes."
+  ],
+  "derived_price_quantization_risk": "Source assigns rounded target/absorb numeric fields; unchanged path/decision code does not prove unchanged inputs.",
+  "validation_commands": {
+    "web": "NODE_OPTIONS=--max-old-space-size=384 NEWOW_PUBLIC_SOURCE=/private/tmp/newow-check-20261103/stock_detail.html node --test --test-concurrency=1 tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
+    "engineering": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py",
+    "source": "Temporary source-bound core-oracle.mjs (legacy fallback only), and new-rules.mjs for pure A/B, regime, priceDigits/readiness and UMD kernel none/trueup witnesses; no original fixtures modified."
+  }
+}
