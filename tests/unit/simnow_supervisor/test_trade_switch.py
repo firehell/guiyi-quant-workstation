@@ -93,7 +93,7 @@ class Backend:
     def snapshot(self):
         return copy.deepcopy(self.value)
 
-    def stop(self, pid):
+    def stop(self, pid, **kwargs):
         self.calls.append("stop")
 
     def stopped(self, s):

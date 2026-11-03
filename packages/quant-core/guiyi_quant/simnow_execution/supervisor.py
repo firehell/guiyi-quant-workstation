@@ -457,6 +457,18 @@ class Supervisor:
             install_guard(lambda: preparation_recovery.validate_connection(
                 recovery_window, self.now(), lambda: self._preparation_authority(day), clock=self.now
             ))
+        elif ordinary_window and self.account_recovery_hold:
+            install_guard = getattr(self.driver, "set_pre_native_guard", None)
+            if not callable(install_guard):
+                raise ValueError("ORDINARY_TAKEOVER_INVALID")
+
+            def check_ordinary_native_boundary():
+                ordinary_takeover.validate_connection(
+                    ordinary_window, self.now(), lambda: self._ordinary_authority(day)
+                )
+                ordinary_takeover.connection_time(ordinary_window, self.now())
+
+            install_guard(check_ordinary_native_boundary)
         self.driver.connect()
         self.prepare(day)
         self.retry_after = self.now() + timedelta(seconds=30 * attempt)

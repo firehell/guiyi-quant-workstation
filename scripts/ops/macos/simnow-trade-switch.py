@@ -888,7 +888,7 @@ class Coordinator:
                 self._phase("STOP_REQUESTED")
                 if not plan["created_at"] <= self.clock() <= plan["expires_at"]:
                     fail("PLAN_EXPIRED")
-                self.backend.stop(snapshot["host"]["pid"])
+                self.backend.stop(snapshot["host"]["pid"], expires_at=plan["expires_at"], clock=self.clock)
                 deadline = self.clock() + 35
                 while not self.backend.stopped(snapshot):
                     if self.clock() >= deadline:
@@ -958,6 +958,12 @@ class Coordinator:
                 fail("READBACK_UNPROVEN")
             if snapshot["account"].get("account_takeover_pending", False) and (
                 proof.get("account_takeover_pending") is not True
+                or proof.get("opening_enabled") is not False
+            ):
+                fail("READBACK_UNPROVEN")
+            if snapshot["account"].get("account_recovery_hold", False) and (
+                proof.get("account_recovery_hold") is not True
+                or proof.get("auto_order") is not False
                 or proof.get("opening_enabled") is not False
             ):
                 fail("READBACK_UNPROVEN")
@@ -1432,6 +1438,11 @@ class MacBackend:
                 fail("PREIMAGE_CHANGED")
             if (
                 control.get("status") != "STOPPED"
+                or control.get("account_recovery_hold", False)
+                    != stopped_snapshot["host"].get("account_recovery_hold", False)
+                or stopped_snapshot["host"].get("account_recovery_hold", False) and (
+                    control.get("account_recovery_hold") is not True
+                    or control.get("auto_order") is not False)
                 or control.get("mode") != stopped_snapshot["host"]["mode"]
                 or control.get("opening_enabled") is not False
                 or control.get("run_id") != stopped_snapshot["host"]["run_id"]
@@ -1587,6 +1598,7 @@ class MacBackend:
             db.close()
         return dict(
             account_takeover_pending=pending,
+            account_recovery_hold=getattr(self.settings, "account_recovery_hold", False),
             native_account_verified=not pending,
             local_obligations_clear=True,
             ledger_hash=state_digest(projection),
@@ -1621,8 +1633,13 @@ class MacBackend:
 
     def release_identity(self, root):
         root = Path(root)
-        tag = root.name.removeprefix("release-")
-        if root.resolve() != root or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag):
+        if root.resolve() != root:
+            fail("CANDIDATE_UNPROVEN")
+        described = self.run(["/usr/bin/git", "-C", root, "describe", "--exact-match", "--tags", "HEAD"])
+        tag = described.stdout.strip()
+        branch = self.run(["/usr/bin/git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"])
+        if (described.returncode or branch.returncode or branch.stdout.strip() != "HEAD"
+            or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag)):
             fail("CANDIDATE_UNPROVEN")
         result = self.run(["/usr/bin/git", "-C", root, "rev-parse", tag + "^{}"])
         if result.returncode or not re.fullmatch(
@@ -1668,6 +1685,11 @@ class MacBackend:
         old = private(Path(args[args.index("--config") + 1]))
         old_cfg = json.loads(old.read_bytes())
         monitor_cfg = json.loads(private(self.monitor).read_bytes())
+        old_hold = old_cfg.get("account_recovery_hold", False)
+        new_hold = self.cfg.get("account_recovery_hold", False)
+        if (type(old_hold) is not bool or type(new_hold) is not bool
+            or old_hold and not new_hold):
+            fail("CANDIDATE_UNPROVEN")
         if (
             monitor_cfg.get("schema") != 2
             or monitor_cfg.get("mode") != "observe"
@@ -1701,6 +1723,7 @@ class MacBackend:
             fail("PREIMAGE_CHANGED")
         self.old_config = old
         self.old_mode = old_cfg["mode"]
+        self._old_recovery_hold = old_hold
         return {
             "monitor_target_sha256": hashlib.sha256(self.monitor_source()).hexdigest()
             if getattr(self.settings, "account_takeover_pending", False)
@@ -1722,6 +1745,17 @@ class MacBackend:
             "old_plist": self.identity(self.plist),
             "monitor": self.identity(self.monitor),
         }
+
+    def _source_hold(self, control):
+        held = control.get("account_recovery_hold", False)
+        if type(held) is not bool or getattr(self, "_old_recovery_hold", False) and not held:
+            fail("HOST_UNPROVEN")
+        if held and not getattr(self.settings, "account_recovery_hold", False):
+            fail("CANDIDATE_UNPROVEN")
+        if held and (control.get("auto_order") is not False
+                     or control.get("opening_enabled") is not False):
+            fail("HOST_UNPROVEN")
+        return held
 
     def code_check(self):
         exact = self.exact
@@ -1808,6 +1842,7 @@ class MacBackend:
                 for p in self.locks
             ],
         )
+        source_hold = self._source_hold(control)
         historical_anchor = (
             self._historical_anchor() if getattr(self, "ordinary", False) else None
         )
@@ -1878,6 +1913,7 @@ class MacBackend:
             ),
             account=account,
             host=dict(
+                account_recovery_hold=source_hold,
                 label=LABEL,
                 mode=getattr(self, "old_mode", "observe"),
                 unique=True,
@@ -1985,7 +2021,7 @@ class MacBackend:
                 old_config_path=str(self.old_config),
             )
 
-    def stop(self, pid):
+    def stop(self, pid, *, expires_at=None, clock=time.time):
         self._prove(pid, getattr(self, "old_mode", "observe"), self.old_config)
         # Observe may reconnect while plan/preflight runs. A last budget/block or
         # queue change must be noticed before sending the cooperative stop.
@@ -2013,6 +2049,8 @@ class MacBackend:
             and self._historical_anchor() != self._stop_historical_anchor
         ):
             fail("PREIMAGE_CHANGED")
+        if expires_at is not None and not clock() < expires_at:
+            fail("PLAN_EXPIRED")
         os.kill(pid, signal.SIGTERM)
 
     def stopped(self, snapshot):
@@ -2510,8 +2548,16 @@ class MacBackend:
             )
         ):
             fail("READBACK_UNPROVEN")
+        if getattr(self.settings, "account_recovery_hold", False) and (
+            final_status.get("account_recovery_hold") is not True
+            or final_status.get("auto_order") is not False
+            or final_status.get("opening_enabled") is not False
+        ):
+            fail("READBACK_UNPROVEN")
         return dict(
             verified=True,
+            account_recovery_hold=final_status.get("account_recovery_hold", False),
+            auto_order=final_status.get("auto_order"),
             account_takeover_pending=final_status.get(
                 "account_takeover_pending", False
             ),
