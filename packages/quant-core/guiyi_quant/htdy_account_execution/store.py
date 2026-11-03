@@ -352,13 +352,14 @@ class LocalStore:
 
     def replay(self):
         """Rebuild and compare every accepted command/effect/hash, without side effects."""
-        with self._mutex:
+        with self._mutex, codec.replay_digests():
             row = self._conn.execute(
                 "SELECT value FROM metadata WHERE key=?", ("initial",)
             ).fetchone()
             if row is None:
                 raise StoreError("INITIAL_STATE_MISSING")
             state = codec.load(row[0])
+            state_hash = codec.digest(state)
             for expected_sequence, row in enumerate(
                 self._conn.execute(
                     "SELECT sequence,command_id,command_hash,command_payload,effects_payload,before_hash,after_hash,recovery_mode FROM commands ORDER BY sequence"
@@ -379,7 +380,7 @@ class LocalStore:
                 if (
                     sequence != expected_sequence
                     or codec.digest(command) != command_hash
-                    or codec.digest(state) != before
+                    or state_hash != before
                 ):
                     raise StoreError("JOURNAL_CHAIN_INVALID")
                 if (
@@ -409,10 +410,12 @@ class LocalStore:
                     else state
                 )
                 tx = apply(execution_state, key, command)
+                after_hash = codec.digest(tx.state)
                 if (
                     codec.json_text(codec.encode(tx.effects)) != effects
-                    or codec.digest(tx.state) != after
+                    or after_hash != after
                 ):
                     raise StoreError("JOURNAL_RESULT_INVALID")
                 state = tx.state
+                state_hash = after_hash
             return state

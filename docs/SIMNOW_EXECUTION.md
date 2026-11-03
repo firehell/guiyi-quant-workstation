@@ -702,3 +702,10 @@ UNKNOWN、交易日冲突、缺失边界、未决义务或不足20秒查询余�
 规范路径/账户/线程、文件身份及完整SHA必须一致，每次四库权限、header、owner和scope查询仍执行。
 作用域出口再次证明账本字节不变，漂移立即拒绝，异常清除作用域；不同snapshot、plan/apply或停止后
 核验不共享结果。SDK子进程及默认公开预检仍完整验证。该优化不改变60秒计划TTL或任何账户恢复门禁。
+
+完整账户重放的摘要优化仅限一次同步replay：仍逐行执行reducer并核对command、sequence、
+effects、前后hash、recovery_mode和最终projection；上一条实际计算并已核对的after hash作为下一条before。
+State字段的原codec序列化字节仅对深度不可变的精确模型/原生类型按对象身份复用，追加tuple须逐成员身份相同；
+Decimal表现上下文变化时失效。缓存最多16MiB、每字段只保留当前片段、按线程隔离，退出和异常清除；
+可变或未知类型、异常及超限回退原整State路径。公开encode/checkpoint和历史hash字节不变，不信任projection替代重放，
+不放宽45秒SDK检查、8秒状态或30秒账户新鲜度边界。
