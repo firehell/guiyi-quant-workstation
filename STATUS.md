@@ -1,3 +1,6 @@
+11/3 v1.16.72发布内容：仅纳入同一SimNow模拟账户的signed32策略成交V2及显式owner自动执行接管；旧V1/policy/codec字节与历史重放保留。解除hold须计划与apply均显式--enable-auto-order并绑定preimage/hash，默认held迁移不变；原账户/四库/profile/SDK/60范围及普通预算、旧block/UNKNOWN不改。源HELD或正常收盘WAITING须完整未决义务及当前run无failure，SIGTERM前/STOPPED后复核；目标pending且opening=false，只有同连接新鲜账户Recover/complete_takeover完成才可执行。所有活动ordinary在实际SDK connector前复核窗口，含非held。
+验证：扩展1283 passed；后续目录扫描加固及真实不可读/EIO反例定向158 passed，最新两个新文件44 passed；正负Session完整Supervisor→V2成交→MonitorReader闭环4 passed；真实SDK结构零nativeAPI/零凭据/零请求及34 smoke通过，独立Review通过。V2新成交必须先同步正式API读者，不能只迁SimNow；现役仍十服务v71/gen54、SimNow v69 held。owner要求15:00全品种收盘后才处理切换，当前无服务/配置/预算或Broker变更。本文是发布内容和验证说明，实际发布、Runtime切换、连接恢复及自然订单/成交分别以现场读回为准。
+
 11/3 v1.16.71发布范围：从正式v70仅增加20261103精确HTDY上下文冲突恢复profile，不包含其他develop研究。固定inventorySHA cc5e1c27…及11个旧revision/capture/checkpoint、3个gen1+8个gen2和5OPEN tradeID；旧48/3入口不变。新incident只用完整typed proof并集排除先前已退休投递，坏proof继续阻断。真实原生MDS只读来源核验11/11通过，变化值匹配物理Canonical及RQData1m/派生60m publication provenance，不下载/改写行情或观察。
 验证：定向及扩展206 passed，另12项真实隔离PostgreSQL全部通过；其中真实旧退休→后继capture/evaluate/commit→再次退休和旧proof篡改反例均通过，原件/5OPEN中断/无退出价和收益/不新增action/未选流/回滚均核验。扩展中2项readiness因无隔离URL跳过，已另在隔离PG2 passed补齐。隔离发布树108项回归及API/core/Web构建、版本与拓扑检查通过；独立代码/发布集成Review、Ruff、显式含未跟踪新测试的secret/diff通过。此处仅发布内容和验证，实际恢复、服务切换与新自然业务另以现场读回为准，不解除SimNow hold或预算。
 
