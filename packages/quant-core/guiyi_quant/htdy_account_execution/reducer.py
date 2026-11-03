@@ -171,7 +171,11 @@ def signal(state, cmd):
 
 
 def fill_follows_order(fill, order):
-    if type(fill) in (m.CorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV1):
+    if type(fill) in (
+        m.CorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV2,
+    ):
         return (
             fill.request_started_at >= order.created_at
             and fill.recorded_at >= fill.request_started_at
@@ -211,9 +215,9 @@ def apply_fill(state, cmd):
             raise ValueError("FILL_IDENTITY_CONFLICT")
         return state, "DUPLICATE_FILL"
     o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
-    if type(cmd) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(
-        state, o
-    ):
+    if type(cmd) in (
+        m.StrategyCorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV2
+    ) and not strategy_order_proven(state, o):
         raise ValueError("STRATEGY_NATIVE_FILL_SIGNAL_REQUIRED")
     if type(cmd) is m.CorrelatedNativeFillV1 and (
         o is None
@@ -1077,6 +1081,7 @@ def validate(state):
                 m.NativeFill,
                 m.CorrelatedNativeFillV1,
                 m.StrategyCorrelatedNativeFillV1,
+                m.StrategyCorrelatedNativeFillV2,
             ),
         ),
         (state.updates, m.OrderUpdate),
@@ -1132,9 +1137,9 @@ def validate(state):
     filled = set()
     for f in state.fills:
         o = orders.get(f.order_id)
-        if type(f) is m.StrategyCorrelatedNativeFillV1 and not strategy_order_proven(
-            state, o
-        ):
+        if type(f) in (
+            m.StrategyCorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV2
+        ) and not strategy_order_proven(state, o):
             raise ValueError("ACCOUNT_FILL_REPLAY_INVALID")
         if type(f) is m.CorrelatedNativeFillV1 and (
             o is None
@@ -1208,6 +1213,7 @@ def apply(state, key, cmd):
         m.NativeFill,
         m.CorrelatedNativeFillV1,
         m.StrategyCorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV2,
         m.OrderUpdate,
         m.Readback,
         m.Recover,
@@ -1237,6 +1243,7 @@ def apply(state, key, cmd):
             m.NativeFill,
             m.CorrelatedNativeFillV1,
             m.StrategyCorrelatedNativeFillV1,
+            m.StrategyCorrelatedNativeFillV2,
         )
         else cmd.at
     )
@@ -1245,6 +1252,7 @@ def apply(state, key, cmd):
         m.NativeFill,
         m.CorrelatedNativeFillV1,
         m.StrategyCorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV2,
         m.OrderUpdate,
         m.Disconnect,
     ):
@@ -1285,6 +1293,7 @@ def apply(state, key, cmd):
         m.NativeFill,
         m.CorrelatedNativeFillV1,
         m.StrategyCorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV2,
     ):
         state, reason = apply_fill(state, cmd)
     elif type(cmd) is m.OrderUpdate:

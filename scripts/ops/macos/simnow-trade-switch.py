@@ -34,6 +34,7 @@ SCHEMA = "simnow_trade_switch_plan_v7"
 POLICY = "simnow_night_only_deployment_window_v1"
 MIDDAY_POLICY = "simnow_midday_deployment_window_v1"
 ORDINARY_POLICY = "simnow_ordinary_next_session_v2"
+AUTO_ORDER_ENABLE_POLICY = "simnow_owner_auto_order_enable_v1"
 LABEL = "com.guiyi.quant-simnow"
 CalendarFacts = namedtuple(
     "CalendarFacts", "trade_date is_trading_day has_night_session"
@@ -174,6 +175,18 @@ def validate_snapshot(s):
         ):
             fail("ACCOUNT_UNPROVEN")
         ordinary = s.get("ordinary_permit")
+        transition = (s["preimage"].get("auto_order_transition")
+                      if isinstance(s.get("preimage"), dict) else None)
+        dropping_hold = (s["host"].get("account_recovery_hold") is True
+                         and a.get("account_recovery_hold") is False)
+        if transition is not None:
+            if (transition != dict(policy=AUTO_ORDER_ENABLE_POLICY,
+                                   source_hold=True, target_hold=False)
+                or not dropping_hold or not ordinary
+                or s["host"].get("mode") != "trade"):
+                fail("CANDIDATE_UNPROVEN")
+        elif dropping_hold:
+            fail("CANDIDATE_UNPROVEN")
         if ordinary:
             anchor = s.get("historical_contract_anchor", {})
             if (
@@ -967,6 +980,14 @@ class Coordinator:
                 or proof.get("opening_enabled") is not False
             ):
                 fail("READBACK_UNPROVEN")
+            if (isinstance(snapshot["preimage"], dict)
+                and snapshot["preimage"].get("auto_order_transition")) and (
+                proof.get("account_recovery_hold") is not False
+                or proof.get("auto_order") is not True
+                or proof.get("account_takeover_pending") is not True
+                or proof.get("opening_enabled") is not False
+            ):
+                fail("READBACK_UNPROVEN")
             if previous and (proof["pid"], proof["run_id"]) != previous:
                 fail("READBACK_UNPROVEN")
             previous = proof["pid"], proof["run_id"]
@@ -985,10 +1006,14 @@ class MacBackend:
     """Pinned native LaunchAgent backend; no shell, credential or Broker calls."""
 
     def __init__(
-        self, candidate, candidate_plist, *, tag, home=None, window="ordinary"
+        self, candidate, candidate_plist, *, tag, home=None, window="ordinary",
+        enable_auto_order=False,
     ):
         if window not in {"night", "midday", "ordinary"}:
             fail("WINDOW_UNPROVEN")
+        if type(enable_auto_order) is not bool:
+            fail("CANDIDATE_UNPROVEN")
+        self.enable_auto_order = enable_auto_order
         self.window = window
         self.home = Path.home() if home is None else Path(home)
         self.config = private(Path(candidate))
@@ -1687,8 +1712,12 @@ class MacBackend:
         monitor_cfg = json.loads(private(self.monitor).read_bytes())
         old_hold = old_cfg.get("account_recovery_hold", False)
         new_hold = self.cfg.get("account_recovery_hold", False)
-        if (type(old_hold) is not bool or type(new_hold) is not bool
-            or old_hold and not new_hold):
+        transition = self._hold_transition(old_hold, new_hold)
+        if transition and (
+            old_cfg.get("mode") != "trade"
+            or old_cfg.get("account_profile") != self.cfg.get("account_profile")
+            or old_cfg.get("sdk_python") != self.cfg.get("sdk_python")
+        ):
             fail("CANDIDATE_UNPROVEN")
         if (
             monitor_cfg.get("schema") != 2
@@ -1724,7 +1753,7 @@ class MacBackend:
         self.old_config = old
         self.old_mode = old_cfg["mode"]
         self._old_recovery_hold = old_hold
-        return {
+        result = {
             "monitor_target_sha256": hashlib.sha256(self.monitor_source()).hexdigest()
             if getattr(self.settings, "account_takeover_pending", False)
             else None,
@@ -1745,17 +1774,78 @@ class MacBackend:
             "old_plist": self.identity(self.plist),
             "monitor": self.identity(self.monitor),
         }
+        if transition:
+            result["auto_order_transition"] = transition
+        return result
+
+    def _hold_transition(self, old_hold, new_hold):
+        """Only an explicit owner operation may drop a recovered source hold."""
+        if type(old_hold) is not bool or type(new_hold) is not bool:
+            fail("CANDIDATE_UNPROVEN")
+        enabled = getattr(self, "enable_auto_order", False)
+        if enabled:
+            from guiyi_quant.simnow_execution.credentials import ENVIRONMENT, BROKER
+
+            if (old_hold is not True or new_hold is not False
+                or ENVIRONMENT != "SIMNOW_FIRST" or BROKER != "9999"
+                or getattr(self, "ordinary", False) is not True
+                or getattr(self.settings, "schema", None) != 2
+                or self.settings.mode != "trade" or self.settings.enabled is not True
+                or self.settings.account_takeover_pending is not True
+                or not getattr(self.settings, "account_profile", None)):
+                fail("CANDIDATE_UNPROVEN")
+            return dict(policy=AUTO_ORDER_ENABLE_POLICY,
+                        source_hold=True, target_hold=False)
+        if old_hold and not new_hold:
+            fail("CANDIDATE_UNPROVEN")
+        return None
 
     def _source_hold(self, control):
         held = control.get("account_recovery_hold", False)
         if type(held) is not bool or getattr(self, "_old_recovery_hold", False) and not held:
             fail("HOST_UNPROVEN")
-        if held and not getattr(self.settings, "account_recovery_hold", False):
-            fail("CANDIDATE_UNPROVEN")
+        if getattr(self, "enable_auto_order", False) and (
+            getattr(self, "_old_recovery_hold", False) is not True or held is not True
+        ):
+            fail("HOST_UNPROVEN")
+        self._hold_transition(held, getattr(self.settings, "account_recovery_hold", False))
+        if getattr(self, "enable_auto_order", False):
+            if (type(control.get("account_takeover_pending")) is not bool
+                or control.get("status") not in {"ACCOUNT_RECOVERED_HELD", "WAITING_SESSION"}
+                or (control["status"] == "ACCOUNT_RECOVERED_HELD"
+                    and control["account_takeover_pending"] is not False)):
+                fail("HOST_UNPROVEN")
+            self._auto_source_run_clear(control)
         if held and (control.get("auto_order") is not False
                      or control.get("opening_enabled") is not False):
             fail("HOST_UNPROVEN")
         return held
+
+    def _auto_source_run_clear(self, control):
+        run = control.get("run_id")
+        if not isinstance(run, str) or not re.fullmatch("[a-f0-9]{32}", run):
+            fail("HOST_UNPROVEN")
+        fd = None
+        try:
+            private(self.folder, directory=True)
+            before = self.folder.lstat()
+            fd = os.open(self.folder, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            opened = os.fstat(fd)
+            def identity(info):
+                return info.st_dev, info.st_ino, info.st_uid, info.st_mode
+            if identity(before) != identity(opened):
+                fail("HOST_UNPROVEN")
+            with os.scandir(fd) as entries:
+                if any(entry.name.startswith("failure-" + run + "-")
+                       and entry.name.endswith(".json") for entry in entries):
+                    fail("HOST_UNPROVEN")
+            if identity(self.folder.lstat()) != identity(opened):
+                fail("HOST_UNPROVEN")
+        except OSError:
+            fail("HOST_UNPROVEN")
+        finally:
+            if fd is not None:
+                os.close(fd)
 
     def code_check(self):
         exact = self.exact
@@ -2049,6 +2139,8 @@ class MacBackend:
             and self._historical_anchor() != self._stop_historical_anchor
         ):
             fail("PREIMAGE_CHANGED")
+        if getattr(self, "enable_auto_order", False):
+            self._source_hold(json.loads(private(self.folder / "continuous.json").read_bytes()))
         if expires_at is not None and not clock() < expires_at:
             fail("PLAN_EXPIRED")
         os.kill(pid, signal.SIGTERM)
@@ -2103,6 +2195,10 @@ class MacBackend:
         if not getattr(self, "_offline_held", False) or not self.stopped(snapshot):
             fail("STOP_UNPROVEN")
         self.code_check()
+        if snapshot["preimage"].get("auto_order_transition"):
+            self._auto_source_run_clear(
+                json.loads(private(self.folder / "continuous.json").read_bytes())
+            )
         current = self._preimage()
         if snapshot.get("ordinary_permit"):
             self._verify_historical_anchor(snapshot)
@@ -2554,6 +2650,13 @@ class MacBackend:
             or final_status.get("opening_enabled") is not False
         ):
             fail("READBACK_UNPROVEN")
+        if snapshot["preimage"].get("auto_order_transition") and (
+            final_status.get("account_recovery_hold") is not False
+            or final_status.get("auto_order") is not True
+            or final_status.get("account_takeover_pending") is not True
+            or final_status.get("opening_enabled") is not False
+        ):
+            fail("READBACK_UNPROVEN")
         return dict(
             verified=True,
             account_recovery_hold=final_status.get("account_recovery_hold", False),
@@ -2608,6 +2711,10 @@ def main(argv=None):
     actions.add_argument("--plan-stopped-recovery", action="store_true")
     actions.add_argument("--recover-pending-trade", action="store_true")
     actions.add_argument("--reconcile-started", action="store_true")
+    parser.add_argument(
+        "--enable-auto-order", action="store_true",
+        help="Explicit owner-authorized held-to-auto SimNow takeover; native recovery still precedes trading",
+    )
     parser.add_argument("--controller-tag")
     parser.add_argument("--source-intent", type=Path)
     parser.add_argument("--recovery-intent", action="store_true")
@@ -2621,7 +2728,8 @@ def main(argv=None):
         if not args.config or not args.candidate_plist or not args.tag:
             fail("PLAN_INVALID")
         backend = MacBackend(
-            args.config, args.candidate_plist, tag=args.tag, window=args.window
+            args.config, args.candidate_plist, tag=args.tag, window=args.window,
+            enable_auto_order=args.enable_auto_order,
         )
         if os.environ.get("GUIYI_SIMNOW_SWITCH_DEPENDENCIES_READY") != "1":
             dependency_environment(backend.code)

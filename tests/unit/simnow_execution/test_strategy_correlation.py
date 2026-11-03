@@ -30,10 +30,10 @@ def test_strategy_open_retains_raw_clock_requires_snapshot_and_actual_fee(tmp_pa
     adapter.fee(b.Fee(identity, Decimal(3), "ctp-commission-delta:fixture"), snapshot.at)
     assert adapter.drain() == ()
     fill = ad.store.current().fills[0]
-    assert type(fill) is a.StrategyCorrelatedNativeFillV1
+    assert type(fill) is a.StrategyCorrelatedNativeFillV2
     assert fill.filled_at < fill.request_started_at
     assert fill.recorded_at == snapshot.at
-    assert fill.correlation_policy_version == "simnow_strategy_correlated_fill_v1"
+    assert fill.correlation_policy_version == "simnow_strategy_correlated_fill_v2"
     assert load(checkpoint(ad.store.current())) == ad.store.current()
     assert restore(checkpoint(ad.store.current())).phase == "RECOVERY_REQUIRED"
     assert restore(checkpoint(ad.store.current())).fills == ad.store.current().fills
@@ -67,9 +67,10 @@ def test_strategy_pending_trade_survives_restart_and_blocks_sends(tmp_path):
         restarted._preflight(ad.store.current(), effect, binding, None, facts, permit, at)
 
 
-def test_strategy_fill_requires_recorded_strategy_signal(tmp_path):
+@pytest.mark.parametrize("fill_type", [a.StrategyCorrelatedNativeFillV1, a.StrategyCorrelatedNativeFillV2])
+def test_strategy_fill_requires_recorded_strategy_signal(tmp_path, fill_type):
     ad, effect, _, _, _, at, _ = setup(tmp_path)
-    command = a.StrategyCorrelatedNativeFillV1(
+    command = fill_type(
         "trade", effect.order.order_id, ad.session.account_id, effect.order.contract,
         at - timedelta(seconds=2), at + timedelta(seconds=1), effect.order.price,
         Decimal(3), 1, at, "dispatch:1", "sys", readback_source_id="snapshot",
@@ -80,9 +81,10 @@ def test_strategy_fill_requires_recorded_strategy_signal(tmp_path):
 
 
 @pytest.mark.parametrize('skew', [-120, -2, 2, 120])
-def test_strategy_fact_does_not_compare_raw_clock_to_local_receipt(tmp_path, skew):
+@pytest.mark.parametrize('fill_type', [a.StrategyCorrelatedNativeFillV1, a.StrategyCorrelatedNativeFillV2])
+def test_strategy_fact_does_not_compare_raw_clock_to_local_receipt(tmp_path, skew, fill_type):
     ad, effect, _, _, _, at, _ = setup(tmp_path)
-    fill = a.StrategyCorrelatedNativeFillV1(
+    fill = fill_type(
         'skewed-native', effect.order.order_id, ad.session.account_id, effect.order.contract,
         at + timedelta(seconds=skew), at + timedelta(seconds=1), effect.order.price,
         Decimal(3), 1, at, 'dispatch:1', 'sys', readback_source_id='snapshot',
@@ -139,7 +141,7 @@ def test_strategy_pending_native_fill_is_recoverable_after_store_restart(tmp_pat
     trade_id = next(p['trade_id'] for _,p,_ in ad.journal.events() if p['kind']=='trade')
     restarted.fee(b.Fee(trade_id,Decimal(3),'ctp-commission-delta:fixture'),snapshot.at)
     assert restarted.drain() == ()
-    assert type(ad.store.current().fills[0]) is a.StrategyCorrelatedNativeFillV1
+    assert type(ad.store.current().fills[0]) is a.StrategyCorrelatedNativeFillV2
     assert ad.store.current().phase == 'RECOVERY_REQUIRED'
     assert a.LocalStore.inspect(tmp_path/'account.db').fills == ad.store.current().fills
     assert len(api.calls) == 1

@@ -45,6 +45,16 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 ## SimNow 全品种持续宿主
 
+同一模拟账户显式held→auto接管及带符号成交V2的离线回归：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_supervisor/test_owner_auto_enable.py tests/unit/simnow_supervisor/test_held_migration.py tests/unit/simnow_supervisor/test_upgrade_connect.py tests/unit/simnow_execution/test_strategy_fill_v2.py
+```
+
+覆盖显式旗标/源配置/实际状态/计划漂移拒绝、当前run故障、真实Supervisor收盘断开后WAITING/pending变化、
+新宿主pending时零开放、held与非held普通连接Keychain耗时越窗零connector，以及正负signed32成交、
+codec/store/replay及V1历史golden不变。纯fixture不读Keychain、停启服务或连接Broker；真实切换仅收盘后按现场Gate执行。
+
 执行输入证据与一次性切换的离线验证（无Broker、服务停启或生产写入）：
 
 ```sh
