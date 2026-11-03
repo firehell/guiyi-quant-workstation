@@ -184,7 +184,7 @@ def test_pre_stop_failures_have_zero_effects(lifecycle, failure):
         if failure == "snapshot_drift":
             e.b.snapshot = lambda: {"changed": True}
         elif failure == "expired":
-            e.c.clock = lambda: NOW.timestamp() + 60
+            e.c.clock = lambda: NOW.timestamp() + 180
         elif failure == "bad_hash":
             plan["plan_hash"] = "0" * 64
         else:
@@ -195,6 +195,126 @@ def test_pre_stop_failures_have_zero_effects(lifecycle, failure):
         with pytest.raises(Exception):
             e.c.apply(plan)
     assert "stop" not in e.calls and not e.c.state.exists()
+
+
+def test_plan_allows_fresh_gc_after_plan_and_full_preflight_beyond_old_minute(
+    lifecycle,
+):
+    e = lifecycle
+    clock = [NOW.timestamp()]
+    e.c.clock = lambda: clock[0]
+    plan = e.c.plan()
+    assert plan["expires_at"] - plan["created_at"] == 180
+    # Disposable clock: the operator obtains a separate fresh GC proof after
+    # planning, then the actual apply snapshot repeats all frozen inputs.
+    clock[0] += 100
+    original = e.b.snapshot
+
+    def slow_snapshot():
+        clock[0] += 40
+        return original()
+
+    e.b.snapshot = slow_snapshot
+    assert e.c.apply(plan)["result"] == "ACCOUNT_RECOVERED"
+    assert e.calls.count("stop") == 1
+
+
+def test_elapsed_apply_snapshot_crossing_plan_deadline_has_zero_effects(lifecycle):
+    e = lifecycle
+    clock = [NOW.timestamp()]
+    e.c.clock = lambda: clock[0]
+    plan = e.c.plan()
+    original = e.b.snapshot
+
+    def slow_snapshot():
+        clock[0] += 180
+        return original()
+
+    e.b.snapshot = slow_snapshot
+    with pytest.raises(e.switch.SwitchError, match="PLAN_EXPIRED"):
+        e.c.apply(plan)
+    assert "stop" not in e.calls and not e.c.state.exists()
+
+
+@pytest.mark.parametrize("age", [179.999, 180])
+def test_pure_sdk_source_proof_has_same_exact_180_second_deadline(
+    ready, modules, monkeypatch, age
+):
+    import hashlib
+
+    f = ready
+    controller, prep, switch = modules
+    b = controller.backend_type(switch, prep).__new__(
+        controller.backend_type(switch, prep)
+    )
+    b.settings = f.s
+    b.config = f.config
+    proof = dict(
+        status="SOURCE_PREFLIGHT_PASSED",
+        source_sha256=switch.digest(f.source),
+        config_sha256=b.identity(f.config)["sha256"],
+        controller_sha256=hashlib.sha256(
+            Path(controller.__file__).read_bytes()
+        ).hexdigest(),
+        sdk_sha256=b.identity(f.s.sdk_python, interpreter=True)["sha256"],
+        checked_at=NOW.isoformat(),
+    )
+    monkeypatch.setattr(controller.time, "time", lambda: NOW.timestamp() + age)
+    if age < 180:
+        b.validate_preflight({"source": f.source}, proof)
+    else:
+        with pytest.raises(switch.SwitchError, match="CANDIDATE_UNPROVEN"):
+            b.validate_preflight({"source": f.source}, proof)
+
+
+def test_real_inherited_stop_rechecks_180_deadline_after_slow_history(
+    ready, modules, monkeypatch
+):
+    f = ready
+    controller, prep, switch = modules
+    b = controller.backend_type(switch, prep).__new__(
+        controller.backend_type(switch, prep)
+    )
+    b.folder = f.folder
+    b.old_config = f.config
+    b.old_pid = r.OLD_PID
+    b._prove = lambda *args: None
+    b._stop_signals = b.identity(f.folder / "signals.sqlite")
+    b._stop_historical_anchor = "fixed"
+    b.run = lambda args: NS(returncode=0, stdout="fixed process birth")
+    b._stop_process_identity = prep.process_identity(r.OLD_PID, b.run)
+    clock = [NOW.timestamp()]
+    signals = []
+
+    def history():
+        clock[0] += 180
+        return "fixed"
+
+    b._historical_anchor = history
+    monkeypatch.setattr(prep.os, "kill", lambda *args: signals.append(args))
+    with pytest.raises(switch.SwitchError, match="PLAN_EXPIRED"):
+        b.stop(r.OLD_PID, expires_at=NOW.timestamp() + 180, clock=lambda: clock[0])
+    assert signals == []
+
+
+def test_safe_errors_preserve_only_exact_fixed_switch_codes(modules):
+    controller, _, switch = modules
+    assert (
+        controller.safe_error_code(switch.SwitchError("HOST_UNPROVEN"), switch)
+        == "HOST_UNPROVEN"
+    )
+    assert (
+        controller.safe_error_code(ValueError("INFRASTRUCTURE_RECOVERY_INVALID"))
+        == "INFRASTRUCTURE_RECOVERY_INVALID"
+    )
+    for exc in (
+        switch.SwitchError("fixture private details"),
+        RuntimeError("HOST_UNPROVEN"),
+        ValueError("fixture private details"),
+    ):
+        assert (
+            controller.safe_error_code(exc, switch) == "INFRASTRUCTURE_RECOVERY_FAILED"
+        )
 
 
 @pytest.mark.parametrize(
