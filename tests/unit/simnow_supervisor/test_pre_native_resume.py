@@ -490,7 +490,7 @@ def test_actual_native_portfolio_checks_after_keychain_work_before_connector(res
     def credentials(*_):
         calls.append("credentials")
         clock.at = NOW+timedelta(seconds=240)
-        return NS(user="fixture-user", password="fixture-password")
+        return NS(user="test-only-user", password="test-only-password")
     monkeypatch.setattr(native.CredentialStore, "load", credentials)
     def gateway(user, password, **_):
         calls.append("gateway")

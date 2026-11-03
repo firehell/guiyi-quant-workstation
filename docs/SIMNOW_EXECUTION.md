@@ -636,6 +636,22 @@ START_REQUESTED以后结果不明只读核对，不能重复启动；停止阶�
 原协调器仍活、锁被替换或原phase已到START_REQUESTED时零claim/安装/启动。
 原源claim与新恢复意图分别独占，不允许恢复链式重试。
 
+### held账户迁移到稳定运行目录
+
+稳定运行源码使用`deploy/README.md`规定的普通Git发布树，保持exact annotated tag、detached、clean；
+旧源身份同样从实际tag/commit校验，不从宿主管理目录的名字推断。迁移前像同时冻结源配置与实际host的hold；
+新候选不得解除既有hold，STOPPED源读回及两轮新host读回均保留`hold=true/auto_order=false/opening=false`。
+收紧为held不要求原先非held源伪称已经held。
+
+新候选使用原账户及原始profile、全新的ordinary许可路径与独立意图目录；新配置移除旧prep许可指针，
+旧许可、claim、失败、UNKNOWN和账本原件继续保留。目标交易日block或count=3仍拒绝；其他日期的原计数与
+block全行冻结，不清除或借用。HOST_SWITCH_VERIFIED仅证明新宿主待接管启动，不证明新连接或账户恢复完成。
+
+停服在慢校验后、SIGTERM前重新采计划时效。活动ordinary窗口的held宿主在Keychain/Gateway/本地准备后、
+真实connector前复用可信guard，权威Session验证后再采当前时间，越窗及缺setter均拒绝；已完成许可在下一
+权威交易日退役后保持原正常held恢复语义。上述迁移修复不在原`v1.16.69`，实际迁移须先发布包含修复的版本，
+不能修改已发布tag下的稳定目录冒充同版。
+
 ### 收盘部署窗口与执行合约分离（普通接管v2）
 
 `simnow_ordinary_next_session_v2`部署窗口只冻结权威Calendar/Session及全60品种范围：当前均无Session、
@@ -686,3 +702,10 @@ UNKNOWN、交易日冲突、缺失边界、未决义务或不足20秒查询余�
 规范路径/账户/线程、文件身份及完整SHA必须一致，每次四库权限、header、owner和scope查询仍执行。
 作用域出口再次证明账本字节不变，漂移立即拒绝，异常清除作用域；不同snapshot、plan/apply或停止后
 核验不共享结果。SDK子进程及默认公开预检仍完整验证。该优化不改变60秒计划TTL或任何账户恢复门禁。
+
+完整账户重放的摘要优化仅限一次同步replay：仍逐行执行reducer并核对command、sequence、
+effects、前后hash、recovery_mode和最终projection；上一条实际计算并已核对的after hash作为下一条before。
+State字段的原codec序列化字节仅对深度不可变的精确模型/原生类型按对象身份复用，追加tuple须逐成员身份相同；
+Decimal表现上下文变化时失效。缓存最多16MiB、每字段只保留当前片段、按线程隔离，退出和异常清除；
+可变或未知类型、异常及超限回退原整State路径。公开encode/checkpoint和历史hash字节不变，不信任projection替代重放，
+不放宽45秒SDK检查、8秒状态或30秒账户新鲜度边界。

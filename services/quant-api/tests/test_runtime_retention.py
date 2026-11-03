@@ -496,3 +496,120 @@ def test_simnow_alias_chain_keeps_intermediate_release_dependency(tmp_path, monk
     value['api_env'] = str(alias)
     config.write_text(json.dumps(value))
     assert build_cleanup_plan((old,), backend=backend)['targets'][0]['status'] == 'retained'
+
+
+@pytest.mark.parametrize("field,value", [("account_recovery_hold",True),
+    ("preparation_recovery_permit","path")])
+def test_held_and_preparation_config_paths_are_known_conservative_references(tmp_path,monkeypatch,field,value):
+    import json
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch)
+    current=json.loads(config.read_text())
+    current[field]=str(tmp_path/"unissued/preparation-recovery-permit.private.json") if value=="path" else value
+    config.write_text(json.dumps(current))
+    result=build_cleanup_plan((old,),backend=backend)
+    assert result["targets"][0]["status"]=="retained"
+
+
+def _private_recovery(tmp_path,old,*,child=False,candidate=False):
+    import json
+    base=tmp_path/"Library/Application Support/GuiyiQuant"
+    name="simnow-stable-migration-candidate-v69" if candidate else "simnow-preparation-recovery-20261103"
+    folder=base/name
+    folder.mkdir(mode=0o700)
+    if child:
+        folder=folder/"pre-native-resume"
+        folder.mkdir(mode=0o700)
+    path=folder/("candidate.private.json" if candidate else "state.private.json")
+    path.write_text(json.dumps(dict(stage="VERIFYING",result="UNKNOWN",dependency=str(old))))
+    path.chmod(0o600)
+    return path
+
+
+@pytest.mark.parametrize("child",[False,True])
+def test_stable_unknown_recovery_pins_both_original_and_resume_layer(tmp_path,monkeypatch,child):
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
+    _private_recovery(tmp_path,old,child=child)
+    result=build_cleanup_plan((old,),backend=backend)
+    assert result["targets"][0]["status"]=="retained"
+    assert any("simnow-private" in reason for reason in result["targets"][0]["references"])
+
+
+def test_uninstalled_stable_candidate_still_pins_its_release_dependency(tmp_path,monkeypatch):
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
+    path=_private_recovery(tmp_path,old,candidate=True)
+    path.write_bytes(config.read_bytes())
+    result=build_cleanup_plan((old,),backend=backend)
+    assert result["targets"][0]["status"]=="retained"
+
+
+@pytest.mark.parametrize("drift",["content","new_file","symlink"])
+def test_stable_private_recovery_drift_or_alias_blocks_scan(tmp_path,monkeypatch,drift):
+    import json
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
+    path=_private_recovery(tmp_path,old)
+    def changed(*args):
+        if drift=="content":
+            path.write_text(json.dumps(dict(dependency="changed")))
+        elif drift=="new_file":
+            extra=path.parent/"new.private.json"
+            extra.write_text('{}');extra.chmod(0o600)
+        else:
+            path.unlink();path.symlink_to(config)
+        return {str(old):[]}
+    monkeypatch.setattr('app.runtime_retirement.recovery_references',changed)
+    assert build_cleanup_plan((old,),backend=backend)["targets"][0]["status"]=="blocked"
+
+
+def test_nonboolean_hold_is_not_a_valid_known_config(tmp_path,monkeypatch):
+    import json
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch)
+    value=json.loads(config.read_text());value["account_recovery_hold"]="yes"
+    config.write_text(json.dumps(value))
+    assert build_cleanup_plan((old,),backend=backend)["targets"][0]["status"]=="blocked"
+
+
+@pytest.mark.parametrize("missing_config",[True,False])
+def test_uninstalled_plist_pins_its_code_and_requires_its_config(tmp_path,monkeypatch,missing_config):
+    import json,plistlib
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
+    path=_private_recovery(tmp_path,old,candidate=True)
+    value=json.loads(config.read_bytes());value['api_env']=str(tmp_path/'current/.venv')
+    path.write_text(json.dumps(value))
+    plist=path.parent/'candidate.private.plist'
+    plist.write_bytes(plistlib.dumps(dict(Label='com.guiyi.quant-simnow',
+        WorkingDirectory=str(old),ProgramArguments=['/usr/bin/python3','-I',str(old/'runner.py'),'--config',str(path),'--trade'])))
+    plist.chmod(0o600)
+    if missing_config:path.unlink()
+    result=build_cleanup_plan((old,),backend=backend)
+    assert result['targets'][0]['status']==('blocked' if missing_config else 'retained')
+
+
+def test_private_recovery_unknown_nested_directory_blocks_instead_of_hiding_refs(tmp_path,monkeypatch):
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
+    path=_private_recovery(tmp_path,old)
+    (path.parent/'unexpected').mkdir(mode=0o700)
+    assert build_cleanup_plan((old,),backend=backend)['targets'][0]['status']=='blocked'
+
+
+@pytest.mark.parametrize('word',['UNKNOWN','COMPLETE','future-result'])
+def test_stable_recovery_labels_alone_never_close_dependency(tmp_path,monkeypatch,word):
+    import json
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
+    path=_private_recovery(tmp_path,old)
+    path.write_text(json.dumps(dict(schema='future-recovery',stage=word,root=str(old))))
+    assert build_cleanup_plan((old,),backend=backend)['targets'][0]['status']=='retained'
+
+
+@pytest.mark.parametrize('extra',['Program','EnvironmentVariables'])
+def test_private_candidate_rejects_unrecognized_executable_overrides(tmp_path,monkeypatch,extra):
+    import json,plistlib
+    old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
+    path=_private_recovery(tmp_path,old,candidate=True)
+    value=json.loads(config.read_bytes());value['api_env']=str(tmp_path/'current/.venv')
+    path.write_text(json.dumps(value))
+    plist=path.parent/'candidate.private.plist'
+    payload=dict(Label='com.guiyi.quant-simnow',WorkingDirectory=str(tmp_path/'current'),
+        ProgramArguments=['/usr/bin/python3','-I',str(tmp_path/'current/runner.py'),'--config',str(path),'--trade'])
+    payload[extra]=str(old/'runner') if extra=='Program' else dict(PYTHONPATH=str(old))
+    plist.write_bytes(plistlib.dumps(payload));plist.chmod(0o600)
+    assert build_cleanup_plan((old,),backend=backend)['targets'][0]['status']=='blocked'

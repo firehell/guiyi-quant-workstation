@@ -13,7 +13,7 @@ from test_settings import existing_v2, write
 
 
 @pytest.fixture
-def granted(tmp_path, monkeypatch):
+def granted(tmp_path, monkeypatch, request):
     config, value, folder = existing_v2(tmp_path)
     out = tmp_path / "ordinary-intent"
     out.mkdir(mode=0o700)
@@ -30,6 +30,8 @@ def granted(tmp_path, monkeypatch):
         account_profile=profile,
         enabled=True,
     )
+    if getattr(request, "param", None) == "held":
+        value["account_recovery_hold"] = True
     write(config, value)
     s = NS(**value)
     s.source_config_path = config
