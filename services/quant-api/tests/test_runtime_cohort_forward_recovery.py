@@ -762,6 +762,10 @@ def test_active_capture_calculation_interleave_waits_for_fresh_round_within_budg
         current, {"mode": "same_generation_startup", "closed_idle": False}
     )
     current._active = lambda binding: {
+        "at": current.now().isoformat(),
+        "pid": 100,
+        "generation": binding.generation,
+        "service": binding.service,
         "phase": "active",
         "ready": True,
         "proof": {
@@ -1817,6 +1821,10 @@ def await_intake_case(tmp_path, monkeypatch):
     current.monotonic = lambda: 0.0
     current.recovery_window = bounded_window(current, {"closed_idle": False})
     current._active = lambda binding: {
+        "at": current.now().isoformat(),
+        "pid": 100,
+        "generation": binding.generation,
+        "service": binding.service,
         "ready": True,
         "proof": {
             "receiving": {"protocol_version": 2, "intake_error": None},
@@ -2097,6 +2105,10 @@ def timed_receiving_case(
     current.now = lambda: NOW + timedelta(seconds=elapsed[0])
     current.recovery_window = bounded_window(current)
     current._active = lambda binding: {
+        "at": current.now().isoformat(),
+        "pid": 100,
+        "generation": binding.generation,
+        "service": binding.service,
         "ready": True,
         "proof": {
             "receiving": {"protocol_version": 2, "intake_error": None},
@@ -2360,6 +2372,116 @@ def test_fixed_identity_check_cannot_return_a_proof_that_expired_during_check(
     proof = current._await(source, audit, lambda: None, feed=True)
     assert proof["before_sha256"] == samples[3]["snapshot_sha256"]
     assert proof["after_sha256"] == samples[4]["snapshot_sha256"]
+
+
+@pytest.mark.parametrize("slow_check", ["fixed", "final_owners"])
+def test_slow_successful_checks_do_not_consume_transient_poll_retry_window(
+    tmp_path, monkeypatch, slow_check
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    ticks = [0.0]
+    monotonic = current.monotonic
+    current.monotonic = lambda: monotonic() + ticks[0]
+    current.now = lambda: NOW + timedelta(seconds=current.monotonic())
+    fixed_checks = [0]
+    snapshot = current._snapshot
+
+    def two_fresh_samples(*args, **kwargs):
+        assert len(samples) < 2, "healthy fresh candidate was incorrectly discarded"
+        return snapshot(*args, **kwargs)
+
+    current._snapshot = two_fresh_samples
+
+    def fixed(*args):
+        fixed_checks[0] += 1
+        if slow_check == "fixed":
+            ticks[0] += 2
+
+    current._fixed = fixed
+    active = current._active
+
+    def final_owners(binding):
+        if fixed_checks[0] and slow_check == "final_owners":
+            ticks[0] += 0.4
+        return active(binding)
+
+    current._active = final_owners
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert fixed_checks == [1]
+    assert len(samples) == 2
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+
+
+def test_final_owner_checks_cannot_overrun_overall_ready_deadline(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, _ = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    ticks = [0.0]
+    monotonic = current.monotonic
+    current.monotonic = lambda: monotonic() + ticks[0]
+    current.now = lambda: NOW + timedelta(seconds=current.monotonic())
+    fixed = [False]
+    current._fixed = lambda *args: fixed.__setitem__(0, True)
+    active = current._active
+
+    def overdue_owner(binding):
+        if fixed[0]:
+            ticks[0] += 121
+        return active(binding)
+
+    current._active = overdue_owner
+    with pytest.raises(ValueError, match="COHORT_FORWARD_READY_TIMEOUT"):
+        current._await(source, audit, lambda: None, feed=True)
+
+
+@pytest.mark.parametrize("invalid_at", ["expired_during_checks", "future", "missing"])
+def test_final_owner_samples_must_all_be_fresh_at_acceptance(
+    tmp_path, monkeypatch, invalid_at
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1, 4)
+    )
+    ticks = [0.0]
+    monotonic = current.monotonic
+    current.monotonic = lambda: monotonic() + ticks[0]
+    current.now = lambda: NOW + timedelta(seconds=current.monotonic())
+    fixed = [False]
+    current._fixed = lambda *args: fixed.__setitem__(0, True)
+    active, snapshot = current._active, current._snapshot
+
+    def final_owners(binding):
+        state = active(binding)
+        if fixed[0] and len(samples) == 2:
+            if binding.service == "market-feed":
+                if invalid_at == "expired_during_checks":
+                    state["at"] = (NOW - timedelta(seconds=28)).isoformat()
+                elif invalid_at == "future":
+                    state["at"] = (NOW + timedelta(seconds=60)).isoformat()
+                else:
+                    del state["at"]
+            elif invalid_at == "expired_during_checks":
+                ticks[0] += 0.5
+        return state
+
+    def fresh_next_sample(*args, **kwargs):
+        if len(samples) == 2:
+            ticks[0] = 0
+        return snapshot(*args, **kwargs)
+
+    current._active, current._snapshot = final_owners, fresh_next_sample
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert len(samples) == 3
+    assert proof["after_sha256"] == samples[2]["snapshot_sha256"]
 
 
 def test_verified_failure_persists_safe_substep_and_sample_times(tmp_path):
