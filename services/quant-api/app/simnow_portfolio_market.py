@@ -279,6 +279,11 @@ class PortfolioMarket:
         from app.simnow_takeover_window import authoritative_window
         return authoritative_window(now, target_day=day)
 
+    def infrastructure_recovery_window(self, day, now: datetime):
+        from app.simnow_infrastructure_readiness import recovery_window
+
+        return recovery_window(day, now, redis=self.redis)
+
     def plan(self, now: datetime) -> SessionPlan:
         if now.tzinfo is None or now.utcoffset() is None:
             return SessionPlan(None, False, False, None)
