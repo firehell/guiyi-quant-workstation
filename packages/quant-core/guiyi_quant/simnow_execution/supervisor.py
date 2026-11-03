@@ -185,6 +185,7 @@ _RECOVERY_ERRORS = frozenset({
     "NATIVE_EVENT_OWNERSHIP_UNPROVEN",
     "NATIVE_SESSION_ID_INVALID",
     "PREPARATION_RECOVERY_INVALID", "PREPARATION_RECOVERY_CONSUMED",
+    "INFRASTRUCTURE_RECOVERY_INVALID",
 })
 
 
@@ -231,6 +232,9 @@ class Supervisor:
         self.session_active = False
         self.account_recovery_hold = getattr(settings, "account_recovery_hold", False)
         self.preparation_recovery_attempted = False
+        self.infrastructure_recovery_attempted = False
+        self.infrastructure_recovery_failed = False
+        self.cycle_stage = "NOT_STARTED"
 
     def status(self, code, *, connected=False):
         state = self.store.current() if self.store is not None else None
@@ -334,12 +338,33 @@ class Supervisor:
             self.observe_reconciliation = None
             self.market.activate(self.now())
         if failed:
-            if self.target_day and not self._preparation_permit():
+            if self.target_day and not self._preparation_permit() and not self._infrastructure_permit(self.target_day):
                 self.inbox.block(self.target_day, "CONTINUOUS_CLEANUP_UNCERTAIN")
             raise ValueError("CONTINUOUS_CLEANUP_UNCERTAIN")
 
     def _preparation_permit(self):
         return bool(getattr(self.settings, "preparation_recovery_permit", None))
+
+    def _infrastructure_permit(self, day=None):
+        from .infrastructure_recovery import DAY
+
+        return bool(getattr(self.settings, "infrastructure_recovery_permit", None)) and (day is None or day == DAY)
+
+    def _infrastructure_available(self, day, now):
+        if not self._infrastructure_permit(day) or self.infrastructure_recovery_attempted:
+            return False
+        from . import infrastructure_recovery
+
+        return infrastructure_recovery.available(
+            self.settings, self.inbox, self.run_id, day, now,
+            authority=lambda: self._infrastructure_authority(day),
+        )
+
+    def _infrastructure_authority(self, day):
+        getter = getattr(self.market, "infrastructure_recovery_window", None)
+        if not callable(getter):
+            raise ValueError("INFRASTRUCTURE_RECOVERY_INVALID")
+        return getter(day, self.now())
 
     def _preparation_authority(self, day):
         now = self.now()
@@ -387,12 +412,21 @@ class Supervisor:
         configured = getattr(self.settings, "deployment_connection_permit", None)
         recovery = self._preparation_permit()
         recovery_candidate = self._preparation_available(day, self.now()) if recovery else False
+        # The cycle probes availability; consume below repeats the complete
+        # authority/anchor checks before any factory or native connection.
+        infrastructure_candidate = bool(
+            self._infrastructure_permit(day)
+            and not self.infrastructure_recovery_attempted
+            and not self.infrastructure_recovery_failed
+        )
         extra_candidate = bool(
             configured and day == permit.DAY and permit.attempts(self.inbox, day) == 3
         )
         if recovery and not recovery_candidate:
             raise ValueError("PREPARATION_RECOVERY_CONSUMED")
-        if self.inbox.blocked(day) and not (extra_candidate or recovery_candidate):
+        if self._infrastructure_permit(day) and not infrastructure_candidate:
+            raise ValueError("INFRASTRUCTURE_RECOVERY_INVALID")
+        if self.inbox.blocked(day) and not (extra_candidate or recovery_candidate or infrastructure_candidate):
             raise ValueError(
                 "DEPLOYMENT_CONNECTION_INVALID"
                 if configured
@@ -401,7 +435,16 @@ class Supervisor:
         permit_window = None
         ordinary_window = None
         recovery_window = None
-        if recovery:
+        infrastructure_window = None
+        if infrastructure_candidate:
+            from . import infrastructure_recovery
+
+            self.infrastructure_recovery_attempted = True
+            attempt, infrastructure_window = infrastructure_recovery.consume(
+                self.settings, self.inbox, self.run_id, day, self.now(), clock=self.now,
+                authority=lambda: self._infrastructure_authority(day),
+            )
+        elif recovery:
             from . import preparation_recovery
 
             # This local latch is terminal even when consumption fails before SQL.
@@ -431,6 +474,10 @@ class Supervisor:
         else:
             attempt = self.inbox.attempt(day)
         self.status("CONNECTING")
+        if infrastructure_window:
+            infrastructure_recovery.validate_connection(
+                infrastructure_window, self.now(), lambda: self._infrastructure_authority(day), clock=self.now
+            )
         if permit_window:
             permit.connection_time(permit_window, self.now())
         if ordinary_window:
@@ -450,7 +497,14 @@ class Supervisor:
                 ordinary_window, self.now(), lambda: self._ordinary_authority(day)
             )
             ordinary_takeover.connection_time(ordinary_window, self.now())
-        if recovery_window:
+        if infrastructure_window:
+            install_guard = getattr(self.driver, "set_pre_native_guard", None)
+            if not callable(install_guard):
+                raise ValueError("INFRASTRUCTURE_RECOVERY_INVALID")
+            install_guard(lambda: infrastructure_recovery.validate_connection(
+                infrastructure_window, self.now(), lambda: self._infrastructure_authority(day), clock=self.now
+            ))
+        elif recovery_window:
             install_guard = getattr(self.driver, "set_pre_native_guard", None)
             if not callable(install_guard):
                 raise ValueError("PREPARATION_RECOVERY_INVALID")
@@ -621,10 +675,14 @@ class Supervisor:
         self.recovery_stage = "READY"
 
     def cycle(self):
+        if getattr(self, "infrastructure_recovery_failed", False):
+            self.status("RECOVERY_BLOCKED")
+            return
         # Keep an attempt's day through its cleanup/error handling, but do not
         # attribute a later disconnected cycle to that historical connection.
         if self.driver is None:
             self.target_day = None
+        self.cycle_stage = "SESSION_AUTHORITY"
         now = self.now()
         plan = self.market.plan(now)
         self.session_active = plan.active
@@ -665,9 +723,10 @@ class Supervisor:
                 == (3,)
             )
             recovery_candidate = self._preparation_available(day, now) if self._preparation_permit() else False
+            infrastructure_candidate = self._infrastructure_available(day, now)
             if (
                 self._preparation_permit() and not recovery_candidate
-                or self.inbox.blocked(day) and not (exception_candidate or recovery_candidate)
+                or self.inbox.blocked(day) and not (exception_candidate or recovery_candidate or infrastructure_candidate)
             ) or now < self.retry_after:
                 self.status("RECOVERY_BLOCKED")
                 return
@@ -721,10 +780,12 @@ class Supervisor:
             if recovering or state.blocked_products
             else ()
         )
+        self.cycle_stage = "ACCOUNT_SNAPSHOT"
         snapshot = self.driver.snapshot()
         if snapshot.trading_day != self.day:
             self.disconnect()
             return
+        self.cycle_stage = "ACCOUNT_RECONCILIATION"
         _, recovered = self.host.reconcile(
             self.driver.report, bindings, self.now(), proofs if recovering else ()
         )
@@ -757,6 +818,7 @@ class Supervisor:
                 recovered,
                 snapshot.at + timedelta(seconds=30),
             )
+            self.cycle_stage = "PRODUCT_RECOVERY"
             self.store.execute(
                 "product-recovery:" + snapshot.source_id,
                 a.ProductRecoveryV1(
@@ -765,6 +827,7 @@ class Supervisor:
                     tuple(recovered.blocked_products),
                 ),
             )
+        self.cycle_stage = "MARKET_AUTHORITY"
         current = self.store.current()
         for product in self.products:
             try:
@@ -785,10 +848,13 @@ class Supervisor:
             p.product: p.last_bar or current.activated_at
             for p in self.store.current().products
         }
+        self.cycle_stage = "MARKET_POLL"
         signals = self.market.poll(self.now(), after) if self.active_seen else ()
         for signal in signals:
             self.inbox.enqueue(signal)
+        self.cycle_stage = "SIGNAL_DELIVERY"
         self.inbox.deliver(self.store)
+        self.cycle_stage = "EXECUTION_INPUT"
         if self.settings.mode == "trade":
             facts, bindings = self.driver.execution_for(
                 self.store.current(),
@@ -816,12 +882,14 @@ class Supervisor:
             self._audit_trade_inputs(force_defer=True)
             self.status("ACCOUNT_RECONCILIATION_REQUIRED", connected=True)
             return  # Slow inputs alone must not create a fake disconnection/recovery.
+        self.cycle_stage = "EXECUTION_TICK"
         outcomes = self.host.tick(facts, bindings, self.now())
         if any(
             o in {"SEND_OUTCOME_UNKNOWN", "NOT_ACCEPTED_RECONCILE_REQUIRED"}
             for o in outcomes
         ):
             raise ValueError("NATIVE_ORDER_OUTCOME_REQUIRES_RECOVERY")
+        self.cycle_stage = "INPUT_AUDIT"
         self._audit_trade_inputs()
         if not self.store._needs_recovery:
             self.ledger_hash = digest(self.store.current())
@@ -946,6 +1014,16 @@ class Supervisor:
                         except Exception:
                             pass
                         raise
+                if self._infrastructure_permit():
+                    from . import infrastructure_recovery
+
+                    startup = self.market.plan(self.now())
+                    if not startup.trading_day or startup.trading_day.strftime("%Y%m%d") != infrastructure_recovery.DAY:
+                        raise ValueError("INFRASTRUCTURE_RECOVERY_INVALID")
+                    infrastructure_recovery.activate(
+                        self.settings, self.inbox, self.run_id, self.now(), clock=self.now,
+                        authority=lambda: self._infrastructure_authority(infrastructure_recovery.DAY),
+                    )
                 if getattr(self.settings, "ordinary_takeover_permit", None):
                     from . import ordinary_takeover
 
@@ -985,10 +1063,14 @@ class Supervisor:
                     try:
                         self.cycle()
                     except Exception as exc:
+                        if self._infrastructure_permit(self.target_day):
+                            self.infrastructure_recovery_attempted = True
+                            self.infrastructure_recovery_failed = True
                         if self._preparation_permit():
                             self.preparation_recovery_attempted = True
                         if (
                             not self._preparation_permit()
+                            and not self._infrastructure_permit(self.target_day)
                             and type(exc) is ValueError
                             and str(exc) == "NATIVE_SNAPSHOT_CHANGED"
                         ):
@@ -1008,6 +1090,7 @@ class Supervisor:
                             }
                             and self.driver is not None
                             and self.driver.transport_failed
+                            and not self._infrastructure_permit(self.target_day)
                         )
                         code = (
                             str(exc)
@@ -1040,7 +1123,7 @@ class Supervisor:
                                     plan.trading_day.strftime("%Y%m%d")
                                     if plan.trading_day else None
                                 )
-                            if self.blocked_day and not self._preparation_permit():
+                            if self.blocked_day and not self._preparation_permit() and not self._infrastructure_permit(self.blocked_day):
                                 self.inbox.block(self.blocked_day, code)
                         try:
                             diagnostic = (
@@ -1053,6 +1136,13 @@ class Supervisor:
                                 self.host, "last_dispatch_diagnostic", None
                             )
                             diagnostic["recovery_stage"] = self.recovery_stage
+                            diagnostic["cycle_stage"] = self.cycle_stage
+                            diagnostic["exception_category"] = (
+                                type(exc).__name__ if type(exc).__name__ in {
+                                    "ConnectionError", "TimeoutError", "OperationalError", "StoreError",
+                                    "ValueError", "OSError", "TypeError", "KeyError",
+                                } else "UNCLASSIFIED"
+                            )
                             diagnostic["recovery_error_code"] = (
                                 str(exc) if isinstance(exc, ValueError) and str(exc) in _RECOVERY_ERRORS
                                 else "RECOVERY_ERROR_UNCLASSIFIED"
@@ -1071,7 +1161,7 @@ class Supervisor:
                             )
                         except Exception:
                             # An evidence failure cannot silently turn into a fresh login.
-                            if self.target_day and not self._preparation_permit():
+                            if self.target_day and not self._preparation_permit() and not self._infrastructure_permit(self.target_day):
                                 self.inbox.block(
                                     self.target_day, "CONTINUOUS_DIAGNOSTIC_UNAVAILABLE"
                                 )

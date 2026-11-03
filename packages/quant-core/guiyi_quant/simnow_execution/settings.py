@@ -55,6 +55,7 @@ class ContinuousSettings:
     ordinary_takeover_permit: Path | None = None
     preparation_recovery_permit: Path | None = None
     account_recovery_hold: bool = False
+    infrastructure_recovery_permit: Path | None = None
 
 
 def _path(value, *, code: str) -> Path:
@@ -120,7 +121,7 @@ def _read_private(path: Path) -> tuple[dict, str]:
     ):
         fields = fields | {"account_takeover_pending"}
     if type(value) is dict and value.get("schema") == 2:
-        fields = fields | ({"account_profile", "ordinary_takeover_permit", "preparation_recovery_permit", "account_recovery_hold"} & set(value))
+        fields = fields | ({"account_profile", "ordinary_takeover_permit", "preparation_recovery_permit", "account_recovery_hold", "infrastructure_recovery_permit"} & set(value))
     if type(value) is not dict or set(value) != fields:
         raise SettingsError("SETTINGS_FIELDS_INVALID")
     if value["schema"] == 3 and info.st_nlink != 1:
@@ -285,13 +286,27 @@ def load_settings(path: Path) -> ContinuousSettings:
     if hold and (value["schema"] != 2 or value["mode"] != "trade"
         or not value["enabled"] or profile is None):
         raise SettingsError("PREPARATION_RECOVERY_SETTINGS_INVALID")
+    infrastructure = None
+    if "infrastructure_recovery_permit" in value:
+        if (permit or ordinary or recovery or hold or value["mode"] != "trade"
+            or not value["enabled"] or profile is None
+            or value.get("account_takeover_pending") is not True):
+            raise SettingsError("INFRASTRUCTURE_RECOVERY_INVALID")
+        infrastructure = _path(value["infrastructure_recovery_permit"], code="INFRASTRUCTURE_RECOVERY_INVALID")
+        if (infrastructure.resolve(strict=False) != infrastructure
+            or infrastructure.name != "infrastructure-recovery-permit.private.json"):
+            raise SettingsError("INFRASTRUCTURE_RECOVERY_INVALID")
+        info = infrastructure.parent.stat()
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o700):
+            raise SettingsError("INFRASTRUCTURE_RECOVERY_INVALID")
     pending = value.get("account_takeover_pending", False)
     if ordinary and not pending:
         raise SettingsError("ORDINARY_TAKEOVER_INVALID")
     if type(pending) is not bool or (
         pending
         and (
-            not (permit or ordinary or recovery) or value["mode"] != "trade" or not value["enabled"]
+            not (permit or ordinary or recovery or infrastructure) or value["mode"] != "trade" or not value["enabled"]
         )
     ):
         raise SettingsError("ACCOUNT_TAKEOVER_PENDING_SETTINGS_INVALID")
@@ -313,4 +328,5 @@ def load_settings(path: Path) -> ContinuousSettings:
         ordinary,
         recovery,
         hold,
+        infrastructure,
     )
