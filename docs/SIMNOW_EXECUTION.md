@@ -30,7 +30,24 @@ signals inode/schema/非attempt表、唯一claim及预算3一致；不把入口�
 配置`account_recovery_hold=true`使Supervisor/Host/Adapter持续禁止订单。即使原账户Recover成功、
 `pending=false`且实际READY，也只保持完整原生读回与对账，公开`ACCOUNT_RECOVERED_HELD`、
 `auto_order=false/opening_enabled=false`，不消费新旧信号、执行或输入审计。全新订单阶段须单独交办。
-本轮不改历史correlated Fill V1的正数身份合同；有符号Session的后续订单/Fill准入须独立补齐后才能解除hold。
+该次恢复不改历史correlated Fill V1的正数身份合同；后续订单使用下文独立V2有符号Session成交协议。
+
+## 同一SimNow账户的显式自动执行接管
+
+`simnow_owner_auto_order_enable_v1`用于owner明确交办自动执行后的held→auto接管；
+`simnow-trade-switch.py`生成计划和apply均须显式传`--enable-auto-order`，默认迁移仍保留hold。
+仅固定`SIMNOW_FIRST`/`9999`模拟环境、schema2/trade/enabled、原账户/原四库/原60品种及
+原profile/SDK允许该路径；目标`account_recovery_hold=false/account_takeover_pending=true`。
+源磁盘及实际hold必须为true，auto/opening必须为false。实际`ACCOUNT_RECOVERED_HELD`要求pending=false；
+正常收盘断开后的`WAITING_SESSION`允许pending重新为true，但源完整历史、未决义务及当前精确run的
+失败原件检查必须通过。RECOVERY_BLOCKED、待对账或当前run存在任何failure均拒绝，不改旧失败记录。
+transition绑定到preimage及计划hash，SIGTERM前和源退出后的离线阶段再次检查；不从目标配置或旧计划隐式推导授权。
+
+权威下一交易日窗口、普通连接预算和历史block保持；不清账本、不退款、不补旧信号。所有有效ordinary许可
+均在Keychain/本地构造之后、真正SDK连接之前重新校验窗口和权威Session，held与auto使用同一末端检查。
+新宿主的双读回须hold=false/auto_order=true/pending=true/opening=false；该部署回执仍只证明
+HOST_SWITCH_VERIFIED。新连接的完整Snapshot、结算、归属及账户Recover、complete_takeover均通过后才允许
+消费自然新信号。部署、配置许可、可执行状态、订单、成交和对账分别验收，不能互相替代。
 
 ## 当前连接结算证明（native_settlement_confirmation_v2）
 
@@ -554,10 +571,12 @@ request_started_at属于未校准的两个时钟域，保留全部原始值，�
 只在首次完整读回确认关联成交后开始600秒计时，已有confirmed_at/due_at不重置；前次回调不是完整核验，不伪造已等待事实。
 只读状态/原恢复失败原件继续保留，关闭恢复状态使用独立close-only-status。退出前仍须真实平仓、费用/权益/预留及尾回调对账。
 
-## 普通策略原生关联协议（simnow_strategy_correlated_fill_v1）
+## 普通策略原生关联协议（simnow_strategy_correlated_fill_v1 / v2）
 
-普通有界宿主和持续宿主的manage对账路径使用独立`StrategyCorrelatedNativeFillV1`，
-接入codec、账户校验和恢复重放。旧`NativeFill`及人工专用`CorrelatedNativeFillV1`语义和历史hash保持。
+普通有界宿主和持续宿主的策略对账新增`StrategyCorrelatedNativeFillV2`／`simnow_strategy_correlated_fill_v2`，
+接入codec、账户校验和恢复重放。V2仅将原生SessionID合同改为非零signed32（含负标识），其他身份关联、
+原生来源、时钟、精度、费用、持仓与去重约束保持。旧`StrategyCorrelatedNativeFillV1`及其policy继续保留
+正数SessionID历史语义；旧codec字节、hash和重放不改写。旧`NativeFill`及人工专用`CorrelatedNativeFillV1`保持。
 新增协议不开放持续新开仓；observe不构造订单Adapter，manage和Host的OPEN禁令不变。
 
 - 原生InsertTime/TradeTime原样保留，不与本地请求/接收时钟比较；本地请求不得早于本地订单创建，
@@ -640,14 +659,16 @@ START_REQUESTED以后结果不明只读核对，不能重复启动；停止阶�
 
 稳定运行源码使用`deploy/README.md`规定的普通Git发布树，保持exact annotated tag、detached、clean；
 旧源身份同样从实际tag/commit校验，不从宿主管理目录的名字推断。迁移前像同时冻结源配置与实际host的hold；
-新候选不得解除既有hold，STOPPED源读回及两轮新host读回均保留`hold=true/auto_order=false/opening=false`。
-收紧为held不要求原先非held源伪称已经held。
+默认新候选不得解除既有hold，STOPPED源读回及两轮新host读回均保留`hold=true/auto_order=false/opening=false`。
+收紧为held不要求原先非held源伪称已经held。唯一显式例外见上文`simnow_owner_auto_order_enable_v1`：
+原held源在HELD或正常收盘WAITING状态、当前run无failure且完整未决义务检查通过后，owner可显式授权
+目标hold=false/auto_order=true；STOPPED仍按源hold校验，目标pending=true/opening=false及新连接Recover保持。
 
 新候选使用原账户及原始profile、全新的ordinary许可路径与独立意图目录；新配置移除旧prep许可指针，
 旧许可、claim、失败、UNKNOWN和账本原件继续保留。目标交易日block或count=3仍拒绝；其他日期的原计数与
 block全行冻结，不清除或借用。HOST_SWITCH_VERIFIED仅证明新宿主待接管启动，不证明新连接或账户恢复完成。
 
-停服在慢校验后、SIGTERM前重新采计划时效。活动ordinary窗口的held宿主在Keychain/Gateway/本地准备后、
+停服在慢校验后、SIGTERM前重新采计划时效。所有活动ordinary窗口的宿主在Keychain/Gateway/本地准备后、
 真实connector前复用可信guard，权威Session验证后再采当前时间，越窗及缺setter均拒绝；已完成许可在下一
 权威交易日退役后保持原正常held恢复语义。上述迁移修复不在原`v1.16.69`，实际迁移须先发布包含修复的版本，
 不能修改已发布tag下的稳定目录冒充同版。

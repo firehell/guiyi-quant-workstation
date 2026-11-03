@@ -102,7 +102,7 @@ def test_real_shaped_normal_signal_reverses_only_after_close_readback(tmp_path, 
     _, final = host.reconcile(report, (binding,), next_at+timedelta(seconds=45))
     assert final and final.positions[0].quantity == -initial_side
     assert len(final.fills) == 3
-    assert all(type(fill) is a.StrategyCorrelatedNativeFillV1 for fill in final.fills)
+    assert all(type(fill) is a.StrategyCorrelatedNativeFillV2 for fill in final.fills)
     assert store.replay() == final
     assert not any(type(audit.command) is a.ManualBeginV1 for audit in final.audit)
     assert proofs and all(proof[3] == 'RB2701' for proof in proofs)  # old physical, not owner RB2705

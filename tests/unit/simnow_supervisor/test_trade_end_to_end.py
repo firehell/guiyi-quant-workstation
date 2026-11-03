@@ -390,7 +390,7 @@ def test_continuous_host_queue_actual_policy_native_fee_and_monitor_closed_loop(
         "CLOSE",
         "OPEN",
     ], json.loads((folder / "continuous.json").read_text())
-    assert all(type(fill) is a.StrategyCorrelatedNativeFillV1 for fill in final.fills)
+    assert all(type(fill) is a.StrategyCorrelatedNativeFillV2 for fill in final.fills)
     assert {p.product: p.quantity for p in final.positions} == {"JM": 1, "RB": -1}
     assert len(drivers) == 1
     assert len(final.signals) == 3 and len(final.risk_decisions) == 3

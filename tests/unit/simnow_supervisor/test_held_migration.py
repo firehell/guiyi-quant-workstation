@@ -210,9 +210,9 @@ def host(s, inbox, factory, at, day, window):
     return sup, clock
 
 
-@pytest.mark.parametrize("granted", ["held"], indirect=True)
+@pytest.mark.parametrize("granted", [None, "held"], indirect=True)
 @pytest.mark.parametrize("missing_setter", [True, False])
-def test_active_held_ordinary_window_blocks_missing_hook_or_slow_keychain(
+def test_active_ordinary_window_blocks_missing_hook_or_slow_keychain(
     granted, monkeypatch, missing_setter
 ):
     s, inbox, now, start, intent, record, frozen = granted

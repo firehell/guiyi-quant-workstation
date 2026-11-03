@@ -457,7 +457,7 @@ class Supervisor:
             install_guard(lambda: preparation_recovery.validate_connection(
                 recovery_window, self.now(), lambda: self._preparation_authority(day), clock=self.now
             ))
-        elif ordinary_window and self.account_recovery_hold:
+        elif ordinary_window:
             install_guard = getattr(self.driver, "set_pre_native_guard", None)
             if not callable(install_guard):
                 raise ValueError("ORDINARY_TAKEOVER_INVALID")
