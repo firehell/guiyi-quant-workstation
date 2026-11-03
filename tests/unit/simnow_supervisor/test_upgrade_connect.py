@@ -22,6 +22,7 @@ def fixture(monkeypatch):
         plan=lambda now: NS(connect_allowed=True, trading_day=date(2026, 11, 2)),
         ordinary_takeover_window=lambda day, now: dict(day=day),
     )
+    s.account_recovery_hold = False
     s.run_id = "a" * 32
     s.folder = "private-folder"
     s.now = lambda: T
