@@ -1108,6 +1108,54 @@ def _closed_predecessors(host, entries):
                 == stopped_plan["plan_sha256"],
                 "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
             )
+            effects = state.get("effects", {})
+            verified = effects.get("verified")
+            feed_label = (
+                stopped_plan["new"]["services"]["market-feed"].get("launchd_label")
+                or "com.guiyi.quant-market-feed"
+            )
+            require(
+                set(state) == {
+                    "schema_version", "kind", "phase", "plan_sha256", "source",
+                    "receipt_sha256", "effects",
+                }
+                and type(state["schema_version"]) is int
+                and state["schema_version"] == 1
+                and state["kind"] == KIND
+                and state["phase"] == "recovered"
+                and set(effects) == {"consumers", "intake", "feed", "verified", "calendars"}
+                and effects["consumers"] == {
+                    "resumed_generation": stopped_plan["new"]["services"]["live"]["generation"]
+                }
+                and effects["feed"] == {"bootstrapped": True, "label": feed_label}
+                and effects["feed"]["bootstrapped"] is True
+                and _valid_intake_result(effects["intake"])
+                and type(verified) is dict
+                and set(verified) == {
+                    "continuous_identity", "calculation_ready", "intake", "natural_acceptance"
+                }
+                and verified["continuous_identity"] == "matched"
+                and verified["calculation_ready"] is False
+                and verified["natural_acceptance"] == "pending"
+                and _valid_intake_result(verified["intake"])
+                and effects["calendars"] == {
+                    "calendar_registration_only": True, "identity": "matched"
+                }
+                and effects["calendars"]["calendar_registration_only"] is True
+                and set(receipt) == {
+                    "schema_version", "kind", "plan_sha256", "source", "observed_at",
+                    "intake", "readback", "natural_acceptance", "original_attempt_preserved",
+                    "stopped_resolution",
+                } | ({"feed_close_resolution"} if "closed_feed" in stopped_plan else set())
+                and type(receipt["schema_version"]) is int
+                and receipt["schema_version"] == 1
+                and receipt["kind"] == "postcas_forward_recovery_readback"
+                and receipt["intake"] == effects["intake"]
+                and receipt["readback"] == verified
+                and receipt["original_attempt_preserved"] is True
+                and receipt["natural_acceptance"] == "pending",
+                "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+            )
             confirmation = read_confirmation(host, receipt["stopped_resolution"])
             require(
                 confirmation["source"] == stopped_plan["source"],
@@ -1133,6 +1181,9 @@ def _closed_predecessors(host, entries):
                     "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
                 )
             closed.update(confirmation["attempts"])
+            # This terminal root is proven too, even though its own historical
+            # confirmation contains only the failed predecessors it resolved.
+            closed.add(child.name)
             continue
         if resolution is None:
             continue

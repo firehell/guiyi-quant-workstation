@@ -25,6 +25,20 @@ def typed_intake():
     }
 
 
+def complete_stopped_outputs(host):
+    host.await_consumers = lambda *args: typed_intake()
+    host.resume_feed = lambda *args: host.calls.append("feed") or {
+        "bootstrapped": True, "label": "com.guiyi.quant-market-feed",
+    }
+    host.verify_forward = lambda *args: host.calls.append("verified") or {
+        "continuous_identity": "matched", "calculation_ready": False,
+        "intake": typed_intake(), "natural_acceptance": "pending",
+    }
+    host.forward_calendars = lambda *args: host.calls.append("calendars") or {
+        "calendar_registration_only": True, "identity": "matched",
+    }
+
+
 def failed_after_feed(tmp_path, monkeypatch, *, calendars=False, original=False):
     from app import runtime_stopped_recovery as stopped
 
@@ -181,6 +195,7 @@ def recover_after_feed_failure(tmp_path, monkeypatch, *, calendars=False, origin
         "continuous_identity": "matched",
         "calculation_ready": False,
         "intake": typed_intake(),
+        "natural_acceptance": "pending",
     }
     host.forward_calendars = lambda *args: {
         "calendar_registration_only": True,
@@ -237,6 +252,100 @@ def test_calendar_confirmation_retains_source_closure_and_failure_bytes(tmp_path
     assert set(state["effects"]) == {"consumers", "intake", "feed", "verified"}
     assert str(folder / "state.json") in value["files"]
     assert not (folder / "receipt.json").exists()
+
+
+def old_recovered_and_new_calendar_failure(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from app.runtime_bindings import BindingRegistry
+    from tests.test_runtime_cohort import Host
+
+    initialize = Host.__init__
+    generation = [55]
+    shared = tmp_path / "control"
+
+    def shared_inventory(host, directory):
+        initialize(host, directory)
+        shared.mkdir(mode=0o700, exist_ok=True)
+        host.directory = shared
+        host.old = BindingRegistry(1, {
+            name: replace(binding, generation=generation[0] - 1)
+            for name, binding in host.old.services.items()
+        })
+        host.registry = host.old
+
+    monkeypatch.setattr(Host, "__init__", shared_inventory)
+    previous = tmp_path / "previous"
+    previous.mkdir(mode=0o700)
+    _, _, recovered = recover_after_feed_failure(previous, monkeypatch)
+    assert recovered["new"]["services"]["live"]["generation"] == 55
+    root = shared / "cohort-forward-recoveries" / recovered["plan_sha256"]
+    retained = {p: p.read_bytes() for p in shared.rglob("*.json")
+                if p.name != "cohort-release.json"}
+    generation[0] = 56
+    current = tmp_path / "current"
+    current.mkdir(mode=0o700)
+    host, path, failed, _, _ = failed_after_feed(
+        current, monkeypatch, calendars=True, original=True
+    )
+    assert failed["new"]["services"]["live"]["generation"] == 56
+    return host, path, root, retained
+
+
+def test_old_successful_stopped_root_can_coexist_with_new_generation_failure(
+    tmp_path, monkeypatch
+):
+    from app import runtime_stopped_recovery as stopped
+
+    host, path, root, retained = old_recovered_and_new_calendar_failure(tmp_path, monkeypatch)
+    selected = stopped.reconcile_stopped(host, path)["confirmation"]
+    value = stopped.read_confirmation(host, selected)
+    assert root.name not in value["attempts"]  # It has its own proven terminal receipt.
+    assert all(p.read_bytes() == raw for p, raw in retained.items())
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["receipt_sha", "missing_receipt", "receipt_kind", "effects", "source",
+     "verified", "intake", "calendar", "failed_field", "extra_unknown"],
+)
+def test_old_successful_root_is_not_admitted_without_complete_terminal_proof(
+    tmp_path, monkeypatch, damage
+):
+    from hashlib import sha256
+    from app import runtime_stopped_recovery as stopped
+
+    host, path, root, _ = old_recovered_and_new_calendar_failure(tmp_path, monkeypatch)
+    state = json.loads((root / "state.json").read_bytes())
+    if damage == "missing_receipt":
+        (root / "receipt.json").unlink()
+    elif damage == "receipt_sha":
+        (root / "receipt.json").write_text("{}")
+    elif damage == "receipt_kind":
+        receipt = json.loads((root / "receipt.json").read_bytes())
+        receipt["kind"] = "unproven"
+        _write(root / "receipt.json", receipt)
+        state["receipt_sha256"] = sha256((root / "receipt.json").read_bytes()).hexdigest()
+        _write(root / "state.json", state)
+    elif damage == "extra_unknown":
+        other = root.parent / ("f" * 64)
+        other.mkdir(mode=0o700)
+        _write(other / "state.json", {"phase": "outcome_unknown"})
+    else:
+        if damage == "effects":
+            state["effects"]["unproven"] = {}
+        elif damage == "source":
+            state["source"]["plan_sha256"] = "f" * 64
+        elif damage == "verified":
+            state["effects"]["verified"]["intake"]["schema_version"] = 1
+        elif damage == "intake":
+            state["effects"]["intake"]["after_sha256"] = "invalid"
+        elif damage == "calendar":
+            state["effects"]["calendars"] = {"registered": True}
+        else:
+            state["failed_stage"] = "calendars"
+        _write(root / "state.json", state)
+    with pytest.raises((ValueError, OSError)):
+        stopped.reconcile_stopped(host, path)
 
 
 @pytest.mark.parametrize(
@@ -417,7 +526,7 @@ def test_original_consumer_only_timeout_reuses_stopped_frontier_without_replay(
     assert fresh["mode"] == "reconciled_stopped"
     fresh_path = tmp_path / "original-fresh.json"
     _write(fresh_path, fresh)
-    host.await_consumers = lambda *args: {"kind": "typed_receiver"}
+    complete_stopped_outputs(host)
     assert recovery.apply_forward_recovery(host, fresh_path)["status"] == "recovered"
     recovery._no_unresolved_recovery(host)
     assert (folder / "state.json").read_bytes() == original
@@ -533,8 +642,7 @@ def test_confirmed_stopped_can_recover_and_close_all_failed_attempts(tmp_path):
     assert "predecessor" not in plan
     target = tmp_path / "fresh.json"
     _write(target, plan)
-    host.await_consumers = lambda *args: {"kind": "typed_receiver"}
-    host.resume_feed = lambda *args: host.calls.append("feed") or {"started": True}
+    complete_stopped_outputs(host)
     result = recovery.apply_forward_recovery(host, target)
     assert result["status"] == "recovered"
     assert host.calls == ["consumers", "feed", "verified", "calendars"]
