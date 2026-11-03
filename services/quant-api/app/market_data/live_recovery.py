@@ -196,6 +196,21 @@ def recover_product(
     commit_guard: Callable[[], ContextManager] = nullcontext,
 ) -> str:
     """Validate a full completed prefix and atomically add only missing observations."""
+    return _recover_product(
+        store, request, fetch, clock=clock, commit_guard=commit_guard,
+        claim_attempt=_claim_regular_attempt,
+    )
+
+
+def _claim_regular_attempt(redis, budget_key, circuit_key, cutoff):
+    return redis.eval(
+        CLAIM_ATTEMPT, 2, budget_key, circuit_key,
+        _epoch_millis(cutoff), _LIVE_TTL_SECONDS,
+    ) == 1
+
+
+def _recover_product(store, request, fetch, *, clock, commit_guard, claim_attempt):
+    """Shared validation/CAS path; public callers retain the ordinary three claims."""
     ends = request.endpoints()
     if not ends:
         return "NO_GAP"
@@ -221,17 +236,7 @@ def recover_product(
             raise ValueError("LIVE_RECOVERY_SESSION_INVALID")
         budget_key = f"{state_key}:attempt:{active_session.start.isoformat()}"
         circuit_key = f"live:recovery:circuit:{request.trading_day.isoformat()}"
-        if (
-            redis.eval(
-                CLAIM_ATTEMPT,
-                2,
-                budget_key,
-                circuit_key,
-                _epoch_millis(request.cutoff),
-                _LIVE_TTL_SECONDS,
-            )
-            != 1
-        ):
+        if not claim_attempt(redis, budget_key, circuit_key, request.cutoff):
             return "RETRY_BUDGET_BLOCKED"
         try:
             source = fetch(request)
