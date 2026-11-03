@@ -1,3 +1,7 @@
+11/3 15:00收盘预检与v1.16.72补充：全60权威窗口WINDOW_OPEN、下一交易日20261104实际预算0且无block，Session今晚21:00、连接窗20:58–21:02；未生成新许可/计划、未停启或连接。原SimNow仍v69/PID29975，13:30只读快照失败后现WAITING_SESSION/hold=true/auto_order=false/pending=true。正式Evidence解码确认lastnative三表空、CurrMargin/FrozenMargin/FrozenCommission均0，原ledger历史/预算/父child UNKNOWN保持、dispatch0 actions且2条disconnect。
+新增simnow_held_readonly_handoff_v1仅固定原v69 exact/PID29975的唯一ACCOUNT_SNAPSHOT/READY/UNCLASSIFIED只读失败，双显式flag、失败SHA/源代码配置SDK/PIDbirth/run/ledger/native/dispatch/budget绑定，原因仍UNKNOWN；默认failure拒绝、新day预算和新连接fresh Recover不变。已停未启恢复重建原source且每轮验证当前/backup真实物理anchor，原cfg必须原inode；任何旧grant/claim或START_REQUESTED拒绝再次授权，原intent/UNKNOWN不改。最终新33+29项、受影响六组241项及独立Review通过；原1283扩展与244发布回归、构建验证仍适用未改变模块，补丁纳入后再补发布树相关回归。
+发布PR601已准备；此前宿主main merge审批拒绝未绕过，实际main/tag/Release及Runtime尚未推进至v72。owner再次明确今晚部署自动交易目标；正式API消费者须先升级，再迁原SimNow；未放弃订单去重、行情/账户对账和实际费用事实门禁。
+
 11/3 v1.16.72发布内容：仅纳入同一SimNow模拟账户的signed32策略成交V2及显式owner自动执行接管；旧V1/policy/codec字节与历史重放保留。解除hold须计划与apply均显式--enable-auto-order并绑定preimage/hash，默认held迁移不变；原账户/四库/profile/SDK/60范围及普通预算、旧block/UNKNOWN不改。源HELD或正常收盘WAITING须完整未决义务及当前run无failure，SIGTERM前/STOPPED后复核；目标pending且opening=false，只有同连接新鲜账户Recover/complete_takeover完成才可执行。所有活动ordinary在实际SDK connector前复核窗口，含非held。
 验证：扩展1283 passed；后续目录扫描加固及真实不可读/EIO反例定向158 passed，最新两个新文件44 passed；正负Session完整Supervisor→V2成交→MonitorReader闭环4 passed；真实SDK结构零nativeAPI/零凭据/零请求及34 smoke通过，独立Review通过。V2新成交必须先同步正式API读者，不能只迁SimNow；现役仍十服务v71/gen54、SimNow v69 held。owner要求15:00全品种收盘后才处理切换，当前无服务/配置/预算或Broker变更。本文是发布内容和验证说明，实际发布、Runtime切换、连接恢复及自然订单/成交分别以现场读回为准。
 
