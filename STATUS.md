@@ -1,3 +1,6 @@
+11/3 v1.16.70发布内容仅从已发布v69基线纳入held迁移保护、恢复/候选引用盘点及完整账本重放提速；其他develop研究不在范围。隔离发布树1251项账户/宿主/迁移/保留扫描/health回归通过（63.47秒），独立集成Review通过；冻结依赖离线安装、API/core sdist+wheel、Web类型/构建/拓扑和共享版本检查、Ruff F/secret零发现/diff均通过。原账本2722条命令重放与旧checkpoint逐字节一致，原45/8/30秒门槛不变。
+本次只发布，不切换、停启或重连任何正式服务/SimNow，不创建许可或订单。发布前只读保护快照：十服务仍v64/gen53，SimNow原v69/PID29975、ACCOUNT_RECOVERED_HELD/hold=true/auto_order=false；正式绑定、11份plist、私有配置、监控锚、父/child UNKNOWN和连接预算均保全，发布后须按同一快照复核。发布完成以实际main/tag/GitHub Release为准，尚未部署的新代码不冒充现役修复。
+
 11/3 重放性能修复已完成开发和验证，尚未发布或切换Runtime。同一只读冻结原账本2722条命令完整重放由91.834秒降至3.428秒（约26.8倍）；每条真实reducer仍执行，checkpoint完整字节、状态hash和冻结DB原字节均与旧实现一致。仅复用本次同步重放内已证明深度不可变字段的原格式序列化片段，并复用实际计算的上一条after hash；逐行command/effects/chain/recovery与最终projection校验保留，历史格式/版本不变。缓存按线程隔离、最多16MiB、退出/异常清除，未知可变值或超限走原路径。
 相关回归命令覆盖htdy_execution、simnow_supervisor/host/execution及preparation-recovery controller，共1126 passed（46.70秒）；独立Review及148项账户测试通过，独立同冻结账本3.473秒且实际apply2722次。固定SDK离线--trade --check 3.955秒<原45秒，原账户完整只读inspect 4.063秒；使用新core外部读取器配合原封v69 controller，在两次自然发布后严格readback_held分别4.319/3.888秒通过（原8秒control/monitor、30秒账户门槛不变）。这验证新读取器性能，不代表旧v69已获修复。
 现役仍原v69/PID29975/run c24bbcb3…、hold=true/auto_order=false；正式十服务仍v64/gen53。本轮未停启、连接、签发许可、写原账本或改父/child UNKNOWN；其他regime研究修改保留。包含迁移与保留扫描修复的新版本仍需正式发布后，才能重建迁移候选并按下一合法窗口/预算执行；原稳定69候选不能直接迁移。
