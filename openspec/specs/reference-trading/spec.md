@@ -232,6 +232,18 @@ the original 48-stream/20-OPEN controller profile and its historical plan schema
 The separate incident SHALL reuse the same source proof, atomic boundary and future FLAT restart below,
 not introduce a generic overlap exemption. Its private plan/attempt schema SHALL be distinct from the
 original incident, and native readback SHALL also require its exact three-stream scope.
+The separately selected `htdy_conflict_recovery_20261103_v1` SHALL cover only the eleven
+AP/CJ/JD/LC/LH/PD/PK/PS/PT/SF/SM 60m streams frozen by inventory SHA256
+`cc5e1c27d980452a128af5635491c56e4bdf339d461a198c1266d8e500bb1b37`. Native scope checks SHALL bind
+each exact old revision, pending Capture, activation generation and checkpoint batch, including
+only the five existing OPEN reference trades in CJ/PD/PS/PT/SM. The CLI plan/attempt schema SHALL be
+`reference_htdy_conflict_cli_20261103_v1`; prior incident schemas and scope remain unchanged.
+Some selected streams already have retired earlier conflicts. Only their complete independently verified
+typed retirement/calculation proof union MAY exclude those immutable old deliveries from the new
+incident; stale generation/revision or a terminal status alone SHALL NOT do so. Tampered prior proof
+SHALL block this operation. The same source, writer fence, one-shot attempt, atomic boundary,
+future FLAT restart and readback requirements below apply; no generic numeric overlap exemption is added.
+
 The native MDS verifier SHALL prove immutable original/capture/checkpoint hashes, the exact 32-Bar
 windows, unchanged overlapping endpoint/physical-owner identities, Calendar/Session continuity and
 finite numeric differences. Every changed Bar SHALL match the current verified physical Canonical

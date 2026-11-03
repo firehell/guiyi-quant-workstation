@@ -210,3 +210,68 @@ def test_real_three_scope_atomic_original_trigger_and_ss_interruption(
     with pytest.raises(DBAPIError):
         with factory() as db, db.begin():
             db.get(ReferenceInboxInput, input_id).canonical_envelope = "tampered"
+
+
+@pytest.mark.parametrize(
+    "pg_setup",
+    [["ap", "cj", "jd", "lc", "lh", "pd", "pk", "ps", "pt", "sf", "sm", "rb"]],
+    indirect=True,
+)
+def test_real_eleven_mixed_generations_five_open_original_retirement(
+    pg_setup, monkeypatch
+):
+    from tests.reference_trading.test_htdy_eleven_conflict_scope import configure_eleven
+    from tests.reference_trading.test_inbox import event
+    from app.reference_trading.htdy_conflict_recovery import _row
+    from app.reference_trading.models import ReferenceTradeRow, ReferenceActionRow
+    from dataclasses import replace
+
+    factory, recovery, _ = pg_setup
+    factory, recovery, ids = configure_eleven(factory, recovery, monkeypatch)
+    original = event(end=NOW - timedelta(minutes=30))
+    incoming = replace(
+        original,
+        channel="live:bar:ps:60m",
+        data={**original.data, "contract": "PS2612"},
+    )
+    delivery = (
+        ReferenceInboxRepository(factory)
+        .ingest(incoming, ingested_at=NOW)
+        .delivery_ids[0]
+    )
+    with factory() as db:
+        retained = _row(db.get(ReferenceInboxDelivery, delivery))
+        batches = {b.batch_id: _row(b) for b in db.scalars(select(ReferenceBatch))}
+    frozen = plan(recovery, ids)
+    result = recovery.apply(frozen, expected_plan_hash=frozen["plan_hash"], now=NOW)
+    assert len(result) == 11 and recovery.readback(frozen) == result
+    with factory() as db:
+        assert all(_row(db.get(ReferenceBatch, k)) == v for k, v in batches.items())
+        assert _row(db.get(ReferenceInboxDelivery, delivery)) == retained
+        assert delivery in verified_resolution_ids(db, stream_ids=ids)
+        interrupted = db.scalars(
+            select(ReferenceTradeRow).where(
+                ReferenceTradeRow.status == "DATA_INTERRUPTED"
+            )
+        ).all()
+        assert len(interrupted) == 5 and all(
+            r.exit_reference_price is None and r.reference_return is None
+            for r in interrupted
+        )
+        assert len(db.scalars(select(ReferenceActionRow)).all()) == 5
+    with factory() as db:
+        input_id = db.get(ReferenceInboxDelivery, delivery).input_id
+    with pytest.raises(DBAPIError):
+        with factory() as db, db.begin():
+            db.get(ReferenceInboxInput, input_id).canonical_envelope = "ALTERED"
+
+
+@pytest.mark.parametrize("tamper", [False, True])
+def test_real_second_retirement_keeps_old_proof_or_rejects_tamper(
+    pg_setup, monkeypatch, tamper
+):
+    from tests.reference_trading.test_htdy_eleven_conflict_scope import (
+        repeated_retirement,
+    )
+
+    repeated_retirement(*pg_setup, monkeypatch, tamper=tamper)

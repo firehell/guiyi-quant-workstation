@@ -282,7 +282,7 @@ def test_unknown_inbox_cannot_be_retired(setup):
         )
 
 
-def add_open_trade(factory, product="rb"):
+def add_open_trade(factory, product="rb", *, action_pk="original-action"):
     from decimal import Decimal
     from app.reference_trading.models import ReferenceActionRow, ReferenceTradeRow
     from guiyi_quant.reference_trading import (
@@ -320,7 +320,7 @@ def add_open_trade(factory, product="rb"):
         trade = transition.state.open_trade
         session.add(
             ReferenceActionRow(
-                action_pk="original-action",
+                action_pk=action_pk,
                 stream_id=identity.stream_id,
                 origin_revision_id=revision.revision_id,
                 batch_revision_id=revision.revision_id,
@@ -347,7 +347,7 @@ def add_open_trade(factory, product="rb"):
                 revision_id=revision.revision_id,
                 trade_id=trade.reference_trade_id,
                 valid_from_seq=1,
-                entry_action_pk="original-action",
+                entry_action_pk=action_pk,
                 side="LONG",
                 status="OPEN",
                 physical_contract=action.physical_contract,
