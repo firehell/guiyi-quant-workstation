@@ -1,3 +1,6 @@
+11/3 v1.16.71发布范围：从正式v70仅增加20261103精确HTDY上下文冲突恢复profile，不包含其他develop研究。固定inventorySHA cc5e1c27…及11个旧revision/capture/checkpoint、3个gen1+8个gen2和5OPEN tradeID；旧48/3入口不变。新incident只用完整typed proof并集排除先前已退休投递，坏proof继续阻断。真实原生MDS只读来源核验11/11通过，变化值匹配物理Canonical及RQData1m/派生60m publication provenance，不下载/改写行情或观察。
+验证：定向及扩展206 passed，另12项真实隔离PostgreSQL全部通过；其中真实旧退休→后继capture/evaluate/commit→再次退休和旧proof篡改反例均通过，原件/5OPEN中断/无退出价和收益/不新增action/未选流/回滚均核验。扩展中2项readiness因无隔离URL跳过，已另在隔离PG2 passed补齐。隔离发布树108项回归及API/core/Web构建、版本与拓扑检查通过；独立代码/发布集成Review、Ruff、显式含未跟踪新测试的secret/diff通过。此处仅发布内容和验证，实际恢复、服务切换与新自然业务另以现场读回为准，不解除SimNow hold或预算。
+
 11/3 v1.16.70发布内容仅从已发布v69基线纳入held迁移保护、恢复/候选引用盘点及完整账本重放提速；其他develop研究不在范围。隔离发布树1251项账户/宿主/迁移/保留扫描/health回归通过（63.47秒），独立集成Review通过；冻结依赖离线安装、API/core sdist+wheel、Web类型/构建/拓扑和共享版本检查、Ruff F/secret零发现/diff均通过。原账本2722条命令重放与旧checkpoint逐字节一致，原45/8/30秒门槛不变。
 本次只发布，不切换、停启或重连任何正式服务/SimNow，不创建许可或订单。发布前只读保护快照：十服务仍v64/gen53，SimNow原v69/PID29975、ACCOUNT_RECOVERED_HELD/hold=true/auto_order=false；正式绑定、11份plist、私有配置、监控锚、父/child UNKNOWN和连接预算均保全，发布后须按同一快照复核。发布完成以实际main/tag/GitHub Release为准，尚未部署的新代码不冒充现役修复。
 
