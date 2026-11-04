@@ -1,3 +1,11 @@
+11/4 正式发布与单发布树收敛完成：v1.16.81（PR611）main/annotated tag/Release精确 `dc86dabf8b9d5bf2297532a095c7732970f17db5`，包含v80两位小数显示及本次12路精确冲突恢复清单。原生cohort `dac00c989fd9f99b05c83c948375ec37d74c6a562de033cd4297b7f7048efecc` 已switched，十服务统一v81/gen57，Feed与原定时注册读回matched。唯一正式发布/运行树为 `.worktrees/release-v1.16.81`；v72/v73/v76/v80在部署锁、两次一致eligible计划、精确干净身份和忽略文件白名单检查后全部non-force删除。原生封存保全76条闭合历史、199份原件、24份marker，删后现役v81原封reader验证13索引通过，四库与正式配置/绑定保持。历史tag保留，回退须从原tag重建而非保留常驻旧树；当前聊天准备工作区受宿主primary保护保留，其他任务与用户研究修改未清理。
+
+owner已明确选择保全原件、冲突中断后恢复：SM/PK/AP/CJ/JD/LC/LH/PD/PS/PT/SF/SI十二路60m由原生计划 `3229a02b533e82c3309e8f9a18dee3cce8d8c2e593561318bf28cf6352f5a7cc` 一次原子COMMITTED，切换及删树后独立status仍COMMITTED/12。仅SI旧OPEN参考追加DATA_INTERRUPTED，无退出价/收益；十二路未来FLAT记录从11/4 16:00北京时间开始，未伪造历史信号或成交。12路物理Canonical及发布来源只读证明通过，128项相关测试、13项真实隔离PG测试、API wheel/sdist、Web构建/拓扑、冻结锁、Ruff/diff/secret0及独立Review通过。旧SimNow仍STOPPED且自启配置/label缺席，四个实际数据库与停用时inode/SHA等完全一致；账户、账本、Keychain和历史原件保留，不登录/报撤单/平仓/初始化。
+
+删树后API/Web可访问且十服务身份全matched，Runtime健康出现ok/degraded间歇波动，不能据此宣称所有策略计算或自然业务完成。只读完整环境诊断已定位健康快照时序误报：请求开始07:55:18.803Z，稍后读取的参考心跳07:55:20.017Z，被旧请求时间判为reference_owner_proof_stale；现场owner实际active、gen57。Alert另保留策略coverage诊断。未为清理重启、补发或改健康门禁，本补丁未修正该健康快照时间问题；最小后续项为修正此纯健康投影时钟并定向验证。精确计划、恢复原件、原生封存/删除及最终单树读回复用 `output/release-cleanup-20261104`，其中 `one-formal-release-root-v81.json` 为实际完成记录。
+
+以下为此前检查点：
+
 11/4 下午收盘后继续统一发布树：v1.16.80仍为已正式发布版本（exact cdbf2b6a6da508b40a3f62f01ff3d29381b7e9c7），现役十服务仍v73/gen56。新鲜休市检查通过后，原生cohort `8f29854f917ed9a6115cbf95f59ed56fad44a05dcd4058ad78d554a6ce436115` 在Reference预热安全取消，effects={}，未暂停日历、停服、安装或CAS，不复用旧attempt。相同私有launcher环境的无提交预热复现HTDY pending `OBSERVATION_GAP`；只读逐条核对发现SM/PK/AP/CJ/JD/LC/LH/PD/PS/PT/SF/SI共12路60m原件与checkpoint同时间重叠Bar价格或成交量不同，checkpoint截至11/3 15:00、pending原件11/4 10:00（北京时间），SI有1笔OPEN页面参考交易，其余11路FLAT。独立Review确认现有合同不允许pending/evaluator失败豁免。已请求owner决定是否保留全部原件、将SI旧参考标为数据冲突中断（无退出价/收益）、12路未来FLAT恢复后再统一；未执行业务DB修复、重置、清pending、补发或回放。正式目录仍v72/v73/v76/v80，旧树保留运行/恢复引用；旧SimNow停用且账户账本保全的结论不变。
 
 以下为此前检查点：
