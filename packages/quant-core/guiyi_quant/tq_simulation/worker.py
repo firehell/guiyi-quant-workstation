@@ -119,6 +119,25 @@ def preflight_ready(controller, snapshot, issues, mappings, products, now):
     )
 
 
+def recover_blocked_products(controller, gateway, packets):
+    state = controller.store.current()
+    owners = {p.product: p.owner for p in state.products}
+    selected = tuple(
+        proof for proof in (codec.decode(packet) for packet in packets)
+        if proof.product in state.blocked_products
+        and proof.contract == owners[proof.product]
+    )
+    if not selected:
+        return False
+    current = datetime.now(UTC)
+    snapshot = gateway.snapshot(current)
+    rb = controller.synchronize(snapshot, current)
+    products = tuple(sorted({proof.product for proof in selected}))
+    cmd = m.ProductRecoveryV1(rb, selected, products)
+    controller.store.execute("tq-product-recovery:" + codec.digest(cmd), cmd)
+    return True
+
+
 def require_recovery(controller, at):
     if controller.store is not None and controller.store.current().phase == "READY":
         controller.store.execute(
@@ -305,15 +324,7 @@ def run(config_path, *, inspect=False):
                                         fact["source_id"],
                                     )
                                 controller.signal(s)
-                            proofs = tuple(codec.decode(p) for p in reply["recovery"])
-                            if proofs and controller.store.current().blocked_products:
-                                current = datetime.now(UTC)
-                                snapshot = gateway.snapshot(current)
-                                rb = controller.synchronize(snapshot, current)
-                                cmd = m.ProductRecoveryV1(rb, proofs)
-                                controller.store.execute(
-                                    "tq-product-recovery:" + codec.digest(cmd), cmd
-                                )
+                            recover_blocked_products(controller, gateway, reply["recovery"])
                     if inspect:
                         report = {
                             "status": "READ_ONLY_CONNECTED",
