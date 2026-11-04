@@ -6,7 +6,7 @@
 
 策略复用 [HTDY 固定一手规则](HTDY_SIMNOW_V1.md) 的 `huotian_dayou_original_v0` 及 operational 品种的 completed 60m 输入。RQData/MDS 是信号、精确物理合约及 Session 权威；天勤只提供执行盘口、模拟委托/成交和远端账户事实，不进入 Canonical 或策略计算。
 
-执行版本 `htdy_tqkq_opponent_reprice180_v1`，风险版本 `htdy_tqkq_actual_equity_margin70_v1`，账户 journal 身份 `TQKQ:<账户指纹>:htdy_tqkq_v1`。独立 `services/tq-executor` 环境锁定 `tqsdk==3.10.4`；版本不符拒绝连接。远端与本地订单身份、原始快照 hash、策略信号和运行 commit 各自保留。
+执行版本 `htdy_tqkq_opponent_reprice180_v1`，风险版本 `htdy_tqkq_actual_equity_margin70_v1`，账户 journal 身份 `TQKQ:<账户指纹>:htdy_tqkq_v1`。独立 `services/tq-executor` 环境锁定 `tqsdk==3.10.4`，显式安装系统 SOCKS 代理所需的 `python-socks[asyncio]` 并随依赖锁固定；版本不符拒绝连接。远端与本地订单身份、原始快照 hash、策略信号和运行 commit 各自保留。
 
 ## 账户与风险
 
@@ -28,7 +28,7 @@
 
 - `credentials --replace`：本机隐藏录入框，存独立 Keychain 项目，明文不写文件或日志。
 - `configure --root /精确正式树 --tag vX.Y.Z`：核验 annotated tag、commit、clean tree 和正式 API binding；默认为 observe。
-- `probe`：只读连接、当前全品种映射、初次接管或已有账户对账；生成最长 300 秒的启动证明，不发送订单。
+- `probe`：使用与 launchd 相同的最小环境，只读连接、当前全品种映射、初次接管或已有账户对账；生成最长 300 秒的启动证明，不发送订单。
 - `install`、`start --trade`：安装唯一 `com.guiyi.quant-tqkq-simulation`，通过新鲜预检后启用。失败进程不自动重启或重发。
 - `status`、`pause`、`stop`：暂停禁止新开仓并管理既有义务；停止撤销已证明归属的未决委托后退出，不自动清仓。未知发送状态不能视为成功停止。
 

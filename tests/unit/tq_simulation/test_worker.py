@@ -161,3 +161,21 @@ def test_current_mapping_coverage_does_not_count_historical_symbols(
     proof = read_private(base / "preflight.json")
     assert proof["ready_for_start"] and proof["mapped_contracts"] == 1
     assert calls == []
+
+
+def test_probe_and_service_environment_match_and_do_not_inherit_terminal_proxy(
+    monkeypatch, tmp_path
+):
+    from guiyi_quant.tq_simulation.cli import service_environment, service_command
+
+    monkeypatch.setenv("HTTPS_PROXY", "http://terminal-only.example:8080")
+    monkeypatch.setenv("PYTHONPATH", "/terminal-only")
+    env = service_environment(tmp_path)
+    assert env["GUIYI_PROJECT_ROOT"] == str(tmp_path)
+    assert env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin"
+    assert "HTTPS_PROXY" not in env and "PYTHONPATH" not in env
+    assert env["USER"] == env["LOGNAME"] and env["HOME"]
+    service = service_command(tmp_path)
+    assert service[:2] == ["/usr/bin/env", "-i"]
+    assert service_command(tmp_path, inspect=True) == service + ["--inspect"]
+    assert set(service[2:7]) == {f"{k}={v}" for k, v in env.items()}

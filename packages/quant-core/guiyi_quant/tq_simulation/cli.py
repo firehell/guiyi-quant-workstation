@@ -65,6 +65,32 @@ def config(root, tag, account):
     return result
 
 
+def service_environment(root):
+    # Match the launchd job for preflight; terminal proxy variables must not
+    # make a successful probe conceal a missing service-side dependency.
+    import pwd
+
+    user = pwd.getpwuid(os.getuid()).pw_name
+    return {
+        "HOME": str(Path.home()),
+        "USER": user,
+        "LOGNAME": user,
+        "GUIYI_PROJECT_ROOT": str(root),
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+
+
+def service_command(root, *, inspect=False):
+    return [
+        "/usr/bin/env",
+        "-i",
+        *[f"{key}={value}" for key, value in service_environment(root).items()],
+        "/bin/bash",
+        str(root / "scripts/ops/macos/run-tq-simulation.sh"),
+        *(["--inspect"] if inspect else []),
+    ]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -153,9 +179,11 @@ def main(argv=None):
         if args.action == "probe":
             if launch_state() and launch_state()["pid"]:
                 raise ValueError("TQ_STOP_BEFORE_PROBE")
-            script = root / "scripts/ops/macos/run-tq-simulation.sh"
             return subprocess.run(
-                ["/bin/bash", str(script), "--inspect"], cwd=root, check=False
+                service_command(root, inspect=True),
+                cwd=root,
+                env=service_environment(root),
+                check=False,
             ).returncode
         if args.action == "install":
             state = launch_state()
@@ -171,15 +199,9 @@ def main(argv=None):
                     raise ValueError("TQ_BOOTOUT_UNKNOWN")
             payload = {
                 "Label": LABEL,
-                "ProgramArguments": [
-                    "/bin/bash",
-                    str(root / "scripts/ops/macos/run-tq-simulation.sh"),
-                ],
+                "ProgramArguments": service_command(root),
                 "WorkingDirectory": str(root),
-                "EnvironmentVariables": {
-                    "GUIYI_PROJECT_ROOT": str(root),
-                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                },
+                "EnvironmentVariables": service_environment(root),
                 "RunAtLoad": True,
                 "KeepAlive": False,
                 "Umask": 0o077,
