@@ -73,6 +73,8 @@ app.include_router(market_live_router)
 app.include_router(alerts_router)
 app.include_router(runtime_router)
 app.include_router(reference_trading_router)
+from app.api.research_subing_decision import router as subing_decision_router
+app.include_router(subing_decision_router)
 app.include_router(research_new_subing_router)
 app.include_router(research_newow_futures_router)
 

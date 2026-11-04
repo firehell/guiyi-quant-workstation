@@ -2387,3 +2387,12 @@ PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过�
 20261103 HTDY精确11流恢复另验证`test_htdy_eleven_conflict_scope.py`及同组`test_htdy_conflict_postgres.py`：
 原3/48流入口不变，mixed generation/5OPEN、未选流保持、精确inventory与旧revision/capture/checkpoint/tradeID漂移拒绝，
 以及真实旧退休→后继capture/calculation→二次退休的typed proof并集、旧proof篡改拒绝。生产执行仍需新鲜原生source/停止写入围栏和单次attempt，测试不替代恢复读回。
+
+## 焦煤统一环境—需求历史回放
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider scripts/research/test_subing_unified.py scripts/research/test_subing_recent_structure.py scripts/research/test_subing_demand_policy.py scripts/research/test_subing_demand_observer.py scripts/research/test_subing_demand_account_candidate.py services/quant-api/tests/test_subing_decision_replay_api.py tests/unit/subing_account tests/unit/subing_decision tests/unit/subing_conditions
+pnpm -C apps/quant-web build
+```
+
+真实历史复算入口 `scripts/research/subing_unified_replay.py --contract CONTRACT --since YYYY-MM-DD --through YYYY-MM-DD --output EXPLICIT_NEW_DIRECTORY`；使用现有MDS只读加载与既有JM执行事实，不下载或写行情。只读API需显式 `GUIYI_SUBING_DECISION_RESULTS_ROOT`，目录内index.json逐项登记SHA文件；损坏/缺失失败，不扫描其他研究目录。开发浏览器验收需真实登记四窗口，检查导航、切窗、时间游标、历史分页及游标前成交；fixture不代替真实回放。

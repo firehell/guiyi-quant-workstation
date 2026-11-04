@@ -32,6 +32,10 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 API只读SHA索引冻结结果，GET不回测、下载或写生产；页面明确历史截止而非当前账户持仓。
 本能力不接入持续Paper、Scope、Runtime、通知或Broker；合同见[期货双向研究](docs/NEWOW_FUTURES_STRATEGY.md)。
 
+## 苏冰决策历史回放
+
+`/research/subing-decision` 提供焦煤统一环境—需求候选的独立历史回放，入口位于模拟交易之后；只读 `/api/v1/research/subing-decision/*` 消费显式登记SHA结果，展示环境、条件、模型持仓及决策/成交历史。v2基础分类与近期结构确认约束分别解释，收益属于独立模型账户已见开发样本，不是持续模型或真实账户。规则与边界见[交易需求合同](docs/research/subing-trading-demands.md#应用内焦煤统一历史回放候选2026-11-04)。
+
 ## 新苏冰策略独立研究
 
 修正版 `new_subing_v2` 使用独立[阶段/分层合同](docs/NEW_SUBING_STRATEGY_V2.md)，保留V1规则与结果。
