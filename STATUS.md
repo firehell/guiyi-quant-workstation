@@ -1,3 +1,15 @@
+11/4 天勤模拟已启用，正式发布树收敛为一棵：v1.16.84 main/tag/Release exact `610a77ff246c18b83eb5423ad02326987ba68e5d`，十个标准服务已由原生 cohort `3b05cba9a167ffd690436f40cb5a1fe3f537217d3a1256b15d0ed0bf8eb6db9c` 切至 gen60、同源正式树 `.worktrees/release-v1.16.84`。
+
+TqKq 单主账户于18:45:41实际启用（当次PID26868），mode=trade、READY、opening_enabled=true、唯一排他锁；60品种映射及真实账户完整读回通过，独立实际权益基线1,000,000.00元，当前空仓。启用现场信号/发送claim/委托/成交均0；只接收启用后的新completed 60m自然信号，不补白天信号、不制造测试成交。首个自然信号、模拟委托、成交分别待夜盘验收，服务启用不冒充成交闭环。
+
+新增独立TqSdk3.10.4锁定环境、账户对账与幂等发送、原风险规则和只读模拟监控；界面金额价格保持两位小数。已修复launchd的SOCKS依赖及外置盘脚本启动问题，采用与标准服务一致的AppSupport稳定入口/HOME工作目录，SDK前验证脚本与exact-tag逐字相同，不改系统安全设置；凭据仅由独立Keychain项目加载。本地控制见 `docs/TQ_SIMULATION.md`。
+
+相关后端324 passed、前端监控20 passed；独立Review、构建、冻结锁、Ruff/diff/secret检查及正式Web代理/DTO/两位小数现场核验通过。全量Web的3项导航既有失败已在v81逐项复现。18:05盘后主更新自然passed（60品种），附带只读消费者核验自然退出后才切换，不将行情完成混同消费者核验通过。
+
+旧81/82/83在零引用dry-run与原生79条闭合历史/14个索引读回后已non-force移除，删除后仍可由v84读取；旧SimNow保持停用，账户和四份既有数据库保护校验不变。用户研究修改及其他工作区保留。恢复/移除原件见 `output/release-cleanup-20261104/one-formal-release-root-v84.json`；不保留常驻备用发布树、不改写旧tag。
+
+以下为此前检查点：
+
 11/4 正式发布与单发布树收敛完成：v1.16.81（PR611）main/annotated tag/Release精确 `dc86dabf8b9d5bf2297532a095c7732970f17db5`，包含v80两位小数显示及本次12路精确冲突恢复清单。原生cohort `dac00c989fd9f99b05c83c948375ec37d74c6a562de033cd4297b7f7048efecc` 已switched，十服务统一v81/gen57，Feed与原定时注册读回matched。唯一正式发布/运行树为 `.worktrees/release-v1.16.81`；v72/v73/v76/v80在部署锁、两次一致eligible计划、精确干净身份和忽略文件白名单检查后全部non-force删除。原生封存保全76条闭合历史、199份原件、24份marker，删后现役v81原封reader验证13索引通过，四库与正式配置/绑定保持。历史tag保留，回退须从原tag重建而非保留常驻旧树；当前聊天准备工作区受宿主primary保护保留，其他任务与用户研究修改未清理。
 
 owner已明确选择保全原件、冲突中断后恢复：SM/PK/AP/CJ/JD/LC/LH/PD/PS/PT/SF/SI十二路60m由原生计划 `3229a02b533e82c3309e8f9a18dee3cce8d8c2e593561318bf28cf6352f5a7cc` 一次原子COMMITTED，切换及删树后独立status仍COMMITTED/12。仅SI旧OPEN参考追加DATA_INTERRUPTED，无退出价/收益；十二路未来FLAT记录从11/4 16:00北京时间开始，未伪造历史信号或成交。12路物理Canonical及发布来源只读证明通过，128项相关测试、13项真实隔离PG测试、API wheel/sdist、Web构建/拓扑、冻结锁、Ruff/diff/secret0及独立Review通过。旧SimNow仍STOPPED且自启配置/label缺席，四个实际数据库与停用时inode/SHA等完全一致；账户、账本、Keychain和历史原件保留，不登录/报撤单/平仓/初始化。
