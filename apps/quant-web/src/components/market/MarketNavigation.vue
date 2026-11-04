@@ -1,6 +1,6 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ activeTab?: 'market' | 'messages' | 'simnow' | null }>(), { activeTab: null })
-const emit = defineEmits<{ market: []; messages: []; simnow: [] }>()
+withDefaults(defineProps<{ activeTab?: 'market' | 'messages' | 'simulation' | null }>(), { activeTab: null })
+const emit = defineEmits<{ market: []; messages: []; simulation: [] }>()
 </script>
 
 <template>
@@ -9,7 +9,7 @@ const emit = defineEmits<{ market: []; messages: []; simnow: [] }>()
     <nav class="market-navigation__tabs" role="tablist" aria-label="全局导航">
       <button type="button" role="tab" :aria-selected="activeTab === 'market'" :aria-current="activeTab === 'market' ? 'page' : undefined" @click="emit('market')">市场</button>
       <button type="button" role="tab" :aria-selected="activeTab === 'messages'" :aria-current="activeTab === 'messages' ? 'page' : undefined" @click="emit('messages')">消息</button>
-      <button type="button" role="tab" :aria-selected="activeTab === 'simnow'" :aria-current="activeTab === 'simnow' ? 'page' : undefined" @click="emit('simnow')">模拟交易</button>
+      <button type="button" role="tab" :aria-selected="activeTab === 'simulation'" :aria-current="activeTab === 'simulation' ? 'page' : undefined" @click="emit('simulation')">模拟交易</button>
     </nav>
     <div class="market-navigation__search"><slot name="search" /></div>
     <div class="market-navigation__actions"><slot name="actions" /></div>

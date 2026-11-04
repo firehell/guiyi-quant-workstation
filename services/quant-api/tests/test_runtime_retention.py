@@ -655,3 +655,25 @@ def test_private_candidate_rejects_unrecognized_executable_overrides(tmp_path,mo
     payload[extra]=str(old/'runner') if extra=='Program' else dict(PYTHONPATH=str(old))
     plist.write_bytes(plistlib.dumps(payload));plist.chmod(0o600)
     assert build_cleanup_plan((old,),backend=backend)['targets'][0]['status']=='blocked'
+
+
+def test_tqkq_config_pins_source_even_when_worker_stopped(tmp_path, monkeypatch):
+    from app.runtime_retention import RetentionBackend, RetentionError
+    from guiyi_quant.tq_simulation.runtime import write_private
+    root = tmp_path / "release"
+    root.mkdir()
+    folder = tmp_path / "Library/Application Support/GuiyiQuant/tqkq-simulation"
+    folder.mkdir(parents=True, mode=0o700)
+    path = folder / "config.json"
+    config = dict(schema=1, provider="TQKQ", account_id="a"*64, root=str(root), commit="b"*40, tag="v1.16.82")
+    write_private(path, config)
+    backend = RetentionBackend(home=tmp_path)
+    def command(args):
+        if args[0] == "/bin/launchctl": return "PID\tStatus\tLabel\n"
+        if args[0] == "/usr/sbin/lsof": return "p99\nfcwd\nn/unrelated"
+        return "99 /usr/bin/python unrelated"
+    monkeypatch.setattr(backend, "_command", command)
+    assert backend.references_by_root((root,))[str(root)] == ["tqkq-private:configured-source"]
+    write_private(path, {**config, "provider": "UNPROVEN"})
+    with pytest.raises(RetentionError, match="TQKQ_CONFIGURATION_UNPROVEN"):
+        backend.references_by_root((root,))

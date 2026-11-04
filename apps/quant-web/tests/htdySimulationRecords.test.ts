@@ -8,11 +8,11 @@ import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 const moduleUrl = (code: string) => `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
 const apiUrl = moduleUrl(`export const calls=[]; export const monitorClient={records(query,signal,cursor){return new Promise((resolve,reject)=>calls.push({query,signal,cursor,resolve,reject}))},detail(id,signal){return new Promise((resolve,reject)=>calls.push({id,signal,resolve,reject}))}}`)
 const api = await import(apiUrl)
-const source = readFileSync(new URL('../src/components/market/detail/htdy/HtdySimnowRecords.vue', import.meta.url), 'utf8')
+const source = readFileSync(new URL('../src/components/market/detail/htdy/HtdySimulationRecords.vue', import.meta.url), 'utf8')
 const compiled = compileScript(parse(source).descriptor, { id: 'simnow-record-test', inlineTemplate: true })
 const code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
   .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
-  .replace(/from ['"]@\/api\/simnowMonitor['"]/g, `from '${apiUrl}'`)
+  .replace(/from ['"]@\/api\/simulationMonitor['"]/g, `from '${apiUrl}'`)
   .replace(/from ['"]@\/([^'"]+)['"]/g, (_m, name) => `from '${new URL('../src/' + name + '.ts', import.meta.url).href}'`)
 const Component = (await import(moduleUrl(code))).default
 interface Node { type: string; text: string; props: Record<string, unknown>; children: Node[]; parent: Node | null }
@@ -30,7 +30,7 @@ const text = (n: Node): string => [n.text, ...n.children.map(text)].join(' ')
 const find = (n: Node, predicate: (value: Node) => boolean): Node | undefined => predicate(n) ? n : n.children.flatMap(child => find(child, predicate) ?? []).at(0)
 const bars = [{ time: '2026-10-30T07:00:00Z', physicalContract: 'JM2701', open: 1400, high: 1410, low: 1390, close: 1405, volume: 10 }]
 const record = (product: string, id: string) => ({ id, kind: 'order', at: bars[0]!.time, product, contract: `${product}2701`, status: 'WORKING', label: '已受理', signal_id: 's', order_id: id, facts: {} })
-const packet = (product: string, id: string, snapshot = 'one', cursor: string | null = null) => ({ version: 'simnow_monitor_v1', snapshot, items: [record(product, id)], next_cursor: cursor, available_count: cursor ? 51 : 1, coverage: 'complete' })
+const packet = (product: string, id: string, snapshot = 'one', cursor: string | null = null) => ({ version: 'simulation_monitor_v1', snapshot, items: [record(product, id)], next_cursor: cursor, available_count: cursor ? 51 : 1, coverage: 'complete' })
 const settle = async () => { await new Promise(resolve => setImmediate(resolve)); await nextTick() }
 
 test('changing product aborts in-flight reads and never accepts the old product response', async () => {
@@ -67,16 +67,16 @@ test('rereading clears an accepted execution chain and aborts late detail respon
       app.mount(root); api.calls.at(-1).resolve(packet('JM', 'first')); await settle()
       ;(find(root, n => n.type === 'button' && text(n).trim() === '查看执行链')!.props.onClick as Function)()
       const pendingDetail = api.calls.at(-1)
-      const detail = { version: 'simnow_monitor_v1', snapshot: 'one', selected: record('JM', 'first'), chain: [{ ...record('JM', 'first'), label: 'OLD_CHAIN_FACT' }] }
+      const detail = { version: 'simulation_monitor_v1', snapshot: 'one', selected: record('JM', 'first'), chain: [{ ...record('JM', 'first'), label: 'OLD_CHAIN_FACT' }] }
       if (acceptBeforeRefresh) { pendingDetail.resolve(detail); await settle(); assert.match(text(root), /OLD_CHAIN_FACT/) }
       ;(find(root, n => n.type === 'button' && text(n).trim() === '重新读取')!.props.onClick as Function)()
       await nextTick()
       assert.equal(pendingDetail.signal.aborted, true)
-      assert.equal(find(root, n => n.props['aria-label'] === 'SimNow关联执行链'), undefined)
+      assert.equal(find(root, n => n.props['aria-label'] === '快期模拟关联执行链'), undefined)
       api.calls.at(-1).resolve(packet('JM', 'new-list', 'two')); await settle()
       if (!acceptBeforeRefresh) { pendingDetail.resolve(detail); await settle() }
       assert.doesNotMatch(text(root), /OLD_CHAIN_FACT/)
-      assert.equal(find(root, n => n.props['aria-label'] === 'SimNow关联执行链'), undefined)
+      assert.equal(find(root, n => n.props['aria-label'] === '快期模拟关联执行链'), undefined)
     } finally { app.unmount() }
   }
 })

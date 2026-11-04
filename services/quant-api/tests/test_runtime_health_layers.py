@@ -115,3 +115,57 @@ def test_reference_deferred_refresh_and_real_intake_failure_are_distinct(backgro
     assert health._service_health_status('reference_worker', component) == expected
     assert component['status'] == 'degraded'  # strict route/input gate remains closed
     assert component['blocked_counts'] == {'SOURCE_BUSY': 1}
+
+
+def test_reference_owner_clock_is_sampled_after_read_without_relaxing_future(
+    monkeypatch,
+):
+    from datetime import datetime, UTC, timedelta
+    from types import SimpleNamespace
+    from app.services import runtime_health as health
+    from app import runtime_handover
+
+    start = datetime(2026, 11, 4, 7, tzinfo=UTC)
+
+    class Clock(datetime):
+        current = start
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.current
+
+    state = {
+        "pid": 1,
+        "phase": "active",
+        "generation": 57,
+        "ready": True,
+        "at": (start + timedelta(seconds=2)).isoformat(),
+        "proof": {
+            "reference_runtime": {
+                "stage": "receiving_cycle",
+                "blocked_count": 0,
+                "blocked_counts": {},
+            }
+        },
+    }
+
+    def read(_):
+        Clock.current = start + timedelta(seconds=3)
+        return state
+
+    monkeypatch.setattr(health, "datetime", Clock)
+    monkeypatch.setattr(
+        health,
+        "resolve_service_binding",
+        lambda _: SimpleNamespace(enabled=True, generation=57),
+    )
+    monkeypatch.setattr(runtime_handover, "read_service_state", read)
+    identity = {
+        "services": {"reference_worker": {"status": "matched", "loaded_pid": 1}}
+    }
+    assert health._collect_reference_owner_health(None, identity)["status"] == "ok"
+    # Explicit historical clocks and genuinely future heartbeats remain strict.
+    assert (
+        health._collect_reference_owner_health(start, identity)["error_type"]
+        == "reference_owner_proof_stale"
+    )

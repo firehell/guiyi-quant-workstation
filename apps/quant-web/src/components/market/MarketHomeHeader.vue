@@ -5,8 +5,8 @@ import ProductSelector from './ProductSelector.vue'
 import type { ProductOption } from '@/utils/productSearch'
 
 type HomeView = 'newow' | 'htdy' | 'subing' | 'free'
-defineProps<{ options: ProductOption[]; directoryStatus: 'ready' | 'loading' | 'error'; loading: boolean; activeTab: 'market' | 'messages' | 'simnow' }>()
-const emit = defineEmits<{ openView: [view: HomeView, symbol: string]; refresh: []; selectTab: [tab: 'market' | 'messages' | 'simnow'] }>()
+defineProps<{ options: ProductOption[]; directoryStatus: 'ready' | 'loading' | 'error'; loading: boolean; activeTab: 'market' | 'messages' | 'simulation' }>()
+const emit = defineEmits<{ openView: [view: HomeView, symbol: string]; refresh: []; selectTab: [tab: 'market' | 'messages' | 'simulation'] }>()
 
 function openProduct(option: ProductOption) {
   emit('openView', 'newow', option.symbol)
@@ -14,7 +14,7 @@ function openProduct(option: ProductOption) {
 </script>
 
 <template>
-  <MarketNavigation :active-tab="activeTab" @market="emit('selectTab', 'market')" @messages="emit('selectTab', 'messages')" @simnow="emit('selectTab', 'simnow')">
+  <MarketNavigation :active-tab="activeTab" @market="emit('selectTab', 'market')" @messages="emit('selectTab', 'messages')" @simulation="emit('selectTab', 'simulation')">
     <template #search>
       <ProductSelector
         :options="options"
