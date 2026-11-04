@@ -1,3 +1,13 @@
+11/4 20:51 夜盘前现场确认：正式十服务已安装 v1.16.87/gen62，exact `5397c7ac92f0b62a74f3c58b3f55be4504d88f37`，唯一运行权威为 `.worktrees/release-v1.16.87`。原生同代恢复 `52b3500bbd492150dac4ec69a5547edafcbb479b9575225efedade5270500569` 实际 recovered；原普通cohort `bcdfe084eeb962719fa24d82034c59935f7f20eaaa59f27732ef4dba590e6e76` 的 verified 超时记录保持原样。恢复控制器为准备区 exact v1.16.86，不把控制器版本冒充运行版本。API health=ok、Runtime health=ok，正式Web模拟监控200/available。
+
+TqKq 唯一 worker PID15111，v1.16.87、LOGGED_IN、READY、mode=trade、opening_enabled=true；实际账本60品种 blocked_products=0、执行issues为空，信号/订单/成交/发送claim均0。原18:45:41启用身份及唯一1,000,000.00元权益基线保留，未重置账户；本次恢复边界20:50:46之后才接收新completed 60m自然信号。首个新信号、模拟委托及模拟成交仍分别待自然事件验证；未制造测试成交。
+
+本次Review修复同步保证金内部重连绕过恢复检查，以及普通Recover派生signal_at误挡从未活动账户恢复；发送前连续性屏障、持久claim禁止重发、原策略和70%风险上限保持。TQ/HTDY198项与恢复238项定向回归通过，独立审查、冻结依赖、正式构建、Ruff/diff/secret检查通过。最后现场验收直接读取账本，确认品种阻断清零，不能仅凭进程READY判断可交易。
+
+普通切换最终就绪采样超时后，Live在drain下重启；在部署锁、精确gen62身份、全部前缀ACK/无pending及其他服务真实parked校验下，单次取消精确Live drain，观察同PID新鲜完整周期和既有准备状态（零新增下载预算），再发一次新drain取得真实parked/锁空闲；操作记录为私有 `live-warm-gen62-once.json`。随后精确Feed关闭和原生完整恢复均成功，旧attempt未改。未为恢复绕过就绪标准；20:30时仍未就绪，保持停用至实际通过，20:51前完成启用。
+
+正式运行只用87；旧84/85源码树因恢复历史引用暂留，物理单发布树收敛尚未再次完成，不为删树在开盘前追加切换或强删。旧SimNow仍停用，账户/账本/原件和用户研究工作区保留。以下为此前检查点：
+
 11/4 天勤模拟已启用，正式发布树收敛为一棵：v1.16.84 main/tag/Release exact `610a77ff246c18b83eb5423ad02326987ba68e5d`，十个标准服务已由原生 cohort `3b05cba9a167ffd690436f40cb5a1fe3f537217d3a1256b15d0ed0bf8eb6db9c` 切至 gen60、同源正式树 `.worktrees/release-v1.16.84`。
 
 TqKq 单主账户于18:45:41实际启用（当次PID26868），mode=trade、READY、opening_enabled=true、唯一排他锁；60品种映射及真实账户完整读回通过，独立实际权益基线1,000,000.00元，当前空仓。启用现场信号/发送claim/委托/成交均0；只接收启用后的新completed 60m自然信号，不补白天信号、不制造测试成交。首个自然信号、模拟委托、成交分别待夜盘验收，服务启用不冒充成交闭环。
