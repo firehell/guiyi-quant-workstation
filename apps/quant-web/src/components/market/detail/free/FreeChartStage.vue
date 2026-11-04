@@ -37,7 +37,7 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
 </script>
 
 <template>
-  <MarketKlineStage :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
+  <MarketKlineStage :subing-volume-tiers="true" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars"
     :dynamic-range-points="dynamicRangePoints"
     :dynamic-range-enabled="dynamicRangeEnabled"
