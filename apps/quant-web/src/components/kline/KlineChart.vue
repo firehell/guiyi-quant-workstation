@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { SubingVolumeTierPrimitive } from './subingVolumeTierPrimitive'
+import { subingVolumeTierPoints } from '@/utils/subingVolumeTierDisplay'
+
 import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
 import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
 
@@ -65,6 +68,7 @@ const props = withDefaults(defineProps<{
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
   volumeScoring?: boolean
+  subingVolumeTiers?: boolean
   loading?: boolean
   error?: string | null
   period?: string
@@ -82,6 +86,7 @@ const props = withDefaults(defineProps<{
   qualityBreaks?: KlineQualityBreak[]
 }>(), {
   volumeScoring: true,
+  subingVolumeTiers: false,
   dynamicRangePoints: () => [],
   dynamicRangeEnabled: false,
   loading: false,
@@ -108,6 +113,8 @@ const emit = defineEmits<{
   'marker-select': [marker: KlineMarker]
 }>()
 
+const volumeTierPrimitive = new SubingVolumeTierPrimitive()
+const volumeTierMarkCount = ref(0)
 let volumeThemeObserver: MutationObserver | null = null
 const container = ref<HTMLElement>()
 const detailSession = inject<DetailChartSession | null>(DETAIL_CHART_SESSION, null)
@@ -262,6 +269,7 @@ onMounted(async () => {
     priceFormat: { type: 'volume' }, priceScaleId: 'volume', priceLineVisible: false, lastValueVisible: false,
   }, 0)
   volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
+  volume.attachPrimitive(volumeTierPrimitive)
   chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: .05, bottom: .14 } })
   macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 1)
   macdDif = chart.addSeries(LineSeries, { color: '#00bfcf', lineWidth: 1, lastValueVisible: false }, 1)
@@ -303,6 +311,7 @@ watch(() => props.visibleMainIndicators, () => {
 watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); hoverContext.value=null })
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
+watch(() => [props.subingVolumeTiers, props.volumeScoring, props.loading, props.error, props.period], () => { renderAllSeries() })
 
 watch(
   () => [props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime],
@@ -344,7 +353,12 @@ function volumeTime(bar: DisplayVolumeBar) {
 }
 function volumeValues(bars: BarData[]) {
   const input = chart ? detailChartVolumeBars(chart, bars) : bars
-  const colors = volumeColors(input, readNewowChartDisplayTheme(), props.volumeScoring)
+  const theme = readNewowChartDisplayTheme()
+  const colors = volumeColors(input, theme, props.volumeScoring && !props.subingVolumeTiers)
+  const marks = props.subingVolumeTiers && props.volumeScoring && !props.loading && !props.error
+    ? subingVolumeTierPoints(input, props.qualityBreaks).map(point => ({ time: volumeTime(point.bar), volume: point.bar.volume!, tier: point.tier })) : []
+  volumeTierMarkCount.value = marks.length
+  volumeTierPrimitive.setData(marks, theme)
   return input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) }))
 }
 
@@ -771,6 +785,8 @@ defineExpose({
   <div
     class="kline-shell"
     data-testid="kline-shell"
+    :data-subing-volume-tier-mark-count="volumeTierMarkCount"
+    :data-subing-volume-tiers="subingVolumeTiers"
     :data-alert-marker-count="alertMarkers.length"
     :data-macd-point-count="macdPointCount"
     :data-reference-target-segments="referenceTargetSegments"

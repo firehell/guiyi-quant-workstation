@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   dynamicRangePoints?: DynamicRangePoint[]
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
+  subingVolumeTiers?: boolean
   bars: BarData[]
   mutation: MarketSeriesMutation
   loading: boolean
@@ -111,6 +112,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
+      :subing-volume-tiers="subingVolumeTiers"
     :dynamic-range-points="dynamicRangePoints"
     :dynamic-range-enabled="dynamicRangeEnabled"
     :pattern-geometry="patternGeometry"
