@@ -120,3 +120,27 @@ for (const frequency of ['1d','1w','60m'] as const) {
   }
  })
 }
+
+test('unified historical path retains OPEN holding cost and exact Test5 strategy without page parity alias',()=>{
+ for(const strategy of ['oscillation','fusion','osc-test5']){
+  const raw=historyWire(),h=raw.explanation.value.decision_v2.daily_weekly_path.history
+  Object.assign(h,{version:'newow_historical_path_trueup_v1',page_parity:false});h.source.strategy=strategy
+  const parsed=normalizeNewowProductResponse(raw,pathRequest) as any,history=parsed.value.decision_v2.daily_weekly_path.history
+  assert.equal(history.holding,true);assert.equal(history.cost,'100');assert.equal(history.source.strategy,strategy);assert.equal(history.buys.length,2);assert.equal(history.sells.length,1)
+  const old=structuredClone(raw);old.explanation.value.decision_v2.daily_weekly_path.history.version='newow_historical_path_v3402_v1';assert.throws(()=>normalizeNewowProductResponse(old,pathRequest),/path.history.version/)
+  const parity=structuredClone(raw);parity.explanation.value.decision_v2.daily_weekly_path.history.page_parity=true;assert.throws(()=>normalizeNewowProductResponse(parity,pathRequest),/path.history.parity/)
+ }
+})
+
+test('ownerless unavailable Test5 and Test1 paths use explicit version parity independent of envelope strategy',()=>{
+ for(const [strategy,version,parity] of [['trend','newow_historical_path_trueup_v1',false],['oscillation','newow_historical_path_v3402_v1',true]] as const){
+  const raw=historyWire(),h=raw.explanation.value.decision_v2.daily_weekly_path.history
+  Object.assign(h,{version,page_parity:parity,status:'unavailable',reason:'PATH_SAMPLES_MISSING',holding:false,current:null,target:null,cost:null,buys:[],sells:[],background:[],eta:null});delete h.source
+  raw.meta.identity.strategy=strategy
+  if(strategy==='oscillation'){raw.meta.identity.profile_id='newow_product_oscillation_1d_v2';raw.meta.identity.formula_versions=['newow_hhv_llv_channel_page_v1','newow_oscillation_trueup_kernel111_v1'];raw.meta.reference_model_version='newow_trueup_reference_zero_cost_v1'}
+  const request={...pathRequest,strategy};normalizeNewowProductResponse(raw,request)
+  const wrong=structuredClone(raw);wrong.explanation.value.decision_v2.daily_weekly_path.history.page_parity=!parity;assert.throws(()=>normalizeNewowProductResponse(wrong,request),/path.history.parity/)
+  const unknown=structuredClone(raw);unknown.explanation.value.decision_v2.daily_weekly_path.history.version='unknown';assert.throws(()=>normalizeNewowProductResponse(unknown,request),/path.history.version/)
+  const ready=structuredClone(raw);ready.explanation.value.decision_v2.daily_weekly_path.history.status='ready';assert.throws(()=>normalizeNewowProductResponse(ready,request))
+ }
+})

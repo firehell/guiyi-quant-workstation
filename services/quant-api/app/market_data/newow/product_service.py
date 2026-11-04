@@ -52,7 +52,7 @@ from guiyi_quant.newow.chart_price_reference import ChartPriceReference, project
 from guiyi_quant.newow.product_identity import (
     FUTURES_ADAPTATION_VERSION,
     InputQualityPolicy,
-    REFERENCE_MODEL_VERSION,
+    REFERENCE_MODEL_VERSION, reference_model_version,
     futures_adaptation_version,
     input_policy_version,
     input_quality_policy,
@@ -166,7 +166,7 @@ class ProductServiceQuery:
     path_strategy: str | None = None
 
     def __post_init__(self) -> None:
-        if self.path_strategy is not None and (not self.decision_v2 or self.path_strategy not in ('trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4')):
+        if self.path_strategy is not None and (not self.decision_v2 or self.path_strategy not in ('trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4','osc-test5')):
             raise ValueError('NEWOW_SECTION_PARAMETER_INVALID')
         if self.decision_v2 and (self.section != "explanation" or self.frequency not in ("1d", "1w", "60m")):
             raise ValueError("NEWOW_SECTION_PARAMETER_INVALID")
@@ -267,6 +267,7 @@ class ChartSectionValue:
     home_summary: dict[str, object] | None = None
     caution_events: tuple[dict, ...] = ()
     display_events: tuple[dict, ...] = ()
+    breakout_events: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -691,10 +692,12 @@ def _snapshot_namespace(identity: ProductIdentity, as_of: datetime) -> str:
         identity.formula_versions,
     )
     from .display_events import DISPLAY_VERSION
+    from .breakout_events import DISPLAY_VERSION as BREAKOUT_DISPLAY_VERSION
     contract: tuple[object, ...] = (
         DISPLAY_VERSION,
+        BREAKOUT_DISPLAY_VERSION,
         SCHEMA_VERSION,
-        REFERENCE_MODEL_VERSION,
+        reference_model_version(identity),
         futures_adaptation_version(
             identity.frequency, identity.input_quality_policy
         ),
@@ -1491,6 +1494,7 @@ class NewowProductService:
             fact_key,
             None,
             None,
+            reference_model_version=reference_model_version(identity),
             futures_adaptation_version=futures_adaptation_version(
                 request.frequency, identity.input_quality_policy
             ),
@@ -1618,6 +1622,10 @@ class NewowProductService:
         }
         from .display_events import project_display_events
         display_events = project_display_events(replay)
+        from .breakout_events import project_breakout_events
+        breakout_events = project_breakout_events(
+            replay, as_of=request_as_of, visible_bars=tuple(f.bar for f in selected)
+        ) if identity.strategy is ProductStrategy.OSCILLATION else ()
         return SectionDelivery(
             "delivered",
             status,
@@ -1630,6 +1638,7 @@ class NewowProductService:
                 page_identity,
                 channel if identity.strategy is ProductStrategy.TREND else None,
                 price_reference,
+                breakout_events=breakout_events,
                 display_events=tuple(e for e in display_events
                     if (e["bar_end"], e["physical_contract"], e["segment_id"], e["calculation_segment_id"]) in visible_caution_owners),
                 caution_events=tuple(e for e in project_caution_events(replay)
@@ -1974,8 +1983,15 @@ class NewowProductService:
                 for bar in eligible_bars
             )
         )
+        # The diagnostic comparator is a frozen HHV10 experiment, never the
+        # current product/reference identity. Do not relabel its old evidence.
+        from guiyi_quant.newow.oscillation_channel import (
+            OSCILLATION_FORMULA_VERSION as frozen_formula,
+            CHANNEL_FORMULA_VERSION as frozen_channel,
+        )
+        frozen_identity = replace(identity, formula_versions=(frozen_formula, frozen_channel), profile_id="")
         result: PageComparatorResult = compare_page_windows(
-            identity,
+            frozen_identity,
             eligible_bars,
             VerifiedPageComparatorEvidence(),
             authoritative_segments=owners,

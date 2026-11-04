@@ -136,7 +136,8 @@ class ProductIdentity:
         if not formulas:
             raise ValueError("NEWOW_PRODUCT_EMPTY_FORMULAS")
         object.__setattr__(self, "formula_versions", formulas)
-        expected = f"newow_product_{self.strategy}_{self.frequency}_v1"
+        version = 2 if "newow_oscillation_trueup_kernel111_v1" in formulas else 1
+        expected = f"newow_product_{self.strategy}_{self.frequency}_v{version}"
         if self.profile_id and self.profile_id != expected:
             raise ValueError("NEWOW_PRODUCT_INVALID_PROFILE")
         object.__setattr__(self, "profile_id", expected)

@@ -1,3 +1,4 @@
+import {normalizeBreakoutEvents,type NewowBreakoutEvent} from './newowBreakoutEvents.ts'
 import {normalizeDisplayEvents,type NewowDisplayEvent} from './newowDisplayEvents.ts'
 import { previewInstant } from './candidatePreviewInstant.ts';
 export const EXPERIMENT_OPTIONS = [
@@ -5,6 +6,7 @@ export const EXPERIMENT_OPTIONS = [
     { kind: 'osc-test2', label: '测试2', description: '7%止损 · 建仓时锁定HHV10目标' },
     { kind: 'osc-test3', label: '测试3', description: '7%止损 · 前两根MA10严格上升才允许建仓' },
     { kind: 'osc-test4', label: '测试4', description: '12%止损 · 触及上轨记录收盘价，后续确认清仓' },
+    { kind: 'osc-test5', label: '测试5', description: '复用现役震荡内核 · 真突破确认后继续持有，确认失败清仓' },
 ] as const;
 export type ExperimentKind = typeof EXPERIMENT_OPTIONS[number]['kind'];
 export interface ExperimentRequest {
@@ -72,7 +74,8 @@ export interface ExperimentSegment {
 }
 export interface ExperimentDetail extends ExperimentRequest {
     display_events?: NewowDisplayEvent[];
-    schema_version: 'newow_experiment_detail_v2';
+    breakout_events?: NewowBreakoutEvent[];
+    schema_version: 'newow_experiment_detail_v3';
     meta: {
       identity: {product:string;frequency:string;kind:ExperimentKind;strategy:ExperimentKind;series_kind:'actual_dominant';as_of:string;formula_version:string;profile_id:string;input_policy_version:string};
       as_of:string; read_at:string; input_content_sha256:string; data_revision_identity:string|null;
@@ -87,7 +90,9 @@ export interface ExperimentDetail extends ExperimentRequest {
         through: string;
     };
     formula_version: string;
-    page_parity: true;
+    page_parity: boolean;
+    kernel_parity?: true;
+    return_policy?: 'guiyi_unified_trueup';
     executable: false;
     readiness: {
         status: 'READY' | 'WARMUP' | 'DATA_INSUFFICIENT';
@@ -104,10 +109,11 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
         throw new Error('实验数据身份或数值不一致');
     };
     if (!v
-                || v.schema_version !== 'newow_experiment_detail_v2'
-                || v.page_parity !== true
+                || v.schema_version !== 'newow_experiment_detail_v3'
+                || v.page_parity !== (request.kind!=='osc-test5')
+                || request.kind==='osc-test5'&&(v.kernel_parity!==true||v.return_policy!=='guiyi_unified_trueup')
                 || v.executable !== false
-                || v.formula_version !== `newow_${request.kind.replace('-', '_')}_page_v3379_v1`
+                || v.formula_version !== (request.kind==='osc-test5'?'newow_oscillation_trueup_kernel111_v1':`newow_${request.kind.replace('-', '_')}_page_v3379_v1`)
                 || !['READY', 'WARMUP', 'DATA_INSUFFICIENT'].includes(v.readiness?.status))
         fail();
     if (v.product !== request.product
@@ -122,7 +128,7 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
         fail();
     const meta=v.meta, id=meta?.identity;
     if (!meta || !id || id.product!==v.product || id.frequency!==v.frequency || id.kind!==v.kind || id.strategy!==v.kind
-      || v.profile_id!=='guiyi_newow_experiment_completed_physical_v1' || typeof v.input_policy_version!=='string' || !v.input_policy_version
+      || v.profile_id!==(request.kind==='osc-test5'?'newow_experiment_trueup_v1':'guiyi_newow_experiment_completed_physical_v1') || typeof v.input_policy_version!=='string' || !v.input_policy_version
       || id.series_kind!=='actual_dominant' || id.formula_version!==v.formula_version || id.profile_id!==v.profile_id
       || id.input_policy_version!==v.input_policy_version || id.as_of!==v.as_of || meta.as_of!==v.as_of
       || meta.input_content_sha256!==v.input_snapshot_hash || !/^[a-f0-9]{64}$/.test(meta.input_content_sha256)
@@ -157,10 +163,11 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
             if (model === null)
                 continue;
             const m = model as Record<string, any>;
-            if (m.page_parity !== true
+            if (m.page_parity !== (request.kind!=='osc-test5')
+                || request.kind==='osc-test5'&&(m.kernel_parity!==true||m.return_policy!=='guiyi_unified_trueup')
                 || m.executable !== false
                 || m.hindsight !== (index === 1)
-                || m.model_version !== (index === 0 ? 'newow_oscillation_experiment_ordinary_v3379_v1' : 'newow_base_oscillation_ideal_v3379_v1')
+                || m.model_version !== (request.kind==='osc-test5'?(index===0?'newow_trueup_reference_zero_cost_v1':'newow_trueup_posterior_peak_v1'):(index === 0 ? 'newow_oscillation_experiment_ordinary_v3379_v1' : 'newow_base_oscillation_ideal_v3379_v1'))
                 || !m.summary
                 || !Number.isInteger(m.summary.trade_count)
                 || m.summary.trade_count < 0
@@ -233,7 +240,7 @@ export function normalizeExperiment(value: unknown, request: ExperimentRequest):
             fail();
         ids.add(m.marker_id);
     }
-    return {...v,display_events:normalizeDisplayEvents(v.display_events??[],v.bars,v.frequency,v.as_of)};
+    return {...v,breakout_events:normalizeBreakoutEvents(v.breakout_events??[],v.bars,v.frequency,v.as_of,v.product),display_events:normalizeDisplayEvents(v.display_events??[],v.bars,v.frequency,v.as_of)};
 }
 /** A generation token also rejects responses from transports that ignore AbortSignal. */
 export class ExperimentRequestGeneration {

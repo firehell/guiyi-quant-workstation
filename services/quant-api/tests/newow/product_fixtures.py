@@ -26,7 +26,7 @@ from guiyi_quant.newow.main_rise import (
     initial_main_rise_state,
     step_main_rise,
 )
-from guiyi_quant.newow.oscillation_channel import (
+from guiyi_quant.newow.oscillation_trueup import (
     OscillationAction,
     OscillationState,
     step_oscillation,
@@ -39,7 +39,6 @@ from guiyi_quant.newow.product_contracts import (
     ProductBar,
     ProductFrequency,
     ProductIdentity,
-    ProductStrategy,
     StrategyAction,
     StrategyFrame,
     StrategyReplay,
@@ -214,6 +213,7 @@ def _oscillation_oracle(
                 sequence,
                 related_build_id=related,
             )
+            action = replace(action, anchor_price=signal.reference_price)
             open_build = action if action.kind is ActionKind.BUILD else None
             actions.append(action)
         channel = result.channel
@@ -232,6 +232,8 @@ def _oscillation_oracle(
                 ("close_position", channel.close_position),
             )
         )
+        values += (("pending_level", result.state.pending_level),
+                   ("true_up", Decimal(int(result.state.pos_true_up))))
         main_state = (
             MainState.BUILD
             if actions and actions[-1].kind is ActionKind.BUILD

@@ -2247,7 +2247,7 @@ def test_cancelled_kernel_leader_does_not_cancel_active_outer_follower(product_c
     assert results["follower"].chart.value is not None
 
 
-@pytest.mark.parametrize('path_strategy',['trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4'])
+@pytest.mark.parametrize('path_strategy',['trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4','osc-test5'])
 def test_path_strategy_is_explicit_and_does_not_change_composite_kernel(product_cases,path_strategy):
     service, reader, _, clear = _service(product_cases)
     base = service.query(ProductServiceQuery('rb','trend','1d',section='explanation',decision_v2=True,as_of=clear.bar_end))

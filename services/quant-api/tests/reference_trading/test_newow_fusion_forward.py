@@ -24,7 +24,7 @@ from test_newow_forward import _capture
 def sources(frequency="1d"):
     from newow.product_fixtures import ProductCases
     from guiyi_quant.newow.product_identity import (
-        REFERENCE_MODEL_VERSION,
+        reference_model_version,
         futures_adaptation_version,
     )
     from guiyi_quant.reference_trading import StreamIdentity
@@ -38,7 +38,7 @@ def sources(frequency="1d"):
             f"newow_{strategy}",
             identity.formula_versions,
             identity.profile_id,
-            REFERENCE_MODEL_VERSION,
+            reference_model_version(identity),
             futures_adaptation_version(frequency),
             "rb",
             frequency,

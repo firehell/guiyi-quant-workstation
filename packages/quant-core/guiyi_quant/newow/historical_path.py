@@ -30,23 +30,25 @@ def build_historical_path(
     target,
     cost,
     weekly_signals,
+    open_reference=None,
+    unified_trueup=False,
 ):
     result = dict(
-        version=VERSION,
+        version="newow_historical_path_trueup_v1" if unified_trueup else VERSION,
         status="unavailable",
         reason="TRADE_SAMPLES_MISSING",
         buys=[],
         sells=[],
         background=[],
         eta=None,
-        holding=False,
+        holding=bool(open_reference) if unified_trueup else False,
         current=str(current) if _price(current) else None,
         target=str(target) if _price(target) else None,
         cost=str(cost) if _price(cost) else None,
-        page_parity=True,
+        page_parity=not unified_trueup,
         executable=False,
     )
-    if len(trades) < 2 or not kline_dates:
+    if len(trades) + int(bool(open_reference) and unified_trueup) < 2 or not kline_dates:
         return result
     # Public strings are date-truncated even for minute K. No invented date grid.
     day = lambda value: str(value)[:10]
@@ -76,6 +78,8 @@ def build_historical_path(
         for t in selected
         if not t.get("forceClose") and t.get("sellDate") and _price(t.get("sellPrice"))
     ]
+    if open_reference and _price(open_reference.get("buyPrice")):
+        buys.append(dict(date=day(open_reference["buyDate"]), price=str(open_reference["buyPrice"])))
     if len(buys) < 2 or not sells:
         return result
     result.update(
@@ -83,7 +87,7 @@ def build_historical_path(
         reason=None,
         buys=buys,
         sells=sells,
-        holding=bool(trades[-1].get("forceClose")),
+        holding=bool(open_reference) if unified_trueup else bool(trades[-1].get("forceClose")),
     )
     visible_dates = [d for d in dates if buys[0]["date"] <= d <= dates[-1]]
     if len(visible_dates) < 2:
@@ -143,7 +147,7 @@ def build_historical_path(
         eta["reason"] = "SAMPLES_MISSING"
         return result
     entry = (
-        trades[-1]
+        (open_reference if unified_trueup else trades[-1])
         if holding
         else next(
             (

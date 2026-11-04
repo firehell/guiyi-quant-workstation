@@ -119,7 +119,7 @@ export interface NewowProductMeta {
   readonly shared_input_proof?: NewowSharedInputProof
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4' | 'newow_trueup_reference_zero_cost_v1'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_daily_quality_segment_v4'
@@ -180,6 +180,7 @@ export interface NewowProductAction {
   readonly bar_end: string
   readonly trading_day: string
   readonly reference_price: string
+  readonly anchor_price?: string | null
   readonly physical_contract: string
   readonly segment_id: string
   readonly calculation_segment_id: string
@@ -213,6 +214,7 @@ export interface NewowCautionEvent {
 }
 
 export interface NewowChartValue {
+  readonly breakout_events?: readonly import('../utils/newowBreakoutEvents').NewowBreakoutEvent[]
   readonly display_events?: readonly import('../utils/newowDisplayEvents').NewowDisplayEvent[]
   readonly caution_events?: readonly NewowCautionEvent[]
   readonly chart_from: string
@@ -262,7 +264,7 @@ export interface NewowReferenceTrade {
   readonly segment_id: string
   readonly calculation_segment_id: string
   readonly formula_versions: readonly string[]
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4' | 'newow_trueup_reference_zero_cost_v1'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_daily_quality_segment_v4'

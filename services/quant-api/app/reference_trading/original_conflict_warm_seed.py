@@ -21,7 +21,7 @@ from app.reference_trading.repository import RepositoryConflict, _wire
 from guiyi_quant.newow.fusion_reference import FusionReferenceReplayState, build_fusion_stream_identity
 from guiyi_quant.newow.product_adapters import ProductReplayState, build_product_identity, replay_step, seed_replay_state
 from guiyi_quant.newow.product_contracts import ProductBar
-from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
+from guiyi_quant.newow.product_identity import reference_model_version, futures_adaptation_version
 from guiyi_quant.reference_trading import ReferenceState, StreamIdentity
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint, strategy_input_fingerprint
 from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_to_json
@@ -174,7 +174,7 @@ def _materialize_warm_seed(baseline: WarmBaseline, *, version: str,
     product_identity = build_product_identity(identity.product, identity.strategy_code.removeprefix('newow_'),
         identity.frequency, input_quality_policy=baseline.saved_manifest['quality_policy'])
     expected_identity = StreamIdentity(identity.strategy_code, product_identity.formula_versions,
-        product_identity.profile_id, REFERENCE_MODEL_VERSION,
+        product_identity.profile_id, reference_model_version(product_identity),
         futures_adaptation_version(identity.frequency, product_identity.input_quality_policy),
         identity.product, identity.frequency, 'actual_dominant', 'historical_replay', None)
     require(identity == expected_identity, 'WARM_SEED_FORMULA_CONFLICT')

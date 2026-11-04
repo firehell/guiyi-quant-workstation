@@ -278,7 +278,7 @@ def test_saved_fusion_accepts_real_trend_initial_clear_and_matches_core_after_re
     assert ReferenceTradeProjector().project(trend, (), bars[-1].bar.bar_end).trades == ()
     window = PerformanceWindow(bars[0].bar.trading_day, bars[-1].bar.trading_day, bars[-1].bar.bar_end)
     core = fusion_reference_comparison(trend, osc, (), (), window)
-    assert core["reference_model_version"] == "newow_dual_fusion_reference_zero_cost_v2"
+    assert core["reference_model_version"] == "newow_dual_fusion_trueup_reference_v1"
     expected = [trade for trade in core["items"] if trade["status"] == "CLOSED"]
     assert len(expected) == 1 and expected[0]["exit_source"] == "trend"
     assert expected[0]["exit_bar_end"] == clear.bar_end.isoformat()

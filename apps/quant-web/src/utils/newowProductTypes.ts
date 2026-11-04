@@ -1,3 +1,4 @@
+import {normalizeBreakoutEvents} from './newowBreakoutEvents.ts'
 import {normalizeDisplayEvents} from './newowDisplayEvents.ts'
 import { normalizeCautionDisplay } from './newowCautionDisplay.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
@@ -68,7 +69,7 @@ const RUNTIME_STATUSES = ['ready', 'warming', 'unavailable', 'not_applicable', '
 const EVIDENCE_STATUSES = ['ACTIVE_CODE_VERIFIED', 'RESEARCH_EVIDENCE_ONLY', 'EVIDENCE_REQUIRED', 'OUT_OF_SCOPE'] as const
 const EXPECTED_FORMULAS: Record<NewowProductStrategy, readonly string[]> = {
   trend: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2'],
-  oscillation: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2'],
+  oscillation: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_trueup_kernel111_v1'],
   main_rise: ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1'],
 }
 const DECIMAL = /^[+-]?(?:(?:0|[1-9]\d*)(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
@@ -184,7 +185,8 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const inputHash = sha256(value.input_content_sha256, 'meta.input_content_sha256')
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
-  requireExact(value.reference_model_version, 'newow_marker_reference_zero_cost_v4', 'meta.reference_model_version')
+  const referenceModel = normalizedIdentity.strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4'
+  requireExact(value.reference_model_version, referenceModel, 'meta.reference_model_version')
   const adaptationVersion = normalizedIdentity.frequency === '1w'
     ? (
       normalizedIdentity.input_quality_policy === 'newow_weekly_input_quality_v2'
@@ -209,7 +211,7 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
     schema_version: 'newow_product_detail_v4',
     identity: normalizedIdentity,
     as_of: asOf, read_at: readAt, input_content_sha256: inputHash, data_revision_identity: revision,
-    snapshot_token: token, reference_model_version: 'newow_marker_reference_zero_cost_v4',
+    snapshot_token: token, reference_model_version: referenceModel,
     futures_adaptation_version: adaptationVersion,
     ...(sharedInputProof ? { shared_input_proof: sharedInputProof } : {}),
   }
@@ -233,7 +235,7 @@ function normalizeWireIdentity(
   requireExact(frequency, expected.frequency, `${field}.frequency`)
   requireExact(value.series_kind, 'actual_dominant', `${field}.series_kind`)
   const profileId = text(value.profile_id, `${field}.profile_id`)
-  requireExact(profileId, `newow_product_${strategy}_${frequency}_v1`, `${field}.profile_id`)
+  requireExact(profileId, `newow_product_${strategy}_${frequency}_${strategy==='oscillation'?'v2':'v1'}`, `${field}.profile_id`)
   const formulaVersions = stringArray(value.formula_versions, `${field}.formula_versions`)
   if (!sameStrings(formulaVersions, EXPECTED_FORMULAS[strategy])) throw new Error(`${field}.formula_versions is invalid or out of order`)
   const policy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
@@ -266,8 +268,8 @@ function normalizeSectionValue(section: NewowProductSection, payload: unknown, m
 
 function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartValue {
   const source = record(payload, 'chart.value')
-  const value = exactRecord({ next_older_window: null, price_reference: null, caution_events: [], display_events: [], ...source }, 'chart.value', [
-    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'display_events', 'caution_events', 'bars', 'frames', 'actions', 'hints',
+  const value = exactRecord({ next_older_window: null, price_reference: null, caution_events: [], display_events: [], breakout_events: [], ...source }, 'chart.value', [
+    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'breakout_events', 'display_events', 'caution_events', 'bars', 'frames', 'actions', 'hints',
     'trend_channel', 'price_reference', 'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
   ])
   const chartFrom = day(value.chart_from, 'chart_from')
@@ -313,6 +315,7 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
     return {...e,bar_end:bar!.bar_end} as unknown as import('../types/newowProduct').NewowCautionEvent
   })
   return {
+    breakout_events: normalizeBreakoutEvents(value.breakout_events, bars, meta.identity.frequency, meta.as_of, meta.identity.product),
     display_events: normalizeDisplayEvents(value.display_events, bars, meta.identity.frequency, meta.as_of),
     caution_events: cautionEvents,
     chart_from: chartFrom, chart_through: chartThrough, page_identity: sha256(value.page_identity, 'chart.page_identity'), price_unavailable_days: priceUnavailableDays,
@@ -476,7 +479,7 @@ function normalizeAction(
   strategy: NewowProductMeta['identity']['strategy'],
 ): NewowProductAction {
   const field = `actions[${index}]`
-  const value = exactRecord(payload, field, ['signal_id', 'kind', 'bar_end', 'trading_day', 'reference_price', 'physical_contract', 'segment_id', 'calculation_segment_id', 'related_build_id', 'trade_eligibility', 'sequence'])
+  const value = exactRecord({anchor_price:null,...record(payload,field)}, field, ['anchor_price', 'signal_id', 'kind', 'bar_end', 'trading_day', 'reference_price', 'physical_contract', 'segment_id', 'calculation_segment_id', 'related_build_id', 'trade_eligibility', 'sequence'])
   const barEnd = instant(value.bar_end, `${field}.bar_end`)
   requireNotAfter(barEnd, asOf, `${field}.bar_end`, 'meta.as_of')
   if (!barEnds.has(barEnd)) throw new Error(`${field} does not reference a chart bar`)
@@ -490,7 +493,7 @@ function normalizeAction(
   }
   return {
     signal_id: text(value.signal_id, `${field}.signal_id`), kind,
-    bar_end: barEnd, trading_day: day(value.trading_day, `${field}.trading_day`), reference_price: decimal(value.reference_price, `${field}.reference_price`),
+    bar_end: barEnd, trading_day: day(value.trading_day, `${field}.trading_day`), reference_price: decimal(value.reference_price, `${field}.reference_price`), anchor_price:nullableDecimal(value.anchor_price,`${field}.anchor_price`),
     physical_contract: contract(value.physical_contract, `${field}.physical_contract`), segment_id: text(value.segment_id, `${field}.segment_id`), calculation_segment_id: text(value.calculation_segment_id, `${field}.calculation_segment_id`),
     related_build_id: relatedBuildId,
     trade_eligibility: eligibility,
@@ -1041,7 +1044,7 @@ function deepFreeze<T>(value: T): T {
 
 function normalizeFusion(payload: unknown, since: string, through: string, hash: unknown, cutoff: unknown): import('../api/newowFusion').FusionComparison {
   const value = record(payload, 'fusion')
-  requireExact(value.reference_model_version, 'newow_dual_fusion_reference_zero_cost_v2', 'fusion.version')
+  requireExact(value.reference_model_version, 'newow_dual_fusion_trueup_reference_v1', 'fusion.version')
   requireExact(value.page_parity, true, 'fusion.parity')
   requireExact(value.executable, false, 'fusion.executable')
   requireExact(value.performance_since, since, 'fusion.since')
@@ -1273,9 +1276,16 @@ function normalizeHoldingCurve(payload: unknown, cutoff: string): import('./newo
 function normalizeHistoricalPath(payload:unknown,meta:NewowProductMeta,prices:unknown,cd:Record<string,unknown>): import('../types/newowDecisionV2').HistoricalPath {
   const v=record(payload,'path.history')
   const cutoffDay=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(meta.as_of))
-  requireExact(v.version,'newow_historical_path_v3402_v1','path.history.version')
+  const sourceStrategy=v.source?record(v.source,'path.source').strategy:null
+  // An unavailable ownerless path can originate from a separately selected T strategy.
+  // Its envelope's strategy does not identify that historical-path request.
+  if(!v.source&&v.status==='unavailable')literal(v.version,['newow_historical_path_v3402_v1','newow_historical_path_trueup_v1'],'path.history.version')
+  const unifiedPath=sourceStrategy===null&&v.status==='unavailable'
+    ?v.version==='newow_historical_path_trueup_v1'
+    :['oscillation','fusion','osc-test5'].includes(String(sourceStrategy))
+  requireExact(v.version,unifiedPath?'newow_historical_path_trueup_v1':'newow_historical_path_v3402_v1','path.history.version')
   literal(v.status,['ready','unavailable'],'path.history.status')
-  requireExact(v.page_parity,true,'path.history.parity');requireExact(v.executable,false,'path.history.executable')
+  requireExact(v.page_parity,!unifiedPath,'path.history.parity');requireExact(v.executable,false,'path.history.executable')
   boolean(v.holding,'path.holding')
   if(v.axis_dates!==undefined)array(v.axis_dates,'axis_dates').forEach(d=>day(d,'axis_date'))
   for(const key of ['current','target','cost']) if(v[key]!==null && Number(decimal(v[key],`path.${key}`))<=0) throw new Error('invalid path price')
@@ -1289,7 +1299,7 @@ function normalizeHistoricalPath(payload:unknown,meta:NewowProductMeta,prices:un
   if(v.source) {
     const s=record(v.source,'path.source');requireNotAfter(instant(s.bar_end,'path.bar_end'),meta.as_of,'bar_end','as_of');sameInstant(s.as_of,meta.as_of,'path.as_of')
     for(const k of ['physical_contract','segment_id','calculation_segment_id'])text(s[k],`path.${k}`)
-    literal(s.strategy,['trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4'],'path.strategy')
+    literal(s.strategy,['trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4','osc-test5'],'path.strategy')
     const role=`trend_${meta.identity.frequency==='1w'?'week':meta.identity.frequency==='60m'?'m60':'day'}`
     const fact=array(cd.facts,'facts').map(f=>record(f,'fact')).find(f=>f.role===role)
     if(fact?.physical_contract){requireExact(s.physical_contract,fact.physical_contract,'path.fact_owner');requireExact(s.segment_id,fact.segment_id,'path.fact_segment')}

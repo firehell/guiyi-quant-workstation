@@ -35,7 +35,7 @@ export interface MarketDetailIdentity {
   /** Presentation mode; fusion is not a fourth strategy kernel. */
   newowMode?: 'dual'
   strategyModel?: 'futures_bidir_v1'
-  newowTest?: 'osc-test' | 'osc-test2' | 'osc-test3' | 'osc-test4'
+  newowTest?: 'osc-test' | 'osc-test2' | 'osc-test3' | 'osc-test4' | 'osc-test5'
   seriesKind: DetailSeriesKind
   contract?: string
   frequency: MarketFrequency

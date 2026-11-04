@@ -1284,3 +1284,24 @@ def test_main_rise_short_minutes_reach_existing_service(monkeypatch, product_cas
         assert response.json()['meta']['identity']['frequency'] == frequency
     finally:
         app.dependency_overrides.clear()
+
+
+def test_test5_explanation_route_delivers_background_context(monkeypatch, product_cases):
+    from newow.test_product_service import _service
+
+    service, _, _, clear = _service(product_cases)
+    monkeypatch.setattr(market_newow, "_build_product_service", lambda *_args, **_kwargs: service)
+    app.dependency_overrides[get_db] = lambda: object()
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/market/newow/strategy-detail", params={
+                "product": "rb", "strategy": "trend", "frequency": "1d",
+                "section": "explanation", "decision_v2": "true",
+                "path_strategy": "osc-test5", "as_of": clear.bar_end.isoformat(),
+            })
+        assert response.status_code == 200, response.text
+        explanation = response.json()["explanation"]
+        assert explanation["delivery"] == "delivered"
+        assert explanation["value"]["decision_v2"]["daily_weekly_path"] is not None
+    finally:
+        app.dependency_overrides.clear()

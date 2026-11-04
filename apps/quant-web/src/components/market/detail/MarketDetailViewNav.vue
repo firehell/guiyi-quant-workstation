@@ -47,7 +47,7 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
   { value: 'free', label: '自由看盘' },
 ]
 const isFutures = computed(() => props.identity.strategyModel === 'futures_bidir_v1')
-const futuresTests = [{value:'osc-test',label:'测试'}, {value:'osc-test2',label:'测试2'}, {value:'osc-test3',label:'测试3'}, {value:'osc-test4',label:'测试4'}] as const
+const futuresTests = [{value:'osc-test',label:'测试'}, {value:'osc-test2',label:'测试2'}, {value:'osc-test3',label:'测试3'}, {value:'osc-test4',label:'测试4'}, {value:'osc-test5',label:'测试5'}] as const
 function chooseTest(choice: MarketDetailIdentity['newowTest'] | 'main_rise') {
   const base = props.identity.view === 'newow' ? props.identity : resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
   emit('select', { ...base, view: 'newow', strategy: choice === 'main_rise' ? 'main_rise' : 'oscillation', newowMode: undefined,

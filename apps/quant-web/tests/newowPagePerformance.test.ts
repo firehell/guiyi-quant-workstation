@@ -34,3 +34,19 @@ test('full-history page curve accepts 200000 points and preserves owner breaks',
  assert.match(parts[0]!, /^0,140 /)
  assert.ok(parts[1]!.includes('712,'))
 })
+
+test('unified oscillator and fusion projections require their independent return policy and source identity',()=>{
+ for(const strategy of ['oscillation','fusion'] as const){
+  const wire={...payload(),strategy,version:'newow_unified_trueup_page_v1',source_version:'3.4.49',source_sha256:'685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb',ordinary:{...payload().ordinary,open_references:[]},ideal:{...payload().ideal,open_references:[]},page_parity:false,kernel_parity:true,return_policy:'guiyi_unified_trueup'}
+  assert.equal(normalizePagePerformance(wire,strategy)!.page_parity,false)
+  for(const patch of [{page_parity:true},{kernel_parity:false},{return_policy:'source_page'},{source_sha256:'a'.repeat(64)},{version:'newow_page_performance_v3379_v2'}])assert.throws(()=>normalizePagePerformance({...wire,...patch},strategy))
+ }
+})
+
+test('unified OPEN references preserve mark metadata without fabricating a closing trade',()=>{
+ const base=payload(),opened={buyDate:'2026-01-02',buyPrice:'101.000',markDate:'2026-01-03',markPrice:'103.000',segment_id:'owner'}
+ const wire={...base,strategy:'oscillation',version:'newow_unified_trueup_page_v1',source_version:'3.4.49',source_sha256:'685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb',page_parity:false,kernel_parity:true,return_policy:'guiyi_unified_trueup',ordinary:{...base.ordinary,open_references:[opened]},ideal:{...base.ideal,open_references:[]}}
+ assert.deepEqual(normalizePagePerformance(wire,'oscillation')!.ordinary!.open_references,[opened])
+ for(const patch of [{buyPrice:'0'},{markDate:'2099-01-01'},{segment_id:'foreign'},{markDate:'2026-01-02'},{forceClose:true}])assert.throws(()=>normalizePagePerformance({...wire,ordinary:{...wire.ordinary,open_references:[{...opened,...patch}]}},'oscillation'))
+ assert.throws(()=>normalizePagePerformance({...base,ordinary:{...base.ordinary,open_references:[opened]}},'trend'))
+})

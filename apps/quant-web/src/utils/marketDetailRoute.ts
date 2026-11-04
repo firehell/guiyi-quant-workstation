@@ -65,7 +65,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
   if (query.newow_test !== undefined && (!isNewow || strategy !== 'oscillation'
-    || !['osc-test', 'osc-test2', 'osc-test3', 'osc-test4'].includes(String(query.newow_test)) || typeof query.newow_test !== 'string')) {
+    || !['osc-test', 'osc-test2', 'osc-test3', 'osc-test4','osc-test5'].includes(String(query.newow_test)) || typeof query.newow_test !== 'string')) {
     return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
 

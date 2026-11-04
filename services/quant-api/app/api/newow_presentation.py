@@ -201,6 +201,7 @@ def _product_response(
                 for frame in value.replay.frames
             ],
             "display_events": _json_value(value.display_events),
+            "breakout_events": _json_value(value.breakout_events),
             "caution_events": _json_value(value.caution_events),
             "trend_channel": None
             if value.trend_channel is None
@@ -254,6 +255,7 @@ def _product_response(
                     "bar_end": item.bar_end,
                     "trading_day": item.trading_day,
                     "reference_price": _decimal(item.reference_price),
+                    "anchor_price": _decimal(item.anchor_price),
                     "physical_contract": item.physical_contract,
                     "segment_id": item.segment_id,
                     "calculation_segment_id": item.calculation_segment_id,

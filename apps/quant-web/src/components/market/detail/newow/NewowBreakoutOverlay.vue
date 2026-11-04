@@ -1,0 +1,9 @@
+<script setup lang="ts">
+import {computed} from 'vue'
+import {layoutBreakouts,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
+const props=defineProps<{points:readonly BreakoutPoint[];width:number;height:number;shapes:boolean;wicks:boolean}>()
+const emit=defineEmits<{'select-breakout':[event:NewowBreakoutEvent]}>()
+const labels=computed(()=>layoutBreakouts(props.points,props.width,props.height,props.shapes,props.wicks))
+</script>
+<template><div class="breakout-overlay" :style="{width:width+'px',height:height+'px'}" aria-label="突破形态，非成交"><button v-for="(p,i) in labels" :key="p.event.event_id+':'+i" type="button" :class="{pending:p.event.kind==='pending',wick:p.event.kind.startsWith('wick_')}" :style="{left:p.left+'px',top:p.top+'px',width:p.width+'px',color:p.color}" :aria-label="p.label+' · '+p.detail+' · '+p.event.bar_end+' · '+p.event.physical_contract" @pointerdown.stop @click.stop="emit('select-breakout',p.event)"><strong>{{p.label}}</strong><span>{{p.detail}}</span></button></div></template>
+<style scoped>.breakout-overlay{position:absolute;top:0;left:0;overflow:hidden;pointer-events:none;z-index:7}.breakout-overlay button{position:absolute;pointer-events:auto;cursor:pointer;height:30px;min-height:30px;max-height:30px;padding:1px 3px;display:flex;flex-direction:column;align-items:center;justify-content:center;font:600 11px sans-serif;line-height:14px;box-sizing:border-box;border:1px solid currentColor;border-radius:4px;white-space:nowrap;background:var(--gy-bg-panel)}.breakout-overlay button strong{font-size:11px;font-weight:600;line-height:14px}.breakout-overlay button span{font-size:10px;font-weight:400;line-height:12px}.breakout-overlay button.wick strong{font-size:10px}.breakout-overlay button.wick span{font-size:9px}.breakout-overlay button.pending{border-style:dashed;background:transparent}.breakout-overlay button:focus-visible{outline:2px solid var(--gy-accent);outline-offset:1px}</style>

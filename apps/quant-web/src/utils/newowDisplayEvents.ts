@@ -22,7 +22,7 @@ export function normalizeDisplayEvents(value: unknown, bars: readonly DisplayOwn
       || !e.formula_version || !decimal(e.observed_close) || Number(e.observed_close)!==Number(bar.close)
       || e.page_parity!==true || e.executable!==false || e.quantity_effect!=='none') throw Error('display event owner or identity conflict')
     if (e.kind==='OSC_BREAKDOWN') {
-      if (!['oscillation','osc-test','osc-test2','osc-test3','osc-test4'].includes(e.source_strategy) || !e.source_build_id || !decimal(e.build_threshold)
+      if (!['oscillation','osc-test','osc-test2','osc-test3','osc-test4','osc-test5'].includes(e.source_strategy) || !e.source_build_id || !decimal(e.build_threshold)
         || !e.build_bar_end || !Number.isFinite(Date.parse(e.build_bar_end)) || Date.parse(e.build_bar_end)>Date.parse(e.bar_end) || e.signal_kind!==null) throw Error('display build association invalid')
     } else if(e.source_build_id!==null||e.build_bar_end!==null||e.build_threshold!==null
       || (e.kind==='ZLGJ_J'?(e.source_strategy!=='oscillation_attack'||e.signal_kind!==null):e.kind==='MAIN_RISE_J'?(e.source_strategy!=='main_rise'||e.signal_kind!==null):(e.source_strategy!=='trend_reversal'||!['rebound','adjust'].includes(e.signal_kind??'')))) throw Error('display source invalid')

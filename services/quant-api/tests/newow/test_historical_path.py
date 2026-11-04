@@ -99,6 +99,7 @@ def test_explicit_path_strategy_query_is_bounded_and_cache_distinct():
         "osc-test2",
         "osc-test3",
         "osc-test4",
+        "osc-test5",
     ]:
         assert (
             ProductServiceQuery(
@@ -237,3 +238,92 @@ def test_fusion_adapter_uses_eligible_osc_then_trend_actions(monkeypatch):
         strategy="fusion",
     )
     assert captured["strategy"] == "fusion" and len(captured["actions"]) == 1
+
+
+def test_test5_path_reuses_current_oscillation_events_instead_of_legacy_hhv(monkeypatch):
+    from dataclasses import replace
+    from newow.test_trueup import witness
+    from newow.test_experiments import make_bar
+    from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
+    from app.market_data.newow.historical_path import project_historical_path
+    import app.market_data.newow.historical_path as adapter
+
+    bars = tuple(replace(make_bar(i), bar=replace(make_bar(i).bar,
+        open=b.open, high=b.high, low=b.low, close=b.close))
+        for i, b in enumerate(witness()))
+    replay = replay_strategy(build_product_identity("rb", "oscillation", "1d"), bars)
+    captured = []
+    def capture(**kwargs):
+        captured.append(kwargs["trades"])
+        return dict(background=[])
+    monkeypatch.setattr(adapter, "build_historical_path", capture)
+    price = dict(current_price=dict(raw="119"),
+                 status_card=dict(target=dict(raw="121"), absorb=dict(raw="100")))
+    for strategy in ("oscillation", "osc-test5"):
+        project_historical_path(replay=replay, daily=None, weekly=None,
+            cutoff=bars[-1].bar.bar_end, prices=price, frequency="1d", strategy=strategy)
+    assert captured[0] == captured[1]
+    assert len(captured[0]) == 1
+    assert captured[0][0]["sellPrice"] == "121"
+    assert captured[0][0]["sellDate"].startswith("2026-01-13")
+    assert captured[0][0]["forceClose"] is False
+
+
+def test_explicit_open_reference_preserves_holding_buys_and_closed_only_eta():
+    days = [f"2026-01-{i:02}" for i in range(1, 31)]
+    result = build_historical_path(
+        trades=[trade(days[0], days[5]), trade(days[6], days[11])],
+        open_reference=dict(buyDate=days[19], buyPrice="100", markDate=days[-1], markPrice="110"),
+        unified_trueup=True,
+        kline_dates=days, daily_dates=days, period="1d", today=days[-1],
+        current="110", target="120", cost="100", weekly_signals=[],
+    )
+    assert result["version"] == "newow_historical_path_trueup_v1"
+    assert result["status"] == "ready" and result["holding"] is True
+    assert result["buys"][-1] == dict(date=days[19], price="100")
+    assert len(result["buys"]) == 3
+    assert [s["date"] for s in result["sells"]] == [days[5], days[11]]
+    assert result["eta"]["status"] == "ready"
+    assert result["eta"]["samples"] == 2
+    assert result["eta"]["base"] == 5
+    assert result["eta"]["elapsed"] == 10
+    assert result["eta"]["remain"] == 2.5
+    assert result["eta"]["from_price"] == "100"
+
+
+def test_test5_adapter_forwards_current_open_reference_without_fabricated_clear(monkeypatch):
+    from newow.test_experiments import make_bar
+    from guiyi_quant.newow.product_adapters import build_product_identity, replay_strategy
+    from app.market_data.newow.historical_path import project_historical_path
+    import app.market_data.newow.historical_path as adapter
+
+    bars = tuple(make_bar(i) for i in range(14))
+    replay = replay_strategy(build_product_identity("rb", "oscillation", "1d"), bars)
+    captured = {}
+    def capture(**kwargs):
+        captured.update(kwargs)
+        return dict(background=[])
+    monkeypatch.setattr(adapter, "build_historical_path", capture)
+    project_historical_path(replay=replay, daily=None, weekly=None,
+        cutoff=bars[-1].bar.bar_end, prices=dict(current_price=dict(raw="100"),
+            status_card=dict(target=dict(raw="110"), absorb=dict(raw="90"))),
+        frequency="1d", strategy="osc-test5")
+    assert len(captured["trades"]) == 2
+    assert not any(t["forceClose"] for t in captured["trades"])
+    assert captured["open_reference"]["buyDate"].startswith("2026-01-14")
+    assert captured["open_reference"]["buyPrice"] == "90"
+
+
+def test_one_closed_plus_open_is_ready_holding_with_eta_samples_missing():
+    days = [f"2026-01-{i:02}" for i in range(1, 21)]
+    result = build_historical_path(
+        trades=[trade(days[0], days[5])],
+        open_reference=dict(buyDate=days[9], buyPrice="100", markDate=days[-1], markPrice="110"),
+        unified_trueup=True,
+        kline_dates=days, daily_dates=days, period="1d", today=days[-1],
+        current="110", target="120", cost="100", weekly_signals=[],
+    )
+    assert result["status"] == "ready" and result["holding"] is True
+    assert result["buys"] == [dict(date=days[0], price="100"), dict(date=days[9], price="100")]
+    assert result["sells"] == [dict(date=days[5], price="120")]
+    assert result["eta"] == dict(status="unavailable", reason="SAMPLES_MISSING")

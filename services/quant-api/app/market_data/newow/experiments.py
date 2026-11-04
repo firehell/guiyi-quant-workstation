@@ -24,7 +24,11 @@ from guiyi_quant.newow.product_adapters import (
     label_calculation_segments,
 )
 from guiyi_quant.newow.product_identity import utc_timestamp, input_policy_version
-from guiyi_quant.newow.page_performance import filter_page_by_date
+from guiyi_quant.newow.page_performance import (
+    PageAction, PageBar, PageSegment, build_page_performance_material,
+    filter_page_by_date, project_page_performance_material,
+)
+from guiyi_quant.newow.oscillation_trueup import calculate_oscillation_series
 from .product_query import NewowProductQuery, ProductReadWindow
 from .product_reader import NewowProductReader, NewowProductReadError
 
@@ -69,6 +73,57 @@ def _window_reference(result, bars, window, frequency):
             trade_count=filtered["summary"]["tradeCount"],
         ),
     )
+
+
+def _trueup_reference(bars, steps, window, frequency, cancelled, *, terminal_eligible):
+    """Project the shared product event material into the experiment wire layout."""
+    material = build_page_performance_material(
+        (PageSegment(
+            bars[0].segment_id,
+            tuple(PageBar(b.bar_end.isoformat(), b.high, b.low, b.close,
+                          b.observation_eligible, b.trading_day.isoformat()) for b in bars),
+            terminal_eligible=terminal_eligible,
+            actions=tuple(
+                PageAction(b.bar_end.isoformat(),
+                           "buy" if signal.action.value == "BUILD" else "sell", signal.price)
+                for b, step in zip(bars, steps, strict=True) for signal in step.signals
+            ),
+        ),),
+        "oscillation", period=frequency.value, event_driven=True, cancelled=cancelled,
+    )
+    projected = project_page_performance_material(
+        material, since=window.since.isoformat(), through=window.through.isoformat()
+    )
+    by_date = {b.bar_end.isoformat(): i for i, b in enumerate(bars)}
+    models = []
+    for mode in ("ordinary", "ideal"):
+        result = projected[mode]
+        if result is None:
+            models.append(None)
+            continue
+        summary = result["summary"]
+        models.append(dict(
+            model_version=("newow_trueup_reference_zero_cost_v1" if mode == "ordinary"
+                           else "newow_trueup_posterior_peak_v1"),
+            page_version=projected["version"], page_parity=False, kernel_parity=True,
+            return_policy="guiyi_unified_trueup", executable=False,
+            hindsight=mode == "ideal",
+            posterior_label="持仓区间事后最高价" if mode == "ideal" else None,
+            summary=dict(cum_return_percentage_points=summary["cumReturn"],
+                         accuracy_pct=str(summary["accuracy"]),
+                         max_drawdown_percentage_points=summary["maxDrawdown"],
+                         trade_count=summary["tradeCount"]),
+            dates=result["dates"], equity=result["equity"],
+            trades=[dict(
+                entry_index=by_date[t["buyDate"]], exit_index=by_date[t["sellDate"]],
+                entry_bar_end=t["buyDate"], exit_bar_end=t["sellDate"],
+                entry_reference_price=t["buyPrice"], exit_reference_price=t["sellPrice"],
+                return_percentage_points=t["pct"], physical_contract=bars[0].physical_contract,
+                segment_id=bars[0].segment_id, stop_loss=False, confirm_exit=False,
+                force_close=t.get("forceClose", False),
+            ) for t in result["trades"]],
+        ))
+    return tuple(models)
 
 
 @dataclass(frozen=True)
@@ -241,12 +296,21 @@ class NewowExperimentService:
                     previous = bar.bar_end
             # Preserve original owner eligibility and all prefix transactions;
             # page range filtering selects exits after the full calculation.
-            steps = calculate_experiment_series(
-                bars, query.kind, check_cancelled=self._check_cancelled
+            self._check_cancelled()
+            steps = (
+                calculate_oscillation_series(bars)
+                if query.kind is ExperimentKind.TEST5
+                else calculate_experiment_series(
+                    bars, query.kind, check_cancelled=self._check_cancelled
+                )
             )
             display_bars = tuple(replace(b, bar=raw) for b, raw in zip(values, bars, strict=True))
             display_events.extend(shared_events(display_bars, include_zlgj=True))
-            shadow = calculate_experiment_series(tuple(replace(b, observation_eligible=True) for b in bars), query.kind, check_cancelled=self._check_cancelled)
+            shadow_bars = tuple(replace(b, observation_eligible=True) for b in bars)
+            shadow = (calculate_oscillation_series(shadow_bars)
+                      if query.kind is ExperimentKind.TEST5 else
+                      calculate_experiment_series(shadow_bars, query.kind,
+                                                  check_cancelled=self._check_cancelled))
             display_events.extend(breakdown_events(display_bars, (s.signals for s in shadow), query.kind.value, query.kind.formula_version,
                 lambda i, seq: sha256(f"{query.kind}:{query.frequency}:{bars[i].segment_id}:{bars[i].bar_end.isoformat()}:{seq}:BUILD".encode()).hexdigest()))
             eligible = tuple(b for b in bars if b.observation_eligible)
@@ -289,10 +353,33 @@ class NewowExperimentService:
                             reference_price=str(signal.price),
                             score=signal.score,
                             break_label=signal.break_label,
-                            stop_loss=signal.stop_loss,
-                            confirm_exit=signal.confirm_exit,
+                            stop_loss=getattr(signal, "stop_loss", False),
+                            confirm_exit=getattr(signal, "confirm_exit", False),
                         )
                     )
+            entry_price = None
+            for step in steps:
+                for signal in step.signals:
+                    entry_price = signal.price if signal.action.value == "BUILD" else None
+            if query.kind is not ExperimentKind.TEST5:
+                entry_price = steps[-1].state.entry_price
+            if query.kind is ExperimentKind.TEST5:
+                ordinary, theoretical = _trueup_reference(
+                    bars, steps, window, query.frequency, self.cancelled,
+                    terminal_eligible=index == len(groups) - 1 and not terminal_blocked,
+                )
+            else:
+                ordinary = _window_reference(
+                    run_experiment_reference(
+                        bars, query.kind,
+                        terminal_eligible=index == len(groups) - 1 and not terminal_blocked,
+                        check_cancelled=self._check_cancelled,
+                    ), bars, window, query.frequency,
+                )
+                theoretical = _window_reference(
+                    run_base_oscillation_ideal(bars, check_cancelled=self._check_cancelled),
+                    bars, window, query.frequency,
+                )
             segment_ready = steps[-1].channel is not None and len(bars) >= 11
             segments.append(
                 dict(
@@ -327,68 +414,42 @@ class NewowExperimentService:
                     ),
                     latest_state=dict(
                         holding=steps[-1].state.holding,
-                        entry_reference_price=str(steps[-1].state.entry_price)
-                        if steps[-1].state.entry_price is not None
-                        else None,
-                        stop_reference_price=str(
-                            steps[-1].state.entry_price
-                            * (
-                                Decimal("0.88")
-                                if query.kind is ExperimentKind.TEST4
-                                else Decimal("0.93")
-                            )
-                        )
-                        if steps[-1].state.entry_price is not None
-                        else None,
-                        locked_target=str(steps[-1].state.target_price)
-                        if steps[-1].state.target_price is not None
-                        else None,
-                        confirm_reference=str(steps[-1].state.sell_reference)
-                        if steps[-1].state.sell_reference is not None
-                        else None,
+                        entry_reference_price=str(entry_price) if entry_price is not None else None,
+                        stop_reference_price=(str(entry_price * (Decimal("0.88")
+                            if query.kind is ExperimentKind.TEST4 else Decimal("0.93")))
+                            if entry_price is not None and query.kind is not ExperimentKind.TEST5 else None),
+                        locked_target=(str(getattr(steps[-1].state, "target_price", None))
+                            if getattr(steps[-1].state, "target_price", None) is not None else None),
+                        confirm_reference=(str(getattr(steps[-1].state, "sell_reference", None))
+                            if getattr(steps[-1].state, "sell_reference", None) is not None else None),
                     ),
-                    ordinary=_window_reference(
-                        run_experiment_reference(
-                            bars,
-                            query.kind,
-                            terminal_eligible=index == len(groups) - 1
-                            and not terminal_blocked,
-                            check_cancelled=self._check_cancelled,
-                        ),
-                        bars,
-                        window,
-                        query.frequency,
-                    ),
-                    theoretical=_window_reference(
-                        run_base_oscillation_ideal(
-                            bars, check_cancelled=self._check_cancelled
-                        ),
-                        bars,
-                        window,
-                        query.frequency,
-                    ),
+                    ordinary=ordinary,
+                    theoretical=theoretical,
                 )
             )
         if not chart:
             raise NewowProductReadError("NEWOW_DATA_UNAVAILABLE")
         ready = segments[-1]["readiness"]["status"] == "READY"
         from .product_service import _fingerprint
-        return dict(
+        output = dict(
             display_version=DISPLAY_VERSION,
             data_revision_identity=_fingerprint(read, product_identity),
-            schema_version="newow_experiment_detail_v1",
+            schema_version="newow_experiment_detail_v3",
             product=query.product,
             frequency=query.frequency.value,
             kind=query.kind.value,
             as_of=as_of.isoformat(),
             formula_version=query.kind.formula_version,
-            page_parity=True,
+            page_parity=query.kind is not ExperimentKind.TEST5,
+            **({"kernel_parity": True, "return_policy": "guiyi_unified_trueup"}
+               if query.kind is ExperimentKind.TEST5 else {}),
             executable=False,
             input_policy_version=input_policy_version(
                 query.frequency.value, read.input_quality_policy
             ),
             input_snapshot_hash=lifecycle_input_sha256(labeled),
-            profile_id="guiyi_newow_experiment_completed_physical_v1",
+            profile_id=("newow_experiment_trueup_v1" if query.kind is ExperimentKind.TEST5
+                        else "guiyi_newow_experiment_completed_physical_v1"),
             window=dict(
                 since=window.since.isoformat(),
                 through=window.through.isoformat(),
@@ -409,3 +470,13 @@ class NewowExperimentService:
             ],
             segments=segments,
         )
+
+        if query.kind is ExperimentKind.TEST5:
+            from .breakout_events import project_breakout_events
+
+            visible = {bar["bar_end"] for bar in chart[-query.chart_limit:]}
+            output["breakout_events"] = list(project_breakout_events(
+                labeled, as_of=as_of,
+                visible_bars=tuple(b for b in labeled if b.bar.bar_end.isoformat() in visible),
+            ))
+        return output

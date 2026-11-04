@@ -150,7 +150,7 @@ function normalizeNewow(value: unknown): MarketDetailPreferences['newow'] {
       ? value.strategy as NewowStrategy
       : 'trend',
     ...(value.strategyModel === 'futures_bidir_v1' ? { strategyModel: 'futures_bidir_v1' as const } : {}),
-    ...(value.strategy === 'oscillation' && typeof value.newowTest === 'string' && ['osc-test','osc-test2','osc-test3','osc-test4'].includes(value.newowTest)
+    ...(value.strategy === 'oscillation' && typeof value.newowTest === 'string' && ['osc-test','osc-test2','osc-test3','osc-test4','osc-test5'].includes(value.newowTest)
       ? { newowTest: value.newowTest as MarketDetailViewRestore['newow']['newowTest'] } : {}),
     ...(value.strategy === 'trend' && value.newowMode === 'dual' ? {newowMode:'dual' as const} : {}),
     // Keep the selected chart period even when the analysis is unsupported.

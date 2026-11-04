@@ -145,7 +145,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     }
 
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
-      return route.fulfill({ json: options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
+      return route.fulfill({ json: options.capabilities ?? (options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities()) })
     }
 
     if (url.pathname === '/api/v1/market/newow/daily-snapshot') {
@@ -318,7 +318,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
     if (url.searchParams.getAll(key).length !== 1) return `missing or duplicate Newow ${key} ${url.search}`
   }
   if (url.searchParams.get('product') !== 'rb' || url.searchParams.get('series_kind') !== 'actual_dominant') return `invalid Newow identity ${url.search}`
-  if (!NEWOW_STRATEGIES.includes(strategy) || !NEWOW_FREQUENCIES.includes(frequency)) return `invalid Newow combination ${strategy}/${frequency}`
+  if (!NEWOW_STRATEGIES.includes(strategy) || ![...NEWOW_FREQUENCIES,'5m','15m','30m'].includes(frequency)) return `invalid Newow combination ${strategy}/${frequency}`
   if (url.searchParams.get('as_of') !== expectedAsOf) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
@@ -537,6 +537,7 @@ function envelope(url, section, strategy, frequency, options) {
     }
       : { expected_period_end: result.meta.as_of, available_period_end: result.meta.as_of, current_context: {} }),
   }
+  options.transformEnvelope?.(result,{section,strategy,frequency})
   return result
 }
 
@@ -544,11 +545,11 @@ function meta(url, strategy, frequency, section, options) {
   const revision = typeof options.revision === 'function' ? options.revision({ url, section, strategy, frequency }) : options.revision || 'fixture-revision-1'
   return {
     schema_version: 'newow_product_detail_v4',
-    identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) },
+    identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_${strategy==='oscillation'?'v2':'v1'}`, formula_versions: formulas(strategy) },
     as_of: url.searchParams.get('as_of') || NEWOW_AS_OF,
     read_at: '2026-09-03T08:00:01.000Z', input_content_sha256: section === 'chart' && url.searchParams.has('snapshot_token') && url.searchParams.has('from') && !url.searchParams.has('chart_before') ? 'f'.repeat(64) : HASH[section] || HASH.chart,
     data_revision_identity: revision, snapshot_token: options.tokenlessSections?.includes(section) ? null : `snapshot:${strategy}:${frequency}:${revision}`,
-    reference_model_version: 'newow_marker_reference_zero_cost_v4',
+    reference_model_version: strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4',
     futures_adaptation_version: frequency === '1w'
       ? 'newow_futures_weekly_quality_segment_v1' : 'newow_futures_quality_segment_v3',
   }
@@ -556,7 +557,7 @@ function meta(url, strategy, frequency, section, options) {
 
 function formulas(strategy) {
   if (strategy === 'trend') return ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
-  if (strategy === 'oscillation') return ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
+  if (strategy === 'oscillation') return ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_trueup_kernel111_v1']
   return ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
 }
 
@@ -772,7 +773,7 @@ function splitReferenceValue(value, url, strategy) {
 function trade(tradeId, strategy, frequency, entry, exit, status, result, mark, entrySignalId, entrySequence, entryPrice, exitSignalId, exitPrice, markOwner, markPrice, membership = 'entry_in_window_v1') {
   return {
     reference_trade_id: tradeId, product: 'rb', strategy_code: strategy, frequency, physical_contract: entry.physical_contract, segment_id: entry.segment_id, calculation_segment_id: entry.calculation_segment_id,
-    formula_versions: formulas(strategy), reference_model_version: 'newow_marker_reference_zero_cost_v4',
+    formula_versions: formulas(strategy), reference_model_version: strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4',
     futures_adaptation_version: frequency === '1w'
       ? 'newow_futures_weekly_quality_segment_v1' : 'newow_futures_quality_segment_v3',
     entry_signal_id: entrySignalId, entry_sequence: entrySequence, entry_bar_end: entry.bar_end, entry_trading_day: entry.trading_day, entry_reference_price: entryPrice,
@@ -848,7 +849,7 @@ function explanationValue(asOf) {
   const strategy = 'trend'
   const slot = (slotFrequency, barEnd, state) => ({
     frequency: slotFrequency, as_of: asOf, availability: ready(), confirmation_status: ready(),
-    identity: { product: 'rb', strategy, frequency: slotFrequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${slotFrequency}_v1`, formula_versions: formulas(strategy) },
+    identity: { product: 'rb', strategy, frequency: slotFrequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${slotFrequency}_${strategy==='oscillation'?'v2':'v1'}`, formula_versions: formulas(strategy) },
     bar_end: barEnd, source_identity: `canonical:rb:${CONTRACT}:${slotFrequency}`, physical_contract: CONTRACT, segment_id: SEGMENT, formula_versions: formulas(strategy), main_state: state,
   })
   const gap = evidenceRequired('NEWOW_PRIVATE_SCORE_UNPROVEN')
@@ -871,7 +872,7 @@ function explanationValue(asOf) {
 function comparatorValue(strategy, frequency, asOf) {
   const windows = [10, 20, 24, 30, 52].map((window) => ({ window, cumulative_return_pct: `${window / 10}`, max_drawdown_pct: '-1', trade_count: 1, win_count: 1, loss_count: 0, win_rate_pct: '100', force_closed_at_end: true, score: '1', page_display: { cumulative_return_pct: `${window / 10}`, max_drawdown_pct: '-1', win_rate_pct: '100' }, trades: [{ entry_bar_end: '2026-01-05T07:00:00.000Z', entry_price: '100', exit_bar_end: NEWOW_AS_OF, exit_price: '101', return_pct: '1', won: true, synthetic_terminal: true }] }))
   const sourceBars = { count: 120, first_trading_day: '2026-01-01', last_trading_day: '2026-09-03', first_bar_end: '2026-01-05T07:00:00.000Z', last_bar_end: '2026-09-03T07:00:00.000Z', source_identities: ['canonical'], snapshot_kind: 'canonical', fact_identity_fields: ['bar_end', 'physical_contract', 'segment_id'] }
-  return { result: { identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas(strategy) }, status: 'ready', evidence_status: 'RESEARCH_EVIDENCE_ONLY', reason_code: null, as_of: asOf, formula_versions: ['newow_hhv_llv_window_optimizer_page_v1'], source_bars: [sourceBars], value: { segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, frequency, authoritative_start_trading_day: '2026-01-01', authoritative_end_trading_day: '2026-09-03', source_bars: sourceBars, as_of: asOf, in_sample: true, repainting: false, repaint_status: ready(), input_snapshot_status: ready(), status: ready(), results: windows, ranked_windows: [52, 30, 24, 20, 10] }], default_segment_id: SEGMENT, candidate_windows: [10, 20, 24, 30, 52], page_formula_version: 'newow_hhv_llv_window_optimizer_page_v1', futures_adapter_version: 'newow_futures_segment_comparator_v1', page_source_kernel_page_parity: true, futures_adapter_page_parity: false, in_sample: true, executable: false, input_mode: 'canonical', subfeatures: [] } }, executable: false, page_parity: false, synthetic_terminal_is_reference_exit: false, allowed_uses: ['in_sample_comparison'] }
+  return { result: { identity: { product: 'rb', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_${strategy==='oscillation'?'v2':'v1'}`, formula_versions: formulas(strategy) }, status: 'ready', evidence_status: 'RESEARCH_EVIDENCE_ONLY', reason_code: null, as_of: asOf, formula_versions: ['newow_hhv_llv_window_optimizer_page_v1'], source_bars: [sourceBars], value: { segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, frequency, authoritative_start_trading_day: '2026-01-01', authoritative_end_trading_day: '2026-09-03', source_bars: sourceBars, as_of: asOf, in_sample: true, repainting: false, repaint_status: ready(), input_snapshot_status: ready(), status: ready(), results: windows, ranked_windows: [52, 30, 24, 20, 10] }], default_segment_id: SEGMENT, candidate_windows: [10, 20, 24, 30, 52], page_formula_version: 'newow_hhv_llv_window_optimizer_page_v1', futures_adapter_version: 'newow_futures_segment_comparator_v1', page_source_kernel_page_parity: true, futures_adapter_page_parity: false, in_sample: true, executable: false, input_mode: 'canonical', subfeatures: [] } }, executable: false, page_parity: false, synthetic_terminal_is_reference_exit: false, allowed_uses: ['in_sample_comparison'] }
 }
 
 function productBar(frequency, index, long = false) {
