@@ -1018,10 +1018,12 @@ class LiveMarketService:
             from time import sleep
 
             self._sleep = sleep
+        history_started = False
         try:
-            if self._history_preparation is not None:
-                self._history_preparation.start()
             while should_stop is None or not should_stop():
+                if self._history_preparation is not None and not history_started:
+                    self._history_preparation.start()
+                    history_started = True
                 self.poll(self._clock())
                 self._sleep(1)
         finally:
