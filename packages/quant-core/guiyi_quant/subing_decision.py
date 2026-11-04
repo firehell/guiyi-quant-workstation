@@ -127,6 +127,25 @@ def daily_allows(direction, side):
     return direction in (('UP', 'NEUTRAL') if side == 'LONG' else ('DOWN', 'NEUTRAL'))
 
 
+def technical_full_exit_reasons(layers, initial_stop, frame, side, close):
+    """Protection facts independent of fees, margin and account risk estimates."""
+    reasons=[]
+    if layers and initial_stop is not None and direction_sign(side)*(close-initial_stop)<=0:reasons.append('FIXED_STOP')
+    if frame and frame['below_ema'] is True:reasons.append('EMA_CLEAR')
+    return reasons
+
+
+def technical_exit_targets(layers, existing, frame, side, close, at, add_protection):
+    sign=direction_sign(side)
+    protected=[l['layer_id'] for l in layers if add_protection and l['kind']=='ADD' and at>l['at'] and sign*(close-l['price'])<0]
+    targets=list(dict.fromkeys(existing+protected))
+    remaining=[l for l in layers if l['layer_id'] not in targets]
+    reductions=(int(frame['below_previous_low'] is True)+int(frame['high_death'] is True)) if frame else 0
+    count=min(reductions,max(0,len(remaining)-1))
+    if count:targets += [l['layer_id'] for l in reversed(remaining[-count:])]
+    return protected,list(dict.fromkeys(targets))
+
+
 class DecisionModel:
     def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None, risk_research_profile: str | None = None, regime_research_profile: str | None = None):
         if not isinstance(contract, str) or not re.fullmatch(r'(JM|MA|TA)[0-9]{4}', contract):
@@ -332,10 +351,7 @@ class DecisionModel:
             reasons.append('DAY_LOSS')
         if e['round_loss'] is True:
             reasons.append('ROUND_LOSS')
-        if self.layers and self.initial_stop is not None and sign * (close - self.initial_stop) <= 0:
-            reasons.append('FIXED_STOP')
-        if m and m['below_ema'] is True:
-            reasons.append('EMA_CLEAR')
+        reasons.extend(technical_full_exit_reasons(self.layers,self.initial_stop,m,side,close))
         if self.layers and e['day_end_window'] and remaining_net is not None and remaining_net <= 0:
             reasons.append('DAY_END_NONPOSITIVE')
         if reasons and (self.layers or self.pending):
@@ -373,17 +389,11 @@ class DecisionModel:
                 self.profit_targets = []
             else:
                 self.profit_targets = eligible if fast else eligible[:1]
-        protected = [layer['layer_id'] for layer in self.layers if self.add_protection and layer['kind'] == 'ADD' and at > layer['at'] and sign * (close - layer['price']) < 0]
+        protected,technical_targets=technical_exit_targets(self.layers,self.exit_layers,m,side,close,at,self.add_protection)
         if self.clear_reasons:
             self.exit_layers = [layer['layer_id'] for layer in self.layers]
         else:
-            self.exit_layers = list(dict.fromkeys(self.exit_layers + protected))
-            remaining = [layer for layer in self.layers if layer['layer_id'] not in self.exit_layers]
-            reductions = (int(m['below_previous_low'] is True) + int(m['high_death'] is True)) if m else 0
-            count = min(reductions, max(0, len(remaining) - 1))
-            if count:
-                self.exit_layers += [layer['layer_id'] for layer in reversed(remaining[-count:])]
-            self.exit_layers = list(dict.fromkeys(self.exit_layers + self.profit_targets))
+            self.exit_layers=list(dict.fromkeys(technical_targets+self.profit_targets))
         exit_now = bool(self.exit_layers or self.clear_reasons)
         reduction_trigger = bool(m and (m['below_previous_low'] is True or m['high_death'] is True))
         if protected or reduction_trigger or profit_trigger:

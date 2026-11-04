@@ -1,3 +1,9 @@
+11/5 苏冰开发持续观察已独立启动：北京时间00:16:01空仓、初始10万元，run `subing-dev-20261104T161601`，执行身份 `next_completed_1m_close_slip1_actual_knowledge_v1`。只读既有completed流与MDS，不切正式Runtime、不新增订阅/通知/Broker。自然SC完成Bar已提交独立开发PostgreSQL不可变事件；同一run自然事件后停启恢复及逐事件outcome/最终投影核对通过。焦煤夜盘已结束，尚无启动后自然JM决策/成交；当日权威执行参数两次有界采集均为空，保持禁止撮合，不回退旧费率。
+
+14品种观察前缀准备13个通过，PR2612日线 `PRICE_UNAVAILABLE`，保留预热不足；全部非JM不启用账户。ATR尺度参数只提供研究快照，未经owner确认与逐品种验证不进入执行。页面持续/历史切换、窗口及快速游标、读取失败恢复已在开发浏览器验收；开发入口 `http://127.0.0.1:5179/research/subing-decision`，API8006，前台worker无launchd/自动重启。正式服务身份与下方既有运行记录独立，未在本任务切换。
+
+回归328项通过，隔离真实PostgreSQL11项通过，独立高风险Review通过，四个固定历史窗口三组账户所有结果字段与旧结果一致；Web构建与Ruff通过。持续模型合同与启动恢复见 [SUBING_DEVELOPMENT_MODEL](docs/SUBING_DEVELOPMENT_MODEL.md)。这些不证明JM自然成交闭环、其他品种可执行性或OOS有效性。
+
 11/4 20:51 夜盘前现场确认：正式十服务已安装 v1.16.87/gen62，exact `5397c7ac92f0b62a74f3c58b3f55be4504d88f37`，唯一运行权威为 `.worktrees/release-v1.16.87`。原生同代恢复 `52b3500bbd492150dac4ec69a5547edafcbb479b9575225efedade5270500569` 实际 recovered；原普通cohort `bcdfe084eeb962719fa24d82034c59935f7f20eaaa59f27732ef4dba590e6e76` 的 verified 超时记录保持原样。恢复控制器为准备区 exact v1.16.86，不把控制器版本冒充运行版本。API health=ok、Runtime health=ok，正式Web模拟监控200/available。
 
 TqKq 唯一 worker PID15111，v1.16.87、LOGGED_IN、READY、mode=trade、opening_enabled=true；实际账本60品种 blocked_products=0、执行issues为空，信号/订单/成交/发送claim均0。原18:45:41启用身份及唯一1,000,000.00元权益基线保留，未重置账户；本次恢复边界20:50:46之后才接收新completed 60m自然信号。首个新信号、模拟委托及模拟成交仍分别待自然事件验证；未制造测试成交。

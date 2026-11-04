@@ -22,8 +22,8 @@ EXIT_ONLY_VERSION='subing_demand_account_candidate_v1_exit_only'
 
 def build_engine(executions,schedule,*,gate_first_entry=True,structures=None):
     version=('subing_unified_demand_candidate_v1' if structures is not None else VERSION) if gate_first_entry else EXIT_ONLY_VERSION
-    bars={x.bar.bar_end:x for x in executions}
-    context_hash=_digest(_wire({'schedule':schedule,'executions':[asdict(x) for x in executions], **({'structures': structures} if structures is not None else {})}))
+    bars=executions if isinstance(executions,dict) else {x.bar.bar_end:x for x in executions}
+    context_hash=_digest(_wire({'schedule':schedule,'executions':[asdict(x) for x in bars.values()], **({'structures': structures} if structures is not None else {})}))
     class Candidate(DecisionModel):
         def __init__(self,contract,run_id,**kwargs):
             super().__init__(contract,run_id,**kwargs)

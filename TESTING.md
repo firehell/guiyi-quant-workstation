@@ -2396,3 +2396,16 @@ pnpm -C apps/quant-web build
 ```
 
 真实历史复算入口 `scripts/research/subing_unified_replay.py --contract CONTRACT --since YYYY-MM-DD --through YYYY-MM-DD --output EXPLICIT_NEW_DIRECTORY`；使用现有MDS只读加载与既有JM执行事实，不下载或写行情。只读API需显式 `GUIYI_SUBING_DECISION_RESULTS_ROOT`，目录内index.json逐项登记SHA文件；损坏/缺失失败，不扫描其他研究目录。开发浏览器验收需真实登记四窗口，检查导航、切窗、时间游标、历史分页及游标前成交；fixture不代替真实回放。
+
+## 苏冰开发持续模型
+
+合同与运行入口见[开发模型](docs/SUBING_DEVELOPMENT_MODEL.md)。直接测试：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_account tests/unit/subing_decision services/quant-api/tests/test_subing_continuous_account.py services/quant-api/tests/test_subing_model_pipeline.py services/quant-api/tests/test_subing_model_api.py
+# 显式建立隔离测试数据库，禁止连接生产库
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/dev/subing_model_setup.py --test-only
+GUIYI_SUBING_MODEL_PG_TEST=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/test_subing_model_postgresql.py
+```
+
+真实PG测试保留隔离标识的不可变测试事件，不删除生产记录。四个固定历史窗口用既有统一回放入口复算，比较全部结果字段，不能仅比总收益。浏览器须检查持续/历史模式切换、真实14品种状态、初始空仓和未成交、错误恢复及停止/过期状态；自然新Bar、JM意图、Fill分别凭实际日志读回，测试fixture不能替代自然事件。
