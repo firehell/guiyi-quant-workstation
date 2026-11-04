@@ -4,7 +4,7 @@ import NewowMainRiseProcessLabels from './NewowMainRiseProcessLabels.vue'
 import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
 import {layoutMainRiseProcessLabels} from '@/utils/newowProcessHintDisplay'
 import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
-import {type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
+import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
@@ -597,13 +597,16 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
       cautionOverlays.value.push({x,y:Math.max(3,y-26),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
   }
+  const breakoutRange=scale.getVisibleLogicalRange()
+  const breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:value.bars.length)*.6)
+  const breakoutBars=value.bars.map(b=>({bar_end:b.barEnd,physical_contract:b.physicalContract,segment_id:b.segmentId,calculation_segment_id:b.calculationSegmentId}))
   const breakoutEvents=props.strategy==='oscillation'?(props.response?.value?.breakout_events??[]):[]
   breakoutPoints.value=breakoutEvents.flatMap(event=>{
     const bar=value.bars.find(b=>b.barEnd===event.bar_end&&b.physicalContract===event.physical_contract&&b.calculationSegmentId===event.calculation_segment_id)
     if(!bar)return []
     const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay)),y=priceToCoordinate.call(candles,event.side==='up'?bar.high:bar.low)
     const index=detailChartIndex(chart!,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay),value.bars.indexOf(bar))
-    return x!=null&&y!=null&&displayIndexVisible(index,scale.getVisibleLogicalRange())?[{event,x,y,wickUpperY:priceToCoordinate.call(candles,bar.high)??y,wickLowerY:priceToCoordinate.call(candles,bar.low)??y}]:[]
+    return x!=null&&y!=null&&displayIndexVisible(index,scale.getVisibleLogicalRange())?[{event,x,y,candleWidth:breakoutCandleWidth,band:breakoutBand(event,breakoutBars,value.bars.indexOf(bar),i=>timeToCoordinate.call(scale,chartMarkerTime(value.bars[i]!.barEnd,value.identity.frequency,value.bars[i]!.tradingDay)),p=>priceToCoordinate.call(candles,p),breakoutCandleWidth)}]:[]
   })
   const displayEvents=[...(props.response?.value?.display_events??[]),...(comparisonActive.value ? props.comparisonResponse?.value?.display_events??[] : [])]
   const seenDisplay=new Set<string>()

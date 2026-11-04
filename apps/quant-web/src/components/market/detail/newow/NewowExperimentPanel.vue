@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
-import {type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
+import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { MAX_ACCUMULATED_REFERENCE_TRADES } from '@/utils/newowReferenceParts'
@@ -134,11 +134,12 @@ function projectCallouts(){
   const x=scale.timeToCoordinate(time(bar.bar_end)),y=candles!.priceToCoordinate(Number(event.kind==='OSC_BREAKDOWN'?bar.low:event.kind==='ZLGJ_J'?String(Number(bar.high)*1.01):bar.high))
   return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y}]:[]
  })
+ const breakoutRange=scale.getVisibleLogicalRange(),breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:bars.length)*.6)
  breakoutPoints.value=(props.kind==='osc-test5'?data.value?.breakout_events??[]:[]).flatMap(event=>{
   const bar=bars.find(b=>b.bar_end===event.bar_end&&b.physical_contract===event.physical_contract&&b.calculation_segment_id===event.calculation_segment_id)
   if(!bar)return []
   const x=scale.timeToCoordinate(time(bar.bar_end)),y=candles!.priceToCoordinate(Number(event.side==='up'?bar.high:bar.low))
-  return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y,wickUpperY:candles!.priceToCoordinate(Number(bar.high))??y,wickLowerY:candles!.priceToCoordinate(Number(bar.low))??y}]:[]
+  return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y,candleWidth:breakoutCandleWidth,band:breakoutBand(event,bars,bars.indexOf(bar),i=>scale.timeToCoordinate(time(bars[i]!.bar_end)),p=>candles!.priceToCoordinate(p),breakoutCandleWidth)}]:[]
  })
  callouts.value=layoutNiuwaReferenceCallouts(chartMarkers.value.flatMap(m=>{
   const x=scale.timeToCoordinate?.(time(m.bar_end)),y=candles?.priceToCoordinate?.(Number(m.reference_price))

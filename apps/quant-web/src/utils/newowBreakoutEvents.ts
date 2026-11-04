@@ -33,28 +33,47 @@ export function normalizeBreakoutEvents(raw:unknown,bars:readonly Owner[],freque
   seen.add(e.event_id);return {...e,bar_end:bar.bar_end}
  })
 }
-export const breakoutTitle=(e:NewowBreakoutEvent)=>e.kind==='pending'?(e.side==='up'?'突破待定':'跌破待定'):({true_up:'真突破·转撑',false_up:'假突破',true_down:'真跌破·转压',false_down:'假跌破',wick_upper:'上影诱多',wick_lower:'下影诱空'}[e.kind])+(e.doubt?'（弱）':'')
+export const breakoutTitle=(e:NewowBreakoutEvent)=>e.kind==='pending'?(e.side==='up'?'突破待定':'跌破待定'):({true_up:'真突破·转撑',false_up:'假突破',true_down:'真跌破·转压',false_down:'假跌破',wick_upper:'上影诱多',wick_lower:'下影诱空'}[e.kind])
 /** Public capsule dates refer to occurrence and confirmation, in Shanghai calendar time. */
 export function breakoutDateLine(e:NewowBreakoutEvent):string {
  const day=(raw:string)=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(raw)).slice(5)
  return e.kind.startsWith('wick_')?day(e.occur_bar_end):`${day(e.occur_bar_end)} › ${e.confirmed_at?day(e.confirmed_at):'—'}`
 }
-export interface BreakoutPoint {event:NewowBreakoutEvent;x:number;y:number;wickUpperY?:number;wickLowerY?:number}
-export interface BreakoutLabel extends BreakoutPoint {label:string;detail:string;left:number;top:number;width:number;height:30;color:string}
-export function layoutBreakouts(points:readonly BreakoutPoint[],width:number,height:number,showShapes=true,showWicks=false):BreakoutLabel[]{
+export interface BreakoutBand {left:number;right:number;top:number;bottom:number;thresholdY:number}
+export interface BreakoutPoint {event:NewowBreakoutEvent;x:number;y:number;wickUpperY?:number;wickLowerY?:number;candleWidth?:number;band?:BreakoutBand}
+export interface BreakoutLabel extends BreakoutPoint {label:string;detail:string;left:number;top:number;width:number;height:30;color:string;fill:string|null;stroke:string|null}
+export function breakoutPaint(kind:NewowBreakoutEvent['kind']):{color:string;fill:string|null;stroke:string|null} {
+ if(kind==='pending')return {color:'var(--breakout-pending-text)',fill:null,stroke:'var(--breakout-pending-stroke)'}
+ return {color:'#FFFFFF',fill:['true_up','false_down','wick_lower'].includes(kind)?'#C62828':'#2E7D32',stroke:kind.startsWith('wick_')?'#FF6B35':null}
+}
+/** Pixel-only geometry; owner bounds keep the orange segment off a different contract. */
+export function breakoutBand(event:NewowBreakoutEvent,bars:readonly Owner[],index:number,xAt:(index:number)=>number|null,yAt:(price:number)=>number|null,candleWidth:number):BreakoutBand|undefined {
+ if(event.kind==='pending')return undefined
+ const owned=(b:Owner)=>b.physical_contract===event.physical_contract&&b.segment_id===event.segment_id&&b.calculation_segment_id===event.calculation_segment_id
+ let lo=index,hi=index
+ while(lo>0&&owned(bars[lo-1]!))lo--
+ while(hi+1<bars.length&&owned(bars[hi+1]!))hi++
+ const occur=bars.findIndex(b=>b.bar_end===event.occur_bar_end&&owned(b))
+ const x0=xAt(Math.max(lo,(occur<0?index-1:occur)-2)),x1=xAt(Math.min(hi,index+1))
+ const level=Number(event.level),edge=level+(event.side==='up'?1:-1)*Number(event.buffer),a=yAt(level),b=yAt(edge)
+ if(x0===null||x1===null||a===null||b===null||![x0,x1,a,b,candleWidth].every(Number.isFinite))return undefined
+ return {left:x0-candleWidth/2,right:x1+candleWidth/2,top:Math.min(a,b),bottom:Math.max(a,b),thresholdY:b}
+}
+export function layoutBreakouts(points:readonly BreakoutPoint[],width:number,height:number,showShapes=true,showWicks=false,measure?:(text:string,size:number)=>number):BreakoutLabel[]{
  const labels:BreakoutLabel[]=[]
- for(const p of points){
-  if(![p.x,p.y].every(Number.isFinite)||p.x<0||p.x>width||p.y<0||p.y>height)continue
-  const add=(label:string,y:number,color:string)=>{
-   if(width<24||height<30)return
-   const w=Math.min(112,width,Math.max(76,label.length*(p.event.kind.startsWith('wick_')?10:11)+10)),left=Math.max(0,Math.min(width-w,p.x-w/2))
-   const candidates=[0,32,-32,64]
-   const top=candidates.map(delta=>y+delta).find(top=>top>=0&&top+30<=height&&!labels.some(q=>left<q.left+q.width+2&&left+w+2>q.left&&top<q.top+32&&top+32>q.top))
-   if(top===undefined)return
-   labels.push({...p,label,detail:breakoutDateLine(p.event),left,top,width:w,height:30,color})
-  }
-  if(showShapes&&!p.event.kind.startsWith('wick_'))add(breakoutTitle(p.event),p.y+(p.event.side==='up'?-34:6),p.event.kind==='pending'?'#8a9099':p.event.kind==='true_up'||p.event.kind==='false_down'?'#e53935':'#23a85a')
-  if(showWicks&&p.event.kind.startsWith('wick_'))add(breakoutTitle(p.event),p.y,'#ed8b20')
+ const textWidth=measure??((text:string,size:number)=>[...text].reduce((sum,c)=>sum+(c.charCodeAt(0)>255?size:size*.56),0))
+ // Public B layer has priority over secondary wick labels, independently of time.
+ for(const p of [...points].sort((a,b)=>Number(a.event.kind.startsWith('wick_'))-Number(b.event.kind.startsWith('wick_')))){
+  const wick=p.event.kind.startsWith('wick_')
+  if((wick?!showWicks:!showShapes)||![p.x,p.y].every(Number.isFinite)||p.x<0||p.x>width||p.y<0||p.y>height||width<24||height<34)continue
+  const label=breakoutTitle(p.event),detail=breakoutDateLine(p.event)
+  const w=Math.min(112,width,Math.max(textWidth(label,wick?10:11),textWidth(detail,wick?9:10))+12),left=Math.max(0,Math.min(width-w,p.x-w/2))
+  const above=p.event.side==='up',base=above?p.y-6-30:p.y+6
+  // Clip before collision detection, then push on the same side (0/1/2 layers).
+  const top=[0,1,2].map(layer=>Math.max(2,Math.min(base+(above?-1:1)*layer*34,height-32)))
+   .find(top=>!labels.some(q=>left<q.left+q.width&&left+w>q.left&&top<q.top+30&&top+30>q.top))
+  if(top===undefined)continue
+  labels.push({...p,label,detail,left,top,width:w,height:30,...breakoutPaint(p.event.kind)})
  }
  return labels
 }
