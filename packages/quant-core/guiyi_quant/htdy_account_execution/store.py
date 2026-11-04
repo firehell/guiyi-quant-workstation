@@ -87,6 +87,10 @@ class LocalStore:
         try:
             view._conn.execute("PRAGMA query_only=ON")
             view._conn.execute("BEGIN")
+            identity = view._conn.execute(
+                "SELECT value FROM metadata WHERE key=?", ("execution_identity",)
+            ).fetchone()
+            view._execution_identity = identity[0] if identity else None
             view._verify()
             return view._projection()[1]
         except (sqlite3.Error, KeyError, TypeError, ValueError):
@@ -94,7 +98,12 @@ class LocalStore:
         finally:
             view._conn.close()
 
-    def __init__(self, path, initial=None):
+    def __init__(self, path, initial=None, *, execution_identity=None):
+        if execution_identity is not None and not execution_identity.startswith(
+            "TQKQ:"
+        ):
+            raise StoreError("EXECUTION_IDENTITY_INVALID")
+        self._execution_identity = execution_identity
         self.path = Path(path)
         self._mutex = threading.RLock()
         self._uncertain = False
@@ -147,6 +156,13 @@ class LocalStore:
             "INSERT INTO metadata VALUES (?,?)",
             ("schema", "htdy_local_account_journal_v1"),
         )
+        if self._execution_identity is not None:
+            if self._execution_identity != "TQKQ:" + state.account_id + ":htdy_tqkq_v1":
+                raise StoreError("EXECUTION_IDENTITY_INVALID")
+            self._conn.execute(
+                "INSERT INTO metadata VALUES (?,?)",
+                ("execution_identity", self._execution_identity),
+            )
         payload = codec.checkpoint(state)
         self._conn.execute("INSERT INTO metadata VALUES (?,?)", ("initial", payload))
         self._conn.execute("INSERT INTO projection VALUES (1,0,?)", (payload,))
@@ -181,6 +197,15 @@ class LocalStore:
         return sequence, state
 
     def _verify(self):
+        identity = self._conn.execute(
+            "SELECT value FROM metadata WHERE key=?", ("execution_identity",)
+        ).fetchone()
+        if identity != (
+            (self._execution_identity,)
+            if self._execution_identity is not None
+            else None
+        ):
+            raise StoreError("EXECUTION_IDENTITY_MISMATCH")
         schema = self._conn.execute(
             "SELECT value FROM metadata WHERE key=?", ("schema",)
         ).fetchone()
@@ -243,6 +268,11 @@ class LocalStore:
 
     def execute(self, key, command, *, unsent_proof=None):
         m.text(key)
+        if (
+            type(command) in (m.TqKqTick, m.TqKqFill)
+            and self._execution_identity is None
+        ):
+            raise StoreError("TQ_ACCOUNT_IDENTITY_REQUIRED")
         with self._mutex:
             if self._uncertain:
                 raise StoreError("COMMIT_OUTCOME_REQUIRES_READ_ONLY_CHECK")
@@ -276,6 +306,7 @@ class LocalStore:
                 if self._needs_recovery and type(command) not in (
                     m.Recover,
                     m.AbortUnsent,
+                    m.TqKqFill,
                     m.Fill,
                     m.NativeFill,
                     m.CorrelatedNativeFillV1,
@@ -289,6 +320,7 @@ class LocalStore:
                     self._needs_recovery
                     and type(command)
                     in (
+                        m.TqKqFill,
                         m.Fill,
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,
@@ -390,6 +422,7 @@ class LocalStore:
                     or recovery_mode
                     and type(command)
                     not in (
+                        m.TqKqFill,
                         m.Fill,
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,

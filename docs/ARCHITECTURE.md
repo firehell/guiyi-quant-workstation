@@ -234,11 +234,8 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 `app.simnow_portfolio_market` 与既有MDS/Calendar/Session入口，原生盘口不写Historical Canonical。
 当前启用模式、exact版本和自然验收以 `STATUS.md` 为准；合同见 [SIMNOW_EXECUTION](SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)。
 
-## SimNow首页监控
+## 快期模拟执行与监控
 
-一次性受控宿主与独立持续宿主各按既有控制流发布私有原子监控索引；simnow_execution.monitor.MonitorReader 从单一显式根
-以SQLite只读连接校验账户、账本和原生快照。纯 monitor_projection 复用现有财务/预留逻辑提供
-/api/simnow/monitor/{overview,records,records/{id}}，不导入SDK或执行恢复。
-首页第三Tab复用全局导航、白底橙色和详情返回记忆，可见时5秒读取；详情抽屉按 PC Web 显示与交互验收。
-监控失败不影响宿主决策；原生/账本来源时点不同保留待核，不创建新的账户事实权威。
-合同见 [SIMNOW_EXECUTION](SIMNOW_EXECUTION.md#首页只读监控simnow_monitor_v1)。
+`guiyi_quant.tq_simulation` 复用 HTDY 账户 reducer，独立 provider 身份隔离旧账本。API 环境的 `app.tq_simulation_market` 通过私有 stdio 复用既有 PortfolioMarket/MDS，SDK 独立环境只构造 TqKq。发送意图、native 身份与不可变原始快照持久化在源码树外；唯一 worker 持续更新并对账。具体合同见 [TQ_SIMULATION](TQ_SIMULATION.md)。
+
+`/api/simulation/monitor/*` 仅读取 worker 原子投影，不创建 SDK 或交易操作。Web 模拟交易 Tab 和 HTDY 快期记录消费此入口；旧 `/api/simnow/monitor/*` 不再挂载，旧 SimNow 历史原件保留。

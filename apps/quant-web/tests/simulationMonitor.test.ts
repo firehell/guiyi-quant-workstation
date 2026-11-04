@@ -1,24 +1,24 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { useSimnowMonitor } from '../src/composables/useSimnowMonitor.ts'
-import { curveGeometry, monitorMoney, observerLabel } from '../src/utils/simnowPresentation.ts'
+import { useSimulationMonitor } from '../src/composables/useSimulationMonitor.ts'
+import { curveGeometry, monitorMoney, observerLabel } from '../src/utils/simulationPresentation.ts'
 import { loadMarketHomeTab, saveMarketHomeTab } from '../src/utils/marketHomeTab.ts'
-import type { MonitorClient, MonitorOverview, MonitorPage, MonitorQuery } from '../src/api/simnowMonitor.ts'
+import type { MonitorClient, MonitorOverview, MonitorPage, MonitorQuery } from '../src/api/simulationMonitor.ts'
 const query: MonitorQuery = { kind:'all', product:'', status:'', startDay:'2026-10-20', endDay:'2026-10-27' }
 const at='2026-10-27T01:00:00Z'
-function overview(snapshot='one',key='account'): MonitorOverview { return {version:'simnow_monitor_v1',status:'available',snapshot,generated_at:at,account:{key,alias:'隔离测试',environment:'fixture',strategy:'HTDY',scope_product:null,policy_version:'fixture'},observer:{status:'running',stage:'ACTIVE',published_at:at,connection:'LOGGED_IN'},readback_at:at,trading_day:'20261027',readback_status:'verified',position_projection_complete:true,metrics:{equity:'100000',available:'100000',used_margin:'0',frozen_margin:'0',frozen_fee:'0',margin_limit:'70000',occupied_margin:'0',margin_ratio:'0',local_reserved_margin:'0',local_reserved_fee:'0',daily_fee:'0',attributed_fee:'0',net_profit:null,return_ratio:null},positions:[],curve:[],issues:[],issue_count:0,coverage:'complete',performance_status:'pending',source_times:{}} }
-function page(snapshot='one',id='one',cursor:string|null=null): MonitorPage { return {version:'simnow_monitor_v1',snapshot,items:[{id,kind:'signal',at,product:'RB',contract:'RB2701',status:'BUY',label:'买信号',signal_id:id,order_id:null,facts:{}}],next_cursor:cursor,available_count:2,coverage:'complete'} }
+function overview(snapshot='one',key='account'): MonitorOverview { return {version:'simulation_monitor_v1',status:'available',snapshot,generated_at:at,account:{key,alias:'隔离测试',environment:'fixture',strategy:'HTDY',scope_product:null,policy_version:'fixture'},observer:{status:'running',stage:'ACTIVE',published_at:at,connection:'LOGGED_IN'},readback_at:at,trading_day:'20261027',readback_status:'verified',position_projection_complete:true,metrics:{equity:'100000',available:'100000',used_margin:'0',frozen_margin:'0',frozen_fee:'0',margin_limit:'70000',occupied_margin:'0',margin_ratio:'0',local_reserved_margin:'0',local_reserved_fee:'0',daily_fee:'0',attributed_fee:'0',net_profit:null,return_ratio:null},positions:[],curve:[],issues:[],issue_count:0,coverage:'complete',performance_status:'pending',source_times:{}} }
+function page(snapshot='one',id='one',cursor:string|null=null): MonitorPage { return {version:'simulation_monitor_v1',snapshot,items:[{id,kind:'signal',at,product:'RB',contract:'RB2701',status:'BUY',label:'买信号',signal_id:id,order_id:null,facts:{}}],next_cursor:cursor,available_count:2,coverage:'complete'} }
 const tick=()=>new Promise<void>(resolve=>setImmediate(resolve))
-function setup(client:Partial<MonitorClient>={}) { let scheduled:(()=>void)|null=null; let clears=0; const base={overview:async()=>overview(), records:async()=>page(),detail:async()=>{throw Error('unused')},...client}; const monitor=useSimnowMonitor(query,base,{set:fn=>{scheduled=fn;return 1 as any},clear:()=>{scheduled=null;clears++}});return {monitor,fire:()=>scheduled?.(),hasTimer:()=>Boolean(scheduled),clears:()=>clears} }
+function setup(client:Partial<MonitorClient>={}) { let scheduled:(()=>void)|null=null; let clears=0; const base={overview:async()=>overview(), records:async()=>page(),detail:async()=>{throw Error('unused')},...client}; const monitor=useSimulationMonitor(query,base,{set:fn=>{scheduled=fn;return 1 as any},clear:()=>{scheduled=null;clears++}});return {monitor,fire:()=>scheduled?.(),hasTimer:()=>Boolean(scheduled),clears:()=>clears} }
 test('visible refresh schedules at completion; hidden/dispose stops further reads',async()=>{let calls=0;const s=setup({overview:async()=>{calls++;return overview()}});s.monitor.start();await tick();assert.equal(calls,1);assert(s.hasTimer());s.fire();await tick();assert.equal(calls,2);s.monitor.setVisible(false);assert(!s.hasTimer());s.fire();assert.equal(calls,2);s.monitor.setVisible(true);await tick();assert.equal(calls,3);s.monitor.dispose();assert(!s.hasTimer())})
 test('failure and unavailable response retain last money and native timestamp',async()=>{let fail=false;const s=setup({overview:async()=>{if(fail)throw Error('private');return overview()}});s.monitor.start();await tick();fail=true;await s.monitor.refresh();assert.equal(s.monitor.data.value?.metrics.equity,'100000');assert.equal(s.monitor.data.value?.readback_at,at);assert(s.monitor.error.value);s.monitor.dispose()})
 test('late filter response cannot overwrite new query',async()=>{const pending:Array<{q:MonitorQuery,resolve:(v:MonitorPage)=>void,signal:AbortSignal}>=[];const s=setup({records:(q,signal)=>new Promise(resolve=>pending.push({q,resolve,signal}))});s.monitor.start();await tick();s.monitor.setQuery({...query,product:'AG'});assert.equal(pending.length,2);assert(pending[0]!.signal.aborted);pending[1]!.resolve(page('new','new'));await tick();pending[0]!.resolve(page('old','old'));await tick();assert.equal(s.monitor.page.value?.items[0]?.id,'new');s.monitor.dispose()})
 test('pending pagination survives automatic refresh and does not stick loading',async()=>{let resolve!:(v:MonitorPage)=>void;const s=setup({records:async(_q,_s,cursor)=>cursor?await new Promise(r=>resolve=r):page('one','one','next')});s.monitor.start();await tick();const more=s.monitor.loadMore();await s.monitor.refresh();assert(s.monitor.loadingMore.value);resolve(page('one','two'));await more;assert.equal(s.monitor.page.value?.items.length,2);assert.equal(s.monitor.loadingMore.value,false);s.monitor.dispose()})
 test('account switch aborts old pages and isolates late account A response',async()=>{let account='a';let resolve!:(v:MonitorPage)=>void;const s=setup({overview:async()=>overview(account,account),records:async(_q,_s,cursor)=>cursor?await new Promise(r=>resolve=r):page(account,account,'next')});s.monitor.start();await tick();const more=s.monitor.loadMore();account='b';await s.monitor.refresh();resolve(page('a','old'));await more;assert.equal(s.monitor.data.value?.account?.key,'b');assert.equal(s.monitor.page.value?.snapshot,'b');assert.equal(s.monitor.loadingMore.value,false);s.monitor.dispose()})
-test('drawer selection protects list from new snapshots',async()=>{let snapshot='one';const s=setup({overview:async()=>overview(snapshot),detail:async()=>({version:'simnow_monitor_v1',snapshot,selected:page().items[0]!,chain:page().items})});s.monitor.start();await tick();await s.monitor.openDetail('one');snapshot='two';await s.monitor.refresh();assert.equal(s.monitor.page.value?.snapshot,'one');assert.equal(s.monitor.selectedId.value,'one');assert(s.monitor.newRecords.value);s.monitor.dispose()})
+test('drawer selection protects list from new snapshots',async()=>{let snapshot='one';const s=setup({overview:async()=>overview(snapshot),detail:async()=>({version:'simulation_monitor_v1',snapshot,selected:page().items[0]!,chain:page().items})});s.monitor.start();await tick();await s.monitor.openDetail('one');snapshot='two';await s.monitor.refresh();assert.equal(s.monitor.page.value?.snapshot,'one');assert.equal(s.monitor.selectedId.value,'one');assert(s.monitor.newRecords.value);s.monitor.dispose()})
 test('invalid date edit suppresses records until valid filter arrives',async()=>{let calls=0;const s=setup({records:async()=>{calls++;return page()}});s.monitor.start();await tick();s.monitor.setQueryValid(false);await s.monitor.refresh();assert.equal(calls,1);assert.equal(s.monitor.page.value,null);s.monitor.setQueryValid(true);s.monitor.setQuery({...query,startDay:'2026-10-21'});await tick();assert.equal(calls,2);s.monitor.dispose()})
 test('unknown is distinct from numeric zero and net curve breaks at null/day change',()=>{assert.equal(monitorMoney(null),'—');assert.equal(monitorMoney('0'),'0.00');const points=[0,1,2,3].map(i=>({at:`2026-10-2${6+i}T01:00:00Z`,equity:'100000',net_profit:i===1?null:String(i),trading_day:i<3?'20261026':'20261029'}));const g=curveGeometry(points,'net_profit');assert.equal(g.segments.length,3);assert.equal(g.dots.length,3)})
-test('home Tab storage retains simnow and degrades safely if unavailable',()=>{const values=new Map<string,string>();Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>values.set(k,v)}});saveMarketHomeTab('simnow');assert.equal(loadMarketHomeTab(),'simnow');delete (globalThis as any).sessionStorage;assert.equal(loadMarketHomeTab(),'market')})
+test('home Tab storage retains simnow and degrades safely if unavailable',()=>{const values=new Map<string,string>();Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:(k:string)=>values.get(k)??null,setItem:(k:string,v:string)=>values.set(k,v)}});saveMarketHomeTab('simulation');assert.equal(loadMarketHomeTab(),'simulation');delete (globalThis as any).sessionStorage;assert.equal(loadMarketHomeTab(),'market')})
 
 test('monitor labels distinguish observe, manage, trade and waiting without inventing connection',()=>{
  const data=overview(); data.observer!.mode='observe';assert.equal(observerLabel(data),'只读观察中');
@@ -30,7 +30,7 @@ test('monitor labels distinguish observe, manage, trade and waiting without inve
 
 
 test('observe reconciliation is separate from ledger and trading permission', async () => {
- const { validateOverview } = await import('../src/api/simnowMonitor.ts');
+ const { validateOverview } = await import('../src/api/simulationMonitor.ts');
  const data = overview();data.status='partial';data.readback_status='pending';data.position_projection_complete=false;
  data.observer!.mode='observe';data.observer!.opening_enabled=false;
  data.observe_reconciliation_ready=true;data.observe_reconciliation_status='verified';
@@ -48,7 +48,7 @@ test('observe ready expires locally and is revoked on failed refresh or hidden v
  ready.observe_reconciliation_valid_until='2026-10-27T01:00:30Z';
  let now=Date.parse(at), expire:(()=>void)|undefined, broken=false;
  const client:MonitorClient={overview:async()=>{if(broken)throw Error('offline');return structuredClone(ready)},records:async()=>page(),detail:async()=>{throw Error('unused')}};
- const monitor=(useSimnowMonitor as any)(query,client,{set:()=>1,clear:()=>{}},{now:()=>now,set:(fn:()=>void)=>{expire=fn;return 2},clear:()=>{expire=undefined}});
+ const monitor=(useSimulationMonitor as any)(query,client,{set:()=>1,clear:()=>{}},{now:()=>now,set:(fn:()=>void)=>{expire=fn;return 2},clear:()=>{expire=undefined}});
  monitor.start();await tick();assert.equal(monitor.data.value.observe_reconciliation_ready,true);
  assert.equal(typeof expire,'function');now+=30000;expire!();assert.equal(monitor.data.value.observe_reconciliation_ready,false);
  now=Date.parse(at);await monitor.refresh();assert.equal(monitor.data.value.observe_reconciliation_ready,true);
@@ -58,7 +58,7 @@ test('observe ready expires locally and is revoked on failed refresh or hidden v
 });
 
 test('pending trade deployment is not presented as recovered or opening', async()=>{
- const {validateOverview}=await import('../src/api/simnowMonitor.ts');
+ const {validateOverview}=await import('../src/api/simulationMonitor.ts');
  const data=overview(); Object.assign(data.observer!,{mode:'trade',host_status:'WAITING_SESSION',connection:'UNKNOWN',opening_enabled:false,account_takeover_pending:true});
  assert.equal(observerLabel(data),'自动交易已部署，账户待接管');
  assert.equal(validateOverview(data),data);
@@ -71,7 +71,7 @@ test('pending trade deployment is not presented as recovered or opening', async(
 });
 
 test('pending takeover flag rejects wrong modes and nonboolean responses',async()=>{
- const {validateOverview}=await import('../src/api/simnowMonitor.ts');
+ const {validateOverview}=await import('../src/api/simulationMonitor.ts');
  const data=overview(); Object.assign(data.observer!,{mode:'observe',opening_enabled:false,account_takeover_pending:true});
  assert.throws(()=>validateOverview(data),/MONITOR_RESPONSE_INVALID/);
  Object.assign(data.observer!,{mode:'trade',account_takeover_pending:'true'});

@@ -9,7 +9,7 @@ import { productSectorLabel } from '@/utils/productDirectory'
 import { homeCardsReloadIdentity } from '@/utils/newowHomeCards'
 import MarketHomeStrategyCards from '@/components/market/MarketHomeStrategyCards.vue'
 import { newowMessageChartQuery, type NewowMessage } from '@/api/newowMessages'
-import MarketHomeSimnow from '@/components/market/MarketHomeSimnow.vue'
+import MarketHomeSimulation from '@/components/market/MarketHomeSimulation.vue'
 import MarketHomeMessages from '@/components/market/MarketHomeMessages.vue'
 import MarketHomeSectorTicker from '@/components/market/MarketHomeSectorTicker.vue'
 import MarketHomeSkeleton from '@/components/market/MarketHomeSkeleton.vue'
@@ -69,7 +69,7 @@ const liveStatus = computed(() => {
 let restoreFrame: number | null = null
 
 async function refreshAll() {
-  if (activeTab.value === 'simnow') return
+  if (activeTab.value === 'simulation') return
   if (activeTab.value === 'messages') {
     void home.directory.refresh()
     messageReloadSequence.value += 1
@@ -199,7 +199,7 @@ onBeforeUnmount(() => {
       </template>
       </section>
     </div>
-    <MarketHomeSimnow v-if="activeTab === 'simnow'" :options="productOptions" />
+    <MarketHomeSimulation v-if="activeTab === 'simulation'" :options="productOptions" />
     <MarketHomeMessages v-if="activeTab === 'messages'" :options="productOptions" :directory-status="directoryStatus" :reload-sequence="messageReloadSequence" @open="openEvent" @open-newow="openNewowEvent" />
   </div>
 </template>

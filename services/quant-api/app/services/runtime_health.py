@@ -204,7 +204,7 @@ def build_runtime_health(
         )
         if core_identity_unverified and overall != RUNTIME_STATUS_FAILED:
             overall = RUNTIME_STATUS_DEGRADED
-    components["reference_worker"] = _collect_reference_owner_health(current_time, runtime_identity)
+    components["reference_worker"] = _collect_reference_owner_health(now, runtime_identity)
     observed_overall = _overall_status(
         {"status": _service_health_status(name, components[name])}
         for name in ("db", "redis", "live_market", "after_market", "alert", "reference_worker")
@@ -268,7 +268,8 @@ def _collect_reference_owner_health(now, runtime_identity):
         if not binding.enabled:
             return {"status": "disabled", "error_type": None}
         identity = (runtime_identity or {}).get("services", {}).get("reference_worker", {})
-        return _reference_owner_health(binding, identity, read_service_state("reference-worker"), now)
+        state = read_service_state("reference-worker")
+        return _reference_owner_health(binding, identity, state, now or datetime.now(UTC))
     except Exception:
         return {"status": "degraded", "error_type": "reference_owner_proof_unavailable"}
 

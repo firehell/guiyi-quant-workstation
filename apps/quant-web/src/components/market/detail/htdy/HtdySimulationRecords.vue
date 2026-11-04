@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { monitorClient, type MonitorDetail, type MonitorQuery, type MonitorRecord } from '@/api/simnowMonitor'
+import { monitorClient, type MonitorDetail, type MonitorQuery, type MonitorRecord } from '@/api/simulationMonitor'
 import type { BarData } from '@/types/market'
-import { projectHtdySimnowRecords, type HtdySimnowDisplayRecord } from '@/utils/htdySimnowMarkers'
-import { monitorMoney, monitorReason, monitorTime } from '@/utils/simnowPresentation'
+import { projectHtdySimulationRecords, type HtdySimulationDisplayRecord } from '@/utils/htdySimulationMarkers'
+import { monitorMoney, monitorReason, monitorTime } from '@/utils/simulationPresentation'
 
 const props = defineProps<{ product: string; bars: BarData[]; active: boolean }>()
 const emit = defineEmits<{
-  records: [records: HtdySimnowDisplayRecord[]]
+  records: [records: HtdySimulationDisplayRecord[]]
   state: [state: { status: 'loading' | 'ready' | 'partial' | 'unavailable'; snapshot: string | null }]
   focus: [identity: { barEnd: string; physicalContract: string }]
 }>()
@@ -29,7 +29,7 @@ const range = computed(() => {
 })
 const identity = computed(() => JSON.stringify([props.product.toUpperCase(), range.value]))
 const query = computed<MonitorQuery | null>(() => range.value ? { kind: 'all', product: props.product.toUpperCase(), status: '', ...range.value } : null)
-const projected = computed(() => projectHtdySimnowRecords(rows.value, props.bars, props.product))
+const projected = computed(() => projectHtdySimulationRecords(rows.value, props.bars, props.product))
 const capped = computed(() => rows.value.length >= MAX_RECORDS && Boolean(nextCursor.value))
 watch([projected, coverage, error], ([value]) => emit('records', error.value || coverage.value === 'unavailable' ? [] : value), { immediate: true })
 
@@ -66,7 +66,7 @@ async function read(more = false) {
     publishState()
   } catch {
     if (own !== generation || wanted !== identity.value || !props.active) return
-    error.value = more ? '执行记录快照变化或读取失败，未追加不一致的记录；请重新读取。' : '本地SimNow执行记录暂不可读取。'
+    error.value = more ? '执行记录快照变化或读取失败，未追加不一致的记录；请重新读取。' : '本地快期模拟执行记录暂不可读取。'
     emit('records', []); publishState('unavailable')
   } finally { if (own === generation) { loading.value = false; moreLoading.value = false } }
 }
@@ -88,8 +88,8 @@ onBeforeUnmount(clear)
 </script>
 
 <template>
-  <section class="htdy-simnow-records" aria-label="HTDY SimNow只读执行记录">
-    <header><h3>SimNow记录</h3><button type="button" :disabled="loading" @click="read()">重新读取</button></header>
+  <section class="htdy-simulation-records" aria-label="HTDY 快期模拟只读执行记录">
+    <header><h3>快期模拟记录</h3><button type="button" :disabled="loading" @click="read()">重新读取</button></header>
     <p class="note">本地信号、风控、订单及成交分别保留。当前记录未保存策略公式版本与周期，不能据此覆盖历史回放或首次观察。品种／策略收益归因未证明，收益统计不可用。</p>
     <p v-if="range" class="note">查询记录时间 {{ range.startDay }} → {{ range.endDay }} · 已加载 {{ rows.length }} 条；一次最多显示 {{ MAX_RECORDS }} 条。</p>
     <p v-if="loading" role="status">正在读取本地执行记录…</p>
@@ -109,7 +109,7 @@ onBeforeUnmount(clear)
     </ol>
     <button v-if="nextCursor && !capped && !error" type="button" :disabled="loading || moreLoading" @click="read(true)">{{ moreLoading ? '读取中…' : '读取更多执行记录' }}</button>
     <p v-if="capped" class="note">已达到本页显示上限；不能作为完整账户记录。</p>
-    <section v-if="selectedId" class="chain" aria-label="SimNow关联执行链">
+    <section v-if="selectedId" class="chain" aria-label="快期模拟关联执行链">
       <header><h4>执行链</h4><button type="button" @click="selectedId = null; selected = null">收起</button></header>
       <p v-if="detailLoading" role="status">正在核对关联身份…</p><p v-if="detailError" role="alert">{{ detailError }}</p>
       <article v-for="row in selected?.chain ?? []" :key="row.id"><strong>{{ kindNames[row.kind] }} · {{ row.label }} · {{ row.status }}</strong><p>{{ row.product }} {{ row.contract }} · {{ monitorTime(row.at) }}</p><dl><template v-for="(value, key) in row.facts" :key="key"><dt>{{ factNames[key] ?? key }}</dt><dd>{{ factValue(String(key), value) }}</dd></template><dt>记录身份</dt><dd>{{ row.id }}</dd><dt>信号身份</dt><dd>{{ row.signal_id ?? '未关联' }}</dd><dt>订单身份</dt><dd>{{ row.order_id ?? '未关联' }}</dd></dl></article>
@@ -118,5 +118,5 @@ onBeforeUnmount(clear)
 </template>
 
 <style scoped>
-.htdy-simnow-records{padding:14px;min-width:0}.htdy-simnow-records header,.row-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.htdy-simnow-records header{justify-content:space-between}.htdy-simnow-records h3,.htdy-simnow-records h4{margin:0}.note,time,.row-heading>span{font-size:12px;color:var(--gy-text-muted);line-height:1.7}.htdy-simnow-records button{border:1px solid var(--gy-border);background:var(--gy-bg-panel);border-radius:6px;padding:6px 10px;min-height:32px;cursor:pointer;font:inherit;margin:4px 6px 4px 0}.htdy-simnow-records ol{list-style:none;margin:0;padding:0}.htdy-simnow-records li,.chain article{padding:12px 0;border-bottom:1px solid var(--gy-border)}.row-heading time{margin-left:auto}.htdy-simnow-records p{line-height:1.7;margin:5px 0}.chain{margin-top:14px;padding:12px;background:var(--gy-bg-panel);border:1px solid var(--gy-border);border-radius:8px}.chain dl{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,3fr);gap:6px;font-size:12px}.chain dd{margin:0;overflow-wrap:anywhere}.chain dt{color:var(--gy-text-muted)}@media(max-width:600px){.htdy-simnow-records{padding:10px}.row-heading time{width:100%;margin-left:0}.htdy-simnow-records button{min-height:40px}}
+.htdy-simulation-records{padding:14px;min-width:0}.htdy-simulation-records header,.row-heading{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.htdy-simulation-records header{justify-content:space-between}.htdy-simulation-records h3,.htdy-simulation-records h4{margin:0}.note,time,.row-heading>span{font-size:12px;color:var(--gy-text-muted);line-height:1.7}.htdy-simulation-records button{border:1px solid var(--gy-border);background:var(--gy-bg-panel);border-radius:6px;padding:6px 10px;min-height:32px;cursor:pointer;font:inherit;margin:4px 6px 4px 0}.htdy-simulation-records ol{list-style:none;margin:0;padding:0}.htdy-simulation-records li,.chain article{padding:12px 0;border-bottom:1px solid var(--gy-border)}.row-heading time{margin-left:auto}.htdy-simulation-records p{line-height:1.7;margin:5px 0}.chain{margin-top:14px;padding:12px;background:var(--gy-bg-panel);border:1px solid var(--gy-border);border-radius:8px}.chain dl{display:grid;grid-template-columns:minmax(90px,1fr) minmax(0,3fr);gap:6px;font-size:12px}.chain dd{margin:0;overflow-wrap:anywhere}.chain dt{color:var(--gy-text-muted)}@media(max-width:600px){.htdy-simulation-records{padding:10px}.row-heading time{width:100%;margin-left:0}.htdy-simulation-records button{min-height:40px}}
 </style>

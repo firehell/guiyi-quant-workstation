@@ -12,7 +12,7 @@ from starlette.middleware.gzip import GZipMiddleware
 import logging
 import os
 
-from app.api.simnow_monitor import router as simnow_monitor_router
+from app.api.simulation_monitor import router as simulation_monitor_router
 from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_newow import router as market_newow_router
@@ -64,7 +64,7 @@ app.add_middleware(
 )
 
 # Market + Alert + Runtime 运维面
-app.include_router(simnow_monitor_router)
+app.include_router(simulation_monitor_router)
 app.include_router(market_router)
 app.include_router(market_newow_router)
 app.include_router(market_messages_router)

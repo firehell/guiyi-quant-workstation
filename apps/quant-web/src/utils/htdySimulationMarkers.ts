@@ -1,8 +1,8 @@
-import type { MonitorRecord } from '../api/simnowMonitor.ts'
+import type { MonitorRecord } from '../api/simulationMonitor.ts'
 import type { BarData, KlineMarker } from '../types/market.ts'
 import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
 
-export interface HtdySimnowDisplayRecord extends MonitorRecord {
+export interface HtdySimulationDisplayRecord extends MonitorRecord {
   signalBarEnd: string | null
   linkage: 'unverified'
   linkageReason: string
@@ -16,14 +16,14 @@ const positiveDecimal = (value: string | null | undefined): value is string => B
 const sameContract = (a: string, b: string) => Boolean(a && b && a.toUpperCase() === b.toUpperCase())
 
 /** Execution rows remain account facts; their stored model lacks historical formula/frequency identity. */
-export function projectHtdySimnowRecords(records: readonly MonitorRecord[], bars: readonly BarData[], product: string): HtdySimnowDisplayRecord[] {
+export function projectHtdySimulationRecords(records: readonly MonitorRecord[], bars: readonly BarData[], product: string): HtdySimulationDisplayRecord[] {
   const own = records.filter(row => row.product.toUpperCase() === product.toUpperCase())
   return own.map(row => {
     const candidates = own.filter(item => item.kind === 'signal' && item.signal_id && item.signal_id === row.signal_id
       && (!row.contract || sameContract(item.contract, row.contract)))
     const signal = candidates.length === 1 ? candidates[0] : undefined
     const signalBarEnd = instant(signal?.facts.bar_end) ? signal.facts.bar_end : null
-    const result: HtdySimnowDisplayRecord = { ...row, signalBarEnd, linkage: 'unverified',
+    const result: HtdySimulationDisplayRecord = { ...row, signalBarEnd, linkage: 'unverified',
       linkageReason: '执行记录未保存策略公式版本和周期；保留本地事实，不覆盖历史或首次观察信号' }
     if (row.kind !== 'fill') {
       if (signalBarEnd && signal && bars.some(bar => Date.parse(bar.time) === Date.parse(signalBarEnd) && sameContract(bar.physicalContract ?? '', signal.contract))) {
@@ -44,10 +44,10 @@ export function projectHtdySimnowRecords(records: readonly MonitorRecord[], bars
       && item.signal_id === row.signal_id && sameContract(item.contract, row.contract))
     const side = orders.length === 1 ? orders[0]!.facts.side : null
     const buy = side === 'BUY'
-    const detail = `SimNow实际成交 · ${at} · ${row.contract} · 价格 ${price} · 数量 ${row.facts.quantity ?? '待核'} · 费用 ${row.facts.fee ?? '待核'} · ${result.linkageReason}`
-    result.callout = { id: `simnow-fill:${row.id}`, time: at, physicalContract: row.contract, price,
-      title: 'SimNow实际成交', detail, tone: 'neutral', above: !buy }
-    result.marker = { id: `simnow-fill:${row.id}`, time: at, label: 'SimNow成交', tooltip: detail,
+    const detail = `快期模拟实际成交 · ${at} · ${row.contract} · 价格 ${price} · 数量 ${row.facts.quantity ?? '待核'} · 费用 ${row.facts.fee ?? '待核'} · ${result.linkageReason}`
+    result.callout = { id: `simulation-fill:${row.id}`, time: at, physicalContract: row.contract, price,
+      title: '快期模拟实际成交', detail, tone: 'neutral', above: !buy }
+    result.marker = { id: `simulation-fill:${row.id}`, time: at, label: '快期模拟成交', tooltip: detail,
       tone: 'neutral', position: buy ? 'belowBar' : 'aboveBar', shape: 'square' }
     result.focus = { barEnd: at, physicalContract: row.contract }
     return result
