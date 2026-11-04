@@ -529,7 +529,7 @@ class RetentionBackend:
                 raise RetentionError("CLEANUP_LOADED_INVENTORY_INVALID")
             if parts[2].startswith("com.guiyi.quant-"):
                 labels.add(parts[2])
-        valid_label = re.compile(r"com\.guiyi\.quant-(?:" + "|".join(re.escape(item) for item in (*SERVICES, "simnow")) + r")(?:-candidate-[0-9a-f]{32})?")
+        valid_label = re.compile(r"com\.guiyi\.quant-(?:" + "|".join(re.escape(item) for item in (*SERVICES, "simnow", "tqkq-simulation")) + r")(?:-candidate-[0-9a-f]{32})?")
         from app.runtime_identity import read_launchd_service as _read_launchd_service
         for label in labels:
             if not valid_label.fullmatch(label):
@@ -546,6 +546,25 @@ class RetentionBackend:
                 if any(_references(value, root) for value in values):
                     result[str(root)].append(f"loaded:{label}")
         simnow.monitor(self.home)
+        # A configured TqKq worker pins its exact source even while stopped.
+        # The account state and credentials never live under a release root.
+        tq_path = self.home / "Library/Application Support/GuiyiQuant/tqkq-simulation/config.json"
+        if os.path.lexists(tq_path):
+            try:
+                from guiyi_quant.tq_simulation.runtime import read_private
+                tq = read_private(tq_path, limit=8192)
+                if (set(tq) != {"schema", "provider", "account_id", "root", "commit", "tag"}
+                        or tq["provider"] != "TQKQ" or tq["schema"] != 1
+                        or not re.fullmatch(r"[0-9a-f]{64}", tq["account_id"])
+                        or not re.fullmatch(r"[0-9a-f]{40}", tq["commit"])
+                        or not re.fullmatch(r"v\d+\.\d+\.\d+", tq["tag"])
+                        or Path(tq["root"]) != Path(tq["root"]).resolve(strict=True)):
+                    raise ValueError
+                for root in roots:
+                    if _references(tq["root"], root):
+                        result[str(root)].append("tqkq-private:configured-source")
+            except Exception:
+                raise RetentionError("CLEANUP_TQKQ_CONFIGURATION_UNPROVEN") from None
         # Unmanaged foreground commands may still hold code from a retired release.
         commands = self._command(["/bin/ps", "-ww", "-axo", "pid=,command="])
         for line in commands.splitlines():

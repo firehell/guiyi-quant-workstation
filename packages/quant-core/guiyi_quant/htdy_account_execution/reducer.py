@@ -216,7 +216,9 @@ def apply_fill(state, cmd):
         return state, "DUPLICATE_FILL"
     o = next((o for o in state.orders if o.order_id == cmd.order_id), None)
     if type(cmd) in (
-        m.StrategyCorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV2
+        m.StrategyCorrelatedNativeFillV1,
+        m.StrategyCorrelatedNativeFillV2,
+        m.TqKqFill,
     ) and not strategy_order_proven(state, o):
         raise ValueError("STRATEGY_NATIVE_FILL_SIGNAL_REQUIRED")
     if type(cmd) is m.CorrelatedNativeFillV1 and (
@@ -851,6 +853,9 @@ def tick(
     opening_allowed=True,
     serialized_submit=False,
     policy_version=None,
+    stopping=False,
+    risk_version=None,
+    execution_version=None,
 ):
     facts = {i.instrument.contract: i for i in cmd.inputs}
     effects = []
@@ -874,6 +879,8 @@ def tick(
             continue
         p = product(state, o.product)
         f = facts.get(o.contract)
+        if stopping:
+            o = replace(o, cancel_required=True)
         if o.offset == "OPEN":
             if not opening_allowed:
                 o = replace(o, cancel_required=True)
@@ -911,6 +918,8 @@ def tick(
             o = replace(o, cancel_sent=True, status="CANCEL_PENDING")
             state = replace_order(state, o)
             effects.append(m.Effect("CANCEL", o))
+    if stopping:
+        return state, tuple(effects), "TQ_STOPPING_NO_SUBMIT"
     if state.phase != "READY" or not state.readback_valid:
         return state, tuple(effects), "ACCOUNT_READBACK_REQUIRED"
     for initial in ordered_products(state):
@@ -968,11 +977,20 @@ def tick(
             ):
                 continue
             local, fees = local_occupancy(state)
-            margin = (
-                price
-                * i.multiplier
-                * (i.long_margin_rate if order_side == "BUY" else i.short_margin_rate)
-            )
+            if type(i) is m.TqKqInstrument:
+                if i.margin_per_lot is None or i.open_fee is None:
+                    continue  # No fallback to unverified quote or CTP margin rates.
+                margin = i.margin_per_lot
+            else:
+                margin = (
+                    price
+                    * i.multiplier
+                    * (
+                        i.long_margin_rate
+                        if order_side == "BUY"
+                        else i.short_margin_rate
+                    )
+                )
             projected = (
                 state.readback.used_margin
                 + state.readback.frozen_margin
@@ -1021,8 +1039,8 @@ def tick(
             (
                 state.account_id,
                 policy_version or m.POLICY_VERSION,
-                m.RISK_VERSION,
-                m.EXECUTION_VERSION,
+                risk_version or m.RISK_VERSION,
+                execution_version or m.EXECUTION_VERSION,
                 key,
                 p.product,
             )
@@ -1077,6 +1095,7 @@ def validate(state):
         (
             state.fills,
             (
+                m.TqKqFill,
                 m.Fill,
                 m.NativeFill,
                 m.CorrelatedNativeFillV1,
@@ -1138,7 +1157,9 @@ def validate(state):
     for f in state.fills:
         o = orders.get(f.order_id)
         if type(f) in (
-            m.StrategyCorrelatedNativeFillV1, m.StrategyCorrelatedNativeFillV2
+            m.TqKqFill,
+            m.StrategyCorrelatedNativeFillV1,
+            m.StrategyCorrelatedNativeFillV2,
         ) and not strategy_order_proven(state, o):
             raise ValueError("ACCOUNT_FILL_REPLAY_INVALID")
         if type(f) is m.CorrelatedNativeFillV1 and (
@@ -1209,6 +1230,7 @@ def apply(state, key, cmd):
     if type(cmd) not in (
         m.Signal,
         m.Owner,
+        m.TqKqFill,
         m.Fill,
         m.NativeFill,
         m.CorrelatedNativeFillV1,
@@ -1220,6 +1242,7 @@ def apply(state, key, cmd):
         m.ProductRecoveryV1,
         m.Disconnect,
         m.AbortUnsent,
+        m.TqKqTick,
         m.Tick,
         m.ManagedTickV1,
         m.ContinuousTradeTickV1,
@@ -1239,6 +1262,7 @@ def apply(state, key, cmd):
         else cmd.recorded_at
         if type(cmd)
         in (
+            m.TqKqFill,
             m.Fill,
             m.NativeFill,
             m.CorrelatedNativeFillV1,
@@ -1248,6 +1272,7 @@ def apply(state, key, cmd):
         else cmd.at
     )
     if type(cmd) in (
+        m.TqKqFill,
         m.Fill,
         m.NativeFill,
         m.CorrelatedNativeFillV1,
@@ -1263,7 +1288,12 @@ def apply(state, key, cmd):
         at = max(at, state.clock)
     if at < state.clock:
         raise ValueError("COMMAND_TIME_REGRESSION")
-    if type(cmd) in (m.Tick, m.ManagedTickV1, m.ContinuousTradeTickV1) and any(
+    if type(cmd) in (
+        m.Tick,
+        m.ManagedTickV1,
+        m.ContinuousTradeTickV1,
+        m.TqKqTick,
+    ) and any(
         not manual_status(state, audit.command.test_id).terminal
         for audit in state.audit
         if type(audit.command) is m.ManualBeginV1
@@ -1289,6 +1319,7 @@ def apply(state, key, cmd):
             state = replace_product(state, replace(p, owner=cmd.contract))
             reason = "OWNER_VERIFIED"
     elif type(cmd) in (
+        m.TqKqFill,
         m.Fill,
         m.NativeFill,
         m.CorrelatedNativeFillV1,
@@ -1344,6 +1375,28 @@ def apply(state, key, cmd):
                 )
             ),
             "DISCONNECTED",
+        )
+    elif type(cmd) is m.TqKqTick:
+        from .tq_types import TQ_RISK_VERSION, TQ_EXECUTION_VERSION
+        if not cmd.opening_allowed:
+            # Paused observations may close managed obligations, but must never
+            # become deferred historical openings when the operator resumes.
+            state = replace(
+                state,
+                products=tuple(
+                    replace(p, opening_consumed=True) for p in state.products
+                ),
+            )
+        state, effects, reason = tick(
+            state,
+            cmd,
+            key,
+            opening_allowed=cmd.opening_allowed,
+            serialized_submit=True,
+            policy_version=cmd.policy_version,
+            stopping=cmd.stopping,
+            risk_version=TQ_RISK_VERSION,
+            execution_version=TQ_EXECUTION_VERSION,
         )
     elif type(cmd) is m.ManagedTickV1:
         state, effects, reason = tick(

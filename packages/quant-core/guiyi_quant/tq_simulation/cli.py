@@ -1,0 +1,272 @@
+"""Explicit local administration. No trading endpoint is exposed over HTTP."""
+
+import argparse
+from pathlib import Path
+from datetime import datetime, UTC
+import json
+import os
+import plistlib
+import subprocess
+import re
+from .runtime import directory, private_folder, write_private, read_private
+from .credentials import CredentialStore, setup_dialog
+from .worker import verify_config
+
+LABEL = "com.guiyi.quant-tqkq-simulation"
+
+
+def launch_state():
+    p = subprocess.run(
+        ["/bin/launchctl", "print", f"gui/{os.getuid()}/{LABEL}"],
+        capture_output=True,
+        text=True,
+    )
+    if p.returncode != 0:
+        if (
+            "Could not find service" in p.stderr
+            or "Could not find specified service" in p.stderr
+        ):
+            return None
+        raise ValueError("TQ_LAUNCHD_STATE_UNKNOWN")
+    match = re.search(r"^\s*pid = ([0-9]+)$", p.stdout, re.M)
+    return {"pid": int(match.group(1)) if match else None}
+
+
+def config(root, tag, account):
+    root = Path(root).resolve(strict=True)
+    commit = subprocess.run(
+        [
+            "/usr/bin/git",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            str(root),
+            "rev-parse",
+            tag + "^{commit}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    result = {
+        "schema": 1,
+        "provider": "TQKQ",
+        "account_id": account,
+        "root": str(root),
+        "commit": commit,
+        "tag": tag,
+    }
+    verify_config(result)
+    bindings = read_private(
+        Path.home() / "Library/Application Support/GuiyiQuant/service-bindings.json"
+    )
+    if bindings["services"]["api"]["root"] != str(root):
+        raise ValueError("TQ_FORMAL_API_ROOT_MISMATCH")
+    return result
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "action",
+        choices=(
+            "credentials",
+            "configure",
+            "probe",
+            "install",
+            "start",
+            "status",
+            "pause",
+            "stop",
+        ),
+    )
+    parser.add_argument("--root", type=Path)
+    parser.add_argument("--tag")
+    parser.add_argument("--trade", action="store_true")
+    parser.add_argument("--replace", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        if args.action == "credentials":
+            account = setup_dialog(replace=args.replace)
+            print(
+                json.dumps(
+                    {"status": "TQ_CREDENTIAL_STORED", "account_fingerprint": account}
+                )
+            )
+            return 0
+        base = private_folder(directory())
+        path = base / "config.json"
+        if args.action == "configure":
+            if not args.root or not args.tag:
+                raise ValueError("TQ_RELEASE_ARGUMENTS_REQUIRED")
+            state = launch_state()
+            if state and state["pid"]:
+                raise ValueError("TQ_STOP_BEFORE_RECONFIGURE")
+            current = config(args.root, args.tag, CredentialStore().load().account_id)
+            write_private(path, current)
+            write_private(base / "control.json", {"mode": "observe"})
+            print(
+                json.dumps({"status": "TQ_CONFIGURED_DISABLED", "tag": current["tag"]})
+            )
+            return 0
+        if args.action == "status":
+            value = (
+                read_private(base / "monitor.json")
+                if (base / "monitor.json").exists()
+                else None
+            )
+            print(
+                json.dumps(
+                    {
+                        "status": "NOT_STARTED"
+                        if value is None
+                        else value["overview"]["status"],
+                        "observer": None
+                        if value is None
+                        else value["overview"]["observer"],
+                        "block_code": None
+                        if value is None
+                        else value["overview"].get("block_code"),
+                        "runtime_tag": None
+                        if value is None
+                        else value.get("runtime_tag"),
+                        "launchd": launch_state(),
+                    }
+                )
+            )
+            return 0
+        current = read_private(path, limit=8192)
+        root = verify_config(current)
+        if CredentialStore().load().account_id != current["account_id"]:
+            raise ValueError("TQ_CREDENTIAL_ACCOUNT_MISMATCH")
+        if args.action in {"pause", "stop"}:
+            write_private(base / "control.json", {"mode": args.action})
+            print(
+                json.dumps(
+                    {
+                        "status": "TQ_" + args.action.upper() + "_REQUESTED",
+                        "automatic_flatten": False,
+                    }
+                )
+            )
+            return 0
+        if args.action == "probe":
+            if launch_state() and launch_state()["pid"]:
+                raise ValueError("TQ_STOP_BEFORE_PROBE")
+            script = root / "scripts/ops/macos/run-tq-simulation.sh"
+            return subprocess.run(
+                ["/bin/bash", str(script), "--inspect"], cwd=root, check=False
+            ).returncode
+        if args.action == "install":
+            state = launch_state()
+            if state and state["pid"]:
+                raise ValueError("TQ_STOP_BEFORE_INSTALL")
+            if state:
+                subprocess.run(
+                    ["/bin/launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"],
+                    check=True,
+                    capture_output=True,
+                )
+                if launch_state() is not None:
+                    raise ValueError("TQ_BOOTOUT_UNKNOWN")
+            payload = {
+                "Label": LABEL,
+                "ProgramArguments": [
+                    "/bin/bash",
+                    str(root / "scripts/ops/macos/run-tq-simulation.sh"),
+                ],
+                "WorkingDirectory": str(root),
+                "EnvironmentVariables": {
+                    "GUIYI_PROJECT_ROOT": str(root),
+                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                },
+                "RunAtLoad": True,
+                "KeepAlive": False,
+                "Umask": 0o077,
+                "StandardOutPath": str(base / "runtime.log"),
+                "StandardErrorPath": str(base / "runtime.log"),
+            }
+            installed = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
+            raw = plistlib.dumps(payload, sort_keys=True)
+            if installed.is_symlink():
+                raise ValueError("TQ_PLIST_PATH_INVALID")
+            # Atomic 0600 write; payload never contains authentication data.
+            import tempfile
+
+            fd, tmp = tempfile.mkstemp(prefix=".tq-plist-", dir=installed.parent)
+            try:
+                os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "wb") as f:
+                    f.write(raw)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(tmp, installed)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            print(
+                json.dumps(
+                    {"status": "TQ_INSTALLED_NOT_STARTED", "tag": current["tag"]}
+                )
+            )
+            return 0
+        if args.action == "start":
+            if (base / "hold.json").exists():
+                raise ValueError("TQ_PERSISTED_HOLD_REQUIRES_RECONCILIATION")
+            if args.trade:
+                proof = read_private(base / "preflight.json")
+                if (
+                    proof.get("config") != current
+                    or proof.get("ready_for_start") is not True
+                    or not 0
+                    <= (
+                        datetime.now(UTC) - datetime.fromisoformat(proof["at"])
+                    ).total_seconds()
+                    <= 300
+                ):
+                    raise ValueError("TQ_FRESH_PREFLIGHT_REQUIRED")
+            write_private(
+                base / "control.json", {"mode": "trade" if args.trade else "observe"}
+            )
+            state = launch_state()
+            if state is None:
+                installed = Path.home() / "Library/LaunchAgents" / f"{LABEL}.plist"
+                if installed.is_symlink() or not installed.is_file():
+                    raise ValueError("TQ_INSTALL_REQUIRED")
+                observed = plistlib.loads(installed.read_bytes())
+                if observed.get("WorkingDirectory") != str(root):
+                    raise ValueError("TQ_INSTALLED_ROOT_MISMATCH")
+                subprocess.run(
+                    [
+                        "/bin/launchctl",
+                        "bootstrap",
+                        f"gui/{os.getuid()}",
+                        str(installed),
+                    ],
+                    capture_output=True,
+                    check=True,
+                )
+            elif state["pid"] is None:
+                # A completed/failed job never earns an automatic retry. Explicit
+                # start requires full fresh preflight and a clean replacement install.
+                raise ValueError("TQ_EXPLICIT_REINSTALL_REQUIRED")
+            print(
+                json.dumps(
+                    {
+                        "status": "TQ_START_REQUESTED",
+                        "mode": "trade" if args.trade else "observe",
+                    }
+                )
+            )
+            return 0
+        return 1
+    except Exception as error:
+        code = str(error) if type(error) is ValueError else "TQ_ADMINISTRATION_BLOCKED"
+        if not re.fullmatch("TQ_[A-Z0-9_]{1,100}", code):
+            code = "TQ_ADMINISTRATION_BLOCKED"
+        print(json.dumps({"status": "BLOCKED", "code": code}))
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

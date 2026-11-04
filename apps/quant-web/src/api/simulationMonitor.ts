@@ -3,7 +3,7 @@ export interface MonitorQuery { kind: MonitorKind; product: string; status: stri
 export interface MonitorRecord { id: string; kind: Exclude<MonitorKind, 'all'>; at: string; product: string; contract: string; status: string; label: string; signal_id: string | null; order_id: string | null; facts: Record<string, string | null> }
 export interface MonitorPage { version: string; snapshot: string | null; items: MonitorRecord[]; next_cursor: string | null; available_count: number; coverage: 'complete' | 'partial' | 'unavailable' }
 export interface MonitorDetail { version: string; snapshot: string; selected: MonitorRecord; chain: MonitorRecord[] }
-export interface MonitorPosition { id: string; product: string; contract: string; side: string; quantity: number; today: number | null; yesterday: number | null; frozen_long: number; frozen_short: number; position_profit: string | null; status: string; as_of: string }
+export interface MonitorPosition { id: string; product: string; contract: string; side: string; quantity: number; today: number | null; yesterday: number | null; frozen_long: number | null; frozen_short: number | null; position_profit: string | null; status: string; as_of: string }
 export interface MonitorIssue { id: string; code: string; label: string; at: string; product: string; contract: string; link: string | null }
 export type MonitorMetric = 'equity' | 'available' | 'used_margin' | 'frozen_margin' | 'frozen_fee' | 'margin_limit' | 'occupied_margin' | 'margin_ratio' | 'local_reserved_margin' | 'local_reserved_fee' | 'daily_fee' | 'attributed_fee' | 'net_profit' | 'return_ratio'
 export interface MonitorOverview {
@@ -18,7 +18,7 @@ export interface MonitorOverview {
   metrics: Record<MonitorMetric, string | null>; positions: MonitorPosition[]; curve: { at: string; equity: string; net_profit: string | null; trading_day: string }[]
   issues: MonitorIssue[]; issue_count: number | null; coverage: string; performance_status: string; source_times: Record<string, string>
 }
-const version = 'simnow_monitor_v1'
+const version = 'simulation_monitor_v1'
 const instant = (v: unknown) => typeof v === 'string' && Number.isFinite(Date.parse(v))
 const money = (v: unknown) => v === null || typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && Number.isFinite(Number(v))
 export function validateOverview(value: MonitorOverview): MonitorOverview {
@@ -46,9 +46,9 @@ export function validateDetail(value: MonitorDetail): MonitorDetail {
   return value
 }
 export const monitorClient = {
-  async overview(signal: AbortSignal) { const { default: request } = await import('./request.ts'); return validateOverview(await request.get<never, MonitorOverview>('/api/simnow/monitor/overview', { signal, readPriority: 0 })) },
-  async records(query: MonitorQuery, signal: AbortSignal, cursor?: string) { const { default: request } = await import('./request.ts'); return validatePage(await request.get<never, MonitorPage>('/api/simnow/monitor/records', { signal, params: { kind: query.kind, product: query.product, status: query.status, start_day: query.startDay, end_day: query.endDay, ...(cursor ? { cursor } : {}) } })) },
-  async detail(id: string, signal: AbortSignal) { const { default: request } = await import('./request.ts'); return validateDetail(await request.get<never, MonitorDetail>('/api/simnow/monitor/records/' + encodeURIComponent(id), { signal })) },
+  async overview(signal: AbortSignal) { const { default: request } = await import('./request.ts'); return validateOverview(await request.get<never, MonitorOverview>('/api/simulation/monitor/overview', { signal, readPriority: 0 })) },
+  async records(query: MonitorQuery, signal: AbortSignal, cursor?: string) { const { default: request } = await import('./request.ts'); return validatePage(await request.get<never, MonitorPage>('/api/simulation/monitor/records', { signal, params: { kind: query.kind, product: query.product, status: query.status, start_day: query.startDay, end_day: query.endDay, ...(cursor ? { cursor } : {}) } })) },
+  async detail(id: string, signal: AbortSignal) { const { default: request } = await import('./request.ts'); return validateDetail(await request.get<never, MonitorDetail>('/api/simulation/monitor/records/' + encodeURIComponent(id), { signal })) },
 }
 export type MonitorClient = typeof monitorClient
 export function monitorQueryKey(q: MonitorQuery) { return JSON.stringify([q.kind, q.product, q.status, q.startDay, q.endDay]) }

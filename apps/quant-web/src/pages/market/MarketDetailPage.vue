@@ -282,7 +282,7 @@ onUnmounted(() => chartSession.dispose())
 
 <template>
   <main class="market-detail-page unified-detail-light" :data-detail-ready="shellReady ? 'true' : 'false'">
-    <MarketNavigation @market="goHome('market')" @messages="goHome('messages')" @simnow="goHome('simnow')">
+    <MarketNavigation @market="goHome('market')" @messages="goHome('messages')" @simulation="goHome('simulation')">
       <template #search>
         <ProductSelector
           ref="productSelector"

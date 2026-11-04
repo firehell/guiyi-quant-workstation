@@ -1,7 +1,7 @@
 import { ref } from 'vue'
-import { monitorClient, monitorQueryKey, validateOverview, validatePage, validateDetail, type MonitorClient, type MonitorOverview, type MonitorQuery, type MonitorPage, type MonitorDetail } from '../api/simnowMonitor.ts'
+import { monitorClient, monitorQueryKey, validateOverview, validatePage, validateDetail, type MonitorClient, type MonitorOverview, type MonitorQuery, type MonitorPage, type MonitorDetail } from '../api/simulationMonitor.ts'
 
-export function useSimnowMonitor(initial: MonitorQuery, client: MonitorClient = monitorClient, timers = { set: (fn: () => void) => setTimeout(fn, 5000), clear: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) }, validity = { now: () => Date.now(), set: (fn: () => void, delay: number) => setTimeout(fn, delay), clear: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) }) {
+export function useSimulationMonitor(initial: MonitorQuery, client: MonitorClient = monitorClient, timers = { set: (fn: () => void) => setTimeout(fn, 5000), clear: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) }, validity = { now: () => Date.now(), set: (fn: () => void, delay: number) => setTimeout(fn, delay), clear: (id: ReturnType<typeof setTimeout>) => clearTimeout(id) }) {
   const data = ref<MonitorOverview | null>(null), page = ref<MonitorPage | null>(null), detail = ref<MonitorDetail | null>(null)
   const selectedId = ref<string | null>(null), loading = ref(false), recordsLoading = ref(false), loadingMore = ref(false), detailLoading = ref(false)
   const error = ref<string | null>(null), recordsError = ref<string | null>(null), detailError = ref<string | null>(null), newRecords = ref(false)

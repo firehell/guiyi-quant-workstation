@@ -141,7 +141,10 @@ class CredentialStore:
 class _NativeKeychain:
     """Security.framework generic password API; fail closed without UI prompts."""
 
-    def __init__(self):
+    def __init__(self, *, service=SERVICE):
+        if not isinstance(service, str) or not service.startswith("com.guiyi.quant.") or len(service) > 128 or "\x00" in service:
+            raise CredentialError("CREDENTIAL_SERVICE_INVALID")
+        self._service = service
         if platform.system() != "Darwin":
             raise CredentialError("MACOS_KEYCHAIN_REQUIRED")
         try:
@@ -231,7 +234,7 @@ class _NativeKeychain:
                 query, self._keys["kSecClass"], self._keys["kSecClassGenericPassword"]
             )
             for key, text in (
-                ("kSecAttrService", SERVICE),
+                ("kSecAttrService", self._service),
                 ("kSecAttrAccount", account),
             ):
                 value = self._string(text)

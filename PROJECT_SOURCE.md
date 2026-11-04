@@ -18,7 +18,7 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
-- 策略详情不显示模糊的“全历史策略效果”，不把账户收益、持仓、订单或成交混入参考交易，也不恢复已退役策略事件。首页独立 SimNow 监控可只读展示模拟账户事实；Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，与该账户事实分离。
+- 策略详情不显示模糊的“全历史策略效果”，不把账户收益、持仓、订单或成交混入参考交易，也不恢复已退役策略事件。首页独立模拟交易监控可只读展示 TqKq 账户事实；Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，与该账户事实分离。
 
 ## 期货双向策略独立研究
 
@@ -148,16 +148,8 @@ RQData -> staging + hard validation -> Canonical Parquet
 
 Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、Multi-Candidate Robustness、RQAlpha 与 Execution Review 同样不属于 active 产品、API、CLI、Web 或 Runtime。
 
-## SimNow 独立账户观察与监控
+## 模拟交易
 
-独立交互式CLI支持固定SimNow测试环境及显式选择的第一套模拟环境认证、登录与资金/持仓/委托/成交两轮只读核验。
-该一次性只读CLI不创建订单、管理账户或启动持续服务，本地快照与HTDY执行政策、Paper模型、页面参考收益保持独立。合同见 [SIMNOW_READONLY](docs/SIMNOW_READONLY.md)。
+现役模拟执行为单个 TqKq 快期账户，使用实际权益及既有 HTDY 60m 固定一手规则。源码、账户恢复、风险与本地控制合同见 [TQ_SIMULATION](docs/TQ_SIMULATION.md)。旧 SimNow 停用并保留原账户和账本，其历史 CLI 不能推导为现役服务。
 
-独立持续宿主与一次性CLI分开：observe按现有合同读取柜台账户并核验本地账本，manage/trade有独立执行边界；支持隔离服务安装、连接预算、持久阻断和只读监控。当前部署及待验收事实只看 `STATUS.md`，不从实现或observe运行推导交易开放，`auto_order=false`保持。
-
-首页导航增加“模拟交易”：只读展示本地原生账户走势、持仓、执行链与待核事项，不提供交易操作。账户口径独立于策略参考收益，未接入或证据不足时明确待验。详见 [SimNow执行合同](docs/SIMNOW_EXECUTION.md)。
-
-HTDY 60m 默认展示独立冻结的历史回放参考动作及收益，可切换“实时参考”和“SimNow记录”。
-回放只使用截至每根已完成Bar的32根窗口末根信号，复用既有参考配对，不展示最终重绘历史信号。
-精确关联的实际记录优先；缺公式版本/周期、冲突或无法定位的记录分别保留，不覆盖回放或伪造成交。
-回放补充、首次观察和SimNow信号/风控/订单/成交各保留独立身份与统计；不拼接收益、不改变运行交易规则。
+首页“模拟交易”及 HTDY 的“快期模拟记录”只读显示账户、持仓、信号、风控、委托、成交与阻断原因；与历史回放、实时页面参考及其收益保持独立。缺少精确公式/周期/时间关联的账户记录不伪造成图表信号。启用状态及自然成交证据以 `STATUS.md` 和实际读回为准。

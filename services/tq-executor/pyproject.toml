@@ -1,0 +1,8 @@
+[project]
+name = "guiyi-tq-executor"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = ["tqsdk==3.10.4", "guiyi-quant-core"]
+
+[tool.uv.sources]
+guiyi-quant-core = { path = "../../packages/quant-core", editable = true }

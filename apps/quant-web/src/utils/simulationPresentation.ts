@@ -1,5 +1,5 @@
 import { formatDisplayNumber, formatMarketPercent } from './marketDisplay.ts'
-import type { MonitorOverview } from '../api/simnowMonitor.ts'
+import type { MonitorOverview } from '../api/simulationMonitor.ts'
 export function monitorTime(value: string | null | undefined) {
   if (!value || !Number.isFinite(Date.parse(value))) return '—'
   return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(value))

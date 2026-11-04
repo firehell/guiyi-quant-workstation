@@ -479,3 +479,9 @@ python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
 不以终态字样或人工说明跳过机器验证；未闭合恢复继续阻止清理。旧unknown/state/plan不改写，历史对象不写回active registry。
 封存后重查待删树当前引用再清理；删除后确认现役服务与必要历史reader仍可用，一次记录结果即可。
 该工具是实际恢复依赖的处理手段，不是每次开发、发布或删旧代码的前置流程。
+
+## TqKq 快期模拟
+
+按 [TQ_SIMULATION](../docs/TQ_SIMULATION.md) 配置、只读预检、安装与启用。独立环境通过 `uv sync --frozen --project services/tq-executor` 构建，launcher 为 `scripts/ops/macos/run-tq-simulation.sh`，唯一 label 为 `com.guiyi.quant-tqkq-simulation`。账户数据位于 AppSupport/tqkq-simulation，凭据位于独立 Keychain 项目，不进入发布树。
+
+清理器检查该 label 的磁盘/现场引用及私有配置；worker 停止时 config 仍固定源码依赖，不能先删树。标准服务切换后再配置同一正式 root、执行新鲜 probe、启用唯一 worker；未通过则保持 observe/暂停。停止不清仓、不清空历史账本。
