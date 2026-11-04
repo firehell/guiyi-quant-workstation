@@ -482,6 +482,6 @@ python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
 
 ## TqKq 快期模拟
 
-按 [TQ_SIMULATION](../docs/TQ_SIMULATION.md) 配置、只读预检、安装与启用。独立环境通过 `uv sync --frozen --project services/tq-executor` 构建，launcher 为 `scripts/ops/macos/run-tq-simulation.sh`，唯一 label 为 `com.guiyi.quant-tqkq-simulation`。账户数据位于 AppSupport/tqkq-simulation，凭据位于独立 Keychain 项目，不进入发布树。
+按 [TQ_SIMULATION](../docs/TQ_SIMULATION.md) 配置、安装、只读预检与启用。独立环境通过 `uv sync --frozen --project services/tq-executor` 构建，launcher 为 `scripts/ops/macos/run-tq-simulation.sh`，唯一 label 为 `com.guiyi.quant-tqkq-simulation`。与标准服务一样，launchd 从 AppSupport 稳定脚本及 HOME 工作目录启动；脚本字节必须与当前 exact-tag 源码相同，环境在脚本内部清理。账户数据位于 AppSupport/tqkq-simulation，凭据位于独立 Keychain 项目，不进入发布树。
 
 清理器检查该 label 的磁盘/现场引用及私有配置；worker 停止时 config 仍固定源码依赖，不能先删树。标准服务切换后再配置同一正式 root、执行新鲜 probe、启用唯一 worker；未通过则保持 observe/暂停。停止不清仓、不清空历史账本。

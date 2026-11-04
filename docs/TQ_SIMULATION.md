@@ -28,8 +28,8 @@
 
 - `credentials --replace`：本机隐藏录入框，存独立 Keychain 项目，明文不写文件或日志。
 - `configure --root /精确正式树 --tag vX.Y.Z`：核验 annotated tag、commit、clean tree 和正式 API binding；默认为 observe。
-- `probe`：使用与 launchd 相同的最小环境，只读连接、当前全品种映射、初次接管或已有账户对账；生成最长 300 秒的启动证明，不发送订单。
-- `install`、`start --trade`：安装唯一 `com.guiyi.quant-tqkq-simulation`，通过新鲜预检后启用。失败进程不自动重启或重发。
+- `probe`：先完成 install；使用与 launchd 相同的稳定入口、HOME 工作目录和最小环境，只读连接、当前全品种映射、初次接管或已有账户对账；生成最长 300 秒的启动证明，不发送订单。
+- `install`、`start --trade`：将发布脚本原子安装到 AppSupport，probe/start/worker 均在 SDK 之前验证其与 exact-tag 源码逐字一致，再安装唯一 `com.guiyi.quant-tqkq-simulation`，通过新鲜预检后启用。失败进程不自动重启或重发。
 - `status`、`pause`、`stop`：暂停禁止新开仓并管理既有义务；停止撤销已证明归属的未决委托后退出，不自动清仓。未知发送状态不能视为成功停止。
 
 不可解释的发送结果、账本冲突或外部操作会留下持久 hold；直接再次 start 不解除。须查清原始委托、成交和账户事实，再按对应恢复语义处理，不能删账本重建。

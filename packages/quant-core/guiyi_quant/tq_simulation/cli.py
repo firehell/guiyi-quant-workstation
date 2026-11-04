@@ -8,7 +8,15 @@ import os
 import plistlib
 import subprocess
 import re
-from .runtime import directory, private_folder, write_private, read_private
+from .runtime import (
+    directory,
+    private_folder,
+    write_private,
+    read_private,
+    write_private_bytes,
+    launcher_path,
+    verify_launcher,
+)
 from .credentials import CredentialStore, setup_dialog
 from .worker import verify_config
 
@@ -81,14 +89,7 @@ def service_environment(root):
 
 
 def service_command(root, *, inspect=False):
-    return [
-        "/usr/bin/env",
-        "-i",
-        *[f"{key}={value}" for key, value in service_environment(root).items()],
-        "/bin/bash",
-        str(root / "scripts/ops/macos/run-tq-simulation.sh"),
-        *(["--inspect"] if inspect else []),
-    ]
+    return ["/bin/bash", str(launcher_path()), *(["--inspect"] if inspect else [])]
 
 
 def main(argv=None):
@@ -163,8 +164,6 @@ def main(argv=None):
             return 0
         current = read_private(path, limit=8192)
         root = verify_config(current)
-        if CredentialStore().load().account_id != current["account_id"]:
-            raise ValueError("TQ_CREDENTIAL_ACCOUNT_MISMATCH")
         if args.action in {"pause", "stop"}:
             write_private(base / "control.json", {"mode": args.action})
             print(
@@ -176,12 +175,15 @@ def main(argv=None):
                 )
             )
             return 0
+        if CredentialStore().load().account_id != current["account_id"]:
+            raise ValueError("TQ_CREDENTIAL_ACCOUNT_MISMATCH")
         if args.action == "probe":
+            verify_launcher(root)
             if launch_state() and launch_state()["pid"]:
                 raise ValueError("TQ_STOP_BEFORE_PROBE")
             return subprocess.run(
                 service_command(root, inspect=True),
-                cwd=root,
+                cwd=Path.home(),
                 env=service_environment(root),
                 check=False,
             ).returncode
@@ -197,10 +199,15 @@ def main(argv=None):
                 )
                 if launch_state() is not None:
                     raise ValueError("TQ_BOOTOUT_UNKNOWN")
+            write_private_bytes(
+                launcher_path(),
+                (root / "scripts/ops/macos/run-tq-simulation.sh").read_bytes(),
+            )
+            verify_launcher(root)
             payload = {
                 "Label": LABEL,
                 "ProgramArguments": service_command(root),
-                "WorkingDirectory": str(root),
+                "WorkingDirectory": str(Path.home()),
                 "EnvironmentVariables": service_environment(root),
                 "RunAtLoad": True,
                 "KeepAlive": False,
@@ -212,20 +219,7 @@ def main(argv=None):
             raw = plistlib.dumps(payload, sort_keys=True)
             if installed.is_symlink():
                 raise ValueError("TQ_PLIST_PATH_INVALID")
-            # Atomic 0600 write; payload never contains authentication data.
-            import tempfile
-
-            fd, tmp = tempfile.mkstemp(prefix=".tq-plist-", dir=installed.parent)
-            try:
-                os.fchmod(fd, 0o600)
-                with os.fdopen(fd, "wb") as f:
-                    f.write(raw)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp, installed)
-            finally:
-                if os.path.exists(tmp):
-                    os.unlink(tmp)
+            write_private_bytes(installed, raw)
             print(
                 json.dumps(
                     {"status": "TQ_INSTALLED_NOT_STARTED", "tag": current["tag"]}
@@ -233,6 +227,7 @@ def main(argv=None):
             )
             return 0
         if args.action == "start":
+            verify_launcher(root)
             if (base / "hold.json").exists():
                 raise ValueError("TQ_PERSISTED_HOLD_REQUIRES_RECONCILIATION")
             if args.trade:
@@ -256,7 +251,11 @@ def main(argv=None):
                 if installed.is_symlink() or not installed.is_file():
                     raise ValueError("TQ_INSTALL_REQUIRED")
                 observed = plistlib.loads(installed.read_bytes())
-                if observed.get("WorkingDirectory") != str(root):
+                if (
+                    observed.get("WorkingDirectory") != str(Path.home())
+                    or observed.get("ProgramArguments") != service_command(root)
+                    or observed.get("EnvironmentVariables") != service_environment(root)
+                ):
                     raise ValueError("TQ_INSTALLED_ROOT_MISMATCH")
                 subprocess.run(
                     [
