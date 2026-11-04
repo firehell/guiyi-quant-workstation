@@ -11,7 +11,14 @@ import re
 import signal
 import subprocess
 import time
-from .runtime import read_private, write_private, private_folder, owner_lock, directory
+from .runtime import (
+    read_private,
+    write_private,
+    private_folder,
+    owner_lock,
+    directory,
+    verify_launcher,
+)
 from .credentials import CredentialStore
 from .gateway import Gateway
 from .controller import Controller, TERMINAL
@@ -118,6 +125,7 @@ def run(config_path, *, inspect=False):
     )  # SDK errors can include authentication responses; never publish raw text.
     config = read_private(config_path, limit=8192)
     root = verify_config(config)
+    verify_launcher(root)
     credentials = CredentialStore().load()
     if credentials.account_id != config["account_id"]:
         raise ValueError("TQ_CREDENTIAL_ACCOUNT_MISMATCH")

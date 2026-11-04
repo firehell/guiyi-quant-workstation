@@ -29,16 +29,22 @@ def private_folder(path):
 
 
 def write_private(path, payload):
+    return write_private_bytes(
+        path, json.dumps(payload, sort_keys=True, allow_nan=False).encode()
+    )
+
+
+def write_private_bytes(path, raw):
     path = Path(path)
     if path.parent.resolve(strict=True) != path.parent or path.is_symlink():
         raise ValueError("TQ_PRIVATE_PATH_REQUIRED")
     if path.exists() and (
         not path.is_file()
+        or path.stat().st_nlink != 1
         or path.stat().st_uid != os.getuid()
         or path.stat().st_mode & 0o077
     ):
         raise ValueError("TQ_PRIVATE_PATH_REQUIRED")
-    raw = json.dumps(payload, sort_keys=True, allow_nan=False).encode()
     fd, name = tempfile.mkstemp(prefix=".tq-", dir=path.parent)
     try:
         os.fchmod(fd, 0o600)
@@ -58,6 +64,10 @@ def write_private(path, payload):
 
 
 def read_private(path, *, limit=32 * 1024 * 1024):
+    return json.loads(read_private_bytes(path, limit=limit))
+
+
+def read_private_bytes(path, *, limit=32 * 1024 * 1024):
     path = Path(path)
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
@@ -85,7 +95,7 @@ def read_private(path, *, limit=32 * 1024 * 1024):
             after.st_size,
         ) or (named.st_dev, named.st_ino) != (before.st_dev, before.st_ino):
             raise ValueError("TQ_PRIVATE_FILE_DRIFT")
-        return json.loads(raw)
+        return raw
     finally:
         os.close(fd)
 
@@ -101,3 +111,17 @@ def owner_lock(path):
         yield
     finally:
         os.close(fd)
+
+
+def launcher_path():
+    return directory().parent / "run-tq-simulation.sh"
+
+
+def verify_launcher(root):
+    try:
+        raw = read_private_bytes(launcher_path(), limit=65536)
+        if raw != (Path(root) / "scripts/ops/macos/run-tq-simulation.sh").read_bytes():
+            raise ValueError
+    except Exception:
+        raise ValueError("TQ_LAUNCHER_IDENTITY_UNPROVEN") from None
+    return launcher_path()

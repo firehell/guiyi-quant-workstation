@@ -25,6 +25,7 @@ def host(monkeypatch, tmp_path, *, mode="trade", restart=False):
     monkeypatch.setattr(worker, "write_private", publish)
     monkeypatch.setattr(worker, "directory", lambda: base)
     monkeypatch.setattr(worker, "verify_config", lambda _: tmp_path)
+    monkeypatch.setattr(worker, "verify_launcher", lambda _: None)
     monkeypatch.setattr(
         worker,
         "CredentialStore",
@@ -176,6 +177,59 @@ def test_probe_and_service_environment_match_and_do_not_inherit_terminal_proxy(
     assert "HTTPS_PROXY" not in env and "PYTHONPATH" not in env
     assert env["USER"] == env["LOGNAME"] and env["HOME"]
     service = service_command(tmp_path)
-    assert service[:2] == ["/usr/bin/env", "-i"]
+    assert service[0] == "/bin/bash"
+    assert service[1].endswith("/GuiyiQuant/run-tq-simulation.sh")
     assert service_command(tmp_path, inspect=True) == service + ["--inspect"]
-    assert set(service[2:7]) == {f"{k}={v}" for k, v in env.items()}
+
+
+def test_private_launcher_is_bound_to_exact_source_and_rejects_links(
+    monkeypatch, tmp_path
+):
+    import pytest
+    from guiyi_quant.tq_simulation import runtime as rt
+
+    root = tmp_path / "release"
+    source = root / "scripts/ops/macos/run-tq-simulation.sh"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"#!/bin/bash\nexit 0\n")
+    monkeypatch.setattr(rt, "directory", lambda: tmp_path / "tqkq-simulation")
+    path = rt.launcher_path()
+    rt.write_private_bytes(path, source.read_bytes())
+    assert rt.verify_launcher(root) == path and path.stat().st_mode & 0o777 == 0o600
+    source.write_bytes(b"#!/bin/bash\nexit 1\n")
+    with pytest.raises(ValueError, match="LAUNCHER_IDENTITY_UNPROVEN"):
+        rt.verify_launcher(root)
+    path.unlink()
+    path.symlink_to(source)
+    with pytest.raises(ValueError, match="LAUNCHER_IDENTITY_UNPROVEN"):
+        rt.verify_launcher(root)
+
+
+def test_private_binary_writer_rejects_hardlinks_and_retains_json_contract(tmp_path):
+    import os
+    import pytest
+    from guiyi_quant.tq_simulation import runtime as rt
+
+    path = tmp_path / "original"
+    rt.write_private(path, {"mode": "observe"})
+    assert rt.read_private(path) == {"mode": "observe"}
+    linked = tmp_path / "linked"
+    os.link(path, linked)
+    with pytest.raises(ValueError, match="PRIVATE_PATH_REQUIRED"):
+        rt.write_private_bytes(linked, b"overwrite")
+    assert path.read_bytes() == linked.read_bytes()
+
+
+def test_stop_does_not_require_keychain_to_remain_available(monkeypatch, tmp_path):
+    from guiyi_quant.tq_simulation import cli
+
+    write_private(tmp_path / "config.json", {"account_id": A})
+    monkeypatch.setattr(cli, "directory", lambda: tmp_path)
+    monkeypatch.setattr(cli, "verify_config", lambda _: tmp_path)
+
+    def unavailable():
+        raise AssertionError("stop must not read credentials")
+
+    monkeypatch.setattr(cli, "CredentialStore", unavailable)
+    assert cli.main(["stop"]) == 0
+    assert read_private(tmp_path / "control.json") == {"mode": "stop"}
