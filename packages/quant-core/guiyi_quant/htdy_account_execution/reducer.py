@@ -485,6 +485,33 @@ def apply_readback(state, cmd):
     ), "READBACK_RECONCILED"
 
 
+def never_active(state):
+    return (not any((state.signals, state.orders, state.fills, state.positions,
+        state.reservations, state.updates, state.risk_decisions, state.abandoned, state.unresolved_fill_ids))
+        and all(p.owner is None and p.last_bar is None and p.desired == 0
+            and not p.signal_id and p.signal_at is None and not p.must_close and not p.rolling
+            for p in state.products)
+        and all(type(a.command) in (m.Readback, m.Disconnect, m.TqKqTick, m.Recover, m.TqKqResumeEmptyV1)
+            for a in state.audit))
+
+
+def resume_empty(state, cmd):
+    if not never_active(state):
+        raise ValueError("TQ_EMPTY_RECOVERY_HAS_ACTIVITY")
+    if cmd.claims_sha256 != digest({"account_id": state.account_id, "claims": []}):
+        raise ValueError("TQ_EMPTY_RECOVERY_CLAIMS_PROOF_INVALID")
+    rb = cmd.readback
+    if (not rb.source_id.startswith("tq-readback:") or not rb.complete
+        or rb.snapshot.positions or rb.snapshot.orders or rb.confirmed_trade_ids
+        or rb.used_margin or rb.frozen_margin or rb.frozen_fee):
+        raise ValueError("TQ_EMPTY_RECOVERY_REQUIRES_NATIVE_FLAT")
+    state, reason = apply_readback(state, rb)
+    if not state.readback_valid or state.phase == "BLOCKED":
+        raise ValueError("TQ_EMPTY_RECOVERY_RECONCILIATION_REQUIRED")
+    return replace(state, phase="READY", blocked_products=(),
+        products=tuple(replace(p, wait_after=cmd.at) for p in state.products)), "TQ_NEVER_ACTIVE_ACCOUNT_RESUMED"
+
+
 def recover(state, cmd):
     state, reason = apply_readback(state, cmd.readback)
     if not state.readback_valid or state.unresolved_fill_ids:
@@ -1243,6 +1270,7 @@ def apply(state, key, cmd):
         m.Disconnect,
         m.AbortUnsent,
         m.TqKqTick,
+        m.TqKqResumeEmptyV1,
         m.Tick,
         m.ManagedTickV1,
         m.ContinuousTradeTickV1,
@@ -1376,6 +1404,8 @@ def apply(state, key, cmd):
             ),
             "DISCONNECTED",
         )
+    elif type(cmd) is m.TqKqResumeEmptyV1:
+        state, reason = resume_empty(state, cmd)
     elif type(cmd) is m.TqKqTick:
         from .tq_types import TQ_RISK_VERSION, TQ_EXECUTION_VERSION
         if not cmd.opening_allowed:
