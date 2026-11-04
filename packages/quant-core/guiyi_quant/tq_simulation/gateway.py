@@ -73,7 +73,7 @@ class Gateway:
         self.orders = self.api.get_order(account=self.account)
         self.trades = self.api.get_trade(account=self.account)
         self.quotes = {}
-        self.notifications = set(self.api._data.get("notify", {}))
+        self.notifications = set()
         self.connections = {}
         self.last_day = None
         self.reconnection_required = False
@@ -85,6 +85,9 @@ class Gateway:
         import time
 
         self.api.wait_update(deadline=time.time() + seconds)
+        self.refresh_notifications()
+
+    def refresh_notifications(self):
         for key, row in list(self.api._data.get("notify", {}).items()):
             if key in self.notifications:
                 continue
@@ -102,6 +105,7 @@ class Gateway:
             raise ValueError("TQ_DISCONNECTED")
 
     def snapshot(self, now):
+        self.refresh_notifications()
         if self.api._account._get_trade_more_data(self.api._data):
             raise ValueError("TQ_ACCOUNT_INCOMPLETE")
         a = self.account_ref
@@ -243,7 +247,10 @@ class Gateway:
             .get("pre_insert_orders", {})
         )
         slots.pop(self.account_key + "_" + user, None)
-        self.api._get_margin_rate(q, direction, self.account)
+        try:
+            self.api._get_margin_rate(q, direction, self.account)
+        finally:
+            self.refresh_notifications()
         row = (
             self.api._data.get("trade", {})
             .get(self.account_key, {})
@@ -272,9 +279,17 @@ class Gateway:
             },
         )
 
+    def assert_continuity(self):
+        # All synchronous SDK calls may drive wait_update internally. Snapshot
+        # also checks native trading-day changes before any transport action.
+        self.snapshot(datetime.now(UTC))
+        if self.reconnection_required:
+            raise ValueError("TQ_RECOVERY_REQUIRED")
+
     def submit(self, symbol, order, offset, native_id):
         if not self.execution_allowed:
             raise ValueError("TQ_OBSERVE_ONLY")
+        self.assert_continuity()
         q = self.quote(symbol)
         price = order.price
         opponent = q["ask_price1"] if order.side == "BUY" else q["bid_price1"]
@@ -285,6 +300,7 @@ class Gateway:
             q["price_tick"], positive=True
         ):
             raise ValueError("TQ_PRICE_PRECISION_INVALID")
+        self.assert_continuity()
         self.api.insert_order(
             symbol=symbol,
             direction=order.side,
@@ -298,4 +314,5 @@ class Gateway:
     def cancel(self, native_id):
         if not self.execution_allowed:
             raise ValueError("TQ_OBSERVE_ONLY")
+        self.assert_continuity()
         self.api.cancel_order(native_id, account=self.account)

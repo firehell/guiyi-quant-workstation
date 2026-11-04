@@ -119,6 +119,13 @@ def preflight_ready(controller, snapshot, issues, mappings, products, now):
     )
 
 
+def require_recovery(controller, at):
+    if controller.store is not None and controller.store.current().phase == "READY":
+        controller.store.execute(
+            "tq-continuity-break:" + at.isoformat(), m.Disconnect(at)
+        )
+
+
 def run(config_path, *, inspect=False):
     logging.disable(
         logging.CRITICAL
@@ -193,6 +200,8 @@ def run(config_path, *, inspect=False):
                     snapshot = gateway.snapshot(now)
                     if action == "trade" and controller.store is None:
                         controller.bootstrap(snapshot, now)
+                    if gateway.reconnection_required:
+                        require_recovery(controller, now)
                     state = controller.store.current() if controller.store else None
                     native = digest_native(snapshot)
                     due = bool(
@@ -212,6 +221,15 @@ def run(config_path, *, inspect=False):
                         last_native = native
                     else:
                         rb = None
+                    if (
+                        state
+                        and rb is not None
+                        and state.phase != "READY"
+                        and not (base / "hold.json").exists()
+                        and controller.resume_never_active(rb, datetime.now(UTC))
+                    ):
+                        gateway.reconnection_required = False
+                        state = controller.store.current()
                     contracts = ()
                     if state:
                         contracts = tuple(
@@ -398,8 +416,13 @@ def run(config_path, *, inspect=False):
                                 )
                         now = datetime.now(UTC)
                         snapshot = gateway.snapshot(now)
+                        if gateway.reconnection_required:
+                            require_recovery(controller, now)
                         rb = controller.synchronize(snapshot, now)
-                        if controller.store.current().phase == "READY":
+                        if (
+                            controller.store.current().phase == "READY"
+                            and not gateway.reconnection_required
+                        ):
                             controller.tick(
                                 inputs,
                                 datetime.now(UTC),
@@ -446,7 +469,10 @@ def run(config_path, *, inspect=False):
                     if controller.store:
                         # A disconnect always destroys permission to reuse a target.
                         state = controller.store.current()
-                        if code == "TQ_DISCONNECTED" and state.phase == "READY":
+                        if (
+                            code in {"TQ_DISCONNECTED", "TQ_RECOVERY_REQUIRED"}
+                            and state.phase == "READY"
+                        ):
                             controller.store.execute(
                                 "disconnect:" + datetime.now(UTC).isoformat(),
                                 m.Disconnect(datetime.now(UTC)),
@@ -459,6 +485,7 @@ def run(config_path, *, inspect=False):
                         return 1
                     if code not in {
                         "TQ_DISCONNECTED",
+                        "TQ_RECOVERY_REQUIRED",
                         "TQ_ACCOUNT_INCOMPLETE",
                         "TQ_AWAITING_ORDER_FACTS",
                         "TQ_AWAITING_TRADE_FACTS",

@@ -6,7 +6,7 @@ from ..htdy_account_execution import model as m
 from ..htdy_execution import OrderReport
 from ..htdy_account_execution.store import LocalStore
 from ..htdy_account_execution.codec import digest as command_digest
-from ..htdy_account_execution.reducer import start
+from ..htdy_account_execution.reducer import start, never_active
 from .journal import Journal, digest
 from .gateway import decimal, quantity, instant_ns
 
@@ -265,6 +265,20 @@ class Controller:
     def signal(self, signal):
         self.store.execute("tq-signal:" + signal.source_id, signal)
 
+    def resume_never_active(self, rb, at):
+        if (
+            not never_active(self.store.current())
+            or rb.snapshot.positions or rb.snapshot.orders or rb.confirmed_trade_ids
+            or rb.used_margin or rb.frozen_margin or rb.frozen_fee
+            or not rb.at <= at < rb.valid_until
+            or self.journal.db.execute("SELECT COUNT(*) FROM claims").fetchone()[0] != 0
+        ):
+            return False
+        proof = digest({"account_id": self.account_id, "claims": []})
+        cmd = m.TqKqResumeEmptyV1(rb, proof)
+        self.store.execute("tq-empty-resume:" + command_digest(cmd), cmd)
+        return True
+
     def recover(self, rb, proofs):
         cmd = m.Recover(rb, tuple(proofs))
         self.store.execute("tq-recover:" + command_digest(cmd), cmd)
@@ -290,6 +304,7 @@ class Controller:
         from ..htdy_account_execution.scheduling import executable_price
 
         order = effect.order
+        self.gateway.assert_continuity()
         with self.store.dispatch_guard() as state:
             current = next(
                 (o for o in state.orders if o.order_id == order.order_id), None

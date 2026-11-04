@@ -122,3 +122,24 @@ class TqKqTick:
             or self.policy_version != TQ_EXECUTION_VERSION
         ):
             raise ValueError("TQ_TICK_INVALID")
+
+
+@dataclass(frozen=True)
+class TqKqResumeEmptyV1:
+    readback: object
+    claims_sha256: str
+    policy_version: str = "tqkq_never_active_resume_v1"
+
+    @property
+    def at(self):
+        return self.readback.at
+
+    def __post_init__(self):
+        from .model import Readback
+
+        if (
+            type(self.readback) is not Readback
+            or re.fullmatch(r"[0-9a-f]{64}", self.claims_sha256) is None
+            or self.policy_version != "tqkq_never_active_resume_v1"
+        ):
+            raise ValueError("TQ_EMPTY_RECOVERY_PROOF_INVALID")
