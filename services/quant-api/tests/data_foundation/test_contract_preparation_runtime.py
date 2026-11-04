@@ -162,8 +162,11 @@ def test_live_foreground_loop_starts_and_drains_history_worker():
     service._sleep = lambda seconds: None
     service._history_preparation = Worker()
     service._discard_provider = lambda: calls.append("close quote")
-    service.run_forever(should_stop=lambda: True)
-    assert calls == ["start", "stop", "close quote"]
+    service._clock = lambda: NOW
+    service.poll = lambda now: calls.append("poll")
+    stopped = iter((False, True))
+    service.run_forever(should_stop=lambda: next(stopped))
+    assert calls == ["start", "poll", "stop", "close quote"]
 
 
 def test_enabled_scope_union_excludes_disabled_and_nonoperational_consumers():
@@ -537,3 +540,40 @@ def test_near_opening_formal_session_still_admits_when_closed_owner_is_unavailab
         completed_day=lambda product: date(2026, 10, 26))
     assert len(demands) == 1
     assert demands[0].trading_day == DAY
+
+
+def test_persisted_drain_does_not_launch_preparation_on_cold_start():
+    from app.market_data.live_market import LiveMarketService
+    calls = []
+    class Preparation:
+        def start(self):
+            raise AssertionError("a drained process must not launch background data work")
+        def stop(self):
+            calls.append("stop idle")
+    service = LiveMarketService.__new__(LiveMarketService)
+    service._sleep = lambda _: None
+    service._history_preparation = Preparation()
+    service._discard_provider = lambda: calls.append("close quote")
+    service.run_forever(should_stop=lambda: True)
+    assert calls == ["stop idle", "close quote"]
+
+
+def test_active_preparation_drain_failure_is_not_suppressed():
+    from app.market_data.live_market import LiveMarketService
+    calls = []
+    class Preparation:
+        def start(self):
+            calls.append("start")
+        def stop(self):
+            calls.append("stop pending")
+            raise RuntimeError("CONTRACT_PREPARATION_DRAIN_PENDING")
+    service = LiveMarketService.__new__(LiveMarketService)
+    service._sleep = lambda _: None
+    service._clock = lambda: NOW
+    service.poll = lambda _: calls.append("poll")
+    service._history_preparation = Preparation()
+    service._discard_provider = lambda: calls.append("close quote")
+    stopped = iter((False, True))
+    with pytest.raises(RuntimeError, match="CONTRACT_PREPARATION_DRAIN_PENDING"):
+        service.run_forever(should_stop=lambda: next(stopped))
+    assert calls == ["start", "poll", "stop pending", "close quote"]
