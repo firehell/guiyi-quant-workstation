@@ -1,7 +1,7 @@
 import type { NewowProductStrategy, NewowReferenceTrade } from '../types/newowProduct.ts'
 import type { KlineReferenceCallout } from '../types/referenceCallout.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
-import { comparePositiveDecimalText } from './marketDisplay.ts'
+import { comparePositiveDecimalText, formatMarketDecimal } from './marketDisplay.ts'
 import { referencePercentDisplay } from './newowDetailPresentation.ts'
 
 function sameInstant(left: string | null, right: string): boolean {
@@ -15,7 +15,7 @@ export function newowActionReturnDisplay(
   strategy: NewowProductStrategy,
   trades: readonly NewowReferenceTrade[],
 ): { text: string; direction: 'up' | 'down' | 'neutral' } {
-  const price = callout.detail.replace('参考价 ', callout.above ? '' : '建仓价:')
+  const price = `${callout.above ? '' : '建仓价:'}${formatMarketDecimal(callout.price)}`
   if (!callout.above) return { text: price, direction: 'neutral' }
   const matches = trades.filter(trade => trade.status === 'CLOSED'
     && trade.strategy_code === strategy && trade.exit_signal_id === callout.id

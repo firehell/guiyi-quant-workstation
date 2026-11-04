@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDisplayNumber } from '@/utils/marketDisplay'
 import { DynamicRangePrimitive } from '@/components/kline/dynamicRangePrimitive'
 import { matchesRangeBar, pointKey, type DynamicRangePoint } from '@/utils/dynamicRange'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
@@ -211,7 +212,7 @@ onMounted(async () => {
       horzLines: { color: theme.grid },
     },
     rightPriceScale: { borderColor: theme.axis },
-    localization: { timeFormatter: formatChartTimeInShanghai },
+    localization: { timeFormatter: formatChartTimeInShanghai, priceFormatter: (value: number) => formatDisplayNumber(value) },
     crosshair: {
       vertLine: {
         labelBackgroundColor: '#1F2937',

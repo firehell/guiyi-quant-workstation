@@ -1,4 +1,4 @@
-const priceFormat = new Intl.NumberFormat('zh-CN', { maximumSignificantDigits: 21 })
+import { formatDisplayNumber } from './marketDisplay.ts'
 
 export function marketHomePercent(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—'
@@ -7,7 +7,7 @@ export function marketHomePercent(value: number | null): string {
 }
 
 export function marketHomePrice(value: number | null): string {
-  return value === null || !Number.isFinite(value) ? '—' : priceFormat.format(value)
+  return formatDisplayNumber(value, true)
 }
 
 export function marketHomeDirection(value: number | null): 'up' | 'down' | 'flat' {
@@ -15,7 +15,7 @@ export function marketHomeDirection(value: number | null): 'up' | 'down' | 'flat
 }
 
 export function marketHomeRatio(value: number | null): string {
-  return value === null || !Number.isFinite(value) ? '—' : value.toFixed(2)
+  return formatDisplayNumber(value)
 }
 
 export function marketHomeQualityNotice(reasons: readonly string[]): string | null {

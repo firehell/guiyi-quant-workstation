@@ -172,7 +172,7 @@ test('groups sourced facts into market extensions, identity, and data trust', as
   assert.deepEqual(model.extendedSections.map((section) => section.id), [
     'market-extension', 'dominant-identity', 'data-trust',
   ])
-  assert.equal(model.extendedSections[0]?.rows.find((row) => row.label === '成交额')?.value, '2,000')
+  assert.equal(model.extendedSections[0]?.rows.find((row) => row.label === '成交额')?.value, '2,000.00')
   assert.equal(model.extendedSections[0]?.rows.some((row) => row.label === '5日涨跌'), false)
   assert.equal(model.extendedSections[1]?.rows.find((row) => row.label === '物理合约区间')?.value, 'JM2601')
   assert.equal(model.extendedSections[2]?.rows.find((row) => row.label === '市场阶段')?.value, '交易中')

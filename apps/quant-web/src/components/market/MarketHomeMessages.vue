@@ -6,6 +6,7 @@ import { ALERT_RULE_CODES, alertEventHomeResultLabel, alertEventRuleShortLabel }
 import { newowMessageStrategies, type NewowMessage } from '@/api/newowMessages'
 import { messageQueryIdentity, type UnifiedMessage, type UnifiedMessageQuery } from '@/api/marketMessages'
 import { useUnifiedMessages } from '@/composables/useUnifiedMessages'
+import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { recordingPointLabel } from '@/utils/newowRecording'
 import { createMessageQueryScheduler } from '@/utils/messageQueryScheduler'
 
@@ -119,7 +120,7 @@ function loadQuery(): UnifiedMessageQuery {
       <div v-if="page.items.length" class="market-message-list" aria-label="统一消息列表">
         <button v-for="row in page.items" :key="`${row.source}:${row.id}`" type="button" @click="open(row)">
           <span class="market-message-row1"><strong>{{ productName(row.event) }}</strong><span class="market-message-code">({{ row.symbol.toUpperCase() }})</span><span class="market-message-rule">{{ row.source === 'alert' ? alertEventRuleShortLabel(row.event) : strategyName(row.event.strategy) }}</span><span class="market-message-period" :data-frequency="row.event.frequency">{{ periodLabel(row.event.frequency) }}</span><time :datetime="row.bar_end">{{ time(row.bar_end) }}</time></span>
-          <span v-if="row.source === 'newow'" class="market-message-row2"><span class="market-message-action" :class="{ 'is-sell': ['CLEAR', 'CLOSE_LONG', 'CLOSE', 'REDUCE'].includes(String(row.event.point.value.kind)) }">{{ recordingPointLabel(row.event.point) }}{{ row.event.point.kind === 'action' ? '参考' : '' }}</span><span>{{ row.event.contract ?? '合约未记录' }}</span><span v-if="row.event.point.value.reference_price">参考价 {{ row.event.point.value.reference_price }}</span></span>
+          <span v-if="row.source === 'newow'" class="market-message-row2"><span class="market-message-action" :class="{ 'is-sell': ['CLEAR', 'CLOSE_LONG', 'CLOSE', 'REDUCE'].includes(String(row.event.point.value.kind)) }">{{ recordingPointLabel(row.event.point) }}{{ row.event.point.kind === 'action' ? '参考' : '' }}</span><span>{{ row.event.contract ?? '合约未记录' }}</span><span v-if="row.event.point.value.reference_price">参考价 {{ formatMarketDecimal(String(row.event.point.value.reference_price)) }}</span></span>
           <span v-else class="market-message-row2"><span class="market-message-action" :class="{ 'is-sell': row.event.result_codes.length === 1 && row.event.result_codes[0] === 'sell' }">{{ alertEventHomeResultLabel(row.event) }}</span><span>{{ row.event.contract }}</span></span>
           <small v-if="row.source === 'newow'">策略参考信号<span v-if="row.event.point.value.retrospective"> · 回看提示</span> · 记录于 {{ time(row.event.observed_at) }}</small>
           <small v-else>历史预警 · 记录于 {{ time(row.event.detected_at) }} · {{ row.event.notification_attempted_at ? `已尝试发送 ${time(row.event.notification_attempted_at)}` : '未记录发送尝试' }}</small>

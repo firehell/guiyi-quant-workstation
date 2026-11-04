@@ -171,7 +171,7 @@ test('crosshair reports a causal Range Detector fact without treating visual sta
 test('missing hover values render as unavailable instead of a fabricated zero', () => {
   assert.equal(formatKlineHoverValue(undefined), '—')
   assert.equal(formatKlineHoverValue(null), '—')
-  assert.equal(formatKlineHoverValue(0), '0')
+  assert.equal(formatKlineHoverValue(0), '0.00')
 })
 
 function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {

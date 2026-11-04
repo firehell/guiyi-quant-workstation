@@ -1,3 +1,4 @@
+import { formatMarketDecimal } from './marketDisplay.ts'
 /** Independent public display facts; never strategy actions or fills. */
 export interface NewowDisplayEvent {
   event_id: string; display_version: 'newow_public_display_v3431_v1';
@@ -67,7 +68,7 @@ export function drawDisplayLabels(ctx:CanvasRenderingContext2D, labels:readonly 
 export function displayEventTitle(e:NewowDisplayEvent):string {
   return e.kind==='MAIN_RISE_J'?`主升浪 reduce-J · ${e.formula_version} · ${e.bar_end}（过程提示，非成交）`
     :e.kind==='ZLGJ_J'?`主力攻击线 ZLGJ-J · ${e.formula_version} · ${e.bar_end}（独立算法提示，非成交）`
-    :`首次破位 · 当根收盘价 ${Number(e.observed_close).toFixed(2)} · 建仓阈值 ${e.build_threshold}（展示提示，非成交）`
+    :`首次破位 · 当根收盘价 ${Number(e.observed_close).toFixed(2)} · 建仓阈值 ${formatMarketDecimal(e.build_threshold)}（展示提示，非成交）`
 }
 export function trendReversalBadge(events:readonly NewowDisplayEvent[], bars:readonly DisplayOwnerBar[]):{state:'active'|'gone';title:string}|null {
   const last=bars.at(-1);if(!last)return null

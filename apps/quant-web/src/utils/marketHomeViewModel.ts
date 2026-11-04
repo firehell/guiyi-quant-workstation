@@ -1,3 +1,4 @@
+import { formatMarketNumber } from './marketDisplay.ts'
 import type {
   AlertEvent,
   MarketHomeOverviewItem,
@@ -54,5 +55,5 @@ export function alignmentFor(daily: MarketHomeTrend, weekly: MarketHomeTrend): M
 }
 
 export function formatMarketHomeNumber(value: number | null, maximumFractionDigits = 2): string {
-  return value === null ? '—' : new Intl.NumberFormat('zh-CN', { maximumFractionDigits }).format(value)
+  return formatMarketNumber(value, maximumFractionDigits)
 }

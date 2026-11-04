@@ -64,7 +64,7 @@ test('resonance dots and mismatch copy describe server codes without rejudging t
 test('volatility uses reported rounded level, remains missing and clamps only the visual dot', () => {
   assert.equal(decisionVolatility({ volatility_pct: null } as Cdv2), null)
   const high = decisionVolatility({ volatility_pct: '6.7', volatility_level: 'high' } as Cdv2)!
-  assert.equal(high.label, '高'); assert.equal(high.position, 97); assert.equal(high.value, '6.7')
+  assert.equal(high.label, '高'); assert.equal(high.position, 97); assert.equal(high.value, '6.70')
   const low = decisionVolatility({ volatility_pct: '0.1', volatility_level: 'low' } as Cdv2)!
   assert.equal(low.position, 3)
   assert.equal(decisionVolatility({ volatility_pct: '-1', volatility_level: 'low' } as Cdv2), null)

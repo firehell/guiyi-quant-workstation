@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDisplayNumber } from '@/utils/marketDisplay'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import NewowDetailDialog from './NewowDetailDialog.vue'
 import { getNewowAiAnalysis, type AiAnalysis, type AiCombo } from '@/api/newowAiAnalysis'
@@ -15,7 +16,7 @@ const best = computed(() => result.value?.combos.find(c => c.is_best) ?? null)
 const ranked = computed(() => [...(result.value?.combos ?? [])].sort((a, b) => Number(b.score ?? -1) - Number(a.score ?? -1)))
 const strategyName = (c: AiCombo) => c.strategy === 'trend' ? '趋势策略' : '震荡策略'
 const periodName = (c: AiCombo) => c.frequency === '1w' ? '周线' : c.frequency === '1d' ? '日线' : '60分钟'
-const signed = (v: string) => `${Number(v) >= 0 ? '+' : '−'}${Math.abs(Number(v)).toFixed(1)}%`
+const signed = (v: string) => `${Number(v) >= 0 ? '+' : '−'}${Math.abs(Number(v)).toFixed(2)}%`
 function combo(strategy: string, frequency: string) { return result.value?.combos.find(c => c.strategy === strategy && c.frequency === frequency) }
 function stop() { ++generation; pending?.abort(); pending = null; loading.value = false; result.value = null; error.value = null }
 async function run() {
@@ -49,7 +50,7 @@ onBeforeUnmount(stop)
       <div v-if="best?.summary" class="ai-banner">
         <div class="ai-banner-title">综合评分推荐</div>
         <div class="ai-banner-main">建议采用 <strong>{{ strategyName(best) }} · {{ periodName(best) }}</strong></div>
-        <div class="ai-reason">理由：累计收益 <b>{{ signed(best.summary.cumulative_return) }}</b>；六组合综合评分优先推荐（同分比较交易数）；胜率 <b>{{ best.summary.win_rate }}%</b>；最大回撤 <b>{{ Number(best.summary.max_drawdown).toFixed(1) }}%</b>。<span v-if="best.confidence === 'mid'">样本较少，请谨慎参考。</span></div>
+        <div class="ai-reason">理由：累计收益 <b>{{ signed(best.summary.cumulative_return) }}</b>；六组合综合评分优先推荐（同分比较交易数）；胜率 <b>{{ formatDisplayNumber(best.summary.win_rate) }}%</b>；最大回撤 <b>{{ Number(best.summary.max_drawdown).toFixed(2) }}%</b>。<span v-if="best.confidence === 'mid'">样本较少，请谨慎参考。</span></div>
       </div>
       <p v-else class="ai-error" role="status">有效交易样本不足 3 次，暂不推荐策略。</p>
       <section v-for="group in groups" :key="group.strategy" class="ai-group">
@@ -60,8 +61,8 @@ onBeforeUnmount(stop)
             <div class="ai-period">{{ period.name }}</div>
             <template v-if="combo(group.strategy, period.frequency)?.summary">
               <div class="ai-metric"><span>累计收益</span><b :class="Number(combo(group.strategy, period.frequency)!.summary!.cumulative_return) >= 0 ? 'up' : 'down'">{{ signed(combo(group.strategy, period.frequency)!.summary!.cumulative_return) }}</b></div>
-              <div class="ai-metric"><span>胜率</span><b>{{ combo(group.strategy, period.frequency)!.summary!.win_rate }}%</b></div>
-              <div class="ai-metric"><span>最大回撤</span><b class="drawdown">{{ Number(combo(group.strategy, period.frequency)!.summary!.max_drawdown).toFixed(1) }}%</b></div>
+              <div class="ai-metric"><span>胜率</span><b>{{ formatDisplayNumber(combo(group.strategy, period.frequency)!.summary!.win_rate) }}%</b></div>
+              <div class="ai-metric"><span>最大回撤</span><b class="drawdown">{{ Number(combo(group.strategy, period.frequency)!.summary!.max_drawdown).toFixed(2) }}%</b></div>
               <div class="ai-metric"><span>交易</span><b>{{ combo(group.strategy, period.frequency)!.summary!.trade_count }}次</b></div>
               <details class="ai-sample"><summary>样本详情</summary><p>含 {{ combo(group.strategy, period.frequency)!.summary!.terminal_valuation_count }} 次段末参考估值</p><p>{{ combo(group.strategy, period.frequency)?.since }} 至 {{ combo(group.strategy, period.frequency)?.through ?? '—' }}</p></details>
             </template>
@@ -71,7 +72,7 @@ onBeforeUnmount(stop)
       </section>
       <div class="ai-ranks" aria-label="综合评分排行">
         <div v-for="(item, index) in ranked" :key="`${item.strategy}:${item.frequency}`" class="ai-rank-row" :class="{ top: item.is_best }">
-          <span class="ai-rank-number">{{ index + 1 }}</span><span class="ai-rank-name">{{ strategyName(item) }} · {{ periodName(item) }}<small v-if="item.score === null"> 样本不足</small></span><b>{{ item.score === null ? '—' : (Number(item.score) * 100).toFixed(1) }}</b>
+          <span class="ai-rank-number">{{ index + 1 }}</span><span class="ai-rank-name">{{ strategyName(item) }} · {{ periodName(item) }}<small v-if="item.score === null"> 样本不足</small></span><b>{{ item.score === null ? '—' : (Number(item.score) * 100).toFixed(2) }}</b>
         </div>
       </div>
       <details class="ai-method"><summary>评分与统计口径</summary><p>累计收益、收益回撤比、胜率分别归一化后按 40% / 35% / 25% 加权。至少 3 次交易参与排名；不足 10 次评分乘 0.85；推荐同分时交易数较多者优先。</p><p>按物理合约及质量段分别预热和回看，段末按收盘价参考估值；不跨合约配对，不代表清仓或换月成交。回撤为含浮动的累计收益峰值差（百分点），与下方仅已完成参考交易统计不同。六组合均使用同一历史截止快照。</p><p>截止快照 {{ result.as_of }}；期末参考估值也计入交易次数和胜率。{{ result.formula_version }}</p></details>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDisplayNumber } from '@/utils/marketDisplay'
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { NewowProductChartBar, NewowProductChartModel } from './newowProductChartPrimitives'
 import { NEWOW_PATTERN_NAMES, NEWOW_PATTERN_WORKER_FACTORY, PatternScanSession, splitNewowPatternOwners, type PatternChoice, type PatternWorker } from '@/utils/newowPatternDisplay'
@@ -33,7 +34,7 @@ function select(pattern:NewowPublicPattern){const value=choice(pattern);if(value
   <p v-if="busy" role="status">正在识别七类形态…</p>
   <p v-else-if="error" role="status">{{ error }} <button @click="scan">重试</button></p>
   <p v-else-if="!patterns.length" role="status">当前区段未检测到符合原式的形态。</p>
-  <table v-else><thead><tr><th>形态</th><th>评分</th><th>操作</th></tr></thead><tbody><tr v-for="pattern in patterns" :key="pattern.type"><td>{{ NEWOW_PATTERN_NAMES[pattern.type] }}</td><td :class="pattern.score>=80?'high':pattern.score>=60?'medium':'low'">{{ pattern.score }} 分</td><td><button @click="select(pattern)">绘制</button></td></tr></tbody></table>
+  <table v-else><thead><tr><th>形态</th><th>评分</th><th>操作</th></tr></thead><tbody><tr v-for="pattern in patterns" :key="pattern.type"><td>{{ NEWOW_PATTERN_NAMES[pattern.type] }}</td><td :class="pattern.score>=80?'high':pattern.score>=60?'medium':'low'">{{ formatDisplayNumber(pattern.score) }} 分</td><td><button @click="select(pattern)">绘制</button></td></tr></tbody></table>
   <button @click="emit('clear')">清除叠加</button>
  </section>
 </template>
