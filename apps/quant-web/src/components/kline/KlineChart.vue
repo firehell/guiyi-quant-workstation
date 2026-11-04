@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import VolumeExplanation from './VolumeExplanation.vue'
 import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
 import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
 
@@ -8,7 +7,7 @@ import { DynamicRangePrimitive } from '@/components/kline/dynamicRangePrimitive'
 import { matchesRangeBar, pointKey, type DynamicRangePoint } from '@/utils/dynamicRange'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
-import { inject, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { DETAIL_CHART_SESSION, detailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
   CandlestickSeries,
@@ -109,9 +108,6 @@ const emit = defineEmits<{
   'marker-select': [marker: KlineMarker]
 }>()
 
-const volumeExplanation = ref<InstanceType<typeof VolumeExplanation> | null>(null)
-const explanationBars = shallowRef<readonly DisplayVolumeBar[]>([])
-const volumeTop = ref(0)
 let volumeThemeObserver: MutationObserver | null = null
 const container = ref<HTMLElement>()
 const detailSession = inject<DetailChartSession | null>(DETAIL_CHART_SESSION, null)
@@ -348,7 +344,6 @@ function volumeTime(bar: DisplayVolumeBar) {
 }
 function volumeValues(bars: BarData[]) {
   const input = chart ? detailChartVolumeBars(chart, bars) : bars
-  explanationBars.value = input
   const colors = volumeColors(input, readNewowChartDisplayTheme(), props.volumeScoring)
   return input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) }))
 }
@@ -552,11 +547,6 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
 }
 
 function onClick(param: MouseEventParams<Time>) {
-  if (param.time != null && param.paneIndex === 0 && param.point && chart && param.point.y >= chart.panes()[0]!.getHeight() * .87) {
-    const bar = explanationBars.value.find(bar => chartTimeKey(volumeTime(bar)) === chartTimeKey(param.time!))
-    if (bar) volumeExplanation.value?.showAt(bar.time)
-    return
-  }
   if (!props.markerSelectionEnabled) return
   const hovered = param.hoveredInfo
   if (hovered?.objectKind !== 'series-marker' || typeof hovered.objectId !== 'string') return
@@ -750,7 +740,6 @@ function syncMacdLabelTop() {
   const panes = chart?.panes()
   if (!panes || panes.length < 2) return
   macdLabelTop.value = panes[0].getHeight()
-  volumeTop.value = panes[0].getHeight() * .87 + 4
 }
 
 function resize() {
@@ -804,7 +793,6 @@ defineExpose({
     <div v-if="referenceCallouts.length" class="reference-callouts" aria-label="历史重算参考信号">
       <ReferenceCalloutLabels :items="positionedCallouts.map(item => ({ position: item, title: item.callout.title, detail: item.callout.detail, direction: item.callout.tone === 'gain' ? 'up' : item.callout.tone === 'loss' ? 'down' : 'neutral', selected: isReferenceSelected(item.callout), labelClass: 'reference-callout', ariaLabel: `${item.callout.title}，参考价 ${item.callout.detail}，历史重算` }))" />
     </div>
-    <VolumeExplanation ref="volumeExplanation" :bars="explanationBars" :top="volumeTop" :scoring="volumeScoring" />
     <KlineHoverLegend
       :context="hoverContext"
       :period="period"

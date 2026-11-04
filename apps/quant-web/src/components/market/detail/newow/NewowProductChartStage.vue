@@ -16,9 +16,8 @@ import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
 import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import { newowSimpleDualLabel, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
 import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
-import VolumeExplanation from '@/components/kline/VolumeExplanation.vue'
 import { newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
-import { newowChartReadout, newowTimeKey } from '@/utils/newowChartReadout'
+import { newowChartReadout } from '@/utils/newowChartReadout'
 import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
 import type { BarData } from '@/types/market'
@@ -152,13 +151,11 @@ function onCrosshair(event: MouseEventParams<Time>): void {
   const cardHeight = cursorRows.value.length * 18 + 20
   cursorTop.value = chartTop + Math.max(0, Math.min((event.point?.y ?? 0) + paneOffset - 100, (container.value?.clientHeight ?? 0) - cardHeight))
 }
-const volumeExplanation = ref<InstanceType<typeof VolumeExplanation> | null>(null)
 const volumeBars = shallowRef<readonly DisplayVolumeBar[]>([])
 const referencePriceLines = new Map<string, IPriceLine>()
 const stageRoot = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
 const fullscreenError = ref<string | null>(null)
-const volumeTop = ref(0)
 const auxiliaryTop = ref(0)
 const actionOverlayTop = ref(0)
 const actionOverlayHeight = ref(0)
@@ -313,7 +310,6 @@ onMounted(async () => {
   auxiliaryAnchor.attachPrimitive(trendReversal)
   if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
   actionMarkers = adapter.createSeriesMarkers(candles as never)
-  chart.subscribeClick(onClick)
   chart.subscribeCrosshairMove?.(onCrosshair)
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
   observer = adapter.createResizeObserver(resize)
@@ -326,7 +322,6 @@ onMounted(async () => {
 
 onUnmounted(createNewowProductChartDisposer({
   unsubscribeRange: () => chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange),
-  unsubscribeClick: () => chart?.unsubscribeClick(onClick),
   disconnectResizeObserver: () => observer?.disconnect(),
   removeChart: () => {
     themeObserver?.disconnect();themeObserver=null
@@ -592,7 +587,6 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   const panesFn = (chart as unknown as { panes?: () => Array<{ getHeight?: () => number }> }).panes
   const width = widthFn?.call(scale) ?? container.value.clientWidth
   const height = panesFn?.call(chart)[0]?.getHeight?.() ?? container.value.clientHeight
-  volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight() * 0.87
   auxiliaryTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
   actionOverlayTop.value = container.value.offsetTop
   actionOverlayHeight.value = height
@@ -768,16 +762,6 @@ function resolveSelectedSignal(): void {
 }
 
 
-function onClick(event: MouseEventParams<Time>): void {
-  if (event.paneIndex === 0 && event.point && chart && event.point.y >= chart.panes()[0]!.getHeight() * 0.87 && event.time != null && model.value) {
-    const key = newowTimeKey(event.time)
-    const bar = volumeBars.value.find(bar => newowTimeKey(detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, model.value!.identity.frequency)) === key)
-    if (bar) volumeExplanation.value?.showAt(bar.time)
-    return
-  }
-
-}
-
 function firstLogicalIndex(): number {
   const bar = model.value?.bars[0]
   return chart && bar && model.value ? detailChartIndex(chart, chartMarkerTime(bar.barEnd, model.value.identity.frequency, bar.tradingDay), 0) : 0
@@ -833,7 +817,6 @@ function resize(): void {
     chart.panes()[1]!.setStretchFactor(layout.auxiliaryHeight)
     // Repaint synchronously so native pane heights include the shared time axis.
     chart.resize(container.value.clientWidth, container.value.clientHeight, true)
-    volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight() * 0.87
     auxiliaryTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
     renderAuxiliary()
     projectActionLabels()
@@ -1001,7 +984,6 @@ defineExpose({ revealSignal, scrollToLatest })
       <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
     <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
-    <VolumeExplanation ref="volumeExplanation" :bars="volumeBars" :top="volumeTop + 4" :scoring="!displayOnly && !strategySwitching" />
     <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
     <p v-if="fullscreenError || (auxiliaryPresentation.message && auxiliaryPresentation.message !== '当前可计算')" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">{{ strategySwitching ? '正在切换策略，更新指标与信号…' : '正在读取 Newow 主图…' }}</p>
