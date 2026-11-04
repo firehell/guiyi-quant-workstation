@@ -84,7 +84,7 @@ def main():
         point=json.loads(json.dumps(point,default=str))
         point['base_regime']=row['range_factor']['regime']
         points[row['time']]=point
-        chart.append(dict(at=row['time'],close=str(row['close']),**point))
+        chart.append(dict(at=row['time'],open=str(row['open']),high=str(row['high']),low=str(row['low']),close=str(row['close']),ema21=row['price_factor']['ema21'],**point))
     first=s['executions'][0].bar.bar_end.isoformat()
     prior_points=[v for k,v in points.items() if k<first]
     prior_hours=[v for k,v in hour_points.items() if k<first]
