@@ -159,18 +159,31 @@ def _registered_next_session(windows, next_start, now):
 
 def prove_same_generation_startup(
     *, now, products, resolver, registered_day, subscriptions, dominant, sessions,
-    with_valid_until=False,
+    with_valid_until=False, closed_cleanup=None,
 ):
     """Read the existing normal startup facts; never initialize day or subscriptions."""
     from app.market_data.market_phase import MarketPhase
     from app.market_data.domain import normalize_contract_for_symbol
 
+    cleaned = subscriptions is None and callable(closed_cleanup)
+    cleanup = closed_cleanup() if cleaned else None
+    require(
+        not cleaned or isinstance(cleanup, dict)
+        and cleanup.get("status") == "CLOSED_CLEANED"
+        and cleanup.get("trading_day") == registered_day.isoformat()
+        and cleanup.get("cleanup_verified") is True
+        and cleanup.get("subscription_present") is False
+        and cleanup.get("remaining_bar_keys") == 0
+        and cleanup.get("pending_count") == 0
+        and cleanup.get("natural_bar_verified") is False,
+        "COHORT_FORWARD_CLEANED_AUTHORITY_UNPROVEN",
+    )
     require(
         now.tzinfo is not None
         and products
         and len(set(products)) == len(products)
-        and isinstance(subscriptions, dict)
-        and set(subscriptions) == set(products),
+        and (cleaned or isinstance(subscriptions, dict)
+             and set(subscriptions) == set(products)),
         "COHORT_FORWARD_STARTUP_AUTHORITY_UNPROVEN",
     )
     phases, contracts = {}, {}
@@ -254,21 +267,25 @@ def prove_same_generation_startup(
         require(
             isinstance(contract, str)
             and normalize_contract_for_symbol(product, contract) == contract
-            and subscriptions[product] == contract,
+            and (cleaned or subscriptions[product] == contract),
             "COHORT_FORWARD_SUBSCRIPTION_DRIFT",
         )
         phases[product] = phase.phase.value
         contracts[product] = contract
         closed_idle = closed_idle and phase.phase is MarketPhase.CLOSED
+    require(not cleaned or closed_idle, "COHORT_FORWARD_CLEANED_SESSION_DRIFT")
     proof = {
-        "mode": "same_generation_startup",
+        "mode": "same_generation_closed_cleaned_startup" if cleaned else "same_generation_startup",
         "registered_trading_day": registered_day.isoformat(),
         "products": len(products),
         "phases": phases,
-        "subscriptions_sha256": digest(contracts),
+        "subscriptions_sha256": None if cleaned else digest(contracts),
         "closed_idle": closed_idle,
         "natural_bar_verified": False,
     }
+    if cleaned:
+        proof["closed_cleanup"] = cleanup
+        proof["contracts_sha256"] = digest(contracts)
     return (proof, valid_until) if with_valid_until else proof
 
 
@@ -2357,12 +2374,18 @@ class ForwardRecoveryHost(CohortHost):
                     ),
                     "COHORT_FORWARD_REGISTERED_DAY_DRIFT",
                 )
+                now = self.now()
+                def cleaned_proof():
+                    from app.market_data.market_feed import _closed_cleaned_idle_proof
+                    phases = {p: feed._phase_resolver.resolve(p, now) for p in products}
+                    return _closed_cleaned_idle_proof(feed, source, now, phases)
                 return prove_same_generation_startup(
-                    now=self.now(),
+                    now=now,
                     products=products,
                     resolver=feed._phase_resolver,
                     registered_day=day,
                     subscriptions=feed._store.subscriptions(day),
+                    closed_cleanup=cleaned_proof,
                     dominant=feed._dominant_source.dominant_for_day,
                     sessions=feed._coverage_session_source,
                     with_valid_until=with_valid_until,

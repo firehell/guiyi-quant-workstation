@@ -395,6 +395,8 @@ drain、bootout或kickstart，不重放或清cursor。旧retirement失败、SimN
 
 当精确当前Live在固定drain下由launchd反复exit1重启、不能稳定停驻时，计划可显式冻结 `live_restart_intent`。只允许部署/维护锁内核对同一label、binding、安装/launcher、drain与实际进程身份后，先持久记录单次effect再发一次原生bootout；确认整个label absent、所有已观察PID退出、owner锁空闲，重验原件/数据库前缀及pending/UNKNOWN后，才可启动原Live和其他消费者。禁止kill、重复bootout、把active冒充parked，或根据未公开日志猜测内部异常。任何退出、锁或提交事实不明即停止相关恢复。
 
+同版本恢复若发现旧日订阅为明确缺席（None），仅接受原生 `_closed_cleaned_idle_proof` 重新验证的全品种 CLOSED、未来 Session、盘后清理证据及 source/completed 全消费者 cursor==tail；不重造订阅。输出独立 cleaned 启动证明，缺席订阅哈希保持 None，合约映射另存哈希；空字典/部分订阅及其他缺失继续拒绝。
+
 同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。新计划仍有15分钟TTL、600秒总预算，部署/维护/owner锁及各阶段独立读回；只恢复原启用集合。
 
 `confirmed_intake_halt` 仅接纳两层原生失败记录：A为Live卸载前缀，B为已确认A后启动消费者、在intake失败并停驻的前缀。新计划同时绑定A/B的public/private plan、state和effect身份；重新证明全部当前消费者精确parked、owner锁可取、Feed与日历absent、pending capture及UNKNOWN为0、完整源/DB/routes和所有当前尾部已ACK追齐。旧接收摘要不可逆时不得用摘要不等推断漂移或直接忽略，须以完整当前前缀校验替代；新快照固定静态context并逐阶段复验。只接受此两层链，不循环接纳新的未知attempt，不执行bootout，成功receipt解析A/B且保留原字节。任一额外effect、第三未决、漂移或未ACK当前尾部均拒绝。
