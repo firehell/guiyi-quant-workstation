@@ -65,6 +65,21 @@ def config(root, tag, account):
     return result
 
 
+def service_environment(root):
+    # Match the launchd job for preflight; terminal proxy variables must not
+    # make a successful probe conceal a missing service-side dependency.
+    import pwd
+
+    user = pwd.getpwuid(os.getuid()).pw_name
+    return {
+        "HOME": str(Path.home()),
+        "USER": user,
+        "LOGNAME": user,
+        "GUIYI_PROJECT_ROOT": str(root),
+        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -155,7 +170,10 @@ def main(argv=None):
                 raise ValueError("TQ_STOP_BEFORE_PROBE")
             script = root / "scripts/ops/macos/run-tq-simulation.sh"
             return subprocess.run(
-                ["/bin/bash", str(script), "--inspect"], cwd=root, check=False
+                ["/bin/bash", str(script), "--inspect"],
+                cwd=root,
+                env=service_environment(root),
+                check=False,
             ).returncode
         if args.action == "install":
             state = launch_state()
@@ -176,10 +194,7 @@ def main(argv=None):
                     str(root / "scripts/ops/macos/run-tq-simulation.sh"),
                 ],
                 "WorkingDirectory": str(root),
-                "EnvironmentVariables": {
-                    "GUIYI_PROJECT_ROOT": str(root),
-                    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
-                },
+                "EnvironmentVariables": service_environment(root),
                 "RunAtLoad": True,
                 "KeepAlive": False,
                 "Umask": 0o077,
