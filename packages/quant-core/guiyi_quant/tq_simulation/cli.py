@@ -80,6 +80,17 @@ def service_environment(root):
     }
 
 
+def service_command(root, *, inspect=False):
+    return [
+        "/usr/bin/env",
+        "-i",
+        *[f"{key}={value}" for key, value in service_environment(root).items()],
+        "/bin/bash",
+        str(root / "scripts/ops/macos/run-tq-simulation.sh"),
+        *(["--inspect"] if inspect else []),
+    ]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -168,9 +179,8 @@ def main(argv=None):
         if args.action == "probe":
             if launch_state() and launch_state()["pid"]:
                 raise ValueError("TQ_STOP_BEFORE_PROBE")
-            script = root / "scripts/ops/macos/run-tq-simulation.sh"
             return subprocess.run(
-                ["/bin/bash", str(script), "--inspect"],
+                service_command(root, inspect=True),
                 cwd=root,
                 env=service_environment(root),
                 check=False,
@@ -189,10 +199,7 @@ def main(argv=None):
                     raise ValueError("TQ_BOOTOUT_UNKNOWN")
             payload = {
                 "Label": LABEL,
-                "ProgramArguments": [
-                    "/bin/bash",
-                    str(root / "scripts/ops/macos/run-tq-simulation.sh"),
-                ],
+                "ProgramArguments": service_command(root),
                 "WorkingDirectory": str(root),
                 "EnvironmentVariables": service_environment(root),
                 "RunAtLoad": True,
