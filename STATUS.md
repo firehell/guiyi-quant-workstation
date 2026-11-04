@@ -1,3 +1,15 @@
+11/5 03:04 夜盘收盘任务部分完成：60品种权威Session及原生静默校验通过后，已将十个标准服务与唯一TqKq worker统一切至v1.16.88/exact `6611a2c428e827d5cce136ec506a9b5d1f53f8d0`、`.worktrees/release-v1.16.88`，标准服务gen63；未重复发布或改写88旧tag。普通cohort `f7c6893e98dfb004269d08b2cf09a90ca4d179e861df812ba8b19ebb88412d82` CAS后最终就绪超时，保留UNKNOWN原件；原生Feed关闭 `849c8ef4c7d4bfc9ce5c281e3d17aeaca515c1446a39572aa63184bd6e745823` 及独立同代恢复 `23c370954d35cfc1ab50a111eac5715585d4c94720a0654df4f40dd45b15ca6a` 实际成功，恢复receipt `193aa60c7383195cad35ef9f5e9f1179a0c48fb3a404535ed7906fe288c68599`。十项身份matched、API1.16.88与Runtime health均ok、Web及模拟监控200；没有降低就绪门禁或重放旧attempt。
+
+Tq原四笔模拟SELL OPEN（FG2701/I2701/AG2612/AU2612各1手）与4单/4成交/4个SUBMIT claim完整逐项对账，原18:45:41唯一100万元基线保留；无未决委托、未决成交、外部活动或未释放预约。账户锁下真实只读SDK、完整账本重放及既有Recover通过；原hold字节/SHA和故障依据保全到私有 `tqkq-simulation/recovery-20261105-v88`，成功后才归档active hold。唯一worker PID77357先正常observe，再恢复mode=trade、READY；只启用服务，当前全60品种因CLOSED缺实时恢复证明仍blocked，四仓保持desired=-1/must_close=false。旧开仓目标已消费、wait_after推进；后续自然completed H1先正常恢复，不补暂停期间或恢复批次旧开仓。03:00实际权益993707.21元、已用保证金185113.90元，属于账户读回，不是策略净收益。闭市无变化时超过10秒的对账投影如实显示unverified；不以最新SDK快照时间冒充新对账。恢复后新策略信号/委托/成交均待自然观察，未制造测试成交，真实资金账户边界不变。
+
+完整develop汇总版本89尚未发布：集成基线为已提交develop `fd728b96b`，已合入88依赖；任务区保留合并结果及89草稿。独立Review与生产只读核对发现develop默认Trueup身份不兼容现役180条震荡+180条融合参考流，当前分别有68/88笔OPEN页面参考交易。直接切换会触发身份/checkpoint冲突，不能把工程发布授权解释为这360路策略晋升或156笔历史参考中断授权；未改生产流、公式、OPEN历史或启用新研究账户。苏冰开发API8006/Web5179及既有观察run保持独立，未重启或晋升。
+
+本轮汇总候选定向536项通过，Web构建/拓扑与secret检查通过；88根因补丁已有TQ/HTDY201项及Live/Runtime113项和独立Review，本轮精确88冻结依赖/API/SDK/Web构建通过。生产恢复脚本经独立审查后执行一次，并实证唯一排他锁/四仓/原基线/旧目标消费；自然业务验收未替代。
+
+单发布树清理未完成：原生dry-run对旧84/85/87分别发现3/6/6条恢复引用，eligible为空；现役88原生closeout返回 `RETIREMENT_EVIDENCE_UNPROVEN`，没有强删、修改失败记录或绕过原件读取。正式物理发布目录仍84/85/87/88四棵，运行权威只有88；研究/开发工作区、准备控制器、原行情、旧SimNow账户账本均保留。精确dry-run和规划原件位于 `output/release-cleanup-20261104`。下一步先决定现役旧震荡/融合流的Trueup迁移范围，再完成汇总发布与安全封存清理；本次一次性自动任务不重复创建。
+
+以下为此前检查点：
+
 11/5 苏冰开发持续观察已独立启动：北京时间00:16:01空仓、初始10万元，run `subing-dev-20261104T161601`，执行身份 `next_completed_1m_close_slip1_actual_knowledge_v1`。只读既有completed流与MDS，不切正式Runtime、不新增订阅/通知/Broker。自然SC完成Bar已提交独立开发PostgreSQL不可变事件；同一run自然事件后停启恢复及逐事件outcome/最终投影核对通过。焦煤夜盘已结束，尚无启动后自然JM决策/成交；当日权威执行参数两次有界采集均为空，保持禁止撮合，不回退旧费率。
 
 14品种观察前缀准备13个通过，PR2612日线 `PRICE_UNAVAILABLE`，保留预热不足；全部非JM不启用账户。ATR尺度参数只提供研究快照，未经owner确认与逐品种验证不进入执行。页面持续/历史切换、窗口及快速游标、读取失败恢复已在开发浏览器验收；开发入口 `http://127.0.0.1:5179/research/subing-decision`，API8006，前台worker无launchd/自动重启。正式服务身份与下方既有运行记录独立，未在本任务切换。
