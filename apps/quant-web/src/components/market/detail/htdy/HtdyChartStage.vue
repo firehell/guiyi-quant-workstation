@@ -35,6 +35,7 @@ const htdyMarkers = computed(() => props.historicalMode ? [...props.markers] : m
 
 <template>
   <MarketKlineStage
+    :subing-volume-tiers="true"
     :show-derived-markers="false" :reference-callouts="referenceCallouts"
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"
     :visible-main-indicators="visibleMainIndicators" :range-detector-source-identity="rangeDetectorSourceIdentity"
