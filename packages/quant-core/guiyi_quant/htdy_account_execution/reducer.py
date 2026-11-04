@@ -489,7 +489,7 @@ def never_active(state):
     return (not any((state.signals, state.orders, state.fills, state.positions,
         state.reservations, state.updates, state.risk_decisions, state.abandoned, state.unresolved_fill_ids))
         and all(p.owner is None and p.last_bar is None and p.desired == 0
-            and not p.signal_id and p.signal_at is None and not p.must_close and not p.rolling
+            and not p.signal_id and not p.must_close and not p.rolling
             for p in state.products)
         and all(type(a.command) in (m.Readback, m.Disconnect, m.TqKqTick, m.Recover, m.TqKqResumeEmptyV1)
             for a in state.audit))
