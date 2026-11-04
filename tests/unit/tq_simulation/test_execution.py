@@ -772,6 +772,9 @@ def test_never_active_restart_keeps_baseline_and_accepts_only_new_signal(tmp_pat
     initial_at = datetime.now(UTC) - timedelta(hours=1)
     c.bootstrap(snapshot(initial_at), initial_at)
     original = c.store.current()
+    # Prior ordinary recovery may stamp signal_at without any strategy input.
+    c.recover(c.readback(snapshot(initial_at), initial_at), ())
+    assert len(c.store.current().blocked_products) == 1
     c.close()
     c = Controller(tmp_path, A, ("RB",), Transport())
     now = datetime.now(UTC) - timedelta(seconds=5)
