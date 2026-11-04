@@ -52,7 +52,8 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 外接卷launchd访问须通过宿主权限与真实启动/读回验证，安装器沿用`GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD=1`选项并核对所有required服务。
 
 保留所有仍被 service-bindings、磁盘 plist 或现场进程引用的发布树；解除全部引用并完成现场读回后才清理。 SimNow还须检查installed/loaded的`--config`私有配置、稳定monitor身份锚中的API环境/SDK/账户根及许可路径；未知结构、不可读、链接或读前后漂移阻止清理。限定路径下的未决SimNow切换/恢复意图同样保留依赖；只有完整计划及正式终态证明闭合的记录才能作为历史，不能仅凭COMPLETE字样放行。只读 `python -m app.runtime_retention cleanup-plan /exact/root...` 汇总 binding/plist/loaded/进程引用；未知结果阻止清理，删除前重新扫描。未引用旧树不作为常驻回滚树。
-只读引用盘点还覆盖AppSupport下已知的SimNow准备恢复、单层`pre-native-resume`、独立诊断、Feed恢复和稳定迁移候选目录。
+只读引用盘点还覆盖AppSupport下已知的SimNow准备恢复、单层`pre-native-resume`、独立诊断、Feed恢复、带日期的稳定迁移及基础设施恢复/启动continuation候选目录。
+现有`infrastructure_recovery_permit`必须属于完整受检库存；库存外的现存许可阻止清理，候选与配置前像也参与最终校验。
 未安装的候选JSON/plist也会保留其源码、SDK/API环境和配置引用；候选plist只接受既有renderer的已知字段与参数形状。
 发现未知执行覆盖、缺配置、额外嵌套、文件/目录库存或身份漂移即阻断，扫描不修改材料。
 这些稳定恢复记录中的`UNKNOWN`或`COMPLETE`字样均不单独解除依赖；无适用闭合证明时仍保留命名的发布路径。

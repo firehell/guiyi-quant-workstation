@@ -32,7 +32,7 @@ class _SimNowReferences:
     """Only named SimNow configuration anchors; never load settings or Broker code."""
     PATH_FIELDS = frozenset({"project_root", "api_env", "sdk_python", "state_root",
         "state_project_root", "ordinary_takeover_permit", "deployment_connection_permit",
-        "preparation_recovery_permit"})
+        "preparation_recovery_permit", "infrastructure_recovery_permit"})
 
     def __init__(self, roots, result):
         self.roots, self.result = roots, result
@@ -41,6 +41,7 @@ class _SimNowReferences:
         self.absent = set()
         self.service_seen = False
         self.dependencies = {}
+        self.infrastructure_permits = set()
 
     @staticmethod
     def snapshot(path, *, limit):
@@ -142,7 +143,7 @@ class _SimNowReferences:
             raise RetentionError("CLEANUP_SIMNOW_CONFIG_UNPROVEN")
         if schema in (2, 3):
             required.add("state_project_root")
-        optional = {"account_profile", "account_takeover_pending", "ordinary_takeover_permit", "deployment_connection_permit", "account_recovery_hold", "preparation_recovery_permit"} if schema == 2 else set()
+        optional = {"account_profile", "account_takeover_pending", "ordinary_takeover_permit", "deployment_connection_permit", "account_recovery_hold", "preparation_recovery_permit", "infrastructure_recovery_permit"} if schema == 2 else set()
         if (not required <= value.keys() or value.keys() - (required | optional)
                 or not isinstance(value["account_id"], str) or not re.fullmatch(r"[0-9a-f]{64}", value["account_id"])
                 or type(value["enabled"]) is not bool
@@ -156,6 +157,8 @@ class _SimNowReferences:
             if not isinstance(item, str) or not item.startswith("/") or any(ord(c) < 32 for c in item):
                 raise RetentionError("CLEANUP_SIMNOW_PRIVATE_INVALID")
             dependency = Path(item)
+            if key == "infrastructure_recovery_permit" and os.path.lexists(dependency):
+                self.infrastructure_permits.add(dependency)
             observed = self.dependency_snapshot(dependency)
             if dependency in self.dependencies and self.dependencies[dependency] != observed:
                 raise RetentionError("CLEANUP_SIMNOW_ALIAS_DRIFT")
@@ -237,7 +240,9 @@ class _SimNowReferences:
             return set()
         pattern = re.compile(
             r"(?:simnow-(?:preparation-recovery|session-diagnostic)|feed-session-recovery)-[0-9]{8}"
-            r"|simnow-stable-migration-candidate-v[0-9]+(?:\.[0-9]+){0,2}")
+            r"|simnow-stable-migration-candidate-v[0-9]+(?:\.[0-9]+){0,2}"
+            r"|simnow-stable-migration-v[0-9]+(?:\.[0-9]+){0,2}-[0-9]{8}"
+            r"|simnow-infrastructure-recovery-v[0-9]+(?:\.[0-9]+){0,2}(?:-start-continuation)?-[0-9]{8}")
         parents = []
         for number, path in enumerate(base.iterdir()):
             if number >= 4096:
@@ -397,6 +402,10 @@ class _SimNowReferences:
         return True
 
     def verify(self):
+        # Candidate/preimage configs are discovered after installed configs.
+        # Validate only after every config has registered its existing permits.
+        if not self.infrastructure_permits <= getattr(self, "private_intent_paths", set()):
+            raise RetentionError("CLEANUP_SIMNOW_INTENTS_UNPROVEN")
         for path, expected in self.dependencies.items():
             if self.dependency_snapshot(path) != expected:
                 raise RetentionError("CLEANUP_SIMNOW_ALIAS_DRIFT")
