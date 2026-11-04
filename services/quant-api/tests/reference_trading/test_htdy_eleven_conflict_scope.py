@@ -31,10 +31,21 @@ def eleven_setup(monkeypatch, engine=None):
     return configure_eleven(factory, recovery, monkeypatch)
 
 
-def configure_eleven(factory, recovery, monkeypatch):
-    for product in OPEN:
+def configure_eleven(
+    factory,
+    recovery,
+    monkeypatch,
+    *,
+    products=PRODUCTS,
+    opened=OPEN,
+    bindings=NOV03_BINDINGS,
+    incident=NOV03_VERSION,
+    binding_name="NOV03_BINDINGS",
+):
+    for product in opened:
         add_open_trade(factory, product, action_pk="original-action-" + product)
-    ids = [htdy_identity(p).stream_id for p in PRODUCTS]
+    ids = [htdy_identity(p).stream_id for p in products]
+    frozen_bindings = bindings
     bindings = {}
     with factory() as db, db.begin():
         for sid in ids:
@@ -51,7 +62,7 @@ def configure_eleven(factory, recovery, monkeypatch):
                 )
             )
             # Separate fixture IDs, with the actual incident's mixed current generations.
-            generation = NOV03_BINDINGS[sid][2]
+            generation = frozen_bindings[sid][2]
             stream.activation_generation = receipt.generation = generation
             wire = cap.source_evidence["forward_capture_v1"]
             original = ForwardCapture(
@@ -88,8 +99,8 @@ def configure_eleven(factory, recovery, monkeypatch):
                 batch.batch_id,
                 None if opened is None else opened.reference_trade_id,
             )
-    monkeypatch.setattr(domain, "NOV03_BINDINGS", bindings)
-    recovery.incident = NOV03_VERSION
+    monkeypatch.setattr(domain, binding_name, bindings)
+    recovery.incident = incident
     return factory, recovery, ids
 
 
