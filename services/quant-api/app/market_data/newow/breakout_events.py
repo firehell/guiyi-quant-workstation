@@ -63,7 +63,7 @@ def project_breakout_events(bars_or_replay, *, as_of: datetime | None = None, vi
         for shape in compute_breakout_shapes(tuple(b.bar for b in segment)):
             known_index = max(shape.index, 11)
             known, occur = segment[known_index], segment[shape.occur]
-            if not known.bar.observation_eligible:
+            if not known.bar.observation_eligible or not occur.bar.observation_eligible:
                 continue
             if visible is not None and (
                 _visible_key(known) not in visible

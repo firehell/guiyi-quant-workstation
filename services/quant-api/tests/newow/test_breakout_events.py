@@ -94,3 +94,15 @@ def test_chart_wire_is_typed_and_breakouts_are_oscillation_only(strategy):
     assert 'display_events' in wire
     if strategy == 'oscillation':
         assert wire['breakout_events'] == [BreakoutEventOut.model_validate(e).model_dump(mode='json') for e in result.chart.value.breakout_events]
+
+
+def test_warmup_occurrence_cannot_confirm_as_display_event_after_rollover():
+    bars = sample()
+    full = project_breakout_events(bars)
+    assert any(e['kind'] == 'true_up' for e in full)
+    warmed = tuple(replace(b, bar=replace(b.bar, observation_eligible=False)) if i <= 11 else b for i, b in enumerate(bars))
+    events = project_breakout_events(warmed, visible_bars=bars[12:])
+    assert not any(e['occur_bar_end'] == bars[11].bar.bar_end.isoformat() for e in events)
+    # A valid occurrence outside the viewport remains usable: window clipping
+    # and physical eligibility are different contracts.
+    assert any(e['kind'] == 'true_up' for e in project_breakout_events(bars, visible_bars=bars[12:]))

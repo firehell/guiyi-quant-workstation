@@ -3596,3 +3596,7 @@ pending为主题灰色空心并以3/3虚线连接对应H/L；关键位buffer橙�
 验证：`node --test tests/newowBreakoutEvents.test.ts`七项通过；Chrome PC六周期及测试5七项通过，断言实际填色、30px高度、主题pending色、装饰层和点击区域；`npm run build`通过。
 本次内部浏览器连接超时、Chrome未找到指定标签页、公开HTML刷新不可达；依据owner截图与冻结SHA核对，**未取得当前原站同输入、同视窗的全主图逐像素验收**。
 离线组件截图只证明本次受测显示，不能冒充原站现场、真实期货收益或正式Runtime。
+
+本地真实页面联调补验：`resolve_current`默认500根窗口发现换月新合约的预热发生根不能投影为正式形态，现同时要求发生根及可知根具备observation eligibility；有资格但窗口外的发生根不受影响。
+既有display_events的strict-before校验改用已有纳秒精度解析，保留`BarEnd + 1微秒`日周快照边界，不再被JS毫秒截断误拒。
+RB日K真实当前响应500根／88形态通过前端解析并在开发Web显示，BUILD/CLEAR、公式和收益未改变；正式新资产未构建，参考收益区继续明确NOT_BUILT。
