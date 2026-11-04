@@ -1279,13 +1279,13 @@ function normalizeHistoricalPath(payload:unknown,meta:NewowProductMeta,prices:un
   const sourceStrategy=v.source?record(v.source,'path.source').strategy:null
   // An unavailable ownerless path can originate from a separately selected T strategy.
   // Its envelope's strategy does not identify that historical-path request.
-  if(!v.source&&v.status==='unavailable')literal(v.version,['newow_historical_path_v3402_v1','newow_historical_path_trueup_v1'],'path.history.version')
-  const unifiedPath=sourceStrategy===null&&v.status==='unavailable'
-    ?v.version==='newow_historical_path_trueup_v1'
-    :['oscillation','fusion','osc-test5'].includes(String(sourceStrategy))
-  requireExact(v.version,unifiedPath?'newow_historical_path_trueup_v1':'newow_historical_path_v3402_v1','path.history.version')
+  if(!v.source&&v.status==='unavailable')requireExact(v.version,'guiyi_futures_historical_path_v1','path.history.version')
+  const unifiedPath=['oscillation','fusion','osc-test5'].includes(String(sourceStrategy))
+  requireExact(v.version,'guiyi_futures_historical_path_v1','path.history.version')
+  if(v.source)requireExact(v.reference_policy,unifiedPath?'unified_trueup':'ordinary','path.history.reference_policy')
+  else literal(v.reference_policy,['ordinary','unified_trueup'],'path.history.reference_policy')
+  requireExact(v.page_parity,false,'path.history.parity');requireExact(v.executable,false,'path.history.executable')
   literal(v.status,['ready','unavailable'],'path.history.status')
-  requireExact(v.page_parity,!unifiedPath,'path.history.parity');requireExact(v.executable,false,'path.history.executable')
   boolean(v.holding,'path.holding')
   if(v.axis_dates!==undefined)array(v.axis_dates,'axis_dates').forEach(d=>day(d,'axis_date'))
   for(const key of ['current','target','cost']) if(v[key]!==null && Number(decimal(v[key],`path.${key}`))<=0) throw new Error('invalid path price')
@@ -1297,7 +1297,7 @@ function normalizeHistoricalPath(payload:unknown,meta:NewowProductMeta,prices:un
   if(v.status==='ready' && (array(v.buys,'buys').length<2 || array(v.sells,'sells').length<1 || v.current===null || !v.source))throw new Error('path samples/source missing')
   for(const raw of array(v.background,'path.background')) {const b=record(raw,'background');day(b.start,'background.start');day(b.end,'background.end');if(String(b.start)>String(b.end) || String(b.end)>cutoffDay)throw new Error('background date order');literal(b.state,['hold','flat'],'background.state')}
   if(v.source) {
-    const s=record(v.source,'path.source');requireNotAfter(instant(s.bar_end,'path.bar_end'),meta.as_of,'bar_end','as_of');sameInstant(s.as_of,meta.as_of,'path.as_of')
+    const s=record(v.source,'path.source');requireExact(s.frequency,meta.identity.frequency,'path.frequency');day(s.trading_day,'path.trading_day');if(s.snapshot_trading_day!==null)day(s.snapshot_trading_day,'path.snapshot_trading_day');requireNotAfter(instant(s.bar_end,'path.bar_end'),meta.as_of,'bar_end','as_of');sameInstant(s.as_of,meta.as_of,'path.as_of')
     for(const k of ['physical_contract','segment_id','calculation_segment_id'])text(s[k],`path.${k}`)
     literal(s.strategy,['trend','oscillation','main_rise','fusion','osc-test','osc-test2','osc-test3','osc-test4','osc-test5'],'path.strategy')
     const role=`trend_${meta.identity.frequency==='1w'?'week':meta.identity.frequency==='60m'?'m60':'day'}`
@@ -1312,6 +1312,24 @@ function normalizeHistoricalPath(payload:unknown,meta:NewowProductMeta,prices:un
       if(current.frequency===meta.identity.frequency) requireExact(s.calculation_segment_id,current.calculation_segment_id,'path.calculation_segment')
     }
   }
-  if(v.eta!==null) {const e=record(v.eta,'path.eta');literal(e.status,['ready','unavailable'],'eta.status');if(e.status==='ready'){day(e.date,'eta.date');for(const k of ['base','remain','elapsed','ratio','samples']) {if(finiteNumber(e[k],`eta.${k}`)<0)throw new Error('negative ETA field')}boolean(e.date_limited,'eta.date_limited');boolean(e.overdue,'eta.overdue')}}
+  if(v.eta!==null) {
+    const e=record(v.eta,'path.eta');literal(e.status,['ready','unavailable'],'eta.status')
+    if(e.status==='ready') {
+      for(const k of ['base','remain','ratio','samples'])if(finiteNumber(e[k],`eta.${k}`)<0)throw new Error('negative ETA field')
+      if(Number(e.samples)<2||Number(e.ratio)>1)throw new Error('invalid ETA samples/ratio')
+      if(e.elapsed===null){if(e.overdue!==null||typeof e.elapsed_reason!=='string'||!e.elapsed_reason)throw new Error('invalid unknown elapsed')}
+      else {if(finiteNumber(e.elapsed,'eta.elapsed')<0)throw new Error('negative elapsed');boolean(e.overdue,'eta.overdue')}
+      literal(e.date_status,['ready','unavailable'],'eta.date_status')
+      if(e.date_status==='ready') {
+        day(e.date,'eta.date');const proof=record(e.date_source,'eta.date_source')
+        requireExact(proof.policy,'futures_calendar_ceil_v1','eta.date_policy')
+        if(!/^[a-f0-9]{64}$/.test(String(proof.identity)))throw new Error('invalid calendar identity')
+        const source=record(v.source,'path.source');requireExact(proof.identity,source.calendar_identity,'eta.calendar_identity')
+        requireExact(proof.origin_trading_day,source.snapshot_trading_day,'eta.origin')
+        if(String(e.date)<String(source.snapshot_trading_day))throw new Error('ETA before origin')
+        if(Number(e.remain)>0&&String(e.date)<=String(source.snapshot_trading_day))throw new Error('positive ETA must advance')
+      } else if(e.date!==null||e.date_source!==null||typeof e.date_reason!=='string'||!e.date_reason)throw new Error('invalid unavailable ETA date')
+    }
+  }
   return v as unknown as import('../types/newowDecisionV2').HistoricalPath
 }

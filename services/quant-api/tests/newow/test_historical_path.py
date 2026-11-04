@@ -5,7 +5,7 @@ def trade(b, s, bp=100, sp=120, force=False):
     return dict(buyDate=b, sellDate=s, buyPrice=bp, sellPrice=sp, forceClose=force)
 
 
-def test_forceclose_has_no_sell_and_eta_preserves_original_clamp():
+def test_forceclose_has_no_sell_and_duration_survives_missing_future_proof():
     days = [f"2026-01-{i:02}" for i in range(1, 31)]
     trades = [
         trade(days[0], days[5]),
@@ -27,7 +27,7 @@ def test_forceclose_has_no_sell_and_eta_preserves_original_clamp():
     assert len(result["buys"]) == 2 and len(result["sells"]) == 1
     eta = result["eta"]
     assert eta["base"] == 5 and eta["remain"] == 2.5 and eta["elapsed"] == 10
-    assert eta["overdue"] and eta["date"] == days[-1] and eta["date_limited"]
+    assert eta["overdue"] and eta["date"] is None and eta["date_status"] == "unavailable"
 
 
 def test_insufficient_samples_are_explicit():
@@ -83,7 +83,7 @@ def test_weekly_eta_uses_calendar_weeks_not_daily_index():
         weekly_signals=[],
     )
     assert r["eta"]["base"] == 1 and r["eta"]["remain"] == 0.5
-    assert r["eta"]["date"] == "2026-02-03" and not r["eta"]["date_limited"]
+    assert r["eta"]["date"] is None and r["eta"]["date_reason"] == "CALENDAR_PROOF_UNAVAILABLE"
 
 
 def test_explicit_path_strategy_query_is_bounded_and_cache_distinct():
@@ -278,7 +278,8 @@ def test_explicit_open_reference_preserves_holding_buys_and_closed_only_eta():
         kline_dates=days, daily_dates=days, period="1d", today=days[-1],
         current="110", target="120", cost="100", weekly_signals=[],
     )
-    assert result["version"] == "newow_historical_path_trueup_v1"
+    assert result["version"] == "guiyi_futures_historical_path_v1"
+    assert result["reference_policy"] == "unified_trueup"
     assert result["status"] == "ready" and result["holding"] is True
     assert result["buys"][-1] == dict(date=days[19], price="100")
     assert len(result["buys"]) == 3
@@ -327,3 +328,39 @@ def test_one_closed_plus_open_is_ready_holding_with_eta_samples_missing():
     assert result["buys"] == [dict(date=days[0], price="100"), dict(date=days[9], price="100")]
     assert result["sells"] == [dict(date=days[5], price="120")]
     assert result["eta"] == dict(status="unavailable", reason="SAMPLES_MISSING")
+
+
+def test_public_eta_oracle_matches_duration_and_explicitly_diverges_on_missing_prefix():
+    import json
+    from pathlib import Path
+
+    fixture = json.loads((Path(__file__).parent / "fixtures/path-public-3449.json").read_text())
+    assert fixture["source"]["sha256"] == "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb"
+    normal, missing, flat = fixture["cases"]
+    result = build_historical_path(**normal["input"])
+    for key in ("samples", "base", "elapsed", "remain", "overdue", "ratio"):
+        assert result["eta"][key] == normal["public"]["eta"][key]
+    result = build_historical_path(**missing["input"])
+    assert result["eta"]["reason"] == "CALENDAR_PREFIX_MISSING"
+    assert missing["public"]["eta"]["base"] == 1  # Deliberate futures boundary divergence.
+    result = build_historical_path(**flat["input"])
+    assert result["eta"]["reason"] == "SAMPLES_MISSING"
+    assert result["holding"] is False
+
+
+def test_night_session_uses_verified_trading_days_for_elapsed_not_wall_dates():
+    days=['2026-01-16','2026-01-19','2026-01-20','2026-01-21','2026-01-22','2026-01-23','2026-01-26']
+    trades=[trade('2026-01-16','2026-01-20'),trade('2026-01-21','2026-01-22'),trade('2026-01-23','2026-01-26',force=True)]
+    trades[0].update(buyTradingDay='2026-01-19',sellTradingDay='2026-01-20')
+    trades[-1].update(buyTradingDay='2026-01-26')
+    r=build_historical_path(trades=trades,kline_dates=days,daily_dates=days,period='60m',today='2026-01-23',trading_day='2026-01-26',current='110',target='120',cost='100',weekly_signals=[])
+    assert r['eta']['elapsed']==0 and r['eta']['base']==1
+
+
+def test_night_snapshot_without_completed_daily_bar_keeps_duration_but_not_fake_elapsed():
+    days=['2026-01-12','2026-01-13','2026-01-14','2026-01-15','2026-01-16']
+    trades=[trade(days[0],days[1]),trade(days[2],days[3]),trade(days[4],days[4],force=True)]
+    r=build_historical_path(trades=trades,kline_dates=days,daily_dates=days,period='60m',today='2026-01-16',trading_day='2026-01-19',current='110',target='120',cost='100',weekly_signals=[])
+    assert r['eta']['base']==1 and r['eta']['remain']==.5
+    assert r['eta']['elapsed'] is None and r['eta']['overdue'] is None
+    assert r['eta']['elapsed_reason']=='CALENDAR_ELAPSED_UNAVAILABLE'

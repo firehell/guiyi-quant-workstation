@@ -207,6 +207,7 @@ class ProductReadSet:
         ProductFrequency, tuple[DataInterruption, ...]
     ] = field(default_factory=lambda: MappingProxyType({}))
     input_quality_policy: InputQualityPolicy = InputQualityPolicy.V1
+    path_calendar: dict | None = None
     reference_source_evidence_sha256: str | None = None
     input_quality_policies_by_frequency: Mapping[ProductFrequency, InputQualityPolicy] = field(default_factory=dict)
     semantic_gap_hashes_by_frequency: Mapping[
@@ -1513,6 +1514,10 @@ class NewowProductReader:
             )
         except CanonicalPublicationError as exc:
             raise NewowProductReadError(exc.code) from exc
+
+    def path_calendar_context(self, *, product, origin, as_of):
+        from .path_calendar import read_path_calendar
+        return read_path_calendar(self._market_data, product=product, origin=origin, as_of=as_of, now=self._now())
 
     def historical_metadata_evidence(
         self, *, product: str, since: date, through: date,

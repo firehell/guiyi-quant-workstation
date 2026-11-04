@@ -2279,3 +2279,18 @@ def test_chart_caution_selection_binds_complete_owner_not_just_time(product_case
 def test_short_minute_decision_path_keeps_existing_explanation_boundary(frequency, strategy):
     with pytest.raises(ValueError, match='NEWOW_SECTION_PARAMETER_INVALID'):
         ProductServiceQuery('rb', strategy, frequency, section='explanation', decision_v2=True, path_strategy=strategy)
+
+
+def test_path_calendar_capture_is_atomic_and_calendar_correction_invalidates_snapshot(product_cases):
+    service, reader, _build, _clear = _service(product_cases)
+    value = ["a" * 64]
+    reader.path_calendar_context = lambda **_: dict(identity=value[0], reason=None, rows={}, sessions=lambda _: ())
+    initial = service.query(ProductServiceQuery('rb','trend','1d',section='chart'))
+    assert initial.meta.snapshot_token
+    entry = next(e for e in service._cache._entries.values() if e.token == initial.meta.snapshot_token)
+    assert entry.values[("path-calendar-capture-v1",)] == "a" * 64
+    pinned=ProductServiceQuery('rb','trend','1d',section='explanation',decision_v2=True,as_of=initial.meta.as_of,snapshot_token=initial.meta.snapshot_token)
+    service.query(pinned)
+    value[0] = "b" * 64
+    with pytest.raises(NewowProductServiceError,match='NEWOW_SNAPSHOT_GENERATION_CONFLICT'):
+        service.query(pinned)

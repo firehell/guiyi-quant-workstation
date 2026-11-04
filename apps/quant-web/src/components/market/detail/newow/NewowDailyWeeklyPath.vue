@@ -11,7 +11,13 @@ let observer:ResizeObserver|null=null, resizeTimer:ReturnType<typeof setTimeout>
 function measure() { width.value=Math.max(480,Math.min(1200,(host.value?.clientWidth??504)-24)) }
 onMounted(()=>{measure();if(typeof ResizeObserver==='undefined')return;observer=new ResizeObserver(()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(measure,200)});if(host.value)observer.observe(host.value)})
 onBeforeUnmount(()=>{observer?.disconnect();clearTimeout(resizeTimer)})
-const reasons:Record<string,string>={TRADE_SAMPLES_MISSING:'至少需要两个建仓点和一个真实清仓点',CURRENT_CONTEXT_UNAVAILABLE:'当前合约段或价格未就绪',CALENDAR_MISSING:'同合约交易日序列缺失',SAMPLES_MISSING:'历史区间样本不足两笔',PRICE_OR_START_MISSING:'起点或目标价格缺失'}
+const reasons:Record<string,string>={TRADE_SAMPLES_MISSING:'至少需要两个建仓点和一个真实清仓点',CURRENT_CONTEXT_UNAVAILABLE:'当前合约段或价格未就绪',CALENDAR_MISSING:'同合约交易日序列缺失',SAMPLES_MISSING:'历史区间样本不足两笔',PRICE_OR_START_MISSING:'起点或目标价格缺失',CALENDAR_PREFIX_MISSING:'历史交易日序列前缀不足'}
+const dateReason=computed(()=>({HISTORICAL_CALENDAR_PROOF_MISSING:'历史快照未保留对应日历身份',CALENDAR_INCOMPLETE:'权威日历区间不完整',SESSION_INCOMPLETE:'交易时段信息不完整',CALENDAR_HORIZON_EXCEEDED:'估算超出366个自然日的查询范围',CALENDAR_SOURCE_CHANGED:'日历或交易时段来源已变化',CALENDAR_PROOF_UNAVAILABLE:'日历或 Session 证明不足'} as Record<string,string>)[eta.value?.date_reason??'']??'日历或 Session 证明不足')
+const frequencyLabel=computed(()=>({'1d':'日K','1w':'周K','60m':'60分'} as Record<string,string>)[data.value?.source?.frequency??'']??'当前周期')
+const distance=computed(()=>{
+ const current=Number(data.value?.current),reference=Number(data.value?.eta?.to_price??(data.value?.holding?data.value?.target:data.value?.cost))
+ return current>0&&reference>0&&Number.isFinite(reference)?((reference-current)/current*100):null
+})
 const eta=computed(()=>data.value?.eta)
 const periods=computed(()=>props.decision?.daily_weekly_path?.periods??[])
 const selected=ref<{date:string;price:string;kind:string}|null>(null)
@@ -29,8 +35,11 @@ const periodName=(frequency:string)=>({'1w':'周线','1d':'日线','60m':'60分'
       <p v-else-if="!data || !graph" role="status">{{reasons[data?.reason??'']??'历史路径数据不足'}}</p>
       <template v-else>
         <p class="period-path__summary"><span>现价 <b>{{price(data.current)}}</b></span><span v-for="period in periods" :key="period.frequency">{{periodName(period.frequency)}} 成本 <b>{{price(period.cost?.raw??null)}}</b> → 目标 <b>{{price(period.target?.raw??null)}}</b></span></p>
-        <div class="period-path__estimate" role="status"><template v-if="eta?.status==='ready'"><p><strong>{{eta.overdue?'已到预测期':'历史周期预估'}}</strong> 预计{{data.holding?'清仓':'建仓'}} <b class="sell">{{price(eta.to_price??(data.holding?data.target:data.cost))}}</b> · {{eta.overdue?'已超出平均周期，随时可能触发':`约 ${eta.remain?.toFixed(2)} ${eta.unit}后（${eta.date}前后）`}}</p><p class="period-path__estimate-detail">历史 {{eta.samples}} 笔 · 平均 {{eta.base?.toFixed(2)}} {{eta.unit}} × 剩余幅度 {{((eta.ratio??0)*100).toFixed(2)}}% · 剩余估算约 {{eta.remain?.toFixed(2)}} {{eta.unit}} · 本段已用 {{eta.elapsed?.toFixed(2)}} {{eta.unit}}。历史统计，仅供参考。</p></template><p v-else>时间估算不可用：{{reasons[eta?.reason??'']??'样本或交易日序列不足'}}</p></div>
-        <p class="period-path__chart-caption">建仓价／清仓价 · 日K（{{data.buys.length+data.sells.length}} 个历史点）</p>
+        <div class="period-path__estimate" role="status"><template v-if="eta?.status==='ready'"><p><strong>历史周期估算</strong> 预计{{data.holding?'清仓':'建仓'}} <b class="sell">{{price(eta.to_price??(data.holding?data.target:data.cost))}}</b> · 剩余约 {{eta.remain?.toFixed(2)}} {{eta.unit}}<template v-if="eta.date_status==='ready'">（{{eta.date}}前后）</template></p><p class="period-path__estimate-detail">历史 {{eta.samples}} 笔 · 平均 {{eta.base?.toFixed(2)}} {{eta.unit}} × 剩余幅度 {{((eta.ratio??0)*100).toFixed(2)}}% · 剩余估算约 {{eta.remain?.toFixed(2)}} {{eta.unit}} · 本段已用 {{eta.elapsed==null?'待确认':eta.elapsed.toFixed(2)+' '+eta.unit}}。历史统计，仅供参考。</p></template><p v-else>时间估算不可用：{{reasons[eta?.reason??'']??'样本或交易日序列不足'}}</p></div>
+        <p v-if="eta?.status==='ready' && eta.overdue" class="limitation">本段已超过历史平均周期；剩余时长仍是历史统计估算。</p>
+        <p v-if="eta?.status==='ready' && eta.date_status!=='ready'" class="limitation">{{dateReason}}，仅展示剩余时长，不提供预计日期。</p>
+        <p v-if="distance!==null" class="period-path__note">{{data.holding?'距清仓目标':'距建仓参考'}} {{distance>=0?'+':''}}{{distance.toFixed(2)}}%</p>
+        <p class="period-path__chart-caption">建仓价／清仓价 · {{frequencyLabel}}（{{data.buys.length+data.sells.length}} 个历史点）</p>
         <div class="canvas"><svg :viewBox="`0 0 ${width} 320`" role="img" aria-label="历史买卖双线与参考路径">
           <defs><linearGradient :id="id+'fill'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2e9e8f" stop-opacity=".2"/><stop offset="1" stop-color="#1f5fa9" stop-opacity=".05"/></linearGradient></defs>
           <rect v-for="(b,i) in graph.background" :key="'bg'+i" :x="b.x" y="32" :width="b.width" height="240" :fill="b.state==='hold'?'#ff950e':'#8e8e93'" opacity=".08"/>
@@ -39,14 +48,14 @@ const periodName=(frequency:string)=>({'1w':'周线','1d':'日线','60m':'60分'
           <line v-for="(s,i) in graph.segments" :key="'segment'+i" :x1="s.x1" :y1="s.y1" :x2="s.x2" :y2="s.y2" :stroke="s.color" :stroke-width="s.holding?1.8:1.2" :stroke-dasharray="s.holding?undefined:'2 3'" :opacity="s.holding?1:.45"/><text v-for="(l,i) in graph.labels" :key="'label'+i" :x="l.x" :y="l.y" :style="{fill:l.color}" font-weight="600">{{l.text}}</text>
           <g v-for="(p,i) in graph.buy" :key="'buy'+i"><circle :cx="p.x" :cy="p.y" r="3.5" class="buy-point" tabindex="0" role="button" :aria-label="`${p.date} 建仓参考 ${price(p.price)}`" @click="selected={...p,kind:'建仓参考'}" @keydown.enter="selected={...p,kind:'建仓参考'}"/><title>{{p.date}} 建仓 {{price(p.price)}}</title></g>
           <g v-for="(p,i) in graph.sell" :key="'sell'+i"><rect :x="p.x-3" :y="p.y-3" width="6" height="6" class="sell-point" tabindex="0" role="button" :aria-label="`${p.date} 清仓参考 ${price(p.price)}`" @click="selected={...p,kind:'清仓参考'}" @keydown.enter="selected={...p,kind:'清仓参考'}"/><title>{{p.date}} 清仓 {{price(p.price)}}</title></g>
-          <g v-if="graph.forecast"><line v-for="(p,i) in [graph.buy.at(-1),graph.sell.at(-1)]" :key="'future'+i" :x1="p?.x" :y1="p?.y" :x2="graph.forecast.x" :y2="graph.forecast.y" :stroke="i?'#2e9e8f':'#1f5fa9'" :stroke-dasharray="data.holding?undefined:'2 3'" opacity=".6"/><text :x="graph.forecast.x" :y="graph.forecast.y-10" text-anchor="end">{{eta?.status==='ready' ? (data.holding?'预计清仓':'预计建仓') : (data.holding?'清仓参考':'建仓参考')}} {{price(graph.forecast.price)}}</text></g>
+          <g v-if="graph.forecast"><line v-for="(p,i) in [graph.buy.at(-1),graph.sell.at(-1)]" :key="'future'+i" :x1="p?.x" :y1="p?.y" :x2="graph.forecast.x" :y2="graph.forecast.y" :stroke="i?'#2e9e8f':'#1f5fa9'" stroke-dasharray="5 4" opacity=".6"/><text :x="graph.forecast.x" :y="graph.forecast.y-10" text-anchor="end">{{eta?.status==='ready' ? (data.holding?'预计清仓':'预计建仓') : (data.holding?'清仓参考':'建仓参考')}} {{price(graph.forecast.price)}}</text></g>
+          <g v-if="!graph.forecast && graph.reference"><line x1="44" :x2="width-40" :y1="graph.reference.y" :y2="graph.reference.y" stroke="#2e9e8f" stroke-dasharray="2 4"/><text :x="width-40" :y="graph.reference.y-10" text-anchor="end">{{data.holding?'清仓目标参考':'建仓吸筹参考'}} {{price(graph.reference.price)}}</text></g>
           <g v-if="graph.current"><line x1="44" :y1="graph.current.y" :x2="width-40" :y2="graph.current.y" stroke="#8e8e93" stroke-dasharray="2 4"/><circle :cx="graph.current.x" :cy="graph.current.y" r="4" fill="#ff950e"/><text x="46" :y="Math.max(18,graph.current.y-8)">现价 {{price(data.current)}}</text></g>
           <text v-for="(t,i) in graph.ticks" :key="'tick'+i" :x="t.x" y="300" text-anchor="middle">{{t.date.slice(5)}}</text>
         </svg></div>
         <p v-if="selected" class="period-path__readout" aria-live="polite">{{selected.date}} · {{selected.kind}} {{price(selected.price)}} <button @click="selected=null" aria-label="清除点位读数">×</button></p>
-        <p class="legend"><span class="buy">○ 建仓价（蓝）</span><span class="sell">□ 清仓价（绿）</span><span>┄ 虚线＝预测段</span><span v-if="data.background.length">琥珀＝周持有 · 灰＝周空仓</span></p>
-        <p class="period-path__note">两条线各自连接同类点，之间区域为价格空间。目标／吸筹来自 Canonical 通道；历史页面参考，不代表成交或执行预测。</p>
-        <p v-if="eta?.date_limited" class="limitation">日期受历史序列限制，不外推未来交易日。</p>
+        <p class="legend"><span class="buy">○ 建仓价（蓝）</span><span class="sell">□ 清仓价（绿）</span><span v-if="graph.forecast">┄ 虚线＝预计区间</span><span v-if="data.background.length">琥珀＝周持有 · 灰＝周空仓</span></p>
+        <p class="period-path__note">两条线各自连接同类点，之间区域为价格空间。目标／吸筹来自 Canonical 通道；期货历史周期估算，不代表成交承诺或触发概率。</p>
 
       </template>
     </div>

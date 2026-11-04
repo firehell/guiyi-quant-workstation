@@ -440,6 +440,10 @@ class MarketDataService:
             limit=limit, contract=contract, before=cutoff,
         )).bars
 
+    def calendar_day_facts(self, *, symbol: str, since: date, through: date):
+        """Authoritative rows, including closed days; callers must prove coverage."""
+        return self.catalog.calendar_days(symbol, since, through)
+
     def previous_trading_day(self, symbol: str, trading_day: date) -> date:
         """Resolve and prove the exact Calendar trading day before one quote day."""
 

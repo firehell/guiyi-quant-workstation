@@ -1102,8 +1102,27 @@ class NewowProductService:
                     None if weekly_complete else "NEWOW_REFERENCE_WEEKLY_WINDOW_PARTIAL"
                 ),
             )
+        path_calendar_key = None
+        capture_calendar = request.section is ProductSection.CHART and request.as_of is None and request.snapshot_token is None
+        calendar_capture = None
+        if capture_calendar or (request.section is ProductSection.EXPLANATION and request.decision_v2):
+            method = getattr(reader, "path_calendar_context", None)
+            calendar_bars = read.replay_bars if request.frequency is ProductFrequency.HOURLY else read.bars_by_frequency.get(ProductFrequency.DAILY, read.replay_bars)
+            eligible = [b.bar for b in calendar_bars if b.bar.observation_eligible and b.bar.bar_end <= read.as_of]
+            context = method(product=request.product, origin=eligible[-1].trading_day, as_of=read.as_of) if method and eligible else None
+            if context and context.get("reason") is None:
+                retained_calendar = self._cache.get(common_key, ("path-calendar-capture-v1",))
+                if request.as_of is not None and retained_calendar != context["identity"]:
+                    from .path_calendar import unavailable
+                    context = unavailable("HISTORICAL_CALENDAR_PROOF_MISSING")
+                elif request.as_of is None:
+                    calendar_capture = context["identity"]
+            read = replace(read, path_calendar=context)
+            path_calendar_key = ("guiyi_futures_historical_path_v1", context["identity"] if context else "unavailable")
         fact_key = _fingerprint(read, identity)
         proof = _dependency_proof(read)
+        if path_calendar_key is not None:
+            proof["futures-path-calendar-v1"] = path_calendar_key[1]
         if self._persisted_reference is not None and request.frequency in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE) and callable(
             getattr(reader, "historical_source_evidence", None)
         ):
@@ -1134,7 +1153,7 @@ class NewowProductService:
         )
         section_key = self._section_key(
             request, window, resolved, fact_key, page_identity
-        ) + (navigable, _shared_input_proof(read, identity).market_input_sha256)
+        ) + ((path_calendar_key,) if path_calendar_key and request.decision_v2 else ()) + (navigable, _shared_input_proof(read, identity).market_input_sha256)
         if request.snapshot_token is not None:
             if not self._cache.token_is_compatible(
                 request.snapshot_token, common_key, proof
@@ -1153,7 +1172,7 @@ class NewowProductService:
                 lambda shared_cancelled: self._verified_result(
                     request, read, identity, fact_key, page_identity, resolved,
                     shared_cancelled, as_of, reader, common_key, section_key,
-                    proof, window, navigable, prior_navigation,
+                    proof, window, navigable, prior_navigation, calendar_capture,
                 ),
                 cancelled,
             )
@@ -1171,6 +1190,7 @@ class NewowProductService:
         common_key: str, section_key: tuple[object, ...], proof: dict[str, str],
         window: ProductReadWindow, navigable: bool,
         prior_navigation: _ChartNavigation | None,
+        calendar_capture: str | None = None,
     ) -> NewowProductResult:
         cached = self._cache.get(common_key, section_key)
         if isinstance(cached, NewowProductResult):
@@ -1262,6 +1282,8 @@ class NewowProductService:
             return result
         related: dict[tuple[object, ...], object] = {}
         complete = result
+        if calendar_capture is not None:
+            related[("path-calendar-capture-v1",)] = calendar_capture
         if navigable and isinstance(chart, ChartSectionValue):
             navigation = _ChartNavigation(
                 window, request.chart_limit, fact_key,

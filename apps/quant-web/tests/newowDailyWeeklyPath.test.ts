@@ -55,9 +55,9 @@ import { historicalPathGeometry } from '../src/utils/newowDailyWeeklyPath.ts'
 function historyWire(){
   const raw=pathWire(),p=raw.explanation.value.decision_v2.daily_weekly_path
   p.version='guiyi_daily_weekly_path_v3'
-  p.history={version:'newow_historical_path_v3402_v1',status:'ready',reason:null,holding:true,current:'110',target:'125',cost:'100',page_parity:true,executable:false,
+  p.history={version:'guiyi_futures_historical_path_v1',reference_policy:'ordinary',status:'ready',reason:null,holding:true,current:'110',target:'125',cost:'100',page_parity:false,executable:false,
     buys:[{date:'2026-08-01',price:'100'},{date:'2026-08-15',price:'105'}],sells:[{date:'2026-08-08',price:'120'}],background:[],eta:null,
-    source:{physical_contract:'RB2701',segment_id:'owner',calculation_segment_id:'1d-calc',bar_end:NEWOW_AS_OF,as_of:NEWOW_AS_OF,strategy:'trend',price_source:'canonical_channel',background_status:'unavailable'}}
+    source:{frequency:'1d',trading_day:NEWOW_AS_OF.slice(0,10),snapshot_trading_day:NEWOW_AS_OF.slice(0,10),calendar_identity:null,physical_contract:'RB2701',segment_id:'owner',calculation_segment_id:'1d-calc',bar_end:NEWOW_AS_OF,as_of:NEWOW_AS_OF,strategy:'trend',price_source:'canonical_channel',background_status:'unavailable'}}
   return raw
 }
 test('new history rejects invalid prices, owner, sample, order and future points',()=>{
@@ -102,7 +102,7 @@ test('history presentation formats long prices and supplies finite price-axis ti
 for (const frequency of ['1d','1w','60m'] as const) {
  test(`historical ${frequency} path binds calculation identity within its own period`,()=>{
   const raw=historyWire(), addon=raw.explanation.value.decision_v2
-  raw.meta.identity.frequency=frequency
+  raw.meta.identity.frequency=frequency;raw.explanation.value.decision_v2.daily_weekly_path.history.source.frequency=frequency
   raw.meta.identity.profile_id=`newow_product_trend_${frequency}_v1`
   if(frequency==='1w')raw.meta.futures_adaptation_version='newow_futures_weekly_quality_segment_v1'
   addon.daily_weekly_path.history.source.calculation_segment_id=frequency+'-calc'
@@ -124,7 +124,7 @@ for (const frequency of ['1d','1w','60m'] as const) {
 test('unified historical path retains OPEN holding cost and exact Test5 strategy without page parity alias',()=>{
  for(const strategy of ['oscillation','fusion','osc-test5']){
   const raw=historyWire(),h=raw.explanation.value.decision_v2.daily_weekly_path.history
-  Object.assign(h,{version:'newow_historical_path_trueup_v1',page_parity:false});h.source.strategy=strategy
+  Object.assign(h,{version:'guiyi_futures_historical_path_v1',reference_policy:'unified_trueup',page_parity:false});h.source.strategy=strategy
   const parsed=normalizeNewowProductResponse(raw,pathRequest) as any,history=parsed.value.decision_v2.daily_weekly_path.history
   assert.equal(history.holding,true);assert.equal(history.cost,'100');assert.equal(history.source.strategy,strategy);assert.equal(history.buys.length,2);assert.equal(history.sells.length,1)
   const old=structuredClone(raw);old.explanation.value.decision_v2.daily_weekly_path.history.version='newow_historical_path_v3402_v1';assert.throws(()=>normalizeNewowProductResponse(old,pathRequest),/path.history.version/)
@@ -133,9 +133,9 @@ test('unified historical path retains OPEN holding cost and exact Test5 strategy
 })
 
 test('ownerless unavailable Test5 and Test1 paths use explicit version parity independent of envelope strategy',()=>{
- for(const [strategy,version,parity] of [['trend','newow_historical_path_trueup_v1',false],['oscillation','newow_historical_path_v3402_v1',true]] as const){
+ for(const [strategy,version,parity] of [['trend','unified_trueup',false],['oscillation','ordinary',false]] as const){
   const raw=historyWire(),h=raw.explanation.value.decision_v2.daily_weekly_path.history
-  Object.assign(h,{version,page_parity:parity,status:'unavailable',reason:'PATH_SAMPLES_MISSING',holding:false,current:null,target:null,cost:null,buys:[],sells:[],background:[],eta:null});delete h.source
+  Object.assign(h,{version:'guiyi_futures_historical_path_v1',reference_policy:version,page_parity:parity,status:'unavailable',reason:'PATH_SAMPLES_MISSING',holding:false,current:null,target:null,cost:null,buys:[],sells:[],background:[],eta:null});delete h.source
   raw.meta.identity.strategy=strategy
   if(strategy==='oscillation'){raw.meta.identity.profile_id='newow_product_oscillation_1d_v2';raw.meta.identity.formula_versions=['newow_hhv_llv_channel_page_v1','newow_oscillation_trueup_kernel111_v1'];raw.meta.reference_model_version='newow_trueup_reference_zero_cost_v1'}
   const request={...pathRequest,strategy};normalizeNewowProductResponse(raw,request)
@@ -143,4 +143,31 @@ test('ownerless unavailable Test5 and Test1 paths use explicit version parity in
   const unknown=structuredClone(raw);unknown.explanation.value.decision_v2.daily_weekly_path.history.version='unknown';assert.throws(()=>normalizeNewowProductResponse(unknown,request),/path.history.version/)
   const ready=structuredClone(raw);ready.explanation.value.decision_v2.daily_weekly_path.history.status='ready';assert.throws(()=>normalizeNewowProductResponse(ready,request))
  }
+})
+
+test('duration without proved date has a price reference but no forecast endpoint or extension',()=>{
+ const h=historyWire().explanation.value.decision_v2.daily_weekly_path.history
+ h.holding=false;h.cost='90';h.target='130';h.eta={status:'unavailable',reason:'SAMPLES_MISSING'}
+ const g=historicalPathGeometry(h,900)
+ assert.equal(g.forecast,null);assert.equal(g.reference!.price,'90')
+ h.holding=true;assert.equal(historicalPathGeometry(h,900).reference!.price,'130')
+})
+
+test('ready ETA duration permits null date, but future date requires matching calendar provenance',()=>{
+ const raw=historyWire(),h=raw.explanation.value.decision_v2.daily_weekly_path.history
+ h.source.frequency='1d';h.source.snapshot_trading_day=NEWOW_AS_OF.slice(0,10);h.source.calendar_identity='a'.repeat(64)
+ h.eta={status:'ready',reason:null,base:5,remain:.83,elapsed:2,ratio:.166,samples:3,overdue:false,unit:'个交易日',date:null,date_status:'unavailable',date_reason:'CALENDAR_INCOMPLETE',date_source:null}
+ normalizeNewowProductResponse(structuredClone(raw),pathRequest)
+ assert.equal(historicalPathGeometry(h).forecast,null)
+ const future=new Date(Date.parse(NEWOW_AS_OF)+86400000).toISOString().slice(0,10)
+ Object.assign(h.eta,{date:future,date_status:'ready',date_reason:null,date_source:{identity:'a'.repeat(64),origin_trading_day:h.source.snapshot_trading_day,policy:'futures_calendar_ceil_v1'}})
+ normalizeNewowProductResponse(structuredClone(raw),pathRequest);assert.ok(historicalPathGeometry(h).forecast)
+ for(const mutate of [(v:any)=>v.eta.date_source.identity='b'.repeat(64),(v:any)=>v.eta.date=v.source.snapshot_trading_day,(v:any)=>v.version='newow_historical_path_v3402_v1']){
+  const bad=structuredClone(raw);mutate(bad.explanation.value.decision_v2.daily_weekly_path.history);assert.throws(()=>normalizeNewowProductResponse(bad,pathRequest))
+ }
+})
+
+test('unknown path status is rejected under the new display identity',()=>{
+ const raw=historyWire();raw.explanation.value.decision_v2.daily_weekly_path.history.status='guessed'
+ assert.throws(()=>normalizeNewowProductResponse(raw,pathRequest),/path.history.status/)
 })

@@ -84,7 +84,8 @@ export interface DailyWeeklyPath {
 }
 
 export interface HistoricalPath {
-  version: 'newow_historical_path_v3402_v1' | 'newow_historical_path_trueup_v1'
+  version: 'guiyi_futures_historical_path_v1'
+  reference_policy: 'ordinary'|'unified_trueup'
   status: 'ready' | 'unavailable'
   reason: string | null
   axis_dates?: string[]
@@ -95,8 +96,8 @@ export interface HistoricalPath {
   current: string | null
   target: string | null
   cost: string | null
-  eta: null | {status:'ready'|'unavailable';reason:string|null;base?:number;remain?:number;elapsed?:number;ratio?:number;samples?:number;overdue?:boolean;date?:string;date_limited?:boolean;unit?:string;from_price?:string;to_price?:string}
-  source?: {physical_contract:string;segment_id:string;calculation_segment_id:string;bar_end:string;as_of:string;strategy:string;price_source:string;background_status:string}
+  eta: null | {status:'ready'|'unavailable';reason:string|null;base?:number;remain?:number;elapsed?:number|null;elapsed_reason?:string|null;ratio?:number;samples?:number;overdue?:boolean|null;date?:string|null;date_status?:'ready'|'unavailable';date_reason?:string|null;date_source?:{identity:string;origin_trading_day:string;policy:string}|null;date_limited?:boolean;unit?:string;from_price?:string;to_price?:string}
+  source?: {frequency?:string;trading_day?:string;snapshot_trading_day?:string|null;calendar_identity?:string|null;physical_contract:string;segment_id:string;calculation_segment_id:string;bar_end:string;as_of:string;strategy:string;price_source:string;background_status:string}
   page_parity:boolean
   executable:false
 }
