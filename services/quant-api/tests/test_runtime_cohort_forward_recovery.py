@@ -2523,3 +2523,36 @@ def test_verified_failure_persists_safe_substep_and_sample_times(tmp_path):
     assert state["verified_diagnostic"]["before_sampled_at"] == host.now().isoformat()
     assert "private" not in state["verified_diagnostic"]
     assert (original_attempt / "state.json").read_bytes() == before
+
+
+def test_cleaned_same_generation_startup_keeps_absent_subscription_and_session_bound(tmp_path):
+    from types import SimpleNamespace
+    from app.market_data.market_phase import MarketPhase
+    now = Host(tmp_path).now()
+    day = now.date()
+    future = SimpleNamespace(start=now + timedelta(hours=1), end=now + timedelta(hours=2))
+    phase = SimpleNamespace(symbol="rb", phase=MarketPhase.CLOSED, trading_day=day,
+        current_session=None, next_session_start=future.start)
+    cleanup = dict(status="CLOSED_CLEANED", trading_day=day.isoformat(), cleanup_verified=True,
+        subscription_present=False, remaining_bar_keys=0, pending_count=0, natural_bar_verified=False)
+    kwargs = dict(now=now, products=("rb",), registered_day=day,
+        resolver=SimpleNamespace(resolve=lambda *_: phase), subscriptions=None,
+        dominant=lambda *_: "RB2701", sessions=lambda *_: (future,), closed_cleanup=lambda: cleanup)
+    proof, until = module().prove_same_generation_startup(**kwargs, with_valid_until=True)
+    assert proof["mode"] == "same_generation_closed_cleaned_startup"
+    assert proof["subscriptions_sha256"] is None and proof["closed_cleanup"] == cleanup
+    assert until == future.start
+    for key, value in (("cleanup_verified", False), ("pending_count", 1),
+                       ("subscription_present", True), ("remaining_bar_keys", 1)):
+        bad = dict(cleanup, **{key: value})
+        with pytest.raises(module().CohortError, match="CLEANED_AUTHORITY_UNPROVEN"):
+            module().prove_same_generation_startup(**dict(kwargs, closed_cleanup=lambda: bad))
+    for subscriptions in ({}, {"rb": "RB2702"}):
+        with pytest.raises(module().CohortError):
+            module().prove_same_generation_startup(**dict(kwargs, subscriptions=subscriptions))
+    phase.phase = MarketPhase.BREAK
+    with pytest.raises(module().CohortError, match="CLEANED_SESSION_DRIFT"):
+        module().prove_same_generation_startup(**kwargs)
+    phase.phase = MarketPhase.CLOSED
+    with pytest.raises(module().CohortError, match="CLEANED_AUTHORITY_UNPROVEN"):
+        module().prove_same_generation_startup(**dict(kwargs, closed_cleanup=lambda: None))
