@@ -110,3 +110,96 @@ NOV03_BINDINGS = {
         None,
     ),
 }
+
+
+NOV04_VERSION = "htdy_conflict_recovery_20261104_v1"
+NOV04_INVENTORY_SHA256 = (
+    "f08607bb8fa823199d05aead9c5dc303bc578b1a482de19faf26ade82c9b7caf"
+)
+# Owner approved 12 exact conflicts; only SI has an OPEN reference trade.
+NOV04_BINDINGS = {
+    "reference-stream:0bd72d58e494ba0c3c76c222141bf9d14282008a4536267a3c1285986efcd8c5": (  # PS
+        "f7cff51f9434485b9471d0ae12f0f9c4",
+        "bde96453adfe44e988a374ad2154d079",
+        2,
+        "c74dcfa743b649c4a12a387faf6afd37",
+        None,
+    ),
+    "reference-stream:19a551ea97b218656ff7b2462e89c6ee44ddb6ccb926b5bed2df6bb13b59fab4": (  # PT
+        "01a8fa7cd6c64faca03d8deec0340ab7",
+        "313bfdc1c5624e37bbc6615424d9302f",
+        2,
+        "f76917a3a3524bb2bca4a7f1ee585c47",
+        None,
+    ),
+    "reference-stream:31c1f7ffe88b05d8142d0fa4ac46ca4d5d977d9604c6deb945a8ffe5389aa7bf": (  # SI
+        "b22d5845d1d147a49a48e3c82a98f94e",
+        "b28715a408ab4aebb5f1f4344b13495c",
+        2,
+        "b49b11ef96b14780be0df70c2e08d022",
+        "reference-trade:27951c24409b2e4a56d88582cc246249a7eaf43482aa460c75c4efc7ae87b2c7",
+    ),
+    "reference-stream:44eb4c5dceaf0331deded57cb4ba79d522bd575289e121956297a9bca257974a": (  # LC
+        "7172e4bfcfa343cbb993337e969fa9e7",
+        "8b867fb09e5f49858f4115f32f551711",
+        3,
+        "d2038174e50d4173a4bdf65a1379e2e4",
+        None,
+    ),
+    "reference-stream:82c1f916ee1227a14487491b368afc032cdb2725b30a914b446f257662df7bed": (  # SF
+        "1f88f949a969488aa6e068744b4c630d",
+        "3d444b69113d4b0bbbc4ccf2ccac8a12",
+        3,
+        "f7a73bc5fc714675b8e54d70af84bdab",
+        None,
+    ),
+    "reference-stream:8612e3118fbd43cff68b523627dd3d25e08b6cab754ddd29191c686f949ba8de": (  # LH
+        "4d25e1ea11b242168e689be5b7b10f20",
+        "17053c828485475484f7508f3ab7645b",
+        3,
+        "bdb7ab9c400a4af79f9a62e7adf0ec41",
+        None,
+    ),
+    "reference-stream:8bbca864461c867f504e1306f95a30f161325049ba8b8250cfd89c24888894db": (  # PD
+        "2154efee25d04f079a4117728abb9b0e",
+        "167f8757a1f94229a3b25f53b39fbab8",
+        2,
+        "951b50f4ed794c459f1f3e9e8ae38f05",
+        None,
+    ),
+    "reference-stream:b3e1ea9d7543f36d175cc1add33d3674810713a2d790e1d960202eb2f12ec8de": (  # SM
+        "b0c3c9cf1a734ea09f75b36804433d4d",
+        "ebff12b87d2a4ce6bb2f6c5b90d253da",
+        3,
+        "f80d4625c8c64c8ca73937efbbc42bd3",
+        None,
+    ),
+    "reference-stream:cde4a953e05421e362a740d1c45f2747eb31ec194d9bc1604b807bc0187c2fb6": (  # PK
+        "c7d45bd98f3a4403ac1f5fa3fb61a0a3",
+        "ac6915896da9449cb8ef50ef508ab0fe",
+        3,
+        "639bf97de99340e8a47e259801129b27",
+        None,
+    ),
+    "reference-stream:d26afc6086a8710138a37002b6b384e3a5a2e93b923069dfa7908cbe356d2e55": (  # CJ
+        "94d2c48c395c417d8dc4e550d9c65347",
+        "d1cdfd374bb64a5c9ee6fe3f7483d056",
+        3,
+        "374690c4e41c4ffd85a940eb044bba7b",
+        None,
+    ),
+    "reference-stream:d7927893f70ab589aa4857dd7e6b5eb1f24bc90bb1fbb2a8df115bd59652bf9d": (  # JD
+        "9e1fcd7549a34a3ca496921181543f72",
+        "c49641b50d724609a310353a23e86576",
+        3,
+        "919281c9cdf0482c960464826804c923",
+        None,
+    ),
+    "reference-stream:e5d425448e95d1a3530ae604649ab96a4332e74d8fabc74b33ab843856855962": (  # AP
+        "37e7ae4210544885a3d5684acc5fa1d3",
+        "fe3ed087adaa433daa66d2183bfadaef",
+        3,
+        "f17d03f2dde943a2939d08320d2e1911",
+        None,
+    ),
+}
