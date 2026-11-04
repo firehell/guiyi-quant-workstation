@@ -453,6 +453,7 @@ def test_nov03_cli_is_exact_separate_and_keeps_old_schemas(cli):
         cli.checked_scope((*ids[:-1], "outside"), incident=cli.NOV03_VERSION)
 
 
+@pytest.mark.parametrize("incident_name", ["NOV03", "NOV04"])
 @pytest.mark.parametrize(
     "change",
     [
@@ -467,7 +468,11 @@ def test_nov03_cli_is_exact_separate_and_keeps_old_schemas(cli):
         "endpoint",
     ],
 )
-def test_nov03_inventory_exact_bytes_and_values(cli, tmp_path, monkeypatch, change):
+def test_nov03_inventory_exact_bytes_and_values(
+    cli, tmp_path, monkeypatch, change, incident_name
+):
+    bindings = getattr(cli, incident_name + "_BINDINGS")
+    incident = getattr(cli, incident_name + "_VERSION")
     import hashlib
 
     rows = [
@@ -482,7 +487,7 @@ def test_nov03_inventory_exact_bytes_and_values(cli, tmp_path, monkeypatch, chan
             endpoint_shift_equal=True,
             code="OBSERVATION_GAP",
         )
-        for sid, v in cli.NOV03_BINDINGS.items()
+        for sid, v in bindings.items()
     ]
     if change not in (None, "raw_sha"):
         key = {
@@ -494,18 +499,31 @@ def test_nov03_inventory_exact_bytes_and_values(cli, tmp_path, monkeypatch, chan
             "open_flag": "reference_open",
             "endpoint": "endpoint_shift_equal",
         }[change]
-        rows[0][key] = False if change in {"open_flag", "endpoint"} else "foreign"
+        rows[0][key] = (
+            not rows[0][key] if change in {"open_flag", "endpoint"} else "foreign"
+        )
     raw = json.dumps({"pending": rows}).encode()
     path = tmp_path / "inventory.json"
     path.write_bytes(raw)
     path.chmod(0o600)
-    monkeypatch.setattr(cli, "NOV03_INVENTORY_SHA256", hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(
+        cli, incident_name + "_INVENTORY_SHA256", hashlib.sha256(raw).hexdigest()
+    )
     if change == "raw_sha":
         path.write_bytes(raw + b" ")
     if change is None:
-        assert cli.frozen_scope(path, incident=cli.NOV03_VERSION) == tuple(
-            sorted(cli.NOV03_BINDINGS)
-        )
+        assert cli.frozen_scope(path, incident=incident) == tuple(sorted(bindings))
     else:
         with pytest.raises(ValueError):
-            cli.frozen_scope(path, incident=cli.NOV03_VERSION)
+            cli.frozen_scope(path, incident=incident)
+
+
+def test_nov04_scope_is_exact_and_cannot_use_previous_incident(cli):
+    ids = tuple(sorted(cli.NOV04_BINDINGS))
+    assert len(ids) == 12 and cli.checked_scope(ids, incident=cli.NOV04_VERSION) == ids
+    assert cli.schema(cli.NOV04_VERSION) == "reference_htdy_conflict_cli_20261104_v1"
+    for bad in (ids[:-1], (*ids[:-1], ids[0]), (*ids[:-1], "foreign")):
+        with pytest.raises(ValueError):
+            cli.checked_scope(bad, incident=cli.NOV04_VERSION)
+    with pytest.raises(ValueError):
+        cli.checked_scope(ids, incident=cli.NOV03_VERSION)

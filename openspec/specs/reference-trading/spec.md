@@ -244,6 +244,17 @@ incident; stale generation/revision or a terminal status alone SHALL NOT do so. 
 SHALL block this operation. The same source, writer fence, one-shot attempt, atomic boundary,
 future FLAT restart and readback requirements below apply; no generic numeric overlap exemption is added.
 
+The owner-selected `htdy_conflict_recovery_20261104_v1` SHALL cover only the twelve
+SM/PK/AP/CJ/JD/LC/LH/PD/PS/PT/SF/SI 60m streams in inventory SHA256
+`f08607bb8fa823199d05aead9c5dc303bc578b1a482de19faf26ade82c9b7caf`.
+The same exact old revision, pending Capture, mixed activation generation and checkpoint batch
+checks SHALL apply, with only the frozen SI OPEN reference trade. The CLI schema SHALL be
+`reference_htdy_conflict_cli_20261104_v1`. Prior incident schemas, scope and proofs remain unchanged.
+The operation SHALL preserve all originals, append the SI DATA_INTERRUPTED boundary without
+exit price or return, and start all twelve future revisions FLAT. Complete verified prior
+retirement/calculation proofs, native MDS source proof, writer fencing, atomicity, one-shot
+attempt and readback remain mandatory; pending/evaluator failures receive no deployment exemption.
+
 The native MDS verifier SHALL prove immutable original/capture/checkpoint hashes, the exact 32-Bar
 windows, unchanged overlapping endpoint/physical-owner identities, Calendar/Session continuity and
 finite numeric differences. Every changed Bar SHALL match the current verified physical Canonical

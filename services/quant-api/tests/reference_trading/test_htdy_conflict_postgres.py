@@ -275,3 +275,67 @@ def test_real_second_retirement_keeps_old_proof_or_rejects_tamper(
     )
 
     repeated_retirement(*pg_setup, monkeypatch, tamper=tamper)
+
+
+@pytest.mark.parametrize(
+    "pg_setup",
+    [["sm", "pk", "ap", "cj", "jd", "lc", "lh", "pd", "ps", "pt", "sf", "si", "rb"]],
+    indirect=True,
+)
+def test_real_twelve_single_si_open_and_immutable_original(pg_setup, monkeypatch):
+    from tests.reference_trading.test_htdy_eleven_conflict_scope import configure_eleven
+    from tests.reference_trading.test_htdy_twelve_conflict_scope import PRODUCTS
+    from app.reference_trading.htdy_conflict_incidents import (
+        NOV04_VERSION,
+        NOV04_BINDINGS,
+    )
+    from app.reference_trading.htdy_conflict_recovery import _row
+    from app.reference_trading.models import ReferenceTradeRow
+    from tests.reference_trading.test_inbox import event
+    from dataclasses import replace
+
+    factory, recovery, _ = pg_setup
+    factory, recovery, ids = configure_eleven(
+        factory,
+        recovery,
+        monkeypatch,
+        products=PRODUCTS,
+        opened=("si",),
+        bindings=NOV04_BINDINGS,
+        incident=NOV04_VERSION,
+        binding_name="NOV04_BINDINGS",
+    )
+    incoming = replace(
+        event(end=NOW - timedelta(minutes=30)),
+        channel="live:bar:si:60m",
+        data={**event(end=NOW - timedelta(minutes=30)).data, "contract": "SI2612"},
+    )
+    delivery = (
+        ReferenceInboxRepository(factory)
+        .ingest(incoming, ingested_at=NOW)
+        .delivery_ids[0]
+    )
+    with factory() as db:
+        retained = _row(db.get(ReferenceInboxDelivery, delivery))
+        batches = {b.batch_id: _row(b) for b in db.scalars(select(ReferenceBatch))}
+    frozen = plan(recovery, ids)
+    result = recovery.apply(frozen, expected_plan_hash=frozen["plan_hash"], now=NOW)
+    assert len(result) == 12 and recovery.readback(frozen) == result
+    with factory() as db:
+        assert all(_row(db.get(ReferenceBatch, k)) == v for k, v in batches.items())
+        assert _row(db.get(ReferenceInboxDelivery, delivery)) == retained
+        assert delivery in verified_resolution_ids(db, stream_ids=ids)
+        interrupted = db.scalars(
+            select(ReferenceTradeRow).where(
+                ReferenceTradeRow.status == "DATA_INTERRUPTED"
+            )
+        ).all()
+        assert len(interrupted) == 1 and interrupted[0].stream_id in ids
+        assert (
+            interrupted[0].exit_reference_price is None
+            and interrupted[0].reference_return is None
+        )
+        input_id = db.get(ReferenceInboxDelivery, delivery).input_id
+    with pytest.raises(DBAPIError):
+        with factory() as db, db.begin():
+            db.get(ReferenceInboxInput, input_id).canonical_envelope = "ALTERED"
