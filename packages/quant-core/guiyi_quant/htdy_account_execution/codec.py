@@ -79,6 +79,7 @@ def _classes():
             m.TqKqInstrument,
             m.TqKqExecutionInput,
             m.TqKqTick,
+            m.TqKqResumeEmptyV1,
             m.Fill,
             m.NativeFill,
             m.CorrelatedNativeFillV1,

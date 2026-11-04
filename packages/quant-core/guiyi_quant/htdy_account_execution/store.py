@@ -269,7 +269,7 @@ class LocalStore:
     def execute(self, key, command, *, unsent_proof=None):
         m.text(key)
         if (
-            type(command) in (m.TqKqTick, m.TqKqFill)
+            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1)
             and self._execution_identity is None
         ):
             raise StoreError("TQ_ACCOUNT_IDENTITY_REQUIRED")
@@ -305,6 +305,7 @@ class LocalStore:
                     return Commit(state, (), sequence, True)
                 if self._needs_recovery and type(command) not in (
                     m.Recover,
+                    m.TqKqResumeEmptyV1,
                     m.AbortUnsent,
                     m.TqKqFill,
                     m.Fill,
@@ -378,7 +379,7 @@ class LocalStore:
                 self._uncertain = True
                 self._conn.close()
                 raise StoreError("COMMIT_OUTCOME_UNKNOWN") from None
-            if type(command) is m.Recover:
+            if type(command) in (m.Recover, m.TqKqResumeEmptyV1):
                 self._needs_recovery = (
                     not tx.state.readback_valid or tx.state.phase != "READY"
                 )
