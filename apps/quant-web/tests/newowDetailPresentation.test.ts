@@ -117,11 +117,11 @@ test('historical chart state description never claims to describe current snapsh
 
 test('reference percentage display preserves server decimals and never treats missing as zero', async () => {
   const { referencePercentDisplay, referenceInterruptionLabel } = await import('../src/utils/newowDetailPresentation.ts')
-  assert.deepEqual(referencePercentDisplay('5.1020'), { text: '+5.1%', direction: 'up' })
+  assert.deepEqual(referencePercentDisplay('5.1020'), { text: '+5.10%', direction: 'up' })
   assert.deepEqual(referencePercentDisplay('-1.2500'), { text: '-1.25%', direction: 'down' })
-  assert.deepEqual(referencePercentDisplay('-0.0000'), { text: '0%', direction: 'neutral' })
+  assert.deepEqual(referencePercentDisplay('-0.0000'), { text: '0.00%', direction: 'neutral' })
   assert.deepEqual(referencePercentDisplay('0.004'), { text: '<0.01%', direction: 'up' })
-  assert.deepEqual(referencePercentDisplay('0E-28'), { text: '0%', direction: 'neutral' })
+  assert.deepEqual(referencePercentDisplay('0E-28'), { text: '0.00%', direction: 'neutral' })
   assert.deepEqual(referencePercentDisplay('1E-2'), { text: '+0.01%', direction: 'up' })
   assert.deepEqual(referencePercentDisplay('-1E-14'), { text: '>-0.01%', direction: 'down' })
   assert.deepEqual(referencePercentDisplay(null), { text: '—', direction: 'neutral' })

@@ -103,7 +103,7 @@ export function returnCurveLayout<T extends ReturnCurvePoint>(source: readonly T
   return {
     points, segments, areas, zero: y(0), low, high, ticks, message: null,
     levels: Array.from({ length: 5 }, (_, index) => ({
-      y: index * 35, label: `${(high - (high - low) * index / 4).toFixed(1)}${policy.valueUnit === 'currency' ? '元' : policy.valueUnit === 'percentage_points' ? 'pp' : '%'}`,
+      y: index * 35, label: `${(high - (high - low) * index / 4).toFixed(2)}${policy.valueUnit === 'currency' ? '元' : policy.valueUnit === 'percentage_points' ? 'pp' : '%'}`,
     })),
   }
 }

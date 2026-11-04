@@ -1,3 +1,4 @@
+import { formatDisplayNumber } from './marketDisplay.ts'
 import type {
   BarData,
   DominantContractItem,
@@ -251,7 +252,7 @@ function displaySource(source: MarketOverlaySource): string {
 }
 
 function numberText(value: number | null | undefined): string {
-  return value === null || value === undefined ? '—' : value.toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+  return formatDisplayNumber(value, true)
 }
 
 function percentText(value: number | null | undefined): string {

@@ -8,8 +8,8 @@ test('percent distinguishes zero, missing and signed ratios', () => {
   }
 })
 
-test('prices preserve numeric precision and do not turn absent values into zero', () => {
-  for (const [input, expected] of [[1186.5, '1,186.5'], [0, '0'], [1.23456789123456, '1.23456789123456'], [0.0000001, '0.0000001'], [null, '—'], [NaN, '—'], [Infinity, '—']] as const) {
+test('prices format two decimals and do not turn absent values into zero', () => {
+  for (const [input, expected] of [[1186.5, '1,186.50'], [0, '0.00'], [1.23456789123456, '1.23'], [0.0000001, '0.00'], [null, '—'], [NaN, '—'], [Infinity, '—']] as const) {
     assert.equal(marketHomePrice(input), expected)
   }
 })

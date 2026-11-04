@@ -339,7 +339,7 @@ function percentageText(value: string | null, suffix = ''): string {
 export function formatDecimalString(value: string | null, fractionDigits?: number): string {
   return formatDecimalText(value, {
     maximumFractionDigits: fractionDigits ?? 2,
-    minimumFractionDigits: fractionDigits ?? 0,
+    minimumFractionDigits: fractionDigits ?? 2,
     grouping: true,
   })
 }

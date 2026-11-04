@@ -28,8 +28,8 @@ export function formatDecimalText(
 ): string {
   const parsed = parseDecimal(value)
   if (!parsed) return '—'
-  const maximum = options.maximumFractionDigits ?? 4
-  const minimum = options.minimumFractionDigits ?? 0
+  const maximum = options.maximumFractionDigits ?? 2
+  const minimum = options.minimumFractionDigits ?? Math.min(2, maximum)
   if (!Number.isInteger(maximum) || !Number.isInteger(minimum) || minimum < 0 || maximum < minimum || maximum > 100) {
     throw new Error('Decimal display precision is invalid')
   }
@@ -52,9 +52,15 @@ export function comparePositiveDecimalText(left: string | null | undefined, righ
   return x < y ? -1 : x > y ? 1 : 0
 }
 
-/** Calculated/reference prices use at most four display decimals. */
+/** Calculated/reference prices use exactly two display decimals. */
 export function formatMarketDecimal(value: string | null | undefined): string {
-  return formatDecimalText(value, { maximumFractionDigits: 4 })
+  return formatDecimalText(value)
+}
+
+/** Presentation boundary only; never round values passed back into calculations. */
+export function formatDisplayNumber(value: string | number | null | undefined, grouping = false): string {
+  if (value === null || value === undefined || typeof value === 'number' && !Number.isFinite(value)) return '—'
+  return formatDecimalText(String(value), { grouping })
 }
 
 export function formatMarketPercent(
@@ -98,8 +104,8 @@ function parseDecimal(value: string | null | undefined): ParsedDecimal | null {
 }
 
 function formatParsedDecimal(parsed: ParsedDecimal, options: DecimalDisplayOptions): string {
-  const maximum = options.maximumFractionDigits ?? 4
-  const minimum = options.minimumFractionDigits ?? 0
+  const maximum = options.maximumFractionDigits ?? 2
+  const minimum = options.minimumFractionDigits ?? Math.min(2, maximum)
   const rounded = roundedMagnitude(parsed, maximum)
   const padded = rounded.toString().padStart(maximum + 1, '0')
   let whole = maximum === 0 ? padded : padded.slice(0, -maximum)
@@ -131,10 +137,10 @@ function isLessThanHundredth(parsed: ParsedDecimal): boolean {
 
 export function formatMarketNumber(
   value: number | null | undefined,
-  maximumFractionDigits = 8,
+  maximumFractionDigits = 2,
 ): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—'
-  return value.toLocaleString('zh-CN', { maximumFractionDigits, useGrouping: true })
+  return formatDecimalText(String(value), { maximumFractionDigits, minimumFractionDigits: maximumFractionDigits === 0 ? 0 : 2, grouping: true })
 }
 
 export function marketFrequencyLabel(frequency: MarketFrequency): string {

@@ -17,7 +17,7 @@ const frequency = (value: string) => ({'1d':'日线','1w':'周线','60m':'60分�
       <strong>{{ item.label }}</strong>
       <p v-if="!item.available" role="status">{{ item.reason }}</p>
       <template v-else-if="item.source">
-        <p>显示 {{ newowReferencePrice(item.source.display_value) }} · 原始 {{ item.source.raw }} · {{ frequency(item.source.frequency) }} · Bar {{ formatBeijingInstant(item.source.bar_end) }}</p>
+        <p>显示 {{ newowReferencePrice(item.source.display_value) }} · 来源 {{ newowReferencePrice(item.source.raw) }} · {{ frequency(item.source.frequency) }} · Bar {{ formatBeijingInstant(item.source.bar_end) }}</p>
         <p v-if="item.label.endsWith('吸筹') && item.source.support_cap_applied !== undefined">吸筹现价上限 {{ item.source.support_cap_applied ? '已应用' : '未应用' }} · 原始与显示值保持分开</p>
         <p>物理合约 {{ item.source.physical_contract }} · Segment {{ item.source.segment_id }} · 计算段 {{ item.source.calculation_segment_id }}</p>
         <p>来源 {{ item.source.source_category }} · 分支 {{ item.source.branch }} · 公式 {{ item.source.formula_version }}</p>

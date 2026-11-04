@@ -1,3 +1,4 @@
+import { formatDisplayNumber } from './marketDisplay.ts'
 import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
 import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
@@ -39,7 +40,7 @@ export interface HtdyDerivedData {
 /** Formats a nullable chart observation without inventing a numeric fallback. */
 export function formatKlineHoverValue(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return '—'
-  return value.toLocaleString('zh-CN', { maximumFractionDigits: 4 })
+  return formatDisplayNumber(value, true)
 }
 
 const EMA_PERIODS: Record<EmaIndicatorId, number> = {

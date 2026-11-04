@@ -95,7 +95,7 @@ onBeforeUnmount(() => { readGeneration++; reference.dispose() })
       <p v-if="plot.message" role="status">{{ plot.message }}</p>
       <section v-if="summary" class="newow-reference__summary"><dl class="newow-reference__metrics">
         <div><dt>累计参考收益</dt><dd :data-direction="direction(summary.sum_return_percentage_points)">{{ summary.closed_count ? formatDecimalText(summary.sum_return_percentage_points, { maximumFractionDigits: 2, signed: true }) + ' 百分点' : '—' }}</dd></div>
-        <div><dt>参考胜率</dt><dd>{{ summary.win_rate_pct === null ? '—' : formatDecimalText(summary.win_rate_pct, { maximumFractionDigits: 1 }) + '%' }}</dd></div>
+        <div><dt>参考胜率</dt><dd>{{ summary.win_rate_pct === null ? '—' : formatDecimalText(summary.win_rate_pct, { maximumFractionDigits: 2 }) + '%' }}</dd></div>
         <div><dt>累计百分点回撤</dt><dd class="newow-reference__drawdown">{{ data?.drawdown_percentage_points == null ? '—' : formatDecimalText(data.drawdown_percentage_points, { maximumFractionDigits: 2 }) + ' 百分点' }}</dd></div>
         <div><dt>已完成参考交易</dt><dd>{{ summary.closed_count }}</dd></div>
       </dl></section>
