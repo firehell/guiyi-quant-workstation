@@ -108,6 +108,7 @@ export interface MarketBarWireDto {
 }
 
 export interface BarData {
+  confirmed?: boolean
   time: string
   trading_day?: string
   physicalContract?: string

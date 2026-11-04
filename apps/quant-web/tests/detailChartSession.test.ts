@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createDetailChartSession, detailChartIndex, detailChartLength, detailChartTimeAt } from '../src/utils/detailChartSession.ts'
+import { createDetailChartSession, detailChartVolumeBars, detailChartIndex, detailChartLength, detailChartTimeAt } from '../src/utils/detailChartSession.ts'
 
 function fixture() {
   const calls = { creates: 0, removes: 0, candles: 0, updates: 0, overlays: 0, detached: 0 }
@@ -128,7 +128,7 @@ test('crosshair forwarding unwraps leased series and rejects writes after releas
 })
 
 
-test('retained volume moves between Free pane and Newow overlay without rewriting facts', () => {
+test('retained main-pane volume is shared by Free and Newow without rewriting facts', () => {
   const f = fixture(), histogram = { type: 'Histogram' } as any
   let pane = 1, writes = 0, options: any = {}, creates = 0
   const original = f.raw.addSeries
@@ -141,13 +141,60 @@ test('retained volume moves between Free pane and Newow overlay without rewritin
   f.session.setIdentity('jm:1d')
   const data = [{ time: 1, value: 100 }]
   const free = f.session.acquire(f.container(), {})
-  free.addSeries(histogram, {}, 1).setData(data)
+  free.addSeries(histogram, { priceScaleId: 'volume' }, 0).setData(data)
   const newow = f.session.acquire(f.container(), {})
   newow.addSeries(histogram, { priceScaleId: 'volume' }, 0).setData(data)
   assert.equal(pane, 0); assert.equal(options.priceScaleId, 'volume')
   const back = f.session.acquire(f.container(), {})
-  back.addSeries(histogram, {}, 1).setData(data)
-  assert.equal(pane, 1); assert.equal(options.priceScaleId, 'right')
+  back.addSeries(histogram, { priceScaleId: 'volume' }, 0).setData(data)
+  assert.equal(pane, 0); assert.equal(options.priceScaleId, 'volume')
   assert.equal(creates, 1); assert.equal(writes, 1)
   f.session.dispose()
+})
+
+test('volume source suffix retains history for scoring and explanations and resets with identity', () => {
+ const f=fixture();f.session.setIdentity('jm:1d')
+ const input=Array.from({length:20},(_,i)=>({time:String(i),open:100,high:110,low:90,close:108,volume:100,physicalContract:'JM2701',calculationSegmentId:'c'}))
+ const full=f.session.mergeVolumeBars(input)
+ assert.equal(full.length,20)
+ const tail=f.session.mergeVolumeBars(input.slice(12))
+ assert.deepEqual(tail,full)
+ assert.equal(tail[0]!.time,'0','retained bars remain addressable by explanation time')
+ const corrected=input.slice(12).map(b=>({...b,volume:200}))
+ assert.deepEqual(f.session.mergeVolumeBars(corrected),corrected,'changed facts do not silently reuse stale history')
+ f.session.setIdentity('rb:1d');assert.deepEqual(f.session.mergeVolumeBars([]),[])
+ f.session.dispose()
+})
+
+test('MACD in pane one is not retained as volume',()=>{
+ const f=fixture(),histogram={type:'Histogram'} as any
+ let creates=0
+ const original=f.raw.addSeries
+ f.raw.addSeries=(...args:any[])=>{creates++;return original(...args)}
+ f.session.acquire(f.container(),{}).addSeries(histogram,{base:0},1)
+ f.session.acquire(f.container(),{}).addSeries(histogram,{base:0},1)
+ assert.equal(creates,2,'strategy auxiliary series are leased, not retained price facts')
+ f.session.dispose()
+})
+
+test('short preview volume replaces old histogram colors instead of retaining yellow prefix',()=>{
+ const f=fixture(),histogram={type:'Histogram'} as any
+ let plotted:any[]=[]
+ f.raw.addSeries=()=>({setData(data:any[]){plotted=data},update(point:any){plotted.push(point)},applyOptions(){}})
+ f.session.setIdentity('jm:1d')
+ const lease=f.session.acquire(f.container(),{}),volume=lease.addSeries(histogram,{priceScaleId:'volume'},0)
+ volume.setData([{time:1 as any,value:10,color:'#D9A400'},{time:2 as any,value:20,color:'#D9A400'}])
+ volume.setData([{time:2 as any,value:20,color:'rgba(255,59,48,0.6)'}])
+ assert.equal(plotted.length,1);assert.equal(plotted[0].color,'rgba(255,59,48,0.6)')
+ f.session.dispose()
+})
+
+test('an expired adapter cannot change the shared volume input window',()=>{
+ const f=fixture(),first=f.session.acquire(f.container(),{})
+ const input=[{time:'2026-11-01T07:00:00Z',open:1,high:2,low:1,close:2,volume:100,physicalContract:'JM2701',calculationSegmentId:'c'}]
+ detailChartVolumeBars(first,input)
+ const second=f.session.acquire(f.container(),{})
+ detailChartVolumeBars(first,[{...input[0]!,volume:200}])
+ assert.deepEqual(detailChartVolumeBars(second,[]),input)
+ f.session.dispose()
 })

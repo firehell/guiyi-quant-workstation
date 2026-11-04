@@ -1,5 +1,5 @@
 import type { NewowProductChartModel } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
-import { newowBarBreakoutScore, newowVolumeScores } from './newowVolumeDisplay.ts'
+import { newowBarBreakoutScore, newowActionBreakoutScores } from './newowBreakoutScore.ts'
 
 export const NEWOW_BREAKOUT_DISPLAY_VERSION = 'newow_oscillation_breakout_line_page_v1'
 export interface NewowBreakoutDisplay {
@@ -26,7 +26,7 @@ export function newowOscillationBreakout(model: NewowProductChartModel): NewowBr
   }
   let latest: { index: number; price: number; origin: NewowBreakoutDisplay['origin']; score: NewowBreakoutDisplay['score'] } | null = null
   for (let index = model.bars.length - 1; index >= 0 && sameOwner(index); index--) {
-    const score = newowVolumeScores(model, index).find(item => item.kind === 'CLEAR' && item.total >= 4)
+    const score = newowActionBreakoutScores(model, index).find(item => item.kind === 'CLEAR' && item.total >= 4)
     const action = score && model.actions.find(item => item.id === score.actionId)
     if (score && action) { latest = { index, price: action.value, origin: 'clear_action', score }; break }
   }

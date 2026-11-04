@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import VolumeExplanation from './VolumeExplanation.vue'
+import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
+import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
+
 import { formatDisplayNumber } from '@/utils/marketDisplay'
 import { DynamicRangePrimitive } from '@/components/kline/dynamicRangePrimitive'
 import { matchesRangeBar, pointKey, type DynamicRangePoint } from '@/utils/dynamicRange'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
-import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { DETAIL_CHART_SESSION, detailChartViewport, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
+import { inject, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { DETAIL_CHART_SESSION, detailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
   CandlestickSeries,
   ColorType,
@@ -61,6 +65,7 @@ const props = withDefaults(defineProps<{
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
+  volumeScoring?: boolean
   loading?: boolean
   error?: string | null
   period?: string
@@ -77,6 +82,7 @@ const props = withDefaults(defineProps<{
   referenceSelection?: KlineReferenceSelection[]
   qualityBreaks?: KlineQualityBreak[]
 }>(), {
+  volumeScoring: true,
   dynamicRangePoints: () => [],
   dynamicRangeEnabled: false,
   loading: false,
@@ -103,6 +109,10 @@ const emit = defineEmits<{
   'marker-select': [marker: KlineMarker]
 }>()
 
+const volumeExplanation = ref<InstanceType<typeof VolumeExplanation> | null>(null)
+const explanationBars = shallowRef<readonly DisplayVolumeBar[]>([])
+const volumeTop = ref(0)
+let volumeThemeObserver: MutationObserver | null = null
 const container = ref<HTMLElement>()
 const detailSession = inject<DetailChartSession | null>(DETAIL_CHART_SESSION, null)
 const positionedCallouts = ref<PositionedCallout[]>([])
@@ -233,7 +243,6 @@ onMounted(async () => {
   })
   chart.panes()[0].setStretchFactor(6)
   chart.addPane().setStretchFactor(2)
-  chart.addPane().setStretchFactor(2)
   candles = chart.addSeries(CandlestickSeries, {
     upColor: theme.candleUp,
     downColor: theme.candleDown,
@@ -254,15 +263,16 @@ onMounted(async () => {
   htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
   htdyMarkers = createSeriesMarkers(candles)
   volume = chart.addSeries(HistogramSeries, {
-    priceFormat: { type: 'volume' },
-  }, 1)
-  macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
-  macdDif = chart.addSeries(LineSeries, { color: '#00bfcf', lineWidth: 1, lastValueVisible: false }, 2)
-  macdDea = chart.addSeries(LineSeries, { color: '#d4b000', lineWidth: 1, lastValueVisible: false }, 2)
+    priceFormat: { type: 'volume' }, priceScaleId: 'volume', priceLineVisible: false, lastValueVisible: false,
+  }, 0)
+  volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
+  chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: .05, bottom: .14 } })
+  macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 1)
+  macdDif = chart.addSeries(LineSeries, { color: '#00bfcf', lineWidth: 1, lastValueVisible: false }, 1)
+  macdDea = chart.addSeries(LineSeries, { color: '#d4b000', lineWidth: 1, lastValueVisible: false }, 1)
   macdCrossMarkers = createSeriesMarkers(macdDif)
   macdDif.createPriceLine({ price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
-  chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
-  chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
+  chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart.subscribeCrosshairMove(onCrosshairMove)
   chart.subscribeClick(onClick)
@@ -270,9 +280,12 @@ onMounted(async () => {
   observer.observe(container.value)
   container.value.addEventListener('pointerup', syncMacdLabelTop)
   replaceBars(props.bars, detailChartViewport(chart) !== null)
+  if (typeof MutationObserver !== 'undefined') volumeThemeObserver = new MutationObserver(() => { if (volume) volume.setData(volumeValues(renderedBars)) })
+  for (const root of [document.documentElement, document.body]) if (root) volumeThemeObserver?.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
 })
 
 onUnmounted(() => {
+  volumeThemeObserver?.disconnect()
   if (calloutFrame !== null) cancelAnimationFrame(calloutFrame)
   if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
@@ -330,13 +343,14 @@ function barValues(bars: BarData[]) {
     : values
 }
 
+function volumeTime(bar: DisplayVolumeBar) {
+  return chartTime({ ...bar, trading_day: bar.trading_day ?? bar.tradingDay } as BarData)
+}
 function volumeValues(bars: BarData[]) {
-  const theme = resolveChartTheme()
-  return bars.map((bar) => ({
-    time: chartTime(bar),
-    value: bar.volume,
-    color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
-  }))
+  const input = chart ? detailChartVolumeBars(chart, bars) : bars
+  explanationBars.value = input
+  const colors = volumeColors(input, readNewowChartDisplayTheme(), props.volumeScoring)
+  return input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) }))
 }
 
 function replaceBars(bars: BarData[], preserveViewport = false): void {
@@ -538,6 +552,11 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
 }
 
 function onClick(param: MouseEventParams<Time>) {
+  if (param.time != null && param.paneIndex === 0 && param.point && chart && param.point.y >= chart.panes()[0]!.getHeight() * .87) {
+    const bar = explanationBars.value.find(bar => chartTimeKey(volumeTime(bar)) === chartTimeKey(param.time!))
+    if (bar) volumeExplanation.value?.showAt(bar.time)
+    return
+  }
   if (!props.markerSelectionEnabled) return
   const hovered = param.hoveredInfo
   if (hovered?.objectKind !== 'series-marker' || typeof hovered.objectId !== 'string') return
@@ -729,8 +748,9 @@ function isDaily() {
 function syncMacdLabelTop() {
   scheduleReferenceCallouts()
   const panes = chart?.panes()
-  if (!panes || panes.length < 3) return
-  macdLabelTop.value = panes[0].getHeight() + panes[1].getHeight()
+  if (!panes || panes.length < 2) return
+  macdLabelTop.value = panes[0].getHeight()
+  volumeTop.value = panes[0].getHeight() * .87 + 4
 }
 
 function resize() {
@@ -739,8 +759,7 @@ function resize() {
     const layout = detailChartPaneLayout(container.value.clientHeight, 32)
     const panes = chart.panes()
     panes[0]?.setStretchFactor(layout.mainHeight)
-    panes[1]?.setStretchFactor(layout.volumeHeight)
-    panes[2]?.setStretchFactor(layout.auxiliaryHeight)
+    panes[1]?.setStretchFactor(layout.auxiliaryHeight)
   }
   chart.resize(container.value.clientWidth, container.value.clientHeight)
   if (viewportStabilityTarget) {
@@ -785,6 +804,7 @@ defineExpose({
     <div v-if="referenceCallouts.length" class="reference-callouts" aria-label="历史重算参考信号">
       <ReferenceCalloutLabels :items="positionedCallouts.map(item => ({ position: item, title: item.callout.title, detail: item.callout.detail, direction: item.callout.tone === 'gain' ? 'up' : item.callout.tone === 'loss' ? 'down' : 'neutral', selected: isReferenceSelected(item.callout), labelClass: 'reference-callout', ariaLabel: `${item.callout.title}，参考价 ${item.callout.detail}，历史重算` }))" />
     </div>
+    <VolumeExplanation ref="volumeExplanation" :bars="explanationBars" :top="volumeTop" :scoring="volumeScoring" />
     <KlineHoverLegend
       :context="hoverContext"
       :period="period"
