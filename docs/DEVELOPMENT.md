@@ -100,14 +100,16 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 首页控盘复用确认 Bar 的现有控盘指标；日线收益展示现有 ordinary 页面参考收益及参考交易数，零手续费与滑点，不是牛哇私有最佳周期准确率或账户收益。目标／吸筹空间以确认收盘价计算；日周综合信号与日线参考价格分别表达。缺失或身份不匹配的数据继续显示待确认。
 
 
-首页策略联调先显式执行 `guiyi home build --output <开发派生文件>`，启动8002 API时设置
-`GUIYI_HOME_PROJECTION_PATH` 指向该文件。首页GET只读投影，首次缺失不会自动计算。
+使用其他 API 启动器时，首页策略联调先显式执行 `guiyi home build --output <开发派生文件>`，
+并设置 `GUIYI_HOME_PROJECTION_PATH` 指向该文件。首页GET只读投影，不自动计算。
 正式默认投影与开发文件分离；不要为预览启用盘后任务或切换正式Runtime。
 
 开发预览入口使用既有严格读取器加载 `~/Library/Application Support/GuiyiQuant/project.env` 的
 DB、Canonical 和 Redis 依赖，不输出或修改配置；按正式启动器规则补齐 Redis URL 认证。
-先运行同前缀的 `python -m app.develop_preview build`，显式构建 `.run/develop-newow-home.json`；
-API 固定读取该开发文件，不覆盖共享正式派生资产。缺失时显示未发布，GET 不自动构建。
+`python -m app.develop_preview api` 在启动 HTTP 服务前，使用既有幂等 builder 校验并更新
+`.run/develop-newow-home.json`，避免重启后继续读取过期摘要；身份未变的周期不会重算。
+同前缀的 `python -m app.develop_preview build` 也可单独更新该文件。只写本地开发派生文件，
+不下载行情、不覆盖共享正式资产，不启用后台任务；构建未成功的周期保留真实失败状态，GET 不自动构建。
 首页日周图标旁的“历史”及展开原因说明发布有效性；正常已完成日周线不会因分钟报价变化而重算。
 参考收益显示累计页面收益与笔数；距离始终按日线参考收盘价计算，正常卡片在悬停说明中提供基准及日周各自截至时间；历史／失败状态保留可见原因。
 
