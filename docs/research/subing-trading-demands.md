@@ -224,3 +224,10 @@ owner确认：被环境单独拦截的机会保留至原0..5根有效期，环�
 应用 `/research/subing-decision` 由模拟交易后的“苏冰决策”进入。只读API `/api/v1/research/subing-decision/*` 读取 `GUIYI_SUBING_DECISION_RESULTS_ROOT` 的显式SHA登记包；开发入口配置本轮 `output/subing-unified-20261104/registered`。请求不运行回测。包绑定输入、执行事实、结构约束及开跑前/写包前一致的源码hash。
 
 四个独立窗口为JM2505 2025-01-06..13、JM2509 2025-05-26..06-04、JM2609 2026-06-01..08、JM2601 2025-11-17..24；各10万元空仓启动，物理前缀只预热，不拼接收益。60m方向仅观察，不作Gate。下一开盘事实在首根1m完成时才观察，成交严格后续；理论最多三手流动性不是盘口证明。页面时刻游标约束图、持仓、成交和决策历史，完整窗口绩效单独折叠。属于已见历史候选，不推导OOS、持续运行或账户晋升。
+
+
+### 解释投影v2收口
+
+`subing_demand_explanation_v2` 只消费已评价状态、实际动作和Observer开盘检查原件，不改变账户行为。阶段显式保留BAR_CLOSE、DAY_END、NEXT_OPEN_AFTER_DAY_END；日终记录等待下一Session开盘，既有退出优先。开盘解释复用原开盘价毛浮盈检查，不以首根分钟收盘重新判定；当前持仓毛浮盈与开盘复核并列。主需求携带实际触发理由、支持/阻止理由、事实缺口和下一等待事项，页面仅翻译。
+
+新解释包单独登记于 `output/subing-explanation-v2-20261104/registered`，原包保留。四窗口同context复算，baseline、previous_candidate、candidate全部结果字段对照原accepted结果；解释变化不得改变成交、费用、权益、未决动作或持仓路径。只读接口要求显式投影身份。

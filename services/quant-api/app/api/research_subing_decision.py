@@ -38,7 +38,7 @@ def packet(run_id):
         raw=_read_file(root/(run_id+'.json'))
         if hashlib.sha256(raw).hexdigest()!=row['sha256']:fail('RESULT_HASH_MISMATCH')
         data=json.loads(raw)
-        if data['product']!='jm' or data['contract']!=row['contract'] or data['version']!='subing_unified_demand_candidate_v1' or not data['chain']:
+        if data['product']!='jm' or data['contract']!=row['contract'] or data['version']!='subing_unified_demand_candidate_v1' or data.get('projection_version')!='subing_demand_explanation_v2' or not data['chain']:
             fail('RESULT_IDENTITY_INVALID')
         return data
     except (OSError, ValueError, KeyError, TypeError, ResultStoreError):

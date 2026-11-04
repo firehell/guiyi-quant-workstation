@@ -122,7 +122,7 @@ def main():
     summary={k:dict(summary=v['summary'],fills=len(v['fills']),exit_reasons=dict(Counter(reason for f in v['fills'] if f['action']=='CLOSE' for reason in f['reasons']))) for k,v in results.items()}
     summary['verification']=dict(candidate_decision_restore=True,candidate_observer_restore=True,strict_later_fills=True)
     (out/'summary.json').write_text(json.dumps(summary,default=str,ensure_ascii=False,indent=2)+'\n')
-    packet=dict(version=model_version,product='jm',contract=args.contract,since=str(args.since),through=str(args.through),
+    packet=dict(projection_version='subing_demand_explanation_v2',version=model_version,product='jm',contract=args.contract,since=str(args.since),through=str(args.through),
         context_hash=context,input_snapshot_hash=evidence['factors_input_hash'],execution_facts_hash=record['facts_sha256'],
         mode='HISTORICAL_CANDIDATE',oos_status='NOT_PROVEN',initial_cash='100000',summary=summary,
         chart=chart,chain=chain,fills=results['candidate']['fills'])

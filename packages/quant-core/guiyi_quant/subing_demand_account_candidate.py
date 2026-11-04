@@ -47,12 +47,14 @@ def build_engine(executions,schedule,*,gate_first_entry=True,structures=None):
                 return dict(event_id=kind+':'+e['event_id'],contract=self.contract,kind=kind,trading_day=e['trading_day'],previous_trading_day=cal['previous'],
                             observed_at=at.isoformat(),price_at=price_at.isoformat(),layers=layers,position_id=position_id,regime=regime,
                             mark=str(mark),multiplier=str(x.facts.multiplier),session_day_end=cal['day_end'],next_open=cal['next_open'])
+            opening_review=None
             start=at-timedelta(minutes=1)
             # Fills already acknowledged by the execution engine are now known.
             # Opening mark is observed at completed minute end; new intent can
             # only fill strictly later through the unchanged execution engine.
             if self.observer.waiting and start.isoformat()==__import__('datetime').datetime.fromisoformat(cal['first_open']).isoformat():
                 result=self.observer.apply(event('NEXT_OPEN',b.open,start,self.regime))
+                opening_review=deepcopy(result)
                 if result['demand']=='EXIT_REQUIRED':
                     self.clear_reasons=list(dict.fromkeys(self.clear_reasons+[result['reason']]))
             regime=e['m30']['regime'] if e['m30'] else self.regime
@@ -98,29 +100,18 @@ def build_engine(executions,schedule,*,gate_first_entry=True,structures=None):
                     if opportunity['met'] is True and w['age'] is not None and w['age']<self.window_age:
                         self.windows[side]=EntryWindow(self.contract,at,w['source_end'],w['age'])
             if structures is not None:
-                from .subing_demand_policy import Facts, project
+                from .subing_demand_explanation import explain
                 from .subing_demand_observer import gross
-                opening=next((a for a in actions if a.get('kind') in ('OPEN','ADD')),None)
-                reason=result['reason']
-                demand=project(Facts(side=self.side or 'FLAT',regime=regime,
+                phase='DAY_END' if kind=='DAY_END' else 'NEXT_OPEN_AFTER_DAY_END' if opening_review else 'BAR_CLOSE'
+                explanation=explain(state=self.state(),regime=regime,phase=phase,
                     pending_break=structure.get('break_side') if blocked else None,
-                    gross_remaining=gross(layers,str(b.close),str(x.facts.multiplier)),
-                    nonpositive_range_days=self.observer.streak,
-                    all_exit_required=bool(self.clear_reasons),reduce_required=bool(self.exit_layers),
-                    action_pending=bool(self.pending),first_entry_ready=bool(opening and opening['kind']=='OPEN'),
-                    add_ready=bool(opening and opening['kind']=='ADD')))
-                # Executable intentions have already passed the same core checks.
-                kind=demand.kind
-                if opening:
-                    kind='CHECK_ENTRY_ELIGIBILITY' if opening['kind']=='OPEN' else 'CHECK_ADD_ELIGIBILITY'
-                    demand=type(demand)(kind,'ORIGINAL_ENTRY_FACTS_READY' if opening['kind']=='OPEN' else 'FRESH_POSITION_AND_ORIGINAL_ADD_FACTS_READY')
-                if any(a.get('kind')=='CLOSE' for a in actions):kind='EXIT_OBLIGATION' if self.clear_reasons else 'REDUCE_OBLIGATION'
+                    gross=gross(layers,str(b.close),str(x.facts.multiplier)),streak=self.observer.streak,
+                    actions=actions,opening_review=opening_review)
                 self.chain.append(_wire(dict(at=at,daily_direction=e['daily_direction'],daily_at=e['daily_at'],
                     regime=regime,structure=structure,conflict=bool(structure and structure.get('structure_direction') in ('UP','DOWN') and regime!='TREND_'+structure['structure_direction']),
-                    demand=kind,reason=reason if result['demand'] in ('EXIT_REQUIRED','EXIT_OBLIGATION','RECORD_ONLY') else demand.reason,
+                    **explanation, opening_review=opening_review,
                     conditions=dict(daily_direction=e['daily_direction'],environment_allows_new=regime not in ('RANGE','UNKNOWN') and not blocked,
                         risk_allows_new=e['admission'],frame=e['m30'] or self.latest_frame,entry_windows=self.state()['entry_windows']),
-                    blocking_reasons=[reason for a in actions if a.get('kind')=='REJECT' for reason in a.get('reasons',[])],
                     actions=actions,position=self.state(),gross_remaining=str(gross(layers,str(b.close),str(x.facts.multiplier))))))
             return actions
 

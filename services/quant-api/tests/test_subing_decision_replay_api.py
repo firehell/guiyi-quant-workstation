@@ -6,7 +6,7 @@ from app.api.research_subing_decision import router
 
 def setup(tmp_path,monkeypatch):
     chain=[dict(at=f'2025-01-06T09:0{i}:00+08:00',demand='WAIT') for i in range(3)]
-    data=dict(product='jm',contract='JM2505',version='subing_unified_demand_candidate_v1',chain=chain,chart=[dict(at=r['at'],close='100') for r in chain],fills=[dict(fill_at=chain[2]['at'],price='100')])
+    data=dict(projection_version='subing_demand_explanation_v2',product='jm',contract='JM2505',version='subing_unified_demand_candidate_v1',chain=chain,chart=[dict(at=r['at'],close='100') for r in chain],fills=[dict(fill_at=chain[2]['at'],price='100')])
     raw=json.dumps(data).encode();key=hashlib.sha256(raw).hexdigest()
     (tmp_path/(key+'.json')).write_bytes(raw)
     (tmp_path/'index.json').write_text(json.dumps([dict(id=key,sha256=key,contract='JM2505',through='2025-01-06')]))

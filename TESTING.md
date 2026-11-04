@@ -2391,7 +2391,7 @@ PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过�
 ## 焦煤统一环境—需求历史回放
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider scripts/research/test_subing_unified.py scripts/research/test_subing_recent_structure.py scripts/research/test_subing_demand_policy.py scripts/research/test_subing_demand_observer.py scripts/research/test_subing_demand_account_candidate.py services/quant-api/tests/test_subing_decision_replay_api.py tests/unit/subing_account tests/unit/subing_decision tests/unit/subing_conditions
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider scripts/research/test_subing_demand_explanation.py scripts/research/test_subing_unified.py scripts/research/test_subing_recent_structure.py scripts/research/test_subing_demand_policy.py scripts/research/test_subing_demand_observer.py scripts/research/test_subing_demand_account_candidate.py services/quant-api/tests/test_subing_decision_replay_api.py tests/unit/subing_account tests/unit/subing_decision tests/unit/subing_conditions
 pnpm -C apps/quant-web build
 ```
 
