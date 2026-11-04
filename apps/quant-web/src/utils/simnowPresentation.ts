@@ -1,13 +1,13 @@
+import { formatDisplayNumber, formatMarketPercent } from './marketDisplay.ts'
 import type { MonitorOverview } from '../api/simnowMonitor.ts'
 export function monitorTime(value: string | null | undefined) {
   if (!value || !Number.isFinite(Date.parse(value))) return '—'
   return new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(value))
 }
 export function monitorMoney(value: string | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(Number(value))) return '—'
-  return Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: Number(value) !== 0 && Math.abs(Number(value)) < .01 ? 8 : 2 })
+  return formatDisplayNumber(value, true)
 }
-export function monitorPercent(value: string | null | undefined) { return value === null || value === undefined ? '—' : `${(Number(value) * 100).toFixed(1)}%` }
+export function monitorPercent(value: string | null | undefined) { return formatMarketPercent(value, 'ratio') }
 export function observerLabel(data: MonitorOverview | null, now = Date.now()) {
   if (!data?.account) return '尚未接入监控'
   if (data.observer?.mode === 'trade' && data.observer.account_takeover_pending === true) {

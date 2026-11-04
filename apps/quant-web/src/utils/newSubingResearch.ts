@@ -1,3 +1,4 @@
+import { formatDecimalText } from './marketDisplay.ts'
 export type ResearchSummary = Record<string, unknown> & { status: string }
 
 type RunSelection = { product: string; scenario: string; strategy_code: string; initial_cash?: string }
@@ -13,22 +14,17 @@ export function matchingProfile(profile: ProfileSelection, strategy: string, cas
 }
 
 const DECIMAL_TEXT = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
-const ZERO_TEXT = /^[+-]?0*(?:\.0*)?(?:[eE][+-]?\d+)?$/
 
 export function metricText(summary: ResearchSummary | null, key: string, suffix = ''): string {
   if (!summary || summary.status !== 'COMPLETED') return '不可评价'
   const value = summary[key]
   if (typeof value !== 'string' && typeof value !== 'number') return '未提供'
   const original = String(value)
-  const digits = key === 'account_return_pct' || key === 'max_drawdown_pct' ? 2
-    : key === 'final_equity' || key === 'initial_cash' || key === 'total_fees' ? 2 : null
-  if (digits === null || !DECIMAL_TEXT.test(original)) return `${original}${suffix}`
+  if (!DECIMAL_TEXT.test(original) || /(?:trades|count|bars|orders|fills|days|samples)$/.test(key)) return `${original}${suffix}`
   const numeric = Number(original)
-  const safe = Number.isFinite(numeric) && Math.abs(numeric) <= Number.MAX_SAFE_INTEGER / (10 ** digits)
-    && (numeric !== 0 || ZERO_TEXT.test(original))
-  if (!safe) return `${original}${suffix}`
-  if (numeric !== 0 && Math.abs(numeric) < 10 ** -digits) return `${numeric < 0 ? '-' : ''}<${(10 ** -digits).toFixed(digits)}${suffix}`
-  return `${new Intl.NumberFormat('en-US', { useGrouping: false, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(numeric)}${suffix}`
+  if (numeric !== 0 && Math.abs(numeric) < .01) return `${numeric < 0 ? '-' : ''}<0.01${suffix}`
+  const formatted = formatDecimalText(original)
+  return `${formatted === '—' ? original : formatted}${suffix}`
 }
 
 export function runStateText(status: string): string {

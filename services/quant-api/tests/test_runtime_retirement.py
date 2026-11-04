@@ -3,14 +3,17 @@ from app import runtime_retirement as m
 
 
 @pytest.mark.parametrize("omit_close_resolution", (False, True))
+@pytest.mark.parametrize("calendars,original", ((False, False), (True, True)))
 def test_archive_post_feed_stopped_chain_requires_unique_close_resolution(
-    tmp_path, monkeypatch, omit_close_resolution
+    tmp_path, monkeypatch, omit_close_resolution, calendars, original
 ):
     from app import runtime_cohort as cohort, runtime_cohort_recovery as recovery
     from app.runtime_handover import _write
     from tests.test_runtime_stopped_recovery import recover_after_feed_failure
 
-    host, failed, fresh = recover_after_feed_failure(tmp_path, monkeypatch)
+    host, failed, fresh = recover_after_feed_failure(
+        tmp_path, monkeypatch, calendars=calendars, original=original
+    )
     if omit_close_resolution:
         folder = host.directory / "cohort-forward-recoveries" / fresh["plan_sha256"]
         receipt = m._json(folder / "receipt.json")
@@ -40,7 +43,7 @@ def test_archive_post_feed_stopped_chain_requires_unique_close_resolution(
             },
         },
     )
-    previous = m._json(failed["stopped_confirmation"]["path"])
+    previous = m._json((fresh if original else failed)["stopped_confirmation"]["path"])
     assert len(previous["attempts"]) == 2
     expected = set(previous["attempts"]) | {
         fresh["plan_sha256"],

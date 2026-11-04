@@ -36,12 +36,12 @@ test('research metric display rounds only presentation precision', () => {
   assert.equal(summary.max_drawdown_pct, '0.123456789012345678901234567890')
 })
 
-test('unknown and unsafe numeric strings retain exact fallback', () => {
+test('huge Decimal strings format exactly while unknown stays unknown', () => {
   assert.equal(metricText({ status: 'COMPLETED' }, 'final_equity'), '未提供')
   assert.equal(metricText({ status: 'EXECUTION_FACTS_MISSING', final_equity: '100000' }, 'final_equity'), '不可评价')
-  assert.equal(metricText({ status: 'COMPLETED', final_equity: '9007199254740993.125' }, 'final_equity'), '9007199254740993.125')
-  assert.equal(metricText({ status: 'COMPLETED', final_equity: '1e999' }, 'final_equity'), '1e999')
-  assert.equal(metricText({ status: 'COMPLETED', final_equity: '1e-999' }, 'final_equity'), '1e-999')
+  assert.equal(metricText({ status: 'COMPLETED', final_equity: '9007199254740993.125' }, 'final_equity'), '9007199254740993.13')
+  assert.equal(metricText({ status: 'COMPLETED', final_equity: '1e999' }, 'final_equity'), `1${'0'.repeat(999)}.00`)
+  assert.equal(metricText({ status: 'COMPLETED', final_equity: '1e-999' }, 'final_equity'), '0.00')
   assert.equal(metricText({ status: 'COMPLETED', final_equity: 'unknown' }, 'final_equity'), 'unknown')
 })
 

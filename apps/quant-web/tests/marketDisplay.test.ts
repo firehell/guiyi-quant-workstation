@@ -3,6 +3,8 @@ import test from 'node:test'
 
 import {
   formatDecimalText,
+  formatDisplayNumber,
+  formatMarketNumber,
   formatMarketDecimal,
   formatBeijingInstant,
   formatMarketPercent,
@@ -12,12 +14,20 @@ import {
   quoteAvailabilityLabel,
 } from '../src/utils/marketDisplay.ts'
 
-test('formats Decimal text without binary conversion or meaningless trailing zeroes', () => {
-  assert.equal(formatMarketDecimal('718.000000000000000000'), '718')
+test('display rounding is fixed at two places while integer counts stay integers', () => {
+  for (const [value, expected] of [[1.005, '1.01'], [-1.005, '-1.01'], [9.999, '10.00'], [0, '0.00'], [-0, '0.00'], ['1e-8', '0.00'], [null, '—'], [NaN, '—'], ['', '—']] as const) {
+    assert.equal(formatDisplayNumber(value), expected)
+  }
+  assert.equal(formatDisplayNumber('9007199254740993.125'), '9007199254740993.13')
+  assert.equal(formatMarketNumber(1234, 0), '1,234')
+})
+
+test('formats Decimal text with exactly two decimals without binary conversion', () => {
+  assert.equal(formatMarketDecimal('718.000000000000000000'), '718.00')
   assert.equal(formatMarketDecimal('-0.070000'), '-0.07')
   assert.equal(formatMarketDecimal('12345678901234567890.1200'), '12345678901234567890.12')
-  assert.equal(formatMarketDecimal('911.363333333333333333'), '911.3633')
-  assert.equal(formatMarketDecimal('9.99995'), '10')
+  assert.equal(formatMarketDecimal('911.363333333333333333'), '911.36')
+  assert.equal(formatMarketDecimal('9.99995'), '10.00')
   assert.equal(formatMarketDecimal('4.4932e2'), '449.32')
   assert.equal(formatMarketDecimal(null), '—')
   assert.equal(formatMarketDecimal('not-a-decimal'), '—')
@@ -28,8 +38,8 @@ test('rounds display percentages by declared source unit without Number conversi
   assert.equal(formatMarketPercent('0.123456', 'ratio'), '12.35%')
   assert.equal(formatMarketPercent('-0.00001', 'percentage_points'), '>-0.01%')
   assert.equal(formatMarketPercent('0.00001', 'percentage_points'), '<0.01%')
-  assert.equal(formatMarketPercent('-0.0000', 'percentage_points'), '0%')
-  assert.equal(formatMarketPercent('1.25e-1', 'ratio', true), '+12.5%')
+  assert.equal(formatMarketPercent('-0.0000', 'percentage_points'), '0.00%')
+  assert.equal(formatMarketPercent('1.25e-1', 'ratio', true), '+12.50%')
   assert.equal(formatMarketPercent('not-a-decimal', 'ratio'), '—')
 })
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDisplayNumber } from '@/utils/marketDisplay'
 import type { NewowCupWitness } from '@/types/newowProduct'
 import { formatMarketDecimal } from '@/utils/marketDisplay'
 import { shortNewowTime } from '@/utils/newowDetailPresentation'
@@ -20,7 +21,7 @@ const points = (witness: NewowCupWitness) => projectNewowCupPoints(witness)
         <text v-else x="12" y="36">拐点价格不可用</text>
       </svg>
       <dl><div v-for="(point, index) in facts(witness)" :key="point.kind"><dt>{{ ['左杯沿', '杯底', '右杯沿', '柄极值'][index] }}</dt><dd>{{ formatMarketDecimal(point.price) }} · {{ shortNewowTime(point.pivot_at) }}</dd><small>确认 {{ shortNewowTime(point.confirmed_at) }}</small></div></dl>
-      <p>Pivot {{ formatMarketDecimal(witness.pivot_price) }} · 确认 {{ shortNewowTime(witness.confirmed_at) }} · score {{ witness.score }}</p>
+      <p>Pivot {{ formatMarketDecimal(witness.pivot_price) }} · 确认 {{ shortNewowTime(witness.confirmed_at) }} · score {{ formatDisplayNumber(witness.score) }}</p>
       <details><summary>评分与可审计事实</summary><p>{{ witness.candidate_id }} · {{ witness.witness_id }}</p><p>{{ witness.score_breakdown.map(([key, value]) => `${key}: ${value}`).join(' / ') || '无评分拆分' }}</p><p>{{ witness.formula_version }} · {{ witness.profile_identity }}</p></details>
     </article>
   </section>

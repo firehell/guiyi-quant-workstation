@@ -371,7 +371,8 @@ def test_tampered_completed_simnow_chain_blocks(tmp_path, monkeypatch, artifact)
 
 
 @pytest.mark.parametrize('field', ['project_root', 'api_env', 'sdk_python', 'state_root',
-    'state_project_root', 'ordinary_takeover_permit', 'deployment_connection_permit'])
+    'state_project_root', 'ordinary_takeover_permit', 'deployment_connection_permit',
+    'infrastructure_recovery_permit'])
 def test_all_simnow_path_fields_pin_old_tree(tmp_path, monkeypatch, field):
     import json
     old, config, monitor, backend = _simnow_fixture(tmp_path, monkeypatch)
@@ -598,6 +599,47 @@ def test_stable_recovery_labels_alone_never_close_dependency(tmp_path,monkeypatc
     path=_private_recovery(tmp_path,old)
     path.write_text(json.dumps(dict(schema='future-recovery',stage=word,root=str(old))))
     assert build_cleanup_plan((old,),backend=backend)['targets'][0]['status']=='retained'
+
+
+@pytest.mark.parametrize('name', [
+    'simnow-stable-migration-v75-20261103',
+    'simnow-infrastructure-recovery-v79-20261104',
+    'simnow-infrastructure-recovery-v79-start-continuation-20261104',
+])
+def test_current_private_recovery_directories_keep_unknown_dependencies(tmp_path, monkeypatch, name):
+    import json
+    old, config, monitor, backend = _simnow_fixture(tmp_path, monkeypatch, installed=False, loaded=False)
+    # Remove the unrelated fixture pin so this specifically proves directory discovery.
+    value = json.loads(config.read_text())
+    value['api_env'] = str(tmp_path / 'current/.venv')
+    config.write_text(json.dumps(value))
+    folder = tmp_path / 'Library/Application Support/GuiyiQuant' / name
+    folder.mkdir(mode=0o700)
+    evidence = folder / 'state.private.json'
+    evidence.write_text(json.dumps(dict(result='UNKNOWN', old_root=str(old))))
+    evidence.chmod(0o600)
+    plan = build_cleanup_plan((old,), backend=backend)
+    assert plan['targets'][0]['status'] == 'retained'
+    assert any(name in reason for reason in plan['targets'][0]['references'])
+
+
+@pytest.mark.parametrize('uninstalled', [False, True])
+def test_existing_infrastructure_permit_outside_inventory_blocks_cleanup(tmp_path, monkeypatch, uninstalled):
+    import json
+    old, config, monitor, backend = _simnow_fixture(tmp_path, monkeypatch,
+        installed=not uninstalled, loaded=not uninstalled)
+    folder = tmp_path / 'operator-exact-recovery'
+    folder.mkdir(mode=0o700)
+    permit = folder / 'infrastructure-recovery-permit.private.json'
+    permit.write_text(json.dumps(dict(source=dict(old_root=str(old)))))
+    permit.chmod(0o600)
+    value = json.loads(config.read_text())
+    value.update(api_env=str(tmp_path / 'current/.venv'), infrastructure_recovery_permit=str(permit))
+    config.write_text(json.dumps(value))
+    if uninstalled:
+        candidate = _private_recovery(tmp_path, old, candidate=True)
+        candidate.write_bytes(config.read_bytes())
+    assert build_cleanup_plan((old,), backend=backend)['targets'][0]['status'] == 'blocked'
 
 
 @pytest.mark.parametrize('extra',['Program','EnvironmentVariables'])

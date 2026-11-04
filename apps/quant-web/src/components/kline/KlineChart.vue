@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDisplayNumber } from '@/utils/marketDisplay'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
@@ -204,7 +205,7 @@ onMounted(async () => {
       horzLines: { color: theme.grid },
     },
     rightPriceScale: { borderColor: theme.axis },
-    localization: { timeFormatter: formatChartTimeInShanghai },
+    localization: { timeFormatter: formatChartTimeInShanghai, priceFormatter: (value: number) => formatDisplayNumber(value) },
     crosshair: {
       vertLine: {
         labelBackgroundColor: '#1F2937',

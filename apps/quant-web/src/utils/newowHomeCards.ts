@@ -248,7 +248,7 @@ export function homeRowHints(day?: HomePeriodFact) {
       } catch { return [] }
     }
     if (item.kind!=='reduce' || !item.formula_version || !/^\d{4}-\d{2}-\d{2}$/.test(item.event_day) || !Number.isFinite(Number(item.j_value)) || Number(item.reference_price)<=0) return []
-    return [{label:'减仓',focusBarEnd:undefined,title:`J值（${Number(item.j_value).toFixed(1)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`}]
+    return [{label:'减仓',focusBarEnd:undefined,title:`J值（${Number(item.j_value).toFixed(2)}）自高位回落 · ${item.event_day} · 参考价 ${newowReferencePrice(item.reference_price)} · 页面参考提示`}]
   })
 }
 

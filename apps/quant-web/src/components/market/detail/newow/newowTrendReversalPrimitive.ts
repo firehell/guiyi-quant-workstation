@@ -81,7 +81,7 @@ export class NewowTrendReversalPrimitive implements ISeriesPrimitive<Time> {
       context.fillStyle = NEWOW_TREND_REVERSAL_STYLE.axis
       context.font = '10px -apple-system, sans-serif'
       context.textAlign = 'left'; context.fillText('0', 4, mediaSize.height - 5)
-      context.textAlign = 'right'; context.fillText(`+${limit.toFixed(1)}% / −${limit.toFixed(1)}%`, mediaSize.width - 5, mediaSize.height - 5)
+      context.textAlign = 'right'; context.fillText(`+${limit.toFixed(2)}% / −${limit.toFixed(2)}%`, mediaSize.width - 5, mediaSize.height - 5)
       context.restore()
     })
   }

@@ -910,6 +910,7 @@ async function componentModule(url: URL): Promise<string> {
   }).outputText
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
     .replace(/from ['"]lightweight-charts['"]/g, `from '${import.meta.resolve('lightweight-charts')}'`)
+    .replace(/from ['"](\.[^'"]+\.ts)['"]/g, (_match, specifier: string) => `from '${new URL(specifier, url).href}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
       const path = resolveSourceImport(specifier)
       return `from '${pathToFileURL(path).href}'`

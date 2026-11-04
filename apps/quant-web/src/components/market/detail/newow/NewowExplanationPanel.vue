@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { formatDisplayNumber } from '@/utils/marketDisplay'
 import { computed, ref, useId } from 'vue'
 
 import { describeNewowState, newowDisplayLabel, shortNewowTime } from '@/utils/newowDetailPresentation'
@@ -116,7 +117,7 @@ const sortedWindows = computed(() => comparator.value === null ? [] : [...compar
         <p>{{ comparator.disclosure }} 排序首位仅表示当前展示排序，不构成推荐或策略采纳。</p>
         <p v-if="comparator.reason !== '—'">Evidence {{ comparator.reason }}</p>
         <div class="newow-comparator__sort" aria-label="五窗口排序"><button v-for="item in ([['default', '默认'], ['return', '收益'], ['drawdown', '回撤'], ['winRate', '胜率']] as const)" :key="item[0]" :aria-pressed="comparatorSort === item[0]" @click="comparatorSort = item[0]">{{ item[1] }}</button></div>
-        <div class="newow-comparator__cards"><article v-for="(row, index) in sortedWindows" :key="row.window" :data-leading="index === 0"><strong>{{ row.window }} 窗口</strong><span>累计 {{ row.returnText }}</span><span>回撤 {{ row.drawdownText }}</span><span>胜率 {{ row.winRateText }}</span><small>{{ row.tradeCount }} 笔 · 服务端评分 {{ row.score }} · {{ row.syntheticTerminal ? '理论平仓' : '无理论平仓' }}</small></article></div>
+        <div class="newow-comparator__cards"><article v-for="(row, index) in sortedWindows" :key="row.window" :data-leading="index === 0"><strong>{{ row.window }} 窗口</strong><span>累计 {{ row.returnText }}</span><span>回撤 {{ row.drawdownText }}</span><span>胜率 {{ row.winRateText }}</span><small>{{ row.tradeCount }} 笔 · 服务端评分 {{ formatDisplayNumber(row.score) }} · {{ row.syntheticTerminal ? '理论平仓' : '无理论平仓' }}</small></article></div>
         <table>
           <caption>样本内五窗口理论结果</caption>
           <thead><tr><th>窗口</th><th>累计</th><th>最大回撤</th><th>胜率</th><th>样本末</th></tr></thead>

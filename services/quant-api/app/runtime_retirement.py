@@ -453,7 +453,8 @@ def _closed_history(seal, repo_root):
             failure_feed_state(plan, state)
             if mode == recovery.ORIGINAL_FEED_MODE:
                 require(
-                    state.get("error_type") == "CohortError"
+                    (state.get("failed_stage") == "calendars"
+                     or state.get("error_type") == "CohortError")
                     and "stop_after" not in plan
                 )
             return

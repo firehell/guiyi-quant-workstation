@@ -82,7 +82,7 @@ async function detail(row: MonitorRecord) {
   } catch { if (own === detailGeneration && wanted === identity.value && props.active) detailError.value = '关联记录不可读取或快照已变化，请重新读取列表。' }
   finally { if (own === detailGeneration) detailLoading.value = false }
 }
-function factValue(key: string, value: string | null) { return value == null ? '—' : key === 'reason' ? monitorReason[value] ?? value : value }
+function factValue(key: string, value: string | null) { return value == null ? '—' : ['price', 'fee', 'margin', 'projected_margin', 'margin_limit'].includes(key) ? monitorMoney(value) : key === 'reason' ? monitorReason[value] ?? value : value }
 watch([identity, () => props.active], () => { clear(); if (props.active) void read() }, { immediate: true })
 onBeforeUnmount(clear)
 </script>

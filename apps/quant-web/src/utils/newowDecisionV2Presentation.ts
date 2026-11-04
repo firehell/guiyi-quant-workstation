@@ -1,3 +1,4 @@
+import { formatDisplayNumber } from './marketDisplay.ts'
 import type { Cdv2 } from '../types/newowDecisionV2'
 
 type Fact = Cdv2['facts'][number]
@@ -65,7 +66,7 @@ export function decisionVolatility(cd: Cdv2) {
   if (!Number.isFinite(value)) return null
   const level = cd.volatility_level
   if (level !== 'low' && level !== 'mid' && level !== 'high') return null
-  return { value: cd.volatility_pct, level, label: { low: '低', mid: '中', high: '高' }[level],
+  return { value: formatDisplayNumber(cd.volatility_pct), level, label: { low: '低', mid: '中', high: '高' }[level],
     color: { low: colors.green, mid: colors.orange, high: colors.red }[level], position: Math.max(3, Math.min(97, Math.round(value / 6 * 100))) }
 }
 export function decisionDisplay(cd: Cdv2) {
