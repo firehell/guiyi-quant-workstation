@@ -7,6 +7,6 @@ test('Newow toolbars leave the public 110px plot while retaining the shared axis
     const layout = newowAuxiliaryPaneLayout(height, toolbar)
     assert.ok(layout.auxiliaryHeight - layout.topInset - 15 === 110)
     assert.ok(layout.mainHeight > 190)
-    assert.equal(layout.mainHeight + layout.volumeHeight + layout.auxiliaryHeight, height - 30)
+    assert.equal(layout.mainHeight + layout.auxiliaryHeight, height - 30)
   }
 })

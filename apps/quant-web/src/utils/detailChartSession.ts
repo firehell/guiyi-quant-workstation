@@ -209,13 +209,17 @@ export function createDetailChartSession(dependencies: {
       }
       if (property === 'addSeries') return (definition: any, settings: any, pane = 0) => {
         if (!active) throw new Error('DETAIL_CHART_LEASE_EXPIRED')
-        const role = definition.type === 'Candlestick' ? 'candles' : definition.type === 'Histogram' && pane === 1 ? 'volume' : null
+        const role = definition.type === 'Candlestick' ? 'candles' : definition.type === 'Histogram' && (pane === 1 || settings?.priceScaleId === 'volume') ? 'volume' : null
         let raw = role ? prices.get(role) : undefined
         if (!raw) {
           raw = target.addSeries(definition, settings, pane)
           if (role) prices.set(role, raw)
           else series.add(raw)
-        } else raw.applyOptions(settings ?? {})
+        } else {
+          // Retain volume facts when switching between Free's volume pane and Newow's overlay.
+          if (role === 'volume' && raw.getPane().paneIndex() !== pane) raw.moveToPane(pane)
+          raw.applyOptions(role === 'volume' ? { ...settings, priceScaleId: settings?.priceScaleId ?? 'right' } : settings ?? {})
+        }
         return wrapSeries(raw, role ?? undefined)
       }
       if (property === 'setCrosshairPosition') return (price: number, time: Time, item: ISeriesApi<SeriesType, Time>) => {

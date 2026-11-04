@@ -15,6 +15,7 @@ for(const frequency of ['5m','15m','30m','60m','1d','1w'])test('ordinary breakou
  const errors=await setup(page);await page.goto(newowRoute('oscillation',frequency,'&as_of='+encodeURIComponent(NEWOW_AS_OF)));await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state','ready');const overlay=page.locator('.newow-product-chart-stage .breakout-overlay');await expect(overlay.getByRole('button')).toHaveCount(5);await expect(overlay.getByRole('button').filter({hasText:'真跌破·转压'})).toBeVisible();await expect(overlay.getByRole('button').filter({hasText:'突破待定'})).toBeVisible();await assertPopup(page,overlay)
  const bull=overlay.getByRole('button').filter({hasText:'真突破·转撑'}).first(),bear=overlay.getByRole('button').filter({hasText:'真跌破·转压'}).first()
  await expect(bull).toHaveCSS('background-color','rgb(198, 40, 40)');await expect(bull).toHaveCSS('color','rgb(255, 255, 255)');await expect(bear).toHaveCSS('background-color','rgb(46, 125, 50)');await expect(bull).toHaveCSS('border-radius','5px')
+ const nativeRows=page.locator('.newow-product-chart-stage .tv-lightweight-charts tr').filter({has:page.locator('td:nth-child(3)')});await expect(nativeRows).toHaveCount(3);const main=await nativeRows.first().boundingBox(),highlight=await overlay.locator('.breakout-volume').first().boundingBox();expect(highlight.y-main.y).toBeCloseTo(main.height*.90,0);expect(highlight.height).toBeCloseTo(main.height*.07,0);
  await expect(overlay.locator('.breakout-threshold')).toHaveCount(4);await expect(overlay.locator('.breakout-volume')).toHaveCount(5);await expect(overlay.locator('.breakout-connector')).toHaveCount(1)
  if(frequency==='1d')await overlay.screenshot({path:'/private/tmp/newow-visual-parity-main-light.png'})
  await page.evaluate(()=>document.documentElement.setAttribute('data-theme','dark'));await assertPopup(page,overlay);await expect(overlay.getByRole('button').filter({hasText:'突破待定'})).toHaveCSS('color','rgb(174, 174, 178)');if(frequency==='1d')await overlay.screenshot({path:'/private/tmp/newow-visual-parity-main-dark.png'});await page.evaluate(()=>document.documentElement.setAttribute('data-theme','light'))
@@ -23,7 +24,22 @@ for(const frequency of ['5m','15m','30m','60m','1d','1w'])test('ordinary breakou
  await page.getByRole('tab',{name:'趋势策略',exact:true}).click();await expect(overlay.getByRole('button')).toHaveCount(0);expect(errors).toEqual([])
 })
 test('Test5 uses shared popup and local shape/wick controls then revokes old labels on switch',async({page})=>{
- const errors=await setup(page);await page.goto(newowRoute('oscillation','1d','&newow_test=osc-test5'));const panel=page.locator('.experiment-panel'),overlay=panel.locator('.breakout-overlay');await expect(panel.getByTestId('experiment-summary')).toBeVisible();await expect(overlay.getByRole('button')).toHaveCount(5);await expect(overlay.getByRole('button').filter({hasText:'真跌破·转压'})).toBeVisible();await expect(overlay.getByRole('button').filter({hasText:'突破待定'})).toBeVisible();await assertPopup(page,overlay)
+ const errors=await setup(page);await page.goto(newowRoute('oscillation','1d','&newow_test=osc-test5'));const panel=page.locator('.experiment-panel'),overlay=panel.locator('.breakout-overlay');await expect(panel.getByTestId('experiment-summary')).toBeVisible();await expect(panel.locator('.experiment-chart .tv-lightweight-charts tr').filter({has:page.locator('td:nth-child(3)')})).toHaveCount(2);await expect(overlay.getByRole('button')).toHaveCount(5);await expect(overlay.getByRole('button').filter({hasText:'真跌破·转压'})).toBeVisible();await expect(overlay.getByRole('button').filter({hasText:'突破待定'})).toBeVisible();await assertPopup(page,overlay)
  await expect(panel.getByRole('button',{name:'突破形态',exact:true})).toHaveAttribute('aria-pressed','true');const wick=panel.getByRole('button',{name:'影线提示',exact:true});await expect(wick).toHaveAttribute('aria-pressed','false');await wick.click();await expect(overlay.getByRole('button')).toHaveCount(7);const upper=overlay.getByRole('button').filter({hasText:'上影诱多'});await upper.click();await expect(page.getByRole('dialog')).toContainText('无需次根确认');await expect(page.getByRole('dialog')).toContainText('量能 样本不足');await page.keyboard.press('Escape');await panel.getByRole('button',{name:'突破形态',exact:true}).click();await expect(overlay.getByRole('button')).toHaveCount(2)
  await page.getByRole('tab',{name:'趋势策略',exact:true}).click();await expect(panel).toHaveCount(0);await expect(page.getByRole('dialog')).not.toBeVisible();expect(errors).toEqual([])
+})
+
+
+for (const strategy of ['trend','oscillation','main_rise']) test(strategy+' shares main volume and keeps auxiliary pane alignment', async ({page})=>{
+ const errors=await setup(page);await page.goto(newowRoute(strategy,'1d'))
+ const stage=page.getByTestId('newow-product-chart-stage')
+ await expect(stage).toHaveAttribute('data-auxiliary-state','ready')
+ const rows=stage.locator('tr').filter({has:page.locator('td:nth-child(3)')})
+ await expect(rows).toHaveCount(3)
+ for (const label of ['涨跌动能','主力控盘','趋势转折','主力照妖镜']) {
+   await page.getByRole('button',{name:label,exact:true}).click()
+   await expect.poll(async()=>{const pane=await rows.nth(1).boundingBox(),toolbar=await stage.locator('.newow-product-chart-stage__auxiliary-toolbar').boundingBox();return Math.abs(pane.y-toolbar.y)}).toBeLessThanOrEqual(4)
+ }
+ await expect(stage.locator('.newow-product-chart-stage__volume-label')).toBeVisible()
+ expect(errors).toEqual([])
 })

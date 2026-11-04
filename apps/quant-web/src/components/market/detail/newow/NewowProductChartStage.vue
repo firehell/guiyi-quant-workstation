@@ -285,7 +285,7 @@ onMounted(async () => {
     height: container.value.clientHeight,
     layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: '#EBEDF0' } },
     grid: { vertLines: { color: theme.grid }, horzLines: { color: theme.grid } },
-    rightPriceScale: { borderColor: theme.axis, scaleMargins: { top: 0.07, bottom: 0.06 } },
+    rightPriceScale: { borderColor: theme.axis, scaleMargins: { top: 0.05, bottom: 0.14 } },
     crosshair: { mode: CrosshairMode.Normal },
     localization: { timeFormatter: formatChartTimeInShanghai },
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
@@ -297,15 +297,16 @@ onMounted(async () => {
     wickUpColor: theme.candleUp, wickDownColor: theme.candleDown,
   })
   chart.panes()[0]!.setStretchFactor(5)
-  chart.addPane().setStretchFactor(1.2)
-  chart.addPane().setStretchFactor(2)
   candles.attachPrimitive(band)
   candles.attachPrimitive(dualBackground)
   candles.attachPrimitive(trendChannel)
   candles.attachPrimitive(publicPattern)
-  volume = chart.addSeries(HistogramSeries, { priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 1)
+  // Public detail v3.4.49: volume shares the price pane on its own hidden scale.
+  volume = chart.addSeries(HistogramSeries, { priceScaleId: 'volume', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 0)
+  volume.priceScale().applyOptions({ scaleMargins: { top: 0.87, bottom: 0 }, visible: false })
+  chart.addPane().setStretchFactor(2)
   // Whitespace keeps the auxiliary pane/timeline present during loading, without inventing zero values.
-  auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 2)
+  auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 1)
   auxiliaryZeroLine = auxiliaryAnchor.createPriceLine({ price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
   auxiliaryAnchor.attachPrimitive(zhaoyaoMirror)
   auxiliaryAnchor.attachPrimitive(upDownEnergy)
@@ -582,8 +583,8 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   const panesFn = (chart as unknown as { panes?: () => Array<{ getHeight?: () => number }> }).panes
   const width = widthFn?.call(scale) ?? container.value.clientWidth
   const height = panesFn?.call(chart)[0]?.getHeight?.() ?? container.value.clientHeight
-  volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
-  auxiliaryTop.value = volumeTop.value + chart.panes()[1]!.getHeight()
+  volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight() * 0.87
+  auxiliaryTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
   actionOverlayTop.value = container.value.offsetTop
   actionOverlayHeight.value = height
   actionOverlayLeft.value = container.value.offsetLeft
@@ -820,12 +821,11 @@ function resize(): void {
   if (chart !== null && container.value !== null) {
     const layout = newowAuxiliaryPaneLayout(container.value.clientHeight, auxiliaryToolbar.value?.offsetHeight ?? 0)
     chart.panes()[0]!.setStretchFactor(layout.mainHeight)
-    chart.panes()[1]!.setStretchFactor(layout.volumeHeight)
-    chart.panes()[2]!.setStretchFactor(layout.auxiliaryHeight)
+    chart.panes()[1]!.setStretchFactor(layout.auxiliaryHeight)
     // Repaint synchronously so native pane heights include the shared time axis.
     chart.resize(container.value.clientWidth, container.value.clientHeight, true)
-    volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
-    auxiliaryTop.value = volumeTop.value + chart.panes()[1]!.getHeight()
+    volumeTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight() * 0.87
+    auxiliaryTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
     renderAuxiliary()
     projectActionLabels()
   }

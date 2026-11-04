@@ -126,3 +126,28 @@ test('crosshair forwarding unwraps leased series and rejects writes after releas
  lease.remove();lease.setCrosshairPosition(110,124 as any,wrapped);assert.equal(received.length,1)
  f.session.dispose()
 })
+
+
+test('retained volume moves between Free pane and Newow overlay without rewriting facts', () => {
+  const f = fixture(), histogram = { type: 'Histogram' } as any
+  let pane = 1, writes = 0, options: any = {}, creates = 0
+  const original = f.raw.addSeries
+  f.raw.addSeries = (definition: any, settings: any, index = 0) => {
+    if (definition.type !== 'Histogram') return original(definition, settings, index)
+    creates++; pane = index; options = settings
+    return { setData() { writes++ }, applyOptions(value: any) { options = { ...options, ...value } },
+      getPane: () => ({ paneIndex: () => pane }), moveToPane(value: number) { pane = value } }
+  }
+  f.session.setIdentity('jm:1d')
+  const data = [{ time: 1, value: 100 }]
+  const free = f.session.acquire(f.container(), {})
+  free.addSeries(histogram, {}, 1).setData(data)
+  const newow = f.session.acquire(f.container(), {})
+  newow.addSeries(histogram, { priceScaleId: 'volume' }, 0).setData(data)
+  assert.equal(pane, 0); assert.equal(options.priceScaleId, 'volume')
+  const back = f.session.acquire(f.container(), {})
+  back.addSeries(histogram, {}, 1).setData(data)
+  assert.equal(pane, 1); assert.equal(options.priceScaleId, 'right')
+  assert.equal(creates, 1); assert.equal(writes, 1)
+  f.session.dispose()
+})
