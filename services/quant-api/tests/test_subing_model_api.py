@@ -1,10 +1,16 @@
 import json
+import pytest
 from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.api import subing_model as api
+
+
+@pytest.fixture(autouse=True)
+def isolate_private_binding(monkeypatch):
+    monkeypatch.setattr(api, 'registered_source', lambda key: None)
 
 
 def test_not_started_never_initializes_database(tmp_path, monkeypatch):
