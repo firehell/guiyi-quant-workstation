@@ -4,7 +4,7 @@ owner已明确批准PR622 main/tag/Release、RS/UR恢复及正式切换；自动
 
 Tq已同树恢复至v91，唯一worker PID62132，trade/READY、无hold；实际完整native四仓/四单四成交/四SUBMIT claims及唯一基线逐项核对通过，禁止发送的恢复不制造交易。精确15个从未活动的owner按fresh权威及SDK元数据初始化，旧开仓已消费；probe60映射/零活动委托/零issues/ready_for_start通过后启用。后续账本读回60品种blocked=0、无未决fill、原四仓保持；尚无新自然委托/成交，不以工程切换冒充自然闭环。原hold、stop、native与账本恢复原件在私有 `tqkq-simulation/recovery-20261105-v90` / `recovery-20261105-v91`。苏冰独立开发模型仍STALE_OR_STOPPED，原39个源hash、run和144条事件保持，正式API仅只读展示。
 
-发布及运行证据复用 `output/release-v91-20261105`。旧v88/v90只读retention扫描返回 `CLEANUP_EVIDENCE_UNAVAILABLE`，eligible为空，未删除或绕过；运行权威仅v91。其源码清理待补齐证明，不阻塞已完成页面发布。本任务托管开发树按原生工具归档，其他任务树保留。
+发布及运行证据复用 `output/release-v91-20261105`。旧v88/v90只读retention扫描返回 `CLEANUP_EVIDENCE_UNAVAILABLE`，eligible为空，未删除或绕过；运行权威仅v91。其源码清理待补齐证明，不阻塞已完成页面发布。本任务托管开发树原生归档返回“The task's primary checkout cannot be removed”，受宿主保护保留，不改用Git绕过；已合并发布分支清理，当前集成分支及其他任务树保留。
 
 以下为此前检查点：
 
