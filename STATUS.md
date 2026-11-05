@@ -1,3 +1,11 @@
+11/5 10:46 天勤通道补丁v1.16.89已发布、尚未切运行：PR620，main/tag/Release exact `230959f8a9f9591a353c6ece79f17d4fe8becdbb`，正式根 `.worktrees/release-v1.16.89` API/SDK/Web冻结构建及身份验证通过。现役标准服务仍v88/gen63，Tq仍原PID77357、持久 `TQ_MARKET_CHANNEL_FAILED`、control=pause，四笔原空头持仓/四单四成交/四SUBMIT claims保持，15个日盘品种尚blocked；不能将已发布89冒充已运行或自然交易验收。计划在全部60品种11:30午休后通过原生Session/静默校验，再统一同树切换与账户恢复，不在交易中拆API和worker根。
+
+已用真实当前60品种H1只读复现：旧signals8.50s+authority1.02s+recovery11.04s=20.56s，超过既有20秒期限。新实现每请求4品种信号/4恢复证明，15批真实诊断单批最长1.43s；保留真实首次receipt、latest合并、缺口恢复、超时通道废弃和禁止补开。新增版本化 `tqkq_observed_signal_v1` 分开事实接收与入账时间，旧Signal/replay规则不改；首次hold不覆盖，无未决义务的停止须先完整native对账再不依赖故障通道退出。222项定向回归、独立高风险Review、API wheel/sdist、冻结锁、Ruff/diff/secret0通过；真实四仓账本只读副本旧/新完整重放状态SHA完全一致。修复已合回develop，不含Trueup晋升。
+
+恢复脚本已定向审查：同账户排他锁/只读SDK，保全原hold及账本，完整native四单四成交/claims/仓位与唯一基线对账；先fresh Recover解除账本恢复态，再仅对15个owner=None且无该品种任何历史活动的品种按fresh MDS+SDK精确合约初始化Owner，再恢复并消费旧开仓。SDK查询后再次验证权威有效期；缺证明继续blocked，成功后才归档hold。尚未执行脚本或制造测试成交；新的全品种恢复、委托、成交、对账均以切换后自然读回分别验收。
+
+以下为此前检查点：
+
 11/5 08:10 正式发布树收敛完成：唯一正式发布/运行树为 `.worktrees/release-v1.16.88`，exact `6611a2c428e827d5cce136ec506a9b5d1f53f8d0`、gen63。旧84/85/87经现役v88原封reader验证、精确零引用双扫描和部署锁内non-force移除；旧v86准备控制器工作区由宿主原生archive_worktree归档。删后十项身份matched、API/Runtime health均ok，Tq保持原PID77357/trade/READY且无active hold。当前develop及持有89未发布集成草稿的任务工作区保留，不属于正式发布树；本轮没有发布89、晋升Trueup、切换/重启服务或修改策略、账户与账本。
 
 使用已提交041eb7维护controller的显式complete收集政策，原生计划 `7a10954af22406fa64a758b6cf9b88ca892e7c61b37beb7bb38b290cae184f45` 保全88条闭合历史、235份原件和18份旧marker；候选、封存前后及删后均由干净exact v88的-I原封reader验证，历史tag/Release与旧UNKNOWN不改。四份旧SimNow数据库保护读回、Tq配置/控制、正式绑定及current cohort保持；删除仅针对三棵已确认无引用的旧源码。完成证据复用 `output/release-cleanup-20261104/one-formal-release-root-v88.json`，恢复源码从原annotated tag重建，不保留常驻回滚树。
