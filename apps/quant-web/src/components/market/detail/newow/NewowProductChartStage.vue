@@ -141,7 +141,7 @@ watch(visualOverlays, value => { saveVisualOverlayPreferences(value); renderVisu
 const cursorRows = ref<string[]>([])
 const cursorTop = ref(0)
 function onCrosshair(event: MouseEventParams<Time>): void {
-  cursorRows.value = event.point == null ? [] : newowChartReadout(model.value, auxiliaryModel.value, event.time ?? null)
+  cursorRows.value = event.point == null ? [] : newowChartReadout(model.value, null, event.time ?? null)
   const chartTop = container.value?.offsetTop ?? 0
   const paneOffset = chart?.panes?.().slice(0, event.paneIndex ?? 0).reduce((height, pane) => height + pane.getHeight(), 0) ?? 0
   const cardHeight = cursorRows.value.length * 18 + 20
