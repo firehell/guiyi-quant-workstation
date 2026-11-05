@@ -1105,7 +1105,7 @@ class ComparatorDeliveryOut(_Out):
 
 
 class CurrentSnapshotContextOut(_Out):
-    frequency: Literal["1d", "1w"]
+    frequency: Literal["5m", "15m", "30m", "60m", "1d", "1w"]
     requested_at: datetime
     as_of: datetime
     freshness: Literal["current", "pending_update"]

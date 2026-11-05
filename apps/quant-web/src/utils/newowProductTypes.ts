@@ -89,13 +89,13 @@ export function normalizeNewowProductResponse(
   const input = record(payload, 'Newow product response')
   const top = exactRecord(payload, 'Newow product response', ['meta', 'section', 'chart', 'auxiliary', 'reference', 'explanation', 'comparator', ...('snapshot_context' in input ? ['snapshot_context'] : [])])
   let snapshotContext: NewowProductSectionResponse['snapshotContext']
-  if ('identity' in expectedRequest && expectedRequest.section === 'chart' && expectedRequest.resolveCurrent && ['1d', '1w'].includes(expected.frequency)) {
+  if ('identity' in expectedRequest && expectedRequest.section === 'chart' && expectedRequest.resolveCurrent && ['5m', '15m', '30m', '60m', '1d', '1w'].includes(expected.frequency)) {
     const context = record(top.snapshot_context, 'snapshot_context')
     requireExact(context.frequency, expected.frequency, 'snapshot_context.frequency')
     const asOf = instant(context.as_of, 'snapshot_context.as_of')
     instant(context.requested_at, 'snapshot_context.requested_at')
     literal(context.freshness, ['current', 'pending_update'], 'snapshot_context.freshness')
-    if (context.frequency === '1d') {
+    if (context.frequency !== '1w') {
       day(context.expected_trading_day, 'expected_trading_day')
       day(context.available_trading_day, 'available_trading_day')
     } else {
@@ -103,7 +103,7 @@ export function normalizeNewowProductResponse(
       instant(context.available_period_end, 'available_period_end')
       record(context.current_context, 'current_context')
     }
-    snapshotContext = { ...context, product: expected.product, strategy: expected.strategy, series_kind: 'actual_dominant', schema_version: context.frequency === '1d' ? 'newow_daily_snapshot_v1' : 'newow_weekly_snapshot_v1' } as unknown as NonNullable<typeof snapshotContext>
+    snapshotContext = { ...context, product: expected.product, strategy: expected.strategy, series_kind: 'actual_dominant', schema_version: context.frequency === '1d' ? 'newow_daily_snapshot_v1' : context.frequency === '1w' ? 'newow_weekly_snapshot_v1' : 'newow_intraday_snapshot_v1' } as unknown as NonNullable<typeof snapshotContext>
     expected = { ...expected, asOf }
   } else if (top.snapshot_context != null) throw new Error('unexpected current snapshot context')
   const section = literal(top.section, SECTIONS, 'section')

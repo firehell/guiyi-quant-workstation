@@ -736,7 +736,7 @@ def newow_strategy_detail(
     if (
         unknown
         or (reference_part is not None and reference_part != "history" and history_before is not None)
-        or (resolve_current and (frequency not in {"1d", "1w"} or section != "chart" or as_of is not None
+        or (resolve_current and (frequency not in {"5m", "15m", "30m", "60m", "1d", "1w"} or section != "chart" or as_of is not None
             or any(value is not None for value in (from_, through, performance_since, performance_through,
                 chart_before, chart_older_window, component, history_before, snapshot_token, fusion_before,
                 reference_part, reference_mode))
@@ -759,10 +759,10 @@ def newow_strategy_detail(
             except RuntimeError:
                 return False
 
-        if resolve_current and frequency in {"1d", "1w"}:
+        if resolve_current:
             now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
             policy = _input_quality_policy(request, product, frequency)
-            resolver_factory = _build_daily_resolver if frequency == "1d" else _build_weekly_resolver
+            resolver_factory = _build_weekly_resolver if frequency == "1w" else _build_daily_resolver
             resolver = resolver_factory(session, cancelled, lambda: now, policy, home_services=[])
             snapshot, chart = resolver.resolve_with_chart(
                 product, ProductStrategy(strategy), ProductFrequency(frequency), chart_limit=chart_limit,

@@ -38,7 +38,7 @@ class PortfolioMarket:
     """Shares one Redis pubsub while retaining MarketBridge's proof per product."""
 
     def __init__(
-        self, products, *, redis=None, session_factory=None, receipt_clock=None
+        self, products, *, redis=None, session_factory=None, receipt_clock=None, record_closed_tails=False
     ):
         operational = set(load_operational_products())
         chosen = tuple(product.upper() for product in products)
@@ -49,6 +49,7 @@ class PortfolioMarket:
         ):
             raise ValueError("PRODUCT_NOT_OPERATIONAL")
         self.products = chosen
+        self.closed_tails = {}
         self._session_factory = session_factory or SessionLocal
         self._receipt_clock = receipt_clock or (lambda: datetime.now(UTC))
         self.redis = redis if redis is not None else get_redis_connection()
@@ -69,6 +70,8 @@ class PortfolioMarket:
                 SeriesKind.ACTUAL_DOMINANT, product.lower(), BarFrequency.H1, limit=32
             )
             view.reader = self.reader
+            if record_closed_tails:
+                view.closed_tails = self.closed_tails
             self._views[product] = view
 
     @contextmanager
@@ -128,6 +131,7 @@ class PortfolioMarket:
             if previous is None or trigger.bar.bar_end > previous[0].bar.bar_end:
                 latest[product] = (trigger, received_at)
 
+        self.closed_tails.clear()
         signals = []
         selected = tuple(latest) if max_products is None else tuple(latest)[:max_products]
         for product in selected:

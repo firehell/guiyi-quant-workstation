@@ -1257,6 +1257,7 @@ def apply(state, key, cmd):
     if type(cmd) not in (
         m.Signal,
         m.TqKqObservedSignalV1,
+        m.TqKqClosedSignalV1,
         m.Owner,
         m.TqKqFill,
         m.Fill,
@@ -1333,6 +1334,17 @@ def apply(state, key, cmd):
         state, reason = signal(state, cmd)
     elif type(cmd) is m.TqKqObservedSignalV1:
         state, reason = signal(state, cmd.signal)
+    elif type(cmd) is m.TqKqClosedSignalV1:
+        prior_product = product(state, cmd.signal.product)
+        # Reuse the original duplicate/owner/continuity checks and retain their
+        # blocking effects. Only the accepted last_bar may change on this lane.
+        candidate, reason = signal(state, cmd.signal)
+        advanced = product(candidate, cmd.signal.product).last_bar
+        state = replace(state, signals=candidate.signals, blocked_products=candidate.blocked_products)
+        state = replace_product(state, replace(prior_product, last_bar=advanced))
+        if reason in {"TARGET_UPDATED", "SIGNAL_CONFLICT", "HOLD", "SIGNAL_BLOCKED"}:
+            reason = "CLOSED_SIGNAL_RECORDED"
+
     elif type(cmd) is m.Owner:
         p = product(state, cmd.product)
         if p.owner is not None and p.owner != cmd.contract:

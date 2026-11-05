@@ -205,6 +205,10 @@ class MarketBridge:
             raise ValueError("NATURAL_BAR_NOT_COMPLETED")
         with self.reader() as (_, reader):
             snapshot = reader.observation_snapshot(self.identity, after, observed_at)
+            closed_tail = False
+            if snapshot.source != "realtime" and getattr(self, "closed_tails", None) is not None:
+                snapshot = reader.tq_closed_tail_snapshot(self.identity, after, observed_at)
+                closed_tail = True
             if (
                 snapshot.source != "realtime"
                 or not snapshot.bars
@@ -217,13 +221,16 @@ class MarketBridge:
                 end=trigger.bar.bar_end,
                 limit=32,
             )
-            return signal_from_window(
+            result = signal_from_window(
                 reader,
                 window,
                 source_id="simnow-natural:"
                 + digest((trigger.symbol, trigger.bar.bar_end, snapshot.contract)),
                 observed_at=observed_at,
             )
+            if closed_tail:
+                self.closed_tails[result.source_id] = (result.bar_end, trigger.bar.trading_day)
+            return result
 
     def recovery(self, state, now):
         p = next(p for p in state.products if p.product == self.product)

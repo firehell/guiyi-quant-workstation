@@ -8,7 +8,7 @@ from datetime import date, datetime
 from time import monotonic
 from typing import Literal
 
-from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy, INTRADAY_PRODUCT_FREQUENCIES
 
 from app.market_data.market_data_service import MarketDataError
 from app.market_data.diagnostics import data_reason
@@ -69,7 +69,8 @@ class NewowDailySnapshotResolver:
         self, product: str, strategy: ProductStrategy, frequency: ProductFrequency,
         *, chart_limit: int = 500,
     ) -> tuple[DailySnapshot, NewowProductResult]:
-        if ProductFrequency(frequency) is not ProductFrequency.DAILY:
+        intraday = ProductFrequency(frequency) in INTRADAY_PRODUCT_FREQUENCIES
+        if ProductFrequency(frequency) is not ProductFrequency.DAILY and not intraday:
             raise DailySnapshotError("NEWOW_FREQUENCY_NOT_OPEN")
         requested_at = self._now()
         started = self._clock()
@@ -107,6 +108,10 @@ class NewowDailySnapshotResolver:
                     raise
                 reason = getattr(exc, "reason", None) or data_reason(exc.code) or exc.code
                 if reason in _MISSING_DATA or exc.code == "NEWOW_COMPLETE_TRADING_DAY_MISSING":
+                    # Minute history is one published physical prefix. A mapped
+                    # day with broken coverage cannot be hidden by an older day.
+                    if intraday:
+                        raise
                     continue
                 raise
             if stopped():

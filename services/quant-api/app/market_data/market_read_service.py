@@ -1316,6 +1316,22 @@ class MarketReadService:
             return MarketObservationSnapshot(state, "unavailable", day, contract, ())
         return MarketObservationSnapshot(state, "realtime", day, contract, bars)
 
+    def tq_closed_tail_snapshot(self, identity, after, now):
+        """Tq record-only lane; this grants no execution or Alert permission."""
+        snapshot = self.newow_completed_observation_snapshot(identity, after, now)
+        if snapshot.source != "realtime" or not snapshot.bars:
+            raise MarketObservationSnapshotError()
+        end = snapshot.bars[-1].bar_end
+        if (snapshot.state.phase != MarketPhase.CLOSED.value
+                or not 0 < (now - end).total_seconds() <= 60):
+            raise MarketObservationSnapshotError()
+        windows = self._market_data.session_windows(
+            symbol=identity.symbol, trading_day=snapshot.trading_day)
+        if (end not in {window.end for window in windows}
+                or any(window.start <= now < window.end for window in windows)):
+            raise MarketObservationSnapshotError()
+        return snapshot
+
     def display_snapshot(
         self,
         identity: SeriesPageQuery,

@@ -145,6 +145,20 @@ def require_recovery(controller, at):
         )
 
 
+def record_observed_signals(controller, reply, facts, issues):
+    for packet in reply["signals"]:
+        s = codec.decode(packet)
+        fact = facts.get((s.product, s.contract))
+        if fact is None or s.product in issues:
+            continue
+        prior = next(p for p in controller.store.current().products if p.product == s.product)
+        tail = reply.get("closed_tails", {}).get(s.source_id)
+        # Record-only tails must never issue Owner (which can trigger rollover).
+        if tail is None and prior.owner != s.contract:
+            controller.owner(s.product, s.contract, datetime.now(UTC), fact["source_id"])
+        controller.signal(s, closed_at=datetime.fromisoformat(tail) if tail else None)
+
+
 def run(config_path, *, inspect=False):
     logging.disable(
         logging.CRITICAL
@@ -319,25 +333,7 @@ def run(config_path, *, inspect=False):
                             and not recovered_batch
                             and action in {"trade", "pause"}
                         ):
-                            for packet in reply["signals"]:
-                                s = codec.decode(packet)
-                                fact = facts.get((s.product, s.contract))
-                                if fact is None or s.product in issues:
-                                    continue
-                                # Authority/owner precedes this exact observed signal; no fabricated time.
-                                prior = next(
-                                    p
-                                    for p in controller.store.current().products
-                                    if p.product == s.product
-                                )
-                                if prior.owner != s.contract:
-                                    controller.owner(
-                                        s.product,
-                                        s.contract,
-                                        datetime.now(UTC),
-                                        fact["source_id"],
-                                    )
-                                controller.signal(s)
+                            record_observed_signals(controller, reply, facts, issues)
                             recover_blocked_products(controller, gateway, reply["recovery"])
                     if inspect:
                         report = {
