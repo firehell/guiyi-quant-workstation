@@ -1667,6 +1667,24 @@ def test_cdv2_explanation_uses_only_available_context_and_no_hidden_trade_gate(p
     assert before.reference.value==after.reference.value
 
 
+def test_cdv2_signal_prices_bind_last_action_without_mutating_chart_or_reference(product_cases):
+    service, reader, build, clear = _service(product_cases)
+    chart_query = ProductServiceQuery('rb', 'trend', '1d', as_of=clear.bar_end)
+    before = service.query(chart_query)
+    result = service.query(ProductServiceQuery('rb', 'trend', '1d', section='explanation', decision_v2=True, as_of=clear.bar_end))
+    facts = result.explanation.value.decision_v2['cdv2']['facts']
+    daily = next(f for f in facts if f['role'] == 'trend_day')
+    assert daily['last_signal'] == {
+        'action_id': clear.signal_id, 'kind': 'CLEAR', 'bar_end': clear.bar_end.isoformat(),
+        'price': format(clear.reference_price, 'f'), 'calculation_segment_id': clear.calculation_segment_id,
+    }
+    assert daily['calculation_segment_id'] == clear.calculation_segment_id
+    assert all(f['last_signal'] is None for f in facts if f['status'] != 'ready')
+    after = service.query(chart_query)
+    assert before.chart.value == after.chart.value
+    assert before.meta.identity == after.meta.identity
+
+
 @pytest.mark.parametrize('frequency', ['1d', '1w'])
 def test_cdv2_tail_interruption_does_not_present_old_state_as_current(product_cases, frequency):
     from app.market_data.newow.decision_v2 import build_decision_v2
@@ -2252,7 +2270,8 @@ def test_path_strategy_is_explicit_and_does_not_change_composite_kernel(product_
     service, reader, _, clear = _service(product_cases)
     base = service.query(ProductServiceQuery('rb','trend','1d',section='explanation',decision_v2=True,as_of=clear.bar_end))
     selected = service.query(ProductServiceQuery('rb','trend','1d',section='explanation',decision_v2=True,path_strategy=path_strategy,as_of=clear.bar_end))
-    a=base.explanation.value.decision_v2; b=selected.explanation.value.decision_v2
+    a = base.explanation.value.decision_v2
+    b = selected.explanation.value.decision_v2
     assert a['cdv2']==b['cdv2']
     history=b['daily_weekly_path']['history']
     if history.get('source'):

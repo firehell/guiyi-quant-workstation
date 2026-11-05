@@ -1,0 +1,1018 @@
+<!doctype html><meta charset="UTF-8"><!-- Frozen public detail v3.4.49 card. Synthetic rendering witness only, never market evidence.
+source https://www.v8848.cn/stock_detail.html
+HTML SHA256 4b3556769f1c7d8de71978d57db4829671f660fc29cb1348130bcbbcf713b24b
+CDV2 SHA256 522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2
+Original card DOM, applicable CSS and named render functions; harness supplies typed fixture values. --><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;color:#333;background:white;font-size:16px;line-height:normal}:root{--nw-muted:#8e8e93;--nw-rise:#ff3b30;--nw-fall:#34c759}
+.composite-action-card{background: #fff; border-bottom: 0.5px solid #f0f0f0;}
+.composite-action-card .composite-header{display: flex; align-items: center; gap: 6px;
+      padding: 10px 14px; cursor: pointer; user-select: none;}
+.composite-action-card .composite-title{font-size: 13px; font-weight: 600; color: #1C1C1E; flex-shrink: 0;}
+.composite-action-card .composite-summary{font-size: 12px; font-weight: 600; flex-shrink: 0;}
+.composite-action-card .composite-badge{font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; flex-shrink: 0; line-height: 1.3;}
+.composite-action-card .composite-spacer{flex: 1; min-width: 4px;}
+.composite-action-card .composite-collapse{font-size: 11px; color: var(--nw-muted); transition: transform .2s; flex-shrink: 0;}
+.composite-action-card.collapsed .composite-collapse{transform: rotate(-90deg);}
+.composite-action-card .composite-body{padding: 0 14px 12px; display: flex; flex-direction: column; gap: 6px;}
+.composite-action-card.collapsed > :not(.composite-header){display: none !important;}
+.composite-action-card .composite-action-word{font-size: 19px; font-weight: 700; flex-shrink: 0; letter-spacing: .5px;}
+.composite-action-card .composite-basis-summary{font-size: 11px; color: var(--nw-muted); padding: 0 14px 10px; line-height: 1.5;}
+.composite-action-card .composite-reason{font-size: 12px; color: #1c1c1e; line-height: 1.55;}
+[data-theme="dark"] .composite-action-card .composite-reason{color: #e5e5e7;}
+.composite-action-card .composite-signal-price-row{background: #f7f7f9; border-radius: 6px; padding: 7px 10px;}
+.composite-action-card .composite-signal-price-row .sp-line{font-size: 11px; color: #1c1c1e; line-height: 1.7; font-variant-numeric: tabular-nums;}
+.composite-action-card .composite-signal-price-row .sp-tag{display: inline-block; font-size: 9px; font-weight: 700; color: var(--nw-muted); border: 0.5px solid #d1d1d6; border-radius: 3px; padding: 0 4px; margin-right: 5px;}
+[data-theme="dark"] .composite-action-card .composite-signal-price-row{background: #2c2c2e;}
+[data-theme="dark"] .composite-action-card .composite-signal-price-row .sp-line{color: #e5e5e7;}
+.composite-action-card .composite-signal-row{display: flex; align-items: center; gap: 8px;
+      background: #f7f7f9; border-radius: 6px; padding: 6px 10px;}
+.composite-action-card .composite-signal-label{font-size: 11px; color: var(--nw-muted); flex-shrink: 0;}
+.composite-action-card .composite-signal-value{font-size: 12px; color: #1C1C1E; flex: 1; min-width: 0;}
+.composite-action-card .composite-signal-dir{font-size: 11px; font-weight: 600; flex-shrink: 0;}
+.composite-action-card .composite-decision-row{display: flex; align-items: baseline; gap: 8px; padding-top: 2px;}
+.composite-action-card .composite-decision-label{font-size: 17px; font-weight: 600;}
+.composite-action-card .composite-decision-pos{font-size: 12px; color: var(--nw-muted);}
+.composite-action-card .composite-advice{font-size: 11px; color: var(--nw-muted); line-height: 1.5;}
+.composite-action-card .composite-score-wrap{flex: 1; min-width: 64px; display: flex; align-items: center; gap: 6px;}
+.composite-action-card .composite-score-track{flex: 1; height: 6px; border-radius: 3px; background: #f0f0f2; overflow: hidden;}
+.composite-action-card .composite-score-fill{display: block; height: 100%; width: 0%; border-radius: 3px; background: var(--nw-muted); transition: width .3s;}
+.composite-action-card .composite-score-num{font-size: 12px; font-weight: 700; flex-shrink: 0;}
+.composite-action-card .composite-cert-row{display: flex; align-items: center; background: #f7f7f9; border-radius: 6px; padding: 9px 4px;}
+.composite-action-card .composite-cert-item{flex: 1; text-align: center; min-width: 0;}
+.composite-action-card .composite-cert-num{font-size: 17px; font-weight: 700;}
+.composite-action-card .composite-cert-lab{font-size: 10px; color: var(--nw-muted); margin-top: 1px;}
+.composite-action-card .composite-cert-sep{width: 0.5px; height: 26px; background: #e5e5ea; flex-shrink: 0;}
+.composite-action-card .composite-vol-row{display: flex; align-items: center; gap: 10px; background: #f7f7f9; border-radius: 6px; padding: 8px 10px;}
+.composite-action-card .composite-vol-lb{font-size: 11px; color: var(--nw-muted); font-weight: 600; flex-shrink: 0;}
+.composite-action-card .composite-vol-track{flex: 1; height: 5px; border-radius: 3px; background: #ececee; position: relative;}
+.composite-action-card .composite-vol-seg{position: absolute; top: 0; bottom: 0;}
+.composite-action-card .composite-vol-seg.vs-g{left: 0; width: 33.4%; background: rgba(52,199,89,.30); border-radius: 3px 0 0 3px;}
+.composite-action-card .composite-vol-seg.vs-o{left: 33.3%; width: 33.4%; background: rgba(255,149,0,.30);}
+.composite-action-card .composite-vol-seg.vs-r{left: 66.6%; width: 33.4%; background: rgba(255,59,48,.28); border-radius: 0 3px 3px 0;}
+.composite-action-card .composite-vol-dot{position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--nw-muted); border: 2px solid #fff; transform: translate(-50%,-50%);}
+.composite-action-card .composite-vol-num{font-size: 12px; font-weight: 700; flex-shrink: 0; min-width: 34px; text-align: right;}
+.composite-action-card .composite-vol-tag{flex-shrink: 0; font-size: 10px; font-weight: 700; border-radius: 8px; padding: 1px 7px;}
+.composite-action-card .composite-vol-tag.vt-low{background: rgba(52,199,89,.14); color: #1d7a43;}
+.composite-action-card .composite-vol-tag.vt-mid{background: rgba(255,149,0,.14); color: #b26a00;}
+.composite-action-card .composite-vol-tag.vt-high{background: rgba(255,59,48,.12); color: #c0392b;}
+.composite-action-card .composite-dual{display: grid; grid-template-columns: 1fr 1fr; gap: 8px;}
+.composite-action-card .composite-dcol{background: #f7f7f9; border-radius: 6px; padding: 8px 10px; min-width: 0;}
+.composite-action-card .composite-dcol-h{display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px;}
+.composite-action-card .composite-dcol-t{font-size: 11px; font-weight: 600; color: var(--nw-muted);}
+.composite-action-card .composite-dcol-d{font-size: 11px; font-weight: 700;}
+.composite-action-card .composite-chips{display: flex; gap: 4px; flex-wrap: wrap;}
+.composite-action-card .composite-chip{font-size: 10px; font-weight: 600; border-radius: 4px; padding: 2px 5px; background: #fff; color: #1C1C1E;}
+.composite-action-card .composite-chip.chip-hot{color: var(--nw-rise);}
+.composite-action-card .composite-chip.chip-cold{color: var(--nw-fall);}
+.composite-action-card .composite-decision-card{border-radius: 10px; padding: 10px 12px; background: rgba(142,142,147,.08); border: 0.5px solid rgba(142,142,147,.25);}
+.composite-action-card .composite-decision-card.dc-bull{background: rgba(255,59,48,.06); border-color: rgba(255,59,48,.25);}
+.composite-action-card .composite-decision-card.dc-bear{background: rgba(52,199,89,.06); border-color: rgba(52,199,89,.25);}
+.composite-action-card .composite-decision-top{display: flex; align-items: center; gap: 8px;}
+.composite-action-card .composite-decision-top .composite-decision-label{font-size: 19px;}
+.composite-action-card .composite-decision-top .composite-decision-pos{margin-left: auto;}
+.composite-action-card .composite-decision-card .composite-advice{margin-top: 5px;}
+[data-theme="dark"] .composite-action-card .composite-score-track,[data-theme="dark"] .composite-action-card .composite-cert-row,[data-theme="dark"] .composite-action-card .composite-vol-row,[data-theme="dark"] .composite-action-card .composite-dcol,[data-theme="dark"] .composite-action-card .composite-vol-track{background: #2c2c2e;}
+[data-theme="dark"] .composite-action-card .composite-cert-sep{background: #3a3a3c;}
+[data-theme="dark"] .composite-action-card .composite-chip{background: #3a3a3c; color: #e5e5e7;}
+[data-theme="dark"] .composite-action-card .composite-vol-dot{border-color: #1c1c1e;}
+[data-theme="dark"] .composite-action-card .composite-decision-card{background: rgba(255,255,255,.05); border-color: #3a3a3c;}
+.composite-action-card .composite-firstaction{display: flex; align-items: flex-start; gap: 8px;
+      border-radius: 8px; padding: 9px 11px;
+      background: #f2f2f7; border: 1px solid #e5e5ea;}
+.composite-action-card .composite-firstaction .fa-icon{font-size: 10px; font-weight: 700; color: #fff; background: var(--nw-muted); border-radius: 5px; padding: 2px 6px; flex-shrink: 0; line-height: 1.5; letter-spacing: 1px;}
+.composite-action-card .composite-firstaction .fa-text{flex: 1; min-width: 0;}
+.composite-action-card .composite-firstaction .fa-title{font-size: 12px; font-weight: 700; line-height: 1.45;}
+.composite-action-card .composite-firstaction .fa-detail{font-size: 11px; line-height: 1.5; margin-top: 2px; opacity: .92;}
+.composite-action-card .composite-firstaction.fa-ok{background: rgba(52,199,89,.10); border-color: rgba(52,199,89,.35);}
+.composite-action-card .composite-firstaction.fa-ok .fa-icon{background: #1d7a43;}
+.composite-action-card .composite-firstaction.fa-ok .fa-title{color: #1d7a43;}
+.composite-action-card .composite-firstaction.fa-ok .fa-detail{color: #2e8b57;}
+.composite-action-card .composite-firstaction.fa-warn{background: rgba(255,149,0,.10); border-color: rgba(255,149,0,.35);}
+.composite-action-card .composite-firstaction.fa-warn .fa-icon{background: #b26a00;}
+.composite-action-card .composite-firstaction.fa-warn .fa-title{color: #b26a00;}
+.composite-action-card .composite-firstaction.fa-warn .fa-detail{color: #c07f1d;}
+.composite-action-card .composite-firstaction.fa-violate{background: rgba(255,59,48,.10); border-color: rgba(255,59,48,.40); border-left: 4px solid #d61e1e;}
+.composite-action-card .composite-firstaction.fa-violate .fa-icon{background: #d61e1e;}
+.composite-action-card .composite-firstaction.fa-violate .fa-title{color: #d61e1e;}
+.composite-action-card .composite-firstaction.fa-violate .fa-detail{color: #c0392b;}
+[data-theme="dark"] .composite-action-card .composite-firstaction{background: rgba(255,255,255,.05); border-color: #3a3a3c;}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-violate{background: rgba(255,59,48,.10); border-color: rgba(255,59,48,.40); border-left: 4px solid #d61e1e;}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-warn{background: rgba(255,149,0,.10); border-color: rgba(255,149,0,.35);}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-ok{background: rgba(52,199,89,.10); border-color: rgba(52,199,89,.35);}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-ok .fa-title{color: #4ade80;}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-ok .fa-detail{color: #6ee7a0;}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-warn .fa-title{color: #fbbf24;}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-warn .fa-detail{color: #fcd34d;}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-violate .fa-title{color: #f87171;}
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-violate .fa-detail{color: #fca5a5;}
+[data-theme="dark"] .composite-action-card .composite-firstaction .fa-detail{opacity: .85;}
+.composite-action-card .composite-dir-row{display: flex; align-items: center; gap: 8px;
+      background: #f7f7f9; border-radius: 6px; padding: 6px 10px;
+      border-left: 3px solid var(--nw-muted);}
+.composite-action-card .composite-dir-label{font-size: 11px; color: var(--nw-muted); flex-shrink: 0; font-weight: 600;}
+.composite-action-card .composite-dir-value{font-size: 12px; font-weight: 600; flex: 1; min-width: 0; line-height: 1.5;}
+[data-theme="dark"] .composite-action-card .composite-dir-row{background: #2c2c2e;}
+.composite-action-card .composite-head-tag{font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 5px; flex-shrink: 0; line-height: 1.4;
+      background: rgba(142,142,147,.14); color: var(--nw-muted); white-space: nowrap;}
+.composite-action-card .composite-head-tag.ht-mm{background: rgba(255,107,53,.14); color: #c2410c;}
+.composite-action-card .composite-basis{font-size: 10px; color: var(--nw-muted); flex-shrink: 0; white-space: nowrap;}
+.composite-action-card .composite-resonance-row{display: flex; align-items: flex-start; gap: 7px;
+      background: #f7f7f9; border-radius: 6px; padding: 7px 10px;
+      border-left: 3px solid var(--nw-muted);}
+.composite-action-card .composite-resonance-name{font-size: 12px; font-weight: 700; flex-shrink: 0;}
+.composite-action-card .composite-resonance-dots{font-size: 9px; letter-spacing: 1px; flex-shrink: 0; line-height: 1.6;}
+.composite-action-card .composite-resonance-desc{font-size: 11px; color: var(--nw-muted); line-height: 1.5; flex: 1; min-width: 0;}
+.composite-action-card .composite-mismatch-row{display: flex; align-items: stretch; gap: 8px;
+      background: #fff7f2; border-radius: 6px; padding: 8px 10px 8px 0;
+      border: 1px solid rgba(255,107,53,.35); overflow: hidden;}
+.composite-action-card .composite-mismatch-row .mm-bar{width: 3px; flex-shrink: 0; background: #ff6b35; border-radius: 3px 0 0 3px;}
+.composite-action-card .composite-mismatch-row .mm-main{flex: 1; min-width: 0; padding-left: 5px;}
+.composite-action-card .composite-mismatch-row .mm-line1{display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;}
+.composite-action-card .composite-mismatch-row .mm-type{font-size: 12px; font-weight: 700; color: #c2410c;}
+.composite-action-card .composite-mismatch-row .mm-action{font-size: 11px; font-weight: 600; color: #1c1c1e;}
+.composite-action-card .composite-mismatch-row .mm-sub{display: flex; align-items: baseline; gap: 6px; margin-top: 2px; flex-wrap: wrap;}
+.composite-action-card .composite-mismatch-row .mm-bars{font-size: 11px; font-weight: 700; color: #ff6b35; flex-shrink: 0;}
+.composite-action-card .composite-mismatch-row .mm-detail{font-size: 11px; color: var(--nw-muted); line-height: 1.5; flex: 1; min-width: 0;}
+.composite-action-card .composite-alert{display: flex; flex-direction: column; gap: 6px;}
+.composite-action-card .composite-mismatch-row{align-items: center; padding: 7px 10px 7px 0;}
+.composite-action-card .composite-mismatch-row .mm-sep{font-size: 11px; font-weight: 700; color: #c2410c; flex-shrink: 0;}
+.composite-action-card .composite-pos-row,.composite-action-card .composite-headtag-row,.composite-action-card .composite-mm-detail-row{display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 11px; color: #1c1c1e; line-height: 1.6;}
+.composite-action-card .composite-pos-row .composite-pos-lb,.composite-action-card .composite-headtag-row .composite-headtag-lb{font-weight: 700; color: var(--nw-muted);}
+.composite-action-card .composite-headtag-row .composite-head-tag{font-size: 10px; font-weight: 700; border-radius: 5px; padding: 1px 6px;}
+.composite-action-card .composite-mm-detail-row .mm-action{font-weight: 600;}
+.composite-action-card .composite-mm-detail-row .mm-detail{color: var(--nw-muted);}
+.composite-action-card .composite-detail-toggle{display: flex; align-items: center; justify-content: center; gap: 4px;
+      font-size: 11px; color: var(--nw-muted); padding: 3px 0; cursor: pointer; user-select: none;}
+.composite-action-card .composite-detail-sec{display: flex; flex-direction: column; gap: 6px;}
+.composite-action-card .composite-detail-sec.collapsed{display: none;}
+.composite-action-card .composite-tier-row{display: flex; align-items: center; gap: 8px; padding: 2px 0;}
+.composite-action-card .composite-tier-lb{font-size: 12px; color: var(--nw-muted);}
+[data-theme="dark"] .composite-action-card .composite-tier-lb{color: #aeaeb2;}
+.composite-action-card .compliance-row{font-size: 10px; color: #aeaeb2; line-height: 1.5; padding: 2px 0 0; text-align: left;}
+[data-theme="dark"] .composite-action-card .composite-resonance-row{background: #2c2c2e;}
+[data-theme="dark"] .composite-action-card .composite-resonance-desc{color: var(--nw-muted);}
+[data-theme="dark"] .composite-action-card .composite-mismatch-row{background: rgba(255,107,53,.08); border-color: rgba(255,107,53,.30);}
+[data-theme="dark"] .composite-action-card .composite-mismatch-row .mm-action{color: #e5e5e7;}
+[data-theme="dark"] .composite-action-card .composite-head-tag{background: rgba(255,255,255,.08); color: #aeaeb2;}
+[data-theme="dark"] .composite-action-card .composite-head-tag.ht-mm{background: rgba(255,107,53,.18); color: #ff9a6b;}
+[data-theme="dark"] .composite-action-card .compliance-row{color: var(--nw-muted);}
+.composite-action-card .composite-chain{display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px 10px;}
+.composite-action-card .chain-cell{flex: 0 0 auto; min-width: 78px; background: transparent; border: 0; border-radius: 0; padding: 2px 4px; text-align: center;}
+.composite-action-card .chain-cell.main{border: 0; background: transparent;}
+.composite-action-card .chain-cell.main .cc-key{font-weight: 800;}
+.composite-action-card .chain-cell.ref{border: 0; background: transparent; opacity: .78;}
+.composite-action-card .chain-cell .cc-top{display: flex; align-items: baseline; justify-content: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap;}
+.composite-action-card .chain-cell .cc-key{font-size: 11px; font-weight: 600; color: #1c1c1e;}
+.composite-action-card .chain-cell .cc-role{font-size: 10px; color: var(--nw-muted); display: none;}
+.composite-action-card .chain-cell .cc-key{font-size: 12px; font-weight: 700; color: #1c1c1e;}
+.composite-action-card .chain-cell.ref .cc-key{color: var(--nw-muted);}
+.composite-action-card .chain-cell .cc-bucket{font-size: 9px; font-weight: 700; color: var(--nw-muted); border: 0.5px solid #d1d1d6; border-radius: 3px; padding: 0 4px; margin-left: auto; white-space: nowrap; display: none;}
+.composite-action-card .chain-cell .cc-bottom{display: flex; align-items: center; justify-content: center; gap: 6px;}
+.composite-action-card .chain-cell .cc-price{font-size: 10px; color: var(--nw-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: none;}
+.composite-action-card .chain-cell .st{font-size: 12px; font-weight: 700; white-space: nowrap;}
+.composite-action-card .chain-cell .st-hold{color: var(--nw-rise);}
+.composite-action-card .chain-cell .st-clear{color: var(--nw-fall);}
+.composite-action-card .chain-cell .st-flat{color: var(--nw-muted);}
+.composite-action-card .chain-arrow{display: flex; align-items: center; color: #c7c7cc; font-size: 11px; flex: 0 0 auto;}
+.composite-action-card .composite-conflict{display: flex; align-items: flex-start; gap: 7px; margin: 0 14px 10px; padding: 8px 10px; border-radius: 6px; background: rgba(255,149,0,.10); border: 1px solid rgba(255,149,0,.35);}
+.composite-action-card .composite-conflict .conflict-chip{flex: 0 0 auto; font-size: 10px; font-weight: 700; color: #b26a00; border: 1px solid rgba(178,106,0,.5); border-radius: 4px; padding: 1px 5px; white-space: nowrap; line-height: 1.5;}
+.composite-action-card .composite-conflict .conflict-text{font-size: 11px; color: #1c1c1e; line-height: 1.5; flex: 1; min-width: 0;}
+.composite-action-card .composite-conflict .conflict-text b{font-weight: 700;}
+.composite-action-card .composite-conflict .conflict-note{display: block; margin-top: 3px; font-size: 10px; color: var(--nw-muted);}
+.composite-action-card .composite-basis-switch{display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 14px 10px;}
+.composite-action-card .composite-basis-switch .basis-btn{font-size: 11px; color: #1c1c1e; background: #f7f7f9; border: 0.5px solid #d1d1d6; border-radius: 5px; padding: 3px 9px; cursor: pointer; font-family: inherit; line-height: 1.4;}
+.composite-action-card .composite-basis-switch .basis-btn.active{background: #0a84ff; color: #fff; border-color: #0a84ff; font-weight: 700; box-shadow: inset 0 0 0 2px rgba(255,255,255,.9);}
+.composite-action-card .composite-basis-switch .basis-btn.active::after{content: '当前'; font-size: 9px; margin-left: 4px; opacity: .95;}
+.composite-action-card .composite-basis-switch .basis-note{font-size: 10px; color: var(--nw-muted);}
+[data-theme="dark"] .composite-action-card .chain-cell{background: transparent; border: 0;}
+[data-theme="dark"] .composite-action-card .chain-cell.main{background: transparent; border: 0;}
+[data-theme="dark"] .composite-action-card .chain-cell .cc-key{color: #e5e5e7;}
+[data-theme="dark"] .composite-action-card .chain-cell.ref .cc-key{color: var(--nw-muted);}
+[data-theme="dark"] .composite-action-card .composite-conflict{background: rgba(255,149,0,.12); border-color: rgba(255,149,0,.40);}
+[data-theme="dark"] .composite-action-card .composite-conflict .conflict-text{color: #e5e5e7;}
+[data-theme="dark"] .composite-action-card .composite-conflict .conflict-chip{color: #fbbf24; border-color: rgba(251,191,36,.5);}
+[data-theme="dark"] .composite-action-card .composite-basis-switch .basis-btn{background: #2c2c2e; color: #e5e5e7; border-color: #3a3a3c;}
+[data-theme="dark"] .composite-action-card{background: #1c1c1e; border-color: #3a3a3c;}
+[data-theme="dark"] .composite-action-card .composite-title{color: #e5e5e7;}
+[data-theme="dark"] .composite-action-card .composite-signal-row{background: #2c2c2e;}
+[data-theme="dark"] .composite-action-card .composite-signal-value{color: #e5e5e7;}
+[data-theme="dark"] .composite-action-card .composite-advice{color: var(--nw-muted);}
+[data-theme="dark"] .composite-action-card .composite-decision-pos{color: var(--nw-muted);}</style>  <div class="composite-action-card collapsed" id="compositeActionCard">
+    <div class="composite-header" onclick="toggleCompositeAction()">
+      <span class="composite-title">综合决策</span>
+      <span class="composite-score-wrap" id="compositeScoreWrap" style="display:none;">
+        <span class="composite-score-track"><span class="composite-score-fill" id="compositeScoreFill"></span></span>
+        <span class="composite-score-num" id="compositeScoreNum">--</span>
+      </span>
+      <span class="composite-summary" id="compositeSummary">--</span>
+      
+      
+      
+      <span class="composite-spacer"></span>
+      
+      <span class="composite-action-word" id="compositeActionWord" style="display:none;">--</span>
+      <span class="composite-collapse" id="compositeCollapse">▾</span>
+    </div>
+    
+    <div class="composite-chain" id="compositeChain" style="display:none;">
+      <div class="chain-cell main" id="compositeChainCell0">
+        <div class="cc-top"><span class="cc-key" id="ccKey0">--</span><span class="cc-role" id="ccRole0">--</span><span class="cc-bucket" id="ccBucket0"></span></div>
+        <div class="cc-bottom"><span class="st st-flat" id="ccState0">--</span><span class="cc-price" id="ccPrice0">--</span></div>
+      </div>
+      <span class="chain-arrow">→</span>
+      <div class="chain-cell" id="compositeChainCell1">
+        <div class="cc-top"><span class="cc-key" id="ccKey1">--</span><span class="cc-role" id="ccRole1">--</span><span class="cc-bucket" id="ccBucket1"></span></div>
+        <div class="cc-bottom"><span class="st st-flat" id="ccState1">--</span><span class="cc-price" id="ccPrice1">--</span></div>
+      </div>
+      <span class="chain-arrow">→</span>
+      <div class="chain-cell ref" id="compositeChainCell2">
+        <div class="cc-top"><span class="cc-key" id="ccKey2">--</span><span class="cc-role" id="ccRole2">--</span><span class="cc-bucket" id="ccBucket2"></span></div>
+        <div class="cc-bottom"><span class="st st-flat" id="ccState2">--</span><span class="cc-price" id="ccPrice2">--</span></div>
+      </div>
+      
+      <span class="chain-single" id="compositeChainSingle" style="display:none;"></span>
+    </div>
+    
+    
+    <div class="composite-conflict" id="compositeConflict" style="display:none;">
+      <span class="conflict-chip" id="compositeConflictChip">周期错配</span>
+      <span class="conflict-text" id="compositeConflictText">--</span>
+    </div>
+    
+    <div class="composite-basis-switch" id="compositeBasisSwitch" style="display:none;">
+      <button type="button" class="basis-btn" data-basis="week" onclick="setPeriodBasis('week')">周线主</button>
+      <button type="button" class="basis-btn" data-basis="day" onclick="setPeriodBasis('day')">日线主 · 短线</button>
+      
+      <span class="basis-note">周线定方向，日线定买卖点（切换仅影响本页展示）</span>
+    </div>
+    <div class="composite-body" id="compositeBody">
+      
+      <div class="composite-reason" id="compositeAdvice">--</div>
+      
+      <div class="composite-alert" id="compositeAlert">
+      
+      <div class="composite-firstaction" id="compositeFirstAction" style="display:none;">
+        <span class="fa-icon" id="faIcon">--</span>
+        <div class="fa-text">
+          <div class="fa-title" id="faTitle">--</div>
+          <div class="fa-detail" id="faDetail" style="display:none;"></div>
+        </div>
+      </div>
+      
+      <div class="composite-mismatch-row" id="compositeMismatchRow" style="display:none;">
+        <span class="mm-bar" id="mmBar"></span>
+        <span class="mm-type" id="mmType">--</span>
+        <span class="mm-sep">·</span>
+        <span class="mm-bars" id="mmBars">--</span>
+      </div>
+      </div>
+      
+      <div class="composite-detail-toggle" id="compositeDetailToggle" onclick="toggleCompositeDetailSec()">
+        <span id="compositeDetailToggleText">展开依据</span>
+        <span id="compositeDetailToggleArrow">▾</span>
+      </div>
+      
+      <div class="composite-detail-sec collapsed" id="compositeDetailSec">
+      
+      <div class="composite-tier-row" id="compositeTierRow" style="display:none;">
+        <span class="composite-tier-lb">可靠性档位</span>
+        <span class="composite-badge" id="compositeHeadBadge">--</span>
+      </div>
+      
+      <div class="composite-pos-row" id="compositePosRow" style="display:none;">
+        <span class="composite-pos-lb">建议仓位（跨策略综合上限）</span>
+        <span class="composite-decision-pos" id="compositePosition">--</span>
+      </div>
+      
+      <div class="composite-headtag-row" id="compositeHeadTagRow" style="display:none;">
+        <span class="composite-headtag-lb">共振级别</span>
+        <span class="composite-head-tag" id="compositeHeadResonanceTag" style="display:none;">--</span>
+        <span class="composite-head-tag ht-mm" id="compositeHeadMismatchTag" style="display:none;">--</span>
+      </div>
+      
+      <div class="composite-mm-detail-row" id="compositeMmDetailRow" style="display:none;">
+        <span class="mm-line1"><span class="mm-action" id="mmAction">--</span></span>
+        <span class="mm-sub"><span class="mm-detail" id="mmDetail">--</span></span>
+      </div>
+      
+      <div class="composite-cert-row" id="compositeCertRow" style="display:none;">
+        <div class="composite-cert-item"><div class="composite-cert-num" id="certTrendNum">--</div><div class="composite-cert-lab">趋势一致</div></div>
+        <div class="composite-cert-sep"></div>
+        <div class="composite-cert-item"><div class="composite-cert-num" id="certOscNum">--</div><div class="composite-cert-lab">震荡确认</div></div>
+        <div class="composite-cert-sep"></div>
+        <div class="composite-cert-item"><div class="composite-cert-num" id="certResonanceNum">--</div><div class="composite-cert-lab">共振</div></div>
+        <div class="composite-cert-sep"></div>
+        <div class="composite-cert-item"><div class="composite-cert-num" id="certDirNum">--</div><div class="composite-cert-lab">方向拐点</div></div>
+        <div class="composite-cert-sep"></div>
+        <div class="composite-cert-item"><div class="composite-cert-num" id="certVolatilityNum">--</div><div class="composite-cert-lab">波动折损</div></div>
+      </div>
+      
+      <div class="composite-vol-row" id="compositeVolRow" style="display:none;">
+        <span class="composite-vol-lb">波动率</span>
+        <span class="composite-vol-track">
+          <span class="composite-vol-seg vs-g"></span><span class="composite-vol-seg vs-o"></span><span class="composite-vol-seg vs-r"></span>
+          <span class="composite-vol-dot" id="compositeVolDot" style="left:50%;"></span>
+        </span>
+        <span class="composite-vol-num" id="compositeVolNum">--</span>
+        <span class="composite-vol-tag" id="compositeVolTag" style="display:none;">--</span>
+      </div>
+      
+      <div class="composite-dual">
+        <div class="composite-dcol">
+          <div class="composite-dcol-h"><span class="composite-dcol-t">趋势策略</span><span class="composite-dcol-d" id="compositeTrendDir">--</span></div>
+          <div class="composite-chips" id="compositeTrendChips"></div>
+        </div>
+        <div class="composite-dcol">
+          <div class="composite-dcol-h"><span class="composite-dcol-t">震荡策略</span><span class="composite-dcol-d" id="compositeOscDir">--</span></div>
+          <div class="composite-chips" id="compositeOscChips"></div>
+        </div>
+      </div>
+      
+      <div class="composite-dir-row" id="compositeDirRow" style="display:none;">
+        <span class="composite-dir-label">方向</span>
+        <span class="composite-dir-value" id="compositeDirValue">--</span>
+      </div>
+      
+      <div class="composite-resonance-row" id="compositeResonanceRow" style="display:none;">
+        <span class="composite-resonance-name" id="compositeResonanceName">--</span>
+        <span class="composite-resonance-dots" id="compositeResonanceDots">○○○○○</span>
+        <span class="composite-resonance-desc" id="compositeResonanceDesc">--</span>
+      </div>
+      
+      <div class="composite-signal-price-row" id="compositeSignalPriceRow" style="display:none;"></div>
+      
+      <div class="composite-basis" id="compositeBasis" style="display:none;">--</div>
+      </div>
+      
+      <div class="composite-decision-card" id="compositeDecisionCard">
+        <div class="composite-decision-top">
+          <span class="composite-decision-label" id="compositeDecisionLabel" style="display:none;">--</span>
+          <span class="composite-badge" id="compositeBadge" style="display:none;">--</span>
+          
+        </div>
+      </div>
+      
+      <div class="compliance-row" id="compositeComplianceRow">本结论基于策略信号的机械判定，仅供参考，不构成投资建议。</div>
+    </div>
+  </div>
+
+<script>    var CDT_ROLE_PERIOD = { week: { dir: 'week', exec: 'day' }, day: { dir: 'day', exec: '60min' } };
+    var CDT_STRENGTH_LABEL = { violate: '违反', tip: '提示', ok: '遵守' };
+    var CDT_BASIS_NAME = { week: '周线定方向，日线定买卖点', day: '日线定方向，60分定买卖点' };
+    var CDT_PERIOD_FULL = { week: '周线', day: '日线', '60min': '60分' };
+
+
+    var MM_ACTION_STATE_DESC = {
+      '错配期·逃顶窗口': '趋势日线仍持股 · 震荡已转空',
+      '错配期·抄底信号': '趋势日线仍空仓 · 震荡已建仓',
+      '错配期·趋势转空': '趋势已转空 · 震荡仍持股',
+      '错配期·趋势转多': '趋势已转多 · 震荡仍空仓'
+    };
+
+
+    var CDT_REASON = {
+      DD: '大级别空头确立，反弹不改趋势',
+      DU: '主周期偏空，反弹不追高',
+      DN: '主周期偏空，暂不建仓',
+      UD: '主周期看多，短线回调待企稳',
+      UN: '主周期看多，等待买点',
+      UU: '各周期方向一致，趋势成立',
+      N: '主周期未表态，等待'
+    };
+    const R3_CONFLICT_TEXT = '周线口径仍持仓，日线已兑现。按「周线主 / 日线从」规则仅作提示，<b>不改动现有仓位</b>。关注周线是否转弱。<span class="conflict-note">推送口径尚未同步（推送恒按「周线主」，暂不随本页口径切换）</span>';
+    const R3_NEUTRAL_ADVICE = '周线口径仍持仓、日线已兑现，按「周线主 / 日线从」规则仅作提示，不改动现有仓位。';
+
+
+    const R3_CONCLUSION_NAME = '周期错配';
+
+
+    function readPeriodBasis() {
+      try { var v = localStorage.getItem(PERIOD_BASIS_KEY); return (v === 'day') ? 'day' : 'week'; } catch (e) { return 'week'; }
+    }
+    function setPeriodBasis(v) {
+      if (v !== 'week' && v !== 'day') return;
+      try { localStorage.setItem(PERIOD_BASIS_KEY, v); } catch (e) {  }
+      try { renderCompositeAction(); } catch (e) { console.warn('[composite] 口径切换重渲染异常:', e && e.message); }
+      try { renderStatusCard(); } catch (e) { console.warn('[status] 口径切换重渲染异常:', e && e.message); }
+    }
+    function resolvePeriodChainBucket() {
+      if (currentStrategy === 'dual') {
+        return (window.__dualDominant === 'osc') ? 'xichou-lagao' : 'huanglantai';
+      }
+      if (_isOscFamily(currentStrategy)) return 'xichou-lagao';
+      if (currentStrategy === 'huanglantai') return 'huanglantai';
+      return null;
+    }
+    function cdtBucket3(rawStatus) {
+      return rawStatus === 'holding' ? 'up' : (rawStatus === 'cleared' ? 'down' : 'neutral');
+    }
+    function cdtDecide(D, X) {
+      var d = cdtBucket3(D), x = cdtBucket3(X);
+      if (d === 'neutral') { return { row: 'N', action: '等待', strength: 'tip', conflict: false }; }
+      if (d === 'down' && x === 'down') { return { row: 'DD', action: '空仓', strength: 'violate', conflict: false }; }
+      if (d === 'down' && x === 'up') { return { row: 'DU', action: '减仓', strength: 'tip', conflict: false }; }
+      if (d === 'down' && x === 'neutral') { return { row: 'DN', action: '空仓', strength: 'tip', conflict: false }; }
+      if (d === 'up' && x === 'down') { return { row: 'UD', action: '等待', strength: 'tip', conflict: true }; }
+      if (d === 'up' && x === 'neutral') { return { row: 'UN', action: '等待', strength: 'tip', conflict: false }; }
+      return { row: 'UU', action: '建仓', strength: 'ok', conflict: false };
+    }
+    function cdtTriggerText(row, dirFull, execFull) {
+      switch (row) {
+        case 'DD': return dirFull + '与' + execFull + '同时清仓';
+        case 'DU': return dirFull + '清仓、' + execFull + '建仓';
+        case 'DN': return dirFull + '清仓、' + execFull + '未表态';
+        case 'UD': return dirFull + '建仓、' + execFull + '清仓';
+        case 'UN': return dirFull + '建仓、' + execFull + '未表态';
+        case 'UU': return dirFull + '与' + execFull + '同时建仓';
+        default: return dirFull + '未表态';
+      }
+    }
+    function deriveCardDecision(basis) {
+      try {
+        var bucket = resolvePeriodChainBucket();
+        if (!bucket) return null;
+        var tf = (window._strategyTfSignals && window._strategyTfSignals[bucket]) || null;
+        if (!tf) return null;
+        var b = (basis === 'day') ? 'day' : 'week';
+        var rp = CDT_ROLE_PERIOD[b];
+        var dirFull = CDT_PERIOD_FULL[rp.dir], execFull = CDT_PERIOD_FULL[rp.exec];
+        var D = (tf[rp.dir] && tf[rp.dir].status) || 'idle';
+        var X = (tf[rp.exec] && tf[rp.exec].status) || 'idle';
+        var dec = cdtDecide(D, X);
+        dec.basis = b; dec.dir = rp.dir; dec.exec = rp.exec; dec.dirFull = dirFull; dec.execFull = execFull;
+        dec.strengthLevel = dec.strength;
+        dec.strengthName = CDT_STRENGTH_LABEL[dec.strength];
+        dec.strengthText = cdtTriggerText(dec.row, dirFull, execFull);
+        dec.reason = CDT_REASON[dec.row];
+        return dec;
+      } catch (e) { return null; }
+    }
+    function cdtActionColor(action) {
+      if (action === '建仓' || action === '加仓') return '#ff3b30';
+      if (action === '减仓' || action === '清仓' || action === '空仓') return '#34c759';
+      return '#8e8e93';
+    }
+    function periodChainCells(bucket) {
+      bucket = bucket || resolvePeriodChainBucket();
+      if (!bucket) return null;
+      const tf = (window._strategyTfSignals && window._strategyTfSignals[bucket]) || {};
+      const _cell = (rawKey) => {
+        const e = tf[rawKey] || null;
+        const status = (e && e.status) || 'idle';
+        const last = (e && e.lastSignal) || null;
+        return {
+          status: status,
+          state: status === 'holding' ? '持股' : (status === 'cleared' ? '清仓' : '空仓'),
+          price: (last && last.price != null && isFinite(Number(last.price))) ? Number(last.price).toFixed(2) : '--',
+          date: (last && last.date != null && String(last.date) !== '') ? String(last.date).slice(0, 10) : '--'
+        };
+      };
+      const week = _cell('week'), day = _cell('day'), m60 = _cell('60min');
+      const _mk = (key, k, role, main, ref, c) => ({ key: key, k: k, role: role, main: main, ref: ref, status: c.status, state: c.state, price: c.price, date: c.date });
+      if (readPeriodBasis() === 'day') {
+        return [
+          _mk('day', '日线', '主 · 定方向', true, false, day),
+          _mk('60min', '60分', '从 · 定执行', false, false, m60),
+          _mk('week', '周线', '参考', false, true, week)
+        ];
+      }
+      return [
+        _mk('week', '周线', '主 · 定方向', true, false, week),
+        _mk('day', '日线', '从 · 定执行', false, false, day),
+        _mk('60min', '60分', '择时', false, true, m60)
+      ];
+    }
+    function resolvePeriodConflictHit(bucket, tf) {
+      if (!bucket) return false;
+      tf = tf || ((window._strategyTfSignals && window._strategyTfSignals[bucket]) || {});
+      const week = (tf.week && tf.week.status) || 'idle';
+      const day = (tf.day && tf.day.status) || 'idle';
+      if (bucket === 'huanglantai') {
+        const cd = window.__compositeDecision;
+        if (cd && cd.periodConflict && typeof cd.periodConflict.hit === 'boolean') return cd.periodConflict.hit;
+        return (week === 'holding' && day === 'cleared');   // 内核就绪前的同式兜底
+      }
+      return (week === 'holding' && day === 'cleared');
+    }
+    function isPeriodConflictActive() {
+      try {
+        var dec = deriveCardDecision(readPeriodBasis());
+        if (dec) return dec.conflict;
+      } catch (e) {  }
+      return resolvePeriodConflictHit(resolvePeriodChainBucket(), null);
+    }
+    function renderCompositeChain() {
+      const chainEl = document.getElementById('compositeChain');
+      const conflictEl = document.getElementById('compositeConflict');
+      const switchEl = document.getElementById('compositeBasisSwitch');
+      if (!chainEl && !conflictEl && !switchEl) return;
+
+
+
+      const _clearConflict = () => {
+        const _c = document.getElementById('compositeConflictChip');
+        const _t = document.getElementById('compositeConflictText');
+        if (_c) _c.textContent = '';
+        if (_t) _t.textContent = '';
+      };
+
+      const bucket = resolvePeriodChainBucket();
+      const basis = readPeriodBasis();
+      const show = !!bucket;
+      const basisSumEl = document.getElementById('basisSummary');
+      const spRowEl = document.getElementById('compositeSignalPriceRow');
+
+      if (chainEl) chainEl.style.display = show ? 'flex' : 'none';
+      if (basisSumEl) basisSumEl.style.display = show ? 'block' : 'none';
+      if (switchEl) {
+        switchEl.style.display = show ? 'flex' : 'none';
+        const _btns = switchEl.querySelectorAll('.basis-btn');
+        for (let i = 0; i < _btns.length; i++) {
+          _btns[i].classList.toggle('active', _btns[i].getAttribute('data-basis') === basis);
+        }
+      }
+      if (!show) {
+        if (conflictEl) { conflictEl.style.display = 'none'; _clearConflict(); }
+        if (spRowEl) { spRowEl.style.display = 'none'; spRowEl.innerHTML = ''; }
+        if (basisSumEl) basisSumEl.textContent = '';
+        return;
+      }
+
+      if (basisSumEl) basisSumEl.textContent = '参考周期：' + (CDT_BASIS_NAME[basis] || '--') + '（可切换）';
+
+      const bucketLabel = (bucket === 'xichou-lagao') ? '震荡' : '趋势';
+      const fallback = (currentStrategy === 'dual' && !window.__dualDominant) ? '·兜底' : '';
+      const cells = periodChainCells(bucket);
+      const _fill = (idx, c) => {
+        const cellEl = document.getElementById('compositeChainCell' + idx);
+        const kEl = document.getElementById('ccKey' + idx);
+        const rEl = document.getElementById('ccRole' + idx);
+        const bEl = document.getElementById('ccBucket' + idx);
+        const sEl = document.getElementById('ccState' + idx);
+        const pEl = document.getElementById('ccPrice' + idx);
+        if (cellEl) cellEl.className = 'chain-cell' + (c.main ? ' main' : '') + (c.ref ? ' ref' : '');
+        if (kEl) kEl.textContent = c.k;
+        if (rEl) rEl.textContent = c.role;
+        if (bEl) bEl.textContent = bucketLabel + fallback;
+        if (sEl) { sEl.textContent = c.state; sEl.className = 'st ' + (c.status === 'holding' ? 'st-hold' : (c.status === 'cleared' ? 'st-clear' : 'st-flat')); }
+        if (pEl) pEl.textContent = (c.date && c.date !== '--') ? (c.price + ' · ' + c.date) : c.price;
+      };
+      if (cells && cells.length === 3) { _fill(0, cells[0]); _fill(1, cells[1]); _fill(2, cells[2]); }
+
+      (function _applyChainMerge() {
+        const _csEl = document.getElementById('compositeChainSingle');
+        const _sameWord = !!(cells && cells.length === 3 && cells[0].state === cells[1].state && cells[1].state === cells[2].state);
+        if (_csEl) {
+          if (_sameWord) { _csEl.textContent = '周 / 日 / 60分 均在' + cells[0].state + '（三周期同向）'; _csEl.style.display = 'block'; }
+          else { _csEl.textContent = ''; _csEl.style.display = 'none'; }
+        }
+        if (chainEl) {
+          const _nodes = chainEl.querySelectorAll('.chain-cell, .chain-arrow');
+          for (let _i = 0; _i < _nodes.length; _i++) { _nodes[_i].style.display = _sameWord ? 'none' : ''; }
+        }
+      })();
+
+      if (spRowEl) {
+        const _spLines = (cells || []).filter(c => c.price && c.price !== '--')
+          .map(c => '<div class="sp-line"><span class="sp-tag">信号价</span>' + c.k + ' ' + c.price + (c.date && c.date !== '--' ? ' · ' + c.date : '') + '</div>');
+        if (_spLines.length) { spRowEl.style.display = 'block'; spRowEl.innerHTML = _spLines.join(''); }
+        else { spRowEl.style.display = 'none'; spRowEl.innerHTML = ''; }
+      }
+
+      const tf = (window._strategyTfSignals && window._strategyTfSignals[bucket]) || {};
+      const _confDec = deriveCardDecision(basis);
+      const hit = _confDec ? _confDec.conflict : resolvePeriodConflictHit(bucket, tf);
+      if (conflictEl) {
+        if (hit) {
+          conflictEl.style.display = 'flex';
+          const chipEl = document.getElementById('compositeConflictChip');
+          const txtEl = document.getElementById('compositeConflictText');
+          if (chipEl) chipEl.textContent = '周期错配';
+          if (txtEl) txtEl.innerHTML = R3_CONFLICT_TEXT;
+        } else {
+          conflictEl.style.display = 'none';
+          _clearConflict();
+        }
+      }
+    }
+    function forceCompositeCollapse() {
+      const card = document.getElementById('compositeActionCard');
+      if (!card) return;
+      try {
+        localStorage.removeItem('compositeCardCollapsed');
+        localStorage.removeItem('compositeCardCollapsedVer');
+      } catch (e) {  }
+      card.classList.add('collapsed');                  // 正文层：收缩（仅表头可见）
+      const _sec = document.getElementById('compositeDetailSec');
+      if (_sec) _sec.classList.add('collapsed');        // 依据层：收缩
+      const _txt0 = document.getElementById('compositeDetailToggleText');
+      if (_txt0) _txt0.textContent = '展开依据';
+      const _arw0 = document.getElementById('compositeDetailToggleArrow');
+      if (_arw0) _arw0.textContent = '▾';
+    }
+    function toggleCompositeAction() {
+
+
+      const card = document.getElementById('compositeActionCard');
+      if (!card) return;
+      card.classList.toggle('collapsed');
+    }
+    function toggleCompositeDetailSec() {
+      const sec = document.getElementById('compositeDetailSec');
+      if (!sec) return;
+      const _collapsed = sec.classList.toggle('collapsed');
+      const _txt = document.getElementById('compositeDetailToggleText');
+      const _arrow = document.getElementById('compositeDetailToggleArrow');
+      if (_txt) _txt.textContent = _collapsed ? '展开依据' : '收起依据';
+      if (_arrow) _arrow.textContent = _collapsed ? '▾' : '▴';
+    }
+    function renderCompositeAction() {
+      const card = document.getElementById('compositeActionCard');
+      if (!card) return;
+      if (currentPeriod === 'minute') { card.style.display = 'none'; return; }
+
+
+
+
+      card.style.display = compositeCardOn ? 'block' : 'none';
+
+      try { forceCompositeCollapse(); } catch (e) { console.warn('[composite] 强制收缩异常:', e && e.message); }
+
+
+
+
+
+      const _oscTf = (window._strategyTfSignals && window._strategyTfSignals['xichou-lagao']) || {};
+      const _oscAllIdle = ['week','day','60min'].every(t => {
+        const s = _oscTf[t] && _oscTf[t].status;
+        return !s || s === 'idle';
+      });
+      if (_oscAllIdle && !window._compositeOscPreloading && typeof preloadStrategyTfSignals === 'function') {
+        window._compositeOscPreloading = true;
+        preloadStrategyTfSignals('xichou-lagao').then(() => {
+          window._compositeOscPreloading = false;
+          try { renderCompositeAction(); } catch (e) { console.warn('[composite] 重渲染异常:', e.message); }
+        }).catch((e) => {
+          window._compositeOscPreloading = false;
+          console.warn('[composite] 震荡预热失败:', e && e.message);
+        });
+      }
+
+      const _ttf = (window._strategyTfSignals && window._strategyTfSignals['huanglantai']) || {};
+      const _t60 = _ttf['60min'] && _ttf['60min'].status;
+      if ((!window._strategyTfSignals || !window._strategyTfSignals['huanglantai']) && typeof preloadStrategyTfSignals === 'function' && !window._compositeTrendPreloading) {
+        window._compositeTrendPreloading = true;
+        window._strategyTfSignals = window._strategyTfSignals || {};
+        window._strategyTfSignals['huanglantai'] = {};
+        preloadStrategyTfSignals('huanglantai').then(() => {
+          window._compositeTrendPreloading = false;
+          try { renderCompositeAction(); } catch (e) { console.warn('[composite] 趋势预热重渲染异常:', e.message); }
+        }).catch((e) => {
+          window._compositeTrendPreloading = false;
+          console.warn('[composite] 趋势预热失败:', e && e.message);
+        });
+      } else if (!_t60 && !window._compositeTrendPreloading && typeof preloadStrategyTfSignals === 'function') {
+        window._compositeTrendPreloading = true;
+        preloadStrategyTfSignals('huanglantai').then(() => {
+          window._compositeTrendPreloading = false;
+          try { renderCompositeAction(); } catch (e) { console.warn('[composite] 趋势60分预热重渲染异常:', e.message); }
+        }).catch((e) => {
+          window._compositeTrendPreloading = false;
+          console.warn('[composite] 趋势60分预热失败:', e && e.message);
+        });
+      }
+
+      const a = calcCompositeAction();
+
+      const _dec = deriveCardDecision(readPeriodBasis());
+
+
+
+      try { renderCompositeChain(); } catch (e) { console.warn('[composite] 口径链渲染异常:', e && e.message); }
+
+
+
+      try { if (a) syncAiPositionText(); } catch (e) { console.warn('[composite] AI仓位同步异常:', e && e.message); }
+      const _set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+      const badgeEl = document.getElementById('compositeBadge');
+      const summaryEl = document.getElementById('compositeSummary');
+      const trendDirEl = document.getElementById('compositeTrendDir');
+      const oscDirEl = document.getElementById('compositeOscDir');
+      const decisionEl = document.getElementById('compositeDecisionLabel');
+
+      if (!a) {
+        if (badgeEl) { badgeEl.textContent = '加载中'; badgeEl.style.background = '#c7c7cc'; }
+        if (summaryEl) { summaryEl.textContent = '--'; summaryEl.style.color = '#8e8e93'; summaryEl.style.display = ''; }
+        _set('compositeDecisionLabel', '--'); _set('compositePosition', ''); _set('compositeAdvice', '--');
+        if (trendDirEl) { trendDirEl.textContent = '--'; trendDirEl.style.color = '#8e8e93'; }
+        if (oscDirEl) { oscDirEl.textContent = '--'; oscDirEl.style.color = '#8e8e93'; }
+        if (decisionEl) decisionEl.style.color = '#8e8e93';
+
+        const _sw0 = document.getElementById('compositeScoreWrap'); if (_sw0) _sw0.style.display = 'none';
+        const _hb0 = document.getElementById('compositeHeadBadge'); if (_hb0) _hb0.style.display = 'none';
+        const _tr0 = document.getElementById('compositeTierRow'); if (_tr0) _tr0.style.display = 'none';
+        const _cr0 = document.getElementById('compositeCertRow'); if (_cr0) _cr0.style.display = 'none';
+        const _vr0 = document.getElementById('compositeVolRow'); if (_vr0) _vr0.style.display = 'none';
+        const _tc0 = document.getElementById('compositeTrendChips'); if (_tc0) _tc0.innerHTML = '';
+        const _oc0 = document.getElementById('compositeOscChips'); if (_oc0) _oc0.innerHTML = '';
+        const _dc0 = document.getElementById('compositeDecisionCard'); if (_dc0) { _dc0.className = 'composite-decision-card'; _dc0.style.display = 'none'; }
+        const _dirRow = document.getElementById('compositeDirRow');
+        if (_dirRow) _dirRow.style.display = 'none';
+
+        const _crn0 = document.getElementById('certResonanceNum'); if (_crn0) { _crn0.textContent = '--'; _crn0.style.color = '#8e8e93'; }
+        const _cvn0 = document.getElementById('certVolatilityNum'); if (_cvn0) { _cvn0.textContent = '--'; _cvn0.style.color = '#8e8e93'; }
+        const _rr0 = document.getElementById('compositeResonanceRow'); if (_rr0) _rr0.style.display = 'none';
+        const _mr0 = document.getElementById('compositeMismatchRow'); if (_mr0) _mr0.style.display = 'none';
+        const _bs0 = document.getElementById('compositeBasis'); if (_bs0) _bs0.textContent = '--';
+        const _hrt0 = document.getElementById('compositeHeadResonanceTag'); if (_hrt0) _hrt0.style.display = 'none';
+        const _hmt0 = document.getElementById('compositeHeadMismatchTag'); if (_hmt0) _hmt0.style.display = 'none';
+
+        const _pr0 = document.getElementById('compositePosRow'); if (_pr0) _pr0.style.display = 'none';
+        const _ht0 = document.getElementById('compositeHeadTagRow'); if (_ht0) _ht0.style.display = 'none';
+        const _mmd0 = document.getElementById('compositeMmDetailRow'); if (_mmd0) _mmd0.style.display = 'none';
+        const _cs0 = document.getElementById('compositeChainSingle'); if (_cs0) { _cs0.style.display = 'none'; _cs0.textContent = ''; }
+
+        const _aw0 = document.getElementById('compositeActionWord'); if (_aw0) { _aw0.style.display = 'none'; _aw0.textContent = ''; }
+        const _ad0 = document.getElementById('compositeAdvice'); if (_ad0) _ad0.textContent = '--';
+        const _sp0 = document.getElementById('compositeSignalPriceRow'); if (_sp0) { _sp0.style.display = 'none'; _sp0.innerHTML = ''; }
+        const _bsm0 = document.getElementById('basisSummary'); if (_bsm0) { _bsm0.textContent = ''; _bsm0.style.display = 'none'; }
+        const _fad0 = document.getElementById('faDetail'); if (_fad0) { _fad0.textContent = ''; _fad0.style.display = 'none'; }
+        return;
+      }
+
+      if (badgeEl) { badgeEl.textContent = a.badge; badgeEl.style.background = a.badgeColor; }
+
+      const _scoreWrap = document.getElementById('compositeScoreWrap');
+      const _headBadge = document.getElementById('compositeHeadBadge');
+      const _tierRow = document.getElementById('compositeTierRow');
+      const _scoreFill = document.getElementById('compositeScoreFill');
+      const _scoreNum = document.getElementById('compositeScoreNum');
+      const _hasCert = a.certTotal != null;
+      if (_scoreWrap && _headBadge && summaryEl) {
+        if (_hasCert) {
+
+
+          _scoreWrap.style.display = 'none';
+          if (_scoreNum) { _scoreNum.textContent = ''; }
+          _headBadge.textContent = a.badge; _headBadge.style.background = a.badgeColor;
+          if (_tierRow) _tierRow.style.display = 'flex';
+          summaryEl.style.display = 'none'; summaryEl.textContent = '';
+        } else if (_dec) {
+
+
+          _scoreWrap.style.display = 'none';
+          if (_tierRow) _tierRow.style.display = 'none';
+          summaryEl.style.display = 'none'; summaryEl.textContent = '';
+        } else {
+
+          _scoreWrap.style.display = 'none';
+          if (_tierRow) _tierRow.style.display = 'none';
+          summaryEl.style.display = '';
+          summaryEl.textContent = a.label + (a.posRange && a.posRange !== '--' ? ' · ' + a.posRange : '');
+          summaryEl.style.color = a.badgeColor;
+        }
+      }
+
+      const _certRow = document.getElementById('compositeCertRow');
+      if (_certRow) {
+        if (_hasCert) {
+          _certRow.style.display = 'flex';
+          const _ct = document.getElementById('certTrendNum'), _co = document.getElementById('certOscNum'), _cd = document.getElementById('certDirNum');
+          if (_ct) { _ct.textContent = a.certTrend; _ct.style.color = a.certTrend >= 25 ? '#ff3b30' : (a.certTrend > 0 ? '#ff9500' : '#8e8e93'); }
+          if (_co) { _co.textContent = a.certOsc; _co.style.color = a.certOsc >= 25 ? '#34c759' : (a.certOsc > 0 ? '#ff9500' : '#8e8e93'); }
+          if (_cd) { _cd.textContent = a.certDir; _cd.style.color = a.certDir >= 15 ? '#ff3b30' : (a.certDir > 5 ? '#ff9500' : '#8e8e93'); }
+
+          const _cres = document.getElementById('certResonanceNum');
+          if (_cres) { _cres.textContent = (a.certResonance != null ? a.certResonance : '--'); _cres.style.color = a.certResonance >= 20 ? '#34c759' : (a.certResonance > 0 ? '#ff9500' : '#8e8e93'); }
+          const _cvol = document.getElementById('certVolatilityNum');
+          if (_cvol) { const _cv = a.certVolatility || 0; _cvol.textContent = _cv; _cvol.style.color = _cv < 0 ? '#34c759' : '#8e8e93'; }
+        } else _certRow.style.display = 'none';
+      }
+
+      const _basisEl = document.getElementById('compositeBasis');
+      if (_basisEl) {
+        _basisEl.style.display = '';
+        _basisEl.textContent = (a.basis === 'intraday') ? '盘中快照·实时价' : '已收盘数据';
+      }
+
+
+
+
+      const _hrt = document.getElementById('compositeHeadResonanceTag');
+      if (_hrt) {
+        _hrt.style.display = '';
+        _hrt.textContent = (a.resonanceName || '--') + ' ' + (a.resonanceLevel || 'R0');
+        _hrt.style.color = a.resonanceColor || '#8e8e93';
+      }
+      const _hmt = document.getElementById('compositeHeadMismatchTag');
+      if (_hmt) {
+
+        const _mtxt = (a.mismatchCopy && a.mismatchCopy.mmType) ? a.mismatchCopy.mmType : '';
+        _hmt.textContent = _mtxt;
+        _hmt.style.display = (a.mismatchType && _mtxt) ? '' : 'none';
+      }
+      const _htRow = document.getElementById('compositeHeadTagRow');
+      if (_htRow) _htRow.style.display = ((_hrt && _hrt.style.display !== 'none') || (_hmt && _hmt.style.display !== 'none')) ? 'flex' : 'none';
+
+      const _resRow = document.getElementById('compositeResonanceRow');
+      if (_resRow) {
+        _resRow.style.display = 'flex';
+        _resRow.style.borderLeftColor = a.resonanceColor || '#8e8e93';
+        const _resName = document.getElementById('compositeResonanceName');
+        const _resDots = document.getElementById('compositeResonanceDots');
+        const _resDesc = document.getElementById('compositeResonanceDesc');
+        if (_resName) { _resName.textContent = a.resonanceName || '--'; _resName.style.color = a.resonanceColor || '#8e8e93'; }
+        if (_resDots) { _resDots.textContent = a.resonanceDots || '○○○○○'; _resDots.style.color = a.resonanceColor || '#8e8e93'; }
+        if (_resDesc) { _resDesc.textContent = a.resonanceDesc || '--'; }
+      }
+
+      const _mmRow = document.getElementById('compositeMismatchRow');
+      if (_mmRow) {
+        const _mc = a.mismatchCopy || null;
+        const _mmdRow = document.getElementById('compositeMmDetailRow');
+        if (a.mismatchType && _mc) {
+          _mmRow.style.display = 'flex';
+          if (_mmdRow) _mmdRow.style.display = 'flex';
+          const _mmBar = document.getElementById('mmBar');
+          if (_mmBar) _mmBar.style.background = _mc.color || '#ff6b35';
+          _set('mmType', _mc.mmType || '--');
+
+          _set('mmAction', MM_ACTION_STATE_DESC[_mc.mmType] || _mc.mmAction || '--');
+          _set('mmBars', _mc.mmBars || '--');
+          _set('mmDetail', _mc.mmDetail || '--');
+        } else {
+          _mmRow.style.display = 'none';
+          if (_mmdRow) _mmdRow.style.display = 'none';
+        }
+      }
+
+      const _volRow = document.getElementById('compositeVolRow');
+      if (_volRow) {
+        if (a.vol) {
+          _volRow.style.display = 'flex';
+          const _dot = document.getElementById('compositeVolDot'), _vn = document.getElementById('compositeVolNum'), _vt = document.getElementById('compositeVolTag');
+          if (_dot) { _dot.style.left = a.vol.pos + '%'; _dot.style.background = a.vol.color; }
+          if (_vn) { _vn.textContent = a.vol.val + '%'; _vn.style.color = a.vol.color; }
+          if (_vt) { _vt.style.display = ''; _vt.textContent = a.vol.label; _vt.className = 'composite-vol-tag vt-' + a.vol.level; }
+        } else _volRow.style.display = 'none';
+      }
+
+
+      const _normStateWord = (s) => String(s == null ? '' : s).replace(/已清/g, '清仓').replace(/持有/g, '持股');
+      const _chipHtml = (chips) => (chips || []).map(c => '<span class="composite-chip ' + c.cls + '">' + c.tf + ' ' + _normStateWord(c.label) + '</span>').join('');
+      const _tc = document.getElementById('compositeTrendChips'), _oc = document.getElementById('compositeOscChips');
+      if (_tc) _tc.innerHTML = _chipHtml(a.trendChips);
+      if (_oc) _oc.innerHTML = _chipHtml(a.oscChips);
+      if (trendDirEl) { trendDirEl.textContent = a.trendDir; trendDirEl.style.color = a.trendDirColor; }
+      if (oscDirEl) { oscDirEl.textContent = a.oscDir; oscDirEl.style.color = a.oscDirColor; }
+
+
+
+      const _r3 = isPeriodConflictActive();
+      const _aw = document.getElementById('compositeActionWord');
+      if (_aw) {
+        if (_dec) { _aw.style.display = ''; _aw.textContent = _dec.action; _aw.style.color = cdtActionColor(_dec.action); }
+        else { _aw.style.display = 'none'; _aw.textContent = ''; }
+      }
+      if (decisionEl) {
+        if (_dec) { decisionEl.style.display = 'none'; decisionEl.textContent = ''; }
+        else {
+          decisionEl.style.display = '';
+          decisionEl.textContent = (_r3 ? R3_CONCLUSION_NAME : a.label);
+          decisionEl.style.color = a.badgeColor;
+        }
+      }
+      _set('compositePosition', _r3 ? '仅提示，不改动仓位' : (a.posText || ''));
+
+      (function _togglePosRow() {
+        const _pr = document.getElementById('compositePosRow');
+        if (_pr) _pr.style.display = ((_r3 ? '仅提示，不改动仓位' : (a.posText || '')) !== '') ? 'flex' : 'none';
+      })();
+
+      _set('compositeAdvice', _dec ? _dec.reason : (_r3 ? R3_NEUTRAL_ADVICE : a.advice));
+
+      const _dcard = document.getElementById('compositeDecisionCard');
+      if (_dcard) {
+        _dcard.className = 'composite-decision-card' + (a.badgeColor === '#ff3b30' ? ' dc-bull' : (a.badgeColor === '#34c759' ? ' dc-bear' : ''));
+
+        _dcard.style.display = _dec ? 'none' : '';
+      }
+
+      const dirRow = document.getElementById('compositeDirRow');
+      const dirVal = document.getElementById('compositeDirValue');
+      if (dirRow && dirVal) {
+        if (a.dirJudge && a.dirJudge.text) {
+          dirRow.style.display = 'flex';
+          dirVal.textContent = a.dirJudge.text;
+          dirVal.style.color = a.dirJudge.color;
+          dirRow.style.borderLeftColor = a.dirJudge.color;
+        } else {
+          dirRow.style.display = 'none';
+        }
+      }
+
+
+      const faEl = document.getElementById('compositeFirstAction');
+      const fa = calcFirstActionPrinciple();
+      const _fadEl = document.getElementById('faDetail');
+      if (faEl) {
+        if (_dec) {
+          faEl.style.display = 'flex';
+          faEl.className = 'composite-firstaction fa-' + (_dec.strength === 'violate' ? 'violate' : (_dec.strength === 'ok' ? 'ok' : 'warn'));
+          _set('faIcon', _dec.strengthName);
+          _set('faTitle', '第一行动原则：' + _dec.strengthText);
+          if (_fadEl) { _fadEl.textContent = ''; _fadEl.style.display = 'none'; }
+        } else if (fa) {
+
+          faEl.style.display = 'flex';
+          faEl.className = 'composite-firstaction fa-' + fa.level;
+          _set('faIcon', fa.level === 'violate' ? '违反' : (fa.level === 'warn' ? '提示' : '遵守'));
+          _set('faTitle', _r3 ? '周期错配 · 仅作提示，不改动现有仓位' : fa.title);
+          if (_fadEl) { _fadEl.textContent = (_r3 ? R3_NEUTRAL_ADVICE : fa.detail); _fadEl.style.display = ''; }
+        } else {
+          faEl.style.display = 'none';
+          if (_fadEl) { _fadEl.textContent = ''; _fadEl.style.display = 'none'; }
+        }
+      }
+    }
+  function judgeDirJudge(ctx) {
+    var w = (ctx && ctx.trendState && ctx.trendState.week) || 'unknown';
+    var d = (ctx && ctx.trendState && ctx.trendState.day) || 'unknown';
+    var m = (ctx && ctx.trendState && ctx.trendState.m60) || 'unknown';
+    if (w === 'down' && (d === 'up' || m === 'up')) return { text: '从周线开始下跌，当前为周线下跌中的反弹（背离），勿追涨', color: '#ff6b35' };
+    if (w === 'down') return { text: '从周线开始下跌（大级别空头确立），必须空仓等待反转', color: '#ff3b30' };
+    if (w === 'up' && d === 'down') return { text: '从日线开始下跌（周线未破位，日线回调），等待日线吸筹回踩', color: '#ff9500' };
+    if (w === 'up' && d === 'up' && m === 'down') return { text: '60分钟回踩（小级别调整，日/周线向上），看大做小等 60min 吸筹', color: '#ff9500' };
+    if (w === 'up' && d === 'up' && m === 'up') return { text: '从60分钟开始上涨（多周期共振向上），顺势建仓', color: '#ff3b30' };
+    return { text: '信号不足，观察（等待趋势/震荡信号明确）', color: '#8e8e93' };
+  }
+  function buildMismatchCopy(mismatchType, mismatchBars, trendCross) {
+    if (!mismatchType) return null;
+    var n = _isNum(mismatchBars) && mismatchBars >= 0 ? mismatchBars : null;
+    var nTxt = (n === null) ? '--' : String(n);
+    // 趋势穿越根数文案：barsAgo=0 → 「最新一根」，N>0 → 「N 根前」（架构 §3.4.3 口径标注）
+    var crossN = (trendCross && _isNum(trendCross.barsAgo)) ? trendCross.barsAgo : null;
+    var crossTxt = (crossN === null) ? '--' : (crossN === 0 ? '最新一根' : crossN + ' 根前');
+    var res = { mmType: '', mmAction: '', mmBars: '', mmDetail: '', color: COLORS.MM_BEAR };
+
+    if (mismatchType === 'MM1') {
+      res.mmType = '错配期·逃顶窗口';
+      res.mmAction = '逢高减仓·保留底仓';
+      res.mmBars = '震荡已清 ' + nTxt + ' 根';
+      res.mmDetail = '趋势日线仍在黄带，未发生下穿';
+      res.color = COLORS.MM_BEAR;
+    } else if (mismatchType === 'MM2') {
+      res.mmType = '错配期·抄底信号';
+      res.mmAction = '小仓试探·等趋势确认';
+      res.mmBars = '震荡已持 ' + nTxt + ' 根';
+      res.mmDetail = '趋势日线仍在蓝带，未发生上穿';
+      res.color = COLORS.MM_BULL;
+    } else if (mismatchType === 'MM3') {
+      res.mmType = '错配期·趋势转空';
+      res.mmAction = '逢高减仓·不追反弹';
+      res.mmBars = '趋势已转向 ' + nTxt + ' 根';
+      res.mmDetail = '趋势日线 ' + crossTxt + '下穿 MA10 · 震荡日线仍持有';
+      res.color = COLORS.MM_BEAR;
+    } else if (mismatchType === 'MM4') {
+      res.mmType = '错配期·趋势转多';
+      res.mmAction = '回补窗口·分批建仓';
+      res.mmBars = '趋势已转向 ' + nTxt + ' 根';
+      res.mmDetail = '趋势日线 ' + crossTxt + '上穿 MA10 · 震荡日线仍处清仓态';
+      res.color = COLORS.MM_BULL;
+    } else {
+      return null;
+    }
+    return res;
+  }
+var currentStrategy='xichou-lagao', currentPeriod='day', compositeCardOn=true;
+const PERIOD_BASIS_KEY='niuwa_detail_period_basis';
+var COLORS={MM_BEAR:'#ff6b35',MM_BULL:'#ff9500'};
+var _isNum=x=>typeof x==='number'&&isFinite(x);
+function _isOscFamily(s){return s==='xichou-lagao'}
+function calcCompositeAction(){return window.referenceAction}
+function calcFirstActionPrinciple(){return null}
+function renderStatusCard(){}
+window.renderReference=function(cd,strategy,basis,stage){
+ currentStrategy={trend:'huanglantai',oscillation:'xichou-lagao',dual:'dual',main_rise:'zhushenglang'}[strategy];
+ localStorage.setItem(PERIOD_BASIS_KEY,basis);window.__dualDominant='osc';
+ window._strategyTfSignals={};
+ for(const [axis,bucket] of [['trend','huanglantai'],['oscillation','xichou-lagao']]){
+  window._strategyTfSignals[bucket]={};
+  for(const period of ['week','day','m60']){
+   const f=cd.facts.find(f=>f.role===axis+'_'+period), signal=f.last_signal;
+   window._strategyTfSignals[bucket][period==='m60'?'60min':period]={status:f.state==='hold'||f.state==='buy'?'holding':f.state==='sell'?'cleared':'idle',lastSignal:signal?{price:signal.price,date:signal.bar_end}:null};
+  }
+ }
+ const colors={bullish:'#ff3b30',bearish:'#34c759',cautious:'#ff9500',warning:'#ff6b35'};
+ const labels={bullish:'看多',bearish:'看空',cautious:'偏空',warning:'偏多'};
+ const tier=cd.total>=80?['高确定性','#ff3b30']:cd.total>=60?['中等确定性','#ff9500']:cd.total>=40?['低确定性','#ff6b35']:['信号不足','#8e8e93'];
+ const resonance={R0:['数据不足',0,'#8e8e93','趋势或震荡信号缺失，无法判定共振，等待信号明确。'],R1:['信号背离',1,'#ff3b30','趋势内部周/日线已打架，叠加震荡明确表态，为最难判状态，按周线主口径谨慎处理、仅作提示。'],R2:['错配预警',2,'#ff6b35','趋势与震荡方向背离，或趋势缺数据而震荡已明确转向，均属错配期，仅作事件级响应。'],R3:['基调共振',3,'#ff9500','趋势与震荡方向一致，但其中一方内部周期不齐，节奏存在分歧。'],R4:['双螺旋共振',5,'#34c759','趋势与震荡三周期同向，噪声正交验证通过，结论一致性最高。']}[cd.resonance];
+ const chips=axis=>['week','day','m60'].map(p=>{const f=cd.facts.find(f=>f.role===axis+'_'+p);return {tf:p==='week'?'周线':p==='day'?'日线':'60分',label:axis==='oscillation'?(f.state==='hold'||f.state==='buy'?'持有':'已清'):(f.state==='hold'?'持有':f.state==='buy'?'建仓':f.state==='sell'?'清仓':'空仓'),cls:f.state==='hold'||f.state==='buy'?'chip-hot':'chip-cold'}});
+ const pos=cd.reference_exposure_cap>0?'建议仓位 '+cd.reference_exposure_range.replaceAll('–','-'):'';
+ const val=Number(cd.volatility_pct);
+ window.referenceAction={certTotal:cd.total,certTrend:cd.scores.trend,certOsc:cd.scores.oscillation,certResonance:cd.scores.resonance,certDir:cd.scores.direction,certVolatility:cd.scores.volatility,badge:tier[0],badgeColor:tier[1],trendDir:labels[cd.trend_bias],oscDir:labels[cd.oscillation_bias],trendDirColor:colors[cd.trend_bias],oscDirColor:colors[cd.oscillation_bias],trendChips:chips('trend'),oscChips:chips('oscillation'),dirJudge:judgeDirJudge({trendState:cd.trend_state}),resonanceName:resonance[0],resonanceDots:'●'.repeat(resonance[1])+'○'.repeat(5-resonance[1]),resonanceColor:resonance[2],resonanceDesc:resonance[3],resonanceLevel:cd.resonance,mismatchType:cd.mismatch,mismatchCopy:buildMismatchCopy(cd.mismatch,cd.mismatch_age,{barsAgo:cd.mismatch_age}),posText:pos,basis:'completed',label:cd.action,advice:cd.presentation?.advice??'',vol:cd.volatility_pct===null?null:{val,level:cd.volatility_level,label:{low:'低',mid:'中',high:'高'}[cd.volatility_level],color:{low:'#34c759',mid:'#ff9500',high:'#ff3b30'}[cd.volatility_level],pos:Math.max(3,Math.min(97,Math.round(val/6*100)))}};
+ window.__compositeDecision=window.referenceAction;
+ renderCompositeAction();
+ if(stage!=='collapsed')toggleCompositeAction();
+ if(stage==='evidence')toggleCompositeDetailSec();
+};
+</script>

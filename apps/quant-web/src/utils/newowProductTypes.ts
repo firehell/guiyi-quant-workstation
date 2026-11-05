@@ -1123,7 +1123,23 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
   }
   const facts = array(cd.facts,'cdv2.facts')
   if (facts.length !== 6) throw new Error('cdv2 facts missing')
-  facts.forEach(raw => { const f = record(raw,'cdv2.fact'); text(f.role,'cdv2.role'); if (!Number.isInteger(f.age) || Number(f.age)<-1) throw new Error('cdv2 age'); if (f.bar_end !== null) requireNotAfter(instant(f.bar_end,'cdv2.bar_end'),meta.as_of,'cdv2.bar_end','meta.as_of') })
+  facts.forEach(raw => {
+    const f = record(raw,'cdv2.fact'); text(f.role,'cdv2.role')
+    if (!Number.isInteger(f.age) || Number(f.age)<-1) throw new Error('cdv2 age')
+    if (f.bar_end !== null) requireNotAfter(instant(f.bar_end,'cdv2.bar_end'),meta.as_of,'cdv2.bar_end','meta.as_of')
+    if (f.last_signal !== undefined && f.last_signal !== null) {
+      const signal = exactRecord(f.last_signal, 'cdv2.last_signal', ['action_id','kind','bar_end','price','calculation_segment_id'])
+      if (f.status !== 'ready' || f.bar_end === null || Number(f.age) < 0) throw new Error('cdv2 signal without ready fact')
+      text(f.physical_contract,'cdv2.contract'); text(f.segment_id,'cdv2.segment')
+      text(signal.action_id,'cdv2.signal_id')
+      literal(signal.kind,['BUILD','CLEAR'] as const,'cdv2.signal_kind')
+      requireNotAfter(instant(signal.bar_end,'cdv2.signal_end'),String(f.bar_end),'cdv2.signal_end','cdv2.bar_end')
+      const priceValue = Number(decimal(signal.price,'cdv2.signal_price'))
+      if (!Number.isFinite(priceValue) || priceValue <= 0) throw new Error('cdv2 signal price')
+      text(signal.calculation_segment_id,'cdv2.signal_segment')
+      requireExact(signal.calculation_segment_id,f.calculation_segment_id,'cdv2.signal_segment')
+    }
+  })
   if (cd.period_conflict !== undefined) {
     const p=exactRecord(cd.period_conflict,'period_conflict',['version','hit','code','week_state','day_state'])
     requireExact(p.version,'newow_period_conflict_v3379_v1','period_conflict.version')

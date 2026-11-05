@@ -53,7 +53,7 @@ export interface Cdv2 {
   volatility_level?: 'low' | 'mid' | 'high' | null
   extra_sources: Record<string, string>
   missing_roles: string[]
-  facts: { role: string; state: string | null; age: number; frequency: string; bar_end: string | null; physical_contract: string | null; segment_id: string | null; source_category: string; status: string; reason: string | null }[]
+  facts: { role: string; state: string | null; age: number; frequency: string; bar_end: string | null; physical_contract: string | null; segment_id: string | null; calculation_segment_id?: string | null; last_signal?: { action_id: string; kind: 'BUILD' | 'CLEAR'; bar_end: string; price: string; calculation_segment_id: string } | null; source_category: string; status: string; reason: string | null }[]
   presentation?: {
     version: string
     scope: 'daily_weekly' | 'daily_weekly_hourly'

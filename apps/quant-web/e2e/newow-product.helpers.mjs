@@ -310,7 +310,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
     chart: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'from', 'through', 'chart_limit', 'chart_before', 'snapshot_token'],
     auxiliary: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'component', 'from', 'through', 'snapshot_token'],
     reference: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'performance_since', 'performance_through', 'history_limit', 'history_before', 'snapshot_token', 'include_fusion', 'reference_part', 'reference_mode'],
-    explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token', 'decision_v2'],
+    explanation: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token', 'decision_v2', 'path_strategy'],
     comparator: ['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'snapshot_token'],
   }
   if (!Object.hasOwn(allowedBySection, section)) return `invalid Newow section ${section}`
@@ -327,7 +327,8 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   if (url.searchParams.has('include_fusion') && (section !== 'reference' || strategy !== 'trend' || url.searchParams.get('include_fusion') !== 'true' || !mode?.startsWith('fusion_'))) return `invalid fusion query ${url.search}`
   if (part && mode.startsWith('fusion_') !== url.searchParams.has('include_fusion')) return `fusion mode flag conflict ${url.search}`
   if (url.searchParams.has('decision_v2') && (section !== 'explanation' || url.searchParams.get('decision_v2') !== 'true')) return `invalid decision V2 query ${url.search}`
-  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion', 'reference_part', 'reference_mode'].includes(key)).sort().join(',')
+  if (url.searchParams.has('path_strategy') && (section !== 'explanation' || url.searchParams.get('decision_v2') !== 'true' || !['trend','oscillation','main_rise','fusion'].includes(url.searchParams.get('path_strategy')))) return `invalid decision path strategy ${url.search}`
+  const optionalShape = actual.filter((key) => !['product', 'strategy', 'frequency', 'series_kind', 'section', 'as_of', 'include_fusion', 'reference_part', 'reference_mode', 'path_strategy'].includes(key)).sort().join(',')
   const allowedShapes = {
     chart: ['', 'chart_limit', 'snapshot_token', 'from,snapshot_token,through', 'chart_before,chart_limit,from,through', 'chart_before,chart_limit,from,snapshot_token,through', 'chart_limit,from,through'],
     auxiliary: ['component', 'component,snapshot_token', 'component,from,through', 'component,from,snapshot_token,through'],

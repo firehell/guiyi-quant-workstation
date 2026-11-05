@@ -576,6 +576,22 @@ pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test
 只使用现有依赖与本地测试输入；`pnpm_config_verify_deps_before_run=false` 防止新版 pnpm 在复核时自动安装依赖。
 这些测试证明当前代码合同，不等于新原站版本的同输入逐值验证。可见收益舍入核查的输入、公式及限制见当前研究复核。
 
+## Newow 综合决策卡展示核验
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_product_service.py services/quant-api/tests/newow/test_cdv2.py \
+  services/quant-api/tests/newow/test_cdv2_presentation.py
+pnpm -C apps/quant-web exec node --test tests/newowDecisionCard.test.ts tests/newowBasisDecision.test.ts \
+  tests/newowDecisionV2Panel.test.ts tests/newowProductTypes.test.ts
+PLAYWRIGHT_PORT=5197 NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web exec \
+  playwright test -c playwright.config.mjs e2e/newow-decision-card.spec.mjs --workers=1
+pnpm -C apps/quant-web build
+```
+
+离线原版见证与本地共享卡片使用相同输入、视口和字体，比较可见文案、明暗色、三种展开状态及关键元素几何；截图差异仍需检查，不将 1px 几何容差表述成全页面逐像素一致。组件覆盖状态缺失、主升浪回退、共享 owner、请求取消和迟到响应；信号字段覆盖 cutoff、价格与计算段拒绝。真实 JM 页面另核对信号价和日期；数据不齐不制造信号。策略与参考收益的发布边界继续按下一节核验。
+
 ## Newow 突破展示发布核验（保留现役策略与参考口径）
 
 真／假突破、突破待定、上下影提示及突破缓冲区是独立展示事实，`executable=false`。
