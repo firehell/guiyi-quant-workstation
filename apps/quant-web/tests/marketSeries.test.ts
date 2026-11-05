@@ -1367,3 +1367,21 @@ describe('history pagination recovery', () => {
     series.dispose()
   })
 })
+
+describe('volume display page ownership',()=>{
+ it('joins adjacent verified cursor pages but not an arbitrary same-contract page',()=>{
+  const make=(days:string[])=>{
+   const response=page(days.map(day=>({bar_end:`2026-08-${day}T07:00:00Z`,close:100})),{has_more_before:false,next_before:null})
+   response.request.series_kind='actual_dominant'
+   response.resolved_contract_segments=[{contract:'JM2701',start_trading_day:`2026-08-${days[0]}`,end_trading_day:`2026-08-${days.at(-1)}`}]
+   return response
+  }
+  const current=mergeInitialPage(make(['12','13'])).bars,older=make(['10','11'])
+  assert.notEqual(prependHistoricalPage(current,older).bars[0]!.calculationSegmentId,current[0]!.calculationSegmentId)
+  older.request.before=current[0]!.time
+  const joined=prependHistoricalPage(current,older).bars
+  assert.equal(new Set(joined.map(bar=>bar.calculationSegmentId)).size,1)
+  const rolled=make(['10','11']);rolled.request.before=current[0]!.time;rolled.resolved_contract_segments[0]!.contract='JM2609'
+  assert.equal(new Set(prependHistoricalPage(current,rolled).bars.map(bar=>bar.calculationSegmentId)).size,2)
+ })
+})

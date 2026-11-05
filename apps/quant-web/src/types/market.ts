@@ -108,6 +108,7 @@ export interface MarketBarWireDto {
 }
 
 export interface BarData {
+  confirmed?: boolean
   time: string
   trading_day?: string
   physicalContract?: string
@@ -314,6 +315,8 @@ export interface MainIndicatorValue {
 }
 
 export interface HoverKlineContext {
+  dynamicRange?: import('../utils/dynamicRange').DynamicRangePoint | null
+  dynamicRangeEnabled?: boolean
   time: string
   bar: BarData
   mainIndicators?: MainIndicatorValue[]

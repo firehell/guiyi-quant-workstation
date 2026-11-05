@@ -1,0 +1,17 @@
+<section class="card" style="margin-top:16px" id="rangePanel">
+<h2>震荡／趋势 · 动态箱体研究</h2>
+<p>蓝色为震荡，红色为上涨趋势，绿色为下跌趋势，灰色为未知。宽幅无序也可为震荡；没有箱体不等于趋势。趋势需方向与运动效率连续确认。</p>
+<p class="muted">仅使用已完成K线；边界从确认时点开始逐根显示，扩展不回画。突破先检查旧边界，再考虑扩展。候选标记仅供研究，不是正式入场许可。参数未优化，分类准确性与收益有效性尚未验证。</p>
+<div class="grid"><div><h3>30分钟</h3><canvas id="rangeMinute"></canvas><pre id="rangeMinuteFacts"></pre></div><div><h3>当时可用日线</h3><canvas id="rangeDaily"></canvas><pre id="rangeDailyFacts"></pre></div></div>
+<table id="rangeStats"></table><pre id="rangeSource"></pre>
+</section>
+<script>
+const regimeNames={RANGE:'震荡',TREND_UP:'上涨趋势',TREND_DOWN:'下跌趋势',UNKNOWN:'数据不足／不可用'};
+function rangeFacts(r){if(!r)return '当时无可用日线';const p=r.range_factor,b=p.box;return `${r.contract} · ${r.label}\n${regimeNames[p.regime]} · ${p.phase}\nER ${p.er===null?'—':Number(p.er).toFixed(3)}　CHOP ${p.chop===null?'—':p.chop.toFixed(2)}\n${b?`箱体 ${b.lower}～${b.upper} · 修订 ${b.revision}\n确认 ${b.confirmed_at} · 固定ATR ${b.atr_reference}`:'尚无已确认箱体'}\n趋势候选 ${p.trend_candidate?'是':'否'}${p.break_side?' · 突破 '+p.break_side:''}${p.reason?'\n'+p.reason:''}`}
+function rangeChart(id,rs){const[g,w,h]=setup(id);if(!rs.length){g.fillText('当时无可用数据',20,40);return}const vals=rs.flatMap(r=>[r.low,r.high,...(r.range_factor.box?[Number(r.range_factor.box.lower),Number(r.range_factor.box.upper)]:[])]);let lo=Math.min(...vals),hi=Math.max(...vals),pad=(hi-lo)*.08||1;lo-=pad;hi+=pad;const dx=(w-75)/rs.length,x=i=>12+i*dx,y=v=>h-30-(v-lo)/(hi-lo)*(h-55);g.font='11px system-ui';rs.forEach((r,i)=>{const p=r.range_factor,b=p.box;g.fillStyle={RANGE:'#4167cb22',TREND_UP:'#e8525233',TREND_DOWN:'#22a46c33',UNKNOWN:'#77777733'}[p.regime];g.fillRect(x(i),20,dx,h-50);g.strokeStyle='#63758b';g.beginPath();g.moveTo(x(i)+dx/2,y(r.low));g.lineTo(x(i)+dx/2,y(r.high));g.stroke();g.fillStyle=r.close>=r.open?'#e85252':'#22a46c';g.fillRect(x(i)+dx*.2,y(Math.max(r.open,r.close)),Math.max(1,dx*.6),Math.max(1,Math.abs(y(r.close)-y(r.open))));if(b){g.strokeStyle='#4167cb';for(const v of [b.lower,b.upper]){g.beginPath();g.moveTo(x(i),y(Number(v)));g.lineTo(x(i+1),y(Number(v)));g.stroke()}}});g.fillStyle='#667';for(let n=0;n<=4;n++){const v=lo+(hi-lo)*n/4;g.fillText(v.toFixed(1),w-55,y(v))}g.fillText(rs[0].label,10,h-8);g.fillText(rs.at(-1).label,Math.max(10,w-190),h-8)}
+function drawRange(){const r=rows[index];if(!r?.range_factor)return;const ms=rows.slice(Math.max(0,index-79),index+1),ds=D.rows.filter(d=>d.contract===r.contract&&d.frequency==='1d'&&Date.parse(d.time)<Date.parse(r.time)).slice(-60);rangeChart('rangeMinute',ms);rangeChart('rangeDaily',ds);$('rangeMinuteFacts').textContent=rangeFacts(r);$('rangeDailyFacts').textContent=rangeFacts(ds.at(-1))}
+$('rangeSource').textContent=`${D.range_version}\n研究参数 ${JSON.stringify(D.range_profile)}\n全窗口统计仅描述所选历史样本，不是准确率、OOS或收益证明。`;
+$('rangeStats').innerHTML='<tr><th>周期（rank1区间）</th><th>震荡</th><th>上涨趋势</th><th>下跌趋势</th><th>未知</th></tr>';
+for(const f of ['1d','30m']){const rs=D.rows.filter(r=>r.frequency===f&&r.owned),tr=document.createElement('tr');for(const v of [f,...Object.keys(regimeNames).map(s=>rs.filter(r=>r.range_factor.regime===s).length)]){const td=document.createElement('td');td.textContent=v;tr.append(td)}$('rangeStats').append(tr)}
+drawRange();
+</script>

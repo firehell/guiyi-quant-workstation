@@ -1,3 +1,4 @@
+import type { DisplayVolumeBar } from './volumeDisplay.ts'
 import type { createChart, IChartApi, LogicalRange, SeriesType, ISeriesApi, Time } from 'lightweight-charts'
 import { createPriceSeriesWriter } from './priceSeriesWriter.ts'
 import { toChartTimeForPeriod } from './barTime.ts'
@@ -7,14 +8,18 @@ export type DetailChartSession = ReturnType<typeof createDetailChartSession>
 export function detailChartPaneLayout(chartHeight: number, toolbarHeight: number, indicatorHeight = 150) {
   const topInset = Math.max(44, toolbarHeight + 12)
   const auxiliaryHeight = topInset + indicatorHeight + 15
-  const volumeHeight = Math.max(60, Math.min(100, chartHeight * 0.1))
-  return { topInset, auxiliaryHeight, volumeHeight, mainHeight: Math.max(1, chartHeight - 30 - volumeHeight - auxiliaryHeight) }
+  return { topInset, auxiliaryHeight, mainHeight: Math.max(1, chartHeight - 30 - auxiliaryHeight) }
 }
 /** One display coordinate for every detail adapter; formal bar_end is untouched. */
 export function detailChartTime(bar: { time: string; trading_day?: string }, period: string): Time {
   return period.endsWith('m') ? Math.floor(Date.parse(bar.time) / 1000) as import('lightweight-charts').UTCTimestamp
     : toChartTimeForPeriod(bar, period) as Time
 }
+/** Use the same retained source window for coloring and explanation. */
+export function detailChartVolumeBars(chart: IChartApi, incoming: readonly DisplayVolumeBar[]): readonly DisplayVolumeBar[] {
+  return volumeInputs.get(chart)?.(incoming) ?? incoming
+}
+const volumeInputs = new WeakMap<IChartApi, (incoming: readonly DisplayVolumeBar[]) => readonly DisplayVolumeBar[]>()
 const owners = new WeakMap<IChartApi, DetailChartSession>()
 /** A strategy adapter can recover the page-owned viewport without owning the canvas. */
 export function detailChartViewport(chart: IChartApi): LogicalRange | null {
@@ -52,6 +57,7 @@ export function createDetailChartSession(dependencies: {
   const prices = new Map<string, ISeriesApi<SeriesType, Time>>()
   const writers = new Map<string, ReturnType<typeof createPriceSeriesWriter<any>>>()
   const pricePoints = new Map<string, any[]>()
+  let volumeInput: readonly DisplayVolumeBar[] = []
   let hasPrices = false
   let ownsViewport = false
 
@@ -66,7 +72,7 @@ export function createDetailChartSession(dependencies: {
     if (next === identity) return
     saveViewport(); identity = next; hasPrices = false; ownsViewport = false
     for (const series of prices.values()) series.setData([])
-    writers.clear(); pricePoints.clear()
+    writers.clear(); pricePoints.clear(); volumeInput = []
   }
   function viewport(): LogicalRange | null {
     const live = hasPrices && ownsViewport ? chart?.timeScale().getVisibleLogicalRange() : null
@@ -74,7 +80,7 @@ export function createDetailChartSession(dependencies: {
   }
   function resetWindow() {
     for (const series of prices.values()) series.setData([])
-    writers.clear(); pricePoints.clear(); ownsViewport = false; hasPrices = false
+    writers.clear(); pricePoints.clear(); volumeInput = []; ownsViewport = false; hasPrices = false
   }
   function indexOf(time: Time): number | null {
     const index = (pricePoints.get('candles') ?? []).findIndex(point => timeKey(point.time) === timeKey(time))
@@ -84,6 +90,16 @@ export function createDetailChartSession(dependencies: {
   function timeAt(index: number): Time | null {
     const data = pricePoints.get('candles') ?? []
     return data[Math.max(0, Math.min(data.length - 1, Math.floor(index)))]?.time ?? null
+  }
+  function mergeVolumeBars(incoming: readonly DisplayVolumeBar[]): readonly DisplayVolumeBar[] {
+    if (!incoming.length) return volumeInput
+    const suffix = volumeInput.length > incoming.length && incoming.every((bar, index) => {
+      const previous = volumeInput[volumeInput.length - incoming.length + index]!
+      return (bar.time === previous.time || Date.parse(bar.time) === Date.parse(previous.time)) && bar.physicalContract === previous.physicalContract
+        && ['open', 'high', 'low', 'close', 'volume'].every(key => Object.is(bar[key as keyof DisplayVolumeBar], previous[key as keyof DisplayVolumeBar]))
+    })
+    volumeInput = suffix ? [...volumeInput.slice(0, volumeInput.length - incoming.length), ...incoming] : [...incoming]
+    return volumeInput
   }
   function acquire(container: HTMLElement, options: Parameters<typeof createChart>[1]): IChartApi {
     if (disposed) throw new Error('DETAIL_CHART_DISPOSED')
@@ -137,17 +153,10 @@ export function createDetailChartSession(dependencies: {
           const range = role === 'candles' ? viewport() : null
           const sameFact = (a: any, b: any) => JSON.stringify(a.time) === JSON.stringify(b.time)
             && (role === 'candles' ? ['open', 'high', 'low', 'close'] : ['value']).every(field => Object.is(a[field], b[field]))
-          const suffix = previous.length > data.length && data.length > 0
+          const suffix = role === 'candles' && previous.length > data.length && data.length > 0
             && data.every((point, index) => sameFact(point, previous[previous.length - data.length + index]))
           if (suffix) {
             const retained = previous.slice(0, previous.length - data.length)
-            if (role === 'volume') {
-              const bars = new Map((pricePoints.get('candles') ?? []).map(bar => [JSON.stringify(bar.time), bar]))
-              for (const [index, point] of retained.entries()) {
-                const bar = bars.get(JSON.stringify(point.time))
-                if (bar && point.value !== undefined) retained[index] = { ...point, color: bar.close >= bar.open ? '#FF8383' : '#80DCA1' }
-              }
-            }
             data = [...retained, ...data]
           }
           let mappedRange = range
@@ -209,13 +218,17 @@ export function createDetailChartSession(dependencies: {
       }
       if (property === 'addSeries') return (definition: any, settings: any, pane = 0) => {
         if (!active) throw new Error('DETAIL_CHART_LEASE_EXPIRED')
-        const role = definition.type === 'Candlestick' ? 'candles' : definition.type === 'Histogram' && pane === 1 ? 'volume' : null
+        const role = definition.type === 'Candlestick' ? 'candles' : definition.type === 'Histogram' && settings?.priceScaleId === 'volume' ? 'volume' : null
         let raw = role ? prices.get(role) : undefined
         if (!raw) {
           raw = target.addSeries(definition, settings, pane)
           if (role) prices.set(role, raw)
           else series.add(raw)
-        } else raw.applyOptions(settings ?? {})
+        } else {
+          // Every adapter shares the main-pane volume overlay.
+          if (role === 'volume' && raw.getPane().paneIndex() !== pane) raw.moveToPane(pane)
+          raw.applyOptions(role === 'volume' ? { ...settings, priceScaleId: settings?.priceScaleId ?? 'right' } : settings ?? {})
+        }
         return wrapSeries(raw, role ?? undefined)
       }
       if (property === 'setCrosshairPosition') return (price: number, time: Time, item: ISeriesApi<SeriesType, Time>) => {
@@ -228,13 +241,14 @@ export function createDetailChartSession(dependencies: {
       return member(target, property)
     } })
     owners.set(lease, session)
+    volumeInputs.set(lease, incoming => active ? mergeVolumeBars(incoming) : incoming)
     return lease
   }
   function dispose() {
     if (disposed) return
     releaseActive?.(); disposed = true
-    chart?.remove(); chart = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); viewports.clear()
+    chart?.remove(); chart = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); volumeInput = []; viewports.clear()
   }
-  const session = { acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, dispose }
+  const session = { acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
   return session
 }

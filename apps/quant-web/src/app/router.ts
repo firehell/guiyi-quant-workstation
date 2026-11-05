@@ -19,6 +19,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/market/chart.vue'),
         meta: { title: '品种行情' },
       },
+      { path: 'research/subing-decision', name: 'subing-decision', component: () => import('@/pages/research/SubingDecisionPage.vue'), meta: { title: '苏冰决策' } },
       {
         path: 'research/new-subing',
         name: 'new-subing-research',

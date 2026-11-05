@@ -1,5 +1,7 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ activeTab?: 'market' | 'messages' | 'simulation' | null }>(), { activeTab: null })
+import { useRouter } from 'vue-router'
+const decisionRouter=useRouter()
+withDefaults(defineProps<{ activeTab?: 'market' | 'messages' | 'simulation' | 'subing-decision' | null }>(), { activeTab: null })
 const emit = defineEmits<{ market: []; messages: []; simulation: [] }>()
 </script>
 
@@ -10,6 +12,7 @@ const emit = defineEmits<{ market: []; messages: []; simulation: [] }>()
       <button type="button" role="tab" :aria-selected="activeTab === 'market'" :aria-current="activeTab === 'market' ? 'page' : undefined" @click="emit('market')">市场</button>
       <button type="button" role="tab" :aria-selected="activeTab === 'messages'" :aria-current="activeTab === 'messages' ? 'page' : undefined" @click="emit('messages')">消息</button>
       <button type="button" role="tab" :aria-selected="activeTab === 'simulation'" :aria-current="activeTab === 'simulation' ? 'page' : undefined" @click="emit('simulation')">模拟交易</button>
+      <button type="button" role="tab" :aria-selected="activeTab === 'subing-decision'" :aria-current="activeTab === 'subing-decision' ? 'page' : undefined" @click="decisionRouter.push('/research/subing-decision')">苏冰决策</button>
     </nav>
     <div class="market-navigation__search"><slot name="search" /></div>
     <div class="market-navigation__actions"><slot name="actions" /></div>

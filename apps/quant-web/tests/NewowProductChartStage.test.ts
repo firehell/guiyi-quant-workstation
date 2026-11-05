@@ -159,8 +159,7 @@ test('keeps action labels passive and preserves an established viewport and focu
   rangeListener!(range)
   assert.equal(loads, 1)
 
-  clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'build-stable' } })
-  clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'unknown' } })
+  assert.equal(clickListener, undefined, 'native chart clicks do not register an interaction handler')
   assert.deepEqual(selected, [], 'clicking a native marker must not open signal details')
 
 
