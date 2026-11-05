@@ -14,7 +14,7 @@ from app.market_data.aggregation import aggregate_from_1m, bucket_window_for_bar
 from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from app.runtime_identity import runtime_heartbeat_identity
 from app.market_data.live_market import (
-    LiveMarketService, LiveProvider, RedisLiveStore, _bar_from_payload, _bar_payload, _compact_json,
+    LiveMarketService, LiveProvider, ProviderRetirementPending, RedisLiveStore, _bar_from_payload, _bar_payload, _compact_json,
     _epoch_millis, live_bar_channel,
 )
 from app.market_data.live_recovery_scripts import COMMIT_OBSERVATIONS
@@ -166,6 +166,9 @@ class MarketFeedService(LiveMarketService):
         self._closed_restore_day = None
         self._closed_cleaned_day = None
         self._closed_retirement_failed = False
+        self._retirement_stage = "WAITING_CLOSE"
+        self._first_retirement_failure_at = None
+        self._first_retirement_failure_code = None
         self._cleanup_isolation: _CleanupIsolation | None = None
 
     def _isolate_cleaned_day(self, day, provider, contracts) -> None:
@@ -184,6 +187,13 @@ class MarketFeedService(LiveMarketService):
     def _fail_closed_retirement(self) -> None:
         self._closed_retirement_failed = True
         self._input_failure = 'LIVE_PROVIDER_CLOSE_UNKNOWN'
+        self._retirement_stage = 'UNKNOWN'
+        self._note_retirement_failure(self._input_failure)
+
+    def _note_retirement_failure(self, code):
+        if self._first_retirement_failure_at is None:
+            self._first_retirement_failure_at = self._clock().astimezone(UTC).isoformat()
+            self._first_retirement_failure_code = code
 
     def _retire_closed_provider(self) -> bool:
         """Resolve the retained old-day object; never consume its late raw input."""
@@ -206,6 +216,7 @@ class MarketFeedService(LiveMarketService):
                 if not callable(close_verified):
                     raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
                 close_verified()  # Bounded join outside the maintenance mutex.
+                self._retirement_stage = 'CLOSED_PENDING_VERIFICATION'
                 if self._shutdown_guard_factory is None:
                     raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
                 with self._shutdown_guard_factory():
@@ -222,9 +233,10 @@ class MarketFeedService(LiveMarketService):
                             or tuple(sorted(self._contracts.items())) != isolation.contracts
                             or self.source_stream.registered_day('live') != isolation.day
                             or self._store.subscriptions(isolation.day) is not None
-                            or self.source_stream.cursor('live', isolation.day) != self.source_stream.tail(isolation.day)
                             or self._pending):
                         raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+                    if self.source_stream.cursor('live', isolation.day) != self.source_stream.tail(isolation.day):
+                        raise ProviderRetirementPending('LIVE_PROVIDER_CURSOR_PENDING')
                     count = provider.buffered_message_count()
                     if type(count) is not int or count != 0:
                         raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
@@ -232,8 +244,19 @@ class MarketFeedService(LiveMarketService):
                     # zero, exact old object/day and cursor still proven.
                     self._provider = None
                     self._channels = set()
+            self._retirement_stage = "RETIRED"
             self._cleanup_isolation = replace(isolation, retired=True)
             return True
+        except ProviderRetirementPending as exc:
+            self._retirement_stage = 'CLOSED_PENDING_VERIFICATION'
+            self._note_retirement_failure(str(exc))
+            return False
+        except RuntimeError as exc:
+            if str(exc) == 'LIVE_RECOVERY_BUSY' and not ownership_lost:
+                self._note_retirement_failure('LIVE_RECOVERY_BUSY')
+                return False
+            self._fail_closed_retirement()
+            raise
         except Exception:
             self._fail_closed_retirement()
             if ownership_lost:
@@ -319,6 +342,10 @@ class MarketFeedService(LiveMarketService):
         self._publish_heartbeat(now, self._phases(now))
 
     def _publish_heartbeat(self, now, phases):
+        try:
+            registered_day = self.source_stream.registered_day('live')
+        except Exception:
+            registered_day = None
         trading = any(item.phase is MarketPhase.TRADING for item in phases.values())
         fresh = not trading or (self._last_input_received_at is not None and
             timedelta(0) <= now - self._last_input_received_at <= timedelta(minutes=5))
@@ -327,16 +354,58 @@ class MarketFeedService(LiveMarketService):
             'operational_count': len(self._products), 'subscribed_count': len(self._channels),
             'last_input_received_at': self._last_input_received_at.isoformat() if self._last_input_received_at else None,
             'phase_by_product': {symbol: phase.phase.value for symbol, phase in phases.items()},
-            'available': bool(fresh and self._available and self._provider_available and
+            'available': bool(registered_day is not None and fresh and self._available and self._provider_available and
                 self._input_failure is None and self._metadata_preparation_error is None and
                 all(item.phase is not MarketPhase.UNKNOWN for item in phases.values())),
             'input_failure': self._input_failure,
+            'retirement_stage': self._retirement_stage,
+            'first_failure_at': self._first_retirement_failure_at,
+            'first_failure_code': self._first_retirement_failure_code,
+            'registered_day': registered_day.isoformat() if registered_day else None,
+            'target_days': sorted({p.trading_day.isoformat() for p in phases.values() if p.trading_day}),
             'input_pending_count': len(self._pending) + len(getattr(self._provider, '_messages', ())),
             'closed_cleaned': self.closed_cleaned_proof,
         })
 
+    def _prepare_metadata(self, now):
+        cache = getattr(self, '_feed_metadata_cache', None)
+        if cache is None:
+            return super()._prepare_metadata(now)
+        if 'result' not in cache:
+            cache['result'] = super()._prepare_metadata(now)
+        return cache['result']
+
     def poll(self, now):
+        if hasattr(self, 'assert_owned'):
+            self.assert_owned()
+        self._feed_metadata_cache = {}
+        failed = False
+        try:
+            failure = self._prepare_metadata(now)
+            if failure is not None:
+                return self._input_failure or failure
+            return self._poll_prepared(now)
+        except BaseException:
+            failed = True
+            self._available = False
+            self._note_retirement_failure('FEED_POLL_FAILED')
+            raise
+        finally:
+            self._feed_metadata_cache = None
+            if hasattr(self, 'assert_owned'):
+                self.assert_owned()
+            try:
+                self._publish_heartbeat(now, self._phases(now))
+            except Exception:
+                self._available = False
+                if not failed:
+                    raise
+
+    def _poll_prepared(self, now):
+        if hasattr(self, 'assert_owned'):
+            self.assert_owned()
         if self._input_failure is not None:
+            self._available = False
             return self._reject(self._input_failure)
         try:
             self._observe_old_day_cleanup()
