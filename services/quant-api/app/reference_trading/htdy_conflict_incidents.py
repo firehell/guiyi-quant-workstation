@@ -203,3 +203,24 @@ NOV04_BINDINGS = {
         None,
     ),
 }
+
+
+NOV05_VERSION = "htdy_conflict_recovery_20261105_v1"
+NOV05_INVENTORY_SHA256 = "89d759414d2206ddf6af239101441edb06079f2228594a8c090727c87304ffc4"
+# Exact owner-approved RS/UR originals; both streams are FLAT.
+NOV05_BINDINGS = {
+    "reference-stream:21149875d0b154b6efa0647e3ad271453cc1d15dc7419087469e2b9fd62b0493": (  # UR
+        'b766aba6ebf848a0866e25735fd94cdd',
+        'f72b376f19a044b6823bc6ea16e185c0',
+        2,
+        '48f410d71e0d419eb5f6b163d9562381',
+        None,
+    ),
+    "reference-stream:c1f54db610d1a9f74fb524c617d1826f1101239b28c62174ce55db8f2fd6be0e": (  # RS
+        'aafc44f2048f4fafbddf8ddbc41db651',
+        '06f31180580843c1a5fb280fdaf8b445',
+        1,
+        'cc2ae5337490420eb24d1dee34a75327',
+        None,
+    ),
+}

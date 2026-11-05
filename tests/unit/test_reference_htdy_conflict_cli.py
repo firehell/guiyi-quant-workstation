@@ -453,7 +453,7 @@ def test_nov03_cli_is_exact_separate_and_keeps_old_schemas(cli):
         cli.checked_scope((*ids[:-1], "outside"), incident=cli.NOV03_VERSION)
 
 
-@pytest.mark.parametrize("incident_name", ["NOV03", "NOV04"])
+@pytest.mark.parametrize("incident_name", ["NOV03", "NOV04", "NOV05"])
 @pytest.mark.parametrize(
     "change",
     [
@@ -527,3 +527,15 @@ def test_nov04_scope_is_exact_and_cannot_use_previous_incident(cli):
             cli.checked_scope(bad, incident=cli.NOV04_VERSION)
     with pytest.raises(ValueError):
         cli.checked_scope(ids, incident=cli.NOV03_VERSION)
+
+
+def test_nov05_exact_two_flat_streams_reject_all_other_incidents(cli):
+    ids=tuple(sorted(cli.NOV05_BINDINGS))
+    assert len(ids)==2 and cli.checked_scope(ids,incident=cli.NOV05_VERSION)==ids
+    assert cli.schema(cli.NOV05_VERSION)=='reference_htdy_conflict_cli_20261105_v1'
+    assert cli.inventory_sha(cli.NOV05_VERSION)==cli.NOV05_INVENTORY_SHA256
+    assert {v[2] for v in cli.NOV05_BINDINGS.values()}=={1,2}
+    assert all(v[4] is None for v in cli.NOV05_BINDINGS.values())
+    for bad in [ids[:1],(ids[0],ids[0]),(*ids,'outside')]:
+        with pytest.raises(ValueError):cli.checked_scope(bad,incident=cli.NOV05_VERSION)
+    with pytest.raises(ValueError):cli.checked_scope(ids,incident=cli.NOV04_VERSION)
