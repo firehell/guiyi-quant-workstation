@@ -1,3 +1,7 @@
+11/6 03:17一次性盘后交接被原生预检阻断：`COHORT_REST_WINDOW_REQUIRED`。独立只读确认60/60 operational品种Session phase=UNKNOWN；各交易所日历仅到11/8、缺少下一交易日事实，凌晨解析器按合同fail-closed，Nov6自身Session模板存在。未暂停/停止Tq、未CAS绑定、未切换或清理发布树；正式仍v1.16.91/gen64，Tq PID62132且原5仓保持。API/Web HTTP通过，Runtime HTTP失败；Tq登录/READY不证明来源恢复或明早可开仓。v1.16.92 exact 2e40e3a4b4d055c3ed305af342aea04add0e374e已发布但未运行。按预定停止条件结束本次任务并停用一次性调度，不另建重试。下一步为恢复权威下一交易日Calendar/Session，再于允许的闭市窗口重新执行原生交接；不以本地推算日期或跳过校验代替。执行上下文见output/release-v92-20261105/execution-context.json。
+
+以下为此前检查点：
+
 11/6 v1.16.92已发布（PR624），main/annotated tag/Release exact `2e40e3a4b4d055c3ed305af342aea04add0e374e`；正式部署副本 `.worktrees/release-v1.16.92` 的API/SDK冻结锁、API wheel/sdist及Web构建已完成，受测树与合并树完全相同。当前正式仍v1.16.91/gen64，未切换/重启标准服务或Tq worker。已创建当前会话一次性任务 `v1-16-92`，北京时间11/6 03:10在全部60品种权威收盘/静默、原账户与原生交接校验通过后统一切换，再核验页面并安全清理旧88/90/91源码；不重复发布、不复用失败attempt、不强删有引用树。
 
 本版整合Feed关闭/跨日准备及Tq恢复保护、本会话综合决策卡/诊断刷新删除/突破与影线独立展示/标签遮盖/悬浮字段/导航修复，并增加版本化Tq收盘尾根只记录命令，不改owner/目标/订单、不补旧开仓。正式Newow公式、主动作、参考模型及收益核心与v91字节相同，未晋升develop Trueup。真实60品种六周期三策略主图1080组：1079 ready，RS周线震荡1组真实warming（156根Bar可读）；辅助978 ready/102 warming，解释540组保持既有evidence_required，无主图/指标/解释读取错误。分钟图恢复为明确标注的完整交易日历史快照，不是盘中实时策略图。
