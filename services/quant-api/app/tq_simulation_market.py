@@ -15,6 +15,28 @@ from app.simnow_portfolio_market import PortfolioMarket
 from guiyi_quant.htdy_account_execution import codec
 
 MAX_REQUEST = 16 * 1024 * 1024
+BATCH_PRODUCTS = 4
+
+
+def recovery_batch(state, cursor):
+    """Partial proofs never grant permission to products without authority."""
+    eligible = [
+        p.product
+        for p in state.products
+        if p.owner is not None
+        and (state.phase != "READY" or p.product in state.blocked_products)
+    ]
+    held = {p.product for p in state.positions}
+    urgent = [p for p in eligible if p in held]
+    rest = [p for p in eligible if p not in held]
+    ordered = urgent + rest
+    if not ordered:
+        return (), 0
+    # Full account recovery sees held products first. Subsequent READY batches
+    # rotate even when a held product's proof remains unavailable.
+    start = 0 if state.phase != "READY" else cursor % len(ordered)
+    chosen = (ordered[start:] + ordered[:start])[:BATCH_PRODUCTS]
+    return tuple(chosen), (start + len(chosen)) % len(ordered)
 
 
 def authority(market, product, now, contract=None):
@@ -59,6 +81,7 @@ def main():
     products = tuple(p.upper() for p in load_operational_products())
     market = PortfolioMarket(products)
     market.activate(datetime.now(UTC))
+    recovery_cursor = 0
     try:
         while True:
             line = sys.stdin.buffer.readline(MAX_REQUEST + 1)
@@ -94,7 +117,11 @@ def main():
                     if state
                     else market.started
                 )
-                signals = market.poll(now, after) if mode == "poll" else ()
+                signals = (
+                    market.poll(now, after, max_products=BATCH_PRODUCTS)
+                    if mode == "poll"
+                    else ()
+                )
                 selected = {}
                 for item in request.get("contracts", []):
                     if (
@@ -120,12 +147,12 @@ def main():
                         facts.append(authority(market, product, now, contract))
                     except Exception:
                         issues[product] = "TQ_MARKET_AUTHORITY_UNAVAILABLE"
-                recovery = (
-                    market.recovery(state, now)
-                    if state is not None
-                    and (state.phase != "READY" or state.blocked_products)
-                    else ()
-                )
+                recovery = ()
+                if state is not None and (
+                    state.phase != "READY" or state.blocked_products
+                ):
+                    batch, recovery_cursor = recovery_batch(state, recovery_cursor)
+                    recovery = market.recovery(state, datetime.now(UTC), products=batch)
                 result = {
                     "status": "ok",
                     "request_id": request_id,

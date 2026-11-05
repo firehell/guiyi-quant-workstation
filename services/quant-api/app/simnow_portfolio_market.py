@@ -58,6 +58,7 @@ class PortfolioMarket:
         )
         self.started: datetime | None = None
         self.issues: dict[str, str] = {}
+        self._pending: dict[str, tuple[Any, datetime]] = {}
         # These views allocate no Redis clients or subscriptions. They only reuse
         # the existing single-product authority, recovery and signal proofs.
         self._views: dict[str, MarketBridge] = {}
@@ -81,6 +82,7 @@ class PortfolioMarket:
         while self.pubsub.get_message(timeout=0) is not None:
             pass
         self.started = now
+        self._pending.clear()
         for view in self._views.values():
             view.started = now
 
@@ -98,10 +100,12 @@ class PortfolioMarket:
             return None
         return parts[2].upper()
 
-    def poll(self, now: datetime, after: datetime | Mapping[str, datetime]):
+    def poll(self, now: datetime, after: datetime | Mapping[str, datetime], *, max_products=None):
         if self.started is None:
             raise ValueError("NATURAL_SOURCE_NOT_ACTIVATED")
-        latest: dict[str, tuple[Any, datetime]] = {}
+        if max_products is not None and (type(max_products) is not int or max_products < 1):
+            raise ValueError("NATURAL_BATCH_INVALID")
+        latest = self._pending if max_products is not None else {}
         while (message := self.pubsub.get_message(timeout=0)) is not None:
             received_at = self._receipt_clock()
             if message.get("type") != "message":
@@ -125,7 +129,9 @@ class PortfolioMarket:
                 latest[product] = (trigger, received_at)
 
         signals = []
-        for product, (trigger, received_at) in latest.items():
+        selected = tuple(latest) if max_products is None else tuple(latest)[:max_products]
+        for product in selected:
+            trigger, received_at = latest.pop(product)
             floor = (
                 after.get(product, after.get(product.lower(), self.started))
                 if isinstance(after, Mapping)
@@ -177,10 +183,13 @@ class PortfolioMarket:
             raise ValueError("PRODUCT_NOT_OPERATIONAL")
         return self._views[normalized].authority(day, now, contract)
 
-    def recovery(self, state, now: datetime):
+    def recovery(self, state, now: datetime, *, products=None):
+        selected = self.products if products is None else tuple(products)
+        if len(set(selected)) != len(selected) or set(selected) - set(self.products):
+            raise ValueError("PRODUCT_NOT_OPERATIONAL")
         known = {item.product for item in state.products}
         result = []
-        for product in self.products:
+        for product in selected:
             if product not in known:
                 self.issues[product] = "RECOVERY_STATE_MISSING"
                 continue

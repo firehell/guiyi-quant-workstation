@@ -262,8 +262,15 @@ class Controller:
         cmd = m.Owner(product, contract, at, source)
         self.store.execute("owner:" + source, cmd)
 
-    def signal(self, signal):
-        self.store.execute("tq-signal:" + signal.source_id, signal)
+    def signal(self, signal, *, processed_at=None):
+        key = "tq-signal:" + signal.source_id
+        prior = next((a.command for a in self.store.current().audit if a.command_id == key), None)
+        if prior is not None:
+            original = prior.signal if type(prior) is m.TqKqObservedSignalV1 else prior
+            if original != signal:
+                raise ValueError("TQ_SIGNAL_IDENTITY_DRIFT")
+            return
+        self.store.execute(key, m.TqKqObservedSignalV1(signal, processed_at or datetime.now(UTC)))
 
     def resume_never_active(self, rb, at):
         if (
