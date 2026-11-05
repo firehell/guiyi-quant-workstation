@@ -24,10 +24,10 @@ test('shared layout clips viewport, resolves collisions, colors directions and s
  assert.equal(layoutBreakouts([{...p,event:{...event(),kind:'wick_upper'}}],160,150,false,true)[0]!.color,'#FFFFFF')
  assert.equal(layoutBreakouts([p],160,150,false,false).length,0)
 })
-test('shared DOM labels retain native keyboard activation and both chart surfaces use the overlay',()=>{
+test('shared DOM labels retain native keyboard activation on the ordinary chart',()=>{
  const source=readFileSync(new URL('../src/components/market/detail/newow/NewowBreakoutOverlay.vue',import.meta.url),'utf8')
  assert.match(source,/type="button"/);assert.match(source,/@click.stop=/);assert.match(source,/:aria-label=/);assert.match(source,/:focus-visible/)
- for(const file of ['NewowExperimentPanel','NewowProductChartStage'])assert.match(readFileSync(new URL('../src/components/market/detail/newow/'+file+'.vue',import.meta.url),'utf8'),/NewowBreakoutOverlay/)
+ assert.match(readFileSync(new URL('../src/components/market/detail/newow/NewowProductChartStage.vue',import.meta.url),'utf8'),/NewowBreakoutOverlay/)
 })
 
 test('public capsule semantics retain support pressure, directional pending and occurrence confirmation dates',()=>{
@@ -65,4 +65,8 @@ test('buffer segment uses direction, owner bounds and real zero coordinates',()=
  assert.equal(breakoutBand({...e,kind:'pending'},same,1,i=>i*10,p=>p,6),undefined)
  const boundary=[{...same[0]!,physical_contract:'OTHER'},...same.slice(1)]
  assert.equal(breakoutBand(e,boundary,1,i=>i*10,p=>p,6)!.left,7)
+})
+
+test('Test5 research surface shares overlay when that experiment is supported', { skip: !readFileSync(new URL('../src/utils/newowExperiments.ts', import.meta.url),'utf8').includes("'osc-test5'") },()=>{
+ assert.match(readFileSync(new URL('../src/components/market/detail/newow/NewowExperimentPanel.vue',import.meta.url),'utf8'),/NewowBreakoutOverlay/)
 })

@@ -301,7 +301,7 @@ function validateFixtureScenario(strategy, frequency, options) {
 
 function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF, dualMarket = false) {
   if (url.searchParams.has('resolve_current')) {
-    if (section !== 'chart' || !['1d', '1w'].includes(frequency) || url.searchParams.get('resolve_current') !== 'true' || url.searchParams.has('as_of') || url.searchParams.has('snapshot_token')) return 'invalid current chart resolution'
+    if (section !== 'chart' || !['5m', '15m', '30m', '60m', '1d', '1w'].includes(frequency) || url.searchParams.get('resolve_current') !== 'true' || url.searchParams.has('as_of') || url.searchParams.has('snapshot_token')) return 'invalid current chart resolution'
     const explicit = new URL(url)
     explicit.searchParams.delete('resolve_current'); explicit.searchParams.set('as_of', expectedAsOf)
     return validateProductQuery(explicit, section, strategy, frequency, expectedAsOf, dualMarket)
@@ -530,7 +530,7 @@ function envelope(url, section, strategy, frequency, options) {
   const result = { meta: meta(url, strategy, frequency, section, options), section, ...wrappers }
   if (url.searchParams.get('resolve_current') === 'true') result.snapshot_context = {
     frequency, requested_at: NEWOW_AS_OF, as_of: result.meta.as_of, freshness: options.pendingCurrent ? 'pending_update' : 'current',
-    ...(frequency === '1d' ? {
+    ...(frequency !== '1w' ? {
       expected_trading_day: options.pendingCurrent
         ? new Date(Date.parse(`${value.bars.at(-1).trading_day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
         : value.bars.at(-1).trading_day,

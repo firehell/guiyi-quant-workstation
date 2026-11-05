@@ -207,7 +207,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       generation += 1
       resetAll()
       intradaySnapshot.value = null
-    dailySnapshot.value = null
+      dailySnapshot.value = null
       weeklySnapshot.value = null
       historicalSnapshot.value = resolved
       // Preserve the server's exact microsecond cutoff; Date.toISOString() truncates it.
