@@ -15,7 +15,7 @@ import type { NewowProductSectionResponse, NewowProductFrequency } from '@/types
 import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { cardChain, cardMergedChain, cardPresentation, cardStateColor, cardChipState, cardActionColor } from '@/utils/newowDecisionCard'
-import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
+import { decisionContextIdentity, decisionRoleLabel, decisionFactAge } from '@/utils/newowDecisionV2Presentation'
 
 const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; historical?: boolean; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; magic11Ready?:boolean; displayStrategy?: string; pathStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; showPriceSources?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true, showPriceSources: true })
 const emit = defineEmits<{ magic11:[]; 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
@@ -78,7 +78,6 @@ const prices = computed(() => result.value?.prices)
 const priceSnapshotNote = computed(() => prices.value && previewInstant(prices.value.as_of) !== previewInstant(props.response.meta.as_of) ? `共享／状态卡价格截至 ${formatBeijingInstant(prices.value.as_of)}，与主图截止不同；不替代主图通道价格。` : undefined)
 const dailyWeeklyFacts = computed(() => ['trend_week', 'trend_day', 'oscillation_week', 'oscillation_day', 'trend_m60', 'oscillation_m60'].map(role => ({ role, fact: cd.value?.facts.find(f => f.role === role) })))
 const missingDailyWeekly = computed(() => cd.value?.missing_roles ?? [])
-const deductions: Record<string, string> = { j_reduce: 'J 减仓', care: '小心', tent: '暂定峰（关闭）' }
 const bias = (axis: 'trend' | 'oscillation') => {
   const value = axis === 'trend' ? cd.value?.trend_bias : cd.value?.oscillation_bias
   return ({ bullish: { label: '看多', color: '#ff3b30' }, bearish: { label: '看空', color: '#34c759' }, cautious: { label: '偏空', color: '#ff9500' }, warning: { label: '偏多', color: '#ff6b35' } } as Record<string, { label: string; color: string }>)[value ?? ''] ?? { label: '--', color: '#8e8e93' }
@@ -150,20 +149,6 @@ const signalDate = (at: string) => new Intl.DateTimeFormat('sv-SE', {timeZone:'A
       </template>
     </div>
   </section>
-  <details class="decision-v2__audit" aria-label="综合决策来源与诊断"><summary>综合决策来源与诊断</summary>
-    <template v-if="cd && view"><details class="decision-v2__proof"><summary>数据来源、信号计龄与参考强度</summary>    <p class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
-                      <p>建议仓位（跨策略综合上限）：{{ view.exposure }} · 页面参考强度，不代表账户持仓。</p><p>沿用原版权重，日周小时共同参与；缺失不补分、不归一化。确定性表示信号明确性，不是胜率。</p>
-          <p>错配依据：{{ decisionMismatchReason(cd) }}</p>
-            <p v-if="copy && !basisDecision">{{ copy.first_action.detail }}</p>
-            <p>信号年龄为距最近一次策略动作的已完成 K 线数；0根表示本周期当前 Bar 发生动作，日K与周K分别计龄。</p>
-            <div class="decision-v2__scroll"><table><thead><tr><th>策略周期</th><th>状态</th><th>信号年龄</th><th>Bar / 合约</th><th>来源</th></tr></thead><tbody><tr v-for="item in dailyWeeklyFacts" :key="item.role"><td>{{ decisionRoleLabel(item.role) }}</td><td>{{ decisionFactState(item.fact) }}</td><td>{{ decisionFactAge(item.fact) }}</td><td>{{ item.fact?.bar_end ? formatBeijingInstant(item.fact.bar_end) : '—' }} / {{ item.fact?.physical_contract || '—' }}</td><td>{{ decisionFactReason(item.fact) }}</td></tr></tbody></table></div>
-            <p>额外扣分 {{ cd.cert_extra }}：<span v-for="(score,key) in cd.deductions" :key="key">{{ deductions[key] ?? key }} {{ score }}（{{ cd.extra_sources[key] }}） </span></p>
-            <p v-if="cd.care_input">小心来源：{{ cd.care_input.status==='ready' ? `最近 ${cd.care_input.window_size} 根已完成K线 · ${cd.care_input.physical_contract} · 截至 ${cd.care_input.bar_end}` : '当前计算段来源不足，不作为已验证的无事件' }}</p>
-            <p>确定性轴上限 {{ cd.certainty_cap }}% · 共振轴上限 {{ cd.resonance_cap }}% → 参考强度上限 {{ cd.reference_exposure_cap }}%</p>
-            <small>{{ cd.formula_version }}{{ copy ? ' · ' + copy.version : '' }}</small>
-          </details></template>
-    <button type="button" class="decision-v2__refresh" aria-label="刷新综合决策" :disabled="loading" @click="load">刷新综合决策</button>
-  </details>
   <div data-testid="status-card-surface"><NewowStatusCard :magic11-ready="magic11Ready" @magic11="emit('magic11')" :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
   <NewowPriceSources v-if="showPriceSources" :rows="[...(chartSources ?? []), ...decisionPriceSources(prices)]" label="目标／吸筹来源" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
   <NewowDailyWeeklyPath v-if="showPath !== false" :decision="result" :loading="loading" :error="error" />
@@ -371,13 +356,6 @@ const signalDate = (at: string) => new Intl.DateTimeFormat('sv-SE', {timeZone:'A
 .composite-cert-item + .composite-cert-item { border-left:.5px solid #e5e5ea; }
 .chain-single { font-size:12px;line-height:normal; }
 .decision-v2__message,.decision-v2__missing { padding:4px 14px;font-size:12px;color:#94611b; }
-.decision-v2__audit { font-size:11px;color:var(--gy-text-muted);padding:4px 14px; }
-.decision-v2__audit summary { cursor:pointer; }
-.decision-v2__audit p { margin:5px 0; }
-.decision-v2__audit table { width:100%;border-collapse:collapse; }
-.decision-v2__audit td,.decision-v2__audit th { text-align:left;padding:6px;border-bottom:1px solid var(--gy-border); }
-.decision-v2__scroll { overflow:auto; }
-.decision-v2__refresh { font:inherit;cursor:pointer; }
 .decision-v2 button:focus-visible { outline:2px solid #0a84ff;outline-offset:2px; }
 .decision-v2 button:disabled { cursor:wait;opacity:.5; }
 [data-theme="dark"] .decision-v2 { --nw-muted:#8e8e93; }
