@@ -5,6 +5,7 @@ import os
 import re
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
+from app.subing_projection_source import registered_source
 from app.new_subing_research.store import _read_file, _safe_root, ResultStoreError
 
 router = APIRouter(prefix='/api/v1/research/subing-decision', tags=['subing-decision'])
@@ -13,7 +14,10 @@ def fail(code, status=409):
     raise HTTPException(status_code=status, detail={'code': code})
 
 def registry():
-    value = os.getenv('GUIYI_SUBING_DECISION_RESULTS_ROOT')
+    try:
+        value = registered_source('results_root') or os.getenv('GUIYI_SUBING_DECISION_RESULTS_ROOT')
+    except (OSError, ValueError):
+        fail('RESULT_SOURCE_INVALID', 503)
     if not value:
         fail('RESULTS_UNAVAILABLE', 404)
     try:
