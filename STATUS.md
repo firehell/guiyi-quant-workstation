@@ -1,3 +1,13 @@
+11/6 v1.16.92已发布（PR624），main/annotated tag/Release exact `2e40e3a4b4d055c3ed305af342aea04add0e374e`；正式部署副本 `.worktrees/release-v1.16.92` 的API/SDK冻结锁、API wheel/sdist及Web构建已完成，受测树与合并树完全相同。当前正式仍v1.16.91/gen64，未切换/重启标准服务或Tq worker。已创建当前会话一次性任务 `v1-16-92`，北京时间11/6 03:10在全部60品种权威收盘/静默、原账户与原生交接校验通过后统一切换，再核验页面并安全清理旧88/90/91源码；不重复发布、不复用失败attempt、不强删有引用树。
+
+本版整合Feed关闭/跨日准备及Tq恢复保护、本会话综合决策卡/诊断刷新删除/突破与影线独立展示/标签遮盖/悬浮字段/导航修复，并增加版本化Tq收盘尾根只记录命令，不改owner/目标/订单、不补旧开仓。正式Newow公式、主动作、参考模型及收益核心与v91字节相同，未晋升develop Trueup。真实60品种六周期三策略主图1080组：1079 ready，RS周线震荡1组真实warming（156根Bar可读）；辅助978 ready/102 warming，解释540组保持既有evidence_required，无主图/指标/解释读取错误。分钟图恢复为明确标注的完整交易日历史快照，不是盘中实时策略图。
+
+验证：后端定向356 passed，真实独立Redis218 passed无跳过，前端定向205 passed/未支持Test5研究面1 skipped，PC对照28 passed，苏冰31 passed；真实JM18组六周期三策略Frame/动作/参考价及3种日线参考业务响应完全一致（仅跨进程snapshot关联hash不同），候选首页原生60/60 ready。全量Web1371 passed/3项原封v91同样失败/4可选skipped；额外6条旧UI E2E依赖隐藏控件、旧弹窗/fixture或屏外可见性，两条双策略已在原封v91独立实跑复现，其余逐字源码定位旧入口，未作为本次通过。独立Review、diff/secret检查通过。证据复用 `output/release-v92-20261105`，执行绑定见其中execution-context.json。
+
+当前监控虽登录/READY，60品种仍有LATEST_NATURAL_OBSERVATION_UNPROVEN；只读看到5仓，不据此称明早可交易，未改账户/持仓/账本。既有Live恢复已启用，但CLOSED不补整夜；明日开市后须同交易日完整1m及派生实际RECOVERED、32根前缀和账户恢复通过，再仅处理新的completed H1。原有provider预算/circuit/水位和不发布历史Bar限制不变，不使用旧incident/captured旁路伪造补齐。自然交易及下一夜盘待实际发生；旧失效/来源未验证参考资产未重写，原苏冰run未重置或晋升。
+
+以下为此前检查点：
+
 11/5 Feed跨日修复开发完成，按owner最新要求仅集成develop，发布与服务切换交由owner后续处理。核心提交860ed0c7a：关闭只调用一次；线程/锁忙/ACK等待可重验；旧错误及暂态期间继续既有预算内元数据准备和不可用心跳；恢复入口绑定实际release/进程/交易日并要求Tq账户排他锁，冻结现役账户与dispatch库；监控明确零可执行品种。真实临时Redis定向233 passed（无跳过）、模拟模块56 passed、前端15 passed、Web/API wheel与sdist构建、冻结锁及Ruff/diff/secret检查通过，独立Review通过。版本号已准备1.16.92，但本任务未合入main、未创建tag/Release、未切换或重启服务、未变更账户和持仓。发布后仍须原生整组休市校验、完整账户对账及一次真实盘后到夜盘转换验收；15:00尾部观测准入是独立待修项，不补发旧开仓。
 
 以下为此前检查点：
