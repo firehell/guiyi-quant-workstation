@@ -106,3 +106,25 @@ def test_warmup_occurrence_cannot_confirm_as_display_event_after_rollover():
     # A valid occurrence outside the viewport remains usable: window clipping
     # and physical eligibility are different contracts.
     assert any(e['kind'] == 'true_up' for e in project_breakout_events(bars, visible_bars=bars[12:]))
+
+
+def test_display_projection_preserves_strategy_and_reference_results():
+    from copy import deepcopy
+    from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
+
+    bars = sample()
+    identity = build_product_identity('rb', 'oscillation', ProductFrequency.DAILY)
+    replay = replay_strategy(identity, bars)
+    original = deepcopy(replay)
+    projector = ReferenceTradeProjector()
+    before = projector.project(replay, (), bars[-1].bar.bar_end)
+
+    events = project_breakout_events(replay)
+    assert events and all(event['executable'] is False for event in events)
+    assert replay == original
+    assert projector.project(replay, (), bars[-1].bar.bar_end) == before
+
+    # Display consumers may edit their own DTO without altering the replay.
+    events[0]['kind'] = 'pending'
+    assert replay == original
+    assert projector.project(replay, (), bars[-1].bar.bar_end) == before
