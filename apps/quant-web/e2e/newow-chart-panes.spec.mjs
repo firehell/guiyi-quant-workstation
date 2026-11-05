@@ -10,16 +10,15 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
     const stage = page.getByTestId('newow-product-chart-stage')
     await expect(stage).toHaveAttribute('data-auxiliary-component', 'zhaoyao_mirror')
     await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
-    // Three native panes and one shared timeline have three cells; separator rows are excluded.
-    await expect(stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })).toHaveCount(4)
+    // Main price/volume and auxiliary panes share one timeline; separator rows are excluded.
+    await expect(stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })).toHaveCount(3)
     const nativeRows = stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })
-    const paneHeights = await nativeRows.evaluateAll(rows => rows.slice(0, 3).map(row => row.getBoundingClientRect().height))
+    const paneHeights = await nativeRows.evaluateAll(rows => rows.slice(0, 2).map(row => row.getBoundingClientRect().height))
     expect(paneHeights[0]).toBeGreaterThanOrEqual(280)
-    expect(paneHeights[1]).toBeGreaterThanOrEqual(64)
-    expect(paneHeights[2]).toBeGreaterThanOrEqual(112)
+    expect(paneHeights[1]).toBeGreaterThanOrEqual(112)
     await expect(stage.locator('.newow-product-chart-stage__volume-label')).toBeVisible()
     await expect.poll(async () => {
-      const native = await nativeRows.nth(2).boundingBox()
+      const native = await nativeRows.nth(1).boundingBox()
       const controls = await stage.locator('.newow-product-chart-stage__auxiliary-toolbar').boundingBox()
       return Math.abs(native.y - controls.y)
     }).toBeLessThanOrEqual(4)
@@ -32,7 +31,7 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
       const count = productRequests(fixture, 'auxiliary').length
       await button.click()
       expect(productRequests(fixture, 'auxiliary')).toHaveLength(count)
-      await expect(stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })).toHaveCount(4)
+      await expect(stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })).toHaveCount(3)
     }
     expect(productRequests(fixture, 'chart')).toHaveLength(1)
     expect(productRequests(fixture, 'explanation').filter(item => item.url.searchParams.get('decision_v2') === 'true')).toHaveLength(1)
