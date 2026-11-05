@@ -1,3 +1,19 @@
+11/5 14:39 天勤模拟自然交易E2E已实证通过：当前v1.16.91/exact `9de9c146beb9f447a1847122bf53a1ed591a15fb`、gen64、唯一worker PID62132，trade/READY、无hold、60品种blocked=0。14:30 completed 60m自然观测60/60已入账，总Signal由45增至105；仅PB产生本批sell方向。PB2612于14:30:36.536630获风险APPROVED并生成SELL OPEN 1手，14:30:38.223761由TqKq原生成交确认，价格16120.00；不是测试单、补单或页面参考交易。
+
+独立只读核对Signal.source_id与Order.signal_id一致、唯一SUBMIT claim、原生委托FILLED/volume_left=0、同native_order_id成交volume=1与native_trade_id、SHFE.pb2612原生空头今仓1手及本地持仓一致。该单reconciled=true；总原生/本地订单5、成交5、持仓5，原FG/I/AG/AU四仓保持，无未决委托/未核fill/未释放预约，完整不可变账本重放通过。至此“恢复后的新信号→风控→模拟委托→模拟成交→账本对账”完成一次真实自然闭环；逐笔手续费仍未知，不生成虚假策略净收益。
+
+连接曾发生反复断线并自动恢复；本次成交验收不等于所有异常路径或长期连接稳定性已验收，稳定性仍须持续关注。此前v89待切换计划已由实际v91同树切换取代，不再重复部署89；此前“尚无新自然委托/成交”的检查点现已过时。历史原件与原账户不改写。
+
+以下为此前检查点：
+
+11/5 10:46 天勤通道补丁v1.16.89已发布、尚未切运行：PR620，main/tag/Release exact `230959f8a9f9591a353c6ece79f17d4fe8becdbb`，正式根 `.worktrees/release-v1.16.89` API/SDK/Web冻结构建及身份验证通过。现役标准服务仍v88/gen63，Tq仍原PID77357、持久 `TQ_MARKET_CHANNEL_FAILED`、control=pause，四笔原空头持仓/四单四成交/四SUBMIT claims保持，15个日盘品种尚blocked；不能将已发布89冒充已运行或自然交易验收。计划在全部60品种11:30午休后通过原生Session/静默校验，再统一同树切换与账户恢复，不在交易中拆API和worker根。
+
+已用真实当前60品种H1只读复现：旧signals8.50s+authority1.02s+recovery11.04s=20.56s，超过既有20秒期限。新实现每请求4品种信号/4恢复证明，15批真实诊断单批最长1.43s；保留真实首次receipt、latest合并、缺口恢复、超时通道废弃和禁止补开。新增版本化 `tqkq_observed_signal_v1` 分开事实接收与入账时间，旧Signal/replay规则不改；首次hold不覆盖，无未决义务的停止须先完整native对账再不依赖故障通道退出。222项定向回归、独立高风险Review、API wheel/sdist、冻结锁、Ruff/diff/secret0通过；真实四仓账本只读副本旧/新完整重放状态SHA完全一致。修复已合回develop，不含Trueup晋升。
+
+恢复脚本已定向审查：同账户排他锁/只读SDK，保全原hold及账本，完整native四单四成交/claims/仓位与唯一基线对账；先fresh Recover解除账本恢复态，再仅对15个owner=None且无该品种任何历史活动的品种按fresh MDS+SDK精确合约初始化Owner，再恢复并消费旧开仓。SDK查询后再次验证权威有效期；缺证明继续blocked，成功后才归档hold。尚未执行脚本或制造测试成交；新的全品种恢复、委托、成交、对账均以切换后自然读回分别验收。
+
+以下为此前检查点：
+
 11/3 18:43 v1.16.76恢复校验修复准备：v75首次停止审计在inventory拒绝旧gen55已恢复根07c6…，未生成停止确认、未恢复服务。修复仅在历史plan/source/receipt SHA、完整五effects及typed readback、stopped confirmation和closed feed全部证实后，将该成功根自身纳入已闭合集合；其他UNKNOWN仍阻断。正式十服务仍v73/gen56 parked，原SimNow仍v72等待夜盘，18:05任务未运行。待新控制器发布后执行新停止审计和同代恢复，再迁移SimNow结算后刷新修复；不重放旧apply，不改旧状态。
 
 11/3 18:25 v1.16.75恢复入口修复准备：另一聊天留下的原40864b…及forward4a141…均UNKNOWN；后者恰完成consumers/intake/feed/verified，在calendars以REDACTED/COHORT_FORWARD_STEP_FAILED失败且无receipt。现已停止其他聊天的服务/SimNow/删树操作；只读确认当前v73/gen56六owner全parked、四calendar定义全absent，18:05未运行，after-market-status缺席、history仅Nov2passed。v75仅让此严格四effects/双typed intake/完整verified前缀进入既有当前停止审计；两处ORIGINAL lineage也仅接受同组合。旧状态和原件不改，不推断过去没有副作用，所有锁/保护前像/pending/ACK/日历缺席检查保持，后续须新关闭及新同代恢复。
