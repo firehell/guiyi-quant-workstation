@@ -271,3 +271,22 @@ def test_channel_failure_preserves_first_hold_and_safe_stop_needs_no_market(
     assert read_private(base / "hold.json")["code"] == "TQ_MARKET_TIMEOUT"
     assert (base / "hold.json").read_bytes() == first_hold[0]
     assert calls == []
+
+
+def test_record_only_tail_never_reassigns_owner_or_touches_neighbor(monkeypatch):
+    from types import SimpleNamespace as NS
+    from datetime import datetime, UTC, timedelta
+    from guiyi_quant.tq_simulation import worker
+    from guiyi_quant.htdy_account_execution import codec, model as m
+    end = datetime(2026,11,5,7,tzinfo=UTC)
+    sig = m.Signal("tail", "RB", "RB2705", end, end+timedelta(seconds=2), None, ("buy",), "a"*64)
+    rb = NS(product="RB", owner="RB2701", desired=-1, must_close=False)
+    ag = NS(product="AG", owner="AG2612", desired=1, must_close=False)
+    seen=[]
+    controller = NS(store=NS(current=lambda: NS(products=(rb,ag))),
+        owner=lambda *_: (_ for _ in ()).throw(AssertionError("tail changed owner")),
+        signal=lambda signal, **kwargs: seen.append((signal,kwargs)))
+    reply={"signals":[codec.encode(sig)], "closed_tails":{"tail":end.isoformat()}}
+    worker.record_observed_signals(controller, reply, {("RB","RB2705"):{"source_id":"owner"}}, {})
+    assert seen == [(sig,{"closed_at":end})]
+    assert rb.owner=="RB2701" and rb.desired==-1 and ag.desired==1

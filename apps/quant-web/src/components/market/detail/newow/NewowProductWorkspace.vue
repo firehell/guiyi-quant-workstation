@@ -591,11 +591,12 @@ onBeforeUnmount(() => {
     </template>
     </NewowProductChartStage><button v-if="locatedTradeId !== null" type="button" class="newow-product-workspace__return" @click="returnToReferenceTrade">返回原记录</button></div>
     <p v-if="releasedMinuteHistory" class="newow-product-workspace__load-notice" role="status">分钟历史参考 · 截至 2026-09-24 15:00（北京时间） · 尚未开放持续更新</p>
-    <div v-if="loader.historicalSnapshot.value || loader.dailyLoading.value || loader.dailySnapshot.value?.freshness === 'pending_update' || loader.weeklySnapshot.value?.freshness === 'pending_update' || (loader.dailyError.value && chartResponse !== null)" class="newow-product-workspace__load-notice" role="status">
+    <div v-if="loader.intradaySnapshot.value || loader.historicalSnapshot.value || loader.dailyLoading.value || loader.dailySnapshot.value?.freshness === 'pending_update' || loader.weeklySnapshot.value?.freshness === 'pending_update' || (loader.dailyError.value && chartResponse !== null)" class="newow-product-workspace__load-notice" role="status">
       <template v-if="loader.historicalSnapshot.value">
         <span :title="loader.historicalSnapshot.value.as_of">历史快照截至 {{ historicalAsOfLabel }}</span>
         <button type="button" @click="loader.returnToCurrent">返回当前</button>
       </template>
+      <span v-else-if="loader.intradaySnapshot.value">{{ identity.frequency }} 已确认历史快照 · 截至 {{ loader.intradaySnapshot.value.available_trading_day }} 完整交易日，非盘中实时策略图</span>
       <span v-else-if="loader.dailyLoading.value">正在加载{{ identity.frequency === '1w' ? '周线' : '日线' }}…</span>
       <template v-else-if="loader.dailyError.value">
         <span>{{ newowErrorDisplay(loader.dailyError.value) }}</span>

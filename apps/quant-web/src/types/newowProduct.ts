@@ -72,6 +72,11 @@ export interface NewowWeeklySnapshot {
   readonly current_context: { readonly status: 'known' | 'unknown'; readonly physical_contract: string | null }
 }
 
+export interface NewowIntradaySnapshot extends Omit<NewowDailySnapshot, 'schema_version' | 'frequency'> {
+  readonly schema_version: 'newow_intraday_snapshot_v1'
+  readonly frequency: '5m' | '15m' | '30m' | '60m'
+}
+
 export const NEWOW_PRODUCT_SECTIONS = ['chart', 'auxiliary', 'reference', 'explanation', 'comparator'] as const
 export type NewowProductSection = (typeof NEWOW_PRODUCT_SECTIONS)[number]
 export type NewowAuxiliaryComponent = 'macd' | 'main_force_control' | 'up_down_energy' | 'trend_reversal' | 'zhaoyao_mirror' | 'cup_handle'
@@ -818,7 +823,7 @@ export interface NewowProductSectionValueMap {
 
 export type NewowProductSectionResponse<S extends NewowProductSection = NewowProductSection> = {
   readonly [K in S]: {
-    readonly snapshotContext?: NewowDailySnapshot | NewowWeeklySnapshot
+    readonly snapshotContext?: NewowDailySnapshot | NewowWeeklySnapshot | NewowIntradaySnapshot
     readonly meta: NewowProductMeta
     readonly section: K
     readonly status: NewowFeatureStatus

@@ -265,3 +265,24 @@ def test_batch_completed_endpoint_missing_product_does_not_poison_other_product(
     result = reader.newow_completed_observation_endpoints((other, query()), END)
     assert result[('cu', BarFrequency.H1)] is None
     assert result[('rb', BarFrequency.H1)] == (END, DAY, 'RB2611')
+
+
+@pytest.mark.parametrize("seconds", [1, 30, 60])
+def test_tq_closed_tail_is_short_lived_record_only_and_preserves_strict_reader(seconds):
+    from app.market_data.aggregation import SessionWindow
+    market = Market()
+    market.session_windows = lambda **_: (SessionWindow(END-timedelta(hours=1),END),)
+    reader = service(market=market)
+    now = END+timedelta(seconds=seconds)
+    assert reader.tq_closed_tail_snapshot(query(), END-timedelta(hours=1), now).bars == (BAR,)
+    assert reader.observation_snapshot(query(), None, now).source == "none"
+
+
+@pytest.mark.parametrize("seconds,terminal", [(61,True),(1,False)])
+def test_tq_closed_tail_rejects_old_receipt_or_nonterminal_bar(seconds,terminal):
+    from app.market_data.aggregation import SessionWindow
+    from app.market_data.market_read_service import MarketObservationSnapshotError
+    market = Market()
+    market.session_windows = lambda **_: (SessionWindow(END-timedelta(hours=1),END if terminal else END+timedelta(hours=1)),)
+    with pytest.raises(MarketObservationSnapshotError):
+        service(market=market).tq_closed_tail_snapshot(query(), None, END+timedelta(seconds=seconds))
