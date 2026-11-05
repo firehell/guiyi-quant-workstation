@@ -1,10 +1,10 @@
-11/5 12:11 v1.16.91整组切换已成功，正式首页派生刷新进行中：PR622，main/annotated tag/Release exact `9de9c146beb9f447a1847122bf53a1ed591a15fb`，正式根 `.worktrees/release-v1.16.91`；十服务统一gen64，cohort `e773310e17f4c851e6d3f72088c14b281962ef68d5e9a716f959213718251af2` 终态switched，十项身份matched，API/Web/Runtime HTTP均通过。正式首页index及主JS与91冻结构建逐字一致，API1.16.91；首页旧派生投影正在通过既有builder刷新，不下载或改Canonical，最终60品种摘要验收待该过程结束。
+11/5 12:28 v1.16.91发布、整组运行切换和正式首页验收完成：PR622，main/annotated tag/Release exact `9de9c146beb9f447a1847122bf53a1ed591a15fb`，正式根 `.worktrees/release-v1.16.91`；十服务统一gen64，cohort `e773310e17f4c851e6d3f72088c14b281962ef68d5e9a716f959213718251af2` 终态switched，十项身份matched，API/Web/Runtime HTTP均通过。正式首页index及主JS与91冻结构建逐字一致，API1.16.91。既有builder已刷新60品种首页派生缓存，overview及60/60摘要均ready；独立文件/真实HTTP读回一致，浏览器旧摘要失败与待更新提示消失。仅写精确 `.derived/newow-home.json`，原件已保全，不下载/改Canonical或收益口径。临时统计尾部曾误用字段status而退出，构建本体已保存；随后以正确projection_status独立读回确认全部ready，未重复执行写入。
 
 owner已明确批准PR622 main/tag/Release、RS/UR恢复及正式切换；自动审批曾因缺少精确main批准拒绝，补充明确批准后同一GitHub工具合并成功，未绕过。RS/UR恢复plan `51cc16f64d83553be18118910264ce8407696b9158a8cbd8d705d940a37ba858` 单次原子COMMITTED/2，独立status相同；全部原件/旧历史保留，零OPEN，无历史收益重算，新FLAT从北京时间13:30开始。360路Newow身份hash保持 `1e41fbc4714cf5dbb944efb42abb9de8ecd3fb61a5093e7c09fb6a22a8d5c119`，未晋升Trueup。v90旧失败attempt原样保留，不重跑。真实Source两路预检、140项回归、14项独立临时PG事务测试、独立Review95项、正式API/SDK/Web冻结构建与secret0通过。
 
 Tq已同树恢复至v91，唯一worker PID62132，trade/READY、无hold；实际完整native四仓/四单四成交/四SUBMIT claims及唯一基线逐项核对通过，禁止发送的恢复不制造交易。精确15个从未活动的owner按fresh权威及SDK元数据初始化，旧开仓已消费；probe60映射/零活动委托/零issues/ready_for_start通过后启用。后续账本读回60品种blocked=0、无未决fill、原四仓保持；尚无新自然委托/成交，不以工程切换冒充自然闭环。原hold、stop、native与账本恢复原件在私有 `tqkq-simulation/recovery-20261105-v90` / `recovery-20261105-v91`。苏冰独立开发模型仍STALE_OR_STOPPED，原39个源hash、run和144条事件保持，正式API仅只读展示。
 
-发布及运行证据复用 `output/release-v91-20261105`。旧v88/v90仍保留实际运行恢复/失败计划来源引用，不作为常驻备用；本任务托管开发树在交付后清理，其他任务树保留。
+发布及运行证据复用 `output/release-v91-20261105`。旧v88/v90只读retention扫描返回 `CLEANUP_EVIDENCE_UNAVAILABLE`，eligible为空，未删除或绕过；运行权威仅v91。其源码清理待补齐证明，不阻塞已完成页面发布。本任务托管开发树按原生工具归档，其他任务树保留。
 
 以下为此前检查点：
 
