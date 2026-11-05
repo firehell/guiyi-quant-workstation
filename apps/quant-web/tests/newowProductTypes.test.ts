@@ -1170,6 +1170,20 @@ test('CDV2 explanation rejects future ages, inconsistent totals and executable c
   assert.throws(() => normalizeNewowProductResponse(badExecution.wire, { ...expected, section: 'explanation' }), /executable/)
   const badAge = make(); badAge.addon.cdv2.facts[0]!.age = -2
   assert.throws(() => normalizeNewowProductResponse(badAge.wire, { ...expected, section: 'explanation' }), /age/)
+  const withSignal = () => {
+    const value = make()
+    Object.assign(value.addon.cdv2.facts[0]!, {status:'ready',age:0,bar_end:AS_OF,physical_contract:'JM2609',segment_id:'segment-1',calculation_segment_id:'calc-1',
+      last_signal:{action_id:'signal-1',kind:'BUILD',bar_end:AS_OF,price:'123.45',calculation_segment_id:'calc-1'}})
+    return value
+  }
+  assert.doesNotThrow(() => normalizeNewowProductResponse(withSignal().wire,{...expected,section:'explanation'}))
+  for (const change of [{price:'0'}, {price:'-1'}, {price:'NaN'}, {kind:'FILL'}, {bar_end:'2099-01-01T07:00:00Z'}, {calculation_segment_id:'another'}]) {
+    const value = withSignal()
+    Object.assign((value.addon.cdv2.facts[0] as any).last_signal,change)
+    assert.throws(() => normalizeNewowProductResponse(value.wire,{...expected,section:'explanation'}))
+  }
+  const unavailable = withSignal(); Object.assign(unavailable.addon.cdv2.facts[0]!, {status:'unavailable'})
+  assert.throws(() => normalizeNewowProductResponse(unavailable.wire,{...expected,section:'explanation'}), /without ready/)
 })
 
 test('reference accepts validated independent hindsight payload and rejects executable or duplicate theory', () => {
