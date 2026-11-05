@@ -145,7 +145,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     }
 
     if (url.pathname === '/api/v1/market/newow/product-capabilities') {
-      return route.fulfill({ json: options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities() })
+      return route.fulfill({ json: options.capabilities ?? (options.weeklyCandidate ? weeklyCandidateCapabilities() : dailyCapabilities()) })
     }
 
     if (url.pathname === '/api/v1/market/newow/daily-snapshot') {
@@ -301,7 +301,7 @@ function validateFixtureScenario(strategy, frequency, options) {
 
 function validateProductQuery(url, section, strategy, frequency, expectedAsOf = NEWOW_AS_OF, dualMarket = false) {
   if (url.searchParams.has('resolve_current')) {
-    if (section !== 'chart' || !['1d', '1w'].includes(frequency) || url.searchParams.get('resolve_current') !== 'true' || url.searchParams.has('as_of') || url.searchParams.has('snapshot_token')) return 'invalid current chart resolution'
+    if (section !== 'chart' || !['5m', '15m', '30m', '60m', '1d', '1w'].includes(frequency) || url.searchParams.get('resolve_current') !== 'true' || url.searchParams.has('as_of') || url.searchParams.has('snapshot_token')) return 'invalid current chart resolution'
     const explicit = new URL(url)
     explicit.searchParams.delete('resolve_current'); explicit.searchParams.set('as_of', expectedAsOf)
     return validateProductQuery(explicit, section, strategy, frequency, expectedAsOf, dualMarket)
@@ -318,7 +318,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
     if (url.searchParams.getAll(key).length !== 1) return `missing or duplicate Newow ${key} ${url.search}`
   }
   if (url.searchParams.get('product') !== 'rb' || url.searchParams.get('series_kind') !== 'actual_dominant') return `invalid Newow identity ${url.search}`
-  if (!NEWOW_STRATEGIES.includes(strategy) || !NEWOW_FREQUENCIES.includes(frequency)) return `invalid Newow combination ${strategy}/${frequency}`
+  if (!NEWOW_STRATEGIES.includes(strategy) || ![...NEWOW_FREQUENCIES,'5m','15m','30m'].includes(frequency)) return `invalid Newow combination ${strategy}/${frequency}`
   if (url.searchParams.get('as_of') !== expectedAsOf) return `unfrozen Newow as_of ${url.searchParams.get('as_of')}`
   const actual = [...url.searchParams.keys()]
   if (new Set(actual).size !== actual.length || actual.some((key) => !allowedBySection[section].includes(key))) return `unexpected Newow query ${url.search}`
@@ -530,7 +530,7 @@ function envelope(url, section, strategy, frequency, options) {
   const result = { meta: meta(url, strategy, frequency, section, options), section, ...wrappers }
   if (url.searchParams.get('resolve_current') === 'true') result.snapshot_context = {
     frequency, requested_at: NEWOW_AS_OF, as_of: result.meta.as_of, freshness: options.pendingCurrent ? 'pending_update' : 'current',
-    ...(frequency === '1d' ? {
+    ...(frequency !== '1w' ? {
       expected_trading_day: options.pendingCurrent
         ? new Date(Date.parse(`${value.bars.at(-1).trading_day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
         : value.bars.at(-1).trading_day,
@@ -538,6 +538,7 @@ function envelope(url, section, strategy, frequency, options) {
     }
       : { expected_period_end: result.meta.as_of, available_period_end: result.meta.as_of, current_context: {} }),
   }
+  options.transformEnvelope?.(result,{section,strategy,frequency})
   return result
 }
 

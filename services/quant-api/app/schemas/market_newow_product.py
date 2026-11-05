@@ -260,7 +260,39 @@ class DisplayEventOut(_Out):
     quantity_effect: Literal["none"]
 
 
+class BreakoutEventOut(_Out):
+    event_id: str
+    display_version: Literal["newow_breakout_shapes_detail3449_v1"]
+    formula_version: Literal["newow_breakout_shapes_detail3449_v1"]
+    product: str
+    frequency: ProductFrequencyValue
+    bar_end: datetime
+    known_at: datetime
+    occur_bar_end: datetime
+    confirmed_at: datetime | None
+    physical_contract: str
+    segment_id: str
+    calculation_segment_id: str
+    kind: Literal["true_up", "false_up", "true_down", "false_down", "wick_upper", "wick_lower", "pending"]
+    side: Literal["up", "down"]
+    level: str
+    buffer: str
+    threshold: str
+    volume_ratio: str | None
+    volume_ok: bool
+    doubt: bool
+    regime: Literal["up", "down", "osc", "unknown"]
+    occur_high: str
+    occur_low: str
+    confirm_close: str | None
+    bar_gap: Literal[1] | None
+    source_sha256: str
+    input_sha256: str
+    executable: Literal[False]
+
+
 class ChartValueOut(_Out):
+    breakout_events: list[BreakoutEventOut] = Field(default_factory=list)
     display_events: list[DisplayEventOut] = Field(default_factory=list)
     caution_events: list[CautionDisplayEventOut] = Field(default_factory=list)
     chart_from: date

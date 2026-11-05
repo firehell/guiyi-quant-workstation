@@ -218,6 +218,7 @@ export interface NewowCautionEvent {
 }
 
 export interface NewowChartValue {
+  readonly breakout_events?: readonly import('../utils/newowBreakoutEvents').NewowBreakoutEvent[]
   readonly display_events?: readonly import('../utils/newowDisplayEvents').NewowDisplayEvent[]
   readonly caution_events?: readonly NewowCautionEvent[]
   readonly chart_from: string

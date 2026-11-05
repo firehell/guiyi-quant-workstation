@@ -3,6 +3,8 @@ import ChartReferenceToolbar from '../ChartReferenceToolbar.vue'
 import NewowMainRiseProcessLabels from './NewowMainRiseProcessLabels.vue'
 import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
 import {layoutMainRiseProcessLabels} from '@/utils/newowProcessHintDisplay'
+import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
+import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
@@ -111,7 +113,7 @@ const emit = defineEmits<{
   'focus-resolved': [signalId: string, focusRequestId: number]
   'select-comparison-signal': [strategy: 'trend' | 'oscillation', signalId: string]
   'select-hint': [hintId: string]
-  'select-display': [event:NewowDisplayEvent]
+  'select-breakout':[event:NewowBreakoutEvent]; 'select-display':[event:NewowDisplayEvent]
   'analyze-channel': []
   'explain-main': []
   'explain-auxiliary': []
@@ -130,7 +132,9 @@ function actionWidth(callout: KlineReferenceCallout, strategy = props.strategy):
 }
 const pageTheme=ref(readNewowChartDisplayTheme())
 let themeObserver:MutationObserver|null=null
+const breakoutPoints=ref<BreakoutPoint[]>([]),showBreakoutShapes=ref(true),showBreakoutWicks=ref(true)
 const displayPoints=ref<DisplayPoint[]>([])
+watch(()=>[props.strategy,props.response?.meta.identity.product,props.response?.meta.identity.frequency,props.response?.meta.identity.formula_versions.join('|')],()=>{breakoutPoints.value=[]},{flush:'sync'})
 const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;title:string}>>([])
 const selectedCautionKey = ref<string | null>(null)
 const selectedCaution = computed(() => cautionOverlays.value.find(item=>item.key===selectedCautionKey.value) ?? null)
@@ -562,7 +566,8 @@ function renderMarkers(value: NewowProductChartModel | null): void {
 }
 
 function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
-  displayPoints.value = []
+  breakoutPoints.value=[]
+  displayPoints.value=[]
   cautionOverlays.value = []
   attackOverlays.value = []
   processOverlays.value = []
@@ -596,6 +601,17 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
       cautionOverlays.value.push({x,y:Math.max(3,y-26),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
   }
+  const breakoutRange=scale.getVisibleLogicalRange()
+  const breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:value.bars.length)*.6)
+  const breakoutBars=value.bars.map(b=>({bar_end:b.barEnd,physical_contract:b.physicalContract,segment_id:b.segmentId,calculation_segment_id:b.calculationSegmentId}))
+  const breakoutEvents=props.strategy==='oscillation'?(props.response?.value?.breakout_events??[]):[]
+  breakoutPoints.value=breakoutEvents.flatMap(event=>{
+    const bar=value.bars.find(b=>b.barEnd===event.bar_end&&b.physicalContract===event.physical_contract&&b.calculationSegmentId===event.calculation_segment_id)
+    if(!bar)return []
+    const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay)),y=priceToCoordinate.call(candles,event.side==='up'?bar.high:bar.low)
+    const index=detailChartIndex(chart!,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay),value.bars.indexOf(bar))
+    return x!=null&&y!=null&&displayIndexVisible(index,scale.getVisibleLogicalRange())?[{event,x,y,candleWidth:breakoutCandleWidth,band:breakoutBand(event,breakoutBars,value.bars.indexOf(bar),i=>timeToCoordinate.call(scale,chartMarkerTime(value.bars[i]!.barEnd,value.identity.frequency,value.bars[i]!.tradingDay)),p=>priceToCoordinate.call(candles,p),breakoutCandleWidth)}]:[]
+  })
   const displayEvents=[...(props.response?.value?.display_events??[]),...(comparisonActive.value ? props.comparisonResponse?.value?.display_events??[] : [])]
   const seenDisplay=new Set<string>()
   displayPoints.value=displayEvents.flatMap(event=>{
@@ -905,6 +921,8 @@ defineExpose({ revealSignal, scrollToLatest })
                 <summary>图层</summary>
                 <button type="button" :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button>
                 <button type="button" :aria-pressed="showActions" @click="showActions = !showActions">建仓 / 清仓</button>
+                <button v-if="strategy==='oscillation'" type="button" :aria-pressed="showBreakoutShapes" @click="showBreakoutShapes=!showBreakoutShapes">突破形态</button>
+                <button v-if="strategy==='oscillation'" type="button" :aria-pressed="showBreakoutWicks" @click="showBreakoutWicks=!showBreakoutWicks">影线提示</button>
                 <button v-if="!comparisonActive" type="button" :aria-pressed="showHints" @click="showHints = !showHints">过程提示</button>
                 <template v-else>
                   <button type="button" :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button>
@@ -935,6 +953,7 @@ defineExpose({ revealSignal, scrollToLatest })
       @wheel="scheduleActionProjection"
       @dblclick="scheduleActionProjection"
     />
+    <NewowBreakoutOverlay :points="breakoutPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-breakout="emit('select-breakout',$event)" />
     <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" />
     <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
       <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg v-if="item.tentative" aria-hidden="true" width="100%" height="16"><rect x="0" y="0" width="100%" height="16" rx="8" /></svg><span>小心</span></button>
