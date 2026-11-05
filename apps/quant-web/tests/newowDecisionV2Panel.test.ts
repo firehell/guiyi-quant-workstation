@@ -40,7 +40,7 @@ const output = () => ({ section: 'explanation', value: { decision_v2: { cdv2: {
   facts: ['trend_day','oscillation_day','trend_week','oscillation_week','trend_m60','oscillation_m60'].map(role => ({ role, state: 'hold', status: role.endsWith('m60') ? 'unavailable' : 'ready', age: role.endsWith('day') ? 0 : 2, frequency: role.endsWith('week') ? '1w' : '1d', bar_end: '2026-09-24T07:00:00Z', physical_contract: 'JM2701', segment_id:'owner', reason: null })),
 }, prices: null } } })
 
-test('daily/weekly card exposes states, ages and two-period R4 scope; refresh and identity discard stale output', async () => {
+test('daily/weekly card preserves state tooltips and retry while removing the audit and refresh controls', async () => {
   const Panel = await component('newow/NewowDecisionV2Panel')
   const response = ref(input())
   const root = element('root')
@@ -48,22 +48,23 @@ test('daily/weekly card exposes states, ages and two-period R4 scope; refresh an
   app.mount(root)
   assert.match(nodeText(root), /正在读取同一快照/)
   assert.equal(mock.calls.length, 1)
-  const button = () => findNode(root, n => n.props['aria-label'] === '刷新综合决策')!
+  const button = () => findNode(root, n => n.type === 'button' && nodeText(n) === '重试')!
   assert.equal(mock.calls[0].request.snapshotToken, undefined)
   mock.calls[0].resolve(output())
   await nextTick(); await nextTick()
   const states = findNode(root, n => n.props['aria-label'] === '日周小时策略状态与信号年龄')!
   assert.match(nodeText(states), /周线 持股.*日线 持股.*60分 状态不可用/)
   assert.equal(findNodes(states, n => n.props.class === 'composite-chip').length, 6)
-  const audit = findNode(root, n => n.props['aria-label'] === '综合决策来源与诊断')!
-  assert.match(nodeText(audit), /周线趋势.*持有.*2 根周K.*日线趋势.*持有.*0 根日K/)
+  assert.equal(findNode(root, n => n.props['aria-label'] === '综合决策来源与诊断'), undefined)
+  assert.equal(findNode(root, n => n.props['aria-label'] === '刷新综合决策'), undefined)
+  assert.doesNotMatch(nodeText(root), /数据来源、信号计龄与参考强度/)
+  assert.ok(findNode(states, n => n.props.title === '2 根周K'))
   response.value = { ...input(), value: { bars: [] } } as any
   await nextTick()
   assert.equal(mock.calls.length, 1, 'same snapshot chart paging must not trigger another composite read')
   const reasons = findNode(root, n => n.props['aria-label'] === '共振与错配依据')!
   assert.match(nodeText(reasons), /趋势与震荡三周期同向，噪声正交验证通过/)
-  assert.match(nodeText(root), /未命中 MM1–MM4/)
-  ;(button().props.onClick as Function)()
+  response.value = input('cu')
   await nextTick()
   assert.doesNotMatch(nodeText(root), /78\s*分/)
   mock.calls[1].reject(new mock.NewowProductRequestError('NEWOW_RESOURCE_BUSY','busy'))
@@ -112,7 +113,7 @@ test('composite card keeps compact action header and places scores inside indepe
   assert.equal(evidence().props['aria-expanded'],false); assert.equal(details.style.display,'none')
   ;(evidence().props.onClick as Function)(); await nextTick()
   assert.equal(evidence().props['aria-expanded'],true)
-  assert.match(nodeText(details),/2.5%/);assert.match(nodeText(root),/日周小时共同参与/)
+  assert.match(nodeText(details),/2.5%/)
   response.value=input('rb'); await nextTick()
   assert.equal(header().props['aria-expanded'],false, 'new identity always collapses the composite')
   assert.doesNotMatch(nodeText(root),/65 分|错配 MM4|回补窗口/)
@@ -422,7 +423,7 @@ for (const frequency of ['1d', '1w']) {
   await nextTick(); await nextTick()
   assert.ok(findNode(root, n => n.props['aria-label'] === '日周状态摘要'))
   assert.match(nodeText(root), /60分钟趋势.*状态不可用/)
-  assert.match(nodeText(root), /日线趋势.*持有/)
+  assert.match(nodeText(findNode(root, n => n.props['aria-label'] === '日周小时策略状态与信号年龄')!), /日线 持股/)
   assert.deepEqual(contexts.at(-1).decision, value.value.decision_v2)
   app.unmount()
  })
