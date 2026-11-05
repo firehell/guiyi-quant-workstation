@@ -71,10 +71,10 @@ def _new_page_spool() -> JsonSpoolSequence[PageBar]:
     return JsonSpoolSequence[PageBar](encode=_encode_page_bar, decode=_decode_page_bar)
 
 
-def _fusion_page_actions(read, identity, replays, cancelled=None):
+def _fusion_page_actions(read, identity, replays, cancelled=None, *, fusion=True):
     actions: dict[tuple[str, str, str | None], list[PageAction]] = {}
     supplied = dict(replays or {})
-    for strategy in (ProductStrategy.OSCILLATION, ProductStrategy.TREND):
+    for strategy in ((ProductStrategy.OSCILLATION, ProductStrategy.TREND) if fusion else (ProductStrategy.OSCILLATION,)):
         if strategy in supplied:
             action_iter = iter(supplied[strategy].actions)
         else:
@@ -157,7 +157,8 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
             current_bars.seal()
 
         _check_cancelled(cancelled)
-        actions = _fusion_page_actions(read, identity, replays, cancelled) if fusion else {}
+        event_driven = fusion or identity.strategy is ProductStrategy.OSCILLATION
+        actions = _fusion_page_actions(read, identity, replays, cancelled, fusion=fusion) if event_driven else {}
         terminal_blocked = last is None or not resolved.complete or any(
             gap.effective_at <= resolved.cutoff and gap.effective_at >= last
             for gap in read.data_interruptions)
@@ -189,7 +190,7 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
             ))
         material = build_page_performance_material(
             segments, "fusion" if fusion else identity.strategy.value,
-            period=identity.frequency.value, cancelled=cancelled,
+            period=identity.frequency.value, event_driven=event_driven, cancelled=cancelled,
         )
         from app.market_data.newow.product_reader import has_unresolved_source_tail
         _check_cancelled(cancelled)

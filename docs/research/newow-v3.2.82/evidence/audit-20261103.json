@@ -1,0 +1,1212 @@
+{
+  "schema": "newow_public_audit_evidence_v1",
+  "observed_on": "2026-11-03 Asia/Shanghai",
+  "develop_commit": "8fb6128d9ceab9ffd3d494f638db69419e2952ff",
+  "working_tree_at_start": "clean",
+  "versions": {
+    "index": "3.4.51",
+    "detail": "3.4.49",
+    "position_kernel": "1.1.1"
+  },
+  "scope_excludes": [
+    "messages",
+    "push",
+    "screener",
+    "month_k",
+    "time_sharing_chart"
+  ],
+  "sources": [
+    {
+      "file": "index.html",
+      "url": "https://www.v8848.cn/index.html",
+      "exit": 0,
+      "sha256": "9c842b1ef73f491b9ff3a963141670dbb79cf1d7b0e2536130b6bc97e72f4c2b"
+    },
+    {
+      "file": "stock_detail.html",
+      "url": "https://www.v8848.cn/stock_detail.html?code=688702.SH",
+      "exit": 0,
+      "sha256": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb"
+    },
+    {
+      "file": "index--api-config.js",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+    },
+    {
+      "file": "index--api-shim.js",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+    },
+    {
+      "file": "index--strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+    },
+    {
+      "file": "index--position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+      "exit": 0,
+      "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036"
+    },
+    {
+      "file": "stock_detail--api-config.js",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7"
+    },
+    {
+      "file": "stock_detail--api-shim.js",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81"
+    },
+    {
+      "file": "stock_detail--strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0"
+    },
+    {
+      "file": "stock_detail--composite-decision-v2.js",
+      "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2"
+    },
+    {
+      "file": "stock_detail--position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+      "exit": 0,
+      "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036"
+    },
+    {
+      "file": "stock_detail--trend-reversal-core.js",
+      "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80"
+    }
+  ],
+  "api": [
+    {
+      "file": "kline-day.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=day&strategy=huanglantai&startdate=2025-11-01&enddate=2026-11-03",
+      "exit": 0,
+      "status": "200",
+      "sha256": "7a0ddbcf1d417fba4fca294c291455217a647cd107711690c9b3f331bbeb6b15",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 32,
+      "rows": 243,
+      "first": "2025-11-03",
+      "last": "2026-11-03"
+    },
+    {
+      "file": "kline-week.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=week&strategy=huanglantai&startdate=2024-06-01&enddate=2026-11-03",
+      "exit": 0,
+      "status": "200",
+      "sha256": "542c3aea35715c6f5595053f730e59149dfc4bfac6d912bbe9dc48d4d291e59b",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0,
+      "signals": 8,
+      "rows": 126,
+      "first": "2024-06-03",
+      "last": "2026-11-02"
+    },
+    {
+      "file": "kline-5min.json",
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=5min&strategy=zhushenglang&startdate=2026-10-01&enddate=2026-11-03",
+      "exit": 0,
+      "status": "200",
+      "sha256": "2744479dd13c9a03694d81405879faa12c4101ce8741c348493ac540b21ecd34",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source",
+        "_filtered"
+      ],
+      "errorcode": 0,
+      "signals": 53,
+      "rows": 800,
+      "first": "2026-10-12 10:55:00",
+      "last": "2026-11-03 15:00:00"
+    },
+    {
+      "file": "batch.json",
+      "url": "https://www.v8848.cn/api/batch?codes=688702.SH",
+      "exit": 0,
+      "status": "200",
+      "sha256": "21deb49224cc0500bd670dc5f67fa74e1240b0c1a6350d9369acc1141c06695c",
+      "top_keys": [
+        "stocks",
+        "_source",
+        "signalStale",
+        "quoteAge"
+      ],
+      "errorcode": null,
+      "signals": 0,
+      "rows": 0,
+      "first": null,
+      "last": null
+    }
+  ],
+  "legacy_fallback_comparison": {
+    "cases": true,
+    "ma_sum_witness": true,
+    "window_witness": true,
+    "fusion_witness": true,
+    "fusion_order_witness": true,
+    "cdv2_cases": true
+  },
+  "legacy_fallback_not_trueup_parity": true,
+  "new_rules_witnesses": {
+    "page_source_sha256": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb",
+    "position_kernel_sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036",
+    "kernel_version": "1.1.1",
+    "defaults": {
+      "volK": 1.5,
+      "doubt": false,
+      "volWeak": false,
+      "density": false
+    },
+    "menu_test5": true,
+    "test5_family": {
+      "family": true,
+      "hardStop": false,
+      "falseBreakMark": true
+    },
+    "false_breakout_cases": {
+      "true_up": [
+        {
+          "kind": "true_up",
+          "i": 11,
+          "occur": 10,
+          "side": "up",
+          "B": 0.6545454545454544
+        }
+      ],
+      "false_up": [
+        {
+          "kind": "false_up",
+          "i": 11,
+          "occur": 10,
+          "side": "up",
+          "B": 0.6545454545454544
+        }
+      ],
+      "true_down": [
+        {
+          "kind": "true_down",
+          "i": 11,
+          "occur": 10,
+          "side": "down",
+          "B": 0.6545454545454544
+        }
+      ],
+      "false_down": [
+        {
+          "kind": "false_down",
+          "i": 11,
+          "occur": 10,
+          "side": "down",
+          "B": 0.6545454545454544
+        }
+      ],
+      "pending_up": [
+        {
+          "kind": "pending",
+          "i": 11,
+          "occur": 11,
+          "side": "up",
+          "B": 0.6499999999999999
+        }
+      ],
+      "pending_down": [
+        {
+          "kind": "pending",
+          "i": 11,
+          "occur": 11,
+          "side": "down",
+          "B": 0.6499999999999999
+        }
+      ],
+      "wick": [
+        {
+          "kind": "fake_up_ib",
+          "i": 10,
+          "occur": 10,
+          "side": "up",
+          "B": 0.7636363636363636
+        },
+        {
+          "kind": "fake_dn_ib",
+          "i": 10,
+          "occur": 10,
+          "side": "down",
+          "B": 0.7636363636363636
+        }
+      ]
+    },
+    "regime_warmup_and_directions": {
+      "up": [
+        "unknown",
+        "up",
+        "up"
+      ],
+      "down": [
+        "unknown",
+        "down",
+        "down"
+      ],
+      "osc": [
+        "unknown",
+        "osc",
+        "osc"
+      ]
+    },
+    "kernel_witness": {
+      "legacy": [
+        {
+          "i": 10,
+          "price": 120,
+          "ref": 120,
+          "trueUp": null
+        }
+      ],
+      "trueup": [
+        {
+          "i": 12,
+          "price": 121,
+          "ref": 121,
+          "trueUp": true
+        }
+      ],
+      "falseup": [
+        {
+          "i": 11,
+          "price": 119,
+          "ref": 110,
+          "trueUp": false
+        }
+      ],
+      "note": "source text calls false-breakout clear limit at L, event price actually current high"
+    },
+    "display_digits": [
+      3,
+      3,
+      2,
+      1,
+      0
+    ],
+    "home_readiness": [
+      false,
+      false,
+      true,
+      false,
+      true
+    ],
+    "function_hashes": {
+      "_fbComputeLevels": "aff19bc8bc1cb5e88b1a5fcd7e3840c57331665db8a9df9b69a04b2462a270ff",
+      "computeFalseBreakoutEvents": "dbc8fdb99551c3de69062ec1c094900c5372254c8f30fe5540c0bdb46d66660f",
+      "computeRegimeSeries": "eb470516ec52e138387b6f557080b5144bd9d7dde941a6becb0e3e5ac8c3beea",
+      "priceDigits": "3b58c103b01f55009cc8a210daa7ce55d7d55eb8e0d759d9a9850df9d0f90c62",
+      "_isOscFamily": "3bef203a60544d61262618f33b7d34bb7728e042a6bf60bac1e7a143bfa9072b",
+      "_isOscTest": "868a8d654200692028d436038fc1327b8f3ebc1b3f46b9f52b0d1506e8038612",
+      "_isOscFalseBreakMark": "7bf4bdd56d33d48ae8b3bfd75db10b2ea973e5421caed97407d9421b50925358"
+    },
+    "limitations": [
+      "Isolated synthetic source witnesses, not live UI or market/OOS proof",
+      "kernel_detail enabled/disabled are distinct paths; user persistent flag not inspected",
+      "No message or notification APIs called"
+    ]
+  },
+  "browser_visual_status": "NO_TARGET_TAB_CREATE_TIMEOUT",
+  "current_delivered_not_gaps": [
+    "oscillation breakdown",
+    "cross-strategy main-rise J",
+    "trend reversal badge",
+    "completed caution anchor",
+    "historical path",
+    "six frequencies v35",
+    "four home sorting columns",
+    "limited historical PC visual acceptance"
+  ],
+  "new_gaps": [
+    "gated trueup trading semantics",
+    "test5 and false-breakout A/B display layer",
+    "regime disclosure",
+    "new display preferences and precision review"
+  ],
+  "checks": {
+    "web_passed": 197,
+    "web_failed": 0,
+    "web_skipped": 0,
+    "web_heap_mb": 384,
+    "web_concurrency": 1,
+    "engineering_passed": 28,
+    "engineering_failed": 1,
+    "baseline_failure": {
+      "test": "test_active_market_route_inventory_is_exact_and_uniquely_owned",
+      "actual": 22,
+      "expected": 21,
+      "extra": "GET /api/v1/market/indicators/dynamic-range",
+      "unrelated_code_changed": false
+    },
+    "manual_links_and_fences": "passed",
+    "unique_current_anchors": "passed",
+    "source_api_hashes_verified": 16,
+    "secret_findings": 0,
+    "diff_check": "passed"
+  },
+  "limitations": [
+    "Public HTML enables kernel_index but not kernel_detail; no persistent user flag inspected or changed.",
+    "Fallback oracle parity does not establish trueup parity; kernel witnesses show different CLEAR bars/prices.",
+    "Public shape algorithm and position kernel have distinct ATR/buffer/comparison rules.",
+    "No live DOM, screenshot, private messages/account, notifications or icon-states POST.",
+    "No strategy implementation, production data, Runtime, release or trading changes."
+  ],
+  "derived_price_quantization_risk": "Source assigns rounded target/absorb numeric fields; unchanged path/decision code does not prove unchanged inputs.",
+  "validation_commands": {
+    "web": "NODE_OPTIONS=--max-old-space-size=384 NEWOW_PUBLIC_SOURCE=/private/tmp/newow-check-20261103/stock_detail.html node --test --test-concurrency=1 tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
+    "engineering": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/engineering/test_repository_hygiene.py tests/engineering/test_canonical_consistency.py",
+    "source": "Temporary source-bound core-oracle.mjs (legacy fallback only), and new-rules.mjs for pure A/B, regime, priceDigits/readiness and UMD kernel none/trueup witnesses; no original fixtures modified."
+  },
+  "same_day_followup": {
+    "develop_commit": "1ce4013a1dc841e57e36d3b31c631b6c34ceddaf",
+    "dirty_preserved": [
+      "docs/research/subing-trading-demands.md"
+    ],
+    "detail_url": "https://www.v8848.cn/stock_detail.html?code=399006.SZ",
+    "detail_sha256": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb",
+    "browser": "iab and Chrome connection timed out; no DOM or screenshot; no user preferences read or changed",
+    "home_callsite_correction": "calcXichouSignals only called by excluded alert pipeline in this snapshot; not proof home cards use trueup",
+    "source_witness": {
+      "kind": "synthetic source-call-path witness, not live UI",
+      "rows": [
+        {
+          "strategy": "xichou-lagao",
+          "enabled": false,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 120
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        },
+        {
+          "strategy": "xichou-lagao",
+          "enabled": true,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-13",
+              "type": "sell",
+              "price": 121
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        },
+        {
+          "strategy": "osc-test5",
+          "enabled": false,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-11",
+              "type": "sell",
+              "price": 120
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        },
+        {
+          "strategy": "osc-test5",
+          "enabled": true,
+          "signals": [
+            {
+              "date": "2026-01-10",
+              "type": "buy",
+              "price": 100
+            },
+            {
+              "date": "2026-01-13",
+              "type": "sell",
+              "price": 121
+            }
+          ],
+          "trades": [
+            {
+              "buyDate": "2026-01-10",
+              "buyPrice": 100,
+              "sellDate": "2026-01-11",
+              "sellPrice": 120,
+              "pct": 20,
+              "forceClose": false
+            }
+          ]
+        }
+      ]
+    },
+    "validation": "node /private/tmp/newow-check-20261103/branch-followup.mjs: 4 paths and all assertions passed"
+  },
+  "limited_pc_followup": {
+    "develop_commit": "6eb81741ec7b3e3bef38784d1bc3813205ee1115",
+    "method": "cua native Chrome accessibility and screenshot observation; browser tab API unstable",
+    "url": "https://www.v8848.cn/stock_detail.html?code=399006.SZ",
+    "version": "3.4.49",
+    "actions": [
+      "Open T menu",
+      "Select test5",
+      "Observe chart and ordinary all-range performance",
+      "Select ordinary oscillation and compare visible metrics"
+    ],
+    "test5_menu_and_chart": "PASS",
+    "observed_labels": [
+      "false breakout 08-17 to 08-18",
+      "false breakout 10-22 to 10-23",
+      "true down 09-02 to 09-03",
+      "true down 10-30 to 11-02"
+    ],
+    "both_strategies_visible_metrics": {
+      "annualized_pct": 6.8,
+      "cumulative_pct": 62.04,
+      "win_rate_pct": 62,
+      "max_drawdown_pct": 41.87,
+      "trade_count": 53
+    },
+    "reference_only": true,
+    "kernel_detail": "UNKNOWN; URL absence not proof disabled; storage/config not read or changed",
+    "unverified": [
+      "shape detail modal",
+      "pending/secondary wick",
+      "minute and weekly UI",
+      "mobile",
+      "new layer plot synchronization",
+      "P95",
+      "actual trueup runtime branch"
+    ],
+    "screenshot_persistence": "Rejected by automatic review because full Chrome window includes unrelated UI; no screenshot file persisted",
+    "other_mutations": "No strategy, production data, Runtime, notification, or preference changes"
+  },
+  "continuous_closeout": {
+    "observed_at_utc": "2026-11-03T16:15:22Z",
+    "timezone": "Asia/Shanghai",
+    "develop_commit": "a1da4cf6c962ee0593e09b27a81953924f3f0b70",
+    "dirty_preserved": [
+      "docs/research/subing-trading-demands.md"
+    ],
+    "page_refreshes": [
+      {
+        "url": "https://www.v8848.cn/index.html",
+        "sha256": "9c842b1ef73f491b9ff3a963141670dbb79cf1d7b0e2536130b6bc97e72f4c2b"
+      },
+      {
+        "url": "https://www.v8848.cn/stock_detail.html?code=399006.SZ",
+        "sha256": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb"
+      }
+    ],
+    "script_refreshes": [
+      {
+        "file": "index--api-config.js",
+        "url": "https://www.v8848.cn/api-config.js?v=3.4.15",
+        "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7",
+        "same": true
+      },
+      {
+        "file": "index--api-shim.js",
+        "url": "https://www.v8848.cn/api-shim.js?v=3.4.15",
+        "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81",
+        "same": true
+      },
+      {
+        "file": "index--strategy-calc.js",
+        "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.15",
+        "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0",
+        "same": true
+      },
+      {
+        "file": "index--position_kernel.js",
+        "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+        "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036",
+        "same": true
+      },
+      {
+        "file": "stock_detail--api-config.js",
+        "url": "https://www.v8848.cn/api-config.js?v=3.4.11",
+        "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7",
+        "same": true
+      },
+      {
+        "file": "stock_detail--api-shim.js",
+        "url": "https://www.v8848.cn/api-shim.js?v=3.4.11",
+        "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81",
+        "same": true
+      },
+      {
+        "file": "stock_detail--strategy-calc.js",
+        "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.11",
+        "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0",
+        "same": true
+      },
+      {
+        "file": "stock_detail--composite-decision-v2.js",
+        "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.4.11",
+        "sha256": "522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2",
+        "same": true
+      },
+      {
+        "file": "stock_detail--position_kernel.js",
+        "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+        "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036",
+        "same": true
+      },
+      {
+        "file": "stock_detail--trend-reversal-core.js",
+        "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.4.11",
+        "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80",
+        "same": true
+      }
+    ],
+    "api_refreshes": [
+      {
+        "url": "https://www.v8848.cn/api/kline?code=399006.SZ&period=day&strategy=xichou-lagao&startdate=2025-09-01&enddate=2026-11-03",
+        "sha256": "9203ceef29ff87290e15364ead9a3be74490655d8dab9b6da8fa290637dac619",
+        "errorcode": 0
+      },
+      {
+        "url": "https://www.v8848.cn/api/kline?code=399006.SZ&period=week&strategy=xichou-lagao&startdate=2024-06-01&enddate=2026-11-03",
+        "sha256": "73b9c8e921201ec076411dad9086197547bc29452311e4a265d03d52d1aca4f9",
+        "errorcode": 0
+      },
+      {
+        "url": "https://www.v8848.cn/api/kline?code=399006.SZ&period=5min&strategy=xichou-lagao&startdate=2026-06-12&enddate=2026-11-03",
+        "sha256": "dbe43834c81f71435062a5ecf4e23648b8b0831ae301be8475c0ac53562224a3",
+        "errorcode": 0
+      },
+      {
+        "url": "https://www.v8848.cn/api/kline?code=399006.SZ&period=1min&strategy=xichou-lagao&startdate=2024-06-01&enddate=2026-11-03",
+        "sha256": "dbe43834c81f71435062a5ecf4e23648b8b0831ae301be8475c0ac53562224a3",
+        "errorcode": 0
+      },
+      {
+        "url": "https://www.v8848.cn/api/kline?code=399006.SZ&period=60min&strategy=xichou-lagao&startdate=2024-06-01&enddate=2026-11-03",
+        "sha256": "172dda8a4665e18aa39da0e2c5a08190140cb4b9ae77681088b070a8df9b12e0",
+        "errorcode": 0
+      },
+      {
+        "url": "https://www.v8848.cn/api/kline?code=399006.SZ&period=120min&strategy=xichou-lagao&startdate=2024-06-01&enddate=2026-11-03",
+        "sha256": "172dda8a4665e18aa39da0e2c5a08190140cb4b9ae77681088b070a8df9b12e0",
+        "errorcode": 0
+      }
+    ],
+    "public_input_witnesses": {
+      "day": {
+        "rows": 1619,
+        "first": "2020-03-02",
+        "last": "2026-11-03",
+        "response_sha256": "9203ceef29ff87290e15364ead9a3be74490655d8dab9b6da8fa290637dac619",
+        "ordinarySummary": {
+          "cumReturn": 62.04,
+          "accuracy": 62,
+          "maxDrawdown": 41.87,
+          "tradeCount": 53
+        },
+        "test5Same": true,
+        "experiments": {
+          "osc-test": {
+            "cumReturn": 78.49,
+            "accuracy": 63,
+            "maxDrawdown": 38.78,
+            "tradeCount": 72
+          },
+          "osc-test2": {
+            "cumReturn": -4.02,
+            "accuracy": 43,
+            "maxDrawdown": 75.23,
+            "tradeCount": 46
+          },
+          "osc-test3": {
+            "cumReturn": 66.91,
+            "accuracy": 68,
+            "maxDrawdown": 46.39,
+            "tradeCount": 38
+          },
+          "osc-test4": {
+            "cumReturn": 116.44,
+            "accuracy": 68,
+            "maxDrawdown": 34.09,
+            "tradeCount": 60
+          },
+          "osc-test5": {
+            "cumReturn": 62.04,
+            "accuracy": 62,
+            "maxDrawdown": 41.87,
+            "tradeCount": 53
+          }
+        },
+        "chart": {
+          "off": {
+            "count": 105,
+            "sha256": "b707c511665382702b386465eedbbf7529448458141f375ac60d7607ffc6a239",
+            "lastThree": [
+              {
+                "date": "2026-08-24",
+                "type": "buy",
+                "price": 3376.639
+              },
+              {
+                "date": "2026-09-21",
+                "type": "sell",
+                "price": 3429.274
+              },
+              {
+                "date": "2026-09-28",
+                "type": "buy",
+                "price": 3125.201
+              }
+            ]
+          },
+          "on": {
+            "count": 103,
+            "sha256": "70575a247a5c93bce4344685e00f3acb0e081852f88949ddfd4f331ffd3b703f",
+            "lastThree": [
+              {
+                "date": "2026-08-24",
+                "type": "buy",
+                "price": 3376.639
+              },
+              {
+                "date": "2026-09-21",
+                "type": "sell",
+                "price": 3429.274
+              },
+              {
+                "date": "2026-09-28",
+                "type": "buy",
+                "price": 3125.201
+              }
+            ]
+          },
+          "firstDifference": {
+            "off": {
+              "date": "2020-04-07",
+              "type": "sell",
+              "price": 1972.868
+            },
+            "on": {
+              "date": "2020-04-08",
+              "type": "sell",
+              "price": 1974.723
+            }
+          }
+        },
+        "popupWitness": [
+          {
+            "kind": "false_down",
+            "i": 1611,
+            "occur": 1610,
+            "side": "down",
+            "Pi": 3168.405,
+            "PiLow": 2682.708,
+            "B": 29.9355,
+            "level": 2682.708,
+            "doubt": false,
+            "volOk": false,
+            "volRatio": 1.0228998724893343,
+            "weak": true,
+            "gap": 1,
+            "occurDate": "2026-10-22",
+            "confirmDate": "2026-10-23",
+            "occurHigh": 2688.11,
+            "occurLow": 2576.901,
+            "confirmClose": 2684.097,
+            "regime": "down"
+          },
+          {
+            "kind": "true_down",
+            "i": 1617,
+            "occur": 1616,
+            "side": "down",
+            "Pi": 2832.131,
+            "PiLow": 2494.215,
+            "B": 32.55428571428572,
+            "level": 2494.215,
+            "doubt": false,
+            "volOk": false,
+            "volRatio": 1.0593449258636072,
+            "weak": true,
+            "gap": 1,
+            "occurDate": "2026-10-30",
+            "confirmDate": "2026-11-02",
+            "occurHigh": 2518.243,
+            "occurLow": 2413.629,
+            "confirmClose": 2458.698,
+            "regime": "down"
+          }
+        ]
+      },
+      "week": {
+        "rows": 217,
+        "first": "2022-08-11",
+        "last": "2026-11-02",
+        "response_sha256": "73b9c8e921201ec076411dad9086197547bc29452311e4a265d03d52d1aca4f9",
+        "ordinarySummary": {
+          "cumReturn": 46.12,
+          "accuracy": 67,
+          "maxDrawdown": 36.45,
+          "tradeCount": 9
+        },
+        "test5Same": true,
+        "experiments": {
+          "osc-test": {
+            "cumReturn": 77.12,
+            "accuracy": 47,
+            "maxDrawdown": 34.89,
+            "tradeCount": 15
+          },
+          "osc-test2": {
+            "cumReturn": 11.57,
+            "accuracy": 30,
+            "maxDrawdown": 37.08,
+            "tradeCount": 10
+          },
+          "osc-test3": {
+            "cumReturn": 22.87,
+            "accuracy": 60,
+            "maxDrawdown": 15.9,
+            "tradeCount": 5
+          },
+          "osc-test4": {
+            "cumReturn": 80.23,
+            "accuracy": 62,
+            "maxDrawdown": 32.5,
+            "tradeCount": 13
+          },
+          "osc-test5": {
+            "cumReturn": 46.12,
+            "accuracy": 67,
+            "maxDrawdown": 36.45,
+            "tradeCount": 9
+          }
+        },
+        "chart": {
+          "off": {
+            "count": 17,
+            "sha256": "4b863332574575c31e1bd13af0e357c08349626697e4fbfc2651bac2915518cb",
+            "lastThree": [
+              {
+                "date": "2026-03-02",
+                "type": "buy",
+                "price": 3149.412
+              },
+              {
+                "date": "2026-03-16",
+                "type": "sell",
+                "price": 3426.609
+              },
+              {
+                "date": "2026-07-13",
+                "type": "buy",
+                "price": 3387.26
+              }
+            ]
+          },
+          "on": {
+            "count": 17,
+            "sha256": "0f88899cbd84375dcde28ffddf0cc5de6e23460c88f1fc024b22f1ee3bad102c",
+            "lastThree": [
+              {
+                "date": "2026-03-02",
+                "type": "buy",
+                "price": 3149.412
+              },
+              {
+                "date": "2026-03-16",
+                "type": "sell",
+                "price": 3426.609
+              },
+              {
+                "date": "2026-07-13",
+                "type": "buy",
+                "price": 3387.26
+              }
+            ]
+          },
+          "firstDifference": {
+            "off": {
+              "date": "2023-01-09",
+              "type": "sell",
+              "price": 2493.126
+            },
+            "on": {
+              "date": "2023-01-30",
+              "type": "sell",
+              "price": 2661.281
+            }
+          }
+        },
+        "popupWitness": []
+      },
+      "5min": {
+        "rows": 800,
+        "first": "2026-10-12 10:55:00",
+        "last": "2026-11-03 15:00:00",
+        "response_sha256": "dbe43834c81f71435062a5ecf4e23648b8b0831ae301be8475c0ac53562224a3",
+        "ordinarySummary": {
+          "cumReturn": -8.86,
+          "accuracy": 46,
+          "maxDrawdown": 13.08,
+          "tradeCount": 26
+        },
+        "test5Same": true,
+        "experiments": {
+          "osc-test": {
+            "cumReturn": -8.86,
+            "accuracy": 46,
+            "maxDrawdown": 13.08,
+            "tradeCount": 26
+          },
+          "osc-test2": {
+            "cumReturn": -17.14,
+            "accuracy": 43,
+            "maxDrawdown": 17.9,
+            "tradeCount": 7
+          },
+          "osc-test3": {
+            "cumReturn": -3.84,
+            "accuracy": 50,
+            "maxDrawdown": 6.95,
+            "tradeCount": 14
+          },
+          "osc-test4": {
+            "cumReturn": -6.68,
+            "accuracy": 42,
+            "maxDrawdown": 12.37,
+            "tradeCount": 26
+          },
+          "osc-test5": {
+            "cumReturn": -8.86,
+            "accuracy": 46,
+            "maxDrawdown": 13.08,
+            "tradeCount": 26
+          }
+        },
+        "chart": {
+          "off": {
+            "count": 52,
+            "sha256": "9677d57e3c6a1c1629121fa134e19b189070c63c863cc13d06287d2971c445b9",
+            "lastThree": [
+              {
+                "date": "2026-11-03 10:05:00",
+                "type": "sell",
+                "price": 2464.86
+              },
+              {
+                "date": "2026-11-03 10:55:00",
+                "type": "buy",
+                "price": 2434.58
+              },
+              {
+                "date": "2026-11-03 14:35:00",
+                "type": "sell",
+                "price": 2422.38
+              }
+            ]
+          },
+          "on": {
+            "count": 46,
+            "sha256": "b4ee81efbaf6c2c3070c90e010bb591b80241ba480fb9c4ae6da6a7e27e1200c",
+            "lastThree": [
+              {
+                "date": "2026-11-03 10:05:00",
+                "type": "sell",
+                "price": 2464.86
+              },
+              {
+                "date": "2026-11-03 10:55:00",
+                "type": "buy",
+                "price": 2434.58
+              },
+              {
+                "date": "2026-11-03 14:40:00",
+                "type": "sell",
+                "price": 2420.16
+              }
+            ]
+          },
+          "firstDifference": {
+            "off": {
+              "date": "2026-10-13 11:30:00",
+              "type": "sell",
+              "price": 2935.54
+            },
+            "on": {
+              "date": "2026-10-13 13:25:00",
+              "type": "sell",
+              "price": 2983.97
+            }
+          }
+        },
+        "popupWitness": []
+      },
+      "60min": {
+        "rows": 800,
+        "first": "2026-01-05 10:30:00",
+        "last": "2026-11-03 15:00:00",
+        "response_sha256": "172dda8a4665e18aa39da0e2c5a08190140cb4b9ae77681088b070a8df9b12e0",
+        "ordinarySummary": {
+          "cumReturn": 29.53,
+          "accuracy": 79,
+          "maxDrawdown": 30.56,
+          "tradeCount": 29
+        },
+        "test5Same": true,
+        "experiments": {
+          "osc-test": {
+            "cumReturn": 35.9,
+            "accuracy": 74,
+            "maxDrawdown": 26.86,
+            "tradeCount": 34
+          },
+          "osc-test2": {
+            "cumReturn": 4.41,
+            "accuracy": 63,
+            "maxDrawdown": 40.84,
+            "tradeCount": 16
+          },
+          "osc-test3": {
+            "cumReturn": 23.39,
+            "accuracy": 76,
+            "maxDrawdown": 19.74,
+            "tradeCount": 21
+          },
+          "osc-test4": {
+            "cumReturn": 23.53,
+            "accuracy": 74,
+            "maxDrawdown": 33.08,
+            "tradeCount": 31
+          },
+          "osc-test5": {
+            "cumReturn": 29.53,
+            "accuracy": 79,
+            "maxDrawdown": 30.56,
+            "tradeCount": 29
+          }
+        },
+        "chart": {
+          "off": {
+            "count": 57,
+            "sha256": "b41f03476ffe5116f6b87b9a9639d4b2b5fbd4fbd0c1fb6ac134cfcf3bcfaa23",
+            "lastThree": [
+              {
+                "date": "2026-09-09 14:00:00",
+                "type": "buy",
+                "price": 3327.14
+              },
+              {
+                "date": "2026-09-17 10:30:00",
+                "type": "sell",
+                "price": 3351.42
+              },
+              {
+                "date": "2026-09-23 15:00:00",
+                "type": "buy",
+                "price": 3372.95
+              }
+            ]
+          },
+          "on": {
+            "count": 55,
+            "sha256": "ec9dc7371aee819a2d41246c83742d68d7b21b67e2395d5cc03751633b390cd0",
+            "lastThree": [
+              {
+                "date": "2026-09-09 14:00:00",
+                "type": "buy",
+                "price": 3327.14
+              },
+              {
+                "date": "2026-09-17 10:30:00",
+                "type": "sell",
+                "price": 3351.42
+              },
+              {
+                "date": "2026-09-23 15:00:00",
+                "type": "buy",
+                "price": 3372.95
+              }
+            ]
+          },
+          "firstDifference": {
+            "off": {
+              "date": "2026-02-09 11:30:00",
+              "type": "sell",
+              "price": 3340.33
+            },
+            "on": {
+              "date": "2026-02-10 10:30:00",
+              "type": "sell",
+              "price": 3348.48
+            }
+          }
+        },
+        "popupWitness": []
+      }
+    },
+    "period_aliases": {
+      "one": "5min",
+      "two": "60min"
+    },
+    "live_popup_match": {
+      "false_down": "2026-10-22 to 2026-10-23; gap 1; level 2682.71; B 29.94; volume 1.02; down; confirm close 2684.10",
+      "true_down": "2026-10-30 to 2026-11-02; gap 1; level 2494.22; B 32.55; volume 1.06; down; confirm close 2458.70"
+    },
+    "live_experiments_weekly": {
+      "osc-test": {
+        "cumReturn": 77.12,
+        "accuracy": 47,
+        "maxDrawdown": 34.89,
+        "tradeCount": 15
+      },
+      "osc-test2": {
+        "cumReturn": 11.57,
+        "accuracy": 30,
+        "maxDrawdown": 37.08,
+        "tradeCount": 10
+      },
+      "osc-test3": {
+        "cumReturn": 22.87,
+        "accuracy": 60,
+        "maxDrawdown": 15.9,
+        "tradeCount": 5
+      },
+      "osc-test4": {
+        "cumReturn": 80.23,
+        "accuracy": 62,
+        "maxDrawdown": 32.5,
+        "tradeCount": 13
+      },
+      "osc-test5": {
+        "cumReturn": 46.12,
+        "accuracy": 67,
+        "maxDrawdown": 36.45,
+        "tradeCount": 9
+      }
+    },
+    "live_other_modes_weekly": {
+      "trend": {
+        "cumReturn": 119.31,
+        "tradeCount": 19
+      },
+      "dual_fusion": {
+        "cumReturn": 133.97,
+        "tradeCount": 21
+      },
+      "main_rise": {
+        "cumReturn": 28.52,
+        "tradeCount": 2
+      }
+    },
+    "effective_chart_branch": {
+      "observed_5min_clear_price": 2422.38,
+      "ordinary_history_clear_time": "2026-11-03 14:35:00",
+      "source_off_clear_time": "2026-11-03 14:35:00",
+      "source_on_clear_time": "2026-11-03 14:40:00",
+      "source_on_clear_price": 2420.16,
+      "conclusion": "Observed output matches legacy-equivalent path for this sample; direct flag value UNKNOWN; disabled/unloaded/error fallback not distinguished"
+    },
+    "original_limitations": [
+      "1min aliases 5min; 120min aliases 60min; corresponding response hashes equal",
+      "Tooltip weak-color claim conflicts with disabled weak rendering and visible filled capsules",
+      "Both sides draw level to level+B despite lower threshold level-B",
+      "Header local date and minute axis labels not authoritative completed bar timestamps",
+      "Current weekly final bar is preview, not completed",
+      "False breakout statistics are unverified source disclosure, not proven alpha"
+    ],
+    "validation": {
+      "web": {
+        "command": "NODE_OPTIONS=--max-old-space-size=384 NEWOW_PUBLIC_SOURCE=/private/tmp/newow-check-20261103/detail-final.html node --test --test-concurrency=1 tests/newowBasisDecision.test.ts tests/newowPublicPatterns.test.ts tests/newowExperiments.test.ts tests/newowPagePerformance.test.ts tests/newowDailyWeeklyPath.test.ts tests/newowHomeCards.test.ts tests/newowDecisionPreferences.test.ts tests/newowUiPreferences.test.ts",
+        "cwd": "apps/quant-web",
+        "passed": 197,
+        "failed": 0,
+        "skipped": 0
+      },
+      "backend_84": {
+        "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_oscillation_channel.py services/quant-api/tests/newow/test_fusion_reference.py services/quant-api/tests/newow/test_page_performance.py services/quant-api/tests/newow/test_page_parity_fixture_contract.py",
+        "passed": 84
+      },
+      "backend_171": {
+        "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_trend_band_page_v2.py services/quant-api/tests/newow/test_main_rise_page_v1.py services/quant-api/tests/newow/test_experiments.py services/quant-api/tests/newow/test_composite_explanation.py services/quant-api/tests/newow/test_ai_analysis.py services/quant-api/tests/newow/test_main_rise_minutes.py",
+        "passed": 171
+      },
+      "original_source": "node /private/tmp/newow-check-20261103/final-audit.mjs: passed; first run missing original constant OSC_STOP_PCT_TEST4 in isolated context, supplied original .12 then passed; no formula changed",
+      "frozen_oracle": "9 cases and 729 CDV2 plus MA/window/fusion/order witnesses equal frozen v3379 fixture; fallback-only, not trueup parity",
+      "original_functions": "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb",
+      "runner_sha256": "c3d1bacad3833d496e38e50161daf6ffbae45fcce388e625104c12524849a068"
+    },
+    "unverified": [
+      "Direct kernel_detail configuration value",
+      "Pending/secondary wick live event",
+      "Minute modal interaction",
+      "Full page pixel parity; mobile/touch/DPR; P95",
+      "Private service formulas and production futures outcome"
+    ],
+    "scope": "Audit/documentation only. No production market, DB, Runtime, strategy, account or notification mutation. Only sole manual and compact evidence updated."
+  },
+  "current_conclusion": "continuous_closeout"
+}

@@ -24,7 +24,7 @@ const subingMarkers = computed(() => props.allowHistoricalMarkers ? [...props.ma
 </script>
 
 <template>
-  <MarketKlineStage :show-navigation-buttons="false" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
+  <MarketKlineStage :subing-volume-tiers="true" :show-navigation-buttons="false" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"
     :visible-main-indicators="visibleMainIndicators" range-detector-source-identity="" :range-detector-anchor-time="null"
     :reference-callouts="referenceCallouts" :reference-selection="referenceSelection" :focus-request-id="focusRequestId" :marker-selection-enabled="false"

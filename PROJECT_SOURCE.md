@@ -20,6 +20,10 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 - Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
 - 策略详情不显示模糊的“全历史策略效果”，不把账户收益、持仓、订单或成交混入参考交易，也不恢复已退役策略事件。首页独立模拟交易监控可只读展示 TqKq 账户事实；Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，与该账户事实分离。
 
+苏冰预警、自由看盘和火天大有六周期（5m/15m/30m/60m/1d/1w）成交量采用 `subing_volume_tier_display_v1`：保留红绿柱，本根量相对同物理合约、同计算段的前一根已完成量，2≤倍数<3在柱顶显示蓝色圆点，倍数≥3显示紫色菱形；低档、无前根、零分母、质量中断及未确认输入不标记。不恢复成交量说明文字、按钮或弹窗。这是独立展示扩展，不修改仅30m分档的研究因子、预警规则或策略动作；牛哇保持现有成交量展示。
+
+多周期波段路径使用独立展示身份 `guiyi_futures_historical_path_v1`。历史双线与周期样本仅限同物理合约、同计算段，普通参考和 trueup 样本分离；保持公开 v3.4.49 的周期与剩余价格幅度估算，不修改策略或参考收益。剩余时长与预计日期分别验证：日期基于快照行情交易日，通过 MarketDataService 的 Catalog 日历和 Session 证明逐日推进（最长366个自然日），不使用浏览器日期或星期推断。缺历史日历前缀不估算时长；缺未来证明只保留时长及原因；历史快照没有当时捕获的日历身份不借当前日历补日期。日期证明参与快照缓存身份，旧路径身份不视为新模型。无有效 ETA 日期时只画持有清仓目标或空仓吸筹参考，不生成预计日期端点或未来持仓背景；没有同身份止损来源不展示止损距离比。
+
 ## 期货双向策略独立研究
 
 详情页显式 `strategy_model=futures_bidir_v1` 切换归一自有期货研究；未带参数的旧链接仍为牛哇原版。
@@ -27,6 +31,12 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 首轮JM/RB/AL/TA六周期，缺资金保留独立参考、缺行情/执行事实分别披露；周线test3无更高级别标不适用。
 API只读SHA索引冻结结果，GET不回测、下载或写生产；页面明确历史截止而非当前账户持仓。
 本能力不接入持续Paper、Scope、Runtime、通知或Broker；合同见[期货双向研究](docs/NEWOW_FUTURES_STRATEGY.md)。
+
+## 苏冰决策持续观察与历史回放
+
+`/research/subing-decision` 提供焦煤统一环境—需求候选的独立历史回放，入口位于模拟交易之后；只读 `/api/v1/research/subing-decision/*` 消费显式登记SHA结果，展示环境、条件、模型持仓及决策/成交历史。v2基础分类与近期结构确认约束分别解释，收益属于独立模型账户已见开发样本，不是持续模型或真实账户。规则与边界见[交易需求合同](docs/research/subing-trading-demands.md#应用内焦煤统一历史回放候选2026-11-04)。
+
+同一页面提供独立开发持续模型，首版仅JM可进入模型撮合；14品种先观察，其余参数只提供ATR尺度研究候选。模型实际启动时空仓，历史仅预热，使用后续完成1m收盘和真实获知时刻的新执行身份；独立开发PostgreSQL事件与账户投影不混入Paper试点、天勤或真实账户。只读 `/api/v1/subing-model/status` 不启用账户。运行、恢复、执行事实及换月边界见[开发模型合同](docs/SUBING_DEVELOPMENT_MODEL.md)。
 
 ## 新苏冰策略独立研究
 
@@ -94,6 +104,7 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 - EMA21 斜率只保留 10K primitive：输入恰好 10 个 EMA21 值，以首尾差除以 9 个 bar interval，再除以当前 EMA21，输出 bps/bar。
 - 不保留 Daily Watch 大方向过滤，也不保留 5m/15m 正式因子。
 - Range Detector 只允许 `range_detector_readonly_display`，不能作为正式策略、Alert 或 Runtime 输入。
+- 自由看盘可选“震荡／趋势”研究显示（30m/1d），使用独立 `subing_dynamic_range_v1`；完整物理前缀计算、逐根不可回写边界，仅 Historical Canonical，Live 未归档部分留空。向左分页校验来源后补充历史点，不作为正式入场过滤器；合同见 [震荡因子](docs/research/subing-range-factor.md)。
 
 ## HTDY 与 Alert
 

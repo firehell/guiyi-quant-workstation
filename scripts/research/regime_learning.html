@@ -1,0 +1,39 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>市场状态 · 盲审</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#f4f6fa;color:#18263b;font:15px system-ui,sans-serif}main{max-width:1100px;margin:30px auto;padding:0 24px}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:25px;margin:0}p{color:#637087;line-height:1.6}.card{background:white;border:1px solid #dfe5ed;border-radius:14px;padding:22px;margin:18px 0;box-shadow:0 4px 16px #24385306}.toolbar,.choices{display:flex;gap:10px;flex-wrap:wrap;align-items:center}button,select{font:inherit;padding:10px 16px;border:1px solid #cbd5e3;border-radius:8px;background:white;color:#263952;cursor:pointer}button.selected{background:#203e67;color:white;border-color:#203e67}button:disabled{opacity:.4;cursor:default}canvas{width:100%;height:390px;display:block}textarea{width:100%;height:65px;border:1px solid #d2dbe7;border-radius:8px;margin:14px 0;padding:12px;font:inherit}.pill{font-size:13px;background:#e7eef8;padding:6px 10px;border-radius:20px}#message{color:#a14e0b;font-size:13px}small{color:#637087}progress{width:100%;height:8px}a{color:#205c9a}</style>
+<main><header><div><h1>市场状态 · 盲审</h1><p>只看截至右侧最后一根的行情，判断当时的市场状态。</p></div><span class="pill">研究标签复核 · 不含预测</span></header>
+<div class="card"><div class="toolbar"><label>周期 <select id="frequency"><option value="all">全部</option><option value="1d">日线</option><option value="30m">30 分钟</option><option value="60m">60 分钟</option></select></label><button id="unanswered">下一个未评</button><span id="progressText"></span></div><progress id="progress" max="90" value="0"></progress><p>图中没有模型答案、均线或未来K线。趋势允许回撤；看不清方向可选“不确定”。本轮只使用开发区间，未使用封存测试区。</p></div>
+<section class="card"><header><strong id="title"></strong><small id="position"></small></header><canvas id="chart"></canvas><div class="choices" id="choices"><button data-answer="TREND_UP">上涨趋势</button><button data-answer="TREND_DOWN">下跌趋势</button><button data-answer="RANGE">震荡</button><button data-answer="UNCERTAIN">不确定</button></div><textarea id="note" placeholder="可选：为什么这样判断？例如重心持续下移、宽幅无序、刚突破还不确定。"></textarea><div class="toolbar"><button id="previous">上一张</button><button id="next">下一张</button><span id="saved"></span></div></section>
+<section class="card"><div class="toolbar"><button id="export">导出我的复核 JSON</button><label>恢复复核文件 <input id="import" type="file" accept="application/json"></label></div><p>答案仅保存在本浏览器。完成一部分也可以导出，将文件交回聊天后再核对标签；不会自动训练或替换当前因子。</p><div id="message" role="status"></div><small id="identity"></small></section></main>
+<script>
+const DATA=__DATA__;
+const $=id=>document.getElementById(id), key='regime-review:'+DATA.dataset_id;
+const allowed=['TREND_UP','TREND_DOWN','RANGE','UNCERTAIN']; let answers={}, current=0;
+try{answers=JSON.parse(localStorage.getItem(key)||'{}')}catch{}
+const validIds=new Set(DATA.samples.map(s=>s.id));
+function validate(a){return a&&typeof a==='object'&&!Array.isArray(a)&&Object.entries(a).every(([id,v])=>validIds.has(id)&&v&&allowed.includes(v.answer)&&typeof v.note==='string'&&v.note.length<=4000)}
+if(!validate(answers)) answers={};
+function list(){return DATA.samples.filter(s=>$('frequency').value==='all'||s.frequency===$('frequency').value)}
+function sample(){return list()[current]}
+function persist(){try{localStorage.setItem(key,JSON.stringify(answers));$('saved').textContent='已保存到本浏览器'}catch{$('saved').textContent='本地保存不可用，请导出文件'}}
+function update(answer){const s=sample();if(!s)return;answers[s.id]={answer,note:$('note').value.slice(0,4000)};persist();draw()}
+function draw(){const xs=list();current=Math.max(0,Math.min(current,xs.length-1));const s=sample();if(!s)return;
+$('title').textContent=`${s.symbol.toUpperCase()} · ${s.contract} · ${s.frequency} · 截至 ${s.bars.at(-1).time.replace('T',' ').replace('+00:00',' UTC')}`;
+$('position').textContent=`${current+1} / ${xs.length}`;$('note').value=answers[s.id]?.note||'';
+$('progressText').textContent=`已复核 ${Object.keys(answers).length} / ${DATA.samples.length}`;$('progress').max=DATA.samples.length;$('progress').value=Object.keys(answers).length;
+document.querySelectorAll('[data-answer]').forEach(b=>b.classList.toggle('selected',b.dataset.answer===answers[s.id]?.answer));
+$('previous').disabled=current===0;$('next').disabled=current===xs.length-1;
+const canvas=$('chart'),ratio=devicePixelRatio||1,w=canvas.clientWidth,h=390;canvas.width=w*ratio;canvas.height=h*ratio;const ctx=canvas.getContext('2d');ctx.scale(ratio,ratio);
+const bars=s.bars,lo=Math.min(...bars.map(b=>b.low)),hi=Math.max(...bars.map(b=>b.high)),pad=Math.max((hi-lo)*.08,hi*.001),min=lo-pad,max=hi+pad;
+const y=v=>20+(max-v)/(max-min)*(h-65),dx=(w-80)/bars.length;
+ctx.font='11px system-ui';for(let i=0;i<5;i++){const v=min+(max-min)*i/4,py=y(v);ctx.strokeStyle='#edf0f5';ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(w-65,py);ctx.stroke();ctx.fillStyle='#687991';ctx.fillText(v.toFixed(2),w-60,py+4)}
+bars.forEach((b,i)=>{const x=10+(i+.5)*dx;ctx.strokeStyle=ctx.fillStyle=b.close>=b.open?'#d85d58':'#359978';ctx.beginPath();ctx.moveTo(x,y(b.high));ctx.lineTo(x,y(b.low));ctx.stroke();ctx.fillRect(x-dx*.30,Math.min(y(b.open),y(b.close)),Math.max(1,dx*.6),Math.max(1,Math.abs(y(b.open)-y(b.close))))});
+ctx.fillStyle='#687991';ctx.fillText(bars[0].time.slice(0,10),10,h-12);ctx.fillText('判断此时 →',w-155,h-12);
+}
+$('choices').onclick=e=>{if(e.target.dataset.answer)update(e.target.dataset.answer)};
+$('note').oninput=()=>{const s=sample();if(s&&answers[s.id]){answers[s.id].note=$('note').value.slice(0,4000);persist()}};
+$('previous').onclick=()=>{current--;draw()};$('next').onclick=()=>{current++;draw()};$('frequency').onchange=()=>{current=0;draw()};
+$('unanswered').onclick=()=>{let i=list().findIndex(s=>!answers[s.id]);if(i>=0){current=i;draw()}else $('message').textContent='当前周期已全部复核。'};
+$('export').onclick=()=>{const payload={dataset_id:DATA.dataset_id,label_version:DATA.label_version,answers};const u=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download='regime-review-'+DATA.dataset_id.slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)};
+$('import').onchange=async e=>{try{const f=e.target.files[0];if(!f||f.size>1000000)throw Error();const p=JSON.parse(await f.text());if(p.dataset_id!==DATA.dataset_id||p.label_version!==DATA.label_version||!validate(p.answers))throw Error();answers={...answers,...p.answers};persist();draw();$('message').textContent='复核文件已恢复。'}catch{$('message').textContent='文件无效或不属于本次数据，请检查。'}};
+$('identity').textContent='数据身份 '+DATA.dataset_id+' · '+DATA.label_version;window.addEventListener('resize',draw);draw();
+</script></html>

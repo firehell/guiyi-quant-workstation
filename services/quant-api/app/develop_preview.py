@@ -1,4 +1,4 @@
-"""Local develop API and explicit derived homepage build; no Runtime switch."""
+"""Local develop API with prepared derived homepage; no Runtime switch."""
 from __future__ import annotations
 
 import argparse
@@ -6,6 +6,13 @@ import os
 from pathlib import Path
 
 from app.private_settings import PrivateSettingsError, load_private_readonly_settings
+
+
+def prepare_home_projection():
+    # Startup work only. GET remains a read of the isolated developer asset.
+    # The existing builder skips periods whose authoritative identity is unchanged.
+    from app.market_data.newow.home_projection_composition import build_home_projection
+    return build_home_projection().build()
 
 
 def main():
@@ -29,9 +36,9 @@ def main():
         'DATABASE_URL', 'GUIYI_CANONICAL_DATA_ROOT')})
     os.environ['REDIS_URL'] = redis_url
     os.environ['GUIYI_HOME_PROJECTION_PATH'] = str(root / '.run/develop-newow-home.json')
+    os.environ['GUIYI_SUBING_DECISION_RESULTS_ROOT'] = str(root / 'output/subing-workbench-20261104/registered')
+    result = prepare_home_projection()
     if args.command == 'build':
-        from app.market_data.newow.home_projection_composition import build_home_projection
-        result = build_home_projection().build()
         counts = {state: sum(item['projection_status'] == state for item in result['items'])
                   for state in ('ready', 'stale', 'failed', 'missing', 'updating')}
         print(counts)

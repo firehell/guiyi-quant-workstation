@@ -339,3 +339,36 @@ def test_real_twelve_single_si_open_and_immutable_original(pg_setup, monkeypatch
     with pytest.raises(DBAPIError):
         with factory() as db, db.begin():
             db.get(ReferenceInboxInput, input_id).canonical_envelope = "ALTERED"
+
+
+@pytest.mark.parametrize('pg_setup', [['rs','ur','rb']], indirect=True)
+def test_real_two_flat_streams_preserve_originals_and_reject_partial_commit(pg_setup,monkeypatch):
+    from tests.reference_trading.test_htdy_eleven_conflict_scope import configure_eleven
+    from app.reference_trading import htdy_conflict_recovery as domain
+    from app.reference_trading.htdy_conflict_incidents import NOV05_VERSION,NOV05_BINDINGS
+    from app.reference_trading.models import ReferenceStream,ReferenceTradeRow
+    factory,recovery,_=pg_setup
+    factory,recovery,ids=configure_eleven(factory,recovery,monkeypatch,
+        products=('rs','ur'),opened=(),bindings=NOV05_BINDINGS,
+        incident=NOV05_VERSION,binding_name='NOV05_BINDINGS')
+    with factory() as db:
+        before={b.batch_id:domain._row(b) for b in db.scalars(select(ReferenceBatch))}
+    p=plan(recovery,ids)
+    calls=[]
+    def fail_at_final_fence():
+        calls.append(True)
+        if len(calls)>1:raise RepositoryConflict('FINAL_FENCE_LOST')
+    recovery.assert_fenced=fail_at_final_fence
+    with pytest.raises(RepositoryConflict,match='FINAL_FENCE_LOST'):
+        recovery.apply(p,expected_plan_hash=p['plan_hash'],now=NOW)
+    assert recovery.readback(p) is None
+    with factory() as db:
+        assert all(db.get(ReferenceStream,sid).activation_generation==domain.NOV05_BINDINGS[sid][2] for sid in ids)
+        assert all(domain._row(db.get(ReferenceBatch,k))==v for k,v in before.items())
+    recovery.assert_fenced=lambda:None
+    result=recovery.apply(p,expected_plan_hash=p['plan_hash'],now=NOW)
+    assert len(result)==2 and recovery.readback(p)==result
+    with factory() as db:
+        assert all(domain._row(db.get(ReferenceBatch,k))==v for k,v in before.items())
+        assert not db.scalars(select(ReferenceTradeRow).where(ReferenceTradeRow.status=='DATA_INTERRUPTED')).all()
+        assert all(db.get(ReferenceStream,sid).activation_generation==domain.NOV05_BINDINGS[sid][2]+1 for sid in ids)

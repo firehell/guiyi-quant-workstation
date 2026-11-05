@@ -2223,7 +2223,7 @@ function normalizedChartPage(request: NewowProductRequest, day: string, nextBefo
   raw.chart.value.bars[0]!.bar_end = `${day}T07:00:00Z`
   raw.chart.value.bars[0]!.trading_day = day
   raw.chart.value.frames[0]!.bar_end = `${day}T07:00:00Z`
-  raw.chart.value.trend_channel.points[0]!.bar_end = `${day}T07:00:00Z`
+  if(raw.chart.value.trend_channel)raw.chart.value.trend_channel.points[0]!.bar_end = `${day}T07:00:00Z`
   raw.chart.value.frames[0]!.action_ids = [`build-${day}`]
   raw.chart.value.actions[0]!.signal_id = `build-${day}`
   raw.chart.value.actions[0]!.bar_end = `${day}T07:00:00Z`
@@ -2259,15 +2259,15 @@ function chartWire(options: { strategy?: 'trend' | 'oscillation' | 'main_rise'; 
   const formulas = strategy === 'trend'
     ? ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']
     : strategy === 'oscillation'
-      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
+      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_trueup_kernel111_v1']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
   const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close: options.close ?? '101.500', volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
-      schema_version: 'newow_product_detail_v4', identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
+      schema_version: 'newow_product_detail_v4', identity: { product: 'jm', strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_${strategy==='oscillation'?'v2':'v1'}`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64), data_revision_identity: options.revision ?? null,
       snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+      reference_model_version: strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart',
     chart: { delivery: 'delivered', status: readyStatus(), value: {
@@ -2425,4 +2425,12 @@ test('older chart pagination preserves independent J, breakdown and current badg
  assert.deepEqual(value.display_events.map((e:any)=>e.event_id),['b'.repeat(64),'a'.repeat(64)])
  assert.equal(value.display_events.at(-1).kind,'TREND_REVERSAL')
  state.dispose()
+})
+
+test('older chart pagination preserves independent breakout facts under exact physical owners',async()=>{
+ const pending:Pending[]=[],state=useNewowProduct({identity:ref(newowIdentity('oscillation','1d')),now:()=>new Date(AS_OF),fetchSection:controlled(pending)})
+ const attach=(response:any,id:string)=>{const b=response.value.bars[0];return {...response,value:{...response.value,breakout_events:[{event_id:id,bar_end:b.bar_end,physical_contract:b.physical_contract,segment_id:b.segment_id,calculation_segment_id:b.calculation_segment_id,kind:'pending'}]}}}
+ pending[0]!.resolve(attach(normalizedChartPage(pending[0]!.request,'2026-08-14','older-chart'),'a'));await flush()
+ const page=state.loadNextChartPage();pending[1]!.resolve(attach(normalizedChartPage(pending[1]!.request,'2026-08-13',null),'b'));await page
+ assert.deepEqual(state.sections.chart.data.value?.value?.breakout_events?.map(e=>e.event_id),['b','a']);state.dispose()
 })

@@ -16,7 +16,7 @@ from guiyi_quant.newow.oscillation_attack import (
     calculate_oscillation_attack,
     FORMULA_VERSION as ZLGJ_FORMULA_VERSION,
 )
-from guiyi_quant.newow.oscillation_channel import (
+from guiyi_quant.newow.oscillation_trueup import (
     calculate_oscillation_series,
     OSCILLATION_FORMULA_VERSION,
 )

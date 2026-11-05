@@ -1,5 +1,5 @@
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
-export type FuturesVariant = 'trend' | 'oscillation' | 'dual_fusion' | 'main_rise' | 'osc-test' | 'osc-test2' | 'osc-test3' | 'osc-test4'
+export type FuturesVariant = 'trend' | 'oscillation' | 'dual_fusion' | 'main_rise' | 'osc-test' | 'osc-test2' | 'osc-test3' | 'osc-test4' | 'osc-test5'
 export function futuresVariant(identity: MarketDetailIdentity): FuturesVariant {
   return identity.newowTest ?? (identity.newowMode === 'dual' ? 'dual_fusion' : identity.strategy ?? 'trend')
 }

@@ -14,7 +14,10 @@ from app.reference_trading.page_material_storage import (
 from guiyi_quant.newow.page_performance import PAGE_PERFORMANCE_VERSION, PAGE_SOURCE_SHA256
 
 
-def _proof():
+def _proof(*, unified=False):
+    from guiyi_quant.newow.page_performance import UNIFIED_PAGE_VERSION, UNIFIED_SOURCE_SHA256
+    page_version = UNIFIED_PAGE_VERSION if unified else PAGE_PERFORMANCE_VERSION
+    page_source = UNIFIED_SOURCE_SHA256 if unified else PAGE_SOURCE_SHA256
     source = "a" * 64
     request = {
         "product": "jm", "frequency": "1d", "since": "2024-01-01",
@@ -29,8 +32,8 @@ def _proof():
         "schema": "reference_page_material_binding_v1",
         "stream_id": "stream", "revision_id": "revision", "seq": 1,
         "manifest_sha256": "c" * 64, "source_token": "d" * 64,
-        "page_version": PAGE_PERFORMANCE_VERSION,
-        "page_source_sha256": PAGE_SOURCE_SHA256,
+        "page_version": page_version,
+        "page_source_sha256": page_source,
         "input_count": 1, "end_input_index": 1,
         "request": request, "cutoff": "2024-02-01T00:00:00+00:00",
         "result_trading_day": "2024-02-01",
@@ -42,7 +45,7 @@ def _proof():
         "schema": "newow_page_material_envelope_v1",
         "input_sha256": binding["input_sha256"],
         "source_evidence_sha256": source,
-        "material": {"page_version": PAGE_PERFORMANCE_VERSION, "segments": []},
+        "material": {"page_version": page_version, "segments": []},
     }
     payload, raw_size, raw_sha, compressed_size, compressed_sha = _compress_json(
         envelope, lambda: False,
@@ -98,3 +101,11 @@ def test_source_integrity_uses_original_exact_window() -> None:
     assert verify_source_integrity(Reader(), record)
     record["evidence_sha256"] = sha256(b"different").hexdigest()
     assert not verify_source_integrity(Reader(), record)
+
+
+def test_trueup_material_roundtrip_cannot_satisfy_old_model_binding():
+    proof, binding, envelope = _proof(unified=True)
+    assert validate_page_material(json.loads(json.dumps(proof)), expected_binding=binding) == envelope
+    _, old_binding, _ = _proof()
+    with pytest.raises(ValueError, match="REFERENCE_PAGE_MATERIAL_BINDING_CONFLICT"):
+        validate_page_material(proof, expected_binding=old_binding)

@@ -18,6 +18,16 @@ from typing import Any, Callable, Sequence, cast
 from .ai_analysis import fixed
 
 PAGE_PERFORMANCE_VERSION = "newow_page_performance_v3379_v2"
+UNIFIED_PAGE_VERSION = "newow_unified_trueup_page_v1"
+UNIFIED_SOURCE_SHA256 = "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb"
+
+
+def page_model_identity(formula_versions):
+    return ((UNIFIED_PAGE_VERSION, UNIFIED_SOURCE_SHA256)
+            if "newow_oscillation_trueup_kernel111_v1" in formula_versions
+            else (PAGE_PERFORMANCE_VERSION, PAGE_SOURCE_SHA256))
+
+
 PAGE_SOURCE_SHA256 = "3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d"
 
 
@@ -80,18 +90,18 @@ def _ma(values: list[float], n: int,
 
 def _segment(
     segment: PageSegment, strategy: str, ideal: bool, period: str, terminal: bool,
-    cancelled: Callable[[], bool] | None = None,
+    cancelled: Callable[[], bool] | None = None, *, event_driven: bool = False,
 ) -> dict | None:
     _check_cancelled(cancelled)
     bars = segment.bars
     minimum, start = (
         (2, 0)
-        if strategy == "fusion"
+        if strategy == "fusion" or event_driven
         else (36, 34)
         if strategy == "main_rise"
         else (11, 9)
     )
-    if len(bars) < minimum or (strategy == "fusion" and not segment.actions):
+    if len(bars) < minimum or ((strategy == "fusion" or event_driven) and not segment.actions):
         return None
     rows = []
     for index, bar in enumerate(bars):
@@ -170,7 +180,7 @@ def _segment(
         high, low, close = rows[i]
         up = states[i] and not states[i - 1] if i else False
         down = not states[i] and states[i - 1] if i else False
-        if strategy == "oscillation":
+        if strategy == "oscillation" and not event_driven:
             if ideal:
                 if buy is None and low <= llv[i]:
                     enter(i, low, hhv[i])
@@ -183,9 +193,11 @@ def _segment(
                     exit_(i, high)
                 if buy is None and low <= llv[i]:
                     enter(i, low, high)
-        elif strategy == "fusion":
+        elif strategy == "fusion" or event_driven:
             actions = by_date.get(bars[i].date, {"buy": [], "sell": []})
             if buy is not None and actions["sell"]:
+                if event_driven:
+                    position_high = max(position_high, high)
                 exit_(i, position_high if ideal else actions["sell"][0])
             if buy is None and actions["buy"]:
                 enter(i, actions["buy"][0], high)
@@ -215,12 +227,18 @@ def _segment(
             drawdown = max(drawdown, peak - marked)
         dates.append(bars[i].date)
         equity.append(_number(marked, 4))
-    interrupted = buy is not None and not (terminal and not ideal)
-    if buy is not None and terminal and not ideal and bars[-1].observation_eligible:
+    interrupted = (buy is not None and (ideal or not terminal) if event_driven
+                   else buy is not None and not (terminal and not ideal))
+    open_reference = None
+    if event_driven and buy is not None and terminal:
+        open_reference = {"buyDate": buy_date, "buyPrice": _number(buy, 2),
+                          "markDate": bars[-1].date, "markPrice": _number(rows[-1][2], 2)}
+    if buy is not None and terminal and not ideal and not event_driven and bars[-1].observation_eligible:
         exit_(len(bars) - 1, rows[-1][2], True)
     _check_cancelled(cancelled)
     return {
         "period": period,
+        "open_reference": open_reference,
         "drawdown_kind": "maximum_trade_loss" if ideal else "peak_difference",
         "summary": {
             "cumReturn": _number(cum, 2),
@@ -288,6 +306,9 @@ def filter_page_by_date(
     if "segment_ids" in data:
         result["segment_ids"] = data["segment_ids"][index:end]
         result["trading_days"] = days
+    if "open_reference" in data:
+        opened = data["open_reference"]
+        result["open_reference"] = (opened if opened and dates and opened["markDate"] <= dates[-1] else None)
     return result
 
 
@@ -299,6 +320,7 @@ def build_page_performance_material(
     strategy: str,
     *,
     period: str = "day",
+    event_driven: bool = False,
     cancelled: Callable[[], bool] | None = None,
 ) -> dict:
     """Compute both source modes once from validated, complete owner segments.
@@ -396,7 +418,7 @@ def build_page_performance_material(
             result = _segment(
                 segment, strategy, ideal, period,
                 index == len(segments) - 1 and segment.terminal_eligible,
-                cancelled,
+                cancelled, event_driven=event_driven,
             )
             if result is not None:
                 trading_days = []
@@ -416,7 +438,7 @@ def build_page_performance_material(
     _check_cancelled(cancelled)
     return {
         "schema": PAGE_MATERIAL_SCHEMA,
-        "page_version": PAGE_PERFORMANCE_VERSION,
+        "page_version": UNIFIED_PAGE_VERSION if event_driven else PAGE_PERFORMANCE_VERSION,
         "strategy": strategy,
         "period": period,
         "segment_count": len(segments),
@@ -439,7 +461,7 @@ def project_page_performance_material(
         raise ValueError("NEWOW_INVALID_QUERY")
     if (not isinstance(material, dict)
         or material.get("schema") != PAGE_MATERIAL_SCHEMA
-        or material.get("page_version") != PAGE_PERFORMANCE_VERSION
+        or material.get("page_version") not in (PAGE_PERFORMANCE_VERSION, UNIFIED_PAGE_VERSION)
         or material.get("strategy") not in ("trend", "oscillation", "main_rise", "fusion")
         or type(material.get("segment_count")) is not int
         or material["segment_count"] < 0
@@ -452,11 +474,14 @@ def project_page_performance_material(
         raise ValueError("NEWOW_PAGE_MATERIAL_INVALID")
     segments = material["segments"]
     period = material["period"]
+    unified = material["page_version"] == UNIFIED_PAGE_VERSION
     output = {
-        "version": PAGE_PERFORMANCE_VERSION,
-        "source_version": "3.3.79",
-        "source_sha256": PAGE_SOURCE_SHA256,
-        "page_parity": True,
+        "version": material["page_version"],
+        "source_version": "3.4.49" if unified else "3.3.79",
+        "source_sha256": UNIFIED_SOURCE_SHA256 if unified else PAGE_SOURCE_SHA256,
+        "page_parity": not unified,
+        "kernel_parity": True,
+        "return_policy": "guiyi_unified_trueup" if unified else "source_page",
         "executable": False,
         "strategy": material["strategy"],
         "segment_count": material["segment_count"],
@@ -477,6 +502,8 @@ def project_page_performance_material(
             "segment_ids": [],
             "trading_days": [],
         }
+        if unified:
+            aggregate["open_references"] = []
         drawdown_kinds: set[str] = set()
         cum = dd = 0.0
         wins = interrupted = used = 0
@@ -511,6 +538,8 @@ def project_page_performance_material(
                 _number(cum + float(v), 4) for v in result["equity"]
             )
             aggregate["trades"].extend(result["trades"])
+            if unified and result.get("open_reference"):
+                aggregate["open_references"].append({**result["open_reference"], "segment_id": segment["owner"]})
             cum += raw_cum
             wins += raw_wins
             dd = max(dd, raw_dd)
@@ -533,6 +562,7 @@ def compute_page_performance(
     segments: Sequence[PageSegment], strategy: str, *, period: str = "day",
     since: str | None = None, through: str | None = None,
     selected_mode: str | None = None,
+    event_driven: bool = False,
 ) -> dict:
     """Current page formula, now shared with frozen material projection."""
     if (
@@ -543,6 +573,6 @@ def compute_page_performance(
     ):
         raise ValueError("NEWOW_INVALID_QUERY")
     return project_page_performance_material(
-        build_page_performance_material(segments, strategy, period=period),
+        build_page_performance_material(segments, strategy, period=period, event_driven=event_driven),
         since=since, through=through, selected_mode=selected_mode,
     )

@@ -136,7 +136,7 @@ def test_http_v2_contract_etag_and_cross_mode_cursor(monkeypatch):
         response = client.get("/api/v1/market/newow/experiments", params=params)
         assert response.status_code == 200, response.text
         panel = response.json()
-        assert panel["schema_version"] == "newow_experiment_detail_v2"
+        assert panel["schema_version"] == "newow_experiment_detail_v3"
         assert (
             client.get(
                 "/api/v1/market/newow/experiments",

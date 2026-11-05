@@ -239,3 +239,7 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 `guiyi_quant.tq_simulation` 复用 HTDY 账户 reducer，独立 provider 身份隔离旧账本。API 环境的 `app.tq_simulation_market` 通过私有 stdio 复用既有 PortfolioMarket/MDS，SDK 独立环境只构造 TqKq。发送意图、native 身份与不可变原始快照持久化在源码树外；唯一 worker 持续更新并对账。具体合同见 [TQ_SIMULATION](TQ_SIMULATION.md)。
 
 `/api/simulation/monitor/*` 仅读取 worker 原子投影，不创建 SDK 或交易操作。Web 模拟交易 Tab 和 HTDY 快期记录消费此入口；旧 `/api/simnow/monitor/*` 不再挂载，旧 SimNow 历史原件保留。
+
+## 苏冰独立开发持续模型
+
+`app.subing_model` 组合MDS完整物理前缀、既有completed ObservationStream和共享 `guiyi_quant.subing_account.AccountEngine`。同一增量账户消费统一候选决策，沿用原费用/风险/退出；历史批量入口不变。隔离开发PostgreSQL保存不可变输入、知识时刻、模型决策/成交与hash链，状态投影可逐事件重建；不依赖正式Runtime或Broker。只读状态API不驱动worker，Web持续模式与登记历史回放分开。14品种非JM只观察；事实中断保留保护义务并停止撮合，换月不自动移仓。详细合同与启动恢复入口见[苏冰开发模型](SUBING_DEVELOPMENT_MODEL.md)。

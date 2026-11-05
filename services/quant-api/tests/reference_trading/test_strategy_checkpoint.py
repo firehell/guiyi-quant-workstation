@@ -440,3 +440,77 @@ def test_adapter_checkpoint_rejects_subing_current_open_divergence() -> None:
             _with_checksum(payload), expected_stream=state.reference_state.stream,
             expected_strategy_schema="subing_replay_v1",
         )
+
+
+def _current_newow_checkpoint_with_old_oscillation_field(case, legacy_state):
+    """Represent the persisted old field without passing through new serialization."""
+    from guiyi_quant.newow.product_identity import reference_model_version, futures_adaptation_version
+    from guiyi_quant.reference_trading.strategy_checkpoint import _wire
+
+    identity = case.identity
+    stream = StreamIdentity(
+        f"newow_{identity.strategy.value}", identity.formula_versions, identity.profile_id,
+        reference_model_version(identity),
+        futures_adaptation_version(identity.frequency.value, identity.input_quality_policy),
+        identity.product, identity.frequency.value, "actual_dominant", "historical_replay", None,
+    )
+    cut = len(case.bars) // 2
+    prefix = seed_replay_state()
+    for bar in case.bars[:cut]:
+        prefix, _, _ = replay_step(identity, prefix, bar)
+    at = case.bars[cut - 1]
+    checkpoint = AdapterCheckpoint(
+        prefix, at.bar.bar_end, "prefix", at.bar.physical_contract, at.bar.segment_id,
+        at.calculation_segment_id, stream, ReferenceState.flat(stream),
+    )
+    payload = json.loads(adapter_checkpoint_to_json(checkpoint, strategy_schema="newow_product_replay_v1"))
+    payload["strategy_state"]["fields"]["oscillation_state"] = _wire(legacy_state)
+    return checkpoint, _with_checksum(payload), cut
+
+
+@pytest.mark.parametrize("strategy", ("trend", "main_rise"))
+def test_existing_unused_empty_oscillation_checkpoint_preserves_bytes_and_continues_current_kernel(product_cases, strategy):
+    from guiyi_quant.newow.oscillation_channel import OscillationState as LegacyState
+
+    case = product_cases.primitive_input(strategy, "1d")
+    checkpoint, old_serialized, cut = _current_newow_checkpoint_with_old_oscillation_field(case, LegacyState())
+    assert "guiyi_quant.newow.oscillation_channel:OscillationState" in old_serialized
+    restored = adapter_checkpoint_from_json(old_serialized, expected_stream=checkpoint.stream,
+        expected_strategy_schema="newow_product_replay_v1")
+    # Only an unused, exactly empty historical field is retained. It is never
+    # consumed by the trend/main-rise engine and must not rewrite retained hashes.
+    assert restored.strategy_state.oscillation_state == LegacyState()
+    retained = adapter_checkpoint_to_json(restored, strategy_schema="newow_product_replay_v1")
+    assert retained == old_serialized
+    assert sha256(retained.encode()).hexdigest() == sha256(old_serialized.encode()).hexdigest()
+    assert replace(restored.strategy_state,
+                   oscillation_state=checkpoint.strategy_state.oscillation_state) == checkpoint.strategy_state
+    expected = seed_replay_state()
+    expected_tail = []
+    for index, bar in enumerate(case.bars):
+        expected, frame, diagnostics = replay_step(case.identity, expected, bar)
+        if index >= cut:
+            expected_tail.append((frame, diagnostics))
+    current = restored.strategy_state
+    actual_tail = []
+    for bar in case.bars[cut:]:
+        current, frame, diagnostics = replay_step(case.identity, current, bar)
+        actual_tail.append((frame, diagnostics))
+    assert actual_tail == expected_tail
+    assert current.oscillation_state == LegacyState()
+    assert replace(current, oscillation_state=expected.oscillation_state) == expected
+
+
+@pytest.mark.parametrize("strategy,used", (("oscillation", False), ("trend", True), ("main_rise", True)))
+def test_legacy_oscillation_checkpoint_rejects_active_or_nonempty_state(product_cases, strategy, used):
+    from guiyi_quant.newow.oscillation_channel import OscillationState as LegacyState, step_oscillation
+
+    case = product_cases.primitive_input(strategy, "1d")
+    legacy = LegacyState()
+    if used:
+        legacy = step_oscillation(legacy, case.bars[0].bar).state
+        assert legacy != LegacyState()
+    checkpoint, old_serialized, _ = _current_newow_checkpoint_with_old_oscillation_field(case, legacy)
+    with pytest.raises(ValueError, match="legacy oscillation state is incompatible"):
+        adapter_checkpoint_from_json(old_serialized, expected_stream=checkpoint.stream,
+            expected_strategy_schema="newow_product_replay_v1")

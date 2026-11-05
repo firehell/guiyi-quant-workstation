@@ -11,7 +11,7 @@ from app.reference_trading.fingerprint_proof import fingerprint_count
 from app.reference_trading.models import ReferenceBatch, ReferenceRevision, ReferenceStream
 from app.reference_trading.page_material_storage import validate_page_material
 from app.reference_trading.query import QueryConflict, _encode, POLICY_VERSION
-from guiyi_quant.newow.page_performance import PAGE_PERFORMANCE_VERSION, PAGE_SOURCE_SHA256
+from guiyi_quant.newow.page_performance import page_model_identity
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,8 +72,8 @@ class PageMaterialSnapshot:
                         'since': manifest['query_since'], 'through': request['through'],
                         'as_of': request['as_of']},
             'cutoff': self.cutoff.isoformat(), 'result_trading_day': self.through.isoformat(),
-            'page_version': PAGE_PERFORMANCE_VERSION,
-            'page_source_sha256': PAGE_SOURCE_SHA256,
+            'page_version': page_model_identity(identity.formula_versions)[0],
+            'page_source_sha256': page_model_identity(identity.formula_versions)[1],
             'fusion_source_dependencies': manifest.get('source_dependencies'),
         }
         if set(binding) != set(expected):

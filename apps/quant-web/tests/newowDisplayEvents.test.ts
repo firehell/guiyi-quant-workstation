@@ -55,3 +55,11 @@ test('ZLGJ paints before neighbouring reduce-J, then breakdown, independent of t
  drawDisplayLabels(ctx,labels,false)
  assert.deepEqual(fills,[{label:'J',color:'#34c759'},{label:'J',color:'#00FF00'},{label:'↓破位3797.24',color:'#003300'}])
 })
+
+
+test('current completed snapshot preserves a one-microsecond strict-before cutoff',()=>{
+ const e=event(),at=e.bar_end.replace('Z','.000001Z')
+ assert.equal(normalizeDisplayEvents([e],bars,'1d',at).length,1)
+ assert.throws(()=>normalizeDisplayEvents([e],bars,'1d',e.bar_end))
+ assert.throws(()=>normalizeDisplayEvents([{...e,known_at:at}],bars,'1d',at))
+})

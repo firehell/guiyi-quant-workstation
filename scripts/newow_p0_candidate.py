@@ -194,14 +194,14 @@ def main() -> int:
         cutoff = datetime.fromisoformat(CUTOFF)
         from guiyi_quant.newow.product_contracts import ProductStrategy, ProductFrequency
         from guiyi_quant.newow.product_adapters import build_product_identity
-        from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
+        from guiyi_quant.newow.product_identity import reference_model_version, futures_adaptation_version
         from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
         from guiyi_quant.reference_trading import StreamIdentity
         if args.strategy == "dual_fusion":
             identity = build_fusion_stream_identity(args.product, args.frequency)
         else:
             p = build_product_identity(args.product, ProductStrategy(args.strategy), ProductFrequency(args.frequency))
-            identity = StreamIdentity(strategy_code=f"newow_{args.strategy}", formula_versions=p.formula_versions, profile_id=p.profile_id, reference_model_version=REFERENCE_MODEL_VERSION, futures_adaptation_version=futures_adaptation_version(args.frequency), product=args.product, frequency=args.frequency, series_kind="actual_dominant", recording_mode="historical_replay", observation_policy_version=None)
+            identity = StreamIdentity(strategy_code=f"newow_{args.strategy}", formula_versions=p.formula_versions, profile_id=p.profile_id, reference_model_version=reference_model_version(p), futures_adaptation_version=futures_adaptation_version(args.frequency), product=args.product, frequency=args.frequency, series_kind="actual_dominant", recording_mode="historical_replay", observation_policy_version=None)
         query = HistoricalReferenceQuery(readonly_factory)
         if args.command == "readback":
             streams = query.streams(strategy=identity.strategy_code, product=args.product, frequency=args.frequency)

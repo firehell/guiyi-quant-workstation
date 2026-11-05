@@ -28,25 +28,31 @@ def project_historical_path(
     fusion_peer=None,
     fusion_weekly=None,
     price_overrides=None,
+    calendar_context=None,
+    snapshot_trading_day=None,
 ):
     def stamp(value):
         return value.astimezone(ZoneInfo("Asia/Shanghai")).isoformat()
 
-    empty = lambda reason: dict(
-        version="newow_historical_path_v3402_v1",
-        status="unavailable",
-        reason=reason,
-        buys=[],
-        sells=[],
-        background=[],
-        eta=None,
-        holding=False,
-        current=None,
-        target=None,
-        cost=None,
-        page_parity=True,
-        executable=False,
-    )
+    requested_strategy = strategy or (replay.identity.strategy.value if replay else None)
+    unified_empty = requested_strategy in ("oscillation", "fusion", "osc-test5")
+    def empty(reason):
+        return dict(
+            version="guiyi_futures_historical_path_v1",
+            reference_policy="unified_trueup" if unified_empty else "ordinary",
+            status="unavailable",
+            reason=reason,
+            buys=[],
+            sells=[],
+            background=[],
+            eta=None,
+            holding=False,
+            current=None,
+            target=None,
+            cost=None,
+            page_parity=False,
+            executable=False,
+        )
     frames = (
         [
             f
@@ -90,6 +96,11 @@ def project_historical_path(
         for f in frames
     )
     strategy = strategy or replay.identity.strategy.value
+    display_strategy = strategy
+    open_reference = None
+    event_driven = strategy in ("oscillation", "fusion", "osc-test5")
+    if strategy == "osc-test5":
+        strategy = "oscillation"
     if strategy.startswith("osc-test"):
         from guiyi_quant.newow.oscillation_experiments import (
             ExperimentKind,
@@ -111,10 +122,10 @@ def project_historical_path(
         ]
     else:
         actions = []
-        if strategy == "fusion":
-            if fusion_peer is None:
+        if event_driven:
+            if strategy == "fusion" and fusion_peer is None:
                 return empty("FUSION_CONTEXT_UNAVAILABLE")
-            for src in (fusion_peer, replay):
+            for src in ((fusion_peer, replay) if strategy == "fusion" else (replay,)):
                 for f in src.frames:
                     if (
                         f.bar.bar.physical_contract,
@@ -147,9 +158,18 @@ def project_historical_path(
             [PageSegment("|".join(owner), bars, True, tuple(actions))],
             strategy,
             period=frequency,
-            selected_mode="ordinary",
+            selected_mode="ordinary", event_driven=event_driven,
         )
-        trades = (result.get("ordinary") or {}).get("trades", [])
+        ordinary = result.get("ordinary") or {}
+        trades = ordinary.get("trades", [])
+        opened = ordinary.get("open_references", [])
+        open_reference = opened[-1] if opened else None
+
+    trading_days = {f.bar.bar.bar_end: f.bar.bar.trading_day.isoformat() for f in frames}
+    for trade in [*trades, *([open_reference] if open_reference else [])]:
+        for field, output in (("buyDate", "buyTradingDay"), ("sellDate", "sellTradingDay")):
+            value = trade.get(field)
+            trade[output] = trading_days.get(datetime.fromisoformat(str(value))) if value else None
 
     def owned(other):
         seq = (
@@ -176,11 +196,12 @@ def project_historical_path(
 
     day = prices["status_card"]
     path = build_historical_path(
-        trades=trades,
+        trades=trades, open_reference=open_reference, unified_trueup=event_driven,
         kline_dates=[stamp(f.bar.bar.bar_end) for f in frames],
         daily_dates=[stamp(f.bar.bar.bar_end) for f in daily_frames],
         period=frequency,
         today=stamp(cutoff)[:10],
+        trading_day=snapshot_trading_day.isoformat() if snapshot_trading_day else None,
         current=raw(prices["current_price"]),
         target=(price_overrides or {}).get("target", raw(day["target"])),
         cost=(price_overrides or {}).get("cost", raw(day["absorb"])),
@@ -199,13 +220,22 @@ def project_historical_path(
         or not any(f.actions for f in weekly_frames)
     ):
         path["background"] = []
+    from .path_calendar import apply_path_date
+    if snapshot_trading_day is not None:
+        apply_path_date(path, calendar_context, snapshot_trading_day)
+    elif path.get("eta"):
+        path["eta"] = dict(status="unavailable", reason="SNAPSHOT_TRADING_DAY_UNAVAILABLE")
     path["source"] = {
         "physical_contract": owner[0],
         "segment_id": owner[1],
         "calculation_segment_id": owner[2],
         "bar_end": stamp(anchor.bar.bar_end),
         "as_of": stamp(cutoff),
-        "strategy": strategy,
+        "strategy": display_strategy,
+        "frequency": frequency,
+        "trading_day": anchor.bar.trading_day.isoformat(),
+        "snapshot_trading_day": snapshot_trading_day.isoformat() if snapshot_trading_day else None,
+        "calendar_identity": (calendar_context or {}).get("identity"),
         "price_source": "canonical_channel_not_private_batch",
         "background_status": "ready" if path["background"] else "unavailable",
     }

@@ -1,6 +1,6 @@
 import { formatDecimalText } from './marketDisplay.ts'
 import type { FrozenRecord, FuturesPart, FuturesCurve, FuturesCurveKind } from '../types/newowFutures.ts'
-const strategies:Record<string,string>={trend:'趋势策略',oscillation:'震荡策略',dual_fusion:'双策略',main_rise:'主升浪','osc-test':'测试','osc-test2':'测试2','osc-test3':'测试3','osc-test4':'测试4'}
+const strategies:Record<string,string>={trend:'趋势策略',oscillation:'震荡策略',dual_fusion:'双策略',main_rise:'主升浪','osc-test':'测试','osc-test2':'测试2','osc-test3':'测试3','osc-test4':'测试4','osc-test5':'测试5'}
 const actions:Record<string,string>={OPEN_LONG:'开多',OPEN_SHORT:'开空',BUILD:'建仓',OPEN:'开仓',ENTER:'安排开仓',CLOSE:'清仓',ADD:'加仓',REDUCE:'减仓',UPGRADE:'升级持有周期',WAIT:'等待',CANCEL:'取消待执行动作',REJECT:'拒绝执行',UNFILLED:'未成交',INTERRUPT:'中断'}
 const reasons:Record<string,string>={
   READY:'数据已就绪',COMPLETED:'历史研究已完成',NO_ENTRY:'未出现入场条件',HOLD:'继续持有',ENTRY_TREND:'趋势突破入场',ENTRY_OSCILLATION:'震荡边界入场',ENTRY_MAIN_RISE:'主升浪突破入场',

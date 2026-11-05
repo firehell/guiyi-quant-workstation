@@ -1,9 +1,17 @@
 <script setup lang="ts">
+import { SubingVolumeTierPrimitive } from './subingVolumeTierPrimitive'
+import { subingVolumeTierPoints } from '@/utils/subingVolumeTierDisplay'
+
+import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
+import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
+
 import { formatDisplayNumber } from '@/utils/marketDisplay'
+import { DynamicRangePrimitive } from '@/components/kline/dynamicRangePrimitive'
+import { matchesRangeBar, pointKey, type DynamicRangePoint } from '@/utils/dynamicRange'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { DETAIL_CHART_SESSION, detailChartViewport, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
+import { DETAIL_CHART_SESSION, detailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
   CandlestickSeries,
   ColorType,
@@ -55,8 +63,12 @@ import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitiv
 import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
 
 const props = withDefaults(defineProps<{
+  dynamicRangePoints?: DynamicRangePoint[]
+  dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
+  volumeScoring?: boolean
+  subingVolumeTiers?: boolean
   loading?: boolean
   error?: string | null
   period?: string
@@ -73,6 +85,10 @@ const props = withDefaults(defineProps<{
   referenceSelection?: KlineReferenceSelection[]
   qualityBreaks?: KlineQualityBreak[]
 }>(), {
+  volumeScoring: true,
+  subingVolumeTiers: false,
+  dynamicRangePoints: () => [],
+  dynamicRangeEnabled: false,
   loading: false,
   error: null,
   period: '15m',
@@ -97,6 +113,9 @@ const emit = defineEmits<{
   'marker-select': [marker: KlineMarker]
 }>()
 
+const volumeTierPrimitive = new SubingVolumeTierPrimitive()
+const volumeTierMarkCount = ref(0)
+let volumeThemeObserver: MutationObserver | null = null
 const container = ref<HTMLElement>()
 const detailSession = inject<DetailChartSession | null>(DETAIL_CHART_SESSION, null)
 const positionedCallouts = ref<PositionedCallout[]>([])
@@ -160,6 +179,7 @@ const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 const publicPatternPrimitive = new NewowPublicPatternPrimitive(point => chartTime({ time: point.barEnd, trading_day: point.tradingDay } as BarData))
 watch(() => props.patternGeometry, value => publicPatternPrimitive.setData(value ?? null))
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
+const dynamicRangePrimitive = new DynamicRangePrimitive()
 let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 const rangeCalculationMs = ref(0)
@@ -226,7 +246,6 @@ onMounted(async () => {
   })
   chart.panes()[0].setStretchFactor(6)
   chart.addPane().setStretchFactor(2)
-  chart.addPane().setStretchFactor(2)
   candles = chart.addSeries(CandlestickSeries, {
     upColor: theme.candleUp,
     downColor: theme.candleDown,
@@ -239,6 +258,7 @@ onMounted(async () => {
   emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
   emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
   candles.attachPrimitive(rangeDetectorPrimitive)
+  candles.attachPrimitive(dynamicRangePrimitive)
   candles.attachPrimitive(publicPatternPrimitive)
   publicPatternPrimitive.setData(props.patternGeometry ?? null)
   htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
@@ -246,15 +266,17 @@ onMounted(async () => {
   htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
   htdyMarkers = createSeriesMarkers(candles)
   volume = chart.addSeries(HistogramSeries, {
-    priceFormat: { type: 'volume' },
-  }, 1)
-  macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 2)
-  macdDif = chart.addSeries(LineSeries, { color: '#00bfcf', lineWidth: 1, lastValueVisible: false }, 2)
-  macdDea = chart.addSeries(LineSeries, { color: '#d4b000', lineWidth: 1, lastValueVisible: false }, 2)
+    priceFormat: { type: 'volume' }, priceScaleId: 'volume', priceLineVisible: false, lastValueVisible: false,
+  }, 0)
+  volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
+  volume.attachPrimitive(volumeTierPrimitive)
+  chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: .05, bottom: .14 } })
+  macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 1)
+  macdDif = chart.addSeries(LineSeries, { color: '#00bfcf', lineWidth: 1, lastValueVisible: false }, 1)
+  macdDea = chart.addSeries(LineSeries, { color: '#d4b000', lineWidth: 1, lastValueVisible: false }, 1)
   macdCrossMarkers = createSeriesMarkers(macdDif)
   macdDif.createPriceLine({ price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
-  chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.05 } })
-  chart.priceScale('right', 2).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
+  chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart.subscribeCrosshairMove(onCrosshairMove)
   chart.subscribeClick(onClick)
@@ -262,9 +284,12 @@ onMounted(async () => {
   observer.observe(container.value)
   container.value.addEventListener('pointerup', syncMacdLabelTop)
   replaceBars(props.bars, detailChartViewport(chart) !== null)
+  if (typeof MutationObserver !== 'undefined') volumeThemeObserver = new MutationObserver(() => { if (volume) volume.setData(volumeValues(renderedBars)) })
+  for (const root of [document.documentElement, document.body]) if (root) volumeThemeObserver?.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
 })
 
 onUnmounted(() => {
+  volumeThemeObserver?.disconnect()
   if (calloutFrame !== null) cancelAnimationFrame(calloutFrame)
   if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
   chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
@@ -283,8 +308,10 @@ watch(() => props.period, () => {
 watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
 }, { deep: true })
+watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); hoverContext.value=null })
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
+watch(() => [props.subingVolumeTiers, props.volumeScoring, props.loading, props.error, props.period], () => { renderAllSeries() })
 
 watch(
   () => [props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime],
@@ -321,16 +348,22 @@ function barValues(bars: BarData[]) {
     : values
 }
 
+function volumeTime(bar: DisplayVolumeBar) {
+  return chartTime({ ...bar, trading_day: bar.trading_day ?? bar.tradingDay } as BarData)
+}
 function volumeValues(bars: BarData[]) {
-  const theme = resolveChartTheme()
-  return bars.map((bar) => ({
-    time: chartTime(bar),
-    value: bar.volume,
-    color: bar.close >= bar.open ? theme.volumeUp : theme.volumeDown,
-  }))
+  const input = chart ? detailChartVolumeBars(chart, bars) : bars
+  const theme = readNewowChartDisplayTheme()
+  const colors = volumeColors(input, theme, props.volumeScoring && !props.subingVolumeTiers)
+  const marks = props.subingVolumeTiers && props.volumeScoring && !props.loading && !props.error
+    ? subingVolumeTierPoints(input, props.qualityBreaks).map(point => ({ time: volumeTime(point.bar), volume: point.bar.volume!, tier: point.tier })) : []
+  volumeTierMarkCount.value = marks.length
+  volumeTierPrimitive.setData(marks, theme)
+  return input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) }))
 }
 
 function replaceBars(bars: BarData[], preserveViewport = false): void {
+  const previousSessionViewport = chart ? detailChartViewport(chart) : null
   const visibleRange = preserveViewport && chart ? detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange() : null
   renderedBars = normalizeBarSeries(bars)
   if (!chart) return
@@ -338,7 +371,8 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   lastVisibleFrom.value = null
   renderAllSeries()
   chart.applyOptions({ timeScale: { timeVisible: !isDaily() } })
-  const targetRange = detailSession ? detailChartViewport(chart) ?? initialNewowChartLogicalRange(renderedBars.length, container.value?.clientWidth ?? 1000)
+  const mappedSessionViewport = previousSessionViewport !== null ? detailChartViewport(chart) : null
+  const targetRange = detailSession ? mappedSessionViewport ?? initialNewowChartLogicalRange(renderedBars.length, container.value?.clientWidth ?? 1000)
     : visibleRange ?? initialChartLogicalRange(renderedBars.length)
   if (targetRange) chart.timeScale().setVisibleLogicalRange(targetRange)
   else chart.timeScale().fitContent()
@@ -517,6 +551,11 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
       markersForHoverContext(),
     )
     : null
+  if (nextContext && props.dynamicRangeEnabled) {
+    const point=props.dynamicRangePoints.find(p => matchesRangeBar(p, nextContext.bar))
+    nextContext.dynamicRange=point ?? null
+    nextContext.dynamicRangeEnabled=true
+  }
   hoverContext.value = nextContext
   emit('crosshair-change', nextContext)
 }
@@ -536,8 +575,16 @@ function renderAllSeries(): void {
   renderDerivedSeries()
 }
 
+function renderDynamicRange(): void {
+  const bars = new Map(renderedBars.map(b => [pointKey(b.physicalContract ?? '',b.time),b]))
+  dynamicRangePrimitive.setData(props.dynamicRangeEnabled ? props.dynamicRangePoints.filter(p => {
+    const b=bars.get(pointKey(p.contract,p.time)); return b && matchesRangeBar(p,b)
+  }).map(p => ({...p,time:bars.get(pointKey(p.contract,p.time))!.time})) : [], ribbonTime)
+}
+
 function renderDerivedSeries(): void {
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
+  renderDynamicRange()
   const calculationStarted = performance.now()
   const rangeEnabled = props.visibleMainIndicators.includes('range_detector') && Boolean(props.rangeDetectorSourceIdentity) && Boolean(props.rangeDetectorAnchorTime)
   const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])
@@ -705,8 +752,8 @@ function isDaily() {
 function syncMacdLabelTop() {
   scheduleReferenceCallouts()
   const panes = chart?.panes()
-  if (!panes || panes.length < 3) return
-  macdLabelTop.value = panes[0].getHeight() + panes[1].getHeight()
+  if (!panes || panes.length < 2) return
+  macdLabelTop.value = panes[0].getHeight()
 }
 
 function resize() {
@@ -715,8 +762,7 @@ function resize() {
     const layout = detailChartPaneLayout(container.value.clientHeight, 32)
     const panes = chart.panes()
     panes[0]?.setStretchFactor(layout.mainHeight)
-    panes[1]?.setStretchFactor(layout.volumeHeight)
-    panes[2]?.setStretchFactor(layout.auxiliaryHeight)
+    panes[1]?.setStretchFactor(layout.auxiliaryHeight)
   }
   chart.resize(container.value.clientWidth, container.value.clientHeight)
   if (viewportStabilityTarget) {
@@ -739,6 +785,8 @@ defineExpose({
   <div
     class="kline-shell"
     data-testid="kline-shell"
+    :data-subing-volume-tier-mark-count="volumeTierMarkCount"
+    :data-subing-volume-tiers="subingVolumeTiers"
     :data-alert-marker-count="alertMarkers.length"
     :data-macd-point-count="macdPointCount"
     :data-reference-target-segments="referenceTargetSegments"

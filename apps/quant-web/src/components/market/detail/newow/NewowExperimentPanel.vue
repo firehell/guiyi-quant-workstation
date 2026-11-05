@@ -1,4 +1,10 @@
 <script setup lang="ts">
+import { experimentVolumeBars, type ExperimentVolumeSource } from '@/utils/newowExperimentVolume'
+import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS } from '@/utils/volumeDisplay'
+import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
+
+import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
+import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { MAX_ACCUMULATED_REFERENCE_TRADES } from '@/utils/newowReferenceParts'
@@ -12,15 +18,15 @@ import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonch
 import {newowReferencePoints,newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,inject,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
 import {createChart,CandlestickSeries,HistogramSeries,LineSeries,createSeriesMarkers,type IChartApi,type ISeriesMarkersPluginApi,type Time,type IPriceLine,type IRange} from 'lightweight-charts'
-import {DETAIL_CHART_SESSION,detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
+import {DETAIL_CHART_SESSION,detailChartVolumeBars, detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
 import {getNewowExperiment,getNewowExperimentHistory} from '@/api/newowExperiments'
 import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
 import {formatPerformancePercent} from '@/utils/marketDisplay'
 import {pagePerformanceAnnualized} from '@/utils/newowPagePerformance'
 import {layoutNiuwaReferenceCallouts,type PositionedCallout} from '@/utils/referenceCalloutLayout'
 import {formatChartTimeInShanghai} from '@/utils/barTime'
-const emit=defineEmits<{'select-display':[event:NewowDisplayEvent]; 'analyze-channel': []; context: [value: {asOf:string;physicalContract:string|null;segmentId:string|null;latestState:import('@/utils/newowExperiments').ExperimentSegment['latest_state']|null}|null] }>()
-const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null;volumeBars?:readonly {barEnd:string;physicalContract:string;volume:number}[]}>()
+const emit=defineEmits<{'select-breakout':[event:NewowBreakoutEvent]; 'select-display':[event:NewowDisplayEvent]; 'analyze-channel': []; context: [value: {asOf:string;physicalContract:string|null;segmentId:string|null;latestState:import('@/utils/newowExperiments').ExperimentSegment['latest_state']|null}|null] }>()
+const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null;volumeBars?:readonly ExperimentVolumeSource[]}>()
 const detailSession=inject<DetailChartSession|null>(DETAIL_CHART_SESSION,null)
 let retainedStop:RetainedBuildStop|null=null
 const data=shallowRef<ExperimentDetail|null>(null),loading=ref(false),error=ref<string|null>(null),container=ref<HTMLElement|null>(null)
@@ -30,6 +36,8 @@ const range=ref<ExperimentRange>('1y')
 const selectedSegment=ref<string|null>(null)
 const visibleSegments=computed(()=>experimentVisibleSegments(data.value,selectedSegment.value))
 const chartBars=computed(()=>{const segment=visibleSegments.value[0];return data.value?.segments.length&&!segment?[]:(data.value?.bars??[]).filter(b=>!segment||b.segment_id===segment.segment_id)})
+const volumeBars=computed(()=>experimentVolumeBars(chartBars.value,props.volumeBars??[]))
+let volumeThemeObserver:MutationObserver|null=null
 const chartMarkers=computed(()=>{const segment=visibleSegments.value[0];return data.value?.segments.length&&!segment?[]:(data.value?.markers??[]).filter(m=>!segment||m.segment_id===segment.segment_id)})
 watch([data,selectedSegment],()=>{const segment=visibleSegments.value[0];emit('context',data.value?{asOf:data.value.as_of,physicalContract:segment?.physical_contract??null,segmentId:segment?.segment_id??null,latestState:segment?.latest_state??null}:null)})
 watch(data,()=>{selectedSegment.value=null})
@@ -112,12 +120,15 @@ function renderVisual(){
  const pct=props.kind==='osc-test4'?0.12:0.07
  retainedStop=retainBuildStop(retainedStop, `${props.product}:${props.frequency}:${props.kind}`, chartMarkers.value.map(m=>({time:m.bar_end,owner:`${m.physical_contract}:${m.segment_id}`,price:m.reference_price,action:m.action})),visible.map(b=>({time:b.bar_end,owner:`${b.physical_contract}:${b.segment_id}`})))
  const price=retainedStopPrice(retainedStop,pct)
- if(price!==null)stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
+ if(price!==null&&props.kind!=='osc-test5')stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
 }
 const callouts=shallowRef<PositionedCallout[]>([])
+const breakoutPoints=ref<BreakoutPoint[]>([]),showBreakoutShapes=ref(true),showBreakoutWicks=ref(true)
 const displayPoints=ref<DisplayPoint[]>([]),displayWidth=ref(0),displayHeight=ref(0)
+watch(()=>[props.product,props.frequency,props.kind],()=>{breakoutPoints.value=[]},{flush:'sync'})
 function projectCallouts(){
- displayPoints.value=[]
+ breakoutPoints.value=[]
+  displayPoints.value=[]
  if(!chart||!candles||!container.value)return
  const scale=chart.timeScale(),width=scale.width?.()??container.value.clientWidth,height=chart.panes()[0]?.getHeight?.()??414
  displayWidth.value=width;displayHeight.value=height
@@ -128,6 +139,13 @@ function projectCallouts(){
   if(!bar)return []
   const x=scale.timeToCoordinate(time(bar.bar_end)),y=candles!.priceToCoordinate(Number(event.kind==='OSC_BREAKDOWN'?bar.low:event.kind==='ZLGJ_J'?String(Number(bar.high)*1.01):bar.high))
   return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y}]:[]
+ })
+ const breakoutRange=scale.getVisibleLogicalRange(),breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:bars.length)*.6)
+ breakoutPoints.value=(props.kind==='osc-test5'?data.value?.breakout_events??[]:[]).flatMap(event=>{
+  const bar=bars.find(b=>b.bar_end===event.bar_end&&b.physical_contract===event.physical_contract&&b.calculation_segment_id===event.calculation_segment_id)
+  if(!bar)return []
+  const x=scale.timeToCoordinate(time(bar.bar_end)),y=candles!.priceToCoordinate(Number(event.side==='up'?bar.high:bar.low))
+  return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y,candleWidth:breakoutCandleWidth,band:breakoutBand(event,bars,bars.indexOf(bar),i=>scale.timeToCoordinate(time(bars[i]!.bar_end)),p=>candles!.priceToCoordinate(p),breakoutCandleWidth)}]:[]
  })
  callouts.value=layoutNiuwaReferenceCallouts(chartMarkers.value.flatMap(m=>{
   const x=scale.timeToCoordinate?.(time(m.bar_end)),y=candles?.priceToCoordinate?.(Number(m.reference_price))
@@ -142,15 +160,16 @@ function render(){
  const bars=chartBars.value
  const viewport=resetViewport?null:detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange();resetViewport=false
  if(bars.length || !detailSession) candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})))
- if(volume&&bars.length){const source=new Map((props.volumeBars??[]).map(bar=>[`${Date.parse(bar.barEnd)}:${bar.physicalContract}`,bar.volume]));volume.setData(bars.map(bar=>{const value=source.get(`${Date.parse(bar.bar_end)}:${bar.physical_contract}`);return {time:time(bar.bar_end),...(value===undefined?{}:{value,color:Number(bar.close)>=Number(bar.open)?'rgba(255,59,48,0.6)':'rgba(52,199,89,0.6)'})}}))}
+ if(volume){const input=detailChartVolumeBars(chart,volumeBars.value),colors=volumeColors(input,readNewowChartDisplayTheme());volume.setData(input.map((bar,index)=>({time:detailChartTime({time:bar.time,trading_day:bar.tradingDay??bar.trading_day},props.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})))}
+
  upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}))
  lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}))
  markers.setMarkers([])
  if(viewport)chart.timeScale().setVisibleLogicalRange(viewport);else chart.timeScale().fitContent();publishViewport();renderVisual();projectCallouts()
 }
-watch([data,selectedSegment],render)
-onMounted(()=>{if(!container.value)return;chart=(detailSession?.acquire??createChart)(container.value,{height:500,width:container.value.clientWidth,layout:{background:{color:'#fff'},textColor:'#333',fontSize:12},localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff3b30',downColor:'#34c759',wickUpColor:'#ff3b30',wickDownColor:'#34c759',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false},1);chart.panes()[0]!.setStretchFactor(5);chart.panes()[1]!.setStretchFactor(1);upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{publishViewport();renderVisual();projectCallouts()});chart.subscribeCrosshairMove?.(param=>{const next=chartBars.value.length?(param.time??null):null;if(JSON.stringify(sharedCursor.value)!==JSON.stringify(next))sharedCursor.value=next});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});publishViewport();projectCallouts()}});observer.observe(container.value);render()})
-onBeforeUnmount(()=>{generation.clear();emit('context',null);observer?.disconnect();chart?.remove()})
+watch([data,selectedSegment,()=>props.volumeBars],render)
+onMounted(()=>{if(!container.value)return;if(typeof MutationObserver!=='undefined'&&typeof document!=='undefined'){volumeThemeObserver=new MutationObserver(()=>render());for(const root of [document.documentElement,document.body])if(root)volumeThemeObserver.observe(root,{attributes:true,attributeFilter:['data-theme']});}chart=(detailSession?.acquire??createChart)(container.value,{height:500,width:container.value.clientWidth,layout:{background:{color:'#fff'},textColor:'#333',fontSize:12},localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff3b30',downColor:'#34c759',wickUpColor:'#ff3b30',wickDownColor:'#34c759',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false,priceScaleId:'volume'},0);volume.priceScale().applyOptions({...VOLUME_SCALE_OPTIONS});chart.priceScale('right').applyOptions({scaleMargins:{top:.05,bottom:.14}});upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{publishViewport();renderVisual();projectCallouts()});chart.subscribeCrosshairMove?.(param=>{const next=chartBars.value.length?(param.time??null):null;if(JSON.stringify(sharedCursor.value)!==JSON.stringify(next))sharedCursor.value=next});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});publishViewport();projectCallouts()}});observer.observe(container.value);render()})
+onBeforeUnmount(()=>{volumeThemeObserver?.disconnect();generation.clear();emit('context',null);observer?.disconnect();chart?.remove()})
 const pct=(v:unknown,signed=true)=>typeof v==='string'?formatPerformancePercent(v,signed):'—'
 const date=(v:unknown)=>typeof v==='string'?formatChartTimeInShanghai(time(v)):'—'
 const annualized=(model:Record<string,unknown>|null)=>pagePerformanceAnnualized(model&&Array.isArray(model.dates)&&Array.isArray(model.equity)?{dates:model.dates as string[],equity:model.equity as string[]}:null)
@@ -165,8 +184,8 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <header class="experiment-heading"><strong>{{option.label}}</strong><slot name="frequency" /></header>
 <p v-if="loading" role="status">正在读取实验策略…</p><p v-else-if="error" role="alert">{{error}} <button @click="load">重试</button></p><p v-else-if="!asOf" role="status">等待当前周期行情快照…</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='DATA_INSUFFICIENT'" role="status">当前合约段数据不足，暂时没有实验结果。</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='WARMUP'" role="status">当前合约段正在预热。</p>
 <slot name="overview" />
-<div class="experiment-chart-controls"><slot name="chart-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /></div>
-<div class="experiment-chart-wrap"><NewowDisplayOverlay :points="displayPoints" :width="displayWidth" :height="displayHeight" @select-display="emit('select-display',$event)" /><div ref="container" class="experiment-chart" />
+<div class="experiment-chart-controls"><template v-if="kind==='osc-test5'"><button type="button" :aria-pressed="showBreakoutShapes" @click="showBreakoutShapes=!showBreakoutShapes">突破形态</button><button type="button" :aria-pressed="showBreakoutWicks" @click="showBreakoutWicks=!showBreakoutWicks">影线提示</button></template><slot name="chart-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /></div>
+<div class="experiment-chart-wrap"><NewowBreakoutOverlay :points="breakoutPoints" :width="displayWidth" :height="displayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" @select-breakout="emit('select-breakout',$event)" /><NewowDisplayOverlay :points="displayPoints" :width="displayWidth" :height="displayHeight" @select-display="emit('select-display',$event)" /><div ref="container" class="experiment-chart" />
 <div class="experiment-callouts" aria-label="实验策略参考动作"><svg aria-hidden="true"><polyline v-for="item in callouts" :key="item.callout.id" :points="`${item.x},${item.y} ${item.x},${(item.y+item.lineY)/2} ${item.lineX},${(item.y+item.lineY)/2} ${item.lineX},${item.lineY}`" fill="none" /></svg>
 <div v-for="item in callouts" :key="item.callout.id" class="experiment-callout" :class="{'is-compact':item.compact}" :style="{left:`${item.left}px`,top:`${item.top}px`,width:`${item.width}px`,height:`${item.height}px`}" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :title="`${item.callout.title} ${newowReferencePrice(item.callout.price)} · ${item.callout.time} · ${item.callout.physicalContract}`"><template v-if="!item.compact"><strong>{{item.callout.title}}</strong><span>{{newowReferencePrice(item.callout.price)}}</span></template><template v-else>{{item.callout.above?'▽':'△'}}</template></div></div></div>
 <slot name="chart-auxiliary" :viewport="sharedViewport" :on-viewport="applySharedViewport" :right-scale-width="sharedRightScaleWidth" :cursor="sharedCursor" :on-cursor="applySharedCursor" />
@@ -183,7 +202,7 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <p v-if="historyError" role="alert">{{historyError}}</p><p class="experiment-record-count">共 {{totalRecords(model)}} 笔页面参考记录，{{`已加载 ${Math.min(recordCount, records(model).length)} 笔`}}</p><button v-if="recordCount<totalRecords(model)" class="experiment-show-all" type="button" :disabled="historyLoading" @click="moreRecords">加载更多参考记录</button><button v-else-if="recordCount>3 && totalRecords(model)>3" class="experiment-show-all" type="button" @click="recordCount=3">收起</button>
 </template></section></template>
 </PerformancePanel><slot name="path" />
-<details v-if="data" class="experiment-basis"><summary>详情与口径</summary><p>{{option.description}}。跳空止损参考价取止损价与开盘价较低者；测试2目标参考价取锁定目标与开盘价较高者。普通统计保留末根收盘强制平仓；理论统计为基础震荡回看理想模型，与四测试独立，按合约计算。</p><p>页面参考 · 零手续费与滑点。黄线 HHV10、蓝线 LLV10；不代表可执行收益。</p><p v-if="data.window">统计窗口 {{data.window.since}} 至 {{data.window.through}} · 主图最多显示最近2000根</p><p>截至 {{date(data.as_of)}} · {{data.formula_version}}</p><p v-for="segment in visibleSegments" :key="segment.segment_id">{{segment.latest_state?.holding?'持有':'空仓'}} · 建仓参考价 {{newowReferencePrice(segment.latest_state?.entry_reference_price)}} · {{kind==='osc-test4'?'12%':'7%'}}止损 {{newowReferencePrice(segment.latest_state?.stop_reference_price)}}<template v-if="kind==='osc-test2'"> · 锁定目标 {{newowReferencePrice(segment.latest_state?.locked_target)}}</template><template v-if="kind==='osc-test4'"> · 确认参考价 {{newowReferencePrice(segment.latest_state?.confirm_reference)}}</template></p></details>
+<details v-if="data" class="experiment-basis"><summary>详情与口径</summary><p>{{option.description}}。</p><p v-if="kind!=='osc-test5'">跳空止损参考价取止损价与开盘价较低者；测试2目标参考价取锁定目标与开盘价较高者。普通统计保留末根收盘强制平仓；理论统计为基础震荡回看理想模型，与实验策略独立，按合约计算。</p><p v-if="kind==='osc-test5'">统一真突破内核参考 · 持仓不按末根强制平仓；理论值采用持仓区间事后最高价。突破待确认只展示，不产生主动作。</p><p>页面参考 · 零手续费与滑点。黄线 HHV10、蓝线 LLV10；不代表可执行收益。</p><p v-if="data.window">统计窗口 {{data.window.since}} 至 {{data.window.through}} · 主图最多显示最近2000根</p><p>截至 {{date(data.as_of)}} · {{data.formula_version}}</p><p v-for="segment in visibleSegments" :key="segment.segment_id">{{segment.latest_state?.holding?'持有':'空仓'}} · 建仓参考价 {{newowReferencePrice(segment.latest_state?.entry_reference_price)}}<template v-if="kind!=='osc-test5'"> · {{kind==='osc-test4'?'12%':'7%'}}止损 {{newowReferencePrice(segment.latest_state?.stop_reference_price)}}</template><template v-if="kind==='osc-test2'"> · 锁定目标 {{newowReferencePrice(segment.latest_state?.locked_target)}}</template><template v-if="kind==='osc-test4'"> · 确认参考价 {{newowReferencePrice(segment.latest_state?.confirm_reference)}}</template></p></details>
 </section>
 </template>
 <style scoped src="./newowReferencePanel.css"></style>

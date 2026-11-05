@@ -16,11 +16,11 @@ from .product_contracts import (
     TradeEligibility,
 )
 from .reference_trades import ReferenceTradeProjector
-from .product_identity import REFERENCE_MODEL_VERSION
+from .product_identity import reference_model_version
 from .reference_statistics import PerformanceWindow, summarize_reference
 from .holding_reference import holding_reference_curve, fusion_theoretical_reference
 
-MODEL_VERSION = "newow_dual_fusion_reference_zero_cost_v2"
+MODEL_VERSION = "newow_dual_fusion_trueup_reference_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +45,7 @@ def build_fusion_stream_identity(
     return StreamIdentity(
         strategy_code="newow_dual_fusion",
         formula_versions=trend.formula_versions + oscillation.formula_versions,
-        profile_id=f"newow_dual_fusion_{selected.value}_v1",
+        profile_id=f"newow_dual_fusion_{selected.value}_v2",
         reference_model_version=MODEL_VERSION,
         futures_adaptation_version=futures_adaptation_version(selected.value, input_quality_policy),
         product=product, frequency=selected.value, series_kind="actual_dominant",
@@ -254,7 +254,7 @@ def fusion_reference_comparison(
         groups.append(
             {
                 "model": replay.identity.strategy.value,
-                "reference_model_version": REFERENCE_MODEL_VERSION,
+                "reference_model_version": reference_model_version(replay.identity),
                 "closed_count": summary.closed_count,
                 "sum_return_percentage_points": format(
                     summary.sum_return_percentage_points, "f"

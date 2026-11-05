@@ -27,11 +27,12 @@ export function historicalPathGeometry(path: import('../types/newowDecisionV2.ts
     const chain=[p.date,...dates.filter(d=>d>p.date&&d<next.date),next.date]
     return chain.slice(0,-1).map((d,j)=>({x1:x(d),y1:interp(points,d),x2:x(chain[j+1]!),y2:interp(points,chain[j+1]!),color,holding:kind.get(d)==='buy'}))
   })
-  const forecastDate=path.eta?.date ?? last
+  const hasForecast=path.eta?.status==='ready' && path.eta.date_status==='ready' && !!path.eta.date
+  const forecastDate=hasForecast?path.eta!.date!:last
   const to=path.eta?.to_price ?? (path.holding?path.target:path.cost)
-  const extended=(points:typeof buy)=>to && points.length && forecastDate>points.at(-1)!.date ? [...points,{date:forecastDate,price:to,x:x(forecastDate),y:y(to)}]:points
+  const extended=(points:typeof buy)=>hasForecast && to && points.length && forecastDate>points.at(-1)!.date ? [...points,{date:forecastDate,price:to,x:x(forecastDate),y:y(to)}]:points
   const extBuy=extended(buy),extSell=extended(sell)
-  const envelopeDates=[...new Set([...dates,...(to?[forecastDate]:[])])].sort()
+  const envelopeDates=[...new Set([...dates,...(hasForecast&&to?[forecastDate]:[])])].sort()
   const labels:Array<{x:number;y:number;text:string;color:string}> = []
   for(const p of [...buy.slice(-2),...sell.slice(-2)]) {
     const lx=Math.max(45,Math.min(width-100,p.x))
@@ -44,7 +45,8 @@ export function historicalPathGeometry(path: import('../types/newowDecisionV2.ts
   }
   const envelope=[...envelopeDates.map(d=>`${x(d)},${Math.min(interp(extBuy,d),interp(extSell,d))}`),...[...envelopeDates].reverse().map(d=>`${x(d)},${Math.max(interp(extBuy,d),interp(extSell,d))}`)].join(' ')
   return {width,yTicks:Array.from({length:4},(_,i)=>{ const price=low+(high-low)*i/3; return {y:y(String(price)),label:newowReferencePrice(String(price))} }),buy,sell,envelope,labels,segments:[...segments(buy,'#1f5fa9'),...segments(sell,'#2e9e8f')],current:path.current ? {x:x(last),y:y(path.current)}:null,
-    forecast:to ? {x:x(forecastDate),y:y(to),price:to}:null,
-    background:path.background.map(b=>({...b,x:x(b.start),width:Math.max(0,x(b.end)-x(b.start))})),
+    forecast:hasForecast && to ? {x:x(forecastDate),y:y(to),price:to}:null,
+    reference:to ? {y:y(to),price:to}:null,
+    background:path.background.map(b=>({...b,x:Math.max(45,x(b.start)),width:Math.max(0,Math.min(width-55,x(b.end))-Math.max(45,x(b.start)))})),
     ticks:[...new Set(path.axis_dates ?? [dates[0]!,...([1,2].map(i=>new Date(first+(end-first)*i/3).toISOString().slice(0,10))),forecastDate])].map(date=>({date,x:x(date)}))}
 }

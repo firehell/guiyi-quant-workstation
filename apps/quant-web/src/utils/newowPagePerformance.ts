@@ -4,7 +4,9 @@ export interface PageEstimateTrade {
   readonly buyDate: string; readonly buyPrice: string; readonly sellDate: string; readonly sellPrice: string
   readonly pct: string; readonly forceClose: boolean; readonly buyBarIsLive?: boolean; readonly segment_id: string
 }
+export interface PageOpenReference {readonly buyDate:string;readonly buyPrice:string;readonly markDate:string;readonly markPrice:string;readonly segment_id:string}
 export interface PagePerformanceMode {
+  readonly open_references?:readonly PageOpenReference[]
   readonly drawdown_kind?: 'maximum_trade_loss' | 'peak_difference' | 'mixed_segment'
   readonly period: string
   readonly summary: { readonly cumReturn: string; readonly accuracy: number; readonly maxDrawdown: string; readonly tradeCount: number }
@@ -12,8 +14,8 @@ export interface PagePerformanceMode {
   readonly equity: readonly string[]; readonly trades: readonly PageEstimateTrade[]
 }
 export interface PagePerformance {
-  readonly version: 'newow_page_performance_v3379_v2'; readonly source_version: '3.3.79'; readonly source_sha256: string
-  readonly page_parity: true; readonly executable: false; readonly strategy: 'trend' | 'oscillation' | 'main_rise' | 'fusion'
+  readonly version: 'newow_page_performance_v3379_v2'|'newow_unified_trueup_page_v1'; readonly source_version: '3.3.79'|'3.4.49'; readonly source_sha256: string
+  readonly page_parity: boolean; readonly kernel_parity?:true;readonly return_policy?:'source_page'|'guiyi_unified_trueup'; readonly executable: false; readonly strategy: 'trend' | 'oscillation' | 'main_rise' | 'fusion'
   readonly input_sha256: string; readonly source_evidence_sha256: string | null
   readonly segment_count: number; readonly ordinary_interrupted_count: number; readonly ideal_open_count: number
   readonly ordinary: PagePerformanceMode | null; readonly ideal: PagePerformanceMode | null
@@ -73,10 +75,10 @@ function text(v: unknown): string { if (typeof v !== 'string' || !v) throw Error
 function decimal(v: unknown): string { const s = text(v); if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(s) || !Number.isFinite(Number(s))) throw Error('page_performance decimal invalid'); return s }
 function count(v: unknown): number { if (!Number.isSafeInteger(v) || Number(v) < 0) throw Error('page_performance count invalid'); return Number(v) }
 function list(v: unknown): unknown[] { if (!Array.isArray(v)) throw Error('page_performance list invalid'); return v }
-function mode(v: unknown, cutoff?: string, ideal = false): PagePerformanceMode | null {
+function mode(v: unknown, cutoff?: string, ideal = false, unified = false): PagePerformanceMode | null {
   if (v === null) return null
   const m = obj(v), s = obj(m.summary)
-  exact(m, ['period','summary','dates','trading_days','segment_ids','equity','trades', ...(Object.hasOwn(m,'drawdown_kind') ? ['drawdown_kind'] : [])])
+  exact(m, ['period','summary','dates','trading_days','segment_ids','equity','trades',...(unified?['open_references']:[]), ...(Object.hasOwn(m,'drawdown_kind') ? ['drawdown_kind'] : [])])
   if (m.drawdown_kind !== undefined && !['maximum_trade_loss','peak_difference','mixed_segment'].includes(m.drawdown_kind as string)) throw Error('page_performance drawdown kind invalid')
   exact(s, ['cumReturn','accuracy','maxDrawdown','tradeCount'])
   const dates = list(m.dates).map(text), days = list(m.trading_days).map(text), segments = list(m.segment_ids).map(text), equity = list(m.equity).map(decimal)
@@ -106,21 +108,34 @@ function mode(v: unknown, cutoff?: string, ideal = false): PagePerformanceMode |
     if (t.buyBarIsLive === true && buyDate !== sellDate) throw Error('page_performance terminal buy invalid')
     return { buyDate, buyPrice, sellDate, sellPrice, pct: decimal(t.pct), forceClose: t.forceClose, ...(t.buyBarIsLive === undefined ? {} : {buyBarIsLive: t.buyBarIsLive}), segment_id: segment }
   })
+  const openReferences = unified ? list(m.open_references).map(raw=>{
+    const opened=obj(raw);exact(opened,['buyDate','buyPrice','markDate','markPrice','segment_id'])
+    const buyDate=text(opened.buyDate),markDate=text(opened.markDate),buyPrice=decimal(opened.buyPrice),markPrice=decimal(opened.markPrice),segment=text(opened.segment_id)
+    const mark=dates.indexOf(markDate),entry=dates.indexOf(buyDate)
+    if(!Number.isFinite(Date.parse(buyDate))||!Number.isFinite(Date.parse(markDate))||Date.parse(buyDate)>Date.parse(markDate)
+      ||(cutoff!==undefined&&Date.parse(markDate)>Date.parse(cutoff))||Number(buyPrice)<=0||Number(markPrice)<=0
+      ||mark<0||segments[mark]!==segment||(entry>=0&&segments[entry]!==segment)
+      ||(entry<0&&Date.parse(buyDate)>=Date.parse(dates.find((_,i)=>segments[i]===segment)!))
+      ||segments.lastIndexOf(segment)!==mark)throw Error('page_performance OPEN owner or chronology invalid')
+    return {buyDate,buyPrice,markDate,markPrice,segment_id:segment}
+  }):undefined
+  if(openReferences&&new Set(openReferences.map(r=>r.segment_id)).size!==openReferences.length)throw Error('page_performance duplicate OPEN owner')
   const accuracy = count(s.accuracy), tradeCount = count(s.tradeCount)
   if (accuracy > 100 || tradeCount !== trades.length) throw Error('page_performance summary invalid')
-  return {...(m.drawdown_kind === undefined ? {} : {drawdown_kind:m.drawdown_kind as PagePerformanceMode['drawdown_kind']}),period: text(m.period), summary: {cumReturn: decimal(s.cumReturn), accuracy, maxDrawdown: decimal(s.maxDrawdown), tradeCount}, dates, trading_days: days, segment_ids: segments, equity, trades}
+  return {...(openReferences===undefined?{}:{open_references:openReferences}),...(m.drawdown_kind === undefined ? {} : {drawdown_kind:m.drawdown_kind as PagePerformanceMode['drawdown_kind']}),period: text(m.period), summary: {cumReturn: decimal(s.cumReturn), accuracy, maxDrawdown: decimal(s.maxDrawdown), tradeCount}, dates, trading_days: days, segment_ids: segments, equity, trades}
 }
 export function normalizePagePerformance(v: unknown, strategy: PagePerformance['strategy'], cutoff?: string, period?: string): PagePerformance | null {
   if (v === undefined || v === null) return null
   const p = obj(v)
-  exact(p, ['version','source_version','source_sha256','page_parity','executable','strategy','segment_count','ordinary_interrupted_count','ideal_open_count','ordinary','ideal','input_sha256','source_evidence_sha256'])
-  if (p.version !== 'newow_page_performance_v3379_v2' || p.source_version !== '3.3.79' || p.source_sha256 !== sourceHash || p.page_parity !== true || p.executable !== false || p.strategy !== strategy) throw Error('page_performance source identity invalid')
+  exact(p, ['version','source_version','source_sha256','page_parity','executable','strategy','segment_count','ordinary_interrupted_count','ideal_open_count','ordinary','ideal','input_sha256','source_evidence_sha256',...(Object.hasOwn(p,'kernel_parity')?['kernel_parity','return_policy']:[])])
+  const unified=strategy==='oscillation'||strategy==='fusion'
+  if (unified?(p.version!=='newow_unified_trueup_page_v1'||p.source_version!=='3.4.49'||p.source_sha256!=='685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb'||p.page_parity!==false||p.kernel_parity!==true||p.return_policy!=='guiyi_unified_trueup'||p.executable!==false||p.strategy!==strategy):(p.version !== 'newow_page_performance_v3379_v2' || p.source_version !== '3.3.79' || p.source_sha256 !== sourceHash || p.page_parity !== true || p.executable !== false || p.strategy !== strategy)) throw Error('page_performance source identity invalid')
   const inputHash = text(p.input_sha256), evidenceHash = p.source_evidence_sha256 === null ? null : text(p.source_evidence_sha256)
   if (!/^[a-f0-9]{64}$/.test(inputHash) || evidenceHash !== null && !/^[a-f0-9]{64}$/.test(evidenceHash)) throw Error('page_performance input identity invalid')
-  const ordinary = mode(p.ordinary, cutoff), ideal = mode(p.ideal, cutoff, true), segmentCount = count(p.segment_count)
+  const ordinary = mode(p.ordinary, cutoff, false, unified), ideal = mode(p.ideal, cutoff, true, unified), segmentCount = count(p.segment_count)
   if (period !== undefined && [ordinary, ideal].some(m => m !== null && m.period !== period)) throw Error('page_performance period invalid')
   if (new Set([...(ordinary?.segment_ids ?? []), ...(ideal?.segment_ids ?? [])]).size > segmentCount) throw Error('page_performance owner count invalid')
-  return {version: p.version, source_version: p.source_version, source_sha256: sourceHash, page_parity: true, executable: false, strategy, input_sha256: inputHash, source_evidence_sha256: evidenceHash, segment_count: segmentCount, ordinary_interrupted_count: count(p.ordinary_interrupted_count), ideal_open_count: count(p.ideal_open_count), ordinary, ideal}
+  return {version: p.version as PagePerformance['version'], source_version: p.source_version as PagePerformance['source_version'], source_sha256: p.source_sha256 as string, page_parity: p.page_parity as boolean,...(p.kernel_parity===true?{kernel_parity:true as const,return_policy:p.return_policy as PagePerformance['return_policy']}:{}), executable: false, strategy, input_sha256: inputHash, source_evidence_sha256: evidenceHash, segment_count: segmentCount, ordinary_interrupted_count: count(p.ordinary_interrupted_count), ideal_open_count: count(p.ideal_open_count), ordinary, ideal}
 }
 
 /** Page-parity geometry uses bar index spacing and authoritative trading-day labels. */

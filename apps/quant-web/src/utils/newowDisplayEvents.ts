@@ -1,3 +1,4 @@
+import {previewInstant} from './candidatePreviewInstant.ts'
 import { formatMarketDecimal } from './marketDisplay.ts'
 /** Independent public display facts; never strategy actions or fills. */
 export interface NewowDisplayEvent {
@@ -14,15 +15,16 @@ export function normalizeDisplayEvents(value: unknown, bars: readonly DisplayOwn
   if (!Array.isArray(value)) throw Error('display events invalid')
   const ids=new Set<string>(), owners=new Map(bars.map(b=>[Date.parse(b.bar_end),b]))
   return value.map((e:NewowDisplayEvent)=>{
+    const known=previewInstant(e?.known_at??''),end=previewInstant(e?.bar_end??''),cutoff=previewInstant(asOf)
     const bar=owners.get(Date.parse(e?.bar_end)); const decimal=(s:unknown)=>typeof s==='string'&&/^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/.test(s)&&Number.isFinite(Number(s))
     if (!e || !bar || !/^[a-f0-9]{64}$/.test(e.event_id) || ids.has(e.event_id) || e.display_version!=='newow_public_display_v3431_v1'
       || !['OSC_BREAKDOWN','MAIN_RISE_J','ZLGJ_J','TREND_REVERSAL'].includes(e.kind) || e.frequency!==frequency
       || e.physical_contract!==bar.physical_contract || e.segment_id!==bar.segment_id || e.calculation_segment_id!==bar.calculation_segment_id
-      || !Number.isFinite(Date.parse(e.known_at)) || Date.parse(e.known_at)!==Date.parse(e.bar_end) || Date.parse(e.known_at)>=Date.parse(asOf)
+      || known===null || end===null || cutoff===null || known!==end || known>=cutoff
       || !e.formula_version || !decimal(e.observed_close) || Number(e.observed_close)!==Number(bar.close)
       || e.page_parity!==true || e.executable!==false || e.quantity_effect!=='none') throw Error('display event owner or identity conflict')
     if (e.kind==='OSC_BREAKDOWN') {
-      if (!['oscillation','osc-test','osc-test2','osc-test3','osc-test4'].includes(e.source_strategy) || !e.source_build_id || !decimal(e.build_threshold)
+      if (!['oscillation','osc-test','osc-test2','osc-test3','osc-test4','osc-test5'].includes(e.source_strategy) || !e.source_build_id || !decimal(e.build_threshold)
         || !e.build_bar_end || !Number.isFinite(Date.parse(e.build_bar_end)) || Date.parse(e.build_bar_end)>Date.parse(e.bar_end) || e.signal_kind!==null) throw Error('display build association invalid')
     } else if(e.source_build_id!==null||e.build_bar_end!==null||e.build_threshold!==null
       || (e.kind==='ZLGJ_J'?(e.source_strategy!=='oscillation_attack'||e.signal_kind!==null):e.kind==='MAIN_RISE_J'?(e.source_strategy!=='main_rise'||e.signal_kind!==null):(e.source_strategy!=='trend_reversal'||!['rebound','adjust'].includes(e.signal_kind??'')))) throw Error('display source invalid')

@@ -13,6 +13,16 @@ if TYPE_CHECKING:
 
 
 REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v4"
+TRUEUP_REFERENCE_MODEL_VERSION = "newow_trueup_reference_zero_cost_v1"
+
+
+def reference_model_version(identity) -> str:
+    """Historical formulas keep their recorded model; current trueup gets a new one."""
+    return (TRUEUP_REFERENCE_MODEL_VERSION
+            if "newow_oscillation_trueup_kernel111_v1" in identity.formula_versions
+            else REFERENCE_MODEL_VERSION)
+
+
 FUTURES_ADAPTATION_VERSION = "newow_futures_quality_segment_v3"
 WEEKLY_FUTURES_ADAPTATION_VERSION = "newow_futures_weekly_quality_segment_v1"
 WEEKLY_FUTURES_ADAPTATION_VERSION_V2 = "newow_futures_weekly_quality_segment_v2"
@@ -197,7 +207,7 @@ def build_reference_trade_id(entry: StrategyAction) -> str:
     return _digest(
         {
             "entry_signal_id": entry.signal_id,
-            "reference_model_version": REFERENCE_MODEL_VERSION,
+            "reference_model_version": reference_model_version(entry.identity),
             "futures_adaptation_version": futures_adaptation_version(
                 entry.identity.frequency, entry.identity.input_quality_policy
             ),
