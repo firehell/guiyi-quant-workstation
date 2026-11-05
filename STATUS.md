@@ -1,3 +1,11 @@
+11/5 08:10 正式发布树收敛完成：唯一正式发布/运行树为 `.worktrees/release-v1.16.88`，exact `6611a2c428e827d5cce136ec506a9b5d1f53f8d0`、gen63。旧84/85/87经现役v88原封reader验证、精确零引用双扫描和部署锁内non-force移除；旧v86准备控制器工作区由宿主原生archive_worktree归档。删后十项身份matched、API/Runtime health均ok，Tq保持原PID77357/trade/READY且无active hold。当前develop及持有89未发布集成草稿的任务工作区保留，不属于正式发布树；本轮没有发布89、晋升Trueup、切换/重启服务或修改策略、账户与账本。
+
+使用已提交041eb7维护controller的显式complete收集政策，原生计划 `7a10954af22406fa64a758b6cf9b88ca892e7c61b37beb7bb38b290cae184f45` 保全88条闭合历史、235份原件和18份旧marker；候选、封存前后及删后均由干净exact v88的-I原封reader验证，历史tag/Release与旧UNKNOWN不改。四份旧SimNow数据库保护读回、Tq配置/控制、正式绑定及current cohort保持；删除仅针对三棵已确认无引用的旧源码。完成证据复用 `output/release-cleanup-20261104/one-formal-release-root-v88.json`，恢复源码从原annotated tag重建，不保留常驻回滚树。
+
+独立定向Review通过。维护相关测试61 passed，1项既有 `test_archive_original_intake_timeout_closed_by_stopped_recovery` 在原封v88同样复现失败，未改断言；该fixture失败未替代现场完整typed封存、独立原reader与零引用验证。此前03:04关于四棵正式树和清理阻断的记录现已由本检查点取代；Trueup/旧参考流迁移仍为独立待处理项。
+
+以下为此前检查点：
+
 11/5 03:04 夜盘收盘任务部分完成：60品种权威Session及原生静默校验通过后，已将十个标准服务与唯一TqKq worker统一切至v1.16.88/exact `6611a2c428e827d5cce136ec506a9b5d1f53f8d0`、`.worktrees/release-v1.16.88`，标准服务gen63；未重复发布或改写88旧tag。普通cohort `f7c6893e98dfb004269d08b2cf09a90ca4d179e861df812ba8b19ebb88412d82` CAS后最终就绪超时，保留UNKNOWN原件；原生Feed关闭 `849c8ef4c7d4bfc9ce5c281e3d17aeaca515c1446a39572aa63184bd6e745823` 及独立同代恢复 `23c370954d35cfc1ab50a111eac5715585d4c94720a0654df4f40dd45b15ca6a` 实际成功，恢复receipt `193aa60c7383195cad35ef9f5e9f1179a0c48fb3a404535ed7906fe288c68599`。十项身份matched、API1.16.88与Runtime health均ok、Web及模拟监控200；没有降低就绪门禁或重放旧attempt。
 
 Tq原四笔模拟SELL OPEN（FG2701/I2701/AG2612/AU2612各1手）与4单/4成交/4个SUBMIT claim完整逐项对账，原18:45:41唯一100万元基线保留；无未决委托、未决成交、外部活动或未释放预约。账户锁下真实只读SDK、完整账本重放及既有Recover通过；原hold字节/SHA和故障依据保全到私有 `tqkq-simulation/recovery-20261105-v88`，成功后才归档active hold。唯一worker PID77357先正常observe，再恢复mode=trade、READY；只启用服务，当前全60品种因CLOSED缺实时恢复证明仍blocked，四仓保持desired=-1/must_close=false。旧开仓目标已消费、wait_after推进；后续自然completed H1先正常恢复，不补暂停期间或恢复批次旧开仓。03:00实际权益993707.21元、已用保证金185113.90元，属于账户读回，不是策略净收益。闭市无变化时超过10秒的对账投影如实显示unverified；不以最新SDK快照时间冒充新对账。恢复后新策略信号/委托/成交均待自然观察，未制造测试成交，真实资金账户边界不变。
