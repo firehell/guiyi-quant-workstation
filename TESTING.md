@@ -2387,3 +2387,6 @@ PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过�
 20261103 HTDY精确11流恢复另验证`test_htdy_eleven_conflict_scope.py`及同组`test_htdy_conflict_postgres.py`：
 原3/48流入口不变，mixed generation/5OPEN、未选流保持、精确inventory与旧revision/capture/checkpoint/tradeID漂移拒绝，
 以及真实旧退休→后继capture/calculation→二次退休的typed proof并集、旧proof篡改拒绝。生产执行仍需新鲜原生source/停止写入围栏和单次attempt，测试不替代恢复读回。
+
+
+2026-11-05 RS/UR恢复使用独立 `htdy_conflict_recovery_20261105_v1`，仅冻结两路旧revision、capture、checkpoint和activation generation（RS1、UR2），OPEN集合必须为空。复用既有权威MDS来源、完整原件/Inbox及历史retirement证明、真实停驻锁、两路同事务与单次attempt；旧历史不重算，从未来FLAT继续。正常HTDY窗口比较、公式和schema均不变。定向验证 `test_htdy_two_conflict_scope.py`，并回归既有来源、retirement、PostgreSQL和CLI测试。
