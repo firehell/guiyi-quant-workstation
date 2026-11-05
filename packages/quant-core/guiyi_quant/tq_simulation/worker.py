@@ -240,6 +240,20 @@ def run(config_path, *, inspect=False):
                         last_native = native
                     else:
                         rb = None
+                    if action == "stop" and controller.store is not None:
+                        # A broken signal channel must not prevent a safe stop.
+                        # Read the entire native account first; any pending or
+                        # uncertain obligation still takes the normal stop path.
+                        controller.synchronize(snapshot, now)
+                        stopped_state = controller.store.current()
+                        if (
+                            stopped_state.phase == "READY"
+                            and stopped_state.readback_valid
+                            and not stopped_state.unresolved_fill_ids
+                            and all(o.reconciled for o in stopped_state.orders)
+                            and all(o["state"] in TERMINAL for o in snapshot["orders"])
+                        ):
+                            break
                     if (
                         state
                         and rb is not None
@@ -320,7 +334,7 @@ def run(config_path, *, inspect=False):
                                     controller.owner(
                                         s.product,
                                         s.contract,
-                                        s.observed_at,
+                                        datetime.now(UTC),
                                         fact["source_id"],
                                     )
                                 controller.signal(s)
@@ -476,7 +490,11 @@ def run(config_path, *, inspect=False):
                         if re.fullmatch(r"TQ_[A-Z0-9_]{1,100}", candidate)
                         else "TQ_EXECUTION_BLOCKED"
                     )
-                    held = code
+                    persistent = (
+                        read_private(base / "hold.json", limit=1024)
+                        if (base / "hold.json").exists() else None
+                    )
+                    held = persistent["code"] if persistent else code
                     if controller.store:
                         # A disconnect always destroys permission to reuse a target.
                         state = controller.store.current()
@@ -494,7 +512,7 @@ def run(config_path, *, inspect=False):
                             flush=True,
                         )
                         return 1
-                    if code not in {
+                    if persistent is None and code not in {
                         "TQ_DISCONNECTED",
                         "TQ_RECOVERY_REQUIRED",
                         "TQ_ACCOUNT_INCOMPLETE",

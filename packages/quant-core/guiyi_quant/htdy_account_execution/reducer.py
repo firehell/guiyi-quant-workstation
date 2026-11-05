@@ -1256,6 +1256,7 @@ def apply(state, key, cmd):
     validate(state)
     if type(cmd) not in (
         m.Signal,
+        m.TqKqObservedSignalV1,
         m.Owner,
         m.TqKqFill,
         m.Fill,
@@ -1330,6 +1331,8 @@ def apply(state, key, cmd):
     effects = ()
     if type(cmd) is m.Signal:
         state, reason = signal(state, cmd)
+    elif type(cmd) is m.TqKqObservedSignalV1:
+        state, reason = signal(state, cmd.signal)
     elif type(cmd) is m.Owner:
         p = product(state, cmd.product)
         if p.owner is not None and p.owner != cmd.contract:

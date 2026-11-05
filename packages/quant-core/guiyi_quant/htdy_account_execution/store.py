@@ -269,7 +269,7 @@ class LocalStore:
     def execute(self, key, command, *, unsent_proof=None):
         m.text(key)
         if (
-            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1)
+            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1, m.TqKqObservedSignalV1)
             and self._execution_identity is None
         ):
             raise StoreError("TQ_ACCOUNT_IDENTITY_REQUIRED")
