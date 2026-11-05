@@ -426,3 +426,36 @@ def test_audit_scope_tracks_2300_0100_0230_closes_and_day_reopening(monkeypatch)
         assert window.trading_day == trading_day
         assert window.boundary == boundary
     assert inlet.audit_window(start + timedelta(hours=5, minutes=30)) is None
+
+
+def test_bounded_poll_preserves_first_receipt_and_never_reprocesses_pending(monkeypatch):
+    receipts=[T+timedelta(hours=2,seconds=i) for i in range(4)]
+    inlet,redis=make_inlet(monkeypatch,receipts=receipts)
+    monkeypatch.setattr(market,'_parse_live_bar_trigger',parse)
+    monkeypatch.setattr(single.MarketBridge,'signal_from_trigger',
+        lambda self,trigger,observed_at,after:NS(product=self.product,source_id=self.product,observed_at=observed_at,bar_end=trigger.bar.bar_end))
+    inlet.activate(T)
+    redis.pub.messages.extend([event('RB',T+timedelta(hours=1)),event('AG',T+timedelta(hours=1))])
+    assert inlet.poll(T+timedelta(hours=2),T,max_products=1)[0].product=='RB'
+    redis.pub.messages.extend([event('AG',T+timedelta(hours=1)),event('AG',T)])
+    result=inlet.poll(T+timedelta(hours=3),T,max_products=1)
+    assert result[0].product=='AG' and result[0].observed_at==receipts[1]
+    assert inlet.poll(T+timedelta(hours=3),T,max_products=1)==()
+
+
+def test_bounded_pending_latest_uses_new_bar_receipt_and_activation_discards(monkeypatch):
+    receipts=[T+timedelta(hours=4,seconds=i) for i in range(5)]
+    inlet,redis=make_inlet(monkeypatch,receipts=receipts)
+    monkeypatch.setattr(market,'_parse_live_bar_trigger',parse)
+    monkeypatch.setattr(single.MarketBridge,'signal_from_trigger',
+        lambda self,trigger,observed_at,after:NS(product=self.product,source_id=self.product,observed_at=observed_at,bar_end=trigger.bar.bar_end))
+    inlet.activate(T)
+    redis.pub.messages.extend([event('RB',T+timedelta(hours=1)),event('AG',T+timedelta(hours=1))])
+    inlet.poll(T+timedelta(hours=4),T,max_products=1)
+    redis.pub.messages.append(event('AG',T+timedelta(hours=2)))
+    result=inlet.poll(T+timedelta(hours=4),T,max_products=1)
+    assert result[0].bar_end==T+timedelta(hours=2) and result[0].observed_at==receipts[2]
+    redis.pub.messages.extend([event('RB',T+timedelta(hours=3)),event('AG',T+timedelta(hours=3))])
+    inlet.poll(T+timedelta(hours=4),T,max_products=1)
+    inlet.activate(T+timedelta(hours=5))
+    assert inlet.poll(T+timedelta(hours=5),T,max_products=1)==()

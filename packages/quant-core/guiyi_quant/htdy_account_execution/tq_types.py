@@ -8,10 +8,25 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 import re
-from ..htdy_execution import Fill, _text, _time, _money
+from ..htdy_execution import Fill, Signal, _text, _time, _money
 
 TQ_EXECUTION_VERSION = "htdy_tqkq_opponent_reprice180_v1"
 TQ_RISK_VERSION = "htdy_tqkq_actual_equity_margin70_v1"
+
+
+@dataclass(frozen=True)
+class TqKqObservedSignalV1:
+    """Original first receipt and later account processing are distinct facts."""
+
+    signal: Signal
+    at: datetime
+    policy_version: str = "tqkq_observed_signal_v1"
+
+    def __post_init__(self):
+        _time(self.at)
+        if (type(self.signal) is not Signal or self.at < self.signal.observed_at
+                or self.policy_version != "tqkq_observed_signal_v1"):
+            raise ValueError("TQ_SIGNAL_PROCESSING_TIME_INVALID")
 
 
 @dataclass(frozen=True)

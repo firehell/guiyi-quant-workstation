@@ -290,7 +290,7 @@ def live_controller(tmp_path, transport=None):
     c.bootstrap(snapshot(now - timedelta(hours=2)), now - timedelta(hours=2))
     c.owner("RB", "RB2701", now - timedelta(seconds=20), "owner")
     s = signal(now - timedelta(seconds=10))
-    c.signal(s)
+    c.signal(s, processed_at=s.observed_at)
     c.synchronize(snapshot(now - timedelta(seconds=2)), now - timedelta(seconds=2))
     return c, now
 
@@ -458,7 +458,7 @@ def test_shfe_close_uses_actual_today_historical_inventory(tmp_path, today, expe
         ("sell",),
         "c" * 64,
     )
-    c.signal(reverse)
+    c.signal(reverse, processed_at=reverse.observed_at)
     c.synchronize(s, at + timedelta(seconds=1))
     at += timedelta(seconds=2)
     f = fact(at)
@@ -728,41 +728,65 @@ def test_market_timeout_discards_channel_and_never_reads_late_response(monkeypat
 def test_sdk_internal_margin_wait_records_reconnect():
     from types import SimpleNamespace
     from guiyi_quant.tq_simulation.gateway import Gateway
+
     g = Gateway.__new__(Gateway)
     g.notifications, g.connections, g.reconnection_required = set(), {}, False
     g.account, g.account_key = object(), "fixture"
     g.quote = lambda _: {}
+
     def respond(*_):
         g.api._data.update(notify={"new": {"code": 2019112902, "conn_id": "trade"}})
-        g.api._data["trade"] = {"fixture": {"pre_insert_orders": {"fixture_user": {
-            "exchange_id": "SHFE", "instrument_id": "rb2701", "direction": "BUY",
-            "pre_margin": 1000, "pre_commission": 3}}}}
-    g.api = SimpleNamespace(_requests={"margin_rates": {}}, _data={},
-        _get_margin_rate=respond, _account=SimpleNamespace(_get_account_id=lambda _: "user"))
+        g.api._data["trade"] = {
+            "fixture": {
+                "pre_insert_orders": {
+                    "fixture_user": {
+                        "exchange_id": "SHFE",
+                        "instrument_id": "rb2701",
+                        "direction": "BUY",
+                        "pre_margin": 1000,
+                        "pre_commission": 3,
+                    }
+                }
+            }
+        }
+
+    g.api = SimpleNamespace(
+        _requests={"margin_rates": {}},
+        _data={},
+        _get_margin_rate=respond,
+        _account=SimpleNamespace(_get_account_id=lambda _: "user"),
+    )
     assert g.margin("SHFE.rb2701", "BUY")[0] == D(1000)
     assert g.reconnection_required
 
 
 def test_continuity_guard_prevents_claim_before_native_send(tmp_path):
     c, now = live_controller(tmp_path)
+
     def reconnect():
         raise ValueError("TQ_RECOVERY_REQUIRED")
+
     c.gateway.assert_continuity = reconnect
     with pytest.raises(ValueError, match="TQ_RECOVERY_REQUIRED"):
         c.tick((fact(now),), now, opening_allowed=True)
     assert c.gateway.calls == []
     assert c.journal.db.execute("SELECT COUNT(*) FROM claims").fetchone()[0] == 0
-    assert len(c.store.current().orders) == 1  # persisted proposal, never erased/retried
+    assert (
+        len(c.store.current().orders) == 1
+    )  # persisted proposal, never erased/retried
     c.close()
 
 
 def test_gateway_final_guard_blocks_submit_and_cancel():
     from guiyi_quant.tq_simulation.gateway import Gateway
+
     g = Gateway.__new__(Gateway)
     g.execution_allowed, g.reconnection_required = True, True
     g.snapshot = lambda _: {}
-    for invoke in (lambda: g.submit("SHFE.rb2701", None, "OPEN", "native"),
-                   lambda: g.cancel("native")):
+    for invoke in (
+        lambda: g.submit("SHFE.rb2701", None, "OPEN", "native"),
+        lambda: g.cancel("native"),
+    ):
         with pytest.raises(ValueError, match="TQ_RECOVERY_REQUIRED"):
             invoke()
 
@@ -793,10 +817,12 @@ def test_never_active_restart_keeps_baseline_and_accepts_only_new_signal(tmp_pat
     assert c.store.current().activated_at == original.activated_at
     c.bind_symbol("SHFE.rb2701", "RB", "RB2701")
     c.owner("RB", "RB2701", second, "new-owner")
-    c.signal(signal(second))  # bar precedes resume; cannot create a target
+    c.signal(
+        signal(second), processed_at=second
+    )  # bar precedes resume; cannot create a target
     assert c.store.current().products[0].desired == 0
     fresh = now + timedelta(seconds=2)
-    c.signal(signal(fresh))
+    c.signal(signal(fresh), processed_at=fresh)
     assert not c.resume_never_active(readback, now)
     c.synchronize(snapshot(fresh), fresh)
     tick_at = fresh + timedelta(seconds=1)
@@ -809,12 +835,17 @@ def test_never_active_restart_keeps_baseline_and_accepts_only_new_signal(tmp_pat
 @pytest.mark.parametrize("change", ["orders", "trades", "used"])
 def test_empty_resume_rejects_remote_activity(change):
     from guiyi_quant.htdy_execution import OrderReport
+
     at = T + timedelta(seconds=1)
     state = apply(start(A, ("RB",), T, rb()), "disconnect", m.Disconnect(at)).state
     readback = replace(rb(at), source_id="tq-readback:fixture")
     if change == "orders":
-        readback = replace(readback, snapshot=replace(readback.snapshot,
-            orders=(OrderReport("external:one", "CANCELLED"),)))
+        readback = replace(
+            readback,
+            snapshot=replace(
+                readback.snapshot, orders=(OrderReport("external:one", "CANCELLED"),)
+            ),
+        )
     elif change == "trades":
         readback = replace(readback, confirmed_trade_ids=("external:trade",))
     else:
@@ -822,3 +853,72 @@ def test_empty_resume_rejects_remote_activity(change):
     cmd = m.TqKqResumeEmptyV1(readback, codec.digest({"account_id": A, "claims": []}))
     with pytest.raises(ValueError, match="REQUIRES_NATIVE_FLAT"):
         apply(state, "resume", cmd)
+
+
+def test_batched_receipts_keep_original_time_after_account_clock_advances(
+    tmp_path, monkeypatch
+):
+    from dataclasses import replace
+    from guiyi_quant.htdy_account_execution.store import LocalStore
+
+    now = datetime.now(UTC)
+    base = now - timedelta(minutes=5)
+    c = Controller(tmp_path, A, ("RB", "AG"), Transport())
+    c.bootstrap(snapshot(base), base)
+    c.owner("RB", "RB2701", base, "rb-owner")
+    first = m.Signal(
+        "batch-rb",
+        "RB",
+        "RB2701",
+        now - timedelta(minutes=1),
+        now - timedelta(seconds=2),
+        None,
+        (),
+        "a" * 64,
+    )
+    c.signal(first, processed_at=now)
+    advanced = now + timedelta(seconds=5)
+    c.synchronize(snapshot(advanced), advanced)
+    processed = now + timedelta(seconds=6)
+    c.owner("AG", "AG2612", processed, "ag-owner")
+    second = m.Signal(
+        "batch-ag",
+        "AG",
+        "AG2612",
+        now - timedelta(minutes=1),
+        now - timedelta(seconds=1),
+        None,
+        (),
+        "b" * 64,
+    )
+    c.signal(second, processed_at=processed)
+    s = c.store.current()
+    assert s.signals == (first, second) and s.clock == processed
+    assert type(s.audit[-1].command) is m.TqKqObservedSignalV1
+    count = len(s.audit)
+    processed += timedelta(seconds=1)
+    c.signal(second, processed_at=processed)
+    assert len(c.store.current().audit) == count
+    with pytest.raises(ValueError, match="TQ_SIGNAL_IDENTITY_DRIFT"):
+        c.signal(replace(second, input_hash="c" * 64))
+    with pytest.raises(ValueError, match="COMMAND_TIME_REGRESSION"):
+        c.store.execute(
+            "unversioned-regression",
+            replace(
+                second,
+                source_id="generic-late",
+                bar_end=second.bar_end + timedelta(seconds=1),
+            ),
+        )
+    c.close()
+    replay = LocalStore.inspect(tmp_path / "account.sqlite")
+    assert replay.signals == (first, second) and replay.clock == s.clock
+
+
+def test_versioned_signal_rejects_processing_before_receipt():
+    now = datetime.now(UTC)
+    sig = m.Signal(
+        "future", "RB", "RB2701", now - timedelta(minutes=1), now, None, (), "d" * 64
+    )
+    with pytest.raises(ValueError, match="TQ_SIGNAL_PROCESSING_TIME_INVALID"):
+        m.TqKqObservedSignalV1(sig, now - timedelta(seconds=1))

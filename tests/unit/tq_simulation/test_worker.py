@@ -233,3 +233,41 @@ def test_stop_does_not_require_keychain_to_remain_available(monkeypatch, tmp_pat
     monkeypatch.setattr(cli, "CredentialStore", unavailable)
     assert cli.main(["stop"]) == 0
     assert read_private(tmp_path / "control.json") == {"mode": "stop"}
+
+
+def test_channel_failure_preserves_first_hold_and_safe_stop_needs_no_market(
+    monkeypatch, tmp_path
+):
+    from itertools import count
+
+    base, calls = host(monkeypatch, tmp_path, restart=True)
+    ticks = count(0, 2)
+    monkeypatch.setattr(worker, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    monkeypatch.setattr(worker, "write_private", write_private)
+    market_type = worker.Market
+    prior_poll = market_type.poll
+    attempts = []
+    first_hold = []
+
+    def update(self, *_):
+        self.n += 1
+        if self.n >= 4:
+            write_private(base / "control.json", {"mode": "stop"})
+
+    monkeypatch.setattr(worker.Gateway, "update", update)
+
+    def poll(self, *args, **kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            return prior_poll(self, *args, **kwargs)
+        if len(attempts) == 2:
+            raise ValueError("TQ_MARKET_TIMEOUT")
+        first_hold.append((base / "hold.json").read_bytes())
+        raise ValueError("TQ_MARKET_CHANNEL_FAILED")
+
+    monkeypatch.setattr(market_type, "poll", poll)
+    assert worker.run(base / "config.json") == 0
+    assert len(attempts) == 3
+    assert read_private(base / "hold.json")["code"] == "TQ_MARKET_TIMEOUT"
+    assert (base / "hold.json").read_bytes() == first_hold[0]
+    assert calls == []
