@@ -144,7 +144,7 @@ test('default W1 waits for one complete-week cutoff before loading panels', asyn
 })
 
 // Cover the fused current-resolution path used by production.
-for (const frequency of ['1d', '1w'] as const) {
+for (const frequency of ['5m', '15m', '30m', '60m', '1d', '1w'] as const) {
   test(`fused ${frequency} pending update retains verified chart and pins dependent panels`, async () => {
     const pending: Pending[] = []
     const state = useNewowProduct({ identity: ref(newowIdentity('trend', frequency)), now: () => AS_OF, fetchSection: controlled(pending) })
@@ -154,10 +154,10 @@ for (const frequency of ['1d', '1w'] as const) {
     const cutoff = '2026-08-14T07:00:00.000001Z'
     const chart = normalizedChart({ ...request, asOf: cutoff, resolveCurrent: false })
     const snapshotContext = {
-      schema_version: frequency === '1d' ? 'newow_daily_snapshot_v1' : 'newow_weekly_snapshot_v1',
+      schema_version: frequency === '1d' ? 'newow_daily_snapshot_v1' : frequency === '1w' ? 'newow_weekly_snapshot_v1' : 'newow_intraday_snapshot_v1',
       product: 'jm', strategy: 'trend', frequency, series_kind: 'actual_dominant',
       requested_at: AS_OF, as_of: cutoff, freshness: 'pending_update',
-      ...(frequency === '1d'
+      ...(frequency !== '1w'
         ? { expected_trading_day: '2026-08-15', available_trading_day: '2026-08-14' }
         : { expected_period_end: AS_OF, available_period_end: cutoff, current_context: { status: 'unknown', physical_contract: null } }),
     } as NonNullable<NewowProductSectionResponse['snapshotContext']>
@@ -168,7 +168,7 @@ for (const frequency of ['1d', '1w'] as const) {
     assert.equal(state.sections.chart.data.value?.meta.as_of, cutoff)
     assert.equal(state.currentChartWindow.value, false)
     assert.equal(state.historicalChartWindow.value, true)
-    assert.equal((frequency === '1d' ? state.dailySnapshot : state.weeklySnapshot).value?.freshness, 'pending_update')
+    assert.equal((frequency === '1d' ? state.dailySnapshot : frequency === '1w' ? state.weeklySnapshot : state.intradaySnapshot).value?.freshness, 'pending_update')
     for (const start of [() => state.loadReference(), () => state.loadAuxiliary('macd'), () => state.loadExplanation()]) {
       const loaded = start()
       const panel = pending.at(-1)!
@@ -2223,7 +2223,7 @@ function normalizedChartPage(request: NewowProductRequest, day: string, nextBefo
   raw.chart.value.bars[0]!.bar_end = `${day}T07:00:00Z`
   raw.chart.value.bars[0]!.trading_day = day
   raw.chart.value.frames[0]!.bar_end = `${day}T07:00:00Z`
-  raw.chart.value.trend_channel.points[0]!.bar_end = `${day}T07:00:00Z`
+  if(raw.chart.value.trend_channel)raw.chart.value.trend_channel.points[0]!.bar_end = `${day}T07:00:00Z`
   raw.chart.value.frames[0]!.action_ids = [`build-${day}`]
   raw.chart.value.actions[0]!.signal_id = `build-${day}`
   raw.chart.value.actions[0]!.bar_end = `${day}T07:00:00Z`
@@ -2425,4 +2425,12 @@ test('older chart pagination preserves independent J, breakdown and current badg
  assert.deepEqual(value.display_events.map((e:any)=>e.event_id),['b'.repeat(64),'a'.repeat(64)])
  assert.equal(value.display_events.at(-1).kind,'TREND_REVERSAL')
  state.dispose()
+})
+
+test('older chart pagination preserves independent breakout facts under exact physical owners',async()=>{
+ const pending:Pending[]=[],state=useNewowProduct({identity:ref(newowIdentity('oscillation','1d')),now:()=>new Date(AS_OF),fetchSection:controlled(pending)})
+ const attach=(response:any,id:string)=>{const b=response.value.bars[0];return {...response,value:{...response.value,breakout_events:[{event_id:id,bar_end:b.bar_end,physical_contract:b.physical_contract,segment_id:b.segment_id,calculation_segment_id:b.calculation_segment_id,kind:'pending'}]}}}
+ pending[0]!.resolve(attach(normalizedChartPage(pending[0]!.request,'2026-08-14','older-chart'),'a'));await flush()
+ const page=state.loadNextChartPage();pending[1]!.resolve(attach(normalizedChartPage(pending[1]!.request,'2026-08-13',null),'b'));await page
+ assert.deepEqual(state.sections.chart.data.value?.value?.breakout_events?.map(e=>e.event_id),['b','a']);state.dispose()
 })

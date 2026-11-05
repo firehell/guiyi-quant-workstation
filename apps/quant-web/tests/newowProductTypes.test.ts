@@ -1170,6 +1170,20 @@ test('CDV2 explanation rejects future ages, inconsistent totals and executable c
   assert.throws(() => normalizeNewowProductResponse(badExecution.wire, { ...expected, section: 'explanation' }), /executable/)
   const badAge = make(); badAge.addon.cdv2.facts[0]!.age = -2
   assert.throws(() => normalizeNewowProductResponse(badAge.wire, { ...expected, section: 'explanation' }), /age/)
+  const withSignal = () => {
+    const value = make()
+    Object.assign(value.addon.cdv2.facts[0]!, {status:'ready',age:0,bar_end:AS_OF,physical_contract:'JM2609',segment_id:'segment-1',calculation_segment_id:'calc-1',
+      last_signal:{action_id:'signal-1',kind:'BUILD',bar_end:AS_OF,price:'123.45',calculation_segment_id:'calc-1'}})
+    return value
+  }
+  assert.doesNotThrow(() => normalizeNewowProductResponse(withSignal().wire,{...expected,section:'explanation'}))
+  for (const change of [{price:'0'}, {price:'-1'}, {price:'NaN'}, {kind:'FILL'}, {bar_end:'2099-01-01T07:00:00Z'}, {calculation_segment_id:'another'}]) {
+    const value = withSignal()
+    Object.assign((value.addon.cdv2.facts[0] as any).last_signal,change)
+    assert.throws(() => normalizeNewowProductResponse(value.wire,{...expected,section:'explanation'}))
+  }
+  const unavailable = withSignal(); Object.assign(unavailable.addon.cdv2.facts[0]!, {status:'unavailable'})
+  assert.throws(() => normalizeNewowProductResponse(unavailable.wire,{...expected,section:'explanation'}), /without ready/)
 })
 
 test('reference accepts validated independent hindsight payload and rejects executable or duplicate theory', () => {
@@ -1297,3 +1311,16 @@ test('accepts trend initial CLEAR only as a standalone eligible display action',
   const warming=structuredClone(wire);warming.chart.value.bars[0]!.observation_eligible=false
   assert.throws(()=>normalizeNewowProductResponse(warming,expected),/INITIAL_CLEAR/)
 })
+
+for (const frequency of ['5m', '15m', '30m', '60m'] as const) {
+  test(`current ${frequency} bootstrap pins dependents to completed history`, () => {
+    const wire = buildNewowFixtureEnvelopeForTest('chart', 'trend', frequency)
+    const request = { identity: { product: 'rb', strategy: 'trend', frequency, seriesKind: 'actual_dominant' }, section: 'chart', asOf: AS_OF, resolveCurrent: true } as const
+    const context = { frequency, as_of: NEWOW_AS_OF, requested_at: NEWOW_AS_OF, freshness: 'current', expected_trading_day: '2026-09-03', available_trading_day: '2026-09-03' }
+    const result = normalizeNewowProductResponse({ ...wire, snapshot_context: context }, request)
+    assert.equal(result.snapshotContext?.schema_version, 'newow_intraday_snapshot_v1')
+    assert.equal(result.meta.as_of, NEWOW_AS_OF)
+    assert.throws(() => normalizeNewowProductResponse(wire, request))
+    assert.throws(() => normalizeNewowProductResponse({ ...wire, snapshot_context: { ...context, frequency: '1d' } }, request))
+  })
+}

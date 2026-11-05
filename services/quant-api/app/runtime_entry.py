@@ -243,6 +243,13 @@ def main(
                             if result is None:
                                 owner.mark_ready({'closed_cleaned': feed.closed_cleaned_proof}
                                     if getattr(feed, 'closed_cleaned_proof', None) else None)
+                            else:
+                                owner.mark_not_ready({'failure_code': result if type(result) is str and result in {
+                                    'LIVE_PROVIDER_CLOSE_UNKNOWN', 'OBSERVATION_CLEANUP_UNPROVEN',
+                                } else 'FEED_POLL_FAILED',
+                                    'retirement_stage': getattr(feed, '_retirement_stage', None),
+                                    'first_failure_at': getattr(feed, '_first_retirement_failure_at', None),
+                                    'first_failure_code': getattr(feed, '_first_retirement_failure_code', None)})
                             return result
                         feed.poll = checked_poll
                     feed.run_forever(should_stop=should_stop)

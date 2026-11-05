@@ -195,3 +195,31 @@ def test_daily_default_rejects_response_completed_after_deadline():
             Reader(), lambda _cancelled: Service(), now=lambda: NEWER,
             monotonic_clock=lambda: clock[0],
         ).resolve("rb", "trend", "1d")
+
+
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
+def test_intraday_latest_pins_verified_completed_day(frequency):
+    queries = []
+    class Service:
+        def query(self, query):
+            queries.append(query)
+            return ready(query)
+    snapshot, chart = NewowDailySnapshotResolver(
+        Reader(), lambda _cancelled: Service(), now=lambda: NEWER
+    ).resolve_with_chart("rb", "trend", frequency)
+    assert snapshot.frequency.value == frequency
+    assert snapshot.as_of == NEWER == chart.meta.as_of
+    assert len(queries) == 1
+
+
+@pytest.mark.parametrize("frequency", ["5m", "15m", "30m", "60m"])
+def test_intraday_latest_never_hides_mapped_prefix_failure(frequency):
+    calls = []
+    class Service:
+        def query(self, query):
+            calls.append(query.as_of)
+            raise InfrastructureError("REPLAY_ENDPOINTS_MISSING")
+    with pytest.raises(InfrastructureError, match="REPLAY_ENDPOINTS_MISSING"):
+        NewowDailySnapshotResolver(Reader(), lambda _cancelled: Service(),
+            now=lambda: NEWER).resolve("rb", "trend", frequency)
+    assert calls == [NEWER]

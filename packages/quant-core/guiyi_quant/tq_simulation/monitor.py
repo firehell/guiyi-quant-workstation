@@ -88,6 +88,11 @@ def projection(
         "risk_profile_version": TQ_RISK_VERSION,
         "execution_profile_version": TQ_EXECUTION_VERSION,
     }
+    blocked = set(state.blocked_products) if state else set()
+    blocked.update(source_issues or {})
+    products = {p.product for p in state.products} if state else set()
+    executable = products - blocked if (opening and state and state.phase == 'READY'
+        and state.readback_valid and state.readback.at <= now < state.readback.valid_until) else set()
     out["observer"] = {
         "status": "error" if code else "running",
         "stage": code or ("AUTO_TRADING" if opening else "OBSERVING"),
@@ -95,6 +100,8 @@ def projection(
         "connection": "LOGGED_IN" if snapshot else "NOT_CONNECTED",
         "mode": mode,
         "opening_enabled": opening,
+        "blocked_product_count": len(blocked),
+        "executable_product_count": len(executable),
         "account_takeover_pending": mode == "trade" and state is None,
         "host_status": state.phase if state else "READ_ONLY",
     }

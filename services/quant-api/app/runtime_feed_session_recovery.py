@@ -8,8 +8,9 @@ from __future__ import annotations
 import argparse
 import base64
 import gzip
+from contextlib import contextmanager
 from dataclasses import asdict
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 import hashlib
 import json
 import os
@@ -18,10 +19,7 @@ import re
 import subprocess
 import time
 
-VERSION = "feed_verified_empty_retirement_v1"
-COMMIT = "3e8229fe8cf2da1bd9f14d5035a32136199c0025"
-OLD_DAY = date(2026, 11, 2)
-DAY = date(2026, 11, 3)
+VERSION = "feed_verified_empty_retirement_v2"
 
 
 class RecoveryError(ValueError):
@@ -64,7 +62,7 @@ def write(path, value, *, exclusive=False):
         _write(path, value)
 
 
-def safe_proof(value, *, pid, now):
+def safe_proof(value, *, pid, now, old_day):
     try:
         at = datetime.fromisoformat(value["proof_at"]).timestamp()
         return (
@@ -85,7 +83,7 @@ def safe_proof(value, *, pid, now):
             and type(value["pending_count"]) is int
             and value["isolation_provider_matches"] is True
             and value["isolation_snapshot_matches"] is True
-            and value["isolation_day"] == OLD_DAY.isoformat()
+            and value["isolation_day"] == old_day.isoformat()
             and 0 <= now - at <= 90
             and bool(value["object_identity"])
             and bool(value["process_identity"])
@@ -115,7 +113,7 @@ class Coordinator:
         pid = baseline["pid"]
         proofs = [self.backend.probe(pid, "plan-1"), self.backend.probe(pid, "plan-2")]
         require(
-            all(safe_proof(p, pid=pid, now=self.clock()) for p in proofs),
+            all(safe_proof(p, pid=pid, now=self.clock(), old_day=self.backend.old_day) for p in proofs),
             "READER_CLOSURE_UNPROVEN",
         )
         require(
@@ -148,7 +146,7 @@ class Coordinator:
                 self.backend.probe(pid, "apply-2"),
             ]
             require(
-                all(safe_proof(p, pid=pid, now=self.clock()) for p in proofs),
+                all(safe_proof(p, pid=pid, now=self.clock(), old_day=self.backend.old_day) for p in proofs),
                 "READER_CLOSURE_UNPROVEN",
             )
             require(
@@ -214,7 +212,9 @@ class Coordinator:
 
 
 class Native:
-    def __init__(self, directory):
+    def __init__(self, directory, *, old_day, day, expected_pid):
+        self.old_day, self.day, self.expected_pid = old_day, day, expected_pid
+        require(type(expected_pid) is int and expected_pid > 0 and day > old_day)
         from app.core.env import PROJECT_ROOT
         from app.runtime_bindings import _git, verify_release, read_bindings
         from app.runtime_handover import runtime_directory
@@ -230,7 +230,8 @@ class Native:
             and not self.directory.stat().st_mode & 0o077
         )
         require(
-            self.directory == self.runtime / "feed-session-recovery-20261103",
+            self.directory.parent == self.runtime
+            and re.fullmatch(r"feed-session-recovery-[a-f0-9]{32}", self.directory.name),
             "RECOVERY_DIRECTORY_INVALID",
         )
         tag = _git(self.code, "describe", "--exact-match", "--tags", "HEAD")
@@ -241,14 +242,12 @@ class Native:
         require(registry is not None)
         binding = registry.services["market-feed"]
         require(
-            binding.tag == "v1.16.64"
-            and binding.commit == COMMIT
-            and binding.generation == 53
-            and binding.enabled
+            binding.enabled and binding.generation > 0
         )
         self.active = Path(binding.root)
         verify_release(self.active, binding.tag, binding.commit)
         self.binding = asdict(binding)
+        self.commit, self.generation = binding.commit, binding.generation
         from app.redis_connections import get_redis_connection
 
         self.redis = get_redis_connection()
@@ -271,17 +270,23 @@ class Native:
             == {"schema_version", "service", "generation", "request_id", "phase"}
             and value["schema_version"] == 1
             and value["service"] == "market-feed"
-            and value["generation"] == 53
+            and value["generation"] == self.generation
             and value["phase"] == "cancelled"
             and re.fullmatch("[a-f0-9]{32}", value["request_id"]),
             "EXISTING_DRAIN_UNRESOLVED",
         )
         return dict(present=True, sha256=hashlib.sha256(raw).hexdigest(), value=value)
 
+    @contextmanager
     def guard(self):
         from app.runtime_handover import deployment_lock
-
-        return deployment_lock()
+        from guiyi_quant.tq_simulation.runtime import owner_lock
+        with deployment_lock(), owner_lock(self.runtime / 'tqkq-simulation/owner.lock'):
+            self._account_locked = True
+            try:
+                yield
+            finally:
+                self._account_locked = False
 
     def command(self, args, *, timeout=15):
         return subprocess.run(
@@ -297,7 +302,7 @@ class Native:
 
         raw = read_launchd_service("com.guiyi.quant-market-feed", root=self.active)
         require(raw is not None)
-        verify_loaded_service(raw, root=self.active, commit=COMMIT)
+        verify_loaded_service(raw, root=self.active, commit=self.commit)
         match = re.search(r"^\s*pid = (\d+)", raw, re.M)
         require(match is not None)
         return int(match[1])
@@ -342,7 +347,23 @@ class Native:
         require(not children, "FEED_DESCENDANTS_UNPROVEN")
 
     def protected(self):
-        paths = [
+        from guiyi_quant.tq_simulation.runtime import owner_lock
+        if getattr(self, '_account_locked', False):
+            return self._protected_locked()
+        # A running worker is a refusal, not a moving whole-file hash baseline.
+        with owner_lock(self.runtime / 'tqkq-simulation/owner.lock'):
+            return self._protected_locked()
+
+    def _protected_locked(self):
+        from guiyi_quant.tq_simulation.runtime import read_private
+        base = self.runtime / 'tqkq-simulation'
+        cfg = read_private(base / 'config.json')
+        require(cfg.get('provider') == 'TQKQ' and re.fullmatch('[a-f0-9]{64}', cfg.get('account_id', '')),
+                'TQ_ACCOUNT_UNPROVEN')
+        account = base / 'accounts' / cfg['account_id']
+        paths = [base / 'config.json', base / 'control.json',
+                 account / 'account.sqlite', account / 'dispatch.sqlite']
+        paths += [
             self.runtime / "service-bindings.json",
             self.runtime / "run-local-service.sh",
             self.runtime / "project.env",
@@ -351,27 +372,8 @@ class Native:
         paths += list(
             (self.home / "Library/LaunchAgents").glob("com.guiyi.quant-*.plist")
         )
-        # The active original-account anchor is explicit and contains no secret.
-        import plistlib
-
-        sim_plist = self.home / "Library/LaunchAgents/com.guiyi.quant-simnow.plist"
-        args = plistlib.loads(sim_plist.read_bytes())["ProgramArguments"]
-        cfg_path = Path(args[args.index("--config") + 1])
-        cfg = json.loads(cfg_path.read_text())
-        folder = Path(cfg["state_root"]) / cfg["account_id"]
-        paths += [
-            cfg_path,
-            self.runtime / "simnow-monitor.private.json",
-            *[
-                folder / n
-                for n in (
-                    "account.sqlite",
-                    "dispatch.sqlite",
-                    "native-evidence.sqlite",
-                    "signals.sqlite",
-                )
-            ],
-        ]
+        # Retired SimNow remains untouched. Its optional launch definition is
+        # already covered above; it is never required or resurrected here.
         for p in paths:
             require(
                 p.is_absolute()
@@ -400,16 +402,16 @@ class Native:
             require(bool(consumers))
             for key in consumers:
                 name = key[len(prefix) :]
-                require(stream.registered_day(name) == OLD_DAY)
+                require(stream.registered_day(name) == self.old_day)
                 require(
-                    stream.cursor(name, OLD_DAY) == stream.tail(OLD_DAY),
+                    stream.cursor(name, self.old_day) == stream.tail(self.old_day),
                     "SOURCE_NOT_DRAINED",
                 )
                 result[key] = self.redis.get(key).decode()
             keys = [
-                stream.key(OLD_DAY),
-                stream.identity_key(OLD_DAY),
-                *[stream.cursor_key(k[len(prefix) :], OLD_DAY) for k in consumers],
+                stream.key(self.old_day),
+                stream.identity_key(self.old_day),
+                *[stream.cursor_key(k[len(prefix) :], self.old_day) for k in consumers],
             ]
             for key in keys:
                 raw = self.redis.dump(key)
@@ -419,8 +421,8 @@ class Native:
                 result[key] = hashlib.sha256(raw).hexdigest()
                 originals[key] = base64.b64encode(raw).decode()
             require(
-                not self.redis.exists(stream.key(DAY))
-                and not self.redis.exists(stream.identity_key(DAY)),
+                not self.redis.exists(stream.key(self.day))
+                and not self.redis.exists(stream.identity_key(self.day)),
                 "TARGET_DAY_ALREADY_STARTED",
             )
         archive = self.directory / "source-originals.json.gz"
@@ -448,12 +450,16 @@ class Native:
     def verify_metadata(self):
         from app.db.session import SessionLocal
         from app.db.readonly import readonly_transaction
-        from app.market_data.day_preparation import catalog_day_ready
+        from app.market_data.day_preparation import catalog_day_ready, select_preparation_day
+        from app.market_data.market_phase import MarketPhaseResolver
         from app.market_data.operational_universe import load_operational_products
 
         with SessionLocal() as db, readonly_transaction(db, timeout_seconds=30):
+            products = tuple(sorted(load_operational_products()))
+            require(select_preparation_day(MarketPhaseResolver(db), products, datetime.now(UTC)) == self.day,
+                    'RECOVERY_TARGET_DAY_UNPROVEN')
             require(
-                catalog_day_ready(db, tuple(sorted(load_operational_products())), DAY),
+                catalog_day_ready(db, tuple(sorted(load_operational_products())), self.day),
                 "METADATA_NOT_READY",
             )
 
@@ -466,11 +472,11 @@ class Native:
         require(asdict(read_bindings().services["market-feed"]) == self.binding)
         owner = read_service_state("market-feed")
         pid = self.loaded_pid()
-        require(pid == 1772, "SOURCE_FEED_CHANGED")
+        require(pid == self.expected_pid, "SOURCE_FEED_CHANGED")
         require(
             owner["phase"] == "active"
             and owner["pid"] == pid
-            and owner["generation"] == 53
+            and owner["generation"] == self.generation
             and owner["ready"] is False
         )
         self.unique_writer(pid)
@@ -479,19 +485,20 @@ class Native:
         )
         require(
             status["last_run"]["status"] == "passed"
-            and status["last_run"]["trading_day"] == OLD_DAY.isoformat()
+            and status["last_run"]["trading_day"] == self.old_day.isoformat()
             and status["last_run"]["live_evidence"]["cleanup_verified"] is True
         )
-        require(self.redis.get("live:subscription:" + OLD_DAY.isoformat()) is None)
+        require(self.redis.get("live:subscription:" + self.old_day.isoformat()) is None)
         require(
             not list(
-                self.redis.scan_iter(match="live:bars:" + OLD_DAY.isoformat() + ":*")
+                self.redis.scan_iter(match="live:bars:" + self.old_day.isoformat() + ":*")
             )
         )
         self.frozen_control = self.control()
         return dict(
             controller=self.controller,
             binding=self.binding,
+            old_day=self.old_day.isoformat(), day=self.day.isoformat(),
             pid=pid,
             process_identity=self.process_identity(pid),
             control=self.frozen_control,
@@ -522,7 +529,7 @@ class Native:
         from app.runtime_handover import request_drain
 
         require(self.control() == self.frozen_control, "CONTROL_DRIFT")
-        return request_drain("market-feed", generation=53)
+        return request_drain("market-feed", generation=self.generation)
 
     def verify_frozen(self, original):
         require(
@@ -542,7 +549,7 @@ class Native:
             require(
                 control["phase"] == "drain"
                 and control["request_id"] == request
-                and control["generation"] == 53
+                and control["generation"] == self.generation
             )
             if self._alive(original["pid"]):
                 return False
@@ -553,7 +560,7 @@ class Native:
             return (
                 owner["pid"] != original["pid"]
                 and owner["pid"] == self.loaded_pid()
-                and owner["generation"] == 53
+                and owner["generation"] == self.generation
                 and 0
                 < time.time() - datetime.fromisoformat(owner["at"]).timestamp()
                 < 120
@@ -590,8 +597,8 @@ class Native:
             or not owner["ready"]
             or owner["pid"] == original["pid"]
             or owner["pid"] != self.loaded_pid()
-            or heartbeat.get("runtime_commit") != COMMIT
-            or heartbeat.get("runtime_generation") != 53
+            or heartbeat.get("runtime_commit") != self.commit
+            or heartbeat.get("runtime_generation") != self.generation
             or not 0 <= time.time() - stamp <= 8
             or not heartbeat.get("available")
             or heartbeat.get("input_failure") is not None
@@ -605,7 +612,7 @@ class Native:
         for key, value in original["journals"].items():
             if key.startswith("live:observations:registered:"):
                 require(
-                    self.redis.get(key).decode() == DAY.isoformat(), "NEW_DAY_NOT_READY"
+                    self.redis.get(key).decode() == self.day.isoformat(), "NEW_DAY_NOT_READY"
                 )
             else:
                 raw = self.redis.dump(key)
@@ -615,8 +622,8 @@ class Native:
         self.verify_metadata()
         return dict(
             pid=owner["pid"],
-            generation=53,
-            commit=COMMIT,
+            generation=self.generation,
+            commit=self.commit,
             heartbeat_at=heartbeat["generated_at"],
             subscribed_count=heartbeat["subscribed_count"],
             operational_count=heartbeat["operational_count"],
@@ -628,6 +635,9 @@ def main():
     parser.add_argument("action", choices=("plan", "apply"))
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--plan", type=Path, required=True)
+    parser.add_argument("--old-day", type=date.fromisoformat, required=True)
+    parser.add_argument("--day", type=date.fromisoformat, required=True)
+    parser.add_argument("--expected-pid", type=int, required=True)
     args = parser.parse_args()
     try:
         if os.environ.get("GUIYI_FEED_SESSION_RECOVERY_READY") != "1":
@@ -657,7 +667,7 @@ def main():
                     *os.sys.argv[1:],
                 ],
             )
-        native = Native(args.directory)
+        native = Native(args.directory, old_day=args.old_day, day=args.day, expected_pid=args.expected_pid)
         require(args.plan == args.directory / "plan.private.json", "PLAN_PATH_INVALID")
         coordinator = Coordinator(native, args.directory)
         if args.action == "plan":

@@ -39,13 +39,13 @@ def recovery_batch(state, cursor):
     return tuple(chosen), (start + len(chosen)) % len(ordered)
 
 
-def authority(market, product, now, contract=None):
+def authority(market, product, now, contract=None, trading_day=None):
     with SessionLocal() as db, readonly_transaction(db, timeout_seconds=10):
         resolver = MarketPhaseResolver(db)
         phase = resolver.resolve(product.lower(), now)
         if phase.phase is MarketPhase.UNKNOWN:
             raise ValueError("TQ_MARKET_PHASE_UNKNOWN")
-        day = phase.trading_day
+        day = trading_day or phase.trading_day
         if day is None:
             if phase.next_session_start is None:
                 raise ValueError("TQ_SESSION_UNAVAILABLE")
@@ -79,7 +79,7 @@ def authority(market, product, now, contract=None):
 
 def main():
     products = tuple(p.upper() for p in load_operational_products())
-    market = PortfolioMarket(products)
+    market = PortfolioMarket(products, record_closed_tails=True)
     market.activate(datetime.now(UTC))
     recovery_cursor = 0
     try:
@@ -134,7 +134,8 @@ def main():
                         raise ValueError("TQ_MARKET_CONTRACT_INVALID")
                     selected[(item["product"], item["contract"])] = None
                 for signal in signals:
-                    selected[(signal.product, signal.contract)] = None
+                    selected[(signal.product, signal.contract)] = (market.closed_tails[signal.source_id][1]
+                        if signal.source_id in market.closed_tails else None)
                 if mode == "inspect":
                     for product in products:
                         selected[(product, None)] = None
@@ -144,7 +145,7 @@ def main():
                     selected, key=lambda p: (p[0], p[1] or "")
                 ):
                     try:
-                        facts.append(authority(market, product, now, contract))
+                        facts.append(authority(market, product, now, contract, selected[(product, contract)]))
                     except Exception:
                         issues[product] = "TQ_MARKET_AUTHORITY_UNAVAILABLE"
                 recovery = ()
@@ -159,6 +160,8 @@ def main():
                     "at": now.isoformat(),
                     "products": products,
                     "signals": [codec.encode(s) for s in signals],
+                    "closed_tails": {s.source_id: market.closed_tails[s.source_id][0].isoformat()
+                                     for s in signals if s.source_id in market.closed_tails},
                     "facts": facts,
                     "recovery": [codec.encode(p) for p in recovery],
                     "issues": {**market.issues, **issues},

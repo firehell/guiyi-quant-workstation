@@ -922,3 +922,66 @@ def test_versioned_signal_rejects_processing_before_receipt():
     )
     with pytest.raises(ValueError, match="TQ_SIGNAL_PROCESSING_TIME_INVALID"):
         m.TqKqObservedSignalV1(sig, now - timedelta(seconds=1))
+
+
+@pytest.mark.parametrize("directions", [("buy",), ("sell",), ("buy", "sell"), ()])
+def test_closed_signal_records_fact_and_continuity_without_target_or_order_effects(directions):
+    before = initial()
+    end = T + timedelta(hours=1)
+    sig = m.Signal("tail", "RB", "RB2701", end, end + timedelta(seconds=2),
+                   None, directions, "f" * 64)
+    cmd = m.TqKqClosedSignalV1(sig, end + timedelta(seconds=5), end)
+    result = apply(before, "tail", cmd)
+    after = result.state
+    assert after.signals == (sig,)
+    assert after.products[0] == replace(before.products[0], last_bar=end)
+    assert after.orders == before.orders and after.reservations == before.reservations
+    assert after.abandoned == before.abandoned and not result.effects
+    assert after.audit[-1].reason == "CLOSED_SIGNAL_RECORDED"
+    from guiyi_quant.htdy_account_execution.codec import encode, decode
+    assert decode(encode(cmd)) == cmd
+    # Next-session continuity uses the terminal Bar; the tail created no target.
+    fresh = replace(sig, source_id="fresh", bar_end=end+timedelta(hours=12),
+                    observed_at=end+timedelta(hours=12,seconds=2), previous_bar_end=end)
+    nxt = apply(after, "fresh", m.TqKqObservedSignalV1(fresh, fresh.observed_at)).state
+    assert nxt.blocked_products == () and nxt.products[0].last_bar == fresh.bar_end
+
+
+@pytest.mark.parametrize("offset", [61, -1])
+def test_closed_signal_rejects_expired_or_wrong_terminal_receipt(offset):
+    end = T+timedelta(hours=1)
+    sig = m.Signal("tail", "RB", "RB2701", end, end+timedelta(seconds=61 if offset==61 else 1), None, (), "a"*64)
+    with pytest.raises(ValueError, match="TQ_CLOSED_SIGNAL_INVALID"):
+        m.TqKqClosedSignalV1(sig, end+timedelta(seconds=100), end+timedelta(seconds=2) if offset==-1 else end)
+
+
+def test_closed_signal_wrong_owner_blocks_without_replacing_owner_or_other_product():
+    before = initial()
+    end = T+timedelta(hours=1)
+    sig = m.Signal("tail", "RB", "RB2705", end, end+timedelta(seconds=2), None, ("buy",), "a"*64)
+    after = apply(before, "tail", m.TqKqClosedSignalV1(sig, end+timedelta(seconds=5), end)).state
+    assert after.products == before.products and after.orders == before.orders
+    assert after.blocked_products == ("RB",)
+
+
+def test_closed_signal_real_sqlite_replay_and_restart_preserve_targets(tmp_path):
+    from guiyi_quant.htdy_account_execution.store import LocalStore
+    end = T+timedelta(hours=1)
+    c = Controller(tmp_path,A,("RB",),Transport())
+    c.bootstrap(snapshot(T),T)
+    c.owner("RB","RB2701",T,"owner")
+    before = c.store.current()
+    sig=m.Signal("tail-db","RB","RB2701",end,end+timedelta(seconds=2),None,("buy",),"a"*64)
+    c.signal(sig,processed_at=end+timedelta(seconds=3),closed_at=end)
+    accepted=c.store.current()
+    assert accepted.products[0] == replace(before.products[0],last_bar=end)
+    assert accepted.positions==before.positions and accepted.orders==before.orders
+    assert accepted.reservations==before.reservations and not c.journal.mappings()
+    c.signal(sig,processed_at=end+timedelta(seconds=5),closed_at=end)
+    assert c.store.current()==accepted==c.store.replay()
+    c.close()
+    assert LocalStore.inspect(tmp_path/"account.sqlite")==accepted
+    reopened=Controller(tmp_path,A,("RB",),Transport())
+    assert reopened.store.current().phase=="RECOVERY_REQUIRED"
+    assert reopened.store.current().products==accepted.products
+    reopened.close()

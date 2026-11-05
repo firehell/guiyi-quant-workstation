@@ -80,7 +80,7 @@ def _classes():
             m.TqKqExecutionInput,
             m.TqKqTick,
             m.TqKqResumeEmptyV1,
-            m.TqKqObservedSignalV1,
+            m.TqKqObservedSignalV1, m.TqKqClosedSignalV1,
             m.Fill,
             m.NativeFill,
             m.CorrelatedNativeFillV1,

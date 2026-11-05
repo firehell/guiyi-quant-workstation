@@ -186,7 +186,8 @@ onUnmounted(() => {
           :reset="clearRouteError"
         />
         <RouterView v-else v-slot="{ Component }">
-          <Transition name="gy-page" mode="out-in" @before-leave="element => element.setAttribute('inert', '')" @leave-cancelled="element => element.removeAttribute('inert')">
+          <component v-if="isFullscreenMarketRoute" :is="Component" :key="String(route.name)" />
+          <Transition v-else name="gy-page" mode="out-in" @before-leave="element => element.setAttribute('inert', '')" @leave-cancelled="element => element.removeAttribute('inert')">
             <component :is="Component" :key="String(route.name)" />
           </Transition>
         </RouterView>
@@ -355,6 +356,7 @@ onUnmounted(() => {
 
 .content--fullscreen {
   height: 100vh;
+  padding: 0;
 }
 
 @media (max-width: 1199px) {

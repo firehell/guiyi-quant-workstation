@@ -151,15 +151,19 @@ def test_cleaned_feed_metadata_failure_never_claims_ready(monkeypatch):
     assert store.subscriptions(DAY) is None
 
 
-def test_unknown_retirement_never_starts_metadata_preparation(monkeypatch):
+def test_unknown_retirement_prepares_metadata_without_admitting_input(monkeypatch):
     service, store, provider, _ = make_service(monkeypatch)
     store.cleaned = True
     provider._buffer_message({'late': 'must remain retained'})
-    service._prepare_trading_day = lambda now: pytest.fail('unknown retirement must stay blocked')
+    calls = []
+    service._prepare_trading_day = lambda now: calls.append(now)
 
     assert service.poll(NOW) is not None
     assert service._input_failure == 'LIVE_PROVIDER_CLOSE_UNKNOWN'
     assert len(provider._messages) == 1
+    assert calls == [NOW]
+    assert service._provider is provider
+    assert store.heartbeats[-1]['available'] is False
 
 
 @pytest.mark.parametrize('arrival', ['before_close', 'during_close'])
@@ -237,7 +241,7 @@ def test_retirement_failure_finally_does_not_drain_late_input(monkeypatch):
 
 
 def test_still_alive_listener_is_not_retired(monkeypatch):
-    service, store, provider, _ = make_service(monkeypatch)
+    service, store, provider, client = make_service(monkeypatch)
     store.cleaned = True
     provider._listener = SimpleNamespace(is_alive=lambda: True)
     real_close = provider.close_verified
@@ -245,7 +249,13 @@ def test_still_alive_listener_is_not_retired(monkeypatch):
     assert service.poll(NOW) is not None
     assert service._provider is provider
     assert provider._listener.is_alive()
-    assert service._input_failure == 'LIVE_PROVIDER_CLOSE_UNKNOWN'
+    assert service._input_failure is None
+    assert provider._close_failed is False
+    provider._listener = SimpleNamespace(is_alive=lambda: False)
+    provider._retired_listener = provider._listener
+    assert service.poll(NOW) is None
+    assert service._provider is None
+    assert client.close_calls == 1
 
 
 def test_cleanup_authority_is_rechecked_after_close(monkeypatch):
@@ -579,7 +589,7 @@ def test_cleanup_retirement_rechecks_frozen_identity_before_buffer_count(monkeyp
     client.on_close = changed
     monkeypatch.setattr(provider, 'buffered_message_count', lambda: pytest.fail('identity drift before count'))
     assert service.poll(NOW) is not None
-    assert service._input_failure is not None
+    assert (service._input_failure is None) == (drift == 'cursor')
     assert service._provider is (replacement if drift == 'object' else provider)
     assert service._cleanup_isolation.provider is provider
 
@@ -613,3 +623,90 @@ def test_raw_arriving_after_empty_count_is_left_for_next_isolation(monkeypatch):
     assert service._input_failure is not None
     assert service._provider is provider
     assert len(provider._messages) == 1
+
+
+def test_unknown_failure_keeps_metadata_and_unavailable_heartbeat_alive(monkeypatch):
+    service, store, provider, client = make_service(monkeypatch)
+    service._fail_closed_retirement()
+    calls = []
+    service._prepare_trading_day = lambda now: calls.append(now)
+    for now in (NOW, NOW + timedelta(hours=3)):
+        assert service.poll(now) == 'LIVE_PROVIDER_CLOSE_UNKNOWN'
+        assert store.heartbeats[-1]['available'] is False
+        assert store.heartbeats[-1]['input_failure'] == 'LIVE_PROVIDER_CLOSE_UNKNOWN'
+    assert len(calls) == 2
+    assert client.close_calls == 0
+    assert service._provider is provider
+
+
+def test_failed_plain_close_cannot_be_retried_by_verified_close():
+    client = Client()
+    client.on_close = lambda: (_ for _ in ()).throw(RuntimeError('failure'))
+    provider = RQDataLiveProvider(client)
+    for close in (provider.close, provider.close_verified, provider.close):
+        with pytest.raises(ValueError, match='LIVE_PROVIDER_CLOSE_UNKNOWN'):
+            close()
+    assert client.close_calls == 1
+
+
+def test_cursor_lag_rechecks_without_reclosing(monkeypatch):
+    service, store, provider, client = make_service(monkeypatch)
+    store.cleaned = True
+    service.source_stream.behind = True
+    assert service.poll(NOW) is not None
+    assert service._provider is provider
+    assert service._input_failure is None
+    service.source_stream.behind = False
+    assert service.poll(NOW) is None
+    assert client.close_calls == 1
+
+
+def test_real_listener_exit_allows_recheck_without_second_close(monkeypatch):
+    from threading import Event, Thread
+    service, store, provider, client = make_service(monkeypatch)
+    store.cleaned = True
+    release = Event()
+    listener = Thread(target=release.wait, daemon=True)
+    provider._listener = listener
+    listener.start()
+    verify = provider.close_verified
+    monkeypatch.setattr(provider, 'close_verified', lambda: verify(timeout=0))
+    prepared = []
+    service._prepare_trading_day = lambda now: prepared.append(now)
+    try:
+        assert service.poll(NOW) is not None
+        assert service._provider is provider
+        assert provider._close_failed is False
+        assert service.poll(NOW + timedelta(hours=3)) is not None
+        assert len(prepared) == 2
+        assert client.close_calls == 1
+        release.set()
+        listener.join(timeout=2)
+        assert not listener.is_alive()
+        assert service.poll(NOW + timedelta(hours=2)) is None
+        assert service._provider is None
+        assert client.close_calls == 1
+        assert service._first_retirement_failure_code == 'LIVE_PROVIDER_LISTENER_PENDING'
+    finally:
+        release.set()
+        listener.join(timeout=2)
+
+
+def test_unregistered_source_publishes_unavailable_heartbeat(monkeypatch):
+    service, store, _, _ = make_service(monkeypatch)
+    monkeypatch.setattr(service.source_stream, 'registered_day',
+                        lambda *_: (_ for _ in ()).throw(ValueError('OBSERVATION_CONSUMER_UNREGISTERED')))
+    service._publish_heartbeat(NOW, service._phases(NOW))
+    assert store.heartbeats[-1]['registered_day'] is None
+    assert store.heartbeats[-1]['available'] is False
+
+
+def test_preparation_exception_never_publishes_available(monkeypatch):
+    service, store, _, _ = make_service(monkeypatch)
+    service._available = service._provider_available = True
+    service._prepare_trading_day = lambda now: (_ for _ in ()).throw(RuntimeError('private failure'))
+    with pytest.raises(RuntimeError, match='private failure'):
+        service.poll(NOW)
+    assert store.heartbeats[-1]['available'] is False
+    assert store.heartbeats[-1]['first_failure_code'] == 'FEED_POLL_FAILED'
+    assert 'private failure' not in str(store.heartbeats)

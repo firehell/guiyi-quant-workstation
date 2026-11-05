@@ -9,7 +9,7 @@ export type MonitorMetric = 'equity' | 'available' | 'used_margin' | 'frozen_mar
 export interface MonitorOverview {
   version: string; status: 'available' | 'partial' | 'not_connected' | 'unavailable'; snapshot: string | null; generated_at: string
   account: { key: string; alias: string; environment: string; strategy: string; scope_product: string | null; policy_version: string } | null
-  observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string; mode?: 'observe' | 'manage' | 'trade' | null; opening_enabled?: boolean; account_takeover_pending?: boolean; host_status?: string | null } | null
+  observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string; mode?: 'observe' | 'manage' | 'trade' | null; opening_enabled?: boolean; blocked_product_count?: number; executable_product_count?: number; account_takeover_pending?: boolean; host_status?: string | null } | null
   observe_reconciliation_ready?: boolean
   observe_reconciliation_status?: 'verified' | 'stale' | 'unverified'
   observe_reconciliation_checked_at?: string | null

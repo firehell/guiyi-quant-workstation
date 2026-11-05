@@ -1,3 +1,4 @@
+import {normalizeBreakoutEvents} from './newowBreakoutEvents.ts'
 import {normalizeDisplayEvents} from './newowDisplayEvents.ts'
 import { normalizeCautionDisplay } from './newowCautionDisplay.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
@@ -89,13 +90,13 @@ export function normalizeNewowProductResponse(
   const input = record(payload, 'Newow product response')
   const top = exactRecord(payload, 'Newow product response', ['meta', 'section', 'chart', 'auxiliary', 'reference', 'explanation', 'comparator', ...('snapshot_context' in input ? ['snapshot_context'] : [])])
   let snapshotContext: NewowProductSectionResponse['snapshotContext']
-  if ('identity' in expectedRequest && expectedRequest.section === 'chart' && expectedRequest.resolveCurrent && ['1d', '1w'].includes(expected.frequency)) {
+  if ('identity' in expectedRequest && expectedRequest.section === 'chart' && expectedRequest.resolveCurrent && ['5m', '15m', '30m', '60m', '1d', '1w'].includes(expected.frequency)) {
     const context = record(top.snapshot_context, 'snapshot_context')
     requireExact(context.frequency, expected.frequency, 'snapshot_context.frequency')
     const asOf = instant(context.as_of, 'snapshot_context.as_of')
     instant(context.requested_at, 'snapshot_context.requested_at')
     literal(context.freshness, ['current', 'pending_update'], 'snapshot_context.freshness')
-    if (context.frequency === '1d') {
+    if (context.frequency !== '1w') {
       day(context.expected_trading_day, 'expected_trading_day')
       day(context.available_trading_day, 'available_trading_day')
     } else {
@@ -103,7 +104,7 @@ export function normalizeNewowProductResponse(
       instant(context.available_period_end, 'available_period_end')
       record(context.current_context, 'current_context')
     }
-    snapshotContext = { ...context, product: expected.product, strategy: expected.strategy, series_kind: 'actual_dominant', schema_version: context.frequency === '1d' ? 'newow_daily_snapshot_v1' : 'newow_weekly_snapshot_v1' } as unknown as NonNullable<typeof snapshotContext>
+    snapshotContext = { ...context, product: expected.product, strategy: expected.strategy, series_kind: 'actual_dominant', schema_version: context.frequency === '1d' ? 'newow_daily_snapshot_v1' : context.frequency === '1w' ? 'newow_weekly_snapshot_v1' : 'newow_intraday_snapshot_v1' } as unknown as NonNullable<typeof snapshotContext>
     expected = { ...expected, asOf }
   } else if (top.snapshot_context != null) throw new Error('unexpected current snapshot context')
   const section = literal(top.section, SECTIONS, 'section')
@@ -266,8 +267,8 @@ function normalizeSectionValue(section: NewowProductSection, payload: unknown, m
 
 function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartValue {
   const source = record(payload, 'chart.value')
-  const value = exactRecord({ next_older_window: null, price_reference: null, caution_events: [], display_events: [], ...source }, 'chart.value', [
-    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'display_events', 'caution_events', 'bars', 'frames', 'actions', 'hints',
+  const value = exactRecord({ next_older_window: null, price_reference: null, caution_events: [], display_events: [], breakout_events: [], ...source }, 'chart.value', [
+    'chart_from', 'chart_through', 'page_identity', 'price_unavailable_days', 'breakout_events', 'display_events', 'caution_events', 'bars', 'frames', 'actions', 'hints',
     'trend_channel', 'price_reference', 'diagnostics', 'next_before', 'next_older_window', 'repainting', 'formal_signal_eligible', 'allowed_uses',
   ])
   const chartFrom = day(value.chart_from, 'chart_from')
@@ -313,6 +314,7 @@ function normalizeChart(payload: unknown, meta: NewowProductMeta): NewowChartVal
     return {...e,bar_end:bar!.bar_end} as unknown as import('../types/newowProduct').NewowCautionEvent
   })
   return {
+    breakout_events: normalizeBreakoutEvents(value.breakout_events, bars, meta.identity.frequency, meta.as_of, meta.identity.product),
     display_events: normalizeDisplayEvents(value.display_events, bars, meta.identity.frequency, meta.as_of),
     caution_events: cautionEvents,
     chart_from: chartFrom, chart_through: chartThrough, page_identity: sha256(value.page_identity, 'chart.page_identity'), price_unavailable_days: priceUnavailableDays,
@@ -1120,7 +1122,23 @@ function normalizeDecisionV2(payload: unknown, meta: NewowProductMeta): import('
   }
   const facts = array(cd.facts,'cdv2.facts')
   if (facts.length !== 6) throw new Error('cdv2 facts missing')
-  facts.forEach(raw => { const f = record(raw,'cdv2.fact'); text(f.role,'cdv2.role'); if (!Number.isInteger(f.age) || Number(f.age)<-1) throw new Error('cdv2 age'); if (f.bar_end !== null) requireNotAfter(instant(f.bar_end,'cdv2.bar_end'),meta.as_of,'cdv2.bar_end','meta.as_of') })
+  facts.forEach(raw => {
+    const f = record(raw,'cdv2.fact'); text(f.role,'cdv2.role')
+    if (!Number.isInteger(f.age) || Number(f.age)<-1) throw new Error('cdv2 age')
+    if (f.bar_end !== null) requireNotAfter(instant(f.bar_end,'cdv2.bar_end'),meta.as_of,'cdv2.bar_end','meta.as_of')
+    if (f.last_signal !== undefined && f.last_signal !== null) {
+      const signal = exactRecord(f.last_signal, 'cdv2.last_signal', ['action_id','kind','bar_end','price','calculation_segment_id'])
+      if (f.status !== 'ready' || f.bar_end === null || Number(f.age) < 0) throw new Error('cdv2 signal without ready fact')
+      text(f.physical_contract,'cdv2.contract'); text(f.segment_id,'cdv2.segment')
+      text(signal.action_id,'cdv2.signal_id')
+      literal(signal.kind,['BUILD','CLEAR'] as const,'cdv2.signal_kind')
+      requireNotAfter(instant(signal.bar_end,'cdv2.signal_end'),String(f.bar_end),'cdv2.signal_end','cdv2.bar_end')
+      const priceValue = Number(decimal(signal.price,'cdv2.signal_price'))
+      if (!Number.isFinite(priceValue) || priceValue <= 0) throw new Error('cdv2 signal price')
+      text(signal.calculation_segment_id,'cdv2.signal_segment')
+      requireExact(signal.calculation_segment_id,f.calculation_segment_id,'cdv2.signal_segment')
+    }
+  })
   if (cd.period_conflict !== undefined) {
     const p=exactRecord(cd.period_conflict,'period_conflict',['version','hit','code','week_state','day_state'])
     requireExact(p.version,'newow_period_conflict_v3379_v1','period_conflict.version')

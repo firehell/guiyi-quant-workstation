@@ -775,4 +775,4 @@ class Transition:
     effects: tuple[Effect, ...] = ()
 
 
-from .tq_types import TqKqFill, TqKqInstrument, TqKqExecutionInput, TqKqTick, TqKqResumeEmptyV1, TqKqObservedSignalV1  # noqa: E402,F401
+from .tq_types import TqKqFill, TqKqInstrument, TqKqExecutionInput, TqKqTick, TqKqResumeEmptyV1, TqKqObservedSignalV1, TqKqClosedSignalV1  # noqa: E402,F401

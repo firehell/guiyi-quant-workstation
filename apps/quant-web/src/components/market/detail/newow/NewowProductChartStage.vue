@@ -3,6 +3,8 @@ import ChartReferenceToolbar from '../ChartReferenceToolbar.vue'
 import NewowMainRiseProcessLabels from './NewowMainRiseProcessLabels.vue'
 import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
 import {layoutMainRiseProcessLabels} from '@/utils/newowProcessHintDisplay'
+import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
+import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
@@ -111,7 +113,7 @@ const emit = defineEmits<{
   'focus-resolved': [signalId: string, focusRequestId: number]
   'select-comparison-signal': [strategy: 'trend' | 'oscillation', signalId: string]
   'select-hint': [hintId: string]
-  'select-display': [event:NewowDisplayEvent]
+  'select-breakout':[event:NewowBreakoutEvent]; 'select-display':[event:NewowDisplayEvent]
   'analyze-channel': []
   'explain-main': []
   'explain-auxiliary': []
@@ -130,7 +132,9 @@ function actionWidth(callout: KlineReferenceCallout, strategy = props.strategy):
 }
 const pageTheme=ref(readNewowChartDisplayTheme())
 let themeObserver:MutationObserver|null=null
+const breakoutPoints=ref<BreakoutPoint[]>([]),showBreakoutShapes=ref(true),showBreakoutWicks=ref(true)
 const displayPoints=ref<DisplayPoint[]>([])
+watch(()=>[props.strategy,props.response?.meta.identity.product,props.response?.meta.identity.frequency,props.response?.meta.identity.formula_versions.join('|')],()=>{breakoutPoints.value=[]},{flush:'sync'})
 const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;title:string}>>([])
 const selectedCautionKey = ref<string | null>(null)
 const selectedCaution = computed(() => cautionOverlays.value.find(item=>item.key===selectedCautionKey.value) ?? null)
@@ -141,7 +145,7 @@ watch(visualOverlays, value => { saveVisualOverlayPreferences(value); renderVisu
 const cursorRows = ref<string[]>([])
 const cursorTop = ref(0)
 function onCrosshair(event: MouseEventParams<Time>): void {
-  cursorRows.value = event.point == null ? [] : newowChartReadout(model.value, auxiliaryModel.value, event.time ?? null)
+  cursorRows.value = event.point == null ? [] : newowChartReadout(model.value, null, event.time ?? null)
   const chartTop = container.value?.offsetTop ?? 0
   const paneOffset = chart?.panes?.().slice(0, event.paneIndex ?? 0).reduce((height, pane) => height + pane.getHeight(), 0) ?? 0
   const cardHeight = cursorRows.value.length * 18 + 20
@@ -562,7 +566,8 @@ function renderMarkers(value: NewowProductChartModel | null): void {
 }
 
 function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
-  displayPoints.value = []
+  breakoutPoints.value=[]
+  displayPoints.value=[]
   cautionOverlays.value = []
   attackOverlays.value = []
   processOverlays.value = []
@@ -596,6 +601,17 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
     if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
       cautionOverlays.value.push({x,y:Math.max(3,y-26),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
   }
+  const breakoutRange=scale.getVisibleLogicalRange()
+  const breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:value.bars.length)*.6)
+  const breakoutBars=value.bars.map(b=>({bar_end:b.barEnd,physical_contract:b.physicalContract,segment_id:b.segmentId,calculation_segment_id:b.calculationSegmentId}))
+  const breakoutEvents=props.strategy==='oscillation'?(props.response?.value?.breakout_events??[]):[]
+  breakoutPoints.value=breakoutEvents.flatMap(event=>{
+    const bar=value.bars.find(b=>b.barEnd===event.bar_end&&b.physicalContract===event.physical_contract&&b.calculationSegmentId===event.calculation_segment_id)
+    if(!bar)return []
+    const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay)),y=priceToCoordinate.call(candles,event.side==='up'?bar.high:bar.low)
+    const index=detailChartIndex(chart!,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay),value.bars.indexOf(bar))
+    return x!=null&&y!=null&&displayIndexVisible(index,scale.getVisibleLogicalRange())?[{event,x,y,candleWidth:breakoutCandleWidth,band:breakoutBand(event,breakoutBars,value.bars.indexOf(bar),i=>timeToCoordinate.call(scale,chartMarkerTime(value.bars[i]!.barEnd,value.identity.frequency,value.bars[i]!.tradingDay)),p=>priceToCoordinate.call(candles,p),breakoutCandleWidth)}]:[]
+  })
   const displayEvents=[...(props.response?.value?.display_events??[]),...(comparisonActive.value ? props.comparisonResponse?.value?.display_events??[] : [])]
   const seenDisplay=new Set<string>()
   displayPoints.value=displayEvents.flatMap(event=>{
@@ -905,6 +921,8 @@ defineExpose({ revealSignal, scrollToLatest })
                 <summary>图层</summary>
                 <button type="button" :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button>
                 <button type="button" :aria-pressed="showActions" @click="showActions = !showActions">建仓 / 清仓</button>
+                <button v-if="strategy==='oscillation'" type="button" :aria-pressed="showBreakoutShapes" @click="showBreakoutShapes=!showBreakoutShapes">突破形态</button>
+                <button v-if="strategy==='oscillation'" type="button" :aria-pressed="showBreakoutWicks" @click="showBreakoutWicks=!showBreakoutWicks">影线提示</button>
                 <button v-if="!comparisonActive" type="button" :aria-pressed="showHints" @click="showHints = !showHints">过程提示</button>
                 <template v-else>
                   <button type="button" :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button>
@@ -935,6 +953,7 @@ defineExpose({ revealSignal, scrollToLatest })
       @wheel="scheduleActionProjection"
       @dblclick="scheduleActionProjection"
     />
+    <NewowBreakoutOverlay :points="breakoutPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-breakout="emit('select-breakout',$event)" />
     <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" />
     <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
       <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg v-if="item.tentative" aria-hidden="true" width="100%" height="16"><rect x="0" y="0" width="100%" height="16" rx="8" /></svg><span>小心</span></button>
@@ -974,7 +993,7 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
-.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:0 6px;height:16px;min-height:16px;max-height:16px;box-sizing:border-box;background:#00ff00;color:#003300;font:bold 10px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
+.newow-caution-overlay{position:absolute;pointer-events:none;z-index:8}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:0 6px;height:16px;min-height:16px;max-height:16px;box-sizing:border-box;background:#00ff00;color:#003300;font:bold 10px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
 
 .newow-product-chart-stage__tools > summary { min-height:22px; padding:0 6px; line-height:22px; cursor:pointer; white-space:nowrap; }
 .newow-product-chart-stage__tools-body { position:absolute; right:0; top:100%; width:min(560px,calc(100vw - 48px)); padding:8px; border:1px solid var(--gy-border); border-radius:6px; background:var(--gy-bg-panel); box-shadow:0 4px 14px #0002; font-weight:400; }
@@ -983,7 +1002,7 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage:fullscreen .newow-product-chart-stage__chart { height:0; flex:1 1 auto; min-height:0; }
 .newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(400px,48vh,650px) + 350px); min-height:690px; }
-.newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
+.newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:9; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
 .newow-product-chart-stage__dual-summary { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0; padding:3px 12px 7px; background:#fafafa; color:var(--gy-text-muted); font-size:11px; font-weight:600; line-height:1.5; }
 .newow-product-chart-stage__reference-record-status { margin:0; padding:2px 12px; color:var(--gy-text-muted); font-size:10px; }

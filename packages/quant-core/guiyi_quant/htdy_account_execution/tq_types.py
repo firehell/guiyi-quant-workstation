@@ -30,6 +30,25 @@ class TqKqObservedSignalV1:
 
 
 @dataclass(frozen=True)
+class TqKqClosedSignalV1:
+    """Record a first-seen terminal Bar without creating an execution target."""
+
+    signal: Signal
+    at: datetime
+    session_end: datetime
+    policy_version: str = "tqkq_closed_signal_record_only_v1"
+
+    def __post_init__(self):
+        _time(self.at)
+        _time(self.session_end)
+        if (type(self.signal) is not Signal or self.at < self.signal.observed_at
+                or self.signal.bar_end != self.session_end
+                or not 0 < (self.signal.observed_at - self.session_end).total_seconds() <= 60
+                or self.policy_version != "tqkq_closed_signal_record_only_v1"):
+            raise ValueError("TQ_CLOSED_SIGNAL_INVALID")
+
+
+@dataclass(frozen=True)
 class TqKqFill(Fill):
     fee: Decimal | None
     native_trade_id: str

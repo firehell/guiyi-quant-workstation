@@ -77,3 +77,10 @@ test('pending takeover flag rejects wrong modes and nonboolean responses',async(
  Object.assign(data.observer!,{mode:'trade',account_takeover_pending:'true'});
  assert.throws(()=>validateOverview(data),/MONITOR_RESPONSE_INVALID/);
 });
+
+
+test('zero executable products never presents enabled process as trading',()=>{
+ const data=overview();data.observer!.mode='trade';data.observer!.opening_enabled=true;
+ data.observer!.executable_product_count=0;data.observer!.blocked_product_count=60;
+ assert.equal(observerLabel(data),'行情或账户条件阻断：可执行0个品种，阻断60个');
+})

@@ -14,7 +14,8 @@ import { NewowProductRequestError, getNewowProductSection } from '@/api/newowPro
 import type { NewowProductSectionResponse, NewowProductFrequency } from '@/types/newowProduct'
 import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
-import { decisionContextIdentity, decisionRoleLabel, decisionFactState, decisionFactAge, decisionFactReason, decisionDisplay, decisionMismatchReason } from '@/utils/newowDecisionV2Presentation'
+import { cardChain, cardMergedChain, cardPresentation, cardStateColor, cardChipState, cardActionColor } from '@/utils/newowDecisionCard'
+import { decisionContextIdentity, decisionRoleLabel, decisionFactAge } from '@/utils/newowDecisionV2Presentation'
 
 const props = withDefaults(defineProps<{ response: NewowProductSectionResponse<'chart'>; historical?: boolean; chartSources?: PriceSourceRow[]; latestCompletedFrequencies?: readonly NewowProductFrequency[]; magic11Ready?:boolean; displayStrategy?: string; pathStrategy?: string; dominant?: 'trend'|'oscillation'|null; dominantAsOf?: string; dominantReady?: boolean; showPath?: boolean; showPriceSources?: boolean; backgroundLabel?: string; mainRiseBackground?: boolean; currentState?: string; expectedOwner?: NewowDisplayOwner | null }>(), { showPath: true, showPriceSources: true })
 const emit = defineEmits<{ magic11:[]; 'path-context': [value: { decision: NewowDecisionV2 | null; loading: boolean; error: string }] }>()
@@ -42,6 +43,7 @@ onBeforeUnmount(() => { observer?.disconnect(); generation++; controller?.abort(
 async function load() {
   const token = ++generation
   controller?.abort(); controller = new AbortController(); loading.value = true; error.value = ''; result.value = null
+  collapsed.value = true; evidenceExpanded.value = false
   try {
     const asOf = decisionAsOf.value
     const next = await getNewowProductSection({ identity: context.value.identity, section: 'explanation', decisionV2: true, pathStrategy: props.pathStrategy ?? (props.displayStrategy === 'dual' ? 'fusion' : props.displayStrategy), asOf, ...(!context.value.background && asOf === props.response.meta.as_of && props.response.meta.snapshot_token ? { snapshotToken: props.response.meta.snapshot_token } : {}) }, { signal: controller.signal })
@@ -60,104 +62,92 @@ async function load() {
   } finally { if (token === generation) loading.value = false }
 }
 const basis = ref(readNewowBasis())
+function selectBasis(value: 'week' | 'day') { basis.value = value; collapsed.value = true; evidenceExpanded.value = false }
 watch(basis, saveNewowBasis)
 function refreshBasis() { if (document.visibilityState === 'visible') basis.value = readNewowBasis() }
 function syncBasis(event: StorageEvent) { if (event.key === null || event.key === 'guiyi.newow.decision-basis.v1') refreshBasis() }
 onMounted(() => { if (typeof document !== 'undefined') document.addEventListener('visibilitychange', refreshBasis); if (typeof window !== 'undefined') window.addEventListener('storage', syncBasis) })
 onBeforeUnmount(() => { if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', refreshBasis); if (typeof window !== 'undefined') window.removeEventListener('storage', syncBasis) })
 const displayStrategy = computed(() => props.displayStrategy ?? props.response.meta.identity.strategy)
+const hasBasisBucket = computed(() => ['trend','oscillation','dual'].includes(displayStrategy.value))
 const basisDecision = computed(() => displayStrategy.value === 'dual' && (!props.dominantReady || props.dominantAsOf !== result.value?.cdv2.as_of) ? null : deriveBasisDecision(result.value,displayStrategy.value,basis.value,props.dominant ?? null))
 const cd = computed(() => result.value?.cdv2)
-const view = computed(() => cd.value ? decisionDisplay(cd.value) : null)
+const view = computed(() => cd.value ? cardPresentation(cd.value) : null)
 const copy = computed(() => cd.value?.presentation?.version === 'guiyi_cdv2_daily_weekly_hourly_presentation_v1' && cd.value.presentation.scope === 'daily_weekly_hourly' ? cd.value.presentation : null)
 const prices = computed(() => result.value?.prices)
 const priceSnapshotNote = computed(() => prices.value && previewInstant(prices.value.as_of) !== previewInstant(props.response.meta.as_of) ? `共享／状态卡价格截至 ${formatBeijingInstant(prices.value.as_of)}，与主图截止不同；不替代主图通道价格。` : undefined)
 const dailyWeeklyFacts = computed(() => ['trend_week', 'trend_day', 'oscillation_week', 'oscillation_day', 'trend_m60', 'oscillation_m60'].map(role => ({ role, fact: cd.value?.facts.find(f => f.role === role) })))
 const missingDailyWeekly = computed(() => cd.value?.missing_roles ?? [])
-const deductions: Record<string, string> = { j_reduce: 'J 减仓', care: '小心', tent: '暂定峰（关闭）' }
 const bias = (axis: 'trend' | 'oscillation') => {
   const value = axis === 'trend' ? cd.value?.trend_bias : cd.value?.oscillation_bias
-  return ({ bullish: { label: '看多', color: '#ff3b30' }, bearish: { label: '看空', color: '#34c759' }, cautious: { label: '偏空', color: '#ff9500' }, warning: { label: '偏多', color: '#ff6b35' } } as Record<string, { label: string; color: string }>)[value ?? ''] ?? { label: '未明确', color: '#8e8e93' }
+  return ({ bullish: { label: '看多', color: '#ff3b30' }, bearish: { label: '看空', color: '#34c759' }, cautious: { label: '偏空', color: '#ff9500' }, warning: { label: '偏多', color: '#ff6b35' } } as Record<string, { label: string; color: string }>)[value ?? ''] ?? { label: '--', color: '#8e8e93' }
 }
-const chipColor = (axis: string, period: string) => {
-  const state = axis === 'trend' ? cd.value?.trend_state?.[period] : cd.value?.oscillation_state?.[period]
-  return state === 'up' || state === 'holding' ? '#ff3b30' : state === 'down' || state === 'cleared' ? '#34c759' : '#8e8e93'
-}
+const chain = computed(() => cardChain(cd.value, displayStrategy.value, basis.value, displayStrategy.value === 'dual' && (!props.dominantReady || props.dominantAsOf !== cd.value?.as_of) ? null : props.dominant))
+const mergedChain = computed(() => cardMergedChain(chain.value))
+const signalCells = computed(() => chain.value.filter(cell => cell.fact?.status === 'ready' && cell.fact.last_signal))
+const action = computed(() => basisDecision.value?.action ?? (['trend','oscillation','dual'].includes(displayStrategy.value) ? '等待' : cd.value?.action ?? ''))
+const signalPrice = (price: string) => Number(price).toFixed(2)
+const signalDate = (at: string) => new Intl.DateTimeFormat('sv-SE', {timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(at))
 </script>
-
 <template>
-  <section ref="surface" data-testid="composite-card-surface" class="decision-v2" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
-    <div class="decision-v2__header">
+  <section ref="surface" data-testid="composite-card-surface" class="decision-v2 composite-action-card" aria-label="新版综合决策 CDV2" :style="{ '--certainty-color': view?.tier.color ?? '#8e8e93' }">
+    <div class="composite-header">
       <button type="button" class="decision-v2__toggle" :aria-label="collapsed ? '展开综合决策' : '收起综合决策'" :aria-expanded="!collapsed" :aria-controls="bodyId" @click="toggleCard">
-        <strong>综合决策</strong>
-        <span v-if="cd" class="decision-v2__action" :class="{ flat: (basisDecision?.action ?? cd.action).includes('空') || (basisDecision?.action ?? cd.action).includes('清') }">{{ basisDecision?.action ?? (cd.action === '清/空仓' ? '空仓' : cd.action) }}</span>
-        <span v-else class="decision-v2__basis">{{ loading ? '读取中…' : '综合依据待就绪' }}</span>
-        <span class="decision-v2__arrow" :class="{ collapsed }" aria-hidden="true">▾</span>
+        <strong class="composite-title">综合决策</strong>
+        <span class="composite-spacer" />
+        <span v-if="cd && hasBasisBucket" class="composite-action-word" :style="{color:cardActionColor(action)}">{{ action }}</span>
+        <span v-else-if="!cd" class="composite-basis">{{ loading ? '读取中…' : '综合依据待就绪' }}</span>
+        <span class="composite-collapse" :class="{collapsed}" aria-hidden="true">▾</span>
       </button>
     </div>
     <p v-if="loading" v-show="!collapsed" class="decision-v2__message" role="status">正在读取同一快照的已完成日周小时策略…</p>
-
     <p v-if="error" v-show="!collapsed" class="decision-v2__message" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
     <div v-show="!collapsed" :id="bodyId" class="decision-v2__body">
       <template v-if="cd && view">
-        <p class="decision-v2__headline">{{ dailyWeeklyFacts.filter(item => item.role.startsWith('trend')).map(item => `${item.role.endsWith('week') ? '周' : item.role.endsWith('m60') ? '60分' : '日'} ${decisionFactState(item.fact)}`).join(' / ') }}</p>
-    <div v-if="cd" v-show="!collapsed" class="decision-v2__period-choice" aria-label="页面决策口径"><button type="button" aria-label="周线口径" :aria-pressed="basis==='week'" @click="basis='week'">周线主<span v-if="basis==='week'"> 当前</span></button><button type="button" aria-label="日线口径" :aria-pressed="basis==='day'" @click="basis='day'">日线主<span v-if="basis==='day'"> 当前</span><span v-else> · 短线</span></button><span>{{ basis==='week' ? '周线定方向 · 日线定执行' : '日线定方向 · 60分定执行' }}</span></div>
-        <p v-if="basisDecision">{{ basisDecision.reason }}</p><p v-else>所选口径不可用，当前保留原综合依据；不补造周期状态。</p>
-        <section v-if="basisDecision" class="decision-v2__first-action" :data-level="basisDecision.strength==='tip'?'warn':basisDecision.strength" aria-label="口径行动原则"><b>{{ basisDecision.strengthName }}</b><strong>{{ basisDecision.strengthText }}</strong></section><p v-if="basisDecision?.conflict" role="status">周期冲突 · {{ basisDecision.dirFull }}看多，{{ basisDecision.execFull }}回调</p><p v-if="cd.period_conflict?.code==='XP1'" role="status">XP1 · 趋势周线向上、日线向下；独立周期提示</p>
-        <p v-if="!basisDecision" class="decision-v2__interpretation">{{ view.direction.text }}</p>
-        <section v-if="copy && !basisDecision" class="decision-v2__first-action" :data-level="copy.first_action.level" aria-label="第一行动原则">
-          <b>{{ { ok:'遵守', warn:'提示', violate:'警示', unknown:'待确认' }[copy.first_action.level] }}</b>
-          <div><strong>{{ copy.first_action.title }}</strong></div>
-        </section>
-        <p v-if="missingDailyWeekly.length" class="decision-v2__missing">日周小时输入不可用：{{ missingDailyWeekly.map(decisionRoleLabel).join('、') }}；缺失不当作空仓，不使用其他周期替代。</p>
-
-        <button type="button" class="decision-v2__detail-toggle" :aria-label="evidenceExpanded ? '收起综合依据' : '展开综合依据'" :aria-expanded="evidenceExpanded" :aria-controls="evidenceId" @click="evidenceExpanded = !evidenceExpanded">{{ evidenceExpanded ? '收起依据' : '展开依据' }} <span aria-hidden="true">{{ evidenceExpanded ? '▴' : '▾' }}</span></button>
-        <div v-show="evidenceExpanded" :id="evidenceId" class="decision-v2__evidence">
-          <div class="decision-v2__fact-line"><strong>可靠性档位</strong><span class="decision-v2__badge">{{ view.tier.label }}</span></div>
-
-          <div class="decision-v2__fact-line"><strong>共振级别</strong><span class="decision-v2__tag" :style="{ color: view.resonance.color }">{{ view.resonance.name }} {{ cd.resonance }}</span><span v-if="view.mismatch" class="decision-v2__tag decision-v2__tag--mismatch">{{ view.mismatch.name }}</span></div>
-        <div class="decision-v2__scores" aria-label="综合决策五项评分">
-          <div v-for="score in view.scores" :key="score.key" class="decision-v2__score"><b :style="{ color: score.color }">{{ score.value ?? '—' }}</b><small>{{ score.label }}</small></div>
+        <div v-if="chain.length" class="composite-chain" aria-label="三周期口径链">
+          <span v-if="mergedChain" class="chain-single">{{ mergedChain }}</span>
+          <template v-else v-for="(cell,index) in chain" :key="cell.period">
+            <span v-if="index" class="chain-arrow" aria-hidden="true">→</span>
+            <div class="chain-cell" :class="{main:cell.main,ref:cell.reference}"><div class="cc-top"><span class="cc-key">{{cell.label}}</span></div><div class="cc-bottom"><span class="st" :style="{color:cell.color}">{{cell.state}}</span></div></div>
+          </template>
         </div>
-
-          <div v-if="view.volatility" class="decision-v2__volatility">
-            <strong>波动率</strong><div class="decision-v2__vol-track"><i :style="{ left: view.volatility.position + '%', background: view.volatility.color }" /></div><b :style="{ color: view.volatility.color }">{{ view.volatility.value }}%</b><span class="decision-v2__vol-tag" :data-level="view.volatility.level">{{ view.volatility.label }}</span>
+        <div v-if="basisDecision?.conflict" class="composite-conflict" role="status">
+          <span class="conflict-chip">周期错配</span><div class="conflict-text">周线口径仍持仓，日线已兑现。按「周线主 / 日线从」规则仅作提示，<b>不改动现有仓位</b>。关注周线是否转弱。<span class="conflict-note">口径切换仅影响本页展示，不改变策略信号及现有参考记录。</span></div>
+        </div>
+        <div v-if="chain.length" class="decision-v2__period-choice composite-basis-switch" aria-label="页面决策口径">
+          <button type="button" class="basis-btn" :class="{active:basis==='week'}" aria-label="周线口径" :aria-pressed="basis==='week'" @click="selectBasis('week')">周线主</button>
+          <button type="button" class="basis-btn" :class="{active:basis==='day'}" aria-label="日线口径" :aria-pressed="basis==='day'" @click="selectBasis('day')">日线主 · 短线</button>
+          <span class="basis-note">周线定方向，日线定买卖点（切换仅影响本页展示）</span>
+        </div>
+        <div class="composite-body">
+          <p class="composite-reason">{{basisDecision?.reason ?? (['trend','oscillation','dual'].includes(displayStrategy) ? '所选口径不可用，等待已完成信号明确。' : copy?.advice ?? view.direction.text)}}</p>
+          <div class="composite-alert">
+            <section v-if="basisDecision || copy" class="composite-firstaction" :class="'fa-'+(basisDecision ? basisDecision.strength==='tip'?'warn':basisDecision.strength : copy!.first_action.level==='unknown'?'warn':copy!.first_action.level)" aria-label="口径行动原则">
+              <b class="fa-icon">{{basisDecision?.strengthName ?? ({ok:'遵守',warn:'提示',violate:'违反',unknown:'待确认'}[copy!.first_action.level])}}</b>
+              <div class="fa-text"><strong class="fa-title">{{basisDecision ? '第一行动原则：'+basisDecision.strengthText : copy!.first_action.title}}</strong><p v-if="!basisDecision" class="fa-detail">{{copy!.first_action.detail}}</p></div>
+            </section>
+            <div v-if="view.mismatch" class="composite-mismatch-row" :style="{'--mismatch-color':view.mismatch.color}"><i class="mm-bar" :style="{background:view.mismatch.color}"/><strong class="mm-type">{{view.mismatch.name}}</strong><span class="mm-sep">·</span><b class="mm-bars">{{view.mismatch.ageLabel}}</b></div>
           </div>
-          <p v-else class="decision-v2__missing">波动率数据不足，未作波动扣分；不把缺失解释为低波动。</p>
-          <section class="decision-v2__states" aria-label="日周小时策略状态与信号年龄">
-            <div v-for="axis in (['trend', 'oscillation'] as const)" :key="axis" class="decision-v2__column">
-              <header><strong>{{ axis === 'trend' ? '趋势策略' : '震荡策略' }}</strong><b :style="{ color: bias(axis).color }">{{ bias(axis).label }}</b></header>
-              <article v-for="item in dailyWeeklyFacts.filter(item => item.role.startsWith(axis))" :key="item.role" :title="`${decisionRoleLabel(item.role)} · ${decisionFactAge(item.fact)}`" :style="{ color: chipColor(axis, item.role.endsWith('week') ? 'week' : item.role.endsWith('m60') ? 'm60' : 'day') }">
-                <strong>{{ decisionRoleLabel(item.role) }}</strong><b>{{ decisionFactState(item.fact) }}</b><span class="decision-v2__chip-age">{{ decisionFactAge(item.fact) }}</span>
-              </article>
-            </div>
-          </section>
-          <div class="decision-v2__direction" :style="{ borderLeftColor: view.direction.color }"><strong>方向</strong><p :style="{ color: view.direction.color }">{{ view.direction.text }}</p></div>
-        <div class="decision-v2__resonance" aria-label="共振与错配依据" :style="{ '--resonance-color': view.resonance.color }">
-          <strong>{{ view.resonance.name }}</strong><span class="decision-v2__dots" aria-hidden="true">{{ view.resonance.dots }}</span><p>{{ view.resonance.description }}</p>
+          <p v-if="missingDailyWeekly.length" class="decision-v2__missing">日周小时输入不可用：{{missingDailyWeekly.map(decisionRoleLabel).join('、')}}；缺失不当作空仓，不使用其他周期替代。</p>
+          <button type="button" class="decision-v2__detail-toggle composite-detail-toggle" :aria-label="evidenceExpanded ? '收起综合依据' : '展开综合依据'" :aria-expanded="evidenceExpanded" :aria-controls="evidenceId" @click="evidenceExpanded=!evidenceExpanded">{{evidenceExpanded?'收起依据':'展开依据'}}<span aria-hidden="true">{{evidenceExpanded?'▴':'▾'}}</span></button>
+          <div v-show="evidenceExpanded" :id="evidenceId" class="decision-v2__evidence">
+            <div class="composite-tier-row"><span class="composite-tier-lb">可靠性档位</span><span class="composite-badge" :style="{background:view.tier.color}">{{view.tier.label}}</span></div>
+            <div v-if="basisDecision?.conflict || view.position" class="composite-pos-row"><b class="composite-pos-lb">建议仓位（跨策略综合上限）</b><span class="composite-decision-pos">{{basisDecision?.conflict?'仅提示，不改动仓位':view.position}}</span></div>
+            <div class="composite-headtag-row"><b class="composite-headtag-lb">共振级别</b><span class="composite-head-tag" :style="{color:view.resonance.color}">{{view.resonance.name}} {{cd.resonance}}</span><span v-if="view.mismatch" class="composite-head-tag ht-mm">{{view.mismatch.name}}</span></div>
+            <div v-if="view.mismatch" class="composite-mm-detail-row"><strong class="mm-action">{{view.mismatch.action}}</strong><span class="mm-detail">{{view.mismatch.detail}}</span></div>
+            <div class="composite-cert-row" aria-label="综合决策五项评分"><div v-for="score in view.scores" :key="score.key" class="decision-v2__score composite-cert-item"><b class="composite-cert-num" :style="{color:score.color}">{{score.value??'—'}}</b><small class="composite-cert-lab">{{score.label}}</small></div></div>
+            <div v-if="view.volatility" class="composite-vol-row"><strong class="composite-vol-lb">波动率</strong><div class="composite-vol-track"><span class="composite-vol-seg vs-g"/><span class="composite-vol-seg vs-o"/><span class="composite-vol-seg vs-r"/><i class="composite-vol-dot" :style="{left:view.volatility.position+'%',background:view.volatility.color}"/></div><b class="composite-vol-num" :style="{color:view.volatility.color}">{{view.volatility.value}}%</b><span class="composite-vol-tag" :class="'vt-'+view.volatility.level">{{view.volatility.label}}</span></div>
+            <div class="composite-dual" aria-label="日周小时策略状态与信号年龄"><div v-for="axis in (['trend','oscillation'] as const)" :key="axis" class="composite-dcol"><header class="composite-dcol-h"><strong class="composite-dcol-t">{{axis==='trend'?'趋势策略':'震荡策略'}}</strong><b class="composite-dcol-d" :style="{color:bias(axis).color}">{{bias(axis).label}}</b></header><div class="composite-chips"><span v-for="item in dailyWeeklyFacts.filter(item=>item.role.startsWith(axis))" :key="item.role" class="composite-chip" :title="decisionFactAge(item.fact)" :style="{color:cardStateColor(item.fact)}">{{item.role.endsWith('week')?'周线':item.role.endsWith('m60')?'60分':'日线'}} {{cardChipState(axis,item.fact)}}</span></div></div></div>
+            <div class="composite-dir-row" :style="{borderLeftColor:view.direction.color}"><strong class="composite-dir-label">方向</strong><span class="composite-dir-value" :style="{color:view.direction.color}">{{view.direction.text}}</span></div>
+            <div class="composite-resonance-row" aria-label="共振与错配依据" :style="{borderLeftColor:view.resonance.color}"><strong class="composite-resonance-name" :style="{color:view.resonance.color}">{{view.resonance.name}}</strong><span class="composite-resonance-dots" :style="{color:view.resonance.color}">{{view.resonance.dots}}</span><p class="composite-resonance-desc">{{view.resonance.description}}</p></div>
+            <div v-if="signalCells.length" class="composite-signal-price-row"><div v-for="cell in signalCells" :key="cell.period" class="sp-line"><span class="sp-tag">信号价</span>{{cell.label}} {{signalPrice(cell.fact!.last_signal!.price)}} · {{signalDate(cell.fact!.last_signal!.bar_end)}}</div></div>
+            <span class="composite-basis">已收盘数据</span>
+          </div>
+          <div v-if="!hasBasisBucket" class="composite-decision-card" :class="{'dc-bull':view.tier.color==='#ff3b30','dc-bear':view.tier.color==='#34c759'}"><div class="composite-decision-top"><span class="composite-decision-label" :style="{color:view.tier.color}">{{cd.action}}</span></div></div>
+          <p class="compliance-row">本结论基于策略信号的机械判定，仅供参考，不构成投资建议。</p>
         </div>
-        <section v-if="view.mismatch" class="decision-v2__mismatch" aria-label="错配期提示" :style="{ '--mismatch-color': view.mismatch.color }">
-          <div><strong>{{ view.mismatch.name }}</strong><b>{{ {MM1:'趋势日线仍持股 · 震荡已转空',MM2:'趋势日线仍空仓 · 震荡已建仓',MM3:'趋势已转空 · 震荡仍持股',MM4:'趋势已转多 · 震荡仍空仓'}[cd.mismatch as 'MM1'|'MM2'|'MM3'|'MM4'] }}</b></div>
-          <p><b>{{ view.mismatch.ageLabel }}</b> {{ view.mismatch.detail }}</p>
-        </section>
-          <details class="decision-v2__proof"><summary>数据来源、信号计龄与参考强度</summary>    <p class="decision-v2__scope">{{ context.background ? `当前 ${response.meta.identity.frequency} 未参与综合评分 · 日周小时作背景` : "60分钟参与综合评分" }} · 仅使用同一历史快照的已完成日线／周线／60分钟；建议仓位为页面参考强度，不代表保证金比例、手数或账户持仓。</p>
-                      <p>建议仓位（跨策略综合上限）：{{ view.exposure }} · 页面参考强度，不代表账户持仓。</p><p>沿用原版权重，日周小时共同参与；缺失不补分、不归一化。确定性表示信号明确性，不是胜率。</p>
-          <p>错配依据：{{ decisionMismatchReason(cd) }}</p>
-            <p v-if="copy && !basisDecision">{{ copy.first_action.detail }}</p>
-            <p>信号年龄为距最近一次策略动作的已完成 K 线数；0根表示本周期当前 Bar 发生动作，日K与周K分别计龄。</p>
-            <div class="decision-v2__scroll"><table><thead><tr><th>策略周期</th><th>状态</th><th>信号年龄</th><th>Bar / 合约</th><th>来源</th></tr></thead><tbody><tr v-for="item in dailyWeeklyFacts" :key="item.role"><td>{{ decisionRoleLabel(item.role) }}</td><td>{{ decisionFactState(item.fact) }}</td><td>{{ decisionFactAge(item.fact) }}</td><td>{{ item.fact?.bar_end ? formatBeijingInstant(item.fact.bar_end) : '—' }} / {{ item.fact?.physical_contract || '—' }}</td><td>{{ decisionFactReason(item.fact) }}</td></tr></tbody></table></div>
-            <p>额外扣分 {{ cd.cert_extra }}：<span v-for="(score,key) in cd.deductions" :key="key">{{ deductions[key] ?? key }} {{ score }}（{{ cd.extra_sources[key] }}） </span></p>
-            <p v-if="cd.care_input">小心来源：{{ cd.care_input.status==='ready' ? `最近 ${cd.care_input.window_size} 根已完成K线 · ${cd.care_input.physical_contract} · 截至 ${cd.care_input.bar_end}` : '当前计算段来源不足，不作为已验证的无事件' }}</p>
-            <p>确定性轴上限 {{ cd.certainty_cap }}% · 共振轴上限 {{ cd.resonance_cap }}% → 参考强度上限 {{ cd.reference_exposure_cap }}%</p>
-            <small>{{ cd.formula_version }}{{ copy ? ' · ' + copy.version : '' }}</small>
-          </details>
-
-        </div>
-        <p class="decision-v2__compliance">本结论基于策略信号的机械判定，仅供参考，不构成投资建议。</p>
       </template>
-      <details v-show="evidenceExpanded" class="decision-v2__proof"><summary>更新综合数据</summary><button type="button" class="decision-v2__refresh" aria-label="刷新综合决策" :disabled="loading" @click="load">刷新综合决策</button></details>
     </div>
-
   </section>
   <div data-testid="status-card-surface"><NewowStatusCard :magic11-ready="magic11Ready" @magic11="emit('magic11')" :background="context.background" :background-label="backgroundLabel" :main-rise-background="mainRiseBackground" :current-state="currentState" :decision="result" :strategy="displayStrategy" :basis="basis" :dominant="dominant" :basis-decision="basisDecision" :loading="loading" :error="error" @retry="load" /></div>
   <NewowPriceSources v-if="showPriceSources" :rows="[...(chartSources ?? []), ...decisionPriceSources(prices)]" label="目标／吸筹来源" :guard-status="prices?.guard_status" :snapshot-note="priceSnapshotNote" :background-label="backgroundLabel" />
@@ -165,110 +155,211 @@ const chipColor = (axis: string, period: string) => {
 </template>
 
 <style scoped>
-.decision-v2 { margin:3px 0; background:#f8f9fd; border-bottom:1px solid #f0f0f0; color:var(--gy-text-primary); }
-.decision-v2__header { display:flex; align-items:center; gap:6px; padding:9px 14px; }
-button { font:inherit; cursor:pointer; } button:focus-visible { outline:2px solid var(--gy-accent); outline-offset:2px; } button:disabled { cursor:wait; opacity:.5; }
-.decision-v2__toggle { display:flex; align-items:center; gap:7px; flex:1; min-width:0; border:0; padding:0; background:transparent; color:inherit; text-align:left; flex-wrap:wrap; }
-.decision-v2__toggle>strong { font-size:14px; white-space:nowrap; } .decision-v2__toggle small { font-size:10px; color:var(--gy-text-muted); font-weight:400; }
-.decision-v2__score-wrap { display:flex; align-items:center; gap:7px; flex:1; min-width:90px; max-width:420px; color:var(--certainty-color); font-size:13px; white-space:nowrap; }
-.decision-v2__score-track { flex:1; height:6px; border-radius:3px; overflow:hidden; background:#f0f0f2; }
-.decision-v2__score-track i { display:block; height:100%; border-radius:3px; background:var(--certainty-color); transition:width .3s; }
-.decision-v2__badge { color:var(--gy-bg-panel); background:var(--certainty-color); font-size:11px; font-weight:600; padding:3px 7px; border-radius:4px; white-space:nowrap; }
-.decision-v2__tag { background:#f0f0f2; padding:2px 5px; font-size:10px; font-weight:700; border-radius:4px; white-space:nowrap; }
-.decision-v2__tag--mismatch { background:#ff6b3520; color:#c2410c; }
-.decision-v2__basis { color:var(--gy-text-muted); font-size:10px; } .decision-v2__arrow { margin-left:auto; color:var(--gy-text-muted); font-size:11px; transition:transform .2s; } .decision-v2__arrow.collapsed { transform:rotate(-90deg); }
-.decision-v2__refresh { background:transparent; color:var(--gy-text-muted); border:0; font-size:18px; padding:0 3px; flex-shrink:0; }
-.decision-v2__body { display:flex; flex-direction:column; gap:7px; padding:0 14px 8px; }
-p { margin:0; font-size:12px; line-height:1.55; color:var(--gy-text-muted); }
-.decision-v2__message { padding:4px 14px; } .decision-v2__message button { border:0; background:transparent; color:var(--gy-accent); }
-.decision-v2__first-action { display:flex; align-items:flex-start; gap:8px; padding:10px 12px; border:1px solid var(--gy-border); border-radius:8px; background:#f7f7f9; color:var(--gy-text-muted); }
-.decision-v2__first-action>b { color:white; padding:3px 6px; border-radius:5px; background:var(--gy-text-muted); font-size:10px; white-space:nowrap; }
-.decision-v2__first-action strong { font-size:13px; } .decision-v2__first-action p { color:inherit; font-size:12px; margin-top:2px; }
-.decision-v2__first-action[data-level=ok] { background:#34c75918; border-color:#34c75955; color:#1d7a43; } .decision-v2__first-action[data-level=ok]>b { background:#1d7a43; }
-.decision-v2__first-action[data-level=warn] { background:#ff950018; border-color:#ff950055; color:#b26a00; } .decision-v2__first-action[data-level=warn]>b { background:#b26a00; }
-.decision-v2__first-action[data-level=violate] { background:#ff3b3018; border-color:#ff3b3055; color:#c0392b; } .decision-v2__first-action[data-level=violate]>b { background:#d61e1e; }
-.decision-v2__mismatch { border:1px solid #ff6b3555; border-left:3px solid var(--mismatch-color); background:#fff7f2; border-radius:6px; padding:8px 10px; }
-.decision-v2__mismatch>div { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; font-size:12px; } .decision-v2__mismatch strong,.decision-v2__mismatch p b { color:var(--mismatch-color); } .decision-v2__mismatch p { margin-top:3px; font-size:11px; }
-.decision-v2__scores { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); background:#f7f7f9; border-radius:6px; padding:10px 0; }
-.decision-v2__score { text-align:center; border-right:1px solid var(--gy-border); } .decision-v2__score:last-child { border-right:0; } .decision-v2__score b { display:block; font-size:20px; line-height:1.3; } .decision-v2__score small { color:var(--gy-text-muted); font-size:11px; }
-.decision-v2__resonance { display:flex; align-items:flex-start; gap:8px; border-left:3px solid var(--resonance-color); border-radius:6px; padding:8px 10px; background:#f7f7f9; }
-.decision-v2__resonance strong { color:var(--resonance-color); white-space:nowrap; font-size:13px; } .decision-v2__dots { color:var(--resonance-color); font-size:10px; letter-spacing:1px; white-space:nowrap; } .decision-v2__resonance p { flex:1; min-width:0; font-size:11px; }
-.decision-v2__detail-toggle { border:0; background:transparent; color:var(--gy-text-muted); font-size:11px; padding:5px 0; }
-.decision-v2__evidence { display:flex; flex-direction:column; gap:7px; }
-.decision-v2__volatility { display:flex; align-items:center; gap:10px; background:#f7f7f9; padding:8px 10px; border-radius:6px; font-size:12px; color:var(--gy-text-muted); }
-.decision-v2__vol-track { flex:1; height:5px; border-radius:3px; position:relative; background:linear-gradient(90deg,#34c7594d 0 33.33%,#ff95004d 33.33% 66.66%,#ff3b3047 66.66% 100%); }
-.decision-v2__vol-track i { position:absolute; top:50%; width:9px; height:9px; border-radius:50%; border:2px solid var(--gy-bg-panel); transform:translate(-50%,-50%); }
-.decision-v2__vol-tag { padding:1px 7px; border-radius:8px; font-size:10px; font-weight:700; background:#ececee; } .decision-v2__vol-tag[data-level=low] { background:#34c75924; color:#1d7a43; } .decision-v2__vol-tag[data-level=mid] { background:#ff950024; color:#b26a00; } .decision-v2__vol-tag[data-level=high] { background:#ff3b301f; color:#c0392b; }
-.decision-v2__states { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; } .decision-v2__column { background:#f7f7f9; border-radius:6px; padding:8px 10px; }
-.decision-v2__column header { display:flex; justify-content:space-between; align-items:center; gap:7px; color:var(--gy-text-muted); font-size:12px; margin-bottom:6px; }
-.decision-v2__column article { display:inline-flex; align-items:center; flex-wrap:wrap; gap:4px; background:var(--gy-bg-panel); border-radius:4px; padding:3px 5px; margin:0 5px 4px 0; font-size:11px; } .decision-v2__column article span { color:var(--gy-text-muted); font-size:10px; }
-.decision-v2__direction { display:flex; align-items:baseline; gap:10px; background:#f7f7f9; border-left:3px solid var(--gy-text-muted); border-radius:6px; padding:7px 10px; color:var(--gy-text-muted); font-size:12px; }
-.decision-v2__conclusion { background:#8e8e9314; border:1px solid #8e8e9340; border-radius:10px; padding:11px 13px; }
-.decision-v2__conclusion--high { background:#ff3b300f; border-color:#ff3b3040; }
-.decision-v2__conclusion header { display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .decision-v2__conclusion strong { color:var(--certainty-color); font-size:21px; font-weight:600; } .decision-v2__exposure { color:var(--gy-text-muted); font-size:12px; margin-left:auto; } .decision-v2__conclusion p { margin-top:6px; }
-.decision-v2__scope { font-size:10px; color:#aeaeb2; padding:0 14px 8px; } .decision-v2__compliance { font-size:10px; color:#aeaeb2; }
-.decision-v2__proof { font-size:12px; color:var(--gy-text-muted); } summary { cursor:pointer; padding:4px 0; } .decision-v2__proof p { margin:5px 0; } .decision-v2__proof small { font-size:10px; overflow-wrap:anywhere; }
-.decision-v2__scroll { overflow:auto; } table { width:100%; border-collapse:collapse; font-size:11px; white-space:nowrap; } td,th { padding:7px; text-align:left; border-bottom:1px solid #eef0f4; }
-.decision-v2__missing { color:#94611b; }
-@media(max-width:600px) { .decision-v2__score-wrap { min-width:80px; } .decision-v2__basis { flex-basis:100%; } .decision-v2__states { grid-template-columns:1fr; } .decision-v2__resonance { flex-wrap:wrap; } .decision-v2__resonance p { flex-basis:100%; } .decision-v2__conclusion strong { font-size:17px; } .decision-v2__exposure { margin-left:0; flex-basis:100%; } .decision-v2__score small { font-size:10px; } .decision-v2__first-action { padding:8px; } }
-@media(prefers-reduced-motion:reduce) { .decision-v2__score-track i,.decision-v2__arrow { transition:none; } }
-</style>
+.composite-action-card { background: #fff; border-bottom: 0.5px solid #f0f0f0; }
+.composite-action-card .composite-header { display: flex; align-items: center; gap: 6px; padding: 10px 14px; cursor: pointer; user-select: none; }
+.composite-action-card .composite-title { font-size: 13px; font-weight: 600; color: #1C1C1E; flex-shrink: 0; }
+.composite-action-card .composite-summary { font-size: 12px; font-weight: 600; flex-shrink: 0; }
+.composite-action-card .composite-badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; flex-shrink: 0; line-height: 1.3; }
+.composite-action-card .composite-spacer { flex: 1; min-width: 4px; }
+.composite-action-card .composite-collapse { font-size: 11px; color: var(--nw-muted); transition: transform .2s; flex-shrink: 0; }
+.composite-action-card.collapsed .composite-collapse { transform: rotate(-90deg); }
+.composite-action-card .composite-body { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 6px; }
+.composite-action-card.collapsed > :not(.composite-header) { display: none !important; }
+.composite-action-card .composite-action-word { font-size: 19px; font-weight: 700; flex-shrink: 0; letter-spacing: .5px; }
+.composite-action-card .composite-basis-summary { font-size: 11px; color: var(--nw-muted); padding: 0 14px 10px; line-height: 1.5; }
+.composite-action-card .composite-reason { font-size: 12px; color: #1c1c1e; line-height: 1.55; }
+[data-theme="dark"] .composite-action-card .composite-reason { color: #e5e5e7; }
+.composite-action-card .composite-signal-price-row { background: #f7f7f9; border-radius: 6px; padding: 7px 10px; }
+.composite-action-card .composite-signal-price-row .sp-line { font-size: 11px; color: #1c1c1e; line-height: 1.7; font-variant-numeric: tabular-nums; }
+.composite-action-card .composite-signal-price-row .sp-tag { display: inline-block; font-size: 9px; font-weight: 700; color: var(--nw-muted); border: 0.5px solid #d1d1d6; border-radius: 3px; padding: 0 4px; margin-right: 5px; }
+[data-theme="dark"] .composite-action-card .composite-signal-price-row { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-signal-price-row .sp-line { color: #e5e5e7; }
+.composite-action-card .composite-signal-row { display: flex; align-items: center; gap: 8px; background: #f7f7f9; border-radius: 6px; padding: 6px 10px; }
+.composite-action-card .composite-signal-label { font-size: 11px; color: var(--nw-muted); flex-shrink: 0; }
+.composite-action-card .composite-signal-value { font-size: 12px; color: #1C1C1E; flex: 1; min-width: 0; }
+.composite-action-card .composite-signal-dir { font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.composite-action-card .composite-decision-row { display: flex; align-items: baseline; gap: 8px; padding-top: 2px; }
+.composite-action-card .composite-decision-label { font-size: 17px; font-weight: 600; }
+.composite-action-card .composite-decision-pos { font-size: 12px; color: var(--nw-muted); }
+.composite-action-card .composite-advice { font-size: 11px; color: var(--nw-muted); line-height: 1.5; }
+.composite-action-card .composite-score-wrap { flex: 1; min-width: 64px; display: flex; align-items: center; gap: 6px; }
+.composite-action-card .composite-score-track { flex: 1; height: 6px; border-radius: 3px; background: #f0f0f2; overflow: hidden; }
+.composite-action-card .composite-score-fill { display: block; height: 100%; width: 0%; border-radius: 3px; background: var(--nw-muted); transition: width .3s; }
+.composite-action-card .composite-score-num { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.composite-action-card .composite-cert-row { display: flex; align-items: center; background: #f7f7f9; border-radius: 6px; padding: 9px 4px; }
+.composite-action-card .composite-cert-item { flex: 1; text-align: center; min-width: 0; }
+.composite-action-card .composite-cert-num { font-size: 17px; font-weight: 700; }
+.composite-action-card .composite-cert-lab { font-size: 10px; color: var(--nw-muted); margin-top: 1px; }
+.composite-action-card .composite-cert-sep { width: 0.5px; height: 26px; background: #e5e5ea; flex-shrink: 0; }
+.composite-action-card .composite-vol-row { display: flex; align-items: center; gap: 10px; background: #f7f7f9; border-radius: 6px; padding: 8px 10px; }
+.composite-action-card .composite-vol-lb { font-size: 11px; color: var(--nw-muted); font-weight: 600; flex-shrink: 0; }
+.composite-action-card .composite-vol-track { flex: 1; height: 5px; border-radius: 3px; background: #ececee; position: relative; }
+.composite-action-card .composite-vol-seg { position: absolute; top: 0; bottom: 0; }
+.composite-action-card .composite-vol-seg.vs-g { left: 0; width: 33.4%; background: rgba(52,199,89,.30); border-radius: 3px 0 0 3px; }
+.composite-action-card .composite-vol-seg.vs-o { left: 33.3%; width: 33.4%; background: rgba(255,149,0,.30); }
+.composite-action-card .composite-vol-seg.vs-r { left: 66.6%; width: 33.4%; background: rgba(255,59,48,.28); border-radius: 0 3px 3px 0; }
+.composite-action-card .composite-vol-dot { position: absolute; top: 50%; width: 9px; height: 9px; border-radius: 50%; background: var(--nw-muted); border: 2px solid #fff; transform: translate(-50%,-50%); }
+.composite-action-card .composite-vol-num { font-size: 12px; font-weight: 700; flex-shrink: 0; min-width: 34px; text-align: right; }
+.composite-action-card .composite-vol-tag { flex-shrink: 0; font-size: 10px; font-weight: 700; border-radius: 8px; padding: 1px 7px; }
+.composite-action-card .composite-vol-tag.vt-low { background: rgba(52,199,89,.14); color: #1d7a43; }
+.composite-action-card .composite-vol-tag.vt-mid { background: rgba(255,149,0,.14); color: #b26a00; }
+.composite-action-card .composite-vol-tag.vt-high { background: rgba(255,59,48,.12); color: #c0392b; }
+.composite-action-card .composite-dual { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.composite-action-card .composite-dcol { background: #f7f7f9; border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.composite-action-card .composite-dcol-h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
+.composite-action-card .composite-dcol-t { font-size: 11px; font-weight: 600; color: var(--nw-muted); }
+.composite-action-card .composite-dcol-d { font-size: 11px; font-weight: 700; }
+.composite-action-card .composite-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.composite-action-card .composite-chip { font-size: 10px; font-weight: 600; border-radius: 4px; padding: 2px 5px; background: #fff; color: #1C1C1E; }
+.composite-action-card .composite-chip.chip-hot { color: var(--nw-rise); }
+.composite-action-card .composite-chip.chip-cold { color: var(--nw-fall); }
+.composite-action-card .composite-decision-card { border-radius: 10px; padding: 10px 12px; background: rgba(142,142,147,.08); border: 0.5px solid rgba(142,142,147,.25); }
+.composite-action-card .composite-decision-card.dc-bull { background: rgba(255,59,48,.06); border-color: rgba(255,59,48,.25); }
+.composite-action-card .composite-decision-card.dc-bear { background: rgba(52,199,89,.06); border-color: rgba(52,199,89,.25); }
+.composite-action-card .composite-decision-top { display: flex; align-items: center; gap: 8px; }
+.composite-action-card .composite-decision-top .composite-decision-label { font-size: 19px; }
+.composite-action-card .composite-decision-top .composite-decision-pos { margin-left: auto; }
+.composite-action-card .composite-decision-card .composite-advice { margin-top: 5px; }
+[data-theme="dark"] .composite-action-card .composite-score-track { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-cert-row { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-vol-row { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-dcol { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-vol-track { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-cert-sep { background: #3a3a3c; }
+[data-theme="dark"] .composite-action-card .composite-chip { background: #3a3a3c; color: #e5e5e7; }
+[data-theme="dark"] .composite-action-card .composite-vol-dot { border-color: #1c1c1e; }
+[data-theme="dark"] .composite-action-card .composite-decision-card { background: rgba(255,255,255,.05); border-color: #3a3a3c; }
+.composite-action-card .composite-firstaction { display: flex; align-items: flex-start; gap: 8px; border-radius: 8px; padding: 9px 11px; background: #f2f2f7; border: 1px solid #e5e5ea; }
+.composite-action-card .composite-firstaction .fa-icon { font-size: 10px; font-weight: 700; color: #fff; background: var(--nw-muted); border-radius: 5px; padding: 2px 6px; flex-shrink: 0; line-height: 1.5; letter-spacing: 1px; }
+.composite-action-card .composite-firstaction .fa-text { flex: 1; min-width: 0; }
+.composite-action-card .composite-firstaction .fa-title { font-size: 12px; font-weight: 700; line-height: 1.45; }
+.composite-action-card .composite-firstaction .fa-detail { font-size: 11px; line-height: 1.5; margin-top: 2px; opacity: .92; }
+.composite-action-card .composite-firstaction.fa-ok { background: rgba(52,199,89,.10); border-color: rgba(52,199,89,.35); }
+.composite-action-card .composite-firstaction.fa-ok .fa-icon { background: #1d7a43; }
+.composite-action-card .composite-firstaction.fa-ok .fa-title { color: #1d7a43; }
+.composite-action-card .composite-firstaction.fa-ok .fa-detail { color: #2e8b57; }
+.composite-action-card .composite-firstaction.fa-warn { background: rgba(255,149,0,.10); border-color: rgba(255,149,0,.35); }
+.composite-action-card .composite-firstaction.fa-warn .fa-icon { background: #b26a00; }
+.composite-action-card .composite-firstaction.fa-warn .fa-title { color: #b26a00; }
+.composite-action-card .composite-firstaction.fa-warn .fa-detail { color: #c07f1d; }
+.composite-action-card .composite-firstaction.fa-violate { background: rgba(255,59,48,.10); border-color: rgba(255,59,48,.40); border-left: 4px solid #d61e1e; }
+.composite-action-card .composite-firstaction.fa-violate .fa-icon { background: #d61e1e; }
+.composite-action-card .composite-firstaction.fa-violate .fa-title { color: #d61e1e; }
+.composite-action-card .composite-firstaction.fa-violate .fa-detail { color: #c0392b; }
+[data-theme="dark"] .composite-action-card .composite-firstaction { background: rgba(255,255,255,.05); border-color: #3a3a3c; }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-violate { background: rgba(255,59,48,.10); border-color: rgba(255,59,48,.40); border-left: 4px solid #d61e1e; }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-warn { background: rgba(255,149,0,.10); border-color: rgba(255,149,0,.35); }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-ok { background: rgba(52,199,89,.10); border-color: rgba(52,199,89,.35); }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-ok .fa-title { color: #4ade80; }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-ok .fa-detail { color: #6ee7a0; }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-warn .fa-title { color: #fbbf24; }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-warn .fa-detail { color: #fcd34d; }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-violate .fa-title { color: #f87171; }
+[data-theme="dark"] .composite-action-card .composite-firstaction.fa-violate .fa-detail { color: #fca5a5; }
+[data-theme="dark"] .composite-action-card .composite-firstaction .fa-detail { opacity: .85; }
+.composite-action-card .composite-dir-row { display: flex; align-items: center; gap: 8px; background: #f7f7f9; border-radius: 6px; padding: 6px 10px; border-left: 3px solid var(--nw-muted); }
+.composite-action-card .composite-dir-label { font-size: 11px; color: var(--nw-muted); flex-shrink: 0; font-weight: 600; }
+.composite-action-card .composite-dir-value { font-size: 12px; font-weight: 600; flex: 1; min-width: 0; line-height: 1.5; }
+[data-theme="dark"] .composite-action-card .composite-dir-row { background: #2c2c2e; }
+.composite-action-card .composite-head-tag { font-size: 10px; font-weight: 700; border-radius: 4px; padding: 1px 5px; flex-shrink: 0; line-height: 1.4; background: rgba(142,142,147,.14); color: var(--nw-muted); white-space: nowrap; }
+.composite-action-card .composite-head-tag.ht-mm { background: rgba(255,107,53,.14); color: #c2410c; }
+.composite-action-card .composite-basis { font-size: 10px; color: var(--nw-muted); flex-shrink: 0; white-space: nowrap; }
+.composite-action-card .composite-resonance-row { display: flex; align-items: flex-start; gap: 7px; background: #f7f7f9; border-radius: 6px; padding: 7px 10px; border-left: 3px solid var(--nw-muted); }
+.composite-action-card .composite-resonance-name { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.composite-action-card .composite-resonance-dots { font-size: 9px; letter-spacing: 1px; flex-shrink: 0; line-height: 1.6; }
+.composite-action-card .composite-resonance-desc { font-size: 11px; color: var(--nw-muted); line-height: 1.5; flex: 1; min-width: 0; }
+.composite-action-card .composite-mismatch-row { display: flex; align-items: center; gap: 8px; background: #fff7f2; border-radius: 6px; padding: 7px 10px 7px 0; border: 1px solid rgba(255,107,53,.35); overflow: hidden; }
+.composite-action-card .composite-mismatch-row .mm-bar { width: 3px; flex-shrink: 0; background: #ff6b35; border-radius: 3px 0 0 3px; }
+.composite-action-card .composite-mismatch-row .mm-main { flex: 1; min-width: 0; padding-left: 5px; }
+.composite-action-card .composite-mismatch-row .mm-line1 { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.composite-action-card .composite-mismatch-row .mm-type { font-size: 12px; font-weight: 700; color: #c2410c; }
+.composite-action-card .composite-mismatch-row .mm-action { font-size: 11px; font-weight: 600; color: #1c1c1e; }
+.composite-action-card .composite-mismatch-row .mm-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; flex-wrap: wrap; }
+.composite-action-card .composite-mismatch-row .mm-bars { font-size: 11px; font-weight: 700; color: #ff6b35; flex-shrink: 0; }
+.composite-action-card .composite-mismatch-row .mm-detail { font-size: 11px; color: var(--nw-muted); line-height: 1.5; flex: 1; min-width: 0; }
+.composite-action-card .composite-alert { display: flex; flex-direction: column; gap: 6px; }
+.composite-action-card .composite-mismatch-row .mm-sep { font-size: 11px; font-weight: 700; color: #c2410c; flex-shrink: 0; }
+.composite-action-card .composite-pos-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 11px; color: #1c1c1e; line-height: 1.6; }
+.composite-action-card .composite-headtag-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 11px; color: #1c1c1e; line-height: 1.6; }
+.composite-action-card .composite-mm-detail-row { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 11px; color: #1c1c1e; line-height: 1.6; }
+.composite-action-card .composite-pos-row .composite-pos-lb { font-weight: 700; color: var(--nw-muted); }
+.composite-action-card .composite-headtag-row .composite-headtag-lb { font-weight: 700; color: var(--nw-muted); }
+.composite-action-card .composite-headtag-row .composite-head-tag { font-size: 10px; font-weight: 700; border-radius: 5px; padding: 1px 6px; }
+.composite-action-card .composite-mm-detail-row .mm-action { font-weight: 600; }
+.composite-action-card .composite-mm-detail-row .mm-detail { color: var(--nw-muted); }
+.composite-action-card .composite-detail-toggle { display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: var(--nw-muted); padding: 3px 0; cursor: pointer; user-select: none; }
+.composite-action-card .composite-detail-sec { display: flex; flex-direction: column; gap: 6px; }
+.composite-action-card .composite-detail-sec.collapsed { display: none; }
+.composite-action-card .composite-tier-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.composite-action-card .composite-tier-lb { font-size: 12px; color: var(--nw-muted); }
+[data-theme="dark"] .composite-action-card .composite-tier-lb { color: #aeaeb2; }
+.composite-action-card .compliance-row { font-size: 10px; color: #aeaeb2; line-height: 1.5; padding: 2px 0 0; text-align: left; }
+[data-theme="dark"] .composite-action-card .composite-resonance-row { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-resonance-desc { color: var(--nw-muted); }
+[data-theme="dark"] .composite-action-card .composite-mismatch-row { background: rgba(255,107,53,.08); border-color: rgba(255,107,53,.30); }
+[data-theme="dark"] .composite-action-card .composite-mismatch-row .mm-action { color: #e5e5e7; }
+[data-theme="dark"] .composite-action-card .composite-head-tag { background: rgba(255,255,255,.08); color: #aeaeb2; }
+[data-theme="dark"] .composite-action-card .composite-head-tag.ht-mm { background: rgba(255,107,53,.18); color: #ff9a6b; }
+[data-theme="dark"] .composite-action-card .compliance-row { color: var(--nw-muted); }
+.composite-action-card .composite-chain { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px 10px; }
+.composite-action-card .chain-cell { flex: 0 0 auto; min-width: 78px; background: transparent; border: 0; border-radius: 0; padding: 2px 4px; text-align: center; }
+.composite-action-card .chain-cell.main { border: 0; background: transparent; }
+.composite-action-card .chain-cell.main .cc-key { font-weight: 800; }
+.composite-action-card .chain-cell.ref { border: 0; background: transparent; opacity: .78; }
+.composite-action-card .chain-cell .cc-top { display: flex; align-items: baseline; justify-content: center; gap: 4px; margin-bottom: 4px; flex-wrap: wrap; }
+.composite-action-card .chain-cell .cc-key { font-size: 12px; font-weight: 700; color: #1c1c1e; }
+.composite-action-card .chain-cell .cc-role { font-size: 10px; color: var(--nw-muted); display: none; }
+.composite-action-card .chain-cell.ref .cc-key { color: var(--nw-muted); }
+.composite-action-card .chain-cell .cc-bucket { font-size: 9px; font-weight: 700; color: var(--nw-muted); border: 0.5px solid #d1d1d6; border-radius: 3px; padding: 0 4px; margin-left: auto; white-space: nowrap; display: none; }
+.composite-action-card .chain-cell .cc-bottom { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.composite-action-card .chain-cell .cc-price { font-size: 10px; color: var(--nw-muted); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: none; }
+.composite-action-card .chain-cell .st { font-size: 12px; font-weight: 700; white-space: nowrap; }
+.composite-action-card .chain-cell .st-hold { color: var(--nw-rise); }
+.composite-action-card .chain-cell .st-clear { color: var(--nw-fall); }
+.composite-action-card .chain-cell .st-flat { color: var(--nw-muted); }
+.composite-action-card .chain-arrow { display: flex; align-items: center; color: #c7c7cc; font-size: 11px; flex: 0 0 auto; }
+.composite-action-card .composite-conflict { display: flex; align-items: flex-start; gap: 7px; margin: 0 14px 10px; padding: 8px 10px; border-radius: 6px; background: rgba(255,149,0,.10); border: 1px solid rgba(255,149,0,.35); }
+.composite-action-card .composite-conflict .conflict-chip { flex: 0 0 auto; font-size: 10px; font-weight: 700; color: #b26a00; border: 1px solid rgba(178,106,0,.5); border-radius: 4px; padding: 1px 5px; white-space: nowrap; line-height: 1.5; }
+.composite-action-card .composite-conflict .conflict-text { font-size: 11px; color: #1c1c1e; line-height: 1.5; flex: 1; min-width: 0; }
+.composite-action-card .composite-conflict .conflict-text b { font-weight: 700; }
+.composite-action-card .composite-conflict .conflict-note { display: block; margin-top: 3px; font-size: 10px; color: var(--nw-muted); }
+.composite-action-card .composite-basis-switch { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 0 14px 10px; }
+.composite-action-card .composite-basis-switch .basis-btn { font-size: 11px; color: #1c1c1e; background: #f7f7f9; border: 0.5px solid #d1d1d6; border-radius: 5px; padding: 3px 9px; cursor: pointer; font-family: inherit; line-height: 1.4; }
+.composite-action-card .composite-basis-switch .basis-btn.active { background: #0a84ff; color: #fff; border-color: #0a84ff; font-weight: 700; box-shadow: inset 0 0 0 2px rgba(255,255,255,.9); }
+.composite-action-card .composite-basis-switch .basis-btn.active::after { content: '当前'; font-size: 9px; margin-left: 4px; opacity: .95; }
+.composite-action-card .composite-basis-switch .basis-note { font-size: 10px; color: var(--nw-muted); }
+[data-theme="dark"] .composite-action-card .chain-cell { background: transparent; border: 0; }
+[data-theme="dark"] .composite-action-card .chain-cell.main { background: transparent; border: 0; }
+[data-theme="dark"] .composite-action-card .chain-cell .cc-key { color: #e5e5e7; }
+[data-theme="dark"] .composite-action-card .chain-cell.ref .cc-key { color: var(--nw-muted); }
+[data-theme="dark"] .composite-action-card .composite-conflict { background: rgba(255,149,0,.12); border-color: rgba(255,149,0,.40); }
+[data-theme="dark"] .composite-action-card .composite-conflict .conflict-text { color: #e5e5e7; }
+[data-theme="dark"] .composite-action-card .composite-conflict .conflict-chip { color: #fbbf24; border-color: rgba(251,191,36,.5); }
+[data-theme="dark"] .composite-action-card .composite-basis-switch .basis-btn { background: #2c2c2e; color: #e5e5e7; border-color: #3a3a3c; }
+[data-theme="dark"] .composite-action-card { background: #1c1c1e; border-color: #3a3a3c; }
+[data-theme="dark"] .composite-action-card .composite-title { color: #e5e5e7; }
+[data-theme="dark"] .composite-action-card .composite-signal-row { background: #2c2c2e; }
+[data-theme="dark"] .composite-action-card .composite-signal-value { color: #e5e5e7; }
+[data-theme="dark"] .composite-action-card .composite-advice { color: var(--nw-muted); }
+[data-theme="dark"] .composite-action-card .composite-decision-pos { color: var(--nw-muted); }
+.decision-v2 { --nw-muted:#8e8e93; --nw-rise:#ff3b30; --nw-fall:#34c759; color:#333; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; font-size:16px; line-height:normal; -webkit-font-smoothing:auto; -moz-osx-font-smoothing:auto; margin:0; }
+.decision-v2 *, .decision-v2 *::before, .decision-v2 *::after { box-sizing:border-box; }
+.decision-v2.composite-action-card button { font-family:inherit; cursor:pointer; min-height:0; }
+.decision-v2 p { margin:0; }
+.decision-v2__toggle { font:inherit; display:flex;align-items:center;gap:6px;width:100%;padding:0;border:0;background:transparent;text-align:left;color:inherit;line-height:normal; }
+.decision-v2__body { display:contents; }
+.decision-v2__evidence { display:flex;flex-direction:column;gap:6px; }
+.composite-collapse.collapsed { transform:rotate(-90deg); }
+.decision-v2__detail-toggle { border:0;width:100%;background:transparent;font-family:inherit;line-height:normal; }
+.composite-cert-num { display:block;line-height:normal; }
+.composite-cert-lab { display:block;line-height:normal; }
+.composite-cert-item + .composite-cert-item { border-left:.5px solid #e5e5ea; }
+.chain-single { font-size:12px;line-height:normal; }
+.decision-v2__message,.decision-v2__missing { padding:4px 14px;font-size:12px;color:#94611b; }
+.decision-v2 button:focus-visible { outline:2px solid #0a84ff;outline-offset:2px; }
+.decision-v2 button:disabled { cursor:wait;opacity:.5; }
+[data-theme="dark"] .decision-v2 { --nw-muted:#8e8e93; }
+[data-theme="dark"] .composite-cert-item + .composite-cert-item { border-color:#3a3a3c; }
+@media(prefers-reduced-motion:reduce) { .composite-collapse { transition:none; } }
 
-<style scoped>
-.decision-v2__header { padding:7px 14px; min-height:44px; box-sizing:border-box; }
-.decision-v2__toggle { flex-wrap:nowrap; min-height:24px; }
-.decision-v2__action { margin-left:auto; font-size:20px; font-weight:700; color:#ff3b30; }
-.decision-v2__action.flat { color:#20c64a; }
-.decision-v2__arrow { margin-left:2px; }
-.decision-v2__headline { text-align:center; color:#24262d; font-size:16px; padding:4px 0 8px; }
-.decision-v2__interpretation { color:#24262d; font-size:12px; }
-.decision-v2__fact-line { display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:var(--gy-text-muted); font-size:12px; }
-.decision-v2__first-action { border-left-width:4px; padding:8px 10px; }
-.decision-v2__first-action strong { font-size:12px; }
-.decision-v2__first-action p { font-size:11px; }
-.decision-v2__scores { padding:8px 0; background:#f0f1f8; }
-.decision-v2__score b { font-size:18px; }
-.decision-v2__volatility,.decision-v2__column,.decision-v2__direction,.decision-v2__resonance { background:#f0f1f8; }
-.decision-v2__detail-toggle { padding:4px 0; }
-.decision-v2__body { gap:7px; }
-</style>
-
-<style scoped>
-.decision-v2__period-choice { display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:12px;color:var(--gy-text-muted) }
-.decision-v2__period-choice button { border:1px solid #ddd;border-radius:5px;background:white;color:inherit;padding:5px 9px;cursor:pointer }
-.decision-v2__period-choice button[aria-pressed=true] { border-color:#ff9500;color:#ff9500;background:#ff950010 }
-</style>
-
-<style scoped>
-.decision-v2 { background:#f8f9fd; }
-.decision-v2__header { min-height:32px; padding:4px 14px; }
-.decision-v2__body { gap:6px; padding:0 14px 10px; }
-.decision-v2__toggle>strong { font-size:13px; }
-.decision-v2__action { font-size:20px; }
-.decision-v2__headline { padding:2px 0 0; font-size:16px; line-height:24px; }
-.decision-v2__period-choice { margin:0 0 3px; gap:7px; font-size:10px; }
-.decision-v2__period-choice button { min-height:22px; padding:1px 8px; border-radius:5px; background:#f0f1f8; border-color:#dddfea; color:#333; font-size:11px; line-height:18px; }
-.decision-v2__period-choice button[aria-pressed=true] { background:#0780ff; border-color:#0780ff; color:white; box-shadow:inset 0 0 0 2px #fff9; }
-.decision-v2__period-choice>span { color:#888; }
-.decision-v2__first-action { padding:6px 10px; border-radius:6px; align-items:center; min-height:26px; }
-.decision-v2__first-action>b { padding:1px 5px; border-radius:3px; font-size:10px; }
-.decision-v2__first-action strong { font-size:12px; }
-.decision-v2__fact-line { font-size:12px; gap:8px; }
-.decision-v2__badge { padding:2px 6px; border-radius:3px; font-size:11px; }
-.decision-v2__scores { padding:8px 0 6px; }
-.decision-v2__score b { font-family:Arial,sans-serif; font-size:18px; line-height:21px; }
-.decision-v2__score small { font-size:10px; }
-.decision-v2__volatility { padding:5px 9px; gap:8px; font-size:11px; }
-.decision-v2__column { padding:6px 9px; }
-.decision-v2__column header { margin-bottom:3px; font-size:11px; }
-.decision-v2__column article { background:transparent; margin:0 6px 0 0; padding:0; gap:3px; font-size:10px; }
-.decision-v2__column article .decision-v2__chip-age { display:none; }
-.decision-v2__direction,.decision-v2__resonance { padding:6px 8px; gap:7px; }
-.decision-v2__direction strong,.decision-v2__resonance strong { font-size:11px; }
-.decision-v2__direction p,.decision-v2__resonance p { font-size:11px; }
-.decision-v2__mismatch { padding:6px 8px; }
-
-</style>
-
-<style scoped>
 </style>

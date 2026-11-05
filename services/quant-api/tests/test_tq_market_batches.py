@@ -63,8 +63,9 @@ def test_bridge_bounds_signal_and_recovery_work_in_same_request(monkeypatch):
     class Market:
         started = s.activated_at
 
-        def __init__(self, chosen):
-            assert chosen == products
+        def __init__(self, chosen, *, record_closed_tails=False):
+            assert chosen == products and record_closed_tails
+            self.closed_tails = {}
 
         def activate(self, now):
             pass
@@ -72,7 +73,7 @@ def test_bridge_bounds_signal_and_recovery_work_in_same_request(monkeypatch):
         def poll(self, now, after, *, max_products):
             assert max_products == 4
             return tuple(
-                NS(product=p, contract=p + "2701") for p in products[:max_products]
+                NS(product=p, contract=p + "2701", source_id=p) for p in products[:max_products]
             )
 
         def recovery(self, state, now, *, products):
@@ -101,7 +102,7 @@ def test_bridge_bounds_signal_and_recovery_work_in_same_request(monkeypatch):
     monkeypatch.setattr(
         bridge,
         "authority",
-        lambda market, product, now, contract: {
+        lambda market, product, now, contract, trading_day=None: {
             "product": product,
             "contract": contract,
         },

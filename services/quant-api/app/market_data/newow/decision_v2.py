@@ -127,6 +127,14 @@ def build_decision_v2(
                     if ready
                     else None,
                     "segment_id": frame.bar.bar.segment_id if ready else None,
+                    "calculation_segment_id": frame.bar.calculation_segment_id if ready else None,
+                    "last_signal": {
+                        "action_id": last.signal_id,
+                        "kind": last.kind.value,
+                        "bar_end": last.bar_end.isoformat(),
+                        "price": format(last.reference_price, "f"),
+                        "calculation_segment_id": last.calculation_segment_id,
+                    } if last else None,
                     "formula_versions": list(replay.identity.formula_versions)
                     if replay
                     else [],

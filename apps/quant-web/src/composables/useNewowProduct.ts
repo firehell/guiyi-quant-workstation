@@ -14,6 +14,7 @@ import type {
   NewowAuxiliaryComponent,
   NewowHistoricalSnapshot,
   NewowDailySnapshot,
+  NewowIntradaySnapshot,
   NewowWeeklySnapshot,
   NewowChartValue,
   NewowProductIdentity,
@@ -69,6 +70,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
   const asOf = shallowRef<string | null>(null)
   const historicalSnapshot = shallowRef<NewowHistoricalSnapshot | null>(null)
   const dailySnapshot = shallowRef<NewowDailySnapshot | null>(null)
+  const intradaySnapshot = shallowRef<NewowIntradaySnapshot | null>(null)
   const weeklySnapshot = shallowRef<NewowWeeklySnapshot | null>(null)
   const dailyError = shallowRef<string | null>(null)
   const dailyLoading = shallowRef(false)
@@ -130,6 +132,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     resolverController = null
     dailyController?.abort()
     dailyController = null
+    intradaySnapshot.value = null
     dailySnapshot.value = null
     weeklySnapshot.value = null
     dailyError.value = null
@@ -149,7 +152,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     if (current === null) return
     if (options.fetchSection === undefined) {
       const common = requestCommon('chart')
-      if (common) void run({ ...common, section: 'chart', ...(['1d', '1w'].includes(current.frequency) ? { resolveCurrent: true } : {}) })
+      if (common) void run({ ...common, section: 'chart', resolveCurrent: true })
       return
     }
     // Injected section transports retain direct fixture mode unless the
@@ -203,6 +206,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       if (disposed || controller.signal.aborted || resolverController !== controller || generation !== resolverGeneration || currentIdentity.value !== requestedIdentity) return
       generation += 1
       resetAll()
+      intradaySnapshot.value = null
       dailySnapshot.value = null
       weeklySnapshot.value = null
       historicalSnapshot.value = resolved
@@ -233,6 +237,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     dailyController = null
     generation += 1
     resetAll()
+    intradaySnapshot.value = null
     dailySnapshot.value = null
     weeklySnapshot.value = null
     dailyError.value = null
@@ -419,11 +424,12 @@ export function useNewowProduct(options: UseNewowProductOptions) {
             if (context) {
               asOf.value = context.as_of
               if (context.frequency === '1d') dailySnapshot.value = context
-              else weeklySnapshot.value = context
+              else if (context.frequency === '1w') weeklySnapshot.value = context
+              else intradaySnapshot.value = context
               // Freshness describes publication lag, not chart validity. Accept
               // the verified completed snapshot and pin dependents to its cutoff.
               // accept() keeps pending snapshots out of the current-signal viewport.
-            } else if (request.identity.frequency === '1d' || request.identity.frequency === '1w') {
+            } else {
               failConflict('chart', 'NEWOW_RESPONSE_INVALID')
               return
             }
@@ -515,6 +521,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
           && request.chartOlderWindow === undefined && historicalSnapshot.value === null
           && dailySnapshot.value?.freshness !== 'pending_update'
           && weeklySnapshot.value?.freshness !== 'pending_update'
+          && intradaySnapshot.value === null
         acceptedHistoricalChartWindow.value = !acceptedCurrentChartWindow.value
       }
       resource.data.value = accepted
@@ -582,6 +589,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     const frames = mergeTimelineUnique(value.frames, priorValue.frames, (item) => item.bar_end)
     const actions = mergeUnique(value.actions, priorValue.actions, (item) => item.signal_id)
     const hints = mergeUnique(value.hints, priorValue.hints, (item) => item.hint_id)
+    const breakoutEvents = mergeUnique(value.breakout_events ?? [], priorValue.breakout_events ?? [], (item) => item.event_id)
     const displayEvents = mergeUnique(value.display_events ?? [], priorValue.display_events ?? [], (item) => item.event_id)
     let trendChannel: NewowChartValue['trend_channel'] = null
     let trendChannelConflict = false
@@ -602,7 +610,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
       if (points === null) trendChannelConflict = true
       else trendChannel = { ...value.trend_channel, points }
     }
-    if ([bars, frames, actions, hints, displayEvents].some((items) => items === null) || trendChannelConflict) {
+    if ([bars, frames, actions, hints, displayEvents, breakoutEvents].some((items) => items === null) || trendChannelConflict) {
       failConflict('chart', 'NEWOW_CHART_PAGE_CONFLICT')
       return null
     }
@@ -634,6 +642,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
         price_reference: priorValue.price_reference,
         bars: boundedBars, frames: boundedFrames, trend_channel: boundedTrendChannel,
         actions: boundedActions, hints: boundedHints,
+        breakout_events: breakoutEvents!.filter(e=>boundedBars.some(b=>b.bar_end===e.bar_end&&b.physical_contract===e.physical_contract&&b.segment_id===e.segment_id&&b.calculation_segment_id===e.calculation_segment_id)).sort((a,b)=>Date.parse(a.bar_end)-Date.parse(b.bar_end)||a.event_id.localeCompare(b.event_id)),
         display_events: displayEvents!.filter(e=>boundedBars.some(b=>b.bar_end===e.bar_end&&b.physical_contract===e.physical_contract&&b.segment_id===e.segment_id&&b.calculation_segment_id===e.calculation_segment_id)).sort((a,b)=>Date.parse(a.bar_end)-Date.parse(b.bar_end)||a.kind.localeCompare(b.kind)),
         diagnostics: [...new Set([...priorValue.diagnostics, ...value.diagnostics])],
         next_before: bars!.length >= MAX_ACCUMULATED_CHART_ROWS ? null : value.next_before,
@@ -831,6 +840,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     asOf: readonly(asOf),
     historicalSnapshot: readonly(historicalSnapshot),
     dailySnapshot: readonly(dailySnapshot),
+    intradaySnapshot: readonly(intradaySnapshot),
     weeklySnapshot: readonly(weeklySnapshot),
     dailyError: readonly(dailyError),
     dailyLoading: readonly(dailyLoading),
