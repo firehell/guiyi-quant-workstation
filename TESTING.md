@@ -2409,3 +2409,6 @@ GUIYI_SUBING_MODEL_PG_TEST=1 PYTHONPATH=.:services/quant-api:services/quant-api/
 ```
 
 真实PG测试保留隔离标识的不可变测试事件，不删除生产记录。四个固定历史窗口用既有统一回放入口复算，比较全部结果字段，不能仅比总收益。浏览器须检查持续/历史模式切换、真实14品种状态、初始空仓和未成交、错误恢复及停止/过期状态；自然新Bar、JM意图、Fill分别凭实际日志读回，测试fixture不能替代自然事件。
+
+
+2026-11-05 RS/UR恢复使用独立 `htdy_conflict_recovery_20261105_v1`，仅冻结两路旧revision、capture、checkpoint和activation generation（RS1、UR2），OPEN集合必须为空。复用既有权威MDS来源、完整原件/Inbox及历史retirement证明、真实停驻锁、两路同事务与单次attempt；旧历史不重算，从未来FLAT继续。正常HTDY窗口比较、公式和schema均不变。定向验证 `test_htdy_two_conflict_scope.py`，并回归既有来源、retirement、PostgreSQL和CLI测试。
