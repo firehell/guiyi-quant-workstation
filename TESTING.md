@@ -576,6 +576,36 @@ pnpm_config_verify_deps_before_run=false pnpm -C apps/quant-web exec node --test
 只使用现有依赖与本地测试输入；`pnpm_config_verify_deps_before_run=false` 防止新版 pnpm 在复核时自动安装依赖。
 这些测试证明当前代码合同，不等于新原站版本的同输入逐值验证。可见收益舍入核查的输入、公式及限制见当前研究复核。
 
+## Newow 突破展示发布核验（保留现役策略与参考口径）
+
+真／假突破、突破待定、上下影提示及突破缓冲区是独立展示事实，`executable=false`。
+本项只核验展示更新，不授权 Trueup 默认策略、参考交易模型或收益口径晋升。
+发布时从现役正式代码提取展示改动；不得整包回移同时包含策略与收益变更的提交。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_breakout_shapes.py \
+  services/quant-api/tests/newow/test_breakout_events.py
+pnpm -C apps/quant-web exec node --test tests/newowBreakoutEvents.test.ts tests/newowProductTypes.test.ts
+PLAYWRIGHT_PORT=5197 NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web exec \
+  playwright test -c playwright.config.mjs e2e/newow-breakout.spec.mjs --workers=1
+```
+
+离线覆盖完成 Bar、相邻确认、pending 身份、已知时点、合约／计算段边界、展示投影不修改
+策略回放和参考投影；浏览器覆盖六周期、图层开关、影线默认开启、弹窗、明暗色、缩放裁剪及策略切换清理。
+这些结果不证明发布候选保留了现役公式，也不替代真实 JM 日线与正式构建的浏览器读回。
+
+对实际发布候选还须与现役 exact tag 检查策略、配对、价格、成本和收益实现及依赖不变；
+同一固定输入的 Frame、主动作、参考交易 ID／开平参考价／状态和完整收益必须相同。
+核对 `formula_versions`、`profile_id`、`reference_model_version` 和现役参考流身份；
+展示新增字段与展示快照身份允许更新，不能据此清空、重建或中断参考历史。
+部署工具共享合同校验、现役流预热和只读前后读回继续适用。
+
+候选若包含 Trueup 默认适配或收益变化，不能通过上述“保留现役口径”核验。
+必须先在正式基线上分离展示改动，再运行此项及受影响合同验证；
+当前发布与运行状态只看 `STATUS.md` 和实际读回。
+
 ## Newow 固定公开快照离线逐值验证
 
 以下命令从仓库根执行，仅使用本机已冻结文件；不重新请求外站。临时目录缺失时不能复现，不可静默用新行情替换该快照。先核对目录内 `manifest.json` 的文件与源码哈希；具体采集身份、容差和119行/18个Marker结果见[当前复核](docs/research/newow-v3.2.82/REPLICATION_MANUAL.md)。
