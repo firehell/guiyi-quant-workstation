@@ -54,9 +54,9 @@ for (const width of [1440, 390]) {
     await expect(stage).toHaveAttribute('data-comparison-active', 'true')
     await page.screenshot({ path: `/private/tmp/newow-ui-nine-dual-${width}.png`, fullPage: false })
     const nativeRows = stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })
-    await expect(nativeRows).toHaveCount(4)
+    await expect(nativeRows).toHaveCount(3)
     await expect.poll(async () => {
-      const auxPane = await nativeRows.nth(2).boundingBox()
+      const auxPane = await nativeRows.nth(1).boundingBox()
       const toolbar = await stage.locator('.newow-product-chart-stage__auxiliary-toolbar').boundingBox()
       return Math.abs(auxPane.y - toolbar.y)
     }).toBeLessThanOrEqual(4)

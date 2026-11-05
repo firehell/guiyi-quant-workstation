@@ -83,6 +83,7 @@ export function useMarketDetailController(
 ): {
   state: Readonly<Ref<MarketDetailControllerState>>
   productCatalog: Readonly<Ref<readonly MarketProductDirectoryItem[]>>
+  canonicalCoverage: Readonly<Ref<{ readonly start: string; readonly end: string } | null>>
   bars: Readonly<Ref<BarData[]>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
   loadingBefore: Readonly<Ref<boolean>>
@@ -295,6 +296,7 @@ export function useMarketDetailController(
     state: readonly(state),
     productCatalog: readonly(productCatalog),
     bars: publicBars,
+    canonicalCoverage: readonly(series.canonicalCoverage),
     mutation: publicMutation,
     loadingBefore: readonly(series.loadingBefore ?? ref(false)),
     historyError: readonly(series.historyError ?? ref(null)),

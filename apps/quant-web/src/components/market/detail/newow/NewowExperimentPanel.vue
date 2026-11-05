@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { experimentVolumeBars, type ExperimentVolumeSource } from '@/utils/newowExperimentVolume'
+import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS } from '@/utils/volumeDisplay'
+import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
+
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { MAX_ACCUMULATED_REFERENCE_TRADES } from '@/utils/newowReferenceParts'
@@ -12,7 +16,7 @@ import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonch
 import {newowReferencePoints,newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,inject,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
 import {createChart,CandlestickSeries,HistogramSeries,LineSeries,createSeriesMarkers,type IChartApi,type ISeriesMarkersPluginApi,type Time,type IPriceLine,type IRange} from 'lightweight-charts'
-import {DETAIL_CHART_SESSION,detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
+import {DETAIL_CHART_SESSION,detailChartVolumeBars, detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
 import {getNewowExperiment,getNewowExperimentHistory} from '@/api/newowExperiments'
 import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
 import {formatPerformancePercent} from '@/utils/marketDisplay'
@@ -20,7 +24,7 @@ import {pagePerformanceAnnualized} from '@/utils/newowPagePerformance'
 import {layoutNiuwaReferenceCallouts,type PositionedCallout} from '@/utils/referenceCalloutLayout'
 import {formatChartTimeInShanghai} from '@/utils/barTime'
 const emit=defineEmits<{'select-display':[event:NewowDisplayEvent]; 'analyze-channel': []; context: [value: {asOf:string;physicalContract:string|null;segmentId:string|null;latestState:import('@/utils/newowExperiments').ExperimentSegment['latest_state']|null}|null] }>()
-const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null;volumeBars?:readonly {barEnd:string;physicalContract:string;volume:number}[]}>()
+const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asOf:string|null;volumeBars?:readonly ExperimentVolumeSource[]}>()
 const detailSession=inject<DetailChartSession|null>(DETAIL_CHART_SESSION,null)
 let retainedStop:RetainedBuildStop|null=null
 const data=shallowRef<ExperimentDetail|null>(null),loading=ref(false),error=ref<string|null>(null),container=ref<HTMLElement|null>(null)
@@ -30,6 +34,8 @@ const range=ref<ExperimentRange>('1y')
 const selectedSegment=ref<string|null>(null)
 const visibleSegments=computed(()=>experimentVisibleSegments(data.value,selectedSegment.value))
 const chartBars=computed(()=>{const segment=visibleSegments.value[0];return data.value?.segments.length&&!segment?[]:(data.value?.bars??[]).filter(b=>!segment||b.segment_id===segment.segment_id)})
+const volumeBars=computed(()=>experimentVolumeBars(chartBars.value,props.volumeBars??[]))
+let volumeThemeObserver:MutationObserver|null=null
 const chartMarkers=computed(()=>{const segment=visibleSegments.value[0];return data.value?.segments.length&&!segment?[]:(data.value?.markers??[]).filter(m=>!segment||m.segment_id===segment.segment_id)})
 watch([data,selectedSegment],()=>{const segment=visibleSegments.value[0];emit('context',data.value?{asOf:data.value.as_of,physicalContract:segment?.physical_contract??null,segmentId:segment?.segment_id??null,latestState:segment?.latest_state??null}:null)})
 watch(data,()=>{selectedSegment.value=null})
@@ -142,15 +148,16 @@ function render(){
  const bars=chartBars.value
  const viewport=resetViewport?null:detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange();resetViewport=false
  if(bars.length || !detailSession) candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})))
- if(volume&&bars.length){const source=new Map((props.volumeBars??[]).map(bar=>[`${Date.parse(bar.barEnd)}:${bar.physicalContract}`,bar.volume]));volume.setData(bars.map(bar=>{const value=source.get(`${Date.parse(bar.bar_end)}:${bar.physical_contract}`);return {time:time(bar.bar_end),...(value===undefined?{}:{value,color:Number(bar.close)>=Number(bar.open)?'rgba(255,59,48,0.6)':'rgba(52,199,89,0.6)'})}}))}
+ if(volume){const input=detailChartVolumeBars(chart,volumeBars.value),colors=volumeColors(input,readNewowChartDisplayTheme());volume.setData(input.map((bar,index)=>({time:detailChartTime({time:bar.time,trading_day:bar.tradingDay??bar.trading_day},props.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})))}
+
  upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}))
  lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}))
  markers.setMarkers([])
  if(viewport)chart.timeScale().setVisibleLogicalRange(viewport);else chart.timeScale().fitContent();publishViewport();renderVisual();projectCallouts()
 }
-watch([data,selectedSegment],render)
-onMounted(()=>{if(!container.value)return;chart=(detailSession?.acquire??createChart)(container.value,{height:500,width:container.value.clientWidth,layout:{background:{color:'#fff'},textColor:'#333',fontSize:12},localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff3b30',downColor:'#34c759',wickUpColor:'#ff3b30',wickDownColor:'#34c759',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false},1);chart.panes()[0]!.setStretchFactor(5);chart.panes()[1]!.setStretchFactor(1);upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{publishViewport();renderVisual();projectCallouts()});chart.subscribeCrosshairMove?.(param=>{const next=chartBars.value.length?(param.time??null):null;if(JSON.stringify(sharedCursor.value)!==JSON.stringify(next))sharedCursor.value=next});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});publishViewport();projectCallouts()}});observer.observe(container.value);render()})
-onBeforeUnmount(()=>{generation.clear();emit('context',null);observer?.disconnect();chart?.remove()})
+watch([data,selectedSegment,()=>props.volumeBars],render)
+onMounted(()=>{if(!container.value)return;if(typeof MutationObserver!=='undefined'&&typeof document!=='undefined'){volumeThemeObserver=new MutationObserver(()=>render());for(const root of [document.documentElement,document.body])if(root)volumeThemeObserver.observe(root,{attributes:true,attributeFilter:['data-theme']});}chart=(detailSession?.acquire??createChart)(container.value,{height:500,width:container.value.clientWidth,layout:{background:{color:'#fff'},textColor:'#333',fontSize:12},localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff3b30',downColor:'#34c759',wickUpColor:'#ff3b30',wickDownColor:'#34c759',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false,priceScaleId:'volume'},0);volume.priceScale().applyOptions({...VOLUME_SCALE_OPTIONS});chart.priceScale('right').applyOptions({scaleMargins:{top:.05,bottom:.14}});upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{publishViewport();renderVisual();projectCallouts()});chart.subscribeCrosshairMove?.(param=>{const next=chartBars.value.length?(param.time??null):null;if(JSON.stringify(sharedCursor.value)!==JSON.stringify(next))sharedCursor.value=next});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});publishViewport();projectCallouts()}});observer.observe(container.value);render()})
+onBeforeUnmount(()=>{volumeThemeObserver?.disconnect();generation.clear();emit('context',null);observer?.disconnect();chart?.remove()})
 const pct=(v:unknown,signed=true)=>typeof v==='string'?formatPerformancePercent(v,signed):'—'
 const date=(v:unknown)=>typeof v==='string'?formatChartTimeInShanghai(time(v)):'—'
 const annualized=(model:Record<string,unknown>|null)=>pagePerformanceAnnualized(model&&Array.isArray(model.dates)&&Array.isArray(model.equity)?{dates:model.dates as string[],equity:model.equity as string[]}:null)

@@ -106,9 +106,20 @@ function toBarData(item: CanonicalBarDto, physicalContract?: string): BarData {
   }
 }
 
+/** Display segments come from the resolver's mapping intervals and strict page
+ * endpoint/quality validation, not a guessed contract or a strategy quality ID. */
+function historicalDisplayBar(page: MarketBarsPageResponse, bar: CanonicalBarDto): BarData {
+  const physicalContract = resolveHistoricalPhysicalContract(page, bar)
+  const segment = page.resolved_contract_segments.find(item => item.contract.toUpperCase() === physicalContract
+    && item.start_trading_day <= bar.trading_day && bar.trading_day <= item.end_trading_day)
+  const calculationSegmentId = segment ? `${physicalContract}:${segment.start_trading_day}`
+    : page.request.series_kind === 'contract' && physicalContract ? `contract:${physicalContract}` : undefined
+  return { ...toBarData(bar, physicalContract), calculationSegmentId }
+}
+
 export function mergeInitialPage(page: MarketBarsPageResponse): MergedMarketPage {
   return {
-    bars: normalizeBarSeries(page.bars.map((bar) => toBarData(bar, resolveHistoricalPhysicalContract(page, bar)))),
+    bars: normalizeBarSeries(page.bars.map((bar) => historicalDisplayBar(page, bar))),
     hasMoreBefore: page.page.has_more_before,
     nextBefore: page.page.next_before,
   }
@@ -118,10 +129,18 @@ export function prependHistoricalPage(
   current: BarData[],
   page: MarketBarsPageResponse,
 ): MergedMarketPage {
+  const earlier = page.bars.map((bar) => historicalDisplayBar(page, bar))
+  const last = earlier.at(-1), first = current[0]
+  const cursorJoins = page.request.before != null && first != null
+    && Date.parse(page.request.before) === Date.parse(first.time)
+  const joined = cursorJoins && last?.physicalContract && last.physicalContract === first?.physicalContract
+    && last.calculationSegmentId && first.calculationSegmentId
+    ? current.map(bar => bar.calculationSegmentId === first.calculationSegmentId
+      ? { ...bar, calculationSegmentId: last.calculationSegmentId } : bar) : current
   return {
     bars: normalizeBarSeries([
-      ...page.bars.map((bar) => toBarData(bar, resolveHistoricalPhysicalContract(page, bar))),
-      ...current,
+      ...earlier,
+      ...joined,
     ]),
     hasMoreBefore: page.page.has_more_before,
     nextBefore: page.page.next_before,
@@ -359,7 +378,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   function applyLiveBars(incoming: CanonicalBarDto[], physicalContract?: string): boolean {
     const seam = latestEnd(canonicalBars)
     const accepted = normalizeBarSeries(incoming
-      .map((bar) => toBarData(bar, physicalContract))
+      .map((bar) => ({ ...toBarData(bar, physicalContract), confirmed: false }))
       .filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
     if (!accepted.length) return false
     liveBars = normalizeBarSeries([...liveBars, ...accepted])

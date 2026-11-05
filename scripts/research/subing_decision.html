@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>焦煤苏冰 · 持仓动作核对</title>
+<style>
+:root{font-family:system-ui,sans-serif;color:#172b3a;background:#f3f5f7}body{max-width:1200px;margin:32px auto;padding:0 20px}h1{font-size:28px;margin-bottom:8px}.notice{background:#fff1cf;padding:16px;border-radius:8px;line-height:1.7}.meta{color:#506575;overflow-wrap:anywhere}nav{position:sticky;top:0;background:#f3f5f7;padding:18px 0;display:flex;gap:12px;align-items:center;flex-wrap:wrap}button,select{padding:8px 14px;border:1px solid #b7c6d1;background:white;border-radius:6px}input{flex:1;min-width:120px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}article{background:white;padding:18px;border-radius:10px;border:1px solid #dce3e9}h2{font-size:17px;margin:0 0 12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.6;margin:0}.wide{grid-column:1/-1}#position{font-variant-numeric:tabular-nums}@media(max-width:700px){.grid{grid-template-columns:1fr}.wide{grid-column:auto}}
+</style>
+<h1>焦煤苏冰 · 持仓动作核对</h1>
+<p class="meta">3.2 · 因子事实 → 决策 → 等待确认 → 仓位变化</p>
+<p id="notice" class="notice"></p><p id="source" class="meta"></p>
+<nav><button id="previous">上一事件</button><input id="cursor" aria-label="回放位置" type="range" min="0" value="0"><button id="next">下一事件</button><span id="position"></span><label>定位动作 <select id="actions"><option value="">选择事件</option></select></label></nav>
+<p id="event" class="meta"></p>
+<div class="grid"><article><h2>动作前状态</h2><pre id="before"></pre></article><article><h2>本事件输入事实</h2><pre id="facts"></pre></article><article class="wide"><h2>新动作／拒绝原因</h2><pre id="decision"></pre></article><article class="wide"><h2>动作后状态（含待成交）</h2><pre id="after"></pre></article></div>
+<script type="application/json" id="data">__DATA__</script>
+<script>
+const data=JSON.parse(document.getElementById('data').textContent),rows=data.rows;
+const el=id=>document.getElementById(id),format=x=>JSON.stringify(x,null,2);
+el('notice').textContent=(data.kind==='ENGINEERING_SCENARIO'?'工程构造场景：用于核对规则，行情、风险输入与确认均不代表真实历史。':'显式输入回放：来源由调用方提供，本页不独立证明行情或成交真实性。')+' '+data.scope;
+el('source').textContent=data.contract+' · '+data.run_id+' · '+data.source_note;
+el('cursor').max=rows.length-1;
+rows.forEach((r,i)=>{if(r.actions?.length){const o=document.createElement('option');o.value=i;o.textContent=(i+1)+' · '+r.event_id;el('actions').append(o)}});
+function show(i){i=Math.max(0,Math.min(rows.length-1,Number(i)));const r=rows[i];el('cursor').value=i;el('position').textContent=(i+1)+' / '+rows.length;el('event').textContent=r.event_id;el('before').textContent=format(r.before);el('facts').textContent=format(r.facts);el('decision').textContent=format(r.actions);el('after').textContent=format(r.after);el('previous').disabled=i===0;el('next').disabled=i===rows.length-1;}
+el('cursor').addEventListener('input',e=>show(e.target.value));el('previous').onclick=()=>show(Number(el('cursor').value)-1);el('next').onclick=()=>show(Number(el('cursor').value)+1);el('actions').onchange=e=>{if(e.target.value!=='')show(e.target.value)};show(0);
+</script></html>

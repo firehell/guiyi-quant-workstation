@@ -472,7 +472,7 @@ export const NEWOW_PRODUCT_CHART_ADAPTER_KEY: InjectionKey<NewowProductChartAdap
 
 export interface NewowProductChartResources {
   unsubscribeRange: () => void
-  unsubscribeClick: () => void
+  unsubscribeClick?: () => void
   disconnectResizeObserver: () => void
   removeChart: () => void
 }
@@ -483,7 +483,7 @@ export function createNewowProductChartDisposer(resources: NewowProductChartReso
     if (disposed) return
     disposed = true
     resources.unsubscribeRange()
-    resources.unsubscribeClick()
+    resources.unsubscribeClick?.()
     resources.disconnectResizeObserver()
     resources.removeChart()
   }

@@ -159,8 +159,7 @@ test('keeps action labels passive and preserves an established viewport and focu
   rangeListener!(range)
   assert.equal(loads, 1)
 
-  clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'build-stable' } })
-  clickListener!({ hoveredInfo: { objectKind: 'series-marker', objectId: 'unknown' } })
+  assert.equal(clickListener, undefined, 'native chart clicks do not register an interaction handler')
   assert.deepEqual(selected, [], 'clicking a native marker must not open signal details')
 
 
@@ -440,7 +439,7 @@ test('same product and frequency strategy switches keep viewport while replacing
   }
 })
 
-test('creates three native panes with volume zero/color and releases resources', async () => {
+test('creates main-pane volume plus auxiliary pane with zero/color and releases resources', async () => {
   const Stage = await loadComponent()
   const records: Array<{ definition: { type: string }; options: Record<string, unknown>; pane: number; data: Array<{ value: number; color: string }> }> = []
   let removed = false
@@ -467,12 +466,12 @@ test('creates three native panes with volume zero/color and releases resources',
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, { ...adapter(fakeChart), createResizeObserver: () => ({ observe() {}, disconnect() { disconnected = true } }) })
   app.mount(element('root')); await nextTick()
-  assert.equal(paneCount, 3)
-  const volume = records.find(record => record.pane === 1 && record.definition.type === 'Histogram')!
+  assert.equal(paneCount, 2)
+  const volume = records.find(record => record.pane === 0 && record.options.priceScaleId === 'volume')!
   assert.equal(volume.data[0]!.value, 0)
   assert.equal(volume.data[0]!.color, 'rgba(255,59,48,0.6)')
   assert.deepEqual(volume.data.map(point => [point.value, point.color]), [[0, 'rgba(255,59,48,0.6)'], [9, 'rgba(52,199,89,0.6)']])
-  assert.equal(records.filter(record => record.pane === 2).length > 0, true, 'keep empty auxiliary pane without manufacturing an indicator zero')
+  assert.equal(records.filter(record => record.pane === 1).length > 0, true, 'keep empty auxiliary pane without manufacturing an indicator zero')
   assert.equal(resizeCalls.at(-1)?.[2], true, 'pane labels require completed native layout before reading pane heights')
   app.unmount()
   assert.equal(removed, true); assert.equal(disconnected, true)

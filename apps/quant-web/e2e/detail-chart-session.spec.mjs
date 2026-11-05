@@ -22,6 +22,10 @@ test('all detail strategies retain one native canvas and their period without re
     expect(new URL(page.url()).searchParams.get('frequency')).toBe('1d')
     expect(new URL(page.url()).searchParams.get('symbol')).toBe('rb')
     await expect(page.locator('.quote-header')).toBeVisible()
+    if (['趋势策略', '震荡策略'].includes(label)) {
+      const rows = page.getByTestId('newow-product-chart-stage').locator('tr').filter({ has: page.locator('td:nth-child(3)') })
+      await expect(rows).toHaveCount(3)
+    }
     timings.push({ label, elapsedMs: Date.now() - started })
   }
   expect(pricePages()).toBe(initialPages)
