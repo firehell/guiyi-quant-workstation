@@ -8,7 +8,7 @@ from app.db.readonly import readonly_transaction
 from app.private_settings import read_private_settings_content
 from app.subing_model.worker import ACTIVE,HEARTBEAT,DB_PATH,facts_for
 from app.subing_model.store import ModelStore,runs,events
-from app.subing_model.projection_source import registered_source
+from app.subing_projection_source import registered_source
 from app.market_data.new_subing_research import payload_hash
 router=APIRouter(prefix='/api/v1/subing-model',tags=['subing-model'])
 FACTS_INDEX=ACTIVE.parent/'subing-model-facts-index.json'

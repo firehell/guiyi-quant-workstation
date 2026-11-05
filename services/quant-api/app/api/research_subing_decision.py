@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
-from app.subing_model.projection_source import registered_source
+from app.subing_projection_source import registered_source
 from app.new_subing_research.store import _read_file, _safe_root, ResultStoreError
 
 router = APIRouter(prefix='/api/v1/research/subing-decision', tags=['subing-decision'])

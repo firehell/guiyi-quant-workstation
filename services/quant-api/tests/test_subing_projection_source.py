@@ -2,7 +2,7 @@ import json
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from app.subing_model import projection_source as source
+from app import subing_projection_source as source
 from app.api import subing_model, research_subing_decision
 
 
