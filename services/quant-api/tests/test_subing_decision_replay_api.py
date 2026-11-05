@@ -1,8 +1,14 @@
 import hashlib
 import json
+import pytest
+from app.api import research_subing_decision as api
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from app.api.research_subing_decision import router
+
+@pytest.fixture(autouse=True)
+def isolate_private_binding(monkeypatch):
+    monkeypatch.setattr(api, 'registered_source', lambda key: None)
 
 def setup(tmp_path,monkeypatch):
     chain=[dict(at=f'2025-01-06T09:0{i}:00+08:00',demand='WAIT') for i in range(3)]
