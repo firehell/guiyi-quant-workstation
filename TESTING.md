@@ -2402,7 +2402,7 @@ pnpm -C apps/quant-web build
 合同与运行入口见[开发模型](docs/SUBING_DEVELOPMENT_MODEL.md)。直接测试：
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_account tests/unit/subing_decision services/quant-api/tests/test_subing_continuous_account.py services/quant-api/tests/test_subing_model_pipeline.py services/quant-api/tests/test_subing_model_api.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_account tests/unit/subing_decision services/quant-api/tests/test_subing_continuous_account.py services/quant-api/tests/test_subing_model_pipeline.py services/quant-api/tests/test_subing_model_api.py services/quant-api/tests/test_subing_model_current_facts.py
 # 显式建立隔离测试数据库，禁止连接生产库
 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/dev/subing_model_setup.py --test-only
 GUIYI_SUBING_MODEL_PG_TEST=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/test_subing_model_postgresql.py
