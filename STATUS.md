@@ -1,3 +1,13 @@
+11/5 11:30后独立页面v1.16.90已发布，正式运行切换因既有HTDY原件冲突暂停：PR621，main/annotated tag/Release exact `fdae18ef3c939f7cae13cc63208f0aea889ef78b`，正式准备根 `.worktrees/release-v1.16.90`，受测与合并代码树完全一致。包含统一成交量/档位标记、苏冰历史回放及既有开发模型只读页面；不含Trueup默认规则晋升，360路Newow流身份hash保持 `1e41fbc4714cf5dbb944efb42abb9de8ecd3fb61a5093e7c09fb6a22a8d5c119`。正式十服务仍v88/gen63，不能把已发布90表述为页面已切换。
+
+全部60品种11:30午休及11:31后原生静默校验通过。整组计划 `77f35f7f00427ed10a21feda049947f4c3a9c6b0bc7a10f323191aa1bc911dcd` 在Reference预热以 `COHORT_CANDIDATE_WARMUP_FAILED` 取消，effects={}，未停标准服务/安装/CAS；旧attempt保留，不重跑。只读全部60路HTDY60m确认仅RS和UR pending冲突，均无OPEN：RS 11/4 15:00 close5477→5474、volume8669→8670；UR 11/4 10:15 volume7582→7584、11:30 volume43574→43572。32根端点连续，同owner/计算段，属于重叠Bar改值，不能以缺Bar或页面回归解释。精确原件/清单及hash在 `output/release-v90-20261105`；新恢复库存SHA `89d759414d2206ddf6af239101441edb06079f2228594a8c090727c87304ffc4`。已请求owner选择是否扩展范围保全两路原件/历史、权威核对并重新预热未来FLAT；确认前未修复或写业务库。
+
+Tq按已审查午休切换准备单次停止：原PID77357及helper77605均实际退出，label absent，真实owner锁已取得；四笔原空头/四单四成交保持，无未核单/未决fill，未清仓/发测试单。原hold及账本保留，尚未配置90/恢复/启用新worker；恢复脚本已收紧精确15个无owner品种及四持仓恢复证明，不重试旧attempt或绕过原生对账。停机原件在AppSupport `tqkq-simulation/recovery-20261105-v90`。
+
+正式只读数据源已明确登记到AppSupport `subing-development-read.json`；真实模型同run `subing-dev-20261104T161601`、144事件/sequence144，4历史窗口可读，GET前后数据库不变。模型心跳过期如实显示STALE_OR_STOPPED，未重启/晋升；39个原模型源hash逐字保持。独立Review、308项苏冰/市场、12项绑定/API、218项参考/Tq合同、API wheel/sdist、冻结API/SDK和Web构建/拓扑/secret通过；全量Web1314通过/3跳过/3项原封v89同样失败的导航测试。真实只读浏览器模型/回放验收通过，正式首页验收仍待切换。发布补丁已回合develop，测试已隔离正式源绑定，不改变模型身份。
+
+以下为此前检查点：
+
 11/5 10:46 天勤通道补丁v1.16.89已发布、尚未切运行：PR620，main/tag/Release exact `230959f8a9f9591a353c6ece79f17d4fe8becdbb`，正式根 `.worktrees/release-v1.16.89` API/SDK/Web冻结构建及身份验证通过。现役标准服务仍v88/gen63，Tq仍原PID77357、持久 `TQ_MARKET_CHANNEL_FAILED`、control=pause，四笔原空头持仓/四单四成交/四SUBMIT claims保持，15个日盘品种尚blocked；不能将已发布89冒充已运行或自然交易验收。计划在全部60品种11:30午休后通过原生Session/静默校验，再统一同树切换与账户恢复，不在交易中拆API和worker根。
 
 已用真实当前60品种H1只读复现：旧signals8.50s+authority1.02s+recovery11.04s=20.56s，超过既有20秒期限。新实现每请求4品种信号/4恢复证明，15批真实诊断单批最长1.43s；保留真实首次receipt、latest合并、缺口恢复、超时通道废弃和禁止补开。新增版本化 `tqkq_observed_signal_v1` 分开事实接收与入账时间，旧Signal/replay规则不改；首次hold不覆盖，无未决义务的停止须先完整native对账再不依赖故障通道退出。222项定向回归、独立高风险Review、API wheel/sdist、冻结锁、Ruff/diff/secret0通过；真实四仓账本只读副本旧/新完整重放状态SHA完全一致。修复已合回develop，不含Trueup晋升。
