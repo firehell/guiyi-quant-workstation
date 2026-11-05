@@ -974,7 +974,7 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
-.newow-caution-overlay{position:absolute;pointer-events:none;z-index:5}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:0 6px;height:16px;min-height:16px;max-height:16px;box-sizing:border-box;background:#00ff00;color:#003300;font:bold 10px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
+.newow-caution-overlay{position:absolute;pointer-events:none;z-index:8}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:0 6px;height:16px;min-height:16px;max-height:16px;box-sizing:border-box;background:#00ff00;color:#003300;font:bold 10px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
 
 .newow-product-chart-stage__tools > summary { min-height:22px; padding:0 6px; line-height:22px; cursor:pointer; white-space:nowrap; }
 .newow-product-chart-stage__tools-body { position:absolute; right:0; top:100%; width:min(560px,calc(100vw - 48px)); padding:8px; border:1px solid var(--gy-border); border-radius:6px; background:var(--gy-bg-panel); box-shadow:0 4px 14px #0002; font-weight:400; }
@@ -983,7 +983,7 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage:fullscreen .newow-product-chart-stage__chart { height:0; flex:1 1 auto; min-height:0; }
 .newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(400px,48vh,650px) + 350px); min-height:690px; }
-.newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:4; overflow:hidden; }
+.newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:9; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
 .newow-product-chart-stage__dual-summary { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0; padding:3px 12px 7px; background:#fafafa; color:var(--gy-text-muted); font-size:11px; font-weight:600; line-height:1.5; }
 .newow-product-chart-stage__reference-record-status { margin:0; padding:2px 12px; color:var(--gy-text-muted); font-size:10px; }
