@@ -1,3 +1,11 @@
+11/5 14:39 天勤模拟自然交易E2E已实证通过：当前v1.16.91/exact `9de9c146beb9f447a1847122bf53a1ed591a15fb`、gen64、唯一worker PID62132，trade/READY、无hold、60品种blocked=0。14:30 completed 60m自然观测60/60已入账，总Signal由45增至105；仅PB产生本批sell方向。PB2612于14:30:36.536630获风险APPROVED并生成SELL OPEN 1手，14:30:38.223761由TqKq原生成交确认，价格16120.00；不是测试单、补单或页面参考交易。
+
+独立只读核对Signal.source_id与Order.signal_id一致、唯一SUBMIT claim、原生委托FILLED/volume_left=0、同native_order_id成交volume=1与native_trade_id、SHFE.pb2612原生空头今仓1手及本地持仓一致。该单reconciled=true；总原生/本地订单5、成交5、持仓5，原FG/I/AG/AU四仓保持，无未决委托/未核fill/未释放预约，完整不可变账本重放通过。至此“恢复后的新信号→风控→模拟委托→模拟成交→账本对账”完成一次真实自然闭环；逐笔手续费仍未知，不生成虚假策略净收益。
+
+连接曾发生反复断线并自动恢复；本次成交验收不等于所有异常路径或长期连接稳定性已验收，稳定性仍须持续关注。此前v89待切换计划已由实际v91同树切换取代，不再重复部署89；此前“尚无新自然委托/成交”的检查点现已过时。历史原件与原账户不改写。
+
+以下为此前检查点：
+
 11/5 12:28 v1.16.91发布、整组运行切换和正式首页验收完成：PR622，main/annotated tag/Release exact `9de9c146beb9f447a1847122bf53a1ed591a15fb`，正式根 `.worktrees/release-v1.16.91`；十服务统一gen64，cohort `e773310e17f4c851e6d3f72088c14b281962ef68d5e9a716f959213718251af2` 终态switched，十项身份matched，API/Web/Runtime HTTP均通过。正式首页index及主JS与91冻结构建逐字一致，API1.16.91。既有builder已刷新60品种首页派生缓存，overview及60/60摘要均ready；独立文件/真实HTTP读回一致，浏览器旧摘要失败与待更新提示消失。仅写精确 `.derived/newow-home.json`，原件已保全，不下载/改Canonical或收益口径。临时统计尾部曾误用字段status而退出，构建本体已保存；随后以正确projection_status独立读回确认全部ready，未重复执行写入。
 
 owner已明确批准PR622 main/tag/Release、RS/UR恢复及正式切换；自动审批曾因缺少精确main批准拒绝，补充明确批准后同一GitHub工具合并成功，未绕过。RS/UR恢复plan `51cc16f64d83553be18118910264ce8407696b9158a8cbd8d705d940a37ba858` 单次原子COMMITTED/2，独立status相同；全部原件/旧历史保留，零OPEN，无历史收益重算，新FLAT从北京时间13:30开始。360路Newow身份hash保持 `1e41fbc4714cf5dbb944efb42abb9de8ecd3fb61a5093e7c09fb6a22a8d5c119`，未晋升Trueup。v90旧失败attempt原样保留，不重跑。真实Source两路预检、140项回归、14项独立临时PG事务测试、独立Review95项、正式API/SDK/Web冻结构建与secret0通过。
