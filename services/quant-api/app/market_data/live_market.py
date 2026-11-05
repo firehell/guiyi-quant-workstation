@@ -474,6 +474,10 @@ class LiveListener(Protocol):
     def is_alive(self) -> bool: ...
 
 
+class ProviderRetirementPending(ValueError):
+    """External close succeeded; retirement evidence may be checked again."""
+
+
 class RQDataLiveProvider:
     """唯一的 RQData raw-feed adapter：注册 handler、缓冲 raw dict、输出 CanonicalBar。
 
@@ -530,36 +534,34 @@ class RQDataLiveProvider:
         return ()
 
     def close(self) -> None:
-        """Idempotently retire a client that the service will never reuse."""
-        if self._closed:
+        """Invoke external close once; an unknown result is never retried."""
+        if self._close_failed:
+            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
+        if self._close_succeeded:
             return
-        self._closed = True
-        self._retired_listener = self._listener
-        self._listener = None
-        self._client.close()
+        self._retired_listener = self._listener or self._retired_listener
+        try:
+            self._client.close()
+        except Exception:
+            self._close_failed = True
+            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN') from None
         self._close_succeeded = True
+        self._closed = True
 
     def close_verified(self, *, timeout: float = 5, clock=None, sleep=None) -> None:
-        """Feed handover proof; legacy retry close retains its original behavior."""
+        """Close once, then permit bounded read-only listener rechecks."""
         from time import monotonic, sleep as real_sleep
         clock = clock or monotonic
         sleep = sleep or real_sleep
         if not 0 <= timeout <= 5 or self._close_failed:
             raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
         listener = self._listener or self._retired_listener
-        try:
-            if not self._close_succeeded:
-                self._client.close()
-                self._close_succeeded = True
-            deadline = clock() + timeout
-            while listener is not None and listener.is_alive():
-                if clock() >= deadline:
-                    raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN')
-                sleep(0.01)
-        except Exception:  # noqa: BLE001 - unknown connection outcome cannot become a parked owner
-            self._close_failed = True
-            raise ValueError('LIVE_PROVIDER_CLOSE_UNKNOWN') from None
-        self._closed = True
+        self.close()
+        deadline = clock() + timeout
+        while listener is not None and listener.is_alive():
+            if clock() >= deadline:
+                raise ProviderRetirementPending('LIVE_PROVIDER_LISTENER_PENDING')
+            sleep(0.01)
         self._retired_listener = listener
         self._listener = None
 

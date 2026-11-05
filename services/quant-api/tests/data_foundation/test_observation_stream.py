@@ -402,11 +402,11 @@ def test_rqdata_verified_close_waits_for_listener_and_timeout_is_explicit():
     client = FakeLiveClient()
     provider = RQDataLiveProvider(client)
     provider.poll()
-    with pytest.raises(ValueError, match='LIVE_PROVIDER_CLOSE_UNKNOWN'):
+    with pytest.raises(ValueError, match='LIVE_PROVIDER_LISTENER_PENDING'):
         provider.close_verified(timeout=0)
     assert client.closed
     assert provider._listener is client.listener  # unknown listener is not forgotten
-    assert not provider._closed
+    assert provider._closed and not provider._close_failed
 
     client = FakeLiveClient()
     provider = RQDataLiveProvider(client)

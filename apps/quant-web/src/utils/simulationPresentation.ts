@@ -17,6 +17,7 @@ export function observerLabel(data: MonitorOverview | null, now = Date.now()) {
   if (data.observer?.status === 'running') {
     if (data.observer.mode === 'observe') return data.observe_reconciliation_ready && now >= Date.parse(data.observe_reconciliation_checked_at ?? '') && now < Date.parse(data.observe_reconciliation_valid_until ?? '') ? '只读对账已通过' : '只读观察中'
     if (data.observer.mode === 'manage') return '仅管理已有仓位'
+    if (data.observer.mode === 'trade' && data.observer.opening_enabled && data.observer.executable_product_count === 0) return `行情或账户条件阻断：可执行0个品种，阻断${data.observer.blocked_product_count ?? 0}个`
     if (data.observer.mode === 'trade') return data.observer.opening_enabled ? '持续模拟交易中' : '持续模式：开仓暂停'
   }
   return ({ running: '受控运行中', stopped: '本次运行已结束', stale: '运行状态待确认', error: '本次运行异常' } as const)[data.observer?.status ?? 'stale']

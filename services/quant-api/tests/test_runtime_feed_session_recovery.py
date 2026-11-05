@@ -1,6 +1,6 @@
 from contextlib import nullcontext
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 import json
 
 import pytest
@@ -38,6 +38,7 @@ def proof():
 
 
 class Backend:
+    old_day = date(2026, 11, 2)
     def __init__(self, folder):
         self.folder = folder
         self.now = 1000
@@ -142,8 +143,8 @@ def test_live_retired_listener_cannot_be_closed_by_pid_exit(tmp_path):
 
 def test_expired_or_future_proof_is_not_fresh():
     p = proof()
-    assert not safe_proof(p, pid=17, now=1091)
-    assert not safe_proof(p, pid=17, now=999)
+    assert not safe_proof(p, pid=17, now=1091, old_day=Backend.old_day)
+    assert not safe_proof(p, pid=17, now=999, old_day=Backend.old_day)
 
 
 def test_same_version_success_preserves_old_failure_and_consumes_once(tmp_path):
@@ -220,3 +221,32 @@ def test_mismatched_pid_birth_proof_never_drains(tmp_path):
     with pytest.raises(RecoveryError):
         c.apply(p)
     assert b.drains == b.resumes == 0
+
+
+def test_wrong_old_day_rejected_before_drain(tmp_path):
+    b, c, p = setup(tmp_path)
+    b.old_day = date(2026, 11, 3)
+    with pytest.raises(RecoveryError, match='READER_CLOSURE_UNPROVEN'):
+        c.apply(p)
+    assert b.drains == b.resumes == 0
+
+
+@pytest.mark.parametrize('field', ['binding', 'day'])
+def test_frozen_context_drift_rejected_before_drain(tmp_path, field):
+    b, c, p = setup(tmp_path)
+    b.baseline[field] = 'changed'
+    with pytest.raises(RecoveryError, match='SOURCE_DRIFT'):
+        c.apply(p)
+    assert b.drains == b.resumes == 0
+
+
+def test_native_protection_refuses_running_tq_worker_before_reading(tmp_path):
+    from app.runtime_feed_session_recovery import Native
+    from guiyi_quant.tq_simulation.runtime import owner_lock
+    native = object.__new__(Native)
+    native.runtime = tmp_path
+    base = tmp_path / 'tqkq-simulation'
+    base.mkdir(mode=0o700)
+    with owner_lock(base / 'owner.lock'):
+        with pytest.raises(BlockingIOError):
+            native.protected()
