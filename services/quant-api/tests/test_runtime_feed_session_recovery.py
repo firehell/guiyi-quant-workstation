@@ -250,3 +250,57 @@ def test_native_protection_refuses_running_tq_worker_before_reading(tmp_path):
     with owner_lock(base / 'owner.lock'):
         with pytest.raises(BlockingIOError):
             native.protected()
+
+
+@pytest.mark.parametrize('generation,phase,accepted', [
+    (63, 'drain', True), (63, 'cancelled', True), (64, 'cancelled', True),
+    (64, 'drain', False), (65, 'cancelled', False), (65, 'drain', False),
+    (0, 'cancelled', False), (True, 'cancelled', False), (63, 'unknown', False),
+])
+def test_native_control_retains_inert_prior_generation_bytes(tmp_path, generation, phase, accepted):
+    import base64
+    import hashlib
+    from app.runtime_feed_session_recovery import Native
+    native = object.__new__(Native)
+    native.runtime, native.generation = tmp_path, 64
+    value = dict(schema_version=1, service='market-feed', generation=generation,
+                 request_id='a' * 32, phase=phase)
+    raw = (json.dumps(value, indent=2) + '\n').encode()
+    path = tmp_path / 'market-feed.handover.json'
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    if accepted:
+        frozen = native.control()
+        assert frozen['value'] == value
+        assert base64.b64decode(frozen['raw_base64']) == raw
+        assert frozen['sha256'] == hashlib.sha256(raw).hexdigest()
+    else:
+        with pytest.raises(RecoveryError, match='EXISTING_DRAIN_UNRESOLVED'):
+            native.control()
+    assert path.read_bytes() == raw
+
+
+def test_native_drain_supersedes_only_frozen_control_and_keeps_original(tmp_path, monkeypatch):
+    import base64
+    from app import runtime_handover
+    from app.runtime_feed_session_recovery import Native
+    monkeypatch.setattr(runtime_handover, 'runtime_directory', lambda: tmp_path)
+    native = object.__new__(Native)
+    native.runtime, native.generation = tmp_path, 64
+    path = tmp_path / 'market-feed.handover.json'
+    old = dict(schema_version=1, service='market-feed', generation=63,
+               request_id='b' * 32, phase='drain')
+    raw = (json.dumps(old, indent=2) + '\n').encode()
+    path.write_bytes(raw)
+    path.chmod(0o600)
+    native.frozen_control = native.control()
+    path.write_bytes(raw + b' ')
+    with pytest.raises(RecoveryError, match='CONTROL_DRIFT'):
+        native.drain()
+    assert path.read_bytes() == raw + b' '
+    path.write_bytes(raw)
+    request = native.drain()
+    current = json.loads(path.read_bytes())
+    assert current['generation'] == 64 and current['phase'] == 'drain'
+    assert current['request_id'] == request != old['request_id']
+    assert base64.b64decode(native.frozen_control['raw_base64']) == raw

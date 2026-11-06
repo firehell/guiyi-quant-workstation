@@ -370,7 +370,8 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 #### 已关闭且空缓冲的原Feed受限恢复
 
 `python -m app.runtime_feed_session_recovery plan|apply --directory <runtime>/feed-session-recovery-20261103 --plan <directory>/plan.private.json`
-仅处理v1.16.64/gen53原PID1772的本次已完成client close但保留retirement失败的现场，不是通用重启或版本promotion。
+仅处理绑定现役release、代次、PID出生身份与旧/目标交易日的已完成client close但保留retirement失败现场，不是通用重启或版本promotion；参数还须提供`--old-day`、`--day`、`--expected-pid`，目录为全新`<runtime>/feed-session-recovery-<32位hex>`。
+控制前像仅接纳同代次cancelled或严格旧代次的drain/cancelled；当前binding、loaded、owner及唯一writer均须一致。旧控制原字节和SHA保存在新私有计划，apply持锁重验后才发唯一当前代次drain，不改旧attempt/state，不取消旧代次请求；同代未决drain、未来代次及漂移仍拒绝。
 控制器自身须为exact annotated release的干净源码。先用只读LLDB/CPython debug_offsets取得双fresh证明：
 固定PID出生和实际代码、同service/provider对象、client close成功、两个listener不存活、raw及pending均0，
 隔离原day/contracts一致；不执行目标函数、不写内存、不输出地址、凭据或raw buffer。未知诊断禁止继续。
