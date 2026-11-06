@@ -1,3 +1,15 @@
+11/6 盘后清理与维护前向切换完成：v1.16.96 / exact `06608ae7f3ad571967df0739e430f9c07b5924c2`（PR628），正式源码唯一`.worktrees/release-v1.16.96`，十标准服务全部matched/gen67，API1.16.96及API/Web/Runtime HTTP通过。60/60权威Session CLOSED后原生cohort `f7ecf81702b8adddec6e263aa518cbe79d59194b2fb8a2de45c82e1835c5e275`单次返回switched；包含此前v95全部功能，仅补维护reader与安全清理读取修复，不改策略、评分、参考交易、风险或账户语义。
+
+原TQKQ停机前排他备份/完整重放，切后同树configure/install/probe/start恢复唯一worker PID79434；trade/LOGGED_IN/AUTO_TRADING，无hold，auto_order=false。切后完整重放与原材料逐项相同：8仓/8单/8成交、8 SUBMIT claims、唯一原基线，零未决fill/未释放预约/活动委托。晚间原生当日委托和成交已归零，但原生8仓与本地8仓一致，历史8单8成交保留；未补旧开仓、清仓或制造测试单。闭市executable0/blocked60不代表夜盘自然验收完成。
+
+实际现役96 reader接受完整94条历史attempt及72个release身份，原生seal `2dc618b75471ab1cb84e8dca9e623fc0d6dbf2b195a01c6831e2e14bb9a21604`成功；保留旧失败/UNKNOWN/plan/index原件。fresh cleanup-plan `89ead37351dab2cf13105933f927256b35cd5ba99aea3eca935dcdeb95c59df9`六树eligible且零引用。独立删除脚本Review通过、部署锁内全plan及每树即时身份/引用/ignored/.run重验后，non-force移除v88/v90登记worktree及v91/v93/v94/v95独立shared clone；此前v92已删除。每树删后独立引用0、现役绑定/配置/PID不变，仅剩最新96正式发布树。运行标记、盘后记录和派生缓存原字节另保全于AppSupport/GuiyiQuant/release-cleanup-20261106-v96；tag/Release、行情、账户、账本、恢复原件及独立数据/研究证据目录均保留。旧源码必要时从保留的exact annotated tag重建、恢复已保全.run并重新冻结构建，不能直接复用旧attempt。
+
+18:05既有盘后任务Nov6行情主业务18:07:48已passed；随后首页派生收尾在snapshot_cache._retained_size递归停留20余分钟，原生状态无current_run。保全原status/history及只读栈证明后，仅对该派生进程正常SIGTERM，原行情passed字节不变，未重跑下载/任务或伪造派生完成。首页108/120版本匹配、6品种派生失败仍明确保留；JM60m当前已确认历史快照实际HTTP200，不冒充实时图。公网未认证401，未宣称认证页面独立通过。
+
+Feed切后新鲜心跳available=true/input_failure=null/pending0，60 CLOSED/订阅0；Nov6 source/live与completed/alert、reference注册和游标均到尾。API/SDK frozen构建、Web类型/生产构建、版本测试及既有定向/独立Review通过；维护测试140 passed有1旧fixture在原封95同样失败、未降断言，删后补修102 passed。夜盘新completed H1、原账户后续自然信号/风控/委托/成交仍待现有链路观察，不能由READY/HTTP替代；未新建监控、重试调度或通知。其他可见源码区仅主项目develop及本聊天已合并任务树；宿主archive明确拒绝“The task's primary checkout cannot be removed.”，因此保留当前主工作区，不绕过保护。其18份浏览器/.run证据已另存；六个cwd引用均为宿主node_repl，不杀宿主进程。独立数据证据目录不删。
+
+以下为此前检查点：
+
 11/6 17:16旧树清理部分完成：仅已证明零引用的`.worktrees/release-v1.16.92`已移除（约1.2GB逻辑占用）。原生dry-run `830b6daf4208bfb4eb72ca8a75125575da64ff79b57db1ea9ba5e5b6536ebc71`，删除前部署锁内完整重验、clean/detached/annotated tag、忽略文件精确清单及其他源码/环境依赖均通过；仅移除该独立shared clone，不使用force，保全其prepared home派生缓存。删除后独立原生host/恢复引用仍0，十服务v95/gen66、API1.16.95及原TQ PID29418不变，tag、行情、账户和账本不动；正式运行树仍唯一指向v1.16.95。
 
 维护修复已集成develop：38c1de445增加严格shared clone对象库归属，要求单一绝对alternates、文档路径、来源一致，并锚定主仓同名annotated tag类型/commit/tag对象，拒绝clone独有提交或重注释tag；a0847bbc2修复删后引用检查用已删目录作launchctl cwd，改用稳定HOME。直接相关140 passed，1项旧fixture在原封v95同样失败，未改其断言；删后补修102 passed；独立Review101 passed及补修1 passed。Ruff/diff/secret通过，未新建版本/tag/Release、未切换/重启任何服务。
