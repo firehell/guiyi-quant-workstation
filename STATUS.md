@@ -1,3 +1,11 @@
+11/6 10:19只读自然交易验收：v1.16.93/gen65、原TQKQ worker PID88439已完成今日真实模拟闭环。10:00 completed H1覆盖60/60且均eligible；45品种进入正常Signal，15品种首根按原恢复合同消费，等待恢复后的新信号。3个方向通过风控：CU2612 BUY OPEN 1，10:01:00.585617成交104890；SN2612 BUY OPEN 1，10:01:19.373280成交345130；RB2701 SELL OPEN 1，10:01:40.308210成交3036。逐笔Signal→风险APPROVED→唯一SUBMIT claim→原生FILLED/volume_left0→native_trade_id/价格/数量→本地Fill及持仓均关联一致，不是测试单或补旧开仓。
+
+原5仓保持，现8仓/累计8单8成交、8个SUBMIT claims、唯一原基线；原生当前日3单3成交、本地与原生8仓完全一致；账本完整重放通过，无未对账订单、未决fill或未释放预约，无hold，10:19最新原生快照无活动委托。行情60订阅及Live coverage正常；不生成未知逐笔费用或策略净收益。
+
+连接稳定性尚未通过：09点以来记录7次Disconnect及自动Recover，最新10:18:09断线、10:18:52账户恢复，逐品种恢复保护继续，10:19监控仍36品种暂时blocked。不能将上述成交验收表述为连接完全正常。空闲时账户ledger读回凭证10秒到期，监控会显示unverified/executable0；新执行目标前原生流程重新同步，本轮未放宽阈值、补单、重启或改变控制。证据复用execution-context.json，定向审计位于/private/tmp/guiyi-v93-1005。下一步优先定位反复断线；当前worker按既有保护继续模拟运行。
+
+以下为此前检查点：
+
 11/6 09:07开盘第一轮现场验收已通过：正式v1.16.93/gen65保持，Feed available=true、input_failure=null、60/60订阅，Nov6 source已自然新增420条、completed 480条，Live coverage/status均ok，最新Bar到09:07。45个夜盘品种正常Live恢复已有水位（JM至09:00:08.525580），持久provider budget各1次、circuit未触发；其余15个日盘品种无夜盘恢复水位。未用captured/incident旁路，未发布恢复历史Bar。TQKQ原worker PID88439运行，原5仓/5单/5成交及唯一基线/claims保持，无未决义务；09:06监控blocked15、executable0，首个后续新completed H1的信号/风控/委托/成交仍待自然验收，不能由READY或行情恢复推导已成交。
 
 苏冰原run按登记原开发源39/39代码hash单次追平Nov5：seq144→145、3332自然观察/225模型决策、14品种日终齐、identity与完整事件链重放通过，模型PaperFill仍0、auto_order=false。未新建run或晋升；--once已退出，未持续运行，Nov6因执行facts未登记及自然夜盘事件前缀缺失继续保护，不能将Live恢复水位当成模型可消费的自然事件。旧发布树仍因原生身份/保全闭合校验失败保留，零删除；未新建监控、重试调度或额外通知。详细操作与边界见下方既有记录和execution-context.json。
