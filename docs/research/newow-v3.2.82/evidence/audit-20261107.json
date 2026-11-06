@@ -1,0 +1,182 @@
+{
+  "schema": "newow_public_audit_evidence_v1",
+  "observed_on": "2026-11-07 Asia/Shanghai",
+  "develop_commit": "5974987406d56e6f1939e7f1b201b32b56c12691",
+  "working_tree_at_start": "clean",
+  "versions": {
+    "index": "3.4.63",
+    "detail": "3.4.51",
+    "position_kernel": "1.1.1"
+  },
+  "sources": [
+    {
+      "file": "index.html",
+      "url": "https://www.v8848.cn/index.html",
+      "exit": 0,
+      "sha256": "ca20ca2a5cc24d71db43cd51ab365e0b2abf77fcddec9f6078a321ac5866789b",
+      "changed": true
+    },
+    {
+      "file": "stock_detail.html",
+      "url": "https://www.v8848.cn/stock_detail.html?code=688702.SH",
+      "exit": 0,
+      "sha256": "4b3556769f1c7d8de71978d57db4829671f660fc29cb1348130bcbbcf713b24b",
+      "changed": true
+    },
+    {
+      "file": "index--api-config.js",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7",
+      "changed": false
+    },
+    {
+      "file": "index--api-shim.js",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81",
+      "changed": false
+    },
+    {
+      "file": "index--strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.15",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0",
+      "changed": false
+    },
+    {
+      "file": "index--position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+      "exit": 0,
+      "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036",
+      "changed": false
+    },
+    {
+      "file": "stock_detail--api-config.js",
+      "url": "https://www.v8848.cn/api-config.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "1d417a20bf2417be8d081c9b7b79d4ed7d55e4cf063dd6d4db0b7fd355b7adc7",
+      "changed": false
+    },
+    {
+      "file": "stock_detail--api-shim.js",
+      "url": "https://www.v8848.cn/api-shim.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "d171dba070265588dcaa8420186c181782449c597fd7a8c568ca44d324b07d81",
+      "changed": false
+    },
+    {
+      "file": "stock_detail--strategy-calc.js",
+      "url": "https://www.v8848.cn/strategy-calc.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "f490dcf6e24a60a2e4e0c178d153a4ff58442e3727181a1c449e18dd68491ea0",
+      "changed": false
+    },
+    {
+      "file": "stock_detail--composite-decision-v2.js",
+      "url": "https://www.v8848.cn/composite-decision-v2.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "522bb42dca07758741b0c9fb25f666c0ae5e79f070c25c32ecc1d08200ff06b2",
+      "changed": false
+    },
+    {
+      "file": "stock_detail--position_kernel.js",
+      "url": "https://www.v8848.cn/position_kernel.js?v=1.1.1",
+      "exit": 0,
+      "sha256": "c6b5f1f634d87af29d7676b3f1a7ab6cdbc28c1ca1229ef753779fdb954f6036",
+      "changed": false
+    },
+    {
+      "file": "stock_detail--trend-reversal-core.js",
+      "url": "https://www.v8848.cn/js/trend-reversal-core.js?v=3.4.11",
+      "exit": 0,
+      "sha256": "85a72b64ca9b9a84ee04338cfffeb28b67dfae923699498a80eb71a22faf6f80",
+      "changed": false
+    }
+  ],
+  "api": [
+    {
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=day&strategy=huanglantai&startdate=2025-11-01&enddate=2026-11-06",
+      "exit": 0,
+      "sha256": "cab007c46c95b833d858956a20742e498bd4dcc2abbc8cca4fd70242eb2a449d",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0
+    },
+    {
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=week&strategy=huanglantai&startdate=2024-06-01&enddate=2026-11-06",
+      "exit": 0,
+      "sha256": "ab5186287063a884309a29bed1d987580efcbd1a7f879b6a913fc16501aa7072",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source"
+      ],
+      "errorcode": 0
+    },
+    {
+      "url": "https://www.v8848.cn/api/kline?code=688702.SH&period=5min&strategy=zhushenglang&startdate=2026-10-01&enddate=2026-11-06",
+      "exit": 0,
+      "sha256": "538676059851158815539537598898c619d14c7681e3d335716c08f4dfa8a6da",
+      "top_keys": [
+        "errorcode",
+        "tables",
+        "signals",
+        "_source",
+        "_filtered"
+      ],
+      "errorcode": 0
+    },
+    {
+      "url": "https://www.v8848.cn/api/batch?codes=688702.SH",
+      "exit": 0,
+      "sha256": "3317fa2169477287f6e12920000cd389d1339d221249e5f396f2ae5b5d8bf83c",
+      "top_keys": [
+        "stocks",
+        "_source",
+        "signalStale",
+        "quoteAge"
+      ],
+      "errorcode": null
+    }
+  ],
+  "detail_function_diff": {
+    "changed": [
+      "loadLazyModule",
+      "loadStockData",
+      "renderTradeReminderV2",
+      "nwPathToggle",
+      "drawSignalAnnotations"
+    ],
+    "added": [
+      "reloadOscMarkFlagsAndRedraw",
+      "nwPathIsMeasurable",
+      "nwPathHasChart",
+      "nwPathScheduleRetry",
+      "nwPathSignature",
+      "nwPathMarkFailure",
+      "nwPathAutoRender"
+    ],
+    "removed": [],
+    "count": 439
+  },
+  "validation": {
+    "web_passed": 205,
+    "web_failed": 0,
+    "web_skipped": 0,
+    "visual": "NOT_VERIFIED",
+    "homepage_full_behavior": "EVIDENCE_REQUIRED"
+  },
+  "scope_excludes": [
+    "messages",
+    "push",
+    "screener",
+    "month_k",
+    "time_sharing_chart"
+  ]
+}
