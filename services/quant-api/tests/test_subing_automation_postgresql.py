@@ -71,3 +71,25 @@ def test_conflict_append_preserves_old_event_and_restarts():
     assert model_state(q)['recovery']['conflict_count'] == 1
     assert q.last_outcome['model_fills'] == []
     store.engine.dispose()
+
+
+def test_backlog_resume_commits_and_replays_without_account_execution():
+    from test_subing_model_automation import backlog_event
+    store = ModelStore(URL, test_only=True)
+    store.initialize()
+    p = empty_pipe()
+    run = 'resume-test-' + uuid.uuid4().hex
+    p.identity['run_id'] = run
+    store.create(run, p.identity, model_state(p))
+    event = backlog_event()
+    apply_event(p, event)
+    event['outcome'] = p.last_outcome
+    store.append(run, event, model_state(p), 0)
+    record, journal = store.load(run)
+    q = empty_pipe()
+    q.identity['run_id'] = run
+    for item in journal:
+        apply_event(q, item)
+    assert model_state(q) == record['state']
+    assert q.last_outcome['model_fills'] == []
+    store.engine.dispose()

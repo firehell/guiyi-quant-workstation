@@ -27,7 +27,7 @@ from app.market_data.storage import CanonicalMonthlyStore
 from app.subing_model import worker
 from app.subing_model.pipeline import Pipeline
 from app.subing_model.store import ModelStore, digest
-from app.subing_model_recovery import POLICY, CONFLICT_POLICY, apply_event, flat_without_obligations, consumed_bars, overlap_conflicts, model_state
+from app.subing_model_recovery import POLICY, CONFLICT_POLICY, RESUME_POLICY, apply_event, flat_without_obligations, consumed_bars, overlap_conflicts, model_state
 from app.subing_projection_source import registered_source
 from guiyi_quant.subing_decision import _wire
 
@@ -88,6 +88,7 @@ class Service:
         self.daily_pending, self.daily_proofs, self.daily_errors = {}, {}, {}
         self.blocked = None
         self.recovery_checked = None
+        self.resume_floor = datetime.now(UTC)
 
     def check_code(self):
         if self.identity['code_hashes'] != worker.code_hashes():
@@ -285,7 +286,10 @@ class Service:
                 observations=rows, contexts=ctx, facts=facts, daily_updates=self.daily_pending,
                 daily_sources=self.daily_proofs, daily_errors=self.daily_errors,
                 cursor=tail, source_day=str(day))
+            if self.resume_floor is not None:
+                payload.update(resume_policy=RESUME_POLICY, resume_floor=self.resume_floor.isoformat())
             self.commit(payload)
+            self.resume_floor = None
             self.daily_pending, self.daily_proofs = {}, {}
         return 'RUNNING'
 

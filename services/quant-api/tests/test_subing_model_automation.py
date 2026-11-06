@@ -121,6 +121,7 @@ def test_processing_knowledge_time_is_after_fact_capture(monkeypatch):
     pipe = SimpleNamespace(source_day=str(day), source_cursor='0-0')
     service = module.Service.__new__(module.Service)
     service.pipe = pipe
+    service.resume_floor = None
     service.check_code = lambda: None
     service.stream = SimpleNamespace(days=lambda: [day])
     service.context = lambda d: {'jm': {'day_end': (AT + timedelta(hours=6)).isoformat()}}
@@ -266,3 +267,84 @@ def test_conflict_rebaseline_keeps_open_account_and_original_ledger_protected():
     assert a.state()['fills'] == ['original-fill']
     assert a.state()['summary']['open_quantity'] == 1
     assert p.last_outcome['model_fills'] == p.last_outcome['model_decisions'] == []
+
+
+def backlog_event():
+    from app.subing_model_recovery import RESUME_POLICY
+    return dict(event_id='resume:1', resume_policy=RESUME_POLICY,
+        resume_floor=(AT + timedelta(seconds=30)).isoformat(),
+        observed_at=(AT + timedelta(minutes=2)).isoformat(),
+        observations=[row('jm', '1m')], daily_updates={},
+        contexts={'jm': dict(contract='JM2701', first_open=(AT-timedelta(minutes=1)).isoformat(),
+                           expected_1m=[AT.isoformat()], expected_30m=[], expected_60m=[])},
+        cursor='2-0', source_day='2026-11-05')
+
+
+def test_restart_backlog_is_indicator_only_and_replays():
+    from app.subing_model_recovery import model_state
+    p = empty_pipe()
+    e = backlog_event()
+    apply_event(p, e)
+    assert p.account is None
+    assert p.products['jm']['bar_end'] == AT.isoformat()
+    assert p.products['jm']['warmup_only']
+    assert p.last_outcome['model_fills'] == p.last_outcome['model_decisions'] == []
+    q = empty_pipe()
+    apply_event(q, dict(e, outcome=deepcopy(p.last_outcome)))
+    assert model_state(q) == model_state(p)
+
+
+def test_existing_pending_is_retained_and_never_filled_on_restart_backlog():
+    p = empty_pipe()
+    pending = {'kind': 'OPEN', 'decision_id': 'original-pending'}
+    m = SimpleNamespace(layers=[], pending=pending, clear_reasons=[], exit_layers=[],
+                        day_halted=False, pullback=None, chain=[])
+    a = SimpleNamespace(halted=None, protection_observation=None,
+                        engine=SimpleNamespace(layers={}, model=m, fills=[]))
+    a.state = lambda: dict(cash='100000', fees='0', fills=[], pending=m.pending, status=a.halted)
+    a.apply = lambda *args: pytest.fail('old pending must not execute on backlog')
+    p.account = a
+    apply_event(p, backlog_event())
+    assert a.halted == 'OBSERVATION_INTERRUPTED_REVIEW_REQUIRED'
+    assert m.pending == pending
+    assert a.state()['cash'] == '100000'
+    assert p.last_outcome['model_fills'] == []
+
+
+def test_zero_backlog_fresh_first_bar_still_protects_old_pending():
+    p = empty_pipe()
+    pending = {'kind': 'OPEN', 'decision_id': 'old'}
+    m = SimpleNamespace(layers=[], pending=pending, clear_reasons=[], exit_layers=[],
+                        day_halted=False, pullback=None, chain=[])
+    a = SimpleNamespace(halted=None, protection_observation=None,
+                        engine=SimpleNamespace(layers={}, model=m, fills=[]))
+    a.state = lambda: dict(cash='100000', fills=[], pending=m.pending, status=a.halted)
+    a.hold_for_facts = lambda *args: None
+    a.apply = lambda *args: pytest.fail('pre-restart pending must stay protected')
+    p.account = a
+    e = backlog_event()
+    e['resume_floor'] = (AT - timedelta(seconds=1)).isoformat()
+    apply_event(p, e)
+    assert a.halted == 'OBSERVATION_INTERRUPTED_REVIEW_REQUIRED'
+    assert m.pending == pending
+    assert p.last_outcome['model_fills'] == []
+
+
+def test_zero_backlog_flat_restart_clears_expired_windows_without_resetting_cash():
+    from app.subing_model_recovery import RESUME_POLICY
+    p = empty_pipe()
+    m = SimpleNamespace(contract='JM2701', layers=[], pending=None, clear_reasons=[],
+                        exit_layers=[], day_halted=False, pullback=None, chain=[],
+                        windows={'LONG': SimpleNamespace(source_end=AT, age=3)})
+    engine = SimpleNamespace(layers={}, model=m, fills=[], prior='old execution bar')
+    a = SimpleNamespace(halted=None, protection_observation=None, engine=engine)
+    a.state = lambda: dict(cash='98765', fees='15', fills=[])
+    p.account = a
+    e = backlog_event()
+    e['observations'] = []
+    apply_event(p, e)
+    assert a.halted is None and a.state()['cash'] == '98765'
+    assert engine.prior is None
+    assert all(w.source_end is None for w in m.windows.values())
+    assert m.reset_after == datetime.fromisoformat(e['resume_floor'])
+    assert p.last_outcome['resume_policy'] == RESUME_POLICY
