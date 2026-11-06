@@ -466,6 +466,8 @@ python -m app.runtime_retention cleanup-plan /exact/old-release-root ...
 ```
 
 只清理精确列为 eligible、必要证据已保全且删除前重查身份/引用未变的目标，逐个 non-force 移除。
+登记式 worktree 与 `.worktrees/release-v*` 的独立 shared clone 共用主仓对象库身份校验。clone 还须有唯一绝对 alternates、匹配的来源，并与主仓同名 annotated tag 的对象和 commit 完全一致；clone 独有提交或重注释 tag 不可清理。
+历史封存必须能由实际恢复读取器验证；仅升级维护 controller 不代表运行中的旧 reader 已支持新布局，不得据此删除仍有恢复引用的树。
 仍在运行、存在未决恢复、用户修改或引用未知的树保留；不为可能回退而保留无引用源码。
 不删除tag/Release、行情、DB、账本、安全配置或其他任务。
 

@@ -86,6 +86,7 @@ def test_foreign_repository_worktree_is_never_eligible(tmp_path, monkeypatch):
     foreign.mkdir()
     project.mkdir()
     monkeypatch.setattr("app.runtime_retention._git", lambda cwd, *args: str(foreign if cwd == root else project))
+    monkeypatch.setattr("app.runtime_repository._git", lambda cwd, *args: str(foreign if cwd == root else project))
     with pytest.raises(RetentionError, match="REPOSITORY_IDENTITY_INVALID"):
         RetentionBackend().candidate_identity(root)
 
