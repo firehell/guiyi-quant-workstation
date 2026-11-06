@@ -196,13 +196,14 @@ def run(config_path, *, inspect=False):
         last_recovery = 0
         facts = {}
         try:
+            helper_environment = dict(os.environ)
             with (
                 open(os.devnull, "w") as sink,
                 contextlib.redirect_stdout(sink),
                 contextlib.redirect_stderr(sink),
             ):
                 gateway = Gateway(credentials)
-            market = Market(root, root / "services/quant-api/.venv/bin/python")
+            market = Market(root, root / "services/quant-api/.venv/bin/python", helper_environment)
             controller = Controller(
                 folder, config["account_id"], market.products, gateway
             )
@@ -529,6 +530,11 @@ def run(config_path, *, inspect=False):
                         )
                     if (base / "hold.json").exists():
                         action = "pause"
+                if controller is not None and hasattr(gateway, "connection_events"):
+                    for event in gateway.connection_events():
+                        controller.journal.event(
+                            "connection", event, datetime.fromisoformat(event["at"])
+                        )
                 if time.monotonic() - last_publish >= 2:
                     now = datetime.now(UTC)
                     if snapshot and (

@@ -9,6 +9,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 from importlib.metadata import version
 from .journal import digest
+from .transport import SdkTransport
 
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
@@ -58,28 +59,48 @@ class Gateway:
             raise ValueError("TQ_SDK_VERSION_MISMATCH")
         from tqsdk import TqApi, TqAuth, TqKq
 
-        self.account = TqKq()
-        self.api = TqApi(
-            account=self.account,
-            auth=TqAuth(credentials.username, credentials.password),
-            debug=False,
-            disable_print=True,
-        )
-        self.execution_allowed = False
-        self.account_id = credentials.account_id
-        self.account_key = self.api._account._get_account_key(self.account)
-        self.account_ref = self.api.get_account(account=self.account)
-        self.positions = self.api.get_position(account=self.account)
-        self.orders = self.api.get_order(account=self.account)
-        self.trades = self.api.get_trade(account=self.account)
-        self.quotes = {}
-        self.notifications = set()
-        self.connections = {}
-        self.last_day = None
-        self.reconnection_required = False
+        self._transport = SdkTransport()
+        self.api = None
+        try:
+            self.account = TqKq()
+            self.api = TqApi(
+                account=self.account,
+                auth=TqAuth(credentials.username, credentials.password),
+                debug=False,
+                disable_print=True,
+            )
+            self._transport.verify(self.api, self.account)
+            self.execution_allowed = False
+            self.account_id = credentials.account_id
+            self.account_key = self.api._account._get_account_key(self.account)
+            self.account_ref = self.api.get_account(account=self.account)
+            self.positions = self.api.get_position(account=self.account)
+            self.orders = self.api.get_order(account=self.account)
+            self.trades = self.api.get_trade(account=self.account)
+            self.quotes = {}
+            self.notifications = set()
+            self.connections = {}
+            self.last_day = None
+            self.reconnection_required = False
+            self._connection_events = []
+        except BaseException:
+            try:
+                if self.api is not None:
+                    self.api.close()
+            finally:
+                self._transport.close()
+            raise
 
     def close(self):
-        self.api.close()
+        try:
+            self.api.close()
+        finally:
+            self._transport.close()
+
+    def connection_events(self):
+        events = tuple(self._connection_events)
+        self._connection_events.clear()
+        return events
 
     def update(self, seconds=1):
         import time
@@ -94,6 +115,16 @@ class Gateway:
             self.notifications.add(key)
             code = row.get("code")
             conn = row.get("conn_id")
+            if code in {2019112910, 2019112911, 2019112901, 2019112902}:
+                events = getattr(self, "_connection_events", None)
+                if events is None:
+                    self._connection_events = events = []
+                # Never persist notify content, URL, account name or credentials.
+                events.append({
+                    "code": code,
+                    "connection": "md" if conn == "md" else "td" if conn == "td_0" else "other",
+                    "at": datetime.now(UTC).isoformat(),
+                })
             if code in {2019112910, 2019112911}:
                 self.connections[conn] = False
                 self.reconnection_required = True
