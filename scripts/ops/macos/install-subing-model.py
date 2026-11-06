@@ -43,6 +43,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', required=True, type=Path)
     parser.add_argument('--install', action='store_true')
+    parser.add_argument('--allow-canonical-conflict-rebaseline', action='store_true')
     args = parser.parse_args()
     root, home = args.root, Path.home()
     if not root.is_absolute() or root.resolve(strict=True) != root:
@@ -78,6 +79,17 @@ def main():
             handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
+    if args.allow_canonical_conflict_rebaseline:
+        import json
+        from app.subing_model_service import atomic
+        from app.subing_model_recovery import CONFLICT_POLICY
+        from app.subing_projection_source import registered_source
+        model_root = registered_source('model_root')
+        if model_root != root / '.run':
+            raise ValueError('MODEL_SUPERVISION_SOURCE_DIFFERS')
+        active = json.loads((model_root / 'subing-model-active.json').read_text())
+        atomic(model_root / 'subing-model-supervision.json', dict(schema_version=1,
+            run_id=active['run_id'], conflict_policy=CONFLICT_POLICY))
     domain = f'gui/{os.getuid()}'
     loaded = subprocess.run(['/bin/launchctl', 'print', f'{domain}/{LABEL}'], capture_output=True, text=True)
     exists = loaded.returncode == 0

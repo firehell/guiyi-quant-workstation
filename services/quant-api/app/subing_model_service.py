@@ -27,7 +27,7 @@ from app.market_data.storage import CanonicalMonthlyStore
 from app.subing_model import worker
 from app.subing_model.pipeline import Pipeline
 from app.subing_model.store import ModelStore, digest
-from app.subing_model_recovery import POLICY, apply_event, flat_without_obligations, consumed_bars, verify_overlap
+from app.subing_model_recovery import POLICY, CONFLICT_POLICY, apply_event, flat_without_obligations, consumed_bars, overlap_conflicts, model_state
 from app.subing_projection_source import registered_source
 from guiyi_quant.subing_decision import _wire
 
@@ -81,7 +81,7 @@ class Service:
         self.pipe = Pipeline(self.identity)
         for event in events:
             apply_event(self.pipe, event)
-        if self.pipe.state() != run['state']:
+        if model_state(self.pipe) != run['state']:
             raise ValueError('MODEL_RESTART_PARITY_FAILED')
         self.context_cache = {}
         self.daily_day = None
@@ -199,7 +199,7 @@ class Service:
                 required_days = [d for d, opened in calendar if opened]
                 if sorted(x.trade_date for x in maps) != required_days or any(x.contract != contract for x in maps):
                     raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
-                item = dict(contract=contract, bars={}, proofs={})
+                item = dict(contract=contract, bars={}, proofs={}, conflicts=[])
                 for frequency in ('1m', '30m', '60m', '1d'):
                     freq = BarFrequency(frequency)
                     cutoff = datetime.fromisoformat(ctx[product]['day_end'])
@@ -216,13 +216,24 @@ class Service:
                     if source != m.contract_source_evidence(symbol=product, contract=contract,
                                                             frequency=freq, before=cutoff):
                         raise ValueError('MODEL_RECOVERY_SOURCE_CHANGED')
-                    verify_overlap(self.known.get((product, frequency), {}), rows.bars)
+                    item['conflicts'].extend(overlap_conflicts(self.known.get((product, frequency), {}), rows.bars, frequency))
                     item['bars'][frequency] = _wire([asdict(b) for b in rows.bars])
                     item['proofs'][frequency] = dict(source=_wire(source), hash=digest(item['bars'][frequency]))
                 updates[product] = item
         if self.stream.tail(day) != tail:
             raise ValueError('MODEL_RECOVERY_STREAM_CHANGED')
-        payload = dict(event_id=f'{POLICY}:{day}:{tail}', recovery_policy=POLICY,
+        policy = POLICY
+        if any(p['conflicts'] for p in updates.values()):
+            config_path = self.root / 'subing-model-supervision.json'
+            if config_path.is_symlink():
+                raise ValueError('MODEL_SUPERVISION_CONFIG_INVALID')
+            config = json.loads(config_path.read_text()) if config_path.is_file() else {}
+            if preview and getattr(self, 'preview_conflicts', False):
+                config = dict(schema_version=1, run_id=self.active['run_id'], conflict_policy=CONFLICT_POLICY)
+            if config != dict(schema_version=1, run_id=self.active['run_id'], conflict_policy=CONFLICT_POLICY):
+                raise ValueError('MODEL_RECOVERY_PRIOR_CONFLICT')
+            policy = CONFLICT_POLICY
+        payload = dict(event_id=f'{policy}:{day}:{tail}', recovery_policy=policy,
             observed_at=datetime.now(UTC).isoformat(), products=updates, source_day=str(day), cursor=tail,
             account_can_resume=flat_without_obligations(self.pipe.account))
         if preview:
@@ -233,11 +244,12 @@ class Service:
 
     def commit(self, payload):
         seq = self.pipe.sequence
+        next_known = consumed_bars(self.identity, [*self.history, payload])
         apply_event(self.pipe, payload)
         payload['outcome'] = self.pipe.last_outcome
-        self.store.append(self.active['run_id'], payload, self.pipe.state(), seq)
+        self.store.append(self.active['run_id'], payload, model_state(self.pipe), seq)
         self.history.append(payload)
-        self.known = consumed_bars(self.identity, self.history)
+        self.known = next_known
 
     def tick(self):
         self.check_code()
@@ -294,19 +306,23 @@ def main():
     parser.add_argument('--once', action='store_true')
     parser.add_argument('--recovery-preview', type=Path)
     parser.add_argument('--check', action='store_true')
+    parser.add_argument('--allow-conflict-preview', action='store_true')
     args = parser.parse_args()
     service = Service()
     try:
         if args.check:
             print(json.dumps(dict(status='MODEL_REPLAY_VERIFIED', sequence=service.pipe.sequence, run_id=service.active['run_id'], source_day=service.pipe.source_day, source_code_hashes=len(service.identity['code_hashes']))))
             return
+        if args.allow_conflict_preview and not args.recovery_preview:
+            raise ValueError('MODEL_CONFLICT_PREVIEW_ONLY')
         if args.recovery_preview:
+            service.preview_conflicts = args.allow_conflict_preview
             day=max(service.stream.days())
             plan=service.recovery(day,service.context(day),datetime.now(UTC),preview=True)
             if not plan:
                 raise ValueError('MODEL_RECOVERY_NOT_NEEDED_OR_NOT_CLOSED')
             atomic(args.recovery_preview,plan)
-            print(json.dumps(dict(status='MODEL_RECOVERY_PLAN_READY',plan_hash=digest(plan),products=len(plan['products']),account_can_resume=plan['account_can_resume'])))
+            print(json.dumps(dict(status='MODEL_RECOVERY_PLAN_READY',plan_hash=digest(plan),products=len(plan['products']),account_can_resume=plan['account_can_resume'],conflicts=sum(len(p['conflicts']) for p in plan['products'].values()))))
             return
         while True:
             # Any failed/mutated in-memory pipeline must exit and reconstruct
