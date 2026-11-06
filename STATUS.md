@@ -1,3 +1,9 @@
+11/6 09:07开盘第一轮现场验收已通过：正式v1.16.93/gen65保持，Feed available=true、input_failure=null、60/60订阅，Nov6 source已自然新增420条、completed 480条，Live coverage/status均ok，最新Bar到09:07。45个夜盘品种正常Live恢复已有水位（JM至09:00:08.525580），持久provider budget各1次、circuit未触发；其余15个日盘品种无夜盘恢复水位。未用captured/incident旁路，未发布恢复历史Bar。TQKQ原worker PID88439运行，原5仓/5单/5成交及唯一基线/claims保持，无未决义务；09:06监控blocked15、executable0，首个后续新completed H1的信号/风控/委托/成交仍待自然验收，不能由READY或行情恢复推导已成交。
+
+苏冰原run按登记原开发源39/39代码hash单次追平Nov5：seq144→145、3332自然观察/225模型决策、14品种日终齐、identity与完整事件链重放通过，模型PaperFill仍0、auto_order=false。未新建run或晋升；--once已退出，未持续运行，Nov6因执行facts未登记及自然夜盘事件前缀缺失继续保护，不能将Live恢复水位当成模型可消费的自然事件。旧发布树仍因原生身份/保全闭合校验失败保留，零删除；未新建监控、重试调度或额外通知。详细操作与边界见下方既有记录和execution-context.json。
+
+以下为此前检查点：
+
 11/6 08:55前已完成修复发布及盘前正式切换：v1.16.93 / exact `0b92a636c38de66dce225067b0f43348f58a5bd4`（PR625），正式副本 `.worktrees/release-v1.16.93`，原生整组返回switched，10服务统一gen65。v92全部改动保留，仅补修Feed恢复控制器对已被新owner取代的旧gen63 drain的受限接纳与原字节保全，不改旧tag或策略/参考/账户语义。实际定向174 passed、Web版本检查1 passed、独立Review、冻结锁、API wheel/sdist及正式Web构建通过。
 
 03:17阻断已定位并修复：旧Feed的client close成功、线程退出、raw/pending均0但保留关闭未知，跨日准备停在Nov5；08:30按真实Session窗口正常capture/plan/apply，新增5条权威日历、60条Nov6 rank1和225条Session，零Canonical写入，Catalog读回完整。v93控制器以全新计划完成同版本Feed恢复后，再原生交接至gen65；source/completed已注册Nov6，旧失败、控制、ACK及日志原件保全。
