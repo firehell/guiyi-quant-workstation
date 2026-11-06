@@ -37,7 +37,7 @@ services/quant-api/.venv/bin/python -m app.subing_model.worker --start --prepare
 services/quant-api/.venv/bin/python -m app.subing_model.worker
 ```
 
-`.run/subing-model-active.json` 保存唯一开发run指针，心跳只表示进程状态；连接文件权限0600，不提交、不打印。无launchd安装或自动重启。停止用当前前台进程Ctrl-C，保留数据库和指针；不能删除指针来绕过恢复失败。
+`.run/subing-model-active.json` 保存唯一开发run指针，心跳只表示进程状态；连接文件权限0600，不提交、不打印。原前台入口本身不安装launchd或自动重启；已授权的自动托管见下节。手工前台模式用Ctrl-C停止，保留数据库和指针；不能删除指针来绕过恢复失败。
 
 当日执行事实采集使用 `scripts/research/subing_model_facts.py --contract JMxxxx --day YYYY-MM-DD --out EXPLICIT_NEW_DIRECTORY`，上限6次逻辑provider调用、无自动retry；失败保留attempt。采集身份 `rqdata_current_constraints_model_fee_v2`：交易参数不传日期走当前接口并校验实际返回日期，昨结算与涨跌停取current_snapshot静态字段，用权威Session整日包络绑定交易日，拒绝异合约、旧交易日、未来时间或非法价格。不读取快照last/OHLC生成策略输入或Fill。成功资产须以绝对路径及SHA256显式登记在 `.run/subing-model-facts-index.json`，形如 `{ "YYYY-MM-DD": { "path": "/absolute/path/jm.json", "sha256": "..." } }`。没有登记且校验通过的执行约束和可用费用口径就不撮合。请求不会触发provider下载。
 
@@ -56,3 +56,33 @@ owner于2026-11-05确认：当日手续费缺失可沿用前一交易日。独�
 路径须无链接、无父级跳转且真实存在；配置存在但非法时明确失败，不猜测其他目录。此绑定仅供两个GET接口读取，
 不改变worker根、run、账户或任何研究身份，也不创建/重启worker。模型查询采用只读事务和5秒语句超时。
 未登记时仍使用开发预览原有来源；正式展示继续标为开发模型，不构成策略或运行阶段晋升。
+
+## 自动准备与持续托管（2026-11-06）
+
+owner已交办持续自动更新。`app.subing_model_service` 托管原run，不创建新账户、不晋升候选，仍为开发模型且
+`auto_order=false`。只使用稳定主开发目录及已登记的read source；不以聊天临时树或发布候选作为模型运行根。
+安装前 `--check` 校验原39个模型依赖hash及完整不可变事件重放；唯一worker仍使用原PostgreSQL advisory lock。
+通过 `scripts/ops/macos/install-subing-model.py --root /Volumes/扩展盘/guiyi-quant-workstation --install`
+显式安装独立launchd label `com.guiyi.quant-subing-development-model`。RunAtLoad/KeepAlive，失败后至少60秒再启动；
+进程退出后从已提交事件重建，不继续使用失败内存对象。日志只输出脱敏状态码，不发送通知。
+
+每日在JM权威Session首次开盘1分钟后自动准备当日执行事实，复用原RQData采集器及费率合同。
+首次1–5分钟、5–20分钟、20分钟后分别只有一个持久slot，每日最多3个attempt、每个最多6次逻辑调用；
+晚启动只使用当前slot，不追补早先slot。闭市不采集；启动前写intent，失败或UNKNOWN不重跑原attempt。
+成功资产以绝对路径和SHA登记原facts index；重启仅可恢复已完整保存的成功资产登记，不再请求provider。
+准备尚未完成时暂停消费，既有撮合、费用、保证金、价格与实际获知时间约束不放宽。
+
+新增恢复语义身份 `canonical_indicator_catchup_no_execution_v1`：停机缺口只在整日收盘且Canonical完整可读时，
+按统一MDS核对物理合约、rank1、完整日历/Session、四周期完整端点和source读前后稳定，并与原warmup、bootstrap
+及不可变事件的全部重叠OHLCV逐值比较。冲突、缺失、换月或未知继续明确保护，不拼接、替代或改旧事件。
+先恢复已结束旧source_day的尾部，再进入新交易日；不因最新交易日尚未收盘而阻塞可恢复的旧日。
+Historical输入以独立恢复事件及来源proof追加，更新指标和观察时间，不伪装Live、不写ObservationStream、
+不经过AccountEngine.step、不生成过去决策/成交/费用或估值。知识时间在读取完成后获取。
+
+只有完全空仓、无pending、退出/减仓义务、pullback、日内风险禁入或latched保护的原模型，才清除过期入场窗口，
+登记新的reset_after，等待后续新的completed观察产生新信号；持仓、义务或latched保护保持，不静默恢复。
+原资金、收益、Fill、决策历史和最后可信估值原样保留，因此指标最新不表示账户估值也被历史补算。
+原策略公式与参数不变，该恢复语义单独版本化并纳入不可变事件outcome及restart parity。
+
+该事件需由新监督器的版本化adapter重放；停止托管可用launchctl bootout，但不能删恢复事件、重置run或用旧
+前台worker绕过adapter。源码发生不兼容改变继续fail-closed，必须前向修复/兼容原事件，不能改原identity的hash。
