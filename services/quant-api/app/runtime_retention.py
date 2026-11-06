@@ -541,7 +541,7 @@ class RetentionBackend:
         for label in labels:
             if not valid_label.fullmatch(label):
                 raise RetentionError("CLEANUP_LOADED_LABEL_UNSUPPORTED")
-            observed = _read_launchd_service(label, root=roots[0])
+            observed = _read_launchd_service(label, root=self.home)
             if observed is None:
                 continue
             values = list(_arguments(observed))

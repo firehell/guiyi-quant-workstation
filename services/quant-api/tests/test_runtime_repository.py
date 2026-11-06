@@ -177,3 +177,32 @@ def test_shared_clone_cannot_delete_clone_only_history(layout, change):
     )
     with pytest.raises(ValueError):
         retirement._verify_present_release(root, identity)
+
+
+def test_post_delete_reference_check_uses_existing_controller_home(
+    tmp_path, monkeypatch
+):
+    from app.runtime_retention import RetentionBackend
+
+    deleted = tmp_path / "deleted-release"
+    backend = RetentionBackend(home=tmp_path)
+
+    def command(args):
+        if args[0] == "/bin/launchctl":
+            return "PID\tStatus\tLabel\n42\t0\tcom.guiyi.quant-api\n"
+        return ""
+
+    calls = []
+
+    def launchd(label, *, root):
+        assert root == tmp_path and root.is_dir()
+        calls.append(label)
+        return None
+
+    monkeypatch.setattr(backend, "_command", command)
+    monkeypatch.setattr("app.runtime_identity.read_launchd_service", launchd)
+    monkeypatch.setattr(
+        "app.runtime_retirement.recovery_references", lambda *args: {str(deleted): []}
+    )
+    assert backend.references_by_root((deleted,)) == {str(deleted): []}
+    assert calls == ["com.guiyi.quant-api"]
