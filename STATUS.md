@@ -1,3 +1,13 @@
+11/6 20:30 TqKq 19:00维护阻断已修复、发布并恢复原账户：owner明确批准PR630合并及本机恢复后，v1.16.97 exact `d80c4ef32d79c901f56f2ce797a990699d682664`已发布，仅含本次7文件维护修复，未携带develop其他研究/页面改动。正式独立副本`.worktrees/release-v1.16.97`，10/10标准服务统一gen68、身份matched，API/Web/Runtime HTTP通过。已定位并离线复现固定SDK3.10.4首次维护断线终止连接任务；新版本仅对精确已知异常在账户义务全部结清后冷重建SDK，再执行既有账户与逐品种恢复，未知异常继续保护。136项相关回归、Web版本测试、API/Web构建、Ruff/diff与针对性独立Review通过。
+
+首个cohort attempt `b231a5a4…`切换后最终就绪超时，原outcome_unknown完整保留、不重试；六消费者同gen68 parked后原生close-only `64394b46…`返回feed_closed，独立新forward `6d7dce7e…`返回recovered，receipt `3633a9c97b9fdf66cbbe024920396d262af92cad7d6a146e8bd5086ca64dcb5f`。旧PID79434确认为断线任务死亡且原生stop不能退出，按精确出生身份停止并记forced_disconnected_shutdown，未冒充正常safe stop。
+
+旧hold SHA `0b59dd85…`与保全原字节一致，排他账户锁内用v97新SDK完成只读原生Nov9快照、Synchronize/Recover与完整账本重放；SDK成功close后才归档精确旧hold。原8仓/8单/8成交/8个SUBMIT claims/唯一初始基线保留，无活动委托、未决成交或未释放预约，不补旧开仓。私有证据位于AppSupport/GuiyiQuant/tqkq-simulation/recovery-20261106-1900。原生probe为READ_ONLY_CONNECTED、60映射完整，随后恢复trade；20:27独立重放证明positions/orders/fills/initial_readback及全部claims与保全前完全一致。唯一worker PID64412、LOGGED_IN/READY、mode trade、新鲜心跳且无hold；auto_order=false、原策略及真实资金边界未变。
+
+当前闭市60品种仍受逐品种恢复保护，executable0不能表述为夜盘自然交易已通过。20:30既有Feed自动完成Nov9元数据准备，原生receipt applied/status passed；独立只读catalog_day_ready为true，60条主力映射及225条Session已入库，无手动重试；后续新completed H1、恢复后新信号及自然委托/成交尚待发生。未新增监控、通知或后台任务，未清理存在恢复引用的旧发布树。
+
+以下为此前检查点（其中v96及宿主阻断描述已被上述新状态取代）：
+
 11/6 苏冰持续模型自动更新已启用：独立launchd `com.guiyi.quant-subing-development-model`，稳定主开发源码、原run `subing-dev-20261104T161601`，不晋升研究候选、不接Broker，auto_order=false。正式十服务仍v1.16.96/gen67，TQ配置仍v96；独立发现TQ job已停止、持有19:00:59生成的TQ_EXECUTION_BLOCKED保护锁和19:18 stop控制，均早于苏冰19:38安装，本轮未清锁/重启TQ，不能宣称当前自动交易健康；本轮没有创建新发布或切换正式服务。
 
 原run序号145→146，14品种Bar均已追到Nov6 15:00，正式GET状态RUNNING且与DB同源；PR仍明确WARMUP_INCOMPLETE，不伪造预热通过。自动托管负责每日JM事实采集和SHA登记，复用当日保证金/价格与既有费率合同；首场开盘1分钟后按3个持久slot、每slot最多6次调用执行，失败/UNKNOWN不重用原attempt，闭市不采集。仅消费既有completed流，未新增Market订阅、Rule、通知或Broker操作。
