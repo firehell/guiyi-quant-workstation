@@ -491,3 +491,12 @@ python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
 按 [TQ_SIMULATION](../docs/TQ_SIMULATION.md) 配置、安装、只读预检与启用。独立环境通过 `uv sync --frozen --project services/tq-executor` 构建，launcher 为 `scripts/ops/macos/run-tq-simulation.sh`，唯一 label 为 `com.guiyi.quant-tqkq-simulation`。与标准服务一样，launchd 从 AppSupport 稳定脚本及 HOME 工作目录启动；脚本字节必须与当前 exact-tag 源码相同，环境在脚本内部清理。账户数据位于 AppSupport/tqkq-simulation，凭据位于独立 Keychain 项目，不进入发布树。
 
 清理器检查该 label 的磁盘/现场引用及私有配置；worker 停止时 config 仍固定源码依赖，不能先删树。标准服务切换后再配置同一正式 root、执行新鲜 probe、启用唯一 worker；未通过则保持 observe/暂停。停止不清仓、不清空历史账本。
+
+### 苏冰独立开发模型托管
+
+苏冰仍为开发候选、原run及独立模型账户，非TQKQ账户或标准整组cohort服务。
+owner授权自动更新后，使用稳定主开发树的 `scripts/ops/macos/install-subing-model.py` 安装独立
+`com.guiyi.quant-subing-development-model`；启动前校验原模型代码hash和全事件重放，不从临时聊天树启动。
+每日有限事实采集、闭市Canonical指标恢复、零历史撮合与冲突/持仓保护见
+[苏冰开发持续模型](../docs/SUBING_DEVELOPMENT_MODEL.md#自动准备与持续托管2026-11-06)。
+托管不创建新run、不改策略阶段或`auto_order=false`；`launchctl bootout`停止服务也不清仓、不删除账户或事件。
