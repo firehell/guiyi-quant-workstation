@@ -28,6 +28,8 @@ from app.reference_trading.htdy_conflict_incidents import (
     NOV04_BINDINGS,
     NOV05_VERSION,
     NOV05_BINDINGS,
+    NOV06_VERSION,
+    NOV06_BINDINGS,
 )
 from app.reference_trading.models import (
     ReferenceActivationReceipt,
@@ -296,7 +298,7 @@ class HtdyConflictRecovery:
     def __init__(
         self, factory, *, verify_source, assert_fenced, clock=None, incident=VERSION
     ):
-        if incident not in (VERSION, OCT31_VERSION, NOV03_VERSION, NOV04_VERSION, NOV05_VERSION):
+        if incident not in (VERSION, OCT31_VERSION, NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION):
             raise ValueError("HTDY_CONFLICT_INCIDENT_INVALID")
         if not callable(verify_source) or not callable(assert_fenced):
             raise ValueError("HTDY_CONFLICT_VERIFIER_REQUIRED")
@@ -310,7 +312,7 @@ class HtdyConflictRecovery:
 
     def _repeated_bindings(self):
         return {NOV03_VERSION: NOV03_BINDINGS, NOV04_VERSION: NOV04_BINDINGS,
-                NOV05_VERSION: NOV05_BINDINGS}[self.incident]
+                NOV05_VERSION: NOV05_BINDINGS, NOV06_VERSION: NOV06_BINDINGS}[self.incident]
 
     def _freeze(self, session, ids, start, *, lock=False):
         from app.reference_trading.inbox_recovery import (
@@ -324,7 +326,7 @@ class HtdyConflictRecovery:
                 self.incident == OCT31_VERSION and sorted(ids) != sorted(OCT31_BINDINGS)
             )
             or (
-                self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION)
+                self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION)
                 and sorted(ids) != sorted(self._repeated_bindings())
             )
         ):
@@ -333,7 +335,7 @@ class HtdyConflictRecovery:
         # calculation/retirement closures, never a stale revision or status.
         resolver = (
             verified_resolution_ids
-            if self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION)
+            if self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION)
             else _verified_calculation_resolution_ids
         )
         resolved = set(resolver(session, stream_ids=ids))
@@ -453,7 +455,7 @@ class HtdyConflictRecovery:
                     != (sid == OCT31_OPEN_STREAM)
                 ):
                     raise RepositoryConflict("HTDY_CONFLICT_INCIDENT_PREIMAGE_DRIFT")
-            if self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION):
+            if self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION):
                 opened = checkpoint.reference_state.open_trade
                 current = (
                     rev.revision_id,
@@ -518,7 +520,7 @@ class HtdyConflictRecovery:
             item["binding"]["stream_id"] for item in plan["items"]
         ) != sorted(OCT31_BINDINGS):
             raise RepositoryConflict("HTDY_CONFLICT_SCOPE_INVALID")
-        if self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION) and sorted(
+        if self.incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION) and sorted(
             item["binding"]["stream_id"] for item in plan["items"]
         ) != sorted(self._repeated_bindings()):
             raise RepositoryConflict("HTDY_CONFLICT_SCOPE_INVALID")

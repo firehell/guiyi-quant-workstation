@@ -224,3 +224,87 @@ NOV05_BINDINGS = {
         None,
     ),
 }
+
+
+NOV06_VERSION = "htdy_conflict_recovery_20261106_v1"
+NOV06_INVENTORY_SHA256 = "0edfab2eefb2042ae33fba864caf2934eb7e897feb8ed2a4fd5c3172f466dada"
+# Owner-approved 11 exact originals; only PD/PS have OPEN reference trades.
+NOV06_BINDINGS = {
+    'reference-stream:0bd72d58e494ba0c3c76c222141bf9d14282008a4536267a3c1285986efcd8c5': (  # PS
+        '06456a4dd3014d1a890b25af0c667cbd',
+        '47e99652891f4e06b77c25d42bc9c75b',
+        3,
+        '68c0edd53adb4e6bbfe1a193a2c9c50e',
+        'reference-trade:d2e4049110325d8a71c31f946c1733f23799220b3dbdfe902135c1698ca6fb15',
+    ),
+    'reference-stream:21149875d0b154b6efa0647e3ad271453cc1d15dc7419087469e2b9fd62b0493': (  # UR
+        'bd07ae50a1f343f4912552bf4509e396',
+        'def7312e8b4f408b85c55ec0729ae11b',
+        3,
+        '9a13a16aac66487d85ce43311e60305d',
+        None,
+    ),
+    'reference-stream:44eb4c5dceaf0331deded57cb4ba79d522bd575289e121956297a9bca257974a': (  # LC
+        '535570f0e1b54db78afd73a1c29eacfe',
+        'bc49d6e94fb141d8bd81fbb50d4017f1',
+        4,
+        'ed38dcc77bf14cd4a7b774c763a556a3',
+        None,
+    ),
+    'reference-stream:82c1f916ee1227a14487491b368afc032cdb2725b30a914b446f257662df7bed': (  # SF
+        '4392d143c92e47c0af7769bcc095dd6e',
+        '7c4a2be22be7469888bb67fde28a21a7',
+        4,
+        '3768191c14234e05baa3a2b5150b47a4',
+        None,
+    ),
+    'reference-stream:8612e3118fbd43cff68b523627dd3d25e08b6cab754ddd29191c686f949ba8de': (  # LH
+        'd4f1aa0989984b60b7f45a1dbe89bc96',
+        '952dd107208a43ce974ecfd7016ce3be',
+        4,
+        '18f665c2ce604480850dd98f3269783d',
+        None,
+    ),
+    'reference-stream:8bbca864461c867f504e1306f95a30f161325049ba8b8250cfd89c24888894db': (  # PD
+        '95adf0b227c54804bcc2a2cbb4aa28a3',
+        '5e0222aa13374d1bb680bbde4cdc5ced',
+        3,
+        'd6cbe3fdfd064bb4a93cfc235973276f',
+        'reference-trade:ea8dc626663dcbddac4c02e805f69f182c49d97a5a53743ae38aec6ab9e41bfc',
+    ),
+    'reference-stream:b3e1ea9d7543f36d175cc1add33d3674810713a2d790e1d960202eb2f12ec8de': (  # SM
+        'db4c9efaee894e2f8db542dc747813a7',
+        'fdfc96f343fe467299fc9a2731ed3b85',
+        4,
+        '3854ff6dd67e4c1da864e63e11c22886',
+        None,
+    ),
+    'reference-stream:cde4a953e05421e362a740d1c45f2747eb31ec194d9bc1604b807bc0187c2fb6': (  # PK
+        'cb2b89d40b10424aa6b814dc9de537c3',
+        'afa3e89564644d4594efd62b12f3f787',
+        4,
+        'a777d8c251604db08560b0407d951669',
+        None,
+    ),
+    'reference-stream:d26afc6086a8710138a37002b6b384e3a5a2e93b923069dfa7908cbe356d2e55': (  # CJ
+        '257f2289eb964df3a1796369661ae8f1',
+        '1d2c646fa0544f2eb21ea85ebcf88609',
+        4,
+        '0c1cf8c3b0bb4bd79183185f053c5c38',
+        None,
+    ),
+    'reference-stream:d7927893f70ab589aa4857dd7e6b5eb1f24bc90bb1fbb2a8df115bd59652bf9d': (  # JD
+        '9f07154c259d4d29b112a73833da27a2',
+        '19c0d061c9c1460db94ec47300d26ccf',
+        4,
+        'cf72e6139b304bec87e6977f118251cb',
+        None,
+    ),
+    'reference-stream:e5d425448e95d1a3530ae604649ab96a4332e74d8fabc74b33ab843856855962': (  # AP
+        'b09a2a3d8b1a403e8300ef876016f4a8',
+        'a01b7c3aaf994e3db654daa99b8abfeb',
+        4,
+        '6f94e208aa5c4645bcb0ac1a3b595ce1',
+        None,
+    ),
+}
