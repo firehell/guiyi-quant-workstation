@@ -1,3 +1,13 @@
+11/6 13:19已按owner明确批准完成Nov6 HTDY 11路追加冲突恢复，v1.16.95已发布，但立即切换被原生休市门禁阻断。v95 exact `d2e4ddae38d8d6b94fdef07e714b599a2950b5fb`（PR627），正式独立副本`.worktrees/release-v1.16.95`，API/SDK frozen sync与Web类型/生产构建通过；develop已同步6b46051bd。承接v94连接修复，仅加入Nov6精确incident身份，不改既有恢复算法、策略或TQ账户语义。实际127项定向回归、15项独立可销毁PostgreSQL事务测试、16项格式修正后定向测试、Ruff/diff/secret及独立Review通过；原封旧reader识别新边界/退役delivery实证通过。独立PostgreSQL容器已删除，未接生产库做测试。
+
+原生计划 `9dbc2219789f605206268c9d46dc30a35045d764a7364c3153ccf9b219fcb4bc`（domain `118199831487f4c3d14bcefea26b36c4a0798c79f40e14d87ca3d455bb492d4a`）一次apply返回COMMITTED/11，独立status读回COMMITTED/11。私有原件、真实MDS/Canonical冲突证明、计划/claim/receipt位于AppSupport/GuiyiQuant/htdy-conflict-20261106-v95-b；旧11路capture/检查点和历史批次未改写，PD/PS追加DATA_INTERRUPTED版本投影，无虚构平仓价或收益。新修订只从2026-11-06 13:30后新观察恢复，未补过去信号；TQ模拟仓位不受此控制边界影响。
+
+首次park受遗留gen64 reference drain阻断，未发送新drain；保留失败intent及旧控制原字节，部署锁内证明实际v93/gen65/PID87569后原生取消旧代请求，再使用全新v95-b attempt完成park/plan/apply。恢复成功后保全本次drain原字节，并原生cancel_drain恢复现有gen65参考writer；未更换源码或伪造ACK。独立读回reference active、API1.16.93/Runtime health ok、唯一TQ PID12641仍trade/LOGGED_IN，无本轮暂停或停止TQ，原8仓/8单/8成交及唯一基线保护继续。
+
+owner随后要求立即切换，13:19:33的全新原生cohort plan实际拒绝`COHORT_WINDOW_TOO_SHORT_OR_UNKNOWN`：全品种13:30开盘，仅余10分27秒，小于原生660秒门禁；无服务卸载、无绑定CAS、无新cohort apply attempt。当前10标准服务仍v93/gen65，v95尚未运行，连接稳定性修复仍未在正式worker自然验证。下一次须在全部60品种下午收盘、权威Session允许后使用新鲜计划完成账户保护及整组交接；不绕门禁、不复用失败attempt、不在交易中强切。本轮按阻断停止切换，未建监控/调度/通知，未清理旧树。
+
+以下为此前检查点：
+
 11/6 12:50连接修复已发布v1.16.94，但正式切换阻塞，原v1.16.93已恢复运行。v94 exact `25b41e9a0e411810636d1cfcf1787ebab202490c`（PR626），正式副本`.worktrees/release-v1.16.94`冻结API/SDK与Web构建通过；修复已合入develop。TQ进程对已现场核实的两条Shinny WebSocket路由绕过系统隐式代理，其他代理与Market helper原环境保持，增加脱敏MD/TD连接事件；不改策略、风险、账户身份或auto_order=false。实际128项相关测试、4项Market批次、Web版本1项及独立Review通过；尚未在正式worker运行v94，不能声称已消除周期性断连。
 
 午休60品种BREAK预检后，原TQ正常暂停/停止，账户排他锁内保全并完整重放8仓/8单/8成交、8个SUBMIT claims及唯一原基线。v94 cohort `2f56cf7772209e7819ed9bae9fc1b6b48210cd3f6d2e5ac25b00de99eab37c5f` 单次执行在CAS前cancelled/effects={}：REFERENCE candidate warmup失败。精确只读复现为11路HTDY 60m待消费capture重放OBSERVATION_GAP；时间端点连续，但Nov5部分历史OHLCV与旧检查点实值不同，涉及AP/CJ/JD/LC/LH/PD/PK/PS/SF/SM/UR，当前PD/PS两笔OPEN页面参考交易。原资产、capture、检查点及该失败attempt未改写，不删除、不重置或放宽校验制造部署通过。
