@@ -1,3 +1,15 @@
+11/6 15:54盘后正式切换和原账户恢复已完成：v1.16.95 / exact `d2e4ddae38d8d6b94fdef07e714b599a2950b5fb`，唯一正式运行源`.worktrees/release-v1.16.95`，十标准服务统一generation66；没有再次创建tag或Release。60/60权威Session CLOSED后，先正常暂停/停止原TQ，排他账户锁内保全原account/dispatch SQLite、配置/控制并完整重放核对。全新cohort `210b7ef0bd41611e964c74e4afb1571644145efb546fa1a05a7c438ce31fe861` 单次原生apply返回switched，连续身份matched；Feed closed_idle、Reference durable_receiving_caught_up_idle，原定时服务均已恢复，不重用午间失败attempt。
+
+原TQKQ同树configure/install/probe/start全部完成，唯一新worker PID29418、mode=trade/LOGGED_IN/READY，无hold，auto_order=false与真实资金边界保持。新鲜原生预检8仓/零活动委托/60映射通过；切后独立完整重放与盘后保全材料逐项完全相同，8仓/8单/8成交、8个SUBMIT claims及唯一原基线，今日原生3单3成交，零未决fill、未释放预约或活动委托，无测试单、补旧开仓或清仓。私有保全为AppSupport/tqkq-simulation/stability-20261106-v95-afterclose。
+
+实际MD/TD连接已从系统代理改为厂商公网443直连，非SDK helper代理保持。连接事件从15:31:31起至15:54仅记录md/td CONNECTED，持续约22.7分钟未重现旧周期性断线；这只是本次有限闭市观察，不证明全天/夜盘稳定或新版自然交易闭环。闭市60品种blocked/executable0符合当前保护，须待夜盘准备、完整前缀及后续新completed H1自然通过，不能由READY推导新委托/成交。
+
+独立十项运行身份全部matched；API1.16.95、Web与Runtime HTTP200，包含版本的实际Web分包与正式构建字节一致。Feed新鲜心跳available=true/input_failure=null/pending0，当前CLOSED/订阅0；Live原60订阅和coverage 60/60 ok，Nov6 source/live及completed/alert、reference注册/游标均追到日志尾。Alert处理状态ok但仍有既有未验证/预热/历史evaluation_failed路由，不将其冒充全策略自然通过。首页接口60品种可读；JM60m明确Nov5已确认历史快照HTTP200，当前日分钟Canonical尚未发布的默认请求如实409，未回退伪装实时或修写历史资产。公网入口HTTP401需认证，未宣称认证页面独立验收。
+
+旧88/90/91/92/93/94均完成原生retention只读扫描；因发布副本/主仓库登记身份和历史恢复plan发现/闭合证据不满足合同，返回CLEANUP_EVIDENCE_UNAVAILABLE，不能证明零引用，六树保留、零删除，tag/数据/账本/原件与其他任务不动。未新建监控、重试调度或通知。下一步只需夜盘按现有18:05链准备后，观察新completed H1与原账户自然信号/风控/委托/成交；苏冰原开发run未重置、启动或晋升。
+
+以下为此前检查点：
+
 11/6 13:19已按owner明确批准完成Nov6 HTDY 11路追加冲突恢复，v1.16.95已发布，但立即切换被原生休市门禁阻断。v95 exact `d2e4ddae38d8d6b94fdef07e714b599a2950b5fb`（PR627），正式独立副本`.worktrees/release-v1.16.95`，API/SDK frozen sync与Web类型/生产构建通过；develop已同步6b46051bd。承接v94连接修复，仅加入Nov6精确incident身份，不改既有恢复算法、策略或TQ账户语义。实际127项定向回归、15项独立可销毁PostgreSQL事务测试、16项格式修正后定向测试、Ruff/diff/secret及独立Review通过；原封旧reader识别新边界/退役delivery实证通过。独立PostgreSQL容器已删除，未接生产库做测试。
 
 原生计划 `9dbc2219789f605206268c9d46dc30a35045d764a7364c3153ccf9b219fcb4bc`（domain `118199831487f4c3d14bcefea26b36c4a0798c79f40e14d87ca3d455bb492d4a`）一次apply返回COMMITTED/11，独立status读回COMMITTED/11。私有原件、真实MDS/Canonical冲突证明、计划/claim/receipt位于AppSupport/GuiyiQuant/htdy-conflict-20261106-v95-b；旧11路capture/检查点和历史批次未改写，PD/PS追加DATA_INTERRUPTED版本投影，无虚构平仓价或收益。新修订只从2026-11-06 13:30后新观察恢复，未补过去信号；TQ模拟仓位不受此控制边界影响。
