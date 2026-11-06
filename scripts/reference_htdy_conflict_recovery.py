@@ -34,7 +34,10 @@ from app.reference_trading.htdy_conflict_incidents import (  # noqa: E402 - loca
     NOV04_INVENTORY_SHA256,
     NOV05_VERSION,
     NOV05_BINDINGS,
+    NOV06_VERSION,
+    NOV06_BINDINGS,
     NOV05_INVENTORY_SHA256,
+    NOV06_INVENTORY_SHA256,
 )
 
 VERSION = "reference_htdy_conflict_cli_v1"
@@ -45,6 +48,8 @@ def schema(incident):
         return VERSION
     if incident == OCT31_VERSION:
         return "reference_htdy_conflict_cli_20261031_v1"
+    if incident == NOV06_VERSION:
+        return "reference_htdy_conflict_cli_20261106_v1"
     if incident == NOV05_VERSION:
         return "reference_htdy_conflict_cli_20261105_v1"
     if incident == NOV04_VERSION:
@@ -56,6 +61,8 @@ def schema(incident):
 
 def inventory_sha(incident):
     schema(incident)
+    if incident == NOV06_VERSION:
+        return NOV06_INVENTORY_SHA256
     if incident == NOV05_VERSION:
         return NOV05_INVENTORY_SHA256
     if incident == NOV04_VERSION:
@@ -137,13 +144,13 @@ def put(path, value):
 
 def repeated_bindings(incident):
     return {NOV03_VERSION: NOV03_BINDINGS, NOV04_VERSION: NOV04_BINDINGS,
-            NOV05_VERSION: NOV05_BINDINGS}[incident]
+            NOV05_VERSION: NOV05_BINDINGS, NOV06_VERSION: NOV06_BINDINGS}[incident]
 
 
 def checked_scope(ids, *, incident=ORIGINAL_INCIDENT):
     schema(incident)
     result = tuple(sorted(ids))
-    if incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION):
+    if incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION):
         if result != tuple(sorted(repeated_bindings(incident))):
             fail("RECOVERY_FROZEN_SCOPE_REQUIRED")
         return result
@@ -165,7 +172,7 @@ def frozen_scope(path, *, incident=ORIGINAL_INCIDENT):
     if sha256(raw).hexdigest() != inventory_sha(incident):
         fail("RECOVERY_INVENTORY_DRIFT")
     value = json.loads(raw)
-    if incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION):
+    if incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION):
         rows = value["pending"]
         ids = checked_scope((r["stream_id"] for r in rows), incident=incident)
         for row in rows:
@@ -241,7 +248,7 @@ def frozen_open_trades(domain, *, incident=ORIGINAL_INCIDENT):
         and [r["stream_id"] for r in result] != [OCT31_OPEN_STREAM]
     ):
         fail("RECOVERY_OPEN_SCOPE_DRIFT")
-    if incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION) and (
+    if incident in (NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION) and (
         [r["stream_id"] for r in result]
         != sorted(k for k, v in repeated_bindings(incident).items() if v[4] is not None)
         or any(
@@ -700,7 +707,7 @@ def main(argv=None):
         modes.add_argument("--" + action, action="store_true")
     parser.add_argument(
         "--incident",
-        choices=(ORIGINAL_INCIDENT, OCT31_VERSION, NOV03_VERSION, NOV04_VERSION, NOV05_VERSION),
+        choices=(ORIGINAL_INCIDENT, OCT31_VERSION, NOV03_VERSION, NOV04_VERSION, NOV05_VERSION, NOV06_VERSION),
         default=ORIGINAL_INCIDENT,
     )
     parser.add_argument("--exact-root", type=Path)
