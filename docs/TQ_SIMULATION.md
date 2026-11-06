@@ -48,6 +48,15 @@ MDS私有通道每请求最多处理4品种自然信号及4份恢复证明，保
 
 ## 监控与发布
 
+TqKq 的固定 WebSocket 传输策略为 `tqkq_direct_websocket_transport_v1`：
+仅 `free-api.shinnytech.com` 和 `otg-sim.shinnytech.com` 加入本 SDK 进程的 `no_proxy`，
+并物化原有代理配置，避免 macOS 因新增 bypass 变量而丢弃其他 SDK 请求的系统代理回退。
+`NO_PROXY` 使用标准域后缀匹配；启用交易前还须校验 SDK 实际 MD/TD 为这两个 HTTPS/WSS 服务的443端口。
+Market/RQData helper 显式使用修改前环境，不继承 SDK bypass；关闭或初始化失败恢复原进程代理变量。
+不修改系统代理、SDK安装源码、TLS校验或ping超时；未知endpoint阻止启用。
+连接通知只向既有私有dispatch journal保存固定通知码、md/td分类与接收时间，不保存URL或通知原文。
+MD及TD断线仍保持原完整恢复、逐品种前缀、新completed信号及账户对账Gate。
+
 只读 `/api/simulation/monitor/{overview,records,records/{id}}` 读取私有原子投影，不导入 SDK、不登录、不提供交易操作。账户、持仓、信号、风控、委托、成交及阻断原因独立于页面参考交易。过期读回不能显示已核验，过期进程心跳撤销页面上的开仓状态。
 
 账户数据与 Keychain 均在正式源码树之外；配置和 launchd 引用保留精确源码树，解除引用之前禁止清理。标准服务和模拟 worker 的代码必须同一正式树。发布、服务启用、策略新信号、模拟委托提交及模拟成交确认分别以现场事实验收；不制造测试成交来补证。

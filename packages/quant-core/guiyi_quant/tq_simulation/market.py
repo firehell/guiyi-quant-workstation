@@ -30,7 +30,7 @@ EXCHANGES = {
 
 
 class Market:
-    def __init__(self, root, api_python):
+    def __init__(self, root, api_python, environment=None):
         root = Path(root).resolve(strict=True)
         python = Path(api_python).absolute()
         if python != root / "services/quant-api/.venv/bin/python":
@@ -38,7 +38,7 @@ class Market:
         self.process = subprocess.Popen(
             [str(python), "-m", "app.tq_simulation_market"],
             cwd=root,
-            env={**os.environ, "GUIYI_PROJECT_ROOT": str(root)},
+            env={**(os.environ if environment is None else environment), "GUIYI_PROJECT_ROOT": str(root)},
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
