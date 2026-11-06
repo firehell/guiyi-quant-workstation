@@ -1,3 +1,15 @@
+11/6 17:16旧树清理部分完成：仅已证明零引用的`.worktrees/release-v1.16.92`已移除（约1.2GB逻辑占用）。原生dry-run `830b6daf4208bfb4eb72ca8a75125575da64ff79b57db1ea9ba5e5b6536ebc71`，删除前部署锁内完整重验、clean/detached/annotated tag、忽略文件精确清单及其他源码/环境依赖均通过；仅移除该独立shared clone，不使用force，保全其prepared home派生缓存。删除后独立原生host/恢复引用仍0，十服务v95/gen66、API1.16.95及原TQ PID29418不变，tag、行情、账户和账本不动；正式运行树仍唯一指向v1.16.95。
+
+维护修复已集成develop：38c1de445增加严格shared clone对象库归属，要求单一绝对alternates、文档路径、来源一致，并锚定主仓同名annotated tag类型/commit/tag对象，拒绝clone独有提交或重注释tag；a0847bbc2修复删后引用检查用已删目录作launchctl cwd，改用稳定HOME。直接相关140 passed，1项旧fixture在原封v95同样失败，未改其断言；删后补修102 passed；独立Review101 passed及补修1 passed。Ruff/diff/secret通过，未新建版本/tag/Release、未切换/重启任何服务。
+
+清理阻断根因已纠正并分别确认：应从主仓实际模块入口取Git权威，而非只设GUIYI_PROJECT_ROOT；主仓93条attempt/30组公共plan全部可解析。15份旧封存原有4份临时JSON原件路径已消失，已从真实持久化plan恢复出与旧index承诺SHA逐字相同的原字节，另保存在AppSupport/retirement-original-recovery-20261106；旧index/attempt未改写，恢复后15份原生封存均有效。不能将此前从发布clone入口发现失败误报成所有旧计划真的丢失。
+
+其余v88/v90/v91/v93/v94仍有精确recovery引用，原生完整closeout候选在RetirementBackend.verify_active_reader实际调用现役原封95 reader处拒绝RETIREMENT_EVIDENCE_UNPROVEN。维护controller新代码通过不等于现役95 reader兼容：当前95本身也是独立clone且进入历史身份集合，原封reader仍按common目录相等拒绝。没有新seal、没有删这些五树，也未伪造root缺席或改旧common/状态。要完成只留最新，需先把已验证的reader修复前向发布并切换实际服务，再走全新完整封存/零引用删除；本轮仅交办清理/保留现役95，未擅自扩大该运行操作范围。
+
+其他可见源码工作区仅主项目develop和本聊天任务worktree，当前仍用于维护/后续交付，均保留；`.worktrees`内独立数据/研究证据目录不当作闲置源码删除。没有清理用户修改、数据、账本、原件或其他聊天任务。完整本次原生计划、缓存保全与删除读回位于AppSupport/GuiyiQuant/release-cleanup-20261106-v95，后续需确认是否允许必要的正式reader前向发布/切换。
+
+以下为此前检查点：
+
 11/6 15:54盘后正式切换和原账户恢复已完成：v1.16.95 / exact `d2e4ddae38d8d6b94fdef07e714b599a2950b5fb`，唯一正式运行源`.worktrees/release-v1.16.95`，十标准服务统一generation66；没有再次创建tag或Release。60/60权威Session CLOSED后，先正常暂停/停止原TQ，排他账户锁内保全原account/dispatch SQLite、配置/控制并完整重放核对。全新cohort `210b7ef0bd41611e964c74e4afb1571644145efb546fa1a05a7c438ce31fe861` 单次原生apply返回switched，连续身份matched；Feed closed_idle、Reference durable_receiving_caught_up_idle，原定时服务均已恢复，不重用午间失败attempt。
 
 原TQKQ同树configure/install/probe/start全部完成，唯一新worker PID29418、mode=trade/LOGGED_IN/READY，无hold，auto_order=false与真实资金边界保持。新鲜原生预检8仓/零活动委托/60映射通过；切后独立完整重放与盘后保全材料逐项完全相同，8仓/8单/8成交、8个SUBMIT claims及唯一原基线，今日原生3单3成交，零未决fill、未释放预约或活动委托，无测试单、补旧开仓或清仓。私有保全为AppSupport/tqkq-simulation/stability-20261106-v95-afterclose。
