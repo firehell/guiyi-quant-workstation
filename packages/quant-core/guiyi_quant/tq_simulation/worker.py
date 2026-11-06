@@ -24,6 +24,7 @@ from .gateway import Gateway
 from .controller import Controller, TERMINAL
 from .market import Market, bind_symbol, execution_input
 from .monitor import projection, blank
+from .maintenance import MaintenanceDisconnect, require_settled, resume_after
 from ..htdy_account_execution import codec, model as m
 from ..htdy_account_execution.scheduling import execution_candidates
 
@@ -195,6 +196,8 @@ def run(config_path, *, inspect=False):
         held = None
         last_recovery = 0
         facts = {}
+        maintenance_until = None
+        maintenance_days = set()
         try:
             helper_environment = dict(os.environ)
             with (
@@ -227,6 +230,31 @@ def run(config_path, *, inspect=False):
                 if (base / "hold.json").exists() and action != "stop":
                     action = "pause"
                 mode = "trade" if action in {"trade", "pause", "stop"} else "observe"
+                if gateway is None:
+                    if action == "stop":
+                        # No fresh readback: this is a disconnected exit, not a safe stop.
+                        return 1
+                    if now < maintenance_until:
+                        payload = projection(controller, None, now, mode=mode,
+                                             opening=False, code="TQ_MAINTENANCE_WAIT")
+                        payload.update(pid=os.getpid(), runtime_root=str(root),
+                                       runtime_commit=config["commit"], runtime_tag=config["tag"])
+                        write_private(monitor_path, payload)
+                        time.sleep(1)
+                        continue
+                    # Exactly one cold construction; failure exits held, never loops login.
+                    try:
+                        with open(os.devnull, "w") as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                            gateway = Gateway(credentials)
+                        gateway.reconnection_required = True
+                        controller.gateway = gateway
+                        held = None
+                    except Exception:
+                        if not (base / "hold.json").exists():
+                            write_private(base / "hold.json", {"account_id": config["account_id"],
+                                "code": "TQ_MAINTENANCE_RECONNECT_FAILED", "at": now.isoformat()})
+                        write_private(control_path, {"mode": "pause"})
+                        return 1
                 gateway.execution_allowed = action != "observe" and not inspect
                 try:
                     gateway.update(0.5)
@@ -481,6 +509,35 @@ def run(config_path, *, inspect=False):
                             controller.synchronize(snapshot, datetime.now(UTC))
                         break
                 except Exception as error:
+                    if type(error) is MaintenanceDisconnect and not inspect and not (base / "hold.json").exists():
+                        try:
+                            now = datetime.now(UTC)
+                            require_recovery(controller, now)
+                            require_settled(controller)
+                            until = resume_after(now)
+                            if until.date() in maintenance_days:
+                                raise ValueError("TQ_MAINTENANCE_REPEATED")
+                            maintenance_days.add(until.date())
+                            controller.journal.event("maintenance_disconnect", {
+                                "version": "tqkq_sdk_maintenance_reconnect_v1",
+                                "at": now.isoformat(), "resume_after": until.isoformat(),
+                            }, now)
+                            gateway.execution_allowed = False
+                            old_gateway, gateway = gateway, None
+                            controller.gateway = None
+                            snapshot, facts, issues, day = None, {}, {}, None
+                            last_native, last_market, last_recovery = None, 0, 0
+                            maintenance_until = until
+                            with open(os.devnull, "w") as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                                old_gateway.close()
+                            continue
+                        except Exception as maintenance_error:
+                            if gateway is None:
+                                write_private(base / "hold.json", {"account_id": config["account_id"],
+                                    "code": "TQ_MAINTENANCE_CLOSE_UNKNOWN", "at": now.isoformat()})
+                                write_private(control_path, {"mode": "pause"})
+                                return 1
+                            error = maintenance_error
                     candidate = str(error) if type(error) is ValueError else ""
                     code = (
                         candidate

@@ -104,8 +104,16 @@ class Gateway:
 
     def update(self, seconds=1):
         import time
+        from .maintenance import MaintenanceDisconnect, is_terminal_maintenance
 
-        self.api.wait_update(deadline=time.time() + seconds)
+        try:
+            self.api.wait_update(deadline=time.time() + seconds)
+        except Exception as error:
+            if is_terminal_maintenance(error, datetime.now(UTC)):
+                self.execution_allowed = False
+                self.reconnection_required = True
+                raise MaintenanceDisconnect() from None
+            raise
         self.refresh_notifications()
 
     def refresh_notifications(self):
