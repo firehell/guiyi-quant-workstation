@@ -1,3 +1,13 @@
+11/6 苏冰持续模型自动更新已启用：独立launchd `com.guiyi.quant-subing-development-model`，稳定主开发源码、原run `subing-dev-20261104T161601`，不晋升研究候选、不接Broker，auto_order=false。正式十服务仍v1.16.96/gen67，TQ配置仍v96；独立发现TQ job已停止、持有19:00:59生成的TQ_EXECUTION_BLOCKED保护锁和19:18 stop控制，均早于苏冰19:38安装，本轮未清锁/重启TQ，不能宣称当前自动交易健康；本轮没有创建新发布或切换正式服务。
+
+原run序号145→146，14品种Bar均已追到Nov6 15:00，正式GET状态RUNNING且与DB同源；PR仍明确WARMUP_INCOMPLETE，不伪造预热通过。自动托管负责每日JM事实采集和SHA登记，复用当日保证金/价格与既有费率合同；首场开盘1分钟后按3个持久slot、每slot最多6次调用执行，失败/UNKNOWN不重用原attempt，闭市不采集。仅消费既有completed流，未新增Market订阅、Rule、通知或Broker操作。
+
+真实完整预演识别旧Live记录与当前Canonical共678个Bar差异（JM1m3根，含派生周期），依owner前文“保留全部原件、追加冲突标记、从后续新信号恢复观察”执行。新增版本化`canonical_rebaseline_after_conflict_no_execution_v1`恢复事件，逐值核对全部旧前缀及每Bar原/新hash、差异字段后仅重建受影响品种指标；Historical输入明确标记，不伪造Live或重算历史模型交易。原identity、145条不可变事件、原始私有登记完整保全，独立完整重放证明旧记录及39个源hash逐项不变，账户资金/历史决策/成交不变，模型Fill仍0。仅原空仓且无义务时清过期入场窗口，等待未来新信号；持仓、未决义务、换月或latched失败仍保护，不静默解除。
+
+实际安装/loaded参数与稳定root核验通过。首次PID44658正常SIGTERM后由KeepAlive自行恢复PID45032、runs2；补修盘中首次执行边界后再次自动恢复PID47282、runs3，完整重放及新鲜心跳通过，同run/seq146、未重复事件；不是手工start或READY替代自然业务。57项定向测试、3项独立可销毁PostgreSQL追加/幂等/旧记录保全/重启重放、独立Review、Ruff/secret/diff及shell语法通过；主开发源前次重验53通过，补修定向57通过，仅sandbox无法写pytest缓存告警。原件与最终读回在AppSupport/GuiyiQuant/subing-model-recovery-20261106，现有execution-context.json已同步。夜盘新交易日事实自动采集及后续新completed信号/模型成交仍待自然发生，不声称已通过；不新增监控、调度提醒或通知。需要停用仅bootout该独立label，保留原run/事件，旧前台worker不能绕过新事件adapter。
+
+以下为此前检查点：
+
 11/6 19:00 TqKq维护断线恢复进行中，发布受宿主审批阻断：19:00:59原v1.16.96 worker新增持久TQ_EXECUTION_BLOCKED并pause。现役锁定SDK3.10.4无网络复现确认首次成功连接后在19:00–19:30首次断线会抛普通异常并终止连接任务，旧worker仅等待无法自愈。原账户完整重放与私有保全通过：8仓/8单/8成交/8个SUBMIT claims/唯一基线，零未决成交或未释放预约；原生stop因dead MD无法退出，精确PID79434/出生身份复验后记录forced_disconnected_shutdown，确认PID退出、owner锁释放及账本逐项不变。不是正常安全停止；原hold保留，未清仓或补单。私有原件位于AppSupport/tqkq-simulation/recovery-20261106-1900。
 
 修复已提交develop 6dcf57934；从现役v96隔离移植为91015386c，PR630只含7文件、准备版本1.16.97，不包含develop其他未发布改动。精确识别SDK维护分支，订单/claim/预约均已结清才允许关闭旧SDK、19:31后单次冷建并完整恢复；未知/关闭失败/冷建失败继续hold。隔离release基线定向136 passed、独立Review及真实SDK离线分支复现通过。PR629因包含无关develop差异已关闭且未合并。PR630 main合并经当前AGENTS授权证据复核仍被宿主拒绝，要求owner明确批准此次具体main合并；HOST_APPROVAL_BLOCKED，未创建tag/Release、未切标准服务，正式仍v96/gen67，Tq worker当前已停止。原生新连接对账、精确hold解除、启用及夜盘就绪均未完成，不能期待今晚自动交易；待批准后连续恢复。

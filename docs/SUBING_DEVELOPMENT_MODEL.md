@@ -63,7 +63,7 @@ owner已交办持续自动更新。`app.subing_model_service` 托管原run，不
 `auto_order=false`。只使用稳定主开发目录及已登记的read source；不以聊天临时树或发布候选作为模型运行根。
 安装前 `--check` 校验原39个模型依赖hash及完整不可变事件重放；唯一worker仍使用原PostgreSQL advisory lock。
 通过 `scripts/ops/macos/install-subing-model.py --root /Volumes/扩展盘/guiyi-quant-workstation --install`
-显式安装独立launchd label `com.guiyi.quant-subing-development-model`。RunAtLoad/KeepAlive，失败后至少60秒再启动；
+显式安装独立launchd label `com.guiyi.quant-subing-development-model`。RunAtLoad/KeepAlive，防止短期快速重启，启动间隔至少60秒；
 进程退出后从已提交事件重建，不继续使用失败内存对象。日志只输出脱敏状态码，不发送通知。
 
 每日在JM权威Session首次开盘1分钟后自动准备当日执行事实，复用原RQData采集器及费率合同。
