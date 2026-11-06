@@ -290,3 +290,109 @@ def test_record_only_tail_never_reassigns_owner_or_touches_neighbor(monkeypatch)
     worker.record_observed_signals(controller, reply, {("RB","RB2705"):{"source_id":"owner"}}, {})
     assert seen == [(sig,{"closed_at":end})]
     assert rb.owner=="RB2701" and rb.desired==-1 and ag.desired==1
+
+
+def test_terminal_maintenance_cold_rebuild_discards_targets(monkeypatch, tmp_path):
+    from itertools import count
+    base, calls = host(monkeypatch, tmp_path, restart=True)
+    original = worker.Gateway
+    instances, closes = [], []
+    ticks = count(0, 2)
+    monkeypatch.setattr(worker.time, 'monotonic', lambda: next(ticks))
+    monkeypatch.setattr(worker, 'resume_after', lambda now: now - timedelta(seconds=1))
+    class Gateway(original):
+        def __init__(self, *args):
+            super().__init__(*args)
+            instances.append(self)
+        def update(self, *_):
+            self.n += 1
+            if self is instances[0] and self.n == 2:
+                self.execution_allowed = False
+                raise worker.MaintenanceDisconnect()
+            if self is not instances[0] and self.n == 1:
+                write_private(base / 'control.json', {'mode': 'stop'})
+        def close(self):
+            closes.append(self)
+            super().close()
+    monkeypatch.setattr(worker, 'Gateway', Gateway)
+    assert worker.run(base / 'config.json') == 0
+    assert len(instances) == 2 and closes == instances
+    assert not (base / 'hold.json').exists()
+    c = Controller(base / 'accounts' / A, A, ('RB',), Transport())
+    assert c.store.current().signals == ()
+    assert len(c.journal.events('maintenance_disconnect')) == 1
+    assert calls == []
+    c.close()
+
+
+def test_maintenance_close_failure_holds_without_second_client(monkeypatch, tmp_path):
+    base, calls = host(monkeypatch, tmp_path, restart=True)
+    original = worker.Gateway
+    instances = []
+    monkeypatch.setattr(worker, 'write_private', write_private)
+    class Gateway(original):
+        def __init__(self, *args):
+            super().__init__(*args)
+            instances.append(self)
+        def update(self, *_):
+            self.n += 1
+            if self.n == 2:
+                raise worker.MaintenanceDisconnect()
+        def close(self):
+            raise RuntimeError('private SDK message')
+    monkeypatch.setattr(worker, 'Gateway', Gateway)
+    assert worker.run(base / 'config.json') == 1
+    assert len(instances) == 1
+    assert read_private(base / 'hold.json')['code'] == 'TQ_MAINTENANCE_CLOSE_UNKNOWN'
+    assert read_private(base / 'control.json') == {'mode': 'pause'}
+    assert calls == []
+
+
+def test_maintenance_constructor_failure_is_one_attempt_and_durable_hold(monkeypatch, tmp_path):
+    base, calls = host(monkeypatch, tmp_path, restart=True)
+    original = worker.Gateway
+    attempts = []
+    monkeypatch.setattr(worker, 'write_private', write_private)
+    monkeypatch.setattr(worker, 'resume_after', lambda now: now - timedelta(seconds=1))
+    class Gateway(original):
+        def __init__(self, *args):
+            attempts.append(1)
+            if len(attempts) > 1:
+                raise RuntimeError('private login failure')
+            super().__init__(*args)
+        def update(self, *_):
+            self.n += 1
+            if self.n == 2:
+                raise worker.MaintenanceDisconnect()
+    monkeypatch.setattr(worker, 'Gateway', Gateway)
+    assert worker.run(base / 'config.json') == 1
+    assert len(attempts) == 2
+    assert read_private(base / 'hold.json')['code'] == 'TQ_MAINTENANCE_RECONNECT_FAILED'
+    assert calls == []
+
+
+def test_pending_obligation_never_cold_closes_client(monkeypatch, tmp_path):
+    base, calls = host(monkeypatch, tmp_path, restart=True)
+    original = worker.Gateway
+    rejected, closed = [], []
+    monkeypatch.setattr(worker, 'write_private', write_private)
+    def pending(controller):
+        rejected.append(controller.store.current().phase)
+        raise ValueError('TQ_MAINTENANCE_OBLIGATIONS_PENDING')
+    monkeypatch.setattr(worker, 'require_settled', pending)
+    class Gateway(original):
+        def update(self, *_):
+            self.n += 1
+            if self.n == 2:
+                raise worker.MaintenanceDisconnect()
+            if self.n == 3:
+                write_private(base / 'control.json', {'mode':'stop'})
+        def close(self):
+            closed.append(self.n)
+            super().close()
+    monkeypatch.setattr(worker, 'Gateway', Gateway)
+    assert worker.run(base / 'config.json') == 0
+    assert rejected == ['RECOVERY_REQUIRED']
+    assert closed == [4]  # only final normal close, never maintenance cold-close
+    assert read_private(base / 'hold.json')['code'] == 'TQ_MAINTENANCE_OBLIGATIONS_PENDING'
+    assert calls == []
