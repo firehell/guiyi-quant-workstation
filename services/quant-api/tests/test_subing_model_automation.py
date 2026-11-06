@@ -212,3 +212,57 @@ def test_loaded_launcher_identity_requires_exact_arguments_and_home():
     for bad in (good.replace('/stable/model', '/other/model'), good.replace('/home/owner', '/other/home')):
         with pytest.raises(ValueError):
             installer.verify_loaded(bad, value)
+
+
+def conflict_event(p):
+    from app.subing_model_recovery import CONFLICT_POLICY, overlap_conflicts
+    from app.subing_model.pipeline import bar
+    e = recovery_event(p)
+    e['recovery_policy'] = CONFLICT_POLICY
+    old = row('jm', '1m')['data']
+    new = dict(old, volume='11')
+    e['products']['jm']['bars']['1m'] = [new]
+    e['products']['jm']['proofs']['1m']['hash'] = digest([new])
+    e['products']['jm']['conflicts'] = overlap_conflicts({AT: bar(old)}, [bar(new)], '1m')
+    return e, old
+
+
+def test_conflict_rebaseline_preserves_originals_and_has_explicit_proof():
+    from app.subing_model_recovery import consumed_bars, model_state
+    p = empty_pipe()
+    e, old = conflict_event(p)
+    identity = dict(prepared={'jm': {'warmup': {}}}, bootstrap=[dict(channel='live:bar:jm:1m', data=old)])
+    before = deepcopy(identity)
+    known = consumed_bars(identity, [e])
+    assert known[('jm', '1m')][AT].volume == 11
+    assert identity == before
+    apply_event(p, e)
+    assert model_state(p)['recovery']['conflict_count'] == 1
+    assert p.products['jm']['source_kind'] == 'CANONICAL_CONFLICT_REBASELINE'
+    assert p.products['jm']['status'] == 'OBSERVATION_READY'
+    assert p.last_outcome['model_fills'] == []
+    q = empty_pipe()
+    apply_event(q, dict(e, outcome=deepcopy(p.last_outcome)))
+    assert model_state(q) == model_state(p)
+    corrupt = deepcopy(e)
+    corrupt['products']['jm']['conflicts'][0]['original_hash'] = 'invented'
+    with pytest.raises(ValueError, match='CONFLICT_PROOF_INVALID'):
+        consumed_bars(identity, [corrupt])
+
+
+def test_conflict_rebaseline_keeps_open_account_and_original_ledger_protected():
+    p = empty_pipe()
+    m = SimpleNamespace(layers=['original-layer'], pending=None, clear_reasons=[],
+                        exit_layers=[], day_halted=False, pullback=None)
+    a = SimpleNamespace(halted=None, protection_observation=None,
+                        engine=SimpleNamespace(layers={'original-layer': 1}, model=m))
+    a.state = lambda: dict(cash='100000', fills=['original-fill'], open_layers=['original-layer'],
+                           summary={'open_quantity': 1}, status=a.halted)
+    p.account = a
+    e, _ = conflict_event(p)
+    e['account_can_resume'] = False
+    apply_event(p, e)
+    assert a.halted == 'OBSERVATION_INTERRUPTED_REVIEW_REQUIRED'
+    assert a.state()['fills'] == ['original-fill']
+    assert a.state()['summary']['open_quantity'] == 1
+    assert p.last_outcome['model_fills'] == p.last_outcome['model_decisions'] == []

@@ -86,3 +86,13 @@ Historical输入以独立恢复事件及来源proof追加，更新指标和观�
 
 该事件需由新监督器的版本化adapter重放；停止托管可用launchctl bootout，但不能删恢复事件、重置run或用旧
 前台worker绕过adapter。源码发生不兼容改变继续fail-closed，必须前向修复/兼容原事件，不能改原identity的hash。
+
+### 已批准的原件冲突恢复
+
+owner已批准“保留全部原件、追加数据冲突标记，再从后续新信号恢复观察”。启用时必须显式使用安装参数
+`--allow-canonical-conflict-rebaseline`，写入绑定原run的私有策略配置；无该配置仍严格拒绝重叠输入冲突。
+恢复身份 `canonical_rebaseline_after_conflict_no_execution_v1` 记录每个冲突Bar的原hash、新Canonical hash、
+周期、端点及差异字段。先验证完整冲突清单，再只重建受影响品种的指标状态；原warmup、旧事件、历史决策、
+账户与收益不回写。重放仍逐频核对旧前缀及冲突证明，不能用任意覆盖清单解除保护。
+完整原run/事件与私有登记在实施前另行保全，恢复事件以新增sequence提交，资金与Fill不得变化。
+该模型仍是原开发候选；仅完全空仓且无义务时等待未来新信号，持仓或latched保护不解除。
