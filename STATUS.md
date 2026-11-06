@@ -1,3 +1,9 @@
+11/6 19:00 TqKq维护断线恢复进行中，发布受宿主审批阻断：19:00:59原v1.16.96 worker新增持久TQ_EXECUTION_BLOCKED并pause。现役锁定SDK3.10.4无网络复现确认首次成功连接后在19:00–19:30首次断线会抛普通异常并终止连接任务，旧worker仅等待无法自愈。原账户完整重放与私有保全通过：8仓/8单/8成交/8个SUBMIT claims/唯一基线，零未决成交或未释放预约；原生stop因dead MD无法退出，精确PID79434/出生身份复验后记录forced_disconnected_shutdown，确认PID退出、owner锁释放及账本逐项不变。不是正常安全停止；原hold保留，未清仓或补单。私有原件位于AppSupport/tqkq-simulation/recovery-20261106-1900。
+
+修复已提交develop 6dcf57934；从现役v96隔离移植为91015386c，PR630只含7文件、准备版本1.16.97，不包含develop其他未发布改动。精确识别SDK维护分支，订单/claim/预约均已结清才允许关闭旧SDK、19:31后单次冷建并完整恢复；未知/关闭失败/冷建失败继续hold。隔离release基线定向136 passed、独立Review及真实SDK离线分支复现通过。PR629因包含无关develop差异已关闭且未合并。PR630 main合并经当前AGENTS授权证据复核仍被宿主拒绝，要求owner明确批准此次具体main合并；HOST_APPROVAL_BLOCKED，未创建tag/Release、未切标准服务，正式仍v96/gen67，Tq worker当前已停止。原生新连接对账、精确hold解除、启用及夜盘就绪均未完成，不能期待今晚自动交易；待批准后连续恢复。
+
+以下为此前检查点：
+
 11/6 盘后清理与维护前向切换完成：v1.16.96 / exact `06608ae7f3ad571967df0739e430f9c07b5924c2`（PR628），正式源码唯一`.worktrees/release-v1.16.96`，十标准服务全部matched/gen67，API1.16.96及API/Web/Runtime HTTP通过。60/60权威Session CLOSED后原生cohort `f7ecf81702b8adddec6e263aa518cbe79d59194b2fb8a2de45c82e1835c5e275`单次返回switched；包含此前v95全部功能，仅补维护reader与安全清理读取修复，不改策略、评分、参考交易、风险或账户语义。
 
 原TQKQ停机前排他备份/完整重放，切后同树configure/install/probe/start恢复唯一worker PID79434；trade/LOGGED_IN/AUTO_TRADING，无hold，auto_order=false。切后完整重放与原材料逐项相同：8仓/8单/8成交、8 SUBMIT claims、唯一原基线，零未决fill/未释放预约/活动委托。晚间原生当日委托和成交已归零，但原生8仓与本地8仓一致，历史8单8成交保留；未补旧开仓、清仓或制造测试单。闭市executable0/blocked60不代表夜盘自然验收完成。
