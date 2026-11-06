@@ -1,3 +1,11 @@
+11/6 12:50连接修复已发布v1.16.94，但正式切换阻塞，原v1.16.93已恢复运行。v94 exact `25b41e9a0e411810636d1cfcf1787ebab202490c`（PR626），正式副本`.worktrees/release-v1.16.94`冻结API/SDK与Web构建通过；修复已合入develop。TQ进程对已现场核实的两条Shinny WebSocket路由绕过系统隐式代理，其他代理与Market helper原环境保持，增加脱敏MD/TD连接事件；不改策略、风险、账户身份或auto_order=false。实际128项相关测试、4项Market批次、Web版本1项及独立Review通过；尚未在正式worker运行v94，不能声称已消除周期性断连。
+
+午休60品种BREAK预检后，原TQ正常暂停/停止，账户排他锁内保全并完整重放8仓/8单/8成交、8个SUBMIT claims及唯一原基线。v94 cohort `2f56cf7772209e7819ed9bae9fc1b6b48210cd3f6d2e5ac25b00de99eab37c5f` 单次执行在CAS前cancelled/effects={}：REFERENCE candidate warmup失败。精确只读复现为11路HTDY 60m待消费capture重放OBSERVATION_GAP；时间端点连续，但Nov5部分历史OHLCV与旧检查点实值不同，涉及AP/CJ/JD/LC/LH/PD/PK/PS/SF/SM/UR，当前PD/PS两笔OPEN页面参考交易。原资产、capture、检查点及该失败attempt未改写，不删除、不重置或放宽校验制造部署通过。
+
+实际10标准服务仍v93/gen65。原v93一次probe连接失败后，经只读inspect确认新鲜8仓、零活动委托及60映射完整，按原生重装/启动恢复唯一TQKQ worker PID12641；12:48独立原生快照、完整账本重放及与停机前原件比较一致，8仓/8单/8成交、8 SUBMIT、唯一原基线，今日原生3单3成交，无活动委托、未决fill、未释放预约或hold，trade/READY但不替代后续自然业务与连接稳定性验收。未补旧开仓、未清仓、未切真实账户；v93原隐式代理问题仍待v94安全切换。下一步应先处理HTDY窗口事实冲突的原生追加恢复与参考交易影响，再用全新计划切换；不复用本次失败attempt、不在交易中强切。旧发布树及其他任务不清理，未新建监控/调度/通知。
+
+以下为此前检查点：
+
 11/6 10:19只读自然交易验收：v1.16.93/gen65、原TQKQ worker PID88439已完成今日真实模拟闭环。10:00 completed H1覆盖60/60且均eligible；45品种进入正常Signal，15品种首根按原恢复合同消费，等待恢复后的新信号。3个方向通过风控：CU2612 BUY OPEN 1，10:01:00.585617成交104890；SN2612 BUY OPEN 1，10:01:19.373280成交345130；RB2701 SELL OPEN 1，10:01:40.308210成交3036。逐笔Signal→风险APPROVED→唯一SUBMIT claim→原生FILLED/volume_left0→native_trade_id/价格/数量→本地Fill及持仓均关联一致，不是测试单或补旧开仓。
 
 原5仓保持，现8仓/累计8单8成交、8个SUBMIT claims、唯一原基线；原生当前日3单3成交、本地与原生8仓完全一致；账本完整重放通过，无未对账订单、未决fill或未释放预约，无hold，10:19最新原生快照无活动委托。行情60订阅及Live coverage正常；不生成未知逐笔费用或策略净收益。
