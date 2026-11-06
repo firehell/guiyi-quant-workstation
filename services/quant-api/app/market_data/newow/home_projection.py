@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 import fcntl
 from hashlib import sha256
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -19,6 +20,28 @@ SCHEMA = 'newow_home_projection_v1'
 MAX_BYTES = 2 * 1024 * 1024
 PERIODS = ('1d', '1w')
 STRATEGIES = ('trend', 'oscillation')
+_LOGGER = logging.getLogger(__name__)
+
+
+def _log_period_failure(product, period, stage, code, exc):
+    # Keep the failure location, never exception text, locals or absolute paths.
+    trace = exc.__traceback__
+    while trace is not None and trace.tb_next is not None:
+        trace = trace.tb_next
+    location = Path(trace.tb_frame.f_code.co_filename).name if trace else 'unknown'
+    function = trace.tb_frame.f_code.co_name if trace else 'unknown'
+    def label(value):
+        return value if re.fullmatch(r'[A-Za-z0-9_.<>-]{1,100}', value) else 'redacted'
+    try:
+        _LOGGER.warning(
+            'home_projection_period_failed product=%s period=%s stage=%s code=%s '
+            'exception_type=%s file=%s line=%s function=%s',
+            label(product), period, stage, code, label(type(exc).__name__),
+            label(location), trace.tb_lineno if trace else 0, label(function),
+        )
+    except Exception:
+        # Diagnostic delivery must not stop other products or replace old facts.
+        pass
 
 
 class ProjectionError(RuntimeError):
@@ -241,15 +264,20 @@ class HomeProjection:
                     version = before.get(key)
                     if version and item['periods'].get(period, {}).get('version') == version:
                         continue
+                    stage = 'source_version'
                     try:
                         if not version:
                             raise ProjectionError()
+                        stage = 'compute'
                         facts = self.compute(product, period)
+                        stage = 'verify_source_version'
                         if self.versions().get(key) != version:
                             raise ProjectionError()
+                        stage = 'validate_facts'
                         if set(facts) != set(STRATEGIES):
                             raise ProjectionError()
                         # Persist display facts, never an expiring query capability.
+                        stage = 'prepare_snapshot'
                         facts = deepcopy(facts)
                         for value in facts.values():
                             value.pop('snapshot_token', None)
@@ -258,6 +286,7 @@ class HomeProjection:
                     except Exception as exc:
                         code = getattr(exc, 'code', '')
                         item['failures'][period] = code if isinstance(code, str) and re.fullmatch(r'(NEWOW|MARKET|MAIN_CONTRACT|HOME)_[A-Z0-9_]{1,100}', code) else 'HOME_PROJECTION_BUILD_FAILED'
+                        _log_period_failure(product, period, stage, item['failures'][period], exc)
                 after = self.versions()
                 if any(after.get(f'{product}:{period}') != before.get(f'{product}:{period}') for period in PERIODS):
                     item['failures'] = dict.fromkeys(PERIODS, 'HOME_PROJECTION_SOURCE_CHANGED')
