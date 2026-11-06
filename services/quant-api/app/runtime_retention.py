@@ -459,17 +459,24 @@ class RetentionBackend:
         self.home = Path.home() if home is None else home
 
     def candidate_identity(self, root: Path) -> dict[str, str]:
-        # Release cleanup only accepts a registered detached clean annotated-tag worktree.
-        if (root / ".git").is_symlink() or not (root / ".git").is_file():
+        # Both supported release layouts retain exact clean detached tag checks.
+        from app.runtime_repository import shared_release_owner, repository_common_dir, verify_shared_release_identity
+        clone = shared_release_owner(root)
+        if (root / ".git").is_symlink() or (clone is None and not (root / ".git").is_file()):
             raise RetentionError("CLEANUP_MANAGED_WORKTREE_REQUIRED")
         from app.core.env import PROJECT_ROOT
-        common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-        authorized_common = _git(PROJECT_ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        common = repository_common_dir(root)
+        authorized_common = repository_common_dir(PROJECT_ROOT)
         if Path(common).resolve(strict=True) != Path(authorized_common).resolve(strict=True):
             raise RetentionError("CLEANUP_REPOSITORY_IDENTITY_INVALID")
         commit = _git(root, "rev-parse", "HEAD")
         tag = _git(root, "describe", "--exact-match", "--tags", "HEAD")
         verify_release(root, tag, commit)
+        if clone is not None:
+            verify_shared_release_identity(root, tag, commit)
+            if root.name != "release-" + tag or _git(root, "branch", "--show-current"):
+                raise RetentionError("CLEANUP_WORKTREE_IDENTITY_INVALID")
+            return {"root": str(root), "commit": commit, "tag": tag}
         listed = _git(root, "worktree", "list", "--porcelain")
         blocks = [dict((line.partition(" ")[0], line.partition(" ")[2]) for line in block.splitlines())
                   for block in listed.split("\n\n") if block]

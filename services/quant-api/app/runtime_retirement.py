@@ -100,11 +100,9 @@ def _write(path, raw):
 
 
 def _common(repo_root):
-    return str(
-        Path(
-            _git(repo_root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-        ).resolve(strict=True)
-    )
+    from app.runtime_repository import repository_common_dir
+
+    return str(repository_common_dir(Path(repo_root)))
 
 
 def _verify_git(repo_root, identity):
@@ -867,6 +865,8 @@ def _verify_present_release(repo_root, identity):
     root = Path(identity["root"])
     require(root == root.resolve(strict=True) and not root.is_symlink())
     verify_release(root, identity["tag"], identity["commit"])
+    from app.runtime_repository import verify_shared_release_identity
+    verify_shared_release_identity(root, identity["tag"], identity["commit"])
     require(_common(root) == _common(repo_root))
 
 
