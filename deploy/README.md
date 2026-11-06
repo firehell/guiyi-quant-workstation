@@ -374,6 +374,7 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 `python -m app.runtime_feed_session_recovery plan|apply --directory <runtime>/feed-session-recovery-<32位唯一hex> --plan <directory>/plan.private.json --old-day YYYY-MM-DD --day YYYY-MM-DD --expected-pid PID`
 绑定当前已验证release/generation、精确PID出生身份与旧/新交易日，仅处理已完成client close但保留retirement失败的现场，不承担版本promotion。目标日须由现有Session resolver证明且metadata完整。
 先通过既有原生停止/对账流程停止Tq worker，保留全部持仓及账本；计划采样保护文件时必须取得既有Tq账户owner锁，apply全程持锁，活跃worker直接拒绝。Tq配置、control、账户库与dispatch库逐字节冻结；不重置基线、补单或清仓。
+控制前像仅接纳同代次cancelled或严格旧代次的drain/cancelled；当前binding、loaded、owner及唯一writer均须一致。旧控制原字节和SHA保存在新私有计划，apply持锁重验后才发唯一当前代次drain，不改旧attempt/state，不取消旧代次请求；同代未决drain、未来代次及漂移仍拒绝。
 控制器自身须为exact annotated release的干净源码。先用只读LLDB/CPython debug_offsets取得双fresh证明：
 固定PID出生和实际代码、同service/provider对象、client close成功、两个listener不存活、raw及pending均0，
 隔离原day/contracts一致；不执行目标函数、不写内存、不输出地址、凭据或raw buffer。未知诊断禁止继续。

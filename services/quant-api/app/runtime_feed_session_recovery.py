@@ -19,7 +19,7 @@ import re
 import subprocess
 import time
 
-VERSION = "feed_verified_empty_retirement_v2"
+VERSION = "feed_verified_empty_retirement_v3"
 
 
 class RecoveryError(ValueError):
@@ -270,12 +270,20 @@ class Native:
             == {"schema_version", "service", "generation", "request_id", "phase"}
             and value["schema_version"] == 1
             and value["service"] == "market-feed"
-            and value["generation"] == self.generation
-            and value["phase"] == "cancelled"
+            and type(value["generation"]) is int
+            and 0 < value["generation"] <= self.generation
+            and value["phase"] in {"drain", "cancelled"}
+            and (value["generation"] < self.generation or value["phase"] == "cancelled")
             and re.fullmatch("[a-f0-9]{32}", value["request_id"]),
             "EXISTING_DRAIN_UNRESOLVED",
         )
-        return dict(present=True, sha256=hashlib.sha256(raw).hexdigest(), value=value)
+        # snapshot() proves the active binding, owner, loaded PID/birth and sole
+        # writer before reaching this point. An earlier generation's control is
+        # inert for that owner; preserve its exact bytes in the private plan
+        # before the unique current-generation drain supersedes it. A same-
+        # generation unresolved drain is never admitted or cancelled here.
+        return dict(present=True, sha256=hashlib.sha256(raw).hexdigest(),
+                    raw_base64=base64.b64encode(raw).decode("ascii"), value=value)
 
     @contextmanager
     def guard(self):
