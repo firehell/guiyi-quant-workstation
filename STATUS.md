@@ -1,3 +1,13 @@
+11/6 08:55前已完成修复发布及盘前正式切换：v1.16.93 / exact `0b92a636c38de66dce225067b0f43348f58a5bd4`（PR625），正式副本 `.worktrees/release-v1.16.93`，原生整组返回switched，10服务统一gen65。v92全部改动保留，仅补修Feed恢复控制器对已被新owner取代的旧gen63 drain的受限接纳与原字节保全，不改旧tag或策略/参考/账户语义。实际定向174 passed、Web版本检查1 passed、独立Review、冻结锁、API wheel/sdist及正式Web构建通过。
+
+03:17阻断已定位并修复：旧Feed的client close成功、线程退出、raw/pending均0但保留关闭未知，跨日准备停在Nov5；08:30按真实Session窗口正常capture/plan/apply，新增5条权威日历、60条Nov6 rank1和225条Session，零Canonical写入，Catalog读回完整。v93控制器以全新计划完成同版本Feed恢复后，再原生交接至gen65；source/completed已注册Nov6，旧失败、控制、ACK及日志原件保全。
+
+原TQKQ模拟worker已同树configure/install/probe/start并运行PID88439；独立原账本重放/原生账户读回均保持5仓/5单/5成交、5个SUBMIT claims、唯一原基线，无未决fill或未释放预约，无hold；没有测试单、补旧开仓、清仓或真实账户操作。盘前executable=0/blocked=60，完整前缀及后续新completed H1仍须自然通过，不能据READY声称开盘交易验收。当前Runtime health因缺失夜盘前缀仍degraded；正常Live恢复按既有预算/circuit在开盘后执行，不发布历史Bar。
+
+正式首页已原生重算发布，60/60 ready、120版本身份一致；真实JM六周期三策略最终18组主图可读（首次5m两请求HTTP失败，定向复核均ready），60m突破94条；PC浏览器确认主图与综合卡正常、诊断/刷新均0、历史快照标识存在。既有reference 409/失效资产未重写。FRPC本地链通过，公网未认证401；认证后公网内容尚未独立验收。原苏冰run保留seq144/source Nov5，worker仍STALE_OR_STOPPED，未重置/晋升。旧88/90/91/92清理只读扫描均因身份/恢复闭合证据不可用阻断，零删除；v91另有本次Feed保全引用，不强删。开盘自然来源恢复与新H1处理待观察，执行上下文复用output/release-v92-20261105/execution-context.json；未新建调度或额外通知。
+
+以下为此前检查点：
+
 11/6 03:17一次性盘后交接被原生预检阻断：`COHORT_REST_WINDOW_REQUIRED`。独立只读确认60/60 operational品种Session phase=UNKNOWN；各交易所日历仅到11/8、缺少下一交易日事实，凌晨解析器按合同fail-closed，Nov6自身Session模板存在。未暂停/停止Tq、未CAS绑定、未切换或清理发布树；正式仍v1.16.91/gen64，Tq PID62132且原5仓保持。API/Web HTTP通过，Runtime HTTP失败；Tq登录/READY不证明来源恢复或明早可开仓。v1.16.92 exact 2e40e3a4b4d055c3ed305af342aea04add0e374e已发布但未运行。按预定停止条件结束本次任务并停用一次性调度，不另建重试。下一步为恢复权威下一交易日Calendar/Session，再于允许的闭市窗口重新执行原生交接；不以本地推算日期或跳过校验代替。执行上下文见output/release-v92-20261105/execution-context.json。
 
 以下为此前检查点：
