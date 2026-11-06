@@ -14,6 +14,7 @@ from guiyi_quant.indicators.subing_conditions import EntryWindow
 
 POLICY = 'canonical_indicator_catchup_no_execution_v1'
 CONFLICT_POLICY = 'canonical_rebaseline_after_conflict_no_execution_v1'
+RESUME_POLICY = 'completed_backlog_indicator_only_resume_v1'
 
 
 def flat_without_obligations(account):
@@ -30,6 +31,9 @@ def flat_without_obligations(account):
 
 
 def apply_event(pipe, event):
+    if event.get('resume_policy') is not None:
+        apply_resume_event(pipe, event)
+        return
     if event.get('recovery_policy') is None:
         pipe.apply(event)
         return
@@ -164,6 +168,8 @@ def model_state(pipe):
     state = pipe.state()
     if hasattr(pipe, 'recovery_status'):
         state['recovery'] = pipe.recovery_status
+    if hasattr(pipe, 'resume_status'):
+        state['resume'] = pipe.resume_status
     return state
 
 
@@ -180,3 +186,59 @@ def overlap_conflicts(known, rows, frequency):
                 canonical_hash=digest(_wire(asdict(new))),
                 changed_fields=[k for k in old.__dataclass_fields__ if getattr(old, k) != getattr(new, k)]))
     return conflicts
+
+
+
+def apply_resume_event(pipe, event):
+    """A restart's already-completed backlog is indicator-only, even if full.
+
+    Existing exposure/obligations never receive retrospective execution. Flat
+    recovery discards old entry opportunities and resumes strictly after its
+    actual restart knowledge boundary, without resetting money or history.
+    """
+    if event['resume_policy'] != RESUME_POLICY:
+        raise ValueError('MODEL_RESUME_POLICY_UNKNOWN')
+    floor = datetime.fromisoformat(event['resume_floor'])
+    now = datetime.fromisoformat(event['observed_at'])
+    if floor > now:
+        raise ValueError('MODEL_RESUME_FUTURE_FLOOR')
+    older, fresh = [], []
+    for row in event['observations']:
+        (older if datetime.fromisoformat(row['data']['bar_end']) <= floor else fresh).append(row)
+    can_resume = flat_without_obligations(pipe.account)
+    before = deepcopy(pipe.account.state()) if pipe.account else None
+    # Apply daily facts once, then feed historical completed envelopes through
+    # the original bootstrap path. No AccountEngine.step/decision/fill calls.
+    for product, rows in event.get('daily_updates', {}).items():
+        for raw in rows:
+            pipe.factors[product].step('1d', bar(raw))
+    for row in older:
+        pipe._row(row, event['contexts'], None, now, bootstrap=True)
+    if pipe.account:
+        if can_resume and pipe.account.engine:
+            engine = pipe.account.engine
+            model = engine.model
+            model.windows = {s: EntryWindow(model.contract) for s in ('LONG', 'SHORT')}
+            model.reset_after = floor
+            # Only a flat account may cross an execution discontinuity. Keep
+            # its prior actual valuation/history; never manufacture a fill bar.
+            engine.prior = None
+            model.latest_frame = deepcopy(pipe.factors['jm'].frame)
+            model.latest_frame_at = pipe.factors['jm'].previous.bar_end if pipe.factors['jm'].previous else None
+        elif not can_resume:
+            pipe.account.halted = pipe.account.halted or 'OBSERVATION_INTERRUPTED_REVIEW_REQUIRED'
+    if before:
+        after = pipe.account.state()
+        if any(before.get(k) != after.get(k) for k in ('cash', 'equity', 'fees', 'net_pnl', 'fills', 'open_layers', 'summary')):
+            raise ValueError('MODEL_RESUME_ACCOUNT_CHANGED')
+    # New completed rows after the restart floor retain the original account
+    # path. This path preserves sequence, actual knowledge and pending timing.
+    payload = {k: v for k, v in event.items() if k != 'outcome'}
+    payload.update(observations=fresh, daily_updates={})
+    pipe.apply(payload)
+    pipe.resume_status = dict(policy=RESUME_POLICY, floor=event['resume_floor'],
+        observed_at=event['observed_at'], historical_execution=False,
+        historical_rows=len(older), account_can_resume=can_resume)
+    pipe.last_outcome.update(state_hash=digest(model_state(pipe)), resume_policy=RESUME_POLICY)
+    if event.get('outcome') is not None and event['outcome'] != pipe.last_outcome:
+        raise ValueError('MODEL_OUTCOME_REPLAY_CONFLICT')
