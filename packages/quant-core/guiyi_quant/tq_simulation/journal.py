@@ -5,6 +5,66 @@ from hashlib import sha256
 import json
 import os
 import sqlite3
+import stat
+from datetime import datetime
+from decimal import Decimal
+
+
+def read_equity_history(path, account, published_tail):
+    """Read retained equity only through the exact published monitor endpoint.
+
+    Never construct Journal here: its constructor can create a database.
+    """
+    path = Path(path)
+    if path.parent.resolve(strict=True) != path.parent:
+        raise ValueError("TQ_PRIVATE_PATH_REQUIRED")
+    info = path.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or info.st_nlink != 1 or info.st_mode & 0o077):
+        raise ValueError("TQ_PRIVATE_JOURNAL_REQUIRED")
+    with path.open("rb") as stream:
+        header = stream.read(20)
+    # Refuse WAL: a read-only SQLite connection could create an shm sidecar.
+    if header[:16] != b"SQLite format 3\x00" or header[18:20] != b"\x01\x01":
+        raise ValueError("TQ_JOURNAL_MODE_UNSUPPORTED")
+    db = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=1)
+    try:
+        db.execute("PRAGMA query_only=ON")
+        db.execute("BEGIN")
+        if db.execute("SELECT account,profile FROM identity").fetchall() != [
+            (account, "TQKQ:htdy_tqkq_v1")
+        ]:
+            raise ValueError("TQ_JOURNAL_IDENTITY_MISMATCH")
+        rows = db.execute(
+            "SELECT rowid,payload FROM events WHERE kind=? AND at=?",
+            ("equity", published_tail["at"]),
+        ).fetchall()
+        if len(rows) != 1:
+            raise ValueError("TQ_EQUITY_ENDPOINT_MISSING")
+        endpoint, raw = rows[0]
+        tail = json.loads(raw)
+        if any(tail[key] != published_tail[key] for key in ("at", "equity", "trading_day")):
+            raise ValueError("TQ_EQUITY_ENDPOINT_MISMATCH")
+        curve, previous = [], None
+        for (raw,) in db.execute(
+            "SELECT payload FROM events WHERE kind=? AND rowid<=? ORDER BY rowid",
+            ("equity", endpoint),
+        ):
+            point = json.loads(raw)
+            at = datetime.fromisoformat(point["at"])
+            if (at.tzinfo is None or previous is not None and at <= previous
+                    or not isinstance(point["equity"], str)
+                    or not Decimal(point["equity"]).is_finite()):
+                raise ValueError("TQ_EQUITY_HISTORY_INVALID")
+            previous = at
+            curve.append(dict(at=point["at"], equity=point["equity"],
+                              net_profit=None, trading_day=point["trading_day"]))
+        after = path.lstat()
+        if (info.st_dev, info.st_ino) != (after.st_dev, after.st_ino):
+            raise ValueError("TQ_PRIVATE_JOURNAL_DRIFT")
+        return curve
+    finally:
+        db.close()
 
 
 def wire(value):

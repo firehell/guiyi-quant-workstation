@@ -16,6 +16,7 @@ export interface MonitorOverview {
   observe_reconciliation_valid_until?: string | null
   readback_at: string | null; trading_day: string | null; readback_status: string; position_projection_complete: boolean
   metrics: Record<MonitorMetric, string | null>; positions: MonitorPosition[]; curve: { at: string; equity: string; net_profit: string | null; trading_day: string }[]
+  curve_history_status?: 'complete' | 'unavailable'
   issues: MonitorIssue[]; issue_count: number | null; coverage: string; performance_status: string; source_times: Record<string, string>
 }
 const version = 'simulation_monitor_v1'

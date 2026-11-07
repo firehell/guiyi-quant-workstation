@@ -238,7 +238,7 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 
 `guiyi_quant.tq_simulation` 复用 HTDY 账户 reducer，独立 provider 身份隔离旧账本。API 环境的 `app.tq_simulation_market` 通过私有 stdio 复用既有 PortfolioMarket/MDS，SDK 独立环境只构造 TqKq。发送意图、native 身份与不可变原始快照持久化在源码树外；唯一 worker 持续更新并对账。具体合同见 [TQ_SIMULATION](TQ_SIMULATION.md)。
 
-`/api/simulation/monitor/*` 仅读取 worker 原子投影，不创建 SDK 或交易操作。Web 模拟交易 Tab 和 HTDY 快期记录消费此入口；旧 `/api/simnow/monitor/*` 不再挂载，旧 SimNow 历史原件保留。
+`/api/simulation/monitor/*` 只读 worker 原子投影；overview 的完整权益历史以只读 SQLite 读取同账户 `accounts/<account_id>/dispatch.sqlite`，校验账户/profile 并精确截止于该投影已发布的权益尾点，不读取尚未发布的新尾点。历史无法核验时仅曲线明确不可用，账户监控保留。不创建 SDK 或交易操作。Web 模拟交易 Tab 和 HTDY 快期记录消费此入口；旧 `/api/simnow/monitor/*` 不再挂载，旧 SimNow 历史原件保留。
 
 ## 苏冰独立开发持续模型
 

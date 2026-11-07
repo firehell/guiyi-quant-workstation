@@ -23,10 +23,34 @@ export function observerLabel(data: MonitorOverview | null, now = Date.now()) {
   return ({ running: '受控运行中', stopped: '本次运行已结束', stale: '运行状态待确认', error: '本次运行异常' } as const)[data.observer?.status ?? 'stale']
 }
 export const monitorReason: Record<string, string> = { APPROVED: '资金与保证金检查通过', MARGIN_CAP: '预计保证金占用超过70%上限，本次信号跳过', AVAILABLE_FUNDS: '可用资金不足，本次信号跳过', MINIMUM_OPEN_VOLUME: '合约不支持固定一手开仓', TARGET_UPDATED: '已更新目标方向', HOLD: '没有新信号，保持仓位', FROZEN_BAR_IGNORED: '同一Bar已冻结，未重复执行', SIGNAL_CONFLICT: '同一Bar出现双向信号，不开仓或反手', PRE_ACTIVATION_OR_RECOVERY_IGNORED: '启用前或恢复期间的旧信号不补开', OBSERVATION_GAP: '自然输入不连续，暂停新开仓', OWNER_MISMATCH: '主力合约不匹配，暂停新开仓', SIGNAL_BLOCKED: '该品种输入或账户状态待核' }
+export type CurveRange = '7d' | '30d' | 'all'
+export function selectCurvePoints(points: MonitorOverview['curve'], range: CurveRange, now = Date.now()) {
+  const today = new Date(now + 8 * 3600000).toISOString().slice(0, 10)
+  const start = range === 'all' ? -Infinity : Date.parse(`${today}T00:00:00+08:00`) - (range === '7d' ? 6 : 29) * 86400000
+  return points.filter(p => Date.parse(p.at) >= start && Date.parse(p.at) <= now)
+}
+// Compare decimal strings without rounding money through binary floating point.
+function decimalKey(value: string | null) {
+  if (value === null || !/^-?\d+(\.\d+)?$/.test(value)) return null
+  const [whole, fraction = ''] = value.split('.')
+  const integer = whole!.replace(/^(-?)0+(?=\d)/, '$1'), decimals = fraction.replace(/0+$/, '')
+  const key = integer + (decimals ? '.' + decimals : '')
+  return key === '-0' ? '0' : key
+}
+export function focusCurvePoints(points: MonitorOverview['curve'], field: 'equity' | 'net_profit') {
+  let end = points.length - 1
+  while (end > 0) {
+    const current = points[end]!, previous = points[end - 1]!
+    const key = decimalKey(current[field])
+    if (key === null || key !== decimalKey(previous[field]) || field === 'net_profit' && current.trading_day !== previous.trading_day) break
+    end--
+  }
+  return points.slice(0, end + 1)
+}
 export function curveGeometry(points: MonitorOverview['curve'], field: 'equity' | 'net_profit') {
   const usable = points.filter(p => p[field] !== null && Number.isFinite(Number(p[field])))
   if (!usable.length) return { segments: [] as string[], dots: [] as { x: number; y: number; at: string; value: string }[], min: null as string | null, max: null as string | null }
-  const values = usable.map(p => Number(p[field])), low = Math.min(...values), high = Math.max(...values)
+  const { low, high } = usable.reduce((limits, p) => ({ low: Math.min(limits.low, Number(p[field])), high: Math.max(limits.high, Number(p[field])) }), { low: Infinity, high: -Infinity })
   const pad = Math.max((high - low) * .15, Math.abs(high) * .0001, .01), min = low - pad, max = high + pad
   const start = Date.parse(points[0]!.at), end = Date.parse(points.at(-1)!.at), duration = Math.max(1, end - start)
   const segments: string[] = [], dots: { x: number; y: number; at: string; value: string }[] = []
@@ -35,7 +59,7 @@ export function curveGeometry(points: MonitorOverview['curve'], field: 'equity' 
     const value = point[field]
     if (value === null || !Number.isFinite(Number(value))) { if (current) segments.push(current); current = ''; day = null; continue }
     if (field === 'net_profit' && day !== null && day !== point.trading_day) { if (current) segments.push(current); current = '' }
-    const x = points.length === 1 ? 500 : 70 + (Date.parse(point.at) - start) / duration * 900
+    const x = points.length === 1 ? 530 : 90 + (Date.parse(point.at) - start) / duration * 880
     const y = 165 - (Number(value) - min) / (max - min) * 140
     current += `${current ? ' L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`
     dots.push({ x, y, at: point.at, value }); day = point.trading_day
