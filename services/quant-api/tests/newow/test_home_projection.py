@@ -278,3 +278,25 @@ def test_publication_reasons_distinguish_versions_from_completed_periods(tmp_pat
     assert item['period_status']['1w'] == 'ready'
     service.versions = lambda: {}
     assert service.read()['items'][0]['period_reason_codes']['1w'] == 'SOURCE_VERSION_UNAVAILABLE'
+
+
+def test_same_version_legacy_failure_requires_actual_failed_period_recompute(tmp_path):
+    service, _, calls = fixture(tmp_path)
+    service.build()
+    data = service.store.load()
+    data['items']['rb']['failures'] = {'1d': 'HOME_PROJECTION_BUILD_FAILED'}
+    service.store.save(data)
+    calls.clear()
+    service.build()
+    assert calls == [('rb', '1d')]
+    assert service.read()['items'][0]['projection_status'] == 'ready'
+
+
+def test_prior_failure_is_not_a_new_source_failure(tmp_path):
+    service, versions, _ = fixture(tmp_path)
+    service.build()
+    versions['rb:1d'] = 'v2'
+    service.compute = lambda *_: (_ for _ in ()).throw(RuntimeError('private'))
+    service.build()
+    versions['rb:1d'] = 'v3'
+    assert service.read()['items'][0]['projection_status'] == 'stale'

@@ -1,7 +1,8 @@
 """Homepage projection composition: Catalog revisions and explicit offline builds."""
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 from hashlib import sha256
 import json
 import os
@@ -56,12 +57,67 @@ def _digest_rows(session, table, owner, *, filters=(), joins=None, extra=()):
     return {tuple(row[:-1]): row[-1] for row in session.execute(statement)}
 
 
-def catalog_versions(session, products):
+HOME_SOURCE_IDENTITY_VERSION = 'home_source_identity_v2'
+_SHANGHAI = ZoneInfo('Asia/Shanghai')
+
+
+def home_source_scope(now):
+    """Bounded query description, including absent rows, not resolved ids.
+
+    Deliberately conservative: all past history includes physical-contract warmup
+    preceding product starts. The current complete ISO calendar week is required
+    even before Friday; candidate discovery inspects it before choosing a week.
+    Datasets/partitions/contracts remain whole-product supersets. No resolver or
+    Parquet read is needed to validate this scope.
+    """
+    day = now.astimezone(_SHANGHAI).date()
+    return {
+        'version': HOME_SOURCE_IDENTITY_VERSION,
+        'history_start': None,
+        'mapping_through': day.isoformat(),
+        'session_effective_from_through': day.isoformat(),
+        'calendar_through': (day + timedelta(days=7 - day.isoweekday())).isoformat(),
+        'publication_from': (day - timedelta(days=day.isoweekday() - 1 + 19 * 7)).isoformat(),
+        'publication_through': day.isoformat(),
+        'physical_inputs': 'all_product_contracts_and_d1_w1_partitions',
+    }
+
+
+def _publication_status():
+    from app.market_data.after_market import _load_status, public_after_market_status
+    return public_after_market_status(_load_status(PROJECT_ROOT / '.run/after-market-status.json'))
+
+
+def publication_selection_identity(products, now, status):
+    # The reader inspects at most 20 ISO weeks. Hash the authority's normalized
+    # meaning over that candidate superset (including missing candidates), not
+    # unrelated heartbeat fields, status timestamps, file bytes or mtime.
+    scope = home_source_scope(now)
+    start = date.fromisoformat(scope['publication_from'])
+    end = date.fromisoformat(scope['publication_through'])
+    # Unknown is the authority's default for any absent/irrelevant candidate.
+    # Keep the query superset in the cache key/saved scope, but encode only
+    # deviations from that default in result identity. Extending the query over
+    # an empty weekend therefore rechecks sources without invalidating facts.
+    days = tuple(start + timedelta(days=n) for n in range((end - start).days + 1))
+    return {product: [
+        (day.isoformat(), state)
+        for day in days
+        if (state := publication_state_from_status(status, product, day, now)) != 'unknown'
+    ] for product in products}
+
+
+def catalog_versions(session, products, *, now=None, publication=None):
     """Eight bounded aggregate queries, no Parquet reads or strategy execution.
 
     Fingerprint every row version, not max(updated_at)/counts: same-count changes and quality,
     map or session edits must invalidate. Digests are evaluated in PostgreSQL.
     """
+    instant = now or datetime.now(UTC)
+    scope = home_source_scope(instant)
+    day = date.fromisoformat(scope['mapping_through'])
+    calendar_through = date.fromisoformat(scope['calendar_through'])
+    publication = publication if publication is not None else publication_selection_identity(products, instant, _publication_status())
     i, e, c, cal, se, m, d, p = (model.__table__ for model in (Instrument, Exchange, Contract, TradingCalendar, TradingSession, MainContractMap, MarketDataset, MarketPartition))
     instruments = {row.symbol: row.exchange_code for row in session.execute(select(i.c.symbol, i.c.exchange_code).where(i.c.symbol.in_(products)))}
     exchanges = tuple(set(instruments.values()))
@@ -69,9 +125,9 @@ def catalog_versions(session, products):
         'instrument': _digest_rows(session, i, i.c.symbol, filters=(i.c.symbol.in_(products),)),
         'exchange': _digest_rows(session, e, e.c.code, filters=(e.c.code.in_(exchanges),)),
         'contract': _digest_rows(session, c, c.c.instrument_symbol, filters=(c.c.instrument_symbol.in_(products),)),
-        'calendar': _digest_rows(session, cal, cal.c.exchange_code, filters=(cal.c.exchange_code.in_(exchanges),)),
-        'session': _digest_rows(session, se, se.c.instrument_symbol, filters=(se.c.instrument_symbol.in_(products),)),
-        'mapping': _digest_rows(session, m, m.c.symbol, filters=(m.c.symbol.in_(products),)),
+        'calendar': _digest_rows(session, cal, cal.c.exchange_code, filters=(cal.c.exchange_code.in_(exchanges), cal.c.trade_date <= calendar_through)),
+        'session': _digest_rows(session, se, se.c.instrument_symbol, filters=(se.c.instrument_symbol.in_(products), se.c.effective_from <= day)),
+        'mapping': _digest_rows(session, m, m.c.symbol, filters=(m.c.symbol.in_(products), m.c.trade_date <= day)),
         'dataset': _digest_rows(session, d, d.c.symbol, filters=(d.c.symbol.in_(products), d.c.kind == 'contract', d.c.frequency.in_(PERIODS)), extra=(d.c.frequency,)),
         'partition': _digest_rows(session, p, d.c.symbol, filters=(d.c.symbol.in_(products), d.c.kind == 'contract', d.c.frequency.in_(PERIODS)), joins=p.join(d, p.c.dataset_id == d.c.id), extra=(d.c.frequency,)),
     }
@@ -85,9 +141,11 @@ def catalog_versions(session, products):
         for frequency in PERIODS:
             policy = candidate_input_quality_policy(product, frequency, candidate_weekly=False)
             identities = [repr(build_product_identity(product, ProductStrategy(strategy), ProductFrequency(frequency), input_quality_policy=policy)) for strategy in STRATEGIES]
-            deps = {**common, 'configuration': configuration, 'identities': identities,
+            deps = {**common, 'source_identity': HOME_SOURCE_IDENTITY_VERSION, 'configuration': configuration, 'identities': identities,
                     'capability': CAPABILITY_SCHEMA_VERSION, 'projection': 'newow_home_projection_v1',
                     'reference': 'ordinary-page-performance-v1', 'home_trend': HOME_TREND_VERSION, 'caution_display': CAUTION_DISPLAY_VERSION}
+            if frequency == '1w':
+                deps['publication_selection'] = publication[product]
             # Weekly source quality also depends on canonical D1 classification.
             for source_frequency in (('1d', '1w') if frequency == '1w' else ('1d',)):
                 for name in ('dataset', 'partition'):
@@ -108,14 +166,20 @@ def current_versions(products, *, now=None):
     with SessionLocal() as session, readonly_transaction(session, timeout_seconds=10):
         snapshot = session.scalar(text('SELECT pg_current_snapshot()::text'))
         configuration = configuration_identity()
-        key = (str(session.get_bind().url.render_as_string(hide_password=True)), snapshot, tuple(products), configuration)
+        publication = publication_selection_identity(products, instant, _publication_status())
+        publication_hash = sha256(json.dumps(publication, sort_keys=True).encode()).hexdigest()
+        key = (str(session.get_bind().url.render_as_string(hide_password=True)), snapshot, tuple(products), configuration, publication_hash, json.dumps(home_source_scope(instant), sort_keys=True))
         with _VERSION_LOCK:
             if _VERSION_CACHE is not None and _VERSION_CACHE[0] == key and _VERSION_CACHE[2] <= instant < _VERSION_CACHE[3]:
                 return dict(_VERSION_CACHE[1])
         coverage = build_database_coverage_source(session)
         target, boundary = coverage.latest_complete_day_with_refresh_at(tuple(products), now=instant)
-        versions = catalog_versions(session, products)
+        versions = catalog_versions(session, products, now=instant, publication=publication)
         versions = {key: sha256(f'{value}:{target.isoformat()}:{configuration}'.encode()).hexdigest() for key, value in versions.items()}
+        local = instant.astimezone(_SHANGHAI)
+        publication_boundary = datetime.combine(local.date(), time(18, 5), _SHANGHAI)
+        if publication_boundary > instant:
+            boundary = min(boundary, publication_boundary)
         with _VERSION_LOCK:
             _VERSION_CACHE = (key, dict(versions), instant, boundary)
         return versions
@@ -177,7 +241,10 @@ def build_home_projection(*, output_path=None, now=None):
         from app.market_data.market_home_projection import market_home_response
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=120):
             return market_home_response(build_market_home_overview_service(session).snapshot()).model_dump(mode='json')
-    return HomeProjection(ProjectionStore(path), products, lambda: current_versions(products), compute, now=instant, overview=overview)
+    projection = HomeProjection(ProjectionStore(path), products, lambda: current_versions(products), compute, now=instant, overview=overview)
+    projection.source_scope = lambda: home_source_scope(instant())
+    from .home_recovery import configure_delivery
+    return configure_delivery(projection)
 
 
 def build_home_overview_projection(_session=None):

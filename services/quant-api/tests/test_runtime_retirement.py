@@ -93,10 +93,12 @@ def test_archive_original_intake_timeout_closed_by_stopped_recovery(
         "old_tail_reached": True,
     }
     host.await_consumers = lambda *args: intake
+    host.resume_feed = lambda *args: {"bootstrapped": True, "label": "com.guiyi.quant-market-feed"}
     host.verify_forward = lambda *args: {
         "continuous_identity": "matched",
         "calculation_ready": False,
         "intake": intake,
+        "natural_acceptance": "pending",
     }
     host.forward_calendars = lambda *args: {
         "calendar_registration_only": True,

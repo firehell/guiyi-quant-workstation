@@ -227,12 +227,18 @@ def test_verified_refresh_rejects_unproved_identity_without_renewal(kind):
     proof = {'bar|1w|SC2303|owner|end': 'same', 'owner-price-state|1w|SC2303|day': 'owner'}
     token = cache.put('namespace', ('chart',), {'value': 'unchanged'}, proof=proof)
     requested_token, namespace, supplied = token, 'namespace', dict(proof)
-    if kind == 'unknown': requested_token = 'unknown'
-    if kind == 'namespace': namespace = 'other'
-    if kind == 'changed': supplied[next(iter(proof))] = 'changed'
-    if kind == 'additional': supplied['bar|new'] = 'new'
-    if kind == 'empty': supplied = {}
-    if kind == 'no_shared_bar': supplied = {'owner-price-state|1w|SC2303|day': 'owner'}
+    if kind == 'unknown':
+        requested_token = 'unknown'
+    if kind == 'namespace':
+        namespace = 'other'
+    if kind == 'changed':
+        supplied[next(iter(proof))] = 'changed'
+    if kind == 'additional':
+        supplied['bar|new'] = 'new'
+    if kind == 'empty':
+        supplied = {}
+    if kind == 'no_shared_bar':
+        supplied = {'owner-price-state|1w|SC2303|day': 'owner'}
     if kind == 'replaced':
         assert cache.put('namespace', ('chart',), {'value': 'changed'}, proof={'bar|1w|SC2303|owner|end': 'changed'}) != token
     entry = cache._entries['namespace']
@@ -260,3 +266,96 @@ def test_verified_refresh_rejects_malformed_proof(proof):
     expiry = entry.expires_at
     assert not cache.refresh_verified_token(token, 'namespace', proof)
     assert entry.expires_at == expiry
+
+
+def test_retained_size_handles_deep_cycles_and_shared_objects_without_recursion():
+    import sys
+
+    from app.market_data.newow.snapshot_cache import _retained_size
+
+    shared = {'value': 'shared payload'}
+    graph = [shared, shared]
+    expected = sum(sys.getsizeof(item) for item in (
+        graph, shared, 'value', 'shared payload',
+    ))
+    for _ in range(5000):
+        graph = [graph]
+        expected += sys.getsizeof(graph)
+    graph.append(graph)
+    # The cycle changes the outer list capacity; account for its actual size.
+    expected += sys.getsizeof(graph) - sys.getsizeof([None])
+    assert _retained_size(graph) == expected
+    cache = SnapshotCache()
+    token = cache.put('deep', ('chart',), graph)
+    assert token
+    assert cache.get_by_token(token, 'deep', ('chart',)) is graph
+
+
+def test_retained_size_bounds_duplicate_references_and_large_graphs():
+    from app.market_data.newow.snapshot_cache import _retained_size
+
+    assert _retained_size([None] * 500, max_nodes=100) is None
+    assert _retained_size(list(range(500)), max_nodes=100) is None
+    # A wide graph is traversed lazily and rejected by its container size before
+    # touching its children, rather than copying all references onto a stack.
+    class Unvisited(list):
+        def __iter__(self):
+            raise AssertionError('oversized children must not be visited')
+
+    assert _retained_size(Unvisited(range(500)), max_bytes=100) is None
+
+
+@pytest.mark.parametrize('limit', ['nodes', 'time', 'bytes'])
+def test_sizing_rejection_preserves_prior_entry_proof_ttl_lru_and_business_value(limit):
+    ttl_clock = [0.0]
+    sizing_step = [0.0]
+    sizing_time = [0.0]
+
+    def sizing_clock():
+        sizing_time[0] += sizing_step[0]
+        return sizing_time[0]
+
+    cache = SnapshotCache(
+        now=lambda: ttl_clock[0], sizing_clock=sizing_clock,
+        ttl_seconds=5, max_sizing_nodes=100, max_entry_bytes=4096,
+    )
+    proof = {'bar|a': 'v1'}
+    token = cache.put('facts', ('chart',), 'old', proof=proof)
+    assert token
+    assert cache.put('other', ('chart',), 'other')
+    entry = cache._entries['facts']
+    before = (entry.expires_at, cache._bytes, tuple(cache._entries), dict(cache._tokens))
+    ttl_clock[0] = 4.0
+    if limit == 'time':
+        sizing_step[0] = 0.5
+        computed = {'result': 'fresh'}
+    elif limit == 'nodes':
+        computed = [None] * 200
+    else:
+        computed = 'large' * 1000
+    assert cache.put(
+        'facts', ('reference',), computed, token=token,
+        proof={**proof, 'bar|new': 'new'},
+    ) is None
+    # Admission is optional: the caller's completed result remains usable.
+    assert computed
+    assert cache.get_by_token(token, 'facts', ('chart',), touch=False) == 'old'
+    assert cache.get('facts', ('reference',), touch=False) is None
+    assert cache.token_proof_covers(token, 'facts', proof)
+    assert not cache.token_proof_covers(token, 'facts', {**proof, 'bar|new': 'new'})
+    assert (entry.expires_at, cache._bytes, tuple(cache._entries), dict(cache._tokens)) == before
+    ttl_clock[0] = 5.0
+    assert cache.put('facts', ('reference',), computed, token=token, proof=proof) is None
+    assert cache.fact_key_for_token(token) is None
+    # A later small result can be admitted; a rejection does not poison reuse.
+    sizing_step[0] = 0.0
+    assert cache.put('next', ('chart',), 'ok')
+
+
+def test_sizing_timeout_on_first_admission_leaves_no_partial_entry_or_token():
+    ticks = iter((0.0, 2.0))
+    cache = SnapshotCache(sizing_clock=lambda: next(ticks))
+    assert cache.put('facts', ('chart',), 'computed') is None
+    assert not cache._entries
+    assert not cache._tokens
+    assert cache._bytes == 0

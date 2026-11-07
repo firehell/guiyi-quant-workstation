@@ -42,13 +42,12 @@ def test_private_configuration_failure_is_sanitized(monkeypatch):
 
 
 def test_home_projection_preparation_uses_existing_idempotent_builder(monkeypatch):
-    from types import SimpleNamespace
-    from app.market_data.newow import home_projection_composition
+    from app.market_data.newow import home_recovery
     calls = []
     expected = {"items": [{"projection_status": "ready"}]}
     def build():
         calls.append("build")
         return expected
-    monkeypatch.setattr(home_projection_composition, "build_home_projection", lambda: SimpleNamespace(build=build))
+    monkeypatch.setattr(home_recovery, "run_home_build", build)
     assert develop_preview.prepare_home_projection() == expected
     assert calls == ["build"]

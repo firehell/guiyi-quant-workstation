@@ -912,6 +912,7 @@ MARKERS = frozenset(
         "market-runtime-enabled",
         "alert-runtime-enabled",
         "reference-worker-enabled",
+        "home-projection-enabled",
         "weekly-audit-enabled",
     }
 )

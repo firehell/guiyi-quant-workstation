@@ -160,6 +160,28 @@ if [[ "$reference_worker_enabled" == "true" || -e "$AGENT_DIR/com.guiyi.quant-re
   fi
 fi
 
+home_projection_marker="$runtime_root/.run/home-projection-enabled"
+home_projection_enabled=false
+if [[ -e "$home_projection_marker" || -L "$home_projection_marker" ]]; then
+  if [[ -f "$home_projection_marker" && ! -L "$home_projection_marker" ]] \
+    && [[ "$(stat -f '%Lp' "$home_projection_marker" 2>/dev/null)" == "600" ]] \
+    && [[ "$(stat -f '%u' "$home_projection_marker" 2>/dev/null)" == "$(id -u)" ]] \
+    && cmp -s "$home_projection_marker" <(printf 'enabled\n'); then
+    home_projection_enabled=true
+  else
+    home_projection_enabled=invalid
+    record_failure
+  fi
+fi
+printf '[local-services-status] home_projection_enabled=%s\n' "$home_projection_enabled"
+if [[ "$home_projection_enabled" == "true" || -e "$AGENT_DIR/com.guiyi.quant-home-projection.plist" || -L "$AGENT_DIR/com.guiyi.quant-home-projection.plist" ]]; then
+  labels+=(com.guiyi.quant-home-projection)
+  if [[ "$home_projection_enabled" != "true" ]]; then
+    printf '[local-services-status] home_projection_orphan_plist=true\n'
+    record_failure
+  fi
+fi
+
 pushplus_present=false
 if [[ "$runtime_root" != "missing" && "$runtime_root" != "unknown" ]]; then
   pushplus_path="$runtime_root/services/quant-api/app/alerts/pushplus.py"
@@ -227,6 +249,7 @@ for label in "${labels[@]}"; do
     com.guiyi.quant-live|com.guiyi.quant-after-market|com.guiyi.quant-late-provider-recovery) [[ "$marker_enabled" == "true" ]] && required=true ;;
     com.guiyi.quant-alert) [[ "$alert_marker_enabled" == "true" ]] && required=true ;;
     com.guiyi.quant-reference-worker) [[ "$reference_worker_enabled" == "true" ]] && required=true ;;
+    com.guiyi.quant-home-projection) [[ "$home_projection_enabled" == "true" ]] && required=true ;;
   esac
 
   if [[ "$root" != "missing" && "$root" != "$runtime_root" ]]; then

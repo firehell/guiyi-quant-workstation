@@ -46,7 +46,19 @@ test('failed card refresh retains labelled accepted facts and recovers independe
  const control=await setup(page);await page.goto('/market')
  const rows=page.locator('.strategy-list-item');await expect(rows.first().locator('[aria-label="豆一趋势日线建仓"]')).toBeVisible()
  control.fail=true;await page.reload()
- await expect(rows.first()).toContainText('策略刷新失败，保留上次快照');await expect(rows.first().locator('[aria-label="豆一趋势日线建仓"]')).toBeVisible()
- control.fail=false;await page.reload()
- await expect(rows.first().getByText('策略刷新失败，保留上次快照')).toHaveCount(0);await expect(rows.first().locator('[aria-label="豆一趋势周线持有"]')).toBeVisible();expect(control.errors).toEqual([])
+ await expect(page.locator('.summary-notice').first()).toContainText('策略摘要读取失败');await expect(rows.first().locator('[aria-label="豆一趋势日线建仓"]')).toBeVisible()
+ control.fail=false
+ await expect(page.locator('.summary-notice').first()).toHaveCount(0);await expect(rows.first().locator('[aria-label="豆一趋势周线持有"]')).toBeVisible();expect(control.errors).toEqual([])
+})
+
+
+test('cold summary read failure remains visible and automatically recovers without cached facts', async ({page}) => {
+ const control = await setup(page); control.fail = true; await page.goto('/market')
+ await expect(page.locator('.summary-notice').first()).toContainText('策略摘要读取失败')
+ await expect(page.locator('.summary-notice').first()).toContainText('暂无已验证摘要')
+ control.fail = false
+ await expect(page.locator('.strategy-list-item').first().locator('[aria-label="豆一趋势日线建仓"]')).toBeVisible()
+ await expect(page.locator('.summary-notice')).toHaveCount(0)
+ expect(control.maximum).toBe(1)
+ expect(control.errors).toEqual([])
 })

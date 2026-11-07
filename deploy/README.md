@@ -500,3 +500,25 @@ owner授权自动更新后，使用稳定主开发树的 `scripts/ops/macos/inst
 每日有限事实采集、闭市Canonical指标恢复、零历史撮合与冲突/持仓保护见
 [苏冰开发持续模型](../docs/SUBING_DEVELOPMENT_MODEL.md#自动准备与持续托管2026-11-06)。
 托管不创建新run、不改策略阶段或`auto_order=false`；`launchctl bootout`停止服务也不清仓、不删除账户或事件。
+
+### 首页策略摘要恢复任务（可选，默认未启用）
+
+`home-projection` / `com.guiyi.quant-home-projection` 只读取 Catalog/Canonical，发布首页派生资产和
+有界工作状态；不下载行情、不发通知、不接触账户。模板存在不代表已安装或启用。
+启用后闲时每60秒检查来源，计算子进程120秒硬截止、独占工作锁和可恢复预算详见
+[首页合同](../openspec/specs/market-home-overview/spec.md)。owner活性与摘要业务成功分别核验。
+
+已有 service-bindings 的主机使用原生增量计划，精确继承当前 API 的 approved root/tag/commit/contracts：
+`--plan-optional-service --service home-projection` 默认仅登记 disabled；只有明确的 `--enable` 才计划启动。
+将计划保存在私有文件后，使用 `--apply-optional-service-plan --plan /absolute/plan.json`。
+两项均由 `scripts/ops/macos/install-local-services.sh` 转发；计划15分钟有效，CAS/磁盘前像/loaded及
+owner读回不匹配就停止。不能通过手写registry、复制marker或额外bootstrap绕过计划。
+
+prepared阶段且尚未请求启动的中断可由 `--rollback-optional-service-plan --plan /absolute/plan.json`
+原生恢复。starting/outcome_unknown保留原件和drain，不重复apply、不直接回滚或重启。
+旧registry缺少该可选项仍可发布；普通release不自动添加/启用。已启用后的升级走cohort，单服务
+selective发布明确要求 `COHORT_REQUIRED`，避免候选Disabled/marker不完整的切换。
+
+首次启用前必须先发布包含该模块的正式版本；仅develop提交不能给旧正式树安装新任务。
+正式默认 `guiyi home build` 只读回已启用所有者状态，独立开发构建请显式选择Canonical外JSON输出。
+停用不删除 `.derived/newow-home.json` 或 `.work.json`，失败/中断与历史截止仍需如实展示。

@@ -2,6 +2,8 @@
 import { homeContext, type NewowHomeContext } from '@/utils/newowHomeContext'
 import MarketStateIcon from './MarketStateIcon.vue'
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { createHomeProjectionReadLoop, type HomeReadFailure } from '@/utils/homeProjectionReadLoop'
+import { homeProjectionSummary, homeRecoveryNotice } from '@/utils/homeProjectionNotice'
 import { getNewowHomeProjection } from '@/api/newowHomeCards'
 import { homeSnapshotCache } from '@/api/homeSnapshotCache'
 import { normalizeHomeCards, type HomeCard } from '@/utils/newowHomeCards'
@@ -16,50 +18,42 @@ import type { MarketHomeSort, MarketHomeSortDirection } from '@/utils/marketHome
 import { isNewowHomeSort, sortNewowHomeRows } from '@/utils/newowHomeSort'
 
 type Row = MarketHomeLiveDisplayRow<MarketHomeRow>
-const props = defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection; active?: boolean }>()
+const props = withDefaults(defineProps<{ rows: Row[]; products: readonly string[]; authority: string; refreshSequence: number; liveStale: boolean; sort: MarketHomeSort; sortDirection: MarketHomeSortDirection; active?: boolean }>(), { active: true })
 const emit = defineEmits<{ open: [row: Row]; chart: [symbol: string, strategy: HomeStrategy, frequency: HomePeriod, focusBarEnd?: string, context?: NewowHomeContext]; sort: [sort: MarketHomeSort] }>()
 const deliveries = shallowRef<Record<string, CardDelivery>>({})
-let generation = 0
-let controller: AbortController | null = null
-let pollTimer: ReturnType<typeof setTimeout> | null = null
-let pollCount = 0
-function clearPoll() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null } }
-async function readProjection(resetPoll = true) {
-  const owner = ++generation
-  controller?.abort(); controller = new AbortController()
-  const signal = controller.signal
-  clearPoll()
-  if (resetPoll) pollCount = 0
+const readFailure = ref<HomeReadFailure | null>(null)
+function hydrateCache() {
   for (const symbol of props.products) {
     if (!deliveries.value[symbol]) {
       const cached = homeSnapshotCache.peek<HomeCard>(`card:${symbol}`)
       if (cached) try {
         const response = normalizeHomeCards({ schema_version: 'newow_home_cards_v2', requested_at: new Date(cached.savedAt).toISOString(), items: [cached.value] }, [symbol])
-        deliveries.value[symbol] = { card: response.items[0]!, stale: true, loading: true, failed: false, savedAt: response.requested_at }
+        deliveries.value[symbol] = { card: response.items[0]!, stale: true, loading: false, failed: false, savedAt: response.requested_at }
       } catch { void homeSnapshotCache.discard(`card:${symbol}`) }
     }
   }
-  deliveries.value = Object.fromEntries(Object.entries(deliveries.value).map(([symbol, entry]) => [symbol, { ...entry, loading: true, stale: Boolean(entry.card) }]))
-  try {
-    const response = await getNewowHomeProjection(signal)
-    if (signal.aborted || owner !== generation) return
+}
+const reader = createHomeProjectionReadLoop({
+  read: getNewowHomeProjection,
+  pending: response => response.items.some(item => item.projection_status !== 'ready' && item.recovery?.status !== 'blocked'),
+  accept(response) {
+    readFailure.value = null
     const next: Record<string, CardDelivery> = {}
     for (const item of response.items) {
       const hasSnapshot = item.computed_at !== null
       const previous = deliveries.value[item.product]
       next[item.product] = { card: hasSnapshot ? item : previous?.card ?? null, loading: false,
         stale: item.projection_status !== 'ready', failed: false, periodStatus: item.period_status, periodReasons: item.period_reason_codes,
-        savedAt: item.computed_at ?? previous?.savedAt, projectionStatus: item.projection_status }
+        savedAt: item.computed_at ?? previous?.savedAt, projectionStatus: item.projection_status, recovery: item.recovery }
       if (hasSnapshot) void homeSnapshotCache.put(`card:${item.product}`, item)
     }
     deliveries.value = next
-    if (response.items.some(item => item.projection_status !== 'ready') && pollCount++ < 30 && props.active !== false && (typeof document === 'undefined' || document.visibilityState === 'visible')) {
-      pollTimer = setTimeout(() => { void readProjection(false) }, 10_000)
-    }
-  } catch {
-    if (signal.aborted || owner !== generation) return
-    deliveries.value = Object.fromEntries(Object.entries(deliveries.value).map(([symbol, entry]) => [symbol, { ...entry, loading: false, stale: Boolean(entry.card), failed: true }]))
-  }
+  },
+  failed(kind) { readFailure.value = kind },
+})
+function syncReader() {
+  hydrateCache()
+  reader.setActive(Boolean(props.authority) && props.active !== false && (typeof document === 'undefined' || document.visibilityState === 'visible'))
 }
 const strategy = ref<HomeStrategy>('trend')
 const expanded = ref<string | null>(null)
@@ -70,21 +64,24 @@ function toggleSummary(symbol: string) { expanded.value = expanded.value === sym
 const strategies = [{ code: 'trend' as const, label: '趋势' }, { code: 'oscillation' as const, label: '震荡' }]
 const periods = ['1d', '1w'] as const
 
-watch([() => props.authority, () => props.refreshSequence], () => { if (props.authority) void readProjection() }, { immediate: true })
-watch(() => props.active, (active, previous) => { if (active === false) clearPoll(); else if (previous === false) void readProjection() })
-let wasHidden = false
-function visibilityChanged() {
-  if (document.visibilityState !== 'visible') { wasHidden = true; clearPoll() }
-  else if (wasHidden && props.active !== false) { wasHidden = false; void readProjection() }
-}
+watch([() => props.authority, () => props.active], syncReader, { immediate: true })
+watch(() => props.authority, (value, previous) => { if (value && previous) reader.refresh() })
+watch(() => props.refreshSequence, () => reader.refresh())
+function visibilityChanged() { syncReader() }
+function online() { reader.wake() }
 if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibilityChanged)
-onBeforeUnmount(() => { ++generation; controller?.abort(); clearPoll(); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged) })
+if (typeof window !== 'undefined') window.addEventListener('online', online)
+onBeforeUnmount(() => {
+  reader.dispose()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibilityChanged)
+  if (typeof window !== 'undefined') window.removeEventListener('online', online)
+})
 function fact(symbol: string, period: HomePeriod) { return deliveries.value[symbol]?.card?.strategies[strategy.value][period] }
 function periodDisplay(symbol: string, period: HomePeriod) { return homePeriodDisplay(fact(symbol, period)) }
 function composite(symbol: string) { return homeCompositeDisplay(fact(symbol, '1d'), fact(symbol, '1w')) }
 function space(symbol: string) { return homeCardSpace(fact(symbol, '1d')) }
 function performance(symbol: string) { return homePagePerformance(fact(symbol, '1d'), strategy.value) }
-function performanceNotice(symbol: string) { return deliveries.value[symbol]?.projectionStatus === 'updating' ? '计算中…' : '参考收益待确认' }
+function performanceNotice(symbol: string) { return deliveries.value[symbol]?.recovery?.status === 'running' ? '计算中…' : '参考收益待确认' }
 function presentation(symbol: string) { return homeCardPresentation(fact(symbol, '1d'), fact(symbol, '1w')) }
 function reference(symbol: string) { return composite(symbol).reference }
 function periodLabel(period: HomePeriod) { return period === '1d' ? '日' : '周' }
@@ -97,12 +94,7 @@ function openSummary(row: Row) { openChart(row.symbol,'1d') }
 function trendDisplay(symbol: string) { return homeTrendDisplay(deliveries.value[symbol]?.card?.strategies.trend['1d'], deliveries.value[symbol]) }
 function periodNotice(symbol: string, period: HomePeriod) { return homePeriodNotice(deliveries.value[symbol], period) }
 function periodTime(symbol: string, period: HomePeriod) { const value = fact(symbol, period)?.bar_end; return value ? formatBeijingInstant(value) : '截至时间待确认' }
-const summaryNotice = computed(() => {
-  const entries = Object.values(deliveries.value)
-  if (entries.some(value => value.failed || value.projectionStatus === 'failed')) return '策略摘要读取或更新失败；保留可验证的历史结果。'
-  if (entries.some(value => value.stale)) return '策略摘要待更新；展开可查看发布状态、原因和截至时间。'
-  return ''
-})
+const summaryNotice = computed(() => homeProjectionSummary(props.rows.map(row => row.symbol), deliveries.value, readFailure.value))
 function pending(symbol: string) { return periods.some(period => fact(symbol, period)?.freshness === 'pending_update') }
 </script>
 
@@ -139,6 +131,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
         <span v-for="period in periods.filter(period => fact(row.symbol, period)?.status !== 'ready' && fact(row.symbol, period))" :key="period">{{ periodLabel(period) }}线{{ periodDisplay(row.symbol, period).label }}</span>
       </div>
       <section v-if="expanded === row.symbol" :id="`home-summary-${row.symbol}`" class="list-composite" :aria-label="`${row.product_name}日周综合摘要`">
+        <p v-if="homeRecoveryNotice(deliveries[row.symbol])" class="summary-notice" role="status">{{ homeRecoveryNotice(deliveries[row.symbol]) }}</p>
         <div class="composite-card" :class="presentation(row.symbol).state?.toLowerCase() ?? 'pending'" role="link" tabindex="0" :aria-label="`${row.product_name}${strategy === 'trend' ? '趋势' : '震荡'}策略详情`" @click="openSummary(row)" @keydown.enter.self.prevent="openSummary(row)" @keydown.space.self.prevent="openSummary(row)">
           <div class="composite-heading" :title="`日线参考 · 截至 ${periodTime(row.symbol, '1d')}；周线截至 ${periodTime(row.symbol, '1w')}；策略状态，不代表账户成交`">
             <strong>{{ presentation(row.symbol).prefix }} <span v-if="presentation(row.symbol).price !== '--'" class="composite-price">{{ presentation(row.symbol).price }}</span><span v-else class="composite-price pending">—</span> {{ presentation(row.symbol).suffix }}</strong>

@@ -13,6 +13,11 @@ RUNTIME_DIR="$HOME/Library/Application Support/GuiyiQuant"
 LOG_DIR="$HOME/Library/Logs/GuiyiQuant"
 PYTHON_BIN="$PROJECT_ROOT/services/quant-api/.venv/bin/python"
 MODE="${1:---render-only}"
+OPTIONAL_WORKER_SERVICE="reference-worker"
+if [[ "$MODE" == "--confirm-home-projection" ]]; then
+  OPTIONAL_WORKER_SERVICE="home-projection"
+  REFERENCE_WORKER_MARKER="$PROJECT_ROOT/.run/home-projection-enabled"
+fi
 ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
 # These entrypoints do not render files or mutate a service until an apply mode.
@@ -22,6 +27,9 @@ case "$MODE" in
   --resolve-cohort-restored) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-resolve "$@" ;;
   --plan-release) shift; exec "$PYTHON_BIN" -m app.runtime_deployment plan "$@" ;;
   --apply-release-plan) shift; exec "$PYTHON_BIN" -m app.runtime_deployment apply-plan "$@" ;;
+  --plan-optional-service) shift; exec "$PYTHON_BIN" -m app.runtime_deployment plan-optional-service "$@" ;;
+  --apply-optional-service-plan) shift; exec "$PYTHON_BIN" -m app.runtime_deployment apply-optional-service-plan "$@" ;;
+  --rollback-optional-service-plan) shift; exec "$PYTHON_BIN" -m app.runtime_deployment rollback-optional-service-plan "$@" ;;
   --plan-topology) shift; exec "$PYTHON_BIN" -m app.runtime_bootstrap plan "$@" ;;
   --apply-topology-plan) shift; exec "$PYTHON_BIN" -m app.runtime_bootstrap apply "$@" ;;
 esac
@@ -83,14 +91,15 @@ market_runtime_labels=(com.guiyi.quant-after-market com.guiyi.quant-late-provide
 alert_runtime_labels=(com.guiyi.quant-alert)
 weekly_audit_labels=(com.guiyi.quant-weekly-audit)
 reference_worker_labels=(com.guiyi.quant-reference-worker)
-render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}" "${reference_worker_labels[@]}")
+render_labels=("${base_labels[@]}" "${market_runtime_labels[@]}" "${alert_runtime_labels[@]}" "${weekly_audit_labels[@]}" "${reference_worker_labels[@]}" com.guiyi.quant-home-projection)
 load_labels=("${base_labels[@]}")
 
-[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" || "$MODE" == "--confirm-weekly-audit" || "$MODE" == "--confirm-reference-worker" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-weekly-audit|--confirm-reference-worker]\n' "$0" >&2; exit 2; }
-if [[ "$MODE" == "--confirm-weekly-audit" || "$MODE" == "--confirm-reference-worker" ]]; then
+[[ "$MODE" == "--render-only" || "$MODE" == "--confirm-load" || "$MODE" == "--confirm-market-runtime" || "$MODE" == "--confirm-alert-runtime" || "$MODE" == "--confirm-weekly-audit" || "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]] || { printf 'usage: %s [--render-only|--confirm-load|--confirm-market-runtime|--confirm-alert-runtime|--confirm-weekly-audit|--confirm-reference-worker|--confirm-home-projection]\n' "$0" >&2; exit 2; }
+if [[ "$MODE" == "--confirm-weekly-audit" || "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]]; then
   api_plist="$AGENT_DIR/com.guiyi.quant-api.plist"
   identity_subject="weekly audit"
   [[ "$MODE" != "--confirm-reference-worker" ]] || identity_subject="reference worker"
+  [[ "$MODE" != "--confirm-home-projection" ]] || identity_subject="home projection"
   if [[ ! -f "$api_plist" || -L "$api_plist" ]] \
     || [[ "$(plutil -extract EnvironmentVariables.GUIYI_PROJECT_ROOT raw -o - "$api_plist" 2>/dev/null)" != "$PROJECT_ROOT" ]] \
     || [[ "$(plutil -extract EnvironmentVariables.GUIYI_RUNTIME_COMMIT raw -o - "$api_plist" 2>/dev/null)" != "$RUNTIME_COMMIT" ]]; then
@@ -98,13 +107,13 @@ if [[ "$MODE" == "--confirm-weekly-audit" || "$MODE" == "--confirm-reference-wor
     exit 1
   fi
 fi
-if [[ "$MODE" == "--confirm-reference-worker" ]] \
+if [[ "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]] \
   && { [[ ! -f "$RUNTIME_DIR/run-local-service.sh" || -L "$RUNTIME_DIR/run-local-service.sh" ]] \
     || ! cmp -s "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh"; }; then
   printf '[install-local-services] reference worker shared launcher mismatch\n' >&2
   exit 1
 fi
-if [[ "$MODE" == "--confirm-reference-worker" ]] \
+if [[ "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]] \
   && [[ -e "$REFERENCE_WORKER_MARKER" || -L "$REFERENCE_WORKER_MARKER" ]] \
   && { [[ ! -f "$REFERENCE_WORKER_MARKER" || -L "$REFERENCE_WORKER_MARKER" ]] \
     || [[ "$(stat -f '%Lp' "$REFERENCE_WORKER_MARKER" 2>/dev/null)" != "600" ]] \
@@ -152,8 +161,8 @@ elif [[ "$MODE" == "--confirm-alert-runtime" ]]; then
   load_labels=("${alert_runtime_labels[@]}")
 elif [[ "$MODE" == "--confirm-weekly-audit" ]]; then
   load_labels=("${weekly_audit_labels[@]}")
-elif [[ "$MODE" == "--confirm-reference-worker" ]]; then
-  load_labels=("${reference_worker_labels[@]}")
+elif [[ "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]]; then
+  load_labels=("com.guiyi.quant-$OPTIONAL_WORKER_SERVICE")
 fi
 
 if [[ "$MODE" == "--confirm-market-runtime" ]]; then
@@ -356,9 +365,9 @@ reference_preimage_existed=0
 reference_preimage_loaded=0
 
 prepare_reference_install_preimage() {
-  local label="com.guiyi.quant-reference-worker"
+  local label="com.guiyi.quant-$OPTIONAL_WORKER_SERVICE"
   local plist="$AGENT_DIR/${label}.plist" state
-  [[ "$MODE" == "--confirm-reference-worker" ]] || return 0
+  [[ "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]] || return 0
   reference_preimage_dir="$(mktemp -d "$RENDER_DIR/reference-install-preimage.XXXXXX")" || return 1
   chmod 700 "$reference_preimage_dir" || return 1
   if [[ -e "$plist" || -L "$plist" ]]; then
@@ -382,9 +391,9 @@ prepare_reference_install_preimage() {
 }
 
 restore_reference_install_preimage() {
-  local label="com.guiyi.quant-reference-worker"
+  local label="com.guiyi.quant-$OPTIONAL_WORKER_SERVICE"
   local plist="$AGENT_DIR/${label}.plist"
-  [[ "$MODE" == "--confirm-reference-worker" ]] || return 0
+  [[ "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]] || return 0
   [[ -n "$reference_preimage_dir" ]] || return 1
   if [[ "$reference_preimage_existed" == "1" ]]; then
     [[ -f "$reference_preimage_dir/plist" && ! -L "$reference_preimage_dir/plist" ]] || return 1
@@ -461,7 +470,7 @@ prepare_runtime_activation_marker() {
   elif [[ "$MODE" == "--confirm-weekly-audit" ]]; then
     activation_marker="$WEEKLY_AUDIT_MARKER"
     writer=write_weekly_audit_activation_marker
-  elif [[ "$MODE" == "--confirm-reference-worker" ]]; then
+  elif [[ "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]]; then
     activation_marker="$REFERENCE_WORKER_MARKER"
     writer=write_reference_worker_activation_marker
   else
@@ -520,14 +529,14 @@ load_selected_services() {
     attempted_load_labels+=("$label")
     reload_launch_agent "$label" "$target_plist" || return 1
     launchctl enable "gui/$UID/$label" || return 1
-    if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" || "$label" == "com.guiyi.quant-reference-worker" ]]; then
+    if [[ "$MODE" == "--confirm-load" || "$label" == "com.guiyi.quant-live" || "$label" == "com.guiyi.quant-alert" || "$label" == "com.guiyi.quant-reference-worker" || "$label" == "com.guiyi.quant-home-projection" ]]; then
       launchctl kickstart -k "gui/$UID/$label" || return 1
     fi
   done
 }
 
 perform_selected_service_install() {
-  if [[ "$MODE" != "--confirm-weekly-audit" && "$MODE" != "--confirm-reference-worker" ]]; then
+  if [[ "$MODE" != "--confirm-weekly-audit" && "$MODE" != "--confirm-reference-worker" && "$MODE" != "--confirm-home-projection" ]]; then
     cp "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" "$RUNTIME_DIR/run-local-service.sh" || return 1
     chmod 700 "$RUNTIME_DIR/run-local-service.sh" || return 1
     cp "$PROJECT_ROOT/scripts/ops/macos/rotate-local-service-logs.sh" "$RUNTIME_DIR/rotate-local-service-logs.sh" || return 1
@@ -582,7 +591,7 @@ if ! perform_selected_service_install; then
     printf '[install-local-services] ERROR: market authority restore unknown; activation marker retained\n' >&2
     exit 1
   fi
-  if [[ "$MODE" == "--confirm-reference-worker" ]]; then
+  if [[ "$MODE" == "--confirm-reference-worker" || "$MODE" == "--confirm-home-projection" ]]; then
     if ! restore_runtime_activation_marker; then
       printf '[install-local-services] ERROR: reference worker marker rollback failed\n' >&2
       exit 1

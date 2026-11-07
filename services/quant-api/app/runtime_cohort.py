@@ -18,11 +18,26 @@ from app.runtime_bindings import (
     ServiceBinding,
     _read as read_plan,
 )
+from app.runtime_contracts import REQUIRED_SERVICES, OPTIONAL_CONTINUOUS
 from app.runtime_handover import _read, _write, deployment_lock
 from app.reference_trading.recovery_campaign import digest
 from app.runtime_cohort_errors import CohortError
 
 CONTINUOUS = ("market-feed", "live", "alert", "reference-worker", "api", "web")
+
+
+def continuous_services(bindings):
+    """Core owners plus explicitly enabled optional owners; absent stays absent."""
+    return tuple(name for name in CONTINUOUS if name in bindings.services) + tuple(
+        name for name in sorted(OPTIONAL_CONTINUOUS)
+        if name in bindings.services and bindings.services[name].enabled
+    )
+
+
+def complete_service_set(names):
+    return REQUIRED_SERVICES <= set(names) <= SERVICES
+
+
 CALENDARS = ("after-market", "late-provider-recovery", "weekly-audit", "log-rotate")
 TERMINAL = frozenset({"switched", "cancelled"})
 WARMUP_SAFE_CODES = frozenset(
@@ -116,7 +131,7 @@ def _release_layout(candidate_root, tag, previous, *, historical=False):
 def freeze_cohort(host, *, candidate_root, tag, commit):
     previous = host.bindings()
     require(
-        previous is not None and set(previous.services) == SERVICES,
+        previous is not None and complete_service_set(previous.services),
         "COHORT_SERVICE_SET_INVALID",
     )
     state = _read(host.directory / "cohort-release.json")
@@ -218,7 +233,7 @@ def validate(
             for key in ("old", "new")
         )
         require(
-            set(old.services) == set(new.services) == SERVICES,
+            set(old.services) == set(new.services) and complete_service_set(old.services),
             "COHORT_SERVICE_SET_INVALID",
         )
         require(plan["downtime_seconds"] == 600, "COHORT_BUDGET_INVALID")
@@ -421,7 +436,7 @@ def apply_cohort(host, plan):
             ):
                 state["error_code"] = str(error)
                 failed_service = getattr(error, "service", None)
-                if failed_service in CONTINUOUS:
+                if failed_service in (*CONTINUOUS, *OPTIONAL_CONTINUOUS):
                     state["failed_service"] = failed_service
                     condition = getattr(error, "warmup_condition", None)
                     if condition in WARMUP_CONDITIONS:
@@ -650,7 +665,7 @@ def main(argv=None):
     p = sub.add_parser("resolve-restored")
     p.add_argument("--plan", required=True, type=Path)
     p = sub.add_parser("warmup")
-    p.add_argument("service", choices=CONTINUOUS)
+    p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS)))
     args = parser.parse_args(argv)
     try:
         if args.mode == "warmup":

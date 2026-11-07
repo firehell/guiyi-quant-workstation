@@ -11,8 +11,8 @@ from app.private_settings import PrivateSettingsError, load_private_readonly_set
 def prepare_home_projection():
     # Startup work only. GET remains a read of the isolated developer asset.
     # The existing builder skips periods whose authoritative identity is unchanged.
-    from app.market_data.newow.home_projection_composition import build_home_projection
-    return build_home_projection().build()
+    from app.market_data.newow.home_recovery import run_home_build
+    return run_home_build()
 
 
 def main():

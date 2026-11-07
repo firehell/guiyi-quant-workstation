@@ -2458,3 +2458,13 @@ GUIYI_SUBING_MODEL_PG_TEST=1 PYTHONPATH=.:services/quant-api:services/quant-api/
 
 
 2026-11-05 RS/UR恢复使用独立 `htdy_conflict_recovery_20261105_v1`，仅冻结两路旧revision、capture、checkpoint和activation generation（RS1、UR2），OPEN集合必须为空。复用既有权威MDS来源、完整原件/Inbox及历史retirement证明、真实停驻锁、两路同事务与单次attempt；旧历史不重算，从未来FLAT继续。正常HTDY窗口比较、公式和schema均不变。定向验证 `test_htdy_two_conflict_scope.py`，并回归既有来源、retirement、PostgreSQL和CLI测试。
+
+## 首页摘要恢复（仅隔离输出，不启用 Runtime）
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_home_projection.py services/quant-api/tests/newow/test_home_projection_versions.py services/quant-api/tests/newow/test_home_recovery.py services/quant-api/tests/newow/test_home_recovery_state.py services/quant-api/tests/newow/test_home_recovery_budget_boundaries.py services/quant-api/tests/newow/test_home_recovery_process.py services/quant-api/tests/newow/test_home_recovery_ownership.py services/quant-api/tests/newow/test_product_snapshot_cache.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_optional_service.py services/quant-api/tests/test_runtime_home_projection.py tests/engineering/test_home_projection_launchd.py
+```
+
+真实输入构建只选择 Canonical 外独立 JSON 目标；默认正式CLI不创建独立写入者。
+故障注入与真实业务结果分开记录；HTTP成功、worker活性、恢复状态和策略预热不能互相替代。

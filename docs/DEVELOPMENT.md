@@ -106,10 +106,14 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 开发预览入口使用既有严格读取器加载 `~/Library/Application Support/GuiyiQuant/project.env` 的
 DB、Canonical 和 Redis 依赖，不输出或修改配置；按正式启动器规则补齐 Redis URL 认证。
-`python -m app.develop_preview api` 在启动 HTTP 服务前，使用既有幂等 builder 校验并更新
+`python -m app.develop_preview api` 在启动 HTTP 服务前，使用统一 `HomeRecovery` 校验并更新
 `.run/develop-newow-home.json`，避免重启后继续读取过期摘要；身份未变的周期不会重算。
 同前缀的 `python -m app.develop_preview build` 也可单独更新该文件。只写本地开发派生文件，
 不下载行情、不覆盖共享正式资产，不启用后台任务；构建未成功的周期保留真实失败状态，GET 不自动构建。
+工作状态与开发资产同根隔离；只读子进程有120秒/周期硬截止，仍验证来源和完整代次。
+正式默认摘要仅由明确启用的受监督 `home-projection` 发布；从 develop 调用默认 `guiyi home build`
+不创建正式写入者。开发 `--output` 必须是 Canonical 之外的 JSON 目标，不能覆盖无法识别的文件。
+自动恢复合同见 `market-home-overview` OpenSpec，后续正式启用入口见 `deploy/README.md`。
 首页日周图标旁的“历史”及展开原因说明发布有效性；正常已完成日周线不会因分钟报价变化而重算。
 参考收益显示累计页面收益与笔数；距离始终按日线参考收盘价计算，正常卡片在悬停说明中提供基准及日周各自截至时间；历史／失败状态保留可见原因。
 

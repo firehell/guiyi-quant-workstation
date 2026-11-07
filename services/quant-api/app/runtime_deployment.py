@@ -19,6 +19,7 @@ import signal
 from time import monotonic, sleep
 from uuid import uuid4
 
+from app.runtime_optional_service import OptionalServiceError
 from app.runtime_bindings import (BindingRegistry, ServiceBinding,
     bindings_sha256, build_release_plan, read_bindings, resolve_service_binding, write_bindings)
 from app.runtime_handover import (_read, _write, runtime_directory,
@@ -194,6 +195,10 @@ def warmup_service(service):
                 raise DeploymentError('CANDIDATE_SCOPE_EMPTY')
             return {'products': len(products), 'progress': progress,
                     'proven_closed_idle': closed_idle, 'natural_bar_verified': False}
+    if service == 'home-projection':
+        # Candidate readiness is import/contract validation only; never publish.
+        from app.market_data.newow.home_recovery import run_home_recovery_forever
+        return {'runner_available': callable(run_home_recovery_forever)}
     if service == 'api':
         from app.main import app
         return {'routes': len(app.routes)}
@@ -415,7 +420,7 @@ class LaunchdBackend:
             'schema_version': 1, 'phase': 'cancelled', 'service': service, 'request_id': request})
 
 
-def assert_no_unknown_deployment(*, cohort_plan_sha256=None):
+def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=False):
     cohort = _read(runtime_directory() / 'cohort-release.json')
     if (cohort is not None and cohort.get('phase') not in {'switched', 'cancelled'}
             and (cohort_plan_sha256 is None or cohort.get('plan_sha256') != cohort_plan_sha256)):
@@ -423,6 +428,9 @@ def assert_no_unknown_deployment(*, cohort_plan_sha256=None):
     journal = _read(runtime_directory() / 'deployment-outcome.json')
     if journal is not None and journal.get('phase') not in {'switched', 'cancelled'}:
         raise DeploymentError('RUNTIME_HANDOVER_RECOVERY_READBACK_REQUIRED')
+    optional = _read(runtime_directory() / 'optional-service-operation.json')
+    if not allow_optional and optional is not None and optional.get('phase') not in {'switched', 'rolled_back'}:
+        raise DeploymentError('OPTIONAL_SERVICE_OUTCOME_UNKNOWN')
     from app.runtime_scheduled import SCHEDULED
     for service in SCHEDULED:
         state = _read(runtime_directory() / f'{service}.scheduled-update.json')
@@ -497,6 +505,12 @@ def main(argv=None):
     candidate.add_argument('generation', type=int)
     port = sub.add_parser('port-service')
     port.add_argument('service', choices=['api', 'web'])
+    optional = sub.add_parser('plan-optional-service')
+    optional.add_argument('--service', choices=['home-projection'], required=True)
+    optional.add_argument('--enable', action='store_true')
+    for mode in ('apply-optional-service-plan', 'rollback-optional-service-plan'):
+        optional_apply = sub.add_parser(mode)
+        optional_apply.add_argument('--plan', type=Path, required=True)
     sub.add_parser('status')
     args = parser.parse_args(argv)
     try:
@@ -507,6 +521,20 @@ def main(argv=None):
                 raise DeploymentError('TOPOLOGY_BOOTSTRAP_REQUIRED')
             result = build_release_plan(registry, candidate_root=args.candidate_root, tag=args.tag,
                                        commit=args.commit, registry_sha256=bindings_sha256())
+        elif args.mode == 'plan-optional-service':
+            from app.runtime_optional_service import OptionalServiceHost, plan_optional_service
+            assert_no_unknown_deployment()
+            result = plan_optional_service(OptionalServiceHost(), service=args.service, enable=args.enable)
+        elif args.mode in {'apply-optional-service-plan', 'rollback-optional-service-plan'}:
+            from app.runtime_optional_service import OptionalServiceHost, apply_optional_service, rollback_optional_service
+            from app.runtime_bindings import _read as read_plan
+            with deployment_lock():
+                assert_no_unknown_deployment(allow_optional=True)
+                raw = read_plan(args.plan)
+                if raw is None:
+                    raise DeploymentError('OPTIONAL_SERVICE_PLAN_MISSING')
+                operation = apply_optional_service if args.mode == 'apply-optional-service-plan' else rollback_optional_service
+                result = operation(OptionalServiceHost(), json.loads(raw))
         elif args.mode == 'status':
             registry = read_bindings()
             if registry is None or 'api' not in registry.services:
@@ -547,7 +575,7 @@ def main(argv=None):
             return 0
         print(json.dumps(result, sort_keys=True))
         return 1 if result.get('status') in {'blocked', 'cancelled'} else 0
-    except DeploymentError as exc:
+    except (DeploymentError, OptionalServiceError) as exc:
         code = str(exc) if re.fullmatch(r'[A-Z0-9_]+', str(exc)) else 'RUNTIME_DEPLOYMENT_BLOCKED'
         print(json.dumps({'status': 'blocked', 'code': code}))
         return 1

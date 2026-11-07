@@ -189,9 +189,10 @@ test('rows expand and summary cards navigate with selected strategy while retain
     }
     assert.equal(api.calls.length, readsBeforeSort)
     sequence.value++; await nextTick()
-    assert.match(nodeText(root), /策略摘要待更新/)
+    assert.match(nodeText(root), /3000.00/)
+    assert.doesNotMatch(nodeText(root), /策略摘要读取失败/)
     api.calls.at(-1).reject(Error('offline')); await settle()
-    assert.match(nodeText(root), /策略摘要读取或更新失败/)
+    assert.match(nodeText(root), /策略摘要读取失败/)
     assert.match(nodeText(root), /3000.00/)
     sequence.value++; await nextTick()
     const warming = { status: 'warming', state: null }, unavailable = { status: 'unavailable', state: null }

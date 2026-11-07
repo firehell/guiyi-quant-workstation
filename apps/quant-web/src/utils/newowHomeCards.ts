@@ -66,7 +66,7 @@ export interface HomePeriodFact {
 }
 export interface HomeCard { product: string; strategies: Record<HomeStrategy, Record<HomePeriod, HomePeriodFact>> }
 export interface HomeCardsResponse { schema_version: 'newow_home_cards_v2'; requested_at: string; items: HomeCard[]; restored?: boolean }
-export interface CardDelivery { card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string; periodStatus?: import('./newowHomeProjection.ts').HomeProjectionItem['period_status']; periodReasons?: import('./newowHomeProjection.ts').HomeProjectionItem['period_reason_codes']; projectionStatus?: import('./newowHomeProjection.ts').ProjectionStatus }
+export interface CardDelivery { recovery?: import('./newowHomeProjection.ts').HomeProjectionRecovery; card: HomeCard | null; loading: boolean; stale: boolean; failed: boolean; savedAt?: string; periodStatus?: import('./newowHomeProjection.ts').HomeProjectionItem['period_status']; periodReasons?: import('./newowHomeProjection.ts').HomeProjectionItem['period_reason_codes']; projectionStatus?: import('./newowHomeProjection.ts').ProjectionStatus }
 
 export const homeStateLabels = { BUILD: '建仓', HOLD: '持有', CLEAR: '清仓', FLAT: '空仓' } as const
 export const homeStateIcons = { BUILD: '▲', HOLD: '✓', CLEAR: '↘', FLAT: '○' } as const
@@ -274,6 +274,6 @@ export function homePeriodNotice(delivery: CardDelivery | undefined, period: Hom
     SUMMARY_BUILD_FAILED: '摘要更新失败', SUMMARY_BUILDING: '摘要更新中', SUMMARY_BUILD_INTERRUPTED: '摘要构建中断',
   }
   const reason = delivery?.loading ? null : delivery?.periodReasons?.[period] ?? card?.period_reason_codes?.[period]
-  const text = delivery?.failed ? '摘要读取或更新失败' : reason && reasons[reason] || ({stale:'历史摘要待验证',failed:'摘要更新失败',missing:'尚无已发布摘要',updating:'摘要更新中',ready:'已发布摘要'} as const)[state]
+  const text = delivery?.failed ? '摘要读取失败' : reason && reasons[reason] || ({stale:'历史摘要待验证',failed:'摘要更新失败',missing:'尚无已发布摘要',updating:'摘要更新中',ready:'已发布摘要'} as const)[state]
   return { historical: Boolean(delivery?.card) && state !== 'ready', text }
 }
