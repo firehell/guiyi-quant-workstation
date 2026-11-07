@@ -1,3 +1,9 @@
+11/7 develop全部未发布代码已发布，服务切换因旧震荡参考流不兼容而停止：v1.16.98（PR631）包含全部develop集成；现场完整账户重放约70秒，追加SDK建连前重放修复并发布v1.16.99（PR632），exact `a143ec3944404d1c18bfb6f238546a8732e1fb84`。API/SDK frozen构建、Web生产构建、受影响后端1127项、Web1398项（3跳过）、补修TQ/版本98项及独立Review通过。正式99副本已构建；没有移动旧tag。
+
+原TQ v97正常stop/SIGTERM后于15:25:16自然STOPPED，未强杀、未清仓或补单。账户owner锁内保全停后seq8295，8仓/8单/8成交、8个原SUBMIT claims及唯一基线保留，零未对账/未决；停前一致副本完整重放通过。私有原件位于AppSupport/GuiyiQuant/release-20261107-v98的tq-before/tq-stopped。
+
+新鲜cohort `337804ec…`在停服前reference-worker预热失败，原生cancelled/effects={}；未重试该attempt。已只读定位新版checkpoint reader拒绝180条现役旧newow_oscillation流（日/周/60m各60），其余960条checkpoint本次读取通过。另有180条依赖融合流；旧reader核验震荡80笔、融合95笔OPEN参考交易，不能静默套用trueup或伪造平仓。需确定版本化参考流迁移/收尾后才可生成新计划继续。十标准服务仍v1.16.97/gen68且全部matched，API/Web/Runtime HTTP通过；TQ当前明确停止，不能期待开盘自动交易。未改生产参考Scope、账本、通知或策略阶段；未启用默认可选home-projection。发布不等于已运行。
+
 11/6 20:30 TqKq 19:00维护阻断已修复、发布并恢复原账户：owner明确批准PR630合并及本机恢复后，v1.16.97 exact `d80c4ef32d79c901f56f2ce797a990699d682664`已发布，仅含本次7文件维护修复，未携带develop其他研究/页面改动。正式独立副本`.worktrees/release-v1.16.97`，10/10标准服务统一gen68、身份matched，API/Web/Runtime HTTP通过。已定位并离线复现固定SDK3.10.4首次维护断线终止连接任务；新版本仅对精确已知异常在账户义务全部结清后冷重建SDK，再执行既有账户与逐品种恢复，未知异常继续保护。136项相关回归、Web版本测试、API/Web构建、Ruff/diff与针对性独立Review通过。
 
 首个cohort attempt `b231a5a4…`切换后最终就绪超时，原outcome_unknown完整保留、不重试；六消费者同gen68 parked后原生close-only `64394b46…`返回feed_closed，独立新forward `6d7dce7e…`返回recovered，receipt `3633a9c97b9fdf66cbbe024920396d262af92cad7d6a146e8bd5086ca64dcb5f`。旧PID79434确认为断线任务死亡且原生stop不能退出，按精确出生身份停止并记forced_disconnected_shutdown，未冒充正常safe stop。
