@@ -32,7 +32,9 @@ test('detail analysis navigation uses one flat six-choice order on every view', 
   assert.match(page, /<ProductSelector/)
   assert.doesNotMatch(source, /aria-label="品种代码"|aria-label="全部品种"/)
   assert.doesNotMatch(source, /detail-view-nav__mobile|分析视角 ·/)
-  assert.equal((source.match(/aria-label="周期"/g) ?? []).length, 1)
+  assert.equal((source.match(/<DetailChartToolbar/g) ?? []).length, 1)
+  const toolbar = read('../src/components/market/detail/DetailChartToolbar.vue')
+  assert.equal((toolbar.match(/aria-label="周期"/g) ?? []).length, 1)
   assert.doesNotMatch(source, /aria-label="Newow策略"|label: '牛哇'|label: 'Newow'|label: '新苏冰'|free: '更多'/)
 })
 
