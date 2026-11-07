@@ -7,7 +7,7 @@ import pytest
 from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary, StreamIdentity
 from guiyi_quant.reference_trading.adapters import strategy_input_fingerprint
 from guiyi_quant.newow.product_identity import (
-    REFERENCE_MODEL_VERSION, futures_adaptation_version,
+    reference_model_version, futures_adaptation_version,
 )
 
 from app.reference_trading.inputs import HistoricalInputBar, _insert_boundaries
@@ -36,7 +36,7 @@ def test_newow_supported_matrix_advances_with_real_p2_adapter(
         strategy_code=f"newow_{strategy}",
         formula_versions=case.identity.formula_versions,
         profile_id=case.identity.profile_id,
-        reference_model_version=REFERENCE_MODEL_VERSION,
+        reference_model_version=reference_model_version(case.identity),
         futures_adaptation_version=futures_adaptation_version(
             frequency, case.identity.input_quality_policy,
         ),

@@ -179,7 +179,7 @@ class NewowForwardBootstrap:
         return identity, checkpoint, batch.strategy_schema, dict(manifest), binding
 
     def plan(self, historical_stream_id: str, *, recording_start: datetime, expires_at: datetime,
-             host: str, environment: str, now: datetime, recovery_policy: str = "block") -> dict:
+             host: str, environment: str, now: datetime, recovery_policy: str = "block", formula_warmup=None) -> dict:
         start, expiry, current = map(_aware, (recording_start, expires_at, now))
         if start <= current or expiry <= current or expiry > start or not host or not environment:
             raise ValueError("BOOTSTRAP_PLAN_WINDOW_INVALID")
@@ -206,6 +206,10 @@ class NewowForwardBootstrap:
                 "expires_at": expiry.isoformat(), "host": host, "environment": environment,
                 "budget": {"max_pending_keys": 360, "max_units_per_round": 32},
                 "recovery_policy": recovery_policy}
+            if formula_warmup is not None:
+                if not isinstance(formula_warmup, dict) or type(formula_warmup.get('ready')) is not bool:
+                    raise ValueError('BOOTSTRAP_WARMUP_PROOF_INVALID')
+                payload['formula_warmup'] = formula_warmup
             return {**payload, "plan_hash": _hash(payload)}
 
     def plan_scope(self, operational, active, *, selected_products=None, selected_frequencies=None, **options) -> dict:
@@ -333,6 +337,8 @@ class NewowForwardBootstrap:
             manifest = {**historical_manifest, "forward_bootstrap_v1": {
                 "plan_hash": plan["plan_hash"], "source": binding,
                 "recording_start": plan["recording_start"], "policy": POLICY}}
+            if 'formula_warmup' in plan:
+                manifest['forward_bootstrap_v1']['formula_warmup'] = plan['formula_warmup']
             digest = manifest_sha256(manifest)
             candidates = list(session.scalars(select(ReferenceRevision).where(
                 ReferenceRevision.stream_id == target_identity.stream_id,
@@ -354,6 +360,9 @@ class NewowForwardBootstrap:
                 host=plan["host"], environment=plan["environment"], recording_start=start,
                 expires_at=expiry, budget=plan["budget"], recovery_policy=plan["recovery_policy"])
             receipt_id = activation.apply(activation_plan, expected_plan_hash=activation_plan.plan_hash, now=current)
+            if plan.get('formula_warmup', {}).get('ready') is False:
+                target_row = session.get(ReferenceStream, target_identity.stream_id)
+                target_row.health = 'FORMULA_WARMING'
             return {"target_stream_id": target_identity.stream_id, "revision_id": revision_id,
                 "activation_plan_hash": activation_plan.plan_hash, "receipt_id": receipt_id,
                 "bootstrap_plan_hash": plan["plan_hash"]}

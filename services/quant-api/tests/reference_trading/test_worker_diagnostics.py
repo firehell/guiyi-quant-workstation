@@ -111,7 +111,7 @@ def saved_capture_fixture():
         source_evidence={'forward_capture_v1': {'capture_id': 'capture', 'hash': capture.capture_hash,
             'generation': 1}})
     previous = SimpleNamespace(seq=1)
-    session = SimpleNamespace(get=lambda model, identifier: row if identifier == 'capture' else None)
+    session = SimpleNamespace(get=lambda model, identifier, **kwargs: row if identifier == 'capture' else None)
     return session, stream, latest, previous, row
 
 

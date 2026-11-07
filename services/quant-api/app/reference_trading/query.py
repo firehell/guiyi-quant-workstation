@@ -197,18 +197,24 @@ class HistoricalReferenceQuery:
         ):
             raise QueryConflict("STREAM_NOT_FOUND")
         row = session.get(ReferenceStream, stream_id)
-        if row is None or not self._registered(row):
+        if row is None:
             raise QueryConflict("STREAM_NOT_FOUND")
+        if not self._registered(row):
+            from app.reference_trading.formula_transition import retired_proof
+            if retired_proof(session, row) is None:
+                raise QueryConflict("STREAM_NOT_FOUND")
         return row
 
     def _snapshot(
         self, session: Session, row: ReferenceStream, *,
         since: date, through: date, cutoff: datetime | None, encoded: str | None,
     ) -> tuple[SnapshotIdentity, str, str]:
+        from app.reference_trading.formula_transition import retired_proof
+        retirement = retired_proof(session, row)
         if encoded is None:
             if row.active_revision_id is None or row.latest_seq < 1:
                 raise QueryConflict("NOT_BUILT")
-            if row.recording_mode == "forward_observation" and not row.enabled:
+            if row.recording_mode == "forward_observation" and not row.enabled and retirement is None:
                 raise QueryConflict("NOT_ENABLED")
             revision_id, seq = row.active_revision_id, row.latest_seq
             revision = session.get(ReferenceRevision, (row.stream_id, revision_id))
@@ -244,7 +250,10 @@ class HistoricalReferenceQuery:
                 or not isinstance(token["dependency"], str)
                 or row.recording_mode == "forward_observation" and (
                     token.get("mode") != row.recording_mode
-                    or token.get("generation") != row.activation_generation
+                    or token.get("generation") not in (
+                        {row.activation_generation, retirement['old_generation']}
+                        if retirement is not None and token.get('seq', 0) < retirement['retired_seq']
+                        else {row.activation_generation})
                     or token.get("recording_start") != (
                         row.recording_start.isoformat() if row.recording_start else None
                     )
@@ -293,6 +302,7 @@ class HistoricalReferenceQuery:
             ReferenceBatch.revision_id == snapshot.revision_id,
             ReferenceBatch.kind == "calculation",
             ~ReferenceBatch.batch_key.like("forward:observation-gap:%"),
+            ~ReferenceBatch.batch_key.like("formula-transition:%"),
             ReferenceBatch.seq <= snapshot.seq,
         )).one()
         gap = session.scalar(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
@@ -307,7 +317,13 @@ class HistoricalReferenceQuery:
             gap_at = gap.source_evidence.get("observation_gap_v1", {}).get("interruption_end")
             if gap_at is None and gap.observed_at is not None:
                 gap_at = gap.observed_at.isoformat()
+        terminal = session.scalar(select(ReferenceBatch).where(
+            ReferenceBatch.stream_id == snapshot.stream_id,
+            ReferenceBatch.revision_id == snapshot.revision_id,
+            ReferenceBatch.batch_key.like('formula-transition:%'),
+            ReferenceBatch.seq <= snapshot.seq))
         return {
+            "formula_boundary_at": terminal.source_evidence['newow_formula_transition_v1']['boundary_at'] if terminal else None,
             "first_computed_through": first.isoformat() if first else None,
             "computed_through": last.isoformat() if last else None,
             "observation_boundary_at": gap_at,

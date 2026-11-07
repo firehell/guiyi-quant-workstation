@@ -15,6 +15,7 @@ from app.reference_trading.retired_conflict_recovery import RetiredDayConflictRe
 from app.reference_trading.repository import RepositoryConflict
 from guiyi_quant.newow.fusion_reference import FusionReferenceReplayState, build_fusion_stream_identity
 from guiyi_quant.newow.product_adapters import build_product_identity, seed_replay_state
+from guiyi_quant.newow.product_identity import reference_model_version
 from guiyi_quant.reference_trading import ReferenceState
 from tests.reference_trading.test_newow_bootstrap import setup_source, NOW, START, plan_for
 
@@ -32,7 +33,8 @@ def prepared():
         else:
             product = build_product_identity("l", strategy, "60m")
             identity = replace(template, product="l", strategy_code="newow_"+strategy,
-                               formula_versions=product.formula_versions, profile_id=product.profile_id)
+                               formula_versions=product.formula_versions, profile_id=product.profile_id,
+                               reference_model_version=reference_model_version(product))
             state, schema = old.strategy_state, "newow_product_replay_v1"
         row = repo.ensure_stream(identity)
         manifest = {"fixture": strategy}

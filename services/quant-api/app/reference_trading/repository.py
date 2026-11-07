@@ -882,6 +882,9 @@ class ReferenceRepository:
                 stream.latest_seq = seq
             if capture_row is not None and stream.health == "RECOVERY_PENDING":
                 self._finish_bounded_recovery_health(session, stream, revision, capture_row)
+            if stream.health == 'FORMULA_WARMING':
+                from app.reference_trading.formula_transition import finish_formula_warmup
+                finish_formula_warmup(stream, prepared)
             self._fault_injector("before_commit")
             if inbox_recovery is not None:
                 inbox_recovery[0].check_external(inbox_recovery[1])

@@ -11,7 +11,7 @@ from app.reference_trading.contracts import SeedChunk, manifest_sha256
 from app.reference_trading.models import ReferenceStream, ReferenceRevision, ReferenceActivationReceipt
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
 from guiyi_quant.newow.product_adapters import build_product_identity, seed_replay_state, replay_step
-from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
+from guiyi_quant.newow.product_identity import reference_model_version, futures_adaptation_version
 from guiyi_quant.reference_trading import StreamIdentity, ReferenceState
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from app.reference_trading.newow_bootstrap import NewowForwardBootstrap
@@ -31,7 +31,7 @@ def setup_source(engine=None, *, strategy="trend", frequency="1d"):
     policy = candidate_input_quality_policy('rb', frequency, candidate_weekly=False)
     product = build_product_identity('rb', strategy, frequency, input_quality_policy=policy)
     identity = StreamIdentity(strategy_code='newow_' + strategy, formula_versions=product.formula_versions,
-        profile_id=product.profile_id, reference_model_version=REFERENCE_MODEL_VERSION,
+        profile_id=product.profile_id, reference_model_version=reference_model_version(product),
         futures_adaptation_version=futures_adaptation_version(frequency, policy), product='rb', frequency=frequency,
         series_kind='actual_dominant', recording_mode='historical_replay', observation_policy_version=None)
     stored = repo.ensure_stream(identity)

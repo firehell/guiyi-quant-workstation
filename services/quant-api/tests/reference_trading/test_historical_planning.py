@@ -10,7 +10,7 @@ from guiyi_quant.reference_trading import StreamIdentity
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
-    InputQualityPolicy, REFERENCE_MODEL_VERSION,
+    InputQualityPolicy, REFERENCE_MODEL_VERSION, reference_model_version,
     futures_adaptation_version,
 )
 from app.reference_trading.planning import _canonical_identity
@@ -41,7 +41,7 @@ def _identity(*, strategy: str = "newow-trend", frequency: str = "1d") -> Stream
         )
         formulas = product.formula_versions
         profile = product.profile_id
-        reference_model = REFERENCE_MODEL_VERSION
+        reference_model = reference_model_version(product)
         futures_version = futures_adaptation_version(frequency, product.input_quality_policy)
     else:
         formulas = ("formula-v1",)
@@ -317,13 +317,13 @@ def test_formal_short_minutes_plan_main_rise_without_activating_streams(frequenc
 
 @pytest.mark.parametrize("frequency", ("5m", "15m", "30m", "60m"))
 def test_independent_fusion_stream_plan_requires_own_model_and_profile(frequency):
-    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity, MODEL_VERSION
     stream = replace(_stream(), identity=build_fusion_stream_identity("rb", frequency))
     reader = Reader()
     plan = HistoricalReferencePlanner(reader, now=lambda:NOW).plan(
         HistoricalReferenceRequest("build",(stream,),_budget()),
     )
-    assert plan.streams[0].request.identity.reference_model_version == "newow_dual_fusion_reference_zero_cost_v2"
+    assert plan.streams[0].request.identity.reference_model_version == MODEL_VERSION
     for identity in (replace(stream.identity, profile_id="wrong"), replace(stream.identity, reference_model_version=REFERENCE_MODEL_VERSION)):
         with pytest.raises(ValueError, match="REFERENCE_IDENTITY_VERSION_UNSUPPORTED"):
             HistoricalReferencePlanner(Reader(), now=lambda:NOW).plan(HistoricalReferenceRequest("build",(replace(stream,identity=identity),),_budget()))
