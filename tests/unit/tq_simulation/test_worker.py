@@ -396,3 +396,22 @@ def test_pending_obligation_never_cold_closes_client(monkeypatch, tmp_path):
     assert closed == [4]  # only final normal close, never maintenance cold-close
     assert read_private(base / 'hold.json')['code'] == 'TQ_MAINTENANCE_OBLIGATIONS_PENDING'
     assert calls == []
+
+
+def test_journal_replay_finishes_before_sdk_connection(monkeypatch, tmp_path):
+    base, _ = host(monkeypatch, tmp_path, restart=True)
+    actual_controller, actual_gateway = worker.Controller, worker.Gateway
+    events = []
+    def replay(*args):
+        assert args[-1] is None
+        result = actual_controller(*args)
+        events.append('replayed')
+        return result
+    def connect(*args):
+        assert events == ['replayed']
+        events.append('connected')
+        return actual_gateway(*args)
+    monkeypatch.setattr(worker, 'Controller', replay)
+    monkeypatch.setattr(worker, 'Gateway', connect)
+    assert worker.run(base / 'config.json') == 0
+    assert events == ['replayed', 'connected']

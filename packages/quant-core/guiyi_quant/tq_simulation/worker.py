@@ -208,17 +208,17 @@ def run(config_path, *, inspect=False):
         maintenance_days = set()
         try:
             helper_environment = dict(os.environ)
+            market = Market(root, root / "services/quant-api/.venv/bin/python", helper_environment)
+            # Full journal replay may be slow; establish no SDK connection until it finishes.
+            controller = Controller(folder, config["account_id"], market.products, None)
             with (
                 open(os.devnull, "w") as sink,
                 contextlib.redirect_stdout(sink),
                 contextlib.redirect_stderr(sink),
             ):
                 gateway = Gateway(credentials)
-            market = Market(root, root / "services/quant-api/.venv/bin/python", helper_environment)
+            controller.gateway = gateway
             market.pump = lambda: gateway.update(0) if gateway is not None else None
-            controller = Controller(
-                folder, config["account_id"], market.products, gateway
-            )
             while True:
                 now = datetime.now(UTC)
                 control = (
