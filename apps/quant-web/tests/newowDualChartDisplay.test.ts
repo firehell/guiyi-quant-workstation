@@ -63,3 +63,12 @@ test('curve/page overlap preserves exact records and excludes stable-id conflict
     }
   }
 })
+
+ test('visible summaries accept equivalent decimal and timezone spellings, not a different instant', () => {
+ const p = point('trend', 100)
+ const trade = { status:'CLOSED', strategy_code:'trend', exit_signal_id:p.callout.id,
+ exit_bar_end:'2026-08-03T15:00:00+08:00', physical_contract:'JM2609', exit_reference_price:'101.00', reference_return_pct:'5' } as NewowReferenceTrade
+ assert.equal(newowDualVisibleStatistics([p],[trade]).average, '+5.0%')
+ assert.equal(newowDualVisibleStatistics([p],[{...trade,exit_bar_end:'2026-08-03T07:00:00.000001Z'}]).samples, 0)
+ assert.equal(newowDualVisibleStatistics([p],[{...trade,exit_reference_price:'101.01'}]).samples, 0)
+ })

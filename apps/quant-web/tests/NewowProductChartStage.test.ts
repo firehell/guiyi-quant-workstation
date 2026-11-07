@@ -653,13 +653,14 @@ test('dual overlay projects both strategies at prices, exposes blue/orange label
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
-    response, strategy: 'trend', comparisonResponse: partner.value, selectedSignalId: null,
+    response, strategy: 'trend', comparisonResponse: partner.value, selectedSignalId: null, showTools: false,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   const root = element('root'); app.mount(root); await nextTick(); await nextTick()
   assert.ok(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'))
+  assert.ok(findNode(root, n => n.props['aria-label'] === '双策略标签密度'))
   const actions = findNode(root, n => n.type === 'button' && textContent(n) === '建仓 / 清仓')!
-  if (actions.props['aria-pressed'] === false) {
+  if (actions && actions.props['aria-pressed'] === false) {
     ;(actions.props.onClick as () => void)(); await nextTick(); await nextTick()
   }
   for (const origin of ['trend', 'oscillation']) {
@@ -835,9 +836,9 @@ function chartResponse(): MutableChartResponse {
   return {
     meta: {
       schema_version: 'newow_product_detail_v4',
-      identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v1', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2'] },
+      identity: { product: 'jm', strategy: 'oscillation', frequency: '60m', series_kind: 'actual_dominant', profile_id: 'newow_product_oscillation_60m_v2', formula_versions: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_trueup_kernel111_v1'] },
       as_of: '2026-08-15T09:00:00Z', read_at: '2026-08-15T09:00:01Z', input_content_sha256: 'a'.repeat(64), data_revision_identity: null,
-      snapshot_token: 'snapshot-a', reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+      snapshot_token: 'snapshot-a', reference_model_version: 'newow_trueup_reference_zero_cost_v1', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart', status: ready(), value: {
       chart_from: '2026-08-15', chart_through: '2026-08-15', page_identity: 'b'.repeat(64), price_unavailable_days: [], bars,
@@ -852,6 +853,7 @@ function chartResponse(): MutableChartResponse {
 function strategyResponse(strategy: 'trend' | 'oscillation' | 'main_rise'): MutableChartResponse {
   const response = chartResponse()
   response.meta.identity.strategy = strategy
+  response.meta.reference_model_version = strategy === 'oscillation' ? 'newow_trueup_reference_zero_cost_v1' : 'newow_marker_reference_zero_cost_v4'
   response.meta.identity.profile_id = `newow_product_${strategy}_60m_v1`
   if (strategy === 'trend') {
     response.meta.identity.formula_versions = ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2']

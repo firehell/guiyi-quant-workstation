@@ -272,7 +272,7 @@ onMounted(async () => {
   if (container.value === null) return
   pageTheme.value=readNewowChartDisplayTheme()
   if(typeof MutationObserver!=='undefined'&&typeof document!=='undefined'){
-    themeObserver=new MutationObserver(()=>{pageTheme.value=readNewowChartDisplayTheme();renderVolume(model.value)})
+    themeObserver=new MutationObserver(()=>{pageTheme.value=readNewowChartDisplayTheme();dualBackground.setDark(pageTheme.value==='dark');renderVolume(model.value)})
     for(const target of [document.documentElement,document.body])if(target)themeObserver.observe(target,{attributes:true,attributeFilter:['data-theme']})
   }
   const theme = resolveChartTheme(container.value)
@@ -294,6 +294,7 @@ onMounted(async () => {
   })
   chart.panes()[0]!.setStretchFactor(5)
   candles.attachPrimitive(band)
+  dualBackground.setDark(pageTheme.value==='dark')
   candles.attachPrimitive(dualBackground)
   candles.attachPrimitive(trendChannel)
   candles.attachPrimitive(publicPattern)
@@ -483,7 +484,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   renderVolume(value)
   if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
   const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')
-  band.setData(showStructure.value ? comparisonActive.value ? trendModel?.bandAreas ?? [] : value.bandAreas : [])
+  band.setData(showStructure.value && !comparisonActive.value ? value.bandAreas : [])
   dualBackground.setData(comparisonActive.value && showStructure.value && comparisonBackground.value
     ? (trendModel?.bandAreas.filter(area => area.color === 'rgba(54, 90, 245, 0.35)').map(area => area.time) ?? []) : [])
   const channelModel = comparisonActive.value ? trackModels.value.find(item => item.identity.strategy === 'oscillation') : value
@@ -899,6 +900,7 @@ defineExpose({ revealSignal, scrollToLatest })
     data-testid="newow-product-chart-stage"
     :data-strategy="strategy"
     :data-comparison-active="comparisonActive"
+    :data-theme="pageTheme"
     :data-frequency="model?.identity.frequency ?? ''"
     :data-selected-signal-id="selectedSignalId ?? ''"
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
@@ -906,6 +908,10 @@ defineExpose({ revealSignal, scrollToLatest })
     <ChartReferenceToolbar :target-price="targetPrice" :absorb-price="absorbPrice" :status="referencePriceStatus">
         <slot name="frequency-controls" />
         <slot name="reference-controls" />
+        <div v-if="comparisonActive" class="newow-product-chart-stage__dual-controls" role="group" aria-label="双策略标签密度">
+          <button type="button" :aria-pressed="detailLabels" @click="detailLabels = true">详</button><button type="button" :aria-pressed="!detailLabels" @click="detailLabels = false">简</button>
+          <details><summary>图层</summary><div class="newow-product-chart-stage__dual-layer-menu"><button type="button" :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button><button type="button" :aria-pressed="oscillationTrack" @click="oscillationTrack = !oscillationTrack">震荡标记</button><button type="button" :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button></div></details>
+        </div>
         <details v-if="showTools" class="newow-product-chart-stage__tools">
           <summary>图表工具</summary>
           <div class="newow-product-chart-stage__tools-body">
@@ -915,8 +921,7 @@ defineExpose({ revealSignal, scrollToLatest })
               <details v-if="showHints && model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details>
             </div>
             <div class="newow-product-chart-stage__controls">
-              <template v-if="comparisonActive"><button type="button" :aria-pressed="detailLabels" @click="detailLabels = true">详</button><button type="button" :aria-pressed="!detailLabels" @click="detailLabels = false">简</button></template>
-              <button v-else type="button" :aria-pressed="!detailLabels" @click="detailLabels = !detailLabels">{{ detailLabels ? '简洁标记' : '详细标记' }}</button>
+              <button v-if="!comparisonActive" type="button" :aria-pressed="!detailLabels" @click="detailLabels = !detailLabels">{{ detailLabels ? '简洁标记' : '详细标记' }}</button>
               <details class="newow-product-chart-stage__layers">
                 <summary>图层</summary>
                 <button type="button" :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button>
@@ -981,7 +986,7 @@ defineExpose({ revealSignal, scrollToLatest })
     <div v-if="comparisonActive" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双策略叠加">
       <svg aria-hidden="true"><line v-for="(item,index) in comparisonSwitches" :key="`switch:${index}`" :x1="item.x" y1="20" :x2="item.x" :y2="actionOverlayHeight" stroke-dasharray="4 3" class="dual-switch-line" /><polyline v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" :points="`${item.x},${item.y} ${item.x},${(item.y + item.lineY) / 2} ${item.lineX},${(item.y + item.lineY) / 2} ${item.lineX},${item.lineY}`" fill="none" /><circle v-for="item in positionedComparison" :key="`anchor:${item.origin}:${item.callout.id}`" :cx="item.x" :cy="item.y" r="2.5" :fill="item.callout.above ? '#34c759' : '#ff3b30'" stroke="none" /></svg>
       <div v-for="(item,index) in comparisonSwitches" :key="index" class="newow-product-chart-stage__dual-switch" :style="{ left: `${item.x}px` }" :title="`${item.from === 'trend' ? '趋势' : '震荡'}切换至${item.to === 'trend' ? '趋势' : '震荡'}，仅主图展示主导策略`"><b :class="item.from">{{ item.from === 'trend' ? '趋' : '震' }}</b><span>⇄</span><b :class="item.to">{{ item.to === 'trend' ? '趋' : '震' }}</b></div>
-      <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
+      <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, unpaired: item.callout.title.includes('无入场'), direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
     <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
     <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
