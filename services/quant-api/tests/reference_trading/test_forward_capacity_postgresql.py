@@ -45,7 +45,7 @@ from guiyi_quant.newow.product_adapters import (
 )
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
-    REFERENCE_MODEL_VERSION as NEWOW_MODEL_VERSION,
+    reference_model_version,
     build_segment_id, futures_adaptation_version,
 )
 from guiyi_quant.reference_trading import RecordingMode, ReferenceState, StreamIdentity
@@ -260,7 +260,7 @@ def _seed_and_capture(repo, factory, product: str, family: str,
         product_identity, state, bar = _newow_state(product, strategy, contract, owner)
         identity = StreamIdentity(
             family, product_identity.formula_versions, product_identity.profile_id,
-            NEWOW_MODEL_VERSION, futures_adaptation_version("60m"), product,
+            reference_model_version(product_identity), futures_adaptation_version("60m"), product,
             "60m", "actual_dominant", RecordingMode.FORWARD_OBSERVATION,
             "completed_live_v1",
         )

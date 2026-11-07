@@ -1832,3 +1832,27 @@ Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading
 `openspec/specs/market-home-overview/spec.md` 的首页投影合同。首页摘要与普通页面参考收益在显式
 构建中复用本域原计算；不保留短期snapshot token，不改变详情独立校验或收益口径。
 旧进程展示缓存及home-card-display-cache入口已退出，不保留兼容reader。
+
+### Requirement: Explicit forward formula transition
+
+A forward oscillator formula change SHALL retire its old oscillator and dependent
+fusion streams together in one fenced transaction and activate distinct current-formula
+streams from verified published historical checkpoints. Old checkpoint/action bytes and
+reference history SHALL remain available under their original identities. Existing OPEN
+references SHALL acquire an appended `OBSERVATION_INTERRUPTED` version without an exit
+action, exit price or return; the control boundary SHALL NOT extend market coverage.
+Old immutable snapshot tokens SHALL still resolve their original temporal version.
+
+The replacement streams SHALL start with flat reference state; historical positions
+SHALL NOT carry forward. Kernel warm-up SHALL remain scoped to the current physical
+contract and calculation segment. A seed without existing READY availability SHALL
+be labelled `FORMULA_WARMING` and may receive completed observations. Only actual
+subsequent READY availability clears this label; no extra strategy gate or fabricated
+warm-up facts are introduced. Unknown commit outcomes require receipt/status readback,
+never a blind second activation. This operation does not change account trades or orders.
+
+Historical reference input policy `through_trading_day_boundaries_v1` SHALL exclude
+rollover and quality-gap events whose trading day exceeds the explicit request
+`through`, or whose effective instant exceeds `as_of`. Later-owner dependency
+metadata is not an observed event in that window. Required kernel warm-up remains
+unchanged; the source manifest binds this event-scope policy.

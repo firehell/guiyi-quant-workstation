@@ -37,7 +37,7 @@ from guiyi_quant.newow.product_adapters import replay_step, seed_replay_state
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency
 from guiyi_quant.newow.product_identity import (
-    REFERENCE_MODEL_VERSION as NEWOW_REFERENCE_MODEL_VERSION,
+    reference_model_version as newow_reference_model_version,
     futures_adaptation_version,
 )
 from guiyi_quant.reference_trading import (
@@ -94,7 +94,7 @@ def _setup(*, recovery_policy="block", engine=None, strategy="trend", frequency=
     observed = bar.bar.bar_end + timedelta(seconds=5)
     identity = StreamIdentity(
         f"newow_{strategy}", case.identity.formula_versions, case.identity.profile_id,
-        NEWOW_REFERENCE_MODEL_VERSION, futures_adaptation_version(frequency, policy), case.identity.product,
+        newow_reference_model_version(case.identity), futures_adaptation_version(frequency, policy), case.identity.product,
         frequency, "actual_dominant", RecordingMode.FORWARD_OBSERVATION,
         "completed_canonical_v1",
     )

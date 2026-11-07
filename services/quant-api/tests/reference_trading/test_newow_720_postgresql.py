@@ -20,7 +20,7 @@ from app.reference_trading.repository import ReferenceRepository
 from app.reference_trading.runtime import ForwardReferenceWorker
 from app.market_data.newow.product_release import candidate_input_quality_policy
 from guiyi_quant.newow.product_adapters import build_product_identity, seed_replay_state
-from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
+from guiyi_quant.newow.product_identity import reference_model_version, futures_adaptation_version
 from guiyi_quant.newow.fusion_reference import FusionReferenceReplayState, build_fusion_stream_identity
 from guiyi_quant.reference_trading import RecordingMode, ReferenceState, StreamIdentity
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
@@ -67,7 +67,7 @@ def test_1440_six_frequency_routes_are_fair_persisted_and_restart_idempotent(iso
                     else:
                         p = build_product_identity(product,strategy,frequency,input_quality_policy=policy)
                         identity = StreamIdentity(f'newow_{strategy}',p.formula_versions,p.profile_id,
-                            REFERENCE_MODEL_VERSION,futures_adaptation_version(frequency,policy),product,
+                            reference_model_version(p),futures_adaptation_version(frequency,policy),product,
                             frequency,'actual_dominant',RecordingMode.FORWARD_OBSERVATION,'completed_observation_v1')
                         state, state_schema = seed_replay_state(), 'newow_product_replay_v1'
                     stored = repo.ensure_stream(identity)

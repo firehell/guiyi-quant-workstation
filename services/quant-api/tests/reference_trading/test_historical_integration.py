@@ -21,7 +21,7 @@ from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
     InputQualityPolicy,
-    REFERENCE_MODEL_VERSION as NEWOW_REFERENCE_MODEL_VERSION,
+    reference_model_version as newow_reference_model_version,
     futures_adaptation_version,
 )
 from guiyi_quant.reference_trading import StreamIdentity
@@ -113,7 +113,7 @@ def _newow_stream(strategy: ProductStrategy, frequency: ProductFrequency) -> Str
         strategy_code=f"newow_{strategy.value}",
         formula_versions=identity.formula_versions,
         profile_id=identity.profile_id,
-        reference_model_version=NEWOW_REFERENCE_MODEL_VERSION,
+        reference_model_version=newow_reference_model_version(identity),
         futures_adaptation_version=futures_adaptation_version(frequency.value, identity.input_quality_policy),
         product="rb",
         frequency=frequency.value,

@@ -912,6 +912,7 @@ class MarketDataHistoricalInputReader:
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
         from app.reference_trading.newow_fusion import FusionHistoricalPayload
+        from guiyi_quant.newow.product_identity import reference_model_version
 
         if (
             shadow.dependency_manifest.get("reader") != "newow_product_reader_prefix_v5"
@@ -924,7 +925,8 @@ class MarketDataHistoricalInputReader:
             oscillator = build_product_identity(request.identity.product,ProductStrategy.OSCILLATION,
                 ProductFrequency(request.identity.frequency),input_quality_policy=policy)
             oscillator_identity = replace(shadow_identity,strategy_code="newow_oscillation",
-                formula_versions=oscillator.formula_versions,profile_id=oscillator.profile_id)
+                formula_versions=oscillator.formula_versions,profile_id=oscillator.profile_id,
+                reference_model_version=reference_model_version(oscillator))
             oscillator_snapshot = self._read_newow(replace(request,identity=oscillator_identity))
             try:
                 if oscillator_snapshot.source_integrity != shadow.source_integrity:
@@ -1148,7 +1150,7 @@ class MarketDataHistoricalInputReader:
             build_product_identity, iter_label_calculation_segments,
         )
         from guiyi_quant.newow.product_contracts import ProductFrequency
-        from guiyi_quant.newow.product_identity import futures_adaptation_version
+        from guiyi_quant.newow.product_identity import futures_adaptation_version, reference_model_version
         from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
         from app.reference_trading.service import NewowHistoricalPayload
 
@@ -1160,12 +1162,16 @@ class MarketDataHistoricalInputReader:
             request.identity.product != identity.product
             or request.identity.formula_versions != identity.formula_versions
             or request.identity.profile_id != identity.profile_id
+            or request.identity.reference_model_version != reference_model_version(identity)
             or request.identity.futures_adaptation_version
             != futures_adaptation_version(frequency.value, identity.input_quality_policy)
         ):
             raise ValueError("REFERENCE_INPUT_IDENTITY_CONFLICT")
         boundaries: list[ReferenceBoundary] = []
         for boundary in read.boundaries:
+            # Later owners are dependency metadata, not events in this request.
+            if boundary.effective_trading_day > request.through or boundary.effective_at > request.as_of:
+                continue
             boundaries.append(ReferenceBoundary(
                 request.identity,
                 BoundaryReason.ROLLOVER,
@@ -1176,6 +1182,8 @@ class MarketDataHistoricalInputReader:
                 boundary.effective_trading_day,
             ))
         for gap in read.data_interruptions:
+            if gap.trading_day > request.through or gap.effective_at > request.as_of:
+                continue
             boundaries.append(ReferenceBoundary(
                 request.identity,
                 BoundaryReason.DATA_INTERRUPTED,
@@ -1326,6 +1334,7 @@ class MarketDataHistoricalInputReader:
             "input_policy_version": read.sources[frequency].input_policy_version,
             "formula_versions": list(request.identity.formula_versions),
             "reference_model_version": request.identity.reference_model_version,
+            "reference_scope_policy_version": "through_trading_day_boundaries_v1",
         }
         if frequency is ProductFrequency.DAILY:
             manifest["reference_boundary_policy_version"] = NEWOW_D1_REFERENCE_BOUNDARY_POLICY

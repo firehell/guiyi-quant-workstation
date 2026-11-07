@@ -77,6 +77,7 @@ _STRATEGY_STATE_TYPES = {
     "newow_reference_replay_v1": NewowReferenceReplayState,
     "htdy_first_seen_v1": HtdyForwardState,
     "subing_forward_v1": SubingForwardState,
+    "reference_formula_retired_v1": ReferenceState,
 }
 
 
@@ -332,6 +333,9 @@ def _validate_strategy_state(
     expected_type = _STRATEGY_STATE_TYPES.get(strategy_schema)
     if expected_type is None or type(state) is not expected_type:
         raise ValueError("strategy checkpoint strategy state type is invalid")
+    if strategy_schema == "reference_formula_retired_v1":
+        if state != reference_state or reference_state.open_trade is not None:
+            raise ValueError("retired formula checkpoint must be terminal")
     if isinstance(state, ProductReplayState) and isinstance(state.oscillation_state, OscillationState):
         # The old field was unused but serialized in trend/main-rise checkpoints.
         # Only that exactly empty state may advance; old oscillator positions
@@ -464,9 +468,16 @@ def adapter_checkpoint_to_json(
     return _canonical(payload)
 
 
-def adapter_checkpoint_from_json(
-    value: str, *, expected_stream: StreamIdentity, expected_strategy_schema: str,
-) -> AdapterCheckpoint[Any]:
+def retirement_reference_from_json(value: str, *, expected_stream: StreamIdentity,
+                                   expected_strategy_schema: str) -> ReferenceState:
+    """Validate original bytes and reference facts without restoring a retired kernel."""
+    payload, reference = _reference_envelope(value, expected_stream=expected_stream,
+                                            expected_strategy_schema=expected_strategy_schema)
+    _validate_progress(payload, reference, expected_stream)
+    return reference
+
+
+def _reference_envelope(value, *, expected_stream, expected_strategy_schema):
     try:
         payload = json.loads(
             value, object_pairs_hook=_pairs, parse_constant=_constant,
@@ -492,6 +503,10 @@ def adapter_checkpoint_from_json(
     reference_state = checkpoint_from_json(_canonical(reference_payload))
     if reference_state.stream != expected_stream:
         raise ValueError("strategy checkpoint reference stream is invalid")
+    return payload, reference_state
+
+
+def _validate_progress(payload, reference_state, expected_stream):
     computed_raw = payload["computed_through"]
     computed = None
     if computed_raw is not None:
@@ -525,11 +540,6 @@ def adapter_checkpoint_from_json(
     if reference_state.computed_through is not None:
         if computed is None or reference_state.computed_through > computed:
             raise ValueError("strategy checkpoint watermarks are inconsistent")
-    strategy_state = _restore(payload["strategy_state"])
-    _validate_strategy_state(strategy_state, expected_strategy_schema, reference_state)
-    embedded_reference_state = getattr(strategy_state, "reference_state", None)
-    if embedded_reference_state is not None and embedded_reference_state != reference_state:
-        raise ValueError("strategy checkpoint embedded reference state is inconsistent")
     if reference_state.open_trade is not None and (
         payload["physical_contract"] != reference_state.open_trade.physical_contract
         or payload["owner_segment_id"] != reference_state.open_trade.owner_segment_id
@@ -537,6 +547,20 @@ def adapter_checkpoint_from_json(
         != reference_state.open_trade.calculation_segment_id
     ):
         raise ValueError("strategy checkpoint open trade owner is inconsistent")
+    return computed
+
+
+def adapter_checkpoint_from_json(
+    value: str, *, expected_stream: StreamIdentity, expected_strategy_schema: str,
+) -> AdapterCheckpoint[Any]:
+    payload, reference_state = _reference_envelope(value, expected_stream=expected_stream,
+                                                  expected_strategy_schema=expected_strategy_schema)
+    computed = _validate_progress(payload, reference_state, expected_stream)
+    strategy_state = _restore(payload["strategy_state"])
+    _validate_strategy_state(strategy_state, expected_strategy_schema, reference_state)
+    embedded_reference_state = getattr(strategy_state, "reference_state", None)
+    if embedded_reference_state is not None and embedded_reference_state != reference_state:
+        raise ValueError("strategy checkpoint embedded reference state is inconsistent")
     return AdapterCheckpoint(
         strategy_state=strategy_state,
         computed_through=computed,
