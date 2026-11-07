@@ -9,9 +9,9 @@ import pytest
 
 import guiyi_quant.newow.product_adapters as adapters
 from guiyi_quant.newow.models import NewowDailyBar
-from guiyi_quant.newow.oscillation_channel import (
+from guiyi_quant.newow.oscillation_trueup import (
     OscillationAction,
-    OscillationSignal,
+    TrueupSignal as OscillationSignal,
     OscillationState,
     OscillationStepResult,
     step_oscillation,

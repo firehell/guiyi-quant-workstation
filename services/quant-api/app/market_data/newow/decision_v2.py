@@ -245,6 +245,7 @@ def build_decision_v2(
     )
     prices = None
     path_current = None
+    snapshot_trading_day = None
     channels = {}
     if anchor:
 
@@ -272,6 +273,7 @@ def build_decision_v2(
             current_bar.bar.close, current_bar, "canonical_completed_close"
         )
         path_current = current
+        snapshot_trading_day = current_bar.bar.trading_day
         previous = next(
             (
                 f.bar
@@ -411,6 +413,8 @@ def build_decision_v2(
                 None,
             ),
         },
+        calendar_context=getattr(read, "path_calendar", None),
+        snapshot_trading_day=snapshot_trading_day,
         strategy=path_strategy,
         fusion_peer=valid_path_context(
             oscillation.get(identity.frequency), identity.frequency

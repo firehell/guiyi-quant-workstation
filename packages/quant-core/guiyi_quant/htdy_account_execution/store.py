@@ -173,6 +173,18 @@ class LocalStore:
             self._conn.close()
 
     def _projection(self):
+        if hasattr(self, "path"):
+            stat = self.path.lstat()
+            identity = (stat.st_dev, stat.st_ino)
+            if self.path.is_symlink() or identity != getattr(self, "_file_identity", identity):
+                raise StoreError("PRIVATE_LOCAL_STORE_REQUIRED")
+            self._file_identity = identity
+        # SQLite data_version detects other connections; total_changes detects ours.
+        generation = (self._conn.execute("PRAGMA data_version").fetchone()[0],
+                      self._conn.total_changes)
+        cached = getattr(self, "_projection_cache", None)
+        if cached is not None and cached[0] == generation:
+            return cached[1:]
         row = self._conn.execute(
             "SELECT sequence,payload FROM projection WHERE id=1"
         ).fetchone()
@@ -194,6 +206,7 @@ class LocalStore:
             and tail != (sequence, codec.digest(state))
         ):
             raise StoreError("PROJECTION_JOURNAL_MISMATCH")
+        self._projection_cache = (generation, sequence, state)
         return sequence, state
 
     def _verify(self):
@@ -373,12 +386,17 @@ class LocalStore:
                 if self._conn.in_transaction:
                     self._conn.execute("ROLLBACK")
                 raise
+            verified_version = self._conn.execute("PRAGMA data_version").fetchone()[0]
             try:
                 self._commit()
             except (sqlite3.Error, OSError):
                 self._uncertain = True
                 self._conn.close()
                 raise StoreError("COMMIT_OUTCOME_UNKNOWN") from None
+            self._projection_cache = (
+                (verified_version, self._conn.total_changes),
+                next_sequence, tx.state,
+            )
             if type(command) in (m.Recover, m.TqKqResumeEmptyV1):
                 self._needs_recovery = (
                     not tx.state.readback_valid or tx.state.phase != "READY"

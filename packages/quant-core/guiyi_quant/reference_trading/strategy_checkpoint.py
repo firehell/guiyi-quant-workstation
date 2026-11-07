@@ -20,6 +20,7 @@ from ..newow.magic11 import Magic11State
 from ..newow.main_rise import MainRiseState
 from ..newow.models import TrendBandState
 from ..newow.oscillation_channel import OscillationState
+from ..newow.oscillation_trueup import TrueupState
 from ..newow.product_adapters import ProductReplayState, _PairingState
 from ..newow.product_contracts import (
     ActionKind as NewowActionKind,
@@ -52,7 +53,7 @@ _DATACLASSES = {
     for cls in (
         EmaState, MacdState, SubingThs15mState, SubingReplayState, SubingReferenceTrade,
         ProductReplayState, _PairingState, TrendBandStateValue, EscapeState,
-        OscillationState, MainRiseState, Magic11State, ProductIdentity, StrategyAction,
+        OscillationState, TrueupState, MainRiseState, Magic11State, ProductIdentity, StrategyAction,
         StrategyHint, NewowReferenceReplayState, NewowReferenceTrade,
         StreamIdentity, ReferenceState, ReferenceTrade, HtdyBarFact, HtdyForwardState,
         SubingForwardState, FusionReferenceReplayState,
@@ -331,6 +332,15 @@ def _validate_strategy_state(
     expected_type = _STRATEGY_STATE_TYPES.get(strategy_schema)
     if expected_type is None or type(state) is not expected_type:
         raise ValueError("strategy checkpoint strategy state type is invalid")
+    if isinstance(state, ProductReplayState) and isinstance(state.oscillation_state, OscillationState):
+        # The old field was unused but serialized in trend/main-rise checkpoints.
+        # Only that exactly empty state may advance; old oscillator positions
+        # cannot be restored under the new trueup formula identity.
+        strategy = reference_state.stream.strategy_code.replace("-", "_")
+        if strategy not in {"newow_trend", "newow_main_rise"} or state.oscillation_state != OscillationState():
+            raise ValueError("strategy checkpoint legacy oscillation state is incompatible")
+        # Preserve the unused field bytes: retained baseline hashes bind the
+        # original serialized checkpoint. The trend/main-rise kernels ignore it.
     if isinstance(state, FusionReferenceReplayState):
         if state.model_version != reference_state.stream.reference_model_version:
             raise ValueError("strategy checkpoint fusion identity is inconsistent")

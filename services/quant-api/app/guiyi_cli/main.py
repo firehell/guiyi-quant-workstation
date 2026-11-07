@@ -212,12 +212,12 @@ def main(
 
     try:
         if args.domain == 'home':
-            from app.market_data.newow.home_projection_composition import build_home_projection
-            result = build_home_projection(output_path=args.output).build(args.products.split(',') if args.products else None)
+            from app.market_data.newow.home_recovery import run_home_build
+            result = run_home_build(output_path=args.output, products=args.products.split(',') if args.products else None)
             counts = {state: sum(item['projection_status'] == state for item in result['items']) for state in ('ready', 'stale', 'failed', 'missing', 'updating')}
             selected = set(args.products.split(',')) if args.products else {item['product'] for item in result['items']}
             selected_ready = sum(item['projection_status'] == 'ready' for item in result['items'] if item['product'] in selected)
-            payload = {'command': 'home.build', 'status': 'passed' if selected_ready == len(selected) and result['overview_status'] == 'ready' else 'partial', 'overview_status': result['overview_status'], 'counts': counts, 'selected_count': len(selected), 'readonly': False}
+            payload = {'command': 'home.build', 'status': 'passed' if selected_ready == len(selected) and result['overview_status'] == 'ready' else 'partial', 'overview_status': result['overview_status'], 'counts': counts, 'selected_count': len(selected), 'readonly': result.get('build_request', {}).get('readonly', False)}
         elif args.domain == "reference":
             if reference_command_runner is None:
                 from app.guiyi_cli.reference_commands import run_reference_command

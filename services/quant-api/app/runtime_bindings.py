@@ -259,14 +259,14 @@ def verify_release(root: Path, tag: str, commit: str) -> None:
 
 # Conservative file classification is frozen in this version. Unknown changes affect all services.
 ALL = SERVICES
-BUSINESS = frozenset({"api", "live", "market-feed", "alert", "reference-worker", "after-market", "weekly-audit", "late-provider-recovery"})
+BUSINESS = frozenset({"api", "live", "market-feed", "alert", "reference-worker", "after-market", "weekly-audit", "late-provider-recovery", "home-projection"})
 
 
 def _owners(path: str) -> frozenset[str]:
     if path.startswith("apps/") or path == "services/quant-api/app/version.py":
         return frozenset({"api", "web"})
     if path.startswith(("packages/quant-core/", "services/quant-api/app/reference_trading/", "services/quant-api/app/strategies/")):
-        return frozenset({"api", "alert", "reference-worker"})
+        return frozenset({"api", "alert", "reference-worker", "home-projection"})
     if path.startswith(("services/quant-api/app/api/", "services/quant-api/app/routers/", "services/quant-api/app/services/")):
         return frozenset({"api"})
     if path.startswith("services/quant-api/app/market_data/"):
@@ -295,7 +295,7 @@ def contract_fingerprints(root: Path) -> dict[str, str]:
                   "services/quant-api/app/market_data/observation_stream.py", "services/quant-api/app/runtime_identity.py", "services/quant-api/app/private_settings.py", "data/universe/"),
         "formula": ("packages/quant-core/", "services/quant-api/app/strategies/"),
         "reference": ("services/quant-api/app/reference_trading/",),
-        "launcher": ("services/quant-api/app/runtime_identity.py", "services/quant-api/app/private_settings.py", "scripts/ops/macos/run-local-service.sh", "scripts/ops/macos/runtime-service-dispatch.sh", "services/quant-api/app/runtime_bindings.py", "services/quant-api/app/runtime_contracts.py", "services/quant-api/app/runtime_entry", "services/quant-api/app/runtime_handover.py", "services/quant-api/app/runtime_deployment.py", "services/quant-api/app/runtime_bootstrap.py", "services/quant-api/app/runtime_scheduled.py")}
+        "launcher": ("services/quant-api/app/runtime_identity.py", "services/quant-api/app/private_settings.py", "scripts/ops/macos/run-local-service.sh", "scripts/ops/macos/runtime-service-dispatch.sh", "services/quant-api/app/runtime_bindings.py", "services/quant-api/app/runtime_contracts.py", "services/quant-api/app/runtime_entry", "services/quant-api/app/runtime_handover.py", "services/quant-api/app/runtime_deployment.py", "services/quant-api/app/runtime_optional_service.py", "services/quant-api/app/runtime_bootstrap.py", "services/quant-api/app/runtime_scheduled.py")}
     result = {}
     for name, paths in prefixes.items():
         selected = {key: value for key, value in files.items() if key.startswith(paths)}
@@ -340,6 +340,10 @@ def build_release_plan(registry: BindingRegistry, *, candidate_root: Path, tag: 
                                 old.generation + 1, old.enabled, candidate_contracts))
     if affected & {"api", "web"}:
         affected.update({"api", "web"} & registry.services.keys())
+    # Optional home publishers move under the stopped-world cohort, which
+    # carries their activation marker and Disabled lifecycle to the new root.
+    if "home-projection" in affected and registry.services["home-projection"].enabled:
+        reasons.append({"service": "home-projection", "code": "COHORT_REQUIRED"})
     # Each sequential handover temporarily mixes old and new services, including
     # services scheduled later in this same plan. v1 requires proven equal contracts.
     for name, old in registry.services.items():

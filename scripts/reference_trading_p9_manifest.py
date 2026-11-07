@@ -23,7 +23,7 @@ from app.market_data.operational_universe import load_active_products, load_oper
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
-    REFERENCE_MODEL_VERSION as NEWOW_MODEL_VERSION, futures_adaptation_version,
+    reference_model_version, futures_adaptation_version,
 )
 from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
 from guiyi_quant.subing_reference import (
@@ -47,7 +47,7 @@ def _newow(product: str, strategy: ProductStrategy, frequency: str, *, forward: 
     )
     return StreamIdentity(
         f"newow_{strategy.value}", identity.formula_versions, identity.profile_id,
-        NEWOW_MODEL_VERSION,
+        reference_model_version(identity),
         futures_adaptation_version(frequency, identity.input_quality_policy), product,
         frequency, "actual_dominant",
         RecordingMode.FORWARD_OBSERVATION if forward else RecordingMode.HISTORICAL_REPLAY,

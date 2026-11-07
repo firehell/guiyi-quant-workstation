@@ -55,6 +55,40 @@ def test_failure_preserves_last_good_and_does_not_mask_other_period(tmp_path):
     assert 'private' not in json.dumps(item)
 
 
+def test_period_failure_logs_stage_and_location_without_exception_details(tmp_path, caplog):
+    service, versions, _ = fixture(tmp_path)
+    service.build()
+    versions['rb:1d'] = 'new'
+    def broken_compute(*_):
+        raise RuntimeError('private credential and database address')
+    service.compute = broken_compute
+    service.build()
+    records = [record for record in caplog.records if 'home_projection_period_failed' in record.message]
+    assert len(records) == 1
+    message = records[0].message
+    assert 'product=rb period=1d stage=compute' in message
+    assert 'code=HOME_PROJECTION_BUILD_FAILED exception_type=RuntimeError' in message
+    assert 'file=test_home_projection.py' in message
+    assert 'function=broken_compute' in message
+    assert 'private' not in message
+    assert str(tmp_path) not in message
+    assert records[0].exc_info is None
+
+
+def test_diagnostic_handler_failure_preserves_product_failure_isolation(tmp_path, monkeypatch):
+    from app.market_data.newow import home_projection
+    service, versions, _ = fixture(tmp_path)
+    service.build()
+    versions['rb:1d'] = 'new'
+    service.compute = lambda *_: (_ for _ in ()).throw(RuntimeError('private'))
+    def broken_handler(*_, **__):
+        raise OSError('private handler details')
+    monkeypatch.setattr(home_projection._LOGGER, 'warning', broken_handler)
+    item = service.build()['items'][0]
+    assert item['projection_status'] == 'failed'
+    assert item['strategies']['trend']['1d']['input_sha256'] == 'd1'
+
+
 def test_source_mutating_during_compute_cannot_publish_as_current(tmp_path):
     service, versions, _ = fixture(tmp_path)
     def compute(product, period):
@@ -244,3 +278,25 @@ def test_publication_reasons_distinguish_versions_from_completed_periods(tmp_pat
     assert item['period_status']['1w'] == 'ready'
     service.versions = lambda: {}
     assert service.read()['items'][0]['period_reason_codes']['1w'] == 'SOURCE_VERSION_UNAVAILABLE'
+
+
+def test_same_version_legacy_failure_requires_actual_failed_period_recompute(tmp_path):
+    service, _, calls = fixture(tmp_path)
+    service.build()
+    data = service.store.load()
+    data['items']['rb']['failures'] = {'1d': 'HOME_PROJECTION_BUILD_FAILED'}
+    service.store.save(data)
+    calls.clear()
+    service.build()
+    assert calls == [('rb', '1d')]
+    assert service.read()['items'][0]['projection_status'] == 'ready'
+
+
+def test_prior_failure_is_not_a_new_source_failure(tmp_path):
+    service, versions, _ = fixture(tmp_path)
+    service.build()
+    versions['rb:1d'] = 'v2'
+    service.compute = lambda *_: (_ for _ in ()).throw(RuntimeError('private'))
+    service.build()
+    versions['rb:1d'] = 'v3'
+    assert service.read()['items'][0]['projection_status'] == 'stale'

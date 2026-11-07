@@ -18,7 +18,7 @@ from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_adapters import build_product_identity, replay_step, seed_replay_state
 from guiyi_quant.newow.product_contracts import ProductBar
-from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
+from guiyi_quant.newow.product_identity import reference_model_version, futures_adaptation_version
 from guiyi_quant.reference_trading import ReferenceState, StreamIdentity
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_to_json
@@ -30,7 +30,7 @@ START = datetime(2026, 10, 14, 1, tzinfo=UTC)
 def fixture(strategy='trend', prices=None):
     product_identity = build_product_identity('rb', strategy, '60m')
     identity = StreamIdentity('newow_' + strategy, product_identity.formula_versions,
-        product_identity.profile_id, REFERENCE_MODEL_VERSION,
+        product_identity.profile_id, reference_model_version(product_identity),
         futures_adaptation_version('60m', product_identity.input_quality_policy),
         'rb', '60m', 'actual_dominant', 'historical_replay', None)
     def bar(index, end, *, contract='RB2701', owner='owner', calculation='calc'):
@@ -106,8 +106,9 @@ def fixture(strategy='trend', prices=None):
     return baseline, snapshot, tuple(inputs), proof, run, product_identity, bar
 
 
-def test_actual_kernel_prefix_and_batched_parity_new_flat_no_baseline_mutation():
-    baseline, _, inputs, _, run, identity, _ = fixture()
+@pytest.mark.parametrize("strategy", ("trend", "oscillation"))
+def test_actual_kernel_prefix_and_batched_parity_new_flat_no_baseline_mutation(strategy):
+    baseline, _, inputs, _, run, identity, _ = fixture(strategy)
     original = adapter_checkpoint_to_json(baseline.checkpoint, strategy_schema=BASE_SCHEMA)
     state = baseline.checkpoint.strategy_state
     for index, item in enumerate(inputs, 1):

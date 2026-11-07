@@ -161,11 +161,9 @@ async function loadChartReferenceStats() {
   }
 }
 // Load exact reference identities for visible chart exits without opening the records panel.
-watch(chartResponse, async (primary) => {
+watch([chartResponse, comparison.response, comparisonEnabled], async ([primary]) => {
   if (!primary?.value) return
-  const window = newowComparisonWindow(primary)
-  if (!window) return
-  await chartStatsPrimary.loadCompleteClosed({ performanceSince: window.from, performanceThrough: window.through })
+  await loadChartReferenceStats()
 }, { immediate: true, flush: 'post' })
 const patternSelection = shallowRef<PatternChoice|null>(null)
 function selectPattern(choice:PatternChoice){patternSelection.value=choice;closeDialog()}

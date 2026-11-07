@@ -13,7 +13,8 @@ import os
 import json
 from pathlib import Path
 
-from app.runtime_bindings import BindingRegistry, SERVICES
+from app.runtime_bindings import BindingRegistry
+from app.runtime_contracts import REQUIRED_SERVICES as SERVICES
 from app.reference_trading.recovery_campaign import AttemptProgress, digest
 
 CONTINUOUS = ("market-feed", "live", "alert", "reference-worker", "api", "web")

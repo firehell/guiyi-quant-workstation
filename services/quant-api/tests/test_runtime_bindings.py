@@ -134,5 +134,5 @@ def test_runtime_consumers_share_exact_service_contract():
     assert runtime_bindings.ALL is runtime_bindings.SERVICES
     assert runtime_bindings.SERVICES == frozenset({
         'api', 'web', 'live', 'market-feed', 'alert', 'reference-worker',
-        'after-market', 'weekly-audit', 'late-provider-recovery', 'log-rotate',
+        'after-market', 'weekly-audit', 'late-provider-recovery', 'log-rotate', 'home-projection',
     })

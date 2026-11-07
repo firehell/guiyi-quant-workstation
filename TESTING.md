@@ -2434,5 +2434,37 @@ PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过�
 原3/48流入口不变，mixed generation/5OPEN、未选流保持、精确inventory与旧revision/capture/checkpoint/tradeID漂移拒绝，
 以及真实旧退休→后继capture/calculation→二次退休的typed proof并集、旧proof篡改拒绝。生产执行仍需新鲜原生source/停止写入围栏和单次attempt，测试不替代恢复读回。
 
+## 焦煤统一环境—需求历史回放
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider scripts/research/test_subing_demand_explanation.py scripts/research/test_subing_unified.py scripts/research/test_subing_recent_structure.py scripts/research/test_subing_demand_policy.py scripts/research/test_subing_demand_observer.py scripts/research/test_subing_demand_account_candidate.py services/quant-api/tests/test_subing_decision_replay_api.py tests/unit/subing_account tests/unit/subing_decision tests/unit/subing_conditions
+pnpm -C apps/quant-web build
+```
+
+真实历史复算入口 `scripts/research/subing_unified_replay.py --contract CONTRACT --since YYYY-MM-DD --through YYYY-MM-DD --output EXPLICIT_NEW_DIRECTORY`；使用现有MDS只读加载与既有JM执行事实，不下载或写行情。只读API需显式 `GUIYI_SUBING_DECISION_RESULTS_ROOT`，目录内index.json逐项登记SHA文件；损坏/缺失失败，不扫描其他研究目录。开发浏览器验收需真实登记四窗口，检查导航、切窗、时间游标、历史分页及游标前成交；fixture不代替真实回放。
+
+## 苏冰开发持续模型
+
+合同与运行入口见[开发模型](docs/SUBING_DEVELOPMENT_MODEL.md)。直接测试：
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_account tests/unit/subing_decision services/quant-api/tests/test_subing_continuous_account.py services/quant-api/tests/test_subing_model_pipeline.py services/quant-api/tests/test_subing_model_api.py services/quant-api/tests/test_subing_model_current_facts.py
+# 显式建立隔离测试数据库，禁止连接生产库
+PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/dev/subing_model_setup.py --test-only
+GUIYI_SUBING_MODEL_PG_TEST=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/test_subing_model_postgresql.py
+```
+
+真实PG测试保留隔离标识的不可变测试事件，不删除生产记录。四个固定历史窗口用既有统一回放入口复算，比较全部结果字段，不能仅比总收益。浏览器须检查持续/历史模式切换、真实14品种状态、初始空仓和未成交、错误恢复及停止/过期状态；自然新Bar、JM意图、Fill分别凭实际日志读回，测试fixture不能替代自然事件。
+
 
 2026-11-05 RS/UR恢复使用独立 `htdy_conflict_recovery_20261105_v1`，仅冻结两路旧revision、capture、checkpoint和activation generation（RS1、UR2），OPEN集合必须为空。复用既有权威MDS来源、完整原件/Inbox及历史retirement证明、真实停驻锁、两路同事务与单次attempt；旧历史不重算，从未来FLAT继续。正常HTDY窗口比较、公式和schema均不变。定向验证 `test_htdy_two_conflict_scope.py`，并回归既有来源、retirement、PostgreSQL和CLI测试。
+
+## 首页摘要恢复（仅隔离输出，不启用 Runtime）
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider services/quant-api/tests/newow/test_home_projection.py services/quant-api/tests/newow/test_home_projection_versions.py services/quant-api/tests/newow/test_home_recovery.py services/quant-api/tests/newow/test_home_recovery_state.py services/quant-api/tests/newow/test_home_recovery_budget_boundaries.py services/quant-api/tests/newow/test_home_recovery_process.py services/quant-api/tests/newow/test_home_recovery_ownership.py services/quant-api/tests/newow/test_product_snapshot_cache.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider services/quant-api/tests/test_runtime_optional_service.py services/quant-api/tests/test_runtime_home_projection.py tests/engineering/test_home_projection_launchd.py
+```
+
+真实输入构建只选择 Canonical 外独立 JSON 目标；默认正式CLI不创建独立写入者。
+故障注入与真实业务结果分开记录；HTTP成功、worker活性、恢复状态和策略预热不能互相替代。

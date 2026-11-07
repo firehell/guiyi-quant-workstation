@@ -740,10 +740,10 @@ test('shared trend explanation context remains valid on oscillation and main-ris
   for (const strategy of ['oscillation', 'main_rise'] as const) {
     const original = explanationWire()
     const formula_versions = strategy === 'oscillation'
-      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
+      ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_trueup_kernel111_v1']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
-    const wire = { ...original, meta: { ...original.meta, identity: {
-      ...original.meta.identity, strategy, profile_id: `newow_product_${strategy}_1d_v1`, formula_versions,
+    const wire = { ...original, meta: { ...original.meta, reference_model_version:strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4', identity: {
+      ...original.meta.identity, strategy, profile_id: `newow_product_${strategy}_1d_${strategy==='oscillation'?'v2':'v1'}`, formula_versions,
     } } }
     const request = { ...expected, strategy, section: 'explanation' as const }
     const explanation = normalizeNewowProductResponse(wire, request)
@@ -842,17 +842,17 @@ export function chartWire(options: { product?: string; strategy?: 'trend' | 'osc
   const strategy = options.strategy ?? 'trend'
   const frequency = options.frequency ?? '1d'
   const formulas = strategy === 'trend' ? FORMULAS : strategy === 'oscillation'
-    ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_hhv_llv10_page_v2']
+    ? ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_trueup_kernel111_v1']
       : ['newow_buy_d456_page_v1', 'newow_escape_d123_page_v2', 'newow_magic11_page_v1', 'newow_main_rise_j_reduce_page_v1', 'newow_main_rise_ma35_ma45_page_v1']
   const close = options.close ?? '101.500'
   const bar = { bar_end: '2026-08-14T07:00:00Z', trading_day: '2026-08-14', open: '100.125', high: '102.000', low: '99.500', close, volume: 10, open_interest: 20, physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', source_identity: 'canonical:jm:JM2601:1d', observation_eligible: true, completed: true }
   return {
     meta: {
       schema_version: 'newow_product_detail_v4',
-      identity: { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_v1`, formula_versions: formulas },
+      identity: { product, strategy, frequency, series_kind: 'actual_dominant', profile_id: `newow_product_${strategy}_${frequency}_${strategy==='oscillation'?'v2':'v1'}`, formula_versions: formulas },
       as_of: AS_OF, read_at: '2026-08-15T07:00:01Z', input_content_sha256: options.hash ?? 'a'.repeat(64),
       data_revision_identity: null, snapshot_token: options.token === undefined ? 'snapshot-a' : options.token,
-      reference_model_version: 'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
+      reference_model_version: strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4', futures_adaptation_version: 'newow_futures_quality_segment_v3',
     },
     section: 'chart' as const,
     chart: {
@@ -1102,7 +1102,7 @@ test('fusion reference validates independent version and parent snapshot', () =>
   const raw = referenceWire()
   const parent = raw.reference.value!
   const fusion = {
-    reference_model_version: 'newow_dual_fusion_reference_zero_cost_v2',
+    reference_model_version: 'newow_dual_fusion_trueup_reference_v1',
     reference_input_sha256: parent.reference_input_sha256,
     reference_cutoff: parent.reference_cutoff,
     performance_since: parent.performance_since,
@@ -1279,8 +1279,8 @@ test('daily and weekly chart reference and auxiliary reads share the strategy de
 test('real hourly comparator accepts the explicit canonical V1 identity and rejects a daily policy',()=>{
  const expected={product:'pp',strategy:'oscillation' as const,frequency:'60m' as const,seriesKind:'actual_dominant' as const,section:'comparator' as const,asOf:hourlyComparator.meta.as_of}
  const current=structuredClone(hourlyComparator)
- current.meta.schema_version='newow_product_detail_v4'; current.meta.reference_model_version='newow_marker_reference_zero_cost_v4'
- current.meta.identity.formula_versions=current.meta.identity.formula_versions.map(v=>v.replace('newow_oscillation_hhv_llv10_page_v1','newow_oscillation_hhv_llv10_page_v2'))
+ current.meta.schema_version='newow_product_detail_v4'; current.meta.reference_model_version='newow_trueup_reference_zero_cost_v1';current.meta.identity.profile_id='newow_product_oscillation_60m_v2';current.comparator.value!.result!.identity.profile_id='newow_product_oscillation_60m_v2'
+ current.meta.identity.formula_versions=current.meta.identity.formula_versions.map(v=>v.replace('newow_oscillation_hhv_llv10_page_v1','newow_oscillation_trueup_kernel111_v1'))
  current.comparator.value!.result!.identity.formula_versions=current.meta.identity.formula_versions
  const normalized=normalizeNewowProductResponse(current,expected)
  assert.equal(normalized.section,'comparator')

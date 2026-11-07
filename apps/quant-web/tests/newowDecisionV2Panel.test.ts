@@ -188,7 +188,7 @@ test('daily weekly path reuses decision snapshot and folds independently with ex
   app.mount(root)
   const payload = output() as any
   const price = (raw: string, frequency: string, category: string) => ({ raw,frequency,source_category:category,bar_end:'2026-09-24T07:00:00Z',physical_contract:'JM2701',segment_id:'owner',calculation_segment_id:frequency+'-calc',source_identity:'source' })
-  payload.value.decision_v2.daily_weekly_path = {version:'guiyi_daily_weekly_path_v3',page_parity:true,executable:false,periods:[],history:{version:'newow_historical_path_v3402_v1',status:'ready',reason:null,holding:true,current:'110',target:'120',cost:'100',buys:[{date:'2026-09-01',price:'100'},{date:'2026-09-15',price:'105'}],sells:[{date:'2026-09-05',price:'120'}],background:[{start:'2026-09-01',end:'2026-09-24',state:'hold'}],eta:{status:'ready',reason:null,base:5,remain:2.5,elapsed:10,samples:2,ratio:0.5,date:'2026-09-24',date_limited:true,overdue:true,unit:'个交易日'},source:{as_of:'2026-09-24T07:00:00Z'}}}
+  payload.value.decision_v2.daily_weekly_path = {version:'guiyi_daily_weekly_path_v3',page_parity:true,executable:false,periods:[],history:{version:'guiyi_futures_historical_path_v1',reference_policy:'ordinary',page_parity:false,status:'ready',reason:null,holding:true,current:'110',target:'120',cost:'100',buys:[{date:'2026-09-01',price:'100'},{date:'2026-09-15',price:'105'}],sells:[{date:'2026-09-05',price:'120'}],background:[{start:'2026-09-01',end:'2026-09-24',state:'hold'}],eta:{status:'ready',reason:null,base:5,remain:2.5,elapsed:10,samples:2,ratio:0.5,date:null,date_status:'unavailable',date_reason:'CALENDAR_PROOF_UNAVAILABLE',date_source:null,date_limited:false,overdue:true,unit:'个交易日'},source:{frequency:'1d',as_of:'2026-09-24T07:00:00Z'}}}
   mock.calls[before].resolve(payload)
   await nextTick(); await nextTick()
   const section = findNode(root,n=>n.props['aria-label']==='历史波段路径：页面参考，不可执行')!
@@ -199,7 +199,7 @@ test('daily weekly path reuses decision snapshot and folds independently with ex
   assert.equal(toggle.props['aria-expanded'],true)
   assert.equal(mock.calls.length,before+1)
   assert.match(nodeText(section),/约 2.50 个交易日/)
-  assert.match(nodeText(section),/日期受历史序列限制/)
+  assert.match(nodeText(section),/仅展示剩余时长，不提供预计日期/)
   assert.ok(findNodes(section,n=>n.type==='line').length>=2)
   assert.equal(findNodes(section,n=>n.type==='polygon').length,1)
   app.unmount()

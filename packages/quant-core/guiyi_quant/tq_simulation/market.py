@@ -43,6 +43,7 @@ class Market:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
+        self.pump = None
         self.buffer = b""
         self.failed = False
         self.products = tuple(self.request({"mode": "hello"})["products"])
@@ -59,15 +60,42 @@ class Market:
         ).encode()
         if len(raw) > 16 * 1024 * 1024:
             raise ValueError("TQ_MARKET_REQUEST_TOO_LARGE")
-        self.process.stdin.write(raw)
-        self.process.stdin.flush()
         end = time.monotonic() + 20
+        deferred = None
+
+        def drive():
+            nonlocal deferred
+            if deferred is None and self.pump is not None:
+                try:
+                    self.pump()
+                except Exception as error:
+                    # Consume this response before surfacing continuity failure.
+                    # Its signals are discarded; the next request cannot see its ID.
+                    deferred = error
+        fd = self.process.stdin.fileno()
+        os.set_blocking(fd, False)
+        sent = 0
+        with selectors.DefaultSelector() as writer:
+            writer.register(fd, selectors.EVENT_WRITE)
+            while sent < len(raw):
+                if time.monotonic() >= end:
+                    self.failed = True
+                    raise ValueError("TQ_MARKET_TIMEOUT")
+                drive()
+                if writer.select(min(0.05, max(0, end - time.monotonic()))):
+                    try:
+                        sent += os.write(fd, raw[sent:sent + 65536])
+                    except BlockingIOError:
+                        pass
         with selectors.DefaultSelector() as selector:
             selector.register(self.process.stdout, selectors.EVENT_READ)
             while b"\n" not in self.buffer:
-                if not selector.select(max(0, end - time.monotonic())):
+                if time.monotonic() >= end:
                     self.failed = True
                     raise ValueError("TQ_MARKET_TIMEOUT")
+                drive()
+                if not selector.select(min(0.05, max(0, end - time.monotonic()))):
+                    continue
                 chunk = os.read(self.process.stdout.fileno(), 65536)
                 if not chunk:
                     self.failed = True
@@ -81,6 +109,8 @@ class Market:
         if result.get("request_id") != request_id:
             self.failed = True
             raise ValueError("TQ_MARKET_RESPONSE_IDENTITY_INVALID")
+        if deferred is not None:
+            raise deferred
         if result.get("status") != "ok":
             raise ValueError("TQ_MARKET_AUTHORITY_UNAVAILABLE")
         return result
@@ -89,7 +119,7 @@ class Market:
         return self.request(
             {
                 "mode": "inspect" if inspect else "poll",
-                "state": codec.checkpoint(state) if state else None,
+                "state": market_state(state) if state else None,
                 "contracts": [
                     {"product": p, "contract": c} for p, c in sorted(set(contracts))
                 ],
@@ -207,3 +237,41 @@ def execution_input(gateway, authority, symbol, side, *, opening, cancelling=Fal
         decimal(q["upper_limit"], positive=True),
     )
     return m.TqKqExecutionInput(instrument, session, quote)
+
+
+def market_state(state):
+    """Private market request v2: bounded by scope, never by account history."""
+    return dict(version="tq_market_state_v2", phase=state.phase,
+                activated_at=codec.encode(state.activated_at),
+                blocked_products=list(state.blocked_products),
+                products=[dict(product=p.product, owner=p.owner, desired=p.desired,
+                               signal_id=bool(p.signal_id), last_bar=codec.encode(p.last_bar))
+                          for p in state.products],
+                positions=[dict(product=p.product, quantity=p.quantity) for p in state.positions])
+
+
+def load_market_state(packet):
+    from types import SimpleNamespace as NS
+    if (type(packet) is not dict or set(packet) != {
+            "version", "phase", "activated_at", "blocked_products", "products", "positions"}
+            or packet["version"] != "tq_market_state_v2"
+            or packet["phase"] not in {"READY", "RECOVERY_REQUIRED", "BLOCKED"}
+            or not 1 <= len(packet["products"]) <= 60):
+        raise ValueError("TQ_MARKET_STATE_INVALID")
+    products = []
+    for p in packet["products"]:
+        if (set(p) != {"product", "owner", "desired", "signal_id", "last_bar"}
+                or type(p["signal_id"]) is not bool or p["desired"] not in (-1, 0, 1)):
+            raise ValueError("TQ_MARKET_STATE_INVALID")
+        products.append(NS(**{**p, "last_bar": codec.decode(p["last_bar"])}))
+    names = {p.product for p in products}
+    if len(names) != len(products) or set(packet["blocked_products"]) - names:
+        raise ValueError("TQ_MARKET_STATE_INVALID")
+    positions = []
+    for p in packet["positions"]:
+        if set(p) != {"product", "quantity"} or p["product"] not in names or p["quantity"] not in (-1, 1):
+            raise ValueError("TQ_MARKET_STATE_INVALID")
+        positions.append(NS(**p))
+    return NS(phase=packet["phase"], activated_at=codec.decode(packet["activated_at"]),
+              blocked_products=tuple(packet["blocked_products"]),
+              products=tuple(products), positions=tuple(positions))

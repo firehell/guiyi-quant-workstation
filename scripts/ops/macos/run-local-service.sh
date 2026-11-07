@@ -152,6 +152,10 @@ case "$SERVICE" in
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable: %s\n' "$PYTHON_BIN" >&2; exit 78; }
     exec "$PYTHON_BIN" -m app.runtime_entry alert
     ;;
+  home-projection)
+    [[ -x "$PYTHON_BIN" ]] || exit 78
+    exec "$PYTHON_BIN" -m app.runtime_entry home-projection
+    ;;
   reference-worker)
     [[ -x "$PYTHON_BIN" ]] || { printf '[run-local-service] runtime python unavailable\n' >&2; exit 78; }
     exec "$PYTHON_BIN" -m app.reference_trading.worker_entry

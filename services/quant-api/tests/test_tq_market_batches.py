@@ -95,7 +95,7 @@ def test_bridge_bounds_signal_and_recovery_work_in_same_request(monkeypatch):
         bridge, "load_operational_products", lambda: tuple(p.lower() for p in products)
     )
     monkeypatch.setattr(bridge, "PortfolioMarket", Market)
-    monkeypatch.setattr(bridge.codec, "load", lambda _: s)
+    monkeypatch.setattr(bridge, "load_market_state", lambda _: s)
     monkeypatch.setattr(
         bridge.codec, "encode", lambda p: p if isinstance(p, str) else p.product
     )

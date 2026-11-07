@@ -53,7 +53,7 @@ def test_revision_cache_requires_exact_mvcc_visibility_and_rechecks_target(monke
     from datetime import UTC, datetime
     monkeypatch.setattr(module, 'build_database_coverage_source', lambda _: SimpleNamespace(latest_complete_day_with_refresh_at=lambda _, **__: (target[0], datetime(2026,10,24,tzinfo=UTC))))
     calls = []
-    monkeypatch.setattr(module, 'catalog_versions', lambda *_: calls.append(1) or {'rb:1d':'data'})
+    monkeypatch.setattr(module, 'catalog_versions', lambda *_, **__: calls.append(1) or {'rb:1d':'data'})
     instant = datetime(2026,10,23,8,tzinfo=UTC)
     first = module.current_versions(('rb',), now=instant)
     assert module.current_versions(('rb',), now=instant) == first and len(calls) == 1
@@ -111,3 +111,177 @@ def test_completed_day_reads_shared_exchange_calendar_once_per_call():
     assert len(calls) == 1
     source.latest_complete_day(('rb', 'ag'))
     assert len(calls) == 2  # No reuse beyond this authority evaluation.
+
+
+def test_source_scope_includes_week_calendar_and_all_history_for_warmup():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    scope = module.home_source_scope(datetime(2026, 11, 6, 18, tzinfo=ZoneInfo('Asia/Shanghai')))
+    assert scope['version'] == 'home_source_identity_v2'
+    assert scope['history_start'] is None
+    assert scope['mapping_through'] == scope['session_effective_from_through'] == '2026-11-06'
+    assert scope['calendar_through'] == '2026-11-08'
+    assert scope['publication_from'] == '2026-06-22'
+
+
+def test_publication_identity_tracks_authority_not_heartbeat_and_1805_boundary():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.market_data.newow.product_release import CANDIDATE_WEEKLY_PRODUCTS
+    product = next(iter(CANDIDATE_WEEKLY_PRODUCTS))
+    zone = ZoneInfo('Asia/Shanghai')
+    before = datetime(2026, 11, 6, 18, 4, tzinfo=zone)
+    after = datetime(2026, 11, 6, 18, 5, tzinfo=zone)
+    status = {'last_run': {'trading_day': '2026-11-05', 'products': [product], 'status': 'passed'}}
+    first = module.publication_selection_identity((product,), before, status)
+    assert first == module.publication_selection_identity((product,), before, {**status, 'heartbeat': 'changed'})
+    assert first != module.publication_selection_identity((product,), after, status)
+    current = {'current_run': {'scheduled_date': '2026-11-06', 'products': [product]}}
+    assert module.publication_selection_identity((product,), after, current) != module.publication_selection_identity((product,), after, {})
+    next_day = datetime(2026, 11, 7, tzinfo=zone)
+    states = dict(module.publication_selection_identity((product,), next_day, current)[product])
+    assert states['2026-11-06'] == 'stale'
+
+
+def test_catalog_future_preparation_stable_but_historical_and_missing_candidates_invalidate(monkeypatch):
+    # Real SQL predicates over SQLite; only PostgreSQL tuple-version hashing is
+    # replaced with whole-row hashing, so inserts/deletes/equal-count edits work.
+    from datetime import datetime, date, time
+    from zoneinfo import ZoneInfo
+    from hashlib import sha256
+    import json
+    from sqlalchemy import create_engine, select, insert, update
+    from sqlalchemy.orm import Session
+    models = (module.Exchange, module.Instrument, module.Contract, module.TradingCalendar,
+              module.TradingSession, module.MainContractMap, module.MarketDataset, module.MarketPartition)
+    engine = create_engine('sqlite://')
+    for model in models:
+        model.__table__.create(engine)
+    def digest(session, table, owner, *, filters=(), joins=None, extra=()):
+        rows = session.execute(select(owner, *extra, *table.c).select_from(joins if joins is not None else table).where(*filters).order_by(table.c.id)).all()
+        grouped = {}
+        for row in rows:
+            grouped.setdefault(tuple(row[:1 + len(extra)]), []).append(tuple(row[1 + len(extra):]))
+        return {key: sha256(json.dumps(value, default=str).encode()).hexdigest() for key, value in grouped.items()}
+    monkeypatch.setattr(module, '_digest_rows', digest)
+    monkeypatch.setattr(module, 'configuration_identity', lambda: 'fixed-config')
+    monkeypatch.setattr(module, '_publication_status', lambda: {})
+    now = datetime(2026, 11, 6, 18, tzinfo=ZoneInfo('Asia/Shanghai'))
+    with Session(engine) as session:
+        session.execute(insert(module.Exchange).values(code='SHFE', name='exchange'))
+        session.execute(insert(module.Instrument).values(symbol='rb', name='rebar', exchange_code='SHFE'))
+        session.execute(insert(module.MainContractMap).values(symbol='rb', trade_date=date(2026, 11, 5), contract_code='rb2701'))
+        session.execute(insert(module.TradingSession).values(exchange_code='SHFE', instrument_symbol='rb', session_name='day', start_time=time(9), end_time=time(15), effective_from=date(2020, 1, 1)))
+        session.execute(insert(module.TradingCalendar).values(exchange_code='SHFE', trade_date=date(2026, 11, 6), is_trading_day=True))
+        def version():
+            return module.catalog_versions(session, ('rb',), now=now)
+        baseline = version()
+        session.execute(insert(module.MainContractMap).values(symbol='rb', trade_date=date(2026, 11, 9), contract_code='rb2705'))
+        session.execute(insert(module.TradingSession).values(exchange_code='SHFE', instrument_symbol='rb', session_name='day', start_time=time(9), end_time=time(15), effective_from=date(2026, 11, 10)))
+        assert version() == baseline
+        for weekend_day in (7, 8):
+            assert module.catalog_versions(session, ('rb',), now=now.replace(day=weekend_day)) == baseline
+        session.execute(update(module.MainContractMap).where(module.MainContractMap.trade_date == date(2026, 11, 5)).values(contract_code='rb2612'))
+        assert version() != baseline
+        baseline = version()
+        session.execute(update(module.TradingSession).where(module.TradingSession.effective_from == date(2020, 1, 1)).values(end_time=time(14)))
+        assert version() != baseline
+        baseline = version()
+        # A newest candidate initially missing its owner must invalidate when
+        # filled, even though a previous snapshot could use Nov5 history.
+        session.execute(insert(module.MainContractMap).values(symbol='rb', trade_date=date(2026, 11, 6), contract_code='rb2701'))
+        assert version() != baseline
+        baseline = version()
+        # Missing physical input becoming available is also a selection
+        # dependency, independent of whether any previously consumed row changed.
+        dataset_id = session.execute(insert(module.MarketDataset).values(kind='contract', symbol='rb', series_or_contract='rb2701', frequency='1d').returning(module.MarketDataset.id)).scalar_one()
+        assert version() != baseline
+        baseline = version()
+        session.execute(insert(module.MarketPartition).values(dataset_id=dataset_id, year=2026, month=11, file_uri='unread.parquet', row_count=1))
+        assert version() != baseline
+        baseline = version()
+        session.execute(update(module.MarketPartition).values(source_quality=[{'status': 'changed'}], source_quality_sha256='a' * 64))
+        assert version() != baseline
+        baseline = version()
+        # Calendar's future Sunday still participates in ISO-week selection.
+        session.execute(insert(module.TradingCalendar).values(exchange_code='SHFE', trade_date=date(2026, 11, 8), is_trading_day=False))
+        assert version() != baseline
+
+
+def test_revision_cache_observes_normalized_publication_without_mvcc_change(monkeypatch):
+    from datetime import datetime, date, timedelta
+    from zoneinfo import ZoneInfo
+    from app.market_data.newow.product_release import CANDIDATE_WEEKLY_PRODUCTS
+    product = next(iter(CANDIDATE_WEEKLY_PRODUCTS))
+    zone = ZoneInfo('Asia/Shanghai')
+    instant = datetime(2026, 11, 6, 18, 4, tzinfo=zone)
+    status = {'last_run': {'trading_day': '2026-11-05', 'products': [product], 'status': 'passed'}}
+    session = SimpleNamespace(scalar=lambda _: 'same-mvcc', get_bind=lambda: SimpleNamespace(url=SimpleNamespace(render_as_string=lambda **_: 'test-db')))
+    monkeypatch.setattr(module, 'SessionLocal', lambda: nullcontext(session))
+    monkeypatch.setattr(module, 'readonly_transaction', lambda *_, **__: nullcontext())
+    monkeypatch.setattr(module, '_VERSION_CACHE', None)
+    monkeypatch.setattr(module, '_publication_status', lambda: status)
+    monkeypatch.setattr(module, 'configuration_identity', lambda: 'config')
+    monkeypatch.setattr(module, 'build_database_coverage_source', lambda _: SimpleNamespace(latest_complete_day_with_refresh_at=lambda _, **__: (date(2026, 11, 6), instant + timedelta(days=1))))
+    calls = []
+    def versions(*_, publication, **__):
+        calls.append(1)
+        return {f'{product}:1w': str(publication)}
+    monkeypatch.setattr(module, 'catalog_versions', versions)
+    first = module.current_versions((product,), now=instant)
+    status['heartbeat'] = 'unrelated'
+    assert module.current_versions((product,), now=instant) == first
+    assert len(calls) == 1
+    after = module.current_versions((product,), now=instant + timedelta(minutes=1))
+    assert after != first and len(calls) == 2
+    status['current_run'] = {'scheduled_date': '2026-11-06', 'products': [product]}
+    assert module.current_versions((product,), now=instant + timedelta(minutes=1)) != after
+    assert len(calls) == 3
+
+
+def test_weekend_empty_scope_expansion_does_not_change_catalog_identity(monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    zone = ZoneInfo('Asia/Shanghai')
+    monkeypatch.setattr(module, 'configuration_identity', lambda: 'fixed-config')
+    monkeypatch.setattr(module, '_publication_status', lambda: {})
+    monkeypatch.setattr(module, '_digest_rows', lambda *_, **__: {})
+    session = SimpleNamespace(execute=lambda _: [SimpleNamespace(symbol='rb', exchange_code='SHFE')])
+    friday = module.catalog_versions(session, ('rb',), now=datetime(2026, 11, 6, 19, tzinfo=zone))
+    for day in (7, 8):
+        assert module.catalog_versions(session, ('rb',), now=datetime(2026, 11, day, 19, tzinfo=zone)) == friday
+
+
+def test_weekend_irrelevant_publication_candidates_do_not_change_identity():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.market_data.newow.product_release import CANDIDATE_WEEKLY_PRODUCTS
+    product = next(iter(CANDIDATE_WEEKLY_PRODUCTS))
+    zone = ZoneInfo('Asia/Shanghai')
+    status = {'last_run': {'trading_day': '2026-11-06', 'products': [product], 'status': 'passed'}}
+    friday = module.publication_selection_identity((product,), datetime(2026, 11, 6, 19, tzinfo=zone), status)
+    for day in (7, 8):
+        assert module.publication_selection_identity((product,), datetime(2026, 11, day, 19, tzinfo=zone), status) == friday
+
+
+def test_weekend_clock_rechecks_catalog_without_invalidating_same_completed_target(monkeypatch):
+    from datetime import datetime, date, timedelta
+    from zoneinfo import ZoneInfo
+    zone = ZoneInfo('Asia/Shanghai')
+    session = SimpleNamespace(scalar=lambda _: 'same-mvcc', get_bind=lambda: SimpleNamespace(url=SimpleNamespace(render_as_string=lambda **_: 'test-db')), execute=lambda _: [SimpleNamespace(symbol='rb', exchange_code='SHFE')])
+    monkeypatch.setattr(module, 'SessionLocal', lambda: nullcontext(session))
+    monkeypatch.setattr(module, 'readonly_transaction', lambda *_, **__: nullcontext())
+    monkeypatch.setattr(module, '_VERSION_CACHE', None)
+    monkeypatch.setattr(module, '_publication_status', lambda: {})
+    monkeypatch.setattr(module, 'configuration_identity', lambda: 'fixed')
+    monkeypatch.setattr(module, '_digest_rows', lambda *_, **__: {})
+    calls = []
+    def target(_, *, now):
+        calls.append(now)
+        return date(2026, 11, 6), now + timedelta(days=1)
+    monkeypatch.setattr(module, 'build_database_coverage_source', lambda _: SimpleNamespace(latest_complete_day_with_refresh_at=target))
+    friday = datetime(2026, 11, 6, 19, tzinfo=zone)
+    first = module.current_versions(('rb',), now=friday)
+    for day in (7, 8):
+        assert module.current_versions(('rb',), now=friday.replace(day=day)) == first
+    assert len(calls) == 3  # Scope/clock still expires memoized authority checks.

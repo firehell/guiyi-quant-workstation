@@ -22,9 +22,9 @@ from app.runtime_bindings import (BindingRegistry, ServiceBinding, contract_fing
     read_bindings, verify_release, write_bindings, authorized_program_arguments)
 from app.runtime_handover import _write, runtime_directory
 
-_CONTINUOUS = ('api', 'web', 'live', 'alert', 'reference-worker')
+_CONTINUOUS = ('api', 'web', 'live', 'alert', 'reference-worker', 'home-projection')
 _MARKERS = {'live': 'market-runtime-enabled', 'alert': 'alert-runtime-enabled',
-            'reference-worker': 'reference-worker-enabled', 'weekly-audit': 'weekly-audit-enabled'}
+            'reference-worker': 'reference-worker-enabled', 'weekly-audit': 'weekly-audit-enabled', 'home-projection': 'home-projection-enabled'}
 _SCHEMA = '20261009_0051'
 
 
@@ -749,7 +749,7 @@ class BootstrapBackend:
 
     def start(self, plan):
         self._assert_rest_still_open()
-        ordered = ('api', 'web', 'live', 'alert', 'reference-worker', 'market-feed',
+        ordered = ('api', 'web', 'live', 'alert', 'reference-worker', 'home-projection', 'market-feed',
                    'after-market', 'late-provider-recovery', 'weekly-audit', 'log-rotate')
         for service in ordered:
             raw = plan['bindings'].get(service)

@@ -12,3 +12,4 @@ def prefix(m,symbol,contract,frequency,through):
     validate_series(rows,product=symbol,contract=contract,frequency=freq,expected=expected)
     if source!=m.contract_source_evidence(symbol=symbol,contract=contract,frequency=freq,before=cutoff):raise ValueError('SOURCE_CHANGED')
     return rows.bars,dict(source=source,hash=payload_hash([asdict(b) for b in rows.bars]))
+

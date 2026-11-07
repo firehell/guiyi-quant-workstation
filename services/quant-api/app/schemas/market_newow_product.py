@@ -25,7 +25,7 @@ EvidenceStatusValue = Literal[
     "OUT_OF_SCOPE",
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
-ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v4"]
+ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v4", "newow_trueup_reference_zero_cost_v1"]
 FuturesAdaptationVersionValue = Literal[
     "newow_futures_quality_segment_v3",
     "newow_futures_daily_quality_segment_v4",
@@ -105,6 +105,7 @@ class ProductActionOut(_Out):
     bar_end: datetime
     trading_day: date
     reference_price: str
+    anchor_price: str | None = None
     physical_contract: str
     segment_id: str
     calculation_segment_id: str
@@ -452,6 +453,14 @@ class PagePerformanceTradeOut(_PageOut):
     buyBarIsLive: bool | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
+class PageOpenReferenceOut(_PageOut):
+    buyDate: str
+    buyPrice: str
+    markDate: str
+    markPrice: str
+    segment_id: str
+
+
 class PagePerformanceResultOut(_PageOut):
     period: ProductFrequencyValue
     drawdown_kind: Literal["maximum_trade_loss", "peak_difference", "mixed_segment"] | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -459,6 +468,7 @@ class PagePerformanceResultOut(_PageOut):
     dates: list[str]
     equity: list[str]
     trades: list[PagePerformanceTradeOut]
+    open_references: list[PageOpenReferenceOut] | None = Field(default=None, exclude_if=lambda value: value is None)
     segment_ids: list[str]
     trading_days: list[str]
 
@@ -472,10 +482,12 @@ class PagePerformanceResultOut(_PageOut):
 
 
 class PagePerformanceOut(_PageOut):
-    version: Literal["newow_page_performance_v3379_v2"]
-    source_version: Literal["3.3.79"]
+    version: Literal["newow_page_performance_v3379_v2", "newow_unified_trueup_page_v1"]
+    source_version: Literal["3.3.79", "3.4.49"]
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    page_parity: Literal[True]
+    page_parity: bool
+    kernel_parity: Literal[True]
+    return_policy: Literal["source_page", "guiyi_unified_trueup"]
     executable: Literal[False]
     strategy: Literal["trend", "oscillation", "main_rise", "fusion"]
     segment_count: int

@@ -30,7 +30,7 @@ from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductBar, ProductFrequency
 from guiyi_quant.newow.product_identity import (
-    REFERENCE_MODEL_VERSION,
+    reference_model_version,
     futures_adaptation_version,
 )
 from guiyi_quant.reference_trading import (
@@ -83,7 +83,7 @@ def _validated_sources(stream, dependencies):
             f"newow_{strategy}",
             product_identity.formula_versions,
             product_identity.profile_id,
-            REFERENCE_MODEL_VERSION,
+            reference_model_version(product_identity),
             futures_adaptation_version(stream.frequency, policy),
             stream.product,
             stream.frequency,
@@ -507,7 +507,7 @@ class SavedForwardFusionSources:
                     f"newow_{strategy}",
                     product.formula_versions,
                     product.profile_id,
-                    REFERENCE_MODEL_VERSION,
+                    reference_model_version(product),
                     identity.futures_adaptation_version,
                     identity.product,
                     identity.frequency,

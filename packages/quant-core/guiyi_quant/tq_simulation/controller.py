@@ -19,6 +19,7 @@ class Controller:
         self.account_id = account_id
         self.products = tuple(products)
         self.gateway = gateway
+        self.clock = lambda: datetime.now(UTC)
         self.journal = Journal(self.root / "dispatch.sqlite", account_id)
         self.store = None
         self.identity = "TQKQ:" + account_id + ":htdy_tqkq_v1"
@@ -316,6 +317,7 @@ class Controller:
         order = effect.order
         self.gateway.assert_continuity()
         with self.store.dispatch_guard() as state:
+            at = self.clock()
             current = next(
                 (o for o in state.orders if o.order_id == order.order_id), None
             )
@@ -404,7 +406,21 @@ class Controller:
             if effect.kind == "CANCEL":
                 self.gateway.cancel(native)
             else:
-                self.gateway.submit(symbol, order, offset, native_claim)
+                checked = getattr(self.gateway, "submit_checked", None)
+                if checked is None:
+                    self.gateway.submit(symbol, order, offset, native_claim)
+                else:
+                    deadline = min(state.readback.valid_until, fact.session.valid_until,
+                                   fact.instrument.valid_until, fact.quote.valid_until,
+                                   fact.session.final_close_at - timedelta(seconds=60)
+                                   if order.offset == "OPEN" else fact.session.final_close_at)
+                    try:
+                        checked(symbol, order, offset, native_claim, deadline)
+                    except ValueError as error:
+                        if str(error) == "TQ_SUBMIT_EXPIRED_NO_SEND":
+                            self.journal.event("local_not_sent", dict(order_id=order.order_id,
+                                native_id=native_claim, reason=str(error)), self.clock())
+                        raise
             # Queued is not sent, accepted or filled; wait_update/remote facts
             # alone can advance those stages. Any thrown/unknown result is held.
             self.journal.event(

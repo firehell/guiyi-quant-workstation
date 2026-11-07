@@ -75,14 +75,19 @@ def test_public_source_breakdown_witness_and_no_trade_mutation():
     events = project_display_events(replay)
     breaks = [e for e in events if e["kind"] == "OSC_BREAKDOWN"]
     assert [e["bar_end"] for e in breaks] == [
-        bars[i].bar.bar_end.isoformat() for i in (10, 14)
+        bars[i].bar.bar_end.isoformat() for i in (10,)
     ]
-    assert [e["observed_close"] for e in breaks] == ["99.994", "79.99"]
+    assert [e["observed_close"] for e in breaks] == ["99.994"]
     assert (replay.frames, replay.actions, replay.hints) == before
     assert len([a for a in replay.actions if a.kind.value == "BUILD"]) == 2
     assert len([a for a in replay.actions if a.kind.value == "CLEAR"]) == 1
     assert breaks[0]["source_build_id"] == replay.actions[0].signal_id
     assert breaks[0]["build_threshold"] == "100"
+    # Trueup delays the old exit, so the next BUILD is now Bar14 at60.
+    assert replay.actions[1].bar_end == bars[13].bar.bar_end
+    assert replay.actions[1].reference_price == Decimal("100")
+    assert replay.actions[1].anchor_price == Decimal("200")
+    assert replay.actions[2].reference_price == Decimal("60")
     assert all(
         e["page_parity"] and not e["executable"] and e["quantity_effect"] == "none"
         for e in events

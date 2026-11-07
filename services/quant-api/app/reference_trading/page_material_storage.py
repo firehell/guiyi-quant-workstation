@@ -11,7 +11,7 @@ import tempfile
 import zlib
 from typing import cast
 
-from guiyi_quant.newow.page_performance import PAGE_PERFORMANCE_VERSION, PAGE_SOURCE_SHA256
+from guiyi_quant.newow.page_performance import page_model_identity
 
 
 MAX_MATERIAL_BYTES = 128 * 1024 * 1024
@@ -111,8 +111,8 @@ def _material_binding(snapshot, request, *, stream_id: str, revision_id: str,
         "request": _request_wire(request),
         "cutoff": snapshot.projection_context.resolved.cutoff.isoformat(),
         "result_trading_day": snapshot.projection_context.resolved.actual_through.isoformat(),
-        "page_version": PAGE_PERFORMANCE_VERSION,
-        "page_source_sha256": PAGE_SOURCE_SHA256,
+        "page_version": page_model_identity(request.identity.formula_versions)[0],
+        "page_source_sha256": page_model_identity(request.identity.formula_versions)[1],
         "input_sha256": input_sha256,
         "source_integrity": snapshot.source_integrity,
         "fusion_source_dependencies": dependencies,
@@ -225,8 +225,8 @@ def validate_page_material(value: object, *, expected_binding: dict[str, object]
             "input_sha256", "source_integrity", "fusion_source_dependencies",
         }
         or binding.get("schema") != "reference_page_material_binding_v1"
-        or binding.get("page_version") != PAGE_PERFORMANCE_VERSION
-        or binding.get("page_source_sha256") != PAGE_SOURCE_SHA256
+        or binding.get("page_version") != expected_binding.get("page_version")
+        or binding.get("page_source_sha256") != expected_binding.get("page_source_sha256")
         or type(binding.get("input_count")) is not int
         or type(binding.get("seq")) is not int or binding["seq"] < 1
         or binding["input_count"] < 1
@@ -299,7 +299,7 @@ def validate_page_material(value: object, *, expected_binding: dict[str, object]
         or envelope.get("input_sha256") != binding.get("input_sha256")
         or envelope.get("source_evidence_sha256") != source_integrity.get("evidence_sha256")
         or not isinstance(envelope.get("material"), dict)
-        or envelope["material"].get("page_version") != PAGE_PERFORMANCE_VERSION):
+        or envelope["material"].get("page_version") != binding.get("page_version")):
         raise ValueError("REFERENCE_PAGE_MATERIAL_INVALID")
     return envelope
 

@@ -19,7 +19,9 @@ export function newowComparisonCompatible(base: Chart | null, partner: Chart | n
     || a.identity.series_kind !== b.identity.series_kind || a.as_of !== b.as_of
     || a.identity.input_quality_policy !== b.identity.input_quality_policy
     || a.futures_adaptation_version !== b.futures_adaptation_version
-    || a.reference_model_version !== b.reference_model_version || a.data_revision_identity !== b.data_revision_identity
+    || a.reference_model_version !== (a.identity.strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4')
+    || b.reference_model_version !== (b.identity.strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4')
+    || a.data_revision_identity !== b.data_revision_identity
     || !base.value.bars.length
     || partner.value.chart_from > base.value.bars[0]!.trading_day || partner.value.chart_through < base.value.bars.at(-1)!.trading_day
     || !sharedChartBarsAgree(base, partner)) return false

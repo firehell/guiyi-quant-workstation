@@ -68,7 +68,7 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
         from guiyi_quant.newow.product_adapters import build_product_identity
         from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
         from guiyi_quant.newow.product_identity import (
-            REFERENCE_MODEL_VERSION,
+            reference_model_version,
             futures_adaptation_version,
         )
 
@@ -86,7 +86,7 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
         return (
             identity.formula_versions == expected.formula_versions
             and identity.profile_id == expected.profile_id
-            and identity.reference_model_version == REFERENCE_MODEL_VERSION
+            and identity.reference_model_version == reference_model_version(expected)
             and identity.futures_adaptation_version
             == futures_adaptation_version(frequency.value, expected.input_quality_policy)
             and identity.observation_policy_version is None

@@ -60,6 +60,8 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.release`，须与原plan同字段及candidate的release身份逐值相等，tag/commit须与candidate及其code身份相等；candidate本身不要求存在root字段，若存在则须相等。原意图/plan/hash及完整闭合条件不变，不修改历史记录来解除引用。
 创建新树、构建、render/preflight、切换和健康读回完成后，逐树核对精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务与进程引用；有用户修改或引用时停止该树清理。
 保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
+当当前运行结果为连续已成功的同代恢复、旧collector无法找到直接普通交接锚时，可显式使用 `runtime_retention closeout-plan --include-latest-recoveries /exact/retired-root`。该入口沿完整binding身份有界追溯唯一成功锚，并保持原v1封存与读取合同；候选、写入前后均由当前干净正式树的原封读取器独立校验，不能用修改后的reader自行宣称兼容。`seal-closed --plan`沿候选绑定的收集政策重新核对，不改原失败记录；仅当后续cleanup-plan零引用才non-force删除源码，删后再次用正式reader核验。公开计划/回执目录仍属原件引用，不随源码清理。
+
 应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。
 
 只维护当前应用实现，不维护旧版兼容矩阵或常驻回滚源码。修复在开发工作区完成、提交并验证后向前发布；现有工具要求的编号/tag由Codex处理，不单开版本管理任务。正式服务绑定受测commit，不移动旧tag或把dirty源码冒充原版本；必要历史源码从Git恢复。
@@ -369,8 +371,9 @@ Newow与SuBing forward共用MDS发布边界：Session完成不等于Canonical已
 
 #### 已关闭且空缓冲的原Feed受限恢复
 
-`python -m app.runtime_feed_session_recovery plan|apply --directory <runtime>/feed-session-recovery-20261103 --plan <directory>/plan.private.json`
-仅处理绑定现役release、代次、PID出生身份与旧/目标交易日的已完成client close但保留retirement失败现场，不是通用重启或版本promotion；参数还须提供`--old-day`、`--day`、`--expected-pid`，目录为全新`<runtime>/feed-session-recovery-<32位hex>`。
+`python -m app.runtime_feed_session_recovery plan|apply --directory <runtime>/feed-session-recovery-<32位唯一hex> --plan <directory>/plan.private.json --old-day YYYY-MM-DD --day YYYY-MM-DD --expected-pid PID`
+绑定当前已验证release/generation、精确PID出生身份与旧/新交易日，仅处理已完成client close但保留retirement失败的现场，不承担版本promotion。目标日须由现有Session resolver证明且metadata完整。
+先通过既有原生停止/对账流程停止Tq worker，保留全部持仓及账本；计划采样保护文件时必须取得既有Tq账户owner锁，apply全程持锁，活跃worker直接拒绝。Tq配置、control、账户库与dispatch库逐字节冻结；不重置基线、补单或清仓。
 控制前像仅接纳同代次cancelled或严格旧代次的drain/cancelled；当前binding、loaded、owner及唯一writer均须一致。旧控制原字节和SHA保存在新私有计划，apply持锁重验后才发唯一当前代次drain，不改旧attempt/state，不取消旧代次请求；同代未决drain、未来代次及漂移仍拒绝。
 控制器自身须为exact annotated release的干净源码。先用只读LLDB/CPython debug_offsets取得双fresh证明：
 固定PID出生和实际代码、同service/provider对象、client close成功、两个listener不存活、raw及pending均0，
@@ -488,3 +491,34 @@ python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
 按 [TQ_SIMULATION](../docs/TQ_SIMULATION.md) 配置、安装、只读预检与启用。独立环境通过 `uv sync --frozen --project services/tq-executor` 构建，launcher 为 `scripts/ops/macos/run-tq-simulation.sh`，唯一 label 为 `com.guiyi.quant-tqkq-simulation`。与标准服务一样，launchd 从 AppSupport 稳定脚本及 HOME 工作目录启动；脚本字节必须与当前 exact-tag 源码相同，环境在脚本内部清理。账户数据位于 AppSupport/tqkq-simulation，凭据位于独立 Keychain 项目，不进入发布树。
 
 清理器检查该 label 的磁盘/现场引用及私有配置；worker 停止时 config 仍固定源码依赖，不能先删树。标准服务切换后再配置同一正式 root、执行新鲜 probe、启用唯一 worker；未通过则保持 observe/暂停。停止不清仓、不清空历史账本。
+
+### 苏冰独立开发模型托管
+
+苏冰仍为开发候选、原run及独立模型账户，非TQKQ账户或标准整组cohort服务。
+owner授权自动更新后，使用稳定主开发树的 `scripts/ops/macos/install-subing-model.py` 安装独立
+`com.guiyi.quant-subing-development-model`；启动前校验原模型代码hash和全事件重放，不从临时聊天树启动。
+每日有限事实采集、闭市Canonical指标恢复、零历史撮合与冲突/持仓保护见
+[苏冰开发持续模型](../docs/SUBING_DEVELOPMENT_MODEL.md#自动准备与持续托管2026-11-06)。
+托管不创建新run、不改策略阶段或`auto_order=false`；`launchctl bootout`停止服务也不清仓、不删除账户或事件。
+
+### 首页策略摘要恢复任务（可选，默认未启用）
+
+`home-projection` / `com.guiyi.quant-home-projection` 只读取 Catalog/Canonical，发布首页派生资产和
+有界工作状态；不下载行情、不发通知、不接触账户。模板存在不代表已安装或启用。
+启用后闲时每60秒检查来源，计算子进程120秒硬截止、独占工作锁和可恢复预算详见
+[首页合同](../openspec/specs/market-home-overview/spec.md)。owner活性与摘要业务成功分别核验。
+
+已有 service-bindings 的主机使用原生增量计划，精确继承当前 API 的 approved root/tag/commit/contracts：
+`--plan-optional-service --service home-projection` 默认仅登记 disabled；只有明确的 `--enable` 才计划启动。
+将计划保存在私有文件后，使用 `--apply-optional-service-plan --plan /absolute/plan.json`。
+两项均由 `scripts/ops/macos/install-local-services.sh` 转发；计划15分钟有效，CAS/磁盘前像/loaded及
+owner读回不匹配就停止。不能通过手写registry、复制marker或额外bootstrap绕过计划。
+
+prepared阶段且尚未请求启动的中断可由 `--rollback-optional-service-plan --plan /absolute/plan.json`
+原生恢复。starting/outcome_unknown保留原件和drain，不重复apply、不直接回滚或重启。
+旧registry缺少该可选项仍可发布；普通release不自动添加/启用。已启用后的升级走cohort，单服务
+selective发布明确要求 `COHORT_REQUIRED`，避免候选Disabled/marker不完整的切换。
+
+首次启用前必须先发布包含该模块的正式版本；仅develop提交不能给旧正式树安装新任务。
+正式默认 `guiyi home build` 只读回已启用所有者状态，独立开发构建请显式选择Canonical外JSON输出。
+停用不删除 `.derived/newow-home.json` 或 `.work.json`，失败/中断与历史截止仍需如实展示。

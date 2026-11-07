@@ -30,9 +30,12 @@ class ExperimentKind(StrEnum):
     TEST2 = "osc-test2"
     TEST3 = "osc-test3"
     TEST4 = "osc-test4"
+    TEST5 = "osc-test5"
 
     @property
     def formula_version(self) -> str:
+        if self is ExperimentKind.TEST5:
+            return "newow_oscillation_trueup_kernel111_v1"
         return f"newow_{self.value.replace('-', '_')}_page_v3379_v1"
 
 
@@ -168,6 +171,8 @@ def step_experiment(
     path: str = "markers",
 ) -> ExperimentStepResult:
     kind = ExperimentKind(kind)
+    if kind is ExperimentKind.TEST5:
+        raise ValueError("NEWOW_TEST5_REQUIRES_TRUEUP_PRODUCT")
     _validate_state(state)
     if path not in ("markers", "ordinary"):
         raise ValueError("NEWOW_EXPERIMENT_PATH_INVALID")
@@ -323,6 +328,8 @@ def calculate_experiment_series(
     *,
     check_cancelled: Callable[[], None] | None = None,
 ) -> tuple[ExperimentStepResult, ...]:
+    if ExperimentKind(kind) is ExperimentKind.TEST5:
+        raise ValueError("NEWOW_TEST5_REQUIRES_TRUEUP_PRODUCT")
     state = ExperimentState()
     result = []
     for index, bar in enumerate(bars):
@@ -343,6 +350,8 @@ def _reference(
     terminal_eligible: bool = True,
     check_cancelled: Callable[[], None] | None = None,
 ) -> dict[str, object] | None:
+    if kind is ExperimentKind.TEST5:
+        raise ValueError("NEWOW_TEST5_REQUIRES_TRUEUP_PRODUCT")
     if check_cancelled is not None:
         check_cancelled()
     if len(bars) < 11:

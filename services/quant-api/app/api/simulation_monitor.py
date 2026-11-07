@@ -4,10 +4,11 @@ from datetime import datetime, UTC, date, timedelta
 import base64
 import copy
 import json
+import re
 from fastapi import APIRouter, HTTPException, Query, Request
 from guiyi_quant.tq_simulation.runtime import read_private, directory
 from guiyi_quant.tq_simulation.monitor import VERSION, blank
-from guiyi_quant.tq_simulation.journal import digest
+from guiyi_quant.tq_simulation.journal import digest, read_equity_history
 
 router = APIRouter(prefix="/api/simulation/monitor", tags=["simulation-monitor"])
 
@@ -52,7 +53,21 @@ def query_keys(request, allowed):
 @router.get("/overview")
 def overview(request: Request):
     query_keys(request, ())
-    return snapshot()["overview"]
+    view = snapshot()["overview"]
+    view["curve_history_status"] = "complete"
+    if view.get("account") and view.get("curve"):
+        try:
+            account = view["account"]["key"]
+            if not re.fullmatch(r"[0-9a-f]{64}", account):
+                raise ValueError("TQ_ACCOUNT_ID_INVALID")
+            view["curve"] = read_equity_history(
+                directory() / "accounts" / account / "dispatch.sqlite", account, view["curve"][-1]
+            )
+        except Exception:
+            # Preserve account monitoring while making missing history explicit.
+            view["curve"] = []
+            view["curve_history_status"] = "unavailable"
+    return view
 
 
 @router.get("/records")

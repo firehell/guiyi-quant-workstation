@@ -723,7 +723,7 @@ def newow_strategy_detail(
     include_fusion: bool = Query(False),
     fusion_before: str | None = Query(None, min_length=1, max_length=2048),
     decision_v2: bool = Query(False),
-    path_strategy: Literal["trend","oscillation","main_rise","fusion","osc-test","osc-test2","osc-test3","osc-test4"] | None = Query(None),
+    path_strategy: Literal["trend","oscillation","main_rise","fusion","osc-test","osc-test2","osc-test3","osc-test4","osc-test5"] | None = Query(None),
     resolve_current: bool = Query(False),
     session: Session = Depends(get_db),
 ) -> NewowProductResponse:
@@ -842,7 +842,7 @@ def newow_experiments(
     request: Request,
     product: str = Query(...),
     frequency: Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"] = Query(...),
-    kind: Literal["osc-test", "osc-test2", "osc-test3", "osc-test4"] = Query(...),
+    kind: Literal["osc-test", "osc-test2", "osc-test3", "osc-test4", "osc-test5"] = Query(...),
     as_of: datetime | None = Query(None),
     from_: date | None = Query(None, alias="from"),
     through: date | None = Query(None),

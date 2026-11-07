@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.read_timings import timed
 
 from collections import OrderedDict
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, fields, is_dataclass
 from secrets import token_urlsafe
 from threading import RLock
@@ -35,8 +35,14 @@ class SnapshotCache:
         ttl_seconds: float = 300,
         enabled: bool = True,
         now: Callable[[], float] = monotonic,
+        sizing_clock: Callable[[], float] = monotonic,
+        max_sizing_seconds: float = 2.0,
+        max_sizing_nodes: int = 1_000_000,
     ) -> None:
-        if min(max_entries, max_bytes, max_entry_bytes) <= 0 or ttl_seconds <= 0:
+        if (
+            min(max_entries, max_bytes, max_entry_bytes, max_sizing_nodes) <= 0
+            or ttl_seconds <= 0 or max_sizing_seconds <= 0
+        ):
             raise ValueError("NEWOW_CACHE_INVALID_BUDGET")
         self._max_entries = max_entries
         self._max_bytes = max_bytes
@@ -44,6 +50,9 @@ class SnapshotCache:
         self._ttl = ttl_seconds
         self._enabled = enabled
         self._now = now
+        self._sizing_clock = sizing_clock
+        self._max_sizing_seconds = max_sizing_seconds
+        self._max_sizing_nodes = max_sizing_nodes
         self._entries: OrderedDict[str, _Entry] = OrderedDict()
         self._tokens: dict[str, str] = {}
         self._bytes = 0
@@ -125,9 +134,17 @@ class SnapshotCache:
             )
             # Reserve the final counter integer as well as the complete payload.
             # The zero placeholder can share identity with a value in the graph.
-            candidate.retained_bytes = _retained_size(candidate) + sys.getsizeof(
-                max(self._max_entry_bytes, self._max_bytes)
+            counter_bytes = sys.getsizeof(max(self._max_entry_bytes, self._max_bytes))
+            measured = _retained_size(
+                candidate,
+                max_bytes=min(self._max_entry_bytes, self._max_bytes) - counter_bytes,
+                max_nodes=self._max_sizing_nodes,
+                max_seconds=self._max_sizing_seconds,
+                clock=self._sizing_clock,
             )
+            if measured is None:
+                return None
+            candidate.retained_bytes = measured + counter_bytes
             single_entries = OrderedDict([(fact_key, candidate)])
             single_tokens = {candidate.token: fact_key}
             if self._retained_bytes(single_entries, single_tokens) > min(
@@ -255,27 +272,62 @@ class SnapshotCache:
         return bool(shared_bars) and all(left[key] == right[key] for key in shared)
 
 
-def _retained_size(value: object, seen: set[int] | None = None) -> int:
-    """Conservative size of the retained graph, counting shared objects once."""
-    if seen is None:
-        seen = set()
-    identity = id(value)
-    if identity in seen:
-        return 0
-    seen.add(identity)
-    size = sys.getsizeof(value)
+def _retained_children(value: object) -> Iterator[object]:
+    # Yield lazily: a wide graph must not allocate a second full child list
+    # before its node/byte/time budgets can be checked.
     if is_dataclass(value) and not isinstance(value, type):
         attributes = getattr(value, "__dict__", None)
         if attributes is not None:
-            return size + _retained_size(attributes, seen)
-        return size + sum(
-            _retained_size(getattr(value, field.name), seen) for field in fields(value)
-        )
-    if isinstance(value, Mapping):
-        return size + sum(
-            _retained_size(key, seen) + _retained_size(item, seen)
-            for key, item in value.items()
-        )
-    if isinstance(value, (tuple, list, set, frozenset)):
-        return size + sum(_retained_size(item, seen) for item in value)
-    return size
+            yield attributes
+        else:
+            for field in fields(value):
+                yield getattr(value, field.name)
+    elif isinstance(value, Mapping):
+        for key, item in value.items():
+            yield key
+            yield item
+    elif isinstance(value, (tuple, list, set, frozenset)):
+        yield from value
+
+
+def _retained_size(
+    value: object,
+    seen: set[int] | None = None,
+    *,
+    max_bytes: int = 32 * 1024 * 1024,
+    max_nodes: int = 1_000_000,
+    max_seconds: float = 2.0,
+    clock: Callable[[], float] = monotonic,
+) -> int | None:
+    """Size a graph without recursion; None declines admission on any budget.
+
+    Shared objects contribute bytes once. Every visited reference consumes a
+    node allowance, including duplicates, so sharing cannot bypass the work cap.
+    Iterator frames keep traversal storage proportional to depth, not width.
+    """
+    if seen is None:
+        seen = set()
+    deadline = clock() + max_seconds
+    stack = [iter((value,))]
+    size = 0
+    visited = 0
+    while stack:
+        if clock() >= deadline:
+            return None
+        try:
+            item = next(stack[-1])
+        except StopIteration:
+            stack.pop()
+            continue
+        visited += 1
+        if visited > max_nodes:
+            return None
+        identity = id(item)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        size += sys.getsizeof(item)
+        if size > max_bytes:
+            return None
+        stack.append(_retained_children(item))
+    return size if clock() < deadline else None

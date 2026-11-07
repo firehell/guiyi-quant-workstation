@@ -1477,6 +1477,8 @@ semantics, page-parity and non-executable boundaries SHALL remain unchanged.
 
 ### Requirement: Independent v3.3.79 page performance projection
 
+适用范围：本节 `newow_page_performance_v3379_v2` 的 page_parity、末根估值和理论峰值规则仅约束该旧模型。当前普通震荡及融合使用 owner 已确认的统一 trueup：`newow_unified_trueup_page_v1`，`page_parity=false / kernel_parity=true / executable=false`；普通消费同源动作并保留末根 OPEN，理论峰值包含退出根 High。当前身份及细则见牛哇手册「2026-11-04 当前实现：trueup默认化与测试5闭环」。不得用本节旧规则覆盖当前统一口径。
+
 P0 的 active 产品 envelope SHALL 为 `newow_product_detail_v4`，ReferenceTrade model 为
 `newow_marker_reference_zero_cost_v4`，趋势主动作政策为 `newow_trend_marker_initial_clear_v2`，
 profile 为 `newow_trend_d1_page_v4`。这些身份 SHALL 进入缓存、资产、快照和分页身份；旧响应与 token 不得跨版本复用。

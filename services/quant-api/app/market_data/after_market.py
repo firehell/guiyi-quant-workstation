@@ -939,8 +939,8 @@ def build_after_market_updater(
     )
 
     def refresh_home_strategy_projection():
-        from app.market_data.newow.home_projection_composition import build_home_projection
-        return build_home_projection().build()
+        from app.market_data.newow.home_recovery import request_home_refresh
+        return request_home_refresh()
 
     notification_transport: NotificationTransport | None = None
     if failure_notification:

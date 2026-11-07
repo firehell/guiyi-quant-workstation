@@ -1,3 +1,5 @@
+import { previewInstant } from './candidatePreviewInstant.ts'
+import { comparePositiveDecimalText } from './marketDisplay.ts'
 import type { NewowProductChartModel } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
 import type { NewowReferenceTrade } from '../types/newowProduct.ts'
 import { layoutNiuwaReferenceCallouts, type ProjectedCallout } from './referenceCalloutLayout.ts'
@@ -72,8 +74,8 @@ export function newowDualVisibleStatistics(points: readonly DualPoint[], trades:
   const returns = points.flatMap(p => {
     if (!p.callout.above) return []
     const matches = trades.filter(t => t.status === 'CLOSED' && t.strategy_code === p.origin
-      && t.exit_signal_id === p.callout.id && t.exit_bar_end === p.callout.time
-      && t.physical_contract === p.callout.physicalContract && t.exit_reference_price === p.callout.price)
+      && t.exit_signal_id === p.callout.id && previewInstant(t.exit_bar_end ?? '') === previewInstant(p.callout.time) && previewInstant(p.callout.time) !== null
+      && t.physical_contract === p.callout.physicalContract && comparePositiveDecimalText(t.exit_reference_price, p.callout.price) === 0)
     const value = matches.length === 1 ? matches[0]!.reference_return_pct : null
     return value != null && /^-?\d+(\.\d+)?$/.test(value) ? [value] : []
   })

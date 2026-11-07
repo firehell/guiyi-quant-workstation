@@ -20,7 +20,8 @@ from .main_rise import (
     step_main_rise,
 )
 from .models import NewowMainMarker, TrendBandState
-from .oscillation_channel import (
+from .oscillation_channel import OscillationState as LegacyOscillationState
+from .oscillation_trueup import (
     CHANNEL_FORMULA_VERSION,
     OSCILLATION_FORMULA_VERSION,
     OscillationState,
@@ -104,7 +105,7 @@ class ProductReplayState:
     pairing: _PairingState = field(default_factory=_PairingState)
     trend_state: TrendBandStateValue = field(default_factory=initial_trend_band_state)
     escape_state: EscapeState = field(default_factory=initial_escape_state)
-    oscillation_state: OscillationState = field(default_factory=OscillationState)
+    oscillation_state: OscillationState | LegacyOscillationState = field(default_factory=OscillationState)
     main_rise_state: MainRiseState = field(default_factory=initial_main_rise_state)
     input_progress: dict[str, tuple[datetime, str]] = field(default_factory=dict)
 
@@ -495,7 +496,7 @@ def _oscillation_actions(
             signal.price,
             sequence,
         )
-        actions.append(_pair_action(pairing, action))
+        actions.append(_pair_action(pairing, replace(action, anchor_price=signal.reference_price)))
     return tuple(actions)
 
 
@@ -559,6 +560,8 @@ def _oscillation_frame(
             ("close_position", channel.close_position),
         )
     )
+    values += (("pending_level", result.state.pending_level),
+               ("true_up", Decimal(int(result.state.pos_true_up))))
     main_state = (
         MainState.BUILD
         if actions

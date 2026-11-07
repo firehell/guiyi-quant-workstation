@@ -15,6 +15,7 @@ SERVICE_LABELS = {
     "live_market": "live", "after_market": "after-market", "alert": "alert",
     "weekly_audit": "weekly-audit", "late_provider_recovery": "late-provider-recovery",
     "reference_worker": "reference-worker",
+    "home-projection": "home-projection",
 }
 
 
@@ -62,7 +63,7 @@ def deployment_identity_health(*, root: Path, commit: str, home: Path | None = N
                 marker = {
                     "live": "market-runtime-enabled", "after-market": "market-runtime-enabled",
                     "late-provider-recovery": "market-runtime-enabled", "alert": "alert-runtime-enabled",
-                    "weekly-audit": "weekly-audit-enabled", "reference-worker": "reference-worker-enabled",
+                    "weekly-audit": "weekly-audit-enabled", "reference-worker": "reference-worker-enabled", "home-projection": "home-projection-enabled",
                 }[service]
                 output = reader(label, root=root)
                 if output is not None:

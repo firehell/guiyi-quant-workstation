@@ -13,6 +13,13 @@ from app.runtime_handover import _write
 @pytest.fixture
 def recovery_host(tmp_path, monkeypatch):
     import app.runtime_bootstrap as module
+    # Calendar safety must not depend on whether pytest runs near an hour boundary.
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, 9, 12, 0, tzinfo=tz)
+    monkeypatch.setattr(module, 'datetime', FrozenDatetime)
+    monkeypatch.setattr(__name__ + '.datetime', FrozenDatetime)
     directory = tmp_path / 'runtime'
     directory.mkdir(mode=0o700)
     home = tmp_path / 'home'

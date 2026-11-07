@@ -255,6 +255,7 @@ def _product_response(
                     "bar_end": item.bar_end,
                     "trading_day": item.trading_day,
                     "reference_price": _decimal(item.reference_price),
+                    "anchor_price": _decimal(item.anchor_price),
                     "physical_contract": item.physical_contract,
                     "segment_id": item.segment_id,
                     "calculation_segment_id": item.calculation_segment_id,

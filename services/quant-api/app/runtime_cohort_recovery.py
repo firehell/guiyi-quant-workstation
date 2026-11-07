@@ -32,7 +32,7 @@ from app.reference_trading.recovery_campaign import digest
 from contextlib import ExitStack, contextmanager
 import fcntl
 from time import sleep
-from app.runtime_cohort import CONTINUOUS, CALENDARS
+from app.runtime_cohort import continuous_services, OPTIONAL_CONTINUOUS, CONTINUOUS, CALENDARS
 from app.runtime_cohort_host import CohortHost, IDENTITY_NAMES
 from app.runtime_handover import (
     _read,
@@ -108,7 +108,7 @@ def _safe_verification_diagnostic(host):
             "receiving_pair_expired",
             "receiving_cycle_stale",
         },
-        "service": frozenset(CONTINUOUS),
+        "service": frozenset((*CONTINUOUS, *OPTIONAL_CONTINUOUS)),
         "report_stage": {
             "cycle",
             "receiving_cycle",
@@ -1475,7 +1475,10 @@ def valid_original_verified_feed_state(plan, state):
             and set(effects["install"].get("installed", ()))
             == set(plan["new"]["services"])
             and set(effects["consumers_ready"])
-            == set(CONTINUOUS) - {"market-feed"}
+            == (set(CONTINUOUS) - {"market-feed"}) | {
+                name for name in OPTIONAL_CONTINUOUS
+                if plan["new"]["services"].get(name, {}).get("enabled") is True
+            }
             and set(effects["drain"]) == {
                 "feed_close", "owners", "progress",
                 "reference_receiving_handover",
@@ -2452,6 +2455,7 @@ class ForwardRecoveryHost(CohortHost):
             "alert-runtime-enabled",
             "reference-worker-enabled",
             "weekly-audit-enabled",
+            "home-projection-enabled",
         }
 
         def local_keys(reg):
@@ -2478,8 +2482,11 @@ class ForwardRecoveryHost(CohortHost):
             "alert": "alert-runtime-enabled",
             "reference-worker": "reference-worker-enabled",
             "weekly-audit": "weekly-audit-enabled",
+            "home-projection": "home-projection-enabled",
         }
         for service, name in markers.items():
+            if service not in new.services:
+                continue
             binding = new.services[service]
             path = Path(binding.root) / ".run" / name
             if binding.enabled:
@@ -2565,7 +2572,7 @@ class ForwardRecoveryHost(CohortHost):
             self.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
         )
         owners = state["effects"]["drain"]["owners"]
-        require(set(owners) == set(CONTINUOUS), "COHORT_FORWARD_OLD_EXIT_UNPROVEN")
+        require(set(owners) == set(continuous_services(registry(source["old"]))), "COHORT_FORWARD_OLD_EXIT_UNPROVEN")
         for owner in owners.values():
             pid = owner.get("pid")
             require(
@@ -2584,7 +2591,7 @@ class ForwardRecoveryHost(CohortHost):
     def _controls(self, source):
         new = registry(source["new"])
         result = {}
-        for name in CONTINUOUS:
+        for name in continuous_services(new):
             value = _read(self.directory / (name + ".handover.json"))
             require(
                 isinstance(value, dict)
@@ -2613,7 +2620,7 @@ class ForwardRecoveryHost(CohortHost):
     ):
         new = registry(source["new"])
         result = {}
-        for name in CONTINUOUS:
+        for name in continuous_services(new):
             binding = new.services[name]
             if name == "market-feed" and not feed_parked:
                 require(
@@ -3722,7 +3729,7 @@ class ForwardRecoveryHost(CohortHost):
     def _resume_owner_guards(self):
         with ExitStack() as stack:
             descriptors = []
-            for name in CONTINUOUS:
+            for name in continuous_services(self.bindings()):
                 path = self.directory / (name + ".owner.lock")
                 fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
                 stack.callback(os.close, fd)
@@ -3796,7 +3803,7 @@ class ForwardRecoveryHost(CohortHost):
                 self.recovery_window()
                 check_budget()
                 lock_identities = held()
-            for name in ("live", "alert", "reference-worker", "api", "web"):
+            for name in (name for name in continuous_services(registry(source["new"])) if name != "market-feed"):
                 path = self.directory / (name + ".owner.lock")
                 disk = path.lstat()
                 require(
@@ -3872,9 +3879,9 @@ class ForwardRecoveryHost(CohortHost):
         by_stage = {}
         previous = None
         names = (
-            CONTINUOUS
+            continuous_services(new)
             if feed
-            else tuple(name for name in CONTINUOUS if name != "market-feed")
+            else tuple(name for name in continuous_services(new) if name != "market-feed")
         )
 
         def ready_states():
@@ -4124,7 +4131,7 @@ class ForwardRecoveryHost(CohortHost):
                 .get(IDENTITY_NAMES.get(name, name), {})
                 .get("status")
                 == "matched"
-                for name in CONTINUOUS
+                for name in continuous_services(new)
             ),
             "COHORT_FORWARD_IDENTITY_UNPROVEN",
         )

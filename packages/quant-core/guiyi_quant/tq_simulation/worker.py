@@ -67,7 +67,15 @@ def verify_config(config):
 def should_tick(state, now, *, stopping=False, opening_allowed=True, facts=None):
     pending = [o for o in state.orders if not o.reconciled]
     if not pending:
-        return bool(execution_candidates(state, opening_allowed=True))
+        if any(p.rolling and not any(h.product == p.product for h in state.positions)
+               for p in state.products):
+            return True
+        candidates = execution_candidates(state, opening_allowed=opening_allowed)
+        return any(
+            f["contract"] == c.contract
+            and (lambda session: session.at <= now < session.valid_until and session.can_trade)(codec.decode(f["session"]))
+            for c in candidates for f in (facts or {}).values()
+        )
     return any(
         o.accepted_at is not None
         and (
@@ -207,6 +215,7 @@ def run(config_path, *, inspect=False):
             ):
                 gateway = Gateway(credentials)
             market = Market(root, root / "services/quant-api/.venv/bin/python", helper_environment)
+            market.pump = lambda: gateway.update(0) if gateway is not None else None
             controller = Controller(
                 folder, config["account_id"], market.products, gateway
             )
@@ -277,7 +286,7 @@ def run(config_path, *, inspect=False):
                         )
                     )
                     if state and (
-                        native != last_native or due or gateway.reconnection_required
+                        native != last_native or (due and any(not o.reconciled for o in state.orders)) or gateway.reconnection_required
                     ):
                         rb = controller.synchronize(snapshot, now)
                         last_native = native
@@ -332,7 +341,11 @@ def run(config_path, *, inspect=False):
                         }
                         if len(days) > 1:
                             raise ValueError("TQ_TRADING_DAY_CONFLICT")
-                        day = next(iter(days)) if days else day
+                        next_day = next(iter(days)) if days else day
+                        if day is not None and next_day != day:
+                            require_recovery(controller, datetime.now(UTC))
+                            gateway.reconnection_required = True
+                        day = next_day
                         current_mappings = set()
                         for fact in reply["facts"]:
                             try:
@@ -460,25 +473,28 @@ def run(config_path, *, inspect=False):
                                         and pending is None,
                                     )
                                 )
-                            except Exception:
+                            except Exception as error:
                                 issues[candidate.product] = (
-                                    "TQ_EXECUTION_INPUT_UNAVAILABLE"
+                                    str(error) if type(error) is ValueError and re.fullmatch(r"TQ_[A-Z0-9_]{1,100}", str(error)) else "TQ_EXECUTION_INPUT_UNAVAILABLE"
                                 )
-                        now = datetime.now(UTC)
-                        snapshot = gateway.snapshot(now)
-                        if gateway.reconnection_required:
-                            require_recovery(controller, now)
-                        rb = controller.synchronize(snapshot, now)
-                        if (
-                            controller.store.current().phase == "READY"
-                            and not gateway.reconnection_required
-                        ):
-                            controller.tick(
-                                inputs,
-                                datetime.now(UTC),
-                                opening_allowed=action == "trade",
-                                stopping=action == "stop",
-                            )
+                        cleanup = any(p.rolling and not any(h.product == p.product for h in state.positions)
+                                      for p in state.products)
+                        if inputs or cleanup:
+                            now = datetime.now(UTC)
+                            snapshot = gateway.snapshot(now)
+                            if gateway.reconnection_required:
+                                require_recovery(controller, now)
+                            rb = controller.synchronize(snapshot, now)
+                            if (
+                                controller.store.current().phase == "READY"
+                                and not gateway.reconnection_required
+                            ):
+                                controller.tick(
+                                    inputs,
+                                    datetime.now(UTC),
+                                    opening_allowed=action == "trade",
+                                    stopping=action == "stop",
+                                )
                     elif (
                         state
                         and action in {"pause", "stop"}

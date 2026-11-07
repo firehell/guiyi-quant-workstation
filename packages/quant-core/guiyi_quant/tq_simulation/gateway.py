@@ -326,6 +326,12 @@ class Gateway:
             raise ValueError("TQ_RECOVERY_REQUIRED")
 
     def submit(self, symbol, order, offset, native_id):
+        return self._submit(symbol, order, offset, native_id)
+
+    def submit_checked(self, symbol, order, offset, native_id, valid_until):
+        return self._submit(symbol, order, offset, native_id, valid_until=valid_until)
+
+    def _submit(self, symbol, order, offset, native_id, *, valid_until=None):
         if not self.execution_allowed:
             raise ValueError("TQ_OBSERVE_ONLY")
         self.assert_continuity()
@@ -340,6 +346,8 @@ class Gateway:
         ):
             raise ValueError("TQ_PRICE_PRECISION_INVALID")
         self.assert_continuity()
+        if valid_until is not None and datetime.now(UTC) >= valid_until:
+            raise ValueError("TQ_SUBMIT_EXPIRED_NO_SEND")
         self.api.insert_order(
             symbol=symbol,
             direction=order.side,

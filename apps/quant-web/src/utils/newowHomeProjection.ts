@@ -1,6 +1,15 @@
 import { normalizeHomeCards, type HomeCard } from './newowHomeCards.ts'
 export type ProjectionStatus = 'ready' | 'updating' | 'stale' | 'failed' | 'missing'
+export interface HomeProjectionRecovery {
+  status: 'pending' | 'running' | 'retry_wait' | 'dependency_wait' | 'blocked' | 'succeeded' | 'superseded'
+  category?: string
+  code?: string
+  last_attempt_at?: string
+  next_attempt_at?: string
+  attempt?: number
+}
 export interface HomeProjectionItem extends HomeCard {
+  recovery?: HomeProjectionRecovery
   projection_status: ProjectionStatus
   period_status: Record<'1d' | '1w', ProjectionStatus>
   period_reason_codes?: Partial<Record<'1d' | '1w', string | null>>
@@ -16,6 +25,9 @@ export interface HomeProjectionResponse {
   items: HomeProjectionItem[]
 }
 export function normalizeHomeProjection(raw: unknown): HomeProjectionResponse {
+  try { return validateHomeProjection(raw) } catch { throw new Error('INVALID_HOME_PROJECTION') }
+}
+function validateHomeProjection(raw: unknown): HomeProjectionResponse {
   const value = raw as HomeProjectionResponse
   if (value?.schema_version !== 'newow_home_projection_v1' || value.page_parity !== true || value.executable !== false || !Array.isArray(value.items) || value.items.length > 60) throw new Error('INVALID_HOME_PROJECTION')
   normalizeHomeCards({ schema_version: 'newow_home_cards_v2', requested_at: value.requested_at, items: value.items }, value.items.map(item => item.product))
@@ -23,6 +35,13 @@ export function normalizeHomeProjection(raw: unknown): HomeProjectionResponse {
   for (const item of value.items) {
     if (!/^[a-z]{1,4}$/.test(item.product) || !states.includes(item.projection_status) || !item.period_status || !item.source_versions || !['1d', '1w'].every(period => states.includes(item.period_status[period as '1d' | '1w']))) throw new Error('INVALID_HOME_PROJECTION')
     if (item.period_reason_codes != null && (typeof item.period_reason_codes !== 'object' || Array.isArray(item.period_reason_codes) || Object.values(item.period_reason_codes).some(reason => reason !== null && !['SOURCE_VERSION_CHANGED', 'SOURCE_VERSION_UNAVAILABLE', 'PERIOD_PENDING_UPDATE', 'SUMMARY_MISSING', 'SUMMARY_BUILD_FAILED', 'SUMMARY_BUILDING', 'SUMMARY_BUILD_INTERRUPTED'].includes(reason)))) throw new Error('INVALID_HOME_PROJECTION')
+    if (item.recovery !== undefined) {
+      const recovery = item.recovery
+      if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) || !['pending', 'running', 'retry_wait', 'dependency_wait', 'blocked', 'succeeded', 'superseded'].includes(recovery.status)) throw new Error('INVALID_HOME_PROJECTION')
+      for (const key of ['category', 'code'] as const) if (recovery[key] !== undefined && (typeof recovery[key] !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_]{0,95}$/.test(recovery[key]))) throw new Error('INVALID_HOME_PROJECTION')
+      for (const key of ['last_attempt_at', 'next_attempt_at'] as const) if (recovery[key] !== undefined && (typeof recovery[key] !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(recovery[key]) || !Number.isFinite(Date.parse(recovery[key])))) throw new Error('INVALID_HOME_PROJECTION')
+      if (recovery.attempt !== undefined && (!Number.isSafeInteger(recovery.attempt) || recovery.attempt < 0)) throw new Error('INVALID_HOME_PROJECTION')
+    }
     if (item.computed_at !== null && !Number.isFinite(Date.parse(item.computed_at))) throw new Error('INVALID_HOME_PROJECTION')
     for (const strategy of ['trend', 'oscillation'] as const) for (const period of ['1d', '1w'] as const) {
       if (item.strategies[strategy][period].snapshot_token) throw new Error('INVALID_HOME_PROJECTION')

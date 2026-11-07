@@ -45,7 +45,7 @@ from .product_contracts import (
 )
 from .product_identity import (
     InputQualityPolicy,
-    REFERENCE_MODEL_VERSION,
+    reference_model_version,
     build_reference_trade_id,
     futures_adaptation_version,
     utc_timestamp,
@@ -262,7 +262,7 @@ def _stream_for(replay: StrategyReplay) -> StreamIdentity:
         strategy_code=f"newow_{replay.identity.strategy.value}",
         formula_versions=replay.identity.formula_versions,
         profile_id=replay.identity.profile_id,
-        reference_model_version=REFERENCE_MODEL_VERSION,
+        reference_model_version=reference_model_version(replay.identity),
         futures_adaptation_version=futures_adaptation_version(
             replay.identity.frequency,
             replay.identity.input_quality_policy,
@@ -540,7 +540,7 @@ def _open_trade(entry: StrategyAction, holding_bars: int = 0) -> ReferenceTrade:
         segment_id=entry.segment_id,
         calculation_segment_id=entry.calculation_segment_id,
         formula_versions=identity.formula_versions,
-        reference_model_version=REFERENCE_MODEL_VERSION,
+        reference_model_version=reference_model_version(identity),
         futures_adaptation_version=futures_adaptation_version(
             identity.frequency, identity.input_quality_policy
         ),

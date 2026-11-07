@@ -237,6 +237,7 @@ class FaultRecoveryHost:
                 "market-runtime-enabled",
                 "alert-runtime-enabled",
                 "reference-worker-enabled",
+                "home-projection-enabled",
                 "weekly-audit-enabled",
             ):
                 path = root / ".run" / name
@@ -421,9 +422,11 @@ class FaultRecoveryHost:
 
     @contextmanager
     def owner_guards(self, old):
+        from app.runtime_cohort import continuous_services
+
         descriptors = []
         try:
-            for name in CONTINUOUS:
+            for name in continuous_services(old):
                 path = self.directory / f"{name}.owner.lock"
                 fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
                 info = os.fstat(fd)
@@ -752,6 +755,7 @@ class FaultRecoveryHost:
             "live": "market-runtime-enabled",
             "alert": "alert-runtime-enabled",
             "reference-worker": "reference-worker-enabled",
+            "home-projection": "home-projection-enabled",
             "weekly-audit": "weekly-audit-enabled",
         }
         if new.service in markers:

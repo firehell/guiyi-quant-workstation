@@ -10,3 +10,14 @@ test('projection validation rejects duplicate products, unknown states and execu
  const unknown=packet();unknown.items[0]!.projection_status='unknown';assert.throws(()=>normalizeHomeProjection(unknown))
  const executable=packet();executable.executable=true;assert.throws(()=>normalizeHomeProjection(executable))
 })
+test('optional recovery delivery metadata is validated without requiring it on legacy responses', () => {
+ const body = packet() as ReturnType<typeof packet> & { items: Array<Record<string, unknown>> }
+ body.items[0]!.recovery = { status:'retry_wait', category:'transient_database', code:'HOME_DATABASE_UNAVAILABLE', last_attempt_at:'2026-11-06T08:00:00Z', next_attempt_at:'2026-11-06T08:02:00Z', attempt:2 }
+ assert.equal(normalizeHomeProjection(body).items[0]!.recovery?.status, 'retry_wait')
+ for (const recovery of [{status:'unknown'}, {status:'running',attempt:-1}, {status:'blocked',code:'/private/path'}, {status:'retry_wait',next_attempt_at:'yesterday'}, {status:'running',category:42}]) {
+  body.items[0]!.recovery = recovery; assert.throws(() => normalizeHomeProjection(body), /INVALID_HOME_PROJECTION/)
+ }
+})
+test('malformed nested response bodies are always classified as protocol failures', () => {
+ for (const raw of [null, { ...packet(), items:[null] }, { ...packet(), items:[{...packet().items[0], strategies:null}] }]) assert.throws(() => normalizeHomeProjection(raw), /INVALID_HOME_PROJECTION/)
+})

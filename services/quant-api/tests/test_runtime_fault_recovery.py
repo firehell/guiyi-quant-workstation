@@ -11,10 +11,10 @@ import pytest
 from app.runtime_bindings import (
     BindingRegistry,
     ServiceBinding,
-    SERVICES,
     CONTRACTS,
     authorized_program_arguments,
 )
+from app.runtime_contracts import REQUIRED_SERVICES as SERVICES
 from app.runtime_fault_recovery import (
     CALENDARS,
     CONTINUOUS,

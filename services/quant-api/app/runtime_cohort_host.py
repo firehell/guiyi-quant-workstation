@@ -17,7 +17,7 @@ import stat
 import subprocess
 from time import monotonic, sleep
 
-from app.runtime_cohort import CONTINUOUS, CALENDARS, CohortError, WARMUP_SAFE_CODES, registry, require
+from app.runtime_cohort import continuous_services, OPTIONAL_CONTINUOUS, CONTINUOUS, CALENDARS, CohortError, WARMUP_SAFE_CODES, registry, require
 from app.runtime_fault_recovery_host import FaultRecoveryHost
 from app.runtime_bindings import (
     authorized_program_arguments,
@@ -101,7 +101,7 @@ class CohortHost(FaultRecoveryHost):
                 "COHORT_LOADED_PREIMAGE_CHANGED",
             )
             result[name]["loaded"] = loaded
-            if name in CONTINUOUS and binding.enabled:
+            if name in (*CONTINUOUS, *OPTIONAL_CONTINUOUS) and binding.enabled:
                 state = read_service_state(name)
                 if state and state.get("phase") == "parked":
                     from app.runtime_handover import _read
@@ -457,9 +457,10 @@ class CohortHost(FaultRecoveryHost):
             "alert": "alert-runtime-enabled",
             "reference-worker": "reference-worker-enabled",
             "weekly-audit": "weekly-audit-enabled",
+            "home-projection": "home-projection-enabled",
         }
         for service, name in marker_names.items():
-            if not old.services[service].enabled:
+            if service not in old.services or not old.services[service].enabled:
                 continue
             source = Path(old.services[service].root) / ".run" / name
             require(self.bytes(source) == b"enabled\n", "COHORT_ACTIVATION_UNPROVEN")
@@ -478,8 +479,9 @@ class CohortHost(FaultRecoveryHost):
             "alert",
             "reference-worker",
             "market-feed",
+            *sorted(OPTIONAL_CONTINUOUS),
         ):
-            if not old.services[service].enabled:
+            if service not in old.services or not old.services[service].enabled:
                 continue
             env = dict(os.environ)
             b = new.services[service]
@@ -592,7 +594,7 @@ class CohortHost(FaultRecoveryHost):
     def drain(self, plan):
         old = registry(plan["old"])
         self.drains = {}
-        for name in CONTINUOUS:
+        for name in continuous_services(old):
             binding = old.services[name]
             if not binding.enabled:
                 continue
@@ -685,7 +687,7 @@ class CohortHost(FaultRecoveryHost):
                 "COHORT_PENDING_CAPTURE",
             )
         return {
-            "owners": {name: read_service_state(name) for name in CONTINUOUS},
+            "owners": {name: read_service_state(name) for name in continuous_services(old)},
             "progress": progress,
             "feed_close": value,
             **({"reference_receiving_handover": reference_handover} if reference_handover is not None else {}),
@@ -701,7 +703,7 @@ class CohortHost(FaultRecoveryHost):
 
     def stop_old(self, plan, proof):
         old = registry(plan["old"])
-        for name in CONTINUOUS:
+        for name in continuous_services(old):
             binding = old.services[name]
             self.launch("disable", f"gui/{os.getuid()}/{binding.label}")
             pid = proof["owners"][name]["pid"]
@@ -1000,8 +1002,8 @@ class CohortHost(FaultRecoveryHost):
 
     def start_consumers(self, plan):
         new = registry(plan["new"])
-        for name in ("live", "alert", "reference-worker", "api", "web"):
-            if new.services[name].enabled:
+        for name in continuous_services(new):
+            if name != "market-feed" and new.services[name].enabled:
                 self.start(new.services[name])
         return {"started": "consumers"}
 
@@ -1250,7 +1252,7 @@ class CohortHost(FaultRecoveryHost):
 
     def consumers_ready(self, plan, proof):
         return self._await_names(
-            plan, ("live", "alert", "reference-worker", "api", "web"), proof, 240
+            plan, tuple(name for name in continuous_services(registry(plan["new"])) if name != "market-feed"), proof, 240
         )
 
     def start_feed(self, plan):
@@ -1260,7 +1262,7 @@ class CohortHost(FaultRecoveryHost):
         return {"started": "market-feed"}
 
     def verify(self, plan, proof):
-        modes = self._await_names(plan, CONTINUOUS, proof, 120)
+        modes = self._await_names(plan, continuous_services(registry(plan["new"])), proof, 120)
         from app.services.deployment_identity import deployment_identity_health
 
         new = registry(plan["new"])
@@ -1277,7 +1279,7 @@ class CohortHost(FaultRecoveryHost):
         with urlopen("http://127.0.0.1:5173/", timeout=5) as response:
             require(response.status == 200, "COHORT_WEB_UNAVAILABLE")
         require(self.bindings() == new, "COHORT_BINDING_DRIFT")
-        for name in CONTINUOUS:
+        for name in continuous_services(new):
             row = identity["services"].get(IDENTITY_NAMES.get(name, name), {})
             require(
                 row.get("status")
@@ -1390,7 +1392,7 @@ class CohortHost(FaultRecoveryHost):
         deadline = monotonic() + 30
         while monotonic() < deadline:
             active = True
-            for name in CONTINUOUS:
+            for name in continuous_services(old):
                 binding = old.services[name]
                 if not binding.enabled:
                     continue
@@ -1427,7 +1429,7 @@ class CohortHost(FaultRecoveryHost):
         new = registry(plan["new"])
         if self.bindings() != new:
             return
-        for name in CONTINUOUS:
+        for name in continuous_services(new):
             if new.services[name].enabled:
                 try:
                     self.request_drain(name, new.services[name].generation)
@@ -1496,7 +1498,7 @@ class CohortHost(FaultRecoveryHost):
 
         def audit_owners():
             owners = {}
-            for name in CONTINUOUS:
+            for name in continuous_services(old):
                 binding = old.services[name]
                 require(
                     binding.enabled and installed[name]["loaded"],

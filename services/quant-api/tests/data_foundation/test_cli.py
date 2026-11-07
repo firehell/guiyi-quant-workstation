@@ -1332,18 +1332,20 @@ def test_runtime_live_runs_only_the_injected_foreground_service() -> None:
 
 @pytest.mark.parametrize("overview_status,expected", [("ready", "passed"), ("failed", "partial")])
 def test_home_build_writes_only_selected_projection_and_reports_overview(monkeypatch, tmp_path, overview_status, expected):
-    from app.market_data.newow import home_projection_composition
+    from app.market_data.newow import home_recovery
     calls = []
-    fake = SimpleNamespace(build=lambda products: calls.append(products) or {
+    def run_build(**kwargs):
+        calls.append(kwargs)
+        return {
         "overview_status": overview_status,
         "items": [{"product": "a", "projection_status": "ready"}, {"product": "ag", "projection_status": "missing"}],
-    })
-    monkeypatch.setattr(home_projection_composition, "build_home_projection", lambda **kwargs: calls.append(kwargs) or fake)
+        }
+    monkeypatch.setattr(home_recovery, "run_home_build", run_build)
     output = tmp_path / "dev.json"
     stdout, stderr = io.StringIO(), io.StringIO()
     code = main(["home", "build", "--products", "a", "--output", str(output)], stdout=stdout, stderr=stderr)
     result = json.loads(stdout.getvalue())
     assert result["status"] == expected and result["readonly"] is False
     assert result["overview_status"] == overview_status and result["selected_count"] == 1
-    assert calls == [{"output_path": str(output)}, ["a"]]
+    assert calls == [{"output_path": str(output), "products": ["a"]}]
     assert code == (0 if expected == "passed" else 1)

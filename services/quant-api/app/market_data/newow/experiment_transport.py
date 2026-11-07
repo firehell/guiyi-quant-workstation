@@ -66,7 +66,7 @@ def experiment_response(
         raise NewowProductReadError("NEWOW_RESOURCE_BUSY")
     bars = result["bars"]
     output = deepcopy(result)
-    output["schema_version"] = "newow_experiment_detail_v2"
+    output["schema_version"] = "newow_experiment_detail_v3"
     output["meta"] = {
         "identity": {
             **identity,

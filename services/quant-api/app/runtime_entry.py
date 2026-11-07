@@ -41,6 +41,7 @@ _COMMANDS = {
     "market-feed": "runtime.market-feed",
     "live": "runtime.live",
     "alert": "runtime.alert",
+    "home-projection": "runtime.home-projection",
     "after-market": "data.after-market",
     "late-provider-recovery": "data.late-provider-recovery",
     "weekly-audit": "data.weekly-audit",
@@ -265,6 +266,19 @@ def main(
             )
         elif service == "alert":
             payload = run_alert(alert_runtime_factory=alert_runtime_factory)
+        elif service == "home-projection":
+            from app.market_data.newow.home_recovery import run_home_recovery_forever
+            if os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') == '1':
+                def run_home(owner, should_stop):
+                    run_home_recovery_forever(
+                        assert_owned=owner.assert_owned,
+                        stop_requested=should_stop,
+                        mark_ready=owner.mark_ready,
+                    )
+                _owned_runner(service, run_home)
+            else:
+                run_home_recovery_forever()
+            payload = {'schema_version': 1, 'command': command, 'status': 'ok', 'foreground': True}
         elif service == "late-provider-recovery":
             from app.market_data.late_provider_recovery import run_runtime_scheduled
             with session_factory() as session:
@@ -320,7 +334,7 @@ def run_weekly_audit_service(
 def entrypoint() -> None:
     handler = None
     if len(sys.argv) == 2 and sys.argv[1] in {
-        "market-feed", "live", "alert", "after-market", "late-provider-recovery", "weekly-audit", "weekly-audit-scheduled",
+        "market-feed", "live", "alert", "home-projection", "after-market", "late-provider-recovery", "weekly-audit", "weekly-audit-scheduled",
     }:
         from app.runtime_logging import install_runtime_diagnostics
 
