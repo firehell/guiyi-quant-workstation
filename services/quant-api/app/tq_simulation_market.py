@@ -13,6 +13,7 @@ from app.market_data.market_phase import MarketPhaseResolver, MarketPhase
 from app.market_data.operational_universe import load_operational_products
 from app.simnow_portfolio_market import PortfolioMarket
 from guiyi_quant.htdy_account_execution import codec
+from guiyi_quant.tq_simulation.market import load_market_state
 
 MAX_REQUEST = 16 * 1024 * 1024
 BATCH_PRODUCTS = 4
@@ -105,7 +106,7 @@ def main():
                 if mode not in {"hello", "poll", "inspect"}:
                     raise ValueError("TQ_MARKET_MODE_INVALID")
                 state = (
-                    codec.load(request["state"])
+                    load_market_state(request["state"])
                     if request.get("state") is not None
                     else None
                 )

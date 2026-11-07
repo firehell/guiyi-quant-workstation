@@ -464,6 +464,7 @@ def test_shfe_close_uses_actual_today_historical_inventory(tmp_path, today, expe
     f = fact(at)
     tx = c.store.execute("close-tick", m.TqKqTick(at, (f,), True))
     assert tx.effects[0].order.offset == "CLOSE"
+    c.clock = lambda: at
     c.dispatch(tx.effects[0], f, at, opening_allowed=True)
     assert c.gateway.calls[-1][1][2] == expected
     c.close()
@@ -673,6 +674,7 @@ def test_pending_open_cancel_cutoff_fires_before_180_second_timeout(tmp_path):
     )
     tx = c.store.execute("cutoff", m.TqKqTick(at, (f,), True))
     assert [e.kind for e in tx.effects] == ["CANCEL"]
+    c.clock = lambda: at
     c.dispatch(tx.effects[0], f, at, opening_allowed=True)
     assert len(c.gateway.calls) == 2
     c.close()
@@ -699,6 +701,10 @@ def test_market_timeout_discards_channel_and_never_reads_late_response(monkeypat
     mkt = Market.__new__(Market)
     mkt.failed, mkt.buffer = False, b""
     stdin = BytesIO()
+    stdin.fileno = lambda: 123
+    monkeypatch.setattr("guiyi_quant.tq_simulation.market.os.set_blocking", lambda *_: None)
+    clock = iter((0, 21))
+    monkeypatch.setattr("time.monotonic", lambda: next(clock))
     mkt.process = SimpleNamespace(stdin=stdin, stdout=object())
 
     class Timeout:
@@ -985,3 +991,167 @@ def test_closed_signal_real_sqlite_replay_and_restart_preserve_targets(tmp_path)
     assert reopened.store.current().phase=="RECOVERY_REQUIRED"
     assert reopened.store.current().products==accepted.products
     reopened.close()
+
+
+def test_projection_cache_reuses_state_and_detects_external_projection_corruption(tmp_path, monkeypatch):
+    import sqlite3
+    store = LocalStore(tmp_path / 'account.sqlite', initial())
+    first = store.current()
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError('unchanged committed state was decoded again')
+    with monkeypatch.context() as patch:
+        patch.setattr(codec, 'load', forbidden)
+        assert store.current() is first
+    other = sqlite3.connect(store.path)
+    other.execute('UPDATE projection SET sequence=sequence+1')
+    other.commit()
+    other.close()
+    with pytest.raises(StoreError, match='PROJECTION_JOURNAL_MISMATCH'):
+        store.current()
+    store.close()
+
+
+def test_market_packet_is_independent_of_history_size():
+    from guiyi_quant.tq_simulation.market import market_state, load_market_state
+    from types import SimpleNamespace as NS
+    import json
+    s = initial()
+    packet = market_state(s)
+    restored = load_market_state(packet)
+    assert restored.products[0].owner == s.products[0].owner
+    assert restored.activated_at == s.activated_at
+    expanded = NS(**{**s.__dict__, 'audit': ('x' * 1000000,) * 30})
+    assert market_state(expanded) == packet
+    assert len(json.dumps(packet)) < 2000
+    with pytest.raises(ValueError, match='TQ_MARKET_STATE_INVALID'):
+        load_market_state({**packet, 'audit': []})
+
+
+def test_closed_session_does_not_tick_rollover_obligation():
+    from guiyi_quant.tq_simulation.worker import should_tick
+    s = initial()
+    s = replace(s, positions=(m.Position('RB', 'RB2701', -1),),
+                products=(replace(s.products[0], owner='RB2705', rolling=True, must_close=True),))
+    session = replace(fact(T).session, can_trade=False, can_cancel=False)
+    facts = {('RB', 'RB2701'): dict(contract='RB2701', session=codec.encode(session))}
+    assert not should_tick(s, T, facts=facts)
+    facts[('RB', 'RB2701')]['session'] = codec.encode(replace(session, can_trade=True))
+    assert should_tick(s, T, facts=facts)
+
+
+def test_pipe_backpressure_has_deadline_and_pumps_sdk(monkeypatch):
+    import os
+    from types import SimpleNamespace as NS
+    from guiyi_quant.tq_simulation.market import Market
+    import time
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(write_fd, False)
+    while True:
+        try:
+            os.write(write_fd, b'x' * 65536)
+        except BlockingIOError:
+            break
+    mkt = Market.__new__(Market)
+    mkt.failed, mkt.buffer = False, b''
+    pumped = []
+    elapsed = [0.0]
+    mkt.pump = lambda: (pumped.append(True), elapsed.__setitem__(0, elapsed[0] + 21))
+    monkeypatch.setattr(time, 'monotonic', lambda: elapsed[0])
+    stream = os.fdopen(write_fd, 'wb', buffering=0)
+    mkt.process = NS(stdin=stream)
+    try:
+        with pytest.raises(ValueError, match='TQ_MARKET_TIMEOUT'):
+            mkt.request(dict(mode='poll'))
+        assert pumped and mkt.failed
+    finally:
+        stream.close()
+        os.close(read_fd)
+
+
+def test_external_change_immediately_after_commit_invalidates_cache(tmp_path, monkeypatch):
+    import sqlite3
+    store = LocalStore(tmp_path / 'account.sqlite', initial())
+    commit = store._commit
+    def raced_commit():
+        commit()
+        with sqlite3.connect(store.path) as external:
+            external.execute('UPDATE projection SET sequence=999')
+    monkeypatch.setattr(store, '_commit', raced_commit)
+    store.execute('disconnect-cache-race', m.Disconnect(T))
+    with pytest.raises(StoreError, match='PROJECTION_JOURNAL_MISMATCH'):
+        store.current()
+    store.close()
+
+
+def test_market_drains_response_before_reporting_pump_disconnect():
+    import os
+    import json
+    import threading
+    from types import SimpleNamespace as NS
+    from guiyi_quant.tq_simulation.market import Market
+    request_read, request_write = os.pipe()
+    response_read, response_write = os.pipe()
+    mkt = Market.__new__(Market)
+    mkt.failed, mkt.buffer = False, b''
+    mkt.process = NS(stdin=os.fdopen(request_write, 'wb', buffering=0),
+                     stdout=os.fdopen(response_read, 'rb', buffering=0))
+    def respond():
+        with os.fdopen(request_read, 'rb') as incoming, os.fdopen(response_write, 'wb', buffering=0) as outgoing:
+            for _ in range(2):
+                packet = json.loads(incoming.readline())
+                outgoing.write((json.dumps(dict(status='ok', request_id=packet['request_id']))+'\n').encode())
+    thread = threading.Thread(target=respond)
+    thread.start()
+    def disconnect():
+        raise ValueError('TQ_DISCONNECTED')
+    mkt.pump = disconnect
+    try:
+        with pytest.raises(ValueError, match='TQ_DISCONNECTED'):
+            mkt.request(dict(mode='poll'))
+        mkt.pump = lambda: None
+        assert mkt.request(dict(mode='poll'))['status'] == 'ok'
+        assert not mkt.failed
+    finally:
+        mkt.process.stdin.close()
+        mkt.process.stdout.close()
+        thread.join(timeout=2)
+    assert not thread.is_alive()
+
+
+def test_flat_rollover_gets_cleanup_tick():
+    from guiyi_quant.tq_simulation.worker import should_tick
+    s = initial()
+    s = replace(s, products=(replace(s.products[0], rolling=True),))
+    assert should_tick(s, T, facts={})
+    tx = apply(s, 'flat-rollover-cleanup', m.TqKqTick(T, (), True))
+    assert not tx.state.products[0].rolling
+    assert not tx.effects
+
+
+def test_checked_sdk_submit_rechecks_deadline_after_continuity():
+    from types import SimpleNamespace as NS
+    from guiyi_quant.tq_simulation.gateway import Gateway
+    from decimal import Decimal
+    g = Gateway.__new__(Gateway)
+    g.execution_allowed = True
+    calls = []
+    g.assert_continuity = lambda: calls.append('continuity')
+    g.quote = lambda _: dict(ask_price1=1000, bid_price1=999, price_tick=1)
+    g.account = object()
+    g.api = NS(insert_order=lambda **_: calls.append('sent'))
+    order = NS(price=Decimal(1000), side='BUY')
+    with pytest.raises(ValueError, match='TQ_SUBMIT_EXPIRED_NO_SEND'):
+        g.submit_checked('SHFE.rb2701', order, 'OPEN', 'unique', datetime.now(UTC)-timedelta(seconds=1))
+    assert calls == ['continuity', 'continuity']
+
+
+def test_final_submit_deadline_includes_opening_cutoff(tmp_path):
+    c, now = live_controller(tmp_path)
+    f = fact(now)
+    f = replace(f, session=replace(f.session, final_close_at=now+timedelta(seconds=62)))
+    captured = []
+    c.gateway.submit_checked = lambda _symbol, _order, _offset, _native, deadline: captured.append(deadline)
+    c.clock = lambda: now
+    c.tick((f,), now, opening_allowed=True)
+    assert captured == [now+timedelta(seconds=2)]
+    c.close()
