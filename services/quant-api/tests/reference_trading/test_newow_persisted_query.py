@@ -217,6 +217,7 @@ def test_persisted_daily_weekly_availability_uses_authoritative_owner(monkeypatc
     reader = object.__new__(NewowProductReader)
     reader._market_data = SimpleNamespace(session_windows=sessions)
     reader.historical_source_evidence = Mock(return_value={})
+    reader.historical_storage_start = lambda product: day
     points = [{"trading_day": day.isoformat(), "value": {
         "physical_contract": owner.contract,
         "segment_id": build_segment_id("rb", owner.contract, sessions(

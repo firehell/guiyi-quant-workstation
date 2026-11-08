@@ -563,6 +563,8 @@ class PersistedFusionComparison:
         identity, manifest = self._persisted._manifest(
             stream["stream_id"], stats["revision_id"], stats["seq"]
         )
+        from app.reference_trading.persisted_newow import _require_history_window
+        _require_history_window(manifest, reader, product, since, cutoff)
         self.verify_saved_source(identity, manifest, product=product, frequency=frequency,
                                  through=through, cutoff=cutoff, reader=reader, persisted=self._persisted)
         dependencies = manifest.get("source_dependencies")
