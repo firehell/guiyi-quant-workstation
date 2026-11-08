@@ -2468,3 +2468,15 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 
 真实输入构建只选择 Canonical 外独立 JSON 目标；默认正式CLI不创建独立写入者。
 故障注入与真实业务结果分开记录；HTTP成功、worker活性、恢复状态和策略预热不能互相替代。
+
+
+## 苏冰一手与固定预算研究
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_one_lot tests/unit/subing_decision tests/unit/subing_account scripts/research/test_subing_unified.py scripts/research/test_subing_demand_account_candidate.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/subing_unified_replay.py --owner-one-lot --contract JM2601 --since 2025-11-17 --through 2025-11-24 --output /absolute/new/private/research-directory
+```
+
+新目录必须不存在；只读现有MDS、Session与历史执行事实，不下载行情或写持续模型。
+包含资本对照；一手候选另做完整账户中途恢复比较。已见窗口不是OOS，测试通过不证明策略收益优势。
+规则、资金和风险口径见 [交易需求合同](docs/research/subing-trading-demands.md#一手与固定预算研究候选2026-11-08)。

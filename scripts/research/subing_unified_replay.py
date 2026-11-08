@@ -4,7 +4,7 @@ from datetime import date,timedelta
 from collections import Counter
 import json,hashlib,argparse
 CODE_ROOT=Path(__file__).resolve().parents[2]
-CODE_PATHS=[*sorted((CODE_ROOT/'packages/quant-core/guiyi_quant').glob('subing*.py')),Path(__file__).resolve(),CODE_ROOT/'scripts/research/subing_account.py',CODE_ROOT/'scripts/research/subing_trend.py']
+CODE_PATHS=[*sorted((CODE_ROOT/'packages/quant-core/guiyi_quant').glob('subing*.py')),*sorted((CODE_ROOT/'packages/quant-core/guiyi_quant/subing_one_lot').glob('*.py')),Path(__file__).resolve(),CODE_ROOT/'scripts/research/subing_account.py',CODE_ROOT/'scripts/research/subing_trend.py']
 CODE_HASHES={str(p.relative_to(CODE_ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in CODE_PATHS}
 from guiyi_quant.subing_demand_account_candidate import build_engine,VERSION
 from subing_account import load
@@ -18,8 +18,10 @@ def main():
     parser.add_argument('--through',type=date.fromisoformat,default=date(2025,11,24))
     parser.add_argument('--contract',default='JM2601')
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--owner-one-lot',action='store_true',help='Independent 1M / one lot / 2000 trade / 5000 daily research; no Runtime change')
     args=parser.parse_args()
     if args.since>args.through:raise ValueError('WINDOW_INVALID')
+    if args.owner_one_lot and args.output.exists():raise ValueError('OUTPUT_ALREADY_EXISTS')
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from app.db.readonly import readonly_transaction
@@ -116,12 +118,41 @@ def main():
             if name=='candidate':chain=model.chain
             assert all(__import__('datetime').datetime.fromisoformat(f['fill_at'])>__import__('datetime').datetime.fromisoformat(f['decision_at']) for f in result['fills'])
         results[name]=result
+    if args.owner_one_lot:
+        from guiyi_quant.subing_one_lot import build_engine as build_one_lot, POLICY
+        control,_,control_context=build_engine(s['executions'],schedule,structures=structures)
+        control.INITIAL_CASH=__import__('decimal').Decimal(POLICY['initial_cash'])
+        control_id=f'capital-only:{args.contract}:{args.since}:{args.through}:{control_context[:12]}'
+        result=control.replay(s['executions'],s['observations'],run_id=control_id,execution_model='theoretical_open',regime_research_profile=REGIME_PROFILE)
+        result['experiment_profile']='capital_only_1000000_v1'
+        result['version']+='_capital_only_1000000_v1'
+        results['capital_only_control']=result
+        one,One,owner_context=build_one_lot(s['executions'],schedule,structures=structures)
+        owner_id=f'owner-one-lot:{args.contract}:{args.since}:{args.through}:{owner_context[:12]}'
+        result=one.replay(s['executions'],s['observations'],run_id=owner_id,execution_model='theoretical_open',regime_research_profile=REGIME_PROFILE)
+        assert One.restore(result['decision_checkpoint']).state()==result['decision_state']
+        # Restore complete cash/fees/position/streak at the midpoint, then
+        # compare the full final account, not only the decision state.
+        account=one.AccountEngine(args.contract,'jm',s['executions'][0].facts.multiplier,owner_id,
+            1,'theoretical_open',regime_research_profile=REGIME_PROFILE)
+        cut=len(s['executions'])//2
+        for x in s['executions'][:cut]:account.step(x,s['observations'][x.bar.bar_end])
+        account=one.AccountEngine.restore(account.checkpoint())
+        for x in s['executions'][cut:]:account.step(x,s['observations'][x.bar.bar_end])
+        assert account.snapshot()==result
+        results['one_lot_candidate']=result
     out=args.output;out.mkdir(parents=True,exist_ok=True)
     record=dict(kind='SEEN_BOUNDED_CANDIDATE_ACCOUNT_REPLAY',context_hash=context,evidence=evidence,facts_sha256=hashlib.sha256(facts_bytes).hexdigest(),results=results)
     (out/'replay.json').write_text(json.dumps(record,default=str,ensure_ascii=False)+'\n')
     summary={k:dict(summary=v['summary'],fills=len(v['fills']),exit_reasons=dict(Counter(reason for f in v['fills'] if f['action']=='CLOSE' for reason in f['reasons']))) for k,v in results.items()}
     summary['verification']=dict(candidate_decision_restore=True,candidate_observer_restore=True,strict_later_fills=True)
     (out/'summary.json').write_text(json.dumps(summary,default=str,ensure_ascii=False,indent=2)+'\n')
+    if args.owner_one_lot:
+        if CODE_HASHES!={str(p.relative_to(CODE_ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in CODE_PATHS}:raise ValueError('SOURCE_CODE_CHANGED')
+        (out/'research-identity.json').write_text(json.dumps(dict(policy=dict(POLICY),context_hash=owner_context,
+            code_hashes=CODE_HASHES,mode='SEEN_DEVELOPMENT_REPLAY_NOT_OOS',account_restore=True),ensure_ascii=False,indent=2)+'\n')
+        print(json.dumps(summary,default=str,ensure_ascii=False))
+        return
     packet=dict(projection_version='subing_demand_explanation_v2',version=model_version,product='jm',contract=args.contract,since=str(args.since),through=str(args.through),
         context_hash=context,input_snapshot_hash=evidence['factors_input_hash'],execution_facts_hash=record['facts_sha256'],
         mode='HISTORICAL_CANDIDATE',oos_status='NOT_PROVEN',initial_cash='100000',summary=summary,
