@@ -8,7 +8,7 @@ import ts from 'typescript'
 import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 import { homeCardPresentation, homeRowHints, homeCautionNotice, homeCardSpace, homeControlLabel, homePagePerformance, homeCompositeDisplay, homeTrendDisplay, homeReferenceDisplay, homeDirectionDisplay, homePeriodDisplay, homePeriodReason, homeDeliveryNotice, type HomePeriodFact, type HomeState } from '../src/utils/newowHomeCards.ts'
 
-function cautionHint() { return {kind:'caution' as const,event_day:'2026-10-08',event_bar_end:'2026-10-08T00:00:00Z',confirmed_day:'2026-10-09',event_id:'a'.repeat(64),frequency:'1d' as const,bar_end:'2026-10-08T00:00:00Z',peak_day:'2026-10-09',peak_bar_end:'2026-10-09T00:00:00Z',first_visible_at:'2026-10-08T00:00:00Z',confirmed_at:'2026-10-09T00:00:00Z',as_of:'2026-10-09T00:00:00Z',tentative:false,display_state:'confirmed' as const,age_bars:1,home_visible:true,detail_visible:true,max_tentative_age_bars:10 as const,visibility_basis:'completed_bar' as const,display_policy_version:'guiyi_caution_completed_anchor_v1' as const,physical_contract:'RB2701',segment_id:'s',calculation_segment_id:'c',formula_version:'newow_zhaoyao_mirror_repainting_page_v2',repainting:true as const,page_parity:false as const,executable:false as const} }
+function cautionHint() { return {kind:'caution' as const,event_day:'2026-10-08',event_bar_end:'2026-10-08T00:00:00Z',confirmed_day:'2026-10-09',event_id:'a'.repeat(64),frequency:'1d' as const,bar_end:'2026-10-08T00:00:00Z',peak_day:'2026-10-09',peak_bar_end:'2026-10-09T00:00:00Z',first_visible_at:'2026-10-08T00:00:00Z',confirmed_at:'2026-10-09T00:00:00Z',as_of:'2026-10-09T00:00:00Z',tentative:false,invalidated_at:null,invalidation_reason:null,display_state:'confirmed' as const,age_bars:1,home_visible:true,detail_visible:true,max_tentative_age_bars:10 as const,visibility_basis:'completed_bar' as const,display_policy_version:'guiyi_caution_completed_state_v2' as const,physical_contract:'RB2701',segment_id:'s',calculation_segment_id:'c',formula_version:'newow_zhaoyao_mirror_repainting_page_v2',repainting:true as const,page_parity:false as const,executable:false as const} }
 const ready = (state: HomeState): HomePeriodFact => ({ status: 'ready', state, physical_contract: 'RB2701', segment_id: 's', calculation_segment_id: 'c', input_sha256: 'hash', formula_versions: ['v1'], as_of: '2026-10-09T00:00:00Z', bar_end: '2026-10-09T00:00:00Z', page_parity: true, executable: false, target: '9007199254740993.125', absorb: '2999.995', display_as_of: '2026-10-11T00:00:00Z', display_projection_version: 'newow_home_display_v1', current_event: null, guard_ma10: null })
 
 
@@ -145,7 +145,7 @@ test('rows expand and summary cards navigate with selected strategy while retain
   try {
     app.mount(root)
     const call = api.calls.at(-1)
-    call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {display_policy_version:'guiyi_caution_completed_anchor_v1',status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:false, executable:false, items:[cautionHint()]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
+    call.resolve({ schema_version: 'newow_home_cards_v2', requested_at: '2026-10-09T00:00:00Z', items: [{ product: 'rb', strategies: { trend: { '1d': {...ready('HOLD'), row_hints: {display_policy_version:'guiyi_caution_completed_state_v2',status:'ready', bar_end:ready('HOLD').bar_end, physical_contract:'RB2701', calculation_segment_id:'c', page_parity:false, executable:false, items:[cautionHint()]}}, '1w': ready('BUILD') }, oscillation: { '1d': ready('FLAT'), '1w': { ...ready('CLEAR'), freshness: 'pending_update' } } } }] })
     await settle()
     assert.match(nodeText(root), /3100.13/)
     assert.equal(nodeText(findNode(root, n => n.props.class === 'row-hint')!), '小心')
@@ -287,7 +287,7 @@ function nodeOperations() {
 
 
 test('row hints require exact daily ownership and do not create a trend source', () => {
-  const day = { ...ready('FLAT'), row_hints: { display_policy_version: 'guiyi_caution_completed_anchor_v1', status: 'ready', bar_end: ready('FLAT').bar_end!, physical_contract: 'RB2701', calculation_segment_id: 'c', page_parity: false, executable: false, items: [cautionHint(), {kind: 'reduce' as const, event_day: '2026-10-09', j_value: '98.1', reference_price: '3000', formula_version: 'j'}] } }
+  const day = { ...ready('FLAT'), row_hints: { display_policy_version: 'guiyi_caution_completed_state_v2', status: 'ready', bar_end: ready('FLAT').bar_end!, physical_contract: 'RB2701', calculation_segment_id: 'c', page_parity: false, executable: false, items: [cautionHint(), {kind: 'reduce' as const, event_day: '2026-10-09', j_value: '98.1', reference_price: '3000', formula_version: 'j'}] } }
   assert.deepEqual(homeRowHints(day).map(hint => hint.label), ['小心', '减仓'])
   assert.match(homeRowHints(day)[0].title, /2026-10-08.*2026-10-09/)
   assert.deepEqual(homeRowHints({...day, row_hints: {...day.row_hints, physical_contract: 'RB2601'}}), [])
@@ -335,7 +335,7 @@ test('MA60 approximate trend uses precomputed D1 identity and preserves stale di
 
 test('unknown caution input has a neutral reason while accepted absence stays quiet', () => {
   assert.match(homeCautionNotice(ready('FLAT'))!,/待确认.*缺少/)
-  const day={...ready('FLAT'),row_hints:{display_policy_version:'guiyi_caution_completed_anchor_v1',status:'ready',bar_end:ready('FLAT').bar_end!,physical_contract:'RB2701',calculation_segment_id:'c',page_parity:false,executable:false,items:[]}}
+  const day={...ready('FLAT'),row_hints:{display_policy_version:'guiyi_caution_completed_state_v2',status:'ready',bar_end:ready('FLAT').bar_end!,physical_contract:'RB2701',calculation_segment_id:'c',page_parity:false,executable:false,items:[]}}
   assert.equal(homeCautionNotice(day),null)
   assert.match(homeCautionNotice({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}})!,/尚未通过核验/)
   assert.equal(homeRowHints({...day,row_hints:{...day.row_hints,items:[{...cautionHint(),confirmed_at:null}]}}).length,0)
@@ -374,4 +374,32 @@ test('trend column uses the displayed approximate D1 direction in both strategy 
   const rows = ['b','a','c','d'].map(symbol=>({symbol}))
   assert.deepEqual(sortNewowHomeRows(rows,deliveries,'oscillation','trend','desc').map(r=>r.symbol), ['a','d','b','c'])
   assert.deepEqual(sortNewowHomeRows(rows,deliveries,'trend','trend','asc').map(r=>r.symbol), ['b','a','d','c'])
+})
+
+test('caution opens current state explanation before explicit chart navigation', async () => {
+  const List=await loadList(),root=element('root'),chart:unknown[]=[]
+  const sequence=ref(0)
+  const rows=[{symbol:'rb',product_name:'螺纹钢',reason_codes:[],close:3100,price_change_1d:0,actual_contract:'RB2701',data_as_of:'2026-10-09'}]
+  const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(List,{rows,products:['rb'],authority:'caution-state',refreshSequence:sequence.value,liveStale:false,sort:'default',sortDirection:'desc',onChart:(...args:unknown[])=>chart.push(args)})}))
+  try {
+    app.mount(root)
+    const publish=async(hint:any)=>{
+      api.calls.at(-1).resolve({schema_version:'newow_home_cards_v2',requested_at:'2026-10-09T00:00:00Z',items:[{product:'rb',strategies:{trend:{'1d':{...ready('HOLD'),row_hints:{display_policy_version:'guiyi_caution_completed_state_v2',status:'ready',bar_end:ready('HOLD').bar_end,physical_contract:'RB2701',calculation_segment_id:'c',page_parity:false,executable:false,items:hint?[hint]:[]}},'1w':ready('HOLD')},oscillation:{'1d':ready('FLAT'),'1w':ready('FLAT')}}}]})
+      await settle()
+    }
+    await publish(cautionHint())
+    const trigger=findNode(root,n=>n.props.class==='row-hint')!
+    assert.equal(trigger.props['data-state'],'confirmed')
+    ;(trigger.props.onClick as Function)({stopPropagation(){}});await nextTick()
+    assert.deepEqual(chart,[])
+    assert.match(nodeText(findNode(root,n=>n.props['aria-label']==='小心说明')!),/小心·已确认/)
+    sequence.value++;await nextTick()
+    await publish({...cautionHint(),display_state:'invalidated',confirmed_at:null,tentative:false,invalidated_at:'2026-10-09T00:00:00Z',invalidation_reason:'CONDITION_WITHDRAWN'})
+    assert.match(nodeText(findNode(root,n=>n.props['aria-label']==='小心说明')!),/小心·已失效/)
+    assert.equal(findNode(root,n=>n.props.class==='row-hint')!.props['data-state'],'invalidated')
+    ;(findNode(root,n=>n.type==='button'&&nodeText(n)==='查看对应K线')!.props.onClick as Function)();await nextTick()
+    assert.equal(chart.length,1)
+    sequence.value++;await nextTick();await publish(null)
+    assert.equal(findNode(root,n=>n.props['aria-label']==='小心说明'),null)
+  } finally {app.unmount()}
 })

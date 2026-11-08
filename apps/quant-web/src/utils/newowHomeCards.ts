@@ -1,4 +1,4 @@
-import { CAUTION_DISPLAY_VERSION, normalizeCautionDisplay, cautionDisplayTitle } from './newowCautionDisplay.ts'
+import { CAUTION_DISPLAY_VERSION, normalizeCautionDisplay, cautionDisplayTitle, cautionStateLabel, type CautionState } from './newowCautionDisplay.ts'
 import type { NewowCautionEvent } from '../types/newowProduct.ts'
 import type { PriceProvenance } from './newowPriceSources.ts'
 import { comparePositiveDecimalText } from './marketDisplay.ts'
@@ -238,13 +238,13 @@ export function homePagePerformance(day: HomePeriodFact | undefined, strategy: H
 export function homeRowHints(day?: HomePeriodFact) {
   const hints = day?.row_hints
   if (day?.status !== 'ready' || !day.bar_end || !day.physical_contract || !day.calculation_segment_id || !hints || hints.status !== 'ready' || hints.display_policy_version!==CAUTION_DISPLAY_VERSION || hints.page_parity !== false || hints.executable !== false || hints.bar_end !== day.bar_end || hints.physical_contract !== day.physical_contract || hints.calculation_segment_id !== day.calculation_segment_id || !Array.isArray(hints.items)) return []
-  return hints.items.flatMap<{label: string; focusBarEnd?: string; title: string}>(item => {
+  return hints.items.flatMap<{label: string; focusBarEnd?: string; title: string; eventId?: string; state?: CautionState; stateLabel?: string}>(item => {
     if (item.kind==='caution') {
       try {
         const {kind, event_day, event_bar_end, confirmed_day, ...wire}=item
         const e=normalizeCautionDisplay(wire)
         if (!e.home_visible || e.frequency!=='1d' || e.physical_contract!==day.physical_contract || e.segment_id!==day.segment_id || e.calculation_segment_id!==day.calculation_segment_id || Date.parse(e.as_of)!==Date.parse(day.bar_end!) || Date.parse(e.bar_end)!==Date.parse(event_bar_end??'') || !/^\d{4}-\d{2}-\d{2}$/.test(event_day)) return []
-        return [{label:'小心',focusBarEnd:e.bar_end,title:cautionDisplayTitle(e)}]
+        return [{label:'小心',focusBarEnd:e.bar_end,title:cautionDisplayTitle(e),eventId:e.event_id,state:e.display_state,stateLabel:cautionStateLabel(e.display_state)}]
       } catch { return [] }
     }
     if (item.kind!=='reduce' || !item.formula_version || !/^\d{4}-\d{2}-\d{2}$/.test(item.event_day) || !Number.isFinite(Number(item.j_value)) || Number(item.reference_price)<=0) return []

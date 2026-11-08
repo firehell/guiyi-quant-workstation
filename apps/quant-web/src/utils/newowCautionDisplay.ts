@@ -1,12 +1,12 @@
 import { formatBeijingInstant } from './marketDisplay.ts'
 import type { NewowCautionEvent } from '../types/newowProduct.ts'
-export const CAUTION_DISPLAY_VERSION = 'guiyi_caution_completed_anchor_v1'
+export const CAUTION_DISPLAY_VERSION = 'guiyi_caution_completed_state_v2'
 
 /** Exact display contract; absence never means confirmed or permission to show. */
 export function normalizeCautionDisplay(raw: unknown): NewowCautionEvent {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('invalid caution display')
   const e = raw as Record<string, unknown>
-  const keys = ['event_id','frequency','bar_end','peak_day','peak_bar_end','first_visible_at','confirmed_at','as_of','tentative','display_state','age_bars','home_visible','detail_visible','max_tentative_age_bars','visibility_basis','display_policy_version','physical_contract','segment_id','calculation_segment_id','formula_version','repainting','page_parity','executable']
+  const keys = ['event_id','frequency','bar_end','peak_day','peak_bar_end','first_visible_at','confirmed_at','as_of','tentative','invalidated_at','invalidation_reason','display_state','age_bars','home_visible','detail_visible','max_tentative_age_bars','visibility_basis','display_policy_version','physical_contract','segment_id','calculation_segment_id','formula_version','repainting','page_parity','executable']
   if (keys.some(k=>!(k in e)) || Object.keys(e).some(k=>!keys.includes(k))) throw new Error('incomplete caution display')
   const time = (key: string) => {
     const value=e[key]
@@ -15,12 +15,17 @@ export function normalizeCautionDisplay(raw: unknown): NewowCautionEvent {
   }
   const at=time('bar_end'),peak=time('peak_bar_end'),first=time('first_visible_at'),cutoff=time('as_of')
   const confirmation=e.confirmed_at===null?null:time('confirmed_at')
+  const invalidation=e.invalidated_at===null?null:time('invalidated_at')
   if (typeof e.event_id!=='string' || !/^[a-f0-9]{64}$/.test(e.event_id)
     || !['1d','1w','60m','1m','5m','15m','30m'].includes(String(e.frequency))
     || typeof e.peak_day!=='string' || !/^\d{4}-\d{2}-\d{2}$/.test(e.peak_day)
     || ['physical_contract','segment_id','calculation_segment_id'].some(k=>typeof e[k]!=='string'||!e[k])
-    || typeof e.tentative!=='boolean' || !['tentative','confirmed'].includes(String(e.display_state))
-    || e.tentative!==(e.display_state==='tentative') || e.tentative!==(confirmation===null)
+    || typeof e.tentative!=='boolean' || !['tentative','confirmed','invalidated'].includes(String(e.display_state))
+    || e.tentative!==(e.display_state==='tentative')
+    || (e.display_state==='confirmed')!==(confirmation!==null)
+    || (e.display_state==='invalidated')!==(invalidation!==null)
+    || (e.display_state==='invalidated' ? e.invalidation_reason!=='CONDITION_WITHDRAWN' : e.invalidation_reason!==null)
+    || (invalidation!==null&&(invalidation<Math.max(first,peak)||invalidation>cutoff))
     || !Number.isInteger(e.age_bars) || Number(e.age_bars)<0 || e.home_visible!==(Number(e.age_bars)<=1)
     || e.detail_visible!==true || e.max_tentative_age_bars!==10
     || (e.tentative&&(Number(e.age_bars)>10||first!==at))
@@ -34,6 +39,14 @@ export function normalizeCautionDisplay(raw: unknown): NewowCautionEvent {
 
 export function cautionDisplayTitle(e: NewowCautionEvent | null, reason = '资料不足或来源尚未通过核验'): string {
   if (!e) return `小心状态待确认：${reason} · 暂不显示风险标记，不等于没有风险`
-  const state = e.display_state==='tentative' ? '暂定峰，尚未回落5%确认' : `已确认于 ${formatBeijingInstant(e.confirmed_at)}`
+  const state = e.display_state==='invalidated' ? `已失效于 ${formatBeijingInstant(e.invalidated_at)} · 条件已撤回，不参与当前提醒` : e.display_state==='tentative' ? '暂定峰，尚未回落5%确认' : `已确认于 ${formatBeijingInstant(e.confirmed_at)}`
   return `首次可见 ${formatBeijingInstant(e.first_visible_at)} · 峰位置 ${e.peak_day} · ${state} · 已完成K线参考，非交易信号`
+}
+
+export type CautionState = NewowCautionEvent['display_state']
+export function cautionStateLabel(state: CautionState): string {
+  return {tentative:'小心·暂定',confirmed:'小心·已确认',invalidated:'小心·已失效'}[state]
+}
+export function cautionStateColor(state: CautionState): string {
+  return {tentative:'#FF9500',confirmed:'#15803D',invalidated:'#9AA0A6'}[state]
 }

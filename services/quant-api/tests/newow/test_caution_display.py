@@ -130,3 +130,27 @@ def test_first_seen_matches_incremental_public_fresh_condition():
         if mirror.last_bar_fresh_peak and expected_first is None:
             expected_first=count-1
         assert mirror_peak_structure(prefix)[4] == expected_first
+
+
+def test_invalidated_display_requires_explicit_withdrawal_and_never_confirmation():
+    import pytest
+    from pydantic import ValidationError
+    from app.schemas.market_newow_product import CautionDisplayEventOut
+    source = bars([100]*20+[110,120])
+    event = project_caution_events(replay(source))[-1]
+    invalidated = {**event, 'display_state':'invalidated', 'tentative':False,
+        'invalidated_at':event['as_of'], 'invalidation_reason':'CONDITION_WITHDRAWN'}
+    assert CautionDisplayEventOut.model_validate(invalidated).display_state == 'invalidated'
+    for patch in [{'invalidated_at':None}, {'invalidation_reason':None},
+                  {'invalidation_reason':'AGE_EXPIRED'}, {'confirmed_at':event['as_of']},
+                  {'tentative':True}, {'invalidated_at':source[0].bar_end.isoformat()},
+                  {'invalidated_at':event['as_of'][:19]}]:
+        with pytest.raises(ValidationError):
+            CautionDisplayEventOut.model_validate({**invalidated, **patch})
+
+
+def test_completed_scan_does_not_invent_withdrawals_from_window_expiry():
+    source=bars([100]*20+list(range(110,123)))
+    for count in range(21,len(source)+1):
+        events=project_caution_events(replay(source[:count]))
+        assert all(e['display_state'] != 'invalidated' and e['invalidated_at'] is None for e in events)

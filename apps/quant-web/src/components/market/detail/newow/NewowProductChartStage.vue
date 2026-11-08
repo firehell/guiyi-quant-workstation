@@ -7,7 +7,7 @@ import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
 import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
-import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
+import { cautionDisplayTitle, cautionStateLabel, type CautionState } from '@/utils/newowCautionDisplay.ts'
 import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vue'
 import { DETAIL_CHART_SESSION, detailChartTime, detailChartVolumeBars, detailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
@@ -135,7 +135,7 @@ let themeObserver:MutationObserver|null=null
 const breakoutPoints=ref<BreakoutPoint[]>([]),showBreakoutShapes=ref(true),showBreakoutWicks=ref(true)
 const displayPoints=ref<DisplayPoint[]>([])
 watch(()=>[props.strategy,props.response?.meta.identity.product,props.response?.meta.identity.frequency,props.response?.meta.identity.formula_versions.join('|')],()=>{breakoutPoints.value=[]},{flush:'sync'})
-const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;title:string}>>([])
+const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;state:CautionState;title:string}>>([])
 const selectedCautionKey = ref<string | null>(null)
 const selectedCaution = computed(() => cautionOverlays.value.find(item=>item.key===selectedCautionKey.value) ?? null)
 watch(cautionOverlays, items => { if (!items.some(item=>item.key===selectedCautionKey.value)) selectedCautionKey.value=null }, {deep:true})
@@ -595,12 +595,13 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   actionOverlayWidth.value = width
   cautionOverlays.value = []
   for (const event of props.response?.value?.caution_events ?? []) {
+    if (!event.detail_visible) continue
     const bar=value.bars.find(bar=>bar.barEnd===event.bar_end)
     if (!bar) continue
     const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay))
     const y=priceToCoordinate.call(candles,bar.close)
     if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
-      cautionOverlays.value.push({x,y:Math.max(3,y-26),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
+      cautionOverlays.value.push({x,y:Math.max(3,y-26),key:event.event_id,tentative:event.tentative,state:event.display_state,title:cautionDisplayTitle(event)})
   }
   const breakoutRange=scale.getVisibleLogicalRange()
   const breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:value.bars.length)*.6)
@@ -841,8 +842,8 @@ function renderAuxiliary(): void {
   auxiliaryZeroLine?.applyOptions({ color: mirror || energy || control || reversal ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
   const { topInset, auxiliaryHeight } = newowAuxiliaryPaneLayout(container.value?.clientHeight ?? 700, auxiliaryToolbar.value?.offsetHeight ?? 0)
   const displayEvents = (props.response?.value?.caution_events ?? []).flatMap(e=>{
-    const bar=model.value?.bars.find(b=>b.barEnd===e.bar_end)
-    return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative}] : []
+    const bar=e.detail_visible ? model.value?.bars.find(b=>b.barEnd===e.bar_end) : undefined
+    return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative,state:e.display_state}] : []
   })
   const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, displayEvents, mirror || energy ? model.value?.bars : null])
   if (nextKey === renderedAuxiliaryKey) return
@@ -961,10 +962,10 @@ defineExpose({ revealSignal, scrollToLatest })
     <NewowBreakoutOverlay :points="breakoutPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-breakout="emit('select-breakout',$event)" />
     <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" />
     <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
-      <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg v-if="item.tentative" aria-hidden="true" width="100%" height="16"><rect x="0" y="0" width="100%" height="16" rx="8" /></svg><span>小心</span></button>
+      <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative, invalidated: item.state === 'invalidated' }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg v-if="item.tentative" aria-hidden="true" width="100%" height="16"><rect x="0" y="0" width="100%" height="16" rx="8" /></svg><span>小心</span></button>
     </div>
     <aside v-if="selectedCaution" class="newow-caution-explanation" data-testid="newow-caution-explanation" role="region" aria-label="小心说明" @pointerdown.stop @keydown.esc.stop="selectedCautionKey = null">
-      <header><strong>{{ selectedCaution.tentative ? '暂定峰' : '已确认峰' }}</strong><button type="button" aria-label="关闭小心说明" @click="selectedCautionKey = null">关闭</button></header>
+      <header><strong>{{ cautionStateLabel(selectedCaution.state) }}</strong><button type="button" aria-label="关闭小心说明" @click="selectedCautionKey = null">关闭</button></header>
       <p>{{ selectedCaution.title }}</p>
     </aside>
     <div v-if="showHints && (processOverlays.length || cycleCountOverlays.length)" class="newow-process-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="主图过程提示，非成交">
@@ -1066,4 +1067,11 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-caution-explanation header { display:flex; justify-content:space-between; align-items:center; gap:16px; }
 .newow-caution-explanation header button { cursor:pointer; color:inherit; background:transparent; border:1px solid #d0d5dd; border-radius:4px; }
 .newow-caution-explanation p { margin:8px 0 0; overflow-wrap:anywhere; }
+</style>
+
+<style scoped>
+.newow-caution-overlay .tentative,.newow-caution-overlay.dark .tentative{color:#FF9500}
+.newow-caution-overlay .tentative rect,.newow-caution-overlay.dark .tentative rect{stroke:#FF9500;fill:rgba(255,149,0,.08)}
+.newow-caution-overlay button:not(.tentative):not(.invalidated){background:#15803D;color:#fff}
+.newow-caution-overlay button.invalidated{background:#9AA0A6;color:#fff}
 </style>

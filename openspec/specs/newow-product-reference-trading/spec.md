@@ -1715,7 +1715,7 @@ SHALL remain explicit; interface consistency SHALL NOT flatten them into one fic
 
 ### Requirement: Completed-bar caution display events have stable first-observation anchors
 
-The product SHALL use `guiyi_caution_completed_anchor_v1` for the futures caution display adapter,
+The product SHALL use `guiyi_caution_completed_state_v2` for the futures caution display adapter,
 separately from the unchanged `newow_zhaoyao_mirror_repainting_page_v2` numerical primitive.
 This adapter SHALL be `page_parity=false`, `repainting=true`, `executable=false`; no BUILD/CLEAR,
 CDV2 care/extra input, reference pairing, return, delivery or account rule may consume its display gate.
@@ -1740,7 +1740,7 @@ independent events. This is a documented futures adaptation, not a claim to repr
 first-publication history, intrabar visibility or a real-time trading decision.
 
 Chart `caution_events` SHALL expose a typed shared contract: event identity, frequency, display anchor,
-actual peak/time/day, first visibility, confirmation or null, cutoff, tentative/confirmed state, bar age,
+actual peak/time/day, first visibility, confirmation or null, explicit invalidation time/reason or null, cutoff, tentative/confirmed/invalidated state, bar age,
 home/detail visibility, maximum tentative age, policy/formula versions and all owner identities.
 Home caution items SHALL carry this same contract plus their row fields. Missing policy, unknown
 certainty or mismatched ownership/cutoff SHALL NOT be treated as confirmed or silently shown.
@@ -1749,6 +1749,26 @@ SHALL draw their caution markers from the accepted chart events, rather than ind
 moving raw tentative arrays. Pure raw mirror arrays SHALL remain accessible and unchanged for numerical
 parity and explanation. Snapshot dependency proofs and persisted home input identities SHALL include
 the display policy version so previous policy output cannot survive as fresh cache data.
+
+The shared display SHALL use orange for tentative, green for confirmed and grey for explicitly
+invalidated events. `invalidated` SHALL require `invalidated_at` and `CONDITION_WITHDRAWN`, no
+confirmation time, and an invalidation at or after both first visibility and peak, not after cutoff.
+Other states SHALL have no invalidation fields. Visibility age expiry, quality failure, missing input
+and rollover SHALL NOT be inferred as condition withdrawal. The current completed-bar close-5% scan
+has no intrabar withdrawal facts: it SHALL continue producing tentative/confirmed only, with explicit
+null invalidation fields. Grey rendering support does not establish a historical withdrawal or add a
+new observation producer. No private WARN/WATCHING distinction is claimed.
+
+Home caution clicks SHALL open an identity-bound explanation with current state, first-visible/peak
+and confirmation or withdrawal times plus an explicit chart link. A replacement snapshot SHALL refresh
+that explanation from its accepted event, and missing/changed owner, strategy or event SHALL remove
+it. Main and auxiliary markers SHALL use the same state/color. Missing data SHALL use a neutral
+notice distinct from grey invalidated history and from accepted absence.
+
+This change SHALL NOT introduce a preview feed, messages, notifications, persistence, a 14:30 stock
+clock gate or trading decisions. The current message domain has no shared caution lifecycle producer;
+message/push integration requires an independently authorized observation fact source rather than
+reconstructing intrabar appearance from final historical bars.
 
 #### Scenario: Candidate advances but the first completed event remains fixed
 - **GIVEN** a fresh event at completed bar A and a higher candidate peak at bar B
