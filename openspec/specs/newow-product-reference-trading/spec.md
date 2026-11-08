@@ -1750,8 +1750,12 @@ moving raw tentative arrays. Pure raw mirror arrays SHALL remain accessible and 
 parity and explanation. Snapshot dependency proofs and persisted home input identities SHALL include
 the display policy version so previous policy output cannot survive as fresh cache data.
 
-The shared display SHALL use orange for tentative, green for confirmed and grey for explicitly
-invalidated events. `invalidated` SHALL require `invalidated_at` and `CONDITION_WITHDRAWN`, no
+Home chips SHALL use orange for tentative, green for confirmed and grey for explicitly
+invalidated events. Chart markers SHALL preserve the public canvas palette: bright-green solid
+confirmed capsules with dark-green text, green dashed tentative capsules (light/dark text variants),
+and pale-grey dashed, diagonally struck withdrawn capsules. Capsules SHALL be 32×16 CSS pixels with
+bold 10px text, 8px radius and a 10px dashed leader to the anchor close; pane containment SHALL not
+compress capsule width. State identity and wording SHALL remain shared across surfaces. `invalidated` SHALL require `invalidated_at` and `CONDITION_WITHDRAWN`, no
 confirmation time, and an invalidation at or after both first visibility and peak, not after cutoff.
 Other states SHALL have no invalidation fields. Visibility age expiry, quality failure, missing input
 and rollover SHALL NOT be inferred as condition withdrawal. The current completed-bar close-5% scan
@@ -1762,7 +1766,7 @@ new observation producer. No private WARN/WATCHING distinction is claimed.
 Home caution clicks SHALL open an identity-bound explanation with current state, first-visible/peak
 and confirmation or withdrawal times plus an explicit chart link. A replacement snapshot SHALL refresh
 that explanation from its accepted event, and missing/changed owner, strategy or event SHALL remove
-it. Main and auxiliary markers SHALL use the same state/color. Missing data SHALL use a neutral
+it. Main and auxiliary markers SHALL use the same state and chart palette; home chip colors may differ. Missing data SHALL use a neutral
 notice distinct from grey invalidated history and from accepted absence.
 
 This change SHALL NOT introduce a preview feed, messages, notifications, persistence, a 14:30 stock

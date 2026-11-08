@@ -50,3 +50,8 @@ export function cautionStateLabel(state: CautionState): string {
 export function cautionStateColor(state: CautionState): string {
   return {tentative:'#FF9500',confirmed:'#15803D',invalidated:'#9AA0A6'}[state]
 }
+
+/** Chart canvas palette differs from homepage status chips in the public product. */
+export function cautionChartColor(state: CautionState): string {
+  return state==='invalidated' ? '#9FB0C8' : '#00FF00'
+}

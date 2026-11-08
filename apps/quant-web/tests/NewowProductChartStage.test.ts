@@ -967,6 +967,12 @@ test('independent caution layer survives auxiliary selection and clears on strat
   const layer=()=>findNode(root,n=>n.props.class==='newow-caution-overlay')!
   assert.match(textContent(layer()),/小心/)
   const trigger=findNode(root,n=>n.props['data-testid']==='newow-caution-trigger')!
+  const capsule=findNode(trigger,n=>n.type==='rect')!
+  assert.equal(capsule.props.width,'32')
+  assert.equal(capsule.props.height,'16')
+  assert.equal(capsule.props.rx,'8')
+  const stem=findNode(trigger,n=>n.type==='line')!
+  assert.equal(stem.props['stroke-dasharray'],'1 3')
   assert.equal(trigger.props['aria-expanded'],false)
   ;(trigger.props.onClick as (event:object)=>void)({stopPropagation(){}})
   await nextTick()

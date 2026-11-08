@@ -1,4 +1,4 @@
-import { cautionStateColor, type CautionState } from '../../../../utils/newowCautionDisplay.ts'
+import { cautionChartColor, type CautionState } from '../../../../utils/newowCautionDisplay.ts'
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from 'lightweight-charts'
 
 export const NEWOW_ZHAOYAO_MIRROR_STYLE = {
@@ -118,7 +118,7 @@ export function buildNewowZhaoyaoMirrorCommands(
     if (row.inducement > 0) items.push({ kind: 'inducement', color: NEWOW_ZHAOYAO_MIRROR_STYLE.inducement, x, fromY: zeroY, toY: down(row.inducement), dash: [2, 2] })
   }
   for (const { row, x } of visible) if (row.caution === 50 || row.tentative === 50) {
-    items.push({ kind: 'caution', color: row.displayState ? cautionStateColor(row.displayState) : NEWOW_ZHAOYAO_MIRROR_STYLE.caution, x, fromY: padTop + 12, toY: zeroY, dash: row.tentative === 50 ? [1, 3] : [3, 3], text: '小心', hollow: row.tentative === 50 })
+    items.push({ kind: 'caution', color: row.displayState ? cautionChartColor(row.displayState) : NEWOW_ZHAOYAO_MIRROR_STYLE.caution, x, fromY: padTop + 12, toY: zeroY, dash: row.tentative === 50 ? [1, 3] : [3, 3], text: '小心', hollow: row.tentative === 50 })
   }
   return { zeroY, barWidth, items }
 }
