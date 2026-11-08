@@ -107,7 +107,7 @@ function openSummary(row: Row) { openChart(row.symbol,'1d') }
 function trendDisplay(symbol: string) { return homeTrendDisplay(deliveries.value[symbol]?.card?.strategies.trend['1d'], deliveries.value[symbol]) }
 function periodNotice(symbol: string, period: HomePeriod) { return homePeriodNotice(deliveries.value[symbol], period) }
 function periodTime(symbol: string, period: HomePeriod) { const value = fact(symbol, period)?.bar_end; return value ? formatBeijingInstant(value) : '截至时间待确认' }
-const summaryNotice = computed(() => homeProjectionSummary(props.rows.map(row => row.symbol), deliveries.value, readFailure.value))
+const summaryNotice = computed(() => homeProjectionSummary(props.products, deliveries.value, readFailure.value))
 function pending(symbol: string) { return periods.some(period => fact(symbol, period)?.freshness === 'pending_update') }
 </script>
 
