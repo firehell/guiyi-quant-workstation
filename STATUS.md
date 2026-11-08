@@ -1,3 +1,5 @@
+11/8 牛哇全历史参考重建进行中：develop `1ad85eb7d` 已修复历史起点、rank1 owner覆盖与普通/融合/缓存读取校验，定向186 passed、1 skipped及独立Review通过；开发预览API8002已加载。玻璃、黄金、豆二三周期×三策略均已逐路重建并保留旧版本，玻璃日线完整曲线及63笔普通参考记录分页实际读回通过。全60品种×1d/1w/60m×趋势/震荡/融合的540路按单计算进程继续，1GiB RSS/系统剩余20%协作停止保护，原生batch上限256。一次SOURCE_BUSY零写入及一次性脚本参数检查造成的纯规划失败保留原件、经读回有界恢复；未知写入不自动重试。动态进度和恢复原件在`output/newow-full-history-20261108/`，以最终`final-readback.json`为全量新鲜源核验结果；当前全量未验收完成。未下载/清缓存/改行情、未切正式Runtime、未发布main/tag。
+
 11/7 17:20 方案一已实施、发布并完成正式服务与原TqKq模拟账户恢复：v1.16.100（PR633），exact `befb1e0e07b7f87c5b9603b7f2ace2fc7f1e32f6`；正式独立副本`.worktrees/release-v1.16.100`。develop全部待发布代码承接v98/v99进入本版本；原tag不改写。十标准服务统一generation69且全部matched，API/Web/Runtime HTTP通过；默认可选home-projection未启用，原苏冰开发模型未重置或晋升。
 
 已完成60品种×3周期×趋势/新震荡/融合共540条真实历史参考准备，窗口Nov2–Nov6，保留原生完整warmup。修复下一交易日换月/质量边界越过请求through或as_of而进入参考回放，以及融合源错误继承趋势reference model身份。180组震荡＋融合在原生drain及OS owner锁内逐对原子迁移，360条旧forward退役、360条新身份从空参考仓位启用。175笔旧OPEN只关闭原投影有效区间并追加OBSERVATION_INTERRUPTED，无退出action/价格/收益；旧snapshot合同保留，正式reader实际读回成功。逐行核验原29,269条batch、1,258条action、3,731条mark、1,397条trade版本：原checkpoint/action/mark内容不变。新流358 READY；RS周线震荡/融合两条FORMULA_WARMING继续接收completed观察，以实际availability决定就绪，不制造暖机证据。
