@@ -58,6 +58,33 @@ def test_future_or_corrupt_catchup_rejected():
         apply_event(p, e)
 
 
+def test_observation_rollover_rewarms_only_new_physical_contract_and_replays():
+    from app.subing_model_recovery import OBSERVATION_ROLLOVER_POLICY, consumed_bars
+
+    p = empty_pipe()
+    old = row('ec', '1d')['data']
+    p.identity.update(prepared={'ec': {'warmup': {'1d': [old]}}}, bootstrap=[])
+    event = recovery_event(p)
+    bars = {freq: [dict(row('ec', freq, contract='EC2702')['data'], close='102')]
+            for freq in ('1m', '30m', '60m', '1d')}
+    event['products']['ec'] = dict(contract='EC2702', previous_contract='EC2612',
+        bars=bars, proofs={freq: {'hash': digest(rows), 'source': dict(contract='EC2702', frequency=freq)}
+                          for freq, rows in bars.items()})
+    event['observation_rollover_policy'] = OBSERVATION_ROLLOVER_POLICY
+    apply_event(p, event)
+    assert p.factors['ec'].contract == p.products['ec']['contract'] == 'EC2702'
+    assert p.products['ec']['source_kind'] == 'CANONICAL_OBSERVATION_ROLLOVER'
+    assert consumed_bars(p.identity, [event])['ec', '1d'][AT].close == 102
+    assert p.last_outcome['model_fills'] == p.last_outcome['model_decisions'] == []
+    q = empty_pipe()
+    q.identity = p.identity
+    apply_event(q, dict(event, outcome=deepcopy(p.last_outcome)))
+    assert q.state() == p.state()
+    event['products']['jm']['previous_contract'] = 'JM2612'
+    with pytest.raises(ValueError, match='ROLLOVER_REQUIRES_REVIEW'):
+        apply_event(empty_pipe(), event)
+
+
 @pytest.mark.parametrize('attribute', ['layers', 'pending', 'clear_reasons', 'exit_layers', 'day_halted', 'pullback'])
 def test_exposure_or_obligation_never_auto_resumes(attribute):
     m = SimpleNamespace(layers=[], pending=None, clear_reasons=[], exit_layers=[], day_halted=False, pullback=None)

@@ -27,7 +27,7 @@ from app.market_data.storage import CanonicalMonthlyStore
 from app.subing_model import worker
 from app.subing_model.pipeline import Pipeline
 from app.subing_model.store import ModelStore, digest
-from app.subing_model_recovery import POLICY, CONFLICT_POLICY, RESUME_POLICY, apply_event, flat_without_obligations, consumed_bars, overlap_conflicts, model_state
+from app.subing_model_recovery import POLICY, CONFLICT_POLICY, RESUME_POLICY, OBSERVATION_ROLLOVER_POLICY, apply_event, flat_without_obligations, consumed_bars, overlap_conflicts, model_state
 from app.subing_projection_source import registered_source
 from guiyi_quant.subing_decision import _wire
 
@@ -178,7 +178,11 @@ class Service:
         since = date.fromisoformat(self.pipe.source_day)
         if day < since or any(now < datetime.fromisoformat(c['day_end']) for c in ctx.values()):
             return False
-        if day == since and all(self.pipe.last.get((p, '1m')) == datetime.fromisoformat(ctx[p]['day_end']) for p in worker.PRODUCTS):
+        if day == since and all(
+            self.pipe.last.get((p, '1m')) == datetime.fromisoformat(ctx[p]['day_end'])
+            and self.pipe.products[p]['contract'] == ctx[p]['contract']
+            for p in worker.PRODUCTS
+        ):
             return False
         # Validate at most once/minute; a failed Canonical read never advances.
         key = (day, int(now.timestamp()) // 60)
@@ -198,9 +202,18 @@ class Service:
                 if {d for d, opened in calendar} != {since + timedelta(days=i) for i in range((day - since).days + 1)}:
                     raise ValueError('MODEL_RECOVERY_CALENDAR_INCOMPLETE')
                 required_days = [d for d, opened in calendar if opened]
-                if sorted(x.trade_date for x in maps) != required_days or any(x.contract != contract for x in maps):
+                if sorted(x.trade_date for x in maps) != required_days or not maps:
                     raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
+                target = ctx[product]['contract']
+                rolled = contract != target
+                if (max(maps, key=lambda x: x.trade_date).contract != target
+                        or (product == 'jm' and any(x.contract != contract for x in maps))
+                        or (not rolled and any(x.contract != contract for x in maps))):
+                    raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
+                previous_contract, contract = contract, target
                 item = dict(contract=contract, bars={}, proofs={}, conflicts=[])
+                if rolled:
+                    item['previous_contract'] = previous_contract
                 for frequency in ('1m', '30m', '60m', '1d'):
                     freq = BarFrequency(frequency)
                     cutoff = datetime.fromisoformat(ctx[product]['day_end'])
@@ -208,8 +221,10 @@ class Service:
                                                          frequency=freq, before=cutoff)
                     expected = m.expected_contract_replay_endpoints(symbol=product,
                         contract=contract, frequency=freq, trading_day=day, cutoff=cutoff)
-                    known = self.known.get((product, frequency), {})
-                    read_since = min((b.trading_day for b in known.values()), default=since)
+                    if not expected:
+                        raise ValueError('MODEL_RECOVERY_PREFIX_EMPTY')
+                    known = {} if rolled else self.known.get((product, frequency), {})
+                    read_since = expected[0][1] if rolled else min((b.trading_day for b in known.values()), default=since)
                     expected = [(end, d) for end, d in expected if d >= read_since]
                     rows = m.query_contract_trading_days(ContractTradingDayQuery(
                         product, contract, freq, read_since, day))
@@ -217,7 +232,7 @@ class Service:
                     if source != m.contract_source_evidence(symbol=product, contract=contract,
                                                             frequency=freq, before=cutoff):
                         raise ValueError('MODEL_RECOVERY_SOURCE_CHANGED')
-                    item['conflicts'].extend(overlap_conflicts(self.known.get((product, frequency), {}), rows.bars, frequency))
+                    item['conflicts'].extend(overlap_conflicts(known, rows.bars, frequency))
                     item['bars'][frequency] = _wire([asdict(b) for b in rows.bars])
                     item['proofs'][frequency] = dict(source=_wire(source), hash=digest(item['bars'][frequency]))
                 updates[product] = item
@@ -237,6 +252,8 @@ class Service:
         payload = dict(event_id=f'{policy}:{day}:{tail}', recovery_policy=policy,
             observed_at=datetime.now(UTC).isoformat(), products=updates, source_day=str(day), cursor=tail,
             account_can_resume=flat_without_obligations(self.pipe.account))
+        if any('previous_contract' in item for item in updates.values()):
+            payload['observation_rollover_policy'] = OBSERVATION_ROLLOVER_POLICY
         if preview:
             return payload
         self.commit(payload)
