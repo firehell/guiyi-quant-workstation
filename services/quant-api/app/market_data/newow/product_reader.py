@@ -7,7 +7,6 @@ from app.read_timings import timed
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal
 from hashlib import sha256
 import json
 from types import MappingProxyType
@@ -1978,16 +1977,7 @@ def _validate_order(bars: tuple[CanonicalBar, ...]) -> None:
 
 
 def _is_strict_no_trade_fact(bar: CanonicalBar) -> bool:
-    """Classify an authoritative futures no-trade fact without synthesizing price."""
-    zero = Decimal(0)
-    return (
-        bar.open == zero
-        and bar.high == zero
-        and bar.low == zero
-        and bar.close == zero
-        and bar.volume == zero
-        and bar.turnover == zero
-    )
+    return bar.is_strict_no_trade
 
 
 def _effective_product_bars(

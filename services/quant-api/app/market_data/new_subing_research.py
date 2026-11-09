@@ -86,7 +86,8 @@ def fact_decimal(value: object, *, positive: bool = False) -> Decimal:
 
 
 def validate_series(result: MarketSeriesResult, *, product: str, contract: str,
-                    frequency: BarFrequency, expected: Sequence[tuple[datetime, date]]) -> None:
+                    frequency: BarFrequency, expected: Sequence[tuple[datetime, date]],
+                    allow_daily_no_trade: bool = False) -> None:
     identity: dict[str, object] = {'symbol': product, 'series_kind': 'contract', 'contract': contract,
                 'frequency': frequency.value}
     if any(result.request_identity.get(k) != v for k, v in identity.items()):
@@ -101,7 +102,10 @@ def validate_series(result: MarketSeriesResult, *, product: str, contract: str,
         raise NewSubingInputError('DATA_CONFLICT', diagnostic=identity)
     if any(right[0] <= left[0] for left, right in zip(actual, actual[1:])):
         raise NewSubingInputError('DATA_CONFLICT', diagnostic=identity)
-    if any(bar.close <= 0 or bar.low <= 0 for bar in result.bars):
+    priced = result.bars
+    if allow_daily_no_trade and frequency is BarFrequency.D1:
+        priced = tuple(bar for bar in priced if not bar.is_strict_no_trade)
+    if not priced or any(bar.close <= 0 or bar.low <= 0 for bar in priced):
         raise NewSubingInputError('DATA_INSUFFICIENT', diagnostic=identity)
 
 

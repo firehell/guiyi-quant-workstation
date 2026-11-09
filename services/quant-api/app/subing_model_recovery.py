@@ -16,6 +16,7 @@ POLICY = 'canonical_indicator_catchup_no_execution_v1'
 CONFLICT_POLICY = 'canonical_rebaseline_after_conflict_no_execution_v1'
 RESUME_POLICY = 'completed_backlog_indicator_only_resume_v1'
 OBSERVATION_ROLLOVER_POLICY = 'canonical_observation_rollover_no_execution_v1'
+DAILY_NO_TRADE_POLICY = 'canonical_observation_daily_skip_no_trade_v1'
 
 
 def observation_rollover(event, product, update):
@@ -64,6 +65,9 @@ def apply_event(pipe, event):
         raise ValueError('MODEL_RECOVERY_ACCOUNT_DRIFT')
     for product, update in event['products'].items():
         row = pipe.products[product]
+        daily_no_trade = update.get('daily_no_trade_policy')
+        if daily_no_trade is not None and (daily_no_trade != DAILY_NO_TRADE_POLICY or product == 'jm'):
+            raise ValueError('MODEL_RECOVERY_NO_TRADE_POLICY_INVALID')
         rolled = observation_rollover(event, product, update)
         if rolled and update['previous_contract'] != row['contract']:
             raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
@@ -82,6 +86,11 @@ def apply_event(pipe, event):
                 b = bar(raw)
                 if b.bar_end > now:
                     raise ValueError('MODEL_RECOVERY_FUTURE_BAR')
+                if daily_no_trade and frequency == '1d':
+                    if b.is_strict_no_trade:
+                        continue
+                    if b.close <= 0 or b.low <= 0:
+                        raise ValueError('MODEL_RECOVERY_DAILY_PRICE_INVALID')
                 last = f.trends[frequency].last_end
                 if last is None or b.bar_end > last:
                     f.step(frequency, b)

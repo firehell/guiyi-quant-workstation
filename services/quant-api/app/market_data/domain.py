@@ -497,6 +497,11 @@ class CanonicalBar:
     turnover: Decimal | None
     open_interest: Decimal | None
 
+    @property
+    def is_strict_no_trade(self) -> bool:
+        """An authoritative all-zero price, volume and turnover fact."""
+        return self.open == self.high == self.low == self.close == self.volume == self.turnover == 0
+
     def __post_init__(self) -> None:
         if not isinstance(self.bar_end, datetime) or self.bar_end.tzinfo is None or self.bar_end.utcoffset() is None:
             raise ContractError(field="bar_end", reason="timezone_required")
