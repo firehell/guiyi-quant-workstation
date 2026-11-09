@@ -28,7 +28,7 @@ def test_unrelated_or_unmapped_proof_does_not_recover_or_read_account(tmp_path, 
     def forbidden(_):
         raise AssertionError("unrelated proof must not trigger account synchronization")
     proof = m.RecoveryInput(product, contract, 0, now, "unrelated-proof")
-    assert recover_blocked_products(c, SimpleNamespace(snapshot=forbidden), [codec.encode(proof)]) is False
+    assert recover_blocked_products(c, SimpleNamespace(snapshot=forbidden, reconnection_required=False), [codec.encode(proof)]) is False
     assert c.store.current() == before
     c.close()
 
@@ -37,7 +37,7 @@ def test_mixed_proofs_recover_only_named_blocked_product(tmp_path):
     c, now, healthy_proof = blocked_controller(tmp_path)
     before = c.store.current()
     proof = m.RecoveryInput("JM", "JM2701", 0, now, "jm-proof")
-    assert recover_blocked_products(c, SimpleNamespace(snapshot=snapshot),
+    assert recover_blocked_products(c, SimpleNamespace(snapshot=snapshot, reconnection_required=False),
         [codec.encode(healthy_proof), codec.encode(proof)]) is True
     after = c.store.current()
     assert not after.blocked_products
@@ -47,5 +47,39 @@ def test_mixed_proofs_recover_only_named_blocked_product(tmp_path):
     assert after.products[0] == before.products[0]
     assert after.activated_at == before.activated_at
     assert after.orders == before.orders and after.fills == before.fills
+    assert c.store.replay() == after
+    c.close()
+
+
+def test_expired_proof_cannot_turn_product_recovery_into_account_hold(tmp_path):
+    c, now, _ = blocked_controller(tmp_path)
+    observed = now + timedelta(seconds=2)
+    c.signal(m.Signal("jm-completed", "JM", "JM2701", observed,
+                     observed + timedelta(seconds=1), None, (), "a" * 64),
+             processed_at=observed + timedelta(seconds=1))
+    proof = m.RecoveryInput("JM", "JM2701", 0, now, "old-jm-proof")
+    gateway = SimpleNamespace(snapshot=snapshot, reconnection_required=False)
+    assert recover_blocked_products(c, gateway, [codec.encode(proof)]) is False
+    after = c.store.current()
+    assert after.phase == "READY" and after.blocked_products == ("JM",)
+    assert after.audit[-1].command.__class__ is m.Readback
+    assert c.store.replay() == after
+    c.close()
+
+
+def test_native_day_change_defers_scoped_recovery_to_account_recovery(tmp_path):
+    c, now, _ = blocked_controller(tmp_path)
+    gateway = SimpleNamespace(reconnection_required=False)
+
+    def changed_day(at):
+        gateway.reconnection_required = True
+        return snapshot(at)
+
+    gateway.snapshot = changed_day
+    proof = m.RecoveryInput("JM", "JM2701", 0, now, "jm-proof")
+    assert recover_blocked_products(c, gateway, [codec.encode(proof)]) is False
+    after = c.store.current()
+    assert after.phase == "RECOVERY_REQUIRED"
+    assert type(after.audit[-1].command) is m.Disconnect
     assert c.store.replay() == after
     c.close()
