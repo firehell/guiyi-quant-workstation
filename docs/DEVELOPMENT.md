@@ -106,8 +106,8 @@ PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/p
 
 开发预览入口使用既有严格读取器加载 `~/Library/Application Support/GuiyiQuant/project.env` 的
 DB、Canonical 和 Redis 依赖，不输出或修改配置；按正式启动器规则补齐 Redis URL 认证。
-`python -m app.develop_preview api` 在启动 HTTP 服务前，使用统一 `HomeRecovery` 校验并更新
-`.run/develop-newow-home.json`，避免重启后继续读取过期摘要；身份未变的周期不会重算。
+`python -m app.develop_preview api` 启动 HTTP 后，通过 API lifespan 管理的单个恢复线程持续调用统一 `HomeRecovery`，每轮后等待60秒。只更新 `.run/develop-newow-home.json`，身份未变的周期不会重算；已有单次构建持锁时只等待，不抢占或重置任务。退出时请求停止并等待原生子进程回收。
+开发恢复状态可只读查询 `/api/v1/develop/home-recovery`；初始化或非锁忙异常使用固定错误码并停止，不能把进程存活当恢复健康。
 同前缀的 `python -m app.develop_preview build` 也可单独更新该文件。只写本地开发派生文件，
 不下载行情、不覆盖共享正式资产，不启用后台任务；构建未成功的周期保留真实失败状态，GET 不自动构建。
 工作状态与开发资产同根隔离；只读子进程有120秒/周期硬截止，仍验证来源和完整代次。

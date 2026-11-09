@@ -7,7 +7,7 @@ import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
 import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
-import { cautionDisplayTitle } from '@/utils/newowCautionDisplay.ts'
+import { cautionDisplayTitle, cautionStateLabel, type CautionState } from '@/utils/newowCautionDisplay.ts'
 import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vue'
 import { DETAIL_CHART_SESSION, detailChartTime, detailChartVolumeBars, detailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
@@ -135,7 +135,7 @@ let themeObserver:MutationObserver|null=null
 const breakoutPoints=ref<BreakoutPoint[]>([]),showBreakoutShapes=ref(true),showBreakoutWicks=ref(true)
 const displayPoints=ref<DisplayPoint[]>([])
 watch(()=>[props.strategy,props.response?.meta.identity.product,props.response?.meta.identity.frequency,props.response?.meta.identity.formula_versions.join('|')],()=>{breakoutPoints.value=[]},{flush:'sync'})
-const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;title:string}>>([])
+const cautionOverlays = ref<Array<{x:number;y:number;key:string;tentative:boolean;state:CautionState;title:string;stemX:number;stemEnd:number}>>([])
 const selectedCautionKey = ref<string | null>(null)
 const selectedCaution = computed(() => cautionOverlays.value.find(item=>item.key===selectedCautionKey.value) ?? null)
 watch(cautionOverlays, items => { if (!items.some(item=>item.key===selectedCautionKey.value)) selectedCautionKey.value=null }, {deep:true})
@@ -595,12 +595,15 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   actionOverlayWidth.value = width
   cautionOverlays.value = []
   for (const event of props.response?.value?.caution_events ?? []) {
+    if (!event.detail_visible) continue
     const bar=value.bars.find(bar=>bar.barEnd===event.bar_end)
     if (!bar) continue
     const x=timeToCoordinate.call(scale,chartMarkerTime(bar.barEnd,value.identity.frequency,bar.tradingDay))
     const y=priceToCoordinate.call(candles,bar.close)
-    if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height)
-      cautionOverlays.value.push({x,y:Math.max(3,y-26),key:event.event_id,tentative:event.tentative,title:cautionDisplayTitle(event)})
+    if (x != null && y != null && Number.isFinite(x) && Number.isFinite(y) && x>=0 && x<=width && y>=0 && y<=height) {
+      const capsuleX=Math.max(16,Math.min(width-16,x)), capsuleY=Math.max(0,y-26)
+      cautionOverlays.value.push({x:capsuleX,y:capsuleY,key:event.event_id,tentative:event.tentative,state:event.display_state,title:cautionDisplayTitle(event),stemX:16+x-capsuleX,stemEnd:y-capsuleY-16})
+    }
   }
   const breakoutRange=scale.getVisibleLogicalRange()
   const breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:value.bars.length)*.6)
@@ -841,8 +844,8 @@ function renderAuxiliary(): void {
   auxiliaryZeroLine?.applyOptions({ color: mirror || energy || control || reversal ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
   const { topInset, auxiliaryHeight } = newowAuxiliaryPaneLayout(container.value?.clientHeight ?? 700, auxiliaryToolbar.value?.offsetHeight ?? 0)
   const displayEvents = (props.response?.value?.caution_events ?? []).flatMap(e=>{
-    const bar=model.value?.bars.find(b=>b.barEnd===e.bar_end)
-    return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative}] : []
+    const bar=e.detail_visible ? model.value?.bars.find(b=>b.barEnd===e.bar_end) : undefined
+    return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative,state:e.display_state}] : []
   })
   const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, displayEvents, mirror || energy ? model.value?.bars : null])
   if (nextKey === renderedAuxiliaryKey) return
@@ -960,11 +963,11 @@ defineExpose({ revealSignal, scrollToLatest })
     />
     <NewowBreakoutOverlay :points="breakoutPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-breakout="emit('select-breakout',$event)" />
     <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" />
-    <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
-      <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg v-if="item.tentative" aria-hidden="true" width="100%" height="16"><rect x="0" y="0" width="100%" height="16" rx="8" /></svg><span>小心</span></button>
+    <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
+      <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative, invalidated: item.state === 'invalidated' }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg class="caution-capsule" aria-hidden="true" width="32" height="16" viewBox="0 0 32 16"><rect x="0" y="0" width="32" height="16" rx="8" /><line v-if="item.state === 'invalidated'" class="caution-withdrawal" x1="3" y1="13" x2="29" y2="3" /></svg><svg class="caution-leader" aria-hidden="true" width="32" height="10" viewBox="0 0 32 10"><line :x1="item.stemX" y1="0" :x2="item.stemX" :y2="item.stemEnd" :stroke-dasharray="item.tentative || item.state === 'invalidated' ? '1 3' : '3 3'" /></svg><span>小心</span></button>
     </div>
     <aside v-if="selectedCaution" class="newow-caution-explanation" data-testid="newow-caution-explanation" role="region" aria-label="小心说明" @pointerdown.stop @keydown.esc.stop="selectedCautionKey = null">
-      <header><strong>{{ selectedCaution.tentative ? '暂定峰' : '已确认峰' }}</strong><button type="button" aria-label="关闭小心说明" @click="selectedCautionKey = null">关闭</button></header>
+      <header><strong>{{ cautionStateLabel(selectedCaution.state) }}</strong><button type="button" aria-label="关闭小心说明" @click="selectedCautionKey = null">关闭</button></header>
       <p>{{ selectedCaution.title }}</p>
     </aside>
     <div v-if="showHints && (processOverlays.length || cycleCountOverlays.length)" class="newow-process-overlay" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="主图过程提示，非成交">
@@ -998,7 +1001,7 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
-.newow-caution-overlay{position:absolute;pointer-events:none;z-index:8}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);border-radius:8px;padding:0 6px;height:16px;min-height:16px;max-height:16px;box-sizing:border-box;background:#00ff00;color:#003300;font:bold 10px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;line-height:16px;white-space:nowrap;pointer-events:auto;border:0;cursor:pointer}
+.newow-caution-overlay{position:absolute;pointer-events:none;z-index:8}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);box-sizing:border-box;white-space:nowrap;pointer-events:auto;cursor:pointer}
 
 .newow-product-chart-stage__tools > summary { min-height:22px; padding:0 6px; line-height:22px; cursor:pointer; white-space:nowrap; }
 .newow-product-chart-stage__tools-body { position:absolute; right:0; top:100%; width:min(560px,calc(100vw - 48px)); padding:8px; border:1px solid var(--gy-border); border-radius:6px; background:var(--gy-bg-panel); box-shadow:0 4px 14px #0002; font-weight:400; }
@@ -1054,12 +1057,20 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 </style>
 
 <style scoped>
-.newow-caution-overlay button>span{position:relative;top:.5px}
-.newow-caution-overlay .tentative { background:transparent; color:#00A03E; }
-.newow-caution-overlay .tentative svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
-.newow-caution-overlay .tentative rect{fill:rgba(0,230,118,.08);stroke:#00A03E;stroke-width:1.5;stroke-dasharray:3 2}
-.newow-caution-overlay.dark .tentative{color:#00E676}
-.newow-caution-overlay.dark .tentative rect{stroke:#00E676}
+.newow-caution-overlay button{width:32px;min-width:32px;max-width:none;height:16px;min-height:16px;max-height:16px;padding:0;border:0;border-radius:8px;background:transparent;color:#003300;overflow:visible;font:700 10px/16px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;text-align:center}
+.newow-caution-overlay button>span{position:relative;top:.5px;z-index:1}
+.newow-caution-overlay .caution-capsule{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.newow-caution-overlay .caution-capsule rect{fill:#00FF00;stroke:none}
+.newow-caution-overlay .caution-leader{position:absolute;left:0;top:16px;overflow:visible;pointer-events:none}
+.newow-caution-overlay .caution-leader line{stroke:#00FF00;stroke-width:1}
+.newow-caution-overlay button.tentative{color:#00A03E}
+.newow-caution-overlay .tentative .caution-capsule rect{fill:rgba(0,230,118,.08);stroke:#00A03E;stroke-width:1.5;stroke-dasharray:3 2}
+.newow-caution-overlay.dark button.tentative{color:#00E676}
+.newow-caution-overlay.dark .tentative .caution-capsule rect{stroke:#00E676}
+.newow-caution-overlay button.invalidated{color:#C7D4E8}
+.newow-caution-overlay .invalidated .caution-capsule rect{fill:rgba(159,176,200,.10);stroke:#9FB0C8;stroke-width:1.5;stroke-dasharray:2 3}
+.newow-caution-overlay .invalidated .caution-leader line{stroke:#8E8E93}
+.newow-caution-overlay .caution-withdrawal{stroke:rgba(159,176,200,.55);stroke-width:1}
 
 .newow-caution-overlay button:focus-visible { outline:2px solid #365af5; outline-offset:2px; }
 .newow-caution-explanation { position:absolute; top:56px; right:8px; z-index:15; max-width:min(340px,calc(100% - 16px)); box-sizing:border-box; padding:10px 12px; border:1px solid #d0d5dd; border-radius:8px; background:var(--gy-bg-panel,#fff); color:var(--gy-text-primary,#1d2939); box-shadow:0 4px 16px #0002; font-size:12px; line-height:1.6; }

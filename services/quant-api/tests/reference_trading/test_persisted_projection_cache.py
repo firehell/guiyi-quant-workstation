@@ -78,7 +78,7 @@ def test_persisted_page_rejects_stale_fusion_with_unchanged_base_generation(monk
         "query_as_of": resolved.cutoff.isoformat(),
         "reader": "newow_product_reader_intraday_v3",
     }
-    fusion_manifest = {"source_dependencies": [
+    fusion_manifest = {"query_since": "2025-01-01", "source_dependencies": [
         {"stream_id": "trend", "revision_id": "trend-revision", "seq": 7},
         {"stream_id": "oscillation", "revision_id": "oscillation-revision", "seq": 7},
     ]}
@@ -108,7 +108,7 @@ def test_persisted_fusion_cache_hit_rechecks_saved_source_and_dependencies(monke
          "dependency_digest": manifest_sha256(base_manifest)}
         for stream, revision in (("stream", "revision"), ("oscillation", "osc-revision"))
     ]
-    fusion_manifest = {"source_dependencies": dependencies}
+    fusion_manifest = {"query_since": "2025-01-01", "source_dependencies": dependencies}
     revision = manifest_sha256({
         "snapshot": "fusion-snapshot", "dependencies": dependencies,
         "record_since": (resolved.requested_through - timedelta(days=364)).isoformat(),

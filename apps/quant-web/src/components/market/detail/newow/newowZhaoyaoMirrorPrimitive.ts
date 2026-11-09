@@ -1,3 +1,4 @@
+import { cautionChartColor, type CautionState } from '../../../../utils/newowCautionDisplay.ts'
 import type { IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesPrimitive, SeriesAttachedParameter, Time } from 'lightweight-charts'
 
 export const NEWOW_ZHAOYAO_MIRROR_STYLE = {
@@ -25,6 +26,7 @@ export interface NewowZhaoyaoMirrorDatum {
   readonly inducement: number
   readonly caution: number
   readonly tentative?: number
+  readonly displayState?: CautionState
 }
 
 interface MirrorSourceSeries {
@@ -38,7 +40,7 @@ function mirrorTimeKey(time: Time): string {
 }
 
 /** Joins server-owned split series without collapsing repeated keys from later physical segments. */
-export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[], events?: readonly { time: Time; tentative: boolean }[]): NewowZhaoyaoMirrorDatum[] {
+export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[], events?: readonly { time: Time; tentative: boolean; state?: CautionState }[]): NewowZhaoyaoMirrorDatum[] {
   type MutableRow = { time: Time; entry: number; wash: number; distribution: number; markup: number; exit: number; inducement: number; caution: number; tentative: number }
   const rows = new Map<number, MutableRow>()
   const allowed = new Set(['entry', 'wash', 'distribution', 'markup', 'exit', 'inducement', 'caution', 'tentative'])
@@ -53,11 +55,12 @@ export function buildNewowZhaoyaoMirrorData(series: readonly MirrorSourceSeries[
       row[source.key as keyof Omit<MutableRow, 'time'>] = point.value
     }
   }
-  const result = [...rows.entries()].sort(([left], [right]) => left - right).map(([, row]) => ({ ...row }))
+  const result: Array<MutableRow & {displayState?: CautionState}> = [...rows.entries()].sort(([left], [right]) => left - right).map(([, row]) => ({ ...row }))
   if (events !== undefined) {
     const byTime = new Map(events.map(e=>[mirrorTimeKey(e.time),e]))
     for (const row of result) {
       const event=byTime.get(mirrorTimeKey(row.time))
+      row.displayState=event?.state ?? (event ? event.tentative ? 'tentative' : 'confirmed' : undefined)
       row.caution=event&&!event.tentative?50:0
       row.tentative=event?.tentative?50:0
     }
@@ -115,7 +118,7 @@ export function buildNewowZhaoyaoMirrorCommands(
     if (row.inducement > 0) items.push({ kind: 'inducement', color: NEWOW_ZHAOYAO_MIRROR_STYLE.inducement, x, fromY: zeroY, toY: down(row.inducement), dash: [2, 2] })
   }
   for (const { row, x } of visible) if (row.caution === 50 || row.tentative === 50) {
-    items.push({ kind: 'caution', color: NEWOW_ZHAOYAO_MIRROR_STYLE.caution, x, fromY: padTop + 12, toY: zeroY, dash: row.tentative === 50 ? [1, 3] : [3, 3], text: '小心', hollow: row.tentative === 50 })
+    items.push({ kind: 'caution', color: row.displayState ? cautionChartColor(row.displayState) : NEWOW_ZHAOYAO_MIRROR_STYLE.caution, x, fromY: padTop + 12, toY: zeroY, dash: row.tentative === 50 ? [1, 3] : [3, 3], text: '小心', hollow: row.tentative === 50 })
   }
   return { zeroY, barWidth, items }
 }

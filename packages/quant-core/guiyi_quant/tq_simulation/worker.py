@@ -130,17 +130,35 @@ def preflight_ready(controller, snapshot, issues, mappings, products, now):
 
 def recover_blocked_products(controller, gateway, packets):
     state = controller.store.current()
-    owners = {p.product: p.owner for p in state.products}
+    if state.phase != "READY" or gateway.reconnection_required:
+        return False
+    blocked = {p.product: p for p in state.products if p.product in state.blocked_products}
     selected = tuple(
         proof for proof in (codec.decode(packet) for packet in packets)
-        if proof.product in state.blocked_products
-        and proof.contract == owners[proof.product]
+        if proof.product in blocked
+        and proof.contract == blocked[proof.product].owner
     )
     if not selected:
         return False
     current = datetime.now(UTC)
     snapshot = gateway.snapshot(current)
+    if gateway.reconnection_required:
+        require_recovery(controller, current)
+        return False
     rb = controller.synchronize(snapshot, current)
+    state = controller.store.current()
+    if state.phase != "READY" or not state.readback_valid:
+        return False
+    # The helper evaluated the previous ledger view. Expired proofs leave the
+    # product blocked and can be reconsidered against the next fresh view.
+    selected = tuple(
+        proof for proof in selected
+        if proof.bar_end < rb.at
+        and (blocked[proof.product].last_bar is None
+             or proof.bar_end >= blocked[proof.product].last_bar)
+    )
+    if not selected:
+        return False
     products = tuple(sorted({proof.product for proof in selected}))
     cmd = m.ProductRecoveryV1(rb, selected, products)
     controller.store.execute("tq-product-recovery:" + codec.digest(cmd), cmd)
@@ -346,6 +364,7 @@ def run(config_path, *, inspect=False):
                             require_recovery(controller, datetime.now(UTC))
                             gateway.reconnection_required = True
                         day = next_day
+                        state = controller.store.current() if controller.store else None
                         current_mappings = set()
                         for fact in reply["facts"]:
                             try:
@@ -373,6 +392,8 @@ def run(config_path, *, inspect=False):
                         if (
                             state
                             and not recovered_batch
+                            and state.phase == "READY"
+                            and not gateway.reconnection_required
                             and action in {"trade", "pause"}
                         ):
                             record_observed_signals(controller, reply, facts, issues)
@@ -554,10 +575,17 @@ def run(config_path, *, inspect=False):
                                 write_private(control_path, {"mode": "pause"})
                                 return 1
                             error = maintenance_error
-                    candidate = str(error) if type(error) is ValueError else ""
+                    candidate = str(error) if isinstance(error, ValueError) else ""
                     code = (
                         candidate
                         if re.fullmatch(r"TQ_[A-Z0-9_]{1,100}", candidate)
+                        or candidate in {
+                            "ACCOUNT_RECOVERY_REQUIRED",
+                            "COMMAND_TIME_REGRESSION",
+                            "NATIVE_RECOVERY_REQUIRED",
+                            "PRODUCT_NOT_BLOCKED",
+                            "RECOVERY_INPUT_CUTOFF_INVALID",
+                        }
                         else "TQ_EXECUTION_BLOCKED"
                     )
                     persistent = (

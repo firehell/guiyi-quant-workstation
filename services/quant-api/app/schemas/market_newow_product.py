@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"]
@@ -201,20 +201,22 @@ class ChartPriceUnavailableDayOut(_Out):
 class CautionDisplayEventOut(_Out):
     event_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     frequency: ProductFrequencyValue
-    bar_end: datetime
+    bar_end: AwareDatetime
     peak_day: date
-    peak_bar_end: datetime
-    first_visible_at: datetime
-    confirmed_at: datetime | None
-    as_of: datetime
+    peak_bar_end: AwareDatetime
+    first_visible_at: AwareDatetime
+    confirmed_at: AwareDatetime | None
+    as_of: AwareDatetime
     tentative: bool
-    display_state: Literal['tentative', 'confirmed']
+    display_state: Literal['tentative', 'confirmed', 'invalidated']
+    invalidated_at: AwareDatetime | None
+    invalidation_reason: Literal['CONDITION_WITHDRAWN'] | None
     age_bars: int = Field(ge=0)
     home_visible: bool
     detail_visible: bool
     max_tentative_age_bars: Literal[10]
     visibility_basis: Literal['completed_bar']
-    display_policy_version: Literal['guiyi_caution_completed_anchor_v1']
+    display_policy_version: Literal['guiyi_caution_completed_state_v2']
     physical_contract: str
     segment_id: str
     calculation_segment_id: str
@@ -230,7 +232,10 @@ class CautionDisplayEventOut(_Out):
                 or self.bar_end > self.peak_bar_end or self.peak_bar_end > self.as_of
                 or self.first_visible_at < self.bar_end or self.first_visible_at > self.as_of
                 or self.tentative != (self.display_state == 'tentative')
-                or self.tentative != (self.confirmed_at is None)
+                or (self.display_state == 'confirmed') != (self.confirmed_at is not None)
+                or (self.display_state == 'invalidated') != (self.invalidated_at is not None)
+                or (self.display_state == 'invalidated') != (self.invalidation_reason is not None)
+                or (self.invalidated_at is not None and not max(self.first_visible_at, self.peak_bar_end) <= self.invalidated_at <= self.as_of)
                 or self.home_visible != (self.age_bars <= 1)
                 or not self.detail_visible
                 or (self.tentative and (self.age_bars > 10 or self.first_visible_at != self.bar_end))

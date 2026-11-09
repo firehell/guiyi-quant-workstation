@@ -186,6 +186,10 @@ def build_final_batch_material(snapshot, request, *, stream_id: str,
         fusion=fusion, replays=_fusion_replays(snapshot.bars, cancelled) if fusion else None,
         cancelled=cancelled,
     )
+    from app.reference_trading.page_material_query import require_material_owners
+    require_material_owners(envelope, snapshot.dependency_manifest,
+        since=request.since, through=context.resolved.actual_through,
+        frequency=request.identity.frequency)
     if envelope.get("source_evidence_sha256") != snapshot.source_integrity["evidence_sha256"]:
         raise ValueError("REFERENCE_PAGE_MATERIAL_SOURCE_CONFLICT")
     binding = _material_binding(

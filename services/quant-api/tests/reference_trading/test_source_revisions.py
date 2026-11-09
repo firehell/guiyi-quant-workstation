@@ -250,3 +250,14 @@ def test_native_bounded_successor_closes_undisabled_original_receipt():
         assert not activation_window_valid(capture, stream, receipts)
         capture.processed_at = observed + timedelta(seconds=1)
         assert not activation_window_valid(capture, stream, receipts)
+
+        stream.enabled = False
+        stream.health = "FORMULA_RETIRED"
+        stream.activation_generation = 3
+        current = next(row for row in receipts if row.generation == 2)
+        capture.source_evidence["forward_capture_v1"]["generation"] = 2
+        assert not activation_window_valid(capture, stream, receipts)
+        current.disabled_at = observed + timedelta(seconds=2)
+        assert activation_window_valid(capture, stream, receipts)
+        capture.processed_at = current.disabled_at
+        assert not activation_window_valid(capture, stream, receipts)

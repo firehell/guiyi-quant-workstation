@@ -57,6 +57,19 @@ function syncReader() {
 }
 const strategy = ref<HomeStrategy>('trend')
 const expanded = ref<string | null>(null)
+const selectedCaution = ref<{symbol:string;eventId:string}|null>(null)
+const cautionExplanation = computed(() => {
+  const selected=selectedCaution.value
+  if (!selected) return null
+  const hint=homeRowHints(fact(selected.symbol,'1d')).find(h=>h.eventId===selected.eventId)
+  return hint ? {...hint,symbol:selected.symbol} : null
+})
+function openHint(symbol:string,hint:ReturnType<typeof homeRowHints>[number]) {
+  if (!hint.eventId) { openChart(symbol,'1d',hint.focusBarEnd); return }
+  selectedCaution.value=selectedCaution.value?.symbol===symbol && selectedCaution.value.eventId===hint.eventId ? null : {symbol,eventId:hint.eventId}
+}
+watch(strategy,()=>{selectedCaution.value=null})
+
 const sortedRows = computed(() => isNewowHomeSort(props.sort) ? sortNewowHomeRows(props.rows, deliveries.value, strategy.value, props.sort, props.sortDirection) : props.rows)
 const projectionColumns = [{ key: 'target', label: '目标价', rule: '按当前显示的目标或吸筹参考价' }, { key: 'daily', label: '日', rule: '降序为建仓、持有、清仓、空仓' }, { key: 'weekly', label: '周', rule: '降序为建仓、持有、清仓、空仓' }, { key: 'trend', label: '趋势', rule: '降序为向上、向下；MA60近似方向' }] as const
 function columnSortLabel(key: MarketHomeSort, label: string) { return `${label}排序，当前${props.sort === key ? props.sortDirection === 'desc' ? '降序' : '升序' : '默认'}；点击切换降序、升序、默认，缺失值置后` }
@@ -94,7 +107,7 @@ function openSummary(row: Row) { openChart(row.symbol,'1d') }
 function trendDisplay(symbol: string) { return homeTrendDisplay(deliveries.value[symbol]?.card?.strategies.trend['1d'], deliveries.value[symbol]) }
 function periodNotice(symbol: string, period: HomePeriod) { return homePeriodNotice(deliveries.value[symbol], period) }
 function periodTime(symbol: string, period: HomePeriod) { const value = fact(symbol, period)?.bar_end; return value ? formatBeijingInstant(value) : '截至时间待确认' }
-const summaryNotice = computed(() => homeProjectionSummary(props.rows.map(row => row.symbol), deliveries.value, readFailure.value))
+const summaryNotice = computed(() => homeProjectionSummary(props.products, deliveries.value, readFailure.value))
 function pending(symbol: string) { return periods.some(period => fact(symbol, period)?.freshness === 'pending_update') }
 </script>
 
@@ -109,7 +122,7 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
     <slot name="status" />
     <article v-for="row in sortedRows" :key="row.symbol" class="strategy-list-item">
       <div class="strategy-list-row" role="button" tabindex="0" :aria-label="`${row.product_name}展开策略摘要`" :aria-expanded="expanded === row.symbol" :aria-controls="`home-summary-${row.symbol}`" @click="toggleSummary(row.symbol)" @keydown.enter.prevent="toggleSummary(row.symbol)" @keydown.space.prevent="toggleSummary(row.symbol)">
-        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.label" class="row-hint" :title="hint.title" :aria-label="`${hint.label}：${hint.title}。点击定位对应K线`" @click.stop="openChart(row.symbol,'1d',hint.focusBarEnd)">{{ hint.label }}</button><span v-if="homeCautionNotice(fact(row.symbol, '1d'))" class="row-hint-pending" role="status" :title="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined" :aria-label="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined">小心待确认</span></span></small></span></div>
+        <div class="product-cell"><span class="product-name"><strong>{{ row.product_name }}</strong><small><span>{{ row.symbol.toUpperCase() }}</span><span class="row-hints"><button type="button" v-for="hint in homeRowHints(fact(row.symbol, '1d'))" :key="hint.eventId ?? hint.label" class="row-hint" :data-state="hint.state" :aria-expanded="hint.eventId ? cautionExplanation?.eventId === hint.eventId : undefined" :title="hint.title" :aria-label="`${hint.label}：${hint.title}。点击查看说明`" @keydown.stop @click.stop="openHint(row.symbol,hint)">{{ hint.label }}</button><span v-if="homeCautionNotice(fact(row.symbol, '1d'))" class="row-hint-pending" role="status" :title="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined" :aria-label="homeCautionNotice(fact(row.symbol, '1d')) ?? undefined">小心待确认</span></span></small></span></div>
         <div class="list-price" :class="priceTone(row)"><strong>{{ newowReferencePrice(String(row.close)) }}</strong></div>
         <div class="list-change"><span :class="priceTone(row)">{{ change(row) }}</span></div>
         <div class="list-reference"><strong :class="reference(row.symbol).label === '目标' ? 'target' : reference(row.symbol).label === '吸筹' ? 'absorb' : 'pending'" :title="`${reference(row.symbol).label} · 页面参考价格，非成交成本`">{{ reference(row.symbol).text }}</strong></div>
@@ -125,6 +138,11 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
           <svg v-else class="independent-trend-pending" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#C7C7CC" stroke-width="2" role="img" :aria-label="trendDisplay(row.symbol).label"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </div>
       </div>
+      <aside v-if="cautionExplanation?.symbol === row.symbol" class="home-caution-explanation" role="region" aria-label="小心说明" @keydown.esc.stop="selectedCaution=null">
+        <header><strong>{{ cautionExplanation.stateLabel }}</strong><button type="button" aria-label="关闭小心说明" @click="selectedCaution=null">关闭</button></header>
+        <p>{{ cautionExplanation.title }}</p>
+        <button type="button" @click="openChart(row.symbol,'1d',cautionExplanation.focusBarEnd)">查看对应K线</button>
+      </aside>
       <p v-if="marketHomeQualityNotice(row.reason_codes)" class="list-quality-note" role="status">{{ marketHomeQualityNotice(row.reason_codes) }}</p>
       <div class="list-notices" role="status">
         <span v-if="pending(row.symbol)">等待最新周期更新</span>
@@ -204,4 +222,14 @@ function pending(symbol: string) { return periods.some(period => fact(symbol, pe
 <style scoped>
 
 .row-hint-pending { font-size:10px; color:#667085; border:1px dashed #98a2b3; border-radius:8px; padding:1px 4px; cursor:help; }
+</style>
+
+<style scoped>
+.row-hint[data-state=tentative]{background:#FF9500;color:#fff}
+.row-hint[data-state=confirmed]{background:#15803D;color:#fff}
+.row-hint[data-state=invalidated]{background:#9AA0A6;color:#fff}
+.home-caution-explanation{margin:6px 12px;padding:10px 12px;border:1px solid var(--gy-border,#d0d5dd);border-radius:8px;background:var(--gy-bg-panel,#fff);color:var(--gy-text-primary,#1d2939);font-size:12px;line-height:1.6}
+.home-caution-explanation header{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.home-caution-explanation p{margin:6px 0}
+.home-caution-explanation button{font:inherit;cursor:pointer}
 </style>

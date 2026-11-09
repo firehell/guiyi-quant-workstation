@@ -202,7 +202,7 @@ def test_hot_reference_cache_rechecks_generation(current_seq):
     from app.reference_trading.query import QueryConflict
     from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
     saved = PersistedNewowReference(lambda: None)
-    saved._manifest = lambda *_args: (None, {"reader": "newow_product_reader_intraday_v3"})
+    saved._manifest = lambda *_args: (None, {"reader": "newow_product_reader_intraday_v3", "query_since": "2023-01-01"})
     saved._query = SimpleNamespace(summary=lambda *_a, **_kw: {'revision_id':'revision', 'seq':current_seq})
     delivery = SectionDelivery('delivered', None, PersistedReferenceSectionValue({'performance_since':'2023-01-01','performance_through':'2026-09-24','reference_cutoff':'2026-09-24T07:00:00+00:00'}, ('stream','revision',7)))
     if current_seq == 7:
@@ -220,7 +220,7 @@ def test_hot_fusion_cache_validates_real_payload_shape_and_all_generations(chang
     from app.reference_trading.query import QueryConflict
     from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
     saved = PersistedNewowReference(lambda: None)
-    base_manifest = {'source_identity': 'unchanged'}
+    base_manifest = {'source_identity': 'unchanged', 'query_since': '2023-01-01'}
     dependencies = [{'stream_id':s, 'revision_id':'revision', 'seq':7,
                      'dependency_digest': manifest_sha256(base_manifest)}
                     for s in ('trend','oscillation')]
@@ -232,7 +232,7 @@ def test_hot_fusion_cache_validates_real_payload_shape_and_all_generations(chang
     def summary(stream, **kw):
         return {'revision_id':'revision','seq':8 if changed==stream else 7,'snapshot':'fusion-new' if changed=='fusion' and stream=='fusion' else 'fusion-snapshot'}
     saved._query = SimpleNamespace(streams=streams, summary=summary)
-    saved._manifest = lambda stream, *_: (None, {'source_dependencies':dependencies}
+    saved._manifest = lambda stream, *_: (None, {'query_since':'2023-01-01','source_dependencies':dependencies}
                                          if stream == 'fusion' else base_manifest)
     revision = manifest_sha256({'snapshot':'fusion-snapshot','dependencies':dependencies,'record_since':'2025-09-25','record_through':'2026-09-24'})
     payload = {'performance_since':'2023-01-01','performance_through':'2026-09-24','reference_cutoff':'2026-09-24T07:00:00+00:00','fusion_comparison':{'product':'rb','frequency':'1m','reference_revision':revision}}

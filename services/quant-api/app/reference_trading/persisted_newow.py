@@ -48,6 +48,23 @@ def _completed_reference_window(read, cutoff):
     return latest_end, latest_day
 
 
+def _require_history_window(manifest, reader, product, since, cutoff):
+    """A current watermark does not prove the requested historical prefix exists.
+
+    Warm-up may predate query_since, but cannot stand in for earlier rank-1
+    owners. Check the committed request, including on cached deliveries.
+    """
+    try:
+        saved_since = date.fromisoformat(manifest["query_since"])
+        storage_start = getattr(reader, "historical_storage_start", None)
+        required_since = max(since, storage_start(product)) if callable(storage_start) else since
+    except (KeyError, TypeError, ValueError) as error:
+        raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED") from error
+    if saved_since > required_since:
+        # Missing earlier owners is not append-only lag at the right endpoint.
+        raise QueryConflict("NOT_BUILT")
+
+
 @dataclass(frozen=True, slots=True)
 class _CompletePresentation:
     """One exact saved generation, retained inside the existing product budget."""
@@ -431,6 +448,9 @@ class PersistedNewowReference:
         from app.reference_trading.page_material_query import select_page_material
         payload, saved = delivery.value.payload, delivery.value.saved_generation
         identity, manifest = self._manifest(*saved)
+        _require_history_window(manifest, reader, identity.product.lower() if identity else "",
+            date.fromisoformat(payload["performance_since"]),
+            datetime.fromisoformat(payload["reference_cutoff"]))
         if manifest.get("reader") != "newow_product_reader_prefix_v5":
             return False
         since = date.fromisoformat(payload["performance_since"])
@@ -449,6 +469,7 @@ class PersistedNewowReference:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             fusion_identity, fusion_manifest = self._manifest(fusion_material.stream_id,
                 fusion_material.revision_id, fusion_material.seq)
+            _require_history_window(fusion_manifest, reader, identity.product.lower(), since, cutoff)
             dependencies = fusion_manifest.get("source_dependencies")
             if not isinstance(dependencies, list) or len(dependencies) != 2:
                 raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
@@ -528,6 +549,7 @@ class PersistedNewowReference:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
         latest = self._query.summary(streams[0]["stream_id"], since=since, through=through, cutoff=cutoff)
         identity, manifest = self._manifest(streams[0]["stream_id"], latest["revision_id"], latest["seq"])
+        _require_history_window(manifest, reader, fusion["product"], since, cutoff)
         dependencies = manifest.get("source_dependencies")
         if not isinstance(dependencies, list) or len(dependencies) != 2:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
@@ -864,6 +886,7 @@ class PersistedNewowReference:
         storage_start = manifest.get("query_since")
         if not isinstance(storage_start, str):
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+        _require_history_window(manifest, reader, request.product, since, cutoff)
         page_materials = {}
         if base_material is not None:
             base_envelope = base_material.envelope(manifest, stream_identity)
@@ -877,6 +900,7 @@ class PersistedNewowReference:
             if fusion_material is not None:
                 fusion_identity, fusion_saved_manifest = self._manifest(fusion_material.stream_id,
                     fusion_material.revision_id, fusion_material.seq)
+                _require_history_window(fusion_saved_manifest, reader, request.product, since, cutoff)
                 fusion_envelope = fusion_material.envelope(fusion_saved_manifest, fusion_identity)
                 self._verify_material_source(fusion_identity, fusion_saved_manifest, reader,
                     owner_keys=self._material_owner_keys(fusion_envelope),
@@ -1068,9 +1092,12 @@ class PersistedNewowReference:
                 "statistics_membership": "initial_before_window" if item["entry_trading_day"] < since.isoformat() else "entry_in_window_v1",
                 "hint_ids": hint_ids.get(item["reference_trade_id"], []),
             })
-        intervals = self._coverage(availability, read.data_interruptions, since, resolved.actual_through)
+        gaps = read.data_interruptions
+        if gaps:
+            gaps = reader.reference_owned_interruptions(request.product, gaps, read.owners)
+        intervals = self._coverage(availability, gaps, since, resolved.actual_through)
         unavailable = sorted({
-            gap.trading_day.isoformat() for gap in read.data_interruptions
+            gap.trading_day.isoformat() for gap in gaps
             if since <= gap.trading_day <= resolved.actual_through
         })
         payload = {
@@ -1080,7 +1107,7 @@ class PersistedNewowReference:
             "actual_available_through": resolved.actual_through.isoformat(),
             "reference_cutoff": cutoff.isoformat(),
             "reference_input_sha256": fact_key,
-            "history_coverage": "PARTIAL" if any(i["status"] != "VALID" for i in intervals) else "FULL",
+            "history_coverage": "FULL" if intervals and all(i["status"] == "VALID" for i in intervals) else "PARTIAL",
             "record_since": record_since.isoformat(),
             "records_window_limited": record_since > since,
             "unavailable_days": unavailable, "coverage_intervals": intervals,

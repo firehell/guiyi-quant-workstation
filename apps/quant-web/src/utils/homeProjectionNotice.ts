@@ -19,9 +19,22 @@ export function homeProjectionSummary(symbols: readonly string[], deliveries: Re
   if (failure === 'access') return `策略摘要访问受限，请恢复访问权限；${history}。`
   if (failure === 'protocol') return `策略摘要响应校验失败，将低频重新读取；${history}。`
   if (failure === 'transport') return `策略摘要读取失败，正在自动重试；${history}。`
-  const blocked = symbols.filter(symbol => deliveries[symbol]?.recovery?.status === 'blocked')
-  if (blocked.length) return `当前板块 ${blocked.length} 个品种更新阻塞：${blocked.map(symbol => symbol.toUpperCase()).join('、')}；展开可查看原因及最近尝试时间。`
-  const updating = entries.filter(value => value?.projectionStatus !== 'ready')
-  if (updating.length) return `当前板块 ${updating.length} 个品种待更新或恢复中；展开可查看状态、原因和截至时间。`
-  return ''
+  const counts={ready:0,running:0,queued:0,failed:0,retry:0,dependency:0,unread:0}
+  const blocked:string[]=[]
+  for (const symbol of symbols) {
+    const item=deliveries[symbol]
+    if (!item) counts.unread++
+    else if (item.projectionStatus==='ready') counts.ready++
+    else if (item.recovery?.status==='running') counts.running++
+    else if (item.recovery?.status==='blocked' || (item.projectionStatus==='failed' && item.recovery?.status!=='retry_wait' && item.recovery?.status!=='dependency_wait')) {
+      counts.failed++; if (item.recovery?.status==='blocked') blocked.push(symbol.toUpperCase())
+    }
+    else if (item.recovery?.status==='retry_wait') counts.retry++
+    else if (item.recovery?.status==='dependency_wait') counts.dependency++
+    else counts.queued++
+  }
+  if (counts.ready===symbols.length) return ''
+  const details=[['queued','排队'],['running','计算中'],['failed','失败'],['retry','重试等待'],['dependency','等待依赖'],['unread','待读取']] as const
+  const label=entries.some(item=>Object.values(item?.periodReasons??{}).includes('SOURCE_VERSION_CHANGED')) ? '新版摘要正在重建' : '策略摘要正在更新'
+  return `${label}，已完成${counts.ready}/${symbols.length}；${details.filter(([key])=>counts[key]).map(([key,text])=>`${text}${counts[key]}`).join('、')}${blocked.length ? `（阻塞：${blocked.join('、')}）` : ''}；展开品种可查看原因和截至时间。`
 }

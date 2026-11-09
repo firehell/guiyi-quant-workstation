@@ -1715,7 +1715,7 @@ SHALL remain explicit; interface consistency SHALL NOT flatten them into one fic
 
 ### Requirement: Completed-bar caution display events have stable first-observation anchors
 
-The product SHALL use `guiyi_caution_completed_anchor_v1` for the futures caution display adapter,
+The product SHALL use `guiyi_caution_completed_state_v2` for the futures caution display adapter,
 separately from the unchanged `newow_zhaoyao_mirror_repainting_page_v2` numerical primitive.
 This adapter SHALL be `page_parity=false`, `repainting=true`, `executable=false`; no BUILD/CLEAR,
 CDV2 care/extra input, reference pairing, return, delivery or account rule may consume its display gate.
@@ -1740,7 +1740,7 @@ independent events. This is a documented futures adaptation, not a claim to repr
 first-publication history, intrabar visibility or a real-time trading decision.
 
 Chart `caution_events` SHALL expose a typed shared contract: event identity, frequency, display anchor,
-actual peak/time/day, first visibility, confirmation or null, cutoff, tentative/confirmed state, bar age,
+actual peak/time/day, first visibility, confirmation or null, explicit invalidation time/reason or null, cutoff, tentative/confirmed/invalidated state, bar age,
 home/detail visibility, maximum tentative age, policy/formula versions and all owner identities.
 Home caution items SHALL carry this same contract plus their row fields. Missing policy, unknown
 certainty or mismatched ownership/cutoff SHALL NOT be treated as confirmed or silently shown.
@@ -1749,6 +1749,30 @@ SHALL draw their caution markers from the accepted chart events, rather than ind
 moving raw tentative arrays. Pure raw mirror arrays SHALL remain accessible and unchanged for numerical
 parity and explanation. Snapshot dependency proofs and persisted home input identities SHALL include
 the display policy version so previous policy output cannot survive as fresh cache data.
+
+Home chips SHALL use orange for tentative, green for confirmed and grey for explicitly
+invalidated events. Chart markers SHALL preserve the public canvas palette: bright-green solid
+confirmed capsules with dark-green text, green dashed tentative capsules (light/dark text variants),
+and pale-grey dashed, diagonally struck withdrawn capsules. Capsules SHALL be 32×16 CSS pixels with
+bold 10px text, 8px radius and a 10px dashed leader to the anchor close; pane containment SHALL not
+compress capsule width. State identity and wording SHALL remain shared across surfaces. `invalidated` SHALL require `invalidated_at` and `CONDITION_WITHDRAWN`, no
+confirmation time, and an invalidation at or after both first visibility and peak, not after cutoff.
+Other states SHALL have no invalidation fields. Visibility age expiry, quality failure, missing input
+and rollover SHALL NOT be inferred as condition withdrawal. The current completed-bar close-5% scan
+has no intrabar withdrawal facts: it SHALL continue producing tentative/confirmed only, with explicit
+null invalidation fields. Grey rendering support does not establish a historical withdrawal or add a
+new observation producer. No private WARN/WATCHING distinction is claimed.
+
+Home caution clicks SHALL open an identity-bound explanation with current state, first-visible/peak
+and confirmation or withdrawal times plus an explicit chart link. A replacement snapshot SHALL refresh
+that explanation from its accepted event, and missing/changed owner, strategy or event SHALL remove
+it. Main and auxiliary markers SHALL use the same state and chart palette; home chip colors may differ. Missing data SHALL use a neutral
+notice distinct from grey invalidated history and from accepted absence.
+
+This change SHALL NOT introduce a preview feed, messages, notifications, persistence, a 14:30 stock
+clock gate or trading decisions. The current message domain has no shared caution lifecycle producer;
+message/push integration requires an independently authorized observation fact source rather than
+reconstructing intrabar appearance from final historical bars.
 
 #### Scenario: Candidate advances but the first completed event remains fixed
 - **GIVEN** a fresh event at completed bar A and a higher candidate peak at bar B
@@ -1807,6 +1831,8 @@ The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default 
 Existing canonical historical reference assets in the current public product/strategy/frequency scope SHALL be maintained independently of forward observation activation. Historical maintenance SHALL NOT enable observation streams, notifications or orders. Bounded scans SHALL persist their cursor across blocked routes so later eligible histories cannot starve. Missing assets SHALL remain explicit until built through the existing exact-plan maintenance contract; durable pending, blocked and unknown-commit evidence SHALL NOT be cleared merely to restart maintenance.
 
 Reference reads SHALL continue to verify saved input identity and SHALL NOT return an older result as current or synchronously rebuild during a page request. Only verified append-only lag may be reported as updating; source revisions, missing history and insufficient data SHALL retain distinct reasons. Safe availability details MAY expose saved and requested cutoff dates. A reference failure SHALL remain isolated from the accepted quote and price chart.
+
+Historical reference delivery SHALL verify the committed `query_since` covers the requested window, clamped only to the authoritative local storage start. A recent cutoff or a current-owner warm-up prefix SHALL NOT prove earlier rank-1 history. Missing earlier history SHALL be reported as `NOT_BUILT`, separately from append-only update lag, including on cache and fusion reads. Before committing final page material and on reading it, every in-window rank-1 owner SHALL be represented; repeated ownership by the same physical contract SHALL be counted separately, while quality calculation splits SHALL not double-count an owner. For new W1 revisions, the manifest SHALL separately bind the exact physical contract and owner segment identities present in the verified weekly replay inputs. An owner with no usable W1 replay input stays in rank-1 history without requiring page material. Every owner with replay inputs MUST match the material exactly. Classified gaps remain explicit. Displayed reference coverage and unavailable days SHALL use the same authoritative rank-1 owner filter for availability and quality interruptions. Physical warm-up gaps remain in source evidence. Empty availability SHALL NOT be labelled FULL. Full-history reconstruction SHALL use the current formula in a new revision, retain prior version records, and never splice old-formula trades into the replacement.
 
 #### Frozen intraday reference input evidence
 

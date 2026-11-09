@@ -384,6 +384,7 @@ class SavedFusionSources:
                 "input_fingerprints", "calendar_session_effective_fingerprints",
                 "calendar_session_source_evidence", "rank1", "boundaries", "data_interruptions",
                 "lifecycle_owners", "market_source_identity", "input_policy_version",
+                "weekly_page_input_owners",
             )
             for key in (*required, *(key for key in shared if key in expected_manifest)):
                 if manifest.get(key) is None or manifest.get(key) != expected_manifest.get(key):
@@ -563,6 +564,8 @@ class PersistedFusionComparison:
         identity, manifest = self._persisted._manifest(
             stream["stream_id"], stats["revision_id"], stats["seq"]
         )
+        from app.reference_trading.persisted_newow import _require_history_window
+        _require_history_window(manifest, reader, product, since, cutoff)
         self.verify_saved_source(identity, manifest, product=product, frequency=frequency,
                                  through=through, cutoff=cutoff, reader=reader, persisted=self._persisted)
         dependencies = manifest.get("source_dependencies")

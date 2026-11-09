@@ -15,6 +15,22 @@ from guiyi_quant.indicators.subing_conditions import EntryWindow
 POLICY = 'canonical_indicator_catchup_no_execution_v1'
 CONFLICT_POLICY = 'canonical_rebaseline_after_conflict_no_execution_v1'
 RESUME_POLICY = 'completed_backlog_indicator_only_resume_v1'
+OBSERVATION_ROLLOVER_POLICY = 'canonical_observation_rollover_no_execution_v1'
+DAILY_NO_TRADE_POLICY = 'canonical_observation_daily_skip_no_trade_v1'
+
+
+def observation_rollover(event, product, update):
+    previous = update.get('previous_contract')
+    if previous is None:
+        return False
+    if (event.get('observation_rollover_policy') != OBSERVATION_ROLLOVER_POLICY
+            or product == 'jm' or previous == update['contract'] or update.get('conflicts')):
+        raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
+    for frequency in ('1m', '30m', '60m', '1d'):
+        source = update['proofs'].get(frequency, {}).get('source', {})
+        if source.get('contract') != update['contract'] or source.get('frequency') != frequency:
+            raise ValueError('MODEL_RECOVERY_ROLLOVER_SOURCE_INVALID')
+    return True
 
 
 def flat_without_obligations(account):
@@ -49,13 +65,19 @@ def apply_event(pipe, event):
         raise ValueError('MODEL_RECOVERY_ACCOUNT_DRIFT')
     for product, update in event['products'].items():
         row = pipe.products[product]
-        if event['recovery_policy'] == CONFLICT_POLICY and update.get('conflicts'):
+        daily_no_trade = update.get('daily_no_trade_policy')
+        if daily_no_trade is not None and (daily_no_trade != DAILY_NO_TRADE_POLICY or product == 'jm'):
+            raise ValueError('MODEL_RECOVERY_NO_TRADE_POLICY_INVALID')
+        rolled = observation_rollover(event, product, update)
+        if rolled and update['previous_contract'] != row['contract']:
+            raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
+        if not rolled and update['contract'] != row['contract']:
+            raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
+        if rolled or (event['recovery_policy'] == CONFLICT_POLICY and update.get('conflicts')):
             from app.subing_model.factors import Factors
             pipe.factors[product] = Factors(update['contract'])
             pipe.chart[product] = []
         f = pipe.factors[product]
-        if update['contract'] != row['contract']:
-            raise ValueError('MODEL_RECOVERY_ROLLOVER_REQUIRES_REVIEW')
         for frequency in ('1d', '60m', '30m'):
             rows = update['bars'][frequency]
             if digest(rows) != update['proofs'][frequency]['hash']:
@@ -64,6 +86,11 @@ def apply_event(pipe, event):
                 b = bar(raw)
                 if b.bar_end > now:
                     raise ValueError('MODEL_RECOVERY_FUTURE_BAR')
+                if daily_no_trade and frequency == '1d':
+                    if b.is_strict_no_trade:
+                        continue
+                    if b.close <= 0 or b.low <= 0:
+                        raise ValueError('MODEL_RECOVERY_DAILY_PRICE_INVALID')
                 last = f.trends[frequency].last_end
                 if last is None or b.bar_end > last:
                     f.step(frequency, b)
@@ -92,6 +119,11 @@ def apply_event(pipe, event):
                    structure=_wire(f.structure_point), execution_enabled=False,
                    source_kind='CANONICAL_CONFLICT_REBASELINE' if update.get('conflicts') else 'CANONICAL_INDICATOR_RECOVERY',
                    status='WARMUP_INCOMPLETE' if row['warmup_errors'] else 'OBSERVATION_READY')
+        if rolled:
+            row.update(contract=update['contract'], previous_contract=update['previous_contract'],
+                       source_kind='CANONICAL_OBSERVATION_ROLLOVER')
+            row.pop('new_contract', None)
+            row.pop('source_confirmed_at', None)
     if pipe.account:
         if can_resume and pipe.account.engine:
             model = pipe.account.engine.model
@@ -142,6 +174,9 @@ def consumed_bars(identity, events):
             for raw in rows:
                 add(product, '1d', raw)
         for product, update in event.get('products', {}).items():
+            if observation_rollover(event, product, update):
+                for frequency in update['bars']:
+                    known.pop((product, frequency), None)
             if event.get('recovery_policy') == CONFLICT_POLICY and update.get('conflicts'):
                 for frequency in update['bars']:
                     prior = known.get((product, frequency), {})

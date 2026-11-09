@@ -310,3 +310,16 @@ test('market refresh completes while independent runtime health remains pending'
   assert.equal(home.runtime.data.value, 'runtime')
   home.dispose()
 })
+
+test('a pending projection refreshes before cache age and ready projection resumes normal caching', async () => {
+ let calls=0
+ const home=useMarketHome({fetchDirectory:async()=>null,fetchRuntime:async()=>null,
+  fetchOverview:async()=>({projection_status:++calls===1?'stale':'ready'}),
+  overviewNeedsRefresh:value=>value.projection_status!=='ready',now:()=>1000})
+ await home.refreshOverview()
+ await home.refreshOverviewIfExpired()
+ assert.equal(calls,2)
+ await home.refreshOverviewIfExpired()
+ assert.equal(calls,2)
+ home.dispose()
+})

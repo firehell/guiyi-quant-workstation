@@ -58,6 +58,95 @@ def test_future_or_corrupt_catchup_rejected():
         apply_event(p, e)
 
 
+def test_observation_rollover_rewarms_only_new_physical_contract_and_replays():
+    from app.subing_model_recovery import DAILY_NO_TRADE_POLICY, OBSERVATION_ROLLOVER_POLICY, consumed_bars
+
+    p = empty_pipe()
+    old = row('ec', '1d')['data']
+    p.identity.update(prepared={'ec': {'warmup': {'1d': [old]}}}, bootstrap=[])
+    event = recovery_event(p)
+    bars = {freq: [dict(row('ec', freq, contract='EC2702')['data'], close='102')]
+            for freq in ('1m', '30m', '60m', '1d')}
+    zero_at = AT - timedelta(days=1)
+    zero = row('ec', '1d', at=zero_at, contract='EC2702')['data']
+    zero = dict(zero, trading_day=str(zero_at.date()), **{
+        key: '0' for key in ('open', 'high', 'low', 'close', 'volume', 'turnover')
+    })
+    bars['1d'].insert(0, zero)
+    event['products']['ec'] = dict(contract='EC2702', previous_contract='EC2612',
+        daily_no_trade_policy=DAILY_NO_TRADE_POLICY,
+        bars=bars, proofs={freq: {'hash': digest(rows), 'source': dict(contract='EC2702', frequency=freq)}
+                          for freq, rows in bars.items()})
+    event['observation_rollover_policy'] = OBSERVATION_ROLLOVER_POLICY
+    apply_event(p, event)
+    assert p.factors['ec'].contract == p.products['ec']['contract'] == 'EC2702'
+    assert p.products['ec']['source_kind'] == 'CANONICAL_OBSERVATION_ROLLOVER'
+    assert consumed_bars(p.identity, [event])['ec', '1d'][AT].close == 102
+    assert consumed_bars(p.identity, [event])['ec', '1d'][zero_at].is_strict_no_trade
+    assert [v['time'] for v in p.factors['ec'].daily] == [AT.isoformat()]
+    assert p.last_outcome['model_fills'] == p.last_outcome['model_decisions'] == []
+    q = empty_pipe()
+    q.identity = p.identity
+    apply_event(q, dict(event, outcome=deepcopy(p.last_outcome)))
+    assert q.state() == p.state()
+    event['products']['jm']['previous_contract'] = 'JM2612'
+    with pytest.raises(ValueError, match='ROLLOVER_REQUIRES_REVIEW'):
+        apply_event(empty_pipe(), event)
+
+
+def test_daily_no_trade_admission_still_requires_complete_series_and_exact_zeros():
+    from app.market_data.domain import BarFrequency
+    from app.market_data.new_subing_research import validate_series
+    from app.subing_model.pipeline import bar
+    from dataclasses import replace
+    from decimal import Decimal
+
+    priced = bar(row('ec', '1d')['data'])
+    zero = replace(priced, bar_end=AT - timedelta(days=1), open=Decimal(0),
+        high=Decimal(0), low=Decimal(0), close=Decimal(0), volume=Decimal(0), turnover=Decimal(0))
+    expected = [(b.bar_end, b.trading_day) for b in (zero, priced)]
+    result = SimpleNamespace(bars=(zero, priced), coverage=(zero.bar_end, priced.bar_end),
+        request_identity=dict(symbol='ec', series_kind='contract', contract='EC2702', frequency='1d'))
+    identity = dict(product='ec', contract='EC2702', frequency=BarFrequency.D1, expected=expected)
+    validate_series(result, **identity, allow_daily_no_trade=True)
+    with pytest.raises(ValueError, match='DATA_INSUFFICIENT'):
+        validate_series(result, **identity)
+    result.bars = (replace(zero, turnover=None), priced)
+    with pytest.raises(ValueError, match='DATA_INSUFFICIENT'):
+        validate_series(result, **identity, allow_daily_no_trade=True)
+    result.bars = (priced,)
+    with pytest.raises(ValueError, match='DATA_INSUFFICIENT'):
+        validate_series(result, **identity, allow_daily_no_trade=True)
+
+
+def test_regular_observation_daily_refresh_retains_no_trade_evidence(monkeypatch):
+    from contextlib import nullcontext
+    from dataclasses import replace
+    from decimal import Decimal
+    from app.subing_model.pipeline import bar
+    import app.subing_model_service as module
+
+    priced = bar(row('ec', '1d')['data'])
+    zero = replace(priced, bar_end=AT - timedelta(days=1), open=Decimal(0),
+        high=Decimal(0), low=Decimal(0), close=Decimal(0), volume=Decimal(0), turnover=Decimal(0))
+    service = module.Service.__new__(module.Service)
+    service.pipe = empty_pipe()
+    service.daily_day = None
+    service.settings = {'GUIYI_CANONICAL_DATA_ROOT': '/test'}
+    service.market = lambda: nullcontext(None)
+    monkeypatch.setattr(module.worker, 'PRODUCTS', ('ec',))
+    monkeypatch.setattr(module, 'readonly_transaction', lambda *args, **kwargs: nullcontext())
+    monkeypatch.setattr(module, 'MarketCatalog', lambda *args: None)
+    monkeypatch.setattr(module, 'CanonicalMonthlyStore', lambda *args: None)
+    monkeypatch.setattr(module, 'MarketDataService', lambda *args: SimpleNamespace(
+        session_windows=lambda **kwargs: [SimpleNamespace(end=AT)]))
+    monkeypatch.setattr(module, 'read_indicator_series', lambda *args: ((zero, priced), {'contract': 'EC2612'}))
+    service.daily_inputs(AT.date() + timedelta(days=1), {'ec': {'previous': str(AT.date())}})
+    assert not service.daily_errors
+    assert [b['bar_end'] for b in service.daily_pending['ec']] == [AT.isoformat()]
+    assert service.daily_proofs['ec']['no_trade_endpoints'] == [zero.bar_end.isoformat()]
+
+
 @pytest.mark.parametrize('attribute', ['layers', 'pending', 'clear_reasons', 'exit_layers', 'day_halted', 'pullback'])
 def test_exposure_or_obligation_never_auto_resumes(attribute):
     m = SimpleNamespace(layers=[], pending=None, clear_reasons=[], exit_layers=[], day_halted=False, pullback=None)

@@ -6,6 +6,7 @@ interface MarketHomeOptions<O, R, D> {
   fetchDirectory: (signal?: AbortSignal) => Promise<D>
   fetchRuntime: (signal?: AbortSignal) => Promise<R>
   overviewCacheKey?: string
+  overviewNeedsRefresh?: (value: O) => boolean
   overviewMaxAgeMs?: number
   directoryMaxAgeMs?: number
   now?: () => number
@@ -72,6 +73,7 @@ export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
 
   async function refreshOverview() { if (options.persistence) await restore(); await overview.refresh() }
   async function refreshOverviewIfExpired() {
+    if (overview.data.value && options.overviewNeedsRefresh?.(overview.data.value)) { await overview.refresh(); return }
     await refreshIfExpired(overview, overviewMaxAgeMs)
   }
   async function refreshIfExpired<T>(resource: Resource<T>, maxAgeMs: number) {

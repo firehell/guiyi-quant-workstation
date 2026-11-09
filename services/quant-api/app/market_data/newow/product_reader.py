@@ -7,7 +7,6 @@ from app.read_timings import timed
 from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal
 from hashlib import sha256
 import json
 from types import MappingProxyType
@@ -1333,8 +1332,7 @@ class NewowProductReader:
             semantic_gap_hashes_by_frequency=MappingProxyType(semantic_gaps_by_frequency),
         )
 
-    def reference_owned_points(self, product, points, owners):
-        """Exclude saved physical warmup facts outside their authoritative rank1 owner."""
+    def _reference_owner_ranges(self, product, owners):
         ranges = {}
         for owner in owners:
             sessions = self._market_data.session_windows(symbol=product, trading_day=owner.start_trading_day)
@@ -1342,6 +1340,11 @@ class NewowProductReader:
                 raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
             segment_id = build_segment_id(product, owner.contract, min(window.start for window in sessions))
             ranges[(owner.contract, segment_id)] = (owner.start_trading_day, owner.end_trading_day)
+        return ranges
+
+    def reference_owned_points(self, product, points, owners):
+        """Exclude saved physical warmup facts outside their authoritative rank1 owner."""
+        ranges = self._reference_owner_ranges(product, owners)
         output = []
         for point in points:
             value = point["value"]
@@ -1350,6 +1353,15 @@ class NewowProductReader:
             if span is not None and span[0] <= day <= span[1]:
                 output.append(point)
         return output
+
+    def reference_owned_interruptions(self, product, gaps, owners):
+        """Only owned quality interruptions affect displayed reference coverage."""
+        ranges = self._reference_owner_ranges(product, owners)
+        return tuple(
+            gap for gap in gaps
+            if (span := ranges.get((gap.physical_contract, gap.segment_id))) is not None
+            and span[0] <= gap.trading_day <= span[1]
+        )
 
     def reference_theoretical_bars(self, product, frequency, trades, cutoff):
         """Read only closed-trade physical windows through the common MDS entry."""
@@ -1965,16 +1977,7 @@ def _validate_order(bars: tuple[CanonicalBar, ...]) -> None:
 
 
 def _is_strict_no_trade_fact(bar: CanonicalBar) -> bool:
-    """Classify an authoritative futures no-trade fact without synthesizing price."""
-    zero = Decimal(0)
-    return (
-        bar.open == zero
-        and bar.high == zero
-        and bar.low == zero
-        and bar.close == zero
-        and bar.volume == zero
-        and bar.turnover == zero
-    )
+    return bar.is_strict_no_trade
 
 
 def _effective_product_bars(

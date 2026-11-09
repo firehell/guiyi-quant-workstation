@@ -119,3 +119,13 @@ test('daily and weekly business dates match only their own caution event by valu
   assert.deepEqual(data.map(row => [row.caution, row.tentative]), [[0, 0], [0, 50], [50, 0]])
   assert.deepEqual(buildNewowZhaoyaoMirrorData(source, []).map(row => [row.caution, row.tentative]), [[0, 0], [0, 0], [0, 0]])
 })
+
+test('chart marker palette follows the public canvas independently from home chips', async () => {
+  const {cautionChartColor}=await import('../src/utils/newowCautionDisplay.ts')
+  for (const state of ['tentative','confirmed','invalidated'] as const) {
+    const source=[{key:'entry',points:[{index:0,time:'a' as never,value:1}]}]
+    const rows=buildNewowZhaoyaoMirrorData(source,[{time:'a' as never,tentative:state==='tentative',state}])
+    const marker=buildNewowZhaoyaoMirrorCommands(rows,100,200,()=>50).items.find(x=>x.kind==='caution')!
+    assert.equal(marker.color,cautionChartColor(state));assert.equal(marker.hollow,state==='tentative')
+  }
+})

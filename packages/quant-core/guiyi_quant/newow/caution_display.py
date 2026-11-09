@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from .models import NewowDailyBar
 from .subplots import calculate_zhaoyao_mirror, mirror_peak_structure
 
-CAUTION_DISPLAY_VERSION = "guiyi_caution_completed_anchor_v1"
+CAUTION_DISPLAY_VERSION = "guiyi_caution_completed_state_v2"
 DETAIL_MAX_AGE = 10
 HOME_MAX_AGE = 1
 

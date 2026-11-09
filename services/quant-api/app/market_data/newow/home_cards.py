@@ -161,6 +161,7 @@ def _caution_event(bars, owner, point, frequency):
         first_visible_at=bars[point.first_visible_index].bar_end.isoformat(),
         confirmed_at=bars[point.confirmed_index].bar_end.isoformat() if not tentative else None,
         as_of=bars[-1].bar_end.isoformat(), tentative=tentative,
+        invalidated_at=None, invalidation_reason=None,
         display_state='tentative' if tentative else 'confirmed', age_bars=point.age_bars,
         home_visible=point.age_bars <= HOME_MAX_AGE,
         detail_visible=not tentative or point.age_bars <= DETAIL_MAX_AGE,

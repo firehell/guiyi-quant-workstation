@@ -1,3 +1,17 @@
+11/9 牛哇全历史参考复核534/540：按owner确认，仅由已校验的本地交易所日行情补PL2604、PX2610、RS2611缺失W1 16/17/3根，13个原空月分区分品种锁内提交并独立读回，D1分区指针/hash保持。新周线参考完整性绑定实际回放输入的物理owner，短主力段无可用输入保留在rank1历史；面板覆盖与缺价记录统一过滤非本owner的预热事实。三品种周线趋势/震荡/融合9路新revision已核验，旧参考行保留；首次完整性误拒的3个候选未发布并留存，后续中断的PX震荡确认零写入再续跑。全540路新鲜MDS读回534通过，仅SC2302周线2022-01-28及SI2506周线2025-05-16源缺口影响6路，未纳入本次补源。开发预览API8002主图关联面板9路实际读回，RS震荡带历史值并显示暖机。参考交易回归1658 passed/202 skipped，面板修复后定向320 passed。单计算进程、全任务峰值337.3MiB。结果见 `output/newow-full-history-20261108/final-readback.json` 和 `weekly-http-readback.json`；未下载、清缓存、发布正式版本或切Runtime。
+
+11/7 17:20 方案一已实施、发布并完成正式服务与原TqKq模拟账户恢复：v1.16.100（PR633），exact `befb1e0e07b7f87c5b9603b7f2ace2fc7f1e32f6`；正式独立副本`.worktrees/release-v1.16.100`。develop全部待发布代码承接v98/v99进入本版本；原tag不改写。十标准服务统一generation69且全部matched，API/Web/Runtime HTTP通过；默认可选home-projection未启用，原苏冰开发模型未重置或晋升。
+
+已完成60品种×3周期×趋势/新震荡/融合共540条真实历史参考准备，窗口Nov2–Nov6，保留原生完整warmup。修复下一交易日换月/质量边界越过请求through或as_of而进入参考回放，以及融合源错误继承趋势reference model身份。180组震荡＋融合在原生drain及OS owner锁内逐对原子迁移，360条旧forward退役、360条新身份从空参考仓位启用。175笔旧OPEN只关闭原投影有效区间并追加OBSERVATION_INTERRUPTED，无退出action/价格/收益；旧snapshot合同保留，正式reader实际读回成功。逐行核验原29,269条batch、1,258条action、3,731条mark、1,397条trade版本：原checkpoint/action/mark内容不变。新流358 READY；RS周线震荡/融合两条FORMULA_WARMING继续接收completed观察，以实际availability决定就绪，不制造暖机证据。
+
+原生cohort `a36cb274…`已完成版本CAS，Feed启动后的verified最终就绪采样超时，原outcome_unknown及所有原件保留、不重试。独立审查未发现公式/旧checkpoint拒绝，原consumer阶段已证明durable_receiving_caught_up_idle；原记录未保存具体拒绝服务，不能唯一归因。全六owner由工具安全parked后，独立close-only `c44a1eec…`取得feed_closed（receipt `131be0d2…`），再以新计划 `7e6b630d…`同代前向恢复成功，receipt `6bfd4294db19e6ba253bc4a9ccf33dcbfc9bba63d30b3a65fd406cbba46a69c1`。原四个定时服务已恢复；接收与计算分开验证，既有pending capture保留并由正常worker处理，未清队列、放宽新鲜度或伪造ACK。
+
+原TqKq已完成同树configure/install/probe/start --trade：新鲜只读预检8仓、零活动委托、60映射通过，唯一worker PID18702、v100/LOGGED_IN/READY/AUTO_TRADING，心跳新鲜且无hold。切后独立一致快照完整重放通过，8仓/8单/8成交、8个原SUBMIT claims及唯一初始基线与停机保全副本逐项相同；零未决fill、未对账order、活动委托及未释放预约。闭市60品种仍blocked、executable0；空执行输入不产生无效tick，执行Readback TTL过期仍如实显示未验证，下一可交易输入先重新同步，不拿SDK心跳替代执行事实。原HTDY60m、账户资金边界及auto_order=false保持；未补旧开仓或制造清仓。隔日/隔周及开收盘逻辑回归已通过，下个自然开盘/收盘和新信号/成交尚待发生，不能用READY冒充自然业务已验收。
+
+Reference回归1615通过，隔离PostgreSQL300流2通过，最终迁移/Scope/脚本/Bootstrap定向96通过（6项不适用跳过）；exact发布副本、API/SDK frozen及Web生产构建、版本一致性、Ruff/diff和独立Review通过。任务测试容器已清理。私有源计划、前像、逐组提交/读回、原生恢复及账户重放证据位于AppSupport/GuiyiQuant/formula-transition-20261107-execution，历史准备位于同级formula-transition-20261107-scoped；原账户停机保全仍在release-20261107-v98/tq-stopped。旧发布树仍有恢复引用，本轮未清理。
+
+以下v99切换阻断和TQ停止记录已被上述现场状态取代：
+
 11/7 develop全部未发布代码已发布，服务切换因旧震荡参考流不兼容而停止：v1.16.98（PR631）包含全部develop集成；现场完整账户重放约70秒，追加SDK建连前重放修复并发布v1.16.99（PR632），exact `a143ec3944404d1c18bfb6f238546a8732e1fb84`。API/SDK frozen构建、Web生产构建、受影响后端1127项、Web1398项（3跳过）、补修TQ/版本98项及独立Review通过。正式99副本已构建；没有移动旧tag。
 
 原TQ v97正常stop/SIGTERM后于15:25:16自然STOPPED，未强杀、未清仓或补单。账户owner锁内保全停后seq8295，8仓/8单/8成交、8个原SUBMIT claims及唯一基线保留，零未对账/未决；停前一致副本完整重放通过。私有原件位于AppSupport/GuiyiQuant/release-20261107-v98的tq-before/tq-stopped。

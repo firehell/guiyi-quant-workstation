@@ -134,7 +134,16 @@ def activation_window_valid(capture, stream, receipts):
     if (type(generation) is not int or stream is None or capture.processed_at is None
             or not 0 < generation <= stream.activation_generation):
         return False
-    for number in range(generation, stream.activation_generation + 1):
+    last_activation = stream.activation_generation
+    # Formula retirement advances the fence without opening an activation.
+    if not stream.enabled and stream.health == "FORMULA_RETIRED" and last_activation not in chain:
+        closing = chain.get(last_activation - 1)
+        if closing is None or closing.disabled_at is None or aware(closing.disabled_at) < aware(closing.activated_at):
+            return False
+        last_activation -= 1
+    if generation > last_activation:
+        return False
+    for number in range(generation, last_activation + 1):
         row = chain.get(number)
         if row is None or row.revision_id != capture.revision_id:
             return False
@@ -142,7 +151,7 @@ def activation_window_valid(capture, stream, receipts):
             return False
     receipt = chain[generation]
     ends = [aware(receipt.disabled_at)] if receipt.disabled_at is not None else []
-    if generation < stream.activation_generation:
+    if generation < last_activation:
         ends.append(aware(chain[generation + 1].activated_at))
     return (aware(receipt.activated_at) <= aware(capture.processed_at)
             and (not ends or aware(capture.processed_at) < min(ends)))
