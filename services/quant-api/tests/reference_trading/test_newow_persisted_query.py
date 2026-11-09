@@ -288,6 +288,13 @@ def test_saved_owner_date_boundaries_and_calculation_conflict():
     switch = date(2026, 9, 4)
     switched = [point(owner, switch) for owner in owners]
     assert reader.reference_owned_points("rb", switched, owners) == switched[1:]
+    gaps = tuple(SimpleNamespace(trading_day=switch, physical_contract=owner.contract,
+                                segment_id=point(owner, switch)["value"]["segment_id"])
+                 for owner in owners)
+    owned_gaps = reader.reference_owned_interruptions("rb", gaps, owners)
+    assert owned_gaps == gaps[1:]
+    assert PersistedNewowReference._coverage(switched[1:], (), switch, switch)[0]["status"] == "VALID"
+    assert PersistedNewowReference._coverage((), owned_gaps, switch, switch)[0]["status"] == "PRICE_UNAVAILABLE"
     # Filtering physical warmup cannot hide a real calculation identity conflict.
     conflict = [point(owners[1], switch, calculation) for calculation in ("calc-a", "calc-b")]
     filtered = reader.reference_owned_points("rb", conflict, owners)

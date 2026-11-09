@@ -1092,9 +1092,12 @@ class PersistedNewowReference:
                 "statistics_membership": "initial_before_window" if item["entry_trading_day"] < since.isoformat() else "entry_in_window_v1",
                 "hint_ids": hint_ids.get(item["reference_trade_id"], []),
             })
-        intervals = self._coverage(availability, read.data_interruptions, since, resolved.actual_through)
+        gaps = read.data_interruptions
+        if gaps:
+            gaps = reader.reference_owned_interruptions(request.product, gaps, read.owners)
+        intervals = self._coverage(availability, gaps, since, resolved.actual_through)
         unavailable = sorted({
-            gap.trading_day.isoformat() for gap in read.data_interruptions
+            gap.trading_day.isoformat() for gap in gaps
             if since <= gap.trading_day <= resolved.actual_through
         })
         payload = {
