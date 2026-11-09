@@ -936,7 +936,7 @@ class MarketDataHistoricalInputReader:
                 for key in ("calendar_session_effective_fingerprints", "calendar_session_source_evidence",
                             "rank1", "boundaries", "data_interruptions", "lifecycle_owners",
                             "market_source_identity", "input_policy_version", "quality_policy",
-                            "reference_boundary_policy_version"):
+                            "reference_boundary_policy_version", "weekly_page_input_owners"):
                     if oscillator_snapshot.dependency_manifest.get(key) != shadow.dependency_manifest.get(key):
                         raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
                 source_manifests["oscillation"] = oscillator_snapshot.dependency_manifest
@@ -1338,6 +1338,12 @@ class MarketDataHistoricalInputReader:
         }
         if frequency is ProductFrequency.DAILY:
             manifest["reference_boundary_policy_version"] = NEWOW_D1_REFERENCE_BOUNDARY_POLICY
+        elif frequency is ProductFrequency.WEEKLY and production_historical:
+            # A rank-1 owner with no usable weekly replay input has no page segment.
+            # Keep every owner in rank1; bind the exact material subset separately.
+            weekly_owners = {(item.physical_contract, item.owner_segment_id)
+                             for item in bars if item.strategy_input}
+            manifest["weekly_page_input_owners"] = [list(owner) for owner in sorted(weekly_owners)]
         source_integrity = None
         projection_context = None
         if production_historical:

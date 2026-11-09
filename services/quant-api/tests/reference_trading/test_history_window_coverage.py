@@ -84,6 +84,28 @@ def test_gap_owner_is_kept_even_without_lifecycle_replay_evidence():
     require_material_owners(envelope, manifest, since=date(2023, 1, 1), through=date(2023, 4, 1))
 
 
+def test_weekly_material_requires_exact_owners_with_verified_inputs():
+    from app.reference_trading.page_material_query import require_material_owners
+    manifest = {
+        'rank1': [['PL2604', '2026-02-03', '2026-02-03'],
+                  ['PL2605', '2026-02-04', '2026-04-01'],
+                  ['PL2605', '2026-04-07', '2026-04-30']],
+        'weekly_page_input_owners': [['PL2605', 'first'], ['PL2605', 'second']],
+    }
+    segments = [{'owner': 'PL2605|first|before-gap'}, {'owner': 'PL2605|second|after-gap'}]
+    envelope = {'material': {'segments': segments}}
+    window = dict(since=date(2026, 2, 1), through=date(2026, 4, 30), frequency='1w')
+    require_material_owners(envelope, manifest, **window)
+    with pytest.raises(QueryConflict, match='SOURCE_IDENTITY_UNVERIFIED'):
+        require_material_owners(envelope, manifest, **{**window, 'frequency': '1d'})
+    segments[1]['owner'] = 'PL2605|first|after-gap'
+    with pytest.raises(QueryConflict, match='SOURCE_IDENTITY_UNVERIFIED'):
+        require_material_owners(envelope, manifest, **window)
+    segments[1]['owner'] = 'PL2605|different|after-gap'
+    with pytest.raises(QueryConflict, match='SOURCE_IDENTITY_UNVERIFIED'):
+        require_material_owners(envelope, manifest, **window)
+
+
 @pytest.mark.parametrize('reader_version', ['newow_product_reader_prefix_v5', 'newow_product_reader_intraday_v3'])
 def test_cached_short_prefix_is_rejected_for_all_readers(reader_version):
     from app.reference_trading.persisted_newow import PersistedNewowReference

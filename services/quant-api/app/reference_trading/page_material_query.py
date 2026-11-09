@@ -15,7 +15,7 @@ from app.reference_trading.query import QueryConflict, _encode, POLICY_VERSION
 from guiyi_quant.newow.page_performance import page_model_identity
 
 
-def require_material_owners(envelope, manifest, *, since, through):
+def require_material_owners(envelope, manifest, *, since, through, frequency=None):
     """Missing a whole rank-1 owner is incomplete even if all present rows pass."""
     try:
         expected = Counter(contract for contract, start, end in manifest['rank1']
@@ -25,7 +25,18 @@ def require_material_owners(envelope, manifest, *, since, through):
         actual = Counter(physical for physical, owner in owners)
         # Lifecycle evidence deliberately excludes owners with classified gaps.
         # Those owners must remain present as interrupted calculation segments.
-        if not expected or actual != expected:
+        if frequency == "1w" and "weekly_page_input_owners" in manifest:
+            weekly = manifest["weekly_page_input_owners"]
+            if (not isinstance(weekly, list) or not weekly
+                    or any(not isinstance(pair, list) or len(pair) != 2
+                           or any(not isinstance(value, str) or not value for value in pair)
+                           for pair in weekly)):
+                raise ValueError("invalid weekly owner proof")
+            required = {tuple(pair) for pair in weekly}
+            if (len(required) != len(weekly) or owners != required
+                    or Counter(contract for contract, _ in required) - expected):
+                raise ValueError("weekly owner coverage mismatch")
+        elif not expected or actual != expected:
             raise ValueError('owner coverage mismatch')
     except (KeyError, TypeError, ValueError) as error:
         raise QueryConflict('SOURCE_IDENTITY_UNVERIFIED') from error
@@ -100,7 +111,8 @@ class PageMaterialSnapshot:
         except (TypeError, ValueError, KeyError) as error:
             raise QueryConflict('PRESENTATION_CORRUPT') from error
         require_material_owners(envelope, manifest,
-            since=date.fromisoformat(manifest['query_since']), through=self.through)
+            since=date.fromisoformat(manifest['query_since']), through=self.through,
+            frequency=identity.frequency)
         return envelope
 
 

@@ -384,6 +384,7 @@ class SavedFusionSources:
                 "input_fingerprints", "calendar_session_effective_fingerprints",
                 "calendar_session_source_evidence", "rank1", "boundaries", "data_interruptions",
                 "lifecycle_owners", "market_source_identity", "input_policy_version",
+                "weekly_page_input_owners",
             )
             for key in (*required, *(key for key in shared if key in expected_manifest)):
                 if manifest.get(key) is None or manifest.get(key) != expected_manifest.get(key):
