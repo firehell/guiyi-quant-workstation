@@ -2187,19 +2187,14 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/subing-
 浏览器用隔离fixture验 UI、三笔卡片、延迟分页、PC 窗口显示与缺失状态，不代表实际运行收益。
 真实页面只读 `forward_observation`；缺少留存流时不以历史重算／重绘补齐。
 
-## 首页SimNow只读监控
+## 首页快期模拟账户监控
 
-以下全部使用隔离fixture，不连接SimNow、不写正式账户记录：
+以下命令使用隔离 fixture 验证现役快期只读监控和前端数据契约。
 
-    PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_monitor services/quant-api/tests/test_simnow_monitor_api.py tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution
-    node --test apps/quant-web/tests/simnowMonitor.test.ts
-    pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/simnow-monitor.spec.mjs
-    pnpm -C apps/quant-web build
-
-覆盖只读文件前后不变、WAL拒绝、并发未提交写、损坏/错账户、分页cursor身份、原生异常持仓、
-待核成交、跨日收益留空、监控发布失败不影响受控交易，以及可见刷新/隐藏停止、迟到过滤响应、
-账户切换、分页与抽屉保护、缺失不为零、桌面/移动导航与全屏抽屉。
-e2e/fixtures/simnow-monitor.json 仅来自离线受控宿主测试，不是实际账户evidence。
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_simulation_monitor.py
+node --test apps/quant-web/tests/simulationMonitor.test.ts apps/quant-web/tests/simulationCurve.test.ts apps/quant-web/tests/marketNavigation.test.ts
+```
 
 ## 休市整组升级与Canonical预热
 
@@ -2274,10 +2269,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 ## 持续trade隔离验收与部署预检
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_credentials tests/unit/simnow_supervisor tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution tests/unit/simnow_monitor services/quant-api/tests/test_simnow_portfolio_market.py services/quant-api/tests/test_simnow_controlled_market.py services/quant-api/tests/test_simnow_monitor_api.py services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/data_foundation/test_htdy_closed_source_conflicts.py
-node --test apps/quant-web/tests/simnowMonitor.test.ts
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/simnow_credentials tests/unit/simnow_supervisor tests/unit/simnow_host tests/unit/simnow_execution tests/unit/htdy_execution tests/unit/simnow_monitor services/quant-api/tests/test_simnow_portfolio_market.py services/quant-api/tests/test_simnow_controlled_market.py services/quant-api/tests/test_htdy_execution_signal.py services/quant-api/tests/data_foundation/test_htdy_input_admission.py services/quant-api/tests/data_foundation/test_htdy_closed_source_conflicts.py
 pnpm -C apps/quant-web build
-PLAYWRIGHT_PORT=5198 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/simnow-monitor.spec.mjs --workers=1
 ```
 
 `test_trade_end_to_end.py`以虚拟时钟/假柜台接真实队列、政策、适配器、费用证明和监控，
