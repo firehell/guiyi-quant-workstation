@@ -304,3 +304,39 @@ def test_native_drain_supersedes_only_frozen_control_and_keeps_original(tmp_path
     assert current['generation'] == 64 and current['phase'] == 'drain'
     assert current['request_id'] == request != old['request_id']
     assert base64.b64decode(native.frozen_control['raw_base64']) == raw
+
+
+def test_feed_bootstrap_uses_shared_read_only_environment(tmp_path, monkeypatch):
+    import os
+    import sys
+
+    from app import private_settings, runtime_feed_session_recovery
+    from app.core import env
+
+    args = [
+        "plan", "--directory", str(tmp_path), "--plan", str(tmp_path / "plan.private.json"),
+        "--old-day", "2026-11-02", "--day", "2026-11-03", "--expected-pid", "17",
+    ]
+    monkeypatch.setattr(env, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["feed-recovery", *args])
+    monkeypatch.setenv("GUIYI_FEED_SESSION_RECOVERY_READY", "0")
+    monkeypatch.setattr(
+        private_settings, "private_dependency_settings",
+        lambda _: ({"REDIS_URL": "redis://fixture:fixture@localhost:6380/4"}, {}),
+    )
+
+    def execv(executable, argv):
+        assert executable == sys.executable
+        assert argv == [sys.executable, "-B", "-m", "app.runtime_feed_session_recovery", *args]
+        assert os.environ["REDIS_URL"] == "redis://fixture:fixture@localhost:6380/4"
+        assert os.environ["PGOPTIONS"] == "-c default_transaction_read_only=on"
+        assert os.environ["GUIYI_OBSERVATION_STREAM_ENABLED"] == "1"
+        assert os.environ["GUIYI_FEED_SESSION_RECOVERY_READY"] == "1"
+        raise SystemExit(0)
+
+    for key in ("REDIS_URL", "PGOPTIONS", "GUIYI_OBSERVATION_STREAM_ENABLED"):
+        monkeypatch.setenv(key, "before-bootstrap")
+    monkeypatch.setattr(os, "execv", execv)
+    with pytest.raises(SystemExit) as exit_info:
+        runtime_feed_session_recovery.main()
+    assert exit_info.value.code == 0

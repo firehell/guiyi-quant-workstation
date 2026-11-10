@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import stat
+from urllib.parse import quote
 
 from app.market_data.rqdata_adapter import RQDATA_PROVIDER_SETTINGS
 
@@ -157,6 +158,21 @@ def load_private_readonly_settings(
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Load only DB/Canonical dependencies; never require provider credentials."""
     return private_dependency_settings(path)
+
+
+def read_only_dependency_environment(values: dict[str, str]) -> dict[str, str]:
+    """Prepare a read-only process environment with the shared Redis default."""
+    env = dict(values)
+    env["PGOPTIONS"] = "-c default_transaction_read_only=on"
+    password = env.get("REDIS_PASSWORD") or env.get("POSTGRES_PASSWORD")
+    if password:
+        env["REDIS_PASSWORD"] = password
+        if env.get("REDIS_URL") in (None, "", "redis://127.0.0.1:6379/0"):
+            env["REDIS_URL"] = (
+                "redis://:" + quote(password, safe="") + "@127.0.0.1:6379/0"
+            )
+    return env
+
 
 def load_private_execution_settings(
     path: Path,
