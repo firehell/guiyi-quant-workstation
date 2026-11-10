@@ -1,3 +1,5 @@
+11/10 13:19 原快期账本 AG2612 未发送平仓提案已对账。账户 owner 锁内保全账本与发送日志，在私有副本完整重放 20496 条并演练通过；正式再次完整重放，核对新鲜原生 8 仓/0 委托/0 成交、原持仓逐项一致、提案无发送凭证后，原生 LocalStore 追加唯一 `AbortUnsent` 至 20497。独立读回 0 未对账委托、8 仓、8 历史成交及 8 个原 SUBMIT 凭证，原生零副作用。私有保全与回执位于 AppSupport/GuiyiQuant/tq-unsent-reconcile.jxKF7X。原 hold 和 pause 保留，快期正式 worker 未启动。新版仍受正式 API v1.16.100 绑定门禁，待同版 API 切换后完成快期恢复启动预检。
+
 11/10 08:25 分服务发布预检拒绝 v1.16.102：所有现役服务均有 `MIXED_CONTRACT_INCOMPATIBLE`，差异为 formula/reference，包含 API/Web。整组仍受 BZ 参考预热阻断，现役 60 对日线中另查到 PG、PK、PL、SF 同类计算段分歧。本次按已交办范围通过原生 optional-service 计划 `762fd4c72954…` 启用 v1.16.100 首页自动计算，独立 owner generation70。API/Web/首页 worker 身份 matched，正式 API/Web 仍 v1.16.100。08:26 已真实产生新首页摘要，2 ready、1 updating、51 stale、6 failed，总览仍为 11/6；全量刷新尚待观察。参考、提醒和账户未切换，快期原保护保持。
 
 11/10 08:09 已发布 v1.16.102，远端 main、annotated tag 和 GitHub Release 指向 exact `e9eece11624cae47362b1c94ac7bd3a6a5fc1dc0`，精确副本 `.worktrees/release-v1.16.102`。提醒 D1 严格全零 Canonical 源行参与端点校验并作为质量断点。PF/PR/PX 真数据日线可计算，全 Scope 414 可计算、6 预热。58 项定向测试通过，3 项运行预热用例在 v1.16.101 同样失败；API/Web/快期 SDK frozen 构建与独立复核通过。
