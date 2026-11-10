@@ -243,7 +243,9 @@ class HomeProjection:
         if self.overview is None:
             return
         versions = self.versions()
-        if not data.get('overview_failed') and data.get('overview') is not None and data.get('overview_versions') == versions:
+        previous = data.get('overview')
+        if (not data.get('overview_failed') and previous is not None
+                and previous.get('participant_count') != 0 and data.get('overview_versions') == versions):
             return
         try:
             if not versions:
@@ -251,8 +253,15 @@ class HomeProjection:
             value = self.overview()
             if self.versions() != versions:
                 raise ProjectionError()
-            data['overview'], data['overview_versions'] = value, versions
-            data.pop('overview_failed', None)
+            if value.get('participant_count') == 0:
+                # The session can close before today's Canonical D1 is published.
+                # Keep the last populated snapshot until the next source revision.
+                if previous is None or previous.get('participant_count') == 0:
+                    data['overview'] = value
+                data['overview_failed'] = True
+            else:
+                data['overview'], data['overview_versions'] = value, versions
+                data.pop('overview_failed', None)
         except Exception as exc:
             _log_period_failure('overview', 'overview', 'compute_overview', 'HOME_OVERVIEW_BUILD_FAILED', exc)
             data['overview_failed'] = True

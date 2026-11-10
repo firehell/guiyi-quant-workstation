@@ -262,6 +262,7 @@ operational集合，包含趋势/震荡D1/W1摘要、控盘/提示、目标/吸�
 响应保留生成时间、逐品种computed_at、逐周期源版本、原始as_of/bar_end/输入/公式身份，
 以及 `ready/updating/stale/failed/missing` 投影状态，标记page_parity=true、executable=false。
 同一资产一并保存原有generic overview，旧overview HTTP协议只读该资产，新增独立projection_status区分传输成功与源有效性；概览失败保留旧值并标记failed，不阻断其他品种构建。
+收盘后目标日没有任何已发布的D1参与品种时，空概览不得覆盖上一份有参与品种的概览，也不得标为ready；来源更新后由同一Worker重算。
 GET不接受客户端品种/周期范围，不读取Parquet、不回放策略、不调用构建，不因缺失触发下载或修复。
 支持ETag；ready只表示持久投影完整且版本与Catalog匹配，不替代Runtime或底层存储健康验收。
 
