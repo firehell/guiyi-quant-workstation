@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.db.readonly import readonly_transaction
 from app.db.url import normalize_database_url
+from app.market_data.canonical_publication import before_daily_publication
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import BarFrequency, ContractTradingDayQuery
 from app.market_data.market_data_service import MarketDataService
@@ -213,6 +214,10 @@ class Service:
             and self.pipe.products[p]['contract'] == ctx[p]['contract']
             for p in worker.PRODUCTS
         ):
+            return False
+        # Session close precedes today's Canonical publication. Let the
+        # regular tick drain original completed observations in that window.
+        if not preview and before_daily_publication(day, now):
             return False
         # Validate at most once/minute; a failed Canonical read never advances.
         key = (day, int(now.timestamp()) // 60)

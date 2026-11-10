@@ -18,6 +18,11 @@ class CanonicalPublicationError(ValueError):
         super().__init__(code)
 
 
+def before_daily_publication(day, as_of):
+    local = as_of.astimezone(SHANGHAI)
+    return day == local.date() and local.time() < time(18, 5)
+
+
 def forward_published_through(
     market_data, *, product, frequency, through, as_of, weekly_candidates
 ):
@@ -37,14 +42,12 @@ def forward_published_through(
     published = page.bars[-1].trading_day
     if published >= through:
         return through
-    local = as_of.astimezone(SHANGHAI)
-    waiting_today = local.time() < time(18, 5)
     if frequency == "1w":
         candidates = weekly_candidates()
         due = tuple(
             day
             for day, _ in candidates
-            if day <= through and not (waiting_today and day == local.date())
+            if day <= through and not before_daily_publication(day, as_of)
         )
     else:
         due = market_data.completed_trading_days(
@@ -53,7 +56,7 @@ def forward_published_through(
             as_of=as_of,
             latest=through,
         )
-        due = tuple(day for day in due if not (waiting_today and day == local.date()))
+        due = tuple(day for day in due if not before_daily_publication(day, as_of))
     if any(day > published for day in due):
         raise CanonicalPublicationError("CANONICAL_PUBLICATION_LAGGING")
     return published
