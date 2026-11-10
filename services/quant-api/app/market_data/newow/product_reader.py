@@ -1502,11 +1502,30 @@ class NewowProductReader:
             )
         ):
             raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
-        owner_id = build_segment_id(product, owner.contract, min(window.start for window in windows))
+        owner_start = min(window.start for window in windows)
+        owner_id = build_segment_id(product, owner.contract, owner_start)
         if owner_id == prior_owner_segment_id:
             calculation_id = prior_calculation_segment_id
         else:
-            calculation_id = build_calculation_segment_id(owner_id, policy=policy)
+            last_gap = None
+            if policy is InputQualityPolicy.DAILY_V2:
+                # Match a freshly seeded stream's label for this physical
+                # lifecycle. Only the completed prefix can establish the gap.
+                endpoint_matched = False
+                for chunk in self._market_data.iter_actual_dominant_owner_replay_chunks(
+                    symbol=product, owner=owner, frequency=BarFrequency.D1,
+                    through=bar.trading_day, cutoff=bar.bar_end, quality_policy=policy,
+                ):
+                    self._check_cancelled()
+                    endpoint_matched |= bar in chunk.bars
+                    for gap in chunk.source_quality:
+                        if gap.bar_end >= owner_start:
+                            raise NewowProductReadError("NEWOW_DATA_INTERRUPTED")
+                        if last_gap is None or gap.bar_end > last_gap:
+                            last_gap = gap.bar_end
+                if not endpoint_matched:
+                    raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
+            calculation_id = build_calculation_segment_id(owner_id, last_gap, policy)
         return replace(
             _product_bar(product, frequency, owner.contract, owner_id, bar, True),
             calculation_segment_id=calculation_id,

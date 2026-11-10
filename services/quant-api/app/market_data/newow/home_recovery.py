@@ -37,6 +37,7 @@ def implementation_identity():
     return sha256(b''.join((directory / name).read_bytes() for name in (
         'home_recovery.py', 'home_recovery_state.py', 'home_projection.py',
         'home_projection_composition.py', 'home_child_bootstrap.py',
+        'page_performance_adapter.py',
     ))).hexdigest()
 
 
@@ -197,7 +198,9 @@ class HomeRecovery:
 
     def _raw_ready(self, product, target, raw):
         if product == 'overview':
-            return raw.get('overview') is not None and not raw.get('overview_failed') and raw.get('overview_versions') == target
+            overview = raw.get('overview')
+            return (overview is not None and overview.get('participant_count') != 0
+                    and not raw.get('overview_failed') and raw.get('overview_versions') == target)
         item = raw.get('items', {}).get(product, {})
         return (not item.get('building') and not item.get('failures') and all(
             target.get(period) and item.get('periods', {}).get(period, {}).get('version') == target[period]

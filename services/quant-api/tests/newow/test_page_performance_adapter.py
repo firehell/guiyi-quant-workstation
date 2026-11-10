@@ -129,6 +129,36 @@ def test_material_build_cancellation_closes_provisional_page_spools(
     assert created and all(not spool.sealed for spool in created)
 
 
+def test_material_keeps_one_spool_for_many_calculation_segments(product_cases, monkeypatch):
+    import app.market_data.newow.page_performance_adapter as adapter
+
+    reader, query, fake = product_cases.paged_reader(prefix_bars=300, frequency="60m")
+    read = reader.load(query, fake.as_of)
+    identity = build_product_identity("rb", "trend", "60m")
+    resolved = ResolvedPerformanceWindow(query.since, query.through,
+                                         query.through, fake.as_of)
+    items = tuple(label_calculation_segments(identity, read.replay_bars,
+                                             read.data_interruptions))
+    monkeypatch.setattr(adapter, "iter_label_calculation_segments", lambda *_: (
+        replace(item, calculation_segment_id=f"segment-{index}")
+        for index, item in enumerate(items)
+    ))
+    spool = adapter._new_page_spool()
+    opened = []
+
+    def open_spool():
+        assert not opened
+        opened.append(spool)
+        return spool
+
+    monkeypatch.setattr(adapter, "_new_page_spool", open_spool)
+    material = build_page_material(read, identity, resolved)
+
+    assert len(items) > 128
+    assert material["material"]["segment_count"] == len(items)
+    assert opened and not spool.sealed
+
+
 def test_material_envelope_freezes_quality_coverage_without_changing_page_result(
     product_cases,
 ):

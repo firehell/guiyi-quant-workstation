@@ -249,6 +249,26 @@ def test_overview_failure_preserves_lastgood_and_does_not_block_products(tmp_pat
     assert 'private' not in json.dumps(result)
 
 
+def test_overview_keeps_populated_snapshot_until_new_daily_facts_arrive(tmp_path):
+    service, versions, _ = fixture(tmp_path)
+    previous = {'data_as_of': '2026-11-09', 'participant_count': 2}
+    service.overview = lambda: previous
+    service.build_overview()
+    versions['rb:1d'] = 'new-target-day'
+    service.overview = lambda: {'data_as_of': '2026-11-10', 'participant_count': 0}
+
+    waiting = service.build_overview()
+    assert waiting['overview'] == previous
+    assert waiting['overview_status'] == 'failed'
+
+    versions['rb:1d'] = 'published-d1'
+    latest = {'data_as_of': '2026-11-10', 'participant_count': 2}
+    service.overview = lambda: latest
+    ready = service.build_overview()
+    assert ready['overview'] == latest
+    assert ready['overview_status'] == 'ready'
+
+
 def test_overview_recovers_when_failed_source_returns_to_lastgood_identity(tmp_path):
     service, versions, _ = fixture(tmp_path)
     service.overview = lambda: {'target_as_of': 'lastgood'}

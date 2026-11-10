@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from hashlib import sha256
 import json
 
@@ -16,12 +16,13 @@ from guiyi_quant.newow.fusion_reference import (
     build_fusion_stream_identity,
 )
 from guiyi_quant.newow.product_adapters import build_product_identity
+from guiyi_quant.newow.product_identity import InputQualityPolicy, build_calculation_segment_id
 from guiyi_quant.reference_trading import RecordingMode, ReferenceState
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from test_newow_forward import _capture
 
 
-def sources(frequency="1d"):
+def sources(frequency="1d", *, policy=InputQualityPolicy.V1, gap_offset=None):
     from newow.product_fixtures import ProductCases
     from guiyi_quant.newow.product_identity import (
         reference_model_version,
@@ -33,23 +34,30 @@ def sources(frequency="1d"):
     bars = case.bars
     dependencies = []
     for strategy in ("trend", "oscillation"):
-        identity = build_product_identity("rb", strategy, frequency)
+        identity = build_product_identity("rb", strategy, frequency, input_quality_policy=policy)
         stream = StreamIdentity(
             f"newow_{strategy}",
             identity.formula_versions,
             identity.profile_id,
             reference_model_version(identity),
-            futures_adaptation_version(frequency),
+            futures_adaptation_version(frequency, policy),
             "rb",
             frequency,
             "actual_dominant",
             RecordingMode.FORWARD_OBSERVATION,
             "completed_observation_v1",
         )
-        capture = _capture(stream, bars[0])
+        owner = bars[0].bar.segment_id
+        owner_start = datetime.fromisoformat(owner.split(":", 2)[-1])
+        gap = owner_start + gap_offset if gap_offset is not None and strategy == "oscillation" else None
+        calculation = build_calculation_segment_id(owner, gap, policy)
+        capture = _capture(stream, replace(bars[0], calculation_segment_id=calculation))
+        capture = replace(capture, input_payload={
+            **capture.input_payload, "input_quality_policy": policy.value,
+        })
         if frequency == "60m":
             capture = replace(capture, source_kind="completed_live")
-        action = replace(case.entry, identity=identity)
+        action = replace(case.entry, identity=identity, calculation_segment_id=calculation)
         dependencies.append(
             {
                 "identity": _wire(stream),
@@ -64,6 +72,47 @@ def sources(frequency="1d"):
             }
         )
     return case, dependencies
+
+
+def test_legacy_pre_owner_gap_alignment_keeps_original_actions_and_fusion_owner():
+    policy = InputQualityPolicy.DAILY_V2
+    case, dependencies = sources(policy=policy, gap_offset=-timedelta(days=1))
+    stream = build_fusion_stream_identity("rb", "1d", recording_mode="forward_observation",
+        observation_policy_version="completed_observation_v1", input_quality_policy=policy)
+    bar = case.bars[0].bar
+    calculation = dependencies[1]["capture"]["source_proof"]["calculation_segment_id"]
+    capture = build_fusion_capture(
+        stream, revision_id="fusion-revision", generation=1, after=None,
+        now=bar.bar_end + timedelta(minutes=1), dependencies=dependencies,
+    )
+    checkpoint = AdapterCheckpoint(
+        FusionReferenceReplayState(), physical_contract=bar.physical_contract,
+        owner_segment_id=bar.segment_id, calculation_segment_id=calculation, stream=stream,
+        reference_state=ReferenceState.flat(stream, recording_start=bar.bar_end),
+    )
+    token = CheckpointToken(stream.stream_id, "fusion-revision", 1, 1, sha256(b"seed").hexdigest())
+    evidence = {**json.loads(json.dumps(capture.evidence())), "capture_id": "fusion-capture"}
+    prepared = evaluate_fusion_capture(token, checkpoint, evidence, dependency_manifest={})
+    assert prepared.checkpoint.reference_state.open_trade.calculation_segment_id == calculation
+    assert prepared.source_actions[0].action.source_action_id == dependencies[0]["actions"][0]["signal_id"]
+    assert evaluate_fusion_capture(token, checkpoint, evidence, dependency_manifest={}) == prepared
+    with pytest.raises(ValueError, match="REFERENCE_FUSION_SOURCE_INPUT_CONFLICT"):
+        evaluate_fusion_capture(token, replace(checkpoint, calculation_segment_id=bar.segment_id),
+                                evidence, dependency_manifest={})
+    del evidence["forward_capture_v1"]["source_proof"]["calculation_alignment"]
+    with pytest.raises(ValueError, match="REFERENCE_FUSION_SOURCE_INPUT_CONFLICT"):
+        evaluate_fusion_capture(token, checkpoint, evidence, dependency_manifest={})
+
+
+@pytest.mark.parametrize("offset", (timedelta(), timedelta(hours=1)))
+def test_rehashed_gap_at_or_after_owner_start_is_not_an_alias(offset):
+    policy = InputQualityPolicy.DAILY_V2
+    case, dependencies = sources(policy=policy, gap_offset=offset)
+    stream = build_fusion_stream_identity("rb", "1d", recording_mode="forward_observation",
+        observation_policy_version="completed_observation_v1", input_quality_policy=policy)
+    with pytest.raises(ValueError, match="REFERENCE_FUSION_SOURCE_INPUT_CONFLICT"):
+        build_fusion_capture(stream, revision_id="fusion-revision", generation=1, after=None,
+            now=case.bars[0].bar.bar_end + timedelta(minutes=1), dependencies=dependencies)
 
 
 @pytest.mark.parametrize("frequency", ("1d", "1w", "60m"))

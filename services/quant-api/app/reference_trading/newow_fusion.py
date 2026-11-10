@@ -27,6 +27,7 @@ from guiyi_quant.newow.product_contracts import (
 from guiyi_quant.reference_trading import (
     ActionKind,
     CompletedReferenceBar,
+    RecordingMode,
     ReferenceAction,
     reduce_reference,
 )
@@ -53,10 +54,13 @@ def fusion_input_policy(stream):
     raise ValueError("REFERENCE_FUSION_STREAM_IDENTITY_CONFLICT")
 
 
-def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=None):
+def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=None,
+                        source_calculations=None):
     if (
         not isinstance(checkpoint.strategy_state, FusionReferenceReplayState)
         or checkpoint.reference_state is None
+        or (source_calculations is not None
+            and stream.recording_mode is not RecordingMode.FORWARD_OBSERVATION)
     ):
         raise ValueError("REFERENCE_FUSION_CHECKPOINT_INVALID")
     if stream != build_fusion_stream_identity(
@@ -112,11 +116,15 @@ def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=N
             or action.bar_end != item.bar_end
         ):
             raise ValueError("REFERENCE_FUSION_SOURCE_IDENTITY_CONFLICT")
+        source_calculation = (
+            item.calculation_segment_id if source_calculations is None
+            else source_calculations[action.identity.strategy]
+        )
         if (
             action.physical_contract,
             action.segment_id,
             action.calculation_segment_id,
-        ) != expected:
+        ) != (item.physical_contract, item.owner_segment_id, source_calculation):
             raise ValueError("REFERENCE_FUSION_SOURCE_INPUT_CONFLICT")
         if action.trade_eligibility in (
             TradeEligibility.ELIGIBLE,

@@ -28,8 +28,11 @@ from app.reference_trading.presentation import (
 )
 from guiyi_quant.newow.models import NewowDailyBar
 from guiyi_quant.newow.product_adapters import build_product_identity
-from guiyi_quant.newow.product_contracts import ProductBar, ProductFrequency
+from guiyi_quant.newow.product_contracts import ProductBar, ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import (
+    InputQualityPolicy,
+    build_calculation_segment_id,
+    build_segment_id,
     reference_model_version,
     futures_adaptation_version,
 )
@@ -68,6 +71,39 @@ def _source_action_fact(wire, dependency, observed):
     except (TypeError, KeyError, ValueError, OverflowError) as error:
         raise ValueError("REFERENCE_FUSION_DELIVERY_TIMING_CONFLICT") from error
     return fact
+
+
+def _pre_owner_calculation_alignment(stream, policy, first, second):
+    """Distinguish legacy rollover labels from interruptions during ownership."""
+    if stream.frequency != "1d" or policy is not InputQualityPolicy.DAILY_V2:
+        return None
+    proof = first["source_proof"]
+    owner = proof["owner_segment_id"]
+    contract = first["input_payload"]["contract"]
+    prefix = f"{stream.product}:{contract}:"
+    expected_key = f"{contract}:{first['bar_end']}"
+    if (not isinstance(owner, str) or not owner.startswith(prefix)
+            or first["source_key"] != expected_key or second["source_key"] != expected_key):
+        return None
+    labels = tuple(c["source_proof"]["calculation_segment_id"] for c in (first, second))
+    plain = build_calculation_segment_id(owner, policy=policy)
+    if plain not in labels:
+        return None
+    tagged = labels[1] if labels[0] == plain else labels[0]
+    gap_prefix = f"{owner}|price-gap:"
+    if not isinstance(tagged, str) or not tagged.startswith(gap_prefix):
+        return None
+    try:
+        owner_start = _timestamp(owner.removeprefix(prefix))
+        gap_at = _timestamp(tagged.removeprefix(gap_prefix).split("|", 1)[0])
+        if (build_segment_id(stream.product, contract, owner_start) != owner
+                or not gap_at < owner_start <= _timestamp(first["bar_end"])
+                or build_calculation_segment_id(owner, gap_at, policy) != tagged):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return {"version": "newow_d1_pre_owner_calculation_alignment_v1",
+            "trend": labels[0], "oscillation": labels[1], "prefix_label": tagged}
 
 
 def _validated_sources(stream, dependencies):
@@ -179,15 +215,21 @@ def _validated_sources(stream, dependencies):
             actions.append(action)
         captures.append(capture)
     first, second = captures
+    excluded = {"inbox_delivery_id"}
+    alignment = None
+    if first["source_proof"]["calculation_segment_id"] != second["source_proof"]["calculation_segment_id"]:
+        alignment = _pre_owner_calculation_alignment(stream, policy, first, second)
+        if alignment is not None:
+            excluded.add("calculation_segment_id")
     if (
         first["bar_end"] != second["bar_end"]
         or first["source_kind"] != second["source_kind"]
         or first["input_payload"] != second["input_payload"]
-        or {k: v for k, v in first["source_proof"].items() if k != "inbox_delivery_id"}
-        != {k: v for k, v in second["source_proof"].items() if k != "inbox_delivery_id"}
+        or {k: v for k, v in first["source_proof"].items() if k not in excluded}
+        != {k: v for k, v in second["source_proof"].items() if k not in excluded}
     ):
         raise ValueError("REFERENCE_FUSION_SOURCE_INPUT_CONFLICT")
-    return first, tuple(actions), max(_timestamp(c["observed_at"]) for c in captures)
+    return first, tuple(actions), max(_timestamp(c["observed_at"]) for c in captures), alignment
 
 
 def build_fusion_capture(
@@ -198,7 +240,7 @@ def build_fusion_capture(
         or identity.recording_mode is not RecordingMode.FORWARD_OBSERVATION
     ):
         raise ValueError("REFERENCE_FUSION_STREAM_IDENTITY_CONFLICT")
-    base, _actions, observed = _validated_sources(identity, dependencies)
+    base, _actions, observed, alignment = _validated_sources(identity, dependencies)
     end = _timestamp(base["bar_end"])
     if after is not None and end <= after or observed > now:
         raise ValueError("REFERENCE_FUSION_PROGRESS_CONFLICT")
@@ -214,6 +256,7 @@ def build_fusion_capture(
         {
             "previous_watermark": None if after is None else after.isoformat(),
             "dependency_sha256": manifest_sha256(dependencies),
+            **({"calculation_alignment": alignment} if alignment else {}),
         },
         "completed_fusion",
     )
@@ -230,7 +273,9 @@ def evaluate_fusion_capture(token, checkpoint, evidence, *, dependency_manifest)
     ):
         raise ValueError("REFERENCE_FUSION_CAPTURE_INVALID")
     dependencies = capture["input_payload"].get("sources")
-    base, actions, observed = _validated_sources(stream, dependencies)
+    base, actions, observed, alignment = _validated_sources(stream, dependencies)
+    if capture["source_proof"].get("calculation_alignment") != alignment:
+        raise ValueError("REFERENCE_FUSION_SOURCE_INPUT_CONFLICT")
     end = _timestamp(base["bar_end"])
     if (
         capture["source_proof"].get("dependency_sha256")
@@ -254,6 +299,14 @@ def evaluate_fusion_capture(token, checkpoint, evidence, *, dependency_manifest)
         proof["owner_segment_id"],
         proof["calculation_segment_id"],
     )
+    source_calculations = None
+    if alignment is not None:
+        source_calculations = {strategy: alignment[strategy.value]
+                               for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION)}
+        calculation = alignment["prefix_label"]
+        if (checkpoint.physical_contract, checkpoint.owner_segment_id,
+                checkpoint.calculation_segment_id) != (contract, owner, calculation):
+            raise ValueError("REFERENCE_FUSION_SOURCE_INPUT_CONFLICT")
     day = date.fromisoformat(raw["trading_day"])
     bar = ProductBar(
         NewowDailyBar(
@@ -316,7 +369,8 @@ def evaluate_fusion_capture(token, checkpoint, evidence, *, dependency_manifest)
     )
     points = []
     next_checkpoint, sources, transition = advance_fusion_step(
-        stream, checkpoint, item, points, observed_at=observed
+        stream, checkpoint, item, points, observed_at=observed,
+        source_calculations=source_calculations,
     )
     for point in points:
         point["value"]["observed_at"] = observed.isoformat()

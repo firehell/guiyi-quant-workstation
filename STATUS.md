@@ -1,3 +1,19 @@
+11/10 日线前向融合源标签冲突在 develop 修复。BZ、PG、PK、PL、SF 的两路原始 Bar/主力/质量政策一致，MDS 独立验证 60/60 物理前缀，五路震荡与融合检查点的缺口均在各自 rank1 归属开始前。新换月读入以已验证物理前缀定标签，旧标签差异仅在严格同源、同 owner、同融合检查点下对齐；原捕获、动作、检查点及归属内缺口保护保留。新只读逐路盘点五路融合全过，590 路通过、10 路为已分类周线不可用、14 路 HTDY 60m 仍报 OBSERVATION_GAP。定向 81 passed、1 skipped，生产代码 Ruff 与 diff 检查通过。
+
+整组仍停于 Reference 预热。首个 PS2612 旧检查点与 11/9 10:00 待处理捕获的端点、合约一致，但 11/6 15:00 上下文量不同。14 路均经原生 HtdyConflictSource 验证原始投递及 MDS/Canonical 证据，EC、PT、SM 涉及 OPEN 参考交易。私有只读清单位于 AppSupport/GuiyiQuant/reference-prewarm-20261110.bXNzV5。旧故障恢复 scope 不覆盖这批新原件；未退休历史、未启动切换、未执行快期同版预检。
+
+11/10 15:26 首页复发根因已在 develop 修复，正式尚待切换。正式六个 D1 失败均定位到 `json_spool.py:seal`，在 256 文件描述符上限下用正式 PF 数据复现 `EMFILE`。共享单一 spool，以索引区间保留物理及计算段；隔离 Worker 同上限完成 PF/PR/PX/RS/SF/SM 的 D1/W1 发布，六路 D1 同截止完整输出与旧算法一致。收盘后目标日零参与品种的空市场概览不再覆盖最后有效快照；真数据验证保留 11/9 的 60 品种，目标 D1 发布后随源版本重算。定向回归 213 passed，Ruff 与 diff 检查通过。
+
+快期 v1.16.102 现有恢复防护已纳入同批回归。正式仍 v1.16.100、进程未启动、pause 和持久 hold 保留；原生配置核验仍返回 `TQ_FORMAL_API_ROOT_MISMATCH`，v1.16.102 整组只读预热仍复现 `REFERENCE_FUSION_SOURCE_INPUT_CONFLICT`。本次没有重放旧切换、启动交易或改变账户。
+
+11/10 13:19 原快期账本 AG2612 未发送平仓提案已对账。账户 owner 锁内保全账本与发送日志，在私有副本完整重放 20496 条并演练通过；正式再次完整重放，核对新鲜原生 8 仓/0 委托/0 成交、原持仓逐项一致、提案无发送凭证后，原生 LocalStore 追加唯一 `AbortUnsent` 至 20497。独立读回 0 未对账委托、8 仓、8 历史成交及 8 个原 SUBMIT 凭证，原生零副作用。私有保全与回执位于 AppSupport/GuiyiQuant/tq-unsent-reconcile.jxKF7X。原 hold 和 pause 保留，快期正式 worker 未启动。新版仍受正式 API v1.16.100 绑定门禁，待同版 API 切换后完成快期恢复启动预检。
+
+11/10 08:25 分服务发布预检拒绝 v1.16.102：所有现役服务均有 `MIXED_CONTRACT_INCOMPATIBLE`，差异为 formula/reference，包含 API/Web。整组仍受 BZ 参考预热阻断，现役 60 对日线中另查到 PG、PK、PL、SF 同类计算段分歧。本次按已交办范围通过原生 optional-service 计划 `762fd4c72954…` 启用 v1.16.100 首页自动计算，独立 owner generation70。API/Web/首页 worker 身份 matched，正式 API/Web 仍 v1.16.100。08:26 已真实产生新首页摘要，2 ready、1 updating、51 stale、6 failed，总览仍为 11/6；全量刷新尚待观察。参考、提醒和账户未切换，快期原保护保持。
+
+11/10 08:09 已发布 v1.16.102，远端 main、annotated tag 和 GitHub Release 指向 exact `e9eece11624cae47362b1c94ac7bd3a6a5fc1dc0`，精确副本 `.worktrees/release-v1.16.102`。提醒 D1 严格全零 Canonical 源行参与端点校验并作为质量断点。PF/PR/PX 真数据日线可计算，全 Scope 414 可计算、6 预热。58 项定向测试通过，3 项运行预热用例在 v1.16.101 同样失败；API/Web/快期 SDK frozen 构建与独立复核通过。
+
+08:12 整组 attempt `973f141ad9b1…` 在停机前 cancelled，effects 为空。Alert 候选预热通过，后续 Reference 预热失败；精确副本只读复现为 BZ 日线 `newow_dual_fusion` 的 `REFERENCE_FUSION_SOURCE_INPUT_CONFLICT`，两路基策略捕获的输入相同，来源证明仅 `calculation_segment_id` 不一致。正式 10 服务仍 v1.16.100 且身份 matched，API/Web 正常、60 品种休市。首页仍未启用，快期原保护未解除。下一步核对 BZ 日线两路计算段的来源与归属，再生成全新原生切换计划，原 attempt 不重用。
+
 11/10 03:03 已发布完整 develop 为 v1.16.101，远端 main、annotated tag 和 GitHub Release 指向 exact `e5340f37cecd7f6430a8dfb88665a92ca5ea3a9f`。精确 linked worktree `.worktrees/release-v1.16.101`；API/快期 SDK frozen、API wheel/sdist、Web frozen 构建通过。前端 1403 passed / 3 skipped，精确副本后端定向 157 及 401 passed，secret scan 0 finding。扩展后端 5453 passed / 203 skipped / 26 failed；26 项均在 v1.16.100 同名用例复现。独立复核未发现新增发布阻塞。
 
 03:05 正式整组切换未执行。原生 attempt `90814121c9cd…` 在停机前 Alert 预热阶段 cancelled，effects 为空。精确新副本只读复现：苏冰提醒 PF 1d / PF2701 在第 201 路报 `MARKET_READ_WINDOW_INCOMPLETE`，194 根日线中 7 根严格全零无成交事实被当前日线预热价格门禁拒绝。10 个标准服务仍 v1.16.100/原代次，API/Web 正常且 60 品种权威休市。首页 worker 未启用，参考仍有 117 路阻塞。原苏冰开发 run 已自然推进至 673、PR2701、worker RUNNING，最新决策仍为 11/5 WAIT、0 模型成交。快期模拟仍已退出并保留原持久 hold，最后原生快照 8 仓、0 委托、0 成交，8 个提交凭证保留。下一步先验证提醒日线严格零成交的质量边界，再使用全新原生计划；原 attempt 不重用。

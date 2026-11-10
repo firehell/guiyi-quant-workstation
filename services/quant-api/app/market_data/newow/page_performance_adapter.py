@@ -71,6 +71,22 @@ def _new_page_spool() -> JsonSpoolSequence[PageBar]:
     return JsonSpoolSequence[PageBar](encode=_encode_page_bar, decode=_decode_page_bar)
 
 
+class _PageSpoolRange(Sequence[PageBar]):
+    """Index one owner in a shared spool without loading its bars into memory."""
+
+    def __init__(self, spool: JsonSpoolSequence[PageBar], indices: range):
+        self._spool = spool
+        self._indices = indices
+
+    def __len__(self) -> int:
+        return len(self._indices)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return _PageSpoolRange(self._spool, self._indices[index])
+        return self._spool[self._indices[index]]
+
+
 def _fusion_page_actions(read, identity, replays, cancelled=None, *, fusion=True):
     actions: dict[tuple[str, str, str | None], list[PageAction]] = {}
     supplied = dict(replays or {})
@@ -116,11 +132,11 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
     source boundary/gap invalidates terminal marking instead of closing a trade.
     """
     digest = LifecycleInputDigest()
-    grouped: list[tuple[tuple[str, str, str | None], JsonSpoolSequence[PageBar]]] = []
-    current_owner: tuple[str, str, str | None] | None = None
-    current_bars: JsonSpoolSequence[PageBar] | None = None
+    grouped: list[tuple[tuple[str, str, str | None], int]] = []
+    bar_count = 0
     last = None
     latest_replay = None
+    spool = _new_page_spool()
     try:
         _check_cancelled(cancelled)
         for input_index, item in enumerate(iter_label_calculation_segments(
@@ -134,27 +150,17 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
             latest_replay = max(latest_replay or item.bar.bar_end, item.bar.bar_end)
             owner = (item.bar.physical_contract, item.bar.segment_id,
                      item.calculation_segment_id)
-            if owner != current_owner:
-                if current_bars is not None:
-                    current_bars.seal()
-                current_bars = _new_page_spool()
-                try:
-                    grouped.append((owner, current_bars))
-                except BaseException:
-                    current_bars.close()
-                    raise
-                current_owner = owner
-            if current_bars is None:
-                raise ValueError("REFERENCE_PAGE_MATERIAL_INVALID")
-            current_bars.append(PageBar(
+            if not grouped or grouped[-1][0] != owner:
+                grouped.append((owner, bar_count))
+            spool.append(PageBar(
                 item.bar.bar_end.astimezone(_SHANGHAI).isoformat(),
                 item.bar.high, item.bar.low, item.bar.close,
                 item.bar.observation_eligible, item.bar.trading_day.isoformat(),
             ))
+            bar_count += 1
             if item.bar.observation_eligible:
                 last = max(last or item.bar.bar_end, item.bar.bar_end)
-        if current_bars is not None:
-            current_bars.seal()
+        spool.seal()
 
         _check_cancelled(cancelled)
         event_driven = fusion or identity.strategy is ProductStrategy.OSCILLATION
@@ -167,8 +173,10 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
                 boundary.effective_at <= resolved.cutoff and boundary.effective_at >= last
                 for boundary in read.boundaries)
         segments = []
-        for index, (owner, bars) in enumerate(grouped):
+        for index, (owner, start) in enumerate(grouped):
             _check_cancelled(cancelled)
+            stop = grouped[index + 1][1] if index + 1 < len(grouped) else bar_count
+            bars = _PageSpoolRange(spool, range(start, stop))
             candidates = actions.get(owner, ())
             if candidates:
                 candidate_dates = {action.date for action in candidates}
@@ -218,8 +226,7 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
             "source_evidence_sha256": read.reference_source_evidence_sha256,
         }
     finally:
-        for _, bars in grouped:
-            bars.close()
+        spool.close()
 
 
 def project_page_material(envelope, *, since, through, selected_mode=None):
