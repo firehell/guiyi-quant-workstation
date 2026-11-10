@@ -938,7 +938,14 @@ class MarketReadService:
         except MarketDataError as exc:
             raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE") from exc
 
-        if any(type(bar) is not CanonicalBar or bar.close <= 0 for bar in bars):
+        def strict_daily_break(value: object) -> bool:
+            return (
+                identity.frequency is BarFrequency.D1
+                and isinstance(value, CanonicalBar)
+                and value.is_strict_no_trade
+            )
+
+        if any(type(bar) is not CanonicalBar or (bar.close <= 0 and not strict_daily_break(bar)) for bar in bars):
             raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
         if any(
             type(fact) not in allowed_fact
@@ -959,11 +966,11 @@ class MarketReadService:
             or tuple((end, day) for end, day, _ in events) != expected
             or events[-1][1] != trading_day):
             raise MarketReadWindowError("MARKET_READ_WINDOW_INCOMPLETE")
-        if not isinstance(events[-1][2], CanonicalBar):
+        if not isinstance(events[-1][2], CanonicalBar) or strict_daily_break(events[-1][2]):
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
         last_break = max(
             (index for index, (_, _, value) in enumerate(events)
-             if not isinstance(value, CanonicalBar)),
+             if not isinstance(value, CanonicalBar) or strict_daily_break(value)),
             default=-1,
         )
         segment_bars = tuple(value for _, _, value in events[last_break + 1:])

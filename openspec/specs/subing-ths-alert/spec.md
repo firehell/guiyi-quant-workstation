@@ -669,6 +669,10 @@ owner segment 身份 SHALL 绑定物理合约与权威 owner 起点；calculatio
 W1 仅接受 `weekly-d1-quality-v2` 已证实中断。未知缺口、owner/Session/端点冲突仍整体 fail closed，
 不得下载替代价格、造价、缩窗或跨物理合约继承状态。最新决策端点本身不可用时不得回退先前价格。
 
+Canonical D1 中保留的严格 `OHLC=0, volume=0, turnover=0` 源行 MUST 参与完整端点核对，
+并按 `NONPOSITIVE_CLOSE` 的质量断点语义重新预热。原始 Bar 保留在 Canonical，不进入指标输入，
+也不构造缺失的 provider 证据。缺少成交额或其他非严格全零的无效价格不适用此分支。
+
 每次质量 break 后清空 EMA/MACD/CROSS 状态，从下一有效 Bar 重新预热；1–33 根预热、34 根指标就绪但
 无法判断 CROSS、35 根起可判断。真实仅有 20 周历史的 EC 继续预热，不伪造可计算状态。
 固定 kernel/formula 不变，输入与状态口径以独立 `input_policy_version` 记录在新 Event；旧 Event 不改写。

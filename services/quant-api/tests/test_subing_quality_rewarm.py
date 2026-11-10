@@ -145,6 +145,29 @@ def test_latest_daily_quality_break_cannot_fall_back_to_earlier_bar():
         )
 
 
+@pytest.mark.parametrize(("index", "turnover", "error"), (
+    (4, Decimal(0), None),
+    (39, Decimal(0), "MARKET_READ_CUTOFF_BAR_MISSING"),
+    (4, None, "MARKET_READ_WINDOW_INCOMPLETE"),
+))
+def test_canonical_zero_trade_daily_break(index, turnover, error):
+    bars = list(_bar(i) for i in range(40))
+    zero = Decimal(0)
+    bars[index] = replace(bars[index], open=zero, high=zero, low=zero,
+                          close=zero, volume=zero, turnover=turnover)
+    reader = _QualityReader(bars, (), frequency=BarFrequency.D1)
+    service = _service(reader)
+    identity = SeriesPageQuery("actual_dominant", "rb", "1d")
+    if error:
+        with pytest.raises(MarketReadWindowError, match=error):
+            service.latest_subing_quality_window(identity, trading_day=bars[-1].trading_day)
+    else:
+        window = service.latest_subing_quality_window(identity, trading_day=bars[-1].trading_day)
+        assert window.bars == tuple(bars[index + 1:])
+        assert window.input_policy_version == SUBING_QUALITY_REWARM_POLICY_V2
+        service.assert_window_current(window)
+
+
 def test_unknown_quality_fact_fails_closed():
     bars = tuple(_bar(i) for i in range(6))
     reader = _QualityReader(bars, (("RB2610", object()),), frequency=BarFrequency.D1)
