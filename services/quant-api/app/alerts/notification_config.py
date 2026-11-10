@@ -13,6 +13,7 @@ from typing import Any, Mapping
 
 
 NOTIFICATION_CONFIG_SCHEMA_VERSION = 1
+NOTIFICATION_TRANSPORT_DISABLED = "disabled"
 NOTIFICATION_CONFIG_ENV = "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH"
 _CONFIG_KEYS = {"schema_version", "transport", "transport_config"}
 _TRANSPORT_CONFIG_KEYS = {"message_token", "htdy_topic"}
@@ -104,12 +105,15 @@ def _parse_config(payload: Any) -> NotificationConfig:
     if (
         type(schema_version) is not int
         or schema_version != NOTIFICATION_CONFIG_SCHEMA_VERSION
-        or transport != "pushplus"
+        or transport not in ("pushplus", NOTIFICATION_TRANSPORT_DISABLED)
         or not isinstance(raw_transport_config, dict)
         or not all(isinstance(key, str) for key in raw_transport_config)
     ):
         raise ValueError
-    validate_pushplus_transport_config(raw_transport_config)
+    if transport == "pushplus":
+        validate_pushplus_transport_config(raw_transport_config)
+    elif raw_transport_config:
+        raise ValueError
     return NotificationConfig(
         schema_version=schema_version,
         transport=transport,

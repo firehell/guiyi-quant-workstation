@@ -942,8 +942,10 @@ def build_after_market_updater(
         from app.market_data.newow.home_recovery import request_home_refresh
         return request_home_refresh()
 
+    from app.alerts.notification_composition import notifications_disabled_from_env
+
     notification_transport: NotificationTransport | None = None
-    if failure_notification:
+    if failure_notification and not notifications_disabled_from_env():
         notification_transport = _ConfiguredNotificationTransport()
 
     def audit_newow_consumers(

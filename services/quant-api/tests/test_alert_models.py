@@ -40,7 +40,18 @@ def test_alert_event_enforces_identity_fk_and_range_index() -> None:
         "bar_end",
         "result_codes",
         "detected_at",
+        "source_observed_at",
+        "source_observation_id",
+        "processing_mode",
+        "notification_status",
         "notification_attempted_at",
+        "input_policy_version",
+        "notification_policy_version",
+        "notification_claimed_at",
+        "notification_generation",
+        "notification_batch_id",
+        "notification_finished_at",
+        "notification_provider_reference",
         "created_at",
     }
     assert isinstance(table.c.trading_day.type, Date)

@@ -12,19 +12,10 @@ _STARTUP_STAGE = "CONFIG"
 
 
 def dependency_environment(values):
-    """Match run-local-service.sh's shared Redis default; never print values."""
-    from urllib.parse import quote
+    """Prepare the environment for legacy SimNow tooling."""
+    from app.private_settings import read_only_dependency_environment
 
-    env = dict(values)
-    env["PGOPTIONS"] = "-c default_transaction_read_only=on"
-    password = env.get("REDIS_PASSWORD") or env.get("POSTGRES_PASSWORD")
-    if password:
-        env["REDIS_PASSWORD"] = password
-        if env.get("REDIS_URL") in (None, "", "redis://127.0.0.1:6379/0"):
-            env["REDIS_URL"] = (
-                "redis://:" + quote(password, safe="") + "@127.0.0.1:6379/0"
-            )
-    return env
+    return read_only_dependency_environment(values)
 
 
 def options(argv=None):

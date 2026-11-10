@@ -13,7 +13,7 @@ from redis.exceptions import WatchError
 
 from app.alerts.evaluators import HtdyOriginalEvaluator, SubingThsEvaluator
 from app.alerts.registry import HTDY_ALERT_RULE_CODE, SUBING_THS_ALERT_RULE_CODE
-from app.alerts.notification_composition import build_notification_sender_from_env
+from app.alerts.notification_composition import build_alert_runtime_sender_from_env
 from app.alerts.runtime import (
     AlertNotificationAcknowledgeError,
     AlertRuntime,
@@ -356,7 +356,7 @@ def build_alert_runtime(*, assert_owned=None) -> AlertRuntime:
             HTDY_ALERT_RULE_CODE: HtdyOriginalEvaluator(),
             SUBING_THS_ALERT_RULE_CODE: SubingThsEvaluator(),
         },
-        sender=build_notification_sender_from_env(),
+        sender=build_alert_runtime_sender_from_env(),
         operational_products=operational_products,
         taxonomy=load_product_taxonomy(),
         message_source=(StreamAlertMessageSource(redis) if os.getenv("GUIYI_OBSERVATION_STREAM_ENABLED", "0") == "1" else RedisAlertMessageSource(redis)),

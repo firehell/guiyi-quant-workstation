@@ -25,7 +25,10 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.alerts.notification_composition import notification_transport_status_from_env
-from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
+from app.alerts.notification_config import (
+    NOTIFICATION_CONFIG_ENV,
+    NOTIFICATION_TRANSPORT_DISABLED,
+)
 from app.alerts.pushplus import PUSHPLUS_TRANSPORT
 from app.alerts.runtime import (
     NOTIFICATION_TRANSPORT_FAILURE,
@@ -404,7 +407,10 @@ def _collect_alert_health(
     }
     if not configured_enabled:
         return {"status": RUNTIME_STATUS_DISABLED, **empty}
-    if notification["configured"] is not True:
+    muted = notification.get("transport") == NOTIFICATION_TRANSPORT_DISABLED
+    if muted:
+        empty["notification_state"] = "disabled"
+    if notification["configured"] is not True and not muted:
         return {
             "status": RUNTIME_STATUS_DEGRADED,
             **empty,
@@ -428,6 +434,8 @@ def _collect_alert_health(
     observation = (
         _alert_runtime_observation(runtime_status) if runtime_status is not None else {}
     )
+    if muted and observation:
+        observation["notification_state"] = "disabled"
     try:
         heartbeat = _json_mapping(connection.get("alert:heartbeat"))
     except Exception:  # noqa: BLE001 - public health stays sanitized

@@ -68,6 +68,9 @@ try:
         raise ValueError
     if payload["schema_version"] != 1 or type(payload["schema_version"]) is not int:
         raise ValueError
+    if payload["transport"] == "disabled" and payload["transport_config"] == {}:
+        print("disabled")
+        raise SystemExit(0)
     if payload["transport"] != "pushplus":
         raise ValueError
     config = payload["transport_config"]
@@ -81,6 +84,7 @@ try:
         raise ValueError
     if any(ord(character) < 32 or ord(character) == 127 for character in topic):
         raise ValueError
+    print("ready")
 except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)
 PY
@@ -222,18 +226,20 @@ if [[ "$notification_channel" == "pushplus" ]]; then
   notification_config_status=missing
   if [[ "$alert_value" != "missing" && -e "$alert_value" ]]; then
     notification_config_status=invalid
-    if notification_config_valid "$alert_value" 2>/dev/null; then
-      notification_config_status=ready
-    fi
+    notification_config_status="$(notification_config_valid "$alert_value" 2>/dev/null)" || notification_config_status=invalid
   fi
   if [[ "$notification_identity_valid" != "true" ]]; then
     notification_config_status=invalid
     record_failure
   fi
   printf '[local-services-status] external.pushplus_config=%s\n' "$notification_config_status"
-  printf '[local-services-status] alert.notification_audience_count=2\n'
+  if [[ "$notification_config_status" == "disabled" ]]; then
+    printf '[local-services-status] alert.notification_audience_count=0\n'
+  else
+    printf '[local-services-status] alert.notification_audience_count=2\n'
+  fi
   if [[ "$alert_marker_enabled" == "true" \
-    && "$notification_config_status" != "ready" ]]; then
+    && "$notification_config_status" != "ready" && "$notification_config_status" != "disabled" ]]; then
     record_failure
   fi
 fi

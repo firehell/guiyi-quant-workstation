@@ -160,7 +160,7 @@ def test_composition_uses_generalized_evaluator_and_keeps_activation_gate(
         composition.build_alert_runtime()
 
     marker.write_text("enabled\n", encoding="utf-8")
-    monkeypatch.setattr(composition, "build_notification_sender_from_env", object)
+    monkeypatch.setattr(composition, "build_alert_runtime_sender_from_env", object)
     monkeypatch.setattr(composition, "load_operational_products", lambda: ("j",))
     monkeypatch.setattr(composition, "load_product_taxonomy", dict)
     monkeypatch.setattr(

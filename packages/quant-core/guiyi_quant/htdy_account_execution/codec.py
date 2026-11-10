@@ -259,8 +259,10 @@ class _ReplayStateDigest:
 
 
 @contextmanager
-def replay_digests(*, max_bytes=16 * 1024 * 1024):
+def replay_digests(*, max_bytes=96 * 1024 * 1024):
     """Private, bounded canonical fragments for one synchronous full replay."""
+    # A production journal already reaches 40 MiB of canonical State.
+    # Keep replay fragments bounded with headroom for the append-only history.
     scope = _ReplayStateDigest(max_bytes)
     token = _replay_digest_scope.set(scope)
     try:

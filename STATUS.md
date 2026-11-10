@@ -1,3 +1,11 @@
+11/10 18:51 按 owner 指令暂停所有正式 PushPlus 发送。Alert gen71 已原生停驻，提醒计算随其暂停；共用 PushPlus 私有配置已原字节归档并移出运行路径，健康只读核对 configured=false，盘后任务继续运行。原生 Newow 通知 policy 已关闭并独立读回，历史投递计数未变；不自动恢复或补发。私有停驻凭证与配置前像保存在 AppSupport/GuiyiQuant/alert-notification/notifications-paused-1605o9_r。已证实样本不足的路线单列为数据不足；FG/RM 原十路仅保留未分类历史错误，现有记录不足以证明其原因，不改写原件。
+
+11/10 15:56 已发布并原生整组切换 v1.16.103，远端 main、annotated tag 与 GitHub Release 指向 exact `43ea1e4ce41a1a6101108895698de0297b0a84eb`，运行副本 `.worktrees/release-v1.16.103`、generation71。11 项现役身份 matched，API/Web/Runtime HTTP 通过，60 品种权威休市。整组计划 `b3f540892c94…` 原生 switched；Reference 470 calculated、120 initialized、10 路已分类周线无数据，Alert 414 calculated、6 warming；正式接收已追尾，业务积压独立保留。API/SDK frozen、Web frozen build、Web 1403 passed/3 skipped，后端 395 passed，3 项同名闭市夹具失败在 v1.16.102 同样复现；隔离 PostgreSQL 14 passed，独立复核和 secret scan 通过。
+
+HTDY 14 路原生恢复计划 `8c6c4109a2e1…` 一次提交，独立复核 14 个后继修订及 130 条原投递；EC、PT、SM 仅追加 `DATA_INTERRUPTED` 参考投影，未生成平仓价/收益。16:13 正式首页本轮 54 已计算、1 正计算、5 待计算，原 PF/PR/PX/RS/SF/SM 六个失败均重算成功。今日盘后 Canonical 到位前日线仍可显示待更新，市场总览仍 stale。BZ/PG/PK/PL 已有新版正式计算提交，SF 已通过预热。
+
+快期已按同版配置并安装 v1.16.103，未启动交易 Worker。原生 `probe` 已发起，检查时仍在重放 20,497 条原账本，尚未返回账户读回。8 个原发送凭证、pause、持久 hold 独立读回一致，账本及保护前像已保全。私有计划、回执和预检原件位于 AppSupport/GuiyiQuant/htdy-conflict-20261110.Ze2pDg。
+
 11/10 日线前向融合源标签冲突在 develop 修复。BZ、PG、PK、PL、SF 的两路原始 Bar/主力/质量政策一致，MDS 独立验证 60/60 物理前缀，五路震荡与融合检查点的缺口均在各自 rank1 归属开始前。新换月读入以已验证物理前缀定标签，旧标签差异仅在严格同源、同 owner、同融合检查点下对齐；原捕获、动作、检查点及归属内缺口保护保留。新只读逐路盘点五路融合全过，590 路通过、10 路为已分类周线不可用、14 路 HTDY 60m 仍报 OBSERVATION_GAP。定向 81 passed、1 skipped，生产代码 Ruff 与 diff 检查通过。
 
 整组仍停于 Reference 预热。首个 PS2612 旧检查点与 11/9 10:00 待处理捕获的端点、合约一致，但 11/6 15:00 上下文量不同。14 路均经原生 HtdyConflictSource 验证原始投递及 MDS/Canonical 证据，EC、PT、SM 涉及 OPEN 参考交易。私有只读清单位于 AppSupport/GuiyiQuant/reference-prewarm-20261110.bXNzV5。旧故障恢复 scope 不覆盖这批新原件；未退休历史、未启动切换、未执行快期同版预检。

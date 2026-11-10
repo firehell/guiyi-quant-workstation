@@ -147,3 +147,29 @@ def test_safe_config_loader_rejects_unsafe_file(
         match="^ALERT_NOTIFICATION_CONFIG_INVALID$",
     ):
         load_notification_config(path)
+
+
+def test_explicit_disabled_transport_allows_computation_without_a_sender(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.alerts.notification_composition import (
+        build_alert_runtime_sender_from_env,
+        build_notification_sender_from_env,
+        notification_transport_status_from_env,
+    )
+    from app.alerts.notification_config import NOTIFICATION_CONFIG_ENV
+
+    path = _private_parent(tmp_path) / "notification.json"
+    monkeypatch.setenv(NOTIFICATION_CONFIG_ENV, str(path))
+    _write(path, {"schema_version": 1, "transport": "disabled", "transport_config": {}})
+
+    assert build_alert_runtime_sender_from_env() is None
+    assert notification_transport_status_from_env() == {
+        "transport": "disabled", "configured": False, "audience_count": 0, "would_send": False,
+    }
+    with pytest.raises(NotificationConfigError, match="ALERT_NOTIFICATION_TRANSPORT_DISABLED"):
+        build_notification_sender_from_env()
+
+    _write(path, _payload(transport="disabled"))
+    with pytest.raises(NotificationConfigError, match="ALERT_NOTIFICATION_CONFIG_INVALID"):
+        build_alert_runtime_sender_from_env()

@@ -13,7 +13,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
 from app.alerts.notification import NotificationDelivery, NotificationTransportError, ProviderAcceptance
-from app.alerts.notification_composition import _load_from_env, build_notification_transport_from_env
+from app.alerts.notification_composition import (
+    _load_from_env,
+    build_notification_transport_from_env,
+    notifications_disabled_from_env,
+)
+from app.alerts.notification_config import (
+    NOTIFICATION_TRANSPORT_DISABLED,
+    NotificationConfigError,
+)
 from app.reference_trading.models import ReferenceActionRow, ReferenceBatch, ReferenceStream, ReferenceRevision
 from app.reference_trading.presentation import require_envelope
 
@@ -51,6 +59,8 @@ class NewowNotificationDelivery(Base):
 
 def configured_topic_hash() -> str:
     config = _load_from_env()
+    if config.transport == NOTIFICATION_TRANSPORT_DISABLED:
+        raise NotificationConfigError("ALERT_NOTIFICATION_TRANSPORT_DISABLED")
     return sha256(str(config.transport_config['htdy_topic']).encode()).hexdigest()
 
 
@@ -142,6 +152,8 @@ class NewowNotificationDispatcher:
         with (session_factory or self.session_factory)() as session:
             policy = session.get(NewowNotificationPolicy, 'newow_actions_v1')
             if policy is None or not policy.enabled:
+                return {'enabled': False, 'processed': 0, 'attempted': 0}
+            if self.transport is None and notifications_disabled_from_env():
                 return {'enabled': False, 'processed': 0, 'attempted': 0}
             topic = self.topic_hash or configured_topic_hash()
             if topic != policy.topic_hash:

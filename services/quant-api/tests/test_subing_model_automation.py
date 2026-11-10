@@ -170,6 +170,33 @@ def test_provider_slots_are_session_bounded_and_finite():
     assert capture_slot(end + timedelta(seconds=1), first, end) is None
 
 
+def test_closed_today_defers_canonical_recovery_only_until_publication(monkeypatch):
+    from datetime import date
+    import app.subing_model_service as module
+
+    day = date(2026, 11, 10)
+    close = datetime(2026, 11, 10, 7, tzinfo=UTC)
+    due = datetime(2026, 11, 10, 10, 5, tzinfo=UTC)
+    service = module.Service.__new__(module.Service)
+    service.pipe = SimpleNamespace(
+        source_day=str(day), last={}, products={'jm': {'contract': 'JM2701'}},
+    )
+    service.recovery_checked = None
+    monkeypatch.setattr(module.worker, 'PRODUCTS', ('jm',))
+    ctx = {'jm': {'day_end': close.isoformat(), 'contract': 'JM2701'}}
+
+    def canonical_attempt(_day):
+        raise ValueError('CANONICAL_ATTEMPT')
+
+    service.stream = SimpleNamespace(tail=canonical_attempt)
+    assert service.recovery(day, ctx, due - timedelta(seconds=1)) is False
+    assert service.recovery_checked is None
+    with pytest.raises(ValueError, match='CANONICAL_ATTEMPT'):
+        service.recovery(day, ctx, due)
+    with pytest.raises(ValueError, match='CANONICAL_ATTEMPT'):
+        service.recovery(day, ctx, due + timedelta(days=1))
+
+
 def test_unknown_policy_or_account_state_drift_is_not_accepted():
     e = recovery_event(empty_pipe())
     e['recovery_policy'] = 'invented'

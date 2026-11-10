@@ -649,20 +649,15 @@ def main():
     args = parser.parse_args()
     try:
         if os.environ.get("GUIYI_FEED_SESSION_RECOVERY_READY") != "1":
-            from app.core.env import PROJECT_ROOT
-            from app.private_settings import private_dependency_settings
-            import importlib.util
-
-            spec = importlib.util.spec_from_file_location(
-                "feed_recovery_environment",
-                PROJECT_ROOT / "scripts/broker/simnow_supervisor.py",
+            from app.private_settings import (
+                private_dependency_settings,
+                read_only_dependency_environment,
             )
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
+
             env, _ = private_dependency_settings(
                 Path.home() / "Library/Application Support/GuiyiQuant/project.env"
             )
-            os.environ.update(module.dependency_environment(env))
+            os.environ.update(read_only_dependency_environment(env))
             os.environ["GUIYI_OBSERVATION_STREAM_ENABLED"] = "1"
             os.environ["GUIYI_FEED_SESSION_RECOVERY_READY"] = "1"
             os.execv(
