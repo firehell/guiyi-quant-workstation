@@ -308,3 +308,107 @@ NOV06_BINDINGS = {
         None,
     ),
 }
+
+NOV10_VERSION = "htdy_conflict_recovery_20261110_v1"
+NOV10_INVENTORY_SHA256 = "340c1885bf7e7acb8d43bf54c2a2a5717a1d25149fa6cc7081028dd383e73bba"
+# Exact owner-authorized records from the November 10 read-only prewarm inventory.
+NOV10_BINDINGS = {
+    "reference-stream:e5d425448e95d1a3530ae604649ab96a4332e74d8fabc74b33ab843856855962": (  # AP
+        "6ae58b9db3d849309cdd53c4f9369a47",
+        "41a616b5dbea450f8d62de3c13a8c55d",
+        5,
+        "ca5b58d69d974815bfcf0add0e2e5612",
+        None,
+    ),
+    "reference-stream:d26afc6086a8710138a37002b6b384e3a5a2e93b923069dfa7908cbe356d2e55": (  # CJ
+        "f6e642e676574129a8faa4fb1281ce35",
+        "d957f35fecf94e56928eb6962172e21a",
+        5,
+        "c7e5a072cd7340cc92d74c68683bddda",
+        None,
+    ),
+    "reference-stream:80d227e2f5209862e3c1a4900e4a4689f391777f2ff96604d225e77343e99542": (  # EC
+        "90fc758f2d84422aae59c6968a960273",
+        "0617baeac7fc438985b66c025b824478",
+        1,
+        "ce0107d009834240a64677e794ead5fb",
+        "reference-trade:d9f23b6abc04c7e693e816818127766420c66015ff638fa48ac2257140922e47",
+    ),
+    "reference-stream:d7927893f70ab589aa4857dd7e6b5eb1f24bc90bb1fbb2a8df115bd59652bf9d": (  # JD
+        "aab219329029483abd8ac7d579c81a73",
+        "7a824155e051449eaca924747a1af193",
+        5,
+        "6f99c7d4822843228133a83e13f5b6e6",
+        None,
+    ),
+    "reference-stream:44eb4c5dceaf0331deded57cb4ba79d522bd575289e121956297a9bca257974a": (  # LC
+        "7ac5632aad9b47f182f8a992ce24e8a4",
+        "2c2e04cbcb5e4ec585217d6d705ea1e3",
+        5,
+        "6070fae2d8904a4dabe5ced3f0484278",
+        None,
+    ),
+    "reference-stream:8612e3118fbd43cff68b523627dd3d25e08b6cab754ddd29191c686f949ba8de": (  # LH
+        "7cfc0592887d42828b94c948c48f1652",
+        "7dd55327ae6444c79be631e116eff201",
+        5,
+        "6c038ccaf7d8460d94fca7ebb6419cbe",
+        None,
+    ),
+    "reference-stream:8bbca864461c867f504e1306f95a30f161325049ba8b8250cfd89c24888894db": (  # PD
+        "351083811aee4222b21626b20edb8afa",
+        "3150339220604303951fdc1ef68c5dcc",
+        4,
+        "a0f40ea3fced46c9a887439dcf1ce691",
+        None,
+    ),
+    "reference-stream:cde4a953e05421e362a740d1c45f2747eb31ec194d9bc1604b807bc0187c2fb6": (  # PK
+        "8160ed1c9bf44bf0893853b74ecf3b30",
+        "83d139a543c24b158a2901de41b5017a",
+        5,
+        "3a37241b8fcc43329cec6d1571241644",
+        None,
+    ),
+    "reference-stream:0bd72d58e494ba0c3c76c222141bf9d14282008a4536267a3c1285986efcd8c5": (  # PS
+        "9f96b8ea988747e3b9cd67041f9fbf5e",
+        "7f9f8fbcd23341bab3cbbdc349c51a37",
+        4,
+        "65d6d209d9984065a08e72598c634c35",
+        None,
+    ),
+    "reference-stream:19a551ea97b218656ff7b2462e89c6ee44ddb6ccb926b5bed2df6bb13b59fab4": (  # PT
+        "c2e76e8c52804ba98c384d1d8307a183",
+        "d8ffd46428f64954a40be55103616107",
+        3,
+        "3df0c273a634420ab9853e9b06c4673a",
+        "reference-trade:f47123bfbadb310fcc0fd3eeab1f2a0f08cb7a05794eca2edc7b42222219fc7b",
+    ),
+    "reference-stream:82c1f916ee1227a14487491b368afc032cdb2725b30a914b446f257662df7bed": (  # SF
+        "1c47165480054ac6aa5f22bafc3ffc5b",
+        "12c28ffc80904078b8e88d9bdf5c112e",
+        5,
+        "bc79cb47648b43c2a54f4ddbde91491c",
+        None,
+    ),
+    "reference-stream:31c1f7ffe88b05d8142d0fa4ac46ca4d5d977d9604c6deb945a8ffe5389aa7bf": (  # SI
+        "c0837e01d9ee476a905677c2f8855ee8",
+        "7cc50cbc03054e49b3a7481233acc989",
+        3,
+        "8f47cedf318e49e682680a55072b88f8",
+        None,
+    ),
+    "reference-stream:b3e1ea9d7543f36d175cc1add33d3674810713a2d790e1d960202eb2f12ec8de": (  # SM
+        "f0478d8d451a47d7a78d5c7557239e65",
+        "629fed13574742e591f3ee910606c500",
+        5,
+        "d56f717cc6c5418a81ce06636826ee3b",
+        "reference-trade:8a6ab54b1d3959ce42730766f1bdf05293efd1b8a8d1ce57cc4b5c4ac8628766",
+    ),
+    "reference-stream:21149875d0b154b6efa0647e3ad271453cc1d15dc7419087469e2b9fd62b0493": (  # UR
+        "7848d34ddf524da4b7aac7d382d8e1c9",
+        "f38ca2deb7614d71b8e83542837fcd3e",
+        4,
+        "19f6f784820246d88354690ca41db422",
+        None,
+    ),
+}
