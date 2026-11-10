@@ -464,3 +464,39 @@ def test_zero_backlog_flat_restart_clears_expired_windows_without_resetting_cash
     assert all(w.source_end is None for w in m.windows.values())
     assert m.reset_after == datetime.fromisoformat(e['resume_floor'])
     assert p.last_outcome['resume_policy'] == RESUME_POLICY
+
+
+@pytest.mark.parametrize("already_consumed_opening", [False, True])
+def test_flat_session_bridge_preserves_observer_history_and_refuses_exposure(already_consumed_opening):
+    from app.subing_model_recovery import FLAT_SESSION_BRIDGE, RESUME_POLICY, apply_flat_session_bridge
+    history = {'original': ('hash', {'demand': 'WAIT'})}
+    observer = SimpleNamespace(day='2026-11-05', last_eod_day='2026-11-05',
+        waiting={'position_id': None}, streak=0, position_id=None, exit_required=False,
+        seen=history, last_at=AT.isoformat())
+    model = SimpleNamespace(observer=observer, layers=[], pending=None, clear_reasons=[],
+        exit_layers=[], day_halted=False, pullback=None)
+    engine = SimpleNamespace(layers={}, model=model)
+    account = SimpleNamespace(engine=engine, halted=None, protection_observation=None, contract='JM2701')
+    completed = AT + timedelta(days=5)
+    pipe = SimpleNamespace(account=account, source_day='2026-11-10',
+        last={('jm', '1m'): completed})
+    next_open = (completed + timedelta(hours=6)).isoformat()
+    event = dict(resume_policy=RESUME_POLICY, resume_floor=next_open, observed_at=next_open, source_day='2026-11-11',
+        contexts={'jm': {'previous': '2026-11-10', 'first_open': next_open, 'contract': 'JM2701'}},
+        flat_session_bridge=dict(policy=FLAT_SESSION_BRIDGE, account_day='2026-11-05',
+            previous_source_day='2026-11-10', previous_day_end=completed.isoformat(),
+            next_open=next_open, contract='JM2701'))
+    if already_consumed_opening:
+        pipe.source_day = '2026-11-11'
+        pipe.last[('jm', '1m')] = datetime.fromisoformat(next_open) + timedelta(minutes=1)
+        pipe.resume_status = dict(policy=RESUME_POLICY, historical_execution=False,
+            historical_rows=1, account_can_resume=True, floor=pipe.last[('jm', '1m')].isoformat())
+        event['resume_floor'] = event['observed_at'] = (pipe.last[('jm', '1m')] + timedelta(seconds=1)).isoformat()
+    engine.layers['open'] = object()
+    with pytest.raises(ValueError, match='MODEL_FLAT_SESSION_BRIDGE_INVALID'):
+        apply_flat_session_bridge(pipe, event)
+    assert observer.day == '2026-11-05'
+    engine.layers.clear()
+    apply_flat_session_bridge(pipe, event)
+    assert observer.day is observer.waiting is observer.last_eod_day is None
+    assert observer.seen is history and observer.last_at == AT.isoformat()

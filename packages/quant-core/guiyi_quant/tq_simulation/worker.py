@@ -64,13 +64,23 @@ def verify_config(config):
     return root
 
 
+def tq_execution_candidates(state, *, opening_allowed):
+    candidates = execution_candidates(state, opening_allowed=opening_allowed)
+    if any(not order.reconciled for order in state.orders):
+        return candidates
+    proven = {product.product for product in state.products if product.signal_id}
+    # Recovery can retain a close obligation without a usable target ID.
+    # Wait for its own authoritative product proof, while retaining the obligation.
+    return tuple(candidate for candidate in candidates if candidate.product in proven)
+
+
 def should_tick(state, now, *, stopping=False, opening_allowed=True, facts=None):
     pending = [o for o in state.orders if not o.reconciled]
     if not pending:
         if any(p.rolling and not any(h.product == p.product for h in state.positions)
                for p in state.products):
             return True
-        candidates = execution_candidates(state, opening_allowed=opening_allowed)
+        candidates = tq_execution_candidates(state, opening_allowed=opening_allowed)
         return any(
             f["contract"] == c.contract
             and (lambda session: session.at <= now < session.valid_until and session.can_trade)(codec.decode(f["session"]))
@@ -337,7 +347,7 @@ def run(config_path, *, inspect=False):
                     if state:
                         contracts = tuple(
                             (c.product, c.contract)
-                            for c in execution_candidates(
+                            for c in tq_execution_candidates(
                                 state, opening_allowed=action == "trade"
                             )
                         )
@@ -443,7 +453,7 @@ def run(config_path, *, inspect=False):
                         )
                     ):
                         inputs = []
-                        for candidate in execution_candidates(
+                        for candidate in tq_execution_candidates(
                             state, opening_allowed=action == "trade"
                         ):
                             fact = facts.get((candidate.product, candidate.contract))
@@ -583,6 +593,7 @@ def run(config_path, *, inspect=False):
                             "ACCOUNT_RECOVERY_REQUIRED",
                             "COMMAND_TIME_REGRESSION",
                             "NATIVE_RECOVERY_REQUIRED",
+                            "IDENTITY_INVALID",
                             "PRODUCT_NOT_BLOCKED",
                             "RECOVERY_INPUT_CUTOFF_INVALID",
                         }

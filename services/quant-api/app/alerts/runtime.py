@@ -373,9 +373,7 @@ class AlertRuntime:
                                 event_created=False, error_type=_rule_error_type(str(exc)),
                                 coverage_identity=(symbol, frequency.value, window.contract if window is not None else None, day),
                                 attempted_bar_at=window.cutoff if window is not None else None,
-                                input_error_code=(str(exc) if 1 <= len(str(exc)) <= 96 and all(
-                                    char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789" for char in str(exc)
-                                ) else "ALERT_EVALUATION_FAILED"),
+                                input_error_code=_safe_evaluation_error_code(exc),
                             )
             if session.in_transaction():
                 session.rollback()
@@ -563,6 +561,7 @@ class AlertRuntime:
                             error_type=error_type,
                             coverage_identity=(trigger.symbol, trigger.frequency.value, window.contract if window is not None else None, trigger.bar.trading_day),
                             attempted_bar_at=trigger.bar.bar_end,
+                            input_error_code=_safe_evaluation_error_code(exc),
                         )
                         recorded_rule_result |= error_type != "evaluation_warming_up"
                     except Exception:
@@ -703,6 +702,7 @@ class AlertRuntime:
                                         error_type=error_type,
                                         coverage_identity=(symbol, frequency.value, window.contract if window is not None else None, trigger.trading_day),
                                         attempted_bar_at=window.cutoff if window is not None else None,
+                                        input_error_code=_safe_evaluation_error_code(exc),
                                     )
                                     recorded_rule_result |= error_type != "evaluation_warming_up"
                                 except Exception:
@@ -1382,6 +1382,13 @@ def _iso_timestamp(value: datetime) -> str:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("ALERT_RUNTIME_STATUS_INVALID")
     return value.astimezone(UTC).isoformat()
+
+
+def _safe_evaluation_error_code(error: Exception) -> str:
+    code = str(error)
+    if 1 <= len(code) <= 96 and all(char in "ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789" for char in code):
+        return code
+    return "ALERT_EVALUATION_FAILED"
 
 
 def _rule_error_type(code: str) -> str:
