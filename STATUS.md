@@ -1,3 +1,5 @@
+11/10 08:25 分服务发布预检拒绝 v1.16.102：所有现役服务均有 `MIXED_CONTRACT_INCOMPATIBLE`，差异为 formula/reference，包含 API/Web。整组仍受 BZ 参考预热阻断，现役 60 对日线中另查到 PG、PK、PL、SF 同类计算段分歧。本次按已交办范围通过原生 optional-service 计划 `762fd4c72954…` 启用 v1.16.100 首页自动计算，独立 owner generation70。API/Web/首页 worker 身份 matched，正式 API/Web 仍 v1.16.100。08:26 已真实产生新首页摘要，2 ready、1 updating、51 stale、6 failed，总览仍为 11/6；全量刷新尚待观察。参考、提醒和账户未切换，快期原保护保持。
+
 11/10 08:09 已发布 v1.16.102，远端 main、annotated tag 和 GitHub Release 指向 exact `e9eece11624cae47362b1c94ac7bd3a6a5fc1dc0`，精确副本 `.worktrees/release-v1.16.102`。提醒 D1 严格全零 Canonical 源行参与端点校验并作为质量断点。PF/PR/PX 真数据日线可计算，全 Scope 414 可计算、6 预热。58 项定向测试通过，3 项运行预热用例在 v1.16.101 同样失败；API/Web/快期 SDK frozen 构建与独立复核通过。
 
 08:12 整组 attempt `973f141ad9b1…` 在停机前 cancelled，effects 为空。Alert 候选预热通过，后续 Reference 预热失败；精确副本只读复现为 BZ 日线 `newow_dual_fusion` 的 `REFERENCE_FUSION_SOURCE_INPUT_CONFLICT`，两路基策略捕获的输入相同，来源证明仅 `calculation_segment_id` 不一致。正式 10 服务仍 v1.16.100 且身份 matched，API/Web 正常、60 品种休市。首页仍未启用，快期原保护未解除。下一步核对 BZ 日线两路计算段的来源与归属，再生成全新原生切换计划，原 attempt 不重用。
