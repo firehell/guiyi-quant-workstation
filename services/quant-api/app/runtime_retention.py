@@ -537,9 +537,9 @@ class RetentionBackend:
             if parts[2].startswith("com.guiyi.quant-"):
                 labels.add(parts[2])
         valid_label = re.compile(r"com\.guiyi\.quant-(?:" + "|".join(re.escape(item) for item in (*SERVICES, "simnow", "tqkq-simulation")) + r")(?:-candidate-[0-9a-f]{32})?")
-        from app.runtime_identity import read_launchd_service as _read_launchd_service
+        from app.runtime_identity import SUBING_DEVELOPMENT_LABEL, read_launchd_service as _read_launchd_service
         for label in labels:
-            if not valid_label.fullmatch(label):
+            if label != SUBING_DEVELOPMENT_LABEL and not valid_label.fullmatch(label):
                 raise RetentionError("CLEANUP_LOADED_LABEL_UNSUPPORTED")
             observed = _read_launchd_service(label, root=self.home)
             if observed is None:
