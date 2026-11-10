@@ -509,6 +509,8 @@ Rule、coverage、已保存事件与发送状态仍按本规范分别表达业�
 `evaluation_warming_up` / `warming_up` 是等待样本积累，不是基础服务故障，也不是计算成功。
 仅知道 `DATA_UNAVAILABLE`、`MARKET_READ_WINDOW_INCOMPLETE` 或 `previous_unresolved` 时，
 不得推断为正常样本不足；原业务错误、未验证状态与历史事实保持不变。
+盘中当前交易日的同合约评价已成功，且同代次 Live 与 Alert journal 明确证明该端点已 ACK 时，
+更早交易日的 `previous_unresolved` 继续公开保留，当前路线按当日 Session 与后续到期端点评估。
 新鲜、身份匹配的 Reference owner 所报告的路线等待、数据不足或隔离同样不证明其进程失败，
 原 component/proof 的 ready、阻断计数和诊断保持严格。基础服务 `ok` 不构成策略就绪、
 预热通过、自然验收、通知送达、Runtime promotion 或交易准入；这些 consumer MUST 继续核验
