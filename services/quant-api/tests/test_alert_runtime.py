@@ -1364,6 +1364,8 @@ def test_htdy_incomplete_window_records_failure_without_event_or_notification() 
     assert rule_status["error_type"] == "evaluation_failed"
     assert rule_status["last_event_at"] is None
     assert evaluator.calls == sender.calls == 0
+    route = runtime._coverage_progress[(HTDY_ALERT_RULE_CODE, "rb", "60m")]
+    assert route["input_error_code"] == "MARKET_READ_WINDOW_INCOMPLETE"
 
 
 def test_subing_event_persistence_failure_is_not_retried_by_duplicate() -> None:
