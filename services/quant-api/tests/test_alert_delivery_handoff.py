@@ -247,6 +247,41 @@ def test_restart_only_closes_orphans_and_does_not_retry_attempted(store):
     assert status(store, 2) == "ATTEMPTED_UNKNOWN"
 
 
+def test_muted_runtime_starts_with_generation_and_never_retries_old_handoffs(store, monkeypatch):
+    from app.alerts import runtime
+
+    seed(store, 1)
+    seed(store, 2, status="ATTEMPTED_UNKNOWN")
+    ready = []
+
+    class Source:
+        def subscribe(self, *_patterns):
+            assert status(store, 1) == "LOST_HANDOFF_NO_SEND"
+            assert status(store, 2) == "ATTEMPTED_UNKNOWN"
+
+        def drain_startup_messages(self):
+            return ()
+
+        def get_message(self, *, timeout_seconds):
+            return None
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(runtime, "runtime_heartbeat_identity", lambda: {"runtime_generation": 20})
+    worker = runtime.AlertRuntime(
+        session_factory=store, market_read_factory=lambda _session: None, sender=None,
+        operational_products=(), taxonomy={}, message_source=Source(), heartbeat_store=object(),
+        stop_requested=lambda: bool(ready), mark_ready=lambda: ready.append(True),
+    )
+    monkeypatch.setattr(worker, "_validate_startup_composition", lambda: None)
+    monkeypatch.setattr(worker, "_write_heartbeat", lambda _now: None)
+    worker.run_forever()
+    assert ready == [True]
+    assert worker._notification_generation == 20
+    assert worker._handoff is None
+
+
 def test_transport_failure_is_terminal_and_not_retried(store):
     calls = []
 

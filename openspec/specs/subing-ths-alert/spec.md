@@ -230,6 +230,10 @@ legacy rows 保留原语义。drain 原子关闭 admission，终止尚未领取�
 线程未结束时不得正常释放 owner。发送线程异常必须公开并停止新接收，Runtime 状态并发合并不得持锁跨 HTTP。
 旧 Event/Rule/Scope/受众不变，SuBing 通知仍按原 policy 关闭。
 provider accepted MUST NOT 表述为微信实际送达。
+
+私有通知配置显式使用 `transport=disabled` 和空配置时，Alert 继续评估、保存 Event 和推进 coverage。
+新 Event 不领取发送资格或 transport attempt，也不创建发送线程。启动仍终止遗留 pending，原已领取或结果未知的记录保持原样。
+health 将此模式报告为 `notification_state=disabled`，仍检查 heartbeat、Rule 评估和到期 coverage；缺失或无效配置继续失败关闭。
 transport 失败 SHALL 在既有有界 Runtime 日志中仅记录固定白名单诊断码，并用 `rule_code`、`symbol`、
 `contract`、`frequency`、`bar_end` 或 v2 的正整数 `event_id` 关联已保存 Event；不得记录 provider message/body、URL、token、通知正文、
 原始异常或 cause。SDK 明确返回拒绝码时可分类为 provider rejected，`900` 分类为 rate limited；SDK 的

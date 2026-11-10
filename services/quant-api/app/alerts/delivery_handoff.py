@@ -51,6 +51,24 @@ def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+def terminalize_orphan_handoffs(session_factory, *, assert_owned, clock) -> None:
+    """Close pending receipts from an earlier owner without reconstructing any send."""
+    assert_owned()
+    with session_factory() as session:
+        session.execute(
+            update(AlertEvent)
+            .where(
+                AlertEvent.notification_policy_version == NOTIFICATION_POLICY_VERSION,
+                AlertEvent.notification_status == "HANDOFF_PENDING",
+            )
+            .values(
+                notification_status="LOST_HANDOFF_NO_SEND",
+                notification_finished_at=clock(),
+            )
+        )
+        session.commit()
+
+
 class BoundedNotificationHandoff:
     def __init__(
         self,
@@ -91,22 +109,9 @@ class BoundedNotificationHandoff:
         with self._condition:
             if self._started or self._closed:
                 raise RuntimeError("ALERT_HANDOFF_ALREADY_STARTED_OR_CLOSED")
-            self._assert_owned()
-            # Only terminalize orphan receipts. Never reconstruct or resend work.
-            with self._sessions() as session:
-                session.execute(
-                    update(AlertEvent)
-                    .where(
-                        AlertEvent.notification_policy_version
-                        == NOTIFICATION_POLICY_VERSION,
-                        AlertEvent.notification_status == "HANDOFF_PENDING",
-                    )
-                    .values(
-                        notification_status="LOST_HANDOFF_NO_SEND",
-                        notification_finished_at=self._clock(),
-                    )
-                )
-                session.commit()
+            terminalize_orphan_handoffs(
+                self._sessions, assert_owned=self._assert_owned, clock=self._clock
+            )
             self._started = True
             self._thread = Thread(
                 target=self._run, name="alert-delivery-v2", daemon=False

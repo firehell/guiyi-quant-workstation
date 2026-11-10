@@ -21,7 +21,11 @@ from app.alerts.evaluators import (
     AlertEvaluator,
     AlertObservationCandidate,
 )
-from app.alerts.delivery_handoff import BoundedNotificationHandoff, FrozenHandoff
+from app.alerts.delivery_handoff import (
+    BoundedNotificationHandoff,
+    FrozenHandoff,
+    terminalize_orphan_handoffs,
+)
 from app.alerts.models import AlertRule
 from app.alerts.notification import (
     AlertNotificationMessage,
@@ -126,11 +130,19 @@ def _persist_candidate_and_prepare_notification(
     source_observed_at: datetime | None = None,
     source_observation_id: str | None = None,
     notification_generation: int | None = None,
+    notifications_allowed: bool = True,
 ) -> _PreparedEvent:
     definition = get_alert_rule_definition(rule.rule_code)
+    notify = notifications_allowed and definition.notification_enabled
     if source_observed_at is not None and processing_now < source_observed_at:
         raise ValueError("ALERT_SOURCE_TIME_INVALID")
     expired = source_observed_at is not None and (processing_now - source_observed_at).total_seconds() > 30
+    handoff = notify and notification_generation is not None
+    notification_status = None
+    if notifications_allowed and expired:
+        notification_status = "EXPIRED_NO_SEND"
+    elif handoff:
+        notification_status = "HANDOFF_PENDING"
     create = AlertEventCreate(
         rule_id=rule.id,
         symbol=symbol,
@@ -140,15 +152,15 @@ def _persist_candidate_and_prepare_notification(
         bar_end=candidate.bar_end,
         result_codes=candidate.observation_types,
         detected_at=processing_now,
-        notification_attempted_at=(processing_now if definition.notification_enabled and not expired and notification_generation is None else None),
+        notification_attempted_at=(processing_now if notify and not expired and notification_generation is None else None),
         source_observed_at=source_observed_at,
         source_observation_id=source_observation_id,
         processing_mode="handover_buffer" if source_observation_id else None,
-        notification_status=("EXPIRED_NO_SEND" if expired else "HANDOFF_PENDING" if definition.notification_enabled and notification_generation is not None else None),
+        notification_status=notification_status,
         input_policy_version=candidate.input_policy_version,
-        notification_policy_version="alert_memory_batch_v2" if definition.notification_enabled and notification_generation is not None else None,
-        notification_claimed_at=processing_now if definition.notification_enabled and notification_generation is not None else None,
-        notification_generation=notification_generation if definition.notification_enabled else None,
+        notification_policy_version="alert_memory_batch_v2" if handoff else None,
+        notification_claimed_at=processing_now if handoff else None,
+        notification_generation=notification_generation if notify else None,
         subing_alignment=subing_alignment,
     )
     if definition.event_mode is AlertEventMode.FIRST_SEEN:
@@ -157,7 +169,7 @@ def _persist_candidate_and_prepare_notification(
         created = service.create_event(create)
     if created is None:
         return _PreparedEvent(False, None, None)
-    if not definition.notification_enabled or expired:
+    if not notify or expired:
         return _PreparedEvent(True, None, None)
     taxonomy_entry = taxonomy.get(symbol)
     if taxonomy_entry is None:
@@ -190,7 +202,7 @@ class AlertRuntime:
         market_read_factory: AlertMarketReadFactory,
         htdy_evaluator: AlertEvaluator | None = None,
         evaluators: Mapping[str, AlertEvaluator] | None = None,
-        sender: AlertNotificationSender,
+        sender: AlertNotificationSender | None,
         operational_products: tuple[str, ...],
         taxonomy: Mapping[str, ProductTaxonomyEntry],
         message_source: AlertMessageSource | None = None,
@@ -244,17 +256,22 @@ class AlertRuntime:
             if self._recovery_guard_enabled and not (type(generation) is int and generation > 0):
                 raise RuntimeError("ALERT_HANDOFF_GENERATION_REQUIRED")
             if type(generation) is int and generation > 0:
-                if not isinstance(self._sender, AlertNotificationDispatcher):
-                    raise RuntimeError("ALERT_HANDOFF_SENDER_INVALID")
                 self.assert_owned()
                 self._notification_generation = generation
                 self._close_not_due_coverage()
-                self._handoff = BoundedNotificationHandoff(
-                    session_factory=self._session_factory, sender=self._sender,
-                    assert_owned=self.assert_owned, clock=self._aware_now, generation=generation,
-                    on_result=self._handoff_result,
-                )
-                self._handoff.start()
+                if self._sender is None:
+                    terminalize_orphan_handoffs(
+                        self._session_factory, assert_owned=self.assert_owned, clock=self._aware_now
+                    )
+                else:
+                    if not isinstance(self._sender, AlertNotificationDispatcher):
+                        raise RuntimeError("ALERT_HANDOFF_SENDER_INVALID")
+                    self._handoff = BoundedNotificationHandoff(
+                        session_factory=self._session_factory, sender=self._sender,
+                        assert_owned=self.assert_owned, clock=self._aware_now, generation=generation,
+                        on_result=self._handoff_result,
+                    )
+                    self._handoff.start()
             self.message_source.subscribe(_LIVE_BAR_PATTERN, _MARKET_STATE_PATTERN)
             for startup_message in self.message_source.drain_startup_messages():
                 self.process_message(*startup_message, emit_events=False)
@@ -508,6 +525,7 @@ class AlertRuntime:
                                 source_observed_at=self._source_observed_at,
                                 source_observation_id=self._source_observation_id,
                                 notification_generation=self._notification_generation,
+                                notifications_allowed=self._sender is not None,
                                 subing_alignment=_alignment_for_candidate(rule, market_read, window, candidate, processing_now),
                             )
                             if prepared.event_created:
@@ -642,6 +660,7 @@ class AlertRuntime:
                                         candidate=candidate,
                                         processing_now=processing_now,
                                         notification_generation=self._notification_generation,
+                                        notifications_allowed=self._sender is not None,
                                         subing_alignment=_alignment_for_candidate(rule, market_read, window, candidate, processing_now),
                                     )
                                     if prepared.event_created:
@@ -762,6 +781,8 @@ class AlertRuntime:
         *,
         processing_now: datetime,
     ) -> None:
+        if self._sender is None:
+            return
         for message in messages:
             if isinstance(message, FrozenHandoff):
                 if self._handoff is None:

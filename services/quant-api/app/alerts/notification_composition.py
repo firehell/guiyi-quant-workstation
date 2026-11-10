@@ -8,10 +8,10 @@ from pathlib import Path
 from app.alerts.notification import AlertNotificationDispatcher, NotificationTransport
 from app.alerts.notification_config import (
     NOTIFICATION_CONFIG_ENV,
+    NOTIFICATION_TRANSPORT_DISABLED,
     NotificationConfig,
     NotificationConfigError,
     load_notification_config,
-    validate_pushplus_transport_config,
 )
 from app.alerts.pushplus import (
     PUSHPLUS_TRANSPORT,
@@ -29,6 +29,20 @@ def build_notification_sender_from_env(
     )
 
 
+def build_alert_runtime_sender_from_env() -> AlertNotificationDispatcher | None:
+    config = _load_from_env()
+    if config.transport == NOTIFICATION_TRANSPORT_DISABLED:
+        return None
+    return AlertNotificationDispatcher(PushPlusTransport.from_config(config.transport_config))
+
+
+def notifications_disabled_from_env() -> bool:
+    try:
+        return _load_from_env().transport == NOTIFICATION_TRANSPORT_DISABLED
+    except NotificationConfigError:
+        return False
+
+
 def build_notification_transport_from_env(
     *,
     client: PushPlusClientProtocol | None = None,
@@ -36,7 +50,7 @@ def build_notification_transport_from_env(
     """Build the single PushPlus transport for Alert and owner-only operations."""
     config = _load_from_env()
     if config.transport != PUSHPLUS_TRANSPORT:
-        raise NotificationConfigError()
+        raise NotificationConfigError("ALERT_NOTIFICATION_TRANSPORT_DISABLED")
     return PushPlusTransport.from_config(
         config.transport_config,
         client=client,
@@ -47,9 +61,13 @@ def notification_transport_status_from_env() -> dict[str, object]:
     """Return secret-safe structural readiness without network access."""
     try:
         config = _load_from_env()
-        if config.transport != PUSHPLUS_TRANSPORT:
-            raise NotificationConfigError()
-        validate_pushplus_transport_config(config.transport_config)
+        if config.transport == NOTIFICATION_TRANSPORT_DISABLED:
+            return {
+                "transport": NOTIFICATION_TRANSPORT_DISABLED,
+                "configured": False,
+                "audience_count": 0,
+                "would_send": False,
+            }
     except NotificationConfigError:
         return _unconfigured_status()
     return {

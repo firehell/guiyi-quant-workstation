@@ -2382,8 +2382,11 @@ def test_duplicate_canonical_update_does_not_clear_prior_status_failure(
     engine.dispose()
 
 
-@pytest.mark.parametrize("rule_code", [SUBING_THS_ALERT_RULE_CODE, HTDY_ALERT_RULE_CODE])
-def test_signal_only_event_persists_without_notification_and_htdy_still_sends(rule_code):
+@pytest.mark.parametrize(
+    ("rule_code", "muted"),
+    [(SUBING_THS_ALERT_RULE_CODE, False), (HTDY_ALERT_RULE_CODE, False), (HTDY_ALERT_RULE_CODE, True)],
+)
+def test_signal_only_event_persists_without_notification_and_htdy_still_sends(rule_code, muted):
     from app.alerts.runtime import _persist_candidate_and_prepare_notification
     from app.alerts.service import AlertService
     from app.db.base import Base
@@ -2403,14 +2406,19 @@ def test_signal_only_event_persists_without_notification_and_htdy_still_sends(ru
         )
         kwargs = dict(taxonomy={"rb": SimpleNamespace(name="螺纹钢")}, rule=rule,
                       symbol="rb", frequency="15m", candidate=candidate, processing_now=at)
+        if muted:
+            kwargs.update(notifications_allowed=False, notification_generation=71)
         prepared = _persist_candidate_and_prepare_notification(service, **kwargs)
         assert prepared.event_created
         assert prepared.notification_error_type is None
         event = session.scalars(select(AlertEvent)).one()
         assert event.result_codes == ["buy"]
-        if rule_code == SUBING_THS_ALERT_RULE_CODE:
+        if muted or rule_code == SUBING_THS_ALERT_RULE_CODE:
             assert prepared.message is None
             assert event.notification_attempted_at is None
+            assert event.notification_status is None
+            assert event.notification_claimed_at is None
+            assert event.notification_generation is None
         else:
             assert prepared.message is not None
             assert event.notification_attempted_at is not None

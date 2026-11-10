@@ -33,7 +33,7 @@ def _run(args: list[str], **factories):
 def test_parser_exposes_only_active_runtime_domains_and_commands() -> None:
     parser = build_parser()
     domain_action = next(action for action in parser._actions if action.dest == "domain")
-    assert set(domain_action.choices) == {"data", "runtime", "reference"}
+    assert set(domain_action.choices) == {"data", "runtime", "reference", "home"}
     runtime_parser = domain_action.choices["runtime"]
     command_action = next(
         action for action in runtime_parser._actions if action.dest == "runtime_command"
@@ -411,7 +411,7 @@ def test_alert_runtime_composition_builds_one_sender_without_sending(
     monkeypatch.setattr(alert_composition, "ALERT_RUNTIME_ACTIVATION_MARKER", marker)
     monkeypatch.setattr(
         alert_composition,
-        "build_notification_sender_from_env",
+        "build_alert_runtime_sender_from_env",
         lambda: calls.append("build") or sender,
     )
     monkeypatch.setattr(alert_composition, "load_operational_products", lambda: ("ag",))
