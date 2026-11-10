@@ -677,13 +677,15 @@ def _evaluate_alert_coverage(
                 and frequency in {"1m", "5m", "15m", "30m", "60m"}
                 and isinstance(day, str) and previous_failure < day
                 and isinstance(contract, str) and bool(contract)
-                and isinstance(live, Mapping) and live.get("state") == "ok"
+                and isinstance(live, Mapping) and live.get("state") in {"ok", "lagging"}
                 and live.get("trading_day") == day and live.get("contract") == contract
                 and isinstance(observation_journal, Mapping) and observation_journal.get("trading_day") == day
                 and evaluated is not None and evaluated <= now
                 and _journal_proves_alert_route(
                     observation_journal, runtime_generation, live_runtime_generation,
-                    symbol, frequency, evaluated, acknowledged_only=True, exact_bar=True,
+                    symbol, frequency, evaluated,
+                    expected_observation_id=f"{day}:{contract}:{frequency}:{evaluated.isoformat()}",
+                    acknowledged_only=True, exact_bar=True,
                 )
             ):
                 updated["state"] = "evaluation_failed"

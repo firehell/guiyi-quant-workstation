@@ -2618,12 +2618,16 @@ def test_current_exact_ack_proves_alert_route_without_erasing_older_failure():
                                  "end": (at + timedelta(minutes=5)).isoformat()}]}}
     journal = {"runtime_generation": 72, "trading_day": day, "cursor": "10-0", "tail": "10-0",
                "routes": {"fg:5m": {"trading_day": day, "stream_id": "10-0",
-                                    "bar_end": at.isoformat(), "observation_id": "natural"}}}
-    def read(generation):
-        return _evaluate_alert_coverage({route: original}, live, at + timedelta(seconds=1),
+                                    "bar_end": at.isoformat(), "observation_id": f"{day}:FG2701:5m:{at.isoformat()}"}}}
+    def read(generation, seconds=1):
+        return _evaluate_alert_coverage({route: original}, live, at + timedelta(seconds=seconds),
             coverage_schema_version=2, observation_journal=journal,
             runtime_generation=72, live_runtime_generation=generation)[route]
 
     assert read(72)["state"] == "ok"
     assert read(72)["previous_unresolved"] == "2026-11-09"
     assert read(71)["state"] == "evaluation_failed"
+    live["fg"]["state"] = "lagging"
+    assert read(72, seconds=361)["state"] == "data_lagging"
+    journal["routes"]["fg:5m"]["observation_id"] = f"{day}:FG2705:5m:{at.isoformat()}"
+    assert read(72)["state"] == "evaluation_failed"
