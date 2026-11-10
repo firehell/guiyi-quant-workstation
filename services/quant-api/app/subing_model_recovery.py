@@ -15,6 +15,7 @@ from guiyi_quant.indicators.subing_conditions import EntryWindow
 POLICY = 'canonical_indicator_catchup_no_execution_v1'
 CONFLICT_POLICY = 'canonical_rebaseline_after_conflict_no_execution_v1'
 RESUME_POLICY = 'completed_backlog_indicator_only_resume_v1'
+FLAT_SESSION_BRIDGE = 'flat_account_after_indicator_only_days_v1'
 OBSERVATION_ROLLOVER_POLICY = 'canonical_observation_rollover_no_execution_v1'
 DAILY_NO_TRADE_POLICY = 'canonical_observation_daily_skip_no_trade_v1'
 
@@ -47,6 +48,8 @@ def flat_without_obligations(account):
 
 
 def apply_event(pipe, event):
+    if event.get('flat_session_bridge') is not None:
+        apply_flat_session_bridge(pipe, event)
     if event.get('resume_policy') is not None:
         apply_resume_event(pipe, event)
         return
@@ -224,6 +227,51 @@ def overlap_conflicts(known, rows, frequency):
 
 
 
+def apply_flat_session_bridge(pipe, event):
+    """Resume a flat account after indicator-only days without replaying decisions."""
+    bridge = event['flat_session_bridge']
+    account = pipe.account
+    if (event.get('resume_policy') != RESUME_POLICY or event.get('recovery_policy') is not None
+            or bridge.get('policy') != FLAT_SESSION_BRIDGE
+            or not account or not account.engine or not flat_without_obligations(account)):
+        raise ValueError('MODEL_FLAT_SESSION_BRIDGE_INVALID')
+    engine = account.engine
+    observer = engine.model.observer
+    context = event['contexts']['jm']
+    previous = context['previous']
+    target = event['source_day']
+    completed = pipe.last.get(('jm', '1m'))
+    day_end = datetime.fromisoformat(bridge['previous_day_end'])
+    first_open = datetime.fromisoformat(context['first_open'])
+    floor = datetime.fromisoformat(event['resume_floor'])
+    prior_day_complete = pipe.source_day == previous and completed == day_end
+    previous_resume = getattr(pipe, 'resume_status', {})
+    consumed_opening = (
+        pipe.source_day == target and completed is not None
+        and previous_resume.get('policy') == RESUME_POLICY
+        and previous_resume.get('historical_execution') is False
+        and previous_resume.get('account_can_resume') is True
+        and previous_resume.get('historical_rows', 0) > 0
+        and first_open < completed <= datetime.fromisoformat(previous_resume['floor'])
+    )
+    if (not observer.day or not observer.day <= previous < target
+            or bridge.get('account_day') != observer.day
+            or bridge.get('previous_source_day') != previous
+            or not (prior_day_complete or consumed_opening)
+            or bridge.get('next_open') != context['first_open']
+            or bridge.get('contract') != account.contract
+            or bridge.get('contract') != context['contract']
+            or floor != datetime.fromisoformat(event['observed_at'])
+            or not day_end < first_open <= floor
+            or observer.position_id or observer.exit_required
+            or (observer.waiting and observer.waiting['position_id'])):
+        raise ValueError('MODEL_FLAT_SESSION_BRIDGE_INVALID')
+    # Retain seen inputs, decision history and the actual last observation time.
+    # Reset the session cursor only. No old day-end or opening review is invented.
+    observer.day = observer.last_eod_day = observer.waiting = None
+    observer.streak = 0
+
+
 def apply_resume_event(pipe, event):
     """A restart's already-completed backlog is indicator-only, even if full.
 
@@ -274,6 +322,8 @@ def apply_resume_event(pipe, event):
     pipe.resume_status = dict(policy=RESUME_POLICY, floor=event['resume_floor'],
         observed_at=event['observed_at'], historical_execution=False,
         historical_rows=len(older), account_can_resume=can_resume)
+    if event.get('flat_session_bridge') is not None:
+        pipe.resume_status['flat_session_bridge'] = deepcopy(event['flat_session_bridge'])
     pipe.last_outcome.update(state_hash=digest(model_state(pipe)), resume_policy=RESUME_POLICY)
     if event.get('outcome') is not None and event['outcome'] != pipe.last_outcome:
         raise ValueError('MODEL_OUTCOME_REPLAY_CONFLICT')

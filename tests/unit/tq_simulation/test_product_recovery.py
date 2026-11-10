@@ -83,3 +83,19 @@ def test_native_day_change_defers_scoped_recovery_to_account_recovery(tmp_path):
     assert type(after.audit[-1].command) is m.Disconnect
     assert c.store.replay() == after
     c.close()
+
+
+def test_unproven_close_keeps_obligation_without_requesting_execution_facts():
+    from dataclasses import replace
+    from guiyi_quant.tq_simulation.worker import tq_execution_candidates
+
+    ag = m.Product("AG", owner="AG2612", must_close=True, opening_consumed=True)
+    state = SimpleNamespace(products=(ag,), positions=(m.Position("AG", "AG2612", -1),),
+        orders=(), blocked_products=("AG",), activated_at=datetime.now(UTC), abandoned=())
+    assert tq_execution_candidates(state, opening_allowed=True) == ()
+    assert state.products[0].must_close and state.positions[0].quantity == -1
+
+    state.products = (replace(ag, signal_id="recovery:authoritative-proof"),)
+    state.blocked_products = ()
+    candidate, = tq_execution_candidates(state, opening_allowed=False)
+    assert (candidate.product, candidate.contract, candidate.offset) == ("AG", "AG2612", "CLOSE")

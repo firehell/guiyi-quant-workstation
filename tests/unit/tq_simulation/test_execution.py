@@ -1031,7 +1031,8 @@ def test_closed_session_does_not_tick_rollover_obligation():
     from guiyi_quant.tq_simulation.worker import should_tick
     s = initial()
     s = replace(s, positions=(m.Position('RB', 'RB2701', -1),),
-                products=(replace(s.products[0], owner='RB2705', rolling=True, must_close=True),))
+                products=(replace(s.products[0], owner='RB2705', rolling=True, must_close=True,
+                                  signal_id='verified-rollover'),))
     session = replace(fact(T).session, can_trade=False, can_cancel=False)
     facts = {('RB', 'RB2701'): dict(contract='RB2701', session=codec.encode(session))}
     assert not should_tick(s, T, facts=facts)

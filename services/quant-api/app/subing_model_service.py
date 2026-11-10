@@ -28,7 +28,7 @@ from app.market_data.storage import CanonicalMonthlyStore
 from app.subing_model import worker
 from app.subing_model.pipeline import Pipeline
 from app.subing_model.store import ModelStore, digest
-from app.subing_model_recovery import POLICY, CONFLICT_POLICY, RESUME_POLICY, OBSERVATION_ROLLOVER_POLICY, DAILY_NO_TRADE_POLICY, apply_event, flat_without_obligations, consumed_bars, overlap_conflicts, model_state
+from app.subing_model_recovery import POLICY, CONFLICT_POLICY, RESUME_POLICY, FLAT_SESSION_BRIDGE, OBSERVATION_ROLLOVER_POLICY, DAILY_NO_TRADE_POLICY, apply_event, flat_without_obligations, consumed_bars, overlap_conflicts, model_state
 from app.subing_projection_source import registered_source
 from guiyi_quant.subing_decision import _wire
 
@@ -328,8 +328,41 @@ class Service:
                 observations=rows, contexts=ctx, facts=facts, daily_updates=self.daily_pending,
                 daily_sources=self.daily_proofs, daily_errors=self.daily_errors,
                 cursor=tail, source_day=str(day))
-            if self.resume_floor is not None:
-                payload.update(resume_policy=RESUME_POLICY, resume_floor=self.resume_floor.isoformat())
+            resume_floor = self.resume_floor
+            jm = ctx['jm']
+            account = getattr(self.pipe, 'account', None)
+            if account and account.engine and 'previous' in jm:
+                observer = account.engine.model.observer
+                previous = jm['previous']
+                first_open = datetime.fromisoformat(jm['first_open'])
+                if (observer.day and (observer.day < previous or
+                        (observer.day == previous and observer.waiting
+                         and resume_floor is not None and resume_floor > first_open))):
+                    previous_context = self.context(date.fromisoformat(previous))['jm']
+                    previous_end = datetime.fromisoformat(previous_context['day_end'])
+                    last = self.pipe.last.get(('jm', '1m'))
+                    prior_complete = (previous == self.pipe.source_day and last == previous_end)
+                    prior_resume = getattr(self.pipe, 'resume_status', {})
+                    in_day_catchup = (
+                        str(day) == self.pipe.source_day and last is not None
+                        and prior_resume.get('policy') == RESUME_POLICY
+                        and prior_resume.get('account_can_resume') is True
+                        and prior_resume.get('historical_rows', 0) > 0
+                        and first_open < last <= datetime.fromisoformat(prior_resume['floor'])
+                        and previous_end in self.known.get(('jm', '1m'), {})
+                    )
+                    if (not flat_without_obligations(account) or not (prior_complete or in_day_catchup)
+                            or previous_context['next_open'] != jm['first_open']
+                            or previous_context['contract'] != jm['contract']):
+                        raise ValueError('MODEL_EXECUTION_DAY_GAP_REQUIRES_REVIEW')
+                    payload['flat_session_bridge'] = dict(
+                        policy=FLAT_SESSION_BRIDGE, account_day=observer.day,
+                        previous_source_day=previous, previous_day_end=previous_context['day_end'],
+                        next_open=previous_context['next_open'], contract=previous_context['contract'],
+                    )
+                    resume_floor = now
+            if resume_floor is not None:
+                payload.update(resume_policy=RESUME_POLICY, resume_floor=resume_floor.isoformat())
             self.commit(payload)
             self.resume_floor = None
             self.daily_pending, self.daily_proofs = {}, {}
