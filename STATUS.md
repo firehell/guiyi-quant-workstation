@@ -1,3 +1,5 @@
+11/10 18:51 按 owner 指令暂停所有正式 PushPlus 发送。Alert gen71 已原生停驻，提醒计算随其暂停；共用 PushPlus 私有配置已原字节归档并移出运行路径，健康只读核对 configured=false，盘后任务继续运行。原生 Newow 通知 policy 已关闭并独立读回，历史投递计数未变；不自动恢复或补发。私有停驻凭证与配置前像保存在 AppSupport/GuiyiQuant/alert-notification/notifications-paused-1605o9_r。已证实样本不足的路线单列为数据不足；FG/RM 原十路仅保留未分类历史错误，现有记录不足以证明其原因，不改写原件。
+
 11/10 15:56 已发布并原生整组切换 v1.16.103，远端 main、annotated tag 与 GitHub Release 指向 exact `43ea1e4ce41a1a6101108895698de0297b0a84eb`，运行副本 `.worktrees/release-v1.16.103`、generation71。11 项现役身份 matched，API/Web/Runtime HTTP 通过，60 品种权威休市。整组计划 `b3f540892c94…` 原生 switched；Reference 470 calculated、120 initialized、10 路已分类周线无数据，Alert 414 calculated、6 warming；正式接收已追尾，业务积压独立保留。API/SDK frozen、Web frozen build、Web 1403 passed/3 skipped，后端 395 passed，3 项同名闭市夹具失败在 v1.16.102 同样复现；隔离 PostgreSQL 14 passed，独立复核和 secret scan 通过。
 
 HTDY 14 路原生恢复计划 `8c6c4109a2e1…` 一次提交，独立复核 14 个后继修订及 130 条原投递；EC、PT、SM 仅追加 `DATA_INTERRUPTED` 参考投影，未生成平仓价/收益。16:13 正式首页本轮 54 已计算、1 正计算、5 待计算，原 PF/PR/PX/RS/SF/SM 六个失败均重算成功。今日盘后 Canonical 到位前日线仍可显示待更新，市场总览仍 stale。BZ/PG/PK/PL 已有新版正式计算提交，SF 已通过预热。
