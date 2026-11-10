@@ -537,6 +537,14 @@ Saved daily fusion sources SHALL verify the current boundary policy against each
 base strategy's own exact source manifest. Missing or different policy proof SHALL
 reject the source rather than silently adopting an old D1 asset.
 
+For a D1 V2 forward rollover, the new calculation label SHALL use the last
+verified quality gap in that physical contract's completed prefix. Existing
+forward fusion captures MAY bind a versioned alignment proof when their
+immutable input and owner match and one label omits a gap strictly before that
+owner started. Replay SHALL verify both original hashes and action labels and
+require the prior fusion checkpoint to carry the gap-tagged label for the same
+owner. Gaps during ownership and all other identity differences remain conflicts.
+
 #### Scenario: A new owner's old physical-prefix quality gap
 
 - **GIVEN** a physical contract's quality gap precedes its verified rank1 owner interval

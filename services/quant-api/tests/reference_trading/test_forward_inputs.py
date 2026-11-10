@@ -2,16 +2,65 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
 from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
 from guiyi_quant.reference_trading.htdy import MODEL_VERSION
 from app.market_data.domain import CanonicalBar
+from app.market_data.newow.product_reader import NewowProductReadError, NewowProductReader
 from app.market_data.market_read_service import MarketObservationSnapshot, MarketReadWindow
 from app.reference_trading.forward_inputs import (
     ForwardInputUnavailable, capture_htdy_live, capture_subing_live,
 )
+from guiyi_quant.newow.product_contracts import ProductFrequency
+from guiyi_quant.newow.product_identity import InputQualityPolicy, build_calculation_segment_id
+
+
+@pytest.mark.parametrize("case", ("pre_owner_gap", "owned_gap", "missing_endpoint"))
+def test_daily_rollover_proves_the_new_owners_physical_prefix(monkeypatch, case):
+    owner_start = datetime(2026, 10, 28, 13, tzinfo=UTC)
+    end = datetime(2026, 10, 29, 7, tzinfo=UTC)
+    after = datetime(2026, 10, 28, 7, tzinfo=UTC)
+    now = end + timedelta(hours=4)
+    price = Decimal("3500")
+    bar = CanonicalBar(end, end.date(), price, price, price, price, Decimal(1), None, None)
+    owner = SimpleNamespace(symbol="rb", contract="RB2612", start_trading_day=end.date(),
+                            end_trading_day=end.date())
+    result = SimpleNamespace(bars=(bar,), resolved_contract_segments=(owner,))
+    gap_at = owner_start if case == "owned_gap" else owner_start - timedelta(days=2)
+    prefix = SimpleNamespace(bars=() if case == "missing_endpoint" else (bar,),
+                             source_quality=(SimpleNamespace(bar_end=gap_at),))
+
+    def read_prefix(**kwargs):
+        assert kwargs["owner"] is owner and kwargs["cutoff"] == end
+        assert kwargs["through"] == end.date()
+        assert kwargs["quality_policy"] is InputQualityPolicy.DAILY_V2
+        yield prefix
+
+    market = SimpleNamespace(
+        query_actual_dominant_trading_days_quality_union=lambda *_args, **_kwargs: (result, ()),
+        dominant_segment_for_day=lambda *_: owner,
+        session_windows=lambda **_: (SimpleNamespace(start=owner_start),),
+        iter_actual_dominant_owner_replay_chunks=read_prefix,
+    )
+    reader = NewowProductReader(market, coverage=SimpleNamespace(latest_complete_day=lambda _: end.date()),
+        active_products=("rb",), now=lambda: now, input_quality_policy=InputQualityPolicy.DAILY_V2)
+    monkeypatch.setattr(reader, "_forward_published_through", lambda *_: end.date())
+    query = dict(product="rb", frequency=ProductFrequency.DAILY, after=after, as_of=now,
+                 prior_owner_segment_id="old-owner", prior_calculation_segment_id="old-calculation")
+    if case == "owned_gap":
+        with pytest.raises(NewowProductReadError, match="NEWOW_DATA_INTERRUPTED"):
+            reader.forward_incremental_bar(**query)
+    elif case == "missing_endpoint":
+        with pytest.raises(NewowProductReadError, match="NEWOW_DATA_IDENTITY_INVALID"):
+            reader.forward_incremental_bar(**query)
+    else:
+        captured, policy = reader.forward_incremental_bar(**query)
+        assert captured.calculation_segment_id == build_calculation_segment_id(
+            captured.bar.segment_id, gap_at, policy,
+        )
 
 
 class _Read:

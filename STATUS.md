@@ -1,3 +1,7 @@
+11/10 日线前向融合源标签冲突在 develop 修复。BZ、PG、PK、PL、SF 的两路原始 Bar/主力/质量政策一致，MDS 独立验证 60/60 物理前缀，五路震荡与融合检查点的缺口均在各自 rank1 归属开始前。新换月读入以已验证物理前缀定标签，旧标签差异仅在严格同源、同 owner、同融合检查点下对齐；原捕获、动作、检查点及归属内缺口保护保留。新只读逐路盘点五路融合全过，590 路通过、10 路为已分类周线不可用、14 路 HTDY 60m 仍报 OBSERVATION_GAP。定向 81 passed、1 skipped，生产代码 Ruff 与 diff 检查通过。
+
+整组仍停于 Reference 预热。首个 PS2612 旧检查点与 11/9 10:00 待处理捕获的端点、合约一致，但 11/6 15:00 上下文量不同。14 路均经原生 HtdyConflictSource 验证原始投递及 MDS/Canonical 证据，EC、PT、SM 涉及 OPEN 参考交易。私有只读清单位于 AppSupport/GuiyiQuant/reference-prewarm-20261110.bXNzV5。旧故障恢复 scope 不覆盖这批新原件；未退休历史、未启动切换、未执行快期同版预检。
+
 11/10 15:26 首页复发根因已在 develop 修复，正式尚待切换。正式六个 D1 失败均定位到 `json_spool.py:seal`，在 256 文件描述符上限下用正式 PF 数据复现 `EMFILE`。共享单一 spool，以索引区间保留物理及计算段；隔离 Worker 同上限完成 PF/PR/PX/RS/SF/SM 的 D1/W1 发布，六路 D1 同截止完整输出与旧算法一致。收盘后目标日零参与品种的空市场概览不再覆盖最后有效快照；真数据验证保留 11/9 的 60 品种，目标 D1 发布后随源版本重算。定向回归 213 passed，Ruff 与 diff 检查通过。
 
 快期 v1.16.102 现有恢复防护已纳入同批回归。正式仍 v1.16.100、进程未启动、pause 和持久 hold 保留；原生配置核验仍返回 `TQ_FORMAL_API_ROOT_MISMATCH`，v1.16.102 整组只读预热仍复现 `REFERENCE_FUSION_SOURCE_INPUT_CONFLICT`。本次没有重放旧切换、启动交易或改变账户。
