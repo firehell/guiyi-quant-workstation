@@ -1,3 +1,7 @@
+11/10 08:09 已发布 v1.16.102，远端 main、annotated tag 和 GitHub Release 指向 exact `e9eece11624cae47362b1c94ac7bd3a6a5fc1dc0`，精确副本 `.worktrees/release-v1.16.102`。提醒 D1 严格全零 Canonical 源行参与端点校验并作为质量断点。PF/PR/PX 真数据日线可计算，全 Scope 414 可计算、6 预热。58 项定向测试通过，3 项运行预热用例在 v1.16.101 同样失败；API/Web/快期 SDK frozen 构建与独立复核通过。
+
+08:12 整组 attempt `973f141ad9b1…` 在停机前 cancelled，effects 为空。Alert 候选预热通过，后续 Reference 预热失败；精确副本只读复现为 BZ 日线 `newow_dual_fusion` 的 `REFERENCE_FUSION_SOURCE_INPUT_CONFLICT`，两路基策略捕获的输入相同，来源证明仅 `calculation_segment_id` 不一致。正式 10 服务仍 v1.16.100 且身份 matched，API/Web 正常、60 品种休市。首页仍未启用，快期原保护未解除。下一步核对 BZ 日线两路计算段的来源与归属，再生成全新原生切换计划，原 attempt 不重用。
+
 11/10 03:03 已发布完整 develop 为 v1.16.101，远端 main、annotated tag 和 GitHub Release 指向 exact `e5340f37cecd7f6430a8dfb88665a92ca5ea3a9f`。精确 linked worktree `.worktrees/release-v1.16.101`；API/快期 SDK frozen、API wheel/sdist、Web frozen 构建通过。前端 1403 passed / 3 skipped，精确副本后端定向 157 及 401 passed，secret scan 0 finding。扩展后端 5453 passed / 203 skipped / 26 failed；26 项均在 v1.16.100 同名用例复现。独立复核未发现新增发布阻塞。
 
 03:05 正式整组切换未执行。原生 attempt `90814121c9cd…` 在停机前 Alert 预热阶段 cancelled，effects 为空。精确新副本只读复现：苏冰提醒 PF 1d / PF2701 在第 201 路报 `MARKET_READ_WINDOW_INCOMPLETE`，194 根日线中 7 根严格全零无成交事实被当前日线预热价格门禁拒绝。10 个标准服务仍 v1.16.100/原代次，API/Web 正常且 60 品种权威休市。首页 worker 未启用，参考仍有 117 路阻塞。原苏冰开发 run 已自然推进至 673、PR2701、worker RUNNING，最新决策仍为 11/5 WAIT、0 模型成交。快期模拟仍已退出并保留原持久 hold，最后原生快照 8 仓、0 委托、0 成交，8 个提交凭证保留。下一步先验证提醒日线严格零成交的质量边界，再使用全新原生计划；原 attempt 不重用。
