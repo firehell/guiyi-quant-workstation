@@ -665,10 +665,30 @@ def _evaluate_alert_coverage(
         symbol = item.get("symbol")
         frequency = item.get("frequency")
         live = live_coverage.get(symbol) if isinstance(symbol, str) else None
-        if isinstance(item.get("previous_unresolved"), str):
-            updated["state"] = "evaluation_failed"
-            result[key] = updated
-            continue
+        previous_failure = item.get("previous_unresolved")
+        if isinstance(previous_failure, str):
+            evaluated = _optional_timestamp(item.get("last_evaluated_bar_at"))
+            day, contract = item.get("trading_day"), item.get("contract")
+            # A historic gap remains visible, but a fresh natural evaluation
+            # with the exact current owner and an ACK proves this route can run.
+            if not (
+                coverage_schema_version == 2
+                and item["state"] == "ok"
+                and frequency in {"1m", "5m", "15m", "30m", "60m"}
+                and isinstance(day, str) and previous_failure < day
+                and isinstance(contract, str) and bool(contract)
+                and isinstance(live, Mapping) and live.get("state") == "ok"
+                and live.get("trading_day") == day and live.get("contract") == contract
+                and isinstance(observation_journal, Mapping) and observation_journal.get("trading_day") == day
+                and evaluated is not None and evaluated <= now
+                and _journal_proves_alert_route(
+                    observation_journal, runtime_generation, live_runtime_generation,
+                    symbol, frequency, evaluated, acknowledged_only=True, exact_bar=True,
+                )
+            ):
+                updated["state"] = "evaluation_failed"
+                result[key] = updated
+                continue
         if frequency in {"1d", "1w"} and item["state"] != "evaluation_failed":
             successful_day = (after_market or {}).get("last_successful_trading_day")
             evaluated_day = item.get("trading_day")

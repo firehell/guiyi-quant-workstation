@@ -2602,3 +2602,28 @@ def test_preparation_authority_wait_is_bounded_and_does_not_invent_contract():
     assert "must-not-leak" not in json.dumps(invalid)
     raw["authority_waiting"] = [{}] * 17
     assert _public_contract_preparation(raw)["error"] == "CONTRACT_PREPARATION_STATUS_INVALID"
+
+
+def test_current_exact_ack_proves_alert_route_without_erasing_older_failure():
+    from app.services.runtime_health import _evaluate_alert_coverage
+
+    at = datetime(2026, 11, 10, 13, 5, tzinfo=UTC)
+    day = "2026-11-11"
+    route = "rule:fg:5m"
+    original = {"state": "ok", "symbol": "fg", "frequency": "5m", "contract": "FG2701",
+                "trading_day": day, "previous_unresolved": "2026-11-09",
+                "last_evaluated_bar_at": at.isoformat()}
+    live = {"fg": {"state": "ok", "contract": "FG2701", "trading_day": day,
+                   "sessions": [{"start": (at - timedelta(minutes=5)).isoformat(),
+                                 "end": (at + timedelta(minutes=5)).isoformat()}]}}
+    journal = {"runtime_generation": 72, "trading_day": day, "cursor": "10-0", "tail": "10-0",
+               "routes": {"fg:5m": {"trading_day": day, "stream_id": "10-0",
+                                    "bar_end": at.isoformat(), "observation_id": "natural"}}}
+    def read(generation):
+        return _evaluate_alert_coverage({route: original}, live, at + timedelta(seconds=1),
+            coverage_schema_version=2, observation_journal=journal,
+            runtime_generation=72, live_runtime_generation=generation)[route]
+
+    assert read(72)["state"] == "ok"
+    assert read(72)["previous_unresolved"] == "2026-11-09"
+    assert read(71)["state"] == "evaluation_failed"
