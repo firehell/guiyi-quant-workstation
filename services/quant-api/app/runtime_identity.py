@@ -12,6 +12,10 @@ from typing import NoReturn
 
 from app.core.env import PROJECT_ROOT
 
+
+SUBING_DEVELOPMENT_LABEL = "com.guiyi.quant-subing-development-model"
+
+
 class RuntimeIdentityError(ValueError):
     """Bounded identity failure, adapted by the calling workflow."""
     def __init__(self, code: str) -> None:
@@ -59,9 +63,10 @@ def read_command(arguments: list[str], *, root: Path) -> str:
         _reject("IDENTITY_UNAVAILABLE")
     return result.stdout.strip()
 
+
 def read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
-    if re.fullmatch(
+    if label != SUBING_DEVELOPMENT_LABEL and re.fullmatch(
         r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker|home-projection|market-feed|simnow|tqkq-simulation)(?:-candidate-[0-9a-f]{32})?",
         label,
     ) is None:

@@ -12,6 +12,7 @@ from time import monotonic, sleep
 from app.reference_trading.capture import ForwardCapture
 from app.reference_trading.forward_service import ForwardReferenceService
 from app.reference_trading.forward_inputs import ForwardInputUnavailable
+from app.reference_trading.prewarm_quality import ClassifiedWeeklyUnavailable
 from app.reference_trading.repository import ReferenceRepository, RepositoryConflict
 from app.reference_trading.work_control import ForwardWorkCancelled, StageTimings
 
@@ -102,6 +103,7 @@ class ForwardReferenceWorker:
         self._queue: deque[str] = deque()
         self._queued: dict[str, tuple[str, datetime | None]] = {}
         self._blocked: dict[str, str] = {}
+        self._unavailable_weekly: set[str] = set()
         self._source_retry_turn = True
         self._last_success: datetime | None = None
         self._scan_after: str | None = None
@@ -342,12 +344,17 @@ class ForwardReferenceWorker:
                             completed += 1
                             self._last_success = datetime.now(UTC)
                         self._blocked.pop(stream_id, None)
+                        self._unavailable_weekly.discard(stream_id)
+                    except ClassifiedWeeklyUnavailable:
+                        self._blocked.pop(stream_id, None)
+                        self._unavailable_weekly.add(stream_id)
                     except ForwardWorkCancelled:
                         consumed -= 1  # This route still owns its original/pending capture.
                         needs_scan = True
                         cancelled = True
                         break
                     except Exception as error:  # noqa: BLE001
+                        self._unavailable_weekly.discard(stream_id)
                         self._blocked[stream_id] = failure_reason(error)
                     if monotonic() - started >= self._budget.max_stream_seconds:
                         needs_scan = True
@@ -417,6 +424,7 @@ class ForwardReferenceWorker:
             'pending_keys': health.pending_keys, 'blocked_count': len(health.blocked),
             'blocked_counts': dict(sorted(Counter(diagnostic_reason(reason)
                 for _stream_id, reason in health.blocked).items())),
+            'unavailable_weekly_count': len(self._unavailable_weekly),
             'last_success': None if health.last_success is None else health.last_success.isoformat(),
             'stage_timings': self.timings.snapshot()}
 

@@ -3,7 +3,7 @@
 ## Purpose
 
 定义新的 `subing_ths_alert_15m_v1` 研究观察产品：对 completed actual_dominant 5m/15m/30m/60m/1d/1w 按各周期固定版本公式创建 immutable AlertEvent，并由 Market Web 提供人工复核；当前通知模式见下节。
-它不恢复 `subing_strategy_v1`，不创建持仓或订单，且 `auto_order=false`。
+该规则仅生成观察事件，且 `auto_order=false`。
 
 ## 当前通知模式
 
@@ -67,7 +67,7 @@ fail closed。API、notification formatter 与 Web MUST NOT 复制 Candidate 公
 ### Requirement: V1 has no hidden filters
 
 Candidate Gate MUST NOT 使用零轴、MACD 柱强弱、Range Detector、成交量、OI、ATR、EMA21 斜率、
-Daily Watch、5m/30m/60m/D1 共振、评分、胜率或其它历史过滤。任何新增过滤 MUST 使用新的 formula
+日线方向过滤、5m/30m/60m/D1 共振、评分、胜率或其它历史过滤。任何新增过滤 MUST 使用新的 formula
 version，不得静默修改 `subing_ths_15m_v3`。v3 与 v2 的数学公式相同，但 v3 只接受 session 锚点修正后的
 正式 Bar、completed time 与 Candidate；不得把旧锚点结果标记为 v3。
 

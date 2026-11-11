@@ -44,7 +44,8 @@ def test_invalid_or_duplicate_target_is_rejected(tmp_path):
         build_cleanup_plan((tmp_path, tmp_path), backend=Backend())
 
 
-def test_host_reader_keeps_registry_plist_and_loaded_references(tmp_path, monkeypatch):
+@pytest.mark.parametrize("subing", [False, True])
+def test_host_reader_keeps_registry_plist_and_loaded_references(tmp_path, monkeypatch, subing):
     import plistlib
     from app.runtime_bindings import BindingRegistry, ServiceBinding, write_bindings
     from app.runtime_retention import RetentionBackend
@@ -56,7 +57,7 @@ def test_host_reader_keeps_registry_plist_and_loaded_references(tmp_path, monkey
     write_bindings(BindingRegistry(1, {"live": binding}), home=tmp_path, expected_sha256=None)
     directory = tmp_path / "Library/LaunchAgents"
     directory.mkdir(parents=True)
-    label = binding.label
+    label = "com.guiyi.quant-subing-development-model" if subing else binding.label
     (directory / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label,
         "WorkingDirectory": str(root), "ProgramArguments": ["/bin/bash", "/stable/launcher", "live"],
         "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(root), "IGNORED_SECRET": "not-for-output"}}))
@@ -111,7 +112,8 @@ def test_simnow_arguments_are_checked_as_references_without_ignoring_its_label(t
         backend.references_by_root((root,))
 
 
-def test_native_reader_allows_only_known_simnow_label_and_still_rejects_unknown(tmp_path, monkeypatch):
+@pytest.mark.parametrize("service", ["simnow", "subing-development-model"])
+def test_native_reader_allows_known_standalone_label_and_still_rejects_unknown(tmp_path, monkeypatch, service):
     import subprocess
     from app import runtime_identity as identity
     calls = []
@@ -119,8 +121,9 @@ def test_native_reader_allows_only_known_simnow_label_and_still_rejects_unknown(
         calls.append(args)
         return subprocess.CompletedProcess(args, 0, "com.guiyi.quant-simnow = {}", "")
     monkeypatch.setattr(identity, "command_result", command)
-    assert identity.read_launchd_service("com.guiyi.quant-simnow", root=tmp_path)
-    assert calls[-1][-1].endswith("/com.guiyi.quant-simnow")
+    label = f"com.guiyi.quant-{service}"
+    assert identity.read_launchd_service(label, root=tmp_path)
+    assert calls[-1][-1].endswith("/" + label)
     before = len(calls)
     with pytest.raises(identity.RuntimeIdentityError):
         identity.read_launchd_service("com.guiyi.quant-unrecognized", root=tmp_path)

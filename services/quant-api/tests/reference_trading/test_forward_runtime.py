@@ -40,6 +40,37 @@ def test_worker_defaults_off_and_rotates_bounded_wakes():
     assert seen[-1] == ("c", "scan", None)
 
 
+def test_worker_reports_proven_weekly_unavailable_separately_from_failure():
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    from app.reference_trading.prewarm_quality import ClassifiedWeeklyUnavailable, SCHEMA
+
+    outcomes = iter([
+        ClassifiedWeeklyUnavailable({"schema": SCHEMA, "status": "DATA_UNAVAILABLE"}),
+        ForwardInputUnavailable("SUBING_REFERENCE_DATA_UNAVAILABLE"),
+        None,
+    ])
+
+    def read(*_args):
+        error = next(outcomes)
+        if error:
+            raise error
+
+    worker = ForwardReferenceWorker(_Repository(), lambda _: _Service(), read, enabled=True)
+    worker.wake("a")
+    worker.run_round()
+    assert worker.health().blocked == ()
+    assert worker.diagnostic_health(stage="cycle", ready=True)["unavailable_weekly_count"] == 1
+
+    worker.wake("a")
+    worker.run_round()
+    assert worker.health().blocked == (("a", "SUBING_REFERENCE_DATA_UNAVAILABLE"),)
+    assert worker.diagnostic_health(stage="cycle", ready=False)["unavailable_weekly_count"] == 0
+
+    worker.wake("a")
+    worker.run_round()
+    assert worker.health().blocked == ()
+
+
 def test_target_observation_finishes_remaining_group_then_deferred_live_once():
     class Repository(_Repository):
         def forward_work_key(self, stream_id):

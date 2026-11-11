@@ -47,7 +47,6 @@ logs/
 
 # local AI / agent runtime artifacts (not canonical)
 .ai/
-.workbuddy/
 .superpowers/
 .worktrees/
 
