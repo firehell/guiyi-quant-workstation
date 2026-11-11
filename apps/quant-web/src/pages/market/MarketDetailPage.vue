@@ -19,9 +19,6 @@ import MarketDetailViewNav from '@/components/market/detail/MarketDetailViewNav.
 import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspace.vue'
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
-import FuturesWorkspace from '@/components/market/detail/futures/FuturesWorkspace.vue'
-import { NEWOW_FREQUENCIES } from '@/types/marketDetail'
-import { originalNewowCombinationSupported } from '@/utils/newowFutures'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
 import NewowAiAnalysisDialog from '@/components/market/detail/newow/NewowAiAnalysisDialog.vue'
 import type { AiCombo } from '@/api/newowAiAnalysis'
@@ -43,7 +40,7 @@ import {
   saveMarketDetailPreferences,
   type FlexibleDetailPreferences,
 } from '@/utils/marketDetailPreferences'
-import { isNewowStrategySwitch, parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/marketDetailRoute'
+import { isNewowStrategySwitch, originalNewowCombinationSupported, parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/marketDetailRoute'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,8 +60,6 @@ watch(() => {
 }, key => chartSession.setIdentity(key), { immediate: true, flush: 'sync' })
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
-const isFuturesMode = computed(() => isNewowView.value && explicitIdentity.value?.strategyModel === 'futures_bidir_v1')
-const isOriginalNewow = computed(() => isNewowView.value && !isFuturesMode.value)
 // Other views reuse the existing Newow trend chart price authority at this exact period.
 const toolbarPriceIdentity = computed<MarketDetailIdentity | null>(() => {
   const identity = explicitIdentity.value
@@ -103,15 +98,14 @@ const newowDailyPending = ref(false)
 const newowDailyChart = ref<NewowProductSectionResponse<'chart'> | null>(null)
 const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
 const newowCapabilities = useNewowCapabilities()
-const newowOpenFrequencies = computed(() => isFuturesMode.value ? [...NEWOW_FREQUENCIES] : newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
-const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow' || isFuturesMode.value
+const newowOpenFrequencies = computed(() => newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
+const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
   || (explicitIdentity.value.seriesKind === 'actual_dominant' && explicitIdentity.value.frequency !== '1m'
     && originalNewowCombinationSupported(explicitIdentity.value) && newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', explicitIdentity.value.symbol)))
 const shellReady = computed(() => isWorkspacePreview.value && (
-  (isFuturesMode.value || (isOriginalNewow.value && newowCapabilities.state.value !== 'loading')) || (controller.state.value.header !== null && !controller.state.value.loading)
+  (isNewowView.value && newowCapabilities.state.value !== 'loading') || (controller.state.value.header !== null && !controller.state.value.loading)
 ))
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
-const futuresWorkspace = ref<InstanceType<typeof FuturesWorkspace> | null>(null)
 const newowWorkspace = ref<InstanceType<typeof NewowProductWorkspace> | null>(null)
 const subingWorkspace = ref<InstanceType<typeof SubingDetailWorkspace> | null>(null)
 const hasHtdyHistory = ref(false)
@@ -147,7 +141,7 @@ const migrationNotice = ref<string | null>(
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
-    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.newowMode ?? '', identity.strategyModel ?? '', identity.newowTest ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
+    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.newowMode ?? '', identity.newowTest ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
     : 'invalid'
 })
 let activationGeneration = 0
@@ -200,7 +194,7 @@ function selectIdentity(identity: MarketDetailIdentity) {
     preferences.value = replaceNewowDetailPreferences(preferences.value, {
       strategy: identity.strategy,
       frequency: identity.frequency,
-      strategyModel: identity.strategyModel, newowTest: identity.newowTest, newowMode: identity.newowMode,
+      newowTest: identity.newowTest, newowMode: identity.newowMode,
     })
   }
   preferences.value = { ...preferences.value, lastView: identity.view === 'trend' ? 'newow' : identity.view }
@@ -252,8 +246,7 @@ function resolveFocus(focusBarEnd: string) {
 
 function openHistory() {
   const view = explicitIdentity.value?.view
-  if (isFuturesMode.value) futuresWorkspace.value?.openHistory()
-  else if (view === 'newow') newowWorkspace.value?.openHistory()
+  if (view === 'newow') newowWorkspace.value?.openHistory()
   else if (view === 'htdy') htdyWorkspace.value?.openHistory()
   else if (view === 'subing') subingWorkspace.value?.openHistory()
 }
@@ -272,10 +265,10 @@ function goHome(tab: MarketHomeTab) {
 // Dual mode is a presentation change and retains the same chart input snapshot.
 watch(() => {
   const i = explicitIdentity.value
-  return i ? [i.view, i.symbol, i.strategy, i.strategyModel, i.newowTest, i.seriesKind, i.contract, i.frequency].join(':') : 'invalid'
+  return i ? [i.view, i.symbol, i.strategy, i.newowTest, i.seriesKind, i.contract, i.frequency].join(':') : 'invalid'
 }, () => { aiAsOf.value = null }, { flush: 'sync' })
 watch([identityKey, () => route.query.series_kind === 'continuous'], () => { aiOpen.value = false; void activateRoute() }, { immediate: true })
-watch(isOriginalNewow, (enabled) => { if (enabled) void newowCapabilities.load() }, { immediate: true })
+watch(isNewowView, (enabled) => { if (enabled) void newowCapabilities.load() }, { immediate: true })
 onBeforeUnmount(() => { activationGeneration += 1; detailQuote.dispose(); controller.dispose() })
 onUnmounted(() => chartSession.dispose())
 </script>
@@ -314,7 +307,7 @@ onUnmounted(() => chartSession.dispose())
         :symbol="routeResult.identity.symbol"
         :display-contract="header?.displayContract ?? routeResult.identity.contract ?? null"
         :history-label="routeResult.identity.view === 'htdy' || (routeResult.identity.view === 'subing' && routeResult.identity.frequency === '15m') ? '预警记录' : '参考记录'"
-        :actions="{ canOpenHistory: routeResult.identity.view === 'htdy' || (routeResult.identity.view === 'subing' && routeResult.identity.frequency === '15m') || isFuturesMode || (routeResult.identity.view === 'newow' && newowFrequencyOpen && newowCapabilities.state.value === 'ready' && newowCapabilities.isSectionOpen('reference')), canManageAlert: false }"
+        :actions="{ canOpenHistory: routeResult.identity.view === 'htdy' || (routeResult.identity.view === 'subing' && routeResult.identity.frequency === '15m') || (routeResult.identity.view === 'newow' && newowFrequencyOpen && newowCapabilities.state.value === 'ready' && newowCapabilities.isSectionOpen('reference')), canManageAlert: false }"
         @back="goBack"
         @select-symbol="productSelector?.focus()"
         @open-history="openHistory"
@@ -327,14 +320,14 @@ onUnmounted(() => chartSession.dispose())
         :target-price="toolbarPriceSummary.target?.display_value ?? null"
         :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null"
         :reference-price-status="toolbarPriceStatus"
-        :frequency-in-workspace="workspaceVisible && ((routeResult.identity.view === 'newow' && !isFuturesMode && !!newowCapabilities.capabilities.value && newowFrequencyOpen) || (!!header && (['htdy', 'free'].includes(routeResult.identity.view) || (routeResult.identity.view === 'subing' && routeResult.identity.frequency !== '1m' && routeResult.identity.seriesKind === 'actual_dominant'))))"
+        :frequency-in-workspace="workspaceVisible && ((routeResult.identity.view === 'newow' && !!newowCapabilities.capabilities.value && newowFrequencyOpen) || (!!header && (['htdy', 'free'].includes(routeResult.identity.view) || (routeResult.identity.view === 'subing' && routeResult.identity.frequency !== '1m' && routeResult.identity.seriesKind === 'actual_dominant'))))"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
         @contract-cleared="selectContractCleared"
         @ai-analysis="aiOpen = true"
       >
       </MarketDetailViewNav>
-      <NewowAiAnalysisDialog v-if="isOriginalNewow" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
+      <NewowAiAnalysisDialog v-if="isNewowView" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
         <section
           class="market-detail-page__workspace"
@@ -351,11 +344,10 @@ onUnmounted(() => chartSession.dispose())
             :can-return-market="true"
             @return-market="goBack"
           />
-          <template v-if="(routeResult.identity.view === 'subing' && (routeResult.identity.frequency === '1m' || routeResult.identity.seriesKind !== 'actual_dominant')) || (isFuturesMode && (routeResult.identity.seriesKind !== 'actual_dominant' || routeResult.identity.frequency === '1m'))">
-            <p role="status">{{ routeResult.identity.view === 'subing' ? '苏冰预警' : '期货双向研究' }}不支持当前周期或指定合约，行情与当前周期已保留。</p>
+          <template v-if="(routeResult.identity.view === 'subing' && (routeResult.identity.frequency === '1m' || routeResult.identity.seriesKind !== 'actual_dominant'))">
+            <p role="status">苏冰预警不支持当前周期或指定合约，行情与当前周期已保留。</p>
             <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview" />
           </template>
-          <FuturesWorkspace v-else-if="isFuturesMode" ref="futuresWorkspace" :identity="routeResult.identity" :price-preview="detailPricePreview"/>
           <template v-else>
           <NewowProductWorkspace
             v-if="routeResult.identity.view === 'newow' && newowCapabilities.capabilities.value && newowFrequencyOpen"

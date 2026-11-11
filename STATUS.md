@@ -1852,13 +1852,6 @@ Ruff/OpenSpec12/secret0/diff通过。证据在 `output/htdy-source-conflicts-202
 
 AL15m续算及RB四周期追加脚本原先先导入应用、后加载私有配置，数据库连接池提前缓存开发配置。已调整初始化顺序，默认离线行为保留；新增只读check-only和安全错误定位。18项定向测试通过、独立Review无Confirmed Issue。正式v18现场只读：AL225792/320074原生续算位置一致、RB四周期exact append/旧事实校验全部PREFLIGHT_PASSED，production_writes=0。旧失败目录不重写，修复版v2目录独占；本步未执行apply，不代表全量历史计算完成。下一步仍须确认旧writer退出、现场锁和来源后精确续算/追加。详见[修复记录](docs/tasks/subing-history-preflight-fix-20261024.md)。
 
-## 期货双向研究：已随v1.15.16发布，未晋升
-
-已推送并集成develop 757c09ae37；数值实现冻结5ad16d06b。保留牛哇默认原版，新增独立futures_bidir_v1内核、参考投影、10万元分层研究账户、冻结结果只读API及详情页开关；八策略名称和六周期入口保持，主图动作/目标保护线、方向、持有周期、参考与账户收益及记录分别切换。
-JM/RB/AL/TA × 六周期 × 八策略 × 三成本场景576格全部落盘并独立核验：260完整、225资金不足、73换月中断、6预热不足、12不适用。基线192格中88个完整账户为12正/69负/7零；不证明普遍盈利或OOS。TA另有3格参考路径DATA_INTERRUPTED，保留未知收益。中断不拼成完整年度收益，资金拒绝不吞并参考交易。
-全量104411条模拟Fill的费用/现金/层级PnL/整数仓位/tick及strict-later核对通过；首轮332重叠格数值逐字一致，仅59处参考快照原因修正。后端及原版回归445 passed，Web1165 passed/3 skipped，build/type/topology、secret零发现及独立Review通过；实际5183/8004八策略/六周期、往返刷新、旧响应隔离、精确定位/窗外提示及最终真实价格逐项读回通过。
-上述为实现验收检查点；其后已随v1.15.16发布并被现役v1.16.1包含，不因此晋升策略或启用持续Paper/通知/Shadow/Broker/订单。冻结主图最近2000根，窗外历史记录明确不可定位；全窗记录和曲线独立保留。实际统计、身份、文件与命令入口见[首轮研究记录](docs/research/newow-futures-bidir-v1-20261021.md)。发布证据见 [期货研究交付记录](docs/tasks/newow-futures-bidir-v1.md)，当前Runtime记录见本页顶部。
-
 ## 新苏冰固定参数研究版：工程与历史回放验收完成，未晋升
 
 新增独立 `new_subing_v1`，规则见 [策略合同](docs/NEW_SUBING_STRATEGY.md)，

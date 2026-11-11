@@ -9,7 +9,6 @@ import {
   type MarketDetailViewRestore,
   type NewowStrategy,
 } from '@/types/marketDetail'
-import { switchFuturesModel } from '@/utils/newowFutures'
 import { resolveViewSwitchIdentity } from '@/utils/marketDetailRoute'
 
 const props = withDefaults(defineProps<{
@@ -46,8 +45,7 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
   { value: 'subing', label: '苏冰预警' },
   { value: 'free', label: '自由看盘' },
 ]
-const isFutures = computed(() => props.identity.strategyModel === 'futures_bidir_v1')
-const futuresTests = [{value:'osc-test',label:'测试'}, {value:'osc-test2',label:'测试2'}, {value:'osc-test3',label:'测试3'}, {value:'osc-test4',label:'测试4'}, {value:'osc-test5',label:'测试5'}] as const
+const experimentOptions = [{value:'osc-test',label:'测试'}, {value:'osc-test2',label:'测试2'}, {value:'osc-test3',label:'测试3'}, {value:'osc-test4',label:'测试4'}, {value:'osc-test5',label:'测试5'}] as const
 function chooseTest(choice: MarketDetailIdentity['newowTest'] | 'main_rise') {
   const base = props.identity.view === 'newow' ? props.identity : resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
   emit('select', { ...base, view: 'newow', strategy: choice === 'main_rise' ? 'main_rise' : 'oscillation', newowMode: undefined,
@@ -121,12 +119,10 @@ defineExpose({ selectSymbol: chooseSymbol })
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
       <span v-if="view.value === 'dual'" id="newow-strategy-test-anchor">
-        <details v-if="identity.view !== 'newow'" class="newow-test-menu"><summary aria-label="牛哇T策略">T ▾</summary><div class="nav-test-options"><button v-for="option in futuresTests" :key="option.value" type="button" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" @click="chooseTest('main_rise')">主升浪</button></div></details>
+        <details v-if="identity.view !== 'newow'" class="newow-test-menu"><summary aria-label="牛哇T策略">T ▾</summary><div class="nav-test-options"><button v-for="option in experimentOptions" :key="option.value" type="button" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" @click="chooseTest('main_rise')">主升浪</button></div></details>
       </span>
       <button v-if="view.value === 'dual'" type="button" class="detail-view-nav__ai" @click="openAiAnalysis">AI分析</button></template>
       <span v-if="identity.view === 'newow'" id="newow-channel-controls" />
-      <button v-if="identity.view === 'newow'" type="button" role="switch" :aria-checked="isFutures" class="detail-view-nav__model" data-testid="futures-model-switch" @click="emit('select',switchFuturesModel(identity,!isFutures))">期货双向 {{ isFutures ? '开' : '关' }}</button>
-      <details v-if="isFutures" class="detail-view-nav__tests"><summary aria-label="牛哇T策略">T</summary><div aria-label="T策略选项"><button v-for="option in futuresTests" :key="option.value" type="button" :aria-pressed="identity.newowTest===option.value" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" :aria-pressed="identity.strategy === 'main_rise'" @click="chooseTest('main_rise')">主升浪</button></div></details>
     </div>
 
     <div class="detail-view-nav__views detail-view-nav__secondary" role="tablist" aria-label="其他分析选项">
@@ -145,14 +141,11 @@ defineExpose({ selectSymbol: chooseSymbol })
 </template>
 
 <style scoped>
-.detail-view-nav__tests { display:flex; white-space:nowrap; }
 .newow-test-menu { position:relative; }
 .newow-test-menu summary { display:flex; align-items:center; height:28px; padding:0 12px; border-radius:6px; background:#f2f2f7; color:#999; font-size:13px; font-weight:600; cursor:pointer; list-style:none; }
 .newow-test-menu summary::-webkit-details-marker { display:none; }
 .nav-test-options { position:absolute; z-index:100; top:100%; min-width:88px; background:var(--gy-bg-panel); box-shadow:0 4px 16px #0002; }
 .nav-test-options button { display:block; width:100%; }
-.detail-view-nav__tests summary { cursor:pointer; padding:8px; }
-.detail-view-nav__model[aria-checked=true] { background:#fff0ce; border-color:#d8ad56; }
 .detail-view-nav { display: grid; gap: var(--gy-space-2); padding: var(--gy-space-2) 0; border-bottom: 1px solid var(--gy-border-subtle); }
 .detail-view-nav__views,
 .detail-view-nav__group { display: flex; align-items: center; gap: var(--gy-space-1); overflow-x: auto; }

@@ -90,6 +90,7 @@ RETIRED_HTTP_404_PATHS = (
     "/api/v1/market/research/subing-strategy/current",
     "/api/v1/market/research/subing-strategy/performance",
     "/api/alerts/strategy-actions/current",
+    "/api/v1/research/newow-futures/runs",
     "/api/v1/backtests/health",
     "/api/execution-review/items",
     "/api/symbols",

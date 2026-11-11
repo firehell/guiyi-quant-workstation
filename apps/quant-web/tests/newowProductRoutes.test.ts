@@ -11,11 +11,11 @@ import {
 } from '../src/utils/marketDetailPreferences.ts'
 import {
   marketDetailEventIdentity,
+  originalNewowCombinationSupported,
   parseMarketDetailRoute,
   resolveViewSwitchIdentity,
   serializeMarketDetailIdentity,
 } from '../src/utils/marketDetailRoute.ts'
-import { originalNewowCombinationSupported } from '../src/utils/newowFutures.ts'
 import { marketHomeUnifiedProductChartQuery } from '../src/utils/marketHomeRoutes.ts'
 
 function storage(initial: Record<string, string> = {}) {
@@ -210,4 +210,10 @@ test('Newow entry defaults to daily despite a legacy 1m preference while explici
   if (explicit.kind === 'valid') assert.equal(explicit.identity.frequency, '1m')
   assert.equal(preferences.free.frequency, '1m')
   assert.equal(parseMarketDetailRoute({ view: 'free', symbol: 'rb', series_kind: 'actual_dominant', frequency: '1m' }).kind, 'valid')
+})
+
+test('retired research links fail closed while ordinary Newow links remain valid', () => {
+  const query = { symbol: 'jm', view: 'newow', strategy: 'trend', frequency: '1d' }
+  assert.equal(parseMarketDetailRoute(query).kind, 'valid')
+  assert.equal(parseMarketDetailRoute({ ...query, strategy_model: 'futures_bidir_v1' }).kind, 'invalid')
 })

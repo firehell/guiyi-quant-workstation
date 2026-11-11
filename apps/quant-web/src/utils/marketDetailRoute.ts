@@ -16,10 +16,10 @@ import {
 /** Only strategy-owned content changes; the product, series and period stay fixed. */
 export function isNewowStrategySwitch(previous: MarketDetailIdentity | null, next: MarketDetailIdentity): boolean {
   return previous?.view === 'newow' && next.view === 'newow'
-    && previous.strategyModel === next.strategyModel && previous.newowTest === next.newowTest
     && (previous.strategy !== next.strategy || previous.newowMode !== next.newowMode)
     && NEWOW_STRATEGIES.includes(previous.strategy!) && NEWOW_STRATEGIES.includes(next.strategy!)
     && previous.symbol === next.symbol && previous.frequency === next.frequency
+    && previous.newowTest === next.newowTest
     && previous.seriesKind === next.seriesKind && previous.contract === next.contract
 }
 import { isHtdyAlertEvent } from './alertRules.ts'
@@ -61,7 +61,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     return invalid('DETAIL_STRATEGY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
 
-  if (query.strategy_model !== undefined && (!isNewow || query.strategy_model !== 'futures_bidir_v1')) {
+  if (query.strategy_model !== undefined) {
     return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
   if (query.newow_test !== undefined && (!isNewow || strategy !== 'oscillation'
@@ -105,7 +105,6 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
 }
 
 function applyNewowOptions(result: MarketDetailRouteResult, query: Record<string, unknown>): MarketDetailRouteResult {
-  if (result.kind === 'valid' && query.strategy_model === 'futures_bidir_v1') result.identity.strategyModel = 'futures_bidir_v1'
   if (result.kind === 'valid' && query.newow_test) result.identity.newowTest = query.newow_test as MarketDetailIdentity['newowTest']
   if (result.kind === 'valid' && query.newow_mode === 'dual') result.identity.newowMode = 'dual'
   return result
@@ -119,7 +118,7 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
   return {
     view: identity.view,
     symbol: identity.symbol,
-    ...(identity.view === 'newow' ? { strategy: identity.strategy, ...(identity.strategyModel ? { strategy_model: identity.strategyModel } : {}), ...(identity.newowTest ? { newow_test: identity.newowTest } : {}), ...(identity.newowMode ? { newow_mode: identity.newowMode } : {}) } : {}),
+    ...(identity.view === 'newow' ? { strategy: identity.strategy, ...(identity.newowTest ? { newow_test: identity.newowTest } : {}), ...(identity.newowMode ? { newow_mode: identity.newowMode } : {}) } : {}),
     series_kind: identity.seriesKind === 'contract' ? 'contract' : 'actual_dominant',
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,
@@ -147,7 +146,6 @@ export function resolveViewSwitchIdentity(
   const saved = previousChart?.view === 'newow' ? previousChart : restore.newow
   return {
     view: 'newow', symbol, ...chart, strategy: view === 'trend' ? 'trend' : saved.strategy ?? 'trend',
-    ...(saved.strategyModel ? { strategyModel: saved.strategyModel } : {}),
     ...(view !== 'trend' && saved.newowTest ? { newowTest: saved.newowTest } : {}),
     ...(view !== 'trend' && saved.newowMode ? { newowMode: saved.newowMode } : {}),
   }
@@ -285,4 +283,8 @@ function isIsoInstant(value: string | undefined): value is string {
     && calendar.getUTCDate() === day
     && hour <= 23 && minute <= 59 && second <= 59
     && Number.isFinite(Date.parse(value))
+}
+
+export function originalNewowCombinationSupported(identity: MarketDetailIdentity): boolean {
+  return !(identity.strategy === 'main_rise' && ['5m','15m','30m'].includes(identity.frequency))
 }

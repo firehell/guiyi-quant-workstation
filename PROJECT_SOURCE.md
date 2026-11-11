@@ -24,14 +24,6 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 多周期波段路径使用独立展示身份 `guiyi_futures_historical_path_v1`。历史双线与周期样本仅限同物理合约、同计算段，普通参考和 trueup 样本分离；保持公开 v3.4.49 的周期与剩余价格幅度估算，不修改策略或参考收益。剩余时长与预计日期分别验证：日期基于快照行情交易日，通过 MarketDataService 的 Catalog 日历和 Session 证明逐日推进（最长366个自然日），不使用浏览器日期或星期推断。缺历史日历前缀不估算时长；缺未来证明只保留时长及原因；历史快照没有当时捕获的日历身份不借当前日历补日期。日期证明参与快照缓存身份，旧路径身份不视为新模型。无有效 ETA 日期时只画持有清仓目标或空仓吸筹参考，不生成预计日期端点或未来持仓背景；没有同身份止损来源不展示止损距离比。
 
-## 期货双向策略独立研究
-
-详情页显式 `strategy_model=futures_bidir_v1` 切换归一自有期货研究；未带参数的旧链接仍为牛哇原版。
-趋势、震荡、双策略、主升浪及测试1～4名称不变，模型、公式、参考交易与10万元分层研究账户独立。
-首轮JM/RB/AL/TA六周期，缺资金保留独立参考、缺行情/执行事实分别披露；周线test3无更高级别标不适用。
-API只读SHA索引冻结结果，GET不回测、下载或写生产；页面明确历史截止而非当前账户持仓。
-本能力不接入持续Paper、Scope、Runtime、通知或Broker；合同见[期货双向研究](docs/NEWOW_FUTURES_STRATEGY.md)。
-
 ## 苏冰决策持续观察与历史回放
 
 `/research/subing-decision` 提供焦煤统一环境—需求候选的独立历史回放，入口位于模拟交易之后；只读 `/api/v1/research/subing-decision/*` 消费显式登记SHA结果，展示环境、条件、模型持仓及决策/成交历史。v2基础分类与近期结构确认约束分别解释，收益属于独立模型账户已见开发样本，不是持续模型或真实账户。规则与边界见[交易需求合同](docs/research/subing-trading-demands.md#应用内焦煤统一历史回放候选2026-11-04)。
@@ -148,7 +140,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 - 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的交办范围内；数据补全或历史候选闭环无需逐批人工批准，由执行者冻结并校验 exact plan hash。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simulation/monitor/*` 及独立只读 `/api/v1/research/new-subing/*`、`/api/v1/research/newow-futures/*`。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simulation/monitor/*` 及独立只读 `/api/v1/research/new-subing/*`。
 统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 为 `data`、`runtime`、`reference` 与 `home`。`reference` 提供精确计划及 build/advance/rebuild/resume，`home build` 显式构建首页派生投影；写入边界仍遵守各自合同。新苏冰离线研究使用上文专用脚本，不恢复退役研究产品。
 
 ## 模拟交易
