@@ -349,6 +349,12 @@ class MarketCatalog:
         before: datetime | None,
     ) -> tuple[CatalogPartition, ...]:
         """返回品种的具体合约分区，按最新月份优先且仅经 Catalog 定位。"""
+        return tuple(self.iter_contract_partitions_before(symbol, frequency, before))
+
+    def iter_contract_partitions_before(
+        self, symbol: str, frequency: BarFrequency, before: datetime | None,
+    ):
+        """Decode partition metadata in month order as the reader needs it."""
         statement = (
             select(MarketDataset, MarketPartition)
             .join(MarketPartition, MarketPartition.dataset_id == MarketDataset.id)
@@ -363,18 +369,19 @@ class MarketCatalog:
         rows = self.session.execute(
             statement.order_by(MarketPartition.year.desc(), MarketPartition.month.desc())
         )
-        return tuple(
-            self._partition(
-                DatasetKey(
-                    kind=DatasetKind.CONTRACT,
-                    symbol=dataset.symbol,
-                    series_or_contract=dataset.series_or_contract,
-                    frequency=frequency,
-                ),
-                partition,
-            )
-            for dataset, partition in rows
-        )
+        try:
+            for dataset, partition in rows:
+                yield self._partition(
+                    DatasetKey(
+                        kind=DatasetKind.CONTRACT,
+                        symbol=dataset.symbol,
+                        series_or_contract=dataset.series_or_contract,
+                        frequency=frequency,
+                    ),
+                    partition,
+                )
+        finally:
+            rows.close()
 
     def upsert_main_contracts(self, rows: Iterable[tuple[str, date, str]]) -> None:
         """批量写入主力映射：按 (symbol, trade_date) 幂等更新合约代码与规则字段。"""
@@ -427,17 +434,18 @@ class MarketCatalog:
         before: datetime | None,
     ) -> tuple[MainMapFact, ...]:
         """读取游标当日及以前的正式 rank-1 主力映射事实。"""
-        statement = select(MainContractMap).where(
-            MainContractMap.symbol == symbol.strip().lower(),
+        symbol = symbol.strip().lower()
+        statement = select(MainContractMap.trade_date, MainContractMap.contract_code).where(
+            MainContractMap.symbol == symbol,
             MainContractMap.rank == 1,
         )
         if before is not None:
             statement = statement.where(
                 MainContractMap.trade_date <= before.astimezone(SHANGHAI).date()
             )
-        rows = self.session.scalars(statement.order_by(MainContractMap.trade_date))
+        rows = self.session.execute(statement.order_by(MainContractMap.trade_date))
         return tuple(
-            MainMapFact(row.symbol, row.trade_date, row.contract_code) for row in rows
+            MainMapFact(symbol, day, contract) for day, contract in rows
         )
 
     @timed("catalog")

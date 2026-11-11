@@ -14,6 +14,14 @@ from .transport import SdkTransport
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
+class SubmissionNotSent(ValueError):
+    """A local admission rejection before calling the SDK's insert_order."""
+
+    def __init__(self, code, *, native_id=None):
+        super().__init__(code)
+        self.native_id = native_id
+
+
 def decimal(value, *, positive=False):
     if isinstance(value, bool):
         raise ValueError("TQ_NUMBER_INVALID")
@@ -339,7 +347,7 @@ class Gateway:
         price = order.price
         opponent = q["ask_price1"] if order.side == "BUY" else q["bid_price1"]
         if decimal(opponent, positive=True) != price:
-            raise ValueError("TQ_OPPONENT_PRICE_DRIFT")
+            raise SubmissionNotSent("TQ_OPPONENT_PRICE_DRIFT", native_id=native_id)
         converted = float(price)
         if decimal(converted) != price or price % decimal(
             q["price_tick"], positive=True
@@ -347,7 +355,7 @@ class Gateway:
             raise ValueError("TQ_PRICE_PRECISION_INVALID")
         self.assert_continuity()
         if valid_until is not None and datetime.now(UTC) >= valid_until:
-            raise ValueError("TQ_SUBMIT_EXPIRED_NO_SEND")
+            raise SubmissionNotSent("TQ_SUBMIT_EXPIRED_NO_SEND", native_id=native_id)
         self.api.insert_order(
             symbol=symbol,
             direction=order.side,

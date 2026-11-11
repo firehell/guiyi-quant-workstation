@@ -111,7 +111,7 @@ def test_canonical_endpoint_reader_requires_completed_mds_bar(monkeypatch):
 
     seen = []
     class Market:
-        def query_page(self, request):
+        def query_page(self, request, *, mapping_cache):
             seen.append(request)
             if request.frequency.value == '1w':
                 raise MarketDataError('MAIN_CONTRACT_MAP_MISSING')

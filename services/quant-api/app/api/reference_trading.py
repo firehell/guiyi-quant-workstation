@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from asyncio import gather
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.concurrency import run_in_threadpool
 
 from app.db.session import SessionLocal
 from app.reference_trading.presentation import PresentationUnavailable
@@ -50,10 +52,14 @@ def capabilities(request: Request):
 
 
 @router.get("/health")
-def health(request: Request):
+async def health(request: Request):
     _keys(request, frozenset())
     from app.reference_trading.inbox_protocol import read_receiving_health
-    return {**_health.read(), "receiving": read_receiving_health(SessionLocal)}
+    detail, receiving = await gather(
+        run_in_threadpool(_health.read),
+        run_in_threadpool(read_receiving_health, SessionLocal),
+    )
+    return {**detail, "receiving": receiving}
 
 
 @router.get("/health/summary")

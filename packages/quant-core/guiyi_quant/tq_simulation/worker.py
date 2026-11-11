@@ -452,10 +452,19 @@ def run(config_path, *, inspect=False):
                             facts=facts,
                         )
                     ):
+                        # Account reconciliation can replay a large ledger. Do it
+                        # before collecting short-lived execution quotes.
+                        now = datetime.now(UTC)
+                        snapshot = gateway.snapshot(now)
+                        if gateway.reconnection_required:
+                            require_recovery(controller, now)
+                        controller.synchronize(snapshot, now)
+                        state = controller.store.current()
                         inputs = []
-                        for candidate in tq_execution_candidates(
-                            state, opening_allowed=action == "trade"
-                        ):
+                        candidates = ()
+                        if state.phase == "READY" and not gateway.reconnection_required:
+                            candidates = tq_execution_candidates(state, opening_allowed=action == "trade")
+                        for candidate in candidates:
                             fact = facts.get((candidate.product, candidate.contract))
                             if fact is None:
                                 continue
@@ -511,18 +520,18 @@ def run(config_path, *, inspect=False):
                         cleanup = any(p.rolling and not any(h.product == p.product for h in state.positions)
                                       for p in state.products)
                         if inputs or cleanup:
-                            now = datetime.now(UTC)
-                            snapshot = gateway.snapshot(now)
+                            # A synchronous SDK quote/margin lookup can also
+                            # advance account facts. Reconcile only on drift.
+                            checked_at = datetime.now(UTC)
+                            checked = gateway.snapshot(checked_at)
                             if gateway.reconnection_required:
-                                require_recovery(controller, now)
-                            rb = controller.synchronize(snapshot, now)
-                            if (
-                                controller.store.current().phase == "READY"
-                                and not gateway.reconnection_required
-                            ):
+                                require_recovery(controller, checked_at)
+                            elif checked["snapshot_id"] != snapshot["snapshot_id"]:
+                                controller.synchronize(checked, checked_at)
+                            elif state.phase == "READY":
                                 controller.tick(
                                     inputs,
-                                    datetime.now(UTC),
+                                    checked_at,
                                     opening_allowed=action == "trade",
                                     stopping=action == "stop",
                                 )

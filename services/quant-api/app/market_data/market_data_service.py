@@ -1918,14 +1918,14 @@ class MarketDataService:
             max(window.end for window in last_windows),
         )
 
-    def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult:
+    def query_page(self, request: SeriesPageQuery, *, mapping_cache=None) -> MarketSeriesPageResult:
         """按历史游标返回一页 Canonical bars，游标严格排除自身。"""
         try:
             assert_not_retired(request.symbol)
         except ProductRetiredError as exc:
             raise MarketDataError("PRODUCT_RETIRED") from exc
         if request.series_kind is SeriesKind.ACTUAL_DOMINANT:
-            return self._actual_dominant_page(request)
+            return self._actual_dominant_page(request, mapping_cache=mapping_cache)
         assert request.physical_key is not None
         bars, has_more = self._physical_page_bars(request.physical_key, request)
         return self._page_result(
@@ -2143,26 +2143,31 @@ class MarketDataService:
         request: SeriesPageQuery,
         *,
         published_prefix: bool = False,
+        mapping_cache=None,
     ) -> MarketSeriesPageResult:
         # ``before`` limits physical bars by ``bar_end`` below.  It must not
         # limit map facts by natural date because a Friday-night bar belongs
         # to the next trading day (for example Monday) and needs that owner.
-        mappings = self.catalog.main_map_before(request.symbol, None)
-        mapping_by_day = {item.trade_date: item for item in mappings}
-        partitions = self.catalog.contract_partitions_before(
+        mapping_by_day = None if mapping_cache is None else mapping_cache.get(request.symbol)
+        if mapping_by_day is None:
+            mappings = self.catalog.main_map_before(request.symbol, None)
+            mapping_by_day = {item.trade_date: item for item in mappings}
+            if mapping_cache is not None:
+                mapping_cache[request.symbol] = mapping_by_day
+        read_partitions = (self.catalog.contract_partitions_before if mapping_cache is None
+                           else self.catalog.iter_contract_partitions_before)
+        partitions = read_partitions(
             request.symbol,
             request.frequency,
             request.before,
         )
-        if not partitions:
-            if request.frequency is BarFrequency.W1:
-                raise MarketDataError("ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT")
-            raise MarketDataError("MAPPED_CONTRACT_DATASET_MISSING")
         # Scope calendar reuse to this page read; later reads must see new facts.
         weekly_calendar: dict[date, tuple[date, ...]] = {}
         selected: list[CanonicalBar] = []
         available_contract_days: set[tuple[str, date]] = set()
-        for _, month_partitions in _partition_month_groups(partitions):
+        found_partitions = False
+        for _, month_partitions in groupby(partitions, key=lambda part: (part.year, part.month)):
+            found_partitions = True
             candidates: list[CanonicalBar | SourceQualityFact] = []
             month_events: list[tuple[CatalogPartition, CanonicalBar | SourceQualityFact]] = []
             for partition in month_partitions:
@@ -2223,6 +2228,8 @@ class MarketDataService:
                     raise MarketDataError("BAR_IDENTITY_CONFLICT")
                 selected.append(event)
         if not selected:
+            if not found_partitions and request.frequency is BarFrequency.W1:
+                raise MarketDataError("ACTUAL_DOMINANT_WEEKLY_DATASET_ABSENT")
             available_days = {day for _, day in available_contract_days}
             if any(day not in mapping_by_day for day in available_days):
                 raise MarketDataError("MAIN_CONTRACT_MAP_MISSING")
@@ -3142,16 +3149,6 @@ def _segments(mappings: tuple[MainMapFact, ...]) -> tuple[ResolvedContractSegmen
         end = row.trade_date
     result.append(ResolvedContractSegment(contract, start, end))
     return tuple(result)
-
-
-def _partition_month_groups(
-    partitions: tuple[CatalogPartition, ...],
-) -> tuple[tuple[tuple[int, int], tuple[CatalogPartition, ...]], ...]:
-    """保留 Catalog 的 reverse 月序，并把同月各合约分区作为一个时间层处理。"""
-    groups: dict[tuple[int, int], list[CatalogPartition]] = {}
-    for partition in partitions:
-        groups.setdefault((partition.year, partition.month), []).append(partition)
-    return tuple((month, tuple(values)) for month, values in groups.items())
 
 
 def _local_date(value: datetime) -> date:

@@ -58,6 +58,8 @@ def read_completed_canonical_endpoints(session, keys, at):
 
     market = build_market_data_service(session)
     result = {}
+    # One read-only transaction owns the mapping snapshot for all its periods.
+    mapping_cache = {}
     for product, frequency in keys:
         value = {"expected_through": None, "expected_source": "canonical_completed",
                  "endpoint_status": "UNKNOWN", "endpoint_reason": None}
@@ -67,7 +69,7 @@ def read_completed_canonical_endpoints(session, keys, at):
                 # Catalog publication determines this historical endpoint;
                 # prepared Session/MainMap metadata and Live time do not.
                 before=None, limit=1,
-            ))
+            ), mapping_cache=mapping_cache)
             if not page.bars or page.bars[-1].bar_end > at:
                 value["endpoint_reason"] = "COMPLETE_PERIOD_MISSING"
             else:

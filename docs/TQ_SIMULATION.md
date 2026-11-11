@@ -77,5 +77,7 @@ MD及TD断线仍保持原完整恢复、逐品种前缀、新completed信号及�
 LocalStore缓存仅服务同一SQLite连接已验证的提交状态，使用事务内data_version及本连接变更计数
 识别失效；启动和恢复仍保留完整历史校验。休市无可执行候选、盘中无有效执行输入时不写空Tick；
 平仓后无持仓的rolling状态允许独立清理Tick。报价/Session输入错误保留固定细分原因码。
-实际insert_order之前重新检查账户、Session、Instrument和Quote最早截止；已claim而确定过期未发
-追加local_not_sent证据并持久保护，原claim保留，禁止自动重发。缓存不授权放宽任何TTL或对账门禁。
+先同步账户再采集执行报价。实际insert_order之前仍检查账户、Session、Instrument和Quote最早截止。
+本地确定未调用SDK发送时，记录版本化local_not_sent证据并终止该提案，保留原claim。
+重启先核对该证据、claim和原生委托成交，再完成中断的本地终止。平仓义务可在新鲜输入下生成新提案。
+发送结果不明仍持久保护。缓存不授权放宽任何TTL或对账门禁。

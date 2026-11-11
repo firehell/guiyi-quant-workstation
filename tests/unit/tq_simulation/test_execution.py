@@ -1156,3 +1156,58 @@ def test_final_submit_deadline_includes_opening_cutoff(tmp_path):
     c.tick((f,), now, opening_allowed=True)
     assert captured == [now+timedelta(seconds=2)]
     c.close()
+
+
+@pytest.mark.parametrize("after_claim", [False, True])
+def test_local_quote_rejection_aborts_proposal_without_sending(tmp_path, after_claim):
+    from guiyi_quant.tq_simulation.gateway import SubmissionNotSent
+
+    c, now = live_controller(tmp_path)
+    f = fact(now)
+    if after_claim:
+        def reject(_symbol, _order, _offset, native, _deadline):
+            raise SubmissionNotSent("TQ_OPPONENT_PRICE_DRIFT", native_id=native)
+        c.gateway.submit_checked = reject
+        c.clock = lambda: now
+    else:
+        f = replace(f, quote=replace(f.quote, valid_until=now + timedelta(seconds=1)))
+        c.clock = lambda: f.quote.valid_until
+    tx = c.tick((f,), now, opening_allowed=True)
+    order = c.store.current().orders[-1]
+    assert order.order_id == tx.effects[0].order.order_id
+    assert order.status == "LOCAL_ABORTED" and order.reconciled
+    assert c.store.current().phase == "READY"
+    assert len(c.journal.mappings()) == int(after_claim)
+    assert len(c.journal.events("local_not_sent")) == 1
+    assert not c.journal.events("queued")
+    c.close()
+
+
+def test_restart_finishes_recorded_unsent_before_missing_claim_check(tmp_path):
+    from guiyi_quant.tq_simulation.gateway import SubmissionNotSent
+
+    c, now = live_controller(tmp_path)
+    def reject(_symbol, _order, _offset, native, _deadline):
+        raise SubmissionNotSent("TQ_OPPONENT_PRICE_DRIFT", native_id=native)
+    c.gateway.submit_checked = reject
+    c.clock = lambda: now
+    execute = c.store.execute
+    def interrupted(key, command, **options):
+        if isinstance(command, m.AbortUnsent):
+            raise OSError("interrupted after writing no-send evidence")
+        return execute(key, command, **options)
+    c.store.execute = interrupted
+    with pytest.raises(OSError):
+        c.tick((fact(now),), now, opening_allowed=True)
+    assert c.store.current().orders[-1].status == "PROPOSED"
+    c.close()
+
+    c = Controller(tmp_path, A, ("RB",), Transport())
+    observed = now + timedelta(seconds=30)
+    c.clock = lambda: observed + timedelta(seconds=1)
+    rb = c.synchronize(snapshot(observed), observed)
+    c.recover(rb, ())
+    assert c.store.current().orders[-1].status == "LOCAL_ABORTED"
+    assert len(c.journal.mappings()) == 1
+    assert not c.gateway.calls
+    c.close()

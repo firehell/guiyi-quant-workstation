@@ -8,7 +8,7 @@ from ..htdy_account_execution.store import LocalStore
 from ..htdy_account_execution.codec import digest as command_digest
 from ..htdy_account_execution.reducer import start, never_active
 from .journal import Journal, digest
-from .gateway import decimal, quantity, instant_ns
+from .gateway import SubmissionNotSent, decimal, quantity, instant_ns
 
 TERMINAL = {"FILLED", "CANCELLED", "REJECTED"}
 
@@ -116,6 +116,9 @@ class Controller:
         self.journal.event("snapshot", snapshot, at)
         mappings = self.journal.mappings()
         state = self.store.current()
+        if any(not order.reconciled for order in state.orders):
+            self._finish_recorded_unsent(snapshot, state, at)
+            state = self.store.current()
         known_fills = {f.trade_id: f for f in state.fills}
         initial_trades = set(state.initial_readback.confirmed_trade_ids)
         native_orders = {o["order_id"]: o for o in snapshot["orders"]}
@@ -312,6 +315,44 @@ class Controller:
         return tx
 
     def dispatch(self, effect, fact, at, *, opening_allowed):
+        try:
+            return self._dispatch(effect, fact, at, opening_allowed=opening_allowed)
+        except SubmissionNotSent as error:
+            self.abort_unsent(effect.order.order_id, str(error), native_id=error.native_id)
+            return "LOCAL_NOT_SENT"
+
+    def _finish_recorded_unsent(self, snapshot, state, at):
+        native_ids = {row["order_id"] for row in (*snapshot["orders"], *snapshot["trades"])}
+        pending = {order.order_id: order for order in state.orders if not order.reconciled}
+        for payload in self.journal.events("local_not_sent"):
+            if payload.get("version") != 1 or payload.get("order_id") not in pending:
+                continue
+            if (set(payload) != {"version", "order_id", "native_id", "reason"}
+                    or payload["reason"] not in {"TQ_OPPONENT_PRICE_DRIFT", "TQ_SUBMIT_EXPIRED_NO_SEND"}):
+                raise ValueError("TQ_UNSENT_PROOF_CONFLICT")
+            if payload.get("native_id") in native_ids:
+                raise ValueError("TQ_UNSENT_NATIVE_CONFLICT")
+            self.abort_unsent(payload["order_id"], payload["reason"], native_id=payload["native_id"], at=at)
+
+    def abort_unsent(self, order_id, reason, *, native_id=None, at=None):
+        def proven(_state):
+            claim = self.journal.db.execute(
+                "SELECT native_id FROM claims WHERE order_id=? AND kind='SUBMIT'", (order_id,)
+            ).fetchone()
+            return claim == ((native_id,) if native_id is not None else None)
+
+        evidence = {"version": 1, "order_id": order_id, "native_id": native_id, "reason": reason}
+        if not proven(None):
+            raise ValueError("TQ_UNSENT_PROOF_CONFLICT")
+        at = self.clock() if at is None else at
+        source = self.journal.event("local_not_sent", evidence, at)
+        return self.store.execute(
+            "tq-abort-unsent:" + order_id,
+            m.AbortUnsent(self.account_id, order_id, at, source, reason),
+            unsent_proof=proven,
+        )
+
+    def _dispatch(self, effect, fact, at, *, opening_allowed):
         from ..htdy_account_execution.scheduling import executable_price
 
         order = effect.order
@@ -366,7 +407,10 @@ class Controller:
                     or not fact.session.can_trade
                 ):
                     raise ValueError("TQ_SUBMIT_NOT_QUALIFIED")
-                if executable_price(fact, order.side, at) != order.price:
+                price = executable_price(fact, order.side, at)
+                if price is None:
+                    raise SubmissionNotSent("TQ_SUBMIT_EXPIRED_NO_SEND")
+                if price != order.price:
                     raise ValueError("TQ_OPPONENT_PRICE_DRIFT")
                 if order.offset == "OPEN" and (
                     not opening_allowed
@@ -416,10 +460,9 @@ class Controller:
                                    if order.offset == "OPEN" else fact.session.final_close_at)
                     try:
                         checked(symbol, order, offset, native_claim, deadline)
-                    except ValueError as error:
-                        if str(error) == "TQ_SUBMIT_EXPIRED_NO_SEND":
-                            self.journal.event("local_not_sent", dict(order_id=order.order_id,
-                                native_id=native_claim, reason=str(error)), self.clock())
+                    except SubmissionNotSent as error:
+                        if error.native_id != native_claim:
+                            raise ValueError("TQ_UNSENT_PROOF_CONFLICT") from error
                         raise
             # Queued is not sent, accepted or filled; wait_update/remote facts
             # alone can advance those stages. Any thrown/unknown result is held.
