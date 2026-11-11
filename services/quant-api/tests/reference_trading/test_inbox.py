@@ -71,9 +71,13 @@ def test_ingest_is_immutable_idempotent_and_freezes_targets_before_ack():
     assert head.envelope.to_json() == original.to_json()
     assert head.envelope.stream_id == original.stream_id
     assert head.ingested_at == NOW + timedelta(seconds=5)
+    assert repo.health()["unfinished_current_generation_deliveries"] == 1
     activation.disable(
         identity.stream_id, expected_generation=1, now=NOW + timedelta(seconds=6)
     )
+    health = repo.health()
+    assert health["unfinished_deliveries"] == health["unfinished_disabled_stream_deliveries"] == 1
+    assert health["unfinished_current_generation_deliveries"] == 0
     duplicate = repo.ingest(original)
     assert duplicate.duplicate and duplicate.delivery_ids == first.delivery_ids
     with pytest.raises(InboxConflict, match="REFERENCE_INBOX_CONTENT_CONFLICT"):

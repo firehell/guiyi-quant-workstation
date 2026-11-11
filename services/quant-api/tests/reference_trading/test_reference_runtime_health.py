@@ -1,10 +1,37 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
 import pytest
 
 from app.reference_trading.health import ForwardReferenceHealth
 from app.reference_trading.repository import ReferenceRepository
 from test_forward_capture import _active, _capture
+
+
+def test_worker_health_summary_requires_a_fresh_owner_of_current_generation(monkeypatch):
+    from app import runtime_bindings, runtime_handover
+    from app.reference_trading.health import read_worker_health_summary
+
+    binding = SimpleNamespace(enabled=True, generation=73)
+    now = datetime.now(UTC)
+    state = {
+        "generation": 73, "phase": "active", "ready": False,
+        "at": now.isoformat(),
+        "proof": {"reference_runtime": {"blocked_count": 45, "unavailable_weekly_count": 10}},
+    }
+    monkeypatch.setattr(runtime_bindings, "resolve_service_binding", lambda _: binding)
+    monkeypatch.setattr(runtime_handover, "read_service_state", lambda _: state)
+
+    assert read_worker_health_summary() == {
+        "status": "not_ready", "generation": 73, "observed_at": now.isoformat(),
+        "blocked_count": 45, "unavailable_weekly_count": 10,
+    }
+    state["at"] = (now - timedelta(minutes=2)).isoformat()
+    assert read_worker_health_summary()["status"] == "unverified"
+    state.update(at=now.isoformat(), generation=72)
+    assert read_worker_health_summary() == {"status": "unverified", "generation": 73}
 
 
 def test_health_distinguishes_enabled_and_pending_from_success():

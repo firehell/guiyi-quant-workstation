@@ -17,6 +17,39 @@ from app.reference_trading.models import (
 from app.reference_trading.presentation import require_envelope
 
 
+def read_worker_health_summary():
+    """Read the current binding's published diagnostics without scanning market data."""
+    from app.runtime_bindings import resolve_service_binding
+    from app.runtime_handover import read_service_state
+
+    service = "reference-worker"
+    binding = resolve_service_binding(service)
+    if binding is None or not binding.enabled:
+        return {"status": "disabled"}
+    state = read_service_state(service)
+    if not state or state.get("generation") != binding.generation:
+        return {"status": "unverified", "generation": binding.generation}
+    stamp = state.get("at")
+    if not isinstance(stamp, str):
+        return {"status": "unverified", "generation": binding.generation}
+    observed_at = datetime.fromisoformat(stamp)
+    if observed_at.tzinfo is None:
+        return {"status": "unverified", "generation": binding.generation}
+    age_seconds = (datetime.now(UTC) - observed_at).total_seconds()
+    summary = {"generation": binding.generation, "observed_at": observed_at.isoformat()}
+    if state.get("phase") != "active" or not 0 <= age_seconds <= 60:
+        return {**summary, "status": "unverified"}
+    report = state.get("proof", {}).get("reference_runtime", {})
+    return {
+        **summary,
+        "status": "ready" if state.get("ready") is True else "not_ready",
+        **{key: report[key] for key in (
+            "stage", "enabled_count", "pending_keys", "blocked_count",
+            "blocked_counts", "unavailable_weekly_count", "last_success",
+        ) if key in report},
+    }
+
+
 def read_completed_canonical_endpoints(session, keys, at):
     """One bounded MDS read per product-period, shared across all strategy routes."""
     from app.market_data.composition import build_market_data_service

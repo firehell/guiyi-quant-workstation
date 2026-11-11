@@ -56,6 +56,21 @@ def health(request: Request):
     return {**_health.read(), "receiving": read_receiving_health(SessionLocal)}
 
 
+@router.get("/health/summary")
+def health_summary(request: Request):
+    _keys(request, frozenset())
+    from app.reference_trading.health import read_worker_health_summary
+    from app.reference_trading.inbox_protocol import read_receiving_health
+
+    try:
+        return {
+            "worker": read_worker_health_summary(),
+            "receiving": read_receiving_health(SessionLocal),
+        }
+    except (SQLAlchemyError, OSError, RuntimeError, ValueError):
+        raise HTTPException(503, detail={"code": "REFERENCE_HEALTH_UNAVAILABLE"}) from None
+
+
 @router.get("/streams")
 def streams(request: Request, strategy: str, product: str, frequency: str,
             mode: str = "historical_replay"):

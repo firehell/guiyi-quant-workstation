@@ -537,6 +537,12 @@ class ReferenceInboxRepository:
         with self._session_factory() as session, readonly_transaction(session, timeout_seconds=20):
             resolved = verified_resolution_ids(session)
             open_delivery = ReferenceInboxDelivery.delivery_id.not_in(resolved)
+            unfinished_delivery = (ReferenceInboxDelivery.status != "COMPLETED") & open_delivery
+            current_generation = (
+                ReferenceStream.enabled.is_(True)
+                & (ReferenceStream.active_revision_id == ReferenceInboxDelivery.revision_id)
+                & (ReferenceStream.activation_generation == ReferenceInboxDelivery.generation)
+            )
             # One SQL statement uses one PostgreSQL snapshot for every aggregate.
             unfinished = exists(select(1).where(
                 ReferenceInboxDelivery.input_id == ReferenceInboxInput.input_id,
@@ -548,9 +554,11 @@ class ReferenceInboxRepository:
                 func.count().filter((ReferenceInboxDelivery.status == "UNKNOWN") & open_delivery).label("unknown_count"),
                 func.count().filter(ReferenceInboxDelivery.status == "COMPLETED").label("completed_count"),
                 func.count().filter(((ReferenceInboxDelivery.status == "PENDING") & open_delivery) & ReferenceInboxDelivery.code.is_not(None)).label("dependency_wait_count"),
-                func.count().filter(((ReferenceInboxDelivery.status != "COMPLETED") & open_delivery)).label("unfinished_deliveries"),
+                func.count().filter(unfinished_delivery).label("unfinished_deliveries"),
+                func.count().filter(unfinished_delivery & current_generation).label("unfinished_current_generation_deliveries"),
+                func.count().filter(unfinished_delivery & ReferenceStream.enabled.is_(False)).label("unfinished_disabled_stream_deliveries"),
                 func.max(ReferenceInboxDelivery.calculated_at).label("last_calculated_at"),
-            ).subquery()
+            ).join(ReferenceStream, ReferenceStream.stream_id == ReferenceInboxDelivery.stream_id).subquery()
             inputs = select(func.count().label("unfinished_inputs"),
                 func.coalesce(func.sum(ReferenceInboxInput.payload_bytes), 0).label("unfinished_bytes"),
                 func.min(ReferenceInboxInput.ingested_at).label("oldest_ingested_at"),
