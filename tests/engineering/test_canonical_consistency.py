@@ -91,6 +91,8 @@ RETIRED_HTTP_404_PATHS = (
     "/api/v1/market/research/subing-strategy/performance",
     "/api/alerts/strategy-actions/current",
     "/api/v1/research/newow-futures/runs",
+    "/api/v1/market/newow/trend-detail",
+    "/api/alerts/rules/htdy_original_15m/scope/jm/60m",
     "/api/v1/backtests/health",
     "/api/execution-review/items",
     "/api/symbols",
@@ -162,11 +164,6 @@ ACTIVE_MARKET_ROUTE_OWNERS = {
         "GET",
         "/api/v1/market/newow/product-capabilities",
         "app.api.market_newow:newow_product_capabilities",
-    ),
-    (
-        "GET",
-        "/api/v1/market/newow/trend-detail",
-        "app.api.market_newow:newow_trend_detail",
     ),
     (
         "GET",
@@ -535,12 +532,7 @@ def test_active_alert_canonical_matches_the_two_rule_code_contract() -> None:
     service_source = (
         ROOT / "services/quant-api/app/alerts/service.py"
     ).read_text(encoding="utf-8")
-    scope_method = service_source.split(
-        "def set_product_frequency_enabled", maxsplit=1
-    )[1].split("def rule_allows_event", maxsplit=1)[0]
-    assert scope_method.index("if not rule.enabled:") < scope_method.index(
-        "rule.scope_product_frequencies ="
-    )
+    assert "def set_product_frequency_enabled" not in service_source
 
     activation_source = (
         ROOT / "services/quant-api/app/alerts/subing_scope_activation.py"

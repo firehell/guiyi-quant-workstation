@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -11,7 +11,6 @@ from app.alerts.models import AlertEvent, AlertRule, SubingSignalAlignment
 from app.alerts.service import (
     AlertConsistencyError,
     AlertEventCreate,
-    AlertRuleNotFoundError,
     AlertScopeError,
     AlertService,
 )
@@ -68,85 +67,6 @@ def test_product_rules_exposes_subing_public_name_from_registry(session: Session
     assert subing.input_frequencies == ("5m", "15m", "30m", "60m", "1d", "1w")
     assert subing.enabled_frequencies == ()
     assert subing.enabled_for_product is False
-
-
-def test_frequency_scope_mutation_is_normalized_and_idempotent(session: Session) -> None:
-    service = AlertService(session, operational_products=("jm",))
-    enabled = service.set_product_frequency_enabled(
-        "htdy_original_15m", " JM ", "5m", True
-    )
-    assert enabled.enabled_frequencies == ("5m", "15m")
-    disabled = service.set_product_frequency_enabled(
-        "htdy_original_15m", "jm", "5m", False
-    )
-    assert disabled.enabled_frequencies == ("15m",)
-
-
-def test_disabled_rule_rejects_scope_mutation_before_commit(session: Session) -> None:
-    session.add(AlertRule(
-        rule_code="subing_ths_alert_15m_v1",
-        enabled=False,
-        scope_product_frequencies={},
-    ))
-    session.commit()
-    commits: list[object] = []
-    event.listen(session, "after_commit", lambda value: commits.append(value))
-
-    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_RULE_DISABLED"):
-        AlertService(session, operational_products=("jm",)).set_product_frequency_enabled(
-            "subing_ths_alert_15m_v1", "jm", "15m", True
-        )
-
-    session.expire_all()
-    stored = session.scalar(select(AlertRule).where(
-        AlertRule.rule_code == "subing_ths_alert_15m_v1"
-    ))
-    assert stored is not None
-    assert stored.enabled is False
-    assert stored.scope_product_frequencies == {}
-    assert commits == []
-
-
-def test_scope_mutation_refreshes_locked_rule_before_disabled_check(session: Session) -> None:
-    session.scalar(select(AlertRule).where(AlertRule.rule_code == "htdy_original_15m"))
-    with Session(session.get_bind()) as competing_session:
-        competing_rule = competing_session.scalar(select(AlertRule).where(
-            AlertRule.rule_code == "htdy_original_15m"
-        ))
-        assert competing_rule is not None
-        competing_rule.enabled = False
-        competing_session.commit()
-
-    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_RULE_DISABLED"):
-        AlertService(session, operational_products=("jm",)).set_product_frequency_enabled(
-            "htdy_original_15m", "jm", "5m", True
-        )
-
-    session.expire_all()
-    stored = session.scalar(select(AlertRule).where(
-        AlertRule.rule_code == "htdy_original_15m"
-    ))
-    assert stored is not None
-    assert stored.enabled is False
-    assert stored.scope_product_frequencies == {"jm": ["15m"]}
-
-
-@pytest.mark.parametrize("frequency", ["", "4h"])
-def test_frequency_scope_rejects_noncanonical_frequency(
-    session: Session, frequency: str
-) -> None:
-    with pytest.raises(AlertScopeError, match="ALERT_SCOPE_FREQUENCY_INVALID"):
-        AlertService(session, operational_products=("jm",)).set_product_frequency_enabled(
-            "htdy_original_15m", "jm", frequency, True
-        )
-
-
-def test_scope_and_rule_fail_closed(session: Session) -> None:
-    service = AlertService(session, operational_products=("jm",))
-    with pytest.raises(AlertScopeError, match="ALERT_SYMBOL_NOT_OPERATIONAL"):
-        service.product_rules("ag")
-    with pytest.raises(AlertRuleNotFoundError):
-        service.set_product_frequency_enabled("future_rule", "jm", "15m", True)
 
 
 def test_create_event_normalizes_codes_and_is_idempotent(session: Session) -> None:

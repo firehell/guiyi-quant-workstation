@@ -25,10 +25,6 @@ class ProductAlertStateResponse(BaseModel):
     rules: list[ProductAlertRuleStateOut]
 
 
-class AlertScopeUpdate(BaseModel):
-    enabled: bool
-
-
 class SubingAlignmentPeriod(BaseModel):
     model_config = ConfigDict(extra="forbid")
     frequency: Literal["5m", "15m", "30m", "60m", "1d", "1w"]

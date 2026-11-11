@@ -15,20 +15,8 @@ test('migrates an omitted view deterministically to Free', () => {
   })
 })
 
-test('legacy Trend migrates to the unified Newow trend identity and preserves a legal focus', () => {
-  assert.deepEqual(parseMarketDetailRoute({ view: 'trend', symbol: 'jm' }), {
-    kind: 'valid',
-    identity: { view: 'newow', symbol: 'jm', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' },
-  })
-  assert.deepEqual(parseMarketDetailRoute({
-    view: 'trend', symbol: 'jm', focus_bar_end: '2026-09-02T07:00:00Z',
-  }), {
-    kind: 'valid',
-    identity: {
-      view: 'newow', symbol: 'jm', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d',
-      focusBarEnd: '2026-09-02T07:00:00Z',
-    },
-  })
+test('rejects the retired Trend view and preserves SuBing focus', () => {
+  assert.equal(parseMarketDetailRoute({ view: 'trend', symbol: 'jm', frequency: '1d' }).kind, 'invalid')
   assert.deepEqual(parseMarketDetailRoute({
     view: 'subing', symbol: 'jm', focus_bar_end: '2026-09-02T02:45:00Z',
   }), {

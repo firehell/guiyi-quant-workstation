@@ -43,15 +43,13 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   const omittedView = query.view === undefined
   const viewValue = omittedView ? (query.overlay === 'htdy' ? 'htdy' : 'free') : scalar(query.view)
   const symbol = normalizeSymbol(query.symbol)
-  if (viewValue === undefined || !isView(viewValue)) return invalid('DETAIL_VIEW_UNKNOWN', symbol, null)
+  if (viewValue === undefined || viewValue === 'trend' || !isView(viewValue)) return invalid('DETAIL_VIEW_UNKNOWN', symbol, null)
   if (!symbol) return invalid('DETAIL_SYMBOL_INVALID', null, null)
 
   if (query.overlay !== undefined && query.overlay !== (viewValue === 'htdy' ? 'htdy' : 'none')) {
     return invalid('DETAIL_OVERLAY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
   if (omittedView) query = { ...query, series_kind: query.series_kind === undefined ? 'actual_dominant' : query.series_kind, frequency: query.frequency === undefined ? '15m' : query.frequency }
-
-  if (viewValue === 'trend') return parseLegacyTrendRoute(query, symbol)
 
   const isNewow = viewValue === 'newow'
   const strategy = isNewow
@@ -259,18 +257,6 @@ function allowsFocus(view: MarketDetailView, seriesKind: DetailSeriesKind, frequ
     || (view === 'subing' && seriesKind === 'actual_dominant' && SUBING_FREQUENCY_SET.has(frequency))
     || (view === 'trend' && seriesKind === 'actual_dominant' && frequency === '1d')
     || (view === 'newow' && seriesKind === 'actual_dominant' && NEWOW_FREQUENCY_SET.has(frequency))
-}
-
-function parseLegacyTrendRoute(query: Record<string, unknown>, symbol: string): MarketDetailRouteResult {
-  if (query.strategy !== undefined || query.contract !== undefined || query.newow_mode !== undefined || query.strategy_model !== undefined || query.newow_test !== undefined) {
-    return invalid('DETAIL_TREND_IDENTITY_INVALID', symbol, recoveryFor('trend', symbol))
-  }
-  const seriesKind = query.series_kind === undefined ? 'actual_dominant' : parseSeriesKind(query.series_kind)
-  const frequency = query.frequency === undefined ? '1d' : parseFrequency(query.frequency)
-  if (seriesKind !== 'actual_dominant' || frequency !== '1d') {
-    return invalid('DETAIL_TREND_IDENTITY_INVALID', symbol, recoveryFor('trend', symbol))
-  }
-  return valid('newow', symbol, 'actual_dominant', '1d', undefined, query.focus_bar_end, 'trend')
 }
 
 function isIsoInstant(value: string | undefined): value is string {

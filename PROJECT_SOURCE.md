@@ -17,7 +17,7 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
-- Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
+- Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。其他视角不得消费或复制这些 Newow 事实。
 - 策略详情不显示模糊的“全历史策略效果”，不把账户收益、持仓、订单或成交混入参考交易，也不恢复已退役策略事件。首页独立模拟交易监控可只读展示 TqKq 账户事实；Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，与该账户事实分离。
 
 苏冰预警、自由看盘和火天大有六周期（5m/15m/30m/60m/1d/1w）成交量采用 `subing_volume_tier_display_v1`：保留红绿柱，本根量相对同物理合约、同计算段的前一根已完成量，2≤倍数<3在柱顶显示蓝色圆点，倍数≥3显示紫色菱形；低档、无前根、零分母、质量中断及未确认输入不标记。不恢复成交量说明文字、按钮或弹窗。这是独立展示扩展，不修改仅30m分档的研究因子、预警规则或策略动作；牛哇保持现有成交量展示。
@@ -88,7 +88,7 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 旧v31/v32历史截止、v33与v34候选wire保持冻结；不把旧合同限制用于当前v35，也不改写历史证据。
 1m仅作为聚合输入。完整 `explanation` section仍显式未开放；独立 `decision_v2` 与分析入口
 按各自合同读取已完成输入，不能据此声称所有解释面板均已开放。
-旧 `/trend-detail` 固定 D1 兼容合同不变；当前发布身份、配置和自然运行验收仍只看 `STATUS.md` 与真实 evidence。
+当前发布身份、配置和自然运行验收仍只看 `STATUS.md` 与真实 evidence。
 
 ## 指标
 
@@ -123,7 +123,7 @@ HTDY 60m 实时参考采用 `htdy_first_seen_reverse_close_v1`：buy 开多、se
 
 苏冰详情与 HTDY 的“实时参考”来源仅消费 `forward_observation` 实时留存参考交易：共用曲线、快捷窗口、最近三笔卡片、按需分页及有界快照缓存；不在该区展示历史重算或 HTDY 重绘交易。缺失实时流时明确不可用，实际 AlertEvent 审计独立折叠，不以预警条数推算完整交易收益。历史研究 API 和资产仍独立保留，不改写已有事实。合同见 [Reference Trading](openspec/specs/reference-trading/spec.md#requirement-retained-forward-reference-performance-panel)。
 
-Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
+Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 
 ## 数据与稳定入口
 

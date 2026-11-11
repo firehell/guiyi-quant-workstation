@@ -91,15 +91,7 @@ from app.market_data.operational_universe import (
     ActiveUniverseError,
     load_active_products,
 )
-from app.market_data.newow.trend_detail_query import NewowTrendDetailQuery
-from app.market_data.newow.trend_detail_service import (
-    NewowTrendDetailError,
-    NewowTrendDetailService,
-)
-from app.market_data.product_taxonomy import ProductTaxonomyError, load_product_taxonomy
-from app.schemas.market_newow import (
-    NewowTrendDetailResponse,
-)
+from app.market_data.product_taxonomy import ProductTaxonomyError
 from app.schemas.market_newow_product import (
     CurrentSnapshotContextOut,
     DeferredFrequencyOut,
@@ -115,15 +107,11 @@ from app.api.newow_presentation import (
     _auxiliary_data_value as _auxiliary_data_value,
     _json_value,
     _product_response,
-    _response,
     _trade as _trade,
 )
 
 router = APIRouter(prefix="/api/v1/market/newow", tags=["market"])
 
-_CLIENT_ERRORS = frozenset(
-    {"NEWOW_INVALID_PRODUCT", "NEWOW_INVALID_RANGE", "NEWOW_RANGE_TOO_LARGE"}
-)
 _PRODUCT_CACHE = SnapshotCache()
 _INTRADAY_HISTORY_CACHE = SnapshotCache(max_bytes=512 * 1024 * 1024, max_entry_bytes=256 * 1024 * 1024)
 _PRODUCT_GATE = HeavyResourceGate()
@@ -365,38 +353,6 @@ def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResp
     if not candidate:
         return conditional_json(request, capability.model_dump(mode="json"))
     return capability
-
-
-@router.get("/trend-detail", response_model=NewowTrendDetailResponse)
-def newow_trend_detail(
-    product: str = Query(...),
-    from_: date = Query(..., alias="from"),
-    through: date = Query(...),
-    frequency: Literal["1d"] = Query(default="1d"),
-    series_kind: Literal["actual_dominant"] = Query(default="actual_dominant"),
-    session: Session = Depends(get_db),
-) -> NewowTrendDetailResponse:
-    del frequency, series_kind
-    product = _normalize_public_product(product)
-    try:
-        result = NewowTrendDetailService(
-            build_market_data_service(session), taxonomy=load_product_taxonomy()
-        ).query(NewowTrendDetailQuery(product, from_, through))
-        return _response(result)
-    except NewowTrendDetailError as exc:
-        raise HTTPException(
-            status_code=422 if exc.code in _CLIENT_ERRORS else 409,
-            detail={"code": exc.code},
-        ) from exc
-    except ProductTaxonomyError as exc:
-        raise HTTPException(
-            status_code=409, detail={"code": "NEWOW_DATA_UNAVAILABLE"}
-        ) from exc
-    except ValueError as exc:
-        code = str(exc)
-        if code not in _CLIENT_ERRORS:
-            code = "NEWOW_DATA_UNAVAILABLE"
-        raise HTTPException(status_code=422, detail={"code": code}) from exc
 
 
 def _build_product_service(

@@ -347,12 +347,11 @@ Scope、Rule、全局评价或历史 reference 推导。所有 Event 与评价�
 - **THEN** 页面分别显示 Scope、Rule/Runtime 与全局评价，并明确当前品种无已存 Event
 - **AND** 页面不得显示中性策略状态或把全局评价时间标成当前品种评价时间
 
-### Requirement: 0044 seeds a disabled empty Rule and generic writes stay guarded
+### Requirement: 0044 seeds a disabled empty Rule
 
 Forward-only `20260902_0044` SHALL 只在精确 0043 HTDY-only schema 上新增一条
 `subing_ths_alert_15m_v1` Rule，且 `enabled=false`、`scope_product_frequencies={}`；它 MUST 保留 HTDY Rule/Event，
-不得硬编码 operational universe，downgrade MUST 拒绝。通用 Scope API MUST 在任何 Scope mutation 前拒绝
-disabled Rule。
+不得硬编码 operational universe，downgrade MUST 拒绝。
 
 #### Scenario: 0044 succeeds on exact 0043 state
 

@@ -134,8 +134,7 @@ const identityWarning = ref(
 const migrationNotice = ref<string | null>(
   seriesPreferenceMigrated.value || route.query.series_kind === 'continuous'
     ? '已切换为真实主力序列'
-    : route.query.view === 'trend'
-    ? '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
+
     : null,
 )
 const identityKey = computed(() => {
@@ -162,11 +161,8 @@ async function activateRoute() {
   hasHtdyHistory.value = false
   hasSubingHistory.value = false
   if (result.kind !== 'valid' || !['newow', 'free', 'htdy', 'subing'].includes(result.identity.view)) return
-  if (route.query.series_kind === 'continuous' || route.query.view === undefined || route.query.view === 'trend') {
+  if (route.query.series_kind === 'continuous' || route.query.view === undefined) {
     if (route.query.series_kind === 'continuous') migrationNotice.value = '已切换为真实主力序列'
-    if (route.query.view === 'trend' && route.query.series_kind !== 'continuous') {
-      migrationNotice.value = '旧趋势详情已迁移到牛哇趋势策略（1d）；当前页面使用新的牛哇策略身份与公式版本。'
-    }
     const failure = await router.replace({ path: '/market/chart', query: serializeMarketDetailIdentity(result.identity) })
     if (failure) return
   }

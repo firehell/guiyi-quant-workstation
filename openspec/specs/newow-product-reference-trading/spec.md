@@ -173,8 +173,7 @@ restoration failure SHALL invalidate the connection rather than leak uncertain s
 
 Newow 产品 SHALL 以趋势、震荡、主升浪 × `5m / 15m / 30m / 60m / 1d / 1w` 十八个独立组合提供只读主状态、
 主动作、Hint、ReferenceTrade 和乐观参考摘要。这是新的产品能力，不是恢复已退役 Historical Projection、
-账户、策略 Event 或 Runtime。既有 `view=trend` 与 `GET /api/v1/market/newow/trend-detail`
-MUST 保持固定 `actual_dominant + 1d + trend` 兼容语义，并允许薄适配复用同一公式 authority。
+账户、策略 Event 或 Runtime。
 
 本阶段 MUST 与 SuBing 公式、Rule、Scope、Event、PushPlus、进程、launchd、Canonical、生产数据和
 现役 Runtime 隔离；`auto_order=false` 不变。代码、测试或文档通过不能改变 SuBing 自然验收、
@@ -433,7 +432,7 @@ closed/open/interrupted/initial-before-window 计数均不因此增加。之后�
 typed product schema 与 ReferenceTrade model SHALL 分别使用 `newow_product_detail_v2` 和
 `newow_marker_reference_zero_cost_v2`。合同组须参与 cache、dependency proof、chart/reference page identity 与
 ReferenceTrade ID；v2 Web MUST 拒绝 v1 envelope，旧 token/cursor 不得跨版本复用。公式、profile、
-Action/Hint ID、capability/historical 与旧 `/trend-detail` 合同不变；期货输入适配按本合同后续要求升级为
+Action/Hint ID 和 capability/historical 合同保持。期货输入适配按本合同后续要求升级为
 `newow_futures_segment_interrupt_no_trade_v2`。
 
 #### Scenario: The first observed main-rise exit has no entry
@@ -1009,7 +1008,7 @@ wire 模型 MUST 完整传递 delivery、运行/证据/子功能状态、reason�
 repainting、formal-signal eligibility、允许用途、实际图表/统计窗口、reference cutoff、分页身份和输入
 指纹。Decimal 价格与收益 MUST 序列化为十进制字符串或 null；合法零 CLOSED 的聚合指标保持 null。
 顶层 ready 不得掩盖子功能 `evidence_required`，也不得把参考交易资格表达成真实下单授权。
-旧 `/trend-detail` 的参数、profile、marker 和响应语义 MUST 保持不变。未预期内部错误使用固定
+未预期内部错误使用固定
 `500 {"detail":{"code":"NEWOW_INTERNAL_ERROR"}}`，不得返回异常文本、SQL、内部路径、stack 或凭据。
 当前与历史快照端点 SHALL 共用有限公开错误码映射，不得信任任意 `NEWOW_` 前缀的异常文本。
 已知数据不可用返回 409，并可附加 `diagnostic`：有限 `reason`、只含已验证品种/合约/周期/日期/时间/数量的
@@ -1024,8 +1023,7 @@ chart/auxiliary/reference/comparator；语法合法但不在品种范围内的 `
 `NEWOW_PRODUCT_FREQUENCY_NOT_OPEN`，`60m` 返回 `NEWOW_FREQUENCY_NOT_OPEN`，依赖未开放
 跨周期输入的 explanation 返回 `NEWOW_SECTION_NOT_OPEN`。Web 必须严格校验 capability envelope；旧链接和
 存储偏好不得把未开放周期静默改写为已开放周期，而要显示本版未开放并提供明确回到已开放周期的操作。
-该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free，也不改变旧 `/trend-detail` 的固定 D1
-兼容语义。后续 `1w` 或 `60m` 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
+该 stage 不删除 kernel/reader 的三周期能力，不改变 HTDY/SuBing/Free。后续 `1w` 或 `60m` 开放须更新同一 capability 合同、数据验收和发布状态，不能仅解除前端按钮。
 正式日周版使用 `newow_product_capabilities_v22`、`daily_weekly` 声明 `1d/1w`，并携带唯一的
 `weekly_products`。b、bz、cj、eb、eg、j、oi、pf、pg、pk、pl、pr、px、rs、sf、sh、si、sm、sr 在正式周线请求上使用 `newow_weekly_input_quality_v2`，
 原先 41 个正式品种保持 `newow_input_quality_v1`。隔离只读候选可继续使用 `newow_product_capabilities_v4`、

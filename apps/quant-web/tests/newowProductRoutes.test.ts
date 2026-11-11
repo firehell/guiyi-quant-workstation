@@ -27,14 +27,6 @@ function storage(initial: Record<string, string> = {}) {
   }
 }
 
-test('legacy Trend redirects semantically to the unified fixed D1 Newow trend identity', () => {
-  assert.equal(parseMarketDetailRoute({ symbol: 'rb', view: 'trend', frequency: '15m' }).kind, 'invalid')
-  assert.deepEqual(parseMarketDetailRoute({ symbol: 'rb', view: 'trend', frequency: '1d' }), {
-    kind: 'valid',
-    identity: { view: 'newow', symbol: 'rb', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' },
-  })
-})
-
 test('Newow accepts only its three strategies and independent completed periods', () => {
   for (const strategy of ['trend', 'oscillation', 'main_rise'] as const) {
     for (const frequency of ['1w', '1d', '5m', '15m', '30m', '60m'] as const) {
