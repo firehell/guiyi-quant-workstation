@@ -6,6 +6,7 @@ from app.reference_trading.recording_scope import LIVE_FREQUENCIES, FREQUENCIES
 
 from datetime import UTC, date, datetime
 from concurrent.futures import ThreadPoolExecutor
+import re
 
 from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import load_only
@@ -361,13 +362,18 @@ def read_completed_recording_endpoints(session, keys, at, *, session_factory=Non
         # Keep every Canonical page on the detailed report's Catalog snapshot.
         # Group periods by product so each reader can share its mapping.
         snapshot = session.scalar(text("SELECT pg_export_snapshot()"))
+        if not isinstance(snapshot, str) or re.fullmatch(r"[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+", snapshot) is None:
+            raise ValueError("REFERENCE_HEALTH_SNAPSHOT_INVALID")
         products = sorted({product for product, _ in keys})
         shards = [set(products[index::3]) for index in range(3)]
 
         def canonical_shard(products):
-            with session_factory() as worker, readonly_transaction(
-                worker, timeout_seconds=15, snapshot=snapshot,
-            ):
+            with session_factory() as worker, worker.no_autoflush:
+                worker.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
+                # The server-generated identifier must be a literal and must
+                # be imported before any query in the reader transaction.
+                worker.execute(text(f"SET TRANSACTION SNAPSHOT '{snapshot}'"))
+                worker.execute(text("SET LOCAL statement_timeout = '15s'"))
                 return read_completed_canonical_endpoints(
                     worker, tuple(key for key in keys if key[0] in products), at,
                 )

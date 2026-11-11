@@ -2,7 +2,6 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-import re
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,7 +13,7 @@ class ReadOnlyTransactionError(ValueError):
 
 @contextmanager
 def readonly_transaction(
-    session: Session, *, timeout_seconds: int = 300, snapshot: str | None = None,
+    session: Session, *, timeout_seconds: int = 300
 ) -> Iterator[Session]:
     """Require a fresh clean session, forbid autoflush/writes, always rollback."""
     if (
@@ -33,12 +32,6 @@ def readonly_transaction(
             session.execute(
                 text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             )
-            if snapshot is not None:
-                # PostgreSQL requires a literal for this statement. Accept only
-                # identifiers emitted by pg_export_snapshot.
-                if re.fullmatch(r"[0-9A-F]{8}-[0-9A-F]{8}-[0-9]+", snapshot) is None:
-                    raise ReadOnlyTransactionError
-                session.execute(text(f"SET TRANSACTION SNAPSHOT '{snapshot}'"))
             session.execute(
                 text("SELECT set_config('statement_timeout', :timeout, true)"),
                 {"timeout": str(timeout_seconds * 1000)},
@@ -46,8 +39,6 @@ def readonly_transaction(
             if session.scalar(text("SHOW transaction_read_only")) != "on":
                 raise ReadOnlyTransactionError
         elif dialect == "sqlite":
-            if snapshot is not None:
-                raise ReadOnlyTransactionError
             sqlite_state = session.scalar(text("PRAGMA query_only"))
             if sqlite_state not in (0, 1):
                 raise ReadOnlyTransactionError
