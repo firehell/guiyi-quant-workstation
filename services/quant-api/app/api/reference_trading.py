@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from asyncio import gather
+from functools import partial
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
@@ -17,7 +20,10 @@ from app.reference_trading.health import ForwardReferenceHealth, read_completed_
 
 router = APIRouter(prefix="/api/v1/reference-trading", tags=["reference-trading"])
 _query = HistoricalReferenceQuery(SessionLocal)
-_health = ForwardReferenceHealth(SessionLocal, endpoint_reader=read_completed_recording_endpoints)
+_health = ForwardReferenceHealth(
+    SessionLocal,
+    endpoint_reader=partial(read_completed_recording_endpoints, session_factory=SessionLocal),
+)
 
 
 def _keys(request: Request, allowed: frozenset[str]) -> None:
@@ -59,7 +65,7 @@ async def health(request: Request):
         run_in_threadpool(_health.read),
         run_in_threadpool(read_receiving_health, SessionLocal),
     )
-    return {**detail, "receiving": receiving}
+    return JSONResponse({**detail, "receiving": jsonable_encoder(receiving)})
 
 
 @router.get("/health/summary")

@@ -5,8 +5,9 @@ from __future__ import annotations
 from app.reference_trading.recording_scope import LIVE_FREQUENCIES, FREQUENCIES
 
 from datetime import UTC, date, datetime
+from concurrent.futures import ThreadPoolExecutor
 
-from sqlalchemy import and_, case, func, select
+from sqlalchemy import and_, case, func, select, text
 from sqlalchemy.orm import load_only
 from types import SimpleNamespace
 
@@ -327,7 +328,7 @@ def _recording_status(stream, endpoint, observed):
     return "READY"
 
 
-def read_completed_recording_endpoints(session, keys, at):
+def read_completed_recording_endpoints(session, keys, at, *, session_factory=None):
     """Historical publication and Session completion are separate authorities.
 
     The H1 expected endpoint comes from the shared recording seam even if Redis
@@ -337,45 +338,70 @@ def read_completed_recording_endpoints(session, keys, at):
     from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
     from app.redis_connections import get_redis_connection
 
-    result = read_completed_canonical_endpoints(session, keys, at)
+    intraday = tuple(key for key in keys if key[1] in LIVE_FREQUENCIES)
+
+    def completed_observations():
+        if not intraday:
+            return {}
+        redis = None
+        try:
+            redis = get_redis_connection()
+            reader = build_market_read_service(session, redis=redis)
+            return reader.newow_completed_observation_endpoints(
+                tuple(SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, product, BarFrequency(frequency))
+                      for product, frequency in intraday), at,
+            )
+        except Exception:  # Failed Session authority cannot fall back to Canonical.
+            return {}
+        finally:
+            if redis is not None:
+                redis.close()
+
+    if session_factory is not None and session.get_bind().dialect.name == "postgresql":
+        # Keep every Canonical page on the detailed report's Catalog snapshot.
+        # Group periods by product so each reader can share its mapping.
+        snapshot = session.scalar(text("SELECT pg_export_snapshot()"))
+        products = sorted({product for product, _ in keys})
+        shards = [set(products[index::3]) for index in range(3)]
+
+        def canonical_shard(products):
+            with session_factory() as worker, readonly_transaction(
+                worker, timeout_seconds=15, snapshot=snapshot,
+            ):
+                return read_completed_canonical_endpoints(
+                    worker, tuple(key for key in keys if key[0] in products), at,
+                )
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            canonical = executor.map(canonical_shard, filter(None, shards))
+            completed = completed_observations()
+            result = {
+                key: value
+                for shard in canonical
+                for key, value in shard.items()
+            }
+    else:
+        result = read_completed_canonical_endpoints(session, keys, at)
+        completed = completed_observations()
     for value in result.values():
         value["canonical_expected_through"] = value["expected_through"]
-    hourly = tuple(key for key in keys if key[1] in LIVE_FREQUENCIES)
-    if not hourly:
-        return result
-    redis = None
-    try:
-        redis = get_redis_connection()
-        reader = build_market_read_service(session, redis=redis)
-        completed = reader.newow_completed_observation_endpoints(
-            tuple(SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, product, BarFrequency(frequency))
-                  for product, frequency in hourly), at,
-        )
-        for key in hourly:
-            prior = result[key]
-            try:
-                value = completed[(key[0], BarFrequency(key[1]))]
-                if value is None:
-                    raise ValueError("AUTHORITATIVE_ENDPOINT_UNAVAILABLE")
-                end, _day, _contract = value
-                if end is not None:
-                    if end.tzinfo is None or end > at:
-                        raise ValueError("COMPLETE_PERIOD_INVALID")
-                    published = datetime.fromisoformat(prior["expected_through"]) if prior["expected_through"] else None
-                    if published is None or end > published:
-                        result[key] = {"expected_through": end.isoformat(), "expected_source": "completed_live",
-                            "endpoint_status": "READY", "endpoint_reason": None,
-                            "canonical_expected_through": prior["canonical_expected_through"]}
-            except Exception:  # No exception text or alternate source can prove a Session.
-                result[key] = {"expected_through": None, "expected_source": "completed_live",
-                    "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE",
-                    "canonical_expected_through": prior["canonical_expected_through"]}
-    except Exception:
-        for key in hourly:
+    for key in intraday:
+        prior = result[key]
+        try:
+            value = completed[(key[0], BarFrequency(key[1]))]
+            if value is None:
+                raise ValueError("AUTHORITATIVE_ENDPOINT_UNAVAILABLE")
+            end, _day, _contract = value
+            if end is not None:
+                if end.tzinfo is None or end > at:
+                    raise ValueError("COMPLETE_PERIOD_INVALID")
+                published = datetime.fromisoformat(prior["expected_through"]) if prior["expected_through"] else None
+                if published is None or end > published:
+                    result[key] = {"expected_through": end.isoformat(), "expected_source": "completed_live",
+                        "endpoint_status": "READY", "endpoint_reason": None,
+                        "canonical_expected_through": prior["canonical_expected_through"]}
+        except Exception:  # No exception text or alternate source can prove a Session.
             result[key] = {"expected_through": None, "expected_source": "completed_live",
                 "endpoint_status": "UNKNOWN", "endpoint_reason": "AUTHORITATIVE_ENDPOINT_UNAVAILABLE",
-                "canonical_expected_through": result[key].get("canonical_expected_through")}
-    finally:
-        if redis is not None:
-            redis.close()
+                "canonical_expected_through": prior["canonical_expected_through"]}
     return result
