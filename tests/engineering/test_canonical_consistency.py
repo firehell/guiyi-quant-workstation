@@ -142,6 +142,7 @@ RETIRED_MODULE_ATTRIBUTES = {
 ALERT_RULE_CODES = frozenset({"htdy_original_15m", "subing_ths_alert_15m_v1"})
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
 ACTIVE_MARKET_ROUTE_OWNERS = {
+    ("GET", "/api/v1/market/indicators/dynamic-range", "app.api.market:dynamic_range_indicator"),
     ("GET", "/api/v1/market/newow/home-projection", "app.api.market_newow:newow_home_projection"),
     ("GET", "/api/v1/market/newow/experiments", "app.api.market_newow:newow_experiments"),
     (

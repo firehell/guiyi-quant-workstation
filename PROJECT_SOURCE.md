@@ -14,7 +14,7 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 - Web 隐藏主连入口，仅保留真实主力及已有指定合约。旧 `series_kind=continuous` 链接在请求前迁移为真实主力，保留品种、视图与合法周期，清除旧合约及记录定位，替换地址并提示；旧显示偏好只迁移序列。不匹配当前序列的统计不展示。底层 continuous API、行情与内部研究能力保留。
 - Market 首页分为市场与消息 Tab，以独立 bulk 只读资源展示 Runtime health、active completed D1/W1 generic overview、operational completed 1m 报价与 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
 - 首页采用白色全宽卡片列表、期货板块本地筛选与涨跌幅表头三态排序；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。趋势/震荡摘要、日周图标、目标/吸筹与展开后的普通参考收益来自版本化持久投影，首页交互不回放策略；源更新后预计算，缺失/失败保留明确状态。增仓率不能解释为做多。
-- 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页；原研究观察折叠入口移除。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
+- 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
@@ -102,7 +102,6 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 
 - EMA、MACD、ATR 与 Range Detector 是通用指标，不拥有策略、下单或 Alert 语义。
 - EMA21 斜率只保留 10K primitive：输入恰好 10 个 EMA21 值，以首尾差除以 9 个 bar interval，再除以当前 EMA21，输出 bps/bar。
-- 不保留 Daily Watch 大方向过滤，也不保留 5m/15m 正式因子。
 - Range Detector 只允许 `range_detector_readonly_display`，不能作为正式策略、Alert 或 Runtime 输入。
 - 自由看盘可选“震荡／趋势”研究显示（30m/1d），使用独立 `subing_dynamic_range_v1`；完整物理前缀计算、逐根不可回写边界，仅 Historical Canonical，Live 未归档部分留空。向左分页校验来源后补充历史点，不作为正式入场过滤器；合同见 [震荡因子](docs/research/subing-range-factor.md)。
 
@@ -151,12 +150,6 @@ RQData -> staging + hard validation -> Canonical Parquet
 
 稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simulation/monitor/*` 及独立只读 `/api/v1/research/new-subing/*`、`/api/v1/research/newow-futures/*`。
 统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 为 `data`、`runtime`、`reference` 与 `home`。`reference` 提供精确计划及 build/advance/rebuild/resume，`home build` 显式构建首页派生投影；写入边界仍遵守各自合同。新苏冰离线研究使用上文专用脚本，不恢复退役研究产品。
-
-## Retired surface
-
-全部既有策略域（包括 `subing_strategy_v1` 及其 Daily Watch、5m/15m 因子、Historical Projection、Current State、Formal Event、Runtime、Scope、CLI、API、Web 和派生 cache）均退出 active 产品面。新 SuBing Alert 是新身份、新合同和新版本，不恢复或复用旧策略实现。旧身份只允许存在于不可变 Git/Alembic lineage、0043 删除迁移的断言和 `STATUS.md` 的真实未迁移生产事实中。
-
-Attention、Trend Focus、Main Force Mirror、Five-Candidate phase assets、N Structure、Multi-Candidate Robustness、RQAlpha 与 Execution Review 同样不属于 active 产品、API、CLI、Web 或 Runtime。
 
 ## 模拟交易
 
