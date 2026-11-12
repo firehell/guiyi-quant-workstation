@@ -649,6 +649,12 @@ class ReferenceRepository:
                 raise RepositoryConflict("STREAM_NOT_FOUND")
             if stream.row_version != expected_row_version:
                 raise RepositoryConflict("STALE_CHECKPOINT")
+            if (
+                stream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value
+                and stream.activation_generation != 0
+            ):
+                # Forward renewal must move the activation receipt and revision together.
+                raise RepositoryConflict("FORWARD_ACTIVATION_REQUIRED")
             revision = session.execute(select(ReferenceRevision).where(
                 ReferenceRevision.stream_id == stream_id,
                 ReferenceRevision.revision_id == revision_id,
