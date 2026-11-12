@@ -17,6 +17,8 @@ from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from test_forward_capture import _active
 from test_activation import NOW
 from test_inbox import event
+from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
+from tests.reference_trading.test_newow_worker_recovery import forward_postgresql  # noqa: F401
 
 
 def fixture(engine=None, *, frequency="1d"):
@@ -304,7 +306,7 @@ def test_normal_later_disable_preserves_verified_historical_recovery():
     assert inbox.health()["recovered_calculation_count"] == 1
 
 
-def _exercise_one_gap_bridge(engine=None):
+def _exercise_one_gap_bridge(engine=None, *, two_gaps=False):
     from hashlib import sha256
     from app.reference_trading.bounded_recovery import BoundedForwardRecovery
     from app.reference_trading.forward_service import ForwardReferenceService
@@ -338,10 +340,25 @@ def _exercise_one_gap_bridge(engine=None):
             token, cp, evidence, dependency_manifest={"source": "fixture"}
         ),
     ).process_pending(first.capture.stream_id)
+    generation = 2
+    if two_gaps:
+        missing = (NOW + timedelta(seconds=9),)
+        gap = bounded.plan(
+            first.capture.stream_id, endpoints=missing, trading_day=original.trading_day,
+            observed_at=NOW + timedelta(seconds=21), expires_at=NOW + timedelta(seconds=50),
+            journal_proof={"kind": "SERVICE_OUTAGE", "sealed_source": "second-isolated"},
+        )
+        bounded.apply(gap, expected_plan_hash=gap.plan_hash, now=NOW + timedelta(seconds=21))
+        ForwardReferenceService(
+            repo, lambda token, cp, evidence: evaluate_observation_gap(
+                token, cp, evidence, dependency_manifest={"source": "fixture"},
+            ),
+        ).process_pending(first.capture.stream_id)
+        generation = 3
     raw = _bar_from_payload(json.dumps(original.data))
     capture = replace(
         first.capture,
-        generation=2,
+        generation=generation,
         source_key="RB2610:" + raw.bar_end.isoformat(),
         bar_end=raw.bar_end,
         observed_at=original.confirmed_at,
@@ -388,7 +405,7 @@ def _exercise_one_gap_bridge(engine=None):
                 "forward_capture_v1": {
                     "capture_id": evidence["capture_id"],
                     "hash": proof["hash"],
-                    "generation": 2,
+                    "generation": generation,
                 },
                 "presentation_v1": envelope([]),
             },
@@ -403,7 +420,7 @@ def _exercise_one_gap_bridge(engine=None):
         old = db.get(ReferenceInboxDelivery, identifier)
         assert old.generation == 1 and old.status == "BLOCKED"
         result = db.get(ReferenceInboxRecoveryResult, identifier)
-        assert result.target_generation == 2
+        assert result.target_generation == generation
     assert inbox.next_heads() == ()
     return factory, inbox, recovery, plan
 
@@ -634,3 +651,28 @@ def test_closure_validation_projects_only_required_batch_evidence():
     assert all(not re.search(r"(?:SELECT |,\s+)reference_batches\.source_evidence(?:,| AS)", statement)
                and "reference_batches.dependency_manifest" not in statement
                for statement in statements)
+
+
+def test_two_proven_gaps_bridge_same_frozen_original_without_rewriting_it():
+    _exercise_one_gap_bridge(two_gaps=True)
+
+
+@pytest.mark.isolated_postgresql
+@pytest.mark.parametrize("drift", ["predecessor_hash", "early_disable"])
+def test_two_gap_bridge_postgresql_readback_rejects_drift_in_middle_receipt(
+    forward_postgresql, drift,  # noqa: F811
+):
+    from app.reference_trading.models import ReferenceActivationReceipt
+
+    factory, _, recovery, plan = _exercise_one_gap_bridge(forward_postgresql, two_gaps=True)
+    with factory() as session, session.begin():
+        middle = session.scalar(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id == plan.capture.stream_id,
+            ReferenceActivationReceipt.generation == 2,
+        ))
+        if drift == "predecessor_hash":
+            middle.budget = {**middle.budget, "previous_receipt_sha256": "0" * 64}
+        else:
+            middle.disabled_at = middle.activated_at
+    with pytest.raises(ValueError, match="REFERENCE_INBOX_RECOVERY_UNPROVEN"):
+        recovery.readback(plan)
