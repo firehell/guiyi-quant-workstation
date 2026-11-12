@@ -372,6 +372,8 @@ class Controller:
             ):
                 raise ValueError("TQ_DISPATCH_FACT_DRIFT")
             if not state.readback.at <= at < state.readback.valid_until:
+                if effect.kind == "SUBMIT" and at >= state.readback.valid_until:
+                    raise SubmissionNotSent("TQ_SUBMIT_EXPIRED_NO_SEND")
                 raise ValueError("TQ_ACCOUNT_STALE")
             if not fact.session.at <= at < fact.session.valid_until:
                 raise ValueError("TQ_SESSION_STALE")

@@ -1158,17 +1158,21 @@ def test_final_submit_deadline_includes_opening_cutoff(tmp_path):
     c.close()
 
 
-@pytest.mark.parametrize("after_claim", [False, True])
-def test_local_quote_rejection_aborts_proposal_without_sending(tmp_path, after_claim):
+@pytest.mark.parametrize("rejection", ["quote_expired", "price_drift", "account_expired"])
+def test_local_submission_rejection_aborts_proposal_without_sending(tmp_path, rejection):
     from guiyi_quant.tq_simulation.gateway import SubmissionNotSent
 
     c, now = live_controller(tmp_path)
     f = fact(now)
-    if after_claim:
+    if rejection == "price_drift":
         def reject(_symbol, _order, _offset, native, _deadline):
             raise SubmissionNotSent("TQ_OPPONENT_PRICE_DRIFT", native_id=native)
         c.gateway.submit_checked = reject
         c.clock = lambda: now
+    elif rejection == "account_expired":
+        # The dispatch clock is sampled under the store transaction.
+        expired_at = c.store.current().readback.valid_until
+        c.clock = lambda: expired_at
     else:
         f = replace(f, quote=replace(f.quote, valid_until=now + timedelta(seconds=1)))
         c.clock = lambda: f.quote.valid_until
@@ -1177,20 +1181,22 @@ def test_local_quote_rejection_aborts_proposal_without_sending(tmp_path, after_c
     assert order.order_id == tx.effects[0].order.order_id
     assert order.status == "LOCAL_ABORTED" and order.reconciled
     assert c.store.current().phase == "READY"
-    assert len(c.journal.mappings()) == int(after_claim)
+    assert len(c.journal.mappings()) == int(rejection == "price_drift")
     assert len(c.journal.events("local_not_sent")) == 1
     assert not c.journal.events("queued")
     c.close()
 
 
-def test_restart_finishes_recorded_unsent_before_missing_claim_check(tmp_path):
+@pytest.mark.parametrize("account_expired", [False, True])
+def test_restart_finishes_recorded_unsent_before_missing_claim_check(tmp_path, account_expired):
     from guiyi_quant.tq_simulation.gateway import SubmissionNotSent
 
     c, now = live_controller(tmp_path)
     def reject(_symbol, _order, _offset, native, _deadline):
         raise SubmissionNotSent("TQ_OPPONENT_PRICE_DRIFT", native_id=native)
     c.gateway.submit_checked = reject
-    c.clock = lambda: now
+    dispatch_at = c.store.current().readback.valid_until if account_expired else now
+    c.clock = lambda: dispatch_at
     execute = c.store.execute
     def interrupted(key, command, **options):
         if isinstance(command, m.AbortUnsent):
@@ -1208,6 +1214,6 @@ def test_restart_finishes_recorded_unsent_before_missing_claim_check(tmp_path):
     rb = c.synchronize(snapshot(observed), observed)
     c.recover(rb, ())
     assert c.store.current().orders[-1].status == "LOCAL_ABORTED"
-    assert len(c.journal.mappings()) == 1
+    assert len(c.journal.mappings()) == int(not account_expired)
     assert not c.gateway.calls
     c.close()

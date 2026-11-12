@@ -29,6 +29,9 @@ from ..htdy_account_execution import codec, model as m
 from ..htdy_account_execution.scheduling import execution_candidates
 
 
+_ACCOUNT_DISPATCH_HEADROOM = timedelta(seconds=1)
+
+
 def verify_config(config):
     if (
         set(config) != {"schema", "provider", "account_id", "root", "commit", "tag"}
@@ -521,14 +524,22 @@ def run(config_path, *, inspect=False):
                                       for p in state.products)
                         if inputs or cleanup:
                             # A synchronous SDK quote/margin lookup can also
-                            # advance account facts. Reconcile only on drift.
+                            # advance account facts or exhaust the dispatch window.
+                            # The next execution pass refreshes the readback and inputs.
                             checked_at = datetime.now(UTC)
                             checked = gateway.snapshot(checked_at)
                             if gateway.reconnection_required:
                                 require_recovery(controller, checked_at)
                             elif checked["snapshot_id"] != snapshot["snapshot_id"]:
                                 controller.synchronize(checked, checked_at)
-                            elif state.phase == "READY":
+                            elif (
+                                state.phase == "READY"
+                                and (
+                                    cleanup
+                                    or any(not order.reconciled for order in state.orders)
+                                    or checked_at + _ACCOUNT_DISPATCH_HEADROOM < state.readback.valid_until
+                                )
+                            ):
                                 controller.tick(
                                     inputs,
                                     checked_at,
