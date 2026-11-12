@@ -437,7 +437,7 @@ class SavedForwardFusionSources:
     def __init__(self, session_factory):
         self._session_factory = session_factory
 
-    def __call__(self, identity, *, revision_id, generation, after, now):
+    def __call__(self, identity, *, revision_id, generation, after, now, inbox_window=None):
         from sqlalchemy import select
         from app.reference_trading.models import ReferenceBatch, ReferenceStream
         from app.reference_trading.repository import _identity_from_row, _aware
@@ -479,6 +479,12 @@ class SavedForwardFusionSources:
                 )
                 if after is not None:
                     query = query.where(committed.computed_through > after)
+                if inbox_window is not None:
+                    recording_start, event_end = inbox_window
+                    query = query.where(
+                        committed.computed_through >= recording_start,
+                        committed.computed_through <= event_end,
+                    )
                 pair = session.execute(
                     query.order_by(
                         committed.computed_through,
@@ -508,6 +514,13 @@ class SavedForwardFusionSources:
                     }
                 ):
                     raise ForwardInputUnavailable("REFERENCE_FUSION_SOURCE_NOT_READY")
+                if inbox_window is not None and (
+                    _aware(calculation.computed_through) != event_end
+                    or base["eligibility"] == "gap_recovery"
+                ):
+                    # Keep the earliest in-scope dependency as a fence. An
+                    # interruption or a different Bar cannot complete this original.
+                    return None
                 points = require_envelope(
                     calculation.source_evidence.get("presentation_v1")
                 )
