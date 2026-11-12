@@ -20,6 +20,8 @@ from guiyi_quant.newow.product_identity import InputQualityPolicy, build_calcula
 from guiyi_quant.reference_trading import RecordingMode, ReferenceState
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
 from test_newow_forward import _capture
+from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
+from tests.reference_trading.test_newow_worker_recovery import forward_postgresql  # noqa: F401
 
 
 def sources(frequency="1d", *, policy=InputQualityPolicy.V1, gap_offset=None):
@@ -177,7 +179,12 @@ def test_fusion_rejects_conflicting_base_proof(field):
         )
 
 
-def test_saved_forward_sources_wait_for_both_durable_calculations_and_reject_broken_link():
+@pytest.mark.parametrize("frequency", [
+    "1d", pytest.param("60m", marks=pytest.mark.isolated_postgresql),
+])
+def test_saved_forward_sources_wait_for_both_durable_calculations_and_reject_broken_link(
+    frequency, request,
+):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from app.db.base import Base
@@ -192,16 +199,20 @@ def test_saved_forward_sources_wait_for_both_durable_calculations_and_reject_bro
     from guiyi_quant.newow.product_adapters import seed_replay_state
     from guiyi_quant.reference_trading import StreamIdentity
 
-    engine = create_engine("sqlite+pysqlite:///:memory:")
+    engine = (
+        request.getfixturevalue("forward_postgresql")
+        if frequency == "60m" else create_engine("sqlite+pysqlite:///:memory:")
+    )
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     repo = ReferenceRepository(factory)
-    case, dependencies = sources()
+    case, dependencies = sources(frequency)
+    source_kind = "completed_live" if frequency == "60m" else "canonical_completed"
     start = case.bars[0].bar.bar_end
     now = start + timedelta(minutes=1)
     fusion = build_fusion_stream_identity(
         "rb",
-        "1d",
+        frequency,
         recording_mode="forward_observation",
         observation_policy_version="completed_observation_v1",
     )
@@ -240,7 +251,7 @@ def test_saved_forward_sources_wait_for_both_durable_calculations_and_reject_bro
             plan, expected_plan_hash=plan.plan_hash, now=start - timedelta(seconds=1)
         )
         base_capture = _capture(stream, case.bars[0])
-        base_capture = replace(base_capture, revision_id=revision)
+        base_capture = replace(base_capture, revision_id=revision, source_kind=source_kind)
         captured_ids.append(repo.capture_forward(base_capture))
         service = ForwardReferenceService(
             repo,
@@ -278,7 +289,7 @@ def test_saved_forward_sources_wait_for_both_durable_calculations_and_reject_bro
     for stream, revision, service in active_sources:
         item = _capture(stream, next_bar)
         repo.capture_forward(replace(
-            item, revision_id=revision,
+            item, revision_id=revision, source_kind=source_kind,
             source_proof={**item.source_proof, "previous_watermark": start.isoformat()},
         ))
         service.process_pending(stream.stream_id)
