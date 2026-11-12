@@ -67,6 +67,13 @@ SHALL expose it separately from the last completed Bar.
 - **AND** `RECOVERY_PENDING` returns to `READY` only in the transaction that commits and consumes that receipt-bound interruption under the current revision, generation and checkpoint token, with no remaining pending capture or current source conflict; rollback and unrelated health states never grant readiness
 - **AND** no journal cursor is skipped and no missing Bar or notification is manufactured
 
+#### Scenario: A frozen original survives consecutive explicit interruptions
+
+- **WHEN** the same active revision has advanced through multiple bounded recovery generations before its next frozen Inbox original
+- **THEN** recovery SHALL verify each adjacent receipt and consumed interruption in generation order, with strictly increasing boundary endpoints and calculation sequences before the original
+- **AND** the recovery result SHALL retain the original delivery identity and its activation receipt
+- **AND** a missing, disabled-before-renewal or altered intermediate receipt or calculation SHALL block both admission and readback
+
 #### Scenario: Completed journal consumption after Live cleanup
 
 - **WHEN** an original retained completed envelope is consumed after Live cache/subscription cleanup or
