@@ -8,8 +8,6 @@ import re
 import stat
 from urllib.parse import quote
 
-from app.market_data.rqdata_adapter import RQDATA_PROVIDER_SETTINGS
-
 class PrivateSettingsError(ValueError):
     """Never include file contents or credentials in public failures."""
     def __init__(self, code: str = "PROJECT_ENV_UNSAFE") -> None:
@@ -19,9 +17,9 @@ class PrivateSettingsError(ValueError):
 _DEPENDENCY_SETTINGS = {
     "DATABASE_URL", "POSTGRES_PASSWORD", "REDIS_URL", "REDIS_PASSWORD",
     "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_LIVE_RECOVERY_ENABLED",
-} | RQDATA_PROVIDER_SETTINGS
+}
 
-_DEPENDENCY_SOURCE_SETTINGS = _DEPENDENCY_SETTINGS | {
+_DEPENDENCY_SOURCE_SETTINGS = {
     "POSTGRES_DB", "POSTGRES_PORT", "POSTGRES_USER", "REDIS_PORT",
 }
 
@@ -98,14 +96,18 @@ def literal_settings(
 
 def runtime_dependency_settings(content: bytes) -> dict[str, str]:
     """Extract only the existing Runtime dependency settings from project.env."""
+    from app.market_data.rqdata_adapter import RQDATA_PROVIDER_SETTINGS
+
+    dependencies = _DEPENDENCY_SETTINGS | RQDATA_PROVIDER_SETTINGS
+    allowed = _DEPENDENCY_SOURCE_SETTINGS | dependencies
     parsed = literal_settings(
         content,
-        dependency_sources=_DEPENDENCY_SOURCE_SETTINGS,
+        dependency_sources=allowed,
         discarded_settings=_CLOSEOUT_IGNORED_SETTINGS | _RETIRED_INERT_SETTINGS,
     )
-    if parsed.keys() - _DEPENDENCY_SOURCE_SETTINGS:
+    if parsed.keys() - allowed:
         raise ValueError
-    return {key: value for key, value in parsed.items() if key in _DEPENDENCY_SETTINGS}
+    return {key: value for key, value in parsed.items() if key in dependencies}
 
 def read_private_settings_content(path: Path) -> bytes:
     try:
