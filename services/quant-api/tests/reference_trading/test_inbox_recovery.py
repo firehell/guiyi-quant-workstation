@@ -202,7 +202,8 @@ def test_failed_calculation_never_resolves_or_skips_original():
         )
     with factory() as db:
         assert db.scalar(select(ReferenceInboxRecoveryResult)) is None
-    assert inbox.next_heads()[0].delivery_id == plan.delivery_id
+    assert inbox.pending_head(plan.capture.stream_id).delivery_id == plan.delivery_id
+    assert inbox.next_heads() == ()
 
 
 def test_recovery_rejects_fence_or_frozen_original_drift_and_wrong_plan_hash():
@@ -264,7 +265,8 @@ def test_fence_loss_during_projection_rolls_back_calculation_and_resolution():
         )
     with factory() as db:
         assert db.scalar(select(ReferenceInboxRecoveryResult)) is None
-    assert inbox.next_heads()[0].delivery_id == plan.delivery_id
+    assert inbox.pending_head(plan.capture.stream_id).delivery_id == plan.delivery_id
+    assert inbox.next_heads() == ()
 
 
 def test_unknown_attempt_is_consumed_and_cannot_retry_or_replan():

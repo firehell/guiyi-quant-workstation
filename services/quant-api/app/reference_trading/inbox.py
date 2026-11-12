@@ -439,8 +439,12 @@ class ReferenceInboxRepository:
                 ReferenceStream.enabled.is_(True),
                 ReferenceInboxDelivery.status != "COMPLETED",
                 ReferenceInboxDelivery.delivery_id.not_in(resolved)).subquery()
+            # Rank before excluding terminal heads so later observations on
+            # the same stream cannot overtake unresolved delivery evidence.
             query = select(ReferenceInboxDelivery).join(rank,
-                rank.c.delivery_id == ReferenceInboxDelivery.delivery_id).where(rank.c.position == 1)
+                rank.c.delivery_id == ReferenceInboxDelivery.delivery_id).where(
+                rank.c.position == 1,
+                ReferenceInboxDelivery.status.not_in(("BLOCKED", "UNKNOWN")))
             if after_stream_id is not None:
                 query = query.order_by(case((ReferenceInboxDelivery.stream_id > after_stream_id, 0), else_=1))
             query = query.order_by(ReferenceInboxDelivery.stream_id).limit(limit)
