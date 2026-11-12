@@ -1420,6 +1420,7 @@ def test_closeout_writer_terminal_sha_rebinds_same_runtime_binding(target):
 
 def test_binding_accepts_known_inert_legacy_settings_without_exposing_them(target):
     inert_names = (
+        "GUIYI_NEWOW_FUTURES_RESULTS_ROOT",
         "APP_ENV", "APP_PORT", "APP_SECRET_KEY", "BACKTEST_DATA_PATH", "BACKTEST_MAX_WORKERS",
         "BACKTEST_RESULT_PATH", "GUIYI_AFTER_MARKET_ARCHIVE_ENABLED",
         "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_HASH", "GUIYI_AFTER_MARKET_AUTOMATION_APPROVAL_PACKET",
@@ -1472,7 +1473,6 @@ def test_binding_rejects_duplicate_ignored_setting(target):
 def test_binding_drops_active_settings_that_closeout_does_not_consume(target):
     ignored_names = (
         "CORS_ORIGINS", "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH", "GUIYI_MARKET_HOME_PROJECTION_ENABLED",
-        "GUIYI_NEWOW_FUTURES_RESULTS_ROOT",
         "VITE_API_BASE_URL", "VITE_MARKET_WS_URL", "VITE_PROXY_API_TARGET",
         "VITE_PROXY_WS_TARGET",
     )

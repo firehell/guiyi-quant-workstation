@@ -63,7 +63,7 @@
 - `output/jm-paper-first-three-20261011/execution-facts-v2.json`：捕获于2026-10-11T14:47:35.217528+00:00；SHA256 `b15ec9ad682f0ce6f7d40749bc395f8bf2269935235c0900b50aa87316785d5e`。
 - `output/newow-futures-bidir-v1-20261020-evidence/facts-attempt-001/jm.json`：捕获于2026-10-20T16:06:37.588473+00:00；SHA256 `86bf8ec9c0da6e284325ff0a94000798223828d844ddfd11bef8af13d9a7b715`。
 
-较新JM快照由[期货双向研究验收](newow-futures-bidir-v1-20261021.md)追溯，provider计划身份为`24c2084af7a85fb3b390a0230d251bf22b4f62c193aac2a0faab2de71c46a793`，同目录`provider-plan.json`与快照plan_hash一致。它扩大了此前只找到2025-10-13～2026-10-09快照时的覆盖判断。本轮未重新请求provider，也不声称已穷尽磁盘上未登记/未追溯的任意文件。
+较新JM快照由历史采集记录追溯，provider计划身份为`24c2084af7a85fb3b390a0230d251bf22b4f62c193aac2a0faab2de71c46a793`，同目录`provider-plan.json`与快照plan_hash一致。它扩大了此前只找到2025-10-13～2026-10-09快照时的覆盖判断。本轮未重新请求provider，也不声称已穷尽磁盘上未登记/未追溯的任意文件。
 
 ## 换月退出事实
 

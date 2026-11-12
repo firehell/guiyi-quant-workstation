@@ -82,7 +82,7 @@ class HtdyRecoverySource:
             market.assert_window_current(window)
             actual = sha256(
                 json.dumps(
-                    [_bar_wire(b) for b in window.bars],
+                    [_bar_wire(b) for b in (*window.bars[:-1], bar)],
                     sort_keys=True,
                     separators=(",", ":"),
                 ).encode()

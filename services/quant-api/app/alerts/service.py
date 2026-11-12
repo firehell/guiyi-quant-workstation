@@ -97,44 +97,6 @@ class AlertService:
         rules = self._session.scalars(select(AlertRule).order_by(AlertRule.rule_code)).all()
         return tuple(self._state(rule, normalized) for rule in rules)
 
-    def set_product_frequency_enabled(
-        self,
-        rule_code: str,
-        symbol: str,
-        frequency: str,
-        enabled: bool,
-    ) -> ProductAlertRuleState:
-        normalized_symbol = self._require_operational_symbol(symbol)
-        rule = self._rule_by_code(rule_code, for_update=True)
-        if not rule.enabled:
-            raise AlertScopeError("ALERT_SCOPE_RULE_DISABLED")
-        definition = _definition(rule.rule_code)
-        normalized_frequency = str(frequency).strip()
-        if normalized_frequency not in definition.input_frequencies:
-            raise AlertScopeError("ALERT_SCOPE_FREQUENCY_INVALID")
-        scope = self._normalized_frequency_scope(rule, definition)
-        current = set(scope.get(normalized_symbol, ()))
-        if enabled:
-            current.add(normalized_frequency)
-        else:
-            current.discard(normalized_frequency)
-        if current:
-            scope[normalized_symbol] = tuple(
-                value for value in definition.input_frequencies if value in current
-            )
-        else:
-            scope.pop(normalized_symbol, None)
-        rule.scope_product_frequencies = {
-            key: list(values) for key, values in sorted(scope.items())
-        }
-        try:
-            self._session.commit()
-            self._session.refresh(rule)
-        except SQLAlchemyError:
-            self._session.rollback()
-            raise AlertScopeError("ALERT_SCOPE_PERSIST_FAILED") from None
-        return self._state(rule, normalized_symbol)
-
     def rule_allows_event(self, rule: AlertRule, *, symbol: str, frequency: str) -> bool:
         normalized = self._require_operational_symbol(symbol)
         definition = _definition(rule.rule_code)
@@ -365,19 +327,6 @@ class AlertService:
         if limit is not None:
             statement = statement.limit(limit)
         return tuple(self._session.scalars(statement).all())
-
-    def _rule_by_code(self, rule_code: str, *, for_update: bool = False) -> AlertRule:
-        normalized = str(rule_code or "").strip()
-        _definition(normalized)
-        statement = select(AlertRule).where(AlertRule.rule_code == normalized)
-        if for_update:
-            statement = statement.with_for_update().execution_options(
-                populate_existing=True
-            )
-        rule = self._session.scalar(statement)
-        if rule is None:
-            raise AlertRuleNotFoundError()
-        return rule
 
     def _event_by_identity(
         self, *, rule_id: int, symbol: str, frequency: str, bar_end: datetime

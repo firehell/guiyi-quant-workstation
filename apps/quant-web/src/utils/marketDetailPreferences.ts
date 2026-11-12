@@ -87,7 +87,7 @@ export function replaceHtdyDetailPreferences(
 
 export function replaceNewowDetailPreferences(
   current: MarketDetailPreferences,
-  newow: { strategy: unknown; frequency: unknown; strategyModel?: unknown; newowTest?: unknown; newowMode?: unknown },
+  newow: { strategy: unknown; frequency: unknown; newowTest?: unknown; newowMode?: unknown },
 ): MarketDetailPreferences {
   return { ...current, newow: normalizeNewow(newow) }
 }
@@ -149,7 +149,6 @@ function normalizeNewow(value: unknown): MarketDetailPreferences['newow'] {
     strategy: typeof value.strategy === 'string' && NEWOW_STRATEGY_SET.has(value.strategy)
       ? value.strategy as NewowStrategy
       : 'trend',
-    ...(value.strategyModel === 'futures_bidir_v1' ? { strategyModel: 'futures_bidir_v1' as const } : {}),
     ...(value.strategy === 'oscillation' && typeof value.newowTest === 'string' && ['osc-test','osc-test2','osc-test3','osc-test4','osc-test5'].includes(value.newowTest)
       ? { newowTest: value.newowTest as MarketDetailViewRestore['newow']['newowTest'] } : {}),
     ...(value.strategy === 'trend' && value.newowMode === 'dual' ? {newowMode:'dual' as const} : {}),

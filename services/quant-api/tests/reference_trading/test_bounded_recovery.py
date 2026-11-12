@@ -124,12 +124,14 @@ def test_preimage_or_authority_drift_rolls_back_without_activation_change():
     assert repo.read_pending_capture(identity.stream_id) is None
 
 
-def test_entire_journal_keeps_already_acked_original_and_only_absence_is_gap():
+@pytest.mark.parametrize("product", ("rb", "RB"))
+def test_entire_journal_keeps_already_acked_original_and_only_absence_is_gap(product):
     from app.reference_trading.journal_recovery import JournalRecoveryAuthority
     _, _, identity, _, start, _, _ = _setup(frequency='60m')
     earliest = _envelope(identity, start)
     following = _envelope(identity, start, end=start+timedelta(seconds=8))
     following = replace(following, stream_id='3-0', observation_id='following')
+    identity = replace(identity, product=product)
     missing_end = start+timedelta(seconds=2)
     rows = [('1-0', {'envelope':earliest.to_json()}), ('3-0', {'envelope':following.to_json()})]
     calls = []

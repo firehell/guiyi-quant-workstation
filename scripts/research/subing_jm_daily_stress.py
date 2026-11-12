@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 
 from guiyi_quant.subing_jm_daily import DailyModel, VERSIONS, entry_risk, wire, digest
-from scripts.research.newow_futures_execution_facts import read_json, safe_path
+from scripts.research.execution_fact_files import read_json, safe_path
 
 SCENARIOS = ('baseline', 'double_commission', 'double_slippage')
 

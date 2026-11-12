@@ -135,7 +135,10 @@ def capture_htdy_live(
     )
     if not owner_id or not calculation_id:
         raise ForwardInputUnavailable("OWNER_UNAVAILABLE")
-    bars = [_bar_wire(bar) for bar in window.bars]
+    # Equality proves the market tail, but Decimal scale can differ from the
+    # original. Bind the capture and window hash to the original encoding.
+    context = (*window.bars[:-1], latest) if observation is not None else window.bars
+    bars = [_bar_wire(bar) for bar in context]
     window_hash = sha256(json.dumps(bars, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     return ForwardCapture(
         stream_id=identity.stream_id, revision_id=revision_id, generation=generation,

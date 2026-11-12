@@ -477,23 +477,6 @@ test('invalid identity fails closed and only recovers after an explicit click', 
   expect(new URL(page.url()).searchParams.get('frequency')).toBe('15m')
 })
 
-test('legacy Trend route migrates once into the unified Newow trend identity', async ({ page }) => {
-  await mockMarketDetail(page)
-  await page.route('**/api/v1/market/newow/strategy-detail**', route => route.abort('blockedbyclient'))
-  await page.goto('/market/chart?symbol=jm&view=trend&focus_bar_end=2026-09-03T07%3A00%3A00Z')
-
-  await expect.poll(() => new URL(page.url()).searchParams.get('view')).toBe('newow')
-  const route = new URL(page.url())
-  expect(Object.fromEntries(route.searchParams)).toEqual({
-    symbol: 'jm', view: 'newow', strategy: 'trend', series_kind: 'actual_dominant',
-    frequency: '1d', focus_bar_end: '2026-09-03T07:00:00Z',
-  })
-  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('market-detail-migration-notice')).toContainText('旧趋势详情已迁移到牛哇趋势策略')
-  await expect(page.locator('[data-detail-workspace="trend"]')).toHaveCount(0)
-  await expect(page.getByTestId('newow-trend-chart-stage')).toHaveCount(0)
-})
-
 test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', { tag: '@contract-alignment' }, async ({ page }) => {
   const requests = await mockDetailDailyQuote(page, {
     alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],

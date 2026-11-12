@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from scripts.research.newow_futures_execution_facts import read_json, safe_path
+from scripts.research.execution_fact_files import read_json, safe_path
 from guiyi_quant.subing_jm_daily import DailyModel, digest
 
 

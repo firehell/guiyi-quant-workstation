@@ -23,7 +23,6 @@ Web源码消费链、后端/CLI注册与显式功能开关。源码检查不证�
 | SimNow有界一次性执行/人工一手往返 | `scripts/broker/simnow_controlled.py`、`simnow_manual_roundtrip.py` | 有显式execute、时间/次数/手数限制；不是Web下单入口，也不是无人值守实盘交易能力。 |
 | JM Paper账户与Ledger重放 | `packages/quant-core/guiyi_quant/paper/`、`scripts/research/jm_paper.py`；[Paper合同](../PAPER_PILOT.md) | 独立离线CLI，run为历史重放；不等于持续Paper或交易Shadow。 |
 | 新苏冰历史研究页 | `apps/quant-web/src/app/router.ts`、`pages/research/NewSubingPage.vue` | `/research/new-subing`已注册；Market布局隐藏侧栏，默认三Tab没有该入口，需直接URL。结果供给还依赖显式结果根。 |
-| 牛哇期货双向研究模式 | `apps/quant-web/src/utils/newowFutures.ts`、`MarketDetailViewNav.vue` | `strategy_model=futures_bidir_v1`显式选择；普通URL仍默认原版。研究结果与页面参考/账户分开。 |
 | 牛哇完整explanation | `services/quant-api/app/market_data/newow/product_release.py`、`NewowProductWorkspace.vue` | 完整section仍deferred；独立decision_v2和AI分析入口不能证明完整解释已经开放。 |
 | 牛哇1m策略产品 | `apps/quant-web/src/utils/marketDetailRoute.ts`；[产品边界](../../PROJECT_SOURCE.md) | 通用行情/聚合输入有1m，Newow策略入口不支持1m；不能称已实现完整Newow 1m策略。 |
 | Web主连 | `marketDetailRoute.ts`；[产品边界](../../PROJECT_SOURCE.md) | 页面隐藏continuous并迁移旧URL；底层行情API/内部研究能力保留。 |

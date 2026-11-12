@@ -8,7 +8,6 @@
 |---|---|---|
 | 行情事实 | HistoricalDataManager 维护；MarketDataService 读取 Canonical/Catalog/rank1 | 策略、参考交易、账户 |
 | 策略计算 | quant-core 纯内核；Newow/SuBing/HTDY adapter 绑定输入身份 | Web 状态、DB/Redis、通知 |
-| 期货双向研究 | 独立newow_futures纯规则/参考/分层模型；MDS输入、单次facts采集及CLI冻结结果；SHA索引只读API交付详情页显式模式 | 改写牛哇parity、生产账户/账本、持续Paper/Runtime、通知、Broker |
 | 参考交易 | 纯投影；统一 ReferenceTrading 的历史重算/前向观察仓储与查询 | Order、Fill、Position、PnL |
 | API/Web | app.main 的注册路由；Market 两条页面路由和统一详情控制器 | 重新算公式、配对交易或自选行情事实 |
 | Runtime/Alert | runtime_entry 与既有监督服务；Event 持久化后 one-shot transport | 自行扩大 Scope、重放通知或晋升策略 |
@@ -102,14 +101,14 @@ flowchart LR
 - 默认关闭的 `app.preview` 只组合 Market/Newow routers、SuBing 历史 reference GET 与共享 read-only transaction，固定 code SHA / cutoff；不导入正常 app 或创建 Live/Alert/EOD/provider。候选 Web 精确白名单代理到 8010，只有既有 health/current-events 两项 GET 到受监督的 8000，并显示独立来源与时间口径；启动入口与 fixture 验证见 `TESTING.md`。
 - Web 只消费 typed Market/Alert API，不计算策略、建仓或清仓。
 - Market WebSocket 先订阅再读快照；快照、state 更新和单连接定时恢复读取在同一有界后台入口执行，每次在 worker 内新建、使用并关闭 Session 与同步 Redis。每进程最多四项读取，满额立即失败，无无界队列；调用取消后仍待实际 worker 结束才释放额度。内部 Bar Pub/Sub 携带物理合约，详情连接只转发与当前交易日/owner 一致的 Bar，并在 owner 变化后先 reset；定时恢复保留 `realtime/post_close` 来源，盘后延迟完成 Bar 不冒充 tick 实时。Pub/Sub 与发送继续在事件循环执行。
-- `chart.vue` 只挂载 `MarketDetailPage`。无 `view` 旧链接按 overlay 明确迁移到 HTDY 或 Free，保留合法品种、序列、合约、周期与定位；参数缺省使用 actual_dominant/15m，非法组合拒绝并提供恢复入口。首页普通进入仍为 Newow 趋势日线，Event 经统一身份构造器精确定位。固定 D1 `view=trend` 兼容产品继续存在，旧页面及返回入口不再保留；工程与用户视觉验收状态见 `STATUS.md`。
+- `chart.vue` 只挂载 `MarketDetailPage`。无 `view` 旧链接按 overlay 明确迁移到 HTDY 或 Free，保留合法品种、序列、合约、周期与定位；参数缺省使用 actual_dominant/15m，非法组合拒绝并提供恢复入口。首页普通进入仍为 Newow 趋势日线，Event 经统一身份构造器精确定位。工程与用户视觉验收状态见 `STATUS.md`。
 - Newow P1–P6 active 代码路径在图中以实线表示：`MarketDataService` 后的 completed `1w/1d/60m` reader 取得物理 owner 区段和同合约 warm-up，typed adapter 输出主状态、`BUILD/CLEAR` Action 与 `quantity_effect=none` Hint；MACD display adapter 只把同一 owner Bar 送入通用 MACD kernel，并保留参数/hash/点级状态。sectioned product service 负责统计截止、来源事实、snapshot/cursor 验证、有限进程内复用和有界重型执行，`GET /api/v1/market/newow/strategy-detail` 只做 typed 序列化；无 DB 的 `product-capabilities` 在 reader/service 前收窄当前发布面，Web 同样据此显示 staged combinations。三周期代码存在不等于当前全部开放；频率、品种、section 和输入质量政策以 `product_release` 的版本化合同 `capability_contracts.json`、派生常量及 capability 响应为准，本文不复制逐批扩展名单。Release 不代表 Runtime promotion、OOS、原站完整 parity 或真实工作站验收。
 - Newow 快照共用 reader、section service 与 MarketDataService，但保留不同政策：日线默认在最近 20 个权威已完成交易日内选择经验证的可读截点；周线同时依据发布状态决定当前/待更新/失败；显式历史快照提供人工恢复入口。所有面板绑定同一 as_of 与 snapshot token，展示实际数据日期和待更新状态；身份、映射、数据损坏或未知错误不得伪装成普通缺数而自动跳过。
 - Newow readiness CLI 经共享 reader/owner validator/MDS 枚举与逐合约读取依赖；纯 `ContractWarmupPlanner` 与维护器共用精确候选 scope/count/hash。matrix 复用实际 section service；只读事务使用 `app.db.readonly.readonly_transaction`，不组合 provider、metadata writer、maintenance apply 或 Redis。
 - `au-calendar-correction` 只组合已捕获来源文件、共享 Session 规范化与 Catalog 事务；默认只读规划，显式 apply 仅更正一个已确认 Calendar 字段并独立读回。不依赖维护执行器、provider、Canonical writer 或 Runtime；固定身份与失败边界见 `DATA_CENTER.md`。
 - `ReferenceTradeProjector` 是无网络、无 DB、无 Redis 的纯 Decimal 投影，只按同策略、周期、物理合约、区段及版本精确配对主动作。它输出 OPEN/CLOSED/ROLLOVER_INTERRUPTED、明确统计窗口和乐观摘要，不创建或代表 Position、Order、Account、Execution、Fill、AlertEvent、PnL 或 Ledger。
 - Newow 解释层显式携带各输入周期 `bar_end`、请求 `as_of`、规则身份和证据状态；解释与 Hint 不得反向改变主动作。照妖镜重绘图层、五窗口页面比较器及其样本末理论平仓与 ReferenceTrade authority 隔离。
-- `/market/chart?view=newow` 以单一 Newow 控制器承载趋势、震荡、主升浪 × `5m/15m/30m/60m/1d/1w` 当前支持范围，并按 capability 只消费当前开放子集；请求切换使用 generation/Abort 隔离，资源按 section 独立呈现，兼容事实不足时显式降级。既有 `view=trend` 与 `GET /api/v1/market/newow/trend-detail` 保持固定 `actual_dominant + 1d` 兼容语义，并经同一趋势公式路径提供结果，不保留第二套算法。旧趋势前端请求/composable/view-model/绘图链已移除；旧 URL 直接规范化进入当前 Workspace，后端固定 D1 兼容 API 独立保留。Web capability 以显式版本表统一校验，保留每版精确 stage、周期与品种顺序，不把未知版本回退成当前版本。HTDY、SuBing 与 Free 的读取和 Marker authority 不变。
+- `/market/chart?view=newow` 以单一 Newow 控制器承载趋势、震荡、主升浪 × `5m/15m/30m/60m/1d/1w` 当前支持范围，并按 capability 只消费当前开放子集；请求切换使用 generation/Abort 隔离，资源按 section 独立呈现，兼容事实不足时显式降级。Web capability 以显式版本表统一校验，保留每版精确 stage、周期与品种顺序，不把未知版本回退成当前版本。HTDY、SuBing 与 Free 的读取和 Marker authority 不变。
 - `MarketHomeOverviewService` 保持generic completed D1/W1唯一计算入口；Newow摘要和普通参考收益复用现有resolver/service。`HomeRecovery` 是正式 `.derived/newow-home.json` 唯一发布执行入口；默认关闭的 `home-projection` 受监督任务在明确启用后自动对账，盘后不再同步回放摘要。正式CLI只读回该所有者结果，显式开发输出在Canonical外通过同执行模块隔离构建。
 - 首页概览及 `/market/newow/home-projection` 只读同一持久资产与轻量源版本；缺失不现场计算。全部板块、排序、趋势/震荡切换和展开在浏览器本地完成，completed 1m报价独立更新。
 - 持久投影使用`home_source_identity_v2`：保守历史和候选缺失范围的Catalog行修订、完成目标、规范化周发布选择及配置/公式身份；未来无关元数据不影响已确认历史，历史修订不漏检。工作锁/有界原子journal、子进程120秒硬截止、父存活握手及源前后核对保护发布，失败保留完整lastgood；缓存图遍历也受字节/节点/时间边界约束。派生失败不改行情维护结论，不创建源修复或通知。恢复预算和只读delivery元数据见`market-home-overview` canonical。
@@ -125,7 +124,7 @@ flowchart LR
   只向 Redis Live 原子提交缺失 observation 和恢复水位。MarketReadService 将水位随 Alert window
   传递；同 Runtime root 的 Live 最终提交与 Alert Event/send 通过品种级 OS 锁串行化。只读 readiness
   CLI 复用这些读取与 coverage 入口，不组合 evaluator、downloader 或 transport。
-- 0044 只创建 disabled + empty-scope Rule；0045 只把 RQData 1m 首根标签规范化为 `(start, end]` 排他 start。通用 Scope writer 拒绝 disabled Rule，首次 operational × 15m activation 只在精确 0045 使用专用锁定、单 commit、readback seam。
+- 0044 只创建 disabled + empty-scope Rule；0045 只把 RQData 1m 首根标签规范化为 `(start, end]` 排他 start。首次 operational × 15m activation 只在精确 0045 使用专用锁定、单 commit、readback seam。
 - EMA21 10K slope 是纯函数 primitive，不连接 Runtime、Alert 或周期级正式因子。
 
 ## 统一参考交易的独立生命周期
@@ -172,7 +171,6 @@ Canonical/Catalog、`DatasetKey`、Trading Calendar/Session、`MainContractMap`�
 不生成 Marker；HTDY actual_dominant 各正式周期保留 exact Bar focus。其他不支持的组合或非法时间明确拒绝。
 有效迁移以 replace 规范化地址，不增加历史条目；导航取消、更新或销毁后的旧迁移不得激活旧行情身份。
 
-显式 `view=trend` 显示一次迁移提示后规范化到固定 `actual_dominant + 1d` Newow 趋势身份；它与已删除旧页面是独立概念。
 首页普通品种仍进入 Newow 趋势日线；HTDY 与 SuBing Event 使用明确 view 和精确 focus。
 品种选择位于统一导航，数据失败时仍可用；更换品种清除不兼容 contract 和 focus。
 成功态保留 TopBar → Quote → ViewNav → workspace 顺序。盘后 last_failure 独立披露为最近盘后更新失败，
