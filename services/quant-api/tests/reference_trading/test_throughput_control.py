@@ -308,7 +308,7 @@ def test_scan_metadata_query_includes_pending_live_group_and_canonical_but_not_i
 
 def test_shared_bridge_readback_still_checks_each_original_time_and_sequence():
     from test_inbox_recovery import _exercise_one_gap_bridge
-    from app.reference_trading.inbox_recovery import _verify_stored_bridge
+    from app.reference_trading.inbox_recovery import _verify_bridge_chain
     from app.reference_trading.models import (ReferenceInboxRecoveryResult as R,
         ReferenceInboxDelivery as D, ReferenceInboxInput as I, ReferenceActivationReceipt as A,
         ReferenceBatch as B)
@@ -322,17 +322,21 @@ def test_shared_bridge_readback_still_checks_each_original_time_and_sequence():
         gaps = db.scalars(select(B).where(B.kind == "capture",
             B.payload_hash == target.budget["bounded_recovery_capture_sha256"])).all()
         calculations = {cap.consumed_by_batch_id: db.get(B, cap.consumed_by_batch_id) for cap in gaps}
+        captures = {(target.stream_id, target.revision_id,
+                     target.budget["bounded_recovery_capture_sha256"]): gaps}
+        receipts = {(target.stream_id, target.generation): target}
         cache = {}
-        _verify_stored_bridge(delivery, item, old, target, row, gaps, calculations, cache=cache)
+        _verify_bridge_chain(old, target, receipts, captures, calculations,
+                             before_end=item.bar_end, before_seq=row.calculation_seq, cache=cache)
         assert len(cache) == 1
-        wrong_row = SimpleNamespace(**{c.name: getattr(row, c.name) for c in R.__table__.columns})
-        wrong_row.calculation_seq = calculations[gaps[0].consumed_by_batch_id].seq
+        wrong_seq = calculations[gaps[0].consumed_by_batch_id].seq
         with pytest.raises(ValueError):
-            _verify_stored_bridge(delivery, item, old, target, wrong_row, gaps, calculations, cache=cache)
-        wrong_item = SimpleNamespace(bar_end=datetime.fromisoformat(
-            gaps[0].source_evidence["forward_capture_v1"]["bar_end"]))
+            _verify_bridge_chain(old, target, receipts, captures, calculations,
+                                 before_end=item.bar_end, before_seq=wrong_seq, cache=cache)
+        wrong_end = datetime.fromisoformat(gaps[0].source_evidence["forward_capture_v1"]["bar_end"])
         with pytest.raises(ValueError):
-            _verify_stored_bridge(delivery, wrong_item, old, target, row, gaps, calculations, cache=cache)
+            _verify_bridge_chain(old, target, receipts, captures, calculations,
+                                 before_end=wrong_end, before_seq=row.calculation_seq, cache=cache)
 
 
 def test_resources_cannot_report_closed_while_background_thread_remains_alive():
