@@ -32,6 +32,7 @@ class JournalRecoveryAuthority:
                                              count=DAILY_LIMIT + 1)
         if len(raw_rows) > DAILY_LIMIT:
             raise RepositoryConflict("RECOVERY_JOURNAL_BUDGET_EXCEEDED")
+        channel = f"live:bar:{identity.product.lower()}:{identity.frequency}"
         selected = []
         for raw_id, fields in raw_rows:
             item_id = raw_id.decode() if isinstance(raw_id, bytes) else raw_id
@@ -40,7 +41,7 @@ class JournalRecoveryAuthority:
                 raise RepositoryConflict("RECOVERY_JOURNAL_INVALID")
             text = raw.decode() if isinstance(raw, bytes) else raw
             item = ObservationEnvelope.from_json(text, stream_id=item_id)
-            if item.channel != f"live:bar:{identity.product}:{identity.frequency}":
+            if item.channel != channel:
                 continue
             end = datetime.fromisoformat(item.data["bar_end"])
             if previous_watermark is not None and end <= previous_watermark:
