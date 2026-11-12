@@ -705,6 +705,44 @@ def test_fusion_shared_source_proof_excludes_only_route_local_inbox_receipt():
     assert result.input_payload
 
 
+@pytest.mark.parametrize("mode", ["oscillation", "trend", "empty"])
+def test_fusion_keeps_route_local_oscillation_warm_prefix_in_dependency_evidence(mode):
+    from app.reference_trading.capture import ForwardCapture
+    from app.reference_trading.newow_inbox_warm_recovery import POLICY
+
+    case, dependencies = sources("60m")
+    dependency = dependencies[0 if mode == "trend" else 1]
+    wire = dependency["capture"]
+    warm = {
+        "checkpoint_sha256": "a" * 64,
+        "recording_start": wire["bar_end"],
+        "originals": [{"input_id": "b" * 64, "envelope_sha256": "c" * 64, "capture_sha256": "d" * 64}],
+        "owner_transition": None,
+    }
+    if mode == "empty":
+        warm["originals"] = []
+    dependency["capture"] = ForwardCapture(
+        dependency["stream_id"], dependency["revision_id"], wire["generation"],
+        wire["source_key"], datetime.fromisoformat(wire["bar_end"]),
+        datetime.fromisoformat(wire["observed_at"]), wire["source_kind"],
+        wire["input_payload"], {**wire["source_proof"], POLICY: warm}, wire["eligibility"],
+    ).evidence()["forward_capture_v1"]
+    stream = build_fusion_stream_identity(
+        "rb", "60m", recording_mode="forward_observation",
+        observation_policy_version="completed_observation_v1",
+    )
+    arguments = dict(
+        revision_id="fusion", generation=1, after=None,
+        now=case.bars[0].bar.bar_end + timedelta(minutes=1), dependencies=dependencies,
+    )
+    if mode != "oscillation":
+        with pytest.raises(ValueError, match="REFERENCE_FUSION_SOURCE_INPUT_CONFLICT"):
+            build_fusion_capture(stream, **arguments)
+        return
+    result = build_fusion_capture(stream, **arguments)
+    assert result.input_payload["sources"][1]["capture"]["source_proof"][POLICY] == warm
+
+
 def test_inbox_fusion_missing_committed_base_is_dependency_wait_not_terminal_failure():
     from types import SimpleNamespace
     from app.reference_trading.composition import build_forward_reference_worker

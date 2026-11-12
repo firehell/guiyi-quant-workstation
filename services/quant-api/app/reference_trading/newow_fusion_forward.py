@@ -11,6 +11,7 @@ import json
 import math
 
 from app.reference_trading.capture import ForwardCapture
+from app.reference_trading.newow_forward import OSCILLATION_INBOX_WARM_PREFIX
 from app.reference_trading.contracts import PreparedBatch, manifest_sha256
 from app.reference_trading.inputs import HistoricalInputBar
 from app.reference_trading.newow_fusion import (
@@ -216,6 +217,22 @@ def _validated_sources(stream, dependencies):
         captures.append(capture)
     first, second = captures
     excluded = {"inbox_delivery_id"}
+    prefix_key = OSCILLATION_INBOX_WARM_PREFIX
+    if prefix_key in first["source_proof"]:
+        raise ValueError("REFERENCE_FUSION_SOURCE_INPUT_CONFLICT")
+    if prefix_key in second["source_proof"]:
+        warm = second["source_proof"][prefix_key]
+        if (
+            stream.frequency != "60m" or second["source_kind"] != "completed_live"
+            or not isinstance(warm, dict)
+            or set(warm) != {"checkpoint_sha256", "recording_start", "originals", "owner_transition"}
+            or not isinstance(warm["originals"], list) or not warm["originals"]
+            or _timestamp(warm["recording_start"]) > _timestamp(second["bar_end"])
+        ):
+            raise ValueError("REFERENCE_FUSION_SOURCE_INPUT_CONFLICT")
+        # The route-local prefix is still bound by the capture hash and the
+        # full fusion dependency digest. It does not describe the shared Bar.
+        excluded.add(prefix_key)
     alignment = None
     if first["source_proof"]["calculation_segment_id"] != second["source_proof"]["calculation_segment_id"]:
         alignment = _pre_owner_calculation_alignment(stream, policy, first, second)

@@ -16,7 +16,11 @@ from app.reference_trading.forward_inputs import capture_newow_envelope
 from app.reference_trading.inbox import _head_query, _validate_active, _verified_input
 from app.reference_trading.inbox_recovery import InboxRecovery, require, verified_resolution_ids
 from app.reference_trading.models import ReferenceInboxDelivery, ReferenceInboxInput
-from app.reference_trading.newow_forward import _whole_number, evaluate_newow_capture
+from app.reference_trading.newow_forward import (
+    OSCILLATION_INBOX_WARM_PREFIX as POLICY,
+    _whole_number,
+    evaluate_newow_capture,
+)
 from app.reference_trading.recording_scope import recording_route_supported
 from app.reference_trading.repository import ReferenceRepository
 from app.reference_trading.retained_owner_transition import prove_rank1_owner_transition
@@ -25,9 +29,6 @@ from guiyi_quant.newow.product_adapters import build_product_identity, replay_st
 from guiyi_quant.newow.product_contracts import ProductBar, ProductFrequency
 from guiyi_quant.reference_trading import ReferenceState
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
-
-POLICY = "newow_oscillation_inbox_warm_prefix_v1"
-
 
 @dataclass(frozen=True)
 class _WarmRecoveryInput:
