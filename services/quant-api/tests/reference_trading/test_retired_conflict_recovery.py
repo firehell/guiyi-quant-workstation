@@ -109,3 +109,29 @@ def test_absence_drift_and_fence_loss_preserve_every_active_revision():
     assert {sid: repo.load_checkpoint(sid)[0].revision_id for sid in targets} == old
     with factory() as db:
         assert len(db.scalars(select(ReferenceActivationReceipt)).all()) == 4
+
+
+def test_generic_publish_cannot_replace_an_activated_forward_revision():
+    factory, repo, targets, _, _, _ = prepared()
+    sid = targets[0]
+    token, checkpoint = repo.load_checkpoint(sid)
+    manifest = {"fixture": "replacement"}
+    digest = manifest_sha256(manifest)
+    candidate = repo.create_revision(sid, token.row_version, digest)
+    repo.stage_seed_chunk(
+        candidate, SeedChunk("fixture", 0, 1, sha256(b"fixture").hexdigest(), "fixture"),
+    )
+    repo.seal_seed(candidate, manifest, checkpoint, "newow_product_replay_v1")
+
+    with pytest.raises(RepositoryConflict, match="FORWARD_ACTIVATION_REQUIRED"):
+        repo.publish_revision(sid, candidate, token.row_version, digest)
+
+    assert repo.load_checkpoint(sid)[0] == token
+    assert repo.read_state(sid, candidate).revision_status == "candidate"
+    with factory() as db:
+        receipts = db.scalars(
+            select(ReferenceActivationReceipt).where(ReferenceActivationReceipt.stream_id == sid)
+        ).all()
+        assert len(receipts) == 1
+        assert receipts[0].revision_id == token.revision_id
+        assert receipts[0].disabled_at is None
