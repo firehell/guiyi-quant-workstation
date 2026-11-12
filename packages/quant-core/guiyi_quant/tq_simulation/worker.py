@@ -528,6 +528,7 @@ def run(config_path, *, inspect=False):
                             # The next execution pass refreshes the readback and inputs.
                             checked_at = datetime.now(UTC)
                             checked = gateway.snapshot(checked_at)
+                            dispatch_at = datetime.now(UTC)
                             if gateway.reconnection_required:
                                 require_recovery(controller, checked_at)
                             elif checked["snapshot_id"] != snapshot["snapshot_id"]:
@@ -537,12 +538,12 @@ def run(config_path, *, inspect=False):
                                 and (
                                     cleanup
                                     or any(not order.reconciled for order in state.orders)
-                                    or checked_at + _ACCOUNT_DISPATCH_HEADROOM < state.readback.valid_until
+                                    or dispatch_at + _ACCOUNT_DISPATCH_HEADROOM < state.readback.valid_until
                                 )
                             ):
                                 controller.tick(
                                     inputs,
-                                    checked_at,
+                                    dispatch_at,
                                     opening_allowed=action == "trade",
                                     stopping=action == "stop",
                                 )
