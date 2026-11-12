@@ -78,6 +78,8 @@ def test_ingest_is_immutable_idempotent_and_freezes_targets_before_ack():
     health = repo.health()
     assert health["unfinished_deliveries"] == health["unfinished_disabled_stream_deliveries"] == 1
     assert health["unfinished_current_generation_deliveries"] == 0
+    assert repo.next_heads() == ()
+    assert not repo.has_unfinished()
     duplicate = repo.ingest(original)
     assert duplicate.duplicate and duplicate.delivery_ids == first.delivery_ids
     with pytest.raises(InboxConflict, match="REFERENCE_INBOX_CONTENT_CONFLICT"):
