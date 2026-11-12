@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import timedelta
+from decimal import Decimal
 from hashlib import sha256
 import json
 import pytest
@@ -282,8 +283,11 @@ def test_source_callback_uses_original_market_facts_without_worker_reentry(tmp_p
     class Market(Read):
         def bars_until(self, query, *, trading_day, end, limit):
             w = super().bars_until(query, trading_day=trading_day, end=end, limit=limit)
+            tail = w.bars[-1]
+            tail = replace(tail, close=tail.close.quantize(Decimal("0.000")))
             return replace(
-                w, symbol="al", contract="AL2610", bar_contracts=("AL2610",) * 32
+                w, symbol="al", contract="AL2610", bar_contracts=("AL2610",) * 32,
+                bars=(*w.bars[:-1], tail),
             )
 
     market = Market()
