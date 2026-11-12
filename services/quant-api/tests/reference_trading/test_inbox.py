@@ -107,11 +107,9 @@ def test_numeric_journal_order_waiting_head_blocks_later_input():
     assert repo.pending_head(identity.stream_id).delivery_id == first.delivery_id
     assert repo.next_heads()[0].status == "WAITING_HISTORY"
     repo.mark_blocked(first.delivery_id, "OWNER_MISMATCH")
-    assert repo.next_heads()[0].status == "BLOCKED"
-    assert (
-        repo.next_heads(after_stream_id=identity.stream_id)[0].delivery_id
-        == first.delivery_id
-    )
+    assert repo.pending_head(identity.stream_id).delivery_id == first.delivery_id
+    assert repo.next_heads() == ()
+    assert repo.next_heads(after_stream_id=identity.stream_id) == ()
     with pytest.raises(ValueError, match="REFERENCE_INBOX_HEAD_BUDGET_INVALID"):
         repo.next_heads(limit=33)
 
@@ -633,6 +631,14 @@ def test_fair_head_cursor_reaches_streams_after_first_32_waiting_heads():
         repo.mark_waiting(item.delivery_id, "SOURCE_BUSY")
     second_round = repo.next_heads(after_stream_id=first_round[-1].stream_id)
     assert len({item.stream_id for item in first_round + second_round}) == 33
+
+    blocked = first_round[0]
+    repo.mark_blocked(blocked.delivery_id, "OWNER_MISMATCH")
+    repo.ingest(event("101-0"))
+    runnable = repo.next_heads()
+    assert len(runnable) == 32
+    assert all(item.stream_id != blocked.stream_id for item in runnable)
+    assert repo.pending_head(blocked.stream_id).delivery_id == blocked.delivery_id
 
 
 @pytest.mark.isolated_postgresql
