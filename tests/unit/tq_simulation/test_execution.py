@@ -686,7 +686,9 @@ def test_managed_position_can_pass_preflight_after_complete_recovery(tmp_path):
     c, now = live_controller(tmp_path)
     s, _ = full_fill(c, now)
     assert preflight_ready(c, s, {}, {"RB"}, ("RB",), now + timedelta(seconds=5))
-    assert not preflight_ready(c, s, {}, {"RB"}, ("RB",), now + timedelta(seconds=40))
+    readback_at = c.store.current().readback.at
+    assert preflight_ready(c, s, {}, {"RB"}, ("RB",), readback_at + timedelta(seconds=59))
+    assert not preflight_ready(c, s, {}, {"RB"}, ("RB",), readback_at + timedelta(minutes=1))
     assert not preflight_ready(
         c, s, {"RB": "UNKNOWN"}, {"RB"}, ("RB",), now + timedelta(seconds=5)
     )
