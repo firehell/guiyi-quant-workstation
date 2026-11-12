@@ -142,8 +142,12 @@ def build_forward_reference_worker(
             if code == "newow_dual_fusion":
                 if fusion_sources is None:
                     raise ForwardInputUnavailable("REFERENCE_FUSION_SOURCES_UNAVAILABLE")
-                capture = fusion_sources(identity, **common)
-                if capture is None and worker.inbox_delivery_id is not None:
+                if worker.inbox_delivery_id is None:
+                    return fusion_sources(identity, **common)
+                capture = fusion_sources(
+                    identity, inbox_window=(recording_start, event_bar_end), **common,
+                )
+                if capture is None:
                     raise ForwardInputUnavailable("REFERENCE_FUSION_SOURCE_NOT_READY")
                 return capture
             if code.startswith("newow_"):
