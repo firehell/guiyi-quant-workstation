@@ -207,6 +207,7 @@ def test_saved_forward_sources_wait_for_both_durable_calculations_and_reject_bro
     )
     loader = SavedForwardFusionSources(factory)
     captured_ids = []
+    active_sources = []
     for dep in dependencies:
         identity_wire = dict(dep["identity"])
         identity_wire["formula_versions"] = tuple(identity_wire["formula_versions"])
@@ -254,11 +255,42 @@ def test_saved_forward_sources_wait_for_both_durable_calculations_and_reject_bro
                 is None
             )
         service.process_pending(stream.stream_id)
+        active_sources.append((stream, revision, service))
     capture = loader(fusion, revision_id="fusion", generation=1, after=None, now=now)
     assert capture.bar_end == start
+    assert loader(
+        fusion, revision_id="fusion", generation=1, after=None, now=now,
+        inbox_window=(start, start),
+    ).bar_end == start
+    assert loader(
+        fusion, revision_id="fusion", generation=1, after=None, now=now,
+        inbox_window=(start + timedelta(microseconds=1), start + timedelta(seconds=1)),
+    ) is None
+    assert loader(
+        fusion, revision_id="fusion", generation=1, after=None, now=now,
+        inbox_window=(start, start + timedelta(seconds=1)),
+    ) is None
     assert (
         loader(fusion, revision_id="fusion", generation=1, after=start, now=now) is None
     )
+    next_bar = case.bars[1]
+    next_end = next_bar.bar.bar_end
+    for stream, revision, service in active_sources:
+        item = _capture(stream, next_bar)
+        repo.capture_forward(replace(
+            item, revision_id=revision,
+            source_proof={**item.source_proof, "previous_watermark": start.isoformat()},
+        ))
+        service.process_pending(stream.stream_id)
+    next_now = next_end + timedelta(minutes=1)
+    assert loader(
+        fusion, revision_id="fusion", generation=1, after=None, now=next_now,
+        inbox_window=(next_end, next_end),
+    ).bar_end == next_end
+    assert loader(
+        fusion, revision_id="fusion", generation=1, after=None, now=next_now,
+        inbox_window=(start, next_end),
+    ) is None
     with factory() as session, session.begin():
         consumed = session.get(ReferenceBatch, captured_ids[0])
         committed = session.get(ReferenceBatch, consumed.consumed_by_batch_id)
