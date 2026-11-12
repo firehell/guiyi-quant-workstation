@@ -180,25 +180,37 @@ def _receipt_binding(session, delivery, stream, target):
             ReferenceRevision, (stream.stream_id, stream.active_revision_id)
         )
         require(
-            target.generation == delivery.generation + 1
-            and target.budget.get("previous_receipt_sha256") == receipt_hash(old)
+            revision is not None and target.generation > old.generation
             and consumed_bound_receipt(session, target, revision),
             "REFERENCE_INBOX_RECOVERY_BRIDGE_UNPROVEN",
+        )
+        item = session.get(ReferenceInboxInput, delivery.input_id)
+        require(item is not None)
+        receipts = session.scalars(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id == old.stream_id,
+            ReferenceActivationReceipt.generation.between(old.generation, target.generation),
+        )).all()
+        indexed = {(r.stream_id, r.generation): r for r in receipts}
+        captures, calculations = _bridge_batches(session, receipts)
+        _verify_bridge_chain(
+            old, target, indexed, captures, calculations,
+            before_end=item.bar_end, before_seq=revision.last_seq + 1,
         )
     return old
 
 
-def _verify_stored_bridge(
-    delivery, item, old, target, row, gap_captures, gap_calculations, *, cache=None
-):
+def _verify_stored_bridge(old, target, gap_captures, gap_calculations):
     from app.reference_trading.inbox import _aware
 
-    require(target.generation == delivery.generation + 1)
-    cache_key = (old.receipt_id, target.receipt_id, row.stream_id, row.target_revision_id)
-    if cache is not None and cache_key in cache:
-        end, sequence = cache[cache_key]
-        require(end < _aware(item.bar_end) and sequence < row.calculation_seq)
-        return
+    require(
+        target.generation == old.generation + 1
+        and target.stream_id == old.stream_id
+        and target.revision_id == old.revision_id
+        and _aware(target.recording_start) == _aware(old.recording_start)
+        and target.host == old.host and target.environment == old.environment
+        and _aware(old.activated_at) <= _aware(target.activated_at)
+        and (old.disabled_at is None or _aware(old.disabled_at) >= _aware(target.activated_at))
+    )
     active_old = SimpleNamespace(
         **{c.name: getattr(old, c.name) for c in old.__table__.columns}
     )
@@ -221,8 +233,8 @@ def _verify_stored_bridge(
     matches = [
         c
         for c in gap_captures
-        if c.stream_id == row.stream_id
-        and c.revision_id == row.target_revision_id
+        if c.stream_id == target.stream_id
+        and c.revision_id == target.revision_id
         and c.payload_hash == bound
     ]
     require(len(matches) == 1)
@@ -247,15 +259,13 @@ def _verify_stored_bridge(
         and source.get("generation") == target.generation
         and source.get("eligibility") == "gap_recovery"
         and source.get("source_kind") == "observation_interruption"
-        and reconstructed.bar_end < _aware(item.bar_end)
         and capture.outcome == "consumed"
         and calculation is not None
-        and calculation.stream_id == row.stream_id
-        and calculation.revision_id == row.target_revision_id
+        and calculation.stream_id == target.stream_id
+        and calculation.revision_id == target.revision_id
         and calculation.kind == "calculation"
         and calculation.outcome == "committed"
         and calculation.seq == capture.expected_seq + 1
-        and calculation.seq < row.calculation_seq
         and calculation.source_evidence.get("forward_capture_v1")
         == {
             "capture_id": capture.batch_id,
@@ -265,8 +275,57 @@ def _verify_stored_bridge(
         and calculation.post_state_hash
         == sha256(calculation.checkpoint_text.encode()).hexdigest()
     )
-    if cache is not None:
-        cache[cache_key] = (reconstructed.bar_end, calculation.seq)
+    return reconstructed.bar_end, calculation.seq
+
+
+def _verify_bridge_chain(old, target, receipts, captures, calculations, *,
+                         before_end, before_seq, cache=None):
+    from app.reference_trading.inbox import _aware
+
+    require(target.generation > old.generation)
+    previous = old
+    last_end, last_seq = None, None
+    for generation in range(old.generation + 1, target.generation + 1):
+        current = receipts.get((old.stream_id, generation))
+        require(current is not None)
+        key = (previous.receipt_id, current.receipt_id)
+        if cache is not None and key in cache:
+            end, seq = cache[key]
+        else:
+            bound = current.budget.get("bounded_recovery_capture_sha256")
+            end, seq = _verify_stored_bridge(
+                previous, current,
+                captures.get((current.stream_id, current.revision_id, bound), ()),
+                calculations,
+            )
+            if cache is not None:
+                cache[key] = end, seq
+        require(last_end is None or (last_end < end and last_seq < seq))
+        last_end, last_seq, previous = end, seq, current
+    require(
+        previous.receipt_id == target.receipt_id
+        and last_end < _aware(before_end) and last_seq < before_seq,
+    )
+
+
+def _bridge_batches(session, receipts):
+    bounds = {r.budget.get("bounded_recovery_capture_sha256") for r in receipts} - {None}
+    if not bounds:
+        return {}, {}
+    captures = _closure_batches(
+        session, ReferenceBatch.kind == "capture", ReferenceBatch.payload_hash.in_(bounds),
+    )
+    calculations = {
+        r.batch_id: r for r in _closure_batches(
+            session, ReferenceBatch.batch_id.in_(
+                [r.consumed_by_batch_id for r in captures if r.consumed_by_batch_id],
+            ),
+        )
+    }
+    indexed = {}
+    for capture in captures:
+        indexed.setdefault((capture.stream_id, capture.revision_id, capture.payload_hash), []).append(capture)
+    return indexed, calculations
 
 
 def _closure_batches(session, *conditions):
@@ -336,21 +395,20 @@ def _verified_calculation_resolution_ids(session, *, stream_ids=None, check_canc
         if deliveries.get(r.delivery_id) is not None
         and r.target_generation != deliveries[r.delivery_id].generation
     ]
-    gap_captures = []
-    gap_calculations = {}
-    if bridges:
-        bounds = {
-            receipts[r.target_receipt_id].budget.get("bounded_recovery_capture_sha256")
-            for r in bridges
-            if r.target_receipt_id in receipts
-        }
-        gap_captures = _closure_batches(session,
-            ReferenceBatch.kind == "capture", ReferenceBatch.payload_hash.in_(bounds))
-        gap_calculations = {
-            r.batch_id: r
-            for r in _closure_batches(session, ReferenceBatch.batch_id.in_(
-                [r.consumed_by_batch_id for r in gap_captures if r.consumed_by_batch_id]))
-        }
+    multiple = [
+        r for r in bridges if r.target_generation > deliveries[r.delivery_id].generation + 1
+    ]
+    if multiple:
+        streams = {r.stream_id for r in multiple}
+        earliest = min(deliveries[r.delivery_id].generation for r in multiple)
+        latest = max(r.target_generation for r in multiple)
+        for receipt in session.scalars(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id.in_(streams),
+            ReferenceActivationReceipt.generation.between(earliest, latest),
+        )):
+            receipts[receipt.receipt_id] = receipt
+    indexed_receipts = {(r.stream_id, r.generation): r for r in receipts.values()}
+    indexed_gaps, gap_calculations = _bridge_batches(session, receipts.values()) if bridges else ({}, {})
     # Only this exact readback may reuse receipt hashes. Later transactions must
     # observe disablement/tampering and revalidate the entire closure again.
     receipt_hashes = {}
@@ -358,9 +416,6 @@ def _verified_calculation_resolution_ids(session, *, stream_ids=None, check_canc
         if receipt.receipt_id not in receipt_hashes:
             receipt_hashes[receipt.receipt_id] = stable_receipt_hash(receipt)
         return receipt_hashes[receipt.receipt_id]
-    indexed_gaps = {}
-    for capture in gap_captures:
-        indexed_gaps.setdefault((capture.stream_id, capture.revision_id, capture.payload_hash), []).append(capture)
     originals, bridge_cache = {}, {}
     ids = []
     for row in rows:
@@ -443,11 +498,9 @@ def _verified_calculation_resolution_ids(session, *, stream_ids=None, check_canc
             )
         )
         if row.target_generation != delivery.generation:
-            _verify_stored_bridge(
-                delivery, item, old, receipt, row,
-                indexed_gaps.get((row.stream_id, row.target_revision_id,
-                    receipt.budget.get("bounded_recovery_capture_sha256")), ()), gap_calculations,
-                cache=bridge_cache,
+            _verify_bridge_chain(
+                old, receipt, indexed_receipts, indexed_gaps, gap_calculations,
+                before_end=item.bar_end, before_seq=row.calculation_seq, cache=bridge_cache,
             )
         checkpoint = proof.get("checkpoint", {})
         require(
