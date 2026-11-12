@@ -84,3 +84,9 @@ test('zero executable products never presents enabled process as trading',()=>{
  data.observer!.executable_product_count=0;data.observer!.blocked_product_count=60;
  assert.equal(observerLabel(data),'行情或账户条件阻断：可执行0个品种，阻断60个');
 })
+
+test('explains a stale TqKq account readback', () => {
+ const data = overview();
+ Object.assign(data.observer!, { status: 'error', stage: 'TQ_ACCOUNT_STALE', opening_enabled: false });
+ assert.equal(observerLabel(data), '快期账户核验已过期，开仓暂停，需重新对账');
+});

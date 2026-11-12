@@ -43,7 +43,6 @@ from app.schemas.alerts import (
     AlertEventHistoryResponse,
     AlertEventOut,
     AlertRuleCode,
-    AlertScopeUpdate,
     CurrentAlertEventsResponse,
     ProductAlertRuleStateOut,
     ProductAlertStateResponse,
@@ -79,28 +78,6 @@ def product_alert_state(
         symbol=normalize_symbol(symbol),
         rules=[_state_out(item) for item in rules],
     )
-
-
-@router.put(
-    "/rules/{rule_code}/scope/{symbol}/{frequency}",
-    response_model=ProductAlertRuleStateOut,
-)
-def set_product_frequency_alert_scope(
-    rule_code: str,
-    symbol: str,
-    frequency: str,
-    request: AlertScopeUpdate,
-    session: Session = Depends(get_db),
-) -> ProductAlertRuleStateOut:
-    try:
-        state = _service(session).set_product_frequency_enabled(
-            rule_code, symbol, frequency, request.enabled
-        )
-    except AlertRuleNotFoundError as exc:
-        raise HTTPException(status_code=404, detail={"code": exc.code}) from exc
-    except AlertScopeError as exc:
-        raise _scope_http_error(exc) from exc
-    return _state_out(state)
 
 
 @router.get("/events", response_model=AlertEventListResponse)
@@ -399,5 +376,4 @@ def _utc(value: datetime) -> datetime:
 
 
 def _scope_http_error(exc: AlertScopeError) -> HTTPException:
-    status_code = 503 if exc.code == "ALERT_SCOPE_PERSIST_FAILED" else 422
-    return HTTPException(status_code=status_code, detail={"code": exc.code})
+    return HTTPException(status_code=422, detail={"code": exc.code})

@@ -48,28 +48,3 @@ test('repeated T experiment and ordinary switches keep the native canvas through
   expect(fixture.experiments.map(item=>item.kind)).toEqual(expect.arrayContaining(['osc-test','osc-test2','osc-test3','osc-test4']))
   expect(errors).toEqual([])
 })
-
-test('futures bidirectional model and variants retain the same ordinary native canvas',async({page})=>{
-  const errors=[];page.on('pageerror',error=>errors.push(error.message))
-  await installNewowProductFixtures(page)
-  const fixture=await installDetailExperimentSessionFixtures(page)
-  await page.goto(newowRoute('trend','1d'))
-  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state','ready')
-  await rememberCanvas(page)
-  await page.getByTestId('futures-model-switch').click()
-  const workspace=page.getByTestId('futures-workspace')
-  await expect(workspace).toContainText('10万元模型账户')
-  await assertCanvasAndInteract(page,errors)
-  for(const label of ['震荡策略','双策略','趋势策略']) {
-    await page.getByRole('tab',{name:label,exact:true}).click()
-    await expect(workspace).toHaveAttribute('aria-busy','false')
-    await expect(workspace.getByTestId('kline-shell')).toBeVisible()
-    await assertCanvasAndInteract(page,errors)
-    expect(new URL(page.url()).searchParams.get('strategy_model')).toBe('futures_bidir_v1')
-  }
-  await page.getByTestId('futures-model-switch').click()
-  await expect(page.locator('[data-detail-workspace="newow"]')).toHaveAttribute('data-chart-state','ready')
-  await assertCanvasAndInteract(page,errors)
-  expect(fixture.futures.filter(url=>url.pathname.endsWith('/snapshot')).map(url=>url.searchParams.get('strategy'))).toEqual(expect.arrayContaining(['trend','oscillation','dual_fusion']))
-  expect(errors).toEqual([])
-})

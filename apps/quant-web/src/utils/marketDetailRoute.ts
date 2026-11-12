@@ -16,10 +16,10 @@ import {
 /** Only strategy-owned content changes; the product, series and period stay fixed. */
 export function isNewowStrategySwitch(previous: MarketDetailIdentity | null, next: MarketDetailIdentity): boolean {
   return previous?.view === 'newow' && next.view === 'newow'
-    && previous.strategyModel === next.strategyModel && previous.newowTest === next.newowTest
     && (previous.strategy !== next.strategy || previous.newowMode !== next.newowMode)
     && NEWOW_STRATEGIES.includes(previous.strategy!) && NEWOW_STRATEGIES.includes(next.strategy!)
     && previous.symbol === next.symbol && previous.frequency === next.frequency
+    && previous.newowTest === next.newowTest
     && previous.seriesKind === next.seriesKind && previous.contract === next.contract
 }
 import { isHtdyAlertEvent } from './alertRules.ts'
@@ -43,15 +43,13 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   const omittedView = query.view === undefined
   const viewValue = omittedView ? (query.overlay === 'htdy' ? 'htdy' : 'free') : scalar(query.view)
   const symbol = normalizeSymbol(query.symbol)
-  if (viewValue === undefined || !isView(viewValue)) return invalid('DETAIL_VIEW_UNKNOWN', symbol, null)
+  if (viewValue === undefined || viewValue === 'trend' || !isView(viewValue)) return invalid('DETAIL_VIEW_UNKNOWN', symbol, null)
   if (!symbol) return invalid('DETAIL_SYMBOL_INVALID', null, null)
 
   if (query.overlay !== undefined && query.overlay !== (viewValue === 'htdy' ? 'htdy' : 'none')) {
     return invalid('DETAIL_OVERLAY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
   if (omittedView) query = { ...query, series_kind: query.series_kind === undefined ? 'actual_dominant' : query.series_kind, frequency: query.frequency === undefined ? '15m' : query.frequency }
-
-  if (viewValue === 'trend') return parseLegacyTrendRoute(query, symbol)
 
   const isNewow = viewValue === 'newow'
   const strategy = isNewow
@@ -61,7 +59,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     return invalid('DETAIL_STRATEGY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
 
-  if (query.strategy_model !== undefined && (!isNewow || query.strategy_model !== 'futures_bidir_v1')) {
+  if (query.strategy_model !== undefined) {
     return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
   if (query.newow_test !== undefined && (!isNewow || strategy !== 'oscillation'
@@ -105,7 +103,6 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
 }
 
 function applyNewowOptions(result: MarketDetailRouteResult, query: Record<string, unknown>): MarketDetailRouteResult {
-  if (result.kind === 'valid' && query.strategy_model === 'futures_bidir_v1') result.identity.strategyModel = 'futures_bidir_v1'
   if (result.kind === 'valid' && query.newow_test) result.identity.newowTest = query.newow_test as MarketDetailIdentity['newowTest']
   if (result.kind === 'valid' && query.newow_mode === 'dual') result.identity.newowMode = 'dual'
   return result
@@ -119,7 +116,7 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
   return {
     view: identity.view,
     symbol: identity.symbol,
-    ...(identity.view === 'newow' ? { strategy: identity.strategy, ...(identity.strategyModel ? { strategy_model: identity.strategyModel } : {}), ...(identity.newowTest ? { newow_test: identity.newowTest } : {}), ...(identity.newowMode ? { newow_mode: identity.newowMode } : {}) } : {}),
+    ...(identity.view === 'newow' ? { strategy: identity.strategy, ...(identity.newowTest ? { newow_test: identity.newowTest } : {}), ...(identity.newowMode ? { newow_mode: identity.newowMode } : {}) } : {}),
     series_kind: identity.seriesKind === 'contract' ? 'contract' : 'actual_dominant',
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,
@@ -147,7 +144,6 @@ export function resolveViewSwitchIdentity(
   const saved = previousChart?.view === 'newow' ? previousChart : restore.newow
   return {
     view: 'newow', symbol, ...chart, strategy: view === 'trend' ? 'trend' : saved.strategy ?? 'trend',
-    ...(saved.strategyModel ? { strategyModel: saved.strategyModel } : {}),
     ...(view !== 'trend' && saved.newowTest ? { newowTest: saved.newowTest } : {}),
     ...(view !== 'trend' && saved.newowMode ? { newowMode: saved.newowMode } : {}),
   }
@@ -263,18 +259,6 @@ function allowsFocus(view: MarketDetailView, seriesKind: DetailSeriesKind, frequ
     || (view === 'newow' && seriesKind === 'actual_dominant' && NEWOW_FREQUENCY_SET.has(frequency))
 }
 
-function parseLegacyTrendRoute(query: Record<string, unknown>, symbol: string): MarketDetailRouteResult {
-  if (query.strategy !== undefined || query.contract !== undefined || query.newow_mode !== undefined || query.strategy_model !== undefined || query.newow_test !== undefined) {
-    return invalid('DETAIL_TREND_IDENTITY_INVALID', symbol, recoveryFor('trend', symbol))
-  }
-  const seriesKind = query.series_kind === undefined ? 'actual_dominant' : parseSeriesKind(query.series_kind)
-  const frequency = query.frequency === undefined ? '1d' : parseFrequency(query.frequency)
-  if (seriesKind !== 'actual_dominant' || frequency !== '1d') {
-    return invalid('DETAIL_TREND_IDENTITY_INVALID', symbol, recoveryFor('trend', symbol))
-  }
-  return valid('newow', symbol, 'actual_dominant', '1d', undefined, query.focus_bar_end, 'trend')
-}
-
 function isIsoInstant(value: string | undefined): value is string {
   if (!value || !/^\d{4}-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return false
   const parts = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/)!
@@ -285,4 +269,8 @@ function isIsoInstant(value: string | undefined): value is string {
     && calendar.getUTCDate() === day
     && hour <= 23 && minute <= 59 && second <= 59
     && Number.isFinite(Date.parse(value))
+}
+
+export function originalNewowCombinationSupported(identity: MarketDetailIdentity): boolean {
+  return !(identity.strategy === 'main_rise' && ['5m','15m','30m'].includes(identity.frequency))
 }

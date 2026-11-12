@@ -106,7 +106,7 @@ class Controller:
             (),
             tuple("tq-trade:" + t["trade_id"] for t in snapshot["trades"]),
             source,
-            at + timedelta(seconds=10),
+            at + timedelta(minutes=1),
             True,
         )
 

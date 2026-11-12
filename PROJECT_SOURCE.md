@@ -17,20 +17,12 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
 - 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
-- Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。旧 `view=trend` 页面链接显示一次迁移提示后规范化到 `view=newow&strategy=trend&series_kind=actual_dominant&frequency=1d`，`/api/v1/market/newow/trend-detail` 仍仅保留固定 D1 API 兼容语义。其他视角不得消费或复制这些 Newow 事实。
+- Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。其他视角不得消费或复制这些 Newow 事实。
 - 策略详情不显示模糊的“全历史策略效果”，不把账户收益、持仓、订单或成交混入参考交易，也不恢复已退役策略事件。首页独立模拟交易监控可只读展示 TqKq 账户事实；Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，与该账户事实分离。
 
 苏冰预警、自由看盘和火天大有六周期（5m/15m/30m/60m/1d/1w）成交量采用 `subing_volume_tier_display_v1`：保留红绿柱，本根量相对同物理合约、同计算段的前一根已完成量，2≤倍数<3在柱顶显示蓝色圆点，倍数≥3显示紫色菱形；低档、无前根、零分母、质量中断及未确认输入不标记。不恢复成交量说明文字、按钮或弹窗。这是独立展示扩展，不修改仅30m分档的研究因子、预警规则或策略动作；牛哇保持现有成交量展示。
 
 多周期波段路径使用独立展示身份 `guiyi_futures_historical_path_v1`。历史双线与周期样本仅限同物理合约、同计算段，普通参考和 trueup 样本分离；保持公开 v3.4.49 的周期与剩余价格幅度估算，不修改策略或参考收益。剩余时长与预计日期分别验证：日期基于快照行情交易日，通过 MarketDataService 的 Catalog 日历和 Session 证明逐日推进（最长366个自然日），不使用浏览器日期或星期推断。缺历史日历前缀不估算时长；缺未来证明只保留时长及原因；历史快照没有当时捕获的日历身份不借当前日历补日期。日期证明参与快照缓存身份，旧路径身份不视为新模型。无有效 ETA 日期时只画持有清仓目标或空仓吸筹参考，不生成预计日期端点或未来持仓背景；没有同身份止损来源不展示止损距离比。
-
-## 期货双向策略独立研究
-
-详情页显式 `strategy_model=futures_bidir_v1` 切换归一自有期货研究；未带参数的旧链接仍为牛哇原版。
-趋势、震荡、双策略、主升浪及测试1～4名称不变，模型、公式、参考交易与10万元分层研究账户独立。
-首轮JM/RB/AL/TA六周期，缺资金保留独立参考、缺行情/执行事实分别披露；周线test3无更高级别标不适用。
-API只读SHA索引冻结结果，GET不回测、下载或写生产；页面明确历史截止而非当前账户持仓。
-本能力不接入持续Paper、Scope、Runtime、通知或Broker；合同见[期货双向研究](docs/NEWOW_FUTURES_STRATEGY.md)。
 
 ## 苏冰决策持续观察与历史回放
 
@@ -96,7 +88,7 @@ RB四周期趋势、震荡及独立双策略是早期分阶段验收范围；当
 旧v31/v32历史截止、v33与v34候选wire保持冻结；不把旧合同限制用于当前v35，也不改写历史证据。
 1m仅作为聚合输入。完整 `explanation` section仍显式未开放；独立 `decision_v2` 与分析入口
 按各自合同读取已完成输入，不能据此声称所有解释面板均已开放。
-旧 `/trend-detail` 固定 D1 兼容合同不变；当前发布身份、配置和自然运行验收仍只看 `STATUS.md` 与真实 evidence。
+当前发布身份、配置和自然运行验收仍只看 `STATUS.md` 与真实 evidence。
 
 ## 指标
 
@@ -131,7 +123,7 @@ HTDY 60m 实时参考采用 `htdy_first_seen_reverse_close_v1`：buy 开多、se
 
 苏冰详情与 HTDY 的“实时参考”来源仅消费 `forward_observation` 实时留存参考交易：共用曲线、快捷窗口、最近三笔卡片、按需分页及有界快照缓存；不在该区展示历史重算或 HTDY 重绘交易。缺失实时流时明确不可用，实际 AlertEvent 审计独立折叠，不以预警条数推算完整交易收益。历史研究 API 和资产仍独立保留，不改写已有事实。合同见 [Reference Trading](openspec/specs/reference-trading/spec.md#requirement-retained-forward-reference-performance-panel)。
 
-Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。通用 Scope 写入拒绝 disabled Rule；首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
+Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 
 ## 数据与稳定入口
 
@@ -148,7 +140,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 - 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的交办范围内；数据补全或历史候选闭环无需逐批人工批准，由执行者冻结并校验 exact plan hash。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simulation/monitor/*` 及独立只读 `/api/v1/research/new-subing/*`、`/api/v1/research/newow-futures/*`。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simulation/monitor/*` 及独立只读 `/api/v1/research/new-subing/*`。
 统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 为 `data`、`runtime`、`reference` 与 `home`。`reference` 提供精确计划及 build/advance/rebuild/resume，`home build` 显式构建首页派生投影；写入边界仍遵守各自合同。新苏冰离线研究使用上文专用脚本，不恢复退役研究产品。
 
 ## 模拟交易

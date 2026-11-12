@@ -22,7 +22,7 @@ from app.market_data.new_subing_research import (
 )
 from scripts.research.four_unity_execution import VERSION, run_segment, summarize
 from scripts.research.four_unity_signals import CANDIDATES, compute_signals
-from scripts.research.newow_futures_execution_facts import read_json, safe_path
+from scripts.research.execution_fact_files import read_json, safe_path
 from scripts.research.subing_jm_daily_preflight import audit_series
 
 

@@ -11,11 +11,11 @@ import {
 } from '../src/utils/marketDetailPreferences.ts'
 import {
   marketDetailEventIdentity,
+  originalNewowCombinationSupported,
   parseMarketDetailRoute,
   resolveViewSwitchIdentity,
   serializeMarketDetailIdentity,
 } from '../src/utils/marketDetailRoute.ts'
-import { originalNewowCombinationSupported } from '../src/utils/newowFutures.ts'
 import { marketHomeUnifiedProductChartQuery } from '../src/utils/marketHomeRoutes.ts'
 
 function storage(initial: Record<string, string> = {}) {
@@ -26,14 +26,6 @@ function storage(initial: Record<string, string> = {}) {
     values,
   }
 }
-
-test('legacy Trend redirects semantically to the unified fixed D1 Newow trend identity', () => {
-  assert.equal(parseMarketDetailRoute({ symbol: 'rb', view: 'trend', frequency: '15m' }).kind, 'invalid')
-  assert.deepEqual(parseMarketDetailRoute({ symbol: 'rb', view: 'trend', frequency: '1d' }), {
-    kind: 'valid',
-    identity: { view: 'newow', symbol: 'rb', strategy: 'trend', seriesKind: 'actual_dominant', frequency: '1d' },
-  })
-})
 
 test('Newow accepts only its three strategies and independent completed periods', () => {
   for (const strategy of ['trend', 'oscillation', 'main_rise'] as const) {
@@ -210,4 +202,10 @@ test('Newow entry defaults to daily despite a legacy 1m preference while explici
   if (explicit.kind === 'valid') assert.equal(explicit.identity.frequency, '1m')
   assert.equal(preferences.free.frequency, '1m')
   assert.equal(parseMarketDetailRoute({ view: 'free', symbol: 'rb', series_kind: 'actual_dominant', frequency: '1m' }).kind, 'valid')
+})
+
+test('retired research links fail closed while ordinary Newow links remain valid', () => {
+  const query = { symbol: 'jm', view: 'newow', strategy: 'trend', frequency: '1d' }
+  assert.equal(parseMarketDetailRoute(query).kind, 'valid')
+  assert.equal(parseMarketDetailRoute({ ...query, strategy_model: 'futures_bidir_v1' }).kind, 'invalid')
 })

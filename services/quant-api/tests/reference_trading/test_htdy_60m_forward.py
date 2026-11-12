@@ -116,6 +116,20 @@ def test_original_identity_changes_rejected_before_market_read(field, value):
     assert read.reads == 0
 
 
+def test_equal_market_tail_preserves_original_decimal_encoding():
+    from hashlib import sha256
+    import json
+
+    read = Read()
+    event = original(read)
+    read.bars = (*read.bars[:-1], replace(read.bars[-1], close=Decimal("3500.000")))
+    result = capture(read, event)
+    assert result.input_payload["bar"]["close"] == event.data["close"]
+    assert result.input_payload["bars"][-1] == result.input_payload["bar"]
+    encoded = json.dumps(result.input_payload["bars"], sort_keys=True, separators=(",", ":"))
+    assert result.source_proof["window_sha256"] == sha256(encoded.encode()).hexdigest()
+
+
 def test_changed_original_bar_cannot_be_replaced_by_current_mds_value():
     read = Read()
     event = original(read)

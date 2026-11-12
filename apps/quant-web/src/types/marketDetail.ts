@@ -18,7 +18,6 @@ export interface FlexibleViewRestore {
 export interface MarketDetailViewRestore {
   newow: {
     strategy: NewowStrategy
-    strategyModel?: MarketDetailIdentity['strategyModel']
     newowTest?: MarketDetailIdentity['newowTest']
     newowMode?: MarketDetailIdentity['newowMode']
     /** Chart period survives switching even when this strategy cannot evaluate it. */
@@ -34,7 +33,6 @@ export interface MarketDetailIdentity {
   strategy?: NewowStrategy
   /** Presentation mode; fusion is not a fourth strategy kernel. */
   newowMode?: 'dual'
-  strategyModel?: 'futures_bidir_v1'
   newowTest?: 'osc-test' | 'osc-test2' | 'osc-test3' | 'osc-test4' | 'osc-test5'
   seriesKind: DetailSeriesKind
   contract?: string
