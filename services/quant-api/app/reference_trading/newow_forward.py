@@ -25,6 +25,8 @@ from guiyi_quant.reference_trading import (
 from guiyi_quant.reference_trading.adapters import AdapterCheckpoint, strategy_input_fingerprint
 
 
+OSCILLATION_INBOX_WARM_PREFIX = "newow_oscillation_inbox_warm_prefix_v1"
+
 def _timestamp(value: object) -> datetime:
     if not isinstance(value, str):
         raise ValueError("NEWOW_CAPTURE_CORRUPT")
