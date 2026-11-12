@@ -412,3 +412,79 @@ NOV10_BINDINGS = {
         None,
     ),
 }
+
+
+NOV12_VERSION = "htdy_conflict_recovery_20261112_v1"
+NOV12_INVENTORY_SHA256 = "ecaac81ee885697efd542e11cd3bf10963877c83d0a90264f626b21820290cc9"
+NOV12_BINDINGS = {
+    "reference-stream:e5d425448e95d1a3530ae604649ab96a4332e74d8fabc74b33ab843856855962": (  # AP
+        "1fe424640c5544eba8d8449f7e8c91fa",
+        "01f2179c7b224b908f67c0c191b7734c",
+        6,
+        "b80b4069aee84cd59600fc71e283604b",
+        None,
+    ),
+    "reference-stream:d26afc6086a8710138a37002b6b384e3a5a2e93b923069dfa7908cbe356d2e55": (  # CJ
+        "82e1b7eb72354ddcacf03e56f84ee7fc",
+        "5bd83420197a43e29461a2e366ac4ae6",
+        6,
+        "aaf762a74be7413fb7c2930fe6876736",
+        None,
+    ),
+    "reference-stream:d7927893f70ab589aa4857dd7e6b5eb1f24bc90bb1fbb2a8df115bd59652bf9d": (  # JD
+        "2523af11fa5b42cf893b1819ab188789",
+        "f745419b37d343878606252a9da5d3a7",
+        6,
+        "e505c753d77c4a5caccd596d7771d1b8",
+        "reference-trade:a9d4adbda430c111bb0753bb83599331ffbb84e7d494c159c91ed50d97189646",
+    ),
+    "reference-stream:44eb4c5dceaf0331deded57cb4ba79d522bd575289e121956297a9bca257974a": (  # LC
+        "1ac351ab9a8b4c12ba8ff6928f110c00",
+        "0c2d2739a2584b7caf752b618ea5cb94",
+        6,
+        "9c8a9482c3fc475bbc7bf943073fffd2",
+        "reference-trade:9478713470063014dd64cde97b581e33df9b69fe14e3cc7b4227b95b1df6d536",
+    ),
+    "reference-stream:8612e3118fbd43cff68b523627dd3d25e08b6cab754ddd29191c686f949ba8de": (  # LH
+        "2d2c402c06aa43f5afb238f4bf1d368b",
+        "a6740f4766ad4f8b9085b5507c563599",
+        6,
+        "2680d033ffd74de2a188ac8a32cfe24e",
+        "reference-trade:1f89cae9527dc168513e91b065024aedd9fcad0baae72d514bf970438747478b",
+    ),
+    "reference-stream:cde4a953e05421e362a740d1c45f2747eb31ec194d9bc1604b807bc0187c2fb6": (  # PK
+        "b185a223c992456fbcbc116c42f3b22d",
+        "3b6a6ff1df7345a88b656f39c5e5bfb5",
+        6,
+        "6a2d34a712ce4531a447e660b461415c",
+        None,
+    ),
+    "reference-stream:0bd72d58e494ba0c3c76c222141bf9d14282008a4536267a3c1285986efcd8c5": (  # PS
+        "c065d133aa7f43fcb3cac39ca8802e79",
+        "27d437868c354bf69fe9ea70ef4f4ef7",
+        5,
+        "61d104b5d50d49d09e4b72538c11dd38",
+        "reference-trade:5bb896ee8ae6a7b4d48b97e2c58a422380ec82c00889e7da3570d6cbf2d12559",
+    ),
+    "reference-stream:82c1f916ee1227a14487491b368afc032cdb2725b30a914b446f257662df7bed": (  # SF
+        "da70d0ef8a1d4a19bc02d9f14e68bb46",
+        "95c70dbc58b34065974814a27227f96c",
+        6,
+        "1a7d688bf68d4df699e94a1039dfacea",
+        None,
+    ),
+    "reference-stream:b3e1ea9d7543f36d175cc1add33d3674810713a2d790e1d960202eb2f12ec8de": (  # SM
+        "7cba5eabee3148a2b63b6d14093b9aca",
+        "0e159b8137444be392dbf6715e79640f",
+        6,
+        "14040900a5dc4cc185123e98bc9d14bf",
+        None,
+    ),
+    "reference-stream:21149875d0b154b6efa0647e3ad271453cc1d15dc7419087469e2b9fd62b0493": (  # UR
+        "c62c673afec24a7b9deaa9f6f6031324",
+        "94362cd1d658449f9d67d546c3fc3433",
+        5,
+        "7701e3173cce4d49811e61487feb2df4",
+        None,
+    ),
+}
