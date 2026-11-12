@@ -295,7 +295,9 @@ class ReferenceInboxRepository:
         from app.db.readonly import readonly_transaction
         with self._session_factory() as session, readonly_transaction(session, timeout_seconds=15):
             resolved = self._resolved(session, cancellable=True)
-            return bool(session.scalar(select(select(ReferenceInboxDelivery.delivery_id).where(
+            return bool(session.scalar(select(select(ReferenceInboxDelivery.delivery_id).join(
+                ReferenceStream, ReferenceStream.stream_id == ReferenceInboxDelivery.stream_id).where(
+                ReferenceStream.enabled.is_(True),
                 ReferenceInboxDelivery.status != "COMPLETED",
                 ReferenceInboxDelivery.delivery_id.not_in(resolved)).exists())))
 
@@ -432,7 +434,9 @@ class ReferenceInboxRepository:
                 func.row_number().over(partition_by=ReferenceInboxDelivery.stream_id,
                     order_by=(ReferenceInboxInput.trading_day, ReferenceInboxInput.journal_ms,
                               ReferenceInboxInput.journal_sequence, ReferenceInboxDelivery.delivery_id)).label("position")
-            ).join(ReferenceInboxInput, ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id).where(
+            ).join(ReferenceInboxInput, ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id).join(
+                ReferenceStream, ReferenceStream.stream_id == ReferenceInboxDelivery.stream_id).where(
+                ReferenceStream.enabled.is_(True),
                 ReferenceInboxDelivery.status != "COMPLETED",
                 ReferenceInboxDelivery.delivery_id.not_in(resolved)).subquery()
             query = select(ReferenceInboxDelivery).join(rank,
