@@ -2,6 +2,7 @@
 
 from datetime import datetime, UTC, timedelta
 from pathlib import Path
+from time import monotonic_ns
 from ..htdy_account_execution import model as m
 from ..htdy_execution import OrderReport
 from ..htdy_account_execution.store import LocalStore
@@ -301,7 +302,9 @@ class Controller:
 
     def tick(self, inputs, at, *, opening_allowed, stopping=False):
         cmd = m.TqKqTick(at, tuple(inputs), opening_allowed, stopping=stopping)
+        started = monotonic_ns()
         tx = self.store.execute("tq-tick:" + command_digest(cmd), cmd)
+        proposal_commit_us = (monotonic_ns() - started) // 1000
         for effect in tx.effects:
             fact = next(
                 (i for i in inputs if i.instrument.contract == effect.order.contract),
@@ -310,16 +313,36 @@ class Controller:
             if fact is None:
                 raise ValueError("TQ_EXECUTION_FACT_MISSING")
             self.dispatch(
-                effect, fact, datetime.now(UTC), opening_allowed=opening_allowed
+                effect, fact, datetime.now(UTC), opening_allowed=opening_allowed,
+                proposal_commit_us=proposal_commit_us
             )
         return tx
 
-    def dispatch(self, effect, fact, at, *, opening_allowed):
+    def dispatch(self, effect, fact, at, *, opening_allowed, proposal_commit_us=None):
+        started = monotonic_ns()
+        timing = {"proposal_commit_us": proposal_commit_us}
         try:
-            return self._dispatch(effect, fact, at, opening_allowed=opening_allowed)
+            result = self._dispatch(effect, fact, at, opening_allowed=opening_allowed,
+                                    timing=timing, started=started)
         except SubmissionNotSent as error:
+            dispatch_finished = monotonic_ns()
             self.abort_unsent(effect.order.order_id, str(error), native_id=error.native_id)
-            return "LOCAL_NOT_SENT"
+            timing["abort_us"] = (monotonic_ns() - dispatch_finished) // 1000
+            result = "LOCAL_NOT_SENT"
+        else:
+            dispatch_finished = monotonic_ns()
+        if effect.kind == "SUBMIT":
+            self.journal.event(
+                "submit_timing",
+                {
+                    **timing,
+                    "order_id": effect.order.order_id,
+                    "result": result,
+                    "dispatch_us": (dispatch_finished - started) // 1000,
+                },
+                self.clock(),
+            )
+        return result
 
     def _finish_recorded_unsent(self, snapshot, state, at):
         native_ids = {row["order_id"] for row in (*snapshot["orders"], *snapshot["trades"])}
@@ -352,12 +375,16 @@ class Controller:
             unsent_proof=proven,
         )
 
-    def _dispatch(self, effect, fact, at, *, opening_allowed):
+    def _dispatch(self, effect, fact, at, *, opening_allowed, timing, started):
         from ..htdy_account_execution.scheduling import executable_price
 
         order = effect.order
         self.gateway.assert_continuity()
+        lock_started = monotonic_ns()
+        timing["before_lock_us"] = (lock_started - started) // 1000
         with self.store.dispatch_guard() as state:
+            locked = monotonic_ns()
+            timing["lock_wait_us"] = (locked - lock_started) // 1000
             at = self.clock()
             current = next(
                 (o for o in state.orders if o.order_id == order.order_id), None
@@ -373,9 +400,13 @@ class Controller:
                 raise ValueError("TQ_DISPATCH_FACT_DRIFT")
             if not state.readback.at <= at < state.readback.valid_until:
                 if effect.kind == "SUBMIT" and at >= state.readback.valid_until:
+                    timing["precheck_us"] = (monotonic_ns() - locked) // 1000
                     raise SubmissionNotSent("TQ_SUBMIT_EXPIRED_NO_SEND")
                 raise ValueError("TQ_ACCOUNT_STALE")
             if not fact.session.at <= at < fact.session.valid_until:
+                if effect.kind == "SUBMIT" and at >= fact.session.valid_until:
+                    timing["precheck_us"] = (monotonic_ns() - locked) // 1000
+                    raise SubmissionNotSent("TQ_SESSION_STALE")
                 raise ValueError("TQ_SESSION_STALE")
             symbol = next(
                 (
@@ -411,6 +442,7 @@ class Controller:
                     raise ValueError("TQ_SUBMIT_NOT_QUALIFIED")
                 price = executable_price(fact, order.side, at)
                 if price is None:
+                    timing["precheck_us"] = (monotonic_ns() - locked) // 1000
                     raise SubmissionNotSent("TQ_SUBMIT_EXPIRED_NO_SEND")
                 if price != order.price:
                     raise ValueError("TQ_OPPONENT_PRICE_DRIFT")
@@ -446,7 +478,10 @@ class Controller:
                 }
             else:
                 raise ValueError("TQ_EFFECT_INVALID")
+            claim_started = monotonic_ns()
+            timing["precheck_us"] = (claim_started - locked) // 1000
             native_claim = self.journal.claim(effect.kind, order.order_id, payload, at)
+            timing["claim_us"] = (monotonic_ns() - claim_started) // 1000
             if native_claim is None:
                 return "ALREADY_CLAIMED_NO_SEND"
             if effect.kind == "CANCEL":
@@ -460,12 +495,15 @@ class Controller:
                                    fact.instrument.valid_until, fact.quote.valid_until,
                                    fact.session.final_close_at - timedelta(seconds=60)
                                    if order.offset == "OPEN" else fact.session.final_close_at)
+                    sdk_started = monotonic_ns()
                     try:
                         checked(symbol, order, offset, native_claim, deadline)
                     except SubmissionNotSent as error:
                         if error.native_id != native_claim:
                             raise ValueError("TQ_UNSENT_PROOF_CONFLICT") from error
                         raise
+                    finally:
+                        timing["sdk_admission_us"] = (monotonic_ns() - sdk_started) // 1000
             # Queued is not sent, accepted or filled; wait_update/remote facts
             # alone can advance those stages. Any thrown/unknown result is held.
             self.journal.event(
