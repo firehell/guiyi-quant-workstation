@@ -161,3 +161,28 @@ def test_classified_source_does_not_exempt_corrupt_saved_original(monkeypatch):
     monkeypatch.setattr(worker_entry, '_warmup_saved_capture', corrupt)
     with pytest.raises(RuntimeError, match='REFERENCE_WARMUP_CAPTURE_CONFLICT'):
         worker_entry.warmup_reference_worker(allow_classified_weekly_unavailable=True)
+
+
+@pytest.mark.parametrize("turnover", [0, None])
+def test_complete_strict_zero_week_is_an_unavailable_endpoint(turnover):
+    from decimal import Decimal
+    from app.market_data.domain import CanonicalBar
+    from app.reference_trading.prewarm_quality import prove_weekly_unavailable
+
+    s = source()
+    zero = Decimal(0)
+    bar = CanonicalBar(END, END.date(), zero, zero, zero, zero, zero,
+                       zero if turnover == 0 else None, None)
+    s.market_data.query_contract_weekly_replay_quality = lambda **_: ((bar,), ())
+    s.market_data.query_actual_dominant_trading_days_quality = lambda *a, **k: (
+        SimpleNamespace(bars=(bar,), request_identity={
+            'symbol': 'rb', 'series_kind': 'actual_dominant', 'contract': None, 'frequency': '1w',
+        }, requested_trading_day_window=(END.date(), END.date())), (),
+    )
+    if turnover is None:
+        with pytest.raises(ValueError, match="REFERENCE_WEEKLY_QUALITY_UNPROVEN"):
+            prove_weekly_unavailable(s, identity('1w'), since=END.date(), through=END.date(), cutoff=END)
+    else:
+        proof = prove_weekly_unavailable(s, identity('1w'), since=END.date(), through=END.date(), cutoff=END)
+        assert proof['quality_interruptions'] == 1
+        assert proof['contracts'][0]['valid_count'] == 0
