@@ -76,7 +76,10 @@ def _source_action_fact(wire, dependency, observed):
 
 def _pre_owner_calculation_alignment(stream, policy, first, second):
     """Distinguish legacy rollover labels from interruptions during ownership."""
-    if stream.frequency != "1d" or policy is not InputQualityPolicy.DAILY_V2:
+    if (stream.frequency, policy) not in (
+        ("1d", InputQualityPolicy.DAILY_V2),
+        ("1w", InputQualityPolicy.WEEKLY_V2),
+    ):
         return None
     proof = first["source_proof"]
     owner = proof["owner_segment_id"]
@@ -103,7 +106,8 @@ def _pre_owner_calculation_alignment(stream, policy, first, second):
             return None
     except (TypeError, ValueError):
         return None
-    return {"version": "newow_d1_pre_owner_calculation_alignment_v1",
+    period = "d1" if stream.frequency == "1d" else "w1"
+    return {"version": f"newow_{period}_pre_owner_calculation_alignment_v1",
             "trend": labels[0], "oscillation": labels[1], "prefix_label": tagged}
 
 
