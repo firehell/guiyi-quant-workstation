@@ -1160,7 +1160,7 @@ def test_final_submit_deadline_includes_opening_cutoff(tmp_path):
     c.close()
 
 
-@pytest.mark.parametrize("rejection", ["quote_expired", "price_drift", "account_expired"])
+@pytest.mark.parametrize("rejection", ["quote_expired", "price_drift", "account_expired", "session_expired", "instrument_expired"])
 def test_local_submission_rejection_aborts_proposal_without_sending(tmp_path, rejection):
     from guiyi_quant.tq_simulation.gateway import SubmissionNotSent
 
@@ -1176,8 +1176,10 @@ def test_local_submission_rejection_aborts_proposal_without_sending(tmp_path, re
         expired_at = c.store.current().readback.valid_until
         c.clock = lambda: expired_at
     else:
-        f = replace(f, quote=replace(f.quote, valid_until=now + timedelta(seconds=1)))
-        c.clock = lambda: f.quote.valid_until
+        field = rejection.removesuffix("_expired")
+        expires = now + timedelta(seconds=1)
+        f = replace(f, **{field: replace(getattr(f, field), valid_until=expires)})
+        c.clock = lambda: expires
     tx = c.tick((f,), now, opening_allowed=True)
     order = c.store.current().orders[-1]
     assert order.order_id == tx.effects[0].order.order_id
@@ -1186,6 +1188,11 @@ def test_local_submission_rejection_aborts_proposal_without_sending(tmp_path, re
     assert len(c.journal.mappings()) == int(rejection == "price_drift")
     assert len(c.journal.events("local_not_sent")) == 1
     assert not c.journal.events("queued")
+    timing, = c.journal.events("submit_timing")
+    assert timing["order_id"] == order.order_id
+    assert timing["result"] == "LOCAL_NOT_SENT"
+    for stage in ("proposal_commit_us", "before_lock_us", "lock_wait_us", "precheck_us", "dispatch_us"):
+        assert timing[stage] >= 0
     c.close()
 
 
