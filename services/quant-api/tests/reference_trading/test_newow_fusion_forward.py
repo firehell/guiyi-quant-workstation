@@ -76,10 +76,13 @@ def sources(frequency="1d", *, policy=InputQualityPolicy.V1, gap_offset=None):
     return case, dependencies
 
 
-def test_legacy_pre_owner_gap_alignment_keeps_original_actions_and_fusion_owner():
-    policy = InputQualityPolicy.DAILY_V2
-    case, dependencies = sources(policy=policy, gap_offset=-timedelta(days=1))
-    stream = build_fusion_stream_identity("rb", "1d", recording_mode="forward_observation",
+@pytest.mark.parametrize(("frequency", "policy"), (
+    ("1d", InputQualityPolicy.DAILY_V2),
+    ("1w", InputQualityPolicy.WEEKLY_V2),
+))
+def test_legacy_pre_owner_gap_alignment_keeps_original_actions_and_fusion_owner(frequency, policy):
+    case, dependencies = sources(frequency, policy=policy, gap_offset=-timedelta(days=1))
+    stream = build_fusion_stream_identity("rb", frequency, recording_mode="forward_observation",
         observation_policy_version="completed_observation_v1", input_quality_policy=policy)
     bar = case.bars[0].bar
     calculation = dependencies[1]["capture"]["source_proof"]["calculation_segment_id"]
