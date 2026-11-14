@@ -321,6 +321,30 @@ def read_closed_feed(host, path, identity, selected):
     }, receipt
 
 
+def _initial_intake_feed_pids(host, identity, source, plan, state):
+    """Bind an intake-only halt to the original cohort's verified Feed exit."""
+    require(identity.get("kind") is None and plan.get("mode") is None
+            and "predecessor" not in plan and "stop_after" not in plan
+            and state.get("failed_stage") == "intake"
+            and failure_feed_state(plan, state) == "absent")
+    _, original = recovery._resolution_source(
+        host.directory / "cohort-attempts" / identity["plan_sha256"] / "state.json"
+    )
+    effects = original["effects"]
+    require(original.get("failed_phase") == "consumers_ready"
+            and original.get("error_code") == "COHORT_NEW_READY_TIMEOUT"
+            and set(effects) == {"prewarm", "calendars_off", "drain", "old_exited",
+                                 "preserve", "install", "consumers", "bootout_requests"})
+    requests = effects["bootout_requests"]
+    require(effects["old_exited"] == {"old_pids_exited": True, "bootout_requests": requests})
+    feed = requests["market-feed"]
+    owner = effects["drain"]["owners"]["market-feed"]
+    require(feed["pid"] == owner["pid"] and owner["phase"] == "parked"
+            and owner["generation"] == source["old"]["services"]["market-feed"]["generation"]
+            and type(feed["pid"]) is int and feed["pid"] > 1)
+    return [feed["pid"]]
+
+
 def _validate_lineage(host, value):
     """Check every retained failure once; flat membership cannot bless an unknown."""
     identity = value["source"]
@@ -350,7 +374,9 @@ def _validate_lineage(host, value):
         plans[name] = plan
         states[name] = state
         mode = plan.get("mode")
-        if mode is None:
+        if mode is None and state.get("failed_stage") == "intake":
+            _initial_intake_feed_pids(host, identity, historical_source(host, identity), plan, state)
+        elif mode is None:
             recovery._predecessor(
                 host, _public_path(value, plan), identity, historical=True
             )
@@ -400,7 +426,9 @@ def _validate_lineage(host, value):
         and value["files"].get(value["failed_plan_path"])
         == sha256(public_raw).hexdigest()
     )
-    if failed.get("mode") == "confirmed_feed_halt":
+    if failed.get("mode") is None:
+        expected = {failed["plan_sha256"]}
+    elif failed.get("mode") == "confirmed_feed_halt":
         predecessor, _ = recovery._feed_predecessor(
             host, failed["predecessor"]["plan_path"], identity
         )
@@ -531,7 +559,9 @@ def _evidence(host, path):
                 retain(folder / leaf)
         attempts.add(item["plan_sha256"])
 
-    if plan.get("mode") == "confirmed_feed_halt" and "stop_after" not in plan:
+    if plan.get("mode") is None:
+        pids = _initial_intake_feed_pids(host, identity, source, plan, state)
+    elif plan.get("mode") == "confirmed_feed_halt" and "stop_after" not in plan:
         selected, _ = recovery._feed_predecessor(
             host, plan["predecessor"]["plan_path"], identity
         )
