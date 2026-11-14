@@ -499,7 +499,7 @@ def _public_path(value, plan):
     require(False)
 
 
-def verify_pin(host, selected, *, own=None, closed_feed=None):
+def verify_pin(host, selected, *, own=None, closed_feed=None, predecessor=None):
     value = read_confirmation(host, selected)
     allowed = set(value["attempts"])
     if closed_feed is not None:
@@ -508,6 +508,8 @@ def verify_pin(host, selected, *, own=None, closed_feed=None):
         )
         require(closure == closed_feed)
         allowed.add(closure["plan_sha256"])
+    if predecessor is not None:
+        allowed.add(predecessor)
     _inventory(host, allowed, own=own)
     return value
 

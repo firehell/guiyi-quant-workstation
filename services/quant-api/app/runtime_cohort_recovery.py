@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 import json
 import os
+import plistlib
 from pathlib import Path
 import re
 import stat
@@ -29,7 +30,7 @@ from app.runtime_cohort import (
 from app.runtime_handover import _write, deployment_lock
 from app.reference_trading.recovery_campaign import digest
 
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 import fcntl
 from time import sleep
 from app.runtime_cohort import continuous_services, OPTIONAL_CONTINUOUS, CONTINUOUS, CALENDARS
@@ -1044,6 +1045,17 @@ def _original_feed_close_attempt(host, path, source_identity):
     }, receipt
 
 
+def _valid_continuation_actions(plan, actions):
+    expected = ["feed_cancel_intent", "feed_cancel_readback",
+                "feed_start_intent", "feed_label_loaded"]
+    for name in CALENDARS:
+        if plan["new"]["services"][name]["enabled"]:
+            stage = f"calendar_{name.replace('-', '_')}"
+            expected.append(stage + "_intent")
+            expected.append(stage + "_readback")
+    return actions == expected
+
+
 def _closed_predecessors(host, entries):
     closed = set()
     if (host.directory / "release-retirements").exists():
@@ -1153,7 +1165,7 @@ def _closed_predecessors(host, entries):
                 set(state) == {
                     "schema_version", "kind", "phase", "plan_sha256", "source",
                     "receipt_sha256", "effects",
-                }
+                } | ({"actions"} if "intake_continuation" in stopped_plan else set())
                 and type(state["schema_version"]) is int
                 and state["schema_version"] == 1
                 and state["kind"] == KIND
@@ -1182,6 +1194,7 @@ def _closed_predecessors(host, entries):
                     "intake", "readback", "natural_acceptance", "original_attempt_preserved",
                     "stopped_resolution",
                 } | ({"feed_close_resolution"} if "closed_feed" in stopped_plan else set())
+                  | ({"intake_continuation"} if "intake_continuation" in stopped_plan else set())
                 and type(receipt["schema_version"]) is int
                 and receipt["schema_version"] == 1
                 and receipt["kind"] == "postcas_forward_recovery_readback"
@@ -1215,6 +1228,16 @@ def _closed_predecessors(host, entries):
                     "feed_close_resolution" not in receipt,
                     "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
                 )
+            if "intake_continuation" in stopped_plan:
+                from app.runtime_intake_continuation import read_pin
+
+                require(
+                    receipt["intake_continuation"] == stopped_plan["intake_continuation"]
+                    and _valid_continuation_actions(stopped_plan, state["actions"])
+                    and all(effects[name] == value for name, value in read_pin(host, stopped_plan).items()),
+                    "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+                )
+                closed.add(stopped_plan["intake_continuation"]["plan_sha256"])
             closed.update(confirmation["attempts"])
             # This terminal root is proven too, even though its own historical
             # confirmation contains only the failed predecessors it resolved.
@@ -1616,6 +1639,19 @@ def _validate(plan, now, *, historical=False, history_directory=None, history_ve
     from app.runtime_stopped_recovery import valid_plan as valid_stopped_plan
 
     try:
+        continuation = plan.get("intake_continuation")
+        if "intake_continuation" in plan:
+            require(
+                plan.get("mode") == "reconciled_stopped"
+                and "closed_feed" in plan and "stop_after" not in plan
+                and isinstance(continuation, dict)
+                and set(continuation) == {"path", "plan_sha256", "plan_bytes_sha256", "state_bytes_sha256"}
+                and Path(continuation["path"]).is_absolute()
+                and all(re.fullmatch(r"[0-9a-f]{64}", continuation[key])
+                        for key in continuation if key != "path")
+                and isinstance(plan["audit"].get("active_consumers"), dict),
+                "COHORT_FORWARD_PLAN_INVALID",
+            )
         extended_budget = (
             plan.get("mode") == "reconciled_stopped"
             and "stop_after" not in plan
@@ -1627,7 +1663,7 @@ def _validate(plan, now, *, historical=False, history_directory=None, history_ve
             "COHORT_FORWARD_PLAN_INVALID",
         )
         require(
-            set(plan) - {"mode", "predecessor", "stop_after", "stopped_confirmation", "closed_feed", "original_close"}
+            set(plan) - {"mode", "predecessor", "stop_after", "stopped_confirmation", "closed_feed", "original_close", "intake_continuation"}
             == {
                 "schema_version",
                 "kind",
@@ -1966,9 +2002,12 @@ def apply_forward_recovery(host, recovery_plan_path):
     """Resume exact new owners; no install, CAS, protocol change or old restoration."""
     _raw, plan = _resolution_source(Path(recovery_plan_path))
     _validate(plan, host.now())
+    continuation = plan.get("intake_continuation")
+    if continuation is not None:
+        from app.runtime_intake_continuation import observe, read_pin
     valid_from = datetime.fromisoformat(plan["created_at"])
     valid_until = datetime.fromisoformat(plan["expires_at"])
-    with deployment_lock(runtime_dir=host.directory):
+    with deployment_lock(runtime_dir=host.directory), ExitStack() as continuation_guards:
         prior_attempt = (
             host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
         )
@@ -2003,12 +2042,15 @@ def apply_forward_recovery(host, recovery_plan_path):
                 )[0] == original_close,
                 "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
             )
-        _no_unresolved_recovery(
-            host, predecessor, stopped=plan.get("stopped_confirmation"),
-            stopped_feed_close=plan.get("closed_feed"),
-            original_close=original_close,
-            original_source=identity if original_halt else None,
-        )
+        if continuation is not None:
+            inherited_effects = read_pin(host, plan)
+        else:
+            _no_unresolved_recovery(
+                host, predecessor, stopped=plan.get("stopped_confirmation"),
+                stopped_feed_close=plan.get("closed_feed"),
+                original_close=original_close,
+                original_source=identity if original_halt else None,
+            )
         require(identity == plan["source"], "COHORT_FORWARD_SOURCE_DRIFT")
         require(source["new"] == plan["new"], "COHORT_FORWARD_REGISTRY_DRIFT")
         deadline = getattr(host, "monotonic", monotonic)() + plan["downtime_seconds"]
@@ -2031,7 +2073,10 @@ def apply_forward_recovery(host, recovery_plan_path):
                 verify_pin(
                     host, plan["stopped_confirmation"], own=plan["plan_sha256"],
                     closed_feed=plan.get("closed_feed"),
+                    predecessor=continuation["plan_sha256"] if continuation else None,
                 )
+                if continuation:
+                    read_pin(host, plan)
             require(
                 host._controller() == plan["audit"]["controller"],
                 "COHORT_FORWARD_CONTROLLER_DRIFT",
@@ -2068,7 +2113,9 @@ def apply_forward_recovery(host, recovery_plan_path):
             host.check_protected_forward(source, plan["audit"])
             budget()
 
-        with host.forward_guards(source):
+        if continuation:
+            continuation_guards.enter_context(host.forward_guards(source))
+        with (nullcontext() if continuation else host.forward_guards(source)):
             kwargs = {"expected": plan["audit"], "predecessor": predecessor}
             if original_halt:
                 kwargs.update(
@@ -2088,7 +2135,15 @@ def apply_forward_recovery(host, recovery_plan_path):
                         else None
                     ),
                 )
-            if plan.get("mode") == "reconciled_stopped":
+            if continuation:
+                audit = plan["audit"]
+                unchanged()
+                require(
+                    observe(host, source, audit, budget) == audit["active_consumers"],
+                    "COHORT_FORWARD_OWNER_UNPROVEN",
+                )
+                host.check_continuation_calendar_window(source, budget)
+            elif plan.get("mode") == "reconciled_stopped":
                 from app.runtime_stopped_recovery import audit_for_plan
 
                 audit = audit_for_plan(
@@ -2118,8 +2173,10 @@ def apply_forward_recovery(host, recovery_plan_path):
             "plan_sha256": plan["plan_sha256"],
             "source": identity,
             "phase": "claimed",
-            "effects": {},
+            "effects": dict(inherited_effects) if continuation else {},
         }
+        if continuation:
+            journal["actions"] = []
         mutated = False
 
         def persist(phase):
@@ -2135,9 +2192,8 @@ def apply_forward_recovery(host, recovery_plan_path):
                 persist(name)
                 if name in {"intake", "verified"}:
                     host._forward_diagnostic = None
-                mutated = (
-                    True  # An uncertain command return is never permission to retry.
-                )
+                if not continuation:
+                    mutated = True  # An uncertain command return is never permission to retry.
                 result = action()
                 if name == "verified":
                     _verification_substep(host, "post_step_guards")
@@ -2183,7 +2239,7 @@ def apply_forward_recovery(host, recovery_plan_path):
                     "original_attempt_preserved": True,
                 }
 
-            if predecessor is None and "live_restart_intent" in plan["audit"]:
+            if not continuation and predecessor is None and "live_restart_intent" in plan["audit"]:
 
                 def record_stop(value):
                     journal["effects"]["live_stop"] = value
@@ -2195,19 +2251,42 @@ def apply_forward_recovery(host, recovery_plan_path):
                         source, plan["audit"], budget, record_stop
                     ),
                 )
-            step(
-                "consumers",
-                lambda: host.resume_consumers(source, plan["audit"], budget),
-            )
-            intake = step(
-                "intake", lambda: host.await_consumers(source, plan["audit"], budget)
-            )
-            step("feed", lambda: host.resume_feed(source, plan["audit"], budget))
+            if continuation:
+                intake = inherited_effects["intake"]
+
+                def record_action(stage):
+                    nonlocal mutated
+                    journal["actions"].append(stage)
+                    persist(stage)
+                    if stage.endswith("_intent"):
+                        mutated = True
+
+                step("feed", lambda: host.resume_feed(
+                    source, plan["audit"], budget, record=record_action,
+                ))
+                continuation_guards.close()
+            else:
+                step(
+                    "consumers",
+                    lambda: host.resume_consumers(source, plan["audit"], budget),
+                )
+                intake = step(
+                    "intake", lambda: host.await_consumers(source, plan["audit"], budget)
+                )
+                step("feed", lambda: host.resume_feed(source, plan["audit"], budget))
             readback = step(
                 "verified", lambda: host.verify_forward(source, plan["audit"], budget)
             )
-            step("calendars", lambda: host.forward_calendars(source, budget))
+            if continuation:
+                step("calendars", lambda: host.forward_calendars(
+                    source, budget, record=record_action,
+                ))
+            else:
+                step("calendars", lambda: host.forward_calendars(source, budget))
             unchanged()
+            if continuation:
+                require(_valid_continuation_actions(plan, journal["actions"]),
+                        "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED")
             receipt = {
                 "schema_version": 1,
                 "kind": "postcas_forward_recovery_readback",
@@ -2223,6 +2302,8 @@ def apply_forward_recovery(host, recovery_plan_path):
                 receipt["stopped_resolution"] = plan["stopped_confirmation"]
                 if "closed_feed" in plan:
                     receipt["feed_close_resolution"] = plan["closed_feed"]
+            if continuation:
+                receipt["intake_continuation"] = continuation
             if predecessor is not None:
                 receipt["predecessor_resolution"] = {
                     "kind": "confirmed_feed_halt_resolution_v1"
@@ -2350,7 +2431,7 @@ def apply_forward_recovery(host, recovery_plan_path):
             try:
                 persist("outcome_unknown" if mutated else "precondition_blocked")
             finally:
-                if mutated and plan.get("stop_after") != "feed_close":
+                if mutated and not continuation and plan.get("stop_after") != "feed_close":
                     try:
                         host.halt_unknown(source)
                     except Exception:
@@ -4120,7 +4201,7 @@ class ForwardRecoveryHost(CohortHost):
     def await_consumers(self, source, audit, check_budget):
         return self._await(source, audit, check_budget, feed=False)
 
-    def resume_feed(self, source, audit, check_budget):
+    def resume_feed(self, source, audit, check_budget, *, record=None):
         require(
             self._controller() == audit["controller"], "COHORT_FORWARD_CONTROLLER_DRIFT"
         )
@@ -4135,6 +4216,17 @@ class ForwardRecoveryHost(CohortHost):
         binding = registry(source["new"]).services["market-feed"]
         require(self.definition_absent(binding), "COHORT_FORWARD_FEED_ALREADY_STARTED")
         self._check_receiving_context(source, audit, check_budget)
+        if record is not None:
+            for name, pid in audit["active_consumers"].items():
+                state = self._active(registry(source["new"]).services[name])
+                require(state is not None and state["pid"] == pid,
+                        "COHORT_FORWARD_OWNER_UNPROVEN")
+            require(
+                owner_lock_available("market-feed", runtime_dir=self.directory),
+                "COHORT_FORWARD_OWNER_LOCK_INVALID",
+            )
+            check_budget()
+            record("feed_cancel_intent")
         cancel_drain(
             "market-feed", request_id=control["request_id"], runtime_dir=self.directory
         )
@@ -4143,7 +4235,20 @@ class ForwardRecoveryHost(CohortHost):
         )
         self.check_protected_forward(source, audit)
         check_budget()
-        return self.start(binding)
+        if record is not None:
+            require(
+                _read(self.directory / "market-feed.handover.json")
+                == {**control, "phase": "cancelled"}
+                and self.definition_absent(binding),
+                "COHORT_FORWARD_DRAIN_DRIFT",
+            )
+            record("feed_cancel_readback")
+            record("feed_start_intent")
+        result = self.start(binding)
+        if record is not None:
+            require(not self.definition_absent(binding), "COHORT_FORWARD_FEED_NOT_LOADED")
+            record("feed_label_loaded")
+        return result
 
     def verify_forward(self, source, audit, check_budget):
         intake = self._await(source, audit, check_budget, feed=True)
@@ -4183,11 +4288,29 @@ class ForwardRecoveryHost(CohortHost):
             "natural_acceptance": "pending",
         }
 
-    def forward_calendars(self, source, check_budget):
+    def check_continuation_calendar_window(self, source, check_budget, *, ahead_minutes=12):
+        from app.runtime_bootstrap import BootstrapBackend, BootstrapError
+
+        new = registry(source["new"])
+        for name in CALENDARS:
+            binding = new.services[name]
+            if binding.enabled:
+                payload = plistlib.loads(self.bytes(self.path(binding)))
+                try:
+                    BootstrapBackend()._assert_recovery_calendar_safe(
+                        payload, ahead_minutes=ahead_minutes,
+                    )
+                except BootstrapError as error:
+                    raise CohortError(str(error)) from None
+            check_budget()
+
+    def forward_calendars(self, source, check_budget, *, record=None):
         from app.runtime_bootstrap import BootstrapError
 
         new = registry(source["new"])
         end = self.monotonic() + 420
+        if record is not None:
+            self.check_continuation_calendar_window(source, check_budget, ahead_minutes=6)
         for name in CALENDARS:
             binding = new.services[name]
             while True:
@@ -4198,11 +4321,19 @@ class ForwardRecoveryHost(CohortHost):
                     self.launch("disable", f"gui/{os.getuid()}/{binding.label}")
                     break
                 try:
-                    self.start_calendar(binding)
+                    if record is None:
+                        self.start_calendar(binding)
+                    else:
+                        require(self.definition_absent(binding), "COHORT_FORWARD_CALENDAR_ALREADY_LOADED")
+                        record(f"calendar_{name.replace('-', '_')}_intent")
+                        self.start_calendar(binding)
+                        self.verify_calendar(binding)
+                        require(not self.definition_absent(binding), "COHORT_FORWARD_CALENDAR_NOT_LOADED")
+                        record(f"calendar_{name.replace('-', '_')}_readback")
                     break
                 except BootstrapError as error:
                     # start_calendar checks this before enabling or bootstrapping.
-                    if str(error) != "BOOTSTRAP_RECOVERY_CALENDAR_DUE" or self.monotonic() >= end:
+                    if record is not None or str(error) != "BOOTSTRAP_RECOVERY_CALENDAR_DUE" or self.monotonic() >= end:
                         raise
                     sleep(2)
             check_budget()
@@ -4234,7 +4365,8 @@ def main(argv=None):
     )
     sub = parser.add_subparsers(dest="mode", required=True)
     freeze = sub.add_parser("plan")
-    freeze.add_argument("--source-plan", required=True, type=Path)
+    freeze.add_argument("--source-plan", type=Path)
+    freeze.add_argument("--continue-after-intake", type=Path)
     freeze.add_argument("--output", required=True, type=Path)
     freeze.add_argument("--predecessor-recovery-plan", type=Path)
     freeze.add_argument("--close-feed-only", action="store_true")
@@ -4251,15 +4383,25 @@ def main(argv=None):
     try:
         host = ForwardRecoveryHost()
         if args.mode == "plan":
-            plan = freeze_forward_recovery(
-                host,
-                args.source_plan,
-                predecessor_recovery_plan=args.predecessor_recovery_plan,
-                close_feed_only=args.close_feed_only,
-                feed_close_plan=args.feed_close_plan,
-                stopped_confirmation=args.stopped_confirmation,
-                original_verified_feed_halt=args.original_verified_feed_halt,
-            )
+            if args.continue_after_intake:
+                from app.runtime_intake_continuation import freeze as freeze_intake
+
+                require(not any((args.source_plan, args.predecessor_recovery_plan,
+                                 args.close_feed_only, args.feed_close_plan,
+                                 args.stopped_confirmation, args.original_verified_feed_halt)),
+                        "COHORT_FORWARD_PLAN_INVALID")
+                plan = freeze_intake(host, args.continue_after_intake)
+            else:
+                require(args.source_plan is not None, "COHORT_FORWARD_PLAN_INVALID")
+                plan = freeze_forward_recovery(
+                    host,
+                    args.source_plan,
+                    predecessor_recovery_plan=args.predecessor_recovery_plan,
+                    close_feed_only=args.close_feed_only,
+                    feed_close_plan=args.feed_close_plan,
+                    stopped_confirmation=args.stopped_confirmation,
+                    original_verified_feed_halt=args.original_verified_feed_halt,
+                )
             parent = args.output.parent
             info = parent.lstat()
             require(

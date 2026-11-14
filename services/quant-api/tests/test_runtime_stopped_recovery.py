@@ -160,7 +160,7 @@ def failed_after_feed(tmp_path, monkeypatch, *, calendars=False, original=False)
     return host, path, plan, parked, closed
 
 
-def recover_after_feed_failure(tmp_path, monkeypatch, *, calendars=False, original=False):
+def recover_after_feed_failure(tmp_path, monkeypatch, *, calendars=False, original=False, interrupt=False):
     from app import runtime_stopped_recovery as stopped
 
     host, path, failed, _, closed = failed_after_feed(
@@ -190,7 +190,7 @@ def recover_after_feed_failure(tmp_path, monkeypatch, *, calendars=False, origin
     )
     assert fresh["closed_feed"]["plan_sha256"] == close["plan_sha256"]
     target = tmp_path / "stopped-after-feed-fresh.json"
-    _write(target, fresh)
+    recovery._exclusive_json(target, fresh)
     host.verify_forward = lambda *args: {
         "continuous_identity": "matched",
         "calculation_ready": False,
@@ -201,6 +201,19 @@ def recover_after_feed_failure(tmp_path, monkeypatch, *, calendars=False, origin
         "calendar_registration_only": True,
         "identity": "matched",
     }
+    if interrupt:
+        checkpoint = recovery._write
+
+        def interrupt_after_intake(path, value):
+            checkpoint(path, value)
+            if value.get("phase") == "intake_complete":
+                raise KeyboardInterrupt
+
+        with monkeypatch.context() as patch:
+            patch.setattr(recovery, "_write", interrupt_after_intake)
+            with pytest.raises(KeyboardInterrupt):
+                recovery.apply_forward_recovery(host, target)
+        return host, target, fresh
     assert recovery.apply_forward_recovery(host, target)["status"] == "recovered"
     recovery._no_unresolved_recovery(host)
     assert (folder / "state.json").read_bytes() == original
@@ -850,3 +863,81 @@ def test_native_stopped_observer_pins_kernel_locks_and_rejects_drift(
     assert all(
         recovery.owner_lock_available(n, runtime_dir=current.directory) for n in names
     )
+
+
+@pytest.mark.parametrize("case", ("success", "journal_drift", "owner_drift", "feed_cancelled", "feed_loaded", "calendar_partial", "calendar_window"))
+def test_continue_from_intake_checkpoint(tmp_path, monkeypatch, case):
+    from app import runtime_intake_continuation as continuation
+
+    host, interrupted_path, interrupted = recover_after_feed_failure(
+        tmp_path, monkeypatch, calendars=True, original=True, interrupt=True,
+    )
+    old_folder = host.directory / "cohort-forward-recoveries" / interrupted["plan_sha256"]
+    state_path = old_folder / "state.json"
+    original = state_path.read_bytes()
+    owners = {"api": 123}
+    monkeypatch.setattr(continuation, "observe", lambda *args: owners)
+    host.recovery_window = lambda: interrupted["audit"]["window"]
+    host.check_continuation_calendar_window = lambda *args: None
+    plan = continuation.freeze(host, interrupted_path)
+    target = tmp_path / "continuation.json"
+    _write(target, plan)
+    host.calls.clear()
+
+    def feed(*args, record):
+        record("feed_cancel_intent")
+        host.calls.append("feed_cancel")
+        if case == "feed_cancelled":
+            raise KeyboardInterrupt
+        record("feed_cancel_readback")
+        record("feed_start_intent")
+        host.calls.append("feed_start")
+        record("feed_label_loaded")
+        if case == "feed_loaded":
+            raise KeyboardInterrupt
+        return {"bootstrapped": True, "label": "com.guiyi.quant-market-feed"}
+
+    host.resume_feed = feed
+    def calendars(*args, record):
+        for name in recovery.CALENDARS:
+            if not plan["new"]["services"][name]["enabled"]:
+                continue
+            stage = f"calendar_{name.replace('-', '_')}"
+            record(stage + "_intent")
+            record(stage + "_readback")
+            if case == "calendar_partial":
+                raise KeyboardInterrupt
+        return {"calendar_registration_only": True, "identity": "matched"}
+
+    host.forward_calendars = calendars
+    if case == "journal_drift":
+        state_path.write_bytes(original + b" ")
+    if case == "owner_drift":
+        owners = {"api": 456}
+    if case == "calendar_window":
+        def blocked(*args):
+            raise ValueError("BOOTSTRAP_RECOVERY_CALENDAR_DUE")
+        host.check_continuation_calendar_window = blocked
+    if case in {"journal_drift", "owner_drift", "calendar_window"}:
+        with pytest.raises(ValueError):
+            recovery.apply_forward_recovery(host, target)
+        assert host.calls == []
+        return
+    if case in {"feed_cancelled", "feed_loaded", "calendar_partial"}:
+        with pytest.raises(KeyboardInterrupt):
+            recovery.apply_forward_recovery(host, target)
+        new_state = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"] / "state.json"
+        actions = json.loads(new_state.read_bytes())["actions"]
+        assert actions[0] == "feed_cancel_intent"
+        assert actions[-1] == {
+            "feed_cancelled": "feed_cancel_intent",
+            "feed_loaded": "feed_label_loaded",
+            "calendar_partial": "calendar_after_market_readback",
+        }[case]
+        with pytest.raises(ValueError, match="ATTEMPT_ALREADY_EXISTS"):
+            recovery.apply_forward_recovery(host, target)
+        return
+    assert recovery.apply_forward_recovery(host, target)["status"] == "recovered"
+    assert host.calls == ["feed_cancel", "feed_start"]
+    assert state_path.read_bytes() == original
+    recovery._no_unresolved_recovery(host)
