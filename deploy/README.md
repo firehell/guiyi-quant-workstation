@@ -60,7 +60,6 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.release`，须与原plan同字段及candidate的release身份逐值相等，tag/commit须与candidate及其code身份相等；candidate本身不要求存在root字段，若存在则须相等。原意图/plan/hash及完整闭合条件不变，不修改历史记录来解除引用。
 创建新树、构建、render/preflight、切换和健康读回完成后，逐树核对精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务与进程引用；有用户修改或引用时停止该树清理。
 保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
-当当前运行结果为连续已成功的同代恢复、旧collector无法找到直接普通交接锚时，可显式使用 `runtime_retention closeout-plan --include-latest-recoveries /exact/retired-root`。该入口沿完整binding身份有界追溯唯一成功锚，并保持原v1封存与读取合同；候选、写入前后均由当前干净正式树的原封读取器独立校验，不能用修改后的reader自行宣称兼容。`seal-closed --plan`沿候选绑定的收集政策重新核对，不改原失败记录；仅当后续cleanup-plan零引用才non-force删除源码，删后再次用正式reader核验。公开计划/回执目录仍属原件引用，不随源码清理。
 
 应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。
 
@@ -465,31 +464,14 @@ DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别�
 正常cohort与同版本恢复共用完成接收报告及双fresh前缀验证；v14的`cycle`与`receiving_cycle`均可作为完成报告，
 不同stage不互相冒充两个轮次；计算pending/blocked独立于接收活性，UNKNOWN及完整性问题仍拒绝。
 
-### 已闭合发布依赖封存与退役
+### 旧发布树清理
 
-常规清理先运行一次只读引用扫描，不固定执行“closeout → seal → cleanup”全套流程：
+运行 `python -m app.runtime_retention cleanup-plan /exact/old-release-root ...`。
+按实际服务绑定、安装及加载定义、进程、工作目录和仍可启动的配置核对引用。
+旧部署的历史日志保留在原处供现场排查，清理旧源码无需封存。
+只对干净、精确且允许清理的发布树执行 non-force `git worktree remove`。
+开发工作树、现行发布树和 Git tag 保留。
 
-```bash
-python -m app.runtime_retention cleanup-plan /exact/old-release-root ...
-```
-
-只清理精确列为 eligible、必要证据已保全且删除前重查身份/引用未变的目标，逐个 non-force 移除。
-登记式 worktree 与 `.worktrees/release-v*` 的独立 shared clone 共用主仓对象库身份校验。clone 还须有唯一绝对 alternates、匹配的来源，并与主仓同名 annotated tag 的对象和 commit 完全一致；clone 独有提交或重注释 tag 不可清理。
-历史封存必须能由实际恢复读取器验证；仅升级维护 controller 不代表运行中的旧 reader 已支持新布局，不得据此删除仍有恢复引用的树。
-仍在运行、存在未决恢复、用户修改或引用未知的树保留；不为可能回退而保留无引用源码。
-不删除tag/Release、行情、DB、账本、安全配置或其他任务。
-
-只有扫描发现实际历史恢复引用、且闭合证明需要树内非Git原件时，才使用已有封存入口：
-
-```bash
-python -m app.runtime_retention closeout-plan /exact/old-release-root ... > /private/retirement-plan.json
-python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
-```
-
-已有有效索引与原件保全直接复用，不为普通发版重新制作封存材料。seal仍校验精确原件、历史闭合与提交时漂移，
-不以终态字样或人工说明跳过机器验证；未闭合恢复继续阻止清理。旧unknown/state/plan不改写，历史对象不写回active registry。
-封存后重查待删树当前引用再清理；删除后确认现役服务与必要历史reader仍可用，一次记录结果即可。
-该工具是实际恢复依赖的处理手段，不是每次开发、发布或删旧代码的前置流程。
 
 ## TqKq 快期模拟
 

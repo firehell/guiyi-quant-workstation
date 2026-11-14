@@ -124,38 +124,6 @@ def test_shared_clone_can_keep_matching_upstream_origin(layout):
     assert shared_release_owner(clone) == root
 
 
-def test_sealed_index_is_readable_from_active_shared_clone(
-    layout, tmp_path, monkeypatch
-):
-    root, clone = layout
-    from tests.test_runtime_retirement import Backend
-
-    (tmp_path / "state").mkdir()
-    backend = Backend(tmp_path / "state")
-    backend.root = clone
-    backend.repo_root = root
-    original_collect = backend.collect
-
-    def collect(roots):
-        p = original_collect(roots)
-        p["releases"] = [
-            dict(root=str(clone), tag="v1.2.3", commit=git(root, "rev-parse", "HEAD"))
-        ]
-        p["repository_common_dir"] = retirement._common(root)
-        p["markers"] = {}
-        return p
-
-    backend.collect = collect
-    monkeypatch.setattr(
-        retirement, "_closed_history", lambda plan, _: set(plan["closed_attempts"])
-    )
-    p = retirement.build_closeout_plan((clone,), backend=backend)
-    retirement.seal_closed(p, backend=backend)
-    folder = backend.directory / "release-retirements" / p["plan_sha256"]
-    assert retirement._load_index(folder, clone) == p
-    assert retirement._load_index(folder, root) == p
-
-
 @pytest.mark.parametrize("change", ["local_only_release", "reannotated_tag"])
 def test_shared_clone_cannot_delete_clone_only_history(layout, change):
     root, clone = layout
@@ -201,8 +169,5 @@ def test_post_delete_reference_check_uses_existing_controller_home(
 
     monkeypatch.setattr(backend, "_command", command)
     monkeypatch.setattr("app.runtime_identity.read_launchd_service", launchd)
-    monkeypatch.setattr(
-        "app.runtime_retirement.recovery_references", lambda *args: {str(deleted): []}
-    )
     assert backend.references_by_root((deleted,)) == {str(deleted): []}
     assert calls == ["com.guiyi.quant-api"]
