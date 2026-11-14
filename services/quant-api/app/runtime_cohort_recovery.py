@@ -48,6 +48,8 @@ from app.runtime_deployment import (
 )
 
 KIND = "postcas_forward_recovery_v1"
+STOPPED_RESUME_BUDGET_SECONDS = 1200
+STOPPED_RESUME_VALIDITY = timedelta(minutes=30)
 ORIGINAL_FEED_SOURCE = "original_cohort_verified_feed_halt_v1"
 ORIGINAL_FEED_MODE = "original_verified_feed_halt_v1"
 
@@ -1614,6 +1616,11 @@ def _validate(plan, now, *, historical=False, history_directory=None, history_ve
     from app.runtime_stopped_recovery import valid_plan as valid_stopped_plan
 
     try:
+        extended_budget = (
+            plan.get("mode") == "reconciled_stopped"
+            and "stop_after" not in plan
+            and plan.get("downtime_seconds") == STOPPED_RESUME_BUDGET_SECONDS
+        )
         require(
             ("stopped_confirmation" in plan)
             == (plan.get("mode") == "reconciled_stopped"),
@@ -1635,7 +1642,8 @@ def _validate(plan, now, *, historical=False, history_directory=None, history_ve
             and type(plan["schema_version"]) is int
             and plan["schema_version"] == 1
             and plan["kind"] == KIND
-            and plan["downtime_seconds"] == 600
+            and type(plan["downtime_seconds"]) is int
+            and (plan["downtime_seconds"] == 600 or extended_budget)
             and plan["plan_sha256"]
             == digest({k: v for k, v in plan.items() if k != "plan_sha256"}),
             "COHORT_FORWARD_PLAN_INVALID",
@@ -1645,7 +1653,9 @@ def _validate(plan, now, *, historical=False, history_directory=None, history_ve
             datetime.fromisoformat(plan["expires_at"]),
         )
         require(
-            expires - created == timedelta(minutes=15), "COHORT_FORWARD_PLAN_INVALID"
+            expires - created
+            == (STOPPED_RESUME_VALIDITY if extended_budget else timedelta(minutes=15)),
+            "COHORT_FORWARD_PLAN_INVALID",
         )
         require(created <= now < expires, "COHORT_FORWARD_PLAN_EXPIRED")
         require(
@@ -2001,7 +2011,7 @@ def apply_forward_recovery(host, recovery_plan_path):
         )
         require(identity == plan["source"], "COHORT_FORWARD_SOURCE_DRIFT")
         require(source["new"] == plan["new"], "COHORT_FORWARD_REGISTRY_DRIFT")
-        deadline = getattr(host, "monotonic", monotonic)() + 600
+        deadline = getattr(host, "monotonic", monotonic)() + plan["downtime_seconds"]
 
         def budget():
             require(

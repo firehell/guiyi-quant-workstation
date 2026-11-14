@@ -401,7 +401,7 @@ drain、bootout或kickstart，不重放或清cursor。旧retirement失败、SimN
 
 同版本恢复若发现旧日订阅为明确缺席（None），仅接受原生 `_closed_cleaned_idle_proof` 重新验证的全品种 CLOSED、未来 Session、盘后清理证据及 source/completed 全消费者 cursor==tail；不重造订阅。输出独立 cleaned 启动证明，缺席订阅哈希保持 None，合约映射另存哈希；空字典/部分订阅及其他缺失继续拒绝。
 
-同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。新计划仍有15分钟TTL、600秒总预算，部署/维护/owner锁及各阶段独立读回；只恢复原启用集合。
+同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。一般计划和仅关闭 Feed 的计划采用 15 分钟有效期、600 秒总预算。经停机证据确认后重新启动服务的计划采用 30 分钟有效期、1200 秒总预算。所有计划保留部署、维护和 owner 锁以及各阶段独立读回，只恢复原启用集合。
 
 `confirmed_intake_halt` 仅接纳两层原生失败记录：A为Live卸载前缀，B为已确认A后启动消费者、在intake失败并停驻的前缀。新计划同时绑定A/B的public/private plan、state和effect身份；重新证明全部当前消费者精确parked、owner锁可取、Feed与日历absent、pending capture及UNKNOWN为0、完整源/DB/routes和所有当前尾部已ACK追齐。旧接收摘要不可逆时不得用摘要不等推断漂移或直接忽略，须以完整当前前缀校验替代；新快照固定静态context并逐阶段复验。只接受此两层链，不循环接纳新的未知attempt，不执行bootout，成功receipt解析A/B且保留原字节。任一额外effect、第三未决、漂移或未ACK当前尾部均拒绝。
 

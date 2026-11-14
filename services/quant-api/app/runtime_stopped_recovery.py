@@ -877,11 +877,14 @@ def freeze_stopped(
     )
     verify_pin(host, selected, closed_feed=closed_feed)
     now = host.now()
-    end = host.monotonic() + 600
+    downtime = 600 if close_feed_only else recovery.STOPPED_RESUME_BUDGET_SECONDS
+    validity = timedelta(minutes=15) if close_feed_only else recovery.STOPPED_RESUME_VALIDITY
+    expires = now + validity
+    end = host.monotonic() + downtime
 
     def budget():
         recovery.require(
-            host.monotonic() < end and host.now() < now + timedelta(minutes=15),
+            host.monotonic() < end and now <= host.now() < expires,
             "COHORT_FORWARD_PLAN_EXPIRED",
         )
 
@@ -893,8 +896,8 @@ def freeze_stopped(
         "new": source["new"],
         "audit": audit,
         "created_at": now.isoformat(),
-        "expires_at": (now + timedelta(minutes=15)).isoformat(),
-        "downtime_seconds": 600,
+        "expires_at": expires.isoformat(),
+        "downtime_seconds": downtime,
         "mode": MODE,
         "stopped_confirmation": selected,
     }
