@@ -448,6 +448,11 @@ DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别�
 
 ### 消费者恢复失败后的停驻确认
 
+控制器退出后若日志精确停在 `intake_complete`、接收已追平且尚未写入 Feed 阶段，可用
+`plan --continue-after-intake <interrupted-plan> --output <new-plan>` 只读冻结新计划。
+冻结和应用时复核原计划与日志字节、已运行消费者、Feed 缺席和定时任务窗口。
+应用从 Feed 接续，保留 Feed 与每项定时任务的意图和读回。接续自身中断后保留已记意图，禁止复跑同一计划。
+
 `python -m app.runtime_cohort_recovery reconcile-stopped --plan <failed-plan>` 仅接纳同一安装generation、
 完成consumers后在intake超时且从未启动Feed的失败边界。部署/维护及真实owner锁内重证当前parked、Feed与日历缺席、
 观察PID退出、安装/配置前像及完整原件/routes/ACK前缀；使用当前drain，不恢复旧控制文件。追加唯一

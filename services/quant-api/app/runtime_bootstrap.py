@@ -919,7 +919,7 @@ class BootstrapBackend:
         result['plan_hash'] = _hash(result)
         return result
 
-    def _assert_recovery_calendar_safe(self, payload):
+    def _assert_recovery_calendar_safe(self, payload, *, ahead_minutes=3):
         if payload.get('RunAtLoad', False) or payload.get('KeepAlive', False):
             raise BootstrapError('BOOTSTRAP_RECOVERY_JOB_AUTOSTART')
         calendars = payload.get('StartCalendarInterval')
@@ -933,7 +933,7 @@ class BootstrapBackend:
                     or any(type(value) is not int for value in entry.values())
                     or not 0 <= entry.get('Hour', -1) <= 23 or not 0 <= entry.get('Minute', -1) <= 59):
                 raise BootstrapError('BOOTSTRAP_RECOVERY_CALENDAR_UNPROVEN')
-            for delta in range(-3, 4):
+            for delta in range(-3, ahead_minutes + 1):
                 at = now + timedelta(minutes=delta)
                 if (at.hour == entry['Hour'] and at.minute == entry['Minute']
                         and entry.get('Weekday', (at.weekday() + 1) % 7) in ((at.weekday() + 1) % 7, 7 if at.weekday() == 6 else -1)
