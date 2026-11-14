@@ -42,7 +42,7 @@ from app.runtime_handover import (
 )
 from app.runtime_deployment import (
     observation_progress,
-    progress_reached,
+    recovery_progress_reached,
     owner_process_matches,
     port_is_ready,
 )
@@ -2935,7 +2935,7 @@ class ForwardRecoveryHost(CohortHost):
         for name in ("market-feed", "live", "alert"):
             current = observation_progress(name)
             require(
-                progress_reached(
+                recovery_progress_reached(
                     current, state["effects"]["drain"]["progress"][name], service=name
                 ),
                 "COHORT_FORWARD_OTHER_CONSUMER_BACKLOG",
@@ -3945,7 +3945,7 @@ class ForwardRecoveryHost(CohortHost):
                         reason = "service_not_ready"
                     elif name in original["effects"]["drain"][
                         "progress"
-                    ] and not progress_reached(
+                    ] and not recovery_progress_reached(
                         observation_progress(name),
                         original["effects"]["drain"]["progress"][name],
                         service=name,
@@ -4184,16 +4184,27 @@ class ForwardRecoveryHost(CohortHost):
         }
 
     def forward_calendars(self, source, check_budget):
+        from app.runtime_bootstrap import BootstrapError
+
         new = registry(source["new"])
+        end = self.monotonic() + 420
         for name in CALENDARS:
-            self._fixed(source, check_budget)
-            self.recovery_window()
-            check_budget()
             binding = new.services[name]
-            if binding.enabled:
-                self.start_calendar(binding)
-            else:
-                self.launch("disable", f"gui/{os.getuid()}/{binding.label}")
+            while True:
+                self._fixed(source, check_budget)
+                self.recovery_window()
+                check_budget()
+                if not binding.enabled:
+                    self.launch("disable", f"gui/{os.getuid()}/{binding.label}")
+                    break
+                try:
+                    self.start_calendar(binding)
+                    break
+                except BootstrapError as error:
+                    # start_calendar checks this before enabling or bootstrapping.
+                    if str(error) != "BOOTSTRAP_RECOVERY_CALENDAR_DUE" or self.monotonic() >= end:
+                        raise
+                    sleep(2)
             check_budget()
         from app.services.deployment_identity import deployment_identity_health
 

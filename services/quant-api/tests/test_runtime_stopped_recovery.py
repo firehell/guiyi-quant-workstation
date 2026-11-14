@@ -816,7 +816,7 @@ def test_native_stopped_observer_pins_kernel_locks_and_rejects_drift(
     current.recovery_window = lambda: {"session": "valid"}
     current._controller = lambda: {"controller": "exact"}
     monkeypatch.setattr(deployment, "observation_progress", lambda *args: {})
-    monkeypatch.setattr(deployment, "progress_reached", lambda *args, **kwargs: True)
+    monkeypatch.setattr(deployment, "recovery_progress_reached", lambda *args, **kwargs: True)
     # This native-lock observer case only needs source progress key presence.
     original = (
         current.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
