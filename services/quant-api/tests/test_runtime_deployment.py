@@ -77,6 +77,53 @@ def test_progress_regression_or_expiry_is_not_readiness():
         progress_reached({}, old)
 
 
+@pytest.mark.parametrize("closed, registered, keys_exist, cursor, accepted", [
+    (True, "2026-10-12", False, None, True),
+    (True, "2026-10-12", False, b"110-0", True),
+    (True, "2026-10-12", False, b"109-0", False),
+    (False, "2026-10-12", False, None, False),
+    (True, "2026-10-09", False, None, False),
+    (True, "2026-10-12", True, None, False),
+])
+def test_recovery_only_accepts_absent_closed_older_partitions(
+    monkeypatch, closed, registered, keys_exist, cursor, accepted
+):
+    from app import redis_connections
+    from app.runtime_deployment import DeploymentError, recovery_progress_reached
+
+    class Redis:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def get(self, key):
+            if key == "live:observations:registered:source:live":
+                return registered
+            assert key == "live:observations:cursor:source:live:2026-10-09"
+            return cursor
+
+        def exists(self, *keys):
+            assert keys == (
+                "live:observations:source:2026-10-09",
+                "live:observations:source:2026-10-09:identities",
+            )
+            return int(keys_exist)
+
+    monkeypatch.setattr(redis_connections, "get_redis_connection", Redis)
+    current = {"2026-10-12": {"cursor": "120-0", "tail": "120-0"}}
+    boundary = {
+        "2026-10-09": {"cursor": "110-0" if closed else "109-0", "tail": "110-0"},
+        **current,
+    }
+    if accepted:
+        assert recovery_progress_reached(current, boundary, service="live")
+    else:
+        with pytest.raises(DeploymentError, match="OBSERVATION_DAY_EXPIRED"):
+            recovery_progress_reached(current, boundary, service="live")
+
+
 def test_api_shutdown_waits_for_child_before_releasing_owner(monkeypatch):
     from app import runtime_deployment as d, runtime_handover
     calls = []

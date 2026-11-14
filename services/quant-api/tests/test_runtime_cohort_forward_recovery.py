@@ -1978,7 +1978,7 @@ def test_native_intake_halt_requires_current_parked_owners_and_complete_current_
     monkeypatch.setattr(m, "_resolution_source", read)
     monkeypatch.setattr(m, "_intake_predecessor", lambda *args: (predecessor, previous))
     monkeypatch.setattr(m, "observation_progress", lambda *args: {})
-    monkeypatch.setattr(m, "progress_reached", lambda *args, **kwargs: True)
+    monkeypatch.setattr(m, "recovery_progress_reached", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         liveness, "receiving_context_identity", lambda snapshot: "f" * 64
     )
@@ -2556,3 +2556,37 @@ def test_cleaned_same_generation_startup_keeps_absent_subscription_and_session_b
     phase.phase = MarketPhase.CLOSED
     with pytest.raises(module().CohortError, match="CLEANED_AUTHORITY_UNPROVEN"):
         module().prove_same_generation_startup(**dict(kwargs, closed_cleanup=lambda: None))
+
+
+def test_calendar_due_window_waits_without_repeating_prior_registration(tmp_path, monkeypatch):
+    from app import runtime_cohort_recovery as m
+    from app.runtime_bootstrap import BootstrapError
+    from app.services import deployment_identity
+
+    _, source, _, _, _, _ = fixture(tmp_path)
+    host = native(tmp_path)
+    calls = []
+    host._fixed = lambda *args: None
+    host.recovery_window = lambda: None
+    host.monotonic = lambda: 0
+    monkeypatch.setattr(m, "sleep", lambda seconds: calls.append("wait"))
+    bindings = m.registry(source["new"])
+    monkeypatch.setattr(
+        deployment_identity,
+        "deployment_identity_health",
+        lambda **kwargs: {"services": {
+            m.IDENTITY_NAMES.get(name, name): {"status": "matched" if binding.enabled else "disabled"}
+            for name, binding in bindings.services.items()
+        }},
+    )
+    host.launch = lambda *args: None
+
+    def start(binding):
+        name = binding.service
+        calls.append(name)
+        if name == "late-provider-recovery" and calls.count(name) == 1:
+            raise BootstrapError("BOOTSTRAP_RECOVERY_CALENDAR_DUE")
+
+    host.start_calendar = start
+    assert host.forward_calendars(source, lambda: None)["identity"] == "matched"
+    assert calls[:4] == ["after-market", "late-provider-recovery", "wait", "late-provider-recovery"]

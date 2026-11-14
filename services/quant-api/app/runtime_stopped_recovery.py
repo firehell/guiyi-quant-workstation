@@ -658,11 +658,11 @@ def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False, retai
         original = recovery._resolution_source(
             host.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
         )[1]
-        from app.runtime_deployment import observation_progress, progress_reached
+        from app.runtime_deployment import observation_progress, recovery_progress_reached
 
         for name in ("market-feed", "live", "alert"):
             require(
-                progress_reached(
+                recovery_progress_reached(
                     observation_progress(name),
                     original["effects"]["drain"]["progress"][name],
                     service=name,
