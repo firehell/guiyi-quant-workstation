@@ -2355,12 +2355,12 @@ class ForwardRecoveryHost(CohortHost):
 
     monotonic = staticmethod(monotonic)
 
-    def audit_stopped(self, source, budget, *, feed_pids, feed_parked=False):
+    def audit_stopped(self, source, budget, *, feed_pids, feed_parked=False, retained_backlog=False):
         from app.runtime_stopped_recovery import observe_stopped
 
         return observe_stopped(
             self, source, budget, feed_pids=feed_pids,
-            feed_parked=feed_parked,
+            feed_parked=feed_parked, retained_backlog=retained_backlog,
         )
 
     def recovery_window(self, *, with_valid_until=False):
@@ -3066,7 +3066,7 @@ class ForwardRecoveryHost(CohortHost):
             ),
         }
 
-    def _feed_frontiers(self, source, check_budget):
+    def _feed_frontiers(self, source, check_budget, *, retained_backlog=False):
         """Hash every retained source original/index plus fully DB-verified completed input."""
         from app.redis_connections import get_redis_connection
         from app.market_data.observation_stream import ObservationStream, DAILY_LIMIT
@@ -3156,7 +3156,9 @@ class ForwardRecoveryHost(CohortHost):
             snapshot = self._snapshot(source, check_budget)
             require(
                 all(
-                    v["ack"] == v["current_tail"] == v["final_tail"]
+                    v["current_tail"] == v["final_tail"]
+                    and (v["current_tail"] == v["old_tail"] if retained_backlog
+                         else v["ack"] == v["current_tail"])
                     for v in snapshot["days"].values()
                 ),
                 "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",

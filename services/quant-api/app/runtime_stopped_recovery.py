@@ -631,7 +631,7 @@ def _evidence(host, path):
     )
 
 
-def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
+def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False, retained_backlog=False):
     """Verify current controls and fresh OS/data facts; never restore old controls."""
     from app.reference_trading.receiving_liveness import (
         receiving_context_identity,
@@ -669,15 +669,24 @@ def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
                 )
             )
         snapshot = host._snapshot(source, budget)
-        require(
+        require(retained_backlog or (
             snapshot["old_tail_reached"] is True
             and all(
                 row["ack"] == row["current_tail"] == row["final_tail"]
                 for row in snapshot["days"].values()
             )
-        )
-        frontier = host._feed_frontiers(source, budget)
-        require(host._feed_frontiers(source, budget) == frontier)
+        ))
+        if retained_backlog:
+            require(not feed_parked and all(
+                row["current_tail"] == row["final_tail"] == row["old_tail"]
+                for row in snapshot["days"].values()
+            ))
+            frontier = host._feed_frontiers(source, budget, retained_backlog=True)
+            require(host._feed_frontiers(source, budget, retained_backlog=True) == frontier
+                    and frontier["completed_sha256"] == receiving_snapshot_identity(snapshot))
+        else:
+            frontier = host._feed_frontiers(source, budget)
+            require(host._feed_frontiers(source, budget) == frontier)
         require(
             owners == host._parked_owners(source, held=True, **owner_options)
             and controls == host._controls(source)
@@ -719,6 +728,8 @@ def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
             require(valid_parked_feed_audit(result, source["new"]))
         else:
             result["feed_exited_pids"] = feed_pids
+        if retained_backlog:
+            result["retained_backlog"] = True
         return result
 
 
@@ -736,6 +747,7 @@ def reconcile_stopped(host, path):
                 source,
                 budget,
                 feed_pids=pids,
+                **({"retained_backlog": True} if failed.get("mode") is None else {}),
                 **({"feed_parked": True} if feed_parked else {}),
             )
             require(
@@ -745,7 +757,7 @@ def reconcile_stopped(host, path):
                         "installed_sha256",
                         "protected",
                         "new_protected",
-                        "receiving_context",
+                        *(("receiving_context",) if "receiving_context" in failed["audit"] else ()),
                     )
                 )
             )
@@ -823,6 +835,7 @@ def audit_for_plan(host, source, selected, budget, *, closed_feed=None):
         source,
         budget,
         feed_pids=pids,
+        **({"retained_backlog": True} if expected.get("retained_backlog") is True else {}),
         **({"feed_parked": True} if parked and closed_feed is None else {}),
     )
     if closed_feed is not None:
