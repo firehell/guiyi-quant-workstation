@@ -1097,7 +1097,23 @@ def _closed_predecessors(host, entries):
                 closure == plan["original_close"],
                 "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
             )
-            closed.add(closure["plan_sha256"])
+            effects = state.get("effects", {})
+            require(
+                state.get("kind") == KIND
+                and receipt.get("kind") == "postcas_forward_recovery_readback"
+                and receipt.get("original_attempt_preserved") is True
+                and set(effects) == {"consumers", "intake", "feed", "verified", "calendars"}
+                and receipt.get("intake") == effects["intake"]
+                and _valid_intake_result(effects["intake"])
+                and receipt.get("readback") == effects["verified"]
+                and effects["verified"].get("continuous_identity") == "matched"
+                and _valid_intake_result(effects["verified"].get("intake"))
+                and effects["calendars"] == {
+                    "calendar_registration_only": True, "identity": "matched"
+                },
+                "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED",
+            )
+            closed.update((closure["plan_sha256"], child.name))
             continue
         resolution = receipt.get("predecessor_resolution")
         if receipt.get("stopped_resolution") is not None:
@@ -2339,12 +2355,12 @@ class ForwardRecoveryHost(CohortHost):
 
     monotonic = staticmethod(monotonic)
 
-    def audit_stopped(self, source, budget, *, feed_pids, feed_parked=False):
+    def audit_stopped(self, source, budget, *, feed_pids, feed_parked=False, retained_backlog=False):
         from app.runtime_stopped_recovery import observe_stopped
 
         return observe_stopped(
             self, source, budget, feed_pids=feed_pids,
-            feed_parked=feed_parked,
+            feed_parked=feed_parked, retained_backlog=retained_backlog,
         )
 
     def recovery_window(self, *, with_valid_until=False):
@@ -3050,7 +3066,7 @@ class ForwardRecoveryHost(CohortHost):
             ),
         }
 
-    def _feed_frontiers(self, source, check_budget):
+    def _feed_frontiers(self, source, check_budget, *, retained_backlog=False):
         """Hash every retained source original/index plus fully DB-verified completed input."""
         from app.redis_connections import get_redis_connection
         from app.market_data.observation_stream import ObservationStream, DAILY_LIMIT
@@ -3140,7 +3156,9 @@ class ForwardRecoveryHost(CohortHost):
             snapshot = self._snapshot(source, check_budget)
             require(
                 all(
-                    v["ack"] == v["current_tail"] == v["final_tail"]
+                    v["current_tail"] == v["final_tail"]
+                    and (v["current_tail"] == v["old_tail"] if retained_backlog
+                         else v["ack"] == v["current_tail"])
                     for v in snapshot["days"].values()
                 ),
                 "COHORT_FORWARD_FEED_FRONTIER_UNPROVEN",
