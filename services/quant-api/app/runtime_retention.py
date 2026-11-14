@@ -599,11 +599,7 @@ class RetentionBackend:
             else:
                 raise RetentionError("CLEANUP_CWD_INVENTORY_INVALID")
         from app.core.env import PROJECT_ROOT
-        from app.runtime_retirement import recovery_references
         simnow.intents(PROJECT_ROOT, home=self.home)
-        recovery = recovery_references(self.home / "Library/Application Support/GuiyiQuant", PROJECT_ROOT, roots)
-        for root, reasons in recovery.items():
-            result[root].extend(reasons)
         simnow.verify()
         if read_bindings(home=self.home) != registry:
             raise RetentionError("CLEANUP_REGISTRY_DRIFT")
@@ -612,29 +608,14 @@ class RetentionBackend:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Read-only exact release cleanup plan")
-    parser.add_argument("command", choices=["cleanup-plan", "closeout-plan", "seal-closed"])
-    parser.add_argument("roots", nargs="*", type=Path)
-    parser.add_argument("--plan", type=Path)
-    parser.add_argument("--include-latest-recoveries", action="store_true")
+    parser.add_argument("command", choices=["cleanup-plan"])
+    parser.add_argument("roots", nargs="+", type=Path)
     args = parser.parse_args(argv)
     try:
-        if args.include_latest_recoveries and args.command != "closeout-plan":
-            raise ValueError
-        if args.command != "seal-closed" and args.plan is not None:
-            raise ValueError
-        if args.command == "cleanup-plan":
-            payload = build_cleanup_plan(tuple(args.roots))
-        else:
-            from app.runtime_retirement import build_closeout_plan, seal_closed, _json
-            if args.command == "closeout-plan":
-                payload = build_closeout_plan(tuple(args.roots), include_latest_recoveries=args.include_latest_recoveries)
-            else:
-                if args.roots or args.plan is None:
-                    raise ValueError
-                payload = seal_closed(_json(args.plan))
+        payload = build_cleanup_plan(tuple(args.roots))
     except (OSError, ValueError, KeyError, TypeError, RuntimeError):
-        print(json.dumps({"status": "blocked", "readonly": args.command != "seal-closed",
-            "error_code": "CLEANUP_TARGETS_INVALID" if args.command == "cleanup-plan" else "RETIREMENT_EVIDENCE_UNPROVEN"}))
+        print(json.dumps({"status": "blocked", "readonly": True,
+                          "error_code": "CLEANUP_TARGETS_INVALID"}))
         return 1
     print(json.dumps(payload, sort_keys=True))
     return 1 if any(item["status"] == "blocked" for item in payload.get("targets", [])) else 0
