@@ -629,7 +629,8 @@ def test_reconcile_rejects_unproven_or_changed_frontier(tmp_path, change):
         reconcile_stopped(host, path)
 
 
-def test_confirmed_stopped_can_recover_and_close_all_failed_attempts(tmp_path):
+@pytest.mark.parametrize("elapsed,expected", [(601, "recovered"), (1200, "deadline")])
+def test_confirmed_stopped_can_recover_and_close_all_failed_attempts(tmp_path, elapsed, expected):
     from app.runtime_stopped_recovery import reconcile_stopped
 
     host, path, frozen, _ = failed_consumers(tmp_path)
@@ -639,10 +640,27 @@ def test_confirmed_stopped_can_recover_and_close_all_failed_attempts(tmp_path):
         host, source, stopped_confirmation=result["confirmation"]["path"]
     )
     assert plan["mode"] == "reconciled_stopped"
+    assert plan["downtime_seconds"] == 1200
     assert "predecessor" not in plan
     target = tmp_path / "fresh.json"
     _write(target, plan)
     complete_stopped_outputs(host)
+    tick = [0]
+    host.monotonic = lambda: tick[0]
+    verify = host.verify_forward
+
+    def delayed_verify(*args):
+        tick[0] += elapsed
+        return verify(*args)
+
+    host.verify_forward = delayed_verify
+    if expected == "deadline":
+        with pytest.raises(ValueError, match="OUTCOME_UNKNOWN"):
+            recovery.apply_forward_recovery(host, target)
+        state = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"] / "state.json"
+        assert json.loads(state.read_bytes())["error_code"] == "COHORT_FORWARD_DEADLINE_EXCEEDED"
+        assert "calendars" not in host.calls
+        return
     result = recovery.apply_forward_recovery(host, target)
     assert result["status"] == "recovered"
     assert host.calls == ["consumers", "feed", "verified", "calendars"]
@@ -752,7 +770,8 @@ def test_native_stopped_observer_pins_kernel_locks_and_rejects_drift(
 
     host, source, _, _, _, _ = fixture(tmp_path)
     current = native(host.directory)
-    names = recovery.CONTINUOUS
+    current.bindings = host.bindings
+    names = recovery.continuous_services(host.bindings())
     for name in names:
         path = current.directory / (name + ".owner.lock")
         path.touch(mode=0o600)
