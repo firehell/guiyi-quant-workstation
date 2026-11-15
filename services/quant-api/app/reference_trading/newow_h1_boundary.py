@@ -48,6 +48,13 @@ class NewowH1Boundary(NewowFormulaTransition):
             codes.add(old.strategy_code)
             target = replace(old, observation_policy_version=H1_BOUNDARY_POLICY)
             require(db.get(ReferenceStream, target.stream_id) is None, "NEWOW_H1_BOUNDARY_TARGET_EXISTS")
+            # Earlier continuation receipts also store source witnesses in
+            # this JSON object. Keep those on the old receipt, not as limits.
+            budget = {name: receipt.budget.get(name)
+                      for name in ("max_pending_keys", "max_units_per_round")}
+            require(all(type(v) is int and 0 < v <= cap
+                        for v, cap in zip(budget.values(), (512, 32), strict=True)),
+                    "NEWOW_H1_ACTIVATION_BUDGET_INVALID")
             bootstrap = {
                 "old_stream_id": old.stream_id,
                 "target_stream_id": target.stream_id,
@@ -55,7 +62,7 @@ class NewowH1Boundary(NewowFormulaTransition):
                 "expires_at": expiry.isoformat(),
                 "host": receipt.host,
                 "environment": receipt.environment,
-                "budget": dict(receipt.budget),
+                "budget": budget,
             }
             items.append({"old": frozen, "bootstrap": {**bootstrap, "plan_hash": _hash(bootstrap)}})
         require(len(products) == 1 and codes == self.codes, "NEWOW_H1_BOUNDARY_SCOPE")
