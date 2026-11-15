@@ -144,3 +144,20 @@ def test_failed_cycle_clears_previous_ready_proof(tmp_path):
         assert read_service_state('live', runtime_dir=tmp_path)['ready'] is True
         owner.mark_not_ready()
         assert read_service_state('live', runtime_dir=tmp_path).get('ready') is not True
+
+
+def test_drain_persists_intent_before_installing_control(tmp_path):
+    from app.runtime_handover import _read, request_drain
+
+    control = tmp_path / "alert.handover.json"
+    def fail(_):
+        assert not control.exists()
+        raise OSError("intent unavailable")
+
+    with pytest.raises(OSError, match="intent unavailable"):
+        request_drain("alert", generation=1, runtime_dir=tmp_path, before_install=fail)
+    assert not control.exists()
+    recorded = []
+    request = request_drain("alert", generation=1, runtime_dir=tmp_path,
+                            before_install=recorded.append)
+    assert recorded == [request] and _read(control)["request_id"] == request
