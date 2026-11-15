@@ -136,7 +136,7 @@ def activation_window_valid(capture, stream, receipts):
         return False
     last_activation = stream.activation_generation
     # Formula retirement advances the fence without opening an activation.
-    if not stream.enabled and stream.health == "FORMULA_RETIRED" and last_activation not in chain:
+    if not stream.enabled and stream.health in {"FORMULA_RETIRED", "OBSERVATION_RETIRED"} and last_activation not in chain:
         closing = chain.get(last_activation - 1)
         if closing is None or closing.disabled_at is None or aware(closing.disabled_at) < aware(closing.activated_at):
             return False

@@ -58,16 +58,16 @@ BAR = NOW - timedelta(days=1)
 START = NOW + timedelta(hours=1)
 
 
-def fixture(engine=None):
+def fixture(engine=None, *, current=False):
     engine = engine or create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     repo = ReferenceRepository(factory)
     pairs = []
     sources = []
-    for code in ["trend", "oscillation", "dual_fusion"]:
+    for code in ["trend", "oscillation", "dual_fusion"] + (["main_rise"] if current else []):
         p = build_product_identity(
-            "rb", "trend" if code == "trend" else "oscillation", "60m"
+            "rb", "oscillation" if code == "dual_fusion" else code, "60m"
         )
         identity = (
             build_fusion_stream_identity("rb", "60m")
@@ -153,12 +153,12 @@ def fixture(engine=None):
             identity.stream_id, rev, stored.row_version, manifest_sha256(manifest)
         )
         sources.append(dict(stream_id=identity.stream_id, revision_id=rev, seq=1))
-        if code == "trend":
+        if code == "trend" and not current:
             continue
         old = replace(
             identity,
-            formula_versions=("legacy_formula_v1",),
-            profile_id="legacy",
+            formula_versions=identity.formula_versions if current else ("legacy_formula_v1",),
+            profile_id=identity.profile_id if current else "legacy",
             recording_mode="forward_observation",
             observation_policy_version="completed_observation_v1",
         )
@@ -176,10 +176,11 @@ def fixture(engine=None):
             ActionKind.OPEN_LONG,
             Decimal(100),
         )
-        reference = reduce_reference(reference, actions=(action,)).state
+        if not current or code == "trend":
+            reference = reduce_reference(reference, actions=(action,)).state
         cp = replace(cp, stream=old, reference_state=reference)
         # Retained legacy bytes: normal readers must continue to reject the oscillator.
-        if code == "oscillation":
+        if code == "oscillation" and not current:
             from guiyi_quant.newow.oscillation_channel import OscillationState
 
             cp.strategy_state.oscillation_state = OscillationState()
@@ -273,6 +274,9 @@ def fixture(engine=None):
                     recovery_policy="block",
                 )
             )
+            if reference.open_trade is None:
+                pairs.append((old.stream_id, identity.stream_id))
+                continue
             aid = uuid4().hex
             db.add(
                 ReferenceActionRow(
@@ -561,3 +565,117 @@ def test_retirement_reader_rejects_rehashed_owner_mismatch(transition_engine):
                 expected_stream=_identity_from_row(stream),
                 expected_strategy_schema=batch.strategy_schema,
             )
+
+def test_h1_boundary_uses_cold_seed_and_preserves_retired_history(transition_engine):
+    from app.reference_trading.newow_h1_boundary import NewowH1Boundary
+    from app.reference_trading.models import ReferenceInboxDelivery, ReferenceInboxInput
+    from app.reference_trading.inbox import _head_query
+
+    factory, pairs = fixture(transition_engine, current=True)
+    old_ids = [old for old, _ in pairs]
+    service = NewowH1Boundary(factory, assert_fenced=lambda: None)
+    with factory.begin() as db:
+        old = db.get(ReferenceStream, old_ids[0])
+        receipt = db.scalar(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id == old.stream_id
+        ))
+        db.add(ReferenceInboxInput(
+            input_id="i", trading_day=BAR.date(), journal_id="1-0", journal_ms=1,
+            journal_sequence=0, observation_id="o", product="rb", frequency="60m", canonical_envelope="{}",
+            envelope_sha256="1"*64, routing_sha256="2"*64, payload_bytes=2,
+            target_count=1, bar_end=BAR, source_observed_at=BAR,
+            confirmed_at=BAR, ingested_at=BAR,
+        ))
+        db.flush()
+        db.add(ReferenceInboxDelivery(
+            delivery_id="d", input_id="i", stream_id=old.stream_id,
+            revision_id=old.active_revision_id, generation=old.activation_generation,
+            activation_receipt_id=receipt.receipt_id,
+            activation_plan_hash=old.activation_plan_hash, recording_start=old.recording_start,
+            status="BLOCKED", code="OBSERVATION_GAP", created_at=BAR, updated_at=BAR,
+        ))
+    plan = service.plan(old_ids, recording_start=START, expires_at=START, now=NOW)
+    with factory() as db:
+        before = {b.batch_id:b.checkpoint_text for b in db.scalars(select(ReferenceBatch))}
+    assert service.status(plan) is None
+    result = service.apply(plan, expected_plan_hash=plan["plan_hash"], now=NOW)
+    assert result == service.status(plan)
+    assert result == service.apply(plan, expected_plan_hash=plan["plan_hash"], now=START)
+    with factory() as db:
+        assert all(db.get(ReferenceBatch, bid).checkpoint_text == raw for bid,raw in before.items())
+        assert db.get(ReferenceInboxDelivery, "d").status == "BLOCKED"
+        assert db.scalar(_head_query(old_ids[0])).delivery_id == "d"
+        assert all(not db.get(ReferenceStream, sid).enabled for sid in old_ids)
+        for item in plan["items"]:
+            sid = item["bootstrap"]["target_stream_id"]
+            assert db.get(ReferenceStream, sid).health == "FORMULA_WARMING"
+            assert db.scalar(_head_query(sid)) is None
+            _, cp = ReferenceRepository(factory).load_checkpoint(sid)
+            assert cp.computed_through is None and cp.reference_state.open_trade is None
+        interrupted = db.scalars(select(ReferenceTradeRow).where(
+            ReferenceTradeRow.status == "OBSERVATION_INTERRUPTED"
+        )).all()
+        assert len(interrupted) == 1 and all(
+            row.exit_action_pk is None and row.exit_reference_price is None
+            and row.reference_return is None for row in interrupted
+        )
+
+    from app.reference_trading.composition import build_forward_reference_worker
+    from app.reference_trading.inbox import ReferenceInboxRepository
+    from app.reference_trading.newow_fusion_forward import SavedForwardFusionSources
+    from tests.reference_trading.test_inbox import event
+
+    def expected_endpoints(_, contract, day, after, cutoff):
+        return tuple(e for e in (START, START + timedelta(hours=1)) if after < e <= cutoff)
+
+    repo = ReferenceRepository(factory)
+    worker = build_forward_reference_worker(
+        repository=repo, market_read=None, newow_reader=None,
+        owner_segments=lambda *args: ("owner", "calc"), expected_endpoints=expected_endpoints,
+        newow_capability_ready=lambda _: True, fusion_sources=SavedForwardFusionSources(factory),
+        enabled=True, now=lambda: START + timedelta(hours=2),
+    )
+    inbox = ReferenceInboxRepository(factory)
+    targets = [item["bootstrap"]["target_stream_id"] for item in plan["items"]]
+    with factory() as db:
+        targets.sort(key=lambda sid: db.get(ReferenceStream, sid).strategy_code == "newow_dual_fusion")
+    for index, end in enumerate((START, START + timedelta(hours=1)), start=10):
+        original = replace(event(str(index) + "-0", end=end), channel="live:bar:rb:60m")
+        ingested = original.confirmed_at + timedelta(seconds=1)
+        assert len(inbox.ingest(original, ingested_at=ingested).delivery_ids) == 4
+        worker.source_envelope = original
+        worker.source_observed_at = original.confirmed_at
+        worker.raw_received_at = original.raw_received_at
+        worker.inbox_ingested_at = ingested
+        for target in targets:
+            head = inbox.pending_head(target)
+            worker.process_inbox_delivery(target, end, delivery_id=head.delivery_id)
+            assert inbox.pending_head(target) is None
+            checkpoint = repo.load_checkpoint(target)[1]
+            assert checkpoint.computed_through == end and checkpoint.reference_state.open_trade is None
+    assert service.status(plan) == result
+
+
+def test_h1_boundary_rolls_back_all_four_on_activate_failure(monkeypatch, transition_engine):
+    from app.reference_trading.newow_h1_boundary import NewowH1Boundary
+
+    factory, pairs = fixture(transition_engine, current=True)
+    ids = [old for old, _ in pairs]
+    service = NewowH1Boundary(factory, assert_fenced=lambda: None)
+    plan = service.plan(ids, recording_start=START, expires_at=START, now=NOW)
+    activate = service._activate_target
+    calls = []
+    def fail_second(*args, **kwargs):
+        calls.append(True)
+        if len(calls) == 2:
+            raise RepositoryConflict("INJECTED_SECOND_ACTIVATION_FAILURE")
+        return activate(*args, **kwargs)
+
+    monkeypatch.setattr(service, "_activate_target", fail_second)
+    with pytest.raises(RepositoryConflict, match="INJECTED_SECOND"):
+        service.apply(plan, expected_plan_hash=plan["plan_hash"], now=NOW)
+    assert service.status(plan) is None
+    with factory() as db:
+        assert all(db.get(ReferenceStream, sid).enabled for sid in ids)
+        assert all(db.get(ReferenceStream, item["bootstrap"]["target_stream_id"]) is None
+                   for item in plan["items"])

@@ -92,3 +92,58 @@ def test_fusion_parks_old_observed_wake_even_when_wall_clock_is_after_start():
     assert len(calls) == 1
     assert calls[0][1]['now'] == start
     assert calls[0][1]['after'] == start - timedelta(microseconds=1)
+
+
+@pytest.mark.parametrize("strategy", ("trend", "oscillation", "main_rise"))
+def test_newow_h1_cold_start_accepts_only_contiguous_completed_observations(strategy):
+    from dataclasses import replace
+    from app.reference_trading.contracts import CheckpointToken
+    from app.reference_trading.forward_inputs import ForwardInputUnavailable
+    from app.reference_trading.newow_forward import evaluate_newow_capture
+    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY
+    from guiyi_quant.newow.product_adapters import seed_replay_state
+    from guiyi_quant.reference_trading import ReferenceState
+    from guiyi_quant.reference_trading.adapters import AdapterCheckpoint
+    from tests.reference_trading.test_inbox import event
+
+    _, _, old_identity, revision, start, _, _ = _setup(strategy=strategy, frequency="60m")
+    identity = replace(old_identity, observation_policy_version=H1_BOUNDARY_POLICY)
+    second = start + timedelta(hours=1)
+    checkpoint = AdapterCheckpoint(seed_replay_state(), stream=identity,
+                                   reference_state=ReferenceState.flat(identity, recording_start=start))
+
+    def context(_):
+        return (identity, revision, 1, start, checkpoint.computed_through, "block", None, None)
+
+    def endpoints(_, contract, day, after, cutoff):
+        return tuple(end for end in (start, second) if after < end <= cutoff)
+
+    worker = build_forward_reference_worker(
+        repository=SimpleNamespace(forward_source_context=context), market_read=None,
+        newow_reader=None, owner_segments=lambda *args: ("owner", "calc"),
+        expected_endpoints=endpoints, newow_capability_ready=lambda _: True,
+        enabled=True, now=lambda: second + timedelta(seconds=3),
+    )
+    assert worker._read_input(identity.stream_id, "scan", None) is None
+    worker.inbox_delivery_id = "frozen"
+
+    def capture(end):
+        original = replace(event(end=end), channel="live:bar:rb:60m")
+        worker.source_observed_at = original.confirmed_at
+        worker.source_envelope = original
+        return worker._read_input(identity.stream_id, "live_event", end)
+
+    assert capture(start - timedelta(hours=1)) is None
+    with pytest.raises(ForwardInputUnavailable, match="OBSERVATION_GAP"):
+        capture(second)
+    for i, end in enumerate((start, second), start=1):
+        accepted = capture(end)
+        assert accepted.source_proof["previous_watermark"] == (
+            None if i == 1 else start.isoformat()
+        )
+        token = CheckpointToken(identity.stream_id, revision, i, 1, "a" * 64)
+        step = evaluate_newow_capture(token, checkpoint, {**accepted.evidence(), "capture_id": "capture-id"}, dependency_manifest={})
+        checkpoint = step.checkpoint
+        assert checkpoint.computed_through == end
+        assert checkpoint.reference_state.open_trade is None
+        assert not step.source_actions
