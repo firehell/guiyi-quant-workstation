@@ -53,6 +53,10 @@ async function load() {
     if (token === generation) result.value = next.value.decision_v2
   } catch (failure) {
     if (token === generation) {
+      if (failure instanceof NewowProductRequestError && failure.code === 'REFERENCE_UPDATE_PENDING') {
+        error.value = '参考数据待更新'
+        return
+      }
       error.value = failure instanceof NewowProductRequestError
         ? failure.classification === 'busy' ? '图表仍在计算，请稍后重试综合解释。'
           : failure.diagnostic ? failure.message
