@@ -4066,6 +4066,29 @@ class ForwardRecoveryHost(CohortHost):
                 "live", "market-feed",
             }
 
+        def await_same_ready_owners(states, current, valid_until):
+            # A poll may temporarily clear ready. Retry only that observation,
+            # with the original owners, authority and receiving sample pinned.
+            poll_end = min(end, self.monotonic() + 1)
+            for _ in range(5):
+                check_budget()
+                now = self.now()
+                if (
+                    self.monotonic() >= poll_end
+                    or now >= valid_until
+                    or not receiving_sample_is_fresh(current, now=now)
+                ):
+                    break
+                observed, reason, service = ready_states()
+                if not same_owners(states, observed):
+                    break
+                if reason is None:
+                    return observed
+                if not transient_poll(reason, service):
+                    break
+                sleep(0.2)
+            return None
+
         while self.monotonic() < end:
             check_budget()
             states, reason, _service = ready_states()
@@ -4102,99 +4125,55 @@ class ForwardRecoveryHost(CohortHost):
             )
             by_stage[report_stage] = before
             previous = current
-            if candidate:
-                while self.monotonic() < end:
-                    check_budget()
-                    now = self.now()
-                    if not receiving_sample_is_fresh(current, now=now):
-                        break
+            if candidate and receiving_sample_is_fresh(current, now=self.now()):
+                check_budget()
+                if self.monotonic() >= end:
+                    break
+                _verification_substep(
+                    self, "session_authority", before=before, current=current
+                )
+                _window, valid_until = self.recovery_window(with_valid_until=True)
+                check_budget()
+                require(
+                    isinstance(valid_until, datetime)
+                    and valid_until.tzinfo is not None,
+                    "COHORT_FORWARD_SESSION_UNKNOWN",
+                )
+                if await_same_ready_owners(states, current, valid_until) is not None:
                     _verification_substep(
-                        self, "session_authority", before=before, current=current
+                        self, "fixed_identity", before=before, current=current
                     )
-                    _window, valid_until = self.recovery_window(
-                        with_valid_until=True
+                    self._fixed(source, check_budget)
+                    self._calculation_boundary(active=True)
+                    _verification_substep(
+                        self, "budget", before=before, current=current
                     )
                     check_budget()
                     require(
-                        isinstance(valid_until, datetime)
-                        and valid_until.tzinfo is not None,
-                        "COHORT_FORWARD_SESSION_UNKNOWN",
+                        self.monotonic() < end,
+                        "COHORT_FORWARD_READY_TIMEOUT",
                     )
-                    # Bound transient poll retries, not successful validation.
-                    # Full identity and owner checks may take longer than one
-                    # second; their proofs retain the normal freshness limits.
-                    burst_end = min(end, self.monotonic() + 1)
-                    retry_window = True
-                    for _ in range(5):
-                        if self.monotonic() >= burst_end:
-                            break
+                    final = await_same_ready_owners(states, current, valid_until)
+                    if final is not None:
+                        check_budget()
+                        require(
+                            self.monotonic() < end,
+                            "COHORT_FORWARD_READY_TIMEOUT",
+                        )
                         now = self.now()
-                        if now >= valid_until or not receiving_sample_is_fresh(
-                            current, now=now
+                        if (
+                            owner_samples_fresh(final, now)
+                            and now < valid_until
+                            and receiving_sample_is_fresh(current, now=now)
                         ):
-                            retry_window = False
-                            break
-                        observed, reason, service = ready_states()
-                        if not same_owners(states, observed):
-                            retry_window = False
-                            break
-                        if reason is None:
                             _verification_substep(
-                                self, "fixed_identity", before=before, current=current
+                                self, "receiving_liveness",
+                                before=before, current=current,
                             )
-                            self._fixed(source, check_budget)
-                            self._calculation_boundary(active=True)
-                            _verification_substep(
-                                self, "budget", before=before, current=current
-                            )
-                            check_budget()
-                            require(
-                                self.monotonic() < end,
-                                "COHORT_FORWARD_READY_TIMEOUT",
-                            )
-                            now = self.now()
-                            if now >= valid_until or not receiving_sample_is_fresh(
-                                current, now=now
-                            ):
-                                retry_window = False
-                                break
-                            final, final_reason, final_service = ready_states()
-                            if not same_owners(states, final):
-                                retry_window = False
-                                break
-                            if final_reason is None:
-                                check_budget()
-                                require(
-                                    self.monotonic() < end,
-                                    "COHORT_FORWARD_READY_TIMEOUT",
-                                )
-                                now = self.now()
-                                if (
-                                    not owner_samples_fresh(final, now)
-                                    or now >= valid_until
-                                    or not receiving_sample_is_fresh(current, now=now)
-                                ):
-                                    retry_window = False
-                                    break
-                                _verification_substep(
-                                    self, "receiving_liveness",
-                                    before=before, current=current,
-                                )
-                                return prove_receiving_liveness(
-                                    before, current, now=now
-                                )
-                            reason, service = final_reason, final_service
-                        if not transient_poll(reason, service):
-                            retry_window = False
-                            break
-                        sleep(0.2)
-                    if not retry_window:
-                        break
+                            return prove_receiving_liveness(before, current, now=now)
                 if not receiving_sample_is_fresh(current, now=self.now()):
                     before = current
                     by_stage[report_stage] = current
-                sleep(0.2)
-                continue
             sleep(0.2)
         raise CohortError("COHORT_FORWARD_READY_TIMEOUT")
 
