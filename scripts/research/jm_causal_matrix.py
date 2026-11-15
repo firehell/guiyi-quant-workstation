@@ -21,7 +21,12 @@ def main():
     parser.add_argument("--canonical-root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--owner-diagnostics", action="store_true")
+    parser.add_argument("--four-step-comparison", choices=("development", "oos"))
     args = parser.parse_args()
+    if args.four_step_comparison and (
+        args.frequency != "1d" or args.strategy or args.owner_diagnostics or args.scenario != "baseline"
+    ):
+        parser.error("--four-step-comparison requires 1d without additional matrix selectors")
     from dotenv import load_dotenv
     load_dotenv(args.market_env, override=False)
     os.environ["GUIYI_CANONICAL_DATA_ROOT"] = str(args.canonical_root.resolve())
@@ -41,10 +46,21 @@ def main():
     from guiyi_quant.newow.product_contracts import ProductFrequency
 
     since, through = date(2025, 10, 11), date(2026, 10, 9)
+    requested_through = date(2026, 10, 10)
+    as_of_day = date(2026, 10, 11)
+    if args.four_step_comparison == "oos":
+        since, through = date(2026, 10, 12), date(2026, 11, 13)
+        requested_through, as_of_day = through, date(2026, 11, 14)
     raw = json.loads(args.facts.read_text())
-    original = args.facts.with_name("execution-facts.json")
-    if sha256(original.read_bytes()).hexdigest() != raw["tick_amendment"]["original_sha256"]:
-        raise ValueError("MATRIX_FACT_AMENDMENT_MISMATCH")
+    if args.four_step_comparison:
+        captured = datetime.fromisoformat(raw.get("captured_at", ""))
+        if (raw.get("schema_version") != 1 or raw.get("source") != "rqdata" or captured.utcoffset() is None
+            or re.fullmatch(r"[0-9a-f]{64}", raw.get("plan_hash", "")) is None):
+            raise ValueError("EXECUTION_FACTS_UNVERIFIED")
+    if args.four_step_comparison != "oos":
+        original = args.facts.with_name("execution-facts.json")
+        if sha256(original.read_bytes()).hexdigest() != raw["tick_amendment"]["original_sha256"]:
+            raise ValueError("MATRIX_FACT_AMENDMENT_MISMATCH")
     frequency = ProductFrequency(args.frequency)
     with SessionLocal() as session, readonly_transaction(session, timeout_seconds=900):
         market = build_market_data_service(session)
@@ -52,18 +68,39 @@ def main():
             active_products=load_active_products(), input_quality_policy=candidate_input_quality_policy(
                 "jm", frequency, candidate_weekly=frequency is ProductFrequency.WEEKLY))
         source = load_matrix_input(market, reader, frequency, since=since,
-            requested_through=date(2026, 10, 10), as_of=datetime(2026, 10, 11, tzinfo=ZoneInfo("Asia/Shanghai")))
+            requested_through=requested_through, as_of=datetime.combine(as_of_day, datetime.min.time(), ZoneInfo("Asia/Shanghai")))
         if source.actual_through != through:
             raise ValueError("MATRIX_WINDOW_MISMATCH")
-        adapt_jm_execution_facts(load_jm_pilot_input(market, since=since, actual_through=through), raw)
+        if args.four_step_comparison != "oos":
+            adapt_jm_execution_facts(load_jm_pilot_input(market, since=since, actual_through=through), raw)
         minutes = load_jm_execution_bars(market, since=since, actual_through=through)
         sessions = ActualDominantResearchSegmentLoader(market).sessions(symbol="jm",
             trading_days=tuple(sorted({b.trading_day for b in minutes})))
         if any(not any(s.start <= b.bar_end-timedelta(minutes=1) and b.bar_end <= s.end
                        for s in sessions[b.trading_day]) for b in minutes):
             raise ValueError("MATRIX_SESSION_UNPROVEN")
+    if args.four_step_comparison:
+        required = {(bar.physical_contract, bar.trading_day.isoformat()) for bar in minutes}
+        missing = []
+        for contract, day in sorted(required):
+            facts = raw.get("contracts", {}).get(contract, {})
+            for table in ("daily", "parameters"):
+                if sum(row.get("date") == day for row in facts.get(table, ())) != 1:
+                    missing.append((contract, day, table))
+        if missing:
+            print(json.dumps({"status": "EXECUTION_FACTS_MISSING", "missing": missing}, ensure_ascii=False))
+            return 2
     templates, facts_hash, clock_hash = prepare_execution(minutes, raw)
     args.out.mkdir(parents=True, exist_ok=True)
+    if args.four_step_comparison:
+        from app.paper.four_step_research import compare_four_step
+        result = compare_four_step(source, templates, facts_hash, clock_hash,
+            owners={bar.bar_end: (bar.physical_contract, bar.segment_id) for bar in minutes},
+            sample="time_holdout" if args.four_step_comparison == "oos" else "development")
+        with (args.out / f"1d-four-step-{args.four_step_comparison}.json").open("x") as stream:
+            json.dump(result, stream, ensure_ascii=False, indent=2)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
     strategies = tuple(CausalMatrixStrategy(s) for s in args.strategy) if args.strategy else tuple(CausalMatrixStrategy)
     for strategy in strategies:
         path = args.out / f"{args.frequency}-{strategy.value}-{args.scenario}.json"
@@ -90,7 +127,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        main()
+        raise SystemExit(main())
     except Exception as exc:
         candidate = getattr(exc, "code", None) or str(exc)
         code = candidate if re.fullmatch(r"[A-Z][A-Z0-9_]{2,100}", str(candidate)) else "MATRIX_EXECUTION_FAILED"

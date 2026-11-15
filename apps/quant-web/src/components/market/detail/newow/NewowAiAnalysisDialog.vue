@@ -53,6 +53,21 @@ onBeforeUnmount(stop)
         <div class="ai-reason">理由：累计收益 <b>{{ signed(best.summary.cumulative_return) }}</b>；六组合综合评分优先推荐（同分比较交易数）；胜率 <b>{{ formatDisplayNumber(best.summary.win_rate) }}%</b>；最大回撤 <b>{{ Number(best.summary.max_drawdown).toFixed(2) }}%</b>。<span v-if="best.confidence === 'mid'">样本较少，请谨慎参考。</span></div>
       </div>
       <p v-else class="ai-error" role="status">有效交易样本不足 3 次，暂不推荐策略。</p>
+      <section v-if="result.four_step" class="ai-group ai-four-step" aria-label="双策略四步法回测">
+        <h3>双策略四步法回测 · 日线</h3>
+        <template v-if="result.four_step.summary">
+          <div class="ai-grid">
+            <div class="ai-cell"><strong>{{ result.four_step.summary.win_rate }}%</strong><div>胜率</div></div>
+            <div class="ai-cell"><strong>{{ result.four_step.summary.trade_count }}</strong><div>交易数</div></div>
+            <div class="ai-cell"><strong>{{ signed(result.four_step.summary.average_return_pct) }}</strong><div>平均每笔</div></div>
+            <div class="ai-cell"><strong>{{ signed(result.four_step.summary.worst_return_pct) }}</strong><div>最差单笔</div></div>
+            <div class="ai-cell"><strong>{{ result.four_step.summary.average_holding_bars }} 根</strong><div>平均持仓</div></div>
+          </div>
+          <p v-if="result.four_step.page_baseline">牛哇页面对照胜率 {{ result.four_step.page_baseline.win_rate }}%，也接受趋势清仓。</p>
+          <p>{{ result.four_step.since }} 至 {{ result.four_step.through }}。半仓开、趋势加至满仓，期末按段估值，零费用和滑点。</p>
+        </template>
+        <p v-else role="status">{{ result.four_step.reason_code === 'NEWOW_FOUR_STEP_NO_ENTRIES' ? '当前日线窗口未出现四步法建仓。' : '当前日线样本不足或不可用。' }}</p>
+      </section>
       <section v-for="group in groups" :key="group.strategy" class="ai-group">
         <div class="ai-group-head"><span class="ai-tag" :class="group.strategy">{{ group.name }}</span><span class="ai-description">{{ group.description }}</span></div>
         <div class="ai-grid">
@@ -84,6 +99,8 @@ onBeforeUnmount(stop)
   </NewowDetailDialog>
 </template>
 <style scoped>
+.ai-four-step h3 { margin: 0 0 8px; font-size: 14px; }
+.ai-four-step p { margin: 8px 0 0; font-size: 12px; }
 .ai-subtitle { margin:0 0 12px; font-size:12px; color:var(--gy-text-muted); text-align:center; line-height:1.6; }
 .ai-toolbar { display:flex; margin-bottom:12px; }.ai-refresh { padding:7px 16px; border:1px solid var(--gy-border); border-radius:10px; font-size:13px; font-weight:600; background:var(--gy-bg-elevated); color:var(--gy-text-primary); cursor:pointer; }
 .ai-banner { border-radius:14px; padding:12px 14px; margin-bottom:12px; background:linear-gradient(135deg,#ff6b3524,#ff95001a); border:1px solid #ff6b3566; }

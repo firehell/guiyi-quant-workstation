@@ -182,14 +182,17 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
         return _build_snapshot_inputs(session, cancelled, lambda: now,
             _input_quality_policy(request, product, frequency))[0]
     try:
+        preview = getattr(request.state, "candidate_preview_as_of", None) is not None
         with _PRODUCT_GATE.acquire(cancelled, priority=2):
-            combos = analyze_product(product, as_of, reader_factory, cancelled,
-                                     lambda frequency: _enforce_product_frequency(request, product, frequency))
-        return {"schema_version": ("newow_ai_analysis_v2" if getattr(request.state, "candidate_preview_as_of", None) is not None else "newow_ai_analysis_v3"), "product": product,
+            result = analyze_product(product, as_of, reader_factory, cancelled,
+                                     lambda frequency: _enforce_product_frequency(request, product, frequency),
+                                     include_four_step=not preview)
+        return {"schema_version": ("newow_ai_analysis_v2" if preview else "newow_ai_analysis_v3"), "product": product,
                 "as_of": _json_value(as_of), "formula_version": PAGE_FORMULA,
                 "futures_adapter_version": FUTURES_ADAPTER, "page_source_sha256": PAGE_SOURCE_SHA256,
                 "page_kernel_parity": True, "page_parity": False, "executable": False,
-                "combos": _json_value(combos)}
+                "combos": _json_value(result.combos),
+                **({} if preview else {"four_step": _json_value(result.four_step)})}
     except HTTPException:
         raise
     except Exception as error:

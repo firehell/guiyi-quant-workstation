@@ -69,3 +69,14 @@ test('v3 requests latest completed Canonical cutoff and keeps v2 wire readable',
   assert.equal(validateAiAnalysis(output(), 'jm', asOf), true)
   assert.equal(validateAiAnalysis({ ...payload, schema_version: 'newow_ai_analysis_v4' }, 'jm', current), false)
 })
+
+test('optional daily four-step result must match the existing daily cutoff and input identity', () => {
+  const response = { ...output(), schema_version: 'newow_ai_analysis_v3', four_step: {
+    since: '2025-09-01', through: '2026-09-24', source_bars: 100, input_sha256: 'a'.repeat(64),
+    model_version: 'newow_dual_four_step_page_v1', futures_adapter_version: 'guiyi_newow_four_step_segment_valuation_v1',
+    page_source_sha256: 'b'.repeat(64), summary: null, page_baseline: null, reason_code: 'NEWOW_FOUR_STEP_NO_ENTRIES',
+  } }
+  assert.equal(validateAiAnalysis(response, 'jm', asOf), true)
+  response.four_step.input_sha256 = 'c'.repeat(64)
+  assert.equal(validateAiAnalysis(response, 'jm', asOf), false)
+})

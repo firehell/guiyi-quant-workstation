@@ -416,22 +416,25 @@ def _halt(state: PaperState, at: datetime) -> PaperState:
     return state
 
 
-def _fill_price(order: PaperOrder, bar: ObserveExecutionBar) -> Decimal | None:
+def execution_fill_price(side: str, bar: ObserveExecutionBar, limit_price: Decimal | None = None) -> Decimal | None:
+    """Shared completed-minute execution pricing for Paper and fixed-lot research."""
+    if side not in ("OPEN", "CLOSE"):
+        raise ValueError("unknown fill side")
     if bar.volume == 0 or not bar.session_open or bar.open < bar.limit_down or bar.open > bar.limit_up:
         return None
-    if order.side == 'OPEN':
+    if side == 'OPEN':
         if bar.open >= bar.limit_up:
             return None
         raw = bar.open + bar.tick_size * bar.slippage_ticks
         price = (raw / bar.tick_size).to_integral_value(rounding=ROUND_CEILING) * bar.tick_size
-        if price > bar.limit_up or (order.limit_price is not None and price > order.limit_price):
+        if price > bar.limit_up or (limit_price is not None and price > limit_price):
             return None
     else:
         if bar.open <= bar.limit_down:
             return None
         raw = bar.open - bar.tick_size * bar.slippage_ticks
         price = (raw / bar.tick_size).to_integral_value(rounding=ROUND_FLOOR) * bar.tick_size
-        if price < bar.limit_down or (order.limit_price is not None and price < order.limit_price):
+        if price < bar.limit_down or (limit_price is not None and price < limit_price):
             return None
     return price
 
@@ -460,7 +463,7 @@ def _on_bar(state: PaperState, bar: ObserveExecutionBar) -> PaperState:
             continue
         if bar.bar_start <= order.created_at or bar.bar_start <= order.effective_after:
             continue
-        price = _fill_price(order, bar)
+        price = execution_fill_price(order.side, bar, order.limit_price)
         if price is None:
             continue
         if order.side == 'OPEN':
