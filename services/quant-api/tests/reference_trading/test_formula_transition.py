@@ -270,7 +270,10 @@ def fixture(engine=None, *, current=False):
                     activated_at=reference.recording_start,
                     environment="fixture",
                     host="fixture",
-                    budget={"max_units_per_round": 32},
+                    budget=({"max_pending_keys": 360, "max_units_per_round": 32,
+                             "bounded_recovery_capture_sha256": "a" * 64,
+                             "journal_proof_sha256": "c" * 64, "previous_receipt_sha256": "d" * 64}
+                            if current else {"max_units_per_round": 32}),
                     recovery_policy="block",
                 )
             )
@@ -595,6 +598,8 @@ def test_h1_boundary_uses_cold_seed_and_preserves_retired_history(transition_eng
             status="BLOCKED", code="OBSERVATION_GAP", created_at=BAR, updated_at=BAR,
         ))
     plan = service.plan(old_ids, recording_start=START, expires_at=START, now=NOW)
+    assert all(item["bootstrap"]["budget"] == {"max_pending_keys": 360, "max_units_per_round": 32}
+               for item in plan["items"])
     with factory() as db:
         before = {b.batch_id:b.checkpoint_text for b in db.scalars(select(ReferenceBatch))}
     assert service.status(plan) is None
@@ -606,6 +611,10 @@ def test_h1_boundary_uses_cold_seed_and_preserves_retired_history(transition_eng
         assert db.get(ReferenceInboxDelivery, "d").status == "BLOCKED"
         assert db.scalar(_head_query(old_ids[0])).delivery_id == "d"
         assert all(not db.get(ReferenceStream, sid).enabled for sid in old_ids)
+        retired = db.scalars(select(ReferenceActivationReceipt).where(
+            ReferenceActivationReceipt.stream_id.in_(old_ids)
+        )).all()
+        assert all(row.budget["bounded_recovery_capture_sha256"] == "a" * 64 for row in retired)
         for item in plan["items"]:
             sid = item["bootstrap"]["target_stream_id"]
             assert db.get(ReferenceStream, sid).health == "FORMULA_WARMING"
