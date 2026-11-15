@@ -2416,6 +2416,53 @@ def test_slow_successful_checks_do_not_consume_transient_poll_retry_window(
     assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
 
 
+
+def test_slow_identity_then_transient_feed_poll_reuses_fresh_candidate(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    elapsed = current.monotonic
+    extra = [0.0]
+    current.monotonic = lambda: elapsed() + extra[0]
+    current.now = lambda: NOW + timedelta(seconds=current.monotonic())
+
+    def advance(seconds):
+        extra[0] += seconds
+
+    monkeypatch.setattr(module(), "sleep", advance)
+    windows = []
+    fixed = []
+    recovery_window = current.recovery_window
+    active = current._active
+
+    def session_proof(**kwargs):
+        windows.append(current.monotonic())
+        advance(0.9)
+        return recovery_window(**kwargs)
+
+    def fixed_identity(*args):
+        fixed.append(current.monotonic())
+        advance(1.1)
+
+    def active_owner(binding):
+        state = active(binding)
+        if binding.service == "market-feed" and fixed:
+            state["ready"] = current.monotonic() - fixed[0] >= 1.25
+        return state
+
+    current.recovery_window = session_proof
+    current._fixed = fixed_identity
+    current._active = active_owner
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert len(windows) == len(fixed) == 1
+    assert len(samples) == 2
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+
+
 def test_final_owner_checks_cannot_overrun_overall_ready_deadline(
     tmp_path, monkeypatch
 ):
