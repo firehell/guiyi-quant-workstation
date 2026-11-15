@@ -39,36 +39,32 @@ test('empty main chart legend follows the selected strategy instead of defaultin
   }
 })
 
-test('chart controls render locally by default and move to an explicit target without duplication', async () => {
-  const Stage = await loadComponent(), target = ref<string | undefined>(undefined)
-  const root = element('root'), portal = element('portal')
+test('chart settings use one trigger and preserve the host tools', async () => {
+  const Stage = await loadComponent()
+  const root = element('root')
   const fakeChart = {
     addSeries: () => ({ setData() {} }), removeSeries() {},
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
-  const app = createRenderer({ ...nodeOperations(), querySelector: (selector:string) => selector === '#chart-controls' ? portal : null }).createApp(defineComponent({
-    setup: () => () => h(Stage, { response:null, strategy:'trend', selectedSignalId:null, channelControlsTarget:target.value }, {
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({
+    setup: () => () => h(Stage, { response:null, strategy:'trend', selectedSignalId:null }, {
       'main-controls': () => h('button', { 'data-testid':'host-control' }, '宿主操作'),
     }),
   }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(root); await nextTick()
-  const controls = (node:TestNode) => findNode(node,n=>n.props['aria-label']==='图表参考叠加')
-  assert.ok(controls(root))
-  assert.equal(controls(portal),undefined)
+  const trigger = () => findNode(root, node => node.type === 'button' && textContent(node) === '图表设置')!
+  assert.equal(trigger().props['aria-expanded'], false)
+  ;(trigger().props.onClick as () => void)(); await nextTick()
+  assert.equal(trigger().props['aria-expanded'], true)
+  assert.ok(findCheckbox(root, '纯净模式'))
+  assert.ok(findCheckbox(root, '唐奇安通道'))
   const tools = findNode(root,n=>n.type==='details'&&n.props.class==='newow-product-chart-stage__tools')!
   assert.ok(tools)
   assert.equal(Boolean(tools.props.open),false,'tools are initially folded')
   assert.ok(findNode(tools,n=>n.props['data-testid']==='host-control'))
-  target.value='#chart-controls'; await nextTick()
-  assert.equal(controls(root),undefined)
-  assert.ok(controls(portal))
-  target.value=undefined; await nextTick()
-  assert.ok(controls(root))
-  assert.equal(controls(portal),undefined)
   app.unmount()
-  assert.equal(controls(portal),undefined)
 })
 
 test('trend A/B boundaries render as lightweight one-pixel lines above the columns', async () => {
@@ -252,11 +248,11 @@ test('process labels and cycle counts follow candles and revoke on switches or e
   assert.equal((hint()!.props.style as any).left, '210px')
   assert.equal(hint()!.props['data-anchor-price'], '88')
   assert.ok(findNode(root, node => node.props['data-cycle-count-bar'] != null))
-  const toggle = findNode(root, node => node.type === 'button' && textContent(node) === '过程提示')
+  const toggle = findCheckbox(root, '过程提示')
   assert.ok(toggle)
-  ;(toggle.props.onClick as () => void)(); await nextTick(); await nextTick()
+  ;(toggle.props.onChange as () => void)(); await nextTick(); await nextTick()
   assert.equal(hint(), undefined)
-  ;(toggle.props.onClick as () => void)(); await nextTick(); await nextTick()
+  ;(toggle.props.onChange as () => void)(); await nextTick(); await nextTick()
   assert.ok(hint())
   switching.value = true; await nextTick(); await nextTick(); assert.equal(hint(), undefined)
   switching.value = false; await nextTick(); await nextTick(); assert.ok(hint())
@@ -450,6 +446,7 @@ test('creates main-pane volume plus auxiliary pane with zero/color and releases 
   const fakeChart = {
     addPane: () => panes[paneCount++], panes: () => panes.slice(0, paneCount),
     addSeries(definition: { type: string }, options: Record<string, unknown>, index = 0) {
+      paneCount = Math.max(paneCount, index + 1)
       const record = { definition, options, pane: index, data: [] as Array<{ value: number; color: string }> }; records.push(record)
       return { setData(data: typeof record.data) { record.data = data }, attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {} }
     }, removeSeries() {},
@@ -562,11 +559,20 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
     selectedSignalId: null,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
-  app.mount(element('root')); await nextTick()
+  const root = element('root')
+  app.mount(root); await nextTick()
   const histogram = records.find(record => record.pane === 2 && record.definition.type === 'Histogram')!
   assert.deepEqual(histogram.data.map(point => [point.value, point.color]), [[-2, '#80DCA1'], [3, '#FF8383']])
   const candleTimes = records.find(record => record.definition.type === 'Candlestick')!.data.map(point => point.time)
   assert.deepEqual(histogram.data.map(point => point.time), candleTimes)
+  const pure = findCheckbox(root, '纯净模式')!
+  const activeAuxiliary = () => records.filter(record => record.pane > 0 && !record.removed)
+  const setPure = pure.props.onChange as () => void
+  setPure(); await nextTick()
+  assert.deepEqual(activeAuxiliary(), [])
+  ;(findCheckbox(root, '纯净模式')!.props.onChange as () => void)(); await nextTick()
+  assert.equal(activeAuxiliary().filter(record => record.pane === 2).length, 3)
+  assert.equal(activeAuxiliary().filter(record => record.pane === 1).length, 1)
   auxiliary.value = { ...auxiliary.value, meta: { ...auxiliary.value.meta, snapshot_token: 'invalidated' } }
   await nextTick()
   assert.equal(records.filter(record => record.pane === 2 && record.data.some(point => point.value !== undefined) && !record.removed).length, 0)
@@ -625,18 +631,18 @@ test('same chart instance restores identity-specific layers and viewport across 
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   const root = element('root'); app.mount(root); await nextTick()
-  const actions = () => findNode(root, node => node.type === 'button' && textContent(node) === '建仓 / 清仓')!
+  const actions = () => findCheckbox(root, '建仓 / 清仓')!
   range = { from: 10, to: 20 }
-  ;(actions().props.onClick as () => void)(); await nextTick()
-  assert.equal(actions().props['aria-pressed'], false)
+  ;(actions().props.onChange as () => void)(); await nextTick()
+  assert.equal(actions().props.checked, false)
   response.value = null; partner.value = null; await nextTick(); await nextTick()
   response.value = strategyResponse('oscillation'); await nextTick(); await nextTick()
   range = { from: 30, to: 40 }
   response.value = strategyResponse('trend'); await nextTick(); await nextTick()
   assert.deepEqual(range, { from: 10, to: 20 })
-  assert.equal(actions().props['aria-pressed'], false)
-  ;(actions().props.onClick as () => void)(); await nextTick()
-  assert.equal(actions().props['aria-pressed'], true, 'restored hidden layers remain recoverable through the folded tools')
+  assert.equal(actions().props.checked, false)
+  ;(actions().props.onChange as () => void)(); await nextTick()
+  assert.equal(actions().props.checked, true, 'restored hidden layers remain recoverable through the folded tools')
   app.unmount()
 })
 
@@ -658,10 +664,10 @@ test('dual overlay projects both strategies at prices, exposes blue/orange label
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   const root = element('root'); app.mount(root); await nextTick(); await nextTick()
   assert.ok(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'))
-  assert.ok(findNode(root, n => n.props['aria-label'] === '双策略标签密度'))
-  const actions = findNode(root, n => n.type === 'button' && textContent(n) === '建仓 / 清仓')!
-  if (actions && actions.props['aria-pressed'] === false) {
-    ;(actions.props.onClick as () => void)(); await nextTick(); await nextTick()
+  assert.ok(findNode(root, n => n.props['aria-label'] === '双策略标注密度'))
+  const actions = findCheckbox(root, '建仓 / 清仓')!
+  if (actions && actions.props.checked === false) {
+    ;(actions.props.onChange as () => void)(); await nextTick(); await nextTick()
   }
   for (const origin of ['trend', 'oscillation']) {
     const label = findNode(root, n => n.props['data-origin-strategy'] === origin)
@@ -916,6 +922,9 @@ async function componentModule(url: URL): Promise<string> {
       const path = resolveSourceImport(specifier)
       return `from '${pathToFileURL(path).href}'`
     })
+  const overlayStub = 'export const useDetailOverlay = () => ({ onNativeClose() {}, onBackdrop() {} })'
+  transpiled = transpiled.replace(/from ['"]\.\.\/overlay\/useDetailOverlay['"]/g,
+    `from 'data:text/javascript;base64,${Buffer.from(overlayStub).toString('base64')}'`)
   for (const match of [...transpiled.matchAll(/from ['"]([^'"]+\.vue)['"]/g)]) {
     const child = match[1]!.startsWith('file:') ? new URL(match[1]!) : new URL(match[1]!, url)
     transpiled = transpiled.replace(match[0], `from '${await componentModule(child)}'`)
@@ -933,12 +942,16 @@ function resolveSourceImport(specifier: string): string {
   throw new Error(`cannot resolve source import: ${specifier}`)
 }
 
-interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string; clientWidth: number; clientHeight: number }
-function element(type: string): TestNode { return { type, props: {}, parent: null, children: [], text: '', clientWidth: 800, clientHeight: 600 } }
+interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string; clientWidth: number; clientHeight: number; style: { display: string } }
+function element(type: string): TestNode { return { type, props: {}, parent: null, children: [], text: '', clientWidth: 800, clientHeight: 600, style: { display: '' } } }
 function findNode(node: TestNode, match: (candidate: TestNode) => boolean): TestNode | undefined {
   if (match(node)) return node
   for (const child of node.children) { const found = findNode(child, match); if (found) return found }
   return undefined
+}
+function findCheckbox(root: TestNode, label: string): TestNode | undefined {
+  const wrapper = findNode(root, node => node.type === 'label' && textContent(node) === label)
+  return wrapper && findNode(wrapper, node => node.type === 'input')
 }
 function textContent(node: TestNode): string { return `${node.text}${node.children.map(textContent).join('')}` }
 function nodeOperations() {
@@ -1011,7 +1024,7 @@ test('page theme repaints breakout volume without a market request and disconnec
     value.bars[9]={...value.bars[9]!,open:'90',close:'108',volume:200}
     value.frames=value.bars.map(b=>({...template,bar_end:b.bar_end,action_ids:b===value.bars[9]?['build-stable']:[],hint_ids:b===value.bars[9]?['hint-stable']:[]}))
     const scale={width:()=>500,timeToCoordinate:()=>210,fitContent(){},setVisibleLogicalRange(){},getVisibleLogicalRange:()=>null,scrollToRealTime(){},subscribeVisibleLogicalRangeChange(){},unsubscribeVisibleLogicalRangeChange(){}}
-    const fakeChart={addSeries:(_definition:unknown,options:any)=>({setData(data:any){if(options?.priceFormat?.type==='volume')volumes=data},update(row:any){if(options?.priceFormat?.type==='volume'){const i=volumes.findIndex(v=>(v as any).time===row.time);if(i<0)volumes.push(row);else volumes[i]=row}},createPriceLine(){},attachPrimitive(){},detachPrimitive(){},priceToCoordinate:(p:number)=>p*2}),removeSeries(){},panes:()=>[400,100,100].map(height=>({getHeight:()=>height,setStretchFactor(){}})),timeScale:()=>scale,subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
+    const fakeChart={addSeries:(_definition:unknown,options:any)=>({setData(data:any){if(options?.priceScaleId==='volume')volumes=data},update(row:any){if(options?.priceScaleId==='volume'){const i=volumes.findIndex(v=>(v as any).time===row.time);if(i<0)volumes.push(row);else volumes[i]=row}},createPriceLine(){},attachPrimitive(){},detachPrimitive(){},priceToCoordinate:(p:number)=>p*2}),removeSeries(){},panes:()=>[400,100,100].map(height=>({getHeight:()=>height,setStretchFactor(){}})),timeScale:()=>scale,subscribeClick(){},unsubscribeClick(){},resize(){},remove(){}}
     const app=createRenderer(nodeOperations()).createApp(defineComponent({setup:()=>()=>h(Stage,{response,strategy:'oscillation',selectedSignalId:null})}))
     app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY,adapter(fakeChart));app.mount(element('root'));await nextTick();await nextTick()
     assert.equal(volumes.at(-1)?.color,'#D9A400');assert.ok(observations>=2)

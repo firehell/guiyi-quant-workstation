@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, useId } from 'vue'
 import { useDetailOverlay } from '../overlay/useDetailOverlay'
-const props = defineProps<{ open: boolean; title: string; identityKey: string; wide?: boolean; variant?: 'niuwa-indicator' | 'ai-analysis' }>()
+const props = defineProps<{ open: boolean; title: string; identityKey: string; wide?: boolean; variant?: 'niuwa-indicator' | 'ai-analysis' | 'chart-settings' }>()
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 const titleId = `newow-dialog-title-${useId()}`
@@ -11,8 +11,8 @@ const { onNativeClose, onBackdrop } = useDetailOverlay({
 })
 </script>
 <template>
-  <dialog ref="dialog" class="newow-detail-dialog gy-detail-dialog" :class="{ 'newow-detail-dialog--wide': wide, 'newow-detail-dialog--niuwa-indicator': variant === 'niuwa-indicator', 'newow-detail-dialog--ai-analysis': variant === 'ai-analysis' }" :aria-labelledby="titleId" @cancel.prevent="close" @close="onNativeClose" @click="onBackdrop">
-    <header><h2 :id="titleId">{{ title }}</h2><button v-if="!variant" type="button" aria-label="关闭解释" autofocus @click="close">×</button></header>
+  <dialog ref="dialog" class="newow-detail-dialog gy-detail-dialog" :class="{ 'newow-detail-dialog--wide': wide, 'newow-detail-dialog--niuwa-indicator': variant === 'niuwa-indicator', 'newow-detail-dialog--ai-analysis': variant === 'ai-analysis', 'newow-detail-dialog--chart-settings': variant === 'chart-settings' }" :aria-labelledby="titleId" @cancel.prevent="close" @close="onNativeClose" @click="onBackdrop">
+    <header><h2 :id="titleId">{{ title }}</h2><button v-if="!variant || variant === 'chart-settings'" type="button" :aria-label="variant === 'chart-settings' ? '关闭图表设置' : '关闭解释'" autofocus @click="close">×</button></header>
     <div class="newow-detail-dialog__body"><slot /></div>
     <footer><slot name="footer"><button type="button" @click="close">知道了</button></slot></footer>
   </dialog>
@@ -37,6 +37,11 @@ footer { justify-content:center; } footer button { width:108px; background:var(-
 .newow-detail-dialog--ai-analysis h2 { font-size:16px; font-weight:600; text-align:center; }
 .newow-detail-dialog--ai-analysis .newow-detail-dialog__body { padding:0 24px; }
 .newow-detail-dialog--ai-analysis footer { padding:14px 24px 24px; }
+.newow-detail-dialog--chart-settings { margin: 0 0 0 auto; width: min(380px, 100%); height: 100dvh; max-height: 100dvh; border-radius: 14px 0 0 14px; }
+.newow-detail-dialog--chart-settings h2 { font-size:16px; }
+@media (max-width: 600px) {
+  .newow-detail-dialog--chart-settings { margin: auto 0 0; width: 100%; max-width: 100%; height: auto; max-height: 90dvh; border-radius: 16px 16px 0 0; }
+}
 </style>
 
 <style scoped>
