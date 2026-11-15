@@ -1,3 +1,6 @@
+import pytest
+
+from app.reference_trading.query import QueryConflict
 from app.reference_trading.recording_matrix import newow_recording_matrix
 
 
@@ -49,3 +52,28 @@ def test_historical_seed_state_is_not_counted_as_natural_observation():
     assert report['configured_count'] == 1
     hourly = [item for item in report['items'] if item['frequency'] == '60m']
     assert all(item['expected_through'] == '2026-10-08T07:00:00+00:00' for item in hourly)
+
+
+
+def test_matrix_selects_only_the_currently_enabled_stream():
+    scope = {"strategy_code": "newow_trend", "product": "rb", "frequency": "60m"}
+    retired = [{**scope, "stream_id": f"old-{i}", "enabled": False} for i in range(2)]
+    active = {**scope, "stream_id": "current", "enabled": True, "status": "OBSERVATION_LAGGING"}
+    report = newow_recording_matrix(("rb",), {"streams": [retired[0], active, retired[1]]})
+    assert report["configured_count"] == report["enabled_count"] == 1
+    hourly = next(item for item in report["items"] if
+                  item["strategy"] == "trend" and item["frequency"] == "60m")
+    assert hourly["stream_id"] == "current"
+    assert hourly["status"] == "OBSERVATION_LAGGING"
+
+    report = newow_recording_matrix(("rb",), {"streams": retired})
+    assert report["configured_count"] == 0
+    assert all(item["status"] == "NOT_CONFIGURED" for item in report["items"])
+
+
+def test_matrix_rejects_two_enabled_streams_for_one_key():
+    scope = {"strategy_code": "newow_trend", "product": "rb", "frequency": "60m", "enabled": True}
+    with pytest.raises(QueryConflict, match="NEWOW_RECORDING_IDENTITY_CONFLICT"):
+        newow_recording_matrix(("rb",), {"streams": [
+            {**scope, "stream_id": "first"}, {**scope, "stream_id": "second"},
+        ]})

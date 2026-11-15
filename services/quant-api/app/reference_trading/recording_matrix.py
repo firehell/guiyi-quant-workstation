@@ -10,6 +10,8 @@ STRATEGIES = ("trend", "oscillation", "main_rise", "dual_fusion")
 def newow_recording_matrix(products, health: dict) -> dict:
     routes = {}
     for item in health["streams"]:
+        if item.get("enabled") is not True:
+            continue
         code = item["strategy_code"].replace("-", "_")
         if not code.startswith("newow_"):
             continue
