@@ -3,15 +3,25 @@
 export interface VisualOverlayPreferences { donchian: boolean; window: number; stop: boolean }
 const key = 'guiyi:newow:visual-overlays:v1'
 export const validDonchianWindow = (value: number): boolean => Number.isInteger(value) && value >= 5 && value <= 120
-export function readVisualOverlayPreferences(): VisualOverlayPreferences {
-  const defaults = { donchian: false, window: 20, stop: false }
+export interface ChartAnnotationPreferences { pure: boolean; extrema: boolean; nineTurn: boolean }
+function readPreferences(): Partial<VisualOverlayPreferences & ChartAnnotationPreferences> {
   try {
     const value = JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null')
-    return { donchian: value?.donchian === true, stop: value?.stop === true, window: validDonchianWindow(value?.window) ? value.window : 20 }
-  } catch { return defaults }
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  } catch { return {} }
 }
-export function saveVisualOverlayPreferences(value: VisualOverlayPreferences): void {
-  try { globalThis.localStorage?.setItem(key, JSON.stringify(value)) } catch { /* storage can be disabled */ }
+export function readVisualOverlayPreferences(): VisualOverlayPreferences {
+  const value = readPreferences()
+  return { donchian: value.donchian === true, stop: value.stop === true,
+    window: typeof value.window === 'number' && validDonchianWindow(value.window) ? value.window : 20 }
+}
+export function readChartAnnotationPreferences(): ChartAnnotationPreferences {
+  const value = readPreferences()
+  return { pure: value.pure === true, extrema: value.extrema !== false, nineTurn: value.nineTurn === true }
+}
+export function saveVisualOverlayPreferences(value: VisualOverlayPreferences | ChartAnnotationPreferences): void {
+  try { globalThis.localStorage?.setItem(key, JSON.stringify({ ...readPreferences(), ...value })) }
+  catch { /* storage can be disabled */ }
 }
 export interface VisualOverlayBar { time: string; high: number; low: number; owner: string }
 export function visualDonchian(bars: readonly VisualOverlayBar[], window: number): Array<{ time: string; upper: number | null; lower: number | null }> {

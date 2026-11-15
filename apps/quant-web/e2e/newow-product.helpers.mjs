@@ -345,7 +345,7 @@ function validateProductQuery(url, section, strategy, frequency, expectedAsOf = 
   if (url.searchParams.has('chart_before') && url.searchParams.get('chart_before') !== 'chart-page-2') return `invalid chart cursor ${url.search}`
   if (url.searchParams.has('history_before') && !part && url.searchParams.get('history_before') !== 'reference-page-2') return `invalid reference cursor ${url.search}`
   if (url.searchParams.has('snapshot_token') && url.searchParams.get('snapshot_token') !== `snapshot:${strategy}:${frequency}:fixture-revision-1`) return `invalid snapshot token ${url.search}`
-  if (url.searchParams.has('performance_since') && !['2026-01-01', '2026-06-03'].includes(url.searchParams.get('performance_since'))) return `invalid performance start ${url.search}`
+  if (url.searchParams.has('performance_since') && !['2025-01-01', '2026-01-01', '2026-06-03'].includes(url.searchParams.get('performance_since'))) return `invalid performance start ${url.search}`
   if (url.searchParams.has('performance_through') && url.searchParams.get('performance_through') !== '2026-09-03') return `invalid performance end ${url.search}`
   const fixtureDates = ['2025-01-01', '2025-12-15', '2025-12-31', '2026-01-01', '2026-01-05', '2026-01-06', '2026-06-05', '2026-06-06', '2026-06-15', '2026-06-30', '2026-09-03']
   if (url.searchParams.has('from') && !fixtureDates.includes(url.searchParams.get('from'))) return `invalid chart start ${url.search}`

@@ -2,7 +2,7 @@ import type { NewowAuxiliaryComponent } from '../types/newowProduct.ts'
 export interface NewowUiPreferences {
   auxiliary?: NewowAuxiliaryComponent
   scrollTop?: number
-  chart?: { axis: string; range: { from: number; to: number } | null; detail: boolean; actions: boolean; structure: boolean; hints: boolean }
+  chart?: { axis: string; range: { from: number; to: number } | null; detail: boolean; actions: boolean; structure: boolean; hints: boolean; breakouts?: boolean; wicks?: boolean; trendTrack?: boolean; oscillationTrack?: boolean; comparisonBackground?: boolean }
 }
 export const NEWOW_DISPLAY_KEY = 'guiyi.newow.display.v1'
 export const NEWOW_VISIT_KEY = 'guiyi.newow.visit.v1'

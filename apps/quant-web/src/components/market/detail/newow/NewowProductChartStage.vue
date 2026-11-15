@@ -12,9 +12,11 @@ import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vu
 import { DETAIL_CHART_SESSION, detailChartTime, detailChartVolumeBars, detailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
-import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
-import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
-import { newowSimpleDualLabel, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
+import NewowChartSettings, { type NewowChartLayers } from './NewowChartSettings.vue'
+import { NewowPriceAnnotationPrimitive, type NewowPriceAnnotation } from './newowPriceAnnotationPrimitive.ts'
+import { newowExtrema, newowNineTurn } from '@/utils/newowChartAnnotations'
+import { readChartAnnotationPreferences, readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
+import { newowReferencePrice, newowSimpleDualLabel, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
 import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
 import { newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
 import { newowChartReadout } from '@/utils/newowChartReadout'
@@ -52,7 +54,7 @@ import { NewowTrendChannelPrimitive } from '@/components/market/detail/newow/new
 import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
 import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
 import { NewowMainForceControlPrimitive, buildNewowMainForceData } from '@/components/market/detail/newow/newowMainForceControlPrimitive'
-import { NewowTrendReversalPrimitive, buildNewowTrendReversalData } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
+import { NewowTrendReversalPrimitive, buildNewowTrendReversalData, buildNewowTrendReversalMarks } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
 import { newowAuxiliaryPaneLayout } from '@/components/market/detail/newow/newowAuxiliaryPaneLayout'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
@@ -103,7 +105,6 @@ const props = withDefaults(defineProps<{
   strategySwitching?: boolean
   showTools?: boolean
   hasMoreBefore?: boolean
-  channelControlsTarget?: string
 }>(), { showTools: true, loading: false, hasMoreBefore: false, focusRequestId: 0 })
 
 const emit = defineEmits<{
@@ -141,6 +142,20 @@ const selectedCaution = computed(() => cautionOverlays.value.find(item=>item.key
 watch(cautionOverlays, items => { if (!items.some(item=>item.key===selectedCautionKey.value)) selectedCautionKey.value=null }, {deep:true})
 
 const visualOverlays = ref(readVisualOverlayPreferences())
+const annotations = ref(readChartAnnotationPreferences())
+const pure = computed(() => annotations.value.pure)
+const settingsOpen = ref(false)
+watch(annotations, value => saveVisualOverlayPreferences(value))
+
+function syncDisplayPreferences() {
+  if (document.visibilityState === 'hidden') return
+  const display = readChartAnnotationPreferences()
+  if (display.pure !== annotations.value.pure || display.extrema !== annotations.value.extrema
+      || display.nineTurn !== annotations.value.nineTurn) annotations.value = display
+  const overlays = readVisualOverlayPreferences()
+  if (overlays.window !== visualOverlays.value.window || overlays.donchian !== visualOverlays.value.donchian
+      || overlays.stop !== visualOverlays.value.stop) visualOverlays.value = overlays
+}
 watch(visualOverlays, value => { saveVisualOverlayPreferences(value); renderVisualOverlays() })
 const cursorRows = ref<string[]>([])
 const cursorTop = ref(0)
@@ -181,6 +196,33 @@ const showActions = ref(true)
 const showStructure = ref(true)
 const showHints = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
+const settingsIdentity = computed(() => {
+  const value = model.value
+  return value ? identityKey(value) : props.strategy
+})
+const layers = computed<NewowChartLayers>(() => ({
+  structure: showStructure.value, actions: showActions.value, hints: showHints.value,
+  breakouts: showBreakoutShapes.value, wicks: showBreakoutWicks.value, detail: detailLabels.value,
+  trendTrack: trendTrack.value, oscillationTrack: oscillationTrack.value,
+  comparisonBackground: comparisonBackground.value,
+}))
+function updateLayers(value: NewowChartLayers) {
+  showStructure.value = value.structure
+  showActions.value = value.actions
+  showHints.value = value.hints
+  showBreakoutShapes.value = value.breakouts
+  showBreakoutWicks.value = value.wicks
+  detailLabels.value = value.detail
+  trendTrack.value = value.trendTrack
+  oscillationTrack.value = value.oscillationTrack
+  comparisonBackground.value = value.comparisonBackground
+  rememberViewport()
+}
+function analyzeChannel() {
+  settingsOpen.value = false
+  // Let the drawer release focus and scroll before opening the comparison dialog.
+  void nextTick(() => emit('analyze-channel'))
+}
 const comparisonActive = computed(() => newowComparisonCompatible(props.response, props.comparisonResponse ?? null))
 const partnerModel = computed(() => comparisonActive.value && props.comparisonResponse ? buildNewowProductChartModel(props.comparisonResponse) : null)
 const trackModels = computed(() => [model.value, partnerModel.value].filter((value): value is NewowProductChartModel => value !== null))
@@ -205,10 +247,36 @@ const band = new NewowProductBandPrimitive()
 const dualBackground = new NewowDualBackgroundPrimitive()
 const trendChannel = new NewowTrendChannelPrimitive()
 const publicPattern = new NewowPublicPatternPrimitive()
+const priceAnnotations = new NewowPriceAnnotationPrimitive()
+const marks = computed<NewowPriceAnnotation[]>(() => {
+  const value = model.value
+  if (!value || props.displayOnly || props.strategySwitching || props.loading) return []
+  const bars = value.bars.map(bar => ({ ...bar, owner: JSON.stringify(
+    [bar.physicalContract, bar.segmentId, bar.calculationSegmentId],
+  ) }))
+  const toMark = (mark: { index: number; side: 'high' | 'low' }) => {
+    const bar = value.bars[mark.index]!
+    return { ...mark, price: bar[mark.side],
+      time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) }
+  }
+  const extrema = annotations.value.extrema ? newowExtrema(bars).map(mark => {
+    const bar = value.bars[mark.index]!
+    return { ...toMark(mark), kind: 'extremum' as const,
+      text: newowReferencePrice(bar.displayPrices?.[mark.side] ?? String(bar[mark.side])) }
+  }) : []
+  const nine = annotations.value.nineTurn && !pure.value ? newowNineTurn(bars).map(mark => ({
+    ...toMark(mark), kind: 'nine' as const, count: mark.count, text: String(mark.count),
+  })) : []
+  return [...extrema, ...nine].sort((a, b) => a.index - b.index)
+})
+function renderPriceAnnotations() {
+  priceAnnotations.setData(marks.value, pageTheme.value === 'dark')
+}
+watch([marks, pageTheme], renderPriceAnnotations, { flush: 'post' })
 function renderPattern(){
  publicPattern.setData(null)
  const choice=props.patternSelection
- if(!choice||!model.value||props.loading||props.strategySwitching||choice.windowKey!==props.patternWindowKey)return
+ if(pure.value||!choice||!model.value||props.loading||props.strategySwitching||choice.windowKey!==props.patternWindowKey)return
  // Every source bar must still be exactly present in the accepted owner window.
  const accepted=new Map(model.value.bars.map(b=>[b.barEnd,b]))
  if(!choice.bars.every(b=>{const current=accepted.get(b.barEnd);return current&&current.sourceIdentity===b.sourceIdentity&&current.physicalContract===b.physicalContract&&current.segmentId===b.segmentId&&current.calculationSegmentId===b.calculationSegmentId}))return
@@ -246,7 +314,7 @@ function renderVisualOverlays(): void {
   if (visualStopLine) candles.removePriceLine(visualStopLine)
   visualStopLine = null
   const value = model.value
-  if (!value || props.displayOnly || props.loading || props.strategySwitching || props.response?.status.status !== 'ready' || value.identity.strategy !== props.strategy) { retainedStop = null; return }
+  if (pure.value || !value || props.displayOnly || props.loading || props.strategySwitching || props.response?.status.status !== 'ready' || value.identity.strategy !== props.strategy) { retainedStop = null; return }
   const owner = (b: NewowProductChartModel['bars'][number]) => `${b.physicalContract}:${b.segmentId}:${b.calculationSegmentId}`
   if (visualOverlays.value.donchian) {
     const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), visualOverlays.value.window)
@@ -301,15 +369,16 @@ onMounted(async () => {
   // Public detail v3.4.49: volume shares the price pane on its own hidden scale.
   volume = chart.addSeries(HistogramSeries, { priceScaleId: 'volume', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 0)
   volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
-  chart.addPane().setStretchFactor(2)
-  // Whitespace keeps the auxiliary pane/timeline present during loading, without inventing zero values.
-  auxiliaryAnchor = chart.addSeries(LineSeries, { lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }, 1)
-  auxiliaryZeroLine = auxiliaryAnchor.createPriceLine({ price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
-  auxiliaryAnchor.attachPrimitive(zhaoyaoMirror)
-  auxiliaryAnchor.attachPrimitive(upDownEnergy)
-  auxiliaryAnchor.attachPrimitive(mainForceControl)
-  auxiliaryAnchor.attachPrimitive(trendReversal)
-  if (typeof document !== 'undefined') document.addEventListener('fullscreenchange', onFullscreenChange)
+  candles.attachPrimitive(priceAnnotations)
+  syncAuxiliaryPane()
+  if (typeof document !== 'undefined') {
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+    document.addEventListener('visibilitychange', syncDisplayPreferences)
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('pageshow', syncDisplayPreferences)
+    window.addEventListener('storage', syncDisplayPreferences)
+  }
   actionMarkers = adapter.createSeriesMarkers(candles as never)
   chart.subscribeCrosshairMove?.(onCrosshair)
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
@@ -318,6 +387,7 @@ onMounted(async () => {
   if (stageRoot.value) observer.observe(stageRoot.value)
   if (auxiliaryToolbar.value) observer.observe(auxiliaryToolbar.value)
   renderModel(model.value)
+  renderPriceAnnotations()
   resize()
 })
 
@@ -330,11 +400,19 @@ onUnmounted(createNewowProductChartDisposer({
     rememberViewport()
     if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
     if (actionProjectionFrame !== null) cancelAnimationFrame(actionProjectionFrame)
-    if (typeof document !== 'undefined') document.removeEventListener('fullscreenchange', onFullscreenChange)
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('fullscreenchange', onFullscreenChange)
+      document.removeEventListener('visibilitychange', syncDisplayPreferences)
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pageshow', syncDisplayPreferences)
+      window.removeEventListener('storage', syncDisplayPreferences)
+    }
     candles?.detachPrimitive(band)
     candles?.detachPrimitive(dualBackground)
     candles?.detachPrimitive(trendChannel)
     candles?.detachPrimitive(publicPattern)
+    candles?.detachPrimitive(priceAnnotations)
     auxiliaryAnchor?.detachPrimitive(zhaoyaoMirror)
     auxiliaryAnchor?.detachPrimitive(upDownEnergy)
     auxiliaryAnchor?.detachPrimitive(mainForceControl)
@@ -350,6 +428,13 @@ onUnmounted(createNewowProductChartDisposer({
 watch([model, () => props.strategySwitching, () => props.priceBars, () => props.displayOnly], ([value]) => { renderModel(value) })
 watch([() => props.targetPrice, () => props.absorbPrice, () => props.loading, () => props.strategy], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
+watch(pure, () => {
+  cursorRows.value = []
+  syncAuxiliaryPane()
+  renderModel(model.value)
+  resize()
+}, { flush: 'post' })
+watch(showBreakoutShapes, () => { renderReferencePrices(); renderVolume(model.value) })
 watch(showActions, () => { renderMarkers(model.value); scheduleActionProjection() })
 watch([model, allReferenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
 watch([detailLabels, showHints], scheduleActionProjection, { flush: 'post' })
@@ -371,13 +456,15 @@ function rememberViewport(): void {
   rememberNewowUiPreferences(`newow:${renderedIdentity.product}:${renderedIdentity.strategy}:${renderedIdentity.frequency}`, { chart: {
     axis: axisKey(renderedBars), range: retainedVisibleRange ?? chart.timeScale().getVisibleLogicalRange(), detail: detailLabels.value,
     actions: showActions.value, structure: showStructure.value, hints: showHints.value,
+    breakouts: showBreakoutShapes.value, wicks: showBreakoutWicks.value, trendTrack: trendTrack.value,
+    oscillationTrack: oscillationTrack.value, comparisonBackground: comparisonBackground.value,
   } })
 }
 function renderReferencePrices(): void {
   if (!candles) return
   for (const line of referencePriceLines.values()) candles.removePriceLine?.(line)
   referencePriceLines.clear()
-  if (!model.value) return
+  if (pure.value || !model.value) return
   for (const [key, value, color, title] of [
     ['target', props.targetPrice, '#ff4d9d', '目标价'],
     ['absorb', props.absorbPrice, '#ff3b30', '吸筹价'],
@@ -388,7 +475,7 @@ function renderReferencePrices(): void {
     referencePriceLines.set(key, candles.createPriceLine({ price, color, title, lineWidth: 1, lineStyle: 1,
       axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' }))
   }
-  const breakout = !props.displayOnly && !props.loading && !props.strategySwitching && props.strategy === model.value.identity.strategy
+  const breakout = showBreakoutShapes.value && !props.displayOnly && !props.loading && !props.strategySwitching && props.strategy === model.value.identity.strategy
     && props.response?.status.status === 'ready' ? newowOscillationBreakout(model.value) : null
   if (breakout) referencePriceLines.set('breakout', candles.createPriceLine({
     price: breakout.price, color: '#FF9800', title: `突破 ${breakout.displayScore}/7`,
@@ -404,7 +491,7 @@ function renderVolume(value:NewowProductChartModel|null):void {
   if(!volume||!value||props.strategySwitching||props.displayOnly)return
   const input = detailChartVolumeBars(chart!, value.bars.map(bar => ({ ...bar, time: bar.barEnd })))
   volumeBars.value = input
-  const colors=volumeColors(input,pageTheme.value)
+  const colors = volumeColors(input, pageTheme.value, !pure.value && showBreakoutShapes.value)
   volumeWriter.write(volume,input.map((bar,index)=>({time:detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, value.identity.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})),`${value.identity.product}:${value.identity.frequency}`)
 }
 function renderModel(value: NewowProductChartModel | null): void {
@@ -454,9 +541,16 @@ function renderModel(value: NewowProductChartModel | null): void {
   const changedIdentity = renderedIdentity !== null && (renderedIdentity.product !== value.identity.product || renderedIdentity.strategy !== value.identity.strategy || renderedIdentity.frequency !== value.identity.frequency)
   if (changedIdentity) rememberViewport()
   const initialPreferences = renderedIdentity === null || changedIdentity ? readNewowUiPreferences(`newow:${value.identity.product}:${value.identity.strategy}:${value.identity.frequency}`).chart : undefined
-  if (initialPreferences) {
-    detailLabels.value = initialPreferences.detail; showActions.value = initialPreferences.actions
-    showStructure.value = initialPreferences.structure; showHints.value = initialPreferences.hints
+  if (renderedIdentity === null || changedIdentity) {
+    detailLabels.value = initialPreferences?.detail ?? true
+    showActions.value = initialPreferences?.actions ?? true
+    showStructure.value = initialPreferences?.structure ?? true
+    showHints.value = initialPreferences?.hints ?? true
+    showBreakoutShapes.value = initialPreferences?.breakouts ?? true
+    showBreakoutWicks.value = initialPreferences?.wicks ?? true
+    trendTrack.value = initialPreferences?.trendTrack ?? true
+    oscillationTrack.value = initialPreferences?.oscillationTrack ?? true
+    comparisonBackground.value = initialPreferences?.comparisonBackground ?? true
   }
   const previousModel = renderedIdentity === null ? null : { identity: renderedIdentity, bars: renderedBars }
   const identityChanged = renderedIdentity !== null && (
@@ -484,11 +578,11 @@ function renderModel(value: NewowProductChartModel | null): void {
   renderVolume(value)
   if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
   const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')
-  band.setData(showStructure.value && !comparisonActive.value ? value.bandAreas : [])
-  dualBackground.setData(comparisonActive.value && showStructure.value && comparisonBackground.value
+  band.setData(!pure.value && showStructure.value && !comparisonActive.value ? value.bandAreas : [])
+  dualBackground.setData(!pure.value && comparisonActive.value && showStructure.value && comparisonBackground.value
     ? (trendModel?.bandAreas.filter(area => area.color === 'rgba(54, 90, 245, 0.35)').map(area => area.time) ?? []) : [])
   const channelModel = comparisonActive.value ? trackModels.value.find(item => item.identity.strategy === 'oscillation') : value
-  trendChannel.setData((showStructure.value ? channelModel?.channelPoints ?? [] : []).map((point) => ({
+  trendChannel.setData((!pure.value && showStructure.value ? channelModel?.channelPoints ?? [] : []).map((point) => ({
     time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay),
     upper: point.upper,
     lower: point.lower,
@@ -526,14 +620,14 @@ function renderModel(value: NewowProductChartModel | null): void {
 
 function syncMainLines(value: NewowProductChartModel): void {
   if (chart === null) return
-  const active = new Set((showStructure.value ? value.mainLines : []).map((line) => line.id))
+  const active = new Set((!pure.value && showStructure.value ? value.mainLines : []).map((line) => line.id))
   for (const [id, series] of mainLines) {
     if (active.has(id)) continue
     chart.removeSeries(series)
     mainLines.delete(id)
   }
 
-  for (const line of showStructure.value ? value.mainLines : []) {
+  for (const line of !pure.value && showStructure.value ? value.mainLines : []) {
     let series = mainLines.get(line.id)
     if (series === undefined) {
       series = chart.addSeries(LineSeries, {
@@ -555,7 +649,7 @@ function syncMainLines(value: NewowProductChartModel): void {
 
 function renderMarkers(value: NewowProductChartModel | null): void {
   if (chart === null || actionMarkers === null || value === null) return
-  if (comparisonActive.value || props.displayOnly) { actionMarkers.setMarkers([]); return }
+  if (pure.value || comparisonActive.value || props.displayOnly) { actionMarkers.setMarkers([]); return }
   const actions: SeriesMarker<Time>[] = [...(showActions.value ? value.actions : [])]
     .sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
     .map((item) => ({ ...productChartMarker(
@@ -573,7 +667,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   attackOverlays.value = []
   processOverlays.value = []
   cycleCountOverlays.value = []
-  if (props.displayOnly || props.strategySwitching || chart === null || candles === null || container.value === null || value === null) {
+  if (pure.value || props.displayOnly || props.strategySwitching || chart === null || candles === null || container.value === null || value === null) {
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     return
   }
@@ -814,11 +908,47 @@ function scrollToLatest(): void {
   armPagination()
 }
 
+function syncAuxiliaryPane(): void {
+  if (!chart) return
+  if (pure.value) {
+    if (auxiliaryAnchor) {
+      for (const series of auxiliaryLines.values()) chart.removeSeries(series)
+      auxiliaryLines.clear()
+      auxiliaryAnchor.detachPrimitive(zhaoyaoMirror)
+      auxiliaryAnchor.detachPrimitive(upDownEnergy)
+      auxiliaryAnchor.detachPrimitive(mainForceControl)
+      auxiliaryAnchor.detachPrimitive(trendReversal)
+      chart.removeSeries(auxiliaryAnchor)
+      auxiliaryAnchor = null
+      auxiliaryZeroLine = null
+      renderedAuxiliaryKey = null
+    }
+    return
+  }
+  if (auxiliaryAnchor) return
+  // Whitespace pins the secondary timeline without inventing zero values.
+  auxiliaryAnchor = chart.addSeries(LineSeries, {
+    lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+  }, 1)
+  auxiliaryZeroLine = auxiliaryAnchor.createPriceLine({
+    price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false,
+  })
+  auxiliaryAnchor.attachPrimitive(zhaoyaoMirror)
+  auxiliaryAnchor.attachPrimitive(upDownEnergy)
+  auxiliaryAnchor.attachPrimitive(mainForceControl)
+  auxiliaryAnchor.attachPrimitive(trendReversal)
+}
+const reversalMarks = computed(() => {
+  const response = props.auxiliaryResponse?.value
+  return model.value && auxiliaryModel.value?.component === 'trend_reversal' && response?.component === 'trend_reversal'
+    ? buildNewowTrendReversalMarks(model.value, response.segments) : []
+})
+
 function resize(): void {
   if (chart !== null && container.value !== null) {
     const layout = newowAuxiliaryPaneLayout(container.value.clientHeight, auxiliaryToolbar.value?.offsetHeight ?? 0)
     chart.panes()[0]!.setStretchFactor(layout.mainHeight)
-    chart.panes()[1]!.setStretchFactor(layout.auxiliaryHeight)
+    chart.panes()[1]?.setStretchFactor(layout.auxiliaryHeight)
     // Repaint synchronously so native pane heights include the shared time axis.
     chart.resize(container.value.clientWidth, container.value.clientHeight, true)
     auxiliaryTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
@@ -829,7 +959,7 @@ function resize(): void {
 
 let renderedAuxiliaryKey: string | null = null
 function renderAuxiliary(): void {
-  if (!chart) return
+  if (!chart || pure.value) return
   const active = new Set<string>()
   const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
   // A strategy switch does not revoke the last accepted market indicator.
@@ -847,7 +977,7 @@ function renderAuxiliary(): void {
     const bar=e.detail_visible ? model.value?.bars.find(b=>b.barEnd===e.bar_end) : undefined
     return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative,state:e.display_state}] : []
   })
-  const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, displayEvents, mirror || energy ? model.value?.bars : null])
+  const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, displayEvents, reversal ? reversalMarks.value : null, mirror || energy ? model.value?.bars : null])
   if (nextKey === renderedAuxiliaryKey) return
   renderedAuxiliaryKey = nextKey
   zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series, displayEvents) : [], topInset)
@@ -857,7 +987,7 @@ function renderAuxiliary(): void {
     ? buildNewowMainForceData(value.series, props.auxiliaryResponse.value.segments) : [],
     topInset)
   trendReversal.setData(reversal ? buildNewowTrendReversalData(value.series) : [],
-    topInset)
+    topInset, reversal ? reversalMarks.value : [])
   for (const item of value?.series ?? []) {
     if (mirror || energy || control || reversal) continue
     const id = `${value!.component}:${item.id}`
@@ -904,6 +1034,10 @@ defineExpose({ revealSignal, scrollToLatest })
     :data-strategy="strategy"
     :data-comparison-active="comparisonActive"
     :data-theme="pageTheme"
+    :data-pure-mode="pure"
+    :data-extrema-count="marks.filter(mark => mark.kind === 'extremum').length"
+    :data-nine-turn-count="marks.filter(mark => mark.kind === 'nine').length"
+    :data-reversal-confirmation-count="pure ? 0 : reversalMarks.length"
     :data-frequency="model?.identity.frequency ?? ''"
     :data-selected-signal-id="selectedSignalId ?? ''"
     :data-action-ids="model?.actions.map((action) => action.id).join(',') ?? ''"
@@ -911,33 +1045,16 @@ defineExpose({ revealSignal, scrollToLatest })
     <ChartReferenceToolbar :target-price="targetPrice" :absorb-price="absorbPrice" :status="referencePriceStatus">
         <slot name="frequency-controls" />
         <slot name="reference-controls" />
-        <div v-if="comparisonActive" class="newow-product-chart-stage__dual-controls" role="group" aria-label="双策略标签密度">
-          <button type="button" :aria-pressed="detailLabels" @click="detailLabels = true">详</button><button type="button" :aria-pressed="!detailLabels" @click="detailLabels = false">简</button>
-          <details><summary>图层</summary><div class="newow-product-chart-stage__dual-layer-menu"><button type="button" :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button><button type="button" :aria-pressed="oscillationTrack" @click="oscillationTrack = !oscillationTrack">震荡标记</button><button type="button" :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button></div></details>
-        </div>
+        <button type="button" class="newow-settings-trigger" aria-haspopup="dialog" :aria-expanded="settingsOpen" @click="settingsOpen = true">图表设置</button>
         <details v-if="showTools" class="newow-product-chart-stage__tools">
           <summary>图表工具</summary>
           <div class="newow-product-chart-stage__tools-body">
             <slot name="main-controls" />
             <div v-if="!comparisonActive" class="newow-product-chart-stage__legend" aria-label="Newow 主图图例">
               <button class="newow-product-chart-stage__main-legend" type="button" @click="emit('explain-main')">{{ mainLegendLabel }}<span v-for="line in legend" :key="line.key" :style="{ color: mainLineColors[line.key] }">{{ line.label }}</span>ⓘ</button>
-              <details v-if="showHints && model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details>
+              <details v-if="!pure && showHints && model?.hints.length"><summary>过程提示</summary><button v-for="hint in model.hints" :key="hint.id" type="button" :data-hint-id="hint.id" :data-hint-tone="hint.tone" @click="emit('select-hint', hint.id)"><span class="newow-product-chart-stage__hint-kind" :class="`is-${hint.tone}`">{{ hint.kind }}</span> · {{ hint.barEnd }}</button></details>
             </div>
             <div class="newow-product-chart-stage__controls">
-              <button v-if="!comparisonActive" type="button" :aria-pressed="!detailLabels" @click="detailLabels = !detailLabels">{{ detailLabels ? '简洁标记' : '详细标记' }}</button>
-              <details class="newow-product-chart-stage__layers">
-                <summary>图层</summary>
-                <button type="button" :aria-pressed="showStructure" @click="showStructure = !showStructure">策略线 / 趋势带</button>
-                <button type="button" :aria-pressed="showActions" @click="showActions = !showActions">建仓 / 清仓</button>
-                <button v-if="strategy==='oscillation'" type="button" :aria-pressed="showBreakoutShapes" @click="showBreakoutShapes=!showBreakoutShapes">突破形态</button>
-                <button v-if="strategy==='oscillation'" type="button" :aria-pressed="showBreakoutWicks" @click="showBreakoutWicks=!showBreakoutWicks">影线提示</button>
-                <button v-if="!comparisonActive" type="button" :aria-pressed="showHints" @click="showHints = !showHints">过程提示</button>
-                <template v-else>
-                  <button type="button" :aria-pressed="trendTrack" @click="trendTrack = !trendTrack">趋势标记</button>
-                  <button type="button" :aria-pressed="oscillationTrack" @click="oscillationTrack = !oscillationTrack">震荡标记</button>
-                  <button type="button" :aria-pressed="comparisonBackground" @click="comparisonBackground = !comparisonBackground">背景着色</button>
-                </template>
-              </details>
               <button v-if="!followLatest" type="button" @click="scrollToLatest">回到最新</button>
             </div>
             <p v-if="!comparisonActive && referenceTradesComplete === false" class="newow-product-chart-stage__reference-record-status" role="status">单笔参考收益仅显示已核对记录；未显示收益不代表没有交易。下方参考记录可按需加载。</p>
@@ -946,9 +1063,10 @@ defineExpose({ revealSignal, scrollToLatest })
     </ChartReferenceToolbar>
     <p v-if="!comparisonActive && referenceStatsError" class="newow-product-chart-stage__reference-record-status" role="status">清仓参考收益读取未完成：{{ referenceStatsError }} <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">重试</button></p>
     <div v-if="comparisonActive" class="newow-product-chart-stage__dual-summary" aria-label="双策略本视图摘要" :title="referenceTradesComplete === false ? '历史记录按需分页，未证明覆盖全部图表信号；仅显示已核对单笔。' : `统计仅含已绘制清仓标签对应的 ${comparisonStats.samples} 笔已完成参考交易，不含融合配对收益`">主导：{{ comparisonDominant === 'trend' ? '趋势' : comparisonDominant === 'oscillation' ? '震荡' : '—' }} · 上=趋势 下=震荡 · 本视图 {{ comparisonStats.count }} 个信号 · <template v-if="referenceTradesComplete !== false">平均盈亏 {{ comparisonStats.average }} · 胜率 {{ comparisonStats.winRate }} · 最大 {{ comparisonStats.maximum }}</template><template v-else>参考收益需完整记录，当前不显示统计 <button type="button" :disabled="referenceStatsLoading" @click="emit('load-reference-stats')">{{ referenceStatsLoading ? '正在核对完整记录…' : '读取完整参考统计' }}</button><span v-if="referenceStatsError" role="alert">{{ referenceStatsError }}</span></template> · 背景深色=趋势蓝带</div>
-    <Teleport defer :to="channelControlsTarget ?? 'body'" :disabled="!channelControlsTarget || fullscreen">
-      <NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" />
-    </Teleport>
+    <NewowChartSettings :open="settingsOpen" :identity-key="settingsIdentity"
+      v-model:annotations="annotations" v-model:overlays="visualOverlays" :layers="layers"
+      :dual="comparisonActive" :oscillation="strategy === 'oscillation' || comparisonActive"
+      @update:layers="updateLayers" @close="settingsOpen = false" @analyze="analyzeChannel" />
     <details v-if="response?.value?.price_unavailable_days.length" class="newow-product-chart-stage__quality-gaps" data-testid="newow-chart-price-gaps">
       <summary>日线来源价格不可用 {{ response.value.price_unavailable_days.length }} 日；指标已分段重算</summary>
       <ul><li v-for="gap in response.value.price_unavailable_days" :key="`${gap.segment_id}:${gap.trading_day}`">{{ gap.trading_day }} · {{ gap.physical_contract }} · 无可用开高低价；未生成 K 线或交易信号</li></ul>
@@ -979,21 +1097,21 @@ defineExpose({ revealSignal, scrollToLatest })
       <span v-for="item in attackOverlays" :key="item.id" :data-hint-kind="item.kind" :style="{ left: `${item.x}px`, top: `${item.y}px`, width: item.kind === 'OSCILLATION_J' ? '12px' : `${item.width}px`, height: item.kind === 'OSCILLATION_J' ? '14px' : `${item.height}px` }" :class="item.kind">{{ item.kind === 'OSCILLATION_J' ? 'J' : '' }}</span>
     </div>
     <div
-      v-if="!comparisonActive && showActions && detailLabels && model?.actions.length"
+      v-if="!pure && !comparisonActive && showActions && detailLabels && model?.actions.length"
       class="newow-product-chart-stage__action-callouts"
       :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }"
       aria-label="策略参考动作"
     >
       <ReferenceCalloutLabels :items="positionedActions.map(item => ({ position: item, title: actionTitle(item.callout), detail: actionDisplay(item.callout).text, direction: actionDisplay(item.callout).direction, selected: selectedSignalId === item.callout.id, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${actionTitle(item.callout)}，${actionDisplay(item.callout).text}，策略参考动作`, tooltip: `${actionTitle(item.callout)} · ${actionDisplay(item.callout).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
-    <div v-if="comparisonActive" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双策略叠加">
+    <div v-if="!pure && comparisonActive" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双策略叠加">
       <svg aria-hidden="true"><line v-for="(item,index) in comparisonSwitches" :key="`switch:${index}`" :x1="item.x" y1="20" :x2="item.x" :y2="actionOverlayHeight" stroke-dasharray="4 3" class="dual-switch-line" /><polyline v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" :points="`${item.x},${item.y} ${item.x},${(item.y + item.lineY) / 2} ${item.lineX},${(item.y + item.lineY) / 2} ${item.lineX},${item.lineY}`" fill="none" /><circle v-for="item in positionedComparison" :key="`anchor:${item.origin}:${item.callout.id}`" :cx="item.x" :cy="item.y" r="2.5" :fill="item.callout.above ? '#34c759' : '#ff3b30'" stroke="none" /></svg>
       <div v-for="(item,index) in comparisonSwitches" :key="index" class="newow-product-chart-stage__dual-switch" :style="{ left: `${item.x}px` }" :title="`${item.from === 'trend' ? '趋势' : '震荡'}切换至${item.to === 'trend' ? '趋势' : '震荡'}，仅主图展示主导策略`"><b :class="item.from">{{ item.from === 'trend' ? '趋' : '震' }}</b><span>⇄</span><b :class="item.to">{{ item.to === 'trend' ? '趋' : '震' }}</b></div>
       <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, unpaired: item.callout.title.includes('无入场'), direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
-    <aside v-if="cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
-    <div ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
-    <p v-if="fullscreenError || (auxiliaryPresentation.message && auxiliaryPresentation.message !== '当前可计算')" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
+    <aside v-if="!pure && cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
+    <div v-show="!pure" ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
+    <p v-if="fullscreenError || (!pure && auxiliaryPresentation.message && auxiliaryPresentation.message !== '当前可计算')" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">{{ strategySwitching ? '正在切换策略，更新指标与信号…' : '正在读取 Newow 主图…' }}</p>
     <p v-else-if="response?.value === null" class="newow-product-chart-stage__status" role="status">当前组合主图不可用。</p>
     <p v-else-if="model?.bars.length === 0" class="newow-product-chart-stage__status" role="status">当前窗口没有已完成 Bar。</p>
@@ -1001,6 +1119,7 @@ defineExpose({ revealSignal, scrollToLatest })
 </template>
 
 <style scoped>
+.newow-settings-trigger { min-height: 30px; padding: 0 9px; white-space: nowrap; border: 1px solid var(--gy-newow-overlay-border); border-radius: 6px; background: var(--gy-newow-overlay-control-bg); color: var(--gy-newow-overlay-control-text); cursor: pointer; }
 .newow-caution-overlay{position:absolute;pointer-events:none;z-index:8}.newow-caution-overlay button{position:absolute;transform:translateX(-50%);box-sizing:border-box;white-space:nowrap;pointer-events:auto;cursor:pointer}
 
 .newow-product-chart-stage__tools > summary { min-height:22px; padding:0 6px; line-height:22px; cursor:pointer; white-space:nowrap; }
@@ -1014,7 +1133,6 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
 .newow-product-chart-stage__dual-summary { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0; padding:3px 12px 7px; background:#fafafa; color:var(--gy-text-muted); font-size:11px; font-weight:600; line-height:1.5; }
 .newow-product-chart-stage__reference-record-status { margin:0; padding:2px 12px; color:var(--gy-text-muted); font-size:10px; }
-.newow-product-chart-stage__dual-controls { margin-left:auto; display:flex; align-items:center; gap:4px; }.newow-product-chart-stage__dual-controls button,.newow-product-chart-stage__dual-controls summary { min-height:22px; padding:0 5px; font-size:10px; background:transparent; }.newow-product-chart-stage__dual-controls > button[aria-pressed="true"] { color:var(--gy-bg-panel); background:#ff6b35; border-radius:4px; }.newow-product-chart-stage__dual-controls details { width:36px; height:22px; }
 .newow-product-chart-stage__dual-layer-menu { position:absolute; top:100%; right:0; min-width:128px; padding:4px; border:1px solid #ebedf0; border-radius:4px; background:var(--gy-bg-panel); box-shadow:0 6px 18px #20242b14; }
 .newow-product-chart-stage__dual-layer-menu button { display:block; width:100%; text-align:left; white-space:nowrap; }
 .newow-product-chart-stage__dual-layer-menu button[aria-pressed="true"] { color:#ff6b35; }
@@ -1031,7 +1149,6 @@ summary { display:flex; align-items:center; }
 .newow-product-chart-stage__auxiliary-toolbar { position:absolute; left:1px; right:70px; min-height:32px; background:var(--gy-bg-panel); z-index:3; }
 details { position:relative; } details[open] { z-index:6; } details[open] > button { display:block; white-space:nowrap; }
 .newow-product-chart-stage__legend details[open] { position:absolute; top:0; left:90px; max-height:240px; max-width:calc(100% - 100px); overflow:auto; border:1px solid #ebedf0; background:var(--gy-bg-panel); box-shadow:0 8px 24px #20242b14; }
-.newow-product-chart-stage__layers[open] { position:relative; max-height:none; }
 .newow-product-chart-stage__hint-kind { display:inline-flex; min-width:28px; justify-content:center; border:1px solid currentColor; border-radius:3px; padding:2px 5px; font-weight:600; }
 .newow-product-chart-stage__hint-kind.is-risk { color:#DC2626; }
 .newow-product-chart-stage__hint-kind.is-entry { color:#16A34A; }

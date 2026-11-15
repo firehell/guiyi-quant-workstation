@@ -122,7 +122,6 @@ defineExpose({ selectSymbol: chooseSymbol })
         <details v-if="identity.view !== 'newow'" class="newow-test-menu"><summary aria-label="牛哇T策略">T ▾</summary><div class="nav-test-options"><button v-for="option in experimentOptions" :key="option.value" type="button" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" @click="chooseTest('main_rise')">主升浪</button></div></details>
       </span>
       <button v-if="view.value === 'dual'" type="button" class="detail-view-nav__ai" @click="openAiAnalysis">AI分析</button></template>
-      <span v-if="identity.view === 'newow'" id="newow-channel-controls" />
     </div>
 
     <div class="detail-view-nav__views detail-view-nav__secondary" role="tablist" aria-label="其他分析选项">
