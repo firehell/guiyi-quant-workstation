@@ -93,7 +93,9 @@ def test_reader_scopes_six_combos_one_cutoff_and_omits_nonowned_warmup():
                 prefix = tuple(replace(b, bar=replace(b.bar, observation_eligible=False)) for b in owned)
                 return SimpleNamespace(replay_bars=(*prefix, *owned), input_quality_policy="test_quality_v1")
         return Reader()
-    combos = analyze_product("jm", cutoff, factory, lambda: False, lambda f: None)
+    result = analyze_product("jm", cutoff, factory, lambda: False, lambda f: None)
+    combos = result.combos
+    assert result.four_step.reason_code == "NEWOW_FOUR_STEP_INSUFFICIENT_BARS"
     assert len(combos) == 6 and {c.frequency for c in combos} == {"1w", "1d", "60m"}
     assert all(c.source_bars == 15 and len(c.input_sha256) == 64 for c in combos)
     assert calls == [(ProductFrequency.WEEKLY, date(2024, 6, 1), cutoff), (ProductFrequency.DAILY, date(2025, 9, 1), cutoff), (ProductFrequency.HOURLY, date(2026, 4, 1), cutoff)]
@@ -141,7 +143,7 @@ def test_missing_hourly_keeps_six_cards_without_recommendation_for_hourly():
     def admit(f):
         if f == "60m":
             raise NewowProductReadError("NEWOW_COMPLETE_PERIOD_MISSING")
-    values = analyze_product("jm", cutoff, lambda f: Reader(), lambda: False, admit)
+    values = analyze_product("jm", cutoff, lambda f: Reader(), lambda: False, admit).combos
     assert len(values) == 6
     missing = [c for c in values if c.frequency == "60m"]
     assert len(missing) == 2 and all(c.summary is None and not c.is_best for c in missing)
@@ -181,9 +183,10 @@ def test_v3_endpoint_uses_exact_requested_canonical_cutoff(monkeypatch, cutoff):
     from app.db.session import get_db
     from app.market_data.newow import ai_analysis
     captured = []
-    def analyze(product, as_of, *args):
+    def analyze(product, as_of, *args, include_four_step):
         captured.append((product, as_of))
-        return []
+        assert include_four_step
+        return ai_analysis.ProductAnalysis((), None)
     monkeypatch.setattr(ai_analysis, 'analyze_product', analyze)
     app.dependency_overrides[get_db] = lambda: object()
     try:

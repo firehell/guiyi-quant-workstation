@@ -22,6 +22,28 @@ export interface AiCombo {
   confidence: 'high' | 'mid' | null
   is_best: boolean
 }
+export interface AiFourStepSummary {
+  trade_count: number
+  win_rate: number
+  average_return_pct: string
+  worst_return_pct: string
+  average_holding_bars: number
+  trend_leg_count: number
+  trend_exit_count: number
+  terminal_valuation_count: number
+}
+export interface AiFourStep {
+  since: string
+  through: string | null
+  source_bars: number
+  input_sha256: string | null
+  model_version: 'newow_dual_four_step_page_v1'
+  futures_adapter_version: 'guiyi_newow_four_step_segment_valuation_v1'
+  page_source_sha256: string
+  summary: AiFourStepSummary | null
+  page_baseline: AiFourStepSummary | null
+  reason_code: string | null
+}
 export interface AiAnalysis {
   schema_version: 'newow_ai_analysis_v2' | 'newow_ai_analysis_v3'
   product: string
@@ -33,6 +55,7 @@ export interface AiAnalysis {
   page_parity: false
   executable: false
   combos: AiCombo[]
+  four_step?: AiFourStep | null
 }
 type Transport = (path: string, config: { params: { product: string; as_of: string }; signal?: AbortSignal; timeout: number }) => Promise<unknown>
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -40,6 +63,27 @@ const integer = (v: unknown): v is number => Number.isSafeInteger(v) && Number(v
 const decimal = (v: unknown): v is string => typeof v === 'string' && /^-?\d+(?:\.\d+)?$/.test(v) && Number.isFinite(Number(v))
 const digest = (v: unknown) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v)
 const day = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d\d-\d\d$/.test(v) && Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v
+
+function fourStepSummary(value: unknown): value is AiFourStepSummary {
+  if (!record(value) || !integer(value.trade_count) || value.trade_count === 0
+    || !integer(value.win_rate) || value.win_rate > 100 || !decimal(value.average_return_pct)
+    || !decimal(value.worst_return_pct) || !integer(value.average_holding_bars)) return false
+  for (const count of [value.trend_leg_count, value.trend_exit_count, value.terminal_valuation_count]) {
+    if (!integer(count) || count > value.trade_count) return false
+  }
+  return true
+}
+function validFourStep(value: unknown, daily: unknown): boolean {
+  if (value == null) return true
+  if (!record(value) || !record(daily) || value.since !== daily.since || value.through !== daily.through
+    || value.source_bars !== daily.source_bars || value.input_sha256 !== daily.input_sha256
+    || value.model_version !== 'newow_dual_four_step_page_v1'
+    || value.futures_adapter_version !== 'guiyi_newow_four_step_segment_valuation_v1'
+    || !digest(value.page_source_sha256)) return false
+  if (value.summary === null) return value.page_baseline === null && typeof value.reason_code === 'string'
+  return fourStepSummary(value.summary) && fourStepSummary(value.page_baseline) && value.reason_code === null
+    && value.summary.trade_count === value.page_baseline.trade_count && Number(value.source_bars) >= 60
+}
 
 export function validateAiAnalysis(value: unknown, product: string, asOf: string): value is AiAnalysis {
   if (!record(value) || !['newow_ai_analysis_v2', 'newow_ai_analysis_v3'].includes(String(value.schema_version)) || value.product !== product
@@ -75,7 +119,8 @@ export function validateAiAnalysis(value: unknown, product: string, asOf: string
       || c.confidence !== (s.trade_count >= 10 ? 'high' : 'mid')) return false
     if (c.is_best) best++
   }
-  return best === (value.combos.some(c => record(c) && record(c.summary) && Number(c.summary.trade_count) >= 3) ? 1 : 0)
+  return validFourStep(value.four_step, value.combos.find(c => c.frequency === '1d' && c.strategy === 'trend'))
+    && best === (value.combos.some(c => record(c) && record(c.summary) && Number(c.summary.trade_count) >= 3) ? 1 : 0)
 }
 
 export async function getNewowAiAnalysis(product: string, asOf: string, options: { signal?: AbortSignal; request?: Transport; historicalSnapshot?: boolean } = {}): Promise<AiAnalysis> {

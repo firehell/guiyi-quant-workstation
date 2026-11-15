@@ -57,6 +57,7 @@ export interface NewowProductActionMarker {
   readonly referencePrice: string
   readonly physicalContract: string
   readonly segmentId: string
+  readonly calculationSegmentId?: string
   readonly sequence: number
   readonly tradeEligibility: NewowProductAction['trade_eligibility']
 }
@@ -218,6 +219,7 @@ export function buildNewowProductChartModel(
     referencePrice: action.reference_price,
     physicalContract: action.physical_contract,
     segmentId: action.segment_id,
+    calculationSegmentId: action.calculation_segment_id,
     sequence: action.sequence,
     tradeEligibility: action.trade_eligibility,
   }))
