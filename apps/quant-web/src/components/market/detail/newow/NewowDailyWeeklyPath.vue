@@ -4,7 +4,7 @@ import type { NewowDecisionV2 } from '@/types/newowDecisionV2'
 import { newowReferencePrice } from '@/utils/newowPagePresentation'
 import { historicalPathGeometry } from '@/utils/newowDailyWeeklyPath'
 const props=defineProps<{decision:NewowDecisionV2|null;loading:boolean;error:string}>()
-const expanded=ref(false),host=ref<HTMLElement|null>(null),width=ref(480),id=useId()
+const expanded=ref(true),host=ref<HTMLElement|null>(null),width=ref(480),id=useId()
 const data=computed(()=>props.decision?.daily_weekly_path?.history)
 const graph=computed(()=>data.value?.status==='ready'?historicalPathGeometry(data.value,width.value):null)
 let observer:ResizeObserver|null=null, resizeTimer:ReturnType<typeof setTimeout>|undefined
@@ -31,8 +31,8 @@ const periodName=(frequency:string)=>({'1w':'周线','1d':'日线','60m':'60分'
     <button class="period-path__toggle" :aria-expanded="expanded" :aria-controls="id" @click="expanded=!expanded"><strong>多周期嵌套波段路径</strong><span>{{expanded?'收起 ⌃':'展开 ⌄'}}</span></button>
     <div v-show="expanded" :id="id" class="period-path__body">
       <p v-if="loading" role="status">读取同一截止的历史路径…</p>
-      <p v-else-if="error" role="alert">路径读取失败，请刷新。</p>
-      <p v-else-if="!data || !graph" role="status">{{reasons[data?.reason??'']??'历史路径数据不足'}}</p>
+      <p v-else-if="error" role="alert">{{ error }}</p>
+      <p v-else-if="!data || !graph" role="status">{{reasons[data?.reason??'']??'历史路径暂不可用'}}</p>
       <template v-else>
         <p class="period-path__summary"><span>现价 <b>{{price(data.current)}}</b></span><span v-for="period in periods" :key="period.frequency">{{periodName(period.frequency)}} 成本 <b>{{price(period.cost?.raw??null)}}</b> → 目标 <b>{{price(period.target?.raw??null)}}</b></span></p>
         <div class="period-path__estimate" role="status"><template v-if="eta?.status==='ready'"><p><strong>历史周期估算</strong> 预计{{data.holding?'清仓':'建仓'}} <b class="sell">{{price(eta.to_price??(data.holding?data.target:data.cost))}}</b> · 剩余约 {{eta.remain?.toFixed(2)}} {{eta.unit}}<template v-if="eta.date_status==='ready'">（{{eta.date}}前后）</template></p><p class="period-path__estimate-detail">历史 {{eta.samples}} 笔 · 平均 {{eta.base?.toFixed(2)}} {{eta.unit}} × 剩余幅度 {{((eta.ratio??0)*100).toFixed(2)}}% · 剩余估算约 {{eta.remain?.toFixed(2)}} {{eta.unit}} · 本段已用 {{eta.elapsed==null?'待确认':eta.elapsed.toFixed(2)+' '+eta.unit}}。历史统计，仅供参考。</p></template><p v-else>时间估算不可用：{{reasons[eta?.reason??'']??'样本或交易日序列不足'}}</p></div>

@@ -193,10 +193,10 @@ test('daily weekly path reuses decision snapshot and folds independently with ex
   await nextTick(); await nextTick()
   const section = findNode(root,n=>n.props['aria-label']==='历史波段路径：页面参考，不可执行')!
   const toggle = findNode(section,n=>n.type==='button')!
-  assert.equal(toggle.props['aria-expanded'],false)
+  assert.equal(toggle.props['aria-expanded'],true)
   ;(toggle.props.onClick as Function)()
   await nextTick()
-  assert.equal(toggle.props['aria-expanded'],true)
+  assert.equal(toggle.props['aria-expanded'],false)
   assert.equal(mock.calls.length,before+1)
   assert.match(nodeText(section),/约 2.50 个交易日/)
   assert.match(nodeText(section),/仅展示剩余时长，不提供预计日期/)
@@ -322,6 +322,38 @@ test('both cards stay visible without settings and collapsing does not reload fa
  assert.notEqual(shell.style.display,'none');assert.notEqual(status.style.display,'none')
  assert.equal(mock.calls.length,before+1,'card expansion shares the existing fact read')
  app.unmount()
+})
+
+test('path shows only the current request status and explicit sample shortage', async () => {
+  const Panel = await component('newow/NewowDecisionV2Panel')
+  const root = element('root')
+  const response = ref(input('rb'))
+  const before = mock.calls.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({
+    setup: () => () => h(Panel, { response: response.value }),
+  }))
+  app.mount(root)
+  const section = () => findNode(root, n => n.props['aria-label'] === '历史波段路径：页面参考，不可执行')!
+  assert.match(nodeText(section()), /读取同一截止的历史路径/)
+  response.value = input('cu')
+  await nextTick()
+  const pending = new mock.NewowProductRequestError('REFERENCE_UPDATE_PENDING', 'unavailable')
+  mock.calls[before].reject(pending)
+  await nextTick(); await nextTick()
+  assert.doesNotMatch(nodeText(section()), /参考数据待更新/)
+  mock.calls[before + 1].reject(pending)
+  await nextTick(); await nextTick()
+  assert.match(nodeText(section()), /参考数据待更新/)
+
+  response.value = input('jm')
+  await nextTick()
+  const payload = output() as any
+  payload.value.decision_v2.daily_weekly_path = { history: { status: 'unavailable', reason: 'SAMPLES_MISSING' } }
+  mock.calls[before + 2].resolve(payload)
+  await nextTick(); await nextTick()
+  assert.match(nodeText(section()), /历史区间样本不足两笔/)
+  assert.doesNotMatch(nodeText(section()), /参考数据待更新/)
+  app.unmount()
 })
 
 test('relocated path shares decision generation and clears when switching or unmounting',async()=>{
