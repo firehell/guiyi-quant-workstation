@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { visualDonchian, visibleBuildStop, readVisualOverlayPreferences, saveVisualOverlayPreferences } from '../src/utils/newowVisualOverlays.ts'
+import { visualDonchian, visibleBuildStop, readVisualOverlayPreferences, readChartAnnotationPreferences, saveVisualOverlayPreferences } from '../src/utils/newowVisualOverlays.ts'
 test('display channel is independently configurable and never spans an owner segment',()=>{
  const bars=Array.from({length:25},(_,i)=>({time:String(i),high:i+10,low:i,owner:i<22?'old':'new'}))
  const twenty=visualDonchian(bars,20),five=visualDonchian(bars,5)
@@ -35,4 +35,23 @@ test('observed stop survives scrolling but cannot cross identity, owner or remov
  assert.equal(retainBuildStop(observed,'rb:day:dual',[],offscreen),null)
  assert.equal(retainBuildStop(null,'rb:day:dual',anchors,offscreen),null)
  assert.equal(retainBuildStop(observed,'rb:day:dual',[{...anchors[0],price:'NaN'}],[{time:'2026-01-01',owner:'contract:segment:calc'}]),null)
+})
+
+test('global annotation preferences preserve old overlay keys in both writer directions', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+  let record = '{"window":25,"donchian":true,"stop":true}'
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: () => record,
+    setItem: (_: string, value: string) => { record = value },
+  } })
+  try {
+    assert.deepEqual(readChartAnnotationPreferences(), { pure: false, extrema: true, nineTurn: false })
+    saveVisualOverlayPreferences({ pure: true, extrema: false, nineTurn: true })
+    assert.deepEqual(readVisualOverlayPreferences(), { donchian: true, window: 25, stop: true })
+    saveVisualOverlayPreferences({ donchian: false, window: 20, stop: false })
+    assert.deepEqual(readChartAnnotationPreferences(), { pure: true, extrema: false, nineTurn: true })
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'localStorage', original)
+    else Reflect.deleteProperty(globalThis, 'localStorage')
+  }
 })

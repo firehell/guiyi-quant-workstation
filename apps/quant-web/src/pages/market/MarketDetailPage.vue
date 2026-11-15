@@ -352,7 +352,6 @@ onUnmounted(() => chartSession.dispose())
             :capabilities="newowCapabilities.capabilities.value"
             :price-preview="detailPricePreview"
             strategy-menu-target="#newow-strategy-test-anchor"
-            channel-controls-target="#newow-channel-controls"
             @focus-resolved="resolveFocus"
             @snapshot-mode="newowHistoricalAsOf = $event"
             @daily-snapshot-as-of="newowDailyAsOf = $event"
