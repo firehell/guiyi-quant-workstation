@@ -1,6 +1,8 @@
 """One explicit Newow recording scope; capability does not activate streams."""
 
 FREQUENCIES = ("1w", "1d", "60m", "5m", "15m", "30m")
+H1_BOUNDARY_POLICY = "newow_h1_from_new_observation_v1"
+
 LIVE_FREQUENCIES = ("5m", "15m", "30m", "60m")
 STRATEGIES = ("trend", "oscillation", "main_rise", "dual_fusion")
 MAX_ROUTES = 60 * len(FREQUENCIES) * len(STRATEGIES)

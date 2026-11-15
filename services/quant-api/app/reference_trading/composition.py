@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import LIVE_FREQUENCIES
+from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY, LIVE_FREQUENCIES
 
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -102,6 +102,21 @@ def build_forward_reference_worker(
             computed_through if computed_through is not None
             else recording_start - timedelta(microseconds=1)
         )
+        input_endpoints = expected_endpoints
+        if identity.observation_policy_version == H1_BOUNDARY_POLICY:
+            if worker.inbox_delivery_id is None:
+                return None
+            if computed_through is None:
+                if event_bar_end != recording_start:
+                    raise ForwardInputUnavailable("OBSERVATION_GAP", endpoints=(recording_start,))
+                # The first watermark is still empty. Scope only the Session
+                # proof to the exact recorded start; never invent a prior Bar.
+                after = None
+
+                def input_endpoints(stream, contract, day, previous, cutoff):
+                    return expected_endpoints(
+                        stream, contract, day, recording_start - timedelta(microseconds=1), cutoff,
+                    )
         common = dict(
             revision_id=revision_id, generation=generation, after=after, now=observed,
         )
@@ -155,7 +170,7 @@ def build_forward_reference_worker(
                     if kind == "live_event" and worker.source_envelope is not None:
                         return capture_newow_envelope(
                             worker.source_envelope, identity, owner_segments=owner_segments,
-                            expected_endpoints=expected_endpoints,
+                            expected_endpoints=input_endpoints,
                             capability_ready=newow_capability_ready, **common,
                         )
                     return capture_newow_live(

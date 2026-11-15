@@ -377,6 +377,10 @@ def evaluate_fusion_capture(token, checkpoint, evidence, *, dependency_manifest)
                     day,
                 ),
             )
+    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY
+    sources_ready = all(str(d.get("availability")).lower() == "ready" for d in dependencies)
+    if stream.observation_policy_version == H1_BOUNDARY_POLICY and not sources_ready:
+        actions = ()
     item = HistoricalInputBar(
         end,
         day,
@@ -398,14 +402,10 @@ def evaluate_fusion_capture(token, checkpoint, evidence, *, dependency_manifest)
         if point["kind"] == "indicator":
             point["value"]["availability"] = {
                 "status": "ready"
-                if all(
-                    str(d.get("availability")).lower() == "ready" for d in dependencies
-                )
+                if sources_ready
                 else "warming",
                 "reason_code": None
-                if all(
-                    str(d.get("availability")).lower() == "ready" for d in dependencies
-                )
+                if sources_ready
                 else "SOURCE_WARMING",
             }
     points.append(
@@ -420,9 +420,7 @@ def evaluate_fusion_capture(token, checkpoint, evidence, *, dependency_manifest)
                 "segment_id": owner,
                 "calculation_segment_id": calculation,
                 "status": "READY"
-                if all(
-                    str(d.get("availability")).lower() == "ready" for d in dependencies
-                )
+                if sources_ready
                 else "WARMING",
                 "main_state": "HOLD"
                 if next_checkpoint.reference_state.open_trade
