@@ -126,14 +126,32 @@ def verify_targets(plan, now):
                 "NEWOW_H1_SCOPE_PLAN_DRIFT")
 
 
+def settle_attempt(plan, binding, attempt, directory, control_path, receipts):
+    require(attempt.resolve() == attempt and attempt.is_dir(), "NEWOW_H1_ATTEMPT_INVALID")
+    intent = json.loads(read_private_settings_content(attempt / "intent.json"))
+    request_id = intent.get("request_id")
+    require(intent == {"plan_hash": plan["plan_hash"], "binding": asdict(binding),
+                       "request_id": request_id}
+            and isinstance(request_id, str), "NEWOW_H1_ATTEMPT_DRIFT")
+    control = _read(control_path)
+    if control and control.get("request_id") == request_id and control.get("phase") != "cancelled":
+        CohortHost._check_parked_control(SERVICE, binding, control)
+        owner = read_service_state(SERVICE, runtime_dir=directory)
+        require(resolve_service_binding(SERVICE) == binding and owner
+                and str(owner.get("pid")) == str(CohortHost().loaded(binding, allow_idle=False))
+                and owner_process_matches(owner, binding), "NEWOW_H1_OWNER_UNPROVEN")
+        cancel_drain(SERVICE, request_id=request_id, runtime_dir=directory)
+    return result(receipts) if receipts else {"status": "NO_COMMIT", "products": 0, "routes": 0}
+
+
 def apply(plan, binding, attempt):
     directory = runtime_directory()
     control_path = directory / f"{SERVICE}.handover.json"
     with deployment_lock(runtime_dir=directory):
         reader = NewowH1Boundary(SessionLocal, assert_fenced=lambda: None)
         prior = scope_readback(reader, plan)
-        if prior:
-            return result(prior)
+        if attempt.exists() or prior:
+            return settle_attempt(plan, binding, attempt, directory, control_path, prior)
         CohortHost().session_proof()
         verify_targets(plan, datetime.now(UTC))
         old_control = _read(control_path)
@@ -151,12 +169,15 @@ def apply(plan, binding, attempt):
             require(json.loads(raw) == old_control, "NEWOW_H1_DRAIN_DRIFT")
             write_once(attempt / "superseded-control.json", {"raw_hex": raw.hex()})
             require(read_private_settings_content(control_path) == raw, "NEWOW_H1_DRAIN_DRIFT")
-        request_id = request_drain(SERVICE, generation=binding.generation)
+        def persist_intent(request_id):
+            write_once(attempt / "intent.json", {"plan_hash": plan["plan_hash"],
+                       "binding": asdict(binding), "request_id": request_id})
+
+        request_id = request_drain(SERVICE, generation=binding.generation,
+                                   runtime_dir=directory, before_install=persist_intent)
         started = False
         definite = False
         try:
-            write_once(attempt / "intent.json", {"plan_hash": plan["plan_hash"],
-                       "binding": asdict(binding), "request_id": request_id})
             deadline = time.monotonic() + 120
             while True:
                 state = read_service_state(SERVICE, runtime_dir=directory)
