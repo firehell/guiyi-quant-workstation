@@ -477,6 +477,10 @@ def _newow_step(
     )
     if frame is None:
         raise ValueError("REFERENCE_DUPLICATE_INPUT")
+    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY
+    actions_from_frame = frame.actions
+    if stream.observation_policy_version == H1_BOUNDARY_POLICY and str(frame.availability.status).lower() != "ready":
+        actions_from_frame = ()
     if presentation is not None:
         from app.reference_trading.presentation import newow_state_point
 
@@ -493,7 +497,7 @@ def _newow_step(
             trading_day=item.trading_day,
             formula_versions=stream.formula_versions,
         ))
-        for action in frame.actions:
+        for action in actions_from_frame:
             presentation.append(presentation_point(
                 kind="action", value=action, trading_day=item.trading_day,
                 formula_versions=stream.formula_versions,
@@ -530,7 +534,7 @@ def _newow_step(
         if stream.recording_mode is RecordingMode.FORWARD_OBSERVATION
         and prior_reference.open_trade is not None else None
     )
-    for action in frame.actions:
+    for action in actions_from_frame:
         if action.trade_eligibility is not TradeEligibility.ELIGIBLE:
             if (
                 stream.recording_mode is RecordingMode.FORWARD_OBSERVATION

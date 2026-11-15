@@ -806,3 +806,18 @@ def test_delayed_action_extraction_rejects_unknown_or_tampered_facts(tamper):
     with pytest.raises(ValueError, match='REFERENCE_FUSION_'):
         build_fusion_capture(stream, revision_id='fusion', generation=1, after=None,
             now=case.bars[0].bar.bar_end + timedelta(minutes=1), dependencies=deps)
+
+
+def test_newow_h1_boundary_rejects_old_policy_fusion_sources():
+    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY
+
+    case, dependencies = sources("60m")
+    stream = build_fusion_stream_identity(
+        "rb", "60m", recording_mode="forward_observation",
+        observation_policy_version=H1_BOUNDARY_POLICY,
+    )
+    with pytest.raises(ValueError, match="REFERENCE_FUSION_SOURCE_IDENTITY_CONFLICT"):
+        build_fusion_capture(
+            stream, revision_id="fusion", generation=1, after=None,
+            now=case.bars[0].bar.bar_end + timedelta(minutes=1), dependencies=dependencies,
+        )

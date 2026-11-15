@@ -48,6 +48,12 @@ from guiyi_quant.reference_trading.strategy_checkpoint import (
 VERSION = "newow_formula_transition_v1"
 SCHEMA = "reference_formula_retired_v1"
 CODES = {"newow_oscillation", "newow_dual_fusion"}
+H1_CODES = CODES | {"newow_trend", "newow_main_rise"}
+H1_VERSION = "newow_h1_forward_boundary_v1"
+RETIREMENTS = {
+    "FORMULA_RETIRED": (VERSION, "formula-transition:", "FORMULA_VERSION_CHANGED", CODES),
+    "OBSERVATION_RETIRED": (H1_VERSION, "h1-forward-boundary:", "OBSERVATION_INTERRUPTED", H1_CODES),
+}
 
 
 def require(value, code="FORMULA_TRANSITION_INVALID"):
@@ -60,6 +66,10 @@ def _row(row):
 
 
 class NewowFormulaTransition:
+    version, batch_prefix, reason, codes = RETIREMENTS["FORMULA_RETIRED"]
+    retired_health = "FORMULA_RETIRED"
+    seed_manifest_key = "forward_bootstrap_v1"
+
     def __init__(self, factory, *, assert_fenced):
         self.factory, self.assert_fenced = factory, assert_fenced
 
@@ -70,7 +80,7 @@ class NewowFormulaTransition:
             row is not None
             and row.enabled
             and row.active_revision_id
-            and row.strategy_code in CODES
+            and row.strategy_code in self.codes
             and row.frequency in {"1d", "1w", "60m"}
             and row.recording_mode == RecordingMode.FORWARD_OBSERVATION.value
         )
@@ -229,7 +239,7 @@ class NewowFormulaTransition:
             db.scalars(
                 select(ReferenceBatch).where(
                     ReferenceBatch.batch_key
-                    == "formula-transition:" + plan["plan_hash"]
+                    == self.batch_prefix + plan["plan_hash"]
                 )
             )
         )
@@ -322,7 +332,7 @@ class NewowFormulaTransition:
             require(
                 receipt is not None
                 and seed is not None
-                and seed.dependency_manifest.get("forward_bootstrap_v1", {}).get(
+                and seed.dependency_manifest.get(self.seed_manifest_key, {}).get(
                     "plan_hash"
                 )
                 == bootstrap["plan_hash"],
@@ -332,9 +342,20 @@ class NewowFormulaTransition:
             status="COMMITTED", plan_hash=plan["plan_hash"], retired=sorted(expected)
         )
 
+    def _plan_members(self, plan):
+        return [
+            (item["old"]["stream"]["stream_id"], item["bootstrap"]["source"]["stream_id"])
+            for item in plan["items"]
+        ]
+
+    def _activate_target(self, factory, bootstrap, at):
+        return NewowForwardBootstrap(factory).apply(
+            bootstrap, expected_plan_hash=bootstrap["plan_hash"], now=at,
+        )
+
     def apply(self, plan, *, expected_plan_hash, now):
         require(
-            plan.get("version") == VERSION
+            plan.get("version") == self.version
             and plan.get("plan_hash") == expected_plan_hash
             and _hash({k: v for k, v in plan.items() if k != "plan_hash"})
             == expected_plan_hash,
@@ -363,13 +384,7 @@ class NewowFormulaTransition:
                 )
                 fresh = self._freeze(
                     db,
-                    [
-                        (
-                            i["old"]["stream"]["stream_id"],
-                            i["bootstrap"]["source"]["stream_id"],
-                        )
-                        for i in plan["items"]
-                    ],
+                    self._plan_members(plan),
                     start=datetime.fromisoformat(plan["recording_start"]),
                     expiry=datetime.fromisoformat(plan["expires_at"]),
                     at=at,
@@ -389,11 +404,7 @@ class NewowFormulaTransition:
                 repo = ReferenceRepository(factory)
                 for item, old in data:
                     row, rev, batch, receipt, identity, reference = old
-                    result = NewowForwardBootstrap(factory).apply(
-                        item["bootstrap"],
-                        expected_plan_hash=item["bootstrap"]["plan_hash"],
-                        now=at,
-                    )
+                    result = self._activate_target(factory, item["bootstrap"], at)
                     require(at > _db_aware(batch.computed_through))
                     original = json.loads(batch.checkpoint_text)
                     owner = tuple(
@@ -416,24 +427,17 @@ class NewowFormulaTransition:
                             reference.open_trade.mark_trading_day
                             or reference.open_trade.entry_trading_day
                         ).isoformat()
-                    require(day_wire is not None, "FORMULA_TRANSITION_DAY_MISSING")
-                    boundary = ReferenceBoundary(
-                        identity,
-                        BoundaryReason.OBSERVATION_INTERRUPTED,
-                        *owner,
-                        at,
-                        date.fromisoformat(day_wire),
-                    )
-                    transition = reduce_reference(reference, boundaries=(boundary,))
+                    boundaries = ()
+                    if self.version == VERSION or reference.open_trade is not None:
+                        require(day_wire is not None, "FORMULA_TRANSITION_DAY_MISSING")
+                        boundaries = (ReferenceBoundary(
+                            identity, BoundaryReason.OBSERVATION_INTERRUPTED, *owner,
+                            at, date.fromisoformat(day_wire),
+                        ),)
+                    transition = reduce_reference(reference, boundaries=boundaries)
                     checkpoint = AdapterCheckpoint(
-                        transition.state,
-                        at,
-                        "formula-transition:" + expected_plan_hash,
-                        boundary.physical_contract,
-                        boundary.owner_segment_id,
-                        boundary.calculation_segment_id,
-                        identity,
-                        transition.state,
+                        transition.state, at, self.batch_prefix + expected_plan_hash,
+                        *owner, identity, transition.state,
                     )
                     content = adapter_checkpoint_to_json(
                         checkpoint, strategy_schema=SCHEMA
@@ -441,7 +445,7 @@ class NewowFormulaTransition:
                     seq, batch_id = rev.last_seq + 1, uuid4().hex
                     proof = dict(
                         plan_hash=expected_plan_hash,
-                        reason="FORMULA_VERSION_CHANGED",
+                        reason=self.reason,
                         old_stream_id=row.stream_id,
                         old_generation=receipt.generation,
                         new_stream_id=result["target_stream_id"],
@@ -457,7 +461,7 @@ class NewowFormulaTransition:
                             batch_id=batch_id,
                             stream_id=row.stream_id,
                             revision_id=rev.revision_id,
-                            batch_key="formula-transition:" + expected_plan_hash,
+                            batch_key=self.batch_prefix + expected_plan_hash,
                             payload_hash=_hash(proof),
                             kind="calculation",
                             outcome="committed",
@@ -470,20 +474,17 @@ class NewowFormulaTransition:
                             computed_through=at,
                             dependency_manifest={},
                             source_evidence={
-                                VERSION: proof,
-                                "presentation_v1": envelope(
-                                    [
-                                        presentation_point(
-                                            kind="boundary",
-                                            value=boundary,
-                                            trading_day=boundary.trading_day,
-                                            formula_versions=identity.formula_versions,
-                                        )
-                                    ]
-                                ),
+                                self.version: proof,
+                                "presentation_v1": envelope([
+                                    presentation_point(
+                                        kind="boundary", value=boundary,
+                                        trading_day=boundary.trading_day,
+                                        formula_versions=identity.formula_versions,
+                                    ) for boundary in boundaries
+                                ]),
                             },
                             projected_action_pks=[],
-                            diagnostics=["FORMULA_VERSION_CHANGED"],
+                            diagnostics=[self.reason],
                             observed_at=at,
                             processed_at=at,
                         )
@@ -501,7 +502,7 @@ class NewowFormulaTransition:
                     row.latest_seq, row.enabled, row.health = (
                         seq,
                         False,
-                        "FORMULA_RETIRED",
+                        self.retired_health,
                     )
                     row.activation_generation += 1
                     row.row_version += 1
@@ -517,12 +518,10 @@ class NewowFormulaTransition:
 
 def retired_proof(db, row):
     """Only terminal, disabled formula records are eligible for historical reads."""
-    if (
-        row is None
-        or row.enabled
-        or row.health != "FORMULA_RETIRED"
-        or row.strategy_code not in CODES
-    ):
+    if row is None or row.enabled or row.health not in RETIREMENTS:
+        return None
+    version, prefix, reason, codes = RETIREMENTS[row.health]
+    if row.strategy_code not in codes:
         return None
     revision = db.get(ReferenceRevision, (row.stream_id, row.active_revision_id))
     batch = db.get(ReferenceBatch, revision.checkpoint_batch_id) if revision else None
@@ -533,10 +532,11 @@ def retired_proof(db, row):
         and batch.checkpoint_text
         and sha256(batch.checkpoint_text.encode()).hexdigest() == batch.post_state_hash
     )
-    proof = batch.source_evidence.get(VERSION, {})
+    proof = batch.source_evidence.get(version, {})
     require(
         proof.get("old_stream_id") == row.stream_id
-        and batch.batch_key == "formula-transition:" + proof.get("plan_hash", "")
+        and proof.get("reason") == reason
+        and batch.batch_key == prefix + proof.get("plan_hash", "")
         and batch.payload_hash == _hash(proof)
     )
     from guiyi_quant.reference_trading.strategy_checkpoint import (
