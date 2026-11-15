@@ -14,6 +14,7 @@ import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
 import NewowChartSettings, { type NewowChartLayers } from './NewowChartSettings.vue'
 import { NewowPriceAnnotationPrimitive, type NewowPriceAnnotation } from './newowPriceAnnotationPrimitive.ts'
+import { newowFourStepMarks } from '@/utils/newowFourStepMarks'
 import { newowExtrema, newowNineTurn } from '@/utils/newowChartAnnotations'
 import { readChartAnnotationPreferences, readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import { newowReferencePrice, newowSimpleDualLabel, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
@@ -226,6 +227,24 @@ function analyzeChannel() {
 const comparisonActive = computed(() => newowComparisonCompatible(props.response, props.comparisonResponse ?? null))
 const partnerModel = computed(() => comparisonActive.value && props.comparisonResponse ? buildNewowProductChartModel(props.comparisonResponse) : null)
 const trackModels = computed(() => [model.value, partnerModel.value].filter((value): value is NewowProductChartModel => value !== null))
+const fourStepMarks = computed(() => {
+  const primary = model.value
+  const partner = partnerModel.value
+  if (!comparisonActive.value || primary?.identity.frequency !== '1d' || !partner) return null
+  return newowFourStepMarks(primary.bars, [primary, partner].map(track => ({
+    source: track.identity.strategy === 'oscillation' ? 'oscillation' : 'trend',
+    actions: track.actions,
+  })))
+})
+function dualStepTitle(title: string, id: string): string {
+  const badge = fourStepMarks.value?.get(id)?.badge
+  return badge ? `${badge} ${title}` : title
+}
+function dualStepDescription(id: string): string {
+  const mark = fourStepMarks.value?.get(id)
+  return mark ? `${mark.badge} ${mark.label} · ` : ''
+}
+
 const allReferenceTrades = computed(() => mergeNewowDualReferences([...(props.referenceTrades ?? []), ...(comparisonActive.value ? props.comparisonReferenceTrades ?? [] : [])]))
 const comparisonStats = computed(() => newowDualVisibleStatistics(positionedComparison.value, allReferenceTrades.value))
 const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
@@ -788,7 +807,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
         const candle = x !== null && highY !== null && lowY !== null ? { left: x - 8, top: Math.min(highY, lowY) - 3, width: 16, height: Math.abs(lowY - highY) + 6 } : undefined
         if (x === null || y === null) return []
         return [{ callout: { ...callout, title: `${origin === 'trend' ? '趋势' : '震荡'}${callout.title}` }, origin, x, y, candle,
-          boxWidth: detailLabels.value ? Math.max(100, actionWidth(callout, origin)) : Math.max(86, newowSimpleDualLabel(origin, callout.above, callout.price).length * 7 + 12), boxHeight: detailLabels.value ? 28 : 18 }]
+          boxWidth: (detailLabels.value ? Math.max(100, actionWidth(callout, origin)) : Math.max(86, newowSimpleDualLabel(origin, callout.above, callout.price).length * 7 + 12)) + (fourStepMarks.value?.has(callout.id) ? 16 : 0), boxHeight: detailLabels.value ? 28 : 18 }]
       }))
     }
     positionedComparison.value = showActions.value ? layoutNewowDualCallouts(points, width, height) : []
@@ -1107,7 +1126,7 @@ defineExpose({ revealSignal, scrollToLatest })
     <div v-if="!pure && comparisonActive" class="newow-product-chart-stage__action-callouts newow-product-chart-stage__dual-tracks" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="趋势与震荡双策略叠加">
       <svg aria-hidden="true"><line v-for="(item,index) in comparisonSwitches" :key="`switch:${index}`" :x1="item.x" y1="20" :x2="item.x" :y2="actionOverlayHeight" stroke-dasharray="4 3" class="dual-switch-line" /><polyline v-for="item in positionedComparison" :key="`${item.origin}:${item.callout.id}`" :points="`${item.x},${item.y} ${item.x},${(item.y + item.lineY) / 2} ${item.lineX},${(item.y + item.lineY) / 2} ${item.lineX},${item.lineY}`" fill="none" /><circle v-for="item in positionedComparison" :key="`anchor:${item.origin}:${item.callout.id}`" :cx="item.x" :cy="item.y" r="2.5" :fill="item.callout.above ? '#34c759' : '#ff3b30'" stroke="none" /></svg>
       <div v-for="(item,index) in comparisonSwitches" :key="index" class="newow-product-chart-stage__dual-switch" :style="{ left: `${item.x}px` }" :title="`${item.from === 'trend' ? '趋势' : '震荡'}切换至${item.to === 'trend' ? '趋势' : '震荡'}，仅主图展示主导策略`"><b :class="item.from">{{ item.from === 'trend' ? '趋' : '震' }}</b><span>⇄</span><b :class="item.to">{{ item.to === 'trend' ? '趋' : '震' }}</b></div>
-      <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, unpaired: item.callout.title.includes('无入场'), direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
+      <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: dualStepTitle(detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), item.callout.id), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, unpaired: item.callout.title.includes('无入场'), direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${dualStepDescription(item.callout.id)}${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${dualStepDescription(item.callout.id)}${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
     <aside v-if="!pure && cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
     <div v-show="!pure" ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
