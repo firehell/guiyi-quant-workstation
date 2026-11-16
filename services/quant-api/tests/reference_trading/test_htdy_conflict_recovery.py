@@ -429,7 +429,7 @@ def test_open_trade_is_interrupted_without_close_price_or_new_action(setup, muta
 
 
 @pytest.mark.parametrize(
-    "mutation", ["seed", "checkpoint", "receipt", "boundary", "capture"]
+    "mutation", ["seed", "checkpoint", "receipt", "boundary", "capture", "missing_deliveries"]
 )
 def test_typed_retirement_rejects_tampered_commit_evidence(setup, mutation):
     from app.reference_trading.models import ReferenceActivationReceipt
@@ -460,6 +460,8 @@ def test_typed_retirement_rejects_tampered_commit_evidence(setup, mutation):
             session.get(ReferenceActivationReceipt, p["new_receipt_id"]).plan_hash = (
                 "c" * 64
             )
+        elif mutation == "missing_deliveries":
+            b.source_evidence = {**b.source_evidence, KEY: {**p, "retired_deliveries": None}}
         else:
             b.payload_hash = "d" * 64
     with (

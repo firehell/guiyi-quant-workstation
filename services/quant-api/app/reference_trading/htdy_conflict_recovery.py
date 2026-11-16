@@ -809,7 +809,48 @@ class _RetirementEvidence:
     routes: dict
 
 
-def _retirement_evidence(session, proofs):
+_RETIREMENT_ID_FIELDS = (
+    "stream_id", "old_revision_id", "new_revision_id", "old_checkpoint_batch_id",
+    "new_seed_batch_id", "old_receipt_id", "new_receipt_id",
+)
+
+
+def _require_retirement(ok):
+    if not ok:
+        raise RepositoryConflict("HTDY_CONFLICT_RETIREMENT_INVALID")
+
+
+def _check_retirement_boundary(batch, proof):
+    _require_retirement(
+        isinstance(proof, dict)
+        and proof.get("version") == KEY
+        and proof.get("reason") == "DATA_CONFLICT"
+        and proof.get("boundary_batch_id") == batch.batch_id
+        and batch.payload_hash == _hash(proof)
+        and batch.diagnostics == ["DATA_CONFLICT"]
+        and not batch.projected_action_pks
+        and all(isinstance(proof.get(field), str) for field in _RETIREMENT_ID_FIELDS)
+    )
+    retired = proof.get("retired_deliveries")
+    _require_retirement(
+        isinstance(retired, list)
+        and all(isinstance(row, dict) and isinstance(row.get("delivery_id"), str) for row in retired)
+        and _hash(retired) == proof.get("retired_deliveries_sha256")
+    )
+
+
+def _prefetch_retirement_rows(session, field, values, check_cancelled, *, order_by=None):
+    # Keep each SQL statement below driver bind limits even when a proof has
+    # many deliveries. Route ordering is used only within each input group.
+    for chunk in batched(values, 4096):
+        check_cancelled()
+        query = select(field.class_).where(field.in_(chunk))
+        if order_by is not None:
+            query = query.order_by(order_by)
+        yield from session.scalars(query)
+
+
+def _retirement_evidence(session, proofs, check_cancelled):
     old_keys = {(p["stream_id"], p["old_revision_id"]) for p in proofs}
     revision_keys = old_keys | {(p["stream_id"], p["new_revision_id"]) for p in proofs}
     streams = {p["stream_id"] for p in proofs}
@@ -842,25 +883,23 @@ def _retirement_evidence(session, proofs):
     ):
         trades[(row.stream_id, row.revision_id)].append(row)
 
-    deliveries, inputs, routes = {}, {}, defaultdict(list)
-    if delivery_ids:
-        deliveries = {
-            row.delivery_id: row for row in session.scalars(
-                select(ReferenceInboxDelivery).where(ReferenceInboxDelivery.delivery_id.in_(delivery_ids))
-            )
-        }
-        input_ids = {row.input_id for row in deliveries.values()}
-        inputs = {
-            row.input_id: row for row in session.scalars(
-                select(ReferenceInboxInput).where(ReferenceInboxInput.input_id.in_(input_ids))
-            )
-        }
-        for row in session.scalars(
-            select(ReferenceInboxDelivery)
-            .where(ReferenceInboxDelivery.input_id.in_(input_ids))
-            .order_by(ReferenceInboxDelivery.stream_id)
-        ):
-            routes[row.input_id].append(row)
+    deliveries = {
+        row.delivery_id: row for row in _prefetch_retirement_rows(
+            session, ReferenceInboxDelivery.delivery_id, delivery_ids, check_cancelled
+        )
+    }
+    input_ids = {row.input_id for row in deliveries.values()}
+    inputs = {
+        row.input_id: row for row in _prefetch_retirement_rows(
+            session, ReferenceInboxInput.input_id, input_ids, check_cancelled
+        )
+    }
+    routes = defaultdict(list)
+    for row in _prefetch_retirement_rows(
+        session, ReferenceInboxDelivery.input_id, input_ids, check_cancelled,
+        order_by=ReferenceInboxDelivery.stream_id,
+    ):
+        routes[row.input_id].append(row)
     return _RetirementEvidence(
         revisions={(row.stream_id, row.revision_id): row for row in revisions},
         streams={row.stream_id: row for row in stream_rows},
@@ -878,13 +917,15 @@ def _retirement_rows(session, query, check_cancelled):
                 select(ReferenceBatch).where(ReferenceBatch.batch_id.in_(identifiers))
             )
         }
-        records = [
-            (row, row.source_evidence[KEY])
-            for identifier in identifiers
-            if (row := rows[identifier]).source_evidence.get(KEY) is not None
-        ]
+        records = []
+        for identifier in identifiers:
+            row = rows[identifier]
+            proof = row.source_evidence.get(KEY)
+            if proof is not None:
+                _check_retirement_boundary(row, proof)
+                records.append((row, proof))
         if records:
-            evidence = _retirement_evidence(session, [proof for _, proof in records])
+            evidence = _retirement_evidence(session, [proof for _, proof in records], check_cancelled)
             for row, proof in records:
                 yield row, proof, evidence
 
@@ -901,18 +942,6 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
     for batch, proof, evidence in _retirement_rows(session, query, check_cancelled):
         check_cancelled()
 
-        def require(ok):
-            if not ok:
-                raise RepositoryConflict("HTDY_CONFLICT_RETIREMENT_INVALID")
-
-        require(
-            proof.get("version") == KEY
-            and proof.get("reason") == "DATA_CONFLICT"
-            and proof.get("boundary_batch_id") == batch.batch_id
-            and batch.payload_hash == _hash(proof)
-            and batch.diagnostics == ["DATA_CONFLICT"]
-            and not batch.projected_action_pks
-        )
         sid, oldid, newid = (
             proof["stream_id"],
             proof["old_revision_id"],
@@ -925,7 +954,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
         receipt = evidence.receipts.get(proof["new_receipt_id"])
         previous = evidence.receipts.get(proof["old_receipt_id"])
         seed = evidence.batches.get(proof["new_seed_batch_id"])
-        require(
+        _require_retirement(
             old is not None
             and old.status == "invalid"
             and old.invalid_reason == "DATA_CONFLICT"
@@ -947,7 +976,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
             and seed.revision_id == newid
             and seed.kind == "seed_seal"
         )
-        require(
+        _require_retirement(
             batch.stream_id == sid
             and batch.revision_id == oldid
             and batch.expected_seq == original.seq
@@ -973,7 +1002,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
                 ).encode()
             ).hexdigest()
         )
-        require(
+        _require_retirement(
             _aware(batch.processed_at)
             <= _aware(previous.disabled_at)
             <= _aware(receipt.activated_at)
@@ -993,7 +1022,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
             row for row in evidence.old_batches[(sid, oldid)]
             if row.batch_id != batch.batch_id
         ]
-        require(_hash([_row(b) for b in old_batches]) == proof["old_batches_sha256"])
+        _require_retirement(_hash([_row(b) for b in old_batches]) == proof["old_batches_sha256"])
         _verify_proof(
             proof["source_proof"],
             {
@@ -1013,7 +1042,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
             expected_stream=identity,
             expected_strategy_schema=SCHEMA,
         )
-        require(
+        _require_retirement(
             boundary_cp
             == replace(
                 original_cp,
@@ -1024,7 +1053,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
                 ),
             )
         )
-        require(
+        _require_retirement(
             batch.outcome == "committed"
             and batch.observed_at is None
             and batch.source_evidence.get("presentation_v1")
@@ -1038,7 +1067,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
         trades = evidence.trades[(sid, oldid)]
         originals = []
         appended = [t for t in trades if t.valid_from_seq == batch.seq]
-        require(len(appended) == int(opened is not None))
+        _require_retirement(len(appended) == int(opened is not None))
         old_open = []
         for trade in trades:
             if trade.valid_from_seq == batch.seq:
@@ -1053,9 +1082,9 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
                 old_open.append(row)
                 row = {**row, "valid_to_seq": None}
             originals.append(row)
-        require(_hash(originals) == proof["old_trades_sha256"])
+        _require_retirement(_hash(originals) == proof["old_trades_sha256"])
         if opened is not None:
-            require(len(old_open) == 1)
+            _require_retirement(len(old_open) == 1)
             expected = {
                 **old_open[0],
                 "valid_from_seq": batch.seq,
@@ -1064,13 +1093,13 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
                 "effective_bar_end": proof["boundary_end"],
                 "observed_at": None,
             }
-            require(_row(appended[0]) == expected)
+            _require_retirement(_row(appended[0]) == expected)
         cp = adapter_checkpoint_from_json(
             seed.checkpoint_text,
             expected_stream=identity,
             expected_strategy_schema=SCHEMA,
         )
-        require(
+        _require_retirement(
             cp.strategy_state == HtdyForwardState(MODEL_VERSION, POLICY)
             and cp.computed_through is None
             and cp.reference_state
@@ -1079,11 +1108,10 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
             )
         )
         retired = proof["retired_deliveries"]
-        require(_hash(retired) == proof["retired_deliveries_sha256"])
         for frozen in retired:
             check_cancelled()
             row = evidence.deliveries.get(frozen["delivery_id"])
-            require(
+            _require_retirement(
                 row is not None
                 and row.stream_id == sid
                 and row.revision_id == oldid
