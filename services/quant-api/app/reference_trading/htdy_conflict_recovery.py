@@ -4,15 +4,17 @@ Source verification is supplied by the authoritative MDS wrapper. This module
 never edits observations, calculates historical signals or completes deliveries.
 """
 
-from dataclasses import replace
+from collections import defaultdict
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from hashlib import sha256
+from itertools import batched
 import json
 from time import monotonic
 from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, tuple_
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.reference_trading.contracts import SeedChunk, manifest_sha256
@@ -89,17 +91,21 @@ def _row(row):
 
 
 def _delivery(session, row):
+    item = session.get(ReferenceInboxInput, row.input_id)
+    routes = session.scalars(
+        select(ReferenceInboxDelivery)
+        .where(ReferenceInboxDelivery.input_id == row.input_id)
+        .order_by(ReferenceInboxDelivery.stream_id)
+    ).all()
+    return _delivery_evidence(row, item, routes)
+
+
+def _delivery_evidence(row, item, routes):
     from app.reference_trading.inbox import _verified_input, _route_identity, _digest
 
-    item = session.get(ReferenceInboxInput, row.input_id)
     if item is None or row.status == "UNKNOWN" or row.unknown_at is not None:
         raise RepositoryConflict("HTDY_CONFLICT_UNKNOWN_DELIVERY")
     _verified_input(item)
-    routes = session.scalars(
-        select(ReferenceInboxDelivery)
-        .where(ReferenceInboxDelivery.input_id == item.input_id)
-        .order_by(ReferenceInboxDelivery.stream_id)
-    ).all()
     if (
         len(routes) != item.target_count
         or _digest([_route_identity(r) for r in routes]) != item.routing_sha256
@@ -790,6 +796,99 @@ class HtdyConflictRecovery:
             raise RepositoryConflict("HTDY_CONFLICT_COMMIT_OUTCOME_UNKNOWN") from error
 
 
+@dataclass(frozen=True, slots=True)
+class _RetirementEvidence:
+    revisions: dict
+    streams: dict
+    batches: dict
+    receipts: dict
+    old_batches: dict
+    trades: dict
+    deliveries: dict
+    inputs: dict
+    routes: dict
+
+
+def _retirement_evidence(session, proofs):
+    old_keys = {(p["stream_id"], p["old_revision_id"]) for p in proofs}
+    revision_keys = old_keys | {(p["stream_id"], p["new_revision_id"]) for p in proofs}
+    streams = {p["stream_id"] for p in proofs}
+    batch_ids = {p[field] for p in proofs for field in ("old_checkpoint_batch_id", "new_seed_batch_id")}
+    receipt_ids = {p[field] for p in proofs for field in ("old_receipt_id", "new_receipt_id")}
+    delivery_ids = {row["delivery_id"] for p in proofs for row in p["retired_deliveries"]}
+
+    revisions = session.scalars(
+        select(ReferenceRevision).where(
+            tuple_(ReferenceRevision.stream_id, ReferenceRevision.revision_id).in_(revision_keys)
+        )
+    )
+    stream_rows = session.scalars(select(ReferenceStream).where(ReferenceStream.stream_id.in_(streams)))
+    batches = session.scalars(select(ReferenceBatch).where(ReferenceBatch.batch_id.in_(batch_ids)))
+    receipts = session.scalars(
+        select(ReferenceActivationReceipt).where(ReferenceActivationReceipt.receipt_id.in_(receipt_ids))
+    )
+    old_batches = defaultdict(list)
+    for row in session.scalars(
+        select(ReferenceBatch)
+        .where(tuple_(ReferenceBatch.stream_id, ReferenceBatch.revision_id).in_(old_keys))
+        .order_by(ReferenceBatch.batch_id)
+    ):
+        old_batches[(row.stream_id, row.revision_id)].append(row)
+    trades = defaultdict(list)
+    for row in session.scalars(
+        select(ReferenceTradeRow)
+        .where(tuple_(ReferenceTradeRow.stream_id, ReferenceTradeRow.revision_id).in_(old_keys))
+        .order_by(ReferenceTradeRow.trade_id, ReferenceTradeRow.valid_from_seq)
+    ):
+        trades[(row.stream_id, row.revision_id)].append(row)
+
+    deliveries, inputs, routes = {}, {}, defaultdict(list)
+    if delivery_ids:
+        deliveries = {
+            row.delivery_id: row for row in session.scalars(
+                select(ReferenceInboxDelivery).where(ReferenceInboxDelivery.delivery_id.in_(delivery_ids))
+            )
+        }
+        input_ids = {row.input_id for row in deliveries.values()}
+        inputs = {
+            row.input_id: row for row in session.scalars(
+                select(ReferenceInboxInput).where(ReferenceInboxInput.input_id.in_(input_ids))
+            )
+        }
+        for row in session.scalars(
+            select(ReferenceInboxDelivery)
+            .where(ReferenceInboxDelivery.input_id.in_(input_ids))
+            .order_by(ReferenceInboxDelivery.stream_id)
+        ):
+            routes[row.input_id].append(row)
+    return _RetirementEvidence(
+        revisions={(row.stream_id, row.revision_id): row for row in revisions},
+        streams={row.stream_id: row for row in stream_rows},
+        batches={row.batch_id: row for row in batches},
+        receipts={row.receipt_id: row for row in receipts},
+        old_batches=old_batches, trades=trades, deliveries=deliveries, inputs=inputs, routes=routes,
+    )
+
+
+def _retirement_rows(session, query, check_cancelled):
+    for identifiers in batched(session.scalars(query).yield_per(32), 32):
+        check_cancelled()
+        rows = {
+            row.batch_id: row for row in session.scalars(
+                select(ReferenceBatch).where(ReferenceBatch.batch_id.in_(identifiers))
+            )
+        }
+        records = [
+            (row, row.source_evidence[KEY])
+            for identifier in identifiers
+            if (row := rows[identifier]).source_evidence.get(KEY) is not None
+        ]
+        if records:
+            evidence = _retirement_evidence(session, [proof for _, proof in records])
+            for row, proof in records:
+                yield row, proof, evidence
+
+
 def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: None):
     """Verify append-only conflict retirement without pretending a calculation ACK."""
     query = select(ReferenceBatch.batch_id).where(
@@ -799,12 +898,8 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
     if stream_ids is not None:
         query = query.where(ReferenceBatch.stream_id.in_(stream_ids))
     result = []
-    for identifier in session.scalars(query):
+    for batch, proof, evidence in _retirement_rows(session, query, check_cancelled):
         check_cancelled()
-        batch = session.get(ReferenceBatch, identifier)
-        proof = batch.source_evidence.get(KEY)
-        if proof is None:
-            continue
 
         def require(ok):
             if not ok:
@@ -824,12 +919,12 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
             proof["new_revision_id"],
         )
         old, new = (
-            session.get(ReferenceRevision, (sid, rid)) for rid in (oldid, newid)
+            evidence.revisions.get((sid, rid)) for rid in (oldid, newid)
         )
-        original = session.get(ReferenceBatch, proof["old_checkpoint_batch_id"])
-        receipt = session.get(ReferenceActivationReceipt, proof["new_receipt_id"])
-        previous = session.get(ReferenceActivationReceipt, proof["old_receipt_id"])
-        seed = session.get(ReferenceBatch, proof["new_seed_batch_id"])
+        original = evidence.batches.get(proof["old_checkpoint_batch_id"])
+        receipt = evidence.receipts.get(proof["new_receipt_id"])
+        previous = evidence.receipts.get(proof["old_receipt_id"])
+        seed = evidence.batches.get(proof["new_seed_batch_id"])
         require(
             old is not None
             and old.status == "invalid"
@@ -888,21 +983,16 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
                 or _aware(receipt.disabled_at) >= _aware(receipt.activated_at)
             )
         )
-        identity = htdy_identity(session.get(ReferenceStream, sid).product)
+        identity = htdy_identity(evidence.streams[sid].product)
         original_cp = adapter_checkpoint_from_json(
             original.checkpoint_text,
             expected_stream=identity,
             expected_strategy_schema=SCHEMA,
         )
-        old_batches = session.scalars(
-            select(ReferenceBatch)
-            .where(
-                ReferenceBatch.stream_id == sid,
-                ReferenceBatch.revision_id == oldid,
-                ReferenceBatch.batch_id != batch.batch_id,
-            )
-            .order_by(ReferenceBatch.batch_id)
-        ).all()
+        old_batches = [
+            row for row in evidence.old_batches[(sid, oldid)]
+            if row.batch_id != batch.batch_id
+        ]
         require(_hash([_row(b) for b in old_batches]) == proof["old_batches_sha256"])
         _verify_proof(
             proof["source_proof"],
@@ -945,14 +1035,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
             )
         )
         opened = original_cp.reference_state.open_trade
-        trades = session.scalars(
-            select(ReferenceTradeRow)
-            .where(
-                ReferenceTradeRow.stream_id == sid,
-                ReferenceTradeRow.revision_id == oldid,
-            )
-            .order_by(ReferenceTradeRow.trade_id, ReferenceTradeRow.valid_from_seq)
-        ).all()
+        trades = evidence.trades[(sid, oldid)]
         originals = []
         appended = [t for t in trades if t.valid_from_seq == batch.seq]
         require(len(appended) == int(opened is not None))
@@ -999,7 +1082,7 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
         require(_hash(retired) == proof["retired_deliveries_sha256"])
         for frozen in retired:
             check_cancelled()
-            row = session.get(ReferenceInboxDelivery, frozen["delivery_id"])
+            row = evidence.deliveries.get(frozen["delivery_id"])
             require(
                 row is not None
                 and row.stream_id == sid
@@ -1007,7 +1090,9 @@ def retired_delivery_ids(session, *, stream_ids=None, check_cancelled=lambda: No
                 and row.generation == previous.generation
                 and row.activation_receipt_id == previous.receipt_id
                 and row.status != "COMPLETED"
-                and _delivery(session, row) == frozen
+                and _delivery_evidence(
+                    row, evidence.inputs.get(row.input_id), evidence.routes[row.input_id]
+                ) == frozen
             )
             result.append(row.delivery_id)
     if len(result) != len(set(result)):

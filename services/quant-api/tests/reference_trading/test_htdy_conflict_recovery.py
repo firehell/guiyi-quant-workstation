@@ -7,7 +7,7 @@ from hashlib import sha256
 import json
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import sessionmaker
 from app.db.base import Base
 from app.reference_trading.htdy_activation import (
@@ -252,7 +252,19 @@ def test_retired_delivery_keeps_original_status_and_hash_and_unblocks_new_genera
     )
     recovery.apply(plan, expected_plan_hash=plan["plan_hash"], now=NOW)
     with factory() as session:
-        assert retired_delivery_ids(session) == (delivery_id,)
+        statements = []
+        engine = session.get_bind()
+
+        def count_statement(_conn, _cursor, statement, _params, _context, _many):
+            statements.append(statement)
+
+        event.listen(engine, "before_cursor_execute", count_statement)
+        try:
+            assert retired_delivery_ids(session) == (delivery_id,)
+        finally:
+            event.remove(engine, "before_cursor_execute", count_statement)
+
+        assert len(statements) <= 20
         assert delivery_id in verified_resolution_ids(session)
         row = session.get(ReferenceInboxDelivery, delivery_id)
         assert row.status == "PENDING" and row.calculation_batch_id is None
