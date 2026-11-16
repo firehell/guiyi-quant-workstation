@@ -22,7 +22,7 @@ from .runtime import (
 from .credentials import CredentialStore
 from .gateway import Gateway
 from .controller import Controller, TERMINAL
-from .market import Market, bind_symbol, execution_input
+from .market import Market, QuoteStale, bind_symbol, execution_input
 from .monitor import projection, blank
 from .maintenance import MaintenanceDisconnect, require_settled, resume_after
 from ..htdy_account_execution import codec, model as m
@@ -230,6 +230,7 @@ def run(config_path, *, inspect=False):
         last_native = None
         last_market = 0
         issues = {}
+        quote_staleness = {}
         mode = "observe"
         day = None
         held = None
@@ -516,6 +517,9 @@ def run(config_path, *, inspect=False):
                                         and pending is None,
                                     )
                                 )
+                            except QuoteStale as error:
+                                issues[candidate.product] = str(error)
+                                quote_staleness[candidate.product] = error.timing
                             except Exception as error:
                                 issues[candidate.product] = (
                                     str(error) if type(error) is ValueError and re.fullmatch(r"TQ_[A-Z0-9_]{1,100}", str(error)) else "TQ_EXECUTION_INPUT_UNAVAILABLE"
@@ -712,6 +716,8 @@ def run(config_path, *, inspect=False):
                         runtime_tag=config["tag"],
                         pid=os.getpid(),
                     )
+                    if quote_staleness:
+                        payload["quote_staleness"] = quote_staleness
                     write_private(monitor_path, payload)
                     last_publish = time.monotonic()
                 # A persisted hold cannot be lifted by merely writing trade to control.
@@ -732,6 +738,8 @@ def run(config_path, *, inspect=False):
                 runtime_tag=config["tag"],
                 pid=os.getpid(),
             )
+            if quote_staleness:
+                payload["quote_staleness"] = quote_staleness
             write_private(monitor_path, payload)
             return 0
         finally:

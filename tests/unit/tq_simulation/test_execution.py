@@ -86,6 +86,71 @@ def fact(at, margin=D("1000"), fee=D("3")):
     )
 
 
+@pytest.mark.parametrize(
+    "quote_age,margin_ms,refresh_quote",
+    [(6, 500, False), (1, 6000, False), (1, 6000, True), (None, 6000, False)],
+)
+def test_execution_quote_staleness_keeps_the_observed_timing(
+    monkeypatch, quote_age, margin_ms, refresh_quote
+):
+    from types import SimpleNamespace
+    from guiyi_quant.tq_simulation import market
+
+    now = T
+
+    first_quote = T - timedelta(seconds=quote_age if quote_age is not None else 1)
+    quote = {
+        "datetime": first_quote.isoformat() if quote_age is not None else "0001-01-01T00:00:00",
+        "price_tick": 1,
+        "volume_multiple": 10,
+        "min_limit_order_volume": 1,
+        "bid_price1": 999,
+        "ask_price1": 1000,
+        "bid_volume1": 1,
+        "ask_volume1": 1,
+        "lower_limit": 1,
+        "upper_limit": 2000,
+    }
+
+    class Gateway:
+        def quote(self, _symbol):
+            return quote
+
+        def margin(self, _symbol, _direction):
+            nonlocal now
+            now += timedelta(milliseconds=margin_ms)
+            if refresh_quote:
+                quote["datetime"] = (now - timedelta(seconds=1)).isoformat()
+            elif quote_age is None:
+                quote["datetime"] = first_quote.isoformat()
+            return D(1000), D(3), {"source": "TQKQ_PRE_INSERT"}
+
+    authority = {"product": "RB", "contract": "RB2701", "session": codec.encode(fact(T).session)}
+    monkeypatch.setattr(market, "datetime", SimpleNamespace(
+        now=lambda tz: now.astimezone(tz), fromisoformat=datetime.fromisoformat,
+    ))
+    monkeypatch.setattr(
+        market, "monotonic_ns", lambda: int((now - T).total_seconds() * 1e9), raising=False
+    )
+    if refresh_quote:
+        result = market.execution_input(Gateway(), authority, "SHFE.rb2701", "BUY", opening=True)
+        assert result.quote.at == now - timedelta(seconds=1)
+        return
+    with pytest.raises(ValueError, match="^TQ_QUOTE_STALE$") as report:
+        market.execution_input(Gateway(), authority, "SHFE.rb2701", "BUY", opening=True)
+    assert report.value.timing == {
+        "product": "RB",
+        "physical_contract": "RB2701",
+        "sdk_symbol": "SHFE.rb2701",
+        "quote_before_margin_at": first_quote.isoformat() if quote_age is not None else None,
+        "margin_started_at": T.isoformat(),
+        "margin_finished_at": now.isoformat(),
+        "margin_elapsed_ms": margin_ms,
+        "quote_checked_at": first_quote.isoformat(),
+        "checked_at": now.isoformat(),
+    }
+
+
 @pytest.mark.parametrize("margin,allowed", [("700000", True), ("700001", False)])
 def test_actual_equity_seventy_percent_boundary_and_one_lot(margin, allowed):
     s = apply(initial(), "signal", signal()).state
