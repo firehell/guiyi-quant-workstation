@@ -1000,6 +1000,13 @@ def reconcile_stopped(host, path):
             }
 
 
+
+def _terminal_lineage(confirmation):
+    _, failed = recovery._resolution_source(Path(confirmation["failed_plan_path"]))
+    require(failed["plan_sha256"] == confirmation["failed_plan_sha256"])
+    return bool({"closed_calendars", "terminal_recovery_lineage"} & failed["audit"].keys())
+
+
 def audit_for_plan(host, source, selected, budget, *, closed_feed=None, terminal_pin=None):
     if terminal_pin is None:
         value = verify_pin(host, selected, closed_feed=closed_feed)
@@ -1047,6 +1054,8 @@ def audit_for_plan(host, source, selected, budget, *, closed_feed=None, terminal
         {k: v for k, v in current.items() if k not in ("window", "controller")}
         == {k: v for k, v in expected.items() if k not in ("window", "controller")}
     )
+    if _terminal_lineage(value):
+        current["terminal_recovery_lineage"] = True
     if closed_feed is not None:
         require(
             current["frontiers_sha256"] == receipt["feed_close"]["frontiers_sha256"]
@@ -1081,7 +1090,9 @@ def freeze_stopped(
     )
     verify_pin(host, selected, closed_feed=closed_feed)
     now = host.now()
-    short_budget = close_feed_only or "disabled_calendars" in value["audit"]
+    short_budget = (
+        close_feed_only or "disabled_calendars" in value["audit"] or _terminal_lineage(value)
+    )
     downtime = 600 if short_budget else recovery.STOPPED_RESUME_BUDGET_SECONDS
     validity = timedelta(minutes=15) if short_budget else recovery.STOPPED_RESUME_VALIDITY
     expires = now + validity

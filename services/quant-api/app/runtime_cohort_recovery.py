@@ -2045,7 +2045,7 @@ def apply_forward_recovery(host, recovery_plan_path):
         terminal_pin = None
         if continuation is not None:
             inherited_effects = read_pin(host, plan)
-        elif {"disabled_calendars", "closed_calendars"} & plan["audit"].keys():
+        elif {"disabled_calendars", "closed_calendars", "terminal_recovery_lineage"} & plan["audit"].keys():
             from app.runtime_stopped_recovery import terminal_evidence_pin
 
             terminal_pin, check_terminal_pin = terminal_evidence_pin(host, plan)
@@ -2307,7 +2307,7 @@ def apply_forward_recovery(host, recovery_plan_path):
             else:
                 step("calendars", lambda: host.forward_calendars(source, budget))
             original_pointer = None
-            if "closed_calendars" in plan["audit"]:
+            if terminal_pin is not None:
                 # step() already ran the full unchanged() readback after calendars.
                 original_pointer = _resolution_source(host.directory / "cohort-release.json")[0]
                 require(sha256(original_pointer).hexdigest() == identity["global_bytes_sha256"],
@@ -4046,7 +4046,7 @@ class ForwardRecoveryHost(CohortHost):
             else tuple(name for name in continuous_services(new) if name != "market-feed")
         )
 
-        def ready_states():
+        def ready_states(*, sampling=False):
             _verification_substep(self, "owner_readiness", before=before)
             states = {name: self._active(new.services[name]) for name in names}
             if not all(states.values()):
@@ -4076,7 +4076,12 @@ class ForwardRecoveryHost(CohortHost):
                 else:
                     reason = None
                     if state.get("ready") is not True:
-                        reason = "service_not_ready"
+                        failed = bool((state.get("proof") or {}).get("failure_code"))
+                        if sampling and not failed and name in {"live", "market-feed"}:
+                            # Polling clears ready briefly. Sample the reference
+                            # frontier now, then require strict readiness at proof time.
+                            continue
+                        reason = "service_poll_failed" if failed else "service_not_ready"
                     elif name in original["effects"]["drain"][
                         "progress"
                     ] and not recovery_progress_reached(
@@ -4144,7 +4149,7 @@ class ForwardRecoveryHost(CohortHost):
 
         while self.monotonic() < end:
             check_budget()
-            states, reason, _service = ready_states()
+            states, reason, _service = ready_states(sampling=feed)
             if reason is not None:
                 sleep(0.2)
                 continue
