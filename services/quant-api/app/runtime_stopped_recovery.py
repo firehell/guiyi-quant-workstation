@@ -959,6 +959,8 @@ def reconcile_stopped(host, path):
                     )
                 )
             )
+            if {"closed_calendars", "terminal_recovery_lineage"} & failed["audit"].keys():
+                audit["terminal_recovery_lineage"] = True
             budget()
             again = _evidence(host, path)
             require((files, attempts, pids, feed_parked, terminal) == again[2:])
@@ -1042,6 +1044,8 @@ def audit_for_plan(host, source, selected, budget, *, closed_feed=None, terminal
     )
     if closed_feed is not None:
         current["feed_state"] = "absent"
+    if value["audit"].get("terminal_recovery_lineage") is True:
+        current["terminal_recovery_lineage"] = True
     # Session phase may naturally change after reconciliation; freeze its fresh authority.
     require(
         {k: v for k, v in current.items() if k not in ("window", "controller")}
@@ -1081,7 +1085,9 @@ def freeze_stopped(
     )
     verify_pin(host, selected, closed_feed=closed_feed)
     now = host.now()
-    short_budget = close_feed_only or "disabled_calendars" in value["audit"]
+    short_budget = close_feed_only or bool(
+        {"disabled_calendars", "terminal_recovery_lineage"} & value["audit"].keys()
+    )
     downtime = 600 if short_budget else recovery.STOPPED_RESUME_BUDGET_SECONDS
     validity = timedelta(minutes=15) if short_budget else recovery.STOPPED_RESUME_VALIDITY
     expires = now + validity
