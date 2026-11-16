@@ -4076,11 +4076,12 @@ class ForwardRecoveryHost(CohortHost):
                 else:
                     reason = None
                     if state.get("ready") is not True:
-                        if sampling and name in {"live", "market-feed"}:
+                        failed = bool((state.get("proof") or {}).get("failure_code"))
+                        if sampling and not failed and name in {"live", "market-feed"}:
                             # Polling clears ready briefly. Sample the reference
                             # frontier now, then require strict readiness at proof time.
                             continue
-                        reason = "service_not_ready"
+                        reason = "service_poll_failed" if failed else "service_not_ready"
                     elif name in original["effects"]["drain"][
                         "progress"
                     ] and not recovery_progress_reached(

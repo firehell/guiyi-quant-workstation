@@ -959,8 +959,6 @@ def reconcile_stopped(host, path):
                     )
                 )
             )
-            if {"closed_calendars", "terminal_recovery_lineage"} & failed["audit"].keys():
-                audit["terminal_recovery_lineage"] = True
             budget()
             again = _evidence(host, path)
             require((files, attempts, pids, feed_parked, terminal) == again[2:])
@@ -1000,6 +998,13 @@ def reconcile_stopped(host, path):
                 "original_attempt_preserved": True,
                 "recovery_started": False,
             }
+
+
+
+def _terminal_lineage(confirmation):
+    _, failed = recovery._resolution_source(Path(confirmation["failed_plan_path"]))
+    require(failed["plan_sha256"] == confirmation["failed_plan_sha256"])
+    return bool({"closed_calendars", "terminal_recovery_lineage"} & failed["audit"].keys())
 
 
 def audit_for_plan(host, source, selected, budget, *, closed_feed=None, terminal_pin=None):
@@ -1044,13 +1049,13 @@ def audit_for_plan(host, source, selected, budget, *, closed_feed=None, terminal
     )
     if closed_feed is not None:
         current["feed_state"] = "absent"
-    if value["audit"].get("terminal_recovery_lineage") is True:
-        current["terminal_recovery_lineage"] = True
     # Session phase may naturally change after reconciliation; freeze its fresh authority.
     require(
         {k: v for k, v in current.items() if k not in ("window", "controller")}
         == {k: v for k, v in expected.items() if k not in ("window", "controller")}
     )
+    if _terminal_lineage(value):
+        current["terminal_recovery_lineage"] = True
     if closed_feed is not None:
         require(
             current["frontiers_sha256"] == receipt["feed_close"]["frontiers_sha256"]
@@ -1085,8 +1090,8 @@ def freeze_stopped(
     )
     verify_pin(host, selected, closed_feed=closed_feed)
     now = host.now()
-    short_budget = close_feed_only or bool(
-        {"disabled_calendars", "terminal_recovery_lineage"} & value["audit"].keys()
+    short_budget = (
+        close_feed_only or "disabled_calendars" in value["audit"] or _terminal_lineage(value)
     )
     downtime = 600 if short_budget else recovery.STOPPED_RESUME_BUDGET_SECONDS
     validity = timedelta(minutes=15) if short_budget else recovery.STOPPED_RESUME_VALIDITY

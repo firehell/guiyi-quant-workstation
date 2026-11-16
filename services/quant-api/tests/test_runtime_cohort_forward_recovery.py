@@ -2657,3 +2657,24 @@ def test_feed_poll_allows_sampling_but_requires_final_ready_owner(tmp_path, monk
     proof = current._await(source, audit, lambda: None, feed=True)
     assert feed_reads == [0, 1, 2, 2]
     assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+
+
+def test_feed_poll_failure_does_not_authorize_receiving_sample(tmp_path, monkeypatch):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    active = current._active
+    feed_reads = []
+
+    def active_owner(binding):
+        state = active(binding)
+        if binding.service == "market-feed":
+            feed_reads.append(len(samples))
+            if len(feed_reads) <= 2:
+                state.update(ready=False, proof={"failure_code": "FEED_POLL_FAILED"})
+        return state
+
+    current._active = active_owner
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert feed_reads == [0, 0, 0, 1, 2, 2]
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
