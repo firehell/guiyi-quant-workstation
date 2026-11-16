@@ -941,3 +941,151 @@ def test_continue_from_intake_checkpoint(tmp_path, monkeypatch, case):
     assert host.calls == ["feed_cancel", "feed_start"]
     assert state_path.read_bytes() == original
     recovery._no_unresolved_recovery(host)
+
+
+@pytest.mark.parametrize("tamper", (None, "receipt", "effects"))
+def test_terminal_timeout_with_receipt_can_confirm_new_parked_frontier(
+    tmp_path, monkeypatch, tamper,
+):
+    from app import runtime_stopped_recovery as stopped
+
+    host, path, failed, parked, closed = failed_after_feed(
+        tmp_path, monkeypatch, calendars=True, original=True
+    )
+    first = stopped.reconcile_stopped(host, path)["confirmation"]
+    source = failed["source"]["plan_path"]
+    close = recovery.freeze_forward_recovery(
+        host, source, stopped_confirmation=first["path"], close_feed_only=True
+    )
+    close_path = tmp_path / "first-close.json"
+    _write(close_path, close)
+    recovery.apply_forward_recovery(host, close_path)
+    plan = recovery.freeze_forward_recovery(
+        host, source, stopped_confirmation=first["path"], feed_close_plan=close_path
+    )
+    plan_path = tmp_path / "terminal.json"
+    _write(plan_path, plan)
+    complete_stopped_outputs(host)
+    elapsed = [0]
+    host.monotonic = lambda: elapsed[0]
+
+    def write(path, value):
+        _write(path, value)
+        if value.get("phase") == "recovered":
+            elapsed[0] = plan["downtime_seconds"]
+
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery, "_write", write)
+        with pytest.raises(ValueError, match="OUTCOME_UNKNOWN"):
+            recovery.apply_forward_recovery(host, plan_path)
+
+    folder = host.directory / "cohort-forward-recoveries" / plan["plan_sha256"]
+    state_path = folder / "state.json"
+    receipt_path = folder / "receipt.json"
+    state = json.loads(state_path.read_text())
+    assert state["failed_stage"] == "recovered"
+    assert state["error_code"] == "COHORT_FORWARD_DEADLINE_EXCEEDED"
+    assert closed[0]
+    closed[0] = False
+    audit = host.audit_stopped
+    calendars = dict.fromkeys(recovery.CALENDARS, True)
+
+    def terminal_audit(*args, terminal=False, **kwargs):
+        result = audit(*args, **kwargs)
+        if terminal:
+            result["disabled_calendars"] = calendars
+        return result
+
+    host.audit_stopped = terminal_audit
+    if tamper:
+        if tamper == "receipt":
+            receipt_path.write_bytes(receipt_path.read_bytes() + b" ")
+        else:
+            state["effects"].pop("calendars")
+            _write(state_path, state)
+        with pytest.raises(ValueError, match="COHORT_STOPPED_FRONTIER_UNPROVEN"):
+            stopped.reconcile_stopped(host, plan_path)
+        return
+
+    original = state_path.read_bytes(), receipt_path.read_bytes()
+    selected = stopped.reconcile_stopped(host, plan_path)["confirmation"]
+    confirmation = stopped.read_confirmation(host, selected)
+    assert str(receipt_path) in confirmation["files"]
+    assert confirmation["audit"]["disabled_calendars"] == calendars
+
+    def close_calendars(_host, _source, _audit, _budget, record):
+        for name in calendars:
+            record(name)
+        return calendars
+
+    monkeypatch.setattr(stopped, "close_disabled_calendars", close_calendars)
+    next_close = recovery.freeze_forward_recovery(
+        host, source, stopped_confirmation=selected["path"], close_feed_only=True
+    )
+    next_close_path = tmp_path / "second-close.json"
+    _write(next_close_path, next_close)
+    recovery.apply_forward_recovery(host, next_close_path)
+    resumed = recovery.freeze_forward_recovery(
+        host, source, stopped_confirmation=selected["path"], feed_close_plan=next_close_path
+    )
+    resumed_path = tmp_path / "resumed.json"
+    _write(resumed_path, resumed)
+    assert recovery.apply_forward_recovery(host, resumed_path)["status"] == "recovered"
+    recovery._no_unresolved_recovery(host)
+    assert (state_path.read_bytes(), receipt_path.read_bytes()) == original
+
+
+@pytest.mark.parametrize("drift", ("owners", "calendar", "budget", "second_bootout"))
+def test_terminal_calendar_close_stops_on_drift_or_uncertain_result(
+    tmp_path, monkeypatch, drift,
+):
+    from contextlib import nullcontext
+    from app import runtime_stopped_recovery as stopped
+    from tests.test_runtime_cohort_forward_recovery import fixture
+
+    host, source, _, _, _, frozen = fixture(tmp_path)
+    calendar_state = dict.fromkeys(recovery.CALENDARS, True)
+    audit = {
+        "disabled_calendars": dict(calendar_state),
+        "new_protected": frozen["new_protected"],
+        "installed_sha256": recovery.digest({"installed": "matched"}),
+        "owners": {"fixed": True},
+        "controls": {"drain": "exact"},
+        "controller": host._controller(),
+    }
+    host._resume_owner_guards = lambda: nullcontext(lambda: None)
+    host._fixed = lambda *_: {"installed": "matched"}
+    host._parked_owners = lambda *_, **_kw: {"fixed": drift != "owners"}
+    host._controls = lambda *_: {"drain": "exact"}
+    bindings = recovery.registry(source["new"]).services
+    names = {f"gui/{stopped.os.getuid()}/{bindings[n].label}": n for n in recovery.CALENDARS}
+    calls, intents = [], []
+
+    def launch(command, label):
+        assert command == "bootout"
+        name = names[label]
+        assert intents[-1][-1] == name
+        calls.append(name)
+        if drift == "second_bootout" and len(calls) == 2:
+            raise ValueError("unknown bootout outcome")
+        calendar_state[name] = False
+
+    def record(prefix):
+        intents.append(prefix)
+        if drift == "calendar":
+            calendar_state[prefix[-1]] = False
+
+    def budget():
+        if drift == "budget" and intents:
+            raise ValueError("deadline")
+
+    host.launch = launch
+    host.definition_absent = lambda binding: not calendar_state[binding.service]
+    monkeypatch.setattr(stopped, "disabled_calendars", lambda *_: dict(calendar_state))
+    with pytest.raises(ValueError):
+        stopped.close_disabled_calendars(host, source, audit, budget, record)
+    if drift == "second_bootout":
+        assert calls == list(recovery.CALENDARS[:2])
+        assert intents[-1] == calls
+    else:
+        assert not calls

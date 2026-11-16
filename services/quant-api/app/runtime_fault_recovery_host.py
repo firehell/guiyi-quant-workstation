@@ -157,7 +157,7 @@ class FaultRecoveryHost:
         )
         return fields.get("pid")
 
-    def protected(self, old):
+    def protected(self, old, *, retired_candidate_plists=None):
         from app.db.session import SessionLocal
         from app.alerts.models import AlertRule
         from app.notifications.newow import NewowNotificationPolicy
@@ -252,9 +252,22 @@ class FaultRecoveryHost:
             for path in self.directory.glob(pattern):
                 files[str(path)] = sha256(self.bytes(path)).hexdigest()
         for item in old.services.values():
-            env = plistlib.loads(self.bytes(self.path(item))).get(
-                "EnvironmentVariables", {}
-            )
+            snapshot = (retired_candidate_plists or {}).get(item.service)
+            if snapshot is None:
+                payload = plistlib.loads(self.bytes(self.path(item)))
+            else:
+                require(
+                    item.launchd_label is not None
+                    and not os.path.lexists(self.path(item))
+                    and self.definition_absent(item),
+                    "FAULT_RECOVERY_RETIRED_CANDIDATE_PRESENT",
+                )
+                raw = bytes.fromhex(snapshot["plist_hex"])
+                require(sha256(raw).hexdigest() == snapshot["sha256"],
+                        "FAULT_RECOVERY_RETIRED_CANDIDATE_INVALID")
+                payload = plistlib.loads(raw)
+                self.verify_plist(item, payload)
+            env = payload.get("EnvironmentVariables", {})
             private_config = env.get("GUIYI_ALERT_NOTIFICATION_CONFIG_PATH")
             if private_config:
                 files[private_config] = sha256(

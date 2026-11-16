@@ -2042,8 +2042,13 @@ def apply_forward_recovery(host, recovery_plan_path):
                 )[0] == original_close,
                 "COHORT_FORWARD_FEED_CLOSE_UNPROVEN",
             )
+        terminal_pin = None
         if continuation is not None:
             inherited_effects = read_pin(host, plan)
+        elif {"disabled_calendars", "closed_calendars"} & plan["audit"].keys():
+            from app.runtime_stopped_recovery import terminal_evidence_pin
+
+            terminal_pin, check_terminal_pin = terminal_evidence_pin(host, plan)
         else:
             _no_unresolved_recovery(
                 host, predecessor, stopped=plan.get("stopped_confirmation"),
@@ -2067,7 +2072,9 @@ def apply_forward_recovery(host, recovery_plan_path):
 
         def unchanged():
             _validate(plan, host.now())
-            if plan.get("mode") == "reconciled_stopped":
+            if terminal_pin is not None:
+                check_terminal_pin()
+            elif plan.get("mode") == "reconciled_stopped":
                 from app.runtime_stopped_recovery import verify_pin
 
                 verify_pin(
@@ -2148,7 +2155,7 @@ def apply_forward_recovery(host, recovery_plan_path):
 
                 audit = audit_for_plan(
                     host, source, plan["stopped_confirmation"], budget,
-                    closed_feed=plan.get("closed_feed"),
+                    closed_feed=plan.get("closed_feed"), terminal_pin=terminal_pin,
                 )
             else:
                 audit = host.audit_forward(source, budget, **kwargs)
@@ -2203,6 +2210,20 @@ def apply_forward_recovery(host, recovery_plan_path):
                 return result
 
             if plan.get("stop_after") == "feed_close":
+                calendars_closed = None
+                if "disabled_calendars" in plan["audit"]:
+                    from app.runtime_stopped_recovery import close_disabled_calendars
+
+                    def record_calendar(names):
+                        journal["effects"]["calendars_closed"] = {"bootout_requested": names}
+                        persist("calendar_stop_intent")
+
+                    calendars_closed = step(
+                        "calendars_closed",
+                        lambda: close_disabled_calendars(
+                            host, source, plan["audit"], budget, record_calendar
+                        ),
+                    )
 
                 def record_feed_stop(value):
                     journal["effects"]["feed_stop"] = value
@@ -2227,6 +2248,8 @@ def apply_forward_recovery(host, recovery_plan_path):
                     "original_attempt_preserved": True,
                     "recovery_started": False,
                 }
+                if calendars_closed is not None:
+                    receipt["calendars_closed"] = calendars_closed
                 journal["receipt_sha256"] = _exclusive_json(
                     attempt / "receipt.json", receipt
                 )
@@ -2283,7 +2306,14 @@ def apply_forward_recovery(host, recovery_plan_path):
                 ))
             else:
                 step("calendars", lambda: host.forward_calendars(source, budget))
-            unchanged()
+            original_pointer = None
+            if "closed_calendars" in plan["audit"]:
+                # step() already ran the full unchanged() readback after calendars.
+                original_pointer = _resolution_source(host.directory / "cohort-release.json")[0]
+                require(sha256(original_pointer).hexdigest() == identity["global_bytes_sha256"],
+                        "COHORT_FORWARD_SOURCE_DRIFT")
+            else:
+                unchanged()
             if continuation:
                 require(_valid_continuation_actions(plan, journal["actions"]),
                         "COHORT_FORWARD_RECOVERY_READBACK_REQUIRED")
@@ -2331,7 +2361,21 @@ def apply_forward_recovery(host, recovery_plan_path):
             receipt_sha = _exclusive_json(attempt / "receipt.json", receipt)
             journal["receipt_sha256"] = receipt_sha
             persist("recovered")
-            unchanged()
+            if original_pointer is None:
+                unchanged()
+            else:
+                check_terminal_pin()
+                require(
+                    _resolution_source(host.directory / "cohort-release.json")[0]
+                    == original_pointer
+                    and _source(
+                        host, plan["source"]["plan_path"], allow_original=original_source,
+                    )[2] == identity
+                    and host.bindings() == registry(plan["new"])
+                    and host._controller() == plan["audit"]["controller"],
+                    "COHORT_FORWARD_SOURCE_DRIFT",
+                )
+                budget()
             # This is a new recovery result. The original attempt is never rewritten.
             result = {
                 "schema_version": 1,
@@ -2446,12 +2490,12 @@ class ForwardRecoveryHost(CohortHost):
 
     monotonic = staticmethod(monotonic)
 
-    def audit_stopped(self, source, budget, *, feed_pids, feed_parked=False, retained_backlog=False):
+    def audit_stopped(self, source, budget, *, feed_pids, feed_parked=False, retained_backlog=False, terminal=False):
         from app.runtime_stopped_recovery import observe_stopped
 
         return observe_stopped(
             self, source, budget, feed_pids=feed_pids,
-            feed_parked=feed_parked, retained_backlog=retained_backlog,
+            feed_parked=feed_parked, retained_backlog=retained_backlog, terminal=terminal,
         )
 
     def recovery_window(self, *, with_valid_until=False):
@@ -2544,7 +2588,16 @@ class ForwardRecoveryHost(CohortHost):
     def _protected_preimages(self, source):
         """Retain old evidence; current release state has its own exact preimage."""
         old, new = registry(source["old"]), registry(source["new"])
-        previous = self.protected(old)
+        retired_candidates = {
+            name: source["installed"][name]
+            for name, binding in old.services.items()
+            if binding.launchd_label is not None
+            and not os.path.lexists(self.path(binding))
+        }
+        previous = (
+            self.protected(old, retired_candidate_plists=retired_candidates)
+            if retired_candidates else self.protected(old)
+        )
         require(previous == source["protected"], "COHORT_FORWARD_PROTECTED_DRIFT")
         current = self.protected(new)
         require(
