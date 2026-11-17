@@ -141,6 +141,21 @@ def preflight_ready(controller, snapshot, issues, mappings, products, now):
     )
 
 
+def preflight_fingerprint(path, config):
+    try:
+        proof = read_private(path, limit=64 * 1024)
+        if (
+            proof["config"] == config
+            and proof["ready_for_start"] is True
+            and 0 <= (datetime.now(UTC) - datetime.fromisoformat(proof["at"])).total_seconds() <= 300
+            and re.fullmatch(r"[0-9a-f]{64}", proof["journal_fingerprint"])
+        ):
+            return proof["journal_fingerprint"]
+    except (OSError, KeyError, TypeError, ValueError):
+        pass
+    return None
+
+
 def recover_blocked_products(controller, gateway, packets):
     state = controller.store.current()
     if state.phase != "READY" or gateway.reconnection_required:
@@ -213,6 +228,7 @@ def run(config_path, *, inspect=False):
     accounts = private_folder(base / "accounts")
     folder = private_folder(accounts / config["account_id"])
     control_path = base / "control.json"
+    preflight_path = base / "preflight.json"
     monitor_path = base / "monitor.json"
     stopped = False
 
@@ -240,8 +256,10 @@ def run(config_path, *, inspect=False):
         try:
             helper_environment = dict(os.environ)
             market = Market(root, root / "services/quant-api/.venv/bin/python", helper_environment)
-            # Full journal replay may be slow; establish no SDK connection until it finishes.
-            controller = Controller(folder, config["account_id"], market.products, None)
+            controller = Controller(
+                folder, config["account_id"], market.products, None,
+                verified_fingerprint=None if inspect else preflight_fingerprint(preflight_path, config),
+            )
             with (
                 open(os.devnull, "w") as sink,
                 contextlib.redirect_stdout(sink),
@@ -434,11 +452,16 @@ def run(config_path, *, inspect=False):
                             and not (base / "hold.json").exists(),
                         }
                         write_private(
-                            base / "preflight.json",
+                            preflight_path,
                             {
                                 **report,
                                 "at": datetime.now(UTC).isoformat(),
                                 "config": config,
+                                "journal_fingerprint": (
+                                    controller.store.fingerprint()
+                                    if report["ready_for_start"] and controller.store is not None
+                                    else None
+                                ),
                             },
                         )
                         print(json.dumps(report), flush=True)

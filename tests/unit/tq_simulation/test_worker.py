@@ -3,6 +3,7 @@
 from datetime import datetime, UTC, timedelta
 from types import SimpleNamespace
 import logging
+import pytest
 from guiyi_quant.tq_simulation import worker
 from guiyi_quant.tq_simulation.runtime import write_private, read_private
 from guiyi_quant.tq_simulation.controller import Controller
@@ -145,6 +146,41 @@ def test_recovery_discards_same_poll_signals_and_waits_for_next_natural_bar(
     assert c.store.current().signals == ()
     assert calls == []
     c.close()
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_start_reuses_probe_replay_only_for_unchanged_ledger(monkeypatch, tmp_path, changed):
+    import sqlite3
+
+    from guiyi_quant.htdy_account_execution.store import LocalStore, StoreError
+
+    base, calls = host(monkeypatch, tmp_path, restart=True)
+    replayed = []
+    replay = LocalStore.replay
+
+    def record_replay(store):
+        replayed.append(store.path)
+        return replay(store)
+
+    monkeypatch.setattr(LocalStore, "replay", record_replay)
+    assert worker.run(base / "config.json", inspect=True) == 0
+    assert read_private(base / "preflight.json")["ready_for_start"] is True
+    if changed:
+        with sqlite3.connect(replayed[0]) as db:
+            trigger = db.execute(
+                "SELECT sql FROM sqlite_schema WHERE name='immutable_commands_update'"
+            ).fetchone()[0]
+            assert db.execute("SELECT MAX(sequence) FROM commands").fetchone()[0] > 1
+            db.execute("DROP TRIGGER immutable_commands_update")
+            db.execute("UPDATE commands SET command_hash='corrupted' WHERE sequence=1")
+            db.execute(trigger)
+        monkeypatch.setattr(worker, "Gateway", lambda *_: pytest.fail("connected with corrupt ledger"))
+        with pytest.raises(StoreError, match="LOCAL_STORE_INVALID"):
+            worker.run(base / "config.json")
+    else:
+        assert worker.run(base / "config.json") == 0
+    assert len(replayed) == (2 if changed else 1)
+    assert calls == []
 
 
 def test_current_mapping_coverage_does_not_count_historical_symbols(
@@ -402,9 +438,10 @@ def test_journal_replay_finishes_before_sdk_connection(monkeypatch, tmp_path):
     base, _ = host(monkeypatch, tmp_path, restart=True)
     actual_controller, actual_gateway = worker.Controller, worker.Gateway
     events = []
-    def replay(*args):
+    def replay(*args, **kwargs):
         assert args[-1] is None
-        result = actual_controller(*args)
+        assert kwargs["verified_fingerprint"] is None
+        result = actual_controller(*args, **kwargs)
         events.append('replayed')
         return result
     def connect(*args):
