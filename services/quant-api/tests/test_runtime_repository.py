@@ -64,6 +64,21 @@ def test_shared_clone_keeps_exact_tag_and_canonical_repository(layout):
     assert retirement._common(root) == retirement._common(clone)
 
 
+def test_cohort_layout_combines_shared_release_and_registered_history(layout, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from app.runtime_cohort import _release_layout, CohortError
+
+    root, clone = layout
+    managed = tmp_path / "managed"
+    git(root, "worktree", "add", "--detach", str(managed), "v1.2.3")
+    previous = SimpleNamespace(services={"api": SimpleNamespace(root=str(managed))})
+    monkeypatch.setattr("app.core.env.PROJECT_ROOT", clone)
+    _release_layout(clone, "v1.2.3", previous, historical=True)
+    git(clone, "remote", "set-url", "origin", "git@example.invalid:foreign/project.git")
+    with pytest.raises(CohortError, match="COHORT_RELEASE_ROOT_INVALID"):
+        _release_layout(clone, "v1.2.3", previous, historical=True)
+
+
 @pytest.mark.parametrize(
     "change",
     [
