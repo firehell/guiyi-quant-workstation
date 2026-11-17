@@ -9,6 +9,7 @@ from dataclasses import dataclass, replace
 from hashlib import sha256
 import json
 from typing import Any
+from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 
 from app.market_data.aggregation import aggregate_from_1m, bucket_window_for_bar
 from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
@@ -696,6 +697,11 @@ class DurableLiveMarketService(LiveMarketService):
                     raise ValueError('OBSERVATION_CLEANUP_UNPROVEN')
                 if self._provider is source and not self._retire_closed_provider():
                     raise ValueError('OBSERVATION_CLEANUP_UNPROVEN')
+        except (RedisConnectionError, RedisTimeoutError):
+            # No retirement or commit has started. Recheck the same durable
+            # evidence on the next poll after a transient read failure.
+            self._mark_redis_unavailable(now, None)
+            return 'LIVE_REDIS_UNAVAILABLE'
         except Exception:
             self._halted = 'OBSERVATION_CLEANUP_UNPROVEN'
             return self._reject(self._halted)
