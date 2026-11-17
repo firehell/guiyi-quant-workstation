@@ -96,13 +96,9 @@ def _release_layout(candidate_root, tag, previous, *, historical=False):
         return  # Preserve the historical layout accepted by existing plans.
     try:
         from app.core.env import PROJECT_ROOT
-        from app.runtime_bindings import _git
+        from app.runtime_repository import repository_common_dir
 
-        common = Path(
-            _git(
-                PROJECT_ROOT, "rev-parse", "--path-format=absolute", "--git-common-dir"
-            )
-        ).resolve(strict=True)
+        common = repository_common_dir(PROJECT_ROOT)
         for root in roots:
             require(
                 root.is_absolute() and root == root.resolve(),
@@ -110,15 +106,7 @@ def _release_layout(candidate_root, tag, previous, *, historical=False):
             )
             if root.exists():
                 require(
-                    Path(
-                        _git(
-                            root,
-                            "rev-parse",
-                            "--path-format=absolute",
-                            "--git-common-dir",
-                        )
-                    ).resolve(strict=True)
-                    == common,
+                    repository_common_dir(root) == common,
                     "COHORT_RELEASE_ROOT_INVALID",
                 )
             else:

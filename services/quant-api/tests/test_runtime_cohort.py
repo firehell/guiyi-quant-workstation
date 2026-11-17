@@ -156,7 +156,7 @@ def plan(h):
 def test_managed_release_roots_use_same_repository_without_naming_authority(
     tmp_path, monkeypatch, foreign
 ):
-    from app import runtime_bindings, runtime_cohort
+    from app import runtime_bindings, runtime_cohort, runtime_repository
 
     h = Host(tmp_path)
     managed = tmp_path / "managed" / "guiyi-quant-workstation"
@@ -174,6 +174,7 @@ def test_managed_release_roots_use_same_repository_without_naming_authority(
         return str(other if bad else common)
 
     monkeypatch.setattr(runtime_bindings, "_git", git)
+    monkeypatch.setattr(runtime_repository, "_git", git)
     if foreign:
         with pytest.raises(CohortError, match="COHORT_RELEASE_ROOT_INVALID"):
             freeze_cohort(h, candidate_root=managed, tag="v1.16.5", commit="e" * 40)
