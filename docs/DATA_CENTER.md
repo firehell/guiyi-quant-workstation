@@ -304,6 +304,12 @@ prefix；最终审计、比较器证据失败、超时或保存失败
 
 ### 当日 Live 缺口恢复
 
+Durable Live 前置清理检查中的 Redis 连接或超时读取失败返回
+`LIVE_REDIS_UNAVAILABLE`，后续 poll 重新读取同一份原始身份与游标证明。
+快照消失且存在未结输入、退役结果未知或已进入提交未知的保护继续保持；
+不可通过网络恢复自动清除这类保护。运行 owner 保留固定清理、跨日及游标错误码，
+未知文本仍脱敏。
+
 `GUIYI_LIVE_RECOVERY_ENABLED` 默认关闭，只有精确值 `1` 才组合恢复 worker。启用前必须核实同一
 Runtime root/version 下 Live 与 Alert 同时具备恢复水位及共享锁协议；单纯订阅任务不包含
 补取数据或恢复 Redis 写入。关闭时不实例化恢复 adapter/worker；只读诊断不创建锁或调用 provider。

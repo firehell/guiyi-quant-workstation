@@ -14,6 +14,51 @@ from tests.data_foundation.test_observation_stream import isolated_redis as redi
 isolated_redis = redis_fixture
 
 
+@pytest.mark.parametrize('read_method', ['registered_day', 'subscriptions'])
+@pytest.mark.parametrize('error_type', ['ConnectionError', 'TimeoutError'])
+def test_transient_initial_read_failure_rechecks_without_latching(
+    isolated_redis, monkeypatch, read_method, error_type,
+):
+    import redis.exceptions
+
+    service, source, completed, store, bar = build(isolated_redis, phase=MarketPhase.CLOSED)
+    target = source if read_method == 'registered_day' else store
+    original = getattr(target, read_method)
+    reads = 0
+
+    def temporarily_unavailable(*args):
+        nonlocal reads
+        reads += 1
+        if reads <= 2:
+            raise getattr(redis.exceptions, error_type)('unavailable')
+        return original(*args)
+
+    monkeypatch.setattr(target, read_method, temporarily_unavailable)
+    now = bar.bar_end - timedelta(minutes=10)
+    for offset in (0, 1):
+        assert service.poll(now + timedelta(seconds=offset)) == 'LIVE_REDIS_UNAVAILABLE'
+        assert service._halted is None
+        assert completed.tail(bar.trading_day) == '0-0'
+        assert source.cursor('live', bar.trading_day) == '0-0'
+    assert service.poll(now + timedelta(seconds=2)) is None
+    assert store.heartbeat()['available'] is True
+
+
+def test_missing_subscription_with_unconsumed_input_remains_latched(isolated_redis):
+    service, source, completed, store, bar = build(isolated_redis, phase=MarketPhase.CLOSED)
+    data = _bar_payload(bar, contract='RB2505')
+    data['subscription_snapshot'] = {'rb': 'RB2505'}
+    source.append(ObservationEnvelope('raw', bar.trading_day, bar.bar_end,
+                                     'live:bar:rb:1m', data, True))
+    isolated_redis.delete(store._subscription_key(bar.trading_day))
+    now = bar.bar_end + timedelta(hours=3)
+    assert service.poll(now) == 'OBSERVATION_CLEANUP_UNPROVEN'
+    store.set_subscriptions(bar.trading_day, {'rb': 'RB2505'})
+    assert service.poll(now + timedelta(seconds=1)) == 'OBSERVATION_CLEANUP_UNPROVEN'
+    assert source.cursor('live', bar.trading_day) == '0-0'
+    assert completed.tail(bar.trading_day) == '0-0'
+
+
 def build(redis, *, phase, subscription=True):
     bar = _bar(1)
     day = bar.trading_day
