@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import SubingPortfolioWorkbench from '@/components/subing/SubingPortfolioWorkbench.vue'
 import SubingContinuousModel from '@/components/subing/SubingContinuousModel.vue'
 import SubingReplayChart from '@/components/subing/SubingReplayChart.vue'
 import '@/styles/marketHome.css'
@@ -36,11 +37,12 @@ const versions:Record<string,string>={baseline:'原基线',previous_candidate:'�
 </script>
 <template>
 <div class="market-dashboard-page subing-workbench">
-  <MarketNavigation active-tab="subing-decision" @market="home('market')" @messages="home('messages')" @simulation="home('simulation')"><template #actions><span class="boundary">{{view==='continuous'?'开发持续观察 · 研究候选':'历史回放 · 研究候选'}}</span></template></MarketNavigation>
+  <MarketNavigation active-tab="subing-decision" @market="home('market')" @messages="home('messages')" @simulation="home('simulation')"><template #actions><span class="boundary">{{(view==='continuous'||view==='legacy-model')?'开发持续观察 · 研究候选':'历史回放 · 研究候选'}}</span></template></MarketNavigation>
   <main>
-    <nav class="mode-nav" aria-label="苏冰数据模式"><button :aria-pressed="view==='continuous'" @click="pause();view='continuous'">持续模型</button><button :aria-pressed="view==='history'" @click="view='history'">历史回放</button></nav>
-    <SubingContinuousModel v-if="view==='continuous'"/>
-    <div v-show="view==='history'">
+    <nav class="mode-nav" aria-label="苏冰数据模式"><button :aria-pressed="view==='continuous'" @click="pause();view='continuous'">持续模型</button><button :aria-pressed="view==='history'||view==='legacy-history'" @click="view='history'">历史回放</button><button :aria-pressed="view==='legacy-model'" @click="pause();view='legacy-model'">焦煤独立模型</button></nav>
+    <SubingPortfolioWorkbench v-if="view==='continuous'||view==='history'" :mode="view==='continuous'?'status':'history'" :legacy="view==='history'" @open-legacy="view='legacy-history'"/>
+    <SubingContinuousModel v-if="view==='legacy-model'"/>
+    <div v-show="view==='legacy-history'">
     <header class="page-heading"><div><h1>苏冰决策</h1><span>焦煤 · 独立模型账户</span></div><label>历史窗口 <select v-model="run" aria-label="历史窗口" @change="select"><option v-for="r in runs" :key="r.id" :value="r.id">{{r.contract}}　{{r.since}} — {{r.through}}</option></select></label></header>
     <div v-if="error" role="alert" class="feedback">{{error}} <button @click="!run?loadRuns():overview?seek():select()">重试</button></div>
     <p v-if="!overview&&loading" role="status" class="feedback">正在加载历史回放…</p>

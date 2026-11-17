@@ -36,6 +36,25 @@ POLICY = MappingProxyType(
 )
 
 
+PORTFOLIO_PRODUCTS = tuple("jm lc rb sa fg ma ec v pr ta ur sh sc cj".split())
+EXPANDED_PORTFOLIO_PRODUCTS = (*PORTFOLIO_PRODUCTS, "oi", "i")
+PORTFOLIO_POLICY = MappingProxyType({
+    **POLICY,
+    "version": "subing_portfolio_one_lot_v1",
+    "trade_loss_budget": "5000",
+    "daily_loss_budget": "20000",
+    "margin_fraction": "0.70",
+})
+
+
+def portfolio_policy(products):
+    if products == PORTFOLIO_PRODUCTS:
+        return dict(PORTFOLIO_POLICY)
+    if products == EXPANDED_PORTFOLIO_PRODUCTS:
+        return {**PORTFOLIO_POLICY, "version": "subing_portfolio_one_lot_v2", "products": list(products)}
+    raise ValueError("PORTFOLIO_SCOPE_INVALID")
+
+
 def planned_loss(entry, stop, side, facts, slippage_ticks):
     """A stop-trigger estimate, not a maximum guaranteed execution loss.
 
@@ -61,8 +80,14 @@ def planned_loss(entry, stop, side, facts, slippage_ticks):
 
 
 def build_engine(
-    executions, schedule, *, structures, execution_model="theoretical_open"
+    executions, schedule, *, structures, execution_model="theoretical_open", portfolio=False,
+    portfolio_products=PORTFOLIO_PRODUCTS,
 ):
+    policy = portfolio_policy(portfolio_products) if portfolio else POLICY
+    version = policy["version"]
+    products = portfolio_products if portfolio else ("jm",)
+    if portfolio and execution_model != "completed_close":
+        raise ValueError("PORTFOLIO_COMPLETED_CLOSE_REQUIRED")
     if execution_model not in ("theoretical_open", "completed_close"):
         raise ValueError("ONE_LOT_EXECUTION_MODEL_INVALID")
     bars = (
@@ -71,7 +96,7 @@ def build_engine(
         else {x.bar.bar_end: x for x in executions}
     )
     contracts = {x.bar.physical_contract for x in bars.values()}
-    if not bars or len(contracts) != 1 or not next(iter(contracts)).startswith("JM"):
+    if not bars or len(contracts) != 1 or next(iter(contracts))[:-4].lower() not in products:
         raise ValueError("ONE_LOT_JM_ONLY")
     if not isinstance(structures, dict) or set(structures) != {
         at.isoformat() for at in bars
@@ -83,22 +108,25 @@ def build_engine(
     context = _digest(
         {
             "base_context": base_context,
-            "policy": dict(POLICY),
+            "policy": dict(policy),
             "execution_model": execution_model,
         }
     )
 
     class Candidate(BaseCandidate):
+        supported_products = tuple(p.upper() for p in products)
+        cross_product_regime = portfolio
+
         def __init__(self, contract, run_id, **kwargs):
             if (
-                not contract.startswith("JM")
+                contract[:-4].lower() not in products
                 or kwargs.get("research_profile") is not None
                 or kwargs.get("risk_research_profile") is not None
                 or kwargs.get("regime_research_profile") != REGIME_PROFILE
             ):
                 raise ValueError("ONE_LOT_PROFILE_COMBINATION_INVALID")
             super().__init__(contract, run_id, **kwargs)
-            self.version = VERSION
+            self.version = version
             self.slippage_ticks = 1
             self.trade_entry = None
             self.loss_streak = 0
@@ -110,7 +138,7 @@ def build_engine(
         def state(self):
             return dict(
                 super().state(),
-                one_lot_policy=dict(POLICY),
+                one_lot_policy=dict(policy),
                 loss_streak=self.loss_streak,
                 loss_pause_day=self.loss_pause_day,
                 loss_pause_at=self.loss_pause_at,
@@ -145,7 +173,7 @@ def build_engine(
                     if (
                         self.layers
                         or risk is None
-                        or risk > D(POLICY["trade_loss_budget"])
+                        or risk > D(policy["trade_loss_budget"])
                     ):
                         raise ValueError("ONE_LOT_FILL_RISK_INVALID")
             actions = super()._ack(event, at)
@@ -180,7 +208,7 @@ def build_engine(
                 self.closed_trade_count += 1
                 self.loss_streak = self.loss_streak + 1 if net < 0 else 0
                 self.trade_entry = None
-                if self.loss_streak >= POLICY["loss_streak_trigger"]:
+                if self.loss_streak >= policy["loss_streak_trigger"]:
                     self.loss_pause_day = facts.trading_day.isoformat()
                     self.loss_pause_at = at
                     self.windows = {
@@ -211,7 +239,7 @@ def build_engine(
                         D(event["close"]) + sign * facts.tick_size * self.slippage_ticks
                     )
                     risk = planned_loss(entry, stop, side, facts, self.slippage_ticks)
-                    denied = risk is None or risk > D(POLICY["trade_loss_budget"])
+                    denied = risk is None or risk > D(policy["trade_loss_budget"])
                 else:
                     denied = True
                 if denied:
@@ -326,7 +354,7 @@ def build_engine(
             if self.chain:
                 row = self.chain[-1]
                 row["conditions"]["planned_loss"] = None if risk is None else str(risk)
-                row["conditions"]["one_lot_policy"] = dict(POLICY)
+                row["conditions"]["one_lot_policy"] = dict(policy)
                 row["conditions"]["loss_pause_day"] = self.loss_pause_day
                 row["actions"] = _wire(actions)
                 row["position"] = self.state()
@@ -346,7 +374,7 @@ def build_engine(
 
         def checkpoint(self):
             payload = dict(
-                version=VERSION,
+                version=version,
                 contract=self.contract,
                 run_id=self.run_id,
                 context_hash=context,
@@ -359,7 +387,7 @@ def build_engine(
         def restore(cls, checkpoint):
             payload = {k: v for k, v in checkpoint.items() if k != "sha256"}
             if (
-                checkpoint["version"] != VERSION
+                checkpoint["version"] != version
                 or checkpoint["context_hash"] != context
                 or _digest(payload) != checkpoint["sha256"]
                 or type(checkpoint.get("slippage_ticks")) is not int
@@ -381,19 +409,20 @@ def build_engine(
     class Account(BaseAccount):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
-            if self.live or self.at_open != (execution_model == "theoretical_open"):
+            if self.live != portfolio or self.at_open != (execution_model == "theoretical_open"):
                 raise ValueError("ONE_LOT_OFFLINE_EXECUTION_ONLY")
             self.model.slippage_ticks = self.slippage_ticks
             self.inputs = []
             self.seen_inputs = {}
             self.failed = False
+            self.portfolio_finance = None
 
         def finance(self, mark, facts, side):
             result = super().finance(mark, facts, side)
             result["admission"] = result["admission"] and not self.layers
             result["round_loss"] = bool(
                 self.layers
-                and result["remaining_net"] <= -D(POLICY["trade_loss_budget"])
+                and result["remaining_net"] <= -D(policy["trade_loss_budget"])
             )
             pending = self.model.pending
             if pending and pending["kind"] == "OPEN":
@@ -406,8 +435,18 @@ def build_engine(
                     self.slippage_ticks,
                 )
                 result["planned_entry_loss"] = risk
-                if risk is None or risk > D(POLICY["trade_loss_budget"]):
+                if risk is None or risk > D(policy["trade_loss_budget"]):
                     result["admission"] = False
+            if portfolio:
+                if self.portfolio_finance is None:
+                    raise ValueError("PORTFOLIO_FINANCE_REQUIRED")
+                admission, day_loss = self.portfolio_finance(self, mark, facts, side)
+                result["admission"] = admission and not self.layers and (
+                    pending is None or pending["kind"] != "OPEN" or
+                    result.get("planned_entry_loss") is not None and
+                    result["planned_entry_loss"] <= D(policy["trade_loss_budget"])
+                )
+                result["day_loss"] = day_loss
             return result
 
         def step(self, execution, technical, *, observed_at=None):
@@ -417,6 +456,8 @@ def build_engine(
             if source is None or _wire(asdict(source)) != _wire(asdict(execution)):
                 raise ValueError("ONE_LOT_ACCOUNT_INPUT_CHANGED")
             wire = _wire(dict(execution=asdict(execution), technical=technical))
+            if portfolio:
+                wire["observed_at"] = _wire(observed_at)
             event_id = technical["event_id"]
             fingerprint = _digest(wire)
             if event_id in self.seen_inputs:
@@ -449,9 +490,9 @@ def build_engine(
             result = super().snapshot(**kwargs)
             result["execution_engine_version"] = result["version"]
             result["version"] = (
-                VERSION + "_" + execution_model + "_slip" + str(self.slippage_ticks)
+                version + "_" + execution_model + "_slip" + str(self.slippage_ticks)
             )
-            result["research_policy"] = dict(POLICY)
+            result["research_policy"] = dict(policy)
             result["context_hash"] = context
             result["assumptions"] = result["assumptions"].replace(
                 "capacity assumed up to 3 lots", "capacity assumed up to 1 lot"
@@ -459,10 +500,12 @@ def build_engine(
             return result
 
         def checkpoint(self):
+            if portfolio:
+                raise ValueError("PORTFOLIO_REPLAY_REQUIRED")
             if self.failed:
                 raise ValueError("ONE_LOT_RESTORE_REQUIRED")
             payload = dict(
-                version=VERSION,
+                version=version,
                 context_hash=context,
                 contract=self.contract,
                 run_id=self.run_id,
@@ -476,7 +519,7 @@ def build_engine(
         def restore(cls, checkpoint):
             payload = {k: v for k, v in checkpoint.items() if k != "sha256"}
             if (
-                checkpoint["version"] != VERSION
+                checkpoint["version"] != version
                 or checkpoint["context_hash"] != context
                 or _digest(payload) != checkpoint["sha256"]
             ):
@@ -507,7 +550,7 @@ def build_engine(
 
     # Only this already-isolated module gets policy overrides. Imported account
     # globals and the continuously running development model are untouched.
-    module.INITIAL_CASH = D(POLICY["initial_cash"])
+    module.INITIAL_CASH = D(policy["initial_cash"])
     module.DecisionModel = Candidate
     module.AccountEngine = Account
     return module, Candidate, context

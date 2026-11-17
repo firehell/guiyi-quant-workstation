@@ -86,13 +86,14 @@ def observations(bars, factor_rows, sessions, *, include_range=False):
     return result
 
 
-def load(market, raw_facts, since, through, *, factor_research_profile=None, product="jm", include_range=False):
-    if product not in ('jm', 'ma', 'ta'):
+def load(market, raw_facts, since, through, *, factor_research_profile=None, product="jm", include_range=False, portfolio=False):
+    from guiyi_quant.subing_one_lot import EXPANDED_PORTFOLIO_PRODUCTS
+    if product not in (EXPANDED_PORTFOLIO_PRODUCTS if portfolio else ('jm', 'ma', 'ta')):
         raise NewSubingInputError('RESEARCH_PRODUCT_UNSUPPORTED')
     if since > through:
         raise NewSubingInputError('REQUEST_WINDOW_INVALID')
     owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol=product, since=since, through=through)
-    factors = load_factors(market, since, through, include_joint=True, research_profile=factor_research_profile, product=product, include_range=include_range)
+    factors = load_factors(market, since, through, include_joint=True, research_profile=factor_research_profile, product=product, include_range=include_range, portfolio=portfolio)
     segments, sources, sessions = [], [], {}
     for owner in owners:
         start, end = max(since, owner.start_trading_day), min(through, owner.end_trading_day)

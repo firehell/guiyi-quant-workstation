@@ -75,6 +75,8 @@ from app.api.research_subing_decision import router as subing_decision_router
 app.include_router(subing_decision_router)
 from app.api.subing_model import router as subing_model_router
 app.include_router(subing_model_router)
+from app.api.subing_portfolio import router as subing_portfolio_router
+app.include_router(subing_portfolio_router)
 app.include_router(research_new_subing_router)
 
 
