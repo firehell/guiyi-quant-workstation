@@ -6,6 +6,7 @@ or a sender. Reopening requires native recovery before a new command can mutate.
 
 from dataclasses import dataclass, replace
 from contextlib import contextmanager
+from hashlib import sha256
 import os
 import json
 from pathlib import Path
@@ -98,7 +99,7 @@ class LocalStore:
         finally:
             view._conn.close()
 
-    def __init__(self, path, initial=None, *, execution_identity=None):
+    def __init__(self, path, initial=None, *, execution_identity=None, verified_fingerprint=None):
         if execution_identity is not None and not execution_identity.startswith(
             "TQKQ:"
         ):
@@ -130,7 +131,8 @@ class LocalStore:
             if initial is not None:
                 self._initialize(initial)
             self._conn.execute("BEGIN")
-            self._verify()
+            self._verified_data_version = self._conn.execute("PRAGMA data_version").fetchone()[0]
+            self._verify(verified_fingerprint)
             self._conn.execute("ROLLBACK")
         except (sqlite3.Error, KeyError, TypeError, ValueError):
             self._conn.close()
@@ -209,7 +211,32 @@ class LocalStore:
         self._projection_cache = (generation, sequence, state)
         return sequence, state
 
-    def _verify(self):
+    def fingerprint(self):
+        with self._mutex:
+            self._conn.execute("BEGIN")
+            try:
+                fingerprint = self._fingerprint()
+                if self._conn.execute("PRAGMA data_version").fetchone()[0] == self._verified_data_version:
+                    return fingerprint
+                return None
+            finally:
+                self._conn.execute("ROLLBACK")
+
+    def _fingerprint(self):
+        # Hash the complete journal and projection from one SQLite snapshot.
+        digest = sha256(b"guiyi-account-journal-v1\n")
+        for query in (
+            "SELECT * FROM metadata ORDER BY key",
+            "SELECT * FROM projection ORDER BY id",
+            "SELECT * FROM commands ORDER BY sequence",
+            "SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name",
+        ):
+            digest.update(query.encode() + b"\n")
+            for row in self._conn.execute(query):
+                digest.update(json.dumps(row, separators=(",", ":")).encode() + b"\n")
+        return digest.hexdigest()
+
+    def _verify(self, verified_fingerprint=None):
         identity = self._conn.execute(
             "SELECT value FROM metadata WHERE key=?", ("execution_identity",)
         ).fetchone()
@@ -224,9 +251,10 @@ class LocalStore:
         ).fetchone()
         if schema != ("htdy_local_account_journal_v1",):
             raise StoreError("STORE_SCHEMA_INVALID")
-        rebuilt = self.replay()
         _, current = self._projection()
-        if rebuilt != current:
+        if verified_fingerprint and self._fingerprint() == verified_fingerprint:
+            return
+        if self.replay() != current:
             raise StoreError("JOURNAL_REPLAY_MISMATCH")
 
     def current(self):

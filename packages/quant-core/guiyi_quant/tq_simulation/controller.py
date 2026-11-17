@@ -15,7 +15,7 @@ TERMINAL = {"FILLED", "CANCELLED", "REJECTED"}
 
 
 class Controller:
-    def __init__(self, root, account_id, products, gateway):
+    def __init__(self, root, account_id, products, gateway, *, verified_fingerprint=None):
         self.root = Path(root)
         self.account_id = account_id
         self.products = tuple(products)
@@ -26,7 +26,10 @@ class Controller:
         self.identity = "TQKQ:" + account_id + ":htdy_tqkq_v1"
         path = self.root / "account.sqlite"
         if path.exists():
-            self.store = LocalStore(path, execution_identity=self.identity)
+            self.store = LocalStore(
+                path, execution_identity=self.identity,
+                verified_fingerprint=verified_fingerprint,
+            )
         self.symbols = {}
         for payload in self.journal.events("symbol"):
             self.symbols[payload["symbol"]] = (payload["product"], payload["contract"])
