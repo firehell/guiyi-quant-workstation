@@ -1,3 +1,5 @@
+11/18 15:17 已完成JD正式恢复及整组切换。JD原生单次计划ea21f972…正式COMMITTED并独立readback：旧参考交易3276原价及原capture保留，追加DATA_INTERRUPTED，无exit/return；后继revision b8272ff4c3c04ee899fd2bae7708d67d/gen8为未来FLAT，active pending capture=0。整组计划837c86c2…原生switched，正式v1.16.135/exact0a5db08a41c662a1674bf059ae67a4c65f958a6c/gen89，11项实际身份matched，Web200、Runtime/DB/Redis/Live均ok，60品种覆盖ok。快期已同版configure/install并保持stop；正式原账本/发送凭证逐字节对照备份通过（42095/8），已启动原生7笔正式对账命令，正在完整原账本校验，尚未返回入账结果。原策略尚未启动，不把部署或私有演练当作正式账户完成。
+
 11/18 13:35 下午开盘只读验收通过：60/60正式WebSocket读到13:31–13:34连续分钟Bar，物理合约一致、无缺口；Web200，API身份matched，DB/Redis/Live与Runtime均ok。正式仍v132/gen88，候选v135未切换，快期未启动。下一步等待15:00收盘及末根确认后，按已批准单JD恢复、原生整组切换、7笔正式对账及原模拟策略恢复顺序执行。
 
 11/18 11:57 v1.16.135已发布（PR659、annotated tag、GitHub Release），exact `0a5db08a41c662a1674bf059ae67a4c65f958a6c`，正式候选根 `.worktrees/release-v1.16.135`。复用未被任何运行/配置/恢复记录引用的v134普通Git工作树，迁移前原生retention扫描eligible且references为空；未改现役v132。新根API/SDK冻结重装、实际Core/Gateway导入和版本身份、Web类型/生产构建与35项smoke通过，源码clean。develop补回已发布的HTDY NOV13/退休证明批读依赖并经独立集成Review和64项定向验证，原两处用户dirty未触及。当前仅等待15:00后权威休市+确认余量，再做本次JD原生单次恢复、整组切换和快期正式对账。
