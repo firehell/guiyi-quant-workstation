@@ -6,6 +6,7 @@ or a sender. Reopening requires native recovery before a new command can mutate.
 
 from dataclasses import dataclass, replace
 from contextlib import contextmanager
+from hashlib import sha256
 import os
 import json
 from pathlib import Path
@@ -98,7 +99,7 @@ class LocalStore:
         finally:
             view._conn.close()
 
-    def __init__(self, path, initial=None, *, execution_identity=None):
+    def __init__(self, path, initial=None, *, execution_identity=None, verified_fingerprint=None):
         if execution_identity is not None and not execution_identity.startswith(
             "TQKQ:"
         ):
@@ -130,7 +131,8 @@ class LocalStore:
             if initial is not None:
                 self._initialize(initial)
             self._conn.execute("BEGIN")
-            self._verify()
+            self._verified_data_version = self._conn.execute("PRAGMA data_version").fetchone()[0]
+            self._verify(verified_fingerprint)
             self._conn.execute("ROLLBACK")
         except (sqlite3.Error, KeyError, TypeError, ValueError):
             self._conn.close()
@@ -209,7 +211,32 @@ class LocalStore:
         self._projection_cache = (generation, sequence, state)
         return sequence, state
 
-    def _verify(self):
+    def fingerprint(self):
+        with self._mutex:
+            self._conn.execute("BEGIN")
+            try:
+                fingerprint = self._fingerprint()
+                if self._conn.execute("PRAGMA data_version").fetchone()[0] == self._verified_data_version:
+                    return fingerprint
+                return None
+            finally:
+                self._conn.execute("ROLLBACK")
+
+    def _fingerprint(self):
+        # Hash the complete journal and projection from one SQLite snapshot.
+        digest = sha256(b"guiyi-account-journal-v1\n")
+        for query in (
+            "SELECT * FROM metadata ORDER BY key",
+            "SELECT * FROM projection ORDER BY id",
+            "SELECT * FROM commands ORDER BY sequence",
+            "SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name",
+        ):
+            digest.update(query.encode() + b"\n")
+            for row in self._conn.execute(query):
+                digest.update(json.dumps(row, separators=(",", ":")).encode() + b"\n")
+        return digest.hexdigest()
+
+    def _verify(self, verified_fingerprint=None):
         identity = self._conn.execute(
             "SELECT value FROM metadata WHERE key=?", ("execution_identity",)
         ).fetchone()
@@ -224,9 +251,10 @@ class LocalStore:
         ).fetchone()
         if schema != ("htdy_local_account_journal_v1",):
             raise StoreError("STORE_SCHEMA_INVALID")
-        rebuilt = self.replay()
         _, current = self._projection()
-        if rebuilt != current:
+        if verified_fingerprint and self._fingerprint() == verified_fingerprint:
+            return
+        if self.replay() != current:
             raise StoreError("JOURNAL_REPLAY_MISMATCH")
 
     def current(self):
@@ -279,10 +307,10 @@ class LocalStore:
     def _commit(self):
         self._conn.execute("COMMIT")
 
-    def execute(self, key, command, *, unsent_proof=None):
+    def execute(self, key, command, *, unsent_proof=None, manual_close_proof=None):
         m.text(key)
         if (
-            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1, m.TqKqObservedSignalV1, m.TqKqClosedSignalV1)
+            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1, m.TqKqObservedSignalV1, m.TqKqClosedSignalV1, m.TqKqManualClosesV1)
             and self._execution_identity is None
         ):
             raise StoreError("TQ_ACCOUNT_IDENTITY_REQUIRED")
@@ -319,6 +347,7 @@ class LocalStore:
                 if self._needs_recovery and type(command) not in (
                     m.Recover,
                     m.TqKqResumeEmptyV1,
+                    m.TqKqManualClosesV1,
                     m.AbortUnsent,
                     m.TqKqFill,
                     m.Fill,
@@ -335,6 +364,7 @@ class LocalStore:
                     and type(command)
                     in (
                         m.TqKqFill,
+                        m.TqKqManualClosesV1,
                         m.Fill,
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,
@@ -359,6 +389,9 @@ class LocalStore:
                 if type(command) is m.AbortUnsent:
                     if unsent_proof is None or unsent_proof(state) is not True:
                         raise StoreError("ATOMIC_UNSENT_PROOF_REQUIRED")
+                if type(command) is m.TqKqManualClosesV1:
+                    if manual_close_proof is None or manual_close_proof(state) is not True:
+                        raise StoreError("ATOMIC_MANUAL_CLOSE_PROOF_REQUIRED")
                 tx = apply(execution_state, key, command)
                 next_sequence = sequence + 1
                 self._conn.execute(
@@ -442,6 +475,7 @@ class LocalStore:
                     and type(command)
                     not in (
                         m.TqKqFill,
+                        m.TqKqManualClosesV1,
                         m.Fill,
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,

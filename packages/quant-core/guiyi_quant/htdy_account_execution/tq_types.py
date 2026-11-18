@@ -15,6 +15,57 @@ TQ_RISK_VERSION = "htdy_tqkq_actual_equity_margin70_v1"
 
 
 @dataclass(frozen=True)
+class TqKqManualClosesV1:
+    orders: tuple
+    fills: tuple
+    readback: object
+    evidence_sha256: str
+    approval_source: str
+    policy_version: str = "tqkq_manual_close_reconciliation_v1"
+
+    @property
+    def at(self):
+        return self.readback.at
+
+    def __post_init__(self):
+        from .model import Order, Readback
+
+        _text(self.approval_source)
+        if (type(self.readback) is not Readback
+                or re.fullmatch(r"[0-9a-f]{64}", self.evidence_sha256) is None
+                or self.policy_version != "tqkq_manual_close_reconciliation_v1"
+                or type(self.orders) is not tuple or type(self.fills) is not tuple
+                or not 1 <= len(self.orders) <= 60 or len(self.orders) != len(self.fills)):
+            raise ValueError("TQ_MANUAL_CLOSE_INVALID")
+        if (any(type(o) is not Order or o.offset != "CLOSE" or o.status != "FILLED"
+                or o.signal_id != "human:" + self.approval_source
+                or o.quantity != 1 for o in self.orders)
+                or any(type(f) is not TqKqFill or f.recorded_at != self.at
+                       or f.account_id != self.readback.snapshot.account_id for f in self.fills)
+                or len({o.product for o in self.orders}) != len(self.orders)
+                or len({o.order_id for o in self.orders}) != len(self.orders)
+                or len({f.trade_id for f in self.fills}) != len(self.fills)
+                or len({f.native_order_id for f in self.fills}) != len(self.fills)
+                or any(f.trade_id != "tq-trade:" + f.native_trade_id
+                       or f.order_id != "manual-tq:" + f.native_order_id for f in self.fills)
+                or {o.order_id for o in self.orders} != {f.order_id for f in self.fills}
+                or not {f.trade_id for f in self.fills} <= set(self.readback.confirmed_trade_ids)):
+            raise ValueError("TQ_MANUAL_CLOSE_INVALID")
+        for order in self.orders:
+            fill = next(f for f in self.fills if f.order_id == order.order_id)
+            source = "manual-evidence:" + self.evidence_sha256
+            if (fill.contract != order.contract or fill.quantity != 1 or fill.fee is not None
+                    or not order.created_at < fill.filled_at <= self.at
+                    or order.terminal_at != self.at or order.accepted_at is not None
+                    or order.reconciled or order.cancel_required or order.cancel_sent
+                    or order.predecessor_id is not None
+                    or (order.instrument_source, order.quote_source, order.session_source)
+                    != (source, source, source)
+                    or (fill.price > order.price if order.side == "BUY" else fill.price < order.price)):
+                raise ValueError("TQ_MANUAL_CLOSE_INVALID")
+
+
+@dataclass(frozen=True)
 class TqKqObservedSignalV1:
     """Original first receipt and later account processing are distinct facts."""
 

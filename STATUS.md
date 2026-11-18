@@ -1,3 +1,19 @@
+11/18 10:54 手动平仓私有验证全部通过：原42095条命令完整校验通过，7笔真实手动平仓单事务追加为第42096条；结果42096条再次全量重放并与投影逐值一致。原命令、metadata、8个claims及权益基线保持，剩余CU2612多头1手；重启读回15个native映射（7个人工）、14条人工监控记录，幂等NOOP通过，仍RECOVERY_REQUIRED且禁止开仓。全程仅私有SQLite副本、既有04:23原生捕获，无SDK连接或正式账户写入。纯Decimal价格表示比较修正与人工来源投影已独立Review；后端189、监控API11、Web23及类型/生产构建通过，最终私有证据独立复核通过。
+
+正式仍v132/gen88、快期进程未启动。60品种日盘M1及首批10:00 H1读回通过，JM同连接跨10:15短休和10:31恢复，无断开。现在准备v1.16.134代码包，正式服务按午休新鲜Session与原生cohort计划切换；正式7笔入账仍需新鲜SDK账户核验，私有旧捕获不替代现场事实。之后按原策略恢复，只接受恢复后的新completed开仓信号。
+
+11/18 09:34 日盘行情验收通过：60品种自然恢复订阅，正式WebSocket全部读到新M1，09:01–09:10逐分钟无缺口且合约一致；JM/CU/EC首批09:15的15m通过。API/DB/Redis/Live持续ok，正式仍v132/gen88未切换。浏览器首页60品种和JM自由看盘1m实际更新至09:22；09:02三条测试长连接曾同时断开，服务未重启、日志无异常，重连后JM连续8根无再断，原原因尚未定位。趋势参考面板实际返回REFERENCE_UPDATE_PENDING（结果11/13、行情11/17），Reference既有业务积压单列，未改写成实时验收通过。
+
+手动平仓实现及补修均已集成develop（7fcb749c7、68f3c1437、86bcb52fe、6dc31a855），PR658仍draft。新增Decimal等值价格核验只消除645.0/645表示差异，原始hash、身份、时间和其他字段仍exact；详情报价比率误当点差的显示问题已修。后端188 passed、Web23 passed、独立Review及Web构建通过。私有原账本全量重放进行中，已到26000/42095；正式仍42095条命令和8个claims，未入账或启用Worker。
+
+11/18 08:44 owner已明确批准将7笔手动平仓正式对账后恢复原模拟策略。实现已提交并集成develop（7fcb749c7、68f3c1437），PR658为draft，尚未发布或切换。新版本化命令单事务追加真实手动Order/Fill，原基线、历史和claims保留，重启映射从不可变audit重建，成功后保持恢复状态并等新completed。定向187 passed，独立Review 114 passed，Ruff/diff通过；原7笔私有原件hash验证通过，原账本私有副本已保全，全量重放/演练待开盘验收后运行。08:40现场原账本42095条命令、8个claims、快期launchd无进程且无hold，control为observe；未发生正式对账或启动。正式仍v132/gen88，API/DB/Redis/Live休市健康正常。先验收09:00开盘，11:20前验证通过才使用午休切换窗口，否则推迟15:00后。
+
+11/18 04:26 快期同版只读探测返回 `READ_ONLY_BLOCKED/TQ_EXTERNAL_TRADE`。读回昨晚22:36手动平仓原件为7笔成交，当前原生只剩CU2612多头1手，与本地原8仓不一致；保持stop，待owner确定继续停用或将手动成交正式对账后恢复。探测后独立SQLite核对原42095条命令、初始metadata/投影、8个claims及64956条历史dispatch事件逐项不变，仅追加1份新鲜只读snapshot。Web正式WebSocket 45/45夜盘读回通过，Runtime与Live仍ok。
+
+11/18 03:40 夜盘恢复与正式服务切换已完成。现役 v1.16.132 / gen88 / exact `b8449cda5464234acfddc3e30f590e4f7832b953`，运行根 `.worktrees/release-v1.16.132`；全部现役身份 matched，API/Web/Runtime HTTP 通过，Runtime 总体 ok、Live 心跳和覆盖正常。v1.16.133 / exact `08784bad9528dd164c5f80dde1f64596761afbc0` 已发布，作为本次前向恢复控制器，运行服务版本仍为 v132。原始 Feed 夜盘实际接收45品种6990根1m，故障集中在后续确认层；本次恢复原始 source 后追尾。首次隔离预演组合仍使用生产连接并实际推进原始游标，已独立逐品种核对、保全原件及恢复前像。Calendar/Session核对6990/6990，五周期225序列9205/9205、零缺失/额外且逐值聚合一致，45个正式WebSocket夜盘快照全部通过，无需重复下载或新增通用补数入口。
+
+首次cohort在drain前置校验以积压取消，原定义恢复后各流已追尾。第二次cohort `0971df68…` 已完成gen88 CAS，在verified超时，原outcome_unknown保持。精确Feed关闭 `3cce7867…` 后，新同代前向恢复 `d6fe1387…` 返回recovered，receipt `e46e34dcd175c761498f016bccfe03374a62f797ad76f068afb716243a1478d9`；原定时服务已恢复，原失败记录保留。代码修复纯Redis读取连接/超时被永久锁死及shared clone/注册工作树混合历史归属误判，分别通过定向回归和独立Review。扩展恢复测试有5项旧夹具失败，在原封v132同样复现。旧历史核验所需计划原字节与exact tag源码已按精确身份恢复，现有恢复引用仍保留。原始、计划、回执、账户保全与逐值读回在AppSupport/GuiyiQuant/night-live-recovery-20261118.LYVwTzIa。快期已同版配置/安装，原账本42095条命令仍在只读探测校验；日盘新completed、新鲜报价与模拟可执行状态尚待自然验证。通知继续关闭。
+
 11/10 18:51 按 owner 指令暂停所有正式 PushPlus 发送。Alert gen71 已原生停驻，提醒计算随其暂停；共用 PushPlus 私有配置已原字节归档并移出运行路径，健康只读核对 configured=false，盘后任务继续运行。原生 Newow 通知 policy 已关闭并独立读回，历史投递计数未变；不自动恢复或补发。私有停驻凭证与配置前像保存在 AppSupport/GuiyiQuant/alert-notification/notifications-paused-1605o9_r。已证实样本不足的路线单列为数据不足；FG/RM 原十路仅保留未分类历史错误，现有记录不足以证明其原因，不改写原件。
 
 11/10 15:56 已发布并原生整组切换 v1.16.103，远端 main、annotated tag 与 GitHub Release 指向 exact `43ea1e4ce41a1a6101108895698de0297b0a84eb`，运行副本 `.worktrees/release-v1.16.103`、generation71。11 项现役身份 matched，API/Web/Runtime HTTP 通过，60 品种权威休市。整组计划 `b3f540892c94…` 原生 switched；Reference 470 calculated、120 initialized、10 路已分类周线无数据，Alert 414 calculated、6 warming；正式接收已追尾，业务积压独立保留。API/SDK frozen、Web frozen build、Web 1403 passed/3 skipped，后端 395 passed，3 项同名闭市夹具失败在 v1.16.102 同样复现；隔离 PostgreSQL 14 passed，独立复核和 secret scan 通过。

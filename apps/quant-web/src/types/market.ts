@@ -272,6 +272,7 @@ export interface MarketHomeLiveItem {
   barEnd: string | null
   price: number | null
   previousClose: number | null
+  /** Fractional return (0.05 = 5%), matching the home-live wire contract. */
   priceChange: number | null
   source: MarketHomeLiveSource
   availability: MarketHomeLiveAvailability

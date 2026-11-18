@@ -15,7 +15,7 @@ TERMINAL = {"FILLED", "CANCELLED", "REJECTED"}
 
 
 class Controller:
-    def __init__(self, root, account_id, products, gateway):
+    def __init__(self, root, account_id, products, gateway, *, verified_fingerprint=None):
         self.root = Path(root)
         self.account_id = account_id
         self.products = tuple(products)
@@ -26,11 +26,15 @@ class Controller:
         self.identity = "TQKQ:" + account_id + ":htdy_tqkq_v1"
         path = self.root / "account.sqlite"
         if path.exists():
-            self.store = LocalStore(path, execution_identity=self.identity)
+            self.store = LocalStore(
+                path, execution_identity=self.identity,
+                verified_fingerprint=verified_fingerprint,
+            )
         self.symbols = {}
         for payload in self.journal.events("symbol"):
             self.symbols[payload["symbol"]] = (payload["product"], payload["contract"])
         self.last_snapshot = None
+        self._manual_orders_cache = None
 
     def bind_symbol(self, symbol, product, contract):
         if product not in self.products:
@@ -64,10 +68,38 @@ class Controller:
         )
         self.journal.event("baseline", snapshot, at)
 
-    def readback(self, snapshot, at):
+    def manual_orders(self):
+        if self.store is None:
+            return {}
+        if self._manual_orders_cache is not None:
+            return self._manual_orders_cache
+        result = {}
+        for audit in self.store.current().audit:
+            if type(audit.command) is m.TqKqManualClosesV1:
+                for order in audit.command.orders:
+                    fill = next(f for f in audit.command.fills if f.order_id == order.order_id)
+                    result[fill.native_order_id] = order
+        self._manual_orders_cache = result
+        return result
+
+    def native_mappings(self):
+        result = self.journal.mappings()
+        for native, order in self.manual_orders().items():
+            if native in result and result[native] != order.order_id:
+                raise ValueError("TQ_MANUAL_CLOSE_MAPPING_CONFLICT")
+            result[native] = order.order_id
+        return result
+
+    def order_payload(self, order_id):
+        for order in self.manual_orders().values():
+            if order.order_id == order_id:
+                return {"offset": "CLOSE", "price": str(order.price)}
+        return self.journal.submit_payload(order_id)
+
+    def readback(self, snapshot, at, *, mappings=None):
         if snapshot["account_id"] != self.account_id:
             raise ValueError("TQ_ACCOUNT_IDENTITY_MISMATCH")
-        mappings = self.journal.mappings()
+        mappings = self.native_mappings() if mappings is None else mappings
         orders = tuple(
             OrderReport(
                 mappings.get(o["order_id"], "external:" + o["order_id"]), o["state"]
@@ -115,7 +147,7 @@ class Controller:
         if self.store is None:
             self.bootstrap(snapshot, at)
         self.journal.event("snapshot", snapshot, at)
-        mappings = self.journal.mappings()
+        mappings = self.native_mappings()
         state = self.store.current()
         if any(not order.reconciled for order in state.orders):
             self._finish_recorded_unsent(snapshot, state, at)
@@ -144,7 +176,7 @@ class Controller:
                 or quantity(trade["volume"]) != 1
             ):
                 raise ValueError("TQ_FILL_CORRELATION_INVALID")
-            claim = self.journal.submit_payload(oid)
+            claim = self.order_payload(oid)
             if trade["offset"] != claim["offset"]:
                 raise ValueError("TQ_FILL_OFFSET_INVALID")
             price = decimal(trade["price"], positive=True)
@@ -191,7 +223,7 @@ class Controller:
                 or native["direction"] != order.side
             ):
                 raise ValueError("TQ_ORDER_CORRELATION_INVALID")
-            claim = self.journal.submit_payload(oid)
+            claim = self.order_payload(oid)
             if native["offset"] != claim["offset"]:
                 raise ValueError("TQ_ORDER_OFFSET_INVALID")
             if native.get("price_type") != "LIMIT" or decimal(
