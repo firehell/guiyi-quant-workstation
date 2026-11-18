@@ -1,3 +1,5 @@
+11/18 13:35 下午开盘只读验收通过：60/60正式WebSocket读到13:31–13:34连续分钟Bar，物理合约一致、无缺口；Web200，API身份matched，DB/Redis/Live与Runtime均ok。正式仍v132/gen88，候选v135未切换，快期未启动。下一步等待15:00收盘及末根确认后，按已批准单JD恢复、原生整组切换、7笔正式对账及原模拟策略恢复顺序执行。
+
 11/18 11:57 v1.16.135已发布（PR659、annotated tag、GitHub Release），exact `0a5db08a41c662a1674bf059ae67a4c65f958a6c`，正式候选根 `.worktrees/release-v1.16.135`。复用未被任何运行/配置/恢复记录引用的v134普通Git工作树，迁移前原生retention扫描eligible且references为空；未改现役v132。新根API/SDK冻结重装、实际Core/Gateway导入和版本身份、Web类型/生产构建与35项smoke通过，源码clean。develop补回已发布的HTDY NOV13/退休证明批读依赖并经独立集成Review和64项定向验证，原两处用户dirty未触及。当前仅等待15:00后权威休市+确认余量，再做本次JD原生单次恢复、整组切换和快期正式对账。
 
 11/18 11:52 owner已选择JD旧参考交易追加DATA_INTERRUPTED、未来FLAT，保留全部原件、原建仓3276及账户CU持仓。本次NOV18单流精确scope/清单hash已实现，未改通用来源、停写fence、lease、CAS或一次性事务；独立Review通过。真实只读MDS来源诊断通过1流/4根冲突；首批21、旧incident88、隔离PostgreSQL16项（含本次JD原子事务）及版本检查通过。隔离测试无生产写入，临时PG容器已清理。v135待发布构建，15:00收盘后再生成新鲜停写计划，先恢复JD并读回，再整组切换及7笔正式对账；当前仍v132/gen88与原42095条账本。
