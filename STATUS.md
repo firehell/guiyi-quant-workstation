@@ -1,3 +1,11 @@
+11/18 23:40 原7笔手动平仓已于19:21正式追加为命令42096，完整重放及新鲜原生探测通过，保留原权益基线和8个旧SUBMIT claims；原策略已在v1.16.136/exact e1e3311d29e30a7b09a8c7b10052bd5b07d73bad恢复，原生与本地仅余CU2612多1。标准共享服务gen90；夜盘45品种首根1m及首根60m实际读回、M1聚合逐值核对通过。SI2701物理历史原生warmup完成77目标/33请求，七周期API通过。不能将这些证据当作新模拟订单成交：本轮CU执行受TQ_QUOTE_STALE保护，尚无新SUBMIT。
+
+本轮已non-force清理9棵干净且已合入origin/main、无运行引用的旧任务树；9棵旧发布树因历史恢复证据封存校验未通过继续保留。新增retirement-cleanup临时树受宿主primary checkout保护，未绕过删除。精确清理清单与恢复commit保存在AppSupport/GuiyiQuant/night-live-recovery-20261118.LYVwTzIa/manual-close-validation。
+
+正在交付账本序列化和SDK驱动修复：复用有界不可变canonical片段，每次仍验证状态；同步账本后驱动SDK，重连、账户漂移或控制变化丢弃本轮，Quote/Session TTL不变。306项定向测试及独立Review通过；真实seq42664/84,975,087字节检查点完整字节一致，热序列化0.21秒。此为纯离线序列化测量，不是正式写账本或自然成交验收。正式仍v136未切；原生休市证明返回COHORT_REST_WINDOW_REQUIRED，等待全部夜盘休市后的合规切换窗口。
+
+以下为此前检查点：
+
 11/18 17:21 owner已确认04:23至今无其他手动交易/出入金/重置，同意跨日历史合同入账及原策略恢复。新增显式TqKqHistoricalManualClosesV1：原生历史观察04:23、当前入账和新鲜readback分别保存，历史仅确认本批7单，当前交易日空列表保持真实；旧日空窗明确记为owner来源，保留原基线/claims，稳定证据key跨两类型幂等。source原行及审批原字节在账户事务内复验，V1严格freshall7不变。独立Review通过；真实私有副本已以新鲜17:15账户事实完成dry-run及42096单事务追加，正完整重放42096；正式账本仍未写入，TQ保持stop。v136待发布构建，正式仍v135/gen89，Web/行情正常。
 
 11/18 16:14 快期正式首次对账被跨交易日核验阻断，未入账。原生命令TQ_MANUAL_CLOSE_BLOCKED/TQ_MANUAL_CLOSE_EVIDENCE_UNPROVEN，正式account/dispatch两文件SHA与11:20备份逐字一致，仍42095条命令、8个claims；control=stop、交易Worker未启动。私有复制诊断使用已全量验证的相同原账本指纹，新鲜只读SDK16:05读回trading_day=20261119、orders/trades=0，CU2612多1精确匹配；pureprepare定位到缺少当前日7笔原生记录，未放宽。已独立核对不可变dispatch snapshot row64957（04:23本地、交易日20261118、payloadSHA6e2814fb…）：7笔原生订单/成交逐笔匹配原手动证据SHA5f41b089…，但04:23至日切额外操作完整性未证明。独立Review确认现有V1不能跨日首次导入；本机无QPro历史服务。已请owner确认该期间是否有其他交易/出入金/重置，并选择跨日历史入账与观测空窗处理或补官方完整历史。正式服务v135/gen89及60品种行情正常，原策略保持停用。新版页面JM1364、点差-52.50、跌幅-3.71%与实际接口一致，控制台0错误。

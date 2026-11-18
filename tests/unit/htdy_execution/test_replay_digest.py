@@ -209,3 +209,47 @@ def test_every_original_integrity_check_still_rejects_tampering(journal, damage)
             db.execute("DELETE FROM commands WHERE sequence=8")
     with pytest.raises(account.StoreError, match="LOCAL_STORE_INVALID"):
         account.LocalStore.inspect(path)
+
+
+def test_checkpoint_bytes_and_load_match_without_reencoding_warm_state(monkeypatch):
+    state = initial()
+    for i in range(8):
+        state = account.apply(state, f"checkpoint-{i}", readback(T + timedelta(seconds=i + 1))).state
+    expected = codec.checkpoint(state)
+    cache = codec.digest_cache()
+    with codec.replay_digests(cache=cache):
+        assert codec.checkpoint(state) == expected
+    original = codec.encode
+    def guarded(value):
+        if value is state:
+            raise AssertionError("whole State encoded again")
+        return original(value)
+    monkeypatch.setattr(codec, "encode", guarded)
+    with codec.replay_digests(cache=cache):
+        assert codec.checkpoint(state) == expected
+    assert codec.load(expected) == state
+    assert cache.cached_bytes <= cache.max_bytes
+
+
+def test_checkpoint_cache_updates_after_command_and_falls_back_at_budget():
+    state = initial()
+    cache = codec.digest_cache()
+    for i in range(12):
+        state = account.apply(state, f"live-{i}", readback(T + timedelta(seconds=i + 1))).state
+        expected = codec.checkpoint(state)
+        with codec.replay_digests(cache=cache):
+            assert codec.checkpoint(state) == expected
+        with codec.replay_digests(cache=codec.digest_cache(max_bytes=8)):
+            assert codec.checkpoint(state) == expected
+
+
+def test_checkpoint_cache_never_crosses_thread_context():
+    state = initial()
+    expected = codec.checkpoint(state)
+    cache = codec.digest_cache()
+    with codec.replay_digests(cache=cache):
+        codec.checkpoint(state)
+        context = copy_context()
+        with ThreadPoolExecutor(1) as executor:
+            assert executor.submit(context.run, codec.checkpoint, state).result() == expected
+    assert codec.checkpoint(state) == expected
