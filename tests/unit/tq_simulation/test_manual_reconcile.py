@@ -227,6 +227,24 @@ def test_native_decimal_representation_is_equal_but_other_fields_are_exact(tmp_p
     c.close()
 
 
+def test_manual_monitor_records_keep_human_origin_without_fabricated_strategy_link(tmp_path):
+    from guiyi_quant.tq_simulation.monitor import projection
+
+    c, folder, fresh, at = fixture(tmp_path)
+    key, command, _ = prepare(c, folder, fresh, at, APPROVAL)
+    c.store.execute(key, command, manual_close_proof=lambda _: True)
+    payload = projection(c, fresh, at, mode="trade", opening=False)
+    records = [r for r in payload["records"] if r["facts"].get("execution_origin") == "OWNER_MANUAL_CLOSE"]
+    assert len(records) == 14
+    assert all(r["signal_id"] is None for r in records)
+    assert all(r["facts"]["evidence_sha256"] == command.evidence_sha256 for r in records)
+    assert all(r["facts"]["approval_source"] == APPROVAL for r in records)
+    assert all(r["label"].startswith("手动") for r in records)
+    assert len([r for r in records if r["kind"] == "fill"]) == 7
+    assert payload["overview"]["metrics"]["net_profit"] is None
+    c.close()
+
+
 def host(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from datetime import datetime
