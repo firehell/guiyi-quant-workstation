@@ -111,7 +111,8 @@ export function useMarketDetailQuote(options: Options) {
     if (usable) {
       const sameOwnerDaily = snapshot?.physicalContract === usable.physicalContract ? snapshot : null
       const previousClose = usable.previousClose
-      return { close:usable.price!,change:usable.priceChange,pct:usable.priceChange !== null && previousClose !== null && previousClose !== 0 ? usable.priceChange / previousClose * 100 : null,
+      const hasBaseline = usable.priceChange !== null && previousClose !== null && previousClose !== 0
+      return { close:usable.price!,change:hasBaseline ? usable.price! - previousClose! : null,pct:hasBaseline ? usable.priceChange! * 100 : null,
         previousClose,asOf:usable.barEnd!,tradingDay:usable.tradingDay!,physicalContract:usable.physicalContract!,source:usable.source as 'completed_1m'|'completed_1d',
         freshness:usable.availability === 'live' && !live.stale.value && live.connection.value === 'connected' ? 'fresh' : 'stale',phase:usable.phase,daily:sameOwnerDaily,
         title:`最新价 ${usable.physicalContract} · 交易日 ${usable.tradingDay} · ${usable.barEnd}；日线 OHLCV ${sameOwnerDaily ? `${sameOwnerDaily.physicalContract} · 交易日 ${sameOwnerDaily.tradingDay} · ${sameOwnerDaily.asOf}` : '不可用'}` }
