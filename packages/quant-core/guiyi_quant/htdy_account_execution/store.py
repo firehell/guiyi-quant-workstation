@@ -307,10 +307,10 @@ class LocalStore:
     def _commit(self):
         self._conn.execute("COMMIT")
 
-    def execute(self, key, command, *, unsent_proof=None):
+    def execute(self, key, command, *, unsent_proof=None, manual_close_proof=None):
         m.text(key)
         if (
-            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1, m.TqKqObservedSignalV1, m.TqKqClosedSignalV1)
+            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1, m.TqKqObservedSignalV1, m.TqKqClosedSignalV1, m.TqKqManualClosesV1)
             and self._execution_identity is None
         ):
             raise StoreError("TQ_ACCOUNT_IDENTITY_REQUIRED")
@@ -347,6 +347,7 @@ class LocalStore:
                 if self._needs_recovery and type(command) not in (
                     m.Recover,
                     m.TqKqResumeEmptyV1,
+                    m.TqKqManualClosesV1,
                     m.AbortUnsent,
                     m.TqKqFill,
                     m.Fill,
@@ -363,6 +364,7 @@ class LocalStore:
                     and type(command)
                     in (
                         m.TqKqFill,
+                        m.TqKqManualClosesV1,
                         m.Fill,
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,
@@ -387,6 +389,9 @@ class LocalStore:
                 if type(command) is m.AbortUnsent:
                     if unsent_proof is None or unsent_proof(state) is not True:
                         raise StoreError("ATOMIC_UNSENT_PROOF_REQUIRED")
+                if type(command) is m.TqKqManualClosesV1:
+                    if manual_close_proof is None or manual_close_proof(state) is not True:
+                        raise StoreError("ATOMIC_MANUAL_CLOSE_PROOF_REQUIRED")
                 tx = apply(execution_state, key, command)
                 next_sequence = sequence + 1
                 self._conn.execute(
@@ -470,6 +475,7 @@ class LocalStore:
                     and type(command)
                     not in (
                         m.TqKqFill,
+                        m.TqKqManualClosesV1,
                         m.Fill,
                         m.NativeFill,
                         m.CorrelatedNativeFillV1,

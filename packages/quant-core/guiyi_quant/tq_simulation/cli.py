@@ -105,12 +105,16 @@ def main(argv=None):
             "status",
             "pause",
             "stop",
+            "reconcile-manual-closes",
         ),
     )
     parser.add_argument("--root", type=Path)
     parser.add_argument("--tag")
     parser.add_argument("--trade", action="store_true")
     parser.add_argument("--replace", action="store_true")
+    parser.add_argument("--evidence-dir", type=Path)
+    parser.add_argument("--approval-source")
+    parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     try:
         if args.action == "credentials":
@@ -177,6 +181,18 @@ def main(argv=None):
             return 0
         if CredentialStore().load().account_id != current["account_id"]:
             raise ValueError("TQ_CREDENTIAL_ACCOUNT_MISMATCH")
+        if args.action == "reconcile-manual-closes":
+            if args.evidence_dir is None or not args.approval_source:
+                raise ValueError("TQ_MANUAL_CLOSE_ARGUMENTS_REQUIRED")
+            verify_launcher(root)
+            command = service_command(root) + [
+                "--manual-close-evidence", str(args.evidence_dir),
+                "--approval-source", args.approval_source,
+            ]
+            if args.apply:
+                command.append("--apply-manual-closes")
+            return subprocess.run(command, cwd=Path.home(), env=service_environment(root),
+                                  check=False).returncode
         if args.action == "probe":
             verify_launcher(root)
             if launch_state() and launch_state()["pid"]:

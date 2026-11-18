@@ -1251,6 +1251,35 @@ def validate(state):
             raise ValueError("ACCOUNT_ORDER_CAPACITY")
 
 
+def manual_closes(state, cmd):
+    if (cmd.readback.snapshot.account_id != state.account_id
+            or state.unresolved_fill_ids
+            or any(unsettled(state, o) for o in state.orders)):
+        raise ValueError("TQ_MANUAL_CLOSE_STATE_UNPROVEN")
+    for order in cmd.orders:
+        if any(o.order_id == order.order_id for o in state.orders):
+            raise ValueError("TQ_MANUAL_CLOSE_ORDER_CONFLICT")
+        held = position(state, order.product)
+        if held is None or (held.contract, held.quantity) != (
+            order.contract, 1 if order.side == "SELL" else -1
+        ):
+            raise ValueError("TQ_MANUAL_CLOSE_POSITION_MISMATCH")
+        fill = next(f for f in cmd.fills if f.order_id == order.order_id)
+        state = replace(state, orders=state.orders + (order,))
+        state, reason = apply_fill(state, fill)
+        if reason != "NATIVE_FILL_RECORDED":
+            raise ValueError("TQ_MANUAL_CLOSE_FILL_UNPROVEN")
+        p = product(state, order.product)
+        state = replace_product(state, replace(
+            p, desired=0, signal_id="", signal_at=None,
+            opening_consumed=True, wait_after=cmd.at,
+        ))
+    state, reason = apply_readback(state, cmd.readback)
+    if reason != "READBACK_RECONCILED":
+        raise ValueError("TQ_MANUAL_CLOSE_READBACK_UNPROVEN")
+    return replace(state, phase="RECOVERY_REQUIRED", readback_valid=False)
+
+
 def apply(state, key, cmd):
     m.text(key)
     validate(state)
@@ -1258,6 +1287,7 @@ def apply(state, key, cmd):
         m.Signal,
         m.TqKqObservedSignalV1,
         m.TqKqClosedSignalV1,
+        m.TqKqManualClosesV1,
         m.Owner,
         m.TqKqFill,
         m.Fill,
@@ -1330,7 +1360,10 @@ def apply(state, key, cmd):
     ):
         raise ValueError("MANUAL_TEST_SCOPED_TICK_REQUIRED")
     effects = ()
-    if type(cmd) is m.Signal:
+    if type(cmd) is m.TqKqManualClosesV1:
+        state = manual_closes(state, cmd)
+        reason = "MANUAL_NATIVE_CLOSES_RECONCILED"
+    elif type(cmd) is m.Signal:
         state, reason = signal(state, cmd)
     elif type(cmd) is m.TqKqObservedSignalV1:
         state, reason = signal(state, cmd.signal)
