@@ -11,6 +11,50 @@ from guiyi_quant.htdy_account_execution import codec, model as m
 from test_execution import A, snapshot, Transport
 
 
+@pytest.mark.parametrize("change", ["none", "account", "reconnect", "pause", "stop", "hold", "disconnect"])
+def test_post_persistence_refresh_discards_changed_execution_context(monkeypatch, tmp_path, change):
+    control = tmp_path / "control.json"
+    hold = tmp_path / "hold.json"
+    write_private(control, {"mode": "trade"})
+    events = []
+
+    class Gateway:
+        reconnection_required = False
+
+        def update(self, timeout):
+            events.append("pump")
+            assert timeout == 0.1
+            if change == "disconnect":
+                raise worker.MaintenanceDisconnect()
+            if change == "reconnect":
+                self.reconnection_required = True
+            if change in {"pause", "stop"}:
+                write_private(control, {"mode": change})
+            if change == "hold":
+                write_private(hold, {"code": "test"})
+
+        def snapshot(self, at):
+            events.append("snapshot")
+            return {"snapshot_id": "new" if change == "account" else "old"}
+
+    controller = SimpleNamespace(synchronize=lambda value, at: events.append(("sync", value["snapshot_id"])))
+    monkeypatch.setattr(worker, "require_recovery", lambda *args: events.append("recover"))
+    def refresh():
+        return worker.refresh_execution_snapshot(
+            controller, Gateway(), {"snapshot_id": "old"},
+            lambda: worker.control_action(control, hold), "trade",
+        )
+    if change == "disconnect":
+        with pytest.raises(worker.MaintenanceDisconnect):
+            refresh()
+        assert events == ["pump"]
+    else:
+        assert refresh() is (change == "none")
+        assert events[:2] == ["pump", "snapshot"]
+        assert events[2:] == (["recover"] if change == "reconnect" else
+                              [("sync", "new")] if change == "account" else [])
+
+
 def host(monkeypatch, tmp_path, *, mode="trade", restart=False):
     base = tmp_path / "host"
     base.mkdir(mode=0o700)

@@ -214,6 +214,34 @@ def record_observed_signals(controller, reply, facts, issues):
         controller.signal(s, closed_at=datetime.fromisoformat(tail) if tail else None)
 
 
+def control_action(control_path, hold_path, *, stopped=False, inspect=False):
+    control = read_private(control_path, limit=1024) if control_path.exists() else {"mode": "observe"}
+    if set(control) != {"mode"} or control["mode"] not in {"observe", "trade", "pause", "stop"}:
+        raise ValueError("TQ_CONTROL_INVALID")
+    action = "stop" if stopped else control["mode"]
+    if inspect:
+        action = "observe"
+    if hold_path.exists() and action != "stop":
+        action = "pause"
+    return action
+
+
+def refresh_execution_snapshot(controller, gateway, snapshot, action_now, expected_action):
+    """Drive SDK after blocking persistence; discard changed execution context."""
+    gateway.update(0.1)
+    at = datetime.now(UTC)
+    checked = gateway.snapshot(at)
+    if gateway.reconnection_required:
+        require_recovery(controller, at)
+        return False
+    if action_now() != expected_action:
+        return False
+    if checked["snapshot_id"] != snapshot["snapshot_id"]:
+        controller.synchronize(checked, at)
+        return False
+    return True
+
+
 def run(config_path, *, inspect=False):
     logging.disable(
         logging.CRITICAL
@@ -271,23 +299,7 @@ def run(config_path, *, inspect=False):
             market.pump = lambda: gateway.update(0) if gateway is not None else None
             while True:
                 now = datetime.now(UTC)
-                control = (
-                    read_private(control_path, limit=1024)
-                    if control_path.exists()
-                    else {"mode": "observe"}
-                )
-                if set(control) != {"mode"} or control["mode"] not in {
-                    "observe",
-                    "trade",
-                    "pause",
-                    "stop",
-                }:
-                    raise ValueError("TQ_CONTROL_INVALID")
-                action = "stop" if stopped else control["mode"]
-                if inspect:
-                    action = "observe"
-                if (base / "hold.json").exists() and action != "stop":
-                    action = "pause"
+                action = control_action(control_path, base / "hold.json", stopped=stopped, inspect=inspect)
                 mode = "trade" if action in {"trade", "pause", "stop"} else "observe"
                 if gateway is None:
                     if action == "stop":
@@ -486,6 +498,12 @@ def run(config_path, *, inspect=False):
                         if gateway.reconnection_required:
                             require_recovery(controller, now)
                         controller.synchronize(snapshot, now)
+                        if not refresh_execution_snapshot(
+                            controller, gateway, snapshot,
+                            lambda: control_action(control_path, base / "hold.json", stopped=stopped, inspect=inspect),
+                            action,
+                        ):
+                            continue
                         state = controller.store.current()
                         inputs = []
                         candidates = ()
@@ -561,7 +579,8 @@ def run(config_path, *, inspect=False):
                             elif checked["snapshot_id"] != snapshot["snapshot_id"]:
                                 controller.synchronize(checked, checked_at)
                             elif (
-                                state.phase == "READY"
+                                control_action(control_path, base / "hold.json", stopped=stopped, inspect=inspect) == action
+                                and state.phase == "READY"
                                 and (
                                     cleanup
                                     or any(not order.reconciled for order in state.orders)
