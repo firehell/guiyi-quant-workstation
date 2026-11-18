@@ -76,7 +76,7 @@ def _classes():
             m.AccountSnapshot,
             m.Position,
             m.TqKqFill,
-            m.TqKqManualClosesV1,
+            m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1,
             m.TqKqInstrument,
             m.TqKqExecutionInput,
             m.TqKqTick,

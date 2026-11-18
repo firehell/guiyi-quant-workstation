@@ -229,18 +229,32 @@ def projection(
     if state:
         manual = {
             order.order_id: audit.command
-            for audit in state.audit if type(audit.command) is m.TqKqManualClosesV1
+            for audit in state.audit if type(audit.command) in (m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1)
             for order in audit.command.orders
         }
 
         def provenance(order_id):
             command = manual.get(order_id)
-            return {} if command is None else {
+            if command is None:
+                return {}
+            facts = {
                 "execution_origin": "OWNER_MANUAL_CLOSE",
                 "approval_source": command.approval_source,
                 "evidence_sha256": command.evidence_sha256,
                 "reconciliation_policy_version": command.policy_version,
             }
+            if type(command) is m.TqKqHistoricalManualClosesV1:
+                facts.update(
+                    historical_native_observed_at=command.historical_readback.at.isoformat(),
+                    current_native_observed_at=command.readback.at.isoformat(),
+                    historical_native_payload_sha256=command.native_payload_sha256,
+                    historical_native_event_rowid=str(command.native_event_rowid),
+                    gap_continuity_source="OWNER_NO_OTHER_OPERATIONS",
+                    gap_approval_source=command.gap_approval_source,
+                    gap_confirmed_at=command.gap_confirmed_at.isoformat(),
+                    gap_approval_sha256=command.gap_approval_sha256,
+                )
+            return facts
 
         for s in state.signals:
             add(

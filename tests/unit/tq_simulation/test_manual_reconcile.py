@@ -337,6 +337,7 @@ def test_operator_requires_native_stop_and_unchanged_config(monkeypatch, tmp_pat
 @pytest.mark.parametrize("arguments", [
     ["--apply-manual-closes"],
     ["--approval-source", APPROVAL],
+    ["--historical-native-approval", "/private/approval"],
     ["--manual-close-evidence", "/private/evidence"],
     ["--inspect", "--manual-close-evidence", "/private/evidence", "--approval-source", APPROVAL],
 ])

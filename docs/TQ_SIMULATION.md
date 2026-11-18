@@ -50,6 +50,13 @@ owner 明确批准的已成交手动平昨仓，可使用 `reconcile-manual-clos
 
 `tqkq_manual_close_reconciliation_v1` 用单一不可变命令原子追加手动 Order 和 TqKqFill，保留原基线、历史命令及 SUBMIT/CANCEL claims；手动记录使用独立 human 来源，不伪造策略信号或程序发送凭证。证据文件摘要决定幂等身份，重复执行读回原命令；重启从已验证 audit 重建手动 native 映射。逐笔手续费继续未知。提交结果不明时先读取原 receipt 核对，不能盲重写。成功入账保持 RECOVERY_REQUIRED，需新鲜原生账户与权威行情恢复，恢复后新 completed Bar 才能开仓。
 
+跨交易日首次导入须显式提供 `--historical-native-approval /绝对私有审批文件`，不自动降级原 V1。
+`tqkq_historical_manual_close_reconciliation_v1` 分别保存不可变 dispatch 原生快照的历史观察时间、历史成交事实、当前入账时间及新鲜当前账户读回。
+审批文件精确绑定账户摘要、手动凭证摘要、原生事件 rowid/原字节摘要、前后交易日、观测空窗起点及 owner 确认“无其他交易、出入金、重置”的来源和接收时间；此人为确认不表述为 SDK 已观测连续。
+历史原生委托/成交必须恰好覆盖本批，当前新交易日必须完整且委托/成交为空，历史及当前残余持仓必须精确相同；历史快照须覆盖原账本时钟。
+仅该批订单可由历史原件确认；当前成交列表保持原样。两类命令共用证据幂等身份，原生原行与审批原字节须在账户事务内复验。
+原权益基线、旧账本和 claims 保留，无发送副作用；成功后仍 RECOVERY_REQUIRED，再以新鲜 Recover 恢复原策略。
+
 ## 监控与发布
 
 TqKq 的固定 WebSocket 传输策略为 `tqkq_direct_websocket_transport_v1`：
