@@ -262,6 +262,16 @@ exit price or return, and start all twelve future revisions FLAT. Complete verif
 retirement/calculation proofs, native MDS source proof, writer fencing, atomicity, one-shot
 attempt and readback remain mandatory; pending/evaluator failures receive no deployment exemption.
 
+The owner-selected `htdy_conflict_recovery_20261118_v1` SHALL cover only JD 60m from inventory SHA256
+`f19aa721a6a0270ee70816a03ccd9f15ad68a017b8c17d5491d5412a392b9039`, binding the exact old revision,
+pending Capture, generation 7, checkpoint batch and existing OPEN reference trade in `NOV18_BINDINGS`.
+The CLI schema SHALL be `reference_htdy_conflict_cli_20261118_v1`; earlier incident identities remain
+unchanged. The original JD entry price SHALL remain 3276 even though its context Bar was revised to
+3278. Recovery SHALL append DATA_INTERRUPTED without exit price or return, and start the future JD
+revision FLAT. All original records, other reference streams and TqKq/account positions SHALL remain
+unchanged. Source proof, stopped-writer fence, maintenance lease, one-shot transaction and exact
+readback below remain mandatory; this incident grants no pending/evaluator deployment exemption.
+
 The native MDS verifier SHALL prove immutable original/capture/checkpoint hashes, the exact 32-Bar
 windows, unchanged overlapping endpoint/physical-owner identities, Calendar/Session continuity and
 finite numeric differences. Every changed Bar SHALL match the current verified physical Canonical

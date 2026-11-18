@@ -501,3 +501,16 @@ NOV13_BINDINGS = {
         "reference-trade:a8511a47644554d0ff550d8d863077e3271bf1dab46b6f6e03b2b9789219fe11",
     ),
 }
+
+
+NOV18_VERSION = "htdy_conflict_recovery_20261118_v1"
+NOV18_INVENTORY_SHA256 = "f19aa721a6a0270ee70816a03ccd9f15ad68a017b8c17d5491d5412a392b9039"
+NOV18_BINDINGS = {
+    "reference-stream:d7927893f70ab589aa4857dd7e6b5eb1f24bc90bb1fbb2a8df115bd59652bf9d": (  # JD
+        "289ea5307f88476c9cebfb15bfb8e5c6",
+        "5294fcdfa33f4bfaac79f2fe4ed260d9",
+        7,
+        "dfcb7f6351c24597bba137fa509ed499",
+        "reference-trade:39c1db2a54cf6d909de0ca4321a62c62f189ee40094e6d6a6784e3d1d5d9f369",
+    ),
+}
