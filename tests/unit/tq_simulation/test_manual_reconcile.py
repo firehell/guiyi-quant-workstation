@@ -213,6 +213,20 @@ def test_already_committed_is_noop_after_native_history_or_positions_change(tmp_
     c.close()
 
 
+def test_native_decimal_representation_is_equal_but_other_fields_are_exact(tmp_path):
+    c, folder, fresh, at = fixture(tmp_path)
+    fresh["orders"][0]["limit_price"] = "999.0"
+    fresh["trades"][0]["price"] = "1000.00"
+    seal(fresh)
+    _, command, duplicate = prepare(c, folder, fresh, at, APPROVAL)
+    assert not duplicate and len(command.fills) == 7
+    fresh["orders"][0]["exchange_order_id"] = "changed-external-identity"
+    seal(fresh)
+    with pytest.raises(ValueError, match="EVIDENCE_UNPROVEN"):
+        prepare(c, folder, fresh, at, APPROVAL)
+    c.close()
+
+
 def host(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from datetime import datetime

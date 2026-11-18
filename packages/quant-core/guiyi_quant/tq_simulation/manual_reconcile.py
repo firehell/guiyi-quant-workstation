@@ -35,6 +35,18 @@ def validate_snapshot(snapshot):
     return observed
 
 
+def native_record_matches(record, observations, identity, price_field):
+    matches = [value for value in observations if value.get(identity) == record[identity]]
+    if len(matches) != 1 or matches[0].keys() != record.keys():
+        return False
+    observed = matches[0]
+    return all(
+        decimal(value, positive=True) == decimal(observed[key], positive=True)
+        if key == price_field else value == observed[key]
+        for key, value in record.items()
+    )
+
+
 def load_evidence(folder):
     folder = Path(folder)
     require(folder.is_absolute() and folder.resolve(strict=True) == folder)
@@ -123,7 +135,8 @@ def prepare(controller, folder, snapshot, at, approval_source):
     orders, fills = [], []
     mappings = controller.native_mappings()
     for symbol, native, trade in records:
-        require(native in snapshot["orders"] and trade in snapshot["trades"])
+        require(native_record_matches(native, snapshot["orders"], "order_id", "limit_price")
+                and native_record_matches(trade, snapshot["trades"], "trade_id", "price"))
         require(symbol in controller.symbols)
         product, contract = controller.symbols[symbol]
         order_id = "manual-tq:" + native["order_id"]
