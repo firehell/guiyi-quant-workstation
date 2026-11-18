@@ -46,6 +46,10 @@ MDS私有通道每请求最多处理4品种自然信号及4份恢复证明，保
 
 不可解释的发送结果、账本冲突或外部操作会留下持久 hold；直接再次 start 不解除。须查清原始委托、成交和账户事实，再按对应恢复语义处理，不能删账本重建。
 
+owner 明确批准的已成交手动平昨仓，可使用 `reconcile-manual-closes --evidence-dir /绝对私有目录 --approval-source 审批来源` 先演练，再加 `--apply` 正式对账。仅允许 Worker 原生停止、control=stop、同版配置核验及账户锁内操作；不发送或撤销订单。逐一核对原始前后快照、手动意图、原生订单和成交，以及新鲜完整账户事实，只接纳精确物理合约的反向一手 CLOSE，原生时间与价格保持原样。任一笔、残余持仓或未知成交不符，整批拒绝。
+
+`tqkq_manual_close_reconciliation_v1` 用单一不可变命令原子追加手动 Order 和 TqKqFill，保留原基线、历史命令及 SUBMIT/CANCEL claims；手动记录使用独立 human 来源，不伪造策略信号或程序发送凭证。证据文件摘要决定幂等身份，重复执行读回原命令；重启从已验证 audit 重建手动 native 映射。逐笔手续费继续未知。提交结果不明时先读取原 receipt 核对，不能盲重写。成功入账保持 RECOVERY_REQUIRED，需新鲜原生账户与权威行情恢复，恢复后新 completed Bar 才能开仓。
+
 ## 监控与发布
 
 TqKq 的固定 WebSocket 传输策略为 `tqkq_direct_websocket_transport_v1`：

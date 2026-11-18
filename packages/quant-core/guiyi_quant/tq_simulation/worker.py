@@ -789,8 +789,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--inspect", action="store_true")
+    parser.add_argument("--manual-close-evidence", type=Path)
+    parser.add_argument("--approval-source")
+    parser.add_argument("--apply-manual-closes", action="store_true")
     args = parser.parse_args()
     try:
+        if args.manual_close_evidence is not None:
+            from .manual_reconcile import run as reconcile
+            result = reconcile(args.config, args.manual_close_evidence, args.approval_source,
+                               commit=args.apply_manual_closes)
+            print(json.dumps(result), flush=True)
+            return 0
         return run(args.config, inspect=args.inspect)
     except Exception as error:
         code = (
@@ -798,6 +807,9 @@ def main():
         )
         if not re.fullmatch(r"TQ_[A-Z0-9_]{1,100}", code):
             code = "TQ_CONNECT_OR_RUNTIME_FAILED"
+        if args.manual_close_evidence is not None:
+            print(json.dumps({"status": "TQ_MANUAL_CLOSE_BLOCKED", "code": code}), flush=True)
+            return 1
         try:
             base = private_folder(directory())
             out = blank(datetime.now(UTC), code)
