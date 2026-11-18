@@ -785,8 +785,12 @@ def main():
     parser.add_argument("--approval-source")
     parser.add_argument("--apply-manual-closes", action="store_true")
     args = parser.parse_args()
+    manual_requested = (args.manual_close_evidence is not None
+                        or args.approval_source is not None or args.apply_manual_closes)
     try:
-        if args.manual_close_evidence is not None:
+        if manual_requested:
+            if args.manual_close_evidence is None or not args.approval_source or args.inspect:
+                raise ValueError("TQ_MANUAL_CLOSE_ARGUMENTS_REQUIRED")
             from .manual_reconcile import run as reconcile
             result = reconcile(args.config, args.manual_close_evidence, args.approval_source,
                                commit=args.apply_manual_closes)
@@ -799,7 +803,7 @@ def main():
         )
         if not re.fullmatch(r"TQ_[A-Z0-9_]{1,100}", code):
             code = "TQ_CONNECT_OR_RUNTIME_FAILED"
-        if args.manual_close_evidence is not None:
+        if manual_requested:
             print(json.dumps({"status": "TQ_MANUAL_CLOSE_BLOCKED", "code": code}), flush=True)
             return 1
         try:
