@@ -1,3 +1,5 @@
+11/18 11:57 v1.16.135已发布（PR659、annotated tag、GitHub Release），exact `0a5db08a41c662a1674bf059ae67a4c65f958a6c`，正式候选根 `.worktrees/release-v1.16.135`。复用未被任何运行/配置/恢复记录引用的v134普通Git工作树，迁移前原生retention扫描eligible且references为空；未改现役v132。新根API/SDK冻结重装、实际Core/Gateway导入和版本身份、Web类型/生产构建与35项smoke通过，源码clean。develop补回已发布的HTDY NOV13/退休证明批读依赖并经独立集成Review和64项定向验证，原两处用户dirty未触及。当前仅等待15:00后权威休市+确认余量，再做本次JD原生单次恢复、整组切换和快期正式对账。
+
 11/18 11:52 owner已选择JD旧参考交易追加DATA_INTERRUPTED、未来FLAT，保留全部原件、原建仓3276及账户CU持仓。本次NOV18单流精确scope/清单hash已实现，未改通用来源、停写fence、lease、CAS或一次性事务；独立Review通过。真实只读MDS来源诊断通过1流/4根冲突；首批21、旧incident88、隔离PostgreSQL16项（含本次JD原子事务）及版本检查通过。隔离测试无生产写入，临时PG容器已清理。v135待发布构建，15:00收盘后再生成新鲜停写计划，先恢复JD并读回，再整组切换及7笔正式对账；当前仍v132/gen88与原42095条账本。
 
 11/18 11:20 午休切换顺延至15:00收盘后：原生cohort预检查出JD HTDY 60m唯一未消费capture `5294fcdfa33f4bfaac79f2fe4ed260d9`。只读纯evaluator重现OBSERVATION_GAP，同JD2701、同segment、端点连续，但11/17四根重叠Bar发生真实值修订，其中11:30收盘3276→3278，正是原OPEN参考多头的建仓Bar。原参考价/交易/capture均未修改；独立复核确认旧精确恢复scope不覆盖本次，不允许绕过pending Gate或静默改价。已请owner选择保留阻塞，或单独将该JD参考交易追加DATA_INTERRUPTED、未来FLAT恢复；此选择不涉及快期账户CU持仓。正式仍v132/gen88，快期42095条命令/8个claims及未启动状态保持；7笔正式对账及原模拟策略恢复授权继续有效。
