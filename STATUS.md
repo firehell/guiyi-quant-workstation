@@ -1,3 +1,7 @@
+11/18 09:34 日盘行情验收通过：60品种自然恢复订阅，正式WebSocket全部读到新M1，09:01–09:10逐分钟无缺口且合约一致；JM/CU/EC首批09:15的15m通过。API/DB/Redis/Live持续ok，正式仍v132/gen88未切换。浏览器首页60品种和JM自由看盘1m实际更新至09:22；09:02三条测试长连接曾同时断开，服务未重启、日志无异常，重连后JM连续8根无再断，原原因尚未定位。趋势参考面板实际返回REFERENCE_UPDATE_PENDING（结果11/13、行情11/17），Reference既有业务积压单列，未改写成实时验收通过。
+
+手动平仓实现及补修均已集成develop（7fcb749c7、68f3c1437、86bcb52fe、6dc31a855），PR658仍draft。新增Decimal等值价格核验只消除645.0/645表示差异，原始hash、身份、时间和其他字段仍exact；详情报价比率误当点差的显示问题已修。后端188 passed、Web23 passed、独立Review及Web构建通过。私有原账本全量重放进行中，已到26000/42095；正式仍42095条命令和8个claims，未入账或启用Worker。
+
 11/18 08:44 owner已明确批准将7笔手动平仓正式对账后恢复原模拟策略。实现已提交并集成develop（7fcb749c7、68f3c1437），PR658为draft，尚未发布或切换。新版本化命令单事务追加真实手动Order/Fill，原基线、历史和claims保留，重启映射从不可变audit重建，成功后保持恢复状态并等新completed。定向187 passed，独立Review 114 passed，Ruff/diff通过；原7笔私有原件hash验证通过，原账本私有副本已保全，全量重放/演练待开盘验收后运行。08:40现场原账本42095条命令、8个claims、快期launchd无进程且无hold，control为observe；未发生正式对账或启动。正式仍v132/gen88，API/DB/Redis/Live休市健康正常。先验收09:00开盘，11:20前验证通过才使用午休切换窗口，否则推迟15:00后。
 
 11/18 04:26 快期同版只读探测返回 `READ_ONLY_BLOCKED/TQ_EXTERNAL_TRADE`。读回昨晚22:36手动平仓原件为7笔成交，当前原生只剩CU2612多头1手，与本地原8仓不一致；保持stop，待owner确定继续停用或将手动成交正式对账后恢复。探测后独立SQLite核对原42095条命令、初始metadata/投影、8个claims及64956条历史dispatch事件逐项不变，仅追加1份新鲜只读snapshot。Web正式WebSocket 45/45夜盘读回通过，Runtime与Live仍ok。
