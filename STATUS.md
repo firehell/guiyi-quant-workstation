@@ -1,4 +1,4 @@
-11/18 23:40 原7笔手动平仓已于19:21正式追加为命令42096，完整重放及新鲜原生探测通过，保留原权益基线和8个旧SUBMIT claims；原策略已在v1.16.136/exact e1e3311d29e30a7b09a8c7b10052bd5b07d73bad恢复，原生与本地仅余CU2612多1。标准共享服务gen90；夜盘45品种首根1m及首根60m实际读回、M1聚合逐值核对通过。SI2701物理历史原生warmup完成77目标/33请求，七周期API通过。不能将这些证据当作新模拟订单成交：本轮CU执行受TQ_QUOTE_STALE保护，尚无新SUBMIT。
+11/18 23:35 原7笔手动平仓已于19:21正式追加为命令42096，完整重放及新鲜原生探测通过，保留原权益基线和8个旧SUBMIT claims；原策略已在v1.16.136/exact e1e3311d29e30a7b09a8c7b10052bd5b07d73bad恢复，原生与本地仅余CU2612多1。标准共享服务gen90；夜盘45品种首根1m及首根60m实际读回、M1聚合逐值核对通过。SI2701物理历史原生warmup完成77目标/33请求，七周期API通过。不能将这些证据当作新模拟订单成交：本轮CU执行受TQ_QUOTE_STALE保护，尚无新SUBMIT。
 
 本轮已non-force清理9棵干净且已合入origin/main、无运行引用的旧任务树；9棵旧发布树因历史恢复证据封存校验未通过继续保留。新增retirement-cleanup临时树受宿主primary checkout保护，未绕过删除。精确清理清单与恢复commit保存在AppSupport/GuiyiQuant/night-live-recovery-20261118.LYVwTzIa/manual-close-validation。
 
