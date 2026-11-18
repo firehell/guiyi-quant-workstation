@@ -4,6 +4,7 @@ from decimal import Decimal
 from ..htdy_account_execution.reducer import local_occupancy
 from .journal import digest
 from ..htdy_account_execution.tq_types import TQ_RISK_VERSION, TQ_EXECUTION_VERSION
+from ..htdy_account_execution import model as m
 
 VERSION = "simulation_monitor_v1"
 METRICS = (
@@ -226,6 +227,21 @@ def projection(
         )
 
     if state:
+        manual = {
+            order.order_id: audit.command
+            for audit in state.audit if type(audit.command) is m.TqKqManualClosesV1
+            for order in audit.command.orders
+        }
+
+        def provenance(order_id):
+            command = manual.get(order_id)
+            return {} if command is None else {
+                "execution_origin": "OWNER_MANUAL_CLOSE",
+                "approval_source": command.approval_source,
+                "evidence_sha256": command.evidence_sha256,
+                "reconciliation_policy_version": command.policy_version,
+            }
+
         for s in state.signals:
             add(
                 "signal",
@@ -262,14 +278,15 @@ def projection(
                 o.product,
                 o.contract,
                 o.status,
-                LABELS[o.status],
+                "手动平仓已对账" if o.order_id in manual else LABELS[o.status],
                 {
                     "side": o.side,
                     "offset": o.offset,
                     "quantity": o.quantity,
                     "price": o.price,
+                    **provenance(o.order_id),
                 },
-                o.signal_id,
+                None if o.order_id in manual else o.signal_id,
                 o.order_id,
             )
         for f in state.fills:
@@ -281,7 +298,7 @@ def projection(
                 o.product,
                 f.contract,
                 "RECORDED",
-                "模拟成交已确认",
+                "手动模拟平仓已对账" if o.order_id in manual else "模拟成交已确认",
                 {
                     "price": f.price,
                     "filled_at": f.filled_at.isoformat(),
@@ -289,8 +306,9 @@ def projection(
                     "quantity": f.quantity,
                     "fee": f.fee,
                     "fee_status": "UNKNOWN" if f.fee is None else "VERIFIED",
+                    **provenance(o.order_id),
                 },
-                o.signal_id,
+                None if o.order_id in manual else o.signal_id,
                 o.order_id,
             )
     out["snapshot"] = digest(records)
