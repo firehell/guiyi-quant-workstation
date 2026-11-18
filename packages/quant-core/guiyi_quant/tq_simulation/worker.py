@@ -783,17 +783,20 @@ def main():
     parser.add_argument("--inspect", action="store_true")
     parser.add_argument("--manual-close-evidence", type=Path)
     parser.add_argument("--approval-source")
+    parser.add_argument("--historical-native-approval", type=Path)
     parser.add_argument("--apply-manual-closes", action="store_true")
     args = parser.parse_args()
     manual_requested = (args.manual_close_evidence is not None
-                        or args.approval_source is not None or args.apply_manual_closes)
+                        or args.approval_source is not None or args.apply_manual_closes
+                        or args.historical_native_approval is not None)
     try:
         if manual_requested:
             if args.manual_close_evidence is None or not args.approval_source or args.inspect:
                 raise ValueError("TQ_MANUAL_CLOSE_ARGUMENTS_REQUIRED")
             from .manual_reconcile import run as reconcile
             result = reconcile(args.config, args.manual_close_evidence, args.approval_source,
-                               commit=args.apply_manual_closes)
+                               commit=args.apply_manual_closes,
+                               historical_approval=args.historical_native_approval)
             print(json.dumps(result), flush=True)
             return 0
         return run(args.config, inspect=args.inspect)

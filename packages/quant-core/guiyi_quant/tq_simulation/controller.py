@@ -75,7 +75,7 @@ class Controller:
             return self._manual_orders_cache
         result = {}
         for audit in self.store.current().audit:
-            if type(audit.command) is m.TqKqManualClosesV1:
+            if type(audit.command) in (m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1):
                 for order in audit.command.orders:
                     fill = next(f for f in audit.command.fills if f.order_id == order.order_id)
                     result[fill.native_order_id] = order
