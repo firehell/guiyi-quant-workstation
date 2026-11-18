@@ -1,3 +1,5 @@
+11/18 11:52 owner已选择JD旧参考交易追加DATA_INTERRUPTED、未来FLAT，保留全部原件、原建仓3276及账户CU持仓。本次NOV18单流精确scope/清单hash已实现，未改通用来源、停写fence、lease、CAS或一次性事务；独立Review通过。真实只读MDS来源诊断通过1流/4根冲突；首批21、旧incident88、隔离PostgreSQL16项（含本次JD原子事务）及版本检查通过。隔离测试无生产写入，临时PG容器已清理。v135待发布构建，15:00收盘后再生成新鲜停写计划，先恢复JD并读回，再整组切换及7笔正式对账；当前仍v132/gen88与原42095条账本。
+
 11/18 11:20 午休切换顺延至15:00收盘后：原生cohort预检查出JD HTDY 60m唯一未消费capture `5294fcdfa33f4bfaac79f2fe4ed260d9`。只读纯evaluator重现OBSERVATION_GAP，同JD2701、同segment、端点连续，但11/17四根重叠Bar发生真实值修订，其中11:30收盘3276→3278，正是原OPEN参考多头的建仓Bar。原参考价/交易/capture均未修改；独立复核确认旧精确恢复scope不覆盖本次，不允许绕过pending Gate或静默改价。已请owner选择保留阻塞，或单独将该JD参考交易追加DATA_INTERRUPTED、未来FLAT恢复；此选择不涉及快期账户CU持仓。正式仍v132/gen88，快期42095条命令/8个claims及未启动状态保持；7笔正式对账及原模拟策略恢复授权继续有效。
 
 11/18 11:04 v1.16.134代码包已发布（PR658、annotated tag及GitHub Release），exact `ed133bb1c11e263f733caa65337d66e1e29d6b79`。普通Git正式工作树 `.worktrees/release-v1.16.134` 已构建，API/SDK frozen、Web类型/生产构建及新副本33项专项smoke通过，实际Core/Gateway导入路径与正式副本一致。当前正式服务仍v132/gen88，未切换；快期正式账本尚未追加7笔，进程未启动。切换需先解决上述JD原件冲突并满足新鲜Session和原生cohort校验，再以新鲜SDK事实正式对账并恢复原模拟策略。

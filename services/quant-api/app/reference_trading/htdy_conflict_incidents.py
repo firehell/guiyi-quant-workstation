@@ -488,3 +488,29 @@ NOV12_BINDINGS = {
         None,
     ),
 }
+
+
+NOV13_VERSION = "htdy_conflict_recovery_20261113_v1"
+NOV13_INVENTORY_SHA256 = "4822d592fe39c7f40511dfcd0cb73b82734763e2c4a54ff4fe2b2e623a0859e9"
+NOV13_BINDINGS = {
+    "reference-stream:31c1f7ffe88b05d8142d0fa4ac46ca4d5d977d9604c6deb945a8ffe5389aa7bf": (  # SI
+        "354d9012c55948bab5d7b6af271bea41",
+        "02ee61321328464db329efa62afd995b",
+        4,
+        "7c61a9d3b2b8434786c9f5f84b7a8649",
+        "reference-trade:a8511a47644554d0ff550d8d863077e3271bf1dab46b6f6e03b2b9789219fe11",
+    ),
+}
+
+
+NOV18_VERSION = "htdy_conflict_recovery_20261118_v1"
+NOV18_INVENTORY_SHA256 = "f19aa721a6a0270ee70816a03ccd9f15ad68a017b8c17d5491d5412a392b9039"
+NOV18_BINDINGS = {
+    "reference-stream:d7927893f70ab589aa4857dd7e6b5eb1f24bc90bb1fbb2a8df115bd59652bf9d": (  # JD
+        "289ea5307f88476c9cebfb15bfb8e5c6",
+        "5294fcdfa33f4bfaac79f2fe4ed260d9",
+        7,
+        "dfcb7f6351c24597bba137fa509ed499",
+        "reference-trade:39c1db2a54cf6d909de0ca4321a62c62f189ee40094e6d6a6784e3d1d5d9f369",
+    ),
+}
