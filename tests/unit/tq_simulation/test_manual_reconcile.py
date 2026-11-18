@@ -300,3 +300,19 @@ def test_operator_requires_native_stop_and_unchanged_config(monkeypatch, tmp_pat
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT COUNT(*) FROM commands").fetchone()[0] == count
     assert calls == (["connect", "update", "close"] if gate == "config_drift" else [])
+
+
+@pytest.mark.parametrize("arguments", [
+    ["--apply-manual-closes"],
+    ["--approval-source", APPROVAL],
+    ["--manual-close-evidence", "/private/evidence"],
+    ["--inspect", "--manual-close-evidence", "/private/evidence", "--approval-source", APPROVAL],
+])
+def test_partial_manual_arguments_never_fall_through_to_normal_worker(monkeypatch, capsys, arguments):
+    from guiyi_quant.tq_simulation import worker
+
+    monkeypatch.setattr("sys.argv", ["worker", "--config", "/private/config.json", *arguments])
+    monkeypatch.setattr(worker, "run", lambda *_a, **_k: pytest.fail("ordinary worker entered"))
+    monkeypatch.setattr(worker, "write_private", lambda *_a: pytest.fail("monitor overwritten"))
+    assert worker.main() == 1
+    assert json.loads(capsys.readouterr().out)["code"] == "TQ_MANUAL_CLOSE_ARGUMENTS_REQUIRED"
