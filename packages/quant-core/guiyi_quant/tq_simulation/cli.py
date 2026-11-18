@@ -114,9 +114,12 @@ def main(argv=None):
     parser.add_argument("--replace", action="store_true")
     parser.add_argument("--evidence-dir", type=Path)
     parser.add_argument("--approval-source")
+    parser.add_argument("--historical-native-approval", type=Path)
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.historical_native_approval is not None and args.action != "reconcile-manual-closes":
+            raise ValueError("TQ_MANUAL_CLOSE_ARGUMENTS_REQUIRED")
         if args.action == "credentials":
             account = setup_dialog(replace=args.replace)
             print(
@@ -189,6 +192,8 @@ def main(argv=None):
                 "--manual-close-evidence", str(args.evidence_dir),
                 "--approval-source", args.approval_source,
             ]
+            if args.historical_native_approval is not None:
+                command += ["--historical-native-approval", str(args.historical_native_approval)]
             if args.apply:
                 command.append("--apply-manual-closes")
             return subprocess.run(command, cwd=Path.home(), env=service_environment(root),

@@ -1251,7 +1251,7 @@ def validate(state):
             raise ValueError("ACCOUNT_ORDER_CAPACITY")
 
 
-def manual_closes(state, cmd):
+def record_manual_closes(state, cmd):
     if (cmd.readback.snapshot.account_id != state.account_id
             or state.unresolved_fill_ids
             or any(unsettled(state, o) for o in state.orders)):
@@ -1274,6 +1274,11 @@ def manual_closes(state, cmd):
             p, desired=0, signal_id="", signal_at=None,
             opening_consumed=True, wait_after=cmd.at,
         ))
+    return state
+
+
+def manual_closes(state, cmd):
+    state = record_manual_closes(state, cmd)
     state, reason = apply_readback(state, cmd.readback)
     if reason != "READBACK_RECONCILED":
         raise ValueError("TQ_MANUAL_CLOSE_READBACK_UNPROVEN")
@@ -1287,7 +1292,7 @@ def apply(state, key, cmd):
         m.Signal,
         m.TqKqObservedSignalV1,
         m.TqKqClosedSignalV1,
-        m.TqKqManualClosesV1,
+        m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1,
         m.Owner,
         m.TqKqFill,
         m.Fill,
@@ -1360,7 +1365,22 @@ def apply(state, key, cmd):
     ):
         raise ValueError("MANUAL_TEST_SCOPED_TICK_REQUIRED")
     effects = ()
-    if type(cmd) is m.TqKqManualClosesV1:
+    if type(cmd) is m.TqKqHistoricalManualClosesV1:
+        # Dated native proof confirms only these imported orders. Current native
+        # collections stay unchanged; old-day IDs are never synthesized into them.
+        if cmd.historical_readback.at < state.clock:
+            raise ValueError("TQ_HISTORICAL_MANUAL_CHECKPOINT_UNPROVEN")
+        state = record_manual_closes(state, cmd)
+        imported = {o.order_id for o in cmd.orders}
+        state = replace(state, orders=tuple(
+            replace(o, reconciled=True) if o.order_id in imported else o
+            for o in state.orders))
+        state, reason = apply_readback(state, cmd.readback)
+        if reason != "READBACK_RECONCILED":
+            raise ValueError("TQ_HISTORICAL_MANUAL_READBACK_UNPROVEN")
+        state = replace(state, phase="RECOVERY_REQUIRED", readback_valid=False)
+        reason = "HISTORICAL_MANUAL_NATIVE_CLOSES_RECONCILED"
+    elif type(cmd) is m.TqKqManualClosesV1:
         state = manual_closes(state, cmd)
         reason = "MANUAL_NATIVE_CLOSES_RECONCILED"
     elif type(cmd) is m.Signal:

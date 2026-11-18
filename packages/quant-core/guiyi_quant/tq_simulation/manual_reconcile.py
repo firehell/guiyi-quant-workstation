@@ -116,12 +116,59 @@ def recorded_command(controller, evidence, approval_source):
     key = "manual-closes:" + evidence
     prior = next((a.command for a in controller.store.current().audit if a.command_id == key), None)
     if prior is not None:
-        require(type(prior) is m.TqKqManualClosesV1
+        require(type(prior) in (m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1)
                 and prior.evidence_sha256 == evidence and prior.approval_source == approval_source)
     return key, prior
 
 
-def prepare(controller, folder, snapshot, at, approval_source):
+HISTORICAL_APPROVAL_SCHEMA = "tqkq_historical_manual_close_approval_v1"
+HISTORICAL_APPROVAL_FIELDS = {
+    "schema", "account_id_sha256", "evidence_sha256", "native_event_rowid",
+    "native_payload_sha256", "historical_trading_day", "current_trading_day",
+    "gap_start", "owner_confirmed_at", "approval_source", "no_other_operations",
+}
+
+
+def historical_source(controller, approval_path, evidence, current, at):
+    import json
+
+    raw = read_private_bytes(Path(approval_path), limit=8192)
+    approval = json.loads(raw, object_pairs_hook=unique_fields)
+    require(set(approval) == HISTORICAL_APPROVAL_FIELDS
+            and approval["schema"] == HISTORICAL_APPROVAL_SCHEMA
+            and approval["no_other_operations"] is True
+            and approval["evidence_sha256"] == evidence
+            and approval["account_id_sha256"] == sha256(controller.account_id.encode()).hexdigest()
+            and type(approval["native_event_rowid"]) is int and approval["native_event_rowid"] > 0)
+    row = controller.journal.db.execute(
+        "SELECT kind,at,payload FROM events WHERE rowid=?", (approval["native_event_rowid"],),
+    ).fetchone()
+    require(row is not None and row[0] == "snapshot"
+            and sha256(row[2].encode()).hexdigest() == approval["native_payload_sha256"])
+    retained = json.loads(row[2], object_pairs_hook=unique_fields)
+    observed = validate_snapshot(retained)
+    confirmed = datetime.fromisoformat(approval["owner_confirmed_at"])
+    m.time(confirmed)
+    require(datetime.fromisoformat(row[1]) == observed
+            and datetime.fromisoformat(approval["gap_start"]) == observed
+            and retained["account_id"] == current["account_id"] == controller.account_id
+            and retained["trading_day"] == approval["historical_trading_day"]
+            and current["trading_day"] == approval["current_trading_day"]
+            and observed <= confirmed <= at and not current["orders"] and not current["trades"])
+    return retained, approval, sha256(raw).hexdigest()
+
+
+def historical_source_unchanged(controller, path, command):
+    require(sha256(read_private_bytes(Path(path), limit=8192)).hexdigest()
+            == command.gap_approval_sha256)
+    row = controller.journal.db.execute(
+        "SELECT payload FROM events WHERE rowid=?", (command.native_event_rowid,),
+    ).fetchone()
+    require(row is not None and sha256(row[0].encode()).hexdigest()
+            == command.native_payload_sha256)
+
+
+def prepare(controller, folder, snapshot, at, approval_source, *, historical_approval=None):
     evidence, before, after, records = load_evidence(folder)
     require(before["account_id"] == controller.account_id)
     key, prior = recorded_command(controller, evidence, approval_source)
@@ -132,11 +179,17 @@ def prepare(controller, folder, snapshot, at, approval_source):
     require(snapshot["account_id"] == before["account_id"] == controller.account_id)
     require(all(o["state"] in {"FILLED", "CANCELLED", "REJECTED"} for o in snapshot["orders"]))
     require(snapshot["positions"] == after["positions"])
+    proof_snapshot = snapshot
+    approval = approval_sha = None
+    if historical_approval is not None:
+        proof_snapshot, approval, approval_sha = historical_source(
+            controller, historical_approval, evidence, snapshot, at)
+        require(proof_snapshot["positions"] == after["positions"])
     orders, fills = [], []
     mappings = controller.native_mappings()
     for symbol, native, trade in records:
-        require(native_record_matches(native, snapshot["orders"], "order_id", "limit_price")
-                and native_record_matches(trade, snapshot["trades"], "trade_id", "price"))
+        require(native_record_matches(native, proof_snapshot["orders"], "order_id", "limit_price")
+                and native_record_matches(trade, proof_snapshot["trades"], "trade_id", "price"))
         require(symbol in controller.symbols)
         product, contract = controller.symbols[symbol]
         order_id = "manual-tq:" + native["order_id"]
@@ -152,18 +205,29 @@ def prepare(controller, folder, snapshot, at, approval_source):
         fills.append(m.TqKqFill(
             "tq-trade:" + trade["trade_id"], order_id, controller.account_id, contract,
             instant_ns(trade["trade_date_time"]), at, decimal(trade["price"], positive=True),
-            None, 1, trade["trade_id"], native["order_id"], snapshot["snapshot_id"],
+            None, 1, trade["trade_id"], native["order_id"], proof_snapshot["snapshot_id"],
         ))
-    command = m.TqKqManualClosesV1(
-        tuple(orders), tuple(fills), controller.readback(snapshot, at, mappings=mappings),
-        evidence, approval_source,
-    )
+    current_readback = controller.readback(snapshot, at, mappings=mappings)
+    if approval is None:
+        command = m.TqKqManualClosesV1(
+            tuple(orders), tuple(fills), current_readback, evidence, approval_source,
+        )
+    else:
+        command = m.TqKqHistoricalManualClosesV1(
+            tuple(orders), tuple(fills),
+            controller.readback(proof_snapshot, validate_snapshot(proof_snapshot), mappings=mappings),
+            current_readback, evidence, approval_source,
+            approval["native_event_rowid"], approval["native_payload_sha256"],
+            approval["historical_trading_day"], approval["current_trading_day"],
+            approval["approval_source"], approval_sha,
+            datetime.fromisoformat(approval["owner_confirmed_at"]),
+        )
     state = controller.store.current()
     apply(state, key, command)
     return key, command, False
 
 
-def run(config_path, evidence_folder, approval_source, *, commit=False):
+def run(config_path, evidence_folder, approval_source, *, commit=False, historical_approval=None):
     import contextlib
     from datetime import UTC
     from .cli import launch_state
@@ -210,7 +274,7 @@ def run(config_path, evidence_folder, approval_source, *, commit=False):
             at = datetime.now(UTC)
             snapshot = gateway.snapshot(at)
             key, command, duplicate = prepare(
-                controller, evidence_folder, snapshot, at, approval_source,
+                controller, evidence_folder, snapshot, at, approval_source, historical_approval=historical_approval,
             )
             stopped()
             report = {
@@ -218,10 +282,13 @@ def run(config_path, evidence_folder, approval_source, *, commit=False):
                 "command_id": key, "count": len(command.fills),
                 "positions_after": len(command.readback.snapshot.positions),
                 "evidence_sha256": command.evidence_sha256,
+                "policy_version": command.policy_version,
             }
             if commit and not duplicate:
                 def proof(_state):
                     stopped()
+                    if type(command) is m.TqKqHistoricalManualClosesV1:
+                        historical_source_unchanged(controller, historical_approval, command)
                     require(timedelta(0) <= datetime.now(UTC) - at <= timedelta(seconds=60))
                     return True
 
