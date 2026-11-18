@@ -4,7 +4,7 @@ import { nextTick, ref, shallowRef } from 'vue'
 import { useMarketDetailQuote, projectMarketDetailQuoteHeader } from '../src/composables/useMarketDetailQuote.ts'
 import type { MarketDetailHeaderModel, MarketDetailIdentity } from '../src/types/marketDetail.ts'
 import type { MarketBarsPageResponse, MarketHomeLiveItem } from '../src/types/market.ts'
-const item = (overrides = {}): MarketHomeLiveItem => ({ symbol:'rb', physicalContract:'RB2701', tradingDay:'2026-10-30', barEnd:'2026-10-30T02:00:00Z', price:105, previousClose:100, priceChange:5, source:'completed_1m', availability:'live', phase:'TRADING', reason:null, ...overrides })
+const item = (overrides = {}): MarketHomeLiveItem => ({ symbol:'rb', physicalContract:'RB2701', tradingDay:'2026-10-30', barEnd:'2026-10-30T02:00:00Z', price:105, previousClose:100, priceChange:0.05, source:'completed_1m', availability:'live', phase:'TRADING', reason:null, ...overrides })
 const page = (request): MarketBarsPageResponse => ({ request:{...request,before:request.before??null,contract:request.contract??null},bars:[{bar_end:'2026-10-29T07:00:00Z',trading_day:'2026-10-29',open:95,high:102,low:93,close:100,volume:123,turnover:456,open_interest:789}],canonical_coverage:{start:'2026-10-29',end:'2026-10-29'},page:{has_more_before:false,next_before:null},resolved_contract_segments:[{contract:'RB2701',start_trading_day:'2026-10-01',end_trading_day:'2026-10-30'}]})
 function liveFixture() { return { items:shallowRef(new Map([['rb',item()]])),connection:shallowRef<'connected'|'stale'>('connected'),stale:shallowRef(false),observedAt:shallowRef<string|null>(null),start(){},restart(){},dispose(){} } }
 const tick = async () => { await nextTick(); await nextTick() }
@@ -18,10 +18,24 @@ test('shared quote uses home price and its own baseline, daily facts retain thei
  assert.equal(q.quote.value?.daily?.tradingDay,'2026-10-29');assert.equal(q.quote.value?.tradingDay,'2026-10-30')
  assert.match(q.quote.value!.title,/2026-10-29/)
  identity.value={...identity.value!,view:'subing',frequency:'5m'};await tick()
- live.items.value=new Map([['rb',item({price:106,priceChange:6,barEnd:'2026-10-30T02:01:00Z'})]]);await tick()
+ live.items.value=new Map([['rb',item({price:106,priceChange:0.06,barEnd:'2026-10-30T02:01:00Z'})]]);await tick()
  assert.equal(q.quote.value?.close,106);assert.equal(requests.length,1)
  live.items.value=new Map([['rb',item({tradingDay:'2026-11-02',barEnd:'2026-11-02T01:01:00Z'})]]);await tick()
  assert.equal(requests.length,2)
+ q.dispose()
+})
+test('live fractional return is displayed as points and percentage exactly once', async () => {
+ const live=liveFixture()
+ live.items.value=new Map([['rb',item({price:1386,previousClose:1416.5,priceChange:1386/1416.5-1})]])
+ const q=useMarketDetailQuote({identity:ref<any>({view:'free',symbol:'rb',seriesKind:'actual_dominant',frequency:'1m'}),live,fetchPage:async request=>page(request)})
+ await tick()
+ assert.equal(q.quote.value?.change,-30.5)
+ assert.ok(Math.abs(q.quote.value!.pct! - (-30.5/1416.5*100)) < 1e-10)
+ for (const baseline of [{previousClose:null,priceChange:null},{previousClose:0,priceChange:null}]) {
+  live.items.value=new Map([['rb',item(baseline)]]);await tick()
+  assert.equal(q.quote.value?.close,105)
+  assert.equal(q.quote.value?.change,null);assert.equal(q.quote.value?.pct,null)
+ }
  q.dispose()
 })
 test('explicit different contract and focused history cannot borrow current dominant price', async () => {
