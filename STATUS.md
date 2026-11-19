@@ -1,6 +1,8 @@
 11/19 v1.16.138 代码包已发布：PR663、main、annotated tag 与 GitHub Release 均绑定 exact `a6076672dfd63b464d852aee49b593030ef83bc4`。完整包含 develop 已提交的苏冰共享组合工作台、14/16 品种 Paper 模型及只读 API，以及仅牛哇计算参考交易的范围调整；已合并 v137 账本性能与 SDK 驱动修复。隔离发布副本后端677 passed/22 skipped、Web31 passed及生产构建、版本/lock/导入根校验与独立Review通过；路由import调整后27项定向回归通过。两处原未提交修改未纳入，历史交易/原件未删除。
 
-本次仅发布代码，未切换Runtime、未创建/重置/启动苏冰模型run，也未改变通知或账户授权。现场正式服务仍v1.16.137/exact `2126d0a71d6a7991b511053b482ccd583c70e43a`/generation91；苏冰持续运行和自然业务是否正常须按各自证据验证，发布不代表模型已恢复。
+11/19 12:34 已按owner交办完成正式整组切换：原生cohort `8824d8a0…` 返回switched，11项服务全部matched v1.16.138/exact `a6076672dfd63b464d852aee49b593030ef83bc4`/generation92，API/Web/Runtime HTTP通过，DB/Redis/Live正常。Reference启用720路，仅牛哇四策略；HTDY重算接口410，真实浏览器已确认HTDY/苏冰隐藏参考交易与收益面板、保留实际预警及快期模拟来源。切后独立只读复核通过；牛哇旧融合阻塞和苏冰W1四品种暖机仍单列，不以服务切换宣称自然业务全通过。
+
+11/19 13:27 原TqKq完成单次原生全量预检并恢复trade：READ_ONLY_CONNECTED、ready_for_start=true、60映射、5仓/0活动委托/issues为空；唯一worker PID37258、v1.16.138/exact同commit、LOGGED_IN/READY/AUTO_TRADING，13:29逐品种恢复达到executable60/blocked0、issues0且无hold。只读逐行摘要证明停机保全的43573条commands、metadata3、claims14、identity1原前缀全部保留，仅追加正常恢复记录；AP2701/OI2701/PG2701/NI2612/SS2701原多1及今昨/冻结事实完全相同。未清仓、补单或制造成交，新版本下一自然开盘/信号/成交尚待发生。未创建/重置/启动苏冰模型run；正式组合API与页面均NOT_STARTED，原独立JM开发run恢复不包含在本次切换。通知保持原设置。切换私有原件保存在AppSupport/GuiyiQuant/release-20261119-v138，受测运行副本保持exact tag clean。
 
 以下为此前检查点：
 
