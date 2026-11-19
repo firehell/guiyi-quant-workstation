@@ -64,15 +64,27 @@ class PortfolioMarket:
         # the existing single-product authority, recovery and signal proofs.
         self._views: dict[str, MarketBridge] = {}
         for product in chosen:
-            view = object.__new__(MarketBridge)
-            view.product = product
-            view.identity = SeriesPageQuery(
-                SeriesKind.ACTUAL_DOMINANT, product.lower(), BarFrequency.H1, limit=32
-            )
-            view.reader = self.reader
+            view = self._authority_view(product)
             if record_closed_tails:
                 view.closed_tails = self.closed_tails
             self._views[product] = view
+
+    def _authority_view(self, product):
+        """One product identity and the shared MDS reader, with no subscription."""
+        view = object.__new__(MarketBridge)
+        view.product = product
+        view.identity = SeriesPageQuery(
+            SeriesKind.ACTUAL_DOMINANT, product.lower(), BarFrequency.H1, limit=32
+        )
+        view.reader = self.reader
+        return view
+
+    def contract_authority(self, product, day, now, contract):
+        """Authority for an owned legacy contract, without strategy calculation."""
+        product = product.upper()
+        if contract is None or product.lower() not in load_operational_products():
+            raise ValueError("PRODUCT_NOT_OPERATIONAL")
+        return self._authority_view(product).authority(day, now, contract)
 
     @contextmanager
     def reader(self):

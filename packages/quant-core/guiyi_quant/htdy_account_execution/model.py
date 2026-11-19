@@ -776,3 +776,29 @@ class Transition:
 
 
 from .tq_types import TqKqFill, TqKqInstrument, TqKqExecutionInput, TqKqTick, TqKqResumeEmptyV1, TqKqObservedSignalV1, TqKqClosedSignalV1, TqKqManualClosesV1, TqKqHistoricalManualClosesV1  # noqa: E402,F401
+
+
+@dataclass(frozen=True)
+class TqKqTradingScopeV1:
+    """Owner instruction: retire openings and flatten original outside contracts.
+
+    Stored as an append-only command, so old State serialization/hashes stay exact.
+    """
+    at: datetime
+    products: tuple[str, ...]
+    scope_version: str
+    policy_version: str = "tqkq_scope_flatten_v1"
+
+    def __post_init__(self):
+        from ..trading_universe import TRADING_PRODUCTS, TRADING_SCOPE_VERSION
+        time(self.at)
+        if (self.products != tuple(p.upper() for p in TRADING_PRODUCTS)
+                or self.scope_version != TRADING_SCOPE_VERSION
+                or self.policy_version != "tqkq_scope_flatten_v1"):
+            raise ValueError("TQ_TRADING_SCOPE_INVALID")
+
+
+@dataclass(frozen=True)
+class TqKqScopedStateV1(State):
+    """Scope begins a new projection type; pre-transition State bytes stay exact."""
+    scope_command: TqKqTradingScopeV1 | None = None

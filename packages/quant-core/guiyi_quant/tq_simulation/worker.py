@@ -335,6 +335,8 @@ def run(config_path, *, inspect=False):
                         controller.bootstrap(snapshot, now)
                     if gateway.reconnection_required:
                         require_recovery(controller, now)
+                    if not inspect and action in {"trade", "pause"} and controller.store is not None:
+                        controller.apply_trading_scope(now)
                     state = controller.store.current() if controller.store else None
                     native = digest_native(snapshot)
                     due = bool(
@@ -412,8 +414,12 @@ def run(config_path, *, inspect=False):
                         current_mappings = set()
                         for fact in reply["facts"]:
                             try:
+                                if (fact["product"] not in market.products
+                                    and (fact["product"], fact["contract"]) not in contracts):
+                                    raise ValueError("TQ_MANAGED_CONTRACT_UNPROVEN")
                                 bind_symbol(gateway, controller, fact)
-                                current_mappings.add(fact["product"])
+                                if fact["product"] in market.products:
+                                    current_mappings.add(fact["product"])
                             except Exception:
                                 issues[fact["product"]] = "TQ_SYMBOL_MAPPING_UNPROVEN"
                         recovered_batch = False
@@ -532,7 +538,8 @@ def run(config_path, *, inspect=False):
                                 ),
                                 None,
                             )
-                            side = (
+                            held_position = next((p for p in state.positions if p.product == candidate.product), None)
+                            side = ("SELL" if held_position.quantity > 0 else "BUY") if candidate.offset == "CLOSE" and held_position else (
                                 pending.side
                                 if pending
                                 else (

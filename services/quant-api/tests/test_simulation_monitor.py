@@ -172,3 +172,23 @@ def test_unproven_history_is_unavailable_without_losing_account_monitor(client, 
     assert response.json()["curve_history_status"] == "unavailable"
     assert response.json()["curve"] == []
     assert response.json()["account"]
+
+
+def test_stale_monitor_revokes_scope_native_and_position_verification(client):
+    from guiyi_quant.tq_simulation.runtime import read_private
+    c, path = client
+    populated(path, age=60)
+    raw = read_private(path/'monitor.json')
+    raw['overview']['trading_scope'] = dict(status='ACTIVE', version='shared_sixteen_products_v1',
+        products=['JM'], pending_positions=[], pending_order_ids=[], pending_reservation_ids=[],
+        native_readback_verified=True)
+    raw['overview']['observer'].update(scope_status='ACTIVE', executable_product_count=16)
+    raw['overview']['positions'] = [dict(status='VERIFIED',product='OI',contract='OI2701')]
+    write_private(path/'monitor.json', raw)
+    view = c.get('/api/simulation/monitor/overview').json()
+    assert view['trading_scope']['status'] == 'FLATTEN_PENDING'
+    assert not view['trading_scope']['native_readback_verified']
+    assert view['observer']['scope_status'] == 'FLATTEN_PENDING'
+    assert view['observer']['executable_product_count'] == 0
+    assert view['positions'][0]['status'] == 'UNVERIFIED'
+    assert read_private(path/'monitor.json') == raw

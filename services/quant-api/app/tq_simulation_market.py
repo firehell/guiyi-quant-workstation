@@ -14,17 +14,19 @@ from app.market_data.operational_universe import load_operational_products
 from app.simnow_portfolio_market import PortfolioMarket
 from guiyi_quant.htdy_account_execution import codec
 from guiyi_quant.tq_simulation.market import load_market_state
+from guiyi_quant.trading_universe import TRADING_PRODUCTS
 
 MAX_REQUEST = 16 * 1024 * 1024
 BATCH_PRODUCTS = 4
 
 
-def recovery_batch(state, cursor):
+def recovery_batch(state, cursor, allowed_products=None):
     """Partial proofs never grant permission to products without authority."""
     eligible = [
         p.product
         for p in state.products
         if p.owner is not None
+        and (allowed_products is None or p.product in allowed_products)
         and (state.phase != "READY" or p.product in state.blocked_products)
     ]
     held = {p.product for p in state.positions}
@@ -38,6 +40,15 @@ def recovery_batch(state, cursor):
     start = 0 if state.phase != "READY" else cursor % len(ordered)
     chosen = (ordered[start:] + ordered[:start])[:BATCH_PRODUCTS]
     return tuple(chosen), (start + len(chosen)) % len(ordered)
+
+
+def legacy_managed_contract(state, product, contract):
+    """Only exact owned inventory or unreconciled orders get legacy authority.
+
+    This read-only authority also supports pre-transition inspection; a working
+    OPEN needs native/session facts before its owner can cancel it safely.
+    """
+    return state is not None and (product, contract) in state.managed_contracts
 
 
 def authority(market, product, now, contract=None, trading_day=None):
@@ -56,7 +67,8 @@ def authority(market, product, now, contract=None, trading_day=None):
             day = future.trading_day
         if day is None:
             raise ValueError("TQ_TRADING_DAY_UNPROVEN")
-        fact = market.authority(product, day, now, contract)
+        fact = (market.authority(product, day, now, contract) if product in market.products
+                else market.contract_authority(product, day, now, contract))
         row = db.scalar(
             select(Contract).where(
                 Contract.contract_code == fact.contract,
@@ -79,7 +91,9 @@ def authority(market, product, now, contract=None, trading_day=None):
 
 
 def main():
-    products = tuple(p.upper() for p in load_operational_products())
+    products = tuple(p.upper() for p in TRADING_PRODUCTS)
+    if set(TRADING_PRODUCTS) - set(load_operational_products()):
+        raise ValueError("TQ_TRADING_SCOPE_NOT_OPERATIONAL")
     market = PortfolioMarket(products, record_closed_tails=True)
     market.activate(datetime.now(UTC))
     recovery_cursor = 0
@@ -127,7 +141,7 @@ def main():
                 for item in request.get("contracts", []):
                     if (
                         set(item) != {"product", "contract"}
-                        or item["product"] not in products
+                        or (item["product"] not in products and not legacy_managed_contract(state, item["product"], item["contract"]))
                         or not re.fullmatch(
                             item["product"] + r"\d{3,4}", item["contract"]
                         )
@@ -153,7 +167,7 @@ def main():
                 if state is not None and (
                     state.phase != "READY" or state.blocked_products
                 ):
-                    batch, recovery_cursor = recovery_batch(state, recovery_cursor)
+                    batch, recovery_cursor = recovery_batch(state, recovery_cursor, products)
                     recovery = market.recovery(state, datetime.now(UTC), products=batch)
                 result = {
                     "status": "ok",

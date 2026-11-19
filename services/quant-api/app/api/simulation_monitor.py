@@ -36,7 +36,14 @@ def snapshot():
                 position_projection_complete=False,
             )
             if view.get("observer"):
-                view["observer"].update(status="stale", opening_enabled=False)
+                view["observer"].update(status="stale", opening_enabled=False, executable_product_count=0)
+            scope = view.get("trading_scope")
+            if scope and scope.get("status") != "NOT_APPLIED":
+                scope.update(status="FLATTEN_PENDING", native_readback_verified=False)
+                if view.get("observer"):
+                    view["observer"]["scope_status"] = scope["status"]
+            for position in view.get("positions", []):
+                position["status"] = "UNVERIFIED"
         return value
     except Exception:
         raise HTTPException(

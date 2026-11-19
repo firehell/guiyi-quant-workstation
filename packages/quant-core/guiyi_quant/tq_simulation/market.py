@@ -275,21 +275,26 @@ def execution_input(gateway, authority, symbol, side, *, opening, cancelling=Fal
 
 
 def market_state(state):
-    """Private market request v2: bounded by scope, never by account history."""
-    return dict(version="tq_market_state_v2", phase=state.phase,
+    """Private market request v3: bounded by scope, never by account history."""
+    managed = {(p.product, p.contract) for p in state.positions}
+    managed.update((o.product, o.contract) for o in state.orders if not o.reconciled)
+    if len(managed) > 120:
+        raise ValueError("TQ_MARKET_STATE_INVALID")
+    return dict(version="tq_market_state_v3", phase=state.phase,
                 activated_at=codec.encode(state.activated_at),
                 blocked_products=list(state.blocked_products),
                 products=[dict(product=p.product, owner=p.owner, desired=p.desired,
                                signal_id=bool(p.signal_id), last_bar=codec.encode(p.last_bar))
                           for p in state.products],
-                positions=[dict(product=p.product, quantity=p.quantity) for p in state.positions])
+                positions=[dict(product=p.product, quantity=p.quantity) for p in state.positions],
+                managed_contracts=[dict(product=p, contract=c) for p, c in sorted(managed)])
 
 
 def load_market_state(packet):
     from types import SimpleNamespace as NS
     if (type(packet) is not dict or set(packet) != {
-            "version", "phase", "activated_at", "blocked_products", "products", "positions"}
-            or packet["version"] != "tq_market_state_v2"
+            "version", "phase", "activated_at", "blocked_products", "products", "positions", "managed_contracts"}
+            or packet["version"] != "tq_market_state_v3"
             or packet["phase"] not in {"READY", "RECOVERY_REQUIRED", "BLOCKED"}
             or not 1 <= len(packet["products"]) <= 60):
         raise ValueError("TQ_MARKET_STATE_INVALID")
@@ -307,6 +312,19 @@ def load_market_state(packet):
         if set(p) != {"product", "quantity"} or p["product"] not in names or p["quantity"] not in (-1, 1):
             raise ValueError("TQ_MARKET_STATE_INVALID")
         positions.append(NS(**p))
+    if type(packet["managed_contracts"]) is not list or len(packet["managed_contracts"]) > 120:
+        raise ValueError("TQ_MARKET_STATE_INVALID")
+    managed = []
+    for pair in packet["managed_contracts"]:
+        if type(pair) is not dict or set(pair) != {"product", "contract"} or pair["product"] not in names:
+            raise ValueError("TQ_MARKET_STATE_INVALID")
+        try:
+            m.contract(pair["product"], pair["contract"])
+        except ValueError:
+            raise ValueError("TQ_MARKET_STATE_INVALID") from None
+        managed.append((pair["product"], pair["contract"]))
+    if len(set(managed)) != len(managed) or {p.product for p in positions} - {p for p, _ in managed}:
+        raise ValueError("TQ_MARKET_STATE_INVALID")
     return NS(phase=packet["phase"], activated_at=codec.decode(packet["activated_at"]),
               blocked_products=tuple(packet["blocked_products"]),
-              products=tuple(products), positions=tuple(positions))
+              products=tuple(products), positions=tuple(positions), managed_contracts=tuple(managed))

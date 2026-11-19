@@ -44,8 +44,8 @@ def test_invalid_or_duplicate_target_is_rejected(tmp_path):
         build_cleanup_plan((tmp_path, tmp_path), backend=Backend())
 
 
-@pytest.mark.parametrize("subing", [False, True])
-def test_host_reader_keeps_registry_plist_and_loaded_references(tmp_path, monkeypatch, subing):
+@pytest.mark.parametrize("service", ["live", "subing-development-model", "subing-paper"])
+def test_host_reader_keeps_registry_plist_and_loaded_references(tmp_path, monkeypatch, service):
     import plistlib
     from app.runtime_bindings import BindingRegistry, ServiceBinding, write_bindings
     from app.runtime_retention import RetentionBackend
@@ -57,7 +57,7 @@ def test_host_reader_keeps_registry_plist_and_loaded_references(tmp_path, monkey
     write_bindings(BindingRegistry(1, {"live": binding}), home=tmp_path, expected_sha256=None)
     directory = tmp_path / "Library/LaunchAgents"
     directory.mkdir(parents=True)
-    label = "com.guiyi.quant-subing-development-model" if subing else binding.label
+    label = f"com.guiyi.quant-{service}"
     (directory / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label,
         "WorkingDirectory": str(root), "ProgramArguments": ["/bin/bash", "/stable/launcher", "live"],
         "EnvironmentVariables": {"GUIYI_PROJECT_ROOT": str(root), "IGNORED_SECRET": "not-for-output"}}))
@@ -112,7 +112,7 @@ def test_simnow_arguments_are_checked_as_references_without_ignoring_its_label(t
         backend.references_by_root((root,))
 
 
-@pytest.mark.parametrize("service", ["simnow", "subing-development-model"])
+@pytest.mark.parametrize("service", ["simnow", "subing-development-model", "subing-paper"])
 def test_native_reader_allows_known_standalone_label_and_still_rejects_unknown(tmp_path, monkeypatch, service):
     import subprocess
     from app import runtime_identity as identity

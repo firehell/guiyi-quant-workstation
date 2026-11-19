@@ -312,7 +312,7 @@ class LocalStore:
     def execute(self, key, command, *, unsent_proof=None, manual_close_proof=None):
         m.text(key)
         if (
-            type(command) in (m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1, m.TqKqObservedSignalV1, m.TqKqClosedSignalV1, m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1)
+            type(command) in (m.TqKqTradingScopeV1, m.TqKqTick, m.TqKqFill, m.TqKqResumeEmptyV1, m.TqKqObservedSignalV1, m.TqKqClosedSignalV1, m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1)
             and self._execution_identity is None
         ):
             raise StoreError("TQ_ACCOUNT_IDENTITY_REQUIRED")
@@ -348,6 +348,7 @@ class LocalStore:
                     return Commit(state, (), sequence, True)
                 if self._needs_recovery and type(command) not in (
                     m.Recover,
+                    m.TqKqTradingScopeV1,
                     m.TqKqResumeEmptyV1,
                     m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1,
                     m.AbortUnsent,
@@ -366,6 +367,7 @@ class LocalStore:
                     and type(command)
                     in (
                         m.TqKqFill,
+                        m.TqKqTradingScopeV1,
                         m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1,
                         m.Fill,
                         m.NativeFill,
@@ -477,6 +479,7 @@ class LocalStore:
                     and type(command)
                     not in (
                         m.TqKqFill,
+                        m.TqKqTradingScopeV1,
                         m.TqKqManualClosesV1, m.TqKqHistoricalManualClosesV1,
                         m.Fill,
                         m.NativeFill,

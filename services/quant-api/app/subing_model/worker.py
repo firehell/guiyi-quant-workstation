@@ -1,20 +1,13 @@
 """Explicit foreground development model worker; reads existing completed observations."""
-from datetime import UTC,datetime,date,timedelta
+from datetime import UTC,datetime,timedelta
 from pathlib import Path
-import argparse,json,os,time,hashlib
-from sqlalchemy import create_engine,text
-from sqlalchemy.orm import Session
-from app.db.readonly import readonly_transaction
-from app.db.url import normalize_database_url
+import json
+import os
+import hashlib
 from app.private_settings import load_private_readonly_settings
-from app.market_data.catalog import MarketCatalog
-from app.market_data.storage import CanonicalMonthlyStore
-from app.market_data.market_data_service import MarketDataService
-from app.market_data.observation_stream import ObservationStream,ObservationEnvelope,_text,DAILY_LIMIT
+from app.market_data.observation_stream import ObservationEnvelope,_text,DAILY_LIMIT
 from app.market_data.aggregation import expected_intraday_ends
 from guiyi_quant.subing_decision import _wire
-from .store import ModelStore
-from .pipeline import Pipeline
 
 ROOT=Path(__file__).resolve().parents[4]
 ACTIVE=ROOT/'.run/subing-model-active.json'
@@ -93,87 +86,7 @@ def code_hashes():
     return {str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
 def main():
-    parser=argparse.ArgumentParser();parser.add_argument('--start',action='store_true');parser.add_argument('--check-start',action='store_true');parser.add_argument('--prepared',type=Path);parser.add_argument('--facts-index',type=Path,default=ROOT/'.run/subing-model-facts-index.json');parser.add_argument('--once',action='store_true');args=parser.parse_args()
-    if DB_PATH.is_symlink():raise ValueError('DATABASE_PATH_INVALID')
-    store=ModelStore(DB_PATH.read_text());settings,redis=settings_and_redis();stream=ObservationStream(redis,kind='completed')
-    sql=create_engine(normalize_database_url(settings['DATABASE_URL']),connect_args={'connect_timeout':5})
-    owner=store.engine.connect()
-    if not owner.scalar(text('SELECT pg_try_advisory_lock(183047231)')):raise ValueError('MODEL_WORKER_ALREADY_RUNNING')
-    def context(day):
-        with Session(sql,autoflush=False) as db,readonly_transaction(db,timeout_seconds=120):
-            root=Path(settings['GUIYI_CANONICAL_DATA_ROOT']);cat=MarketCatalog(db,root);return contexts(MarketDataService(cat,CanonicalMonthlyStore(root)),cat,day)
-    def daily_inputs(pipe,day):
-        from .market import prefix
-        updates={};proofs={};errors={}
-        with Session(sql,autoflush=False) as db,readonly_transaction(db,timeout_seconds=180):
-            root=Path(settings['GUIYI_CANONICAL_DATA_ROOT']);cat=MarketCatalog(db,root);m=MarketDataService(cat,CanonicalMonthlyStore(root))
-            for product in PRODUCTS:
-                through=date.fromisoformat(ctx[product]['previous']);f=pipe.factors[product]
-                last=f.trends['1d'].last_end
-                if last is not None and last.date()>=through:continue
-                try:
-                    bars,proof=prefix(m,product,pipe.products[product]['contract'],'1d',through)
-                    updates[product]=[_wire(__import__('dataclasses').asdict(b)) for b in bars if last is None or b.bar_end>last]
-                    proofs[product]=proof
-                except Exception as exc:errors[product]=getattr(exc,'code',None) or type(exc).__name__
-        return updates,proofs,errors
-    def validate_prepared(prepared,started):
-        from app.market_data.domain import BarFrequency
-        from app.market_data.new_subing_research import payload_hash
-        with Session(sql,autoflush=False) as db,readonly_transaction(db,timeout_seconds=180):
-            root=Path(settings['GUIYI_CANONICAL_DATA_ROOT']);cat=MarketCatalog(db,root);m=MarketDataService(cat,CanonicalMonthlyStore(root))
-            for product,p in prepared.items():
-                through=date.fromisoformat(p['through']);cutoff=max(w.end for w in m.session_windows(symbol=product,trading_day=through))
-                validate_warmup_boundary(through,date.fromisoformat(ctx[product]['previous']),cutoff,started)
-                for freq,proof in p['sources'].items():
-                    if payload_hash(p['warmup'][freq])!=proof['hash']:raise ValueError('WARMUP_HASH_INVALID')
-                    if _wire(m.contract_source_evidence(symbol=product,contract=p['contract'],frequency=BarFrequency(freq),before=cutoff))!=proof['source']:raise ValueError('WARMUP_SOURCE_CHANGED')
-    try:
-        if args.start or args.check_start:
-            if ACTIVE.exists():raise ValueError('MODEL_ALREADY_INITIALIZED')
-            if not args.prepared:raise ValueError('PREPARED_REQUIRED')
-            day=max(stream.days());ctx=context(day)
-            prepared={};readiness={r['product']:r for r in json.loads((args.prepared/'readiness.json').read_text())}
-            for product in PRODUCTS:
-                p=json.loads((args.prepared/(product+'.json')).read_text());p['normalization_candidate']=readiness[product]['normalization_candidate'];prepared[product]=p
-            bootstrap,tail=read_rows(stream,day)
-            started=datetime.now(UTC)
-            if any(datetime.fromisoformat(e['data']['bar_end'])>started or datetime.fromisoformat(e['confirmed_at'])>started for e in bootstrap):raise ValueError('FUTURE_BOOTSTRAP_OBSERVATION')
-            validate_prepared(prepared,started)
-            run_id='subing-dev-'+started.strftime('%Y%m%dT%H%M%S')
-            identity=dict(run_id=run_id,started_at=started.isoformat(),prepared=prepared,bootstrap=bootstrap,contexts=ctx,cursor=tail,source_day=str(day),code_hashes=code_hashes(),execution_profile='next_completed_1m_close_slip1_actual_knowledge_v1')
-            pipe=Pipeline(identity)
-            if args.check_start:
-                print(json.dumps(dict(status='START_PREFLIGHT_PASSED',products=len(pipe.products),bootstrap_rows=len(bootstrap),source_day=str(day),model_orders=0)));return
-            store.create(run_id,identity,pipe.state());store.load(run_id)
-            atomic(ACTIVE,dict(run_id=run_id,started_at=started,auto_order=False))
-        else:
-            run_id=json.loads(ACTIVE.read_text())['run_id'];r,events=store.load(run_id);identity=r['identity']
-            if identity['code_hashes']!=code_hashes():raise ValueError('MODEL_CODE_IDENTITY_CHANGED')
-            pipe=Pipeline(identity)
-            for event in events:pipe.apply(event)
-            if pipe.state()!=r['state']:raise ValueError('MODEL_RESTART_PARITY_FAILED')
-        day=date.fromisoformat(pipe.source_day);ctx=context(day)
-        daily_day=None;daily_pending={};daily_proofs={};daily_errors={}
-        while True:
-            if identity['code_hashes']!=code_hashes():raise ValueError('MODEL_CODE_IDENTITY_CHANGED')
-            latest=max(stream.days())
-            if latest>day and stream.tail(day)==pipe.source_cursor:
-                if any(pipe.last.get((s,'1m'))!=datetime.fromisoformat(ctx[s]['day_end']) for s in PRODUCTS):raise ValueError('DAY_END_OBSERVATION_MISSING')
-                day=latest;ctx=context(day);pipe.source_cursor='0-0'
-            if daily_day!=day:
-                daily_pending,daily_proofs,daily_errors=daily_inputs(pipe,day);daily_day=day
-            rows,tail=read_rows(stream,day,pipe.source_cursor)
-            if rows or tail!=pipe.source_cursor or str(day)!=pipe.source_day:
-                now=datetime.now(UTC)
-                if any(datetime.fromisoformat(e['confirmed_at'])>now for e in rows):raise ValueError('FUTURE_OBSERVATION')
-                payload=dict(event_id=str(day)+':'+tail,observed_at=now.isoformat(),observations=rows,contexts=ctx,facts=facts_for(args.facts_index,day),daily_updates=daily_pending,daily_sources=daily_proofs,daily_errors=daily_errors,cursor=tail,source_day=str(day))
-                sequence=pipe.sequence;pipe.apply(payload);payload['outcome']=pipe.last_outcome;store.append(run_id,payload,pipe.state(),sequence)
-                daily_pending={};daily_proofs={}
-            atomic(HEARTBEAT,dict(run_id=run_id,status='RUNNING',at=datetime.now(UTC),source_day=str(day),sequence=pipe.sequence))
-            if args.once:return
-            time.sleep(2)
-    finally:owner.close();sql.dispose();store.engine.dispose();redis.close()
+    raise SystemExit("SUBING_INDEPENDENT_MODEL_RETIRED_USE_SUBING_PORTFOLIO_WORKER")
 
 if __name__=='__main__':
     try:main()

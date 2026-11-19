@@ -17,10 +17,12 @@ from app.subing_model.pipeline import bar
 from app.subing_model.store import digest
 from app.subing_model.worker import ROOT, code_hashes
 from guiyi_quant.new_subing import StrategyBar
-from guiyi_quant.subing_one_lot import PORTFOLIO_PRODUCTS, portfolio_policy
+from guiyi_quant.subing_one_lot import PORTFOLIO_PRODUCTS, EXPANDED_PORTFOLIO_PRODUCTS, portfolio_policy
 from guiyi_quant.subing_one_lot.portfolio import Portfolio
 
-KIND = "subing_portfolio_minute_journal_v1"
+LEGACY_KIND = "subing_portfolio_minute_journal_v1"
+KIND = "subing_portfolio_minute_journal_v2"
+KNOWLEDGE_POLICY = "strict_after_pending_and_current_facts_capture_v1"
 SCHEDULE_FIELDS = ("previous", "first_open", "day_end", "next_open")
 
 
@@ -30,7 +32,8 @@ def source_hashes():
     worker = journal.with_name("subing_portfolio_worker.py")
     return {
         **code_hashes(),
-        **{str(path.relative_to(ROOT)): sha256(path.read_bytes()).hexdigest() for path in (journal, worker)},
+        **{str(path.relative_to(ROOT)): sha256(path.read_bytes()).hexdigest() for path in (journal, worker, journal.with_name("subing_portfolio_supervision.py"),
+                journal.with_name("subing_portfolio_paths.py"), ROOT / "packages/quant-core/guiyi_quant/trading_universe.py")},
         **{
             str(path.relative_to(ROOT)): sha256(path.read_bytes()).hexdigest()
             for path in sorted(core.glob("*.py"))
@@ -116,6 +119,12 @@ def encode_minute(product, prepared, context, at, day, observed_at):
     return dict(
         **({"chart": chart} if chart is not None else {}),
         execution=encode_execution(executions[0]),
+        execution_facts=dict(
+            captured_at=prepared.execution_facts["captured_at"],
+            payload_sha256=digest(prepared.execution_facts),
+            **{key: prepared.execution_facts.get(key) for key in (
+                "capture_version", "time_semantics", "fee_policy_version", "fee_assumption", "plan_hash")},
+        ),
         technical=prepared.technical,
         structure=structure,
         producer_stream_id=event.stream_id,
@@ -127,7 +136,7 @@ class PortfolioJournal:
 
     def __init__(self, store, run_id, identity):
         self.products = tuple(identity["policy"].get("products", PORTFOLIO_PRODUCTS))
-        if identity["kind"] != KIND or identity["policy"] != portfolio_policy(self.products):
+        if identity["kind"] not in (KIND, LEGACY_KIND) or identity["policy"] != portfolio_policy(self.products):
             raise ValueError("PORTFOLIO_JOURNAL_IDENTITY_INVALID")
         if identity["code_hashes"] != source_hashes():
             raise ValueError("PORTFOLIO_CODE_IDENTITY_CHANGED")
@@ -146,9 +155,12 @@ class PortfolioJournal:
         self.failed = False
 
     @staticmethod
-    def create(store, run_id, started_at, *, products=PORTFOLIO_PRODUCTS):
+    def create(store, run_id, started_at, *, products=EXPANDED_PORTFOLIO_PRODUCTS):
+        if products != EXPANDED_PORTFOLIO_PRODUCTS:
+            raise ValueError("PORTFOLIO_ACTIVE_SCOPE_RETIRED")
         identity = dict(
             kind=KIND,
+            execution_knowledge_policy=KNOWLEDGE_POLICY,
             policy=portfolio_policy(products),
             started_at=started_at.isoformat(),
             code_hashes=source_hashes(),
@@ -170,7 +182,7 @@ class PortfolioJournal:
     def projection(self):
         if self.failed:
             raise ValueError("PORTFOLIO_RESTORE_REQUIRED")
-        return dict(kind=KIND, sequence=self.sequence, result=self.portfolio.snapshot(),
+        return dict(kind=self.identity["kind"], sequence=self.sequence, result=self.portfolio.snapshot(),
                     **({"charts": self.charts} if self.charts else {}))
 
     def _next_minute(self, day, contexts):
@@ -266,9 +278,29 @@ class PortfolioJournal:
                 points.append(chart)
                 del points[:-128]
             batch.append((x, row["technical"]))
+        if self.identity["kind"] == KIND:
+            self.apply_current_knowledge(rows, day, observed_at)
         self.portfolio.step_batch(batch, observed_at=observed_at)
         self.sequence += 1
         self.events[payload["event_id"]] = digest(payload)
+
+    def apply_current_knowledge(self, rows, day, observed_at):
+        # Old marks remain visible with their true as-of time. They cannot
+        # finance fresh portfolio risk until a real current-day mark/fact arrives.
+        for contract, account in self.portfolio.accounts.items():
+            mark = self.portfolio.marks.get(contract)
+            if account.layers and (mark is None or mark.bar.trading_day != day):
+                self.portfolio.unproven_marks.add(contract)
+        for product, row in rows.items():
+            known = stamp(row["execution_facts"]["captured_at"])
+            if known > observed_at:
+                raise ValueError("PORTFOLIO_EXECUTION_FACTS_NOT_KNOWN")
+            account = self.portfolio.accounts[self.contexts[product]["contract"]]
+            contract = self.contexts[product]["contract"]
+            self.portfolio.unproven_marks.discard(contract)
+            if account.model.pending and account.pending_known_at is not None:
+                account.pending_known_at = max(account.pending_known_at, known)
+
 
     def submit(self, day, at, observed_at, prepared, *, contexts=None):
         """Commit only after the whole minute is proven and applied in memory."""

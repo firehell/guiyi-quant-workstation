@@ -56,6 +56,8 @@ def test_post_persistence_refresh_discards_changed_execution_context(monkeypatch
 
 
 def host(monkeypatch, tmp_path, *, mode="trade", restart=False):
+    from guiyi_quant import trading_universe
+    monkeypatch.setattr(trading_universe, "TRADING_PRODUCTS", ("rb",))
     base = tmp_path / "host"
     base.mkdir(mode=0o700)
     write_private(base / "control.json", {"mode": mode})

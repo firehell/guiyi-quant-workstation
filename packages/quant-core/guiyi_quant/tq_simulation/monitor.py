@@ -89,11 +89,25 @@ def projection(
         "risk_profile_version": TQ_RISK_VERSION,
         "execution_profile_version": TQ_EXECUTION_VERSION,
     }
+    last_snapshot = getattr(controller, "last_snapshot", None)
+    fresh = bool(
+        state and snapshot and last_snapshot and not code
+        and all(snapshot[key] == last_snapshot[key] for key in ("positions", "orders", "trades"))
+        and state.readback_valid
+        and state.readback.at <= now < state.readback.valid_until
+    )
     blocked = set(state.blocked_products) if state else set()
     blocked.update(source_issues or {})
-    products = {p.product for p in state.products} if state else set()
-    executable = products - blocked if (opening and state and state.phase == 'READY'
-        and state.readback_valid and state.readback.at <= now < state.readback.valid_until) else set()
+    from ..htdy_account_execution.scope import trading_scope, scope_status
+    scope = trading_scope(state) if state else None
+    out["trading_scope"] = scope_status(state, now) if state else {"status": "NOT_APPLIED", "version": None}
+    if scope and not fresh:
+        out["trading_scope"]["native_readback_verified"] = False
+        out["trading_scope"]["status"] = "FLATTEN_PENDING"
+    if scope:
+        blocked.intersection_update(scope.products)
+    products = set(scope.products) if scope else ({p.product for p in state.products} if state else set())
+    executable = products - blocked if (opening and fresh and state.phase == 'READY') else set()
     out["observer"] = {
         "status": "error" if code else "running",
         "stage": code or ("AUTO_TRADING" if opening else "OBSERVING"),
@@ -105,16 +119,12 @@ def projection(
         "executable_product_count": len(executable),
         "account_takeover_pending": mode == "trade" and state is None,
         "host_status": state.phase if state else "READ_ONLY",
+        "scope_status": out["trading_scope"]["status"],
     }
     out["status"] = "partial" if code or state is None else "available"
     out["trading_day"] = trading_day
     out["coverage"] = "complete" if state else "partial"
     out["readback_at"] = snapshot["observed_at"] if snapshot else None
-    fresh = bool(
-        state
-        and state.readback_valid
-        and state.readback.at <= now < state.readback.valid_until
-    )
     out["readback_status"] = "verified" if fresh else "unverified"
     out["position_projection_complete"] = fresh
     out["performance_status"] = "ACCOUNT_EQUITY_ONLY"

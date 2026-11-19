@@ -99,7 +99,10 @@ def collect(api,call,contract,day,windows,out,previous_day):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('--contract',required=True);p.add_argument('--day',type=date.fromisoformat,required=True);p.add_argument('--out',type=Path,required=True);a=p.parse_args()
-    if not re.fullmatch(r'JM[0-9]{4}',a.contract):raise ValueError('CONTRACT_INVALID')
+    from guiyi_quant.trading_universe import TRADING_PRODUCTS
+    product = a.contract[:-4].lower()
+    if not re.fullmatch(r'[A-Z]{1,2}[0-9]{4}',a.contract) or product not in TRADING_PRODUCTS:
+        raise ValueError('CONTRACT_INVALID')
     from sqlalchemy import create_engine
     from sqlalchemy.orm import Session
     from app.db.readonly import readonly_transaction
@@ -112,11 +115,13 @@ def main():
     engine=create_engine(normalize_database_url(settings['DATABASE_URL']),connect_args={'connect_timeout':5})
     def metadata():
         with Session(engine,autoflush=False) as s,readonly_transaction(s):
-            root=Path(settings['GUIYI_CANONICAL_DATA_ROOT']);catalog=MarketCatalog(s,root);maps=catalog.main_map('jm',a.day,a.day)
+            root=Path(settings['GUIYI_CANONICAL_DATA_ROOT'])
+            catalog=MarketCatalog(s,root)
+            maps=catalog.main_map(product,a.day,a.day)
             if len(maps)!=1 or maps[0].contract!=a.contract:raise ValueError('OWNER_MAPPING_INVALID')
-            calendar=catalog.calendar_days('jm',a.day-timedelta(days=14),a.day)
+            calendar=catalog.calendar_days(product,a.day-timedelta(days=14),a.day)
             previous=previous_trading_day(calendar,a.day)
-            windows=MarketDataService(catalog,CanonicalMonthlyStore(root)).session_windows(symbol='jm',trading_day=a.day)
+            windows=MarketDataService(catalog,CanonicalMonthlyStore(root)).session_windows(symbol=product,trading_day=a.day)
             return windows,previous
     try:
         windows,previous=metadata();a.out.mkdir(parents=True,exist_ok=False)
@@ -136,7 +141,7 @@ def main():
         if quota['bytes_limit']-quota['bytes_used']<1024*1024:raise ValueError('PROVIDER_BUDGET_INSUFFICIENT')
         result=collect(api,call,a.contract,a.day,windows,a.out,previous)
         if (windows,previous)!=metadata():raise ValueError('SESSION_CHANGED_DURING_CAPTURE')
-        _write(a.out/'jm.json',dict(result,plan_hash=payload_hash(plan)))
+        _write(a.out/f'{product}.json',dict(result,plan_hash=payload_hash(plan)))
         print(json.dumps(dict(status='CAPTURED',contract=a.contract,day=str(a.day),calls=calls)))
     finally:engine.dispose()
 

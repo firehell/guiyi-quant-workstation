@@ -10,6 +10,7 @@ from datetime import timedelta
 from decimal import Decimal as D
 from types import MappingProxyType
 
+from guiyi_quant.trading_universe import TRADING_PRODUCTS
 from guiyi_quant.indicators.subing_conditions import EntryWindow, observe_entry
 from guiyi_quant.subing_decision import (
     REGIME_PROFILE,
@@ -37,7 +38,9 @@ POLICY = MappingProxyType(
 
 
 PORTFOLIO_PRODUCTS = tuple("jm lc rb sa fg ma ec v pr ta ur sh sc cj".split())
-EXPANDED_PORTFOLIO_PRODUCTS = (*PORTFOLIO_PRODUCTS, "oi", "i")
+
+# The 14-product identity remains decodeable only for historical research.
+EXPANDED_PORTFOLIO_PRODUCTS = TRADING_PRODUCTS
 PORTFOLIO_POLICY = MappingProxyType({
     **POLICY,
     "version": "subing_portfolio_one_lot_v1",

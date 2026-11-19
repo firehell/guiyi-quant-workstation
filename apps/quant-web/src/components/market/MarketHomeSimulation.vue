@@ -64,6 +64,20 @@ watch(monitor.selectedId, async id => { if (id && mounted) { await nextTick(); i
     </div>
     <template v-else-if="data">
       <div class="simulation-status"><div><span class="simulation-dot" :class="`simulation-dot--${data.observer?.status}`" /><strong>{{ observer }}</strong><span>{{ data.account?.alias }}</span><span>{{ data.account?.environment }}</span><span v-if="data.account?.scope_product">本次范围 {{ data.account.scope_product }}</span></div><span>柜台核验截至 {{ monitorTime(data.readback_at) }} <span v-if="data.trading_day">· 交易日 {{ data.trading_day }}</span></span></div>
+      <div v-if="data.trading_scope" class="simulation-notice" role="status" aria-label="交易范围">
+        <template v-if="data.trading_scope.status === 'NOT_APPLIED'">交易范围尚未应用，不能确认已收敛为16品种。</template>
+        <template v-else>
+          <strong>交易范围{{ data.trading_scope.products.length }}品种</strong>
+          <span v-if="data.trading_scope.status === 'ACTIVE'"> · 范围收敛已核验</span>
+          <template v-else>
+            <strong> · {{ data.trading_scope.pending_positions.length ? '范围外持仓待平仓' : '范围收敛待核验' }}</strong>
+            <span v-for="position in data.trading_scope.pending_positions" :key="position.contract"> · {{ position.contract }} {{ Math.abs(position.quantity) }}手{{ position.quantity < 0 ? '（空头）' : '' }}</span>
+            <span v-if="data.trading_scope.pending_order_ids.length"> · 待核订单 {{ data.trading_scope.pending_order_ids.length }}笔</span>
+            <span v-if="data.trading_scope.pending_reservation_ids.length"> · 待释放预留 {{ data.trading_scope.pending_reservation_ids.length }}笔</span>
+            <span v-if="!data.trading_scope.native_readback_verified"> · 柜台核验待完成</span>
+          </template>
+        </template>
+      </div>
       <p v-if="data.observer?.mode === 'observe' && data.observe_reconciliation_ready" class="simulation-notice" role="status">账户只读对账已通过（{{ monitorTime(data.observe_reconciliation_checked_at) }}）。本地账本投影与执行输入另行核验，交易权限关闭。</p>
       <p v-if="!data.observe_reconciliation_ready && (data.readback_status !== 'verified' || data.observer?.status !== 'running')" class="simulation-notice" role="status">{{ data.readback_status === 'pending' ? '账户或成交仍有待核事项，持仓及预算完整性尚未确认。' : '正在展示上次完整核验的记录，不代表柜台当前实时状态。' }}</p>
       <div class="simulation-metrics">
