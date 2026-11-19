@@ -1,3 +1,11 @@
+11/19 19:01 运行前提与预警输入核验：原生18:05盘后主任务于18:10:42 passed/attempt1，operational60共720项正式历史发布，rank1与订阅快照一致；Live cleanup_verified、remaining_bar_keys=0、subscription_present=false。附属牛哇消费者审计D1仅150/180（budget_exhausted），W1为179/180，未视为全量验收通过。
+
+exact v1.16.139只读原生warmup_alert_runtime(allow_closed_warming=True)对既有60品种420路实际计算：416通过，BZ/PD/PL/RS周线4路预热（有效输入27/31/23/9根），耗时131.99秒；数据库连接强制read-only，未创建Event、修改游标、发送通知或覆盖历史失败。CJ/FG/RM/SH四品种的20路旧失败均以11/19 15:00正式Canonical重算通过；Runtime仍保留20路历史未解决诊断，另280路分钟覆盖等待本代新观察，不把纯重算作为自然闭环或清除旧失败依据。通知传输仍disabled，未调整受众或启用。
+
+18:58实际快期仍running/trade/LOGGED_IN/READY、FLATTEN_PENDING，AP2701/NI2612/PG2701/SS2701各多1待自然Session平仓，OI保留；闭市16blocked/executable0、原生续证未验证。苏冰共享模型仍BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE/run_id=null；11/20元数据attempt尚未产生，待既有20:30准备窗口读回。首次共享Paper还需16品种当日执行事实，按当前Session最早11/20 09:01后具备采集条件；未提前创建账户、补历史成交或重启交易进程。
+
+以下为此前检查点：
+
 11/19 v1.16.139 已发布并切换标准服务：PR664、main及annotated tag绑定exact `2be7a62af8cd38be67d9d1b671e132673e44f91e`，develop源码 `78b5a8e39`。原生cohort `b0151bae…` 返回switched，11项全部matched/generation93，API/Web/Runtime HTTP通过。快期交易范围与苏冰唯一共享Paper统一为 JM/LC/RB/SA/FG/MA/EC/V/PR/TA/UR/SH/SC/CJ/OI/I；行情中心60品种、既有Alert及通知范围未变。两项独立高风险Review通过，后端相关444 passed；共享Paper含真实隔离PG111 passed；最终受影响122 passed/1 opt-in skipped；Web21 passed、API wheel/sdist及Web构建通过。Ruff无新增诊断（91项原有诊断未清零），secret扫描0。
 
 苏冰只保留16品种共享模型与其持续/历史视图。旧独立JM托管label及自启动plist已停用，原run `subing-dev-20261104T161601` 的2733事件与原投影逐项hash不变；14品种新建入口与旧JM HTTP/CLI已退役。唯一 `com.guiyi.quant-subing-paper` 已安装到exact发布树，私有状态位于AppSupport/GuiyiQuant/subing-paper，auto_order=false。正式API目前BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE、run_id=null：下一交易日11/20 rank1尚未准备，所需下一开盘日11/23日历缺失；不猜未来主力、不虚构账户或历史成交。后续仍须当日16品种执行事实及真实完成流后才可创建并推进Paper。
