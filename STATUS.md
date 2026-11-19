@@ -1,3 +1,13 @@
+11/19 22:35 牛哇参考积压完成当前库存、原件与恢复边界核查，尚未执行恢复：effective calculation_scope_clause启用720路，旧HTDY/苏冰enabled标志不等于仍在计算，二者未重新启用。实际最早未闭包H1队头236路（59品种×4策略，JD四路正常）：趋势/震荡/主升浪各59个OBSERVATION_GAP，融合46个OBSERVATION_GAP及13个等待上游；均为11/17原件且匹配当前revision/generation。不存在已验证恢复闭包。46品种四策略computed_through为空，其余13品种旧水位已晚于起录点，均不满足现有震荡warm恢复工具，未套用旧硬编码10/12恢复CLI。
+
+只读权威Session与Inbox比对：11/16交易日日盘60品种×10:00/10:15/11:30/14:30/15:00共300个H1原件当前不可读，11/16保留的H1仅前夜夜盘；该日Redis completed journal长度0，11/17仍有27080条。找到gen85 Redis备份并解析RDB AUX ctime=11/16 09:52:48，早于所有待补日盘H1终点，无法提供完整原始证据。缺少保留记录不证明当时未观察，不用Canonical伪造Live身份/确认时间，也不用11/17单日Redis证明跨日无观察。
+
+受影响检查点35笔OPEN参考交易：趋势9、主升浪8、震荡7、融合11；其余201路FLAT。精确stream/revision/generation/检查点/队头/原件hash及35笔原价清单已保存于AppSupport/GuiyiQuant/newow-backlog-20261119/triage.json，SHA256 `f9a665381ade5a0523ab40b171519d87a42ea7a0983d540b791bcfaa659c40ad`，明确为只读库存而非执行计划。独立Review确认普通Inbox维护可仅停驻Reference writer，不将特定AL维修660秒休市规则泛化；但当前缺乏可恢复单元，因此未drain、写生产、调用provider或改变参考收益/账户。
+
+OWNER_DECISION_PENDING：已向owner提交两项互斥业务选择——保留旧区间阻塞并继续寻找完整原件，或明确退役受影响旧区间、保留历史及原价、将35笔OPEN追加中断投影（无虚构退出价/收益）、未来从新FLAT区间起录。后者改变参考收益连续性，须owner选择并形成适用的当前事件合同和实现后再执行，不能将缺口或旧投递登记为已恢复/已完成。JD、日周参考、Alert、Paper及TqKq不在该退役范围。
+
+以下为此前检查点：
+
 11/19 22:12 首根H1及自然分钟预警核验通过：11/20交易日22:00的45个夜盘品种completed H1原件全部存在，rank1物理合约、确认时间、notification_eligible及identity索引一致。45路5m、45路15m、45路30m、90路60m（苏冰/HTDY各45）共225路正式Alert均自然计算成功至不早于22:00，无本轮失败；15路保留previous_unresolved，未清除旧事实。当前五路evaluation_failed均为日盘CJ（苏冰四分钟周期及HTDY60m），四路周线预热保持，不用夜盘验收替代日盘和历史诊断闭环。
 
 快期当前seq43798、claims17：10条新增ObservedSignal（FG/TA/MA/OI/SA/SH/PR/SC/RB/V）对应22:00，directions均空且恢复期间audit SIGNAL_BLOCKED；JM/I经seq43784同根H1 RecoveryInput/latest_direction=0恢复，未新增独立ObservedSignal。独立只读Review确认按既有floor/last_bar及恢复合同处理，12夜盘品种解除恢复阻断，CJ/EC/LC/UR四个日盘品种仍blocked；本轮未发现漏掉可执行开仓，但不声称JM/I自然消息分别已抵达，恢复证明不等于新开仓证据。
