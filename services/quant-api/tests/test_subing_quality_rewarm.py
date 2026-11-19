@@ -150,14 +150,15 @@ def test_latest_daily_quality_break_cannot_fall_back_to_earlier_bar():
     (39, Decimal(0), "MARKET_READ_CUTOFF_BAR_MISSING"),
     (4, None, "MARKET_READ_WINDOW_INCOMPLETE"),
 ))
-def test_canonical_zero_trade_daily_break(index, turnover, error):
-    bars = list(_bar(i) for i in range(40))
+@pytest.mark.parametrize("frequency", (BarFrequency.D1, BarFrequency.W1))
+def test_canonical_zero_trade_break(index, turnover, error, frequency):
+    bars = list(_bar(i, weekly=frequency is BarFrequency.W1) for i in range(40))
     zero = Decimal(0)
     bars[index] = replace(bars[index], open=zero, high=zero, low=zero,
                           close=zero, volume=zero, turnover=turnover)
-    reader = _QualityReader(bars, (), frequency=BarFrequency.D1)
+    reader = _QualityReader(bars, (), frequency=frequency)
     service = _service(reader)
-    identity = SeriesPageQuery("actual_dominant", "rb", "1d")
+    identity = SeriesPageQuery("actual_dominant", "rb", frequency.value)
     if error:
         with pytest.raises(MarketReadWindowError, match=error):
             service.latest_subing_quality_window(identity, trading_day=bars[-1].trading_day)

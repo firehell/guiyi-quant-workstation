@@ -56,7 +56,8 @@ def prove_weekly_unavailable(service, identity, *, since, through, cutoff):
             symbol=symbol, contract=owner.contract, through=last, cutoff=end,
             classification_version=WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2)
         points = [(b.bar_end, b.trading_day) for b in bars]
-        require(all(b.close > 0 for b in bars))
+        zero_weeks = sum(b.is_strict_no_trade for b in bars)
+        require(all(b.close > 0 or b.is_strict_no_trade for b in bars))
         for gap in gaps:
             require(isinstance(gap, WeeklySourceInterruption)
                     and gap.product == symbol and gap.physical_contract == owner.contract
@@ -69,10 +70,10 @@ def prove_weekly_unavailable(service, identity, *, since, through, cutoff):
         owned_bars.extend(b for b in bars if owner.start_trading_day <= b.trading_day <= last)
         owned_gaps.extend((owner.contract, g) for g in gaps
                           if owner.start_trading_day <= g.trading_day <= last)
-        gap_count += len(gaps)
+        gap_count += len(gaps) + zero_weeks
         rows.append({'contract': owner.contract, 'owner_since': owner.start_trading_day.isoformat(),
             'owner_through': last.isoformat(), 'expected_count': len(expected),
-            'valid_count': len(bars), 'quality_interruptions': len(gaps)})
+            'valid_count': len(bars) - zero_weeks, 'quality_interruptions': len(gaps) + zero_weeks})
         source.append({'owner': asdict(owner), 'expected': expected,
                        'bars': [asdict(b) for b in bars], 'interruptions': [asdict(g) for g in gaps]})
     require(gap_count > 0)

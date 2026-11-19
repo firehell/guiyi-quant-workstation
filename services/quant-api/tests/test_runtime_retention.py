@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from app.runtime_retention import build_cleanup_plan
+from app.runtime_retention import _SimNowReferences, build_cleanup_plan
 
 
 class Backend:
@@ -158,7 +158,6 @@ def _simnow_fixture(tmp_path, monkeypatch, *, installed=True, loaded=True):
     monitor.chmod(0o600)
     backend = RetentionBackend(home=tmp_path)
     monkeypatch.setattr('app.runtime_retention.read_bindings', lambda **kw: None)
-    monkeypatch.setattr('app.runtime_retirement.recovery_references', lambda *a: {str(old): []})
     monkeypatch.setattr('app.core.env.PROJECT_ROOT', tmp_path)
     monkeypatch.setattr(backend, 'candidate_identity', lambda root: {'root': str(root)})
     monkeypatch.setattr(backend, '_command', lambda argv: (
@@ -552,7 +551,9 @@ def test_stable_private_recovery_drift_or_alias_blocks_scan(tmp_path,monkeypatch
     import json
     old,config,monitor,backend=_simnow_fixture(tmp_path,monkeypatch,installed=False,loaded=False)
     path=_private_recovery(tmp_path,old)
-    def changed(*args):
+    verify = _SimNowReferences.verify
+
+    def changed(self):
         if drift=="content":
             path.write_text(json.dumps(dict(dependency="changed")))
         elif drift=="new_file":
@@ -560,8 +561,8 @@ def test_stable_private_recovery_drift_or_alias_blocks_scan(tmp_path,monkeypatch
             extra.write_text('{}');extra.chmod(0o600)
         else:
             path.unlink();path.symlink_to(config)
-        return {str(old):[]}
-    monkeypatch.setattr('app.runtime_retirement.recovery_references',changed)
+        verify(self)
+    monkeypatch.setattr('app.runtime_retention._SimNowReferences.verify',changed)
     assert build_cleanup_plan((old,),backend=backend)["targets"][0]["status"]=="blocked"
 
 

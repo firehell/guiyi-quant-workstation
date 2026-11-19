@@ -107,6 +107,7 @@ class LocalStore:
         self._execution_identity = execution_identity
         self.path = Path(path)
         self._mutex = threading.RLock()
+        self._digest_cache = codec.digest_cache()
         self._uncertain = False
         self._needs_recovery = initial is None
         if initial is not None:
@@ -172,6 +173,7 @@ class LocalStore:
 
     def close(self):
         with self._mutex:
+            self._digest_cache.clear()
             self._conn.close()
 
     def _projection(self):
@@ -281,7 +283,7 @@ class LocalStore:
         Native callbacks must only stage facts in a separate journal until exit.
         No account mutation or automatic sending is performed here.
         """
-        with self._mutex:
+        with self._mutex, codec.replay_digests(cache=self._digest_cache):
             if self._uncertain or self._needs_recovery:
                 raise StoreError("NATIVE_RECOVERY_REQUIRED")
             self._conn.execute("BEGIN IMMEDIATE")
@@ -314,7 +316,7 @@ class LocalStore:
             and self._execution_identity is None
         ):
             raise StoreError("TQ_ACCOUNT_IDENTITY_REQUIRED")
-        with self._mutex:
+        with self._mutex, codec.replay_digests(cache=self._digest_cache):
             if self._uncertain:
                 raise StoreError("COMMIT_OUTCOME_REQUIRES_READ_ONLY_CHECK")
             try:

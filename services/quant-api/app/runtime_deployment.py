@@ -123,6 +123,41 @@ def progress_reached(current, boundary, *, service=None, proof=None):
     return True
 
 
+def recovery_progress_reached(current, boundary, *, service, proof=None):
+    """Accept absent historical partitions only after a pinned terminal drain."""
+    from datetime import date
+    from app.market_data.observation_stream import ObservationStream
+    from app.redis_connections import get_redis_connection
+
+    missing = boundary.keys() - current.keys()
+    if not missing:
+        return progress_reached(current, boundary, service=service, proof=proof)
+    if service not in {"market-feed", "live", "alert"}:
+        raise DeploymentError("OBSERVATION_DAY_EXPIRED")
+    consumer = "alert" if service == "alert" else "live"
+    with get_redis_connection() as redis:
+        stream = ObservationStream(redis, kind="completed" if consumer == "alert" else "source")
+        registered = stream.registered_day(consumer)
+        if registered.isoformat() not in current:
+            raise DeploymentError("OBSERVATION_DAY_EXPIRED")
+        for key in missing:
+            day = date.fromisoformat(key)
+            row = boundary[key]
+            if (day.isoformat() != key or day >= registered
+                    or _stream_id(row["cursor"]) != _stream_id(row["tail"])
+                    or redis.exists(stream.key(day), stream.identity_key(day))):
+                raise DeploymentError("OBSERVATION_DAY_EXPIRED")
+            surviving_cursor = redis.get(stream.cursor_key(consumer, day))
+            if isinstance(surviving_cursor, bytes):
+                surviving_cursor = surviving_cursor.decode("ascii")
+            if surviving_cursor is not None and surviving_cursor != row["cursor"]:
+                raise DeploymentError("OBSERVATION_DAY_EXPIRED")
+        if stream.registered_day(consumer) != registered:
+            raise DeploymentError("OBSERVATION_DAY_EXPIRED")
+    retained = {key: row for key, row in boundary.items() if key in current}
+    return progress_reached(current, retained, service=service, proof=proof)
+
+
 def prove_feed_quiescent(binding):
     from datetime import UTC, datetime
     from app.db.session import SessionLocal

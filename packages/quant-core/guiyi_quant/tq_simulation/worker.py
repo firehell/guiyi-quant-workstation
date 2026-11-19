@@ -22,7 +22,7 @@ from .runtime import (
 from .credentials import CredentialStore
 from .gateway import Gateway
 from .controller import Controller, TERMINAL
-from .market import Market, bind_symbol, execution_input
+from .market import Market, QuoteStale, bind_symbol, execution_input
 from .monitor import projection, blank
 from .maintenance import MaintenanceDisconnect, require_settled, resume_after
 from ..htdy_account_execution import codec, model as m
@@ -214,6 +214,34 @@ def record_observed_signals(controller, reply, facts, issues):
         controller.signal(s, closed_at=datetime.fromisoformat(tail) if tail else None)
 
 
+def control_action(control_path, hold_path, *, stopped=False, inspect=False):
+    control = read_private(control_path, limit=1024) if control_path.exists() else {"mode": "observe"}
+    if set(control) != {"mode"} or control["mode"] not in {"observe", "trade", "pause", "stop"}:
+        raise ValueError("TQ_CONTROL_INVALID")
+    action = "stop" if stopped else control["mode"]
+    if inspect:
+        action = "observe"
+    if hold_path.exists() and action != "stop":
+        action = "pause"
+    return action
+
+
+def refresh_execution_snapshot(controller, gateway, snapshot, action_now, expected_action):
+    """Drive SDK after blocking persistence; discard changed execution context."""
+    gateway.update(0.1)
+    at = datetime.now(UTC)
+    checked = gateway.snapshot(at)
+    if gateway.reconnection_required:
+        require_recovery(controller, at)
+        return False
+    if action_now() != expected_action:
+        return False
+    if checked["snapshot_id"] != snapshot["snapshot_id"]:
+        controller.synchronize(checked, at)
+        return False
+    return True
+
+
 def run(config_path, *, inspect=False):
     logging.disable(
         logging.CRITICAL
@@ -246,6 +274,7 @@ def run(config_path, *, inspect=False):
         last_native = None
         last_market = 0
         issues = {}
+        quote_staleness = {}
         mode = "observe"
         day = None
         held = None
@@ -270,23 +299,7 @@ def run(config_path, *, inspect=False):
             market.pump = lambda: gateway.update(0) if gateway is not None else None
             while True:
                 now = datetime.now(UTC)
-                control = (
-                    read_private(control_path, limit=1024)
-                    if control_path.exists()
-                    else {"mode": "observe"}
-                )
-                if set(control) != {"mode"} or control["mode"] not in {
-                    "observe",
-                    "trade",
-                    "pause",
-                    "stop",
-                }:
-                    raise ValueError("TQ_CONTROL_INVALID")
-                action = "stop" if stopped else control["mode"]
-                if inspect:
-                    action = "observe"
-                if (base / "hold.json").exists() and action != "stop":
-                    action = "pause"
+                action = control_action(control_path, base / "hold.json", stopped=stopped, inspect=inspect)
                 mode = "trade" if action in {"trade", "pause", "stop"} else "observe"
                 if gateway is None:
                     if action == "stop":
@@ -485,6 +498,12 @@ def run(config_path, *, inspect=False):
                         if gateway.reconnection_required:
                             require_recovery(controller, now)
                         controller.synchronize(snapshot, now)
+                        if not refresh_execution_snapshot(
+                            controller, gateway, snapshot,
+                            lambda: control_action(control_path, base / "hold.json", stopped=stopped, inspect=inspect),
+                            action,
+                        ):
+                            continue
                         state = controller.store.current()
                         inputs = []
                         candidates = ()
@@ -539,6 +558,9 @@ def run(config_path, *, inspect=False):
                                         and pending is None,
                                     )
                                 )
+                            except QuoteStale as error:
+                                issues[candidate.product] = str(error)
+                                quote_staleness[candidate.product] = error.timing
                             except Exception as error:
                                 issues[candidate.product] = (
                                     str(error) if type(error) is ValueError and re.fullmatch(r"TQ_[A-Z0-9_]{1,100}", str(error)) else "TQ_EXECUTION_INPUT_UNAVAILABLE"
@@ -557,7 +579,8 @@ def run(config_path, *, inspect=False):
                             elif checked["snapshot_id"] != snapshot["snapshot_id"]:
                                 controller.synchronize(checked, checked_at)
                             elif (
-                                state.phase == "READY"
+                                control_action(control_path, base / "hold.json", stopped=stopped, inspect=inspect) == action
+                                and state.phase == "READY"
                                 and (
                                     cleanup
                                     or any(not order.reconciled for order in state.orders)
@@ -735,6 +758,8 @@ def run(config_path, *, inspect=False):
                         runtime_tag=config["tag"],
                         pid=os.getpid(),
                     )
+                    if quote_staleness:
+                        payload["quote_staleness"] = quote_staleness
                     write_private(monitor_path, payload)
                     last_publish = time.monotonic()
                 # A persisted hold cannot be lifted by merely writing trade to control.
@@ -755,6 +780,8 @@ def run(config_path, *, inspect=False):
                 runtime_tag=config["tag"],
                 pid=os.getpid(),
             )
+            if quote_staleness:
+                payload["quote_staleness"] = quote_staleness
             write_private(monitor_path, payload)
             return 0
         finally:

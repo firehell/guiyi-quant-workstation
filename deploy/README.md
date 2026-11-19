@@ -60,7 +60,6 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.release`，须与原plan同字段及candidate的release身份逐值相等，tag/commit须与candidate及其code身份相等；candidate本身不要求存在root字段，若存在则须相等。原意图/plan/hash及完整闭合条件不变，不修改历史记录来解除引用。
 创建新树、构建、render/preflight、切换和健康读回完成后，逐树核对精确路径、版本、dirty/untracked、已集成状态、配置/loaded服务与进程引用；有用户修改或引用时停止该树清理。
 保留必要运行JSON与日志证据，不保留整棵旧源码；不删除tag/Release历史，不触碰develop/main、普通任务树、行情、DB、Scope或安全配置。
-当当前运行结果为连续已成功的同代恢复、旧collector无法找到直接普通交接锚时，可显式使用 `runtime_retention closeout-plan --include-latest-recoveries /exact/retired-root`。该入口沿完整binding身份有界追溯唯一成功锚，并保持原v1封存与读取合同；候选、写入前后均由当前干净正式树的原封读取器独立校验，不能用修改后的reader自行宣称兼容。`seal-closed --plan`沿候选绑定的收集政策重新核对，不改原失败记录；仅当后续cleanup-plan零引用才non-force删除源码，删后再次用正式reader核验。公开计划/回执目录仍属原件引用，不随源码清理。
 
 应用管理的worktree使用Codex archive工具，普通Git worktree使用non-force的`git worktree remove`；独立旧clone只有在精确清单与引用复核通过后才能清理。
 
@@ -401,7 +400,7 @@ drain、bootout或kickstart，不重放或清cursor。旧retirement失败、SimN
 
 同版本恢复若发现旧日订阅为明确缺席（None），仅接受原生 `_closed_cleaned_idle_proof` 重新验证的全品种 CLOSED、未来 Session、盘后清理证据及 source/completed 全消费者 cursor==tail；不重造订阅。输出独立 cleaned 启动证明，缺席订阅哈希保持 None，合约映射另存哈希；空字典/部分订阅及其他缺失继续拒绝。
 
-同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。新计划仍有15分钟TTL、600秒总预算，部署/维护/owner锁及各阶段独立读回；只恢复原启用集合。
+同版本恢复使用正常服务启动的权威Session/rank1/注册交易日校验，可处于TRADING、BREAK或CLOSED；不复用版本promotion的休市660秒条件，也不放宽原cohort条件。一般计划和仅关闭 Feed 的计划采用 15 分钟有效期、600 秒总预算。经停机证据确认后重新启动服务的计划采用 30 分钟有效期、1200 秒总预算。所有计划保留部署、维护和 owner 锁以及各阶段独立读回，只恢复原启用集合。
 
 `confirmed_intake_halt` 仅接纳两层原生失败记录：A为Live卸载前缀，B为已确认A后启动消费者、在intake失败并停驻的前缀。新计划同时绑定A/B的public/private plan、state和effect身份；重新证明全部当前消费者精确parked、owner锁可取、Feed与日历absent、pending capture及UNKNOWN为0、完整源/DB/routes和所有当前尾部已ACK追齐。旧接收摘要不可逆时不得用摘要不等推断漂移或直接忽略，须以完整当前前缀校验替代；新快照固定静态context并逐阶段复验。只接受此两层链，不循环接纳新的未知attempt，不执行bootout，成功receipt解析A/B且保留原字节。任一额外effect、第三未决、漂移或未ACK当前尾部均拒绝。
 
@@ -421,6 +420,8 @@ drain、bootout或kickstart，不重放或清cursor。旧retirement失败、SimN
 原cohort Feed关闭已完整证明后，若其正常恢复仅启动同代消费者、以明确intake READY_TIMEOUT停驻且Feed未启动，可复用`reconcile-stopped`生成新鲜停止确认。原close和失败normal的公共/私有plan、state、receipt逐字绑定，额外effect或未决记录拒绝；已闭合历史仅通过原生typed闭合证明排除。该确认不表示旧失败成功，也不执行启动；后续仍为独立的既有stopped恢复计划。
 若该恢复已经完成合法schema2 intake并启动精确Feed，仅在只读verified阶段以已知控制/接收错误停驻，则同一入口可确认`feed_state=parked`，不能把它当作已退出。必须显式`plan --stopped-confirmation <确认> --close-feed-only`并单次执行原生关闭；取得完整PID退出/锁/双前缀关闭回执后，再以同一确认及`--feed-close-plan <关闭计划>`生成普通stopped恢复计划。关闭结果不明、额外effect/unknown、来源或身份漂移均阻断，旧记录不改写。
 同一停止确认入口也接受严格的定时注册失败前缀：恰有consumers/intake/feed/verified四项完成效果，两个接收证明及verified完整且有效，失败恰为calendars阶段的REDACTED/COHORT_FORWARD_STEP_FAILED。原失败仍UNKNOWN；只有当前四个定时定义均absent、全部owner停驻、保护前像与数据/ACK前缀及pending检查仍通过时才可生成新停止确认。任何已加载定时定义、新盘后状态/历史漂移、额外效果或缺失证明均拒绝，不重放原计划，也不推断过去未发生副作用；后续沿用单次关闭Feed和独立同代恢复。
+若同代恢复完成全部五项效果并已写入哈希匹配的回执，仅在 `recovered` 阶段超出原预算而再次停驻，可对该终态执行 `reconcile-stopped`。它验证原结果指针、回执、此前停止确认和 Feed 关闭链，并现场确认全部定时定义禁用且空闲。close-only 计划逐项持久记录原生卸载意图，核验定时定义缺席后再关闭 Feed；任一结果不明阻断后续恢复。新的同代启动计划仍用 15 分钟期限和 600 秒预算，成功回执关联原失败，旧记录保持原样。
+
 新的verified失败在原生attempt中仅补充固定子步骤与合法带时区采样时间；接收异常仅保留精确类型的固定公开码，不记录异常原文或回溯。新诊断不能用于倒推旧attempt未记录的失败原因，也不增加对未决恢复前缀的接纳范围。
 
 接收存活由独立typed证明确定：原冻结SourceProof完整不变、active v2边界与原升级意图匹配、所有已ACK原件及冻结routes在数据库中逐条完整，其他分区不回退；有积压时须两次新鲜有界receiving cycle显示ACK与数据库前缀共同前进。计算等待及BLOCKED分别展示并继续逐流fence，不借此清除失败或重试；接收错误、原件/routes/身份异常、接收提交未知、恢复前未归属pending capture、失权或超时拒绝。旧尾部全部追齐是后续独立验收，不冒充启动完成条件。
@@ -448,6 +449,11 @@ DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别�
 
 ### 消费者恢复失败后的停驻确认
 
+控制器退出后若日志精确停在 `intake_complete`、接收已追平且尚未写入 Feed 阶段，可用
+`plan --continue-after-intake <interrupted-plan> --output <new-plan>` 只读冻结新计划。
+冻结和应用时复核原计划与日志字节、已运行消费者、Feed 缺席和定时任务窗口。
+应用从 Feed 接续，保留 Feed 与每项定时任务的意图和读回。接续自身中断后保留已记意图，禁止复跑同一计划。
+
 `python -m app.runtime_cohort_recovery reconcile-stopped --plan <failed-plan>` 仅接纳同一安装generation、
 完成consumers后在intake超时且从未启动Feed的失败边界。部署/维护及真实owner锁内重证当前parked、Feed与日历缺席、
 观察PID退出、安装/配置前像及完整原件/routes/ACK前缀；使用当前drain，不恢复旧控制文件。追加唯一
@@ -460,31 +466,14 @@ DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别�
 正常cohort与同版本恢复共用完成接收报告及双fresh前缀验证；v14的`cycle`与`receiving_cycle`均可作为完成报告，
 不同stage不互相冒充两个轮次；计算pending/blocked独立于接收活性，UNKNOWN及完整性问题仍拒绝。
 
-### 已闭合发布依赖封存与退役
+### 旧发布树清理
 
-常规清理先运行一次只读引用扫描，不固定执行“closeout → seal → cleanup”全套流程：
+运行 `python -m app.runtime_retention cleanup-plan /exact/old-release-root ...`。
+按实际服务绑定、安装及加载定义、进程、工作目录和仍可启动的配置核对引用。
+旧部署的历史日志保留在原处供现场排查，清理旧源码无需封存。
+只对干净、精确且允许清理的发布树执行 non-force `git worktree remove`。
+开发工作树、现行发布树和 Git tag 保留。
 
-```bash
-python -m app.runtime_retention cleanup-plan /exact/old-release-root ...
-```
-
-只清理精确列为 eligible、必要证据已保全且删除前重查身份/引用未变的目标，逐个 non-force 移除。
-登记式 worktree 与 `.worktrees/release-v*` 的独立 shared clone 共用主仓对象库身份校验。clone 还须有唯一绝对 alternates、匹配的来源，并与主仓同名 annotated tag 的对象和 commit 完全一致；clone 独有提交或重注释 tag 不可清理。
-历史封存必须能由实际恢复读取器验证；仅升级维护 controller 不代表运行中的旧 reader 已支持新布局，不得据此删除仍有恢复引用的树。
-仍在运行、存在未决恢复、用户修改或引用未知的树保留；不为可能回退而保留无引用源码。
-不删除tag/Release、行情、DB、账本、安全配置或其他任务。
-
-只有扫描发现实际历史恢复引用、且闭合证明需要树内非Git原件时，才使用已有封存入口：
-
-```bash
-python -m app.runtime_retention closeout-plan /exact/old-release-root ... > /private/retirement-plan.json
-python -m app.runtime_retention seal-closed --plan /private/retirement-plan.json
-```
-
-已有有效索引与原件保全直接复用，不为普通发版重新制作封存材料。seal仍校验精确原件、历史闭合与提交时漂移，
-不以终态字样或人工说明跳过机器验证；未闭合恢复继续阻止清理。旧unknown/state/plan不改写，历史对象不写回active registry。
-封存后重查待删树当前引用再清理；删除后确认现役服务与必要历史reader仍可用，一次记录结果即可。
-该工具是实际恢复依赖的处理手段，不是每次开发、发布或删旧代码的前置流程。
 
 ## TqKq 快期模拟
 

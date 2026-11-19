@@ -671,10 +671,10 @@ owner segment 身份 SHALL 绑定物理合约与权威 owner 起点；calculatio
 
 正式 SuBing D1/W1 SHALL 仅通过显式 `subing_quality_rewarm_v2` 输入策略读取当前物理合约完整生命周期的
 权威有效 Bar 与已证实质量端点互斥集合。D1 仅接受 `PRICE_UNAVAILABLE`、`NONPOSITIVE_CLOSE`；
-W1 仅接受 `weekly-d1-quality-v2` 已证实中断。未知缺口、owner/Session/端点冲突仍整体 fail closed，
+W1 接受 `weekly-d1-quality-v2` 已证实中断，以及经完整 D1 端点和聚合一致性校验的严格全零 Canonical W1 源行。未知缺口、owner/Session/端点冲突仍整体 fail closed，
 不得下载替代价格、造价、缩窗或跨物理合约继承状态。最新决策端点本身不可用时不得回退先前价格。
 
-Canonical D1 中保留的严格 `OHLC=0, volume=0, turnover=0` 源行 MUST 参与完整端点核对，
+Canonical D1/W1 中保留的严格 `OHLC=0, volume=0, turnover=0` 源行 MUST 参与完整端点核对，
 并按 `NONPOSITIVE_CLOSE` 的质量断点语义重新预热。原始 Bar 保留在 Canonical，不进入指标输入，
 也不构造缺失的 provider 证据。缺少成交额或其他非严格全零的无效价格不适用此分支。
 

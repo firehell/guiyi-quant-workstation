@@ -1978,7 +1978,7 @@ def test_native_intake_halt_requires_current_parked_owners_and_complete_current_
     monkeypatch.setattr(m, "_resolution_source", read)
     monkeypatch.setattr(m, "_intake_predecessor", lambda *args: (predecessor, previous))
     monkeypatch.setattr(m, "observation_progress", lambda *args: {})
-    monkeypatch.setattr(m, "progress_reached", lambda *args, **kwargs: True)
+    monkeypatch.setattr(m, "recovery_progress_reached", lambda *args, **kwargs: True)
     monkeypatch.setattr(
         liveness, "receiving_context_identity", lambda snapshot: "f" * 64
     )
@@ -2416,6 +2416,53 @@ def test_slow_successful_checks_do_not_consume_transient_poll_retry_window(
     assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
 
 
+
+def test_slow_identity_then_transient_feed_poll_reuses_fresh_candidate(
+    tmp_path, monkeypatch
+):
+    from tests.reference_trading.test_receiving_liveness import NOW
+
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    elapsed = current.monotonic
+    extra = [0.0]
+    current.monotonic = lambda: elapsed() + extra[0]
+    current.now = lambda: NOW + timedelta(seconds=current.monotonic())
+
+    def advance(seconds):
+        extra[0] += seconds
+
+    monkeypatch.setattr(module(), "sleep", advance)
+    windows = []
+    fixed = []
+    recovery_window = current.recovery_window
+    active = current._active
+
+    def session_proof(**kwargs):
+        windows.append(current.monotonic())
+        advance(0.9)
+        return recovery_window(**kwargs)
+
+    def fixed_identity(*args):
+        fixed.append(current.monotonic())
+        advance(1.1)
+
+    def active_owner(binding):
+        state = active(binding)
+        if binding.service == "market-feed" and fixed:
+            state["ready"] = current.monotonic() - fixed[0] >= 1.25
+        return state
+
+    current.recovery_window = session_proof
+    current._fixed = fixed_identity
+    current._active = active_owner
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert len(windows) == len(fixed) == 1
+    assert len(samples) == 2
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+
+
 def test_final_owner_checks_cannot_overrun_overall_ready_deadline(
     tmp_path, monkeypatch
 ):
@@ -2556,3 +2603,78 @@ def test_cleaned_same_generation_startup_keeps_absent_subscription_and_session_b
     phase.phase = MarketPhase.CLOSED
     with pytest.raises(module().CohortError, match="CLEANED_AUTHORITY_UNPROVEN"):
         module().prove_same_generation_startup(**dict(kwargs, closed_cleanup=lambda: None))
+
+
+def test_calendar_due_window_waits_without_repeating_prior_registration(tmp_path, monkeypatch):
+    from app import runtime_cohort_recovery as m
+    from app.runtime_bootstrap import BootstrapError
+    from app.services import deployment_identity
+
+    _, source, _, _, _, _ = fixture(tmp_path)
+    host = native(tmp_path)
+    calls = []
+    host._fixed = lambda *args: None
+    host.recovery_window = lambda: None
+    host.monotonic = lambda: 0
+    monkeypatch.setattr(m, "sleep", lambda seconds: calls.append("wait"))
+    bindings = m.registry(source["new"])
+    monkeypatch.setattr(
+        deployment_identity,
+        "deployment_identity_health",
+        lambda **kwargs: {"services": {
+            m.IDENTITY_NAMES.get(name, name): {"status": "matched" if binding.enabled else "disabled"}
+            for name, binding in bindings.services.items()
+        }},
+    )
+    host.launch = lambda *args: None
+
+    def start(binding):
+        name = binding.service
+        calls.append(name)
+        if name == "late-provider-recovery" and calls.count(name) == 1:
+            raise BootstrapError("BOOTSTRAP_RECOVERY_CALENDAR_DUE")
+
+    host.start_calendar = start
+    assert host.forward_calendars(source, lambda: None)["identity"] == "matched"
+    assert calls[:4] == ["after-market", "late-provider-recovery", "wait", "late-provider-recovery"]
+
+
+def test_feed_poll_allows_sampling_but_requires_final_ready_owner(tmp_path, monkeypatch):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    active = current._active
+    feed_reads = []
+
+    def active_owner(binding):
+        state = active(binding)
+        if binding.service == "market-feed":
+            feed_reads.append(len(samples))
+            state["ready"] = len(samples) == 2
+        return state
+
+    current._active = active_owner
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert feed_reads == [0, 1, 2, 2]
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]
+
+
+def test_feed_poll_failure_does_not_authorize_receiving_sample(tmp_path, monkeypatch):
+    current, source, audit, samples = timed_receiving_case(
+        tmp_path, monkeypatch, offsets=(0, 1)
+    )
+    active = current._active
+    feed_reads = []
+
+    def active_owner(binding):
+        state = active(binding)
+        if binding.service == "market-feed":
+            feed_reads.append(len(samples))
+            if len(feed_reads) <= 2:
+                state.update(ready=False, proof={"failure_code": "FEED_POLL_FAILED"})
+        return state
+
+    current._active = active_owner
+    proof = current._await(source, audit, lambda: None, feed=True)
+    assert feed_reads == [0, 0, 0, 1, 2, 2]
+    assert proof["after_sha256"] == samples[1]["snapshot_sha256"]

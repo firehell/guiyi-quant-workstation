@@ -1,3 +1,23 @@
+11/19 早盘前原生整组切换v1.16.137成功，exact `2126d0a71d6a7991b511053b482ccd583c70e43a`、generation91，正式根 `/Volumes/扩展盘/worktree/release-v116137/guiyi-quant-workstation`。整组计划f09a884d…返回switched，11项实际身份matched，API/Web/Runtime HTTP通过，DB/Redis/Live正常，原定时集合已恢复；未重跑旧unknown，未启用通知或新Scope。新根为同common的clean detached annotated release，属于在役源码，不得随聊天归档或清理。
+
+09:02日盘现场读回通过：60/60正式WebSocket包含09:01新confirmed分钟Bar，physical contract与Nov19权威主力映射逐项一致，零失败；Web200、Runtime identity matched、DB/Redis/Live正常。
+
+快期v136正常STOPPED并保全后，v137同版configure/install及完整原账本probe通过（1仓、0活动委托、60映射、issues为空、ready_for_start=true），唯一新worker PID4278于09:11进入READY/AUTO_TRADING。启动预检约51分钟，没有跳过重放。原CU owner=CU2701、must_close/rolling=True、旧仓CU2612多1的既有清旧仓义务自然恢复：09:11:19.722唯一新增SUBMIT，09:11:25.554原生SELL CLOSE1@98220，09:11:26.483以命令43228入账，随后原生与本地零仓、订单FILLED/reconciled。没有CU2701开仓，不能将此作为新H1开仓验收。
+
+独立核验原43,210条commands所有字段、metadata3条、原8个claims及identity完整保留，仅新增第9条合法SUBMIT。首个过期候选LOCAL_ABORTED，未claim/未发送；后续新鲜提案发送时Quote、Session、Readback均有效，proposal commit实测1.396秒。原生账户commission已读到，但本笔归属fee仍UNKNOWN，未伪造零费或收益。当前45品种完成恢复，AP/CJ/EC/JD/LC/LH/PD/PK/PS/PT/RS/SF/SI/SM/UR共15个纯日盘品种仍待新H1恢复证明。空仓闲置后Readback过期、executable0/unverified继续保守呈现，不以心跳冒充执行事实。
+
+API/SDK frozen、Web生产构建、exact副本306项回归、独立部署及账户Review通过。日盘M1接收和旧CU模拟平仓闭环已有实际证据；新H1恢复及新信号开仓仍待自然观察。私有计划、原生切换结果、日盘读回、probe及停机保全位于AppSupport/GuiyiQuant/release-20261119-v137。
+
+以下为此前检查点：
+
+11/18 23:35 原7笔手动平仓已于19:21正式追加为命令42096，完整重放及新鲜原生探测通过，保留原权益基线和8个旧SUBMIT claims；原策略已在v1.16.136/exact e1e3311d29e30a7b09a8c7b10052bd5b07d73bad恢复，原生与本地仅余CU2612多1。标准共享服务gen90；夜盘45品种首根1m及首根60m实际读回、M1聚合逐值核对通过。SI2701物理历史原生warmup完成77目标/33请求，七周期API通过。不能将这些证据当作新模拟订单成交：本轮CU执行受TQ_QUOTE_STALE保护，尚无新SUBMIT。
+
+本轮已non-force清理9棵干净且已合入origin/main、无运行引用的旧任务树；9棵旧发布树因历史恢复证据封存校验未通过继续保留。新增retirement-cleanup临时树受宿主primary checkout保护，未绕过删除。精确清理清单与恢复commit保存在AppSupport/GuiyiQuant/night-live-recovery-20261118.LYVwTzIa/manual-close-validation。
+
+正在交付账本序列化和SDK驱动修复：复用有界不可变canonical片段，每次仍验证状态；同步账本后驱动SDK，重连、账户漂移或控制变化丢弃本轮，Quote/Session TTL不变。306项定向测试及独立Review通过；真实seq42664/84,975,087字节检查点完整字节一致，热序列化0.21秒。此为纯离线序列化测量，不是正式写账本或自然成交验收。正式仍v136未切；原生休市证明返回COHORT_REST_WINDOW_REQUIRED，等待全部夜盘休市后的合规切换窗口。
+
+以下为此前检查点：
+
 11/18 21:16 夜盘开盘与SI前缀修复已完成。20:30既有自动元数据任务passed，Nov19 rank1/Session60/60；CU2612→CU2701、PG2612→PG2701、SI2612→SI2701。CU/PG自动六频READY且正式HTTP各32根H1读回通过；CU旧持仓按既有TqKq Owner/rolling合同等待自然新H1处理，未人工清仓/搬仓。21:02:57正式WS逐项匹配Nov19独立映射，45交易品种均有21:01 completed M1/day19，15正常closed，全60通过，Runtime身份matched及Web/DB/Redis/Live正常。独立复核bridge恢复proof固定实时60m/32根，M1不替代，故当前Tq blocked60/Core42100与旧Readback过期为等待首H1路径，PID5311/trade/READY/issues0、Native仍CU多1；22:00自然H1续证/信号/旧CU实际执行尚待观察。
 
 SI2701当时物理前缀真实缺失，已在开盘验收后执行精确原生warmup计划6e2c6fd8…（上市Jan19至Nov18、七周期）：真实RQData33请求、77目标全部applied、failed/blocked0，原生Canonical锁/分区发布生效，仅SI2701，不改MainMap/continuous/Live。正式API七频各32根全部200，日内/日线到Nov18，周线到Nov13；现无SI明早前缀缺口。21:12:28独立WS连续性复核45夜盘21:01–21:08无缺口，15closed正确，覆盖补齐开始时段；首H1前会继续验证自然业务，不制造订单。

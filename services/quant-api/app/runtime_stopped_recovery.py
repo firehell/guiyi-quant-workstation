@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from hashlib import sha256
 import os
 from pathlib import Path
+from time import sleep
 
 from app import runtime_cohort_recovery as recovery
 from app.runtime_handover import deployment_lock, owner_lock_available
@@ -56,6 +57,56 @@ def _calendar_failure_error(state):
     )
 
 
+def terminal_timeout(plan, state):
+    return (
+        plan.get("mode") == MODE
+        and "closed_feed" in plan
+        and "stop_after" not in plan
+        and state.get("phase") == "outcome_unknown"
+        and state.get("failed_stage") == "recovered"
+        and state.get("error_type") == "CohortError"
+        and state.get("error_code") == "COHORT_FORWARD_DEADLINE_EXCEEDED"
+    )
+
+
+def verify_failure_receipt(folder, plan, state):
+    path = folder / "receipt.json"
+    if not terminal_timeout(plan, state):
+        require(not os.path.lexists(path))
+        return None
+    raw, receipt = recovery._resolution_source(path)
+    effects = state["effects"]
+    require(
+        set(state) == {
+            "schema_version", "kind", "phase", "plan_sha256", "source", "effects",
+            "receipt_sha256", "failed_stage", "error_type", "error_code",
+        }
+        and state["receipt_sha256"] == sha256(raw).hexdigest()
+        and set(receipt) == {
+            "schema_version", "kind", "plan_sha256", "source", "observed_at",
+            "intake", "readback", "natural_acceptance",
+            "original_attempt_preserved", "stopped_resolution",
+            "feed_close_resolution",
+        }
+        and receipt["schema_version"] == 1
+        and receipt["kind"] == "postcas_forward_recovery_readback"
+        and receipt["plan_sha256"] == plan["plan_sha256"]
+        and receipt["source"] == plan["source"]
+        and receipt["intake"] == effects["intake"]
+        and receipt["readback"] == effects["verified"]
+        and receipt["stopped_resolution"] == plan["stopped_confirmation"]
+        and receipt["feed_close_resolution"] == plan["closed_feed"]
+        and receipt["natural_acceptance"] == "pending"
+        and receipt["original_attempt_preserved"] is True
+    )
+    observed = datetime.fromisoformat(receipt["observed_at"])
+    require(
+        datetime.fromisoformat(plan["created_at"])
+        <= observed < datetime.fromisoformat(plan["expires_at"])
+    )
+    return path
+
+
 def failure_feed_state(plan, state):
     """Classify retained prefixes; current audit proves any stopped frontier.
 
@@ -76,11 +127,18 @@ def failure_feed_state(plan, state):
         plan["new"]["services"]["market-feed"].get("launchd_label")
         or "com.guiyi.quant-market-feed"
     )
-    if state.get("failed_stage") == "calendars":
+    terminal = terminal_timeout(plan, state)
+    if terminal or state.get("failed_stage") == "calendars":
         verified = effects.get("verified")
+        expected = {"consumers", "intake", "feed", "verified"}
+        if terminal:
+            expected.add("calendars")
+            require(effects.get("calendars") == {
+                "calendar_registration_only": True, "identity": "matched",
+            })
         require(
-            _calendar_failure_error(state)
-            and set(effects) == {"consumers", "intake", "feed", "verified"}
+            (terminal or _calendar_failure_error(state))
+            and set(effects) == expected
             and effects["consumers"] == consumers
             and recovery._valid_intake_result(effects["intake"])
             and effects["feed"] == {"bootstrapped": True, "label": label}
@@ -280,6 +338,8 @@ def read_closed_feed(host, path, identity, selected):
         confirmation["source"] == identity
         and confirmation["audit"].get("feed_state") == "parked"
         and plan["audit"]["feed_close"] == confirmation["audit"]["feed_close"]
+        and plan["audit"].get("disabled_calendars")
+        == confirmation["audit"].get("disabled_calendars")
         and plan["new"] == historical_source(host, identity)["new"]
     )
     controller = plan["audit"]["controller"]
@@ -292,6 +352,21 @@ def read_closed_feed(host, path, identity, selected):
     private_raw, private = recovery._resolution_source(folder / "plan.json")
     state_raw, state = recovery._resolution_source(folder / "state.json")
     receipt_raw, receipt = recovery._resolution_source(folder / "receipt.json")
+    calendar_intent = plan["audit"].get("disabled_calendars")
+    effects = state.get("effects", {})
+    expected_effects = {"feed_stop"}
+    if calendar_intent is not None:
+        require(
+            set(calendar_intent) == set(recovery.CALENDARS)
+            and all(type(loaded) is bool for loaded in calendar_intent.values())
+        )
+        expected_effects.add("calendars_closed")
+        require(
+            effects.get("calendars_closed") == calendar_intent
+            and receipt.get("calendars_closed") == calendar_intent
+        )
+    else:
+        require("calendars_closed" not in receipt)
     require(
         private == plan
         and state.get("schema_version") == receipt.get("schema_version") == 1
@@ -305,7 +380,7 @@ def read_closed_feed(host, path, identity, selected):
         and receipt.get("kind") == "feed_close_readback_v1"
         and receipt.get("original_attempt_preserved") is True
         and receipt.get("recovery_started") is False
-        and set(state.get("effects", {})) == {"feed_stop"}
+        and set(effects) == expected_effects
         and state["effects"]["feed_stop"] == receipt.get("feed_close")
         and recovery._valid_feed_close(
             receipt.get("feed_close"), plan["audit"]["feed_close"]
@@ -319,6 +394,30 @@ def read_closed_feed(host, path, identity, selected):
         "state_bytes_sha256": sha256(state_raw).hexdigest(),
         "receipt_bytes_sha256": sha256(receipt_raw).hexdigest(),
     }, receipt
+
+
+def _initial_intake_feed_pids(host, identity, source, plan, state):
+    """Bind an intake-only halt to the original cohort's verified Feed exit."""
+    require(identity.get("kind") is None and plan.get("mode") is None
+            and "predecessor" not in plan and "stop_after" not in plan
+            and state.get("failed_stage") == "intake"
+            and failure_feed_state(plan, state) == "absent")
+    _, original = recovery._resolution_source(
+        host.directory / "cohort-attempts" / identity["plan_sha256"] / "state.json"
+    )
+    effects = original["effects"]
+    require(original.get("failed_phase") == "consumers_ready"
+            and original.get("error_code") == "COHORT_NEW_READY_TIMEOUT"
+            and set(effects) == {"prewarm", "calendars_off", "drain", "old_exited",
+                                 "preserve", "install", "consumers", "bootout_requests"})
+    requests = effects["bootout_requests"]
+    require(effects["old_exited"] == {"old_pids_exited": True, "bootout_requests": requests})
+    feed = requests["market-feed"]
+    owner = effects["drain"]["owners"]["market-feed"]
+    require(feed["pid"] == owner["pid"] and owner["phase"] == "parked"
+            and owner["generation"] == source["old"]["services"]["market-feed"]["generation"]
+            and type(feed["pid"]) is int and feed["pid"] > 1)
+    return [feed["pid"]]
 
 
 def _validate_lineage(host, value):
@@ -350,7 +449,9 @@ def _validate_lineage(host, value):
         plans[name] = plan
         states[name] = state
         mode = plan.get("mode")
-        if mode is None:
+        if mode is None and state.get("failed_stage") == "intake":
+            _initial_intake_feed_pids(host, identity, historical_source(host, identity), plan, state)
+        elif mode is None:
             recovery._predecessor(
                 host, _public_path(value, plan), identity, historical=True
             )
@@ -375,7 +476,12 @@ def _validate_lineage(host, value):
             )
         elif mode in {"confirmed_feed_halt", MODE, recovery.ORIGINAL_FEED_MODE}:
             failure_feed_state(plan, state)
-            require(not os.path.lexists(folder / "receipt.json"))
+            receipt_path = verify_failure_receipt(folder, plan, state)
+            if receipt_path is not None:
+                require(value["files"].get(str(receipt_path)) == descriptor(receipt_path)["sha256"])
+                require(name == value["failed_plan_sha256"] or str(
+                    folder / "stopped-confirmation.json"
+                ) in value["files"])
             if mode == recovery.ORIGINAL_FEED_MODE:
                 require(
                     "stop_after" not in plan
@@ -400,7 +506,9 @@ def _validate_lineage(host, value):
         and value["files"].get(value["failed_plan_path"])
         == sha256(public_raw).hexdigest()
     )
-    if failed.get("mode") == "confirmed_feed_halt":
+    if failed.get("mode") is None:
+        expected = {failed["plan_sha256"]}
+    elif failed.get("mode") == "confirmed_feed_halt":
         predecessor, _ = recovery._feed_predecessor(
             host, failed["predecessor"]["plan_path"], identity
         )
@@ -471,7 +579,7 @@ def _public_path(value, plan):
     require(False)
 
 
-def verify_pin(host, selected, *, own=None, closed_feed=None):
+def verify_pin(host, selected, *, own=None, closed_feed=None, predecessor=None):
     value = read_confirmation(host, selected)
     allowed = set(value["attempts"])
     if closed_feed is not None:
@@ -480,9 +588,58 @@ def verify_pin(host, selected, *, own=None, closed_feed=None):
         )
         require(closure == closed_feed)
         allowed.add(closure["plan_sha256"])
+    if predecessor is not None:
+        allowed.add(predecessor)
     _inventory(host, allowed, own=own)
     return value
 
+
+
+def terminal_evidence_pin(host, plan):
+    """Validate immutable history once, then check exact bytes under the deployment lock."""
+    from app.runtime_identity import file_snapshot
+
+    selected = plan["stopped_confirmation"]
+    own = plan["plan_sha256"]
+    closed = plan.get("closed_feed")
+    external = {Path(selected["path"])}
+    if closed is not None:
+        external.add(Path(closed["plan_path"]))
+
+    def fingerprint():
+        paths = set(external)
+        for leaf in ("cohort-forward-recoveries", "release-retirements"):
+            parent = host.directory / leaf
+            if not os.path.lexists(parent):
+                continue
+            recovery._directory(parent)
+            children = [child for child in parent.iterdir() if child.name != own]
+            require(len(children) <= 1024)
+            for child in children:
+                recovery._directory(child)
+                paths.update(child.iterdir())
+        require(len(paths) <= 8192)
+        return {
+            path: sha256(file_snapshot(path, limit=64 * 1024 * 1024)[0]).hexdigest()
+            for path in paths
+        }
+
+    before = fingerprint()
+    value = verify_pin(host, selected, closed_feed=closed)
+    receipt = None
+    if closed is not None:
+        closure, receipt = read_closed_feed(host, closed["plan_path"], plan["source"], selected)
+        require(closure == closed)
+    require(fingerprint() == before)
+    external.update(Path(name) for name in value["files"])
+    pinned = fingerprint()
+    require(all(pinned.get(path) == value for path, value in before.items()))
+    require(all(pinned[Path(name)] == checksum for name, checksum in value["files"].items()))
+
+    def check():
+        require(fingerprint() == pinned)
+
+    return (value, receipt), check
 
 def _evidence(host, path):
     raw, plan = recovery._resolution_source(Path(path))
@@ -506,9 +663,9 @@ def _evidence(host, path):
         and state.get("kind") == recovery.KIND
         and state.get("plan_sha256") == plan["plan_sha256"]
         and state.get("source") == identity
-        and not os.path.lexists(attempt / "receipt.json")
     )
     feed_state = failure_feed_state(plan, state)
+    receipt_path = verify_failure_receipt(attempt, plan, state)
     controller = plan["audit"]["controller"]
     recovery._verify_historical_release(
         host, Path(controller["root"]), controller["tag"], controller["commit"]
@@ -531,7 +688,9 @@ def _evidence(host, path):
                 retain(folder / leaf)
         attempts.add(item["plan_sha256"])
 
-    if plan.get("mode") == "confirmed_feed_halt" and "stop_after" not in plan:
+    if plan.get("mode") is None:
+        pids = _initial_intake_feed_pids(host, identity, source, plan, state)
+    elif plan.get("mode") == "confirmed_feed_halt" and "stop_after" not in plan:
         selected, _ = recovery._feed_predecessor(
             host, plan["predecessor"]["plan_path"], identity
         )
@@ -582,6 +741,8 @@ def _evidence(host, path):
     retain(Path(path))
     retain(attempt / "plan.json")
     retain(attempt / "state.json")
+    if receipt_path is not None:
+        retain(receipt_path)
     attempts.add(plan["plan_sha256"])
     retain(Path(identity["plan_path"]))
     if identity.get("kind") == recovery.ORIGINAL_FEED_SOURCE:
@@ -598,10 +759,71 @@ def _evidence(host, path):
         sorted(attempts),
         sorted(set(pids)),
         feed_state == "parked",
+        receipt_path is not None,
     )
 
 
-def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
+def disabled_calendars(host, source):
+    from app.runtime_bootstrap import parse_disabled_states
+    from app.runtime_scheduled import ScheduledBackend
+
+    disabled = parse_disabled_states(
+        host.launch("print-disabled", f"gui/{os.getuid()}").stdout
+    )
+    bindings = recovery.registry(source["new"]).services
+    calendar_state = {}
+    for name in recovery.CALENDARS:
+        binding = bindings[name]
+        require(disabled.get(binding.label) is True)
+        require(ScheduledBackend().idle(binding))
+        calendar_state[name] = not host.definition_absent(binding)
+        require(ScheduledBackend().idle(binding))
+    return calendar_state
+
+
+def close_disabled_calendars(host, source, audit, budget, record):
+    expected = audit["disabled_calendars"]
+    require(
+        set(expected) == set(recovery.CALENDARS)
+        and all(type(loaded) is bool for loaded in expected.values())
+    )
+    with host.forward_guards(source), host._resume_owner_guards() as held:
+        require(
+            digest(host._fixed(source, budget)) == audit["installed_sha256"]
+            and host._parked_owners(source, held=True, feed_parked=True) == audit["owners"]
+            and host._controls(source) == audit["controls"]
+            and disabled_calendars(host, source) == expected
+        )
+        host.check_protected_forward(source, audit)
+        bindings = recovery.registry(source["new"]).services
+        pending = dict(expected)
+        requested = []
+        for name in recovery.CALENDARS:
+            if not pending[name]:
+                continue
+            budget()
+            requested.append(name)
+            record(list(requested))
+            held()
+            require(
+                disabled_calendars(host, source) == pending
+                and host._controls(source) == audit["controls"]
+                and host._controller() == audit["controller"]
+            )
+            budget()
+            host.launch("bootout", f"gui/{os.getuid()}/{bindings[name].label}")
+            pending[name] = False
+            end = host.monotonic() + 30
+            while not host.definition_absent(bindings[name]):
+                require(host.monotonic() < end)
+                budget()
+                sleep(0.1)
+            require(disabled_calendars(host, source) == pending)
+        budget()
+        return expected
+
+
+def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False, retained_backlog=False, terminal=False):
     """Verify current controls and fresh OS/data facts; never restore old controls."""
     from app.reference_trading.receiving_liveness import (
         receiving_context_identity,
@@ -614,12 +836,14 @@ def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
         fixed = host._fixed(source, budget)
         owners = host._parked_owners(source, held=True, **owner_options)
         controls = host._controls(source)
-        require(
-            all(
-                host.definition_absent(recovery.registry(source["new"]).services[n])
-                for n in recovery.CALENDARS
-            )
-        )
+        calendars = {}
+        if terminal:
+            calendars = disabled_calendars(host, source)
+        else:
+            require(all(
+                host.definition_absent(recovery.registry(source["new"]).services[name])
+                for name in recovery.CALENDARS
+            ))
         if feed_parked:
             require(host._feed_pids(source) == intent["observed_pids"])
         else:
@@ -628,26 +852,35 @@ def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
         original = recovery._resolution_source(
             host.directory / "cohort-attempts" / source["plan_sha256"] / "state.json"
         )[1]
-        from app.runtime_deployment import observation_progress, progress_reached
+        from app.runtime_deployment import observation_progress, recovery_progress_reached
 
         for name in ("market-feed", "live", "alert"):
             require(
-                progress_reached(
+                recovery_progress_reached(
                     observation_progress(name),
                     original["effects"]["drain"]["progress"][name],
                     service=name,
                 )
             )
         snapshot = host._snapshot(source, budget)
-        require(
+        require(retained_backlog or (
             snapshot["old_tail_reached"] is True
             and all(
                 row["ack"] == row["current_tail"] == row["final_tail"]
                 for row in snapshot["days"].values()
             )
-        )
-        frontier = host._feed_frontiers(source, budget)
-        require(host._feed_frontiers(source, budget) == frontier)
+        ))
+        if retained_backlog:
+            require(not feed_parked and all(
+                row["current_tail"] == row["final_tail"] == row["old_tail"]
+                for row in snapshot["days"].values()
+            ))
+            frontier = host._feed_frontiers(source, budget, retained_backlog=True)
+            require(host._feed_frontiers(source, budget, retained_backlog=True) == frontier
+                    and frontier["completed_sha256"] == receiving_snapshot_identity(snapshot))
+        else:
+            frontier = host._feed_frontiers(source, budget)
+            require(host._feed_frontiers(source, budget) == frontier)
         require(
             owners == host._parked_owners(source, held=True, **owner_options)
             and controls == host._controls(source)
@@ -680,6 +913,9 @@ def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
             "controller": host._controller(),
             "frontiers_sha256": digest(frontier),
         }
+        if terminal:
+            require(disabled_calendars(host, source) == calendars)
+            result["disabled_calendars"] = calendars
         if feed_parked:
             result.update(
                 feed_state="parked",
@@ -689,12 +925,14 @@ def observe_stopped(host, source, budget, *, feed_pids, feed_parked=False):
             require(valid_parked_feed_audit(result, source["new"]))
         else:
             result["feed_exited_pids"] = feed_pids
+        if retained_backlog:
+            result["retained_backlog"] = True
         return result
 
 
 def reconcile_stopped(host, path):
     with deployment_lock(runtime_dir=host.directory):
-        source, failed, files, attempts, pids, feed_parked = _evidence(host, path)
+        source, failed, files, attempts, pids, feed_parked, terminal = _evidence(host, path)
         end = host.monotonic() + 120
 
         def budget():
@@ -706,7 +944,9 @@ def reconcile_stopped(host, path):
                 source,
                 budget,
                 feed_pids=pids,
+                **({"retained_backlog": True} if failed.get("mode") is None else {}),
                 **({"feed_parked": True} if feed_parked else {}),
+                **({"terminal": True} if terminal else {}),
             )
             require(
                 all(
@@ -715,13 +955,13 @@ def reconcile_stopped(host, path):
                         "installed_sha256",
                         "protected",
                         "new_protected",
-                        "receiving_context",
+                        *(("receiving_context",) if "receiving_context" in failed["audit"] else ()),
                     )
                 )
             )
             budget()
             again = _evidence(host, path)
-            require((files, attempts, pids, feed_parked) == again[2:])
+            require((files, attempts, pids, feed_parked, terminal) == again[2:])
             target = (
                 host.directory
                 / "cohort-forward-recoveries"
@@ -760,20 +1000,30 @@ def reconcile_stopped(host, path):
             }
 
 
-def audit_for_plan(host, source, selected, budget, *, closed_feed=None):
-    value = verify_pin(host, selected, closed_feed=closed_feed)
+
+def _terminal_lineage(confirmation):
+    _, failed = recovery._resolution_source(Path(confirmation["failed_plan_path"]))
+    require(failed["plan_sha256"] == confirmation["failed_plan_sha256"])
+    return bool({"closed_calendars", "terminal_recovery_lineage"} & failed["audit"].keys())
+
+
+def audit_for_plan(host, source, selected, budget, *, closed_feed=None, terminal_pin=None):
+    if terminal_pin is None:
+        value = verify_pin(host, selected, closed_feed=closed_feed)
+        receipt = None
+        if closed_feed is not None:
+            closure, receipt = read_closed_feed(host, closed_feed["plan_path"], value["source"], selected)
+            require(closure == closed_feed)
+    else:
+        value, receipt = terminal_pin
     require(source["new"] == historical_source(host, value["source"])["new"])
     host._expected_new_protected = value["audit"]["new_protected"]
     parked = value["audit"].get("feed_state") == "parked"
     expected = dict(value["audit"])
-    receipt = None
     if closed_feed is not None:
         require(parked)
-        closure, receipt = read_closed_feed(
-            host, closed_feed["plan_path"], value["source"], selected
-        )
-        require(closure == closed_feed)
         pids = receipt["feed_close"]["observed_pids"]
+        expected.pop("disabled_calendars", None)
         expected.pop("feed_close")
         expected.pop("feed_observed_pids")
         expected["feed_state"] = "absent"
@@ -793,7 +1043,9 @@ def audit_for_plan(host, source, selected, budget, *, closed_feed=None):
         source,
         budget,
         feed_pids=pids,
+        **({"retained_backlog": True} if expected.get("retained_backlog") is True else {}),
         **({"feed_parked": True} if parked and closed_feed is None else {}),
+        **({"terminal": True} if "disabled_calendars" in expected else {}),
     )
     if closed_feed is not None:
         current["feed_state"] = "absent"
@@ -802,10 +1054,14 @@ def audit_for_plan(host, source, selected, budget, *, closed_feed=None):
         {k: v for k, v in current.items() if k not in ("window", "controller")}
         == {k: v for k, v in expected.items() if k not in ("window", "controller")}
     )
+    if _terminal_lineage(value):
+        current["terminal_recovery_lineage"] = True
     if closed_feed is not None:
         require(
             current["frontiers_sha256"] == receipt["feed_close"]["frontiers_sha256"]
         )
+        if "calendars_closed" in receipt:
+            current["closed_calendars"] = receipt["calendars_closed"]
         current["feed_close"] = {
             "kind": "feed_close_readback_v1",
             "attempt": closed_feed,
@@ -834,11 +1090,17 @@ def freeze_stopped(
     )
     verify_pin(host, selected, closed_feed=closed_feed)
     now = host.now()
-    end = host.monotonic() + 600
+    short_budget = (
+        close_feed_only or "disabled_calendars" in value["audit"] or _terminal_lineage(value)
+    )
+    downtime = 600 if short_budget else recovery.STOPPED_RESUME_BUDGET_SECONDS
+    validity = timedelta(minutes=15) if short_budget else recovery.STOPPED_RESUME_VALIDITY
+    expires = now + validity
+    end = host.monotonic() + downtime
 
     def budget():
         recovery.require(
-            host.monotonic() < end and host.now() < now + timedelta(minutes=15),
+            host.monotonic() < end and now <= host.now() < expires,
             "COHORT_FORWARD_PLAN_EXPIRED",
         )
 
@@ -850,8 +1112,8 @@ def freeze_stopped(
         "new": source["new"],
         "audit": audit,
         "created_at": now.isoformat(),
-        "expires_at": (now + timedelta(minutes=15)).isoformat(),
-        "downtime_seconds": 600,
+        "expires_at": expires.isoformat(),
+        "downtime_seconds": downtime,
         "mode": MODE,
         "stopped_confirmation": selected,
     }

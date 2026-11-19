@@ -119,6 +119,15 @@ def checkpoint(state):
     from .reducer import validate
 
     validate(state)
+    scope = _replay_digest_scope.get()
+    if scope is not None and scope.owner == get_ident() and type(state) is m.State:
+        raw_state = scope.state_json(state)
+        if raw_state is not None:
+            header = json_text({"policy": m.POLICY_VERSION, "risk": m.RISK_VERSION,
+                                "execution": m.EXECUTION_VERSION, "formula": m.FORMULA_VERSION})
+            body = header[:-1] + ',"state":' + raw_state + '}'
+            return ('{"body":' + body + ',"sha256":'
+                    + json_text(sha256(body.encode()).hexdigest()) + '}')
     body = {
         "policy": m.POLICY_VERSION,
         "risk": m.RISK_VERSION,
@@ -201,6 +210,21 @@ class _ReplayStateDigest:
         self.values.clear()
         self.cached_bytes = 0
 
+    def state_json(self, state):
+        if self.state_digest(state) is None:
+            return None
+        parts = [b'{"fields":{']
+        for index, name in enumerate(self.names):
+            if index:
+                parts.append(b",")
+            parts.extend((self.keys[name], self.values[name][1]))
+        parts.extend((b'},"type":', json_text(type(state).__name__).encode(), b"}"))
+        raw = b"".join(parts)
+        if len(raw) > self.max_bytes:
+            self.clear()
+            return None
+        return raw.decode()
+
     def state_digest(self, state):
         if self.capitals != getcontext().capitals:
             self.clear()
@@ -259,15 +283,22 @@ class _ReplayStateDigest:
             return None
 
 
+def digest_cache(*, max_bytes=96 * 1024 * 1024):
+    """Bounded immutable fragments; neither stored facts nor validation results."""
+    return _ReplayStateDigest(max_bytes)
+
+
 @contextmanager
-def replay_digests(*, max_bytes=96 * 1024 * 1024):
-    """Private, bounded canonical fragments for one synchronous full replay."""
+def replay_digests(*, max_bytes=96 * 1024 * 1024, cache=None):
+    """Canonical fragments for replay or a serialized store operation."""
     # A production journal already reaches 40 MiB of canonical State.
     # Keep replay fragments bounded with headroom for the append-only history.
-    scope = _ReplayStateDigest(max_bytes)
+    persistent = cache is not None and cache.owner == get_ident()
+    scope = cache if persistent else _ReplayStateDigest(max_bytes)
     token = _replay_digest_scope.set(scope)
     try:
         yield scope
     finally:
-        scope.clear()
+        if not persistent:
+            scope.clear()
         _replay_digest_scope.reset(token)

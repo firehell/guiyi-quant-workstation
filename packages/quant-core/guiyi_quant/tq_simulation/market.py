@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from datetime import date, datetime, UTC, timedelta
+from time import monotonic_ns
 from zoneinfo import ZoneInfo
 import subprocess
 import json
@@ -181,6 +182,21 @@ def bind_symbol(gateway, controller, authority):
     return symbol
 
 
+class QuoteStale(ValueError):
+    """Preserve the execution rejection and attach private timing evidence."""
+
+    def __init__(self, timing):
+        super().__init__("TQ_QUOTE_STALE")
+        self.timing = timing
+
+
+def _quote_time(value):
+    stamp = datetime.fromisoformat(value)
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
+    return stamp.astimezone(UTC)
+
+
 def execution_input(gateway, authority, symbol, side, *, opening, cancelling=False):
     q = gateway.quote(symbol)
     now = datetime.now(UTC)
@@ -189,19 +205,38 @@ def execution_input(gateway, authority, symbol, side, *, opening, cancelling=Fal
         raise ValueError("TQ_SESSION_STALE")
     margin = fee = None
     source = {"source": "TQKQ_QUOTE_METADATA"}
+    before_margin = margin_started_at = margin_finished_at = margin_elapsed_ms = None
     if opening:
+        # The SDK returns a live quote. Keep the earlier timestamp before the
+        # synchronous margin request can update it.
+        before_margin = q.get("datetime")
+        margin_started_at = datetime.now(UTC)
+        started = monotonic_ns()
         margin, fee, source = gateway.margin(symbol, side)
+        margin_elapsed_ms = (monotonic_ns() - started) // 1_000_000
+        margin_finished_at = datetime.now(UTC)
     now = datetime.now(UTC)
     if not session.at <= now < session.valid_until:
         raise ValueError("TQ_SESSION_STALE")
     stamp = None
     if not cancelling:
-        stamp = datetime.fromisoformat(q["datetime"])
-        if stamp.tzinfo is None:
-            stamp = stamp.replace(tzinfo=ZoneInfo("Asia/Shanghai"))
-        stamp = stamp.astimezone(UTC)
+        stamp = _quote_time(q["datetime"])
         if stamp > now or now - stamp > timedelta(seconds=5):
-            raise ValueError("TQ_QUOTE_STALE")
+            try:
+                before_margin_at = _quote_time(before_margin).isoformat()
+            except (TypeError, ValueError, OverflowError):
+                before_margin_at = None
+            raise QuoteStale({
+                "product": authority["product"],
+                "physical_contract": authority["contract"],
+                "sdk_symbol": symbol,
+                "quote_before_margin_at": before_margin_at,
+                "margin_started_at": margin_started_at.isoformat() if opening else None,
+                "margin_finished_at": margin_finished_at.isoformat() if opening else None,
+                "margin_elapsed_ms": margin_elapsed_ms,
+                "quote_checked_at": stamp.isoformat(),
+                "checked_at": now.isoformat(),
+            })
     instrument = m.TqKqInstrument(
         authority["product"],
         authority["contract"],
