@@ -481,14 +481,14 @@ DB队列空不能证明Redis追尾，运行切换及自然业务验收仍分别�
 
 清理器检查该 label 的磁盘/现场引用及私有配置；worker 停止时 config 仍固定源码依赖，不能先删树。标准服务切换后再配置同一正式 root、执行新鲜 probe、启用唯一 worker；未通过则保持 observe/暂停。停止不清仓、不清空历史账本。
 
-### 苏冰独立开发模型托管
+### 苏冰16品种共享 Paper 托管
 
-苏冰仍为开发候选、原run及独立模型账户，非TQKQ账户或标准整组cohort服务。
-owner授权自动更新后，使用稳定主开发树的 `scripts/ops/macos/install-subing-model.py` 安装独立
-`com.guiyi.quant-subing-development-model`；启动前校验原模型代码hash和全事件重放，不从临时聊天树启动。
-每日有限事实采集、闭市Canonical指标恢复、零历史撮合与冲突/持仓保护见
-[苏冰开发持续模型](../docs/SUBING_DEVELOPMENT_MODEL.md#自动准备与持续托管2026-11-06)。
-托管不创建新run、不改策略阶段或`auto_order=false`；`launchctl bootout`停止服务也不清仓、不删除账户或事件。
+唯一现役模型为16品种共享组合，独立于快期和标准cohort，`auto_order=false`。
+使用exact-tag发布树的 `scripts/ops/macos/install-subing-paper.py` 安装唯一
+`com.guiyi.quant-subing-paper`；私有状态固定AppSupport/GuiyiQuant/subing-paper，不随源码树移动。
+旧 `com.guiyi.quant-subing-development-model` 应停用并移除其自启动plist，原账户和事件保留。
+安装/业务输入与恢复边界见 [苏冰共享模型](../docs/SUBING_DEVELOPMENT_MODEL.md)。
+托管进程已启动不等于16品种事实就绪或模型自然业务已完成；缺当前事实时明确等待，不虚构run/成交。
 
 ### 首页策略摘要恢复任务（可选，默认未启用）
 

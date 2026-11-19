@@ -5,6 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 from . import model as m
 from .codec import digest
+from .scope import trading_scope, enforce_scope
 from .scheduling import ordered_products, desired_action, executable_price
 
 ZERO = Decimal(0)
@@ -112,6 +113,9 @@ def start(account_id, products, at, readback):
 
 def signal(state, cmd):
     p = product(state, cmd.product)
+    scope = trading_scope(state)
+    if scope is not None and cmd.product not in scope.products:
+        return state, "TQ_PRODUCT_RETIRED"
     if any(
         s.source_id == cmd.source_id
         and (s.product, s.bar_end) != (cmd.product, cmd.bar_end)
@@ -884,6 +888,7 @@ def tick(
     risk_version=None,
     execution_version=None,
 ):
+    state = enforce_scope(state)
     facts = {i.instrument.contract: i for i in cmd.inputs}
     effects = []
     if not valid(state.readback, cmd.at):
@@ -1105,11 +1110,13 @@ def tick(
 
 def validate(state):
     if (
-        type(state) is not m.State
+        type(state) not in (m.State, m.TqKqScopedStateV1)
         or state.phase not in ("READY", "RECOVERY_REQUIRED", "BLOCKED")
         or type(state.readback_valid) is not bool
     ):
         raise ValueError("ACCOUNT_STATE_INVALID")
+    if type(state) is m.TqKqScopedStateV1 and type(state.scope_command) is not m.TqKqTradingScopeV1:
+        raise ValueError("TQ_TRADING_SCOPE_STATE_INVALID")
     m.text(state.account_id)
     m.time(state.activated_at)
     m.time(state.clock)
@@ -1304,6 +1311,7 @@ def apply(state, key, cmd):
         m.Readback,
         m.Recover,
         m.ProductRecoveryV1,
+        m.TqKqTradingScopeV1,
         m.Disconnect,
         m.AbortUnsent,
         m.TqKqTick,
@@ -1365,7 +1373,15 @@ def apply(state, key, cmd):
     ):
         raise ValueError("MANUAL_TEST_SCOPED_TICK_REQUIRED")
     effects = ()
-    if type(cmd) is m.TqKqHistoricalManualClosesV1:
+    if type(cmd) is m.TqKqTradingScopeV1:
+        if set(cmd.products) - {p.product for p in state.products}:
+            raise ValueError("TQ_SCOPE_BASELINE_INCOMPLETE")
+        prior_scope = trading_scope(state)
+        if prior_scope is not None:
+            raise ValueError("TQ_SCOPE_ALREADY_APPLIED")
+        state = enforce_scope(state, cmd)
+        reason = "TQ_SCOPE_FLATTEN_REQUESTED"
+    elif type(cmd) is m.TqKqHistoricalManualClosesV1:
         # Dated native proof confirms only these imported orders. Current native
         # collections stay unchanged; old-day IDs are never synthesized into them.
         if cmd.historical_readback.at < state.clock:
@@ -1525,5 +1541,6 @@ def apply(state, key, cmd):
         receipts=state.receipts + ((key, payload),),
         audit=state.audit + (m.Audit(key, reason, cmd),),
     )
+    state = enforce_scope(state)
     validate(state)
     return m.Transition(state, effects)

@@ -122,7 +122,7 @@ HTDY 旧 `htdy_first_seen_reverse_close_v1` 等参考身份与原始记录保留
 
 只有牛哇策略维护参考交易。苏冰与 HTDY 的前向参考流退出调度、投递与 active 健康统计，苏冰历史参考退出自动刷新；旧 stream、capture、inbox、交易、版本与恢复原件保留，退役未完成投递单列，不伪装为已计算或已恢复。
 苏冰与 HTDY 主图保留实际预警记录与定位，不挂载参考交易/收益面板，不因读取图表触发参考历史请求。
-此范围不改变两者指标公式、Alert Rule/Scope/Event、通知配置、苏冰独立模型或快期账户执行。
+参考交易退役不改变两者指标公式、Alert Rule/Scope/Event 或通知配置。苏冰模型及快期交易范围另按下述各自账户合同管理。
 
 Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 
@@ -146,8 +146,10 @@ RQData -> staging + hard validation -> Canonical Parquet
 
 ## 模拟交易
 
-现役模拟执行为单个 TqKq 快期账户，使用实际权益及既有 HTDY 60m 固定一手规则。源码、账户恢复、风险与本地控制合同见 [TQ_SIMULATION](docs/TQ_SIMULATION.md)。旧 SimNow 停用并保留原账户和账本，其历史 CLI 不能推导为现役服务。
+现役模拟执行为单个 TqKq 快期账户，使用实际权益及既有 HTDY 60m 固定一手规则；新增交易范围与苏冰共享组合统一为16品种，原范围外持仓按真实时段平仓并独立显示收敛进度。源码、账户恢复、风险与本地控制合同见 [TQ_SIMULATION](docs/TQ_SIMULATION.md)。旧 SimNow 停用并保留原账户和账本，其历史 CLI 不能推导为现役服务。
 
 首页“模拟交易”及 HTDY 的“快期模拟记录”只读显示账户、持仓、信号、风控、委托、成交与阻断原因；与历史回放、实时页面参考及其收益保持独立。缺少精确公式/周期/时间关联的账户记录不伪造成图表信号。启用状态及自然成交证据以 `STATUS.md` 和实际读回为准。
 
 账户走势可选近7天、近30天或完整留存历史；近期窗口按北京时间自然日筛选。默认聚焦波动，仅收起末尾连续相同的留存值，保留实际时间轴、最后变化与最新留存时点；可切换完整时间查看不变尾段。不更改账户事实，不跨缺失净收益或跨日净收益边界拼接曲线。
+
+苏冰唯一现役模型为16品种共享资金 Paper 组合，持续观察与历史回放是同一组合的两种视图。旧独立JM及14品种启动入口退役，原账本和历史研究身份保留；Paper 与快期账户独立且 `auto_order=false`。运行、费用和恢复合同见 [苏冰共享模型](docs/SUBING_DEVELOPMENT_MODEL.md)。

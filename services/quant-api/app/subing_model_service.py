@@ -2,7 +2,6 @@
 
 No Broker, Market subscription, historical publication or notification endpoint.
 """
-import argparse
 from dataclasses import asdict
 from datetime import UTC, date, datetime, timedelta
 from hashlib import sha256
@@ -11,7 +10,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import time
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
@@ -381,46 +379,7 @@ class Service:
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--once', action='store_true')
-    parser.add_argument('--recovery-preview', type=Path)
-    parser.add_argument('--check', action='store_true')
-    parser.add_argument('--allow-conflict-preview', action='store_true')
-    args = parser.parse_args()
-    service = Service()
-    try:
-        if args.check:
-            print(json.dumps(dict(status='MODEL_REPLAY_VERIFIED', sequence=service.pipe.sequence, run_id=service.active['run_id'], source_day=service.pipe.source_day, source_code_hashes=len(service.identity['code_hashes']))))
-            return
-        if args.allow_conflict_preview and not args.recovery_preview:
-            raise ValueError('MODEL_CONFLICT_PREVIEW_ONLY')
-        if args.recovery_preview:
-            service.preview_conflicts = args.allow_conflict_preview
-            day=max(service.stream.days())
-            plan=service.recovery(day,service.context(day),datetime.now(UTC),preview=True)
-            if not plan:
-                raise ValueError('MODEL_RECOVERY_NOT_NEEDED_OR_NOT_CLOSED')
-            atomic(args.recovery_preview,plan)
-            print(json.dumps(dict(status='MODEL_RECOVERY_PLAN_READY',plan_hash=digest(plan),products=len(plan['products']),account_can_resume=plan['account_can_resume'],conflicts=sum(len(p['conflicts']) for p in plan['products'].values()))))
-            return
-        while True:
-            # Any failed/mutated in-memory pipeline must exit and reconstruct
-            # under the one worker lock. Never continue after commit UNKNOWN.
-            try:
-                status = service.tick()
-                service.heartbeat(status)
-            except Exception as exc:
-                code = getattr(exc, 'code', None)
-                if not code and isinstance(exc, ValueError) and str(exc).replace('_', '').isalnum() and str(exc).isupper():
-                    code = str(exc)
-                service.heartbeat('STOPPED', code or type(exc).__name__.upper())
-                raise SystemExit(2) from None
-            if args.once:
-                return
-            time.sleep(5)
-    finally:
-        service.close()
-
+    raise SystemExit("SUBING_INDEPENDENT_MODEL_RETIRED_USE_SUBING_PORTFOLIO_WORKER")
 
 if __name__ == '__main__':
     try:

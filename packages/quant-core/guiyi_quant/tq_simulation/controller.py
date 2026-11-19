@@ -37,7 +37,8 @@ class Controller:
         self._manual_orders_cache = None
 
     def bind_symbol(self, symbol, product, contract):
-        if product not in self.products:
+        known = self.products if self.store is None else tuple(p.product for p in self.store.current().products)
+        if product not in known:
             raise ValueError("TQ_PRODUCT_NOT_AUTHORIZED")
         prior = self.symbols.get(symbol)
         if prior is not None and prior != (product, contract):
@@ -67,6 +68,15 @@ class Controller:
             execution_identity=self.identity,
         )
         self.journal.event("baseline", snapshot, at)
+
+    def apply_trading_scope(self, at):
+        from ..trading_universe import TRADING_PRODUCTS, TRADING_SCOPE_VERSION
+        from ..htdy_account_execution.scope import trading_scope
+        if self.store is None or trading_scope(self.store.current()) is not None:
+            return
+        cmd = m.TqKqTradingScopeV1(max(at, self.store.current().clock),
+            tuple(p.upper() for p in TRADING_PRODUCTS), TRADING_SCOPE_VERSION)
+        self.store.execute("tq-scope:" + TRADING_SCOPE_VERSION, cmd)
 
     def manual_orders(self):
         if self.store is None:
@@ -478,6 +488,10 @@ class Controller:
                     raise SubmissionNotSent("TQ_SUBMIT_EXPIRED_NO_SEND")
                 if price != order.price:
                     raise ValueError("TQ_OPPONENT_PRICE_DRIFT")
+                from ..htdy_account_execution.scope import trading_scope
+                scope = trading_scope(state)
+                if order.offset == "OPEN" and scope is not None and order.product not in scope.products:
+                    raise ValueError("TQ_PRODUCT_RETIRED")
                 if order.offset == "OPEN" and (
                     not opening_allowed
                     or at >= fact.session.final_close_at - timedelta(seconds=60)

@@ -14,6 +14,7 @@ from app.core.env import PROJECT_ROOT
 
 
 SUBING_DEVELOPMENT_LABEL = "com.guiyi.quant-subing-development-model"
+SUBING_PAPER_LABEL = "com.guiyi.quant-subing-paper"
 
 
 class RuntimeIdentityError(ValueError):
@@ -66,7 +67,7 @@ def read_command(arguments: list[str], *, root: Path) -> str:
 
 def read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
-    if label != SUBING_DEVELOPMENT_LABEL and re.fullmatch(
+    if label not in (SUBING_DEVELOPMENT_LABEL, SUBING_PAPER_LABEL) and re.fullmatch(
         r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker|home-projection|market-feed|simnow|tqkq-simulation)(?:-candidate-[0-9a-f]{32})?",
         label,
     ) is None:

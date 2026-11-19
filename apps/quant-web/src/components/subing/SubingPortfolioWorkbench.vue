@@ -3,8 +3,7 @@ import { computed, ref, watch } from 'vue'
 import SubingReplayChart from './SubingReplayChart.vue'
 import { label } from './labels'
 
-const props = defineProps<{ mode: 'status' | 'history'; legacy?: boolean }>()
-const emit = defineEmits<{ openLegacy: [] }>()
+const props = defineProps<{ mode: 'status' | 'history' }>()
 const names: Record<string, string> = {
   jm: '焦煤', lc: '碳酸锂', rb: '螺纹钢', sa: '纯碱', fg: '玻璃', ma: '甲醇',
   ec: '集运欧线', v: 'PVC', pr: '瓶片', ta: 'PTA', ur: '尿素', sh: '烧碱',
@@ -23,7 +22,7 @@ const loading = ref(false)
 const error = ref(false)
 const tab = ref('decisions')
 const rows = computed(() => Object.entries(names).map(([code, name]) => ({
-  code, name, ...snapshot.value?.products.find((row: Row) => row.product === code),
+  code, name, ...snapshot.value?.products?.find((row: Row) => row.product === code),
 })))
 const current = computed(() => rows.value.find(row => row.code === selected.value)!)
 const accounts = computed<Row[]>(() => current.value.accounts ?? [])
@@ -67,7 +66,7 @@ function rowStatus(row: Row) {
     const side = position.open_layers?.[0]?.side
     return side === 'LONG' ? '多头持仓' : side === 'SHORT' ? '空头持仓' : '持仓'
   }
-  return states[row.accounts?.[0]?.status] ?? (row.enabled ? '待观察' : ['oi', 'i'].includes(row.code) ? '待接入' : '待登记')
+  return states[row.accounts?.[0]?.status] ?? states[snapshot.value?.status] ?? (row.enabled ? '待观察' : '待登记')
 }
 const tabs = [['decisions', '决策历史'], ['fills', '模型成交'], ['positions', '持仓与义务'], ['ledger', '组合账目']]
 
@@ -114,10 +113,11 @@ watch(() => props.mode, (mode, _, onCleanup) => {
 <template>
   <div class="portfolio">
     <header class="heading">
-      <h1>苏冰决策 <small>共享模型账户</small></h1>
-      <button v-if="legacy" type="button" @click="emit('openLegacy')">焦煤独立回放</button>
+      <h1>苏冰决策 <small>16品种共享模型账户</small></h1>
       <button type="button" :disabled="loading" @click="refresh(snapshot?.index)">刷新</button>
     </header>
+    <p class="model-context">{{ mode === 'status' ? '持续观察' : '历史回放' }} · 同一16品种共享资金与风险模型 · 自动下单关闭</p>
+    <p v-if="snapshot?.run_id" class="model-context">{{ mode === 'status' ? '持续运行' : '历史结果' }}身份：{{ snapshot.run_id }}</p>
     <p v-if="error" class="notice" role="alert">读取失败。{{ snapshot ? '正在显示最后一次读取的快照。' : '暂无可用快照。' }}</p>
     <section class="panel overview" aria-label="共享账户摘要">
       <div>组合权益<strong>{{ money(combined?.equity) }}</strong></div>
@@ -128,7 +128,7 @@ watch(() => props.mode, (mode, _, onCleanup) => {
     </section>
     <p v-if="snapshot?.worker_code" class="notice" role="status">{{ snapshot.worker_code }}</p>
     <p v-if="combined?.valuation_unproven?.length" class="notice">待核对估值：{{ combined.valuation_unproven.join('、') }}</p>
-    <p v-if="snapshot?.window">历史窗口 {{ snapshot.window.join(' — ') }} · 组合窗口结果</p>
+    <p v-if="snapshot?.window">历史窗口 {{ snapshot.window.join(' — ') }} · {{ snapshot.length ? '当前回放时刻快照' : '组合窗口结果' }}；历史结果与持续账户独立记账。</p>
     <div v-if="mode === 'history' && snapshot?.length" class="panel playback">
       <button type="button" :disabled="loading || snapshot.index === 0" @click="playing = false; refresh(snapshot.index - 1)">上一步</button>
       <button type="button" :disabled="!playing && (loading || snapshot.index + 1 === snapshot.length)" @click="playing = !playing; if (playing) refresh(snapshot.index + 1)">{{ playing ? '暂停' : '播放' }}</button>
@@ -165,7 +165,7 @@ watch(() => props.mode, (mode, _, onCleanup) => {
         <section class="panel chart" aria-label="行情与结构">
           <h2>行情与结构 <small>30分钟 · 已完成 Bar</small></h2>
           <SubingReplayChart v-if="chart.length" :key="selected" :rows="chart" :stop="account?.decision_state?.initial_stop ?? null" :target="account?.decision_state?.profit_target ?? null" />
-          <div v-else class="chart-empty">{{ ['oi','i'].includes(selected) && !current.enabled ? '品种待接入' : '暂无已登记图表' }}</div>
+          <div v-else class="chart-empty">{{ snapshot?.status === 'NOT_STARTED' ? '组合尚未启动，暂无行情快照' : '暂无已登记图表' }}</div>
         </section>
         <section class="panel records">
           <nav aria-label="组合记录">
@@ -194,6 +194,7 @@ watch(() => props.mode, (mode, _, onCleanup) => {
 button { border: 1px solid #ebedf0; border-radius: 6px; background: white; padding: 6px 10px; color: inherit; cursor: pointer; }
 button[aria-pressed=true] { border-color: #ff6b2c; background: #fff4ee; color: #a64113; }
 .products button { display: grid; grid-template-columns: 1fr 28px 50px; gap: 4px; text-align: left; align-items: center; }
+.model-context { color: #667085; font-size: 12px; overflow-wrap: anywhere; }
 small, details, .chart-empty { color: #667085; font-size: 12px; }
 h2 { margin: 0 0 8px; font-size: 16px; }
 .decision h2 { margin: 0; }

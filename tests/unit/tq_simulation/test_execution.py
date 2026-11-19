@@ -1291,3 +1291,47 @@ def test_restart_finishes_recorded_unsent_before_missing_claim_check(tmp_path, a
     assert len(c.journal.mappings()) == int(not account_expired)
     assert not c.gateway.calls
     c.close()
+
+
+def test_market_v3_only_exports_exact_inventory_and_unreconciled_contracts():
+    from guiyi_quant.tq_simulation.market import market_state, load_market_state
+    from types import SimpleNamespace as NS
+    baseline = initial()
+    s = NS(**{**baseline.__dict__,
+        'products': baseline.products + (m.Product('AP', owner='AP2705', desired=1, signal_id='old-open'), m.Product('AU')),
+        'positions': (m.Position('AP', 'AP2701', 1),),
+        'orders': (NS(product='AP', contract='AP2705', reconciled=False),
+                   NS(product='AP', contract='AP2705', reconciled=False),
+                   NS(product='AU', contract='AU2612', reconciled=True))})
+    packet = market_state(s)
+    assert packet['version'] == 'tq_market_state_v3'
+    assert packet['managed_contracts'] == [dict(product='AP', contract='AP2701'), dict(product='AP', contract='AP2705')]
+    loaded = load_market_state(packet)
+    assert loaded.managed_contracts == (('AP', 'AP2701'), ('AP', 'AP2705'))
+    # Product target changes do not substitute for owned physical facts.
+    s.products = baseline.products + (m.Product('AP', desired=0, signal_id='scope-retired'), m.Product('AU', signal_id='stale-zero'))
+    assert market_state(s)['managed_contracts'] == packet['managed_contracts']
+    # Arbitrarily long reconciled history never enters the bounded packet.
+    s.orders += (NS(product='AU', contract='AU2612', reconciled=True),) * 10000
+    assert market_state(s)['managed_contracts'] == packet['managed_contracts']
+    assert 'orders' not in packet
+
+
+@pytest.mark.parametrize('mutation', ['legacy-version', 'unknown-product', 'wrong-contract', 'duplicate', 'too-many', 'uncovered-position'])
+def test_market_v3_rejects_invalid_managed_contract_packets(mutation):
+    from guiyi_quant.tq_simulation.market import market_state, load_market_state
+    packet = market_state(initial())
+    if mutation == 'legacy-version':
+        packet['version'] = 'tq_market_state_v2'
+    elif mutation == 'unknown-product':
+        packet['managed_contracts'] = [dict(product='AP', contract='AP2701')]
+    elif mutation == 'wrong-contract':
+        packet['managed_contracts'] = [dict(product='RB', contract='AP2701')]
+    elif mutation == 'duplicate':
+        packet['managed_contracts'] = [dict(product='RB', contract='RB2701')] * 2
+    elif mutation == 'too-many':
+        packet['managed_contracts'] = [dict(product='RB', contract='RB2701')] * 121
+    else:
+        packet['positions'] = [dict(product='RB', quantity=1)]
+    with pytest.raises(ValueError, match='TQ_MARKET_STATE_INVALID'):
+        load_market_state(packet)

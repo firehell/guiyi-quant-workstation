@@ -4,9 +4,23 @@
 
 ## 来源与身份
 
-策略复用 [HTDY 固定一手规则](HTDY_SIMNOW_V1.md) 的 `huotian_dayou_original_v0` 及 operational 品种的 completed 60m 输入。RQData/MDS 是信号、精确物理合约及 Session 权威；天勤只提供执行盘口、模拟委托/成交和远端账户事实，不进入 Canonical 或策略计算。
+策略复用 [HTDY 固定一手规则](HTDY_SIMNOW_V1.md) 的 `huotian_dayou_original_v0` 及交易范围内品种的 completed 60m 输入。RQData/MDS 是信号、精确物理合约及 Session 权威；天勤只提供执行盘口、模拟委托/成交和远端账户事实，不进入 Canonical 或策略计算。
 
 执行版本 `htdy_tqkq_opponent_reprice180_v1`，风险版本 `htdy_tqkq_actual_equity_margin70_v1`，账户 journal 身份 `TQKQ:<账户指纹>:htdy_tqkq_v1`。独立 `services/tq-executor` 环境锁定 `tqsdk==3.10.4`，显式安装系统 SOCKS 代理所需的 `python-socks[asyncio]` 并随依赖锁固定；版本不符拒绝连接。远端与本地订单身份、原始快照 hash、策略信号和运行 commit 各自保留。
+
+## 16 品种范围与原账户收敛
+
+唯一新增交易范围为 `shared_sixteen_products_v1`，由 `guiyi_quant.trading_universe.TRADING_PRODUCTS` 统一定义：
+JM、LC、RB、SA、FG、MA、EC、V、PR、TA、UR、SH、SC、CJ、OI、I，与苏冰共享 Paper 组合相同。
+它只收敛快期策略计算和订单许可，不修改行情中心 operational 60 品种、Alert Scope 或通知。
+
+既有账户通过版本化 `TqKqTradingScopeV1` 命令追加范围变更，原初始基线、命令、提交凭证和成交身份不改写。
+范围外立即禁止新增开仓，撤销已证明归属的未决开仓，并将原物理持仓目标归零；范围内持仓继续原策略管理。
+平仓沿用现有盘口、Session、今昨仓、确定性订单与原生对账链路。闭市、缺事实或结果不明时保留退出义务，
+不得伪造成交、清账重建或重新发送已有 claim。重启与恢复不能重新放开范围外开仓。
+
+监控分别报告 `FLATTEN_PENDING` 与 `ACTIVE`；只有范围外持仓、委托和预约均结清并有新鲜原生对账后才为 ACTIVE。
+过渡期继续保留必要的范围外物理合约输入以完成平仓；结清后这些品种不再进行策略计算，历史账本仍可完整重放。
 
 ## 账户与风险
 

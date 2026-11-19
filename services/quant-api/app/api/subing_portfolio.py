@@ -14,14 +14,11 @@ from app.db.readonly import readonly_transaction
 from app.new_subing_research.store import _read_file, _safe_root
 from app.private_settings import read_private_settings_content
 from app.subing_model.store import ModelStore, events, runs
-from app.subing_model.worker import ACTIVE, DB_PATH
-from app.subing_portfolio_journal import KIND
+from app.subing_portfolio_paths import ACTIVE_PORTFOLIO, HEARTBEAT, HISTORY, DB_PATH
+from app.subing_portfolio_journal import KIND, LEGACY_KIND
 from guiyi_quant.subing_one_lot import EXPANDED_PORTFOLIO_PRODUCTS, PORTFOLIO_PRODUCTS, portfolio_policy
 
 router = APIRouter(prefix="/api/v1/subing-portfolio", tags=["subing-portfolio"])
-ACTIVE_PORTFOLIO = ACTIVE.with_name("subing-portfolio-active.json")
-HEARTBEAT = ACTIVE.with_name("subing-portfolio-heartbeat.json")
-HISTORY = ACTIVE.with_name("subing-portfolio-history.json")
 
 
 def read_registration(path):
@@ -74,7 +71,13 @@ def status():
     try:
         active = read_registration(ACTIVE_PORTFOLIO)
         if active is None:
-            return project({"accounts": {}}, products=(), status="NOT_STARTED", run_id=None)
+            heartbeat = read_registration(HEARTBEAT) or {}
+            fresh = heartbeat.get("run_id") is None and heartbeat.get("at") and (
+                0 <= (datetime.now(UTC) - datetime.fromisoformat(heartbeat["at"])).total_seconds() < 90
+            )
+            return project({"accounts": {}}, products=(),
+                status=heartbeat.get("status", "NOT_STARTED") if fresh else "NOT_STARTED",
+                worker_code=heartbeat.get("code") if fresh else None, run_id=None)
         run_id = active["run_id"]
         store = ModelStore(read_private_settings_content(DB_PATH).decode())
         with Session(store.engine, autoflush=False) as session, readonly_transaction(
@@ -87,9 +90,11 @@ def status():
                 .where(runs.c.run_id == run_id)
             ).one()
         identity, sequence, state, last = row
-        if identity["kind"] != KIND or state["kind"] != KIND or state["sequence"] != sequence:
+        if identity["kind"] not in (KIND, LEGACY_KIND) or state["kind"] != identity["kind"] or state["sequence"] != sequence:
             raise ValueError("PORTFOLIO_SNAPSHOT_INVALID")
         products = verified_scope(identity["policy"])
+        if products != EXPANDED_PORTFOLIO_PRODUCTS:
+            raise ValueError("PORTFOLIO_ACTIVE_SCOPE_RETIRED")
         if state["result"]["policy"] != identity["policy"]:
             raise ValueError("PORTFOLIO_SNAPSHOT_POLICY_MISMATCH")
         heartbeat = read_registration(HEARTBEAT) or {}

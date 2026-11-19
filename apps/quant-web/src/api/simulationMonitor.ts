@@ -6,10 +6,16 @@ export interface MonitorDetail { version: string; snapshot: string; selected: Mo
 export interface MonitorPosition { id: string; product: string; contract: string; side: string; quantity: number; today: number | null; yesterday: number | null; frozen_long: number | null; frozen_short: number | null; position_profit: string | null; status: string; as_of: string }
 export interface MonitorIssue { id: string; code: string; label: string; at: string; product: string; contract: string; link: string | null }
 export type MonitorMetric = 'equity' | 'available' | 'used_margin' | 'frozen_margin' | 'frozen_fee' | 'margin_limit' | 'occupied_margin' | 'margin_ratio' | 'local_reserved_margin' | 'local_reserved_fee' | 'daily_fee' | 'attributed_fee' | 'net_profit' | 'return_ratio'
+export type MonitorTradingScope = { status: 'NOT_APPLIED'; version: null } | {
+  status: 'FLATTEN_PENDING' | 'ACTIVE'; version: string; products: string[]
+  pending_positions: { product: string; contract: string; quantity: number }[]
+  pending_order_ids: string[]; pending_reservation_ids: string[]; native_readback_verified: boolean
+}
 export interface MonitorOverview {
   version: string; status: 'available' | 'partial' | 'not_connected' | 'unavailable'; snapshot: string | null; generated_at: string
   account: { key: string; alias: string; environment: string; strategy: string; scope_product: string | null; policy_version: string } | null
   observer: { status: 'running' | 'stopped' | 'error' | 'stale'; stage: string; published_at: string; connection: string; mode?: 'observe' | 'manage' | 'trade' | null; opening_enabled?: boolean; blocked_product_count?: number; executable_product_count?: number; account_takeover_pending?: boolean; host_status?: string | null } | null
+  trading_scope?: MonitorTradingScope
   observe_reconciliation_ready?: boolean
   observe_reconciliation_status?: 'verified' | 'stale' | 'unverified'
   observe_reconciliation_checked_at?: string | null
@@ -22,9 +28,22 @@ export interface MonitorOverview {
 const version = 'simulation_monitor_v1'
 const instant = (v: unknown) => typeof v === 'string' && Number.isFinite(Date.parse(v))
 const money = (v: unknown) => v === null || typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && Number.isFinite(Number(v))
+function validTradingScope(scope: MonitorTradingScope | undefined) {
+  if (scope === undefined) return true
+  if (!scope) return false
+  if (scope.status === 'NOT_APPLIED') return scope.version === null
+  return ['FLATTEN_PENDING', 'ACTIVE'].includes(scope.status)
+    && typeof scope.version === 'string' && scope.version.length > 0
+    && Array.isArray(scope.products) && scope.products.every(product => typeof product === 'string' && /^[A-Z]{1,3}$/.test(product))
+    && Array.isArray(scope.pending_positions) && scope.pending_positions.every(position => position && typeof position.product === 'string' && typeof position.contract === 'string' && Number.isSafeInteger(position.quantity) && position.quantity !== 0)
+    && Array.isArray(scope.pending_order_ids) && scope.pending_order_ids.every(id => typeof id === 'string')
+    && Array.isArray(scope.pending_reservation_ids) && scope.pending_reservation_ids.every(id => typeof id === 'string')
+    && typeof scope.native_readback_verified === 'boolean'
+}
 export function validateOverview(value: MonitorOverview): MonitorOverview {
   if (!value || value.version !== version || !['available', 'partial', 'not_connected', 'unavailable'].includes(value.status) || !instant(value.generated_at)
     || !value.metrics || Object.values(value.metrics).some(v => !money(v)) || !Array.isArray(value.positions) || !Array.isArray(value.curve) || !Array.isArray(value.issues)
+    || !validTradingScope(value.trading_scope)
     || (value.observe_reconciliation_ready !== undefined && typeof value.observe_reconciliation_ready !== 'boolean')
     || (value.observe_reconciliation_status !== undefined && !['verified', 'stale', 'unverified'].includes(value.observe_reconciliation_status))
     || (value.observe_reconciliation_ready === true && (value.observer?.mode !== 'observe' || value.observer.status !== 'running' || value.observer.connection !== 'LOGGED_IN' || value.observe_reconciliation_status !== 'verified' || !instant(value.observe_reconciliation_checked_at) || !instant(value.observe_reconciliation_valid_until) || Date.parse(value.observe_reconciliation_checked_at!) > Date.parse(value.generated_at) || Date.parse(value.generated_at) >= Date.parse(value.observe_reconciliation_valid_until!)))

@@ -36,7 +36,7 @@ def json_text(value):
 
 def digest(value):
     scope = _replay_digest_scope.get()
-    if scope is not None and type(value) is m.State and scope.owner == get_ident():
+    if scope is not None and type(value) in (m.State, m.TqKqScopedStateV1) and scope.owner == get_ident():
         result = scope.state_digest(value)
         if result is not None:
             return result
@@ -65,6 +65,8 @@ def _classes():
             m.Disconnect,
             m.Recover,
             m.ProductRecoveryV1,
+            m.TqKqTradingScopeV1,
+            m.TqKqScopedStateV1,
             m.Product,
             m.Order,
             m.Reservation,
@@ -120,7 +122,7 @@ def checkpoint(state):
 
     validate(state)
     scope = _replay_digest_scope.get()
-    if scope is not None and scope.owner == get_ident() and type(state) is m.State:
+    if scope is not None and scope.owner == get_ident() and type(state) in (m.State, m.TqKqScopedStateV1):
         raw_state = scope.state_json(state)
         if raw_state is not None:
             header = json_text({"policy": m.POLICY_VERSION, "risk": m.RISK_VERSION,
@@ -203,6 +205,7 @@ class _ReplayStateDigest:
         self.cached_bytes = 0
         self.capitals = getcontext().capitals
         self.known = frozenset(_classes().values())
+        self.state_kind = m.State
         self.names = tuple(sorted(field.name for field in fields(m.State)))
         self.keys = {name: json_text(name).encode() + b":" for name in self.names}
 
@@ -226,6 +229,11 @@ class _ReplayStateDigest:
         return raw.decode()
 
     def state_digest(self, state):
+        if type(state) is not self.state_kind:
+            self.clear()
+            self.state_kind = type(state)
+            self.names = tuple(sorted(field.name for field in fields(state)))
+            self.keys = {name: json_text(name).encode() + b":" for name in self.names}
         if self.capitals != getcontext().capitals:
             self.clear()
             self.capitals = getcontext().capitals

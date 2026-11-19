@@ -22,7 +22,7 @@ def test_explicit_roots_are_shared_by_both_readers_without_changing_worker(tmp_p
     monkeypatch.setenv('GUIYI_SUBING_DECISION_RESULTS_ROOT', '/unused/old-location')
     app = FastAPI(); app.include_router(subing_model.router); app.include_router(research_subing_decision.router)
     client = TestClient(app)
-    assert client.get('/api/v1/subing-model/status').json()['status'] == 'NOT_STARTED'
+    assert client.get('/api/v1/subing-model/status').status_code == 410
     assert client.get('/api/v1/research/subing-decision/runs').json() == {'runs': []}
 
 
@@ -40,5 +40,5 @@ def test_present_invalid_binding_fails_closed_in_both_apis(tmp_path, monkeypatch
     monkeypatch.setattr(source, 'BINDING', binding)
     app=FastAPI();app.include_router(subing_model.router);app.include_router(research_subing_decision.router)
     client=TestClient(app)
-    assert client.get('/api/v1/subing-model/status').json() == {'detail': {'code':'MODEL_STATUS_UNAVAILABLE'}}
+    assert client.get('/api/v1/subing-model/status').status_code == 410
     assert client.get('/api/v1/research/subing-decision/runs').json() == {'detail': {'code':'RESULT_SOURCE_INVALID'}}

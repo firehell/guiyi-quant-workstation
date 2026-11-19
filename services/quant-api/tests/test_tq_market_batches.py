@@ -94,6 +94,7 @@ def test_bridge_bounds_signal_and_recovery_work_in_same_request(monkeypatch):
     monkeypatch.setattr(
         bridge, "load_operational_products", lambda: tuple(p.lower() for p in products)
     )
+    monkeypatch.setattr(bridge, "TRADING_PRODUCTS", tuple(p.lower() for p in products))
     monkeypatch.setattr(bridge, "PortfolioMarket", Market)
     monkeypatch.setattr(bridge, "load_market_state", lambda _: s)
     monkeypatch.setattr(
@@ -125,3 +126,45 @@ def test_bridge_bounds_signal_and_recovery_work_in_same_request(monkeypatch):
         == len(response["recovery"])
         == 4
     )
+
+
+def test_scope_recovery_never_calculates_retired_products():
+    s = state()
+    allowed = ("P2", "P3")
+    assert recovery_batch(s, 0, allowed)[0] == allowed
+
+
+def test_legacy_authority_requires_exact_owned_physical_contract():
+    from app.tq_simulation_market import legacy_managed_contract
+    assert not legacy_managed_contract(None, "AP", "AP2701")
+    # No inventory/order means no authority, regardless of a stale zero target.
+    empty = NS(products=(NS(product="AU", desired=0, signal_id=True),), managed_contracts=())
+    assert not legacy_managed_contract(empty, "AU", "AU2701")
+    # Existing working OPEN before scope is inspectable even with desired=1.
+    pending = NS(products=(NS(product="AP", desired=1, signal_id=True),),
+                 managed_contracts=(("AP", "AP2701"),))
+    assert legacy_managed_contract(pending, "AP", "AP2701")
+    assert not legacy_managed_contract(pending, "AP", "AP2705")
+    assert not legacy_managed_contract(pending, "AU", "AU2701")
+    pending.products[0].desired = 0
+    assert legacy_managed_contract(pending, "AP", "AP2701")
+
+
+def test_legacy_contract_authority_constructs_only_its_own_reader_identity(monkeypatch):
+    from datetime import datetime, UTC, date
+    from app import simnow_portfolio_market as portfolio
+    from app.simnow_controlled_market import MarketBridge
+    market = object.__new__(portfolio.PortfolioMarket)
+    market.products = ('OI',)
+    market._views = {}
+    monkeypatch.setattr(portfolio, 'load_operational_products', lambda: ('oi', 'ap'))
+    calls = []
+    def authority(view, day, now, contract):
+        calls.append((view.product, day, contract))
+        assert set(view.__dict__) == {'product', 'identity', 'reader'}
+        assert view.reader == market.reader
+        return 'authority-proof'
+    monkeypatch.setattr(MarketBridge, 'authority', authority)
+    assert market.contract_authority('AP', date(2026,11,19), datetime.now(UTC), 'AP2701') == 'authority-proof'
+    assert calls == [('AP', date(2026,11,19), 'AP2701')]
+    assert market.products == ('OI',) and market._views == {}
