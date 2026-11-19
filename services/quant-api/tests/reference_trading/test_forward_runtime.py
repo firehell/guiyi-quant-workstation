@@ -321,7 +321,9 @@ def test_repository_groups_only_target_newow_strategies_and_orders_dependencies(
         streams[f"newow_{name}"] for name in ("trend", "oscillation", "main_rise", "dual_fusion")
     )
     assert repository.forward_work_key(streams["newow_trend"]) == keys[0]
-    assert repository.enabled_forward_work_keys(after=keys[0]) == (f"stream:{streams['htdy']}",)
+    assert repository.enabled_forward_work_keys(after=keys[0]) == ()
+    assert repository.forward_work_key(streams["htdy"]) is None
+    assert repository.enabled_forward_work_routes(f"stream:{streams['htdy']}") == ()
 
 
 def test_group_hooks_release_source_cache_even_when_a_stream_fails():

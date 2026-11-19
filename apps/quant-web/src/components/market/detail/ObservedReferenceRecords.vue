@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import ReferenceTradePanel from './ReferenceTradePanel.vue'
 import type { AlertEvent } from '@/types/market'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 const props = defineProps<{ strategy: string; product: string; frequency: string; events: readonly AlertEvent[]; unavailable?: boolean; through?: string; seriesKind?: string }>()
@@ -10,9 +9,8 @@ watch(() => [props.product, props.frequency], () => { visibleCount.value = 20 })
 const events = computed(() => [...props.events].sort((a, b) => Date.parse(b.bar_end)-Date.parse(a.bar_end)))
 </script>
 <template>
-  <section class="observed-records" aria-label="实时首次事件审计" data-actual-reference-source="forward_observation">
-    <ReferenceTradePanel :strategy="strategy" :product="product" :frequency="frequency" :through="through" :series-kind="seriesKind" @focus="emit('focus', $event)" />
-    <details v-if="strategy !== 'subing-reference'" class="observed-records__audit"><summary>实际观察／预警审计（{{ events.length }}）</summary>
+  <section class="observed-records" aria-label="实际预警记录" data-alert-observation-source="alert_event">
+    <details class="observed-records__audit"><summary>实际观察／预警审计（{{ events.length }}）</summary>
     <h3>实际观察／预警记录</h3>
     <p>当前图表范围读到 {{ events.length }} 条实际记录；首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史；版本未记录时明确标注。</p>
     <p v-if="unavailable" role="status">实际预警读取未完成或失败，当前实际覆盖尚不能确认。</p>

@@ -455,7 +455,7 @@ def build_snapshot(service, query, *, store=None, query_history=None, full_histo
 def safe_failure(exc):
     """Existing public diagnostic classes only; never exception text or traces."""
     code = getattr(exc, 'code', '')
-    if not isinstance(code, str) or not re.fullmatch(r'(HTDY|SUBING|MARKET|MAIN_CONTRACT|HISTORICAL)_[A-Z0-9_]{1,100}', code):
+    if not isinstance(code, str) or (code != 'REFERENCE_STRATEGY_RETIRED' and not re.fullmatch(r'(HTDY|SUBING|MARKET|MAIN_CONTRACT|HISTORICAL)_[A-Z0-9_]{1,100}', code)):
         code = 'HTDY_SNAPSHOT_BUILD_FAILED'
     result = {'status': 'failed', 'code': code}
     from app.market_data.subing_reference import SubingReferenceError
@@ -475,6 +475,8 @@ def main():
     parser.add_argument('--as-of', type=datetime.fromisoformat)
     args = parser.parse_args()
     try:
+        from app.reference_trading.recording_scope import require_active_calculation
+        require_active_calculation('htdy')
         _scope(args.symbol)
         from app.private_settings import load_private_readonly_settings
         settings, _ = load_private_readonly_settings(Path.home() / 'Library/Application Support/GuiyiQuant/project.env')

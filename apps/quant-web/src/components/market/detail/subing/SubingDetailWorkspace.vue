@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
-import { referencePanelSupported } from '@/utils/referencePanelPeriods'
 import { retainedReferenceFocus } from '@/utils/retainedReferenceFocus'
 import ObservedReferenceRecords from '@/components/market/detail/ObservedReferenceRecords.vue'
 import { actualEventsToOwnedMarkers } from '@/utils/historicalSignalMerge'
@@ -49,7 +48,7 @@ async function refresh() {
   const identity = { ...props.identity }
   await Promise.all([loader.sync(identity, props.bars, props.mutation.kind), alertFacts.refresh({ symbol: identity.symbol, frequency: identity.frequency })])
 }
-async function openHistory() { await nextTick(); chartRegion.value?.parentElement?.querySelector('.forward-reference')?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }
+async function openHistory() { await nextTick(); chartRegion.value?.parentElement?.querySelector('.observed-records')?.scrollIntoView({ block: 'start', behavior: 'smooth' }) }
 async function focusObservation(identity: { barEnd: string; physicalContract: string }) {
   const own = ++focusGeneration, key = identityKey.value
   const current = () => own === focusGeneration && key === identityKey.value
@@ -73,7 +72,6 @@ onBeforeUnmount(() => { focusGeneration++; loader.dispose(); alertFacts.dispose(
   <section class="subing-workspace" data-detail-workspace="subing">
     <p v-if="identityWarning" class="subing-workspace__hint" role="status">{{ identityWarning }}</p>
     <div ref="chartRegion" class="subing-workspace__chart"><slot name="chart-toolbar" /><SubingChartStage :allow-historical-markers="false" :bars="bars" :mutation="mutation" :loading="loading" :error="error" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :period="identity.frequency" :series-kind="identity.seriesKind" :identity-key="identityKey" :focus-bar-end="referenceFocus ?? focusBarEnd ?? identity.focusBarEnd" :reference-callouts="[]" :reference-indicators="[]" :quality-breaks="[]" :focus-request-id="referenceFocusRequestId" :reference-selection="[]" :markers="visibleMarkers" :visible-main-indicators="['ema_21']" @load-earlier="loadEarlierChart" @focus-resolved="emit('focus-resolved', $event)" /></div>
-    <p v-if="referencePanelSupported('subing-reference', identity.frequency, identity.seriesKind)" class="subing-workspace__reference-source">实时留存参考交易｜首次记录，不以盘后重算补齐；零费用／零滑点，非账户成交</p>
     <ObservedReferenceRecords strategy="subing-reference" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :series-kind="identity.seriesKind" :through="bars.at(-1)?.trading_day" :events="visibleEvents" :unavailable="loader.unavailable.value" @focus="focusObservation" />
     <p v-if="referenceFocusNotice" role="status">{{ referenceFocusNotice }}</p>
     <MarketDetailDrawer :open="selectedHistory !== null" title="苏冰预警详情" @close="selectedEvent = null">

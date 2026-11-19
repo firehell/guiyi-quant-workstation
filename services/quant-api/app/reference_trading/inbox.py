@@ -7,6 +7,8 @@ SQLite supports deterministic unit fixtures only, not concurrency guarantees.
 """
 from __future__ import annotations
 
+from app.reference_trading.recording_scope import calculation_scope_clause
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -298,6 +300,7 @@ class ReferenceInboxRepository:
             return bool(session.scalar(select(select(ReferenceInboxDelivery.delivery_id).join(
                 ReferenceStream, ReferenceStream.stream_id == ReferenceInboxDelivery.stream_id).where(
                 ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
                 ReferenceInboxDelivery.status != "COMPLETED",
                 ReferenceInboxDelivery.delivery_id.not_in(resolved)).exists())))
 
@@ -334,6 +337,7 @@ class ReferenceInboxRepository:
                 if envelope.notification_eligible:
                     streams = session.scalars(select(ReferenceStream).where(
                         ReferenceStream.enabled.is_(True),
+                        calculation_scope_clause(ReferenceStream),
                         ReferenceStream.recording_mode == "forward_observation",
                         func.lower(ReferenceStream.product) == product,
                         ReferenceStream.frequency == frequency,
@@ -437,6 +441,7 @@ class ReferenceInboxRepository:
             ).join(ReferenceInboxInput, ReferenceInboxInput.input_id == ReferenceInboxDelivery.input_id).join(
                 ReferenceStream, ReferenceStream.stream_id == ReferenceInboxDelivery.stream_id).where(
                 ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
                 ReferenceInboxDelivery.status != "COMPLETED",
                 ReferenceInboxDelivery.delivery_id.not_in(resolved)).subquery()
             # Rank before excluding terminal heads so later observations on
@@ -544,10 +549,13 @@ class ReferenceInboxRepository:
         from app.db.readonly import readonly_transaction
         with self._session_factory() as session, readonly_transaction(session, timeout_seconds=20):
             resolved = verified_resolution_ids(session)
-            open_delivery = ReferenceInboxDelivery.delivery_id.not_in(resolved)
+            supported = ReferenceInboxDelivery.stream_id.in_(select(ReferenceStream.stream_id).where(
+                calculation_scope_clause(ReferenceStream)).correlate(None))
+            open_delivery = ReferenceInboxDelivery.delivery_id.not_in(resolved) & supported
             unfinished_delivery = (ReferenceInboxDelivery.status != "COMPLETED") & open_delivery
             current_generation = (
                 ReferenceStream.enabled.is_(True)
+                & calculation_scope_clause(ReferenceStream)
                 & (ReferenceStream.active_revision_id == ReferenceInboxDelivery.revision_id)
                 & (ReferenceStream.activation_generation == ReferenceInboxDelivery.generation)
             )
@@ -565,6 +573,9 @@ class ReferenceInboxRepository:
                 func.count().filter(unfinished_delivery).label("unfinished_deliveries"),
                 func.count().filter(unfinished_delivery & current_generation).label("unfinished_current_generation_deliveries"),
                 func.count().filter(unfinished_delivery & ReferenceStream.enabled.is_(False)).label("unfinished_disabled_stream_deliveries"),
+                func.count().filter((ReferenceInboxDelivery.status != "COMPLETED")
+                    & ReferenceInboxDelivery.delivery_id.not_in(resolved)
+                    & ~supported).label("unfinished_retired_strategy_deliveries"),
                 func.max(ReferenceInboxDelivery.calculated_at).label("last_calculated_at"),
             ).join(ReferenceStream, ReferenceStream.stream_id == ReferenceInboxDelivery.stream_id).subquery()
             inputs = select(func.count().label("unfinished_inputs"),

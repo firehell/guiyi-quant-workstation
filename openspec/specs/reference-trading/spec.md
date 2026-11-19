@@ -11,6 +11,34 @@ migration、历史 bootstrap、Canonical 写入或 Runtime enable。
 
 ## Requirements
 
+### Requirement: Only Newow remains in the active reference calculation scope
+
+The active reference worker SHALL schedule, ingest new deliveries and automatically refresh
+reference trades only for Newow strategies. HTDY and SuBing reference streams SHALL remain
+outside that scope even when an old database activation is still enabled. Existing identities,
+trades, captures, inbox receipts and recovery evidence SHALL remain unchanged; unfinished retired
+strategy deliveries SHALL be reported separately from active calculation backlog.
+
+Official historical planning/execution composition and HTDY snapshot build commands SHALL reject
+new HTDY/SuBing reference work. HTDY HTTP replay endpoints SHALL return explicit retirement
+instead of recalculating trades. Legacy codecs, deterministic verification engines and saved
+read-only assets remain available for historical evidence validation.
+
+HTDY and SuBing chart workspaces SHALL NOT mount reference trade/performance panels or load
+historical reference replay. They SHALL retain actual AlertEvent markers and audit records;
+HTDY SHALL retain the independent TqKq simulation records. This retirement SHALL NOT change
+indicator formulas, Alert scope/evaluation, transport configuration, development models or
+account execution. The older HTDY/SuBing requirements below define retained historical identities
+and evidence, and do not authorize active reference calculation or chart presentation.
+
+#### Scenario: Legacy reference activations remain in storage
+
+- **GIVEN** enabled HTDY/SuBing streams and their unfinished original deliveries
+- **WHEN** the reference worker reads its scope or accepts a new completed observation
+- **THEN** only Newow routes are scheduled and receive new reference deliveries
+- **AND** old HTDY/SuBing deliveries are preserved without completion or replay
+
+
 ### Requirement: Lossless bounded historical plan and manifest storage
 
 Historical plan files SHALL preserve the logical plan hash. Legacy inline JSON SHALL remain

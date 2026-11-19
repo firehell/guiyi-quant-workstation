@@ -5,7 +5,9 @@ Unknown commits and interrupted processes require readback instead of blind retr
 """
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import FREQUENCIES, MAX_ROUTES as NEWOW_MAX_ROUTES
+from app.reference_trading.recording_scope import (
+    FREQUENCIES, MAX_ROUTES as NEWOW_MAX_ROUTES, recording_route_supported,
+)
 
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -32,11 +34,11 @@ from app.reference_trading.refresh_plan_codec import (
 MAX_REFRESH_STATE_BYTES = 64_000_000
 VERSION = 'newow_historical_refresh_v1'
 PLAN_FILE_CODEC = 'reference_refresh_plan_file_v1'
-STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion', 'subing_reference')
-MAX_ROUTES = NEWOW_MAX_ROUTES + 60 * 6
+STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion')
+MAX_ROUTES = NEWOW_MAX_ROUTES
+MAX_RETAINED_ROUTES = NEWOW_MAX_ROUTES + 60 * 6
 # Logical input volume stays capped; bounded Newow reads separately avoid full residency.
 BUDGET = WorkBudget(1, 1_000_000, 1800, 512_000_000)
-SUBING_BUDGET = WorkBudget(1, 2_000_000, 1800, 8_192_000_000)
 
 
 def _strategy(identity):
@@ -81,7 +83,7 @@ class RefreshStateStore:
         value = json.loads(self.path.read_text(encoding='utf-8'))
         if (not isinstance(value, dict) or set(value) != {'version', 'cursor', 'routes'}
                 or value['version'] != VERSION or not isinstance(value['cursor'], str)
-                or not isinstance(value['routes'], dict) or len(value['routes']) > MAX_ROUTES):
+                or not isinstance(value['routes'], dict) or len(value['routes']) > MAX_RETAINED_ROUTES):
             raise RefreshStateError('REFRESH_STATE_INVALID')
         for stream_id, item in value['routes'].items():
             if (not isinstance(stream_id, str) or not isinstance(item, dict)
@@ -222,19 +224,23 @@ class HistoricalRefresh:
 
     def _tick(self, now, cancelled, batch_limit):
         state = self.state.read()
-        self.last_progress = {**self.last_progress,
-            'backlog_count': sum(item['status'] != 'blocked' for item in state['routes'].values()),
-            'blocked_route_count': sum(item['status'] == 'blocked' for item in state['routes'].values())}
-        # An unknown process exit may have happened between a commit and its
-        # callback. A saved older resume token cannot prove the last outcome.
-        for item in state['routes'].values():
-            if item['status'] == 'inflight':
-                item.update(status='blocked', reason='REFRESH_READBACK_REQUIRED')
-        self.state.write(state)
-        routes = sorted(self._routes(), key=lambda route: route.key)
+        routes = sorted((route for route in self._routes()
+                         if recording_route_supported(route.identity.strategy_code, route.identity.frequency)),
+                        key=lambda route: route.key)
         if len(routes) > MAX_ROUTES:
             raise ValueError('REFRESH_SCOPE_INVALID')
         ids = [route.identity.stream_id for route in routes]
+        active_ids = set(ids)
+        self.last_progress = {**self.last_progress,
+            'backlog_count': sum(item['status'] != 'blocked' for key, item in state['routes'].items() if key in active_ids),
+            'blocked_route_count': sum(item['status'] == 'blocked' for key, item in state['routes'].items() if key in active_ids),
+            'inactive_route_count': sum(key not in active_ids for key in state['routes'])}
+        # An unknown process exit may have happened between a commit and its
+        # callback. A saved older resume token cannot prove the last outcome.
+        for key, item in state['routes'].items():
+            if key in active_ids and item['status'] == 'inflight':
+                item.update(status='blocked', reason='REFRESH_READBACK_REQUIRED')
+        self.state.write(state)
         offset = ids.index(state['cursor']) + 1 if state['cursor'] in ids else 0
         endpoints = {}
         for route in (routes[offset:] + routes[:offset])[:32]:
@@ -293,7 +299,7 @@ class HistoricalRefresh:
         self.state.write(state)
 
     def _execute(self, route, endpoint, trading_day, prior, state, now, cancelled, batch_limit):
-        budget = SUBING_BUDGET if _strategy(route.identity) == 'subing_reference' else BUDGET
+        budget = BUDGET
         key = route.identity.stream_id
         storage_failure: RefreshStateError | None = None
         original_cancelled = cancelled
@@ -540,10 +546,6 @@ def _history_route_supported(identity):
     if identity.recording_mode is not RecordingMode.HISTORICAL_REPLAY or not _canonical_identity(identity):
         return False
     strategy = _strategy(identity)
-    if strategy == 'subing_reference':
-        return (identity.strategy_code == 'subing_reference'
-                and identity.series_kind == 'actual_dominant'
-                and identity.frequency in FREQUENCIES)
     if (identity.strategy_code != f'newow_{strategy}'
             or identity.product != identity.product.lower()
             or identity.series_kind != 'actual_dominant'

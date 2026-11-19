@@ -16,7 +16,7 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 - 首页采用白色全宽卡片列表、期货板块本地筛选与涨跌幅表头三态排序；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。趋势/震荡摘要、日周图标、目标/吸筹与展开后的普通参考收益来自版本化持久投影，首页交互不回放策略；源更新后预计算，缺失/失败保留明确状态。增仓率不能解释为做多。
 - 消息 Tab 按规则、品种和交易日进行有界历史查询与稳定分页。消息存在、尝试发送与实际收件不是同一事实，不提供删除、重发或 Scope 写入口。更多直接命名自由看盘，下拉使用统一 SVG 图标；日周未同向用独立分向图标，不表达空仓。
 - 首页的红/橙/绿/蓝/灰图标仅表达冻结的 completed-period/数据状态，不表达策略、持仓、买卖建议、订单或交易结果。
-- 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；专用页面另有独立历史参考标注，不注册为通用 Overlay。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
+- 通用 Research Overlay 仅 `none | htdy`；Newow 使用自身 typed API 和 Workspace 图层，不注册为通用 Overlay。SuBing 的正式 `S↑/S↓` marker 只来自 Event；HTDY 与 SuBing 主图不展示参考交易或收益，也不加载历史参考回放。图表设置保留通用 EMA、MACD、Range Detector 与合约控制。
 - Market 详情的已接受产品合同使用同一稳定工作台中的扁平导航入口：`震荡策略 / 趋势策略 / 双策略 / HTDY / SuBing / Free`；双策略是趋势与震荡的并列展示与独立单仓参考融合模式，不是第四套策略公式，主升浪仍保留独立策略身份和 URL/API。Newow 允许显示策略 `BUILD/HOLD/CLEAR/FLAT` 状态、主动作、Hint、ReferenceTrade 和明确标注的乐观参考摘要；主动作标签只连接服务端原始参考价坐标，不推导收益。其他视角不得消费或复制这些 Newow 事实。
 - 策略详情不显示模糊的“全历史策略效果”，不把账户收益、持仓、订单或成交混入参考交易，也不恢复已退役策略事件。首页独立模拟交易监控可只读展示 TqKq 账户事实；Newow 的固定统计窗口 ReferenceTrade 摘要是只读研究投影，与该账户事实分离。
 
@@ -105,11 +105,10 @@ HTDY 60m 固定一手双向执行规则已有独立离线状态机及显式输�
 
 HTDY 是 observation-only/repainting 产品，能力覆盖七个正式周期 `1m/5m/15m/30m/60m/1d/1w`。稳定 Rule code 为 `htdy_original_15m`，唯一 Scope authority 是 `scope_product_frequencies` 的 symbol × frequency。
 
-HTDY 当前实时运行与页面实时记录统一为 operational 60 品种 × `60m`；其他周期保留历史研究图表和通用审计查询能力，不自动启用。旧 Event 与发送事实保留，不补发、不转换周期。实时参考交易流须独立建立，不能由 AlertEvent 或查询能力推断其存在。
+HTDY 当前实时运行与页面实时记录统一为 operational 60 品种 × `60m`；其他周期保留历史研究图表和通用审计查询能力，不自动启用。旧 Event 与发送事实保留，不补发、不转换周期。参考交易计算与主图参考收益已退出当前产品；已有参考记录只保留审计，不由 AlertEvent 推算交易。
 
-HTDY 60m 实时参考采用 `htdy_first_seen_reverse_close_v1`：buy 开多、sell 开空，反向平旧开新、同向不加仓，
-以 completed Bar close 计算零手续费/滑点的页面参考收益。它独立于 AlertEvent 和 Broker Fill；从精确启用起点空仓记录，
-不回填旧信号交易。模型接受与原子启用合同见 [ReferenceTrading](openspec/specs/reference-trading/spec.md)，实际运行与自然验收看 `STATUS.md`。
+HTDY 旧 `htdy_first_seen_reverse_close_v1` 等参考身份与原始记录保留，不再进入后台参考计算或新输入投递。
+主图仅展示实际预警信号及独立的快期模拟记录，不再加载冻结历史回放、参考交易列表或参考收益。
 
 持久 HTDY `AlertEvent` 是 forward-only first-seen 事实，只接受触发窗口的最新 completed Bar。repaint zone 中的历史 Bar 只供 Web retrospective 研究展示，不创建 Event 或通知。Event 创建后不可变，不因后续重绘消失、重现或方向变化而改写或重发。
 
@@ -119,9 +118,11 @@ HTDY 60m 实时参考采用 `htdy_first_seen_reverse_close_v1`：buy 开多、se
 
 苏冰持久 Event 使用 `exact` identity：同一 Rule、symbol、frequency、bar_end 的事实完全一致才幂等，冲突 fail-closed。正式预警 Web 和通知只消费 Event，不复制公式；Event-backed `S↑/S↓` 不拥有 Overlay 或订单语义。
 
-苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；15m 沿用 `subing_ths_15m_v3`，30m/60m/1d 使用各自版本身份、历史参考与六周期正式 Event 独立。它不创建或补发 AlertEvent。15m/30m/60m 参考模型保持 `subing_reference_reverse_close_v1`；D1 候选合同使用 `subing_reference_reverse_close_quality_segment_v2`，只接受 Market Fact 权威的有效 Bar 与 typed quality break，每个 break 后重新预热，质量中断单列为 `DATA_INTERRUPTED`，不制造退出价、收益或当前浮动。第 1–33 根有效日线为预热，第 34 根指标已就绪但不可评价 exact CROSS，第 35 根起才可评价。公式仍为 `subing_ths_1d_v1`。历史资产独立标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
+苏冰历史参考复用同一公式 Kernel，从 Canonical 同物理合约生命周期预热，仅在 rank1 有效区间生成历史参考信号；15m 沿用 `subing_ths_15m_v3`，30m/60m/1d 使用各自版本身份、历史参考与六周期正式 Event 独立。它不创建或补发 AlertEvent。15m/30m/60m 参考模型保持 `subing_reference_reverse_close_v1`；D1 候选合同使用 `subing_reference_reverse_close_quality_segment_v2`，只接受 Market Fact 权威的有效 Bar 与 typed quality break，每个 break 后重新预热，质量中断单列为 `DATA_INTERRUPTED`，不制造退出价、收益或当前浮动。第 1–33 根有效日线为预热，第 34 根指标已就绪但不可评价 exact CROSS，第 35 根起才可评价。公式仍为 `subing_ths_1d_v1`。这些是保留的历史身份与审计资产，不再自动构建或刷新。历史资产独立标注“历史重算·乐观参考”，不是牛哇公式一致性、因果回测或账户收益；`executable=false`、`auto_order=false`。收益统计按显式交易日窗口固定，简单相加以百分点展示，不随缩放或分页变化。
 
-苏冰详情与 HTDY 的“实时参考”来源仅消费 `forward_observation` 实时留存参考交易：共用曲线、快捷窗口、最近三笔卡片、按需分页及有界快照缓存；不在该区展示历史重算或 HTDY 重绘交易。缺失实时流时明确不可用，实际 AlertEvent 审计独立折叠，不以预警条数推算完整交易收益。历史研究 API 和资产仍独立保留，不改写已有事实。合同见 [Reference Trading](openspec/specs/reference-trading/spec.md#requirement-retained-forward-reference-performance-panel)。
+只有牛哇策略维护参考交易。苏冰与 HTDY 的前向参考流退出调度、投递与 active 健康统计，苏冰历史参考退出自动刷新；旧 stream、capture、inbox、交易、版本与恢复原件保留，退役未完成投递单列，不伪装为已计算或已恢复。
+苏冰与 HTDY 主图保留实际预警记录与定位，不挂载参考交易/收益面板，不因读取图表触发参考历史请求。
+此范围不改变两者指标公式、Alert Rule/Scope/Event、通知配置、苏冰独立模型或快期账户执行。
 
 Alert 是独立 Application Domain。0043 删除旧策略 Rule/Event 与专用列，0044 只增加 disabled + empty-scope 的新 SuBing Rule，0045 只规范化 RQData session 排他起点。HTDY 使用 `first_seen`，SuBing 使用 `exact`；两者均先提交 Event，随后最多一次 transport，无 retry、queue、replay、backfill、fallback 或订单路径。provider accepted 不等于送达。首次 SuBing Scope/enable 只走专用原子 seam，且要求精确 0045，真实 apply 仍是外部 Gate。
 

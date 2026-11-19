@@ -279,6 +279,8 @@ def main():
     parser.add_argument('--preflight', action='store_true')
     args = parser.parse_args()
     try:
+        from app.reference_trading.recording_scope import require_active_calculation
+        require_active_calculation('htdy')
         from app.private_settings import load_private_readonly_settings
         settings, _ = load_private_readonly_settings(Path.home() / 'Library/Application Support/GuiyiQuant/project.env')
         os.environ.update({key: settings[key] for key in ('DATABASE_URL', 'GUIYI_CANONICAL_DATA_ROOT')})

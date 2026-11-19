@@ -206,29 +206,20 @@ def test_htdy_bar_budget_preserves_hard_upper_bound():
         query_htdy_history(Service(), SubingReferenceQuery("jm"))
 
 
-def test_http_preserves_decimal_lexemes(monkeypatch):
+def test_retired_http_replay_is_rejected_without_loading_inputs(monkeypatch):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from app.api import market_subing_reference as routes
-    from app.reference_trading import htdy_history
 
     app = FastAPI()
     app.include_router(routes.router)
     app.dependency_overrides[routes.get_db] = lambda: None
-    monkeypatch.setattr(routes, "_build_service", lambda *_: object())
-    from app.reference_trading import signal_window
-    monkeypatch.setattr(signal_window, "historical_window_navigation", lambda *args, **kwargs: {})
-    monkeypatch.setattr(htdy_history, "query_htdy_history", lambda *_: {
-        "trades": [{"entry_reference_price": Decimal("1417.00"),
-                    "reference_return": Decimal("0.1234567890123456789")}],
-        "computed_through": START, "since": START.date(), "through": START.date(),
-    })
+    def unexpected(*args):
+        pytest.fail("retired HTTP replay must not load inputs")
+    monkeypatch.setattr(routes, "_build_service", unexpected)
     response = TestClient(app).get("/api/v1/market/jm/htdy/reference?as_of=" + START.isoformat().replace("+", "%2B"))
-    assert response.status_code == 200
-    assert response.json()["trades"][0] == {
-        "entry_reference_price": "1417.00",
-        "reference_return": "0.1234567890123456789",
-    }
+    assert response.status_code == 410
+    assert response.json()["detail"] == {"code": "REFERENCE_STRATEGY_RETIRED"}
 
 
 def test_summary_uses_curve_exit_order_with_exact_decimal_arithmetic(monkeypatch):

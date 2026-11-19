@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import LIVE_FREQUENCIES, FREQUENCIES
+from app.reference_trading.recording_scope import LIVE_FREQUENCIES, FREQUENCIES, calculation_scope_clause
 
 from datetime import UTC, date, datetime
 from concurrent.futures import ThreadPoolExecutor
@@ -92,6 +92,7 @@ class ForwardReferenceHealth:
         with self._factory() as session, readonly_transaction(session, timeout_seconds=15):
             streams = session.scalars(select(ReferenceStream).where(
                 ReferenceStream.recording_mode == "forward_observation",
+                calculation_scope_clause(ReferenceStream),
             ).order_by(ReferenceStream.stream_id)).all()
             keys = {(stream.product.lower(), stream.frequency) for stream in streams
                     if (stream.strategy_code.replace("-", "_").startswith("newow_")

@@ -16,7 +16,7 @@ from app.reference_trading.operational_readiness import build_receiving_wait_pro
 from guiyi_quant.reference_trading import StreamIdentity
 
 NOW = datetime.now(UTC)
-IDENTITY = StreamIdentity(strategy_code="subing_reference", formula_versions=("test",), profile_id="test",
+IDENTITY = StreamIdentity(strategy_code="newow_trend", formula_versions=("test",), profile_id="test",
     reference_model_version="test", futures_adaptation_version="test", product="rb", frequency="5m",
     series_kind="actual_dominant", recording_mode="forward_observation", observation_policy_version="test")
 STREAM = IDENTITY.stream_id
@@ -29,7 +29,7 @@ def setup_wait(*, status="WAITING_HISTORY", code=ALLOWED, engine=None):
     factory = sessionmaker(engine, expire_on_commit=False)
     start = NOW - timedelta(hours=1)
     with factory() as session, session.begin():
-        session.add(ReferenceStream(stream_id=STREAM, identity_hash=STREAM.removeprefix("reference-stream:"), strategy_code="subing_reference",
+        session.add(ReferenceStream(stream_id=STREAM, identity_hash=STREAM.removeprefix("reference-stream:"), strategy_code="newow_trend",
             formula_versions=["test"], profile_id="test", reference_model_version="test", futures_adaptation_version="test",
             product="rb", frequency="5m", series_kind="actual_dominant", recording_mode="forward_observation",
             observation_policy_version="test", enabled=True, active_revision_id=None, activation_generation=1,

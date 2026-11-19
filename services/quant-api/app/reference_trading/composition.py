@@ -10,6 +10,25 @@ from datetime import UTC, datetime, timedelta
 
 from app.reference_trading.inputs import HistoricalInputReader
 from app.reference_trading.planning import HistoricalReferencePlanner
+from app.reference_trading.service import HistoricalReferenceService
+from app.reference_trading.recording_scope import require_active_calculation
+
+
+class ActiveHistoricalReferencePlanner(HistoricalReferencePlanner):
+    """Current application scope; legacy plan/identity readers stay unchanged."""
+
+    def plan(self, request):
+        for item in request.streams:
+            require_active_calculation(item.identity.strategy_code)
+        return super().plan(request)
+
+
+class ActiveHistoricalReferenceService(HistoricalReferenceService):
+    @staticmethod
+    def _validate_plan(plan, expected_plan_hash, *, operation):
+        HistoricalReferenceService._validate_plan(plan, expected_plan_hash, operation=operation)
+        for item in plan.streams:
+            require_active_calculation(item.request.identity.strategy_code)
 
 
 def build_forward_reference_worker(
@@ -47,6 +66,7 @@ def build_forward_reference_worker(
         if stream is None:
             raise ValueError("FORWARD_CHECKPOINT_INVALID")
         code = stream.strategy_code.replace("-", "_")
+        require_active_calculation(code)
         if code == "newow_dual_fusion":
             evaluator = evaluate_fusion_capture
         elif code.startswith("newow_"):
@@ -121,6 +141,7 @@ def build_forward_reference_worker(
             revision_id=revision_id, generation=generation, after=after, now=observed,
         )
         code = identity.strategy_code.replace("-", "_")
+        require_active_calculation(code)
         try:
             if code == "htdy":
                 return capture_htdy_live(
@@ -224,7 +245,7 @@ def build_historical_reference_planner(
     *, input_reader: HistoricalInputReader, repository: object | None = None,
     now: Callable | None = None,
 ) -> HistoricalReferencePlanner:
-    return HistoricalReferencePlanner(input_reader, repository=repository, now=now)
+    return ActiveHistoricalReferencePlanner(input_reader, repository=repository, now=now)
 
 
 @contextmanager
@@ -244,7 +265,6 @@ def open_historical_reference_components(*, session_factory=None, cancelled=lamb
     from app.market_data.subing_reference import SubingReferenceService
     from app.reference_trading.inputs import MarketDataHistoricalInputReader
     from app.reference_trading.repository import ReferenceRepository
-    from app.reference_trading.service import HistoricalReferenceService
 
     factory = session_factory or SessionLocal
     with factory() as session:
@@ -294,8 +314,8 @@ def open_historical_reference_components(*, session_factory=None, cancelled=lamb
             fusion_sources=SavedFusionSources(factory),
         )
         repository = ReferenceRepository(factory)
-        planner = HistoricalReferencePlanner(reader, repository=repository, now=now)
-        service = HistoricalReferenceService(repository, reader, cancelled=cancelled, after_batch=after_batch)
+        planner = ActiveHistoricalReferencePlanner(reader, repository=repository, now=now)
+        service = ActiveHistoricalReferenceService(repository, reader, cancelled=cancelled, after_batch=after_batch)
         if reuse_market_inputs:
             with market_cache.scope():
                 yield planner, service
