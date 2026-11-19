@@ -80,7 +80,7 @@ def setup(factory, read):
     return repo, inbox, worker, wake
 
 
-def test_events_and_reference_survive_failed_transport_duplicates_and_restart(factory):
+def test_alert_events_survive_failed_transport_duplicates_and_restart_without_reference_trades(factory):
     read = RollingRead()
     repo, inbox, worker, wake = setup(factory, read)
     with factory() as db, db.begin():
@@ -104,7 +104,7 @@ def test_events_and_reference_survive_failed_transport_duplicates_and_restart(fa
         assert runtime.process_message(event.channel, json.dumps(event.data)) is True
         receipt = inbox.ingest(event)
         if index == 34:
-            # A fresh worker resumes from the committed checkpoint, with no new seed.
+            # Restart keeps the legacy activation outside the active scope.
             worker = build_forward_reference_worker(repository=repo, market_read=read, newow_reader=None,
                 owner_segments=lambda *_: ("owner", "calc"), expected_endpoints=lambda *a: (a[-1],),
                 newow_capability_ready=lambda *_: False, enabled=True)
@@ -113,16 +113,14 @@ def test_events_and_reference_survive_failed_transport_duplicates_and_restart(fa
         assert inbox.pending_head(htdy_identity("rb").stream_id) is None
         assert inbox.ingest(event).duplicate
         runtime.process_message(event.channel, json.dumps(event.data))
-        with factory() as db:
-            assert db.get(ReferenceInboxDelivery, receipt.delivery_ids[0]).status == "COMPLETED"
+        assert receipt.delivery_ids == ()
     with factory() as db:
         events = db.scalars(select(AlertEvent).order_by(AlertEvent.bar_end)).all()
         assert [item.result_codes for item in events] == [["buy"], ["sell"], ["buy"]]
         assert [item.source_observation_id for item in events] == ["htdy60m-33", "htdy60m-39", "htdy60m-45"]
-        assert db.scalar(select(func.count()).select_from(ReferenceActionRow)) == 5
+        assert db.scalar(select(func.count()).select_from(ReferenceActionRow)) == 0
         trades = db.scalars(select(ReferenceTradeRow).where(ReferenceTradeRow.valid_to_seq.is_(None))).all()
-        assert len(trades) == 3
-        assert sorted(item.status for item in trades) == ["CLOSED", "CLOSED", "OPEN"]
+        assert trades == []
     assert sender.calls == 3
     status = runtime._current_runtime_status()
     assert status["processing_error_type"] is None
@@ -131,97 +129,62 @@ def test_events_and_reference_survive_failed_transport_duplicates_and_restart(fa
     stream = htdy_identity("rb").stream_id
     page = query.trades(stream, since=read.all_bars[0].trading_day,
         through=read.all_bars[-1].trading_day, limit=50)
-    assert len(page["items"]) == 3
-    assert {item["status"] for item in page["items"]} == {"CLOSED", "OPEN"}
+    assert page["items"] == []
 
 
-def test_capture_survives_cancel_and_resumes_without_reading_new_input(factory):
+def test_legacy_pending_capture_is_preserved_without_evaluation(factory):
     read = RollingRead()
     repo, inbox, worker, wake = setup(factory, read)
     event = original(read)
-    receipt = inbox.ingest(event)
+    stream = htdy_identity("rb").stream_id
     from app.reference_trading.forward_inputs import capture_htdy_live
+    # A retained pre-retirement capture is independent of current intake scope.
     capture = capture_htdy_live(read, htdy_identity("rb"),
-        revision_id=inbox.pending_head(htdy_identity("rb").stream_id).revision_id,
+        revision_id=repo.read_state(stream).revision_id,
         generation=1, after=None, now=event.confirmed_at, wake_kind="live_event",
         observation=event, event_bar_end=read.bars[-1].bar_end,
         expected_endpoints=lambda *a: (a[-1],), owner_segments=lambda *_: ("owner", "calc"))
-    from hashlib import sha256
-    proof = {**capture.source_proof, "inbox_delivery_id": receipt.delivery_ids[0],
-        "journal_envelope_sha256": sha256(event.to_json().encode()).hexdigest(),
-        "journal_stream_id": event.stream_id}
-    repo.capture_forward(replace(capture, source_proof=proof))
+    identifier = repo.capture_forward(capture)
+    before = repo.read_pending_capture(stream)
     def forbidden(*_a, **_kw):
-        raise AssertionError("persisted capture must resume without reading mutable inputs")
+        pytest.fail("retired capture must not read market input")
     read.bars_until = forbidden
     wake._calculate_heads()
+    worker.scan()
+    assert worker.run_round() == 0
+    assert repo.read_pending_capture(stream) == before
+    assert not repo.has_pending_forward_capture()
     with factory() as db:
-        delivery = db.get(ReferenceInboxDelivery, receipt.delivery_ids[0])
-        assert delivery.status == "COMPLETED", (delivery.code, worker._blocked)
-        assert db.get(ReferenceBatch, delivery.calculation_batch_id).kind == "calculation"
+        assert db.get(ReferenceBatch, identifier).outcome == "pending"
         assert db.scalar(select(func.count()).select_from(ReferenceActionRow)) == 0
 
 
-@pytest.mark.parametrize("committed", [True, False])
-def test_commit_connection_loss_requires_exact_readback_or_stays_unknown(factory, monkeypatch, committed):
-    from sqlalchemy.exc import OperationalError
+def test_retired_scope_never_calls_reference_commit(factory, monkeypatch):
     read = RollingRead()
-    read.select(33)  # The real frozen formula produces a buy on this window.
+    read.select(33)  # The real Alert formula produces buy; reference stays off.
     repo, inbox, worker, wake = setup(factory, read)
+    def forbidden(*args, **kwargs):
+        pytest.fail("retired stream must never commit a reference calculation")
+    monkeypatch.setattr(repo, "commit_batch", forbidden)
     receipt = inbox.ingest(original(read))
-    commit = repo.commit_batch
-    def lost(*args, **kwargs):
-        if committed:
-            commit(*args, **kwargs)
-        raise OperationalError("fixture lost commit acknowledgement", {}, Exception())
-    monkeypatch.setattr(repo, "commit_batch", lost)
+    assert receipt.delivery_ids == ()
     wake._calculate_heads()
+    assert inbox.next_heads() == ()
     with factory() as db:
-        delivery = db.get(ReferenceInboxDelivery, receipt.delivery_ids[0])
-        assert delivery.status == ("COMPLETED" if committed else "UNKNOWN")
-        assert db.scalar(select(func.count()).select_from(ReferenceActionRow)) == int(committed)
-    if not committed:
-        assert repo.read_pending_capture(htdy_identity("rb").stream_id) is not None
-        wake._calculate_heads()  # UNKNOWN is retained; it cannot be retried by polling.
-        with factory() as db:
-            assert db.get(ReferenceInboxDelivery, receipt.delivery_ids[0]).status == "UNKNOWN"
+        assert db.scalar(select(func.count()).select_from(ReferenceInboxDelivery)) == 0
+        assert db.scalar(select(func.count()).select_from(ReferenceTradeRow)) == 0
 
 
-def test_blocked_eligible_original_recovers_with_native_atomic_closure(factory, tmp_path):
-    from hashlib import sha256
-    from app.reference_trading.inbox_recovery import InboxRecovery, digest
-    from app.reference_trading.models import ReferenceInboxRecoveryResult
+def test_explicit_retired_worker_paths_reject_before_market_reads(factory):
     read = RollingRead()
     repo, inbox, worker, _ = setup(factory, read)
-    event = original(read)
-    receipt = inbox.ingest(event)
-    identifier = receipt.delivery_ids[0]
-    inbox.mark_blocked(identifier, 'HTDY_WINDOW_UNAVAILABLE')
-    stream = htdy_identity('rb').stream_id
-    worker.source_envelope = event
-    worker.source_observed_at = event.confirmed_at
-    worker.raw_received_at = event.raw_received_at
-    capture = worker._read_input(stream, 'live_event', read.bars[-1].bar_end)
-    capture = replace(capture, source_proof={**capture.source_proof,
-        'inbox_delivery_id': identifier, 'journal_stream_id': event.stream_id,
-        'journal_envelope_sha256': sha256(event.to_json().encode()).hexdigest(),
-        'raw_received_at': event.raw_received_at.isoformat(),
-        'confirmed_at': event.confirmed_at.isoformat()})
-    attempts = tmp_path.resolve() / 'single-account-attempt'
-    recovery = InboxRecovery(factory, attempt_dir=attempts,
-        verify_fence=lambda: {'owner': 'parked', 'attempt_namespace_sha256': digest(str(attempts))},
-        verify_source=lambda plan: None,
-        now=lambda: event.confirmed_at + timedelta(seconds=30))
-    plan = recovery.plan(identifier, capture=capture,
-        expires_at=event.confirmed_at + timedelta(minutes=1))
-    result = recovery.apply(plan, expected_plan_hash=plan.plan_hash,
-        evaluator=worker._service_for(stream)._evaluator)
-    assert recovery.readback(plan) == result
+    stream = htdy_identity("rb").stream_id
+    before = repo.load_checkpoint(stream)
+    for call in (lambda: worker._read_input(stream, 'live_event', read.bars[-1].bar_end),
+                 lambda: worker._service_for(stream)):
+        with pytest.raises(ValueError, match="REFERENCE_STRATEGY_RETIRED"):
+            call()
+    assert repo.load_checkpoint(stream) == before
     with factory() as db:
-        original_row = db.get(ReferenceInboxDelivery, identifier)
-        assert original_row.status == 'BLOCKED' and original_row.code == 'HTDY_WINDOW_UNAVAILABLE'
-        closure = db.get(ReferenceInboxRecoveryResult, identifier)
-        assert closure.outcome == 'CALCULATED'
         assert db.scalar(select(func.count()).select_from(AlertEvent)) == 0
-    assert inbox.pending_head(stream) is None
-    assert inbox.health()['blocked_count'] == 0
+        assert db.scalar(select(func.count()).select_from(ReferenceActionRow)) == 0

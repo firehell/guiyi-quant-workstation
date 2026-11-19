@@ -44,9 +44,9 @@ RESEARCH_PROFILES = MappingProxyType({
 
 
 def _contract_version(version, contract):
-    if not isinstance(contract, str) or not re.fullmatch(r'(JM|MA|TA)[0-9]{4}', contract):
+    if not isinstance(contract, str) or not re.fullmatch(r'[A-Z]{1,3}[0-9]{4}', contract):
         raise ValueError('CONTRACT_INVALID')
-    return version if contract.startswith('JM') else version.replace('jm30', contract[:2].lower() + '30') + '_transfer_v1'
+    return version if contract.startswith('JM') else version.replace('jm30', contract[:-4].lower() + '30') + '_transfer_v1'
 
 
 def _time(value):
@@ -147,8 +147,11 @@ def technical_exit_targets(layers, existing, frame, side, close, at, add_protect
 
 
 class DecisionModel:
+    supported_products = ("JM", "MA", "TA")
+    cross_product_regime = False
+
     def __init__(self, contract: str, run_id: str, *, research_profile: str | None = None, risk_research_profile: str | None = None, regime_research_profile: str | None = None):
-        if not isinstance(contract, str) or not re.fullmatch(r'(JM|MA|TA)[0-9]{4}', contract):
+        if not isinstance(contract, str) or not re.fullmatch(r'[A-Z]{1,3}[0-9]{4}', contract) or contract[:-4] not in self.supported_products:
             raise ValueError('CONTRACT_INVALID')
         if not isinstance(run_id, str) or not run_id.strip():
             raise ValueError('RUN_INVALID')
@@ -161,7 +164,7 @@ class DecisionModel:
         if not contract.startswith('JM') and (research_profile is not None or risk_research_profile is not None):
             raise ValueError('CROSS_PRODUCT_PARAMETER_SEARCH_UNSUPPORTED')
         if regime_research_profile is not None:
-            if regime_research_profile != REGIME_PROFILE or not contract.startswith('JM'):
+            if regime_research_profile != REGIME_PROFILE or (not contract.startswith('JM') and not self.cross_product_regime):
                 raise ValueError('REGIME_RESEARCH_PROFILE_INVALID')
             if research_profile is not None or risk_research_profile is not None:
                 raise ValueError('RESEARCH_PROFILE_COMBINATION_UNSUPPORTED')

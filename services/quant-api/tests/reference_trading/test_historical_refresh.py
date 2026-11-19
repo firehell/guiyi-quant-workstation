@@ -696,15 +696,13 @@ def test_health_rejects_future_published_tail(tmp_path, monkeypatch, frequency):
         'endpoint_status': 'UNKNOWN', 'endpoint_reason': 'COMPLETE_PERIOD_MISSING'}
 
 
-def test_subing_full_history_uses_separate_bounded_budget(tmp_path):
+def test_subing_history_is_excluded_before_planning_or_execution(tmp_path):
     from app.reference_trading.subing_activation import subing_identity
     item = RefreshRoute(subing_identity('rb', '5m'), date(2023, 1, 1), END-timedelta(days=1))
     runner, planner, service = setup(tmp_path, [('completed', None, False)], routes=(item,))
     runner.tick(now=END)
-    assert len(planner.requests) == 1
-    assert planner.requests[0].budget.max_input_bars == 2_000_000
-    assert planner.requests[0].budget.max_input_bytes == 8_192_000_000
-    assert len(service.calls) == 1
+    assert planner.requests == []
+    assert service.calls == []
 
 
 def test_blocked_scan_page_advances_cursor_to_allow_later_history_progress(tmp_path):
@@ -760,11 +758,11 @@ def test_pending_old_endpoint_finishes_before_fresh_catchup_plan(tmp_path):
     assert service.calls[-1][1].streams[0].target_completed_through == latest
 
 
-def test_history_scope_keeps_subing_uppercase_and_rejects_legacy_aliases():
+def test_history_scope_retires_subing_and_rejects_legacy_aliases():
     from app.reference_trading.historical_refresh import _history_route_supported
     from scripts.reference_trading_p9_manifest import _subing
     subing = _subing('jm', '1d', forward=False)
-    assert subing.product == 'JM' and _history_route_supported(subing)
+    assert subing.product == 'JM' and not _history_route_supported(subing)
     assert not _history_route_supported(replace(subing, product='jm'))
     newow = _newow('jm', ProductStrategy.TREND, '1d', forward=False)
     assert not _history_route_supported(replace(newow, product='JM'))

@@ -104,3 +104,53 @@ floor之前的已完成Bar只进入原bootstrap指标路径，不进入账户撮
 在历史Bar或重启后的第一根Bar补执行旧pending。完全空仓且无义务时清过期窗口，并解除旧执行Bar的连续性锚，
 保留最后可信估值、现金、历史记录，只允许floor后的新信号/新Bar按原执行引擎处理。恢复边界及结果纳入
 不可变事件与restart parity；不得把后台进程重启当作清仓、取消旧义务或重新开户。
+
+## 14 品种共享资金历史回放
+
+`scripts/research/subing_portfolio_replay.py` 使用一个 100 万元模拟账户、每品种最多一手、
+单笔预算 5,000 元、组合日亏预算 20,000 元和 70% 保证金上限。同刻按固定品种顺序分配新增风险，
+处置已可执行的平仓在先。撮合使用其后合规的完成 1m 收盘价及 1 tick 不利滑点。
+报价、手续费、保证金和涨跌停绑定成交物理合约。历史回放以 K 线结束时刻作为确认时刻。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m scripts.research.subing_portfolio_replay \
+  --facts-dir /absolute/private/dated-facts --output /absolute/private/new-result.json
+```
+
+输入目录包含逐品种执行事实和 `plan.json`，绑定完整交易日、主力分段及 Session。输出保存日历范围、
+源码与费率原件哈希、逐合约覆盖和组合账目。日线预热保留无成交端点校验，只将有价格的记录送入指标。
+原主力仍有仓位且没有后续物理合约价格时，保留仓位并报告中断，暂停增加组合风险。
+
+此入口交付的是历史回放。持续运行需要按实际到达时刻驱动组合、提交批次账本并验证重启续接，
+之后才能将组合状态提供给持续模型页面。
+
+组合批次适配器 `app.subing_portfolio_journal` 接收已准备的完成 1m 观察、Session、指标和当时已知的
+执行事实。Session 推导该分钟应到的品种集合，缺品种或漏分钟不能提交。账本保留实际获知时间和行情流
+记录身份，每分钟使用稳定事件 ID，通过现有 ModelStore 原子追加事件和投影。同一事件可幂等复送。
+提交结果不明或发生并发冲突时，从已提交账本重建并核对全量投影后才能继续。
+
+适配器需要持续消费者提供完整指标前缀、逐日执行事实和 Rank 1 上下文。开发工作台及独立前台消费者见下节。原焦煤入口继续使用独立运行身份。
+
+### 组合工作台与持续消费者
+
+开发页 `/research/subing-decision` 默认展示共享组合。旧焦煤独立模型和焦煤历史回放仍可单独打开。
+组合交易规则沿用 14 品种历史口径。16 品种身份 `subing_portfolio_one_lot_v2` 将 OI、I 追加在原分配顺序末尾。
+注册的历史回放结果可在组合页读取。新回放结果携带逐分钟游标与已完成 30m 图表，旧结果只显示全窗口结果。
+历史结果登记文件为 `.run/subing-portfolio-history.json`，权限 0600，包含绝对 `path` 和文件 `sha256`。
+
+组合消费者通过权威交易时段核对每分钟的品种集合，按 60m、30m、1m 顺序准备指标和执行输入。缺少
+必要品种或连续性时停止提交并保留原账目。每个交易日需显式指定 `--day`。重启以原日志重放，超过
+两分钟的未消费交易分钟进入人工复核。新旧组合身份与账本独立。组合页读取原子快照，显示持仓和未决义务。
+
+```sh
+PYTHONPATH=.:services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -m app.subing_portfolio_worker \
+  --day YYYY-MM-DD --facts-registry /absolute/private/registries --check 16
+```
+
+事实目录内每品种一个以小写品种代码命名的 JSON 登记，按交易日绑定当日执行事实文件和 SHA256。
+通过检查后，首次开发模型启动用 `--start 16`，后续恢复省略该参数。历史回放与持续模型
+分别使用回顾性与当时可知的执行事实。旧阶段 C 归档为「历史验证完成，样本外证据不足」。
+RB2701 的开平仓与费用核对属于 14 品种组合历史模拟证据。代码身份保护导致的观察中断单独记录，
+具体漏单需同版本、同品种和同时段的对照证明。

@@ -132,6 +132,7 @@ flowchart LR
 `app.reference_trading` 已有历史 build/resume/rebuild、前向 capture/recovery、revision/checkpoint 仓储、
 查询 API 与 Web 消费路径。`historical_replay` 和 `forward_observation` 身份、输入及起点不同；
 纯 Newow/SuBing 页面投影与持久化 stream 也不能仅因都显示“参考交易”就合并事实。
+当前参考交易计算范围仅牛哇。统一 `recording_scope` 同时约束前向调度、Inbox 新投递、历史自动刷新和 active 健康读取；HTDY/SuBing 的旧流与原件保留但不继续计算。两者主图只消费独立 AlertEvent/指标，HTDY 的快期记录仍是账户事实。
 显式 activation、reconciliation、worker entry 和恢复入口具有独立用途；HTTP 路由存在不证明生产
 bootstrap 或 worker 已启用。当前生产状态与未完成验收见 `STATUS.md`。
 

@@ -203,7 +203,7 @@ def test_saved_warmup_accepts_exact_flat_activation_seed_without_calculation(fre
             ReferenceBatch.kind.in_(("calculation", "capture")))) == 0
 
 
-def test_initialized_only_warmup_is_successful_but_calculated_count_is_zero(monkeypatch):
+def test_retired_subing_only_warmup_has_no_active_scope(monkeypatch):
     from contextlib import contextmanager
     from types import SimpleNamespace
     factory, repository, result = _initialized_route()
@@ -215,7 +215,8 @@ def test_initialized_only_warmup_is_successful_but_calculated_count_is_zero(monk
     def opened(**_):
         yield worker, None, None
     monkeypatch.setattr(worker_entry, "open_forward_worker", opened)
-    assert worker_entry.warmup_reference_worker() == {"calculated": 0, "initialized": 1}
+    with pytest.raises(RuntimeError, match="REFERENCE_WARMUP_SCOPE_EMPTY"):
+        worker_entry.warmup_reference_worker()
 
 
 @pytest.mark.parametrize("drift", (

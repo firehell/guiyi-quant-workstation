@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import FREQUENCIES
+from app.reference_trading.recording_scope import FREQUENCIES, calculation_scope_clause
 
 from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
@@ -278,6 +278,7 @@ class ReferenceRepository:
             query = select(ReferenceStream.stream_id).where(
                 ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
                 ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
             )
             if after is not None:
                 query = query.where(ReferenceStream.stream_id > after)
@@ -306,6 +307,7 @@ class ReferenceRepository:
         query = select(key).where(
             ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
             ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
         ).distinct()
         if after is not None:
             query = query.where(key > after)
@@ -318,6 +320,7 @@ class ReferenceRepository:
                 ReferenceStream.stream_id == stream_id,
                 ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
                 ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
             ))
 
     def enabled_forward_scan_work_keys(self, *, limit: int = 512, after: str | None = None):
@@ -332,6 +335,7 @@ class ReferenceRepository:
         key = self._forward_work_key_expression()
         from app.reference_trading.recording_scope import LIVE_FREQUENCIES
         query = select(key).where(ReferenceStream.enabled.is_(True),
+            calculation_scope_clause(ReferenceStream),
             ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
             or_(ReferenceStream.frequency.not_in(LIVE_FREQUENCIES), pending)).distinct()
         if after is not None:
@@ -345,6 +349,7 @@ class ReferenceRepository:
                 ReferenceStream, and_(ReferenceBatch.stream_id == ReferenceStream.stream_id,
                     ReferenceBatch.revision_id == ReferenceStream.active_revision_id)).where(
                 ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
                 ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
                 ReferenceBatch.kind == "capture", ReferenceBatch.consumed_by_batch_id.is_(None)).exists())))
 
@@ -360,6 +365,7 @@ class ReferenceRepository:
                 self._forward_work_key_expression() == key,
                 ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
                 ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
             ).order_by(order, ReferenceStream.stream_id).limit(5)).all())
         if len(routes) > 4:
             raise RepositoryConflict("FORWARD_GROUP_SCOPE_EXCEEDED")
@@ -371,6 +377,7 @@ class ReferenceRepository:
             stream_ids = tuple(session.scalars(select(ReferenceStream.stream_id).where(
                 ReferenceStream.recording_mode == RecordingMode.FORWARD_OBSERVATION.value,
                 ReferenceStream.enabled.is_(True),
+                calculation_scope_clause(ReferenceStream),
                 func.lower(ReferenceStream.product) == product,
                 ReferenceStream.frequency == frequency,
             ).order_by(ReferenceStream.stream_id).limit(513)).all())

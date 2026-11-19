@@ -166,7 +166,7 @@ def test_v2_canonical_capture_commit_restart_and_duplicate_are_exact():
     assert checkpoint.reference_state.open_trade.entry_bar_end == END
 
 
-def test_first_live_composed_capture_separates_read_boundary_from_checkpoint_watermark():
+def test_retired_subing_composition_does_not_capture_or_advance_watermark():
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from types import SimpleNamespace
@@ -192,11 +192,9 @@ def test_first_live_composed_capture_separates_read_boundary_from_checkpoint_wat
         owner_segments=lambda *_: ('owner','calc'),expected_endpoints=lambda *_: (end,),
         newow_capability_ready=lambda *_: False,now=lambda: end+timedelta(seconds=1),enabled=True,
         subing_owner_started_at=lambda *_: end-timedelta(days=1))
-    capture = worker._read_input(stream.stream_id,'live_event',end)
-    assert capture.source_proof['previous_watermark'] is None
-    repo.capture_forward(capture)
-    result = worker._service_for(stream.stream_id).process_pending(stream.stream_id)
-    assert result is not None
-    state = repo.read_state(stream.stream_id)
-    _, checkpoint = repo.load_checkpoint(stream.stream_id,state.revision_id)
-    assert checkpoint.computed_through == end
+    before = repo.load_checkpoint(stream.stream_id)
+    with pytest.raises(ValueError, match='REFERENCE_STRATEGY_RETIRED'):
+        worker._read_input(stream.stream_id, 'live_event', end)
+    worker.scan()
+    assert worker.run_round() == 0
+    assert repo.load_checkpoint(stream.stream_id) == before

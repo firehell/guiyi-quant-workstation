@@ -20,6 +20,7 @@ from app.reference_trading.models import (
 )
 
 from app.reference_trading.repository import _identity_from_row
+from app.reference_trading.recording_scope import retired_calculation_clause
 
 KIND = "reference_receiving_operational_v1"
 WAIT_REASONS = frozenset({"SUBING_PHYSICAL_PREFIX_UNAVAILABLE", "MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE", "SOURCE_BUSY"})
@@ -47,7 +48,9 @@ def _build(session_factory, expected_pairs):
         with session_factory() as session, readonly_transaction(session, timeout_seconds=20):
             from app.reference_trading.inbox_recovery import verified_resolution_ids
             resolved = verified_resolution_ids(session)
-            unresolved = ReferenceInboxDelivery.delivery_id.not_in(resolved)
+            unresolved = (ReferenceInboxDelivery.delivery_id.not_in(resolved)
+                & ReferenceInboxDelivery.stream_id.not_in(select(ReferenceStream.stream_id).where(
+                    retired_calculation_clause(ReferenceStream))))
             unsafe = session.scalar(select(select(1).select_from(ReferenceInboxDelivery).where(
                 ReferenceInboxDelivery.status.in_(("BLOCKED", "UNKNOWN")), unresolved).exists()))
             if unsafe:

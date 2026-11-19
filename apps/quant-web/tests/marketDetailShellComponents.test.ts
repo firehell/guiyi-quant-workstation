@@ -144,3 +144,20 @@ test('the shared K-line stage exposes an identity-bounded focus seam without vie
   assert.match(source, /patternGeometry\?: PatternGeometry \| null/)
   assert.match(source, /subingVolumeTiers\?: boolean/)
 })
+
+
+test('HTDY and SuBing show actual alerts without reference trades or replay requests', () => {
+  for (const view of ['htdy/HtdyDetailWorkspace', 'subing/SubingDetailWorkspace']) {
+    const source = detailComponentSource(view)
+    assert.doesNotMatch(source, /ReferenceTradePanel|HtdyHistoricalPanel|useHtdySnapshot|htdyReplayMarkers|htdyUnifiedMarkers|实时留存参考交易/)
+    assert.match(source, /usePersistentAlertMarkers/)
+    assert.match(source, /actualEventsToOwnedMarkers/)
+    assert.match(source, /<ObservedReferenceRecords/)
+  }
+  const htdy = detailComponentSource('htdy/HtdyDetailWorkspace')
+  assert.match(htdy, /<HtdySimulationRecords/)
+  assert.match(htdy, /ref<'signals'\|'simulation'>\('signals'\)/)
+  const records = detailComponentSource('ObservedReferenceRecords')
+  assert.doesNotMatch(records, /ReferenceTradePanel|v-if="strategy !== 'subing-reference'"/)
+  assert.match(records, /实际观察／预警记录/)
+})

@@ -43,8 +43,9 @@ def diagnostic(exc):
     return safe_diagnostic(exc, product='jm', stage='trend_factor')
 
 
-def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False, include_range=False, range_profile="bounded_confirmed", research_profile=None, product="jm"):
-    if product not in ('jm', 'ma', 'ta'):
+def load(market, since, through, *, include_macd=False, include_volume=False, include_price=False, include_joint=False, include_range=False, range_profile="bounded_confirmed", research_profile=None, product="jm", portfolio=False):
+    from guiyi_quant.subing_one_lot import EXPANDED_PORTFOLIO_PRODUCTS
+    if product not in (EXPANDED_PORTFOLIO_PRODUCTS if portfolio else ('jm', 'ma', 'ta')):
         raise TrendExportError('RESEARCH_PRODUCT_UNSUPPORTED')
     if product != 'jm' and research_profile is not None:
         raise TrendExportError('CROSS_PRODUCT_PARAMETER_SEARCH_UNSUPPORTED')
@@ -78,7 +79,9 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
                 raise TrendExportError('TREND_INPUT_EMPTY')
             result = market.query_contract_trading_days(ContractTradingDayQuery(
                 product, owner.contract, frequency, expected[0][1], end))
-            validate_series(result, product=product, contract=owner.contract, frequency=frequency, expected=expected)
+            allow_daily_no_trade = portfolio and frequency is BarFrequency.D1
+            validate_series(result, product=product, contract=owner.contract, frequency=frequency,
+                            expected=expected, allow_daily_no_trade=allow_daily_no_trade)
             state = initial_state(owner.contract, frequency.value, ema_period=daily_period if frequency is BarFrequency.D1 else minute_period)
             cross_state = subing_macd.initial_state(owner.contract, frequency.value, periods=macd_periods) if include_macd and frequency is BarFrequency.M30 else None
             volume_state = subing_volume.initial_state(owner.contract, frequency.value) if include_volume else None
@@ -90,6 +93,9 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
             daily_rows = [r for r in rows if r['contract'] == owner.contract and r['frequency'] == '1d']
             daily_times = [datetime.fromisoformat(r['time']) for r in daily_rows]
             for bar in result.bars:
+                # Preserve the endpoint proof and exclude strict no-trade rows from price indicators.
+                if allow_daily_no_trade and bar.is_strict_no_trade:
+                    continue
                 state, point = step(state, contract=owner.contract, frequency=frequency.value,
                     bar_end=bar.bar_end, high=float(bar.high), low=float(bar.low), close=float(bar.close))
                 cross_fields = {}
