@@ -1614,3 +1614,52 @@ their working set. This does not change already returned immutable market facts,
 Catalog selection, partition validation or file ownership. Cache eviction alone
 is not evidence that process memory is bounded; complete-path RSS and physical
 footprint measurements remain required in both isolation and the running service.
+
+### Requirement: Owner-selected Nov-19 H1 interval retirement
+
+The approved `newow_h1_interval_retirement_20261119_v1` operation SHALL bind the
+inventory SHA256 `f9a665381ade5a0523ab40b171519d87a42ea7a0983d540b791bcfaa659c40ad`:
+59 products, exactly 236 active Newow H1 streams, excluding JD. D1/W1, retired
+HTDY/SuBing calculations, Alert, Paper and TqKq SHALL remain outside its scope.
+This is retirement of an unprovable observation interval, not proof of absence,
+recovery of missing originals, a Canonical conflict, or historical calculation.
+
+All 236 changes SHALL commit atomically under an owned Reference stopped-writer
+fence and a continuously verified Catalog maintenance lease. Plan/apply SHALL
+freeze and revalidate old stream/revision/receipt/checkpoint, all existing batch
+and trade identities, and every unfinished original and its complete frozen
+routing. UNKNOWN, unexpected enabled parallel routes, source/receipt drift or a
+changed preimage SHALL fail closed. A durable exclusive attempt precedes writes;
+failed/unknown attempts are not reused. A final actual clock check SHALL occur
+after full strict readback and before commit, with expiry before the future cut.
+Feed/Live MAY continue; neither a global stop nor a fictitious rest-window proof
+is needed for this operator-selected reference-only boundary.
+
+All original actions, captures, prices, completed trades and Inbox rows SHALL be
+preserved. Exactly 35 current OPEN references SHALL acquire appended
+`OBSERVATION_INTERRUPTED` projections, without exit actions, exit prices or
+realized returns. Their current holding duration comes from the frozen checkpoint,
+not the older entry projection. Old streams SHALL be disabled as
+`INTERVAL_RETIRED`, keep their original revision/recording start, and retain old
+snapshot tokens plus a separately readable terminal snapshot. Operator time SHALL
+not be reported as a newly computed market endpoint. Historical coverage SHALL
+expose the observation boundary only when its actual processing time is within
+an optional cutoff; pre-boundary snapshots retain their earlier state.
+
+Each successor SHALL have the same formula/profile/reference model and a distinct
+`newow_h1_retired_interval_v1` observation identity. Its empty strategy, FLAT
+reference state and computed watermark SHALL remain empty. Each product's four
+strategies SHALL share the first authoritative H1 endpoint on/after the future
+cut; Calendar and Session evidence SHALL be complete for every intervening day,
+including nontrading days. The exact first eligible Inbox original is mandatory:
+a missing first endpoint remains `OBSERVATION_GAP`. Both base and fusion strategies
+SHALL suppress actionable outputs until their existing natural warmup is ready.
+
+Only a fully verified terminal, frozen old originals/routes, unchanged historical
+facts, exact successor seed/chunks and generation-one receipt may remove retired
+old delivery IDs from unfinished ordering/capacity. Old statuses SHALL remain
+unchanged and SHALL NOT count as recovered calculations. Corrupt proof fails
+closed; merely disabling a stream grants no capacity exemption. Idle scheduling
+MAY scope closure checks to enabled routes, while capacity and health continue
+full terminal verification. Later legitimate successor progress or receipt
+retirement SHALL not invalidate the historical commit proof.

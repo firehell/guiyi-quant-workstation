@@ -1,3 +1,59 @@
+11/19 owner已选择退役无法证明连续性的牛哇H1旧观察区间；原OWNER_DECISION_PENDING已解除。实现固定库存SHA的59品种236路单事务退役，35笔OPEN追加OBSERVATION_INTERRUPTED、无退出动作/退出价/收益；保留原件、原价、原状态及历史快照，未来按各品种权威Session首H1建立独立FLAT空种子并自然预热。JD、日周参考、Alert、Paper及TqKq不在退役范围。正式数据尚未执行，现役仍v1.16.139/gen93。
+
+两项独立高风险Review通过；扩展SQLite/真实隔离PostgreSQL命令150 passed后遇到1项旧HTDY夹具失败，同一失败已在exact v1.16.139复现（退役Scope不再创建旧测试投递），未恢复Scope或降低断言。独立队列/历史查询/来源套件66 passed、6 opt-in skipped，终态分派回归1 passed，版本/health7 passed；原最多6条集合SQL预算保持。Ruff、diff及secret扫描通过，v1.16.140待发布树构建。新读写端须先经原生cohort切换；夜盘期间不越过权威休市/660秒门禁。其后方可单独停驻Reference、固定business claim单次执行并独立只读核验，不用测试结果冒充生产完成。
+
+以下为此前检查点：
+
+11/19 22:35 牛哇参考积压完成当前库存、原件与恢复边界核查，尚未执行恢复：effective calculation_scope_clause启用720路，旧HTDY/苏冰enabled标志不等于仍在计算，二者未重新启用。实际最早未闭包H1队头236路（59品种×4策略，JD四路正常）：趋势/震荡/主升浪各59个OBSERVATION_GAP，融合46个OBSERVATION_GAP及13个等待上游；均为11/17原件且匹配当前revision/generation。不存在已验证恢复闭包。46品种四策略computed_through为空，其余13品种旧水位已晚于起录点，均不满足现有震荡warm恢复工具，未套用旧硬编码10/12恢复CLI。
+
+只读权威Session与Inbox比对：11/16交易日日盘60品种×10:00/10:15/11:30/14:30/15:00共300个H1原件当前不可读，11/16保留的H1仅前夜夜盘；该日Redis completed journal长度0，11/17仍有27080条。找到gen85 Redis备份并解析RDB AUX ctime=11/16 09:52:48，早于所有待补日盘H1终点，无法提供完整原始证据。缺少保留记录不证明当时未观察，不用Canonical伪造Live身份/确认时间，也不用11/17单日Redis证明跨日无观察。
+
+受影响检查点35笔OPEN参考交易：趋势9、主升浪8、震荡7、融合11；其余201路FLAT。精确stream/revision/generation/检查点/队头/原件hash及35笔原价清单已保存于AppSupport/GuiyiQuant/newow-backlog-20261119/triage.json，SHA256 `f9a665381ade5a0523ab40b171519d87a42ea7a0983d540b791bcfaa659c40ad`，明确为只读库存而非执行计划。独立Review确认普通Inbox维护可仅停驻Reference writer，不将特定AL维修660秒休市规则泛化；但当前缺乏可恢复单元，因此未drain、写生产、调用provider或改变参考收益/账户。
+
+OWNER_DECISION_PENDING：已向owner提交两项互斥业务选择——保留旧区间阻塞并继续寻找完整原件，或明确退役受影响旧区间、保留历史及原价、将35笔OPEN追加中断投影（无虚构退出价/收益）、未来从新FLAT区间起录。后者改变参考收益连续性，须owner选择并形成适用的当前事件合同和实现后再执行，不能将缺口或旧投递登记为已恢复/已完成。JD、日周参考、Alert、Paper及TqKq不在该退役范围。
+
+以下为此前检查点：
+
+11/19 22:12 首根H1及自然分钟预警核验通过：11/20交易日22:00的45个夜盘品种completed H1原件全部存在，rank1物理合约、确认时间、notification_eligible及identity索引一致。45路5m、45路15m、45路30m、90路60m（苏冰/HTDY各45）共225路正式Alert均自然计算成功至不早于22:00，无本轮失败；15路保留previous_unresolved，未清除旧事实。当前五路evaluation_failed均为日盘CJ（苏冰四分钟周期及HTDY60m），四路周线预热保持，不用夜盘验收替代日盘和历史诊断闭环。
+
+快期当前seq43798、claims17：10条新增ObservedSignal（FG/TA/MA/OI/SA/SH/PR/SC/RB/V）对应22:00，directions均空且恢复期间audit SIGNAL_BLOCKED；JM/I经seq43784同根H1 RecoveryInput/latest_direction=0恢复，未新增独立ObservedSignal。独立只读Review确认按既有floor/last_bar及恢复合同处理，12夜盘品种解除恢复阻断，CJ/EC/LC/UR四个日盘品种仍blocked；本轮未发现漏掉可执行开仓，但不声称JM/I自然消息分别已抵达，恢复证明不等于新开仓证据。
+
+22:00:36.799876原生续证成功，实际AP2701/OI2701各多1与本地一致，无未对账订单；有效期至22:01:36.799876。22:10监控native_readback_verified=false、executable0属于该读回已过期的保护，未延长TTL、伪造续证或重复启动。22:00后无新增提交凭证、订单或成交；后续自然方向信号及执行前新鲜续证仍待发生，范围外AP待11/20日盘。共享Paper仍WAITING_EXECUTION_FACTS/run_id=null，首次事实采集门槛11/20 09:01；正式服务继续exact v1.16.139/PID66421。
+
+以下为此前检查点：
+
+11/19 21:11 夜盘开盘与范围收敛平仓核验通过：NI2612于21:00:12.283435卖平1手/117870，PG2701于21:01:13.853330卖平1手/5644，SS2701于21:01:20.530523卖平1手/13770，均由shared_sixteen_products_v1范围退出义务触发。独立只读复核逐笔匹配唯一SUBMIT claim、native SELL/CLOSE FILLED/volume_left=0、唯一原生成交及本地Fill，local order reconciled=true。21:01:20.591192成功原生对账与本地持仓均为AP2701多1、OI2701多1（昨仓、冻结0），范围外仅剩AP待日盘；本次范围平仓不替代新版策略自然信号交易验收。
+
+原43730条commands、metadata3、claims14、identity1逐行完全保留，当前43778 commands/17 claims，新增3个提交凭证恰好对应三笔平仓。另在只读SQLite快照上以已验证旧投影为锚重放新增48条命令，逐项核对命令hash、before/after、effects及最终projection通过（29.17秒），phase READY、unresolved_fill_ids为空；未重做全历史预检、未重启worker、未人工重复下单。
+
+正式completed观察原件核验11/20交易日夜盘21:01—21:06：45个交易品种×6根M1=270根全部连续，15个品种正常closed；rank1物理合约、confirmed_at、notification_eligible及identity索引与原件逐项一致。正式Alert首批45路5m均自然成功计算至21:05，其中3路仍明确保留previous_unresolved；其他旧失败、未到分钟周期和四路周线预热未清除。正式HTTP身份matched、运维health ok，当前快期仍PID66421/exact v139、running/trade/READY、FLATTEN_PENDING/executable0/blocked16及native_readback_verified=false；其余自然信号与新鲜账户续证待后续真实输入。共享Paper继续WAITING_EXECUTION_FACTS/run_id=null，首次采集门槛仍为11/20 09:01。
+
+以下为此前检查点：
+
+11/19 20:35 下一交易日元数据准备已完成并独立读回：既有原生准备器20:30:00单次启动、status passed/applied，plan `05de8b361d0ef9aeb50b0cb5ec5f75eac2e2bdc2e46dcc842abec02932325959`，新增60条rank1、5条Calendar、225条Session，另225条Session与15条Calendar保持equal。归档`3df6449b…`字节数、SHA及binding/日期/回执匹配；只读Catalog验证11/20 operational60主力映射与Session均60/60，11/23 CZCE/DCE/GFEX/INE/SHFE日历齐全，夜盘标记为true/true/false/true/true。未另行应用下午保存的日历分类计划，未重复provider或写库。
+
+苏冰实际API已从BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE转为WAITING_EXECUTION_FACTS/run_id=null，唯一共享Paper进程running（PID86592）、旧JM label未加载。只读原生prepare_day(11/20,16品种)完整历史预热通过，contexts/factors均16，耗时6.87秒；16品种11/20及下一开盘日11/23 Session读回齐全，首轮执行事实门槛经权威Session核实为11/20 09:01 CST，与心跳next_open一致；当前11/20采集attempt为0，托管命令已有--start 16 --refresh-facts。未提前采集、创建run或补历史成交。
+
+快期仍为原16品种trade/AUTO_TRADING/READY、FLATTEN_PENDING：NI2612/SS2701/PG2701/AP2701各多1尚待真实Session与必要事实；OI保留，闭市executable0/blocked16、native_readback_verified=false。元数据准备成功不等于自然平仓或新模型成交完成；正式服务继续exact v1.16.139，不重启或重复预检交易进程。
+
+以下为此前检查点：
+
+11/19 19:01 运行前提与预警输入核验：原生18:05盘后主任务于18:10:42 passed/attempt1，operational60共720项正式历史发布，rank1与订阅快照一致；Live cleanup_verified、remaining_bar_keys=0、subscription_present=false。附属牛哇消费者审计D1仅150/180（budget_exhausted），W1为179/180，未视为全量验收通过。
+
+exact v1.16.139只读原生warmup_alert_runtime(allow_closed_warming=True)对既有60品种420路实际计算：416通过，BZ/PD/PL/RS周线4路预热（有效输入27/31/23/9根），耗时131.99秒；数据库连接强制read-only，未创建Event、修改游标、发送通知或覆盖历史失败。CJ/FG/RM/SH四品种的20路旧失败均以11/19 15:00正式Canonical重算通过；Runtime仍保留20路历史未解决诊断，另280路分钟覆盖等待本代新观察，不把纯重算作为自然闭环或清除旧失败依据。通知传输仍disabled，未调整受众或启用。
+
+18:58实际快期仍running/trade/LOGGED_IN/READY、FLATTEN_PENDING，AP2701/NI2612/PG2701/SS2701各多1待自然Session平仓，OI保留；闭市16blocked/executable0、原生续证未验证。苏冰共享模型仍BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE/run_id=null；11/20元数据attempt尚未产生，待既有20:30准备窗口读回。首次共享Paper还需16品种当日执行事实，按当前Session最早11/20 09:01后具备采集条件；未提前创建账户、补历史成交或重启交易进程。
+
+以下为此前检查点：
+
+11/19 v1.16.139 已发布并切换标准服务：PR664、main及annotated tag绑定exact `2be7a62af8cd38be67d9d1b671e132673e44f91e`，develop源码 `78b5a8e39`。原生cohort `b0151bae…` 返回switched，11项全部matched/generation93，API/Web/Runtime HTTP通过。快期交易范围与苏冰唯一共享Paper统一为 JM/LC/RB/SA/FG/MA/EC/V/PR/TA/UR/SH/SC/CJ/OI/I；行情中心60品种、既有Alert及通知范围未变。两项独立高风险Review通过，后端相关444 passed；共享Paper含真实隔离PG111 passed；最终受影响122 passed/1 opt-in skipped；Web21 passed、API wheel/sdist及Web构建通过。Ruff无新增诊断（91项原有诊断未清零），secret扫描0。
+
+苏冰只保留16品种共享模型与其持续/历史视图。旧独立JM托管label及自启动plist已停用，原run `subing-dev-20261104T161601` 的2733事件与原投影逐项hash不变；14品种新建入口与旧JM HTTP/CLI已退役。唯一 `com.guiyi.quant-subing-paper` 已安装到exact发布树，私有状态位于AppSupport/GuiyiQuant/subing-paper，auto_order=false。正式API目前BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE、run_id=null：下一交易日11/20 rank1尚未准备，所需下一开盘日11/23日历缺失；不猜未来主力、不虚构账户或历史成交。后续仍须当日16品种执行事实及真实完成流后才可创建并推进Paper。
+
+11/19 16:31 快期原账户已恢复同版trade：单次原生43730命令完整重放约46分钟，16:30:37 fresh预检ready、16映射、5仓/0活动委托/issues为空；唯一worker PID66421、v1.16.139/exact同commit、LOGGED_IN/READY/AUTO_TRADING且无hold。原生已追加唯一TqKqTradingScopeV1，当前投影TqKqScopedStateV1/seq43733：AP2701、NI2612、PG2701、SS2701均desired0/must_close/opening_consumed，原OI2701多1/desired1保留，范围外禁止新开仓。正式HTTP与原生监控均FLATTEN_PENDING，四仓尚未成交，闭市16blocked/executable0继续保护；须等各自真实Session及必要事实，不称全策略已可执行。原5仓/原物理合约/方向/手数保留，今仓已按原生换日变昨仓；原43730 commands、metadata3、claims14、identity1逐行SHA证明前缀不变，仅追加scope/恢复记录，无新增提交凭证。私有原件在AppSupport/GuiyiQuant/unify-sixteen-20261119。原两处未提交修改已通过预先验证的三方合并保留，未纳入发布。
+
+以下为此前检查点：
+
 11/19 v1.16.138 代码包已发布：PR663、main、annotated tag 与 GitHub Release 均绑定 exact `a6076672dfd63b464d852aee49b593030ef83bc4`。完整包含 develop 已提交的苏冰共享组合工作台、14/16 品种 Paper 模型及只读 API，以及仅牛哇计算参考交易的范围调整；已合并 v137 账本性能与 SDK 驱动修复。隔离发布副本后端677 passed/22 skipped、Web31 passed及生产构建、版本/lock/导入根校验与独立Review通过；路由import调整后27项定向回归通过。两处原未提交修改未纳入，历史交易/原件未删除。
 
 11/19 12:34 已按owner交办完成正式整组切换：原生cohort `8824d8a0…` 返回switched，11项服务全部matched v1.16.138/exact `a6076672dfd63b464d852aee49b593030ef83bc4`/generation92，API/Web/Runtime HTTP通过，DB/Redis/Live正常。Reference启用720路，仅牛哇四策略；HTDY重算接口410，真实浏览器已确认HTDY/苏冰隐藏参考交易与收益面板、保留实际预警及快期模拟来源。切后独立只读复核通过；牛哇旧融合阻塞和苏冰W1四品种暖机仍单列，不以服务切换宣称自然业务全通过。

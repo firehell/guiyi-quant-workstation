@@ -377,9 +377,9 @@ def evaluate_fusion_capture(token, checkpoint, evidence, *, dependency_manifest)
                     day,
                 ),
             )
-    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY
+    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICIES
     sources_ready = all(str(d.get("availability")).lower() == "ready" for d in dependencies)
-    if stream.observation_policy_version == H1_BOUNDARY_POLICY and not sources_ready:
+    if stream.observation_policy_version in H1_BOUNDARY_POLICIES and not sources_ready:
         actions = ()
     item = HistoricalInputBar(
         end,

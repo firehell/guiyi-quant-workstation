@@ -2473,3 +2473,8 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:services/quant-api:packa
 run完全离线，拒绝覆盖已有结果。复跑须保留原规则固定时间；策略行为变化后不能沿用旧OOS时间资格。
 验证包括完整MDS日历行、未知未来Session、跨夜盘时间资格、费用派生不改原件、逐轮净额/身份/成交覆盖反例。
 完整规则与使用边界见 [交易需求合同](docs/research/subing-trading-demands.md#一手候选扩大开发与成本压力2026-11-08)。
+
+Nov-19 Newow H1 interval retirement: run `PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/reference_trading/test_interval_retirement.py services/quant-api/tests/reference_trading/test_formula_transition.py`.
+The tests use SQLite and the existing opt-in isolated PostgreSQL database guard;
+full-size 236-route atomicity, 35 OPEN interruptions, immutable originals, strict
+retirement/capacity proofs and mid-transaction rollback require actual output.

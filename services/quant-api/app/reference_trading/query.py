@@ -293,7 +293,7 @@ class HistoricalReferenceQuery:
             raise QueryConflict("QUERY_INVALID")
 
     @staticmethod
-    def _coverage(session: Session, snapshot: SnapshotIdentity) -> dict[str, object]:
+    def _coverage(session: Session, snapshot: SnapshotIdentity, cutoff=None) -> dict[str, object]:
         first, last = session.execute(select(
             func.min(ReferenceBatch.computed_through),
             func.max(ReferenceBatch.computed_through),
@@ -303,6 +303,7 @@ class HistoricalReferenceQuery:
             ReferenceBatch.kind == "calculation",
             ~ReferenceBatch.batch_key.like("forward:observation-gap:%"),
             ~ReferenceBatch.batch_key.like("formula-transition:%"),
+            ~ReferenceBatch.batch_key.like("h1-interval-retirement:%"),
             ReferenceBatch.seq <= snapshot.seq,
         )).one()
         gap = session.scalar(select(ReferenceBatch).options(defer(ReferenceBatch.dependency_manifest)).where(
@@ -317,6 +318,15 @@ class HistoricalReferenceQuery:
             gap_at = gap.source_evidence.get("observation_gap_v1", {}).get("interruption_end")
             if gap_at is None and gap.observed_at is not None:
                 gap_at = gap.observed_at.isoformat()
+        interval = session.scalar(select(ReferenceBatch).where(
+            ReferenceBatch.stream_id == snapshot.stream_id,
+            ReferenceBatch.revision_id == snapshot.revision_id,
+            ReferenceBatch.batch_key.like('h1-interval-retirement:%'),
+            *(() if cutoff is None else (ReferenceBatch.processed_at <= cutoff,)),
+            ReferenceBatch.seq <= snapshot.seq))
+        if interval is not None:
+            from app.reference_trading.formula_transition import INTERVAL_VERSION
+            gap_at = interval.source_evidence[INTERVAL_VERSION]['boundary_at']
         terminal = session.scalar(select(ReferenceBatch).where(
             ReferenceBatch.stream_id == snapshot.stream_id,
             ReferenceBatch.revision_id == snapshot.revision_id,
@@ -398,7 +408,7 @@ class HistoricalReferenceQuery:
                     "cutoff": cutoff.isoformat() if cutoff else None,
                     "window": {"since": since.isoformat(), "through": through.isoformat()},
                     "statistics_policy": POLICY_VERSION,
-                    "coverage": self._coverage(session, snapshot), "status": row.health,
+                    "coverage": self._coverage(session, snapshot, cutoff), "status": row.health,
                     "expected_through": None, "freshness": "unknown",
                 }
             interruption_keys = (
@@ -438,7 +448,7 @@ class HistoricalReferenceQuery:
                 "dependency_digest": digest, "cutoff": cutoff.isoformat() if cutoff else None,
                 "window": {"since": since.isoformat(), "through": through.isoformat()},
                 "statistics_policy": POLICY_VERSION,
-                "coverage": self._coverage(session, snapshot),
+                "coverage": self._coverage(session, snapshot, cutoff),
                 "status": row.health,
                 "expected_through": None, "freshness": "unknown",
             }
@@ -894,7 +904,10 @@ class HistoricalReferenceQuery:
                 ReferenceBatch.source_evidence["presentation_v1"]["last_day"].as_string() >= since.isoformat(),
                 ReferenceBatch.source_evidence["presentation_v1"]["first_day"].as_string() <= through.isoformat(),
                 *(() if cutoff is None or row.recording_mode != "forward_observation" else (
-                    ReferenceBatch.observed_at <= cutoff,
+                    or_(ReferenceBatch.observed_at <= cutoff, and_(
+                        ReferenceBatch.batch_key.like('h1-interval-retirement:%'),
+                        ReferenceBatch.processed_at <= cutoff,
+                    )),
                 )),
             ).order_by(ReferenceBatch.seq).execution_options(yield_per=32)).scalars()
             selected: list[tuple[int, int, dict[str, object]]] = []
@@ -942,7 +955,7 @@ class HistoricalReferenceQuery:
                 "revision_id": snapshot.revision_id, "seq": snapshot.seq,
                 "cutoff": cutoff.isoformat() if cutoff else None,
                 "window": {"since": since.isoformat(), "through": through.isoformat()},
-                "coverage": self._coverage(session, snapshot),
+                "coverage": self._coverage(session, snapshot, cutoff),
                 "status": row.health,
             }
 
@@ -1063,6 +1076,6 @@ class HistoricalReferenceQuery:
                 "statistics_policy": POLICY_VERSION, "snapshot": token,
                 "revision_id": snapshot.revision_id, "seq": snapshot.seq,
                 "window": {"since": since.isoformat(), "through": through.isoformat()},
-                "coverage": self._coverage(session, snapshot),
+                "coverage": self._coverage(session, snapshot, cutoff),
                 "status": row.health,
             }

@@ -24,6 +24,7 @@ from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint
 
 
 class NewowH1Boundary(NewowFormulaTransition):
+    policy_version = H1_BOUNDARY_POLICY
     retired_health = "OBSERVATION_RETIRED"
     version, batch_prefix, reason, codes = RETIREMENTS[retired_health]
     seed_manifest_key = H1_VERSION
@@ -83,7 +84,7 @@ class NewowH1Boundary(NewowFormulaTransition):
         expiry = datetime.fromisoformat(bootstrap["expires_at"])
         with factory() as session:
             old = _identity_from_row(session.get(ReferenceStream, bootstrap["old_stream_id"]))
-        target = replace(old, observation_policy_version=H1_BOUNDARY_POLICY)
+        target = replace(old, observation_policy_version=self.policy_version)
         require(target.stream_id == bootstrap["target_stream_id"], "NEWOW_H1_BOUNDARY_TARGET_DRIFT")
         strategy = target.strategy_code.removeprefix("newow_")
         state = FusionReferenceReplayState() if strategy == "dual_fusion" else seed_replay_state()

@@ -296,7 +296,9 @@ class ReferenceInboxRepository:
     def has_unfinished(self):
         from app.db.readonly import readonly_transaction
         with self._session_factory() as session, readonly_transaction(session, timeout_seconds=15):
-            resolved = self._resolved(session, cancellable=True)
+            active = tuple(session.scalars(select(ReferenceStream.stream_id).where(
+                ReferenceStream.enabled.is_(True), calculation_scope_clause(ReferenceStream))))
+            resolved = self._resolved(session, stream_ids=active, cancellable=True)
             return bool(session.scalar(select(select(ReferenceInboxDelivery.delivery_id).join(
                 ReferenceStream, ReferenceStream.stream_id == ReferenceInboxDelivery.stream_id).where(
                 ReferenceStream.enabled.is_(True),
@@ -433,7 +435,9 @@ class ReferenceInboxRepository:
         if type(limit) is not int or not 1 <= limit <= 32:
             raise ValueError("REFERENCE_INBOX_HEAD_BUDGET_INVALID")
         with self._session_factory() as session:
-            resolved = self._resolved(session, cancellable=True)
+            active = tuple(session.scalars(select(ReferenceStream.stream_id).where(
+                ReferenceStream.enabled.is_(True), calculation_scope_clause(ReferenceStream))))
+            resolved = self._resolved(session, stream_ids=active, cancellable=True)
             rank = select(ReferenceInboxDelivery.delivery_id,
                 func.row_number().over(partition_by=ReferenceInboxDelivery.stream_id,
                     order_by=(ReferenceInboxInput.trading_day, ReferenceInboxInput.journal_ms,
@@ -545,10 +549,11 @@ class ReferenceInboxRepository:
         self._mark(delivery_id, "UNKNOWN", code, at=at)
 
     def health(self) -> dict[str, object]:
-        from app.reference_trading.inbox_recovery import verified_resolution_ids
+        from app.reference_trading.inbox_recovery import verified_resolution_groups
         from app.db.readonly import readonly_transaction
         with self._session_factory() as session, readonly_transaction(session, timeout_seconds=20):
-            resolved = verified_resolution_ids(session)
+            resolution_groups = verified_resolution_groups(session)
+            resolved = tuple(v for group in resolution_groups.values() for v in group)
             supported = ReferenceInboxDelivery.stream_id.in_(select(ReferenceStream.stream_id).where(
                 calculation_scope_clause(ReferenceStream)).correlate(None))
             open_delivery = ReferenceInboxDelivery.delivery_id.not_in(resolved) & supported
@@ -598,7 +603,9 @@ class ReferenceInboxRepository:
             values["by_code"] = tuple({"status": status, "code": code, "count": count} for status, code, count in reasons[:384])
             values["codes_truncated"] = len(reasons) > 384
             values["recovery_policy"] = "reference_inbox_recovery_v1"
-            values["recovered_calculation_count"] = len(resolved)
+            values["recovered_calculation_count"] = len(resolution_groups['calculated'])
+            values["retired_delivery_count"] = len(resolution_groups['conflict_retired']) + len(resolution_groups['interval_retired'])
+            values["retired_interval_delivery_count"] = len(resolution_groups['interval_retired'])
             values["historical_blocked_count"] = session.scalar(select(func.count()).select_from(
                 ReferenceInboxDelivery).where(ReferenceInboxDelivery.status == "BLOCKED"))
             values.update(daily_limit=self._daily_limit, unfinished_bytes_limit=self._unfinished_bytes_limit)

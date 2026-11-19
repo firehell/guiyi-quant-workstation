@@ -477,9 +477,9 @@ def _newow_step(
     )
     if frame is None:
         raise ValueError("REFERENCE_DUPLICATE_INPUT")
-    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY
+    from app.reference_trading.recording_scope import H1_BOUNDARY_POLICIES
     actions_from_frame = frame.actions
-    if stream.observation_policy_version == H1_BOUNDARY_POLICY and str(frame.availability.status).lower() != "ready":
+    if stream.observation_policy_version in H1_BOUNDARY_POLICIES and str(frame.availability.status).lower() != "ready":
         actions_from_frame = ()
     if presentation is not None:
         from app.reference_trading.presentation import newow_state_point

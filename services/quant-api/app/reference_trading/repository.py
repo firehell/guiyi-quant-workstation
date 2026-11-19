@@ -1194,7 +1194,10 @@ class ReferenceRepository:
                             ReferenceBatch.stream_id == candidate.stream_id,
                             ReferenceBatch.revision_id == candidate.revision_id,
                             ReferenceBatch.seq == candidate.valid_from_seq,
-                            ReferenceBatch.observed_at <= cutoff,
+                            or_(ReferenceBatch.observed_at <= cutoff, and_(
+                                ReferenceBatch.batch_key.like('h1-interval-retirement:%'),
+                                ReferenceBatch.processed_at <= cutoff,
+                            )),
                         ).exists(),
                     ))
             return clauses
