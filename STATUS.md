@@ -1,3 +1,9 @@
+11/19 owner已选择退役无法证明连续性的牛哇H1旧观察区间；原OWNER_DECISION_PENDING已解除。实现固定库存SHA的59品种236路单事务退役，35笔OPEN追加OBSERVATION_INTERRUPTED、无退出动作/退出价/收益；保留原件、原价、原状态及历史快照，未来按各品种权威Session首H1建立独立FLAT空种子并自然预热。JD、日周参考、Alert、Paper及TqKq不在退役范围。正式数据尚未执行，现役仍v1.16.139/gen93。
+
+两项独立高风险Review通过；扩展SQLite/真实隔离PostgreSQL命令150 passed后遇到1项旧HTDY夹具失败，同一失败已在exact v1.16.139复现（退役Scope不再创建旧测试投递），未恢复Scope或降低断言。独立队列/历史查询/来源套件66 passed、6 opt-in skipped，终态分派回归1 passed，版本/health7 passed；原最多6条集合SQL预算保持。Ruff、diff及secret扫描通过，v1.16.140待发布树构建。新读写端须先经原生cohort切换；夜盘期间不越过权威休市/660秒门禁。其后方可单独停驻Reference、固定business claim单次执行并独立只读核验，不用测试结果冒充生产完成。
+
+以下为此前检查点：
+
 11/19 22:35 牛哇参考积压完成当前库存、原件与恢复边界核查，尚未执行恢复：effective calculation_scope_clause启用720路，旧HTDY/苏冰enabled标志不等于仍在计算，二者未重新启用。实际最早未闭包H1队头236路（59品种×4策略，JD四路正常）：趋势/震荡/主升浪各59个OBSERVATION_GAP，融合46个OBSERVATION_GAP及13个等待上游；均为11/17原件且匹配当前revision/generation。不存在已验证恢复闭包。46品种四策略computed_through为空，其余13品种旧水位已晚于起录点，均不满足现有震荡warm恢复工具，未套用旧硬编码10/12恢复CLI。
 
 只读权威Session与Inbox比对：11/16交易日日盘60品种×10:00/10:15/11:30/14:30/15:00共300个H1原件当前不可读，11/16保留的H1仅前夜夜盘；该日Redis completed journal长度0，11/17仍有27080条。找到gen85 Redis备份并解析RDB AUX ctime=11/16 09:52:48，早于所有待补日盘H1终点，无法提供完整原始证据。缺少保留记录不证明当时未观察，不用Canonical伪造Live身份/确认时间，也不用11/17单日Redis证明跨日无观察。

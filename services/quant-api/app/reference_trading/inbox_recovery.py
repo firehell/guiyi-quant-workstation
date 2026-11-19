@@ -9,7 +9,7 @@ from pathlib import Path
 import os
 import json
 import stat
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_, case
 from app.reference_trading.capture import ForwardCapture
 from app.reference_trading.contracts import CheckpointToken
 from app.reference_trading.models import (
@@ -520,17 +520,40 @@ def verified_resolution_ids(session, *, stream_ids=None, check_cancelled=lambda:
     A retired original is excluded from ordering, never reported as calculated.
     Its immutable delivery status and all prior calculations remain unchanged.
     """
+    groups = verified_resolution_groups(session, stream_ids=stream_ids, check_cancelled=check_cancelled)
+    return tuple(value for group in groups.values() for value in group)
+
+
+def verified_resolution_groups(session, *, stream_ids=None, check_cancelled=lambda: None):
+    """Preserve the distinction between a calculated and an explicitly retired input."""
     from app.reference_trading.htdy_conflict_recovery import retired_delivery_ids
 
     calculated = _verified_calculation_resolution_ids(
         session, stream_ids=stream_ids, check_cancelled=check_cancelled,
     )
-    retired = retired_delivery_ids(
+    from app.reference_trading.interval_retirement import retired_interval_delivery_ids
+    # One set probe preserves the existing constant query budget when neither
+    # terminal kind exists. Presence only dispatches the full strict verifier;
+    # it never grants a resolution by itself.
+    interval = ReferenceBatch.batch_key.like('h1-interval-retirement:%')
+    terminals = select(case((interval, 'interval'), else_='conflict')).where(or_(
+        interval, and_(ReferenceBatch.kind == 'calculation',
+                       ReferenceBatch.batch_key.like('htdy-conflict:%')),
+    )).distinct()
+    if stream_ids is not None:
+        terminals = terminals.where(ReferenceBatch.stream_id.in_(stream_ids))
+    kinds = set(session.scalars(terminals))
+    retired = (retired_delivery_ids(
         session, stream_ids=stream_ids, check_cancelled=check_cancelled,
-    )
-    require(not set(calculated).intersection(retired))
-    require(len(calculated) + len(retired) <= MAX_RESULTS)
-    return tuple(calculated) + tuple(retired)
+    ) if 'conflict' in kinds else ())
+    interval_retired = (retired_interval_delivery_ids(
+        session, stream_ids=stream_ids, check_cancelled=check_cancelled,
+    ) if 'interval' in kinds else ())
+    require(not set(retired).intersection(interval_retired))
+    require(not set(calculated).intersection((*retired, *interval_retired)))
+    require(len(calculated) + len(retired) + len(interval_retired) <= MAX_RESULTS)
+    return dict(calculated=tuple(calculated), conflict_retired=tuple(retired),
+                interval_retired=tuple(interval_retired))
 
 
 class InboxRecovery:

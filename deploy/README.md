@@ -511,3 +511,14 @@ selective发布明确要求 `COHORT_REQUIRED`，避免候选Disabled/marker不�
 首次启用前必须先发布包含该模块的正式版本；仅develop提交不能给旧正式树安装新任务。
 正式默认 `guiyi home build` 只读回已启用所有者状态，独立开发构建请显式选择Canonical外JSON输出。
 停用不删除 `.derived/newow-home.json` 或 `.work.json`，失败/中断与历史截止仍需如实展示。
+
+### 牛哇旧观察区间退役（11/19 owner选择）
+
+`scripts/reference_interval_retirement.py --phase execute --exact-root <现役exact发布树> --exact-commit <commit> --inventory <已批准triage.json> --plan <新私有plan.json> --attempt <新私有attempt目录>`
+只接纳固定库存hash、59品种236路。脚本要求已发布的新Reference读写端及PostgreSQL；单独请求Reference排空，
+持有本次request围栏与持续核验的Catalog租约，不停Feed/Live。计划内每品种首H1来自完整Calendar/Session；
+提交前严格校验原件、旧区间、35笔OPEN中断、新空种子/回执及真实期限。一事务全成或回滚，不伪造补算或通知。
+整个事故使用固定、排他的business claim；换attempt/plan路径不授予重复写入。写前失败可撤销自身排空；
+写入意图后结果未知保持停驻，先用同一脚本 `--phase readback --exact-root ... --exact-commit ... --inventory ... --plan ... --expected-plan-hash ...`
+在同一显式只读快照校验终态。独立读回不是再次apply，也不自动取消未知排空。成功写入后只允许有证据的向前修复，
+不能删除原件或回改历史交易；新流达到自然预热与产生参考交易须另看实际观察。

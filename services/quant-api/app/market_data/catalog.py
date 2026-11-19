@@ -62,11 +62,17 @@ class MaintenanceLease:
     def release(self) -> None:
         raise NotImplementedError
 
+    def assert_held(self) -> None:
+        raise NotImplementedError
+
 
 class _NoopMaintenanceLease(MaintenanceLease):
     """非 PostgreSQL 方言下的空实现（测试/SQLite 不持锁）。"""
 
     def release(self) -> None:
+        return None
+
+    def assert_held(self) -> None:
         return None
 
 
@@ -77,6 +83,17 @@ class _PostgresMaintenanceLease(MaintenanceLease):
         self._connection = connection
         self._close_on_release = close_on_release
         self._released = False
+
+    def assert_held(self) -> None:
+        if self._released or self._connection.closed or self._connection.invalidated:
+            raise RuntimeError('MAINTENANCE_LEASE_LOST')
+        held = self._connection.scalar(text(
+            "SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' "
+            "AND pid=pg_backend_pid() AND classid::bigint=:high "
+            "AND objid::bigint=:low AND objsubid=1 AND granted)"),
+            {'high':_MAINTENANCE_LOCK_KEY >> 32, 'low':_MAINTENANCE_LOCK_KEY & 0xffffffff})
+        if held is not True:
+            raise RuntimeError('MAINTENANCE_LEASE_LOST')
 
     def release(self) -> None:
         if self._released:

@@ -2,6 +2,8 @@
 
 FREQUENCIES = ("1w", "1d", "60m", "5m", "15m", "30m")
 H1_BOUNDARY_POLICY = "newow_h1_from_new_observation_v1"
+H1_INTERVAL_POLICY = "newow_h1_retired_interval_v1"
+H1_BOUNDARY_POLICIES = frozenset({H1_BOUNDARY_POLICY, H1_INTERVAL_POLICY})
 
 LIVE_FREQUENCIES = ("5m", "15m", "30m", "60m")
 STRATEGIES = ("trend", "oscillation", "main_rise", "dual_fusion")

@@ -50,9 +50,11 @@ SCHEMA = "reference_formula_retired_v1"
 CODES = {"newow_oscillation", "newow_dual_fusion"}
 H1_CODES = CODES | {"newow_trend", "newow_main_rise"}
 H1_VERSION = "newow_h1_forward_boundary_v1"
+INTERVAL_VERSION = "newow_h1_interval_retirement_20261119_v1"
 RETIREMENTS = {
     "FORMULA_RETIRED": (VERSION, "formula-transition:", "FORMULA_VERSION_CHANGED", CODES),
     "OBSERVATION_RETIRED": (H1_VERSION, "h1-forward-boundary:", "OBSERVATION_INTERRUPTED", H1_CODES),
+    "INTERVAL_RETIRED": (INTERVAL_VERSION, "h1-interval-retirement:", "OBSERVATION_INTERRUPTED", H1_CODES),
 }
 
 
@@ -353,6 +355,27 @@ class NewowFormulaTransition:
             bootstrap, expected_plan_hash=bootstrap["plan_hash"], now=at,
         )
 
+    def _boundary_owner(self, batch, at):
+        require(batch.computed_through is not None and at > _db_aware(batch.computed_through))
+        original = json.loads(batch.checkpoint_text)
+        owner = tuple(original[k] for k in (
+            "physical_contract", "owner_segment_id", "calculation_segment_id",
+        ))
+        require(all(isinstance(v, str) and v for v in owner), "FORMULA_TRANSITION_OWNER_MISSING")
+        return owner
+
+    def _terminal_checkpoint(self, batch, transition, owner, identity, at, key):
+        return AdapterCheckpoint(transition.state, at, key, *owner, identity, transition.state)
+
+    def _terminal_fields(self, at):
+        return dict(computed_through=at, observed_at=at)
+
+    def _proof_extras(self, db, item, result):
+        return {}
+
+    def _before_commit(self, db, plan):
+        self.assert_fenced()
+
     def apply(self, plan, *, expected_plan_hash, now):
         require(
             plan.get("version") == self.version
@@ -405,20 +428,7 @@ class NewowFormulaTransition:
                 for item, old in data:
                     row, rev, batch, receipt, identity, reference = old
                     result = self._activate_target(factory, item["bootstrap"], at)
-                    require(at > _db_aware(batch.computed_through))
-                    original = json.loads(batch.checkpoint_text)
-                    owner = tuple(
-                        original[k]
-                        for k in (
-                            "physical_contract",
-                            "owner_segment_id",
-                            "calculation_segment_id",
-                        )
-                    )
-                    require(
-                        all(isinstance(v, str) and v for v in owner),
-                        "FORMULA_TRANSITION_OWNER_MISSING",
-                    )
+                    owner = self._boundary_owner(batch, at)
                     day_wire = batch.source_evidence.get("presentation_v1", {}).get(
                         "last_day"
                     )
@@ -435,9 +445,9 @@ class NewowFormulaTransition:
                             at, date.fromisoformat(day_wire),
                         ),)
                     transition = reduce_reference(reference, boundaries=boundaries)
-                    checkpoint = AdapterCheckpoint(
-                        transition.state, at, self.batch_prefix + expected_plan_hash,
-                        *owner, identity, transition.state,
+                    checkpoint = self._terminal_checkpoint(
+                        batch, transition, owner, identity, at,
+                        self.batch_prefix + expected_plan_hash,
                     )
                     content = adapter_checkpoint_to_json(
                         checkpoint, strategy_schema=SCHEMA
@@ -450,11 +460,15 @@ class NewowFormulaTransition:
                         old_generation=receipt.generation,
                         new_stream_id=result["target_stream_id"],
                         previous_checkpoint_sha256=batch.post_state_hash,
-                        last_market_computed_through=_db_aware(
-                            batch.computed_through
-                        ).isoformat(),
+                        last_market_computed_through=(
+                            _db_aware(batch.computed_through).isoformat()
+                            if batch.computed_through is not None else None
+                        ),
                         boundary_at=at.isoformat(),
-                        recording_start=plan["recording_start"],
+                        recording_start=item["bootstrap"].get(
+                            "expected_first_bar_end", plan["recording_start"],
+                        ),
+                        **self._proof_extras(db, item, result),
                     )
                     db.add(
                         ReferenceBatch(
@@ -471,7 +485,7 @@ class NewowFormulaTransition:
                             post_state_hash=sha256(content.encode()).hexdigest(),
                             checkpoint_text=content,
                             strategy_schema=SCHEMA,
-                            computed_through=at,
+                            **self._terminal_fields(at),
                             dependency_manifest={},
                             source_evidence={
                                 self.version: proof,
@@ -485,7 +499,6 @@ class NewowFormulaTransition:
                             },
                             projected_action_pks=[],
                             diagnostics=[self.reason],
-                            observed_at=at,
                             processed_at=at,
                         )
                     )
@@ -508,8 +521,9 @@ class NewowFormulaTransition:
                     row.row_version += 1
                     receipt.disabled_at = at
                 db.flush()
-                self.assert_fenced()
-                return self._status(db, plan)
+                result = self._status(db, plan)
+                self._before_commit(db, plan)
+                return result
         except SQLAlchemyError as error:
             raise RepositoryConflict(
                 "FORMULA_TRANSITION_COMMIT_OUTCOME_UNKNOWN"

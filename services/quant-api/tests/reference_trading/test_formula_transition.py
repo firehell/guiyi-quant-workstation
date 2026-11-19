@@ -58,7 +58,8 @@ BAR = NOW - timedelta(days=1)
 START = NOW + timedelta(hours=1)
 
 
-def fixture(engine=None, *, current=False):
+def fixture(engine=None, *, current=False, product="rb", opened_codes=None):
+    contract = product.upper() + "2701"
     engine = engine or create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
@@ -67,10 +68,10 @@ def fixture(engine=None, *, current=False):
     sources = []
     for code in ["trend", "oscillation", "dual_fusion"] + (["main_rise"] if current else []):
         p = build_product_identity(
-            "rb", "oscillation" if code == "dual_fusion" else code, "60m"
+            product, "oscillation" if code == "dual_fusion" else code, "60m"
         )
         identity = (
-            build_fusion_stream_identity("rb", "60m")
+            build_fusion_stream_identity(product, "60m")
             if code == "dual_fusion"
             else StreamIdentity(
                 "newow_" + code,
@@ -78,7 +79,7 @@ def fixture(engine=None, *, current=False):
                 p.profile_id,
                 reference_model_version(p),
                 futures_adaptation_version("60m"),
-                "rb",
+                product,
                 "60m",
                 "actual_dominant",
                 "historical_replay",
@@ -86,8 +87,8 @@ def fixture(engine=None, *, current=False):
             )
         )
         bar = NewowDailyBar(
-            "rb",
-            "RB2701",
+            product,
+            contract,
             "owner",
             BAR.date(),
             BAR,
@@ -119,7 +120,7 @@ def fixture(engine=None, *, current=False):
             state,
             BAR,
             "a" * 64,
-            "RB2701",
+            contract,
             "owner",
             "calc",
             identity,
@@ -167,7 +168,7 @@ def fixture(engine=None, *, current=False):
         action = ReferenceAction(
             old,
             "entry",
-            "RB2701",
+            contract,
             "owner",
             "calc",
             BAR,
@@ -176,7 +177,7 @@ def fixture(engine=None, *, current=False):
             ActionKind.OPEN_LONG,
             Decimal(100),
         )
-        if not current or code == "trend":
+        if (code in opened_codes if opened_codes is not None else (not current or code == "trend")):
             reference = reduce_reference(reference, actions=(action,)).state
         cp = replace(cp, stream=old, reference_state=reference)
         # Retained legacy bytes: normal readers must continue to reject the oscillator.
@@ -197,7 +198,7 @@ def fixture(engine=None, *, current=False):
             reference_state=json.loads(checkpoint_to_json(reference)),
             computed_through=BAR.isoformat(),
             last_fingerprint="a" * 64,
-            physical_contract="RB2701",
+            physical_contract=contract,
             owner_segment_id="owner",
             calculation_segment_id="calc",
         )
@@ -291,7 +292,7 @@ def fixture(engine=None, *, current=False):
                     recording_mode="forward_observation",
                     kind="OPEN_LONG",
                     sequence=0,
-                    physical_contract="RB2701",
+                    physical_contract=contract,
                     owner_segment_id="owner",
                     calculation_segment_id="calc",
                     bar_end=BAR,
@@ -313,7 +314,7 @@ def fixture(engine=None, *, current=False):
                     entry_action_pk=aid,
                     side="LONG",
                     status="OPEN",
-                    physical_contract="RB2701",
+                    physical_contract=contract,
                     owner_segment_id="owner",
                     calculation_segment_id="calc",
                     entry_bar_end=BAR,

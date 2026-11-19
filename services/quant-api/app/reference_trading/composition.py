@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.reference_trading.recording_scope import H1_BOUNDARY_POLICY, LIVE_FREQUENCIES
+from app.reference_trading.recording_scope import H1_BOUNDARY_POLICIES, LIVE_FREQUENCIES
 
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -123,7 +123,7 @@ def build_forward_reference_worker(
             else recording_start - timedelta(microseconds=1)
         )
         input_endpoints = expected_endpoints
-        if identity.observation_policy_version == H1_BOUNDARY_POLICY:
+        if identity.observation_policy_version in H1_BOUNDARY_POLICIES:
             if worker.inbox_delivery_id is None:
                 return None
             if computed_through is None:
