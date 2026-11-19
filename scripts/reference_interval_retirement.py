@@ -13,6 +13,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import signal
 import time
@@ -78,6 +79,25 @@ def business_claim_path():
     if root.resolve(strict=True) != root or root.stat().st_mode & 0o077:
         raise RuntimeError('INTERVAL_RETIREMENT_CLAIM_UNSAFE')
     return root/(INVENTORY_SHA256+'.json')
+
+
+def validate_prior_handover(handover, generation):
+    if handover is None:
+        return
+    if (not isinstance(handover, dict) or
+            set(handover) != {'schema_version', 'service', 'generation', 'phase', 'request_id'} or
+            type(handover.get('schema_version')) is not int or handover['schema_version'] != 1 or
+            handover.get('service') != 'reference-worker' or
+            type(handover.get('generation')) is not int or handover['generation'] < 1 or
+            handover.get('phase') not in ('drain', 'cancelled') or
+            not isinstance(handover.get('request_id'), str) or
+            re.fullmatch('[0-9a-f]{32}', handover['request_id']) is None):
+        raise RuntimeError('INTERVAL_RETIREMENT_CONTROL_INVALID')
+    # Native owners ignore a previous generation's drain after a cohort CAS.
+    # Never replace an active same-generation request or a future control.
+    if (handover['generation'] > generation or
+            handover['generation'] == generation and handover['phase'] == 'drain'):
+        raise RuntimeError('INTERVAL_RETIREMENT_OWNER_BUSY')
 
 
 @contextmanager
@@ -168,12 +188,13 @@ def main():
                 raise RuntimeError('INTERVAL_RETIREMENT_RUNTIME_DRIFT')
             owner = read_service_state('reference-worker', runtime_dir=directory)
             handover = _read(directory/'reference-worker.handover.json')
-            if (not owner or owner.get('phase') != 'active' or owner.get('generation') != binding.generation or
-                    handover and handover.get('phase') == 'drain'):
+            validate_prior_handover(handover, binding.generation)
+            if not owner or owner.get('phase') != 'active' or owner.get('generation') != binding.generation:
                 raise RuntimeError('INTERVAL_RETIREMENT_OWNER_BUSY')
             def before_drain(rid):
                 nonlocal request_id, safe_to_resume
-                progress.record('drain_intent', request_id=rid, binding=asdict(binding))
+                progress.record('drain_intent', request_id=rid, binding=asdict(binding),
+                                previous_handover=handover)
                 request_id, safe_to_resume = rid, True
             request_id = request_drain('reference-worker', generation=binding.generation,
                 runtime_dir=directory, before_install=before_drain)

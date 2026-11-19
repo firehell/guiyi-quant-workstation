@@ -82,14 +82,14 @@ def invocation(cli, tmp_path, monkeypatch):
         enabled: bool
         generation: int
 
-    binding = ActiveBinding(str(cli.ROOT), "b" * 40, True, 4)
+    binding = ActiveBinding(str(cli.ROOT), "b" * 40, True, 93)
     monkeypatch.setattr(cli, "business_claim_path", lambda: tmp_path / "business-claim")
     handlers = {}
     monkeypatch.setattr(signal, "signal", handlers.__setitem__)
     monkeypatch.setattr(runtime_bindings, "resolve_service_binding", lambda _: binding)
     monkeypatch.setattr(runtime_handover, "runtime_directory", lambda: tmp_path)
     runtime_handover._write(tmp_path / "reference-worker.owner.json", {
-        "schema_version": 1, "service": "reference-worker", "generation": 4, "phase": "active",
+        "schema_version": 1, "service": "reference-worker", "generation": binding.generation, "phase": "active",
     })
     monkeypatch.setattr(cli, "load_dependencies", lambda _: "a" * 64)
     monkeypatch.setattr(cli, "verify_code", lambda *_: None)
@@ -102,6 +102,67 @@ def invocation(cli, tmp_path, monkeypatch):
         "--plan", str(tmp_path / "plan"),
     ])
     return handlers
+
+
+@pytest.mark.parametrize(("generation", "phase"), [(92, "drain"), (92, "cancelled"), (93, "cancelled")])
+def test_previous_control_recorded_before_install(cli, invocation, tmp_path, monkeypatch, generation, phase):
+    control = tmp_path / "reference-worker.handover.json"
+    old_id = runtime_handover.request_drain("reference-worker", generation=generation, runtime_dir=tmp_path)
+    if phase == "cancelled":
+        runtime_handover.cancel_drain("reference-worker", request_id=old_id, runtime_dir=tmp_path)
+    before = control.read_bytes()
+    progress = tmp_path / "attempt/progress.jsonl"
+    installed = []
+    write = runtime_handover._write
+
+    def check_intent_at_install(path, payload):
+        if path == control and payload["phase"] == "drain":
+            assert control.read_bytes() == before
+            entries = [json.loads(line) for line in progress.read_text().splitlines()]
+            entry, = [item for item in entries if item["stage"] == "drain_intent"]
+            assert entry["previous_handover"] == json.loads(before)
+            assert entry["binding"]["generation"] == payload["generation"] == 93
+            assert entry["request_id"] == payload["request_id"] != old_id
+            installed.append(payload["request_id"])
+        write(path, payload)
+
+    monkeypatch.setattr(runtime_handover, "_write", check_intent_at_install)
+    monkeypatch.setattr(cli, "wait_phase", lambda *_: invocation[signal.SIGTERM](signal.SIGTERM, None))
+    with pytest.raises(RuntimeError, match="INTERVAL_RETIREMENT_TERMINATED"):
+        cli.main()
+    current = json.loads(control.read_bytes())
+    assert installed == [current["request_id"]]
+    assert current["generation"] == 93 and current["phase"] == "cancelled"
+    assert not (tmp_path / "business-claim").exists()
+
+
+@pytest.mark.parametrize(("changes", "code"), [
+    ({"generation": 93}, "OWNER_BUSY"),
+    ({"generation": 94}, "OWNER_BUSY"),
+    ({"generation": 94, "phase": "cancelled"}, "OWNER_BUSY"),
+    ({"schema_version": True}, "CONTROL_INVALID"),
+    ({"schema_version": 1.0}, "CONTROL_INVALID"),
+    ({"service": "market"}, "CONTROL_INVALID"),
+    ({"generation": 0}, "CONTROL_INVALID"),
+    ({"generation": True}, "CONTROL_INVALID"),
+    ({"phase": []}, "CONTROL_INVALID"),
+    ({"request_id": "a" * 31}, "CONTROL_INVALID"),
+    ({"unexpected": "invalid"}, "CONTROL_INVALID"),
+])
+def test_busy_or_malformed_control_remains_byte_exact(cli, invocation, tmp_path, monkeypatch, changes, code):
+    control = tmp_path / "reference-worker.handover.json"
+    runtime_handover._write(control, {
+        "schema_version": 1, "service": "reference-worker", "generation": 92,
+        "phase": "drain", "request_id": "a" * 32, **changes,
+    })
+    before = control.read_bytes()
+    monkeypatch.setattr(runtime_handover, "request_drain", lambda *_args, **_kwargs: pytest.fail("drain attempted"))
+    with pytest.raises(RuntimeError, match="INTERVAL_RETIREMENT_" + code):
+        cli.main()
+    assert control.read_bytes() == before
+    entries = [json.loads(line) for line in (tmp_path / "attempt/progress.jsonl").read_text().splitlines()]
+    assert [item["stage"] for item in entries] == ["started", "stopped"]
+    assert not (tmp_path / "business-claim").exists()
 
 
 def test_prewrite_termination_releases_drain_even_if_progress_disk_fails(cli, tmp_path, monkeypatch, invocation):
