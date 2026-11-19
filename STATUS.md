@@ -1,3 +1,9 @@
+11/19 23:55 v1.16.140代码已发布：PR665合并main，annotated tag/GitHub Release精确绑定`65dd7c856c8bc42e325e33e82c64d2dbd953fbfb`；源码实现`517ded0b8`。干净发布树`/Volumes/扩展盘/worktree/release-v116140/guiyi-quant-workstation`与受测源码tree完全一致，API/Core独立离线环境、API wheel/sdist、Web类型/生产构建、离线锁、Ruff/diff/secret检查通过；最终SQLite及真实隔离PostgreSQL目标集合155 passed（221.47秒），两项独立高风险Review通过。原有两处develop用户dirty未包含在提交或发布树。
+
+原生`--plan-cohort`现场返回`COHORT_REST_WINDOW_REQUIRED`，没有生成可执行切换或运行apply。23:49权威60品种Session读回49 CLOSED/11 TRADING，最晚当前Session于11/20 02:30 CST结束，之后仍须现场通过grace与距下次开盘660秒条件。正式11服务仍全部matched/exact v1.16.139/gen93，API/Web/Runtime HTTP通过；未重启快期或共享Paper，未执行236路生产退役，未消耗本次business claim。唯一下一步是在有效休市窗口重新生成原生cohort计划并切换，再单独停驻Reference执行固定库存的一次性退役及独立读回。发布代码不等于生产退役或新流预热完成。
+
+以下为此前检查点：
+
 11/19 owner已选择退役无法证明连续性的牛哇H1旧观察区间；原OWNER_DECISION_PENDING已解除。实现固定库存SHA的59品种236路单事务退役，35笔OPEN追加OBSERVATION_INTERRUPTED、无退出动作/退出价/收益；保留原件、原价、原状态及历史快照，未来按各品种权威Session首H1建立独立FLAT空种子并自然预热。JD、日周参考、Alert、Paper及TqKq不在退役范围。正式数据尚未执行，现役仍v1.16.139/gen93。
 
 两项独立高风险Review通过；扩展SQLite/真实隔离PostgreSQL命令150 passed后遇到1项旧HTDY夹具失败，同一失败已在exact v1.16.139复现（退役Scope不再创建旧测试投递），未恢复Scope或降低断言。独立队列/历史查询/来源套件66 passed、6 opt-in skipped，终态分派回归1 passed，版本/health7 passed；原最多6条集合SQL预算保持。Ruff、diff及secret扫描通过，v1.16.140待发布树构建。新读写端须先经原生cohort切换；夜盘期间不越过权威休市/660秒门禁。其后方可单独停驻Reference、固定business claim单次执行并独立只读核验，不用测试结果冒充生产完成。
