@@ -1,3 +1,11 @@
+11/19 v1.16.139 已发布并切换标准服务：PR664、main及annotated tag绑定exact `2be7a62af8cd38be67d9d1b671e132673e44f91e`，develop源码 `78b5a8e39`。原生cohort `b0151bae…` 返回switched，11项全部matched/generation93，API/Web/Runtime HTTP通过。快期交易范围与苏冰唯一共享Paper统一为 JM/LC/RB/SA/FG/MA/EC/V/PR/TA/UR/SH/SC/CJ/OI/I；行情中心60品种、既有Alert及通知范围未变。两项独立高风险Review通过，后端相关444 passed；共享Paper含真实隔离PG111 passed；最终受影响122 passed/1 opt-in skipped；Web21 passed、API wheel/sdist及Web构建通过。Ruff无新增诊断（91项原有诊断未清零），secret扫描0。
+
+苏冰只保留16品种共享模型与其持续/历史视图。旧独立JM托管label及自启动plist已停用，原run `subing-dev-20261104T161601` 的2733事件与原投影逐项hash不变；14品种新建入口与旧JM HTTP/CLI已退役。唯一 `com.guiyi.quant-subing-paper` 已安装到exact发布树，私有状态位于AppSupport/GuiyiQuant/subing-paper，auto_order=false。正式API目前BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE、run_id=null：下一交易日11/20 rank1尚未准备，所需下一开盘日11/23日历缺失；不猜未来主力、不虚构账户或历史成交。后续仍须当日16品种执行事实及真实完成流后才可创建并推进Paper。
+
+11/19 16:31 快期原账户已恢复同版trade：单次原生43730命令完整重放约46分钟，16:30:37 fresh预检ready、16映射、5仓/0活动委托/issues为空；唯一worker PID66421、v1.16.139/exact同commit、LOGGED_IN/READY/AUTO_TRADING且无hold。原生已追加唯一TqKqTradingScopeV1，当前投影TqKqScopedStateV1/seq43733：AP2701、NI2612、PG2701、SS2701均desired0/must_close/opening_consumed，原OI2701多1/desired1保留，范围外禁止新开仓。正式HTTP与原生监控均FLATTEN_PENDING，四仓尚未成交，闭市16blocked/executable0继续保护；须等各自真实Session及必要事实，不称全策略已可执行。原5仓/原物理合约/方向/手数保留，今仓已按原生换日变昨仓；原43730 commands、metadata3、claims14、identity1逐行SHA证明前缀不变，仅追加scope/恢复记录，无新增提交凭证。私有原件在AppSupport/GuiyiQuant/unify-sixteen-20261119。原两处未提交修改已通过预先验证的三方合并保留，未纳入发布。
+
+以下为此前检查点：
+
 11/19 v1.16.138 代码包已发布：PR663、main、annotated tag 与 GitHub Release 均绑定 exact `a6076672dfd63b464d852aee49b593030ef83bc4`。完整包含 develop 已提交的苏冰共享组合工作台、14/16 品种 Paper 模型及只读 API，以及仅牛哇计算参考交易的范围调整；已合并 v137 账本性能与 SDK 驱动修复。隔离发布副本后端677 passed/22 skipped、Web31 passed及生产构建、版本/lock/导入根校验与独立Review通过；路由import调整后27项定向回归通过。两处原未提交修改未纳入，历史交易/原件未删除。
 
 11/19 12:34 已按owner交办完成正式整组切换：原生cohort `8824d8a0…` 返回switched，11项服务全部matched v1.16.138/exact `a6076672dfd63b464d852aee49b593030ef83bc4`/generation92，API/Web/Runtime HTTP通过，DB/Redis/Live正常。Reference启用720路，仅牛哇四策略；HTDY重算接口410，真实浏览器已确认HTDY/苏冰隐藏参考交易与收益面板、保留实际预警及快期模拟来源。切后独立只读复核通过；牛哇旧融合阻塞和苏冰W1四品种暖机仍单列，不以服务切换宣称自然业务全通过。
