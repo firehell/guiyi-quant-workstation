@@ -1,3 +1,11 @@
+11/19 20:35 下一交易日元数据准备已完成并独立读回：既有原生准备器20:30:00单次启动、status passed/applied，plan `05de8b361d0ef9aeb50b0cb5ec5f75eac2e2bdc2e46dcc842abec02932325959`，新增60条rank1、5条Calendar、225条Session，另225条Session与15条Calendar保持equal。归档`3df6449b…`字节数、SHA及binding/日期/回执匹配；只读Catalog验证11/20 operational60主力映射与Session均60/60，11/23 CZCE/DCE/GFEX/INE/SHFE日历齐全，夜盘标记为true/true/false/true/true。未另行应用下午保存的日历分类计划，未重复provider或写库。
+
+苏冰实际API已从BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE转为WAITING_EXECUTION_FACTS/run_id=null，唯一共享Paper进程running（PID86592）、旧JM label未加载。只读原生prepare_day(11/20,16品种)完整历史预热通过，contexts/factors均16，耗时6.87秒；16品种11/20及下一开盘日11/23 Session读回齐全，首轮执行事实门槛经权威Session核实为11/20 09:01 CST，与心跳next_open一致；当前11/20采集attempt为0，托管命令已有--start 16 --refresh-facts。未提前采集、创建run或补历史成交。
+
+快期仍为原16品种trade/AUTO_TRADING/READY、FLATTEN_PENDING：NI2612/SS2701/PG2701/AP2701各多1尚待真实Session与必要事实；OI保留，闭市executable0/blocked16、native_readback_verified=false。元数据准备成功不等于自然平仓或新模型成交完成；正式服务继续exact v1.16.139，不重启或重复预检交易进程。
+
+以下为此前检查点：
+
 11/19 19:01 运行前提与预警输入核验：原生18:05盘后主任务于18:10:42 passed/attempt1，operational60共720项正式历史发布，rank1与订阅快照一致；Live cleanup_verified、remaining_bar_keys=0、subscription_present=false。附属牛哇消费者审计D1仅150/180（budget_exhausted），W1为179/180，未视为全量验收通过。
 
 exact v1.16.139只读原生warmup_alert_runtime(allow_closed_warming=True)对既有60品种420路实际计算：416通过，BZ/PD/PL/RS周线4路预热（有效输入27/31/23/9根），耗时131.99秒；数据库连接强制read-only，未创建Event、修改游标、发送通知或覆盖历史失败。CJ/FG/RM/SH四品种的20路旧失败均以11/19 15:00正式Canonical重算通过；Runtime仍保留20路历史未解决诊断，另280路分钟覆盖等待本代新观察，不把纯重算作为自然闭环或清除旧失败依据。通知传输仍disabled，未调整受众或启用。
