@@ -1,3 +1,11 @@
+11/19 21:11 夜盘开盘与范围收敛平仓核验通过：NI2612于21:00:12.283435卖平1手/117870，PG2701于21:01:13.853330卖平1手/5644，SS2701于21:01:20.530523卖平1手/13770，均由shared_sixteen_products_v1范围退出义务触发。独立只读复核逐笔匹配唯一SUBMIT claim、native SELL/CLOSE FILLED/volume_left=0、唯一原生成交及本地Fill，local order reconciled=true。21:01:20.591192成功原生对账与本地持仓均为AP2701多1、OI2701多1（昨仓、冻结0），范围外仅剩AP待日盘；本次范围平仓不替代新版策略自然信号交易验收。
+
+原43730条commands、metadata3、claims14、identity1逐行完全保留，当前43778 commands/17 claims，新增3个提交凭证恰好对应三笔平仓。另在只读SQLite快照上以已验证旧投影为锚重放新增48条命令，逐项核对命令hash、before/after、effects及最终projection通过（29.17秒），phase READY、unresolved_fill_ids为空；未重做全历史预检、未重启worker、未人工重复下单。
+
+正式completed观察原件核验11/20交易日夜盘21:01—21:06：45个交易品种×6根M1=270根全部连续，15个品种正常closed；rank1物理合约、confirmed_at、notification_eligible及identity索引与原件逐项一致。正式Alert首批45路5m均自然成功计算至21:05，其中3路仍明确保留previous_unresolved；其他旧失败、未到分钟周期和四路周线预热未清除。正式HTTP身份matched、运维health ok，当前快期仍PID66421/exact v139、running/trade/READY、FLATTEN_PENDING/executable0/blocked16及native_readback_verified=false；其余自然信号与新鲜账户续证待后续真实输入。共享Paper继续WAITING_EXECUTION_FACTS/run_id=null，首次采集门槛仍为11/20 09:01。
+
+以下为此前检查点：
+
 11/19 20:35 下一交易日元数据准备已完成并独立读回：既有原生准备器20:30:00单次启动、status passed/applied，plan `05de8b361d0ef9aeb50b0cb5ec5f75eac2e2bdc2e46dcc842abec02932325959`，新增60条rank1、5条Calendar、225条Session，另225条Session与15条Calendar保持equal。归档`3df6449b…`字节数、SHA及binding/日期/回执匹配；只读Catalog验证11/20 operational60主力映射与Session均60/60，11/23 CZCE/DCE/GFEX/INE/SHFE日历齐全，夜盘标记为true/true/false/true/true。未另行应用下午保存的日历分类计划，未重复provider或写库。
 
 苏冰实际API已从BLOCKED/PORTFOLIO_CALENDAR_INCOMPLETE转为WAITING_EXECUTION_FACTS/run_id=null，唯一共享Paper进程running（PID86592）、旧JM label未加载。只读原生prepare_day(11/20,16品种)完整历史预热通过，contexts/factors均16，耗时6.87秒；16品种11/20及下一开盘日11/23 Session读回齐全，首轮执行事实门槛经权威Session核实为11/20 09:01 CST，与心跳next_open一致；当前11/20采集attempt为0，托管命令已有--start 16 --refresh-facts。未提前采集、创建run或补历史成交。
