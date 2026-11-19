@@ -1,3 +1,9 @@
+11/19 v1.16.138 代码包已发布：PR663、main、annotated tag 与 GitHub Release 均绑定 exact `a6076672dfd63b464d852aee49b593030ef83bc4`。完整包含 develop 已提交的苏冰共享组合工作台、14/16 品种 Paper 模型及只读 API，以及仅牛哇计算参考交易的范围调整；已合并 v137 账本性能与 SDK 驱动修复。隔离发布副本后端677 passed/22 skipped、Web31 passed及生产构建、版本/lock/导入根校验与独立Review通过；路由import调整后27项定向回归通过。两处原未提交修改未纳入，历史交易/原件未删除。
+
+本次仅发布代码，未切换Runtime、未创建/重置/启动苏冰模型run，也未改变通知或账户授权。现场正式服务仍v1.16.137/exact `2126d0a71d6a7991b511053b482ccd583c70e43a`/generation91；苏冰持续运行和自然业务是否正常须按各自证据验证，发布不代表模型已恢复。
+
+以下为此前检查点：
+
 11/18 21:16 夜盘开盘与SI前缀修复已完成。20:30既有自动元数据任务passed，Nov19 rank1/Session60/60；CU2612→CU2701、PG2612→PG2701、SI2612→SI2701。CU/PG自动六频READY且正式HTTP各32根H1读回通过；CU旧持仓按既有TqKq Owner/rolling合同等待自然新H1处理，未人工清仓/搬仓。21:02:57正式WS逐项匹配Nov19独立映射，45交易品种均有21:01 completed M1/day19，15正常closed，全60通过，Runtime身份matched及Web/DB/Redis/Live正常。独立复核bridge恢复proof固定实时60m/32根，M1不替代，故当前Tq blocked60/Core42100与旧Readback过期为等待首H1路径，PID5311/trade/READY/issues0、Native仍CU多1；22:00自然H1续证/信号/旧CU实际执行尚待观察。
 
 SI2701当时物理前缀真实缺失，已在开盘验收后执行精确原生warmup计划6e2c6fd8…（上市Jan19至Nov18、七周期）：真实RQData33请求、77目标全部applied、failed/blocked0，原生Canonical锁/分区发布生效，仅SI2701，不改MainMap/continuous/Live。正式API七频各32根全部200，日内/日线到Nov18，周线到Nov13；现无SI明早前缀缺口。21:12:28独立WS连续性复核45夜盘21:01–21:08无缺口，15closed正确，覆盖补齐开始时段；首H1前会继续验证自然业务，不制造订单。
