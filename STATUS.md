@@ -1,3 +1,11 @@
+11/19 22:12 首根H1及自然分钟预警核验通过：11/20交易日22:00的45个夜盘品种completed H1原件全部存在，rank1物理合约、确认时间、notification_eligible及identity索引一致。45路5m、45路15m、45路30m、90路60m（苏冰/HTDY各45）共225路正式Alert均自然计算成功至不早于22:00，无本轮失败；15路保留previous_unresolved，未清除旧事实。当前五路evaluation_failed均为日盘CJ（苏冰四分钟周期及HTDY60m），四路周线预热保持，不用夜盘验收替代日盘和历史诊断闭环。
+
+快期当前seq43798、claims17：10条新增ObservedSignal（FG/TA/MA/OI/SA/SH/PR/SC/RB/V）对应22:00，directions均空且恢复期间audit SIGNAL_BLOCKED；JM/I经seq43784同根H1 RecoveryInput/latest_direction=0恢复，未新增独立ObservedSignal。独立只读Review确认按既有floor/last_bar及恢复合同处理，12夜盘品种解除恢复阻断，CJ/EC/LC/UR四个日盘品种仍blocked；本轮未发现漏掉可执行开仓，但不声称JM/I自然消息分别已抵达，恢复证明不等于新开仓证据。
+
+22:00:36.799876原生续证成功，实际AP2701/OI2701各多1与本地一致，无未对账订单；有效期至22:01:36.799876。22:10监控native_readback_verified=false、executable0属于该读回已过期的保护，未延长TTL、伪造续证或重复启动。22:00后无新增提交凭证、订单或成交；后续自然方向信号及执行前新鲜续证仍待发生，范围外AP待11/20日盘。共享Paper仍WAITING_EXECUTION_FACTS/run_id=null，首次事实采集门槛11/20 09:01；正式服务继续exact v1.16.139/PID66421。
+
+以下为此前检查点：
+
 11/19 21:11 夜盘开盘与范围收敛平仓核验通过：NI2612于21:00:12.283435卖平1手/117870，PG2701于21:01:13.853330卖平1手/5644，SS2701于21:01:20.530523卖平1手/13770，均由shared_sixteen_products_v1范围退出义务触发。独立只读复核逐笔匹配唯一SUBMIT claim、native SELL/CLOSE FILLED/volume_left=0、唯一原生成交及本地Fill，local order reconciled=true。21:01:20.591192成功原生对账与本地持仓均为AP2701多1、OI2701多1（昨仓、冻结0），范围外仅剩AP待日盘；本次范围平仓不替代新版策略自然信号交易验收。
 
 原43730条commands、metadata3、claims14、identity1逐行完全保留，当前43778 commands/17 claims，新增3个提交凭证恰好对应三笔平仓。另在只读SQLite快照上以已验证旧投影为锚重放新增48条命令，逐项核对命令hash、before/after、effects及最终projection通过（29.17秒），phase READY、unresolved_fill_ids为空；未重做全历史预检、未重启worker、未人工重复下单。
