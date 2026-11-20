@@ -244,6 +244,13 @@ def valid_plan(plan):
 
 
 def _inventory(host, allowed, *, own=None):
+    from app.runtime_retirement import inventory_history_reads
+
+    with inventory_history_reads(host.directory):
+        _inventory_checked(host, allowed, own=own)
+
+
+def _inventory_checked(host, allowed, *, own=None):
     parent = host.directory / "cohort-forward-recoveries"
     recovery._directory(parent)
     children = list(parent.iterdir())

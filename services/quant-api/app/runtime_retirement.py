@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+from contextlib import contextmanager
+from contextvars import ContextVar
 from hashlib import sha256
 import json
 import os
@@ -11,6 +13,53 @@ import re
 import stat
 
 from app.runtime_bindings import _git
+
+_INVENTORY_SEALS = ContextVar("inventory_seals", default=None)
+_INVENTORY_RELEASES = ContextVar("inventory_releases", default=None)
+
+
+def _history_directories(directory):
+    result = {}
+    for leaf in ("cohort-forward-recoveries", "cohort-attempts", "release-retirements"):
+        parent = Path(directory) / leaf
+        if not os.path.lexists(parent):
+            result[leaf] = None
+            continue
+        _directory(parent)
+        children = sorted(parent.iterdir())
+        require(len(children) <= 1024)
+        members = {}
+        for child in children:
+            _directory(child)
+            members[child.name] = tuple(sorted(p.name for p in child.iterdir()))
+        result[leaf] = members
+    return result
+
+
+@contextmanager
+def inventory_history_reads(directory):
+    """Share repeated seal reads only inside one fully rechecked inventory.
+
+    No result crosses a phase or process. A fresh complete archive/Git/original
+    verification and exact directory membership check precede successful exit.
+    """
+    before = _history_directories(directory)
+    cache = {}
+    token = _INVENTORY_SEALS.set(cache)
+    releases = {}
+    release_token = _INVENTORY_RELEASES.set(releases)
+    try:
+        yield
+        _INVENTORY_SEALS.set(None)
+        for (folder, repo), expected in cache.items():
+            require(_seals(Path(folder), Path(repo)) == expected)
+        _INVENTORY_RELEASES.set(None)
+        for (kind, repo, _root, _tag, _commit), identity in releases.items():
+            (_verify_git if kind == "git" else _verify_present_release)(Path(repo), identity)
+        require(_history_directories(directory) == before)
+    finally:
+        _INVENTORY_RELEASES.reset(release_token)
+        _INVENTORY_SEALS.reset(token)
 
 
 class RetirementError(ValueError):
@@ -83,6 +132,10 @@ def _common(repo_root):
 
 
 def _verify_git(repo_root, identity):
+    cache = _INVENTORY_RELEASES.get()
+    key = ("git", str(repo_root), identity.get("root", ""), identity["tag"], identity["commit"])
+    if cache is not None and key in cache:
+        return
     tag, commit = identity["tag"], identity["commit"]
     require(
         re.fullmatch(r"v\d+\.\d+\.\d+", tag) and re.fullmatch(r"[0-9a-f]{40}", commit)
@@ -91,6 +144,8 @@ def _verify_git(repo_root, identity):
         _git(repo_root, "cat-file", "-t", f"refs/tags/{tag}") == "tag"
         and _git(repo_root, "rev-parse", f"refs/tags/{tag}^{{commit}}") == commit
     )
+    if cache is not None:
+        cache[key] = dict(identity)
 
 
 COMPLETE_HISTORY = "complete_closed_forward_history_v1"
@@ -701,6 +756,10 @@ def _load_index(folder, repo_root):
 
 
 def _seals(directory, repo_root):
+    cache = _INVENTORY_SEALS.get()
+    key = (str(directory), str(repo_root))
+    if cache is not None and key in cache:
+        return cache[key]
     parent = directory / "release-retirements"
     if not os.path.lexists(parent):
         return []
@@ -714,6 +773,8 @@ def _seals(directory, repo_root):
             continue
         require(re.fullmatch(r"[0-9a-f]{64}", folder.name) is not None)
         result.append((folder, _load_index(folder, repo_root)))
+    if cache is not None:
+        cache[key] = result
     return result
 
 
@@ -759,6 +820,10 @@ def verify_historical_release(directory, repo_root, root, tag, commit):
 
 
 def _verify_present_release(repo_root, identity):
+    cache = _INVENTORY_RELEASES.get()
+    key = ("present", str(repo_root), identity["root"], identity["tag"], identity["commit"])
+    if cache is not None and key in cache:
+        return
     from app.runtime_bindings import verify_release
 
     root = Path(identity["root"])
@@ -767,6 +832,8 @@ def _verify_present_release(repo_root, identity):
     from app.runtime_repository import verify_shared_release_identity
     verify_shared_release_identity(root, identity["tag"], identity["commit"])
     require(_common(root) == _common(repo_root))
+    if cache is not None:
+        cache[key] = dict(identity)
 
 
 MARKERS = frozenset(
