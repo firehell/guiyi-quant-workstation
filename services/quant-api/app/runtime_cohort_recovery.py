@@ -16,6 +16,7 @@ import plistlib
 from pathlib import Path
 import re
 import stat
+import sys
 from time import monotonic
 from zoneinfo import ZoneInfo
 
@@ -4040,6 +4041,7 @@ class ForwardRecoveryHost(CohortHost):
         before = None
         by_stage = {}
         previous = None
+        owner_epoch = None
         names = (
             continuous_services(new)
             if feed
@@ -4110,6 +4112,22 @@ class ForwardRecoveryHost(CohortHost):
                 for name in names
             )
 
+        def forget_owner_candidate():
+            nonlocal before, owner_epoch
+            before = None
+            owner_epoch = None
+            by_stage.clear()
+            # Keep previous: an owner replacement never waives continuous
+            # source/ACK prefix verification across the replacement.
+
+        def witnessed_owner_change(first, later):
+            return any(
+                later[name] is not None
+                and any(first[name].get(key) != later[name].get(key)
+                        for key in ("pid", "generation", "service"))
+                for name in names
+            )
+
         def owner_samples_fresh(states, now):
             try:
                 return all(
@@ -4127,8 +4145,10 @@ class ForwardRecoveryHost(CohortHost):
         def await_same_ready_owners(states, current, valid_until):
             # A poll may temporarily clear ready. Retry only that observation,
             # with the original owners, authority and receiving sample pinned.
-            poll_end = min(end, self.monotonic() + 1)
-            for _ in range(5):
+            poll_start = self.monotonic()
+            poll_end = min(end, poll_start + 5)
+            reason, service = "poll_window_elapsed", None
+            for _ in range(25):
                 check_budget()
                 now = self.now()
                 if (
@@ -4139,12 +4159,26 @@ class ForwardRecoveryHost(CohortHost):
                     break
                 observed, reason, service = ready_states()
                 if not same_owners(states, observed):
+                    if witnessed_owner_change(states, observed):
+                        forget_owner_candidate()
+                    reason = "owner_changed_or_unavailable"
                     break
                 if reason is None:
+                    if (self.monotonic() >= end or self.now() >= valid_until
+                            or not receiving_sample_is_fresh(current, now=self.now())):
+                        reason = "proof_expired_during_owner_check"
+                        break
+                    if self.monotonic() - poll_start > 1:
+                        print(json.dumps({"event": "forward_ready_poll", "reason": "actual_ready",
+                            "elapsed_seconds": round(self.monotonic() - poll_start, 3)}),
+                            file=sys.stderr, flush=True)
                     return observed
                 if not transient_poll(reason, service):
                     break
                 sleep(0.2)
+            print(json.dumps({"event": "forward_ready_poll", "reason": reason,
+                "service": service, "elapsed_seconds": round(self.monotonic() - poll_start, 3)}),
+                file=sys.stderr, flush=True)
             return None
 
         while self.monotonic() < end:
@@ -4153,6 +4187,9 @@ class ForwardRecoveryHost(CohortHost):
             if reason is not None:
                 sleep(0.2)
                 continue
+            if owner_epoch is not None and not same_owners(owner_epoch, states):
+                forget_owner_candidate()
+            owner_epoch = states
             report_stage = states["reference-worker"]["proof"]["reference_runtime"][
                 "stage"
             ]
@@ -4229,7 +4266,8 @@ class ForwardRecoveryHost(CohortHost):
                                 before=before, current=current,
                             )
                             return prove_receiving_liveness(before, current, now=now)
-                if not receiving_sample_is_fresh(current, now=self.now()):
+                if (owner_epoch is not None
+                        and not receiving_sample_is_fresh(current, now=self.now())):
                     before = current
                     by_stage[report_stage] = current
             sleep(0.2)

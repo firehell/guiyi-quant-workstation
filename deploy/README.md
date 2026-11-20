@@ -416,7 +416,7 @@ drain、bootout或kickstart，不重放或清cursor。旧retirement失败、SimN
 30秒活性样本过期不等于前缀损坏。等待循环逐次验证全部快照（包括同一owner cycle）的静态context、原件/routes、ACK及数据库前缀非回退；只有这条连续链通过后才能滚动活性采样窗口。两份样本采集时均须在各自owner cycle后30秒内，cycle严格递增且间隔不超过30秒，最终身份核验后最新样本仍须在30秒内；不接受任意旧基线。原120/240秒局部预算、600秒总预算及计划期限不延长。
 若owner检查后在完整快照采样前刚超过30秒，仅专用`ReceivingCycleStale`进入上述等待；未来时间、无效时间及任何完整性异常仍立即失败，已形成的快照仍必须通过连续前缀校验。
 接收等待先快速采样owner真实就绪，形成完整候选后重证Session、owner、身份及最新时效；Live正常poll暂时not_ready不清除已验证基线，也不授予就绪。
-完整候选只在最新30秒、原预算及权威Session/民用日/06:00和18:00边界内做最多1秒的真实就绪短轮询；不缓存或合成ready。控制器预算中断与来源校验错误分别保留，不把预算回调异常改写为来源冲突。
+完整候选只在最新30秒、原预算及权威Session/民用日/06:00和18:00边界内，在最多5秒内发起最多25次真实就绪重读；单次读取完成后仍须校验时效与预算。前后均须读到同一进程真实ready，不缓存或合成ready。进程身份变化清除旧候选，保留跨进程的输入/ACK连续性校验，重新取得同一进程的两个新鲜接收轮；换进程与样本过期同时发生也不得回填旧候选。局部120/240秒及总预算不延长。控制器预算中断与来源校验错误分别保留，不把预算回调异常改写为来源冲突。
 原cohort Feed关闭已完整证明后，若其正常恢复仅启动同代消费者、以明确intake READY_TIMEOUT停驻且Feed未启动，可复用`reconcile-stopped`生成新鲜停止确认。原close和失败normal的公共/私有plan、state、receipt逐字绑定，额外effect或未决记录拒绝；已闭合历史仅通过原生typed闭合证明排除。该确认不表示旧失败成功，也不执行启动；后续仍为独立的既有stopped恢复计划。
 若该恢复已经完成合法schema2 intake并启动精确Feed，仅在只读verified阶段以已知控制/接收错误停驻，则同一入口可确认`feed_state=parked`，不能把它当作已退出。必须显式`plan --stopped-confirmation <确认> --close-feed-only`并单次执行原生关闭；取得完整PID退出/锁/双前缀关闭回执后，再以同一确认及`--feed-close-plan <关闭计划>`生成普通stopped恢复计划。关闭结果不明、额外effect/unknown、来源或身份漂移均阻断，旧记录不改写。
 同一停止确认入口也接受严格的定时注册失败前缀：恰有consumers/intake/feed/verified四项完成效果，两个接收证明及verified完整且有效，失败恰为calendars阶段的REDACTED/COHORT_FORWARD_STEP_FAILED。原失败仍UNKNOWN；只有当前四个定时定义均absent、全部owner停驻、保护前像与数据/ACK前缀及pending检查仍通过时才可生成新停止确认。任何已加载定时定义、新盘后状态/历史漂移、额外效果或缺失证明均拒绝，不重放原计划，也不推断过去未发生副作用；后续沿用单次关闭Feed和独立同代恢复。
