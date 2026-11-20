@@ -1,6 +1,6 @@
 11/20 09:18 第一批正式服务恢复完成。v1.16.144 控制器（PR669，`c9ec259b9e08b663c7491d47a95c855e1afee7be`）执行同代恢复，计划 `d3d0d19548b2f7d95ecdd928cb8b5b8966a65828c6ffe5d0edc9ed471eebafd2` 返回 recovered，原生回执 SHA256 `2fab0f9854801552a8f8e5171db4e90ec50de1e3685555019880592799773854` 与现场文件一致。11 项正式绑定均 matched，服务继续运行 v1.16.141 / generation 94，Web/API/Runtime HTTP 检查通过，原定时任务已注册。原发布与恢复失败记录保留。
 
-09:00 开盘未赶上恢复。实际已确认 09:16 的 1m 行情覆盖 60/60 品种，Alert 进程已有新鲜心跳，规则覆盖仍有 evaluation_failed。上午恢复前的缺口留待 11:30 后单独查询米筐并核对，不能以历史数据代替本机观察原件。236 路参考交易退役仍暂停，未消耗生产 business claim。
+09:00 开盘未赶上恢复。实际已确认 09:16–09:20 的 1m 每根均覆盖 60/60，09:20 的 5m 也覆盖 60/60。Alert 进程心跳新鲜；09:20:29 现场共 76 路 evaluation_failed，其中 60 路 5m 为 MARKET_READ_WINDOW_INCOMPLETE。上午恢复前的缺口留待 11:30 后单独查询米筐并核对，不能以历史数据代替本机观察原件。236 路参考交易退役仍暂停，未消耗生产 business claim。
 
 11/20 08:35 现场恢复进行中，尚未执行236路区间退役。v1.16.141（PR666/exact `e956d84277706fbe1e0ce82bad114deca2fcfabf`）已原生CAS至11服务generation94，但cohort `36a6b95e…`在verified以COHORT_NEW_READY_TIMEOUT保护停驻；原attempt保持outcome_unknown。单次关闭Feed `b77734dd…`成功feed_closed；其后同代恢复 `e9f0bed2…`在intake超时，仅consumers效果、Feed未启动，原件保持。原生只读证明四分区ACK均追到tail，未接收0条、容量38,186,704/6,442,450,944，不将其归为积压或数据损坏。
 
