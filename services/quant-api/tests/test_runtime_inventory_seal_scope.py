@@ -1,6 +1,7 @@
 """A stopped inventory may share seal reads only within its own verification."""
 
 from types import SimpleNamespace
+from collections import Counter
 import subprocess
 
 import pytest
@@ -143,3 +144,63 @@ def test_scope_exit_rejects_release_identity_drift(tmp_path, historical_release,
                 git("tag", "-f", identity["tag"], "HEAD")  # Convert to lightweight.
             else:
                 (repo / "source.py").write_text("revision = 2\n")
+
+
+def direct_history_inventory(tmp_path, monkeypatch, historical_release, change=lambda: None):
+    from app import runtime_bindings, runtime_repository
+
+    repo, identity, _ = historical_release
+    runtime = tmp_path / "runtime"
+    runtime.mkdir(mode=0o700)
+    (runtime / "cohort-forward-recoveries").mkdir(mode=0o700)
+
+    def verify_closed(host, entries):
+        for _ in range(3):
+            runtime_bindings.verify_release(repo, identity["tag"], identity["commit"])
+            assert runtime_repository.repository_common_dir(repo) == repo / ".git"
+        change()
+        return set()
+
+    monkeypatch.setattr(stopped.recovery, "_closed_predecessors", verify_closed)
+    return lambda: stopped._inventory(SimpleNamespace(directory=runtime), set())
+
+
+def test_direct_git_reads_execute_twice_in_each_inventory(
+    tmp_path, monkeypatch, historical_release
+):
+    from app import runtime_bindings
+
+    run = direct_history_inventory(tmp_path, monkeypatch, historical_release)
+    reads = Counter()
+    native = runtime_bindings._git_uncached
+
+    def count(root, *args):
+        reads[(root, args)] += 1
+        return native(root, *args)
+
+    monkeypatch.setattr(runtime_bindings, "_git_uncached", count)
+    repo, _, _ = historical_release
+    for expected in (2, 4):
+        run()
+        assert reads[(repo, ("rev-parse", "HEAD"))] == expected
+        assert reads[(repo, ("rev-parse", "--path-format=absolute", "--git-common-dir"))] == expected
+        assert set(reads.values()) == {expected}
+
+
+@pytest.mark.parametrize("drift", ["tag", "source"])
+def test_direct_git_result_drift_is_rejected_before_inventory_returns(
+    tmp_path, monkeypatch, historical_release, drift
+):
+    from app.runtime_bindings import RuntimeBindingError
+
+    repo, identity, git = historical_release
+
+    def change():
+        if drift == "tag":
+            git("tag", "-f", identity["tag"], "HEAD")
+        else:
+            (repo / "source.py").write_text("revision = 2\n")
+
+    run = direct_history_inventory(tmp_path, monkeypatch, historical_release, change)
+    with pytest.raises(RuntimeBindingError, match="RELEASE_IDENTITY_INVALID"):
+        run()
