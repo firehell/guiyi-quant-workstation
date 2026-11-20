@@ -1,3 +1,9 @@
+11/20 08:35 现场恢复进行中，尚未执行236路区间退役。v1.16.141（PR666/exact `e956d84277706fbe1e0ce82bad114deca2fcfabf`）已原生CAS至11服务generation94，但cohort `36a6b95e…`在verified以COHORT_NEW_READY_TIMEOUT保护停驻；原attempt保持outcome_unknown。单次关闭Feed `b77734dd…`成功feed_closed；其后同代恢复 `e9f0bed2…`在intake超时，仅consumers效果、Feed未启动，原件保持。原生只读证明四分区ACK均追到tail，未接收0条、容量38,186,704/6,442,450,944，不将其归为积压或数据损坏。
+
+已恢复8处被历史闭包引用且无封存替代的exact源码（v113/117/118/119/120/124/127/128），仅供原生审计、不启动旧服务；保留原父目录宿主marker及所有旧回执。这些路径不能因无当前服务绑定就直接清理。v142恢复控制器（PR667/exact `fd13e782fbb525c029f3dc72094be6bd145744d9`）已发布，修正有界真实ready重读与跨owner候选拼接，局部/总预算及30秒输入时效不变；干净副本231 passed，独立9项边界回归通过，API/Web构建、Ruff/diff/secret通过。不会把控制器版本当作服务版本。e9停止确认`14857a78…`已原生生成，正准备受测控制器的同代恢复；business claim尚未消费，JD/日周、快期及Paper不在退役范围。
+
+以下为此前检查点：
+
 11/19 v1.16.140代码已发布：PR665合并main，annotated tag/GitHub Release精确绑定`65dd7c856c8bc42e325e33e82c64d2dbd953fbfb`；源码实现`517ded0b8`。干净发布树`/Volumes/扩展盘/worktree/release-v116140/guiyi-quant-workstation`与受测源码tree完全一致，API/Core独立离线环境、API wheel/sdist、Web类型/生产构建、离线锁、Ruff/diff/secret检查通过；最终SQLite及真实隔离PostgreSQL目标集合155 passed（221.47秒），两项独立高风险Review通过。原有两处develop用户dirty未包含在提交或发布树。
 
 原生`--plan-cohort`现场返回`COHORT_REST_WINDOW_REQUIRED`，没有生成可执行切换或运行apply。23:49权威60品种Session读回49 CLOSED/11 TRADING，最晚当前Session于11/20 02:30 CST结束，之后仍须现场通过grace与距下次开盘660秒条件。正式11服务仍全部matched/exact v1.16.139/gen93，API/Web/Runtime HTTP通过；未重启快期或共享Paper，未执行236路生产退役，未消耗本次business claim。唯一下一步是在有效休市窗口重新生成原生cohort计划并切换，再单独停驻Reference执行固定库存的一次性退役及独立读回。发布代码不等于生产退役或新流预热完成。
