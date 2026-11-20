@@ -244,9 +244,10 @@ def valid_plan(plan):
 
 
 def _inventory(host, allowed, *, own=None):
+    from app.runtime_bindings import inventory_git_reads
     from app.runtime_retirement import inventory_history_reads
 
-    with inventory_history_reads(host.directory):
+    with inventory_git_reads(), inventory_history_reads(host.directory):
         _inventory_checked(host, allowed, own=own)
 
 

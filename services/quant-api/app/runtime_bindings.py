@@ -1,6 +1,8 @@
 """Exact per-service Runtime authority. No credentials or configuration are read."""
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import InitVar, asdict, dataclass
 import fcntl
 import hashlib
@@ -17,6 +19,7 @@ from app.runtime_contracts import SERVICES
 
 CONTRACTS = frozenset({"db", "live", "input", "formula", "reference", "launcher"})
 _HISTORY_CAPABILITY = object()
+_INVENTORY_GIT_READS = ContextVar("inventory_git_reads", default=None)
 
 
 class RuntimeBindingError(ValueError):
@@ -235,7 +238,34 @@ def pinned_release_roots(*, home: Path | None = None) -> frozenset[Path]:
     return frozenset() if registry is None else frozenset(Path(item.root) for item in registry.services.values())
 
 
+@contextmanager
+def inventory_git_reads():
+    """Repeat each distinct historical Git check before an inventory is accepted."""
+    results = {}
+    token = _INVENTORY_GIT_READS.set(results)
+    try:
+        yield
+        for (root, arguments), expected in results.items():
+            if _git_uncached(root, *arguments) != expected:
+                raise RuntimeBindingError("RELEASE_IDENTITY_INVALID")
+    finally:
+        _INVENTORY_GIT_READS.reset(token)
+
+
 def _git(root: Path, *arguments: str) -> str:
+    results = _INVENTORY_GIT_READS.get()
+    read_only = arguments[:1] in {
+        ("rev-parse",), ("cat-file",), ("status",),
+    } or arguments[:2] == ("config", "--get")
+    if results is None or not read_only:
+        return _git_uncached(root, *arguments)
+    key = (root, arguments)
+    if key not in results:
+        results[key] = _git_uncached(root, *arguments)
+    return results[key]
+
+
+def _git_uncached(root: Path, *arguments: str) -> str:
     try:
         result = subprocess.run(["/usr/bin/git", "-c", "core.fsmonitor=false", *arguments],
                                 cwd=root, capture_output=True, text=True, timeout=15, check=True)
