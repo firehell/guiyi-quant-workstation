@@ -24,6 +24,9 @@ Newow 的 snapshot token、重型门禁与在途去重都由该进程持有；�
 # 已加载进程 commit 身份与本地 HTTP/Runtime health
 ./scripts/ops/macos/local-services-status.sh
 
+# Mac：读回历史审计、行情、提醒、苏冰共享 Paper 和快期的业务状态
+./scripts/ops/macos/local-services-status.sh --business
+
 # Mac：本地端口与 FRPC
 ./scripts/ops/network/local-tunnel-healthcheck.sh
 
@@ -39,6 +42,13 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 未认证公网检查预期 HTTP 401；提供 Basic Auth 后，页面/API 预期 200，
 `/api/v1/market/ws` WebSocket Upgrade 预期 101。
+
+业务状态从本机既有只读 API 读取，每项独立展示范围、当前进度、受阻原因和可证明的最后成功。
+历史研究行使用独立的周度全历史审计，行情行保留实时覆盖和盘后发布两项进度，提醒行分别列计算成功与服务商接收时间。
+苏冰 Paper 使用已提交观察和组合序号，快期只有当前账户读回经核验时才列入最后成功，并保留范围退出、待处理委托和资金预留的计数。
+字段为空表示现有来源没有对应证据，例如周度审计仅保留当前尝试、过期快期读回无法确认账户，或苏冰尚无正式 run。
+可以附加 `--research-result /absolute/result.json` 检查 `subing_exit_comparison.py` 已完成的三品种或十四品种历史 A/B 回放结果。
+`offline_replay` 单列结果文件的可读性、范围与字节摘要。它不受实时 API 断连影响，周度历史数据审计状态仍来自既有 Runtime 来源。
 
 ## 发布工作树存储
 
@@ -73,6 +83,9 @@ SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.rele
 共享 `run-local-service.sh` 只做稳定分派，业务 launcher 保留在各自发布树。普通发布不覆盖共享分派器。
 API/Web 配套影响；未知依赖按全服务受影响。v1 对共享合同只接受内容指纹相等，不能证明兼容时阻止混合版本。
 所有已启用服务都参加兼容检查，即使它们全部在本次受影响集合中，也不默许顺序制造未知混合版本。
+
+纯离线研究在隔离环境验证，无需停启运行服务。共享合同兼容的独立消费者改动使用下方 `--plan-release`，以计划中的受影响服务、预检与交接证明为准。
+共享合同不能与现有消费者并行时，使用[休市窗口整组发布](#休市窗口整组发布)的 `--plan-cohort`。
 
 安装器的四个新入口在 legacy render/mutation 之前分派（计划文件需当前用户独占 0600）：
 

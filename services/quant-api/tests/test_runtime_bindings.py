@@ -60,6 +60,11 @@ def test_present_invalid_registry_never_falls_back(tmp_path, defect):
     ("services/quant-api/app/routers/ordinary.py", ["api", "web"], False),
     ("services/quant-api/app/runtime_contracts.py", ["alert", "api", "live", "web"], True),
     ("unknown-dependency.txt", ["alert", "api", "live", "web"], False),
+    ("scripts/research/subing-replay.sh", [], False),
+    ("scripts/research/subing_exit_comparison.py", [], False),
+    ("scripts/research/subing_trade_report.py", [], False),
+    ("scripts/research/subing_model_facts.py", ["alert", "api", "live", "web"], False),
+    ("scripts/research/unknown_consumer.py", ["alert", "api", "live", "web"], False),
     ("packages/quant-core/formula.py", ["alert", "api", "web"], True),
     ("scripts/ops/macos/run-local-service.sh", ["alert", "api", "live", "web"], True),
     ("services/quant-api/app/market_data/market_feed.py", ["alert", "api", "live", "web"], True),
@@ -91,7 +96,9 @@ def test_readonly_plan_freezes_impact_and_contracts(tmp_path, change_path, expec
     commit = git("rev-parse", "HEAD")
     candidate = tmp_path / "candidate"
     git("worktree", "add", "--detach", str(candidate), "HEAD")
-    (candidate / change_path).write_text("new content\n")
+    changed = candidate / change_path
+    changed.parent.mkdir(parents=True, exist_ok=True)
+    changed.write_text("new content\n")
     def candidate_git(*args):
         return subprocess.run(["/usr/bin/git", "-c", "core.fsmonitor=false", *args], cwd=candidate,
                               check=True, capture_output=True, text=True).stdout.strip()
@@ -103,8 +110,10 @@ def test_readonly_plan_freezes_impact_and_contracts(tmp_path, change_path, expec
                               True, contract_fingerprints(root)) for service in ("api", "web", "live", "alert")})
     plan = build_release_plan(registry, candidate_root=candidate, tag="v1.2.4",
                               commit=candidate_git("rev-parse", "HEAD"))
+    assert plan["readonly"] is True
     assert plan["status"] == ("blocked" if blocked else "ready")
     assert plan["affected_services"] == expected
+    assert {reason["code"] for reason in plan["blocked"]} == ({"MIXED_CONTRACT_INCOMPATIBLE"} if blocked else set())
     if change_path == "apps/web/main.ts":
         assert plan["fingerprints"]["live"]["previous"] == plan["fingerprints"]["live"]["candidate"]
     (candidate / "untracked").write_text("dirty")

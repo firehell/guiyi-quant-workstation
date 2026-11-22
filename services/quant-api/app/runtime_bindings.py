@@ -290,6 +290,13 @@ def verify_release(root: Path, tag: str, commit: str) -> None:
 # Conservative file classification is frozen in this version. Unknown changes affect all services.
 ALL = SERVICES
 BUSINESS = frozenset({"api", "live", "market-feed", "alert", "reference-worker", "after-market", "weekly-audit", "late-provider-recovery", "home-projection"})
+OFFLINE_RESEARCH = frozenset({
+    "scripts/research/subing-replay.sh",
+    "scripts/research/subing_exit_comparison.py",
+    "scripts/research/subing_portfolio_replay.py",
+    "scripts/research/subing_research_diagnostics.py",
+    "scripts/research/subing_trade_report.py",
+})
 
 
 def _owners(path: str) -> frozenset[str]:
@@ -301,7 +308,7 @@ def _owners(path: str) -> frozenset[str]:
         return frozenset({"api"})
     if path.startswith("services/quant-api/app/market_data/"):
         return BUSINESS
-    if path.startswith(("services/quant-api/tests/", "tests/", "docs/", "openspec/")) or path.endswith(".md"):
+    if path in OFFLINE_RESEARCH or path.startswith(("services/quant-api/tests/", "tests/", "docs/", "openspec/")) or path.endswith(".md"):
         return frozenset()
     return ALL
 
