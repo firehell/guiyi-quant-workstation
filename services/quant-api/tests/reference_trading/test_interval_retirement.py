@@ -93,6 +93,64 @@ def plan_for(service, ids):
     return service.plan(ids, recording_start=CUT, expires_at=NOW+timedelta(minutes=30), now=NOW)
 
 
+@pytest.mark.parametrize("original_recovered", [False, True])
+def test_jd_incident_preserves_originals_or_rejects_recovered_bar(
+        transition_engine, monkeypatch, original_recovered):
+    factory, pairs = source_fixture(transition_engine, current=True, product="jd",
+                                    opened_codes={"trend", "dual_fusion"})
+    ids = [pair[0] for pair in pairs]
+    inbox = ReferenceInboxRepository(factory)
+
+    def jd_event(identifier, end):
+        original = event(identifier, end=end)
+        return replace(original, channel="live:bar:jd:60m",
+                       data={**original.data, "contract": "JD2701"})
+
+    for offset in range(4):
+        observed = jd_event(f"{110 + offset}-0", NOW - timedelta(minutes=5 - offset))
+        receipt = inbox.ingest(observed, ingested_at=NOW)
+        assert len(receipt.delivery_ids) == 4
+    inventory = dict(kind="READ_ONLY_INVENTORY_NOT_EXECUTION_PLAN", affected_scope=[])
+    with factory() as db:
+        for sid in ids:
+            row = db.get(ReferenceStream, sid)
+            revision = db.get(ReferenceRevision, (sid, row.active_revision_id))
+            batch = db.get(ReferenceBatch, revision.checkpoint_batch_id)
+            inventory["affected_scope"].append(dict(
+                stream_id=sid, product="jd", frequency="60m", revision=revision.revision_id,
+                generation=row.activation_generation, row_version=row.row_version,
+                checkpoint_id=batch.batch_id, checkpoint_sha256=batch.post_state_hash,
+                open_count=int(row.strategy_code in {"newow_trend", "newow_dual_fusion"}),
+                deliveries=module._jd_originals(db, module._deliveries(db, (sid,), active=True)[sid]),
+            ))
+    raw = json.dumps(inventory, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    monkeypatch.setattr(module, "JD_INVENTORY_SHA256", sha256(raw).hexdigest())
+    inbox.mark_blocked(inventory["affected_scope"][0]["deliveries"][0]["delivery_id"],
+                       "OBSERVATION_GAP", at=NOW + timedelta(seconds=1))
+    service = module.NewowIntervalRetirement(factory, inventory=inventory, jd=True,
+        first_endpoint=lambda db, product, cut: dict(product=product, bar_end=cut.isoformat(),
+            trading_day=str(cut.date()), metadata_sha256="c" * 64),
+        assert_fenced=lambda: None, clock=lambda: NOW)
+    plan = plan_for(service, ids)
+    if original_recovered:
+        inbox.ingest(jd_event("120-0", module.JD_MISSING_H1), ingested_at=NOW)
+        with pytest.raises(RepositoryConflict, match="INTERVAL_RETIREMENT_ORIGINAL_FOUND"):
+            service.apply(plan, expected_plan_hash=plan["plan_hash"], now=NOW)
+        assert service.status(plan) is None
+        return
+    outcome = service.apply(plan, expected_plan_hash=plan["plan_hash"], now=NOW)
+    assert outcome == service.status(plan)
+    assert outcome["retired_originals"] == 16
+    with factory() as db:
+        assert len(module.retired_interval_delivery_ids(db)) == 16
+        assert db.scalar(select(func.count()).select_from(ReferenceStream)
+                         .where(ReferenceStream.enabled.is_(True))) == 4
+        trades = db.scalars(select(ReferenceTradeRow).where(
+            ReferenceTradeRow.status == "OBSERVATION_INTERRUPTED")).all()
+        assert len(trades) == 2
+        assert all(trade.exit_reference_price is None and trade.reference_return is None for trade in trades)
+
+
 def test_full_atomic_retirement_preserves_originals_and_real_market_progress(transition_engine, monkeypatch):
     factory, service, ids = scenario(transition_engine, monkeypatch)
     repo = ReferenceRepository(factory)

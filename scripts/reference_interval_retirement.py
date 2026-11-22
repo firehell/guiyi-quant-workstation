@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Execute/read back the owner-approved Nov-19 Newow interval retirement once.
+"""Execute or read back one approved Newow interval retirement.
 
 Only Reference is drained. Feed, Live, Alert and both model accounts are untouched.
 Failure after an uncertain commit leaves the writer parked for exact readback.
 """
 import argparse
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -72,13 +72,13 @@ def cancel_owned(directory, binding, request_id):
             time.sleep(0.2)
 
 
-def business_claim_path():
+def business_claim_path(inventory_sha256=None):
     from app.reference_trading.interval_retirement import INVENTORY_SHA256
     root = Path.home()/'Library/Application Support/GuiyiQuant/reference-interval-retirement-attempts'
     root.mkdir(mode=0o700, exist_ok=True)
     if root.resolve(strict=True) != root or root.stat().st_mode & 0o077:
         raise RuntimeError('INTERVAL_RETIREMENT_CLAIM_UNSAFE')
-    return root/(INVENTORY_SHA256+'.json')
+    return root/((inventory_sha256 or INVENTORY_SHA256)+'.json')
 
 
 def validate_prior_handover(handover, generation):
@@ -98,6 +98,61 @@ def validate_prior_handover(handover, generation):
     if (handover['generation'] > generation or
             handover['generation'] == generation and handover['phase'] == 'drain'):
         raise RuntimeError('INTERVAL_RETIREMENT_OWNER_BUSY')
+
+
+def check_jd_original_absent():
+    from app.market_data.observation_stream import DAILY_LIMIT, ObservationStream
+    from app.redis_connections import get_redis_connection
+    from app.reference_trading.interval_retirement import JD_MISSING_H1
+
+    redis = get_redis_connection()
+    try:
+        journal = ObservationStream(redis, kind='completed')
+        day = JD_MISSING_H1.date()
+        tail = journal.tail(day)
+        if (tail == '0-0' or journal.registered_day('reference') <= day
+                or journal.cursor('reference', day) != tail):
+            raise RuntimeError('INTERVAL_RETIREMENT_ORIGINAL_INPUT_UNPROVEN')
+        after = '0-0'
+        count = 0
+        while after != tail:
+            events = journal.read('reference', day, count=min(DAILY_LIMIT, 1024),
+                                  after=after, through=tail)
+            if not events:
+                raise RuntimeError('INTERVAL_RETIREMENT_ORIGINAL_INPUT_UNPROVEN')
+            count += len(events)
+            if count > DAILY_LIMIT:
+                raise RuntimeError('INTERVAL_RETIREMENT_ORIGINAL_INPUT_UNPROVEN')
+            for event in events:
+                if (event.channel == 'live:bar:jd:60m'
+                        and datetime.fromisoformat(event.data['bar_end']) == JD_MISSING_H1):
+                    raise RuntimeError('INTERVAL_RETIREMENT_ORIGINAL_FOUND')
+            after = events[-1].stream_id
+        if (journal.registered_day('reference') <= day or journal.tail(day) != tail
+                or journal.cursor('reference', day) != tail):
+            raise RuntimeError('INTERVAL_RETIREMENT_ORIGINAL_INPUT_UNPROVEN')
+        return day, tail
+    finally:
+        redis.close()
+
+
+def check_jd_journal_witness(day, tail):
+    from app.market_data.observation_stream import ObservationStream
+    from app.redis_connections import get_redis_connection
+    redis = get_redis_connection()
+    try:
+        journal = ObservationStream(redis, kind='completed')
+        if (journal.registered_day('reference') <= day or journal.tail(day) != tail
+                or journal.cursor('reference', day) != tail):
+            raise RuntimeError('INTERVAL_RETIREMENT_ORIGINAL_INPUT_UNPROVEN')
+    finally:
+        redis.close()
+
+
+def jd_session_deadline(factory, now):
+    from app.market_data.operational_universe import load_operational_products
+    from reference_history_maintenance import session_deadline
+    return session_deadline(factory, load_operational_products(), now=now)
 
 
 @contextmanager
@@ -137,6 +192,7 @@ def main():
     parser.add_argument('--exact-root', required=True, type=Path)
     parser.add_argument('--exact-commit', required=True)
     parser.add_argument('--inventory', required=True, type=Path)
+    parser.add_argument('--jd-20261120', action='store_true')
     parser.add_argument('--plan', required=True, type=Path)
     parser.add_argument('--attempt', type=Path)
     parser.add_argument('--expected-plan-hash')
@@ -154,11 +210,13 @@ def main():
     if SessionLocal.kw['bind'].dialect.name != 'postgresql':
         raise RuntimeError('INTERVAL_RETIREMENT_POSTGRES_REQUIRED')
     from app.reference_trading.interval_retirement import (
-        INVENTORY_SHA256, NewowIntervalRetirement,
+        INVENTORY_SHA256, JD_INVENTORY_SHA256, NewowIntervalRetirement,
     )
     from app.reference_trading.recovery_campaign import write_once, AttemptProgress
     raw = read_private_settings_content(args.inventory)
-    if sha256(raw).hexdigest() != INVENTORY_SHA256:
+    inventory_sha256 = JD_INVENTORY_SHA256 if args.jd_20261120 else INVENTORY_SHA256
+    stream_count = 4 if args.jd_20261120 else 236
+    if sha256(raw).hexdigest() != inventory_sha256:
         raise RuntimeError('INTERVAL_RETIREMENT_INVENTORY_HASH')
     inventory = json.loads(raw)
     if args.phase == 'readback':
@@ -170,18 +228,22 @@ def main():
         # No owner acquisition, drain or write in the readback path.
         with SessionLocal() as db, readonly_transaction(db, timeout_seconds=120):
             service = NewowIntervalRetirement(lambda: _BorrowedSession(db), inventory=inventory,
-                first_endpoint=None, assert_fenced=lambda: None)
+                first_endpoint=None, assert_fenced=lambda: None, jd=args.jd_20261120)
             result = service.status(plan)
         print(json.dumps(dict(result=result)))
         return
     if args.attempt is None or args.expected_plan_hash is not None or args.plan.exists():
         raise RuntimeError('INTERVAL_RETIREMENT_NEW_ATTEMPT_REQUIRED')
-    claim = business_claim_path()
+    claim = business_claim_path(inventory_sha256) if args.jd_20261120 else business_claim_path()
     if claim.exists():
         raise RuntimeError('INTERVAL_RETIREMENT_CLAIM_CONSUMED_READBACK_ONLY')
-    progress = AttemptProgress(args.attempt, plan_hash=INVENTORY_SHA256)
+    progress = AttemptProgress(args.attempt, plan_hash=inventory_sha256)
     request_id, safe_to_resume = None, False
     try:
+        if args.jd_20261120:
+            preflight_at = datetime.now(UTC)
+            if jd_session_deadline(SessionLocal, preflight_at) <= preflight_at + timedelta(minutes=10):
+                raise RuntimeError('INTERVAL_RETIREMENT_SESSION_WINDOW_SHORT')
         with deployment_lock(runtime_dir=directory):
             current = resolve_service_binding('reference-worker')
             if current != binding:
@@ -200,25 +262,39 @@ def main():
                 runtime_dir=directory, before_install=before_drain)
         wait_phase(directory, binding, 'parked')
         safe_to_resume = True
-        with resources(directory, binding, config_hash, request_id) as (factory, first, fence):
+        with ExitStack() as stack:
+            factory, first, fence = stack.enter_context(resources(directory, binding, config_hash, request_id))
             now = datetime.now(UTC)
+            expiry = now + timedelta(minutes=30)
+            if args.jd_20261120:
+                from app.market_data.live_recovery_guard import after_market_recovery_guard
+                stack.enter_context(after_market_recovery_guard())
+                deadline = jd_session_deadline(factory, now)
+                expiry = min(expiry, deadline)
+                witness = check_jd_original_absent()
+                base_fence = fence
+
+                def fence():
+                    base_fence()
+                    check_jd_journal_witness(*witness)
+
             service = NewowIntervalRetirement(factory, inventory=inventory,
-                first_endpoint=first, assert_fenced=fence)
+                first_endpoint=first, assert_fenced=fence, jd=args.jd_20261120)
             plan = service.plan(tuple(service.inventory), recording_start=now+timedelta(minutes=45),
-                expires_at=now+timedelta(minutes=30), now=now)
+                expires_at=expiry, now=now)
             write_once(args.plan, plan)
             if read_plan(args.plan) != plan:
                 raise RuntimeError('INTERVAL_RETIREMENT_PLAN_READBACK')
             progress.record('plan_frozen', plan_hash=plan['plan_hash'])
             # Fixed incident-wide claim: changing --attempt or --plan paths
             # never authorizes another business invocation after unknown writes.
-            write_once(claim, dict(inventory_sha256=INVENTORY_SHA256,
+            write_once(claim, dict(inventory_sha256=inventory_sha256,
                 plan_hash=plan['plan_hash'], attempt=str(args.attempt),
                 runtime_commit=args.exact_commit, binding=asdict(binding), request_id=request_id))
             progress.record('apply_intent', plan_hash=plan['plan_hash'])
             safe_to_resume = False
             result = service.apply(plan, expected_plan_hash=plan['plan_hash'], now=datetime.now(UTC))
-            if result != service.status(plan) or len(result['retired']) != 236:
+            if result != service.status(plan) or len(result['retired']) != stream_count:
                 raise RuntimeError('INTERVAL_RETIREMENT_READBACK_FAILED')
             retired_count = result['retired_originals']
             progress.record('committed', result=result)
@@ -229,7 +305,7 @@ def main():
             wait_phase(directory, binding, 'active')
             progress.record('complete')
             print(json.dumps(dict(status='COMMITTED', plan_hash=plan['plan_hash'],
-                                  retired_streams=236, retired_originals=retired_count)))
+                                  retired_streams=stream_count, retired_originals=retired_count)))
     except BaseException:
         try:
             progress.record('stopped', safe_to_resume=safe_to_resume, request_id=request_id)

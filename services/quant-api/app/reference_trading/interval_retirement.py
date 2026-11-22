@@ -33,6 +33,8 @@ from guiyi_quant.reference_trading.strategy_checkpoint import (
 )
 
 INVENTORY_SHA256 = "f9a665381ade5a0523ab40b171519d87a42ea7a0983d540b791bcfaa659c40ad"
+JD_INVENTORY_SHA256 = "c5655b04956064f727a0a652ccecabde98ad294d63ac070abbe4e135cd5b859b"
+JD_MISSING_H1 = datetime(2026, 11, 20, 2, tzinfo=UTC)
 HEALTH = "INTERVAL_RETIRED"
 PREFIX = RETIREMENTS[HEALTH][1]
 MAX_DELIVERIES = 120000
@@ -89,6 +91,16 @@ def _deliveries(db, stream_ids, *, active=False):
     return dict(result)
 
 
+def _jd_originals(db, deliveries):
+    # Approval binds immutable inputs and targets. The frozen, parked plan
+    # separately binds the full delivery state, including mutable diagnostics.
+    return [
+        {"delivery_id": row["delivery_id"], "input_id": row["input_id"],
+         "envelope_sha256": db.get(ReferenceInboxInput, row["input_id"]).envelope_sha256}
+        for row in deliveries
+    ]
+
+
 class NewowIntervalRetirement(NewowH1Boundary):
     retired_health = HEALTH
     version, batch_prefix, reason, codes = RETIREMENTS[HEALTH]
@@ -96,18 +108,22 @@ class NewowIntervalRetirement(NewowH1Boundary):
     policy_version = H1_INTERVAL_POLICY
 
     def __init__(self, factory, *, inventory, first_endpoint, assert_fenced,
-                 clock=lambda: datetime.now(UTC)):
+                 clock=lambda: datetime.now(UTC), jd=False):
         super().__init__(factory, assert_fenced=assert_fenced)
         require(inventory.get("kind") == "READ_ONLY_INVENTORY_NOT_EXECUTION_PLAN",
                 "INTERVAL_RETIREMENT_INVENTORY")
+        self.inventory_sha256 = JD_INVENTORY_SHA256 if jd else INVENTORY_SHA256
+        self.stream_count = 4 if jd else 236
         require(sha256(json.dumps(inventory, ensure_ascii=False, sort_keys=True,
-                separators=(',', ':')).encode()).hexdigest() == INVENTORY_SHA256,
+                separators=(',', ':')).encode()).hexdigest() == self.inventory_sha256,
                 "INTERVAL_RETIREMENT_INVENTORY_HASH")
         self.inventory = {v["stream_id"]: v for v in inventory["affected_scope"]}
-        require(len(self.inventory) == len(inventory["affected_scope"]) == 236 and
-                len({v["product"] for v in self.inventory.values()}) == 59 and
-                all(v["product"] != "jd" and v["frequency"] == "60m"
-                    for v in self.inventory.values()), "INTERVAL_RETIREMENT_SCOPE")
+        products = {v["product"] for v in self.inventory.values()}
+        require(len(self.inventory) == len(inventory["affected_scope"]) == self.stream_count
+                and all(v["frequency"] == "60m" for v in self.inventory.values())
+                and (products == {"jd"} if jd else len(products) == 59 and "jd" not in products),
+                "INTERVAL_RETIREMENT_SCOPE")
+        self.jd = jd
         self.first_endpoint, self.clock = first_endpoint, clock
 
     def _old(self, db, stream_id, *, lock=False):
@@ -133,11 +149,21 @@ class NewowIntervalRetirement(NewowH1Boundary):
             .order_by(ReferenceTradeRow.revision_id, ReferenceTradeRow.trade_id,
                       ReferenceTradeRow.valid_from_seq))])
         frozen["deliveries"] = _deliveries(db, (stream_id,), active=True).get(stream_id, [])
+        if self.jd:
+            require(_jd_originals(db, frozen["deliveries"]) == expected["deliveries"]
+                    and len(frozen["deliveries"]) == 4
+                    and int(reference.open_trade is not None) == expected["open_count"],
+                    "INTERVAL_RETIREMENT_INVENTORY_DRIFT")
         return frozen, data
 
     def _freeze(self, db, stream_ids, *, start, expiry, at):
-        require(set(stream_ids) == set(self.inventory) and len(stream_ids) == 236 and
+        require(set(stream_ids) == set(self.inventory) and len(stream_ids) == self.stream_count and
                 at < expiry <= start, "INTERVAL_RETIREMENT_SCOPE")
+        if self.jd:
+            require(not db.scalar(select(ReferenceInboxInput.input_id).where(
+                ReferenceInboxInput.product == "jd", ReferenceInboxInput.frequency == "60m",
+                ReferenceInboxInput.bar_end == JD_MISSING_H1,
+            ).limit(1)), "INTERVAL_RETIREMENT_ORIGINAL_FOUND")
         products = {v['product'] for v in self.inventory.values()}
         enabled = set(db.scalars(select(ReferenceStream.stream_id).where(
             ReferenceStream.enabled.is_(True), ReferenceStream.product.in_(products),
@@ -157,7 +183,7 @@ class NewowIntervalRetirement(NewowH1Boundary):
                 (ReferenceInboxDelivery.generation != row.activation_generation) |
                 (ReferenceInboxDelivery.activation_receipt_id != receipt.receipt_id),
             ).limit(1)), "INTERVAL_RETIREMENT_ROUTE_DRIFT")
-            frozen["deliveries"] = originals[sid]
+            require(frozen["deliveries"] == originals[sid], "INTERVAL_RETIREMENT_ORIGINAL_DRIFT")
             target = replace(identity, observation_policy_version=self.policy_version)
             require(db.get(ReferenceStream, target.stream_id) is None,
                     "INTERVAL_RETIREMENT_TARGET_EXISTS")
@@ -174,14 +200,14 @@ class NewowIntervalRetirement(NewowH1Boundary):
             bootstrap = dict(old_stream_id=sid, target_stream_id=target.stream_id,
                 expected_first_bar_end=first.isoformat(), expires_at=expiry.isoformat(),
                 host=receipt.host, environment=receipt.environment, budget=budget,
-                session_proof=endpoint, inventory_sha256=INVENTORY_SHA256)
+                session_proof=endpoint, inventory_sha256=self.inventory_sha256)
             items.append(dict(old=frozen, bootstrap={**bootstrap, "plan_hash": _hash(bootstrap)}))
         groups = defaultdict(set)
         for i in items:
             groups[i["old"]["stream"]["product"]].add(i["old"]["stream"]["strategy_code"])
         require(all(v == self.codes for v in groups.values()), "INTERVAL_RETIREMENT_SCOPE")
         body = dict(version=self.version, items=items, recording_start=start.isoformat(),
-                    expires_at=expiry.isoformat(), inventory_sha256=INVENTORY_SHA256)
+                    expires_at=expiry.isoformat(), inventory_sha256=self.inventory_sha256)
         return {**body, "plan_hash": _hash(body)}
 
     def _boundary_owner(self, batch, at):
@@ -210,7 +236,7 @@ class NewowIntervalRetirement(NewowH1Boundary):
             ReferenceBatch.stream_id == target.stream_id,
             ReferenceBatch.revision_id == target.active_revision_id,
             ReferenceBatch.kind == 'seed_chunk').order_by(ReferenceBatch.seed_chunk_index)).all()
-        return dict(interval_inventory=item["old"], inventory_sha256=INVENTORY_SHA256,
+        return dict(interval_inventory=item["old"], inventory_sha256=self.inventory_sha256,
                     target_seed_id=seed_id, target_seed_sha256=_hash(_immutable_row(seed)),
                     target_receipt_id=receipt.receipt_id,
                     target_receipt=_immutable_row(receipt),
@@ -231,7 +257,7 @@ class NewowIntervalRetirement(NewowH1Boundary):
         if not terminals:
             return None
         expected = {i['old']['stream']['stream_id'] for i in plan['items']}
-        require({b.stream_id for b in terminals} == expected and len(terminals) == 236,
+        require({b.stream_id for b in terminals} == expected and len(terminals) == self.stream_count,
                 'INTERVAL_RETIREMENT_PARTIAL_COMMIT')
         from app.reference_trading.inbox_recovery import verified_resolution_ids
         resolved = verified_resolution_ids(db, stream_ids=tuple(expected))
@@ -281,13 +307,17 @@ def retired_interval_delivery_ids(db, *, stream_ids=None, check_cancelled=lambda
         check_cancelled()
         row = db.get(ReferenceStream, batch.stream_id)
         proof = retired_proof(db, row)
-        require(proof is not None and proof['inventory_sha256'] == INVENTORY_SHA256 and
+        expected_inventory = JD_INVENTORY_SHA256 if row is not None and row.product == "jd" else INVENTORY_SHA256
+        require(proof is not None and proof['inventory_sha256'] == expected_inventory and
                 batch.computed_through is None and batch.observed_at is None and
                 not batch.projected_action_pks and
                 db.get(ReferenceRevision, (row.stream_id, row.active_revision_id)).checkpoint_batch_id == batch.batch_id and
                 batch.source_evidence[INTERVAL_VERSION] == {k:v for k,v in proof.items() if k != 'retired_seq'},
                 "INTERVAL_RETIREMENT_INVALID")
         old = proof['interval_inventory']
+        if row.product == "jd":
+            require(row.frequency == "60m" and len(old['deliveries']) == 4,
+                    "INTERVAL_RETIREMENT_INVALID")
         receipt_old = db.get(ReferenceActivationReceipt, old['receipt']['receipt_id'])
         require(receipt_old is not None and receipt_old.disabled_at is not None and
                 {**_row(receipt_old), 'disabled_at':old['receipt']['disabled_at']} == old['receipt'] and
@@ -344,7 +374,8 @@ def retired_interval_delivery_ids(db, *, stream_ids=None, check_cancelled=lambda
                 "INTERVAL_RETIREMENT_SEED_DRIFT")
         bootstrap = seed.dependency_manifest[INTERVAL_VERSION]
         require(_hash({k:v for k,v in bootstrap.items() if k != 'plan_hash'}) ==
-                bootstrap['plan_hash'] == proof['bootstrap_sha256'], 'INTERVAL_RETIREMENT_BOOTSTRAP_DRIFT')
+                bootstrap['plan_hash'] == proof['bootstrap_sha256']
+                and bootstrap['inventory_sha256'] == expected_inventory, 'INTERVAL_RETIREMENT_BOOTSTRAP_DRIFT')
         current_receipt = _immutable_row(receipt)
         require({**current_receipt, 'disabled_at':proof['target_receipt']['disabled_at']} ==
                 proof['target_receipt'] and

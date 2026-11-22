@@ -67,6 +67,32 @@ def test_private_plan_larger_than_settings_budget_roundtrips(cli, tmp_path):
     assert cli.read_plan(path) == plan
 
 
+@pytest.mark.parametrize("mode, code", [
+    ("old_registration", "INTERVAL_RETIREMENT_ORIGINAL_INPUT_UNPROVEN"),
+    ("found", "INTERVAL_RETIREMENT_ORIGINAL_FOUND"),
+    ("append_before_commit", "INTERVAL_RETIREMENT_ORIGINAL_INPUT_UNPROVEN"),
+])
+def test_jd_operator_requires_stable_advanced_journal(cli, monkeypatch, mode, code):
+    from app import redis_connections
+    from app.market_data import observation_stream
+
+    day = retirement.JD_MISSING_H1.date()
+    fake = SimpleNamespace(close=lambda: None, journal_tail="1-0")
+    row = SimpleNamespace(stream_id="1-0", channel="live:bar:jd:60m",
+        data={"bar_end": (retirement.JD_MISSING_H1 + timedelta(minutes=mode != "found")).isoformat()})
+    journal = SimpleNamespace(
+        tail=lambda _: fake.journal_tail, cursor=lambda *_: "1-0",
+        registered_day=lambda _: day + timedelta(days=mode != "old_registration"),
+        read=lambda *a, **kw: (row,),
+    )
+    monkeypatch.setattr(redis_connections, "get_redis_connection", lambda: fake)
+    monkeypatch.setattr(observation_stream, "ObservationStream", lambda *a, **kw: journal)
+    with pytest.raises(RuntimeError, match=code):
+        proof = cli.check_jd_original_absent()
+        fake.journal_tail = "2-0"
+        cli.check_jd_journal_witness(*proof)
+
+
 def test_existing_drain_remains_owned_by_original_caller(cli, tmp_path, monkeypatch):
     binding = SimpleNamespace(root=str(cli.ROOT), commit="c" * 40, generation=7, enabled=True)
     monkeypatch.setattr(runtime_bindings, "resolve_service_binding", lambda service: binding)
