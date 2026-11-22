@@ -359,6 +359,82 @@ class MarketReadService:
         self.assert_window_current(window)
         return window
 
+    def verify_retained_htdy_window(
+        self, identity: SeriesPageQuery, *, original, observations, missing_endpoints,
+    ) -> MarketReadWindow:
+        """Compare retained originals with today's verified Canonical H1 window.
+
+        This read-only comparison does not establish when Canonical context was
+        available. Do not use it to admit historical first-seen calculations.
+        """
+        from app.market_data.live_market import _bar_from_payload
+        from app.market_data.observation_stream import ObservationEnvelope
+        from guiyi_quant.reference_trading.htdy import CONTEXT_BARS
+        import json
+
+        def require(valid):
+            if not valid:
+                raise MarketReadWindowError("HTDY_RETAINED_WINDOW_UNPROVEN")
+
+        require(
+            identity.series_kind is SeriesKind.ACTUAL_DOMINANT
+            and identity.frequency is BarFrequency.H1
+            and identity.contract is None
+            and isinstance(original, ObservationEnvelope)
+            and original.confirmed_at is not None
+        )
+        cutoff = datetime.fromisoformat(original.data["bar_end"])
+        require(cutoff.tzinfo is not None)
+        page = self._market_data.query_alert_history_prefix(
+            replace(identity, before=cutoff + timedelta(microseconds=1), limit=CONTEXT_BARS)
+        )
+        bars = page.bars
+        require(len(bars) == CONTEXT_BARS and bars[-1].bar_end == cutoff)
+        contracts = tuple(
+            _resolved_contract_for_bar(identity.symbol, bar, page.resolved_contract_segments)
+            for bar in bars
+        )
+        expected = {bar.bar_end: (bar, contract) for bar, contract in zip(bars, contracts)}
+        require(len(expected) == CONTEXT_BARS)
+        missing = set(missing_endpoints)
+        require(len(missing_endpoints) == len(missing) == 1 and missing < expected.keys()
+                and cutoff not in missing)
+        channel = f"live:bar:{identity.symbol.lower()}:60m"
+        retained = {}
+        journal_ids = set()
+        for event in observations:
+            require(
+                isinstance(event, ObservationEnvelope)
+                and event.channel == channel
+                and bool(event.stream_id)
+                and (event.trading_day, event.stream_id) not in journal_ids
+                and event.notification_eligible
+                and event.confirmed_at is not None
+                and event.source_observed_at <= event.confirmed_at <= original.confirmed_at
+                and (event.raw_received_at is None or event.raw_received_at <= event.confirmed_at)
+            )
+            bar = _bar_from_payload(json.dumps(event.data, allow_nan=False))
+            require(
+                bar.trading_day == event.trading_day
+                and bar.bar_end < event.confirmed_at
+                and bar.bar_end not in retained
+                and expected.get(bar.bar_end) == (bar, event.data.get("contract"))
+            )
+            retained[bar.bar_end] = event
+            journal_ids.add((event.trading_day, event.stream_id))
+        require(
+            retained.keys() == expected.keys() - missing and retained.get(cutoff) == original
+        )
+        self._market_data.validate_actual_dominant_alert_window(
+            symbol=identity.symbol, frequency=identity.frequency,
+            trading_day=original.trading_day, current_contract=contracts[-1],
+            cutoff=cutoff, bars=bars, bar_contracts=contracts,
+        )
+        return MarketReadWindow(
+            identity.symbol, identity.series_kind.value, identity.frequency.value,
+            original.trading_day, contracts[-1], cutoff, bars, contracts,
+        )
+
     def _verified_live_bars(
         self,
         *,

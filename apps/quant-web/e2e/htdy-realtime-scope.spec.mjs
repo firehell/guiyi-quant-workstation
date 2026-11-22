@@ -18,7 +18,7 @@ for (const frequency of ['1m', '5m', '15m', '30m', '1d', '1w']) {
   test(`HTDY ${frequency} old link retains chart without realtime reads`, async ({ page }) => {
     const requests = await setup(page)
     await page.goto(address(frequency))
-    await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+    await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留指标图表。')).toBeVisible()
     await expect(page.locator('[data-detail-workspace="htdy"] .market-kline-stage')).toBeVisible()
     await expect(page.locator('.observed-records')).toHaveCount(0)
     await page.waitForTimeout(150)
@@ -30,11 +30,12 @@ test('HTDY 60m reads events, empty stream is explicit, then switching stops read
   const requests = await setup(page)
   await page.goto(address('60m'))
   await expect(page.locator('.observed-records')).toBeVisible()
-  await expect(page.getByText('尚无实时留存参考交易流', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: '快期模拟记录', exact: true })).toBeVisible()
+  expect(requests.every(url => !url.pathname.includes('/reference-trading/'))).toBe(true)
   await expect.poll(() => requests.filter(url => url.pathname.includes('/api/alerts/events')).length).toBeGreaterThan(0)
   expect(requests.every(url => url.searchParams.get('frequency') === '60m')).toBe(true)
   await page.goto(address('15m'))
-  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留指标图表。')).toBeVisible()
   const count = requests.length
   await page.waitForTimeout(150)
   expect(requests).toHaveLength(count)
@@ -62,7 +63,7 @@ test('HTDY SPA 60m → 15m → 60m rejects a delayed old Event response', async 
   await started
   const controls = page.getByRole('group', { name: '周期', exact: true })
   await controls.getByRole('button', { name: '15分钟', exact: true }).click()
-  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留指标图表。')).toBeVisible()
   release()
   await expect(page.locator('.observed-records')).toHaveCount(0)
   const before = requests.length

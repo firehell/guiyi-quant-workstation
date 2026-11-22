@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
 import { retainedReferenceFocus } from '@/utils/retainedReferenceFocus'
-import ObservedReferenceRecords from '@/components/market/detail/ObservedReferenceRecords.vue'
+import ObservedAlertRecords from '@/components/market/detail/ObservedAlertRecords.vue'
 import HtdySimulationRecords from './HtdySimulationRecords.vue'
 import type { HtdySimulationDisplayRecord } from '@/utils/htdySimulationMarkers'
 import { actualEventsToOwnedMarkers } from '@/utils/historicalSignalMerge'
@@ -83,7 +83,7 @@ onBeforeUnmount(() => { focusGeneration += 1; loader.dispose() })
     <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeWarmup.anchorTime.value" :identity-key="sourceIdentity" :focus-bar-end="selectedFocus ?? identity.focusBarEnd" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :historical-mode="true" :reference-callouts="executionCallouts" :markers="chartMarkers" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" @visible-from-change="visibleFrom = $event" @range-detector-result="rangeCount = $event.count" />
     </div>
     <HtdySimulationRecords v-if="realtimeEnabled" v-show="selectedSource==='simulation'" :product="identity.symbol" :bars="bars" :active="simulationEnabled" @records="simulationRecords=$event" @focus="focusObservation" />
-    <ObservedReferenceRecords v-if="realtimeEnabled && selectedSource==='signals'" strategy="htdy" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :series-kind="identity.seriesKind" :through="bars.at(-1)?.trading_day" :events="loader.events.value" :unavailable="loader.unavailable.value" @focus="focusObservation" />
+    <ObservedAlertRecords v-if="realtimeEnabled && selectedSource==='signals'" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :events="loader.events.value" :unavailable="loader.unavailable.value" @focus="focusObservation" />
     <p v-if="focusError" role="status">{{ focusError }}</p>
 
   </section>
