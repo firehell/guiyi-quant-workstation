@@ -26,7 +26,9 @@ from app.private_settings import load_private_readonly_settings
 from guiyi_quant.indicators import subing_range
 from guiyi_quant.indicators.subing_trend import initial_state, step
 from guiyi_quant.subing_decision import _wire
-from guiyi_quant.subing_one_lot import EXPANDED_PORTFOLIO_PRODUCTS, PORTFOLIO_PRODUCTS
+from guiyi_quant.subing_one_lot import (
+    EXPANDED_PORTFOLIO_PRODUCTS, PORTFOLIO_PRODUCTS, THREE_PRODUCT_RESEARCH,
+)
 from guiyi_quant.subing_one_lot.portfolio import Segment, replay
 from scripts.research.subing_account import load
 from scripts.research.subing_one_lot_stress import build_context, dump, hashes
@@ -170,10 +172,11 @@ def verify_schedule(market, product, item, since, through):
             raise ValueError("PORTFOLIO_SESSION_PLAN_CHANGED")
 
 
-def load_segments(facts_dir, *, compare_exits=False, diagnostics=False):
+def load_segments(facts_dir, *, compare_exits=False, diagnostics=False, research_scope=False):
     plan = json.loads((facts_dir / "plan.json").read_text())
     since, through = map(date.fromisoformat, plan["dates"])
-    products = next((scope for scope in (PORTFOLIO_PRODUCTS, EXPANDED_PORTFOLIO_PRODUCTS)
+    scopes = (THREE_PRODUCT_RESEARCH,) if research_scope else (PORTFOLIO_PRODUCTS, EXPANDED_PORTFOLIO_PRODUCTS)
+    products = next((scope for scope in scopes
                      if set(plan["products"]) == set(scope)), None)
     if products is None:
         raise ValueError("PORTFOLIO_PLAN_SCOPE_INVALID")

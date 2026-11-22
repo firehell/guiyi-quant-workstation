@@ -27,7 +27,9 @@ from app.market_data.product_taxonomy import load_product_taxonomy
 from app.private_settings import load_private_readonly_settings
 from app.subing_model.account import decode_execution
 from guiyi_quant.subing_decision import REGIME_PROFILE, _wire, direction_sign
-from guiyi_quant.subing_one_lot import EXPANDED_PORTFOLIO_PRODUCTS, HOUR_EXIT, RANGE_EXIT, build_engine
+from guiyi_quant.subing_one_lot import (
+    EXPANDED_PORTFOLIO_PRODUCTS, HOUR_EXIT, RANGE_EXIT, THREE_PRODUCT_RESEARCH, build_engine,
+)
 from guiyi_quant.subing_one_lot.portfolio import INITIAL_CASH, replay
 from scripts.research.subing_one_lot_stress import dump, hashes, sha, stressed
 from scripts.research.subing_portfolio_replay import load_hourly, load_segments
@@ -266,6 +268,7 @@ def portfolio_comparison(segments, products, fee, slip, profile, input_id):
         observed_range = Counter()
         held = {}
         position_marks = {}
+        sparse_actions = {}
         shanghai = ZoneInfo('Asia/Shanghai')
 
         def batch(book):
@@ -297,25 +300,39 @@ def portfolio_comparison(segments, products, fee, slip, profile, input_id):
                 stats['sessions'].add((mark.bar.trading_day, mark.bar.session_open_at))
             for side, count in positions.items():
                 exposure[side] = max(exposure[side], count)
-            held[book.last_at.isoformat()] = {
+            occupied = {
                 c for c, a in book.accounts.items() if a.layers or a.model.pending
             }
+            if occupied:
+                held[book.last_at.isoformat()] = occupied
+            if products == THREE_PRODUCT_RESEARCH:
+                for contract, account in book.accounts.items():
+                    chain = account.model.chain
+                    if len(chain) < 256:
+                        continue
+                    sparse_actions.setdefault(contract, []).extend(
+                        {'actions': row['actions']} for row in chain[:-1] if row['actions']
+                    )
+                    latest = chain[-1]
+                    compact_prefix(account)
+                    chain.append(latest)
 
         variant = exit_profile or 'baseline'
         result = replay(segments, f'subing-research:{input_id}:{variant}:f{fee}:s{slip}',
                         products=products, on_batch=batch, exit_profile=exit_profile,
-                        slippage_ticks=slip)
+                        slippage_ticks=slip, research_scope=products == THREE_PRODUCT_RESEARCH)
         entry_rows, by_product, by_session, opportunities, intents = {}, {}, {}, Counter(), []
         execution_rejections = Counter()
         for contract, account in result['accounts'].items():
             fills = {f['fill_id']: f for f in account['fills']}
             execution_rejections.update(event['reason'] for event in account['execution_events'])
+            decision_rows = sparse_actions.get(contract, []) + account['decisions_with_actions']
             initial = {
-                action['decision_id']: action for row in account['decisions_with_actions']
+                action['decision_id']: action for row in decision_rows
                 for action in row['actions'] if action['kind'] == 'OPEN'
             }
             closed = {r['fills'][0]: r for r in account['closed_rounds']}
-            for row in account['decisions_with_actions']:
+            for row in decision_rows:
                 for action in row['actions']:
                     if action['kind'] == 'OPEN':
                         opportunities['OPEN_INTENT'] += 1
@@ -396,7 +413,8 @@ def portfolio_comparison(segments, products, fee, slip, profile, input_id):
     pairs = [pair_result(key[0], a_entries[key]['risk'], {'A': a_entries[key], 'B': b_entries[key]})
              for key in sorted(a_entries.keys() & b_entries.keys())]
     return dict(
-        kind='SEEN_14_PRODUCT_RETROSPECTIVE_HISTORICAL_RESEARCH',
+        kind=('THREE_PRODUCT_RETROSPECTIVE_HISTORICAL_RESEARCH' if products == THREE_PRODUCT_RESEARCH
+              else 'SEEN_14_PRODUCT_RETROSPECTIVE_HISTORICAL_RESEARCH'),
         fee_multiplier=fee, slippage_ticks=slip, exit_profile=profile, input_id=input_id,
         portfolio_runs=runs, common_entries=summarize_pairs(pairs),
         matched_entries=pairs,
@@ -563,7 +581,10 @@ def registered_day(archive):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('legacy-hours', 'legacy-pairs', 'portfolio', 'current-coverage', 'diagnostics', 'registered-day'))
+    parser.add_argument('mode', choices=(
+        'legacy-hours', 'legacy-pairs', 'portfolio', 'three-product',
+        'current-coverage', 'diagnostics', 'registered-day',
+    ))
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--hours', type=Path)
@@ -610,13 +631,15 @@ def main():
     else:
         plan, products, segments, coverage, _, fact_hashes = load_segments(
             args.source, compare_exits=True, diagnostics=args.mode == 'diagnostics',
+            research_scope=args.mode == 'three-product',
         )
         result = dict(kind='HISTORICAL_RESEARCH_COVERAGE', requested=plan['dates'],
                       products=products, coverage=coverage, plan_hash=payload_hash(plan),
                       execution_facts_sha256=fact_hashes)
         if products == EXPANDED_PORTFOLIO_PRODUCTS:
             result['execution_status'] = 'ACTUAL_KNOWLEDGE_FACTS_REQUIRED_FOR_16'
-        elif args.mode == 'portfolio' and segments and all(row['status'] == 'VERIFIED' for row in coverage):
+        elif (args.mode in ('portfolio', 'three-product') and segments
+              and all(row['status'] == 'VERIFIED' for row in coverage)):
             result.update(portfolio_comparison(
                 segments, products, args.fee, args.slip, RANGE_EXIT if args.range_exit else HOUR_EXIT,
                 payload_hash([plan, fact_hashes, coverage]),

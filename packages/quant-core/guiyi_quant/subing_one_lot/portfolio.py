@@ -41,9 +41,10 @@ def opening_quote(mark, facts, side, slippage_ticks=1):
 
 class Portfolio:
     def __init__(self, segments, run_id, *, products=PORTFOLIO_PRODUCTS,
-                 exit_profile=None, slippage_ticks=1):
+                 exit_profile=None, slippage_ticks=1, research_scope=False):
         self.products = products
-        self.policy = portfolio_policy(products)
+        self.policy = portfolio_policy(products, research_scope=research_scope)
+        self.research_scope = research_scope
         if (exit_profile is not None and exit_profile not in RESEARCH_EXIT_PROFILES
                 or type(slippage_ticks) is not int or slippage_ticks not in (1, 2, 3)):
             raise ValueError("PORTFOLIO_RESEARCH_SETTINGS_INVALID")
@@ -93,6 +94,7 @@ class Portfolio:
             portfolio=True,
             portfolio_products=self.products,
             exit_profile=self.exit_profile,
+            research_scope=self.research_scope,
         )
         account = module.AccountEngine(
             contract,
@@ -314,9 +316,10 @@ class Portfolio:
 
 
 def replay(segments, run_id, *, products=PORTFOLIO_PRODUCTS, on_batch=None,
-           exit_profile=None, slippage_ticks=1):
+           exit_profile=None, slippage_ticks=1, research_scope=False):
     portfolio = Portfolio(
-        segments, run_id, products=products, exit_profile=exit_profile, slippage_ticks=slippage_ticks
+        segments, run_id, products=products, exit_profile=exit_profile, slippage_ticks=slippage_ticks,
+        research_scope=research_scope,
     )
     rows = sorted(
         (

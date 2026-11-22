@@ -45,6 +45,7 @@ PORTFOLIO_PRODUCTS = tuple("jm lc rb sa fg ma ec v pr ta ur sh sc cj".split())
 
 # The 14-product identity remains decodeable only for historical research.
 EXPANDED_PORTFOLIO_PRODUCTS = TRADING_PRODUCTS
+THREE_PRODUCT_RESEARCH = ("jm", "sa", "ta")
 PORTFOLIO_POLICY = MappingProxyType({
     **POLICY,
     "version": "subing_portfolio_one_lot_v1",
@@ -54,7 +55,10 @@ PORTFOLIO_POLICY = MappingProxyType({
 })
 
 
-def portfolio_policy(products):
+def portfolio_policy(products, *, research_scope=False):
+    if research_scope and products == THREE_PRODUCT_RESEARCH:
+        return {**PORTFOLIO_POLICY, "version": "subing_three_product_research_v1",
+                "products": list(products)}
     if products == PORTFOLIO_PRODUCTS:
         return dict(PORTFOLIO_POLICY)
     if products == EXPANDED_PORTFOLIO_PRODUCTS:
@@ -89,8 +93,9 @@ def planned_loss(entry, stop, side, facts, slippage_ticks):
 def build_engine(
     executions, schedule, *, structures, execution_model="theoretical_open", portfolio=False,
     portfolio_products=PORTFOLIO_PRODUCTS, exit_profile=None, legacy_close_witness=False,
+    research_scope=False,
 ):
-    policy = portfolio_policy(portfolio_products) if portfolio else POLICY
+    policy = portfolio_policy(portfolio_products, research_scope=research_scope) if portfolio else POLICY
     if exit_profile is not None and exit_profile not in RESEARCH_EXIT_PROFILES:
         raise ValueError("ONE_LOT_EXIT_PROFILE_INVALID")
     if exit_profile:

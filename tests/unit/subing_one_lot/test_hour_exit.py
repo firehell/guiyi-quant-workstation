@@ -196,3 +196,16 @@ def test_shared_handoff_replays_same_prefix_before_resuming():
     for x in xs[5:]:
         restarted.step_batch([(x, obs[x.bar.bar_end])])
     assert restarted.snapshot() == replay([seg], "cold-restart", exit_profile=HOUR_EXIT)
+
+
+def test_three_product_scope_has_distinct_offline_identity():
+    from guiyi_quant.subing_one_lot import THREE_PRODUCT_RESEARCH
+
+    segments = [segment(product, [100, 101, 102]) for product in THREE_PRODUCT_RESEARCH]
+    with pytest.raises(ValueError, match="PORTFOLIO_SCOPE_INVALID"):
+        replay(segments, "study", products=THREE_PRODUCT_RESEARCH)
+    result = replay(segments, "study", products=THREE_PRODUCT_RESEARCH, research_scope=True)
+    assert result["policy"]["version"] == "subing_three_product_research_v1"
+    assert result["policy"]["products"] == ["jm", "sa", "ta"]
+    assert len(result["accounts"]) == 3
+    assert sum(len(account["fills"]) for account in result["accounts"].values()) == 3
