@@ -68,7 +68,7 @@ PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin
 ```
 
 `GET /api/v1/subing-portfolio/status` 和 `/history` 只读快照，不在HTTP中建表、创建run、捕获行情或驱动模型。
-无active时NOT_STARTED，未知权益显示未知，不能填默认资金；心跳陈旧明确STALE_OR_STOPPED，读取失败503。
+无 active 且无启动心跳时显示 NOT_STARTED，未知权益显示未知。首次建账前，缺日历、主力映射、正式观察前缀或当日执行事实时，由同一进程在原门槛内等待。正式观察前缀缺失时先等待原件，避免消耗执行事实采集次数。心跳陈旧时显示 STALE_OR_STOPPED，保留最近可读的启动状态码和心跳时间。读取失败返回 503。
 历史回放使用独立登记和原政策身份，不把回顾性执行事实作为持续模型当时可知的事实。
 历史14品种结果可作为原身份审计读取，不作为另一套可启动现役模型。
 

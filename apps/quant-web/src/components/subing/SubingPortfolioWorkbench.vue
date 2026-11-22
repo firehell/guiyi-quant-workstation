@@ -12,7 +12,10 @@ const names: Record<string, string> = {
 const states: Record<string, string> = {
   NOT_STARTED: '组合尚未启动', NOT_REGISTERED: '暂无已登记组合回放',
   STALE_OR_STOPPED: '已停止或状态过期', INTERRUPTED: '观察中断',
-  RUNNING: '运行中', SESSION_COMPLETE: '本交易日已处理完毕',
+  RUNNING: '运行中', SESSION_COMPLETE: '本交易日已处理完毕', SESSION_CLOSED: '休市等待',
+  WARMING_UP: '正在准备模型', WAITING_MARKET_METADATA: '等待交易日历或主力合约',
+  WAITING_OBSERVATIONS: '等待完整行情原件', WAITING_EXECUTION_FACTS: '等待当日执行事实',
+  BLOCKED: '启动或运行受阻',
   HISTORICAL_RESULT: '历史回放 · 窗口结果', OPEN: '持仓', PENDING: '待执行', COMPLETED: '空仓',
 }
 type Row = Record<string, any>
@@ -124,9 +127,10 @@ watch(() => props.mode, (mode, _, onCleanup) => {
       <div>日内净损益<strong>{{ money(dayNet) }}</strong></div>
       <div>保证金 / 日亏预算<strong>{{ money(combined?.margin) }} / {{ money(combined?.policy?.daily_loss_budget) }}</strong></div>
       <div>持仓品种 / 未决动作<strong>{{ combined?.policy ? holds : '—' }} / {{ combined?.policy ? pending : '—' }}</strong></div>
-      <div>{{ states[snapshot?.status] ?? (loading ? '读取中' : '运行状态') }}<strong>{{ stamp(snapshot?.observed_at) }}</strong></div>
+      <div>{{ states[snapshot?.status] ?? (loading ? '读取中' : '运行状态') }}<strong>{{ stamp(snapshot?.observed_at ?? snapshot?.worker_at) }}</strong></div>
     </section>
     <p v-if="snapshot?.worker_code" class="notice" role="status">{{ snapshot.worker_code }}</p>
+    <p v-if="snapshot?.next_open" class="model-context">最早检查执行事实时间 {{ stamp(snapshot.next_open) }}</p>
     <p v-if="combined?.valuation_unproven?.length" class="notice">待核对估值：{{ combined.valuation_unproven.join('、') }}</p>
     <p v-if="snapshot?.window">历史窗口 {{ snapshot.window.join(' — ') }} · {{ snapshot.length ? '当前回放时刻快照' : '组合窗口结果' }}；历史结果与持续账户独立记账。</p>
     <div v-if="mode === 'history' && snapshot?.length" class="panel playback">

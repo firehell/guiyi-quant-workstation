@@ -44,7 +44,10 @@ def prepare_day(settings, sql, day, products, *, warmup=True):
             days = [d for d, opened in catalog.calendar_days(
                 product, day - timedelta(days=14), day + timedelta(days=14)
             ) if opened]
-            index = days.index(day)
+            try:
+                index = days.index(day)
+            except ValueError:
+                raise ValueError("PORTFOLIO_CALENDAR_INCOMPLETE") from None
             if not 0 < index < len(days) - 1:
                 raise ValueError("PORTFOLIO_CALENDAR_INCOMPLETE")
             previous, following = days[index - 1], days[index + 1]
@@ -295,6 +298,18 @@ def recover_registration(store):
     return {"run_id": shared[0]} if shared else None
 
 
+def startup_wait_status(code):
+    if code in {"PORTFOLIO_CALENDAR_INCOMPLETE", "PORTFOLIO_OWNER_MAPPING_MISSING"}:
+        return "WAITING_MARKET_METADATA"
+    if code == "PORTFOLIO_INITIAL_PREFIX_INCOMPLETE" or code.startswith(
+        "PORTFOLIO_EXECUTION_FACTS_OBSERVATION_MISSING_"
+    ):
+        return "WAITING_OBSERVATIONS"
+    if code.startswith("PORTFOLIO_EXECUTION_FACTS_MISSING_"):
+        return "WAITING_EXECUTION_FACTS"
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--day", type=date.fromisoformat)
@@ -316,10 +331,10 @@ def main():
     initial_observations = None
     owner_file = None
     try:
-        now = datetime.now(UTC)
-        day = args.day or trading_day(settings, sql, now)[0]
         # Read-only preflight does not create state, a run, or invoke the provider.
         if args.check:
+            now = datetime.now(UTC)
+            day = args.day or trading_day(settings, sql, now)[0]
             contexts, _ = prepare_day(settings, sql, day, EXPANDED_PORTFOLIO_PRODUCTS)
             observations = preflight_prefix(stream, day, contexts, now)
             registered_facts(args.facts_registry, day, contexts, now, observations=observations)
@@ -350,48 +365,49 @@ def main():
                     atomic(ACTIVE_PORTFOLIO, active)
             elif args.start:
                 # No ledger reset, equity transfer or historical fill replay.
-                cached = None
-                light = None
-                checked_at = None
+                day = cached = light = checked_at = None
                 while True:
                     now = datetime.now(UTC)
-                    current_day, _ = trading_day(settings, sql, now)
-                    if args.day and day != current_day:
-                        raise ValueError("PORTFOLIO_START_OUTSIDE_TRADING_DAY")
-                    if day != current_day:
-                        day, cached, light, checked_at = current_day, None, None, None
-                    if checked_at is None or now - checked_at >= timedelta(seconds=30):
-                        latest, _ = prepare_day(settings, sql, day, EXPANDED_PORTFOLIO_PRODUCTS, warmup=False)
-                        if light != latest:
-                            cached = None
-                        light, checked_at = latest, now
-                    ready_at = max(stamp(context["first_open"]) for context in light.values()) + timedelta(minutes=1)
-                    if now < ready_at:
-                        atomic(HEARTBEAT, dict(run_id=None, at=now, status="WAITING_EXECUTION_FACTS", next_open=ready_at))
-                        if args.once:
-                            return
-                        time.sleep(5)
-                        continue
-                    if cached is None:
-                        cached = prepare_day(settings, sql, day, EXPANDED_PORTFOLIO_PRODUCTS)
-                    contexts, factors = cached
-                    if contexts != light:
-                        cached = None
-                        continue
-                    if args.refresh_facts:
-                        refresh_facts(args.facts_registry, day, contexts, now)
-                    now = datetime.now(UTC)
                     try:
-                        registered_facts(args.facts_registry, day, contexts, now)
+                        current_day, _ = trading_day(settings, sql, now)
+                        if args.day and args.day != current_day:
+                            raise ValueError("PORTFOLIO_START_OUTSIDE_TRADING_DAY")
+                        if day != current_day:
+                            day, cached, light, checked_at = current_day, None, None, None
+                        if checked_at is None or now - checked_at >= timedelta(seconds=30):
+                            latest, _ = prepare_day(settings, sql, day, EXPANDED_PORTFOLIO_PRODUCTS, warmup=False)
+                            if light != latest:
+                                cached = None
+                            light, checked_at = latest, now
+                        ready_at = max(stamp(context["first_open"]) for context in light.values()) + timedelta(minutes=1)
+                        if now < ready_at:
+                            atomic(HEARTBEAT, dict(run_id=None, at=now, status="WAITING_EXECUTION_FACTS", next_open=ready_at))
+                            if args.once:
+                                return
+                            time.sleep(5)
+                            continue
+                        if cached is None:
+                            cached = prepare_day(settings, sql, day, EXPANDED_PORTFOLIO_PRODUCTS)
+                        contexts, factors = cached
+                        if contexts != light:
+                            cached = None
+                            continue
+                        if args.refresh_facts:
+                            now = datetime.now(UTC)
+                            # Check the completed prefix before spending a fact capture slot.
+                            preflight_prefix(stream, day, contexts, now)
+                            refresh_facts(args.facts_registry, day, contexts, now)
+                        now = datetime.now(UTC)
                         observations, cursor = preflight_prefix(stream, day, contexts, now, with_cursor=True)
                         registered_facts(args.facts_registry, day, contexts, now, observations=observations)
                     except ValueError as exc:
-                        if not str(exc).startswith("PORTFOLIO_EXECUTION_FACTS_MISSING_"):
+                        status = startup_wait_status(str(exc))
+                        if status is None:
                             raise
-                        atomic(HEARTBEAT, dict(run_id=None, at=now, status="WAITING_EXECUTION_FACTS", code=str(exc)))
+                        atomic(HEARTBEAT, dict(run_id=None, at=datetime.now(UTC), status=status, code=str(exc)))
                         if args.once:
                             return
-                        time.sleep(5)
+                        time.sleep(5 if status == "WAITING_EXECUTION_FACTS" else 30)
                         continue
                     break
                 primed_through = now - timedelta(minutes=2)
