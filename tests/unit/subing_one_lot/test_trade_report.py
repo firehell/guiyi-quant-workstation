@@ -4,7 +4,7 @@ import pytest
 
 def test_report_preserves_single_variant_and_open_position():
     # An open position must not acquire an invented exit or realized PnL.
-    outcome = dict(opening=dict(contract='JM2505', side='LONG', decision_at='decision',
+    outcome = dict(opening=dict(fill_id='open123', contract='JM2505', side='LONG', decision_at='decision',
                                 fill_at='fill', price='100', reasons=['ENTRY_MET']),
                    exit=None, handoff=None)
     summary = dict(net_pnl='0', drawdown='0', opportunities={}, execution_rejections={}, risk_records=[])
@@ -15,6 +15,9 @@ def test_report_preserves_single_variant_and_open_position():
     assert meta['matched'] == 0
     assert (row['rule'], row['match'], row['decision_at'], row['fill_at']) == ('A', '单侧入场', 'decision', 'fill')
     assert row['net'] is None and row['exit_at'] is None
+    report['unmatched_entries']['A'].append(outcome)
+    with pytest.raises(ValueError, match='重复'):
+        next(project(report))
 
 
 def test_incomplete_research_reports_the_source_reason():

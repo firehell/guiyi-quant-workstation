@@ -54,6 +54,14 @@ def project(report, archive=None):
     else:
         raise ValueError(report.get('execution_status') or '不支持的研究结果类型')
 
+    seen = set()
+    for rule in ('A', 'B'):
+        outcomes = [p[rule] for p in pairs] + unmatched.get(rule, [])
+        for outcome in outcomes:
+            identity = (rule, outcome['opening']['fill_id'])
+            if identity in seen:
+                raise ValueError('同一规则下出现重复的开仓成交身份')
+            seen.add(identity)
     yield dict(kind=kind, matched=len(pairs), trade_rows=2 * len(pairs) + sum(map(len, unmatched.values())),
                differences=sum(p['changed'] for p in pairs),
                code_hashes=report['code_hashes'], **metadata)
@@ -71,7 +79,7 @@ def project(report, archive=None):
 def trade(rule, outcome, match):
     opened = outcome['opening']
     closed = outcome['exit'] or {}
-    return dict(rule=rule, match=match, contract=opened['contract'], side=opened['side'],
+    return dict(rule=rule, fill_id=opened['fill_id'], match=match, contract=opened['contract'], side=opened['side'],
                 decision_at=opened['decision_at'], fill_at=opened['fill_at'], price=opened['price'],
                 entry_reasons=opened['reasons'], handoff_at=outcome['handoff'],
                 exit_decision_at=closed.get('decision_at'), exit_at=closed.get('fill_at'),

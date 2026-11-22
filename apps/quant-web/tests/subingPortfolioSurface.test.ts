@@ -66,7 +66,10 @@ test('mount and switching use only shared APIs, show all16 and preserve honest n
     await upload.props.onChange({target:{files:[new File([JSON.stringify(header)], 'trades.jsonl')]}})
     await flush()
     assert.ok(textOf(root).includes('退出分歧 0 组'))
-    await upload.props.onChange({target:{files:[new File(['{}'], 'wrong.jsonl')]}})
+    const fill = {rule:'A', fill_id:'same', contract:'JM2505', fill_at:'2026-01-02T02:01:00Z',
+      match:'单侧入场', exit_reasons:null}
+    const duplicate = [{...header, trade_rows:2}, fill, fill].map(row => JSON.stringify(row)).join('\n')
+    await upload.props.onChange({target:{files:[new File([duplicate], 'duplicate.jsonl')]}})
     await flush()
     assert.ok(textOf(root).includes('读取失败，请选择逐笔说明'))
     assert.ok(!textOf(root).includes('退出分歧 0 组'))
