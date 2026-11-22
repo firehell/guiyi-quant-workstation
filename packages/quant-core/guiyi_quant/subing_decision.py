@@ -274,6 +274,9 @@ class DecisionModel:
             at=at, side=side or self.side, layer_ids=list(targets), reasons=list(reasons), cancel_requested=False)
         return deepcopy(self.pending)
 
+    def _exit_frame(self, frame):
+        return frame
+
     def _observe(self, e, at):
         _fields(e, 'event_id kind at contract trading_day close daily_direction daily_at day_end_window admission round_loss day_loss remaining_net base_net layer_nets reconciled m30')
         if e['kind'] != 'observe' or (self.last_observation is not None and at <= self.last_observation):
@@ -354,7 +357,8 @@ class DecisionModel:
             reasons.append('DAY_LOSS')
         if e['round_loss'] is True:
             reasons.append('ROUND_LOSS')
-        reasons.extend(technical_full_exit_reasons(self.layers,self.initial_stop,m,side,close))
+        exit_frame = self._exit_frame(m)
+        reasons.extend(technical_full_exit_reasons(self.layers,self.initial_stop,exit_frame,side,close))
         if self.layers and e['day_end_window'] and remaining_net is not None and remaining_net <= 0:
             reasons.append('DAY_END_NONPOSITIVE')
         if reasons and (self.layers or self.pending):
@@ -392,13 +396,13 @@ class DecisionModel:
                 self.profit_targets = []
             else:
                 self.profit_targets = eligible if fast else eligible[:1]
-        protected,technical_targets=technical_exit_targets(self.layers,self.exit_layers,m,side,close,at,self.add_protection)
+        protected,technical_targets=technical_exit_targets(self.layers,self.exit_layers,exit_frame,side,close,at,self.add_protection)
         if self.clear_reasons:
             self.exit_layers = [layer['layer_id'] for layer in self.layers]
         else:
             self.exit_layers=list(dict.fromkeys(technical_targets+self.profit_targets))
         exit_now = bool(self.exit_layers or self.clear_reasons)
-        reduction_trigger = bool(m and (m['below_previous_low'] is True or m['high_death'] is True))
+        reduction_trigger = bool(exit_frame and (exit_frame['below_previous_low'] is True or exit_frame['high_death'] is True))
         if protected or reduction_trigger or profit_trigger:
             self.pullback = None
             self.reset_after = at

@@ -128,6 +128,9 @@ class AccountEngine:
         self.observation_ids.add(o['event_id'])
         self.prior = b
 
+    def _fill_on_open(self, pending):
+        return self.at_open
+
     def step(self, execution, technical, *, observed_at=None):
         self.validate(execution, technical, observed_at)
         pending_before=self.model.pending["decision_id"] if self.model.pending else None
@@ -140,18 +143,19 @@ class AccountEngine:
         side = self.model.side or (self.model.pending['side'] if self.model.pending else candidate_side(technical['m30'] or self.model.latest_frame))
         sign = direction_sign(side)
         pending = deepcopy(self.model.pending)
-        execution_at = b.bar_end - timedelta(minutes=1) if self.at_open else b.bar_end
-        mark = b.open if self.at_open else b.close
-        known = self.previous_technical if self.at_open and self.index else technical
+        at_open = self._fill_on_open(pending)
+        execution_at = b.bar_end - timedelta(minutes=1) if at_open else b.bar_end
+        mark = b.open if at_open else b.close
+        known = self.previous_technical if at_open and self.index else technical
         local_execution = execution_at.astimezone(ZoneInfo('Asia/Shanghai'))
-        end_window = local_execution.date() == b.trading_day and local_execution.time() >= time(14, 50) if self.at_open else known['day_end_window']
+        end_window = local_execution.date() == b.trading_day and local_execution.time() >= time(14, 50) if at_open else known['day_end_window']
         if pending is not None and execution_at > pending['at'] and (not self.live or (self.pending_known_at is not None and b.bar_end > self.pending_known_at)):
             opening = pending['kind'] in ('OPEN', 'ADD')
             buying = opening and side == 'LONG' or (not opening and side == 'SHORT')
             price = mark + (f.tick_size if buying else -f.tick_size) * self.slippage_ticks
             pre = self.finance(mark, f, side)
             current_frame = directional_frame(known['m30'], side)
-            current_exit = not self.at_open and current_frame is not None and any((current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death')))
+            current_exit = not at_open and current_frame is not None and any((current_frame.get(key) is True for key in ('below_ema', 'below_previous_low', 'high_death')))
             protected_layer = self.model.add_protection and any((layer['kind'] == 'ADD' and sign * (mark - layer['price']) < 0 for layer in self.layers.values()))
             frame_unknown = current_frame is not None and (current_frame.get('minute_angle') is None or any((current_frame.get(key) is None for key in ('near_zero_golden', 'above_ema', 'volume_effective', 'below_previous_low', 'high_death', 'below_ema', 'qualified_pullback'))))
             fixed_stop = self.model.initial_stop is not None and sign * (mark - self.model.initial_stop) <= 0
@@ -175,15 +179,15 @@ class AccountEngine:
                 reject = 'PULLBACK_BREAKOUT_LOST_AT_EXECUTION'
             elif pending['kind'] == 'OPEN' and sign * (price - pending['initial_stop']) <= 0:
                 reject = 'INITIAL_STOP_INVALID_AT_EXECUTION'
-            elif not self.at_open and b.volume <= 0:
+            elif not at_open and b.volume <= 0:
                 reject = 'ZERO_VOLUME'
-            elif not self.at_open and (not b.low <= price <= b.high):
+            elif not at_open and (not b.low <= price <= b.high):
                 reject = 'SLIPPAGE_OUTSIDE_BAR'
             elif not f.limit_down <= price <= f.limit_up:
                 reject = 'EXCHANGE_LIMIT'
-            elif buying and (b.open if self.at_open else b.low) == f.limit_up or (not buying and (b.open if self.at_open else b.high) == f.limit_down):
+            elif buying and (b.open if at_open else b.low) == f.limit_up or (not buying and (b.open if at_open else b.high) == f.limit_down):
                 reject = 'LOCKED_LIMIT'
-            targets = [] if opening else pending['layer_ids'][:3 if self.at_open else int(b.volume)]
+            targets = [] if opening else pending['layer_ids'][:3 if at_open else int(b.volume)]
             if not opening and (not targets) and (reject is None):
                 reject = 'INSUFFICIENT_VOLUME'
             if reject:
@@ -192,7 +196,7 @@ class AccountEngine:
                     result = self.model.apply(dict(event_id=f'account:cancel:{index}', kind='ack', at=execution_at.isoformat(), contract=self.contract, decision_id=pending['decision_id'], status='CANCELLED', price=None, layer_ids=[]))
                     self.trace.append(result)
             else:
-                if opening and (not self.at_open) and (b.volume < 1):
+                if opening and (not at_open) and (b.volume < 1):
                     raise ValueError('ACCOUNT_FRACTIONAL_VOLUME')
                 fee_parts = [(f.fees.amount('open', price, self.multiplier), 'open')] if opening else [self.close_fee(self.layers[key], price, f) for key in targets]
                 fee = sum((part[0] for part in fee_parts), D('0'))

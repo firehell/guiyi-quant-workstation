@@ -2,6 +2,7 @@
 
 import argparse
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal as D
 import hashlib
 import json
 from pathlib import Path
@@ -22,42 +23,20 @@ from app.market_data.new_subing_research import (
 )
 from app.market_data.storage import CanonicalMonthlyStore
 from app.private_settings import load_private_readonly_settings
+from guiyi_quant.indicators import subing_range
 from guiyi_quant.indicators.subing_trend import initial_state, step
 from guiyi_quant.subing_decision import _wire
 from guiyi_quant.subing_one_lot import EXPANDED_PORTFOLIO_PRODUCTS, PORTFOLIO_PRODUCTS
 from guiyi_quant.subing_one_lot.portfolio import Segment, replay
 from scripts.research.subing_account import load
 from scripts.research.subing_one_lot_stress import build_context, dump, hashes
-from scripts.research.subing_trend import load as load_factors
+from scripts.research.subing_trend import TrendExportError, load as load_factors
 
 
-def prepare_segment(market, product, contract, days, schedule, facts):
-    since, through = map(date.fromisoformat, (days[0], days[-1]))
-    segments, evidence = load(
-        market,
-        facts,
-        since,
-        through,
-        product=product,
-        include_range=True,
-        portfolio=True,
+def load_hourly(market, product, contract, through, cutoff, *, include_range=False):
+    source = market.contract_source_evidence(
+        symbol=product, contract=contract, frequency=BarFrequency.H1, before=cutoff,
     )
-    (segment,) = segments
-    if segment["contract"] != contract:
-        raise ValueError("PORTFOLIO_RANK1_MISMATCH")
-    xs = segment["executions"]
-    factors = load_factors(
-        market,
-        since,
-        through,
-        product=product,
-        include_joint=True,
-        include_range=True,
-        portfolio=True,
-    )
-    if factors["input_hash"] != evidence["factors_input_hash"]:
-        raise ValueError("PORTFOLIO_FACTOR_SOURCE_CHANGED")
-    cutoff = xs[-1].bar.bar_end
     expected = market.expected_contract_replay_endpoints(
         symbol=product,
         contract=contract,
@@ -81,6 +60,7 @@ def prepare_segment(market, product, contract, days, schedule, facts):
     )
     hourly = {}
     state = initial_state(contract, "60m")
+    range_state = subing_range.initial_state(contract, "60m") if include_range else None
     for bar in series.bars:
         state, point = step(
             state,
@@ -92,12 +72,58 @@ def prepare_segment(market, product, contract, days, schedule, facts):
             close=float(bar.close),
         )
         hourly[bar.bar_end] = dict(
-            at=bar.bar_end.isoformat(), direction=point.direction
+            at=bar.bar_end.isoformat(), direction=point.direction,
+            close=str(bar.close), ema21=None if point.ema21 is None else str(point.ema21),
         )
+        if range_state is not None:
+            range_state, range_point = subing_range.step(
+                range_state, contract=contract, frequency="60m", bar_end=bar.bar_end,
+                high=bar.high, low=bar.low, close=bar.close,
+                atr=None if point.atr14 is None else D(str(point.atr14)),
+                trend_direction=point.direction,
+            )
+            hourly[bar.bar_end]["regime"] = range_point.regime
+    if source != market.contract_source_evidence(
+        symbol=product, contract=contract, frequency=BarFrequency.H1, before=cutoff,
+    ):
+        raise NewSubingInputError("HOURLY_SOURCE_CHANGED")
+    return hourly, source
+
+
+def prepare_segment(market, product, contract, days, schedule, facts, *, compare_exits=False, diagnostics=False):
+    since, through = map(date.fromisoformat, (days[0], days[-1]))
+    segments, evidence = load(
+        market, facts, since, through, product=product, include_range=True, portfolio=True,
+    )
+    (segment,) = segments
+    if segment["contract"] != contract:
+        raise ValueError("PORTFOLIO_RANK1_MISMATCH")
+    xs = segment["executions"]
+    factors = load_factors(
+        market, since, through, product=product, include_joint=True,
+        include_range=True, portfolio=True,
+    )
+    if factors["input_hash"] != evidence["factors_input_hash"]:
+        raise ValueError("PORTFOLIO_FACTOR_SOURCE_CHANGED")
+    cutoff = xs[-1].bar.bar_end
+    hourly, h1_source = load_hourly(
+        market, product, contract, through, cutoff, include_range=diagnostics,
+    )
+    if compare_exits:
+        evidence["hourly_source"] = h1_source
+        marks = {x.bar.bar_end: x.bar.close for x in xs}
+        if any(at not in marks or marks[at] != D(hour["close"])
+               for at, hour in hourly.items() if xs[0].bar.bar_end <= at <= cutoff):
+            raise NewSubingInputError("H1_M1_ENDPOINT_OR_CLOSE_CONFLICT")
+    else:
+        hourly = {at: {key: hour[key] for key in ("at", "direction")} for at, hour in hourly.items()}
     structures = build_context(factors["rows"], xs, contract, hourly)
-    return Segment(
-        product, tuple(xs), segment["observations"], structures, schedule
-    ), evidence, [
+    prepared = Segment(product, tuple(xs), segment["observations"], structures, schedule)
+    if diagnostics:
+        from scripts.research.subing_research_diagnostics import diagnose_segment
+
+        evidence["diagnostics"] = diagnose_segment(market, prepared, factors["rows"], hourly)
+    return prepared, evidence, [
         {**{key: row[key] for key in ("open", "high", "low", "close", "ema21")},
          "at": row["time"], "contract": contract, **{
              key: structures.get(row["time"], {}).get(key) for key in ("lower", "upper")
@@ -144,14 +170,8 @@ def verify_schedule(market, product, item, since, through):
             raise ValueError("PORTFOLIO_SESSION_PLAN_CHANGED")
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--facts-dir", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    if args.output.exists():
-        raise ValueError("PORTFOLIO_OUTPUT_EXISTS")
-    plan = json.loads((args.facts_dir / "plan.json").read_text())
+def load_segments(facts_dir, *, compare_exits=False, diagnostics=False):
+    plan = json.loads((facts_dir / "plan.json").read_text())
     since, through = map(date.fromisoformat, plan["dates"])
     products = next((scope for scope in (PORTFOLIO_PRODUCTS, EXPANDED_PORTFOLIO_PRODUCTS)
                      if set(plan["products"]) == set(scope)), None)
@@ -165,14 +185,12 @@ def main():
         normalize_database_url(settings["DATABASE_URL"]),
         connect_args={"connect_timeout": 5},
     )
-    segments, coverage, charts, timeline = [], [], {}, []
-    runner_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    source_hashes = hashes()
+    segments, coverage, charts = [], [], {}
     fact_hashes = {}
     try:
         for product in products:
             item = plan["products"][product]
-            path = args.facts_dir / f"{product}-facts.json"
+            path = facts_dir / f"{product}-facts.json"
             raw = path.read_bytes() if path.is_file() else b""
             facts = json.loads(raw) if raw else {}
             fact_hashes[product] = hashlib.sha256(raw).hexdigest() if raw else None
@@ -211,10 +229,15 @@ def main():
                     schedule = {d: item["schedule"][d] for d in days}
                     try:
                         segment, evidence, chart = prepare_segment(
-                            market, product, contract, days, schedule, facts
+                            market, product, contract, days, schedule, facts,
+                            compare_exits=compare_exits, diagnostics=diagnostics,
                         )
                     except NewSubingInputError as exc:
                         row.update(status=exc.code, diagnostic=exc.diagnostic)
+                    except TrendExportError as exc:
+                        if not compare_exits:
+                            raise
+                        row.update(status=str(exc))
                     else:
                         segments.append(segment)
                         charts.setdefault(product, []).extend(chart)
@@ -233,6 +256,21 @@ def main():
                     )
     finally:
         engine.dispose()
+    return plan, products, segments, coverage, charts, fact_hashes
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--facts-dir", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args()
+    if args.output.exists():
+        raise ValueError("PORTFOLIO_OUTPUT_EXISTS")
+    runner_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    source_hashes = hashes()
+    plan, products, segments, coverage, charts, fact_hashes = load_segments(args.facts_dir)
+    since, through = plan["dates"]
+    timeline = []
     if not segments:
         raise ValueError("PORTFOLIO_NO_VERIFIED_SEGMENTS")
     if products == EXPANDED_PORTFOLIO_PRODUCTS and any(row["status"] != "VERIFIED" for row in coverage):
