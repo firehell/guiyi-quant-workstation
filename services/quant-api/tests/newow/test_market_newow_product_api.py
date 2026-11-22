@@ -321,7 +321,11 @@ def test_daily_snapshot_uses_formal_quality_policy(product, monkeypatch):
                 ),
             )
 
-    def inputs(_session, _cancelled, _now, quality_policy=InputQualityPolicy.V1, *, home_services=None):
+    def inputs(
+        _session, _cancelled, _now, quality_policy=InputQualityPolicy.V1, *,
+        home_services=None, reference_price_policy=None,
+    ):
+        assert reference_price_policy is None
         selected.append(quality_policy)
         return Reader(), lambda _cancelled: Service()
 

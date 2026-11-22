@@ -8,16 +8,21 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from .reference_pricing import has_gap_fill
+
 if TYPE_CHECKING:
     from .product_contracts import ProductIdentity, StrategyAction
 
 
 REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v4"
 TRUEUP_REFERENCE_MODEL_VERSION = "newow_trueup_reference_zero_cost_v1"
+GAP_FILL_REFERENCE_MODEL_VERSION = "newow_gap_fill_reference_zero_cost_v1"
 
 
 def reference_model_version(identity) -> str:
     """Historical formulas keep their recorded model; current trueup gets a new one."""
+    if has_gap_fill(identity.formula_versions):
+        return GAP_FILL_REFERENCE_MODEL_VERSION
     return (TRUEUP_REFERENCE_MODEL_VERSION
             if "newow_oscillation_trueup_kernel111_v1" in identity.formula_versions
             else REFERENCE_MODEL_VERSION)
@@ -90,6 +95,32 @@ def input_policy_version(
         else DAILY_INPUT_POLICY_VERSION_V2
         if normalized is InputQualityPolicy.DAILY_V2
         else FUTURES_INPUT_POLICY_VERSION
+    )
+
+
+def build_newow_stream_identity(
+    identity: ProductIdentity,
+    *,
+    strategy_code: str | None = None,
+    recording_mode="historical_replay",
+    observation_policy_version: str | None = None,
+):
+    """Bind a Newow product formula and price model to its exact saved stream."""
+    from ..reference_trading import StreamIdentity
+
+    return StreamIdentity(
+        strategy_code=strategy_code or f"newow_{identity.strategy.value}",
+        formula_versions=identity.formula_versions,
+        profile_id=identity.profile_id,
+        reference_model_version=reference_model_version(identity),
+        futures_adaptation_version=futures_adaptation_version(
+            identity.frequency.value, identity.input_quality_policy,
+        ),
+        product=identity.product,
+        frequency=identity.frequency.value,
+        series_kind=identity.series_kind,
+        recording_mode=recording_mode,
+        observation_policy_version=observation_policy_version,
     )
 
 

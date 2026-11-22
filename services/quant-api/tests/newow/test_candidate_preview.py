@@ -461,6 +461,32 @@ def test_market_cutoff_and_readonly_rollback(preview, monkeypatch):
         assert connection.scalar(text("PRAGMA query_only")) == 0
 
 
+def test_newow_candidate_ai_four_step_uses_gap_policy(preview, monkeypatch):
+    from app.market_data.newow import ai_analysis
+    from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
+
+    def analyze(product, as_of, *_callbacks, include_four_step, reference_price_policy):
+        assert product == "rb"
+        assert as_of == datetime(2026, 9, 3, 8, tzinfo=UTC)
+        assert include_four_step
+        assert reference_price_policy == GAP_FILL_PRICE_POLICY
+        four_step = ai_analysis.FourStepAnalysis(
+            "2025-09-01", None, 0, None, None, None, "NEWOW_FOUR_STEP_INSUFFICIENT_BARS",
+            model_version=ai_analysis.GAP_FILL_MODEL_VERSION,
+            page_source_sha256=ai_analysis.GAP_FILL_SOURCE_SHA256,
+        )
+        return ai_analysis.ProductAnalysis((), four_step)
+
+    monkeypatch.setattr(ai_analysis, "analyze_product", analyze)
+    response = TestClient(preview[0]).get("/api/v1/market/newow/ai-analysis", params={
+        "product": "rb", "as_of": "2026-09-03T08:00:00Z",
+    })
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["schema_version"] == "newow_ai_analysis_v4"
+    assert result["four_step"]["model_version"] == ai_analysis.GAP_FILL_MODEL_VERSION
+
+
 def test_newow_real_query_respects_cutoff(preview, monkeypatch, product_cases):
     from app.api import market_newow
     from app.preview import create_preview_app
@@ -491,7 +517,13 @@ def test_newow_real_query_respects_cutoff(preview, monkeypatch, product_cases):
         },
     )
     assert response.status_code == 200, response.text
-    assert datetime.fromisoformat(response.json()["meta"]["as_of"]) == fake.as_of
+    from guiyi_quant.newow.product_identity import GAP_FILL_REFERENCE_MODEL_VERSION
+    from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
+
+    meta = response.json()["meta"]
+    assert datetime.fromisoformat(meta["as_of"]) == fake.as_of
+    assert GAP_FILL_PRICE_POLICY in meta["identity"]["formula_versions"]
+    assert meta["reference_model_version"] == GAP_FILL_REFERENCE_MODEL_VERSION
     assert all(
         datetime.fromisoformat(bar["bar_end"]) <= fake.as_of
         for bar in response.json()["chart"]["value"]["bars"]
@@ -761,7 +793,10 @@ def test_current_chart_resolver_uses_preview_clock_without_injected_as_of(previe
             raise ValueError("NEWOW_SOURCE_UNAVAILABLE")
 
     def factory(session, cancelled, now, policy, **kwargs):
+        from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
+
         assert now() == datetime(2026, 9, 3, 8, tzinfo=UTC)
+        assert kwargs["reference_price_policy"] == GAP_FILL_PRICE_POLICY
         return Resolver()
 
     monkeypatch.setattr(market_newow, "_build_daily_resolver" if frequency == "1d" else "_build_weekly_resolver", factory)

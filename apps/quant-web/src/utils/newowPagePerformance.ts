@@ -14,7 +14,8 @@ export interface PagePerformanceMode {
   readonly equity: readonly string[]; readonly trades: readonly PageEstimateTrade[]
 }
 export interface PagePerformance {
-  readonly version: 'newow_page_performance_v3379_v2'|'newow_unified_trueup_page_v1'; readonly source_version: '3.3.79'|'3.4.49'; readonly source_sha256: string
+  readonly version: 'newow_page_performance_v3379_v2' | 'newow_unified_trueup_page_v1' | 'newow_page_performance_v3475_gap_fill_v1' | 'newow_unified_trueup_gap_fill_v1'
+  readonly source_version: '3.3.79' | '3.4.49' | '3.4.75'; readonly source_sha256: string
   readonly page_parity: boolean; readonly kernel_parity?:true;readonly return_policy?:'source_page'|'guiyi_unified_trueup'; readonly executable: false; readonly strategy: 'trend' | 'oscillation' | 'main_rise' | 'fusion'
   readonly input_sha256: string; readonly source_evidence_sha256: string | null
   readonly segment_count: number; readonly ordinary_interrupted_count: number; readonly ideal_open_count: number
@@ -128,8 +129,22 @@ export function normalizePagePerformance(v: unknown, strategy: PagePerformance['
   if (v === undefined || v === null) return null
   const p = obj(v)
   exact(p, ['version','source_version','source_sha256','page_parity','executable','strategy','segment_count','ordinary_interrupted_count','ideal_open_count','ordinary','ideal','input_sha256','source_evidence_sha256',...(Object.hasOwn(p,'kernel_parity')?['kernel_parity','return_policy']:[])])
-  const unified=strategy==='oscillation'||strategy==='fusion'
-  if (unified?(p.version!=='newow_unified_trueup_page_v1'||p.source_version!=='3.4.49'||p.source_sha256!=='685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb'||p.page_parity!==false||p.kernel_parity!==true||p.return_policy!=='guiyi_unified_trueup'||p.executable!==false||p.strategy!==strategy):(p.version !== 'newow_page_performance_v3379_v2' || p.source_version !== '3.3.79' || p.source_sha256 !== sourceHash || p.page_parity !== true || p.executable !== false || p.strategy !== strategy)) throw Error('page_performance source identity invalid')
+  const unified = strategy === 'oscillation' || strategy === 'fusion'
+  const adjusted = p.version === 'newow_page_performance_v3475_gap_fill_v1' || p.version === 'newow_unified_trueup_gap_fill_v1'
+  const validVersion = adjusted
+    ? strategy === 'fusion'
+      ? p.version === 'newow_unified_trueup_gap_fill_v1'
+      : !unified && p.version === 'newow_page_performance_v3475_gap_fill_v1'
+    : p.version === (unified ? 'newow_unified_trueup_page_v1' : 'newow_page_performance_v3379_v2')
+  const expectedSource = adjusted ? '3.4.75' : unified ? '3.4.49' : '3.3.79'
+  const expectedHash = adjusted ? '16ff7e4284f5bea252da84d6ad7ae2f29ba1fcf443c126cd85a46fa36af91796'
+    : unified ? '685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb' : sourceHash
+  if (!validVersion || p.source_version !== expectedSource || p.source_sha256 !== expectedHash
+    || p.executable !== false || p.strategy !== strategy || p.page_parity !== !unified
+    || ((unified || adjusted) && (p.kernel_parity !== true
+      || p.return_policy !== (unified ? 'guiyi_unified_trueup' : 'source_page')))) {
+    throw Error('page_performance source identity invalid')
+  }
   const inputHash = text(p.input_sha256), evidenceHash = p.source_evidence_sha256 === null ? null : text(p.source_evidence_sha256)
   if (!/^[a-f0-9]{64}$/.test(inputHash) || evidenceHash !== null && !/^[a-f0-9]{64}$/.test(evidenceHash)) throw Error('page_performance input identity invalid')
   const ordinary = mode(p.ordinary, cutoff, false, unified), ideal = mode(p.ideal, cutoff, true, unified), segmentCount = count(p.segment_count)

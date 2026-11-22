@@ -893,26 +893,21 @@ class MarketDataHistoricalInputReader:
         raise ValueError("REFERENCE_CAPABILITY_UNSUPPORTED")
 
     def _read_fusion(self, request):
-        from guiyi_quant.newow.product_adapters import build_product_identity
-        from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
-        from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION, futures_adaptation_version
-        from app.reference_trading.newow_fusion import fusion_input_policy
+        from guiyi_quant.newow.product_contracts import ProductStrategy
+        from app.reference_trading.newow_fusion import fusion_source_stream_identity
+
         if not callable(self._fusion_sources) or not self._compact_intraday_inputs:
             raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
-        policy = fusion_input_policy(request.identity)
-        product = build_product_identity(request.identity.product,ProductStrategy.TREND,ProductFrequency(request.identity.frequency),input_quality_policy=policy)
-        shadow_identity = replace(request.identity,strategy_code="newow_trend",formula_versions=product.formula_versions,profile_id=product.profile_id,reference_model_version=REFERENCE_MODEL_VERSION,futures_adaptation_version=futures_adaptation_version(request.identity.frequency,policy))
-        shadow = self._read_newow(replace(request,identity=shadow_identity))
+        trend = fusion_source_stream_identity(request.identity, ProductStrategy.TREND)
+        shadow = self._read_newow(replace(request, identity=trend))
         try:
-            return self._read_fusion_loaded(request, shadow, policy, shadow_identity)
+            return self._read_fusion_loaded(request, shadow)
         finally:
             shadow.close()
 
-    def _read_fusion_loaded(self, request, shadow, policy, shadow_identity):
-        from guiyi_quant.newow.product_adapters import build_product_identity
-        from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
-        from app.reference_trading.newow_fusion import FusionHistoricalPayload
-        from guiyi_quant.newow.product_identity import reference_model_version
+    def _read_fusion_loaded(self, request, shadow):
+        from guiyi_quant.newow.product_contracts import ProductStrategy
+        from app.reference_trading.newow_fusion import FusionHistoricalPayload, fusion_source_stream_identity
 
         if (
             shadow.dependency_manifest.get("reader") != "newow_product_reader_prefix_v5"
@@ -922,12 +917,8 @@ class MarketDataHistoricalInputReader:
         source_manifests = {"trend": shadow.dependency_manifest}
         oscillator_snapshot = None
         if "input_fingerprints" in shadow.dependency_manifest:
-            oscillator = build_product_identity(request.identity.product,ProductStrategy.OSCILLATION,
-                ProductFrequency(request.identity.frequency),input_quality_policy=policy)
-            oscillator_identity = replace(shadow_identity,strategy_code="newow_oscillation",
-                formula_versions=oscillator.formula_versions,profile_id=oscillator.profile_id,
-                reference_model_version=reference_model_version(oscillator))
-            oscillator_snapshot = self._read_newow(replace(request,identity=oscillator_identity))
+            oscillator = fusion_source_stream_identity(request.identity, ProductStrategy.OSCILLATION)
+            oscillator_snapshot = self._read_newow(replace(request, identity=oscillator))
             try:
                 if oscillator_snapshot.source_integrity != shadow.source_integrity:
                     raise ValueError("REFERENCE_FUSION_SOURCE_SNAPSHOT_CONFLICT")
@@ -1151,12 +1142,16 @@ class MarketDataHistoricalInputReader:
         )
         from guiyi_quant.newow.product_contracts import ProductFrequency
         from guiyi_quant.newow.product_identity import futures_adaptation_version, reference_model_version
+        from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY, has_gap_fill
         from guiyi_quant.reference_trading import BoundaryReason, ReferenceBoundary
         from app.reference_trading.service import NewowHistoricalPayload
 
         identity = build_product_identity(
             query.product, strategy, frequency,
             input_quality_policy=read.input_quality_policy,
+            reference_price_policy=(
+                GAP_FILL_PRICE_POLICY if has_gap_fill(request.identity.formula_versions) else None
+            ),
         )
         if (
             request.identity.product != identity.product

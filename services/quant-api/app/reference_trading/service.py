@@ -233,7 +233,7 @@ def _rebuild_preserves_active_prefix(current, snapshot) -> bool:
 def _seed_checkpoint(stream: StreamIdentity) -> tuple[AdapterCheckpoint[object], str]:
     if stream.strategy_code.replace("-", "_") == "newow_dual_fusion":
         from guiyi_quant.newow.fusion_reference import FusionReferenceReplayState
-        state: object = FusionReferenceReplayState()
+        state: object = FusionReferenceReplayState(model_version=stream.reference_model_version)
         schema = "newow_dual_fusion_reference_v1"
     elif stream.strategy_code.replace("-", "_") == "subing_reference":
         state = seed_subing_replay_state()

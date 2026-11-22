@@ -206,12 +206,29 @@ def test_process_singleton_survives_database_backend_loss(monkeypatch, tmp_path)
             worker.main()
 
 
-def test_first_owner_waits_for_all_product_sessions_without_warmup_or_run(monkeypatch, tmp_path):
+@pytest.mark.parametrize("gate, code, expected", [
+    ("closed", None, ["WARMING_UP", "light_context", "WAITING_EXECUTION_FACTS"]),
+    ("calendar", "PORTFOLIO_CALENDAR_INCOMPLETE", ["WARMING_UP", "WAITING_MARKET_METADATA"]),
+    ("mapping", "PORTFOLIO_OWNER_MAPPING_MISSING", ["WARMING_UP", "light_context", "WAITING_MARKET_METADATA"]),
+    ("prefix", "PORTFOLIO_INITIAL_PREFIX_INCOMPLETE",
+     ["WARMING_UP", "light_context", "warm_context", "prefix", "WAITING_OBSERVATIONS"]),
+    ("conflict", "PORTFOLIO_OBSERVATION_DUPLICATE",
+     ["WARMING_UP", "light_context", "warm_context", "prefix", "BLOCKED"]),
+    ("resume", "PORTFOLIO_INITIAL_PREFIX_INCOMPLETE",
+     ["WARMING_UP", "light_context", "warm_context", "prefix", "WAITING_OBSERVATIONS",
+      "prefix", "refresh", "prefix", "register_facts", "created", "registered", "refresh", "consume"]),
+])
+def test_first_owner_waits_for_input_without_provider_or_run(monkeypatch, tmp_path, gate, code, expected):
     import app.subing_portfolio_worker as worker
     from contextlib import nullcontext
     now = datetime.now(UTC)
-    open_at = now + timedelta(hours=1)
-    contexts = {p:{'first_open':open_at.isoformat()} for p in EXPANDED_PORTFOLIO_PRODUCTS}
+    open_at = now + timedelta(hours=1 if gate == "closed" else -1)
+    first_open = open_at if gate == "closed" else now - timedelta(hours=1)
+    contexts = {
+        p: {"first_open": open_at.isoformat(), "sessions": [
+            [open_at.isoformat(), (open_at + timedelta(hours=4)).isoformat()],
+        ]} for p in EXPANDED_PORTFOLIO_PRODUCTS
+    }
     calls = []
     monkeypatch.setattr(worker, 'STATE_ROOT', tmp_path)
     monkeypatch.setattr(worker, 'settings_and_redis', lambda: ({'DATABASE_URL':'unused'}, SimpleNamespace(close=lambda:None)))
@@ -224,17 +241,75 @@ def test_first_owner_waits_for_all_product_sessions_without_warmup_or_run(monkey
     monkeypatch.setattr(worker, 'ModelStore', lambda *a:SimpleNamespace(engine=engine))
     monkeypatch.setattr(worker, 'read_registration', lambda *a:None)
     monkeypatch.setattr(worker, 'recover_registration', lambda *a:None)
-    monkeypatch.setattr(worker, 'trading_day', lambda *a:(now.date(),open_at))
+    def trading_day(*args):
+        if gate == "calendar":
+            raise ValueError(code)
+        return now.date(), first_open
+
     def prepare(*args, warmup=True):
-        assert warmup is False
-        calls.append('light_context')
+        calls.append("warm_context" if warmup else "light_context")
+        if gate == "mapping":
+            raise ValueError(code)
         return contexts, {}
-    monkeypatch.setattr(worker, 'prepare_day', prepare)
-    monkeypatch.setattr(worker, 'atomic', lambda path,value:calls.append(value['status']))
-    monkeypatch.setattr(worker.PortfolioJournal, 'create', lambda *a, **k:pytest.fail('opened run without current facts'))
-    monkeypatch.setattr('sys.argv', ['worker','--start','16','--once'])
-    worker.main()
-    assert calls == ['WARMING_UP','light_context','WAITING_EXECUTION_FACTS']
+
+    def prefix(*args, **kwargs):
+        assert gate in {"prefix", "conflict", "resume"}
+        calls.append("prefix")
+        if gate != "resume" or calls.count("prefix") == 1:
+            raise ValueError(code)
+        return ({}, "0-0") if kwargs.get("with_cursor") else {}
+
+    def heartbeat(path, value):
+        if path == worker.ACTIVE_PORTFOLIO:
+            assert value == {"run_id": "new-run"}
+            calls.append("registered")
+            return
+        calls.append(value["status"])
+        if "code" in value:
+            assert value["code"] == code
+
+    monkeypatch.setattr(worker, "trading_day", trading_day)
+    monkeypatch.setattr(worker, "prepare_day", prepare)
+    monkeypatch.setattr(worker, "preflight_prefix", prefix)
+    monkeypatch.setattr(worker, "atomic", heartbeat)
+    monkeypatch.setattr(worker, "refresh_facts", lambda *a: pytest.fail("spent provider attempts without a complete prefix"))
+    monkeypatch.setattr(worker.PortfolioJournal, "create", lambda *a, **k: pytest.fail("opened run without all inputs"))
+    argv = ["worker", "--start", "16", "--refresh-facts"]
+    if gate == "resume":
+        def create(*args, **kwargs):
+            calls.append("created")
+            assert kwargs["products"] == EXPANDED_PORTFOLIO_PRODUCTS
+            return SimpleNamespace(day=None, products=EXPANDED_PORTFOLIO_PRODUCTS)
+
+        def write_registration(path, value):
+            if path == worker.ACTIVE_PORTFOLIO:
+                assert value["run_id"].startswith("subing-portfolio-16-")
+                value = {"run_id": "new-run"}
+            heartbeat(path, value)
+
+        def consume(*args, **kwargs):
+            calls.append("consume")
+            assert kwargs["initial"][1] == "0-0"
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(worker, "atomic", write_registration)
+        monkeypatch.setattr(worker.time, "sleep", lambda seconds: None)
+        monkeypatch.setattr(worker, "registered_facts", lambda *a, **k: calls.append("register_facts"))
+        monkeypatch.setattr(worker, "refresh_facts", lambda *a: calls.append("refresh"))
+        monkeypatch.setattr(worker.PortfolioJournal, "create", create)
+        monkeypatch.setattr(worker, "consume_day", consume)
+        monkeypatch.setattr("sys.argv", argv)
+        with pytest.raises(KeyboardInterrupt):
+            worker.main()
+        assert calls == expected
+        return
+    monkeypatch.setattr("sys.argv", [*argv, "--once"])
+    if gate == "conflict":
+        with pytest.raises(SystemExit, match=code):
+            worker.main()
+    else:
+        worker.main()
+    assert calls == expected
 
 
 def test_day_only_open_holding_keeps_asof_and_pauses_risk_until_real_day_mark():

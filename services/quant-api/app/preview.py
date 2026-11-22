@@ -30,6 +30,7 @@ PREVIEW_PATHS = frozenset(
         "/api/v1/market/product-directory",
         "/api/v1/market/research/home-overview",
         "/api/v1/market/newow/product-capabilities",
+        "/api/v1/market/newow/ai-analysis",
         "/api/v1/market/newow/strategy-detail",
         "/api/v1/market/newow/experiments",
         "/api/v1/market/newow/historical-snapshot",
@@ -177,6 +178,11 @@ def create_preview_app(
             au_period_preview = (
                 os.getenv("GUIYI_AU_PERIOD_PREVIEW") == "1" and hourly_products is None
             )
+            if (raw_path == "/api/v1/market/newow/ai-analysis"
+                and (au_period_preview or hourly_products is not None or intraday_products is not None)):
+                return JSONResponse(
+                    status_code=403, content={"detail": {"code": "PREVIEW_ROUTE_FORBIDDEN"}},
+                )
             if (au_period_preview and raw_path in {
                 "/api/v1/market/newow/strategy-detail",
                 "/api/v1/market/newow/experiments",

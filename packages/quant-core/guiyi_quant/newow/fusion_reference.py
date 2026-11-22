@@ -17,10 +17,16 @@ from .product_contracts import (
 )
 from .reference_trades import ReferenceTradeProjector
 from .product_identity import reference_model_version
+from .reference_pricing import has_gap_fill
 from .reference_statistics import PerformanceWindow, summarize_reference
 from .holding_reference import holding_reference_curve, fusion_theoretical_reference
 
 MODEL_VERSION = "newow_dual_fusion_trueup_reference_v1"
+GAP_FILL_MODEL_VERSION = "newow_dual_fusion_gap_fill_reference_v1"
+
+
+def _fusion_model_version(trend_identity):
+    return GAP_FILL_MODEL_VERSION if has_gap_fill(trend_identity.formula_versions) else MODEL_VERSION
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +37,7 @@ class FusionReferenceReplayState:
 def build_fusion_stream_identity(
     product: str, frequency: str, *, recording_mode="historical_replay",
     observation_policy_version=None, input_quality_policy="newow_input_quality_v1",
+    reference_price_policy=None,
 ):
     """Independent reference projection identity; never a third base kernel."""
     from .product_adapters import build_product_identity
@@ -40,13 +47,16 @@ def build_fusion_stream_identity(
     selected = ProductFrequency(frequency)
     if selected not in (*INTRADAY_PRODUCT_FREQUENCIES, ProductFrequency.MINUTE, ProductFrequency.DAILY, ProductFrequency.WEEKLY):
         raise ValueError("NEWOW_FUSION_FREQUENCY_UNSUPPORTED")
-    trend = build_product_identity(product, ProductStrategy.TREND, selected, input_quality_policy=input_quality_policy)
+    trend = build_product_identity(
+        product, ProductStrategy.TREND, selected, input_quality_policy=input_quality_policy,
+        reference_price_policy=reference_price_policy,
+    )
     oscillation = build_product_identity(product, ProductStrategy.OSCILLATION, selected, input_quality_policy=input_quality_policy)
     return StreamIdentity(
         strategy_code="newow_dual_fusion",
         formula_versions=trend.formula_versions + oscillation.formula_versions,
-        profile_id=f"newow_dual_fusion_{selected.value}_v2",
-        reference_model_version=MODEL_VERSION,
+        profile_id=f"newow_dual_fusion_{selected.value}_v{3 if has_gap_fill(trend.formula_versions) else 2}",
+        reference_model_version=_fusion_model_version(trend),
         futures_adaptation_version=futures_adaptation_version(selected.value, input_quality_policy),
         product=product, frequency=selected.value, series_kind="actual_dominant",
         recording_mode=recording_mode, observation_policy_version=observation_policy_version,
@@ -56,7 +66,7 @@ def build_fusion_stream_identity(
 def fusion_trade_id(trend_identity, oscillation_identity, entry_signal_id: str) -> str:
     identity = (trend_identity.product, trend_identity.frequency.value,
                 trend_identity.formula_versions, oscillation_identity.formula_versions,
-                MODEL_VERSION)
+                _fusion_model_version(trend_identity))
     return sha256(json.dumps([identity, entry_signal_id], sort_keys=True).encode()).hexdigest()
 
 
@@ -115,6 +125,7 @@ def fusion_reference_comparison(
             ):
                 by_bar.setdefault(action.bar_end, []).append(action)
     rows = []
+    model_version = _fusion_model_version(trend.identity)
     holding = None
     mark = None
     bars_held = 0
@@ -123,7 +134,7 @@ def fusion_reference_comparison(
         trend.identity.frequency.value,
         trend.identity.formula_versions,
         oscillation.identity.formula_versions,
-        MODEL_VERSION,
+        model_version,
     )
 
     def finish(status, exit_action=None, interruption=None):
@@ -134,7 +145,7 @@ def fusion_reference_comparison(
         rows.append(
             {
                 "reference_trade_id": digest,
-                "reference_model_version": MODEL_VERSION,
+                "reference_model_version": model_version,
                 "physical_contract": holding.physical_contract,
                 "segment_id": holding.segment_id,
                 "calculation_segment_id": holding.calculation_segment_id,
@@ -268,7 +279,7 @@ def fusion_reference_comparison(
     groups.append(
         {
             "model": "fusion",
-            "reference_model_version": MODEL_VERSION,
+            "reference_model_version": model_version,
             "closed_count": len(closed),
             "sum_return_percentage_points": format(total, "f")
             if total is not None
@@ -304,7 +315,7 @@ def fusion_reference_comparison(
         "source_profiles": [trend.identity.profile_id, oscillation.identity.profile_id],
         "product": trend.identity.product,
         "frequency": trend.identity.frequency.value,
-        "reference_model_version": MODEL_VERSION,
+        "reference_model_version": model_version,
         "performance_since": window.since.isoformat(),
         "performance_through": window.through.isoformat(),
         "reference_cutoff": window.cutoff.isoformat(),

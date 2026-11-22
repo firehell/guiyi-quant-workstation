@@ -1,5 +1,5 @@
 import type { NewowProductSectionResponse } from '../types/newowProduct.ts'
-import { sharedChartBarsAgree } from './newowProductTypes.ts'
+import { newowReferenceModelVersion, sharedChartBarsAgree } from './newowProductTypes.ts'
 import { newowChartSnapshotKey } from '../components/market/detail/newow/newowProductChartPrimitives.ts'
 type Chart = NewowProductSectionResponse<'chart'>
 /** A loaded older window can coexist with previously loaded newer Bars. */
@@ -19,8 +19,8 @@ export function newowComparisonCompatible(base: Chart | null, partner: Chart | n
     || a.identity.series_kind !== b.identity.series_kind || a.as_of !== b.as_of
     || a.identity.input_quality_policy !== b.identity.input_quality_policy
     || a.futures_adaptation_version !== b.futures_adaptation_version
-    || a.reference_model_version !== (a.identity.strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4')
-    || b.reference_model_version !== (b.identity.strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4')
+    || a.reference_model_version !== newowReferenceModelVersion(a.identity)
+    || b.reference_model_version !== newowReferenceModelVersion(b.identity)
     || a.data_revision_identity !== b.data_revision_identity
     || !base.value.bars.length
     || partner.value.chart_from > base.value.bars[0]!.trading_day || partner.value.chart_through < base.value.bars.at(-1)!.trading_day

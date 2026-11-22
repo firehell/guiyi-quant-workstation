@@ -178,14 +178,20 @@ def test_public_source_six_combo_score_oracle(case):
         assert combo.confidence == expected["confidence"]
 
 @pytest.mark.parametrize('cutoff', ['2026-10-08T07:00:00Z', '2026-09-11T07:00:00Z'])
-def test_v3_endpoint_uses_exact_requested_canonical_cutoff(monkeypatch, cutoff):
+def test_formal_gap_endpoint_uses_exact_requested_canonical_cutoff(monkeypatch, cutoff):
     from app.main import app
     from app.db.session import get_db
     from app.market_data.newow import ai_analysis
     captured = []
-    def analyze(product, as_of, *args, include_four_step):
+    from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
+    from app.api import market_newow
+
+    monkeypatch.setattr(market_newow, 'FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY', GAP_FILL_PRICE_POLICY)
+
+    def analyze(product, as_of, *args, include_four_step, reference_price_policy):
         captured.append((product, as_of))
         assert include_four_step
+        assert reference_price_policy == GAP_FILL_PRICE_POLICY
         return ai_analysis.ProductAnalysis((), None)
     monkeypatch.setattr(ai_analysis, 'analyze_product', analyze)
     app.dependency_overrides[get_db] = lambda: object()
@@ -193,7 +199,7 @@ def test_v3_endpoint_uses_exact_requested_canonical_cutoff(monkeypatch, cutoff):
         with TestClient(app) as client:
             response = client.get('/api/v1/market/newow/ai-analysis', params={'product': 'jm', 'as_of': cutoff})
         assert response.status_code == 200
-        assert response.json()['schema_version'] == 'newow_ai_analysis_v3'
+        assert response.json()['schema_version'] == 'newow_ai_analysis_v4'
         assert captured == [('jm', datetime.fromisoformat(cutoff.replace('Z', '+00:00')))]
     finally:
         app.dependency_overrides.clear()

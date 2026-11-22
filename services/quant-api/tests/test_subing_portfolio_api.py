@@ -1,5 +1,8 @@
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -36,3 +39,25 @@ def test_cursor_keeps_equity_and_fills_at_same_observation(tmp_path, monkeypatch
     assert before["products"][-1]["accounts"][0]["fills"] == []
     assert after["day_net"] == "-1"
     assert after["products"][-1]["accounts"][0]["fills"] == [{"fill_at": second}]
+
+
+@pytest.mark.parametrize(("age", "expected"), [
+    (15, "WAITING_MARKET_METADATA"),
+    (120, "STALE_OR_STOPPED"),
+])
+def test_prestart_status_keeps_last_wait_reason(monkeypatch, age, expected):
+    seen_at = datetime.now(UTC) - timedelta(seconds=age)
+    heartbeat = dict(run_id=None, at=seen_at.isoformat(),
+                     status="WAITING_MARKET_METADATA", code="PORTFOLIO_CALENDAR_INCOMPLETE")
+    monkeypatch.setattr(api, "read_registration",
+                        lambda path: heartbeat if path == api.HEARTBEAT else None)
+    app = FastAPI()
+    app.include_router(api.router)
+    with TestClient(app) as client:
+        result = client.get("/api/v1/subing-portfolio/status").json()
+    assert result["status"] == expected
+    assert result["worker_code"] == "PORTFOLIO_CALENDAR_INCOMPLETE"
+    assert datetime.fromisoformat(result["worker_at"]) == seen_at
+    assert result["run_id"] is None
+    assert result["account"] == {}
+    assert result["auto_order"] is False

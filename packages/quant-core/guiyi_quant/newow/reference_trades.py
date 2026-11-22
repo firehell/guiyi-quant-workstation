@@ -25,6 +25,7 @@ from ..reference_trading.adapters import strategy_input_fingerprint
 
 from .models import NewowMarkerType
 from .profile import NEWOW_TREND_D1_PAGE_V2
+from .reference_pricing import adjust_reference_price, has_gap_fill
 from .trend_band import _marker_id
 
 from .product_contracts import (
@@ -431,7 +432,8 @@ def _validate_initial_clear_no_entry(
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     current = matching[0]
     if replay.identity.strategy is ProductStrategy.TREND and action.source_marker_id != _marker_id(
-        current.bar.bar, NewowMarkerType.CLEAR, NEWOW_TREND_D1_PAGE_V2
+        current.bar.bar, NewowMarkerType.CLEAR, NEWOW_TREND_D1_PAGE_V2,
+        gap_fill=has_gap_fill(replay.identity.formula_versions),
     ):
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     prefix = tuple(frame for frame in frames if frame.bar.bar.bar_end <= action.bar_end)
@@ -450,7 +452,10 @@ def _validate_initial_clear_no_entry(
         or ma35 is None
         or ma45 is None
         or ma35 >= ma45
-        or action.reference_price != ma45
+        or action.reference_price != (
+            adjust_reference_price(ma45, current.bar.bar.open, buy=False)
+            if has_gap_fill(replay.identity.formula_versions) else ma45
+        )
     ):
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     for frame in prior:
@@ -508,7 +513,8 @@ def _validate_checkpointed_initial_clear(
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     current = matching[0]
     if replay.identity.strategy is ProductStrategy.TREND and action.source_marker_id != _marker_id(
-        current.bar.bar, NewowMarkerType.CLEAR, NEWOW_TREND_D1_PAGE_V2
+        current.bar.bar, NewowMarkerType.CLEAR, NEWOW_TREND_D1_PAGE_V2,
+        gap_fill=has_gap_fill(replay.identity.formula_versions),
     ):
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     values = dict(current.main_values)
@@ -523,7 +529,10 @@ def _validate_checkpointed_initial_clear(
         or ma35 is None
         or ma45 is None
         or ma35 >= ma45
-        or action.reference_price != ma45
+        or action.reference_price != (
+            adjust_reference_price(ma45, current.bar.bar.open, buy=False)
+            if has_gap_fill(replay.identity.formula_versions) else ma45
+        )
     ):
         raise ValueError("NEWOW_REFERENCE_PAIRING_CONFLICT")
     return positions[key]

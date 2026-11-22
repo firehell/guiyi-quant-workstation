@@ -180,3 +180,58 @@ def test_60m_evaluator_binds_window_tail_to_original_payload():
     captured["forward_capture_v1"]["input_payload"]["bar"]["close"] = "3501"
     with pytest.raises(ValueError, match="HTDY_CAPTURE_IDENTITY_CONFLICT"):
         evaluate_htdy_capture(token, checkpoint, {**captured, "capture_id": "capture"}, dependency_manifest={})
+
+
+def test_retained_window_requires_exact_original_overlap_and_missing_endpoint():
+    from types import SimpleNamespace
+
+    from app.market_data.market_read_service import MarketReadService, MarketReadWindowError
+    from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
+
+    end = datetime(2026, 11, 2, 15, tzinfo=UTC)
+    day = (end + timedelta(days=1)).date()
+    gap = end - timedelta(hours=1)
+    bars = tuple(
+        replace(bar, bar_end=end-timedelta(hours=31-index), trading_day=day)
+        for index, bar in enumerate(Read().bars)
+    )
+    observations = tuple(
+        ObservationEnvelope(
+            f"al-{index}", day, bar.bar_end+timedelta(seconds=1), "live:bar:al:60m",
+            {**_bar_wire(bar), "contract": "AL2611"}, True, f"{index+1}-0",
+            bar.bar_end+timedelta(seconds=1), bar.bar_end+timedelta(seconds=2),
+        )
+        for index, bar in enumerate(bars) if bar.bar_end != gap
+    )
+    event = observations[-1]
+    checks = []
+    market = SimpleNamespace(
+        query_alert_history_prefix=lambda query: SimpleNamespace(
+            bars=bars,
+            resolved_contract_segments=(SimpleNamespace(
+                contract="AL2611", start_trading_day=day, end_trading_day=day,
+            ),),
+        ),
+        validate_actual_dominant_alert_window=lambda **window: checks.append(window),
+    )
+    read = MarketReadService(
+        market_data=market, phase_resolver=None, operational_products=("al",), live_store=None,
+    )
+    query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, "AL", BarFrequency.H1)
+    window = read.verify_retained_htdy_window(
+        query, original=event, observations=observations, missing_endpoints=(gap,),
+    )
+    assert window.cutoff == end
+    assert window.bars == bars
+    assert checks[0]["cutoff"] == end
+
+    conflicting = replace(observations[0], data={**observations[0].data, "close": "3501"})
+    for invalid, missing in (
+        ((conflicting, *observations[1:]), (gap,)),
+        (observations[1:], (gap,)),
+        (observations, (gap, gap)),
+    ):
+        with pytest.raises(MarketReadWindowError, match="HTDY_RETAINED_WINDOW_UNPROVEN"):
+            read.verify_retained_htdy_window(
+                query, original=event, observations=invalid, missing_endpoints=missing,
+            )

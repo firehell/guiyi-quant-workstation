@@ -29,13 +29,17 @@ from app.reference_trading.planning import (
 )
 from app.reference_trading.repository import ReferenceRepository
 from app.reference_trading.models import ReferenceBatch
+from app.reference_trading.page_material_query import select_page_material
 from app.reference_trading.page_material_storage import verify_source_integrity
+from app.reference_trading.persisted_newow import PersistedNewowReference
 from app.reference_trading.service import HistoricalReferenceService
 from app.reference_trading.refresh_recovery import _readback
 from app.reference_trading.query import HistoricalReferenceQuery
 from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
 from guiyi_quant.newow.product_adapters import build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+from guiyi_quant.newow.product_identity import build_newow_stream_identity
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
 from tests.alembic.conftest import isolated_postgres_engine  # noqa: F401
 from tests.reference_trading.test_historical_integration import (
     _Coverage,
@@ -233,18 +237,51 @@ def test_same_month_native_append_matches_rebuild_and_rejects_prefix_revision(
         reader._fusion_sources = SavedFusionSources(factory)
         fusion_initial = plan("build", fusion_old)
         assert service.execute(fusion_initial, fusion_initial.plan_hash).status == "completed"
-        def page_read_without_history(through, *, fusion=False):
+
+        # Build the price-versioned routes alongside the saved threshold routes.
+        # Fusion must read the exact new trend stream and reuse the same oscillator.
+        gap_identities = [
+            build_newow_stream_identity(build_product_identity(
+                "rb", strategy, ProductFrequency.HOURLY,
+                reference_price_policy=GAP_FILL_PRICE_POLICY,
+            ))
+            for strategy in (ProductStrategy.TREND, ProductStrategy.MAIN_RISE)
+        ]
+        gap_identities.append(build_fusion_stream_identity(
+            "rb", "60m", reference_price_policy=GAP_FILL_PRICE_POLICY,
+        ))
+        persisted = PersistedNewowReference(factory)
+        manifests = {}
+        for gap_stream in gap_identities:
+            gap_plan = plan("build", replace(old, identity=gap_stream))
+            assert service.execute(gap_plan, gap_plan.plan_hash).status == "completed"
+
+            material = select_page_material(factory, gap_stream.stream_id, cutoff=old.as_of)
+            assert material is not None
+            saved, manifest = persisted._manifest(
+                gap_stream.stream_id, material.revision_id, material.seq,
+            )
+            assert saved == gap_stream
+            assert material.envelope(manifest, saved)["material"]["segments"]
+            manifests[gap_stream.strategy_code] = manifest
+        fusion_sources = manifests["newow_dual_fusion"]["source_dependencies"]
+        assert [item["stream_id"] for item in fusion_sources] == [
+            gap_identities[0].stream_id, identity.stream_id,
+        ]
+
+        def page_read_without_history(through, *, fusion=False, reference_price_policy=None):
             from app.market_data.newow.product_service import (
                 NewowProductService, ProductServiceQuery, ProductSection, ReferenceMode, ReferencePart,
             )
-            from app.reference_trading.persisted_newow import PersistedNewowReference
             from app.market_data.newow.snapshot_cache import SnapshotCache
-            persisted = PersistedNewowReference(factory, cache=SnapshotCache())
+            persisted = PersistedNewowReference(
+                factory, cache=SnapshotCache(), reference_price_policy=reference_price_policy,
+            )
             def factory_read(context, cancelled):
                 return NewowProductReader(mds, coverage=coverage, active_products=("rb",),
                     context_frequencies=context, cancelled=cancelled, now=lambda: end(through))
             product = NewowProductService(factory_read, now=lambda: end(through),
-                persisted_reference=persisted.section)
+                persisted_reference=persisted.section, reference_price_policy=reference_price_policy)
             query_request = ProductServiceQuery(product="rb", strategy=ProductStrategy.OSCILLATION,
                 frequency=ProductFrequency.HOURLY, section=ProductSection.REFERENCE,
                 performance_since=first, performance_through=through, as_of=end(through),
@@ -273,19 +310,25 @@ def test_same_month_native_append_matches_rebuild_and_rejects_prefix_revision(
                 assert switched_page["ideal"] is not None
                 assert switched.reference.value.saved_generation == result.reference.value.saved_generation
                 if fusion:
+                    if reference_price_policy == GAP_FILL_PRICE_POLICY:
+                        actual_fusion = payload["fusion_comparison"]
+                        assert actual_fusion["reference_model_version"] == gap_identities[-1].reference_model_version
+                        assert actual_fusion["source_profiles"][0] == gap_identities[0].profile_id
+                        assert result.reference.value.saved_generation[0] == identity.stream_id
                     assert (switched_payload["fusion_comparison"]["reference_revision"]
                             == payload["fusion_comparison"]["reference_revision"])
                     return selected, switched_page
                 return payload
 
-        def pure_fusion_pages(through):
+        def pure_fusion_pages(through, *, reference_price_policy=None):
             full = reader._newow.load_historical(NewowProductQuery(
                 "rb", ProductStrategy.OSCILLATION, ProductFrequency.HOURLY,
                 first, through, first, through, end(through),
             ), end(through))
             try:
                 product_identity = build_product_identity(
-                    "rb", ProductStrategy.OSCILLATION, ProductFrequency.HOURLY,
+                    "rb", ProductStrategy.TREND, ProductFrequency.HOURLY,
+                    reference_price_policy=reference_price_policy,
                 )
                 resolved = ResolvedPerformanceWindow(
                     first, through, through, end(through) - timedelta(microseconds=1),
@@ -302,6 +345,12 @@ def test_same_month_native_append_matches_rebuild_and_rejects_prefix_revision(
 
         old_page = page_read_without_history(old_last)
         old_fusion_pages = page_read_without_history(old_last, fusion=True)
+        gap_fusion_pages = page_read_without_history(
+            old_last, fusion=True, reference_price_policy=GAP_FILL_PRICE_POLICY,
+        )
+        assert numerical_pages(gap_fusion_pages) == numerical_pages(
+            pure_fusion_pages(old_last, reference_price_policy=GAP_FILL_PRICE_POLICY),
+        )
         assert numerical_pages(old_fusion_pages) == numerical_pages(
             pure_fusion_pages(old_last)
         )

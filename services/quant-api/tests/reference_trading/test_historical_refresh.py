@@ -288,7 +288,10 @@ def test_actual_strategy_service_advances_same_window(tmp_path, request, backend
 @pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
 @pytest.mark.parametrize("activate", [False, True])
 @pytest.mark.parametrize("reader_version", ["newow_product_reader_prefix_v5", "newow_product_reader_prefix_v4", "newow_product_reader_intraday_v3", "newow_product_reader_v2"])
-def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, request, backend, activate, reader_version):
+def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, request, backend, activate, reader_version, monkeypatch):
+    # Bootstrap below intentionally exercises the unchanged legacy observation identity.
+    from app.market_data.newow import product_release
+    monkeypatch.setattr(product_release, 'FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY', None)
     from app.reference_trading.historical_refresh import build_historical_refresh
     from tests.reference_trading.test_newow_bootstrap import setup_source, plan_for, NOW
     from app.reference_trading.newow_bootstrap import NewowForwardBootstrap
@@ -722,11 +725,24 @@ def test_blocked_scan_page_advances_cursor_to_allow_later_history_progress(tmp_p
 
 
 @pytest.mark.parametrize('frequency', ['5m', '15m', '30m', '60m', '1d', '1w'])
-def test_page_history_scope_accepts_current_identity_without_observation_activation(frequency):
+def test_page_history_scope_accepts_current_identity_without_observation_activation(frequency, monkeypatch):
     from app.reference_trading.historical_refresh import _history_route_supported
+    from app.market_data.newow import product_release
+    from guiyi_quant.newow.product_adapters import build_product_identity
+    from guiyi_quant.newow.product_identity import build_newow_stream_identity
+    from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
     from guiyi_quant.reference_trading import RecordingMode
-    identity = _newow('jm', ProductStrategy.TREND, frequency, forward=False)
+
+    monkeypatch.setattr(product_release, 'FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY', GAP_FILL_PRICE_POLICY)
+    legacy = _newow('jm', ProductStrategy.TREND, frequency, forward=False)
+    identity = build_newow_stream_identity(build_product_identity(
+        'jm', ProductStrategy.TREND, frequency,
+        input_quality_policy=product_release.candidate_input_quality_policy('jm', frequency, candidate_weekly=False),
+        reference_price_policy=GAP_FILL_PRICE_POLICY,
+    ))
     assert _history_route_supported(identity)
+    assert not _history_route_supported(legacy)
+    assert _history_route_supported(_newow('jm', ProductStrategy.OSCILLATION, frequency, forward=False))
     assert not _history_route_supported(replace(identity, formula_versions=('superseded_formula',)))
     assert not _history_route_supported(replace(identity, recording_mode=RecordingMode.FORWARD_OBSERVATION,
                                                 observation_policy_version='completed_canonical_v1'))

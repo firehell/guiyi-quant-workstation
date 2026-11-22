@@ -26,7 +26,9 @@ from app.market_data.market_home_overview import METRIC_POLICY_VERSION
 from .composition import NewowComposition
 from .daily_snapshot import NewowDailySnapshotResolver
 from .weekly_snapshot import NewowWeeklySnapshotResolver, publication_state_from_status
-from .product_release import candidate_input_quality_policy, CAPABILITY_SCHEMA_VERSION
+from .product_release import (
+    CAPABILITY_SCHEMA_VERSION, FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY, candidate_input_quality_policy,
+)
 from .product_service import ProductServiceQuery, ProductSection
 from .home_cards import project_home_performance
 from .home_projection import HomeProjection, ProjectionStore, projection_path, PERIODS, STRATEGIES
@@ -41,7 +43,10 @@ def configuration_identity():
              'active_products.txt', 'operational_products.txt',
              'retired_products.txt', 'product_sectors.csv')
     dependencies = {name: sha256((directory / name).read_bytes()).hexdigest() for name in files}
-    dependencies.update(capability=CAPABILITY_SCHEMA_VERSION, overview_policy=METRIC_POLICY_VERSION, home_trend=HOME_TREND_VERSION, caution_display=CAUTION_DISPLAY_VERSION)
+    dependencies.update(capability=CAPABILITY_SCHEMA_VERSION, overview_policy=METRIC_POLICY_VERSION,
+        home_trend=HOME_TREND_VERSION, caution_display=CAUTION_DISPLAY_VERSION)
+    if FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY is not None:
+        dependencies['reference_price_policy'] = FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
     return sha256(json.dumps(dependencies, sort_keys=True).encode()).hexdigest()
 
 
@@ -140,7 +145,9 @@ def catalog_versions(session, products, *, now=None, publication=None):
         common = {name: value.get((instruments[product] if name in {'calendar', 'exchange'} else product,)) for name, value in parts.items() if name not in {'dataset', 'partition'}}
         for frequency in PERIODS:
             policy = candidate_input_quality_policy(product, frequency, candidate_weekly=False)
-            identities = [repr(build_product_identity(product, ProductStrategy(strategy), ProductFrequency(frequency), input_quality_policy=policy)) for strategy in STRATEGIES]
+            identities = [repr(build_product_identity(product, ProductStrategy(strategy),
+                ProductFrequency(frequency), input_quality_policy=policy,
+                reference_price_policy=FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY)) for strategy in STRATEGIES]
             deps = {**common, 'source_identity': HOME_SOURCE_IDENTITY_VERSION, 'configuration': configuration, 'identities': identities,
                     'capability': CAPABILITY_SCHEMA_VERSION, 'projection': 'newow_home_projection_v1',
                     'reference': 'ordinary-page-performance-v1', 'home_trend': HOME_TREND_VERSION, 'caution_display': CAUTION_DISPLAY_VERSION}
@@ -193,7 +200,8 @@ def compute_period(session, product, frequency, now):
     market = build_market_data_service(session)
     coverage = build_database_coverage_source(session, reuse_session_windows=True)
     market.replay_coverage = coverage
-    composition = NewowComposition(market, coverage, load_active_products(), policy, now=lambda: now)
+    composition = NewowComposition(market, coverage, load_active_products(), policy, now=lambda: now,
+        reference_price_policy=FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY)
     services = []
     def factory(cancelled):
         service = composition.service(cancelled=cancelled, reuse_read_inputs=True)

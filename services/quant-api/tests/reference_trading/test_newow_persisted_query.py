@@ -11,8 +11,9 @@ from sqlalchemy.orm import sessionmaker
 from guiyi_quant.newow.product_adapters import replay_strategy, build_product_identity, label_calculation_segments
 from guiyi_quant.newow.product_identity import InputQualityPolicy
 from guiyi_quant.newow.product_identity import (
-    REFERENCE_MODEL_VERSION, futures_adaptation_version,
+    REFERENCE_MODEL_VERSION, build_newow_stream_identity, futures_adaptation_version,
 )
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
 from guiyi_quant.newow.reference_statistics import PerformanceWindow, summarize_reference
 from guiyi_quant.newow.reference_trades import ReferenceTradeProjector
 from guiyi_quant.reference_trading import StreamIdentity
@@ -23,7 +24,7 @@ from app.reference_trading.contracts import PreparedBatch, SeedChunk
 from app.reference_trading.inputs import HistoricalInputBar
 from app.reference_trading.presentation import envelope
 from app.reference_trading.persisted_newow import PersistedNewowReference
-from app.reference_trading.query import HistoricalReferenceQuery
+from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
 from app.reference_trading.repository import ReferenceRepository
 from app.reference_trading.service import (
     NewowHistoricalPayload, _advance_batch, _seed_checkpoint,
@@ -103,29 +104,41 @@ def test_newow_goldens_keep_public_trade_ids_and_decimal_statistics() -> None:
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     repository = ReferenceRepository(factory)
-    stored = repository.ensure_stream(stream)
-    manifest = {"fixture": "newow-trend-v1"}
-    revision = repository.create_revision(stream.stream_id, stored.row_version, _digest(manifest))
-    checkpoint, schema = _seed_checkpoint(stream)
-    root = sha256(b"seed").hexdigest()
-    repository.stage_seed_chunk(revision, SeedChunk("seed", 0, 1, root, "seed"))
-    token = repository.seal_seed(revision, manifest, checkpoint, schema)
-    for start in range(0, len(bars), 23):
-        points: list[dict[str, object]] = []
-        next_checkpoint, sources, transitions, schema = _advance_batch(
-            stream, checkpoint, bars[start:start + 23], points,
+    def publish(identity, inputs):
+        stored = repository.ensure_stream(identity)
+        manifest = {"fixture": "newow-trend-v1"}
+        revision = repository.create_revision(identity.stream_id, stored.row_version, _digest(manifest))
+        checkpoint, schema = _seed_checkpoint(identity)
+        root = sha256(b"seed").hexdigest()
+        repository.stage_seed_chunk(revision, SeedChunk("seed", 0, 1, root, "seed"))
+        token = repository.seal_seed(revision, manifest, checkpoint, schema)
+        for start in range(0, len(inputs), 23):
+            points: list[dict[str, object]] = []
+            next_checkpoint, sources, transitions, schema = _advance_batch(
+                identity, checkpoint, inputs[start:start + 23], points,
+            )
+            prepared = PreparedBatch(
+                identity.stream_id, revision, f"bar-{start}", token, manifest,
+                sources, transitions, next_checkpoint, schema,
+                {"presentation_v1": envelope(points)},
+            )
+            repository.commit_batch(token, prepared)
+            token, checkpoint = repository.load_checkpoint(identity.stream_id, revision)
+        snapshot = repository.publish_revision(
+            identity.stream_id, revision, token.row_version, _digest(manifest),
         )
-        prepared = PreparedBatch(
-            stream.stream_id, revision, f"bar-{start}", token, manifest,
-            sources, transitions, next_checkpoint, schema,
-            {"presentation_v1": envelope(points)},
-        )
-        repository.commit_batch(token, prepared)
-        token, checkpoint = repository.load_checkpoint(stream.stream_id, revision)
-    snapshot = repository.publish_revision(
-        stream.stream_id, revision, token.row_version, _digest(manifest),
+        assert snapshot.seq > 1
+
+    publish(stream, bars)
+    gap_product_identity = build_product_identity(
+        case.identity.product, case.identity.strategy, case.identity.frequency,
+        input_quality_policy=case.identity.input_quality_policy,
+        reference_price_policy=GAP_FILL_PRICE_POLICY,
     )
-    assert snapshot.seq > 1
+    gap_stream = build_newow_stream_identity(gap_product_identity)
+    publish(gap_stream, tuple(replace(
+        bar, payload=NewowHistoricalPayload(gap_product_identity, bar.payload.bar),
+    ) for bar in bars))
     since = case.bars[0].bar.trading_day
     through = case.bars[-1].bar.trading_day
     query = HistoricalReferenceQuery(factory)
@@ -133,6 +146,19 @@ def test_newow_goldens_keep_public_trade_ids_and_decimal_statistics() -> None:
         stream.stream_id, since=since, through=through,
         cutoff=case.bars[-1].bar.bar_end, limit=200,
     )
+    assert query.stream_for(stream)["stream_id"] == stream.stream_id
+    assert query.stream_for(gap_stream)["stream_id"] == gap_stream.stream_id
+    gap_page = query.trades(
+        gap_stream.stream_id, since=since, through=through,
+        cutoff=case.bars[-1].bar.bar_end, limit=200,
+    )
+    assert actual["items"] and gap_page["items"]
+    assert {item["public_reference_trade_id"] for item in actual["items"]}.isdisjoint(
+        item["public_reference_trade_id"] for item in gap_page["items"]
+    )
+    with pytest.raises(QueryConflict, match="SNAPSHOT_CONFLICT"):
+        query.summary(gap_stream.stream_id, since=since, through=through,
+            cutoff=case.bars[-1].bar.bar_end, snapshot_token=actual["snapshot"])
     replay = replay_strategy(case.identity, case.bars)
     projection = ReferenceTradeProjector().project(
         replay, (), case.bars[-1].bar.bar_end,
@@ -229,7 +255,7 @@ def test_persisted_daily_weekly_availability_uses_authoritative_owner(monkeypatc
     saved = PersistedNewowReference(lambda: None)
     page = {"snapshot": "snapshot", "revision_id": "revision", "seq": 2,
             "items": [], "next_cursor": None}
-    saved._query = SimpleNamespace(streams=lambda **kwargs: [{"stream_id": "stream"}],
+    saved._query = SimpleNamespace(stream_for=lambda identity: {"stream_id": identity.stream_id},
                                    trades=lambda *args, **kwargs: page,
                                    summary=lambda *args, **kwargs: {"revision_id": "revision", "seq": 2})
     manifest = {"query_since": day.isoformat(), "query_through": "2026-09-10",
@@ -255,7 +281,8 @@ def test_persisted_daily_weekly_availability_uses_authoritative_owner(monkeypatc
     request = SimpleNamespace(product="rb", strategy=ProductStrategy.TREND,
         frequency=ProductFrequency(frequency), history_before=None, history_limit=200)
     with pytest.raises(CoverageChecked):
-        saved.section(request, read, None, reader, "fact", None, resolved)
+        saved.section(request, read, build_product_identity("rb", ProductStrategy.TREND, frequency),
+            reader, "fact", None, resolved)
 
 
 def test_saved_owner_date_boundaries_and_calculation_conflict():

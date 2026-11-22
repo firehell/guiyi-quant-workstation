@@ -20,6 +20,7 @@ from pathlib import Path
 from threading import Event, Thread
 from time import monotonic
 
+from guiyi_quant.newow.reference_pricing import has_gap_fill
 from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
 
 from app.reference_trading.planning import (
@@ -36,7 +37,8 @@ VERSION = 'newow_historical_refresh_v1'
 PLAN_FILE_CODEC = 'reference_refresh_plan_file_v1'
 STRATEGIES = ('trend', 'oscillation', 'main_rise', 'dual_fusion')
 MAX_ROUTES = NEWOW_MAX_ROUTES
-MAX_RETAINED_ROUTES = NEWOW_MAX_ROUTES + 60 * 6
+# Retain unfinished state from the threshold-priced generation for readback.
+MAX_RETAINED_ROUTES = NEWOW_MAX_ROUTES + 60 * 6 + 60 * 6 * 3
 # Logical input volume stays capped; bounded Newow reads separately avoid full residency.
 BUDGET = WorkBudget(1, 1_000_000, 1800, 512_000_000)
 
@@ -256,7 +258,8 @@ class HistoricalRefresh:
             if prior and prior['status'] == 'blocked':
                 continue
             source_changed = route.reason in {'CANONICAL_SOURCE_REVISION_CHANGED', 'INPUT_PROOF_UPGRADE_REQUIRED'}
-            if (route.reason and not source_changed and not prior) or not _canonical_identity(identity) or route.since is None:
+            if ((route.reason and not source_changed and not prior)
+                    or not _canonical_identity(identity, allow_gap_fill=True) or route.since is None):
                 state['routes'][key] = {'status': 'blocked', 'reason': route.reason or 'SOURCE_IDENTITY_UNVERIFIED'}
                 self.state.write(state)
                 return
@@ -543,7 +546,7 @@ class RefreshThread:
 
 def _history_route_supported(identity):
     """Maintain only existing canonical histories in the public page scope."""
-    if identity.recording_mode is not RecordingMode.HISTORICAL_REPLAY or not _canonical_identity(identity):
+    if identity.recording_mode is not RecordingMode.HISTORICAL_REPLAY or not _canonical_identity(identity, allow_gap_fill=True):
         return False
     strategy = _strategy(identity)
     if (identity.strategy_code != f'newow_{strategy}'
@@ -553,9 +556,13 @@ def _history_route_supported(identity):
         return False
     from app.market_data.newow.product_release import (
         OPEN_FREQUENCIES, OPEN_INTRADAY_PRODUCTS, OPEN_WEEKLY_PRODUCTS,
-        MAIN_RISE_FREQUENCIES,
+        MAIN_RISE_FREQUENCIES, FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY,
     )
     from guiyi_quant.newow.product_contracts import ProductFrequency
+    if strategy != 'oscillation' and has_gap_fill(identity.formula_versions) != (
+        FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY is not None
+    ):
+        return False
     frequency = ProductFrequency(identity.frequency)
     if frequency not in OPEN_FREQUENCIES:
         return False

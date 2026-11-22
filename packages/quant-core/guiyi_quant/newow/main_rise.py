@@ -19,6 +19,7 @@ from .magic11 import (
 )
 from .models import NewowDailyBar, NewowMainMarker, TrendBandState
 from .profile import NEWOW_TREND_D1_PAGE_V2
+from .reference_pricing import adjust_reference_price
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,7 @@ class MainRiseBandSignal:
     profit_pct: Decimal | None
     hold_bars: int | None
     formula_version: str = MAIN_RISE_PAGE_V1.band_formula
+    reference_threshold: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,6 +265,7 @@ def step_main_rise(
     bar: NewowDailyBar,
     *,
     formulas: MainRiseFormulaSet = MAIN_RISE_PAGE_V1,
+    gap_fill: bool = False,
 ) -> MainRiseStepResult:
     if not main_rise_formula_gate(formulas):
         return _unavailable("NEWOW_MAIN_RISE_FORMULA_GATE_FAILED")
@@ -289,7 +292,10 @@ def step_main_rise(
             if band_state is TrendBandState.YELLOW
             else MainRiseAction.CLEAR
         )
-    price = Decimal(str(ma45))
+    basis = Decimal(str(ma45))
+    threshold = basis if gap_fill and transition is not None else None
+    price = (adjust_reference_price(basis, bar.open, buy=transition is MainRiseAction.BUILD)
+             if threshold is not None else basis)
     next_buy_price = state.last_buy_price
     next_bars_since_buy = (
         None if state.bars_since_buy is None else state.bars_since_buy + 1
@@ -298,7 +304,7 @@ def step_main_rise(
     if transition is MainRiseAction.BUILD:
         next_buy_price = price
         next_bars_since_buy = 0
-        band_signal = MainRiseBandSignal(transition, price, None, None)
+        band_signal = MainRiseBandSignal(transition, price, None, None, reference_threshold=threshold)
     elif transition is MainRiseAction.CLEAR:
         valid_buy = next_buy_price is not None and next_bars_since_buy is not None
         profit = (
@@ -311,6 +317,7 @@ def step_main_rise(
             price,
             profit,
             next_bars_since_buy if valid_buy else None,
+            reference_threshold=threshold,
         )
         next_buy_price = None
         next_bars_since_buy = None

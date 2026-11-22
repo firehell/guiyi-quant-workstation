@@ -883,6 +883,7 @@ class NewowProductService:
         cancelled: Callable[[], bool] | None = None,
         reuse_read_inputs: bool = False,
         quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+        reference_price_policy: str | None = None,
         persisted_reference: Callable | None = None,
     ) -> None:
         self._reader_factory = reader_factory
@@ -894,6 +895,7 @@ class NewowProductService:
         self._cancelled = cancelled
         self._reuse_read_inputs = reuse_read_inputs
         self._quality_policy = InputQualityPolicy(quality_policy)
+        self._reference_price_policy = reference_price_policy
         self._persisted_reference = persisted_reference
         self._read_input_lock = Lock()
         self._chart_windows: dict[
@@ -970,8 +972,12 @@ class NewowProductService:
             request.strategy,
             request.frequency,
             input_quality_policy=policy,
+            reference_price_policy=self._reference_price_policy,
         )
         common_key = _snapshot_namespace(identity, as_of)
+        if self._reference_price_policy is not None:
+            # An unchanged oscillator identity can still select candidate fusion.
+            common_key = f"{common_key}:{self._reference_price_policy}"
         prior_navigation: _ChartNavigation | None = None
         anchor_proof: dict[str, str] = {}
         if request.chart_older_window is not None:
@@ -1774,6 +1780,7 @@ class NewowProductService:
                 source_identity = build_product_identity(
                     identity.product, strategy, identity.frequency,
                     input_quality_policy=identity.input_quality_policy,
+                    reference_price_policy=self._reference_price_policy,
                 )
                 replays[strategy] = replay if strategy is identity.strategy else self._replay_strategy(
                     source_identity, read.replay_bars,
@@ -1790,7 +1797,7 @@ class NewowProductService:
             fusion["reference_input_sha256"] = fact_key
             if selected_mode is None or selected_page is not None:
                 fusion["page_performance"] = project_page_performance(
-                    read, identity, resolved, fusion=True, replays=replays,
+                    read, replays[ProductStrategy.TREND].identity, resolved, fusion=True, replays=replays,
                     selected_mode=selected_page,
                 )
         theoretical = None
@@ -1881,6 +1888,7 @@ class NewowProductService:
                     identity.product,
                     ProductStrategy.TREND,
                     frequency,
+                    reference_price_policy=self._reference_price_policy,
                     input_quality_policy=read.input_quality_policies_by_frequency.get(frequency, (
                         identity.input_quality_policy
                         if frequency is ProductFrequency.WEEKLY
@@ -1922,6 +1930,7 @@ class NewowProductService:
             main_bars = read.bars_by_frequency.get(main_frequency, ())
             main = self._replay_strategy(
                 build_product_identity(identity.product, ProductStrategy.MAIN_RISE, main_frequency,
+                    reference_price_policy=self._reference_price_policy,
                     input_quality_policy=read.input_quality_policies_by_frequency.get(main_frequency, InputQualityPolicy.V1)),
                 main_bars, lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(main_frequency, ()),
                 data_interruptions=read.data_interruptions_by_frequency.get(main_frequency, ()), cancelled=cancelled,
@@ -1932,13 +1941,17 @@ class NewowProductService:
                     bars = read.bars_by_frequency.get(freq, ())
                     if bars:
                         main_paths[freq] = self._replay_strategy(build_product_identity(identity.product, ProductStrategy.MAIN_RISE, freq,
+                            reference_price_policy=self._reference_price_policy,
                             input_quality_policy=read.input_quality_policies_by_frequency.get(freq, InputQualityPolicy.V1)), bars,
                             lifecycle_evidence=read.lifecycle_evidence_by_frequency.get(freq,()), data_interruptions=read.data_interruptions_by_frequency.get(freq,()), cancelled=cancelled)
             addon = build_decision_v2(trend, oscillation, main, read, identity, path_strategy=path_strategy, main_paths=main_paths)
             for replays, strategy in ((trend, ProductStrategy.TREND), (oscillation, ProductStrategy.OSCILLATION)):
                 for frequency in LEGACY_PRODUCT_FREQUENCIES:
                     if frequency not in replays:
-                        replays[frequency] = StrategyReplay(build_product_identity(identity.product, strategy, frequency), (), (), (), ())
+                        replays[frequency] = StrategyReplay(
+                            build_product_identity(identity.product, strategy, frequency,
+                                reference_price_policy=self._reference_price_policy), (), (), (), (),
+                        )
         inputs = build_composite_inputs(trend, oscillation, read.as_of)
         composite = calculate_composite_explanation(inputs.context, inputs.evidence)
         target = calculate_target_absorb(inputs.context, None)

@@ -445,6 +445,7 @@ test('Free clears a contract when the product changes and keeps HTDY preferences
 
   const productSearch = page.getByRole('combobox', { name: '搜索60品种' })
   await productSearch.fill('rb')
+  await expect(page.getByRole('option', { name: /\bRB\b/ })).toBeVisible()
   await productSearch.press('Enter')
   await expect.poll(() => new URL(page.url()).searchParams.get('series_kind')).toBe('actual_dominant')
   expect(new URL(page.url()).searchParams.has('contract')).toBe(false)
@@ -489,7 +490,7 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=actual_dominant&frequency=15m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
   await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
-  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留指标图表。')).toBeVisible()
   await expect(page.locator('.observed-records')).toHaveCount(0)
   expect(requests.alertRequests.filter(({ url }) => url.searchParams.get('rule_code') === 'htdy_original_15m')).toHaveLength(0)
   await page.getByRole('group', { name: '周期', exact: true }).getByRole('button', { name: '60分钟', exact: true }).click()
@@ -508,9 +509,9 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await subingAudit.locator('summary').click()
   await expect(subingAudit).toContainText('首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
-  await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('Bar 2026-09-03 10:45 北京时间')
-  await expect(page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history')).toContainText('S↑ 多头预警')
+  await expect(subingAudit.locator('tbody')).toContainText('2026-09-03 10:45')
+  await expect(subingAudit.locator('tbody')).toContainText('买入观察')
+  await expect(page.getByRole('button', { name: '参考记录', exact: true })).toHaveCount(0)
   expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
 })
@@ -549,16 +550,11 @@ test('SuBing current MACD and immutable history remain usable on desktop and mob
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: width === 390 ? 844 : 900 })
-    await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-    const history = width === 390 ? page.getByRole('dialog', { name: '历史记录', exact: true }) : page.locator('.detail-section-tabs__history')
-    await expect(history).toContainText('Bar 2026-09-03 10:45 北京时间')
+    await page.getByRole('button', { name: '预警记录', exact: true }).click()
+    const history = page.locator('.observed-records tbody')
+    await expect(history).toContainText('2026-09-03 10:45')
     await expect(history).toContainText('JM2601')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-    if (width === 390) {
-      await page.keyboard.press('Escape')
-      await expect(history).not.toBeVisible()
-      await expect(page.getByRole('tab', { name: '历史记录', exact: true })).toBeFocused()
-    }
   }
 })
 
@@ -582,8 +578,8 @@ test('SuBing has stable desktop and narrow viewport visuals with selectable hist
   })
 
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '历史记录' })).toContainText('Bar 2026-09-03 10:45 北京时间')
+  await page.getByRole('button', { name: '预警记录', exact: true }).click()
+  await expect(page.locator('.observed-records tbody')).toContainText('2026-09-03 10:45')
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await expect(page).toHaveScreenshot('market-detail-subing-390x844.png', {
     animations: 'disabled', caret: 'hide', maxDiffPixels: 500,
@@ -597,9 +593,12 @@ test('SuBing history opens the matching immutable AlertEvent detail while chart 
   })
   await page.goto('/market/chart?symbol=jm&view=subing')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
-  await page.getByRole('tab', { name: '历史记录', exact: true }).click()
-  await page.locator('[data-detail-workspace="subing"] .detail-section-tabs__history button').first().click()
-  await expect(page.getByRole('dialog', { name: '苏冰预警详情' })).toContainText('S↑ 多头预警 · 未记录 · 2026-09-03 10:45 北京时间 · JM2601')
+  await page.getByRole('button', { name: '预警记录', exact: true }).click()
+  await page.locator('.observed-records').getByRole('button', { name: '预警详情', exact: true }).first().click()
+  const details = page.getByRole('dialog', { name: '苏冰预警详情' })
+  await expect(details).toContainText('2026-09-03 10:45')
+  await expect(details).toContainText('JM2601')
+  await expect(details).toContainText('未记录')
 })
 
 test('SuBing consumes its exact AlertEvent focus once', async ({ page }) => {
@@ -673,7 +672,7 @@ test('HTDY keeps seven historical periods but only 60m resolves immutable Event 
       await expect(page.locator('.observed-records__table')).toContainText('买入观察')
       await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
     } else {
-      await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+      await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留指标图表。')).toBeVisible()
       await expect(page.locator('.observed-records')).toHaveCount(0)
       await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '0')
       await page.waitForTimeout(100)
@@ -691,10 +690,11 @@ test('HTDY keeps seven historical periods but only 60m resolves immutable Event 
   currentCase = ['60m', '2026-09-03T02:30:00.000Z', '2026-09-03']
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=continuous&frequency=60m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-  await expect.poll(() => requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events')).length).toBe(before + 1)
+  await expect.poll(() => requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events')).length).toBeGreaterThan(before)
+  const beforeContract = requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events')).length
   await page.goto('/market/chart?symbol=jm&view=htdy&series_kind=contract&contract=JM2601&frequency=60m')
   await expect(page.locator('[data-detail-ready="true"]')).toBeVisible()
-  expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(before + 1)
+  expect(requests.alertRequests.filter(({ url }) => url.pathname.endsWith('/events'))).toHaveLength(beforeContract)
 })
 
 test('HTDY keeps last successful immutable Event evidence when a later Event refresh fails', async ({ page }) => {
@@ -1088,11 +1088,11 @@ test('chart toolbar survives price failures, market failures, product changes an
 test('HTDY source descriptions remain above the native chart toolbar', async ({ page }) => {
   await installNewowProductFixtures(page)
   await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=60m')
-  await page.getByRole('button',{name:'实时参考',exact:true}).click()
+  await page.getByRole('button',{name:'实际预警记录',exact:true}).click()
   const workspace = page.locator('[data-detail-workspace="htdy"]')
   const before = () => workspace.evaluate(el => el.querySelector('.htdy-workspace__source').getBoundingClientRect().bottom <= el.querySelector('.chart-reference-toolbar').getBoundingClientRect().top)
   await expect.poll(before).toBe(true)
   await workspace.getByRole('button',{name:'5分钟',exact:true}).click()
-  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留历史研究图表。')).toBeVisible()
+  await expect(page.getByText('实时信号统一记录于60分钟；当前周期保留指标图表。')).toBeVisible()
   await expect.poll(before).toBe(true)
 })

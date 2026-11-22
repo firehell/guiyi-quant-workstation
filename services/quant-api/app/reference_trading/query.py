@@ -28,7 +28,8 @@ from app.reference_trading.presentation import require_envelope, _wire
 from app.reference_trading.repository import (
     ReferenceRepository, RepositoryConflict, _identity_from_row,
 )
-from guiyi_quant.reference_trading import RecordingMode
+from guiyi_quant.newow.reference_pricing import has_gap_fill
+from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
 from guiyi_quant.reference_trading.htdy import MODEL_VERSION as HTDY_MODEL_VERSION
 
 
@@ -114,9 +115,13 @@ class HistoricalReferenceQuery:
         if row.recording_mode == "historical_replay":
             return (
                 row.frequency in _CAPABILITIES.get(row.strategy_code, ())
-                and _canonical_identity(identity)
+                and _canonical_identity(identity, allow_gap_fill=True)
             )
-        if row.recording_mode != "forward_observation" or not identity.observation_policy_version:
+        if (
+            row.recording_mode != "forward_observation"
+            or not identity.observation_policy_version
+            or has_gap_fill(identity.formula_versions)
+        ):
             return False
         if row.strategy_code == "htdy":
             return (
@@ -169,6 +174,16 @@ class HistoricalReferenceQuery:
                 ]
             selected = readable(exact) or readable(fallback) or exact or fallback
             return [self._stream_info(row) for row in selected]
+
+    def stream_for(self, identity: StreamIdentity) -> dict[str, object] | None:
+        """Look up the exact registered identity without enumerating sibling versions."""
+        with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
+            row = session.get(ReferenceStream, identity.stream_id)
+            if row is None:
+                return None
+            if _identity_from_row(row) != identity or not self._registered(row):
+                raise QueryConflict("STREAM_NOT_FOUND")
+            return self._stream_info(row)
 
     @staticmethod
     def _stream_info(row: ReferenceStream) -> dict[str, object]:

@@ -6,6 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Iterable, Literal
 
 MODEL_VERSION = "newow_dual_four_step_page_v1"
+GAP_FILL_MODEL_VERSION = "newow_dual_four_step_gap_fill_page_v1"
 FUTURES_ADAPTER_VERSION = "guiyi_newow_four_step_segment_valuation_v1"
 PAGE_SOURCE_SHA256 = "487a23ba40dcba03918ed76fe48187d8d7f1cf8ea692c44b4bd58be636e39e7b"
 PAGE_MIN_BARS = 60

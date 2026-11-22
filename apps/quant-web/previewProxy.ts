@@ -10,6 +10,7 @@ const candidatePaths = new Set([
   '/api/v1/market/bars/page', '/api/v1/market/dominants', '/api/v1/market/product-directory',
   '/api/v1/market/research/home-overview',
   '/api/v1/market/newow/product-capabilities',
+  '/api/v1/market/newow/ai-analysis',
   '/api/v1/market/newow/strategy-detail', '/api/v1/market/newow/historical-snapshot',
   '/api/v1/market/newow/daily-snapshot',
   '/api/v1/market/newow/weekly-snapshot',

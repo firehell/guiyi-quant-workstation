@@ -72,12 +72,14 @@ def status():
         active = read_registration(ACTIVE_PORTFOLIO)
         if active is None:
             heartbeat = read_registration(HEARTBEAT) or {}
-            fresh = heartbeat.get("run_id") is None and heartbeat.get("at") and (
-                0 <= (datetime.now(UTC) - datetime.fromisoformat(heartbeat["at"])).total_seconds() < 90
-            )
-            return project({"accounts": {}}, products=(),
-                status=heartbeat.get("status", "NOT_STARTED") if fresh else "NOT_STARTED",
-                worker_code=heartbeat.get("code") if fresh else None, run_id=None)
+            if heartbeat.get("run_id") is None and heartbeat.get("at"):
+                seen_at = datetime.fromisoformat(heartbeat["at"])
+                fresh = 0 <= (datetime.now(UTC) - seen_at).total_seconds() < 90
+                return project({"accounts": {}}, products=(),
+                    status=heartbeat["status"] if fresh else "STALE_OR_STOPPED",
+                    worker_code=heartbeat.get("code"), worker_at=seen_at,
+                    next_open=heartbeat.get("next_open") if fresh else None, run_id=None)
+            return project({"accounts": {}}, products=(), status="NOT_STARTED", worker_code=None, run_id=None)
         run_id = active["run_id"]
         store = ModelStore(read_private_settings_content(DB_PATH).decode())
         with Session(store.engine, autoflush=False) as session, readonly_transaction(

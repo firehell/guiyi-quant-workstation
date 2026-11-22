@@ -16,10 +16,9 @@ from guiyi_quant.newow.fusion_reference import (
     fusion_trade_id,
 )
 from guiyi_quant.newow.product_adapters import build_product_identity
-from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY, has_gap_fill
 from guiyi_quant.newow.product_contracts import (
     ProductBar,
-    ProductFrequency,
     ProductStrategy,
     StrategyAction,
     TradeEligibility,
@@ -54,10 +53,31 @@ def fusion_input_policy(stream):
     raise ValueError("REFERENCE_FUSION_STREAM_IDENTITY_CONFLICT")
 
 
+def _fusion_price_policy(stream):
+    if stream.recording_mode is RecordingMode.HISTORICAL_REPLAY and has_gap_fill(stream.formula_versions):
+        return GAP_FILL_PRICE_POLICY
+    return None
+
+
+def fusion_source_product_identity(stream, strategy):
+    return build_product_identity(
+        stream.product, strategy, stream.frequency,
+        input_quality_policy=fusion_input_policy(stream),
+        reference_price_policy=_fusion_price_policy(stream),
+    )
+
+
+def fusion_source_stream_identity(stream, strategy):
+    from guiyi_quant.newow.product_identity import build_newow_stream_identity
+
+    return build_newow_stream_identity(fusion_source_product_identity(stream, strategy))
+
+
 def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=None,
                         source_calculations=None):
     if (
         not isinstance(checkpoint.strategy_state, FusionReferenceReplayState)
+        or checkpoint.strategy_state.model_version != stream.reference_model_version
         or checkpoint.reference_state is None
         or (source_calculations is not None
             and stream.recording_mode is not RecordingMode.FORWARD_OBSERVATION)
@@ -67,6 +87,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=N
         stream.product, stream.frequency, recording_mode=stream.recording_mode,
         observation_policy_version=stream.observation_policy_version,
         input_quality_policy=fusion_input_policy(stream),
+        reference_price_policy=_fusion_price_policy(stream),
     ):
         raise ValueError("REFERENCE_FUSION_STREAM_IDENTITY_CONFLICT")
     prior = checkpoint.reference_state
@@ -106,7 +127,7 @@ def advance_fusion_step(stream, checkpoint, item, presentation, *, observed_at=N
         item.calculation_segment_id,
     )
     source_identities = {
-        strategy: build_product_identity(stream.product, strategy, bar.frequency, input_quality_policy=fusion_input_policy(stream))
+        strategy: fusion_source_product_identity(stream, strategy)
         for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION)
     }
     candidates = []
@@ -304,7 +325,6 @@ class SavedFusionSources:
                  target_trading_day=None):
         from contextlib import nullcontext
         from datetime import date, datetime
-        from guiyi_quant.newow.product_contracts import ProductFrequency
         from app.reference_trading.fusion_action_spool import FusionActionSpool
         from app.reference_trading.manifest_storage import verified_manifest_scope
 
@@ -315,14 +335,12 @@ class SavedFusionSources:
         # The per-source frame releases its manifest and page material before
         # the next strategy starts; only actions and small dependency proofs remain.
         def read_one(strategy, expected_manifest):
-            streams = self._query.streams(
-                strategy=f"newow_{strategy.value}",
-                product=request.identity.product,
-                frequency=request.identity.frequency,
-            )
-            if len(streams) != 1:
+            identity = fusion_source_product_identity(request.identity, strategy)
+            source_stream = fusion_source_stream_identity(request.identity, strategy)
+            info = self._query.stream_for(source_stream)
+            if info is None:
                 raise ValueError("REFERENCE_FUSION_SOURCE_NOT_READY")
-            stream_id = streams[0]["stream_id"]
+            stream_id = info["stream_id"]
             summary = self._query.summary(
                 stream_id,
                 since=request.since,
@@ -406,12 +424,6 @@ class SavedFusionSources:
                     "snapshot": summary["snapshot"],
                 }
             )
-            identity = build_product_identity(
-                request.identity.product,
-                strategy,
-                ProductFrequency(request.identity.frequency),
-                input_quality_policy=fusion_input_policy(request.identity),
-            )
             if (
                 source_identity.formula_versions != identity.formula_versions
                 or source_identity.profile_id != identity.profile_id
@@ -448,10 +460,12 @@ class SavedFusionSources:
 class PersistedFusionComparison:
     """Independent fusion revision, complete curve and bounded one-year records."""
 
-    def __init__(self, session_factory):
+    def __init__(self, session_factory, *, reference_price_policy=None):
         from app.reference_trading.persisted_newow import PersistedNewowReference
 
-        self._persisted = PersistedNewowReference(session_factory)
+        self._persisted = PersistedNewowReference(
+            session_factory, reference_price_policy=reference_price_policy,
+        )
         self._query = self._persisted._query
 
     @staticmethod
@@ -504,22 +518,17 @@ class PersistedFusionComparison:
                 )
                 verify_saved_compact_source({**manifest, "reader": source_reader}, proof)
             else:
-                from dataclasses import replace
                 from app.reference_trading.inputs import MarketDataHistoricalInputReader
                 from app.reference_trading.planning import HistoricalStreamRequest
                 from app.reference_trading.source_identity import verify_saved_input_prefix
-                base_identity = build_product_identity(product, ProductStrategy.TREND,
-                    ProductFrequency(frequency), input_quality_policy=fusion_input_policy(identity))
-                source_stream = replace(identity, strategy_code="newow_trend",
-                    formula_versions=base_identity.formula_versions, profile_id=base_identity.profile_id,
-                    reference_model_version=REFERENCE_MODEL_VERSION)
+                source_stream = fusion_source_stream_identity(identity, ProductStrategy.TREND)
                 input_reader = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None)
                 with input_reader.planned_stream(HistoricalStreamRequest(
                     source_stream, date.fromisoformat(manifest["query_since"]),
                     through, cutoff,
                 )) as source:
                     source_manifest = {**manifest, "reader": source_reader,
-                        "formula_versions": list(base_identity.formula_versions),
+                        "formula_versions": list(source_stream.formula_versions),
                         "reference_model_version": source_stream.reference_model_version}
                     if manifest["reader"] in {"newow_fusion_saved_sources_v2", "newow_fusion_saved_sources_v3"}:
                         from app.reference_trading.inputs import _stream_manifest_sha256
@@ -557,14 +566,9 @@ class PersistedFusionComparison:
         from datetime import date, timedelta
         from app.reference_trading.query import QueryConflict, _decode, _encode
 
-        matches = self._query.streams(
-            strategy="newow_dual_fusion", product=product, frequency=frequency
-        )
-        if len(matches) != 1:
-            raise QueryConflict(
-                "NOT_BUILT" if not matches else "STREAM_IDENTITY_AMBIGUOUS"
-            )
-        stream = matches[0]
+        stream = self._persisted._fusion_stream(product, frequency)
+        if stream is None:
+            raise QueryConflict("NOT_BUILT")
         stats = self._query.summary(
             stream["stream_id"], since=since, through=through, cutoff=cutoff,
             **({"snapshot_token": snapshot_token} if snapshot_token is not None else {}),
@@ -580,24 +584,25 @@ class PersistedFusionComparison:
         if not isinstance(dependencies, list) or len(dependencies) != 2:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
         groups = []
+        semantic_source = manifest.get("source_reader") in SEMANTIC_READERS
         for strategy, dependency in zip(
             (ProductStrategy.TREND, ProductStrategy.OSCILLATION), dependencies
         ):
-            if (manifest.get("source_reader") not in SEMANTIC_READERS
-                    and expected_source_generation is not None and strategy.value == expected_source_generation[0]):
-                if (dependency.get("stream_id"), dependency.get("revision_id"), dependency.get("seq")) != tuple(expected_source_generation[1:]):
+            base_identity = fusion_source_stream_identity(identity, strategy)
+            base_stream = self._query.stream_for(base_identity)
+            if base_stream is None or dependency.get("stream_id") != base_identity.stream_id:
+                raise QueryConflict("SOURCE_GENERATION_CONFLICT")
+            dependency_generation = (dependency["stream_id"], dependency["revision_id"], dependency["seq"])
+            if expected_source_generation is not None and strategy.value == expected_source_generation[0]:
+                expected = tuple(expected_source_generation[1:])
+                if expected[0] != base_identity.stream_id or (
+                    (not semantic_source or snapshot_token is not None)
+                    and dependency_generation != expected
+                ):
                     raise QueryConflict("SOURCE_GENERATION_CONFLICT")
-            bases = self._query.streams(
-                strategy=f"newow_{strategy.value}", product=product, frequency=frequency
-            )
-            if len(bases) != 1 or any(
-                bases[0].get(key) != dependency.get(other)
-                for key, other in (
-                    ("stream_id", "stream_id"),
-                    *(((("active_revision_id", "revision_id"), ("latest_seq", "seq")))
-                      if manifest.get("source_reader") not in SEMANTIC_READERS else ()),
-                )
-            ):
+            if not semantic_source and (
+                base_stream["active_revision_id"], base_stream["latest_seq"],
+            ) != dependency_generation[1:]:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             _, saved = self._persisted._manifest(
                 dependency["stream_id"], dependency["revision_id"], dependency["seq"]
@@ -605,7 +610,7 @@ class PersistedFusionComparison:
             if manifest_sha256(saved) != dependency.get("dependency_digest"):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             snapshot_options = {}
-            if manifest.get("source_reader") in SEMANTIC_READERS:
+            if semantic_source:
                 token = _decode(dependency["snapshot"], kind="snapshot")
                 token.update(since=since.isoformat(), through=through.isoformat(), cutoff=cutoff.isoformat())
                 snapshot_options["snapshot_token"] = _encode(token)
@@ -616,7 +621,7 @@ class PersistedFusionComparison:
             if base["revision_id"] != dependency["revision_id"] or base["seq"] != dependency["seq"]:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             groups.append(
-                self._group(strategy.value, bases[0]["reference_model_version"], base)
+                self._group(strategy.value, base_identity.reference_model_version, base)
             )
         groups.append(self._group("fusion", identity.reference_model_version, stats))
         record_since = through - timedelta(days=364)
@@ -680,10 +685,7 @@ class PersistedFusionComparison:
             "summary": groups[-1],
             "curve": curve,
             "source_profiles": [
-                build_product_identity(
-                    product, strategy, ProductFrequency(frequency),
-                    input_quality_policy=fusion_input_policy(identity),
-                ).profile_id
+                fusion_source_product_identity(identity, strategy).profile_id
                 for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION)
             ],
             "product": product,

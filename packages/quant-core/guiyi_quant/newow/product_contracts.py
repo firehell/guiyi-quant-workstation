@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import TypeVar
 
 from .models import NewowDailyBar
+from .reference_pricing import has_gap_fill
 from .product_identity import (
     InputQualityPolicy,
     build_hint_id,
@@ -136,7 +137,7 @@ class ProductIdentity:
         if not formulas:
             raise ValueError("NEWOW_PRODUCT_EMPTY_FORMULAS")
         object.__setattr__(self, "formula_versions", formulas)
-        version = 2 if "newow_oscillation_trueup_kernel111_v1" in formulas else 1
+        version = 2 if has_gap_fill(formulas) or "newow_oscillation_trueup_kernel111_v1" in formulas else 1
         expected = f"newow_product_{self.strategy}_{self.frequency}_v{version}"
         if self.profile_id and self.profile_id != expected:
             raise ValueError("NEWOW_PRODUCT_INVALID_PROFILE")

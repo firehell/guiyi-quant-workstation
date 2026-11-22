@@ -172,17 +172,20 @@ def test_cached_base_fusion_requires_exact_saved_generation(monkeypatch, changed
     from app.reference_trading.newow_fusion import PersistedFusionComparison
     from app.reference_trading.query import QueryConflict
     from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
+    from guiyi_quant.newow.product_identity import build_newow_stream_identity
+    from guiyi_quant.newow.product_adapters import build_product_identity
+    from guiyi_quant.newow.product_contracts import ProductFrequency
+    stream = build_newow_stream_identity(build_product_identity("rb", "trend", "1m"))
     saved = PersistedNewowReference(lambda: None)
     saved._query = SimpleNamespace(summary=lambda *a, **kw: {'revision_id': 'revision', 'seq': 8 if changed else 7})
-    saved._manifest = lambda *_: (None, {})
-    saved._page_read = lambda *_: SimpleNamespace(input_quality_policy=None)
+    saved._manifest = lambda *_: (stream, {})
+    saved._page_read = lambda *_: SimpleNamespace(input_quality_policy='newow_input_quality_v1')
     saved.validate_cached_generation = lambda *_: None
-    monkeypatch.setattr('guiyi_quant.newow.product_adapters.build_product_identity', lambda *_a, **_kw: None)
     monkeypatch.setattr('app.market_data.newow.page_performance_adapter.project_page_performance', lambda *_a, **_kw: {'strategy': 'fusion'})
     monkeypatch.setattr(PersistedFusionComparison, 'comparison', lambda *_a, **_kw: {'reference_input_sha256': 'fusion-source', 'items': []})
     payload = {'items': [{'reference_trade_id': 'base'}]}
-    delivery = SectionDelivery('delivered', None, PersistedReferenceSectionValue(payload, ("stream", "revision", 7)))
-    request = SimpleNamespace(product='rb', frequency=SimpleNamespace(value='1m'), strategy=SimpleNamespace(value='trend'), history_limit=50, fusion_before=None)
+    delivery = SectionDelivery('delivered', None, PersistedReferenceSectionValue(payload, (stream.stream_id, "revision", 7)))
+    request = SimpleNamespace(product='rb', frequency=ProductFrequency.MINUTE, strategy=SimpleNamespace(value='trend'), history_limit=50, fusion_before=None)
     window = SimpleNamespace(requested_since=date(2023,1,1), actual_through=date(2026,9,24), requested_through=date(2026,9,24), cutoff=datetime(2026,9,24,7,tzinfo=UTC))
     if changed:
         with pytest.raises(QueryConflict, match='SOURCE_GENERATION_CONFLICT'):
@@ -201,10 +204,13 @@ def test_hot_reference_cache_rechecks_generation(current_seq):
     from app.reference_trading.persisted_newow import PersistedNewowReference
     from app.reference_trading.query import QueryConflict
     from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
+    from guiyi_quant.newow.product_identity import build_newow_stream_identity
+    from guiyi_quant.newow.product_adapters import build_product_identity
+    stream = build_newow_stream_identity(build_product_identity("rb", "trend", "1m"))
     saved = PersistedNewowReference(lambda: None)
-    saved._manifest = lambda *_args: (None, {"reader": "newow_product_reader_intraday_v3", "query_since": "2023-01-01"})
+    saved._manifest = lambda *_args: (stream, {"reader": "newow_product_reader_intraday_v3", "query_since": "2023-01-01"})
     saved._query = SimpleNamespace(summary=lambda *_a, **_kw: {'revision_id':'revision', 'seq':current_seq})
-    delivery = SectionDelivery('delivered', None, PersistedReferenceSectionValue({'performance_since':'2023-01-01','performance_through':'2026-09-24','reference_cutoff':'2026-09-24T07:00:00+00:00'}, ('stream','revision',7)))
+    delivery = SectionDelivery('delivered', None, PersistedReferenceSectionValue({'performance_since':'2023-01-01','performance_through':'2026-09-24','reference_cutoff':'2026-09-24T07:00:00+00:00'}, (stream.stream_id,'revision',7)))
     if current_seq == 7:
         saved.validate_cached_generation(delivery)
     else:
@@ -219,24 +225,31 @@ def test_hot_fusion_cache_validates_real_payload_shape_and_all_generations(chang
     from app.reference_trading.contracts import manifest_sha256
     from app.reference_trading.query import QueryConflict
     from app.market_data.newow.product_service import SectionDelivery, PersistedReferenceSectionValue
+    from app.reference_trading.newow_fusion import fusion_source_stream_identity
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    from guiyi_quant.newow.product_contracts import ProductStrategy
     saved = PersistedNewowReference(lambda: None)
+    fusion = build_fusion_stream_identity("rb", "1m")
+    trend = fusion_source_stream_identity(fusion, ProductStrategy.TREND)
+    oscillation = fusion_source_stream_identity(fusion, ProductStrategy.OSCILLATION)
+    streams = {s.stream_id: s for s in (fusion, trend, oscillation)}
+    changed_stream = {"fusion": fusion, "oscillation": oscillation}.get(changed)
     base_manifest = {'source_identity': 'unchanged', 'query_since': '2023-01-01'}
-    dependencies = [{'stream_id':s, 'revision_id':'revision', 'seq':7,
+    dependencies = [{'stream_id':s.stream_id, 'revision_id':'revision', 'seq':7,
                      'dependency_digest': manifest_sha256(base_manifest)}
-                    for s in ('trend','oscillation')]
-    def streams(*, strategy, product, frequency, mode):
-        assert mode == 'historical_replay'
-        assert (product, frequency) == ('rb','1m')
-        name = 'fusion' if strategy == 'newow_dual_fusion' else strategy.removeprefix('newow_')
-        return [{'stream_id':name,'active_revision_id':'revision','latest_seq':8 if changed==name else 7}]
+                    for s in (trend, oscillation)]
+    def stream_for(identity):
+        assert identity == streams[identity.stream_id]
+        return {'stream_id':identity.stream_id, 'active_revision_id':'revision','latest_seq':8 if changed_stream == identity else 7}
     def summary(stream, **kw):
-        return {'revision_id':'revision','seq':8 if changed==stream else 7,'snapshot':'fusion-new' if changed=='fusion' and stream=='fusion' else 'fusion-snapshot'}
-    saved._query = SimpleNamespace(streams=streams, summary=summary)
-    saved._manifest = lambda stream, *_: (None, {'query_since':'2023-01-01','source_dependencies':dependencies}
-                                         if stream == 'fusion' else base_manifest)
+        return {'revision_id':'revision','seq':8 if changed_stream == streams[stream] else 7,
+                'snapshot':'fusion-new' if changed_stream == fusion and streams[stream] == fusion else 'fusion-snapshot'}
+    saved._query = SimpleNamespace(stream_for=stream_for, summary=summary)
+    saved._manifest = lambda stream, *_: (streams[stream], {'query_since':'2023-01-01','source_dependencies':dependencies}
+                                         if streams[stream] == fusion else base_manifest)
     revision = manifest_sha256({'snapshot':'fusion-snapshot','dependencies':dependencies,'record_since':'2025-09-25','record_through':'2026-09-24'})
     payload = {'performance_since':'2023-01-01','performance_through':'2026-09-24','reference_cutoff':'2026-09-24T07:00:00+00:00','fusion_comparison':{'product':'rb','frequency':'1m','reference_revision':revision}}
-    delivery = SectionDelivery('delivered',None,PersistedReferenceSectionValue(payload,('trend','revision',7)))
+    delivery = SectionDelivery('delivered',None,PersistedReferenceSectionValue(payload,(trend.stream_id,'revision',7)))
     if changed is None:
         saved.validate_cached_generation(delivery)
     else:

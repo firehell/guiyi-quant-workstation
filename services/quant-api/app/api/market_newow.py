@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
 from guiyi_quant.newow.product_identity import InputQualityPolicy
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from app.reference_trading.presentation import PresentationUnavailable
@@ -37,6 +38,7 @@ from app.market_data.newow.weekly_snapshot import (
 )
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
+    FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY,
     AU_PERIOD_PREVIEW_FREQUENCIES,
     INTRADAY_BATCH_PREVIEW_SYMBOLS,
     INTRADAY_SINGLE_PREVIEW_SYMBOLS,
@@ -168,8 +170,7 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     if as_of > now:
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_AS_OF"})
-    # v3 binds all six combinations to the requested completed Canonical cutoff.
-    # Candidate previews retain their immutable v2 wire identity.
+    # All six combinations bind to the requested completed Canonical cutoff.
     deadline = monotonic() + 30
     def cancelled():
         if monotonic() >= deadline:
@@ -183,16 +184,17 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
             _input_quality_policy(request, product, frequency))[0]
     try:
         preview = getattr(request.state, "candidate_preview_as_of", None) is not None
+        pricing = GAP_FILL_PRICE_POLICY if preview else FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
         with _PRODUCT_GATE.acquire(cancelled, priority=2):
             result = analyze_product(product, as_of, reader_factory, cancelled,
                                      lambda frequency: _enforce_product_frequency(request, product, frequency),
-                                     include_four_step=not preview)
-        return {"schema_version": ("newow_ai_analysis_v2" if preview else "newow_ai_analysis_v3"), "product": product,
+                                     include_four_step=True, reference_price_policy=pricing)
+        return {"schema_version": ("newow_ai_analysis_v4" if pricing == GAP_FILL_PRICE_POLICY else "newow_ai_analysis_v3"), "product": product,
                 "as_of": _json_value(as_of), "formula_version": PAGE_FORMULA,
                 "futures_adapter_version": FUTURES_ADAPTER, "page_source_sha256": PAGE_SOURCE_SHA256,
                 "page_kernel_parity": True, "page_parity": False, "executable": False,
                 "combos": _json_value(result.combos),
-                **({} if preview else {"four_step": _json_value(result.four_step)})}
+                "four_step": _json_value(result.four_step)}
     except HTTPException:
         raise
     except Exception as error:
@@ -364,13 +366,18 @@ def _build_product_service(
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     *, historical_intraday: bool = False,
     reuse_read_inputs: bool = False,
+    reference_price_policy: str | None = None,
+    use_persisted_reference: bool = True,
 ) -> NewowProductService:
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
     active = load_active_products()
+    if reference_price_policy is None:
+        reference_price_policy = FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
 
     composition = NewowComposition(
         market_data, coverage, active, quality_policy,
+        reference_price_policy=reference_price_policy,
         context_quality_policy=lambda product, frequency: candidate_input_quality_policy(
             product, frequency, candidate_weekly=False,
         ),
@@ -384,7 +391,8 @@ def _build_product_service(
         if historical_intraday else SessionLocal)
     persisted_reference = PersistedNewowReference(
         factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
-    ).section
+        reference_price_policy=reference_price_policy,
+    ).section if use_persisted_reference else None
     return composition.service(
         cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,
@@ -402,6 +410,7 @@ def _build_snapshot_inputs(
     now: Callable[[], datetime],
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     *, home_services: list[NewowProductService] | None = None,
+    reference_price_policy: str | None = None,
 ):
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(
@@ -412,8 +421,11 @@ def _build_snapshot_inputs(
         # windows never cross transactions or reach a maintenance writer.
         market_data.replay_coverage = coverage
     active = load_active_products()
+    if reference_price_policy is None:
+        reference_price_policy = FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
     composition = NewowComposition(
         market_data, coverage, active, quality_policy, now=now,
+        reference_price_policy=reference_price_policy,
     )
     reader = composition.reader(cancelled=cancelled)
 
@@ -450,9 +462,11 @@ def _build_daily_resolver(
     now: Callable[[], datetime],
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     *, home_services: list[NewowProductService] | None = None,
+    reference_price_policy: str | None = None,
 ) -> NewowDailySnapshotResolver:
     reader, service_factory = _build_snapshot_inputs(
         session, cancelled, now, quality_policy, home_services=home_services,
+        reference_price_policy=reference_price_policy,
     )
     return NewowDailySnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 
@@ -463,9 +477,11 @@ def _build_weekly_resolver(
     now: Callable[[], datetime],
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     *, home_services: list[NewowProductService] | None = None,
+    reference_price_policy: str | None = None,
 ) -> NewowWeeklySnapshotResolver:
     reader, service_factory = _build_snapshot_inputs(
-        session, cancelled, now, quality_policy, home_services=home_services
+        session, cancelled, now, quality_policy, home_services=home_services,
+        reference_price_policy=reference_price_policy
     )
     status = public_after_market_status(_load_status(
         PROJECT_ROOT / ".run" / "after-market-status.json"
@@ -718,11 +734,14 @@ def newow_strategy_detail(
             except RuntimeError:
                 return False
 
+        preview_at = getattr(request.state, "candidate_preview_as_of", None)
+        # Preview is local/read-only and cannot select a new formal ledger.
+        pricing = {"reference_price_policy": GAP_FILL_PRICE_POLICY} if preview_at is not None else {}
         if resolve_current:
-            now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
+            now = preview_at or datetime.now(UTC)
             policy = _input_quality_policy(request, product, frequency)
             resolver_factory = _build_weekly_resolver if frequency == "1w" else _build_daily_resolver
-            resolver = resolver_factory(session, cancelled, lambda: now, policy, home_services=[])
+            resolver = resolver_factory(session, cancelled, lambda: now, policy, home_services=[], **pricing)
             snapshot, chart = resolver.resolve_with_chart(
                 product, ProductStrategy(strategy), ProductFrequency(frequency), chart_limit=chart_limit,
             )
@@ -769,6 +788,7 @@ def newow_strategy_detail(
                                and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES)
         service = (_build_product_service(session, cancelled, policy, historical_intraday=True)
                    if historical_intraday else
+                   _build_product_service(session, cancelled, policy, use_persisted_reference=False, **pricing) if pricing else
                    _build_product_service(session, cancelled) if policy is InputQualityPolicy.V1
                    else _build_product_service(session, cancelled, policy))
         result = service.query(product_query)

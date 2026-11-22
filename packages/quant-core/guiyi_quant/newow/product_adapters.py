@@ -9,6 +9,8 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime
 from decimal import Decimal
 
+from typing import cast
+
 from ..reference_trading.adapters import strategy_input_fingerprint
 
 from .escape_d123 import EscapeState, initial_escape_state, step_escape_d123
@@ -49,6 +51,7 @@ from .product_contracts import (
 )
 from .product_identity import InputQualityPolicy, build_calculation_segment_id
 from .profile import NEWOW_TREND_D1_PAGE_V2
+from .reference_pricing import GAP_FILL_PRICE_POLICY, has_gap_fill
 from .trend_band import (
     TrendBandStateValue,
     initial_trend_band_state,
@@ -116,15 +119,22 @@ def build_product_identity(
     frequency: ProductFrequency | str,
     *,
     input_quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
+    reference_price_policy: str | None = None,
 ) -> ProductIdentity:
-    """Build the one active adapter identity without duplicating formula sets."""
+    """Build a price-versioned identity; existing consumers default to threshold pricing."""
 
     normalized = ProductStrategy(strategy)
+    formulas = _EXPECTED_FORMULAS[normalized]
+    if reference_price_policy is not None:
+        if reference_price_policy != GAP_FILL_PRICE_POLICY:
+            raise ValueError("NEWOW_PRODUCT_REFERENCE_PRICE_POLICY_INVALID")
+        if normalized is not ProductStrategy.OSCILLATION:
+            formulas = formulas | {GAP_FILL_PRICE_POLICY}
     return ProductIdentity(
         product,
         normalized,
         ProductFrequency(frequency),
-        tuple(_EXPECTED_FORMULAS[normalized]),
+        tuple(formulas),
         input_quality_policy=input_quality_policy,
     )
 
@@ -155,7 +165,12 @@ def _iter_validated_inputs(
 ) -> Iterator[ProductBar]:
     if not isinstance(identity, ProductIdentity):
         raise ValueError("NEWOW_PRODUCT_INVALID_IDENTITY")
-    if frozenset(identity.formula_versions) != _EXPECTED_FORMULAS[identity.strategy]:
+    expected = build_product_identity(
+        identity.product, identity.strategy, identity.frequency,
+        input_quality_policy=identity.input_quality_policy,
+        reference_price_policy=GAP_FILL_PRICE_POLICY if has_gap_fill(identity.formula_versions) else None,
+    )
+    if identity.formula_versions != expected.formula_versions:
         raise ValueError("NEWOW_PRODUCT_FORMULA_IDENTITY_INVALID")
     seen_segments: set[str] = set()
     current_segment: str | None = None
@@ -196,6 +211,7 @@ def _new_action(
     price: Decimal,
     sequence: int,
     *,
+    anchor_price: Decimal | None = None,
     source_marker_id: str | None = None,
     source_related_marker_ids: tuple[str, ...] = (),
     trade_eligibility: TradeEligibility = TradeEligibility.ELIGIBLE,
@@ -208,7 +224,7 @@ def _new_action(
         trading_day=product_bar.bar.trading_day,
         kind=ActionKind(kind),
         reference_price=price,
-        anchor_price=price,
+        anchor_price=anchor_price if anchor_price is not None else price,
         sequence=sequence,
         source_marker_id=source_marker_id,
         source_related_marker_ids=source_related_marker_ids,
@@ -310,6 +326,7 @@ def _trend_action(
         marker.marker_type,
         marker.price,
         0,
+        anchor_price=cast(Decimal | None, marker.trigger_facts.get("reference_threshold")),
         source_marker_id=marker.marker_id,
         source_related_marker_ids=marker.related_marker_ids,
         trade_eligibility=eligibility,
@@ -384,7 +401,8 @@ def _trend_frame(
     pairing: _PairingState,
 ) -> tuple[StrategyFrame, TrendBandStateValue, EscapeState, tuple[str, ...]]:
     raw_bar = product_bar.bar
-    result = step_trend_band(state, raw_bar, profile=NEWOW_TREND_D1_PAGE_V2)
+    gap_fill = has_gap_fill(identity.formula_versions)
+    result = step_trend_band(state, raw_bar, profile=NEWOW_TREND_D1_PAGE_V2, gap_fill=gap_fill)
     escape = step_escape_d123(escape_state, raw_bar, profile=NEWOW_TREND_D1_PAGE_V2)
     diagnostics: list[str] = []
     actions: tuple[StrategyAction, ...] = ()
@@ -417,6 +435,7 @@ def _trend_frame(
             state,
             replace(raw_bar, observation_eligible=True),
             profile=NEWOW_TREND_D1_PAGE_V2,
+            gap_fill=gap_fill,
         )
         # The primitive suppresses both the marker and its source-link state on
         # pre-owner bars. Preserve that formula state without promoting a main
@@ -606,6 +625,7 @@ def _main_rise_actions(
         signal.action,
         signal.price,
         0,
+        anchor_price=signal.reference_threshold,
         trade_eligibility=(
             TradeEligibility.INITIAL_CLEAR_NO_ENTRY
             if qualifies
@@ -668,6 +688,7 @@ def _main_rise_witnesses(
         state,
         replace(product_bar.bar, observation_eligible=True),
         formulas=MAIN_RISE_PAGE_V1,
+        gap_fill=has_gap_fill(identity.formula_versions),
     )
     signal = shadow.band_signal
     if signal is None:
@@ -683,6 +704,7 @@ def _main_rise_witnesses(
         signal.action,
         signal.price,
         0,
+        anchor_price=signal.reference_threshold,
         trade_eligibility=TradeEligibility.WARMUP_ONLY,
     )
     return (_record_warmup_build(pairing, action),)
@@ -719,7 +741,10 @@ def _main_rise_frame(
     state: MainRiseState,
     pairing: _PairingState,
 ) -> tuple[StrategyFrame, MainRiseState, tuple[str, ...]]:
-    result = step_main_rise(state, product_bar.bar, formulas=MAIN_RISE_PAGE_V1)
+    result = step_main_rise(
+        state, product_bar.bar, formulas=MAIN_RISE_PAGE_V1,
+        gap_fill=has_gap_fill(identity.formula_versions),
+    )
     actions = (
         _main_rise_actions(
             identity,

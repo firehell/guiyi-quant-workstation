@@ -14,6 +14,12 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import defer
 
+from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+from guiyi_quant.newow.product_adapters import build_product_identity
+from guiyi_quant.newow.product_contracts import ProductIdentity, ProductStrategy
+from guiyi_quant.newow.product_identity import build_newow_stream_identity
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
+
 from app.db.readonly import readonly_transaction
 from app.reference_trading.inputs import MarketDataHistoricalInputReader
 from app.reference_trading.models import ReferenceBatch, ReferenceStream
@@ -87,12 +93,46 @@ class _SavedManifest(dict):
 
 
 class PersistedNewowReference:
-    def __init__(self, session_factory, *, cache=None) -> None:
+    def __init__(self, session_factory, *, cache=None, reference_price_policy: str | None = None) -> None:
+        if reference_price_policy not in (None, GAP_FILL_PRICE_POLICY):
+            raise ValueError("NEWOW_PRODUCT_REFERENCE_PRICE_POLICY_INVALID")
+        self._reference_price_policy = reference_price_policy
         self._factory = session_factory
         self._query = HistoricalReferenceQuery(session_factory)
         self._cache = cache
         self._page_reads: OrderedDict[tuple, Any] = OrderedDict()
         self._page_read_lock = Lock()
+
+    def _fusion_stream(self, product, frequency, input_quality_policy=None):
+        if input_quality_policy is None:
+            from app.market_data.newow.product_release import candidate_input_quality_policy
+            input_quality_policy = candidate_input_quality_policy(product, frequency, candidate_weekly=False)
+        return self._query.stream_for(build_fusion_stream_identity(
+            product, frequency, input_quality_policy=input_quality_policy,
+            reference_price_policy=self._reference_price_policy,
+        ))
+
+    def _product_identity(self, product, strategy, frequency, input_quality_policy):
+        return build_product_identity(
+            product, strategy, frequency, input_quality_policy=input_quality_policy,
+            reference_price_policy=self._reference_price_policy,
+        )
+
+    def _selected_base(self, identity: ProductIdentity):
+        if identity != self._product_identity(
+            identity.product, identity.strategy, identity.frequency, identity.input_quality_policy,
+        ):
+            raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
+        return build_newow_stream_identity(identity)
+
+    def _require_selected_generation(self, identity, stream_id):
+        from app.reference_trading.newow_fusion import fusion_input_policy
+        expected = build_newow_stream_identity(self._product_identity(
+            identity.product, identity.strategy_code.removeprefix("newow_"),
+            identity.frequency, fusion_input_policy(identity),
+        ))
+        if identity != expected or stream_id != expected.stream_id:
+            raise QueryConflict("SOURCE_GENERATION_CONFLICT")
 
     def _manifest(self, stream_id: str, revision_id: str, seq: int):
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
@@ -141,33 +181,22 @@ class PersistedNewowReference:
         material is still being calculated. Only its source proof is reused;
         every visible number and record remains on the selected material seq.
         """
-        from dataclasses import replace
         from app.reference_trading.page_material_storage import validate_input_integrity, verify_source_integrity
         from app.reference_trading.contracts import manifest_sha256
-        from guiyi_quant.newow.product_adapters import build_product_identity
-        from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
-        from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION
+        from app.reference_trading.newow_fusion import fusion_source_stream_identity
         source_manifest = manifest
         source_identity = identity
         if identity.strategy_code.replace("-", "_") == "newow_dual_fusion":
-            from app.reference_trading.newow_fusion import fusion_input_policy
-            product = build_product_identity(identity.product, ProductStrategy.TREND,
-                ProductFrequency(identity.frequency), input_quality_policy=fusion_input_policy(identity))
-            source_identity = replace(identity, strategy_code="newow_trend",
-                formula_versions=product.formula_versions, profile_id=product.profile_id,
-                reference_model_version=REFERENCE_MODEL_VERSION)
+            source_identity = fusion_source_stream_identity(identity, ProductStrategy.TREND)
             source_manifest = {**manifest, "reader": manifest.get("source_reader"),
                 "input_fingerprints": manifest.get("source_input_fingerprints"),
-                "formula_versions": list(product.formula_versions),
-                "reference_model_version": REFERENCE_MODEL_VERSION}
+                "formula_versions": list(source_identity.formula_versions),
+                "reference_model_version": source_identity.reference_model_version}
         if source_manifest.get("reader") != "newow_product_reader_prefix_v5":
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
-        matches = self._query.streams(strategy=source_identity.strategy_code,
-            product=source_identity.product, frequency=source_identity.frequency,
-            mode="historical_replay")
-        if len(matches) != 1:
+        current = self._query.stream_for(source_identity)
+        if current is None:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
-        current = matches[0]
         current_identity, current_manifest = self._manifest(current["stream_id"],
             current["active_revision_id"], current["latest_seq"])
         record = getattr(current_manifest, "input_integrity", None)
@@ -199,7 +228,7 @@ class PersistedNewowReference:
             saved_day, owner_keys)
         return True
 
-    def _page_read(self, request, reader, manifest, resolved):
+    def _page_read(self, request, reader, identity, manifest, resolved):
         """Decode the authoritative prefix only after saved source proof passes.
 
         Reuse binds the entire saved manifest and exact cutoff/window; a cache
@@ -209,13 +238,7 @@ class PersistedNewowReference:
         from dataclasses import replace
         from app.market_data.newow.product_query import NewowProductQuery
         if manifest.get("reader") in SEMANTIC_READERS:
-            from app.reference_trading.planning import HistoricalStreamRequest
-            stream = self._query.streams(strategy=f"newow_{request.strategy.value}",
-                product=request.product, frequency=request.frequency.value, mode="historical_replay")
-            if len(stream) != 1:
-                raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
             # Semantic verification is repeated around the bounded display read.
-            identity, _ = self._manifest(stream[0]["stream_id"], stream[0]["active_revision_id"], stream[0]["latest_seq"])
             def semantic_verify():
                 input_reader = MarketDataHistoricalInputReader(newow_reader=reader, subing_service=None)
                 with input_reader.planned_stream(HistoricalStreamRequest(
@@ -451,6 +474,7 @@ class PersistedNewowReference:
         _require_history_window(manifest, reader, identity.product.lower() if identity else "",
             date.fromisoformat(payload["performance_since"]),
             datetime.fromisoformat(payload["reference_cutoff"]))
+        self._require_selected_generation(identity, saved[0])
         if manifest.get("reader") != "newow_product_reader_prefix_v5":
             return False
         since = date.fromisoformat(payload["performance_since"])
@@ -460,11 +484,10 @@ class PersistedNewowReference:
         fusion = payload.get("fusion_comparison")
         fusion_material = None
         if fusion is not None:
-            routes = self._query.streams(strategy="newow_dual_fusion",
-                product=identity.product, frequency=identity.frequency, mode="historical_replay")
-            if len(routes) != 1:
+            route = self._fusion_stream(identity.product, identity.frequency)
+            if route is None:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
-            fusion_material = select_page_material(self._factory, routes[0]["stream_id"], cutoff=market)
+            fusion_material = select_page_material(self._factory, route["stream_id"], cutoff=market)
             if fusion_material is None or fusion_material.cutoff != cutoff:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             fusion_identity, fusion_manifest = self._manifest(fusion_material.stream_id,
@@ -491,7 +514,7 @@ class PersistedNewowReference:
                 owner_keys=self._material_owner_keys(envelope), saved_through=cutoff,
                 saved_day=material.through, requested_through=market)
         if fusion_material is not None:
-            from app.reference_trading.newow_fusion import PersistedFusionComparison
+            from app.reference_trading.newow_fusion import PersistedFusionComparison, fusion_source_stream_identity
             from app.reference_trading.contracts import manifest_sha256
             token = fusion_material.token(fusion_manifest, since=since, through=through, cutoff=cutoff)
             self._query.summary(fusion_material.stream_id, since=since, through=through,
@@ -501,7 +524,9 @@ class PersistedNewowReference:
                 "record_through": through.isoformat()})
             if revision != fusion["reference_revision"]:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
-            for dependency in dependencies:
+            for strategy, dependency in zip((ProductStrategy.TREND, ProductStrategy.OSCILLATION), dependencies):
+                if dependency.get("stream_id") != fusion_source_stream_identity(fusion_identity, strategy).stream_id:
+                    raise QueryConflict("SOURCE_GENERATION_CONFLICT")
                 _, base = self._manifest(dependency["stream_id"], dependency["revision_id"], dependency["seq"])
                 if manifest_sha256(base) != dependency.get("dependency_digest"):
                     raise QueryConflict("SOURCE_GENERATION_CONFLICT")
@@ -544,11 +569,11 @@ class PersistedNewowReference:
         fusion = payload.get("fusion_comparison")
         if fusion is None:
             return
-        streams = self._query.streams(strategy="newow_dual_fusion", product=fusion["product"], frequency=fusion["frequency"], mode="historical_replay")
-        if len(streams) != 1:
+        stream = self._fusion_stream(fusion["product"], fusion["frequency"])
+        if stream is None:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
-        latest = self._query.summary(streams[0]["stream_id"], since=since, through=through, cutoff=cutoff)
-        identity, manifest = self._manifest(streams[0]["stream_id"], latest["revision_id"], latest["seq"])
+        latest = self._query.summary(stream["stream_id"], since=since, through=through, cutoff=cutoff)
+        identity, manifest = self._manifest(stream["stream_id"], latest["revision_id"], latest["seq"])
         _require_history_window(manifest, reader, fusion["product"], since, cutoff)
         dependencies = manifest.get("source_dependencies")
         if not isinstance(dependencies, list) or len(dependencies) != 2:
@@ -558,11 +583,12 @@ class PersistedNewowReference:
             "record_through": through.isoformat()})
         if revision != fusion["reference_revision"]:
             raise QueryConflict("SOURCE_GENERATION_CONFLICT")
-        for strategy, dependency in zip(("trend", "oscillation"), dependencies):
-            base = self._query.streams(strategy="newow_" + strategy, product=fusion["product"], frequency=fusion["frequency"], mode="historical_replay")
+        from app.reference_trading.newow_fusion import fusion_source_stream_identity
+        for strategy, dependency in zip((ProductStrategy.TREND, ProductStrategy.OSCILLATION), dependencies):
+            base = self._query.stream_for(fusion_source_stream_identity(identity, strategy))
             semantic_fusion = manifest.get("source_reader") in SEMANTIC_READERS
-            if (len(base) != 1 or base[0]["stream_id"] != dependency["stream_id"]
-                or not semantic_fusion and (base[0]["active_revision_id"], base[0]["latest_seq"]) != (dependency["revision_id"], dependency["seq"])):
+            if (base is None or base["stream_id"] != dependency["stream_id"]
+                or not semantic_fusion and (base["active_revision_id"], base["latest_seq"]) != (dependency["revision_id"], dependency["seq"])):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             _, dependency_manifest = self._manifest(dependency["stream_id"], dependency["revision_id"], dependency["seq"])
             if manifest_sha256(dependency_manifest) != dependency.get("dependency_digest"):
@@ -591,7 +617,8 @@ class PersistedNewowReference:
         saved = delivery.value.saved_generation
         if not isinstance(saved, tuple) or len(saved) != 3:
             raise QueryConflict("SOURCE_IDENTITY_UNVERIFIED")
-        _, saved_manifest = self._manifest(*saved)
+        saved_identity, saved_manifest = self._manifest(*saved)
+        self._require_selected_generation(saved_identity, saved[0])
         material = None
         material_token = None
         if saved_manifest.get("reader") == "newow_product_reader_prefix_v5":
@@ -599,11 +626,10 @@ class PersistedNewowReference:
             from app.market_data.newow.page_performance_adapter import project_page_material
             self.validate_cached_generation(delivery, reader=reader)
             cutoff = datetime.fromisoformat(payload["reference_cutoff"])
-            routes = self._query.streams(strategy="newow_dual_fusion", product=request.product,
-                frequency=request.frequency.value, mode="historical_replay")
-            if len(routes) != 1:
+            route = self._fusion_stream(request.product, request.frequency.value)
+            if route is None:
                 raise QueryConflict("NOT_BUILT")
-            material = select_page_material(self._factory, routes[0]["stream_id"], cutoff=cutoff)
+            material = select_page_material(self._factory, route["stream_id"], cutoff=cutoff)
             if material is None or material.cutoff != cutoff:
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             fusion_identity, fusion_manifest = self._manifest(material.stream_id, material.revision_id, material.seq)
@@ -623,7 +649,9 @@ class PersistedNewowReference:
             if (current["revision_id"], current["seq"]) != (saved[1], saved[2]):
                 raise QueryConflict("SOURCE_GENERATION_CONFLICT")
             cutoff = resolved.cutoff
-        fusion = PersistedFusionComparison(self._factory).comparison(
+        fusion = PersistedFusionComparison(
+            self._factory, reference_price_policy=self._reference_price_policy,
+        ).comparison(
             product=request.product, frequency=request.frequency.value,
             since=resolved.requested_since, through=resolved.requested_through,
             cutoff=cutoff, reader=reader, limit=request.history_limit,
@@ -638,13 +666,12 @@ class PersistedNewowReference:
             fusion["page_performance"] = project_page_material(envelope,
                 since=resolved.requested_since.isoformat(), through=resolved.requested_through.isoformat())
         else:
-            from guiyi_quant.newow.product_adapters import build_product_identity
             from app.market_data.newow.page_performance_adapter import project_page_performance
-            _, manifest = self._manifest(*saved)
-            full = self._page_read(request, reader, manifest, resolved)
+            full = self._page_read(request, reader, saved_identity, saved_manifest, resolved)
             try:
-                source_identity = build_product_identity(request.product, request.strategy, request.frequency,
-                    input_quality_policy=full.input_quality_policy)
+                source_identity = self._product_identity(
+                    request.product, ProductStrategy.TREND, request.frequency, full.input_quality_policy,
+                )
                 fusion["page_performance"] = project_page_performance(full, source_identity, resolved, fusion=True)
             finally:
                 close = getattr(full, "close", None)
@@ -693,7 +720,9 @@ class PersistedNewowReference:
                 resolved.requested_through.isoformat())
         if request.include_fusion and (legacy or fusion_selected):
             from app.reference_trading.newow_fusion import PersistedFusionComparison
-            fusion = PersistedFusionComparison(self._factory).comparison(
+            fusion = PersistedFusionComparison(
+                self._factory, reference_price_policy=self._reference_price_policy,
+            ).comparison(
                 product=request.product, frequency=request.frequency.value,
                 since=resolved.requested_since, through=resolved.requested_through,
                 cutoff=resolved.cutoff, reader=reader, limit=request.history_limit,
@@ -722,15 +751,18 @@ class PersistedNewowReference:
         if legacy or page_mode is not None:
             owns_full = full_read is None and request.frequency.value in {"1m", "5m", "15m", "30m", "60m"}
             full = full_read if full_read is not None else (
-                self._page_read(request, reader, manifest, resolved) if
+                self._page_read(request, reader, build_newow_stream_identity(identity), manifest, resolved) if
                 request.frequency.value in {"1m", "5m", "15m", "30m", "60m"} else read)
             try:
                 if legacy or not fusion_selected:
                     extra["page_performance"] = project_page_performance(
                         full, identity, resolved, selected_mode=page_mode)
                 if "fusion_comparison" in extra:
+                    fusion_trend = self._product_identity(
+                        identity.product, ProductStrategy.TREND, identity.frequency, identity.input_quality_policy,
+                    )
                     extra["fusion_comparison"]["page_performance"] = project_page_performance(
-                        full, identity, resolved, fusion=True, selected_mode=page_mode)
+                        full, fusion_trend, resolved, fusion=True, selected_mode=page_mode)
             finally:
                 if owns_full:
                     close = getattr(full, "close", None)
@@ -750,15 +782,10 @@ class PersistedNewowReference:
             PersistedReferenceSectionValue, SectionDelivery, _has_unresolved_tail_gap,
         )
 
-        matches = self._query.streams(
-            strategy=f"newow_{request.strategy.value}", product=request.product,
-            frequency=request.frequency.value, mode="historical_replay",
-        )
-        if not matches:
+        stream = self._query.stream_for(self._selected_base(identity))
+        if stream is None:
             raise QueryConflict("NOT_BUILT")
-        if len(matches) != 1:
-            raise QueryConflict("STREAM_IDENTITY_AMBIGUOUS")
-        stream_id = matches[0]["stream_id"]
+        stream_id = stream["stream_id"]
         since, through, cutoff = (
             resolved.requested_since, resolved.requested_through, resolved.cutoff,
         )
@@ -770,10 +797,12 @@ class PersistedNewowReference:
         needs_fusion = (getattr(request, "include_fusion", False)
                         and (not selected_mode or selected_mode.startswith("fusion_")))
         if needs_fusion:
-            fusion_routes = self._query.streams(strategy="newow_dual_fusion", product=request.product,
-                frequency=request.frequency.value, mode="historical_replay")
-            if len(fusion_routes) == 1:
-                fusion_material = select_page_material(self._factory, fusion_routes[0]["stream_id"], cutoff=cutoff)
+            fusion_stream = self._fusion_stream(
+                request.product, request.frequency.value, identity.input_quality_policy,
+            )
+            if fusion_stream is None:
+                raise QueryConflict("NOT_BUILT")
+            fusion_material = select_page_material(self._factory, fusion_stream["stream_id"], cutoff=cutoff)
             if fusion_material is not None:
                 dependencies = fusion_material.field["binding"].get("fusion_source_dependencies")
                 if not isinstance(dependencies, list) or len(dependencies) != 2:
@@ -801,20 +830,16 @@ class PersistedNewowReference:
         saved_endpoint = base_material.cutoff if base_material is not None else getattr(head_manifest, "computed_through", None)
         if base_material is None and head_manifest.get("reader") == "newow_product_reader_prefix_v5":
             raise QueryConflict("NOT_BUILT")
-        if getattr(request, "include_fusion", False) and (not selected_mode or selected_mode.startswith("fusion_")):
-            fusion_streams = self._query.streams(strategy="newow_dual_fusion", product=request.product,
-                frequency=request.frequency.value, mode="historical_replay")
-            if len(fusion_streams) != 1:
-                raise QueryConflict("NOT_BUILT")
+        if needs_fusion:
             fusion_options = {}
             if fusion_material is not None:
                 _, selected_fusion_manifest = self._manifest(fusion_material.stream_id,
                     fusion_material.revision_id, fusion_material.seq)
                 fusion_options["snapshot_token"] = fusion_material.token(selected_fusion_manifest,
                     since=since, through=through, cutoff=cutoff)
-            fusion_head = self._query.summary(fusion_streams[0]["stream_id"], since=since, through=through,
+            fusion_head = self._query.summary(fusion_stream["stream_id"], since=since, through=through,
                 cutoff=cutoff, **fusion_options)
-            _, fusion_manifest = self._manifest(fusion_streams[0]["stream_id"], fusion_head["revision_id"], fusion_head["seq"])
+            _, fusion_manifest = self._manifest(fusion_stream["stream_id"], fusion_head["revision_id"], fusion_head["seq"])
             fusion_endpoint = getattr(fusion_manifest, "computed_through", None)
             if fusion_endpoint is not None and saved_endpoint is not None:
                 saved_endpoint = min(saved_endpoint, fusion_endpoint)
@@ -860,10 +885,12 @@ class PersistedNewowReference:
             saved_snapshot = cursor.get("snapshot")
             if not isinstance(saved_snapshot, str):
                 raise QueryConflict("CURSOR_CONFLICT")
+            requested_snapshot = _decode(saved_snapshot, kind="snapshot")
+            if requested_snapshot.get("stream") != stream_id:
+                raise QueryConflict("CURSOR_CONFLICT")
         record_since = max(since, through - timedelta(days=364)) if minute else since
         if base_material is not None:
             if saved_snapshot is not None:
-                requested_snapshot = _decode(saved_snapshot, kind="snapshot")
                 if (requested_snapshot.get("revision"), requested_snapshot.get("seq")) != (base_material.revision_id, base_material.seq):
                     raise QueryConflict("CURSOR_CONFLICT")
             saved_snapshot = base_material.token(head_manifest,
@@ -1069,8 +1096,8 @@ class PersistedNewowReference:
                 "segment_id": item["owner_segment_id"],
                 "calculation_segment_id": item["calculation_segment_id"],
                 "formula_versions": list(identity.formula_versions),
-                "reference_model_version": matches[0]["reference_model_version"],
-                "futures_adaptation_version": matches[0]["futures_adaptation_version"],
+                "reference_model_version": stream["reference_model_version"],
+                "futures_adaptation_version": stream["futures_adaptation_version"],
                 **({"input_quality_policy": identity.input_quality_policy.value}
                    if identity.input_quality_policy.value != "newow_input_quality_v1" else {}),
                 "entry_signal_id": item["entry_action_id"],
@@ -1135,7 +1162,7 @@ class PersistedNewowReference:
         # Read the complete persisted window for readiness even when no page
         # estimate is requested: the bounded display read can miss a tail gap.
         full = read if base_material is not None else (
-            self._page_read(request, reader, manifest, resolved) if minute else read)
+            self._page_read(request, reader, stream_identity, manifest, resolved) if minute else read)
         try:
             selected_extra = self._selected_projection(
                 request, read, identity, reader, fact_key, resolved, generation,
