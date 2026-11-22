@@ -67,6 +67,13 @@ const STRATEGIES = NEWOW_PRODUCT_STRATEGIES
 const FREQUENCIES = NEWOW_PRODUCT_FREQUENCIES
 const RUNTIME_STATUSES = ['ready', 'warming', 'unavailable', 'not_applicable', 'evidence_required'] as const
 const EVIDENCE_STATUSES = ['ACTIVE_CODE_VERIFIED', 'RESEARCH_EVIDENCE_ONLY', 'EVIDENCE_REQUIRED', 'OUT_OF_SCOPE'] as const
+const GAP_FILL_FORMULA = 'newow_gap_fill_price_v1'
+
+export function newowReferenceModelVersion(identity: NewowProductMeta['identity']): NewowProductMeta['reference_model_version'] {
+  if (identity.formula_versions.includes(GAP_FILL_FORMULA)) return 'newow_gap_fill_reference_zero_cost_v1'
+  return identity.strategy === 'oscillation' ? 'newow_trueup_reference_zero_cost_v1' : 'newow_marker_reference_zero_cost_v4'
+}
+
 const EXPECTED_FORMULAS: Record<NewowProductStrategy, readonly string[]> = {
   trend: ['newow_escape_d123_page_v2', 'newow_trend_band_page_v3', 'newow_trend_marker_initial_clear_v2'],
   oscillation: ['newow_hhv_llv_channel_page_v1', 'newow_oscillation_trueup_kernel111_v1'],
@@ -185,7 +192,7 @@ function normalizeMeta(payload: unknown, expected: FlatExpected): NewowProductMe
   const inputHash = sha256(value.input_content_sha256, 'meta.input_content_sha256')
   const revision = nullableText(value.data_revision_identity, 'meta.data_revision_identity')
   const token = nullableText(value.snapshot_token, 'meta.snapshot_token')
-  const referenceModel = normalizedIdentity.strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4'
+  const referenceModel = newowReferenceModelVersion(normalizedIdentity)
   requireExact(value.reference_model_version, referenceModel, 'meta.reference_model_version')
   const adaptationVersion = normalizedIdentity.frequency === '1w'
     ? (
@@ -235,9 +242,11 @@ function normalizeWireIdentity(
   requireExact(frequency, expected.frequency, `${field}.frequency`)
   requireExact(value.series_kind, 'actual_dominant', `${field}.series_kind`)
   const profileId = text(value.profile_id, `${field}.profile_id`)
-  requireExact(profileId, `newow_product_${strategy}_${frequency}_${strategy==='oscillation'?'v2':'v1'}`, `${field}.profile_id`)
   const formulaVersions = stringArray(value.formula_versions, `${field}.formula_versions`)
-  if (!sameStrings(formulaVersions, EXPECTED_FORMULAS[strategy])) throw new Error(`${field}.formula_versions is invalid or out of order`)
+  const gapFill = strategy !== 'oscillation' && formulaVersions.includes(GAP_FILL_FORMULA)
+  const expectedFormulas = gapFill ? [...EXPECTED_FORMULAS[strategy], GAP_FILL_FORMULA].sort() : EXPECTED_FORMULAS[strategy]
+  requireExact(profileId, `newow_product_${strategy}_${frequency}_${strategy === 'oscillation' || gapFill ? 'v2' : 'v1'}`, `${field}.profile_id`)
+  if (!sameStrings(formulaVersions, expectedFormulas)) throw new Error(`${field}.formula_versions is invalid or out of order`)
   const policy = Object.prototype.hasOwnProperty.call(value, 'input_quality_policy')
     ? literal(value.input_quality_policy, ['newow_input_quality_v1', 'newow_daily_input_quality_v2', 'newow_weekly_input_quality_v2'] as const, `${field}.input_quality_policy`)
     : undefined
@@ -1044,7 +1053,9 @@ function deepFreeze<T>(value: T): T {
 
 function normalizeFusion(payload: unknown, since: string, through: string, hash: unknown, cutoff: unknown): import('../api/newowFusion').FusionComparison {
   const value = record(payload, 'fusion')
-  requireExact(value.reference_model_version, 'newow_dual_fusion_trueup_reference_v1', 'fusion.version')
+  const gapFill = value.source_formula_versions !== undefined &&
+    stringArray(value.source_formula_versions, 'fusion.source_formula_versions').includes(GAP_FILL_FORMULA)
+  requireExact(value.reference_model_version, gapFill ? 'newow_dual_fusion_gap_fill_reference_v1' : 'newow_dual_fusion_trueup_reference_v1', 'fusion.version')
   requireExact(value.page_parity, true, 'fusion.parity')
   requireExact(value.executable, false, 'fusion.executable')
   requireExact(value.performance_since, since, 'fusion.since')

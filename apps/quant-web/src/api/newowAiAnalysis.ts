@@ -37,7 +37,7 @@ export interface AiFourStep {
   through: string | null
   source_bars: number
   input_sha256: string | null
-  model_version: 'newow_dual_four_step_page_v1'
+  model_version: 'newow_dual_four_step_page_v1' | 'newow_dual_four_step_gap_fill_page_v1'
   futures_adapter_version: 'guiyi_newow_four_step_segment_valuation_v1'
   page_source_sha256: string
   summary: AiFourStepSummary | null
@@ -45,7 +45,7 @@ export interface AiFourStep {
   reason_code: string | null
 }
 export interface AiAnalysis {
-  schema_version: 'newow_ai_analysis_v2' | 'newow_ai_analysis_v3'
+  schema_version: 'newow_ai_analysis_v2' | 'newow_ai_analysis_v3' | 'newow_ai_analysis_v4'
   product: string
   as_of: string
   formula_version: 'newow_ai_summary_ranking_page_v1'
@@ -73,20 +73,21 @@ function fourStepSummary(value: unknown): value is AiFourStepSummary {
   }
   return true
 }
-function validFourStep(value: unknown, daily: unknown): boolean {
-  if (value == null) return true
+function validFourStep(value: unknown, daily: unknown, gapFill: boolean): boolean {
+  if (value == null) return !gapFill
   if (!record(value) || !record(daily) || value.since !== daily.since || value.through !== daily.through
     || value.source_bars !== daily.source_bars || value.input_sha256 !== daily.input_sha256
-    || value.model_version !== 'newow_dual_four_step_page_v1'
+    || value.model_version !== (gapFill ? 'newow_dual_four_step_gap_fill_page_v1' : 'newow_dual_four_step_page_v1')
     || value.futures_adapter_version !== 'guiyi_newow_four_step_segment_valuation_v1'
-    || !digest(value.page_source_sha256)) return false
+    || !digest(value.page_source_sha256)
+    || (gapFill && value.page_source_sha256 !== '16ff7e4284f5bea252da84d6ad7ae2f29ba1fcf443c126cd85a46fa36af91796')) return false
   if (value.summary === null) return value.page_baseline === null && typeof value.reason_code === 'string'
   return fourStepSummary(value.summary) && fourStepSummary(value.page_baseline) && value.reason_code === null
     && value.summary.trade_count === value.page_baseline.trade_count && Number(value.source_bars) >= 60
 }
 
 export function validateAiAnalysis(value: unknown, product: string, asOf: string): value is AiAnalysis {
-  if (!record(value) || !['newow_ai_analysis_v2', 'newow_ai_analysis_v3'].includes(String(value.schema_version)) || value.product !== product
+  if (!record(value) || !['newow_ai_analysis_v2', 'newow_ai_analysis_v3', 'newow_ai_analysis_v4'].includes(String(value.schema_version)) || value.product !== product
     || typeof value.as_of !== 'string' || previewInstant(asOf) === null || previewInstant(value.as_of) !== previewInstant(asOf)
     || value.formula_version !== 'newow_ai_summary_ranking_page_v1'
     || value.futures_adapter_version !== 'guiyi_newow_ai_segment_valuation_v1'
@@ -119,7 +120,8 @@ export function validateAiAnalysis(value: unknown, product: string, asOf: string
       || c.confidence !== (s.trade_count >= 10 ? 'high' : 'mid')) return false
     if (c.is_best) best++
   }
-  return validFourStep(value.four_step, value.combos.find(c => c.frequency === '1d' && c.strategy === 'trend'))
+  const dailyTrend = value.combos.find(c => c.frequency === '1d' && c.strategy === 'trend')
+  return validFourStep(value.four_step, dailyTrend, value.schema_version === 'newow_ai_analysis_v4')
     && best === (value.combos.some(c => record(c) && record(c.summary) && Number(c.summary.trade_count) >= 3) ? 1 : 0)
 }
 

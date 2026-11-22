@@ -16,19 +16,36 @@ from math import floor, isfinite
 from typing import Any, Callable, Sequence, cast
 
 from .ai_analysis import fixed
+from .reference_pricing import GAP_FILL_PRICE_POLICY, adjust_reference_price
 
 PAGE_PERFORMANCE_VERSION = "newow_page_performance_v3379_v2"
 UNIFIED_PAGE_VERSION = "newow_unified_trueup_page_v1"
 UNIFIED_SOURCE_SHA256 = "685a44629ad938bcc427fbc790e4fa57b5ee7a9a6d0b327a15795c12590430bb"
+PAGE_SOURCE_SHA256 = "3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d"
+GAP_FILL_PAGE_VERSION = "newow_page_performance_v3475_gap_fill_v1"
+GAP_FILL_UNIFIED_PAGE_VERSION = "newow_unified_trueup_gap_fill_v1"
+GAP_FILL_SOURCE_SHA256 = "16ff7e4284f5bea252da84d6ad7ae2f29ba1fcf443c126cd85a46fa36af91796"
+
+_PAGE_MODELS = {
+    PAGE_PERFORMANCE_VERSION: ("3.3.79", PAGE_SOURCE_SHA256, False),
+    UNIFIED_PAGE_VERSION: ("3.4.49", UNIFIED_SOURCE_SHA256, True),
+    GAP_FILL_PAGE_VERSION: ("3.4.75", GAP_FILL_SOURCE_SHA256, False),
+    GAP_FILL_UNIFIED_PAGE_VERSION: ("3.4.75", GAP_FILL_SOURCE_SHA256, True),
+}
+
+
+def _page_version(*, event_driven: bool, gap_fill: bool) -> str:
+    if event_driven:
+        return GAP_FILL_UNIFIED_PAGE_VERSION if gap_fill else UNIFIED_PAGE_VERSION
+    return GAP_FILL_PAGE_VERSION if gap_fill else PAGE_PERFORMANCE_VERSION
 
 
 def page_model_identity(formula_versions):
-    return ((UNIFIED_PAGE_VERSION, UNIFIED_SOURCE_SHA256)
-            if "newow_oscillation_trueup_kernel111_v1" in formula_versions
-            else (PAGE_PERFORMANCE_VERSION, PAGE_SOURCE_SHA256))
-
-
-PAGE_SOURCE_SHA256 = "3c1d600a1bd59dc8d8edfe46dd0cdfa1b44dbd9e7124a20d509426eb1d66973d"
+    version = _page_version(
+        event_driven="newow_oscillation_trueup_kernel111_v1" in formula_versions,
+        gap_fill=GAP_FILL_PRICE_POLICY in formula_versions,
+    )
+    return version, _PAGE_MODELS[version][1]
 
 
 @dataclass(frozen=True)
@@ -39,6 +56,7 @@ class PageBar:
     close: Decimal
     observation_eligible: bool = True
     trading_day: str | None = None
+    open: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +109,7 @@ def _ma(values: list[float], n: int,
 def _segment(
     segment: PageSegment, strategy: str, ideal: bool, period: str, terminal: bool,
     cancelled: Callable[[], bool] | None = None, *, event_driven: bool = False,
+    gap_fill: bool = False,
 ) -> dict | None:
     _check_cancelled(cancelled)
     bars = segment.bars
@@ -212,11 +231,19 @@ def _segment(
                 else b10[i]
             )
             if up and buy is None:
-                enter(i, entry_price, close)
+                buy_price = float(adjust_reference_price(
+                    Decimal(str(entry_price)), bars[i].open, buy=True,
+                )) if gap_fill and not ideal else entry_price
+                enter(i, buy_price, close)
             if ideal and strategy == "trend" and buy is not None:
                 position_high = max(position_high, close)
             if down and buy is not None:
-                exit_(i, position_high if ideal else entry_price)
+                sell_price = position_high if ideal else entry_price
+                if gap_fill and not ideal:
+                    sell_price = float(adjust_reference_price(
+                        Decimal(str(entry_price)), bars[i].open, buy=False,
+                    ))
+                exit_(i, sell_price)
             if ideal and strategy == "main_rise" and buy is not None:
                 position_high = max(position_high, close)
         marked = cum + (
@@ -321,6 +348,7 @@ def build_page_performance_material(
     *,
     period: str = "day",
     event_driven: bool = False,
+    gap_fill: bool = False,
     cancelled: Callable[[], bool] | None = None,
 ) -> dict:
     """Compute both source modes once from validated, complete owner segments.
@@ -329,7 +357,9 @@ def build_page_performance_material(
     identity and terminal eligibility. This function never reads data or emits
     strategy actions, ReferenceTrades, account fills, or Runtime decisions.
     """
-    if strategy not in ("trend", "oscillation", "main_rise", "fusion"):
+    if strategy not in ("trend", "oscillation", "main_rise", "fusion") or (
+        gap_fill and (strategy == "oscillation" or event_driven != (strategy == "fusion"))
+    ):
         raise ValueError("NEWOW_INVALID_QUERY")
     _check_cancelled(cancelled)
     last_eligible_date = None
@@ -418,7 +448,7 @@ def build_page_performance_material(
             result = _segment(
                 segment, strategy, ideal, period,
                 index == len(segments) - 1 and segment.terminal_eligible,
-                cancelled, event_driven=event_driven,
+                cancelled, event_driven=event_driven, gap_fill=gap_fill,
             )
             if result is not None:
                 trading_days = []
@@ -438,7 +468,7 @@ def build_page_performance_material(
     _check_cancelled(cancelled)
     return {
         "schema": PAGE_MATERIAL_SCHEMA,
-        "page_version": UNIFIED_PAGE_VERSION if event_driven else PAGE_PERFORMANCE_VERSION,
+        "page_version": _page_version(event_driven=event_driven, gap_fill=gap_fill),
         "strategy": strategy,
         "period": period,
         "segment_count": len(segments),
@@ -461,7 +491,12 @@ def project_page_performance_material(
         raise ValueError("NEWOW_INVALID_QUERY")
     if (not isinstance(material, dict)
         or material.get("schema") != PAGE_MATERIAL_SCHEMA
-        or material.get("page_version") not in (PAGE_PERFORMANCE_VERSION, UNIFIED_PAGE_VERSION)
+        or not isinstance(material.get("page_version"), str)
+        or material["page_version"] not in _PAGE_MODELS
+        or (material["page_version"] == GAP_FILL_PAGE_VERSION
+            and material.get("strategy") not in ("trend", "main_rise"))
+        or (material["page_version"] == GAP_FILL_UNIFIED_PAGE_VERSION
+            and material.get("strategy") != "fusion")
         or material.get("strategy") not in ("trend", "oscillation", "main_rise", "fusion")
         or type(material.get("segment_count")) is not int
         or material["segment_count"] < 0
@@ -474,11 +509,11 @@ def project_page_performance_material(
         raise ValueError("NEWOW_PAGE_MATERIAL_INVALID")
     segments = material["segments"]
     period = material["period"]
-    unified = material["page_version"] == UNIFIED_PAGE_VERSION
+    source_version, source_sha256, unified = _PAGE_MODELS[material["page_version"]]
     output = {
         "version": material["page_version"],
-        "source_version": "3.4.49" if unified else "3.3.79",
-        "source_sha256": UNIFIED_SOURCE_SHA256 if unified else PAGE_SOURCE_SHA256,
+        "source_version": source_version,
+        "source_sha256": source_sha256,
         "page_parity": not unified,
         "kernel_parity": True,
         "return_policy": "guiyi_unified_trueup" if unified else "source_page",
@@ -563,6 +598,7 @@ def compute_page_performance(
     since: str | None = None, through: str | None = None,
     selected_mode: str | None = None,
     event_driven: bool = False,
+    gap_fill: bool = False,
 ) -> dict:
     """Current page formula, now shared with frozen material projection."""
     if (
@@ -573,6 +609,8 @@ def compute_page_performance(
     ):
         raise ValueError("NEWOW_INVALID_QUERY")
     return project_page_performance_material(
-        build_page_performance_material(segments, strategy, period=period, event_driven=event_driven),
+        build_page_performance_material(
+            segments, strategy, period=period, event_driven=event_driven, gap_fill=gap_fill,
+        ),
         since=since, through=through, selected_mode=selected_mode,
     )

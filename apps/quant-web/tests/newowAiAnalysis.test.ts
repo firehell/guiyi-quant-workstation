@@ -80,3 +80,17 @@ test('optional daily four-step result must match the existing daily cutoff and i
   response.four_step.input_sha256 = 'c'.repeat(64)
   assert.equal(validateAiAnalysis(response, 'jm', asOf), false)
 })
+
+test('candidate four-step accepts only the gap-fill model and its exact public source', () => {
+  const response = { ...output(), schema_version: 'newow_ai_analysis_v4', four_step: {
+    since: '2025-09-01', through: '2026-09-24', source_bars: 100, input_sha256: 'a'.repeat(64),
+    model_version: 'newow_dual_four_step_gap_fill_page_v1',
+    futures_adapter_version: 'guiyi_newow_four_step_segment_valuation_v1',
+    page_source_sha256: '16ff7e4284f5bea252da84d6ad7ae2f29ba1fcf443c126cd85a46fa36af91796',
+    summary: null, page_baseline: null, reason_code: 'NEWOW_FOUR_STEP_NO_ENTRIES',
+  } }
+  assert.equal(validateAiAnalysis(response, 'jm', asOf), true)
+  assert.equal(validateAiAnalysis({ ...response, schema_version: 'newow_ai_analysis_v3' }, 'jm', asOf), false)
+  response.four_step.page_source_sha256 = 'b'.repeat(64)
+  assert.equal(validateAiAnalysis(response, 'jm', asOf), false)
+})

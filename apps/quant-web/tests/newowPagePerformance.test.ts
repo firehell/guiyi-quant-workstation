@@ -50,3 +50,21 @@ test('unified OPEN references preserve mark metadata without fabricating a closi
  for(const patch of [{buyPrice:'0'},{markDate:'2099-01-01'},{segment_id:'foreign'},{markDate:'2026-01-02'},{forceClose:true}])assert.throws(()=>normalizePagePerformance({...wire,ordinary:{...wire.ordinary,open_references:[{...opened,...patch}]}},'oscillation'))
  assert.throws(()=>normalizePagePerformance({...base,ordinary:{...base.ordinary,open_references:[opened]}},'trend'))
 })
+
+test('versioned gap-fill results keep the matching page and unified model identities', () => {
+  const gap = {
+    ...payload(), version: 'newow_page_performance_v3475_gap_fill_v1', source_version: '3.4.75',
+    source_sha256: '16ff7e4284f5bea252da84d6ad7ae2f29ba1fcf443c126cd85a46fa36af91796',
+    kernel_parity: true, return_policy: 'source_page',
+  }
+  assert.equal(normalizePagePerformance(gap, 'trend')?.source_version, '3.4.75')
+  assert.equal(normalizePagePerformance({...gap, strategy: 'main_rise'}, 'main_rise')?.page_parity, true)
+  assert.throws(() => normalizePagePerformance({...gap, strategy: 'oscillation'}, 'oscillation'), /identity/)
+  const fusion = {
+    ...gap, strategy: 'fusion', version: 'newow_unified_trueup_gap_fill_v1',
+    page_parity: false, return_policy: 'guiyi_unified_trueup',
+    ordinary: {...gap.ordinary, open_references: []}, ideal: {...gap.ideal, open_references: []},
+  }
+  assert.equal(normalizePagePerformance(fusion, 'fusion')?.page_parity, false)
+  assert.throws(() => normalizePagePerformance({...fusion, source_version: '3.4.49'}, 'fusion'), /identity/)
+})

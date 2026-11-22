@@ -7,9 +7,11 @@ import json
 
 from guiyi_quant.newow.ai_analysis import AnalysisCombo, estimate_segments, rank_combos
 from guiyi_quant.newow.four_step import (
-    FourStepEvent, FourStepSummary, MODEL_VERSION, FUTURES_ADAPTER_VERSION,
+    FourStepEvent, FourStepSummary, GAP_FILL_MODEL_VERSION, MODEL_VERSION, FUTURES_ADAPTER_VERSION,
     PAGE_MIN_BARS, PAGE_SOURCE_SHA256, fold_four_step, summarize_four_step,
 )
+from guiyi_quant.newow.page_performance import GAP_FILL_SOURCE_SHA256
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY
 from guiyi_quant.newow.product_adapters import build_product_identity, iter_label_calculation_segments, iter_replay_strategy_steps
 from guiyi_quant.newow.product_contracts import ActionKind, ProductFrequency, ProductStrategy, TradeEligibility, lifecycle_input_sha256
 from .product_query import NewowProductQuery
@@ -43,10 +45,17 @@ def _owner(bar):
     return bar.bar.physical_contract, bar.bar.segment_id, bar.calculation_segment_id
 
 
-def _four_step_analysis(product, read, bars, since, through, digest, cancelled):
+def _four_step_identity(reference_price_policy):
+    if reference_price_policy == GAP_FILL_PRICE_POLICY:
+        return {"model_version": GAP_FILL_MODEL_VERSION, "page_source_sha256": GAP_FILL_SOURCE_SHA256}
+    return {}
+
+
+def _four_step_analysis(product, read, bars, since, through, digest, cancelled, *, reference_price_policy=None):
+    model = _four_step_identity(reference_price_policy)
     scope = (since.isoformat(), through, len(bars), digest)
     if len(bars) < PAGE_MIN_BARS:
-        return FourStepAnalysis(*scope, None, None, "NEWOW_FOUR_STEP_INSUFFICIENT_BARS")
+        return FourStepAnalysis(*scope, None, None, "NEWOW_FOUR_STEP_INSUFFICIENT_BARS", **model)
     owners = {}
     index = {}
     inputs = {bar.bar.bar_end for bar in bars}
@@ -63,6 +72,7 @@ def _four_step_analysis(product, read, bars, since, through, digest, cancelled):
     for strategy in (ProductStrategy.OSCILLATION, ProductStrategy.TREND):
         identity = build_product_identity(
             product, strategy, ProductFrequency.DAILY, input_quality_policy=read.input_quality_policy,
+            reference_price_policy=reference_price_policy,
         )
         for frame, _ in iter_replay_strategy_steps(
             identity, read.replay_bars, lifecycle_evidence=read.lifecycle_evidence,
@@ -88,7 +98,7 @@ def _four_step_analysis(product, read, bars, since, through, digest, cancelled):
                for rows, events in owners.values()]
     summary = summarize_four_step(trade for replay in replays for trade in replay.trades)
     baseline = summarize_four_step(trade for replay in replays for trade in replay.page_baseline)
-    return FourStepAnalysis(*scope, summary, baseline, None if summary else "NEWOW_FOUR_STEP_NO_ENTRIES")
+    return FourStepAnalysis(*scope, summary, baseline, None if summary else "NEWOW_FOUR_STEP_NO_ENTRIES", **model)
 
 
 def analysis_input_sha256(bars, quality_policy):
@@ -100,7 +110,10 @@ def analysis_input_sha256(bars, quality_policy):
     return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def analyze_product(product: str, as_of: datetime, reader_factory, cancelled, enforce_frequency, *, include_four_step=True):
+def analyze_product(
+    product: str, as_of: datetime, reader_factory, cancelled, enforce_frequency, *,
+    include_four_step=True, reference_price_policy=None,
+):
     combos = []
     four_step = None
     for frequency, since in STARTS:
@@ -130,7 +143,10 @@ def analyze_product(product: str, as_of: datetime, reader_factory, cancelled, en
             through = bars[-1].bar.trading_day.isoformat() if bars else None
             digest = analysis_input_sha256(bars, read.input_quality_policy)
             if include_four_step and frequency is ProductFrequency.DAILY:
-                four_step = _four_step_analysis(product, read, bars, since, through, digest, cancelled)
+                four_step = _four_step_analysis(
+                    product, read, bars, since, through, digest, cancelled,
+                    reference_price_policy=reference_price_policy,
+                )
             for strategy in ("oscillation", "trend"):
                 summary = estimate_segments(segments, strategy)
                 combos.append(AnalysisCombo(strategy, frequency.value, since.isoformat(), through,
@@ -148,5 +164,8 @@ def analyze_product(product: str, as_of: datetime, reader_factory, cancelled, en
             combos.extend(AnalysisCombo(s, frequency.value, since.isoformat(), None, 0, None, None, code)
                           for s in ("oscillation", "trend"))
             if include_four_step and frequency is ProductFrequency.DAILY:
-                four_step = FourStepAnalysis(since.isoformat(), None, 0, None, None, None, code)
+                four_step = FourStepAnalysis(
+                    since.isoformat(), None, 0, None, None, None, code,
+                    **_four_step_identity(reference_price_policy),
+                )
     return ProductAnalysis(rank_combos(combos), four_step)

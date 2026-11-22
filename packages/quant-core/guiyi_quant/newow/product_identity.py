@@ -8,16 +8,21 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
+from .reference_pricing import has_gap_fill
+
 if TYPE_CHECKING:
     from .product_contracts import ProductIdentity, StrategyAction
 
 
 REFERENCE_MODEL_VERSION = "newow_marker_reference_zero_cost_v4"
 TRUEUP_REFERENCE_MODEL_VERSION = "newow_trueup_reference_zero_cost_v1"
+GAP_FILL_REFERENCE_MODEL_VERSION = "newow_gap_fill_reference_zero_cost_v1"
 
 
 def reference_model_version(identity) -> str:
     """Historical formulas keep their recorded model; current trueup gets a new one."""
+    if has_gap_fill(identity.formula_versions):
+        return GAP_FILL_REFERENCE_MODEL_VERSION
     return (TRUEUP_REFERENCE_MODEL_VERSION
             if "newow_oscillation_trueup_kernel111_v1" in identity.formula_versions
             else REFERENCE_MODEL_VERSION)

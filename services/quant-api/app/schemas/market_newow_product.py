@@ -25,7 +25,10 @@ EvidenceStatusValue = Literal[
     "OUT_OF_SCOPE",
 ]
 MainStateValue = Literal["BUILD", "HOLD", "CLEAR", "FLAT", "UNAVAILABLE"]
-ReferenceModelVersionValue = Literal["newow_marker_reference_zero_cost_v4", "newow_trueup_reference_zero_cost_v1"]
+ReferenceModelVersionValue = Literal[
+    "newow_marker_reference_zero_cost_v4", "newow_trueup_reference_zero_cost_v1",
+    "newow_gap_fill_reference_zero_cost_v1",
+]
 FuturesAdaptationVersionValue = Literal[
     "newow_futures_quality_segment_v3",
     "newow_futures_daily_quality_segment_v4",
@@ -487,8 +490,11 @@ class PagePerformanceResultOut(_PageOut):
 
 
 class PagePerformanceOut(_PageOut):
-    version: Literal["newow_page_performance_v3379_v2", "newow_unified_trueup_page_v1"]
-    source_version: Literal["3.3.79", "3.4.49"]
+    version: Literal[
+        "newow_page_performance_v3379_v2", "newow_unified_trueup_page_v1",
+        "newow_page_performance_v3475_gap_fill_v1", "newow_unified_trueup_gap_fill_v1",
+    ]
+    source_version: Literal["3.3.79", "3.4.49", "3.4.75"]
     source_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     page_parity: bool
     kernel_parity: Literal[True]

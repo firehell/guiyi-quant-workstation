@@ -14,6 +14,7 @@ from .models import (
     TrendTransition,
 )
 from .profile import NEWOW_TREND_D1_PAGE_V2, NEWOW_TREND_D1_V1, NewowTrendProfile
+from .reference_pricing import GAP_FILL_PRICE_POLICY, adjust_reference_price
 
 
 _CLEANROOM_V1 = NEWOW_TREND_D1_V1.trend_band_formula
@@ -168,7 +169,8 @@ def _valid_state(state: TrendBandStateValue, profile: NewowTrendProfile) -> bool
 
 
 def _marker_id(
-    bar: NewowDailyBar, marker_type: NewowMarkerType, profile: NewowTrendProfile
+    bar: NewowDailyBar, marker_type: NewowMarkerType, profile: NewowTrendProfile,
+    *, gap_fill: bool = False,
 ) -> str:
     strategy_code = (
         "newow_trend_page_v3"
@@ -180,6 +182,7 @@ def _marker_id(
             strategy_code,
             profile.trend_band_formula,
             *((profile.marker_policy,) if profile.marker_policy != "newow_trend_marker_policy_v1" else ()),
+            *((GAP_FILL_PRICE_POLICY,) if gap_fill else ()),
             bar.physical_contract,
             marker_type.value,
             bar.bar_end.isoformat(),
@@ -198,8 +201,15 @@ def _marker(
     signal_price: Decimal,
     reference_basis: str,
     reference_change_pct: float | None = None,
+    *,
+    threshold: Decimal | None = None,
 ) -> NewowMainMarker:
-    marker_id = _marker_id(bar, marker_type, profile)
+    marker_id = _marker_id(bar, marker_type, profile, gap_fill=threshold is not None)
+    price_facts = {} if threshold is None else {
+        "reference_price_policy": GAP_FILL_PRICE_POLICY,
+        "reference_threshold": threshold,
+        "gap_fill": signal_price != threshold,
+    }
     if marker_type is NewowMarkerType.BUILD:
         return NewowMainMarker(
             marker_id=marker_id,
@@ -220,6 +230,7 @@ def _marker(
                 "reference_basis": reference_basis,
                 "marker_policy": profile.marker_policy,
                 "reference_change_pct": None,
+                **price_facts,
             },
             formula_version=profile.trend_band_formula,
         )
@@ -250,6 +261,7 @@ def _marker(
             "reference_basis": reference_basis,
             "marker_policy": profile.marker_policy,
             "reference_change_pct": reference_change_pct,
+            **price_facts,
         },
         formula_version=profile.trend_band_formula,
     )
@@ -311,6 +323,7 @@ def step_trend_band(
     bar: NewowDailyBar,
     *,
     profile: NewowTrendProfile = NEWOW_TREND_D1_V1,
+    gap_fill: bool = False,
 ) -> TrendBandStepResult:
     if not _valid_state(state, profile):
         return _unavailable_result(bar)
@@ -343,7 +356,12 @@ def step_trend_band(
         state_before = state.previous_state
         transition = None
         marker = None
-        signal_price = Decimal(str(b_value))
+        basis = Decimal(str(b_value))
+        signal_price = (
+            adjust_reference_price(basis, bar.open, buy=current_state is TrendBandState.YELLOW)
+            if gap_fill else basis
+        )
+        threshold = basis if gap_fill else None
         if (
             bar.observation_eligible
             and state_before is not None
@@ -360,6 +378,7 @@ def step_trend_band(
                     TrendBandState.YELLOW,
                     signal_price,
                     "trend_slow_band",
+                    threshold=threshold,
                 )
             elif (
                 state.last_build_marker_id is not None
@@ -379,6 +398,7 @@ def step_trend_band(
                     signal_price,
                     "trend_slow_band",
                     reference_change_pct,
+                    threshold=threshold,
                 )
         next_build_close = state.last_build_close
         next_build_marker_id = state.last_build_marker_id

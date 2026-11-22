@@ -452,3 +452,74 @@ def test_drawdown_type_describes_actual_filter_not_requested_preset():
     filtered = filter_page_by_date(ideal, ideal["trading_days"][1])
     assert filtered["drawdown_kind"] == "peak_difference"
     assert ideal["drawdown_kind"] == "maximum_trade_loss"
+
+
+@pytest.mark.parametrize(("strategy", "prefix"), [("trend", 10), ("main_rise", 35)])
+def test_gap_fill_page_changes_only_ordinary_entry_and_exit(strategy, prefix):
+    def make(index, high, low, close, opening):
+        day = (datetime(2026, 1, 1, tzinfo=UTC) + timedelta(days=index)).date()
+        return PageBar(day.isoformat(), Decimal(high), Decimal(low), Decimal(close),
+                       open=Decimal(opening) if opening is not None else None)
+
+    steady = tuple(make(index, 101, 99, 100, 100) for index in range(prefix))
+    rows = steady + (
+        make(prefix, 91, 89, 90, 90),
+        make(prefix + 1, 131, 105, 110, 130),
+        make(prefix + 2, 91, 70, 85, 75),
+    )
+    owner = PageSegment("owner", rows, True)
+    original = compute_page_performance([owner], strategy)
+    adjusted = compute_page_performance([owner], strategy, gap_fill=True)
+    assert adjusted["source_version"] == "3.4.75"
+    assert adjusted["version"] == "newow_page_performance_v3475_gap_fill_v1"
+    assert adjusted["ideal"] == original["ideal"]
+    old_trade, = original["ordinary"]["trades"]
+    trade, = adjusted["ordinary"]["trades"]
+    assert (trade["buyDate"], trade["sellDate"]) == (old_trade["buyDate"], old_trade["sellDate"])
+    assert (trade["buyPrice"], trade["sellPrice"], trade["forceClose"]) == ("130", "75", False)
+
+    terminal = compute_page_performance(
+        [PageSegment("owner", rows[:-1], True)], strategy, gap_fill=True,
+    )
+    trade, = terminal["ordinary"]["trades"]
+    assert (trade["buyPrice"], trade["sellPrice"], trade["forceClose"]) == ("130", "110", True)
+
+    for invalid_open in (None, 0, -1, "NaN", "Infinity"):
+        without_open = steady + (
+            rows[prefix],
+            make(prefix + 1, 131, 105, 110, invalid_open),
+            make(prefix + 2, 91, 70, 85, invalid_open),
+        )
+        fallback = compute_page_performance(
+            [PageSegment("owner", without_open, True)], strategy, gap_fill=True,
+        )
+        assert fallback["ordinary"] == original["ordinary"]
+
+
+def test_gap_fill_fusion_uses_updated_signal_prices_and_keeps_ideal_exit_rule():
+    rows = tuple(bar(dict(date=f"2026-01-0{index}", high=135, low=70, close=110))
+                 for index in range(1, 4))
+    old_buy = PageAction(rows[0].date, "buy", Decimal("100"))
+    old_sell = PageAction(rows[1].date, "sell", Decimal("95"))
+    buy = PageAction(rows[0].date, "buy", Decimal("130"))
+    sell = PageAction(rows[1].date, "sell", Decimal("75"))
+    old = compute_page_performance(
+        [PageSegment("owner", rows, True, (old_buy, old_sell))], "fusion", event_driven=True,
+    )
+    new = compute_page_performance(
+        [PageSegment("owner", rows, True, (buy, sell))], "fusion", event_driven=True, gap_fill=True,
+    )
+    assert new["version"] == "newow_unified_trueup_gap_fill_v1"
+    old_ideal, = old["ideal"]["trades"]
+    new_ideal, = new["ideal"]["trades"]
+    assert (new_ideal["buyDate"], new_ideal["sellDate"]) == (old_ideal["buyDate"], old_ideal["sellDate"])
+    assert (new_ideal["buyPrice"], new_ideal["sellPrice"]) == ("130", old_ideal["sellPrice"])
+    trade, = new["ordinary"]["trades"]
+    assert (trade["buyPrice"], trade["sellPrice"], trade["forceClose"]) == ("130", "75", False)
+
+    opened = compute_page_performance(
+        [PageSegment("owner", rows, True, (buy,))], "fusion", event_driven=True, gap_fill=True,
+    )["ordinary"]
+    assert not opened["trades"]
+    mark, = opened["open_references"]
+    assert (mark["buyPrice"], mark["markPrice"]) == ("130", "110")

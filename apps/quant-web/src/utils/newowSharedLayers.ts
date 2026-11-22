@@ -1,5 +1,6 @@
 import type { NewowAuxiliaryComponent, NewowProductIdentity, NewowProductMeta, NewowProductSectionResponse } from '../types/newowProduct.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
+import { newowReferenceModelVersion } from './newowProductTypes.ts'
 
 // A retained display must match this client's supported active kernel version.
 // Unknown/new formulas continue through the normal fresh-response path only.
@@ -44,7 +45,7 @@ function sharedMarketKey(meta: NewowProductMeta): string | null {
     || (policy === 'newow_daily_input_quality_v2' && meta.identity.frequency !== '1d')
     || (policy === 'newow_weekly_input_quality_v2' && meta.identity.frequency !== '1w')
     || meta.futures_adaptation_version !== expectedAdaptation
-    || meta.reference_model_version !== (meta.identity.strategy==='oscillation'?'newow_trueup_reference_zero_cost_v1':'newow_marker_reference_zero_cost_v4')) return null
+    || meta.reference_model_version !== newowReferenceModelVersion(meta.identity)) return null
   return JSON.stringify([
     meta.schema_version, proof.schema_version, proof.market_input_sha256,
     meta.identity.product, meta.identity.frequency, meta.identity.series_kind,

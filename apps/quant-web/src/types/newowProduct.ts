@@ -124,7 +124,7 @@ export interface NewowProductMeta {
   readonly shared_input_proof?: NewowSharedInputProof
   readonly data_revision_identity: string | null
   readonly snapshot_token: string | null
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4' | 'newow_trueup_reference_zero_cost_v1'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4' | 'newow_trueup_reference_zero_cost_v1' | 'newow_gap_fill_reference_zero_cost_v1'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_daily_quality_segment_v4'
@@ -270,7 +270,7 @@ export interface NewowReferenceTrade {
   readonly segment_id: string
   readonly calculation_segment_id: string
   readonly formula_versions: readonly string[]
-  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4' | 'newow_trueup_reference_zero_cost_v1'
+  readonly reference_model_version: 'newow_marker_reference_zero_cost_v4' | 'newow_trueup_reference_zero_cost_v1' | 'newow_gap_fill_reference_zero_cost_v1'
   readonly futures_adaptation_version:
     | 'newow_futures_quality_segment_v3'
     | 'newow_futures_daily_quality_segment_v4'

@@ -32,6 +32,7 @@ class NewowComposition:
         Callable[[str, ProductFrequency], InputQualityPolicy] | None
     ) = None
     budget_cancelled: Callable[[], bool] | None = None
+    reference_price_policy: str | None = None
 
     def reader(
         self,
@@ -78,6 +79,7 @@ class NewowComposition:
             now=self.now,
             cancelled=cancelled,
             quality_policy=self.quality_policy,
+            reference_price_policy=self.reference_price_policy,
             persisted_reference=persisted_reference,
             reuse_read_inputs=reuse_read_inputs,
         )

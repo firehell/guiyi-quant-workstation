@@ -16,6 +16,8 @@ from guiyi_quant.newow.product_contracts import (
     ActionKind, LifecycleInputDigest, ProductStrategy, TradeEligibility,
 )
 
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY, has_gap_fill
+
 from app.reference_trading.json_spool import JsonSpoolSequence
 
 
@@ -52,19 +54,24 @@ def _encode_page_bar(item: PageBar) -> dict[str, object]:
         "date": item.date, "high": str(item.high), "low": str(item.low),
         "close": str(item.close), "observation_eligible": item.observation_eligible,
         "trading_day": item.trading_day,
+        "open": str(item.open) if item.open is not None else None,
     }
 
 
 def _decode_page_bar(raw: object) -> PageBar:
     if not isinstance(raw, dict) or set(raw) != {
-        "date", "high", "low", "close", "observation_eligible", "trading_day",
+        "date", "high", "low", "close", "observation_eligible", "trading_day", "open",
     } or not isinstance(raw["date"], str) or type(raw["observation_eligible"]) is not bool:
         raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
     day = raw["trading_day"]
     if day is not None and not isinstance(day, str):
         raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
+    opening = raw["open"]
+    if opening is not None and not isinstance(opening, str):
+        raise ValueError("NEWOW_DATA_IDENTITY_INVALID")
     return PageBar(raw["date"], Decimal(raw["high"]), Decimal(raw["low"]),
-                   Decimal(raw["close"]), raw["observation_eligible"], day)
+                   Decimal(raw["close"]), raw["observation_eligible"], day,
+                   Decimal(opening) if opening is not None else None)
 
 
 def _new_page_spool() -> JsonSpoolSequence[PageBar]:
@@ -91,12 +98,17 @@ def _fusion_page_actions(read, identity, replays, cancelled=None, *, fusion=True
     actions: dict[tuple[str, str, str | None], list[PageAction]] = {}
     supplied = dict(replays or {})
     for strategy in ((ProductStrategy.OSCILLATION, ProductStrategy.TREND) if fusion else (ProductStrategy.OSCILLATION,)):
+        adjusted_trend = (
+            strategy is ProductStrategy.TREND
+            and has_gap_fill(identity.formula_versions)
+        )
         if strategy in supplied:
             action_iter = iter(supplied[strategy].actions)
         else:
             source_identity = build_product_identity(
                 identity.product, strategy, identity.frequency,
                 input_quality_policy=identity.input_quality_policy,
+                reference_price_policy=GAP_FILL_PRICE_POLICY if adjusted_trend else None,
             )
             action_iter = (
                 action for frame, _ in iter_replay_strategy_steps(
@@ -108,6 +120,8 @@ def _fusion_page_actions(read, identity, replays, cancelled=None, *, fusion=True
         for index, action in enumerate(action_iter):
             if index % 256 == 0:
                 _check_cancelled(cancelled)
+            if adjusted_trend != has_gap_fill(action.identity.formula_versions):
+                raise ValueError("NEWOW_PAGE_REFERENCE_PRICE_IDENTITY_MISMATCH")
             allowed = (TradeEligibility.ELIGIBLE, TradeEligibility.NO_ELIGIBLE_ENTRY)
             if strategy is ProductStrategy.TREND:
                 allowed = (*allowed, TradeEligibility.INITIAL_CLEAR_NO_ENTRY)
@@ -132,6 +146,7 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
     source boundary/gap invalidates terminal marking instead of closing a trade.
     """
     digest = LifecycleInputDigest()
+    gap_fill = has_gap_fill(identity.formula_versions)
     grouped: list[tuple[tuple[str, str, str | None], int]] = []
     bar_count = 0
     last = None
@@ -156,6 +171,7 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
                 item.bar.bar_end.astimezone(_SHANGHAI).isoformat(),
                 item.bar.high, item.bar.low, item.bar.close,
                 item.bar.observation_eligible, item.bar.trading_day.isoformat(),
+                item.bar.open if gap_fill else None,
             ))
             bar_count += 1
             if item.bar.observation_eligible:
@@ -198,7 +214,8 @@ def build_page_material(read, identity, resolved, *, fusion=False, replays=None,
             ))
         material = build_page_performance_material(
             segments, "fusion" if fusion else identity.strategy.value,
-            period=identity.frequency.value, event_driven=event_driven, cancelled=cancelled,
+            period=identity.frequency.value, event_driven=event_driven,
+            gap_fill=gap_fill, cancelled=cancelled,
         )
         from app.market_data.newow.product_reader import has_unresolved_source_tail
         _check_cancelled(cancelled)

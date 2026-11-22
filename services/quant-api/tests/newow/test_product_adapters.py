@@ -536,8 +536,8 @@ def test_trend_prewarm_clear_expires_its_build_witness(product_cases, monkeypatc
         for bar in case.bars[:40]
     ) + (case.bars[40],)
 
-    def repeat_expired_clear(state, raw_bar, *, profile):
-        result = original(state, raw_bar, profile=profile)
+    def repeat_expired_clear(state, raw_bar, *, profile, gap_fill=False):
+        result = original(state, raw_bar, profile=profile, gap_fill=gap_fill)
         if raw_bar.bar_end == bars[-1].bar.bar_end:
             return replace(
                 result,
@@ -573,8 +573,8 @@ def test_trend_prewarm_clear_rejects_missing_build_witness(product_cases, monkey
     assert clear is not None
     first = replace(case.bars[0], bar=replace(case.bars[0].bar, observation_eligible=False))
 
-    def orphan_clear(state, raw_bar, *, profile):
-        result = original(state, raw_bar, profile=profile)
+    def orphan_clear(state, raw_bar, *, profile, gap_fill=False):
+        result = original(state, raw_bar, profile=profile, gap_fill=gap_fill)
         return replace(result, marker=replace(
             clear, marker_id="orphan-clear", bar_end=raw_bar.bar_end,
             related_marker_ids=("missing-build",),
@@ -623,8 +623,8 @@ def test_trend_rejects_missing_or_cross_domain_source_related_ids(
     case = product_cases.primitive_input("trend", "1d")
     original = adapters.step_trend_band
 
-    def corrupt_related(state, raw_bar, *, profile):
-        result = original(state, raw_bar, profile=profile)
+    def corrupt_related(state, raw_bar, *, profile, gap_fill=False):
+        result = original(state, raw_bar, profile=profile, gap_fill=gap_fill)
         if result.marker is not None and result.marker.marker_type == "CLEAR":
             return replace(
                 result,
@@ -666,8 +666,8 @@ def test_trend_rejects_a_related_source_marker_from_another_owner_domain(
     )
     original = adapters.step_trend_band
 
-    def cross_owner_related(state, raw_bar, *, profile):
-        result = original(state, raw_bar, profile=profile)
+    def cross_owner_related(state, raw_bar, *, profile, gap_fill=False):
+        result = original(state, raw_bar, profile=profile, gap_fill=gap_fill)
         if (
             raw_bar.segment_id == second_segment
             and result.marker is not None
