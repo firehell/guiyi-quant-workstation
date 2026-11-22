@@ -295,6 +295,10 @@ OFFLINE_RESEARCH = frozenset({
     "scripts/research/subing_exit_comparison.py",
     "scripts/research/subing_portfolio_replay.py",
     "scripts/research/subing_research_diagnostics.py",
+    "scripts/research/subing_three_exit_validation.py",
+    "scripts/research/subing_three_nested.py",
+    "scripts/research/subing_three_timing.py",
+    "scripts/research/subing_three_timing_evidence.py",
     "scripts/research/subing_trade_report.py",
 })
 

@@ -62,6 +62,7 @@ def test_present_invalid_registry_never_falls_back(tmp_path, defect):
     ("unknown-dependency.txt", ["alert", "api", "live", "web"], False),
     ("scripts/research/subing-replay.sh", [], False),
     ("scripts/research/subing_exit_comparison.py", [], False),
+    ("scripts/research/subing_three_timing.py", [], False),
     ("scripts/research/subing_trade_report.py", [], False),
     ("scripts/research/subing_model_facts.py", ["alert", "api", "live", "web"], False),
     ("scripts/research/unknown_consumer.py", ["alert", "api", "live", "web"], False),
