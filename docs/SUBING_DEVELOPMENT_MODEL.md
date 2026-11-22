@@ -74,3 +74,22 @@ PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin
 
 旧JM和14品种的历史模拟证据不是本次16品种的OOS、自然成交、跨日或长期运行证明。
 实际启动、自然信号/成交和待验事项只记录在 `STATUS.md`。
+
+## 本地研究与逐笔核对
+
+在仓库根目录运行。首次准备用只读 Catalog 和 Canonical 核对小时线来源，输出保存到自己选择的研究目录。每次使用新的输出文件名。
+
+```sh
+archive='/Volumes/扩展盘/subing-knowledge-foundation-data/third-camp-v2/refined/research/strategy-stage-c-20261108'
+work=$(mktemp -d)
+scripts/research/subing-replay.sh legacy-hours --source "$archive" --output "$work/hours.json"
+```
+
+已有核对过的小时文件即可直接执行以下步骤。固定物理合约、分钟档案、小时文件和成本参数后，回放只读本地文件，不启动 Web、行情、推送或账户服务。
+
+```sh
+scripts/research/subing-replay.sh legacy-pairs --contract JM2505 --source "$archive" --hours "$work/hours.json" --output "$work/pairs.json"
+python3 scripts/research/subing_trade_report.py "$work/pairs.json" --archive "$archive" > "$work/trades.jsonl"
+```
+
+在苏冰工作台的历史回放页展开“比较历史研究规则”，选择 trades.jsonl。首行记录输入和代码身份、入场机会与拒绝原因；后续每行对应一条规则的一笔交易，分别保存信号与模拟成交时间、接管时间和退出原因。焦煤开发样本提供归档后可附加当时使用的小时和日线方向时刻。三品种、历史14品种的组合比较同样可用逐笔命令读取 result.json（省略 --archive）；单侧独有的入场另外列出，组合净损益和最大回撤取自各自完整账户。空值表示原始研究结果无对应事实。

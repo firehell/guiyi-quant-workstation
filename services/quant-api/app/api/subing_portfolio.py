@@ -78,6 +78,7 @@ def status():
                 return project({"accounts": {}}, products=(),
                     status=heartbeat["status"] if fresh else "STALE_OR_STOPPED",
                     worker_code=heartbeat.get("code"), worker_at=seen_at,
+                    missing_observations=heartbeat.get("missing", []) if fresh else [],
                     next_open=heartbeat.get("next_open") if fresh else None, run_id=None)
             return project({"accounts": {}}, products=(), status="NOT_STARTED", worker_code=None, run_id=None)
         run_id = active["run_id"]
@@ -109,6 +110,7 @@ def status():
             run_id=run_id, sequence=sequence, observed_at=last["observed_at"] if last else None,
             trading_day=last["day"] if last else None,
             worker_code=heartbeat.get("code") if heartbeat.get("run_id") == run_id else None,
+            missing_observations=heartbeat.get("missing", []) if fresh else [],
             charts=state.get("charts", {}),
         )
     except Exception:

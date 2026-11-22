@@ -184,15 +184,33 @@ def registered_facts(registry, day, contexts, now, *, observations=None):
     return facts
 
 
+class ObservationGap(ValueError):
+    """First outstanding endpoint and total missing bars per physical input."""
+
+    def __init__(self, code, missing, contexts):
+        super().__init__(code)
+        grouped = {}
+        for at, product, frequency in missing:
+            item = grouped.setdefault((product, frequency), dict(
+                product=product, contract=contexts[product].get("contract"), frequency=frequency,
+                first_missing_at=at.isoformat(), count=0,
+            ))
+            item["count"] += 1
+        self.missing = list(grouped.values())
+
+
 def preflight_prefix(stream, day, contexts, now, *, with_cursor=False):
     """Validate the actual observation prefix before creating a new cash identity."""
     rows, cursor = read_completed(stream, day, contexts, "0-0")
+    missing = []
     for product, context in contexts.items():
         for frequency in ("1m", "30m", "60m"):
             for raw in context["expected_" + frequency]:
                 at = stamp(raw)
                 if at <= now - timedelta(minutes=2) and (at, product, frequency) not in rows:
-                    raise ValueError("PORTFOLIO_INITIAL_PREFIX_INCOMPLETE")
+                    missing.append((at, product, frequency))
+    if missing:
+        raise ObservationGap("PORTFOLIO_INITIAL_PREFIX_INCOMPLETE", missing, contexts)
     if any(at <= now and event.confirmed_at > now for (at, _, _), event in rows.items()):
         raise ValueError("PORTFOLIO_OBSERVATION_FROM_FUTURE")
     return (rows, cursor) if with_cursor else rows
@@ -229,9 +247,10 @@ def consume_day(journal, day, contexts, factors, stream, registry, *, once=False
             required = [(endpoint, product, freq) for product in sorted(by_end[endpoint])
                         for freq in ("60m", "30m", "1m")
                         if freq == "1m" or endpoint in higher[product, freq]]
-            if any(key not in rows for key in required):
+            missing = [key for key in required if key not in rows]
+            if missing:
                 if now - endpoint > timedelta(minutes=2):
-                    raise ValueError("PORTFOLIO_BATCH_INCOMPLETE")
+                    raise ObservationGap("PORTFOLIO_BATCH_INCOMPLETE", missing, contexts)
                 break
             if any(rows[key].confirmed_at > now for key in required):
                 raise ValueError("PORTFOLIO_OBSERVATION_FROM_FUTURE")
@@ -404,7 +423,8 @@ def main():
                         status = startup_wait_status(str(exc))
                         if status is None:
                             raise
-                        atomic(HEARTBEAT, dict(run_id=None, at=datetime.now(UTC), status=status, code=str(exc)))
+                        atomic(HEARTBEAT, dict(run_id=None, at=datetime.now(UTC), status=status, code=str(exc),
+                            missing=exc.missing if isinstance(exc, ObservationGap) else []))
                         if args.once:
                             return
                         time.sleep(5 if status == "WAITING_EXECUTION_FACTS" else 30)
@@ -472,7 +492,8 @@ def main():
         if not code.startswith("PORTFOLIO_") or not code.isidentifier():
             code = "PORTFOLIO_INPUT_OR_STORAGE_UNAVAILABLE"
         if owns_lock and STATE_ROOT.is_dir() and (not run_id or read_registration(ACTIVE_PORTFOLIO) == {"run_id": run_id}):
-            atomic(HEARTBEAT, dict(run_id=run_id, at=datetime.now(UTC), status="BLOCKED", code=code))
+            atomic(HEARTBEAT, dict(run_id=run_id, at=datetime.now(UTC), status="BLOCKED", code=code,
+                missing=exc.missing if isinstance(exc, ObservationGap) else []))
         raise SystemExit(code) from None
     finally:
         if owner_file is not None:

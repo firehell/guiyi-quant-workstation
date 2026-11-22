@@ -239,6 +239,6 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 
 `/api/simulation/monitor/*` 只读 worker 原子投影；overview 的完整权益历史以只读 SQLite 读取同账户 `accounts/<account_id>/dispatch.sqlite`，校验账户/profile 并精确截止于该投影已发布的权益尾点，不读取尚未发布的新尾点。历史无法核验时仅曲线明确不可用，账户监控保留。不创建 SDK 或交易操作。Web 模拟交易 Tab 和 HTDY 快期记录消费此入口；旧 `/api/simnow/monitor/*` 不再挂载，旧 SimNow 历史原件保留。
 
-## 苏冰独立开发持续模型
+## 苏冰16品种共享 Paper 模型
 
-`app.subing_model` 组合MDS完整物理前缀、既有completed ObservationStream和共享 `guiyi_quant.subing_account.AccountEngine`。同一增量账户消费统一候选决策，沿用原费用/风险/退出；历史批量入口不变。隔离开发PostgreSQL保存不可变输入、知识时刻、模型决策/成交与hash链，状态投影可逐事件重建；不依赖正式Runtime或Broker。只读状态API不驱动worker，Web持续模式与登记历史回放分开。14品种非JM只观察；事实中断保留保护义务并停止撮合，换月不自动移仓。详细合同与启动恢复入口见[苏冰开发模型](SUBING_DEVELOPMENT_MODEL.md)。
+`app.subing_portfolio_worker` 从 MDS 取得物理合约与预热输入，消费既有 completed ObservationStream。`PortfolioJournal` 按分钟提交不可变事实与共享账户状态。16 品种共享资金，每品种最多一手；事实中断时保留保护义务，换月需显式处理。历史14品种和单JM账户按原身份重放。工作台的持续模式读取已提交快照，历史模式读取登记回放，本地研究对照可直接导入。详细合同与启动恢复入口见[苏冰共享模型](SUBING_DEVELOPMENT_MODEL.md)。

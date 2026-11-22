@@ -330,3 +330,19 @@ def test_day_only_open_holding_keeps_asof_and_pauses_risk_until_real_day_mark():
     portfolio.marks['JM2701'] = SimpleNamespace(bar=SimpleNamespace(trading_day=day))
     journal.apply_current_knowledge({'lc':raw}, day, now)
     assert portfolio.unproven_marks == set()
+
+
+def test_prefix_gap_counts_only_due_observations(monkeypatch):
+    from app import subing_portfolio_worker as worker
+    now = datetime.fromisoformat('2026-11-20T02:05:00+00:00')
+    hour = now - timedelta(minutes=5)
+    contexts = {'jm': dict(contract='JM2701', expected_1m=[
+        hour.isoformat(), (hour + timedelta(minutes=1)).isoformat(), now.isoformat()
+    ], expected_30m=[hour.isoformat()], expected_60m=[hour.isoformat()])}
+    observed = {(hour, 'jm', '30m'): SimpleNamespace(confirmed_at=hour)}
+    monkeypatch.setattr(worker, 'read_completed', lambda *args: (observed, '1-0'))
+    with pytest.raises(worker.ObservationGap, match='PORTFOLIO_INITIAL_PREFIX_INCOMPLETE') as raised:
+        worker.preflight_prefix(None, now.date(), contexts, now)
+    assert [(g['contract'], g['frequency'], g['first_missing_at'], g['count']) for g in raised.value.missing] == [
+        ('JM2701', '1m', hour.isoformat(), 2), ('JM2701', '60m', hour.isoformat(), 1)
+    ]
