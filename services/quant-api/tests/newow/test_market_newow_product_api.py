@@ -1309,3 +1309,32 @@ def test_test5_explanation_route_delivers_background_context(monkeypatch, produc
         assert explanation["value"]["decision_v2"]["daily_weekly_path"] is not None
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize("preview", [False, True])
+def test_current_chart_uses_same_reference_proof_configuration_as_explicit(monkeypatch, preview):
+    services = []
+
+    class Composition:
+        def __init__(self, *_args, reference_price_policy=None, **_kwargs):
+            self.reference_price_policy = reference_price_policy
+
+        def reader(self, **_kwargs):
+            return object()
+
+        def service(self, **kwargs):
+            services.append(kwargs)
+
+    monkeypatch.setattr(market_newow, "NewowComposition", Composition)
+    monkeypatch.setattr(market_newow, "build_market_data_service", lambda _session: object())
+    monkeypatch.setattr(market_newow, "build_database_coverage_source", lambda *_args, **_kwargs: object())
+    pricing = {"reference_price_policy": market_newow.GAP_FILL_PRICE_POLICY} if preview else {}
+    _, current = market_newow._build_snapshot_inputs(
+        object(), lambda: False, lambda: datetime.now(UTC), **pricing,
+    )
+    current(lambda: False)
+    market_newow._build_product_service(object(), use_persisted_reference=not preview, **pricing)
+
+    for service in services:
+        assert callable(service["persisted_reference"]) is (not preview)
+        assert service["cache"] is market_newow._PRODUCT_CACHE
