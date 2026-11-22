@@ -209,8 +209,8 @@ def test_persisted_empty_scope_decodes_cached_full_prefix_after_source_proof(pro
     resolved = ResolvedPerformanceWindow(query.since, query.through, query.through, fake.as_of)
     request = ProductServiceQuery("rb", "trend", "60m", section="reference")
     saved = PersistedNewowReference(lambda: None)
-    full = saved._page_read(request, reader, manifest, resolved)
-    cached = saved._page_read(request, reader, manifest, resolved)
+    full = saved._page_read(request, reader, None, manifest, resolved)
+    cached = saved._page_read(request, reader, None, manifest, resolved)
     assert full is cached and full.replay_bars == read.replay_bars
     assert len(calls) == 1 and len(proofs) == 3
     assert calls[0].performance_since == query.since
@@ -256,8 +256,8 @@ def test_persisted_v3_bounded_read_is_fresh_verified_and_closes_own_spool(
                                          fake.as_of)
     request = ProductServiceQuery("rb", "trend", "60m", section="reference")
     saved = PersistedNewowReference(lambda: None)
-    first = saved._page_read(request, reader, manifest, resolved)
-    second = saved._page_read(request, reader, manifest, resolved)
+    first = saved._page_read(request, reader, None, manifest, resolved)
+    second = saved._page_read(request, reader, None, manifest, resolved)
     try:
         assert first is not second
         assert first.replay_bars.sealed and second.replay_bars.sealed
@@ -269,7 +269,7 @@ def test_persisted_v3_bounded_read_is_fresh_verified_and_closes_own_spool(
         assert second.replay_bars.sealed
         evidence["revision"] = "changed"
         with pytest.raises(QueryConflict, match="SOURCE_IDENTITY_UNVERIFIED"):
-            saved._page_read(request, reader, manifest, resolved)
+            saved._page_read(request, reader, None, manifest, resolved)
     finally:
         first.close()
         second.close()
@@ -298,7 +298,7 @@ def test_persisted_full_read_preserves_unresolved_tail_gap_for_readiness(product
     resolved = ResolvedPerformanceWindow(query.since, query.through, query.through, cutoff)
     saved = PersistedNewowReference(lambda: None)
     request = ProductServiceQuery("rb", "trend", "60m", section="reference")
-    full = saved._page_read(request, reader, manifest, resolved)
+    full = saved._page_read(request, reader, None, manifest, resolved)
     assert _has_unresolved_tail_gap(full)
     assert not _has_unresolved_tail_gap(replace(full,
         data_interruptions_by_frequency={original.frequency: ()}))

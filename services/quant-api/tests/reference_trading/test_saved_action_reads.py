@@ -270,8 +270,8 @@ def test_saved_fusion_sources_keep_actions_and_dependencies_and_close_on_decode_
     calls = []
 
     class Query:
-        def streams(self, **kw):
-            return [{"stream_id": kw["strategy"]}]
+        def stream_for(self, identity):
+            return {"stream_id": identity.strategy_code}
 
         def summary(self, stream_id, **kw):
             return {"revision_id": "revision", "seq": 2, "snapshot": "saved"}

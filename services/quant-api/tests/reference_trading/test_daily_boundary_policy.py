@@ -160,8 +160,8 @@ def test_saved_daily_fusion_requires_current_projection_policy(saved_policy):
         actual["reference_boundary_policy_version"] = saved_policy
 
     class Query:
-        def streams(self, **kwargs):
-            return [{"stream_id": kwargs["strategy"]}]
+        def stream_for(self, identity):
+            return {"stream_id": identity.strategy_code}
 
         def summary(self, *args, **kwargs):
             return {"revision_id": "saved", "seq": 1, "snapshot": "saved"}

@@ -38,6 +38,7 @@ from app.market_data.newow.weekly_snapshot import (
 )
 from app.market_data.newow.public_errors import public_product_error
 from app.market_data.newow.product_release import (
+    FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY,
     AU_PERIOD_PREVIEW_FREQUENCIES,
     INTRADAY_BATCH_PREVIEW_SYMBOLS,
     INTRADAY_SINGLE_PREVIEW_SYMBOLS,
@@ -169,7 +170,7 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
     now = getattr(request.state, "candidate_preview_as_of", None) or datetime.now(UTC)
     if as_of > now:
         raise HTTPException(status_code=422, detail={"code": "NEWOW_INVALID_AS_OF"})
-    # v3 binds all six combinations to the requested completed Canonical cutoff.
+    # All six combinations bind to the requested completed Canonical cutoff.
     deadline = monotonic() + 30
     def cancelled():
         if monotonic() >= deadline:
@@ -183,12 +184,12 @@ def newow_ai_analysis(request: Request, product: str = Query(...),
             _input_quality_policy(request, product, frequency))[0]
     try:
         preview = getattr(request.state, "candidate_preview_as_of", None) is not None
-        pricing = {"reference_price_policy": GAP_FILL_PRICE_POLICY} if preview else {}
+        pricing = GAP_FILL_PRICE_POLICY if preview else FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
         with _PRODUCT_GATE.acquire(cancelled, priority=2):
             result = analyze_product(product, as_of, reader_factory, cancelled,
                                      lambda frequency: _enforce_product_frequency(request, product, frequency),
-                                     include_four_step=True, **pricing)
-        return {"schema_version": ("newow_ai_analysis_v4" if preview else "newow_ai_analysis_v3"), "product": product,
+                                     include_four_step=True, reference_price_policy=pricing)
+        return {"schema_version": ("newow_ai_analysis_v4" if pricing == GAP_FILL_PRICE_POLICY else "newow_ai_analysis_v3"), "product": product,
                 "as_of": _json_value(as_of), "formula_version": PAGE_FORMULA,
                 "futures_adapter_version": FUTURES_ADAPTER, "page_source_sha256": PAGE_SOURCE_SHA256,
                 "page_kernel_parity": True, "page_parity": False, "executable": False,
@@ -366,10 +367,13 @@ def _build_product_service(
     *, historical_intraday: bool = False,
     reuse_read_inputs: bool = False,
     reference_price_policy: str | None = None,
+    use_persisted_reference: bool = True,
 ) -> NewowProductService:
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(session)
     active = load_active_products()
+    if reference_price_policy is None:
+        reference_price_policy = FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
 
     composition = NewowComposition(
         market_data, coverage, active, quality_policy,
@@ -387,16 +391,15 @@ def _build_product_service(
         if historical_intraday else SessionLocal)
     persisted_reference = PersistedNewowReference(
         factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
-    ).section
+        reference_price_policy=reference_price_policy,
+    ).section if use_persisted_reference else None
     return composition.service(
         cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
         heavy_gate=_PRODUCT_GATE,
         persisted_reference_gate=_PERSISTED_REFERENCE_GATE,
         inflight=_PRODUCT_INFLIGHT,
         cancelled=cancelled,
-        # The local candidate compares freshly replayed prices under a separate
-        # identity. Formal requests continue to require their saved generation.
-        persisted_reference=persisted_reference if reference_price_policy is None else None,
+        persisted_reference=persisted_reference,
         reuse_read_inputs=reuse_read_inputs,
     )
 
@@ -418,6 +421,8 @@ def _build_snapshot_inputs(
         # windows never cross transactions or reach a maintenance writer.
         market_data.replay_coverage = coverage
     active = load_active_products()
+    if reference_price_policy is None:
+        reference_price_policy = FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
     composition = NewowComposition(
         market_data, coverage, active, quality_policy, now=now,
         reference_price_policy=reference_price_policy,
@@ -783,7 +788,7 @@ def newow_strategy_detail(
                                and ProductFrequency(frequency) in FROZEN_INTRADAY_FREQUENCIES)
         service = (_build_product_service(session, cancelled, policy, historical_intraday=True)
                    if historical_intraday else
-                   _build_product_service(session, cancelled, policy, **pricing) if pricing else
+                   _build_product_service(session, cancelled, policy, use_persisted_reference=False, **pricing) if pricing else
                    _build_product_service(session, cancelled) if policy is InputQualityPolicy.V1
                    else _build_product_service(session, cancelled, policy))
         result = service.query(product_query)

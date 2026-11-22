@@ -11,6 +11,7 @@ import json
 from time import monotonic
 from typing import Callable, Literal, cast
 
+from guiyi_quant.newow.reference_pricing import GAP_FILL_PRICE_POLICY, has_gap_fill
 from guiyi_quant.reference_trading import RecordingMode, StreamIdentity
 
 from app.reference_trading.inputs import HistoricalInputReader
@@ -30,7 +31,7 @@ _CAPABILITIES = {
 }
 
 
-def _canonical_identity(identity: StreamIdentity) -> bool:
+def _canonical_identity(identity: StreamIdentity, *, allow_gap_fill: bool = False) -> bool:
     normalized = identity.strategy_code.replace("-", "_")
     if normalized == "subing_reference":
         from guiyi_quant.subing_reference import (
@@ -53,6 +54,10 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
             and identity.futures_adaptation_version == "subing_actual_dominant_v1"
             and identity.observation_policy_version is None
         )
+    gap_fill = has_gap_fill(identity.formula_versions)
+    if gap_fill and (not allow_gap_fill or identity.recording_mode is not RecordingMode.HISTORICAL_REPLAY):
+        return False
+    price_policy = GAP_FILL_PRICE_POLICY if gap_fill else None
     if normalized == "newow_dual_fusion":
         from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
         try:
@@ -60,6 +65,7 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
             policy = candidate_input_quality_policy(identity.product, identity.frequency, candidate_weekly=False)
             return identity == build_fusion_stream_identity(
                 identity.product, identity.frequency, input_quality_policy=policy,
+                reference_price_policy=price_policy,
             )
         except ValueError:
             return False
@@ -80,6 +86,7 @@ def _canonical_identity(identity: StreamIdentity) -> bool:
                 input_quality_policy=candidate_input_quality_policy(
                     identity.product, frequency, candidate_weekly=False,
                 ),
+                reference_price_policy=price_policy,
             )
         except ValueError:
             return False
@@ -318,7 +325,7 @@ class HistoricalReferencePlanner:
                 or identity.frequency not in _CAPABILITIES.get(identity.strategy_code, ())
             ):
                 raise ValueError("REFERENCE_CAPABILITY_UNSUPPORTED")
-            if not _canonical_identity(identity):
+            if not _canonical_identity(identity, allow_gap_fill=True):
                 raise ValueError("REFERENCE_IDENTITY_VERSION_UNSUPPORTED")
             estimator = getattr(self._reader, "estimate_stream", None)
             if callable(estimator):

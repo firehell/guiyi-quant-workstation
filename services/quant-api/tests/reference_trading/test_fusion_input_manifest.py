@@ -36,8 +36,9 @@ def test_saved_fusion_sources_rejects_partial_v5_base_before_action_read(monkeyp
     }
 
     class Query:
-        def streams(self, **_kwargs):
-            return [{"stream_id": "trend", "active_revision_id": "rev", "latest_seq": 2}]
+        def stream_for(self, identity):
+            assert identity.strategy_code == "newow_trend"
+            return {"stream_id": identity.stream_id, "active_revision_id": "rev", "latest_seq": 2}
 
         def summary(self, *_args, **_kwargs):
             assert _kwargs["cutoff"] == completed
@@ -139,9 +140,9 @@ def test_saved_fusion_sources_scopes_each_v5_source_and_cleans_failure(
                         select_material)
 
     class Query:
-        def streams(self, *, strategy, **_kwargs):
+        def stream_for(self, identity):
             assert bool(active) == reader.endswith('_v5')
-            return [{'stream_id': strategy.removeprefix('newow_')}]
+            return {'stream_id': identity.strategy_code}
 
         def summary(self, *_args, **_kwargs):
             assert bool(active) == reader.endswith('_v5')
@@ -251,34 +252,32 @@ def test_persisted_fusion_v2_page_checks_both_execution_and_source_sequences(
 ):
     from datetime import date, datetime, UTC
     from app.reference_trading.contracts import manifest_sha256
-    from app.reference_trading.newow_fusion import PersistedFusionComparison
+    from app.reference_trading.newow_fusion import PersistedFusionComparison, fusion_source_stream_identity
+    from app.reference_trading.persisted_newow import PersistedNewowReference
     from app.reference_trading.query import QueryConflict, _encode
-    from guiyi_quant.newow.product_adapters import build_product_identity
-    from guiyi_quant.newow.product_contracts import ProductStrategy, ProductFrequency
-    from guiyi_quant.newow.product_identity import REFERENCE_MODEL_VERSION
+    from guiyi_quant.newow.product_contracts import ProductStrategy
+    from guiyi_quant.newow.product_identity import InputQualityPolicy
 
-    identity = build_fusion_stream_identity("rb", "1d")
+    identity = build_fusion_stream_identity("rb", "1d", input_quality_policy=InputQualityPolicy.DAILY_V2)
     since, through = date(2026, 9, 1), date(2026, 9, 2)
     cutoff = datetime(2026, 9, 2, 8, tzinfo=UTC)
-    base_identity = build_product_identity(
-        "rb", ProductStrategy.TREND, ProductFrequency.DAILY
-    )
+    base_identity = fusion_source_stream_identity(identity, ProductStrategy.TREND)
     source = {
         "reader": "newow_product_reader_v2",
         "input_fingerprints": ["source1", "source2"],
         "calendar_session_effective_fingerprints": ["calendar"],
         "formula_versions": list(base_identity.formula_versions),
-        "reference_model_version": REFERENCE_MODEL_VERSION,
+        "reference_model_version": base_identity.reference_model_version,
     }
     base_manifest = {"base": "proven"}
     dependencies = [
         {
-            "stream_id": name,
+            "stream_id": fusion_source_stream_identity(identity, strategy).stream_id,
             "revision_id": "rev",
             "seq": 2,
             "dependency_digest": manifest_sha256(base_manifest),
         }
-        for name in ("newow_trend", "newow_oscillation")
+        for strategy in (ProductStrategy.TREND, ProductStrategy.OSCILLATION)
     ]
     actual = ["fusion1", "fusion2"]
     manifest = {
@@ -303,15 +302,8 @@ def test_persisted_fusion_v2_page_checks_both_execution_and_source_sequences(
         manifest["reader"] = "unknown"
 
     class Query:
-        def streams(self, *, strategy, **kwargs):
-            return [
-                {
-                    "stream_id": strategy,
-                    "active_revision_id": "rev",
-                    "latest_seq": 2,
-                    "reference_model_version": REFERENCE_MODEL_VERSION,
-                }
-            ]
+        def stream_for(self, selected):
+            return {"stream_id": selected.stream_id, "active_revision_id": "rev", "latest_seq": 2}
 
         def summary(self, stream_id, **kwargs):
             return {
@@ -333,14 +325,13 @@ def test_persisted_fusion_v2_page_checks_both_execution_and_source_sequences(
         def complete_trades(self, *args, **kwargs):
             return []
 
-    comparison = object.__new__(PersistedFusionComparison)
-    comparison._query = Query()
-    comparison._persisted = SimpleNamespace(
-        _manifest=lambda sid, *args: (
-            identity,
-            manifest if sid == "newow_dual_fusion" else base_manifest,
-        )
+    comparison = PersistedFusionComparison(lambda: None)
+    persisted = PersistedNewowReference(lambda: None)
+    persisted._query = comparison._query = Query()
+    persisted._manifest = lambda sid, *args: (
+        identity, manifest if sid == identity.stream_id else base_manifest,
     )
+    comparison._persisted = persisted
     monkeypatch.setattr(
         MarketDataHistoricalInputReader,
         "plan_stream",

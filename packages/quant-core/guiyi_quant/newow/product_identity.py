@@ -98,6 +98,32 @@ def input_policy_version(
     )
 
 
+def build_newow_stream_identity(
+    identity: ProductIdentity,
+    *,
+    strategy_code: str | None = None,
+    recording_mode="historical_replay",
+    observation_policy_version: str | None = None,
+):
+    """Bind a Newow product formula and price model to its exact saved stream."""
+    from ..reference_trading import StreamIdentity
+
+    return StreamIdentity(
+        strategy_code=strategy_code or f"newow_{identity.strategy.value}",
+        formula_versions=identity.formula_versions,
+        profile_id=identity.profile_id,
+        reference_model_version=reference_model_version(identity),
+        futures_adaptation_version=futures_adaptation_version(
+            identity.frequency.value, identity.input_quality_policy,
+        ),
+        product=identity.product,
+        frequency=identity.frequency.value,
+        series_kind=identity.series_kind,
+        recording_mode=recording_mode,
+        observation_policy_version=observation_policy_version,
+    )
+
+
 def utc_timestamp(value: datetime) -> datetime:
     if (
         not isinstance(value, datetime)

@@ -50,7 +50,7 @@ def test_fusion_comparison_rejects_short_prefix_before_projecting(monkeypatch):
     from app.reference_trading.newow_fusion import PersistedFusionComparison
     from app.reference_trading.persisted_newow import PersistedNewowReference
     saved = PersistedNewowReference(lambda: None)
-    saved._query = SimpleNamespace(streams=lambda **kw: [{'stream_id': 'fusion'}],
+    saved._query = SimpleNamespace(stream_for=lambda identity: {'stream_id': identity.stream_id},
         summary=lambda *a, **kw: {'revision_id': 'r', 'seq': 2})
     saved._manifest = lambda *a: (None, {'query_since': '2026-11-02'})
     fusion = PersistedFusionComparison(lambda: None)

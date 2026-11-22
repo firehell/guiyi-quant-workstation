@@ -46,6 +46,9 @@ OPEN_FREQUENCIES = tuple(ProductFrequency(value) for value in _CURRENT_CAPABILIT
 FROZEN_INTRADAY_FREQUENCIES = ()
 MAIN_RISE_FREQUENCIES = tuple(ProductFrequency(value) for value in _CURRENT_CAPABILITY["strategy_frequencies"]["main_rise"])
 LATEST_COMPLETED_FREQUENCIES = OPEN_FREQUENCIES
+# Historical page assets and their refresh use one exact pricing policy.
+# Change in the release that activates the verified, complete replacement scope.
+FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY: str | None = None
 OPEN_SECTIONS: tuple[ProductSectionName, ...] = tuple(_CURRENT_CAPABILITY["open_sections"])
 DEFERRED_FREQUENCIES: tuple[tuple[ProductFrequency, str], ...] = ()
 DEFERRED_SECTIONS: tuple[tuple[ProductSectionName, str], ...] = tuple((item["section"], item["reason_code"]) for item in _CURRENT_CAPABILITY["deferred_sections"])
