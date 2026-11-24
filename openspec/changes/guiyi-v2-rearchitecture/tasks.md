@@ -1,0 +1,134 @@
+# 归一量化 V2 · 开发计划
+
+2026-11-24｜Superpowers Implementation Plan｜待评审。先读同目录 proposal.md、design.md 与 specs/。批准对应 Plan 后，使用 Superpowers executing-plans 按批实现和复核；勾选表示已有证据，本稿各项均未执行。
+
+**目标。** 先打通“冻结物理合约 → 牛哇决策 → RQAlpha 历史账户 → 隔离 PG → 现有 PC 工作台”，再扩三策略六周期和 VeighNa 单账户仿真。沿用 Python、quant-core、既有 API、PostgreSQL、Redis、Vue、launchd；外部引擎各自锁定依赖。
+
+## 当前判断与批次依赖
+
+| 批次 | 前置 | 可独立验收的交付 |
+|---|---|---|
+| P0 现役合同与消费者 | 本文与当前 Git 基线 | 按现役条款和 reader/writer 列出保留、替换、退役、受保护资产 |
+| P1 两项引擎试验 | P0 核实相应输入 | RQAlpha 可复核的往返成交；VeighNa 在 M4 原生导入和离线回调。两项独立判定 |
+| P2 Market/Core | P0；外部引擎可先用 fixture | 同一因果输入、既有公式和可复现决策 |
+| P3 历史切片 | P1 历史通过，P2 通过 | 一个品种、趋势、5m，从 MDS 到隔离 PG 和只读 API |
+| P4 工作台与盘后更新 | P3 | 可点击切片、三策略六周期、盘后发布；增量按实测需要 |
+| P5 共享模拟执行 | P2、P1 前向离线能力；可与 P4 分开 | 从一个品种到共享预算，离线验证所有权、去重、退出和对账 |
+| P6 本机容量及现场分项 | P4、P5 对应部分 | 四组容量实测；获准的 MD/TD 与实际仿真读回单列 |
+| P7 切换和退役 | 对应验收、合同变更与授权 | 读入口切换、旧生产者停写、限定资产清理与保护对象读回 |
+
+**共用限制。** 唯一 MDS/Session 历史权威、物理合约、Decimal 边界、auto_order=false。研究与模拟账户各有身份；缺开仓参数时仅离线可运行。正式 PG/数据湖、柜台、通知、main/tag 与 Runtime 各守原授权。本次仅交付文档。
+
+**审查焦点。** P2 的晚确认和周线前缀；P3 的换月和未成交 CLEAR；P4 的发布并发与跨页；P5 的未知提交、部分成交和保证金竞争；P7 的原始证据与独立账户误删。
+
+## Codex 调度建议
+
+下卡仅对应首批 P0，整项重构涉及交易与可信收益口径。普通工作台展示独立实施时可归 Lane 2。
+
+- 任务车道：Lane 3
+- 执行入口：Codex App
+- 推荐模型：Sol
+- 推理强度：高
+- 会话：新开会话
+- Plan：Plan-only
+- 工作区：从核实的最新 develop 创建新 task worktree
+- 人工 Gate：Plan 批准；涉及合同、撮合或共享账户的实现另作独立 Review
+
+P0 只读，无须 PR 或集成，交付后确认干净再清理。后续有代码时 task branch 指向 develop；普通 Lane 2 在测试、CI、审查和远端规则满足后允许自动集成；Lane 3 经批准才可集成。按远端规则用 PR 或可核查的集成记录。仅在确认提交进入 develop、无未保存工作后清理本任务 worktree/branch。main/tag、正式写入及 Runtime promotion 单独交办。本卡沿用本次项目交办，仓库默认按需使用 worktree/PR。
+
+## 实际落点及拟增文件
+
+| 现有文件或目录（仓库根相对路径） | 复用与修改边界 |
+|---|---|
+| `services/quant-api/app/market_data/market_data_service.py`、同目录 `live_recovery.py` | MarketDataService 已负责 Catalog、真实主力与连续性校验；只增必需的 Session-aware 适配 |
+| `packages/quant-core/guiyi_quant/newow/engine.py`、同目录 `fusion_reference.py`、`research_backtest.py` | 复用策略状态与融合公式；计划新增同目录 `decision_adapter.py`。查清旧研究入口消费者后才退役 |
+| `services/quant-api/app/reference_trading/`、`services/quant-api/app/api/market_newow.py`、同目录 `newow_reference_parts.py` | 旧 Reference 查询/快照绑定；拟新增 `services/quant-api/app/api/newow_backtests.py` 和 `services/quant-api/app/services/newow_backtest_results.py` |
+| `services/quant-api/alembic/` | P3 对实际 migration head 生成隔离迁移。先对表的历史语义做兼容性核对，不猜 revision 编号 |
+| `services/quant-api/app/simnow_infrastructure_readiness.py`、同目录 `simnow_takeover_window.py`；`tests/unit/simnow_execution/`、`tests/unit/simnow_supervisor/` | 已有账户与恢复验证素材；拟用隔离的 `services/newow-vnpy/` 承载新宿主。复用兼容部分，不接管旧宿主 |
+| `apps/quant-web/src/components/market/detail/newow/NewowReferencePartsPanel.vue`、`apps/quant-web/src/composables/useNewowReferenceParts.ts` | 对照旧请求、错误、游标与图表定位；新面板与旧入口按批切换 |
+| `deploy/README.md`、`deploy/launchd/` | 现役绑定与恢复入口；P7 前只读核对 |
+| 拟新增 `services/newow-rqalpha/runner.py` | 引擎独立环境。输入冻结清单，输出不可变 run/trade/equity；API 进程不安装 RQAlpha/CTP SDK |
+
+新增路径是拟定落点。P0 发现等价接口时优先原位复用，记录实际路径。各批先用最小用例暴露缺口，再做最小实现、定向回归和独立提交。
+
+## P0 · 先查清谁仍使用旧链
+
+- [ ] 读取 STATUS.md、AGENTS.md、docs/DEVELOPMENT.md、PROJECT_SOURCE.md、DECISIONS.md、TESTING.md；比对 develop/main、PR #670/#671、当前相关 Issue/PR、task contract 与运行证据日期。
+- [ ] 执行 `git status --short --branch`、`git worktree list`、`git log -1 --oneline`。用 `rg -n 'ReferenceTrade|forward_observation|dual_fusion|main_rise' packages services apps openspec/specs` 定位消费者，补查通知、旧消息定位、launchd、恢复引用和账户持锁者。
+- [ ] 根据 active requirement 原名列出保留、修改或退役条款，绑定首个生效批次；重点核对 product-retirement 的 60 品种规则、旧观察原件、快期/苏冰独立账户及现有 SimNow writer。无法确认模拟账户所有者时标为阻断，不读凭据。
+- [ ] 输出精确文件、首切片数据资格、待批准成交及风险口径、现场所需权限，提交 P1 Plan。不得先改 active spec 或 STATUS。P0 收敛后只阻断有歧义的分支。
+
+## P1 · 分开验证历史引擎与盘中引擎
+
+- [ ] **历史可行性。** 隔离环境锁定 RQAlpha、Python、所需 mod。用冻结物理合约 1m、Session 和历史参数接入有界数据代理。在禁用外部读取时仍能运行；留输入摘要、引擎版本和实际撮合配置。
+- [ ] **可复算账目。** 离线样例设 1 手、乘数 10、买 100、卖 103、开平费各 2、无滑点，预期毛利 30、净利 26，初始权益 1000 最终 1026。另测空头、平今单独费率、跨日结算、限价无成交、晚确认分钟。上述数值仅为测试数据。引擎默认时序不符时报告第一笔分歧，不复制自研撮合器。
+- [ ] **M4 可行性。** 在目标 Mac 的隔离环境锁定 vnpy、vnpy_ctp、vnpy_portfoliostrategy；记录系统、架构、SDK 与原生加载结果。先离线初始化、注入回调，不读取生产账号。能导入、能订阅、能对账、能获得真实仿真回报分项判定。CTP 失败时保留已验证的单一实时源，历史分支独立推进。
+- [ ] 拟建 `services/newow-rqalpha/tests/test_minute_execution.py`、`services/newow-vnpy/tests/test_gateway_fixture.py`。在各自 env 及服务目录运行 `python -m pytest -q tests`；交付版本锁、数据资格、逐笔手算及未验证能力。
+
+## P2 · 一次实现策略决策，两个适配器各自持有状态
+
+- [ ] 拟建 `services/quant-api/tests/newow/test_v2_completed_decision.py`。先使夜盘、短 H1、午休、尾分钟缺失、周线未完成、同一身份异值与预热 HOLD 用例在缺失适配时失败。
+- [ ] 拟定 `step_completed(state, inputs, execution_context) -> (next_state, decision)`。映射既有输入/状态类型；趋势、震荡只各算一次，再按已有融合规则推进独立融合状态。保留精度、主动作、Hint 与重绘身份。
+- [ ] 对相同前缀执行逐条/批量及双适配器回放，再追加未来日周数据；前缀所有动作和原因须一致。缺口期间无补单。正常增量更新不重新读取全历史。
+- [ ] 运行 `PYTHONPATH=services/quant-api:packages/quant-core python -m pytest -q services/quant-api/tests/newow/test_v2_completed_decision.py services/quant-api/tests/newow/test_fusion_reference.py services/quant-api/tests/data_foundation/test_historical_session_window.py`。解释器按 TESTING.md 选择。
+
+## P3 · 一个真实合约、趋势、5m，跑通历史切片
+
+- [ ] 选有完整冻结证据且含可核验一开一平的物理合约。分别记录 bar_end、历史可用时点、信号及最早合格成交分钟。缺费率/结算或价格资格时记录阻断；不在主连价格生成成交。
+- [ ] 在隔离 PG 建 run/trade/equity 与成功版本指针。计划 `GET /api/v1/newow/backtests/latest` 按策略、品种、周期、研究配置查摘要；`GET /api/v1/newow/backtests/{run_id}/trades` 与同前缀 `/equity` 只读同一 run。首次无结果给空状态，未知 run 返回 404，游标错配拒绝；已有等价资源优先复用。
+- [ ] 拟建 `services/quant-api/tests/newow/test_v2_backtest_results.py`：比对输入→决策→首次合法分钟→费用→权益→API；分别测旧月带仓新月 HOLD、期末未平、结算缺失、无入场 CLEAR。缺批准跨月政策不能发布跨月正式收益。
+- [ ] 依 TESTING.md 配置真实隔离 PG，测试迁移、事务失败/重试与既有库共存；定向运行上项测试与 `services/quant-api/tests/newow/test_research_backtest.py`。独立审查第一笔成交和全部成本明细，再把这条链作为 P4 基线。
+
+## P4 · 打开工作台，接盘后更新，再扩矩阵
+
+- [ ] 最小页面展示 run 来源、截至日、费用、窗口、逐笔和权益。在读取测试中让引擎启动器/外部下载器一调用即失败；打开页面及翻页须成功。覆盖首次无结果、失败/旧结果、切品种晚响应、固定 run 的跨页查询。
+- [ ] 使用 Canonical 完成事件或现有盘后任务接缝；同一输入发布重复通知只生成一份结果。模拟较新任务先成功、旧任务后完成、PG 发布故障、检查点写后崩溃。新结果不被倒退，失败不推进指针，A 的老游标仍固定在 A。
+- [ ] 扩展三策略六周期；覆盖日盘、夜盘、短 H1 与 W1 预热。验证普通新增品种、容量上限、激活失败原配置不变。全量作为基线；只有实测需要才比较 Incremental Mod。修订、版本/成本/映射变化或 checkpoint 缺失时全量重建对应组合。
+- [ ] 拟建 `apps/quant-web/tests/newowBacktestPanel.test.ts` 与 `services/quant-api/tests/newow/test_v2_eod_publication.py`。Web 在 apps/quant-web 运行 `node --test tests/newowBacktestPanel.test.ts tests/newowReferenceWindows.test.ts`、`pnpm build`。后端运行新增发布测试。PC 核对主图、快期、苏冰、消息定位和快照来源，真实发送次数为零。
+
+## P5 · 一个仿真账户，先离线证明只会发一次
+
+- [ ] 新宿主分开 Core 适配、gateway 和意图/恢复。校验环境与独占写入，支持只读。缺手数、保证金、日损、新鲜度预算时禁开仓。模拟两个品种同批争用仅够一个的预算，调换到达顺序应选出同一品种。
+- [ ] 一个事务保存去重键、输入水位、决策、唯一意图和预留，提交资格先持久化再发送。模拟落盘前崩溃、领取后崩溃、发送后无确认；同一动作重放至多一个逻辑意图，未知不重发。部分成交后 CLEAR、晚到成交、重复回报、撤余单要逐项对照实际可平数量与剩余预留。
+- [ ] 测带旧月仓位退出、所有者切换、第二 writer 争用、20 个含 DRAINING 再加一个、风险估值缺失。恢复核对账户、持仓、活动单、当日成交和未决意图，读回不完整则维持阻断。
+- [ ] 拟建 `services/newow-vnpy/tests/test_account_recovery.py` 及同目录 `test_owner_and_budget.py`。新宿主 env 运行 `python -m pytest -q tests`；原隔离 env 回归 `python -m pytest -q tests/unit/simnow_execution tests/unit/simnow_supervisor/test_native_portfolio.py services/quant-api/tests/test_subing_model_api.py`。此批不触发任何真实账户操作。
+
+## P6 · M4 容量和现场分项
+
+- [ ] 用同一冻结切片，测试 60/16 与 70/20 × 研究并发 0 与 1。每组至少 100 热批、其中 20 个同步峰值；预热不计，模拟同步场景单列。记录可消费至持久化的各批样本，p95/p99 用排序最近秩；额外统计行情到达与柜台延迟。
+- [ ] 每组 p95≤5 秒、p99≤10 秒；记录 CPU/RSS/swap、SSD、读次数和回测耗时，30–60 分钟代表性回放无持续积压，回报零漏重。先处理重复全历史读/同步 IO/重复公式，后考虑纯计算并行。记录 Web 或 Research 更新前后 Trading 身份。单组失败只阻止相应容量声明。
+- [ ] 分列本机原生安装、MD 权限及实际订阅、TD 模拟只读身份与对账、明确授权的模拟委托和原生读回。现场测试需给定环境、时段、最大手数、品种与退出政策。未获授权记“未执行”；没有自然成交记“待观察”。不要求 24h 或破坏性现场演练。
+
+## P7 · 真实切换与退役
+
+- [ ] 根据此时 HEAD 形成按现役标题匹配的 MODIFIED/REMOVED delta；检查消费者、保留的原件与恢复引用。切换合同须严格校验并独立 Review；产品/架构/决策文档与生效批次同步。
+- [ ] main/tag、Runtime promotion、生产 PG/湖写入和删除分别以明确授权为准。dry-run 固定环境、对象、数量/身份、可恢复依据与停止点；先切一个品种读面并核对，才扩范围。读面失败保留最后已核实读取身份；账户结果未知先读回。
+- [ ] 核对旧 Worker、旧预警生产者及自研回测零未决义务、零剩余消费者；共用进程仅退役相应职责。删除白名单须与待删对象、删除后差异相同；历史行情、旧观察原件、独立账户与恢复依赖完整。分别报告开发、实际发布、运行身份、实际业务和清理读回。
+
+## 需求—交付核对
+
+| 需求 | 主责批次 | 验收证据 |
+|---|---|---|
+| M01、M02、S01、S02 | P2、P3 | 单源、Session、可用时点、前缀与快照 |
+| M03 | P4、P5、P6 | 70/20、配置原子性、退出中计数及满载样本 |
+| R01 | P1、P3 | 引擎真实回放、手算、换月/期末与无成交 |
+| R02、R03 | P3、P4 | 隔离 PG、旧指针/游标稳定、全量/增量对照 |
+| T01、T02、T03 | P5、P6 | 独占、仲裁、崩溃重放、部分成交和现场读回 |
+| W01 | P4、P7 | 只读面板、独立 Tab、旧消息回归 |
+| O01、O02 | P6、P7 | M4 采样、组件身份、旧生产者和保护对象读回 |
+
+## 可复制的首次 Codex Prompt
+
+```text
+仅执行《归一量化 V2 · 开发计划》P0，只读，Lane 3、Sol 高推理、Plan-only。
+先读 STATUS.md、AGENTS.md、docs/DEVELOPMENT.md、PROJECT_SOURCE.md、DECISIONS.md、
+TESTING.md、本 change 三份主文档和六份规格。核对最新 develop/main、相关 Issue/PR、
+active specs、代码、测试与运行证据日期。按本任务调度卡，从 develop 隔离工作区。
+产出旧消费者→新归属→保护/替换对象→现役 requirement 原名的对应表，区分原始行情、
+可再生投影、不可再生前向观察和独立账户事实。确认共享 SimNow 是否存在 writer，不读凭据。
+给出 P1 两个离线试验的输入、实际代码和测试路径、已知冲突、需批准的成交/风险参数。
+不实现业务、不改 active 或 STATUS，不访问生产、柜台或通知，不发布 main/tag 或同步 Runtime。
+说明验证范围与只读工作区清理结果；交付即止于 P0 和 P1 Plan。
+```
+
+**用户重点审查。** 历史引擎分工、严格后继分钟、同一品种执行所有者、预算不足的排序，以及旧观察原件的保护名单。当前可交办 P0 只读核对。正式实现 Gate 结论：**阻塞**，待对应 Lane 3 Plan 获批。该结论不阻碍需求、设计和离线试验计划的审阅。
