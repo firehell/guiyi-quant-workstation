@@ -7,23 +7,29 @@
 ```sh
 repo_dir="$PWD"
 service_dir="$repo_dir/services/newow-rqalpha"
-evidence_dir="$repo_dir/output/guiyi-v2-p1a-rqalpha"
+evidence_root="$repo_dir/output/guiyi-v2-p1a-rqalpha"
+fu_sample_dir='/Volumes/扩展盘/guiyi-quant-workstation/output/newow-fu15-validation-20261107'
+rqalpha_legacy_dir="${HOME}/.rqalpha"
+proof_sandbox='(version 1) (allow default) (deny network*)
+  (deny file-read* (subpath (param "GUIYI_LEGACY_RQALPHA")))
+  (deny file-write* (subpath (param "GUIYI_P0_SAMPLE")))'
 uv sync --locked --project "$service_dir" --cache-dir /private/tmp/guiyi-v2-p1a-uv-cache \
   --default-index https://pypi.org/simple \
   --python /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13
-mkdir -p "$evidence_dir"
+mkdir -p "$evidence_root"
+evidence_dir=$(mktemp -d "$evidence_root/verification.XXXXXX")
 scratch_dir=$(mktemp -d /private/tmp/guiyi-p1a-offline.XXXXXX)
 cd "$scratch_dir"
-/usr/bin/sandbox-exec -p '(version 1) (allow default) (deny network*)' \
-  /usr/bin/env -i HOME="$scratch_dir" TMPDIR="$scratch_dir" PATH=/usr/bin:/bin \
-  PYTHONDONTWRITEBYTECODE=1 "$service_dir/.venv/bin/python" \
-  -m pytest -v -o cache_dir="$scratch_dir/pytest-cache" "$service_dir/tests"
-/usr/bin/sandbox-exec -p '(version 1) (allow default) (deny network*)' \
-  /usr/bin/env -i HOME="$scratch_dir" TMPDIR="$scratch_dir" PATH=/usr/bin:/bin \
-  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$repo_dir/services/quant-api:$repo_dir/packages/quant-core" \
-  "$service_dir/.venv/bin/python" "$service_dir/fu_sample.py" \
-  '/Volumes/扩展盘/guiyi-quant-workstation/output/newow-fu15-validation-20261107' \
-  "$evidence_dir/fu2603-first-pair.json"
+printf '%s\n' "$evidence_dir"
+/usr/bin/sandbox-exec -D GUIYI_LEGACY_RQALPHA="$rqalpha_legacy_dir" \
+  -D GUIYI_P0_SAMPLE="$fu_sample_dir" -p "$proof_sandbox" \
+  /usr/bin/env -i "$service_dir/.venv/bin/python" -B \
+  -m pytest -v -p no:cacheprovider "$service_dir/tests"
+/usr/bin/sandbox-exec -D GUIYI_LEGACY_RQALPHA="$rqalpha_legacy_dir" \
+  -D GUIYI_P0_SAMPLE="$fu_sample_dir" -p "$proof_sandbox" \
+  /usr/bin/env -i PYTHONPATH="$repo_dir/services/quant-api:$repo_dir/packages/quant-core" \
+  "$service_dir/.venv/bin/python" -B "$service_dir/fu_sample.py" \
+  "$fu_sample_dir" "$evidence_dir/fu2603-first-pair.json"
 ```
 
 - 5m 收线 `09:05:00` 在历史模型中于 `09:05:02` 可用。最早候选为 `09:06:00` 分钟开盘，原生 `NEXT_BAR_OPEN` 在 `09:06:00` 标签回调创建委托，在 `09:07:00` 标签回调撮合。委托冻结价取决策时已知的 `09:05:00` 收价。证据保存信号、建模成交时点、原生委托及成交回调时点。首候选无资格即结束，缺失的原始分钟或参数阻断运行。
