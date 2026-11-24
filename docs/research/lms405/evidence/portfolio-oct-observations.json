@@ -1,0 +1,95 @@
+{
+  "snapshots": [
+    {
+      "source": "WRnTlEfj1t",
+      "table": "图2",
+      "system": "4.0.5",
+      "binding": "SYSTEM_COVER",
+      "legs": {"RU2701":{"long":20,"short":20},"JM2701":{"long":20,"short":20},"FG2701":{"long":20,"short":20},"SA2701":{"long":20,"short":20},"SH2701":{"long":20,"short":20},"I2701":{"long":16,"short":16}}
+    },
+    {
+      "source": "WRnY5bznUE",
+      "table": "图2",
+      "system": "4.0.5",
+      "binding": "SYSTEM_POST_MIXED_ROWS",
+      "legs": {"FG2701":{"short":20},"SA2701":{"short":20},"SH2701":{"short":20},"I2701":{"short":16}}
+    },
+    {
+      "source": "WRo00BFM1E",
+      "table": "图3",
+      "system": null,
+      "binding": "MIXED_POST_TABLE_BINDING_UNKNOWN",
+      "quote_anchor": "2026-10-23T15:00:00+08:00",
+      "legs": {"OI2701":{"long":40},"JM2701":{"long":20},"FG2701":{"long":20,"short":20},"V2701":{"long":40},"SH2701":{"short":20},"I2701":{"short":16}}
+    },
+    {
+      "source": "WRo2KQ43iX",
+      "table": "图2",
+      "system": "4.0.5",
+      "binding": "SYSTEM_COVER",
+      "legs": {"OI2701":{"long":40},"JM2701":{"short":20},"SA2701":{"long":20},"V2701":{"long":40},"TA2701":{"long":34},"SH2701":{"long":20,"short":20},"I2701":{"short":16}}
+    },
+    {
+      "source": "WRo2LIbP3s",
+      "table": "图2",
+      "system": "5.0",
+      "binding": "SYSTEM_COVER",
+      "legs": {"TA2701":{"long":null},"V2701":{"long":null},"OI2701":{"long":null},"I2701":{"short":null}}
+    },
+    {
+      "source": "WRov1j6e10",
+      "table": "图2",
+      "system": "4.0.5",
+      "binding": "SYSTEM_COVER",
+      "legs": {"OI2701":{"short":40},"RU2701":{"short":20},"JM2701":{"short":20},"FG2701":{"short":20},"SA2701":{"short":20},"V2701":{"long":40},"SH2701":{"short":20},"I2701":{"short":16}}
+    },
+    {
+      "source": "WRoAkcEppg",
+      "table": "图2",
+      "system": null,
+      "binding": "MIXED_POST_TABLE_BINDING_UNKNOWN",
+      "quote_anchor": "2026-10-27T11:30:00+08:00",
+      "legs": {"OI2701":{"short":40},"RU2701":{"short":20},"JM2701":{"long":20},"FG2701":{"short":20},"V2701":{"long":40},"SH2701":{"long":20,"short":20},"I2701":{"long":16,"short":16}}
+    },
+    {
+      "source": "U03",
+      "table": "图3",
+      "system": null,
+      "binding": "MIXED_POST_TABLE_BINDING_UNKNOWN",
+      "quote_anchor": "2026-10-27T15:00:00+08:00",
+      "legs": {"OI2701":{"short":40},"RU2701":{"short":20},"JM2701":{"long":20},"V2701":{"long":40},"SH2701":{"short":20},"I2701":{"long":16,"short":16}}
+    },
+    {
+      "source": "WRoEvasxQR",
+      "table": "图2",
+      "system": "4.0.5",
+      "binding": "SYSTEM_COVER",
+      "legs": {"OI2701":{"long":40,"short":40},"RU2701":{"long":20,"short":20},"JM2701":{"long":20},"V2701":{"long":40},"SH2701":{"long":20,"short":20},"I2701":{"short":16}}
+    },
+    {
+      "source": "WRoEvFgWlh",
+      "table": "图2",
+      "system": "5.0",
+      "binding": "SYSTEM_COVER",
+      "legs": {"TA2701":{"long":null},"V2701":{"long":null},"OI2701":{"short":null},"I2701":{"short":null}}
+    }
+  ],
+  "notices": [
+    {"source":"F08","contract":"JM2609","kind":"AUTHOR_REPORT","topics":["LOCK","SHORT_M","RECOVERY_OR_REENTRY_UNKNOWN"]},
+    {"source":"F09","contract":"OI2609","kind":"AUTHOR_REPORT","topics":["SHORT_M","RECOVERY_LEG_UNKNOWN"]},
+    {"source":"F12","contract":null,"products":["FG","SA"],"kind":"AUTHOR_REPORT","topics":["RELOCK","CONSOLIDATION_CONTEXT"]},
+    {"source":"F07","contract":"RU2609","kind":"AUTHOR_REPORT","topics":["LOCK","RECOVERY_IF_STRENGTH_RETURNS"]},
+    {"source":"E52","contract":"FG2701","kind":"AUTHOR_REPORT","topics":["TAKE_PROFIT","REENTRY_TO_OBSERVE"]},
+    {"source":"A5355789916438626","contract":"TA2701","kind":"PLAN_PUBLICATION","topics":["NEW_REGION_PAUSED"]},
+    {"source":"A5356507360788540","contract":"TA2701","kind":"PLAN_PUBLICATION","topics":["NEW_REGION_PAUSED"]},
+    {"source":"A5356884885635211","contract":"TA2701","kind":"PLAN_PUBLICATION","topics":["NEW_REGION_PAUSED"]},
+    {"source":"A5357264793370945","contract":"TA2701","kind":"PLAN_PUBLICATION","topics":["NEW_REGION_PAUSED"]},
+    {"source":"WRot6yvHyS","contract":"V2701","kind":"AUTHOR_REPORT","topics":["TAKE_PROFIT"]},
+    {"source":"A5358325549629506","contract":"V2701","kind":"PLAN_PUBLICATION","topics":["LEFT_LONG","RIGHT_LONG","RIGHT_SHORT"]},
+    {"source":"A5358325972992140","contract":"TA2701","kind":"PLAN_PUBLICATION","topics":["NEW_REGION_PAUSED"]},
+    {"source":"WRozPmaK10","contract":"SH2701","kind":"AUTHOR_REPORT","topics":["LOCK"]},
+    {"source":"U03","contract":"SH2701","kind":"AUTHOR_REPORT","topics":["RECOVERY","EXACT_EVENT_TIME_UNKNOWN"]},
+    {"source":"WRoCxx1ooa","contract":"V2701","kind":"AUTHOR_REPORT","topics":["RIGHT_SHORT_TIME_CONFLICT","LEFT_LONG_CONTEXT"]},
+    {"source":"A5358686695981271","contract":"TA2701","kind":"PLAN_PUBLICATION","topics":["NEW_REGION_PAUSED"]}
+  ]
+}
