@@ -1,0 +1,20 @@
+[
+  {"source": "WRnTlEfj1t", "table": "图2", "row_count": 16, "total_lots": 332,
+   "other_legs": {"J2701": {"long": 10, "short": 10}, "RB2701": {"long": 40, "short": 40}}},
+  {"source": "WRnY5bznUE", "table": "图2", "row_count": 6, "total_lots": 120,
+   "other_legs": {"IM2612": {"short": 4}, "RB2701": {"short": 40}}},
+  {"source": "WRo00BFM1E", "table": "图3", "row_count": 9, "total_lots": 226,
+   "other_legs": {"J2701": {"long": 10}, "RB2701": {"short": 40}}},
+  {"source": "WRo2KQ43iX", "table": "图2", "row_count": 10, "total_lots": 260,
+   "other_legs": {"J2701": {"short": 10}, "RB2701": {"short": 40}}},
+  {"source": "WRov1j6e10", "table": "图2", "row_count": 10, "total_lots": 246,
+   "other_legs": {"J2701": {"short": 10}, "RB2701": {"short": 40}}},
+  {"source": "WRozNbg3en", "table": "图2", "row_count": 9, "total_lots": 200,
+   "other_legs": {"IM2612": {"short": 4}, "RB2701": {"short": 40}}},
+  {"source": "WRoAkcEppg", "table": "图2", "row_count": 13, "total_lots": 310,
+   "other_legs": {"IM2612": {"short": 8}, "J2701": {"long": 10}, "RB2701": {"long": 40, "short": 40}}},
+  {"source": "U03", "table": "图3", "row_count": 8, "total_lots": 182,
+   "other_legs": {"J2701": {"long": 10}}},
+  {"source": "WRoEvasxQR", "table": "图2", "row_count": 10, "total_lots": 246,
+   "other_legs": {"J2701": {"long": 10}}}
+]

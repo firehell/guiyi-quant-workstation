@@ -8,10 +8,12 @@ from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 
-from lms405_portfolio_replay import ARCHIVE, BOOK, visible_legs
+from guiyi_quant.lms405 import physical_contract
+from lms405_portfolio_replay import ARCHIVE, BOOK, CONTRACTS, visible_legs
 from lms_near405_replay import encoded, sha
 
 FIELDS = BOOK.with_name("portfolio-oct-leg-fields.json")
+TOTALS = BOOK.with_name("portfolio-oct-table-totals.json")
 VERSION = "lms405-oct-exposure-audit-v1"
 SIDES = ("long", "short")
 
@@ -155,16 +157,87 @@ def audit(book, supplement, sources, archive):
     )
 
 
+def reconcile_display(table, totals):
+    quantities = {
+        contract: {side: leg["quantity"] for side, leg in observation["legs"].items()}
+        for contract, observation in table["contracts"].items()
+    }
+    if set(totals["other_legs"]) & set(CONTRACTS):
+        raise ValueError("SUPPLEMENT_CONTAINS_STUDY_CONTRACT")
+    quantities.update(totals["other_legs"])
+    if not quantities:
+        raise ValueError("EMPTY_DISPLAY")
+    for contract, legs in quantities.items():
+        physical_contract(contract)
+        if not legs or set(legs) - set(SIDES) or any(type(q) is not int or q <= 0 for q in legs.values()):
+            raise ValueError("DISPLAY_INCOMPLETE_OR_QUANTITY_INVALID")
+    row_count = sum(map(len, quantities.values()))
+    lot_sum = sum(Decimal(lots) for legs in quantities.values() for lots in legs.values())
+    if row_count != totals["row_count"] or lot_sum != totals["total_lots"]:
+        raise ValueError("DISPLAY_TOTALS_MISMATCH")
+
+    partitions = dict(equal_pairs=[], unequal_pairs=[], single_visible_side=[])
+    for contract, legs in sorted(quantities.items()):
+        if len(legs) == 1:
+            partitions["single_visible_side"].append(contract)
+        elif legs["long"] == legs["short"]:
+            partitions["equal_pairs"].append(contract)
+        else:
+            partitions["unequal_pairs"].append(contract)
+    return dict(
+        **{key: table[key] for key in ("source", "table", "published_at", "system", "binding", "image", "source_url")},
+        displayed_row_count=row_count, displayed_lot_sum_for_reconciliation=str(lot_sum),
+        visible_contract_count=len(quantities),
+        unseen_study_contracts=sorted(set(CONTRACTS) - quantities.keys()),
+        all_visible_contracts_equal_paired=len(partitions["equal_pairs"]) == len(quantities),
+        **partitions,
+    )
+
+
+def portfolio_scope(audit_report, supplements):
+    indexed = {(row["source"], row["table"]): row for row in supplements}
+    expected = {(row["source"], row["table"]) for row in audit_report["tables"]}
+    if len(indexed) != len(supplements) or expected != indexed.keys():
+        raise ValueError("DISPLAY_TABLE_SET_MISMATCH")
+    rows = [reconcile_display(table, indexed[table["source"], table["table"]]) for table in audit_report["tables"]]
+    covers = [row for row in rows if row["system"] == "4.0.5" and row["binding"] == "SYSTEM_COVER"]
+    return dict(
+        version="lms405-oct-table-scope-v1",
+        observation_scope="RECONCILED_SCREENSHOT_ROWS_ONLY",
+        tables=rows,
+        cover_tables_with_all_visible_contracts_equal_paired=[
+            row["source"] for row in covers if row["all_visible_contracts_equal_paired"]
+        ],
+        cover_tables_with_equal_pairs_and_single_visible_sides=[
+            row["source"] for row in covers if row["equal_pairs"] and row["single_visible_side"]
+        ],
+        cover_tables_without_visible_equal_pairs=[row["source"] for row in covers if not row["equal_pairs"]],
+        excluded_5_0_tables=audit_report["excluded_5_0_tables"],
+        account_whole_portfolio_exposure=None,
+        portfolio_risk_budget=None,
+        account_continuity=None,
+        author_action_matches=None,
+        admitted_author_action_samples=0,
+        executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--portfolio-scope", action="store_true", help="Reconcile full displayed table totals.")
     args = parser.parse_args()
     try:
         raw_book, raw_fields = BOOK.read_bytes(), FIELDS.read_bytes()
         with ARCHIVE.open(newline="", encoding="utf-8") as stream:
             sources = {row["source_id"]: row for row in csv.DictReader(stream)}
         report = audit(json.loads(raw_book), json.loads(raw_fields), sources, ARCHIVE.parent)
-        report["input_sha256"] = dict(quantities=sha(raw_book), leg_fields=sha(raw_fields))
+        input_hashes = dict(quantities=sha(raw_book), leg_fields=sha(raw_fields))
+        if args.portfolio_scope:
+            raw_totals = TOTALS.read_bytes()
+            report = portfolio_scope(report, json.loads(raw_totals))
+            input_hashes["display_totals"] = sha(raw_totals)
+        report["input_sha256"] = input_hashes
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except (OSError, ValueError, KeyError, InvalidOperation) as error:

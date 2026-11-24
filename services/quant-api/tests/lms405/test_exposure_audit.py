@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from lms405_exposure_audit import ARCHIVE, BOOK, FIELDS, audit, displayed_contract
+from lms405_exposure_audit import ARCHIVE, BOOK, FIELDS, TOTALS, audit, displayed_contract, portfolio_scope
 
 
 @pytest.fixture
@@ -81,3 +81,34 @@ def test_baseline_rows_and_image_identity_cannot_be_overridden(source_inputs):
     first["image"] = "RoEvasxQR-position-screen.png"
     with pytest.raises(ValueError, match="IMAGE_IDENTITY_MISMATCH"):
         audit(book, fields, sources, ARCHIVE.parent)
+
+
+def test_reconciled_tables_keep_visible_and_account_scope_separate(source_inputs):
+    report = portfolio_scope(audit(*source_inputs, ARCHIVE.parent), json.loads(TOTALS.read_text()))
+    assert len(report["tables"]) == 9
+    assert sum(row["displayed_row_count"] for row in report["tables"]) == 91
+    assert report["cover_tables_with_all_visible_contracts_equal_paired"] == ["WRnTlEfj1t"]
+    assert report["cover_tables_with_equal_pairs_and_single_visible_sides"] == ["WRo2KQ43iX", "WRoEvasxQR"]
+    assert report["cover_tables_without_visible_equal_pairs"] == ["WRov1j6e10"]
+    assert report["account_whole_portfolio_exposure"] is report["portfolio_risk_budget"] is None
+
+    october_22 = report["tables"][0]
+    assert october_22["displayed_lot_sum_for_reconciliation"] == "332"
+    assert october_22["visible_contract_count"] == len(october_22["equal_pairs"]) == 8
+    assert october_22["unseen_study_contracts"] == ["OI2701", "TA2701", "V2701"]
+    october_27 = next(row for row in report["tables"] if row["source"] == "WRoEvasxQR")
+    assert october_27["equal_pairs"] == ["OI2701", "RU2701", "SH2701"]
+    assert october_27["single_visible_side"] == ["I2701", "J2701", "JM2701", "V2701"]
+
+
+def test_display_total_and_scope_require_exact_parts(source_inputs):
+    audit_report = audit(*source_inputs, ARCHIVE.parent)
+    totals = json.loads(TOTALS.read_text())
+    with pytest.raises(ValueError, match="DISPLAY_TABLE_SET_MISMATCH"):
+        portfolio_scope(audit_report, totals[:-1])
+    totals[0]["other_legs"]["J2701"]["short"] -= 1
+    with pytest.raises(ValueError, match="DISPLAY_TOTALS_MISMATCH"):
+        portfolio_scope(audit_report, totals)
+    totals[0]["other_legs"]["JM2701"] = {"short": 20}
+    with pytest.raises(ValueError, match="SUPPLEMENT_CONTAINS_STUDY_CONTRACT"):
+        portfolio_scope(audit_report, totals)
