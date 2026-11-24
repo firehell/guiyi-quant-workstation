@@ -42,6 +42,15 @@ CASES = (
      (("interruption_far", "1397.5"), ("m_near", "1410.5"),
       ("m_far", "1420"), ("extreme_m_near", "1420.5"), ("extreme_m_far", "1427.5"))),
 )
+RU2701_LEVELS = (("interruption_far", "19405"), ("m_near", "19515"), ("m_far", "19610"))
+RU2701_CASES = (
+    ("ru2701_night", "RU2701", ("2026-10-28",), "LONG",
+     "2026-10-27T21:00", "2026-10-27T23:01",
+     ("A5358686695981271", "WRoEvasxQR", "WRoEMZFhT2", "S5359046580243515"), RU2701_LEVELS),
+    ("ru2701_day", "RU2701", ("2026-10-28",), "LONG",
+     "2026-10-28T09:00", "2026-10-28T15:01",
+     ("A5358686695981271", "S5359046580243515"), RU2701_LEVELS),
+)
 
 
 def local_time(value):
@@ -118,11 +127,12 @@ def examine(minutes, fives, *, start, cut, side, levels):
                 confirmed_shape_windows=len(shapes), events=events)
 
 
-def study(session, market):
+def study(session, market, *, rubber_october=False):
     from app.market_data.market_data_service import MarketDataError
 
     coverage, cases = {}, {}
-    for name, contract, dates, side, start, cut, source_ids, levels in CASES:
+    cases_to_run = RU2701_CASES if rubber_october else CASES
+    for name, contract, dates, side, start, cut, source_ids, levels in cases_to_run:
         cases[name] = dict(contract=contract, trading_days=dates, side=side, source_ids=source_ids,
                            window=[start, cut], author_action_at=None)
         key = (contract, dates)
@@ -150,14 +160,22 @@ def study(session, market):
             cases[name].update(examine(minutes, fives, start=datetime.fromisoformat(start).replace(tzinfo=SHANGHAI),
                                        cut=datetime.fromisoformat(cut).replace(tzinfo=SHANGHAI),
                                        side=side, levels=levels))
-    return dict(version="lms405-counter-m-order-study-v1", cases=cases, executable=False,
-                author_matches=None, admitted_author_samples=0, fills=None, pnl=None)
+    result = dict(version="lms405-counter-m-order-study-v1", cases=cases, executable=False,
+                  author_matches=None, admitted_author_samples=0, fills=None, pnl=None)
+    if rubber_october:
+        result.update(
+            case_set="RU2701_OCT28_PROTECTION_AND_M_BOUNDARIES",
+            author_market_context="RETROSPECTIVE_M_AND_CONSOLIDATION",
+            author_system_participation=None,
+        )
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--rubber-october", action="store_true", help="Only the two RU2701 October 28 windows.")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -170,7 +188,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), rubber_october=args.rubber_october)
     except OperationalError:
         parser.exit(2, "LOCAL_MDS_CONNECTION_UNAVAILABLE\n")
     with args.output.open("x", encoding="utf-8") as stream:
