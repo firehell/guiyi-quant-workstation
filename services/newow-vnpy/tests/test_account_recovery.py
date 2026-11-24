@@ -317,3 +317,30 @@ def test_a_build_known_during_unverified_account_cannot_be_retroactively_sent(sc
         decisions = host.store.projection('decisions')['data']
         assert any(d['main_action'] == 'BUILD' and d['reason'] == 'ACCOUNT_PREFIX_UNVERIFIED' for d in decisions)
         assert not scenario.gateway.sends
+
+
+def test_signal_from_stopped_interval_is_not_opened_after_restart(scenario):
+    with scenario.host() as host:
+        host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
+        assert host.reconcile(scenario.snapshot())
+        host.register_policy(scenario.policy('RB'))
+        scenario.warm(host, scenario.market('RB'))
+    recovery = scenario.signal_end + timedelta(seconds=3)
+    with scenario.host(started_at=recovery) as host:
+        assert host.reconcile(scenario.snapshot(at=recovery))
+        scenario.quoted(host, 'RB')
+        assert scenario.live(host, 'RB', now=recovery) == 'ACCEPTED'
+        host.advance(scenario.signal_end + timedelta(seconds=5))
+        assert not scenario.gateway.sends
+        rows = host.store.projection('decisions')['data']
+        assert any(d['execution_reason'] == 'P5_SIGNAL_BEFORE_READBACK' for d in rows)
+
+
+def test_snapshot_older_than_disconnect_cannot_restore_ready(scenario):
+    with scenario.host() as host:
+        assert host.reconcile(scenario.snapshot())
+        outage = scenario.start + timedelta(seconds=5)
+        host.block('P5_DISCONNECTED', known_at=outage)
+        assert not host.reconcile(scenario.snapshot(at=outage - timedelta(seconds=1)))
+        assert host.status()['status'] == 'RECONCILING'
+        assert host.reconcile(scenario.snapshot(at=outage + timedelta(seconds=1)))

@@ -98,7 +98,7 @@ P0 只读，无须 PR 或集成，交付后确认干净再清理。后续有代�
 - [x] `services/newow-vnpy` 接入 P2 completed 输入及 VeighNa 原生事件、请求和开平转换。一个账户写入者，正式规格 60/16，隔离上限 70/20。按交易所、品种、部署排序仲裁同批增仓。缺账户、风险参数或已有仓估值时禁增风险。
 - [x] 隔离 PG 原子保存水位、决策、检查点、意图和预留。以当时已知的账户、成交和失效前缀计算决策。持久化单次领取后才向 fixture 分派。未知不重发，回报按原生身份去重，平仓发送前复核实际可平与今昨仓。
 - [x] 退出进入 DRAINING，保留旧物理合约义务与受限的显式减仓入口。新启动重取资金、持仓、活动单和当日成交的完整读回。Web 后续使用隔离只读 `GET /api/v1/newow/trading/` 投影。
-- [x] 在 M4 锁定环境及一次性 PostgreSQL 16 运行 `python -m pytest -q tests`，51 项通过。原 `simnow_execution`、`test_native_portfolio.py`、`test_subing_model_api.py` 加新 GET 投影共 196 项通过。离线边界、命令和 P6 待验项见 [宿主 README](../../../services/newow-vnpy/README.md)。
+- [x] 在 M4 锁定环境及一次性 PostgreSQL 16 运行 `python -m pytest -q tests`，53 项通过。原 `simnow_execution`、`test_native_portfolio.py`、`test_subing_model_api.py` 加新 GET 投影共 196 项通过。离线边界、命令和 P6 待验项见 [宿主 README](../../../services/newow-vnpy/README.md)。
 
 ## P6 · M4 容量和现场分项
 

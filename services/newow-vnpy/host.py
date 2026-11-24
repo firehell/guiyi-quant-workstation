@@ -31,7 +31,7 @@ def initial_state():
     return dict(revision=None, config_ref=None, market=[], requested_market=[], market_rank={},
                 owners={}, policies={}, streams={}, staged={}, intents={}, clears={}, orders={},
                 order_generations={}, fills={}, quotes={}, native=None, generation=None, readback_id=None,
-                last_callback_at=None, readback_started_at=None,
+                last_callback_at=None, readback_started_at=None, last_invalidation_at=None,
                 trading_day=None, watermark=0, verified_until=None, status='RECONCILING',
                 reason='P5_STARTUP_READBACK_REQUIRED', native_conflict=False)
 
@@ -263,6 +263,8 @@ class TradingHost:
                         or not state['readback_id'] or snapshot.readback_id != state['readback_id']
                         or state['native_conflict']
                         or snapshot.as_of < timestamp(state['readback_started_at'])
+                        or state['last_invalidation_at']
+                        and snapshot.as_of < timestamp(state['last_invalidation_at'])
                         or state['last_callback_at'] and snapshot.as_of < timestamp(state['last_callback_at'])
                         or state['native'] and snapshot.as_of < timestamp(state['native']['as_of'])
                         or state['native'] and snapshot.as_of == timestamp(state['native']['as_of'])
@@ -286,20 +288,23 @@ class TradingHost:
                     state.update(status='READY', reason=None,
                                  verified_until=(snapshot.as_of + limits.account_age).isoformat())
                     return True
-                invalidate(state, reason or 'P5_RISK_LIMIT_MISSING')
+                self._invalidate_prefix(state, journal, reason or 'P5_RISK_LIMIT_MISSING', snapshot.as_of)
                 return False
         except ValueError as error:
             with self.store.transaction() as (state, journal):
                 at = max((snapshot.as_of, *(timestamp(state[key]) for key in (
-                    'readback_started_at', 'last_callback_at',
+                    'readback_started_at', 'last_callback_at', 'last_invalidation_at',
                 ) if state[key])))
                 self._invalidate_prefix(state, journal, str(error), at)
             return False
 
     @staticmethod
-    def _invalidate_prefix(state, journal, reason, known_at):
+    def _invalidate_prefix(state, journal, reason, known_at, *, key=None):
         invalidate(state, reason)
-        journal.record('native_updates', uuid4().hex, {'verified': False, 'reason': reason}, at=known_at)
+        previous = state['last_invalidation_at']
+        if previous is None or known_at > timestamp(previous):
+            state['last_invalidation_at'] = known_at.isoformat()
+        journal.record('native_updates', key or uuid4().hex, {'verified': False, 'reason': reason}, at=known_at)
 
     def block(self, reason: str, *, known_at: datetime) -> None:
         aware(known_at)
@@ -331,8 +336,7 @@ class TradingHost:
                 if isinstance(event, NativeOrder):
                     state['order_generations'][event.key] = generation
                 if changed:
-                    journal.record('native_updates', key, {'verified': False}, at=known_at)
-                    invalidate(state, 'P5_NATIVE_UPDATE_READBACK_REQUIRED')
+                    self._invalidate_prefix(state, journal, 'P5_NATIVE_UPDATE_READBACK_REQUIRED', known_at, key=key)
         except ValueError as error:
             with self.store.transaction() as (state, journal):
                 state['native_conflict'] = True
@@ -460,16 +464,21 @@ class TradingHost:
                 stage['decision'] = wire(decision)
             if decision and decision.main_action is ActionKind.BUILD and decision.execution_candidate:
                 deadline = item.bar_end + limits.batch_delay if limits else now
+                within_epoch = self._opening_after_readback_boundary(state, payload.available_at)
                 # A delayed publication can only be acted on with a common, eligible
                 # market cutoff. P5 has no authorization to carry it into a new session.
                 if (owner['phase'] == 'ACTIVE' and now < deadline < session.end
-                        and account_fresh(state, now)
+                        and within_epoch and account_fresh(state, now)
                         and payload.source is MarketSource.OBSERVATION):
                     stage['deadline'] = deadline.isoformat()
                     stage['exchange'] = self._exchange_for_contract(state, product, contract)
                     state['staged'][input_key] = stage
                     return admission
-                reason = 'P5_OPENING_WINDOW_CLOSED' if account_fresh(state, now) else 'P5_RISK_INPUT_UNAVAILABLE'
+                reason = 'P5_RISK_INPUT_UNAVAILABLE'
+                if not within_epoch:
+                    reason = 'P5_SIGNAL_BEFORE_READBACK'
+                elif account_fresh(state, now):
+                    reason = 'P5_OPENING_WINDOW_CLOSED'
                 self._finish_build(state, journal, stage, None, reason)
             else:
                 if (decision and decision.main_action is ActionKind.CLEAR and limits
@@ -553,7 +562,10 @@ class TradingHost:
             and now > timestamp(decision['decision_at']) and account_fresh(state, now)
             and decision['trading_day'] == state['trading_day']):
             return None
-        if opening and (owner['phase'] != 'ACTIVE' or owner['contract'] != decision['physical_contract']):
+        if opening and (
+            owner['phase'] != 'ACTIVE' or owner['contract'] != decision['physical_contract']
+            or not self._opening_after_readback_boundary(state, timestamp(decision['decision_at']))
+        ):
             return None
         if opening and any(p['quantity'] and identity(p['exchange'], p['contract']) not in state['policies']
                            for p in state['native']['positions']):
@@ -573,6 +585,11 @@ class TradingHost:
         if price % Decimal(policy['tick']) != 0:
             return None
         return policy, price
+
+    @staticmethod
+    def _opening_after_readback_boundary(state, at):
+        previous = state['last_invalidation_at']
+        return previous is not None and at >= timestamp(previous)
 
     @staticmethod
     def _exchange_for_contract(state, product, contract):

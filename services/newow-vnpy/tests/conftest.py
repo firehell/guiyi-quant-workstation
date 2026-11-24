@@ -40,12 +40,12 @@ def scenario():
             self.readback_id = None
 
         @contextmanager
-        def host(self, reset=False):
+        def host(self, reset=False, *, started_at=None):
             if reset:
                 self.__init__()
             with TradingHost(self.database, self.config, self.gateway) as host:
                 previous = host.store.projection('status')['as_of']
-                started_at = datetime.fromisoformat(previous) if previous else self.start
+                started_at = started_at or (datetime.fromisoformat(previous) if previous else self.start)
                 self.readback_id = host.begin_readback(generation=self.generation, trading_day=self.day,
                                                        started_at=started_at)
                 yield host
