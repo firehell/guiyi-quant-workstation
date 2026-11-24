@@ -26,6 +26,24 @@ def read_local(market, symbol, contract, frequency, since, through):
     return result
 
 
+def check_session_coverage(bars, sessions, step):
+    """Bind ordered completed bars to exact authoritative session endpoints."""
+    expected = {}
+    for day, items in sessions.items():
+        for item in items:
+            end = item.window.start + step
+            while end <= item.window.end:
+                if end in expected:
+                    raise ValueError("OVERLAPPING_SESSION")
+                expected[end] = (day, item.is_night)
+                end += step
+    actual = [bar.bar_end for bar in bars]
+    if (not expected or actual != sorted(expected)
+            or any(bar.trading_day != expected[bar.bar_end][0] for bar in bars)):
+        raise ValueError("SESSION_OR_BAR_COVERAGE_MISMATCH")
+    return expected
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)

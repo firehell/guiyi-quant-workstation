@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms_keybar_approx import classify
-from lms405_replay import read_local
+from lms405_replay import check_session_coverage, read_local
 
 SYMBOL, CONTRACT = "oi", "OI2609"
 DAYS = tuple(date(2026, 6, day) for day in (3, 4, 5))
@@ -21,24 +21,6 @@ JUNE3_POST = datetime(2026, 6, 3, 10, 13, tzinfo=SHANGHAI)
 
 def local_time(end):
     return end.astimezone(SHANGHAI).isoformat(timespec="minutes")
-
-
-def check_coverage(bars, sessions, frequency):
-    step = timedelta(minutes=PERIODS[frequency])
-    expected = {}
-    for day, items in sessions.items():
-        for item in items:
-            end = item.window.start + step
-            while end <= item.window.end:
-                if end in expected:
-                    raise ValueError("OVERLAPPING_SESSION")
-                expected[end] = (day, item.is_night)
-                end += step
-    actual = [bar.bar_end for bar in bars]
-    if (not expected or actual != sorted(expected)
-            or any(bar.trading_day != expected[bar.bar_end][0] for bar in bars)):
-        raise ValueError("SESSION_OR_BAR_COVERAGE_MISMATCH")
-    return expected
 
 
 def price_summary(bars, levels):
@@ -99,7 +81,7 @@ def compute(market, sessions):
     series, coverage, prices, hashes = {}, {}, {}, {}
     for period, minutes in PERIODS.items():
         bars = read_local(market, SYMBOL, CONTRACT, period, DAYS[0], DAYS[-1]).bars
-        coverage[period] = check_coverage(bars, sessions, period)
+        coverage[period] = check_session_coverage(bars, sessions, timedelta(minutes=minutes))
         series[period] = bars
         payload = [[local_time(b.bar_end), *(str(v) for v in (b.open, b.high, b.low, b.close))]
                    for b in bars]
