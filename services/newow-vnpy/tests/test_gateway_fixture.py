@@ -4,7 +4,6 @@ import pytest
 
 from gateway_smoke import (
     capture_gateway_callbacks,
-    import_ctp,
     import_portfolio_strategy,
     require_offline,
 )
@@ -12,13 +11,6 @@ from gateway_smoke import (
 
 @pytest.fixture(scope="module")
 def callbacks():
-    require_offline()
-    try:
-        import_ctp()
-    except ModuleNotFoundError as exc:
-        if exc.name == "vnpy_ctp":
-            pytest.skip("locked vnpy_ctp absent; native install must pass first")
-        raise
     return capture_gateway_callbacks()
 
 

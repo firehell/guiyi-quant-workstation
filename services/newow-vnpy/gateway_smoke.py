@@ -1,7 +1,7 @@
 r"""VeighNa P1-B native import and offline Python callback probe.
 
 From this service directory, use a fresh cache and Apple Clang to build the
-locked dependencies from public PyPI:
+locked CTP GitHub archive and its public PyPI dependencies:
 
     UV_CACHE_DIR="$(mktemp -d /private/tmp/guiyi-vnpy-cache.XXXXXXXX)" \
         CC=/usr/bin/clang CXX=/usr/bin/clang++ uv sync --locked \
@@ -105,7 +105,7 @@ def import_ctp():
     from vnpy_ctp import CtpGateway
 
     _require_version("vnpy", "4.4.0")
-    _require_version("vnpy-ctp", "6.7.11.4")
+    _require_version("vnpy-ctp", "6.7.7.2")
     modules = tuple(import_module(f"vnpy_ctp.api.{name}") for name in ("vnctpmd", "vnctptd"))
     for module in modules:
         if not isinstance(module.__spec__.loader, ExtensionFileLoader):
@@ -163,6 +163,8 @@ def capture_gateway_callbacks() -> list[tuple[str, object]]:
     engine.register(barrier, lambda event: drained.set())
     engine.start()
     try:
+        if any(api.connect_status or api.login_status for api in (gateway.md_api, gateway.td_api)):
+            raise RuntimeError("The CTP fixture gateway must initialize disconnected")
         td = gateway.td_api
         td.onRspQryInstrument({
             "InstrumentID": symbol,
@@ -325,6 +327,7 @@ def main() -> int:
             callbacks = capture_gateway_callbacks()
             report["ctp_gateway_callbacks"] = {
                 "status": "CAPTURED",
+                "transport": "python_callback_fixture",
                 "events": [{"kind": kind, **vars(payload)} for kind, payload in callbacks],
             }
         except Exception as exc:

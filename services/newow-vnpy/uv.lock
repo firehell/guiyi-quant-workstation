@@ -113,7 +113,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "vnpy", specifier = "==4.4.0" },
-    { name = "vnpy-ctp", specifier = "==6.7.11.4" },
+    { name = "vnpy-ctp", url = "https://github.com/vnpy/vnpy_ctp/archive/fa199f70dac9e242c20e925c17e2241b877e694f.tar.gz" },
     { name = "vnpy-portfoliostrategy", specifier = "==1.3.0" },
 ]
 
@@ -555,12 +555,15 @@ wheels = [
 
 [[package]]
 name = "vnpy-ctp"
-version = "6.7.11.4"
-source = { registry = "https://pypi.org/simple" }
+version = "6.7.7.2"
+source = { url = "https://github.com/vnpy/vnpy_ctp/archive/fa199f70dac9e242c20e925c17e2241b877e694f.tar.gz" }
 dependencies = [
     { name = "vnpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/9d/11a64ae00c45c72a9b5527189261fca2ece06f189a7a88b763b7e31c04ff/vnpy_ctp-6.7.11.4.tar.gz", hash = "sha256:c73a432171f9d45c341fa8472bed56e6ca00c97d6e04898dfa65593ff2d6fd2a", size = 12580717, upload-time = "2026-03-29T05:56:22.845Z" }
+sdist = { hash = "sha256:de298bfd8c917d99fb84bf4177909cf98b791d701c056683d239546fc8f9eb6b" }
+
+[package.metadata]
+requires-dist = [{ name = "vnpy", specifier = ">=3.0.0" }]
 
 [[package]]
 name = "vnpy-portfoliostrategy"
