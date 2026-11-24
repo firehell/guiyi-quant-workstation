@@ -1,0 +1,85 @@
+{
+  "tables": [
+    {
+      "source": "WRnTlEfj1t", "table": "图2", "image": "RnTlEfj1t-table2-screen.png",
+      "fields": {
+        "RU2701": {"long": ["19505",20], "short": ["19735",0]},
+        "JM2701": {"long": ["1400.1",20], "short": ["1410.5",0]},
+        "FG2701": {"long": ["828",20], "short": ["850",0]},
+        "SA2701": {"long": ["935",20], "short": ["945",0]},
+        "SH2701": {"long": ["1618.5",20], "short": ["1720",0]},
+        "I2701": {"long": ["668.75",16], "short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "WRnY5bznUE", "table": "图2", "image": "RnY5bznUE-position-screen.png",
+      "fields": {
+        "FG2701": {"short": ["856",0]}, "SA2701": {"short": ["944",20]},
+        "SH2701": {"short": ["1720",0]}, "I2701": {"short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "WRo00BFM1E", "table": "图3", "image": "Ro00BFM1E-table3-screen.png",
+      "fields": {
+        "OI2701": {"long": ["10330",40]}, "JM2701": {"long": ["1415.03",20]},
+        "FG2701": {"long": ["828.8",20], "short": ["856",0]},
+        "V2701": {"long": ["5045",40]}, "SH2701": {"short": ["1720",0]}, "I2701": {"short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "WRo2KQ43iX", "table": "图2", "image": "Ro2KQ43iX-position-screen.png",
+      "fields": {
+        "OI2701": {"long": ["10337",0]}, "JM2701": {"short": ["1406.5",20]},
+        "SA2701": {"long": ["963",20]}, "V2701": {"long": ["5045",0]}, "TA2701": {"long": ["6548",34]},
+        "SH2701": {"long": ["1568.6",20], "short": ["1720",0]}, "I2701": {"short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "WRov1j6e10", "table": "图2", "image": "Rov1j6e10-position-screen.png",
+      "fields": {
+        "OI2701": {"short": ["10340",40]}, "RU2701": {"short": ["19575",0]}, "JM2701": {"short": ["1372",20]},
+        "FG2701": {"short": ["832",20]}, "SA2701": {"short": ["960",20]}, "V2701": {"long": ["5117",40]},
+        "SH2701": {"short": ["1720",0]}, "I2701": {"short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "WRozNbg3en", "table": "图2", "image": "WRozNbg3en-position-screen.png",
+      "binding": "SYSTEM_POST_MIXED_ROWS",
+      "additional_quantities": {
+        "OI2701": {"short":40}, "RU2701": {"short":20}, "FG2701": {"short":20}, "SA2701": {"short":20},
+        "SH2701": {"long":20, "short":20}, "I2701": {"short":16}
+      },
+      "fields": {
+        "OI2701": {"short": ["10340",40]}, "RU2701": {"short": ["19575",0]},
+        "FG2701": {"short": ["832",20]}, "SA2701": {"short": ["960",20]},
+        "SH2701": {"long": ["1490.1",null], "short": ["1720",0]}, "I2701": {"short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "WRoAkcEppg", "table": "图2", "image": "WRoAkcEppg-pos2-screen.png",
+      "fields": {
+        "OI2701": {"short": ["10340",40]}, "RU2701": {"short": ["19575",0]}, "JM2701": {"long": ["1385.25",20]},
+        "FG2701": {"short": ["832",20]}, "V2701": {"long": ["5078.4",40]},
+        "SH2701": {"long": ["1490.1",20], "short": ["1720",0]},
+        "I2701": {"long": ["663.34",16], "short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "U03", "table": "图3", "image": "U03-pos3-screen.png",
+      "fields": {
+        "OI2701": {"short": ["10340",40]}, "RU2701": {"short": ["19575",0]}, "JM2701": {"long": ["1385.25",20]},
+        "V2701": {"long": ["5078.4",40]}, "SH2701": {"short": ["1720",0]},
+        "I2701": {"long": ["663.34",null], "short": ["682.50",0]}
+      }
+    },
+    {
+      "source": "WRoEvasxQR", "table": "图2", "image": "RoEvasxQR-position-screen.png",
+      "fields": {
+        "OI2701": {"long": ["10224",40], "short": ["10340",0]},
+        "RU2701": {"long": ["19470",20], "short": ["19575",0]}, "JM2701": {"long": ["1385.25",0]},
+        "V2701": {"long": ["5078.4",0]}, "SH2701": {"long": ["1492",null], "short": ["1720",0]},
+        "I2701": {"short": ["682.50",0]}
+      }
+    }
+  ]
+}
