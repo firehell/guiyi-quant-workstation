@@ -1,0 +1,52 @@
+{
+  "market": 70,
+  "owners": 20,
+  "concurrent_backtest": true,
+  "batches": 110,
+  "peaks": 20,
+  "representative_minutes": 45,
+  "smoke": false,
+  "order_sends": 1,
+  "native_fills": 1,
+  "native_callback_drain_seconds": 0.5928410000051372,
+  "checks": {
+    "decisions": true,
+    "inputs": true,
+    "callback_errors": true,
+    "one_native_dispatch": true,
+    "native_fills": true,
+    "native_watermark": true
+  },
+  "p95_seconds": 116.21794283302734,
+  "p99_seconds": 123.52429233299335,
+  "worst_seconds": 131.394025082991,
+  "elapsed_seconds": 2245.4834265409736,
+  "minimum_next_minute_slack_seconds": -71.39402508299099,
+  "timing_mode": "accelerated market clock; staged first batch waits for real two-second opening cutoff",
+  "source": "synthetic completed Market/P5 + real fixed P4 FU trial",
+  "before": {
+    "cpu_seconds": 160.04678,
+    "max_rss_bytes": 281034752,
+    "pg_blks_read": 7873118,
+    "pg_blks_hit": 68797614,
+    "pg_tuples_inserted": 13408838,
+    "pg_tuples_updated": 42528,
+    "pg_temp_bytes": 0
+  },
+  "after": {
+    "cpu_seconds": 972.295757,
+    "max_rss_bytes": 390627328,
+    "pg_blks_read": 10455524,
+    "pg_blks_hit": 91196626,
+    "pg_tuples_inserted": 17901434,
+    "pg_tuples_updated": 52002,
+    "pg_temp_bytes": 0
+  },
+  "research": [
+    {
+      "wall_seconds": 7.561603792011738,
+      "packet_sha256": "22d79598a1336e625ab3b1c134dba00a1132fcd27e0a3b2a5c17daed0c8d2b30"
+    }
+  ],
+  "research_max_rss_bytes": 180928512
+}

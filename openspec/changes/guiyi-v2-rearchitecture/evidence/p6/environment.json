@@ -1,0 +1,56 @@
+{
+  "source_commit": "d373064d71a591c42c380dc927e816f793a5dbb7",
+  "p5_feature_head": "7085a0ede",
+  "p5_retest": {
+    "tests": 53,
+    "failed": 0,
+    "seconds": 10.51
+  },
+  "machine": {
+    "model": "Mac16,10",
+    "chip": "Apple M4",
+    "ram_gib": 16
+  },
+  "workspace_disk": {
+    "bus": "PCI-Express",
+    "bytes": 999995129856,
+    "ssd": true
+  },
+  "rqalpha_packet_sha256": "22d79598a1336e625ab3b1c134dba00a1132fcd27e0a3b2a5c17daed0c8d2b30",
+  "method": "offline accelerated synthetic completed-observation inputs; one fixed P4 real frozen research task per concurrent group",
+  "scripts": {
+    "bench.py": "411ab721b516ff6d01df2e876b4282b3d04b4c4514392bd0c48444dfacc387c5",
+    "summarize.py": "9ea1d55213d39e2b50f45e88d51734529187943770e104903cbbf185c1f45949"
+  },
+  "p4_engine_unchanged_from": "4d2090547306e5490e331d3d767eb80f9f0df070",
+  "research_witnesses": {
+    "60-16-concurrent": {
+      "output_sha256": "7199cfc8278276d3df1b4d83dcd427a0ee6d06f2dcbb03f3ea3b7feedd1fd1f1",
+      "input_sha256": "22d79598a1336e625ab3b1c134dba00a1132fcd27e0a3b2a5c17daed0c8d2b30",
+      "fill_count": 8,
+      "fees": "4.92300000",
+      "final_equity": "9765.07700000"
+    },
+    "70-20-concurrent": {
+      "output_sha256": "356e5cb6d19e97d3aec82c9090149a4998e90f779f87414c6e99941a067707ac",
+      "input_sha256": "22d79598a1336e625ab3b1c134dba00a1132fcd27e0a3b2a5c17daed0c8d2b30",
+      "fill_count": 8,
+      "fees": "4.92300000",
+      "final_equity": "9765.07700000"
+    }
+  },
+  "local_launcher_hashes": {
+    "run-group.sh": "b65acdcd2dab6a70b111fbfef0bda7bd337ff041d6d480c3b1a915b490338ecc",
+    "run-matrix.sh": "31513b37d36897e99b5e181a8a9fedf0d04e38c14180b06e3df40f101710daaf"
+  },
+  "original_host_capture_sha256": {
+    "60-16-alone-host-after.txt": "16a054eb34f13c406988297f196d47e2a5f4dd89812faa2a16cd82c730f08229",
+    "60-16-alone-host-before.txt": "b8efba827ddd790310a0a8e30116de1de7cde7e2ed7bd185dff3404b9ba05b9d",
+    "60-16-concurrent-host-after.txt": "5b14c2746a6d19a1adbf6ba79e4464516512ea3218e3c39fffaa8da9c27e5684",
+    "60-16-concurrent-host-before.txt": "cc0e6bb825be64e002c13fa03d95bd2baf853a40475d82ce91ddc10808c37b50",
+    "70-20-alone-host-after.txt": "928535a36e197086f3422cf0b9899a6da500629cea58f4754e53c2c6bbd486b1",
+    "70-20-alone-host-before.txt": "f1050f1fb42b2fbe1415d3424b4271022b9c2b768ad99740e90c10299111316f",
+    "70-20-concurrent-host-after.txt": "84ab853f07b477fbbba7c43f8e31f91c51070097c284e829ac380fa4704a8fba",
+    "70-20-concurrent-host-before.txt": "e51ba750759f34fa7cf02bfe1f1a4642618e65138d1d3a1a46a7b60c4d515c48"
+  }
+}
