@@ -1,0 +1,19 @@
+{
+  "review_at": "2026-11-25T03:18:00+08:00",
+  "geometry_sha256": "4341b322e096a06734c75f657845fee877e8a3cf58b8ff889c3ff993fc820558",
+  "cases": [
+    {"id":"oi-plan-validity", "contract":"OI2701", "side":"LONG", "position":"DIRECTIONAL", "version_405":null, "sources":["WRoCuRq1nf","A5358686423089344"], "note":"原文称节点未用完仍盘整，不能补出有效方向、持有及新追许可。"},
+    {"id":"ru-no-chase-center", "contract":"RU2701", "side":"SHORT", "position":"FLAT", "version_405":null, "sources":["A5358325972992140","U05"], "scenario_price":"19370", "right_policy_at_review":false, "geometry":"ru-short", "note":"禁追中心价的独立假设。行情候选价实际为19410，不能从中心价推出40点范围的许可。"},
+    {"id":"ru-before-no-chase-center", "contract":"RU2701", "side":"SHORT", "position":"FLAT", "version_405":null, "sources":["A5358325972992140","U05"], "scenario_price":"19410", "geometry":"ru-short", "note":"作者的附近范围未披露，复算的40点不替代作者空间条件。"},
+    {"id":"jm-in-resistance", "contract":"JM2509", "side":"LONG", "position":"DIRECTIONAL", "version_405":null, "sources":["S5193109300577840"], "scenario_price":"1250", "right_policy_at_review":false, "geometry":"jm-transition", "note":"1250为阻力区内的研究前像，保留作者继续持原多与风险时保护的不同路径。"},
+    {"id":"jm-after-interruption", "contract":"JM2509", "side":"LONG", "position":"FLAT", "version_405":null, "sources":["S5193109300577840"], "geometry":"jm-transition", "note":"只观察到周一第一层抵抗的严格收盘，旧趋势回顾及区间并不提供新的有效方向或作者信号。"},
+    {"id":"fg-existing-short", "contract":"FG2701", "side":"SHORT", "position":"DIRECTIONAL", "version_405":true, "sources":["E52","WRnY5bznUE"], "note":"止盈、回补与十月恢复为不同日期的资料，不合并成一个已验证动作。"},
+    {"id":"sa-fresh-plan", "contract":"SA2701", "side":"SHORT", "position":"DIRECTIONAL", "version_405":null, "sources":["A5358325549629506","WRoCtNmpu8"], "note":"前两次节点与后续持仓无法锁定同一原方向或新参与时点。"},
+    {"id":"v-right-long", "contract":"V2701", "side":"LONG", "position":"FLAT", "version_405":null, "sources":["A5358686423089344"], "right_policy_at_review":true, "geometry":"v-long", "note":"该右多路径见于文章，原版信号与所属账户未知；代理确认早于价格门。"},
+    {"id":"v-right-short-day", "contract":"V2701", "side":"SHORT", "position":"FLAT", "version_405":null, "sources":["A5358325549629506","WRoCxx1ooa"], "right_policy_at_review":true, "geometry":"v-short-day", "note":"日盘价格回探仅是代理，晚来的确认已回到主边界上方。"},
+    {"id":"v-right-short-night", "contract":"V2701", "side":"SHORT", "position":"FLAT", "version_405":null, "sources":["A5358325549629506","WRoCxx1ooa"], "right_policy_at_review":true, "geometry":"v-short-night", "note":"按公开回顾选择对应前夜，固定本地价格没有完成破位，原版时段冲突保留。"},
+    {"id":"ta-missing-public-region", "contract":"TA2701", "side":"LONG", "position":"DIRECTIONAL", "version_405":true, "sources":["WRo2KQ43iX","A5357264793370945"], "note":"公开复盘暂停发布新区域，同时看到多单展示。实际方案及是否允许继续进入未知。"},
+    {"id":"sh-existing-short-no-chase", "contract":"SH2701", "side":"SHORT", "position":"DIRECTIONAL", "version_405":null, "sources":["WRnOnrllRX"], "right_policy_at_review":false, "geometry":"sh-short", "note":"只在该帖描述的高乖离背景中关闭新追空；仍需独立判断原仓保护。"},
+    {"id":"i-existing-short-review", "contract":"I2701", "side":"SHORT", "position":"DIRECTIONAL", "version_405":null, "sources":["WRoCldvp4f","WRoEvasxQR"], "note":"前后可见原空腿，实际解除保护腿和是否进入新右侧路径未知。"}
+  ]
+}
