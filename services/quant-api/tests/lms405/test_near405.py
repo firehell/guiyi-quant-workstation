@@ -3,6 +3,7 @@
 from datetime import datetime, UTC, timedelta
 from decimal import Decimal as D
 from dataclasses import replace
+import json
 import pytest
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms_near405 import replay, context, VERSION
@@ -134,6 +135,73 @@ def retry_bars():
         bar(14, 102, 104, 101, 103),
         bar(15, 103, 108, 102, 105),
     ]
+
+
+def held_clock_bars():
+    return lock_restore_bars()[:11] + [
+        bar(i, 103, 109, 101, 104) for i in range(11, 29)
+    ] + [bar(29, 104, 105, 102, 104), bar(30, 104, 109, 101, 106)] + [
+        bar(i, 103, 109, 101, 104) for i in range(31, 42)
+    ]
+
+
+@pytest.mark.parametrize("side", ["LONG", "SHORT"])
+@pytest.mark.parametrize("clock, exit_index", [
+    (None, 19), ("DEFER_WHILE_LOCKED", 31), ("PAUSE_WHILE_LOCKED", 39),
+])
+def test_held_clock_counts_completed_bars_before_and_after_restore(side, clock, exit_index):
+    b = held_clock_bars()
+    if side == "SHORT":
+        b = [replace(x, open=210 - x.open, high=210 - x.low,
+                     low=210 - x.high, close=210 - x.close) for x in b]
+    result = replay(b, as_of=until(b), timely_fixture=True, clock=clock)
+    cycle = result["transitions"][0]["after"]["cycle_id"]
+    rows = [t for t in result["transitions"]
+            if cycle in (t["before"]["cycle_id"], t["after"]["cycle_id"])]
+    assert [t["action"] for t in rows] == ["ENTER_" + side, "LOCK"] + (
+        ["UNLOCK_" + side] if clock else []
+    ) + ["CLEAR"]
+    assert rows[-1]["reason"] == "PLAN_EXPIRED"
+    assert rows[-1]["known_at"] == (b[exit_index].end + 2 * US).isoformat()
+    if clock:
+        assert rows[2]["known_at"] == (b[30].end + 2 * US).isoformat()
+        assert rows[2]["after"]["lock_intervals"] == [[10, 30]]
+        prefix = replay(b, as_of=b[24].end + US, timely_fixture=True, clock=clock)
+        checkpoint = json.loads(json.dumps(prefix["checkpoint"]))
+        assert checkpoint["current_state"]["lock_intervals"] == [[10, None]]
+        assert replay(b, as_of=until(b), timely_fixture=True, clock=clock,
+                      checkpoint=checkpoint) == result
+        assert rows[-1]["after"]["lock_intervals"] == []
+
+
+@pytest.mark.parametrize("clock", ["DEFER_WHILE_LOCKED", "PAUSE_WHILE_LOCKED"])
+def test_hard_risk_and_target_still_clear_locked_legs(clock):
+    b = held_clock_bars()[:31]
+    for closing_bar, reason in (
+        (bar(30, 104, 108, 99, 100), "RISK_INVALID"),
+        (bar(30, 104, 110, 100, 110), "RANGE_TARGET"),
+    ):
+        series = b[:30] + [closing_bar]
+        result = replay(series, as_of=until(series), timely_fixture=True, clock=clock)
+        assert result["transitions"][-2]["action"] == "LOCK"
+        assert result["transitions"][-1]["action"] == "CLEAR"
+        assert result["transitions"][-1]["reason"] == reason
+
+
+@pytest.mark.parametrize("clock", ["DEFER_WHILE_LOCKED", "PAUSE_WHILE_LOCKED"])
+def test_rejected_lock_does_not_suspend_clock(clock):
+    b = held_clock_bars()[:20]
+    proposal = replay(b, as_of=until(b[:8]), clock=clock)["proposals"][0]
+    entry = decision(proposal, record_kind="HUMAN_RESEARCH_DECISION")
+    result = replay(b, [entry], as_of=until(b[:11]), clock=clock)
+    proposal = result["proposals"][-1]
+    assert proposal["action"] == "LOCK"
+    rejected = decision(proposal, decision_id="reject-lock", decision="REJECT",
+                        record_kind="HUMAN_RESEARCH_DECISION")
+    result = replay(b, [entry, rejected], as_of=until(b), clock=clock)
+    assert result["current_state"]["lock_intervals"] == []
+    assert [t["action"] for t in result["transitions"]] == ["ENTER_LONG"]
+    assert result["proposals"][-1]["reason"] == "PLAN_EXPIRED"
 
 
 @pytest.mark.parametrize("mirror", [False, True])

@@ -37,16 +37,26 @@ RULES = dict(
 RULE_HASH = fingerprint(RULES)
 US = timedelta(microseconds=1)
 STUDY_VERSION = "lms-near405-author-study-v1"
+CLOCK_VERSIONS = {
+    "DEFER_WHILE_LOCKED": "lms-near405-hold-clock-defer-v1",
+    "PAUSE_WHILE_LOCKED": "lms-near405-hold-clock-pause-v1",
+}
 
 
-def _rules_for(region_input):
-    if region_input is None:
+def _rules_for(region_input, clock):
+    if region_input is None and clock is None:
         return RULES, RULE_HASH
-    rules = RULES | dict(
-        version=STUDY_VERSION,
-        region_mode=region_input.source_mode,
-        recovery_rule=region_input.recovery_rule,
-    )
+    rules = RULES.copy()
+    if region_input is not None:
+        rules.update(
+            version=STUDY_VERSION,
+            region_mode=region_input.source_mode,
+            recovery_rule=region_input.recovery_rule,
+        )
+    if clock is not None:
+        if not isinstance(clock, str) or clock not in CLOCK_VERSIONS:
+            raise ValueError("UNKNOWN_HELD_PLAN_CLOCK")
+        rules.update(version=CLOCK_VERSIONS[clock], held_plan_clock=clock)
     return rules, fingerprint(rules)
 
 
@@ -114,7 +124,24 @@ def _entry_allowed(region, side, signal, following):
     )
 
 
-def _invalid(state, bars, index):
+def _plan_expired(state, j, clock):
+    end = state["plan"]["created_index"] + RULES["plan_lifetime_bars"]
+    if clock == "PAUSE_WHILE_LOCKED":
+        # Accepted actions occur after the indexed bar is available. The lock
+        # bar counts, and an unlock bar still belongs to the locked interval.
+        end += sum(
+            max(0, (j if unlocked is None else min(j, unlocked)) - locked)
+            for locked, unlocked in state["lock_intervals"]
+        )
+    elif clock == "DEFER_WHILE_LOCKED" and any(
+        locked < j and (unlocked is None or j <= unlocked)
+        for locked, unlocked in state["lock_intervals"]
+    ):
+        return False
+    return j >= end
+
+
+def _invalid(state, bars, index, clock):
     plan = state["plan"]
     side = state["original_side"]
     lo, hi = Decimal(plan["lower"]), Decimal(plan["upper"])
@@ -125,7 +152,7 @@ def _invalid(state, bars, index):
         c = bars[j].close
         if (side == "LONG" and c <= lo) or (side == "SHORT" and c >= hi):
             found.add("RISK_INVALID")
-        if j >= plan["created_index"] + RULES["plan_lifetime_bars"]:
+        if _plan_expired(state, j, clock):
             found.add("PLAN_EXPIRED")
         env = context(bars, j)
         if env and env["environment"] == ("DOWN" if side == "LONG" else "UP"):
@@ -188,11 +215,12 @@ def evaluate(
     *,
     region_input=None,
     timely_fixture=False,
+    clock=None,
 ):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
     t = c.end + US
-    rules, rule_hash = _rules_for(region_input)
+    rules, rule_hash = _rules_for(region_input, clock)
     region = context(bars, index)
     region_issue = None
     author_region = None
@@ -255,7 +283,7 @@ def evaluate(
     held = Decimal(state["long"]) + Decimal(state["short"]) > 0
     signal_fresh = frame.bar.end > _time(state["since"])
     if held:
-        reason = _invalid(state, bars, index)
+        reason = _invalid(state, bars, index, clock)
         if reason:
             action = "CLEAR"
         elif direction and signal_fresh:
@@ -354,7 +382,7 @@ def evaluate(
     return result
 
 
-def _apply(state, p, t):
+def _apply(state, p, t, clock):
     action = p["action"]
     before = Position(
         state["contract"], Decimal(state["long"]), Decimal(state["short"])
@@ -388,6 +416,14 @@ def _apply(state, p, t):
             cycle_id=None,
             entry_index=None,
         )
+    if clock is not None:
+        if action.startswith(("ENTER_", "REENTER_")) or action == "CLEAR":
+            after["lock_intervals"] = []
+        elif action == "LOCK":
+            after["lock_intervals"] = [*state["lock_intervals"], [p["index"], None]]
+        elif action.startswith("UNLOCK_"):
+            *closed, (locked, _) = state["lock_intervals"]
+            after["lock_intervals"] = [*closed, [locked, p["index"]]]
     return after
 
 
@@ -399,6 +435,7 @@ def replay(
     checkpoint=None,
     timely_fixture=False,
     region_input=None,
+    clock=None,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
@@ -410,7 +447,7 @@ def replay(
         raise ValueError("BOOLEAN_MODE_REQUIRED")
     if region_input is not None and not isinstance(region_input, RegionInput):
         raise ValueError("REGION_INPUT_REQUIRED")
-    rules, rule_hash = _rules_for(region_input)
+    rules, rule_hash = _rules_for(region_input, clock)
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
@@ -434,6 +471,7 @@ def replay(
             as_of=old,
             timely_fixture=timely_fixture,
             region_input=region_input,
+            clock=clock,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -522,7 +560,7 @@ def replay(
                 ] != fingerprint(d):
                     reason = "DECISION_ID_CONTENT_CONFLICT"
                 elif (
-                    region_input is not None
+                    (region_input is not None or clock is not None)
                     and not timely_fixture
                     and d["record_kind"] != "HUMAN_RESEARCH_DECISION"
                 ):
@@ -566,7 +604,7 @@ def replay(
                         reason = "REJECTED"
                     else:
                         before = state
-                        state = _apply(state, p, t)
+                        state = _apply(state, p, t, clock)
                         p["status"] = "ACCEPTED"
                         reason = "ACCEPTED"
                         transitions.append(
@@ -610,6 +648,7 @@ def replay(
             payload,
             region_input=region_input,
             timely_fixture=timely_fixture,
+            clock=clock,
         )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:
