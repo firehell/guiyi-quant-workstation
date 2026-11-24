@@ -145,3 +145,40 @@ services/quant-api/.venv/bin/python scripts/research/lms405_carry_in_study.py \
 ```
 
 本地输出 `output/lms405-sized-portfolio-20261125/short-carry-in.json`，SHA256 `1cd609a652d5ffacc21f1c1a91e2ff71bc4be183b60327d9a0253202458c95e1`。两次复算逐字节相同，已有路径拒覆盖。LMS定向测试297通过、1跳过，独立复核确认46次模拟动作的时序和原空腿数量。作者动作可评分样本仍为0，未生成成交或收益。
+
+## 三品种保护许可与组合敞口
+
+把菜油OI2609、铁矿I2701、烧碱SH2701的四个证据窗口代入同一个 `lms405-participation-v1` 条件评估。每案使用各自的时点、物理合约和单位原仓假设。三份行情报告及持仓索引用固定SHA256绑定。保护区接触、快慢确认和开仓均价可行范围均保留在观察字段；未知的实际保护需求、反向信号和作者仓位不填真。铁矿报价锚为11:30时，其本身的完成K线保留在原案例价格报告，条件重放只接受此前已经可见的信息。
+
+|来源窗口|新增原向敞口|继续持有原向|加反向保护腿|
+|---|---|---|---|
+|菜油6月3日，原多|待证|待证|近端提前观察有依据，实际空V+待证|
+|铁矿10月27日午盘前，原空|待证|待证|等到667才形成整腿与显示均价不相容，实际多V+待证|
+|烧碱10月22日日盘，原空|原文所述高乖离情景不许可|待证|多V+及保护需求待证|
+|烧碱10月22日夜盘，原空|待证|待证|已触保护区，实际多V+及保护需求待证|
+
+[菜油来源和行情](PORTFOLIO_RECONSTRUCTION.md#菜油提前保护与常规关键k的交叉验证) · [铁矿来源和行情](I2701_OCT_CASE.md#26日夜盘至27日午盘的保护触发窗口) · [烧碱来源和行情](SH2701_OCT_CASE.md#22日原空保护与新增空头许可)
+
+敞口测量仅使用22日22:10发布的同一张4.0.5封面表。图中本研究组合的6个品种均显示等量双腿，且空腿今仓为0、多腿今仓等于显示数量。构造假设前像时只保留这6条旧空，分别给铁矿、烧碱或两者注入**显式测试确认**，其余品种保持假设原空。SH新增空头的否决是独立测试输入，用来检验即使禁止新增同方向敞口，已确认的保护仍可减少敞口；未把早盘作者禁追迁移到夜盘。组合快照不以6月OI2609代替10月未显示的OI2701。 [快照来源](../../lms-source-archive/02-持仓记录/2026-10-22/WRnTlEfj1t.md)
+
+|情景|仍净空品种|等量锁定品种|双腿总手数小计|逐品种净手数绝对值小计|
+|---|---:|---:|---:|---:|
+|仅保留旧空，没有确认|6|0|116|116|
+|仅确认铁矿保护|5|1|132|100|
+|仅确认烧碱保护|5|1|136|96|
+|同时确认铁矿和烧碱保护|4|2|152|80|
+|原图6个可见品种|0|6|232|0|
+
+铁矿保护腿在测试中单独增加16手总量、减少16手净空；烧碱分别变动20手。锁定使方向敞口下降并扩大总持仓。手数小计仅用于逐腿核对；账户风险、合约金额、占用保证金和执行成本仍未知。原图未显示的菜油、PTA、PVC保持未知。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_protection_portfolio_study.py \
+  --oi output/lms-oi2609-june-20261124/early-protection-window.json \
+  --iron output/lms-i2701-oct-20261125/protection-window.json \
+  --sh output/lms405-right-side-20261125/sh-protection-window.json \
+  --exposure output/lms405-exposure-20261125/exposure-audit.json \
+  --output /tmp/lms405-protection-permissions-new.json
+```
+
+本地报告 `output/lms405-sized-portfolio-20261125/protection-permissions.json`，SHA256 `f6e24d57ad056d999ca690033d247c81eded8c5feac4c29eeec54d223fa1a48d`。两次复算逐字节一致。后续把这些外部许可接到九品种连续研究回放，核对确认后只能改变同合约的保护腿，随后仍能按原向恢复、平双腿退出或退出后回补。历史作者确认和成交仍待证。
