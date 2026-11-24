@@ -8,9 +8,7 @@ import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from guiyi_quant.lms405 import Bar
-from guiyi_quant.lms_keybar_approx import classify
-from lms405_replay import check_session_coverage, read_local
+from lms405_replay import display, keybar_windows, ohlc, photo_comparison, read_session_series
 
 LOCAL = ZoneInfo("Asia/Shanghai")
 DAYS = (date(2026, 10, 27), date(2026, 10, 28))
@@ -39,30 +37,6 @@ def at(value):
     return datetime.fromisoformat(f"2026-10-27T{value}").replace(tzinfo=LOCAL)
 
 
-def display(end):
-    return end.astimezone(LOCAL).isoformat(timespec="minutes")
-
-
-def ohlc(bar):
-    return bar.open, bar.high, bar.low, bar.close
-
-
-def read_series(session, market, symbol, frequency, step, days):
-    from app.market_data.session_clock import resolved_session_windows_for_trading_day
-
-    contract = f"{symbol.upper()}2701"
-    exchange = market.catalog.exchange_for_symbol(symbol)
-    sessions = {
-        day: resolved_session_windows_for_trading_day(
-            session, exchange=exchange, symbol=symbol, trading_day=day,
-        )
-        for day in days
-    }
-    bars = read_local(market, symbol, contract, frequency, days[0], days[-1]).bars
-    check_session_coverage(bars, sessions, step)
-    return bars
-
-
 def readback(bars):
     by_day = {}
     for day in DAYS:
@@ -73,25 +47,6 @@ def readback(bars):
             "ohlc_sha256": sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest(),
         }
     return by_day
-
-
-def photo_comparison(series, start, published, marks):
-    per_symbol, contains, closes = {}, {}, {}
-    for symbol, value in marks.items():
-        mark = Decimal(value)
-        eligible = [b for b in series[symbol] if at(start) < b.bar_end < at(published)]
-        if not eligible:
-            raise ValueError("PHOTO_WINDOW_NOT_COVERED")
-        contains[symbol] = {b.bar_end for b in eligible if b.low <= mark <= b.high}
-        closes[symbol] = {b.bar_end for b in eligible if b.close == mark}
-        per_symbol[symbol] = dict(mark=value, contains=sorted(map(display, contains[symbol])),
-                                  equal_close=sorted(map(display, closes[symbol])))
-    return dict(
-        published_minute=display(at(published)),
-        per_symbol=per_symbol,
-        joint_contains=sorted(map(display, set.intersection(*contains.values()))),
-        joint_equal_close=sorted(map(display, set.intersection(*closes.values()))),
-    )
 
 
 def price_path(bars):
@@ -116,41 +71,18 @@ def price_path(bars):
     )
 
 
-def keybar_windows(fives, minutes, start, cutoff, *, long):
-    """Evaluate an already completed 5m shape only through its next contiguous window."""
-    calendar = {b.bar_end: b for b in minutes}
-    bars = [Bar("I2701", b.bar_end, *ohlc(b), start=b.bar_end - FIVE) for b in fives
-            if b.bar_end < cutoff]
-    rows = []
-    previous = None
-    for shape, following in zip(bars, bars[1:]):
-        frame = classify(previous, shape)
-        previous = shape
-        if shape.end < start or shape.end != following.start:
-            continue
-        if not frame.ibar and frame.pinbar != ("LONG" if long else "SHORT"):
-            continue
-        child = [calendar[shape.end + n * ONE] for n in range(1, 6)]
-        if (child[0].open, max(b.high for b in child), min(b.low for b in child), child[-1].close) != ohlc(following):
-            raise ValueError("MINUTE_AGGREGATE_DIVERGED")
-        boundary = shape.high if long else shape.low
-        hit = (lambda p: p > boundary) if long else (lambda p: p < boundary)
-        rows.append(dict(
-            shape_at=display(shape.end), next_5m_at=display(following.end),
-            shape_ibar=frame.ibar, shape_pinbar=frame.pinbar, keybar_boundary=str(boundary),
-            first_1m_touch=next((display(b.bar_end) for b in child if hit(b.high if long else b.low)), None),
-            first_1m_close=next((display(b.bar_end) for b in child if hit(b.close)), None),
-            next_5m_close=hit(following.close),
-        ))
-    return rows
-
-
 def compute(session, market):
     symbols = sorted({symbol for _, _, marks in PHOTOS.values() for symbol in marks})
-    series = {symbol: read_series(session, market, symbol, "1m", ONE, DAYS) for symbol in symbols}
+    series = {
+        symbol: read_session_series(session, market, symbol, f"{symbol.upper()}2701", "1m", ONE, DAYS)
+        for symbol in symbols
+    }
     minutes = series["i"]
-    fives = read_series(session, market, "i", "5m", FIVE, DAYS)
-    source_photos = {source: photo_comparison(series, *spec) for source, spec in PHOTOS.items()}
+    fives = read_session_series(session, market, "i", "I2701", "5m", FIVE, DAYS)
+    source_photos = {
+        source: photo_comparison(series, at(start), at(published), marks)
+        for source, (start, published, marks) in PHOTOS.items()
+    }
     paths = {
         "oct27_full_trading_day": [b for b in minutes if b.trading_day == DAYS[0]],
         "oct27_previous_night": [b for b in minutes if b.trading_day == DAYS[0] and b.bar_end < at("09:00")],
@@ -165,8 +97,12 @@ def compute(session, market):
         i2701_5m=readback(fives),
         photos=source_photos,
         iron_price_path={scope: price_path(bars) for scope, bars in paths.items()},
-        long_protection_candidates=keybar_windows(fives, minutes, at("09:00"), at("11:31"), long=True),
-        short_recovery_candidates=keybar_windows(fives, minutes, at("21:00"), at("22:12"), long=False),
+        long_protection_candidates=keybar_windows(
+            fives, minutes, at("09:00"), at("11:31"), contract="I2701", long=True,
+        ),
+        short_recovery_candidates=keybar_windows(
+            fives, minutes, at("21:00"), at("22:12"), contract="I2701", long=False,
+        ),
     )
 
 

@@ -4,7 +4,9 @@ import argparse
 import hashlib
 import json
 from datetime import date, datetime, UTC, timedelta
+from decimal import Decimal
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from guiyi_quant.lms405 import Bar, inspect_bar, VERSION
 
@@ -42,6 +44,81 @@ def check_session_coverage(bars, sessions, step):
             or any(bar.trading_day != expected[bar.bar_end][0] for bar in bars)):
         raise ValueError("SESSION_OR_BAR_COVERAGE_MISMATCH")
     return expected
+
+
+def read_session_series(session, market, symbol, contract, frequency, step, days):
+    from app.market_data.session_clock import resolved_session_windows_for_trading_day
+
+    exchange = market.catalog.exchange_for_symbol(symbol)
+    sessions = {
+        day: resolved_session_windows_for_trading_day(
+            session, exchange=exchange, symbol=symbol, trading_day=day,
+        )
+        for day in days
+    }
+    bars = read_local(market, symbol, contract, frequency, days[0], days[-1]).bars
+    check_session_coverage(bars, sessions, step)
+    return bars
+
+
+def display(end):
+    return end.astimezone(ZoneInfo("Asia/Shanghai")).isoformat(timespec="minutes")
+
+
+def ohlc(bar):
+    return bar.open, bar.high, bar.low, bar.close
+
+
+def photo_comparison(series, start, published, marks):
+    per_symbol, contains, closes = {}, {}, {}
+    for symbol, value in marks.items():
+        mark = Decimal(value)
+        eligible = [b for b in series[symbol] if start < b.bar_end < published]
+        if not eligible:
+            raise ValueError("PHOTO_WINDOW_NOT_COVERED")
+        contains[symbol] = {b.bar_end for b in eligible if b.low <= mark <= b.high}
+        closes[symbol] = {b.bar_end for b in eligible if b.close == mark}
+        per_symbol[symbol] = dict(mark=value, contains=sorted(map(display, contains[symbol])),
+                                  equal_close=sorted(map(display, closes[symbol])))
+    return dict(
+        published_minute=display(published),
+        per_symbol=per_symbol,
+        joint_contains=sorted(map(display, set.intersection(*contains.values()))),
+        joint_equal_close=sorted(map(display, set.intersection(*closes.values()))),
+    )
+
+
+def keybar_windows(fives, minutes, start, cutoff, *, contract, long):
+    """Evaluate an already completed 5m shape only through its next contiguous window."""
+    from guiyi_quant.lms_keybar_approx import classify
+
+    one = timedelta(minutes=1)
+    five = timedelta(minutes=5)
+    calendar = {b.bar_end: b for b in minutes}
+    bars = [Bar(contract, b.bar_end, *ohlc(b), start=b.bar_end - five) for b in fives
+            if b.bar_end < cutoff]
+    rows = []
+    previous = None
+    for shape, following in zip(bars, bars[1:]):
+        frame = classify(previous, shape)
+        previous = shape
+        if shape.end < start or shape.end != following.start:
+            continue
+        if not frame.ibar and frame.pinbar != ("LONG" if long else "SHORT"):
+            continue
+        child = [calendar[shape.end + n * one] for n in range(1, 6)]
+        if (child[0].open, max(b.high for b in child), min(b.low for b in child), child[-1].close) != ohlc(following):
+            raise ValueError("MINUTE_AGGREGATE_DIVERGED")
+        boundary = shape.high if long else shape.low
+        hit = (lambda p: p > boundary) if long else (lambda p: p < boundary)
+        rows.append(dict(
+            shape_at=display(shape.end), next_5m_at=display(following.end),
+            shape_ibar=frame.ibar, shape_pinbar=frame.pinbar, keybar_boundary=str(boundary),
+            first_1m_touch=next((display(b.bar_end) for b in child if hit(b.high if long else b.low)), None),
+            first_1m_close=next((display(b.bar_end) for b in child if hit(b.close)), None),
+            next_5m_close=hit(following.close),
+        ))
+    return rows
 
 
 def main():
