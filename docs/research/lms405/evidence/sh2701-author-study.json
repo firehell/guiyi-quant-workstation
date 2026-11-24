@@ -1,0 +1,33 @@
+{
+  "contract": "SH2701",
+  "sample_split": "DEVELOPMENT",
+  "region_time_note": "known_at is the displayed post minute and is retained for retrospective indexing only",
+  "regions": [
+    {
+      "id": "WRouYm67Bc-target",
+      "contract": "SH2701",
+      "lower": "1483",
+      "upper": "1485",
+      "purpose": "TARGET",
+      "time_basis": "RETROSPECTIVE",
+      "known_at": "2026-10-26T21:57:00+08:00",
+      "effective_at": "2026-10-26T21:57:00+08:00",
+      "source": "https://weibo.com/1885745060/RouYm67Bc"
+    }
+  ],
+  "observations": [
+    {
+      "id": "WRozPmaK10-lock",
+      "contract": "SH2701",
+      "source": "https://weibo.com/1885745060/RozPmaK10",
+      "action": "LOCK",
+      "version_405": true,
+      "five_minute_alignment": null,
+      "initial_state_aligned": null,
+      "earliest_at": null,
+      "latest_at": null,
+      "time_basis": "POST_TIME_ONLY",
+      "evidence_gaps": ["WEAK_SIDE_RATING_UNKNOWN", "AUTHOR_LOW_1475_VS_LOCAL_1477"]
+    }
+  ]
+}

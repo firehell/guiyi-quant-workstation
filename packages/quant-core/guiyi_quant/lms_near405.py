@@ -9,6 +9,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from decimal import Decimal, localcontext
 from .lms405 import Position, Action, apply_action, timestamp
+from .lms_author_regions import RegionInput
 from .lms_keybar_approx import classify, VERSION as KEYBAR_VERSION
 from .lms_confirmed_replay import fingerprint
 
@@ -35,6 +36,18 @@ RULES = dict(
 )
 RULE_HASH = fingerprint(RULES)
 US = timedelta(microseconds=1)
+STUDY_VERSION = "lms-near405-author-study-v1"
+
+
+def _rules_for(region_input):
+    if region_input is None:
+        return RULES, RULE_HASH
+    rules = RULES | dict(
+        version=STUDY_VERSION,
+        region_mode=region_input.source_mode,
+        recovery_rule=region_input.recovery_rule,
+    )
+    return rules, fingerprint(rules)
 
 
 def _time(value):
@@ -146,11 +159,69 @@ def initial_state(bars):
     )
 
 
-def evaluate(state, bars, index):
+def _recovery_status(plan, direction, bars, index):
+    key = "recovery_" + direction.lower()
+    if plan.get("author_region_id"):
+        boundary = plan.get(key)
+        if boundary is None:
+            return "RECOVERY_BOUNDARY_UNKNOWN"
+    elif plan["environment"] != "RANGE":
+        boundary = plan["upper" if direction == "LONG" else "lower"]
+    else:
+        # A generated range edge is already the hard CLEAR target.
+        return None
+    threshold = Decimal(boundary)
+    closes = (bars[index - 1].close, bars[index].close)
+    if bars[index].start != bars[index - 1].end:
+        return "RECOVERY_TWO_CLOSES_NOT_MET"
+    passed = all(
+        close > threshold if direction == "LONG" else close < threshold
+        for close in closes
+    )
+    return None if passed else "RECOVERY_TWO_CLOSES_NOT_MET"
+
+
+def evaluate(
+    state,
+    bars,
+    index,
+    *,
+    region_input=None,
+    timely_fixture=False,
+):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
     t = c.end + US
+    rules, rule_hash = _rules_for(region_input)
     region = context(bars, index)
+    region_issue = None
+    author_region = None
+    if region and region_input and region_input.source_mode == "AUTHOR":
+        author_region, region_issue = region_input.resolve(
+            bars[index - 1], t, timely_fixture=timely_fixture
+        )
+        if author_region:
+            region.update(
+                lower=str(author_region.zone.lower),
+                upper=str(author_region.zone.upper),
+                valid=True,
+                window_start=author_region.starts_at.isoformat(),
+                author_region_id=author_region.zone.id,
+                source=author_region.zone.source,
+                context_hash=fingerprint(
+                    (region["context_hash"], asdict(author_region))
+                ),
+                recovery_long=(
+                    str(author_region.recovery_long)
+                    if author_region.recovery_long is not None
+                    else None
+                ),
+                recovery_short=(
+                    str(author_region.recovery_short)
+                    if author_region.recovery_short is not None
+                    else None
+                ),
+            )
     frame = (
         classify(bars[index - 2] if index >= 2 else None, bars[index - 1])
         if index
@@ -174,6 +245,10 @@ def evaluate(state, bars, index):
         status="WARMUP" if region is None else "HOLD",
         proposal=None,
     )
+    if region_input is not None:
+        result["region_issue"] = region_issue
+        if region_issue:
+            result["region"] = None
     if region is None:
         return result
     action = reason = plan = None
@@ -189,8 +264,19 @@ def evaluate(state, bars, index):
                 action = "LOCK"
                 reason = "OPPOSING_KEYBAR"
             elif locked and direction == state["original_side"]:
-                action = "UNLOCK_" + direction
-                reason = "ORIGINAL_DIRECTION_KEYBAR"
+                recovery_status = (
+                    _recovery_status(state["plan"], direction, bars, index)
+                    if region_input
+                    and region_input.recovery_rule == "TWO_CLOSES_BEYOND"
+                    else None
+                )
+                if recovery_status:
+                    result["status"] = recovery_status
+                else:
+                    action = "UNLOCK_" + direction
+                    reason = "ORIGINAL_DIRECTION_KEYBAR"
+    elif region_issue:
+        result["status"] = "INDETERMINATE"
     elif direction and signal_fresh and region["valid"]:
         prior = state["plan"]
         if (
@@ -198,6 +284,9 @@ def evaluate(state, bars, index):
             and state["last_exit_reason"] == "RISK_INVALID"
             and state["attempt"] < RULES["max_attempts"]
             and index < prior["created_index"] + RULES["plan_lifetime_bars"]
+            and (
+                not author_region or author_region.zone.id == prior["author_region_id"]
+            )
             and direction == prior["side"]
             and region["environment"] != ("DOWN" if direction == "LONG" else "UP")
             and _entry_allowed(prior, direction, frame.bar, c)
@@ -215,10 +304,22 @@ def evaluate(state, bars, index):
             plan = {
                 k: region[k] for k in ("lower", "upper", "environment", "context_hash")
             }
+            if author_region:
+                plan.update(
+                    {
+                        key: region[key]
+                        for key in (
+                            "author_region_id",
+                            "source",
+                            "recovery_long",
+                            "recovery_short",
+                        )
+                    }
+                )
             plan.update(side=direction, created_index=index, created_at=t.isoformat())
             plan["plan_id"] = fingerprint(
                 dict(
-                    rules=RULE_HASH,
+                    rules=rule_hash,
                     contract=c.contract,
                     region=plan,
                     signal=asdict(frame.bar),
@@ -228,8 +329,8 @@ def evaluate(state, bars, index):
     if action:
         proposed_plan = plan or state["plan"]
         p = dict(
-            version=VERSION,
-            rule_hash=RULE_HASH,
+            version=rules["version"],
+            rule_hash=rule_hash,
             keybar_version=KEYBAR_VERSION,
             contract=c.contract,
             action=action,
@@ -246,9 +347,9 @@ def evaluate(state, bars, index):
         )
         p["proposal_id"] = fingerprint(p)
         result.update(status="PROPOSAL", proposal=p)
-    elif not held:
+    elif not held and not region_issue:
         result["status"] = "NO_ENTRY" if region["valid"] else "DEGENERATE_REGION"
-    elif direction and not signal_fresh:
+    elif held and direction and not signal_fresh:
         result["status"] = "STALE_SIGNAL"
     return result
 
@@ -273,7 +374,7 @@ def _apply(state, p, t):
             original_side=side,
             cycle_seq=seq,
             cycle_id=fingerprint(
-                dict(version=VERSION, sequence=seq, proposal_id=p["proposal_id"])
+                dict(version=p["version"], sequence=seq, proposal_id=p["proposal_id"])
             ),
             plan=p["plan"],
             attempt=state["attempt"] + 1 if action.startswith("REENTER_") else 1,
@@ -290,7 +391,15 @@ def _apply(state, p, t):
     return after
 
 
-def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False):
+def replay(
+    bars,
+    decisions=None,
+    *,
+    as_of,
+    checkpoint=None,
+    timely_fixture=False,
+    region_input=None,
+):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
     Only explicit timely_fixture creates TEST_FIXTURE records. Human mode never
@@ -299,11 +408,18 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
     timestamp(as_of)
     if not isinstance(timely_fixture, bool):
         raise ValueError("BOOLEAN_MODE_REQUIRED")
+    if region_input is not None and not isinstance(region_input, RegionInput):
+        raise ValueError("REGION_INPUT_REQUIRED")
+    rules, rule_hash = _rules_for(region_input)
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
     for i, b in enumerate(visible):
         classify(visible[i - 1] if i else None, b)
+    if region_input and any(
+        r.zone.contract != visible[0].contract for r in region_input.regions
+    ):
+        raise ValueError("AUTHOR_REGION_CONTRACT_BOUNDARY")
     state = initial_state(visible)
     supplied = list(decisions or [])
     if timely_fixture and supplied:
@@ -317,6 +433,7 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
             None if timely_fixture else checkpoint["decision_records"],
             as_of=old,
             timely_fixture=timely_fixture,
+            region_input=region_input,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -360,6 +477,25 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
     ]
     events.sort(key=lambda x: (x[0], x[1]))
 
+    def expire_author_entry(p, t):
+        if not (
+            p["status"] == "PENDING"
+            and p["action"].startswith(("ENTER_", "REENTER_"))
+            and p["plan"].get("author_region_id")
+        ):
+            return False
+        area, issue = region_input.resolve(
+            visible[p["index"] - 1], t, timely_fixture=timely_fixture
+        )
+        if area is None or area.zone.id != p["plan"]["author_region_id"]:
+            p.update(
+                status="EXPIRED",
+                expired_at=t.isoformat(),
+                expiry_reason=issue or "AUTHOR_PLAN_RANGE_SUPERSEDED",
+            )
+            return True
+        return False
+
     def process(ds, t):
         nonlocal state
         for d in sorted(ds, key=fingerprint):
@@ -385,13 +521,19 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
                     d["decision_id"]
                 ] != fingerprint(d):
                     reason = "DECISION_ID_CONTENT_CONFLICT"
+                elif (
+                    region_input is not None
+                    and not timely_fixture
+                    and d["record_kind"] != "HUMAN_RESEARCH_DECISION"
+                ):
+                    reason = "HUMAN_DECISION_REQUIRED"
                 elif len(ds) > 1:
                     reason = "SAME_TIME_DECISION_CONFLICT"
                 elif any(
                     d.get(k, v) != v
                     for k, v in dict(
-                        version=VERSION,
-                        rule_hash=RULE_HASH,
+                        version=rules["version"],
+                        rule_hash=rule_hash,
                         keybar_version=KEYBAR_VERSION,
                         contract=state["contract"],
                         cycle_id=state["cycle_id"],
@@ -417,6 +559,8 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
                         p["generated_at"]
                     ):
                         reason = "DECISION_NOT_AFTER_PROPOSAL"
+                    elif expire_author_entry(p, t):
+                        reason = p["expiry_reason"]
                     elif d["decision"] == "REJECT":
                         p["status"] = "REJECTED"
                         reason = "REJECTED"
@@ -460,7 +604,13 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
         for p in proposals:
             if p["status"] == "PENDING":
                 p.update(status="EXPIRED", expired_at=t.isoformat())
-        e = evaluate(state, visible, payload)
+        e = evaluate(
+            state,
+            visible,
+            payload,
+            region_input=region_input,
+            timely_fixture=timely_fixture,
+        )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:
             p = e["proposal"]
@@ -479,6 +629,9 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
                 records.append(d)
                 process([d], ft)
 
+    for p in proposals:
+        expire_author_entry(p, as_of)
+
     # Canonical chronological record order makes batch and resumed files identical.
     def record_key(record):
         try:
@@ -489,8 +642,8 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
     records.sort(key=record_key)
     outcomes.sort(key=lambda outcome: record_key(outcome["record"]))
     cp = dict(
-        version=VERSION,
-        rule_hash=RULE_HASH,
+        version=rules["version"],
+        rule_hash=rule_hash,
         as_of=as_of.isoformat(),
         mode="TIMELY_TEST_FIXTURE" if timely_fixture else "HUMAN_CONFIRMATION",
         input_prefix_hash=fingerprint([asdict(b) for b in visible]),
@@ -507,6 +660,8 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
             for d in records
         ],
     )
+    if region_input is not None:
+        cp["region_prefix_hash"] = region_input.prefix_hash(as_of)
     terminal = (
         "FLAT"
         if state["long"] == state["short"] == "0"
@@ -515,9 +670,9 @@ def replay(bars, decisions=None, *, as_of, checkpoint=None, timely_fixture=False
         else "OPEN_DIRECTIONAL"
     )
     return dict(
-        version=VERSION,
-        rule_hash=RULE_HASH,
-        rules=deepcopy(RULES),
+        version=rules["version"],
+        rule_hash=rule_hash,
+        rules=deepcopy(rules),
         evaluations=evaluations,
         proposals=proposals,
         decisions=outcomes,
