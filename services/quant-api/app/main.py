@@ -15,6 +15,7 @@ from app.api.simulation_monitor import router as simulation_monitor_router
 from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_newow import router as market_newow_router
+from app.api.newow_backtests import router as newow_backtests_router
 from app.api.market_messages import router as market_messages_router
 from app.api.market_subing_reference import router as market_subing_reference_router
 from app.api.market_live import router as market_live_router
@@ -66,6 +67,7 @@ app.add_middleware(
 app.include_router(simulation_monitor_router)
 app.include_router(market_router)
 app.include_router(market_newow_router)
+app.include_router(newow_backtests_router)
 app.include_router(market_messages_router)
 app.include_router(market_subing_reference_router)
 app.include_router(market_live_router)

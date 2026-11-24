@@ -45,6 +45,7 @@ class Signal:
     action: str
     direction: str = "LONG"
     limit_price: Decimal | None = None
+    available_at: datetime | None = None
 
     def __post_init__(self):
         if (not self.signal_id or self.action not in ("BUILD", "CLEAR", "HOLD")
@@ -53,6 +54,10 @@ class Signal:
             raise ValueError("INVALID_SIGNAL")
         if local_naive(self.bar_end).date() != self.day:
             raise ValueError("SIGNAL_DAY_MISMATCH")
+        if self.available_at is not None and (
+            self.available_at.utcoffset() is None or self.available_at < self.bar_end
+        ):
+            raise ValueError("SIGNAL_AVAILABILITY_INVALID")
 
 
 def _config(market, capital, scratch):
@@ -80,7 +85,7 @@ def _config(market, capital, scratch):
     return config
 
 
-def _attempts(market, signals):
+def _attempts(market, signals, minute_selector=None):
     seen, attempts, scheduled = set(), [], {}
     previous = None
     for signal in signals:
@@ -99,9 +104,10 @@ def _attempts(market, signals):
         if signal.limit_price is not None and signal.limit_price % market.tick:
             raise ValueError("SIGNAL_LIMIT_TICK_MISMATCH")
 
-        available = bar_end + HISTORICAL_AVAILABILITY
-        candidate_open = bar_end + ONE_MINUTE
-        candidate_end = candidate_open + ONE_MINUTE
+        available = (signal.available_at or bar_end + HISTORICAL_AVAILABILITY).astimezone(ASIA_SHANGHAI)
+        opens = tuple(end - ONE_MINUTE for end in session.minute_ends())
+        candidate_open = (minute_selector(available, opens) if minute_selector is not None
+                          else next((opening for opening in opens if opening > available), None))
         attempt = {"signal_id": signal.signal_id, "contract": market.contract, "action": signal.action,
                    "direction_requested": signal.direction if signal.action == "BUILD" else None,
                    "signal_bar_end": bar_end, "signal_available_at": available,
@@ -109,9 +115,13 @@ def _attempts(market, signals):
         attempts.append(attempt)
         if signal.action == "HOLD":
             attempt["reason"] = "HOLD"
-        elif not available < candidate_open or candidate_end > session.end:
+        elif candidate_open is None:
             attempt["reason"] = "NO_SAME_SESSION_CANDIDATE"
         else:
+            if candidate_open not in opens or candidate_open <= available:
+                raise ValueError("SIGNAL_CANDIDATE_INVALID")
+            candidate_open = candidate_open.astimezone(ASIA_SHANGHAI)
+            candidate_end = candidate_open + ONE_MINUTE
             attempt.update(candidate_open_at=candidate_open, candidate_bar_end=candidate_end)
             # This is the native preceding bar label, not a model timestamp for
             # the research decision. Its later close is hidden at submission.
@@ -134,19 +144,41 @@ def _account_snapshot(account):
     }
 
 
-def run_proof(market: FrozenMarket, signals: tuple[Signal, ...], capital: Decimal, *, rollover_boundary=False):
+def run_proof(
+    market: FrozenMarket, signals: tuple[Signal, ...], capital: Decimal, *,
+    rollover_boundary=False, decide=None, minute_selector=None,
+):
     """Run one bounded day-session segment serially in a standalone Python process."""
     if rqalpha.__version__ != "6.3.0":
         raise RuntimeError("UNSUPPORTED_RQALPHA_VERSION")
     if not valid_decimal(capital, positive=True):
         raise ValueError("INVALID_INITIAL_CAPITAL")
 
-    attempts, scheduled = _attempts(market, signals)
+    if signals and decide is not None:
+        raise ValueError("MIXED_SIGNAL_SOURCES")
+    attempts, scheduled = _attempts(market, signals, minute_selector)
     minutes = {local_naive(row.end): row for row in market.minutes}
+    last_bar_by_day = {row.day: row for row in market.minutes}
     fills, settlements, creation_rejections = [], [], []
     open_orders = {}
     native = {}
     contract = market.contract
+
+    def admit_decisions(env, *, settling=False):
+        if decide is None:
+            return
+        dt = env.calendar_dt
+        positions = tuple(env.get_account(contract).get_positions())
+        signal_batch = tuple(decide(_timestamp(dt), positions, tuple(fills)))
+        new_attempts, new_candidates = _attempts(market, signal_batch, minute_selector)
+        if attempts and new_attempts and attempts[-1]["signal_bar_end"] >= new_attempts[0]["signal_bar_end"]:
+            raise ValueError("SIGNALS_NOT_STRICTLY_ORDERED")
+        if any(row["signal_available_at"] > _timestamp(dt) for row in new_attempts):
+            raise ValueError("SIGNAL_NOT_YET_AVAILABLE")
+        if new_candidates and (settling or min(new_candidates) < dt or scheduled.keys() & new_candidates.keys()):
+            raise ValueError("EXPECTED_NATIVE_SUBMISSION_EVENT_MISSING")
+        attempts.extend(new_attempts)
+        scheduled.update(new_candidates)
 
     def on_trade(event):
         trade = event.trade
@@ -173,7 +205,10 @@ def run_proof(market: FrozenMarket, signals: tuple[Signal, ...], capital: Decima
 
     def pre_settlement(_):
         env = Environment.get_instance()
-        settlements.append({"day": env.trading_dt.date(), "native_event_at": _timestamp(env.calendar_dt),
+        admit_decisions(env, settling=True)
+        day = env.trading_dt.date()
+        settlements.append({"day": day, "native_event_at": _timestamp(env.calendar_dt),
+                            "last_bar_close": last_bar_by_day[day].close,
                             "before": _account_snapshot(env.get_account(contract))})
 
     def post_settlement(_):
@@ -210,6 +245,7 @@ def run_proof(market: FrozenMarket, signals: tuple[Signal, ...], capital: Decima
             attempt.update(native_status=order.status.name, native_status_reason=order.message)
             del open_orders[order_id]
 
+        admit_decisions(env)
         item = scheduled.pop(dt, None)
         if item is None:
             return

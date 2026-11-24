@@ -2478,3 +2478,23 @@ Nov-19 Newow H1 interval retirement: run `PYTHONPATH=services/quant-api:packages
 The tests use SQLite and the existing opt-in isolated PostgreSQL database guard;
 full-size 236-route atomicity, 35 OPEN interruptions, immutable originals, strict
 retirement/capacity proofs and mid-transaction rollback require actual output.
+
+## Guiyi V2 P3 隔离历史回测
+
+使用 loopback、非 5432 端口、专用 `guiyi_newow_backtest` 数据库和只读 API 角色。
+`GUIYI_P3_TEST_WRITE_DSN` 与 `GUIYI_P3_TEST_READ_DSN` 指向同条件的可销毁
+`guiyi_newow_backtest_test`，分别使用测试写入者与只读角色。
+迁移验收在实际隔离库从 `20261028_0054` 升级至 `20261124_0055`。
+现役 Runtime 的 schema 兼容合同仍独立，P3 不在现役数据库执行该升级。
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_v2_backtest_results.py \
+  services/quant-api/tests/newow/test_research_backtest.py
+```
+
+RQAlpha 试验按 [禁网说明](services/newow-rqalpha/README.md) 运行。将
+`GUIYI_P3_FROZEN_PACKET` 指向手工入口输出的内容寻址输入包，禁网复验完整 FU2603
+的 P2 动作时点、8 笔成交、4 次平仓、4.923 元费用与 9,765.077 元结算权益。
+隔离库或冻结原件缺失时相关跳过项单列，现场验收须提供实际证据。
