@@ -110,6 +110,8 @@ class FrozenMarket:
     sessions: tuple[Session, ...]
     minutes: tuple[Minute, ...]
     daily: tuple[DailyFacts, ...]
+    listed_date: date | None = None
+    expired_date: date | None = None
 
     def __post_init__(self):
         if (not fullmatch(r"[A-Z]+[0-9]{4}", self.contract)
@@ -123,6 +125,10 @@ class FrozenMarket:
         days = tuple(dict.fromkeys(session.day for session in self.sessions))
         if not self.window_start <= days[0] <= days[-1] <= self.window_end:
             raise ValueError("CONTRACT_WINDOW_MISMATCH")
+        if (self.listed_date is None) != (self.expired_date is None):
+            raise ValueError("CONTRACT_LIFECYCLE_MISSING")
+        if self.listed_date is not None and not self.listed_date <= days[0] <= days[-1] < self.expired_date:
+            raise ValueError("CONTRACT_LIFECYCLE_MISMATCH")
         if tuple(facts.day for facts in self.daily) != days:
             raise ValueError("DAILY_FACTS_MISSING")
         if any(old.settlement != new.prev_settlement for old, new in zip(self.daily, self.daily[1:])):
@@ -156,8 +162,8 @@ class FrozenDataSource(AbstractDataSource):
             "exchange": market.exchange,
             "contract_multiplier": market.multiplier,
             "round_lot": 1,
-            "listed_date": market.window_start.isoformat(),
-            "de_listed_date": market.window_end.isoformat(),
+            "listed_date": (market.listed_date or market.window_start).isoformat(),
+            "de_listed_date": (market.expired_date or market.window_end).isoformat(),
         }, futures_tick_size_getter=lambda _: float(market.tick))
 
     def get_instruments(self, id_or_syms=None, types=None):

@@ -163,3 +163,42 @@ def test_session_break_cannot_move_candidate_to_later_continuous_session():
     assert run["fills"] == []
     assert run["attempts"][0]["candidate_open_at"] is None
     assert run["attempts"][0]["reason"] == "NO_SAME_SESSION_CANDIDATE"
+
+
+def test_causal_provider_uses_confirmed_fill_and_preserves_boundary_signal():
+    seen = []
+
+    def decide(at, positions, fills):
+        if at == clock(DAY_1, "09:06:00"):
+            assert not positions and not fills
+            seen.append("BUILD")
+            return (replace(signal(5), available_at=clock(DAY_1, "09:05:02")),)
+        if at == clock(DAY_1, "09:11:00"):
+            assert [(p.order_book_id, p.quantity) for p in positions] == [("FU2603", 1)]
+            assert fills[-1]["native_event_at"] == clock(DAY_1, "09:07:00")
+            seen.append("CLEAR")
+            return (replace(signal(10, "CLEAR"), available_at=clock(DAY_1, "09:10:02")),)
+        if at.time().hour == 15:
+            seen.append("SESSION_END")
+            return (replace(signal(20), available_at=clock(DAY_1, "09:20:02")),)
+        return ()
+
+    def choose(available, opens):
+        return next((opening for opening in opens if opening > available), None)
+
+    result = run_proof(market(), (), D("1000"), decide=decide, minute_selector=choose)
+    assert seen == ["BUILD", "CLEAR", "SESSION_END"]
+    assert names(result) == ["OPEN", "CLOSE_TODAY"]
+    assert result["attempts"][-1]["reason"] == "NO_SAME_SESSION_CANDIDATE"
+    assert result["settlements"][0]["last_bar_close"] == D("103")
+
+
+def test_availability_equal_to_open_uses_strict_successor():
+    signal_at_open = replace(signal(5), available_at=clock(DAY_1, "09:06:00"))
+
+    def decide(at, positions, fills):
+        return (signal_at_open,) if at == signal_at_open.available_at else ()
+
+    run = run_proof(market(), (), D("1000"), decide=decide)
+    assert run["fills"][0]["modeled_fill_at"] == clock(DAY_1, "09:07:00")
+    assert run["fills"][0]["native_event_at"] == clock(DAY_1, "09:08:00")

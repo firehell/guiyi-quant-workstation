@@ -76,9 +76,15 @@ P0 只读，无须 PR 或集成，交付后确认干净再清理。后续有代�
 ## P3 · 一个真实合约、趋势、5m，跑通历史切片
 
 - [ ] 选有完整冻结证据且含可核验一开一平的物理合约。分别记录 bar_end、历史可用时点、信号及最早合格成交分钟。缺费率/结算或价格资格时记录阻断；不在主连价格生成成交。
-- [ ] 在隔离 PG 建 run/trade/equity 与成功版本指针。计划 `GET /api/v1/newow/backtests/latest` 按策略、品种、周期、研究配置查摘要；`GET /api/v1/newow/backtests/{run_id}/trades` 与同前缀 `/equity` 只读同一 run。首次无结果给空状态，未知 run 返回 404，游标错配拒绝；已有等价资源优先复用。
-- [ ] 拟建 `services/quant-api/tests/newow/test_v2_backtest_results.py`：比对输入→决策→首次合法分钟→费用→权益→API；分别测旧月带仓新月 HOLD、期末未平、结算缺失、无入场 CLEAR。缺批准跨月政策不能发布跨月正式收益。
-- [ ] 依 TESTING.md 配置真实隔离 PG，测试迁移、事务失败/重试与既有库共存；定向运行上项测试与 `services/quant-api/tests/newow/test_research_backtest.py`。独立审查第一笔成交和全部成本明细，再把这条链作为 P4 基线。
+  FU2603 的 2026-01-05 实际 Canonical 输入已走完试验链路。正式系列仍为
+  `RANK1_AS_KNOWN_UNPROVEN`，前一交易日缺六个在册 FU 合约的日线证据，Catalog 排名亦为事后录入。
+- [x] 隔离 PostgreSQL 已建 run/trade/equity 与成功版本指针。`GET /api/v1/newow/backtests/latest`
+  按品种、策略、周期和研究配置查摘要，`/{run_id}/trades` 与 `/{run_id}/equity` 读取固定成功 run。
+  API 无结果时返回空状态；失败保留旧成功指针；正式与试验系列各自独立。
+- [x] 使用 `test_v2_backtest_results.py`、RQAlpha 原生用例和真实 FU2603 冻结输入验收决策、时序、费用、
+  权益、查询与分页。跨月首版明确阻断，既有带仓结算与无入场 CLEAR 保留验证。
+- [x] 在真实隔离 PostgreSQL 验证迁移、提交前不可见、事务回滚、重试、乱序发布、固定 run 分页与现役研究回归。
+  P4 可用已核验试验系列联调，资格完整的正式结果仍依赖上一项证据。
 
 ## P4 · 打开工作台，接盘后更新，再扩矩阵
 
