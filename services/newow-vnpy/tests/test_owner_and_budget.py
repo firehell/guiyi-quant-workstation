@@ -8,7 +8,7 @@ from host import TradingHost
 def test_ready_host_requires_complete_native_readback(scenario):
     with TradingHost(scenario.database, scenario.config, scenario.gateway) as host:
         assert host.status()['status'] == 'RECONCILING'
-        host.begin_readback(generation=scenario.generation, trading_day=scenario.day)
+        scenario.readback_id = host.begin_readback(generation=scenario.generation, trading_day=scenario.day)
         assert not host.reconcile(scenario.snapshot(sections=('account', 'positions', 'orders')))
         assert host.status()['status'] == 'RECONCILING'
         assert host.reconcile(scenario.snapshot())
@@ -180,3 +180,64 @@ def test_mutable_sources_and_uncompleted_bars_have_no_authority(scenario):
         with pytest.raises(ValueError, match='V2_MARKET_FREQUENCY_INVALID'):
             scenario.market('RB', freq='1m')
         assert not host.store.projection('decisions')['data']
+
+
+def test_conflict_at_batch_deadline_is_known_before_dispatch(scenario):
+    with scenario.host() as host:
+        scenario.prepare_builds(host, ('RB',))
+        deadline = scenario.signal_end + timedelta(seconds=4)
+        assert scenario.live(host, 'RB', price='101', now=deadline) == 'CONFLICT'
+        host.advance(deadline)
+        assert not scenario.gateway.sends
+
+
+def test_quarantined_canonical_prefix_cannot_handoff_to_observation(scenario):
+    from app.market_data.newow.v2_completed import HistoricalAvailability, from_historical_bar
+
+    with scenario.host() as host:
+        market = scenario.market('RB')
+        host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
+        assert host.reconcile(scenario.snapshot())
+        host.register_policy(scenario.policy('RB'))
+        scenario.warm(host, market)
+        end = market.endpoints[8]
+        available = end + timedelta(seconds=1)
+        conflict = from_historical_bar(
+            scenario.bar(end, '101'), market, revision='fixture-canonical', source_ref=f'bar-{end}',
+            availability=HistoricalAvailability(available, 'fixture-clock'), as_of=available, warmup=True,
+        )
+        assert host.receive_completed(conflict, market, expected=end, now=available) == 'CONFLICT'
+        scenario.quoted(host, 'RB')
+        assert scenario.live(host, 'RB') == 'BLOCKED'
+        host.advance(scenario.signal_end + timedelta(seconds=4))
+        assert not scenario.gateway.sends
+
+
+def test_market_only_product_and_unattributed_order_keep_physical_bindings(scenario):
+    from app.market_data.newow.v2_scope import Scope
+    from gateway import NativeOrder, OrderStatus
+
+    with scenario.host() as host:
+        scope = scenario.scope(('RB',))
+        host.activate(Scope(scope.revision, ('rb', 'hc'), scope.deployments), expected_revision=None,
+                      supported=('RB', 'HC'))
+        assert scenario.live(host, 'HC', end=scenario.start + timedelta(minutes=5)) == 'ACCEPTED'
+        unknown = NativeOrder('SHFE', 'HC2609', scenario.day, 'unattributed', 1, 0, OrderStatus.ACTIVE)
+        assert not host.reconcile(scenario.snapshot(orders=(unknown,)))
+        assert host.status()['subscriptions'] == {'physical_count': 2, 'contracts': {'hc': ['HC2609', 'HC2701'], 'rb': []}}
+
+
+def test_exact_contract_product_and_czce_binding(scenario):
+    from gateway import Position
+    from guiyi_quant.simnow_execution.model import Contract
+    from risk import ContractPolicy
+
+    with pytest.raises(ValueError, match='P5_NATIVE_POSITION_INVALID'):
+        Position('CFFEX', 'IF2701', 'I', 1, 0, 0)
+    with pytest.raises(ValueError, match='P5_CONTRACT_POLICY_INVALID'):
+        scenario.policy('R', contract='RB2701')
+    binding = Contract('SR2701', 'SR701', 'CZCE', 'fixture-instrument',
+                       scenario.start, scenario.start + timedelta(hours=3))
+    policy = ContractPolicy('SR', 'CZCE', 'SR2701', 'SR701', 1, scenario.D(10),
+                            scenario.D(1), scenario.D('0.10'), scenario.D(0), binding)
+    assert policy.product == 'sr' and policy.native_symbol == 'SR701'

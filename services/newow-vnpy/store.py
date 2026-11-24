@@ -66,7 +66,7 @@ def isolated_connection(dsn: str):
         return psycopg.connect(
             '', host='127.0.0.1', hostaddr='127.0.0.1', port=facts['port'],
             user='postgres', dbname='guiyi_p5_test',
-            passfile='/dev/null', sslmode='disable', gssencmode='disable',
+            passfile='/dev/null/guiyi-p5-passfile', sslmode='disable', gssencmode='disable',
             options='', application_name='guiyi-v2-p5-offline', connect_timeout=3, autocommit=True,
         )
     except psycopg.Error:
@@ -84,20 +84,20 @@ class Journal:
         self.connection = connection
         self.account = account
 
-    def record(self, kind: str, key: str, payload: dict) -> int:
+    def record(self, kind: str, key: str, payload: dict, *, at: datetime | None = None) -> int:
         payload = wire(payload)
         row = self.connection.execute(
-            'INSERT INTO newow_p5.record (account, kind, key, payload) VALUES (%s, %s, %s, %s) '
+            'INSERT INTO newow_p5.record (account, kind, key, payload, known_at) VALUES (%s, %s, %s, %s, %s) '
             'ON CONFLICT (account, kind, key) DO NOTHING RETURNING sequence',
-            (self.account, kind, key, Jsonb(payload)),
+            (self.account, kind, key, Jsonb(payload), at),
         ).fetchone()
         if row:
             return row[0]
-        sequence, previous = self.connection.execute(
-            'SELECT sequence, payload FROM newow_p5.record WHERE account = %s AND kind = %s AND key = %s',
+        sequence, previous, original_at = self.connection.execute(
+            'SELECT sequence, payload, known_at FROM newow_p5.record WHERE account = %s AND kind = %s AND key = %s',
             (self.account, kind, key),
         ).fetchone()
-        if previous != payload:
+        if previous != payload or original_at != at:
             raise ValueError('P5_RECORD_CONFLICT')
         return sequence
 
@@ -110,6 +110,24 @@ class Journal:
             (self.account, kind, key),
         ).fetchone()
         return row[0] if row else None
+
+    def account_prefix(self, at: datetime):
+        row = self.connection.execute(
+            "SELECT payload FROM newow_p5.record WHERE account = %s "
+            "AND kind IN ('readbacks', 'native_updates') AND known_at <= %s "
+            'ORDER BY known_at DESC, sequence DESC LIMIT 1',
+            (self.account, at),
+        ).fetchone()
+        return row[0] if row else None
+
+    def intent_prefix(self, product: str, at: datetime):
+        rows = self.connection.execute(
+            "SELECT DISTINCT ON (payload->>'id') payload FROM newow_p5.record "
+            "WHERE account = %s AND kind = 'orders' AND known_at <= %s AND payload->>'product' = %s "
+            "ORDER BY payload->>'id', known_at DESC, sequence DESC",
+            (self.account, at, product),
+        ).fetchall()
+        return tuple(row[0] for row in rows)
 
 
 class TradingStore:
@@ -137,11 +155,13 @@ class TradingStore:
                 connection.execute('''CREATE TABLE IF NOT EXISTS newow_p5.record (
                     sequence bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
                     account text NOT NULL REFERENCES newow_p5.account_state(account),
-                    kind text NOT NULL, key text NOT NULL, payload jsonb NOT NULL,
+                    kind text NOT NULL, key text NOT NULL, payload jsonb NOT NULL, known_at timestamptz,
                     UNIQUE (account, kind, key)
                 )''')
                 connection.execute('CREATE INDEX IF NOT EXISTS p5_record_list '
                                    'ON newow_p5.record (account, kind, sequence)')
+                connection.execute('CREATE INDEX IF NOT EXISTS p5_record_prefix '
+                                   'ON newow_p5.record (account, kind, known_at DESC) WHERE known_at IS NOT NULL')
                 connection.execute(
                     'INSERT INTO newow_p5.account_state VALUES (%s, 0, %s) ON CONFLICT DO NOTHING',
                     (self.account, Jsonb({})),

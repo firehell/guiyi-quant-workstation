@@ -83,9 +83,9 @@ def test_partial_fill_clear_cancels_then_closes_only_native_position(scenario):
         partial = NativeOrder('SHFE', 'RB2701', scenario.day, 'fixture-1', 3, 1, OrderStatus.PARTIAL)
         fill = NativeFill('SHFE', 'RB2701', scenario.day, partial.native_id, 'trade-1', 1, scenario.D(100), build)
         position = Position('SHFE', 'RB2701', 'RB', 1, 1, 0)
-        host.callback(partial, generation=scenario.generation, sequence=1)
-        host.callback(fill, generation=scenario.generation, sequence=2)
-        host.callback(fill, generation=scenario.generation, sequence=3)
+        host.callback(partial, generation=scenario.generation, sequence=1, known_at=build)
+        host.callback(fill, generation=scenario.generation, sequence=2, known_at=build)
+        host.callback(fill, generation=scenario.generation, sequence=3, known_at=build)
         assert host.reconcile(scenario.snapshot(at=build, cash='210', margin='100', through=3,
                                                 positions=(position,), orders=(partial,), fills=(fill,)))
         clear = scenario.signal_end + timedelta(minutes=5)
@@ -95,13 +95,13 @@ def test_partial_fill_clear_cancels_then_closes_only_native_position(scenario):
         assert len(scenario.gateway.sends) == 1
         terminal = replace(partial, status=OrderStatus.CANCELLED, filled=2)
         late = replace(fill, native_trade_id='trade-2', occurred_at=clear + timedelta(seconds=3))
-        host.callback(terminal, generation=scenario.generation, sequence=4)
+        host.callback(terminal, generation=scenario.generation, sequence=4, known_at=clear + timedelta(seconds=3))
         assert not host.reconcile(scenario.snapshot(at=clear + timedelta(seconds=4), through=4,
                                                     positions=(position,), orders=(terminal,), fills=(fill,)))
         host.advance(clear + timedelta(seconds=4))
         assert len(scenario.gateway.cancels) == len(scenario.gateway.sends) == 1
-        host.callback(late, generation=scenario.generation, sequence=5)
-        host.callback(partial, generation=scenario.generation, sequence=6)
+        host.callback(late, generation=scenario.generation, sequence=5, known_at=clear + timedelta(seconds=4))
+        host.callback(partial, generation=scenario.generation, sequence=6, known_at=clear + timedelta(seconds=5))
         tail = clear + timedelta(seconds=5)
         assert host.reconcile(scenario.snapshot(at=tail, cash='110', margin='200', through=6,
                                                 positions=(replace(position, quantity=2, today=2),),
@@ -146,7 +146,7 @@ def test_callback_gap_and_identity_conflict_keep_host_blocked(scenario):
     with scenario.host() as host:
         assert host.reconcile(scenario.snapshot())
         order = NativeOrder('SHFE', 'RB2701', scenario.day, 'order-a', 1, 0, OrderStatus.ACTIVE)
-        host.callback(order, generation=scenario.generation, sequence=2)
+        host.callback(order, generation=scenario.generation, sequence=2, known_at=scenario.start)
         assert host.status()['reason'] == 'P5_CALLBACK_GAP'
         assert not host.reconcile(scenario.snapshot())
         assert not scenario.gateway.sends
@@ -179,7 +179,7 @@ def test_clear_during_reconciliation_keeps_existing_open_obligation(scenario):
         build = scenario.signal_end + timedelta(seconds=4)
         host.advance(build)
         order = NativeOrder('SHFE', 'RB2701', scenario.day, 'fixture-1', 3, 1, OrderStatus.PARTIAL)
-        host.callback(order, generation=scenario.generation, sequence=1)
+        host.callback(order, generation=scenario.generation, sequence=1, known_at=build)
         assert host.status()['status'] == 'RECONCILING'
         clear = scenario.signal_end + timedelta(minutes=5)
         scenario.quoted(host, 'RB', at=clear)
@@ -203,3 +203,94 @@ def test_unproven_flat_snapshot_does_not_erase_known_position(scenario):
         assert not host.reconcile(scenario.snapshot(at=scenario.start + timedelta(seconds=1)))
         assert host.status()['reason'] == 'P5_POSITION_READBACK_MISMATCH'
         assert host.store.projection('positions')['data'][0]['quantity'] == 1
+
+
+def test_restart_rejects_complete_readback_from_previous_process(scenario):
+    with scenario.host() as host:
+        previous = scenario.snapshot()
+        assert host.reconcile(previous)
+    with scenario.host() as host:
+        assert not host.reconcile(previous)
+        assert host.status()['status'] == 'RECONCILING'
+        assert not host.reconcile(replace(previous, readback_id=scenario.readback_id))
+        assert host.reconcile(scenario.snapshot(at=scenario.start + timedelta(seconds=1)))
+
+
+def test_as_of_prefix_excludes_later_native_readback_and_local_intent(scenario, monkeypatch):
+    import host as module
+
+    with scenario.host() as host:
+        host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
+        assert host.reconcile(scenario.snapshot())
+        host.register_policy(scenario.policy('RB'))
+        scenario.warm(host, scenario.market('RB'))
+        observed = scenario.signal_end + timedelta(seconds=2)
+        after = observed + timedelta(seconds=1)
+        assert host.reconcile(scenario.snapshot(at=after, cash='500'))
+        with host.store.transaction() as (_state, journal):
+            journal.record('orders', 'fixture-future', {'id': 'future', 'product': 'rb', 'contract': 'RB2701',
+                                                       'state': 'CLAIMED'}, at=after)
+        seen = []
+        consume = module.consume_completed
+
+        def capture(market, core, item, context, **kwargs):
+            seen.append(context)
+            return consume(market, core, item, context, **kwargs)
+
+        monkeypatch.setattr(module, 'consume_completed', capture)
+        assert scenario.live(host, 'RB', now=after) == 'ACCEPTED'
+        assert seen[0].account_as_of == scenario.start
+        assert seen[0].unsettled_contracts == ()
+        assert seen[0].position == scenario.D(0)
+
+
+def test_close_legs_recheck_frozen_inventory_immediately_before_send(scenario, monkeypatch):
+    with scenario.host() as host:
+        host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
+        host.register_policy(scenario.policy('RB'))
+        position = Position('SHFE', 'RB2701', 'RB', 2, 1, 0)
+        assert host.reconcile(scenario.snapshot(positions=(position,)))
+        scenario.warm(host, scenario.market('RB'))
+        scenario.live(host, 'RB')
+        clear = scenario.signal_end + timedelta(minutes=5)
+        scenario.quoted(host, 'RB', at=clear)
+        send = host._dispatch
+        changed = False
+
+        def freeze_before_claim(key, now):
+            nonlocal changed
+            if not changed:
+                changed = True
+                assert host.reconcile(scenario.snapshot(at=now, positions=(replace(position, frozen=1),)))
+            send(key, now)
+
+        monkeypatch.setattr(host, '_dispatch', freeze_before_claim)
+        scenario.live(host, 'RB', end=clear)
+        host.advance(clear + timedelta(seconds=3))
+        orders = host.store.projection('orders')['data']
+        assert {o['offset'] for o in orders if o['state'] == 'PLANNED'} == {'CLOSETODAY', 'CLOSEYESTERDAY'}
+        assert sum(o.get('reason') == 'P5_CLOSE_QUANTITY_CHANGED' for o in orders) == 2
+        assert not scenario.gateway.sends
+
+
+def test_explicit_old_month_management_never_opens_or_exceeds_permit(scenario):
+    from risk import ManagementPermit
+
+    with scenario.host() as host:
+        host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
+        position = Position('SHFE', 'RB2701', 'RB', 2, 0, 0)
+        assert host.reconcile(scenario.snapshot(positions=(position,)))
+        host.register_policy(scenario.policy('RB'))
+        latest = scenario.signal_end
+        scenario.live(host, 'RB', end=latest, market=scenario.market('RB', contract='RB2705'))
+        scenario.quoted(host, 'RB', at=latest, contract='RB2701')
+        permit = ManagementPermit('fixture-old-month-reduce', 'r1', 'RB', 'SHFE', 'RB2701', scenario.day,
+                                  (scenario.start, scenario.start + timedelta(hours=3)), latest,
+                                  latest + timedelta(seconds=10), 1)
+        now = latest + timedelta(seconds=3)
+        host.manage_existing(permit, now=now)
+        host.manage_existing(permit, now=now)
+        assert [(i['contract'], i['offset'], i['quantity']) for i in scenario.gateway.sends] == [
+            ('RB2701', 'CLOSEYESTERDAY', 1),
+        ]
+        assert scenario.gateway.sends[0]['decision']['management_ref'] == permit.reference

@@ -37,20 +37,21 @@ def scenario():
             self.database = database
             self.gateway = FixtureGateway()
             self.config = HostConfig('p5-' + uuid4().hex, 'fixture-market-1', self.limits, True, True)
+            self.readback_id = None
 
         @contextmanager
         def host(self, reset=False):
             if reset:
                 self.__init__()
             with TradingHost(self.database, self.config, self.gateway) as host:
-                host.begin_readback(generation=self.generation, trading_day=self.day)
+                self.readback_id = host.begin_readback(generation=self.generation, trading_day=self.day)
                 yield host
 
         def snapshot(self, *, at=None, sections=tuple(sorted(SECTIONS)), cash='110', margin='0',
                      loss='0', through=0, positions=(), orders=(), fills=(), account=True):
             return Snapshot(self.config.alias, self.generation, self.day, at or self.start, through, sections,
                             Account(Decimal(10000), Decimal(cash), Decimal(margin), Decimal(loss)) if account else None,
-                            positions, orders, fills)
+                            positions, orders, fills, self.readback_id)
 
         def scope(self, products, revision='r1', frequency='5m', strategy='oscillation'):
             return Scope(revision, tuple(products), tuple(Deployment(p, strategy, frequency) for p in products))
@@ -76,7 +77,7 @@ def scenario():
                                            as_of=available, warmup=True)
                 host.receive_completed(item, market, expected=end, now=available)
 
-        def live(self, host, product, *, end=None, market=None, price='100', expected=None):
+        def live(self, host, product, *, end=None, market=None, price='100', expected=None, now=None):
             market = market or self.market(product)
             end = end or self.signal_end
             available = end + timedelta(seconds=2)
@@ -88,7 +89,7 @@ def scenario():
             )
             receive = getattr(self.gateway, 'completed', host.receive_observation)
             return receive(source, market, generation=self.config.market_generation,
-                           expected=expected or end, now=available)
+                           expected=expected or end, now=now or available)
 
         def quoted(self, host, product, *, at=None, contract=None):
             host.quote(Quote('SHFE', contract or f'{product}2701', self.day, self.generation,

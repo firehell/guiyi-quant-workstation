@@ -64,9 +64,10 @@ def test_p2_to_real_veighna_callbacks_to_pg(scenario):
                 'Direction': api.THOST_FTDC_D_Buy, 'OffsetFlag': api.THOST_FTDC_OFEN_Open,
                 'Price': 100, 'Volume': 1,
             }
-            native.push_ctp('order', order, generation=scenario.generation, sequence=1)
-            native.push_ctp('trade', trade, generation=scenario.generation, sequence=2)
-            native.push_ctp('trade', trade.copy(), generation=scenario.generation, sequence=3)
+            tail = seal + timedelta(seconds=1)
+            native.push_ctp('order', order, generation=scenario.generation, sequence=1, known_at=seal)
+            native.push_ctp('trade', trade, generation=scenario.generation, sequence=2, known_at=tail)
+            native.push_ctp('trade', trade.copy(), generation=scenario.generation, sequence=3, known_at=tail)
             drain()
             assert problems == []
             assert host.status()['watermark'] == 3
@@ -84,6 +85,47 @@ def test_p2_to_real_veighna_callbacks_to_pg(scenario):
             assert host.reconcile(snap)
             assert host.store.projection('positions')['data'][0]['quantity'] == 1
             assert host.store.projection('orders')['data'][-1]['reserved'] == '0'
+    finally:
+        native.close()
+        symbol_contract_map.pop(symbol, None)
+
+
+def test_verified_prior_position_closes_in_a_cold_native_engine(scenario):
+    if not os.getenv('GUIYI_VNPY_PROBE_DIR'):
+        pytest.skip('native gateway test requires macOS sandbox-exec')
+    from vnpy.event import Event as NativeEvent
+    from vnpy_ctp import api
+    from vnpy_ctp.gateway.ctp_gateway import symbol_contract_map
+
+    from risk import ManagementPermit
+
+    symbol = 'rb2701'
+    native = VeighNaOfflineGateway(on_event=lambda *args, **kwargs: None, on_error=lambda _reason: None,
+                                  on_completed=lambda *args, **kwargs: None)
+    scenario.gateway = native
+    try:
+        with scenario.host() as host:
+            native.native.td_api.onRspQryInstrument({
+                'InstrumentID': symbol, 'ExchangeID': 'SHFE', 'InstrumentName': 'Fixture future',
+                'ProductClass': api.THOST_FTDC_PC_Futures, 'VolumeMultiple': 10, 'PriceTick': 1.0,
+                'MinLimitOrderVolume': 1, 'MaxLimitOrderVolume': 10,
+            }, {'ErrorID': 0, 'ErrorMsg': ''}, 1, True)
+            drained = Event()
+            native.events.register('fixture.cold.barrier', lambda _event: drained.set())
+            native.events.put(NativeEvent('fixture.cold.barrier'))
+            assert drained.wait(timeout=4)
+            host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
+            host.register_policy(scenario.policy('RB'))
+            host.activate(scenario.scope((), revision='r2'), expected_revision='r1', supported=('RB',))
+            assert host.reconcile(scenario.snapshot(positions=(Position('SHFE', 'RB2701', 'RB', 1, 0, 0),)))
+            assert native.main.get_all_positions() == []
+            at = scenario.signal_end
+            scenario.quoted(host, 'RB')
+            permit = ManagementPermit('cold-native-close', 'r2', 'RB', 'SHFE', 'RB2701', scenario.day,
+                                      (scenario.start, scenario.start + timedelta(hours=3)), at,
+                                      at + timedelta(seconds=10), 1)
+            host.manage_existing(permit, now=at + timedelta(seconds=1))
+            assert [i['request'] for i in native.sends] == [['RB2701', 'SHFE', 'SHORT', 'CLOSEYESTERDAY', '99.0', 1]]
     finally:
         native.close()
         symbol_contract_map.pop(symbol, None)

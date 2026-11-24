@@ -1,11 +1,11 @@
 """Explicit, versioned fixture trading limits and conservative account budget."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-import re
+from guiyi_quant.simnow_execution.model import Contract as NativeContractBinding
 
-from gateway import aware, identity, lots, money
+from gateway import aware, contract_product, identity, lots, money
 from recovery import active
 from store import account_key
 
@@ -41,14 +41,19 @@ class ContractPolicy:
     tick: Decimal
     margin_rate: Decimal
     fee_ceiling: Decimal
+    native_binding: NativeContractBinding | None = None
 
     def __post_init__(self):
         identity(self.exchange, self.contract)
         lots(self.maximum_lots, minimum=1)
         for value in (self.multiplier, self.tick, self.margin_rate, self.fee_ceiling):
             money(value)
-        if (not re.fullmatch('[A-Za-z]+', self.product) or not self.contract.startswith(self.product.upper())
-                or self.native_symbol.upper() != self.contract
+        binding = self.native_binding
+        if (self.product.lower() != contract_product(self.contract)
+                or binding is not None and (binding.canonical, binding.native, binding.exchange) != (
+                    self.contract, self.native_symbol, self.exchange,
+                )
+                or binding is None and self.native_symbol.upper() != self.contract
                 or not self.multiplier or not self.tick or not 0 < self.margin_rate <= 1):
             raise ValueError('P5_CONTRACT_POLICY_INVALID')
         object.__setattr__(self, 'product', self.product.lower())
@@ -68,6 +73,32 @@ class HostConfig:
         if (not self.market_generation or type(self.fixture_send_enabled) is not bool
                 or type(self.isolated_capacity) is not bool or self.market_age <= timedelta(0)):
             raise ValueError('P5_CONFIG_INVALID')
+
+
+@dataclass(frozen=True, slots=True)
+class ManagementPermit:
+    """A bounded offline approval for reducing an existing contract obligation."""
+
+    reference: str
+    revision: str
+    product: str
+    exchange: str
+    contract: str
+    trading_day: date
+    session: tuple[datetime, datetime]
+    approved_at: datetime
+    expires_at: datetime
+    maximum_close_lots: int
+
+    def __post_init__(self):
+        identity(self.exchange, self.contract)
+        lots(self.maximum_close_lots, minimum=1)
+        start, end = map(aware, self.session)
+        if (not self.reference or not self.revision or self.product.lower() != contract_product(self.contract)
+                or type(self.trading_day) is not date or not start <= aware(self.approved_at) <
+                aware(self.expires_at) <= end):
+            raise ValueError('P5_MANAGEMENT_PERMIT_INVALID')
+        object.__setattr__(self, 'product', self.product.lower())
 
 
 def timestamp(value):

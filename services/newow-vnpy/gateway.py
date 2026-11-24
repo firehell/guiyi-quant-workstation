@@ -8,6 +8,8 @@ from enum import StrEnum
 import re
 from threading import Lock
 
+from app.market_data.domain import normalize_contract_for_symbol
+
 SECTIONS = frozenset({'account', 'positions', 'orders', 'fills'})
 EXCHANGES = frozenset({'SHFE', 'INE', 'DCE', 'CZCE', 'CFFEX', 'GFEX'})
 
@@ -24,9 +26,16 @@ def money(value: Decimal, *, nonnegative: bool = True) -> None:
 
 
 def identity(exchange: str, contract: str) -> str:
-    if exchange not in EXCHANGES or not re.fullmatch(r'[A-Z][A-Z0-9]{1,15}', contract):
+    if exchange not in EXCHANGES or normalize_contract_for_symbol(contract_product(contract), contract) != contract:
         raise ValueError('P5_CONTRACT_INVALID')
     return f'{exchange}:{contract}'
+
+
+def contract_product(contract: str) -> str:
+    matched = re.fullmatch(r'([A-Z]+)[0-9]{3,4}', contract)
+    if matched is None:
+        raise ValueError('P5_CONTRACT_INVALID')
+    return matched[1].lower()
 
 
 def lots(value: int, *, minimum: int = 0) -> None:
@@ -122,7 +131,7 @@ class Position:
         for value in (self.quantity, self.today, self.frozen):
             lots(value)
         if (self.today > self.quantity or self.frozen > self.quantity
-                or not re.fullmatch(r'[A-Za-z]+', self.product) or not self.contract.startswith(self.product.upper())
+                or self.product.lower() != contract_product(self.contract)
                 or type(self.valued) is not bool or type(self.long) is not bool):
             raise ValueError('P5_NATIVE_POSITION_INVALID')
         object.__setattr__(self, 'product', self.product.lower())
@@ -158,6 +167,7 @@ class Snapshot:
     positions: tuple[Position, ...] = ()
     orders: tuple[NativeOrder, ...] = ()
     fills: tuple[NativeFill, ...] = ()
+    readback_id: str | None = None
 
     def __post_init__(self):
         aware(self.as_of)
@@ -208,6 +218,9 @@ class FixtureGateway:
     def validate_request(self, intent: dict) -> None:
         identity(intent['exchange'], intent['contract'])
         lots(intent['quantity'], minimum=1)
+
+    def register_contract(self, policy: dict) -> None:
+        identity(policy['exchange'], policy['contract'])
 
     def close_legs(self, position: dict) -> tuple[tuple[str, int], ...]:
         free = position['quantity'] - position['frozen']
@@ -273,18 +286,18 @@ class VeighNaOfflineGateway(FixtureGateway):
             def cancel_order(self, req):
                 intent = boundary._prepared
                 if (not intent or req.orderid != intent.get('native_id')
-                        or req.symbol.upper() != intent['contract'] or req.exchange.value != intent['exchange']):
+                        or req.symbol != intent['native_symbol'] or req.exchange.value != intent['exchange']):
                     raise RuntimeError('P5_UNCLAIMED_CANCEL')
                 FixtureGateway.cancel(boundary, intent)
 
             def on_order(self, order):
-                event, generation, sequence = boundary._normalize(order)
-                self.event_engine.put(Event(event_type, (event, generation, sequence)))
+                self.event_engine.put(Event(event_type, boundary._normalize(order)))
                 super().on_order(order)
 
             def on_trade(self, trade):
-                event, generation, sequence = boundary._normalize(trade)
-                self.event_engine.put(Event(event_type, (event, generation, sequence)))
+                envelope = boundary._normalize(trade)
+                event = envelope[0]
+                self.event_engine.put(Event(event_type, envelope))
                 # OffsetConverter increments on every TradeData. The durable
                 # reducer sees every callback, but OMS gets each fill only once.
                 if event.key not in boundary._oms_trades:
@@ -308,6 +321,7 @@ class VeighNaOfflineGateway(FixtureGateway):
         self._on_error = on_error
         self._system_orders = {}
         self._oms_trades = set()
+        self._contracts = {}
         self._name = 'P5_OFFLINE'
         self.events = EventEngine()
         self.main = MainEngine(self.events)
@@ -317,8 +331,8 @@ class VeighNaOfflineGateway(FixtureGateway):
 
         def receive(event):
             try:
-                native, generation, sequence = event.data
-                on_event(native, generation=generation, sequence=sequence)
+                native, generation, sequence, known_at = event.data
+                on_event(native, generation=generation, sequence=sequence, known_at=known_at)
             except Exception:
                 on_error('P5_CALLBACK_CONFLICT')
 
@@ -327,7 +341,15 @@ class VeighNaOfflineGateway(FixtureGateway):
     def completed(self, envelope, window, **proof):
         return self.template.on_completed(envelope, window, **proof)
 
-    def push_ctp(self, kind: str, fields: dict, *, generation: str, sequence: int) -> None:
+    def register_contract(self, policy: dict) -> None:
+        super().register_contract(policy)
+        scope = (policy['exchange'], policy['native_symbol'].upper())
+        prior = self._contracts.setdefault(scope, policy['contract'])
+        if prior != policy['contract']:
+            raise ValueError('P5_NATIVE_CONTRACT_COLLISION')
+
+    def push_ctp(self, kind: str, fields: dict, *, generation: str, sequence: int,
+                 known_at: datetime) -> None:
         """Inject one raw CTP fixture row with its durable source envelope."""
         api = self.native.td_api
         with self._callback_lock:
@@ -335,11 +357,13 @@ class VeighNaOfflineGateway(FixtureGateway):
                 if kind not in ('order', 'trade') or not api.contract_inited:
                     raise ValueError('P5_CTP_CALLBACK_NOT_READY')
                 lots(sequence, minimum=1)
+                aware(known_at)
                 if not generation or not re.fullmatch(r'[0-9]{8}', fields['TradingDay']):
                     raise ValueError('P5_CTP_CALLBACK_SCOPE_MISSING')
                 day = datetime.strptime(fields['TradingDay'], '%Y%m%d').date()
                 exchange = fields['ExchangeID']
-                identity(exchange, fields['InstrumentID'].upper())
+                if (exchange, fields['InstrumentID'].upper()) not in self._contracts:
+                    raise ValueError('P5_NATIVE_CONTRACT_MISSING')
                 system_id = fields['OrderSysID']
                 system_key = (day, exchange, system_id)
                 native_id = None
@@ -352,7 +376,7 @@ class VeighNaOfflineGateway(FixtureGateway):
                 elif (not system_id.strip() or not self._system_orders.get(system_key)
                         or self._system_orders[system_key] != api.sysid_orderid_map.get(system_id)):
                     raise ValueError('P5_CTP_TRADE_ORDER_UNBOUND')
-                self._callback = (day, exchange, generation, sequence, native_id)
+                self._callback = (day, exchange, generation, sequence, native_id, known_at)
                 if kind == 'order':
                     api.onRtnOrder(fields)
                 else:
@@ -370,7 +394,7 @@ class VeighNaOfflineGateway(FixtureGateway):
 
         if not self._callback:
             raise ValueError('P5_CTP_CALLBACK_SCOPE_MISSING')
-        day, exchange, generation, sequence, native_order_id = self._callback
+        day, exchange, generation, sequence, native_order_id, known_at = self._callback
         offset = row.offset.name
         if (row.exchange.value != exchange or (offset == 'OPEN') != (row.direction.name == 'LONG')
                 or row.volume != int(row.volume) or isinstance(row, OrderData) and row.orderid != native_order_id):
@@ -383,13 +407,13 @@ class VeighNaOfflineGateway(FixtureGateway):
             }[row.status.name]
             if row.traded != int(row.traded):
                 raise ValueError('P5_CTP_CALLBACK_FACT_CONFLICT')
-            result = NativeOrder(exchange, row.symbol.upper(), day, row.orderid, int(row.volume),
+            result = NativeOrder(exchange, self._contracts[(exchange, row.symbol.upper())], day, row.orderid, int(row.volume),
                                  int(row.traded), status, offset)
         else:
-            result = NativeFill(exchange, row.symbol.upper(), day, row.orderid, row.tradeid, int(row.volume),
+            result = NativeFill(exchange, self._contracts[(exchange, row.symbol.upper())], day, row.orderid, row.tradeid, int(row.volume),
                                 Decimal(str(row.price)), row.datetime, offset)
         self._callback = None
-        return result, generation, sequence
+        return result, generation, sequence, known_at
 
     @staticmethod
     def _request_facts(req):
@@ -446,15 +470,24 @@ class VeighNaOfflineGateway(FixtureGateway):
             self._prepared = None
 
     def close_legs(self, position: dict) -> tuple[tuple[str, int], ...]:
+        from vnpy.trader.constant import Direction
+        from vnpy.trader.converter import PositionHolding
+        from vnpy.trader.object import PositionData
+
         safe = super().close_legs(position)
         if not safe or position['exchange'] not in {'SHFE', 'INE'}:
             return safe
         quantity = sum(count for _, count in safe)
         request = self._request(position, offset='CLOSE', price=Decimal(1),
                                 quantity=quantity, reference='p5-close-plan')
-        if self.main.get_converter(self._name) is None:
-            return ()
-        requests = self.main.convert_order_request(request, self._name, False, False)
+        # Plan from the verified absolute snapshot so a cold OMS cache, delayed
+        # position event or cached order cannot supply a fictional close bucket.
+        holding = PositionHolding(self.main.get_contract(request.vt_symbol))
+        holding.update_position(PositionData(
+            gateway_name=self._name, symbol=request.symbol, exchange=request.exchange, direction=Direction.LONG,
+            volume=position['quantity'], frozen=position['frozen'], yd_volume=position['quantity'] - position['today'],
+        ))
+        requests = holding.convert_order_request_shfe(request)
         legs = tuple((req.offset.name, int(req.volume)) for req in requests)
         return legs if dict(legs) == dict(safe) and sum(qty for _, qty in legs) == quantity else ()
 

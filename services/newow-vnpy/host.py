@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timedelta
 from decimal import Decimal
 from threading import RLock
+from uuid import uuid4
 
 from app.market_data.newow.v2_completed import (
     Admission, CompletedStream, MarketWindow, consume_completed, from_observation,
@@ -19,16 +20,18 @@ from guiyi_quant.newow.product_contracts import ActionKind
 
 from gateway import (
     FixtureGateway, NativeFill, NativeOrder, OrderStatus, Quote, Snapshot, VeighNaOfflineGateway,
-    aware, identity, lots,
+    aware, contract_product, identity, lots,
 )
 from recovery import active, invalidate, native_key, open_obligations, reconcile_snapshot, record_fill, record_order
-from risk import ContractPolicy, HostConfig, account_fresh, budget, fresh, timestamp
+from risk import ContractPolicy, HostConfig, ManagementPermit, account_fresh, budget, fresh, timestamp
 from store import TradingStore, digest, wire
 
 
 def initial_state():
-    return dict(revision=None, config_ref=None, market=[], requested_market=[], owners={}, policies={}, streams={}, staged={},
-                intents={}, clears={}, orders={}, fills={}, quotes={}, native=None, generation=None,
+    return dict(revision=None, config_ref=None, market=[], requested_market=[], market_rank={},
+                owners={}, policies={}, streams={}, staged={}, intents={}, clears={}, orders={},
+                order_generations={}, fills={}, quotes={}, native=None, generation=None, readback_id=None,
+                last_callback_at=None,
                 trading_day=None, watermark=0, verified_until=None, status='RECONCILING',
                 reason='P5_STARTUP_READBACK_REQUIRED', native_conflict=False)
 
@@ -60,7 +63,10 @@ class TradingHost:
                 if state['config_ref'] and state['config_ref'] != config_ref:
                     raise ValueError('P5_HOST_CONFIGURATION_CONFLICT')
                 state['config_ref'] = config_ref
+                state['readback_id'] = None
                 invalidate(state, 'P5_STARTUP_READBACK_REQUIRED')
+                for policy in state['policies'].values():
+                    self.gateway.register_contract(policy)
                 for intent in state['intents'].values():
                     if intent['state'] == 'PLANNED':
                         self._expire(journal, intent, 'P5_RESTART_EXPIRED')
@@ -71,6 +77,7 @@ class TradingHost:
                     self._finish_build(state, journal, state['staged'][key], None, 'P5_RESTART_EXPIRED')
                 state['staged'].clear()
                 state['quotes'].clear()
+                state['order_generations'].clear()
         except BaseException:
             self.store.__exit__()
             raise
@@ -96,6 +103,9 @@ class TradingHost:
     @staticmethod
     def _subscriptions(state):
         contracts = {product: set() for product in state['market']}
+        for product, rank in state['market_rank'].items():
+            if product in contracts:
+                contracts[product].add(rank['contract'])
         for product, entry in state['owners'].items():
             if entry['contract']:
                 contracts[product].add(entry['contract'])
@@ -103,6 +113,10 @@ class TradingHost:
         for row in (*native.get('positions', ()), *state['intents'].values()):
             if row['product'] in contracts and row['quantity'] and ('state' not in row or active(row)):
                 contracts[row['product']].add(row['contract'])
+        for order in state['orders'].values():
+            product = contract_product(order['contract'])
+            if product in contracts and not OrderStatus(order['status']).terminal:
+                contracts[product].add(order['contract'])
         subscriptions = {product: sorted(values) for product, values in contracts.items()}
         return {'physical_count': physical_subscription_count(
             Scope(state['revision'] or 'offline-empty', tuple(contracts), ()), subscriptions,
@@ -144,13 +158,15 @@ class TradingHost:
             for product, candidate in deployments.items():
                 if product not in owners:
                     owners[product] = dict(strategy=candidate.strategy, frequency=candidate.frequency,
-                                           deployment=scope.revision, phase='ACTIVE', contract=None, rank_at=None,
-                                           drain_after=None, previous_contracts=[])
+                                           deployment=scope.revision, phase='ACTIVE',
+                                           contract=(state['market_rank'].get(product) or {}).get('contract'),
+                                           drain_after=None)
             for product, owner in owners.items():
                 if (owner['phase'] == 'DRAINING' and owner['drain_after'] is None):
                     owner['drain_after'] = (state.get('native') or {}).get('as_of')
             state.update(revision=scope.revision, market=sorted(market), owners=owners,
                          requested_market=list(scope.market_products))
+            state['market_rank'] = {product: rank for product, rank in state['market_rank'].items() if product in market}
             journal.record('scope', scope.revision, {'owners': owners, 'market': state['market']})
 
     def retire(self, product: str, *, expected_revision: str, new_revision: str, now: datetime):
@@ -168,6 +184,7 @@ class TradingHost:
             del state['owners'][product]
             if product not in state['requested_market']:
                 state['market'].remove(product)
+                state['market_rank'].pop(product, None)
             state['revision'] = new_revision
             journal.record('scope', new_revision, {'owners': state['owners'], 'market': state['market']})
 
@@ -179,15 +196,50 @@ class TradingHost:
             row = wire(policy)
             if state['policies'].get(key, row) != row:
                 raise ValueError('P5_CONTRACT_POLICY_CONFLICT')
+            self.gateway.register_contract(row)
             state['policies'][key] = row
 
-    def begin_readback(self, *, generation: str, trading_day) -> None:
+    def manage_existing(self, permit: ManagementPermit, *, now: datetime) -> None:
+        """Record an explicit, bounded fixture reduction for an old or draining contract."""
+        aware(now)
+        with self.store.transaction() as (state, journal):
+            previous = journal.get('management', permit.reference)
+            if previous:
+                if previous != wire(permit):
+                    raise ValueError('P5_MANAGEMENT_PERMIT_CONFLICT')
+                return
+            owner = state['owners'].get(permit.product)
+            if (not self.config.fixture_send_enabled or not self.config.limits or not owner
+                    or state['revision'] != permit.revision or state['trading_day'] != permit.trading_day.isoformat()
+                    or not permit.approved_at < now <= permit.expires_at
+                    or permit.expires_at - permit.approved_at > self.config.limits.signal_age
+                    or (owner['phase'] != 'DRAINING' and owner['contract'] in {None, permit.contract})
+                    or not self._has_contract_obligation(state, permit.product, permit.contract)
+                    or identity(permit.exchange, permit.contract) not in state['policies']):
+                raise ValueError('P5_MANAGEMENT_PERMIT_INVALID')
+            decision_id = digest([self.store.account, 'management', permit.reference])
+            journal.record('management', permit.reference, wire(permit), at=now)
+            state['clears'][decision_id] = wire({
+                'decision': {
+                    'decision_id': decision_id, 'product': permit.product, 'physical_contract': permit.contract,
+                    'trading_day': permit.trading_day, 'config_revision': owner['deployment'],
+                    'frequency': owner['frequency'], 'strategy': owner['strategy'], 'decision_at': permit.approved_at,
+                    'management_ref': permit.reference,
+                },
+                'product': permit.product, 'session': permit.session, 'expires': permit.expires_at,
+                'maximum_close_lots': permit.maximum_close_lots,
+            })
+        self.advance(now)
+
+    def begin_readback(self, *, generation: str, trading_day) -> str:
+        readback_id = uuid4().hex
         with self.store.transaction() as (state, _journal):
             day = trading_day.isoformat()
             if not generation or state['trading_day'] and day < state['trading_day']:
                 raise ValueError('P5_NATIVE_BINDING_INVALID')
             if generation != state['generation']:
-                state.update(generation=generation, watermark=0, quotes={}, native_conflict=False)
+                state.update(generation=generation, watermark=0, quotes={}, native_conflict=False, order_generations={})
+                state['last_callback_at'] = None
             elif state['trading_day'] and day != state['trading_day']:
                 raise ValueError('P5_NATIVE_BINDING_INVALID')
             if state['trading_day'] and day > state['trading_day']:
@@ -195,17 +247,36 @@ class TradingHost:
                 state['orders'].clear()
                 state['fills'].clear()
             state['trading_day'] = day
+            state['readback_id'] = readback_id
+            state['order_generations'].clear()
             invalidate(state, 'P5_READBACK_REQUIRED')
+        return readback_id
 
     def reconcile(self, snapshot: Snapshot) -> bool:
         try:
             with self.store.transaction() as (state, journal):
                 if (snapshot.alias != self.config.alias or snapshot.generation != state['generation']
                         or snapshot.trading_day.isoformat() != state['trading_day']
+                        or not state['readback_id'] or snapshot.readback_id != state['readback_id']
                         or state['native_conflict']
-                        or state['native'] and snapshot.as_of < timestamp(state['native']['as_of'])):
+                        or state['last_callback_at'] and snapshot.as_of < timestamp(state['last_callback_at'])
+                        or state['native'] and snapshot.as_of < timestamp(state['native']['as_of'])
+                        or state['native'] and snapshot.as_of == timestamp(state['native']['as_of'])
+                        and state['status'] != 'READY'):
                     raise ValueError('P5_READBACK_IDENTITY_CONFLICT')
+                previous = state.get('native')
                 reason = reconcile_snapshot(state, journal, snapshot)
+                if previous and snapshot.as_of == timestamp(previous['as_of']) and previous != state['native']:
+                    raise ValueError('P5_READBACK_IDENTITY_CONFLICT')
+                record = {'native': state['native'], 'verified': not reason}
+                journal.record('readbacks', digest(record), record, at=snapshot.as_of)
+                for intent in state['intents'].values():
+                    if intent.get('restart_expiry_pending'):
+                        del intent['restart_expiry_pending']
+                        journal.record('orders', f"{intent['id']}:restart_no_send",
+                                       self._intent_row(intent), at=snapshot.as_of)
+                for order in snapshot.orders:
+                    state['order_generations'][order.key] = snapshot.generation
                 limits = self.config.limits
                 if reason is None and limits:
                     state.update(status='READY', reason=None,
@@ -221,8 +292,10 @@ class TradingHost:
         with self.store.transaction() as (state, _journal):
             invalidate(state, reason)
 
-    def callback(self, event: NativeOrder | NativeFill, *, generation: str, sequence: int) -> None:
+    def callback(self, event: NativeOrder | NativeFill, *, generation: str, sequence: int,
+                 known_at: datetime) -> None:
         lots(sequence, minimum=1)
+        aware(known_at)
         try:
             with self.store.transaction() as (state, journal):
                 if generation != state['generation'] or event.trading_day.isoformat() != state['trading_day']:
@@ -230,13 +303,21 @@ class TradingHost:
                 key = f'{generation}:{sequence}'
                 if sequence > state['watermark'] + 1:
                     raise ValueError('P5_CALLBACK_GAP')
-                journal.record('callbacks', key, {'type': type(event).__name__, 'event': wire(event)})
+                journal.record('callbacks', key, {'type': type(event).__name__, 'event': wire(event)},
+                               at=known_at)
                 if sequence <= state['watermark']:
                     return
+                if (state['last_callback_at'] and known_at < timestamp(state['last_callback_at'])
+                        or isinstance(event, NativeFill) and event.occurred_at > known_at):
+                    raise ValueError('P5_CALLBACK_TIME_INVALID')
                 state['watermark'] = sequence
+                state['last_callback_at'] = known_at.isoformat()
                 changed = (record_fill(state, journal, event) if isinstance(event, NativeFill)
                            else record_order(state, journal, event))
+                if isinstance(event, NativeOrder):
+                    state['order_generations'][event.key] = generation
                 if changed:
+                    journal.record('native_updates', key, {'verified': False}, at=known_at)
                     invalidate(state, 'P5_NATIVE_UPDATE_READBACK_REQUIRED')
         except ValueError as error:
             with self.store.transaction() as (state, _journal):
@@ -294,7 +375,6 @@ class TradingHost:
                 or payload.available_at > now or payload.source is MarketSource.CANONICAL and raw.observation_eligible
                 or payload.source is MarketSource.OBSERVATION and payload.revision != self.config.market_generation):
             raise ValueError('P5_MARKET_PROOF_CONFLICT')
-        self.advance(now)
         with self.store.transaction() as (state, journal):
             if product not in state['market']:
                 raise ValueError('P5_PRODUCT_NOT_CONFIGURED')
@@ -318,22 +398,24 @@ class TradingHost:
                         state['streams'][stream_key]['market']['blocked'] = True
                         return Admission.CONFLICT
                     return Admission.DUPLICATE
-                raise ValueError('P5_PENDING_MARKET_ENDPOINT')
+                if now < timestamp(stage['deadline']):
+                    raise ValueError('P5_PENDING_MARKET_ENDPOINT')
+                self._seal_due(state, journal, now)
+                stream, core = self._restore_stream(state['streams'].get(stream_key))
             if stream.through and stream.through in window.endpoints:
                 successor = window.next_after(stream.through)
                 if item.bar_end > stream.through and expected != successor:
                     raise ValueError('P5_MARKET_EXPECTED_ENDPOINT_CONFLICT')
             if (payload.source is MarketSource.OBSERVATION and stream.scope
-                    and stream.scope[0] == MarketSource.CANONICAL):
+                    and stream.scope[0] == MarketSource.CANONICAL and not stream.blocked):
                 stream = CompletedStream()
-            if selected and payload.source is MarketSource.OBSERVATION and owner['contract'] != contract:
-                if contract in owner['previous_contracts'] or (
-                    owner['rank_at'] and item.bar_end <= timestamp(owner['rank_at'])
-                ):
+            rank = state['market_rank'].get(product)
+            if payload.source is MarketSource.OBSERVATION and rank and rank['contract'] != contract:
+                if contract in rank['previous_contracts'] or item.bar_end <= timestamp(rank['bar_end']):
                     raise ValueError('P5_RANK1_REGRESSION')
             limits = self.config.limits
             is_fresh = fresh(now, payload.available_at, self.config.market_age)
-            context = self._context(state, item, owner if selected else None, revision)
+            context = self._context(journal, item, owner if selected else None, revision)
             market, decision_state, admission, decisions = consume_completed(
                 stream, core, item, context, expected=expected,
                 fresh=is_fresh if payload.source is MarketSource.OBSERVATION else None,
@@ -346,10 +428,16 @@ class TradingHost:
                 journal.record('input_diagnostics', digest([input_key, item.fingerprint, admission]),
                                {'market_key': payload.market_key(), 'status': admission, 'fingerprint': item.fingerprint})
                 return admission
-            if selected and payload.source is MarketSource.OBSERVATION:
-                if owner['contract'] and owner['contract'] != contract:
-                    owner['previous_contracts'].append(owner['contract'])
-                owner.update(contract=contract, rank_at=item.bar_end.isoformat())
+            if payload.source is MarketSource.OBSERVATION:
+                previous = rank['previous_contracts'] if rank else []
+                if rank and rank['contract'] != contract:
+                    previous = [*previous, rank['contract']]
+                if not rank or item.bar_end >= timestamp(rank['bar_end']):
+                    state['market_rank'][product] = {
+                        'contract': contract, 'bar_end': item.bar_end.isoformat(), 'previous_contracts': previous,
+                    }
+                if owner:
+                    owner['contract'] = contract
             stage = {'input_key': input_key, 'fingerprint': item.fingerprint, 'stream_key': stream_key,
                      'checkpoint': checkpoint, 'decisions': wire(decisions), 'session': wire(payload.session),
                      'received_at': now.isoformat()}
@@ -397,14 +485,15 @@ class TradingHost:
             raw['scope'] = (MarketSource(first), *rest)
         return CompletedStream(**raw), decode_decision_checkpoint(entry['core'])
 
-    def _context(self, state, item, owner, revision):
-        native = state['native']
+    def _context(self, journal, item, owner, revision):
+        at = item.payload.available_at
+        prefix = journal.account_prefix(at) if owner else None
+        native = prefix['native'] if prefix and prefix['verified'] else None
         product = item.payload.bar.bar.product
-        unsettled = {i['contract'] for i in state['intents'].values() if active(i) and i['product'] == product}
+        unsettled = {i['contract'] for i in journal.intent_prefix(product, at) if active(i)} if owner else set()
         values = {}
         limits = self.config.limits
-        at = item.payload.available_at
-        if (native and limits and state['status'] == 'READY'
+        if (native and limits
                 and native['trading_day'] == item.trading_day.isoformat()
                 and fresh(at, timestamp(native['as_of']), limits.account_age)):
             positions = [p for p in native['positions'] if p['product'] == product and p['quantity']]
@@ -458,6 +547,9 @@ class TradingHost:
         if len(policies) != 1:
             return None
         policy = policies[0]
+        binding = policy['native_binding']
+        if binding and not timestamp(binding['at']) <= now <= timestamp(binding['valid_until']):
+            return None
         quote = state['quotes'].get(identity(policy['exchange'], policy['contract']))
         if not quote or not fresh(now, timestamp(quote['as_of']), limits.quote_age):
             return None
@@ -489,13 +581,15 @@ class TradingHost:
             'expires': expires, 'created_at': now,
         })
         state['intents'][key] = intent
-        journal.record('orders', f'{key}:planned', self._intent_row(intent))
+        journal.record('orders', f'{key}:planned', self._intent_row(intent), at=now)
         return key
 
     @staticmethod
-    def _expire(journal, intent, reason):
+    def _expire(journal, intent, reason, *, at=None):
         intent.update(state='EXPIRED', reserved='0', reason=reason)
-        journal.record('orders', f"{intent['id']}:expired", {'kind': 'order_intent', **intent})
+        if at is None:
+            intent['restart_expiry_pending'] = True
+        journal.record('orders', f"{intent['id']}:expired", {'kind': 'order_intent', **intent}, at=at)
 
     def _adjudicate(self, state, journal, stage, now):
         decision = stage['decision']
@@ -532,27 +626,48 @@ class TradingHost:
         if now > timestamp(clear['expires']):
             journal.record('clear_outcomes', decision['decision_id'], {'reason': 'P5_CLEAR_EXPIRED'})
             return True
-        product, contract = decision['product'], decision['physical_contract']
+        product = decision['product']
         if any(i['product'] == product and active(i) for i in state['intents'].values()):
             return False
         facts = self._execution_facts(state, decision, clear['session'], now, opening=False)
         if not facts or not self.config.fixture_send_enabled:
             return False
         policy, price = facts
-        positions = [p for p in state['native']['positions'] if p['contract'] == contract and p['product'] == product
-                     and p['long'] and p['exchange'] == policy['exchange'] and p['quantity']]
-        if not positions:
+        position = self._long_position(state, policy)
+        if not position:
             journal.record('clear_outcomes', decision['decision_id'], {'reason': 'P5_ALREADY_FLAT'})
             return True
-        legs = self.gateway.close_legs(positions[0] | policy)
+        legs = self.gateway.close_legs(position | policy)
         if not legs:
             return False
-        keys = [self._make_intent(
-            state, journal, decision, policy, offset=offset, quantity=quantity, price=price, unit=Decimal(0),
-            session=clear['session'], now=now, expires=timestamp(clear['expires']),
-        ) for offset, quantity in legs]
+        remaining = clear.get('maximum_close_lots', position['quantity'])
+        keys = []
+        for offset, quantity in legs:
+            quantity = min(remaining, quantity)
+            if not quantity:
+                break
+            keys.append(self._make_intent(
+                state, journal, decision, policy, offset=offset, quantity=quantity, price=price, unit=Decimal(0),
+                session=clear['session'], now=now, expires=timestamp(clear['expires']),
+            ))
+            remaining -= quantity
         journal.record('clear_outcomes', decision['decision_id'], {'intents': keys})
         return True
+
+    @staticmethod
+    def _long_position(state, policy):
+        return next((p for p in state['native']['positions'] if p['long'] and p['quantity']
+                     and all(p[key] == policy[key] for key in ('product', 'contract', 'exchange'))), None)
+
+    def _seal_due(self, state, journal, now):
+        due = [entry for entry in state['staged'].values() if now >= timestamp(entry['deadline'])]
+        due.sort(key=lambda entry: (
+            timestamp(entry['deadline']), entry['exchange'], entry['decision']['product'],
+            entry['decision']['config_revision'],
+        ))
+        for entry in due:
+            self._adjudicate(state, journal, entry, now)
+            del state['staged'][entry['input_key']]
 
     def advance(self, now: datetime) -> None:
         """Seal due opening batches, act on earlier CLEARs, then drain committed intents."""
@@ -562,14 +677,7 @@ class TradingHost:
                 for key, clear in list(state['clears'].items()):
                     if self._plan_clear(state, journal, clear, now):
                         del state['clears'][key]
-                due = [entry for entry in state['staged'].values() if now >= timestamp(entry['deadline'])]
-                due.sort(key=lambda entry: (
-                    timestamp(entry['deadline']), entry['exchange'], entry['decision']['product'],
-                    entry['decision']['config_revision'],
-                ))
-                for entry in due:
-                    self._adjudicate(state, journal, entry, now)
-                    del state['staged'][entry['input_key']]
+                self._seal_due(state, journal, now)
                 keys = [i['id'] for i in state['intents'].values() if i['state'] == 'PLANNED']
                 cancellations = self._cancel_targets(state, now)
             for key in cancellations:
@@ -588,22 +696,28 @@ class TradingHost:
             facts = self._execution_facts(state, intent['decision'], intent['session'], now, opening=opening)
             if (not facts or now > timestamp(intent['expires']) or not self.config.fixture_send_enabled
                     or facts[1] != Decimal(intent['price'])):
-                self._expire(journal, intent, 'P5_DISPATCH_PRECONDITION_CHANGED')
+                self._expire(journal, intent, 'P5_DISPATCH_PRECONDITION_CHANGED', at=now)
                 return
             if opening:
                 funds = budget(state, self.config.limits)
                 if (funds['buying_power'] < 0 or funds['daily_loss'] >= self.config.limits.daily_loss_cap
                         or any(p['product'] == intent['product'] and p['quantity']
                                for p in state['native']['positions'])):
-                    self._expire(journal, intent, 'P5_DISPATCH_BUDGET_CHANGED')
+                    self._expire(journal, intent, 'P5_DISPATCH_BUDGET_CHANGED', at=now)
+                    return
+            else:
+                position = self._long_position(state, facts[0])
+                possible = dict(self.gateway.close_legs(position | facts[0])) if position else {}
+                if possible.get(intent['offset'], 0) < intent['quantity']:
+                    self._expire(journal, intent, 'P5_CLOSE_QUANTITY_CHANGED', at=now)
                     return
             try:
                 self.gateway.validate_request(intent)
             except (ValueError, RuntimeError):
-                self._expire(journal, intent, 'P5_NATIVE_REQUEST_INVALID')
+                self._expire(journal, intent, 'P5_NATIVE_REQUEST_INVALID', at=now)
                 return
             intent.update(state='CLAIMED', claimed_at=now.isoformat())
-            journal.record('orders', f'{key}:claimed', self._intent_row(intent))
+            journal.record('orders', f'{key}:claimed', self._intent_row(intent), at=now)
             request = intent.copy()
         try:
             native_id = self.gateway.send(request)
@@ -618,7 +732,7 @@ class TradingHost:
                 native_id = None
             intent.update(state='SUBMITTED' if native_id else 'UNKNOWN', native_id=native_id,
                           submit_observed_at=now.isoformat())
-            journal.record('orders', f'{key}:submit_outcome', self._intent_row(intent))
+            journal.record('orders', f'{key}:submit_outcome', self._intent_row(intent), at=now)
             if not native_id:
                 invalidate(state, 'P5_SUBMIT_UNKNOWN')
 
@@ -639,6 +753,7 @@ class TradingHost:
         key = native_key(intent, intent.get('native_id'))
         order = state['orders'].get(key)
         return bool(order and intent['trading_day'] == state['trading_day']
+                    and state['order_generations'].get(key) == state['generation']
                     and OrderStatus(order['status']) in {OrderStatus.ACTIVE, OrderStatus.PARTIAL})
 
     def _cancel(self, key, now):
@@ -647,7 +762,7 @@ class TradingHost:
             if key not in self._cancel_targets(state, now):
                 return
             intent.update(state='CANCEL_CLAIMED', cancel_claimed_at=now.isoformat())
-            journal.record('orders', f'{key}:cancel_claimed', self._intent_row(intent))
+            journal.record('orders', f'{key}:cancel_claimed', self._intent_row(intent), at=now)
             request = intent.copy()
         try:
             self.gateway.cancel(request)
@@ -656,5 +771,5 @@ class TradingHost:
         with self.store.transaction() as (state, journal):
             intent = state['intents'][key]
             intent['state'] = 'CANCEL_UNKNOWN'
-            journal.record('orders', f'{key}:cancel_outcome', self._intent_row(intent))
+            journal.record('orders', f'{key}:cancel_outcome', self._intent_row(intent), at=now)
             invalidate(state, 'P5_CANCEL_READBACK_REQUIRED')

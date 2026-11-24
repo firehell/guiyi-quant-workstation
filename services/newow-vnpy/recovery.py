@@ -135,7 +135,8 @@ def reconcile_snapshot(state, journal, snapshot: Snapshot):
         order = orders.get(native_key(intent, intent['native_id']))
         if order and order.status.terminal:
             intent.update(state='TERMINAL', reserved='0', close_outcome=order.status)
-            journal.record('orders', f"{intent['id']}:terminal", {'kind': 'intent_terminal', **intent})
+            journal.record('orders', f"{intent['id']}:terminal", {'kind': 'intent_terminal', **intent},
+                           at=snapshot.as_of)
         elif order and intent['state'] in {'SUBMITTED', 'NATIVE_ACTIVE'}:
             intent.update(state='NATIVE_ACTIVE', native_filled=order.filled)
 
@@ -151,7 +152,7 @@ def reconcile_snapshot(state, journal, snapshot: Snapshot):
     record.pop('orders')
     record.pop('fills')
     record.pop('sections')
-    journal.record('readbacks', digest(record), record)
+    record.pop('readback_id')
     state['native'] = record
     if any((not p.long or not p.valued or p.product not in state['owners']) and p.quantity for p in positions.values()):
         return 'P5_POSITION_RISK_UNVERIFIED'
