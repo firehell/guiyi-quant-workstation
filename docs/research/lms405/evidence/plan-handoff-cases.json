@@ -1,0 +1,17 @@
+{
+  "review_at": "2026-11-25T02:40:00+08:00",
+  "cases": [
+    {"id":"oi-retain-hedge", "contract":"OI2609", "sources":["F09","S5306128623993006"], "version_405":true, "route":"COUNTER_M_FROM_LOCK", "original_side":"LONG", "m_config_at_review":true, "gap":"作者说转为空向抓M；缺同账户双腿、具体触发和开平回报。"},
+    {"id":"oi-clear-then-m", "contract":"OI2609", "sources":["F09","S5306128623993006"], "version_405":true, "route":"COUNTER_M_AFTER_CLEAR", "original_side":"LONG", "m_config_at_review":true, "gap":"反向空向确定；备选动作链的空仓前像和独立新空开仓均未确认。"},
+    {"id":"ru-resume-long", "contract":"RU2609", "sources":["F07","A5330414436221055"], "version_405":true, "route":"RESUME_ORIGINAL", "original_side":"LONG", "gap":"作者将转强列为恢复条件；转强、实际信号与两腿不齐。"},
+    {"id":"jm-separate-long-m", "contract":"JM2601", "sources":["M01","O02"], "version_405":true, "route":"COUNTER_M_FROM_LOCK", "original_side":"SHORT", "m_config_at_review":true, "gap":"多22图未列空；账户连续性、平原空或者另开仓、两低一高与共振时间均未确认。"},
+    {"id":"jm-extreme-m", "contract":"JM2701", "sources":["WRo0OCbeQG","A5356884629782554"], "version_405":true, "route":"COUNTER_M_FROM_LOCK", "original_side":"SHORT", "m_config_at_review":true, "gap":"事后叙述确认短线试错；锁定前像、作者信号及实际动作时刻未知。"},
+    {"id":"fg-reentry-after-take-profit", "contract":"FG2701", "sources":["E52"], "version_405":true, "route":"REENTER_ORIGINAL", "original_side":"SHORT", "gap":"正文称止盈后夜盘看回补；止盈是否全清、后续回补与计划身份均未确认。"},
+    {"id":"sa-discontinuous-legs", "contract":"SA2701", "sources":["WRnTlEfj1t","WRnY5bznUE","WRo2KQ43iX"], "version_405":true, "gap":"两次空腿字段不同，中间缺行，随后只见新多；无法确定原方向或选择解锁、反向短线、重开中的路径。"},
+    {"id":"v-reentry-after-reported-take-profit", "contract":"V2701", "sources":["WRot6yvHyS","A5358325549629506"], "version_405":true, "route":"REENTER_ORIGINAL", "original_side":"LONG", "gap":"右侧、左侧和反向计划均被列举；止盈范围及后续新旧计划与软件回报的绑定未知。"},
+    {"id":"ta-plan-paused", "contract":"TA2701", "sources":["WRo2KQ43iX","A5357264793370945"], "version_405":true, "gap":"文章没有新区域，仍见当日多持仓。前像、旧区域仍有效与否、是否退出过均未知。"},
+    {"id":"sh-resume-short", "contract":"SH2701", "sources":["WRoCCdf0i5","WRozPmaK10","U03"], "version_405":true, "route":"RESUME_ORIGINAL", "original_side":"SHORT", "gap":"风险可控可恢复原空；缺同账户连续性与实际信号和许可。"},
+    {"id":"sh-continuous-m-config-counterexample", "contract":"SH2509", "sources":["F03"], "version_405":true, "route":"COUNTER_M_FROM_LOCK", "original_side":"SHORT", "m_config_at_review":false, "gap":"仅该日该环境下的连续抓M不在系统配置中；原空为单位情景假设。"},
+    {"id":"i-resume-short", "contract":"I2701", "sources":["WRoEvasxQR","U03"], "version_405":true, "route":"RESUME_ORIGINAL", "original_side":"SHORT", "gap":"原空腿开均和显示数量相同；多腿退出、账户连续性、计划和信号均未确认。"}
+  ]
+}
