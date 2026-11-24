@@ -22,9 +22,9 @@ def callbacks():
     return capture_gateway_callbacks()
 
 
-def test_requires_isolated_home_before_import(monkeypatch, tmp_path):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    with pytest.raises(RuntimeError, match="private temporary HOME"):
+def test_requires_isolated_working_directory_before_import(monkeypatch, tmp_path):
+    monkeypatch.setenv("GUIYI_VNPY_PROBE_DIR", str(tmp_path))
+    with pytest.raises(RuntimeError, match="private temporary working directory"):
         require_offline()
 
 

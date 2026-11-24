@@ -13,10 +13,13 @@ Use a fresh private directory for every offline run after installation:
     service_dir="$PWD"
     run_dir="$(mktemp -d /private/tmp/guiyi-vnpy-smoke.XXXXXXXX)"
     mkdir -m 700 "$run_dir/.vntrader"
+    legacy_vntrader=~/.vntrader
     (
         cd "$run_dir" &&
-        /usr/bin/env -i PATH=/usr/bin:/bin HOME="$run_dir" TMPDIR=/private/tmp \
-            /usr/bin/sandbox-exec -p '(version 1) (allow default) (deny network*)' \
+        /usr/bin/env -i PATH=/usr/bin:/bin GUIYI_VNPY_PROBE_DIR="$run_dir" \
+            /usr/bin/sandbox-exec -D "GUIYI_LEGACY_VNTRADER=$legacy_vntrader" \
+            -p '(version 1) (allow default) (deny network*)
+                (deny file-read* file-write* (subpath (param "GUIYI_LEGACY_VNTRADER")))' \
             "$service_dir/.venv/bin/python" -I -B "$service_dir/gateway_smoke.py"
     )
 
@@ -36,15 +39,30 @@ from pathlib import Path
 import platform
 import socket
 import stat
+import sys
 from threading import Event as ThreadEvent
 
 
 def require_offline() -> None:
     """Reject non-isolated paths and require denied IPv4 loopback binding."""
+    runtime = (
+        platform.system(),
+        platform.machine(),
+        platform.python_implementation(),
+        platform.python_version(),
+    )
+    if runtime != ("Darwin", "arm64", "CPython", "3.13.3"):
+        raise RuntimeError("This probe requires macOS arm64 and CPython 3.13.3")
+
     run_dir = Path.cwd()
     config_dir = run_dir / ".vntrader"
-    if Path.home().resolve() != run_dir or Path("/private/tmp") not in run_dir.parents:
-        raise RuntimeError("Use a private temporary HOME as the working directory")
+    expected_dir = Path(os.environ.get("GUIYI_VNPY_PROBE_DIR", ""))
+    if (
+        not expected_dir.is_absolute()
+        or expected_dir.resolve() != run_dir
+        or Path("/private/tmp") not in run_dir.parents
+    ):
+        raise RuntimeError("Use a private temporary working directory set by GUIYI_VNPY_PROBE_DIR")
 
     for path in (run_dir, config_dir):
         try:
@@ -56,7 +74,14 @@ def require_offline() -> None:
             or info.st_uid != os.getuid()
             or stat.S_IMODE(info.st_mode) != 0o700
         ):
-            raise RuntimeError("The temporary HOME and .vntrader must be private directories")
+            raise RuntimeError("The working directory and .vntrader must be private directories")
+
+    utility = sys.modules.get("vnpy.trader.utility")
+    if utility is None:
+        if any(config_dir.iterdir()):
+            raise RuntimeError("Start with an empty private .vntrader directory")
+    elif utility.TEMP_DIR != config_dir:
+        raise RuntimeError("VeighNa already initialized a different .vntrader directory")
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -68,11 +93,19 @@ def require_offline() -> None:
     raise RuntimeError("Use the native macOS deny-network sandbox")
 
 
+def _require_version(package: str, expected: str) -> None:
+    actual = version(package)
+    if actual != expected:
+        raise RuntimeError(f"{package} {expected} required, found {actual}")
+
+
 def import_ctp():
     """Import the real gateway and both compiled extension modules."""
     require_offline()
     from vnpy_ctp import CtpGateway
 
+    _require_version("vnpy", "4.4.0")
+    _require_version("vnpy-ctp", "6.7.11.4")
     modules = tuple(import_module(f"vnpy_ctp.api.{name}") for name in ("vnctpmd", "vnctptd"))
     for module in modules:
         if not isinstance(module.__spec__.loader, ExtensionFileLoader):
@@ -84,6 +117,8 @@ def import_portfolio_strategy():
     require_offline()
     from vnpy_portfoliostrategy import PortfolioStrategyApp
 
+    _require_version("vnpy", "4.4.0")
+    _require_version("vnpy-portfoliostrategy", "1.3.0")
     return PortfolioStrategyApp
 
 
@@ -222,6 +257,13 @@ def capture_gateway_callbacks() -> list[tuple[str, object]]:
         engine.put(Event(barrier))
         if not drained.wait(timeout=5):
             raise RuntimeError("VeighNa EventEngine did not drain the fixture callbacks")
+        observed = [kind for kind, _ in received]
+        expected = [
+            "contract", "tick", "order", "trade", "trade", "trade", "order",
+            "account", "position",
+        ]
+        if observed != expected:
+            raise RuntimeError(f"Unexpected VeighNa fixture event sequence: {observed}")
         return received
     finally:
         try:
