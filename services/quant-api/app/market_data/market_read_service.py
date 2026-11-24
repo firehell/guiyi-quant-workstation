@@ -24,10 +24,11 @@ from app.market_data.domain import (
     SeriesKind,
     SeriesPageQuery,
     normalize_contract_for_symbol,
+    parse_rfc3339_instant,
 )
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.market_data_service import DominantContractSegmentSummary, MarketDataError
-from app.market_data.live_market import LiveBarObservation, LiveRecoveryState
+from app.market_data.live_market import LIVE_FINALIZATION_DELAY, LiveBarObservation, LiveRecoveryState
 from app.market_data.source_quality import NonpositiveCloseFact, PriceUnavailableFact
 from app.market_data.weekly_quality import (
     WEEKLY_SOURCE_CLASSIFICATION_VERSION_V2,
@@ -115,6 +116,13 @@ class LiveReadStore(Protocol):
     def subscriptions(self, trading_day: date) -> Mapping[str, object] | None: ...
 
     def heartbeat(self) -> Mapping[str, object] | None: ...
+
+    def feed_heartbeat(self) -> Mapping[str, Any] | None: ...
+
+    def latest_observation(
+        self, trading_day: date, symbol: str, frequency: BarFrequency, *,
+        until: datetime, expected_contract: str,
+    ) -> LiveBarObservation | None: ...
 
     def bars_after(
         self,
@@ -1129,6 +1137,62 @@ class MarketReadService:
         if window.cutoff > cutoff:
             raise MarketReadWindowError("MARKET_READ_CUTOFF_BAR_MISSING")
         return window
+
+    def chart_progress(self, identity: SeriesPageQuery, now: datetime) -> dict[str, Any]:
+        """Read-only chart diagnosis, independently available when its socket fails."""
+        phase = self._phase_resolver.resolve(identity.symbol, now)
+        day = phase.trading_day
+        result: dict[str, Any] = {"phase": phase.phase.value, "trading_day": day, "status": "unknown"}
+        if (identity.frequency not in INTRADAY_FREQUENCIES
+                or identity.symbol not in self._operational_products):
+            return {**result, "status": "historical", "contract": identity.contract}
+        if phase.phase is MarketPhase.CLOSED:
+            return {**result, "status": "waiting", "contract": identity.contract}
+        if day is None or phase.phase is MarketPhase.UNKNOWN:
+            return result
+        try:
+            contract = self._market_data.dominant_segment_for_day(identity.symbol, day).contract
+            if identity.contract is not None and identity.contract != contract:
+                return {**result, "status": "historical", "contract": identity.contract}
+            result["contract"] = contract
+            expected, _, _ = self._completed_endpoint_for_owner(
+                identity, now - LIVE_FINALIZATION_DELAY, day, contract,
+            )
+            result["expected_end"] = expected
+        except (MarketDataError, ValueError):
+            return result
+
+        try:
+            completed = self._live_store.latest_observation(
+                day, identity.symbol, identity.frequency, until=now, expected_contract=contract,
+            )
+            if completed is not None:
+                if completed.bar.trading_day != day:
+                    return result
+                result["completed_end"] = completed.bar.bar_end
+            feed = self._live_store.feed_heartbeat()
+            source = (feed or {}).get("input_progress")
+            entry = source.get(identity.symbol) if isinstance(source, Mapping) else None
+            if (feed and feed.get("registered_day") == day.isoformat()
+                    and isinstance(entry, Mapping) and entry.get("contract") == contract):
+                end = parse_rfc3339_instant(entry["bar_end"], field="bar_end")
+                received = parse_rfc3339_instant(entry["received_at"], field="received_at")
+                if received <= now:
+                    result.update(source_end=end, source_received_at=received)
+        except Exception:  # Redis or malformed evidence must not masquerade as zero progress.
+            if expected is None or phase.phase is MarketPhase.BREAK:
+                result["status"] = "waiting"
+            return result
+
+        if expected is None or phase.phase is MarketPhase.BREAK:
+            result["status"] = "waiting"
+        elif completed is not None and completed.bar.bar_end >= expected:
+            result["status"] = "confirmed"
+        elif (source_end := result.get("source_end")) is not None:
+            result["status"] = "source" if source_end < expected else "confirmation"
+        elif feed is None:
+            result["status"] = "source"
+        return result
 
     def state(self, identity: SeriesPageQuery, now: datetime) -> MarketReadState:
         """返回统一展示状态；Redis 任意失败降级为 historical-only。"""

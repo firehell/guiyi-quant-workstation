@@ -513,6 +513,13 @@ function renderVolume(value:NewowProductChartModel|null):void {
   const colors = volumeColors(input, pageTheme.value, !pure.value && showBreakoutShapes.value)
   volumeWriter.write(volume,input.map((bar,index)=>({time:detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, value.identity.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})),`${value.identity.product}:${value.identity.frequency}`)
 }
+function reportRenderedEnd(end?: string, contract?: string, frequency?: string) {
+  if (!stageRoot.value) return
+  stageRoot.value.dataset.klineEnd = end ?? ''
+  stageRoot.value.dataset.klineContract = contract ?? ''
+  stageRoot.value.dataset.klineFrequency = frequency ?? ''
+}
+
 function renderModel(value: NewowProductChartModel | null): void {
   processOverlays.value = []
   cycleCountOverlays.value = []
@@ -535,6 +542,8 @@ function renderModel(value: NewowProductChartModel | null): void {
         ? Math.floor(Date.parse(bar.time) / 1000) as import('lightweight-charts').UTCTimestamp
         : chartMarkerTime(bar.time, '1d', bar.trading_day ?? bar.time.slice(0, 10)), open: bar.open, high: bar.high, low: bar.low, close: bar.close }))
       candleWriter.write(candles, points, 'preview')
+      const last = preview.at(-1)
+      reportRenderedEnd(last?.time, last?.physicalContract, props.priceFrequency)
 
       if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, [], 'cleared')
     }
@@ -594,6 +603,8 @@ function renderModel(value: NewowProductChartModel | null): void {
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
   })), priceIdentity)
+  const last = value.bars.at(-1)
+  reportRenderedEnd(last?.barEnd, last?.physicalContract, value.identity.frequency)
   renderVolume(value)
   if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
   const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')

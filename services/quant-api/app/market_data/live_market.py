@@ -21,7 +21,7 @@ from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
 _HEARTBEAT_TTL_SECONDS = 30
-_FINALIZATION_DELAY = timedelta(seconds=2)
+LIVE_FINALIZATION_DELAY = timedelta(seconds=2)
 LIVE_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
 _LIVE_BAR_FRESHNESS = timedelta(minutes=5)
@@ -228,6 +228,10 @@ class RedisLiveStore:
             ex=_HEARTBEAT_TTL_SECONDS,
         ) is not True:
             raise ConnectionError("LIVE_REDIS_UNAVAILABLE")
+
+    def feed_heartbeat(self) -> dict[str, Any] | None:
+        raw = self._redis.get("live:feed:heartbeat")
+        return None if raw is None else _decode_mapping(raw)
 
     def heartbeat(self) -> dict[str, Any] | None:
         raw = self._redis.get("live:heartbeat")
@@ -790,7 +794,7 @@ class LiveMarketService:
         requests = []
         pending_symbols = {
             symbol for (symbol, _), (bar, _, _) in self._pending.items()
-            if bar.bar_end + _FINALIZATION_DELAY <= now
+            if bar.bar_end + LIVE_FINALIZATION_DELAY <= now
         }
         for symbol in self._products:
             # A completed normal observation waiting for its lock is not a gap.
@@ -849,7 +853,7 @@ class LiveMarketService:
             return self._flush_pending(now, phases, pending)
         grouped: dict[str, list[tuple[tuple[str, datetime], tuple[CanonicalBar, SessionWindow, str]]]] = {}
         for item in pending:
-            if now >= item[1][0].bar_end + _FINALIZATION_DELAY:
+            if now >= item[1][0].bar_end + LIVE_FINALIZATION_DELAY:
                 grouped.setdefault(item[0][0], []).append(item)
         finalized: list[CanonicalBar] = []
         for symbol, items in grouped.items():
@@ -873,7 +877,7 @@ class LiveMarketService:
         """One symbol's completed writes and publications share the recovery lock."""
         due: list[tuple[tuple[str, datetime], CanonicalBar, SessionWindow, str]] = []
         for key, (bar, window, frozen_contract) in pending:
-            if now < bar.bar_end + _FINALIZATION_DELAY:
+            if now < bar.bar_end + LIVE_FINALIZATION_DELAY:
                 continue
             symbol, _ = key
             try:
@@ -1325,7 +1329,7 @@ class LiveMarketService:
             window.start + timedelta(minutes=minute)
             for window in windows
             for minute in range(1, int((window.end - window.start).total_seconds() // 60) + 1)
-            if window.start + timedelta(minutes=minute) + _FINALIZATION_DELAY <= now
+            if window.start + timedelta(minutes=minute) + LIVE_FINALIZATION_DELAY <= now
         )
         if not expected:
             item["state"] = "not_due"
@@ -1338,7 +1342,7 @@ class LiveMarketService:
                 min(window.start + timedelta(minutes=minute), window.end)
                 for window in windows
                 for minute in range(width, int((window.end - window.start).total_seconds() // 60) + width, width)
-                if min(window.start + timedelta(minutes=minute), window.end) + _FINALIZATION_DELAY <= now
+                if min(window.start + timedelta(minutes=minute), window.end) + LIVE_FINALIZATION_DELAY <= now
             )
             if due:
                 expected_by_frequency[frequency.value] = max(due).isoformat()

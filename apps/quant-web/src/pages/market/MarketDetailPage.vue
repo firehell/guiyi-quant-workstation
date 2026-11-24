@@ -12,6 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
 import ProductSelector from '@/components/market/ProductSelector.vue'
 import MarketDetailQuoteHeader from '@/components/market/detail/MarketDetailQuoteHeader.vue'
+import MarketChartProgress from '@/components/market/detail/MarketChartProgress.vue'
 import MarketDetailTopBar from '@/components/market/detail/MarketDetailTopBar.vue'
 import MarketDetailUnavailable from '@/components/market/detail/MarketDetailUnavailable.vue'
 import DetailChartToolbar from '@/components/market/detail/DetailChartToolbar.vue'
@@ -332,6 +333,8 @@ onUnmounted(() => chartSession.dispose())
           :data-active-view="routeResult.identity.view"
           :aria-busy="controller.state.value.loading"
         >
+          <MarketChartProgress v-if="!candidatePreview.enabled" :key="identityKey"
+            :identity="routeResult.identity" :historical="!!newowHistoricalAsOf" />
           <p v-if="controller.state.value.loading && routeResult.identity.view !== 'newow'" class="market-detail-page__loading" role="status">正在加载当前图表…</p>
           <MarketDetailUnavailable
             v-else-if="routeResult.identity.view !== 'newow' && (controller.state.value.error || !header)"

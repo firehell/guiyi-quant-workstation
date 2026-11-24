@@ -45,6 +45,17 @@ class MarketBarsPageResponse(BaseModel):
     resolved_contract_segments: list[ContractSegmentOut]
 
 
+class MarketProgressResponse(BaseModel):
+    phase: str
+    trading_day: date | None
+    contract: str | None = None
+    status: Literal["historical", "waiting", "unknown", "source", "confirmation", "confirmed"]
+    expected_end: datetime | None = None
+    source_end: datetime | None = None
+    source_received_at: datetime | None = None
+    completed_end: datetime | None = None
+
+
 class MarketReadStateResponse(BaseModel):
     symbol: str
     series_kind: str

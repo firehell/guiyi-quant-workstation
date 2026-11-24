@@ -571,6 +571,12 @@ function onClick(param: MouseEventParams<Time>) {
 function renderAllSeries(): void {
   if (!candles || !volume || !chart) return
   candles.setData(barValues(renderedBars))
+  const last = renderedBars.at(-1)
+  if (container.value) {
+    container.value.dataset.klineEnd = last?.time ?? ''
+    container.value.dataset.klineContract = last?.physicalContract ?? ''
+    container.value.dataset.klineFrequency = props.period
+  }
   volume.setData(volumeValues(renderedBars))
   renderDerivedSeries()
 }

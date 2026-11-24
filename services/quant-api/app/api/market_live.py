@@ -39,7 +39,7 @@ from app.market_data.market_read_service import (
 )
 from app.market_data.operational_universe import load_operational_products
 from app.redis_connections import get_async_redis_connection
-from app.schemas.market import MarketReadStateResponse
+from app.schemas.market import MarketProgressResponse, MarketReadStateResponse
 from app.schemas.market_home_live import (
     MarketHomeLiveItemResponse,
     MarketHomeLiveQuoteFrame,
@@ -73,6 +73,22 @@ def market_state(
     except ContractError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "facts": dict(exc.facts)}) from exc
     return _state_response(state)
+
+
+@router.get("/chart-progress", response_model=MarketProgressResponse)
+def market_chart_progress(
+    series_kind: str = Query(...),
+    symbol: str = Query(...),
+    frequency: str = Query(...),
+    contract: str | None = Query(default=None),
+    session: Session = Depends(get_db),
+) -> MarketProgressResponse:
+    try:
+        identity = _identity(series_kind, symbol, frequency, contract)
+        progress = build_market_read_service(session).chart_progress(identity, datetime.now(UTC))
+    except ContractError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "facts": dict(exc.facts)}) from exc
+    return MarketProgressResponse(**progress)
 
 
 @router.websocket("/ws")

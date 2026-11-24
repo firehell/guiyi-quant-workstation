@@ -93,3 +93,27 @@ export function getMarketState(params: MarketStateRequest, signal?: AbortSignal)
     },
   })
 }
+
+export interface MarketChartProgress {
+  phase: MarketReadState['phase']
+  trading_day: string | null
+  contract: string | null
+  status: 'historical' | 'waiting' | 'unknown' | 'source' | 'confirmation' | 'confirmed'
+  expected_end: string | null
+  source_end: string | null
+  source_received_at: string | null
+  completed_end: string | null
+}
+
+export function getMarketChartProgress(identity: MarketStateRequest, signal: AbortSignal) {
+  return request.get<never, MarketChartProgress>('/market/chart-progress', {
+    signal,
+    timeout: 5_000,
+    params: {
+      series_kind: identity.seriesKind,
+      symbol: identity.symbol,
+      contract: identity.contract,
+      frequency: identity.frequency,
+    },
+  })
+}

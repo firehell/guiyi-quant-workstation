@@ -2155,3 +2155,60 @@ def test_live_only_suffix_never_substitutes_missing_or_invalid_canonical_authori
         catalog.session.commit()
     with pytest.raises(MarketReadWindowError, match='MARKET_READ_CONTRACT_HISTORY_UNAVAILABLE'):
         fixture.service.current_contract_replay_window(_replay_window(fixture.cutoff.bar_end), after=fixture.canonical[-1].bar_end)
+
+
+@pytest.mark.parametrize(
+    ("phase", "offset", "source", "completed", "status"),
+    [
+        (MarketPhase.TRADING, 1, -1, -15, "confirmed"),
+        (MarketPhase.TRADING, 3, -1, -15, "source"),
+        (MarketPhase.TRADING, 3, 0, -15, "confirmation"),
+        (MarketPhase.TRADING, 3, 0, 0, "confirmed"),
+        (MarketPhase.TRADING, 3, None, -15, "unknown"),
+        (MarketPhase.BREAK, 3, -1, -15, "waiting"),
+        (MarketPhase.CLOSED, 3, -1, -15, "waiting"),
+    ],
+)
+def test_chart_progress_uses_session_and_separates_feed_from_completion(
+    tmp_path, phase, offset, source, completed, status,
+):
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        _add_replay_metadata(session, (DAY_1, DAY_2))
+        session.add(MainContractMap(symbol="rb", trade_date=DAY_2, rank=1, contract_code="RB2610"))
+        session.commit()
+        market_data = MarketDataService(
+            MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path)
+        )
+        now = LIVE_END + timedelta(seconds=offset)
+        feed = {"registered_day": DAY_2.isoformat(), "input_progress": {}}
+        if source is not None:
+            feed["input_progress"]["rb"] = {
+                "contract": "RB2610",
+                "bar_end": (LIVE_END + timedelta(minutes=source)).isoformat(),
+                "received_at": now.isoformat(),
+            }
+
+        def latest(day, symbol, frequency, *, until, expected_contract):
+            assert (day, symbol, frequency, expected_contract) == (DAY_2, "rb", "15m", "RB2610")
+            assert until == now
+            return LiveBarObservation(
+                _bar(LIVE_END + timedelta(minutes=completed), DAY_2), expected_contract,
+            )
+
+        service = MarketReadService(
+            market_data=market_data,
+            phase_resolver=SimpleNamespace(
+                resolve=lambda *_: ProductMarketPhase("rb", phase, DAY_2, None, None),
+            ),
+            operational_products=("rb",),
+            live_store=SimpleNamespace(feed_heartbeat=lambda: feed, latest_observation=latest),
+        )
+        result = service.chart_progress(SeriesPageQuery("actual_dominant", "rb", "15m"), now)
+        assert result["status"] == status
+        if phase is not MarketPhase.CLOSED:
+            assert result["contract"] == "RB2610"
+            assert result["expected_end"] == (HISTORICAL_END_2 if offset == 1 else LIVE_END)
+        daily = service.chart_progress(SeriesPageQuery("actual_dominant", "rb", "1d"), now)
+        assert daily["status"] == "historical"

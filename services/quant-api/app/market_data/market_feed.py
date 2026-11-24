@@ -162,6 +162,7 @@ class MarketFeedService(LiveMarketService):
         self._shutdown_guard_factory = shutdown_guard_factory
         self._input_failure: str | None = None
         self._last_input_received_at: datetime | None = None
+        self._input_progress: dict[str, tuple[date, str, datetime, datetime]] = {}
         self.closed_cleanup_evidence = closed_cleanup_evidence
         self.closed_cleaned_proof = None
         self._closed_restore_day = None
@@ -354,6 +355,11 @@ class MarketFeedService(LiveMarketService):
             'generated_at': now.astimezone(UTC).isoformat(), **runtime_heartbeat_identity(),
             'operational_count': len(self._products), 'subscribed_count': len(self._channels),
             'last_input_received_at': self._last_input_received_at.isoformat() if self._last_input_received_at else None,
+            'input_progress': {
+                symbol: {'contract': contract, 'bar_end': end.isoformat(), 'received_at': received.isoformat()}
+                for symbol, (day, contract, end, received) in self._input_progress.items()
+                if day == registered_day and self._contracts.get(symbol) == contract
+            },
             'phase_by_product': {symbol: phase.phase.value for symbol, phase in phases.items()},
             'available': bool(registered_day is not None and fresh and self._available and self._provider_available and
                 self._input_failure is None and self._metadata_preparation_error is None and
@@ -539,6 +545,9 @@ class MarketFeedService(LiveMarketService):
             raise
 
         self._last_input_received_at = max(self._last_input_received_at or observed_at, observed_at)
+        previous = self._input_progress.get(symbol)
+        if previous is None or previous[:2] != (bar.trading_day, contract) or bar.bar_end > previous[2]:
+            self._input_progress[symbol] = (bar.trading_day, contract, bar.bar_end, observed_at)
         self._pending.pop((symbol, bar.bar_end))
         return None
 
