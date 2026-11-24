@@ -18,7 +18,7 @@ def test_p2_to_real_veighna_callbacks_to_pg(scenario):
     problems = []
     native = VeighNaOfflineGateway(
         on_event=lambda event, **scope: holder['host'].callback(event, **scope),
-        on_error=problems.append,
+        on_error=lambda reason, **_facts: problems.append(reason),
         on_completed=lambda envelope, window, **scope: holder['host'].receive_observation(envelope, window, **scope),
         on_send=lambda _request: '7_13_42',
     )
@@ -46,13 +46,13 @@ def test_p2_to_real_veighna_callbacks_to_pg(scenario):
             drain()
             assert native.template.inited and not native.template.trading
             scenario.prepare_builds(host, ('RB',))
-            seal = scenario.signal_end + timedelta(seconds=4)
+            seal = scenario.signal_end + timedelta(seconds=5)
             host.advance(seal)
             assert [p['request'] for p in native.sends] == [['RB2701', 'SHFE', 'LONG', 'OPEN', '100.0', 1]]
             order = {
                 'InstrumentID': symbol, 'ExchangeID': 'SHFE', 'TradingDay': market_day,
                 'FrontID': 7, 'SessionID': 13, 'OrderRef': '42', 'OrderSysID': ' 000089',
-                'OrderStatus': api.THOST_FTDC_OST_AllTraded, 'InsertDate': market_day, 'InsertTime': '09:50:04',
+                'OrderStatus': api.THOST_FTDC_OST_AllTraded, 'InsertDate': market_day, 'InsertTime': '09:50:05',
                 'OrderPriceType': api.THOST_FTDC_OPT_LimitPrice, 'TimeCondition': api.THOST_FTDC_TC_GFD,
                 'VolumeCondition': api.THOST_FTDC_VC_AV, 'Direction': api.THOST_FTDC_D_Buy,
                 'CombOffsetFlag': api.THOST_FTDC_OFEN_Open, 'LimitPrice': 100, 'VolumeTotalOriginal': 1,
@@ -60,7 +60,7 @@ def test_p2_to_real_veighna_callbacks_to_pg(scenario):
             }
             trade = {
                 'InstrumentID': symbol, 'ExchangeID': 'SHFE', 'TradingDay': market_day,
-                'OrderSysID': ' 000089', 'TradeID': '000101', 'TradeDate': market_day, 'TradeTime': '09:50:05',
+                'OrderSysID': ' 000089', 'TradeID': '000101', 'TradeDate': market_day, 'TradeTime': '09:50:06',
                 'Direction': api.THOST_FTDC_D_Buy, 'OffsetFlag': api.THOST_FTDC_OFEN_Open,
                 'Price': 100, 'Volume': 1,
             }
@@ -100,7 +100,7 @@ def test_verified_prior_position_closes_in_a_cold_native_engine(scenario):
     from risk import ManagementPermit
 
     symbol = 'rb2701'
-    native = VeighNaOfflineGateway(on_event=lambda *args, **kwargs: None, on_error=lambda _reason: None,
+    native = VeighNaOfflineGateway(on_event=lambda *args, **kwargs: None, on_error=lambda _reason, **_facts: None,
                                   on_completed=lambda *args, **kwargs: None)
     scenario.gateway = native
     try:
@@ -117,7 +117,7 @@ def test_verified_prior_position_closes_in_a_cold_native_engine(scenario):
             host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
             host.register_policy(scenario.policy('RB'))
             host.activate(scenario.scope((), revision='r2'), expected_revision='r1', supported=('RB',))
-            assert host.reconcile(scenario.snapshot(positions=(Position('SHFE', 'RB2701', 'RB', 1, 0, 0),)))
+            assert host.reconcile(scenario.snapshot(positions=(Position('SHFE', 'RB2701', 'RB', 11, 0, 0),)))
             assert native.main.get_all_positions() == []
             at = scenario.signal_end
             scenario.quoted(host, 'RB')

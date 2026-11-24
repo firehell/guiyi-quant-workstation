@@ -8,7 +8,8 @@ from host import TradingHost
 def test_ready_host_requires_complete_native_readback(scenario):
     with TradingHost(scenario.database, scenario.config, scenario.gateway) as host:
         assert host.status()['status'] == 'RECONCILING'
-        scenario.readback_id = host.begin_readback(generation=scenario.generation, trading_day=scenario.day)
+        scenario.readback_id = host.begin_readback(generation=scenario.generation, trading_day=scenario.day,
+                                                        started_at=scenario.start)
         assert not host.reconcile(scenario.snapshot(sections=('account', 'positions', 'orders')))
         assert host.status()['status'] == 'RECONCILING'
         assert host.reconcile(scenario.snapshot())
@@ -21,7 +22,7 @@ def test_batch_winner_survives_reverse_arrival(scenario):
         with scenario.host(reset=True) as host:
             scenario.prepare_builds(host, products)
             assert len(scenario.gateway.sends) == 0
-            host.advance(scenario.signal_end + timedelta(seconds=4))
+            host.advance(scenario.signal_end + timedelta(seconds=5))
             assert len(scenario.gateway.sends) == 1
             outcome.append(scenario.gateway.sends[0]['product'])
     assert outcome == ['hc', 'hc']
@@ -90,7 +91,7 @@ def test_missing_execution_facts_do_not_create_risk(scenario, missing):
         scenario.warm(host, scenario.market('HC'))
         scenario.quoted(host, 'HC')
         scenario.live(host, 'HC')
-        host.advance(scenario.signal_end + timedelta(seconds=4))
+        host.advance(scenario.signal_end + timedelta(seconds=5))
         assert host.store.projection('orders')['data'] == []
         assert scenario.gateway.sends == []
 
@@ -99,7 +100,7 @@ def test_duplicate_build_staged_then_committed_has_exactly_one_submission(scenar
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',))
         assert scenario.live(host, 'RB') == 'DUPLICATE'
-        end = scenario.signal_end + timedelta(seconds=4)
+        end = scenario.signal_end + timedelta(seconds=5)
         host.advance(end)
         assert scenario.live(host, 'RB') == 'DUPLICATE'
         host.advance(end)
@@ -112,7 +113,7 @@ def test_conflicting_duplicate_quarantines_staged_input(scenario):
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',))
         assert scenario.live(host, 'RB', price='101') == 'CONFLICT'
-        host.advance(scenario.signal_end + timedelta(seconds=4))
+        host.advance(scenario.signal_end + timedelta(seconds=5))
         assert not scenario.gateway.sends
         assert scenario.live(host, 'RB', end=scenario.signal_end + timedelta(minutes=5)) == 'BLOCKED'
 
@@ -123,7 +124,7 @@ def test_read_only_host_records_decisions_without_intents(scenario):
     scenario.config = replace(scenario.config, fixture_send_enabled=False)
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',))
-        host.advance(scenario.signal_end + timedelta(seconds=4))
+        host.advance(scenario.signal_end + timedelta(seconds=5))
         assert not scenario.gateway.sends
         decisions = host.store.projection('decisions')['data']
         assert any(d['execution_reason'] == 'P5_OBSERVATION_ONLY' for d in decisions)
@@ -182,12 +183,15 @@ def test_mutable_sources_and_uncompleted_bars_have_no_authority(scenario):
         assert not host.store.projection('decisions')['data']
 
 
-def test_conflict_at_batch_deadline_is_known_before_dispatch(scenario):
+@pytest.mark.parametrize('timer_first', (True, False))
+def test_conflict_at_batch_deadline_is_known_before_dispatch(scenario, timer_first):
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',))
         deadline = scenario.signal_end + timedelta(seconds=4)
+        if timer_first:
+            host.advance(deadline)
         assert scenario.live(host, 'RB', price='101', now=deadline) == 'CONFLICT'
-        host.advance(deadline)
+        host.advance(deadline + timedelta(seconds=1))
         assert not scenario.gateway.sends
 
 
@@ -209,7 +213,7 @@ def test_quarantined_canonical_prefix_cannot_handoff_to_observation(scenario):
         assert host.receive_completed(conflict, market, expected=end, now=available) == 'CONFLICT'
         scenario.quoted(host, 'RB')
         assert scenario.live(host, 'RB') == 'BLOCKED'
-        host.advance(scenario.signal_end + timedelta(seconds=4))
+        host.advance(scenario.signal_end + timedelta(seconds=5))
         assert not scenario.gateway.sends
 
 
@@ -241,3 +245,16 @@ def test_exact_contract_product_and_czce_binding(scenario):
     policy = ContractPolicy('SR', 'CZCE', 'SR2701', 'SR701', 1, scenario.D(10),
                             scenario.D(1), scenario.D('0.10'), scenario.D(0), binding)
     assert policy.product == 'sr' and policy.native_symbol == 'SR701'
+
+
+def test_formal_scope_allows_sixteen_but_not_seventeen(scenario):
+    from dataclasses import replace
+    from app.market_data.operational_universe import load_active_products, load_operational_products
+
+    supported = sorted(set(load_active_products()).intersection(load_operational_products()))
+    scenario.config = replace(scenario.config, isolated_capacity=False)
+    with scenario.host() as host:
+        host.activate(scenario.scope(supported[:16]), expected_revision=None)
+        with pytest.raises(ValueError, match='V2_SCOPE_CAPACITY_EXCEEDED'):
+            host.activate(scenario.scope(supported[:17], revision='next'), expected_revision='r1')
+        assert len(host.status()['owners']) == 16

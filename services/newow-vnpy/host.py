@@ -31,7 +31,7 @@ def initial_state():
     return dict(revision=None, config_ref=None, market=[], requested_market=[], market_rank={},
                 owners={}, policies={}, streams={}, staged={}, intents={}, clears={}, orders={},
                 order_generations={}, fills={}, quotes={}, native=None, generation=None, readback_id=None,
-                last_callback_at=None,
+                last_callback_at=None, readback_started_at=None,
                 trading_day=None, watermark=0, verified_until=None, status='RECONCILING',
                 reason='P5_STARTUP_READBACK_REQUIRED', native_conflict=False)
 
@@ -231,11 +231,13 @@ class TradingHost:
             })
         self.advance(now)
 
-    def begin_readback(self, *, generation: str, trading_day) -> str:
+    def begin_readback(self, *, generation: str, trading_day, started_at: datetime) -> str:
+        aware(started_at)
         readback_id = uuid4().hex
-        with self.store.transaction() as (state, _journal):
+        with self.store.transaction() as (state, journal):
             day = trading_day.isoformat()
-            if not generation or state['trading_day'] and day < state['trading_day']:
+            if (not generation or state['trading_day'] and day < state['trading_day']
+                    or state['native'] and started_at < timestamp(state['native']['as_of'])):
                 raise ValueError('P5_NATIVE_BINDING_INVALID')
             if generation != state['generation']:
                 state.update(generation=generation, watermark=0, quotes={}, native_conflict=False, order_generations={})
@@ -248,8 +250,9 @@ class TradingHost:
                 state['fills'].clear()
             state['trading_day'] = day
             state['readback_id'] = readback_id
+            state['readback_started_at'] = started_at.isoformat()
             state['order_generations'].clear()
-            invalidate(state, 'P5_READBACK_REQUIRED')
+            self._invalidate_prefix(state, journal, 'P5_READBACK_REQUIRED', started_at)
         return readback_id
 
     def reconcile(self, snapshot: Snapshot) -> bool:
@@ -259,6 +262,7 @@ class TradingHost:
                         or snapshot.trading_day.isoformat() != state['trading_day']
                         or not state['readback_id'] or snapshot.readback_id != state['readback_id']
                         or state['native_conflict']
+                        or snapshot.as_of < timestamp(state['readback_started_at'])
                         or state['last_callback_at'] and snapshot.as_of < timestamp(state['last_callback_at'])
                         or state['native'] and snapshot.as_of < timestamp(state['native']['as_of'])
                         or state['native'] and snapshot.as_of == timestamp(state['native']['as_of'])
@@ -285,12 +289,22 @@ class TradingHost:
                 invalidate(state, reason or 'P5_RISK_LIMIT_MISSING')
                 return False
         except ValueError as error:
-            self.block(str(error))
+            with self.store.transaction() as (state, journal):
+                at = max((snapshot.as_of, *(timestamp(state[key]) for key in (
+                    'readback_started_at', 'last_callback_at',
+                ) if state[key])))
+                self._invalidate_prefix(state, journal, str(error), at)
             return False
 
-    def block(self, reason: str) -> None:
-        with self.store.transaction() as (state, _journal):
-            invalidate(state, reason)
+    @staticmethod
+    def _invalidate_prefix(state, journal, reason, known_at):
+        invalidate(state, reason)
+        journal.record('native_updates', uuid4().hex, {'verified': False, 'reason': reason}, at=known_at)
+
+    def block(self, reason: str, *, known_at: datetime) -> None:
+        aware(known_at)
+        with self.store.transaction() as (state, journal):
+            self._invalidate_prefix(state, journal, reason, known_at)
 
     def callback(self, event: NativeOrder | NativeFill, *, generation: str, sequence: int,
                  known_at: datetime) -> None:
@@ -320,9 +334,9 @@ class TradingHost:
                     journal.record('native_updates', key, {'verified': False}, at=known_at)
                     invalidate(state, 'P5_NATIVE_UPDATE_READBACK_REQUIRED')
         except ValueError as error:
-            with self.store.transaction() as (state, _journal):
+            with self.store.transaction() as (state, journal):
                 state['native_conflict'] = True
-                invalidate(state, str(error))
+                self._invalidate_prefix(state, journal, str(error), known_at)
 
     def quote(self, quote: Quote) -> None:
         with self.store.transaction() as (state, _journal):
@@ -398,7 +412,7 @@ class TradingHost:
                         state['streams'][stream_key]['market']['blocked'] = True
                         return Admission.CONFLICT
                     return Admission.DUPLICATE
-                if now < timestamp(stage['deadline']):
+                if now <= timestamp(stage['deadline']):
                     raise ValueError('P5_PENDING_MARKET_ENDPOINT')
                 self._seal_due(state, journal, now)
                 stream, core = self._restore_stream(state['streams'].get(stream_key))
@@ -448,13 +462,15 @@ class TradingHost:
                 deadline = item.bar_end + limits.batch_delay if limits else now
                 # A delayed publication can only be acted on with a common, eligible
                 # market cutoff. P5 has no authorization to carry it into a new session.
-                if (owner['phase'] == 'ACTIVE' and now < deadline <= session.end
+                if (owner['phase'] == 'ACTIVE' and now < deadline < session.end
+                        and account_fresh(state, now)
                         and payload.source is MarketSource.OBSERVATION):
                     stage['deadline'] = deadline.isoformat()
                     stage['exchange'] = self._exchange_for_contract(state, product, contract)
                     state['staged'][input_key] = stage
                     return admission
-                self._finish_build(state, journal, stage, None, 'P5_OPENING_WINDOW_CLOSED')
+                reason = 'P5_OPENING_WINDOW_CLOSED' if account_fresh(state, now) else 'P5_RISK_INPUT_UNAVAILABLE'
+                self._finish_build(state, journal, stage, None, reason)
             else:
                 if (decision and decision.main_action is ActionKind.CLEAR and limits
                         and fresh(now, payload.available_at, limits.signal_age)
@@ -660,7 +676,7 @@ class TradingHost:
                      and all(p[key] == policy[key] for key in ('product', 'contract', 'exchange'))), None)
 
     def _seal_due(self, state, journal, now):
-        due = [entry for entry in state['staged'].values() if now >= timestamp(entry['deadline'])]
+        due = [entry for entry in state['staged'].values() if now > timestamp(entry['deadline'])]
         due.sort(key=lambda entry: (
             timestamp(entry['deadline']), entry['exchange'], entry['decision']['product'],
             entry['decision']['config_revision'],
@@ -734,7 +750,7 @@ class TradingHost:
                           submit_observed_at=now.isoformat())
             journal.record('orders', f'{key}:submit_outcome', self._intent_row(intent), at=now)
             if not native_id:
-                invalidate(state, 'P5_SUBMIT_UNKNOWN')
+                self._invalidate_prefix(state, journal, 'P5_SUBMIT_UNKNOWN', now)
 
     def _cancel_targets(self, state, now):
         if not self.config.fixture_send_enabled or state['native_conflict']:
@@ -772,4 +788,4 @@ class TradingHost:
             intent = state['intents'][key]
             intent['state'] = 'CANCEL_UNKNOWN'
             journal.record('orders', f'{key}:cancel_outcome', self._intent_row(intent), at=now)
-            invalidate(state, 'P5_CANCEL_READBACK_REQUIRED')
+            self._invalidate_prefix(state, journal, 'P5_CANCEL_READBACK_REQUIRED', now)

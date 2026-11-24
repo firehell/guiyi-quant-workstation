@@ -330,11 +330,11 @@ class VeighNaOfflineGateway(FixtureGateway):
         self.template.on_init()
 
         def receive(event):
+            native, generation, sequence, known_at = event.data
             try:
-                native, generation, sequence, known_at = event.data
                 on_event(native, generation=generation, sequence=sequence, known_at=known_at)
             except Exception:
-                on_error('P5_CALLBACK_CONFLICT')
+                on_error('P5_CALLBACK_CONFLICT', known_at=known_at)
 
         self.events.register(event_type, receive)
 
@@ -384,7 +384,7 @@ class VeighNaOfflineGateway(FixtureGateway):
                 if self._callback is not None:
                     raise ValueError('P5_CTP_CALLBACK_NOT_EMITTED')
             except (ValueError, TypeError, AttributeError, KeyError):
-                self._on_error('P5_CTP_CALLBACK_UNVERIFIED')
+                self._on_error('P5_CTP_CALLBACK_UNVERIFIED', known_at=known_at)
                 raise ValueError('P5_CTP_CALLBACK_UNVERIFIED') from None
             finally:
                 self._callback = None
@@ -420,7 +420,8 @@ class VeighNaOfflineGateway(FixtureGateway):
         return (req.symbol.upper(), req.exchange.value, req.direction.name, req.offset.name,
                 format(Decimal(str(req.price)), 'f'), int(req.volume))
 
-    def _request(self, position: dict, *, offset: str, price: Decimal, quantity: int, reference: str):
+    def _request(self, position: dict, *, offset: str, price: Decimal, quantity: int, reference: str,
+                 enforce_order_size: bool = True):
         from vnpy.trader.constant import Direction, Exchange, Offset, OrderType
         from vnpy.trader.object import OrderRequest
 
@@ -429,7 +430,9 @@ class VeighNaOfflineGateway(FixtureGateway):
             raise RuntimeError('P5_NATIVE_CONTRACT_MISSING')
         if (Decimal(str(contract.pricetick)) != Decimal(position['tick'])
                 or Decimal(str(contract.size)) != Decimal(position['multiplier'])
-                or contract.max_volume is None or not contract.min_volume <= quantity <= contract.max_volume):
+                or enforce_order_size and (
+                    contract.max_volume is None or not contract.min_volume <= quantity <= contract.max_volume
+                )):
             raise ValueError('P5_NATIVE_CONTRACT_CONFLICT')
         return OrderRequest(
             symbol=contract.symbol, exchange=Exchange(position['exchange']),
@@ -478,8 +481,11 @@ class VeighNaOfflineGateway(FixtureGateway):
         if not safe or position['exchange'] not in {'SHFE', 'INE'}:
             return safe
         quantity = sum(count for _, count in safe)
-        request = self._request(position, offset='CLOSE', price=Decimal(1),
-                                quantity=quantity, reference='p5-close-plan')
+        try:
+            request = self._request(position, offset='CLOSE', price=Decimal(1), quantity=quantity,
+                                    reference='p5-close-plan', enforce_order_size=False)
+        except (ValueError, RuntimeError):
+            return ()
         # Plan from the verified absolute snapshot so a cold OMS cache, delayed
         # position event or cached order cannot supply a fictional close bucket.
         holding = PositionHolding(self.main.get_contract(request.vt_symbol))

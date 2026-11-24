@@ -8,11 +8,11 @@
 
 ## P5 共享账户离线宿主
 
-`TradingHost` 消费 P2 completed 输入。`VeighNaOfflineGateway` 复用 headless `MainEngine`、`EventEngine`、持仓转换器、PortfolioStrategy 模板和 CTP 回调。部署、账户仲裁、领取及审计记录由隔离 PostgreSQL 保存。账户、持仓和成交来自读回与回报；fixture 报撤单只记录请求。所有真实连接和真实报撤单入口均关闭，`auto_order=false`。
+`TradingHost` 消费 P2 completed 输入。`VeighNaOfflineGateway` 复用 headless `MainEngine`、`EventEngine`、持仓转换器、PortfolioStrategy 模板和 CTP 回调。部署、账户仲裁、领取及审计记录由隔离 PostgreSQL 保存。账户、持仓和成交来自读回与回报。fixture 报撤单只记录请求。所有真实连接和真实报撤单入口均关闭，`auto_order=false`。
 
-装配顺序为创建私有目录和网关，启动宿主并绑定账户/交易日/连接代次，对账后用 `activate` 校验范围、为物理合约登记风险参数，再送入 P2 预热和前向事实。`receive_observation` 接收带源代次的 completed journal 原件，`receive_publication` 接收 P2 的日周首次发布证据。调用方提供 Market 已证明的下一端点与时间。调用 `advance` 封闭到期的同端点批次并分派已落盘意图。回报沿单一 EventEngine 队列进入 PG，可随时处理。期末已发布的 D1/W1 仍可产出观察决策，闭市或过期的动作无报单资格。
+装配顺序为创建私有目录和网关，启动宿主并绑定账户/交易日/连接代次，对账后用 `activate` 校验范围、为物理合约登记风险参数，再送入 P2 预热和前向事实。`receive_observation` 接收带源代次的 completed journal 原件，`receive_publication` 接收 P2 的日周首次发布证据。调用方提供 Market 已证明的下一端点与时间。调用 `advance` 在超过截止时刻后封闭同端点批次并分派已落盘意图。同一截止时点仍处理已有输入的冲突。回报沿单一 EventEngine 队列进入 PG，可随时处理。期末已发布的 D1/W1 仍可产出观察决策，闭市或过期的动作无报单资格。
 
-启动和回报变化后，须提供同身份、同代次、同水位的资金、持仓、订单及当日成交四段完成证据。已知原生委托身份可在重启时进行精确对账。缺关联证据的未知提交不重发、预留不释放。持仓退出只进入 DRAINING，释放名额须有更新的空仓及无未决义务读回。共享范围默认使用 P2 的正式 60/16 验证器，70/20 仅隔离容量用例。
+启动和回报变化后，须提供同身份、同代次、同水位的资金、持仓、订单及当日成交四段完成证据。读回绑定本次查询身份，决策按各段事实已知时点读取。已知原生委托身份可在重启时进行精确对账。缺关联证据的未知提交不重发、预留不释放。持仓退出只进入 DRAINING，释放名额须有更新的空仓及无未决义务读回。旧约可用有界 `ManagementPermit` 离线演练撤余单和按可平量减仓。共享范围默认使用 P2 的正式 60/16 验证器，70/20 仅隔离容量用例。
 
 只读 API 可将独立的 `build_newow_trading_router` 绑定到 `TradingStore.projection` 或 `read_projection`。独立应用挂载 `GET /api/v1/newow/trading/{status,account,positions,decisions,orders,fills}`，默认服务入口不挂载。记录按固定查询上限翻页，资金和持仓显示最后一次读回与状态。
 

@@ -9,7 +9,7 @@ from host import TradingHost
 
 @pytest.mark.parametrize('boundary', ('before_commit', 'after_claim', 'after_send'))
 def test_crash_boundaries(scenario, monkeypatch, boundary):
-    end = scenario.signal_end + timedelta(seconds=4)
+    end = scenario.signal_end + timedelta(seconds=5)
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',))
         if boundary == 'before_commit':
@@ -44,7 +44,7 @@ def test_crash_boundaries(scenario, monkeypatch, boundary):
 
 
 def test_restart_requires_exact_order_and_fill_prefix(scenario):
-    end = scenario.signal_end + timedelta(seconds=4)
+    end = scenario.signal_end + timedelta(seconds=5)
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',))
         host.advance(end)
@@ -62,7 +62,7 @@ def test_restart_requires_exact_order_and_fill_prefix(scenario):
 
 def test_unknown_receipt_does_not_match_a_similar_native_order(scenario):
     scenario.gateway.on_send = lambda _: None
-    end = scenario.signal_end + timedelta(seconds=4)
+    end = scenario.signal_end + timedelta(seconds=5)
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',))
         host.advance(end)
@@ -76,7 +76,7 @@ def test_unknown_receipt_does_not_match_a_similar_native_order(scenario):
 
 
 def test_partial_fill_clear_cancels_then_closes_only_native_position(scenario):
-    build = scenario.signal_end + timedelta(seconds=4)
+    build = scenario.signal_end + timedelta(seconds=5)
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',), cash='310', maximum_lots=3)
         host.advance(build)
@@ -96,11 +96,11 @@ def test_partial_fill_clear_cancels_then_closes_only_native_position(scenario):
         terminal = replace(partial, status=OrderStatus.CANCELLED, filled=2)
         late = replace(fill, native_trade_id='trade-2', occurred_at=clear + timedelta(seconds=3))
         host.callback(terminal, generation=scenario.generation, sequence=4, known_at=clear + timedelta(seconds=3))
-        assert not host.reconcile(scenario.snapshot(at=clear + timedelta(seconds=4), through=4,
+        assert not host.reconcile(scenario.snapshot(at=clear + timedelta(seconds=5), through=4,
                                                     positions=(position,), orders=(terminal,), fills=(fill,)))
-        host.advance(clear + timedelta(seconds=4))
+        host.advance(clear + timedelta(seconds=5))
         assert len(scenario.gateway.cancels) == len(scenario.gateway.sends) == 1
-        host.callback(late, generation=scenario.generation, sequence=5, known_at=clear + timedelta(seconds=4))
+        host.callback(late, generation=scenario.generation, sequence=5, known_at=clear + timedelta(seconds=5))
         host.callback(partial, generation=scenario.generation, sequence=6, known_at=clear + timedelta(seconds=5))
         tail = clear + timedelta(seconds=5)
         assert host.reconcile(scenario.snapshot(at=tail, cash='110', margin='200', through=6,
@@ -167,7 +167,7 @@ def test_projection_pages_stay_within_a_snapshot(scenario):
         scenario.prepare_builds(host, ('RB',))
         page = host.store.projection('decisions', limit=2)
         first = {d['sequence'] for d in page['data']}
-        host.advance(scenario.signal_end + timedelta(seconds=4))
+        host.advance(scenario.signal_end + timedelta(seconds=5))
         assert host.store.projection('decisions')['through'] > page['through']
         old = host.store.projection('decisions', after=page['next_after'], through=page['through'])
         assert all(d['sequence'] <= page['through'] and d['sequence'] not in first for d in old['data'])
@@ -176,7 +176,7 @@ def test_projection_pages_stay_within_a_snapshot(scenario):
 def test_clear_during_reconciliation_keeps_existing_open_obligation(scenario):
     with scenario.host() as host:
         scenario.prepare_builds(host, ('RB',), cash='310', maximum_lots=3)
-        build = scenario.signal_end + timedelta(seconds=4)
+        build = scenario.signal_end + timedelta(seconds=5)
         host.advance(build)
         order = NativeOrder('SHFE', 'RB2701', scenario.day, 'fixture-1', 3, 1, OrderStatus.PARTIAL)
         host.callback(order, generation=scenario.generation, sequence=1, known_at=build)
@@ -294,3 +294,26 @@ def test_explicit_old_month_management_never_opens_or_exceeds_permit(scenario):
             ('RB2701', 'CLOSEYESTERDAY', 1),
         ]
         assert scenario.gateway.sends[0]['decision']['management_ref'] == permit.reference
+
+
+@pytest.mark.parametrize('cause', ('disconnect', 'readback'))
+def test_a_build_known_during_unverified_account_cannot_be_retroactively_sent(scenario, cause):
+    with scenario.host() as host:
+        host.activate(scenario.scope(('RB',)), expected_revision=None, supported=('RB',))
+        assert host.reconcile(scenario.snapshot())
+        host.register_policy(scenario.policy('RB'))
+        scenario.warm(host, scenario.market('RB'))
+        scenario.quoted(host, 'RB')
+        if cause == 'disconnect':
+            host.block('P5_DISCONNECTED', known_at=scenario.signal_end)
+        else:
+            scenario.readback_id = host.begin_readback(generation=scenario.generation, trading_day=scenario.day,
+                                                       started_at=scenario.signal_end)
+        # Deliver the signal after the account resumes, but preserve its original availability.
+        again = scenario.signal_end + timedelta(seconds=3)
+        assert host.reconcile(scenario.snapshot(at=again))
+        assert scenario.live(host, 'RB', now=again) == 'ACCEPTED'
+        host.advance(scenario.signal_end + timedelta(seconds=5))
+        decisions = host.store.projection('decisions')['data']
+        assert any(d['main_action'] == 'BUILD' and d['reason'] == 'ACCOUNT_PREFIX_UNVERIFIED' for d in decisions)
+        assert not scenario.gateway.sends

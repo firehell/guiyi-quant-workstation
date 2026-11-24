@@ -44,7 +44,10 @@ def scenario():
             if reset:
                 self.__init__()
             with TradingHost(self.database, self.config, self.gateway) as host:
-                self.readback_id = host.begin_readback(generation=self.generation, trading_day=self.day)
+                previous = host.store.projection('status')['as_of']
+                started_at = datetime.fromisoformat(previous) if previous else self.start
+                self.readback_id = host.begin_readback(generation=self.generation, trading_day=self.day,
+                                                       started_at=started_at)
                 yield host
 
         def snapshot(self, *, at=None, sections=tuple(sorted(SECTIONS)), cash='110', margin='0',

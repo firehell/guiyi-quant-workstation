@@ -95,10 +95,10 @@ P0 只读，无须 PR 或集成，交付后确认干净再清理。后续有代�
 
 ## P5 · 一个仿真账户，先离线证明只会发一次
 
-- [ ] 新宿主分开 Core 适配、gateway 和意图/恢复。校验环境与独占写入，支持只读。缺手数、保证金、日损、新鲜度预算时禁开仓。模拟两个品种同批争用仅够一个的预算，调换到达顺序应选出同一品种。
-- [ ] 一个事务保存去重键、输入水位、决策、唯一意图和预留，提交资格先持久化再发送。模拟落盘前崩溃、领取后崩溃、发送后无确认；同一动作重放至多一个逻辑意图，未知不重发。部分成交后 CLEAR、晚到成交、重复回报、撤余单要逐项对照实际可平数量与剩余预留。
-- [ ] 测带旧月仓位退出、所有者切换、第二 writer 争用、20 个含 DRAINING 再加一个、风险估值缺失。恢复核对账户、持仓、活动单、当日成交和未决意图，读回不完整则维持阻断。
-- [ ] 拟建 `services/newow-vnpy/tests/test_account_recovery.py` 及同目录 `test_owner_and_budget.py`。新宿主 env 运行 `python -m pytest -q tests`；原隔离 env 回归 `python -m pytest -q tests/unit/simnow_execution tests/unit/simnow_supervisor/test_native_portfolio.py services/quant-api/tests/test_subing_model_api.py`。此批不触发任何真实账户操作。
+- [x] `services/newow-vnpy` 接入 P2 completed 输入及 VeighNa 原生事件、请求和开平转换。一个账户写入者，正式规格 60/16，隔离上限 70/20。按交易所、品种、部署排序仲裁同批增仓。缺账户、风险参数或已有仓估值时禁增风险。
+- [x] 隔离 PG 原子保存水位、决策、检查点、意图和预留。以当时已知的账户、成交和失效前缀计算决策。持久化单次领取后才向 fixture 分派。未知不重发，回报按原生身份去重，平仓发送前复核实际可平与今昨仓。
+- [x] 退出进入 DRAINING，保留旧物理合约义务与受限的显式减仓入口。新启动重取资金、持仓、活动单和当日成交的完整读回。Web 后续使用隔离只读 `GET /api/v1/newow/trading/` 投影。
+- [x] 在 M4 锁定环境及一次性 PostgreSQL 16 运行 `python -m pytest -q tests`，51 项通过。原 `simnow_execution`、`test_native_portfolio.py`、`test_subing_model_api.py` 加新 GET 投影共 196 项通过。离线边界、命令和 P6 待验项见 [宿主 README](../../../services/newow-vnpy/README.md)。
 
 ## P6 · M4 容量和现场分项
 
