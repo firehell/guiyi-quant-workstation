@@ -17,7 +17,7 @@ import type {
 
 /** Keep the initial chart readable and cap first-render indicator work. */
 const DEFAULT_PAGE_LIMIT = 300
-const RECONNECT_DELAY_MS = 10_000
+const MAX_RECONNECT_DELAY_MS = 10_000
 const INTRADAY_FREQUENCIES = new Set<MarketFrequency>(['1m', '5m', '15m', '30m', '60m'])
 
 export interface MarketSeriesIdentity {
@@ -199,13 +199,12 @@ function isLater(left: string | null, right: string | null): boolean {
   return left !== null && (right === null || Date.parse(left) > Date.parse(right))
 }
 
-function socketUrl(base: string, identity: MarketSeriesIdentity, after: string | null): string {
+function socketUrl(base: string, identity: MarketSeriesIdentity): string {
   const url = new URL(base, base.includes('://') ? undefined : 'ws://market.local')
   url.searchParams.set('series_kind', identity.seriesKind)
   url.searchParams.set('symbol', identity.symbol)
   url.searchParams.set('frequency', identity.frequency)
   if (identity.seriesKind === 'contract' && identity.contract) url.searchParams.set('contract', identity.contract)
-  if (after) url.searchParams.set('after', after)
   return url.toString()
 }
 
@@ -273,6 +272,8 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   let liveBars: BarData[] = []
   let activeSocket: MarketWebSocket | null = null
   let reconnectHandle: unknown = null
+  let reconnectAttempts = 0
+  let pendingReconnect: (() => void) | null = null
   let canonicalRefreshToken = 0
   let overlayIdentity: MarketOverlayIdentity | null = null
   let loadingBeforePromise: Promise<void> | null = null
@@ -295,6 +296,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   }
 
   function clearSocket(): void {
+    pendingReconnect = null
     if (reconnectHandle !== null) {
       clearReconnect(reconnectHandle)
       reconnectHandle = null
@@ -310,6 +312,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     const requestGeneration = ++generation
     reads.abort(); reads = new AbortController()
     clearSocket()
+    reconnectAttempts = 0
     identity = nextIdentity ? { ...nextIdentity } : null
     canonicalBars = []
     clearOverlay()
@@ -386,10 +389,67 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     return true
   }
 
+  function retryLive(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
+    if (!isCurrentGeneration(requestGeneration, generation)) return
+    liveUnavailable.value = true
+    if (reconnectHandle !== null) return
+    const delay = Math.min(1000 * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS)
+    reconnectAttempts += 1
+    const reconnect = () => {
+      if (pendingReconnect !== reconnect || !isCurrentGeneration(requestGeneration, generation)) return
+      pendingReconnect = null
+      reconnectHandle = null
+      const state = marketState.value
+      if (state && shouldKeepStateSocket(nextIdentity, state)) openSocket(requestGeneration, nextIdentity)
+      else void connectFromState(requestGeneration, nextIdentity)
+    }
+    pendingReconnect = reconnect
+    reconnectHandle = scheduleReconnect(reconnect, delay)
+  }
+
+  async function connectFromState(requestGeneration: number, nextIdentity: MarketSeriesIdentity): Promise<void> {
+    if (candidatePreview.enabled) return
+    try {
+      const state = await fetchState(nextIdentity, reads.signal)
+      if (!isCurrentGeneration(requestGeneration, generation)) return
+      const recovering = liveUnavailable.value
+      marketState.value = state
+      if (recovering && state.canonical_end && isLater(state.canonical_end, latestEnd(canonicalBars))) {
+        const refreshed = await refreshCanonicalEdge(
+          requestGeneration, nextIdentity, ++canonicalRefreshToken, state.canonical_end,
+        )
+        if (!isCurrentGeneration(requestGeneration, generation)) return
+        if (!refreshed) {
+          marketState.value = null
+          retryLive(requestGeneration, nextIdentity)
+          return
+        }
+      }
+      if (shouldKeepStateSocket(nextIdentity, state)) {
+        openSocket(requestGeneration, nextIdentity)
+      } else if (state.operational && INTRADAY_FREQUENCIES.has(nextIdentity.frequency)
+          && !state.live_contract && (state.phase === 'TRADING' || state.phase === 'UNKNOWN')) {
+        retryLive(requestGeneration, nextIdentity)
+      } else {
+        liveUnavailable.value = false
+      }
+    } catch {
+      retryLive(requestGeneration, nextIdentity)
+    }
+  }
+
   function openSocket(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
     if (candidatePreview.enabled) return
     if (!isCurrentGeneration(requestGeneration, generation) || !marketState.value || !shouldKeepStateSocket(nextIdentity, marketState.value)) return
-    const socket = createWebSocket(socketUrl(getWsURL(), nextIdentity, latestEnd(liveBars)))
+    let socket: MarketWebSocket
+    try {
+      // A reconnect may have missed a bar older than the latest one rendered.
+      // The server's day-scoped snapshot starts at the Canonical seam.
+      socket = createWebSocket(socketUrl(getWsURL(), nextIdentity))
+    } catch {
+      retryLive(requestGeneration, nextIdentity)
+      return
+    }
     activeSocket = socket
     socket.onmessage = (event) => {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
@@ -401,8 +461,13 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       }
       if (payload === null) return
       if (payload.type === 'snapshot') {
-        liveUnavailable.value = false
         if (payload.source === 'none') {
+          const state = marketState.value
+          if (state?.live_eligible && !state.live_available && state.phase === 'TRADING') {
+            liveUnavailable.value = true
+            if (overlayIdentity?.tradingDay === state.trading_day
+              && overlayIdentity?.contract === normalizePhysicalContract(state.live_contract)) return
+          }
           clearOverlay()
           publishMerged({ kind: 'replace' })
           return
@@ -434,12 +499,11 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
           tradingDay: payload.trading_day,
           contract: snapshotContract,
         }
-        const accepted = applyLiveBars(payload.bars, snapshotContract)
+        liveUnavailable.value = false
+        reconnectAttempts = 0
+        const accepted = applyLiveBars(payload.bars.filter(bar => bar.trading_day === payload.trading_day), snapshotContract)
         if (accepted || liveBars.length > 0) {
           overlaySource.value = payload.source
-        }
-        if (payload.source === 'realtime') {
-          return
         }
         return
       }
@@ -504,12 +568,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     socket.onclose = () => {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
       activeSocket = null
-      liveUnavailable.value = true
-      if (!identity || !marketState.value || !shouldKeepStateSocket(identity, marketState.value)) return
-      reconnectHandle = scheduleReconnect(() => {
-        reconnectHandle = null
-        openSocket(requestGeneration, nextIdentity)
-      }, RECONNECT_DELAY_MS)
+      retryLive(requestGeneration, nextIdentity)
     }
   }
 
@@ -526,15 +585,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       nextBefore.value = merged.nextBefore
       canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
       publishMerged({ kind: 'replace' })
-      try {
-        if (candidatePreview.enabled) return
-        const nextState = await fetchState(nextIdentity, signal)
-        if (!isCurrentGeneration(requestGeneration, generation)) return
-        marketState.value = nextState
-        if (shouldKeepStateSocket(nextIdentity, nextState)) openSocket(requestGeneration, nextIdentity)
-      } catch {
-        if (isCurrentGeneration(requestGeneration, generation)) liveUnavailable.value = true
-      }
+      void connectFromState(requestGeneration, nextIdentity)
     } catch (error) {
       if (!signal.aborted && isCurrentGeneration(requestGeneration, generation)) throw error
     } finally {
@@ -587,7 +638,22 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     return request
   }
 
+  function resumePendingReconnect(): void {
+    if (document.visibilityState === 'hidden' || !pendingReconnect) return
+    if (reconnectHandle !== null) clearReconnect(reconnectHandle)
+    pendingReconnect()
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', resumePendingReconnect)
+    document.addEventListener('visibilitychange', resumePendingReconnect)
+  }
+
   function dispose(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', resumePendingReconnect)
+      document.removeEventListener('visibilitychange', resumePendingReconnect)
+    }
     generation += 1
     reads.abort()
     loadingInitial.value = false; loadingBefore.value = false

@@ -85,6 +85,7 @@ export interface MarketStateRequest {
 export function getMarketState(params: MarketStateRequest, signal?: AbortSignal) {
   return request.get<never, MarketReadState>('/market/state', {
     signal,
+    timeout: 5_000,
     params: {
       series_kind: params.seriesKind,
       symbol: params.symbol,

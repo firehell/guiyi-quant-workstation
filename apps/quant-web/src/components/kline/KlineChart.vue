@@ -451,11 +451,8 @@ function prependBars(bars: BarData[]): void {
   publishVisibleFrom(chart.timeScale().getVisibleLogicalRange())
 }
 
-function updateBar(bar: BarData): void {
-  const index = renderedBars.findIndex((item) => item.time === bar.time)
-  if (index >= 0) renderedBars[index] = bar
-  else renderedBars.push(bar)
-  renderedBars = normalizeBarSeries(renderedBars)
+function updateLiveBars(bars: BarData[]): void {
+  renderedBars = normalizeBarSeries(bars)
   // Live updates rebuild only series data; viewport ownership remains with the user/follow state.
   renderAllSeries()
 }
@@ -574,6 +571,8 @@ function renderAllSeries(): void {
   const last = renderedBars.at(-1)
   if (container.value) {
     container.value.dataset.klineEnd = last?.time ?? ''
+    container.value.dataset.klineCount = String(renderedBars.length)
+    container.value.dataset.klineClose = last ? String(last.close) : ''
     container.value.dataset.klineContract = last?.physicalContract ?? ''
     container.value.dataset.klineFrequency = props.period
   }
@@ -588,7 +587,19 @@ function renderDynamicRange(): void {
   }).map(p => ({...p,time:bars.get(pointKey(p.contract,p.time))!.time})) : [], ribbonTime)
 }
 
+const indicatorRenderFailed = ref(false)
+
 function renderDerivedSeries(): void {
+  try {
+    writeDerivedSeries()
+    indicatorRenderFailed.value = false
+  } catch {
+    // Price and volume have already been committed to their own series.
+    indicatorRenderFailed.value = true
+  }
+}
+
+function writeDerivedSeries(): void {
   if (!chart || !macdHistogram || !macdDif || !macdDea) return
   renderDynamicRange()
   const calculationStarted = performance.now()
@@ -781,7 +792,7 @@ function resize() {
 defineExpose({
   replaceBars,
   prependBars,
-  updateBar,
+  updateLiveBars,
   scrollToLatest,
   revealTime,
 })
@@ -810,6 +821,7 @@ defineExpose({
     :data-visible-from="lastVisibleFrom"
     :data-chart-viewport-ready="chartViewportReady"
   >
+    <p v-if="indicatorRenderFailed" role="status">指标图层更新失败，当前仍可查看 K 线。</p>
     <div ref="container" class="chart" @pointermove="scheduleReferenceCallouts" @pointerup="scheduleReferenceCallouts" @wheel="scheduleReferenceCallouts" />
     <div v-for="selection in positionedSelection" :key="selection.time" class="reference-candle-selection" aria-hidden="true" :style="{ left: `${selection.x - 6}px`, height: `${selection.height}px` }" />
     <div v-if="referenceCallouts.length" class="reference-callouts" aria-label="历史重算参考信号">

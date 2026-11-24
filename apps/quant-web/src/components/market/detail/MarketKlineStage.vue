@@ -83,7 +83,7 @@ watch(() => props.mutation, async (mutation) => {
   if (mutation.kind === 'replace') chart.value.replaceBars(props.bars, !followLatest.value)
   else if (mutation.kind === 'prepend') chart.value.prependBars(mutation.bars)
   else {
-    for (const bar of mutation.bars) chart.value.updateBar(bar)
+    chart.value.updateLiveBars(props.bars)
     if (followLatest.value) chart.value.scrollToLatest()
   }
   resolveFocus()
