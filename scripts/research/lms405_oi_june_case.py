@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms_keybar_approx import classify
+from lms405_locked_exit_audit import confirmed_shapes, verify_aggregation
 from lms405_replay import check_session_coverage, read_local
 
 SYMBOL, CONTRACT = "oi", "OI2609"
@@ -17,6 +18,12 @@ DAYS = tuple(date(2026, 6, day) for day in (3, 4, 5))
 PERIODS = {"1m": 1, "5m": 5, "15m": 15}
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 JUNE3_POST = datetime(2026, 6, 3, 10, 13, tzinfo=SHANGHAI)
+EARLY_BASELINE_SHA256 = "b1b35238a8ff776b243dc9b3490865c7339f71ac68aa1cd26559d464acc113dc"
+EARLY_BANDS = {
+    "NEAR_HIGH_VOLATILITY": (Decimal("10175"), Decimal("10197")),
+    "FAR_BASELINE": (Decimal("10019"), Decimal("10151")),
+}
+ONE = timedelta(minutes=1)
 
 
 def local_time(end):
@@ -72,7 +79,95 @@ def short_candidates(fives, minutes):
     return rows
 
 
-def compute(market, sessions):
+def observe_band(bars, lower, upper):
+    """Band contact, arrival at the near edge and break of the far edge are separate."""
+    events = {
+        "intersects": lambda bar: bar.low <= upper and bar.high >= lower,
+        "close_reaches_near_edge": lambda bar: bar.close <= upper,
+        "close_strictly_below_far_edge": lambda bar: bar.close < lower,
+    }
+    return {
+        key: next((bar.bar_end for bar in bars if event(bar)), None)
+        for key, event in events.items()
+    }
+
+
+def early_protection_path(series, coverage, *, as_of):
+    available = JUNE3_POST + ONE
+    after_post = {
+        period: [bar for bar in series[period] if bar.trading_day == DAYS[0]
+                 and not coverage[period][bar.bar_end][1]
+                 and available <= bar.bar_end - timedelta(minutes=step) and bar.bar_end < as_of]
+        for period, step in PERIODS.items()
+    }
+    path = {
+        name: {period: observe_band(bars, lower, upper) for period, bars in after_post.items()}
+        for name, (lower, upper) in EARLY_BANDS.items()
+    }
+    # Prior completed parents may describe geometry; the candidate shape must start
+    # after plan availability and its confirmation must itself be known at as_of.
+    step = timedelta(minutes=5)
+    fives = [Bar(CONTRACT, bar.bar_end, bar.open, bar.high, bar.low, bar.close,
+                 start=bar.bar_end - step) for bar in series["5m"]
+             if bar.trading_day == DAYS[0] and bar.bar_end < as_of]
+    touches = {name: periods["1m"]["intersects"] for name, periods in path.items()}
+    contact_ends = {
+        name: [bar.bar_end for bar in after_post["1m"] if bar.low <= upper and bar.high >= lower]
+        for name, (lower, upper) in EARLY_BANDS.items()
+    }
+    minute_by_end = {bar.bar_end: bar for bar in after_post["1m"]}
+    run_starts = {}
+    for end in minute_by_end:
+        run_starts[end] = run_starts.get(end - ONE, end - ONE)
+
+    def describe_confirmation(when):
+        if when is None:
+            return None
+        bar = minute_by_end[when]
+        band_checks = {}
+        for name, (lower, upper) in EARLY_BANDS.items():
+            latest = next((end for end in reversed(contact_ends[name]) if end < when), None)
+            band_checks[name] = dict(
+                close_in_band=lower <= bar.close <= upper,
+                close_minus_upper=str(bar.close - upper),
+                earlier_contact=local_time(latest) if latest is not None else None,
+                earlier_contact_same_contiguous_run=(
+                    run_starts[latest] == run_starts[when] if latest is not None else None),
+                first_contact_same_end=touches[name] == when,
+            )
+        return dict(bar_end=local_time(when), close=str(bar.close), bands=band_checks)
+
+    eligible_ends = {local_time(bar.bar_end) for bar in after_post["5m"]}
+    verify_aggregation([bar for bar in fives if local_time(bar.end) in eligible_ends], after_post["1m"])
+    all_short_shapes = confirmed_shapes(fives, after_post["1m"], start=available, through=as_of, side="SHORT")
+    rows = []
+    for row in all_short_shapes:
+        shape_at = local_time(datetime.fromisoformat(row["shape_at"]))
+        if shape_at not in eligible_ends:
+            continue
+        confirmations = {kind: datetime.fromisoformat(row[field]) if row[field] else None
+                         for kind, field in (("1M_CLOSE", "fast_at"), ("5M_CLOSE", "slow_at"))}
+        rows.append(dict(
+            shape_at=shape_at, shape_low=row["level"],
+            evidence={kind: describe_confirmation(when) for kind, when in confirmations.items()},
+        ))
+    return dict(
+        version="lms405-oi2609-early-protection-path-v1", contract=CONTRACT,
+        as_of=as_of.isoformat(), conservative_post_available_at=available.isoformat(),
+        band_levels={name: [str(low), str(high)] for name, (low, high) in EARLY_BANDS.items()},
+        band_path={name: {period: {kind: local_time(when) if when else None for kind, when in times.items()}
+                          for period, times in periods.items()} for name, periods in path.items()},
+        bar_counts={period: len(bars) for period, bars in after_post.items()},
+        shape_substitute_version="lms-keybar-approx-v1", short_keybar_geometry=rows,
+        source_id="S5305666088472874", scope="CURRENT_READABLE_SOURCE_HISTORICAL_EDIT_UNVERIFIED",
+        source_suggested_context_period="15m", author_signal_formula=None,
+        high_volatility_threshold=None, actual_position_and_permission=None,
+        protection_status="INDETERMINATE", author_action_at=None, author_prediction_samples=0,
+        action=None, fill=None, pnl=None, executable=False,
+    )
+
+
+def compute(market, sessions, *, early_baseline=None):
     levels = {
         DAYS[0]: ("10197", "10175", "10151", "10019"),
         DAYS[1]: ("10315", "10273", "10230"),
@@ -100,6 +195,13 @@ def compute(market, sessions):
              and b.bar_end - timedelta(minutes=minutes) >= JUNE3_POST + timedelta(minutes=1)],
             levels[DAYS[0]],
         )
+    if early_baseline is not None:
+        if hashes != early_baseline["input_ohlc_sha256"]:
+            raise ValueError("FROZEN_MARKET_INPUT_CHANGED")
+        report = early_protection_path(
+            series, coverage, as_of=datetime(2026, 6, 3, 15, tzinfo=SHANGHAI) + timedelta(microseconds=1),
+        )
+        return dict(input_ohlc_sha256=hashes, reference_baseline_sha256=EARLY_BASELINE_SHA256, **report)
     fives = [Bar(CONTRACT, b.bar_end, b.open, b.high, b.low, b.close,
                  start=b.bar_end - timedelta(minutes=5)) for b in series["5m"]
              if b.trading_day == DAYS[-1]]
@@ -116,6 +218,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--early-protection-baseline", type=Path,
+                        help="Run the 6/3 protection-path audit against the frozen June comparison.")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -130,17 +234,23 @@ def main():
     from sqlalchemy.exc import OperationalError
 
     try:
+        baseline = None
+        if args.early_protection_baseline:
+            raw = args.early_protection_baseline.read_bytes()
+            if sha256(raw).hexdigest() != EARLY_BASELINE_SHA256:
+                raise ValueError("FROZEN_COMPARISON_MISMATCH")
+            baseline = json.loads(raw)
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=30):
             market = build_market_data_service(session)
             exchange = market.catalog.exchange_for_symbol(SYMBOL)
             sessions = {day: resolved_session_windows_for_trading_day(
                 session, exchange=exchange, symbol=SYMBOL, trading_day=day) for day in DAYS}
-            report = compute(market, sessions)
+            report = compute(market, sessions, early_baseline=baseline)
     except MarketDataError as exc:
         parser.exit(2, f"MDS_BLOCKED: {exc.code}\n")
     except OperationalError:
         parser.exit(2, "LOCAL_MDS_CONNECTION_UNAVAILABLE\n")
-    except (ValueError, IndexError, KeyError):
+    except (OSError, ValueError, IndexError, KeyError):
         parser.exit(2, "MDS_SESSION_OR_BAR_COVERAGE_UNVERIFIED\n")
     with args.output.open("x", encoding="utf-8") as stream:
         json.dump(report, stream, ensure_ascii=False, indent=2)
