@@ -202,3 +202,20 @@ def test_availability_equal_to_open_uses_strict_successor():
     run = run_proof(market(), (), D("1000"), decide=decide)
     assert run["fills"][0]["modeled_fill_at"] == clock(DAY_1, "09:07:00")
     assert run["fills"][0]["native_event_at"] == clock(DAY_1, "09:08:00")
+
+
+def test_night_signal_uses_authoritative_trading_day_and_same_session():
+    previous = date(2026, 1, 2)
+    start = clock(previous, "21:00:00")
+    night = Session(DAY_1, start, start + timedelta(minutes=40))
+    rows = tuple(Minute(DAY_1, end, D("100"), D("100"), D("100"), D("100"), D("8"))
+                 for end in night.minute_ends())
+    base = market()
+    source = replace(base, sessions=(night, *base.sessions), minutes=(*rows, *base.minutes))
+    entry = Signal("night", "FU2603", DAY_1, start + timedelta(minutes=15), "BUILD", frequency="15m")
+    exit_signal = Signal("short-h1", "FU2603", DAY_1, night.end, "CLEAR", frequency="60m")
+    run = run_proof(source, (entry, exit_signal), D("1000"))
+    assert run["fills"][0]["modeled_fill_at"] == start + timedelta(minutes=16)
+    assert run["fills"][0]["native_trading_at"].date() == DAY_1
+    assert run["attempts"][1]["reason"] == "NO_SAME_SESSION_CANDIDATE"
+    assert run["settlements"][0]["day"] == DAY_1

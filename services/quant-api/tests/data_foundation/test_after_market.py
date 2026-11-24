@@ -192,6 +192,7 @@ def _updater(
     consumer_audit=None,
     consumer_revision=None,
     consumer_check_keys=("newow_d1",),
+    research_update=None,
 ):
     manager = _Manager(trading_day, results, metadata_day=metadata_day)
     rqdata = _RQData(readiness)
@@ -214,6 +215,7 @@ def _updater(
         consumer_audit=consumer_audit,
         consumer_revision=consumer_revision,
         consumer_check_keys=consumer_check_keys,
+        research_update=research_update,
     )
     return updater, manager, rqdata, sleeps, notices, live_store
 
@@ -1545,6 +1547,25 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
     ]
     assert live_store.cleaned == [date(2026, 8, 10)]
     assert notices == []
+
+
+@pytest.mark.parametrize("maintenance_status", ("passed", "failed"))
+def test_backtest_consumer_requires_durable_success(tmp_path, maintenance_status):
+    day = date(2026, 8, 10)
+    captured = []
+
+    def update(path, trading_day):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["last_successful_trading_day"] == trading_day.isoformat()
+        assert payload["last_run"]["status"] == "passed"
+        captured.append(trading_day)
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=day, readiness=[True],
+        results=[_result(maintenance_status)], research_update=update,
+    )
+    assert updater.run().status == maintenance_status
+    assert captured == ([day] if maintenance_status == "passed" else [])
 
 
 def test_cleanup_failure_does_not_retry_or_report_success(tmp_path) -> None:

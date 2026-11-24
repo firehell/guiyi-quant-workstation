@@ -28,6 +28,7 @@ const emit = defineEmits<{ updatePreferences: [preferences: FlexibleDetailPrefer
 const selectedFocus = ref<string | null>(null)
 const focusError = ref<string | null>(null)
 let focusGeneration = 0
+const observationPreview = import.meta.env.VITE_NEWOW_BACKTEST_PREVIEW === '1'
 const realtimeEnabled = computed(() => props.identity.frequency === '60m')
 const selectedSource = ref<'signals'|'simulation'>('signals')
 const simulationEnabled = computed(() => realtimeEnabled.value && props.identity.seriesKind === 'actual_dominant')
@@ -75,14 +76,14 @@ onBeforeUnmount(() => { focusGeneration += 1; loader.dispose() })
   <section ref="workspace" class="htdy-workspace" data-detail-workspace="htdy" :data-range-detector-status="rangeWarmup.status.value" :data-range-detector-anchor="rangeWarmup.anchorTime.value" :data-range-detector-visible-from="visibleFrom">
     <p v-if="identityWarning" class="htdy-workspace__hint" role="status">{{ identityWarning }}</p>
     <p v-if="showRangeDetector" class="htdy-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
-    <nav v-if="realtimeEnabled" class="htdy-workspace__filter" aria-label="记录来源"><button type="button" :aria-pressed="selectedSource==='signals'" @click="selectedSource='signals'">实际预警记录</button><button type="button" :aria-pressed="selectedSource==='simulation'" @click="selectedSource='simulation'">快期模拟记录</button></nav>
+    <nav v-if="realtimeEnabled && !observationPreview" class="htdy-workspace__filter" aria-label="记录来源"><button type="button" :aria-pressed="selectedSource==='signals'" @click="selectedSource='signals'">实际预警记录</button><button type="button" :aria-pressed="selectedSource==='simulation'" @click="selectedSource='simulation'">快期模拟记录</button></nav>
     <p v-if="realtimeEnabled && loader.unavailable.value" role="status">实际预警来源暂不可验证。</p>
     <p v-if="realtimeEnabled && selectedSource==='signals'" class="htdy-workspace__source">60分钟实时买／卖信号｜首次观察留存，非账户成交</p>
     <p v-if="!realtimeEnabled" class="htdy-workspace__source" role="status">实时信号统一记录于60分钟；当前周期保留指标图表。</p>
     <div class="htdy-workspace__chart-surface"><slot name="chart-toolbar" />
     <HtdyChartStage :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="identity.frequency" :series-kind="identity.seriesKind" :visible-main-indicators="indicators" :range-detector-source-identity="sourceIdentity" :range-detector-anchor-time="rangeWarmup.anchorTime.value" :identity-key="sourceIdentity" :focus-bar-end="selectedFocus ?? identity.focusBarEnd" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError" :historical-mode="true" :reference-callouts="executionCallouts" :markers="chartMarkers" @load-earlier="loadEarlier" @focus-resolved="emit('focus-resolved', $event)" @visible-from-change="visibleFrom = $event" @range-detector-result="rangeCount = $event.count" />
     </div>
-    <HtdySimulationRecords v-if="realtimeEnabled" v-show="selectedSource==='simulation'" :product="identity.symbol" :bars="bars" :active="simulationEnabled" @records="simulationRecords=$event" @focus="focusObservation" />
+    <HtdySimulationRecords v-if="realtimeEnabled && !observationPreview" v-show="selectedSource==='simulation'" :product="identity.symbol" :bars="bars" :active="simulationEnabled" @records="simulationRecords=$event" @focus="focusObservation" />
     <ObservedAlertRecords v-if="realtimeEnabled && selectedSource==='signals'" :product="identity.symbol.toUpperCase()" :frequency="identity.frequency" :events="loader.events.value" :unavailable="loader.unavailable.value" @focus="focusObservation" />
     <p v-if="focusError" role="status">{{ focusError }}</p>
 

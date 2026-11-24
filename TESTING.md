@@ -2498,3 +2498,26 @@ RQAlpha 试验按 [禁网说明](services/newow-rqalpha/README.md) 运行。将
 `GUIYI_P3_FROZEN_PACKET` 指向手工入口输出的内容寻址输入包，禁网复验完整 FU2603
 的 P2 动作时点、8 笔成交、4 次平仓、4.923 元费用与 9,765.077 元结算权益。
 隔离库或冻结原件缺失时相关跳过项单列，现场验收须提供实际证据。
+
+## Guiyi V2 P4 隔离盘后与工作台
+
+在专用隔离结果库完成 `20261124_0055 -> 20261124_0056`，沿用上文两个测试角色。配置 `GUIYI_P4_MATRIX_ENGINE` 为锁定的 RQAlpha Python 绝对路径，使合成的 18 组合验证实际走禁网引擎或日周执行合同拒绝。缺少该变量时，矩阵只验证冻结输入。
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/newow/test_v2_backtest_results.py \
+  services/quant-api/tests/newow/test_v2_eod_publication.py \
+  services/quant-api/tests/newow/test_v2_completed_market.py \
+  services/quant-api/tests/newow/test_v2_completed_decision.py \
+  services/quant-api/tests/data_foundation/test_after_market.py
+```
+
+启动隔离 API 和 `VITE_NEWOW_BACKTEST_PREVIEW=1 pnpm dev:develop`。隔离库需有 FU2603 冻结试验 run 和独立正式资格失败尝试。PC 验证使用真实回测路由，保持数据与执行权限隔离。
+
+```sh
+node --test tests/newowBacktestPanel.test.ts tests/newowReferenceWindows.test.ts
+pnpm build
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:5175 PLAYWRIGHT_SKIP_WEBSERVER=1 \
+  PLAYWRIGHT_NEWOW_BACKTEST_ISOLATED=1 pnpm exec playwright test e2e/newow-backtest-isolated.spec.mjs
+```

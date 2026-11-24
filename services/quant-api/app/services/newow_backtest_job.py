@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from argparse import ArgumentParser
+from bisect import bisect_right
 from contextlib import ExitStack
 from dataclasses import asdict, replace
 from datetime import date, datetime, time, timedelta
@@ -39,14 +40,13 @@ from app.market_data.newow.v2_completed import (
     MarketWindow,
     iter_historical_inputs,
     iter_historical_segments,
-    next_executable_minute,
 )
 from app.market_data.storage import CanonicalMonthlyStore
 from app.models.market_tables import Contract, MainContractMap
 from app.private_settings import load_private_readonly_settings
 from app.reference_trading.json_spool import encode_product_bar
-from guiyi_quant.newow.decision_adapter import DECISION_VERSION
-from guiyi_quant.newow.product_adapters import build_product_identity
+from guiyi_quant.newow.decision_adapter import DECISION_VERSION, V2Strategy
+from guiyi_quant.newow.product_adapters import OSCILLATION_WARMUP_BARS, build_product_identity
 from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy, lifecycle_input_sha256
 from guiyi_quant.newow.product_identity import InputQualityPolicy
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
@@ -114,25 +114,26 @@ def _rule2_witness(path: Path | None, digest: str | None) -> tuple[str, str] | N
 
 
 def _rank1_evidence(
-    mds: MarketDataService, session: Session, day_open: datetime, rule2: tuple[str, str] | None,
+    mds: MarketDataService, session: Session, product: str, contract_code: str,
+    day: date, day_open: datetime, rule2: tuple[str, str] | None,
 ) -> dict:
     """Qualify a frozen Catalog mapping with prior physical daily facts, without reranking the route."""
-    prior = mds.previous_trading_day(_PRODUCT, _DAY)
-    prior_end = mds.session_windows(symbol=_PRODUCT, trading_day=prior)[-1].end
+    prior = mds.previous_trading_day(product, day)
+    prior_end = mds.session_windows(symbol=product, trading_day=prior)[-1].end
     catalog_row = session.scalars(select(MainContractMap).where(
-        MainContractMap.symbol == _PRODUCT, MainContractMap.trade_date == _DAY,
+        MainContractMap.symbol == product, MainContractMap.trade_date == day,
     )).one()
-    if (catalog_row.contract_code, catalog_row.rank, catalog_row.rule) != (_CONTRACT, 1, "volume_open_interest"):
+    if (catalog_row.contract_code, catalog_row.rank, catalog_row.rule) != (contract_code, 1, "volume_open_interest"):
         raise BacktestJobError("P3_OWNER_MAPPING_CONFLICT")
     universe = tuple(session.scalars(select(Contract.contract_code).where(
-        Contract.instrument_symbol == _PRODUCT, Contract.provider == "rqdata",
+        Contract.instrument_symbol == product, Contract.provider == "rqdata",
         Contract.listed_date <= prior, Contract.expired_date > prior,
     ).order_by(Contract.contract_code)))
     facts, missing = [], []
     for contract in universe:
         try:
             (bar,) = mds.query_contract_trading_days(
-                ContractTradingDayQuery(_PRODUCT, contract, BarFrequency.D1, prior, prior),
+                ContractTradingDayQuery(product, contract, BarFrequency.D1, prior, prior),
             ).bars
         except Exception as exc:
             if getattr(exc, "code", None) not in {"DATASET_OR_PARTITION_MISSING", "QUERY_WINDOW_EMPTY"}:
@@ -153,93 +154,130 @@ def _rank1_evidence(
         "missing_daily_facts": missing,
         "physical_facts": [asdict(fact) for fact in facts],
         "code": "RANK1_AS_KNOWN_UNPROVEN",
+        "prior_cross_section_matches": False,
+        "as_known_publication_unproven": True,
     }
     if rule2 is not None and not missing and catalog_row.updated_at <= day_open:
         try:
             validate_rank1_as_known((Rank1CausalInput(
-                _PRODUCT, _DAY, prior, prior_end, day_open, universe, tuple(facts),
+                product, day, prior, prior_end, day_open, universe, tuple(facts),
                 rule2[0], catalog_row.contract_code,
             ),))
         except Rank1AsKnownError:
             return proof
-        proof["code"] = "RANK1_AS_KNOWN_VERIFIED"
+        # A match against today's Catalog does not timestamp the original
+        # physical cross-section or the rule=2 observation before this open.
+        proof["prior_cross_section_matches"] = True
     return proof
 
 
-def _execution_facts(facts_dir: Path) -> tuple[dict, dict]:
+def _execution_facts(path: Path, digest: str, contract: str, days: tuple[date, ...]) -> tuple[dict, list[dict]]:
     try:
-        body = _read(facts_dir / _FACTS_NAME)
+        body = _read(path)
     except FileNotFoundError:
         raise BacktestJobError("P3_DATED_EXECUTION_FACTS_MISSING") from None
-    if sha256(body).hexdigest() != _FACTS_SHA:
+    if sha256(body).hexdigest() != digest:
         raise BacktestJobError("P3_DATED_FACTS_DIGEST_MISMATCH")
     facts = json.loads(body)
     instrument = facts["instrument"]
-    (rates,) = (row for row in facts["parameters"] if row["date"] == str(_DAY))
-    (settlement,) = (row for row in facts["daily"] if row["date"] == str(_DAY))
-    if instrument["order_book_id"] != _CONTRACT:
+    if instrument["order_book_id"] != contract:
         raise BacktestJobError("P3_DATED_FACTS_CONTRACT_MISMATCH")
-    daily = {
-        "day": _DAY,
-        "prev_settlement": Decimal(settlement["prev_settlement"]),
-        "settlement": Decimal(settlement["settlement"]),
-        "limit_down": Decimal(settlement["limit_down"]),
-        "limit_up": Decimal(settlement["limit_up"]),
-        "fee_type": rates["commission_type"],
-        "open_fee": Decimal(rates["open_commission"]),
-        "close_fee": Decimal(rates["close_commission"]),
-        "close_today_fee": Decimal(rates["close_commission_today"]),
-        "long_margin": Decimal(rates["long_margin_ratio"]),
-        "short_margin": Decimal(rates["short_margin_ratio"]),
-    }
+    multiplier = Decimal(str(instrument["contract_multiplier"]))
+    if not multiplier.is_finite() or multiplier <= 0 or multiplier != multiplier.to_integral_value():
+        raise BacktestJobError("BACKTEST_CONTRACT_MULTIPLIER_INVALID")
+    instrument = {**instrument, "contract_multiplier": int(multiplier)}
+    daily = []
+    for day in days:
+        rates = [row for row in facts["parameters"] if row["date"] == str(day)]
+        settlements = [row for row in facts["daily"] if row["date"] == str(day)]
+        if len(rates) != 1 or len(settlements) != 1:
+            raise BacktestJobError("P3_DATED_EXECUTION_FACTS_MISSING")
+        rate, settlement = rates[0], settlements[0]
+        daily.append({
+            "day": day,
+            "prev_settlement": Decimal(settlement["prev_settlement"]),
+            "settlement": Decimal(settlement["settlement"]),
+            "limit_down": Decimal(settlement["limit_down"]),
+            "limit_up": Decimal(settlement["limit_up"]),
+            "fee_type": rate["commission_type"],
+            "open_fee": Decimal(rate["open_commission"]),
+            "close_fee": Decimal(rate["close_commission"]),
+            "close_today_fee": Decimal(rate["close_commission_today"]),
+            "long_margin": Decimal(rate["long_margin_ratio"]),
+            "short_margin": Decimal(rate["short_margin_ratio"]),
+        })
     return instrument, daily
-
-
-def _session_window(mds: MarketDataService):
-    windows = mds.session_windows(symbol=_PRODUCT, trading_day=_DAY)
-    if any(
-        window.start.astimezone(_ZONE).date() != _DAY or window.end.astimezone(_ZONE).date() != _DAY
-        or not time(8, 30) <= window.start.astimezone(_ZONE).time() < window.end.astimezone(_ZONE).time() <= time(15)
-        for window in windows
-    ):
-        raise BacktestJobError("P3_EXECUTION_SESSION_UNSUPPORTED")
-    return windows
 
 
 def freeze_fu2603(
     session: Session, canonical: Path, facts_dir: Path, *, rule2: tuple[str, str] | None = None,
 ) -> tuple[dict, dict]:
-    """Freeze exactly one existing MDS window. The caller supplies a read-only transaction."""
+    """Compatibility entry for the exact P3 evidence scope."""
+    return freeze_research(
+        session, canonical, product=_PRODUCT, strategy=V2Strategy.TREND, frequency=_FREQ,
+        since=_DAY, through=_DAY, facts_path=facts_dir / _FACTS_NAME, facts_digest=_FACTS_SHA,
+        expected_contract=_CONTRACT, witnesses={_DAY: rule2} if rule2 else {},
+    )
+
+
+def freeze_research(
+    session: Session, canonical: Path, *, product: str, strategy: V2Strategy, frequency: ProductFrequency,
+    since: date, through: date, facts_path: Path, facts_digest: str,
+    witnesses: dict[date, tuple[str, str]], expected_contract: str | None = None,
+) -> tuple[dict, dict]:
+    """Freeze one bounded, uninterrupted physical segment using MDS and dated facts."""
+    market_frequency = BarFrequency(frequency.value)
     mds = MarketDataService(MarketCatalog(session, canonical), CanonicalMonthlyStore(canonical))
-    instrument, daily = _execution_facts(facts_dir)
-    windows = _session_window(mds)
-    as_of = windows[-1].end + timedelta(seconds=2)
-    owner = mds.dominant_segment_for_day(_PRODUCT, _DAY)
-    if owner.contract != _CONTRACT:
+    final_sessions = mds.session_windows(symbol=product, trading_day=through)
+    as_of = final_sessions[-1].end + timedelta(seconds=2)
+    day_windows = mds.completed_trading_day_windows(
+        symbol=product, start=datetime.combine(since, time.min, _ZONE), as_of=as_of,
+        latest=through, calendar_since=since,
+    )
+    if not day_windows or day_windows[-1][0] != through:
+        raise BacktestJobError("BACKTEST_COMPLETE_TRADING_DAY_MISSING")
+    owners = mds.actual_dominant_segments(product, since, through)
+    if len(owners) != 1:
+        raise BacktestJobError("ROLLOVER_INTERRUPTED_OR_QUALITY_GAP")
+    owner = owners[0]
+    contract_code = owner.contract
+    if expected_contract is not None and contract_code != expected_contract:
         raise BacktestJobError("P3_OWNER_MAPPING_CONFLICT")
-    contract = mds.catalog.contract_fact(_PRODUCT, _CONTRACT)
-    if contract.exchange != "SHFE":
-        raise BacktestJobError("P3_UNSUPPORTED_CONTRACT")
+    contract = mds.catalog.contract_fact(product, contract_code)
+    instrument, daily = _execution_facts(facts_path, facts_digest, contract_code,
+                                        tuple(day for day, _ in day_windows))
     reader = NewowComposition(
         mds, build_database_coverage_source(session, reuse_session_windows=True),
-        (_PRODUCT,), InputQualityPolicy.V1,
+        (product,), InputQualityPolicy.V1,
     ).reader()
     provenance = reader.historical_source_evidence(
-        product=_PRODUCT, frequency=_FREQ.value, since=_DAY, through=_DAY, as_of=as_of,
+        product=product, frequency=frequency.value, since=since, through=through, as_of=as_of,
     )
+    if market_frequency in (BarFrequency.D1, BarFrequency.W1):
+        provenance["execution_m1"] = mds.contract_source_evidence(
+            symbol=product, contract=contract_code, frequency=BarFrequency.M1, before=as_of,
+        )
+    rank_facts = tuple(_rank1_evidence(mds, session, product, contract_code, day, windows[0].start,
+                                      witnesses.get(day)) for day, windows in day_windows)
+    verified = all(fact["code"] == "RANK1_AS_KNOWN_VERIFIED" for fact in rank_facts)
+    rank1 = {
+        **(rank_facts[0] if len(rank_facts) == 1 else {"trading_days": rank_facts}),
+        "code": "RANK1_AS_KNOWN_VERIFIED" if verified else "RANK1_AS_KNOWN_UNPROVEN",
+    }
     revision = _sha(provenance)
-    rank1 = _rank1_evidence(mds, session, windows[0].start, rule2)
-    owner_ref = _sha((_PRODUCT, _CONTRACT, owner.start_trading_day, owner.end_trading_day, rank1))
-    request = ContractTradingDayQuery(_PRODUCT, _CONTRACT, BarFrequency.M1, _DAY, _DAY)
+    owner_ref = _sha((product, contract_code, owner.start_trading_day, owner.end_trading_day, rank1))
+    request = ContractTradingDayQuery(product, contract_code, BarFrequency.M1, day_windows[0][0], through)
     minutes = mds.query_contract_trading_days(request).bars
     if not minutes or any(bar.open_interest is None for bar in minutes):
         raise BacktestJobError("P3_M1_OI_OR_COVERAGE_MISSING")
-    aggregates = aggregate_from_1m(minutes, target_frequency="5m", sessions=windows)
-    query = NewowProductQuery(_PRODUCT, ProductStrategy.TREND, _FREQ, _DAY, _DAY,
-                              performance_since=_DAY, performance_through=_DAY)
+    sessions = tuple(window for _, windows in day_windows for window in windows)
+    opens = tuple(bar.bar_end - timedelta(minutes=1) for bar in minutes)
+    query_strategy = ProductStrategy.OSCILLATION if strategy is V2Strategy.OSCILLATION else ProductStrategy.TREND
+    query = NewowProductQuery(product, query_strategy, frequency, since, through,
+                              performance_since=since, performance_through=through)
     read = reader.load_historical(query, as_of)
     try:
-        if len(read.owners) != 1 or read.owners[0].contract != _CONTRACT or read.data_interruptions:
+        if len(read.owners) != 1 or read.owners[0].contract != contract_code or read.data_interruptions:
             raise BacktestJobError("ROLLOVER_INTERRUPTED_OR_QUALITY_GAP")
         original = tuple(read.replay_bars)
         (lifecycle,) = read.lifecycle_evidence
@@ -248,37 +286,43 @@ def freeze_fu2603(
             or lifecycle.first_bar_end != original[0].bar.bar_end
             or lifecycle.last_bar_end != original[-1].bar.bar_end):
             raise BacktestJobError("P3_LIFECYCLE_UNVERIFIED")
-        evaluation = [item.bar for item in original if item.bar.trading_day == _DAY]
-        fields = ("trading_day", "bar_end", "open", "high", "low", "close", "volume", "open_interest")
-        if len(evaluation) != len(aggregates) or any(
-            any(getattr(bar, field) != getattr(aggregate, field) for field in fields)
-            for bar, aggregate in zip(evaluation, aggregates, strict=True)
-        ):
-            raise BacktestJobError("P3_M5_M1_PARITY_FAILED")
+        evaluation = [item.bar for item in original if since <= item.bar.trading_day <= through]
+        if market_frequency not in (BarFrequency.D1, BarFrequency.W1):
+            aggregates = aggregate_from_1m(minutes, target_frequency=frequency.value, sessions=sessions)
+            fields = ("trading_day", "bar_end", "open", "high", "low", "close", "volume", "open_interest")
+            if len(evaluation) != len(aggregates) or any(
+                any(getattr(bar, field) != getattr(aggregate, field) for field in fields)
+                for bar, aggregate in zip(evaluation, aggregates, strict=True)
+            ):
+                raise BacktestJobError("BACKTEST_M1_SIGNAL_PARITY_FAILED")
         if any(item.bar.open_interest is None for item in original):
-            raise BacktestJobError("P3_M5_OI_MISSING")
-        # The historical reader verifies the exact physical prefix with authoritative endpoints.
-        # A run begins flat even when the market owner was established before the window.
+            raise BacktestJobError("BACKTEST_SIGNAL_OI_MISSING")
         bars = tuple(replace(item, bar=replace(item.bar, observation_eligible=False))
-                     if item.bar.trading_day < _DAY and item.bar.observation_eligible else item for item in original)
-        if len(bars) - len(evaluation) < NEWOW_TREND_D1_PAGE_V2.trend_signal_period:
-            raise BacktestJobError("P3_TREND_WARMUP_INSUFFICIENT")
+                     if item.bar.trading_day < since and item.bar.observation_eligible else item for item in original)
+        warmup_count = len(bars) - len(evaluation)
+        warmup_required = (NEWOW_TREND_D1_PAGE_V2.trend_signal_period if strategy is V2Strategy.TREND
+                           else OSCILLATION_WARMUP_BARS)
+        if not evaluation or warmup_count < warmup_required:
+            raise BacktestJobError("BACKTEST_WARMUP_INSUFFICIENT")
         windows_by_day: dict[date, MarketWindow] = {}
 
         def window_for(item):
             bar = item.bar
             if bar.trading_day not in windows_by_day:
                 windows_by_day[bar.trading_day] = MarketWindow.from_mds(
-                    mds, product=_PRODUCT, contract=_CONTRACT, owner_segment_id=bar.segment_id,
-                    owner_ref=owner_ref, trading_day=bar.trading_day, frequency=BarFrequency.M5,
-                    as_of=as_of, warmup=bar.trading_day < _DAY,
+                    mds, product=product, contract=contract_code, owner_segment_id=bar.segment_id,
+                    owner_ref=owner_ref, trading_day=bar.trading_day, frequency=market_frequency,
+                    as_of=as_of, warmup=bar.trading_day < since,
                 )
             return windows_by_day[bar.trading_day]
 
-        def availability_for(item):
-            return HistoricalAvailability(item.bar.bar_end + timedelta(seconds=2), _AVAILABILITY)
+        availability_policy = (_AVAILABILITY if frequency.value == "5m"
+                               else f"historical_completed_{frequency.value}_plus_2_seconds_v1")
 
-        prepared = replace(read, bars_by_frequency={_FREQ: bars})
+        def availability_for(item):
+            return HistoricalAvailability(item.bar.bar_end + timedelta(seconds=2), availability_policy)
+
+        prepared = replace(read, bars_by_frequency={frequency: bars})
         inputs = iter_historical_inputs(
             prepared, revision=revision, as_of=as_of, window_for=window_for,
             availability_for=availability_for, verified_prefix_for=lambda _: True,
@@ -288,10 +332,9 @@ def freeze_fu2603(
         for item in segment:
             payload = item.payload
             start, end = payload.session
-            candidate = next_executable_minute(
-                payload.available_at,
-                (bar.bar_end - timedelta(minutes=1) for bar in minutes if start < bar.bar_end <= end),
-            ) if payload.bar.bar.observation_eligible else None
+            index = bisect_right(opens, payload.available_at)
+            candidate = opens[index] if (payload.bar.bar.observation_eligible
+                         and index < len(opens) and start <= opens[index] < end) else None
             completed.append({
                 "bar": encode_product_bar(payload.bar), "source_ref": payload.source_ref,
                 "owner_ref": payload.owner_ref, "session": payload.session,
@@ -301,16 +344,19 @@ def freeze_fu2603(
             })
     finally:
         read.close()
-    identity = build_product_identity(_PRODUCT, ProductStrategy.TREND, _FREQ)
+    underlying = (ProductStrategy.TREND, ProductStrategy.OSCILLATION) if strategy is V2Strategy.DUAL_FUSION else (query_strategy,)
+    identities = tuple(build_product_identity(product, member, frequency,
+                       input_quality_policy=read.input_quality_policy) for member in underlying)
     packet = {
+        "strategy": strategy.value, "frequency": frequency.value,
         "market_revision": revision, "initial_equity": "10000.00000000",
         "execution_profile": "same_session_first_open_one_long_lot_v1",
         "market": {
-            "contract": _CONTRACT, "exchange": contract.exchange, "window_start": owner.start_trading_day,
+            "contract": contract_code, "exchange": contract.exchange, "window_start": owner.start_trading_day,
             "window_end": owner.end_trading_day, "listed_date": contract.listed_date,
             "expired_date": contract.expired_date, "tick": instrument["tick_size"],
-            "multiplier": int(instrument["contract_multiplier"]), "daily": [daily],
-            "sessions": [(_DAY, window.start, window.end) for window in windows],
+            "multiplier": instrument["contract_multiplier"], "daily": daily,
+            "sessions": [(day, window.start, window.end) for day, windows in day_windows for window in windows],
             "minutes": [(bar.trading_day, bar.bar_end, bar.open, bar.high, bar.low, bar.close, bar.volume)
                         for bar in minutes],
             "minute_oi": [(bar.bar_end, bar.open_interest) for bar in minutes],
@@ -318,15 +364,17 @@ def freeze_fu2603(
         "completed": completed,
     }
     manifest = {
-        "as_of_trading_day": _DAY, "since": _DAY, "through": _DAY, "market_as_of": as_of,
-        "physical_contract": _CONTRACT, "market_revision": revision, "source_evidence": provenance,
-        "rank1": rank1, "dated_facts_sha256": _FACTS_SHA,
+        "as_of_trading_day": through, "since": since, "through": through, "market_as_of": as_of,
+        "physical_contract": contract_code, "market_revision": revision, "source_evidence": provenance,
+        "rank1": rank1, "dated_facts_sha256": facts_digest,
         "engine": "RQAlpha", "engine_version": "6.3.0", "decision_version": DECISION_VERSION,
-        "execution_profile": packet["execution_profile"], "availability_policy": _AVAILABILITY,
-        "strategy_profile": identity.profile_id, "formula_versions": identity.formula_versions,
+        "execution_profile": packet["execution_profile"], "availability_policy": availability_policy,
+        "strategy_profile": identities[0].profile_id,
+        "strategy_profiles": [identity.profile_id for identity in identities],
+        "formula_versions": list(dict.fromkeys(v for identity in identities for v in identity.formula_versions)),
         "money_policy": _MONEY_POLICY, "initial_equity": packet["initial_equity"],
-        "warmup_count": len(bars) - len(evaluation), "signal_bar_count": len(evaluation), "execution_bar_count": len(minutes),
-        "dated_execution_facts": daily,
+        "warmup_count": warmup_count, "signal_bar_count": len(evaluation), "execution_bar_count": len(minutes),
+        "dated_execution_facts": daily[0] if len(daily) == 1 else daily,
     }
     return packet, manifest
 
@@ -386,7 +434,8 @@ def _diagnostic(exc: Exception) -> str:
 def _code_fingerprint() -> str:
     engine_files = ("replay.py", "runner.py", "frozen_market.py", "reconcile.py", "uv.lock")
     core_files = ("decision_adapter.py", "product_adapters.py", "trend_band.py", "profile.py", "escape_d123.py",
-                  "product_contracts.py", "product_identity.py", "reference_pricing.py", "models.py")
+                  "product_contracts.py", "product_identity.py", "reference_pricing.py", "models.py",
+                  "oscillation_trueup.py", "oscillation_channel.py", "fusion_reference.py")
     api_root = _REPO / "services/quant-api/app"
     paths = (
         Path(__file__),
@@ -394,6 +443,7 @@ def _code_fingerprint() -> str:
         *(_REPO / "packages/quant-core/guiyi_quant/newow" / file for file in core_files),
         _REPO / "packages/quant-core/guiyi_quant/reference_trading/adapters.py",
         api_root / "market_data/newow/v2_completed.py",
+        api_root / "market_data/newow/rank1_causality.py",
         api_root / "market_data/newow/product_reader.py",
         api_root / "market_data/market_data_service.py",
         api_root / "market_data/aggregation.py",

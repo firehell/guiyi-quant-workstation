@@ -64,3 +64,21 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 `research_profile_id` 查询。P4 将返回的 `run_id` 固定用于后续 `/{run_id}/trades` 和
 `/{run_id}/equity` 请求。权益点为初始及逐日结算，逐笔中的 `modeled_fill_at` 和
 `native_fill_event_at` 使用上海时间并各自保留。
+
+## P4 隔离工作台与盘后回测
+
+使用 P3 结果库，并仅在隔离库应用 `20261124_0056`。原 run、逐笔、权益及成功版本读接口保持原合同。API 进程只需 `GUIYI_NEWOW_BACKTEST_READ_DSN`。在 develop Web 启动时设置 `VITE_NEWOW_BACKTEST_PREVIEW=1`，由牛哇主图的「回测记录」进入，旧「参考记录」仍可独立打开。
+
+盘后研究消费者默认关闭。隔离盘后任务可用 `GUIYI_NEWOW_EOD_ISOLATED_CONFIG` 指向配置文件，只有已落盘的 Canonical 完成凭证才触发。也可用同一消费者处理已留存的凭证：
+
+```sh
+PYTHONPATH=services/quant-api:packages/quant-core \
+  services/quant-api/.venv/bin/python -B -m app.services.newow_backtest_eod \
+  --status "$isolated_status_file" --trading-day "$trading_day" --config "$isolated_config"
+```
+
+配置为 JSON 数组。每项必填 `product`、`since`、`facts` 和 `facts_sha256`。执行事实使用 P3 已有的 instrument、daily、parameters 结构，显式给出目标物理合约在回测窗口内的逐日事实。可选 `trial: true` 开设试验系列，可选 `rule2` 和 `rule2_sha256` 记录独立凭证，文件路径用绝对路径。研究消费者读取名为 `guiyi_newow_market_test` 的隔离本地 PostgreSQL（非 5432 端口），连接变量为 `GUIYI_NEWOW_EOD_MARKET_DSN`。另设 `GUIYI_NEWOW_EOD_CANONICAL_ROOT`、`GUIYI_NEWOW_EOD_INPUT_DIR`、`GUIYI_NEWOW_BACKTEST_WRITE_DSN`。可用 `GUIYI_NEWOW_EOD_ENGINE` 指向离线引擎解释器。
+
+重复凭证、同一输入、旧日期或已被替代的同日凭证会复用已有结果或跳过。写事务失败保留最后成功 run。明确失败后可用 `--retry-series fu trend 5m` 对同一凭证重试指定组合。提交结果未知由 P3 独立读回处理。相同研究输入全量重算仍使用同一逻辑 run。接口翻页固定 run 并独立读取成交和权益。
+
+P4 沿用同 Session、严格后继分钟开盘的一手执行模型。日周线验证候选输入、预热与周期归属，当前无跨 Session 订单有效期，返回 `BACKTEST_EXECUTION_POLICY_UNAVAILABLE` 或更早的资格失败。跨主力段保持阻断。当前 Catalog 横截面和回顾性 rule=2 匹配无法证明开盘时就可用的原始事实，因此正式资格仍留在 `RANK1_AS_KNOWN_UNPROVEN`。季节、手续费和历史数据修订按各 run 保存的输入及版本复核。

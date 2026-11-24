@@ -41,9 +41,12 @@ def _market(raw: dict) -> FrozenMarket:
 def replay(packet: dict, run_id: str) -> dict:
     market = _market(packet["market"])
     state = seed_decision_state()
-    trend = V2Strategy.TREND
+    strategy = V2Strategy(packet.get("strategy", "trend"))
+    frequency = packet.get("frequency", "5m")
+    if frequency in ("1d", "1w"):
+        raise ValueError("BACKTEST_EXECUTION_POLICY_UNAVAILABLE")
     base_context = {"scope_id": run_id, "config_revision": packet["execution_profile"],
-                    "strategies": (trend,), "execution_strategy": trend}
+                    "strategies": (strategy,), "execution_strategy": strategy}
     completed = []
     decisions = {}
     opens = {}
@@ -56,7 +59,8 @@ def replay(packet: dict, run_id: str) -> dict:
             verified_lifecycle=raw["verified_lifecycle"],
         )
         item = payload.completed_input()
-        if item.fingerprint != raw["fingerprint"] or item.physical_contract != market.contract:
+        if (item.fingerprint != raw["fingerprint"] or item.physical_contract != market.contract
+                or bar.frequency.value != frequency):
             raise ValueError("P3_COMPLETED_INPUT_MISMATCH")
         if not bar.bar.observation_eligible:
             if completed:
@@ -117,7 +121,8 @@ def replay(packet: dict, run_id: str) -> dict:
                 }
             if decision.execution_candidate:
                 signals.append(Signal(decision.decision_id, market.contract, decision.trading_day,
-                                      decision.bar_end, decision.main_action.value, available_at=decision.decision_at))
+                                      decision.bar_end, decision.main_action.value, available_at=decision.decision_at,
+                                      frequency=decision.frequency.value))
             following = next(pending, None)
         return signals
 

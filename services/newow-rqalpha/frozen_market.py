@@ -44,9 +44,12 @@ class Session:
 
     def __post_init__(self):
         start, end = local_naive(self.start), local_naive(self.end)
-        if (start.date() != self.day or end.date() != self.day
-                or not time(8, 30) <= start.time() < end.time() <= time(15)
-                or any(dt.second or dt.microsecond for dt in (start, end))):
+        day_session = (start.date() == end.date() == self.day
+                       and time(8, 30) <= start.time() < end.time() <= time(15))
+        night_session = (start.date() < self.day and start.time() >= time(20)
+                         and start < end <= datetime.combine(start.date() + timedelta(days=1), time(3))
+                         and end.date() <= self.day)
+        if not (day_session or night_session) or any(dt.second or dt.microsecond for dt in (start, end)):
             raise ValueError("INVALID_DAY_SESSION")
 
     def minute_ends(self):
@@ -114,13 +117,16 @@ class FrozenMarket:
     expired_date: date | None = None
 
     def __post_init__(self):
-        if (not fullmatch(r"[A-Z]+[0-9]{4}", self.contract)
+        if (not fullmatch(r"[A-Z]+[0-9]{3,4}", self.contract)
                 or not 1 <= int(self.contract[-2:]) <= 12
                 or Instrument.is_future_continuous_contract(self.contract)
-                or self.exchange != "SHFE" or not valid_decimal(self.tick, positive=True)
+                or self.exchange not in {"SHFE", "DCE", "CZCE", "CFFEX", "INE", "GFEX"}
+                or not valid_decimal(self.tick, positive=True)
                 or type(self.multiplier) is not int or self.multiplier <= 0):
             raise ValueError("INVALID_PHYSICAL_CONTRACT")
-        if not self.sessions or any(a.end >= b.start for a, b in zip(self.sessions, self.sessions[1:])):
+        if not self.sessions or any(
+            a.end >= b.start or a.day > b.day for a, b in zip(self.sessions, self.sessions[1:])
+        ):
             raise ValueError("INVALID_SESSION_ORDER")
         days = tuple(dict.fromkeys(session.day for session in self.sessions))
         if not self.window_start <= days[0] <= days[-1] <= self.window_end:

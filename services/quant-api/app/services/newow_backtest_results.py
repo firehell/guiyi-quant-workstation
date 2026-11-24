@@ -9,10 +9,10 @@ import re
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager, nullcontext
 from dataclasses import asdict, dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 
-from sqlalchemy import Date, Numeric, column, create_engine, func, insert, select, table, text, update
+from sqlalchemy import Date, DateTime, Numeric, column, create_engine, func, insert, select, table, text, update
 from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
 from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
@@ -39,6 +39,10 @@ _SERIES = table(
         "id", "product", "strategy", "frequency", "research_profile_id",
         "generation", "published_run_id", "last_attempt_id",
     )),
+)
+_SERIES_PUBLICATIONS = table(
+    "newow_backtest_series", column("id"), column("source_publication_at", DateTime(timezone=True)),
+    column("source_publication_sha256"),
 )
 _RUNS = table(
     "newow_backtest_runs",
@@ -86,6 +90,10 @@ class SeriesKey:
             or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", self.research_profile_id)
         ):
             raise ResultStoreError("BACKTEST_SERIES_INVALID")
+
+    @property
+    def is_trial(self) -> bool:
+        return self.research_profile_id == f"{self.strategy}_{self.frequency}_rqalpha_trial_v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,8 +254,8 @@ class ResultStore:
             raise ResultStoreError("BACKTEST_RESULT_READ_ONLY")
 
     @contextmanager
-    def job_slot(self, key: SeriesKey) -> Iterator[Connection]:
-        """Keep one database session per active series job, with no wait on contention."""
+    def job_slot(self, key: SeriesKey, *, wait_seconds: int = 0) -> Iterator[Connection]:
+        """Keep one database session per series, optionally waiting for an active runner."""
         self._write_access()
         try:
             connection = self._engine.connect()
@@ -257,12 +265,16 @@ class ResultStore:
             try:
                 with connection.begin():
                     self._verify_database(connection)
-                    locked = connection.scalar(select(func.pg_try_advisory_lock(*_job_lock_keys(key))))
-                    if not locked:
+                    if wait_seconds:
+                        connection.execute(text("SELECT set_config('statement_timeout', :timeout, true)"),
+                                           {"timeout": str(wait_seconds * 1000)})
+                        connection.execute(select(func.pg_advisory_lock(*_job_lock_keys(key))))
+                    elif not connection.scalar(select(func.pg_try_advisory_lock(*_job_lock_keys(key)))):
                         raise ResultStoreError("BACKTEST_JOB_BUSY")
                 connection.info[_JOB_SLOT] = key
-            except SQLAlchemyError:
-                raise ResultStoreError("BACKTEST_DATABASE_UNAVAILABLE") from None
+            except SQLAlchemyError as exc:
+                code = "BACKTEST_JOB_BUSY" if getattr(getattr(exc, "orig", None), "sqlstate", None) == "57014" else "BACKTEST_DATABASE_UNAVAILABLE"
+                raise ResultStoreError(code) from None
             # NullPool closes the database session on exit and releases its lock.
             yield connection
 
@@ -292,12 +304,42 @@ class ResultStore:
         equity_count = conn.scalar(select(func.count()).select_from(_EQUITY).where(_EQUITY.c.run_id == run_id))
         return trade_count, equity_count
 
+    def observe_source_publication(
+        self, key: SeriesKey, at: datetime, digest: str, connection: Connection,
+    ) -> bool:
+        """Fence delayed receipts without including delivery identity in the run hash."""
+        self._write_access()
+        if at.utcoffset() is None or _DIGEST.fullmatch(digest) is None:
+            raise ResultStoreError("BACKTEST_SOURCE_PUBLICATION_INVALID")
+        identity = asdict(key)
+        where = [getattr(_SERIES.c, name) == value for name, value in identity.items()]
+        try:
+            with connection.begin():
+                self._verify_job_slot(connection, key)
+                connection.execute(pg_insert(_SERIES).values(**identity).on_conflict_do_nothing())
+                series_id = connection.execute(select(_SERIES.c.id).where(*where).with_for_update()).scalar_one()
+                target = _SERIES_PUBLICATIONS.c
+                previous_at, previous_digest = connection.execute(select(
+                    target.source_publication_at, target.source_publication_sha256,
+                ).where(target.id == series_id)).one()
+                if previous_at is not None and previous_at > at:
+                    return False
+                if previous_at == at and previous_digest != digest:
+                    raise ResultStoreError("BACKTEST_SOURCE_PUBLICATION_CONFLICT")
+                if previous_at != at:
+                    connection.execute(update(_SERIES_PUBLICATIONS).where(target.id == series_id).values(
+                        source_publication_at=at, source_publication_sha256=digest,
+                    ))
+                return True
+        except SQLAlchemyError:
+            raise ResultStoreError("BACKTEST_SOURCE_PUBLICATION_WRITE_FAILED") from None
+
     def admit(
         self, key: SeriesKey, manifest: Mapping[str, object], *, eligible: bool,
-        job_connection: Connection | None = None,
+        job_connection: Connection | None = None, retry_failed: bool = True,
     ) -> Admission:
         self._write_access()
-        if type(eligible) is not bool or (eligible and key.research_profile_id == TRIAL_PROFILE):
+        if type(eligible) is not bool or (eligible and key.is_trial):
             raise ResultStoreError("BACKTEST_QUALIFICATION_INVALID")
         day = _date(manifest.get("as_of_trading_day"))
         frozen = json.loads(_json(dict(manifest) | {"as_of_trading_day": day.isoformat()}))
@@ -315,6 +357,8 @@ class ResultStore:
                 existing = conn.execute(select(_RUNS).where(_RUNS.c.run_id == run_id)).mappings().one_or_none()
                 if existing and existing["status"] == "SUCCEEDED":
                     return Admission(run_id, existing["generation"], False, "SUCCEEDED")
+                if existing and existing["status"] == "FAILED" and not retry_failed:
+                    return Admission(run_id, existing["generation"], False, "FAILED")
                 if existing and existing["status"] == "RUNNING":
                     if job_connection is None:
                         return Admission(run_id, existing["generation"], False)
@@ -393,7 +437,9 @@ class ResultStore:
                     return
                 if run["status"] != "RUNNING" or not admission.should_run:
                     raise ResultStoreError("BACKTEST_RUN_NOT_ACTIVE")
-                if not run["eligible"] and series["research_profile_id"] != TRIAL_PROFILE:
+                if not run["eligible"] and not SeriesKey(
+                    series["product"], series["strategy"], series["frequency"], series["research_profile_id"],
+                ).is_trial:
                     raise ResultStoreError("BACKTEST_FORMAL_INELIGIBLE")
                 if equity_rows[-1]["trading_day"] != run["as_of_trading_day"]:
                     raise ResultStoreError("BACKTEST_EQUITY_INVALID")

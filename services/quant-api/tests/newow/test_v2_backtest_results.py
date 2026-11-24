@@ -257,7 +257,7 @@ def test_lost_commit_acknowledgement_reconciles_committed_publication(p3_results
 def test_migration_coexists_with_existing_catalog_and_reference_tables(p3_results):
     store, _ = p3_results
     with store._engine.connect() as conn:
-        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "20261124_0055"
+        assert conn.scalar(text("SELECT version_num FROM alembic_version")) == "20261124_0056"
         tables = set(inspect(conn).get_table_names())
         assert {
             "market_partitions", "reference_inbox_recovery_results",
@@ -380,3 +380,52 @@ def test_job_slot_refuses_to_recover_running_with_existing_children(p3_results):
         with pytest.raises(ResultStoreError, match="BACKTEST_COMMIT_OUTCOME_UNKNOWN"):
             store.admit(key, manifest, eligible=True, job_connection=connection)
     assert _latest(client, key)["last_attempt"]["generation"] == orphan.generation
+
+
+def test_eod_receipt_reuse_order_and_explicit_transaction_recovery(p3_results, monkeypatch, tmp_path):
+    from datetime import datetime
+
+    from app.services import newow_backtest_eod as eod
+
+    store, client = p3_results
+    key = eod.research_key("fu", "oscillation", "15m", trial=True)
+    day = date(2026, 1, 5)
+    old = (datetime.fromisoformat("2026-01-05T18:01:00+08:00"), "a" * 64)
+    new = (datetime.fromisoformat("2026-01-05T18:02:00+08:00"), "b" * 64)
+    launches = []
+
+    def launch(_engine, _frozen, _digest, run_id):
+        launches.append(run_id)
+        return {"summary": {"money_policy": "P3"}, "trades": _trades(), "equity": _equity(str(day))}
+
+    monkeypatch.setattr(eod, "_launch", launch)
+
+    def execute(receipt, variant, *, retry=False):
+        manifest = _manifest(day, variant) | {"money_policy": "P3", "rank1": {"code": "RANK1_AS_KNOWN_UNPROVEN"}}
+        return eod._run_one(store, key, day, lambda: ({"variant": variant}, manifest),
+                            output=tmp_path, engine_python=tmp_path / "engine", code_identity="c" * 64,
+                            retry_failed=retry, source_publication=receipt, source_is_current=lambda: True)
+
+    initial = execute(old, "initial")
+    assert execute(old, "initial")["reused"]
+    assert launches == [initial["run_id"]]
+    with store._engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE newow_backtest_equity ADD CONSTRAINT p4_rollback CHECK (seq < 0) NOT VALID")
+    try:
+        failed = execute(new, "revised")
+        assert failed["code"] == "BACKTEST_RESULT_WRITE_FAILED"
+        assert _latest(client, key)["result"]["run_id"] == initial["run_id"]
+        assert client.get(f"{API}/{failed['run_id']}/trades").status_code == 404
+        assert execute(new, "revised")["reused"]
+    finally:
+        with store._engine.begin() as conn:
+            conn.exec_driver_sql("ALTER TABLE newow_backtest_equity DROP CONSTRAINT p4_rollback")
+    revision = execute(new, "revised", retry=True)
+    assert revision["run_id"] == failed["run_id"]
+    assert revision["status"] == "SUCCEEDED"
+    assert execute(old, "inverse") is None
+    with pytest.raises(ResultStoreError, match="BACKTEST_SOURCE_PUBLICATION_CONFLICT"):
+        execute((new[0], "d" * 64), "same-time conflict")
+    assert _latest(client, key)["result"]["run_id"] == revision["run_id"]
+    assert client.get(f"{API}/{initial['run_id']}/equity").status_code == 200
+    assert launches == [initial["run_id"], failed["run_id"], revision["run_id"]]

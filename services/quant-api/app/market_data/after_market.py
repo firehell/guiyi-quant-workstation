@@ -167,8 +167,10 @@ class AfterMarketUpdater:
         consumer_revision: Callable[[tuple[str, ...], date], str | Mapping[str, str]] | None = None,
         consumer_check_keys: tuple[str, ...] = ("newow_d1",),
         late_failure_schedule: Callable[..., None] | None = None,
+        research_update: Callable[[Path, date], None] | None = None,
     ) -> None:
         self.late_failure_schedule = late_failure_schedule
+        self.research_update = research_update
         self.manager = manager
         self.rqdata = rqdata
         self.rqdata_factory = rqdata_factory
@@ -205,6 +207,8 @@ class AfterMarketUpdater:
         self._historical_publications: list[dict[str, object]] | None = None
         with self.recovery_guard_factory():
             result = self._run_guarded()
+        if self.research_update is not None and result.status == "passed":
+            self.research_update(self.status_path, result.trading_day)
         if self.consumer_audit is not None:
             self._run_consumer_audit(result)
         return result
@@ -973,6 +977,12 @@ def build_after_market_updater(
             )
     from app.market_data.late_provider_recovery import schedule_failure
 
+    def refresh_research(path: Path, day: date) -> None:
+        from app.services.newow_backtest_eod import run_configured
+
+        run_configured(path, day, Path(research_config))
+
+    research_config = os.getenv("GUIYI_NEWOW_EOD_ISOLATED_CONFIG", "")
     return AfterMarketUpdater(
         manager=manager,
         rqdata=None,
@@ -988,6 +998,7 @@ def build_after_market_updater(
         recovery_guard_factory=lambda: after_market_recovery_guard(wait=True),
         consumer_guard_factory=lambda: after_market_recovery_guard(wait=False),
         consumer_audit=audit_newow_consumers,
+        research_update=refresh_research if research_config else None,
         consumer_revision=lambda products, day: _read_newow_consumer_revisions(products, day),
         consumer_check_keys=("newow_d1", "newow_w1"),
         late_failure_schedule=lambda result, products, started: schedule_failure(

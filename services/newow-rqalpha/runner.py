@@ -46,14 +46,15 @@ class Signal:
     direction: str = "LONG"
     limit_price: Decimal | None = None
     available_at: datetime | None = None
+    frequency: str = "5m"
 
     def __post_init__(self):
         if (not self.signal_id or self.action not in ("BUILD", "CLEAR", "HOLD")
                 or self.direction not in ("LONG", "SHORT")
                 or self.limit_price is not None and not valid_decimal(self.limit_price, positive=True)):
             raise ValueError("INVALID_SIGNAL")
-        if local_naive(self.bar_end).date() != self.day:
-            raise ValueError("SIGNAL_DAY_MISMATCH")
+        if self.bar_end.utcoffset() is None:
+            raise ValueError("SIGNAL_BAR_TIMEZONE_REQUIRED")
         if self.available_at is not None and (
             self.available_at.utcoffset() is None or self.available_at < self.bar_end
         ):
@@ -98,9 +99,10 @@ def _attempts(market, signals, minute_selector=None):
         previous = bar_end
         session = next((item for item in market.sessions
                         if item.day == signal.day and item.start < bar_end <= item.end), None)
-        if (session is None or bar_end.second or bar_end.microsecond
-                or (bar_end != session.end and (bar_end - session.start) % (5 * ONE_MINUTE))):
-            raise ValueError("SIGNAL_5M_SESSION_MISMATCH")
+        minutes_per_signal = {"5m": 5, "15m": 15, "30m": 30, "60m": 60}.get(signal.frequency)
+        if (session is None or minutes_per_signal is None or bar_end.second or bar_end.microsecond
+                or (bar_end != session.end and (bar_end - session.start) % (minutes_per_signal * ONE_MINUTE))):
+            raise ValueError("SIGNAL_SESSION_MISMATCH")
         if signal.limit_price is not None and signal.limit_price % market.tick:
             raise ValueError("SIGNAL_LIMIT_TICK_MISMATCH")
 
@@ -148,7 +150,7 @@ def run_proof(
     market: FrozenMarket, signals: tuple[Signal, ...], capital: Decimal, *,
     rollover_boundary=False, decide=None, minute_selector=None,
 ):
-    """Run one bounded day-session segment serially in a standalone Python process."""
+    """Run one bounded physical segment serially in a standalone Python process."""
     if rqalpha.__version__ != "6.3.0":
         raise RuntimeError("UNSUPPORTED_RQALPHA_VERSION")
     if not valid_decimal(capital, positive=True):

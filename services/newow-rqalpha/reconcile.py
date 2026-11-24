@@ -339,9 +339,12 @@ def _reconcile(result: dict, decisions: Mapping[str, dict]) -> dict:
     last_time = None
     for fill in fills:
         stamp = fill["native_event_at"]
-        if stamp.utcoffset() is None or stamp.date() not in days or (last_time is not None and stamp <= last_time):
+        trade_clock = fill["native_trading_at"]
+        trading_day = trade_clock.date()
+        if (stamp.utcoffset() is None or trade_clock.utcoffset() is None or trading_day not in days
+                or (last_time is not None and stamp <= last_time)):
             raise ReconciliationError("TRADE_SEQUENCE_INVALID", "fills.native_event_at")
-        by_day[stamp.date()].append(fill)
+        by_day[trading_day].append(fill)
         last_time = stamp
 
     trades = []
