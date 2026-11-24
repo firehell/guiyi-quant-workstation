@@ -12,6 +12,7 @@ from .product_contracts import (
     DataInterruption,
     OwnerBoundary,
     ProductStrategy,
+    StrategyAction,
     StrategyReplay,
     TradeEligibility,
 )
@@ -23,6 +24,26 @@ from .holding_reference import holding_reference_curve, fusion_theoretical_refer
 
 MODEL_VERSION = "newow_dual_fusion_trueup_reference_v1"
 GAP_FILL_MODEL_VERSION = "newow_dual_fusion_gap_fill_reference_v1"
+
+
+def select_fusion_actions(
+    candidates: tuple[StrategyAction, ...], *, holding: bool,
+) -> tuple[StrategyAction, ...]:
+    """Choose same-bar CLEAR then BUILD, preferring the oscillation source."""
+    ordered = sorted(candidates, key=lambda action: (
+        action.identity.strategy is not ProductStrategy.OSCILLATION,
+        action.sequence,
+        action.signal_id,
+    ))
+    clear = next((action for action in ordered if action.kind is ActionKind.CLEAR), None)
+    build = next((action for action in ordered if action.kind is ActionKind.BUILD), None)
+    selected: list[StrategyAction] = []
+    if holding and clear is not None:
+        selected.append(clear)
+        holding = False
+    if not holding and build is not None:
+        selected.append(build)
+    return tuple(selected)
 
 
 def _fusion_model_version(trend_identity):
@@ -240,12 +261,11 @@ def fusion_reference_comparison(
             if (a.physical_contract, a.segment_id, a.calculation_segment_id)
             == (bar.physical_contract, bar.segment_id, event.calculation_segment_id)
         ]
-        sells = [a for a in actions if a.kind is ActionKind.CLEAR]
-        buys = [a for a in actions if a.kind is ActionKind.BUILD]
-        if holding is not None and sells:
-            finish("CLOSED", sells[0])
-        if holding is None and buys:
-            holding, mark, bars_held = buys[0], event, 0
+        for action in select_fusion_actions(tuple(actions), holding=holding is not None):
+            if action.kind is ActionKind.CLEAR:
+                finish("CLOSED", action)
+            else:
+                holding, mark, bars_held = action, event, 0
     finish("OPEN")
     members = [r for r in rows if r["statistics_membership"] == "entry_in_window_v1"]
     closed = [r for r in members if r["status"] == "CLOSED"]

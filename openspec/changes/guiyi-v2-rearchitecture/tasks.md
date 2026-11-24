@@ -67,10 +67,11 @@ P0 只读，无须 PR 或集成，交付后确认干净再清理。后续有代�
 
 ## P2 · 一次实现策略决策，两个适配器各自持有状态
 
-- [ ] 拟建 `services/quant-api/tests/newow/test_v2_completed_decision.py`。先使夜盘、短 H1、午休、尾分钟缺失、周线未完成、同一身份异值与预热 HOLD 用例在缺失适配时失败。
-- [ ] 拟定 `step_completed(state, inputs, execution_context) -> (next_state, decision)`。映射既有输入/状态类型；趋势、震荡只各算一次，再按已有融合规则推进独立融合状态。保留精度、主动作、Hint 与重绘身份。
-- [ ] 对相同前缀执行逐条/批量及双适配器回放，再追加未来日周数据；前缀所有动作和原因须一致。缺口期间无补单。正常增量更新不重新读取全历史。
-- [ ] 运行 `PYTHONPATH=services/quant-api:packages/quant-core python -m pytest -q services/quant-api/tests/newow/test_v2_completed_decision.py services/quant-api/tests/newow/test_fusion_reference.py services/quant-api/tests/data_foundation/test_historical_session_window.py`。解释器按 TESTING.md 选择。
+- [x] `app.market_data.newow.v2_completed` 将现有 MDS 历史结果、completed journal 和已发布 D1/W1 映射为同一 `CompletedInput`。Session 校验保留夜盘、午休、短 H1 与完整周边界。D1/W1 前向输入绑定首次观察回执和原始 Bar 摘要；迟到、断档、修订及原件冲突按水位拒绝推进。
+- [x] `guiyi_quant.newow.decision_adapter.step_completed(state, input, execution_context)` 复用现役趋势与 TrueUp，各推进一次后计算独立融合。解释保留 CLEAR→BUILD 的来源顺序及 Hint 引用，执行候选只表达融合净变化。只有同物理合约已核实的仓位与显式选定策略能获得候选资格。
+- [x] P3 使用 `iter_historical_inputs` 和 `iter_historical_segments` 消费已封存的 MDS 结果。新主力单独预热，允许其历史前缀与上一主力重叠。生命周期证据若参与动作资格，调用端须提供截至该 Bar 已证明的前缀；日周价格质量断点开启新计算段。P3 用 `next_executable_minute` 查严格后继的合法开盘。
+- [x] P5 使用 `consume_completed` 提议成对提交的行情水位与策略状态。Canonical 预热结束后保留同 owner 的 Core 状态，使用独立前向水位。配置校验保留 60/16 正式规格和 70/20 隔离上限，退出中品种计入名额，物理订阅独立计数。持久化、对账与执行仍在 P5。
+- [x] 定向验证覆盖六周期、逐条与分批、检查点恢复、未来日周数据、换月及两档 fixture 容量。运行 `test_v2_completed_market.py`、`test_v2_completed_decision.py` 和现有聚合、Session、公式、参考回放回归。设置 `GUIYI_P2_FROZEN_FU` 指向已存在的 P0/P1-A FU2603 冻结目录，可复验已核验 SHA-256 的 5m 动作。P6 单列端到端时延及现场测试。
 
 ## P3 · 一个真实合约、趋势、5m，跑通历史切片
 
