@@ -1,0 +1,27 @@
+{
+  "archives": [
+    {
+      "root": "output/htdy-60m-full-replay-20261025/evidence-002",
+      "directory": "provider",
+      "capture_date": "2026-10-25",
+      "contracts": {
+        "FG2701": "3cb29dabc1f3f54530951276d63e6916b4e94af23e782d1ef95af46fc08fdd7a",
+        "I2701": "15835ce932fc468201218d64267ece16e3ab1fbda1817c43690f6fab4b065393",
+        "OI2701": "b1959aaaa74277fe14ac003c11fcd10f673a6a2b3d71ac4820547783d5c85b4f",
+        "RU2701": "a38ce541ead01109780295ce2f0fb73beb3ca68051ad5157684d3ebdc3f4419a",
+        "SA2701": "7684c8013f3355016339fa7075b0d16e94713d7f5dc4b66d3739cd2def4df247",
+        "SH2701": "48021031571e33ace7f34e2ca5f806e78f50aed42dd19aa0d73b8f7baeedc241",
+        "TA2701": "73f420c6f48a18206f397692beade9702d61a509fc12b82fc08cc00251ff6bb8",
+        "V2701": "35dca47e26d67546bbe51b8e67a1acca100aee077e6028a4174215581f8e1cde"
+      }
+    },
+    {
+      "root": "output/newow-futures-bidir-v1-20261020-evidence/facts-attempt-001",
+      "directory": ".",
+      "capture_date": "2026-10-21",
+      "contracts": {
+        "JM2701": "14d28f5ecbcfdd49a7a328824928d2f8ba4c7f090ab8cf7d2e0240e9f8e0b9d8"
+      }
+    }
+  ]
+}
