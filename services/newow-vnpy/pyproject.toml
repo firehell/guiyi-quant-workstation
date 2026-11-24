@@ -3,6 +3,11 @@ name = "guiyi-newow-vnpy"
 version = "0.1.0"
 requires-python = "==3.13.3"
 dependencies = [
+    "guiyi-quant-core",
+    "perk-pushplus-sdk==1.2.1",
+    "psycopg[binary]==3.3.4",
+    "python-dotenv==1.2.2",
+    "sqlalchemy==2.0.51",
     "vnpy==4.4.0",
     "vnpy-ctp @ https://github.com/vnpy/vnpy_ctp/archive/fa199f70dac9e242c20e925c17e2241b877e694f.tar.gz#sha256=de298bfd8c917d99fb84bf4177909cf98b791d701c056683d239546fc8f9eb6b",
     "vnpy-portfoliostrategy==1.3.0",
@@ -10,6 +15,9 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest==9.0.2"]
+
+[tool.uv.sources]
+guiyi-quant-core = { path = "../../packages/quant-core", editable = true }
 
 [tool.uv]
 package = false
