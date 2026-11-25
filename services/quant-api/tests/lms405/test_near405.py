@@ -6,8 +6,10 @@ from dataclasses import replace
 import json
 import pytest
 from guiyi_quant.lms405 import Bar
+from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
 from guiyi_quant.lms_near405 import (
-    EXTERNAL_PROTECTION_VERSION, ProtectionConfirmation, VERSION, context, evaluate, fingerprint, replay,
+    EXTERNAL_PROTECTION_VERSION, SCOPED_PROTECTION_VERSION, ProtectionConfirmation, ScopedProtectionConfirmation,
+    VERSION, context, evaluate, fingerprint, replay,
 )
 
 T = datetime(2025, 1, 1, tzinfo=UTC)
@@ -198,6 +200,112 @@ def test_external_protection_known_at_fingerprint_conflict_and_checkpoint():
     with pytest.raises(ValueError, match="PROTECTION_CONFIRMATION_CONTRACT_MISMATCH"):
         replay(bars, as_of=until(bars), timely_fixture=True,
                protection_confirmations=(replace(proof, contract="I2701"),))
+
+
+def protection_band(bars, revision, time, role="PROTECTION"):
+    bounds = {} if role == "REVIEW_PENDING" else dict(lower=D(101), upper=D(104))
+    return ProtectionBandUpdate(bars[0].contract, revision, role, time, time, "test", "LONG", **bounds)
+
+
+def scoped_proof(bars, band, signal_start, record_kind="TEST_FIXTURE", state=None):
+    if state is None:
+        state = replay(bars, as_of=until(bars[:8]), timely_fixture=True, protection_bands=(),
+                       protection_confirmations=())["current_state"]
+    end = bars[10].end
+    return ScopedProtectionConfirmation(
+        bars[0].contract, fingerprint(state), end, end, end, "scoped-test", record_kind,
+        band.scope, signal_start, "SHORT",
+    )
+
+
+def test_scoped_protection_rejects_target_old_scope_old_shape_and_wrong_side():
+    bars = lock_restore_bars()
+    active_at = bars[9].end
+    old = protection_band(bars, "old", bars[8].end)
+    new = protection_band(bars, "new", active_at)
+    target = protection_band(bars, "target", active_at + US, "TARGET")
+    pending = protection_band(bars, "review", active_at + US, "REVIEW_PENDING")
+    conflict = protection_band(bars, "other", active_at)
+    proof = scoped_proof(bars, new, active_at + 2 * US)
+    other_side = replace(new, side="SHORT")
+    for bands, supplied, expected in (
+        ((target,), (replace(proof, band_scope=target.scope),), "PROTECTION_RANGE_UNAVAILABLE"),
+        ((old, new), (replace(proof, band_scope=old.scope),), "PROTECTION_UNCONFIRMED"),
+        ((old, new), (replace(proof, signal_start=active_at),), "PROTECTION_UNCONFIRMED"),
+        ((old, new), (replace(proof, due_at=active_at),), "PROTECTION_UNCONFIRMED"),
+        ((old, new), (replace(proof, signal_side="LONG"),), "PROTECTION_UNCONFIRMED"),
+        ((old, new), (replace(protection_for(bars), state_fingerprint=proof.state_fingerprint),),
+         "PROTECTION_UNCONFIRMED"),
+        ((old, new, pending), (proof,), "PROTECTION_RANGE_REVIEW_PENDING"),
+        ((old, new, conflict), (proof,), "PROTECTION_RANGE_CONFLICT"),
+        ((other_side,), (replace(proof, band_scope=other_side.scope),), "PROTECTION_RANGE_UNAVAILABLE"),
+    ):
+        result = replay(bars, as_of=until(bars), timely_fixture=True, protection_bands=bands,
+                        protection_confirmations=supplied)
+        assert result["evaluations"][10]["status"] == expected
+        assert not any(p["action"] == "LOCK" for p in result["proposals"])
+    result = replay(bars, as_of=until(bars), timely_fixture=True,
+                    protection_bands=(old, new, target, new, replace(pending, side="SHORT")),
+                    protection_confirmations=(proof,))
+    assert result["version"] == SCOPED_PROTECTION_VERSION
+    assert [p["action"] for p in result["proposals"]] == ["ENTER_LONG", "LOCK", "UNLOCK_LONG", "CLEAR"]
+    assert result["proposals"][1]["protection_band_scope"] == new.scope
+
+
+def test_scoped_band_schedule_and_checkpoint_know_only_the_available_prefix():
+    bars = lock_restore_bars()
+    old = protection_band(bars, "old", bars[8].end)
+    activation = bars[9].end + US
+    new = replace(protection_band(bars, "new", bars[9].end), effective_after=activation)
+    cut = new.known_at
+    args = dict(timely_fixture=True, protection_confirmations=())
+    prefix = replay(bars, as_of=cut, protection_bands=(old,), **args)
+    assert replay(bars, as_of=cut, protection_bands=(old, new), **args) == prefix
+    scheduled = replay(bars, as_of=activation, protection_bands=(old, new), **args)
+    assert scheduled["evaluations"][9]["protection_band_scope"] == old.scope
+    proof = scoped_proof(bars, new, activation + US)
+    full = dict(timely_fixture=True, protection_bands=(old, new), protection_confirmations=(proof,))
+    continued = replay(bars, as_of=until(bars), checkpoint=json.loads(json.dumps(scheduled["checkpoint"])), **full)
+    assert continued == replay(bars, as_of=until(bars), **full)
+    assert any(row["action"] == "LOCK" for row in continued["transitions"])
+    with pytest.raises(ValueError, match="CHECKPOINT_IDENTITY_MISMATCH"):
+        replay(bars, as_of=until(bars), checkpoint=scheduled["checkpoint"],
+               **(full | dict(protection_bands=(old,))))
+    with pytest.raises(ValueError, match="SCOPED_CONFIRMATION_REQUIRES_PROTECTION_BANDS"):
+        replay(bars, as_of=until(bars), timely_fixture=True, protection_confirmations=(proof,))
+
+
+def test_ambiguous_revisions_with_decimal_scale_are_order_independent():
+    bars = lock_restore_bars()
+    band = protection_band(bars, "review", bars[9].end)
+    alternate = replace(band, lower=D("101.00"))
+    proof = scoped_proof(bars, band, bars[9].end + US)
+    args = dict(as_of=until(bars), timely_fixture=True, protection_confirmations=(proof,))
+    result = replay(bars, protection_bands=(band, alternate), **args)
+    assert result == replay(bars, protection_bands=(alternate, band), **args)
+    assert result["evaluations"][10]["status"] == "PROTECTION_RANGE_CONFLICT"
+    assert not any(row["action"] == "LOCK" for row in result["transitions"])
+
+
+def test_human_cannot_confirm_lock_after_the_protection_band_has_changed():
+    bars = lock_restore_bars()[:11]
+    old = protection_band(bars, "old", bars[8].end)
+    args = dict(protection_bands=(old,), protection_confirmations=())
+    initial = replay(bars, as_of=until(bars[:8]), **args)["proposals"][0]
+    accepted = decision(initial, record_kind="HUMAN_RESEARCH_DECISION")
+    state = replay(bars, (accepted,), as_of=until(bars[:8]), **args)["current_state"]
+    proof = scoped_proof(bars, old, bars[9].end, "HUMAN_RESEARCH_EVIDENCE", state)
+    args["protection_confirmations"] = (proof,)
+    generated = bars[10].end + US
+    p = replay(bars, (accepted,), as_of=generated, **args)["proposals"][-1]
+    assert p["action"] == "LOCK"
+    new = protection_band(bars, "replacement", generated, "REVIEW_PENDING")
+    lock_ack = decision(p, decision_id="human-lock", record_kind="HUMAN_RESEARCH_DECISION")
+    result = replay(bars, (accepted, lock_ack), as_of=until(bars),
+                    **(args | dict(protection_bands=(old, new))))
+    assert result["proposals"][-1]["expiry_reason"] == "PROTECTION_RANGE_REVIEW_PENDING"
+    assert result["decisions"][-1]["reason"] == "PROTECTION_RANGE_REVIEW_PENDING"
+    assert [t["action"] for t in result["transitions"]] == ["ENTER_LONG"]
 
 
 def test_external_human_evidence_proposes_only_and_risk_exit_has_priority():

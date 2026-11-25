@@ -212,6 +212,32 @@ services/quant-api/.venv/bin/python scripts/research/lms405_external_protection_
 
 研究仍需确定从行情生成保护需求与反向信号的候选，现有作者确认、可评分动作及账户成交均为空。
 
+## 保护价带换档与确认范围
+
+独立研究版本 `lms-near405-scoped-protection-v1` 在外部保护确认上增加价带版本和生效时间。菜油支持完成目标后另选或复用价带，烧碱支持弱侧待重评时保留新价位未知。旧、新价带的价格允许相同，角色、版本和生效时刻必须显式提供。 [菜油与烧碱证据](PORTFOLIO_RECONSTRUCTION.md#目标完成保护换档与已报告锁定)
+
+- 每个更新绑定物理合约、用途、方向、来源、获知和生效时间。保护用途的方向指所保护的原持仓。只处理严格早于评估时间、已经获知并生效的更新。目标记录仅保留价格用途，等待重评使同方向旧保护失效。同一生效时刻的不同更新使当次保护不可判定。
+- 锁定确认须绑定当前保护区身份以及具体仓位、计划和循环。保护需求和反向形态开始都须晚于保护区生效；形态开始也须晚于当前仓位生效。换档后旧确认失效，收到人工接受时会重新检查原建议绑定的价带。跨循环的新请求也须提供当前仓位与该次反向信号的新证据。
+- 风险退出仍优先。价带模型只约束已确认事实的用途和先后；作者实际区间、形态和介入仍需要外部来源。本版本未增加机械端点触发公式。
+
+沿用10月23、26、27和28日九个实月合约的2,484根5分钟行情。OI2609换档材料记录为不同物理合约，组合中的OI2701不采用它。SH2701作者锁定案例的新价带未知，作者案例也没有作为自动保护输入。
+
+|九品种重放|模拟进入|模拟退出|模拟锁定|模拟恢复|
+|---|---:|---:|---:|---:|
+|无可用保护确认，其他动作测试接受|41|40|0|0|
+|只在SH2701注入绑定新价带的测试确认|41|40|1|1|
+
+测试窗口内，只给目标、绑定旧保护区、在新区生效时已开始的形态，以及等待重评，均没有锁定建议。同一原空周期换成有效的新测试依据后，09:45模拟锁定，10:55恢复原空，11:00退出。人工模式有56条建议、0次状态转换。作者动作匹配分母仍为空，测试时间和动作保留测试身份。前缀与JSON重启结果相同。省略新参数运行旧外部版本，与冻结报告逐字节一致。新版本两次复算一致，原路径拒绝覆盖，最终报告 `output/lms405-scoped-protection-20261125/final-side.json`，SHA256 `da40e72047fe22889de199fd45d7b9a6a9825a95ed6fc0ac87099c1b37e347e7`。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_external_protection_replay.py \
+  --env-file .env --baseline output/lms405-portfolio-oct-20261125/fixture.json \
+  --evidence output/lms405-sized-portfolio-20261125/protection-permissions.json \
+  --scoped-handoff-evidence output/lms405-protection-handoff-20261125/final.json \
+  --exercise-sh-fixture --output /tmp/lms405-scoped-protection-new.json
+```
+
 ## 保护信号的周期选择对照
 
 作者在菜油案例建议用15分钟观察保护；焦煤图解明确是5分钟内包，盘后另谈到极端波动时可能缩短周期。股指问答与截图还提到5分钟甚至1分钟应急，但它没有给出商品4.0.5的统一开关。以四个已知窗口检验「同样的内包或pinbar几何，换周期能否解释此前缺失的保护信号」。窗口在读数前固定为当日作者建议之后、持仓图发出之前或已核对的图表时点。 [菜油保护说明](PORTFOLIO_RECONSTRUCTION.md#菜油提前保护与常规关键k的交叉验证) · [焦煤图解](SIGNAL_CHAIN_JULY22.md) · [股指周期问答](../../lms-source-archive/03-单品种分析/2026-10-22/股指/WRnTjn0HU8.md)

@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 from .lms405 import Position, Action, apply_action, physical_contract, timestamp
+from .lms405.protection_band import active_band, visible_bands
 from .lms_author_regions import RegionInput
 from .lms_keybar_approx import classify, VERSION as KEYBAR_VERSION
 from .lms_confirmed_replay import fingerprint
@@ -42,6 +43,7 @@ CLOCK_VERSIONS = {
     "PAUSE_WHILE_LOCKED": "lms-near405-hold-clock-pause-v1",
 }
 EXTERNAL_PROTECTION_VERSION = "lms-near405-external-protection-v1"
+SCOPED_PROTECTION_VERSION = "lms-near405-scoped-protection-v1"
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,21 @@ class ProtectionConfirmation:
             object.__setattr__(self, field, getattr(self, field).astimezone(UTC))
 
 
+@dataclass(frozen=True)
+class ScopedProtectionConfirmation(ProtectionConfirmation):
+    band_scope: str
+    signal_start: datetime
+    signal_side: str
+
+    def __post_init__(self):
+        super().__post_init__()
+        timestamp(self.signal_start)
+        if (not isinstance(self.band_scope, str) or not self.band_scope.strip()
+                or self.signal_side not in ("LONG", "SHORT") or self.signal_start >= self.signal_at):
+            raise ValueError("INVALID_SCOPED_PROTECTION_CONFIRMED_SIGNAL")
+        object.__setattr__(self, "signal_start", self.signal_start.astimezone(UTC))
+
+
 def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
     visible = []
     for item in confirmations:
@@ -86,7 +103,7 @@ def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
     return tuple(dict.fromkeys(visible))
 
 
-def _rules_for(region_input, clock, external_protection=False):
+def _rules_for(region_input, clock, external_protection=False, scoped_protection=False):
     if region_input is None and clock is None and not external_protection:
         return RULES, RULE_HASH
     rules = RULES.copy()
@@ -103,6 +120,9 @@ def _rules_for(region_input, clock, external_protection=False):
     if external_protection:
         rules.update(version=EXTERNAL_PROTECTION_VERSION,
                      protection="EXPLICIT_STATE_BOUND_CONFIRMATION_ONLY")
+    if scoped_protection:
+        rules.update(version=SCOPED_PROTECTION_VERSION,
+                     protection="EXPLICIT_STATE_AND_CURRENT_PROTECTION_RANGE_REQUIRED")
     return rules, fingerprint(rules)
 
 
@@ -263,12 +283,16 @@ def evaluate(
     timely_fixture=False,
     clock=None,
     protection_confirmations=None,
+    protection_bands=None,
 ):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
     t = c.end + US
     external = protection_confirmations is not None
-    rules, rule_hash = _rules_for(region_input, clock, external)
+    scoped = protection_bands is not None
+    if scoped and not external:
+        raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped)
     if external:
         if not isinstance(timely_fixture, bool):
             raise ValueError("BOOLEAN_MODE_REQUIRED")
@@ -277,6 +301,10 @@ def evaluate(
         protection_confirmations = _visible_protection(
             protection_confirmations, c.contract, as_of=c.end, timely_fixture=timely_fixture,
         )
+        if not scoped and any(isinstance(p, ScopedProtectionConfirmation) for p in protection_confirmations):
+            raise ValueError("SCOPED_CONFIRMATION_REQUIRES_PROTECTION_BANDS")
+    band, band_issue = (active_band(visible_bands(protection_bands, c.contract, t), t, state["original_side"])
+                        if scoped else (None, None))
     region = context(bars, index)
     region_issue = None
     author_region = None
@@ -333,6 +361,9 @@ def evaluate(
         result["region_issue"] = region_issue
         if region_issue:
             result["region"] = None
+    if scoped:
+        result["protection_band_scope"] = band.scope if band else None
+        result["protection_band_revision"] = band.revision if band else None
     if region is None:
         return result
     action = reason = plan = protection = None
@@ -349,7 +380,19 @@ def evaluate(
                      if bars[index - 1].end + US <= item.known_at < t
                      and since < min(item.due_at, item.signal_at)
                      and item.state_fingerprint == fingerprint(state)]
-            if len(proof) == 1:
+            if scoped:
+                original_side = state["original_side"]
+                proof = [
+                    item for item in proof
+                    if band is not None and isinstance(item, ScopedProtectionConfirmation)
+                    and item.band_scope == result["protection_band_scope"]
+                    and item.signal_side != original_side
+                    and band.effective_after < item.due_at
+                    and max(since, band.effective_after) < item.signal_start
+                ]
+            if band_issue:
+                result["status"] = band_issue
+            elif len(proof) == 1:
                 action, reason = "LOCK", "EXTERNAL_PROTECTION_CONFIRMED"
                 protection = proof[0]
             elif len(proof) > 1:
@@ -444,6 +487,8 @@ def evaluate(
         )
         if protection:
             p.update(signal_bar_end=None, protection_confirmation=fingerprint(asdict(protection)))
+            if band:
+                p.update(protection_band_scope=band.scope, protection_band_revision=band.revision)
         p["proposal_id"] = fingerprint(p)
         result.update(status="PROPOSAL", proposal=p)
     elif not held and not region_issue:
@@ -508,6 +553,7 @@ def replay(
     region_input=None,
     clock=None,
     protection_confirmations=None,
+    protection_bands=None,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
@@ -520,7 +566,10 @@ def replay(
     if region_input is not None and not isinstance(region_input, RegionInput):
         raise ValueError("REGION_INPUT_REQUIRED")
     external = protection_confirmations is not None
-    rules, rule_hash = _rules_for(region_input, clock, external)
+    scoped = protection_bands is not None
+    if scoped and not external:
+        raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped)
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
@@ -534,6 +583,10 @@ def replay(
         protection_confirmations = _visible_protection(
             protection_confirmations, visible[0].contract, as_of=as_of, timely_fixture=timely_fixture,
         )
+        if not scoped and any(isinstance(p, ScopedProtectionConfirmation) for p in protection_confirmations):
+            raise ValueError("SCOPED_CONFIRMATION_REQUIRES_PROTECTION_BANDS")
+    if scoped:
+        protection_bands = visible_bands(protection_bands, visible[0].contract, as_of)
     state = initial_state(visible)
     supplied = list(decisions or [])
     if timely_fixture and supplied:
@@ -550,6 +603,7 @@ def replay(
             region_input=region_input,
             clock=clock,
             protection_confirmations=protection_confirmations,
+            protection_bands=protection_bands,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -593,7 +647,13 @@ def replay(
     ]
     events.sort(key=lambda x: (x[0], x[1]))
 
-    def expire_author_entry(p, t):
+    def expire_scoped_proposal(p, t):
+        if p["status"] == "PENDING" and p.get("protection_band_scope"):
+            area, issue = active_band(protection_bands, t, state["original_side"])
+            if area is None or area.scope != p["protection_band_scope"]:
+                p.update(status="EXPIRED", expired_at=t.isoformat(),
+                         expiry_reason=issue or "PROTECTION_RANGE_SUPERSEDED")
+                return True
         if not (
             p["status"] == "PENDING"
             and p["action"].startswith(("ENTER_", "REENTER_"))
@@ -675,7 +735,7 @@ def replay(
                         p["generated_at"]
                     ):
                         reason = "DECISION_NOT_AFTER_PROPOSAL"
-                    elif expire_author_entry(p, t):
+                    elif expire_scoped_proposal(p, t):
                         reason = p["expiry_reason"]
                     elif d["decision"] == "REJECT":
                         p["status"] = "REJECTED"
@@ -728,6 +788,7 @@ def replay(
             timely_fixture=timely_fixture,
             clock=clock,
             protection_confirmations=protection_confirmations,
+            protection_bands=protection_bands,
         )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:
@@ -748,7 +809,7 @@ def replay(
                 process([d], ft)
 
     for p in proposals:
-        expire_author_entry(p, as_of)
+        expire_scoped_proposal(p, as_of)
 
     # Canonical chronological record order makes batch and resumed files identical.
     def record_key(record):
@@ -784,6 +845,8 @@ def replay(
         cp["protection_prefix_hash"] = fingerprint(sorted(
             fingerprint(asdict(item)) for item in protection_confirmations
         ))
+    if scoped:
+        cp["protection_band_prefix_hash"] = fingerprint(sorted(band.scope for band in protection_bands))
     terminal = (
         "FLAT"
         if state["long"] == state["short"] == "0"
