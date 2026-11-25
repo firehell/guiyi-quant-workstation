@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar, Position
 from lms405_carry_in_study import at_anchor, keybar_events, project
+from lms405_original_leg_study import compare_afternoon
 
 
 START = datetime.fromisoformat("2026-10-22T22:11:00+08:00")
@@ -79,3 +80,28 @@ def test_anchor_is_strict_and_recreated_leg_does_not_inherit_old_average():
     assert later["retained_leg_opening_average_agrees"] == {"long": None, "short": True}
     hold = at_anchor(seed, [], after(21), observations, SEED_FIELDS)
     assert hold["retained_leg_opening_average_agrees"] == {"long": False, "short": True}
+
+
+def test_original_leg_comparison_distinguishes_removing_protection_from_clearing():
+    older_short = SEED_FIELDS["short"] | {"today_quantity": 0}
+    snapshots = [
+        {"author_visible_legs": SEED_FIELDS | {"short": older_short}},
+        {"author_visible_legs": {"short": older_short}},
+    ]
+    signal = {"confirmed_at": after(10)}
+    comparison = compare_afternoon(CONTRACT, {"short_confirmations": {
+        "5m_to_1m": [signal],
+        "5m_to_5m": [],
+    }}, snapshots)
+    assert comparison["possible_state_changes"] == {
+        "retain_lock": {"long": QTY, "short": QTY},
+        "remove_protection": {"long": 0, "short": QTY},
+        "exit_both": {"long": 0, "short": 0},
+    }
+    assert comparison["visible_quantity_agrees"] == {
+        "retain_lock": {"long": None, "short": True},
+        "remove_protection": {"long": None, "short": True},
+        "exit_both": {"long": None, "short": False},
+    }
+    assert comparison["geometry_only_projections"]["5m_to_1m"]["scenario"] == "remove_protection"
+    assert comparison["geometry_only_projections"]["5m_to_5m"]["scenario"] == "retain_lock"
