@@ -46,6 +46,7 @@ EXTERNAL_PROTECTION_VERSION = "lms-near405-external-protection-v1"
 SCOPED_PROTECTION_VERSION = "lms-near405-scoped-protection-v1"
 CARRY_IN_VERSION = "lms-near405-carry-in-v1"
 CARRY_IN_EXIT_VERSION = "lms-near405-carry-in-explicit-exit-v1"
+CARRY_SCOPED_PROTECTION_VERSION = "lms-near405-carry-scoped-protection-v1"
 MANAGEMENT_VERSION = "lms-near405-managed-lifecycle-v1"
 
 
@@ -194,11 +195,18 @@ def _rules_for(
     if explicit_exit and not carry_in:
         raise ValueError("EXPLICIT_EXIT_REQUIRES_CARRY_IN")
     if carry_in:
-        if region_input is not None or clock is not None or external_protection or scoped_protection:
+        if (region_input is not None or clock is not None
+                or ((external_protection or scoped_protection)
+                    and not (external_protection and scoped_protection and explicit_exit))):
             raise ValueError("CARRY_IN_BASELINE_RULES_REQUIRED")
         rules = RULES | dict(version=CARRY_IN_VERSION, seed_plan="PRESEED_CONTEXT_PROXY")
         if explicit_exit:
             rules.update(version=CARRY_IN_EXIT_VERSION, carry_exit="EXPLICIT_POSITION_EVIDENCE")
+        if scoped_protection:
+            rules.update(version=CARRY_SCOPED_PROTECTION_VERSION,
+                         protection="EXPLICIT_STATE_AND_CURRENT_PROTECTION_RANGE_REQUIRED",
+                         recovery="CONTIGUOUS_ORIGINAL_DIRECTION_KEYBAR_AFTER_LOCK",
+                         pending_management="EXPIRE_ON_VISIBLE_EXIT_OR_PROTECTION_RANGE_SUPERSESSION")
         return rules, fingerprint(rules)
     if region_input is None and clock is None and not external_protection:
         return RULES, RULE_HASH
@@ -590,6 +598,9 @@ def _evaluate(
     signal_fresh = frame.bar.end > _time(state["since"])
     if seeded:
         signal_fresh = signal_fresh and frame.bar.start > _time(state["carry_in_known_at"])
+        if scoped and held:
+            signal_fresh = (signal_fresh and frame.bar.start > _time(state["since"])
+                            and frame.bar.end == c.start and bars[index - 2].end == frame.bar.start)
     if held and managed_lifecycle:
         signal_fresh = (frame.bar.start > _time(state["since"]) and frame.bar.end == c.start
                         and bars[index - 2].end == frame.bar.start)
@@ -911,17 +922,32 @@ def replay(
             (t, 1, None) for t in {item.known_at + US for item in carry_exit_evidence}
             if t > carry_in.known_at
         )
+    carry_scoped = rules["version"] == CARRY_SCOPED_PROTECTION_VERSION
+    if carry_scoped:
+        events.extend(
+            (t, 1, None) for t in {band.effective_after + US for band in protection_bands}
+            if carry_in.known_at < t <= as_of
+        )
     events.sort(key=lambda x: (x[0], x[1]))
 
     def expire_carry_exit_proposal(p, t):
-        if p["status"] == "PENDING" and p.get("carry_exit_evidence"):
-            visible_exits = _visible_carry_exits(
-                carry_exit_evidence, state["contract"], as_of=t, timely_fixture=timely_fixture,
-            )
-            matches = _carry_exits_for_state(visible_exits, state)
-            if len(matches) != 1 or fingerprint(asdict(matches[0])) != p["carry_exit_evidence"]:
-                p.update(status="EXPIRED", expired_at=t.isoformat(), expiry_reason="CARRY_IN_EXIT_EVIDENCE_CHANGED")
-                return True
+        if p["status"] != "PENDING":
+            return False
+        proof = p.get("carry_exit_evidence")
+        pending_carry_management = (carry_scoped and p["action"] in ("LOCK", "UNLOCK_LONG", "UNLOCK_SHORT")
+                                    and p["plan"].get("pricing_basis") == "PRESEED_CONTEXT_PROXY")
+        if not proof and not pending_carry_management:
+            return False
+        visible_exits = _visible_carry_exits(
+            carry_exit_evidence, state["contract"], as_of=t, timely_fixture=timely_fixture,
+        )
+        matches = _carry_exits_for_state(visible_exits, state)
+        if proof and (len(matches) != 1 or fingerprint(asdict(matches[0])) != proof):
+            p.update(status="EXPIRED", expired_at=t.isoformat(), expiry_reason="CARRY_IN_EXIT_EVIDENCE_CHANGED")
+            return True
+        if pending_carry_management and len(matches) == 1:
+            p.update(status="EXPIRED", expired_at=t.isoformat(), expiry_reason="EXPLICIT_CARRY_IN_EXIT_TAKES_PRIORITY")
+            return True
         return False
 
     def expire_scoped_proposal(p, t):
@@ -948,6 +974,11 @@ def replay(
             )
             return True
         return False
+
+    def expire_before_acceptance(p, t):
+        if carry_scoped:
+            return expire_carry_exit_proposal(p, t) or expire_scoped_proposal(p, t)
+        return expire_scoped_proposal(p, t) or expire_carry_exit_proposal(p, t)
 
     def process(ds, t):
         nonlocal state
@@ -1012,7 +1043,7 @@ def replay(
                         p["generated_at"]
                     ):
                         reason = "DECISION_NOT_AFTER_PROPOSAL"
-                    elif expire_scoped_proposal(p, t) or expire_carry_exit_proposal(p, t):
+                    elif expire_before_acceptance(p, t):
                         reason = p["expiry_reason"]
                     elif d["decision"] == "REJECT":
                         p["status"] = "REJECTED"
@@ -1053,7 +1084,10 @@ def replay(
     for t, kind, payload in events:
         if kind == 1:
             for p in proposals:
-                expire_carry_exit_proposal(p, t)
+                if carry_scoped:
+                    expire_before_acceptance(p, t)
+                else:
+                    expire_carry_exit_proposal(p, t)
             continue
         if kind == 2:
             process(payload, t)

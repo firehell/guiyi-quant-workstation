@@ -529,6 +529,152 @@ def test_scoped_band_schedule_and_checkpoint_know_only_the_available_prefix():
         replay(bars, as_of=until(bars), timely_fixture=True, protection_confirmations=(proof,))
 
 
+def test_carry_in_combines_one_selected_band_with_independent_exit_evidence():
+    from guiyi_quant.lms_near405 import CarryInExitEvidence, CarryInSeed
+
+    bars = managed_lock_restore_bars() + [bar(15, 114, 116, 111, 113)]
+    seed = CarryInSeed("JM2509", bars[7].end + timedelta(minutes=1), "LONG", False, "archive")
+    early = protection_band(bars, "early", bars[9].end)
+    late = replace(early, revision="late", lower=D(97), upper=D(100))
+    pending = protection_band(bars, "pending", early.known_at, "REVIEW_PENDING")
+    args = dict(carry_in=seed, timely_fixture=True, carry_exit_evidence=())
+    initial = replay(bars, as_of=seed.known_at, protection_bands=(), protection_confirmations=(), **args)
+    assert initial["version"] == "lms-near405-carry-scoped-protection-v1"
+    proof = scoped_proof(bars, early, early.known_at + 2 * US, state=initial["current_state"])
+    args.update(protection_confirmations=(proof,))
+    cutoff = bars[14].end + 3 * US
+
+    results = {}
+    for name, bands in (("early", (early,)), ("late", (late,)), ("pending", (pending,)),
+                        ("conflict", (early, late))):
+        prefix = replay(bars, as_of=cutoff, protection_bands=bands, **args)
+        state = prefix["current_state"]
+        assert state["plan"] == initial["current_state"]["plan"]
+        assert state["cycle_id"] == initial["current_state"]["cycle_id"]
+        proposed_exit = CarryInExitEvidence(
+            seed.contract, fingerprint(state), cutoff, cutoff, "fixed-exit-fixture", "TEST_FIXTURE",
+        )
+        with_exit = args | dict(carry_exit_evidence=(proposed_exit,))
+        advanced = replay(bars, as_of=until(bars), protection_bands=bands, **with_exit)
+        assert advanced == replay(bars, as_of=until(bars), protection_bands=bands,
+                                  checkpoint=json.loads(json.dumps(prefix["checkpoint"])), **with_exit)
+        assert advanced["transitions"][-1]["reason"] == "EXPLICIT_CARRY_IN_EXIT"
+        assert advanced["terminal_status"] == "FLAT"
+        results[name] = [step["action"] for step in advanced["transitions"]]
+    assert results == {"early": ["LOCK", "UNLOCK_LONG", "CLEAR"], "late": ["CLEAR"],
+                       "pending": ["CLEAR"], "conflict": ["CLEAR"]}
+
+    locked = replay(bars, as_of=until(bars[:11]), protection_bands=(early,), **args)["current_state"]
+    conflict_at = bars[11].start + 3 * US
+    explicit = CarryInExitEvidence(
+        seed.contract, fingerprint(locked), conflict_at, conflict_at, "exit-while-locked", "TEST_FIXTURE",
+    )
+    cleared = replay(bars, as_of=until(bars[:12]), protection_bands=(early,),
+                     **(args | dict(carry_exit_evidence=(explicit,))))
+    assert [step["action"] for step in cleared["transitions"]] == ["LOCK", "CLEAR"]
+    assert cleared["transitions"][-1]["before"]["long"] == cleared["transitions"][-1]["before"]["short"] == "1"
+    assert cleared["terminal_status"] == "FLAT"
+
+
+def test_carry_scoped_recovery_cannot_use_a_shape_opened_before_lock_acceptance():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    rows = lock_restore_bars()[:11]
+    rows += [bar(11, 102, 104, 101, 103), bar(12, 103, 106, 102, 105)]
+    seed = CarryInSeed("JM2509", rows[7].end + timedelta(minutes=1), "LONG", False, "archive")
+    band = protection_band(rows, "early", rows[9].end)
+    args = dict(carry_in=seed, timely_fixture=True, carry_exit_evidence=(), protection_bands=(band,))
+    initial = replay(rows, as_of=seed.known_at, protection_confirmations=(), **args)
+    proof = scoped_proof(rows, band, band.known_at + 2 * US, state=initial["current_state"])
+    result = replay(rows, as_of=until(rows), protection_confirmations=(proof,), **args)
+    assert result["evaluations"][-1]["signal_direction"] == "LONG"
+    assert result["evaluations"][-1]["status"] == "STALE_SIGNAL"
+    assert [step["action"] for step in result["transitions"]] == ["LOCK"]
+    assert result["terminal_status"] == "OPEN_LOCKED"
+
+
+def test_carry_scoped_exit_preempts_a_pending_lock_once_exit_is_known():
+    from guiyi_quant.lms_near405 import CarryInExitEvidence, CarryInSeed
+
+    bars = managed_lock_restore_bars()
+    seed = CarryInSeed("JM2509", bars[7].end + timedelta(minutes=1), "LONG", False, "archive")
+    band = protection_band(bars, "early", bars[9].end)
+    args = dict(carry_in=seed, protection_bands=(band,), carry_exit_evidence=())
+    initial = replay(bars, as_of=seed.known_at, protection_confirmations=(), **args)
+    proof = scoped_proof(bars, band, band.known_at + 2 * US, "HUMAN_RESEARCH_EVIDENCE", initial["current_state"])
+    args.update(protection_confirmations=(proof,))
+    proposal = replay(bars, as_of=until(bars[:11]), **args)["proposals"][0]
+    assert proposal["action"] == "LOCK"
+    generated = datetime.fromisoformat(proposal["generated_at"])
+    known = generated + 2 * US
+    evidence = CarryInExitEvidence(
+        seed.contract, proposal["state_fingerprint"], known, known, "explicit-exit", "HUMAN_RESEARCH_EVIDENCE",
+    )
+    with_exit = args | dict(carry_exit_evidence=(evidence,))
+    at_known = replay(bars, as_of=known, **with_exit)
+    assert at_known == replay(bars, as_of=known, **args)
+    assert at_known["proposals"][0]["status"] == "PENDING"
+
+    accepted_at = (known + 2 * US).isoformat()
+    accept = decision(proposal, decided_at=accepted_at, known_at=accepted_at, record_kind="HUMAN_RESEARCH_DECISION")
+    result = replay(bars, [accept], as_of=until(bars[:12]), **with_exit)
+    assert result == replay(bars, [accept], as_of=until(bars[:12]), checkpoint=at_known["checkpoint"], **with_exit)
+    lock, clear = result["proposals"]
+    assert lock["status"] == "EXPIRED"
+    assert lock["expired_at"] == (known + US).isoformat()
+    assert lock["expiry_reason"] == "EXPLICIT_CARRY_IN_EXIT_TAKES_PRIORITY"
+    assert clear["action"] == "CLEAR"
+    assert not result["transitions"]
+
+
+def test_carry_scoped_revised_band_expires_pending_lock_at_a_stable_time():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    bars = managed_lock_restore_bars()
+    seed = CarryInSeed("JM2509", bars[7].end + timedelta(minutes=1), "LONG", False, "archive")
+    band = protection_band(bars, "early", bars[9].end)
+    initial = replay(bars, as_of=seed.known_at, carry_in=seed, carry_exit_evidence=(),
+                     protection_bands=(), protection_confirmations=())
+    proof = scoped_proof(bars, band, band.known_at + 2 * US, "HUMAN_RESEARCH_EVIDENCE", initial["current_state"])
+    effective = bars[10].end + 3 * US
+    next_band = protection_band(bars, "revised", effective)
+    args = dict(carry_in=seed, carry_exit_evidence=(), protection_bands=(band, next_band),
+                protection_confirmations=(proof,))
+    before = replay(bars, as_of=effective, **args)
+    assert before["proposals"][0]["status"] == "PENDING"
+    at_expiry = replay(bars, as_of=effective + US, **args)
+    extended = replay(bars, as_of=until(bars[:12]), checkpoint=before["checkpoint"], **args)
+    assert at_expiry["proposals"] == extended["proposals"]
+    (proposal,) = extended["proposals"]
+    assert proposal["expired_at"] == (effective + US).isoformat()
+    assert proposal["expiry_reason"] == "PROTECTION_RANGE_SUPERSEDED"
+    assert not extended["transitions"]
+
+
+def test_carry_scoped_exit_and_band_update_have_same_priority_for_fixture_and_human():
+    from guiyi_quant.lms_near405 import CarryInExitEvidence, CarryInSeed
+
+    bars = managed_lock_restore_bars()
+    seed = CarryInSeed("JM2509", bars[7].end + timedelta(minutes=1), "LONG", False, "archive")
+    band = protection_band(bars, "early", bars[9].end)
+    generated = bars[10].end + US
+    newer = protection_band(bars, "revised", generated)
+    initial = replay(bars, as_of=seed.known_at, carry_in=seed, carry_exit_evidence=(),
+                     protection_bands=(), protection_confirmations=())["current_state"]
+    proof = scoped_proof(bars, band, band.known_at + 2 * US, "HUMAN_RESEARCH_EVIDENCE", initial)
+    exit_evidence = CarryInExitEvidence(
+        seed.contract, fingerprint(initial), generated, generated, "same-time-exit", "HUMAN_RESEARCH_EVIDENCE",
+    )
+    args = dict(carry_in=seed, protection_bands=(band, newer), protection_confirmations=(proof,),
+                carry_exit_evidence=(exit_evidence,))
+    fixture = replay(bars, as_of=generated + US, timely_fixture=True, **args)
+    proposal = replay(bars, as_of=generated, **args)["proposals"][0]
+    human = replay(bars, [decision(proposal, record_kind="HUMAN_RESEARCH_DECISION")], as_of=generated + US, **args)
+    for result in (fixture, human):
+        assert not result["transitions"]
+        assert result["proposals"][0]["expiry_reason"] == "EXPLICIT_CARRY_IN_EXIT_TAKES_PRIORITY"
+
+
 def test_ambiguous_revisions_with_decimal_scale_are_order_independent():
     bars = lock_restore_bars()
     band = protection_band(bars, "review", bars[9].end)
