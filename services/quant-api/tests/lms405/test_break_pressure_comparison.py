@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
 from lms405_break_pressure_comparison import compare_break, first_shape_after, inspect
+from lms405_ordered_original_short import ordered_followups
 from lms405_right_side_study import ONE, US, at
 
 
@@ -42,3 +43,33 @@ def test_only_new_shapes_known_before_invalidation_can_follow_a_retest():
     at_invalidation = {"shape_start": end + ONE, "available_at": invalid}
     events = {"valid": [too_early, present], "invalid": [at_invalidation]}
     assert first_shape_after(events, end, invalid) == {"valid": present, "invalid": None}
+
+
+def test_separate_break_excludes_earlier_and_overlapping_crosses_and_stops_at_recapture():
+    end = at("2025-12-18T09:05")
+    bars = [minute(end + n * ONE, close) for n, close in enumerate(
+        [8970, 8968, 8970, 8968, 8970, 8968, 8968, 8968, 8970, 8968, 8968]
+    )]
+    anchor = bars[2].end
+    pressure = dict(
+        uninterrupted_observed_retest=None, uninterrupted_full_bar_retest=None,
+        renewed_break_after_inside_close=dict(bar_end=anchor, observed_until=bars[-1].end + US),
+    )
+    fresh_break = bars[5].end
+    recaptured = bars[8].end
+    valid = dict(shape_start=bars[6].end, available_at=bars[7].end + US)
+    at_recapture = dict(shape_start=bars[6].end, available_at=recaptured + US)
+    before_break = dict(shape_start=bars[4].start, available_at=bars[6].end + US)
+    report = ordered_followups(bars, [pressure], Decimal(8969),
+                               {"yes": [before_break, valid], "too_late": [at_recapture]})
+    assert [entry["at"] for entry in report["fresh_crosses"]] == [
+        bars[1].end, bars[3].end, fresh_break, bars[9].end,
+    ]
+    branch = report["branches"][0]
+    first, second = branch["trigger_attempts"]
+    assert first["trigger_at"] == fresh_break
+    assert first["trigger_recaptured_at"] == recaptured
+    assert first["fresh_shapes_before_pressure_reset"] == {"yes": valid, "too_late": at_recapture}
+    assert first["fresh_shapes_before_trigger_recapture"] == {"yes": valid, "too_late": None}
+    assert second["trigger_at"] == bars[9].end
+    assert second["fresh_shapes_before_trigger_recapture"] == {"yes": None, "too_late": None}
