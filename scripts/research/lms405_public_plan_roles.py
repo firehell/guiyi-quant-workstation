@@ -7,9 +7,10 @@ from pathlib import Path
 
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_recovery_confirmation_audit import examine
-from lms405_protection_timeframes import read_window
+from lms405_protection_timeframes import VARIANTS, geometry_events, read_window, summarize
 from lms405_replay import display
 from lms405_right_side_study import ONE, US, at
+from lms405_v_zone_progress import observations
 from lms_near405_replay import encoded, sha
 
 TA_TARGET_COMMENT_AT = "2025-09-25T14:57"
@@ -54,6 +55,28 @@ MANAGEMENT_CASES = {
         ("short_reentry_reference", "session_start", "close", "SHORT", "5432 5494"),
     )),
 }
+PROTECTION_AND_M_CASES = {
+    "S5246699477926773": ("OI2605", "2025-12-22", "17:01", (
+        ("optional_counter_m_after_reported_lock", "session_start", "close", "LONG", "8738 8814"),
+    )),
+    "S5310836013794895": ("V2609", "2026-06-17", "16:37", (
+        ("incomplete_weak_side_m", "session_start", "close", "LONG", "4686 4704"),
+    )),
+    "S5319173366613171": ("SA2609", "2026-07-10", "16:46", (
+        ("short_protection_reference", "session_start", "close", "LONG", "1079 1087"),
+        ("m_reference", "session_start", "close", "LONG", "1087 1094"),
+    )),
+    "S5323519697094213": ("FG2609", "2026-07-22", "16:37", (
+        ("trend_reference", "session_start", "close", "LONG", "882 897"),
+        ("short_protection_reference", "session_start", "close", "LONG", "893 899"),
+    )),
+}
+EARLIER_PROTECTION_CONTEXT = {"S5323519697094213": "2026-07-21"}
+BATCHES = {
+    "published-updates": CASES,
+    "management": MANAGEMENT_CASES,
+    "protection-and-m": PROTECTION_AND_M_CASES,
+}
 
 
 def load_source(index, key):
@@ -65,7 +88,8 @@ def load_source(index, key):
 def study(session, market, *, batch="published-updates"):
     index = input_sources()
     use_management = batch == "management"
-    cases = MANAGEMENT_CASES if use_management else CASES
+    compare_protection = batch == "protection-and-m"
+    cases = BATCHES[batch]
     records = {}
     for source_id, (contract, day, published_minute, roles) in cases.items():
         source = load_source(index, source_id)
@@ -73,7 +97,10 @@ def study(session, market, *, batch="published-updates"):
         if published != at(f"{day}T{published_minute}"):
             raise ValueError("PUBLIC_PLAN_SOURCE_TIME_CHANGED")
         series = read_window(session, market, contract, date.fromisoformat(day))
-        close = at(f"{day}T15:00") + 2 * US
+        session_close = at(f"{day}T15:00")
+        close = session_close + 2 * US
+        if compare_protection and (series[1][-1].end != session_close or published <= close):
+            raise ValueError("PUBLIC_PROTECTION_REPORT_WINDOW_MISMATCH")
         boundaries = dict(published=published, after_publication=published + ONE,
                           session_start=series[1][0].start, close=close)
         if source_id == "G63272-549":
@@ -84,20 +111,43 @@ def study(session, market, *, batch="published-updates"):
             cut_at = boundaries.get(cut) or at(f"{day}T{cut}")
             band = tuple(map(Decimal, levels.split()))
             results[role] = examine(series, start=start_at, cut=cut_at, side=side, band=band)
+            if compare_protection:
+                results[role]["in_band_geometry"] = {
+                    f"{shape}m_to_{confirmation}m": summarize(
+                        geometry_events(series, shape, confirmation, start=start_at, as_of=cut_at, side=side),
+                        band=band, milestones=(),
+                    ) for shape, confirmation in VARIANTS
+                }
         record = dict(contract=contract, source=source, trading_day=day, role_windows=results)
-        if use_management:
+        if use_management or compare_protection:
             minutes = series[1]
             record["market_extrema"] = dict(
                 first_minute_end=display(minutes[0].end), open=minutes[0].open, close=minutes[-1].close,
                 high_at=display(max(minutes, key=lambda bar: bar.high).end),
                 low_at=display(min(minutes, key=lambda bar: bar.low).end),
             )
+        if compare_protection:
+            record["market_extrema"].update(low=min(bar.low for bar in minutes), high=max(bar.high for bar in minutes))
+            record["market_bar_counts"] = {f"{period}m": len(bars) for period, bars in series.items()}
+            prior_day = EARLIER_PROTECTION_CONTEXT.get(source_id)
+            if prior_day:
+                prior = read_window(session, market, contract, date.fromisoformat(prior_day))[1]
+                if prior[-1].end != at(f"{prior_day}T15:00") or prior[-1].end >= minutes[0].start:
+                    raise ValueError("PUBLIC_PROTECTION_PRIOR_WINDOW_MISMATCH")
+                record["earlier_price_context"] = dict(
+                    trading_day=prior_day, reference_from_later_publication=True,
+                    close=prior[-1].close, open_change=minutes[0].open - prior[-1].close,
+                    bands={role: observations(prior, tuple(map(Decimal, prices.split())), side)
+                           for role, _, _, side, prices in roles},
+                )
         records[source_id] = record
 
     report = dict(cases=records, originals_before_current_archives=None, admitted_author_action_samples=0,
                   executable=False, fills=None, pnl=None)
     if use_management:
         return report | dict(version="lms405-public-management-roles-v1", price_roles_retrospective_only=True)
+    if compare_protection:
+        return report | dict(version="lms405-public-protection-and-m-roles-v1", price_roles_retrospective_only=True)
     return report | dict(version="lms405-public-plan-roles-v1",
                          author_comment=dict(source_id="G63272-549", published_at=at(TA_TARGET_COMMENT_AT),
                                              role="REPORTED_TARGET_REACHED"),
@@ -108,7 +158,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--batch", choices=("published-updates", "management"), default="published-updates")
+    parser.add_argument("--batch", choices=BATCHES, default="published-updates")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
