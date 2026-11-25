@@ -6,12 +6,15 @@ from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 
-from lms405_portfolio_replay import BOOK, CONTRACTS
+from lms405_portfolio_replay import ARCHIVE, BOOK, CONTRACTS
 from lms_near405_replay import encoded, sha
 
 SPECS = BOOK.with_name("portfolio-oct-contract-spec-sources.json")
 EXPOSURE_SHA256 = "d359577caffa505a9d6c1840680c430cfc4e8fbfd6ad7812d445404ba8ba464a"
 HALF_LOT = Decimal("0.5")
+AUGUST_IMAGE = Path("02-持仓记录/2026-08-11/0023CoqUgy1ifzqicrvdrj50iq090dkz2.jpg")
+AUGUST_IMAGE_SHA256 = "8a4f889d36375fb7830d976615c51cdb41f3633e86aca8d81bda83d5f8ba9d74"
+AUGUST_VISIBLE = {"FG2609": 20, "OI2609": 40, "SA2609": 20, "JM2609": 20, "SH2609": 16, "I2609": 16, "RU2609": 20}
 
 
 def positive_decimal(value):
@@ -124,10 +127,36 @@ def sizing_report(exposure, specs):
     )
 
 
+def compare_visible_quantities(october, august):
+    """Test a common quantity rescale conditional on comparable strategy rows."""
+    comparable, absent, lower_limits, upper_limits = {}, [], {}, {}
+    for later, observation in october.items():
+        earlier = later[:-4] + "2609"
+        before = august.get(earlier)
+        after = observation["displayed_quantities"]
+        if before is None or not after:
+            absent.append(later[:-4])
+            continue
+        # Scale the observed earlier whole lots. Allow a half-lot either way in the later display.
+        lower_limits[later] = (max(after) - HALF_LOT) / before
+        upper_limits[later] = (min(after) + HALF_LOT) / before
+        comparable[later[:-4]] = dict(august_contract=earlier, august_lots=before,
+                                     october_contract=later, october_lots=after,
+                                     same_lots_observed=all(quantity == before for quantity in after))
+    return dict(
+        comparable=comparable, no_comparable_august_row=sorted(absent),
+        fixed_lots_all_displayed_possible=all(row["same_lots_observed"] for row in comparable.values()) if comparable else None,
+        common_quantity_scale_possible=max(lower_limits.values()) <= min(upper_limits.values()) if lower_limits else None,
+        lower_scale_by_contract=lower_limits, upper_scale_by_contract=upper_limits,
+        account_and_strategy_continuity=None, record_scope="DISPLAYED_SNAPSHOT_QUANTITIES_ONLY",
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--exposure-audit", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--compare-august-quantities", action="store_true")
     args = parser.parse_args()
     try:
         exposure, spec_sources = args.exposure_audit.read_bytes(), SPECS.read_bytes()
@@ -135,6 +164,13 @@ def main():
             raise ValueError("EXPOSURE_AUDIT_HASH_MISMATCH")
         report = sizing_report(json.loads(exposure), load_specs(json.loads(spec_sources)))
         report["input_sha256"] = dict(exposure=sha(exposure), spec_sources=sha(spec_sources))
+        if args.compare_august_quantities:
+            if sha((ARCHIVE.parent / AUGUST_IMAGE).read_bytes()) != AUGUST_IMAGE_SHA256:
+                raise ValueError("AUGUST_HOLDING_IMAGE_HASH_MISMATCH")
+            report["version"] = "lms405-august-october-visible-sizing-v1"
+            report["august_comparison"] = compare_visible_quantities(report["by_contract"], AUGUST_VISIBLE)
+            report["august_source"] = dict(source="WRcSq3muJk", image=AUGUST_IMAGE.as_posix(),
+                                           sha256=AUGUST_IMAGE_SHA256, row_system=None)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except (OSError, ValueError, KeyError, InvalidOperation) as error:

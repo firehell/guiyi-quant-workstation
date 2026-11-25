@@ -2,7 +2,7 @@ from decimal import Decimal
 
 import pytest
 
-from lms405_sizing_audit import common_target, normalized_leg, sizing_report
+from lms405_sizing_audit import common_target, compare_visible_quantities, normalized_leg, sizing_report
 
 
 def test_opening_notional_and_one_tick_use_distinct_price_bases():
@@ -48,3 +48,25 @@ def test_mixed_tables_cannot_create_repeated_size_evidence():
     assert report["by_contract"]["RU2701"]["stable_lots_across_visible_tables"] is None
     assert report["by_contract"]["FG2701"]["opening_notional_range"] is None
     assert report["account_equity"] is report["account_margin"] is report["original_sizing_formula"] is None
+
+
+def test_cross_month_rescale_uses_only_observed_rows_and_all_later_quantities():
+    october = {
+        "OI2701": {"displayed_quantities": [40]},
+        "SH2701": {"displayed_quantities": [20]},
+        "TA2701": {"displayed_quantities": [34]},
+    }
+    august = {"OI2609": 40, "SH2609": 16, "JM2609": 20}
+    report = compare_visible_quantities(october, august)
+    assert report["no_comparable_august_row"] == ["TA"]
+    assert report["lower_scale_by_contract"]["SH2701"] == Decimal("1.21875")
+    assert report["upper_scale_by_contract"]["OI2701"] == Decimal("1.0125")
+    assert report["fixed_lots_all_displayed_possible"] is False
+    assert report["common_quantity_scale_possible"] is False
+    assert report["account_and_strategy_continuity"] is None
+
+    october["SH2701"]["displayed_quantities"] = [16, 20]
+    mixed_sizes = compare_visible_quantities(october, august)
+    assert mixed_sizes["comparable"]["SH"]["same_lots_observed"] is False
+    assert mixed_sizes["common_quantity_scale_possible"] is False
+    assert compare_visible_quantities(october, {})["common_quantity_scale_possible"] is None

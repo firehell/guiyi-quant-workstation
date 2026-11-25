@@ -271,6 +271,33 @@ services/quant-api/.venv/bin/python scripts/research/lms405_sizing_audit.py \
 
 结果位于 `output/lms405-exposure-20261125/sizing-audit.json`，SHA256 `ef8c8dd93f5fde25d3fb7ac7a25f90659b6122b729cae7aae7c4224fb4d30ce1`。两次复算逐字节一致，已有路径拒绝覆盖。LMS定向285通过、1跳过，独立复核通过。
 
+### 换月前后的可见手数与组合容量
+
+复读8月11日原午图，截取九品种研究范围内的七条商品行。八个商品行报价与11:30收盘相容，午图属于多系统汇总，逐行系统版本和账户未知。右列仅用10月已归档的4.0.5封面表。两列按品种关联，手数不跨合约继承。 [8月午盘原图](../../lms-source-archive/02-持仓记录/2026-08-11/WRcSq3muJk.md) · [8月行情对齐](PORTFOLIO_RECONSTRUCTION.md#焦煤旧多仓与强侧目标扩展)
+
+|品种|8月2609可见单腿|10月2701可见单腿|
+|---|---:|---:|
+|菜油|40|40|
+|橡胶|20|20|
+|焦煤|20|20|
+|玻璃|20|20|
+|纯碱|20|20|
+|烧碱|16|20|
+|铁矿|16|16|
+
+PVC及PTA没有可比的8月行，数量保留未知。10月23日及27日两张4.0.5封面表均同时可见烧碱多20和菜油多40，两行可以与8月午图同方向比较。若两个时期的行都属于同一账户和策略，每品种永久固定手数无法解释烧碱16与20的差别。将8月显示手数统一乘以一个比例并允许最多半手取整，也无法同时解释两表。烧碱要求比例至少1.21875，菜油40手允许的最高比例为1.0125。六品种同手数可以作为跨样本观察。烧碱的变化还可能来自账户、逐行版本、策略角色或部分持仓，两期样本无法确定原因，也无法推定发生在换月当时。10月现有数量重放仍绑定当期样本。 [23日同方向见证](../../lms-source-archive/02-持仓记录/2026-10-23/WRo2KQ43iX.md) · [27日同方向见证](../../lms-source-archive/02-持仓记录/2026-10-27/WRoEvasxQR.md)
+
+作者1月26日的相关阅读节选谈到4.0.5当时负载已满和品种淘汰，杠杆部分截断。2025年7月17日另有纯碱节选，称当时仍有单，也质疑当年行情是否适合4.0.5。2026年10月4.0.5封面表仍可见纯碱。现有材料支持单独记录组合容量、品种去留意向、当期可见持仓。调整周期、容量单位、实际淘汰或重新加入的时点仍未知。 [组合负载节选](../../lms-source-archive/03-单品种分析/2026-01-26/组合配置/R20260126405CAPACITY.md) · [纯碱相关阅读入口](https://www.sina.cn/news/detail/5310365073410706.html) · [10月纯碱封面图](../../lms-source-archive/02-持仓记录/2026-10-22/WRnTlEfj1t.md)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_sizing_audit.py \
+  --exposure-audit output/lms405-exposure-20261125/exposure-audit.json \
+  --compare-august-quantities --output /tmp/lms405-august-october-sizing-new.json
+```
+
+两次输出逐字节一致，默认命令也与冻结的10月报告逐字节相同。新对照 `output/lms405-august-october-visible-sizing-20261126/a.json`，SHA256 `d5f034825b9bf2b455afbd919da589947ac11f412f1245e429865815101082d6`。
+
 ## 到保护区间的价格距离
 
 比较两种不同基准。对空腿，从参照价到区间两端的损失方向金额等于「区间端点减参照价」乘合约乘数与可见手数。负数表示端点比参照价更有利，区间跨越参照价时保留正负两端。只有整个区间都位于不利方向才进入同额比较。保护区表示作者观察信号的位置，执行并不保证在区间内成交。
