@@ -3,9 +3,11 @@
 import argparse
 from datetime import datetime, time, timedelta
 from decimal import Decimal
+import json
 from pathlib import Path
 
 from guiyi_quant.lms405 import Bar
+from lms405_i2701_case import FROZEN_COMPARISON_SHA256
 from lms405_managed_portfolio import BASELINE, BASELINE_SHA256
 from lms405_original_leg_study import verified_json
 from lms405_portfolio_replay import ARCHIVE, DAYS, FIVE, LOCAL, input_sources
@@ -28,7 +30,15 @@ CASES = {
         state_after=("PAUSED_BEARISH_TREND_RANGE", "PAUSED_BEARISH_TREND_RANGE"), review="WRoCswszPF",
     ),
 }
+IRON = {
+    "I2701": dict(
+        band=("668.5", "671.5"), targets=((654, "662.5"),),
+        plans=("A5357264059367516", "A5358325549629506", "A5358686423089344"),
+        state_after=("RANGE_BEARISH_STRONG_SIDE", "RANGE"), review="WRoCldvp4f",
+    ),
+}
 STUDIED = DAYS[1:3]
+IRON_REFERENCE = Path("output/lms-i2701-oct-20261125/comparison.json")
 
 
 def persistence(bars, edge):
@@ -54,6 +64,17 @@ def price_path(bars, band):
     )
 
 
+def persistence_after_target(bars, edge, target):
+    """Use a completed target-price observation strictly before the evaluation close."""
+    target_end = next((bar.end for bar in bars if bar.low <= target), None)
+    runs = strict_runs(bars, edge, "SHORT")
+    qualified = [end for end, run in runs.items()
+                 if target_end is not None and target_end < end and run["close_count"] >= 2]
+    return dict(target=target, target_first_reached_at=target_end,
+                first_qualified_at=qualified[0] if qualified else None,
+                qualified_at_end=bool(qualified) and qualified[-1] == bars[-1].end)
+
+
 def source_details(index, ids):
     result = {}
     for key in ids:
@@ -63,11 +84,13 @@ def source_details(index, ids):
     return result
 
 
-def study(session, market):
+def study(session, market, *, include_iron=False):
     reference = verified_json(BASELINE, BASELINE_SHA256)
+    iron_reference = verified_json(IRON_REFERENCE, FROZEN_COMPARISON_SHA256) if include_iron else None
     index = input_sources()
     cases = {}
-    for contract, case in CASES.items():
+    inputs = CASES | IRON if include_iron else CASES
+    for contract, case in inputs.items():
         series = {day: read_window(session, market, contract, day) for day in STUDIED}
         full_five = []
         for day in DAYS:
@@ -79,6 +102,11 @@ def study(session, market):
         digest = sha(encoded(price_digest(full_five)).encode())
         if digest != reference["contract_summaries"][contract]["input_prefix_sha256"]:
             raise ValueError("STRONG_SIDE_FROZEN_5M_INPUT_CHANGED")
+        if contract in IRON:
+            rows = price_digest(series[STUDIED[-1]][1])
+            minute_identity = dict(bars=len(rows), ohlc_sha256=sha(json.dumps(rows, separators=(",", ":")).encode()))
+            if minute_identity != iron_reference["market_1m"]["i"][STUDIED[-1].isoformat()]:
+                raise ValueError("STRONG_SIDE_FROZEN_IRON_MINUTES_CHANGED")
         sources = source_details(index, (*case["plans"], case["review"]))
         timelines = {}
         band = tuple(map(Decimal, case["band"]))
@@ -109,6 +137,12 @@ def study(session, market):
                     at_least_two_closes_below_far_at_end=far["terminal"] >= 2,
                 ),
             )
+            if include_iron:
+                targets = [Decimal(levels[0]) for levels in case["targets"]]
+                timelines[day.isoformat()]["persistence_after_old_target_1m"] = {
+                    "first_target": persistence_after_target(one, band[0], targets[0]),
+                    "all_targets": persistence_after_target(one, band[0], min(targets)),
+                }
         cases[contract] = dict(band=band, market_5m_sha256=digest, sources=sources, trading_days=timelines,
                                strategy_transition_at=None, author_signal_at=None)
     return dict(version="lms405-strong-side-transition-audit-v1", cases=cases, admitted_author_action_samples=0,
@@ -120,6 +154,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--include-iron", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -133,7 +168,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), include_iron=args.include_iron)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
