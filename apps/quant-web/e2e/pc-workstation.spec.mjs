@@ -112,9 +112,11 @@ test('operations reads two independent accounts, goes directly to the held old c
   await expect(closing).toContainText('苏冰独立 Paper 模型账本')
   await expect(closing).toContainText('JM2601')
   await expect(closing).toContainText('多 1 手')
+  await expect(closing).toContainText('2026-09-03 10:30 北京时间')
   const opening = page.getByRole('row').filter({ hasText: '模型动作 · 待开仓' })
   await expect(opening).toContainText('JM2701')
   await expect(opening).toContainText('空仓')
+  await expect(opening).toContainText('2026-09-03 10:30 北京时间')
   await expect(page.getByRole('row').filter({ hasText: '部分成交' })).toContainText('快期模拟主账户')
   await expect(page.getByText(/全部活动委托未核验/)).toBeVisible()
   await screenshot(page, '运行台-隔离样本')
@@ -158,9 +160,13 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
     decision_id: 'ref-1', action: 'BUILD', frequency: '15m', signal_bar_end: fillTime,
     bar: { ...detailBar('jm', 110), frequency: '15m', completed: true },
   }
+  const differentSnapshot = {
+    ...frozen, decision_id: 'ref-from-different-snapshot',
+    bar: { ...frozen.bar, close: 999 },
+  }
   const result = run => ({ run_id: run, as_of_trading_day: '2026-09-03', finished_at: at,
     qualification: 'QUALIFIED', manifest: { physical_contract: 'JM2601' },
-    summary: { result_kind: 'reference_only', decisions: [frozen] } })
+    summary: { result_kind: 'reference_only', decisions: [frozen, differentSnapshot] } })
   await page.route('**/api/v1/newow/backtests/latest?*', async route => {
     const strategy = new URL(route.request().url()).searchParams.get('strategy')
     if (strategy === 'trend' && !trendRequested) {
@@ -207,8 +213,12 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
   await expect(page.getByTestId('newow-backtest-identity')).toContainText('数据截至交易日 2026-09-03')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '1')
   releaseTrend()
-  await page.getByRole('button', { name: '冻结行情切片' }).click()
-  await expect(page.getByLabel('冻结参考输入')).toContainText('Run oscillation')
+  const frozenSlices = page.getByRole('button', { name: '冻结行情切片' })
+  await expect(frozenSlices).toHaveCount(2)
+  await frozenSlices.last().click()
+  const isolatedInput = page.getByLabel('冻结参考输入')
+  await expect(isolatedInput).toContainText('Run oscillation')
+  await expect(isolatedInput).toContainText('"close": 999')
   await page.getByRole('button', { name: '双策略', exact: true }).click()
   await expect(page.getByText('回测结果读取失败，请刷新重试。')).toBeVisible()
   await expect(canvas).toBeVisible()
@@ -236,6 +246,13 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
   await expect(page.getByRole('button', { name: '双策略', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('checkbox', { name: '委托/成交' }).uncheck()
   await expect.poll(async () => (await reading(page)).points).toEqual([])
+  await page.getByRole('checkbox', { name: '委托/成交' }).check()
+  await expect.poll(async () => (await reading(page)).points).toEqual(before.points)
+  const strip = page.getByRole('region', { name: '合约列表' })
+  await strip.getByRole('button', { name: /RB2601\s*螺纹钢/ }).click()
+  await expect(page).toHaveURL(/contract=RB2601/)
+  await expect.poll(async () => (await reading(page)).points).toEqual([])
+  await expect(page.getByRole('region', { name: '只读委托与成交' }).locator('li')).toHaveCount(0)
   await page.getByRole('tab', { name: '研究' }).click()
   await expect(page.getByRole('heading', { name: '牛哇盘后与固定回测' })).toBeVisible()
   await page.getByRole('link', { name: '苏冰历史回放' }).click()
