@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { newowReferencePrice } from '../../../utils/newowPagePresentation.ts'
-withDefaults(defineProps<{ targetPrice?: string | null; absorbPrice?: string | null; status?: string }>(), { targetPrice: null, absorbPrice: null, status: '不可用' })
+withDefaults(defineProps<{ targetPrice?: string | null; absorbPrice?: string | null; status?: string; showReferencePrices?: boolean }>(), { targetPrice: null, absorbPrice: null, status: '不可用', showReferencePrices: true })
 </script>
 <template>
-  <div class="chart-reference-toolbar newow-product-chart-stage__reference-prices" aria-label="主图参考价格">
-    <span class="is-target" :title="targetPrice == null ? status : '牛哇页面目标参考，非委托价格'">目标价: {{ newowReferencePrice(targetPrice) }}<small v-if="targetPrice == null"> · {{ status }}</small></span>
-    <span class="is-absorb" :title="absorbPrice == null ? status : '牛哇页面吸筹参考，非委托价格'">吸筹价: {{ newowReferencePrice(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ status }}</small></span>
+  <div class="chart-reference-toolbar newow-product-chart-stage__reference-prices" :aria-label="showReferencePrices ? '主图参考价格' : undefined">
+    <span v-if="showReferencePrices" class="is-target" :title="targetPrice == null ? status : '牛哇页面目标参考，非委托价格'">目标价: {{ newowReferencePrice(targetPrice) }}<small v-if="targetPrice == null"> · {{ status }}</small></span>
+    <span v-if="showReferencePrices" class="is-absorb" :title="absorbPrice == null ? status : '牛哇页面吸筹参考，非委托价格'">吸筹价: {{ newowReferencePrice(absorbPrice) }}<small v-if="absorbPrice == null"> · {{ status }}</small></span>
     <div class="newow-product-chart-stage__reference-controls"><slot /></div>
   </div>
 </template>

@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { DynamicRangePoint } from '@/utils/dynamicRange'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
 import KlineChart from '@/components/kline/KlineChart.vue'
 import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
 import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
+import { DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 
 const props = withDefaults(defineProps<{
@@ -14,6 +15,8 @@ const props = withDefaults(defineProps<{
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   subingVolumeTiers?: boolean
+  volumeScoring?: boolean
+  researchMarkers?: KlineMarker[]
   bars: BarData[]
   mutation: MarketSeriesMutation
   loading: boolean
@@ -37,7 +40,7 @@ const props = withDefaults(defineProps<{
   loadingBefore?: boolean
   historyError?: string | null
   focusRequestId?: number
-}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
+}>(), { volumeScoring: true, markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -46,6 +49,7 @@ const emit = defineEmits<{
   'focus-resolved': [focusBarEnd: string]
   'marker-select': [marker: KlineMarker]
 }>()
+const pageOwnsNavigation = Boolean(inject(DETAIL_CHART_SESSION, null))
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
 const followLatest = ref(true)
 const fullscreen = ref(false)
@@ -97,7 +101,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 <template>
   <section class="market-kline-stage" :class="{ 'market-kline-stage--fullscreen': fullscreen }">
     <div class="market-kline-stage__controls">
-      <button v-if="showNavigationButtons && !followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
+      <button v-if="showNavigationButtons && !pageOwnsNavigation && !followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
     </div>
     <div v-if="hasMoreBefore !== undefined && (loadingBefore || historyError || hasMoreBefore === false)" class="market-kline-stage__history" role="status">
       <button v-if="hasMoreBefore && historyError" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
@@ -113,6 +117,8 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       ref="chart"
       :bars="bars"
       :subing-volume-tiers="subingVolumeTiers"
+      :volume-scoring="volumeScoring"
+      :research-markers="researchMarkers"
     :dynamic-range-points="dynamicRangePoints"
     :dynamic-range-enabled="dynamicRangeEnabled"
     :pattern-geometry="patternGeometry"

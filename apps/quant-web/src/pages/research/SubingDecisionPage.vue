@@ -1,22 +1,17 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import SubingPortfolioWorkbench from '@/components/subing/SubingPortfolioWorkbench.vue'
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
-import { saveMarketHomeTab, type MarketHomeTab } from '@/utils/marketHomeTab'
 import '@/styles/marketHome.css'
 
-const router = useRouter()
-const view = ref<'status' | 'history'>('status')
-function home(tab: MarketHomeTab) {
-  saveMarketHomeTab(tab)
-  void router.push('/market')
-}
+const route = useRoute()
+const view = ref<'status' | 'history'>(route.query.mode === 'history' ? 'history' : 'status')
 </script>
 
 <template>
   <div class="market-dashboard-page subing-workbench">
-    <MarketNavigation active-tab="subing-decision" @market="home('market')" @messages="home('messages')" @simulation="home('simulation')">
+    <MarketNavigation active-tab="subing-decision">
       <template #actions><span class="boundary">16品种共享模型 · 研究候选</span></template>
     </MarketNavigation>
     <main>

@@ -233,6 +233,16 @@ export async function installNewowProductFixtures(page, options = {}) {
     if (url.pathname === '/api/v1/market/product-directory') {
       return route.fulfill({ json: { items: [{ product: 'rb', product_name: '螺纹钢', sector: '黑色', exchange: 'SHFE' }] } })
     }
+    if (url.pathname === '/api/v1/market/dominants') {
+      return route.fulfill({ json: { items: [
+        { product: 'rb', product_name: '螺纹钢', exchange: 'SHFE', actual_contract: CONTRACT },
+      ] } })
+    }
+    // The chart fixtures have neither account snapshots nor chart progress data.
+    if (['/api/simulation/monitor/overview', '/api/simulation/monitor/records',
+      '/api/v1/subing-portfolio/status', '/api/v1/market/chart-progress'].includes(url.pathname)) {
+      return route.fulfill({ status: 503, json: {} })
+    }
     if (url.pathname === '/api/v1/market/research/product') return route.fulfill({ json: researchProduct() })
     if (url.pathname === '/api/v1/market/state') return route.fulfill({ json: marketState(url) })
     if (url.pathname === '/api/v1/market/bars/page') {
