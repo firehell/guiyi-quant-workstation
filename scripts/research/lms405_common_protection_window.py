@@ -4,11 +4,12 @@ import argparse
 from datetime import date, datetime
 from decimal import Decimal
 from itertools import combinations
-import json
 from pathlib import Path
 
+from lms405_i2701_case import FROZEN_COMPARISON_SHA256, readback
 from lms405_portfolio_replay import ARCHIVE
-from lms405_replay import display, read_session_series
+from lms405_protection_lot_timing import verified_json
+from lms405_replay import display, ohlc, read_session_series
 from lms405_right_side_study import ONE, US, at
 from lms405_sizing_audit import EXPOSURE_SHA256
 from lms405_volatility_context import bars_sha
@@ -24,6 +25,13 @@ OTHER_LONG_ROWS = {"J2701": (10, "1906.75"), "RB2701": (40, "3048")}
 START = at("2026-10-22T21:00")
 POST = at("2026-10-22T22:10")
 DAY = date(2026, 10, 23)
+OCT27_SNAPSHOT = "WRoEvasxQR"
+OCT27_DAY = date(2026, 10, 28)
+OCT27_START = at("2026-10-27T21:00")
+OCT27_POST = at("2026-10-27T22:12")
+OCT27_CONTRACTS = ("OI2701", "RU2701", "SH2701")
+OCT27_QUOTES = Path("output/lms-i2701-oct-20261125/comparison.json")
+SH_REPLACEMENT_SHA = "700523eff5ab60c4330cd180b223c58dd3f664feadcc8fa1df8dc67283733286"
 
 
 def enclosed_averages(series, averages):
@@ -89,6 +97,21 @@ def later_screens(tables, first):
     return output
 
 
+def average_windows(timelines, averages, displayed):
+    single = {}
+    for key, bars in timelines.items():
+        candidate = enclosed_averages({key: bars}, {key: averages[key]})
+        end_times = [display(bar.bar_end) for bar in bars if bar.low <= averages[key] <= bar.high]
+        single[key] = dict(**summary(candidate), quantity=displayed[key][0], shown_average=averages[key],
+                           first_single_minute_end=end_times[0] if end_times else None,
+                           last_single_minute_end=end_times[-1] if end_times else None)
+    pairs = {
+        f"{a}/{b}": summary(enclosed_averages({a: timelines[a], b: timelines[b]}, {a: averages[a], b: averages[b]}))
+        for a, b in combinations(timelines, 2)
+    }
+    return single, pairs
+
+
 def study(session, market, exposure, zone):
     tables = {row["source"]: row for row in exposure["tables"] if row["source"] in (FIRST, *LATER)}
     if tables.keys() != {FIRST, *LATER}:
@@ -121,17 +144,7 @@ def study(session, market, exposure, zone):
             raise ValueError("FIRST_NIGHT_MINUTE_FINGERPRINT_CHANGED")
         timelines[contract] = [bar for bar in raw if START <= bar.bar_end - ONE and bar.bar_end + US < POST]
         coverage[contract] = dict(full_day_count=len(raw), full_day_sha256=key, window_minutes=len(timelines[contract]))
-    single = {}
-    for key, bars in timelines.items():
-        candidate = enclosed_averages({key: bars}, {key: averages[key]})
-        end_times = [display(bar.bar_end) for bar in bars if bar.low <= averages[key] <= bar.high]
-        single[key] = dict(**summary(candidate), quantity=displayed[key][0], shown_average=averages[key],
-                           first_single_minute_end=end_times[0] if end_times else None,
-                           last_single_minute_end=end_times[-1] if end_times else None)
-    pairs = {
-        f"{a}/{b}": summary(enclosed_averages({a: timelines[a], b: timelines[b]}, {a: averages[a], b: averages[b]}))
-        for a, b in combinations(timelines, 2)
-    }
+    single, pairs = average_windows(timelines, averages, displayed)
     portfolio = {key: timelines[key] for key in observed}
     return dict(
         version="lms405-common-protection-window-v1", source_ids=[FIRST, "WRnTl1Ej2P", *LATER],
@@ -146,11 +159,66 @@ def study(session, market, exposure, zone):
     )
 
 
+def october27_study(session, market, exposure, replacement, quotes):
+    (night,) = [row for row in exposure["tables"] if row["source"] == OCT27_SNAPSHOT]
+    reread = replacement["with_night_today_quantity"]
+    evidence = night["image"]
+    if (night["system"] != "4.0.5" or datetime.fromisoformat(night["published_at"]) != OCT27_POST
+            or reread["source_id"] != OCT27_SNAPSHOT or reread["image_sha256"] != evidence["sha256"]
+            or evidence != replacement["snapshots"][OCT27_SNAPSHOT]["image"]
+            or sha((ARCHIVE.parent / evidence["path"]).read_bytes()) != evidence["sha256"]):
+        raise ValueError("OCT27_SNAPSHOT_EVIDENCE_CHANGED")
+    paired = tuple(sorted(key for key, row in night["contracts"].items() if set(row["legs"]) == {"long", "short"}))
+    if paired != OCT27_CONTRACTS:
+        raise ValueError("OCT27_DISPLAYED_PAIR_SCOPE_CHANGED")
+    if quotes["photos"][OCT27_SNAPSHOT]["joint_equal_close"] or quotes["photos"][OCT27_SNAPSHOT]["joint_contains"]:
+        raise ValueError("OCT27_QUOTE_ANCHOR_CHANGED")
+
+    displayed, timelines, coverage = {}, {}, {}
+    for contract in OCT27_CONTRACTS:
+        long, short = (night["contracts"][contract]["legs"][side] for side in ("long", "short"))
+        today = long["today_quantity"]
+        if contract == "SH2701":
+            if today is not None or long != replacement["snapshots"][OCT27_SNAPSHOT]["legs"]["long"]:
+                raise ValueError("OCT27_FROZEN_SH_LONG_ROW_CHANGED")
+            today = reread["today_quantity"]
+        if today != long["quantity"] or short["today_quantity"] != 0 or long["quantity"] != short["quantity"]:
+            raise ValueError("OCT27_EXPECTED_MATCHED_PAIR")
+        displayed[contract] = long["quantity"], long["opening_average"]
+        symbol = contract[:-4].lower()
+        raw = read_session_series(session, market, symbol, contract, "1m", ONE, (OCT27_DAY,))
+        identity = readback(raw)[OCT27_DAY.isoformat()]
+        if identity != quotes["market_1m"][symbol][OCT27_DAY.isoformat()] or raw[0].bar_end != OCT27_START + ONE:
+            raise ValueError("OCT27_FROZEN_MARKET_CHANGED")
+        timelines[contract] = [bar for bar in raw if bar.bar_end + US < OCT27_POST]
+        coverage[contract] = identity | dict(window_minutes=len(timelines[contract]))
+
+    averages = {key: Decimal(average) for key, (_, average) in displayed.items()}
+    single, pairs = average_windows(timelines, averages, displayed)
+    joint = summary(enclosed_averages(timelines, averages))
+    witness = None
+    if joint["minimum_minutes"] == 1:
+        minute_end = datetime.fromisoformat(joint["first_minimum_window"]["last_bar_end"])
+        witness = {contract: ohlc(next(bar for bar in bars if bar.bar_end == minute_end))
+                   for contract, bars in timelines.items()}
+    return dict(
+        version="lms405-common-protection-window-oct27-v1", source_id=OCT27_SNAPSHOT, image=evidence,
+        start=display(OCT27_START), source_published_at=display(OCT27_POST), exact_quote_anchor=None,
+        sh_today_quantity_reread=reread, by_contract=single, pairwise=pairs,
+        all_three=joint, first_common_single_minute_ohlc=witness, input_1m=coverage,
+        assumption="ENTIRE_VISIBLE_LONG_LEG_FORMED_WITHIN_RETAINED_COMPLETED_MINUTES",
+        price_scope="DISPLAYED_AVERAGE_IN_WINDOW_OHLC_ENVELOPE_ONLY", author_signal_at=None,
+        author_action_samples=0, author_action_matches=None, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--exposure", type=Path, required=True)
-    parser.add_argument("--zone-order", type=Path, required=True)
+    inputs = parser.add_mutually_exclusive_group(required=True)
+    inputs.add_argument("--zone-order", type=Path)
+    inputs.add_argument("--oct27-sh-replacement", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
@@ -164,12 +232,19 @@ def main():
     from sqlalchemy.exc import OperationalError
 
     try:
-        exposure, zone = args.exposure.read_bytes(), args.zone_order.read_bytes()
-        if sha(exposure) != EXPOSURE_SHA256 or sha(zone) != ZONE_SHA256:
-            raise ValueError("FROZEN_ASSET_CHANGED")
-        with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            result = study(session, build_market_data_service(session), json.loads(exposure), json.loads(zone))
-        result["input_sha256"] = dict(exposure=EXPOSURE_SHA256, zone=ZONE_SHA256, article=SOURCE_SHA256)
+        exposure = verified_json(args.exposure, EXPOSURE_SHA256)
+        if args.zone_order is not None:
+            zone = verified_json(args.zone_order, ZONE_SHA256)
+            with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
+                result = study(session, build_market_data_service(session), exposure, zone)
+            result["input_sha256"] = dict(exposure=EXPOSURE_SHA256, zone=ZONE_SHA256, article=SOURCE_SHA256)
+        else:
+            replacement = verified_json(args.oct27_sh_replacement, SH_REPLACEMENT_SHA)
+            quotes = verified_json(OCT27_QUOTES, FROZEN_COMPARISON_SHA256)
+            with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
+                result = october27_study(session, build_market_data_service(session), exposure, replacement, quotes)
+            result["input_sha256"] = dict(exposure=EXPOSURE_SHA256, replacement=SH_REPLACEMENT_SHA,
+                                          quotes=FROZEN_COMPARISON_SHA256)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
