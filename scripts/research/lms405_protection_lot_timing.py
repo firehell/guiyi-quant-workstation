@@ -61,14 +61,14 @@ def earlier_lot_counts(earlier, later, lots, totals):
     return counts
 
 
-def latest_whole_leg_start(minutes, tick, lots, totals):
+def latest_whole_leg_start(minutes, tick, lots, totals, *, start_of=lambda bar: bar.bar_end - ONE):
     """Latest minute start whose remaining price envelope can contain the whole leg."""
     envelope = None
     for bar in reversed(minutes):
         low, high = tick_bounds((bar,), tick)
         envelope = (min(envelope[0], low), max(envelope[1], high)) if envelope else (low, high)
         if earlier_lot_counts(None, envelope, lots, totals):
-            return display(bar.bar_end - ONE)
+            return display(start_of(bar))
     return None
 
 
