@@ -102,7 +102,7 @@ services/quant-api/.venv/bin/python scripts/research/lms405_session_carry_study.
   --env-file .env --output /tmp/lms405-session-carry-new.json
 ```
 
-通过MDS核验五品种3,450根1分钟、前三品种414根5分钟。定稿 `output/lms-fg-sa-oct-20261125/session-carry-final.json`，SHA256 `e0a9fea00a423a9efc464f9daaf3674bbaadf03f8cefcb37a8b10966deedf436`。重复输出逐字节一致，已有路径拒覆盖。下一步用27日午盘焦煤多腿开均1385.25对照1392分水岭回归窗口，区分空向失败后的保护与重新试多。
+通过MDS核验五品种3,450根1分钟、前三品种414根5分钟。定稿 `output/lms-fg-sa-oct-20261125/session-carry-final.json`，SHA256 `e0a9fea00a423a9efc464f9daaf3674bbaadf03f8cefcb37a8b10966deedf436`。重复输出逐字节一致，已有路径拒覆盖。焦煤27日午盘的新多腿见[分水岭回归对照](PORTFOLIO_RECONSTRUCTION.md#jm2701-分水岭回归前的可见多腿)。
 
 ## 复算
 
