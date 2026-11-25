@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
 from lms405_break_pressure_comparison import compare_break, first_shape_after, inspect
+from lms405_counter_m_exit_clocks import inspect_level
 from lms405_jm_may_recovery_reset import overlapping_breaks
 from lms405_ordered_original_short import ordered_followups
 from lms405_right_side_study import ONE, US, at
@@ -88,3 +89,16 @@ def test_completed_closes_can_be_ordered_without_a_fully_later_trigger_bar():
     assert [row["trigger_at"] for row in rows] == [pressure, pressure + ONE]
     report["branches"][0]["expires_before"] = pressure + ONE + US
     assert [row["trigger_at"] for row in overlapping_breaks(report)] == [pressure]
+
+
+def test_risk_clock_distinguishes_opening_outside_from_fresh_cross_and_reset():
+    end = at("2025-07-28T09:01")
+    bars = [minute(end + n * ONE, close) for n, close in enumerate([1160, 1155, 1156, 1157, 1155])]
+    cross_at = bars[2].end
+    reset = bars[4].end
+    geometry = {"1m": [{"shape_start": bars[3].end, "available_at": reset + US}]}
+    result = inspect_level([bars], "LONG", Decimal(1155), geometry)
+    assert result["first_strict_close"] == end
+    assert result["first_fresh_cross"]["at"] == cross_at
+    assert result["first_fresh_cross"]["reset_at"] == reset
+    assert result["first_fresh_cross"]["geometry_starting_after_cross"] == {"1m": None}
