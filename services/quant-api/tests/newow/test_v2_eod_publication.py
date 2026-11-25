@@ -53,7 +53,7 @@ def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path, mon
     from pathlib import Path
 
     import pytest
-    from sqlalchemy import create_engine
+    from sqlalchemy import create_engine, select
     from sqlalchemy.orm import Session
 
     from app.db.base import Base
@@ -63,6 +63,7 @@ def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path, mon
     from app.market_data.domain import CanonicalBar, DatasetKey
     from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
     from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
+    from app.models.market_tables import MarketPartition
     from app.services.newow_backtest_job import BacktestJobError, _json, _launch, _seal, freeze_research
     from guiyi_quant.newow.decision_adapter import DECISION_FREQUENCIES, V2Strategy
 
@@ -169,7 +170,7 @@ def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path, mon
     def submit_receipt():
         from app.main import app
         from app.market_data.after_market import _atomic_write_status
-        from app.services.newow_backtest_eod import reconcile_publications
+        from app.services.newow_backtest_eod import _code_fingerprint, _receipt, reconcile_publications
         from fastapi.testclient import TestClient
 
         assert engine
@@ -196,12 +197,34 @@ def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path, mon
                 for part in parts if part.month == through.month
             ]
         authority = tmp_path / "after-market-status.json"
-        _atomic_write_status(authority, {
+        status = {
             "schema_version": 4, "last_successful_trading_day": str(through),
             "last_run": {"status": "passed", "attempts": 1, "error_code": None, "trading_day": str(through),
                          "started_at": f"{through}T18:05:00+08:00", "finished_at": f"{through}T18:09:00+08:00",
                          "products": ["fu"], "historical_publications": publication},
-        })
+        }
+        _atomic_write_status(authority, status)
+        _, receipt_id = _receipt(status)
+        legacy_key = sha256(config.read_bytes() + _code_fingerprint().encode()).hexdigest()
+        legacy_done = tmp_path / "newow-publications" / "completed" / legacy_key / f"{receipt_id}.json"
+        legacy_done.parent.mkdir(parents=True)
+        _atomic_write_status(legacy_done, {"series": 0, "computed": 0, "failed": [], "deferred": 0})
+        minute_file = next(item["file_name"] for item in publication if item["dataset"][3] == "1m")
+        with Session(work) as session:
+            partition = session.scalar(select(MarketPartition).where(MarketPartition.file_uri.endswith(minute_file)))
+            original_uri = partition.file_uri
+            previous_minute = next(part.file_path.name for part in parts
+                                   if part.dataset.frequency.value == "1m" and part.month == through.month - 1)
+            partition.file_uri = original_uri.rsplit("/", 1)[0] + "/" + previous_minute
+            session.commit()
+            deferred, = reconcile_publications(authority, config)
+            assert deferred["series"] == deferred["deferred"] == 18
+            assert deferred["computed"] == 0
+            assert {item["code"] for item in deferred["failed"]} == {"BACKTEST_CANONICAL_PUBLICATION_CHANGED"}
+            assert list(legacy_done.parent.parent.glob(f"*/{receipt_id}.json")) == [legacy_done]
+            partition.file_uri = original_uri
+            session.commit()
+
         report, = reconcile_publications(authority, config)
         assert report["series"] == report["computed"] == 18, report
         assert report["failed"] == []

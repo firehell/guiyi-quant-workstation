@@ -400,11 +400,11 @@ def test_eod_receipt_reuse_order_and_explicit_transaction_recovery(p3_results, m
 
     monkeypatch.setattr(eod, "_launch", launch)
 
-    def execute(receipt, variant, *, retry=False):
+    def execute(receipt, variant, *, retry=False, current=True):
         manifest = _manifest(day, variant) | {"money_policy": "P3", "rank1": {"code": "RANK1_AS_KNOWN_UNPROVEN"}}
         return eod._run_one(store, key, day, lambda: ({"variant": variant}, manifest),
                             output=tmp_path, engine_python=tmp_path / "engine", code_identity="c" * 64,
-                            retry_failed=retry, source_publication=receipt, source_is_current=lambda: True)
+                            retry_failed=retry, source_publication=receipt, source_is_current=lambda: current)
 
     initial = execute(old, "initial")
     assert execute(old, "initial")["reused"]
@@ -424,6 +424,11 @@ def test_eod_receipt_reuse_order_and_explicit_transaction_recovery(p3_results, m
     assert revision["run_id"] == failed["run_id"]
     assert revision["status"] == "SUCCEEDED"
     assert execute(old, "inverse") is None
+    assert execute(old, "inverse", current=False) is None
+    unanswered = (new[0] + timedelta(seconds=30), "f" * 64)
+    with pytest.raises(eod.BacktestJobError, match="BACKTEST_CANONICAL_PUBLICATION_CHANGED"):
+        execute(unanswered, "unsettled", current=False)
+    assert execute(new, "revised")["reused"]
     with pytest.raises(ResultStoreError, match="BACKTEST_SOURCE_PUBLICATION_CONFLICT"):
         execute((new[0], "d" * 64), "same-time conflict")
     assert _latest(client, key)["result"]["run_id"] == revision["run_id"]

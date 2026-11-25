@@ -304,6 +304,18 @@ class ResultStore:
         equity_count = conn.scalar(select(func.count()).select_from(_EQUITY).where(_EQUITY.c.run_id == run_id))
         return trade_count, equity_count
 
+    def source_publication_is_superseded(self, key: SeriesKey, at: datetime, connection: Connection) -> bool:
+        """Check the series watermark without admitting an unverified publication."""
+        where = [getattr(_SERIES.c, name) == value for name, value in asdict(key).items()]
+        series_id = select(_SERIES.c.id).where(*where).scalar_subquery()
+        target = _SERIES_PUBLICATIONS.c
+        try:
+            with connection.begin():
+                self._verify_job_slot(connection, key)
+                return bool(connection.scalar(select(target.source_publication_at > at).where(target.id == series_id)))
+        except SQLAlchemyError:
+            raise ResultStoreError("BACKTEST_DATABASE_UNAVAILABLE") from None
+
     def observe_source_publication(
         self, key: SeriesKey, at: datetime, digest: str, connection: Connection,
     ) -> bool:

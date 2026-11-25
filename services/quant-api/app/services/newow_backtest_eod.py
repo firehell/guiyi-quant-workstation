@@ -36,6 +36,9 @@ from guiyi_quant.newow.product_contracts import ProductFrequency
 
 _LOGGER = logging.getLogger(__name__)
 
+# Recheck pre-fix acknowledgements, which could omit series on a pointer mismatch.
+_COMPLETION_CONTRACT = b"newow-completion-v2\0"
+
 
 @dataclass(frozen=True)
 class ResearchInput:
@@ -149,7 +152,11 @@ def _run_one(
         if any(cutoff > day.isoformat() for cutoff in cutoffs):
             return None
         if source_is_current is not None and not source_is_current():
-            return None
+            if source_publication is not None and store.source_publication_is_superseded(
+                key, source_publication[0], connection,
+            ):
+                return None
+            raise BacktestJobError("BACKTEST_CANONICAL_PUBLICATION_CHANGED")
         if source_publication is not None and not store.observe_source_publication(key, *source_publication, connection):
             return None
         try:
@@ -558,7 +565,7 @@ def _reconcile_publications(status_path: Path, config_path: Path, authority: tup
     from app.market_data.after_market import _atomic_write_status
 
     root, statuses, latest_days = _retained_statuses(status_path)
-    config_identity = sha256(_read(config_path, 128 * 1024) + _code_fingerprint().encode()).hexdigest()
+    config_identity = sha256(_COMPLETION_CONTRACT + _read(config_path, 128 * 1024) + _code_fingerprint().encode()).hexdigest()
     completed = root / "completed" / config_identity
     reports = []
     # The newest complete publication can subsume older work for the same
