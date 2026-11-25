@@ -15,12 +15,14 @@ from lms405_v_zone_progress import observations
 from lms405_volatility_context import bars_sha
 from lms_near405_replay import encoded
 
+APRIL_DIVIDER = ("RU2609", "2026-04-27", None, "S5292366539525356", (("divider", "LONG", 17130, 17210),))
+JUNE_M = ("RU2609", "2026-06-23", None, "S5313021782003245",
+          (("divider", "SHORT", 17850, 17930), ("strong_side_target", "SHORT", 17555, 17670)))
 CASES = (
-    ("RU2609", "2026-04-27", None, "S5292366539525356", (("divider", "LONG", 17130, 17210),)),
+    APRIL_DIVIDER,
     ("RU2609", "2026-05-27", None, "S5303234774436285", (("divider", "LONG", 17255, 17370),)),
     ("SH2607", "2026-06-05", None, "S5306498940930568", (("weak_side_m", "LONG", 1950, 1964),)),
-    ("RU2609", "2026-06-23", None, "S5313021782003245",
-     (("divider", "SHORT", 17850, 17930), ("strong_side_target", "SHORT", 17555, 17670))),
+    JUNE_M,
     ("RU2701", "2026-10-26", "A5357264793370945", "A5358325972992140",
      (("short_trend_recovery", "SHORT", 19505, 19570),)),
     ("RU2701", "2026-10-27", "A5358325972992140", "A5358686695981271",
@@ -28,6 +30,20 @@ CASES = (
     ("RU2701", "2026-10-28", "A5358686695981271", "S5359046580243515",
      (("weak_side_m", "LONG", 19515, 19610),)),
 )
+VERSION_SCOPE_CASES = (
+    ("RU2609", "2026-04-21", None, "S5290187538302824", (("upper_pa", "LONG", 17130, 17210),)),
+    ("RU2609", "2026-04-24", None, "S5291275490430891", (("bearish_test_area", "SHORT", 16930, 17040),)),
+    APRIL_DIVIDER,
+    JUNE_M,
+)
+# These labels describe what the source says. None of them identifies a position lot or fill.
+VERSION_DISCOURSE = {
+    "2026-04-21": dict(two_unnamed_systems="PRIOR_M_PARTICIPATION_REPORTED", known_version=None,
+                       protect_or_limit_add="GUIDANCE"),
+    "2026-04-24": {"4.0.5": "LOCK_REPORTED", "5.0": "TAKE_PROFIT_REPORTED"},
+    "2026-04-27": dict(m="DAY_SESSION_PROBE_DESCRIPTION", known_version=None),
+    "2026-06-23": {"4.0.5": "INTRADAY_M_ROLE", "5.0": "TRIAL_STOP_ROLE", "cross_system_hedge_known": None},
+}
 VARIANTS = ((1, 1), (5, 1), (5, 5))
 
 
@@ -67,10 +83,11 @@ def compare_band(series, start, cutoff, side, band):
     )
 
 
-def study(session, market):
+def study(session, market, *, version_scope=False):
     index = input_sources()
     cases = {}
-    for contract, day, plan_id, label_id, zones in CASES:
+    selected_cases = VERSION_SCOPE_CASES if version_scope else CASES
+    for contract, day, plan_id, label_id, zones in selected_cases:
         raw, series = read_pair(session, market, contract, (date.fromisoformat(day),))
         minutes = series[1]
         start, close = minutes[0].start, at(f"{day}T15:00")
@@ -97,7 +114,10 @@ def study(session, market):
             bands={role: compare_band(series, start, cutoff, side, (Decimal(low), Decimal(high)))
                    for role, side, low, high in zones},
         )
-    return dict(version="lms405-rubber-m-classification-v1", cases=cases, historical_text_versions_verified=False,
+        if version_scope:
+            cases[day].update(author_disclosure=VERSION_DISCOURSE[day], author_position=None, author_action_at=None)
+    version = "lms405-rubber-version-scope-v1" if version_scope else "lms405-rubber-m-classification-v1"
+    return dict(version=version, cases=cases, historical_text_versions_verified=False,
                 author_action_samples=0, author_match_rate=None, executable=False, fills=None, pnl=None)
 
 
@@ -105,6 +125,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--version-scope", action="store_true", help="Compare disclosures with and without named versions.")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -119,7 +140,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), version_scope=args.version_scope)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
