@@ -171,12 +171,15 @@ def observations_for_contract(series, updates, m_bands, cutoff, *, period=5):
     return events
 
 
-def replay_with_price_context(series, updates, events, *, cutoff, due_field, seed=None, period=5):
+def replay_with_price_context(series, updates, events, *, cutoff, due_field, seed=None, period=5,
+                              recovery_boundary=None):
     minutes, fives = series[1], series[5]
     proofs, attempts = [], []
     replay_args = dict(protection_bands=updates, timely_fixture=True)
     if seed:
         replay_args.update(carry_in=seed, carry_exit_evidence=())
+    if recovery_boundary is not None:
+        replay_args["carry_recovery"] = recovery_boundary
     driver_ends = [bar.end for bar in fives]
     confirming_bars = {bar.end: bar for bar in series[period]}
     step = period * ONE
