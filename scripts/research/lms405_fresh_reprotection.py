@@ -22,12 +22,12 @@ PAIR = Path("output/lms405-fg-sa-leg-handoff-20261125/final.json")
 PAIR_SHA = "4e947ef9365180cb4330016fc18cff6737478c44f0473601f641425e8001d5da"
 
 
-def annotated_geometry(series, start, cut):
+def annotated_geometry(series, start, cut, *, side="LONG"):
     rows = {}
     for shape, confirm in VARIANTS:
         parents = {cur.end: prev for prev, cur in zip(series[shape], series[shape][1:])}
         frames = {bar.end: bar for bar in series[shape]}
-        events = geometry_events(series, shape, confirm, side="LONG", start=start, as_of=cut)
+        events = geometry_events(series, shape, confirm, side=side, start=start, as_of=cut)
         for event in events:
             frame_end = event["shape_end"]
             mother = parents.get(frame_end)
@@ -38,7 +38,7 @@ def annotated_geometry(series, start, cut):
             )
             # A pinbar can stand alone. The mother-bar dependency is specific to the ibar path.
             event["survives_resetting_ibar_at_session_gap"] = (
-                event["pinbar"] == "LONG" or (event["ibar"] and event["mother_contiguous"])
+                event["pinbar"] == side or (event["ibar"] and event["mother_contiguous"])
             )
         rows[f"{shape}m_to_{confirm}m"] = events
     return rows
