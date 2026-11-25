@@ -6,9 +6,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds
 from lms405_protection_timeframes import VARIANTS, geometry_events, read_window
 from lms405_recovery_confirmation_audit import edge_candidates, strict_runs
-from lms405_right_side_study import ONE, US
+from lms405_right_side_study import ONE, US, at
 from lms405_unlock_boundary_comparison import evaluate
 from lms_near405_replay import encoded, sha
 
@@ -68,7 +69,57 @@ def compare(series, start, cut, edge):
     )
 
 
-def study(session, market):
+def protection_origin(series, published):
+    quantity, average, tick = 16, Decimal("1026.69"), Decimal("0.5")
+    totals = displayed_tick_totals(average, quantity, tick)
+    high_precision_average = tuple(Decimal(total) * tick / quantity for total in totals)
+    day_open = at(f"{DAY}T09:00")
+    point = PRICE_LEVELS["early_ibar_low_proxy"]
+    windows = {}
+    for source_id in ("H06", "H11"):
+        minutes = [bar for bar in series[1] if bar.end + US < published[source_id]]
+        day_minutes = [bar for bar in minutes if bar.start >= day_open]
+        bar_5m = [bar for bar in series[5] if bar.start >= day_open and bar.end + US < published[source_id]]
+        shape = next(bar for bar in bar_5m if bar.end == at(f"{DAY}T09:10"))
+        if shape.low != point:
+            raise ValueError("JULY_PROTECTION_POINT_CHANGED")
+        later_than_shape = [bar for bar in day_minutes if bar.start >= shape.end]
+        gates = {
+            "protection_shape_completed": shape,
+            "first_intraminute_strict_break_bar": next(b for b in later_than_shape if b.low < point),
+            "first_minute_strict_close_below": next(b for b in later_than_shape if b.close < point),
+            "first_five_minute_strict_close_below": next(b for b in bar_5m if b.start >= shape.end and b.close < point),
+        }
+        bounds = {}
+        for key, gate in gates.items():
+            strict_after = [bar for bar in minutes if bar.start > gate.end + US]
+            inclusive_after = [bar for bar in minutes if bar.end > gate.end]
+            if key == "first_intraminute_strict_break_bar":
+                # The minute contains the first breach. Its OHLC cannot place prices before or after the breach.
+                inclusive_after.insert(0, gate)
+            later = {}
+            for rule, eligible in (("with_overlapping_minute", inclusive_after), ("complete_minutes_only", strict_after)):
+                boundary = eligible[0].start if eligible else gate.end
+                windows_before = {name: tick_bounds([bar for bar in window if bar.end <= boundary], tick)
+                                  for name, window in (("same_trading_day", minutes), ("day_session", day_minutes))}
+                after = tick_bounds(eligible, tick)
+                minima = {name: min(earlier_lot_counts(before, after, quantity, totals), default=None)
+                          for name, before in windows_before.items()}
+                later[rule] = dict(after_high=Decimal(after[1]) * tick if after else None,
+                                   eligible_minutes=len(eligible), earlier_window_tick_bounds=windows_before,
+                                   minimum_quantity_outside_after_window=minima)
+            bounds[key] = dict(bar_end=gate.end, high=gate.high, low=gate.low, close=gate.close, variants=later)
+        windows[source_id] = dict(cutoff_exclusive=published[source_id], gates=bounds,
+                                  trading_day_minutes=len(minutes), day_session_minutes=len(day_minutes))
+    return dict(
+        version="lms405-jm-july-protection-origin-v1", quantity=quantity, average_shown=average, price_tick=tick,
+        quantity_source="H11", source_use="H06_ASSUME_SAME_SHOWN_LEG_H11_CONFIRMATION",
+        rounding="ASSUMED_HALF_UP", possible_tick_sums=list(totals), possible_exact_average=high_precision_average,
+        windows=windows, action_interval_unknown=True,
+    )
+
+
+def study(session, market, *, batch="recovery-clock"):
     sources = source_records()
     published = {key: datetime.fromisoformat(row["published_at"]) for key, row in sources.items()}
     start, cutoff = max(published["H06"], published["H11"]) + ONE, published["H08"]
@@ -82,16 +133,21 @@ def study(session, market):
     matching = [(bar.end, bar.open, bar.high, bar.low, bar.close) for bar in series[5]]
     if not original or original != [row for row in matching if row[0] >= original[0][0]]:
         raise ValueError("JULY_RECOVERY_DAY_5M_MISMATCH")
-    return dict(
-        version="lms405-jm-july-recovery-clock-v1", contract=CONTRACT, trading_day=DAY,
-        start=start, cutoff_exclusive=cutoff, sources=sources, source_index_sha256=sha(SOURCE_INDEX.read_bytes()),
+    shared = dict(
+        contract=CONTRACT, trading_day=DAY, sources=sources, source_index_sha256=sha(SOURCE_INDEX.read_bytes()),
         market={f"{p}m": dict(count=len(rows), sha256=sha(encoded([
             (bar.start, bar.end, bar.open, bar.high, bar.low, bar.close) for bar in rows
         ]).encode())) for p, rows in series.items()}, frozen_5m_sha256=FROZEN_SHA,
-        case_scope="REPORTED_LMS_RECOVERY_VERSION_AND_TIME_UNVERIFIED",
-        comparisons={key: compare(series, start, cutoff, edge) for key, edge in PRICE_LEVELS.items()},
         author_action_time=None, author_signal_time=None, author_match_rate=None, admitted_author_action_samples=0,
         executable=False, fills=None, pnl=None,
+    )
+    if batch == "protection-origin":
+        return shared | protection_origin(series, published)
+    return shared | dict(
+        version="lms405-jm-july-recovery-clock-v1",
+        start=start, cutoff_exclusive=cutoff,
+        case_scope="REPORTED_LMS_RECOVERY_VERSION_AND_TIME_UNVERIFIED",
+        comparisons={key: compare(series, start, cutoff, edge) for key, edge in PRICE_LEVELS.items()},
     )
 
 
@@ -99,6 +155,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--batch", choices=("recovery-clock", "protection-origin"), default="recovery-clock")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -112,14 +169,14 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), batch=args.batch)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
         parser.exit(2, f"MDS_BLOCKED: {exc.code}\n")
     except OperationalError:
         parser.exit(2, "LOCAL_MDS_CONNECTION_UNAVAILABLE\n")
-    except (KeyError, OSError, ValueError):
+    except (KeyError, OSError, StopIteration, ValueError):
         parser.exit(2, "JULY_RECOVERY_SOURCE_OR_MARKET_UNVERIFIED\n")
 
 
