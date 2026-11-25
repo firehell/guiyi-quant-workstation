@@ -5,6 +5,7 @@ import pytest
 from guiyi_quant.lms405 import Bar, Position
 from guiyi_quant.lms405.handoff import Handoff
 from lms405_portfolio_recovery_progress import position_at, simulated_confirmation, study_paths
+from lms405_portfolio_recovery_shape_lifetime import EARLIER, NEW, first_candidates
 from lms405_right_side_study import ONE, US, at
 
 
@@ -33,3 +34,18 @@ def test_historical_far_reach_can_pass_near_but_not_current_far():
     assert before["short"] == after["short"] == strict["short"] == 20
     with pytest.raises(ValueError, match="CONFIRMATION_SCOPE_MISMATCH"):
         position_at(request, event, mode="near_geometry", as_of=known + US, approval=approval)
+
+
+def test_both_recovery_variants_share_price_gate_and_preserve_distinct_shape_order():
+    start = at("2026-10-27T09:00")
+    marks = [start + n * ONE for n in range(7)]
+    bars = [Bar("I2701", marks[n], *([Decimal(close)] * 4), start=marks[n - 1])
+            for n, close in enumerate([111, 109, 108, 107, 106, 105], 1)]
+    old = dict(shape_start=marks[0], confirmed_at=marks[2], available_at=marks[2] + US, boundary=Decimal(112))
+    overlapping = dict(shape_start=marks[2], confirmed_at=marks[4], available_at=marks[4] + US, boundary=Decimal(112))
+    later = dict(shape_start=marks[3], confirmed_at=marks[5], available_at=marks[5] + US, boundary=Decimal(112))
+    geometry = {"1m_to_1m": [old, overlapping, later]}
+    result = first_candidates(bars, geometry, edge=Decimal(110), side="SHORT")
+    assert result[EARLIER]["1m_to_1m"]["confirmed_at"] == marks[3]
+    assert result[NEW]["1m_to_1m"]["confirmed_at"] == marks[5]
+    assert result[NEW]["1m_to_1m"]["original_geometry_confirmed_at"] == marks[5]
