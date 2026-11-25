@@ -13,6 +13,12 @@ const emit = defineEmits<{ published: [result: LatestBacktest['result']] }>()
 const open = ref(!!props.afterMarket)
 const trial = ref(false)
 const selected = shallowRef<BacktestRow | null>(null)
+const selectedReference = shallowRef<Record<string, unknown> | null>(null)
+const referenceActions = computed<Record<string, unknown>[]>(() => {
+  const decisions = result.value?.summary.decisions
+  return Array.isArray(decisions) ? decisions.filter(row => row?.decision_id && row.bar) : []
+})
+const referenceLimit = ref(10)
 const frozenBar = computed(() => {
   const decision = selected.value?.decision as { bar?: Record<string, unknown> } | undefined
   return decision?.bar
@@ -56,6 +62,8 @@ const diagnostics: Record<string, string> = {
 
 function refresh() {
   selected.value = null
+  selectedReference.value = null
+  referenceLimit.value = 10
   void reader.select(open.value || props.afterMarket ? key.value : null)
 }
 
@@ -106,6 +114,25 @@ defineExpose({ show })
           <p>{{ text(result.manifest.formula_versions) }} · {{ text(result.manifest.decision_version) }} <template v-if="!referenceOnly">· RQAlpha {{ text(result.manifest.engine_version) }}</template></p>
           <p>Run {{ result.run_id }}</p>
         </details>
+        <section v-if="referenceActions.length" aria-label="牛哇历史参考动作">
+          <h3>牛哇历史参考动作</h3>
+          <table>
+            <thead><tr><th>确认时间</th><th>物理合约</th><th>参考动作</th><th>原始输入</th></tr></thead>
+            <tbody>
+              <tr v-for="action in referenceActions.slice(0, referenceLimit)" :key="text(action.decision_id)">
+                <td>{{ text(action.signal_bar_end) }}</td><td>{{ text(result.manifest.physical_contract) }}</td>
+                <td>{{ action.action === 'BUILD' ? '建仓' : action.action === 'CLEAR' ? '清仓' : text(action.action) }}</td>
+                <td><button type="button" :aria-expanded="selectedReference?.decision_id === action.decision_id"
+                  @click="selectedReference = selectedReference?.decision_id === action.decision_id ? null : action">冻结行情切片</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <button v-if="referenceLimit < referenceActions.length" type="button" @click="referenceLimit += 10">更多参考动作</button>
+          <div v-if="selectedReference" class="backtest-panel__slice" aria-label="冻结参考输入">
+            <strong>Run {{ result.run_id }} · {{ text(selectedReference.signal_bar_end) }} · {{ text(result.manifest.physical_contract) }}</strong>
+            <pre>{{ JSON.stringify(selectedReference.bar, null, 2) }}</pre>
+          </div>
+        </section>
         <section v-for="kind in referenceOnly ? [] : kinds" :key="kind" :aria-label="labels[kind]">
           <h3>{{ labels[kind] }}</h3>
           <ReturnCurveSvg v-if="kind === 'equity' && equityPlot" :plot="equityPlot" label="已加载结算点的权益变化（元）" area zero-line />

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { installNewowProductFixtures, newowRoute } from './newow-product.helpers.mjs'
+import { navigateClient } from './market-detail.helpers.mjs'
 
 test('all detail strategies retain one native canvas and their period without repeating price pagination', async ({ page }, testInfo) => {
   const errors = []
@@ -14,9 +15,10 @@ test('all detail strategies retain one native canvas and their period without re
   const pricePages = () => fixture.requests.filter(item => item.url.pathname.endsWith('/bars/page') && item.url.searchParams.get('limit') === '500').length
   const initialPages = pricePages()
   const timings = []
-  for (const label of ['震荡策略', '火天大有', '苏冰预警', '自由看盘', '趋势策略', '震荡策略', '趋势策略']) {
+  for (const label of ['震荡策略', '火天大有', '苏冰预警', '自由看盘', '传统趋势深链', '震荡策略', '趋势策略']) {
     const started = Date.now()
-    await page.getByRole('tab', { name: label, exact: true }).click()
+    if (label === '传统趋势深链') await navigateClient(page, newowRoute())
+    else await page.getByRole('tab', { name: label, exact: true }).click()
     await expect(page.locator('.tv-lightweight-charts').first()).toBeVisible()
     await expect.poll(() => page.evaluate(() => document.querySelector('.tv-lightweight-charts') === window.__detailCanvas)).toBe(true)
     expect(new URL(page.url()).searchParams.get('frequency')).toBe('1d')
@@ -39,8 +41,8 @@ test('unsupported analysis keeps the selected one-minute chart without issuing s
   await page.goto('/market/chart?symbol=rb&view=free&frequency=1m&series_kind=actual_dominant')
   await expect(page.locator('.tv-lightweight-charts')).toBeVisible()
   await page.locator('.tv-lightweight-charts').evaluate(element => { window.__detailCanvas = element })
-  await page.getByRole('tab', { name: '趋势策略', exact: true }).click()
-  await expect(page.getByText('当前牛哇周期未开放', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: '牛哇参考', exact: true }).click()
+  await expect(page.getByText('当前周期没有牛哇盘后结果，保留行情底图。', { exact: true })).toBeVisible()
   expect(new URL(page.url()).searchParams.get('frequency')).toBe('1m')
   expect(fixture.productRequests).toHaveLength(0)
   expect(await page.evaluate(() => document.querySelector('.tv-lightweight-charts') === window.__detailCanvas)).toBe(true)

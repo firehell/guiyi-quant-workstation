@@ -30,7 +30,7 @@ test('activates generic facts and mounts Newow in the unified workspace', () => 
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy' && header"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing' && header"/)
   assert.match(source, /import NewowProductWorkspace/)
-  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow' && newowCapabilities\.capabilities\.value && newowFrequencyOpen"/)
+  assert.match(template, /<NewowProductWorkspace\s+v-else-if="routeResult\.identity\.view === 'newow' && newowCapabilities\.capabilities\.value && newowFrequencyOpen"/)
   assert.match(template, /:capabilities="newowCapabilities\.capabilities\.value"/)
   assert.match(template, /切换到已开放日线/)
   assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free' && header"/)
@@ -54,7 +54,7 @@ test('gives active analysis views their own history, while alert management rema
 test('keeps Free HTDY and SuBing as separate explicit adapters inside the stable workspace slot', () => {
   const { template } = page()
 
-  assert.match(template, /<NewowProductWorkspace\s+v-if="routeResult\.identity\.view === 'newow' && newowCapabilities\.capabilities\.value && newowFrequencyOpen"/)
+  assert.match(template, /<NewowProductWorkspace\s+v-else-if="routeResult\.identity\.view === 'newow' && newowCapabilities\.capabilities\.value && newowFrequencyOpen"/)
   assert.match(template, /<FreeChartWorkspace\s+v-else-if="routeResult\.identity\.view === 'free' && header"/)
   assert.match(template, /<HtdyDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'htdy' && header"/)
   assert.match(template, /<SubingDetailWorkspace\s+v-else-if="routeResult\.identity\.view === 'subing' && header"/)

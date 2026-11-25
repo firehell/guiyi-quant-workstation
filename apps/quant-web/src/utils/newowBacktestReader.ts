@@ -123,19 +123,28 @@ export function createBacktestReader(api: BacktestAPI, changed: (state: ReaderSt
 }
 
 
-export function publishedActionMarkers(result: LatestBacktest['result'], bars: readonly BarData[]): KlineMarker[] {
-  const actions = result?.summary.decisions
-  if (!Array.isArray(actions)) return []
-  const contracts = new Map(bars.map(bar => [Date.parse(bar.time), bar.physicalContract]))
+export function publishedActionMarkers(
+  result: LatestBacktest['result'], bars: readonly BarData[], frequency: string,
+): KlineMarker[] {
+  if (!result) return []
+  const actions = result.summary.decisions
+  const contract = result.manifest.physical_contract
+  if (!Array.isArray(actions) || typeof contract !== 'string') return []
+  const byTime = new Map(bars.map(bar => [Date.parse(bar.time), bar]))
   return actions.flatMap(action => {
     if (!action || typeof action.decision_id !== 'string' || typeof action.signal_bar_end !== 'string'
-      || (action.action !== 'BUILD' && action.action !== 'CLEAR')
-      || typeof result?.manifest.physical_contract !== 'string'
-      || contracts.get(Date.parse(action.signal_bar_end)) !== result.manifest.physical_contract) return []
+      || (action.action !== 'BUILD' && action.action !== 'CLEAR') || action.frequency !== frequency) return []
+    const frozen = action.bar
+    const active = byTime.get(Date.parse(action.signal_bar_end))
+    if (!active || active.confirmed === false || active.physicalContract?.toUpperCase() !== contract.toUpperCase()
+      || !frozen || frozen.completed !== true || frozen.frequency !== frequency
+      || frozen.physical_contract !== contract || active.trading_day !== frozen.trading_day
+      || Date.parse(frozen.bar_end) !== Date.parse(active.time)
+      || !(['open', 'high', 'low', 'close', 'volume'] as const).every(field => frozen[field] != null && Number(frozen[field]) === active[field])) return []
     const build = action.action === 'BUILD'
     return [{
       id: action.decision_id, time: action.signal_bar_end,
-      label: (result.qualification === 'TRIAL' ? '试验' : '盘后') + (build ? '建仓' : '清仓'),
+      label: (result.qualification === 'TRIAL' ? '牛哇试验参考' : '牛哇盘后参考') + (build ? '建仓' : '清仓'),
       tooltip: typeof action.reason === 'string' ? action.reason : undefined,
       position: build ? 'belowBar' : 'aboveBar', shape: build ? 'arrowUp' : 'arrowDown',
       tone: result.qualification === 'TRIAL' ? 'neutral' : build ? 'up' : 'down',

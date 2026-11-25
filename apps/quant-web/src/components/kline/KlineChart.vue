@@ -177,7 +177,10 @@ let htdyZd2: ISeriesApi<'Line'> | null = null
 let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 const publicPatternPrimitive = new NewowPublicPatternPrimitive(point => chartTime({ time: point.barEnd, trading_day: point.tradingDay } as BarData))
-watch(() => props.patternGeometry, value => publicPatternPrimitive.setData(value ?? null))
+watch(() => props.patternGeometry, value => {
+  publicPatternPrimitive.setData(value ?? null)
+  detailSession?.restoreInspectionCursor()
+})
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
 const dynamicRangePrimitive = new DynamicRangePrimitive()
 let observer: ResizeObserver | null = null
@@ -244,8 +247,9 @@ onMounted(async () => {
       ),
     },
   })
-  chart.panes()[0].setStretchFactor(6)
-  chart.addPane().setStretchFactor(2)
+  const paneLayout = detailSession ? detailChartPaneLayout(container.value.clientHeight, 32) : null
+  chart.panes()[0].setStretchFactor(paneLayout?.mainHeight ?? 6)
+  chart.addPane().setStretchFactor(paneLayout?.auxiliaryHeight ?? 2)
   candles = chart.addSeries(CandlestickSeries, {
     upColor: theme.candleUp,
     downColor: theme.candleDown,
@@ -307,8 +311,9 @@ watch(() => props.period, () => {
 
 watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
+  detailSession?.restoreInspectionCursor()
 }, { deep: true })
-watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); hoverContext.value=null })
+watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); detailSession?.restoreInspectionCursor() })
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
 watch(() => [props.subingVolumeTiers, props.volumeScoring, props.loading, props.error, props.period], () => { renderAllSeries() })

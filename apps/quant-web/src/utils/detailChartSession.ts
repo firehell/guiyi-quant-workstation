@@ -1,6 +1,7 @@
 import type { DisplayVolumeBar } from './volumeDisplay.ts'
-import type { createChart, IChartApi, LogicalRange, SeriesType, ISeriesApi, Time } from 'lightweight-charts'
+import type { createChart, IChartApi, LogicalRange, SeriesType, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
 import { createPriceSeriesWriter } from './priceSeriesWriter.ts'
+import { ExecutionOverlayPrimitive, type ExecutionOverlayPoint } from '../components/kline/executionOverlayPrimitive.ts'
 import { toChartTimeForPeriod } from './barTime.ts'
 
 export const DETAIL_CHART_SESSION = Symbol('detail-chart-session')
@@ -60,6 +61,29 @@ export function createDetailChartSession(dependencies: {
   let volumeInput: readonly DisplayVolumeBar[] = []
   let hasPrices = false
   let ownsViewport = false
+  const executions = new ExecutionOverlayPrimitive()
+  let cursor: { time: Time; price: number } | null = null
+  let cursorFrame: number | null = null
+  let restoringCursor = false
+
+  function rememberCursor(event: MouseEventParams<Time>) {
+    if (restoringCursor) return
+    if (event.time === undefined || !event.point || event.paneIndex !== 0) return
+    const price = prices.get('candles')?.coordinateToPrice(event.point.y)
+    cursor = price == null ? null : { time: event.time, price }
+  }
+
+  function restoreCursor(native: IChartApi) {
+    if (!cursor || cursorFrame !== null || typeof requestAnimationFrame === 'undefined') return
+    cursorFrame = requestAnimationFrame(() => {
+      cursorFrame = null
+      const candles = prices.get('candles')
+      if (!cursor || !candles || indexOf(cursor.time) === null) return
+      restoringCursor = true
+      try { native.setCrosshairPosition(cursor.price, cursor.time, candles) }
+      finally { restoringCursor = false }
+    })
+  }
 
   function saveViewport() {
     const range = chart?.timeScale().getVisibleLogicalRange()
@@ -70,7 +94,9 @@ export function createDetailChartSession(dependencies: {
   }
   function setIdentity(next: string) {
     if (next === identity) return
-    saveViewport(); identity = next; hasPrices = false; ownsViewport = false
+    saveViewport(); identity = next; hasPrices = false; ownsViewport = false; cursor = null
+    chart?.clearCrosshairPosition?.()
+    executions.setData([])
     for (const series of prices.values()) series.setData([])
     writers.clear(); pricePoints.clear(); volumeInput = []
   }
@@ -79,6 +105,9 @@ export function createDetailChartSession(dependencies: {
     return live ?? viewports.get(identity) ?? null
   }
   function resetWindow() {
+    cursor = null
+    chart?.clearCrosshairPosition?.()
+    executions.setData([])
     for (const series of prices.values()) series.setData([])
     writers.clear(); pricePoints.clear(); volumeInput = []; ownsViewport = false; hasPrices = false
   }
@@ -103,14 +132,21 @@ export function createDetailChartSession(dependencies: {
   }
   function acquire(container: HTMLElement, options: Parameters<typeof createChart>[1]): IChartApi {
     if (disposed) throw new Error('DETAIL_CHART_DISPOSED')
+    const retainedRange = viewport()
     releaseActive?.()
     if (!surface) {
       surface = dependencies.createContainer?.() ?? document.createElement('div')
       Object.assign(surface.style, { width: '100%', height: '100%' })
     }
     container.appendChild(surface)
-    if (!chart) chart = dependencies.createChart(surface, options)
-    else chart.applyOptions(options ?? {})
+    if (!chart) {
+      chart = dependencies.createChart(surface, options)
+      chart.subscribeCrosshairMove?.(rememberCursor)
+    } else {
+      chart.applyOptions(options ?? {})
+      if (retainedRange && hasPrices) chart.timeScale().setVisibleLogicalRange(retainedRange)
+      restoreCursor(chart)
+    }
     const native = chart
     let active = true, paneIndex = 1
     const series = new Set<ISeriesApi<SeriesType, Time>>()
@@ -221,9 +257,12 @@ export function createDetailChartSession(dependencies: {
         const role = definition.type === 'Candlestick' ? 'candles' : definition.type === 'Histogram' && settings?.priceScaleId === 'volume' ? 'volume' : null
         let raw = role ? prices.get(role) : undefined
         if (!raw) {
-          raw = target.addSeries(definition, settings, pane)
-          if (role) prices.set(role, raw)
-          else series.add(raw)
+          const candlePaneOverlay = !role && pane === 0 && (!settings?.priceScaleId || settings.priceScaleId === 'right')
+          raw = target.addSeries(definition, candlePaneOverlay ? { ...settings, autoscaleInfoProvider: () => null } : settings, pane)
+          if (role) {
+            prices.set(role, raw)
+            if (role === 'candles') raw.attachPrimitive(executions)
+          } else series.add(raw)
         } else {
           // Every adapter shares the main-pane volume overlay.
           if (role === 'volume' && raw.getPane().paneIndex() !== pane) raw.moveToPane(pane)
@@ -247,8 +286,14 @@ export function createDetailChartSession(dependencies: {
   function dispose() {
     if (disposed) return
     releaseActive?.(); disposed = true
+    if (cursorFrame !== null) cancelAnimationFrame(cursorFrame)
+    cursor = null
     chart?.remove(); chart = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); volumeInput = []; viewports.clear()
   }
-  const session = { acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
+  const setExecutions = (points: readonly ExecutionOverlayPoint[]) => executions.setData(points)
+  function restoreInspectionCursor() {
+    if (chart) restoreCursor(chart)
+  }
+  const session = { setExecutions, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
   return session
 }

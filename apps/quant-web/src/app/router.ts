@@ -5,8 +5,10 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),
-    redirect: '/market',
+    redirect: '/workstation',
     children: [
+      { path: 'workstation', name: 'operations', component: () => import('@/pages/workstation/OperationsPage.vue'), meta: { title: '运行台' } },
+      { path: 'research', name: 'research', component: () => import('@/pages/workstation/ResearchPage.vue'), meta: { title: '研究' } },
       {
         path: 'market',
         name: 'market',

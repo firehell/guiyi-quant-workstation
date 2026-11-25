@@ -14,6 +14,8 @@ const props = withDefaults(defineProps<{
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   subingVolumeTiers?: boolean
+  volumeScoring?: boolean
+  researchMarkers?: KlineMarker[]
   bars: BarData[]
   mutation: MarketSeriesMutation
   loading: boolean
@@ -37,7 +39,7 @@ const props = withDefaults(defineProps<{
   loadingBefore?: boolean
   historyError?: string | null
   focusRequestId?: number
-}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
+}>(), { volumeScoring: true, markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -113,6 +115,8 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       ref="chart"
       :bars="bars"
       :subing-volume-tiers="subingVolumeTiers"
+      :volume-scoring="volumeScoring"
+      :research-markers="researchMarkers"
     :dynamic-range-points="dynamicRangePoints"
     :dynamic-range-enabled="dynamicRangeEnabled"
     :pattern-geometry="patternGeometry"

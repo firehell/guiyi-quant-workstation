@@ -42,6 +42,6 @@ test('reads the real frozen FU trial from isolated PostgreSQL through the develo
   await expect(panel).toContainText('暂无成功回测结果')
   expect(requests.at(-1).url.searchParams.get('strategy')).toBe('oscillation')
   expect(requests.at(-1).url.searchParams.get('frequency')).toBe('15m')
-  await expect(page.getByRole('tab', { name: '模拟交易', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: '苏冰决策', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '运行台', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: '研究', exact: true })).toBeVisible()
 })

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { loadMarketHomeTab as loadActiveTab, saveMarketHomeTab as saveActiveTab, type MarketHomeTab } from '@/utils/marketHomeTab'
 import '@/styles/marketHome.css'
 import MarketHomeHeader from '@/components/market/MarketHomeHeader.vue'
@@ -30,12 +30,16 @@ import { projectMarketHomeLiveRows } from '@/utils/marketHomeLiveView'
 import { homeSnapshotCache, homeCacheNamespace } from '@/api/homeSnapshotCache'
 import { validateStoredMarketHomeOverview } from '@/utils/marketHomeTypes'
 const router = useRouter()
+const route = useRoute()
 const initialPreferences = loadMarketHomePreferences()
 const sector = ref(initialPreferences.sector)
 const sort = ref<MarketHomeSort>(['change', 'target', 'daily', 'weekly', 'trend'].includes(initialPreferences.sort) ? initialPreferences.sort : 'default')
 const sortDirection = ref<MarketHomeSortDirection>(initialPreferences.sortDirection)
 const compactDensity = ref(initialPreferences.compactDensity)
 const activeTab = ref<MarketHomeTab>(loadActiveTab())
+watch(() => route.query.tab, tab => {
+  if (tab === 'market' || tab === 'messages' || tab === 'simulation') selectTab(tab)
+}, { immediate: true })
 const messageReloadSequence = ref(0)
 const cardReloadSequence = ref(0)
 const navigationError = ref<string | null>(null)
@@ -185,7 +189,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="market-dashboard-page">
-    <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @select-tab="selectTab" @open-view="openView" @refresh="refreshAll" />
+    <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @open-view="openView" @refresh="refreshAll" />
     <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
     <section v-if="newowAfterMarketOnly && activeTab === 'market'" class="market-home-main" aria-label="行情与盘后研究">
       <p role="status">{{ liveStatus }} · 在品种页查看牛哇最近成功的盘后结果。</p>
