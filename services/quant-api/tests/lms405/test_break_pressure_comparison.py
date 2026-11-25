@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
 from lms405_break_pressure_comparison import compare_break, first_shape_after, inspect
+from lms405_jm_may_recovery_reset import overlapping_breaks
 from lms405_ordered_original_short import ordered_followups
 from lms405_right_side_study import ONE, US, at
 
@@ -73,3 +74,17 @@ def test_separate_break_excludes_earlier_and_overlapping_crosses_and_stops_at_re
     assert first["fresh_shapes_before_trigger_recapture"] == {"yes": valid, "too_late": None}
     assert second["trigger_at"] == bars[9].end
     assert second["fresh_shapes_before_trigger_recapture"] == {"yes": None, "too_late": None}
+
+
+def test_completed_closes_can_be_ordered_without_a_fully_later_trigger_bar():
+    pressure = at("2026-05-21T13:59")
+    report = {
+        "branches": [{"variant": "example", "pressure_at": pressure, "expires_before": pressure + 3 * ONE}],
+        "fresh_crosses": [
+            {"at": pressure + n * ONE, "close": Decimal("1205")} for n in (-1, 0, 1, 2, 3)
+        ],
+    }
+    rows = overlapping_breaks(report)
+    assert [row["trigger_at"] for row in rows] == [pressure, pressure + ONE]
+    report["branches"][0]["expires_before"] = pressure + ONE + US
+    assert [row["trigger_at"] for row in overlapping_breaks(report)] == [pressure]
