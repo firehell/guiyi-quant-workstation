@@ -1,4 +1,4 @@
-"""Replay three public commodity plans while preserving their distinct price-area roles."""
+"""Replay public commodity plans while preserving their distinct price-area roles."""
 
 import argparse
 from datetime import date, datetime
@@ -8,6 +8,7 @@ from pathlib import Path
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_recovery_confirmation_audit import examine
 from lms405_protection_timeframes import read_window
+from lms405_replay import display
 from lms405_right_side_study import ONE, US, at
 from lms_near405_replay import encoded, sha
 
@@ -31,6 +32,28 @@ CASES = {
     )),
 }
 UNALIGNED_SOURCE = "S5215089620682840"
+MANAGEMENT_CASES = {
+    "S5290904148773752": ("V2609", "2026-04-23", "16:35", (
+        ("strong_target_on_gap_day", "session_start", "close", "LONG", "5226 5262"),
+    )),
+    "S5292358960155373": ("V2609", "2026-04-27", "16:56", (
+        ("uncompleted_long_unlock_reference", "session_start", "close", "LONG", "5226 5262"),
+    )),
+    "S5292720017903146": ("V2609", "2026-04-28", "16:50", (
+        ("first_strong_target", "session_start", "close", "LONG", "5226 5262"),
+        ("second_strong_target", "session_start", "close", "LONG", "5285 5297"),
+    )),
+    "S5301418816702075": ("V2609", "2026-05-22", "16:56", (
+        ("uncompleted_short_target", "session_start", "close", "SHORT", "4802 4830"),
+    )),
+    "S5311207311147936": ("TA2609", "2026-06-18", "17:12", (
+        ("short_protection_reference", "session_start", "close", "LONG", "5800 5820"),
+        ("counter_m_reference", "session_start", "close", "LONG", "5868 5888"),
+    )),
+    "S5315919112832178": ("TA2609", "2026-07-01", "17:15", (
+        ("short_reentry_reference", "session_start", "close", "SHORT", "5432 5494"),
+    )),
+}
 
 
 def load_source(index, key):
@@ -39,10 +62,12 @@ def load_source(index, key):
     return source | dict(archive_sha256=sha(path.read_bytes()))
 
 
-def study(session, market):
+def study(session, market, *, batch="published-updates"):
     index = input_sources()
+    use_management = batch == "management"
+    cases = MANAGEMENT_CASES if use_management else CASES
     records = {}
-    for source_id, (contract, day, published_minute, roles) in CASES.items():
+    for source_id, (contract, day, published_minute, roles) in cases.items():
         source = load_source(index, source_id)
         published = datetime.fromisoformat(source["published_at"])
         if published != at(f"{day}T{published_minute}"):
@@ -59,20 +84,31 @@ def study(session, market):
             cut_at = boundaries.get(cut) or at(f"{day}T{cut}")
             band = tuple(map(Decimal, levels.split()))
             results[role] = examine(series, start=start_at, cut=cut_at, side=side, band=band)
-        records[source_id] = dict(contract=contract, source=source, trading_day=day, role_windows=results)
+        record = dict(contract=contract, source=source, trading_day=day, role_windows=results)
+        if use_management:
+            minutes = series[1]
+            record["market_extrema"] = dict(
+                first_minute_end=display(minutes[0].end), open=minutes[0].open, close=minutes[-1].close,
+                high_at=display(max(minutes, key=lambda bar: bar.high).end),
+                low_at=display(min(minutes, key=lambda bar: bar.low).end),
+            )
+        records[source_id] = record
 
-    return dict(version="lms405-public-plan-roles-v1", cases=records,
-                author_comment=dict(source_id="G63272-549", published_at=at(TA_TARGET_COMMENT_AT),
-                                    role="REPORTED_TARGET_REACHED"),
-                reported_unlock_without_contract=load_source(index, UNALIGNED_SOURCE),
-                originals_before_current_archives=None, admitted_author_action_samples=0,
-                executable=False, fills=None, pnl=None)
+    report = dict(cases=records, originals_before_current_archives=None, admitted_author_action_samples=0,
+                  executable=False, fills=None, pnl=None)
+    if use_management:
+        return report | dict(version="lms405-public-management-roles-v1", price_roles_retrospective_only=True)
+    return report | dict(version="lms405-public-plan-roles-v1",
+                         author_comment=dict(source_id="G63272-549", published_at=at(TA_TARGET_COMMENT_AT),
+                                             role="REPORTED_TARGET_REACHED"),
+                         reported_unlock_without_contract=load_source(index, UNALIGNED_SOURCE))
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--batch", choices=("published-updates", "management"), default="published-updates")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -88,7 +124,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            result = study(session, build_market_data_service(session))
+            result = study(session, build_market_data_service(session), batch=args.batch)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
