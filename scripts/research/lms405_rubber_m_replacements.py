@@ -21,14 +21,16 @@ REFERENCE_SHA = "b73fbed1e6052c56e98fe232906b561408159895d069d63edfcbf06b2694354
 BANDS = {"protection": (Decimal(19530), Decimal(19680)), "m": (Decimal(19790), Decimal(19935))}
 
 
-def first_gates(series, start, cut):
+def first_gates(series, start, cut, *, bands=BANDS, side="LONG"):
     minutes = completed(series[1], start, cut)
     result = {}
-    for role, band in BANDS.items():
-        paths = compare_paths(series, "LONG", band, start, cut)
-        for edge, price in zip(("near", "far"), band, strict=True):
+    for role, band in bands.items():
+        paths = compare_paths(series, side, band, start, cut)
+        ordered = band if side == "LONG" else band[::-1]
+        for edge, price in zip(("near", "far"), ordered, strict=True):
             name = f"{role}_{edge}"
-            touch = next((row.end for row in minutes if row.high >= price), None)
+            touch = next((row.end for row in minutes if (row.high >= price if side == "LONG" else row.low <= price)),
+                         None)
             result[f"{name}_touch"] = dict(end=touch, price=price)
             strict_close = paths["edges"][edge]["first_strict_close"]
             result[f"{name}_strict_close"] = dict(end=strict_close, price=price)
