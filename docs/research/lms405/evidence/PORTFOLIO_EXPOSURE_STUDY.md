@@ -55,7 +55,7 @@ services/quant-api/.venv/bin/python scripts/research/lms405_common_protection_wi
   --output /tmp/lms405-common-protection-oct27-new.json
 ```
 
-三合约共1,035根1分钟行情匹配已冻结实月合约指纹，两次结果逐字节一致，22日八品种结果重跑也与冻结版本相同。27日定稿 `output/lms405-common-protection-oct27-20261125/final.json`，SHA256 `1f8faeba34873d4be26cb01145dbb994305c01aa45a0af3d905ea35442f09264`。后续优先核对菜油当日等量多腿用途及从旧空到盘整试错的切换条件，再判断应否把它与橡胶、烧碱放入同一个保护规则。
+三合约共1,035根1分钟行情匹配已冻结实月合约指纹，两次结果逐字节一致，22日八品种结果重跑也与冻结版本相同。27日定稿 `output/lms405-common-protection-oct27-20261125/final.json`，SHA256 `1f8faeba34873d4be26cb01145dbb994305c01aa45a0af3d905ea35442f09264`。菜油整腿至少5手需要首次触及分水岭以前的价格，角色仍要按作者动作材料核实。 [菜油手数与形态复算](PORTFOLIO_RECONSTRUCTION.md#oi2701-分水岭前的夜盘多腿)
 
 ## 共振背景下的局部锁定与继续开放敞口
 

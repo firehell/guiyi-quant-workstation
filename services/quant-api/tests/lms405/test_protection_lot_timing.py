@@ -3,14 +3,16 @@ from decimal import Decimal
 from itertools import product
 from types import SimpleNamespace
 
+from lms405_oi_leg_intent import lot_bound
 from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, latest_whole_leg_start
-from lms405_right_side_study import at
+from lms405_right_side_study import ONE, US, at
 from lms405_sh_protection_replacement import compatible_counts
 
 
 def test_displayed_tick_totals_use_precision_of_each_source():
     assert list(displayed_tick_totals(Decimal("663.34"), 16, Decimal("0.5"))) == [21227]
     assert list(displayed_tick_totals(Decimal("1490.1"), 20, Decimal("1"))) == [29801, 29802]
+    assert list(displayed_tick_totals(Decimal("10224.0"), 40, Decimal("1"))) == [408958, 408959, 408960, 408961]
 
 
 def test_envelopes_require_some_lots_before_disputed_confirmation():
@@ -50,3 +52,16 @@ def test_retained_lot_joint_bounds_match_exhaustive_small_tick_ranges():
     assert compatible_counts(lots, old_total, new_total, old, None, night) == [
         list(row) for row in sorted(compatible) if row[1] == 0
     ]
+
+
+def test_gate_comparison_exposes_the_effect_of_the_minute_straddling_availability():
+    gate_end = at("2026-10-27T21:01")
+    bars = [SimpleNamespace(start=gate_end + (index - 1) * ONE, end=gate_end + index * ONE,
+                           low=Decimal(price), high=Decimal(price))
+            for index, price in enumerate((98, 102, 110))]
+    args = dict(lots=2, tick=Decimal(1), totals=range(200, 201))
+    optimistic = lot_bound(bars, gate_end, **args)
+    strict = lot_bound(bars, gate_end + US, **args)
+    assert optimistic["minimum_prior_lots"] == 1
+    assert strict["minimum_prior_lots"] == 2
+    assert strict["first_later_completed_minute_end"] == "2026-10-27T21:03+08:00"
