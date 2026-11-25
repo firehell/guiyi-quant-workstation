@@ -1,11 +1,14 @@
-"""Compare two observable break-and-retest sequences across FG and V cases."""
+"""Compare two observable break-and-retest sequences in LMS cases."""
 
 import argparse
 from datetime import date, datetime
 from decimal import Decimal
+from hashlib import sha256
+import json
 from pathlib import Path
 
 from lms405_jm_oct_recovery_clock import window_signals
+from lms405_oi_june_case import DAYS as OI_DAYS, local_time
 from lms405_portfolio_replay import input_sources
 from lms405_protection_lot_timing import verified_json
 from lms405_protection_timeframes import read_window
@@ -19,6 +22,12 @@ AUGUST = "S5328222180872595"
 PVC = "A5358325549629506"
 WAIT = Path("output/lms405-glass-soda-august-wait-20261126/verified-a.json")
 WAIT_SHA = "52e733e21a235201bb82f750ffa3436b08537f9f195cf7598dcc51abe8332e2c"
+OI_BASELINE_SHA = "b1b35238a8ff776b243dc9b3490865c7339f71ac68aa1cd26559d464acc113dc"
+OI_SOURCES = {
+    "temporary_lock": ("S5306128623993006", "2026-06-04T16:51"),
+    "early_m_description": ("S5306393997347489", "2026-06-05T10:26"),
+    "short_m_action_recap": ("WR2IUYCQHj", "2026-06-05T17:00"),
+}
 CASES = (
     ("glass_preceding_path", JULY, "FG2609", "2026-07-27", ("900", "902"), None, "RETROSPECTIVE_PRIOR_PATH"),
     ("glass_trend_continuation", JULY, "FG2609", "2026-07-28", ("900", "902"), ("882", "887"),
@@ -139,10 +148,79 @@ def study(session, market):
     )
 
 
+def oi_unlock_study(session, market, baseline_path):
+    baseline = verified_json(baseline_path, OI_BASELINE_SHA)
+    index = input_sources()
+    sources = {}
+    for role, (source_id, displayed_at) in OI_SOURCES.items():
+        source = load_source(index, source_id)
+        if datetime.fromisoformat(source["published_at"]) != at(displayed_at):
+            raise ValueError("LMS_PRESSURE_OI_SOURCE_TIME_CHANGED")
+        sources[role] = source
+
+    contract = "OI2609"
+    windows = {day: read_window(session, market, contract, day) for day in OI_DAYS}
+    fingerprints = {}
+    for period in (1, 5, 15):
+        rows = [[local_time(b.end), *map(str, (b.open, b.high, b.low, b.close))]
+                for series in windows.values() for b in series[period]]
+        fingerprints[f"{period}m"] = sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest()
+    if fingerprints != baseline["input_ohlc_sha256"]:
+        raise ValueError("LMS_PRESSURE_OI_MARKET_CHANGED")
+
+    _, before, after = OI_DAYS
+    previous, current = windows[before], windows[after]
+    before_open, after_open = at(f"{before}T09:00"), at(f"{after}T09:00")
+    lock_post = datetime.fromisoformat(sources["temporary_lock"]["published_at"])
+    early_post = datetime.fromisoformat(sources["early_m_description"]["published_at"])
+    if not previous[1][-1].end < lock_post < current[1][0].start < after_open < early_post < current[1][-1].end:
+        raise ValueError("LMS_PRESSURE_OI_WINDOW_CHANGED")
+    scopes = (
+        ("previous_day_retrospective", previous, before_open, previous[1][-1].end + 2 * US),
+        ("next_night_after_displayed_lock_post", current, current[1][0].start, after_open),
+        ("day_before_displayed_m_post", current, after_open, early_post),
+        ("full_day_retrospective", current, after_open, current[1][-1].end + 2 * US),
+    )
+    levels = {
+        "old_protection_band": (Decimal(10273), Decimal(10315)),
+        "previous_low_sensitivity": (Decimal(10230), Decimal(10230)),
+    }
+    last_night = [bar for bar in current[1] if bar.end < after_open][-1]
+    first_day = next(bar for bar in current[1] if bar.start >= after_open)
+    previous_low = min(b.low for b in previous[1] if b.start >= before_open)
+    if previous_low != levels["previous_low_sensitivity"][0]:
+        raise ValueError("LMS_PRESSURE_OI_PREVIOUS_LOW_CHANGED")
+    morning_signals, morning_checks = window_signals(current, after_open, early_post, "SHORT")
+    return dict(
+        version="lms405-oi-unlock-pressure-comparison-v1", contract=contract, sources=sources,
+        baseline_sha256=OI_BASELINE_SHA, input_ohlc_sha256=fingerprints, bands=levels,
+        windows={name: dict(start=start, as_of=cutoff,
+                            by_band={key: inspect(series, start, cutoff, band, None)
+                                     for key, band in levels.items()})
+                 for name, series, start, cutoff in scopes},
+        day_open_context=dict(
+            previous_day_low=previous_low,
+            last_night_end=last_night.end, last_night_close=last_night.close,
+            first_day_start=first_day.start, first_day_end=first_day.end,
+            first_day_open=first_day.open, first_day_close=first_day.close,
+            first_day_close_below_previous_low=first_day.close < previous_low,
+            first_morning_geometry_starting_after_first_close=first_shape_after(
+                morning_signals, first_day.end, early_post,
+            ),
+            geometry_prefix_checks=morning_checks,
+        ),
+        author_strategy_version="4.0.5", author_action_description="UNLOCK_AND_SHORT_M_RECAP",
+        author_signal_at=None, actual_author_action_at=None, article_history_verified=False,
+        author_action_samples=0, behavior_match_rate=None, fills=None, pnl=None, executable=False,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--oi-unlock", type=Path, metavar="FROZEN_JUNE_COMPARISON",
+                        help="Compare OI2609's disclosed protection context and later short-M action.")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -156,7 +234,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            market = build_market_data_service(session)
+            report = oi_unlock_study(session, market, args.oi_unlock) if args.oi_unlock else study(session, market)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
