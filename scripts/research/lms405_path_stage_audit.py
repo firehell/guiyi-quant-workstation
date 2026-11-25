@@ -9,6 +9,7 @@ from lms405_portfolio_replay import ARCHIVE, LOCAL, input_sources
 from lms405_protection_shape_audit import price_digest
 from lms405_protection_timeframes import read_window
 from lms405_replay import display
+from lms405_right_side_study import ONE
 from lms405_v_zone_progress import MINUTE_HASHES, observations, publication_windows
 from lms_near405_replay import encoded, sha
 
@@ -33,9 +34,33 @@ CASES = {
         ("particularly_strong_extension", "OPTIONAL_EXTENSION", "4508 4508"),
     )),
 }
+COAL_FOLLOWUP = ("JM2609", "SHORT", "S5313011682379978", "TREND_FOLLOW_THROUGH_INTENT_4_0_5", (
+    ("previous_target", "PRIOR_STRONG_SIDE_TARGET", "1257.5 1263.5"),
+    ("particularly_strong_extension", "PRIOR_OPTIONAL_EXTENSION", "1241.5 1248"),
+))
 
 
-def compare(series, side, nodes, published_minute):
+def hypothetical_publication_cutoffs(bars, band, side):
+    """Latest hypothetical publication minute that leaves a whole qualifying bar."""
+    edge = band[0] if side == "SHORT" else band[1]
+    if side == "SHORT":
+        touched = [bar for bar in bars if bar.low <= edge]
+        closed = [bar for bar in bars if bar.close < edge]
+    else:
+        touched = [bar for bar in bars if bar.high >= edge]
+        closed = [bar for bar in bars if bar.close > edge]
+    return {
+        name: dict(
+            first_bar_end=display(matches[0].end) if matches else None,
+            last_bar_end=display(matches[-1].end) if matches else None,
+            latest_release_minute_for_first=display(matches[0].start - ONE) if matches else None,
+            latest_release_minute_for_any=display(matches[-1].start - ONE) if matches else None,
+        )
+        for name, matches in (("directional_far_reach", touched), ("strict_close_beyond_far", closed))
+    }
+
+
+def compare(series, side, nodes, published_minute, *, publication_followup=False):
     periods = {}
     for period, bars in series.items():
         before, after = publication_windows(bars, published_minute)
@@ -60,6 +85,8 @@ def compare(series, side, nodes, published_minute):
                     "NEW_STRONG_SIDE_TARGET", "OPTIONAL_EXTENSION",
                 ) else None,
             )
+            if publication_followup and role == "SEPARATELY_UPDATED_EXTENSION":
+                levels[name]["hypothetical_publication_cutoffs"] = hypothetical_publication_cutoffs(before, band, side)
         periods[f"{period}m"] = dict(
             bar_count=len(bars), market_sha256=sha(encoded(price_digest(bars)).encode()),
             high=max(b.high for b in bars), low=min(b.low for b in bars), close=bars[-1].close,
@@ -68,15 +95,17 @@ def compare(series, side, nodes, published_minute):
     return periods
 
 
-def study(session, market):
+def study(session, market, *, publication_followup=False):
     index = input_sources()
     cases = {}
-    for name, (contract, side, key, wording, nodes) in CASES.items():
+    cases_input = CASES | {"coal_trend_intent_before_optional_completion": COAL_FOLLOWUP} if publication_followup else CASES
+    for name, (contract, side, key, wording, nodes) in cases_input.items():
         source = index[key]
         path = ARCHIVE.parent / source["archive_path"]
         published = datetime.fromisoformat(source["published_at"]).astimezone(LOCAL)
         series = read_window(session, market, contract, published.date())
-        periods = compare(series, side, nodes, published.replace(second=0, microsecond=0))
+        periods = compare(series, side, nodes, published.replace(second=0, microsecond=0),
+                          publication_followup=publication_followup)
         if contract == "V2609" and periods["1m"]["market_sha256"] != MINUTE_HASHES[published.date().isoformat()]:
             raise ValueError("PATH_STAGE_FROZEN_PVC_MARKET_CHANGED")
         cases[name] = dict(
@@ -84,7 +113,8 @@ def study(session, market):
             trading_day=published.date(), after_review_wording=wording, market=periods,
             historical_vplus_revision_verified=False, author_state_transition_at=None,
         )
-    return dict(version="lms405-path-stage-audit-v1", cases=cases, admitted_author_action_samples=0,
+    version = "lms405-path-stage-publication-audit-v1" if publication_followup else "lms405-path-stage-audit-v1"
+    return dict(version=version, cases=cases, admitted_author_action_samples=0,
                 executable=False, fills=None, pnl=None)
 
 
@@ -92,6 +122,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--publication-followup", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -105,7 +136,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), publication_followup=args.publication_followup)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
