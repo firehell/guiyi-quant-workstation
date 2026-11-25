@@ -22,6 +22,7 @@ SODA_LIST = "https://stock.weibo.cn/page/detail?market=gn&symbol=SA0"
 WINDOWS = (
     ("OI2609", "2026-06-03T10:13", "S5305666088472874", "LONG",
      ("10175", "10197"), ("10019", "10151"), "REGULAR_WEAK_SIDE_AREA"),
+    # Preserve the frozen display-as-local sensitivity. See lms405_sa_bd_clock for calibration.
     ("SA2701", "2026-10-19T09:02", None, "SHORT",
      ("932", "937"), ("941", "946"), "OPTIONAL_LATER_PROTECTION_FOR_DIFFERENT_CONTINUITY_HANDLING"),
     ("SR2701", "2026-08-10T11:04", "S5330321279291289", "LONG",
