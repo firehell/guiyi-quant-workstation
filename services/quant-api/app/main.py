@@ -8,6 +8,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
+from starlette.responses import JSONResponse
 import logging
 import os
 
@@ -24,6 +25,7 @@ from app.api.reference_trading import router as reference_trading_router
 from app.api.research_new_subing import router as research_new_subing_router
 from app.api.subing_portfolio import router as subing_portfolio_router
 from app.middleware.request_timing import RequestTimingMiddleware
+from app.services.newow_reference_mode import after_market_only
 from app.version import APP_VERSION
 
 logging.basicConfig(level=logging.INFO)
@@ -62,6 +64,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def isolate_legacy_newow_calculation(request, call_next):
+    path = request.url.path.rstrip("/")
+    prefix = "/api/v1/market/newow/"
+    if (after_market_only() and path.startswith(prefix)
+            and path not in {prefix + "product-capabilities", prefix + "home-projection"}):
+        return JSONResponse({"detail": {"code": "NEWOW_AFTER_MARKET_ONLY"}}, status_code=409)
+    return await call_next(request)
+
 
 # Market + Alert + Runtime 运维面
 app.include_router(simulation_monitor_router)

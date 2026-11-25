@@ -38,6 +38,10 @@ def guard_directory(*, root: Path | None = None, legacy_root: bool = False) -> P
         if root is None:
             raise ValueError('LIVE_RECOVERY_GUARD_UNSAFE')
         return root
+    from app.services.newow_reference_mode import after_market_only
+
+    if after_market_only():
+        return PROJECT_ROOT / '.run' / 'newow-isolated' / 'live-recovery-guards'
     from app.runtime_bindings import read_bindings
     from app.runtime_handover import runtime_directory
     if os.environ.get('GUIYI_RUNTIME_HANDOVER_ENABLED') == '1' or read_bindings() is not None:

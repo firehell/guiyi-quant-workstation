@@ -100,6 +100,12 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                          publish_stage=lambda _stage, **_fields: None,
                          report_health=lambda _proof: None):
     """Open DB and Redis only after an explicit local enable marker is present."""
+    from app.services.newow_reference_mode import after_market_only
+
+    # The active recording scope is Newow-only. HTDY and SuBing account
+    # owners read their independent inputs outside this worker.
+    if after_market_only():
+        raise RuntimeError("NEWOW_AFTER_MARKET_ONLY")
     require_worker_enabled()
     from app.db.session import SessionLocal
     from app.market_data.catalog import MarketCatalog

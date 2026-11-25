@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, shallowRef, ref, watch } from 'vue'
 import request from '@/api/request'
+import { formatBeijingInstant } from '@/utils/marketDisplay'
 import ReturnCurveSvg from '@/components/charts/ReturnCurveSvg.vue'
 import { returnCurveLayout } from '@/utils/returnCurveLayout'
 import {
   backtestSelection, createBacktestReader, type BacktestKind, type BacktestRow, type LatestBacktest,
 } from '@/utils/newowBacktestReader'
 
-const props = defineProps<{ product: string; strategy: string; frequency: string }>()
-const open = ref(false)
+const props = defineProps<{ product: string; strategy: string; frequency: string; afterMarket?: boolean }>()
+const emit = defineEmits<{ published: [result: LatestBacktest['result']] }>()
+const open = ref(!!props.afterMarket)
 const trial = ref(false)
 const selected = shallowRef<BacktestRow | null>(null)
 const frozenBar = computed(() => {
@@ -26,6 +28,8 @@ const reader = createBacktestReader({
 
 const key = computed(() => backtestSelection(props.product, props.strategy, props.frequency, trial.value))
 const result = computed(() => current.value?.latest?.result)
+watch(result, value => emit('published', value ?? null), { flush: 'sync' })
+const referenceOnly = computed(() => result.value?.summary.result_kind === 'reference_only')
 const attempt = computed(() => current.value?.latest?.last_attempt)
 const equityPlot = computed(() => {
   const run = result.value
@@ -52,7 +56,7 @@ const diagnostics: Record<string, string> = {
 
 function refresh() {
   selected.value = null
-  void reader.select(open.value ? key.value : null)
+  void reader.select(open.value || props.afterMarket ? key.value : null)
 }
 
 function show() {
@@ -72,7 +76,7 @@ defineExpose({ show })
 
 <template>
   <details :open="open" class="backtest-panel" data-testid="newow-backtest" @toggle="open = ($event.target as HTMLDetailsElement).open">
-    <summary>历史回测交易 · RQAlpha</summary>
+    <summary>{{ afterMarket ? '牛哇盘后参考与历史回测' : '历史回测交易 · RQAlpha' }}</summary>
     <div class="backtest-panel__body">
       <div class="backtest-panel__controls">
         <label>结果系列 <select v-model="trial"><option :value="false">正式研究</option><option :value="true">历史试验</option></select></label>
@@ -80,7 +84,7 @@ defineExpose({ show })
       </div>
       <p v-if="current?.loading" role="status">正在读取回测结果…</p>
       <p v-else-if="current?.error" role="status">回测结果读取失败，请刷新重试。</p>
-      <p v-else-if="!result" role="status">暂无成功回测结果。</p>
+      <p v-else-if="!result" role="status">{{ afterMarket ? '暂无成功发布结果。' : '暂无成功回测结果。' }}</p>
       <p v-if="frequency === '1d' || frequency === '1w'">当前执行策略仅允许同交易时段内成交。日周收盘后没有符合该策略的开盘价。</p>
       <p v-if="attempt" role="status">
         最近尝试 {{ attempt.as_of_trading_day }} · {{ stateLabels[attempt.status] }}
@@ -89,9 +93,9 @@ defineExpose({ show })
       </p>
       <template v-if="result">
         <p data-testid="newow-backtest-identity"><strong>{{ result.qualification === 'TRIAL' ? '历史试验' : '数据资格已核验' }}</strong>
-          · 数据截至 {{ result.as_of_trading_day }} · {{ text(result.manifest.since) }} 至 {{ text(result.manifest.through) }}
+          · {{ afterMarket ? '数据截至交易日' : '数据截至' }} {{ result.as_of_trading_day }} · 计算完成 {{ formatBeijingInstant(result.finished_at) }} · {{ text(result.manifest.since) }} 至 {{ text(result.manifest.through) }}
           · {{ text(result.manifest.physical_contract) }}</p>
-        <dl class="backtest-panel__stats">
+        <dl v-if="!referenceOnly" class="backtest-panel__stats">
           <div><dt>净收益额</dt><dd>{{ text(result.summary.net_equity_change) }}</dd></div>
           <div><dt>最大回撤（元）</dt><dd>{{ text(result.summary.max_drawdown) }}</dd></div>
           <div><dt>手续费</dt><dd>{{ text(result.summary.fees) }}</dd></div>
@@ -99,10 +103,10 @@ defineExpose({ show })
         </dl>
         <details>
           <summary>策略版本与运行身份</summary>
-          <p>{{ text(result.manifest.formula_versions) }} · {{ text(result.manifest.decision_version) }} · RQAlpha {{ text(result.manifest.engine_version) }}</p>
+          <p>{{ text(result.manifest.formula_versions) }} · {{ text(result.manifest.decision_version) }} <template v-if="!referenceOnly">· RQAlpha {{ text(result.manifest.engine_version) }}</template></p>
           <p>Run {{ result.run_id }}</p>
         </details>
-        <section v-for="kind in kinds" :key="kind" :aria-label="labels[kind]">
+        <section v-for="kind in referenceOnly ? [] : kinds" :key="kind" :aria-label="labels[kind]">
           <h3>{{ labels[kind] }}</h3>
           <ReturnCurveSvg v-if="kind === 'equity' && equityPlot" :plot="equityPlot" label="已加载结算点的权益变化（元）" area zero-line />
           <table v-if="current?.[kind].items.length">

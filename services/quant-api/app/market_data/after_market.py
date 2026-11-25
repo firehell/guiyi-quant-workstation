@@ -168,9 +168,11 @@ class AfterMarketUpdater:
         consumer_check_keys: tuple[str, ...] = ("newow_d1",),
         late_failure_schedule: Callable[..., None] | None = None,
         research_update: Callable[[Path, date], None] | None = None,
+        retain_research_publication: Callable[[Path], None] | None = None,
     ) -> None:
         self.late_failure_schedule = late_failure_schedule
         self.research_update = research_update
+        self.retain_research_publication = retain_research_publication
         self.manager = manager
         self.rqdata = rqdata
         self.rqdata_factory = rqdata_factory
@@ -206,12 +208,25 @@ class AfterMarketUpdater:
         self._live_evidence: dict[str, object] | None = None
         self._historical_publications: list[dict[str, object]] | None = None
         with self.recovery_guard_factory():
+            # Preserve the previous success before the mutable status file is
+            # invalidated. This also closes the crash window after its commit.
+            self._retain_research()
             result = self._run_guarded()
+            if result.status == "passed":
+                self._retain_research()
         if self.research_update is not None and result.status == "passed":
             self.research_update(self.status_path, result.trading_day)
         if self.consumer_audit is not None:
             self._run_consumer_audit(result)
         return result
+
+    def _retain_research(self) -> None:
+        if self.retain_research_publication is None:
+            return
+        try:
+            self.retain_research_publication(self.status_path)
+        except (OSError, ValueError, RuntimeError):
+            _LOGGER.warning("after_market_research_publication_retain_failed")
 
     def _run_consumer_audit(self, result: AfterMarketResult) -> None:
         checks = {key: {"status": "not_verified"} for key in self.consumer_check_keys}
@@ -935,7 +950,7 @@ def build_after_market_updater(
         MarketHomeProjectionStore,
         market_home_projection_path,
     )
-    from app.redis_connections import get_redis_connection
+    from app.redis_connections import REDIS_URL, get_redis_connection
     from typing import cast
 
     projection_store = MarketHomeProjectionStore(
@@ -949,7 +964,22 @@ def build_after_market_updater(
     from app.alerts.notification_composition import notifications_disabled_from_env
 
     notification_transport: NotificationTransport | None = None
-    if failure_notification and not notifications_disabled_from_env():
+    from app.services.newow_reference_mode import after_market_only, require_isolated_redis
+
+    isolated_research = after_market_only()
+    state_root = PROJECT_ROOT / ".run"
+    if isolated_research:
+        state_root = state_root / "newow-isolated"
+        require_isolated_redis(REDIS_URL)
+        from app.services.newow_backtest_eod import _isolated_market_url
+
+        research_url = _isolated_market_url(os.environ["GUIYI_NEWOW_EOD_MARKET_DSN"])
+        if (manager.catalog.session.get_bind().url != research_url
+                or manager.catalog.canonical_root.resolve() !=
+                Path(os.environ["GUIYI_NEWOW_EOD_CANONICAL_ROOT"]).resolve(strict=True)
+                or not Path(os.environ["GUIYI_NEWOW_EOD_ISOLATED_CONFIG"]).is_file()):
+            raise ValueError("BACKTEST_ISOLATED_CATALOG_REQUIRED")
+    if failure_notification and not isolated_research and not notifications_disabled_from_env():
         notification_transport = _ConfiguredNotificationTransport()
 
     def audit_newow_consumers(
@@ -980,29 +1010,34 @@ def build_after_market_updater(
     def refresh_research(path: Path, day: date) -> None:
         from app.services.newow_backtest_eod import run_configured
 
-        run_configured(path, day, Path(research_config))
+        run_configured(path, day, Path(os.environ["GUIYI_NEWOW_EOD_ISOLATED_CONFIG"]))
 
-    research_config = os.getenv("GUIYI_NEWOW_EOD_ISOLATED_CONFIG", "")
+    def retain_research(path: Path) -> None:
+        from app.services.newow_backtest_eod import retain_publication
+
+        retain_publication(path)
+
     return AfterMarketUpdater(
         manager=manager,
         rqdata=None,
         rqdata_factory=ready_client,
         live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
-        status_path=PROJECT_ROOT / ".run" / "after-market-status.json",
+        status_path=state_root / "after-market-status.json",
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
         market_home_projection_invalidate=projection_store.invalidate,
         market_home_projection_refresh=None,
-        home_strategy_projection_refresh=refresh_home_strategy_projection,
+        home_strategy_projection_refresh=None if isolated_research else refresh_home_strategy_projection,
         recovery_guard_factory=lambda: after_market_recovery_guard(wait=True),
         consumer_guard_factory=lambda: after_market_recovery_guard(wait=False),
-        consumer_audit=audit_newow_consumers,
-        research_update=refresh_research if research_config else None,
+        consumer_audit=None if isolated_research else audit_newow_consumers,
+        research_update=refresh_research if isolated_research else None,
+        retain_research_publication=retain_research if isolated_research else None,
         consumer_revision=lambda products, day: _read_newow_consumer_revisions(products, day),
         consumer_check_keys=("newow_d1", "newow_w1"),
         late_failure_schedule=lambda result, products, started: schedule_failure(
-            PROJECT_ROOT / ".run" / "late-provider-recovery-status.json", result, products, started
+            state_root / "late-provider-recovery-status.json", result, products, started
         ),
     )
 

@@ -1,3 +1,7 @@
+import type { BarData, KlineMarker } from '@/types/market'
+
+export const newowAfterMarketOnly = import.meta.env?.VITE_NEWOW_EOD_ISOLATED === '1'
+
 export const backtestFrequencies = ['5m', '15m', '30m', '60m', '1d', '1w'] as const
 export type BacktestKind = 'trades' | 'equity'
 
@@ -20,6 +24,7 @@ export interface LatestBacktest {
     run_id: string
     as_of_trading_day: string
     qualification: 'QUALIFIED' | 'TRIAL'
+    finished_at?: string
     manifest: Record<string, unknown>
     summary: Record<string, unknown>
   } | null
@@ -45,6 +50,7 @@ const emptyPage = (): PageState => ({ items: [], cursor: null, loaded: false, lo
 
 export function createBacktestReader(api: BacktestAPI, changed: (state: ReaderState) => void) {
   let controller = new AbortController()
+  let seriesId: string | null = null
   const state: ReaderState = { latest: null, loading: false, error: false, trades: emptyPage(), equity: emptyPage() }
   const notify = () => changed({ ...state, trades: { ...state.trades }, equity: { ...state.equity } })
 
@@ -79,19 +85,34 @@ export function createBacktestReader(api: BacktestAPI, changed: (state: ReaderSt
     controller.abort()
     controller = new AbortController()
     const signal = controller.signal
-    Object.assign(state, { latest: null, loading: key !== null, error: false, trades: emptyPage(), equity: emptyPage() })
+    const nextId = key ? JSON.stringify(key) : null
+    const retain = nextId !== null && nextId === seriesId
+    seriesId = nextId
+    if (!retain) Object.assign(state, { latest: null, trades: emptyPage(), equity: emptyPage() })
+    Object.assign(state, { loading: key !== null, error: false })
     notify()
     if (!key) return
     try {
       const latest = await api.latest(key, signal)
       if (signal.aborted) return
+      if (state.latest?.result?.run_id !== latest.result?.run_id) {
+        state.trades = emptyPage()
+        state.equity = emptyPage()
+      } else {
+        state.trades.loading = false
+        state.equity.loading = false
+      }
       state.latest = latest
       state.loading = false
       notify()
-      await Promise.all([more('trades'), more('equity')])
+      if (latest.result?.summary.result_kind !== 'reference_only') {
+        await Promise.all([!state.trades.loaded && more('trades'), !state.equity.loaded && more('equity')])
+      }
     } catch {
       if (!signal.aborted) {
         state.loading = false
+        state.trades.loading = false
+        state.equity.loading = false
         state.error = true
         notify()
       }
@@ -99,4 +120,25 @@ export function createBacktestReader(api: BacktestAPI, changed: (state: ReaderSt
   }
 
   return { state, select, more, dispose: () => controller.abort() }
+}
+
+
+export function publishedActionMarkers(result: LatestBacktest['result'], bars: readonly BarData[]): KlineMarker[] {
+  const actions = result?.summary.decisions
+  if (!Array.isArray(actions)) return []
+  const contracts = new Map(bars.map(bar => [Date.parse(bar.time), bar.physicalContract]))
+  return actions.flatMap(action => {
+    if (!action || typeof action.decision_id !== 'string' || typeof action.signal_bar_end !== 'string'
+      || (action.action !== 'BUILD' && action.action !== 'CLEAR')
+      || typeof result?.manifest.physical_contract !== 'string'
+      || contracts.get(Date.parse(action.signal_bar_end)) !== result.manifest.physical_contract) return []
+    const build = action.action === 'BUILD'
+    return [{
+      id: action.decision_id, time: action.signal_bar_end,
+      label: (result.qualification === 'TRIAL' ? '试验' : '盘后') + (build ? '建仓' : '清仓'),
+      tooltip: typeof action.reason === 'string' ? action.reason : undefined,
+      position: build ? 'belowBar' : 'aboveBar', shape: build ? 'arrowUp' : 'arrowDown',
+      tone: result.qualification === 'TRIAL' ? 'neutral' : build ? 'up' : 'down',
+    }]
+  })
 }

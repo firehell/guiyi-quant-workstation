@@ -2430,3 +2430,35 @@ def test_home_strategy_projection_runs_only_after_cleanup_and_cannot_retry_maint
     assert calls == ['projection']
     assert len(manager.calls) == 1
     assert sleeps == [] and notices == []
+
+
+
+def test_isolated_research_runs_after_durable_publication_outside_market_guard(tmp_path):
+    from contextlib import contextmanager
+    from app.services.newow_backtest_eod import retain_publication
+
+    updater, manager, *_ = _updater(tmp_path, trading_day=date(2026, 8, 10),
+        readiness=[True], results=[_result("passed", applied=1)])
+    manager.publication_evidence = [_capacity_publication()]
+    locked = False
+    triggers = []
+
+    @contextmanager
+    def guard():
+        nonlocal locked
+        locked = True
+        try:
+            yield
+        finally:
+            locked = False
+
+    def research(path, day):
+        assert not locked
+        assert len(tuple((path.parent / "newow-publications").glob("*.json"))) == 1
+        triggers.append(day)
+
+    updater.recovery_guard_factory = guard
+    updater.retain_research_publication = retain_publication
+    updater.research_update = research
+    assert updater.run().status == "passed"
+    assert triggers == [date(2026, 8, 10)]

@@ -42,7 +42,7 @@ def test_same_month_superseded_receipt_is_rejected():
     assert _source_is_current(catalog, [older, current], "fu")
 
 
-def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path):
+def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path, monkeypatch):
     from collections import defaultdict
     from dataclasses import replace
     from datetime import UTC, datetime, time, timedelta
@@ -72,7 +72,11 @@ def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path):
     def start_of(day):
         return datetime.combine(day, time(1), UTC)
 
-    work = create_engine("sqlite+pysqlite:///:memory:")
+    isolated_market = os.getenv("GUIYI_P4_EOD_TEST_MARKET_DSN")
+    if isolated_market:
+        from app.services.newow_backtest_eod import _isolated_market_url
+        _isolated_market_url(isolated_market)
+    work = create_engine(isolated_market or "sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(work)
     root = tmp_path / "canonical"
     root.mkdir()
@@ -145,7 +149,7 @@ def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path):
             if frequency.value == "60m":
                 assert manifest["signal_bar_count"] == 2
                 assert packet["completed"][-2]["candidate_open_at"] == start_of(through) + timedelta(minutes=61)
-            if engine:
+            if engine and not isolated_market:
                 data = _json(packet)
                 fingerprint = sha256(data).hexdigest()
                 artifact = _seal(tmp_path, data, fingerprint)
@@ -161,6 +165,68 @@ def test_matrix_freezes_all_six_frequencies_from_bounded_canonical(tmp_path):
 
     with pytest.raises(BacktestJobError, match="BACKTEST_WARMUP_INSUFFICIENT"):
         freeze(V2Strategy.DUAL_FUSION, ProductFrequency.WEEKLY, early_week)
+
+    def submit_receipt():
+        from app.main import app
+        from app.market_data.after_market import _atomic_write_status
+        from app.services.newow_backtest_eod import reconcile_publications
+        from fastapi.testclient import TestClient
+
+        assert engine
+        sealed = tmp_path / "sealed"
+        sealed.mkdir()
+        for name, value in {
+            "GUIYI_NEWOW_EOD_MARKET_DSN": isolated_market,
+            "GUIYI_NEWOW_EOD_CANONICAL_ROOT": str(root),
+            "GUIYI_NEWOW_EOD_INPUT_DIR": str(sealed),
+            "GUIYI_NEWOW_EOD_ENGINE": engine,
+            "GUIYI_NEWOW_BACKTEST_WRITE_DSN": os.environ["GUIYI_P3_TEST_WRITE_DSN"],
+            "GUIYI_NEWOW_BACKTEST_READ_DSN": os.environ["GUIYI_P3_TEST_READ_DSN"],
+        }.items():
+            monkeypatch.setenv(name, value)
+        config = tmp_path / "research.json"
+        config.write_text(json.dumps([{"product": "fu", "trial": True, "since": str(through),
+                                       "facts": str(facts), "facts_sha256": digest}]))
+        with Session(work) as session, readonly_transaction(session):
+            parts = MarketCatalog(session, root).product_partitions("fu")
+            publication = [
+                {"dataset": [part.dataset.kind.value, "fu", part.dataset.series_or_contract, part.dataset.frequency.value],
+                 "year": part.year, "month": part.month, "file_name": part.file_path.name,
+                 "provenance": {"version": 1, "input_source": "historical_provider", "input_sha256": "b" * 64}}
+                for part in parts if part.month == through.month
+            ]
+        authority = tmp_path / "after-market-status.json"
+        _atomic_write_status(authority, {
+            "schema_version": 4, "last_successful_trading_day": str(through),
+            "last_run": {"status": "passed", "attempts": 1, "error_code": None, "trading_day": str(through),
+                         "started_at": f"{through}T18:05:00+08:00", "finished_at": f"{through}T18:09:00+08:00",
+                         "products": ["fu"], "historical_publications": publication},
+        })
+        report, = reconcile_publications(authority, config)
+        assert report["series"] == report["computed"] == 18, report
+        assert report["failed"] == []
+        print(f"after-market isolated: {report['computed']} series, {report['work_seconds']}s, {len(report['failed'])} failures")
+        assert reconcile_publications(authority, config) == []
+        with TestClient(app) as client:
+            for frequency in ("5m", "15m", "30m", "60m", "1d", "1w"):
+                key = research_key("fu", "trend", frequency, trial=True)
+                result = client.get("/api/v1/newow/backtests/latest", params={
+                    "product": key.product, "strategy": key.strategy, "frequency": key.frequency,
+                    "research_profile_id": key.research_profile_id,
+                })
+                assert result.status_code == 200, result.text
+                row = result.json()["result"]
+                assert row["qualification"] == "TRIAL"
+                assert row["as_of_trading_day"] == str(through) and row["finished_at"]
+                assert (row["summary"].get("result_kind") == "reference_only") == (frequency in ("1d", "1w"))
+                uri = f"/api/v1/newow/backtests/{row['run_id']}/equity"
+                page = client.get(uri)
+                assert page.status_code == 200 and page.json()["run_id"] == row["run_id"]
+                assert bool(page.json()["items"]) == (frequency not in ("1d", "1w"))
+        assert reconcile_publications(authority, config) == []
+
+    if isolated_market:
+        submit_receipt()
 
     original, _ = freeze(V2Strategy.TREND, ProductFrequency.FIVE_MINUTE)
     revised = list(minutes)

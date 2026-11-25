@@ -230,3 +230,36 @@ def test_claim_directory_fsync_failure_blocks_provider(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "fsync", fail_directory)
     with pytest.raises(OSError):
         runner(path, clock(2), ready=lambda day: pytest.fail("non durable claim"))
+
+
+
+def test_isolated_late_success_is_a_recoverable_publication(tmp_path, monkeypatch):
+    from app.services import newow_backtest_eod as eod
+
+    destination = tmp_path / "late-provider-recovery-status.json"
+    scheduled(tmp_path).rename(destination)
+    product = PRODUCTS[0]
+    manager = SimpleNamespace(
+        catalog=SimpleNamespace(acquire_maintenance_lock=lambda: SimpleNamespace(release=lambda: None)),
+        metadata=SimpleNamespace(synchronize_current_day=lambda *_: None),
+        daily_recovery=lambda *_args, **_kwargs: SimpleNamespace(
+            plan_sha256="a" * 64, target_windows=(), maintenance=SimpleNamespace(status="passed"),
+        ),
+        publication_evidence=[{
+            "dataset": ["contract", product, product.upper() + "2612", "1m"],
+            "year": DAY.year, "month": DAY.month, "file_name": "part." + "a" * 64 + ".parquet",
+            "provenance": {"version": 1, "input_source": "historical_provider", "input_sha256": "b" * 64},
+        }],
+    )
+    status = tmp_path / "after-market-status.json"
+    config = tmp_path / "config.json"
+    config.write_text("fixture")
+    assert eod.reconcile_publications(status, config) == []
+    assert runner(destination, clock(2), manager=manager, ready=lambda _day: True,
+                  retain_newow_receipt=True)["status"] == "passed"
+    calls = []
+    monkeypatch.setattr(eod, "consume_status",
+                        lambda raw, day, config_path, **kwargs: calls.append(day) or [{"status": "SUCCEEDED"}])
+    report, = eod.reconcile_publications(status, config)
+    assert calls == [DAY] and report["computed"] == 1
+    assert eod.reconcile_publications(status, config) == []

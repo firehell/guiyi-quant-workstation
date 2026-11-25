@@ -337,8 +337,11 @@ class ResultStore:
     def admit(
         self, key: SeriesKey, manifest: Mapping[str, object], *, eligible: bool,
         job_connection: Connection | None = None, retry_failed: bool = True,
+        republish_existing: bool = False,
     ) -> Admission:
         self._write_access()
+        if republish_existing and job_connection is None:
+            raise ResultStoreError("BACKTEST_JOB_SLOT_LOST")
         if type(eligible) is not bool or (eligible and key.is_trial):
             raise ResultStoreError("BACKTEST_QUALIFICATION_INVALID")
         day = _date(manifest.get("as_of_trading_day"))
@@ -356,6 +359,12 @@ class ResultStore:
                 series = conn.execute(select(_SERIES).where(*where).with_for_update()).mappings().one()
                 existing = conn.execute(select(_RUNS).where(_RUNS.c.run_id == run_id)).mappings().one_or_none()
                 if existing and existing["status"] == "SUCCEEDED":
+                    if republish_existing and series["published_run_id"] != run_id:
+                        published = self._get_run(conn, series["published_run_id"])
+                        if published is None or day >= published["as_of_trading_day"]:
+                            conn.execute(update(_SERIES).where(_SERIES.c.id == series["id"]).values(
+                                published_run_id=run_id, last_attempt_id=run_id,
+                            ))
                     return Admission(run_id, existing["generation"], False, "SUCCEEDED")
                 if existing and existing["status"] == "FAILED" and not retry_failed:
                     return Admission(run_id, existing["generation"], False, "FAILED")
@@ -419,7 +428,8 @@ class ResultStore:
         run_id = admission.run_id
         trade_rows = [_child_row(row, run_id, seq, equity=False) for seq, row in enumerate(trades, 1)]
         equity_rows = [_child_row(row, run_id, seq, equity=True) for seq, row in enumerate(equity)]
-        if not equity_rows or any(
+        reference_only = summary.get("result_kind") == "reference_only"
+        if (reference_only and (trade_rows or equity_rows)) or (not reference_only and not equity_rows) or any(
             previous["trading_day"] > current["trading_day"]
             for previous, current in zip(equity_rows, equity_rows[1:])
         ):
@@ -441,11 +451,14 @@ class ResultStore:
                     series["product"], series["strategy"], series["frequency"], series["research_profile_id"],
                 ).is_trial:
                     raise ResultStoreError("BACKTEST_FORMAL_INELIGIBLE")
-                if equity_rows[-1]["trading_day"] != run["as_of_trading_day"]:
+                if reference_only != (run["manifest"].get("result_kind") == "reference_only"):
+                    raise ResultStoreError("BACKTEST_EQUITY_INVALID")
+                if equity_rows and equity_rows[-1]["trading_day"] != run["as_of_trading_day"]:
                     raise ResultStoreError("BACKTEST_EQUITY_INVALID")
                 if trade_rows:
                     conn.execute(insert(_TRADES), trade_rows)
-                conn.execute(insert(_EQUITY), equity_rows)
+                if equity_rows:
+                    conn.execute(insert(_EQUITY), equity_rows)
                 conn.execute(update(_RUNS).where(_RUNS.c.run_id == run_id).values(
                     status="SUCCEEDED", summary=normalized_summary, result_digest=digest, finished_at=func.now(),
                 ))
@@ -517,6 +530,7 @@ class ResultStore:
                     result = {
                         "run_id": published["run_id"],
                         "as_of_trading_day": published["as_of_trading_day"].isoformat(),
+                        "finished_at": published["finished_at"].isoformat(),
                         "qualification": "QUALIFIED" if published["eligible"] else "TRIAL",
                         "manifest": published["manifest"],
                         "summary": published["summary"],
