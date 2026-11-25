@@ -29,7 +29,7 @@
 
 ## Impact
 
-数据层沿用 RQData、Canonical、Catalog、MDS、PG 和 Redis。新依赖候选为 RQAlpha、VeighNa 及其 CTP/组合策略适配；分别跑在隔离环境。变更触及牛哇主图、历史回测查询、盘后计算、盘中行情与新仿真宿主。现役 reference-trading、newow-product-reference-trading、subing-ths-alert、newow-action-notifications、market-home-overview 以及数据、退役和发布合同仍生效。六份新增规格描述隔离 V2 目标。执行生产切换前，必须对被替代的 active 条款逐项提出 MODIFIED/REMOVED delta 并独立审核；本包不授权直接 archive 或替换现役合同。
+数据层沿用 RQData、Canonical、Catalog、MDS、PG 和 Redis。离线实现已锁定开源 RQAlpha 6.3.0 和 VeighNa 4.4.0 及其 CTP/组合策略适配，分别运行于隔离环境。各模块的复用接口与恢复边界见 [架构设计](design.md)，当前开发目标与验收顺序见 [开发计划](tasks.md)。变更触及牛哇主图、历史回测查询、盘后计算、盘中行情与新仿真宿主。现役 reference-trading、newow-product-reference-trading、subing-ths-alert、newow-action-notifications、market-home-overview 以及数据、退役和发布合同仍生效。六份新增规格描述隔离 V2 目标。执行生产切换前，必须对被替代的 active 条款逐项提出 MODIFIED/REMOVED delta 并独立审核；本包不授权直接 archive 或替换现役合同。
 
 ## 阅读与批准范围
 

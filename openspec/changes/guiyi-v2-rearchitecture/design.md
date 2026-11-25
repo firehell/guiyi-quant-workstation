@@ -49,6 +49,37 @@ GitHub 对照基线为 develop 的 5a69aca28c06f0e055ac2ee42f5c9818cd9cefbe，�
 
 Web/研究发布不重启 Trading；数据接口变更须证明兼容或受控联合切换。现有发布工具仍按现行 cohort 工作，拆分生效前先验证组件绑定、进程身份及恢复引用，不能直接剪掉启动项。
 
+
+### 第一版的复用边界（2026-11-25）
+
+个人 PC 上按职责分模块，继续沿用一个仓库。行情、研究、账户和页面有各自的写入者。优先调用已有实现，在数据来源、时钟或账户身份发生变化的地方转换一次。新策略接入、换行情源和换账单格式是三种独立修改。使用现有领域类型和组合入口，出现第二种实际实现再抽公共接口。
+
+| 职责 | 直接复用的落点 | 归一负责的边界与可扩展点 |
+|---|---|---|
+| 历史数据 | [现有数据合同](../../../docs/DATA_CENTER.md)、HistoricalDataManager、RQData、Canonical/Catalog/MainContractMap、MDS | 按品种/物理合约和日期暂存、质量校验、幂等发布、配额及续传；新来源先验证字段、单位、时间戳和缺失值，接入同一发布链。上层只读 MDS。 |
+| 实时行情 | [现有 RQData 完整 1m 适配器](../../../services/quant-api/app/market_data/live_market.py)、[Session 聚合](../../../services/quant-api/app/market_data/aggregation.py) | Market 对同流同代次唯一；报价预览可合并刷新，完成事件保留来源、交易日、收线、接收/确认时间、版本与质量。CTP MD 须单独验收后方可受控交接。 |
+| 策略与研究 | [共享决策入口](../../../packages/quant-core/guiyi_quant/newow/decision_adapter.py)、[开源 RQAlpha 6.3.0 冻结适配器](../../../services/newow-rqalpha/frozen_market.py)、[撮合配置](../../../services/newow-rqalpha/runner.py) | 策略声明所需品种/周期、预热、参数与状态版本；返回决策、原因、下一状态和输入引用。必要时显式传入当时可见的成交/持仓前缀。研究由引擎撮合和结算，固定 run 发布逐笔及权益；策略与 Web 均不自己下载行情。 |
+| 模拟执行 | [P5 无界面宿主](../../../services/newow-vnpy/README.md)、VeighNa 4.4.0 的事件、标准对象与开平转换、锁定 CTP 6.7.7.2 | 账户只有一个执行写入者；同品种只激活一个策略/周期，其余都可观察。风险仲裁、在途预留、未知结果、退出中旧合约由 Trading 负责。 |
+| 账户证据与页面 | [既有四段只读查询](../../../scripts/broker/simnow_readonly.py)、[P5 只读路由](../../../services/quant-api/app/api/newow_trading.py)、[Vue 回测面板](../../../apps/quant-web/src/components/market/detail/newow/NewowBacktestPanel.vue) | 工作台沿用行情主图、策略复盘和模拟账户入口。区分最新报价、上次收线、试验/正式 run、SimNow、快期与苏冰。按账户/环境/交易日/原生编号核对；文件重复导入幂等，缺编号显示待核。未来账单导入适配只产生带来源的只读记录，不能取得账户执行权。 |
+
+**供应商口径。** 策略分钟线从物理合约 1m 依同一 Session 生成；例如 10:15–10:30 休市时，米筐直推的 11:00 H1 可能仅含 45 个交易分钟。日线取交易所日行情，周线待完整交易周。接 vnpy_rqdata 时要核对开始/结束标签以及缺值转零。盘后更正生成新的历史版本，盘中首次观察及其缺口按原身份保留。Redis 中仍承担现场原件或恢复引用的内容，须证明有可回读的耐久副本才能按可丢缓存处理。[RQData 通用 API](https://www.ricequant.com/doc/rqdata/python/generic-api) · [VeighNa 数据接口](https://www.vnpy.com/docs/cn/community/info/datafeed.html)
+
+**当时可知与成本。** 显式固定主力规则/rank、交易日和当时可见的横截面。米筐默认 rule=0，FU 正式系列的独立凭证要求 rule=2。手续费、平今费、保证金保存生效日与取得时刻。盘后发布的参数可用于注明口径的结算复算。冻结回测沿用严格后继合法分钟开盘、当前同 Session 限制及成本版本；当前试验一手、零滑点、关闭成交量比例限制，仍校验无量。正式结果只覆盖通过验收的模型。RQAlpha Plus 另属产品，其默认撮合、数据权益和模块不计作开源引擎的能力。[期货数据](https://www.ricequant.com/doc/rqdata/python/futures-mod) · [Plus 配置](https://www.ricequant.com/doc/rqalpha-plus/api/config) · [归一冻结试验](../../../services/newow-rqalpha/README.md)
+
+**账户恢复。** MD 行情、TD 读回和受控模拟报撤分别核验。锁定的网关默认连接 MD 和 TD，TD 登录后自动确认结算；只读验收须能证明实际调用边界。资金、持仓、活动单和当日成交四段读回应绑定同账号、交易日、连接代次、结束标记及回报水位。提交未知保留预留、不重发；重复或晚到回报按原生身份核对。快期文件仅能佐证其记录的事实。[锁定网关](https://github.com/vnpy/vnpy_ctp/blob/fa199f70dac9e242c20e925c17e2241b877e694f/vnpy_ctp/gateway/ctp_gateway.py)
+
+**P6 热路径。** 首查 [quote/receive_completed](../../../services/newow-vnpy/host.py) 与 [TradingStore.transaction](../../../services/newow-vnpy/store.py)。先分别测报价、只观察流、可执行候选及原生回报的排队、锁等待、编解码/摘要、SQL 读写、提交和端到端时间。对照保留现有事务的局部优化与按流隔离状态的改动，选择有测量支持的最小方案。若拆事务，让观察流拥有自己的消费位置与检查点；可执行候选须和对应检查点耐久交接，账户侧按唯一标识去重，预算与意图仍原子提交。恢复时对账，发送前重新核对所有权、可平量与截止。保留同批竞争的确定次序，旧动作过期不重新开仓。
+
+| 故障注入点 | 隔离验证应看到的结果 |
+|---|---|
+| 完成事件已保存，策略尚未提交 | 从旧检查点消费同一原件，只推进一次；历史修订或断线期间未观察事件不能冒充原件 |
+| 候选已提交，账户消费位置尚未前移 | 恢复后幂等领取，同一决策只有一个有效意图及一份预留；过期仅留原因 |
+| 下单请求发出，尚无可关联回报 | 保留未知状态与剩余预留，四段读回后按原生身份核实；不能核实则继续阻断新增风险 |
+| 成交、撤余单与下一根收线相遇 | 保留决策当时前缀；执行按已核实仓位处理，重复事件不增加成交或多平 |
+| 页面刷新、Web 重启或并发单项回测 | 从同一 run 或账户投影读数；已有盘中宿主身份、完成流及回报连续 |
+
+**扩展的验收方式。** 用已有策略与隔离样本证明共享内核可在历史与前向两种宿主给出同一决策，无需另造示范策略。换数据来源只比对标准输入及其来源身份；换账单格式只比原生记录与对账结果。常用看盘软件固定版号、同一物理合约、参数、预热前缀和交易日，先比 OHLCV/OI，再比指标和已收线动作，记录第一处分歧。有原公式来源的策略以来源终端为基准，未取得样本的终端保留未验证状态。
+
 ## 3. 合约与时间
 
 以下为领域接口约定。实现优先映射仓库已有类型，仅为缺少的字段加适配。
@@ -105,4 +136,4 @@ Web/研究发布不重启 Trading；数据接口变更须证明兼容或受控�
 - [固定基线 AGENTS](https://github.com/firehell/guiyi-quant-workstation/blob/5a69aca28c06f0e055ac2ee42f5c9818cd9cefbe/AGENTS.md) · [现场记录](https://github.com/firehell/guiyi-quant-workstation/blob/5a69aca28c06f0e055ac2ee42f5c9818cd9cefbe/STATUS.md) · [PR #670](https://github.com/firehell/guiyi-quant-workstation/pull/670) · [PR #671](https://github.com/firehell/guiyi-quant-workstation/pull/671)
 - [OpenSpec 规范结构](https://github.com/Fission-AI/OpenSpec/blob/main/docs/concepts.md) · [RQAlpha 撮合模块](https://github.com/ricequant/rqalpha/tree/master/rqalpha/mod/rqalpha_mod_sys_simulation) · [VeighNa CTP](https://github.com/vnpy/vnpy_ctp) · [PortfolioStrategy](https://github.com/vnpy/vnpy_portfoliostrategy)
 
-普通单品种研究不依赖实际 SimNow 登录。M4 原生安装、订阅权限、逐笔成本对账、现场回报与满载延迟均待测试；任何单项失败只阻断依赖它的能力。
+普通单品种研究不依赖实际 SimNow 登录。锁定版本的 M4 离线加载、FU 试验与满载采样已有证据；容量尚未达标。订阅权限、正式研究资格、完整柜台读回与实际仿真回报依 [开发记录](tasks.md) 分项验收。
