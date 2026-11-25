@@ -7,6 +7,7 @@ import pytest
 from guiyi_quant.lms405 import Position
 from guiyi_quant.lms405.public_conditions import Condition
 from guiyi_quant.lms405.task_roles import ROUTES, TaskBook, assess_task_action
+from lms405_counter_m_lot_roles import compare_roles
 
 T = datetime(2026, 7, 27, 9, tzinfo=UTC)
 ONE = Decimal(1)
@@ -91,3 +92,15 @@ def test_post_reading_time_and_wrong_contract_cannot_confirm_a_task_exit():
     assert result["checks"][first.name] is None
     with pytest.raises(ValueError, match="CONTRACT_OR_SIDE_INVALID"):
         replace(book, counter_m=Position("SH2701", ONE))
+
+
+def test_equal_visible_longs_have_different_residual_exposure_under_explicit_lot_roles():
+    result = compare_roles("JM2601", 22, 20, [20])
+    (separate,) = result["new_longs_only_are_m_original_short_still_held"]
+    transfers = result["all_longs_are_m_original_short_still_held"]
+    reverse_only = result["all_longs_are_m_original_short_already_closed"]
+    assert separate["before"] == transfers["before"] == dict(long=22, short=20, net=2, gross=42)
+    assert separate["designated_m_longs"] == 2
+    assert separate["after"] == dict(long=20, short=20, net=0, gross=40)
+    assert transfers["after"] == dict(long=0, short=20, net=-20, gross=20)
+    assert reverse_only["after"] == dict(long=0, short=0, net=0, gross=0)
