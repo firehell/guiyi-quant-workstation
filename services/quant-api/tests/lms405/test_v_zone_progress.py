@@ -1,6 +1,7 @@
 from decimal import Decimal
 from types import SimpleNamespace
 
+from lms405_oi_range_roles import range_activity
 from lms405_right_side_study import ONE, at
 from lms405_v_zone_progress import observations, publication_windows
 
@@ -32,3 +33,14 @@ def test_visible_plan_excludes_publication_minute_and_ambiguous_boundary():
     before, after = publication_windows(bars, at("2026-06-22T10:05"))
     assert before == bars[:1]
     assert after == bars[3:]
+
+
+def test_range_return_distinguishes_opening_inside_from_contiguous_reentry():
+    bars = [minute(*row) for row in (
+        (1, 100, 104, 104), (2, 105, 107, 106), (4, 100, 102, 101), (5, 98, 101, 99), (6, 99, 102, 100),
+    )]
+    stats = range_activity(bars, (Decimal(100), Decimal(105)))
+    assert stats["initial_close_inside"] is True
+    assert stats["closes_inside"] == 3 and stats["overlap_bars"] == 5
+    assert stats["same_segment_return_count"] == 1
+    assert stats["first_same_segment_close_return"] == "2026-06-22T10:06+08:00"
