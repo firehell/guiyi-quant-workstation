@@ -8,7 +8,7 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
-from .lms405 import Position, Action, apply_action, physical_contract, timestamp
+from .lms405 import Position, Action, apply_action, number, physical_contract, timestamp
 from .lms405.protection_band import active_band, visible_bands
 from .lms_author_regions import RegionInput
 from .lms_keybar_approx import classify, VERSION as KEYBAR_VERSION
@@ -47,6 +47,7 @@ SCOPED_PROTECTION_VERSION = "lms-near405-scoped-protection-v1"
 CARRY_IN_VERSION = "lms-near405-carry-in-v1"
 CARRY_IN_EXIT_VERSION = "lms-near405-carry-in-explicit-exit-v1"
 CARRY_SCOPED_PROTECTION_VERSION = "lms-near405-carry-scoped-protection-v1"
+CARRY_RECOVERY_BOUNDARY_VERSION = "lms-near405-carry-recovery-boundary-v1"
 MANAGEMENT_VERSION = "lms-near405-managed-lifecycle-v1"
 
 
@@ -92,6 +93,27 @@ class CarryInExitEvidence:
                 or self.record_kind not in ("HUMAN_RESEARCH_EVIDENCE", "TEST_FIXTURE")):
             raise ValueError("INVALID_CARRY_IN_EXIT_EVIDENCE")
         object.__setattr__(self, "observed_at", self.observed_at.astimezone(UTC))
+        object.__setattr__(self, "known_at", self.known_at.astimezone(UTC))
+
+
+@dataclass(frozen=True)
+class CarryRecoveryBoundary:
+    """Explicit price rule for original-side recovery of a carried position."""
+
+    contract: str
+    side: str
+    edge: Decimal
+    known_at: datetime
+    confirmation: str
+    source: str
+
+    def __post_init__(self):
+        physical_contract(self.contract)
+        number(self.edge, positive=True)
+        timestamp(self.known_at)
+        if (self.side not in ("LONG", "SHORT") or self.confirmation not in ("CLOSE_BEYOND", "FRESH_TWO_CLOSES")
+                or not isinstance(self.source, str) or not self.source.strip()):
+            raise ValueError("INVALID_CARRY_RECOVERY_BOUNDARY")
         object.__setattr__(self, "known_at", self.known_at.astimezone(UTC))
 
 
@@ -174,10 +196,15 @@ def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
 
 def _rules_for(
     region_input, clock, external_protection=False, scoped_protection=False, carry_in=False, explicit_exit=False,
-    managed_lifecycle=False,
+    managed_lifecycle=False, carry_recovery=None,
 ):
     if not isinstance(managed_lifecycle, bool):
         raise ValueError("BOOLEAN_MODE_REQUIRED")
+    if carry_recovery is not None:
+        if not isinstance(carry_recovery, CarryRecoveryBoundary):
+            raise ValueError("CARRY_RECOVERY_BOUNDARY_REQUIRED")
+        if not (carry_in and explicit_exit and scoped_protection and external_protection) or managed_lifecycle:
+            raise ValueError("CARRY_RECOVERY_REQUIRES_SCOPED_CARRY")
     if managed_lifecycle:
         if any((region_input is not None, clock is not None, external_protection, scoped_protection,
                 carry_in, explicit_exit)):
@@ -207,6 +234,9 @@ def _rules_for(
                          protection="EXPLICIT_STATE_AND_CURRENT_PROTECTION_RANGE_REQUIRED",
                          recovery="CONTIGUOUS_ORIGINAL_DIRECTION_KEYBAR_AFTER_LOCK",
                          pending_management="EXPIRE_ON_VISIBLE_EXIT_OR_PROTECTION_RANGE_SUPERSESSION")
+        if carry_recovery is not None:
+            rules.update(version=CARRY_RECOVERY_BOUNDARY_VERSION,
+                         recovery="EXPLICIT_PRICE_BOUNDARY_AND_CONTIGUOUS_ORIGINAL_DIRECTION_KEYBAR")
         return rules, fingerprint(rules)
     if region_input is None and clock is None and not external_protection:
         return RULES, RULE_HASH
@@ -411,9 +441,11 @@ def _recovery_status(plan, direction, bars, index):
     return None if passed else "RECOVERY_TWO_CLOSES_NOT_MET"
 
 
-def _managed_recovery(state, bars, index, edge):
+def _managed_recovery(state, bars, index, edge, *, not_before=None):
     is_long = state["original_side"] == "LONG"
     locked_at = _time(state["since"])
+    if not_before is not None:
+        locked_at = max(locked_at, not_before)
 
     def beyond(bar):
         return bar.close > edge if is_long else bar.close < edge
@@ -427,6 +459,19 @@ def _managed_recovery(state, bars, index, edge):
         if not beyond(bar):
             return True
     return False
+
+
+def _carry_recovery_status(rule, state, bars, index, at):
+    if not rule.known_at < at or rule.side != state["original_side"]:
+        return "RECOVERY_BOUNDARY_UNKNOWN"
+    if bars[index - 1].start <= rule.known_at:
+        return "RECOVERY_SIGNAL_PRECEDES_BOUNDARY"
+    if rule.confirmation == "FRESH_TWO_CLOSES":
+        passed = _managed_recovery(state, bars, index, rule.edge, not_before=rule.known_at)
+    else:
+        close = bars[index].close
+        passed = close > rule.edge if rule.side == "LONG" else close < rule.edge
+    return None if passed else "RECOVERY_RETURN_UNCONFIRMED"
 
 
 def _managed_position(state, bars, index, region, direction, signal_fresh):
@@ -470,6 +515,7 @@ def evaluate(
     protection_bands=None,
     carry_exit_evidence=None,
     managed_lifecycle=False,
+    carry_recovery=None,
 ):
     """Evaluate one completed Bar against an explicit research state."""
     if "carry_in_seed_id" in state or managed_lifecycle:
@@ -478,7 +524,7 @@ def evaluate(
         state, bars, index, region_input=region_input, timely_fixture=timely_fixture, clock=clock,
         protection_confirmations=protection_confirmations, protection_bands=protection_bands,
         carry_exit_evidence=carry_exit_evidence,
-        managed_lifecycle=managed_lifecycle,
+        managed_lifecycle=managed_lifecycle, carry_recovery=carry_recovery,
     )
 
 
@@ -494,6 +540,7 @@ def _evaluate(
     protection_bands=None,
     carry_exit_evidence=None,
     managed_lifecycle=False,
+    carry_recovery=None,
 ):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
@@ -504,7 +551,10 @@ def _evaluate(
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
     seeded = "carry_in_seed_id" in state
     explicit_exit = carry_exit_evidence is not None
-    rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded, explicit_exit, managed_lifecycle)
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded, explicit_exit,
+                                  managed_lifecycle, carry_recovery)
+    if carry_recovery is not None and carry_recovery.known_at < t and carry_recovery.contract != c.contract:
+        raise ValueError("CARRY_RECOVERY_CONTRACT_MISMATCH")
     if state.get("plan") is not None and managed_lifecycle != ("management_entry_known_at" in state):
         raise ValueError("MANAGED_STATE_RULE_MISMATCH")
     if managed_lifecycle and state["contract"] != c.contract:
@@ -651,12 +701,12 @@ def _evaluate(
                 action = "LOCK"
                 reason = "OPPOSING_KEYBAR"
             elif locked and direction == state["original_side"]:
-                recovery_status = (
-                    _recovery_status(state["plan"], direction, bars, index)
-                    if region_input
-                    and region_input.recovery_rule == "TWO_CLOSES_BEYOND"
-                    else None
-                )
+                recovery_status = None
+                carried_plan = state["plan"].get("pricing_basis") == "PRESEED_CONTEXT_PROXY"
+                if carry_recovery is not None and carried_plan:
+                    recovery_status = _carry_recovery_status(carry_recovery, state, bars, index, t)
+                elif region_input and region_input.recovery_rule == "TWO_CLOSES_BEYOND":
+                    recovery_status = _recovery_status(state["plan"], direction, bars, index)
                 if recovery_status:
                     result["status"] = recovery_status
                 else:
@@ -739,6 +789,9 @@ def _evaluate(
                 p.update(protection_band_scope=band.scope, protection_band_revision=band.revision)
         if exit_proof:
             p.update(signal_bar_end=None, carry_exit_evidence=fingerprint(asdict(exit_proof)))
+        if (action.startswith("UNLOCK_") and carry_recovery is not None
+                and proposed_plan.get("pricing_basis") == "PRESEED_CONTEXT_PROXY"):
+            p["carry_recovery_boundary"] = fingerprint(asdict(carry_recovery))
         p["proposal_id"] = fingerprint(p)
         result.update(status="PROPOSAL", proposal=p)
     elif not held and not region_issue:
@@ -809,6 +862,7 @@ def replay(
     carry_in=None,
     carry_exit_evidence=None,
     managed_lifecycle=False,
+    carry_recovery=None,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
@@ -828,12 +882,15 @@ def replay(
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
     explicit_exit = carry_exit_evidence is not None
     rules, rule_hash = _rules_for(
-        region_input, clock, external, scoped, carry_in is not None, explicit_exit, managed_lifecycle,
+        region_input, clock, external, scoped, carry_in is not None, explicit_exit, managed_lifecycle, carry_recovery,
     )
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
     _validate_prefix(visible)
+    if (carry_recovery is not None and carry_recovery.known_at < as_of
+            and carry_recovery.contract != visible[0].contract):
+        raise ValueError("CARRY_RECOVERY_CONTRACT_MISMATCH")
     if region_input and any(
         r.zone.contract != visible[0].contract for r in region_input.regions
     ):
@@ -871,6 +928,7 @@ def replay(
             carry_in=carry_in,
             carry_exit_evidence=carry_exit_evidence,
             managed_lifecycle=managed_lifecycle,
+            carry_recovery=carry_recovery,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -922,7 +980,7 @@ def replay(
             (t, 1, None) for t in {item.known_at + US for item in carry_exit_evidence}
             if t > carry_in.known_at
         )
-    carry_scoped = rules["version"] == CARRY_SCOPED_PROTECTION_VERSION
+    carry_scoped = rules["version"] in (CARRY_SCOPED_PROTECTION_VERSION, CARRY_RECOVERY_BOUNDARY_VERSION)
     if carry_scoped:
         events.extend(
             (t, 1, None) for t in {band.effective_after + US for band in protection_bands}
@@ -1106,6 +1164,7 @@ def replay(
             protection_bands=protection_bands,
             carry_exit_evidence=carry_exit_evidence,
             managed_lifecycle=managed_lifecycle,
+            carry_recovery=carry_recovery,
         )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:
@@ -1168,6 +1227,10 @@ def replay(
         cp["carry_exit_evidence_prefix_hash"] = fingerprint(sorted(
             fingerprint(asdict(item)) for item in carry_exit_evidence
         ))
+    if carry_recovery is not None:
+        cp["carry_recovery_boundary_prefix_hash"] = (
+            fingerprint(asdict(carry_recovery)) if carry_recovery.known_at < as_of else None
+        )
     terminal = (
         "FLAT"
         if state["long"] == state["short"] == "0"

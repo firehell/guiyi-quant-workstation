@@ -675,6 +675,48 @@ def test_carry_scoped_exit_and_band_update_have_same_priority_for_fixture_and_hu
         assert result["proposals"][0]["expiry_reason"] == "EXPLICIT_CARRY_IN_EXIT_TAKES_PRIORITY"
 
 
+def test_carry_recovery_boundary_distinguishes_one_close_from_a_fresh_run():
+    from guiyi_quant import lms_near405 as candidate
+
+    bars = managed_lock_restore_bars()
+    start = bars[7].end + timedelta(minutes=1)
+    seed = candidate.CarryInSeed("JM2509", start, "LONG", True, "study")
+    args = dict(carry_in=seed, carry_exit_evidence=(), protection_bands=(),
+                protection_confirmations=(), timely_fixture=True)
+    initial = candidate.replay(bars, as_of=start, **args)["current_state"]
+    boundary_type = getattr(candidate, "CarryRecoveryBoundary", None)
+    assert boundary_type is not None, "time-scoped recovery boundary contract is missing"
+    boundary = boundary_type("JM2509", "LONG", D(112), bars[8].end, "CLOSE_BEYOND", "research")
+
+    def run(rule):
+        return candidate.replay(bars, as_of=until(bars), carry_recovery=rule, **args)
+
+    simple = run(boundary)
+    assert simple["version"] == "lms-near405-carry-recovery-boundary-v1"
+    assert [row["action"] for row in simple["transitions"]] == ["UNLOCK_LONG"]
+    assert simple["current_state"]["plan"] == initial["plan"]
+    assert simple["current_state"]["cycle_id"] == initial["cycle_id"]
+    strict = replace(boundary, confirmation="FRESH_TWO_CLOSES")
+    assert not run(strict)["transitions"]
+    assert run(strict)["evaluations"][-1]["status"] == "RECOVERY_RETURN_UNCONFIRMED"
+    lower = replace(strict, edge=D(110))
+    assert [row["action"] for row in run(lower)["transitions"]] == ["UNLOCK_LONG"]
+    future = replace(lower, known_at=bars[-1].end + US)
+    assert not run(future)["transitions"]
+    assert run(future)["evaluations"][-1]["status"] == "RECOVERY_BOUNDARY_UNKNOWN"
+    foreign = replace(future, contract="JM2601")
+    assert candidate.replay(bars, as_of=future.known_at, carry_recovery=foreign, **args) == candidate.replay(
+        bars, as_of=future.known_at, carry_recovery=future, **args,
+    )
+    with pytest.raises(ValueError, match="CARRY_RECOVERY_CONTRACT_MISMATCH"):
+        candidate.replay(bars, as_of=future.known_at + US, carry_recovery=foreign, **args)
+    cut = bars[9].end + 2 * US
+    checkpoint = candidate.replay(bars, as_of=cut, carry_recovery=lower, **args)["checkpoint"]
+    assert run(lower) == candidate.replay(
+        bars, as_of=until(bars), carry_recovery=lower, checkpoint=json.loads(json.dumps(checkpoint)), **args,
+    )
+
+
 def test_ambiguous_revisions_with_decimal_scale_are_order_independent():
     bars = lock_restore_bars()
     band = protection_band(bars, "review", bars[9].end)
