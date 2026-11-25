@@ -71,6 +71,51 @@ def test_carry_in_uses_published_state_and_unchanged_invalidation_rules():
     assert held["checkpoint"]["initial_state"]["plan"]["upper"] == "110"
 
 
+def test_carry_proxy_exit_sensitivity_scans_later_risk_and_binds_checkpoint():
+    from guiyi_quant.lms_near405 import CARRY_EXIT_SENSITIVITY_VERSION, CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111), bar(9, 101, 105, 98, 99)]
+    seed = CarryInSeed("JM2509", b[7].end + US * 2, "LONG", False, "TEST_FIXTURE:opening")
+    control = replay(b, as_of=until(b), carry_in=seed, timely_fixture=True)
+    assert [row["reason"] for row in control["transitions"]] == ["RANGE_TARGET"]
+
+    options = dict(carry_in=seed, timely_fixture=True, omitted_proxy_exit="RANGE_TARGET")
+    at_target = replay(b, as_of=b[8].end + 2 * US, **options)
+    contrast = replay(b, as_of=until(b), **options)
+    assert contrast["version"] == CARRY_EXIT_SENSITIVITY_VERSION
+    assert contrast["rule_hash"] != control["rule_hash"]
+    assert at_target["current_state"]["long"] == "1"
+    assert [row["reason"] for row in contrast["transitions"]] == ["RISK_INVALID"]
+    assert contrast == replay(b, as_of=until(b), checkpoint=at_target["checkpoint"], **options)
+    with pytest.raises(ValueError, match="CHECKPOINT_IDENTITY_MISMATCH"):
+        replay(b, as_of=until(b), carry_in=seed, timely_fixture=True, checkpoint=at_target["checkpoint"])
+
+
+def test_carry_proxy_exit_sensitivity_rejects_human_and_risk_overrides():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    b = entry_bars()
+    seed = CarryInSeed("JM2509", b[7].end + US * 2, "LONG", False, "TEST_FIXTURE:opening")
+    with pytest.raises(ValueError, match="PROXY_EXIT_SENSITIVITY_REQUIRES_BASELINE_CARRY_FIXTURE"):
+        replay(b, as_of=until(b), carry_in=seed, omitted_proxy_exit="RANGE_TARGET")
+    with pytest.raises(ValueError, match="UNKNOWN_OMITTABLE_PROXY_EXIT"):
+        replay(b, as_of=until(b), carry_in=seed, timely_fixture=True, omitted_proxy_exit="RISK_INVALID")
+
+
+def test_carry_proxy_exit_sensitivity_keeps_exits_for_same_plan_reentry():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    b = retry_bars()[:12] + [bar(12, 105, 112, 103, 111)]
+    seed = CarryInSeed("JM2509", b[7].end + US * 2, "LONG", False, "TEST_FIXTURE:opening")
+    result = replay(b, as_of=until(b), carry_in=seed, timely_fixture=True, omitted_proxy_exit="RANGE_TARGET")
+    rows = result["transitions"]
+    assert [(row["action"], row["reason"]) for row in rows] == [
+        ("CLEAR", "RISK_INVALID"), ("REENTER_LONG", "FRESH_SIGNAL_RETRY"), ("CLEAR", "RANGE_TARGET"),
+    ]
+    assert rows[1]["after"]["cycle_id"] != rows[0]["before"]["cycle_id"]
+    assert rows[1]["after"]["plan"]["plan_id"] == rows[0]["before"]["plan"]["plan_id"]
+
+
 def test_carry_in_rejects_unavailable_and_mismatched_checkpoints():
     from guiyi_quant.lms_near405 import CarryInSeed
 

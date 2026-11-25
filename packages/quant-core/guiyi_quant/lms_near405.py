@@ -45,6 +45,8 @@ CLOCK_VERSIONS = {
 EXTERNAL_PROTECTION_VERSION = "lms-near405-external-protection-v1"
 SCOPED_PROTECTION_VERSION = "lms-near405-scoped-protection-v1"
 CARRY_IN_VERSION = "lms-near405-carry-in-v1"
+CARRY_EXIT_SENSITIVITY_VERSION = "lms-near405-carry-exit-sensitivity-v1"
+CARRY_PROXY_EXIT_REASONS = ("RANGE_TARGET", "REGIME_INVALID", "PLAN_EXPIRED")
 CARRY_IN_EXIT_VERSION = "lms-near405-carry-in-explicit-exit-v1"
 CARRY_SCOPED_PROTECTION_VERSION = "lms-near405-carry-scoped-protection-v1"
 CARRY_RECOVERY_BOUNDARY_VERSION = "lms-near405-carry-recovery-boundary-v1"
@@ -196,10 +198,18 @@ def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
 
 def _rules_for(
     region_input, clock, external_protection=False, scoped_protection=False, carry_in=False, explicit_exit=False,
-    managed_lifecycle=False, carry_recovery=None,
+    managed_lifecycle=False, carry_recovery=None, omitted_proxy_exit=None, timely_fixture=False,
 ):
     if not isinstance(managed_lifecycle, bool):
         raise ValueError("BOOLEAN_MODE_REQUIRED")
+    if omitted_proxy_exit is not None:
+        if omitted_proxy_exit not in CARRY_PROXY_EXIT_REASONS:
+            raise ValueError("UNKNOWN_OMITTABLE_PROXY_EXIT")
+        if not (carry_in and timely_fixture is True) or any((
+            region_input is not None, clock is not None, external_protection, scoped_protection,
+            explicit_exit, managed_lifecycle, carry_recovery is not None,
+        )):
+            raise ValueError("PROXY_EXIT_SENSITIVITY_REQUIRES_BASELINE_CARRY_FIXTURE")
     if carry_recovery is not None:
         if not isinstance(carry_recovery, CarryRecoveryBoundary):
             raise ValueError("CARRY_RECOVERY_BOUNDARY_REQUIRED")
@@ -227,6 +237,8 @@ def _rules_for(
                     and not (external_protection and scoped_protection and explicit_exit))):
             raise ValueError("CARRY_IN_BASELINE_RULES_REQUIRED")
         rules = RULES | dict(version=CARRY_IN_VERSION, seed_plan="PRESEED_CONTEXT_PROXY")
+        if omitted_proxy_exit is not None:
+            rules.update(version=CARRY_EXIT_SENSITIVITY_VERSION, omitted_proxy_exit=omitted_proxy_exit)
         if explicit_exit:
             rules.update(version=CARRY_IN_EXIT_VERSION, carry_exit="EXPLICIT_POSITION_EVIDENCE")
         if scoped_protection:
@@ -345,8 +357,12 @@ def _risk_invalid(side, close, lo, hi):
     return (side == "LONG" and close <= lo) or (side == "SHORT" and close >= hi)
 
 
-def _invalid(state, bars, index, clock):
+def _invalid(state, bars, index, clock, omitted_proxy_exit=None):
     plan = state["plan"]
+    if omitted_proxy_exit is not None and (
+        state["cycle_seq"] != 1 or plan.get("pricing_basis") != "PRESEED_CONTEXT_PROXY"
+    ):
+        omitted_proxy_exit = None
     side = state["original_side"]
     lo, hi = Decimal(plan["lower"]), Decimal(plan["upper"])
     # Persistent invalidation for this cycle: reveal history only, never heal a
@@ -365,7 +381,7 @@ def _invalid(state, bars, index, clock):
             (side == "LONG" and c >= hi) or (side == "SHORT" and c <= lo)
         ):
             found.add("RANGE_TARGET")
-        first = next((r for r in RULES["priority"][:4] if r in found), None)
+        first = next((r for r in RULES["priority"][:4] if r in found and r != omitted_proxy_exit), None)
         if first:
             return first
     return None
@@ -516,6 +532,7 @@ def evaluate(
     carry_exit_evidence=None,
     managed_lifecycle=False,
     carry_recovery=None,
+    omitted_proxy_exit=None,
 ):
     """Evaluate one completed Bar against an explicit research state."""
     if "carry_in_seed_id" in state or managed_lifecycle:
@@ -524,7 +541,7 @@ def evaluate(
         state, bars, index, region_input=region_input, timely_fixture=timely_fixture, clock=clock,
         protection_confirmations=protection_confirmations, protection_bands=protection_bands,
         carry_exit_evidence=carry_exit_evidence,
-        managed_lifecycle=managed_lifecycle, carry_recovery=carry_recovery,
+        managed_lifecycle=managed_lifecycle, carry_recovery=carry_recovery, omitted_proxy_exit=omitted_proxy_exit,
     )
 
 
@@ -541,6 +558,7 @@ def _evaluate(
     carry_exit_evidence=None,
     managed_lifecycle=False,
     carry_recovery=None,
+    omitted_proxy_exit=None,
 ):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
@@ -552,7 +570,7 @@ def _evaluate(
     seeded = "carry_in_seed_id" in state
     explicit_exit = carry_exit_evidence is not None
     rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded, explicit_exit,
-                                  managed_lifecycle, carry_recovery)
+                                  managed_lifecycle, carry_recovery, omitted_proxy_exit, timely_fixture)
     if carry_recovery is not None and carry_recovery.known_at < t and carry_recovery.contract != c.contract:
         raise ValueError("CARRY_RECOVERY_CONTRACT_MISMATCH")
     if state.get("plan") is not None and managed_lifecycle != ("management_entry_known_at" in state):
@@ -656,7 +674,7 @@ def _evaluate(
                         and bars[index - 2].end == frame.bar.start)
         action, reason, result["status"] = _managed_position(state, bars, index, region, direction, signal_fresh)
     elif held:
-        reason = _invalid(state, bars, index, clock)
+        reason = _invalid(state, bars, index, clock, omitted_proxy_exit)
         locked = state["long"] == state["short"]
         if explicit_exit and state["plan"].get("pricing_basis") == "PRESEED_CONTEXT_PROXY":
             matches = _carry_exits_for_state(carry_exit_evidence, state)
@@ -863,6 +881,7 @@ def replay(
     carry_exit_evidence=None,
     managed_lifecycle=False,
     carry_recovery=None,
+    omitted_proxy_exit=None,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
@@ -870,6 +889,7 @@ def replay(
     generates decisions, and no accepted action is a broker or fill fact.
     A carry-in seed activates after its archival knowledge time and uses a proxy
     plan. The broker entry and original author's plan are unknown.
+    A fixture may omit one soft proxy exit for the original seeded cycle only.
     """
     timestamp(as_of)
     if not isinstance(timely_fixture, bool):
@@ -883,6 +903,7 @@ def replay(
     explicit_exit = carry_exit_evidence is not None
     rules, rule_hash = _rules_for(
         region_input, clock, external, scoped, carry_in is not None, explicit_exit, managed_lifecycle, carry_recovery,
+        omitted_proxy_exit, timely_fixture,
     )
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
@@ -929,6 +950,7 @@ def replay(
             carry_exit_evidence=carry_exit_evidence,
             managed_lifecycle=managed_lifecycle,
             carry_recovery=carry_recovery,
+            omitted_proxy_exit=omitted_proxy_exit,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -1165,6 +1187,7 @@ def replay(
             carry_exit_evidence=carry_exit_evidence,
             managed_lifecycle=managed_lifecycle,
             carry_recovery=carry_recovery,
+            omitted_proxy_exit=omitted_proxy_exit,
         )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:
