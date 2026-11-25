@@ -418,6 +418,41 @@ def test_managed_recovery_requires_fresh_cross_and_human_decisions():
     assert manual["decisions"][0]["reason"] == "HUMAN_DECISION_REQUIRED"
 
 
+@pytest.mark.parametrize("order", ["BEFORE_CONFIRMATION", "BEFORE_SHAPE"])
+def test_managed_order_blocks_same_window_recovery_then_accepts_later_shape(order):
+    rows = managed_lock_restore_bars()
+    options = dict(managed_lifecycle=True, managed_recovery_order=order, timely_fixture=True)
+    baseline = replay(rows, as_of=until(rows), managed_lifecycle=True, timely_fixture=True)
+    prefix = replay(rows, as_of=until(rows), **options)
+    assert [step["action"] for step in baseline["transitions"]][-1] == "UNLOCK_LONG"
+    assert [step["action"] for step in prefix["transitions"]] == ["ENTER_LONG", "LOCK"]
+    assert prefix["evaluations"][-1]["status"] == "RECOVERY_NOT_KNOWN_BEFORE_SIGNAL_WINDOW"
+    assert prefix["rule_hash"] != baseline["rule_hash"]
+
+    later = rows + [bar(15, 113, 114, 111, 112), bar(16, 112, 117, 111, 116)]
+    full = replay(later, as_of=until(later), **options)
+    assert [step["action"] for step in full["transitions"]] == ["ENTER_LONG", "LOCK", "UNLOCK_LONG"]
+    assert full["transitions"][-1]["after"]["cycle_id"] == prefix["current_state"]["cycle_id"]
+    assert full == replay(later, as_of=until(later), checkpoint=json.loads(json.dumps(prefix["checkpoint"])), **options)
+    with pytest.raises(ValueError):
+        replay(later, as_of=until(later), checkpoint=baseline["checkpoint"], **options)
+
+
+def test_managed_order_distinguishes_shape_start_from_confirmation_start():
+    rows = managed_lock_restore_bars()[:-1] + [bar(14, 111, 111.8, 110.5, 111.3), bar(15, 111.4, 114, 110.6, 113)]
+    options = dict(as_of=until(rows), managed_lifecycle=True, timely_fixture=True)
+    confirmation = replay(rows, managed_recovery_order="BEFORE_CONFIRMATION", **options)
+    shape = replay(rows, managed_recovery_order="BEFORE_SHAPE", **options)
+    assert confirmation["transitions"][-1]["action"] == "UNLOCK_LONG"
+    assert shape["transitions"][-1]["action"] == "LOCK"
+    assert shape["evaluations"][-1]["status"] == "RECOVERY_NOT_KNOWN_BEFORE_SIGNAL_WINDOW"
+    assert shape["current_state"]["management_rule_version"] == shape["version"]
+
+    for order in (None, "BEFORE_CONFIRMATION"):
+        with pytest.raises(ValueError, match="MANAGED_STATE_RULE_MISMATCH"):
+            evaluate(shape["current_state"], rows, len(rows) - 1, managed_lifecycle=True, managed_recovery_order=order)
+
+
 def test_managed_state_cannot_be_evaluated_by_the_old_rule_or_reverse():
     rows = managed_lock_restore_bars()
     states = [replay(rows, as_of=until(rows[:8]), timely_fixture=True, managed_lifecycle=managed)["current_state"]
