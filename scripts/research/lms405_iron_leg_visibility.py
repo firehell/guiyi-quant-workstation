@@ -1,15 +1,20 @@
 """Bound I2701 protection continuity and release clocks without treating a missing row as flat."""
 
 import argparse
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from lms405_break_pressure_comparison import continuous_groups
+from lms405_counter_m_exit_clocks import observe
 from lms405_i2701_case import DAYS, FROZEN_COMPARISON_SHA256, readback
 from lms405_m_permission_study import read_pair
 from lms405_oi_leg_intent import CONTINUITY, CONTINUITY_SHA
-from lms405_portfolio_replay import ARCHIVE
+from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_lot_timing import displayed_tick_totals, latest_whole_leg_start, tick_bounds, verified_json
+from lms405_protection_timeframes import read_window
+from lms405_public_plan_roles import load_source
+from lms405_recovery_confirmation_audit import strict_runs
 from lms405_reversal_stage_bounds import SPECS_SHA
 from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import CLOSE, LUNCH, NIGHT, signals
@@ -21,6 +26,8 @@ CONTRACT = "I2701"
 QUOTE_REPORT = Path("output/lms-i2701-oct-20261125/comparison.json")
 NEAR, FAR = Decimal("662.5"), Decimal("654")
 PERIODS = ((1, 1), (5, 1), (5, 5))
+CONTROL = "S5354683459701283"
+CONTROL_DAY = date(2026, 10, 16)
 
 
 def quote_clock_counts(quote_ends, available_at):
@@ -52,7 +59,59 @@ def bounds_for_later_opens(all_minutes, noon, close, tick, lots, totals):
                 last_possible_whole_rebuild=case(last), next_minute_start=case(last + ONE))
 
 
-def study(session, market):
+def release_witnesses(minutes, geometry, *, as_of, level):
+    """Read completed facts strictly before a candidate quote minute starts."""
+    prior = [bar for bar in minutes if bar.end + US < as_of]
+    if not prior or as_of - (prior[-1].end + US) > ONE:
+        return dict(last_known_close_at=None, last_known_close=None, active_price_run=None,
+                    active_shapes=dict.fromkeys(geometry), post_new_cross_active_shapes=dict.fromkeys(geometry))
+    segment = continuous_groups(prior)[-1]
+    last = segment[-1]
+    run = strict_runs(segment, level, "SHORT").get(last.end)
+    crossing = run["fresh_crossing_known_at"] if run else None
+    early, follow = {}, {}
+    for label, (period, items) in geometry.items():
+        visible = [row for row in items if row["available_at"] < as_of
+                   and row["shape_end"] - period * ONE >= segment[0].start]
+        active = [row for row in visible if not any(
+            bar.close >= row["boundary"] for bar in segment if row["confirmed_at"] < bar.end
+        )]
+        early[label] = next(iter(active), None)
+        follow[label] = next((row for row in active if crossing is not None
+                              and crossing < row["shape_end"] - period * ONE), None)
+    return dict(last_known_close_at=last.end, last_known_close=last.close, active_price_run=run,
+                active_shapes=early, post_new_cross_active_shapes=follow)
+
+
+def lifetime_observations(session, market, minutes, geometry, quotes, joint):
+    if len(continuous_groups(minutes)) != 1:
+        raise ValueError("IRON_VISIBILITY_RELEASE_SEGMENT_CHANGED")
+    rows = []
+    for end in quotes:
+        when = end - ONE
+        witnesses = release_witnesses(minutes, geometry, as_of=when, level=NEAR)
+        prefix = [bar for bar in minutes if bar.end + US < when]
+        visible = {label: (period, [row for row in events if row["available_at"] < when])
+                   for label, (period, events) in geometry.items()}
+        if release_witnesses(prefix, visible, as_of=when, level=NEAR) != witnesses:
+            raise ValueError("IRON_VISIBILITY_RELEASE_PREFIX_DIVERGED")
+        rows.append(dict(quote_bar_end=end, quote_bar_start=when, six_symbol_partial=end in joint, **witnesses))
+    source = load_source(input_sources(), CONTROL)
+    series = read_window(session, market, CONTRACT, CONTROL_DAY)
+    first, last = series[1][0].start, series[1][-1].end
+    if last >= datetime.fromisoformat(source["published_at"]):
+        raise ValueError("IRON_VISIBILITY_CONTROL_TIME_CHANGED")
+    levels = (("protection_near", "672.5"), ("protection_far", "677"),
+              ("m_near", "680.5"), ("m_far", "682"))
+    return dict(
+        definition="ACTIVE_NEAR_RUN_AND_SHAPES_KNOWN_STRICTLY_BEFORE_QUOTE_MINUTE_START",
+        candidates=rows, source_scope="QUOTE_COMPATIBILITY_UNDER_UNCONFIRMED_POSITION_SCOPE",
+        recap_control=dict(source=source, author_version=None, actual_lock=None,
+                           observations=observe(series, first, last + 2 * US, "LONG", levels)),
+    )
+
+
+def study(session, market, *, release_lifetime=False):
     quoted = verified_json(QUOTE_REPORT, FROZEN_COMPARISON_SHA256)
     continuity = verified_json(CONTINUITY, CONTINUITY_SHA)
     rows = {row["later"]: row["later_legs"] for row in continuity["contracts"][CONTRACT]["transitions"]}
@@ -96,16 +155,18 @@ def study(session, market):
                                           for symbol, row in prices.items() if symbol != "sh"]))
     if quoted["photos"][NIGHT]["joint_contains"] or not joint_six:
         raise ValueError("IRON_VISIBILITY_PARTIAL_QUOTE_CHANGED")
-    clocks = {}
+    clocks, geometry = {}, {}
     for periods in PERIODS:
         rows_for_variant = signals(bars, *periods, side="SHORT", start=night_start, cut=night_cut)
-        clocks[f"geometry_{periods[0]}m_to_{periods[1]}m"] = next((row["available_at"] for row in rows_for_variant), None)
+        label = f"geometry_{periods[0]}m_to_{periods[1]}m"
+        clocks[label] = next((row["available_at"] for row in rows_for_variant), None)
+        geometry[label] = (periods[0], rows_for_variant)
     for label, level in (("first_strict_close_below_near", NEAR), ("first_strict_close_below_far", FAR)):
         clocks[label] = next((bar.end + US for bar in overnight_minutes if bar.close < level), None)
     gate_cases = {label: dict(known_at=clock, iron_quote_candidates=quote_clock_counts(individual, clock),
                               six_symbol_partial_candidates=quote_clock_counts(joint_six, clock))
                   for label, clock in clocks.items()}
-    return dict(version="lms405-iron-leg-visibility-v1", contract=CONTRACT, market=fingerprints,
+    report = dict(version="lms405-iron-leg-visibility-v1", contract=CONTRACT, market=fingerprints,
                 snapshots={post: dict(image=sources[post]["image"], quote_anchor=sources[post]["quote_anchor"],
                                      displayed_legs=legs) for post, legs in zip((LUNCH, CLOSE, NIGHT), (midday, closing, overnight), strict=True)},
                 inputs=dict(quote_sha256=FROZEN_COMPARISON_SHA256, continuity_sha256=CONTINUITY_SHA, specs_sha256=SPECS_SHA),
@@ -118,12 +179,19 @@ def study(session, market):
                     all_symbols_joint_quote_minutes=[], timing_sensitivity=gate_cases,
                 ), actual_overnight_long_lots=None, actual_release_time=None, author_action_samples=0,
                 executable=False, fills=None, pnl=None)
+    if release_lifetime:
+        report.update(version="lms405-iron-leg-visibility-release-lifetime-v1",
+                      release_lifetime=lifetime_observations(
+                          session, market, overnight_minutes, geometry, individual, joint_six,
+                      ))
+    return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--release-lifetime", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -137,7 +205,7 @@ def main():
     load_dotenv(args.env_file, override=False)
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), release_lifetime=args.release_lifetime)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
