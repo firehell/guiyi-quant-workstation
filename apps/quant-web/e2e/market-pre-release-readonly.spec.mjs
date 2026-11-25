@@ -35,9 +35,9 @@ test('real candidate home keeps 60 products across cold, hard reload and SPA tab
   }
   for (const sample of refreshSamples) expect(sample).toBeLessThan(homeBudgetMs)
 
-  await page.getByRole('tab', { name: '消息' }).click()
-  await expect(page.getByRole('tab', { name: '消息' })).toHaveAttribute('aria-selected', 'true')
-  await page.getByRole('tab', { name: '市场' }).click()
+  await page.getByRole('link', { name: '消息' }).click()
+  await expect(page.getByRole('link', { name: '消息' })).toHaveAttribute('aria-current', 'page')
+  await page.getByRole('link', { name: '行情总览' }).click()
   await expect(page.locator('.table-wrap tbody tr')).toHaveCount(60)
   const search = page.getByRole('combobox', { name: '搜索60品种' })
   await search.fill('JM')

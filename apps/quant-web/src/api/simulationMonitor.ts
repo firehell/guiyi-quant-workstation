@@ -67,7 +67,7 @@ export function validateDetail(value: MonitorDetail): MonitorDetail {
 }
 export const monitorClient = {
   async overview(signal: AbortSignal) { const { default: request } = await import('./request.ts'); return validateOverview(await request.get<never, MonitorOverview>('/api/simulation/monitor/overview', { signal, readPriority: 0 })) },
-  async records(query: MonitorQuery, signal: AbortSignal, cursor?: string) { const { default: request } = await import('./request.ts'); return validatePage(await request.get<never, MonitorPage>('/api/simulation/monitor/records', { signal, params: { kind: query.kind, product: query.product, status: query.status, start_day: query.startDay, end_day: query.endDay, ...(cursor ? { cursor } : {}) } })) },
+  async records(query: MonitorQuery, signal: AbortSignal, cursor?: string) { const { default: request } = await import('./request.ts'); return validatePage(await request.get<never, MonitorPage>('/api/simulation/monitor/records', { signal, params: { kind: query.kind, product: query.product, status: query.status, ...(query.startDay ? { start_day: query.startDay } : {}), ...(query.endDay ? { end_day: query.endDay } : {}), ...(cursor ? { cursor } : {}) } })) },
   async detail(id: string, signal: AbortSignal) { const { default: request } = await import('./request.ts'); return validateDetail(await request.get<never, MonitorDetail>('/api/simulation/monitor/records/' + encodeURIComponent(id), { signal })) },
 }
 export type MonitorClient = typeof monitorClient

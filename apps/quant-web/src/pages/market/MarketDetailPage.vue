@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { saveMarketHomeTab, type MarketHomeTab } from '@/utils/marketHomeTab'
+import ContractStrip from '@/components/workstation/ContractStrip.vue'
+import { useWorkstationAccounts } from '@/composables/useWorkstationAccounts'
+import { tqChartExecutions, subingChartExecutions, locateChartExecutions } from '@/utils/workstationChartActivity'
+import { rememberWorkstationChart, rememberWorkstationNewowMode } from '@/utils/workstationRoutes'
+import MarketKlineStage from '@/components/market/detail/MarketKlineStage.vue'
 import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
 import { useMarketDetailQuote, projectMarketDetailQuoteHeader } from '@/composables/useMarketDetailQuote'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { candidatePreview } from '@/utils/candidatePreview'
 import { computed, onBeforeUnmount, onUnmounted, provide, ref, watch } from 'vue'
 import { createChart } from 'lightweight-charts'
-import { createDetailChartSession, DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
+import { createDetailChartSession, detailChartTime, DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
 import { useRoute, useRouter } from 'vue-router'
 
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
@@ -21,7 +25,7 @@ import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspa
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import NewowBacktestPanel from '@/components/market/detail/newow/NewowBacktestPanel.vue'
-import { backtestFrequencies, newowAfterMarketOnly, publishedActionMarkers, type LatestBacktest } from '@/utils/newowBacktestReader'
+import { backtestFrequencies, newowAfterMarketOnly as isolatedNewow, publishedActionMarkers, type LatestBacktest } from '@/utils/newowBacktestReader'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
 import NewowAiAnalysisDialog from '@/components/market/detail/newow/NewowAiAnalysisDialog.vue'
 import type { AiCombo } from '@/api/newowAiAnalysis'
@@ -55,18 +59,55 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
+const newowAfterMarketOnly = computed(() => isolatedNewow || explicitIdentity.value?.newowSource === 'after-market')
+const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()
+const verifiedAccountSources = computed(() => ({
+  htdy: tq.status.value === 'ready' && tqAccount.value.verified,
+  subing: subing.status.value === 'ready' && subingAccount.value.verified,
+}))
+const showExecutions = ref(typeof window !== 'undefined' && window.history.state?.showWorkstationExecutions === true)
+const executions = computed(() => {
+  const identity = explicitIdentity.value
+  if (!identity || !showExecutions.value) return []
+  const bars = controller.bars.value
+  const contracts = new Set(bars.map(bar => bar.physicalContract?.toUpperCase()))
+  const tq = recentTqRecords.status.value === 'ready' && recentTqRecords.value.value?.coverage !== 'unavailable'
+    ? tqChartExecutions(recentTqRecords.value.value?.items ?? [], '快期模拟主账户') : []
+  const paper = subing.status.value === 'ready' ? subingChartExecutions(subing.value.value, identity.symbol) : []
+  return [...tq, ...paper].filter(record => contracts.has(record.contract.toUpperCase())
+    && (!identity.contract || record.contract.toUpperCase() === identity.contract))
+})
+const positionedExecutions = computed(() => {
+  const identity = explicitIdentity.value
+  return identity ? locateChartExecutions(executions.value, controller.bars.value, identity.frequency) : []
+})
+const activeOrderRows = computed(() => {
+  const identity = explicitIdentity.value
+  if (!identity || !showExecutions.value) return []
+  const contract = identity.contract ?? controller.bars.value.at(-1)?.physicalContract?.toUpperCase()
+  return accountActivity.value.filter(row => row.contract === contract && row.actions.length)
+})
+watch(explicitIdentity, identity => { if (identity) rememberWorkstationChart(identity) }, { immediate: true })
 const chartSession = createDetailChartSession({ createChart })
 provide(DETAIL_CHART_SESSION, chartSession)
-watch(() => {
+const marketAxisKey = computed(() => {
   const identity = explicitIdentity.value
   return identity ? [identity.symbol, identity.seriesKind, identity.contract ?? '', identity.frequency].join(':') : 'invalid'
-}, key => chartSession.setIdentity(key), { immediate: true, flush: 'sync' })
+})
+watch(marketAxisKey, key => chartSession.setIdentity(key), { immediate: true, flush: 'sync' })
+watch(positionedExecutions, points => {
+  const frequency = explicitIdentity.value?.frequency
+  chartSession.setExecutions(frequency ? points.map(point => ({
+    from: detailChartTime(point.before, frequency), to: detailChartTime(point.after, frequency),
+    ratio: point.ratio, price: Number(point.price), source: point.source,
+  })) : [])
+}, { immediate: true })
+
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
-// Other views reuse the existing Newow trend chart price authority at this exact period.
 const toolbarPriceIdentity = computed<MarketDetailIdentity | null>(() => {
   const identity = explicitIdentity.value
-  return !newowAfterMarketOnly && identity && ['htdy', 'subing', 'free'].includes(identity.view)
+  return !newowAfterMarketOnly.value && identity && ['htdy', 'subing', 'free'].includes(identity.view)
     && identity.seriesKind === 'actual_dominant' && identity.frequency !== '1m'
     ? { view: 'newow', symbol: identity.symbol, seriesKind: 'actual_dominant', frequency: identity.frequency, strategy: 'trend' } : null
 })
@@ -101,15 +142,17 @@ const newowDailyPending = ref(false)
 const newowDailyChart = ref<NewowProductSectionResponse<'chart'> | null>(null)
 const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: string | null }>({ asOf: null, physicalContract: null })
 const newowCapabilities = useNewowCapabilities()
-const newowOpenFrequencies = computed(() => newowAfterMarketOnly
+const newowOpenFrequencies = computed(() => newowAfterMarketOnly.value
   ? [...backtestFrequencies] : newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
+const expectedReferenceRun = computed(() => newowAfterMarketOnly.value && typeof route.query.reference_run === 'string'
+  ? route.query.reference_run : undefined)
 const published = ref<LatestBacktest['result']>(null)
-const referenceMarkers = computed(() => publishedActionMarkers(published.value, controller.bars.value))
+const referenceMarkers = computed(() => publishedActionMarkers(expectedReferenceRun.value && published.value?.run_id !== expectedReferenceRun.value ? null : published.value, controller.bars.value, explicitIdentity.value?.frequency ?? ''))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
-  || (explicitIdentity.value.seriesKind === 'actual_dominant' && explicitIdentity.value.frequency !== '1m'
-    && (newowAfterMarketOnly || originalNewowCombinationSupported(explicitIdentity.value) && newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', explicitIdentity.value.symbol))))
+  || ((newowAfterMarketOnly.value || explicitIdentity.value.seriesKind === 'actual_dominant') && explicitIdentity.value.frequency !== '1m'
+    && (newowAfterMarketOnly.value || originalNewowCombinationSupported(explicitIdentity.value) && newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', explicitIdentity.value.symbol))))
 const shellReady = computed(() => isWorkspacePreview.value && (
-  (isNewowView.value && (newowAfterMarketOnly || newowCapabilities.state.value !== 'loading')) || (controller.state.value.header !== null && !controller.state.value.loading)
+  (isNewowView.value && (newowAfterMarketOnly.value || newowCapabilities.state.value !== 'loading')) || (controller.state.value.header !== null && !controller.state.value.loading)
 ))
 const htdyWorkspace = ref<InstanceType<typeof HtdyDetailWorkspace> | null>(null)
 const newowWorkspace = ref<InstanceType<typeof NewowProductWorkspace> | null>(null)
@@ -146,10 +189,11 @@ const migrationNotice = ref<string | null>(
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
-    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.newowMode ?? '', identity.newowTest ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
+    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.newowMode ?? '', identity.newowTest ?? '', identity.newowSource ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
     : 'invalid'
 })
 watch(identityKey, () => { published.value = null }, { flush: 'sync' })
+watch(identityKey, chartSession.restoreInspectionCursor, { flush: 'post' })
 let activationGeneration = 0
 let activatedIdentity: MarketDetailIdentity | null = null
 async function activateRoute() {
@@ -194,6 +238,7 @@ function switchNewowToOpenFrequency() {
 function selectIdentity(identity: MarketDetailIdentity) {
   migrationNotice.value = null
   if (identity.view === 'newow') {
+    if (identity.newowSource === 'after-market' || isolatedNewow) rememberWorkstationNewowMode(identity)
     preferences.value = replaceNewowDetailPreferences(preferences.value, {
       strategy: identity.strategy,
       frequency: identity.frequency,
@@ -258,11 +303,11 @@ function goBack() {
   void router.push('/market')
 }
 
-function goHome(tab: MarketHomeTab) {
-  if (typeof window !== 'undefined') {
-    saveMarketHomeTab(tab)
-  }
-  void router.push('/market')
+function selectPhysicalContract(item: { product: string; contract: string }) {
+  const identity = explicitIdentity.value
+  if (!identity) return
+  selectIdentity({ ...identity, symbol: item.product, contract: item.contract, seriesKind: 'contract',
+    focusBarEnd: undefined, homeContext: undefined })
 }
 
 // Dual mode is a presentation change and retains the same chart input snapshot.
@@ -271,14 +316,14 @@ watch(() => {
   return i ? [i.view, i.symbol, i.strategy, i.newowTest, i.seriesKind, i.contract, i.frequency].join(':') : 'invalid'
 }, () => { aiAsOf.value = null }, { flush: 'sync' })
 watch([identityKey, () => route.query.series_kind === 'continuous'], () => { aiOpen.value = false; void activateRoute() }, { immediate: true })
-watch(isNewowView, (enabled) => { if (enabled && !newowAfterMarketOnly) void newowCapabilities.load() }, { immediate: true })
+watch([isNewowView, newowAfterMarketOnly], ([enabled, afterMarket]) => { if (enabled && !afterMarket) void newowCapabilities.load() }, { immediate: true })
 onBeforeUnmount(() => { activationGeneration += 1; detailQuote.dispose(); controller.dispose() })
 onUnmounted(() => chartSession.dispose())
 </script>
 
 <template>
   <main class="market-detail-page unified-detail-light" :data-detail-ready="shellReady ? 'true' : 'false'">
-    <MarketNavigation @market="goHome('market')" @messages="goHome('messages')" @simulation="goHome('simulation')">
+    <MarketNavigation active-tab="market">
       <template #search>
         <ProductSelector
           ref="productSelector"
@@ -302,6 +347,8 @@ onUnmounted(() => chartSession.dispose())
     </template>
 
     <template v-else-if="routeResult.kind === 'valid'">
+      <ContractStrip :active-contract="routeResult.identity.contract ?? header?.displayContract" :active-product="routeResult.identity.symbol"
+        :activity="accountActivity" :verified-sources="verifiedAccountSources" @select="selectPhysicalContract" />
       <MarketDetailTopBar
         static-identity
         :display-date="header?.tradingDay"
@@ -321,6 +368,7 @@ onUnmounted(() => chartSession.dispose())
         :products="controller.productCatalog.value"
         :newow-frequencies="newowOpenFrequencies"
         :after-market="newowAfterMarketOnly"
+        :show-reference-prices="!newowAfterMarketOnly"
         :target-price="toolbarPriceSummary.target?.display_value ?? null"
         :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null"
         :reference-price-status="toolbarPriceStatus"
@@ -330,6 +378,14 @@ onUnmounted(() => chartSession.dispose())
         @contract-cleared="selectContractCleared"
         @ai-analysis="aiOpen = true"
       >
+        <template #display-controls>
+          <label class="execution-toggle"><input v-model="showExecutions" type="checkbox"> 委托/成交</label>
+          <div v-if="isWorkspacePreview" class="chart-navigation" role="group" aria-label="图表视窗">
+            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.zoom('out')">缩小</button>
+            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.zoom('in')">放大</button>
+            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.scrollToLatest()">回到最新</button>
+          </div>
+        </template>
       </MarketDetailViewNav>
       <NewowAiAnalysisDialog v-if="isNewowView && !newowAfterMarketOnly" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
@@ -352,17 +408,37 @@ onUnmounted(() => chartSession.dispose())
           />
           <template v-if="(routeResult.identity.view === 'subing' && (routeResult.identity.frequency === '1m' || routeResult.identity.seriesKind !== 'actual_dominant'))">
             <p role="status">苏冰预警不支持当前周期或指定合约，行情与当前周期已保留。</p>
-            <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview" />
+            <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview" :axis-key="marketAxisKey"
+              :mutation="controller.mutation.value" :has-more-before="controller.hasMoreBefore.value"
+              :loading-before="controller.loadingBefore.value" :history-error="controller.historyError.value"
+              @load-earlier="controller.loadMoreBefore" @focus-resolved="resolveFocus" />
           </template>
           <template v-else>
           <template v-if="routeResult.identity.view === 'newow' && newowAfterMarketOnly">
-            <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview"
-              after-market :reference-markers="referenceMarkers" />
+            <MarketKlineStage
+              :identity-key="marketAxisKey" :bars="controller.bars.value" :mutation="controller.mutation.value"
+              :loading="controller.state.value.loading" :error="controller.state.value.error"
+              :period="routeResult.identity.frequency" :series-kind="routeResult.identity.seriesKind"
+              :visible-main-indicators="[]" range-detector-source-identity="" :range-detector-anchor-time="null"
+              :volume-scoring="false" :show-derived-markers="false" :marker-selection-enabled="false"
+              :research-markers="referenceMarkers"
+              :focus-bar-end="routeResult.identity.focusBarEnd"
+              :has-more-before="controller.hasMoreBefore.value" :loading-before="controller.loadingBefore.value"
+              :history-error="controller.historyError.value"
+              @load-earlier="controller.loadMoreBefore" @focus-resolved="resolveFocus"
+            />
             <p v-if="routeResult.identity.newowTest || routeResult.identity.strategy === 'main_rise'" role="status">此历史策略入口不属于盘后系列。</p>
-            <NewowBacktestPanel v-else-if="newowFrequencyOpen"
+            <p v-else-if="!newowFrequencyOpen" role="status">当前周期没有牛哇盘后结果，保留行情底图。</p>
+            <p v-if="published && routeResult.identity.contract && published.manifest.physical_contract !== routeResult.identity.contract" class="market-detail-page__reference-note">
+              当前合约 {{ routeResult.identity.contract }}。盘后结果独立保留其原始合约 {{ published.manifest.physical_contract }}。
+            </p>
+            <p v-else-if="published && Array.isArray(published.summary.decisions) && published.summary.decisions.length > referenceMarkers.length" class="market-detail-page__reference-note">
+              仅在可核对的同合约、同周期、同原始行情上显示参考动作。完整结果及冻结切片见盘后研究面板。
+            </p>
+            <NewowBacktestPanel v-if="newowFrequencyOpen && !routeResult.identity.newowTest && routeResult.identity.strategy !== 'main_rise'"
               :product="routeResult.identity.symbol" :frequency="routeResult.identity.frequency"
               :strategy="routeResult.identity.newowMode === 'dual' ? 'dual_fusion' : routeResult.identity.strategy ?? 'trend'"
-              after-market @published="published = $event" />
+              after-market :expected-reference-run="expectedReferenceRun" @published="published = $event" />
           </template>
           <NewowProductWorkspace
             v-else-if="routeResult.identity.view === 'newow' && newowCapabilities.capabilities.value && newowFrequencyOpen"
@@ -391,7 +467,10 @@ onUnmounted(() => chartSession.dispose())
             </template>
           </NewowProductWorkspace>
           <template v-else-if="routeResult.identity.view === 'newow'">
-          <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview" />
+          <DetailPricePreview :identity="routeResult.identity" :preview="detailPricePreview" :axis-key="marketAxisKey"
+              :mutation="controller.mutation.value" :has-more-before="controller.hasMoreBefore.value"
+              :loading-before="controller.loadingBefore.value" :history-error="controller.historyError.value"
+              @load-earlier="controller.loadMoreBefore" @focus-resolved="resolveFocus" />
           <MarketDetailUnavailable
             :title="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在读取牛哇开放能力' : newowCapabilities.state.value === 'unavailable' ? '牛哇开放能力不可用' : '当前牛哇周期未开放'"
             :message="newowCapabilities.state.value === 'loading' || newowCapabilities.state.value === 'not_requested' ? '正在确认当前发布阶段及周期能力。' : newowCapabilities.state.value === 'unavailable' ? (newowCapabilities.error.value ?? '无法确认开放范围。') : newowFrequencyOpen ? '正在确认当前发布阶段。' : `${routeResult.identity.frequency} 尚未开放（${newowCapabilities.deferredFrequencyReason(routeResult.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m') ?? 'NEWOW_FREQUENCY_NOT_OPEN'}）。`"
@@ -479,11 +558,31 @@ onUnmounted(() => chartSession.dispose())
           </SubingDetailWorkspace>
           </template>
         </section>
+      <section v-if="showExecutions" class="execution-details" aria-label="只读委托与成交">
+        <h2>只读委托与成交</h2>
+        <p>□ 快期原生委托　■ 快期原生成交　● 苏冰模型成交。图点按原始时间与价格定位，坐标缺乏依据时保留记录。</p>
+        <p v-if="recentTqRecords.status.value === 'error' || subing.status.value === 'error'" role="status">部分账户记录读取失败。</p>
+        <p>快期活动委托覆盖未核验。苏冰待处理动作按模型原始状态列示。</p>
+        <ul>
+          <li v-for="row in activeOrderRows" :key="row.source + row.contract">
+            {{ row.account }} · {{ row.contract }}
+            <div v-for="(action, index) in row.actions" :key="index">{{ action.label }} · {{ formatBeijingInstant(action.at) }}</div>
+          </li>
+          <li v-for="record in executions" :key="record.source + record.id">
+            {{ record.source }} · {{ record.account }} · {{ record.contract }} · <time>{{ record.time }}</time> · {{ record.price }}
+          </li>
+        </ul>
+      </section>
     </template>
   </main>
 </template>
 
 <style scoped>
+.execution-toggle { padding-inline: 8px; white-space: nowrap; }
+.execution-details { padding: 12px; border-top: 1px solid var(--gy-border); }
+.execution-details h2 { margin: 0; font-size: 16px; }
+.execution-details p, .execution-details li { margin-block: 8px; font-size: 13px; }
+
 
 .market-detail-page {
   position: relative;
@@ -515,6 +614,10 @@ onUnmounted(() => chartSession.dispose())
   background: #FFF8F0;
   font-size: var(--gy-font-size-sm);
 }
+
+.chart-navigation { display: flex; gap: 4px; }
+.chart-navigation button { padding: 4px 8px; border: 1px solid var(--gy-border); border-radius: 4px; background: var(--gy-bg-panel); color: inherit; font: inherit; white-space: nowrap; }
+.chart-navigation button:not(:disabled) { cursor: pointer; }
 
 .market-detail-page > :deep(.market-navigation) {
   margin-inline: calc(-1 * clamp(16px, 4vw, 64px));

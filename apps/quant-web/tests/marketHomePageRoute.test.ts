@@ -94,6 +94,7 @@ async function loadPage(initialSector = '') {
     })
   `)
   const routerModule = moduleUrl(`
+    export function useRoute() { return { query: {} } }
     export function useRouter() {
       return { push(value) { globalThis.__marketHomeRoutePushes.push(value) } }
     }
@@ -142,6 +143,8 @@ async function loadPage(initialSector = '') {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText
     .replace(/import ['"]@\/styles\/marketHome.css['"];?/g, '')
+    .replace(/from ['"]@\/utils\/(newowBacktestReader|marketDisplay)['"]/g,
+      (_match, specifier: string) => `from '${new URL(`../src/utils/${specifier}.ts`, import.meta.url).href}'`)
     .replace(/from ['"]@\/utils\/marketHomeTab['"]/g, `from '${new URL('../src/utils/marketHomeTab.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/utils\/productSearch['"]/g, `from '${new URL('../src/utils/productSearch.ts', import.meta.url).href}'`)
     .replace(/from ['"]@\/utils\/productDirectory['"]/g, `from '${new URL('../src/utils/productDirectory.ts', import.meta.url).href}'`)

@@ -83,7 +83,7 @@ test('changing analysis never replaces chart contract or unsupported one-minute 
   const root = element('root'), selected: any[] = []
   const app = createRenderer(nodeOperations()).createApp({ render: () => h(Nav, { identity:identity.value, restore:{newow:{strategy:'trend',frequency:'1d'},htdy:{seriesKind:'actual_dominant',frequency:'60m'},free:{seriesKind:'actual_dominant',frequency:'15m'}},newowFrequencies:['1d','1w'], onSelect:(value:any) => { selected.push(value); identity.value=value } }) })
   app.mount(root)
-  for (const label of ['趋势策略','火天大有','苏冰预警','自由看盘','震荡策略','双策略']) {
+  for (const label of ['牛哇参考','震荡策略','双策略','火天大有','苏冰预警','自由看盘']) {
     const button = findNode(root,n=>n.type==='button'&&nodeText(n)===label)!
     ;(button.props.onClick as Function)(); await nextTick()
     assert.equal(selected.at(-1).frequency,'1m',label); assert.equal(selected.at(-1).contract,'JM2601',label); assert.equal(selected.at(-1).seriesKind,'contract',label)
