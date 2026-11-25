@@ -51,6 +51,97 @@ def decision(p, **changes):
     )
 
 
+def test_carry_in_uses_published_state_and_unchanged_invalidation_rules():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111)]
+    known = b[7].end + timedelta(minutes=1)
+    flat = CarryInSeed("JM2509", known, None, False, "sample")
+    short = CarryInSeed("JM2509", known, "SHORT", False, "sample")
+    results = [replay(b, as_of=until(b), timely_fixture=True, carry_in=seed) for seed in (flat, short)]
+
+    cold, held = results
+    assert cold["rule_hash"] == held["rule_hash"]
+    assert cold["version"] == held["version"] == "lms-near405-carry-in-v1"
+    assert cold["evaluations"][0]["index"] == held["evaluations"][0]["index"] == 8
+    assert cold["transitions"] == []
+    assert [(t["action"], t["reason"]) for t in held["transitions"]] == [("CLEAR", "RISK_INVALID")]
+    assert held["checkpoint"]["initial_state"]["plan"]["source"] == "sample"
+    assert held["checkpoint"]["initial_state"]["plan"]["created_at"] == known.isoformat()
+    assert held["checkpoint"]["initial_state"]["plan"]["upper"] == "110"
+
+
+def test_carry_in_rejects_unavailable_and_mismatched_checkpoints():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111)]
+    known = b[7].end + timedelta(minutes=1)
+    seed = CarryInSeed("JM2509", known, "SHORT", True, "sample")
+    with pytest.raises(ValueError, match="CARRY_IN_NOT_YET_KNOWN"):
+        replay(b, as_of=known - US, carry_in=seed)
+    at_seed = replay(b, as_of=known, carry_in=seed)
+    assert not at_seed["evaluations"] and not at_seed["transitions"]
+    assert at_seed["current_state"]["long"] == at_seed["current_state"]["short"] == "1"
+    result = replay(b, as_of=until(b), carry_in=seed)
+    assert result == replay(b, as_of=until(b), carry_in=seed, checkpoint=at_seed["checkpoint"])
+    with pytest.raises(ValueError, match="CHECKPOINT_IDENTITY_MISMATCH"):
+        replay(b, as_of=until(b), carry_in=replace(seed, source="other"), checkpoint=at_seed["checkpoint"])
+
+
+def test_carry_in_does_not_apply_risk_from_a_bar_available_at_exact_seed_time():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111), bar(9, 108, 109, 106, 108)]
+    seed = CarryInSeed("JM2509", b[8].end + US, "SHORT", False, "sample")
+
+    result = replay(b, as_of=until(b), carry_in=seed, timely_fixture=True)
+
+    assert [e["index"] for e in result["evaluations"]] == [9]
+    assert result["checkpoint"]["initial_state"]["plan"]["upper"] == "110"
+    assert result["current_state"]["short"] == "1"
+    assert result["transitions"] == []
+
+
+def test_carry_in_step_rejects_a_different_contract_or_a_bar_before_seed():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111)]
+    known = b[7].end + timedelta(minutes=1)
+    seed = CarryInSeed("JM2509", known, "SHORT", False, "sample")
+    state = replay(b, as_of=known, carry_in=seed)["current_state"]
+
+    with pytest.raises(ValueError, match="CARRY_IN_CONTRACT_MISMATCH"):
+        evaluate(state, [replace(item, contract="JM2510") for item in b], 8)
+    with pytest.raises(ValueError, match="CARRY_IN_NOT_YET_KNOWN"):
+        evaluate(state, b, 7)
+    with pytest.raises(ValueError, match="CONTRACT_BOUNDARY"):
+        evaluate(state, [replace(b[0], contract="JM2510"), *b[1:]], 8)
+    with pytest.raises(ValueError, match="BAR_ORDER_OR_OVERLAP"):
+        evaluate(state, [*b[:7], bar(20, 104, 108, 102, 106), b[8]], 8)
+
+
+def test_decisions_at_or_before_carry_in_do_not_use_seed_identity():
+    from guiyi_quant.lms_near405 import CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111)]
+    known = b[7].end + timedelta(minutes=1)
+    seed = CarryInSeed("JM2509", known, "SHORT", False, "sample")
+    cycle = replay(b, as_of=known, carry_in=seed)["current_state"]["cycle_id"]
+    supplied = [
+        dict(decision_id=str(offset), proposal_id="unseen", state_fingerprint="unseen",
+             decision="ACCEPT", record_kind="HUMAN_RESEARCH_DECISION", cycle_id=cycle,
+             known_at=(known + offset * US).isoformat(), decided_at=(known + offset * US).isoformat())
+        for offset in (-1, 0)
+    ]
+
+    result = replay(b, supplied, as_of=until(b), carry_in=seed)
+    alternative = replay(b, supplied, as_of=until(b), carry_in=replace(seed, source="another"))
+
+    assert result["decisions"] == alternative["decisions"]
+    assert {row["reason"] for row in result["decisions"]} == {"DECISION_NOT_AFTER_CARRY_IN_SEED"}
+    assert result["transitions"] == []
+
+
 def test_warmup_then_entry_proposal_without_application():
     b = entry_bars()
     r = replay(b, as_of=until(b))

@@ -44,6 +44,28 @@ CLOCK_VERSIONS = {
 }
 EXTERNAL_PROTECTION_VERSION = "lms-near405-external-protection-v1"
 SCOPED_PROTECTION_VERSION = "lms-near405-scoped-protection-v1"
+CARRY_IN_VERSION = "lms-near405-carry-in-v1"
+
+
+@dataclass(frozen=True)
+class CarryInSeed:
+    """Research-only starting observation. An older trade's entry plan is unknown."""
+
+    contract: str
+    known_at: datetime
+    original_side: str | None
+    locked: bool
+    source: str
+
+    def __post_init__(self):
+        physical_contract(self.contract)
+        timestamp(self.known_at)
+        if (self.original_side not in (None, "LONG", "SHORT")
+                or not isinstance(self.locked, bool)
+                or (self.original_side is None and self.locked)
+                or not isinstance(self.source, str) or not self.source.strip()):
+            raise ValueError("INVALID_CARRY_IN_SEED")
+        object.__setattr__(self, "known_at", self.known_at.astimezone(UTC))
 
 
 @dataclass(frozen=True)
@@ -103,7 +125,12 @@ def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
     return tuple(dict.fromkeys(visible))
 
 
-def _rules_for(region_input, clock, external_protection=False, scoped_protection=False):
+def _rules_for(region_input, clock, external_protection=False, scoped_protection=False, carry_in=False):
+    if carry_in:
+        if region_input is not None or clock is not None or external_protection or scoped_protection:
+            raise ValueError("CARRY_IN_BASELINE_RULES_REQUIRED")
+        rules = RULES | dict(version=CARRY_IN_VERSION, seed_plan="PRESEED_CONTEXT_PROXY")
+        return rules, fingerprint(rules)
     if region_input is None and clock is None and not external_protection:
         return RULES, RULE_HASH
     rules = RULES.copy()
@@ -252,6 +279,35 @@ def initial_state(bars):
     )
 
 
+def _carry_in_state(bars, seed, as_of):
+    if not isinstance(seed, CarryInSeed) or seed.contract != bars[0].contract:
+        raise ValueError("CARRY_IN_CONTRACT_MISMATCH")
+    if seed.known_at > as_of:
+        raise ValueError("CARRY_IN_NOT_YET_KNOWN")
+    prefix_count = sum(bar.end + US < seed.known_at for bar in bars)
+    region = context(bars, prefix_count - 1)
+    if region is None or (seed.original_side and not region["valid"]):
+        raise ValueError("CARRY_IN_PRESEED_CONTEXT_REQUIRED")
+    known = seed.known_at.isoformat()
+    seed_id = fingerprint(asdict(seed))
+    state = initial_state(bars) | dict(since=known, known_at=known, carry_in_seed_id=seed_id,
+                                       carry_in_known_at=known)
+    if seed.original_side is None:
+        return state
+    index = sum(bar.end + US <= seed.known_at for bar in bars) - 1
+    plan = {field: region[field] for field in ("lower", "upper", "environment", "context_hash")}
+    plan.update(side=seed.original_side, created_index=index, created_at=known, source=seed.source,
+                pricing_basis="PRESEED_CONTEXT_PROXY")
+    plan["plan_id"] = fingerprint(dict(seed=seed_id, plan=plan))
+    return state | dict(
+        long="1" if seed.locked or seed.original_side == "LONG" else "0",
+        short="1" if seed.locked or seed.original_side == "SHORT" else "0",
+        original_side=seed.original_side,
+        cycle_id=fingerprint(dict(seed=seed_id, plan=plan["plan_id"])),
+        cycle_seq=1, plan=plan, attempt=1, entry_index=index,
+    )
+
+
 def _recovery_status(plan, direction, bars, index):
     key = "recovery_" + direction.lower()
     if plan.get("author_region_id"):
@@ -274,7 +330,32 @@ def _recovery_status(plan, direction, bars, index):
     return None if passed else "RECOVERY_TWO_CLOSES_NOT_MET"
 
 
+def _validate_prefix(bars):
+    for i, bar in enumerate(bars):
+        classify(bars[i - 1] if i else None, bar)
+
+
 def evaluate(
+    state,
+    bars,
+    index,
+    *,
+    region_input=None,
+    timely_fixture=False,
+    clock=None,
+    protection_confirmations=None,
+    protection_bands=None,
+):
+    """Evaluate one completed Bar against an explicit research state."""
+    if "carry_in_seed_id" in state:
+        _validate_prefix(bars[:index + 1])
+    return _evaluate(
+        state, bars, index, region_input=region_input, timely_fixture=timely_fixture, clock=clock,
+        protection_confirmations=protection_confirmations, protection_bands=protection_bands,
+    )
+
+
+def _evaluate(
     state,
     bars,
     index,
@@ -292,7 +373,13 @@ def evaluate(
     scoped = protection_bands is not None
     if scoped and not external:
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
-    rules, rule_hash = _rules_for(region_input, clock, external, scoped)
+    seeded = "carry_in_seed_id" in state
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded)
+    if seeded:
+        if state["contract"] != c.contract:
+            raise ValueError("CARRY_IN_CONTRACT_MISMATCH")
+        if t <= _time(state["carry_in_known_at"]):
+            raise ValueError("CARRY_IN_NOT_YET_KNOWN")
     if external:
         if not isinstance(timely_fixture, bool):
             raise ValueError("BOOLEAN_MODE_REQUIRED")
@@ -369,6 +456,8 @@ def evaluate(
     action = reason = plan = protection = None
     held = Decimal(state["long"]) + Decimal(state["short"]) > 0
     signal_fresh = frame.bar.end > _time(state["since"])
+    if seeded:
+        signal_fresh = signal_fresh and frame.bar.start > _time(state["carry_in_known_at"])
     if held:
         reason = _invalid(state, bars, index, clock)
         locked = state["long"] == state["short"]
@@ -554,11 +643,14 @@ def replay(
     clock=None,
     protection_confirmations=None,
     protection_bands=None,
+    carry_in=None,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
     Only explicit timely_fixture creates TEST_FIXTURE records. Human mode never
     generates decisions, and no accepted action is a broker or fill fact.
+    A carry-in seed activates after its archival knowledge time and uses a proxy
+    plan. The broker entry and original author's plan are unknown.
     """
     timestamp(as_of)
     if not isinstance(timely_fixture, bool):
@@ -569,12 +661,11 @@ def replay(
     scoped = protection_bands is not None
     if scoped and not external:
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
-    rules, rule_hash = _rules_for(region_input, clock, external, scoped)
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped, carry_in is not None)
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
-    for i, b in enumerate(visible):
-        classify(visible[i - 1] if i else None, b)
+    _validate_prefix(visible)
     if region_input and any(
         r.zone.contract != visible[0].contract for r in region_input.regions
     ):
@@ -587,7 +678,8 @@ def replay(
             raise ValueError("SCOPED_CONFIRMATION_REQUIRES_PROTECTION_BANDS")
     if scoped:
         protection_bands = visible_bands(protection_bands, visible[0].contract, as_of)
-    state = initial_state(visible)
+    starting_state = initial_state(visible) if carry_in is None else _carry_in_state(visible, carry_in, as_of)
+    state = starting_state
     supplied = list(decisions or [])
     if timely_fixture and supplied:
         raise ValueError("FIXTURE_MODE_DISALLOWS_EXTERNAL_DECISIONS")
@@ -604,6 +696,7 @@ def replay(
             clock=clock,
             protection_confirmations=protection_confirmations,
             protection_bands=protection_bands,
+            carry_in=carry_in,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -641,8 +734,13 @@ def replay(
             continue
         if d not in records:
             records.append(d)
+            if carry_in is not None and t <= carry_in.known_at:
+                outcomes.append(dict(record=d, status="INVALID", reason="DECISION_NOT_AFTER_CARRY_IN_SEED",
+                                     confirmation_delay_seconds=None))
+                continue
             groups.setdefault(t, []).append(d)
-    events = [(b.end + US, 0, i) for i, b in enumerate(visible)] + [
+    events = [(b.end + US, 0, i) for i, b in enumerate(visible)
+              if carry_in is None or b.end + US > carry_in.known_at] + [
         (t, 1, ds) for t, ds in groups.items()
     ]
     events.sort(key=lambda x: (x[0], x[1]))
@@ -698,7 +796,7 @@ def replay(
                 ] != fingerprint(d):
                     reason = "DECISION_ID_CONTENT_CONFLICT"
                 elif (
-                    (region_input is not None or clock is not None or external)
+                    (region_input is not None or clock is not None or external or carry_in is not None)
                     and not timely_fixture
                     and d["record_kind"] != "HUMAN_RESEARCH_DECISION"
                 ):
@@ -780,7 +878,7 @@ def replay(
         for p in proposals:
             if p["status"] == "PENDING":
                 p.update(status="EXPIRED", expired_at=t.isoformat())
-        e = evaluate(
+        e = _evaluate(
             state,
             visible,
             payload,
@@ -827,7 +925,7 @@ def replay(
         mode="TIMELY_TEST_FIXTURE" if timely_fixture else "HUMAN_CONFIRMATION",
         input_prefix_hash=fingerprint([asdict(b) for b in visible]),
         cursor=len(visible),
-        initial_state=initial_state(visible),
+        initial_state=starting_state,
         current_state=state,
         pending_proposals=[p for p in proposals if p["status"] == "PENDING"],
         decision_records=records,
