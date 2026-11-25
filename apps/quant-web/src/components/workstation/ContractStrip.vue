@@ -2,9 +2,9 @@
 import { computed, onMounted, onScopeDispose, ref, shallowRef } from 'vue'
 import { getMarketDominants } from '@/api/market'
 import type { DominantContractItem } from '@/types/market'
-import { physicalContract, type WorkstationContractActivity } from '@/utils/workstationAccounts'
+import { physicalContract, type WorkstationAccountSource, type WorkstationContractActivity } from '@/utils/workstationAccounts'
 
-const props = defineProps<{ activeContract?: string | null; activeProduct: string; activity: WorkstationContractActivity[] }>()
+const props = defineProps<{ activeContract?: string | null; activeProduct: string; activity: WorkstationContractActivity[]; verifiedSources: Record<WorkstationAccountSource, boolean> }>()
 const emit = defineEmits<{ select: [item: ContractChoice] }>()
 interface ContractChoice { product: string; contract: string; name: string }
 const storageKey = 'guiyi.workstation.watchlist.v1'
@@ -49,6 +49,7 @@ const activeChoice = computed<ContractChoice | null>(() => {
   const contract = props.activeContract && physicalContract(props.activeProduct, props.activeContract)
   return contract ? { product: props.activeProduct, contract, name: productNames.value.get(props.activeProduct) ?? props.activeProduct.toUpperCase() } : null
 })
+const activeActivity = computed(() => props.activity.filter(row => row.contract === activeChoice.value?.contract))
 const isWatched = (contract: string) => watched.value.some(item => item.contract === contract)
 function toggle(item: ContractChoice) {
   watched.value = isWatched(item.contract) ? watched.value.filter(row => row.contract !== item.contract)
@@ -61,12 +62,18 @@ const filters = [{ id: 'active', label: '持仓/挂单' }, { id: 'watched', labe
 <template>
   <section class="contract-strip" aria-label="合约列表">
     <div class="contract-strip__controls">
+      <h2>合约列表</h2>
       <div role="group" aria-label="合约筛选">
         <button v-for="option in filters" :key="option.id" type="button" :aria-pressed="filter === option.id" @click="filter = option.id">{{ option.label }}</button>
       </div>
       <input v-model="search" type="search" aria-label="搜索合约" placeholder="搜索合约或品种">
       <button v-if="activeChoice" type="button" :aria-pressed="isWatched(activeChoice.contract)" @click="toggle(activeChoice)">{{ isWatched(activeChoice.contract) ? '移出重点关注' : '加入重点关注' }}</button>
     </div>
+    <ul v-if="activeActivity.length" class="active-activity" aria-label="当前合约账户记录">
+      <li v-for="row in activeActivity" :key="row.source">
+        {{ row.account }} · {{ verifiedSources[row.source] ? '已读取' : '最近快照待核验' }} {{ [...row.positions, ...row.actions.map(action => action.label)].join(' / ') }}
+      </li>
+    </ul>
     <p v-if="filter === 'active'" class="note">已读取的账户持仓与待处理记录 · 账户核验与覆盖见运行台</p>
     <p v-if="filter === 'all' && directoryStatus === 'error'" role="status">当前主力合约目录读取失败。</p>
     <ul v-if="shown.length">
@@ -82,11 +89,15 @@ const filters = [{ id: 'active', label: '持仓/挂单' }, { id: 'watched', labe
 
 <style scoped>
 .contract-strip { border-bottom: 1px solid var(--gy-border-subtle); padding-block: 8px; }
+.contract-strip h2 { margin: 0 8px 0 0; font-size: 14px; white-space: nowrap; }
+.active-activity { color: var(--gy-text-secondary); font-size: 12px; flex-wrap: wrap; }
+.active-activity li + li { margin-left: 8px; }
 .contract-strip__controls, .contract-strip__controls > div, ul, li { display: flex; align-items: center; gap: 6px; }
+.contract-strip__controls { flex-wrap: wrap; }
 input, button { font: inherit; color: inherit; border: 1px solid var(--gy-border); background: var(--gy-bg-panel); border-radius: 5px; padding: 4px 8px; min-height: 30px; white-space: nowrap; }
 button { cursor: pointer; }
 button[aria-pressed=true], button[aria-current=true] { background: var(--gy-detail-accent-soft); border-color: var(--gy-detail-accent); }
-ul { overflow-x: auto; list-style: none; margin: 8px 0 0; padding: 0 0 4px; }
+ul { max-width: 100%; overflow-x: auto; list-style: none; margin: 8px 0 0; padding: 0 0 4px; }
 li { gap: 0; }
 li button:first-child { border-radius: 5px 0 0 5px; }
 li button + button { border-radius: 0 5px 5px 0; border-left: none; }

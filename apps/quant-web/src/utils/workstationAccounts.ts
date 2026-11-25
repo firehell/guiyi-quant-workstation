@@ -92,23 +92,26 @@ export function projectSubingAccount(status: SubingPortfolioStatus | null) {
     && policyProducts.every(product => enabledProducts.includes(product))
   const verified = !!status?.run_id && completeScope && readableModelStatus.has(status.status) && !!latestTime([status.observed_at])
   const rows: WorkstationContractActivity[] = []
+  const idleRows: WorkstationContractActivity[] = []
   const exits = new Set(status?.account.pending_exit_contracts ?? [])
   for (const product of status?.run_id ? status.products : []) {
     for (const model of product.accounts) {
       const contract = physicalContract(product.product, model.contract)
       const quantity = model.summary?.open_quantity
-      if (!contract || !(quantity > 0 || model.pending || exits.has(model.contract))) continue
+      if (!contract) continue
       const actions: WorkstationContractActivity['actions'] = []
       if (model.pending) actions.push({
         label: `模型动作 · ${modelActionLabels[model.pending.kind] ?? model.pending.kind}`, at: model.pending.at,
       })
       if (exits.has(model.contract) && model.pending?.kind !== 'CLOSE') actions.push({ label: '模型待退出', at: null })
-      rows.push({
+      const row: WorkstationContractActivity = {
         source: 'subing', account: '苏冰独立 Paper 模型账本', product: product.product.toLowerCase(), contract,
         positions: quantity > 0 ? [positionLabel(model.open_layers[0]?.side ?? '', quantity)] : [],
         actions, updatedAt: latestTime([model.valuation_at, model.pending?.at]),
-      })
+      }
+      if (quantity > 0 || actions.length) rows.push(row)
+      else if (verified && product.enabled && quantity === 0 && model.pending === null && row.updatedAt) idleRows.push(row)
     }
   }
-  return { verified, rows }
+  return { verified, rows, idleRows }
 }

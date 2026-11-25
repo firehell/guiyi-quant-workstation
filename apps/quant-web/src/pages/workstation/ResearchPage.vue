@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onScopeDispose, ref, shallowRef } from 'vue'
+import { computed, onMounted, onScopeDispose, ref, shallowRef } from 'vue'
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
 import NewowBacktestPanel from '@/components/market/detail/newow/NewowBacktestPanel.vue'
 import { getMarketProductDirectory } from '@/api/market'
 import type { MarketProductDirectoryItem } from '@/types/market'
-import { backtestFrequencies } from '@/utils/newowBacktestReader'
+import { workstationChartLink } from '@/utils/workstationRoutes'
+import { physicalContract } from '@/utils/workstationAccounts'
+import { backtestFrequencies, type LatestBacktest } from '@/utils/newowBacktestReader'
 
 const products = shallowRef<MarketProductDirectoryItem[]>([])
 const product = ref('')
@@ -20,6 +22,23 @@ onMounted(async () => {
   } catch { if (!controller.signal.aborted) error.value = true }
 })
 onScopeDispose(() => controller.abort())
+
+const published = shallowRef<LatestBacktest['result']>(null)
+const referenceChartLink = computed(() => {
+  const result = published.value
+  if (!result) return null
+  if (result.qualification !== 'QUALIFIED' || result.summary.result_kind !== 'reference_only'
+    || typeof result.manifest.physical_contract !== 'string') return null
+  const contract = physicalContract(product.value, result.manifest.physical_contract)
+  const period = backtestFrequencies.find(item => item === frequency.value)
+  if (!contract || !period) return null
+  const link = workstationChartLink({
+    view: 'newow', newowSource: 'after-market', symbol: product.value, seriesKind: 'contract', contract,
+    frequency: period, strategy: strategy.value === 'oscillation' ? 'oscillation' : 'trend',
+    newowMode: strategy.value === 'dual_fusion' ? 'dual' : undefined,
+  })
+  return { ...link, query: { ...link.query, reference_run: result.run_id } }
+})
 </script>
 
 <template>
@@ -39,7 +58,11 @@ onScopeDispose(() => controller.abort())
           <label>周期 <select v-model="frequency"><option v-for="period in backtestFrequencies" :key="period">{{ period }}</option></select></label>
           <label>策略 <select v-model="strategy"><option value="trend">趋势</option><option value="oscillation">震荡</option><option value="dual_fusion">双策略</option></select></label>
         </div>
-        <NewowBacktestPanel v-if="product" :product="product" :strategy="strategy" :frequency="frequency" after-market />
+        <NewowBacktestPanel v-if="product" :product="product" :strategy="strategy" :frequency="frequency" after-market @published="published = $event">
+          <template #result-actions>
+            <RouterLink v-if="referenceChartLink" :to="referenceChartLink">在行情中查看</RouterLink>
+          </template>
+        </NewowBacktestPanel>
       </section>
     </main>
   </div>

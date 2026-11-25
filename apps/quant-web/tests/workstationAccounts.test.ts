@@ -35,7 +35,8 @@ test('a stale model stays a historical snapshot and a missing run gives no accou
   const stale = projectSubingAccount({ ...model, status: 'STALE_OR_STOPPED' })
   assert.equal(stale.verified, false)
   assert.equal(stale.rows.length, 2)
-  assert.deepEqual(projectSubingAccount({ ...model, run_id: null }), { verified: false, rows: [] })
+  assert.deepEqual(stale.idleRows, [])
+  assert.deepEqual(projectSubingAccount({ ...model, run_id: null }), { verified: false, rows: [], idleRows: [] })
 })
 
 const order: MonitorRecord = {

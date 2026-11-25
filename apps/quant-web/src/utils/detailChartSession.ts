@@ -104,6 +104,21 @@ export function createDetailChartSession(dependencies: {
     const live = hasPrices && ownsViewport ? chart?.timeScale().getVisibleLogicalRange() : null
     return live ?? viewports.get(identity) ?? null
   }
+  function zoom(direction: 'in' | 'out') {
+    if (!chart || !hasPrices) return
+    const scale = chart.timeScale()
+    const range = scale.getVisibleLogicalRange()
+    if (!range) return
+    const center = (range.from + range.to) / 2
+    const half = (range.to - range.from) * (direction === 'in' ? 0.4 : 0.625)
+    ownsViewport = true
+    scale.setVisibleLogicalRange({ from: center - half, to: center + half })
+  }
+  function scrollToLatest() {
+    if (!chart || !hasPrices) return
+    ownsViewport = true
+    chart.timeScale().scrollToRealTime()
+  }
   function resetWindow() {
     cursor = null
     chart?.clearCrosshairPosition?.()
@@ -294,6 +309,6 @@ export function createDetailChartSession(dependencies: {
   function restoreInspectionCursor() {
     if (chart) restoreCursor(chart)
   }
-  const session = { setExecutions, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
+  const session = { zoom, scrollToLatest, setExecutions, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
   return session
 }

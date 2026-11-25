@@ -265,6 +265,8 @@ test('Free keeps return-to-latest without restoring retired fullscreen controls'
   await mockPagedFreeHistory(page, 600)
   await page.goto(freeJm)
 
+  const shell = page.getByTestId('kline-shell')
+  await expect(shell).toHaveAttribute('data-chart-viewport-ready', 'true')
   const chart = page.locator('.chart')
   await chart.scrollIntoViewIfNeeded()
   const chartBox = await chart.boundingBox()
@@ -274,20 +276,29 @@ test('Free keeps return-to-latest without restoring retired fullscreen controls'
     await page.mouse.move(chartBox.x + chartBox.width * 0.94, chartBox.y + chartBox.height * 0.5, { steps: 12 })
     await page.mouse.up()
   }
-  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '回到最新', exact: true }).click()
-  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
+  const previous = await shell.getAttribute('data-visible-from')
+  expect(previous).toBeTruthy()
+  const latest = page.getByRole('button', { name: '回到最新', exact: true })
+  await expect(latest).toHaveCount(1)
+  await latest.click()
+  await expect.poll(async () => Date.parse(await shell.getAttribute('data-visible-from'))).toBeGreaterThan(Date.parse(previous))
 
   await expect(page.getByRole('button', { name: '全屏图表', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '退出全屏', exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
 })
 
+async function appVueModuleUrl(page) {
+  // Reuse the app's Vite version URL so mounted probes share Vue's renderer state.
+  return (await page.waitForFunction(() => performance.getEntriesByType('resource')
+    .find(entry => new URL(entry.name).pathname === '/node_modules/.vite/deps/vue.js')?.name)).jsonValue()
+}
+
 test('shared K-line focus retries an unresolved target and clears it on identity replacement', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
-  await page.evaluate(async () => {
-    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h, ref } = await import(vueUrl)
     const { default: MarketKlineStage } = await import('/src/components/market/detail/MarketKlineStage.vue')
     const bars = [
       { time: '2026-09-03T02:30:00Z', open: 100, high: 102, low: 99, close: 101, volume: 1000, openInterest: 2000 },
@@ -319,7 +330,7 @@ test('shared K-line focus retries an unresolved target and clears it on identity
     document.body.append(host)
     app.mount(host)
     window.__marketKlineFocusContract = { focus, identity, resolved, app }
-  })
+  }, await appVueModuleUrl(page))
 
   await expect(page.locator('#focus-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
   await page.evaluate(() => { window.__marketKlineFocusContract.focus.value = '2026-09-03T02:45:00Z' })
@@ -335,8 +346,8 @@ test('shared K-line focus retries an unresolved target and clears it on identity
 test('shared K-line focus also resolves an existing daily trading day', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
-  await page.evaluate(async () => {
-    const { createApp, h } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h } = await import(vueUrl)
     const { default: MarketKlineStage } = await import('/src/components/market/detail/MarketKlineStage.vue')
     const bars = [
       { time: '2026-09-01T07:00:00Z', trading_day: '2026-09-01', open: 100, high: 102, low: 99, close: 101, volume: 1000, openInterest: 2000 },
@@ -366,7 +377,7 @@ test('shared K-line focus also resolves an existing daily trading day', async ({
     document.body.append(host)
     app.mount(host)
     window.__marketKlineDailyFocusContract = { resolved, app }
-  })
+  }, await appVueModuleUrl(page))
 
   await expect(page.locator('#focus-daily-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.__marketKlineDailyFocusContract.resolved)).toEqual(['2026-09-02T07:00:00Z'])
@@ -786,8 +797,8 @@ test('market facts dialog closes when its identity changes', async ({ page }) =>
   await mockMarketDetail(page)
   await page.goto(freeJm)
 
-  await page.evaluate(async () => {
-    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h, ref } = await import(vueUrl)
     const { default: MarketFactsDialog } = await import('/src/components/market/detail/MarketFactsDialog.vue')
     const host = document.createElement('div')
     host.id = 'market-facts-dialog-browser-contract'
@@ -803,7 +814,7 @@ test('market facts dialog closes when its identity changes', async ({ page }) =>
       }),
     }).mount(host)
     window.__changeMarketFactsIdentity = () => { identity.value = 'free:rb:actual_dominant:15m' }
-  })
+  }, await appVueModuleUrl(page))
 
   const dialog = page.getByRole('dialog', { name: '行情数据详情测试' })
   await expect(dialog).toBeVisible()
@@ -815,8 +826,8 @@ test('mobile history drawer traps focus, closes with Escape, and restores its tr
   await page.setViewportSize({ width: 390, height: 844 })
   await mockMarketDetail(page)
   await page.goto(freeJm)
-  await page.evaluate(async () => {
-    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h, ref } = await import(vueUrl)
     const { default: MarketDetailDrawer } = await import('/src/components/market/detail/MarketDetailDrawer.vue')
     const host = document.createElement('div')
     host.id = 'drawer-browser-contract'
@@ -836,7 +847,7 @@ test('mobile history drawer traps focus, closes with Escape, and restores its tr
     })
     app.mount(host)
     window.__marketDetailDrawerContractApp = app
-  })
+  }, await appVueModuleUrl(page))
 
   const trigger = page.locator('#drawer-trigger')
   await trigger.click()
@@ -1047,14 +1058,23 @@ test('chart toolbar remains usable through delayed prices, rapid switching and s
 
 test('chart toolbar supports all analysis tabs without reload', async ({ page }) => {
   await installNewowProductFixtures(page)
+  await page.route('**/api/v1/newow/backtests/**', route => route.fulfill({ json: { result: null, last_attempt: null } }))
   await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=1d')
-  for (const name of ['趋势策略','震荡策略','双策略','火天大有','苏冰预警','自由看盘','趋势策略']) {
+  for (const name of ['牛哇参考','火天大有','苏冰预警','自由看盘','牛哇参考']) {
     await page.getByRole('tab',{name,exact:true}).click()
-    const toolbar = page.getByLabel('主图参考价格',{exact:true})
-    await expect(toolbar).toBeVisible()
-    await expect(toolbar).toHaveCount(1)
-    await expect(toolbar.getByRole('button',{name:'日线',exact:true})).toHaveAttribute('aria-pressed','true')
-    await expect(page.locator('.detail-view-nav .chart-reference-toolbar')).toHaveCount(0)
+    if (name === '牛哇参考') {
+      await expect(page.getByRole('group', { name: '牛哇策略' })).toBeVisible()
+      for (const strategy of ['趋势', '震荡', '双策略']) {
+        await page.getByRole('button', { name: strategy, exact: true }).click()
+        await expect(page.getByRole('group', { name: '周期', exact: true }).getByRole('button', { name: '日线', exact: true })).toHaveAttribute('aria-pressed','true')
+      }
+    } else {
+      const toolbar = page.getByLabel('主图参考价格',{exact:true})
+      await expect(toolbar).toBeVisible()
+      await expect(toolbar).toHaveCount(1)
+      await expect(toolbar.getByRole('button',{name:'日线',exact:true})).toHaveAttribute('aria-pressed','true')
+      await expect(page.locator('.detail-view-nav .chart-reference-toolbar')).toHaveCount(0)
+    }
   }
 })
 

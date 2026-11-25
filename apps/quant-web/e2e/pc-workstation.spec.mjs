@@ -10,6 +10,7 @@ function portfolio() {
     account: { equity: '100020', policy: { products: ['jm'] } }, products: [{ product: 'jm', enabled: true, accounts: [
       { contract: 'JM2601', valuation_at: at, summary: { open_quantity: 1 }, open_layers: [{ side: 'LONG' }], pending: { kind: 'CLOSE', at }, fills: [] },
       { contract: 'JM2701', valuation_at: at, summary: { open_quantity: 0 }, open_layers: [], pending: { kind: 'OPEN', at }, fills: [] },
+      { contract: 'JM2705', valuation_at: at, summary: { open_quantity: 0 }, open_layers: [], pending: null, fills: [] },
     ] }],
   }
 }
@@ -119,6 +120,15 @@ test('operations reads two independent accounts, goes directly to the held old c
   await expect(opening).toContainText('2026-09-03 10:30 北京时间')
   await expect(page.getByRole('row').filter({ hasText: '部分成交' })).toContainText('快期模拟主账户')
   await expect(page.getByText(/全部活动委托未核验/)).toBeVisible()
+  const sources = page.getByRole('group', { name: '账户来源筛选' })
+  await sources.getByRole('button', { name: '快期', exact: true }).click()
+  await expect(closing).toHaveCount(0)
+  await sources.getByRole('button', { name: '苏冰', exact: true }).click()
+  await expect(closing).toBeVisible()
+  await expect(page.getByRole('row').filter({ hasText: '部分成交' })).toHaveCount(0)
+  await page.getByText('苏冰已核验空仓且无待处理动作（1）').click()
+  await expect(page.getByRole('link', { name: /看图 JM2705/ })).toBeVisible()
+  await sources.getByRole('button', { name: '全部来源' }).click()
   await screenshot(page, '运行台-隔离样本')
   await closing.getByRole('link', { name: /看图/ }).click()
   await expect(page).toHaveURL(/view=subing.*contract=JM2601/)
@@ -156,6 +166,7 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
   let releaseTrend
   const trendReady = new Promise(resolve => { releaseTrend = resolve })
   let trendRequested = false
+  let replacePublication = false
   const frozen = {
     decision_id: 'ref-1', action: 'BUILD', frequency: '15m', signal_bar_end: fillTime,
     bar: { ...detailBar('jm', 110), frequency: '15m', completed: true },
@@ -174,12 +185,21 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
       await trendReady
     }
     if (strategy === 'dual_fusion') return route.fulfill({ status: 503, json: {} })
-    try { await route.fulfill({ json: { result: result(strategy), last_attempt: null } }) }
+    try { await route.fulfill({ json: { result: result(replacePublication ? 'new-publication' : strategy), last_attempt: null } }) }
     catch { /* The obsolete request may already have been cancelled by the browser. */ }
   })
   await page.goto('/market/chart?view=free&symbol=jm&series_kind=actual_dominant&frequency=15m')
   const canvas = page.locator('.tv-lightweight-charts').first()
   await expect(canvas).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
+  const controls = page.getByRole('group', { name: '图表视窗' })
+  const initialViewport = (await reading(page)).viewport
+  await controls.getByRole('button', { name: '放大' }).click()
+  await expect.poll(async () => (await reading(page)).viewport).not.toEqual(initialViewport)
+  const magnified = (await reading(page)).viewport
+  await controls.getByRole('button', { name: '缩小' }).click()
+  await expect.poll(async () => (await reading(page)).viewport).not.toEqual(magnified)
+  await controls.getByRole('button', { name: '回到最新' }).click()
   await page.getByRole('checkbox', { name: '委托/成交' }).check()
   await expect(page.getByRole('region', { name: '只读委托与成交' })).toContainText('快期原生成交')
   for (const name of ['EMA10', 'EMA21', 'EMA60', '箱体识别', '形态识别', '震荡／趋势']) {
@@ -255,6 +275,19 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
   await expect(page.getByRole('region', { name: '只读委托与成交' }).locator('li')).toHaveCount(0)
   await page.getByRole('tab', { name: '研究' }).click()
   await expect(page.getByRole('heading', { name: '牛哇盘后与固定回测' })).toBeVisible()
+  await page.getByRole('combobox', { name: '周期', exact: true }).selectOption('15m')
+  const referenceLink = page.getByRole('link', { name: '在行情中查看' })
+  await expect(referenceLink).toHaveAttribute('href', /contract=JM2601.*frequency=15m.*reference_run=trend/)
+  const pinnedRoute = await referenceLink.getAttribute('href')
+  await referenceLink.click()
+  await expect(page.getByTestId('newow-backtest-identity')).toContainText('JM2601')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '1')
+  replacePublication = true
+  await page.reload()
+  await expect(page).toHaveURL(pinnedRoute)
+  await expect(page.getByText('该研究 Run 已无法通过当前发布入口核对，行情保留。')).toBeVisible()
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
+  await page.getByRole('tab', { name: '研究' }).click()
   await page.getByRole('link', { name: '苏冰历史回放' }).click()
   await expect(page.getByRole('button', { name: '历史回放' })).toHaveAttribute('aria-pressed', 'true')
 })

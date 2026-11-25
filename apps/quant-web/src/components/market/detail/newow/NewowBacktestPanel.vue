@@ -8,7 +8,7 @@ import {
   backtestSelection, createBacktestReader, type BacktestKind, type BacktestRow, type LatestBacktest,
 } from '@/utils/newowBacktestReader'
 
-const props = defineProps<{ product: string; strategy: string; frequency: string; afterMarket?: boolean }>()
+const props = defineProps<{ product: string; strategy: string; frequency: string; afterMarket?: boolean; expectedReferenceRun?: string }>()
 const emit = defineEmits<{ published: [result: LatestBacktest['result']] }>()
 const open = ref(!!props.afterMarket)
 const trial = ref(false)
@@ -26,7 +26,13 @@ const frozenBar = computed(() => {
 const current = shallowRef<ReturnType<typeof createBacktestReader>['state']>()
 const path = '/newow/backtests'
 const reader = createBacktestReader({
-  latest: (params, signal) => request.get<unknown, LatestBacktest>(`${path}/latest`, { params, signal }),
+  latest: async (params, signal) => {
+    const latest = await request.get<unknown, LatestBacktest>(`${path}/latest`, { params, signal })
+    const expected = props.expectedReferenceRun
+    if (expected && (latest.result?.run_id !== expected || latest.result.qualification !== 'QUALIFIED'
+      || latest.result.summary.result_kind !== 'reference_only')) return { result: null, last_attempt: null }
+    return latest
+  },
   page: (run, kind, cursor, signal) => request.get(`${path}/${encodeURIComponent(run)}/${kind}`, {
     params: { limit: kind === 'trades' ? 5 : 20, ...(cursor ? { cursor } : {}) }, signal,
   }),
@@ -77,7 +83,11 @@ function text(value: unknown): string {
 }
 
 watch(() => [props.product, props.strategy, props.frequency], () => { trial.value = false }, { flush: 'sync' })
-watch([open, key], refresh, { immediate: true })
+watch(() => props.expectedReferenceRun, () => {
+  trial.value = false
+  void reader.select(null)
+})
+watch([open, key, () => props.expectedReferenceRun], refresh, { immediate: true })
 onBeforeUnmount(reader.dispose)
 defineExpose({ show })
 </script>
@@ -87,12 +97,12 @@ defineExpose({ show })
     <summary>{{ afterMarket ? '牛哇盘后参考与历史回测' : '历史回测交易 · RQAlpha' }}</summary>
     <div class="backtest-panel__body">
       <div class="backtest-panel__controls">
-        <label>结果系列 <select v-model="trial"><option :value="false">正式研究</option><option :value="true">历史试验</option></select></label>
+        <label v-if="!expectedReferenceRun">结果系列 <select v-model="trial"><option :value="false">正式研究</option><option :value="true">历史试验</option></select></label>
         <button type="button" :disabled="current?.loading" @click="refresh">刷新结果</button>
       </div>
       <p v-if="current?.loading" role="status">正在读取回测结果…</p>
       <p v-else-if="current?.error" role="status">回测结果读取失败，请刷新重试。</p>
-      <p v-else-if="!result" role="status">{{ afterMarket ? '暂无成功发布结果。' : '暂无成功回测结果。' }}</p>
+      <p v-else-if="!result" role="status">{{ expectedReferenceRun ? '该研究 Run 已无法通过当前发布入口核对，行情保留。' : afterMarket ? '暂无成功发布结果。' : '暂无成功回测结果。' }}</p>
       <p v-if="frequency === '1d' || frequency === '1w'">当前执行策略仅允许同交易时段内成交。日周收盘后没有符合该策略的开盘价。</p>
       <p v-if="attempt" role="status">
         最近尝试 {{ attempt.as_of_trading_day }} · {{ stateLabels[attempt.status] }}
@@ -103,6 +113,7 @@ defineExpose({ show })
         <p data-testid="newow-backtest-identity"><strong>{{ result.qualification === 'TRIAL' ? '历史试验' : '数据资格已核验' }}</strong>
           · {{ afterMarket ? '数据截至交易日' : '数据截至' }} {{ result.as_of_trading_day }} · 计算完成 {{ formatBeijingInstant(result.finished_at) }} · {{ text(result.manifest.since) }} 至 {{ text(result.manifest.through) }}
           · {{ text(result.manifest.physical_contract) }}</p>
+        <slot name="result-actions" />
         <dl v-if="!referenceOnly" class="backtest-panel__stats">
           <div><dt>净收益额</dt><dd>{{ text(result.summary.net_equity_change) }}</dd></div>
           <div><dt>最大回撤（元）</dt><dd>{{ text(result.summary.max_drawdown) }}</dd></div>

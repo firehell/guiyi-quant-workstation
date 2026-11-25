@@ -123,13 +123,15 @@ defineExpose({ selectSymbol: chooseSymbol })
 
 <template>
   <nav class="detail-view-nav" aria-label="分析视角" data-detail-section="view-nav">
-    <div class="detail-view-nav__views" role="tablist" aria-label="分析选项">
-      <button v-for="view in views.filter(view => ['free', 'htdy', 'subing'].includes(view.value))" :key="view.value"
-        type="button" role="tab" :aria-selected="activeChoice === view.value"
-        :class="{ 'is-active': activeChoice === view.value }" @click="chooseView(view.value)">{{ view.label }}</button>
-      <button type="button" role="tab" :aria-selected="identity.view === 'newow'"
-        :class="{ 'is-active': identity.view === 'newow' }" @click="chooseNewowReference">牛哇参考</button>
-      <slot name="display-controls" />
+    <div class="detail-view-nav__row">
+      <div class="detail-view-nav__views" role="tablist" aria-label="分析选项">
+        <button v-for="view in views.filter(view => ['free', 'htdy', 'subing'].includes(view.value))" :key="view.value"
+          type="button" role="tab" :aria-selected="activeChoice === view.value"
+          :class="{ 'is-active': activeChoice === view.value }" @click="chooseView(view.value)">{{ view.label }}</button>
+        <button type="button" role="tab" :aria-selected="identity.view === 'newow'"
+          :class="{ 'is-active': identity.view === 'newow' }" @click="chooseNewowReference">牛哇参考</button>
+      </div>
+      <div class="detail-view-nav__display"><slot name="display-controls" /></div>
     </div>
     <div v-if="identity.view === 'newow'" class="detail-view-nav__views" aria-label="牛哇策略" :role="afterMarket ? 'group' : 'tablist'">
       <template v-for="view in views.filter(view => ['oscillation', 'trend', 'dual'].includes(view.value))" :key="view.value"><button
@@ -159,8 +161,10 @@ defineExpose({ selectSymbol: chooseSymbol })
 .nav-test-options { position:absolute; z-index:100; top:100%; min-width:88px; background:var(--gy-bg-panel); box-shadow:0 4px 16px #0002; }
 .nav-test-options button { display:block; width:100%; }
 .detail-view-nav { display: grid; gap: var(--gy-space-2); padding: var(--gy-space-2) 0; border-bottom: 1px solid var(--gy-border-subtle); }
+.detail-view-nav__row, .detail-view-nav__display { display: flex; align-items: center; gap: var(--gy-space-2); min-width: 0; }
+.detail-view-nav__display { margin-inline-start: auto; flex-wrap: wrap; }
 .detail-view-nav__views,
-.detail-view-nav__group { display: flex; align-items: center; gap: var(--gy-space-1); overflow-x: auto; }
+.detail-view-nav__group { display: flex; align-items: center; gap: var(--gy-space-1); min-width: 0; overflow-x: auto; }
 .detail-view-nav button,
 .detail-view-nav__fixed { min-height: 36px; padding: 0 var(--gy-space-3); border: 1px solid transparent; border-radius: var(--gy-radius-pill); color: var(--gy-text-secondary); background: transparent; font: inherit; white-space: nowrap; }
 .detail-view-nav button { cursor: pointer; }
@@ -178,6 +182,8 @@ defineExpose({ selectSymbol: chooseSymbol })
   .detail-view-nav { margin-inline: calc(-1 * var(--gy-space-3)); }
   .detail-view-nav__views,
   .detail-view-nav__controls { padding-inline: var(--gy-space-3); }
+  .detail-view-nav__row { flex-wrap: wrap; }
+  .detail-view-nav__display { margin-inline: var(--gy-space-3); }
   .detail-view-nav__views { width: auto; scroll-padding-inline: var(--gy-space-3); }
   .detail-view-nav__views button { min-height: 44px; }
   .detail-view-nav__controls { align-items: flex-start; flex-direction: column; }

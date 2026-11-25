@@ -30,6 +30,8 @@ import NewowProductWorkspace from '@/components/market/detail/newow/NewowProduct
 import NewowAiAnalysisDialog from '@/components/market/detail/newow/NewowAiAnalysisDialog.vue'
 import type { AiCombo } from '@/api/newowAiAnalysis'
 import '@/styles/marketDetailUnified.css'
+import { useNewowProduct } from '@/composables/useNewowProduct'
+import { projectNewowDetail } from '@/utils/newowDetailPresentation'
 import { useNewowCapabilities } from '@/composables/useNewowCapabilities'
 import { useMarketDetailController } from '@/composables/useMarketDetailController'
 import { buildMarketDetailHeaderModel } from '@/utils/marketDetailViewModel'
@@ -58,7 +60,11 @@ const controller = useMarketDetailController({ routeQuery: () => ({ ...route.que
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
 const newowAfterMarketOnly = computed(() => isolatedNewow || explicitIdentity.value?.newowSource === 'after-market')
-const { rows: accountActivity, recentTqRecords, subing } = useWorkstationAccounts()
+const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()
+const verifiedAccountSources = computed(() => ({
+  htdy: tq.status.value === 'ready' && tqAccount.value.verified,
+  subing: subing.status.value === 'ready' && subingAccount.value.verified,
+}))
 const showExecutions = ref(typeof window !== 'undefined' && window.history.state?.showWorkstationExecutions === true)
 const executions = computed(() => {
   const identity = explicitIdentity.value
@@ -99,6 +105,21 @@ watch(positionedExecutions, points => {
 
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
 const isNewowView = computed(() => explicitIdentity.value?.view === 'newow')
+const toolbarPriceIdentity = computed<MarketDetailIdentity | null>(() => {
+  const identity = explicitIdentity.value
+  return !newowAfterMarketOnly.value && identity && ['htdy', 'subing', 'free'].includes(identity.view)
+    && identity.seriesKind === 'actual_dominant' && identity.frequency !== '1m'
+    ? { view: 'newow', symbol: identity.symbol, seriesKind: 'actual_dominant', frequency: identity.frequency, strategy: 'trend' } : null
+})
+const toolbarPrices = useNewowProduct({ identity: toolbarPriceIdentity })
+const toolbarPriceSummary = computed(() => projectNewowDetail(
+  toolbarPrices.sections.chart.data.value as NewowProductSectionResponse<'chart'> | null,
+  toolbarPrices.sections.chart.state.value, null, 'not_requested', false,
+  null, 'not_requested', false, toolbarPrices.currentChartWindow.value, toolbarPrices.historicalChartWindow.value,
+))
+const toolbarPriceStatus = computed(() => toolbarPrices.sections.chart.state.value === 'loading' ? '读取中' : '不可用')
+onBeforeUnmount(toolbarPrices.dispose)
+
 const detailPricePreview = {
   bars: computed(() => controller.bars.value), cached: ref(false), loading: computed(() => controller.state.value.loading),
   error: computed(() => controller.state.value.error), refresh: () => { if (explicitIdentity.value) void controller.switchIdentity(explicitIdentity.value) },
@@ -123,8 +144,10 @@ const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: str
 const newowCapabilities = useNewowCapabilities()
 const newowOpenFrequencies = computed(() => newowAfterMarketOnly.value
   ? [...backtestFrequencies] : newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
+const expectedReferenceRun = computed(() => newowAfterMarketOnly.value && typeof route.query.reference_run === 'string'
+  ? route.query.reference_run : undefined)
 const published = ref<LatestBacktest['result']>(null)
-const referenceMarkers = computed(() => publishedActionMarkers(published.value, controller.bars.value, explicitIdentity.value?.frequency ?? ''))
+const referenceMarkers = computed(() => publishedActionMarkers(expectedReferenceRun.value && published.value?.run_id !== expectedReferenceRun.value ? null : published.value, controller.bars.value, explicitIdentity.value?.frequency ?? ''))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
   || ((newowAfterMarketOnly.value || explicitIdentity.value.seriesKind === 'actual_dominant') && explicitIdentity.value.frequency !== '1m'
     && (newowAfterMarketOnly.value || originalNewowCombinationSupported(explicitIdentity.value) && newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', explicitIdentity.value.symbol))))
@@ -325,7 +348,7 @@ onUnmounted(() => chartSession.dispose())
 
     <template v-else-if="routeResult.kind === 'valid'">
       <ContractStrip :active-contract="routeResult.identity.contract ?? header?.displayContract" :active-product="routeResult.identity.symbol"
-        :activity="accountActivity" @select="selectPhysicalContract" />
+        :activity="accountActivity" :verified-sources="verifiedAccountSources" @select="selectPhysicalContract" />
       <MarketDetailTopBar
         static-identity
         :display-date="header?.tradingDay"
@@ -345,7 +368,10 @@ onUnmounted(() => chartSession.dispose())
         :products="controller.productCatalog.value"
         :newow-frequencies="newowOpenFrequencies"
         :after-market="newowAfterMarketOnly"
-        :show-reference-prices="false"
+        :show-reference-prices="!newowAfterMarketOnly"
+        :target-price="toolbarPriceSummary.target?.display_value ?? null"
+        :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null"
+        :reference-price-status="toolbarPriceStatus"
         :frequency-in-workspace="workspaceVisible && ((!newowAfterMarketOnly && routeResult.identity.view === 'newow' && !!newowCapabilities.capabilities.value && newowFrequencyOpen) || (!!header && (['htdy', 'free'].includes(routeResult.identity.view) || (routeResult.identity.view === 'subing' && routeResult.identity.frequency !== '1m' && routeResult.identity.seriesKind === 'actual_dominant'))))"
         :restore="{ newow: preferences.newow, htdy: preferences.htdy, free: preferences.free }"
         @select="selectIdentity"
@@ -354,6 +380,11 @@ onUnmounted(() => chartSession.dispose())
       >
         <template #display-controls>
           <label class="execution-toggle"><input v-model="showExecutions" type="checkbox"> 委托/成交</label>
+          <div v-if="isWorkspacePreview" class="chart-navigation" role="group" aria-label="图表视窗">
+            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.zoom('out')">缩小</button>
+            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.zoom('in')">放大</button>
+            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.scrollToLatest()">回到最新</button>
+          </div>
         </template>
       </MarketDetailViewNav>
       <NewowAiAnalysisDialog v-if="isNewowView && !newowAfterMarketOnly" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
@@ -407,7 +438,7 @@ onUnmounted(() => chartSession.dispose())
             <NewowBacktestPanel v-if="newowFrequencyOpen && !routeResult.identity.newowTest && routeResult.identity.strategy !== 'main_rise'"
               :product="routeResult.identity.symbol" :frequency="routeResult.identity.frequency"
               :strategy="routeResult.identity.newowMode === 'dual' ? 'dual_fusion' : routeResult.identity.strategy ?? 'trend'"
-              after-market @published="published = $event" />
+              after-market :expected-reference-run="expectedReferenceRun" @published="published = $event" />
           </template>
           <NewowProductWorkspace
             v-else-if="routeResult.identity.view === 'newow' && newowCapabilities.capabilities.value && newowFrequencyOpen"
@@ -471,7 +502,8 @@ onUnmounted(() => chartSession.dispose())
             @focus-resolved="resolveFocus"
           >
             <template #chart-toolbar>
-              <DetailChartToolbar :identity="routeResult.identity" :show-reference-prices="false"
+              <DetailChartToolbar :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
+                :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null" :status="toolbarPriceStatus"
                 @select="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })" />
             </template>
           </FreeChartWorkspace>
@@ -495,7 +527,8 @@ onUnmounted(() => chartSession.dispose())
             @focus-resolved="resolveFocus"
           >
             <template #chart-toolbar>
-              <DetailChartToolbar :identity="routeResult.identity" :show-reference-prices="false"
+              <DetailChartToolbar :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
+                :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null" :status="toolbarPriceStatus"
                 @select="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })" />
             </template>
           </HtdyDetailWorkspace>
@@ -518,7 +551,8 @@ onUnmounted(() => chartSession.dispose())
             @focus-resolved="resolveFocus"
           >
             <template #chart-toolbar>
-              <DetailChartToolbar :identity="routeResult.identity" :show-reference-prices="false"
+              <DetailChartToolbar :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
+                :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null" :status="toolbarPriceStatus"
                 @select="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })" />
             </template>
           </SubingDetailWorkspace>
@@ -544,7 +578,7 @@ onUnmounted(() => chartSession.dispose())
 </template>
 
 <style scoped>
-.execution-toggle { margin-left: auto; padding-inline: 8px; white-space: nowrap; }
+.execution-toggle { padding-inline: 8px; white-space: nowrap; }
 .execution-details { padding: 12px; border-top: 1px solid var(--gy-border); }
 .execution-details h2 { margin: 0; font-size: 16px; }
 .execution-details p, .execution-details li { margin-block: 8px; font-size: 13px; }
@@ -580,6 +614,10 @@ onUnmounted(() => chartSession.dispose())
   background: #FFF8F0;
   font-size: var(--gy-font-size-sm);
 }
+
+.chart-navigation { display: flex; gap: 4px; }
+.chart-navigation button { padding: 4px 8px; border: 1px solid var(--gy-border); border-radius: 4px; background: var(--gy-bg-panel); color: inherit; font: inherit; white-space: nowrap; }
+.chart-navigation button:not(:disabled) { cursor: pointer; }
 
 .market-detail-page > :deep(.market-navigation) {
   margin-inline: calc(-1 * clamp(16px, 4vw, 64px));
