@@ -4,6 +4,7 @@ import argparse
 from dataclasses import asdict
 from datetime import date, datetime
 from decimal import Decimal
+import json
 from pathlib import Path
 
 from guiyi_quant.lms405 import Action, Event, Position, replay_events
@@ -22,6 +23,11 @@ from lms405_sh_lock_lifecycle import completed, digest, signals
 from lms_near405_replay import encoded, sha
 
 VERSION = "lms405-protection-route-comparison-v1"
+WICK_VERSION = "lms405-protection-route-wick-comparison-v1"
+FROZEN_ROUTES = (Path("output/lms405-protection-route-comparison-20261125/checked.json"),
+                 "f71a5a8a6bfd444c67d7f349cd97ccea3b21556904225569a595067a96dd6abe")
+FROZEN_LOCATIONS = (Path("output/lms405-protection-location-20261125/final.json"),
+                    "70b1f43e9980383a6ba8f1e67a14a4aa0dca358dc90bb64ceb37b0539e8a9677")
 ROUTE_MODES = {
     "public_only": (),
     "ordinary_only": ("ordinary",),
@@ -31,17 +37,33 @@ ROUTE_MODES = {
     "either_on_geometry": ("ordinary", "precontact"),
     "either_from_contact": ("ordinary", "contact"),
 }
+WICK_BRANCHES = {pair: f"wick_{pair[0]}m_to_{pair[1]}m" for pair in VARIANTS}
+WICK_MODES = {
+    **{name: (name,) for name in WICK_BRANCHES.values()},
+    "wick_only": tuple(WICK_BRANCHES.values()),
+    "geometry_with_wick": (*ROUTE_MODES["either_on_geometry"], *WICK_BRANCHES.values()),
+}
 
 
-def candidate_clocks(series, band, *, start, cutoff):
+def wick_beyond(ohlc, confirmed, band, *, side):
+    opened, high, low, closed = ohlc
+    lower, upper = band
+    if side == "LONG":
+        return low <= upper < min(opened, closed) and confirmed > upper
+    if side == "SHORT":
+        return high >= lower > max(opened, closed) and confirmed < lower
+    raise ValueError("PROTECTION_ROUTE_WICK_SIDE_INVALID")
+
+
+def candidate_clocks(series, band, *, start, cutoff, compare_wick=False):
     minutes = completed(series[1], start, cutoff)
     contact = touched(minutes, band)
     if band is None or not minutes:
         return {}, contact
     opening_signal = minutes[0].end + 2 * US
     candidates = {"opening": opening_signal} if opening_signal < cutoff else {}
-    events = [event for shape, confirm in VARIANTS
-              for event in signals(series, shape, confirm, side="LONG", start=start, cut=cutoff)]
+    per_period = {pair: signals(series, *pair, side="LONG", start=start, cut=cutoff) for pair in VARIANTS}
+    events = [event for group in per_period.values() for event in group]
     # A touch in a still-forming minute is not a fact at the confirmation clock.
     advancing = min((event["available_at"] for event in events
                      if (contact is None or event["available_at"] < contact.end + US)
@@ -56,14 +78,25 @@ def candidate_clocks(series, band, *, start, cutoff):
                         if known < event["available_at"] and band[0] <= event["close"] <= band[1]), default=None)
         if ordinary is not None:
             candidates["ordinary"] = ordinary
+        if compare_wick:
+            for pair, group in per_period.items():
+                by_end = {bar.end: bar for bar in series[pair[0]]}
+                for event in group:
+                    shape = by_end[event["shape_end"]]
+                    if known < event["available_at"] and wick_beyond(
+                        (shape.open, shape.high, shape.low, shape.close), event["close"], band, side="LONG",
+                    ):
+                        candidates[WICK_BRANCHES[pair]] = event["available_at"]
+                        break
     return candidates, contact
 
 
-def replay_case(seed, row, series, anchors):
+def replay_case(seed, row, series, anchors, *, compare_wick=False):
     start, cutoff, band = row["start"], row["cutoff"], row["band"]
     if series[1][0].start != start:
         raise ValueError("PROTECTION_ROUTE_OPENING_MISMATCH")
-    candidates, contact = candidate_clocks(series, band, start=start, cutoff=cutoff)
+    args = dict(start=start, compare_wick=compare_wick)
+    candidates, contact = candidate_clocks(series, band, cutoff=cutoff, **args)
     opening = series[1][0].end
     plan = row["plan"]
     published = datetime.fromisoformat(plan["published_at"]) + ONE
@@ -88,7 +121,7 @@ def replay_case(seed, row, series, anchors):
         if event_at >= cutoff:
             continue
         inputs = [*facts]
-        if name != "ordinary":
+        if name in ("opening", "contact", "precontact"):
             inputs.append(fact(case, "EXPLICIT_ADVANCE_ROUTE", signal - US, f"TEST_FIXTURE_ADVANCE:{name}"))
         inputs.extend((fact(case, "OPPOSITE_VPLUS", signal, f"TEST_FIXTURE_VPLUS:{name}"),
                        fact(case, "LOCK_PERMISSION", permission, f"TEST_FIXTURE_PERMISSION:{name}")))
@@ -104,11 +137,12 @@ def replay_case(seed, row, series, anchors):
     minutes = completed(series[1], start, cutoff)
     for anchor in anchors:
         prefix = {p: [bar for bar in bars if bar.end + US < anchor] for p, bars in series.items()}
-        scoped, _ = candidate_clocks(prefix, band, start=start, cutoff=anchor)
+        scoped, _ = candidate_clocks(prefix, band, cutoff=anchor, **args)
         if scoped != {k: signal for k, signal in candidates.items() if signal < anchor}:
             raise ValueError("PROTECTION_ROUTE_SIGNAL_PREFIX_DIVERGED")
     results = {}
-    for mode, branches in ROUTE_MODES.items():
+    modes = ROUTE_MODES | WICK_MODES if compare_wick else ROUTE_MODES
+    for mode, branches in modes.items():
         permitted = sorted((steps[key] for key in branches if key in steps), key=lambda event: event.effective_at)
         selected = permitted[:1]
         end_state = replay_events(seed.contract, selected, cutoff=cutoff, initial=seed)
@@ -172,7 +206,46 @@ def input_rows(first, later, touch):
         )
 
 
-def study(session, market):
+def wick_delta(report, baseline):
+    results = {}
+    for day, cases in report.items():
+        results[day] = {}
+        for contract, case in cases.items():
+            if "modes" not in case:
+                if case != baseline[day][contract]:
+                    raise ValueError("PROTECTION_ROUTE_BASELINE_SCOPE_CHANGED")
+                continue
+            modes = case["modes"]
+            projection = case | dict(modes={key: modes[key] for key in ROUTE_MODES},
+                                     branches={key: v for key, v in case["branches"].items()
+                                               if key not in WICK_BRANCHES.values()})
+            if json.loads(encoded(projection)) != baseline[day][contract]:
+                raise ValueError("PROTECTION_ROUTE_BASELINE_CHANGED")
+            base, expanded = (modes[name] for name in ("either_on_geometry", "geometry_with_wick"))
+            compatible = [{stamp for stamp, q in row["quotes"].items()
+                           if (q["conditional_whole_leg_prices"].get("previous_minutes_only") or {}).get(
+                               "whole_leg_possible")} for row in (base, expanded)]
+            results[day][contract] = dict(
+                strict_quote_gain=sorted(compatible[1] - compatible[0]),
+                strict_quote_loss=sorted(compatible[0] - compatible[1]),
+                geometry_origin_replaced=bool(base["modeled_event"] and base["modeled_event"] != expanded["modeled_event"]),
+            )
+    return results
+
+
+def wick_location_controls():
+    controls = {}
+    for name, row in verified_json(*FROZEN_LOCATIONS)["cases"].items():
+        band = tuple(map(Decimal, row["band"])) if row["band"] else None
+        qualifying = [event for event in row["events"] if band and wick_beyond(
+            tuple(map(Decimal, event["shape_ohlc"])), Decimal(event["close"]), band, side=row["direction"],
+        )]
+        controls[name] = dict(source=row["source"], band=band, side=row["direction"],
+                              eligible_geometry=qualifying if band else None)
+    return controls
+
+
+def study(session, market, *, compare_wick=False):
     first, later, touch = (verified_json(path, key) for path, key in (
         (REFERENCE, REFERENCE_HASH), (CAUSTIC_REFERENCE, CAUSTIC_SHA), (TOUCH, TOUCH_SHA),
     ))
@@ -195,15 +268,22 @@ def study(session, market):
             raise ValueError("PROTECTION_ROUTE_QUOTE_SCOPE_CHANGED")
         seed = Position(contract, short=Decimal(row["short"]["quantity"]))
         results[day][contract] = dict(status="FIXED_HYPOTHETICAL_SHORT_SEED", seed=asdict(seed), inputs=row,
-                                      **replay_case(seed, row, series, anchors))
-    return dict(version=VERSION, case_days=results, author_action_samples=0, author_match_rate=None,
-                executable=False, fills=None, pnl=None)
+                                      **replay_case(seed, row, series, anchors, compare_wick=compare_wick))
+    report = dict(version=VERSION, case_days=results, author_action_samples=0, author_match_rate=None,
+                  executable=False, fills=None, pnl=None)
+    if compare_wick:
+        report.update(version=WICK_VERSION, baseline_sha256=FROZEN_ROUTES[1], location_sha256=FROZEN_LOCATIONS[1],
+                      wick_delta=wick_delta(results, verified_json(*FROZEN_ROUTES)["case_days"]),
+                      wick_location_controls=wick_location_controls(),
+                      wick_control_scope="GEOMETRY_ONLY_AUTHOR_SIGNAL_AND_PERMISSION_UNVERIFIED")
+    return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--compare-wick", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -217,7 +297,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), compare_wick=args.compare_wick)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
