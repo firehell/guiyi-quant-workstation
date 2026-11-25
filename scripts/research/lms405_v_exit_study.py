@@ -7,13 +7,18 @@ import json
 from math import ceil
 from pathlib import Path
 
+from lms405_exit_position_scope import EARLY, MIDDAY
 from lms405_fg_exit_study import minute_context
 from lms405_jm_divider_study import price_envelope
 from lms405_m_permission_study import read_pair
+from lms405_opening_clock_comparison import boundary_clocks
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_handoff_study import complete_window, price_window
-from lms405_protection_timeframes import geometry_events
+from lms405_protection_lot_timing import verified_json
+from lms405_protection_timeframes import VARIANTS, geometry_events, read_window
 from lms405_right_side_study import ONE, US, at
+from lms405_sh_lock_lifecycle import completed, signals, digest as bar_digest
+from lms405_visible_lock_handoff import stamp
 from lms405_volatility_context import bars_sha
 from lms_near405_replay import encoded, sha
 
@@ -60,6 +65,106 @@ DISPLAY_STEP = Decimal("0.1")
 QUANTITY = 40
 OLD_AVERAGE = Decimal("5117.0")
 LUNCH_AVERAGE = Decimal("5078.4")
+
+PRIOR_PLAN, POST_EXIT, NEW_PLAN = "A5357264059367516", "WRot6yvHyS", "A5358325549629506"
+EXIT_SCOPE = Path("output/lms405-exit-position-scope-20261125/final.json")
+EXIT_SCOPE_SHA = "9ba998d56d83f28cc6b2f0b7a4a4365b315a1dcbe076ee01b9cdc035f12a6801"
+DAY_PLAN = {
+    "target_1": ("LONG", "5088", "5118"), "target_2": ("LONG", "5121", "5151"),
+    "target_3": ("LONG", "5155", "5180"), "resistance": ("SHORT", "5091", "5115"),
+    "protection": ("SHORT", "5045", "5054"), "m": ("SHORT", "4994", "5012"),
+    "extreme_m": ("SHORT", "4956", "4983"),
+}
+TARGET_REFERENCES = ("first_range_reaches_direction", "first_range_contains_level", "first_close_strict_beyond")
+
+
+def quote_pair_counts(known, before, after):
+    """Compare possible minute placement with strict separation from both quote minutes."""
+    return dict(possible=sum(left - ONE < known < right for left in before for right in after),
+                strictly_between=sum(left < known < right - ONE for left in before for right in after))
+
+
+def directional_band_clocks(minutes):
+    return {role: {edge: boundary_clocks(minutes, Decimal(level), side)
+                   for edge, level in zip(("lower", "upper"), (lo, hi), strict=True)}
+            for role, (side, lo, hi) in DAY_PLAN.items()}
+
+
+def compute_daytime_clocks(session, market):
+    reference = verified_json(EXIT_SCOPE, EXIT_SCOPE_SHA)
+    scope = reference["cases"]["pvc_daytime"]
+    index = input_sources()
+    sources = {key: index[key] | {"archive_sha256": sha((ARCHIVE.parent / index[key]["archive_path"]).read_bytes())}
+               for key in (PRIOR_PLAN, POST_EXIT, NEW_PLAN, EARLY, MIDDAY)}
+    before = tuple(map(datetime.fromisoformat, reference["pvc_row_price_anchors"][EARLY]))
+    after = tuple(map(datetime.fromisoformat, reference["quote_anchors"][MIDDAY]))
+    start = at("2026-10-26T09:00")
+    series = read_window(session, market, CONTRACT, start.date())
+    market_digests = {f"{p}m": dict(count=len(rows), sha256=bar_digest(rows)) for p, rows in series.items()}
+    if (market_digests["1m"]["sha256"] != MINUTE_HASHES[start.date().isoformat()]
+            or market_digests["1m"]["sha256"] != reference["market"]["V2701:2026-10-26"]["sha256"]):
+        raise ValueError("V_DAY_EXIT_FROZEN_BAR_DRIFT")
+    activation = stamp(sources[PRIOR_PLAN]) + ONE
+    day_end = series[1][-1].end + 2 * US
+    night_open = series[1][0].start
+    if (scope["before_source"] != EARLY or scope["gap_source"] != MIDDAY or not before or not after
+            or scope["observed_before"]["quantity"] != QUANTITY or scope["observed_gap"] is not None
+            or not activation < night_open < start < min(before) <= max(before) < min(after) <= max(after) < day_end
+            or not day_end < stamp(sources[POST_EXIT]) < stamp(sources[NEW_PLAN])):
+        raise ValueError("V_DAY_EXIT_SOURCE_ORDER_DRIFT")
+    minute_index = {bar.end: bar for bar in series[1]}
+    old_mark = Decimal(reference["day_quote_alignment"][EARLY]["per_symbol"][CONTRACT]["mark"])
+    if any(not minute_index[end].low <= old_mark <= minute_index[end].high for end in before):
+        raise ValueError("V_DAY_EXIT_SINGLE_ROW_QUOTE_DRIFT")
+    night = completed(series[1], night_open, start)
+    day = completed(series[1], start, day_end)
+    nearest_lunch = {str(quote): directional_band_clocks(completed(day, start, quote)) for quote in after}
+    night_price_clocks = directional_band_clocks(night)
+    day_price_clocks = directional_band_clocks(day)
+    resistance_price = Decimal(DAY_PLAN["resistance"][2])
+    cutoff = max(after) + 2 * US
+    clock_results = {}
+    for shape, confirm in VARIANTS:
+        candidates = signals(series, shape, confirm, side="SHORT", start=start, cut=cutoff)
+        for quote in (*after, *(event["available_at"] for event in candidates)):
+            prefix = {key: [bar for bar in rows if bar.end + US < quote] for key, rows in series.items()}
+            if signals(prefix, shape, confirm, side="SHORT", start=start, cut=quote) != [
+                event for event in candidates if event["available_at"] < quote
+            ]:
+                raise ValueError("V_DAY_EXIT_PREFIX_DRIFT")
+        rows = []
+        for event in candidates:
+            known = event["available_at"]
+            check = quote_pair_counts(known, before, after)
+            visible = completed(day, start, known + US)
+            high = max(bar.high for bar in visible)
+            shape_start = event["shape_end"] - shape * ONE
+            target_upper = Decimal(DAY_PLAN["target_3"][2])
+            day_through_shape = completed(day, start, shape_start)
+            clocks_before_shape = {
+                "prior_night": night_price_clocks["target_3"]["upper"],
+                "day_session": boundary_clocks(day_through_shape, target_upper, "LONG") if day_through_shape else {},
+            }
+            target_timing = {role: {metric: clocks.get(metric) is not None for metric in TARGET_REFERENCES}
+                             for role, clocks in clocks_before_shape.items()}
+            rows.append(event | dict(shape_start=shape_start, high_known_through_confirmation=high,
+                                     first_high_at=next(bar.end for bar in visible if bar.high == high),
+                                     close_drawdown_points=high - event["close"], quote_pairs=check,
+                                     resistance_touch_available_before_shape=any(
+                                         bar.low <= resistance_price <= bar.high for bar in day_through_shape),
+                                     last_target_available_before_shape=target_timing))
+        clock_results[f"{shape}m_to_{confirm}m"] = rows
+    resistance = day_price_clocks["resistance"]["upper"]
+    return dict(version="lms405-pvc-daytime-exit-clocks-v1", contract=CONTRACT, sources=sources,
+                market=market_digests, prior_plan_published_before_night=True, prior_plan_revision_verified=False,
+                prior_plan_applicable_to_visible_4_0_5_leg=None, later_plan_used_for_prior_windows=False,
+                scope_report_sha256=EXIT_SCOPE_SHA, opening_quotes=list(before), gap_quotes=list(after),
+                quote_pair_count=len(before) * len(after), comparison_levels=DAY_PLAN, night_clocks=night_price_clocks,
+                full_day_lookup_only=day_price_clocks, before_lunch_quotes=nearest_lunch,
+                resistance_near_touch_pairs=quote_pair_counts(resistance["first_range_contains_level"] + US, before, after)
+                if resistance["first_range_contains_level"] else None,
+                opposing_geometry=clock_results, author_action=None, author_signal=None,
+                action_amount=None, admitted_author_samples=0, executable=False, fills=None, pnl=None)
 
 
 def displayed_sum(average, quantity):
@@ -186,6 +291,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--daytime-clocks", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -199,7 +305,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            result = compute(session, build_market_data_service(session))
+            run = compute_daytime_clocks if args.daytime_clocks else compute
+            result = run(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
