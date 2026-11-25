@@ -181,4 +181,33 @@ services/quant-api/.venv/bin/python scripts/research/lms405_protection_portfolio
   --output /tmp/lms405-protection-permissions-new.json
 ```
 
-本地报告 `output/lms405-sized-portfolio-20261125/protection-permissions.json`，SHA256 `f6e24d57ad056d999ca690033d247c81eded8c5feac4c29eeec54d223fa1a48d`。两次复算逐字节一致。后续把这些外部许可接到九品种连续研究回放，核对确认后只能改变同合约的保护腿，随后仍能按原向恢复、平双腿退出或退出后回补。历史作者确认和成交仍待证。
+本地报告 `output/lms405-sized-portfolio-20261125/protection-permissions.json`，SHA256 `f6e24d57ad056d999ca690033d247c81eded8c5feac4c29eeec54d223fa1a48d`。两次复算逐字节一致。历史作者确认和成交仍待证。
+
+## 九品种外部保护确认连续重放
+
+研究版本 `lms-near405-external-protection-v1` 沿用原来的环境、区域、入场、原向恢复、退出和回补规则；将开启反向保护的依据切换为有明确保护需求与反向信号的外部确认。传入空确认集合可复算证据不足的情形；省略该输入则使用原研究版本。此次对照固定采用锁定时延后检查到期的研究变体。期限仍是近似假设。
+
+1. 用具体合约和当前仓位指纹绑定确认，指纹包括持仓、计划和循环。需求与信号时刻须晚于当前仓位生效，确认获知不得早于它们。只在确认已知后的首个完成K线评估，之后不重新使用旧确认。
+2. 风险、期限、环境和盘整目标退出仍优先。无匹配确认时不提出锁定，多份互异确认相冲突时不提出锁定。人工研究输入只生成建议，另需人工研究确认才改变回放状态；测试确认只用于独立测试分支。
+3. 锁定增加等量反向腿并保留原方向和计划。恢复时只撤反向腿。锁定期间若触发退出，按两腿总量清掉该循环；此后回补仍需原规则给出新信号，并受试错上限限制。
+
+读取10月23、26、27、28日九个物理合约，共2,484根5分钟K线。输入指纹、原候选动作和冻结基线一致。四个案例均无可采信保护确认，历史读入仅核对缺口。人工重放产生56条建议、0次状态转换。另用自动测试确认推进原候选的其他动作，结果如下：
+
+|重放|新进入|退出|锁定|恢复原向|
+|---|---:|---:|---:|---:|
+|无外部保护确认，其他建议用测试确认|41|40|0|0|
+|只向烧碱注入一条显式保护测试确认|41|40|1|1|
+
+烧碱测试在10月23日09:45锁定，10:55清掉保护多腿恢复原空，11:00按计划到期退场。其余八个合约的动作沿用同一批行情和输入。该时点借用既有回放的烧碱周期作为测试窗口，状态变化不计入作者动作匹配。锁定过程中清掉双腿、风险优先及退出后新信号回补由独立合成样本覆盖。人工模式与测试两种输入都保留自己的身份。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_external_protection_replay.py \
+  --env-file .env --baseline output/lms405-portfolio-oct-20261125/fixture.json \
+  --evidence output/lms405-sized-portfolio-20261125/protection-permissions.json \
+  --exercise-sh-fixture --output /tmp/lms405-external-protection-new.json
+```
+
+省略 `--exercise-sh-fixture` 只运行无外部确认的比较。定稿 `output/lms405-sized-portfolio-20261125/external-protection-verified.json` 的 SHA256 为 `c5e98c3850b4b4bbd83b5ceda0303028ed323f4f6bfe17ca3bddd4ef0d04be4a`。两次独立复算逐字节一致。烧碱确认前缀、批量与JSON重启结果一致。独立复核发现的未来记录提前校验及单步评估输入绑定问题已修复并加入回归。
+
+研究仍需确定从行情生成保护需求与反向信号的候选，现有作者确认、可评分动作及账户成交均为空。

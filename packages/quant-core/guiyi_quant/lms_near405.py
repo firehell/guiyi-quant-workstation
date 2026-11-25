@@ -5,10 +5,10 @@ remain independent. Decimal prices, explicit human decisions, no fills/PnL.
 """
 
 from copy import deepcopy
-from dataclasses import asdict
-from datetime import datetime, timedelta
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
-from .lms405 import Position, Action, apply_action, timestamp
+from .lms405 import Position, Action, apply_action, physical_contract, timestamp
 from .lms_author_regions import RegionInput
 from .lms_keybar_approx import classify, VERSION as KEYBAR_VERSION
 from .lms_confirmed_replay import fingerprint
@@ -41,10 +41,53 @@ CLOCK_VERSIONS = {
     "DEFER_WHILE_LOCKED": "lms-near405-hold-clock-defer-v1",
     "PAUSE_WHILE_LOCKED": "lms-near405-hold-clock-pause-v1",
 }
+EXTERNAL_PROTECTION_VERSION = "lms-near405-external-protection-v1"
 
 
-def _rules_for(region_input, clock):
-    if region_input is None and clock is None:
+@dataclass(frozen=True)
+class ProtectionConfirmation:
+    """Explicit positive evidence of both protection need and opposite signal."""
+
+    contract: str
+    state_fingerprint: str
+    due_at: datetime
+    signal_at: datetime
+    known_at: datetime
+    source: str
+    record_kind: str
+
+    def __post_init__(self):
+        physical_contract(self.contract)
+        for time in (self.due_at, self.signal_at, self.known_at):
+            timestamp(time)
+        if (
+            self.known_at < max(self.due_at, self.signal_at)
+            or any(not isinstance(value, str) or not value.strip()
+                   for value in (self.source, self.state_fingerprint))
+            or self.record_kind not in ("HUMAN_RESEARCH_EVIDENCE", "TEST_FIXTURE")
+        ):
+            raise ValueError("INVALID_PROTECTION_CONFIRMATION")
+        for field in ("due_at", "signal_at", "known_at"):
+            object.__setattr__(self, field, getattr(self, field).astimezone(UTC))
+
+
+def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
+    visible = []
+    for item in confirmations:
+        if not isinstance(item, ProtectionConfirmation):
+            raise ValueError("PROTECTION_CONFIRMATION_REQUIRED")
+        if item.known_at > as_of:
+            continue
+        if item.contract != contract:
+            raise ValueError("PROTECTION_CONFIRMATION_CONTRACT_MISMATCH")
+        if not timely_fixture and item.record_kind != "HUMAN_RESEARCH_EVIDENCE":
+            raise ValueError("HUMAN_PROTECTION_EVIDENCE_REQUIRED")
+        visible.append(item)
+    return tuple(dict.fromkeys(visible))
+
+
+def _rules_for(region_input, clock, external_protection=False):
+    if region_input is None and clock is None and not external_protection:
         return RULES, RULE_HASH
     rules = RULES.copy()
     if region_input is not None:
@@ -57,6 +100,9 @@ def _rules_for(region_input, clock):
         if not isinstance(clock, str) or clock not in CLOCK_VERSIONS:
             raise ValueError("UNKNOWN_HELD_PLAN_CLOCK")
         rules.update(version=CLOCK_VERSIONS[clock], held_plan_clock=clock)
+    if external_protection:
+        rules.update(version=EXTERNAL_PROTECTION_VERSION,
+                     protection="EXPLICIT_STATE_BOUND_CONFIRMATION_ONLY")
     return rules, fingerprint(rules)
 
 
@@ -216,11 +262,21 @@ def evaluate(
     region_input=None,
     timely_fixture=False,
     clock=None,
+    protection_confirmations=None,
 ):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
     t = c.end + US
-    rules, rule_hash = _rules_for(region_input, clock)
+    external = protection_confirmations is not None
+    rules, rule_hash = _rules_for(region_input, clock, external)
+    if external:
+        if not isinstance(timely_fixture, bool):
+            raise ValueError("BOOLEAN_MODE_REQUIRED")
+        if state["contract"] != c.contract:
+            raise ValueError("PROTECTION_STATE_CONTRACT_MISMATCH")
+        protection_confirmations = _visible_protection(
+            protection_confirmations, c.contract, as_of=c.end, timely_fixture=timely_fixture,
+        )
     region = context(bars, index)
     region_issue = None
     author_region = None
@@ -279,15 +335,28 @@ def evaluate(
             result["region"] = None
     if region is None:
         return result
-    action = reason = plan = None
+    action = reason = plan = protection = None
     held = Decimal(state["long"]) + Decimal(state["short"]) > 0
     signal_fresh = frame.bar.end > _time(state["since"])
     if held:
         reason = _invalid(state, bars, index, clock)
+        locked = state["long"] == state["short"]
         if reason:
             action = "CLEAR"
+        elif not locked and external:
+            since = _time(state["since"])
+            proof = [item for item in protection_confirmations
+                     if bars[index - 1].end + US <= item.known_at < t
+                     and since < min(item.due_at, item.signal_at)
+                     and item.state_fingerprint == fingerprint(state)]
+            if len(proof) == 1:
+                action, reason = "LOCK", "EXTERNAL_PROTECTION_CONFIRMED"
+                protection = proof[0]
+            elif len(proof) > 1:
+                result["status"] = "CONFLICTING_PROTECTION_CONFIRMATIONS"
+            else:
+                result["status"] = "PROTECTION_UNCONFIRMED"
         elif direction and signal_fresh:
-            locked = state["long"] == state["short"]
             if not locked and direction != state["original_side"]:
                 action = "LOCK"
                 reason = "OPPOSING_KEYBAR"
@@ -373,11 +442,13 @@ def evaluate(
             status="PENDING",
             executable=False,
         )
+        if protection:
+            p.update(signal_bar_end=None, protection_confirmation=fingerprint(asdict(protection)))
         p["proposal_id"] = fingerprint(p)
         result.update(status="PROPOSAL", proposal=p)
     elif not held and not region_issue:
         result["status"] = "NO_ENTRY" if region["valid"] else "DEGENERATE_REGION"
-    elif held and direction and not signal_fresh:
+    elif held and direction and not signal_fresh and result["status"] == "HOLD":
         result["status"] = "STALE_SIGNAL"
     return result
 
@@ -436,6 +507,7 @@ def replay(
     timely_fixture=False,
     region_input=None,
     clock=None,
+    protection_confirmations=None,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
@@ -447,7 +519,8 @@ def replay(
         raise ValueError("BOOLEAN_MODE_REQUIRED")
     if region_input is not None and not isinstance(region_input, RegionInput):
         raise ValueError("REGION_INPUT_REQUIRED")
-    rules, rule_hash = _rules_for(region_input, clock)
+    external = protection_confirmations is not None
+    rules, rule_hash = _rules_for(region_input, clock, external)
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
@@ -457,6 +530,10 @@ def replay(
         r.zone.contract != visible[0].contract for r in region_input.regions
     ):
         raise ValueError("AUTHOR_REGION_CONTRACT_BOUNDARY")
+    if external:
+        protection_confirmations = _visible_protection(
+            protection_confirmations, visible[0].contract, as_of=as_of, timely_fixture=timely_fixture,
+        )
     state = initial_state(visible)
     supplied = list(decisions or [])
     if timely_fixture and supplied:
@@ -472,6 +549,7 @@ def replay(
             timely_fixture=timely_fixture,
             region_input=region_input,
             clock=clock,
+            protection_confirmations=protection_confirmations,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -560,7 +638,7 @@ def replay(
                 ] != fingerprint(d):
                     reason = "DECISION_ID_CONTENT_CONFLICT"
                 elif (
-                    (region_input is not None or clock is not None)
+                    (region_input is not None or clock is not None or external)
                     and not timely_fixture
                     and d["record_kind"] != "HUMAN_RESEARCH_DECISION"
                 ):
@@ -649,6 +727,7 @@ def replay(
             region_input=region_input,
             timely_fixture=timely_fixture,
             clock=clock,
+            protection_confirmations=protection_confirmations,
         )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:
@@ -701,6 +780,10 @@ def replay(
     )
     if region_input is not None:
         cp["region_prefix_hash"] = region_input.prefix_hash(as_of)
+    if external:
+        cp["protection_prefix_hash"] = fingerprint(sorted(
+            fingerprint(asdict(item)) for item in protection_confirmations
+        ))
     terminal = (
         "FLAT"
         if state["long"] == state["short"] == "0"

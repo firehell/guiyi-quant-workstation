@@ -6,7 +6,9 @@ from dataclasses import replace
 import json
 import pytest
 from guiyi_quant.lms405 import Bar
-from guiyi_quant.lms_near405 import replay, context, VERSION
+from guiyi_quant.lms_near405 import (
+    EXTERNAL_PROTECTION_VERSION, ProtectionConfirmation, VERSION, context, evaluate, fingerprint, replay,
+)
 
 T = datetime(2025, 1, 1, tzinfo=UTC)
 US = timedelta(microseconds=1)
@@ -122,6 +124,124 @@ def lock_restore_bars():
         bar(12, 103, 105, 102, 104),
         bar(13, 104, 111, 103, 110),
     ]
+
+
+def protection_for(bars, *, mirror=False):
+    prefix = replay(bars, as_of=until(bars[:8]), timely_fixture=True, protection_confirmations=())
+    return ProtectionConfirmation(
+        bars[0].contract, fingerprint(prefix["current_state"]), bars[10].end, bars[10].end,
+        bars[10].end, "fixture-short" if mirror else "fixture-long", "TEST_FIXTURE",
+    )
+
+
+@pytest.mark.parametrize("mirror", [False, True])
+def test_external_protection_owns_lock_and_keeps_original_restore_and_risk_priority(mirror):
+    bars = lock_restore_bars()
+    if mirror:
+        bars = [replace(x, open=210 - x.open, high=210 - x.low,
+                        low=210 - x.high, close=210 - x.close) for x in bars]
+    proof = protection_for(bars, mirror=mirror)
+    side = "SHORT" if mirror else "LONG"
+    empty = replay(bars, as_of=until(bars), timely_fixture=True, protection_confirmations=())
+    assert empty["version"] == EXTERNAL_PROTECTION_VERSION
+    assert "LOCK" not in [row["action"] for row in empty["transitions"]]
+    accepted = replay(bars, as_of=until(bars), timely_fixture=True, protection_confirmations=(proof, proof))
+    assert [row["action"] for row in accepted["transitions"]] == [
+        "ENTER_" + side, "LOCK", "UNLOCK_" + side, "CLEAR",
+    ]
+    lock = accepted["transitions"][1]
+    assert lock["reason"] == "EXTERNAL_PROTECTION_CONFIRMED"
+    assert lock["before"]["cycle_id"] == lock["after"]["cycle_id"]
+    lock_proposal = next(p for p in accepted["proposals"] if p["action"] == "LOCK")
+    assert lock_proposal["signal_bar_end"] is None and lock_proposal["protection_confirmation"]
+
+
+def test_external_protection_on_bar_without_keybar_can_clear_both_and_reenter():
+    bars = lock_restore_bars()[:11] + [
+        bar(11, 104, 108, 99, 100),
+        bar(12, 104, 109, 100, 105),
+        bar(13, 102, 104, 101, 103),
+        bar(14, 103, 108, 102, 105),
+    ]
+    # Request protection on Bar 9, where the ordinary geometry issues no lock.
+    end = bars[9].end
+    proof = replace(protection_for(bars), due_at=end, signal_at=end, known_at=end)
+    result = replay(bars, as_of=until(bars), timely_fixture=True, protection_confirmations=(proof,))
+    assert [x["action"] for x in result["transitions"]] == ["ENTER_LONG", "LOCK", "CLEAR", "REENTER_LONG"]
+    lock, clear = result["transitions"][1:3]
+    assert lock["known_at"] == (end + US + US).isoformat()
+    assert clear["before"]["long"] == clear["before"]["short"] == "1"
+    assert clear["after"]["long"] == clear["after"]["short"] == "0"
+    assert result["current_state"]["attempt"] == 2
+
+
+def test_external_protection_known_at_fingerprint_conflict_and_checkpoint():
+    bars = lock_restore_bars()
+    proof = protection_for(bars)
+    cut = bars[10].end + US
+    late = replace(proof, known_at=cut)
+    early = replay(bars, as_of=cut, timely_fixture=True, protection_confirmations=(late,))
+    assert not any(p["action"] == "LOCK" for p in early["proposals"])
+    advanced = replay(bars, as_of=until(bars), timely_fixture=True,
+                      protection_confirmations=(late,), checkpoint=json.loads(json.dumps(early["checkpoint"])))
+    assert advanced == replay(bars, as_of=until(bars), timely_fixture=True, protection_confirmations=(late,))
+    wrong_state = replace(proof, state_fingerprint="different")
+    conflicting = replace(proof, source="different")
+    for invalid in ((wrong_state,), (proof, conflicting)):
+        result = replay(bars, as_of=until(bars), timely_fixture=True, protection_confirmations=invalid)
+        assert not any(p["action"] == "LOCK" for p in result["proposals"])
+    with pytest.raises(ValueError, match="CHECKPOINT_IDENTITY_MISMATCH"):
+        replay(bars, as_of=until(bars), timely_fixture=True,
+               protection_confirmations=(proof, late), checkpoint=early["checkpoint"])
+    with pytest.raises(ValueError, match="HUMAN_PROTECTION_EVIDENCE_REQUIRED"):
+        replay(bars, as_of=until(bars), protection_confirmations=(proof,))
+    with pytest.raises(ValueError, match="PROTECTION_CONFIRMATION_CONTRACT_MISMATCH"):
+        replay(bars, as_of=until(bars), timely_fixture=True,
+               protection_confirmations=(replace(proof, contract="I2701"),))
+
+
+def test_external_human_evidence_proposes_only_and_risk_exit_has_priority():
+    bars = lock_restore_bars()[:11]
+    end = until(bars)
+    entry = replay(bars, as_of=until(bars[:8]), protection_confirmations=())["proposals"][0]
+    decisions = [decision(entry, record_kind="HUMAN_RESEARCH_DECISION")]
+    entered = replay(bars, decisions, as_of=until(bars[:8]), protection_confirmations=())
+    proof = replace(protection_for(bars), state_fingerprint=fingerprint(entered["current_state"]),
+                    record_kind="HUMAN_RESEARCH_EVIDENCE")
+    observed = replay(bars, decisions, as_of=end, protection_confirmations=(proof,))
+    lock = observed["proposals"][-1]
+    assert lock["action"] == "LOCK" and lock["status"] == "PENDING"
+    assert [row["action"] for row in observed["transitions"]] == ["ENTER_LONG"]
+    synthetic = decision(lock, decision_id="lock", record_kind="TEST_FIXTURE")
+    denied = replay(bars, decisions + [synthetic], as_of=end, protection_confirmations=(proof,))
+    assert denied["decisions"][-1]["reason"] == "HUMAN_DECISION_REQUIRED"
+    approved = replay(bars, decisions + [synthetic | {"record_kind": "HUMAN_RESEARCH_DECISION"}],
+                      as_of=end, protection_confirmations=(proof,))
+    assert [row["action"] for row in approved["transitions"]] == ["ENTER_LONG", "LOCK"]
+    risk_bars = bars[:10] + [bar(10, 104, 106, 99, 100)]
+    priority = replay(risk_bars, decisions, as_of=end, protection_confirmations=(proof,))
+    assert priority["proposals"][-1]["action"] == "CLEAR"
+    assert priority["proposals"][-1]["reason"] == "RISK_INVALID"
+
+
+def test_future_protection_validation_respects_as_of_and_single_step_uses_same_checks():
+    bars = lock_restore_bars()
+    proof = protection_for(bars)
+    wrong_contract = replace(proof, contract="I2701")
+    early = until(bars[:8])
+    assert replay(bars, as_of=early, protection_confirmations=(wrong_contract,)) == replay(
+        bars, as_of=early, protection_confirmations=(),
+    )
+    state = replay(bars, as_of=early, timely_fixture=True, protection_confirmations=())["current_state"]
+    with pytest.raises(ValueError, match="PROTECTION_CONFIRMATION_CONTRACT_MISMATCH"):
+        evaluate(state, bars, 10, timely_fixture=True, protection_confirmations=(wrong_contract,))
+    with pytest.raises(ValueError, match="HUMAN_PROTECTION_EVIDENCE_REQUIRED"):
+        evaluate(state, bars, 10, protection_confirmations=(proof,))
+    with pytest.raises(ValueError, match="BOOLEAN_MODE_REQUIRED"):
+        evaluate(state, bars, 10, timely_fixture="False", protection_confirmations=(proof,))
+    foreign_bars = [replace(item, contract="I2701") for item in bars]
+    with pytest.raises(ValueError, match="PROTECTION_STATE_CONTRACT_MISMATCH"):
+        evaluate(state, foreign_bars, 10, timely_fixture=True, protection_confirmations=(wrong_contract,))
 
 
 def retry_bars():
