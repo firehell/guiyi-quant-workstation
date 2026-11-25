@@ -6,6 +6,7 @@ import json
 import pytest
 
 from guiyi_quant.lms405 import Bar
+from lms405_counter_m_lot_roles import exit_projection
 from lms405_portfolio_replay import (
     BOOK,
     CONTRACTS,
@@ -15,6 +16,7 @@ from lms405_portfolio_replay import (
     replay_portfolio,
     visible_legs,
 )
+from lms405_portfolio_task_exits import condition_comparison
 
 
 T = datetime(2026, 10, 23, 2, tzinfo=UTC)
@@ -95,3 +97,18 @@ def test_frozen_candidate_is_independent_of_observations_and_future_bars():
     human = replay_portfolio(inputs, book, sources, as_of=until)
     assert not any(row["layer"] == "FIXTURE_STATE_BATCH" for row in human["timeline"])
     assert human["fills"] is None and human["admitted_author_action_samples"] == 0
+
+
+def test_counter_m_comparison_requires_separate_exit_permission_without_clearing_protection():
+    scenario = exit_projection("JM2701", 20, 20, 5)
+    for cutoff in (T - timedelta(microseconds=1), T + timedelta(microseconds=2)):
+        early = condition_comparison("JM2701", scenario, ("old", "later"), T, as_of=cutoff)
+        assert early == dict(public_status="INDETERMINATE", public_after=None, fixture=None)
+    comparison = condition_comparison("JM2701", scenario, ("old", "later"), T,
+                                      as_of=T + timedelta(microseconds=4))
+    assert comparison["public_status"] == "INDETERMINATE" and comparison["public_after"] is None
+    assert comparison["fixture"]["permit"]["after"] == dict(long=15, short=20, net=-5, gross=35)
+    assert comparison["fixture"]["deny"] == dict(status="NOT_PERMITTED", after=None)
+    assert comparison["fixture"]["missing"] == dict(status="INDETERMINATE", after=None)
+    assert comparison["whole_long_leg_comparator"] == dict(long=0, short=20, net=-20, gross=20)
+    assert comparison["changes_remaining_exposure"]
