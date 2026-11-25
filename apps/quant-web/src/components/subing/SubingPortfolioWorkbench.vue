@@ -118,6 +118,7 @@ watch(() => props.mode, (mode, _, onCleanup) => {
   <div class="portfolio">
     <header class="heading">
       <h1>苏冰决策 <small>16品种共享模型账户</small></h1>
+    <p v-if="mode === 'status'">事实来源 · 苏冰独立 Paper 模型账本</p>
       <button type="button" :disabled="loading" @click="refresh(snapshot?.index)">刷新</button>
     </header>
     <p class="model-context">{{ mode === 'status' ? '持续观察' : '历史回放' }} · 同一16品种共享资金与风险模型 · 自动下单关闭</p>

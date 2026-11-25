@@ -51,3 +51,21 @@ test('empty and failed attempts retain the actual published cutoff', async () =>
   assert.equal(reader.state.latest?.result?.as_of_trading_day, '2026-01-05')
   assert.equal(reader.state.latest?.last_attempt?.error_code, 'RANK1_AS_KNOWN_UNPROVEN')
 })
+
+test('a failed refresh keeps the published run and a new series clears it', async () => {
+  let fail = false
+  const reader = createBacktestReader({
+    latest: async () => {
+      if (fail) throw new Error('offline')
+      return result('published')
+    },
+    page: async (id) => ({ run_id: id, items: [], next_cursor: null }),
+  }, () => {})
+  await reader.select(trend)
+  fail = true
+  await reader.select(trend)
+  assert.equal(reader.state.error, true)
+  assert.equal(reader.state.latest?.result?.run_id, 'published')
+  await reader.select(trial)
+  assert.equal(reader.state.latest, null)
+})

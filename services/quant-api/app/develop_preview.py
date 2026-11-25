@@ -9,6 +9,7 @@ import threading
 import os
 from pathlib import Path
 
+from app.services.newow_reference_mode import after_market_only
 from app.private_settings import PrivateSettingsError, load_private_readonly_settings
 
 
@@ -57,6 +58,8 @@ def run_develop_recovery(stop, *, worker=None, wait=None, report=None):
 
 def create_develop_app():
     from app.main import app
+    if after_market_only():
+        return app
     previous_lifespan = app.router.lifespan_context
     from datetime import UTC, datetime
     app.state.develop_home_recovery = {'status': 'starting', 'updated_at': None}
@@ -89,6 +92,22 @@ def main():
     parser.add_argument('command', choices=('api', 'build'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
+    if after_market_only():
+        if args.command != 'api':
+            raise SystemExit('NEWOW_AFTER_MARKET_ONLY')
+        from app.services.newow_backtest_eod import _isolated_market_url
+        from app.services.newow_reference_mode import require_isolated_redis
+
+        require_isolated_redis(os.environ.get("REDIS_URL", ""))
+        _isolated_market_url(os.environ.get("DATABASE_URL", ""))
+        root_value = Path(os.environ["GUIYI_CANONICAL_DATA_ROOT"]).resolve(strict=True)
+        if root_value != Path(os.environ["GUIYI_NEWOW_EOD_CANONICAL_ROOT"]).resolve(strict=True):
+            raise SystemExit("BACKTEST_ISOLATED_CATALOG_REQUIRED")
+        # Never load local Runtime provider credentials for this instance.
+        import uvicorn
+        uvicorn.run('app.develop_preview:create_develop_app', factory=True,
+                    host='127.0.0.1', port=8002, workers=1)
+        return
     try:
         settings, _ = load_private_readonly_settings(
             Path.home() / 'Library/Application Support/GuiyiQuant/project.env')

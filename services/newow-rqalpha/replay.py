@@ -38,15 +38,34 @@ def _market(raw: dict) -> FrozenMarket:
     )
 
 
+def _action(decision, frozen_bar):
+    return {
+        "decision_id": decision.decision_id, "input_ref": decision.input_ref,
+        "previous_state_ref": decision.previous_state_ref, "state_ref": decision.state_ref,
+        "execution_context_ref": decision.execution_context_ref,
+        "owner_segment_id": decision.owner_segment_id, "calculation_segment_id": decision.calculation_segment_id,
+        "strategy": decision.strategy.value, "version": decision.version, "frequency": decision.frequency.value,
+        "formula_versions": list(decision.formula_versions), "profiles": list(decision.profiles),
+        "state": decision.state.value, "action": decision.main_action.value,
+        "reason": decision.reason, "execution_candidate": decision.execution_candidate,
+        "signal_bar_end": decision.bar_end.astimezone(ASIA_SHANGHAI).isoformat(),
+        "signal_available_at": decision.decision_at.astimezone(ASIA_SHANGHAI).isoformat(),
+        "source_actions": [{"id": source.signal_id, "related_build_id": source.related_build_id}
+                           for source in decision.source_actions],
+        "bar": frozen_bar,
+    }
+
+
 def replay(packet: dict, run_id: str) -> dict:
     market = _market(packet["market"])
     state = seed_decision_state()
     strategy = V2Strategy(packet.get("strategy", "trend"))
     frequency = packet.get("frequency", "5m")
-    if frequency in ("1d", "1w"):
+    reference_only = packet.get("result_kind") == "reference_only"
+    if (frequency in ("1d", "1w")) != reference_only:
         raise ValueError("BACKTEST_EXECUTION_POLICY_UNAVAILABLE")
     base_context = {"scope_id": run_id, "config_revision": packet["execution_profile"],
-                    "strategies": (strategy,), "execution_strategy": strategy}
+                    "strategies": (strategy,), "execution_strategy": None if reference_only else strategy}
     completed = []
     decisions = {}
     opens = {}
@@ -72,6 +91,18 @@ def replay(packet: dict, run_id: str) -> dict:
         opens[payload.available_at] = datetime.fromisoformat(candidate) if candidate is not None else None
     if not completed or state.computed_through is None:
         raise ValueError("P3_WARMUP_OR_EXECUTION_INPUT_MISSING")
+
+    if reference_only:
+        context = ExecutionContext(**base_context)
+        actions = []
+        for item, raw in completed:
+            state, (decision,) = step_completed(state, item, context)
+            if decision.main_action is not None:
+                actions.append(_action(decision, raw))
+        return {"summary": {"result_kind": "reference_only", "decisions": actions,
+                            "cutoff_trading_day": completed[-1][0].trading_day.isoformat(),
+                            "execution_status": "BACKTEST_EXECUTION_POLICY_UNAVAILABLE"},
+                "trades": [], "equity": []}
 
     pending = iter(completed)
     following = next(pending, None)
@@ -104,21 +135,7 @@ def replay(packet: dict, run_id: str) -> dict:
             )
             state, (decision,) = step_completed(state, item, context)
             if decision.main_action is not None:
-                decisions[decision.decision_id] = {
-                    "decision_id": decision.decision_id, "input_ref": decision.input_ref,
-                    "previous_state_ref": decision.previous_state_ref, "state_ref": decision.state_ref,
-                    "execution_context_ref": decision.execution_context_ref,
-                    "owner_segment_id": decision.owner_segment_id, "calculation_segment_id": decision.calculation_segment_id,
-                    "strategy": decision.strategy.value, "version": decision.version, "frequency": decision.frequency.value,
-                    "formula_versions": list(decision.formula_versions), "profiles": list(decision.profiles),
-                    "state": decision.state.value, "action": decision.main_action.value,
-                    "reason": decision.reason, "execution_candidate": decision.execution_candidate,
-                    "signal_bar_end": decision.bar_end.astimezone(ASIA_SHANGHAI).isoformat(),
-                    "signal_available_at": decision.decision_at.astimezone(ASIA_SHANGHAI).isoformat(),
-                    "source_actions": [{"id": source.signal_id, "related_build_id": source.related_build_id}
-                                       for source in decision.source_actions],
-                    "bar": frozen_bar,
-                }
+                decisions[decision.decision_id] = _action(decision, frozen_bar)
             if decision.execution_candidate:
                 signals.append(Signal(decision.decision_id, market.contract, decision.trading_day,
                                       decision.bar_end, decision.main_action.value, available_at=decision.decision_at,

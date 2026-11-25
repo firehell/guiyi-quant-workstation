@@ -383,7 +383,7 @@ def test_job_slot_refuses_to_recover_running_with_existing_children(p3_results):
 
 
 def test_eod_receipt_reuse_order_and_explicit_transaction_recovery(p3_results, monkeypatch, tmp_path):
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     from app.services import newow_backtest_eod as eod
 
@@ -428,4 +428,7 @@ def test_eod_receipt_reuse_order_and_explicit_transaction_recovery(p3_results, m
         execute((new[0], "d" * 64), "same-time conflict")
     assert _latest(client, key)["result"]["run_id"] == revision["run_id"]
     assert client.get(f"{API}/{initial['run_id']}/equity").status_code == 200
+    reverted = execute((new[0] + timedelta(minutes=1), "e" * 64), "initial")
+    assert reverted["reused"] and reverted["run_id"] == initial["run_id"]
+    assert _latest(client, key)["result"]["run_id"] == initial["run_id"]
     assert launches == [initial["run_id"], failed["run_id"], revision["run_id"]]

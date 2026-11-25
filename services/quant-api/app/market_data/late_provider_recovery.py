@@ -172,6 +172,7 @@ def run_scheduled(
     invalidate: Callable[[], None],
     verify_identity: Callable[[], None],
     live_store,
+    retain_newow_receipt: bool = False,
 ) -> dict:
     """Caller owns after-market guard. No notification, manual rerun or backfill."""
     current = _local_timestamp(now())
@@ -191,6 +192,7 @@ def run_scheduled(
         _write(path, payload)
         # Any exception after the claim consumes the sole check, including unknown
         # commit/readback outcomes. Keep original natural task status untouched.
+        publications = None
         try:
             row["stage"] = "source_readiness"
             target_day = date.fromisoformat(day)
@@ -227,6 +229,12 @@ def run_scheduled(
                     before_apply=invalidate,
                     verify_identity=verify_identity,
                 )
+                if retain_newow_receipt:
+                    from app.market_data.after_market import _public_historical_publications
+
+                    publications = _public_historical_publications(manager.publication_evidence, row["products"])
+                    if publications is None:
+                        raise ValueError("LATE_RECOVERY_PUBLICATION_EVIDENCE_INVALID")
                 if applied.maintenance.status not in {"passed", "noop"}:
                     raise ValueError("RECOVERY_FAILED")
                 # Fresh resolver planning reads physical pointers and proves no
@@ -260,6 +268,23 @@ def run_scheduled(
                 else "RECOVERY_CHECK_OR_APPLY_FAILED",
             )
         row["finished_at"] = _local_timestamp(now()).isoformat()
+        if row["state"] == "passed" and publications is not None:
+            from app.services.newow_backtest_eod import archive_publication
+
+            research_status = {
+                "schema_version": 4,
+                "last_successful_trading_day": day,
+                "last_run": {"status": "passed", "trading_day": day, "attempts": 1,
+                             "products": row["products"], "started_at": row["claimed_at"],
+                             "finished_at": row["finished_at"], "error_code": None,
+                             "historical_publications": publications},
+            }
+            try:
+                row["newow_publication_sha256"] = archive_publication(
+                    path.with_name("after-market-status.json"), research_status, late=True,
+                )
+            except (OSError, ValueError, RuntimeError):
+                row["newow_publication_error"] = "BACKTEST_SOURCE_PUBLICATION_RETAIN_FAILED"
         _write(path, payload)
         outcome = row["state"]
     return {
@@ -283,6 +308,14 @@ def run_runtime_scheduled(manager) -> dict:
     updater = build_after_market_updater(manager, failure_notification=False)
 
     def verify() -> None:
+        if updater.research_update is not None:
+            from app.services.newow_reference_mode import after_market_only
+
+            # The updater factory has already verified the isolated DB, Canonical
+            # and Redis bindings. No formal launchd identities are needed here.
+            if not after_market_only() or updater.status_path.parent != PROJECT_ROOT / ".run" / "newow-isolated":
+                raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+            return
         git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
         commit = _read_command([*git, "rev-parse", "HEAD"], root=PROJECT_ROOT)
         if (
@@ -346,15 +379,19 @@ def run_runtime_scheduled(manager) -> dict:
         return updater.rqdata.is_future_data_ready(day)
 
     with after_market_recovery_guard(wait=False):
-        return run_scheduled(
+        result = run_scheduled(
             manager,
-            path=PROJECT_ROOT / ".run" / "late-provider-recovery-status.json",
+            path=updater.status_path.with_name("late-provider-recovery-status.json"),
             now=lambda: datetime.now(SHANGHAI),
             ready=ready,
             invalidate=updater._invalidate_market_home_projection,
             verify_identity=verify,
             live_store=updater.live_store,
+            retain_newow_receipt=updater.research_update is not None,
         )
+    if result["status"] == "passed" and updater.research_update is not None:
+        updater.research_update(updater.status_path, None)
+    return result
 
 
 def recovery_health(path: Path, current: datetime) -> dict:

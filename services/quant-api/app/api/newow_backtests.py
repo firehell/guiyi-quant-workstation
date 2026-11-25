@@ -51,6 +51,7 @@ class Attempt(BaseModel):
 class PublishedResult(BaseModel):
     run_id: str
     as_of_trading_day: str
+    finished_at: str
     qualification: Literal["QUALIFIED", "TRIAL"]
     manifest: dict
     summary: dict

@@ -288,3 +288,108 @@ def test_current_facts_learned_after_bar_cannot_fill_old_pending_until_next_minu
     assert encoded['fee_assumption']['source_day'] == str(day)
     assert len(encoded['payload_sha256']) == 64
     assert PortfolioJournal.restore(store, journal.run_id).projection() == journal.projection()
+
+
+def test_same_night_accounts_replay_while_previous_day_research_fails_and_recovers(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+    from threading import Event, Thread
+    from time import perf_counter
+
+    from app.market_data.after_market import _atomic_write_status
+    from app.services import newow_backtest_eod as eod
+    from tests.unit.subing_account import test_account
+    from tests.unit.tq_simulation import test_execution as tq
+
+    night = datetime(2026, 11, 4, 13, 1, tzinfo=UTC)
+    monkeypatch.setattr(test_account, "BASE", night)
+    contexts, batches = inputs()
+
+    def account_replay(folder):
+        folder.mkdir(mode=0o700)
+        started = perf_counter()
+        controller = tq.Controller(folder, tq.A, ("RB",), tq.Transport())
+        controller.clock = lambda: night
+        controller.bind_symbol("SHFE.rb2701", "RB", "RB2701")
+        opening_snapshot = night - timedelta(hours=2)
+        controller.bootstrap(tq.snapshot(opening_snapshot), opening_snapshot)
+        controller.owner("RB", "RB2701", night - timedelta(seconds=20), "owner")
+        signal = tq.signal(night - timedelta(seconds=10))
+        controller.signal(signal, processed_at=signal.observed_at)
+        before = night - timedelta(seconds=2)
+        controller.synchronize(tq.snapshot(before), before)
+        native, _ = tq.full_fill(controller, night)
+        gateway_calls = tuple(controller.gateway.calls)
+        controller.close()
+        restored = tq.Controller(folder, tq.A, ("RB",), tq.Transport())
+        try:
+            readback = restored.synchronize(native, night + timedelta(seconds=6))
+            restored.recover(readback, (tq.m.RecoveryInput(
+                "RB", "RB2701", 1, signal.bar_end, "fixture-recovery",
+            ),))
+            account = restored.store.current()
+            assert len(gateway_calls) == 1 and restored.gateway.calls == []
+            assert len(account.fills) == 1 and account.orders[0].reconciled
+            tq_facts = account, gateway_calls
+        finally:
+            restored.close()
+        tq_seconds = perf_counter() - started
+
+        started = perf_counter()
+        store = MemoryStore()
+        journal = PortfolioJournal.create(store, "portfolio-night", night - timedelta(minutes=1))
+        assert journal.submit(*batches[0], contexts=contexts)
+        restored_journal = PortfolioJournal.restore(store, journal.run_id)
+        assert not restored_journal.submit(*batches[0], contexts=contexts)
+        for batch in batches[1:]:
+            assert restored_journal.submit(*batch)
+        paper_facts = restored_journal.run_id, store.record["sequence"], store.rows, restored_journal.projection()
+        assert paper_facts[1] == 3
+        assert sum(len(row["fills"]) for row in paper_facts[3]["result"]["accounts"].values()) == 16
+        return (tq_facts, paper_facts), (tq_seconds, perf_counter() - started)
+
+    baseline, baseline_seconds = account_replay(tmp_path / "baseline")
+    path = tmp_path / "after-market-status.json"
+    config = tmp_path / "research.json"
+    config.write_text("fixture")
+    day = night.date() - timedelta(days=1)
+    _atomic_write_status(path, {
+        "schema_version": 4, "last_successful_trading_day": str(day),
+        "last_run": {
+            "status": "passed", "trading_day": str(day), "attempts": 1, "products": ["rb"], "error_code": None,
+            "started_at": f"{night.date()}T18:05:00+08:00", "finished_at": f"{night.date()}T18:10:00+08:00",
+            "historical_publications": [{
+                "dataset": ["contract", "rb", "RB2701", "1m"], "year": day.year, "month": day.month,
+                "file_name": "part." + "b" * 64 + ".parquet",
+                "provenance": {"version": 1, "input_source": "historical_provider", "input_sha256": "b" * 64},
+            }],
+        },
+    })
+    started = Event()
+    release = Event()
+    reports = []
+
+    def slow_job(status, cutoff, config_path, **kwargs):
+        assert cutoff == day and kwargs["latest_days"]["rb"] == day
+        started.set()
+        assert release.wait(10)
+        return [{"status": "UNKNOWN", "code": "BACKTEST_JOB_BUSY"}]
+
+    monkeypatch.setattr(eod, "consume_status", slow_job)
+    worker = Thread(target=lambda: reports.extend(eod.reconcile_publications(path, config)))
+    worker.start()
+    try:
+        assert started.wait(10)
+        concurrent, concurrent_seconds = account_replay(tmp_path / "with-research")
+        assert concurrent == baseline
+        assert not release.is_set()
+        assert eod.reconcile_publications(path, config) == []
+    finally:
+        release.set()
+        worker.join(10)
+    assert not worker.is_alive()
+    assert reports[0]["deferred"] == 1
+    monkeypatch.setattr(eod, "consume_status", lambda *_args, **_kwargs: [{"status": "SUCCEEDED"}])
+    report, = eod.reconcile_publications(path, config)
+    assert report["computed"] == 1
+    assert eod.reconcile_publications(path, config) == []
+    print("night replay, seconds, Tq then SuBing:", baseline_seconds, concurrent_seconds)

@@ -21,6 +21,7 @@ const props = withDefaults(defineProps<{
   targetPrice?: string | null
   absorbPrice?: string | null
   referencePriceStatus?: string
+  afterMarket?: boolean
   frequencyInWorkspace?: boolean
 }>(), {
   seriesKinds: () => ['actual_dominant', 'contract'],
@@ -119,9 +120,9 @@ defineExpose({ selectSymbol: chooseSymbol })
         @click="chooseView(view.value)"
       >{{ view.label }}</button>
       <span v-if="view.value === 'dual'" id="newow-strategy-test-anchor">
-        <details v-if="identity.view !== 'newow'" class="newow-test-menu"><summary aria-label="牛哇T策略">T ▾</summary><div class="nav-test-options"><button v-for="option in experimentOptions" :key="option.value" type="button" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" @click="chooseTest('main_rise')">主升浪</button></div></details>
+        <details v-if="!afterMarket && identity.view !== 'newow'" class="newow-test-menu"><summary aria-label="牛哇T策略">T ▾</summary><div class="nav-test-options"><button v-for="option in experimentOptions" :key="option.value" type="button" @click="chooseTest(option.value)">{{ option.label }}</button><button type="button" @click="chooseTest('main_rise')">主升浪</button></div></details>
       </span>
-      <button v-if="view.value === 'dual'" type="button" class="detail-view-nav__ai" @click="openAiAnalysis">AI分析</button></template>
+      <button v-if="!afterMarket && view.value === 'dual'" type="button" class="detail-view-nav__ai" @click="openAiAnalysis">AI分析</button></template>
     </div>
 
     <div class="detail-view-nav__views detail-view-nav__secondary" role="tablist" aria-label="其他分析选项">

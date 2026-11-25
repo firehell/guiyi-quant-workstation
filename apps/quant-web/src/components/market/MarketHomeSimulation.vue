@@ -55,7 +55,7 @@ watch(monitor.selectedId, async id => { if (id && mounted) { await nextTick(); i
 
 <template>
   <section class="simulation-home" aria-label="模拟交易监控">
-    <header class="simulation-heading"><div><h1>模拟交易</h1><p>火天大有 · 60分钟 <span>账户监控与执行复盘</span></p></div><div class="simulation-heading-actions"><span class="simulation-refresh-note">页面可见时每5秒更新</span><button type="button" :disabled="monitor.loading.value" @click="refresh">{{ monitor.loading.value ? '读取中…' : '刷新' }}</button></div></header>
+    <header class="simulation-heading"><div><h1>模拟交易</h1><p>事实来源 · 快期模拟账户原生回报及本地对账记录</p><p>火天大有 · 60分钟 <span>账户监控与执行复盘</span></p></div><div class="simulation-heading-actions"><span class="simulation-refresh-note">页面可见时每5秒更新</span><button type="button" :disabled="monitor.loading.value" @click="refresh">{{ monitor.loading.value ? '读取中…' : '刷新' }}</button></div></header>
     <p v-if="monitor.error.value" class="simulation-notice simulation-notice--warning" role="alert">{{ monitor.error.value }}</p>
     <div v-if="!hasAccount" class="simulation-empty simulation-empty--initial">
       <span class="simulation-empty-symbol" aria-hidden="true">≋</span>
