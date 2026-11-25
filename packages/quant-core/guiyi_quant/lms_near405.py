@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 from .lms405 import Position, Action, apply_action, number, physical_contract, timestamp
 from .lms405.protection_band import active_band, visible_bands
+from .lms405.recovery_permission import current_permission, visible_permissions
 from .lms_author_regions import RegionInput
 from .lms_keybar_approx import classify, VERSION as KEYBAR_VERSION
 from .lms_confirmed_replay import fingerprint
@@ -51,6 +52,7 @@ CARRY_IN_EXIT_VERSION = "lms-near405-carry-in-explicit-exit-v1"
 CARRY_SCOPED_PROTECTION_VERSION = "lms-near405-carry-scoped-protection-v1"
 CARRY_RECOVERY_BOUNDARY_VERSION = "lms-near405-carry-recovery-boundary-v1"
 MANAGEMENT_VERSION = "lms-near405-managed-lifecycle-v1"
+MANAGED_RECOVERY_PERMISSION_VERSION = "lms-near405-managed-recovery-permission-v1"
 MANAGED_RECOVERY_ORDER_VERSIONS = {
     "BEFORE_CONFIRMATION": "lms-near405-managed-recovery-before-confirmation-v1",
     "BEFORE_SHAPE": "lms-near405-managed-recovery-before-shape-v1",
@@ -203,7 +205,7 @@ def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
 def _rules_for(
     region_input, clock, external_protection=False, scoped_protection=False, carry_in=False, explicit_exit=False,
     managed_lifecycle=False, carry_recovery=None, omitted_proxy_exit=None, timely_fixture=False,
-    managed_recovery_order=None,
+    managed_recovery_order=None, managed_recovery_permissions=None,
 ):
     if not isinstance(managed_lifecycle, bool):
         raise ValueError("BOOLEAN_MODE_REQUIRED")
@@ -212,6 +214,8 @@ def _rules_for(
         or managed_recovery_order not in MANAGED_RECOVERY_ORDER_VERSIONS
     ):
         raise ValueError("MANAGED_RECOVERY_ORDER_REQUIRES_MANAGED_LIFECYCLE")
+    if managed_recovery_permissions is not None and (not managed_lifecycle or managed_recovery_order is not None):
+        raise ValueError("RECOVERY_PERMISSION_REQUIRES_MANAGED_LIFECYCLE_WITHOUT_ORDER_VARIANT")
     if omitted_proxy_exit is not None:
         if omitted_proxy_exit not in CARRY_PROXY_EXIT_REASONS:
             raise ValueError("UNKNOWN_OMITTABLE_PROXY_EXIT")
@@ -241,6 +245,9 @@ def _rules_for(
         if managed_recovery_order is not None:
             rules.update(version=MANAGED_RECOVERY_ORDER_VERSIONS[managed_recovery_order],
                          recovery_order=managed_recovery_order)
+        if managed_recovery_permissions is not None:
+            rules.update(version=MANAGED_RECOVERY_PERMISSION_VERSION,
+                         recovery="LOCK_SCOPED_ENDPOINT_PERMISSION_AND_TWO_CONTIGUOUS_FRESH_CLOSES")
         return rules, fingerprint(rules)
     if explicit_exit and not carry_in:
         raise ValueError("EXPLICIT_EXIT_REQUIRES_CARRY_IN")
@@ -504,7 +511,7 @@ def _carry_recovery_status(rule, state, bars, index, at):
     return None if passed else "RECOVERY_RETURN_UNCONFIRMED"
 
 
-def _managed_position(state, bars, index, region, direction, signal_fresh, recovery_order):
+def _managed_position(state, bars, index, region, direction, signal_fresh, recovery_order, recovery_permission):
     plan, side = state["plan"], state["original_side"]
     lo, hi = Decimal(plan["lower"]), Decimal(plan["upper"])
     entry_known = _time(state["management_entry_known_at"])
@@ -517,14 +524,24 @@ def _managed_position(state, bars, index, region, direction, signal_fresh, recov
     if direction == side:
         if not locked:
             return None, None, "HOLD"
-        known_at = _managed_recovery_known_at(state, bars, index, hi if side == "LONG" else lo)
+        permit = None
+        if recovery_permission is not None:
+            permit, issue = recovery_permission
+            if issue:
+                return None, None, issue
+            if permit.known_at >= bars[index - 1].start:
+                return None, None, "RECOVERY_PERMISSION_NOT_KNOWN_BEFORE_SHAPE"
+        edge = permit.edge if permit else (hi if side == "LONG" else lo)
+        known_at = _managed_recovery_known_at(state, bars, index, edge,
+                                             not_before=permit.known_at if permit else None)
         if known_at is None:
             return None, None, "RECOVERY_RETURN_UNCONFIRMED"
         if recovery_order is not None:
             signal_start = bars[index - 1].start if recovery_order == "BEFORE_SHAPE" else bars[index].start
             if known_at >= signal_start:
                 return None, None, "RECOVERY_NOT_KNOWN_BEFORE_SIGNAL_WINDOW"
-        return "UNLOCK_" + side, "ORIGINAL_KEYBAR_AFTER_FRESH_RETURN", "HOLD"
+        reason = "ORIGINAL_KEYBAR_AFTER_PERMITTED_RETURN" if permit else "ORIGINAL_KEYBAR_AFTER_FRESH_RETURN"
+        return "UNLOCK_" + side, reason, "HOLD"
     if plan["environment"] == "RANGE" and any(
         entry_known < bar.start and (bar.high >= hi if side == "LONG" else bar.low <= lo)
         for bar in since_entry[:-1]
@@ -553,6 +570,7 @@ def evaluate(
     carry_exit_evidence=None,
     managed_lifecycle=False,
     managed_recovery_order=None,
+    managed_recovery_permissions=None,
     carry_recovery=None,
     omitted_proxy_exit=None,
 ):
@@ -564,7 +582,7 @@ def evaluate(
         protection_confirmations=protection_confirmations, protection_bands=protection_bands,
         carry_exit_evidence=carry_exit_evidence,
         managed_lifecycle=managed_lifecycle, carry_recovery=carry_recovery, omitted_proxy_exit=omitted_proxy_exit,
-        managed_recovery_order=managed_recovery_order,
+        managed_recovery_order=managed_recovery_order, managed_recovery_permissions=managed_recovery_permissions,
     )
 
 
@@ -581,6 +599,7 @@ def _evaluate(
     carry_exit_evidence=None,
     managed_lifecycle=False,
     managed_recovery_order=None,
+    managed_recovery_permissions=None,
     carry_recovery=None,
     omitted_proxy_exit=None,
 ):
@@ -595,16 +614,21 @@ def _evaluate(
     explicit_exit = carry_exit_evidence is not None
     rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded, explicit_exit,
                                   managed_lifecycle, carry_recovery, omitted_proxy_exit, timely_fixture,
-                                  managed_recovery_order)
+                                  managed_recovery_order, managed_recovery_permissions)
     if carry_recovery is not None and carry_recovery.known_at < t and carry_recovery.contract != c.contract:
         raise ValueError("CARRY_RECOVERY_CONTRACT_MISMATCH")
     if state.get("plan") is not None and managed_lifecycle != ("management_entry_known_at" in state):
         raise ValueError("MANAGED_STATE_RULE_MISMATCH")
-    expected_management_version = rules["version"] if managed_recovery_order is not None else None
+    expected_management_version = (rules["version"] if managed_recovery_order is not None
+                                   or managed_recovery_permissions is not None else None)
     if state.get("plan") is not None and state.get("management_rule_version") != expected_management_version:
         raise ValueError("MANAGED_STATE_RULE_MISMATCH")
     if managed_lifecycle and state["contract"] != c.contract:
         raise ValueError("MANAGED_STATE_CONTRACT_MISMATCH")
+    if managed_recovery_permissions is not None:
+        managed_recovery_permissions = visible_permissions(
+            managed_recovery_permissions, c.contract, as_of=t, timely_fixture=timely_fixture,
+        )
     if seeded:
         if state["contract"] != c.contract:
             raise ValueError("CARRY_IN_CONTRACT_MISMATCH")
@@ -689,7 +713,7 @@ def _evaluate(
         result["protection_band_revision"] = band.revision if band else None
     if region is None:
         return result
-    action = reason = plan = protection = exit_proof = None
+    action = reason = plan = protection = exit_proof = recovery_permission = None
     held = Decimal(state["long"]) + Decimal(state["short"]) > 0
     signal_fresh = frame.bar.end > _time(state["since"])
     if seeded:
@@ -700,8 +724,10 @@ def _evaluate(
     if held and managed_lifecycle:
         signal_fresh = (frame.bar.start > _time(state["since"]) and frame.bar.end == c.start
                         and bars[index - 2].end == frame.bar.start)
+        if managed_recovery_permissions is not None and state["long"] == state["short"]:
+            recovery_permission = current_permission(managed_recovery_permissions, state, t)
         action, reason, result["status"] = _managed_position(
-            state, bars, index, region, direction, signal_fresh, managed_recovery_order,
+            state, bars, index, region, direction, signal_fresh, managed_recovery_order, recovery_permission,
         )
     elif held:
         reason = _invalid(state, bars, index, clock, omitted_proxy_exit)
@@ -840,6 +866,9 @@ def _evaluate(
         if (action.startswith("UNLOCK_") and carry_recovery is not None
                 and proposed_plan.get("pricing_basis") == "PRESEED_CONTEXT_PROXY"):
             p["carry_recovery_boundary"] = fingerprint(asdict(carry_recovery))
+        if action.startswith("UNLOCK_") and recovery_permission is not None:
+            permit, _ = recovery_permission
+            p["recovery_permission"] = dict(identity=permit.identity, endpoint=permit.endpoint, edge=str(permit.edge))
         p["proposal_id"] = fingerprint(p)
         result.update(status="PROPOSAL", proposal=p)
     elif not held and not region_issue:
@@ -876,7 +905,8 @@ def _apply(state, p, t, clock):
             entry_index=p["index"],
             last_exit_reason=None,
         )
-        if p["version"] in (MANAGEMENT_VERSION, *MANAGED_RECOVERY_ORDER_VERSIONS.values()):
+        if p["version"] in (MANAGEMENT_VERSION, MANAGED_RECOVERY_PERMISSION_VERSION,
+                            *MANAGED_RECOVERY_ORDER_VERSIONS.values()):
             after["management_entry_known_at"] = t.isoformat()
             if p["version"] != MANAGEMENT_VERSION:
                 after["management_rule_version"] = p["version"]
@@ -913,6 +943,7 @@ def replay(
     carry_exit_evidence=None,
     managed_lifecycle=False,
     managed_recovery_order=None,
+    managed_recovery_permissions=None,
     carry_recovery=None,
     omitted_proxy_exit=None,
 ):
@@ -936,7 +967,7 @@ def replay(
     explicit_exit = carry_exit_evidence is not None
     rules, rule_hash = _rules_for(
         region_input, clock, external, scoped, carry_in is not None, explicit_exit, managed_lifecycle, carry_recovery,
-        omitted_proxy_exit, timely_fixture, managed_recovery_order,
+        omitted_proxy_exit, timely_fixture, managed_recovery_order, managed_recovery_permissions,
     )
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
@@ -957,6 +988,10 @@ def replay(
             raise ValueError("SCOPED_CONFIRMATION_REQUIRES_PROTECTION_BANDS")
     if scoped:
         protection_bands = visible_bands(protection_bands, visible[0].contract, as_of)
+    if managed_recovery_permissions is not None:
+        managed_recovery_permissions = visible_permissions(
+            managed_recovery_permissions, visible[0].contract, as_of=as_of, timely_fixture=timely_fixture,
+        )
     if explicit_exit:
         carry_exit_evidence = _visible_carry_exits(
             carry_exit_evidence, visible[0].contract, as_of=as_of, timely_fixture=timely_fixture,
@@ -983,6 +1018,7 @@ def replay(
             carry_exit_evidence=carry_exit_evidence,
             managed_lifecycle=managed_lifecycle,
             managed_recovery_order=managed_recovery_order,
+            managed_recovery_permissions=managed_recovery_permissions,
             carry_recovery=carry_recovery,
             omitted_proxy_exit=omitted_proxy_exit,
         )["checkpoint"]
@@ -1042,6 +1078,10 @@ def replay(
             (t, 1, None) for t in {band.effective_after + US for band in protection_bands}
             if carry_in.known_at < t <= as_of
         )
+    if managed_recovery_permissions is not None:
+        clocks = {record.known_at + US for record in managed_recovery_permissions}
+        clocks.update(record.expires_at for record in managed_recovery_permissions if record.expires_at is not None)
+        events.extend((t, 1, None) for t in clocks if t <= as_of)
     events.sort(key=lambda x: (x[0], x[1]))
 
     def expire_carry_exit_proposal(p, t):
@@ -1065,6 +1105,13 @@ def replay(
         return False
 
     def expire_scoped_proposal(p, t):
+        evidence = p.get("recovery_permission")
+        if p["status"] == "PENDING" and evidence:
+            permit, issue = current_permission(managed_recovery_permissions, state, t)
+            if permit is None or permit.identity != evidence["identity"]:
+                p.update(status="EXPIRED", expired_at=t.isoformat(),
+                         expiry_reason=issue or "RECOVERY_PERMISSION_SUPERSEDED")
+                return True
         if p["status"] == "PENDING" and p.get("protection_band_scope"):
             area, issue = active_band(protection_bands, t, state["original_side"])
             if area is None or area.scope != p["protection_band_scope"]:
@@ -1198,7 +1245,7 @@ def replay(
     for t, kind, payload in events:
         if kind == 1:
             for p in proposals:
-                if carry_scoped:
+                if carry_scoped or managed_recovery_permissions is not None:
                     expire_before_acceptance(p, t)
                 else:
                     expire_carry_exit_proposal(p, t)
@@ -1221,6 +1268,7 @@ def replay(
             carry_exit_evidence=carry_exit_evidence,
             managed_lifecycle=managed_lifecycle,
             managed_recovery_order=managed_recovery_order,
+            managed_recovery_permissions=managed_recovery_permissions,
             carry_recovery=carry_recovery,
             omitted_proxy_exit=omitted_proxy_exit,
         )
@@ -1289,6 +1337,9 @@ def replay(
         cp["carry_recovery_boundary_prefix_hash"] = (
             fingerprint(asdict(carry_recovery)) if carry_recovery.known_at < as_of else None
         )
+    if managed_recovery_permissions is not None:
+        cp["recovery_permission_prefix_hash"] = fingerprint(sorted(record.identity
+                                                                  for record in managed_recovery_permissions))
     terminal = (
         "FLAT"
         if state["long"] == state["short"] == "0"

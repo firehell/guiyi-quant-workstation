@@ -7,9 +7,10 @@ import json
 import pytest
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
+from guiyi_quant.lms405.recovery_permission import RecoveryPermission
 from guiyi_quant.lms_near405 import (
     EXTERNAL_PROTECTION_VERSION, SCOPED_PROTECTION_VERSION, ProtectionConfirmation, ScopedProtectionConfirmation,
-    MANAGEMENT_VERSION, VERSION, context, evaluate, fingerprint, replay,
+    MANAGED_RECOVERY_PERMISSION_VERSION, MANAGEMENT_VERSION, VERSION, context, evaluate, fingerprint, replay,
 )
 
 T = datetime(2025, 1, 1, tzinfo=UTC)
@@ -451,6 +452,94 @@ def test_managed_order_distinguishes_shape_start_from_confirmation_start():
     for order in (None, "BEFORE_CONFIRMATION"):
         with pytest.raises(ValueError, match="MANAGED_STATE_RULE_MISMATCH"):
             evaluate(shape["current_state"], rows, len(rows) - 1, managed_lifecycle=True, managed_recovery_order=order)
+
+
+def permit_locked(state, edge, **other):
+    locked_at = datetime.fromisoformat(state["since"])
+    return RecoveryPermission(**(dict(
+        contract=state["contract"], plan_id=state["plan"]["plan_id"], cycle_id=state["cycle_id"],
+        original_side=state["original_side"], locked_at=locked_at, known_at=locked_at + US,
+        decision="PERMIT", endpoint="NEAR", edge=edge, source="permit-test", record_kind="TEST_FIXTURE",
+    ) | other))
+
+
+@pytest.mark.parametrize("side", ["LONG", "SHORT"])
+def test_managed_recovery_requires_current_permission_for_configured_endpoint(side):
+    rows = managed_lock_restore_bars()
+    if side == "SHORT":
+        rows = [replace(b, open=210 - b.open, high=210 - b.low, low=210 - b.high, close=210 - b.close)
+                for b in rows]
+    options = dict(managed_lifecycle=True, timely_fixture=True)
+    unknown = replay(rows, as_of=until(rows), managed_recovery_permissions=(), **options)
+    state = unknown["current_state"]
+    edge = D(110 if side == "LONG" else 100)
+    permit = permit_locked(state, edge)
+    deny = replace(permit, decision="DENY", endpoint=None, edge=None, known_at=permit.known_at + US)
+    variants = [
+        ((), "RECOVERY_PERMISSION_UNKNOWN"),
+        ((replace(permit, cycle_id="other-cycle"),), "RECOVERY_PERMISSION_UNKNOWN"),
+        ((replace(permit, locked_at=permit.locked_at - US),), "RECOVERY_PERMISSION_UNKNOWN"),
+        ((permit, deny), "RECOVERY_PERMISSION_DENIED"),
+        ((permit, replace(deny, known_at=permit.known_at)), "RECOVERY_PERMISSION_CONFLICT"),
+        ((permit, replace(permit, edge=permit.edge.quantize(D("0.00")))), "RECOVERY_PERMISSION_CONFLICT"),
+        ((replace(permit, edge=permit.edge.quantize(D("0.00"))), permit), "RECOVERY_PERMISSION_CONFLICT"),
+        ((replace(permit, endpoint="FAR", edge=edge + (5 if side == "LONG" else -5)),),
+         "RECOVERY_RETURN_UNCONFIRMED"),
+        ((replace(permit, expires_at=rows[-1].start),), "RECOVERY_PERMISSION_EXPIRED"),
+        ((replace(permit, known_at=rows[-2].start),), "RECOVERY_PERMISSION_NOT_KNOWN_BEFORE_SHAPE"),
+    ]
+    for permissions, status in variants:
+        result = replay(rows, as_of=until(rows), managed_recovery_permissions=permissions, **options)
+        assert result["evaluations"][-1]["status"] == status
+        assert result["current_state"] == state
+    result = replay(rows, as_of=until(rows), managed_recovery_permissions=(permit,), **options)
+    assert result["version"] == MANAGED_RECOVERY_PERMISSION_VERSION
+    action = result["transitions"][-1]
+    assert action["action"] == "UNLOCK_" + side
+    opposite = "short" if side == "LONG" else "long"
+    assert action["after"][side.lower()] == "1" and action["after"][opposite] == "0"
+    assert action["after"]["cycle_id"] == state["cycle_id"]
+    assert result["proposals"][-1]["recovery_permission"]["identity"] == permit.identity
+    prefix = replay(rows, as_of=permit.known_at, managed_recovery_permissions=(), **options)
+    assert result == replay(rows, as_of=until(rows), managed_recovery_permissions=(permit,),
+                            checkpoint=json.loads(json.dumps(prefix["checkpoint"])), **options)
+    with pytest.raises(ValueError, match="HUMAN_RECOVERY_PERMISSION_REQUIRED"):
+        replay(rows, as_of=until(rows), managed_lifecycle=True, managed_recovery_permissions=(permit,))
+    with pytest.raises(ValueError, match="BOOLEAN_MODE_REQUIRED"):
+        evaluate(state, rows, len(rows) - 1, managed_lifecycle=True, managed_recovery_permissions=(permit,),
+                 timely_fixture="yes")
+
+
+@pytest.mark.parametrize("revoke", [False, True])
+def test_recovery_permission_governs_pending_human_acceptance(revoke):
+    rows = managed_lock_restore_bars()
+    options = dict(managed_lifecycle=True)
+    base = replay(rows, as_of=until(rows), managed_recovery_permissions=(), timely_fixture=True, **options)
+    history = [dict(record, record_kind="HUMAN_RESEARCH_DECISION")
+               for record in base["checkpoint"]["decision_records"]]
+    expiry = rows[-1].end + timedelta(seconds=5)
+    permit = permit_locked(base["current_state"], D(110), record_kind="HUMAN_RESEARCH_EVIDENCE",
+                           expires_at=None if revoke else expiry)
+    opened = replay(rows, history, as_of=until(rows), managed_recovery_permissions=(permit,), **options)
+    proposal = opened["proposals"][-1]
+    assert proposal["status"] == "PENDING" and proposal["action"] == "UNLOCK_LONG"
+    change = (replace(permit, decision="DENY", endpoint=None, edge=None, known_at=expiry - US),) if revoke else ()
+    arrived = (expiry + US).isoformat()
+    accept = decision(proposal, decision_id="human-unlock", record_kind="HUMAN_RESEARCH_DECISION",
+                      decided_at=arrived, known_at=arrived)
+    timely = dict(accept, decided_at=until(rows).isoformat(), known_at=until(rows).isoformat())
+    approved = replay(rows, history + [timely], as_of=until(rows), managed_recovery_permissions=(permit,), **options)
+    assert approved["transitions"][-1]["action"] == "UNLOCK_LONG"
+    assert approved["transitions"][-1]["record_kind"] == "HUMAN_RESEARCH_DECISION"
+    result = replay(rows, history + [accept], as_of=expiry + US,
+                    managed_recovery_permissions=(permit, *change), **options)
+    assert result["proposals"][-1]["expiry_reason"] == (
+        "RECOVERY_PERMISSION_DENIED" if revoke else "RECOVERY_PERMISSION_EXPIRED"
+    )
+    assert result["current_state"]["long"] == result["current_state"]["short"] == "1"
+    resumed = replay(rows, [accept], as_of=expiry + US, managed_recovery_permissions=(permit, *change),
+                     checkpoint=json.loads(json.dumps(opened["checkpoint"])), **options)
+    assert result == resumed
 
 
 def test_managed_state_cannot_be_evaluated_by_the_old_rule_or_reverse():
