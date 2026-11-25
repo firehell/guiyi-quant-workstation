@@ -142,6 +142,98 @@ def test_decisions_at_or_before_carry_in_do_not_use_seed_identity():
     assert result["transitions"] == []
 
 
+def test_protection_candidate_does_not_turn_proxy_invalidation_into_carry_exit():
+    from guiyi_quant.lms_near405 import CarryInExitEvidence, CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111), bar(9, 111, 112, 105, 107)]
+    known = b[7].end + timedelta(minutes=1)
+    seed = CarryInSeed("JM2509", known, "SHORT", True, "sample")
+    kwargs = dict(carry_in=seed, timely_fixture=True)
+    gated = replay(b, as_of=until(b), carry_exit_evidence=(), **kwargs)
+    assert gated["checkpoint"]["initial_state"] == gated["current_state"]
+    assert gated["evaluations"][0]["carry_exit_status"] == "UNKNOWN"
+    assert gated["evaluations"][0]["carry_exit_proxy_reason"] == "RISK_INVALID"
+
+    proof = CarryInExitEvidence("JM2509", fingerprint(gated["current_state"]),
+                                b[8].end + US, b[8].end + US, "fixture-only", "TEST_FIXTURE")
+    authorized = replay(b, as_of=until(b), carry_exit_evidence=(proof,), **kwargs)
+    assert [(x["action"], x["reason"]) for x in authorized["transitions"]] == [
+        ("CLEAR", "EXPLICIT_CARRY_IN_EXIT"),
+    ]
+    assert authorized["proposals"][0]["index"] == 9
+    assert authorized["current_state"]["short"] == authorized["current_state"]["long"] == "0"
+    cutoff = b[8].end + US
+    assert replay(b, as_of=cutoff, carry_exit_evidence=(), **kwargs) == replay(
+        b, as_of=cutoff, carry_exit_evidence=(proof,), **kwargs,
+    )
+    prefix = replay(b, as_of=cutoff, carry_exit_evidence=(), **kwargs)["checkpoint"]
+    assert authorized == replay(
+        b, as_of=until(b), carry_exit_evidence=(proof,), checkpoint=json.loads(json.dumps(prefix)), **kwargs,
+    )
+    wrong = replace(proof, state_fingerprint="other-position")
+    assert not replay(b, as_of=until(b), carry_exit_evidence=(wrong,), **kwargs)["transitions"]
+    assert authorized == replay(b, as_of=until(b), carry_exit_evidence=(proof, proof), **kwargs)
+    with pytest.raises(ValueError, match="HUMAN_CARRY_IN_EXIT_EVIDENCE_REQUIRED"):
+        replay(b, as_of=until(b), carry_in=seed, carry_exit_evidence=(proof,))
+    with pytest.raises(ValueError, match="CARRY_IN_EXIT_CONTRACT_MISMATCH"):
+        replay(b, as_of=until(b), carry_exit_evidence=(replace(proof, contract="JM2510"),), **kwargs)
+    with pytest.raises(ValueError, match="EXPLICIT_EXIT_REQUIRES_CARRY_IN"):
+        replay(b, as_of=until(b), carry_exit_evidence=())
+
+
+def test_carry_exit_new_conflict_expires_pending_human_proposal():
+    from guiyi_quant.lms_near405 import CarryInExitEvidence, CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111)]
+    seed = CarryInSeed("JM2509", b[7].end + timedelta(minutes=1), "SHORT", True, "archive")
+    t = b[8].end + US
+    state = replay(b, as_of=seed.known_at, carry_in=seed, carry_exit_evidence=())["current_state"]
+    evidence = CarryInExitEvidence(
+        seed.contract, fingerprint(state), t - 2 * US, t - US, "archive-exit", "HUMAN_RESEARCH_EVIDENCE",
+    )
+    kwargs = dict(carry_in=seed, carry_exit_evidence=(evidence,))
+    single = replay(b, as_of=t, **kwargs)
+    assert single["current_state"] == state
+    assert single["proposals"][0]["signal_bar_end"] is None
+    accept_at = (t + 2 * US).isoformat()
+    accept = decision(single["proposals"][0], known_at=accept_at, decided_at=accept_at,
+                      record_kind="HUMAN_RESEARCH_DECISION")
+    accepted = replay(b, [accept], as_of=until(b), **kwargs)
+    assert accepted["transitions"][0]["after"]["long"] == accepted["transitions"][0]["after"]["short"] == "0"
+    late_conflict = replace(evidence, source="another", known_at=t + US)
+    pending = replay(b, [accept], as_of=until(b), carry_in=seed, carry_exit_evidence=(evidence, late_conflict))
+    assert pending["decisions"][0]["reason"] == "PROPOSAL_NOT_PENDING"
+    assert pending["proposals"][0]["expiry_reason"] == "CARRY_IN_EXIT_EVIDENCE_CHANGED"
+    assert pending["current_state"] == state
+    early_conflict = replace(evidence, source="another")
+    conflicting = replay(b, as_of=until(b), carry_in=seed, carry_exit_evidence=(evidence, early_conflict))
+    assert conflicting["evaluations"][0]["carry_exit_status"] == "CONFLICT"
+    assert not conflicting["proposals"]
+
+
+def test_carry_exit_conflict_expiry_is_stable_without_a_human_record():
+    from guiyi_quant.lms_near405 import CarryInExitEvidence, CarryInSeed
+
+    b = entry_bars() + [bar(8, 106, 112, 103, 111), bar(9, 111, 112, 105, 107)]
+    seed = CarryInSeed("JM2509", b[7].end + timedelta(minutes=1), "SHORT", True, "archive")
+    t = b[8].end + US
+    state = replay(b, as_of=seed.known_at, carry_in=seed, carry_exit_evidence=())["current_state"]
+    first = CarryInExitEvidence(
+        seed.contract, fingerprint(state), t - 2 * US, t - US, "archive-exit", "HUMAN_RESEARCH_EVIDENCE",
+    )
+    conflict = replace(first, source="another", known_at=t + 3 * US)
+    kwargs = dict(carry_in=seed, carry_exit_evidence=(first, conflict))
+    expected = conflict.known_at + US
+    before = replay(b, as_of=conflict.known_at, **kwargs)
+    short = replay(b, as_of=expected, **kwargs)
+    long = replay(b, as_of=until(b), **kwargs)
+    assert before["proposals"][0]["status"] == "PENDING"
+    assert short["proposals"][0]["expired_at"] == expected.isoformat()
+    assert short["proposals"][0]["expiry_reason"] == "CARRY_IN_EXIT_EVIDENCE_CHANGED"
+    assert short["proposals"] == long["proposals"]
+    assert long == replay(b, as_of=until(b), checkpoint=short["checkpoint"], **kwargs)
+
+
 def test_warmup_then_entry_proposal_without_application():
     b = entry_bars()
     r = replay(b, as_of=until(b))

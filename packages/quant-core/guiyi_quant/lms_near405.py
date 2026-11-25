@@ -45,6 +45,7 @@ CLOCK_VERSIONS = {
 EXTERNAL_PROTECTION_VERSION = "lms-near405-external-protection-v1"
 SCOPED_PROTECTION_VERSION = "lms-near405-scoped-protection-v1"
 CARRY_IN_VERSION = "lms-near405-carry-in-v1"
+CARRY_IN_EXIT_VERSION = "lms-near405-carry-in-explicit-exit-v1"
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,50 @@ class CarryInSeed:
                 or not isinstance(self.source, str) or not self.source.strip()):
             raise ValueError("INVALID_CARRY_IN_SEED")
         object.__setattr__(self, "known_at", self.known_at.astimezone(UTC))
+
+
+@dataclass(frozen=True)
+class CarryInExitEvidence:
+    """Explicit full-exit condition for the supplied research position."""
+
+    contract: str
+    state_fingerprint: str
+    observed_at: datetime
+    known_at: datetime
+    source: str
+    record_kind: str
+
+    def __post_init__(self):
+        physical_contract(self.contract)
+        timestamp(self.observed_at)
+        timestamp(self.known_at)
+        if (self.known_at < self.observed_at
+                or any(not isinstance(value, str) or not value.strip()
+                       for value in (self.state_fingerprint, self.source))
+                or self.record_kind not in ("HUMAN_RESEARCH_EVIDENCE", "TEST_FIXTURE")):
+            raise ValueError("INVALID_CARRY_IN_EXIT_EVIDENCE")
+        object.__setattr__(self, "observed_at", self.observed_at.astimezone(UTC))
+        object.__setattr__(self, "known_at", self.known_at.astimezone(UTC))
+
+
+def _visible_carry_exits(evidence, contract, *, as_of, timely_fixture):
+    visible = []
+    for item in evidence:
+        if not isinstance(item, CarryInExitEvidence):
+            raise ValueError("CARRY_IN_EXIT_EVIDENCE_REQUIRED")
+        if item.known_at >= as_of:
+            continue
+        if item.contract != contract:
+            raise ValueError("CARRY_IN_EXIT_CONTRACT_MISMATCH")
+        if not timely_fixture and item.record_kind != "HUMAN_RESEARCH_EVIDENCE":
+            raise ValueError("HUMAN_CARRY_IN_EXIT_EVIDENCE_REQUIRED")
+        visible.append(item)
+    return tuple(dict.fromkeys(visible))
+
+
+def _carry_exits_for_state(evidence, state):
+    state_hash, since = fingerprint(state), _time(state["since"])
+    return [item for item in evidence if item.state_fingerprint == state_hash and since < item.observed_at]
 
 
 @dataclass(frozen=True)
@@ -125,11 +170,17 @@ def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
     return tuple(dict.fromkeys(visible))
 
 
-def _rules_for(region_input, clock, external_protection=False, scoped_protection=False, carry_in=False):
+def _rules_for(
+    region_input, clock, external_protection=False, scoped_protection=False, carry_in=False, explicit_exit=False,
+):
+    if explicit_exit and not carry_in:
+        raise ValueError("EXPLICIT_EXIT_REQUIRES_CARRY_IN")
     if carry_in:
         if region_input is not None or clock is not None or external_protection or scoped_protection:
             raise ValueError("CARRY_IN_BASELINE_RULES_REQUIRED")
         rules = RULES | dict(version=CARRY_IN_VERSION, seed_plan="PRESEED_CONTEXT_PROXY")
+        if explicit_exit:
+            rules.update(version=CARRY_IN_EXIT_VERSION, carry_exit="EXPLICIT_POSITION_EVIDENCE")
         return rules, fingerprint(rules)
     if region_input is None and clock is None and not external_protection:
         return RULES, RULE_HASH
@@ -345,6 +396,7 @@ def evaluate(
     clock=None,
     protection_confirmations=None,
     protection_bands=None,
+    carry_exit_evidence=None,
 ):
     """Evaluate one completed Bar against an explicit research state."""
     if "carry_in_seed_id" in state:
@@ -352,6 +404,7 @@ def evaluate(
     return _evaluate(
         state, bars, index, region_input=region_input, timely_fixture=timely_fixture, clock=clock,
         protection_confirmations=protection_confirmations, protection_bands=protection_bands,
+        carry_exit_evidence=carry_exit_evidence,
     )
 
 
@@ -365,6 +418,7 @@ def _evaluate(
     clock=None,
     protection_confirmations=None,
     protection_bands=None,
+    carry_exit_evidence=None,
 ):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
@@ -374,12 +428,19 @@ def _evaluate(
     if scoped and not external:
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
     seeded = "carry_in_seed_id" in state
-    rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded)
+    explicit_exit = carry_exit_evidence is not None
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded, explicit_exit)
     if seeded:
         if state["contract"] != c.contract:
             raise ValueError("CARRY_IN_CONTRACT_MISMATCH")
         if t <= _time(state["carry_in_known_at"]):
             raise ValueError("CARRY_IN_NOT_YET_KNOWN")
+    if explicit_exit:
+        if not isinstance(timely_fixture, bool):
+            raise ValueError("BOOLEAN_MODE_REQUIRED")
+        carry_exit_evidence = _visible_carry_exits(
+            carry_exit_evidence, c.contract, as_of=t, timely_fixture=timely_fixture,
+        )
     if external:
         if not isinstance(timely_fixture, bool):
             raise ValueError("BOOLEAN_MODE_REQUIRED")
@@ -453,7 +514,7 @@ def _evaluate(
         result["protection_band_revision"] = band.revision if band else None
     if region is None:
         return result
-    action = reason = plan = protection = None
+    action = reason = plan = protection = exit_proof = None
     held = Decimal(state["long"]) + Decimal(state["short"]) > 0
     signal_fresh = frame.bar.end > _time(state["since"])
     if seeded:
@@ -461,6 +522,17 @@ def _evaluate(
     if held:
         reason = _invalid(state, bars, index, clock)
         locked = state["long"] == state["short"]
+        if explicit_exit and state["plan"].get("pricing_basis") == "PRESEED_CONTEXT_PROXY":
+            matches = _carry_exits_for_state(carry_exit_evidence, state)
+            result["carry_exit_proxy_reason"] = reason
+            result["carry_exit_status"] = "UNKNOWN"
+            reason = None
+            if len(matches) == 1:
+                exit_proof = matches[0]
+                result["carry_exit_status"] = "CONFIRMED"
+                reason = "EXPLICIT_CARRY_IN_EXIT"
+            elif matches:
+                result["carry_exit_status"] = "CONFLICT"
         if reason:
             action = "CLEAR"
         elif not locked and external:
@@ -578,6 +650,8 @@ def _evaluate(
             p.update(signal_bar_end=None, protection_confirmation=fingerprint(asdict(protection)))
             if band:
                 p.update(protection_band_scope=band.scope, protection_band_revision=band.revision)
+        if exit_proof:
+            p.update(signal_bar_end=None, carry_exit_evidence=fingerprint(asdict(exit_proof)))
         p["proposal_id"] = fingerprint(p)
         result.update(status="PROPOSAL", proposal=p)
     elif not held and not region_issue:
@@ -644,6 +718,7 @@ def replay(
     protection_confirmations=None,
     protection_bands=None,
     carry_in=None,
+    carry_exit_evidence=None,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
@@ -661,7 +736,8 @@ def replay(
     scoped = protection_bands is not None
     if scoped and not external:
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
-    rules, rule_hash = _rules_for(region_input, clock, external, scoped, carry_in is not None)
+    explicit_exit = carry_exit_evidence is not None
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped, carry_in is not None, explicit_exit)
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
@@ -678,6 +754,10 @@ def replay(
             raise ValueError("SCOPED_CONFIRMATION_REQUIRES_PROTECTION_BANDS")
     if scoped:
         protection_bands = visible_bands(protection_bands, visible[0].contract, as_of)
+    if explicit_exit:
+        carry_exit_evidence = _visible_carry_exits(
+            carry_exit_evidence, visible[0].contract, as_of=as_of, timely_fixture=timely_fixture,
+        )
     starting_state = initial_state(visible) if carry_in is None else _carry_in_state(visible, carry_in, as_of)
     state = starting_state
     supplied = list(decisions or [])
@@ -697,6 +777,7 @@ def replay(
             protection_confirmations=protection_confirmations,
             protection_bands=protection_bands,
             carry_in=carry_in,
+            carry_exit_evidence=carry_exit_evidence,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -741,9 +822,25 @@ def replay(
             groups.setdefault(t, []).append(d)
     events = [(b.end + US, 0, i) for i, b in enumerate(visible)
               if carry_in is None or b.end + US > carry_in.known_at] + [
-        (t, 1, ds) for t, ds in groups.items()
+        (t, 2, ds) for t, ds in groups.items()
     ]
+    if explicit_exit:
+        events.extend(
+            (t, 1, None) for t in {item.known_at + US for item in carry_exit_evidence}
+            if t > carry_in.known_at
+        )
     events.sort(key=lambda x: (x[0], x[1]))
+
+    def expire_carry_exit_proposal(p, t):
+        if p["status"] == "PENDING" and p.get("carry_exit_evidence"):
+            visible_exits = _visible_carry_exits(
+                carry_exit_evidence, state["contract"], as_of=t, timely_fixture=timely_fixture,
+            )
+            matches = _carry_exits_for_state(visible_exits, state)
+            if len(matches) != 1 or fingerprint(asdict(matches[0])) != p["carry_exit_evidence"]:
+                p.update(status="EXPIRED", expired_at=t.isoformat(), expiry_reason="CARRY_IN_EXIT_EVIDENCE_CHANGED")
+                return True
+        return False
 
     def expire_scoped_proposal(p, t):
         if p["status"] == "PENDING" and p.get("protection_band_scope"):
@@ -833,7 +930,7 @@ def replay(
                         p["generated_at"]
                     ):
                         reason = "DECISION_NOT_AFTER_PROPOSAL"
-                    elif expire_scoped_proposal(p, t):
+                    elif expire_scoped_proposal(p, t) or expire_carry_exit_proposal(p, t):
                         reason = p["expiry_reason"]
                     elif d["decision"] == "REJECT":
                         p["status"] = "REJECTED"
@@ -873,6 +970,10 @@ def replay(
 
     for t, kind, payload in events:
         if kind == 1:
+            for p in proposals:
+                expire_carry_exit_proposal(p, t)
+            continue
+        if kind == 2:
             process(payload, t)
             continue
         for p in proposals:
@@ -887,6 +988,7 @@ def replay(
             clock=clock,
             protection_confirmations=protection_confirmations,
             protection_bands=protection_bands,
+            carry_exit_evidence=carry_exit_evidence,
         )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:
@@ -945,6 +1047,10 @@ def replay(
         ))
     if scoped:
         cp["protection_band_prefix_hash"] = fingerprint(sorted(band.scope for band in protection_bands))
+    if explicit_exit:
+        cp["carry_exit_evidence_prefix_hash"] = fingerprint(sorted(
+            fingerprint(asdict(item)) for item in carry_exit_evidence
+        ))
     terminal = (
         "FLAT"
         if state["long"] == state["short"] == "0"
