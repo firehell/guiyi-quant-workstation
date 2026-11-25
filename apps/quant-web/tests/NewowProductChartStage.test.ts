@@ -942,8 +942,8 @@ function resolveSourceImport(specifier: string): string {
   throw new Error(`cannot resolve source import: ${specifier}`)
 }
 
-interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string; clientWidth: number; clientHeight: number; style: { display: string } }
-function element(type: string): TestNode { return { type, props: {}, parent: null, children: [], text: '', clientWidth: 800, clientHeight: 600, style: { display: '' } } }
+interface TestNode { type: string; props: Record<string, unknown>; parent: TestNode | null; children: TestNode[]; text: string; clientWidth: number; clientHeight: number; dataset: Record<string, string>; style: { display: string } }
+function element(type: string): TestNode { return { type, props: {}, parent: null, children: [], text: '', clientWidth: 800, clientHeight: 600, dataset: {}, style: { display: '' } } }
 function findNode(node: TestNode, match: (candidate: TestNode) => boolean): TestNode | undefined {
   if (match(node)) return node
   for (const child of node.children) { const found = findNode(child, match); if (found) return found }
