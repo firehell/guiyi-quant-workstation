@@ -46,6 +46,7 @@ EXTERNAL_PROTECTION_VERSION = "lms-near405-external-protection-v1"
 SCOPED_PROTECTION_VERSION = "lms-near405-scoped-protection-v1"
 CARRY_IN_VERSION = "lms-near405-carry-in-v1"
 CARRY_IN_EXIT_VERSION = "lms-near405-carry-in-explicit-exit-v1"
+MANAGEMENT_VERSION = "lms-near405-managed-lifecycle-v1"
 
 
 @dataclass(frozen=True)
@@ -172,7 +173,24 @@ def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
 
 def _rules_for(
     region_input, clock, external_protection=False, scoped_protection=False, carry_in=False, explicit_exit=False,
+    managed_lifecycle=False,
 ):
+    if not isinstance(managed_lifecycle, bool):
+        raise ValueError("BOOLEAN_MODE_REQUIRED")
+    if managed_lifecycle:
+        if any((region_input is not None, clock is not None, external_protection, scoped_protection,
+                carry_in, explicit_exit)):
+            raise ValueError("MANAGED_LIFECYCLE_REQUIRES_INDEPENDENT_PLAN")
+        rules = RULES | dict(
+            version=MANAGEMENT_VERSION, plan_lifetime_bars=None, max_attempts=1,
+            priority=["RISK_INVALID", "OPPOSING_KEYBAR_AFTER_RANGE_TARGET", "OPPOSING_KEYBAR_REGIME_REVERSAL",
+                      "LOCK", "UNLOCK", "ENTER"],
+            recovery="TWO_CONTIGUOUS_CLOSES_BEYOND_FRESH_FROZEN_EDGE_CROSSING_AFTER_LOCK",
+            range_target="PRIOR_COMPLETE_BAR_TOUCH_AFTER_ENTRY_ONLY",
+            held_signal="CONTIGUOUS_SHAPE_AND_CONFIRMATION_AFTER_STATE",
+            reentry="NEW_PLAN_WITH_ALL_CONTEXT_STARTED_AFTER_EXIT",
+        )
+        return rules, fingerprint(rules)
     if explicit_exit and not carry_in:
         raise ValueError("EXPLICIT_EXIT_REQUIRES_CARRY_IN")
     if carry_in:
@@ -285,6 +303,10 @@ def _plan_expired(state, j, clock):
     return j >= end
 
 
+def _risk_invalid(side, close, lo, hi):
+    return (side == "LONG" and close <= lo) or (side == "SHORT" and close >= hi)
+
+
 def _invalid(state, bars, index, clock):
     plan = state["plan"]
     side = state["original_side"]
@@ -294,7 +316,7 @@ def _invalid(state, bars, index, clock):
     for j in range(state["entry_index"] + 1, index + 1):
         found = set()
         c = bars[j].close
-        if (side == "LONG" and c <= lo) or (side == "SHORT" and c >= hi):
+        if _risk_invalid(side, c, lo, hi):
             found.add("RISK_INVALID")
         if _plan_expired(state, j, clock):
             found.add("PLAN_EXPIRED")
@@ -381,6 +403,48 @@ def _recovery_status(plan, direction, bars, index):
     return None if passed else "RECOVERY_TWO_CLOSES_NOT_MET"
 
 
+def _managed_recovery(state, bars, index, edge):
+    is_long = state["original_side"] == "LONG"
+    locked_at = _time(state["since"])
+
+    def beyond(bar):
+        return bar.close > edge if is_long else bar.close < edge
+
+    if not all(beyond(bar) for bar in bars[index - 1:index + 1]):
+        return False
+    for j in range(index - 1, state["entry_index"], -1):
+        bar = bars[j]
+        if bars[j + 1].start != bar.end or bar.end <= locked_at:
+            return False
+        if not beyond(bar):
+            return True
+    return False
+
+
+def _managed_position(state, bars, index, region, direction, signal_fresh):
+    plan, side = state["plan"], state["original_side"]
+    lo, hi = Decimal(plan["lower"]), Decimal(plan["upper"])
+    entry_known = _time(state["management_entry_known_at"])
+    since_entry = bars[state["entry_index"] + 1:index + 1]
+    if any(entry_known < bar.end and _risk_invalid(side, bar.close, lo, hi) for bar in since_entry):
+        return "CLEAR", "RISK_INVALID", "HOLD"
+    if not direction or not signal_fresh:
+        return None, None, "HOLD"
+    locked = state["long"] == state["short"]
+    if direction == side:
+        if locked and _managed_recovery(state, bars, index, hi if side == "LONG" else lo):
+            return "UNLOCK_" + side, "ORIGINAL_KEYBAR_AFTER_FRESH_RETURN", "HOLD"
+        return None, None, "RECOVERY_RETURN_UNCONFIRMED" if locked else "HOLD"
+    if plan["environment"] == "RANGE" and any(
+        entry_known < bar.start and (bar.high >= hi if side == "LONG" else bar.low <= lo)
+        for bar in since_entry[:-1]
+    ):
+        return "CLEAR", "OPPOSING_KEYBAR_AFTER_RANGE_TARGET", "HOLD"
+    if region["environment"] == ("DOWN" if side == "LONG" else "UP"):
+        return "CLEAR", "OPPOSING_KEYBAR_REGIME_REVERSAL", "HOLD"
+    return (None, None, "HOLD") if locked else ("LOCK", "OPPOSING_KEYBAR", "HOLD")
+
+
 def _validate_prefix(bars):
     for i, bar in enumerate(bars):
         classify(bars[i - 1] if i else None, bar)
@@ -397,14 +461,16 @@ def evaluate(
     protection_confirmations=None,
     protection_bands=None,
     carry_exit_evidence=None,
+    managed_lifecycle=False,
 ):
     """Evaluate one completed Bar against an explicit research state."""
-    if "carry_in_seed_id" in state:
+    if "carry_in_seed_id" in state or managed_lifecycle:
         _validate_prefix(bars[:index + 1])
     return _evaluate(
         state, bars, index, region_input=region_input, timely_fixture=timely_fixture, clock=clock,
         protection_confirmations=protection_confirmations, protection_bands=protection_bands,
         carry_exit_evidence=carry_exit_evidence,
+        managed_lifecycle=managed_lifecycle,
     )
 
 
@@ -419,6 +485,7 @@ def _evaluate(
     protection_confirmations=None,
     protection_bands=None,
     carry_exit_evidence=None,
+    managed_lifecycle=False,
 ):
     """One revealed Bar, one possible proposal; state is never mutated here."""
     c = bars[index]
@@ -429,7 +496,11 @@ def _evaluate(
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
     seeded = "carry_in_seed_id" in state
     explicit_exit = carry_exit_evidence is not None
-    rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded, explicit_exit)
+    rules, rule_hash = _rules_for(region_input, clock, external, scoped, seeded, explicit_exit, managed_lifecycle)
+    if state.get("plan") is not None and managed_lifecycle != ("management_entry_known_at" in state):
+        raise ValueError("MANAGED_STATE_RULE_MISMATCH")
+    if managed_lifecycle and state["contract"] != c.contract:
+        raise ValueError("MANAGED_STATE_CONTRACT_MISMATCH")
     if seeded:
         if state["contract"] != c.contract:
             raise ValueError("CARRY_IN_CONTRACT_MISMATCH")
@@ -519,7 +590,11 @@ def _evaluate(
     signal_fresh = frame.bar.end > _time(state["since"])
     if seeded:
         signal_fresh = signal_fresh and frame.bar.start > _time(state["carry_in_known_at"])
-    if held:
+    if held and managed_lifecycle:
+        signal_fresh = (frame.bar.start > _time(state["since"]) and frame.bar.end == c.start
+                        and bars[index - 2].end == frame.bar.start)
+        action, reason, result["status"] = _managed_position(state, bars, index, region, direction, signal_fresh)
+    elif held:
         reason = _invalid(state, bars, index, clock)
         locked = state["long"] == state["short"]
         if explicit_exit and state["plan"].get("pricing_basis") == "PRESEED_CONTEXT_PROXY":
@@ -580,8 +655,9 @@ def _evaluate(
         result["status"] = "INDETERMINATE"
     elif direction and signal_fresh and region["valid"]:
         prior = state["plan"]
+        context_start = bars[index - 7].start if managed_lifecycle else _time(region["window_start"])
         if (
-            prior
+            not managed_lifecycle and prior
             and state["last_exit_reason"] == "RISK_INVALID"
             and state["attempt"] < RULES["max_attempts"]
             and index < prior["created_index"] + RULES["plan_lifetime_bars"]
@@ -598,7 +674,7 @@ def _evaluate(
         # A new plan requires an entire post-exit context, not merely a new id.
         elif (
             state["last_exit_at"] is None
-            or _time(region["window_start"]) > _time(state["last_exit_at"])
+            or context_start > _time(state["last_exit_at"])
         ) and _entry_allowed(region, direction, frame.bar, c):
             action = "ENTER_" + direction
             reason = "FRESH_PLAN_KEYBAR"
@@ -688,6 +764,8 @@ def _apply(state, p, t, clock):
             entry_index=p["index"],
             last_exit_reason=None,
         )
+        if p["version"] == MANAGEMENT_VERSION:
+            after["management_entry_known_at"] = t.isoformat()
     elif action == "CLEAR":
         after.update(
             last_exit_at=t.isoformat(),
@@ -719,6 +797,7 @@ def replay(
     protection_bands=None,
     carry_in=None,
     carry_exit_evidence=None,
+    managed_lifecycle=False,
 ):
     """Append-only hypothesis replay; checkpoint recovery validates the entire prefix.
 
@@ -737,7 +816,9 @@ def replay(
     if scoped and not external:
         raise ValueError("SCOPED_PROTECTION_REQUIRES_EXPLICIT_CONFIRMATIONS")
     explicit_exit = carry_exit_evidence is not None
-    rules, rule_hash = _rules_for(region_input, clock, external, scoped, carry_in is not None, explicit_exit)
+    rules, rule_hash = _rules_for(
+        region_input, clock, external, scoped, carry_in is not None, explicit_exit, managed_lifecycle,
+    )
     visible = [b for b in bars if b.end + US <= as_of]
     if not visible:
         raise ValueError("VISIBLE_BARS_REQUIRED")
@@ -778,6 +859,7 @@ def replay(
             protection_bands=protection_bands,
             carry_in=carry_in,
             carry_exit_evidence=carry_exit_evidence,
+            managed_lifecycle=managed_lifecycle,
         )["checkpoint"]
         if prior != checkpoint:
             raise ValueError("CHECKPOINT_IDENTITY_MISMATCH")
@@ -893,7 +975,7 @@ def replay(
                 ] != fingerprint(d):
                     reason = "DECISION_ID_CONTENT_CONFLICT"
                 elif (
-                    (region_input is not None or clock is not None or external or carry_in is not None)
+                    (region_input is not None or clock is not None or external or carry_in is not None or managed_lifecycle)
                     and not timely_fixture
                     and d["record_kind"] != "HUMAN_RESEARCH_DECISION"
                 ):
@@ -989,6 +1071,7 @@ def replay(
             protection_confirmations=protection_confirmations,
             protection_bands=protection_bands,
             carry_exit_evidence=carry_exit_evidence,
+            managed_lifecycle=managed_lifecycle,
         )
         evaluations.append({k: v for k, v in e.items() if k != "proposal"})
         if e["proposal"]:

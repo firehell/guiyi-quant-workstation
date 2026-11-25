@@ -9,7 +9,7 @@ from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
 from guiyi_quant.lms_near405 import (
     EXTERNAL_PROTECTION_VERSION, SCOPED_PROTECTION_VERSION, ProtectionConfirmation, ScopedProtectionConfirmation,
-    VERSION, context, evaluate, fingerprint, replay,
+    MANAGEMENT_VERSION, VERSION, context, evaluate, fingerprint, replay,
 )
 
 T = datetime(2025, 1, 1, tzinfo=UTC)
@@ -309,6 +309,77 @@ def lock_restore_bars():
         bar(12, 103, 105, 102, 104),
         bar(13, 104, 111, 103, 110),
     ]
+
+
+def managed_lock_restore_bars():
+    return lock_restore_bars()[:11] + [
+        bar(11, 107, 110, 103, 108),
+        bar(12, 109, 113, 107, 111),
+        bar(13, 111, 112, 108, 111.5),
+        bar(14, 112, 115, 109, 114),
+    ]
+
+
+@pytest.mark.parametrize("side", ["LONG", "SHORT"])
+def test_managed_recovery_preserves_original_cycle_and_hard_exit_clears_both_when_locked(side):
+    rows = managed_lock_restore_bars()
+    early_risk = rows[:11] + [bar(11, 103, 104, 99, 100)]
+    if side == "SHORT":
+        def reflect(items):
+            return [replace(b, open=210 - b.open, high=210 - b.low, low=210 - b.high, close=210 - b.close)
+                    for b in items]
+        rows, early_risk = reflect(rows), reflect(early_risk)
+
+    result = replay(rows, as_of=until(rows), timely_fixture=True, managed_lifecycle=True)
+    assert result["version"] == MANAGEMENT_VERSION
+    assert [row["action"] for row in result["transitions"]] == ["ENTER_" + side, "LOCK", "UNLOCK_" + side]
+    _, lock, recover = result["transitions"]
+    assert lock["after"]["cycle_id"] == recover["after"]["cycle_id"]
+    assert recover["after"][side.lower()] == "1"
+    closed = replay(early_risk, as_of=until(early_risk), timely_fixture=True, managed_lifecycle=True)
+    last = closed["transitions"][-1]
+    assert last["action"] == "CLEAR" and last["reason"] == "RISK_INVALID"
+    assert last["before"]["long"] == last["before"]["short"] == "1"
+    assert last["after"]["long"] == last["after"]["short"] == "0"
+
+
+def test_managed_range_target_requires_later_opposing_confirmation_and_full_post_exit_context():
+    rows = entry_bars() + [bar(8, 106, 109, 101, 107), bar(9, 107, 110, 101, 106),
+                          bar(10, 107, 108, 103, 105), bar(11, 105, 107, 101, 102)]
+    rows += [bar(i, 104, 110, 100, 106) for i in range(12, 19)]
+    rows += [bar(19, 103, 105, 101, 104), bar(20, 104, 108, 102, 106)]
+    earlier = replay(rows, as_of=until(rows[:11]), timely_fixture=True, managed_lifecycle=True)
+    assert [row["action"] for row in earlier["transitions"]] == ["ENTER_LONG"]
+    result = replay(rows, as_of=until(rows), timely_fixture=True, managed_lifecycle=True)
+    assert [row["action"] for row in result["transitions"]] == ["ENTER_LONG", "CLEAR", "ENTER_LONG"]
+    first, clear, reentry = result["transitions"]
+    assert clear["reason"] == "OPPOSING_KEYBAR_AFTER_RANGE_TARGET"
+    assert first["after"]["plan"]["plan_id"] != reentry["after"]["plan"]["plan_id"]
+    assert rows[13].start > datetime.fromisoformat(clear["known_at"])
+    assert result == replay(rows, as_of=until(rows), timely_fixture=True, managed_lifecycle=True,
+                            checkpoint=json.loads(json.dumps(earlier["checkpoint"])))
+
+
+def test_managed_recovery_requires_fresh_cross_and_human_decisions():
+    rows = managed_lock_restore_bars()
+    for i in (11, 12):
+        rows[i] = bar(i, 111, 113, 107, 111)
+    result = replay(rows, as_of=until(rows), timely_fixture=True, managed_lifecycle=True)
+    assert [row["action"] for row in result["transitions"]] == ["ENTER_LONG", "LOCK"]
+    assert result["evaluations"][-1]["status"] == "RECOVERY_RETURN_UNCONFIRMED"
+    pending = replay(rows, as_of=until(rows[:8]), managed_lifecycle=True)["proposals"][0]
+    manual = replay(rows, [decision(pending)], as_of=until(rows), managed_lifecycle=True)
+    assert not manual["transitions"]
+    assert manual["decisions"][0]["reason"] == "HUMAN_DECISION_REQUIRED"
+
+
+def test_managed_state_cannot_be_evaluated_by_the_old_rule_or_reverse():
+    rows = managed_lock_restore_bars()
+    states = [replay(rows, as_of=until(rows[:8]), timely_fixture=True, managed_lifecycle=managed)["current_state"]
+              for managed in (False, True)]
+    for old, managed in zip(states, (True, False), strict=True):
+        with pytest.raises(ValueError, match="MANAGED_STATE_RULE_MISMATCH"):
+            evaluate(old, rows, 8, managed_lifecycle=managed)
 
 
 def protection_for(bars, *, mirror=False):
