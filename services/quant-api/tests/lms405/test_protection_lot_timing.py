@@ -1,9 +1,11 @@
 from datetime import timedelta
 from decimal import Decimal
+from itertools import product
 from types import SimpleNamespace
 
 from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, latest_whole_leg_start
 from lms405_right_side_study import at
+from lms405_sh_protection_replacement import compatible_counts
 
 
 def test_displayed_tick_totals_use_precision_of_each_source():
@@ -27,3 +29,24 @@ def test_latest_whole_leg_start_combines_disjoint_minutes_as_an_optimistic_bound
     ]
     assert latest_whole_leg_start(bars, Decimal("1"), 4, range(404, 405)) == "2026-10-27T11:28+08:00"
     assert latest_whole_leg_start(bars[1:], Decimal("1"), 4, range(404, 405)) is None
+
+
+def test_retained_lot_joint_bounds_match_exhaustive_small_tick_ranges():
+    lots, old, afternoon, night = 3, (98, 101), (97, 99), (103, 104)
+    old_total, new_total = range(298, 300), range(302, 304)
+    compatible = set()
+    for before in product(range(old[0], old[1] + 1), repeat=lots):
+        if sum(before) not in old_total:
+            continue
+        for retained in range(lots + 1):
+            for day_lots in range(lots - retained + 1):
+                night_lots = lots - retained - day_lots
+                for day in product(range(afternoon[0], afternoon[1] + 1), repeat=day_lots):
+                    for evening in product(range(night[0], night[1] + 1), repeat=night_lots):
+                        if sum(before[:retained] + day + evening) in new_total:
+                            compatible.add((retained, day_lots, night_lots))
+    observed = compatible_counts(lots, old_total, new_total, old, afternoon, night)
+    assert observed == [list(row) for row in sorted(compatible)]
+    assert compatible_counts(lots, old_total, new_total, old, None, night) == [
+        list(row) for row in sorted(compatible) if row[1] == 0
+    ]
