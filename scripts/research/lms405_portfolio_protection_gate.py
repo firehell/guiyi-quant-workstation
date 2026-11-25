@@ -1,6 +1,7 @@
 """Compare typed protection references against directional reach in the frozen LMS portfolio."""
 
 import argparse
+from bisect import bisect_right
 from collections import Counter
 from dataclasses import asdict
 from datetime import datetime
@@ -13,7 +14,9 @@ from guiyi_quant.lms405.protection_band import ProtectionBandUpdate, active_band
 from lms405_locked_exit_audit import BASELINE_SHA256
 from lms405_m_permission_study import read_pair
 from lms405_portfolio_replay import ARCHIVE, CONTRACTS, DAYS, FIVE, batch_fixture_transitions, input_sources
-from lms405_protection_lot_timing import EXPOSURE, verified_json
+from lms405_protection_lot_timing import EXPOSURE, displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
+from lms405_protection_quote_bounds import gate_price_support
+from lms405_protection_route_comparison import FROZEN_ROUTES
 from lms405_public_plan_roles import load_source
 from lms405_right_side_study import ONE, US
 from lms405_sh_lock_lifecycle import digest, signals
@@ -21,6 +24,7 @@ from lms405_sizing_audit import EXPOSURE_SHA256
 from lms_near405_replay import encoded, sha
 
 VERSION = "lms405-portfolio-protection-price-admission-v1"
+ADVANCE_VERSION = "lms405-portfolio-advance-protection-v1"
 BASELINE = Path("output/lms405-portfolio-oct-20261125/fixture.json")
 CONTROLS = Path("output/lms405-public-protection-and-m-20261126/final-a.json")
 CONTROL_SHA = "0d3068a8a05cf32fa8f4954c413d4d2534d198ea79b5a1915ac5cb92d2cc9cad"
@@ -47,6 +51,13 @@ ALTERNATIVES = {"RU2701", "SH2701", "TA2701"}
 OBSERVED_REVIEW = "WRouYm67Bc"
 CARRY_SOURCE = "WRov1j6e10"
 OPPOSITE = {"LONG": "SHORT", "SHORT": "LONG"}
+ADVANCE_PLAN_SCOPE = {
+    "A5356884629782554": {"FG2701", "JM2701"},
+    "A5356884885635211": {"RU2701", "SH2701"},
+    "A5357264793370945": {"RU2701", "SH2701"},
+    "A5358686423089344": {"FG2701", "I2701"},
+    "A5358686695981271": {"RU2701", "SH2701"},
+}
 
 
 def plan_rows(index, contract):
@@ -74,9 +85,9 @@ def plan_rows(index, contract):
     return tuple(updates), m_by_revision, sources
 
 
-def price_admission(minutes, band, event, *, position_since=None):
+def price_admission(minutes, band, event, *, position_since=None, shape_step=FIVE):
     """Read only completed bars from the signal's continuous segment and plan revision."""
-    shape_start = event["shape_end"] - FIVE
+    shape_start = event["shape_end"] - shape_step
     known = event["available_at"]
     from_time = max(band.effective_after, position_since) if position_since is not None else band.effective_after
     if from_time >= shape_start:
@@ -110,15 +121,49 @@ def price_admission(minutes, band, event, *, position_since=None):
                 ordinary_due_at=contact.end + US if status == "ORDINARY_PRICE_CONTEXT" else None)
 
 
-def observations_for_contract(series, updates, m_bands, cutoff):
+def advance_due(bar, band, price):
+    """A test route needs scoped wording and remains on the approach side through confirmation."""
+    if bar.contract != band.contract:
+        raise ValueError("PROTECTION_ADVANCE_CONFIRMATION_BAR_MISMATCH")
+    if band.contract not in ADVANCE_PLAN_SCOPE.get(band.revision, ()):
+        return None
+    if price["status"] != "NO_PRIOR_DIRECTIONAL_REACH":
+        return None
+    entire_bar_before = bar.high < band.lower if band.side == "SHORT" else bar.low > band.upper
+    return bar.end if entire_bar_before else None
+
+
+def route_due(price, band, confirming_bar, route):
+    if route in ("ordinary_or_advance", "advance_only"):
+        if route == "ordinary_or_advance" and price["ordinary_due_at"] is not None:
+            return price["ordinary_due_at"], "ORDINARY_CONTACT"
+        return advance_due(confirming_bar, band, price), "ADVANCE_APPROACH"
+    return price[route], "DIRECTIONAL_REACH" if route == "loose_due_at" else "ORDINARY_CONTACT"
+
+
+def describe_advance_candidates(bars, events):
+    by_end = {bar.end: bar for bar in bars}
+    rows = []
+    for (end, _), item in sorted(events.items()):
+        band, price = item["area"], item["price"]
+        if band is None or advance_due(by_end[end], band, price) is None:
+            continue
+        close = item["event"]["close"]
+        distance = band.lower - close if band.side == "SHORT" else close - band.upper
+        rows.append(dict(confirmed_at=end, close=close, revision=band.revision, points_to_near=distance))
+    return rows
+
+
+def observations_for_contract(series, updates, m_bands, cutoff, *, period=5):
     minutes, fives = series[1], series[5]
+    step = period * ONE
     events = {}
     for signal_side in ("LONG", "SHORT"):
-        for event in signals(series, 5, 5, side=signal_side, start=fives[0].start, cut=cutoff):
+        for event in signals(series, period, period, side=signal_side, start=fives[0].start, cut=cutoff):
             key = event["confirmed_at"], signal_side
             shown = visible_bands(updates, fives[0].contract, event["available_at"])
             area, issue = active_band(shown, event["available_at"], OPPOSITE[signal_side])
-            price = (price_admission(minutes, area, event) if area else
+            price = (price_admission(minutes, area, event, shape_step=step) if area else
                      dict(status=issue, loose_due_at=None, ordinary_due_at=None))
             m = m_bands.get(area.revision) if area else None
             events[key] = dict(event=event, area=area, price=price,
@@ -126,22 +171,24 @@ def observations_for_contract(series, updates, m_bands, cutoff):
     return events
 
 
-def replay_with_price_context(series, updates, events, *, cutoff, due_field, seed=None):
+def replay_with_price_context(series, updates, events, *, cutoff, due_field, seed=None, period=5):
     minutes, fives = series[1], series[5]
     proofs, attempts = [], []
     replay_args = dict(protection_bands=updates, timely_fixture=True)
     if seed:
         replay_args.update(carry_in=seed, carry_exit_evidence=())
-    end_index = {bar.end: i for i, bar in enumerate(fives)}
+    driver_ends = [bar.end for bar in fives]
+    confirming_bars = {bar.end: bar for bar in series[period]}
+    step = period * ONE
     for (end, side), row in sorted(events.items()):
-        due_at = row["price"][due_field]
-        if due_at is None:
-            continue
         signal, band = row["event"], row["area"]
+        bar = confirming_bars[end]
+        if band is None or route_due(row["price"], band, bar, due_field)[0] is None:
+            continue
         known = signal["available_at"]
-        next_index = end_index[end] + 1
+        next_index = bisect_right(driver_ends, end)
         if ((seed and known <= seed.known_at) or next_index == len(fives)
-                or fives[next_index].start != end):
+                or fives[next_index].start > end):
             continue
         # Give other actions from the signal bar time to update the position.
         state = candidate.replay(fives, as_of=known + US, protection_confirmations=tuple(proofs),
@@ -149,13 +196,15 @@ def replay_with_price_context(series, updates, events, *, cutoff, due_field, see
         if state["original_side"] != band.side or state["long"] == state["short"]:
             continue
         since = datetime.fromisoformat(state["since"])
-        price = price_admission(minutes, band, signal, position_since=since)
-        due_at = price[due_field]
+        price = price_admission(minutes, band, signal, position_since=since, shape_step=step)
+        due_at, route = route_due(price, band, bar, due_field)
         if due_at is None:
             continue
+        advance = due_field in ("ordinary_or_advance", "advance_only")
+        version = ADVANCE_VERSION if advance else VERSION
         proof = candidate.ScopedProtectionConfirmation(
             band.contract, candidate.fingerprint(state), due_at, end, known,
-            f"{VERSION}:{due_field}", "TEST_FIXTURE", band.scope, signal["shape_end"] - FIVE, side,
+            f"{version}:{due_field}", "TEST_FIXTURE", band.scope, signal["shape_end"] - step, side,
         )
         proofs.append(proof)
         attempts.append(dict(
@@ -163,6 +212,9 @@ def replay_with_price_context(series, updates, events, *, cutoff, due_field, see
             signal_close=signal["close"], protection_revision=band.revision, m_reference=row["m_reference"],
             confirmed_in_m=row["close_also_in_m"],
         ))
+        if advance:
+            attempts[-1]["route"] = route
+            attempts[-1]["signal_period_minutes"] = period
     args = replay_args | dict(protection_confirmations=tuple(proofs))
     result = candidate.replay(fives, as_of=cutoff, **args)
     default_probe = seed.known_at if seed else fives[len(fives) // 2].end
@@ -213,13 +265,58 @@ def carry_seeds(exposure):
     return states, table
 
 
-def study(session, market, baseline, control, exposure):
+def compare_caustic_quote(minutes, transitions, frozen):
+    """Compare simulated position through each possible quote minute under same-row assumptions."""
+    inputs = frozen["inputs"]
+    start, cutoff = (datetime.fromisoformat(inputs[key]) for key in ("start", "cutoff"))
+    image = inputs["photo"]
+    if sha((ARCHIVE.parent / image["path"]).read_bytes()) != image["sha256"]:
+        raise ValueError("PROTECTION_ADVANCE_QUOTE_IMAGE_CHANGED")
+    context = [bar for bar in minutes if start <= bar.start and bar.end + US < cutoff]
+    tick, mark = Decimal(inputs["tick"]), Decimal(inputs["mark"])
+    lots = inputs["long"]["quantity"]
+    totals = displayed_tick_totals(Decimal(inputs["average"]), lots, tick)
+    quoted = [bar for bar in context if bar.low <= mark <= bar.high]
+    if {bar.end.isoformat() for bar in quoted} != set(frozen["modes"]["ordinary_only"]["quotes"]):
+        raise ValueError("PROTECTION_ADVANCE_QUOTE_WINDOWS_CHANGED")
+    changes = [(datetime.fromisoformat(row["known_at"]), Decimal(row["after"]["long"]) > 0)
+               for row in transitions]
+
+    def locked_at(time):
+        return next((locked for changed_at, locked in reversed(changes) if changed_at < time), False)
+
+    opens = [when for when, locked in changes if locked]
+    first_lock = opens[0] if opens else None
+    rows = []
+    for quote in quoted:
+        locked_before = locked_at(quote.start)
+        locked_through = locked_at(quote.end)
+        price = {}
+        if first_lock is not None and locked_before:
+            for name, include in (("before_quote_minute", False), ("through_quote_minute", True)):
+                prefix = [bar for bar in context if bar.end < quote.end or (include and bar.end == quote.end)]
+                possible = bool(earlier_lot_counts(None, tick_bounds(prefix, tick), lots, totals))
+                price[name] = (gate_price_support(prefix, first_lock, tick=tick, lots=lots, totals=totals)[
+                    "only_complete_minutes_after_permission"
+                ]["whole_leg_possible"] if possible else False)
+        rows.append(dict(quote_minute_end=quote.end, locked_before=locked_before, locked_at_end=locked_through,
+                         later_complete_minute_price_support=price))
+    return dict(image=image, quote=mark, displayed_long_lots=lots, displayed_long_opening_average=inputs["average"],
+                first_fixture_lock=first_lock, author_capture_at=None, author_account_continuity=None, minutes=rows)
+
+
+def study(session, market, baseline, control, exposure, *, advance=False):
     cutoff = datetime.fromisoformat(baseline["as_of"])
     index = input_sources()
     modes = {key: [] for key in (
         "baseline", "no_protection_confirmation_fixture", "directional_reach_fixture", "ordinary_contact_fixture",
     )}
+    price_modes = [("directional_reach_fixture", "loose_due_at"), ("ordinary_contact_fixture", "ordinary_due_at")]
+    if advance:
+        modes["ordinary_or_advance_fixture"] = []
+        price_modes.append(("ordinary_or_advance_fixture", "ordinary_or_advance"))
     seeds, seed_table = carry_seeds(exposure)
+    caustic_quote = None
     results = {}
     for contract in CONTRACTS:
         _, series = read_pair(session, market, contract, DAYS)
@@ -238,8 +335,7 @@ def study(session, market, baseline, control, exposure):
         modes["no_protection_confirmation_fixture"].extend(independent["transitions"])
         fixtures = {}
         carry = {}
-        for name, due_field in (("directional_reach_fixture", "loose_due_at"),
-                                ("ordinary_contact_fixture", "ordinary_due_at")):
+        for name, due_field in price_modes:
             outcome, attempts = replay_with_price_context(series, updates, events, cutoff=cutoff, due_field=due_field)
             modes[name].extend(outcome["transitions"])
             fixtures[name] = dict(attempts=attempts, terminal_status=outcome["terminal_status"])
@@ -256,6 +352,22 @@ def study(session, market, baseline, control, exposure):
             baseline_locks=check_baseline_locks(original, events),
             manual_suggestions=len(manual["proposals"]), fixtures=fixtures, unit_carry_fixtures=carry,
         )
+        if advance:
+            fast = observations_for_contract(series, updates, m_bands, cutoff, period=1)
+            results[contract]["pre_contact_candidates"] = {
+                f"{period}m": describe_advance_candidates(series[period], rows)
+                for period, rows in ((1, fast), (5, events))
+            }
+            if contract in seeds:
+                outcome, attempts = replay_with_price_context(
+                    series, updates, fast, cutoff=cutoff, due_field="advance_only", seed=seeds[contract], period=1,
+                )
+                carry["fast_advance_only_fixture"] = dict(
+                    attempts=attempts, terminal_status=outcome["terminal_status"], transitions=outcome["transitions"],
+                )
+                if contract == "SH2701":
+                    quote = verified_json(*FROZEN_ROUTES)["case_days"]["2026-10-27"][contract]
+                    caustic_quote = compare_caustic_quote(series[1], outcome["transitions"], quote)
         for row in events.values():
             if row["price"]["loose_due_at"] is not None and row["price"]["ordinary_due_at"] is None:
                 results[contract]["non_ordinary_directional"].append(dict(
@@ -269,7 +381,8 @@ def study(session, market, baseline, control, exposure):
     if actions["baseline"]["timeline"] != [row for row in baseline["timeline"] if row["layer"] == "FIXTURE_STATE_BATCH"]:
         raise ValueError("PROTECTION_PRICE_BASELINE_DIVERGED")
     controls = control["cases"]
-    return dict(version=VERSION, contracts=results, actions=actions, baseline_sha256=BASELINE_SHA256,
+    report = dict(version=ADVANCE_VERSION if advance else VERSION, contracts=results, actions=actions,
+                baseline_sha256=BASELINE_SHA256,
                 historical_plan_revision_verified=False, author_action_samples=0, author_match_rate=None,
                 evidence_controls_sha256=CONTROL_SHA,
                 carry_context=dict(source=CARRY_SOURCE, image=seed_table["image"], seeds={
@@ -277,12 +390,17 @@ def study(session, market, baseline, control, exposure):
                 }, exposure_sha256=EXPOSURE_SHA256, author_account_continuity=None),
                 controls={key: controls[key]["role_windows"] for key in ("S5319173366613171", "S5323519697094213")},
                 executable=False, fills=None, pnl=None)
+    if advance:
+        report["advance_scope"] = {key: sorted(contracts) for key, contracts in ADVANCE_PLAN_SCOPE.items()}
+        report["caustic_quote_comparison"] = caustic_quote
+    return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--advance", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -298,7 +416,7 @@ def main():
         baseline, control = verified_json(BASELINE, BASELINE_SHA256), verified_json(CONTROLS, CONTROL_SHA)
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=90):
             report = study(session, build_market_data_service(session), baseline, control,
-                           verified_json(EXPOSURE, EXPOSURE_SHA256))
+                           verified_json(EXPOSURE, EXPOSURE_SHA256), advance=args.advance)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

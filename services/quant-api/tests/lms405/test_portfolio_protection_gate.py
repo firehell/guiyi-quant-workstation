@@ -1,8 +1,11 @@
+from dataclasses import replace
 from decimal import Decimal
+
+import pytest
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
-from lms405_portfolio_protection_gate import price_admission
+from lms405_portfolio_protection_gate import advance_due, price_admission
 from lms405_right_side_study import ONE, US, at
 
 
@@ -52,3 +55,19 @@ def test_contact_before_current_position_cannot_support_its_protection():
     result = price_admission(bars, BAND, signal(12, 1087), position_since=bars[0].end + US)
     assert result["first_contact_at"] is None
     assert result["ordinary_due_at"] is None
+
+
+def test_advance_requires_explicit_plan_and_a_complete_confirming_bar_before_the_zone():
+    authorized = replace(BAND, contract="FG2701", revision="A5356884629782554")
+    bar = replace(minute(20, 1078), contract="FG2701")
+    before = {"status": "NO_PRIOR_DIRECTIONAL_REACH"}
+    assert advance_due(bar, authorized, before) == bar.end
+    assert advance_due(bar, replace(authorized, revision="unknown"), before) is None
+    assert advance_due(replace(bar, high=Decimal(1079)), authorized, before) is None
+    assert advance_due(bar, authorized, {"status": "REACH_WITHOUT_RANGE_CONTACT"}) is None
+
+
+def test_advance_rejects_a_foreign_confirmation_bar():
+    authorized = replace(BAND, contract="FG2701", revision="A5356884629782554")
+    with pytest.raises(ValueError, match="PROTECTION_ADVANCE_CONFIRMATION_BAR_MISMATCH"):
+        advance_due(minute(20, 1078), authorized, {"status": "NO_PRIOR_DIRECTIONAL_REACH"})
