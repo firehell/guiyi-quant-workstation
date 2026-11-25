@@ -1,0 +1,46 @@
+from dataclasses import replace
+from datetime import datetime, timedelta
+from decimal import Decimal
+
+import pytest
+
+from guiyi_quant.lms405 import Bar
+from guiyi_quant.lms_keybar_approx import classify, classify_research_period
+from lms405_protection_timeframes import geometry_events
+
+
+BASE = datetime.fromisoformat("2026-10-22T21:00:00+08:00")
+US = timedelta(microseconds=1)
+
+
+def bar(end, period, low, high, close):
+    when = BASE + timedelta(minutes=end)
+    prices = (Decimal(close), Decimal(high), Decimal(low), Decimal(close))
+    return Bar("SH2701", when, *prices, start=when - timedelta(minutes=period))
+
+
+def test_period_comparison_reuses_frozen_five_minute_identity():
+    mother, inside = bar(5, 5, 9, 15, 12), bar(10, 5, 10, 14, 11)
+    assert classify(mother, inside) == classify_research_period(mother, inside, minutes=5)
+    minute = classify_research_period(bar(1, 1, 9, 15, 12), bar(2, 1, 10, 14, 11), minutes=1)
+    assert minute.ibar is True
+    assert minute.rule_version != classify(mother, inside).rule_version
+    with pytest.raises(ValueError, match="COMPLETED_RESEARCH_PERIOD_REQUIRED"):
+        classify_research_period(mother, inside, minutes=15)
+
+
+def test_fast_close_has_own_availability_and_never_skips_a_missing_minute():
+    mother, shape, next_five = bar(5, 5, 9, 15, 12), bar(10, 5, 10, 14, 11), bar(15, 5, 9, 14, 11)
+    m11, m12 = bar(11, 1, 10, 12, 10), bar(12, 1, 9, 12, 9)
+    args = dict(start=BASE, side="SHORT")
+    data = {1: [m11, m12], 5: [mother, shape, next_five]}
+    assert geometry_events(data, 5, 1, as_of=m12.end + US, **args) == []
+    (fast,) = geometry_events(data, 5, 1, as_of=m12.end + 2 * US, **args)
+    assert fast["confirmed_at"] == m12.end and fast["boundary"] == Decimal(10)
+    assert geometry_events(data, 5, 5, as_of=next_five.end + 2 * US, **args) == []
+    assert geometry_events(data | {1: [m12]}, 5, 1, as_of=next_five.end + 2 * US, **args) == []
+    with pytest.raises(ValueError, match="CONFIRMATION_BAR_IDENTITY_MISMATCH"):
+        geometry_events(data | {1: [m11, replace(m12, completed=1)]}, 5, 1,
+                        as_of=next_five.end + 2 * US, **args)
+    assert geometry_events(data, 5, 1, as_of=m12.end + 2 * US,
+                           start=shape.start + US, side="SHORT") == []
