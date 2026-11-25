@@ -55,19 +55,19 @@ def wick_beyond(ohlc, confirmed, band, *, side):
     raise ValueError("PROTECTION_ROUTE_WICK_SIDE_INVALID")
 
 
-def candidate_clocks(series, band, *, start, cutoff, compare_wick=False):
+def candidate_clocks(series, band, *, start, cutoff, compare_wick=False, side="LONG"):
     minutes = completed(series[1], start, cutoff)
     contact = touched(minutes, band)
     if band is None or not minutes:
         return {}, contact
     opening_signal = minutes[0].end + 2 * US
     candidates = {"opening": opening_signal} if opening_signal < cutoff else {}
-    per_period = {pair: signals(series, *pair, side="LONG", start=start, cut=cutoff) for pair in VARIANTS}
+    per_period = {pair: signals(series, *pair, side=side, start=start, cut=cutoff) for pair in VARIANTS}
     events = [event for group in per_period.values() for event in group]
     # A touch in a still-forming minute is not a fact at the confirmation clock.
     advancing = min((event["available_at"] for event in events
                      if (contact is None or event["available_at"] < contact.end + US)
-                     and event["close"] < band[0]), default=None)
+                     and (event["close"] < band[0] if side == "LONG" else event["close"] > band[1])), default=None)
     if advancing is not None:
         candidates["precontact"] = advancing
     if contact is not None:
@@ -84,7 +84,7 @@ def candidate_clocks(series, band, *, start, cutoff, compare_wick=False):
                 for event in group:
                     shape = by_end[event["shape_end"]]
                     if known < event["available_at"] and wick_beyond(
-                        (shape.open, shape.high, shape.low, shape.close), event["close"], band, side="LONG",
+                        (shape.open, shape.high, shape.low, shape.close), event["close"], band, side=side,
                     ):
                         candidates[WICK_BRANCHES[pair]] = event["available_at"]
                         break

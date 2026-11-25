@@ -84,3 +84,22 @@ def test_wick_comparison_keeps_original_routes_and_locks_once_when_both_qualify(
     assert selected["quotes"][bars[2].end.isoformat()]["position"]["long"] == 0
     assert selected["position"] == dict(contract="FG2701", long=Decimal(20), short=Decimal(20))
     assert compared["public_assessment"]["after"] is None
+
+
+def test_protection_geometry_uses_mirrored_prices_for_short_confirmation():
+    start = at("2026-10-22T21:00")
+    prices = ((825, 828, 821, 827), (825, 827, 823, 826), (827, 828, 826, 828), (828, 832, 826, 830),
+              (834, 841, 828, 835), (837, 838, 836, 837), (837, 840, 837, 839),
+              (833, 837, 830, 834), (831, 832, 831, 832), (832, 836, 831, 834))
+    mirrored = [(2000 - o, 2000 - low, 2000 - high, 2000 - close) for o, high, low, close in prices]
+    results = []
+    for direction, rows, edges in (("LONG", prices, (829, 836)), ("SHORT", mirrored, (1164, 1171))):
+        bars = [Bar("FG2701", start + i * ONE, *map(Decimal, ohlc), start=start + (i - 1) * ONE)
+                for i, ohlc in enumerate(rows, 1)]
+        clocks, contact = candidate_clocks(
+            {1: bars, 5: [], 15: []}, tuple(map(Decimal, edges)), start=start,
+            cutoff=bars[-1].end + ONE, compare_wick=True, side=direction,
+        )
+        assert "precontact" in clocks and "ordinary" in clocks and "wick_1m_to_1m" in clocks
+        results.append((clocks, contact.end))
+    assert results[0] == results[1]
