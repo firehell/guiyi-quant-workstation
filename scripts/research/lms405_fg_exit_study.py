@@ -6,10 +6,14 @@ from decimal import Decimal
 from pathlib import Path
 
 from lms405_m_permission_study import read_pair
+from lms405_opening_clock_comparison import boundary_clocks
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_handoff_study import price_window
-from lms405_protection_timeframes import geometry_events
-from lms405_right_side_study import ONE, at
+from lms405_protection_lot_timing import verified_json
+from lms405_protection_timeframes import VARIANTS, geometry_events, read_window
+from lms405_right_side_study import ONE, US, at
+from lms405_sh_lock_lifecycle import completed, digest as bar_digest, signals
+from lms405_visible_lock_handoff import stamp
 from lms405_volatility_context import bars_sha
 from lms_near405_replay import encoded, sha
 
@@ -32,6 +36,93 @@ IMAGES = {
     "earlier_night_log": ("2026-10-26/WRovrUdwHi-image4-screen.png",
                           "f5afb7da82441bcea7e0b2e96b67b038fb421e9cc51de753fe149e8fc81f0165"),
 }
+FG_REPORT, LATER_HOLD = SOURCE_IDS[:2]
+PVC_CLOCKS = Path("output/lms405-v-daytime-exit-20261125/final.json")
+PVC_CLOCKS_SHA = "18e1c1ebbc8ef71a4d9ab9f74a9ed7a76d3730d9882cb2f4eca4ce556c22aab3"
+EXTREME_BAND = Decimal(940), Decimal(946)
+PRIOR_LOW = Decimal(925)
+
+
+def fg_window(series, start, cutoff, side, *, after_report):
+    minutes = completed(series[1], start, cutoff)
+    if not minutes:
+        raise ValueError("FG_SEPTEMBER_EMPTY_COMPLETED_WINDOW")
+    latest = minutes[-1].end + 2 * US
+    lower, upper = EXTREME_BAND
+    first_overlap = next((bar.end for bar in minutes if bar.low <= upper and lower <= bar.high), None)
+    levels = {
+        f"{edge}_{direction}": boundary_clocks(minutes, level, direction)
+        for edge, level in (("940", lower), ("946", upper)) for direction in ("LONG", "SHORT")
+    }
+    prior_low = boundary_clocks(minutes, PRIOR_LOW, "SHORT") if after_report else None
+    low_break = prior_low["first_close_strict_beyond"] if prior_low else None
+    low_cross = prior_low["first_same_segment_new_close_cross"] if prior_low else None
+    shapes_by_clock = {}
+    for shape, confirm in VARIANTS:
+        events = signals(series, shape, confirm, start=start, cut=latest, side=side)
+        for anchor in (latest, *(event["available_at"] for event in events)):
+            prefix = {p: [bar for bar in bars if bar.end + US < anchor] for p, bars in series.items()}
+            if signals(prefix, shape, confirm, start=start, cut=anchor, side=side) != [
+                event for event in events if event["available_at"] < anchor
+            ]:
+                raise ValueError("FG_SEPTEMBER_PREFIX_DRIFT")
+        shapes_by_clock[f"{shape}m_to_{confirm}m"] = [
+            event | dict(shape_start=event["shape_end"] - shape * ONE,
+                         fresh_after_range_overlap=(first_overlap is not None
+                                                    and first_overlap + US < event["shape_end"] - shape * ONE),
+                         fresh_after_reference_low_close=(low_break is not None
+                                                          and low_break + US < event["shape_end"] - shape * ONE),
+                         fresh_after_reference_low_new_cross=(low_cross is not None
+                                                              and low_cross + US < event["shape_end"] - shape * ONE))
+            for event in events
+        ]
+    minimum = min(bar.low for bar in minutes)
+    return dict(window_start=start, last_bar_end=minutes[-1].end, count=len(minutes), low=minimum,
+                low_first_at=next(bar.end for bar in minutes if bar.low == minimum), close=minutes[-1].close,
+                high=max(bar.high for bar in minutes), open=minutes[0].open, first_overlap=first_overlap,
+                price_by_edge=levels, reference_low_925=prior_low, geometry_side=side, geometry=shapes_by_clock)
+
+
+def compute_september_clocks(session, market):
+    pvc = verified_json(PVC_CLOCKS, PVC_CLOCKS_SHA)
+    index = input_sources()
+    sources = {key: index[key] | {"archive_sha256": sha((ARCHIVE.parent / index[key]["archive_path"]).read_bytes())}
+               for key in (FG_REPORT, LATER_HOLD)}
+    report_cut, later_cut = (stamp(sources[key]) for key in (FG_REPORT, LATER_HOLD))
+    market_digests, windows = {}, {}
+    for day in (14, 15, 16, 17):
+        trading_day = date(2026, 9, day)
+        series = read_window(session, market, CONTRACT, trading_day)
+        coverage = {f"{period}m": dict(count=len(rows), sha256=bar_digest(rows)) for period, rows in series.items()}
+        frozen = MINUTE_HASHES.get(trading_day.isoformat())
+        if frozen is not None and coverage["1m"]["sha256"] != frozen:
+            raise ValueError("FG_SEPTEMBER_FROZEN_MARKET_DRIFT")
+        market_digests[trading_day.isoformat()] = coverage
+        day_open, night_open = at(f"{trading_day}T09:00"), series[1][0].start
+        day_close = series[1][-1].end + 2 * US
+        before_report = day == 14
+        if not night_open < day_open < day_close or (
+            before_report and day_close >= report_cut or not before_report and night_open <= report_cut + ONE
+        ) or (day == 17 and day_close >= later_cut):
+            raise ValueError("FG_SEPTEMBER_SOURCE_OR_SESSION_ORDER_DRIFT")
+        side = "LONG" if before_report else "SHORT"
+        windows[trading_day.isoformat()] = {
+            "night": fg_window(series, night_open, day_open, side, after_report=not before_report),
+            "day": fg_window(series, day_open, day_close, side, after_report=not before_report),
+        }
+    before = windows["2026-09-14"]
+    return dict(version="lms405-fg-september-clock-contrast-v1", contract=CONTRACT, sources=sources,
+                market=market_digests, windows=windows,
+                public_evidence=dict(weak_side_extreme_m=EXTREME_BAND, orientation_in_unretrieved_prior_plan=None,
+                                     same_direction_target=None, original_plan_available_at=None,
+                                     estimate_low=PRIOR_LOW, estimate_low_available_after=report_cut + ONE,
+                                     short_profit_taking_reported=True, actual_reentry=None, actual_short_size=None),
+                comparison=dict(pvc_report_sha256=PVC_CLOCKS_SHA, pvc_strict_quote_pairs=pvc["quote_pair_count"],
+                                glass_opposing_counts_before_report={
+                                    period: sum(len(session["geometry"][period]) for session in before.values())
+                                    for period in before["day"]["geometry"]
+                                }, author_target_then_opposing_verdict=None),
+                admitted_author_samples=0, author_matches=None, executable=False, fills=None, pnl=None)
 
 
 def minute_context(minutes, disclosed_minute, opening_averages):
@@ -134,6 +225,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--september-clocks", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -147,7 +239,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            result = compute(session, build_market_data_service(session))
+            run = compute_september_clocks if args.september_clocks else compute
+            result = run(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
