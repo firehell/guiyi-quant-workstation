@@ -19,25 +19,25 @@ JULY = "S5318448139471722"
 CONTROL = EVIDENCE / "evidence/author-control-20261016.csv"
 
 
-def window(series, start, cut, *, band=None):
+def window(series, start, cut, *, band=None, side="LONG"):
     segment = {period: completed(bars, start, cut) for period, bars in series.items()}
     minutes = segment[1]
     if not minutes:
         raise ValueError("GLASS_LOCK_WINDOW_EMPTY")
     candidates = {}
     for shape, confirm in VARIANTS:
-        found = signals(segment, shape, confirm, side="LONG", start=start, cut=cut)
+        found = signals(segment, shape, confirm, side=side, start=start, cut=cut)
         for event in found:
             prefix_cut = event["available_at"]
             prefix = {period: [bar for bar in bars if bar.end + US < prefix_cut]
                       for period, bars in segment.items()}
-            observed = signals(prefix, shape, confirm, side="LONG", start=start, cut=prefix_cut)
+            observed = signals(prefix, shape, confirm, side=side, start=start, cut=prefix_cut)
             if observed != [row for row in found if row["available_at"] < prefix_cut]:
                 raise ValueError("GLASS_LOCK_PREFIX_DIVERGED")
         candidates[f"{shape}m_to_{confirm}m"] = found
     return dict(start=start, cutoff_exclusive=cut, minute_count=len(minutes),
                 low=min(b.low for b in minutes), high=max(b.high for b in minutes), close=minutes[-1].close,
-                band_observations=observations(minutes, band, "LONG") if band is not None else None,
+                band_observations=observations(minutes, band, side) if band is not None else None,
                 candidates=candidates)
 
 
