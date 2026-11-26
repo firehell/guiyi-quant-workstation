@@ -9,12 +9,18 @@ import json
 from pathlib import Path
 
 from guiyi_quant import lms_near405 as near
+from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, VERSION, Book, Intent, assess
+from guiyi_quant.lms405.protection_band import active_band, visible_bands
 from guiyi_quant.lms405.public_conditions import Condition
 from lms405_portfolio_leg_audit import study as audit_legs
+from lms405_portfolio_protection_gate import advance_due, plan_rows, price_admission
+from lms405_portfolio_replay import input_sources
 from lms405_protection_lot_timing import verified_json
+from lms405_replay import ohlc
 from lms405_right_side_study import ONE, US
+from lms405_sh_lock_lifecycle import signals
 from lms_near405_replay import encoded
 
 TIMELINE = (Path("output/lms405-portfolio-role-replay-20261126/reviewed-a.json"),
@@ -22,6 +28,7 @@ TIMELINE = (Path("output/lms405-portfolio-role-replay-20261126/reviewed-a.json")
 AUDIT = (Path("output/lms405-portfolio-leg-audit-20261125/verified.json"),
          "93ddfe102a19d99cb5ec939b85f0dba82f7035b34a15d985a6564e1e070cb1cc")
 VARIANT = "scoped_without_external_conditions"
+PLAN_VARIANT = "published_band_protection_candidate"
 UNIT = Decimal(1)
 EARLY_PROTECTION_CASES = {"FG2701:EARLY", "SA:EARLY_PROTECTION_FIXTURE", "SH:PROTECT_NEW"}
 
@@ -103,35 +110,89 @@ def project_oil(timeline):
     return result
 
 
-def gated_replay(bars, cutoff):
+def published_protection_events(series, bands, cutoff):
+    if not series[1]:
+        return []
+    contract = series[1][0].contract
+    quotes = {bar.end: bar for bar in series[1]}
+    events = []
+    for period in (1, 5):
+        for shape in signals(series, period, 1, side="LONG", start=series[1][0].start, cut=cutoff):
+            known = shape["available_at"]
+            ready_at = known + 5 * US
+            if not ready_at < cutoff:
+                continue
+            band, _ = active_band(visible_bands(bands, contract, known), known, "SHORT")
+            if band is None:
+                continue
+            latest, _ = active_band(visible_bands(bands, contract, ready_at), ready_at, "SHORT")
+            if latest != band:
+                continue
+            step = period * ONE
+            price = price_admission(series[1], band, shape, shape_step=step)
+            regular = price["ordinary_due_at"] is not None
+            if not regular and advance_due(quotes[shape["confirmed_at"]], band, price) is None:
+                continue
+            events.append(dict(
+                at=ready_at, known_at=known, shape_start=shape["shape_end"] - step,
+                band=band, period=period, signal=shape,
+                operation="PROTECT_REGULAR" if regular else "PROTECT_EARLY",
+            ))
+    return sorted(events, key=lambda row: (row["at"], row["period"]))
+
+
+def gated_replay(bars, cutoff, protection_events=(), *, minutes=()):
     """Keep old directional suggestions while requiring independent management evidence."""
     if not bars:
         return [], []
     state, book, transitions, blocked = near.initial_state(bars), None, [], []
-    for index, bar in enumerate(bars):
-        if not bar.end + US < cutoff:
+    queue = [(bar.end + 5 * US, 0, index) for index, bar in enumerate(bars)]
+    queue.extend((row["at"], 1, index) for index, row in enumerate(protection_events))
+    for evaluated_at, source, index in sorted(queue):
+        if evaluated_at >= cutoff:
             break
-        proposal = near.evaluate(state, bars, index, managed_lifecycle=True)["proposal"]
-        if proposal is None:
-            continue
-        action = proposal["action"]
-        plan = proposal["plan_id"]
-        clock = local_clock(proposal["generated_at"]) + 3 * US
-        evaluated_at = clock + US
-        if not evaluated_at < cutoff:
-            break
-        if action == "LOCK":
-            intent = Intent(book, "PROTECT_REGULAR", book.original, plan, clock + ONE)
+        clock = evaluated_at - US
+        event_context = None
+        if source:
+            event = protection_events[index]
+            area = event["band"]
+            if (book is None or book.direction != "SHORT" or not book.original or book.protection
+                    or not book.known_at < event["shape_start"]
+                    or (event["operation"] == "PROTECT_EARLY" and not book.known_at < area.effective_after)):
+                continue
+            if event["operation"] == "PROTECT_REGULAR":
+                scoped_price = price_admission(minutes, area, event["signal"], position_since=book.known_at,
+                                               shape_step=event["period"] * ONE)
+                if scoped_price["ordinary_due_at"] is None:
+                    continue
+            proposal = dict(action="LOCK", plan=state["plan"])
+            action, operation, qty = "LOCK", event["operation"], book.original
+            plan = f"{state['plan']['plan_id']}:{area.scope}"
+            event_context = dict(revision=area.revision, url=area.source, band=[area.lower, area.upper],
+                                 signal_known_at=event["known_at"], shape_start=event["shape_start"],
+                                 confirmation_close=event["signal"]["close"], shape_period=event["period"],
+                                 confirmation_period=1, operation=operation, approval_kind="TEST_FIXTURE")
+        else:
+            bar = bars[index]
+            proposal = near.evaluate(state, bars, index, managed_lifecycle=True)["proposal"]
+            if proposal is None:
+                continue
+            action = proposal["action"]
+            plan = proposal["plan_id"]
+        if not source and (action == "LOCK" or action.startswith("UNLOCK_")):
+            operation = "PROTECT_REGULAR" if action == "LOCK" else "RECOVER_ORIGINAL"
+            qty = book.original if action == "LOCK" else book.protection
+            intent = Intent(book, operation, qty, plan, clock + ONE)
             result = assess(book, intent, (), as_of=evaluated_at)
             blocked.append(dict(at=evaluated_at, underlying_signal_at=proposal["generated_at"],
                                 operation=intent.operation, unknown=result["unknown"]))
             continue
-        if action.startswith("ENTER_"):
+        if not source and action.startswith("ENTER_"):
             book = Book(bar.contract, plan, proposal["plan"]["side"], local_clock(state["known_at"]))
             operation, qty = "ENTER_TREND", UNIT
-        elif action == "CLEAR" and book is not None:
-            operation, qty = "CLEAR_TREND", book.original
-        else:
+        elif not source and action == "CLEAR" and book is not None:
+            operation, qty = "CLEAR_TREND", book.original + book.protection
+        elif not source:
             raise ValueError("PORTFOLIO_TASK_POLICY_UNEXPECTED_DIRECTIONAL_ACTION")
         projected = project_fixture(book, operation, qty, clock, plan=plan)["fixture"]["after"]
         if projected is None or projected.known_at != evaluated_at:
@@ -141,41 +202,61 @@ def gated_replay(bars, cutoff):
         if (candidate_state["long"], candidate_state["short"]) != tuple(map(str, (new.long, new.short))):
             raise ValueError("PORTFOLIO_TASK_POLICY_DIRECTIONAL_ADAPTER_DIVERGED")
         state, book = candidate_state, projected
-        transitions.append(dict(at=evaluated_at.isoformat(), action=action,
-                                before=list(map(str, (old.long, old.short))),
-                                after=list(map(str, (new.long, new.short)))))
+        row = dict(at=evaluated_at.isoformat(), action=action,
+                   before=list(map(str, (old.long, old.short))), after=list(map(str, (new.long, new.short))))
+        transitions.append(row if event_context is None else row | dict(protection=event_context))
     return transitions, blocked
 
 
-def rolling_comparison(session, market, frozen):
+def rolling_comparison(session, market, frozen, *, published_bands=False):
     gates = {}
+    index = input_sources() if published_bands else {}
 
-    def challenger(bars, cutoff):
-        actions, blocked = gated_replay(bars, cutoff)
+    def challenger(bars, raw_minutes, cutoff):
+        symbol = bars[0].contract
+        series = {1: [Bar(symbol, bar.bar_end, *ohlc(bar), start=bar.bar_end - ONE) for bar in raw_minutes],
+                  5: bars}
+        plans, _, sources = plan_rows(index, symbol) if published_bands else ((), {}, {})
+        events = published_protection_events(series, plans, cutoff) if published_bands else []
+        actions, blocked = gated_replay(bars, cutoff, events, minutes=series[1])
         for split in (bars[0].end, bars[len(bars) // 2].end, cutoff):
             prefix = [b for b in bars if b.end + US < split]
-            replayed = gated_replay(prefix, split)
+            sliced = {period: [b for b in candles if b.end + US < split] for period, candles in series.items()}
+            available = published_protection_events(sliced, plans, split) if published_bands else []
+            if [e for e in events if e["at"] < split] != [e for e in available if e["at"] < split]:
+                raise ValueError("PORTFOLIO_TASK_POLICY_SIGNAL_PREFIX_DIVERGED")
+            replayed = gated_replay(prefix, split, available, minutes=sliced[1])
             expected = (
                 [item for item in actions if local_clock(item["at"]) < split],
                 [item for item in blocked if item["at"] < split],
             )
-            if replayed != expected or replayed != gated_replay(bars, split):
+            if replayed != expected or replayed != gated_replay(bars, split, events, minutes=series[1]):
                 raise ValueError("PORTFOLIO_TASK_POLICY_PREFIX_DIVERGED")
-        gates[bars[0].contract] = dict(directional_actions=len(actions), blocked_locks=blocked)
-        return VARIANT, actions
+        gates[symbol] = dict(directional_actions=sum(row["action"] != "LOCK" for row in actions),
+                             blocked_locks=blocked)
+        if published_bands:
+            gates[symbol].update(protections=[row for row in actions if row["action"] == "LOCK"],
+                                 plan_sources=sources, historical_plan_revisions_verified=False)
+        return PLAN_VARIANT if published_bands else VARIANT, actions
 
     result = audit_legs(session, market, extra_variant=challenger)
     stats = result["classifications"]
     if set(result["contracts"]) != set(frozen["contracts"]):
         raise ValueError("PORTFOLIO_TASK_POLICY_AUDIT_CONTRACTS_CHANGED")
+    variant = PLAN_VARIANT if published_bands else VARIANT
     for contract, rows in result["contracts"].items():
-        matched = [{**r, "by_variant": {k: v for k, v in r["by_variant"].items() if k != VARIANT}}
+        matched = [{**r, "by_variant": {k: v for k, v in r["by_variant"].items() if k != variant}}
                    if "by_variant" in r else r for r in rows]
         if json.loads(encoded(matched)) != frozen["contracts"][contract]:
             raise ValueError("PORTFOLIO_TASK_POLICY_BASELINE_AUDIT_CHANGED")
-    return dict(variant=VARIANT, classifications=stats, gates=gates, contracts=result["contracts"],
-                external_management_conditions_supplied=0, directional_approvals_are_fixtures=True,
-                screenshot_positions_used_as_inputs=False)
+    result = dict(variant=variant, classifications=stats, gates=gates, contracts=result["contracts"],
+                  external_management_conditions_supplied=0, directional_approvals_are_fixtures=True,
+                  screenshot_positions_used_as_inputs=False)
+    if published_bands:
+        result.update(protection_source="PUBLISHED_REFERENCE_AND_COMPLETED_GEOMETRY",
+                      protection_approvals_are_fixtures=True, source_revision_history_verified=False,
+                      author_permissions_supplied=0)
+    return result
 
 
 def study():
@@ -207,9 +288,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--env-file", type=Path)
+    parser.add_argument("--published-bands", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PORTFOLIO_TASK_POLICY_OUTPUT_EXISTS")
+    if args.published_bands and args.env_file is None:
+        parser.error("PORTFOLIO_TASK_POLICY_ENV_FILE_MISSING")
     try:
         report = study()
         if args.env_file:
@@ -227,6 +311,7 @@ def main():
                 with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
                     report["rolling_nine_contract_comparison"] = rolling_comparison(
                         session, build_market_data_service(session), verified_json(*AUDIT),
+                        published_bands=args.published_bands,
                     )
             except MarketDataError as exc:
                 parser.exit(2, f"MDS_BLOCKED: {exc.code}\n")
