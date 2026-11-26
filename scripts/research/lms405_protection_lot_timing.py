@@ -4,7 +4,7 @@ import argparse
 from datetime import date, datetime
 from decimal import Decimal
 import json
-from math import ceil
+from math import ceil, floor
 from pathlib import Path
 
 from lms405_i2701_case import FROZEN_COMPARISON_SHA256, readback
@@ -29,10 +29,12 @@ CASES = {
 }
 
 
-def displayed_tick_totals(average, lots, tick):
-    """Integer tick sums inside the positive half-up rounding interval."""
+def displayed_tick_totals(average, lots, tick, *, include_upper_tie=False):
+    """Integer tick sums for positive half-up display, optionally allowing either midpoint tie."""
     half_step = Decimal(1).scaleb(average.as_tuple().exponent) / 2
-    return range(ceil((average - half_step) * lots / tick), ceil((average + half_step) * lots / tick))
+    lower = (average - half_step) * lots / tick
+    upper = (average + half_step) * lots / tick
+    return range(ceil(lower), floor(upper) + 1 if include_upper_tie else ceil(upper))
 
 
 def tick_bounds(bars, tick):

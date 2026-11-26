@@ -15,6 +15,13 @@ def test_displayed_tick_totals_use_precision_of_each_source():
     assert list(displayed_tick_totals(Decimal("10224.0"), 40, Decimal("1"))) == [408958, 408959, 408960, 408961]
 
 
+def test_displayed_tick_totals_can_bound_unknown_midpoint_rounding():
+    average = Decimal("1490.12")
+    tick = Decimal("0.5")
+    assert not displayed_tick_totals(average, 20, tick)
+    assert list(displayed_tick_totals(average, 20, tick, include_upper_tie=True)) == [59605]
+
+
 def test_envelopes_require_some_lots_before_disputed_confirmation():
     totals = range(404, 405)
     assert earlier_lot_counts((98, 100), (103, 105), 4, totals) == [2, 3]
