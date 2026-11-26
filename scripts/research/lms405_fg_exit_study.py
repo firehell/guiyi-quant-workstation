@@ -5,14 +5,17 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from lms405_fg_sa_cycle_order import fresh_geometry
 from lms405_m_permission_study import read_pair
 from lms405_opening_clock_comparison import boundary_clocks
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_handoff_study import price_window
 from lms405_protection_lot_timing import verified_json
 from lms405_protection_timeframes import VARIANTS, geometry_events, read_window
+from lms405_recovery_confirmation_audit import strict_runs
 from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import completed, digest as bar_digest, signals
+from lms405_sizing_audit import EXPOSURE_SHA256
 from lms405_visible_lock_handoff import stamp
 from lms405_volatility_context import bars_sha
 from lms_near405_replay import encoded, sha
@@ -41,6 +44,18 @@ PVC_CLOCKS = Path("output/lms405-v-daytime-exit-20261125/final.json")
 PVC_CLOCKS_SHA = "18e1c1ebbc8ef71a4d9ab9f74a9ed7a76d3730d9882cb2f4eca4ce556c22aab3"
 EXTREME_BAND = Decimal(940), Decimal(946)
 PRIOR_LOW = Decimal(925)
+OCTOBER_EXIT_BASELINE = Path("output/lms405-fg-exit-20261125/final.json")
+OCTOBER_EXIT_SHA = "42263c39dfe67167ede40436e5f0f50cd35e33225e2c4cd4ac899fffa21ef78f"
+EXPOSURE = Path("output/lms405-exposure-20261125/exposure-audit.json")
+CONTINUITY = Path("output/lms405-position-continuity-20261125/final.json")
+CONTINUITY_SHA = "664dad4a242846f9602f86839788a319bf3d0091ece2e7a3cbdedaa731ccca60"
+TABLE_TOTALS = Path("docs/research/lms405/evidence/portfolio-oct-table-totals.json")
+TABLE_TOTALS_SHA = "474d797405d0e124d391aa34649d892948a4088f0c9963c0c3401bf8ee56ccd0"
+ORDER_SCREEN_ROWS = {
+    "WRovrUdwHi": ("1415109", "1415102", "102694086", "12979723"),
+    "WRoAkcEppg": ("1415102", "1415109", "102694086", "12979723"),
+    "U03": ("1415102", "1415109", "102694086", "12979723", "49974780"),
+}
 
 
 def fg_window(series, start, cutoff, side, *, after_report):
@@ -200,6 +215,108 @@ def analyze_october(series, sources):
     )
 
 
+def position_cutoffs():
+    exposure = verified_json(EXPOSURE, EXPOSURE_SHA256)
+    timeline = verified_json(CONTINUITY, CONTINUITY_SHA)["sources"]
+    totals = {row["source"]: row for row in verified_json(TABLE_TOTALS, TABLE_TOTALS_SHA)}
+    tables = {row["source"]: row for row in exposure["tables"]}
+    comparisons = {}
+    for source in ("WRoAkcEppg", "U03"):
+        table, total = tables[source], totals[source]
+        image = table["image"]
+        if sha((ARCHIVE.parent / image["path"]).read_bytes()) != image["sha256"] or image != timeline[source]["image"]:
+            raise ValueError("FG_ORDER_WINDOW_IMAGE_CHANGED")
+        legs = {f"{contract}:{side}": leg for contract, position in table["contracts"].items()
+                for side, leg in position["legs"].items()}
+        legs.update({f"{contract}:{side}": {"quantity": lots} for contract, sides in total["other_legs"].items()
+                     for side, lots in sides.items()})
+        if len(legs) != total["row_count"] or sum(leg["quantity"] for leg in legs.values()) != total["total_lots"]:
+            raise ValueError("FG_ORDER_WINDOW_TABLE_TOTAL_CHANGED")
+        comparisons[source] = dict(image=image, legs=legs, total_lots=total["total_lots"],
+                                   quote_anchor=timeline[source]["quote_anchor"], binding=table["binding"])
+    return comparisons
+
+
+def order_window(session, market):
+    baseline = verified_json(OCTOBER_EXIT_BASELINE, OCTOBER_EXIT_SHA)
+    index = input_sources()
+    sources = {key: index[key] for key in ("WRovrUdwHi", "WRoAkcEppg", "U03", "A5358325549629506", "WRoCswszPF")}
+    for source, row in sources.items():
+        if any(row[key] != baseline["sources"][source][key] for key in ("published_at", "source_url")):
+            raise ValueError("FG_ORDER_WINDOW_SOURCE_CHANGED")
+    for label, (relative, digest) in IMAGES.items():
+        if sha((ARCHIVE.parent / "02-持仓记录" / relative).read_bytes()) != digest:
+            raise ValueError("FG_ORDER_WINDOW_REPORT_IMAGE_CHANGED")
+
+    tables = position_cutoffs()
+    before, after = (tables[source] for source in ("WRoAkcEppg", "U03"))
+    previous, following = before["legs"], after["legs"]
+    missing = {key: previous[key]["quantity"] for key in sorted(previous.keys() - following.keys())}
+    common = sorted(previous.keys() & following.keys())
+    unchanged_quantity = all(previous[key]["quantity"] == following[key]["quantity"] for key in common)
+    no_long_shown = f"{CONTRACT}:long" not in (previous.keys() | following.keys())
+    if (not unchanged_quantity or following.keys() - previous.keys()
+            or sum(missing.values()) != before["total_lots"] - after["total_lots"]):
+        raise ValueError("FG_ORDER_WINDOW_UNRECONCILED_DISPLAY")
+    if f"{CONTRACT}:short" not in missing:
+        raise ValueError("FG_ORDER_WINDOW_SHORT_ABSENCE_CHANGED")
+    prior_short_quantity = missing[f"{CONTRACT}:short"]
+
+    series = read_window(session, market, CONTRACT, date(2026, 10, 27))
+    if bar_digest(series[1]) != MINUTE_HASHES["2026-10-27"]:
+        raise ValueError("FG_ORDER_WINDOW_MARKET_CHANGED")
+    start = datetime.fromisoformat(before["quote_anchor"])
+    cutoff = at("2026-10-27T14:08")
+    if not start < cutoff < datetime.fromisoformat(after["quote_anchor"]):
+        raise ValueError("FG_ORDER_WINDOW_QUOTE_ORDER_CHANGED")
+    prices = completed(series[1], start, cutoff)
+    checks = {cutoff}
+    geometry = {}
+    for side in ("LONG", "SHORT"):
+        events = fresh_geometry(series, start, cutoff, side)
+        cuts = {cutoff} | {event["available_at"] for rows in events.values() for event in rows}
+        cuts |= {instant + US for instant in cuts if instant + US < cutoff}
+        for instant in cuts:
+            prefix = {p: [bar for bar in bars if bar.end + US < instant] for p, bars in series.items()}
+            expected = {clock: [event for event in rows if event["available_at"] < instant]
+                        for clock, rows in events.items()}
+            if fresh_geometry(prefix, start, instant, side) != expected:
+                raise ValueError("FG_ORDER_WINDOW_PREFIX_DRIFT")
+        checks.update(cuts)
+        geometry[side] = events
+
+    edges = {}
+    for edge in map(Decimal, ("829", "836", "842", "844")):
+        runs = strict_runs(prices, edge, "LONG")
+        edges[str(edge)] = boundary_clocks(prices, edge, "LONG") | dict(
+            first_new_cross_two_closes_at=next((end for end, run in runs.items()
+                                               if run["fresh_crossing_known_at"] and run["close_count"] >= 2), None),
+        )
+    return dict(
+        version="lms405-fg-october-order-window-v1", contract=CONTRACT, baseline_sha256=OCTOBER_EXIT_SHA,
+        sources=sources, software_images=IMAGES, software_sequence_by_source=ORDER_SCREEN_ROWS,
+        shared_order_ids=sorted(set.intersection(*(set(rows) for rows in ORDER_SCREEN_ROWS.values()))),
+        newly_visible_at_close=sorted(set(ORDER_SCREEN_ROWS["U03"]) - set(ORDER_SCREEN_ROWS["WRoAkcEppg"])),
+        software_buy_close=dict(report_order_id="49974780", displayed_time="14:08", displayed_filled=True,
+                                executed_date=None, executed_price=None, executed_quantity=None, account=None,
+                                strategy_version=None),
+        position_tables=tables, same_quantity_common_rows=common, no_long_row_shown_in_either_table=no_long_shown,
+        position_rows_unlisted_at_close=missing, assumed_close_minute_start=cutoff,
+        conditional_position_conclusions=dict(
+            required_assumptions=["SAME_ACCOUNT", "BOTH_POSITION_TABLES_COMPLETE_AND_SYNCHRONIZED_WITH_QUOTE_ANCHORS",
+                                  "NORMAL_OPEN_CLOSE_POSITION_ACCOUNTING"],
+            short_quantity_decrease=prior_short_quantity, minimum_buy_close_quantity_in_interval=prior_short_quantity,
+            single_order_quantity=dict(quantity=prior_short_quantity, additional_assumption=
+                                       "REPORT_49974780_IS_THIS_ACCOUNTS_ONLY_FG_POSITION_CHANGE_IN_INTERVAL"),
+        ),
+        chronological_single_stream_verified=False, actual_account_continuity=None,
+        retrospective_price_conditions=edges, before_observed_minute_geometry=geometry,
+        market={f"{p}m": dict(count=len(rows), sha256=bar_digest(rows)) for p, rows in series.items()},
+        prefix_checks=len(checks), historical_plan_verified=False, author_exit_reason=None,
+        admitted_author_samples=0, author_matches=None, executable=False, fills=None, pnl=None,
+    )
+
+
 def compute(session, market):
     index = input_sources()
     sources = {key: index[key] | {"archive_sha256": sha((ARCHIVE.parent / index[key]["archive_path"]).read_bytes())}
@@ -225,7 +342,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--september-clocks", action="store_true")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--september-clocks", action="store_true")
+    group.add_argument("--order-window", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -239,7 +358,10 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            run = compute_september_clocks if args.september_clocks else compute
+            if args.september_clocks:
+                run = compute_september_clocks
+            else:
+                run = order_window if args.order_window else compute
             result = run(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
