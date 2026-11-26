@@ -6,7 +6,8 @@ from types import SimpleNamespace
 from lms405_oi_leg_intent import lot_bound
 from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, latest_whole_leg_start
 from lms405_right_side_study import ONE, US, at
-from lms405_sh_protection_replacement import compatible_counts
+import lms405_sh_protection_replacement as replacement
+from lms405_sh_protection_replacement import compatible_counts, retained_original_after_close
 
 
 def test_displayed_tick_totals_use_precision_of_each_source():
@@ -59,6 +60,36 @@ def test_retained_lot_joint_bounds_match_exhaustive_small_tick_ranges():
     assert compatible_counts(lots, old_total, new_total, old, None, night) == [
         list(row) for row in sorted(compatible) if row[1] == 0
     ]
+
+
+def test_same_opening_average_and_trading_day_allow_overlap_only_if_price_supports_replacement():
+    total = range(400, 401)
+    assert retained_original_after_close(4, total, (99, 104), (90, 98)) == [4]
+    assert retained_original_after_close(4, total, (97, 104), (90, 98)) == [2, 3, 4]
+
+
+def test_close_quote_does_not_admit_recovery_inside_its_minute(monkeypatch):
+    close = at("2026-10-27T15:00")
+    night = at("2026-10-27T21:40")
+
+    def row(clock, long, new=0):
+        return dict(as_of=clock.isoformat(), long=str(long), new_protection_long=str(new), short="20", original_short="20")
+
+    recovery = close - ONE / 2
+    trace = [row(close - 2 * ONE, 20), row(recovery, 0), row(close, 0), row(night - 2 * ONE, 20, 20)]
+    case = dict(trace=trace, recovery_candidate=dict(confirmed_at=recovery.isoformat()))
+    frozen = dict(sources={}, inputs=dict(lifecycle=replacement.LIFECYCLE_SHA), contract=replacement.CONTRACT,
+                  seed=dict(long="20", short="20"), scenarios={
+                      "test:both_immediate": case,
+                      "test:no_checkpoint_before_quote": case | {"trace": trace[2:]},
+                  })
+    monkeypatch.setattr(replacement, "verified_json", lambda *_: frozen)
+    paths = replacement.check_permission_paths(
+        {"sources": {}}, close, {night.isoformat(): {"full_night_long_after_gate": {"21:21": True}}}, 20,
+    )
+    assert paths["test:both_immediate"]["projected_close_long"] == 20
+    assert paths["test:both_immediate"]["conditional_snapshot_compatibility"] is False
+    assert paths["test:no_checkpoint_before_quote"]["projected_close_long"] == 20
 
 
 def test_gate_comparison_exposes_the_effect_of_the_minute_straddling_availability():
