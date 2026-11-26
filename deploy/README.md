@@ -344,6 +344,12 @@ Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 com
 ### 休市窗口整组发布
 
 当待发布共享合同改变、不能与旧消费者并行时，使用 `install-local-services.sh --plan-cohort --candidate-root <absolute-release-root> --tag <annotated-tag> --commit <peeled-commit>` 冻结整组计划，再用 `--apply-cohort-plan --plan <absolute-plan>` 单次执行。
+
+Market 跨 Redis 交接前，可在候选代码所在 macOS 宿主运行
+`install-local-services.sh --read-market-account-handover --trading-day YYYY-MM-DD --consumer tqkq`
+和 `--consumer subing`，分别核对正式 bar 源下的快期 H1 账本水位和苏冰 Paper 提交水位。
+该入口仅读取服务绑定、私有设置和账本，输出预检证据。正式跨 Redis apply 仍受独立接管与配置校验保护。
+
 仅支持现有十服务、六常驻全部启用的向前版本；数据库合同默认不变，仅已预装的0052→0053新增接收表可按
 `reference_inbox_preinstalled_additive_0053_v1`提供精确Git差异、单链head及新鲜只读schema/约束/触发器证明；
 另允许已预装的0053→0054不可变Inbox恢复结果表，按`reference_inbox_recovery_preinstalled_additive_0054_v1`核对原表、原guard不变以及新增表完整约束/触发器；

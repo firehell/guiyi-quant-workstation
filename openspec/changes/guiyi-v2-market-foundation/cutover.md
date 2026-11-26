@@ -37,4 +37,6 @@
 自然连测可用 `run_display.py --complete-trading-day` 绑定 Calendar 首尾，提前两分钟内启动并在当天最后时段后两分钟停机，上限 24 小时。真实采样与供应商历史对照仍使用已批准额度和窗口。
 
 
-跨实例交接的隔离验证复用 cohort 的部署锁和一次 CAS。停旧后按交易日核对 source、completed、identity 索引和各接收游标，落原件并再次读回。新实例在旧实例身份、目标实例身份和新交易日明确后一次性建立零位点，CAS 前重验。跨实例故障前像无法证明时停驻，CAS 结果未知时独立读取 registry。只有精确匹配新绑定才判为仅可前向恢复，其他不确定状态继续停驻。常规 macOS 入口仍受保护，待快期和苏冰各自的生产接管证明与配置入口接通后才允许使用该路径。
+跨实例交接的隔离验证复用 cohort 的部署锁和一次 CAS。停旧后按交易日核对 source、completed、identity 索引和各接收游标，落原件并再次读回。新实例在旧实例身份、目标实例身份和新交易日明确后一次性建立零位点，CAS 前重验。跨实例故障前像无法证明时停驻，CAS 结果未知时独立读取 registry。只有精确匹配新绑定才判为仅可前向恢复，其他不确定状态继续停驻。macOS 部署宿主提供只读账户预检 `install-local-services.sh --read-market-account-handover --trading-day YYYY-MM-DD`，可用 `--consumer tqkq` 或 `--consumer subing` 单独运行。快期从私有 SQLite 同一读事务核对投影和提交尾，再按 Catalog 核对逐品种物理合约及 H1 水位，并检查 monitor、Scope、账户读回有效期和恢复义务。苏冰从独立 PostgreSQL 只读快照校验 run、序号、哈希链和重放，再逐品种按原 stream ID 及 identity 索引核对末根分钟。入口按私有项目设置和 registry 解释现有 bar 源，输出不作为切换授权。
+
+正式交接仍需在停写边界证明两个账户的独立 owner，以及启动后实际使用目标 Redis 的证据。快期 H1 水位本身没有 Market source generation，须另外证明其进程重启后使用了目标 Redis。苏冰续用原 run，必须核验新增分钟来自目标 completed journal，不能把旧 stream ID 当作新实例的推进证据。常规 macOS apply 入口继续拒绝跨实例计划，直至账户接管、配置激活及前向恢复接通。

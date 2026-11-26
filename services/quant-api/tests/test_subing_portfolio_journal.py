@@ -393,3 +393,68 @@ def test_same_night_accounts_replay_while_previous_day_research_fails_and_recove
     assert report["computed"] == 1
     assert eod.reconcile_publications(path, config) == []
     print("night replay, seconds, Tq then SuBing:", baseline_seconds, concurrent_seconds)
+
+
+def test_market_handoff_reads_paper_watermark_from_postgres_and_completed_redis():
+    from redis import Redis
+    from app.market_data.observation_stream import ObservationStream
+    from app.runtime_cohort_errors import CohortError
+    from app.runtime_market_account_readback import paper_watermark
+
+    url = os.getenv("GUIYI_MARKET_PAPER_TEST_DATABASE_URL")
+    redis_port = int(os.getenv("GUIYI_TEST_REDIS_PORT", "0"))
+    target_port = int(os.getenv("GUIYI_MARKET_TARGET_REDIS_PORT", "0"))
+    if not url or not redis_port or not target_port:
+        pytest.skip("requires disposable PostgreSQL and two isolated Redis instances")
+    assert all(port > 1024 and port != 6379 for port in (redis_port, target_port))
+    store = ModelStore(url, test_only=True)
+    contexts, batches = inputs()
+    run_id = "market-handoff-" + uuid.uuid4().hex
+    day = batches[0][0]
+    fixture_generation = "rqdata-tick:" + "a" * 32 + ":"
+    with Redis(host="127.0.0.1", port=redis_port) as old, Redis(
+        host="127.0.0.1", port=target_port,
+    ) as target:
+        assert old.dbsize() == target.dbsize() == 0
+        try:
+            store.initialize()
+            writer = PortfolioJournal.create(store, run_id, batches[0][1] - timedelta(minutes=1))
+            stream = ObservationStream(target, kind="completed")
+            old_stream = ObservationStream(old, kind="completed")
+            expected = {}
+            for index, (day, at, observed, prepared) in enumerate(batches):
+                inputs_at = {}
+                for product, row in prepared.items():
+                    old_stream.append(row.envelope)
+                    event = replace(
+                        row.envelope,
+                        raw_received_at=row.envelope.source_observed_at,
+                        source_generation=fixture_generation + "1",
+                    )
+                    stream_id = stream.append(event)
+                    inputs_at[product] = replace(row, envelope=replace(event, stream_id=stream_id))
+                    expected[product] = (event.data["contract"], at)
+                assert writer.submit(day, at, observed, inputs_at, contexts=contexts if index == 0 else None)
+            reader = ModelStore(url, test_only=True)
+            reader.engine = reader.engine.execution_options(
+                isolation_level="REPEATABLE READ", postgresql_readonly=True,
+            )
+            try:
+                result = paper_watermark(reader, run_id, stream, day, expected,
+                                         generation_prefix=fixture_generation)
+                assert result["status"] == "verified"
+                assert result["sequence"] == len(batches)
+                assert result["run_id"] == run_id
+                assert set(result["watermarks"]) == set(EXPANDED_PORTFOLIO_PRODUCTS)
+                with pytest.raises(CohortError, match="SUBING_HANDOFF_SOURCE_MISMATCH"):
+                    paper_watermark(reader, run_id, stream, day, expected)
+                with pytest.raises(CohortError, match="SUBING_HANDOFF_SOURCE_(MISSING|MISMATCH)"):
+                    paper_watermark(reader, run_id, old_stream, day, expected,
+                                    generation_prefix=fixture_generation)
+            finally:
+                reader.engine.dispose()
+        finally:
+            store.engine.dispose()
+            for connection in (old, target):
+                for key in connection.scan_iter():
+                    connection.delete(key)

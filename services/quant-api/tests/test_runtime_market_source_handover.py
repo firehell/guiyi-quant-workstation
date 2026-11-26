@@ -278,3 +278,22 @@ def test_staging_refuses_redis_client_with_transparent_retries(tmp_path, redis_p
                 **host.target_arguments(_plan(host)),
             )
     assert host.target.dbsize() == 0
+
+
+def test_macos_account_job_rejects_program_override(tmp_path, monkeypatch):
+    import plistlib
+    from app import runtime_market_macos as macos
+
+    label = macos.SUBING_PAPER_LABEL
+    agents = tmp_path / "Library" / "LaunchAgents"
+    agents.mkdir(parents=True)
+    args = ("/bin/bash", "expected-script")
+    (agents / f"{label}.plist").write_bytes(plistlib.dumps({
+        "Label": label, "ProgramArguments": list(args), "Program": "/usr/bin/false",
+        "WorkingDirectory": str(tmp_path),
+    }))
+    def launchd(*_args, **_kwargs):
+        pytest.fail("unexpected launchd read for invalid installed launcher")
+    monkeypatch.setattr(macos, "read_launchd_service", launchd)
+    with pytest.raises(CohortError, match="MARKET_HANDOFF_ACCOUNT_LAUNCHER_MISMATCH"):
+        macos._job(tmp_path, label, args, tmp_path)
