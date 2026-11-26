@@ -119,7 +119,7 @@ def compare_leg(observed, average, observed_day, quote_end, active, minutes, siz
                          price_compatible_if_trade_day_can_be_deferred=by_displayed_day)
 
 
-def study(session, market):
+def study(session, market, *, extra_variant=None):
     managed = verified_json(MANAGED, MANAGED_SHA)
     if set(managed["cases"]) != set(CONTRACTS) or managed["fixture_only"] is not True:
         raise ValueError("AUDIT_FIXTURE_SCOPE_CHANGED")
@@ -146,6 +146,11 @@ def study(session, market):
             raise ValueError("AUDIT_REPLAY_INPUT_CHANGED")
         minute_index = {b.bar_end: b for b in minutes}
         states = {name: leg_changes(contract, variant["transitions"]) for name, variant in case["variants"].items()}
+        if extra_variant is not None:
+            name, rows = extra_variant(fives, cut)
+            if not name or name in states:
+                raise ValueError("AUDIT_VARIANT_NAME_CONFLICT")
+            states[name] = leg_changes(contract, rows)
         rows = []
         for table in tables:
             source = table["source"]
@@ -212,7 +217,9 @@ def summarize(outputs):
     classifications = {}
     for contract, rows in outputs.items():
         cases = {}
-        for name in ("baseline", "managed"):
+        names = ("baseline", "managed", *sorted({name for row in rows for name in row.get("by_variant", {})}
+                                              - {"baseline", "managed"}))
+        for name in names:
             counts = Counter()
             sides_by_source = {}
             for row in rows:
