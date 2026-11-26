@@ -49,12 +49,27 @@ class RecoveryPermission:
         return fingerprint(asdict(self))
 
 
-def visible_permissions(records, contract, *, as_of, timely_fixture):
+@dataclass(frozen=True)
+class MinuteRecoveryPermission(RecoveryPermission):
+    """The period of the shape; directional confirmation always uses 1m."""
+
+    shape_minutes: int | None = None
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.decision == "PERMIT":
+            if type(self.shape_minutes) is not int or self.shape_minutes not in (1, 5):
+                raise ValueError("MINUTE_RECOVERY_SHAPE_PERIOD_REQUIRED")
+        elif self.shape_minutes is not None:
+            raise ValueError("MINUTE_RECOVERY_DENIAL_MUST_OMIT_PERIOD")
+
+
+def visible_permissions(records, contract, *, as_of, timely_fixture, record_type=RecoveryPermission):
     if not isinstance(timely_fixture, bool):
         raise ValueError("BOOLEAN_MODE_REQUIRED")
     visible = {}
     for item in records:
-        if not isinstance(item, RecoveryPermission):
+        if type(item) is not record_type:
             raise ValueError("RECOVERY_PERMISSION_REQUIRED")
         if item.known_at >= as_of:
             continue
