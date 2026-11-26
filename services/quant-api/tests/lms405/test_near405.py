@@ -469,6 +469,27 @@ def test_portfolio_recovery_needs_same_contract_and_a_break_after_the_current_lo
     assert transitions[-1]["after"] == ["0", "1"]
 
 
+def test_divider_probe_keeps_an_existing_opposite_position_and_can_enter_from_flat():
+    from lms405_divider_short_candidates import DividerShortPlan
+    from lms405_portfolio_task_policy import gated_replay
+
+    rows = entry_bars()
+    start = rows[-1].end
+    minute = timedelta(minutes=1)
+    plan = DividerShortPlan("JM2509", "divider", start - minute, start, start + 4 * minute, D("100"), D("110"),
+                            "FIRST_FAR_CLOSE")
+    event = dict(at=start + 3 * minute + 9 * US, known_at=start + 3 * minute + US, setup_start=start + 2 * minute,
+                 close=D("99"), signal=None, plan=plan)
+    actions, blocked = gated_replay(rows, event["at"] + US, divider_events=(event,))
+    assert [row["action"] for row in actions] == ["ENTER_LONG"]
+    assert blocked[-1]["reason"] == "FRESH_FLAT_STATE_REQUIRED"
+
+    actions, blocked = gated_replay(rows[:-1], event["at"] + US, divider_events=(event,))
+    assert [row["action"] for row in actions] == ["ENTER_SHORT"]
+    assert not blocked
+    assert actions[-1]["divider_short"]["approval_kind"] == "TEST_FIXTURE"
+
+
 def test_managed_recovery_requires_fresh_cross_and_human_decisions():
     rows = managed_lock_restore_bars()
     for i in (11, 12):

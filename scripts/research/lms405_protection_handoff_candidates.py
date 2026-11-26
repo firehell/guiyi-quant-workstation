@@ -22,13 +22,15 @@ class HandoffPlan:
     replacement_known_at: datetime
     replacement_start: datetime
     recovery_clock: str
+    replacement_clock: str = "WICK"
 
 
 def handoff_events(series, bands, plan, cutoff):
     """Require a known plan before the reference bar and use completed geometry only."""
     if not series[1]:
         return [], []
-    if plan.contract != series[1][0].contract or plan.recovery_clock not in {"FAR_CLOSE", "FAR_CLOSE_THEN_SHAPE"}:
+    if (plan.contract != series[1][0].contract or plan.recovery_clock not in {"FAR_CLOSE", "FAR_CLOSE_THEN_SHAPE"}
+            or plan.replacement_clock not in {"WICK", "ARM_THEN_TOUCH"}):
         raise ValueError("LMS_HANDOFF_SCOPE_INVALID")
     recoveries, protections = [], []
     recovery_cut = min(cutoff, plan.replacement_known_at)
@@ -66,6 +68,9 @@ def handoff_events(series, bands, plan, cutoff):
                                    revision=plan.recovery_revision, old_lock_revision=plan.old_lock_revision,
                                    clock=plan.recovery_clock))
 
+    if plan.replacement_clock == "ARM_THEN_TOUCH":
+        return sorted(recoveries, key=lambda row: (row["at"], row["period"])), protections
+
     for period in (1, 5):
         shapes = {bar.end: bar for bar in series[period]}
         for signal in signals(series, period, 1, side="LONG", start=plan.replacement_start, cut=cutoff):
@@ -88,3 +93,17 @@ def handoff_events(series, bands, plan, cutoff):
     return sorted(recoveries, key=lambda row: (row["at"], row["period"])), sorted(
         protections, key=lambda row: (row["at"], row["period"]),
     )
+
+
+def scope_armed_replacement(events, plan):
+    """Require the current recovery before using a new revision's deferred 1m signal."""
+    if plan is None or plan.replacement_clock != "ARM_THEN_TOUCH":
+        return events
+    adjusted = []
+    for event in events:
+        if event["band"].revision != plan.replacement_revision or "touch_known_at" not in event:
+            adjusted.append(event)
+        elif (event["band"].contract == plan.contract and event["period"] == 1
+              and max(plan.replacement_start, plan.replacement_known_at) < event["shape_start"]):
+            adjusted.append(event | dict(contract=plan.contract, required_recovery=plan.recovery_revision))
+    return adjusted

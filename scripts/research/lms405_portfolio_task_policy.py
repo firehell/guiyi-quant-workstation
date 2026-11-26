@@ -14,6 +14,7 @@ from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, VERSION, Book, Intent, assess
 from guiyi_quant.lms405.protection_band import active_band, visible_bands
 from guiyi_quant.lms405.public_conditions import Condition
+from lms405_divider_short_candidates import divider_short_events
 from lms405_portfolio_leg_audit import study as audit_legs
 from lms405_portfolio_left_entry import (
     MODES as LEFT_MODES, assess_left_proposal, assumed_carry_comparison, left_signals, scope_for,
@@ -21,7 +22,7 @@ from lms405_portfolio_left_entry import (
 from lms405_portfolio_protection_gate import advance_due, plan_rows, price_admission
 from lms405_portfolio_replay import input_sources
 from lms405_portfolio_right_entry import active_branch, assess_entry, branches, entry_events
-from lms405_protection_handoff_candidates import handoff_events
+from lms405_protection_handoff_candidates import handoff_events, scope_armed_replacement
 from lms405_protection_lot_timing import verified_json
 from lms405_protection_signal_lifetime import lifetime
 from lms405_replay import ohlc
@@ -177,7 +178,7 @@ def published_protection_events(series, bands, cutoff, *, advance_at_touch=False
 
 def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branches=(), right_events=(),
                  left_scope=None, left_mode=None, left_events=(), range_exit_requires_confirmation=False,
-                 recovery_events=()):
+                 recovery_events=(), divider_events=()):
     """Keep old directional suggestions while requiring independent management evidence."""
     if not bars:
         return [], []
@@ -185,6 +186,7 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
     queue = [(bar.end + 5 * US, 0, index) for index, bar in enumerate(bars)]
     queue.extend((row["at"], 1, index) for index, row in enumerate(protection_events))
     queue.extend((row["at"], 3, index) for index, row in enumerate(recovery_events))
+    queue.extend((row["at"], 4, index) for index, row in enumerate(divider_events))
     right_by_time = defaultdict(list)
     for row in right_events:
         right_by_time[row["at"]].append(row)
@@ -194,7 +196,7 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
         if evaluated_at >= cutoff:
             break
         clock = evaluated_at - US
-        entry_context = protection_context = left_context = recovery_context = None
+        entry_context = protection_context = left_context = recovery_context = divider_context = None
         if source == 2:
             slot = sorted(right_by_time[evaluated_at], key=lambda row: row["clock"])
             directions = set()
@@ -269,6 +271,27 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
             plan = f"{state['plan']['plan_id']}:{event['revision']}"
             proposal = dict(action=action, plan=state["plan"])
             recovery_context = event | dict(approval_kind="TEST_FIXTURE")
+        elif source == 4:
+            event = divider_events[index]
+            divider = event["plan"]
+            if divider.contract != state["contract"] or not (
+                divider.known_at < divider.start <= event["setup_start"] < event["known_at"] < evaluated_at < divider.through
+            ):
+                raise ValueError("PORTFOLIO_TASK_POLICY_DIVIDER_SCOPE_MISMATCH")
+            state_known = local_clock(state["known_at"])
+            flat = state["long"] == state["short"] == "0" and state["cycle_id"] is None
+            if latest_five is None or not flat or not state_known < event["setup_start"]:
+                blocked.append(dict(at=evaluated_at, operation="ENTER_DIVIDER_SHORT", revision=divider.revision,
+                                    reason="FRESH_FLAT_STATE_REQUIRED", before=[state["long"], state["short"]]))
+                continue
+            action, operation, qty = "ENTER_SHORT", "ENTER_TREND", UNIT
+            plan = sha(encoded([asdict(divider), event["known_at"], state]).encode())
+            region = dict(plan_id=plan, side="SHORT", lower=str(divider.lower), upper=str(divider.upper),
+                          environment="RANGE", created_index=latest_five, created_at=event["known_at"].isoformat())
+            proposal = dict(action=action, version=near.MANAGEMENT_VERSION, proposal_id=plan,
+                            index=latest_five, plan=region)
+            book = Book(state["contract"], plan, "SHORT", state_known)
+            divider_context = event | dict(plan=asdict(divider), approval_kind="TEST_FIXTURE")
         else:
             bar = bars[index]
             latest_five = index
@@ -344,12 +367,15 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
             row["left_entry"] = left_context
         if recovery_context is not None:
             row["recovery"] = recovery_context
+        if divider_context is not None:
+            row["divider_short"] = divider_context
         transitions.append(row)
     return transitions, blocked
 
 
 def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, right_entries, left_mode,
-                         advance_at_touch, range_exit_requires_confirmation=False, handoff_plan=None):
+                         advance_at_touch, range_exit_requires_confirmation=False, handoff_plan=None,
+                         divider_short_plan=None):
     """Evaluate the same scoped policy across different completed history windows."""
     symbol = bars[0].contract
     series = {1: [Bar(symbol, bar.bar_end, *ohlc(bar), start=bar.bar_end - ONE) for bar in raw_minutes],
@@ -359,14 +385,16 @@ def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, r
     left_scope = scope_for(index, symbol) if left_mode is not None else None
     events = published_protection_events(series, plans, cutoff, advance_at_touch=advance_at_touch) if published_bands else []
     recoveries, replacements = handoff_events(series, plans, handoff_plan, cutoff) if handoff_plan else ([], [])
-    events = sorted([*events, *replacements], key=lambda row: (row["at"], row["period"]))
+    events = sorted([*scope_armed_replacement(events, handoff_plan), *replacements],
+                    key=lambda row: (row["at"], row["period"]))
     entries = entry_events(series, scoped, cutoff)
+    divider_entries = divider_short_events(series, divider_short_plan, cutoff) if divider_short_plan else []
     left = left_signals(series, left_scope, cutoff)
     replay_options = dict(left_scope=left_scope, left_mode=left_mode,
                           range_exit_requires_confirmation=range_exit_requires_confirmation)
     actions, blocked = gated_replay(bars, cutoff, events, minutes=series[1],
                                    right_branches=scoped, right_events=entries, left_events=left,
-                                   recovery_events=recoveries, **replay_options)
+                                   recovery_events=recoveries, divider_events=divider_entries, **replay_options)
     for split in (bars[0].end, bars[len(bars) // 2].end, cutoff):
         prefix = [b for b in bars if b.end + US < split]
         sliced = {period: [b for b in candles if b.end + US < split] for period, candles in series.items()}
@@ -375,7 +403,8 @@ def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, r
         prior_recoveries, prior_replacements = handoff_events(
             sliced, plans, handoff_plan, split,
         ) if handoff_plan else ([], [])
-        available = sorted([*available, *prior_replacements], key=lambda row: (row["at"], row["period"]))
+        available = sorted([*scope_armed_replacement(available, handoff_plan), *prior_replacements],
+                           key=lambda row: (row["at"], row["period"]))
         if [e for e in events if e["at"] < split] != [e for e in available if e["at"] < split]:
             raise ValueError("PORTFOLIO_TASK_POLICY_SIGNAL_PREFIX_DIVERGED")
         if prior_recoveries != [row for row in recoveries if row["at"] < split]:
@@ -383,12 +412,15 @@ def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, r
         right_prefix = entry_events(sliced, scoped, split)
         if right_prefix != [e for e in entries if e["at"] < split]:
             raise ValueError("PORTFOLIO_TASK_POLICY_RIGHT_PREFIX_DIVERGED")
+        divider_prefix = divider_short_events(sliced, divider_short_plan, split) if divider_short_plan else []
+        if divider_prefix != [row for row in divider_entries if row["at"] < split]:
+            raise ValueError("PORTFOLIO_TASK_POLICY_DIVIDER_PREFIX_DIVERGED")
         left_prefix = left_signals(sliced, left_scope, split)
         if left_prefix != [e for e in left if e["signal_known_at"] < split]:
             raise ValueError("PORTFOLIO_TASK_POLICY_LEFT_PREFIX_DIVERGED")
         replayed = gated_replay(prefix, split, available, minutes=sliced[1], right_branches=scoped,
                                right_events=right_prefix, left_events=left_prefix,
-                               recovery_events=prior_recoveries, **replay_options)
+                               recovery_events=prior_recoveries, divider_events=divider_prefix, **replay_options)
         expected = (
             [item for item in actions if local_clock(item["at"]) < split],
             [item for item in blocked if item["at"] < split],
@@ -396,7 +428,7 @@ def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, r
         if replayed != expected or replayed != gated_replay(bars, split, events, minutes=series[1],
                                                            right_branches=scoped, right_events=entries,
                                                            left_events=left, recovery_events=recoveries,
-                                                           **replay_options):
+                                                           divider_events=divider_entries, **replay_options):
             raise ValueError("PORTFOLIO_TASK_POLICY_PREFIX_DIVERGED")
     return actions, blocked, sources, scoped, events, entries, left_scope, left
 

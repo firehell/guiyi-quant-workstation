@@ -99,7 +99,9 @@ def study(session, market):
             candidate, diagnostics, *_ = replay_scoped_policy(fives, minutes, cutoff, index, handoff_plan=plan, **opts)
             rows = compare_rows(CONTRACT, control["comparisons"], "replay", candidate, minutes, profile[CONTRACT], None, tick)
             counts = summarize({CONTRACT: rows})[CONTRACT]["strict_replay"]
-            variants[clock] = dict(plan=asdict(plan), actions=candidate, diagnostics=diagnostics,
+            plan_record = asdict(plan)
+            del plan_record["replacement_clock"]  # Preserve the v1 rubber report's serialized contract.
+            variants[clock] = dict(plan=plan_record, actions=candidate, diagnostics=diagnostics,
                                    portfolio=totals(portfolio, key, counts), rubber=counts,
                                    changed_quotes=compatibility_changes(control["comparisons"], rows),
                                    strict_night_joint_quotes=night_joint_quotes(rows),
