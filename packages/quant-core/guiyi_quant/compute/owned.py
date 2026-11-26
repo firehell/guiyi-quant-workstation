@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass, fields
+from datetime import datetime
 from functools import partial
 from types import MappingProxyType
 
@@ -13,7 +14,10 @@ from ..indicators.policy import HTDY_ALERT_OBSERVATION_CONSUMER
 from ..indicators.range_detector_lux import RANGE_DETECTOR_LUX_VERSION, range_detector_lux_series
 from ..indicators.registry import get_indicator
 from ..indicators.subing_ths import SUBING_THS_FORMULA_VERSIONS, SubingThs15mKernel
-from ..newow.product_auxiliary import calculate_auxiliary_component
+from ..newow.cup_handle import CupReadyWitness
+from ..newow.profile import NEWOW_TREND_D1_V1
+from ..newow.product_auxiliary import AuxiliaryLayer, calculate_auxiliary_component
+from ..newow.product_contracts import ProductBar, ProductIdentity
 from ..newow.subplots import (
     MAIN_FORCE_CONTROL_FORMULA_VERSION,
     UP_DOWN_ENERGY_FORMULA_VERSION,
@@ -46,6 +50,15 @@ class OwnedIndicatorDefinition:
     optional_outputs: tuple[str, ...] = ()
 
 
+def _newow_display_calculator(name: str) -> Callable:
+    def calculate(
+        identity: ProductIdentity, bars: tuple[ProductBar, ...], *, as_of: datetime | None = None,
+    ) -> AuxiliaryLayer[object]:
+        return calculate_auxiliary_component(identity, bars, name, as_of=as_of)
+
+    return calculate
+
+
 def _newow_auxiliary(name, formula_version, data_type, *, repainting=False):
     return OwnedIndicatorDefinition(
         feature_id=f"newow.{name}", formula_version=formula_version,
@@ -53,7 +66,7 @@ def _newow_auxiliary(name, formula_version, data_type, *, repainting=False):
         outputs=tuple(field for field in data_type.__dataclass_fields__ if field != "formula_version"),
         supported_frequencies=FREQUENCIES - {"1m"},
         allowed_uses=frozenset(("web",)), repainting=repainting,
-        calculate=partial(calculate_auxiliary_component, component=name),
+        calculate=_newow_display_calculator(name),
     )
 
 
@@ -167,6 +180,14 @@ _DEFINITIONS = (
     _newow_auxiliary("up_down_energy", UP_DOWN_ENERGY_FORMULA_VERSION, UpDownEnergyResult),
     _newow_auxiliary("trend_reversal", TREND_REVERSAL_FORMULA_VERSION, TrendReversalResult),
     _newow_auxiliary("zhaoyao_mirror", ZHAOYAO_MIRROR_FORMULA_VERSION, ZhaoyaoMirrorResult, repainting=True),
+    OwnedIndicatorDefinition(
+        "newow.cup_handle", NEWOW_TREND_D1_V1.cup_handle_formula,
+        "newow_product_bars_v1", "newow_cup_handle_witnesses_v1",
+        tuple(field.name for field in fields(CupReadyWitness)),
+        # The display envelope retains NOT_APPLICABLE for inactive strategy/period pairs.
+        FREQUENCIES - {"1m"}, frozenset(("web",)),
+        False, _newow_display_calculator("cup_handle"),
+    ),
     OwnedIndicatorDefinition(
         "range_detector_lux", RANGE_DETECTOR_LUX_VERSION, "range_detector_ohlc_v1",
         "range_detector_v1", ("points", "ranges"), FREQUENCIES, frozenset(("web",)),

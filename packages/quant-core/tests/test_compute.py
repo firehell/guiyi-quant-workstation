@@ -203,10 +203,21 @@ def test_manifest_pins_result_state_formulas_and_display_permissions():
     with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
         owned_indicator("newow.zhaoyao_mirror", frequency="1d", use="backtest")
     with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
+        owned_indicator("newow.cup_handle", frequency="1d", use="backtest")
+    with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
+        owned_indicator("newow.cup_handle", frequency="1m", use="web")
+    cup_definition = owned_indicator("newow.cup_handle", frequency="1d", use="web")
+    with pytest.raises(TypeError, match="unexpected keyword argument 'component'"):
+        cup_definition.calculate(None, (), component="zhaoyao_mirror", as_of=None)
+    with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
         owned_indicator("range_detector_lux", frequency="1m", use="simulation")
     manifest_features = manifest()["features"]
     assert manifest_features["macd"]["formula_version"] == "talib_macd_12_26_9_v1"
     assert manifest_features["newow.zhaoyao_mirror"]["repainting"] is True
+    cup = manifest_features["newow.cup_handle"]
+    assert cup["allowed_uses"] == ["web"] and cup["repainting"] is False
+    assert cup["output_schema_version"] == "newow_cup_handle_witnesses_v1"
+    assert {"witness_id", "confirmed_at", "profile_identity"}.issubset(cup["outputs"])
     assert manifest_features["subing_ths_15m"]["formula_version"] == "subing_ths_15m_v3"
 
 

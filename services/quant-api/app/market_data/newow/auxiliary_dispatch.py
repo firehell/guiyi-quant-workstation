@@ -3,10 +3,7 @@
 from datetime import datetime
 
 from guiyi_quant.compute.owned import owned_indicator
-from guiyi_quant.newow.product_auxiliary import (
-    AuxiliaryLayer,
-    calculate_auxiliary_component as calculate_pattern_layer,
-)
+from guiyi_quant.newow.product_auxiliary import AuxiliaryLayer
 from guiyi_quant.newow.product_contracts import ProductBar, ProductIdentity
 
 
@@ -19,9 +16,6 @@ def calculate_auxiliary_component(
 ) -> AuxiliaryLayer[object]:
     if not isinstance(identity, ProductIdentity):
         raise ValueError("NEWOW_AUXILIARY_INVALID_INPUT")
-    if component == "cup_handle":
-        return calculate_pattern_layer(identity, bars, component, as_of=as_of)
-
     definition = owned_indicator(f"newow.{component}", frequency=identity.frequency.value, use="web")
     if definition.calculate is None:
         raise ValueError("NEWOW_AUXILIARY_CALCULATOR_MISSING")

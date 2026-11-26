@@ -363,21 +363,22 @@ def test_auxiliary_uses_owned_calculation_without_changing_values(monkeypatch, p
         component, as_of=read.as_of,
     )
     assert result.auxiliary.value == expected
-    assert lookups == ([] if component == "cup_handle" else [(f"newow.{component}", "1d", "web")])
+    assert lookups == [(f"newow.{component}", "1d", "web")]
 
 
-def test_auxiliary_rejects_mismatched_registered_formula(monkeypatch, product_cases):
+@pytest.mark.parametrize("component", ("zhaoyao_mirror", "cup_handle"))
+def test_auxiliary_rejects_mismatched_registered_formula(monkeypatch, product_cases, component):
     from app.market_data.newow import auxiliary_dispatch
 
     service, _, _, clear = _service(product_cases)
-    definition = auxiliary_dispatch.owned_indicator("newow.zhaoyao_mirror", frequency="1d", use="web")
+    definition = auxiliary_dispatch.owned_indicator(f"newow.{component}", frequency="1d", use="web")
     monkeypatch.setattr(
         auxiliary_dispatch, "owned_indicator",
         lambda *_args, **_kwargs: replace(definition, formula_version="wrong-version"),
     )
     with pytest.raises(ValueError, match="NEWOW_AUXILIARY_REGISTRY_MISMATCH"):
         service.query(ProductServiceQuery(
-            "rb", "trend", "1d", section="auxiliary", component="zhaoyao_mirror", as_of=clear.bar_end,
+            "rb", "trend", "1d", section="auxiliary", component=component, as_of=clear.bar_end,
         ))
 
 
