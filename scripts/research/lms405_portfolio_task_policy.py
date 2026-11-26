@@ -37,6 +37,7 @@ PLAN_VARIANT = "published_band_protection_candidate"
 RIGHT_VARIANT = "published_protection_and_right_entry_candidate"
 UNIT = Decimal(1)
 EARLY_PROTECTION_CASES = {"FG2701:EARLY", "SA:EARLY_PROTECTION_FIXTURE", "SH:PROTECT_NEW"}
+RANGE_TARGET_EXIT = "OPPOSING_KEYBAR_AFTER_RANGE_TARGET"
 
 
 def local_clock(value):
@@ -174,7 +175,7 @@ def published_protection_events(series, bands, cutoff, *, advance_at_touch=False
 
 
 def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branches=(), right_events=(),
-                 left_scope=None, left_mode=None, left_events=()):
+                 left_scope=None, left_mode=None, left_events=(), range_exit_requires_confirmation=False):
     """Keep old directional suggestions while requiring independent management evidence."""
     if not bars:
         return [], []
@@ -251,7 +252,8 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
         else:
             bar = bars[index]
             latest_five = index
-            proposal = near.evaluate(state, bars, index, managed_lifecycle=True)["proposal"]
+            evaluation = near.evaluate(state, bars, index, managed_lifecycle=True)
+            proposal = evaluation["proposal"]
             if proposal is None:
                 continue
             action = proposal["action"]
@@ -279,6 +281,19 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
             operation, qty = "ENTER_TREND", UNIT
         elif not source and action == "CLEAR" and book is not None:
             operation, qty = "CLEAR_TREND", book.original + book.protection
+            if range_exit_requires_confirmation and proposal["reason"] == RANGE_TARGET_EXIT:
+                opposite_environment = "DOWN" if book.direction == "LONG" else "UP"
+                if evaluation["environment"] != opposite_environment:
+                    request = Intent(book, operation, qty, plan, clock + ONE)
+                    result = assess(book, request, (), as_of=evaluated_at)
+                    blocked.append(dict(at=evaluated_at, operation=operation, reason=RANGE_TARGET_EXIT,
+                                        plan_id=plan, direction=book.direction, unknown=result["unknown"]))
+                    continue
+                # When the same fresh opposing signal also confirms a reversal,
+                # the existing independent reversal proxy remains available.
+                proposal = {key: value for key, value in proposal.items() if key != "proposal_id"}
+                proposal["reason"] = "OPPOSING_KEYBAR_REGIME_REVERSAL"
+                proposal["proposal_id"] = near.fingerprint(proposal)
         elif not source:
             raise ValueError("PORTFOLIO_TASK_POLICY_UNEXPECTED_DIRECTIONAL_ACTION")
         projected = project_fixture(book, operation, qty, clock, plan=plan)["fixture"]["after"]
@@ -291,6 +306,8 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
         state, book = candidate_state, projected
         row = dict(at=evaluated_at.isoformat(), action=action,
                    before=list(map(str, (old.long, old.short))), after=list(map(str, (new.long, new.short))))
+        if range_exit_requires_confirmation and action == "CLEAR":
+            row["research_exit_reason"] = proposal["reason"]
         if protection_context is not None:
             row["protection"] = protection_context
         if entry_context is not None:
@@ -302,7 +319,7 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
 
 
 def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, right_entries, left_mode,
-                         advance_at_touch):
+                         advance_at_touch, range_exit_requires_confirmation=False):
     """Evaluate the same scoped policy across different completed history windows."""
     symbol = bars[0].contract
     series = {1: [Bar(symbol, bar.bar_end, *ohlc(bar), start=bar.bar_end - ONE) for bar in raw_minutes],
@@ -313,9 +330,10 @@ def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, r
     events = published_protection_events(series, plans, cutoff, advance_at_touch=advance_at_touch) if published_bands else []
     entries = entry_events(series, scoped, cutoff)
     left = left_signals(series, left_scope, cutoff)
-    left_args = dict(left_scope=left_scope, left_mode=left_mode)
+    replay_options = dict(left_scope=left_scope, left_mode=left_mode,
+                          range_exit_requires_confirmation=range_exit_requires_confirmation)
     actions, blocked = gated_replay(bars, cutoff, events, minutes=series[1],
-                                   right_branches=scoped, right_events=entries, left_events=left, **left_args)
+                                   right_branches=scoped, right_events=entries, left_events=left, **replay_options)
     for split in (bars[0].end, bars[len(bars) // 2].end, cutoff):
         prefix = [b for b in bars if b.end + US < split]
         sliced = {period: [b for b in candles if b.end + US < split] for period, candles in series.items()}
@@ -330,14 +348,14 @@ def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, r
         if left_prefix != [e for e in left if e["signal_known_at"] < split]:
             raise ValueError("PORTFOLIO_TASK_POLICY_LEFT_PREFIX_DIVERGED")
         replayed = gated_replay(prefix, split, available, minutes=sliced[1], right_branches=scoped,
-                               right_events=right_prefix, left_events=left_prefix, **left_args)
+                               right_events=right_prefix, left_events=left_prefix, **replay_options)
         expected = (
             [item for item in actions if local_clock(item["at"]) < split],
             [item for item in blocked if item["at"] < split],
         )
         if replayed != expected or replayed != gated_replay(bars, split, events, minutes=series[1],
                                                            right_branches=scoped, right_events=entries,
-                                                           left_events=left, **left_args):
+                                                           left_events=left, **replay_options):
             raise ValueError("PORTFOLIO_TASK_POLICY_PREFIX_DIVERGED")
     return actions, blocked, sources, scoped, events, entries, left_scope, left
 

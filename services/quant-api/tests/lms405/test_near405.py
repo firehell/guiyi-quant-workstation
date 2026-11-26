@@ -406,6 +406,42 @@ def test_managed_range_target_requires_later_opposing_confirmation_and_full_post
                             checkpoint=json.loads(json.dumps(earlier["checkpoint"])))
 
 
+def test_portfolio_range_exit_needs_independent_confirmation_but_hard_risk_still_clears():
+    from lms405_portfolio_task_policy import RANGE_TARGET_EXIT, gated_replay
+
+    rows = entry_bars() + [bar(8, 106, 109, 101, 107), bar(9, 107, 110, 101, 106),
+                          bar(10, 107, 108, 103, 105), bar(11, 105, 107, 101, 102)]
+    candidate = dict(range_exit_requires_confirmation=True)
+    action_at = rows[-1].end + 5 * US
+    assert [row["action"] for row in gated_replay(rows, action_at + US)[0]] == ["ENTER_LONG", "CLEAR"]
+    held, blocked = gated_replay(rows, action_at + US, **candidate)
+    assert [row["action"] for row in held] == ["ENTER_LONG"]
+    assert [(r["at"], r["reason"], r["unknown"]) for r in blocked if r["operation"] == "CLEAR_TREND"] == [
+        (action_at, RANGE_TARGET_EXIT, ["TREND_EXIT_SIGNAL", "SCOPED_APPROVAL"]),
+    ]
+    assert gated_replay(rows, action_at, **candidate) == (held, [])
+
+    rows.append(bar(12, 102, 104, 98, 99))
+    exited, _ = gated_replay(rows, rows[-1].end + 6 * US, **candidate)
+    assert [row["action"] for row in exited] == ["ENTER_LONG", "CLEAR"]
+    assert exited[-1]["research_exit_reason"] == "RISK_INVALID"
+
+
+def test_portfolio_range_gate_keeps_concurrent_regime_reversal_available():
+    from lms405_portfolio_task_policy import RANGE_TARGET_EXIT, gated_replay
+
+    rows = entry_bars() + [bar(8, 107, 109, 104, 108), bar(9, 108, 112, 105, 108),
+                          bar(10, 106, 109, 103, 104), bar(11, 105, 108, 102, 104),
+                          bar(12, 104, 106, 101, 104), bar(13, 104, 105, 102, 103),
+                          bar(14, 103, 104, 100.5, 101)]
+    baseline = replay(rows, as_of=until(rows), timely_fixture=True, managed_lifecycle=True)
+    assert baseline["transitions"][-1]["reason"] == RANGE_TARGET_EXIT
+    actions, blocked = gated_replay(rows, rows[-1].end + 6 * US, range_exit_requires_confirmation=True)
+    assert [row["action"] for row in actions] == ["ENTER_LONG", "CLEAR"]
+    assert actions[-1]["research_exit_reason"] == "OPPOSING_KEYBAR_REGIME_REVERSAL"
+    assert not [r for r in blocked if r["operation"] == "CLEAR_TREND"]
+
+
 def test_managed_recovery_requires_fresh_cross_and_human_decisions():
     rows = managed_lock_restore_bars()
     for i in (11, 12):
