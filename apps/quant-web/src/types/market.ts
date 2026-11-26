@@ -312,7 +312,7 @@ export type MarketHomeLiveFrame =
   | { type: 'quote'; schemaVersion: 1; observedAt: string; item: MarketHomeLiveItem }
   | { type: 'reset'; schemaVersion: 1; observedAt: string; reason: 'AUTHORITY_CHANGED'; items: MarketHomeLiveItem[] }
   | { type: 'unavailable'; schemaVersion: 1; observedAt: string; code: 'MARKET_HOME_LIVE_UNAVAILABLE' }
-export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'range_detector' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'boll' | 'range_detector' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
 export interface MainIndicatorDefinition {

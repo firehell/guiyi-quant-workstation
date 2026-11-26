@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from time import monotonic
 from typing import cast
 from threading import BoundedSemaphore
 from decimal import Decimal
 
+from anyio import CapacityLimiter, to_thread
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from app.api.conditional import conditional_json
@@ -13,6 +16,8 @@ from app.market_data.newow.home_projection_composition import build_home_overvie
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.db.readonly import readonly_transaction
+from app.market_data.chart_indicators import project_chart_study_display
 from app.market_data.composition import (
     build_market_data_service,
     build_market_research_service,
@@ -36,6 +41,8 @@ from app.schemas.market import (
     DominantContractOut,
     MarketBarOut,
     MarketBarsPageResponse,
+    MarketChartStudyDisplayOut,
+    MarketChartStudyId,
     MarketHomeOverviewResponse,
     MarketPageMetaOut,
     MarketProductDirectoryItem,
@@ -45,6 +52,9 @@ from app.schemas.market import (
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 _DYNAMIC_RANGE_GATE = BoundedSemaphore(1)
+_CHART_STUDY_GATE = BoundedSemaphore(1)
+_CHART_STUDY_THREADS = CapacityLimiter(1)
+_CHART_STUDY_BUDGET_SECONDS = 8
 
 
 @router.get("/research/home-overview", response_model=MarketHomeOverviewResponse)
@@ -130,6 +140,60 @@ def canonical_market_bars_page(
             for item in result.resolved_contract_segments
         ],
     )
+
+
+@router.get("/indicators/chart-window", response_model=MarketChartStudyDisplayOut)
+async def market_chart_window_studies(
+    series_kind: SeriesKind, symbol: str, frequency: BarFrequency,
+    first: str, last: str, count: int = Query(ge=1, le=2000),
+    studies: str = Query(pattern=r"^(ema10|ema21|ema60|boll)(,(ema10|ema21|ema60|boll)){0,3}$"),
+    contract: str | None = None, session: Session = Depends(get_db),
+) -> MarketChartStudyDisplayOut:
+    """Read only the requested completed chart window, with independent admission."""
+    requested = tuple(cast(MarketChartStudyId, study) for study in studies.split(","))
+    try:
+        start = parse_rfc3339_instant(first, field="first")
+        end = parse_rfc3339_instant(last, field="last")
+        if start > end or (start == end) != (count == 1) or end > datetime.now(UTC):
+            raise ContractError(field="window", reason="invalid")
+        if len(set(requested)) != len(requested):
+            raise ContractError(field="studies", reason="duplicate")
+        before = end if series_kind is SeriesKind.CONTRACT else end + timedelta(microseconds=1)
+        query = SeriesPageQuery(series_kind, symbol, frequency, before, count, contract)
+    except ContractError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "facts": dict(exc.facts)}) from None
+    if query.series_kind is SeriesKind.CONTINUOUS:
+        return project_chart_study_display(query, None, first=start, last=end, studies=requested)
+    if not _CHART_STUDY_GATE.acquire(blocking=False):
+        raise HTTPException(status_code=503, detail={"code": "MARKET_CHART_STUDY_BUSY"})
+    deadline = monotonic() + _CHART_STUDY_BUDGET_SECONDS
+
+    def check() -> None:
+        if monotonic() > deadline:
+            raise TimeoutError
+
+    def calculate() -> MarketChartStudyDisplayOut:
+        with readonly_transaction(session, timeout_seconds=_CHART_STUDY_BUDGET_SECONDS):
+            service = build_market_data_service(session, check_cancelled=check)
+            page = (
+                service.query_page_inclusive(query) if query.series_kind is SeriesKind.CONTRACT
+                else service.query_page(query, mapping_cache={})
+            )
+        check()
+        return project_chart_study_display(
+            query, page, first=start, last=end, studies=requested, check_cancelled=check,
+        )
+
+    try:
+        return await to_thread.run_sync(calculate, limiter=_CHART_STUDY_THREADS)
+    except MarketDataError as exc:
+        raise HTTPException(status_code=409, detail={"code": exc.code}) from None
+    except TimeoutError:
+        raise HTTPException(status_code=503, detail={"code": "MARKET_CHART_STUDY_BUDGET_EXCEEDED"}) from None
+    except Exception:
+        raise HTTPException(status_code=503, detail={"code": "MARKET_CHART_STUDY_UNAVAILABLE"}) from None
+    finally:
+        _CHART_STUDY_GATE.release()
 
 
 @router.get("/dominants", response_model=DominantContractListResponse)

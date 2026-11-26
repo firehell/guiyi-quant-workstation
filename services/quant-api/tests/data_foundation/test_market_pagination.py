@@ -2,13 +2,18 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
+from importlib.metadata import version
+from math import isfinite
 
 import pytest
+import numpy as np
+import talib
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
+from app.market_data.chart_indicators import project_chart_study_display
 from app.market_data.domain import (
     ActualDominantRecentBarsQuery,
     CanonicalBar,
@@ -17,6 +22,7 @@ from app.market_data.domain import (
     ResolvedContractSegment,
     SeriesKind,
     SeriesPageQuery,
+    canonical_bar_source_sha256,
 )
 from app.market_data.market_data_service import (
     ActualDominantSourceTradingDayMissingError,
@@ -540,6 +546,53 @@ def test_query_page_actual_dominant_crosses_contract_switch(session, tmp_path) -
 
     assert [bar.close for bar in result.bars] == [Decimal("100"), Decimal("200")]
     assert [segment.contract for segment in result.resolved_contract_segments] == ["JM2505", "JM2509"]
+
+
+def test_chart_studies_match_talib_on_bounded_page_and_reset_at_rollover(session, tmp_path) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    first = tuple(_bar(day, 100 + day * day) for day in range(2, 25))
+    second = tuple(_bar(day, 200 + day * day) for day in range(25, 32))
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2505", "1d"), first)
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1d"), second)
+    _calendar_and_map(session, catalog, tuple(
+        (bar.trading_day.day, contract)
+        for contract, bars in (("JM2505", first), ("JM2509", second))
+        for bar in bars
+    ))
+    session.commit()
+
+    end = second[-1].bar_end
+    query = SeriesPageQuery(
+        "actual_dominant", "jm", "1d", before=end + timedelta(microseconds=1), limit=30,
+    )
+    page = service.query_page(query, mapping_cache={})
+    page_hashes = {bar.bar_end: canonical_bar_source_sha256(bar) for bar in page.bars}
+    result = project_chart_study_display(
+        query, page, first=first[0].bar_end, last=end, studies=("ema10", "ema60", "boll"),
+    )
+    assert result.as_of == end
+    assert result.source_revision is not None and len(result.source_revision) == 64
+    assert [segment.physical_contract for segment in result.segments] == ["JM2505", "JM2509"]
+    for segment, bars in zip(result.segments, (first, second), strict=True):
+        assert [bar.bar_end for bar in segment.bars] == [bar.bar_end for bar in bars]
+        assert [bar.source_bar_sha256 for bar in segment.bars] == [page_hashes[bar.bar_end] for bar in bars]
+        assert [feature.study for feature in segment.features] == ["ema10", "ema60", "boll"]
+        short, long, boll = segment.features
+        assert short.formula_version == "talib_ema10_v1"
+        assert short.backend_version == f"ta-lib:{version('ta-lib')}"
+        closes = np.array([float(bar.close) for bar in bars])
+        expected = talib.EMA(closes, timeperiod=10)
+        assert [point.status for point in short.points] == ["READY" if isfinite(value) else "WARMING" for value in expected]
+        assert [point.values for point in short.points] == [{"value": value} if isfinite(value) else None for value in expected]
+        assert all(point.values is None and point.status == "WARMING" for point in long.points)
+        expected_boll = talib.BBANDS(closes, timeperiod=20, nbdevup=2, nbdevdn=2, matype=0)
+        assert boll.formula_version == "talib_boll_v1"
+        assert [point.values for point in boll.points] == [
+            dict(zip(("upper", "middle", "lower"), values, strict=True)) if all(map(isfinite, values)) else None
+            for values in zip(*expected_boll, strict=True)
+        ]
+    with pytest.raises(MarketDataError, match="MARKET_CHART_STUDY_WINDOW_MISMATCH"):
+        project_chart_study_display(query, page, first=first[1].bar_end, last=end, studies=("ema10",))
 
 
 def test_query_page_actual_dominant_cursor_keeps_next_trading_day_night_owner(

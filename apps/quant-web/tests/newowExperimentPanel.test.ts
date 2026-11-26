@@ -8,12 +8,12 @@ import ts from 'typescript'
 import {createRenderer,defineComponent,h,nextTick,ref} from 'vue'
 const mockUrl=`data:text/javascript;base64,${Buffer.from(`export const calls=[],history=[];export function getNewowExperimentHistory(request,panel,signal){return new Promise((resolve,reject)=>history.push({request,panel,signal,resolve,reject}))};export function getNewowExperiment(request,signal){return new Promise((resolve,reject)=>calls.push({request,signal,resolve,reject}))}`).toString('base64')}`
 const mock=await import(mockUrl)
-const chartUrl=`data:text/javascript;base64,${Buffer.from(`export const prices=new Set(),series=[],charts=[];export const CandlestickSeries={type:'Candlestick'},HistogramSeries={type:'Histogram'},LineSeries={type:'Line'};export function createSeriesMarkers(){return {setMarkers(){}}};export function createChart(container,options){let range=null,rangeListener=null,cursorListener=null,hasData=false;const scale={fitContent(){},timeToCoordinate(t){return 100},getVisibleLogicalRange(){return null},getVisibleRange(){return range},setVisibleRange(value){if(!hasData)throw Error('cannot project range without bars');if(api.deferRange){api.pendingRange=value;return}range=api.clampRange??value;rangeListener?.()},subscribeVisibleLogicalRangeChange(fn){rangeListener=fn}};const api={options,flushRange(){if(api.pendingRange){range=api.clampRange??api.pendingRange;api.pendingRange=null;rangeListener?.()}},emitRange(value){range=value;rangeListener?.()},emitCursor(time){cursorListener?.({time})},setCrosshairPosition(value,time){api.cursor=time},clearCrosshairPosition(){api.cursor=null},subscribeCrosshairMove(fn){cursorListener=fn},resize(){},priceScale(){return {applyOptions(){}}},panes(){return [{setStretchFactor(){}},{setStretchFactor(){}}]},addSeries(definition,options){const record={definition,options,data:[]};series.push(record);return {priceScale(){return {applyOptions(){}}},attachPrimitive(){},detachPrimitive(){},setData(data){record.data=data;hasData=data.length>0},priceToCoordinate(price){return 220-price/2},createPriceLine(options){const line={...options};prices.add(line);return line},removePriceLine(line){prices.delete(line)}}},removeSeries(){},timeScale(){return {fitContent(){},timeToCoordinate(t){return (typeof t==='number'?t:Date.UTC(t.year,t.month-1,t.day)/1000)%200+100},getVisibleLogicalRange(){return null},subscribeVisibleLogicalRangeChange(){}}},applyOptions(){},remove(){prices.clear()}};api.timeScale=()=>scale;charts.push(api);return api}`).toString('base64')}`
+const chartUrl=`data:text/javascript;base64,${Buffer.from(`export const prices=new Set(),series=[],charts=[];export const CandlestickSeries={type:'Candlestick'},HistogramSeries={type:'Histogram'},LineSeries={type:'Line'};export function createSeriesMarkers(){return {setMarkers(){}}};export function createChart(container,options){let range=null,rangeListener=null,cursorListener=null,hasData=false;const activeSeries=new Set(),primitives=new Set();const scale={fitContent(){},timeToCoordinate(t){return 100},getVisibleLogicalRange(){return null},getVisibleRange(){return range},setVisibleRange(value){if(!hasData)throw Error('cannot project range without bars');if(api.deferRange){api.pendingRange=value;return}range=api.clampRange??value;rangeListener?.()},subscribeVisibleLogicalRangeChange(fn){rangeListener=fn},unsubscribeVisibleLogicalRangeChange(fn){if(rangeListener===fn)rangeListener=null}};const api={options,resources(){return {series:activeSeries.size,primitives:primitives.size,range:Boolean(rangeListener),cursor:Boolean(cursorListener)}},flushRange(){if(api.pendingRange){range=api.clampRange??api.pendingRange;api.pendingRange=null;rangeListener?.()}},emitRange(value){range=value;rangeListener?.()},emitCursor(time){cursorListener?.({time})},setCrosshairPosition(value,time){api.cursor=time},clearCrosshairPosition(){api.cursor=null},subscribeCrosshairMove(fn){cursorListener=fn},unsubscribeCrosshairMove(fn){if(cursorListener===fn)cursorListener=null},resize(){},priceScale(){return {applyOptions(){}}},panes(){return [{setStretchFactor(){}},{setStretchFactor(){}}]},addSeries(definition,options,pane){const record={definition,options,pane,data:[]};series.push(record);const item={priceScale(){return {applyOptions(){}}},attachPrimitive(primitive){primitives.add(primitive)},detachPrimitive(primitive){primitives.delete(primitive)},setData(data){record.data=data;hasData=data.length>0},priceToCoordinate(price){return 220-price/2},createPriceLine(options){const line={...options};prices.add(line);return line},removePriceLine(line){prices.delete(line)}};activeSeries.add(item);return item},removeSeries(item){activeSeries.delete(item)},timeScale(){return {fitContent(){},timeToCoordinate(t){return (typeof t==='number'?t:Date.UTC(t.year,t.month-1,t.day)/1000)%200+100},getVisibleLogicalRange(){return null},subscribeVisibleLogicalRangeChange(){}}},applyOptions(){},remove(){prices.clear()}};api.timeScale=()=>scale;charts.push(api);return api}`).toString('base64')}`
 const chartMock=await import(chartUrl)
 async function compiledModule(url:URL):Promise<string>{
  const source=readFileSync(url,'utf8'),compiled=compileScript(parse(source,{filename:url.pathname}).descriptor,{id:'experiment',inlineTemplate:true})
  const root=fileURLToPath(new URL('../src/',import.meta.url))
- let code=ts.transpileModule(compiled.content,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/from ['"]vue['"]/g,`from '${import.meta.resolve('vue')}'`).replace(/from ['"]lightweight-charts['"]/g,`from '${chartUrl}'`).replace(/from ['"]@\/api\/newowExperiments['"]/g,`from '${mockUrl}'`).replace(/from ['"]@\/([^'"]+)['"]/g,(_m,s)=>`from '${pathToFileURL(resolve(root,s+'.ts')).href}'`)
+ let code=ts.transpileModule(compiled.content,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace(/from ['"]vue['"]/g,`from '${import.meta.resolve('vue')}'`).replace(/from ['"]lightweight-charts['"]/g,`from '${chartUrl}'`).replace(/from ['"]@guiyi\/quant-chart['"]/g,`from '${import.meta.resolve('@guiyi/quant-chart')}'`).replace(/from ['"]@\/api\/newowExperiments['"]/g,`from '${mockUrl}'`).replace(/from ['"]@\/([^'"]+)['"]/g,(_m,s)=>`from '${pathToFileURL(resolve(root,s+'.ts')).href}'`)
  code=code.replace(/from ['"](\.\/[^'"]+)['"]/g,(_m,s)=>s.endsWith('.vue')?_m:`from '${new URL(s+'.ts',url).href}'`)
  for(const match of [...code.matchAll(/from ['"]([^'"]+\.vue)['"]/g)])code=code.replace(match[0],`from '${await compiledModule(new URL(match[1]!,url))}'`)
  return `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`
@@ -171,6 +171,8 @@ test('shared auxiliary writes newly arrived bars before viewport and suppresses 
  app.mount(root);await flush()
  const chart=chartMock.charts[base],requested={from:'2026-09-01',to:'2026-09-03'},clamped={from:'2026-09-02',to:'2026-09-03'}
  assert.match(chart.options.localization.timeFormatter(1791873000),/14:30/)
+ assert.equal(chart.options.height,138)
+ assert.equal(chartMock.series.at(-1).pane,0,'the standalone auxiliary stays on its only native pane')
  chart.clampRange=clamped;chart.deferRange=true
  source.value={meta:{identity:{product:'rb',strategy:'oscillation',frequency:'1d'}},value:{bars:['2026-09-02','2026-09-03'].map(day=>({bar_end:day+'T07:00:00Z',trading_day:day,physical_contract:'RB2701',segment_id:'a',calculation_segment_id:'a',source_identity:'fixed',open:'100',high:'110',low:'90',close:'105',volume:1})),frames:[],actions:[],hints:[],trend_channel:null,next_before:null}}
  viewport.value=requested;await flush();chart.flushRange();await flush();assert.deepEqual(chart.timeScale().getVisibleRange(),clamped)
@@ -178,4 +180,46 @@ test('shared auxiliary writes newly arrived bars before viewport and suppresses 
  chart.emitRange(clamped);await flush();assert.equal(events.length,0,'asynchronous clamped echo remains suppressed')
  const userRange={from:'2026-09-03',to:'2026-09-03'};(findNode(root,n=>n.props.class==='shared-auxiliary__canvas')!.props.onWheelCapturePassive as ()=>void)();chart.emitRange(userRange);await flush();assert.deepEqual(events,[userRange])
  app.unmount()
+ assert.deepEqual(chart.resources(),{series:0,primitives:0,range:false,cursor:false})
+})
+
+test('shared auxiliary replaces only its selected primitive and revokes a mismatched owner', async () => {
+  globalThis.ResizeObserver = class { observe() {} disconnect() {} } as any
+  const url = new URL('../src/components/market/detail/newow/NewowSharedAuxiliaryStage.vue', import.meta.url)
+  const Shared = (await import(await compiledModule(url))).default
+  const meta = {
+    snapshot_token: 'snapshot-a',
+    identity: { product: 'rb', strategy: 'oscillation', frequency: '1d' },
+  }
+  const bar = {
+    bar_end: '2026-09-02T07:00:00Z', trading_day: '2026-09-02', physical_contract: 'RB2701',
+    segment_id: 'a', calculation_segment_id: 'a', source_identity: 'fixed',
+    open: '100', high: '110', low: '90', close: '105', volume: 1,
+  }
+  const chart = { meta, value: { bars: [bar], frames: [], actions: [], hints: [], trend_channel: null, next_before: null } }
+  const layer = (component: string, data: object, snapshot = 'snapshot-a') => ({
+    meta: { ...meta, snapshot_token: snapshot },
+    value: { component, segments: [{ physical_contract: bar.physical_contract, segment_id: 'a', bar_ends: [bar.bar_end], data }] },
+  })
+  const selected = ref(layer('main_force_control', { kongpan: [12], status: ['HOLD'], current_status: 'HOLD' }))
+  const startingCharts = chartMock.charts.length
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({
+    setup: () => () => h(Shared, { chart, auxiliary: selected.value }),
+  }))
+  app.mount(element('root'))
+  await flush()
+  const native = chartMock.charts[startingCharts]
+  assert.deepEqual(native.resources(), { series: 1, primitives: 1, range: true, cursor: true })
+
+  selected.value = layer('up_down_energy', { var4: [2], ma10: [1] })
+  await flush()
+  assert.equal(chartMock.charts.length, startingCharts + 1)
+  assert.deepEqual(native.resources(), { series: 1, primitives: 1, range: true, cursor: true })
+
+  selected.value = layer('up_down_energy', { var4: [2], ma10: [1] }, 'obsolete')
+  await flush()
+  assert.deepEqual(native.resources(), { series: 1, primitives: 0, range: true, cursor: true })
+
+  app.unmount()
+  assert.deepEqual(native.resources(), { series: 0, primitives: 0, range: false, cursor: false })
 })

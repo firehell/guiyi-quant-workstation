@@ -1,17 +1,22 @@
 <script setup lang="ts">
+import type { ChartProfileId } from '@guiyi/quant-chart'
 import type { DynamicRangePoint } from '@/utils/dynamicRange'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
-import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import ChartLayerDiagnostics from '@/components/kline/ChartLayerDiagnostics.vue'
 import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
 import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
 import { DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
 import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
+import { candidatePreview } from '@/utils/candidatePreview'
+import { MARKET_CHART_STUDY_BAR_LIMIT, MARKET_CHART_STUDY_IDENTITY, marketChartStudyRequest, projectMarketChartStudyDisplay, type MarketChartStudyDisplay } from '@/utils/marketChartStudies'
 
 const props = withDefaults(defineProps<{
+  chartProfile?: ChartProfileId
   dynamicRangePoints?: DynamicRangePoint[]
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
@@ -54,6 +59,37 @@ const emit = defineEmits<{
 }>()
 const pageOwnsNavigation = Boolean(inject(DETAIL_CHART_SESSION, null))
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
+const marketIdentity = inject(MARKET_CHART_STUDY_IDENTITY, null)
+const studyRequest = computed(() => {
+  const identity = marketIdentity?.value
+  if (!identity || candidatePreview.enabled || identity.frequency !== props.period || identity.seriesKind !== props.seriesKind) return null
+  return marketChartStudyRequest(identity, props.visibleMainIndicators, props.bars)
+})
+const studyDisplay = ref<MarketChartStudyDisplay | null>(null)
+const studyUnavailable = ref(false)
+watch(() => studyRequest.value?.key, async (_key, _previous, onCleanup) => {
+  const demand = studyRequest.value
+  studyDisplay.value = null
+  studyUnavailable.value = false
+  if (!demand) return
+  if (demand.query.series_kind === 'continuous') {
+    studyUnavailable.value = true
+    return
+  }
+  const request = new AbortController()
+  onCleanup(() => request.abort())
+  try {
+    const { getMarketChartStudyDisplay } = await import('@/api/market')
+    if (request.signal.aborted) return
+    const payload = await getMarketChartStudyDisplay(demand.query, request.signal)
+    if (request.signal.aborted) return
+    const projected = projectMarketChartStudyDisplay(payload, demand)
+    studyDisplay.value = projected
+    studyUnavailable.value = projected === null
+  } catch {
+    if (!request.signal.aborted) studyUnavailable.value = true
+  }
+}, { immediate: true })
 const followLatest = ref(true)
 const fullscreen = ref(false)
 let resolvedFocusKey: string | null = null
@@ -114,8 +150,13 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       <span v-if="hasMoreBefore === false && !loading && bars.length">已到最早可用数据</span>
       <span v-if="historyError">{{ historyError }}</span>
     </div>
+    <p v-if="studyUnavailable" class="market-kline-stage__history" role="status">当前行情窗口的所选指标暂不可用。</p>
+    <p v-else-if="studyDisplay && studyRequest?.truncatedBefore" class="market-kline-stage__history" role="status">
+      所选通用指标仅覆盖最近 {{ MARKET_CHART_STUDY_BAR_LIMIT.toLocaleString('zh-CN') }} 根已完成行情。
+    </p>
     <KlineChart
       :key="identityKey"
+      :chart-profile="chartProfile"
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
@@ -132,6 +173,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :period="period"
       :series-kind="seriesKind"
       :visible-main-indicators="visibleMainIndicators"
+      :study-display="studyDisplay"
       :range-detector-source-identity="rangeDetectorSourceIdentity"
       :range-detector-anchor-time="rangeDetectorAnchorTime"
       :alert-markers="markers"
@@ -146,6 +188,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       @range-detector-result="emit('range-detector-result', $event)"
       @marker-select="emit('marker-select', $event)"
     />
+    <ChartLayerDiagnostics v-if="chart && bars.length" :inspect="chart.inspectLayers" />
   </section>
 </template>
 

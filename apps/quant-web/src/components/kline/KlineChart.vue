@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { SubingVolumeTierPrimitive } from './subingVolumeTierPrimitive'
-import { subingVolumeTierPoints } from '@/utils/subingVolumeTierDisplay'
-
-import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
+import { CHART_PROFILES, mountChartHost, type ChartHost, type ChartProfileId } from '@guiyi/quant-chart'
+import { volumePresentation, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
 import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
 
 import { formatDisplayNumber } from '@/utils/marketDisplay'
@@ -13,12 +12,8 @@ import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { DETAIL_CHART_SESSION, detailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
-  CandlestickSeries,
   ColorType,
   createChart,
-  createSeriesMarkers,
-  HistogramSeries,
-  LineSeries,
   type IChartApi,
   type ISeriesMarkersPluginApi,
   type ISeriesApi,
@@ -41,7 +36,7 @@ import type {
   MainIndicatorId,
   SeriesKind,
 } from '@/types/market'
-import { calculateThsMacdDisplay } from '@/utils/thsMacdDisplay'
+import { marketStudyLayerStatus, type EmaIndicatorId, type MarketChartStudyDisplay, type MarketChartStudyPoint } from '@/utils/marketChartStudies'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   formatChartAxisTimeInShanghai,
@@ -53,6 +48,7 @@ import { visibleRangeDetectorCount } from '@/utils/rangeDetectorStatus'
 import { initialChartLogicalRange, initialNewowChartLogicalRange, prependChartLogicalRange } from '@/utils/chartViewport'
 import {
   buildKlineDerivedData,
+  chartStudySeries,
   resolveKlineHoverContext,
   type KlineValuePoint,
 } from '@/utils/klineViewModel'
@@ -63,7 +59,19 @@ import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitiv
 import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
 
+function latestStudyPoint(
+  points: readonly KlineValuePoint[] | undefined,
+  facts: Record<string, MarketChartStudyPoint> | undefined,
+): KlineValuePoint | undefined {
+  if (!points) return
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const point = points[index]
+    if (point && (point.value !== null || facts?.[point.time] !== undefined)) return point
+  }
+}
+
 const props = withDefaults(defineProps<{
+  chartProfile?: ChartProfileId
   dynamicRangePoints?: DynamicRangePoint[]
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
@@ -76,6 +84,7 @@ const props = withDefaults(defineProps<{
   period?: string
   seriesKind: SeriesKind
   visibleMainIndicators?: MainIndicatorId[]
+  studyDisplay?: MarketChartStudyDisplay | null
   rangeDetectorSourceIdentity?: string
   rangeDetectorAnchorTime?: string | null
   showDerivedMarkers?: boolean
@@ -118,7 +127,6 @@ const emit = defineEmits<{
 
 const volumeTierPrimitive = new SubingVolumeTierPrimitive()
 const volumeTierMarkCount = ref(0)
-let volumeThemeObserver: MutationObserver | null = null
 const container = ref<HTMLElement>()
 const detailSession = inject<DetailChartSession | null>(DETAIL_CHART_SESSION, null)
 const positionedCallouts = ref<PositionedCallout[]>([])
@@ -165,8 +173,8 @@ watch(() => [props.referenceCallouts, props.referenceSelection], () => {
   positionedSelection.value = []
   scheduleReferenceCallouts()
 }, { deep: true })
-let referenceLevelSeries: ISeriesApi<'Line'>[] = []
 const referenceTargetSegments = ref(0), referenceStopSegments = ref(0)
+let host: ChartHost | null = null
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let activeCandle: ISeriesApi<'Candlestick'> | null = null
@@ -175,19 +183,19 @@ let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
 let macdDea: ISeriesApi<'Line'> | null = null
 let macdCrossMarkers: ISeriesMarkersPluginApi<Time> | null = null
-let htdyZk1: ISeriesApi<'Line'> | null = null
-let htdyZd1: ISeriesApi<'Line'> | null = null
-let htdyZd2: ISeriesApi<'Line'> | null = null
 let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
+let bollLines: Record<'upper' | 'middle' | 'lower', ISeriesApi<'Line'>> | null = null
+const bollPointCount = ref(0)
 const publicPatternPrimitive = new NewowPublicPatternPrimitive(point => chartTime({ time: point.barEnd, trading_day: point.tradingDay } as BarData))
 watch(() => props.patternGeometry, value => {
   publicPatternPrimitive.setData(value ?? null)
   detailSession?.restoreInspectionCursor()
 })
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
+let rangeAttached = false
+let htdyLines: Record<'zk1' | 'zd1' | 'zd2', ISeriesApi<'Line'>> | null = null
 const dynamicRangePrimitive = new DynamicRangePrimitive()
-let observer: ResizeObserver | null = null
 let renderedBars: BarData[] = []
 const rangeCalculationMs = ref(0)
 const rangeCount = ref(0)
@@ -210,7 +218,6 @@ let viewportStabilityTarget: ChartViewportRange | null = null
 let viewportStableFrames = 0
 let viewportStabilityAttempts = 0
 
-type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 type ChartViewportRange = { from: number; to: number }
 const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
 const REQUIRED_VIEWPORT_STABLE_FRAMES = 3
@@ -221,7 +228,7 @@ onMounted(async () => {
   await nextTick()
   if (!container.value) return
   const theme = resolveChartTheme(container.value)
-  chart = (detailSession?.acquire ?? createChart)(container.value, {
+  host = mountChartHost(container.value, {
     width: container.value.clientWidth,
     height: container.value.clientHeight,
     layout: {
@@ -251,63 +258,68 @@ onMounted(async () => {
         formatChartAxisTimeInShanghai(time, tickMarkType)
       ),
     },
-  })
+  }, detailSession?.acquire ?? createChart)
+  chart = host.chart
   const paneLayout = detailSession ? detailChartPaneLayout(container.value.clientHeight, 32) : null
   chart.panes()[0].setStretchFactor(paneLayout?.mainHeight ?? 6)
   chart.addPane().setStretchFactor(paneLayout?.auxiliaryHeight ?? 2)
-  candles = chart.addSeries(CandlestickSeries, {
+  const auxiliary = host.addAuxiliary('default')
+  const price = host.layer('price', 'price', 'main')
+  candles = price.candles({
     upColor: theme.candleUp,
     downColor: theme.candleDown,
     borderUpColor: theme.candleUp,
     borderDownColor: theme.candleDown,
     wickUpColor: theme.candleUp,
     wickDownColor: theme.candleDown,
-  }, 0)
-  emaLines.ema_10 = chart.addSeries(LineSeries, { color: theme.ema10, lineWidth: 1, lastValueVisible: false }, 0)
-  emaLines.ema_21 = chart.addSeries(LineSeries, { color: theme.ema21, lineWidth: 2, lastValueVisible: false }, 0)
-  emaLines.ema_60 = chart.addSeries(LineSeries, { color: theme.ema60, lineWidth: 1, lastValueVisible: false }, 0)
-  candles.attachPrimitive(rangeDetectorPrimitive)
-  candles.attachPrimitive(dynamicRangePrimitive)
-  candles.attachPrimitive(publicPatternPrimitive)
+  })
+  host.layer('pattern', 'newow_pattern', 'main').primitive(candles, publicPatternPrimitive)
   publicPatternPrimitive.setData(props.patternGeometry ?? null)
-  htdyZk1 = chart.addSeries(LineSeries, { color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
-  htdyZd1 = chart.addSeries(LineSeries, { color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }, 0)
-  htdyZd2 = chart.addSeries(LineSeries, { color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }, 0)
-  htdyMarkers = createSeriesMarkers(candles)
-  volume = chart.addSeries(HistogramSeries, {
+  htdyMarkers = host.layer('markers', 'display_markers', 'main').markers(candles)
+  const profile = props.chartProfile ?? (props.subingVolumeTiers ? 'subing' : props.visibleMainIndicators.includes('htdy') ? 'htdy' : 'free')
+  const volumeId = props.subingVolumeTiers && CHART_PROFILES[profile].volume === 'subing' ? 'subing_volume' : 'generic_volume'
+  const volumeLayer = host.layer('volume', volumeId, 'volume')
+  volume = volumeLayer.histogram({
     priceFormat: { type: 'volume' }, priceScaleId: 'volume', priceLineVisible: false, lastValueVisible: false,
-  }, 0)
+  })
   volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
-  volume.attachPrimitive(volumeTierPrimitive)
+  if (props.subingVolumeTiers) volumeLayer.primitive(volume, volumeTierPrimitive)
   chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: .05, bottom: .14 } })
-  macdHistogram = chart.addSeries(HistogramSeries, { base: 0, lastValueVisible: false }, 1)
-  macdDif = chart.addSeries(LineSeries, { color: '#00bfcf', lineWidth: 1, lastValueVisible: false }, 1)
-  macdDea = chart.addSeries(LineSeries, { color: '#d4b000', lineWidth: 1, lastValueVisible: false }, 1)
-  macdCrossMarkers = createSeriesMarkers(macdDif)
-  macdDif.createPriceLine({ price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
+  const macd = host.layer('macd', 'ths_macd', auxiliary)
+  macdHistogram = macd.histogram({ base: 0, lastValueVisible: false })
+  macdDif = macd.line({ color: '#00bfcf', lineWidth: 1, lastValueVisible: false })
+  macdDea = macd.line({ color: '#d4b000', lineWidth: 1, lastValueVisible: false })
+  macdCrossMarkers = macd.markers(macdDif)
+  macd.priceLevel(macdDif, { price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart.subscribeCrosshairMove(onCrosshairMove)
   chart.subscribeClick(onClick)
-  observer = new ResizeObserver(() => resize())
+  const native = chart
+  host.own(() => native.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange))
+  host.own(() => native.unsubscribeCrosshairMove(onCrosshairMove))
+  host.own(() => native.unsubscribeClick(onClick))
+  const observer = new ResizeObserver(() => resize())
   observer.observe(container.value)
-  container.value.addEventListener('pointerup', syncMacdLabelTop)
+  host.own(() => observer.disconnect())
+  const chartContainer = container.value
+  chartContainer.addEventListener('pointerup', syncMacdLabelTop)
+  host.own(() => chartContainer.removeEventListener('pointerup', syncMacdLabelTop))
   replaceBars(props.bars, detailChartViewport(chart) !== null)
-  if (typeof MutationObserver !== 'undefined') volumeThemeObserver = new MutationObserver(() => { if (volume) volume.setData(volumeValues(renderedBars)) })
-  for (const root of [document.documentElement, document.body]) if (root) volumeThemeObserver?.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+  if (typeof MutationObserver !== 'undefined') {
+    const themeObserver = new MutationObserver(() => { if (volume) volume.setData(volumeValues(renderedBars)) })
+    for (const root of [document.documentElement, document.body]) if (root) themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+    volumeLayer.own(() => themeObserver.disconnect())
+  }
 })
 
 onUnmounted(() => {
-  volumeThemeObserver?.disconnect()
   if (calloutFrame !== null) cancelAnimationFrame(calloutFrame)
   if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
-  chart?.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
-  chart?.unsubscribeCrosshairMove(onCrosshairMove)
-  chart?.unsubscribeClick(onClick)
-  observer?.disconnect()
-  container.value?.removeEventListener('pointerup', syncMacdLabelTop)
   rangeCache = null
-  chart?.remove()
+  host?.dispose()
+  host = null
+  chart = null
 })
 
 watch(() => props.period, () => {
@@ -318,6 +330,10 @@ watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
   detailSession?.restoreInspectionCursor()
 }, { deep: true })
+watch(() => props.studyDisplay, () => {
+  renderDerivedSeries()
+  detailSession?.restoreInspectionCursor()
+})
 watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); detailSession?.restoreInspectionCursor() })
 watch(() => props.savedReferenceLines, renderSavedReferenceLines)
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
@@ -365,9 +381,10 @@ function volumeTime(bar: DisplayVolumeBar) {
 function volumeValues(bars: BarData[]) {
   const input = chart ? detailChartVolumeBars(chart, bars) : bars
   const theme = readNewowChartDisplayTheme()
-  const colors = volumeColors(input, theme, props.volumeScoring && !props.subingVolumeTiers)
-  const marks = props.subingVolumeTiers && props.volumeScoring && !props.loading && !props.error
-    ? subingVolumeTierPoints(input, props.qualityBreaks).map(point => ({ time: volumeTime(point.bar), volume: point.bar.volume!, tier: point.tier })) : []
+  const { colors, tiers } = volumePresentation(props.subingVolumeTiers ? 'subing' : 'generic', input, {
+    theme, enabled: props.volumeScoring, allowTiers: !props.loading && !props.error, breaks: props.qualityBreaks,
+  })
+  const marks = tiers.map(point => ({ time: volumeTime(point.bar), volume: point.bar.volume!, tier: point.tier }))
   volumeTierMarkCount.value = marks.length
   volumeTierPrimitive.setData(marks, theme)
   return input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) }))
@@ -586,13 +603,13 @@ function renderActiveCandle(): void {
   }
   if (!activeCandle) {
     const color = '#b47820'
-    activeCandle = chart.addSeries(CandlestickSeries, {
+    activeCandle = host?.layer('price-preview', 'price_preview', 'main').candles({
       upColor: 'transparent', downColor: 'transparent',
       borderUpColor: color, borderDownColor: color, wickUpColor: color, wickDownColor: color,
       priceLineVisible: false, lastValueVisible: false,
-    }, 0)
+    }) ?? null
   }
-  activeCandle.setData([{
+  activeCandle?.setData([{
     time: chartTime(active), open: active.open, high: active.high, low: active.low, close: active.close,
   }])
 }
@@ -600,20 +617,20 @@ function renderActiveCandle(): void {
 watch(() => props.activeBar, renderActiveCandle)
 
 function renderSavedReferenceLines(): void {
-  if (!chart) return
+  if (!host) return
   const lines = props.savedReferenceLines ?? []
   const active = new Set(lines.map(line => line.id))
-  for (const [id, series] of savedReferenceSeries) {
+  for (const id of savedReferenceSeries.keys()) {
     if (active.has(id)) continue
-    chart.removeSeries(series)
+    host.removeLayer(`saved-reference:${id}`)
     savedReferenceSeries.delete(id)
   }
   for (const line of lines) {
     let series = savedReferenceSeries.get(line.id)
     if (!series) {
-      series = chart.addSeries(LineSeries, {
+      series = host.layer(`saved-reference:${line.id}`, 'saved_reference', 'main').line({
         color: line.color, title: line.label, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
-      }, 0)
+      })
       savedReferenceSeries.set(line.id, series)
     }
     series.setData(chartValues(line.points))
@@ -637,7 +654,18 @@ function renderAllSeries(): void {
   renderDerivedSeries()
 }
 
+let dynamicRangeAttached = false
 function renderDynamicRange(): void {
+  if (!host || !candles) return
+  if (!props.dynamicRangeEnabled) {
+    host.removeLayer('dynamic-range')
+    dynamicRangeAttached = false
+    return
+  }
+  if (!dynamicRangeAttached) {
+    host.layer('dynamic-range', 'dynamic_range', 'main').primitive(candles, dynamicRangePrimitive)
+    dynamicRangeAttached = true
+  }
   const bars = new Map(renderedBars.map(b => [pointKey(b.physicalContract ?? '',b.time),b]))
   dynamicRangePrimitive.setData(props.dynamicRangeEnabled ? props.dynamicRangePoints.filter(p => {
     const b=bars.get(pointKey(p.contract,p.time)); return b && matchesRangeBar(p,b)
@@ -657,13 +685,14 @@ function renderDerivedSeries(): void {
 }
 
 function writeDerivedSeries(): void {
-  if (!chart || !macdHistogram || !macdDif || !macdDea) return
+  if (!host || !candles || !macdHistogram || !macdDif || !macdDea) return
   renderDynamicRange()
   const calculationStarted = performance.now()
   const rangeEnabled = props.visibleMainIndicators.includes('range_detector') && Boolean(props.rangeDetectorSourceIdentity) && Boolean(props.rangeDetectorAnchorTime)
   const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])
   const cachedRange = rangeEnabled && rangeCache?.bars === renderedBars && rangeCache.key === rangeKey ? rangeCache.result : null
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
+    emaPoints: props.studyDisplay?.points,
     rangeDetector: { enabled: rangeEnabled && !cachedRange, sourceIdentity: props.rangeDetectorSourceIdentity, anchorTime: props.rangeDetectorAnchorTime },
   })
   if (cachedRange) derivedData.rangeDetector = cachedRange
@@ -676,25 +705,70 @@ function writeDerivedSeries(): void {
   if (referenceOverlay) {
     derivedData.ema.ema_21 = referenceOverlay.ema21
   }
-  referenceLevelSeries.forEach(series => chart!.removeSeries(series))
-  referenceLevelSeries = []
+  host.removeLayer('trade-reference')
   const levels = referencePriceLevelSegments(renderedBars, props.referenceIndicators ?? [])
   referenceTargetSegments.value = levels.filter(level => level.kind === 'target').length
   referenceStopSegments.value = levels.filter(level => level.kind === 'stop').length
   for (const level of levels) {
-    const line = chart.addSeries(LineSeries, { color: level.kind === 'target' ? '#b28a36' : '#cc6262', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 }, 0)
+    const line = host.layer('trade-reference', 'trade_reference', 'main').line({ color: level.kind === 'target' ? '#b28a36' : '#cc6262', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 })
     line.setData(chartValues(level.points))
-    referenceLevelSeries.push(line)
   }
   const theme = resolveChartTheme()
 
-  emaLines.ema_10?.applyOptions({ color: theme.ema10 })
-  emaLines.ema_21?.applyOptions({ color: theme.ema21 })
-  emaLines.ema_60?.applyOptions({ color: theme.ema60 })
-  EMA_INDICATORS.forEach((indicator) => {
-    const visible = props.visibleMainIndicators.includes(indicator)
-    emaLines[indicator]?.setData(chartValues(visible ? derivedData.ema[indicator] : undefined))
-  })
+  const emaColors = { ema_10: theme.ema10, ema_21: theme.ema21, ema_60: theme.ema60 }
+  for (const indicator of EMA_INDICATORS) {
+    if (!props.visibleMainIndicators.includes(indicator)) {
+      host.removeLayer(indicator)
+      delete emaLines[indicator]
+      continue
+    }
+    const layer = host.layer(indicator, indicator, 'main')
+    const series = emaLines[indicator] ??= layer.line({ color: emaColors[indicator], lineWidth: indicator === 'ema_21' ? 2 : 1, lastValueVisible: false })
+    series.applyOptions({ color: emaColors[indicator] })
+    const points = chartValues(derivedData.ema[indicator])
+    series.setData(points)
+    const last = latestStudyPoint(derivedData.ema[indicator], derivedData.emaFacts[indicator])
+    const fact = last ? derivedData.emaFacts[indicator]?.[last.time] : undefined
+    const identity = referenceOverlay && indicator === 'ema_21' ? undefined : props.studyDisplay?.features[indicator]
+    layer.updateDiagnostics({ frequency: props.period,
+      status: last?.value != null ? 'ready' : marketStudyLayerStatus(fact),
+      formulaVersion: identity?.formulaVersion ?? null, sourceIdentity: identity ? props.studyDisplay?.sourceRevision : null,
+      dataCutoff: last?.time ?? null, lastError: last?.value != null ? null : fact?.diagnostic ?? null })
+  }
+  if (props.visibleMainIndicators.includes('boll')) {
+    const layer = host.layer('boll', 'boll', 'main')
+    const boundary = { color: theme.ema60, lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false } as const
+    const center = { ...boundary, color: theme.ema10, lineStyle: 0 } as const
+    bollLines ??= { ...layer.band(boundary, boundary), middle: layer.line(center) }
+    const facts = props.studyDisplay?.points.boll
+    const middle = chartStudySeries(renderedBars, facts, 'middle')
+    const last = latestStudyPoint(middle, facts)
+    const fact = last && facts?.[last.time]
+    bollLines.upper.applyOptions(boundary)
+    bollLines.middle.applyOptions(center)
+    bollLines.lower.applyOptions(boundary)
+    bollLines.upper.setData(chartValues(chartStudySeries(renderedBars, facts, 'upper')))
+    bollLines.middle.setData(chartValues(middle))
+    bollLines.lower.setData(chartValues(chartStudySeries(renderedBars, facts, 'lower')))
+    bollPointCount.value = middle.filter(point => point.value !== null).length
+    layer.updateDiagnostics({
+      frequency: props.period, formulaVersion: props.studyDisplay?.features.boll?.formulaVersion ?? null,
+      sourceIdentity: facts ? props.studyDisplay?.sourceRevision : null, dataCutoff: last?.time ?? null,
+      status: last?.value != null ? 'ready' : marketStudyLayerStatus(fact),
+      lastError: fact?.diagnostic ?? null,
+    })
+  } else if (bollLines) {
+    host.removeLayer('boll')
+    bollLines = null
+    bollPointCount.value = 0
+  }
+  if (rangeEnabled && !rangeAttached) {
+    host.layer('range-detector', 'range_detector', 'main').primitive(candles, rangeDetectorPrimitive)
+    rangeAttached = true
+  } else if (!rangeEnabled && rangeAttached) {
+    host.removeLayer('range-detector')
+    rangeAttached = false
+  }
   rangeDetectorPrimitive.setStyle({
     rangeIntact: theme.rangeIntact,
     rangeBrokenUp: theme.rangeBrokenUp,
@@ -708,10 +782,8 @@ function writeDerivedSeries(): void {
     ribbonTime,
   )
 
-  const displayMacd = calculateThsMacdDisplay(renderedBars)
-  derivedData.macd = displayMacd
   const displayBarByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
-  macdCrossMarkers?.setMarkers(displayMacd.crosses.map(point => ({
+  macdCrossMarkers?.setMarkers(derivedData.macd.crosses.map(point => ({
     time: chartTime(displayBarByTime.get(point.time)!), position: 'atPriceMiddle' as const, price: point.value,
     shape: 'circle' as const, size: 0, text: point.side === 'golden' ? '▲' : '▼',
     color: point.side === 'golden' ? '#ef232a' : '#14b143',
@@ -723,9 +795,20 @@ function writeDerivedSeries(): void {
     'value' in point ? { ...point, color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : point
   )))
 
-  htdyZk1?.setData(chartValues(derivedData.htdy?.zk1))
-  htdyZd1?.setData(chartValues(derivedData.htdy?.zd1))
-  htdyZd2?.setData(chartValues(derivedData.htdy?.zd2))
+  if (props.visibleMainIndicators.includes('htdy')) {
+    const layer = host.layer('htdy', 'htdy', 'main')
+    htdyLines ??= {
+      zk1: layer.line({ color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }),
+      zd1: layer.line({ color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }),
+      zd2: layer.line({ color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }),
+    }
+    for (const key of ['zk1', 'zd1', 'zd2'] as const) htdyLines[key].setData(chartValues(derivedData.htdy?.[key]))
+    layer.updateDiagnostics({ frequency: props.period, formulaVersion: 'original-v0',
+      status: derivedData.htdy ? 'ready' : 'missing_input', dataCutoff: renderedBars.at(-1)?.time ?? null })
+  } else {
+    host.removeLayer('htdy')
+    htdyLines = null
+  }
   const displayMarkers = mergedDisplayMarkers()
   const renderedMarkers = chartMarkers(displayMarkers)
   renderedMarkerById = new Map(displayMarkers.filter((marker) => renderedMarkers.some((rendered) => rendered.id === marker.id)).map((marker) => [marker.id, marker]))
@@ -751,7 +834,7 @@ function chartValues(points: KlineValuePoint[] | undefined): Array<SingleValueDa
   const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
   return points.flatMap((point) => {
     const bar = barsByTime.get(point.time)
-    return bar ? [Number.isFinite(point.value)
+    return bar ? [point.value !== null && Number.isFinite(point.value)
       ? { time: chartTime(bar), value: point.value }
       : { time: chartTime(bar) }] : []
   })
@@ -852,6 +935,7 @@ defineExpose({
   updateLiveBars,
   scrollToLatest,
   revealTime,
+  inspectLayers: () => host?.diagnostics() ?? [],
 })
 </script>
 
@@ -863,6 +947,7 @@ defineExpose({
     :data-subing-volume-tiers="subingVolumeTiers"
     :data-alert-marker-count="alertMarkers.length"
     :data-macd-point-count="macdPointCount"
+    :data-boll-point-count="bollPointCount"
     :data-reference-target-segments="referenceTargetSegments"
     :data-reference-stop-segments="referenceStopSegments"
     :data-research-marker-count="researchMarkers.length"

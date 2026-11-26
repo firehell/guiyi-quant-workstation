@@ -12,7 +12,7 @@ import { formatChartTimeInShanghai } from '@/utils/barTime'
 import type { BarData, MarketTickQuote, OptionalEmaIndicatorId, ProductResearchResponse } from '@/types/market'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import type { MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
-import type { FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
+import type { FreeDetailPreferences } from '@/utils/marketDetailPreferences'
 
 const props = defineProps<{
   canonicalEnd?: string | null
@@ -26,14 +26,14 @@ const props = defineProps<{
   error: string | null
   research: ProductResearchResponse | null
   researchError: boolean
-  preferences: FlexibleDetailPreferences
+  preferences: FreeDetailPreferences
   hasMoreBefore: boolean; loadingBefore?: boolean; historyError?: string | null
   loadEarlier: () => Promise<void>
   identityWarning?: string | null
 }>()
 const emit = defineEmits<{
   'focus-resolved': [focusBarEnd: string]
-  updatePreferences: [preferences: FlexibleDetailPreferences]
+  updatePreferences: [preferences: FreeDetailPreferences]
 }>()
 
 const optionalEmaIndicators = ref<OptionalEmaIndicatorId[]>([...props.preferences.optionalEmaIndicators])
@@ -60,6 +60,7 @@ const rangeCount = ref(0)
 watch(sourceIdentity, () => { visibleFrom.value = null; rangeCount.value = 0 }, { flush: 'sync' })
 const bars = computed(() => props.bars)
 const showDynamicRange = ref(false)
+const showBoll = ref(props.preferences.showBoll === true)
 const dynamicRange = useDynamicRange({ enabled: showDynamicRange, bars,
   canonicalEnd: computed(() => props.canonicalEnd ?? null), identity: sourceIdentity,
   symbol: computed(() => props.identity.symbol), frequency: computed(() => props.identity.frequency),
@@ -80,6 +81,7 @@ const rangeState = computed<'disabled' | 'loading' | 'ready' | 'insufficient'>((
 })
 const indicators = computed(() => [
   ...optionalEmaIndicators.value,
+  ...(showBoll.value ? ['boll' as const] : []),
   ...(showRangeDetector.value ? ['range_detector' as const] : []),
 ])
 const emaIndicatorControls = [
@@ -94,10 +96,11 @@ function updatePreferences(identity: MarketDetailIdentity) {
     frequency: identity.frequency,
     optionalEmaIndicators: [...optionalEmaIndicators.value],
     showRangeDetector: showRangeDetector.value,
+    ...(showBoll.value ? { showBoll: true } : {}),
   })
 }
 
-watch([optionalEmaIndicators, showRangeDetector], () => {
+watch([optionalEmaIndicators, showRangeDetector, showBoll], () => {
   updatePreferences(props.identity)
   if (!showRangeDetector.value) rangeWarmup.reset()
 }, { deep: true })
@@ -114,6 +117,7 @@ watch(() => props.preferences, (preferences) => {
   if (preferences.showRangeDetector !== showRangeDetector.value) {
     showRangeDetector.value = preferences.showRangeDetector
   }
+  showBoll.value = preferences.showBoll === true
 }, { deep: true })
 
 function toggleEma(value: OptionalEmaIndicatorId) {
@@ -145,6 +149,11 @@ function loadEarlier() { void props.loadEarlier() }
         <span class="indicator-chip__dot" aria-hidden="true" />
         {{ item.label }}
         <span v-if="optionalEmaIndicators.includes(item.id)" class="indicator-chip__check" aria-hidden="true">✓</span>
+      </button>
+      <button class="indicator-chip indicator-chip--boll" :class="{ 'indicator-chip--active': showBoll }"
+        type="button" :aria-pressed="showBoll" @click="showBoll = !showBoll">
+        <span class="indicator-chip__dot" aria-hidden="true" />BOLL
+        <span v-if="showBoll" class="indicator-chip__check" aria-hidden="true">✓</span>
       </button>
       <button
         class="indicator-chip indicator-chip--range"
@@ -227,6 +236,7 @@ function loadEarlier() { void props.loadEarlier() }
 .indicator-chip__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--indicator-color); }
 .indicator-chip__check { line-height: 1; }
 .indicator-chip--ema10 { --indicator-color: #2563eb; }
+.indicator-chip--boll { --indicator-color: var(--gy-chart-ema-60, #7c3aed); }
 .indicator-chip--ema21 { --indicator-color: #f59e0b; }
 .indicator-chip--ema60 { --indicator-color: #7c3aed; }
 .indicator-chip--patterns { --indicator-color: #15803d; }

@@ -23,12 +23,16 @@ export interface FlexibleDetailPreferences extends FlexibleViewRestore {
   showRangeDetector: boolean
 }
 
+export interface FreeDetailPreferences extends FlexibleDetailPreferences {
+  showBoll?: true
+}
+
 export interface MarketDetailPreferences {
   version: 2
   lastView: Exclude<MarketDetailView, 'trend'>
   newow: MarketDetailViewRestore['newow']
   htdy: FlexibleDetailPreferences
-  free: FlexibleDetailPreferences
+  free: FreeDetailPreferences
 }
 
 export type DetailPreferenceStorage = Pick<Storage, 'getItem' | 'setItem'>
@@ -73,9 +77,9 @@ export function saveMarketDetailPreferences(
 
 export function replaceFreeDetailPreferences(
   current: MarketDetailPreferences,
-  free: Omit<FlexibleDetailPreferences, 'seriesKind'> & { seriesKind: SeriesKind },
+  free: Omit<FreeDetailPreferences, 'seriesKind'> & { seriesKind: SeriesKind },
 ): MarketDetailPreferences {
-  return { ...current, free: normalizeFlexible(free) }
+  return { ...current, free: normalizeFree(free) }
 }
 
 export function replaceHtdyDetailPreferences(
@@ -99,7 +103,7 @@ function normalizeCurrent(value: unknown): MarketDetailPreferences {
     lastView: isRestorableView(value.lastView) ? value.lastView : 'newow',
     newow: normalizeNewow(value.newow),
     htdy: normalizeFlexible(value.htdy),
-    free: normalizeFlexible(value.free),
+    free: normalizeFree(value.free),
   }
 }
 
@@ -140,6 +144,13 @@ function normalizeFlexible(value: unknown): FlexibleDetailPreferences {
     frequency: normalizeFrequency(value.frequency),
     optionalEmaIndicators: normalizeOptionalEmaIndicators(value.optionalEmaIndicators),
     showRangeDetector: value.showRangeDetector === true,
+  }
+}
+
+function normalizeFree(value: unknown): FreeDetailPreferences {
+  return {
+    ...normalizeFlexible(value),
+    ...(isRecord(value) && value.showBoll === true ? { showBoll: true } : {}),
   }
 }
 

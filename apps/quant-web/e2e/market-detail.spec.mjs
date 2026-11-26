@@ -431,15 +431,121 @@ test('Free migrates legacy continuous links and keeps 60-minute and daily naviga
   expect(requests.some(url => url.searchParams.get('series_kind') === 'continuous')).toBe(false)
 })
 
+function chartStudyWire(bars, requestedStudies, point = () => ({ status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' })) {
+  return {
+    schema_version: 'guiyi_market_chart_studies_v1', result_schema_version: 'guiyi_feature_result_v1',
+    symbol: 'jm', series_kind: 'actual_dominant', contract: null, frequency: '15m',
+    as_of: bars.at(-1).bar_end, source_revision: 'a'.repeat(64), unavailable_reason: null,
+    segments: [{
+      physical_contract: 'JM2601', segment_id: 'JM2601:2026-09-03',
+      bars: bars.map(bar => ({ bar_end: bar.bar_end, close: String(bar.close), source_bar_sha256: 'c'.repeat(64) })),
+      features: requestedStudies.split(',').map(study => ({
+        study, formula_version: `talib_${study}_v1`,
+        backend_version: 'ta-lib:fixture', parameters_hash: 'b'.repeat(16),
+        points: bars.map(point),
+      })),
+    }],
+  }
+}
+
 test('Free restores enabled EMA preferences after reload', async ({ page }) => {
   await mockMarketDetail(page)
+  const requests = []
+  const bars = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(Object.fromEntries(params))
+    return route.fulfill({ json: chartStudyWire(bars, params.get('studies')) })
+  })
   await page.goto(freeJm)
 
   const ema10 = page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })
+  await expect(ema10).toBeVisible()
+  expect(requests).toHaveLength(0)
   await ema10.click()
   await expect(ema10).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => requests.length).toBe(1)
+  expect(requests[0]).toEqual({
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m',
+    first: bars[0].bar_end, last: bars.at(-1).bar_end, count: '2', studies: 'ema10',
+  })
   await page.reload()
   await expect(page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => requests.length).toBe(2)
+  expect(requests[1]).toEqual(requests[0])
+})
+
+test('Free recovers the newest EMA selection when a superseded load still occupies the worker', async ({ page }) => {
+  await mockMarketDetail(page)
+  const requests = []
+  const bars = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  let releaseFirst
+  await page.route('**/api/v1/market/indicators/chart-window?**', async route => {
+    const studies = new URL(route.request().url()).searchParams.get('studies')
+    requests.push(studies)
+    if (studies === 'ema10') {
+      await new Promise(resolve => { releaseFirst = resolve })
+      await route.fulfill({ json: chartStudyWire(bars, studies) }).catch(() => {})
+      return
+    }
+    if (requests.length === 2) {
+      releaseFirst()
+      return route.fulfill({ status: 503, json: { detail: { code: 'MARKET_CHART_STUDY_BUSY' } } })
+    }
+    return route.fulfill({ json: chartStudyWire(bars, studies) })
+  })
+  await page.goto(freeJm)
+
+  const indicators = page.getByRole('group', { name: '主图指标' })
+  await indicators.getByRole('button', { name: /EMA10/ }).click()
+  await expect.poll(() => requests).toEqual(['ema10'])
+  const recovered = page.waitForResponse(response => response.url().includes('/market/indicators/chart-window')
+    && new URL(response.url()).searchParams.get('studies') === 'ema10,ema60' && response.ok())
+  await indicators.getByRole('button', { name: /EMA60/ }).click()
+  await recovered
+  expect(requests).toEqual(['ema10', 'ema10,ema60', 'ema10,ema60'])
+  await expect(page.getByText('当前行情窗口的所选指标暂不可用。')).toHaveCount(0)
+})
+
+test('Free BOLL restores on reload, requests only its bounded study and disposes when hidden', async ({ page }) => {
+  const bars = freeHistory(20)
+  await mockMarketDetail(page, { barsPage({ url }) {
+    return url.searchParams.get('frequency') === '15m' ? { bars } : undefined
+  } })
+  const requests = []
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(Object.fromEntries(params))
+    return route.fulfill({ json: chartStudyWire(bars, params.get('studies'), (_bar, index) => index < 19
+      ? { status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' }
+      : { status: 'READY', values: { upper: 125, middle: 110, lower: 95 }, diagnostic: null }) })
+  })
+  await page.goto(freeJm)
+
+  const boll = page.getByRole('button', { name: 'BOLL', exact: true })
+  const chart = page.getByTestId('kline-shell')
+  await expect(boll).toHaveAttribute('aria-pressed', 'false')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  expect(requests).toHaveLength(0)
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  expect(requests).toHaveLength(1)
+  expect(requests[0].studies).toBe('boll')
+  expect(requests[0].count).toBe('20')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await diagnostics.getByText('boll · 就绪', { exact: true }).click()
+  await expect(diagnostics).toContainText('talib_boll_v1')
+  await page.reload()
+  await expect(boll).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  expect(requests).toEqual([requests[0], requests[0]])
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  await page.reload()
+  await expect(boll).toHaveAttribute('aria-pressed', 'false')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  expect(requests).toHaveLength(2)
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {

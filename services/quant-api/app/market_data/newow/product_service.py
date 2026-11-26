@@ -1487,7 +1487,7 @@ class NewowProductService:
         elif request.section is ProductSection.AUXILIARY:
             assert request.component is not None
             layer = (
-                calculate_macd_display(identity, read)
+                calculate_macd_display(identity, read, source_revision=fact_key)
                 if request.component is AuxiliaryComponent.MACD
                 else calculate_auxiliary_component(
                     identity,

@@ -4,6 +4,8 @@ import { normalizeCautionDisplay } from './newowCautionDisplay.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
 import { normalizePagePerformance } from './newowPagePerformance.ts'
 import {
+  NEWOW_MACD_DISPLAY_ADAPTER_VERSION,
+  NEWOW_MACD_FORMULA_VERSION,
   NEWOW_PRODUCT_FREQUENCIES,
   NEWOW_PRODUCT_STRATEGIES,
 } from '../types/newowProduct.ts'
@@ -723,14 +725,16 @@ function macdParametersHash(value: unknown, field: string): string {
 function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue {
   const field = 'auxiliary.value'
   const value = exactRecord(payload, field, ['component', 'formula_version', 'display_adapter_version', 'parameters', 'parameters_hash', 'segments', 'repainting', 'formal_signal_eligible', 'page_parity', 'source_category', 'allowed_uses'])
-  requireExact(value.display_adapter_version, 'guiyi_newow_macd_display_v1', `${field}.display_adapter_version`)
+  requireExact(value.display_adapter_version, NEWOW_MACD_DISPLAY_ADAPTER_VERSION, `${field}.display_adapter_version`)
+  requireExact(value.formula_version, NEWOW_MACD_FORMULA_VERSION, `${field}.formula_version`)
   requireExact(value.source_category, 'guiyi_product_auxiliary_adapter', `${field}.source_category`)
   for (const key of ['repainting', 'formal_signal_eligible', 'page_parity']) requireExact(value[key], false, `${field}.${key}`)
-  const parameters = exactRecord(value.parameters, `${field}.parameters`, ['fast', 'slow', 'signal', 'ema_seed_policy', 'histogram_scale', 'round_digits'])
-  const expectedParameters = { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 } as const
+  const expectedParameters = { fast: 12, slow: 26, signal: 9 } as const
+  const parameters = exactRecord(value.parameters, `${field}.parameters`, Object.keys(expectedParameters))
   for (const [key, expected] of Object.entries(expectedParameters)) requireExact(parameters[key], expected, `${field}.parameters.${key}`)
   const seen = new Set<string>()
-  let previousEnd = -Infinity
+  const asOf = previewInstant(meta.as_of)
+  let previousEnd: bigint | null = null
   const segments = array(value.segments, `${field}.segments`).map((payload, index) => {
     const path = `${field}.segments[${index}]`
     const segment = exactRecord(payload, path, ['physical_contract', 'segment_id', 'bar_ends', 'status', 'data'])
@@ -741,11 +745,12 @@ function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue
     seen.add(segmentId)
     const ends = array(segment.bar_ends, `${path}.bar_ends`).map((item, i) => instant(item, `${path}.bar_ends[${i}]`))
     if (!ends.length) throw new Error(`${path}.bar_ends is empty`)
-    for (const end of ends) {
-      const timestamp = Date.parse(end)
-      if (timestamp <= previousEnd || timestamp > Date.parse(meta.as_of)) throw new Error(`${path}.bar_ends order or as_of conflict`)
+    const endInstants = ends.map(end => {
+      const timestamp = previewInstant(end)
+      if (timestamp === null || asOf === null || (previousEnd !== null && timestamp <= previousEnd) || timestamp > asOf) throw new Error(`${path}.bar_ends order or as_of conflict`)
       previousEnd = timestamp
-    }
+      return timestamp
+    })
     const data = exactRecord(segment.data, `${path}.data`, ['dif', 'dea', 'histogram'])
     const points = (key: string): NewowMacdPoint[] => {
       const items = array(data[key], `${path}.data.${key}`)
@@ -753,18 +758,30 @@ function normalizeMacd(payload: unknown, meta: NewowProductMeta): NewowMacdValue
       return items.map((payload, i) => {
         const location = `${path}.data.${key}[${i}]`
         const point = exactRecord(payload, location, ['bar_end', 'value', 'ready', 'valid', 'reason'])
-        const barEnd = sameInstant(point.bar_end, ends[i]!, `${location}.bar_end`)
+        const barEnd = ends[i]!
+        if (previewInstant(instant(point.bar_end, `${location}.bar_end`)) !== endInstants[i]) throw new Error(`${location}.bar_end conflicts with segment Bar`)
         const number = point.value === null ? null : finiteNumber(point.value, `${location}.value`)
         const ready = boolean(point.ready, `${location}.ready`), valid = boolean(point.valid, `${location}.valid`)
         const reason = nullableText(point.reason, `${location}.reason`)
-        if (ready && valid ? number === null || reason !== null : number !== null || reason === null) throw new Error(`${location} point state contradicts value/reason`)
-        if (!ready && (!valid || reason !== 'warming_up')) throw new Error(`${location} warming state is invalid`)
+        const consistent = ready
+          ? valid && number !== null && reason === null
+          : number === null && reason !== null && valid === (reason === 'warming_up')
+        if (!consistent) throw new Error(`${location} point state contradicts value/reason`)
         return { bar_end: barEnd, value: number, ready, valid, reason }
       })
     }
-    return { physical_contract: physical, segment_id: segmentId, bar_ends: ends, status: normalizeStatus(segment.status, `${path}.status`), data: { dif: points('dif'), dea: points('dea'), histogram: points('histogram') } }
+    const aligned = { dif: points('dif'), dea: points('dea'), histogram: points('histogram') }
+    for (const [i, dif] of aligned.dif.entries()) {
+      for (const point of [aligned.dea[i]!, aligned.histogram[i]!]) {
+        if (point.ready !== dif.ready || point.valid !== dif.valid || point.reason !== dif.reason) throw new Error(`${path}.data[${i}] point states disagree`)
+      }
+    }
+    const status = normalizeStatus(segment.status, `${path}.status`)
+    const last = aligned.dif[ends.length - 1]!
+    requireExact(status.status, last.ready ? 'ready' : last.valid ? 'warming' : 'unavailable', `${path}.status.status`)
+    return { physical_contract: physical, segment_id: segmentId, bar_ends: ends, status, data: aligned }
   })
-  return { component: 'macd', formula_version: text(value.formula_version, `${field}.formula_version`), display_adapter_version: 'guiyi_newow_macd_display_v1', parameters: expectedParameters,
+  return { component: 'macd', formula_version: NEWOW_MACD_FORMULA_VERSION, display_adapter_version: NEWOW_MACD_DISPLAY_ADAPTER_VERSION, parameters: expectedParameters,
     parameters_hash: macdParametersHash(value.parameters_hash, `${field}.parameters_hash`), segments, repainting: false, formal_signal_eligible: false, page_parity: false, source_category: 'guiyi_product_auxiliary_adapter',
     allowed_uses: exactStringArray(value.allowed_uses, ['research_display'] as const, `${field}.allowed_uses`) }
 }

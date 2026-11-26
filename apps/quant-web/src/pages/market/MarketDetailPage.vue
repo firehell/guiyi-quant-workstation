@@ -8,6 +8,7 @@ import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vu
 import { useMarketDetailQuote, projectMarketDetailQuoteHeader } from '@/composables/useMarketDetailQuote'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { candidatePreview } from '@/utils/candidatePreview'
+import { MARKET_CHART_STUDY_IDENTITY } from '@/utils/marketChartStudies'
 import { computed, onBeforeUnmount, onUnmounted, provide, ref, watch } from 'vue'
 import { createChart } from 'lightweight-charts'
 import { createDetailChartSession, detailChartTime, DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
@@ -50,6 +51,7 @@ import {
   replaceNewowDetailPreferences,
   saveMarketDetailPreferences,
   type FlexibleDetailPreferences,
+  type FreeDetailPreferences,
 } from '@/utils/marketDetailPreferences'
 import { isNewowStrategySwitch, originalNewowCombinationSupported, parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/marketDetailRoute'
 
@@ -63,6 +65,7 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
+provide(MARKET_CHART_STUDY_IDENTITY, explicitIdentity)
 const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
 const newowAfterMarketOnly = computed(() => marketFoundation || isolatedNewow || explicitIdentity.value?.newowSource === 'after-market')
 const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()
@@ -327,7 +330,7 @@ function selectProduct(option: ProductOption) {
   selectIdentity({ ...identity, symbol: option.symbol, focusBarEnd: undefined })
 }
 
-function updateFreePreferences(free: FlexibleDetailPreferences) {
+function updateFreePreferences(free: FreeDetailPreferences) {
   preferences.value = replaceFreeDetailPreferences(preferences.value, free)
   saveMarketDetailPreferences(preferences.value)
 }

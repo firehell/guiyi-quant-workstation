@@ -1,36 +1,36 @@
 # 实施任务 · Quant Compute Core 与 Quant Chart
 
-本任务表以 [proposal](proposal.md)、[design](design.md) 和三份新增能力规格及 Newow MACD delta 为准。当前 change 只记录目标与实施顺序；未勾选项均未实施，不代表已有代码已通过新合同。
+本任务表以 [proposal](proposal.md)、[design](design.md) 和三份新增能力规格及 Newow MACD delta 为准。勾选表示达到该条交付条件。部分完成、现场未验和既有基线问题见下方说明。
 
 ## A. 计算包与注册合同
 
-- [ ] A1. 盘点通用指标、Newow/HTDY/SuBing 专属公式及所有消费者；标出哪些是通用显示、策略内部数学、回看展示或业务事实。
-- [ ] A2. 定义 BarSeries、FeatureResult、IndicatorDefinition、Compute Registry、公式/参数/状态/结果 schema 身份。
-- [ ] A3. 将 TA-Lib 纳入 `guiyi-quant-core` 独立依赖和锁定构建；确认 Python 3.13 / macOS ARM64 / CI 可安装。
-- [ ] A4. 将通用指标目录收敛到 EMA10/21/60、MACD 12/26/9、ATR14、STDDEV20、BOLL20/2、HHV、LLV、OBV、Volume Ratio；不保留重复通用实现。
-- [ ] A5. 保留并整理现有趋势因子；不扩展未经验证的通用因子。
-- [ ] A6. 建立 Swing Pivot、Support/Resistance、Breakout/Retest 公共内核及因果时间合同。
+- [x] A1. 盘点通用指标、Newow/HTDY/SuBing 专属公式及所有消费者；标出哪些是通用显示、策略内部数学、回看展示或业务事实。
+- [x] A2. 定义 BarSeries、FeatureResult、IndicatorDefinition、Compute Registry、公式/参数/状态/结果 schema 身份。
+- [x] A3. 将 TA-Lib 纳入 `guiyi-quant-core` 独立依赖和锁定构建；确认 Python 3.13 / macOS ARM64 / CI 可安装。
+- [x] A4. 将通用指标目录收敛到 EMA10/21/60、MACD 12/26/9、ATR14、STDDEV20、BOLL20/2、HHV、LLV、OBV、Volume Ratio；不保留重复通用实现。
+- [x] A5. 保留并整理现有趋势因子；不扩展未经验证的通用因子。
+- [x] A6. 建立 Swing Pivot、Support/Resistance、Breakout/Retest 公共内核及因果时间合同。
 - [ ] A7. 为现有 Newow/HTDY/SuBing 专属计算提供统一注册与结果适配，不改公式身份、状态机和权限。
 
 ## B. Chart 包与现有显示迁移
 
-- [ ] B1. 建立 `@guiyi/quant-chart` 独立 TypeScript 包，定义 Display Catalog、Renderer Registry 和 Chart Profile。
-- [ ] B2. 实现共享 Main Pane、Volume Track、Auxiliary Pane、Pane Manager 和共同时间轴/光标同步。
-- [ ] B3. 实现 Line/Histogram/Band/Marker/PriceLevel-Zone/Primitive 通用 Renderer。
-- [ ] B4. 迁移 EMA/BOLL/Range Detector/Donchian 等公共主图图层；保留现有 Newow 主图 Primitive。
-- [ ] B5. 迁移 Newow 四类副图和现有副图选择行为；默认仍为一个选中副图，新增多 Pane 只作为显式能力。
-- [ ] B6. 保留并验证通用特殊成交量着色、SuBing 2x/3x 档位、Newow 自有成交量显示。
-- [ ] B7. 将动作、Hint、Alert、委托/成交等业务事实作为独立来源图层接入，不转成技术指标。
-- [ ] B8. 实现 Add/Hide/Remove/Configure/Retire、偏好 schema migration、Profile 默认配置和图层资源释放。
+- [x] B1. 建立 `@guiyi/quant-chart` 独立 TypeScript 包，定义 Display Catalog、Renderer Registry 和 Chart Profile。
+- [x] B2. 实现共享 Main Pane、Volume Track、Auxiliary Pane、Pane Manager 和共同时间轴/光标同步。
+- [x] B3. 实现 Line/Histogram/Band/Marker/PriceLevel-Zone/Primitive 通用 Renderer。
+- [x] B4. 迁移 EMA/BOLL/Range Detector/Donchian 等公共主图图层；保留现有 Newow 主图 Primitive。
+- [x] B5. 迁移 Newow 四类副图和现有副图选择行为；默认仍为一个选中副图，新增多 Pane 只作为显式能力。
+- [x] B6. 保留并验证通用特殊成交量着色、SuBing 2x/3x 档位、Newow 自有成交量显示。
+- [x] B7. 将动作、Hint、Alert、委托/成交等业务事实作为独立来源图层接入，不转成技术指标。
+- [x] B8. 实现 Add/Hide/Remove/Configure/Retire、偏好 schema migration、Profile 默认配置和图层资源释放。
 - [ ] B9. 实现指标诊断与 Compute Registry / Display Catalog 兼容性检查。
 
 ## C. 独立发布与消费者迁移
 
-- [ ] C1. Quant Core 独立 SemVer、wheel/sdist、包内测试及 Release artifact。
-- [ ] C2. Quant Chart 独立 SemVer、package tarball、类型/渲染测试及 Release artifact。
-- [ ] C3. API/Web 消费者锁定精确包版本和 artifact hash；开发 editable/workspace 与正式锁定安装分离。
-- [ ] C4. 独立版本化 formula/state/result/chart schema；验证不兼容消费者 fail-closed。
-- [ ] C5. 更新 Newow MACD auxiliary 使用 TA-Lib 12/26/9 原始输出的 active delta；保持 Newow API envelope、as-of、physical owner、warming 和 research-display-only 边界。
+- [x] C1. Quant Core 独立 SemVer、wheel/sdist、包内测试及 Release artifact。
+- [x] C2. Quant Chart 独立 SemVer、package tarball、类型/渲染测试及 Release artifact。
+- [x] C3. API/Web 消费者锁定精确包版本和 artifact hash；开发 editable/workspace 与正式锁定安装分离。
+- [x] C4. 独立版本化 formula/state/result/chart schema；验证不兼容消费者 fail-closed。
+- [x] C5. 更新 Newow MACD auxiliary 使用 TA-Lib 12/26/9 原始输出的 active delta；保持 Newow API envelope、as-of、physical owner、warming 和 research-display-only 边界。
 - [ ] C6. 迁移 Web/牛哇/回测/快期/苏冰消费者到统一接口；每个消费者只请求自身需要的指标。
 - [ ] C7. 执行 60 品种 × 7 周期性能、内存、缓存、增量恢复、计算隔离和图表视觉回归。
 - [ ] C8. 完成独立 Review、OpenSpec strict validation、受影响测试和 develop 集成；同步已接受 delta 到 active specs 与 canonical。
@@ -50,3 +50,11 @@
 ## 目标模式执行约束
 
 后续实现属于架构与公式边界任务。实现时按仓库 `AGENTS.md`、`docs/DEVELOPMENT.md` 和当前 active canonical 选择 Lane、工作区与验证；涉及通用公式替换、因果性或 Newow MACD 语义的代码改动应做针对性独立 Review。包发布与正式消费者升级分别处理，不能把 develop 集成或 package Release 当作 Runtime 已切换。
+
+## 集成验收与剩余依赖
+
+- A7 已建立专属指标目录并保留输入权限，现有牛哇副图、HTDY、Lux Range 与苏冰同花顺合同已登记。完整消费者迁移与 C6 联验。
+- B9 行情工作台和牛哇主图已提供图层诊断，Free BOLL 在浏览器验证可读公式与就绪状态；EMA/BOLL 区分缺输入、预热、源无效和计算错误。牛哇旧响应的预热计数和后端缓存状态证据不足时留空，盘后共享副图及全部业务图层的完整诊断验收保留待办。
+- C3 验证独立候选安装。Quant API 候选以独立消费锁校验 Python wheel，Web 锁定独立 tarball 的完整性。正式消费者升级与候选构建分开。
+- C6 Web 历史指标已接入批量计算队列，牛哇 MACD 保留同 owner 前缀，RQAlpha 使用独立冻结输入通过 17 项回归，快期 HTDY、苏冰独立模拟的 completed 消费、权威修订回调和持久化游标须与 Market Foundation 接口联验。牛哇正式盘后参考沿用原归档凭证入口。
+- C7 [M4 冻结性能结果](evidence/performance.json) 覆盖 415/420 个品种周期组合及 66,590 根已完成 Bar。OI/RS 日线与 PD/PT/RS 周线有源缺口。已做工作台夹具与图层资源释放验证，未更新在基线上同样失败的旧截图。完整 420 组合与 Market/模拟进程并行现场尚待联验。

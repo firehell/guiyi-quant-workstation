@@ -536,7 +536,7 @@ test('channel primitive replaces strategy-owned data on snapshot pagination and 
   }
 })
 
-test('signed MACD bars share pane 2 and switch/invalidated snapshots remove every old series', async () => {
+test('signed MACD bars share the selected auxiliary pane and switch/invalidated snapshots remove every old series', async () => {
   const Stage = await loadComponent()
   const records: Array<{ definition: { type: string }; pane: number; data: Array<{ value?: number; color?: string; time: unknown }>; removed: boolean }> = []
   const chart = ref<NewowProductSectionResponse<'chart'> | null>(prependBar(chartResponse()))
@@ -561,7 +561,7 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   const root = element('root')
   app.mount(root); await nextTick()
-  const histogram = records.find(record => record.pane === 2 && record.definition.type === 'Histogram')!
+  const histogram = records.find(record => record.pane === 1 && record.definition.type === 'Histogram')!
   assert.deepEqual(histogram.data.map(point => [point.value, point.color]), [[-2, '#80DCA1'], [3, '#FF8383']])
   const candleTimes = records.find(record => record.definition.type === 'Candlestick')!.data.map(point => point.time)
   assert.deepEqual(histogram.data.map(point => point.time), candleTimes)
@@ -571,11 +571,11 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   setPure(); await nextTick()
   assert.deepEqual(activeAuxiliary(), [])
   ;(findCheckbox(root, '纯净模式')!.props.onChange as () => void)(); await nextTick()
-  assert.equal(activeAuxiliary().filter(record => record.pane === 2).length, 3)
-  assert.equal(activeAuxiliary().filter(record => record.pane === 1).length, 1)
+  assert.equal(activeAuxiliary().filter(record => record.pane === 1).length, 4)
+  assert.equal(activeAuxiliary().filter(record => record.pane > 1).length, 0)
   auxiliary.value = { ...auxiliary.value, meta: { ...auxiliary.value.meta, snapshot_token: 'invalidated' } }
   await nextTick()
-  assert.equal(records.filter(record => record.pane === 2 && record.data.some(point => point.value !== undefined) && !record.removed).length, 0)
+  assert.equal(records.filter(record => record.pane === 1 && record.data.some(point => point.value !== undefined) && !record.removed).length, 0)
   chart.value = null; await nextTick()
   assert.equal(records.filter(record => !record.removed && record.data.length > 0).length, 0, 'price, volume and auxiliary clear together')
   app.unmount()
@@ -612,7 +612,7 @@ test('zhaoyao mirror uses one dedicated primitive and no generic value series', 
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(element('root')); await nextTick()
   assert.equal(attached.some(value => value.constructor.name === 'NewowZhaoyaoMirrorPrimitive'), true)
-  assert.equal(records.filter(record => record.pane === 2 && record.data.some(point => point.value !== undefined)).length, 0)
+  assert.equal(records.filter(record => record.pane === 1 && record.data.some(point => point.value !== undefined)).length, 0)
   app.unmount()
 })
 
@@ -648,11 +648,13 @@ test('same chart instance restores identity-specific layers and viewport across 
 
 test('dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit', async () => {
   const Stage = await loadComponent()
-  const response = strategyResponse('trend')
-  const partner = ref<MutableChartResponse | null>(strategyResponse('oscillation'))
+  const response = prependBar(strategyResponse('trend'))
+  response.value!.frames[0]!.main_values = { a: '99', b: '101' }
+  const partner = ref<MutableChartResponse | null>(prependBar(strategyResponse('oscillation')))
+  const detached: string[] = []
   const attached: Array<{ setData(data: unknown[]): void; constructor: { name: string } }> = []
   const fakeChart = { addSeries: () => ({ setData() {}, createPriceLine() {},
-    attachPrimitive(value: typeof attached[number]) { attached.push(value) }, detachPrimitive() {}, priceToCoordinate: (price: number) => price * 2 }),
+    attachPrimitive(value: typeof attached[number]) { attached.push(value) }, detachPrimitive(value: typeof attached[number]) { detached.push(value.constructor.name) }, priceToCoordinate: (price: number) => price * 2 }),
     removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
     timeScale: () => ({ width: () => 600, timeToCoordinate: () => 210, fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
       scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
@@ -689,6 +691,7 @@ test('dual overlay projects both strategies at prices, exposes blue/orange label
   partner.value = null; await nextTick(); await nextTick()
   assert.equal(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'), undefined)
   assert.equal(findNode(root, n => n.props['data-origin-strategy'] === 'oscillation'), undefined)
+  assert.ok(detached.includes('NewowDualBackgroundPrimitive'))
   app.unmount()
 })
 
@@ -917,6 +920,7 @@ async function componentModule(url: URL): Promise<string> {
   }).outputText
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
     .replace(/from ['"]lightweight-charts['"]/g, `from '${import.meta.resolve('lightweight-charts')}'`)
+    .replace(/from ['"](@guiyi\/quant-chart(?:\/volume)?)['"]/g, (_match, specifier: string) => `from '${import.meta.resolve(specifier)}'`)
     .replace(/from ['"](\.[^'"]+\.ts)['"]/g, (_match, specifier: string) => `from '${new URL(specifier, url).href}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
       const path = resolveSourceImport(specifier)

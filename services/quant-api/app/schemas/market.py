@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 
 class MarketBarOut(BaseModel):
@@ -44,6 +44,50 @@ class MarketBarsPageResponse(BaseModel):
     canonical_coverage: CoverageOut | None
     page: MarketPageMetaOut
     resolved_contract_segments: list[ContractSegmentOut]
+
+
+MarketChartStudyId = Literal["ema10", "ema21", "ema60", "boll"]
+MarketChartStudyPointStatus = Literal["READY", "WARMING", "UNKNOWN", "INVALID", "ERROR"]
+
+
+class MarketChartStudyPointOut(BaseModel):
+    status: MarketChartStudyPointStatus
+    values: dict[str, FiniteFloat] | None
+    diagnostic: str | None
+
+
+class MarketChartStudyFeatureOut(BaseModel):
+    study: MarketChartStudyId
+    formula_version: str
+    backend_version: str
+    parameters_hash: str = Field(pattern=r"^[a-f0-9]{16}$")
+    points: list[MarketChartStudyPointOut]
+
+
+class MarketChartStudyBarOut(BaseModel):
+    bar_end: datetime
+    close: Decimal
+    source_bar_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class MarketChartStudySegmentOut(BaseModel):
+    physical_contract: str
+    segment_id: str
+    bars: list[MarketChartStudyBarOut]
+    features: list[MarketChartStudyFeatureOut]
+
+
+class MarketChartStudyDisplayOut(BaseModel):
+    schema_version: Literal["guiyi_market_chart_studies_v1"] = "guiyi_market_chart_studies_v1"
+    result_schema_version: Literal["guiyi_feature_result_v1"] = "guiyi_feature_result_v1"
+    symbol: str
+    series_kind: Literal["contract", "actual_dominant", "continuous"]
+    contract: str | None
+    frequency: str
+    as_of: datetime
+    source_revision: str | None = Field(pattern=r"^[a-f0-9]{64}$")
+    unavailable_reason: Literal["PHYSICAL_OWNER_REQUIRED"] | None
+    segments: list[MarketChartStudySegmentOut]
 
 
 class MarketProgressResponse(BaseModel):
