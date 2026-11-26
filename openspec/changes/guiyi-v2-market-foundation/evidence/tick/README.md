@@ -3,8 +3,9 @@
 ## 实际来源
 
 - 2026-11-26 从 Catalog 只读验证 RB2701 的 rank1 和 Session。在 13:30 日盘开盘附近捕获 491 条 RQData Tick 与 4 根供应商实时 1m。候选生成的 13:32–13:34 三根 1m 与供应商实时数据逐字段相等。监听已关闭，无队列溢出。两条对照频道均只写采样临时文件。 [对照](RB2701-day.json)
-- 同一合约用候选强制证书校验 WebSocket 复验 125 秒，共 250 条 Tick 与 2 根供应商实时 1m。已形成的 13:38 端点逐字段一致。两段真实采样各有一根缺乏开头累计基线，候选均拒绝发布。 [TLS 复验](RB2701-verified-tls.json)
-- 13:42 以只读事务查询同日权威 Catalog 返回 DATASET_OR_PARTITION_MISSING。当日归档后可用 compare_tick.py 绑定原始采样 SHA 读回，真实权威三方数值、交易日尾部与自然跨夜尚待验。真实行情原件存于本机私有临时文件。13:30 样本另经 EventEngine、MarketFeed、DurableLive 与原生 PostgreSQL/Redis 重放，落入完成日志的 3 根 1m 再次逐字段一致。
+- 同一合约用候选强制证书校验 WebSocket 复验 125 秒，共 250 条 Tick 与 2 根供应商实时 1m。已形成的 13:38 端点逐字段一致。前两段各有一根缺乏开头累计基线，候选均拒绝发布。 [TLS 复验](RB2701-verified-tls.json)
+- 14:58 收盘尾段继续用强制证书校验的双频道采样。241 条 Tick 和 2 根实时 1m 中，候选生成的 15:00 Session 最后一根与供应商实时 1m 逐字段一致。另一根缺少接入前累计基线，候选保留缺口。 [收盘实测](RB2701-tail.json)
+- 13:42 只读 Catalog 返回 DATASET_OR_PARTITION_MISSING。收盘后首次检查时，米筐尚未报告期货日线与分钟线均就绪，未请求历史分钟。历史就绪后以 compare_tick.py 绑定原始 SHA 复验。同日盘后权威三方、自然跨夜及目标范围仍待验。真实行情原件存于本机私有临时文件。13:30 样本另经 EventEngine、MarketFeed、DurableLive 与原生 PostgreSQL/Redis 重放，落入完成日志的 3 根 1m 再次逐字段一致。
 
 ## M4／16 GB 回放
 
