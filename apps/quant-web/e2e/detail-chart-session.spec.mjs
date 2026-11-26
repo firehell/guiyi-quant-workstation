@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
+import { closeSync, openSync, writeFileSync } from 'node:fs'
 import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { assertNoUnexpectedRequests, installNewowProductFixtures, newowRoute } from './newow-product.helpers.mjs'
 import { navigateClient } from './market-detail.helpers.mjs'
 
@@ -7,7 +9,9 @@ test('isolated chart soak measures pane and canvas teardown across repeated work
   const output = process.env.GUIYI_CHART_SOAK_JSON
   test.skip(!output, 'Requires an explicit scratch JSON destination')
   const seconds = Number(process.env.GUIYI_CHART_SOAK_SECONDS ?? 180)
-  expect(Number.isInteger(seconds) && seconds > 0).toBe(true)
+  const fixedCycles = Number(process.env.GUIYI_CHART_SOAK_CYCLES ?? 0)
+  const heapDirectory = process.env.GUIYI_CHART_SOAK_HEAP_DIRECTORY
+  expect(Number.isInteger(seconds) && seconds > 0 && Number.isInteger(fixedCycles) && fixedCycles >= 0).toBe(true)
   test.setTimeout((seconds + 75) * 1000)
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
@@ -49,6 +53,19 @@ test('isolated chart soak measures pane and canvas teardown across repeated work
   const resources = () => page.evaluate(() => window.__chartSoakResources())
   const session = await page.context().newCDPSession(page)
   const samples = [], times = []
+  async function snapshot(phase) {
+    if (!heapDirectory) return
+    const fd = openSync(join(heapDirectory, `${phase}.heapsnapshot`), 'wx')
+    const writeChunk = ({ chunk }) => writeFileSync(fd, chunk)
+    session.on('HeapProfiler.addHeapSnapshotChunk', writeChunk)
+    try {
+      await session.send('HeapProfiler.collectGarbage')
+      await session.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false })
+    } finally {
+      session.off('HeapProfiler.addHeapSnapshotChunk', writeChunk)
+      closeSync(fd)
+    }
+  }
   async function sample(phase, cycles) {
     await session.send('HeapProfiler.collectGarbage')
     const heap = await session.send('Runtime.getHeapUsage')
@@ -74,7 +91,7 @@ test('isolated chart soak measures pane and canvas teardown across repeated work
   const selector = stage.getByRole('combobox', { name: '选择附加副图' })
   const macd = stage.locator('[data-auxiliary-pane="macd"]')
   await sample('mounted', cycles)
-  while (Date.now() - start < seconds * 1000) {
+  while (fixedCycles ? cycles < fixedCycles : Date.now() - start < seconds * 1000) {
     const cycleStart = Date.now()
     await stage.getByRole('button', { name: '涨跌动能', exact: true }).click()
     await expect(stage).toHaveAttribute('data-auxiliary-component', 'up_down_energy')
@@ -109,6 +126,7 @@ test('isolated chart soak measures pane and canvas teardown across repeated work
     else workspaceResources.set(strategy, await resources())
     cycles++
     times.push(Date.now() - cycleStart)
+    if (cycles === 10) await snapshot('cycle-10')
     if (Date.now() >= nextSample) {
       await sample('cycling', cycles)
       nextSample = Date.now() + 15_000
@@ -116,6 +134,7 @@ test('isolated chart soak measures pane and canvas teardown across repeated work
   }
   expect(cycles).toBeGreaterThan(0)
   await sample('before_unmount', cycles)
+  await snapshot('before-unmount')
   await page.evaluate(() => document.querySelector('#app').__vue_app__.unmount())
   await expect(canvas).toHaveCount(0)
   await expect.poll(resources).toEqual({ series: 0, primitives: 0, listeners: 0 })
@@ -125,13 +144,14 @@ test('isolated chart soak measures pane and canvas teardown across repeated work
     return newowSessionResources.stats().pending
   })).toBe(0)
   await sample('after_unmount', cycles)
+  await snapshot('after-unmount')
   await session.detach()
   expect(errors).toEqual([])
   assertNoUnexpectedRequests(fixture)
   const ordered = times.toSorted((a, b) => a - b)
   const percentiles = [0.5, 0.95, 0.99].map(fraction => ordered[Math.ceil(fraction * ordered.length) - 1])
   await writeFile(output, JSON.stringify({ startedAt: new Date(start).toISOString(), chartPackage,
-    elapsedSeconds: (Date.now() - start) / 1000, thresholdSeconds: seconds,
+    elapsedSeconds: (Date.now() - start) / 1000, thresholdSeconds: fixedCycles ? null : seconds, fixedCycles: fixedCycles || null,
     cycles, cycleTimeP50P95P99Ms: percentiles, samples, productRequests: fixture.productRequests.length, errors }, null, 2) + '\n', { flag: 'wx' })
 })
 

@@ -962,5 +962,250 @@
     ],
     "productRequests": 1925,
     "errors": []
+  },
+  "browser_heap_forensics": {
+    "source_commit": "a21a3b12646a67261a23fbeb8106831be3e5fdd6",
+    "chart_package": "0.1.5",
+    "scope": "Chromium loopback with frozen Newow, HTDY, SuBing and Free fixtures. Each of the three runs completed 140 cycles covering auxiliary pane switching, MACD lifecycle and shared canvas reuse.",
+    "reproduce_corrected_fixture": "GUIYI_CHART_SOAK_CYCLES=140 GUIYI_CHART_SOAK_HEAP_DIRECTORY=<existing-scratch-directory> GUIYI_CHART_SOAK_JSON=<new-scratch-json> pnpm test:e2e e2e/detail-chart-session.spec.mjs --grep \"isolated chart soak\"",
+    "production_control": "Built with pnpm build and replayed the same fixture interactions through the mounted application router on loopback Vite preview. Uses CDP snapshots and DOM assertions. The production bundle minifies constructor names.",
+    "snapshot_measure": "HeapProfiler snapshots after explicit collection, summed shallow bytes across nodes including V8 and Blink; Runtime.getHeapUsage is a separate measurement.",
+    "class_count_order": [
+      "ChartModel",
+      "ChartWidget",
+      "DataLayer",
+      "TimeScaleApi",
+      "Series",
+      "SeriesApi",
+      "PaneWidget",
+      "ReactiveEffect"
+    ],
+    "retainers": {
+      "network": "In the original run, all 4494 final ResourceData nodes were held by DevToolsSession -> InspectorNetworkAgent -> NetworkResourcesData. All 3481 XHRReplayData nodes were directly held by ResourceData. Counts persisted after application unmount.",
+      "console": "All 869 final ConsoleMessage nodes were held by Blink page console storage. The original fixture also retained 945 Vite send failures and one Vite addEventListener failure. Neither error appeared in the corrected or production control snapshots.",
+      "lwc": "ChartModel, ChartWidget, DataLayer and TimeScaleApi kept the same single object ID from cycle 10 through cycle 140 in the original run. Their counts reached zero after unmount. The 32 residual similarly named LWC object nodes inspected after unmount had direct constructor .prototype references.",
+      "detached_dom": "The only native node still marked detached after unmount in the original run was <template>. No detached canvas, pane or chart DOM remained."
+    },
+    "runs": {
+      "original_fixture": {
+        "cycles": 140,
+        "elapsed_seconds_including_probe": 86.175,
+        "shallow_growth_bytes_cycle_10_to_140": 6315564,
+        "v8_code_shallow_growth_bytes": {
+          "InstructionStream": 2050080,
+          "TrustedByteArray": 765308,
+          "ProtectedFixedArray": 304512
+        },
+        "inspector_shallow_growth_bytes": {
+          "ResourceData": 1147000,
+          "XHRReplayData": 566192
+        },
+        "snapshots": {
+          "after-unmount": {
+            "sha256": "1ff49fd57f55fe30014368ea1cb8755862fd95fc3afef9bbf204201fbe89c1ce",
+            "shallow_bytes": 43761064,
+            "vite_transport_type_errors": 946,
+            "native_nodes_marked_detached": 1,
+            "inspector_resource_data": 4494,
+            "inspector_xhr_replay_data": 3481,
+            "console_messages": 869,
+            "chart_and_vue_object_counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "cycle-10": {
+            "sha256": "f4393e027ec9cb42f6e0746ab149591afa609cf581e2c9e88b72818a7c04fe21",
+            "shallow_bytes": 43491731,
+            "vite_transport_type_errors": 70,
+            "native_nodes_marked_detached": 104,
+            "inspector_resource_data": 619,
+            "inspector_xhr_replay_data": 264,
+            "console_messages": 65,
+            "chart_and_vue_object_counts": [
+              1,
+              1,
+              1,
+              1,
+              8,
+              8,
+              2,
+              143
+            ]
+          },
+          "cycle-140": {
+            "sha256": "8a34a6473eee09e7b9d5eb243aa8c57897337854ef1542161030d5f277681f5f",
+            "shallow_bytes": 49807295,
+            "vite_transport_type_errors": 946,
+            "native_nodes_marked_detached": 104,
+            "inspector_resource_data": 4494,
+            "inspector_xhr_replay_data": 3481,
+            "console_messages": 869,
+            "chart_and_vue_object_counts": [
+              1,
+              1,
+              1,
+              1,
+              8,
+              8,
+              2,
+              143
+            ]
+          },
+          "cycle-60": {
+            "sha256": "fffab6359691f4b7152766c51398f554d350f1a9276bacc08a35b95feba2f0a5",
+            "shallow_bytes": 46747794,
+            "vite_transport_type_errors": 427,
+            "native_nodes_marked_detached": 104,
+            "inspector_resource_data": 2095,
+            "inspector_xhr_replay_data": 1487,
+            "console_messages": 374,
+            "chart_and_vue_object_counts": [
+              1,
+              1,
+              1,
+              1,
+              8,
+              8,
+              2,
+              143
+            ]
+          }
+        },
+        "tracked_native_after_unmount": {
+          "series": 0,
+          "primitives": 0,
+          "listeners": 0
+        }
+      },
+      "corrected_fixture": {
+        "cycles": 140,
+        "elapsed_seconds_including_probe": 88.04,
+        "shallow_growth_bytes_cycle_10_to_140": 5721671,
+        "v8_code_shallow_growth_bytes": {
+          "InstructionStream": 2067296,
+          "TrustedByteArray": 773876,
+          "ProtectedFixedArray": 306772
+        },
+        "inspector_shallow_growth_bytes": {
+          "ResourceData": 1145816,
+          "XHRReplayData": 565488
+        },
+        "snapshots": {
+          "after-unmount": {
+            "sha256": "e40ea957aa438433802b1ea2d385c34335370466b9514d3af44d85089df72222",
+            "shallow_bytes": 43067860,
+            "vite_transport_type_errors": 0,
+            "native_nodes_marked_detached": 1,
+            "inspector_resource_data": 4491,
+            "inspector_xhr_replay_data": 3478,
+            "console_messages": 869,
+            "chart_and_vue_object_counts": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ]
+          },
+          "before-unmount": {
+            "sha256": "343849c70fbed45534c13de365f8a5c3403ab579301832b52bb8be7edef58bd0",
+            "shallow_bytes": 49149410,
+            "vite_transport_type_errors": 0,
+            "native_nodes_marked_detached": 104,
+            "inspector_resource_data": 4491,
+            "inspector_xhr_replay_data": 3478,
+            "console_messages": 869,
+            "chart_and_vue_object_counts": [
+              1,
+              1,
+              1,
+              1,
+              8,
+              8,
+              2,
+              143
+            ]
+          },
+          "cycle-10": {
+            "sha256": "a185222babeaf69778c7249afb06766079ab0baca6f27121c5c29c307d135958",
+            "shallow_bytes": 43427739,
+            "vite_transport_type_errors": 0,
+            "native_nodes_marked_detached": 104,
+            "inspector_resource_data": 620,
+            "inspector_xhr_replay_data": 265,
+            "console_messages": 65,
+            "chart_and_vue_object_counts": [
+              1,
+              1,
+              1,
+              1,
+              8,
+              8,
+              2,
+              143
+            ]
+          }
+        },
+        "tracked_native_after_unmount": {
+          "series": 0,
+          "primitives": 0,
+          "listeners": 0
+        }
+      },
+      "production_bundle": {
+        "cycles": 140,
+        "elapsed_seconds_including_probe": 85.455,
+        "shallow_growth_bytes_cycle_10_to_140": 5763444,
+        "v8_code_shallow_growth_bytes": {
+          "InstructionStream": 1988864,
+          "TrustedByteArray": 739392,
+          "ProtectedFixedArray": 296544
+        },
+        "inspector_shallow_growth_bytes": {
+          "ResourceData": 1157656,
+          "XHRReplayData": 572528
+        },
+        "snapshots": {
+          "after-unmount": {
+            "sha256": "6f3963d1cd72ec1f874e08f982fc404aa1d420f8ca958db5cecc731a2b16508b",
+            "shallow_bytes": 20834432,
+            "vite_transport_type_errors": 0,
+            "native_nodes_marked_detached": 1,
+            "inspector_resource_data": 4262,
+            "inspector_xhr_replay_data": 3518,
+            "console_messages": 869
+          },
+          "cycle-10": {
+            "sha256": "dcf47e5a30c6492a14574fa8a634981ffe5262566c4f9e8ebefa32faaef93a9b",
+            "shallow_bytes": 20956422,
+            "vite_transport_type_errors": 0,
+            "native_nodes_marked_detached": 104,
+            "inspector_resource_data": 351,
+            "inspector_xhr_replay_data": 265,
+            "console_messages": 65
+          },
+          "cycle-140": {
+            "sha256": "ba512aa4b45ee90a9382740657ead1023320232ffc301290e213fe958b74caac",
+            "shallow_bytes": 26719866,
+            "vite_transport_type_errors": 0,
+            "native_nodes_marked_detached": 91,
+            "inspector_resource_data": 4262,
+            "inspector_xhr_replay_data": 3518,
+            "console_messages": 869
+          }
+        }
+      }
+    },
+    "limitations": "Attribution and teardown evidence are scoped to these fixtures and tracked resources. Chromium inspector overhead remains present in all snapshot runs. Renderer RSS, GPU resources, longer memory trajectories and live Market workload are outside this measurement."
   }
 }

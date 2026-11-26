@@ -110,6 +110,7 @@ export async function installNewowProductFixtures(page, options = {}) {
   page.on('requestfailed', (request) => state.aborted.push(request.url()))
   await page.addInitScript(({ frozenNow }) => {
     const NativeDate = Date
+    const NativeWebSocket = WebSocket
     class FrozenDate extends NativeDate {
       constructor(...args) { super(...(args.length === 0 ? [frozenNow] : args)) }
       static now() { return NativeDate.parse(frozenNow) }
@@ -123,7 +124,16 @@ export async function installNewowProductFixtures(page, options = {}) {
       readyState = FixtureWebSocket.OPEN
       onopen = null
       onclose = null
-      constructor(url) { this.url = url; window.__newowFixtureWebSockets.push(url); queueMicrotask(() => this.onopen?.()) }
+      constructor(url, protocols) {
+        // Vite owns its same-origin development transport. Only application sockets are fixtures.
+        if (protocols === 'vite-hmr' && new URL(url).host === window.location.host
+            && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+          return new NativeWebSocket(url, protocols)
+        }
+        this.url = url
+        window.__newowFixtureWebSockets.push(url)
+        queueMicrotask(() => this.onopen?.())
+      }
       close() { this.readyState = FixtureWebSocket.CLOSED; this.onclose?.() }
     }
     window.WebSocket = FixtureWebSocket
