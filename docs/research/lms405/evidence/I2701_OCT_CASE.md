@@ -193,3 +193,29 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:sc
 services/quant-api/.venv/bin/python scripts/research/lms405_iron_leg_visibility.py \
   --env-file .env --release-lifetime --output /tmp/lms405-iron-release-lifetime-new.json
 ```
+
+## 铁矿夜图范围和撤保护回放
+
+复读27日夜图，持仓表尾为10行、246手，逐笔浮盈列也与表尾逐行对平。铁矿只列空16、开均682.50。对照日收盘图3，展示量由182手变246手，差额来自菜油、橡胶、烧碱新增展示的多40、20、20手，以及铁矿少展示多16手。如果这条原多仍计入夜图同一张表，表尾会是11行、262手。因此铁矿多腿也未计入这张表的合计，排除了只是滚出画面的解释。账户标识、筛选范围和逐表系统归属仍不足以证明实账多仓为零。 [午盘图](../../lms-source-archive/02-持仓记录/2026-10-27/WRoAkcEppg.md) · [收盘图](../../lms-source-archive/02-持仓记录/2026-10-27/U03.md) · [夜盘图](../../lms-source-archive/02-持仓记录/2026-10-27/WRoEvasxQR.md)
+
+从收盘所示多16、空16起算，原空持续保留，假定多腿属于保护。654–662.5是作者公布的空向目标，近沿和远沿在此仅作价格对照，实际撤腿条件未知。按31个铁矿单行报价候选分别检查分钟开始前及整根分钟结束前的投影。两种检查只界定条件顺序，不能给同一分钟内的报价及仓位变化排序。另把22:10记录为六品种部分共同报价。只核对夜图显示的空16手，所有路径31/31相容。增加同账户、完整仓位展示且仓位与报价同期的假设后，铁矿多腿为零才成为可用于排除路径的约束。
+
+|条件路径|若夜图同账户且完整，报价分钟开始前出现零多|纳入整根报价分钟|
+|---|---:|---:|
+|保留双腿，或有快确认但缺许可|0/31|0/31|
+|21:18快确认后另给测试许可|31/31|31/31|
+|21:20慢确认后另给测试许可|30/31|31/31|
+|21:21近沿收破后另给测试许可|30/31|30/31|
+|等远沿654严格收破|0/31|0/31|
+
+三条已批准撤腿的测试路径，撤后至发帖前完全位于后段的分钟最高均为663.0。31个报价候选中，没有任何一个允许在撤腿后用完整分钟价格重建16手、开均仍为663.34的多腿。若以不同均价重建，夜图缺相应字段，无法由开均排除。当前计划给出667–671之前或区内寻找多VPLUS的保护思路。该夜窗最高666.5且1→1、5→1、5→5、15→15均无多向近似，因此现有候选中没有撤后再保护的独立信号。作者信号可能采用其他形态、周期或盘中判断，实际动作和时间仍未知。 [27日计划](../../lms-source-archive/01-VPLUS每日复盘/2026-10-27/A5358686423089344.md)
+
+回放将六条铁矿条件路径追加到九品种研究时间轴，逐条保留原观测。资金与成交维持空值，作者动作评分分母为0。统一MDS复算两个交易日，1／5分钟指纹与既有报告一致，并用同窗已完成15分钟行情补查再保护。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_iron_portfolio_lifecycle.py \
+  --env-file .env --output /tmp/lms405-iron-portfolio-lifecycle-new.json
+```
+
+两次只读复算逐字节一致。定稿 `output/lms405-iron-portfolio-lifecycle-20261126/final-a.json`，SHA256 `b2d4f388c019240a9ef0f8bbd6b37d12f9bec3cc87531803ede6cedc7e40504a`。
