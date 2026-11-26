@@ -261,6 +261,8 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
                 protection_context["deferred_until_touch_known_at"] = event["touch_known_at"]
             if required_recovery is not None:
                 protection_context["replacement_after_recovery_revision"] = required_recovery
+            if "target_role_sensitivity" in event:
+                protection_context["target_role_sensitivity"] = event["target_role_sensitivity"]
         elif source == 3:
             event = recovery_events[index]
             if (book is None or book.direction != "SHORT" or not book.original or not book.protection
