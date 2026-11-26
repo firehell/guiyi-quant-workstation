@@ -117,6 +117,11 @@ def _release_layout(candidate_root, tag, previous, *, historical=False):
 
 
 def freeze_cohort(host, *, candidate_root, tag, commit):
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    # This existing controller compares old and new stream IDs in one Redis.
+    # A source transition crosses instances and needs its own cutoff proof.
+    require(not formal_tick_requested(), "COHORT_MARKET_SOURCE_HANDOVER_REQUIRED")
     previous = host.bindings()
     require(
         previous is not None and complete_service_set(previous.services),
@@ -314,6 +319,10 @@ def _check_reference_handover(host, plan, proof):
 
 
 def apply_cohort(host, plan):
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    require(not formal_tick_requested(), "COHORT_MARKET_SOURCE_HANDOVER_REQUIRED")
+
     old, _new = validate(plan, host.now())
     with deployment_lock(runtime_dir=host.directory):
         current = _read(host.directory / "cohort-release.json")

@@ -266,3 +266,27 @@ def test_archive_rejects_redis_client_different_from_declared_isolation(tmp_path
             )
     finally:
         redis.close()
+
+
+
+def test_stable_formal_receipt_survives_release_rotation(tmp_path):
+    from app.market_data.market_archive import current_retained_receipt
+
+    old_status = tmp_path / "release-a" / "after-market-status.json"
+    stable = tmp_path / "stable" / "market-foundation"
+    stable.parent.mkdir(mode=0o700)
+    assert current_retained_receipt(stable, now=FINISHED) is None
+    _atomic_write_status(old_status, _status())
+    path = retain_archive_receipt(old_status, now=FINISHED, archive_root=stable)
+    first = current_retained_receipt(stable, now=FINISHED)
+    assert path.parent.parent == stable and path.stem == first.identity
+
+    new_status = tmp_path / "release-b" / "after-market-status.json"
+    later = FINISHED + timedelta(minutes=10)
+    _atomic_write_status(new_status, _status(finished=later))
+    assert retain_archive_receipt(new_status, now=later, archive_root=stable) == path
+    assert current_retained_receipt(stable, now=later) == first
+    _atomic_write_status(new_status, _status(finished=later, digest="c" * 64))
+    next_receipt = retain_archive_receipt(new_status, now=later, archive_root=stable)
+    assert current_retained_receipt(stable, now=later).identity == next_receipt.stem
+    assert read_archive_receipt(path, now=later) == first

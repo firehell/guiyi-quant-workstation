@@ -134,7 +134,7 @@ def test_isolated_runtime_replays_real_tick_capture(disposable_market, tmp_path,
     assert capture.stat().st_size < 16 * 1024 * 1024
     with capture.open() as source:
         header = json.loads(next(source))
-        records = tuple(json.loads(line) for line in source)
+        records = tuple(record for line in source if "payload" in (record := json.loads(line)))
     assert header["contract"] == CONTRACT and date.fromisoformat(header["trading_day"]) == DAY
 
     engine, redis = disposable_market

@@ -256,11 +256,24 @@ def build_market_read_service(
 ) -> MarketReadService:
     """Compose Market reads with an optional transient Redis Live overlay."""
 
+    from app.market_data.market_foundation_scope import FormalMarketReadRedis, formal_tick_requested
+
+    connection = redis if redis is not None else cast(RedisClient, get_redis_connection())
+    market_data = build_market_data_service(session, check_cancelled=check_cancelled)
+    if formal_tick_requested():
+        from app.market_data.tick_preview_redis import RedisTickPreviewReader
+
+        connection = FormalMarketReadRedis(connection, session.get_bind().url, canonical_root())
+        preview_reader = RedisTickPreviewReader(connection, sessions=market_data.session_windows)
+        if after_market_status_path is None:
+            from app.market_data.market_archive import formal_after_market_status_path
+
+            after_market_status_path = formal_after_market_status_path()
     return MarketReadService(
-        market_data=build_market_data_service(session, check_cancelled=check_cancelled),
+        market_data=market_data,
         phase_resolver=MarketPhaseResolver(session),
         operational_products=load_operational_products(),
-        live_store=RedisLiveStore(redis if redis is not None else cast(RedisClient, get_redis_connection())),
+        live_store=RedisLiveStore(connection),
         preview_reader=preview_reader,
         after_market_status_path=after_market_status_path,
     )
@@ -284,20 +297,38 @@ def open_market_home_live_service() -> Iterator[MarketHomeLiveService]:
     with SessionLocal() as session:
         redis = get_redis_connection()
         try:
+            from app.market_data.market_foundation_scope import FormalMarketReadRedis, formal_tick_requested
+
+            connection = cast(RedisClient, redis)
+            if formal_tick_requested():
+                connection = FormalMarketReadRedis(redis, session.get_bind().url, canonical_root())
             yield MarketHomeLiveService(
                 market_data=build_market_data_service(session),
                 phase_resolver=MarketPhaseResolver(session),
-                live_store=RedisLiveStore(cast(RedisClient, redis)),
+                live_store=RedisLiveStore(connection),
                 operational_products=load_operational_products(),
             )
         finally:
             redis.close()
 
 
-def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveMarketService:
+def build_live_market_service(session: Session, *, _feed: bool = False, tick_dispatch=None) -> LiveMarketService:
     """Compose the foreground Live observation service without starting it."""
 
     from app.market_data.rqdata_adapter import RQDataClient
+    from app.market_data.market_foundation_scope import (
+        formal_tick_requested, require_bar_writer_namespace, require_formal_tick_binding,
+    )
+
+    tick = formal_tick_requested()
+    durable = os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1'
+    connection = get_redis_connection()
+    if tick:
+        if not durable or os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') != '1':
+            raise ValueError('MARKET_TICK_SUPERVISOR_REQUIRED')
+        require_formal_tick_binding(connection, session.get_bind().url, canonical_root())
+    elif _feed or not durable:
+        require_bar_writer_namespace(connection)
 
     from app.market_data.aggregation import SessionWindow
     from app.market_data.session_clock import resolved_session_windows_for_trading_day
@@ -325,7 +356,7 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
     recovery_fetch_factory: Callable | None = None
     recovery_sessions_source: Callable[[str, date], tuple[SessionWindow, ...]] | None = None
     recovery_guard_factory: Callable[[str], ContextManager] | None = None
-    if os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1":
+    if not tick and os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1":
         from app.market_data.rqdata_adapter import RQDataLiveRecoveryAdapter
         from app.market_data.live_recovery_guard import recovery_guard
 
@@ -367,35 +398,41 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
         coverage_sessions=coverage_sessions,
         recovery_guard_factory=recovery_guard_factory,
         phase_resolver=MarketPhaseResolver(session),
-        store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+        store=RedisLiveStore(cast(RedisClient, connection)),
         operational_products=products,
     )
     if _feed:
         from app.market_data.market_feed import FeedLiveStore, MarketFeedService
         from app.market_data.observation_stream import ObservationStream
-        redis = get_redis_connection()
-        common_kwargs.update(store=FeedLiveStore(cast(RedisClient, redis)), recovery_fetch_factory=None,
+        common_kwargs.update(store=FeedLiveStore(cast(RedisClient, connection)), recovery_fetch_factory=None,
                              recovery_sessions=None, recovery_guard_factory=None)
         common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
         from app.market_data.live_recovery_guard import after_market_recovery_guard
         common_kwargs['shutdown_guard_factory'] = lambda: after_market_recovery_guard(wait=False)
-        return MarketFeedService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
-                                 source_stream=ObservationStream(redis, kind='source'), **common_kwargs)
-    if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1':
+        def bar_provider():
+            return RQDataLiveProvider(rqdata.live_market_client())
+
+        if tick:
+            from app.market_data.tick_runtime import build_formal_tick_feed
+
+            return build_formal_tick_feed(connection, client=rqdata, dispatch=tick_dispatch, **common_kwargs)
+        return MarketFeedService(provider_factory=bar_provider,
+                                 source_stream=ObservationStream(connection, kind='source'), **common_kwargs)
+    if durable:
         from app.market_data.market_feed import DurableLiveMarketService, StreamLiveProvider
         from app.market_data.observation_stream import ObservationStream
         common_kwargs['prepare_trading_day'] = None
         common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
         return DurableLiveMarketService(source_provider=StreamLiveProvider(
-            ObservationStream(get_redis_connection(), kind='source')), **common_kwargs)
+            ObservationStream(connection, kind='source'), require_tick=tick), **common_kwargs)
     return LiveMarketService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
                              **common_kwargs)
 
 
-def build_market_feed_service(session: Session) -> LiveMarketService:
+def build_market_feed_service(session: Session, *, tick_dispatch=None) -> LiveMarketService:
     if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') != '1':
         raise ValueError('OBSERVATION_STREAM_NOT_ENABLED')
-    return build_live_market_service(session, _feed=True)
+    return build_live_market_service(session, _feed=True, tick_dispatch=tick_dispatch)
 
 
 def build_closed_cleanup_evidence(store, products):

@@ -134,6 +134,7 @@ def _compute_sections(session, product: str, strategy: str, frequency: str, *,
 
 def materialize_sections(
     sandbox: Path, receipt: MarketArchiveReceipt, *, session_factory, verify_publication: Callable[[str], None],
+    canonical_root: Path | None = None, stop_requested: Callable[[], bool] = lambda: False,
 ) -> dict:
     """One fixed default 500-bar chart window per active series and revision."""
     from app.db.readonly import readonly_transaction
@@ -144,11 +145,12 @@ def materialize_sections(
     deadline = monotonic() + _MAX_ELAPSED
 
     def cancelled():
-        return monotonic() >= deadline
+        return stop_requested() or monotonic() >= deadline
 
     guard_root = sandbox / "live-recovery-guards"
     try:
         with _file_guard("newow-sections.lock", root=guard_root, wait=False, legacy_root=True):
+            data_root = canonical_root if canonical_root is not None else sandbox / "canonical"
             for product in receipt.revisions:
                 for frequency in FREQUENCIES:
                     for strategy in STRATEGIES:
@@ -161,7 +163,7 @@ def materialize_sections(
                         try:
                             if _load(sandbox, reference) is None:
                                 with session_factory() as session:
-                                    lease = MarketCatalog(session, sandbox / "canonical").acquire_maintenance_lock(
+                                    lease = MarketCatalog(session, data_root).acquire_maintenance_lock(
                                         caller="market-newow-sections",
                                     )
                                     if lease is None:

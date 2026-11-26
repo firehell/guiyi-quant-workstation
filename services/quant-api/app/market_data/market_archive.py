@@ -1,16 +1,17 @@
-"""Isolated post-close archive and receipt intake for Market reference consumers."""
+"""Verified post-close Market publication and retained receipt intake."""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import json
 import logging
 import os
 from pathlib import Path
 import re
+import stat
 from urllib.parse import urlsplit
 
 from sqlalchemy.engine import URL
@@ -23,7 +24,7 @@ from app.market_data.after_market import (
 )
 from app.market_data.after_market_history import _bytes, publish_history
 from app.market_data.catalog import CatalogPartition
-from app.market_data.domain import BarFrequency
+from app.market_data.domain import BarFrequency, ContractTradingDayQuery, INTRADAY_FREQUENCIES
 from app.market_data.historical_data_manager import HistoricalDataManager
 from app.market_data.live_market import RedisLiveStore
 from app.market_data.live_recovery_guard import after_market_recovery_guard
@@ -71,7 +72,9 @@ def _cleanup_scope(sandbox: Path, day: date, products: tuple[str, ...]) -> Path:
     return sandbox / _CLEANUP_DIRECTORY / day.isoformat() / _evidence_hash(sorted(products))
 
 
-def retain_archive_receipt(status_path: Path, *, now: datetime) -> Path | None:
+def retain_archive_receipt(
+    status_path: Path, *, now: datetime, archive_root: Path | None = None,
+) -> Path | None:
     try:
         status = public_after_market_status(json.loads(_bytes(status_path)))
     except FileNotFoundError:
@@ -79,7 +82,13 @@ def retain_archive_receipt(status_path: Path, *, now: datetime) -> Path | None:
     receipt = archive_receipt(status, now=now)
     if receipt is None:
         return
-    sandbox = status_path.parent
+    sandbox = archive_root if archive_root is not None else status_path.parent
+    if archive_root is not None:
+        sandbox.mkdir(mode=0o700, exist_ok=True)
+        info = sandbox.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700
+                or info.st_uid != os.getuid() or sandbox.resolve() != sandbox):
+            raise ValueError("MARKET_FORMAL_ARCHIVE_ROOT_INVALID")
     target = sandbox / RECEIPT_DIRECTORY / f"{receipt.identity}.json"
     try:
         _read_archive_receipt(target, now=now)
@@ -95,6 +104,18 @@ def retain_archive_receipt(status_path: Path, *, now: datetime) -> Path | None:
         # Each exact rank1 map needs one verified cleanup. Later Canonical
         # revisions retain their own receipts without replacing this proof.
         publish_history(scope_path, {"receipt": receipt.identity})
+    if archive_root is not None:
+        from app.runtime_handover import _read, _write
+
+        pointer = archive_root / "latest-receipt.json"
+        previous = _read(pointer)
+        if previous is None or previous.get("receipt") != receipt.identity:
+            if previous is not None:
+                prior = _open_formal_receipt(archive_root, previous, now=now)
+                # A verified older-day repair remains directly claimable by SHA.
+                if (receipt.trading_day, receipt.finished_at) < (prior.trading_day, prior.finished_at):
+                    return target
+            _write(pointer, {"receipt": receipt.identity})
     return target
 
 
@@ -161,6 +182,8 @@ def verified_archive_readback(
     products: tuple[str, ...],
     trading_day: date,
     publications: list[dict[str, object]],
+    *,
+    verify_rank1_day: bool = False,
 ) -> Iterator[Mapping[str, str]]:
     """Verify fresh committed pointers and the full daily plan before evicting Live."""
     with open_manager() as manager:
@@ -181,8 +204,10 @@ def verified_archive_readback(
                             if partition.file_path.name != expected.pop(identity):
                                 raise ValueError("MARKET_ARCHIVE_POINTER_CHANGED")
                             manager.store.read_catalog_partition_quality(partition)
+                    if verify_rank1_day:
+                        _verify_rank1_day(manager, product, trading_day)
                     revisions[product] = reference_catalog_revision(
-                        manager.catalog.session, product, trading_day,
+                        manager.catalog.session, product, trading_day, archive_scope=verify_rank1_day,
                     )
                 if expected:
                     raise ValueError("MARKET_ARCHIVE_POINTER_MISSING")
@@ -191,8 +216,82 @@ def verified_archive_readback(
             lock.release()
 
 
-def reference_catalog_revision(session: Session, product: str, day: date) -> str:
-    return catalog_revision(session, (product,), day, FREQUENCIES)
+def _verify_rank1_day(manager: HistoricalDataManager, symbol: str, day: date) -> None:
+    """Even a no-op must read the day's active physical bars and quality facts."""
+    from app.market_data.market_data_service import MarketDataService
+
+    reader = MarketDataService(manager.catalog, manager.store)
+    owner = reader.dominant_segment_for_day(symbol, day).contract
+    sessions = reader.session_windows(symbol=symbol, trading_day=day)
+    close = sessions[-1].end
+    for frequency in INTRADAY_FREQUENCIES:
+        reader.query_contract_trading_days(ContractTradingDayQuery(symbol, owner, frequency, day, day))
+    bars, breaks = reader.query_contract_replay_quality_union(
+        symbol=symbol, contract=owner, through=day, cutoff=close, since=day,
+    )
+    if tuple((row.bar_end, row.trading_day) for row in (*bars, *breaks)) != ((close, day),):
+        raise ValueError("MARKET_ARCHIVE_DAILY_ENDPOINT_UNPROVEN")
+    monday = day - timedelta(days=day.weekday())
+    week = tuple(date_ for date_, trading in reader.calendar_week_facts(symbol=symbol, week_monday=monday) if trading)
+    if not week or day not in week:
+        raise ValueError("MARKET_ARCHIVE_CALENDAR_UNPROVEN")
+    if day == week[-1]:
+        bars, interruptions = reader.query_contract_weekly_replay_quality(
+            symbol=symbol, contract=owner, through=day, cutoff=close, since=monday,
+        )
+        if not bars and not interruptions:
+            # A weekly contract whose lifecycle started during the week has
+            # no required W1 endpoint under the existing expectation rules.
+            expected = reader.expected_contract_replay_endpoints(
+                symbol=symbol, contract=owner, frequency=BarFrequency.W1,
+                trading_day=day, cutoff=close, since=monday,
+            )
+            if expected:
+                raise ValueError("MARKET_ARCHIVE_WEEKLY_ENDPOINT_UNPROVEN")
+
+
+def reference_catalog_revision(
+    session: Session, product: str, day: date, *, archive_scope: bool = False,
+) -> str:
+    return catalog_revision(session, (product,), day, FREQUENCIES, archive_scope=archive_scope)
+
+
+def formal_after_market_status_path() -> Path:
+    from app.runtime_bindings import resolve_service_binding
+
+    binding = resolve_service_binding("after-market")
+    if binding is None or not binding.enabled:
+        raise ValueError("MARKET_FORMAL_ARCHIVE_OWNER_UNPROVEN")
+    root = Path(binding.root) / ".run"
+    if not root.is_absolute() or root.resolve() != root:
+        raise ValueError("MARKET_FORMAL_ARCHIVE_ROOT_INVALID")
+    return root / "after-market-status.json"
+
+
+def formal_archive_root() -> Path:
+    """Receipt files, acknowledgements and saved sections survive release rotation."""
+    from app.runtime_handover import runtime_directory
+
+    formal_after_market_status_path()
+    root = runtime_directory() / "market-foundation"
+    if not root.is_absolute() or root.resolve() != root:
+        raise ValueError("MARKET_FORMAL_ARCHIVE_ROOT_INVALID")
+    return root
+
+
+def _open_formal_receipt(root: Path, pointer: dict, *, now: datetime) -> MarketArchiveReceipt:
+    identity = pointer.get("receipt")
+    if (set(pointer) != {"receipt"} or type(identity) is not str
+            or re.fullmatch(r"[0-9a-f]{64}", identity) is None):
+        raise ValueError("MARKET_ARCHIVE_RECEIPT_INVALID")
+    return read_archive_receipt(root / RECEIPT_DIRECTORY / f"{identity}.json", now=now)
+
+
+def current_retained_receipt(root: Path, *, now: datetime) -> MarketArchiveReceipt | None:
+    from app.runtime_handover import _read
+
+    pointer = _read(root / "latest-receipt.json")
+    return None if pointer is None else _open_formal_receipt(root, pointer, now=now)
 
 
 def require_isolated_archive(url: URL, redis_url: str, canonical_root: Path) -> Path:

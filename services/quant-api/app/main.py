@@ -23,9 +23,12 @@ from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
 from app.api.reference_trading import router as reference_trading_router
 from app.api.research_new_subing import router as research_new_subing_router
+from app.api.research_subing_decision import router as subing_decision_router
+from app.api.subing_model import router as subing_model_router
 from app.api.subing_portfolio import router as subing_portfolio_router
 from app.middleware.request_timing import RequestTimingMiddleware
-from app.services.newow_reference_mode import after_market_only
+from app.services.newow_reference_mode import market_reference_receipts_only
+from app.market_data.market_foundation_scope import formal_tick_requested, require_formal_tick_socket
 from app.version import APP_VERSION
 
 logging.basicConfig(level=logging.INFO)
@@ -53,6 +56,23 @@ def resolve_cors_origins() -> list[str]:
 
 app = FastAPI(title="归一量化 API", version=APP_VERSION)
 
+
+if formal_tick_requested():
+    from app.api.market_live import MarketDisplayRuntime
+    from app.db.session import SessionLocal, engine
+    from app.market_data.composition import canonical_root, open_market_home_live_service, open_market_read_service
+    from app.redis_connections import get_async_redis_connection
+
+    async def verify_socket_binding(redis):
+        await require_formal_tick_socket(redis, engine.url, canonical_root())
+
+    app.state.market_display_runtime = MarketDisplayRuntime(
+        open_market_read_service, get_async_redis_connection, open_market_home_live_service,
+        verify_socket_binding,
+    )
+    app.state.market_foundation_reference_sessions = SessionLocal
+
+
 app.add_middleware(RequestTimingMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
 # CORS：允许凭证、全部方法与请求头；来源由 resolve_cors_origins 白名单控制
@@ -69,7 +89,7 @@ app.add_middleware(
 async def isolate_legacy_newow_calculation(request, call_next):
     path = request.url.path.rstrip("/")
     prefix = "/api/v1/market/newow/"
-    if (after_market_only() and path.startswith(prefix)
+    if (market_reference_receipts_only() and path.startswith(prefix)
             and path not in {prefix + "product-capabilities", prefix + "home-projection"}):
         return JSONResponse({"detail": {"code": "NEWOW_AFTER_MARKET_ONLY"}}, status_code=409)
     return await call_next(request)
@@ -86,9 +106,7 @@ app.include_router(market_live_router)
 app.include_router(alerts_router)
 app.include_router(runtime_router)
 app.include_router(reference_trading_router)
-from app.api.research_subing_decision import router as subing_decision_router
 app.include_router(subing_decision_router)
-from app.api.subing_model import router as subing_model_router
 app.include_router(subing_model_router)
 app.include_router(subing_portfolio_router)
 app.include_router(research_new_subing_router)

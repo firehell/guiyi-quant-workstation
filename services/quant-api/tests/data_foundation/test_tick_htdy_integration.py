@@ -293,7 +293,14 @@ def _assert_recovery_fence(redis, store, inlet, recovery_key, clock):
                 trading_day=DAY, end=CUTOFF, limit=32,
             ).bars[-1]
         store.publish_bar(PRODUCT, BarFrequency.H1, retained, contract=CONTRACT)
-        assert inlet.poll(clock(), {PRODUCT: OPEN}) == ()
+        # Redis Pub/Sub delivers on a different connection from the publisher.
+        # Poll until the actual frame is observed, asserting no execution on
+        # every poll while the recovery fence remains in place.
+        deadline = monotonic() + 3
+        while monotonic() < deadline and not inlet.issues:
+            assert inlet.poll(clock(), {PRODUCT: OPEN}) == ()
+            if not inlet.issues:
+                sleep(0.01)
         assert inlet.issues == {PRODUCT.upper(): "HTDY_EXECUTION_REQUIRES_FIRST_SEEN"}
     finally:
         redis.delete(recovery_key)

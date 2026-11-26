@@ -290,6 +290,18 @@ def _reference_owner_health(binding, identity, state, now):
     outer_proof = state.get("proof")
     if not isinstance(outer_proof, Mapping):
         return unavailable
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    if formal_tick_requested():
+        receipt_stage = outer_proof.get("reference_receipts")
+        if receipt_stage not in {"waiting_archive", "calculating", "current", "pending", "unavailable"}:
+            return unavailable
+        return {
+            "status": "degraded" if receipt_stage == "unavailable" else "ok" if receipt_stage == "current" else "pending",
+            "error_type": "reference_worker_failed" if receipt_stage == "unavailable" else None,
+            "last_heartbeat_at": _iso(stamp), "stage": receipt_stage,
+        }
+
     proof = outer_proof.get("reference_runtime")
     if not isinstance(proof, Mapping):
         return unavailable

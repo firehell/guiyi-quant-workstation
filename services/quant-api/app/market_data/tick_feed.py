@@ -6,7 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from threading import Lock
-from typing import Any
+from typing import Any, Protocol
 from uuid import uuid4
 
 from app.market_data.aggregation import (
@@ -112,13 +112,22 @@ class TickPreviewStore:
         return aggregate_bucket((*prefix, active), bucket_end=end)
 
 
+class TickPreviewSink(Protocol):
+    def publish(self, symbol: str, tick: MarketTick, update: TickMinuteUpdate,
+                sessions: tuple[SessionWindow, ...], *, generation: str) -> None: ...
+
+    def clear_activity(self, day: date | None, *, contract: str | None = None,
+                       stale: bool = False) -> None: ...
+
+
 class TickMarketDataProvider(RQDataLiveProvider):
     """Translate logical minute channels, keep the SDK callback bounded, emit proved minutes."""
 
     def __init__(
-        self, client, *, connection_identity: Callable[[], object], preview: TickPreviewStore,
+        self, client, *, connection_identity: Callable[[], object], preview: TickPreviewSink,
         clock: Callable[[], datetime] | None = None, capacity: int = 8192,
         batch_size: int = 1024, dispatch: Callable[..., Any] | None = None,
+        flush_preview: Callable[[], None] = lambda: None,
     ) -> None:
         super().__init__(client)
         if not 1 <= capacity <= 65_536 or not 1 <= batch_size <= 8192:
@@ -130,6 +139,7 @@ class TickMarketDataProvider(RQDataLiveProvider):
         self._capacity = capacity
         self._batch_size = batch_size
         self._dispatch = dispatch
+        self._flush_preview = flush_preview
         self._overflow = False
         self._day: date | None = None
         self._owners: dict[str, tuple[str, tuple[SessionWindow, ...]]] = {}
@@ -192,6 +202,7 @@ class TickMarketDataProvider(RQDataLiveProvider):
             if self._overflow:
                 self.diagnostics["TICK_BUFFER_OVERFLOW"] += 1
                 self._preview.clear_activity(self._day, stale=True)
+                self._flush_preview()
                 raise ConnectionError("TICK_BUFFER_OVERFLOW")
             messages = tuple(self._tick_messages.popleft() for _ in range(min(len(self._tick_messages), self._batch_size)))
             stopped = self._listener is not None and not self._listener.is_alive()
@@ -200,8 +211,11 @@ class TickMarketDataProvider(RQDataLiveProvider):
             raise ConnectionError("TICK_LISTENER_STOPPED")
         self._proofs.clear()
         if self._dispatch is None:
-            return self._process(messages)
-        return self._dispatch(self._process, messages) if messages else ()
+            result = self._process(messages)
+        else:
+            result = self._dispatch(self._process, messages) if messages else ()
+        self._flush_preview()
+        return result
 
     def _process(self, messages) -> tuple[tuple[str, CanonicalBar], ...]:
         completed = []
@@ -259,3 +273,4 @@ class TickMarketDataProvider(RQDataLiveProvider):
             super().close()
         finally:
             self._preview.clear_activity(self._day, stale=True)
+            self._flush_preview()

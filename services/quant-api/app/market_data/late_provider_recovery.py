@@ -305,6 +305,13 @@ def run_runtime_scheduled(manager) -> dict:
     from app.market_data.live_recovery_guard import after_market_recovery_guard
     from app.market_data.after_market import build_after_market_updater
 
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    if formal_tick_requested():
+        # The legacy late job may delete an overlay without a Market receipt.
+        # Keep pending data and require exact archive recovery/readback instead.
+        return {"schema_version": 1, "command": "data.late-provider-recovery",
+                "status": "market_archive_readback_required"}
     updater = build_after_market_updater(manager, failure_notification=False)
 
     def verify() -> None:
