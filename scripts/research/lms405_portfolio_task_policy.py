@@ -179,7 +179,7 @@ def published_protection_events(series, bands, cutoff, *, advance_at_touch=False
 
 def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branches=(), right_events=(),
                  left_scope=None, left_mode=None, left_events=(), range_exit_requires_confirmation=False,
-                 recovery_events=(), divider_events=(), original_reversal_evidence=None):
+                 recovery_events=(), divider_events=(), original_reversal_evidence=None, protection_wait_windows=()):
     """Keep old directional suggestions while requiring independent management evidence."""
     if not bars:
         return [], []
@@ -193,6 +193,7 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
         right_by_time[row["at"]].append(row)
     queue.extend((instant, 2, 0) for instant in right_by_time)
     latest_five = locked_revision = recovered_revision = None
+    waited_signals = set()
     for evaluated_at, source, index in sorted(queue):
         if evaluated_at >= cutoff:
             break
@@ -237,6 +238,9 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
         elif source == 1:
             event = protection_events[index]
             area = event["band"]
+            if max(event["known_at"], area.effective_after,
+                   event.get("touch_known_at", event["known_at"])) >= evaluated_at:
+                continue
             if (book is None or book.direction != "SHORT" or not book.original or book.protection
                     or not book.known_at < event["shape_start"]
                     or (event["operation"] == "PROTECT_EARLY" and not book.known_at < area.effective_after)):
@@ -251,6 +255,15 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
                                                shape_step=event["period"] * ONE)
                 if scoped_price["ordinary_due_at"] is None:
                     continue
+            signal_identity = (event["period"], event["shape_start"], event["known_at"])
+            if signal_identity in waited_signals:
+                continue
+            if any(start <= evaluated_at <= release for start, release in protection_wait_windows):
+                blocked.append(dict(at=evaluated_at, operation=event["operation"],
+                                    reason="RESEARCH_WAIT_FOR_COMMON_PROTECTION_CLOCK",
+                                    revision=area.revision, signal_known_at=event["known_at"]))
+                waited_signals.add(signal_identity)
+                continue
             proposal = dict(action="LOCK", plan=state["plan"])
             action, operation, qty = "LOCK", event["operation"], book.original
             plan = f"{state['plan']['plan_id']}:{area.scope}"
@@ -385,7 +398,7 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
 
 def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, right_entries, left_mode,
                          advance_at_touch, range_exit_requires_confirmation=False, handoff_plan=None,
-                         divider_short_plan=None, original_reversal_evidence=None):
+                         divider_short_plan=None, original_reversal_evidence=None, protection_wait_windows=()):
     """Evaluate the same scoped policy across different completed history windows."""
     symbol = bars[0].contract
     series = {1: [Bar(symbol, bar.bar_end, *ohlc(bar), start=bar.bar_end - ONE) for bar in raw_minutes],
@@ -402,7 +415,8 @@ def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, r
     left = left_signals(series, left_scope, cutoff)
     replay_options = dict(left_scope=left_scope, left_mode=left_mode,
                           original_reversal_evidence=original_reversal_evidence,
-                          range_exit_requires_confirmation=range_exit_requires_confirmation)
+                          range_exit_requires_confirmation=range_exit_requires_confirmation,
+                          protection_wait_windows=protection_wait_windows)
     actions, blocked = gated_replay(bars, cutoff, events, minutes=series[1],
                                    right_branches=scoped, right_events=entries, left_events=left,
                                    recovery_events=recoveries, divider_events=divider_entries, **replay_options)

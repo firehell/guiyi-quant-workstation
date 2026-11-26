@@ -40,6 +40,12 @@ METRICS = ("VISIBLE_LEGS_CHECKED", "AT_LEAST_ONE_QUOTE_COMPATIBLE", "TWO_VISIBLE
            "BOTH_LEGS_COMPATIBLE_AT_SAME_QUOTE")
 CAUSTIC_PREFIXES = ("2026-10-23T22:03", "2026-10-26T11:30", "2026-10-26T23:00",
                     "2026-10-27T10:13", "2026-10-27T15:00", "2026-10-27T21:40")
+CROSS_DATE = (Path("output/lms405-cross-date-protection-20261126/final-a.json"),
+              "cf93cde04473f75bb42597c63bcd9e9bff1c386d6e2eae52d9299ef41db3009e")
+THREE_LEG = (Path("output/lms405-three-night-deadlines-20261126/final-a.json"),
+             "609ca99cf782fb570256638cfdd758e18df49095c7a7dcdf1cfc1a5fdb689af0")
+LOCK_CLOCK_STARTS = (at("2026-10-22T21:00"), at("2026-10-27T21:00"))
+CLOCK_REJECTIONS = "RESEARCH_WAIT_FOR_COMMON_PROTECTION_CLOCK"
 
 
 def source_alignment(comparisons):
@@ -79,7 +85,35 @@ def verify_tape(actions, diagnostics, reference, *, diagnostics_key="blocked"):
         raise ValueError("COMBINED_FROZEN_TAPE_CHANGED")
 
 
-def study(session, market):
+def clock_windows():
+    first = verified_json(*CROSS_DATE)
+    second = verified_json(*THREE_LEG)
+    if first["reference"]["oct27"] != THREE_LEG[1]:
+        raise ValueError("COMBINED_CLOCK_EVIDENCE_LINK_CHANGED")
+    alternatives = {}
+    for label, left, right in (
+        ("EARLY_COMMON", "first_available_local_candidate", "common_after_all_early_clocks"),
+        ("LATE_COMMON", "last_available_local_candidate", "common_after_oil_divider_contact"),
+    ):
+        (right_release,) = {datetime.fromisoformat(row["gate"]) for row in second["policies"][right]["by_contract"].values()}
+        releases = (datetime.fromisoformat(first["common_price_hypotheses"][left]), right_release)
+        windows = tuple(zip(LOCK_CLOCK_STARTS, releases, strict=True))
+        if any(not start < release < start.replace(hour=23) for start, release in windows):
+            raise ValueError("COMBINED_CLOCK_OUTSIDE_NIGHT_WINDOW")
+        alternatives[label] = windows
+    return alternatives
+
+
+def variant_summary(rows, selection):
+    per_contract = {k: v["strict_replay"] for k, v in summarize(rows).items()}
+    totals = Counter()
+    for counts in per_contract.values():
+        totals.update({name: counts.get(name, 0) for name in METRICS})
+    return dict(modes=selection, strict_totals=dict(totals), by_contract=per_contract,
+                quote_alignment=source_alignment(rows), comparisons=rows)
+
+
+def study(session, market, *, compare_protection_clocks=False):
     baseline = verified_json(*CONTROL)
     rubber = verified_json(*RUBBER_REFERENCE)
     caustic = verified_json(*CAUSTIC_REFERENCE)
@@ -112,6 +146,7 @@ def study(session, market):
     entry, _ = case_options(caustic_sources, "FIRST_FAR_CLOSE", False)
 
     scope = FROZEN_SCOPE | dict(range_exit_requires_confirmation=True)
+    waits = clock_windows() if compare_protection_clocks else {}
     days = tuple(day for day in ALL_DAYS if day >= START)
     traces, comparisons = {}, {}
     for contract in CONTRACTS:
@@ -149,6 +184,28 @@ def study(session, market):
                     ):
                         raise ValueError("COMBINED_CAUSTIC_PREFIX_CHANGED")
                 cases[mode] = actions, blocked, rows
+        for label, windows in waits.items():
+            basis = {RUBBER: "replacement", CAUSTIC: "TOUCH_FAR", IRON: "retention"}.get(contract, "control")
+            scoring_rows = cases[basis][2]
+            if contract == CAUSTIC:
+                altered, blocked = replay_middle(series, entry, bands, caustic_sources, cutoff, "TOUCH_FAR", None,
+                                                protection_wait_windows=windows)
+                for cut in (at("2026-10-22T22:07"), at("2026-10-27T22:09")):
+                    prefix = replay_middle(series, entry, bands, caustic_sources, cut, "TOUCH_FAR", None,
+                                           protection_wait_windows=windows)
+                    if prefix != ([row for row in altered if datetime.fromisoformat(row["at"]) < cut],
+                                  [row for row in blocked if row["at"] < cut]):
+                        raise ValueError("COMBINED_CLOCK_CAUSTIC_PREFIX_CHANGED")
+            else:
+                altered, blocked, *_ = replay_scoped_policy(
+                    fives, minutes, cutoff, index, handoff_plan=replacement if contract == RUBBER else None,
+                    original_reversal_evidence=iron_check if contract == IRON else None,
+                    protection_wait_windows=windows, **scope,
+                )
+            if not any(row.get("reason") == CLOCK_REJECTIONS for row in blocked):
+                if (altered, blocked) != cases[basis][:2]:
+                    raise ValueError("COMBINED_CLOCK_UNAFFECTED_TAPE_CHANGED")
+            cases[label] = altered, blocked, scoring_rows
         traces[contract] = dict(market=fingerprints, input_bars={"1m": len(minutes), "5m_before_cutoff": len(fives)},
                                 tapes={label: dict(actions=actions, blocked=blocked)
                                        for label, (actions, blocked, _) in cases.items()})
@@ -166,16 +223,29 @@ def study(session, market):
             selection = {contract: "control" for contract in CONTRACTS}
             selection.update({RUBBER: "replacement", CAUSTIC: mode, IRON: "retention" if retain else "control"})
             rows = {contract: comparisons[contract][label] for contract, label in selection.items()}
-            per_contract = {k: v["strict_replay"] for k, v in summarize(rows).items()}
-            totals = Counter()
-            for counts in per_contract.values():
-                totals.update({name: counts.get(name, 0) for name in METRICS})
-            if not retain and totals != caustic["windows"][start]["cases"][mode + ":SHAPE_ONLY"]["portfolio"]:
+            result = variant_summary(rows, selection)
+            if not retain and result["strict_totals"] != caustic["windows"][start]["cases"][mode + ":SHAPE_ONLY"]["portfolio"]:
                 raise ValueError("COMBINED_PREVIOUS_TOTALS_CHANGED")
-            results[f"{mode}:{'IRON_RETAIN' if retain else 'IRON_CONTROL'}"] = dict(
-                modes=selection, strict_totals=dict(totals), by_contract=per_contract,
-                quote_alignment=source_alignment(rows), comparisons=rows,
-            )
+            results[f"{mode}:{'IRON_RETAIN' if retain else 'IRON_CONTROL'}"] = result
+    extra = {}
+    if waits:
+        control = results["TOUCH_FAR:IRON_RETAIN"]
+        for label in waits:
+            rows = {contract: comparisons[contract][label] for contract in CONTRACTS}
+            result = variant_summary(rows, dict.fromkeys(CONTRACTS, label))
+            if any(result["strict_totals"][m] != control["strict_totals"][m] for m in (
+                "VISIBLE_LEGS_CHECKED", "TWO_VISIBLE_LEGS_CHECKED",
+            )):
+                raise ValueError("COMBINED_CLOCK_SCORING_SCOPE_CHANGED")
+            result["rejections_by_contract"] = {c: [r for r in traces[c]["tapes"][label]["blocked"]
+                                                            if r.get("reason") == CLOCK_REJECTIONS] for c in CONTRACTS}
+            results[label] = result
+        extra = dict(clock_experiment=dict(
+            reference_sha256=dict(six_leg=CROSS_DATE[1], three_leg=THREE_LEG[1]),
+            conditional_control="TOUCH_FAR:IRON_RETAIN", windows=waits,
+            waiting_only_rejects_early_local_protection=True, discarded_signals_not_reused=True,
+            shared_wait_never_supplies_local_signal_or_permission=True,
+        ))
     return dict(
         study="LMS405_NINE_CONTRACT_COMBINED_RESEARCH_REPLAY", as_of=cutoff, start_trading_day=START, runs=results,
         contracts=traces, reference_sha256=dict(control=CONTROL[1], rubber=RUBBER_REFERENCE[1],
@@ -184,6 +254,7 @@ def study(session, market):
                          screenshots_only_for_validation=True, shared_account_risk_model=None,
                          iron_undisclosed_protection_permits=None, caustic_target_role_is_sensitivity=True),
         author_action_samples=0, author_match_rate=None, executable=False, fills=None, pnl=None,
+        **extra,
     )
 
 
@@ -191,6 +262,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--compare-protection-clocks", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -204,7 +276,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session),
+                           compare_protection_clocks=args.compare_protection_clocks)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

@@ -469,6 +469,38 @@ def test_portfolio_recovery_needs_same_contract_and_a_break_after_the_current_lo
     assert transitions[-1]["after"] == ["0", "1"]
 
 
+def test_portfolio_protection_wait_rejects_at_release_and_requires_a_new_candidate():
+    from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
+    from lms405_portfolio_task_policy import gated_replay
+
+    rows = [replace(b, open=210 - b.open, high=210 - b.low, low=210 - b.high, close=210 - b.close)
+            for b in entry_bars()]
+    opened = rows[-1].end
+    minute = timedelta(minutes=1)
+    band = ProtectionBandUpdate("JM2509", "old", "PROTECTION", opened + minute, opened + minute,
+                                "test", "SHORT", D("101"), D("105"))
+    release = opened + 3 * minute
+    protection = dict(at=release, known_at=release - US, shape_start=opened + 2 * minute,
+                      band=band, signal={"close": D("102")}, period=1, operation="PROTECT_EARLY")
+    after = release + 2 * minute
+    later = protection | dict(at=after, known_at=after - US, shape_start=release + minute)
+    opts = dict(protection_wait_windows=((opened + minute, release),))
+
+    assert [r["action"] for r in gated_replay(rows, release + US, (protection,))[0]] == ["ENTER_SHORT", "LOCK"]
+    assert gated_replay(rows, release, (protection,), **opts)[1] == []
+    stopped, blocked = gated_replay(rows, after + US, (protection,), **opts)
+    assert [r["action"] for r in stopped] == ["ENTER_SHORT"]
+    assert [r["reason"] for r in blocked] == ["RESEARCH_WAIT_FOR_COMMON_PROTECTION_CLOCK"]
+    duplicated = protection | dict(at=after)
+    assert gated_replay(rows, after + US, (protection, duplicated), **opts) == (stopped, blocked)
+    for unavailable in (protection | dict(known_at=release), protection | dict(touch_known_at=release + US),
+                        protection | dict(band=replace(band, known_at=release, effective_after=release))):
+        assert gated_replay(rows, after + US, (unavailable,), **opts) == (stopped, [])
+    resumed, _ = gated_replay(rows, after + US, (protection, later), **opts)
+    assert [r["action"] for r in resumed] == ["ENTER_SHORT", "LOCK"]
+    assert resumed[-1]["at"] == after.isoformat()
+
+
 def test_divider_probe_keeps_an_existing_opposite_position_and_can_enter_from_flat():
     from lms405_divider_short_candidates import DividerShortPlan
     from lms405_portfolio_task_policy import gated_replay

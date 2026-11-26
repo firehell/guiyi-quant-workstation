@@ -120,12 +120,12 @@ def phase_events(series, bands, sources, cutoff, mode, night_edge):
             sorted(recoveries, key=lambda row: (row["at"], row["period"])))
 
 
-def replay_middle(series, entry, bands, sources, cutoff, mode, night_edge):
+def replay_middle(series, entry, bands, sources, cutoff, mode, night_edge, *, protection_wait_windows=()):
     prefix = {p: [bar for bar in bars if bar.end + US < cutoff] for p, bars in series.items()}
     protect, recover = phase_events(prefix, bands, sources, cutoff, mode, night_edge)
     return gated_replay(prefix[5], cutoff, protect, minutes=prefix[1], recovery_events=recover,
                         divider_events=divider_short_events(prefix, entry, cutoff),
-                        range_exit_requires_confirmation=True)
+                        range_exit_requires_confirmation=True, protection_wait_windows=protection_wait_windows)
 
 
 def table_conditions(actions, observations):
