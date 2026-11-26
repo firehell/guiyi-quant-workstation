@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from math import ceil
 from time import monotonic
 from typing import cast
 from threading import BoundedSemaphore
@@ -15,6 +16,7 @@ from app.api.conditional import conditional_json
 from app.market_data.newow.home_projection_composition import build_home_overview_projection as build_market_home_projection
 from sqlalchemy.orm import Session
 
+from app.compute_runtime import ComputeBusy
 from app.db.session import get_db
 from app.db.readonly import readonly_transaction
 from app.market_data.chart_indicators import project_chart_study_display
@@ -26,6 +28,7 @@ from app.market_data.domain import (
     BarFrequency,
     canonical_bar_source_sha256,
     ContractError,
+    MarketSeriesPageResult,
     SeriesKind,
     SeriesPageQuery,
     parse_rfc3339_instant,
@@ -168,26 +171,33 @@ async def market_chart_window_studies(
         raise HTTPException(status_code=503, detail={"code": "MARKET_CHART_STUDY_BUSY"})
     deadline = monotonic() + _CHART_STUDY_BUDGET_SECONDS
 
-    def check() -> None:
-        if monotonic() > deadline:
+    def check() -> float:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
             raise TimeoutError
+        return remaining
 
-    def calculate() -> MarketChartStudyDisplayOut:
-        with readonly_transaction(session, timeout_seconds=_CHART_STUDY_BUDGET_SECONDS):
+    def read_page() -> MarketSeriesPageResult:
+        with readonly_transaction(session, timeout_seconds=ceil(check())):
             service = build_market_data_service(session, check_cancelled=check)
             page = (
                 service.query_page_inclusive(query) if query.series_kind is SeriesKind.CONTRACT
                 else service.query_page(query, mapping_cache={})
             )
         check()
+        return page
+
+    def calculate() -> MarketChartStudyDisplayOut:
         return project_chart_study_display(
-            query, page, first=start, last=end, studies=requested, check_cancelled=check,
+            query, read_page(), first=start, last=end, studies=requested, check_cancelled=check, read_current=read_page,
         )
 
     try:
         return await to_thread.run_sync(calculate, limiter=_CHART_STUDY_THREADS)
     except MarketDataError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from None
+    except ComputeBusy:
+        raise HTTPException(status_code=503, detail={"code": "MARKET_CHART_STUDY_BUSY"}) from None
     except TimeoutError:
         raise HTTPException(status_code=503, detail={"code": "MARKET_CHART_STUDY_BUDGET_EXCEEDED"}) from None
     except Exception:

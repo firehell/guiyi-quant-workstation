@@ -11,7 +11,9 @@ import talib
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.compute_runtime import ComputeRuntime
 from app.db.base import Base
+from app.market_data import chart_indicators
 from app.market_data.catalog import MarketCatalog
 from app.market_data.chart_indicators import project_chart_study_display
 from app.market_data.domain import (
@@ -32,6 +34,7 @@ from app.market_data.market_data_service import (
 from app.market_data.source_quality import PriceUnavailableFact
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
 from app.models import Contract, Exchange, Instrument, TradingCalendar, TradingSession
+from guiyi_quant.compute import REGISTRY
 
 
 @pytest.fixture
@@ -593,6 +596,52 @@ def test_chart_studies_match_talib_on_bounded_page_and_reset_at_rollover(session
         ]
     with pytest.raises(MarketDataError, match="MARKET_CHART_STUDY_WINDOW_MISMATCH"):
         project_chart_study_display(query, page, first=first[1].bar_end, last=end, studies=("ema10",))
+
+
+def test_chart_study_readback_invalidates_only_the_revised_physical_segment(session, tmp_path, monkeypatch) -> None:
+    catalog, service, store = _service(session, tmp_path)
+    old_contract = DatasetKey("contract", "jm", "JM2505", "1d")
+    first = tuple(_bar(day, 100) for day in range(2, 13))
+    second = tuple(_bar(day, 200) for day in range(13, 24))
+    _publish(catalog, store, old_contract, first)
+    _publish(catalog, store, DatasetKey("contract", "jm", "JM2509", "1d"), second)
+    _calendar_and_map(session, catalog, tuple(
+        (item.trading_day.day, contract)
+        for contract, rows in (("JM2505", first), ("JM2509", second)) for item in rows
+    ))
+    session.commit()
+    end = second[-1].bar_end
+    query = SeriesPageQuery("actual_dominant", "jm", "1d", before=end + timedelta(microseconds=1), limit=22)
+
+    def reread():
+        return service.query_page(query, mapping_cache={})
+
+    def publish_during_calculation():
+        revised = (*first[:4], _bar(6, 130), *first[5:])
+        _publish(catalog, store, old_contract, revised)
+        session.commit()
+        return reread()
+
+    with ComputeRuntime(REGISTRY, cache_points=128) as runtime:
+        monkeypatch.setattr(chart_indicators, "_CHART_COMPUTE", runtime)
+        invalidated = []
+        invalidate = runtime.invalidate_revision
+
+        def track_revision(source, *, from_bar_end):
+            invalidated.append(source.physical_contract)
+            invalidate(source, from_bar_end=from_bar_end)
+
+        monkeypatch.setattr(runtime, "invalidate_revision", track_revision)
+        with pytest.raises(MarketDataError, match="MARKET_CHART_STUDY_WINDOW_MISMATCH"):
+            project_chart_study_display(query, reread(), first=first[0].bar_end, last=end,
+                                        studies=("ema10",), read_current=publish_during_calculation)
+        assert invalidated == ["JM2505"]
+
+        result = project_chart_study_display(query, reread(), first=first[0].bar_end, last=end,
+                                             studies=("ema10",), read_current=reread)
+        left, right = result.segments
+        assert left.features[0].points[9].values == {"value": 103}
+        assert right.features[0].points[9].values == {"value": 200}
 
 
 def test_query_page_actual_dominant_cursor_keeps_next_trading_day_night_owner(

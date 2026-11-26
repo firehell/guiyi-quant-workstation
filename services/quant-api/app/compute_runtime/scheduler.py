@@ -29,7 +29,8 @@ class JobQueue[T]:
             existing = self._jobs.get(key)
             if existing is not None:
                 if existing[1].is_set():
-                    raise ValueError("COMPUTE_REVISION_INVALIDATED")
+                    self._rejected += 1
+                    raise ComputeBusy(self._name)
                 return _waiter(existing[0])
             if len(self._jobs) >= self._limit:
                 self._rejected += 1
