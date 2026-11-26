@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
 from lms405_pre_touch_protection import analyze, opening_pinbar_sensitivity
+from lms405_protection_signal_lifetime import lifetime
 from lms405_right_side_study import ONE, US, at
 
 
@@ -47,3 +48,21 @@ def test_opening_pinbar_sensitivity_never_calls_a_cross_session_shape_inside_bar
     assert event["pinbar"] == "LONG"
     assert event["ibar"] is False
     assert event["confirmed_at"] == bars[2].end
+
+
+def test_delayed_signal_reads_boundary_equality_and_full_shape_failure_at_distinct_times():
+    end = at("2026-10-26T21:16")
+    bars = [
+        Bar("SH2701", end + i * ONE, *map(Decimal, ohlc), start=end + (i - 1) * ONE)
+        for i, ohlc in enumerate(((1498, 1502, 1497, 1502), (1502, 1502, 1497, 1497), (1497, 1497, 1493, 1493)))
+    ]
+    signal = dict(confirmed_at=end, available_at=end + US, boundary=Decimal(1497), shape_low=Decimal(1495))
+    reset_at = bars[1].end + US
+    assert lifetime({1: bars}, signal, 1, 1, as_of=end + US, revision_at=None) is None
+    at_reset = lifetime({1: bars}, signal, 1, 1, as_of=reset_at, revision_at=None)
+    assert at_reset["no_failure_observed_in_completed_prefix"]
+    after_reset = lifetime({1: bars}, signal, 1, 1, as_of=reset_at + US, revision_at=None)
+    assert after_reset["first_confirm_period_close_back_at_or_below_boundary"]["close"] == 1497
+    assert after_reset["first_confirm_period_close_below_full_shape"] is None
+    after_full_failure = lifetime({1: bars}, signal, 1, 1, as_of=bars[2].end + 2 * US, revision_at=None)
+    assert after_full_failure["first_confirm_period_close_below_full_shape"]["close"] == 1493
