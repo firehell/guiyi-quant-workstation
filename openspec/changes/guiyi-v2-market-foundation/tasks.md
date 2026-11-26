@@ -1,24 +1,23 @@
 # 实施任务 · Market Core
 
-本次仅文档 Review 与 develop 集成，以下开发项全部待执行。按依赖推进，不把隔离验证当作生产验收。读取 [proposal](proposal.md)、[design](design.md)、[spec](specs/guiyi-v2-market-foundation/spec.md) 及现役合同。
+任务按 [目标](proposal.md)、[设计](design.md) 和 [候选合同](specs/guiyi-v2-market-foundation/spec.md) 实施。勾选依据为当前候选的实际证据。真实运行与正式切换各自保留验收状态。
 
-## 1. 现状与边界
-- [ ] M1 清点行情生产者/消费者、存储、元数据、Session、现有 API、发布/恢复和保护原件；列出可复用、待验证替换、必须保留及删除前置。标出 RQAlpha 旧 MDS 耦合，仅保护现有读面，独立数据改造不列入本阶段。
+## 市场事实与组件
 
-## 2. 组件与选型
-- [ ] M2 隔离验证锁定 VeighNa 核心组件的 headless 使用；对照真实历史字段/精度/空值、事件队列、批量写入、末根及 Session。无法直接复用的部分说明最小适配与原因。
-- [ ] M3 在目标本机用同一冻结历史切片对比 vnpy_postgresql 与现有 Parquet + Catalog（查询、扫描、日增量、空间、恢复、并发、维护复杂度）。记录正确性逐值/端点核验和选型结论；未证实保留现役方案。禁止修改 RQAlpha 数据或用其回测作为基准。
+- [x] M1 核对写入者、消费者、发布和恢复依赖、原件与账户保护范围。 [依赖库存](evidence/M1-inventory.md)
+- [x] M2 实测锁定 VeighNa 4.4.0 headless 与适用插件。复用 EventEngine，保留经过逐值验证的历史适配、Decimal 领域对象、Session-aware 分钟聚合和有界记录。 [组件证据](evidence/storage/README.md)
+- [x] M3 用同一冻结行情完成 Mac mini M4／16 GB 对照，确认 Canonical Parquet + PostgreSQL Catalog 为唯一历史权威。 [基准与完整性](evidence/storage/README.md)
 
-## 3. 实时与查询
-- [ ] M4 单合约 Tick/实时 1m/盘后历史三方对照，证明权限、身份、累计量及额、OI、断线、首尾 Bar、短休、午休、夜盘跨日；确定原生聚合或现有适配复用范围。再隔离扩至 60/70 品种，真实流与回放结果分开。
-- [ ] M5 接入统一行情读面，保留历史 strict-read、物理合约、主力映射、活动/完成区分、已有 Web 与两独立模拟接口；报价与 completed 路径独立，验证无 Tick 导致牛哇实时计算，无重复/漏重，重启恢复可核对。
+## 实时与统一读取
 
-## 4. 归档与验证
-- [ ] M6 复用盘后更新入口、质量、原子发布、凭证补领和缓存清理；验证失败、重启、修订、跨交易日及并发，归档后历史独立可读；只触发 Market 盘后消费者，不为 RQAlpha 维护数据。
-- [ ] M7 本机真实性能与稳定性验收：500/5000/100000 根、典型与峰值 Tick、60/70 品种、完整交易日、归档与后台 Market 作业并发。记录 design 门槛、冷/热条件、资源、积压、输入与已完成事件漏重以及两模拟消费回归；缺自然样本明确未验。
-- [ ] M8 提出涉及 active requirements 的完整精确 delta 与消费者迁移、原件保护和旧实现退役清单；独立 Review。隔离通过后按仓库流程集成 develop，不得推导正式启用。
-- [ ] M9 经明确授权后再实施生产历史迁移/主源切换/发布与 Runtime；现场读回实际身份、连续性、完整日归档和两模拟消费，证明无回退依赖后清理旧实现。无授权或证据不足时停止相关操作。
+- [ ] M4 候选 Tick 接入、累计量额、OI、盘口、完成性、来源代次、断线迟到和 60／70 回放已验证。四根真实 RB2701 候选分钟线与供应商实时 1m 逐字段相等。待同日权威历史及自然 Session 尾部读回。 [实时与回放证据](evidence/tick/README.md)
+- [x] M5 统一严格历史、盘中和待归档 Live、报价／活动，以及实际主力和物理合约入口。验证短休、夜盘重叠、同端点修订、候选 Web 和独立完成输入。 [验证入口](evidence/tick/README.md)
 
-## 验收原则
+## 归档、容量和迁移
 
-测试依据 [spec](specs/guiyi-v2-market-foundation/spec.md) 与 [design](design.md)，定向验证入口参考 [TESTING](../../../TESTING.md)。仅修改文档时运行 OpenSpec strict 校验、引用、diff 与适用 secret 检查，不运行无关业务测试。实际数据/公式时序/迁移/账户高风险实现需独立 Review。当前任务未授权真实下载、生产 DB/数据湖写入、通知、柜台、main/tag 或 Runtime。
+- [x] M6 已验证隔离归档、完整读回、按交易日清理、未知提交停驻、同日失败后的成功凭证恢复，以及空库首张凭证物化。自然盘后整批仍待验。 [归档证据](evidence/archive-reference.md)
+- [x] M7 完成同机七周期历史读写、60／70 Tick 接收与完成流容量，确认端点、队列、重启和快期／苏冰输入回归。现场待验为目标规模的供应商自然流、完整盘后窗口及实际重连。 [容量证据](evidence/tick/README.md)
+- [x] M8 完成候选 active delta、Web／指标、牛哇 v35 盘后参考、快期、苏冰和 Alert 的隔离迁移与复验。独立 Review 已回归修正项。旧源和受引用原件按退役前置保留。 [依赖库存](evidence/M1-inventory.md) · [切换准备](cutover.md)
+- [x] M9 完成隔离环境的切换演练入口、读回、恢复流程和正式操作前置。正式迁移、源切换、发布与 Runtime 不在本次范围。 [切换准备](cutover.md)
+
+定向命令见 [TESTING](../../../TESTING.md)。本阶段的真实数据动作限于有界 RQData 只读采样与验收。策略、风险、模拟或真实账户规则，以及 RQAlpha 研究域遵循现有合同。

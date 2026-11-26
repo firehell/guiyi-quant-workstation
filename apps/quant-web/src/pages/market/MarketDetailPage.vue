@@ -25,6 +25,10 @@ import FreeChartWorkspace from '@/components/market/detail/free/FreeChartWorkspa
 import HtdyDetailWorkspace from '@/components/market/detail/htdy/HtdyDetailWorkspace.vue'
 import SubingDetailWorkspace from '@/components/market/detail/subing/SubingDetailWorkspace.vue'
 import NewowBacktestPanel from '@/components/market/detail/newow/NewowBacktestPanel.vue'
+import { getMarketAfterClosePresentation } from '@/api/referenceTrading'
+import { projectMarketReferenceChart } from '@/utils/newowMarketReference'
+import type { MarketAfterClosePresentation, MarketAfterCloseReference } from '@/types/referenceTrading'
+import NewowMarketReferencePanel from '@/components/market/detail/newow/NewowMarketReferencePanel.vue'
 import { backtestFrequencies, newowAfterMarketOnly as isolatedNewow, publishedActionMarkers, type LatestBacktest } from '@/utils/newowBacktestReader'
 import NewowProductWorkspace from '@/components/market/detail/newow/NewowProductWorkspace.vue'
 import NewowAiAnalysisDialog from '@/components/market/detail/newow/NewowAiAnalysisDialog.vue'
@@ -59,7 +63,8 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-const newowAfterMarketOnly = computed(() => isolatedNewow || explicitIdentity.value?.newowSource === 'after-market')
+const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
+const newowAfterMarketOnly = computed(() => marketFoundation || isolatedNewow || explicitIdentity.value?.newowSource === 'after-market')
 const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()
 const verifiedAccountSources = computed(() => ({
   htdy: tq.status.value === 'ready' && tqAccount.value.verified,
@@ -148,6 +153,53 @@ const expectedReferenceRun = computed(() => newowAfterMarketOnly.value && typeof
   ? route.query.reference_run : undefined)
 const published = ref<LatestBacktest['result']>(null)
 const referenceMarkers = computed(() => publishedActionMarkers(expectedReferenceRun.value && published.value?.run_id !== expectedReferenceRun.value ? null : published.value, controller.bars.value, explicitIdentity.value?.frequency ?? ''))
+const savedReference = ref<{ source: MarketAfterCloseReference; snapshot: string } | null>(null)
+const savedPresentation = ref<MarketAfterClosePresentation | null>(null)
+const savedChartStatus = ref<'waiting' | 'loading' | 'ready' | 'unavailable'>('waiting')
+const savedVisibleFrom = ref<string | null>(null)
+const savedStrategy = computed(() => explicitIdentity.value?.newowMode === 'dual' ? 'dual_fusion' : explicitIdentity.value?.strategy ?? 'trend')
+const savedChartSpan = computed(() => {
+  const source = savedReference.value?.source
+  if (!source || !marketFoundation || explicitIdentity.value?.view !== 'newow') return ''
+  const cutoff = Date.parse(source.cutoff)
+  const bars = controller.bars.value.filter(bar => bar.sourceBarSha256 && bar.trading_day
+    && source.since <= bar.trading_day && bar.trading_day <= source.through && Date.parse(bar.time) <= cutoff)
+  if (!bars.length) return ''
+  const anchor = savedVisibleFrom.value ? bars.findIndex(bar => Date.parse(bar.time) >= Date.parse(savedVisibleFrom.value!)) : -1
+  const start = anchor < 0 ? Math.max(0, bars.length - 1200) : Math.max(0, Math.floor((anchor - 180) / 400) * 400)
+  const first = bars[start]!
+  const last = bars[Math.min(start + 1199, bars.length - 1)]!
+  return JSON.stringify({ since: first.trading_day, through: last.trading_day, from: first.time, to: last.time })
+})
+watch([savedReference, savedChartSpan], async ([selection, span], _, onCleanup) => {
+  savedPresentation.value = null
+  savedChartStatus.value = 'waiting'
+  if (!selection || !span) return
+  const signal = new AbortController()
+  onCleanup(() => signal.abort())
+  savedChartStatus.value = 'loading'
+  try {
+    const presentation = await getMarketAfterClosePresentation(selection.source, selection.snapshot, JSON.parse(span), { signal: signal.signal })
+    if (signal.signal.aborted) return
+    savedPresentation.value = presentation
+    savedChartStatus.value = presentation.main_status === 'saved' ? 'ready' : 'unavailable'
+  } catch {
+    if (!signal.signal.aborted) savedChartStatus.value = 'unavailable'
+  }
+})
+watch(() => {
+  const id = explicitIdentity.value
+  return id ? [id.view, id.symbol, id.frequency, id.contract, savedStrategy.value].join(':') : ''
+}, () => {
+  savedVisibleFrom.value = null
+  savedReference.value = null
+  savedPresentation.value = null
+}, { flush: 'sync' })
+const savedChart = computed(() => projectMarketReferenceChart(
+  savedPresentation.value?.frames ?? [], controller.bars.value,
+  explicitIdentity.value?.symbol ?? '', savedStrategy.value, explicitIdentity.value?.frequency ?? '',
+))
+const savedLatest = computed(() => savedChart.value.matched.at(-1))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
   || ((newowAfterMarketOnly.value || explicitIdentity.value.seriesKind === 'actual_dominant') && explicitIdentity.value.frequency !== '1m'
     && (newowAfterMarketOnly.value || originalNewowCombinationSupported(explicitIdentity.value) && newowCapabilities.isFrequencyOpen(explicitIdentity.value.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', explicitIdentity.value.symbol))))
@@ -368,6 +420,7 @@ onUnmounted(() => chartSession.dispose())
         :products="controller.productCatalog.value"
         :newow-frequencies="newowOpenFrequencies"
         :after-market="newowAfterMarketOnly"
+        :market-foundation="marketFoundation"
         :show-reference-prices="!newowAfterMarketOnly"
         :target-price="toolbarPriceSummary.target?.display_value ?? null"
         :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null"
@@ -421,13 +474,15 @@ onUnmounted(() => chartSession.dispose())
               :period="routeResult.identity.frequency" :series-kind="routeResult.identity.seriesKind"
               :visible-main-indicators="[]" range-detector-source-identity="" :range-detector-anchor-time="null"
               :volume-scoring="false" :show-derived-markers="false" :marker-selection-enabled="false"
-              :research-markers="referenceMarkers"
+              :research-markers="marketFoundation ? savedChart.markers : referenceMarkers"
+              :saved-reference-lines="marketFoundation ? savedChart.lines : undefined"
+              @visible-from-change="savedVisibleFrom = $event"
               :focus-bar-end="routeResult.identity.focusBarEnd"
               :has-more-before="controller.hasMoreBefore.value" :loading-before="controller.loadingBefore.value"
               :history-error="controller.historyError.value"
               @load-earlier="controller.loadMoreBefore" @focus-resolved="resolveFocus"
             />
-            <p v-if="routeResult.identity.newowTest || routeResult.identity.strategy === 'main_rise'" role="status">此历史策略入口不属于盘后系列。</p>
+            <p v-if="routeResult.identity.newowTest || (!marketFoundation && routeResult.identity.strategy === 'main_rise')" role="status">此历史策略入口不属于盘后系列。</p>
             <p v-else-if="!newowFrequencyOpen" role="status">当前周期没有牛哇盘后结果，保留行情底图。</p>
             <p v-if="published && routeResult.identity.contract && published.manifest.physical_contract !== routeResult.identity.contract" class="market-detail-page__reference-note">
               当前合约 {{ routeResult.identity.contract }}。盘后结果独立保留其原始合约 {{ published.manifest.physical_contract }}。
@@ -435,7 +490,24 @@ onUnmounted(() => chartSession.dispose())
             <p v-else-if="published && Array.isArray(published.summary.decisions) && published.summary.decisions.length > referenceMarkers.length" class="market-detail-page__reference-note">
               仅在可核对的同合约、同周期、同原始行情上显示参考动作。完整结果及冻结切片见盘后研究面板。
             </p>
-            <NewowBacktestPanel v-if="newowFrequencyOpen && !routeResult.identity.newowTest && routeResult.identity.strategy !== 'main_rise'"
+            <div v-if="marketFoundation && newowFrequencyOpen" class="market-detail-page__reference-note">
+              <p role="status" :data-saved-newow-chart-status="savedChartStatus">
+                <template v-if="savedChartStatus === 'loading'">正在读取已保存的牛哇主图事实。</template>
+                <template v-else-if="savedChart.matched.length">已绑定 {{ savedChart.matched.length }} 根权威行情与 {{ savedChart.markers.length }} 个盘后参考动作。</template>
+                <template v-else>当前图表范围没有与权威行情版本匹配的盘后主图事实。</template>
+              </p>
+              <details v-if="savedLatest">
+                <summary>盘后主图事实与版本</summary>
+                <p>{{ formatBeijingInstant(savedLatest.bar_end) }} · {{ savedLatest.physical_contract }} · {{ savedLatest.main_state }}</p>
+                <p>{{ savedLatest.formula_versions.join(' · ') }} · {{ savedLatest.availability?.status ?? '状态未保存' }}</p>
+                <p v-if="savedLatest.hints.length">提示 {{ savedLatest.hints.map(item => item.kind).join('、') }}</p>
+              </details>
+              <p>跨周期综合解释暂未开放。盘后视图只读取已保存结果。</p>
+            </div>
+            <NewowMarketReferencePanel v-if="marketFoundation && newowFrequencyOpen && !routeResult.identity.newowTest"
+              :product="routeResult.identity.symbol" :frequency="routeResult.identity.frequency"
+              :strategy="savedStrategy" @selected="savedReference = $event" />
+            <NewowBacktestPanel v-else-if="!marketFoundation && newowFrequencyOpen && !routeResult.identity.newowTest && routeResult.identity.strategy !== 'main_rise'"
               :product="routeResult.identity.symbol" :frequency="routeResult.identity.frequency"
               :strategy="routeResult.identity.newowMode === 'dual' ? 'dual_fusion' : routeResult.identity.strategy ?? 'trend'"
               after-market :expected-reference-run="expectedReferenceRun" @published="published = $event" />
@@ -487,6 +559,8 @@ onUnmounted(() => chartSession.dispose())
             :identity="routeResult.identity"
             :header="header"
             :bars="controller.bars.value"
+            :active-bar="routeResult.identity.focusBarEnd ? null : controller.activeBar.value"
+            :quote="routeResult.identity.focusBarEnd ? null : controller.quote.value"
             :mutation="controller.mutation.value"
             :loading="controller.state.value.loading"
             :error="controller.state.value.error"

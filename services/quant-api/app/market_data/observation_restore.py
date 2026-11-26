@@ -115,7 +115,9 @@ def _read_rows(redis, stream, day):
             raise ValueError('RESTORE_JOURNAL_SCHEMA_INVALID')
         raw = fields['envelope']
         event = ObservationEnvelope.from_json(raw, stream_id=_text(identifier))
-        if event.trading_day != day or not event.notification_eligible:
+        if event.trading_day != day or (
+            not event.notification_eligible and (stream.kind == 'source' or event.source_generation is None)
+        ):
             raise ValueError('RESTORE_JOURNAL_IDENTITY_INVALID')
         record = redis.hget(stream.identity_key(day), event.observation_id)
         if record is None:
@@ -194,7 +196,9 @@ def build_projection_restore_plan(
         endpoint = latest.get((symbol, bar.bar_end))
         if (event.observation_id != identity or bar.trading_day != day or endpoint is None
                 or event.source_observed_at != endpoint[1].source_observed_at
-                or event.raw_received_at != event.source_observed_at or event.confirmed_at is None
+                or event.raw_received_at != (endpoint[1].raw_received_at or endpoint[1].source_observed_at)
+                or event.source_generation != endpoint[1].source_generation or event.confirmed_at is None
+                or event.notification_eligible != event.timely_for_forward(bar.bar_end, event.confirmed_at)
                 or event.confirmed_at < event.source_observed_at
                 or event.confirmed_at < bar.bar_end + timedelta(seconds=2)):
             raise ValueError('RESTORE_COMPLETED_TIME_IDENTITY_CONFLICT')

@@ -23,6 +23,7 @@ const props = withDefaults(defineProps<{
   absorbPrice?: string | null
   referencePriceStatus?: string
   afterMarket?: boolean
+  marketFoundation?: boolean
   showReferencePrices?: boolean
   frequencyInWorkspace?: boolean
 }>(), {
@@ -45,6 +46,7 @@ const views: readonly { value: AnalysisChoice; label: string }[] = [
   { value: 'trend', label: '趋势' },
   { value: 'oscillation', label: '震荡' },
   { value: 'dual', label: '双策略' },
+  { value: 'main_rise', label: '主升浪' },
   { value: 'free', label: '自由看盘' },
   { value: 'htdy', label: '火天大有' },
   { value: 'subing', label: '苏冰预警' },
@@ -73,7 +75,7 @@ function chooseView(view: AnalysisChoice) {
     const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
     emit('select', {
       ...restored, strategy: view === 'dual' ? 'trend' : view,
-      newowSource: props.afterMarket ? 'after-market' : restored.newowSource,
+      newowSource: props.marketFoundation ? undefined : props.afterMarket ? 'after-market' : restored.newowSource,
       newowTest: undefined, newowMode: view === 'dual' ? 'dual' : undefined,
       homeContext: undefined, focusBarEnd: undefined,
     })
@@ -134,7 +136,7 @@ defineExpose({ selectSymbol: chooseSymbol })
       <div class="detail-view-nav__display"><slot name="display-controls" /></div>
     </div>
     <div v-if="identity.view === 'newow'" class="detail-view-nav__views" aria-label="牛哇策略" :role="afterMarket ? 'group' : 'tablist'">
-      <template v-for="view in views.filter(view => ['oscillation', 'trend', 'dual'].includes(view.value))" :key="view.value"><button
+      <template v-for="view in views.filter(view => ['oscillation', 'trend', 'dual'].includes(view.value) || (marketFoundation && view.value === 'main_rise'))" :key="view.value"><button
         type="button"
         :role="afterMarket ? undefined : 'tab'"
         :aria-pressed="afterMarket ? activeChoice === view.value : undefined"

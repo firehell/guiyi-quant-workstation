@@ -156,10 +156,11 @@ class MarketFeedService(LiveMarketService):
     _channels: set[str]
 
     def __init__(self, *, source_stream: ObservationStream, closed_cleanup_evidence=None,
-                 shutdown_guard_factory=None, **kwargs: Any) -> None:
+                 shutdown_guard_factory=None, tick_source: bool = False, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.source_stream = source_stream
         self._shutdown_guard_factory = shutdown_guard_factory
+        self._tick_source = tick_source
         self._input_failure: str | None = None
         self._last_input_received_at: datetime | None = None
         self._input_progress: dict[str, tuple[date, str, datetime, datetime]] = {}
@@ -343,6 +344,10 @@ class MarketFeedService(LiveMarketService):
         now = self._clock()
         self._publish_heartbeat(now, self._phases(now))
 
+    def _buffered_count(self) -> int:
+        count = getattr(self._provider, "buffered_message_count", None)
+        return count() if callable(count) else len(getattr(self._provider, "_messages", ()))
+
     def _publish_heartbeat(self, now, phases):
         try:
             registered_day = self.source_stream.registered_day('live')
@@ -370,7 +375,7 @@ class MarketFeedService(LiveMarketService):
             'first_failure_code': self._first_retirement_failure_code,
             'registered_day': registered_day.isoformat() if registered_day else None,
             'target_days': sorted({p.trading_day.isoformat() for p in phases.values() if p.trading_day}),
-            'input_pending_count': len(self._pending) + len(getattr(self._provider, '_messages', ())),
+            'input_pending_count': len(self._pending) + self._buffered_count(),
             'closed_cleaned': self.closed_cleaned_proof,
         })
 
@@ -460,6 +465,25 @@ class MarketFeedService(LiveMarketService):
             self.assert_owned()
         return super()._reconcile_prepared(now)
 
+    def _provider_or_create(self):
+        if not self._tick_source:
+            return super()._provider_or_create()
+        if self._trading_day is None or self._coverage_session_source is None:
+            raise ValueError('TICK_SESSION_AUTHORITY_UNPROVEN')
+        from app.market_data.tick_feed import TickMarketDataProvider
+
+        provider = super()._provider_or_create()
+        if not isinstance(provider, TickMarketDataProvider):
+            raise ValueError('TICK_PROVIDER_REQUIRED')
+        if provider.trading_day != self._trading_day:
+            owners = {
+                symbol: (contract, self._coverage_session_source(symbol, self._trading_day))
+                for symbol, contract in self._contracts.items()
+            }
+            provider.configure(self._trading_day, owners)
+        return provider
+
+
     def _restore_break_identity(self, phases):
         # CLOSED still carries the proven current Calendar day; it must not
         # initialize a future day inferred from an upcoming Session.
@@ -523,6 +547,14 @@ class MarketFeedService(LiveMarketService):
         return super()._restore_frozen_day(trading_day)
 
     def ingest(self, contract: str, bar: CanonicalBar, *, now: datetime) -> str | None:
+        proof = None
+        if self._tick_source:
+            from app.market_data.tick_feed import TickMarketDataProvider
+
+            if not isinstance(self._provider, TickMarketDataProvider):
+                raise ValueError("TICK_PROVIDER_REQUIRED")
+            proof = self._provider.source_proof(contract, bar)
+            now = max(now, proof.received_at)
         failure = super().ingest(contract, bar, now=now)
         if failure is not None:
             return failure
@@ -536,10 +568,14 @@ class MarketFeedService(LiveMarketService):
         identity = sha256(content.encode()).hexdigest()
         if hasattr(self, 'assert_owned'):
             self.assert_owned()
+        if proof is not None:
+            observed_at = proof.received_at
         try:
-            self.source_stream.append(ObservationEnvelope(identity, bar.trading_day, observed_at,
-                                                          live_bar_channel(symbol, '1m'), data, True,
-                                                          raw_received_at=observed_at))
+            self.source_stream.append(ObservationEnvelope(
+                identity, bar.trading_day, proof.observed_at if proof is not None else observed_at,
+                live_bar_channel(symbol, '1m'), data, True, raw_received_at=observed_at,
+                source_generation=proof.generation if proof is not None else None,
+            ))
         except Exception as exc:  # noqa: BLE001 - unknown input publication requires readback
             self._input_failure = str(exc) if isinstance(exc, ValueError) else 'OBSERVATION_COMMIT_UNKNOWN'
             raise
@@ -579,15 +615,16 @@ class MarketFeedService(LiveMarketService):
             item.phase in (MarketPhase.BREAK, MarketPhase.CLOSED)
             for item in phases.values()
         ) and not self._channels_in_session_grace(now) and not (
-            self._provider is not None and bool(getattr(self._provider, '_messages', None))
+            self._buffered_count()
         )
 
 
 class StreamLiveProvider:
     """Input journal adapter. Cursor commits belong to the atomic Live publisher."""
-    def __init__(self, stream: ObservationStream, *, consumer: str = 'live') -> None:
+    def __init__(self, stream: ObservationStream, *, consumer: str = 'live', require_tick: bool = False) -> None:
         self.stream = stream
         self.consumer = consumer
+        self.require_tick = require_tick
         self.day: date | None = None
         self.after: str | None = None
         self.events: dict[tuple[str, datetime], ObservationEnvelope] = {}
@@ -623,7 +660,7 @@ class StreamLiveProvider:
             if count > DAILY_LIMIT:
                 raise ValueError('OBSERVATION_CAPACITY_EXCEEDED')
             for event in events:
-                if not event.notification_eligible:
+                if not event.notification_eligible or self.require_tick and event.source_generation is None:
                     raise ValueError('OBSERVATION_SOURCE_IDENTITY_INVALID')
                 contract = event.data['contract']
                 bar = _bar_from_payload(_compact_json(event.data))
@@ -801,7 +838,7 @@ class DurableLiveMarketService(LiveMarketService):
                 event = source.events[(contract, bar.bar_end)]
                 if event.data['subscription_snapshot'] != self._contracts:
                     raise ValueError('OBSERVATION_SUBSCRIPTION_CONFLICT')
-                failure = self.ingest(contract, bar, now=event.source_observed_at)
+                failure = self.ingest(contract, bar, now=event.raw_received_at or event.source_observed_at)
                 if failure == 'LIVE_BAR_FINALIZED':
                     existing = self._store.bars_between(bar.trading_day, event.channel.split(':')[2],
                         '1m', bar.bar_end, bar.bar_end)
@@ -825,15 +862,25 @@ class DurableLiveMarketService(LiveMarketService):
             return self._reject(code)
 
     def _flush_pending(self, now, phases, pending):
-        due = [(key, bar, window, contract) for key, (bar, window, contract) in pending
-               if (now - bar.bar_end).total_seconds() >= 2]
+        source_events = self.source_provider.events
+        due = [
+            (key, bar, window, contract) for key, (bar, window, contract) in pending
+            if (now - bar.bar_end).total_seconds() >= 2
+            and (
+                not source_events[(contract, bar.bar_end)].source_generation
+                or (
+                    (received_at := source_events[(contract, bar.bar_end)].raw_received_at) is not None
+                    and received_at <= now
+                )
+            )
+        ]
         if not due:
             return ()
         plan = []
         try:
             for (symbol, _), bar, window, contract in due:
                 event = self.source_provider.events[(contract, bar.bar_end)]
-                plan.append((symbol, BarFrequency.M1, bar, contract, event.source_observed_at))
+                plan.append((symbol, BarFrequency.M1, bar, contract, event))
                 for frequency in (BarFrequency.M5, BarFrequency.M15, BarFrequency.M30, BarFrequency.H1):
                     bucket = bucket_window_for_bar(window, frequency, bar.bar_end)
                     if bar.bar_end != bucket.end:
@@ -850,7 +897,7 @@ class DurableLiveMarketService(LiveMarketService):
                         continue
                     derived = aggregate_from_1m(tuple(existing[end] for end in ends),
                                                 target_frequency=frequency, sessions=(bucket,))[0]
-                    plan.append((symbol, frequency, derived, contract, event.source_observed_at))
+                    plan.append((symbol, frequency, derived, contract, event))
             completed_keys = {(contract, bar.bar_end) for _, bar, _, contract in due}
             self._available = True
             previous_last_bar = self._last_bar_at
@@ -889,7 +936,7 @@ class DurableLiveMarketService(LiveMarketService):
         keys = [stream.cursor_key(source.consumer, source.day), stream.key(source.day),
                 self.completed_stream.key(source.day), self.completed_stream.identity_key(source.day)]
         plan = []
-        for symbol, frequency, bar, contract, observed_at in observations:
+        for symbol, frequency, bar, contract, source_event in observations:
             key = self._store._bars_key(bar.trading_day, symbol, frequency)
             if key not in keys:
                 keys.append(key)
@@ -913,8 +960,12 @@ class DurableLiveMarketService(LiveMarketService):
                 record = json.loads(existing)
                 prior = ObservationEnvelope.from_json(record['payload'])
                 original_confirmation = prior.confirmed_at
-            envelope = ObservationEnvelope(identity, bar.trading_day, observed_at, channel, payload, True,
-                                           raw_received_at=observed_at, confirmed_at=original_confirmation)
+            envelope = ObservationEnvelope(
+                identity, bar.trading_day, source_event.source_observed_at, channel, payload,
+                source_event.timely_for_forward(bar.bar_end, original_confirmation),
+                raw_received_at=source_event.raw_received_at or source_event.source_observed_at,
+                confirmed_at=original_confirmation, source_generation=source_event.source_generation,
+            )
             serialized_envelope = envelope.to_json()
             if existing is not None:
                 # Preserve the old envelope byte-for-byte, including first arrival and confirmation.

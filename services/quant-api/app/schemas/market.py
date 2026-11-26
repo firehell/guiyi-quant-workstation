@@ -19,6 +19,7 @@ class MarketBarOut(BaseModel):
     volume: Decimal
     turnover: Decimal | None
     open_interest: Decimal | None
+    source_bar_sha256: str | None = Field(None, exclude_if=lambda value: value is None)
 
 
 class CoverageOut(BaseModel):
@@ -68,6 +69,8 @@ class MarketReadStateResponse(BaseModel):
     live_contract: str | None
     canonical_end: datetime | None
     after_market: dict[str, object]
+    display_preview: bool = False
+    canonical_revision: str | None = None
 
 
 class DominantContractOut(BaseModel):

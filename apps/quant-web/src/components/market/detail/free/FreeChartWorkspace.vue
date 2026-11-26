@@ -8,7 +8,8 @@ import type { NewowProductChartBar } from '@/components/market/detail/newow/newo
 import FreeChartStage from '@/components/market/detail/free/FreeChartStage.vue'
 import { rangeDetectorStatusText } from '@/utils/rangeDetectorStatus'
 import { useRangeDetectorOverlayWarmup } from '@/composables/useRangeDetectorOverlayWarmup'
-import type { BarData, OptionalEmaIndicatorId, ProductResearchResponse } from '@/types/market'
+import { formatChartTimeInShanghai } from '@/utils/barTime'
+import type { BarData, MarketTickQuote, OptionalEmaIndicatorId, ProductResearchResponse } from '@/types/market'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import type { MarketDetailHeaderModel, MarketDetailIdentity } from '@/types/marketDetail'
 import type { FlexibleDetailPreferences } from '@/utils/marketDetailPreferences'
@@ -18,6 +19,8 @@ const props = defineProps<{
   identity: MarketDetailIdentity
   header: MarketDetailHeaderModel
   bars: BarData[]
+  activeBar?: BarData | null
+  quote?: MarketTickQuote | null
   mutation: MarketSeriesMutation
   loading: boolean
   error: string | null
@@ -172,9 +175,25 @@ function loadEarlier() { void props.loadEarlier() }
     <NewowPublicPatternsPanel v-if="showPatterns" :bars="patternBars" :period="identity.frequency" :window-key="patternWindowKey" @select="patternSelection = $event" @preview="patternSelection = $event" @clear="patternSelection = null" />
     <p v-if="identityWarning" class="free-workspace__hint" role="status">{{ identityWarning }}</p>
     <p v-if="showRangeDetector" class="free-workspace__hint" role="status">{{ rangeDetectorStatusText(rangeWarmup.status.value, rangeCount) }} 历史图形参考；加载更早数据可能修订箱体。</p>
+    <p v-if="activeBar" class="free-workspace__hint" role="status">
+      活动 K 线 · {{ formatChartTimeInShanghai(activeBar.time) }}
+    </p>
+    <details v-if="quote" class="free-workspace__hint">
+      <summary>{{ quote.stale ? '报价已停更' : '行情快照' }} {{ quote.contract }} · 最新价 {{ quote.last_price }} · {{ formatChartTimeInShanghai(quote.observed_at) }}</summary>
+      <table v-if="quote.bids.length || quote.asks.length" aria-label="盘口">
+        <thead><tr><th scope="col">买价</th><th scope="col">买量</th><th scope="col">卖价</th><th scope="col">卖量</th></tr></thead>
+        <tbody>
+          <tr v-for="level in Math.max(quote.bids.length, quote.asks.length)" :key="level">
+            <td>{{ quote.bids[level - 1]?.[0] ?? '—' }}</td><td>{{ quote.bids[level - 1]?.[1] ?? '—' }}</td>
+            <td>{{ quote.asks[level - 1]?.[0] ?? '—' }}</td><td>{{ quote.asks[level - 1]?.[1] ?? '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </details>
     <div class="free-workspace__chart-surface"><slot name="chart-toolbar" />
     <FreeChartStage
       :bars="bars"
+      :active-bar="activeBar"
       :dynamic-range-points="dynamicRange.points.value"
       :dynamic-range-enabled="showDynamicRange && dynamicRange.supported.value"
       :pattern-geometry="patternGeometry"

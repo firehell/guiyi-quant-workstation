@@ -90,6 +90,7 @@ export interface CanonicalBarDto {
   volume: number
   turnover: number | null
   open_interest: number | null
+  source_bar_sha256?: string
 }
 
 /** Raw transport shape; the backend serializes Decimal values as strings. */
@@ -105,6 +106,7 @@ export interface MarketBarWireDto {
   volume: MarketNumericWire
   turnover: MarketNumericWire | null
   open_interest: MarketNumericWire | null
+  source_bar_sha256?: string
 }
 
 export interface BarData {
@@ -113,6 +115,7 @@ export interface BarData {
   trading_day?: string
   physicalContract?: string
   calculationSegmentId?: string
+  sourceBarSha256?: string
   open: number
   high: number
   low: number
@@ -193,12 +196,36 @@ export interface MarketReadState {
   live_contract: string | null
   canonical_end: string | null
   after_market: Record<string, unknown>
+  display_preview?: boolean
+  canonical_revision?: string | null
+}
+
+export interface MarketTickQuote {
+  trading_day: string
+  contract: string
+  generation: string
+  observed_at: string
+  received_at: string
+  last_price: string
+  stale?: boolean
+  bids: [string, string][]
+  asks: [string, string][]
+}
+
+export interface MarketActivityFrame {
+  contract: string
+  generation: string
+  observed_at: string
+  received_at: string
+  bar: CanonicalBarDto
 }
 
 export type MarketOverlaySource = 'none' | 'realtime' | 'post_close'
 export type MarketWsMessage =
   | { type: 'state'; state: MarketReadState }
   | { type: 'snapshot'; source: MarketOverlaySource; trading_day: string | null; contract: string | null; bars: CanonicalBarDto[] }
+  | { type: 'preview'; quote: MarketTickQuote | null; activity: MarketActivityFrame | null }
+  | { type: 'retained'; trading_day: string | null; contract: string | null; bars: CanonicalBarDto[] }
   | { type: 'bar'; bar: CanonicalBarDto }
   | { type: 'reset'; trading_day: string | null; contract: string | null }
 

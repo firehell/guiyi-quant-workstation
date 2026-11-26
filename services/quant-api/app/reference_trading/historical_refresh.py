@@ -209,29 +209,35 @@ class RefreshStateStore:
 
 class HistoricalRefresh:
     def __init__(self, *, routes, endpoint, components, state,
-                 needs_source_verification=None):
+                 needs_source_verification=None, verify_publication=None):
         self._routes, self._endpoint, self._components = routes, endpoint, components
         self._needs_source_verification = needs_source_verification
+        self._verify_publication = verify_publication
         self.state = state
         self.last_progress = {}
+        self.last_scope = ()
 
-    def tick(self, *, now, cancelled=lambda: False, batch_limit=None):
+    def _eligible_routes(self):
+        return tuple(route for route in self._routes()
+                     if recording_route_supported(route.identity.strategy_code, route.identity.frequency))
+
+    def tick(self, *, now, cancelled=lambda: False, batch_limit=None, completed_routes=None):
         if batch_limit is not None and (type(batch_limit) is not int or batch_limit < 1):
             raise ValueError('REFRESH_BATCH_LIMIT_INVALID')
         if cancelled():
             return
         with self.state.exclusive() as acquired:
             if acquired:
-                self._tick(now, cancelled, batch_limit)
+                self._tick(now, cancelled, batch_limit, completed_routes)
 
-    def _tick(self, now, cancelled, batch_limit):
+    def _tick(self, now, cancelled, batch_limit, completed_routes):
         state = self.state.read()
-        routes = sorted((route for route in self._routes()
-                         if recording_route_supported(route.identity.strategy_code, route.identity.frequency)),
-                        key=lambda route: route.key)
+        routes = sorted(self._eligible_routes(), key=lambda route: route.key)
         if len(routes) > MAX_ROUTES:
             raise ValueError('REFRESH_SCOPE_INVALID')
         ids = [route.identity.stream_id for route in routes]
+        if completed_routes is not None:
+            self.last_scope = tuple((route.identity.stream_id, route.key) for route in routes)
         active_ids = set(ids)
         self.last_progress = {**self.last_progress,
             'backlog_count': sum(item['status'] != 'blocked' for key, item in state['routes'].items() if key in active_ids),
@@ -255,11 +261,17 @@ class HistoricalRefresh:
             # Persist scan progress even when this bounded page contains only
             # blocked streams; otherwise later routes starve forever.
             state['cursor'] = key
-            if prior and prior['status'] == 'blocked':
+            if (completed_routes is not None and key in completed_routes
+                    or prior and prior['status'] == 'blocked'):
                 continue
             source_changed = route.reason in {'CANONICAL_SOURCE_REVISION_CHANGED', 'INPUT_PROOF_UPGRADE_REQUIRED'}
-            if ((route.reason and not source_changed and not prior)
-                    or not _canonical_identity(identity, allow_gap_fill=True) or route.since is None):
+            first_receipt = route.reason == 'MARKET_FIRST_RECEIPT_BUILD' or (
+                completed_routes is not None and route.reason == 'HISTORY_SOURCE_MISSING'
+                and prior is not None and prior.get('status') == 'pending'
+            )
+            if ((route.reason and not source_changed and not prior and not first_receipt)
+                    or not _canonical_identity(identity, allow_gap_fill=True)
+                    or route.since is None and not first_receipt):
                 state['routes'][key] = {'status': 'blocked', 'reason': route.reason or 'SOURCE_IDENTITY_UNVERIFIED'}
                 self.state.write(state)
                 return
@@ -273,6 +285,8 @@ class HistoricalRefresh:
                 if not prior and not source_changed and route.computed_through is not None and endpoint <= route.computed_through:
                     if (self._needs_source_verification is None
                             or not self._needs_source_verification(route, now, cancelled)):
+                        if completed_routes is not None:
+                            completed_routes.add(key)
                         continue
                 if _strategy(identity) == 'dual_fusion':
                     base = [item for item in routes if item.identity.product == identity.product
@@ -284,7 +298,10 @@ class HistoricalRefresh:
                             'stage': 'waiting', 'reason': 'BASE_DEPENDENCIES_PENDING',
                             'target': endpoint.isoformat()}
                         continue
-                self._execute(route, endpoint, trading_day, prior, state, now, cancelled, batch_limit)
+                if self._execute(route, endpoint, trading_day, prior, state, now, cancelled, batch_limit,
+                                 first_receipt=first_receipt):
+                    if completed_routes is not None:
+                        completed_routes.add(key)
             except RefreshPlanningYield:
                 state['cursor'] = previous_cursor
                 self.state.write(state)  # Keep the original plan/rebuild/resume facts.
@@ -295,13 +312,13 @@ class HistoricalRefresh:
             except Exception as error:
                 reason = _reason(error)
                 self.last_progress = {**self.last_progress, 'stage': 'blocked', 'reason': reason}
-                if reason != 'SOURCE_BUSY':
+                if reason not in {'SOURCE_BUSY', 'MARKET_ARCHIVE_SOURCE_CHANGED'}:
                     state['routes'][key] = {**state['routes'].get(key, {}), 'status': 'blocked', 'reason': reason}
                     self.state.write(state)
             return  # One selected stream per tick, even when planning fails.
         self.state.write(state)
 
-    def _execute(self, route, endpoint, trading_day, prior, state, now, cancelled, batch_limit):
+    def _execute(self, route, endpoint, trading_day, prior, state, now, cancelled, batch_limit, *, first_receipt=False):
         budget = BUDGET
         key = route.identity.stream_id
         storage_failure: RefreshStateError | None = None
@@ -346,6 +363,14 @@ class HistoricalRefresh:
                     raise storage_failure
                 raise
         with protected_components() as (planner, service):
+            if self._verify_publication is not None:
+                self._verify_publication(route.identity.product)
+            since = route.since
+            if first_receipt:
+                from app.reference_trading.newow_history_window import new_plan_since
+
+                reader = planner._reader._newow_for(route.identity)
+                since = new_plan_since(route.identity, reader.historical_storage_start)
             def prepare(request):
                 from app.market_data.newow.product_reader import NewowProductReadCancelled
                 try:
@@ -370,9 +395,10 @@ class HistoricalRefresh:
                 except ValueError as error:
                     raise RefreshStateError('REFRESH_PLAN_READBACK_REQUIRED') from error
                 if (len(plan.streams) != 1 or plan.streams[0].request.identity != route.identity
-                        or plan.streams[0].request.since != route.since):
+                        or plan.streams[0].request.since != since
+                        or first_receipt and (plan.operation != 'build' or plan.streams[0].request.as_of != endpoint)):
                     raise ValueError('REFRESH_PLAN_SCOPE_DRIFT')
-                if getattr(service, '_reader', None) is not None:
+                if not first_receipt and getattr(service, '_reader', None) is not None:
                     from app.reference_trading.refresh_recovery import prepare_source_recovery, install_source_recovery
                     from app.market_data.newow.product_reader import NewowProductReadCancelled
                     try:
@@ -395,8 +421,9 @@ class HistoricalRefresh:
                     plan, prior = rebuild_plan(plan), None
             else:
                 plan = prepare(HistoricalReferenceRequest(
+                    'build' if first_receipt else
                     'rebuild' if route.reason in {'CANONICAL_SOURCE_REVISION_CHANGED', 'INPUT_PROOF_UPGRADE_REQUIRED'} else 'advance',
-                    (HistoricalStreamRequest(route.identity, route.since,
+                    (HistoricalStreamRequest(route.identity, since,
                                                         trading_day, endpoint),), budget,
                 ))
                 if plan.streams[0].target_completed_through != endpoint:
@@ -414,7 +441,8 @@ class HistoricalRefresh:
                 token = ResumeToken(**pending['resume'])
                 report = service.resume(plan, token, plan.plan_hash)
             else:
-                report = getattr(service, plan.operation)(plan, plan.plan_hash)
+                execute = service.execute if plan.operation == 'build' else getattr(service, plan.operation)
+                report = execute(plan, plan.plan_hash)
             # HistoricalReferenceService isolates exceptions into stream reports.
             # A committed callback's control-storage failure must survive that boundary.
             if storage_failure is not None:
@@ -475,6 +503,8 @@ class HistoricalRefresh:
             self.state.write(state)
             self.last_progress = {**self.last_progress, 'stage': result.status,
                                   'reason': _reason(ValueError(result.reason)) if result.reason else None}
+            return (result.status in {'completed', 'noop'}
+                    and plan.streams[0].target_completed_through == endpoint)
 
 
 class RefreshThread:
@@ -575,7 +605,30 @@ def _history_route_supported(identity):
     return True
 
 
-def build_historical_refresh(session_factory, *, state_path):
+def canonical_newow_history_identity(product, strategy, frequency):
+    """The same exact stream is used for the first build and persisted Web reads."""
+    from app.market_data.newow.product_release import (
+        FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY, candidate_input_quality_policy,
+    )
+    from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
+    from guiyi_quant.newow.product_adapters import build_product_identity
+    from guiyi_quant.newow.product_contracts import ProductFrequency, ProductStrategy
+    from guiyi_quant.newow.product_identity import build_newow_stream_identity
+
+    policy = candidate_input_quality_policy(product, frequency, candidate_weekly=False)
+    if strategy == 'dual_fusion':
+        return build_fusion_stream_identity(
+            product, frequency, input_quality_policy=policy,
+            reference_price_policy=FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY,
+        )
+    return build_newow_stream_identity(build_product_identity(
+        product, ProductStrategy(strategy), ProductFrequency(frequency),
+        input_quality_policy=policy, reference_price_policy=FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY,
+    ))
+
+
+def build_historical_refresh(session_factory, *, state_path, publication_products=None,
+                             verify_publication=None):
     """Only metadata and one authoritative endpoint are read before full planning.
 
     Each callback creates its own session in the refresh thread. No MDS, Session,
@@ -589,6 +642,16 @@ def build_historical_refresh(session_factory, *, state_path):
     from app.market_data.operational_universe import load_operational_products, load_active_products
     from app.reference_trading.newow_bootstrap import validate_product_scope
     products = validate_product_scope(load_operational_products(), load_active_products())
+    if publication_products is not None:
+        selected = frozenset(publication_products)
+        if not selected or not selected <= set(products):
+            raise ValueError("MARKET_ARCHIVE_SCOPE_INVALID")
+        products = tuple(product for product in products if product in selected)
+
+    first_scope = tuple(
+        canonical_newow_history_identity(product, strategy, frequency)
+        for product in products for frequency in FREQUENCIES for strategy in STRATEGIES
+    ) if publication_products is not None else ()
 
     def routes():
         with session_factory() as session, readonly_transaction(session, timeout_seconds=15):
@@ -617,7 +680,11 @@ def build_historical_refresh(session_factory, *, state_path):
               .join(ReferenceBatch, ReferenceBatch.batch_id == ReferenceRevision.checkpoint_batch_id)
               .where(ReferenceStream.stream_id.in_([item.stream_id for item in historical]))).all()
             stored = {row[0]: row[1:] for row in rows}
-        result = []
+        registered = {identity.stream_id for identity in historical}
+        result = [
+            RefreshRoute(identity, None, None, 'MARKET_FIRST_RECEIPT_BUILD')
+            for identity in first_scope if identity.stream_id not in registered
+        ]
         for identity in historical:
             value = stored.get(identity.stream_id)
             if value is None or value[2] is None:
@@ -696,6 +763,8 @@ def build_historical_refresh(session_factory, *, state_path):
         if cancelled():
             raise RefreshPlanningYield()
         with components(cancelled=cancelled, after_batch=None, now=lambda: now) as (_planner, service):
+            if verify_publication is not None:
+                verify_publication(route.identity.product)
             # components() holds the same maintenance lease used by planning.
             with session_factory() as session, readonly_transaction(session, timeout_seconds=30):
                 stream = session.get(ReferenceStream, route.identity.stream_id)
@@ -751,4 +820,5 @@ def build_historical_refresh(session_factory, *, state_path):
 
     return HistoricalRefresh(routes=routes, endpoint=endpoint, components=components,
                              state=RefreshStateStore(state_path),
-                             needs_source_verification=needs_source_verification)
+                             needs_source_verification=needs_source_verification,
+                             verify_publication=verify_publication)

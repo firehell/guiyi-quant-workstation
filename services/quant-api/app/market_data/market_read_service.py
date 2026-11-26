@@ -15,17 +15,21 @@ from zoneinfo import ZoneInfo
 from app.core.env import PROJECT_ROOT
 from app.alerts.registry import SUBING_QUALITY_REWARM_POLICY_V2
 from app.market_data.after_market import public_after_market_status
+from app.market_data.aggregation import aggregate_bucket
 from app.market_data.domain import (
     CanonicalBar,
     BarFrequency,
+    ContractTradingDayQuery,
     INTRADAY_FREQUENCIES,
     MarketSeriesPageResult,
+    MarketSeriesResult,
     ResolvedContractSegment,
     SeriesKind,
     SeriesPageQuery,
     normalize_contract_for_symbol,
     parse_rfc3339_instant,
 )
+from app.market_data.market_display_preview import MarketActivity, MarketPreview, MarketPreviewReader
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 from app.market_data.market_data_service import DominantContractSegmentSummary, MarketDataError
 from app.market_data.live_market import LIVE_FINALIZATION_DELAY, LiveBarObservation, LiveRecoveryState
@@ -39,6 +43,8 @@ _SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
 class MarketPageReader(Protocol):
+    def previous_trading_day(self, symbol: str, trading_day: date) -> date: ...
+
     def dominant_segment_for_day(self, symbol: str, trading_day: date) -> DominantContractSegmentSummary: ...
 
     def completed_trading_days(
@@ -83,6 +89,8 @@ class MarketPageReader(Protocol):
     def expected_contract_replay_endpoints(self, *, symbol: str, contract: str, frequency: BarFrequency | str,
                                           trading_day: date, cutoff: datetime, after: datetime | None = None,
                                           since: date | None = None) -> tuple[tuple[datetime, date], ...]: ...
+
+    def query_contract_trading_days(self, request: ContractTradingDayQuery) -> MarketSeriesResult: ...
 
     def query_page(self, request: SeriesPageQuery) -> MarketSeriesPageResult: ...
 
@@ -167,6 +175,15 @@ class MarketReadState:
     live_contract: str | None
     canonical_end: datetime | None
     after_market: Mapping[str, object]
+    display_preview: bool = False
+    canonical_revision: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MarketRetainedTail:
+    trading_day: date
+    contract: str
+    bars: tuple[CanonicalBar, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +195,8 @@ class MarketDisplaySnapshot:
     trading_day: date | None
     contract: str | None
     bars: tuple[CanonicalBar, ...]
+    preview: MarketPreview | None = None
+    retained: MarketRetainedTail | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,11 +273,13 @@ class MarketReadService:
         operational_products: tuple[str, ...],
         live_store: LiveReadStore,
         after_market_status_path: Path | None = None,
+        preview_reader: MarketPreviewReader | None = None,
     ) -> None:
         self._market_data = market_data
         self._phase_resolver = phase_resolver
         self._operational_products = frozenset(item.strip().lower() for item in operational_products)
         self._live_store = live_store
+        self._preview_reader = preview_reader
         self._after_market_status_path = (
             after_market_status_path or PROJECT_ROOT / ".run" / "after-market-status.json"
         )
@@ -1221,6 +1242,18 @@ class MarketReadService:
                 )
             )
         )
+        after_market = _load_after_market_status(self._after_market_status_path)
+        display_preview = (
+            self._preview_reader is not None and operational
+            and identity.series_kind in {SeriesKind.ACTUAL_DOMINANT, SeriesKind.CONTRACT}
+        )
+        canonical_revision = None
+        if display_preview:
+            from app.market_data.market_archive import archive_receipt
+
+            receipt = archive_receipt(after_market, now=now)
+            if receipt is not None:
+                canonical_revision = receipt.revisions.get(identity.symbol)
         return MarketReadState(
             symbol=identity.symbol,
             series_kind=identity.series_kind.value,
@@ -1232,7 +1265,9 @@ class MarketReadService:
             live_available=live_eligible and live_available,
             live_contract=live_contract,
             canonical_end=canonical_end,
-            after_market=_load_after_market_status(self._after_market_status_path),
+            after_market=after_market,
+            display_preview=display_preview,
+            canonical_revision=canonical_revision,
         )
 
     def live_snapshot(
@@ -1483,8 +1518,145 @@ class MarketReadService:
         identity: SeriesPageQuery,
         after: datetime | None,
         now: datetime,
+        *,
+        retained_after: datetime | None = None,
     ) -> MarketDisplaySnapshot:
-        """读取 Web 展示快照；收盘快照不扩大严格实时消费者语义。"""
+        """Read display data without widening completed observation consumers."""
+        display = self._completed_display_snapshot(identity, after, now)
+        if not display.state.display_preview:
+            return display
+        state = display.state
+        if state.trading_day is None or state.phase == MarketPhase.UNKNOWN.value:
+            return replace(display, preview=MarketPreview())
+        try:
+            owner = self._market_data.dominant_segment_for_day(identity.symbol, state.trading_day).contract
+        except MarketDataError:
+            owner = None
+        if display.contract is not None and display.contract != owner:
+            state = replace(state, live_eligible=False, live_available=False, live_contract=None)
+            display = _empty_display_snapshot(state)
+        return replace(
+            display,
+            preview=self._display_preview(identity, display, owner, now),
+            retained=self._retained_display_tail(identity, state, retained_after, now),
+        )
+
+    def _display_preview(
+        self, identity: SeriesPageQuery, display: MarketDisplaySnapshot, contract: str | None, now: datetime,
+    ) -> MarketPreview:
+        state = display.state
+        day = state.trading_day
+        if day is None or contract is None or self._preview_reader is None:
+            return MarketPreview()
+        if ((identity.contract is not None and identity.contract != contract)
+                or state.after_market.get("last_successful_trading_day") == day.isoformat()):
+            return MarketPreview()
+        try:
+            source_frequency = BarFrequency.D1 if identity.frequency is BarFrequency.W1 else identity.frequency
+            preview = self._preview_reader.snapshot(
+                trading_day=day, symbol=identity.symbol, contract=contract, frequency=source_frequency,
+            )
+            quote, activity = preview.quote, preview.activity
+            if quote is not None and (
+                quote.contract != contract or quote.trading_day != day or not quote.generation
+                or not quote.observed_at <= quote.received_at <= now
+                or (identity.frequency in INTRADAY_FREQUENCIES and state.canonical_end is not None
+                    and quote.observed_at <= state.canonical_end)
+            ):
+                quote = None
+            confirmed = _later(state.canonical_end, display.bars[-1].bar_end if display.bars else None)
+            if activity is not None and (
+                activity.contract != contract or activity.bar.trading_day != day or not activity.generation
+                or not activity.observed_at <= activity.received_at <= now
+                or activity.observed_at > activity.bar.bar_end
+                or (identity.frequency in INTRADAY_FREQUENCIES and activity.bar.bar_end <= now)
+                or (confirmed is not None and activity.bar.bar_end <= confirmed)
+            ):
+                activity = None
+            if quote is not None and activity is not None and quote.generation != activity.generation:
+                return MarketPreview()
+            trading = state.phase == MarketPhase.TRADING.value
+            stale = quote is not None and (
+                quote.stale or trading and now - quote.received_at > timedelta(seconds=30)
+            )
+            if stale or (
+                trading and activity is not None and now - activity.received_at > timedelta(seconds=30)
+            ):
+                activity = None
+            if quote is not None:
+                quote = replace(quote, stale=trading and stale)
+            if activity is not None and identity.frequency is BarFrequency.W1:
+                activity = self._weekly_display_activity(identity, activity, now)
+            return MarketPreview(quote=quote, activity=activity)
+        except (AttributeError, MarketDataError, OSError, TypeError, ValueError):
+            return MarketPreview()
+
+    def _weekly_display_activity(
+        self, identity: SeriesPageQuery, daily: MarketActivity, now: datetime,
+    ) -> MarketActivity | None:
+        day = daily.bar.trading_day
+        monday = day - timedelta(days=day.weekday())
+        try:
+            week = self._market_data.calendar_week_facts(symbol=identity.symbol, week_monday=monday)
+            days = tuple(date_ for date_, trading in week if trading)
+            if day not in days:
+                return None
+            if identity.series_kind is SeriesKind.ACTUAL_DOMINANT:
+                owner = self._market_data.dominant_segment_for_day(identity.symbol, days[-1]).contract
+                if owner != daily.contract:
+                    return None
+            prior = tuple(date_ for date_ in days if date_ < day)
+            history = self._market_data.query_contract_trading_days(ContractTradingDayQuery(
+                symbol=identity.symbol, contract=daily.contract, frequency=BarFrequency.D1,
+                since=prior[0], through=prior[-1],
+            )).bars if prior else ()
+        except MarketDataError:
+            return None
+        if (tuple(bar.trading_day for bar in history) != prior
+                or any(bar.bar_end > now or bar.bar_end >= daily.bar.bar_end for bar in history)):
+            return None
+        bars = (*history, daily.bar)
+        priced = tuple(bar for bar in bars if not bar.is_strict_no_trade)
+        if not priced or priced[-1] is not daily.bar or any(bar.low <= 0 for bar in priced):
+            return None
+        preview = aggregate_bucket(priced, bucket_end=daily.bar.bar_end)
+        if any(bar.turnover is None for bar in priced):
+            preview = replace(preview, turnover=None)
+        return replace(daily, bar=preview)
+
+    def _retained_display_tail(
+        self, identity: SeriesPageQuery, state: MarketReadState, after: datetime | None, now: datetime,
+    ) -> MarketRetainedTail | None:
+        """Keep the previous unarchived day visible during the next night's session."""
+        current = state.trading_day
+        if current is None or identity.frequency not in INTRADAY_FREQUENCIES:
+            return None
+        try:
+            previous = self._market_data.previous_trading_day(identity.symbol, current)
+            if previous >= current:
+                return None
+            sessions = self._market_data.session_windows(symbol=identity.symbol, trading_day=previous)
+            previous_end = max(window.end for window in sessions)
+            cutoff = _later(after, state.canonical_end)
+            if previous_end >= now or (cutoff is not None and previous_end <= cutoff):
+                return None
+            contract = self._market_data.dominant_segment_for_day(identity.symbol, previous).contract
+        except (MarketDataError, ValueError):
+            return None
+        if identity.contract is not None and identity.contract != contract:
+            return None
+        if self._subscription_contract(symbol=identity.symbol, trading_day=previous) != contract:
+            return None
+        bars = self._display_snapshot_bars(
+            identity, replace(state, trading_day=previous), contract=contract, after=after, through=previous_end,
+        )
+        if bars and self._subscription_contract(symbol=identity.symbol, trading_day=previous) == contract:
+            return MarketRetainedTail(trading_day=previous, contract=contract, bars=bars)
+        return None
+
+    def _completed_display_snapshot(
+        self, identity: SeriesPageQuery, after: datetime | None, now: datetime,
+    ) -> MarketDisplaySnapshot:
         state = self.state(identity, now)
         if (
             state.live_eligible

@@ -1,0 +1,21 @@
+{
+  "kind": "synthetic_minute_boundary_replay_with_native_redis",
+  "products": 70,
+  "completed_by_frequency": {
+    "1m": 22650,
+    "5m": 4530,
+    "15m": 1510,
+    "30m": 790,
+    "60m": 467
+  },
+  "total_completed": 29947,
+  "paper_inputs": 23907,
+  "restart_after_minute_round": 279,
+  "minute_rounds": 559,
+  "minute_round_redis_commit_p95_ms": 617.879,
+  "minute_round_redis_commit_p99_ms": 740.18,
+  "duration_s": 166.309,
+  "redis_used_bytes": 348117944,
+  "rss_max_bytes": 191922176,
+  "cpu_seconds": 107.34
+}

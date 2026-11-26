@@ -101,6 +101,7 @@ if redis.call('GET',KEYS[1])~=ARGV[1] then return -2 end
 if ARGV[2]~=ARGV[1] and #redis.call('XRANGE',KEYS[2],ARGV[2],ARGV[2])~=1 then return -2 end
 local additions=0
 local identities={}
+local forward={}
 for _,item in ipairs(plan) do
  if type(item)~='table' or type(item.key_index)~='number' or item.key_index~=math.floor(item.key_index)
     or item.key_index<5 or item.key_index>=#KEYS or type(item.score)~='number'
@@ -112,7 +113,8 @@ for _,item in ipairs(plan) do
     or type(item.channel)~='string' or #item.channel==0 then return -4 end
  identities[item.identity]=true
  local parsed,envelope=pcall(cjson.decode,item.envelope)
- if not parsed or type(envelope)~='table' then return -4 end
+ if not parsed or type(envelope)~='table' or type(envelope.notification_eligible)~='boolean' then return -4 end
+ forward[item.identity]=envelope.notification_eligible
  local existing=redis.call('ZRANGEBYSCORE',KEYS[item.key_index],item.score,item.score)
  if item.expected_payload~=nil then
   if item.expected_payload==cjson.null then
@@ -134,7 +136,7 @@ for _,item in ipairs(plan) do
  if not redis.call('HGET',KEYS[4],item.identity) then
   local id=redis.call('XADD',KEYS[3],'*','envelope',item.envelope)
   redis.call('HSET',KEYS[4],item.identity,cjson.encode({id=id,payload=item.envelope}))
-  redis.call('PUBLISH',item.channel,item.payload)
+  if forward[item.identity] then redis.call('PUBLISH',item.channel,item.payload) end
  end
 end
 redis.call('EXPIRE',KEYS[3],ttl); redis.call('EXPIRE',KEYS[4],ttl)

@@ -9,7 +9,7 @@ import { NewowMainForceControlPrimitive, buildNewowMainForceData } from './newow
 import { NewowTrendReversalPrimitive, buildNewowTrendReversalData } from './newowTrendReversalPrimitive'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 
-const props = defineProps<{ chart: NewowProductSectionResponse<'chart'> | null; auxiliary: NewowProductSectionResponse<'auxiliary'> | null; error?: string | null; rightScaleWidth?: number; viewport?: IRange<Time>|null; cursor?: Time|null }>()
+const props = defineProps<{ label?: string; chart: NewowProductSectionResponse<'chart'> | null; auxiliary: NewowProductSectionResponse<'auxiliary'> | null; error?: string | null; rightScaleWidth?: number; viewport?: IRange<Time>|null; cursor?: Time|null }>()
 const emit=defineEmits<{viewport:[value:IRange<Time>|null];cursor:[value:Time|null]}>()
 const container = ref<HTMLElement | null>(null)
 const aligned = computed(() => alignNewowAuxiliaryChartModel(props.chart, props.auxiliary))
@@ -62,7 +62,7 @@ watch([() => props.chart, () => props.auxiliary], render, { flush: 'post' })
 onBeforeUnmount(() => { observer?.disconnect(); chart?.remove(); chart = null; series = null })
 </script>
 <template>
-  <section class="shared-auxiliary" aria-label="震荡背景辅助指标">
+  <section class="shared-auxiliary" :aria-label="label ?? '震荡背景辅助指标'">
     <slot name="controls" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-else-if="!aligned" role="status">当前合约段的辅助指标未就绪。</p>
