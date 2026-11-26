@@ -8,6 +8,7 @@ from guiyi_quant.lms405 import Position
 from guiyi_quant.lms405.public_conditions import Condition
 from guiyi_quant.lms405.task_roles import ROUTES, TaskBook, assess_task_action
 from lms405_counter_m_lot_roles import compare_roles
+from lms405_task_role_replay import turnover_bounds
 
 T = datetime(2026, 7, 27, 9, tzinfo=UTC)
 ONE = Decimal(1)
@@ -18,6 +19,39 @@ INPUT = dict(source="study", source_available_at=T, version_405=True)
 def short_trend():
     return TaskBook(Position("SH2609", ONE, ONE), Position("SH2609", 2 * ONE),
                     "SHORT", "original", "temporary", T)
+
+
+def test_conditional_turnover_distinguishes_carry_replacement_and_missing_directions():
+    old = {"long": {"quantity": 20, "today_quantity": 20}, "short": {"quantity": 20, "today_quantity": 0}}
+    midday = {"long": {"quantity": 20, "today_quantity": 20}}
+    night = {"short": {"quantity": 20, "today_quantity": 20}}
+    same_day = turnover_bounds(old, midday, "D1", "D1", {"long": list(range(16))})
+    assert (same_day["long"]["minimum_close"], same_day["long"]["minimum_open"]) == (5, 5)
+    assert same_day["short"]["minimum_close"] == 20
+
+    new_day = turnover_bounds(midday, night, "D1", "D2", {})
+    assert new_day["long"]["minimum_close"] == new_day["short"]["minimum_open"] == 20
+    assert "short" not in midday and "long" not in night
+    with pytest.raises(ValueError, match="LMS_TASK_TURNOVER_RETENTION_CONFLICT"):
+        turnover_bounds(old, night, "D1", "D2", {"short": [1]})
+
+
+def test_equal_locks_can_hide_full_turnover_of_the_protection_leg():
+    before = {"long": {"quantity": 20, "today_quantity": 20}, "short": {"quantity": 20, "today_quantity": 0}}
+    after = {side: dict(leg) for side, leg in before.items()}
+    result = turnover_bounds(before, after, "D1", "D2", {"short": [20]})
+    assert result["long"]["minimum_close"] == result["long"]["minimum_open"] == 20
+    assert result["short"]["retained_min"] == result["short"]["retained_max"] == 20
+
+    shifted = {"long": {"quantity": 20, "today_quantity": 16}}
+    earlier = {"long": {"quantity": 20, "today_quantity": 12}}
+    same_day = turnover_bounds(earlier, shifted, "D1", "D1", {})
+    assert (same_day["long"]["retained_min"], same_day["long"]["retained_max"]) == (4, 16)
+    earlier_unknown = {"long": {"quantity": 15, "today_quantity": None}}
+    same_day = turnover_bounds(earlier_unknown, shifted, "D1", "D1", {})
+    assert (same_day["long"]["retained_min"], same_day["long"]["retained_max"]) == (4, 15)
+    with pytest.raises(ValueError, match="LMS_TASK_TURNOVER_PRIOR_LOTS_INCREASED_SAME_DAY"):
+        turnover_bounds(before, shifted, "D1", "D1", {})
 
 
 def facts_for(book, route):

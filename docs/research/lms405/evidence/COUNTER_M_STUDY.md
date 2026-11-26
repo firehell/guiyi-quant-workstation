@@ -359,3 +359,23 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:sc
 services/quant-api/.venv/bin/python scripts/research/lms405_counter_m_lot_roles.py \
   --output /tmp/lms405-counter-m-lot-roles-new.json
 ```
+
+### 烧碱和焦煤的仓位变化下界
+
+将10月22日晚至23日晚的四张表与27日三张表逐行相加，分别对平332、120、226、260、310、182、246手。表中原始缺行保持未知。条件情景假定各表覆盖同一账户和同一策略的全部持仓、实际拍摄与发帖先后及所列交易日一致、有报价锚时价格与持仓同期，以及今仓按交易日计算。仅在此情景把缺行解释为零。最后一张23日晚表归26日交易日，27日晚表归28日交易日。有些图无唯一行情锚点，不能按发帖分钟定位截图或中间动作。 [22日夜盘表](../../lms-source-archive/02-持仓记录/2026-10-22/WRnTlEfj1t.md) · [23日早盘表](../../lms-source-archive/02-持仓记录/2026-10-23/WRnY5bznUE.md) · [23日收盘表](../../lms-source-archive/02-持仓记录/2026-10-23/WRo00BFM1E.md) · [23日晚表](../../lms-source-archive/02-持仓记录/2026-10-23/WRo2KQ43iX.md)
+
+| 合约与观察链 | 条件仓位（多／空） | 可排除的单一路径 |
+|---|---|---|
+| SH2701，22日晚→23日10:13帖→日收→夜盘 | 20／20 → 0／20 → 0／20 → 20／20。按旧空留存对照，空20贯穿各图；至少平多20，再新开多20。 | 一直保留原来双腿的解释无法穿过早盘和日收两个观察点。仅凭手数仍无法指定被平多仓的原任务。 |
+| SH2701，27日午盘→日收→夜盘 | 20／20 → 0／20 → 20／20。旧空同样留存，至少平多20、再新开多20。 | 两端仓位一样仍需要一次多腿退出和重建。正文的顺势解锁为撤保护解释提供独立支持，具体手数分批及真实时间待证。 |
+| JM2701，22日晚→23日日收→夜盘 | 20／20 → 20／0 → 0／20。夜盘空20全为今仓，日盘多20至多留存初始多15。 | 仅撤一条保护腿、仅平抓M多仓或原空持续留存，均不能单独解释完整路径。至少买平旧空20、日盘多向平5开5、日收后平多20并新开空20。 |
+
+烧碱两段各至少40手次开平仓，焦煤至少70手次。数值来自端点数量与冻结留存上限，不代表成交笔数。烧碱的原空延续和作者分别给短线及原仓设条件的说明，支持把保护退出、保护再加和M短线退出设为独立判断。焦煤表明反向短线的退出以后可以出现一条全新的原方向持仓，应为新进入或回补保留独立计划与许可。当前公开证据无法定位每次开平的原因、次序或成交。同一账户、混合表归属及完整性仍待证，未新增可评分作者动作。 [27日午盘表](../../lms-source-archive/02-持仓记录/2026-10-27/WRoAkcEppg.md) · [27日日收自述](../../lms-source-archive/02-持仓记录/2026-10-27/U03.md) · [27日夜盘表](../../lms-source-archive/02-持仓记录/2026-10-27/WRoEvasxQR.md)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_task_role_replay.py --turnover \
+  --output /tmp/lms405-task-turnover-new.json
+```
+
+定稿位于 `output/lms405-task-turnover-20261126/final-a.json`，SHA256 `057abdfc12cd517d8a30a7f596c1e1ab43d1a736767c9c926cd0297958c881e8`。引用已有统一MDS留存报告和对应图片，附件SHA256逐张通过，重复输出一致。

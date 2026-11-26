@@ -1,15 +1,19 @@
 """Compare source roles and account-independent unit task projections for LMS 4.0.5."""
 
 import argparse
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
 from guiyi_quant.lms405 import Position
 from guiyi_quant.lms405.public_conditions import Condition
 from guiyi_quant.lms405.task_roles import ROUTES, TaskBook, assess_task_action
+from lms405_counter_m_lot_roles import RETENTION, RETENTION_SHA, exposure
+from lms405_exposure_audit import TOTALS, reconcile_display
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_lot_timing import verified_json
 from lms405_right_side_study import ONE, US
+from lms405_sizing_audit import EXPOSURE_SHA256
 from lms405_visible_lock_handoff import stamp
 from lms_near405_replay import encoded, sha
 
@@ -22,6 +26,14 @@ JM_HASH = "e61635c6ca198163dabf2ed9d7dfbcca4b71b38dd322f739f2e01f0b17ec8b74"
 OI_MARKET = Path("output/lms-oi2609-june-20261124/comparison.json")
 OI_HASH = "b1b35238a8ff776b243dc9b3490865c7339f71ac68aa1cd26559d464acc113dc"
 ONE_LOT = Decimal(1)
+EXPOSURE_PATH = Path("output/lms405-exposure-20261125/exposure-audit.json")
+TOTALS_SHA = "474d797405d0e124d391aa34649d892948a4088f0c9963c0c3401bf8ee56ccd0"
+OCT_23 = ("WRnTlEfj1t", "WRnY5bznUE", "WRo00BFM1E", "WRo2KQ43iX")
+CHAINS = {
+    "soda_oct23": ("SH2701", OCT_23),
+    "soda_oct27": ("SH2701", ("WRoAkcEppg", "U03", "WRoEvasxQR")),
+    "coal_oct23": ("JM2701", (OCT_23[0], *OCT_23[2:])),
+}
 
 
 def compare_routes(book, source, hypotheses, *, available_at, author_version):
@@ -105,14 +117,104 @@ def report():
                 market_reference_sha256={str(SH_MARKET): SH_HASH, str(JM_MARKET): JM_HASH, str(OI_MARKET): OI_HASH})
 
 
+def turnover_bounds(before, after, before_day, after_day, retention):
+    """Lower bounds conditional on both tableaux covering the same full position."""
+    result = {}
+    for side in ("long", "short"):
+        prior, later = (snapshot.get(side) for snapshot in (before, after))
+        old, new = (row["quantity"] if row else 0 for row in (prior, later))
+        minimum, maximum = 0, min(old, new)
+        old_today = prior["today_quantity"] if prior else 0
+        new_today = later["today_quantity"] if later else 0
+        if before_day != after_day:
+            if new_today is not None:
+                maximum = min(maximum, new - new_today)
+        elif new_today is not None:
+            minimum = new - new_today
+            if minimum > old - (old_today or 0):
+                raise ValueError("LMS_TASK_TURNOVER_PRIOR_LOTS_INCREASED_SAME_DAY")
+            if old_today is not None:
+                maximum = minimum + min(old_today, new_today)
+        counts = retention.get(side)
+        if counts is not None and (not counts or any(not minimum <= n <= maximum for n in counts)):
+            raise ValueError("LMS_TASK_TURNOVER_RETENTION_CONFLICT")
+        retained_min, retained_max = (min(counts), max(counts)) if counts is not None else (minimum, maximum)
+        result[side] = dict(
+            retained_min=retained_min, retained_max=retained_max,
+            minimum_close=old - retained_max, minimum_open=new - retained_max,
+        )
+    return result
+
+
+def turnover_report():
+    tables = verified_json(EXPOSURE_PATH, EXPOSURE_SHA256)["tables"]
+    references = verified_json(RETENTION, RETENTION_SHA)
+    total_rows = {row["source"]: row for row in verified_json(TOTALS, TOTALS_SHA)}
+    table_index = {(row["source"], row["table"]): row for row in tables}
+    source_ids = sorted({sid for _, ids in CHAINS.values() for sid in ids})
+    evidence, displays = {}, {}
+    for sid in source_ids:
+        total = total_rows[sid]
+        table = table_index[sid, total["table"]]
+        source = references["snapshot_sources"][sid]
+        picture = source["image"]
+        if table["image"] != picture or sha((ARCHIVE.parent / picture["path"]).read_bytes()) != picture["sha256"]:
+            raise ValueError("LMS_TASK_TURNOVER_IMAGE_CHANGED")
+        evidence[sid] = reconcile_display(table, total) | dict(
+            quote_anchor=source["quote_anchor"], trading_day=source["trading_day"],
+            archive_sha256=sha((ARCHIVE.parent / source["archive_path"]).read_bytes()),
+        )
+        displays[sid] = table["contracts"]
+
+    results = {}
+    for label, (contract, ids) in CHAINS.items():
+        rows = [evidence[sid] for sid in ids]
+        times = [datetime.fromisoformat(row["published_at"]) for row in rows]
+        if times != sorted(set(times)):
+            raise ValueError("LMS_TASK_TURNOVER_SOURCE_ORDER_CHANGED")
+        legs = [displays[sid][contract]["legs"] for sid in ids]
+        checks = {(row["before"], row["after"], row["side"]): row["retained"]
+                  for row in references["contracts"][contract]["checks"]}
+        transitions = []
+        for left, right, before, after in zip(ids[:-1], ids[1:], legs[:-1], legs[1:], strict=True):
+            retained = {side: checks.get((left, right, side)) for side in ("long", "short")}
+            bounds = turnover_bounds(before, after, evidence[left]["trading_day"],
+                                     evidence[right]["trading_day"], retained)
+            transitions.append(dict(before=left, after=right, sides=bounds))
+        results[label] = dict(
+            contract=contract, sources=ids,
+            displayed_legs=legs, unlisted_leg_is_unknown=True,
+            conditional_exposure=[exposure(Position(contract, *(
+                Decimal(snapshot.get(side, {}).get("quantity", 0)) for side in ("long", "short")
+            ))) for snapshot in legs],
+            conditional_transitions=transitions,
+            minimum_total_open_close_lots=sum(
+                side["minimum_close"] + side["minimum_open"]
+                for transition in transitions for side in transition["sides"].values()
+            ),
+            author_action_at=None, author_role_assignment=None,
+        )
+    return dict(
+        version="lms405-task-visible-turnover-v1", sources=evidence, cases=results,
+        conditional_assumptions=["SAME_ACCOUNT_AND_STRATEGY", "EACH_DISPLAY_COVERS_ALL_ACCOUNT_LEGS",
+                                 "CAPTURE_ORDER_MATCHES_SOURCE_ORDER_AND_RESOLVED_TRADING_DATES",
+                                 "POSITION_SYNCHRONIZED_WITH_AVAILABLE_QUOTE_ANCHORS",
+                                 "TODAY_QUANTITY_USES_RESOLVED_TRADING_DAY"],
+        source_order_is_publication_not_execution_time=True,
+        references=dict(positions=EXPOSURE_SHA256, retention=RETENTION_SHA, display_totals=TOTALS_SHA),
+        admitted_author_actions=0, author_match_rate=None, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--turnover", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("OUTPUT_EXISTS")
     try:
-        data = encoded(report())
+        data = encoded(turnover_report() if args.turnover else report())
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(data)
     except (OSError, KeyError, ValueError):
