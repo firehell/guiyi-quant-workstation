@@ -51,6 +51,7 @@ def manifest() -> dict:
             "repainting": definition.repainting,
             "supported_frequencies": sorted(definition.supported_frequencies),
             "input_schema_version": definition.input_schema_version,
+            **({"optional_outputs": definition.optional_outputs} if definition.optional_outputs else {}),
         }
         for feature_id, definition in OWNED_DEFINITIONS.items()
     })

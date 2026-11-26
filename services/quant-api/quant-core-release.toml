@@ -1,7 +1,7 @@
 # Exact candidate for isolated consumer builds. Deployment remains separately authorized.
 package = "guiyi-quant-core"
-version = "0.2.1"
-wheel_sha256 = "89a54d6468a3f0f64d0d7ecc57e64e9daa679295652721e33f4cb20b6717a290"
+version = "0.3.0"
+wheel_sha256 = "9b3bee104cb210e0f4af9f4ff95bd543c7ca51524968bf39701effba965b7a1a"
 compute_contract_version = "guiyi_quant_compute_v1"
 result_schema_version = "guiyi_feature_result_v1"
 state_schema_version = "guiyi_compute_state_v1"

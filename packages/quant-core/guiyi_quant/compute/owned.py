@@ -1,10 +1,12 @@
 """Source-owned indicators keep their existing typed inputs and calculation policies."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import partial
 from types import MappingProxyType
 
+from .. import subing_recent_structure
+from ..indicators import subing_conditions, subing_macd, subing_price, subing_range, subing_trend, subing_volume
 from ..indicators.htdy_original import INDICATOR_VERSION as HTDY_VERSION, compute_htdy_original
 from ..indicators.htdy_strict import BOOLEAN_FIELDS, NUMERIC_FIELDS, compute_strict_fields
 from ..indicators.policy import HTDY_ALERT_OBSERVATION_CONSUMER
@@ -25,6 +27,7 @@ from .contracts import FREQUENCIES
 
 SUBING_THS_OBSERVATION_USE = "subing_ths_observation"
 SUBING_THS_REFERENCE_USE = "subing_reference"
+SUBING_PAPER_FACTOR_USE = "subing_paper_factor"
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +43,7 @@ class OwnedIndicatorDefinition:
     calculate: Callable | None
     step: Callable | None = None
     initial_state: Callable | None = None
+    optional_outputs: tuple[str, ...] = ()
 
 
 def _newow_auxiliary(name, formula_version, data_type, *, repainting=False):
@@ -77,6 +81,87 @@ def _subing_ths(frequency: str) -> OwnedIndicatorDefinition:
     )
 
 
+def _subing_paper_factor(
+    name, version, outputs, *, optional_outputs=(), frequencies=("30m",), calculate=None, step=None, initial_state=None,
+) -> OwnedIndicatorDefinition:
+    return OwnedIndicatorDefinition(
+        feature_id=f"subing_paper.{name}", formula_version=version,
+        input_schema_version=f"subing_paper_{name}_input_v1",
+        output_schema_version=f"subing_paper_{name}_result_v1",
+        outputs=outputs, supported_frequencies=frozenset(frequencies),
+        allowed_uses=frozenset((SUBING_PAPER_FACTOR_USE,)), repainting=False,
+        calculate=calculate, step=step, initial_state=initial_state, optional_outputs=optional_outputs,
+    )
+
+
+def _paper_trend_state(contract: str, frequency: str):
+    return subing_trend.initial_state(contract, frequency)
+
+
+def _require_paper_m30(frequency: str) -> None:
+    if frequency != "30m":
+        raise ValueError("SUBING_PAPER_FACTOR_FREQUENCY_UNSUPPORTED")
+
+
+def _paper_m30_state(initializer, contract: str, frequency: str):
+    _require_paper_m30(frequency)
+    return initializer(contract, frequency)
+
+
+def _paper_pullback_state(contract: str, frequency: str, *, side: str = "LONG"):
+    _require_paper_m30(frequency)
+    if side not in ("LONG", "SHORT"):
+        raise ValueError("PRICE_SIDE_INVALID")
+    return subing_price.PullbackState(contract, side=side)
+
+
+def _paper_structure_state(contract: str, frequency: str):
+    _require_paper_m30(frequency)
+    return subing_recent_structure.State(contract)
+
+
+_SUBING_PAPER_FACTORS = (
+    _subing_paper_factor(
+        "trend", subing_trend.VERSION, tuple(field.name for field in fields(subing_trend.TrendPoint)),
+        frequencies=("1d", "30m", "60m"), step=subing_trend.step, initial_state=_paper_trend_state,
+    ),
+    _subing_paper_factor(
+        "macd", subing_macd.VERSION, tuple(field.name for field in fields(subing_macd.CrossPoint)),
+        step=subing_macd.step, initial_state=partial(_paper_m30_state, subing_macd.initial_state),
+    ),
+    _subing_paper_factor(
+        "volume", subing_volume.VERSION, tuple(field.name for field in fields(subing_volume.VolumeObservation)),
+        step=subing_volume.observe, initial_state=partial(_paper_m30_state, subing_volume.initial_state),
+    ),
+    _subing_paper_factor(
+        "price", subing_price.VERSION, tuple(field.name for field in fields(subing_price.PricePoint)),
+        calculate=subing_price.price_point,
+    ),
+    _subing_paper_factor(
+        "pullback", subing_price.VERSION,
+        ("touch", "hold", "breakout", "breakout_source", "breakout_high", "invalidated", "replaced",
+         "armed_at", "armed_high", "lower", "upper", "reason", "qualified_hold", "background_at",
+         "background_close", "from_above", "trend_direction", "background_reset"),
+        optional_outputs=("next_background_at", "next_background_close"),
+        step=subing_price.observe, initial_state=_paper_pullback_state,
+    ),
+    _subing_paper_factor(
+        "range", subing_range.VERSION, tuple(field.name for field in fields(subing_range.Point)),
+        step=subing_range.step, initial_state=partial(_paper_m30_state, subing_range.initial_state),
+    ),
+    _subing_paper_factor(
+        "structure", subing_recent_structure.VERSION,
+        ("phase", "reason"),
+        optional_outputs=("lower", "upper", "boundary_at", "break_side", "count", "structure_direction", "pivot_confirmed_now"),
+        step=subing_recent_structure.step, initial_state=_paper_structure_state,
+    ),
+    _subing_paper_factor(
+        "exit_facts", subing_conditions.VERSION, ("previous_low", "below_previous_low", "below_ema", "high_death"),
+        calculate=subing_conditions.exit_facts,
+    ),
+)
+
+
 _DEFINITIONS = (
     _newow_auxiliary("main_force_control", MAIN_FORCE_CONTROL_FORMULA_VERSION, MainForceControlResult),
     _newow_auxiliary("up_down_energy", UP_DOWN_ENERGY_FORMULA_VERSION, UpDownEnergyResult),
@@ -99,6 +184,7 @@ _DEFINITIONS = (
         False, compute_strict_fields,
     ),
     *(_subing_ths(frequency) for frequency in SUBING_THS_FORMULA_VERSIONS),
+    *_SUBING_PAPER_FACTORS,
 )
 
 OWNED_DEFINITIONS = MappingProxyType({item.feature_id: item for item in _DEFINITIONS})
@@ -123,3 +209,11 @@ def subing_ths_state_step(frequency: str, *, use: str) -> tuple[Callable, Callab
     ):
         raise ValueError("SUBING_THS_REGISTRATION_MISMATCH")
     return feature.initial_state, feature.step
+
+
+def subing_paper_factors(frequency: str) -> tuple[OwnedIndicatorDefinition, ...]:
+    """Return only the factors used by the existing Paper model at this frequency."""
+    factors = tuple(item for item in _SUBING_PAPER_FACTORS if frequency in item.supported_frequencies)
+    if not factors:
+        raise ValueError("SUBING_PAPER_FACTOR_FREQUENCY_UNSUPPORTED")
+    return factors

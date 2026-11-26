@@ -2,7 +2,7 @@
 name = "guiyi-newow-rqalpha-proof"
 version = "0.1.0"
 requires-python = ">=3.13,<3.14"
-dependencies = ["guiyi-quant-core==0.2.1", "rqalpha==6.3.0"]
+dependencies = ["guiyi-quant-core==0.3.0", "rqalpha==6.3.0"]
 
 [tool.uv.sources]
 guiyi-quant-core = { path = "../../packages/quant-core", editable = true }

@@ -132,7 +132,7 @@ dev = [{ name = "pytest", specifier = "==9.0.2" }]
 
 [[package]]
 name = "guiyi-quant-core"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "../../packages/quant-core" }
 dependencies = [
     { name = "numpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },

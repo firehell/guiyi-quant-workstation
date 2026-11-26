@@ -255,6 +255,76 @@ def test_registered_htdy_and_subing_do_not_grant_new_consumers():
         subing_ths_state_step("1m", use=SUBING_THS_OBSERVATION_USE)
 
 
+def test_subing_paper_registry_exposes_only_its_existing_period_dependencies():
+    from guiyi_quant.compute.manifest import manifest
+    from guiyi_quant.compute.owned import SUBING_PAPER_FACTOR_USE, owned_indicator, subing_paper_factors
+    from guiyi_quant.indicators import subing_trend
+
+    for frequency in ("1d", "60m"):
+        trend, = subing_paper_factors(frequency)
+        assert trend.step is subing_trend.step
+        assert trend.initial_state("JM2701", frequency) == subing_trend.initial_state("JM2701", frequency)
+        assert trend.formula_version == subing_trend.VERSION
+    with pytest.raises(ValueError, match="SUBING_PAPER_FACTOR_FREQUENCY_UNSUPPORTED"):
+        subing_paper_factors("1m")
+
+    expected = {"trend", "macd", "volume", "price", "pullback", "range", "structure", "exit_facts"}
+    features = manifest()["features"]
+    for definition in subing_paper_factors("30m"):
+        expected.remove(definition.feature_id.removeprefix("subing_paper."))
+        assert definition is owned_indicator(definition.feature_id, frequency="30m", use=SUBING_PAPER_FACTOR_USE)
+        assert definition.repainting is False
+        assert features[definition.feature_id]["allowed_uses"] == [SUBING_PAPER_FACTOR_USE]
+        for use in ("web", "backtest", "simulation", "subing_reference", "subing_ths_observation"):
+            with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
+                owned_indicator(definition.feature_id, frequency="30m", use=use)
+    assert not expected
+    with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
+        owned_indicator("subing_paper.macd", frequency="60m", use=SUBING_PAPER_FACTOR_USE)
+
+
+def test_subing_paper_state_creation_preserves_the_fixed_model_parameters_and_optional_outputs():
+    from decimal import Decimal
+
+    from guiyi_quant.compute.manifest import manifest
+    from guiyi_quant.compute.owned import subing_paper_factors
+    from guiyi_quant.indicators import subing_macd, subing_range, subing_trend
+    from guiyi_quant.subing_recent_structure import Bar
+
+    factors = {item.feature_id.removeprefix("subing_paper."): item for item in subing_paper_factors("30m")}
+    for factor, original, overrides in (
+        ("trend", subing_trend.initial_state, {"ema_period": 19}),
+        ("macd", subing_macd.initial_state, {"periods": (10, 26, 9)}),
+        ("range", subing_range.initial_state, {"profile": "fixed"}),
+    ):
+        initializer = factors[factor].initial_state
+        assert initializer("JM2701", "30m") == original("JM2701", "30m")
+        with pytest.raises(TypeError):
+            initializer("JM2701", "30m", **overrides)
+    for factor in ("macd", "range", "volume", "pullback", "structure"):
+        with pytest.raises(ValueError, match="SUBING_PAPER_FACTOR_FREQUENCY_UNSUPPORTED"):
+            factors[factor].initial_state("JM2701", "1d")
+
+    pullback = factors["pullback"]
+    structure = factors["structure"]
+    bar = Bar(START, Decimal(101), Decimal(99), Decimal(100))
+    _, gap = structure.step(structure.initial_state("JM2701", "30m"), bar, contract="JM2701", valid=False)
+    _, observed = structure.step(structure.initial_state("JM2701", "30m"), bar, contract="JM2701")
+    assert set(gap) == set(structure.outputs)
+    assert set(observed) == set((*structure.outputs, *structure.optional_outputs))
+    for side in ("LONG", "SHORT"):
+        initial = pullback.initial_state("JM2701", "30m", side=side)
+        inputs = dict(contract="JM2701", bar_end=START, high=bar.high, low=bar.low, close=bar.close,
+                      atr14=Decimal(2), trend_direction="NEUTRAL", side=side)
+        _, warming = pullback.step(initial, ema21=None, **inputs)
+        _, observed = pullback.step(initial, ema21=bar.close, **inputs)
+        assert set(warming) == set(pullback.outputs)
+        assert set(observed) == set((*pullback.outputs, *pullback.optional_outputs))
+    by_feature = manifest()["features"]
+    for definition in (pullback, structure):
+        assert by_feature[definition.feature_id]["optional_outputs"] == definition.optional_outputs
+
+
 def test_same_revision_and_window_bounds_distinguish_bar_members():
     rows = bars(16)
     first = BarSeries(SOURCE, (*rows[:3], *rows[4:]))
