@@ -1,5 +1,7 @@
 # 归一量化 V2 · 架构设计
 
+> **2026-11-26 owner 边界修订：** 第一阶段 Market 底座另见 [guiyi-v2-market-foundation](../guiyi-v2-market-foundation/proposal.md)。RQAlpha 数据由独立研究域维护，不纳入 Market 下载、存储、迁移、对照或验收；下文已有 MDS 冻结输入及 P3/P4 盘后接线描述仅为既有隔离实现/历史证据，不能作为新目标的数据耦合要求。研究域改造另行设计，当前不改代码、收益、触发器或正式运行；Market 盘后参考与研究数据就绪分别核验。
+
 2026-11-25 修订。首版服务单机、单用户、国内期货。将工作负载按触发依据分开，保留现有行情基础、Vue 工作台和独立模拟账户。
 
 ## 1. 运行时机和所有权
@@ -15,11 +17,11 @@
 
 ## 2. 复用与触发
 
-沿用模块化单体和现有进程边界。历史数据依次经过 RQData、staging/质量校验、Canonical Parquet、Catalog/MainContractMap 和 MDS。盘中报价与盘后权威修订保存各自来源和时间。[现有数据合同](../../../docs/DATA_CENTER.md) · [实时行情](../../../services/quant-api/app/market_data/live_market.py) · [Session 聚合](../../../services/quant-api/app/market_data/aggregation.py)
+沿用模块化单体和现有进程边界。现役 Market 历史数据依次经过 RQData、staging/质量校验、Canonical Parquet、Catalog/MainContractMap 和 MDS；目标底座及存储选型见 [Market 独立设计](../guiyi-v2-market-foundation/design.md)。盘中报价与盘后权威修订保存各自来源和时间。[现有数据合同](../../../docs/DATA_CENTER.md) · [实时行情](../../../services/quant-api/app/market_data/live_market.py) · [Session 聚合](../../../services/quant-api/app/market_data/aggregation.py)
 
 1. **触发一次。** 以交易日和完整 Canonical 成功发布凭证作为入口，复用 [P4 盘后消费者](../../../services/quant-api/app/services/newow_backtest_eod.py)。任务自动发现/补领成功发布，按受影响品种、策略、周期、输入版本合并。多分片完成前、盘中收线、API 查询、定时钟点本身均不授予计算资格。夜盘按交易所交易日归属。
 2. **限定重算。** 数据增量入库后才触发计算。先复用已验证的受影响系列全量回放；只有冻结样本证明等价且有实测收益才采用公式检查点增量。旧日订正须覆盖其预热和后续依赖，周线待完整周。相同凭证跨重启仅发布一次；同日有效新修订单独发布，过期版本不能覆盖新结果。
-3. **复用研究内核。** [共享决策入口](../../../packages/quant-core/guiyi_quant/newow/decision_adapter.py) 与[冻结输入适配器](../../../services/newow-rqalpha/frozen_market.py)使用同一物理合约、Session 和当时可知的输入。研究使用锁定的开源 RQAlpha 6.3.0。新的参考策略只声明依赖、预热和版本，并由相同的盘后任务调用。
+3. **复用研究内核。** [共享决策入口](../../../packages/quant-core/guiyi_quant/newow/decision_adapter.py) 保留纯计算复用；既有[冻结输入适配器](../../../services/newow-rqalpha/frozen_market.py)属于原 P3/P4 隔离研究实现。研究使用锁定的开源 RQAlpha 6.3.0，目标由独立研究域维护输入及就绪依据，迁移另议。Market 参考任务不负责 RQAlpha 数据，新的 Market 参考策略只声明依赖、预热和版本。
 4. **发布与展示。** 沿用[结果存储](../../../services/quant-api/app/services/newow_backtest_results.py)、[查询路由](../../../services/quant-api/app/api/newow_backtests.py)及[现有 Vue 面板](../../../apps/quant-web/src/components/market/detail/newow/NewowBacktestPanel.vue)。按系列原子切换最后成功 run，保留失败尝试。页面分别显示报价时间、牛哇截至交易日及完成时间、试验/正式与更新状态；图上动作定位到原 bar，不能画到最新行情上。模拟各读自己的账户事实。
 5. **隔离慢任务。** 研究作业用独立消费与事务，不持有行情或独立账户的写锁，也不共享账户消费水位。盘后批量和下一交易日夜盘可能重叠；按触发来源分别计数，上一交易日成功凭证触发的作业可继续运行。限制后台并发、允许暂停/重试，并用相同输入验证账户消费不受影响。已有 P5 VeighNa 宿主保留为离线资产，本次没有将其设为牛哇或现役账户的新宿主。
 
