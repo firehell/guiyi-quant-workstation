@@ -28,12 +28,15 @@ GEN = "rqdata-tick:" + "a" * 32
 
 def test_formal_binding_cannot_use_candidate_redis(disposable_market, tmp_path):
     from redis import Redis
+    from redis.backoff import NoBackoff
+    from redis.retry import Retry
 
     engine, isolated = disposable_market
     bind_market_redis(isolated, tmp_path, engine.url)
     bind_tick_source(isolated)
     port = isolated.connection_pool.connection_kwargs["port"]
-    with Redis(host="127.0.0.1", port=port, db=0, decode_responses=True) as formal:
+    with Redis(host="127.0.0.1", port=port, db=0, decode_responses=True,
+               retry=Retry(NoBackoff(), 0)) as formal:
         assert formal.dbsize() == 0
         database = make_url("postgresql+psycopg://operator@127.0.0.1:5432/guiyi_quant")
         fingerprint = formal_tick_fingerprint(formal, database, tmp_path)

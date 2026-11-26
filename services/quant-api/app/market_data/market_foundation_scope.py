@@ -5,6 +5,7 @@ from datetime import date
 from hashlib import sha256
 import json
 import os
+import re
 from pathlib import Path
 
 from sqlalchemy.engine import URL
@@ -117,47 +118,92 @@ def require_bar_writer_namespace(redis) -> None:
 
 
 
-def stage_empty_formal_tick_namespace(
-    redis, database: URL, canonical_root: Path, *,
-    day: date, subscriptions: dict[str, str], alert_enabled: bool,
-) -> str:
-    """Create the complete baseline after the coordinator proves the old source stopped.
-
-    Only the new dedicated Redis is touched. Existing data, even with the same
-    owner fingerprint, must go through independent cutover or recovery readback.
-    """
-    from app.market_data.domain import normalize_contract_for_symbol
+def _formal_baseline(fingerprint, day, subscriptions, alert_enabled):
     from app.market_data.live_market import RedisLiveStore
     from app.market_data.observation_stream import ObservationStream, TTL_SECONDS
+
+    source = ObservationStream(None, kind="source")
+    completed = ObservationStream(None, kind="completed")
+    baseline = {
+        _FORMAL_BINDING: (fingerprint, -1),
+        _SOURCE: (_TICK_POLICY, -1),
+        RedisLiveStore._subscription_key(day): (
+            json.dumps(subscriptions, sort_keys=True, separators=(",", ":")), TTL_SECONDS,
+        ),
+        source.registration_key("live"): (day.isoformat(), -1),
+        source.cursor_key("live", day): ("0-0", TTL_SECONDS),
+    }
+    if alert_enabled:
+        baseline[completed.registration_key("alert")] = (day.isoformat(), -1)
+        baseline[completed.cursor_key("alert", day)] = ("0-0", TTL_SECONDS)
+    return baseline
+
+
+def stage_empty_formal_tick_namespace(
+    redis, database: URL, canonical_root: Path, *,
+    day: date, subscriptions: dict[str, str], alert_enabled: bool, expected_run_id: str | None = None,
+) -> str:
+    """Create the baseline after the coordinator proves the old source stopped."""
+    from app.market_data.domain import normalize_contract_for_symbol
     from app.market_data.operational_universe import load_operational_products
 
     if (type(day) is not date or type(alert_enabled) is not bool
             or set(subscriptions) != set(load_operational_products())
             or any(normalize_contract_for_symbol(product, owner) != owner
-                   for product, owner in subscriptions.items())):
+                   for product, owner in subscriptions.items())
+            or (expected_run_id is not None and not re.fullmatch(r"[0-9a-f]{40}", expected_run_id))):
         raise ValueError("MARKET_TICK_INITIAL_BASELINE_INVALID")
+    retry = redis.connection_pool.connection_kwargs.get("retry")
+    if retry is None or retry.get_retries() != 0:
+        raise ValueError("MARKET_TICK_INITIAL_RETRY_FORBIDDEN")
     fingerprint = formal_tick_fingerprint(redis, database, canonical_root)
-    source = ObservationStream(redis, kind="source")
-    completed = ObservationStream(redis, kind="completed")
-    keys = [_FORMAL_BINDING, _SOURCE, RedisLiveStore._subscription_key(day),
-            source.registration_key("live"), source.cursor_key("live", day)]
-    if alert_enabled:
-        keys += [completed.registration_key("alert"), completed.cursor_key("alert", day)]
+    baseline = _formal_baseline(fingerprint, day, subscriptions, alert_enabled)
     result = redis.eval(
         """
+        if ARGV[1] ~= '' and string.match(redis.call('INFO', 'server'), 'run_id:([0-9a-f]+)') ~= ARGV[1] then
+            return -1
+        end
         if string.match(redis.call('INFO', 'keyspace'), 'db%d+:') then return 0 end
-        redis.call('MSET', KEYS[1], ARGV[1], KEYS[2], ARGV[2], KEYS[4], ARGV[4])
-        redis.call('SET', KEYS[3], ARGV[3], 'EX', ARGV[5])
-        redis.call('SET', KEYS[5], '0-0', 'EX', ARGV[5])
-        if #KEYS == 7 then
-            redis.call('SET', KEYS[6], ARGV[4])
-            redis.call('SET', KEYS[7], '0-0', 'EX', ARGV[5])
+        for i, key in ipairs(KEYS) do
+            local ttl = tonumber(ARGV[2 * i + 1])
+            if ttl == -1 then
+                redis.call('SET', key, ARGV[2 * i])
+            else
+                redis.call('SET', key, ARGV[2 * i], 'EX', ttl)
+            end
         end
         return 1
         """,
-        len(keys), *keys, fingerprint, _TICK_POLICY,
-        json.dumps(subscriptions, sort_keys=True, separators=(",", ":")), day.isoformat(), TTL_SECONDS,
+        len(baseline), *baseline, expected_run_id or "",
+        *(part for pair in baseline.values() for part in pair),
     )
+    if result == -1:
+        raise ValueError("MARKET_TICK_INITIAL_INSTANCE_DRIFT")
     if result != 1:
         raise ValueError("MARKET_TICK_INITIAL_NAMESPACE_NOT_EMPTY")
     return fingerprint
+
+
+def check_empty_formal_tick_baseline(
+    redis, fingerprint: str, *, day: date, subscriptions: dict[str, str], alert_enabled: bool, run_id: str,
+) -> bool:
+    """Use one read-only Redis operation to prove all keys on the dedicated instance."""
+    baseline = _formal_baseline(fingerprint, day, subscriptions, alert_enabled)
+    return redis.eval_ro(
+        """
+        if string.match(redis.call('INFO', 'server'), 'run_id:([0-9a-f]+)') ~= ARGV[1]
+           or redis.call('DBSIZE') ~= #KEYS
+           or string.match(redis.call('INFO', 'keyspace'), 'db[1-9]%d*:') then return 0 end
+        for i, key in ipairs(KEYS) do
+            local ttl = redis.call('PTTL', key)
+            local bound = tonumber(ARGV[2 * i + 1])
+            if redis.call('GET', key) ~= ARGV[2 * i] then return 0 end
+            if bound == -1 then
+                if ttl ~= -1 then return 0 end
+            elseif ttl <= 0 or ttl > bound * 1000 then return 0 end
+        end
+        return 1
+        """,
+        len(baseline), *baseline, run_id,
+        *(part for pair in baseline.values() for part in pair),
+    ) == 1
