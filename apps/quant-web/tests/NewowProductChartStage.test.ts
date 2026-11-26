@@ -542,7 +542,10 @@ test('signed MACD bars share the selected auxiliary pane and switch/invalidated 
   const chart = ref<NewowProductSectionResponse<'chart'> | null>(prependBar(chartResponse()))
   const times = chart.value!.value!.bars.map(bar => bar.bar_end)
   const points = times.map((bar_end, index) => ({ bar_end, value: index === 0 ? -2 : 3, ready: true, valid: true, reason: null }))
-  const auxiliary = ref({ section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: { dif: points, dea: points, histogram: points } }] } })
+  const valid = { section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: { dif: points, dea: points, histogram: points } }] } }
+  const auxiliary = ref<typeof valid | null>(valid)
+  const lifecycle = ref<'ready' | 'loading' | 'input_conflict'>('ready')
+  const switching = ref(false)
   const fakeChart = {
     addSeries(definition: { type: string }, _options: unknown, pane = 0) {
       const record = { definition, pane, data: [] as Array<{ value?: number; color?: string; time: unknown }>, removed: false }; records.push(record)
@@ -554,8 +557,9 @@ test('signed MACD bars share the selected auxiliary pane and switch/invalidated 
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
     response: chart.value,
     strategy: chart.value?.meta.identity.strategy ?? 'oscillation',
+    strategySwitching: switching.value,
     auxiliaryResponse: auxiliary.value,
-    auxiliaryLifecycle: 'ready',
+    auxiliaryLifecycle: lifecycle.value,
     selectedSignalId: null,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
@@ -573,7 +577,24 @@ test('signed MACD bars share the selected auxiliary pane and switch/invalidated 
   ;(findCheckbox(root, '纯净模式')!.props.onChange as () => void)(); await nextTick()
   assert.equal(activeAuxiliary().filter(record => record.pane === 1).length, 4)
   assert.equal(activeAuxiliary().filter(record => record.pane > 1).length, 0)
-  auxiliary.value = { ...auxiliary.value, meta: { ...auxiliary.value.meta, snapshot_token: 'invalidated' } }
+  const wrongOwner = { ...valid.value.segments[0]!, segment_id: 'different-calculation-segment' }
+  auxiliary.value = { ...valid, value: { ...valid.value, segments: [wrongOwner] } }
+  await nextTick()
+  const stage = findNode(root, node => node.props['data-testid'] === 'newow-product-chart-stage')!
+  assert.equal(stage.props['data-auxiliary-state'], 'error')
+  assert.equal(stage.props['data-auxiliary-component'], '')
+  assert.equal(activeAuxiliary().length, 1, 'only the auxiliary anchor remains')
+
+  auxiliary.value = valid; await nextTick()
+  assert.equal(activeAuxiliary().length, 4)
+  switching.value = true; lifecycle.value = 'loading'; auxiliary.value = null; await nextTick()
+  assert.equal(activeAuxiliary().length, 4, 'loading retains the last accepted value')
+  lifecycle.value = 'input_conflict'; await nextTick()
+  assert.equal(activeAuxiliary().length, 1, 'confirmed conflict clears the previously accepted value')
+  switching.value = false; lifecycle.value = 'ready'; auxiliary.value = valid; await nextTick()
+  assert.equal(activeAuxiliary().length, 4)
+
+  auxiliary.value = { ...valid, meta: { ...valid.meta, snapshot_token: 'invalidated' } }
   await nextTick()
   assert.equal(records.filter(record => record.pane === 1 && record.data.some(point => point.value !== undefined) && !record.removed).length, 0)
   chart.value = null; await nextTick()

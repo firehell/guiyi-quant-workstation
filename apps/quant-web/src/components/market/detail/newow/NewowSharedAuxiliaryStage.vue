@@ -27,16 +27,9 @@ const props = defineProps<{
 const emit=defineEmits<{viewport:[value:IRange<Time>|null];cursor:[value:Time|null]}>()
 const container = ref<HTMLElement | null>(null)
 const aligned = computed(() => {
-  const input = props.auxiliary?.value
+  if (props.lifecycle === 'input_conflict') return null
   const model = alignNewowAuxiliaryChartModel(props.chart, props.auxiliary)
-  if (!model || !input || (props.component && props.component !== input.component)) return null
-  const visibleOwners = new Set(props.chart?.value?.bars.map(bar =>
-    `${bar.physical_contract}:${bar.calculation_segment_id}:${bar.bar_end}`,
-  ))
-  const hasSharedBar = input.segments.some(segment => segment.bar_ends.some(end =>
-    visibleOwners.has(`${segment.physical_contract}:${segment.segment_id}:${end}`),
-  ))
-  return hasSharedBar ? model : null
+  return props.component && props.component !== model?.component ? null : model
 })
 let host: ChartHost | null = null
 let series: ISeriesApi<'Line'> | null = null

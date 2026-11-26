@@ -253,9 +253,17 @@ function dualStepDescription(id: string): string {
 
 const allReferenceTrades = computed(() => mergeNewowDualReferences([...(props.referenceTrades ?? []), ...(comparisonActive.value ? props.comparisonReferenceTrades ?? [] : [])]))
 const comparisonStats = computed(() => newowDualVisibleStatistics(positionedComparison.value, allReferenceTrades.value))
-const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
-const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(props.auxiliaryResponse?.value, props.response?.value?.bars.at(-1)))
-const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(props.auxiliaryLifecycle ?? 'not_requested', auxiliaryModel.value !== null, props.auxiliaryError ?? null, auxiliaryReadiness.value?.message ?? null))
+const auxiliaryModel = computed(() => props.auxiliaryLifecycle === 'input_conflict'
+  ? null : alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
+const auxiliarySourceConflict = computed(() => props.auxiliaryLifecycle === 'input_conflict'
+  || Boolean(props.response?.value && props.auxiliaryResponse?.value && !auxiliaryModel.value))
+const auxiliaryReadiness = computed(() => auxiliaryModel.value
+  ? projectNewowAuxiliaryReadiness(props.auxiliaryResponse?.value, props.response?.value?.bars.at(-1)) : null)
+const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(
+  auxiliarySourceConflict.value ? 'input_conflict' : props.auxiliaryLifecycle ?? 'not_requested',
+  auxiliaryModel.value !== null, auxiliarySourceConflict.value ? '辅助指标与当前合约计算段未对齐' : props.auxiliaryError ?? null,
+  auxiliaryReadiness.value?.message ?? null,
+))
 const mainLineColors: Record<string, string> = { b: '#F59E0B', a: '#2563EB', upper: '#16A34A', lower: '#DC2626', ma35: '#F59E0B', ma45: '#2563EB', ma10_display_v1: 'rgba(255,105,180,.7)' }
 const legend = computed(() => [...new Map(model.value?.mainLines.filter(line => line.key !== 'ma10_display_v1').map(line => [line.key, line]) ?? []).values()])
 const mainLegendLabel = computed(() => ({ trend: '趋势带', oscillation: '震荡区间', main_rise: '主升浪' })[props.strategy])
@@ -1057,7 +1065,7 @@ function renderExtraAuxiliaries() {
       current = { pane, layer, anchor, primitive, lines: new Map(), snapshot: null }
       extraPanes.set(item.component, current)
     }
-    const aligned = alignNewowAuxiliaryChartModel(props.response, item.response)
+    const aligned = item.lifecycle === 'input_conflict' ? null : alignNewowAuxiliaryChartModel(props.response, item.response)
     const value = aligned?.component === item.component ? aligned : null
     const height = item.height ?? 120
     const key = JSON.stringify([newowChartSnapshotKey(props.response), main?.bars[0]?.barEnd, main?.bars.at(-1)?.barEnd, value, mirrorEvents.value, height, pageTheme.value])
@@ -1067,13 +1075,16 @@ function renderExtraAuxiliaries() {
       else renderMacdLines(current.layer, current.lines, value, 20 / height)
       current.snapshot = key
     }
-    const readiness = projectNewowAuxiliaryReadiness(item.response?.value, props.response?.value?.bars.at(-1))
+    const response = value === null ? null : item.response
+    const readiness = projectNewowAuxiliaryReadiness(response?.value, props.response?.value?.bars.at(-1))
     const hasPoints = value?.series.some(series => series.points.length > 0) ?? false
+    const status = newowAuxiliaryLayerStatus(item.lifecycle, Boolean(item.response?.value), value !== null, readiness?.currentStatus ?? null, hasPoints, item.error)
     current.layer.updateDiagnostics({
-      status: newowAuxiliaryLayerStatus(item.lifecycle, Boolean(item.response?.value), value !== null, readiness?.currentStatus ?? null, hasPoints, item.error),
-      sourceIdentity: item.response?.meta.data_revision_identity ?? item.response?.meta.input_content_sha256 ?? null,
-      formulaVersion: item.response?.value?.formula_version ?? null,
-      frequency: main?.identity.frequency ?? null, dataCutoff: item.response?.meta.as_of ?? null, lastError: item.error,
+      status,
+      sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
+      formulaVersion: response?.value?.formula_version ?? null,
+      frequency: main?.identity.frequency ?? null, dataCutoff: response?.meta.as_of ?? null,
+      lastError: item.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
     })
   }
   if (!pure.value && auxiliaryAnchor) host.orderAuxiliaries([auxiliaryPaneKey, ...panes.map(item => newowPaneId(item.component))])
@@ -1127,7 +1138,7 @@ function renderAuxiliary(): void {
   const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
   // A strategy switch does not revoke the last accepted market indicator.
   // The new generation must prove compatibility before it can replace this layer.
-  if (value === null && (props.strategySwitching || props.auxiliaryLifecycle === 'loading')) return
+  if (value === null && !auxiliarySourceConflict.value && (props.strategySwitching || props.auxiliaryLifecycle === 'loading')) return
   const component = value?.component ?? null
   if (component !== attachedAuxiliaryComponent) {
     host.removeLayer('auxiliary-selected')

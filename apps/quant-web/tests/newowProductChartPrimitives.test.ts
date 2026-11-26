@@ -345,7 +345,7 @@ test('auxiliary alignment uses calculation identity and rejects points from befo
   chart.value!.bars[1]!.calculation_segment_id = `${calculationId}|price-gap:2026-08-14`
   assert.deepEqual(primitives.alignNewowAuxiliaryChartModel(chart, auxiliary)!.series[0]!.points.map(point => point.value), [20])
   for (const bar of chart.value!.bars) bar.calculation_segment_id = 'other-calculation'
-  assert.deepEqual(primitives.alignNewowAuxiliaryChartModel(chart, auxiliary)!.series, [])
+  assert.equal(primitives.alignNewowAuxiliaryChartModel(chart, auxiliary), null)
 })
 
 test('trend model projects one 35%-opacity column per ready Bar with its own state', () => {
