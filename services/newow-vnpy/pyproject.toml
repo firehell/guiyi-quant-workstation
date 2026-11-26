@@ -3,7 +3,7 @@ name = "guiyi-newow-vnpy"
 version = "0.1.0"
 requires-python = "==3.13.3"
 dependencies = [
-    "guiyi-quant-core==0.2.0",
+    "guiyi-quant-core==0.2.1",
     "perk-pushplus-sdk==1.2.1",
     "psycopg[binary]==3.3.4",
     "python-dotenv==1.2.2",

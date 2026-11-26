@@ -8,7 +8,8 @@ from decimal import Decimal
 from hashlib import sha256
 import json
 
-from ..indicators.subing_ths import SubingThs15mKernel, SubingThs15mState
+from ..compute.owned import SUBING_THS_REFERENCE_USE, subing_ths_state_step
+from ..indicators.subing_ths import SubingThs15mState
 from .contracts import (
     ActionKind, BoundaryReason, CompletedReferenceBar, ReferenceAction,
     ReferenceBoundary, ReferenceState,
@@ -25,8 +26,9 @@ class SubingForwardState:
     calculation_segment_id: str | None = None
 
 
-def seed_subing_forward() -> SubingForwardState:
-    return SubingForwardState(SubingThs15mKernel().initial_state())
+def seed_subing_forward(*, frequency: str = "15m") -> SubingForwardState:
+    initial_state, _ = subing_ths_state_step(frequency, use=SUBING_THS_REFERENCE_USE)
+    return SubingForwardState(initial_state())
 
 
 def advance_subing_forward(
@@ -35,6 +37,7 @@ def advance_subing_forward(
     bar_end: datetime, trading_day: date, close: Decimal,
     warmup_kernel: SubingThs15mState | None = None, rollover_at: datetime | None = None,
 ) -> tuple[SubingForwardState, tuple[ReferenceAction, ...], ReferenceTransition, dict[str, object]]:
+    initial_state, step = subing_ths_state_step(reference.stream.frequency, use=SUBING_THS_REFERENCE_USE)
     owner_changed = strategy.physical_contract is not None and (
         strategy.physical_contract != physical_contract
         or strategy.calculation_segment_id != calculation_segment_id
@@ -62,9 +65,8 @@ def advance_subing_forward(
                 bar_end, trading_day, close,
             ),
         )
-        fresh = seed_subing_forward()
-        kernel_state, _ = SubingThs15mKernel().step(
-            fresh.kernel_state, float(close), bar_end=bar_end.isoformat(),
+        kernel_state, _ = step(
+            initial_state(), float(close), bar_end=bar_end.isoformat(),
         )
         return (
             SubingForwardState(kernel_state, 1, physical_contract, calculation_segment_id),
@@ -72,7 +74,7 @@ def advance_subing_forward(
             {"bar_end": bar_end, "physical_contract": physical_contract,
              "direction": None, "ready": False, "rollover_interrupted": prior is not None},
         )
-    kernel_state, result = SubingThs15mKernel().step(
+    kernel_state, result = step(
         warmup_kernel or strategy.kernel_state, float(close), bar_end=bar_end.isoformat(),
     )
     if not result.valid or len(result.result_codes) > 1:

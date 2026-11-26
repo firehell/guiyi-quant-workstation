@@ -210,6 +210,51 @@ def test_manifest_pins_result_state_formulas_and_display_permissions():
     assert manifest_features["subing_ths_15m"]["formula_version"] == "subing_ths_15m_v3"
 
 
+@pytest.mark.parametrize(("frequency", "formula_version"), (
+    ("5m", "subing_ths_5m_v1"),
+    ("15m", "subing_ths_15m_v3"),
+    ("30m", "subing_ths_30m_v1"),
+    ("60m", "subing_ths_60m_v1"),
+    ("1d", "subing_ths_1d_v1"),
+    ("1w", "subing_ths_1w_v1"),
+))
+def test_owned_subing_preserves_period_identity_and_matches_the_existing_step(frequency, formula_version):
+    from guiyi_quant.compute.owned import (
+        SUBING_THS_OBSERVATION_USE, SUBING_THS_REFERENCE_USE, subing_ths_state_step,
+    )
+    from guiyi_quant.indicators.subing_ths import SubingThs15mKernel
+
+    legacy = SubingThs15mKernel()
+    expected_state = legacy.initial_state()
+    initial, observe = subing_ths_state_step(frequency, use=SUBING_THS_OBSERVATION_USE)
+    replay_initial, replay = subing_ths_state_step(frequency, use=SUBING_THS_REFERENCE_USE)
+    observed_state, replayed_state = initial(), replay_initial()
+    for bar in bars(90):
+        end = bar.bar_end.isoformat()
+        expected_state, expected = legacy.step(expected_state, bar.close, bar_end=end)
+        observed_state, observation = observe(observed_state, bar.close, bar_end=end)
+        replayed_state, replay_result = replay(replayed_state, bar.close, bar_end=end)
+        assert expected_state == observed_state == replayed_state
+        assert observation.formula_version == formula_version
+        assert observation == replay_result
+        assert replace(observation, formula_version=legacy.formula_version) == expected
+
+
+def test_registered_htdy_and_subing_do_not_grant_new_consumers():
+    from guiyi_quant.compute.owned import SUBING_THS_OBSERVATION_USE, owned_indicator, subing_ths_state_step
+
+    for feature, frequency, use in (
+        ("htdy_original", "60m", "backtest"),
+        ("htdy_strict", "60m", "web"),
+        ("subing_ths_1d", "1d", "simulation"),
+        ("subing_ths_1d", "15m", SUBING_THS_OBSERVATION_USE),
+    ):
+        with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
+            owned_indicator(feature, frequency=frequency, use=use)
+    with pytest.raises(ValueError, match="UNSUPPORTED_OWNED_FEATURE"):
+        subing_ths_state_step("1m", use=SUBING_THS_OBSERVATION_USE)
+
+
 def test_same_revision_and_window_bounds_distinguish_bar_members():
     rows = bars(16)
     first = BarSeries(SOURCE, (*rows[:3], *rows[4:]))

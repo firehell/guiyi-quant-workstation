@@ -6,11 +6,11 @@ from functools import partial
 from types import MappingProxyType
 
 from ..indicators.htdy_original import INDICATOR_VERSION as HTDY_VERSION, compute_htdy_original
-from ..indicators.htdy_strict import compute_strict_fields
+from ..indicators.htdy_strict import BOOLEAN_FIELDS, NUMERIC_FIELDS, compute_strict_fields
 from ..indicators.policy import HTDY_ALERT_OBSERVATION_CONSUMER
 from ..indicators.range_detector_lux import RANGE_DETECTOR_LUX_VERSION, range_detector_lux_series
 from ..indicators.registry import get_indicator
-from ..indicators.subing_ths import SUBING_THS_FORMULA_VERSION, SubingThs15mKernel
+from ..indicators.subing_ths import SUBING_THS_FORMULA_VERSIONS, SubingThs15mKernel
 from ..newow.product_auxiliary import calculate_auxiliary_component
 from ..newow.subplots import (
     MAIN_FORCE_CONTROL_FORMULA_VERSION,
@@ -22,6 +22,9 @@ from ..newow.subplots import (
 )
 from ..newow.trend_reversal import TREND_REVERSAL_FORMULA_VERSION, TrendReversalResult
 from .contracts import FREQUENCIES
+
+SUBING_THS_OBSERVATION_USE = "subing_ths_observation"
+SUBING_THS_REFERENCE_USE = "subing_reference"
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +39,7 @@ class OwnedIndicatorDefinition:
     repainting: bool
     calculate: Callable | None
     step: Callable | None = None
+    initial_state: Callable | None = None
 
 
 def _newow_auxiliary(name, formula_version, data_type, *, repainting=False):
@@ -50,7 +54,29 @@ def _newow_auxiliary(name, formula_version, data_type, *, repainting=False):
 
 
 _HTDY_STRICT = get_indicator("huotian_dayou_strict_v1")
-_SUBING = SubingThs15mKernel()
+
+
+def _subing_ths(frequency: str) -> OwnedIndicatorDefinition:
+    kernel = SubingThs15mKernel(frequency=frequency)
+    uses = {SUBING_THS_OBSERVATION_USE, SUBING_THS_REFERENCE_USE}
+    if frequency == "15m":
+        uses.add("research")
+    result_version = "v3" if frequency == "15m" else "v1"
+    return OwnedIndicatorDefinition(
+        feature_id=f"subing_ths_{frequency}",
+        formula_version=kernel.formula_version,
+        input_schema_version=f"subing_ths_{frequency}_input_v1",
+        output_schema_version=f"subing_ths_{frequency}_result_{result_version}",
+        outputs=("dif", "dea", "macd", "ema21", "result_codes"),
+        supported_frequencies=frozenset({frequency}),
+        allowed_uses=frozenset(uses),
+        repainting=False,
+        calculate=None,
+        step=kernel.step,
+        initial_state=kernel.initial_state,
+    )
+
+
 _DEFINITIONS = (
     _newow_auxiliary("main_force_control", MAIN_FORCE_CONTROL_FORMULA_VERSION, MainForceControlResult),
     _newow_auxiliary("up_down_energy", UP_DOWN_ENERGY_FORMULA_VERSION, UpDownEnergyResult),
@@ -69,14 +95,10 @@ _DEFINITIONS = (
     ),
     OwnedIndicatorDefinition(
         "htdy_strict", _HTDY_STRICT.indicator_version, "htdy_strict_ohlcv_v1", "htdy_strict_research_v1",
-        (), FREQUENCIES, frozenset(("research", "backtest")), False, compute_strict_fields,
+        (*NUMERIC_FIELDS, *BOOLEAN_FIELDS), FREQUENCIES, frozenset(("research", "backtest")),
+        False, compute_strict_fields,
     ),
-    OwnedIndicatorDefinition(
-        "subing_ths_15m", SUBING_THS_FORMULA_VERSION, "subing_ths_15m_input_v1",
-        "subing_ths_15m_result_v3", ("dif", "dea", "macd", "ema21", "result_codes"),
-        frozenset(("15m",)), frozenset(("subing_ths_observation", "research")), False,
-        None, step=_SUBING.step,
-    ),
+    *(_subing_ths(frequency) for frequency in SUBING_THS_FORMULA_VERSIONS),
 )
 
 OWNED_DEFINITIONS = MappingProxyType({item.feature_id: item for item in _DEFINITIONS})
@@ -89,3 +111,15 @@ def owned_indicator(feature_id: str, *, frequency: str, use: str) -> OwnedIndica
     if frequency not in definition.supported_frequencies or use not in definition.allowed_uses:
         raise ValueError(f"FEATURE_USE_NOT_ALLOWED: {feature_id}")
     return definition
+
+
+def subing_ths_state_step(frequency: str, *, use: str) -> tuple[Callable, Callable]:
+    feature = owned_indicator(f"subing_ths_{frequency}", frequency=frequency, use=use)
+    if (
+        feature.formula_version != SUBING_THS_FORMULA_VERSIONS[frequency]
+        or feature.repainting
+        or feature.initial_state is None
+        or feature.step is None
+    ):
+        raise ValueError("SUBING_THS_REGISTRATION_MISMATCH")
+    return feature.initial_state, feature.step

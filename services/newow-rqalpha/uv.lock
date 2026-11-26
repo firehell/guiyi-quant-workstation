@@ -124,7 +124,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "guiyi-quant-core", specifier = "==0.2.0", editable = "../../packages/quant-core" },
+    { name = "guiyi-quant-core", editable = "../../packages/quant-core" },
     { name = "rqalpha", specifier = "==6.3.0" },
 ]
 
@@ -133,7 +133,7 @@ dev = [{ name = "pytest", specifier = ">=8,<10" }]
 
 [[package]]
 name = "guiyi-quant-core"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "../../packages/quant-core" }
 dependencies = [
     { name = "numpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -145,6 +145,9 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.4.4,<3" },
     { name = "ta-lib", specifier = "==0.8.3.post1" },
 ]
+
+[package.metadata.requires-dev]
+test = [{ name = "pytest", specifier = "==9.2.0" }]
 
 [[package]]
 name = "h5py"

@@ -10,16 +10,16 @@ from app.alerts.registry import (
     HTDY_RULE, SUBING_THS_RULE, SUBING_FORMULA_VERSIONS,
     SUBING_QUALITY_REWARM_POLICY_V2,
 )
-from app.market_data.domain import CanonicalBar, INTRADAY_FREQUENCIES
+from app.market_data.domain import INTRADAY_FREQUENCIES
 from app.market_data.market_read_service import (
     CurrentContractReplayWindow,
     MarketReadService,
     MarketReadWindow,
     MarketReadWindowError,
 )
+from guiyi_quant.compute.owned import SUBING_THS_OBSERVATION_USE, owned_indicator, subing_ths_state_step
 from guiyi_quant.indicators import (
     HTDY_ALERT_OBSERVATION_CONSUMER,
-    compute_htdy_original,
     get_indicator,
     require_formal_policy,
 )
@@ -87,19 +87,16 @@ class HtdyOriginalEvaluator:
     context_bars = CURRENT_BAR_CONTEXT_BARS
 
     def evaluate(self, window: MarketReadWindow) -> AlertEvaluation:
-        self._validate_policy()
+        formula_version = self._validate_policy()
         self._validate_window(window, minimum=CURRENT_BAR_CONTEXT_BARS)
-        result = self._compute(window.bars[-CURRENT_BAR_CONTEXT_BARS:])
+        result = self._compute(window, formula_version=formula_version)
         return AlertEvaluation(observation_types=_observation_types(result, -1))
 
     def evaluate_first_seen(
         self,
         window: MarketReadWindow,
     ) -> tuple[HtdyFirstSeenObservation, ...]:
-        self._validate_policy()
-        self._validate_window(window, minimum=CURRENT_BAR_CONTEXT_BARS)
-        current = self._compute(window.bars[-CURRENT_BAR_CONTEXT_BARS:])
-        return self._latest_candidate(window, _observation_types(current, -1))
+        return self._latest_candidate(window, self.evaluate(window).observation_types)
 
     def evaluate_candidates(
         self,
@@ -121,7 +118,7 @@ class HtdyOriginalEvaluator:
             for candidate in self.evaluate_first_seen(window)
         )
 
-    def _validate_policy(self) -> None:
+    def _validate_policy(self) -> str:
         definition = get_indicator(self.indicator_code)
         if definition.alert_capable is not True:
             raise AlertEvaluationError("ALERT_EVALUATION_CAPABILITY_DISABLED")
@@ -132,6 +129,7 @@ class HtdyOriginalEvaluator:
             )
         except (KeyError, ValueError):
             raise AlertEvaluationError("ALERT_EVALUATION_POLICY_DISABLED") from None
+        return definition.indicator_version
 
     @staticmethod
     def _validate_window(window: MarketReadWindow, *, minimum: int) -> None:
@@ -147,8 +145,17 @@ class HtdyOriginalEvaluator:
             raise AlertEvaluationError("ALERT_EVALUATION_INPUT_INVALID")
 
     @staticmethod
-    def _compute(bars: tuple[CanonicalBar, ...]) -> HtdyOriginalResult:
-        return compute_htdy_original(
+    def _compute(window: MarketReadWindow, *, formula_version: str) -> HtdyOriginalResult:
+        try:
+            feature = owned_indicator(
+                "htdy_original", frequency=window.frequency, use=HTDY_ALERT_OBSERVATION_CONSUMER,
+            )
+        except ValueError:
+            raise AlertEvaluationError("ALERT_EVALUATION_POLICY_DISABLED") from None
+        if not feature.repainting or feature.formula_version != formula_version or feature.calculate is None:
+            raise AlertEvaluationError("ALERT_EVALUATION_FAILED")
+        bars = window.bars[-CURRENT_BAR_CONTEXT_BARS:]
+        return feature.calculate(
             [bar.bar_end for bar in bars],
             [float(bar.open) for bar in bars],
             [float(bar.high) for bar in bars],
@@ -181,7 +188,7 @@ class SubingThsEvaluator:
     formula_versions = SUBING_FORMULA_VERSIONS
 
     def __init__(self, *, kernel: SubingThs15mKernel | None = None) -> None:
-        self._kernel = kernel or SubingThs15mKernel()
+        self._kernel = kernel
         self._cursors: dict[tuple[str, str], _SubingCursor] = {}
         self._latest_windows: dict[tuple[str, str], _SubingWindowIdentity] = {}
 
@@ -191,6 +198,12 @@ class SubingThsEvaluator:
         window: MarketReadWindow,
     ) -> tuple[AlertObservationCandidate, ...]:
         self._validate_window(window)
+        try:
+            initial_state, step = subing_ths_state_step(window.frequency, use=SUBING_THS_OBSERVATION_USE)
+        except ValueError:
+            raise AlertEvaluationError("ALERT_EVALUATION_FAILED") from None
+        if self._kernel is not None:
+            initial_state, step = self._kernel.initial_state, self._kernel.step
         identity = _SubingWindowIdentity(
             cutoff=window.cutoff,
             trading_day=window.trading_day,
@@ -228,11 +241,11 @@ class SubingThsEvaluator:
         self._validate_replay(window, replay)
         state = (
             cursor.state if not quality_rewarm and cursor is not None
-            and cursor.contract == window.contract else self._kernel.initial_state()
+            and cursor.contract == window.contract else initial_state()
         )
         final = None
         for bar in replay.bars:
-            state, final = self._kernel.step(state, float(bar.close), bar_end=bar.bar_end.isoformat())
+            state, final = step(state, float(bar.close), bar_end=bar.bar_end.isoformat())
         if replay.bars:
             self._cursors[key] = _SubingCursor(
                 contract=window.contract,
