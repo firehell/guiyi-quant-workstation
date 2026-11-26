@@ -94,7 +94,7 @@ def main():
     products = tuple(p.upper() for p in TRADING_PRODUCTS)
     if set(TRADING_PRODUCTS) - set(load_operational_products()):
         raise ValueError("TQ_TRADING_SCOPE_NOT_OPERATIONAL")
-    market = PortfolioMarket(products, record_closed_tails=True)
+    market = PortfolioMarket(products, record_closed_tails=True, require_completed_journal=True)
     market.activate(datetime.now(UTC))
     recovery_cursor = 0
     try:

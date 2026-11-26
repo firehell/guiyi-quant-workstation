@@ -102,6 +102,7 @@ class _LiveBarTrigger:
     symbol: str
     frequency: BarFrequency
     bar: CanonicalBar
+    contract: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1435,7 +1436,11 @@ def _parse_live_bar_trigger(channel: object, payload: object) -> _LiveBarTrigger
         )
     except (DecimalException, KeyError, TypeError, ValueError, UnicodeError):
         return None
-    return _LiveBarTrigger(symbol=symbol, frequency=frequency, bar=bar)
+    contract = raw.get("contract")
+    return _LiveBarTrigger(
+        symbol=symbol, frequency=frequency, bar=bar,
+        contract=contract if isinstance(contract, str) else None,
+    )
 
 
 def _parse_canonical_updated_trigger(

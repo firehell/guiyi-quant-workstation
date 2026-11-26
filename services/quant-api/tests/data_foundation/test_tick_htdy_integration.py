@@ -190,7 +190,8 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
         return DurableLiveMarketService(source_provider=StreamLiveProvider(source), store=store, **args)
 
     def portfolio_market():
-        return PortfolioMarket((PRODUCT,), redis=redis, session_factory=lambda: Session(engine), receipt_clock=clock)
+        return PortfolioMarket((PRODUCT,), redis=redis, session_factory=lambda: Session(engine),
+                               receipt_clock=clock, require_completed_journal=True)
 
     compute = live()
     assert feed.poll(OPEN) is None and compute.poll(OPEN) is None
@@ -242,6 +243,24 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
 
         recovery_key = store._recovery_key(DAY, PRODUCT, CONTRACT)
         if not delayed_completion:
+            from app.alerts.runtime import _parse_live_bar_trigger
+
+            trigger = _parse_live_bar_trigger(original.channel, original.data)
+            view = inlet._views[PRODUCT.upper()]
+            index_key = completed.identity_key(DAY)
+            index = redis.hget(index_key, original.observation_id)
+            assert index is not None
+            redis.hdel(index_key, original.observation_id)
+            try:
+                with pytest.raises(ValueError, match="HTDY_COMPLETED_ORIGINAL_UNPROVEN"):
+                    view.signal_from_trigger(trigger, clock(), OPEN)
+                mismatched = json.loads(index)
+                mismatched["payload"] += " "
+                redis.hset(index_key, original.observation_id, json.dumps(mismatched))
+                with pytest.raises(ValueError, match="HTDY_COMPLETED_ORIGINAL_UNPROVEN"):
+                    view.signal_from_trigger(trigger, clock(), OPEN)
+            finally:
+                redis.hset(index_key, original.observation_id, index)
             _assert_recovery_fence(redis, store, inlet, recovery_key, clock)
     finally:
         inlet.close()

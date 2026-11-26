@@ -181,6 +181,27 @@ class ObservationStream:
         rows = self.redis.xrevrange(self.key(day), count=1)
         return _text(rows[0][0]) if rows else '0-0'
 
+    def read_original(self, day: date, observation_id: str) -> ObservationEnvelope:
+        """Read one indexed original and verify it against the durable row."""
+        try:
+            indexed = self.redis.hget(self.identity_key(day), observation_id)
+            if indexed is None:
+                raise ValueError
+            index = json.loads(indexed)
+            stream_id = index['id']
+            if not isinstance(stream_id, str) or not _ID.fullmatch(stream_id):
+                raise ValueError
+            (identifier, fields), = self.redis.xrange(self.key(day), min=stream_id, max=stream_id, count=1)
+            raw = fields.get('envelope', fields.get(b'envelope'))
+            if raw is None or _text(identifier) != stream_id or _text(raw) != index['payload']:
+                raise ValueError
+            event = ObservationEnvelope.from_json(raw, stream_id=stream_id)
+            if event.observation_id != observation_id or event.trading_day != day:
+                raise ValueError
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ValueError('OBSERVATION_ORIGINAL_UNPROVEN') from exc
+        return event
+
     def initialize(self, consumer: str, day: date, *, cursor: str) -> None:
         """Explicit migration baseline only; callers must freeze the supplied cutoff."""
         if not _ID.fullmatch(cursor):

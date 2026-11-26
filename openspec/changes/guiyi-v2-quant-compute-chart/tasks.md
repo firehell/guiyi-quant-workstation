@@ -67,6 +67,7 @@
 - C3 验证独立候选安装。Quant Core 0.3.0 的 wheel 和 sdist 两次构建逐字节一致，API、TQ Executor、RQAlpha、VeighNa 隔离环境均按精确消费锁安装。Web 锁定 Quant Chart 0.1.6 tarball，已复验其 Display Catalog 与 Core 0.3.0 的 Compute Registry 兼容性。正式消费者升级与候选构建分开。
 - C6 Web 历史指标已接入批量计算队列，牛哇 MACD 保留同 owner 前缀，RQAlpha 使用独立冻结输入通过 17 项回归。快期 HTDY、苏冰独立模拟的 completed 消费、权威修订回调和持久化游标须与 Market Foundation 接口联验。牛哇正式盘后参考继续读取原归档凭证；四类牛哇副图的在线计算入口和已保存结果的图表诊断均已定向验证。
 - C6 Web 历史图表冷计算在返回前通过新只读事务复核同一 Canonical 窗口。隔离 Parquet/Catalog 验证仅失效旧修订的物理合约段，新请求按修订后的数据重算；缓存命中只使用本次 Market 读取。计算等待和复核共用既有时间预算。现场主动修订通知与独立模拟接线仍待联验。
+- C6 快期 HTDY 的自然 H1 入场使用 Pub/Sub 唤醒，并只读核对完成日志、身份索引、物理合约和 32 根计算窗口末端。缺失、错配、提前确认及不可转发的原件均拒绝入场；沿用现有首次观察水位、信号身份与账本。独立 Review 通过，303 项定向及隔离 PostgreSQL、Parquet、Redis 的 42 项集成测试通过。正式 Market 来源启用与现场读回仍待联验。
 - C6/C7 Compute Runtime 的 Live 恢复复核同修订的检查点前缀、提交 ID 和直接前驱。相同可用时间的多根 Bar 按提交端点各自恢复，拒绝重复或未订阅的检查点。固定样本复跑 60 品种、999 次 Live 提交，60 个 Runtime 重建后均可去重并与连续运行逐值接续。现有快期 HTDY 完成流入场、双 Redis 交接和苏冰 Paper 游标已用独立 PostgreSQL / Redis 回放复验，连同 Compute Runtime 共 76 项通过；专属消费者与新版 Compute Runtime 的正式接线和现场读回仍待验证。
 - C7 [M4 冻结性能结果](evidence/performance.json) 覆盖 415/420 个品种周期组合及 66,590 根已完成 Bar。OI/RS 日线与 PD/PT/RS 周线有源缺口。已做工作台夹具与图层资源释放验证，未更新在基线上同样失败的旧截图。完整 420 组合与 Market/模拟进程并行现场尚待联验。
 - C7 同一 Chrome 和固定夹具对照三种牛哇主图乘四种副图，以及 HTDY、SuBing、Free 的桌面图表。震荡初始视窗在原提交重复截图中也出现分歧，按同取景复拍后各组为 0 至 6 像素差。本次浏览器对照未覆盖自然行情、长时间运行或所有视窗尺寸。
