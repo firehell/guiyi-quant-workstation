@@ -39,7 +39,12 @@ def admitted_event(event, policy, *, refreshed):
     return None
 
 
-def next_protection(bars, revisions, since, through, clocks, policy):
+def shape_range_admits(shape, confirmed_close, band):
+    lower, upper = band
+    return confirmed_close > upper and shape.low <= upper and lower <= shape.high
+
+
+def next_protection(bars, revisions, since, through, clocks, policy, *, allow_shape_touch=False):
     for revision, next_at in revisions:
         if revision.role != "PROTECTION":
             continue
@@ -52,17 +57,26 @@ def next_protection(bars, revisions, since, through, clocks, policy):
         variants = analyze(bars, start=start, cut=cut, band=band, side="LONG", leg=None, variants=options)["variants"]
         candidates = []
         for clock, rows in variants.items():
-            step = timedelta(minutes=CLOCKS[clock][0])
+            shape_period = CLOCKS[clock][0]
+            step = timedelta(minutes=shape_period)
+            shapes = {bar.end: bar for bar in bars[shape_period]} if allow_shape_touch else {}
             for event in rows:
                 if event["shape_end"] - step <= start:
                     continue
                 admission = admitted_event(event, policy, refreshed=since < revision.effective_after)
+                footprint = {}
+                if (admission is None and allow_shape_touch
+                        and shape_range_admits(shapes[event["shape_end"]], event["close"], band)):
+                    shape = shapes[event["shape_end"]]
+                    admission = event["available_at"], "SHAPE_RANGE_CONTACT"
+                    footprint = dict(shape_start=shape.start, shape_end=shape.end,
+                                     shape_low=shape.low, shape_high=shape.high)
                 if admission is None:
                     continue
                 known, route = admission
                 accepted = known + US
                 if accepted < cut:
-                    candidates.append(dict(
+                    candidates.append(footprint | dict(
                         at=accepted, revision=revision.revision, band=band, route=route, clock=clock,
                         signal_at=event["confirmed_at"], signal_known_at=event["available_at"],
                         signal_close=event["close"], first_touch=(event["segment_first_touch"]
@@ -82,14 +96,15 @@ def next_recovery(recoveries, since, through):
     return None
 
 
-def tape(bars, recoveries, revisions, seed, seed_at, through, clocks, policy):
+def tape(bars, recoveries, revisions, seed, seed_at, through, clocks, policy, *, allow_shape_touch=False):
     rows, position, since = [], seed, seed_at
     while since < through:
         if position.long:
             result = next_recovery(recoveries, since, through)
             action = "UNLOCK_SHORT"
         else:
-            result = next_protection(bars, revisions, since, through, clocks, policy)
+            result = next_protection(bars, revisions, since, through, clocks, policy,
+                                     allow_shape_touch=allow_shape_touch)
             action = "LOCK"
         if result is None:
             break
@@ -117,7 +132,7 @@ def opening_average_support(tape, matched, final_point, minutes, tick):
     return rows
 
 
-def compare(session, market):
+def compare(session, market, *, shape_range_control=False):
     source_index = input_sources()
     plans, _, sources = plan_rows(source_index, CONTRACT)
     plans = sorted(plans, key=lambda row: row.effective_after)
@@ -134,11 +149,14 @@ def compare(session, market):
         results = {}
         scenarios = {(clock, policy): (clock,) for clock in CLOCKS for policy in POLICIES}
         scenarios.update({("EITHER", policy): tuple(CLOCKS) for policy in ("EARLIER_SIGNAL", NEW_PLAN)})
+        if shape_range_control:
+            scenarios["EITHER_SHAPE_CONTACT", NEW_PLAN] = tuple(CLOCKS)
         prices = {}
         for (clock, policy), clock_choices in scenarios.items():
-            full = tape(bars, recovery, revisions, position, seed_at, through, clock_choices, policy)
+            kwargs = {"allow_shape_touch": clock == "EITHER_SHAPE_CONTACT"}
+            full = tape(bars, recovery, revisions, position, seed_at, through, clock_choices, policy, **kwargs)
             for cut in (point["cuts"][0] for point in points):
-                if tape(bars, recovery, revisions, position, seed_at, cut, clock_choices, policy) != [
+                if tape(bars, recovery, revisions, position, seed_at, cut, clock_choices, policy, **kwargs) != [
                     event for event in full if event["at"] < cut
                 ]:
                     raise ValueError("SH_REPROTECTION_PREFIX_DIVERGED")
@@ -166,6 +184,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--shape-range-control", action="store_true")
     args = parser.parse_args()
     if args.output.exists() or not args.env_file.is_file():
         parser.error("SH_REPROTECTION_OUTPUT_EXISTS_OR_ENV_MISSING")
@@ -179,7 +198,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            result = compare(session, build_market_data_service(session))
+            result = compare(session, build_market_data_service(session), shape_range_control=args.shape_range_control)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
