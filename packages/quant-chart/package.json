@@ -1,6 +1,6 @@
 {
   "name": "@guiyi/quant-chart",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Presentation resources for Guiyi market charts",
   "type": "module",
   "exports": {

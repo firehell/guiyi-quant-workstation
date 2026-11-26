@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createChartHost } from '@guiyi/quant-chart'
 import { createDetailChartSession, detailChartVolumeBars, detailChartIndex, detailChartLength, detailChartTimeAt } from '../src/utils/detailChartSession.ts'
 
 function fixture() {
@@ -45,6 +46,39 @@ test('late writes and disposal from an obsolete adapter cannot alter the active 
   assert.equal(f.calls.candles, 1)
   assert.equal(f.calls.removes, 0)
   f.session.dispose()
+})
+
+test('a partial native attachment is removed through the page lease before an indicator retry', () => {
+  const f = fixture()
+  const original = f.raw.addSeries.bind(f.raw)
+  const pattern = {}
+  const attached = new Set<unknown>()
+  let fail = true
+  f.raw.addSeries = (...args: unknown[]) => Object.assign(original(...args), {
+    attachPrimitive(primitive: unknown) {
+      assert.equal(attached.has(primitive), false)
+      attached.add(primitive)
+      if (primitive === pattern && fail) throw new Error('native attached callback failed')
+    },
+    detachPrimitive(primitive: unknown) { assert.ok(attached.delete(primitive)) },
+  })
+  const host = createChartHost(f.session.acquire(f.container(), {}))
+  const candles = host.layer('price', 'price', 'main').candles({})
+  const render = () => host.renderLayer('pattern', 'newow_pattern', 'main', 'primitive', layer => {
+    layer.primitive(candles, pattern)
+    layer.updateDiagnostics({ status: 'ready' })
+  })
+  assert.equal(render(), false)
+  assert.equal(host.inspectLayer('pattern')?.lastError, 'CHART_RENDERER_UPDATE_FAILED')
+  assert.equal(attached.size, 2, 'the independent execution layers remain attached')
+  fail = false
+  assert.equal(render(), true)
+  assert.equal(host.inspectLayer('pattern')?.status, 'ready')
+  assert.equal(attached.size, 3)
+  host.dispose()
+  assert.equal(attached.size, 2)
+  f.session.dispose()
+  assert.equal(attached.size, 0)
 })
 
 test('new market identity clears old prices and restores its own saved viewport', () => {

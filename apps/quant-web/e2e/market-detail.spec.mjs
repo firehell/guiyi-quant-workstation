@@ -548,6 +548,40 @@ test('Free BOLL restores on reload, requests only its bounded study and disposes
   expect(requests).toHaveLength(2)
 })
 
+test('Free BOLL rejects an incompatible result schema and recovers on a fresh selection', async ({ page }) => {
+  const bars = freeHistory(20)
+  await mockMarketDetail(page, { barsPage({ url }) {
+    return url.searchParams.get('frequency') === '15m' ? { bars } : undefined
+  } })
+  let calls = 0
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const wire = chartStudyWire(bars, 'boll', (_bar, index) => index < 19
+      ? { status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' }
+      : { status: 'READY', values: { upper: 125, middle: 110, lower: 95 }, diagnostic: null })
+    if (++calls === 1) wire.result_schema_version = 'future-feature-result'
+    return route.fulfill({ json: wire })
+  })
+  await page.goto(freeJm)
+  const boll = page.getByRole('button', { name: 'BOLL', exact: true })
+  await boll.click()
+  await expect(page.getByText('当前行情窗口的所选指标暂不可用。')).toBeVisible()
+  const chart = page.getByTestId('kline-shell')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  await expect(chart.locator('canvas').first()).toBeVisible()
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await diagnostics.getByText('boll · 指标目录不匹配', { exact: true }).click()
+  await expect(diagnostics.getByText('MARKET_CHART_STUDY_SCHEMA_MISMATCH', { exact: true })).toBeVisible()
+  await boll.click()
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('boll · 指标目录不匹配', { exact: true })).toHaveCount(0)
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('boll · 就绪', { exact: true })).toBeVisible()
+  expect(calls).toBe(2)
+})
+
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
   const recursiveUpdates = []
   page.on('console', (message) => {

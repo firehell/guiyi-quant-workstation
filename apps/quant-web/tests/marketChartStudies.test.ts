@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { BarData } from '../src/types/market.ts'
-import { MARKET_CHART_STUDY_BAR_LIMIT, marketChartStudyRequest, marketStudyLayerStatus, projectMarketChartStudyDisplay, retryMarketStudyWhenBusy } from '../src/utils/marketChartStudies.ts'
+import { MARKET_CHART_STUDY_BAR_LIMIT, marketChartStudyIssue, marketChartStudyRequest, marketStudyLayerStatus, projectMarketChartStudyDisplay, retryMarketStudyWhenBusy } from '../src/utils/marketChartStudies.ts'
 
 const identity = { symbol: 'rb', frequency: '15m', seriesKind: 'actual_dominant' } as const
 const bars: BarData[] = [1, 2, 3].map(index => ({
@@ -92,7 +92,37 @@ test('BOLL requires an aligned finite upper, middle and lower value from the sha
   assert.deepEqual(projectMarketChartStudyDisplay(wire, request)?.points.boll?.[bars[1]!.time]?.values,
     { upper: 105, middle: 100, lower: 95 })
   feature.points[1]!.values = { upper: 105, middle: 100 }
-  assert.throws(() => projectMarketChartStudyDisplay(wire, request), /MARKET_CHART_STUDY_POINT_INVALID/)
+  assert.throws(() => projectMarketChartStudyDisplay(wire, request), error => {
+    assert.deepEqual(marketChartStudyIssue(error), { status: 'catalog_mismatch', reason: 'MARKET_CHART_STUDY_OUTPUT_MISMATCH' })
+    return true
+  })
+})
+
+test('an incompatible result schema differs from rejected market input and compute output', () => {
+  const { request, wire } = fixtures()
+  const cases = [
+    [{ ...wire, result_schema_version: 'future' }, 'catalog_mismatch', 'MARKET_CHART_STUDY_SCHEMA_MISMATCH'],
+    [{ ...wire, symbol: 'other' }, 'invalid_source', 'MARKET_CHART_STUDY_IDENTITY_MISMATCH'],
+  ] as const
+  for (const [payload, status, reason] of cases) {
+    assert.throws(() => projectMarketChartStudyDisplay(payload, request), error => {
+      assert.deepEqual(marketChartStudyIssue(error), { status, reason })
+      return true
+    })
+  }
+  wire.segments[0]!.features[0]!.points[1]!.values = { value: Infinity }
+  assert.throws(() => projectMarketChartStudyDisplay(wire, request), error => {
+    assert.deepEqual(marketChartStudyIssue(error), { status: 'compute_error', reason: 'MARKET_CHART_STUDY_POINT_INVALID' })
+    return true
+  })
+  for (const code of ['MARKET_CHART_STUDY_PHYSICAL_OWNER_INVALID', 'MARKET_CHART_STUDY_WINDOW_MISMATCH']) {
+    assert.deepEqual(marketChartStudyIssue({ response: { status: 409, data: { detail: { code } } } }), {
+      status: 'invalid_source', reason: code,
+    })
+  }
+  assert.deepEqual(marketChartStudyIssue({ response: { status: 409, data: { detail: { code: 'unexpected-private-detail' } } } }), {
+    status: 'missing_input', reason: 'MARKET_CHART_STUDY_REQUEST_FAILED',
+  })
 })
 test('EMA explicitly reports continuous series without physical ownership as unavailable', () => {
   const { wire } = fixtures()
@@ -142,4 +172,8 @@ test('chart study diagnostics distinguish missing, waiting, source rejection and
   assert.equal(marketStudyLayerStatus({ values: null, status: 'INVALID', diagnostic: 'INPUT_QUALITY_INVALID' }), 'invalid_source')
   assert.equal(marketStudyLayerStatus({ values: null, status: 'INVALID', diagnostic: 'OUTPUT_NONFINITE' }), 'compute_error')
   assert.equal(marketStudyLayerStatus({ values: null, status: 'ERROR', diagnostic: 'COMPUTE_FAILED' }), 'compute_error')
+  const { request, wire } = fixtures()
+  wire.segments[0]!.features[0]!.points[0]!.diagnostic = 'Unexpected private payload'
+  assert.equal(projectMarketChartStudyDisplay(wire, request)?.points.ema_21?.[bars[0]!.time]?.diagnostic,
+    'MARKET_CHART_STUDY_POINT_UNAVAILABLE')
 })

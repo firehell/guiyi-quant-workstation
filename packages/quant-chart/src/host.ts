@@ -73,6 +73,7 @@ type MarkerFactory = <T extends Time>(series: never, markers?: SeriesMarker<T>[]
 export function createChartHost(chart: IChartApi) {
   const scope = resourceScope()
   const layers = new Map<string, { pane: ChartPane; generationBound: boolean; handles: ReturnType<typeof makeLayer> }>()
+  const failures = new Map<string, LayerDiagnostics>()
   const auxiliaries: string[] = []
   let generation = 0
   let identity: string | null = null
@@ -97,16 +98,11 @@ export function createChartHost(chart: IChartApi) {
   function makeLayer(indicatorId: string, pane: ChartPane) {
     const resources = resourceScope()
     const definition = DISPLAY_CATALOG[indicatorId]
-    if (!definition) throw new Error(`CHART_DISPLAY_NOT_REGISTERED: ${indicatorId}`)
+    if (!Object.hasOwn(DISPLAY_CATALOG, indicatorId) || !definition) throw new Error(`CHART_DISPLAY_NOT_REGISTERED: ${indicatorId}`)
     const area = typeof pane === 'string' ? pane : 'auxiliary'
     if (definition.pane !== area) throw new Error(`CHART_DISPLAY_PANE_MISMATCH: ${indicatorId}`)
     if (definition.retired) throw new Error(`CHART_DISPLAY_RETIRED: ${indicatorId}`)
-    let diagnostic: LayerDiagnostics = {
-      indicatorId, pane, renderer: definition.renderers[0], status: 'missing_input',
-      packageVersion: CHART_MANIFEST.version, formulaVersion: null, sourceIdentity: identity,
-      frequency: null, warmup: null, dataCutoff: null, cacheState: null, lastError: null,
-      updatedAt: new Date().toISOString(),
-    }
+    let diagnostic = initialDiagnostics(indicatorId, pane, definition.renderers[0])
     const owned = new Map<object, () => void>()
     function remember<T extends object>(item: T, dispose: () => void): T {
       owned.set(item, resources.own(() => {
@@ -153,8 +149,34 @@ export function createChartHost(chart: IChartApi) {
       },
       markers(series: ISeriesApi<SeriesType>, factory: MarkerFactory = createSeriesMarkers) {
         resources.assertActive()
-        const plugin = factory(series as never)
-        return remember(plugin, () => plugin.detach?.())
+        // Lightweight Charts attaches inside the factory before a plugin handle
+        // exists. Keep enough information to roll back a partial attachment.
+        const attempted = new Set<ISeriesPrimitive<Time>>()
+        let constructing = true
+        const target = new Proxy(series, {
+          get(native, property) {
+            if (property === 'attachPrimitive') return (primitive: ISeriesPrimitive<Time>) => {
+              if (constructing) attempted.add(primitive)
+              native.attachPrimitive(primitive)
+            }
+            if (property === 'detachPrimitive') return (primitive: ISeriesPrimitive<Time>) => {
+              native.detachPrimitive(primitive)
+              attempted.delete(primitive)
+            }
+            const value = Reflect.get(native, property)
+            return typeof value === 'function' ? value.bind(native) : value
+          },
+        })
+        try {
+          const plugin = factory(target as never)
+          return remember(plugin, () => plugin.detach?.())
+        } catch (error) {
+          for (const primitive of attempted) resources.own(() => series.detachPrimitive(primitive))
+          throw error
+        } finally {
+          constructing = false
+          attempted.clear()
+        }
       },
       priceLevel(series: ISeriesApi<SeriesType>, options: CreatePriceLineOptions) {
         resources.assertActive()
@@ -164,16 +186,88 @@ export function createChartHost(chart: IChartApi) {
       },
       primitive<T extends ISeriesPrimitive<Time>>(series: ISeriesApi<SeriesType>, primitive: T) {
         resources.assertActive()
+        remember(primitive, () => series.detachPrimitive(primitive))
         series.attachPrimitive(primitive)
-        return remember(primitive, () => series.detachPrimitive(primitive))
+        return primitive
       },
     }
   }
 
+  function initialDiagnostics(indicatorId: string, pane: ChartPane, renderer: RendererId): LayerDiagnostics {
+    return {
+      indicatorId, pane, renderer, status: 'missing_input',
+      packageVersion: CHART_MANIFEST.version, formulaVersion: null, sourceIdentity: identity,
+      frequency: null, warmup: null, dataCutoff: null, cacheState: null, lastError: null,
+      updatedAt: new Date().toISOString(),
+    }
+  }
+
+  function samePane(left: ChartPane, right: ChartPane): boolean {
+    return typeof left === 'string' || typeof right === 'string' ? left === right : left.auxiliary === right.auxiliary
+  }
+
+  function layer(id: string, indicatorId: string, pane: ChartPane, generationBound = false) {
+    if (disposed) throw new Error('CHART_HOST_DISPOSED')
+    const existing = layers.get(id)
+    if (existing) {
+      if (existing.handles.inspect().indicatorId !== indicatorId || !samePane(existing.pane, pane)) {
+        throw new Error(`CHART_LAYER_IDENTITY_CONFLICT: ${id}`)
+      }
+      return existing.handles
+    }
+    const handles = makeLayer(indicatorId, pane)
+    layers.set(id, { pane, generationBound, handles })
+    return handles
+  }
+
   function removeLayer(id: string) {
-    const layer = layers.get(id)
+    const existing = layers.get(id)
+    failures.delete(id)
     layers.delete(id)
-    layer?.handles.dispose()
+    existing?.handles.dispose()
+  }
+
+  /**
+   * Mount or update one optional layer. A failing render drops all of that layer's
+   * native resources and leaves an inspectable row until the layer is retried or removed.
+   */
+  function renderLayer(
+    id: string, indicatorId: string, pane: ChartPane, renderer: RendererId,
+    render: (handle: ChartLayer) => void,
+  ): boolean {
+    if (disposed) throw new Error('CHART_HOST_DISPOSED')
+    const definition = Object.hasOwn(DISPLAY_CATALOG, indicatorId) ? DISPLAY_CATALOG[indicatorId] : undefined
+    const area = typeof pane === 'string' ? pane : 'auxiliary'
+    const current = layers.get(id)
+    const sameBinding = current && current.handles.inspect().indicatorId === indicatorId && samePane(current.pane, pane)
+    const catalogError = !definition ? 'CHART_DISPLAY_NOT_REGISTERED'
+      : definition.retired ? 'CHART_DISPLAY_RETIRED'
+      : definition.pane !== area ? 'CHART_DISPLAY_PANE_MISMATCH'
+      : !definition.renderers.includes(renderer) ? 'CHART_DISPLAY_RENDERER_MISMATCH'
+      : typeof pane !== 'string' && !auxiliaries.includes(pane.auxiliary) ? 'CHART_AUXILIARY_PANE_MISSING'
+      : current && !sameBinding ? 'CHART_LAYER_IDENTITY_CONFLICT' : null
+    let status: LayerStatus = definition?.retired ? 'retired' : 'catalog_mismatch'
+    let lastError = catalogError
+    if (!catalogError) {
+      try {
+        render(layer(id, indicatorId, pane))
+        failures.delete(id)
+        return true
+      } catch {
+        status = 'renderer_failure'
+        lastError = 'CHART_RENDERER_UPDATE_FAILED'
+      }
+    }
+    try {
+      removeLayer(id)
+    } catch {
+      status = 'renderer_failure'
+      lastError = 'CHART_RENDERER_CLEANUP_FAILED'
+    }
+    failures.set(id, {
+      ...initialDiagnostics(indicatorId, pane, renderer), status, lastError, sourceIdentity: null,
+    })
+    return false
   }
 
   function removeAuxiliary(id: string) {
@@ -181,6 +275,9 @@ export function createChartHost(chart: IChartApi) {
     if (index < 0) return
     for (const [layerId, layer] of [...layers].reverse()) {
       if (typeof layer.pane !== 'string' && layer.pane.auxiliary === id) removeLayer(layerId)
+    }
+    for (const [layerId, failure] of failures) {
+      if (samePane(failure.pane, { auxiliary: id })) failures.delete(layerId)
     }
     // Lightweight Charts drops the empty pane when its last series is removed.
     auxiliaries.splice(index, 1)
@@ -206,30 +303,29 @@ export function createChartHost(chart: IChartApi) {
     orderAuxiliaries,
     paneIndex,
     hasLayer: (id: string) => layers.has(id),
-    layer(id: string, indicatorId: string, pane: ChartPane, generationBound = false) {
-      if (disposed) throw new Error('CHART_HOST_DISPOSED')
-      const existing = layers.get(id)
-      if (existing) {
-        if (existing.handles.inspect().indicatorId !== indicatorId || paneIndex(existing.pane) !== paneIndex(pane)) {
-          throw new Error(`CHART_LAYER_IDENTITY_CONFLICT: ${id}`)
-        }
-        return existing.handles
-      }
-      const handles = makeLayer(indicatorId, pane)
-      layers.set(id, { pane, generationBound, handles })
-      return handles
-    },
+    layer,
+    renderLayer,
     removeLayer,
     activate(identityKey: string) {
       if (identity !== identityKey) {
         for (const [id, layer] of layers) if (layer.generationBound) removeLayer(id)
+        failures.clear()
         identity = identityKey
         generation += 1
       }
       return generation
     },
     isCurrent(token: number) { return !disposed && token === generation },
-    diagnostics() { return [...layers.values()].map(layer => layer.handles.inspect()) },
+    inspectLayer(id: string) {
+      const failure = failures.get(id)
+      return failure ? { ...failure } : layers.get(id)?.handles.inspect() ?? null
+    },
+    diagnostics() {
+      return [
+        ...[...layers].flatMap(([id, layer]) => failures.has(id) ? [] : [layer.handles.inspect()]),
+        ...[...failures.values()].map(failure => ({ ...failure })),
+      ]
+    },
     dispose() {
       if (disposed) return
       disposed = true
@@ -237,7 +333,7 @@ export function createChartHost(chart: IChartApi) {
       cleanup.own(() => chart.remove())
       for (const id of layers.keys()) cleanup.own(() => removeLayer(id))
       cleanup.own(() => scope.dispose())
-      try { cleanup.dispose() } finally { auxiliaries.length = 0 }
+      try { cleanup.dispose() } finally { auxiliaries.length = 0; failures.clear() }
     },
   }
 }

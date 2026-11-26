@@ -93,6 +93,88 @@ test('catalog rejects missing, incompatible and unauthorized compute definitions
   assert.throws(() => validateDisplayCatalog({ ...manifest, features: { ...features, macd: { ...features.macd, allowed_uses: ['research'] } } }), /CHART_COMPUTE_SCHEMA_MISMATCH: macd/)
 })
 
+test('a rejected renderer leaves an actionable diagnostic and releases only its own resources', () => {
+  const { chart, series } = chartAdapter()
+  const host = createChartHost(chart)
+  const candles = host.layer('price', 'price', 'main').candles({})
+  const stable = host.layer('ema', 'ema_10', 'main').line({})
+  assert.equal(host.renderLayer('boll', 'boll', 'main', 'band', layer => {
+    layer.band({}, {})
+    layer.updateDiagnostics({ status: 'ready', dataCutoff: '2026-11-26', sourceIdentity: 'old-result',
+      formulaVersion: 'old-formula', warmup: { available: 12, required: 10 }, frequency: '15m' })
+  }), true)
+  assert.equal(series.size, 4)
+  assert.equal(host.renderLayer('boll', 'boll', 'main', 'band', () => {
+    throw new Error('native coordinates and raw payload')
+  }), false)
+  assert.deepEqual([...series], [candles, stable])
+  const failed = host.inspectLayer('boll')
+  assert.equal(failed.status, 'renderer_failure')
+  assert.equal(failed.lastError, 'CHART_RENDERER_UPDATE_FAILED')
+  assert.equal(failed.sourceIdentity, null)
+  assert.equal(failed.dataCutoff, null)
+  assert.equal(failed.formulaVersion, null)
+  assert.equal(failed.warmup, null)
+  assert.equal(failed.frequency, null)
+
+  assert.equal(host.renderLayer('unknown', 'unknown-indicator', 'main', 'line', () => assert.fail('unexpected render')), false)
+  assert.equal(host.inspectLayer('unknown').status, 'catalog_mismatch')
+  assert.equal(host.inspectLayer('unknown').lastError, 'CHART_DISPLAY_NOT_REGISTERED')
+  assert.equal(host.renderLayer('ema', 'ema_10', 'main', 'histogram', () => assert.fail('wrong renderer')), false)
+  assert.equal(host.inspectLayer('ema').lastError, 'CHART_DISPLAY_RENDERER_MISMATCH')
+  assert.deepEqual([...series], [candles])
+  host.removeLayer('unknown')
+  assert.equal(host.inspectLayer('unknown'), null)
+  assert.equal(host.renderLayer('boll', 'boll', 'main', 'band', layer => {
+    layer.band({}, {})
+    layer.updateDiagnostics({ status: 'ready' })
+  }), true)
+  assert.equal(host.inspectLayer('boll').status, 'ready')
+  assert.equal(host.inspectLayer('boll').lastError, null)
+  host.activate('RB:5m:updated')
+  assert.equal(host.inspectLayer('ema'), null)
+  assert.equal(series.size, 3)
+  host.dispose()
+  assert.equal(series.size, 0)
+})
+
+test('partial native allocation and failed primitive attachment are reclaimed', () => {
+  const { chart, series, events } = chartAdapter()
+  const add = chart.addSeries.bind(chart)
+  const host = createChartHost(chart)
+  const candles = host.layer('price', 'price', 'main').candles({})
+  let calls = 0
+  chart.addSeries = (...args) => {
+    if (++calls === 2) throw new Error('second series')
+    return add(...args)
+  }
+  assert.equal(host.renderLayer('boll', 'boll', 'main', 'band', layer => layer.band({}, {})), false)
+  assert.deepEqual([...series], [candles])
+  candles.attachPrimitive = () => { events.push('partial-attach'); throw new Error('initial paint') }
+  assert.equal(host.renderLayer('pattern', 'newow_pattern', 'main', 'primitive',
+    layer => layer.primitive(candles, {})), false)
+  assert.deepEqual(events.slice(-2), ['partial-attach', 'detach'])
+  host.dispose()
+})
+
+test('the native marker factory cannot leave an attachment when construction throws', () => {
+  const { chart } = chartAdapter()
+  const host = createChartHost(chart)
+  const candles = host.layer('price', 'price', 'main').candles({})
+  const attached = new Set()
+  candles.attachPrimitive = primitive => {
+    attached.add(primitive)
+    throw new Error('attachment callback failed before the marker factory returned')
+  }
+  candles.detachPrimitive = primitive => { assert.ok(attached.delete(primitive)) }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    assert.equal(host.renderLayer('actions', 'newow_actions', 'main', 'marker', layer => layer.markers(candles)), false)
+    assert.equal(host.inspectLayer('actions').lastError, 'CHART_RENDERER_UPDATE_FAILED')
+    assert.equal(attached.size, 0)
+  }
+  host.dispose()
+})
+
 test('preferences preserve legacy selection and isolate hide, configure and removal by profile', () => {
   const profile = 'newow_trend'
   const defaultAux = CHART_PROFILES[profile].auxiliaryDefault

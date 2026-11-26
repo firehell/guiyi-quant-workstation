@@ -674,6 +674,8 @@ test('action diagnostics follow the rendered strategy and clear old provenance d
   const stage = ref<{ inspectLayers: () => ReadonlyArray<{
     indicatorId: string; status: string; sourceIdentity: string | null; dataCutoff: string | null; formulaVersion: string | null
   }> } | null>(null)
+  let failMarkers = false
+  let detached = 0
   const fakeChart = {
     addSeries: () => ({ setData() {} }), removeSeries() {}, resize() {}, remove() {},
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
@@ -684,7 +686,13 @@ test('action diagnostics follow the rendered strategy and clear old provenance d
     strategySwitching: switching.value,
     selectedSignalId: null,
   }) }))
-  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
+    ...adapter(fakeChart),
+    createSeriesMarkers: () => ({
+      setMarkers() { if (failMarkers) throw new Error('native marker rejected') },
+      detach() { detached++ },
+    }) as never,
+  })
   const root = element('root')
   app.mount(root); await nextTick()
 
@@ -693,6 +701,14 @@ test('action diagnostics follow the rendered strategy and clear old provenance d
   assert.equal(actions().sourceIdentity, response.value!.meta.input_content_sha256)
   assert.equal(actions().dataCutoff, response.value!.value!.bars[0]!.bar_end)
   assert.equal(actions().formulaVersion, response.value!.meta.identity.formula_versions.join(' / '))
+  failMarkers = true
+  response.value = { ...response.value! }; await nextTick()
+  assert.equal(actions().status, 'renderer_failure')
+  assert.equal(actions().sourceIdentity, null)
+  assert.equal(detached, 1)
+  failMarkers = false
+  response.value = { ...response.value! }; await nextTick()
+  assert.equal(actions().status, 'ready')
 
   const toggle = findCheckbox(root, '建仓 / 清仓')!
   ;(toggle.props.onChange as () => void)(); await nextTick()
@@ -798,6 +814,125 @@ test('main layers report actual cutoffs and revoke stale pattern, prices and str
   assert.equal(layers('newow_process')[0]!.status, 'ready')
   app.unmount()
   assert.equal(prices.size, 0)
+})
+
+test('a failing Newow main line removes its old native series and recovers without losing candles', async () => {
+  const Stage = await loadComponent()
+  const response = ref(strategyResponse('trend'))
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; renderer: string; status: string; lastError: string | null }> } | null>(null)
+  const liveSeries = new Set<{ type: string; color?: string }>()
+  let fail = false
+  const chart = {
+    addSeries(definition: { type: string }, options: { color?: string }) {
+      const series = {
+        type: definition.type, color: options.color,
+        setData() {
+          if (fail && options.color === '#2563EB') throw new Error('native line paint error')
+        },
+      }
+      liveSeries.add(series)
+      return series
+    },
+    removeSeries(item: { type: string; color?: string }) { liveSeries.delete(item) },
+    resize() {}, remove() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: 'trend', selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
+    ...adapter(chart),
+    // Keep chartAdapter identity intact when checking that the original native series is removed.
+    createChart: () => {
+      const add = chart.addSeries.bind(chart)
+      return {
+        ...chart, panes: () => [pane(), pane(), pane()], addPane: () => pane(),
+        addSeries(definition: { type: string }, options: { color?: string }) {
+          return Object.assign(add(definition, options), {
+            attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, priceScale: () => ({ applyOptions() {} }),
+          })
+        },
+      } as never
+    },
+  })
+  app.mount(element('root')); await nextTick()
+  const lineDiagnostics = () => stage.value!.inspectLayers().filter(layer => layer.indicatorId === 'newow_trend' && layer.renderer === 'line')
+  assert.deepEqual(lineDiagnostics().map(layer => layer.status), ['ready', 'ready'])
+  const candles = [...liveSeries].find(series => series.type === 'Candlestick')
+  assert.ok(candles)
+
+  fail = true
+  response.value = { ...response.value }; await nextTick()
+  assert.equal(lineDiagnostics().find(layer => layer.status === 'renderer_failure')?.lastError, 'CHART_RENDERER_UPDATE_FAILED')
+  assert.equal(lineDiagnostics().filter(layer => layer.status === 'ready').length, 1)
+  assert.ok(liveSeries.has(candles))
+  assert.equal([...liveSeries].some(series => series.color === '#2563EB'), false)
+
+  fail = false
+  response.value = { ...response.value }; await nextTick()
+  assert.deepEqual(lineDiagnostics().map(layer => layer.status), ['ready', 'ready'])
+  assert.equal([...liveSeries].filter(series => series.color === '#2563EB').length, 1)
+  app.unmount()
+  assert.equal(liveSeries.size, 0)
+})
+
+for (const failedPane of ['primary', 'primary write', 'extra MACD'] as const) test(`a failed ${failedPane} axis releases its pane slot and a sibling still renders`, async () => {
+  const Stage = await loadComponent()
+  const response = ref(strategyResponse('trend'))
+  const failIndex = failedPane === 'extra MACD' ? 2 : 1
+  const activePanes = ref([
+    ...(failedPane === 'extra MACD' ? [{ component: 'macd', lifecycle: 'loading', response: null, error: null }] : []),
+    { component: 'main_force_control', lifecycle: 'loading', response: null, error: null },
+  ])
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; pane: unknown; status: string }> } | null>(null)
+  const swaps: Array<[number, number]> = []
+  const live = new Set<object>()
+  let fail = true
+  const chart = {
+    addSeries(_definition: unknown, _options: unknown, index = 0) {
+      let hasZeroLine = false
+      const item = {
+        setData() {
+          if (fail && failedPane === 'primary write' && hasZeroLine) throw new Error('could not write the primary axis')
+        },
+        attachPrimitive() {}, detachPrimitive() {},
+        priceScale: () => ({ applyOptions() {} }),
+        createPriceLine(options: { price: number }) {
+          if (index === failIndex && fail && failedPane !== 'primary write') throw new Error('could not allocate the zero line')
+          if (options.price === 0) hasZeroLine = true
+          return { applyOptions() {} }
+        },
+        removePriceLine() {},
+      }
+      live.add(item)
+      return item
+    },
+    removeSeries(item: object) { assert.ok(live.delete(item)) },
+    resize() {}, remove() {},
+    panes: () => [pane(), pane(), pane(), pane()], addPane: () => pane(),
+    swapPanes(left: number, right: number) { swaps.push([left, right]) },
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: 'trend', selectedSignalId: null, extraAuxiliaryPanes: activePanes.value,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, { ...adapter(chart), createChart: () => chart as never })
+  app.mount(element('root')); await nextTick()
+  const diagnostics = () => stage.value!.inspectLayers()
+  assert.ok(diagnostics().some(item => item.indicatorId === 'auxiliary_axis' && item.status === 'renderer_failure'))
+  assert.ok(diagnostics().some(item => item.indicatorId === 'newow.main_force_control' && item.status === 'loading'))
+  const afterFailure = live.size
+  fail = false
+  response.value = { ...response.value }
+  activePanes.value = [...activePanes.value]; await nextTick(); await nextTick()
+  if (failedPane === 'extra MACD') assert.ok(diagnostics().some(item => item.indicatorId === 'macd' && item.status === 'loading'))
+  assert.ok(diagnostics().every(item => item.status !== 'renderer_failure'))
+  assert.equal(live.size, afterFailure + 1)
+  assert.deepEqual(swaps, [failedPane === 'extra MACD' ? [2, 3] : [1, 2]])
+  app.unmount()
+  assert.equal(live.size, 0)
 })
 
 test('dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit', async () => {

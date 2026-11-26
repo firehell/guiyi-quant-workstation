@@ -13,7 +13,8 @@ import { DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
 import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 import { candidatePreview } from '@/utils/candidatePreview'
-import { MARKET_CHART_STUDY_BAR_LIMIT, MARKET_CHART_STUDY_IDENTITY, marketChartStudyRequest, projectMarketChartStudyDisplay, type MarketChartStudyDisplay } from '@/utils/marketChartStudies'
+import { MARKET_CHART_STUDY_BAR_LIMIT, MARKET_CHART_STUDY_IDENTITY, marketChartStudyIssue, marketChartStudyRequest,
+  projectMarketChartStudyDisplay, type MarketChartStudyDisplay, type MarketChartStudyIssue } from '@/utils/marketChartStudies'
 
 const props = withDefaults(defineProps<{
   chartProfile?: ChartProfileId
@@ -66,10 +67,12 @@ const studyRequest = computed(() => {
   return marketChartStudyRequest(identity, props.visibleMainIndicators, props.bars)
 })
 const studyDisplay = ref<MarketChartStudyDisplay | null>(null)
+const studyIssue = ref<MarketChartStudyIssue | null>(null)
 const studyUnavailable = ref(false)
 watch(() => studyRequest.value?.key, async (_key, _previous, onCleanup) => {
   const demand = studyRequest.value
   studyDisplay.value = null
+  studyIssue.value = null
   studyUnavailable.value = false
   if (!demand) return
   if (demand.query.series_kind === 'continuous') {
@@ -86,8 +89,11 @@ watch(() => studyRequest.value?.key, async (_key, _previous, onCleanup) => {
     const projected = projectMarketChartStudyDisplay(payload, demand)
     studyDisplay.value = projected
     studyUnavailable.value = projected === null
-  } catch {
-    if (!request.signal.aborted) studyUnavailable.value = true
+  } catch (error) {
+    if (!request.signal.aborted) {
+      studyIssue.value = marketChartStudyIssue(error)
+      studyUnavailable.value = true
+    }
   }
 }, { immediate: true })
 const followLatest = ref(true)
@@ -174,6 +180,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :series-kind="seriesKind"
       :visible-main-indicators="visibleMainIndicators"
       :study-display="studyDisplay"
+      :study-issue="studyIssue"
       :range-detector-source-identity="rangeDetectorSourceIdentity"
       :range-detector-anchor-time="rangeDetectorAnchorTime"
       :alert-markers="markers"

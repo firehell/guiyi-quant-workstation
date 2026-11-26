@@ -36,7 +36,7 @@ import type {
   MainIndicatorId,
   SeriesKind,
 } from '@/types/market'
-import { marketStudyLayerStatus, type EmaIndicatorId, type MarketChartStudyDisplay, type MarketChartStudyPoint } from '@/utils/marketChartStudies'
+import { marketStudyLayerStatus, type EmaIndicatorId, type MarketChartStudyDisplay, type MarketChartStudyIssue, type MarketChartStudyPoint } from '@/utils/marketChartStudies'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   formatChartAxisTimeInShanghai,
@@ -86,6 +86,7 @@ const props = withDefaults(defineProps<{
   seriesKind: SeriesKind
   visibleMainIndicators?: MainIndicatorId[]
   studyDisplay?: MarketChartStudyDisplay | null
+  studyIssue?: MarketChartStudyIssue | null
   rangeDetectorSourceIdentity?: string
   rangeDetectorAnchorTime?: string | null
   showDerivedMarkers?: boolean
@@ -333,7 +334,7 @@ watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
   detailSession?.restoreInspectionCursor()
 }, { deep: true })
-watch(() => props.studyDisplay, () => {
+watch([() => props.studyDisplay, () => props.studyIssue], () => {
   renderDerivedSeries()
   detailSession?.restoreInspectionCursor()
 })
@@ -677,14 +678,17 @@ function renderDynamicRange(): void {
     dynamicRangeAttached = false
     return
   }
-  if (!dynamicRangeAttached) {
-    host.layer('dynamic-range', 'dynamic_range', 'main').primitive(candles, dynamicRangePrimitive)
-    dynamicRangeAttached = true
-  }
+  const anchor = candles
   const bars = new Map(renderedBars.map(b => [pointKey(b.physicalContract ?? '',b.time),b]))
-  dynamicRangePrimitive.setData(props.dynamicRangeEnabled ? props.dynamicRangePoints.filter(p => {
+  const points = props.dynamicRangePoints.filter(p => {
     const b=bars.get(pointKey(p.contract,p.time)); return b && matchesRangeBar(p,b)
-  }).map(p => ({...p,time:bars.get(pointKey(p.contract,p.time))!.time})) : [], ribbonTime)
+  }).map(p => ({...p,time:bars.get(pointKey(p.contract,p.time))!.time}))
+  dynamicRangeAttached = host.renderLayer('dynamic-range', 'dynamic_range', 'main', 'primitive', layer => {
+    if (!dynamicRangeAttached) layer.primitive(anchor, dynamicRangePrimitive)
+    dynamicRangePrimitive.setData(points, ribbonTime)
+    layer.updateDiagnostics({ status: points.length ? 'ready' : 'missing_input', frequency: props.period,
+      dataCutoff: points.at(-1)?.time ?? null })
+  })
 }
 
 const indicatorRenderFailed = ref(false)
@@ -737,21 +741,68 @@ function writeDerivedSeries(): void {
       delete emaLines[indicator]
       continue
     }
-    const layer = host.layer(indicator, indicator, 'main')
-    const series = emaLines[indicator] ??= layer.line({ color: emaColors[indicator], lineWidth: indicator === 'ema_21' ? 2 : 1, lastValueVisible: false })
-    series.applyOptions({ color: emaColors[indicator] })
-    const points = chartValues(derivedData.ema[indicator])
-    series.setData(points)
+    const usesReference = Boolean(referenceOverlay && indicator === 'ema_21')
+    if (props.studyIssue && !usesReference) {
+      host.removeLayer(indicator)
+      delete emaLines[indicator]
+      host.layer(indicator, indicator, 'main').updateDiagnostics({
+        status: props.studyIssue.status, frequency: props.period, lastError: props.studyIssue.reason,
+      })
+      continue
+    }
     const last = latestStudyPoint(derivedData.ema[indicator], derivedData.emaFacts[indicator])
     const fact = last ? derivedData.emaFacts[indicator]?.[last.time] : undefined
-    const identity = referenceOverlay && indicator === 'ema_21' ? undefined : props.studyDisplay?.features[indicator]
-    layer.updateDiagnostics({ frequency: props.period,
-      status: last?.value != null ? 'ready' : marketStudyLayerStatus(fact),
-      formulaVersion: identity?.formulaVersion ?? null, sourceIdentity: identity ? props.studyDisplay?.sourceRevision : null,
-      dataCutoff: last?.time ?? null, lastError: last?.value != null ? null : fact?.diagnostic ?? null })
+    const identity = usesReference ? undefined : props.studyDisplay?.features[indicator]
+    const written = host.renderLayer(indicator, indicator, 'main', 'line', layer => {
+      const series = emaLines[indicator] ??= layer.line({ color: emaColors[indicator], lineWidth: indicator === 'ema_21' ? 2 : 1, lastValueVisible: false })
+      series.applyOptions({ color: emaColors[indicator] })
+      series.setData(chartValues(derivedData.ema[indicator]))
+      layer.updateDiagnostics({ frequency: props.period,
+        status: last?.value != null ? 'ready' : marketStudyLayerStatus(fact),
+        formulaVersion: identity?.formulaVersion ?? null, sourceIdentity: identity ? props.studyDisplay?.sourceRevision : null,
+        dataCutoff: last?.time ?? null, lastError: last?.value != null ? null : fact?.diagnostic ?? null })
+    })
+    if (!written) delete emaLines[indicator]
   }
-  if (props.visibleMainIndicators.includes('boll')) {
-    const layer = host.layer('boll', 'boll', 'main')
+  renderBoll(theme)
+  const anchor = candles
+  if (rangeEnabled) rangeAttached = host.renderLayer('range-detector', 'range_detector', 'main', 'primitive', layer => {
+    if (!rangeAttached) layer.primitive(anchor, rangeDetectorPrimitive)
+    rangeDetectorPrimitive.setStyle({
+      rangeIntact: theme.rangeIntact,
+      rangeBrokenUp: theme.rangeBrokenUp,
+      rangeBrokenDown: theme.rangeBrokenDown,
+      rangeFill: theme.rangeFill,
+      rangeMid: theme.rangeMid,
+    })
+    rangeDetectorPrimitive.setData(derivedData.rangeDetector?.ranges ?? [], renderedBars.at(-1)?.time ?? null, ribbonTime)
+    layer.updateDiagnostics({
+      status: derivedData.rangeDetector ? 'ready' : 'missing_input', frequency: props.period,
+      sourceIdentity: props.rangeDetectorSourceIdentity ?? null, formulaVersion: 'range_detector_lux_v1',
+      dataCutoff: derivedData.rangeDetector ? renderedBars.at(-1)?.time ?? null : null,
+    })
+  })
+  else {
+    host.removeLayer('range-detector')
+    rangeAttached = false
+  }
+
+  writeMarkersAndMacd(theme)
+}
+
+function renderBoll(theme: ReturnType<typeof resolveChartTheme>): void {
+  if (!host) return
+  const selected = props.visibleMainIndicators.includes('boll')
+  if (!selected || props.studyIssue) {
+    host.removeLayer('boll')
+    bollLines = null
+    bollPointCount.value = 0
+    if (selected && props.studyIssue) host.layer('boll', 'boll', 'main').updateDiagnostics({
+      status: props.studyIssue.status, frequency: props.period, lastError: props.studyIssue.reason,
+    })
+    return
+  }
+  const written = host.renderLayer('boll', 'boll', 'main', 'band', layer => {
     const boundary = { color: theme.ema60, lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false } as const
     const center = { ...boundary, color: theme.ema10, lineStyle: 0 } as const
     bollLines ??= { ...layer.band(boundary, boundary), middle: layer.line(center) }
@@ -772,31 +823,15 @@ function writeDerivedSeries(): void {
       status: last?.value != null ? 'ready' : marketStudyLayerStatus(fact),
       lastError: fact?.diagnostic ?? null,
     })
-  } else if (bollLines) {
-    host.removeLayer('boll')
+  })
+  if (!written) {
     bollLines = null
     bollPointCount.value = 0
   }
-  if (rangeEnabled && !rangeAttached) {
-    host.layer('range-detector', 'range_detector', 'main').primitive(candles, rangeDetectorPrimitive)
-    rangeAttached = true
-  } else if (!rangeEnabled && rangeAttached) {
-    host.removeLayer('range-detector')
-    rangeAttached = false
-  }
-  rangeDetectorPrimitive.setStyle({
-    rangeIntact: theme.rangeIntact,
-    rangeBrokenUp: theme.rangeBrokenUp,
-    rangeBrokenDown: theme.rangeBrokenDown,
-    rangeFill: theme.rangeFill,
-    rangeMid: theme.rangeMid,
-  })
-  rangeDetectorPrimitive.setData(
-    derivedData.rangeDetector?.ranges ?? [],
-    renderedBars.at(-1)?.time ?? null,
-    ribbonTime,
-  )
+}
 
+function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void {
+  if (!host || !macdHistogram || !macdDif || !macdDea) return
   const displayBarByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
   macdCrossMarkers?.setMarkers(derivedData.macd.crosses.map(point => ({
     time: chartTime(displayBarByTime.get(point.time)!), position: 'atPriceMiddle' as const, price: point.value,
@@ -811,15 +846,17 @@ function writeDerivedSeries(): void {
   )))
 
   if (props.visibleMainIndicators.includes('htdy')) {
-    const layer = host.layer('htdy', 'htdy', 'main')
-    htdyLines ??= {
-      zk1: layer.line({ color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }),
-      zd1: layer.line({ color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }),
-      zd2: layer.line({ color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }),
-    }
-    for (const key of ['zk1', 'zd1', 'zd2'] as const) htdyLines[key].setData(chartValues(derivedData.htdy?.[key]))
-    layer.updateDiagnostics({ frequency: props.period, formulaVersion: 'original-v0',
-      status: derivedData.htdy ? 'ready' : 'missing_input', dataCutoff: renderedBars.at(-1)?.time ?? null })
+    const written = host.renderLayer('htdy', 'htdy', 'main', 'line', layer => {
+      htdyLines ??= {
+        zk1: layer.line({ color: theme.htdyZk1, lineWidth: 2, lineStyle: 0, lastValueVisible: false }),
+        zd1: layer.line({ color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }),
+        zd2: layer.line({ color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }),
+      }
+      for (const key of ['zk1', 'zd1', 'zd2'] as const) htdyLines[key].setData(chartValues(derivedData.htdy?.[key]))
+      layer.updateDiagnostics({ frequency: props.period, formulaVersion: 'original-v0',
+        status: derivedData.htdy ? 'ready' : 'missing_input', dataCutoff: renderedBars.at(-1)?.time ?? null })
+    })
+    if (!written) htdyLines = null
   } else {
     host.removeLayer('htdy')
     htdyLines = null

@@ -1,5 +1,5 @@
 import type { InjectionKey, Ref } from 'vue'
-import type { LayerStatus } from '@guiyi/quant-chart'
+import { DISPLAY_CATALOG, type LayerStatus } from '@guiyi/quant-chart'
 import type { BarData, MainIndicatorId, MarketFrequency, SeriesKind } from '../types/market.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
 
@@ -9,6 +9,10 @@ export const MARKET_CHART_STUDY_BAR_LIMIT = 2_000
 export type EmaIndicatorId = keyof typeof EMA_STUDIES
 type ChartStudyId = keyof typeof STUDIES
 type StudyPointStatus = 'READY' | 'WARMING' | 'UNKNOWN' | 'INVALID' | 'ERROR'
+const STUDY_POINT_REASONS = new Set([
+  'LOOKBACK_REQUIRED', 'INPUT_QUALITY_INVALID', 'INPUT_MISSING', 'INPUT_NONFINITE',
+  'INPUT_PREFIX_INTERRUPTED', 'OUTPUT_NONFINITE', 'COMPUTE_FAILED',
+])
 export type MarketChartStudyPoints = Partial<Record<ChartStudyId, Record<string, MarketChartStudyPoint>>>
 export interface MarketChartStudyDisplay {
   points: MarketChartStudyPoints
@@ -24,6 +28,38 @@ export interface MarketChartStudyPoint {
   values: Record<string, number> | null
   status: StudyPointStatus
   diagnostic: string | null
+}
+
+export interface MarketChartStudyIssue {
+  status: Extract<LayerStatus, 'catalog_mismatch' | 'invalid_source' | 'compute_error' | 'missing_input'>
+  reason: string
+}
+
+class MarketChartStudyProjectionError extends Error {
+  readonly issue: MarketChartStudyIssue
+
+  constructor(issue: MarketChartStudyIssue) {
+    super(issue.reason)
+    this.issue = issue
+  }
+}
+
+function rejectStudy(reason: string, status: MarketChartStudyIssue['status'] = 'invalid_source'): never {
+  throw new MarketChartStudyProjectionError({ status, reason })
+}
+
+export function marketChartStudyIssue(error: unknown): MarketChartStudyIssue {
+  if (error instanceof MarketChartStudyProjectionError) return error.issue
+  const response = chartStudyResponse(error)
+  const code = response?.data?.detail?.code
+  if (response?.status === 409 && (code === 'MARKET_CHART_STUDY_PHYSICAL_OWNER_INVALID' || code === 'MARKET_CHART_STUDY_WINDOW_MISMATCH')) {
+    return { status: 'invalid_source', reason: code }
+  }
+  return { status: 'missing_input', reason: 'MARKET_CHART_STUDY_REQUEST_FAILED' }
+}
+
+function chartStudyResponse(error: unknown) {
+  return (error as { response?: { status?: number; data?: { detail?: { code?: string } } } })?.response
 }
 
 export function marketStudyLayerStatus(fact?: MarketChartStudyPoint): LayerStatus {
@@ -69,7 +105,7 @@ export async function retryMarketStudyWhenBusy<T>(read: () => Promise<T>, signal
       signal.throwIfAborted()
       return result
     } catch (error) {
-      const response = (error as { response?: { status?: number; data?: { detail?: { code?: string } } } })?.response
+      const response = chartStudyResponse(error)
       const delay = CHART_STUDY_BUSY_DELAYS_MS[retries++]
       if (signal.aborted || delay === undefined || response?.status !== 503
         || response.data?.detail?.code !== 'MARKET_CHART_STUDY_BUSY') throw error
@@ -115,7 +151,7 @@ export function marketChartStudyRequest(
 }
 
 function record(value: unknown): Record<string, unknown> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new Error('MARKET_CHART_STUDY_INVALID')
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) rejectStudy('MARKET_CHART_STUDY_INVALID')
   return value as Record<string, unknown>
 }
 
@@ -128,30 +164,43 @@ function pointValue(value: unknown, id: ChartStudyId): MarketChartStudyPoint {
   const status = point.status as StudyPointStatus
   if (status === 'READY' && point.diagnostic === null) {
     const values = record(point.values)
-    const keys = id === 'boll' ? ['upper', 'middle', 'lower'] : ['value']
-    if (Object.keys(values).length === keys.length && keys.every(key => typeof values[key] === 'number' && Number.isFinite(values[key]))) {
+    const source = DISPLAY_CATALOG[id]?.source
+    if (source?.type !== 'quant_feature' || source.featureId !== STUDIES[id]) {
+      rejectStudy('MARKET_CHART_STUDY_FEATURE_INVALID', 'catalog_mismatch')
+    }
+    const keys = source.outputs
+    if (Object.keys(values).length !== keys.length || !keys.every(key => Object.hasOwn(values, key))) {
+      rejectStudy('MARKET_CHART_STUDY_OUTPUT_MISMATCH', 'catalog_mismatch')
+    }
+    if (keys.every(key => typeof values[key] === 'number' && Number.isFinite(values[key]))) {
       return { status, values: values as Record<string, number>, diagnostic: null }
     }
+    rejectStudy('MARKET_CHART_STUDY_POINT_INVALID', 'compute_error')
   }
   if (['WARMING', 'UNKNOWN', 'INVALID', 'ERROR'].includes(status) && point.values === null
     && typeof point.diagnostic === 'string' && point.diagnostic.length > 0) {
-    return { status, values: null, diagnostic: point.diagnostic }
+    return {
+      status, values: null,
+      diagnostic: STUDY_POINT_REASONS.has(point.diagnostic) ? point.diagnostic : 'MARKET_CHART_STUDY_POINT_UNAVAILABLE',
+    }
   }
-  throw new Error('MARKET_CHART_STUDY_POINT_INVALID')
+  return rejectStudy('MARKET_CHART_STUDY_POINT_INVALID')
 }
 
 /** Bind every projected value to the requested completed chart Bar and owner. */
 export function projectMarketChartStudyDisplay(payload: unknown, request: NonNullable<ReturnType<typeof marketChartStudyRequest>>): MarketChartStudyDisplay | null {
   const { query, ids, bars } = request
   const body = record(payload)
-  if (body.schema_version !== 'guiyi_market_chart_studies_v1' || body.result_schema_version !== 'guiyi_feature_result_v1'
-    || body.symbol !== query.symbol || body.series_kind !== query.series_kind || body.frequency !== query.frequency
+  if (body.schema_version !== 'guiyi_market_chart_studies_v1' || body.result_schema_version !== 'guiyi_feature_result_v1') {
+    rejectStudy('MARKET_CHART_STUDY_SCHEMA_MISMATCH', 'catalog_mismatch')
+  }
+  if (body.symbol !== query.symbol || body.series_kind !== query.series_kind || body.frequency !== query.frequency
     || body.contract !== (query.contract?.toUpperCase() ?? null) || !sameInstant(body.as_of, query.last)
-    || !Array.isArray(body.segments)) throw new Error('MARKET_CHART_STUDY_IDENTITY_MISMATCH')
+    || !Array.isArray(body.segments)) rejectStudy('MARKET_CHART_STUDY_IDENTITY_MISMATCH')
   if (query.series_kind === 'continuous' && body.unavailable_reason === 'PHYSICAL_OWNER_REQUIRED'
     && body.source_revision === null && !body.segments.length) return null
   if (query.series_kind === 'continuous' || body.unavailable_reason !== null || typeof body.source_revision !== 'string'
-    || !/^[0-9a-f]{64}$/.test(body.source_revision)) throw new Error('MARKET_CHART_STUDY_SOURCE_INVALID')
+    || !/^[0-9a-f]{64}$/.test(body.source_revision)) rejectStudy('MARKET_CHART_STUDY_SOURCE_INVALID')
   const projected: MarketChartStudyPoints = {}
   const features: MarketChartStudyDisplay['features'] = {}
   ids.forEach(id => { projected[id] = {} })
@@ -160,12 +209,12 @@ export function projectMarketChartStudyDisplay(payload: unknown, request: NonNul
   for (const raw of body.segments) {
     const segment = record(raw)
     if (typeof segment.segment_id !== 'string' || !segment.segment_id || seen.has(segment.segment_id)
-      || !Array.isArray(segment.bars) || !segment.bars.length
-      || !Array.isArray(segment.features) || segment.features.length !== ids.length) throw new Error('MARKET_CHART_STUDY_SEGMENT_INVALID')
+      || !Array.isArray(segment.bars) || !segment.bars.length) rejectStudy('MARKET_CHART_STUDY_SEGMENT_INVALID')
+    if (!Array.isArray(segment.features) || segment.features.length !== ids.length) rejectStudy('MARKET_CHART_STUDY_FEATURE_INVALID', 'catalog_mismatch')
     seen.add(segment.segment_id)
     const owner = bars[offset]?.calculationSegmentId
     if (offset > 0 && owner === bars[offset - 1]?.calculationSegmentId
-      && segment.physical_contract === bars[offset - 1]?.physicalContract) throw new Error('MARKET_CHART_STUDY_OWNER_MISMATCH')
+      && segment.physical_contract === bars[offset - 1]?.physicalContract) rejectStudy('MARKET_CHART_STUDY_OWNER_MISMATCH')
     const times = segment.bars.map((rawBar, index) => {
       const bar = record(rawBar)
       const expected = bars[offset + index]
@@ -174,7 +223,7 @@ export function projectMarketChartStudyDisplay(payload: unknown, request: NonNul
         || !Number.isFinite(Number(bar.close)) || Number(bar.close) !== expected.close
         || typeof bar.source_bar_sha256 !== 'string' || !/^[0-9a-f]{64}$/.test(bar.source_bar_sha256)
         || (expected.sourceBarSha256 !== undefined && bar.source_bar_sha256 !== expected.sourceBarSha256)) {
-        throw new Error('MARKET_CHART_STUDY_BAR_MISMATCH')
+        rejectStudy('MARKET_CHART_STUDY_BAR_MISMATCH')
       }
       return expected.time
     })
@@ -182,12 +231,14 @@ export function projectMarketChartStudyDisplay(payload: unknown, request: NonNul
       const id = ids[index]!
       const feature = record(rawFeature)
       if (feature.study !== STUDIES[id] || feature.formula_version !== `talib_${STUDIES[id]}_v1`
-        || typeof feature.backend_version !== 'string' || !feature.backend_version.startsWith('ta-lib:')
-        || typeof feature.parameters_hash !== 'string' || !/^[0-9a-f]{16}$/.test(feature.parameters_hash)
-        || !Array.isArray(feature.points) || feature.points.length !== times.length) throw new Error('MARKET_CHART_STUDY_FEATURE_INVALID')
+        || typeof feature.backend_version !== 'string' || !feature.backend_version.startsWith('ta-lib:')) {
+        rejectStudy('MARKET_CHART_STUDY_FEATURE_INVALID', 'catalog_mismatch')
+      }
+      if (typeof feature.parameters_hash !== 'string' || !/^[0-9a-f]{16}$/.test(feature.parameters_hash)
+        || !Array.isArray(feature.points) || feature.points.length !== times.length) rejectStudy('MARKET_CHART_STUDY_FEATURE_INVALID')
       const previous = features[id]
       if (previous && (previous.backendVersion !== feature.backend_version || previous.parametersHash !== feature.parameters_hash)) {
-        throw new Error('MARKET_CHART_STUDY_FEATURE_IDENTITY_MISMATCH')
+        rejectStudy('MARKET_CHART_STUDY_FEATURE_IDENTITY_MISMATCH')
       }
       features[id] = {
         formulaVersion: feature.formula_version, backendVersion: feature.backend_version, parametersHash: feature.parameters_hash,
@@ -196,6 +247,6 @@ export function projectMarketChartStudyDisplay(payload: unknown, request: NonNul
     })
     offset += times.length
   }
-  if (offset !== bars.length) throw new Error('MARKET_CHART_STUDY_WINDOW_MISMATCH')
+  if (offset !== bars.length) rejectStudy('MARKET_CHART_STUDY_WINDOW_MISMATCH')
   return { points: projected, sourceRevision: body.source_revision, features }
 }

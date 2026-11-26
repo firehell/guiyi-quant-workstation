@@ -62,51 +62,71 @@ function syncCursor(){
  finally{projectingCursor=false}
 }
 function render() {
-  if (!series || !host) return
+  if (!host) return
+  const currentHost = host
   const chart = host.chart
   const model = props.chart ? buildNewowProductChartModel(props.chart) : null
   const value = aligned.value
   if(model)chart.applyOptions({timeScale:{timeVisible:model.identity.frequency.endsWith('m')}})
-  series.setData(model?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, model.identity.frequency, bar.tradingDay), value: 0 })) ?? [])
+  const ready = host.renderLayer('axis', 'auxiliary_axis', pane, 'line', axis => {
+    series ??= axis.line({ color: 'transparent', lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false })
+    try {
+      series.setData(model?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, model.identity.frequency, bar.tradingDay), value: 0 })) ?? [])
+    } catch (error) {
+      currentHost.removeLayer('selected')
+      throw error
+    }
+    const latest = props.chart?.value?.bars.at(-1)
+    axis.updateDiagnostics({
+      status: latest ? 'ready' : 'missing_input',
+      sourceIdentity: props.chart?.meta.data_revision_identity ?? props.chart?.meta.input_content_sha256 ?? null,
+      frequency: model?.identity.frequency ?? null,
+      dataCutoff: latest?.bar_end ?? null,
+    })
+  })
+  if (!ready || !series) {
+    series = null
+    attachedComponent = null
+    diagnosticComponent = null
+    hasWrittenBars = false
+    return
+  }
   const response = props.auxiliary
   const requested = props.component ?? response?.value?.component
   const component = requested && Object.hasOwn(primitives, requested) ? requested as keyof typeof primitives : null
   const accepted = component && value?.component === component ? component : null
   if (accepted !== attachedComponent || component !== diagnosticComponent) {
     host.removeLayer('selected')
-    if (accepted) host.layer('selected', `newow.${accepted}`, pane).primitive(series, primitives[accepted])
-    attachedComponent = accepted
+    attachedComponent = null
     diagnosticComponent = component
   }
   const latest = props.chart?.value?.bars.at(-1)
-  host.layer('axis', 'auxiliary_axis', pane).updateDiagnostics({
-    status: latest ? 'ready' : 'missing_input',
-    sourceIdentity: props.chart?.meta.data_revision_identity ?? props.chart?.meta.input_content_sha256 ?? null,
-    frequency: model?.identity.frequency ?? null,
-    dataCutoff: latest?.bar_end ?? null,
-  })
   if (component) {
     const readiness = accepted ? projectNewowAuxiliaryReadiness(response?.value, latest) : null
     const status = newowAuxiliaryLayerStatus(
       props.lifecycle ?? 'not_requested', Boolean(response?.value), Boolean(accepted), readiness?.currentStatus ?? null,
       value?.series.some(item => item.points.length > 0) ?? false, props.error ?? null,
     )
-    host.layer('selected', `newow.${component}`, pane).updateDiagnostics({
-      status,
-      // A rejected response can identify itself, but does not establish plotted provenance.
-      sourceIdentity: accepted ? response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null : null,
-      frequency: model?.identity.frequency ?? null,
-      formulaVersion: accepted ? response?.value?.formula_version ?? null : null,
-      dataCutoff: accepted ? response?.meta.as_of ?? null : null,
-      lastError: props.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
+    const anchor = series
+    const written = host.renderLayer('selected', `newow.${component}`, pane, 'primitive', layer => {
+      if (accepted && !attachedComponent) layer.primitive(anchor, primitives[accepted])
+      if (value?.component === 'zhaoyao_mirror') primitives.zhaoyao_mirror.setData(buildNewowZhaoyaoMirrorData(value.series), 12)
+      if (value?.component === 'up_down_energy' && model) primitives.up_down_energy.setData(buildNewowUpDownEnergyData(value.series, model.bars), 12)
+      if (value?.component === 'main_force_control' && props.auxiliary?.value?.component === 'main_force_control') {
+        primitives.main_force_control.setData(buildNewowMainForceData(value.series, props.auxiliary.value.segments), 12)
+      }
+      if (value?.component === 'trend_reversal') primitives.trend_reversal.setData(buildNewowTrendReversalData(value.series), 12)
+      layer.updateDiagnostics({
+        status,
+        sourceIdentity: accepted ? response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null : null,
+        frequency: model?.identity.frequency ?? null,
+        formulaVersion: accepted ? response?.value?.formula_version ?? null : null,
+        dataCutoff: accepted ? response?.meta.as_of ?? null : null,
+        lastError: props.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
+      })
     })
+    attachedComponent = written ? accepted : null
   }
-  if (value?.component === 'zhaoyao_mirror') primitives.zhaoyao_mirror.setData(buildNewowZhaoyaoMirrorData(value.series), 12)
-  if (value?.component === 'up_down_energy' && model) primitives.up_down_energy.setData(buildNewowUpDownEnergyData(value.series, model.bars), 12)
-  if (value?.component === 'main_force_control' && props.auxiliary?.value?.component === 'main_force_control') {
-    primitives.main_force_control.setData(buildNewowMainForceData(value.series, props.auxiliary.value.segments), 12)
-  }
-  if (value?.component === 'trend_reversal') primitives.trend_reversal.setData(buildNewowTrendReversalData(value.series), 12)
   writtenChart=props.chart;hasWrittenBars=Boolean(model?.bars.length)
   if(!hasWrittenBars){userRangePending=false;chart.clearCrosshairPosition();return}
   syncViewport();syncCursor()
@@ -137,7 +157,6 @@ onMounted(() => {
   }, mountStandalonePane)
   const chart = host.chart
   host.addAuxiliary(pane.auxiliary)
-  series = host.layer('axis', 'auxiliary_axis', pane).line({ color: 'transparent', lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false })
   const observer = new ResizeObserver(() => chart.resize(canvas.clientWidth, 138))
   observer.observe(canvas)
   host.own(() => observer.disconnect())

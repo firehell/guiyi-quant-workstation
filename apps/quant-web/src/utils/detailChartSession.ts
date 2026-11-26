@@ -250,9 +250,9 @@ export function createDetailChartSession(dependencies: {
         }
         if (property === 'attachPrimitive') return (primitive: any) => {
           if (!active) return
-          target.attachPrimitive(primitive)
           const remove = () => target.detachPrimitive(primitive)
           primitiveCleanup.set(primitive, remove); cleanup.add(remove)
+          target.attachPrimitive(primitive)
         }
         if (property === 'detachPrimitive') return (primitive: any) => {
           const remove = primitiveCleanup.get(primitive)

@@ -33,6 +33,7 @@ import {
   CrosshairMode,
   createChart,
   createSeriesMarkers,
+  type CreatePriceLineOptions,
   type WhitespaceData,
   type IChartApi,
   type ISeriesApi,
@@ -172,6 +173,7 @@ const extraPaneHeaders = ref<Array<{ component: NewowAuxiliaryPaneComponent; tit
 const activeAuxiliary = shallowRef<ReturnType<ChartLayer['inspect']> | null>(null)
 const extraStatusMessages: Partial<Record<LayerStatus, string>> = {
   loading: '加载中', warming: '预热中', invalid_source: '来源不匹配', compute_error: '计算结果不可用', missing_input: '缺少输入',
+  catalog_mismatch: '指标目录不匹配', renderer_failure: '渲染错误',
 }
 const extraPaneHeight = computed(() => pure.value ? 0 : (props.extraAuxiliaryPanes ?? []).reduce((sum, pane) => sum + (pane.height ?? 120), 0))
 function onCrosshair(event: MouseEventParams<Time>): void {
@@ -321,6 +323,8 @@ function displayVersion(indicator: string): string | null {
 }
 
 function writeMainDiagnostics(id: string, indicator: string, response: ChartResponse | null, patch: LayerPatch): void {
+  const current = host?.inspectLayer(id)
+  if (current?.status === 'renderer_failure' || current?.status === 'catalog_mismatch' || current?.status === 'retired') return
   host?.layer(id, indicator, 'main').updateDiagnostics({
     ...chartLayerSource(response),
     status: chartLayerStatus(response, false),
@@ -359,21 +363,28 @@ const marks = computed<NewowPriceAnnotation[]>(() => {
   return [...extrema, ...nine].sort((a, b) => a.index - b.index)
 })
 const attachedPricePrimitives = new Set<string>()
-function syncPricePrimitive(id: string, indicator: string, primitive: ISeriesPrimitive<Time>, show: boolean) {
+function syncPricePrimitive(id: string, indicator: string, primitive: ISeriesPrimitive<Time>, show: boolean, update?: () => void) {
   if (!host || !candles) return
-  if (show && !attachedPricePrimitives.has(id)) {
-    host.layer(id, indicator, 'main').primitive(candles, primitive)
-    attachedPricePrimitives.add(id)
-  } else if (!show && attachedPricePrimitives.delete(id)) {
+  if (!show) {
+    attachedPricePrimitives.delete(id)
     host.removeLayer(id)
+    update?.()
+    return
   }
+  const anchor = candles
+  const written = host.renderLayer(id, indicator, 'main', 'primitive', layer => {
+    if (!attachedPricePrimitives.has(id)) layer.primitive(anchor, primitive)
+    update?.()
+  })
+  if (written) attachedPricePrimitives.add(id)
+  else attachedPricePrimitives.delete(id)
 }
 function renderPriceAnnotations() {
   const id = 'annotations', indicator = 'newow_annotations'
   const source = props.loading ? null : strategySource.value
   const enabled = annotations.value.extrema || (!pure.value && annotations.value.nineTurn)
-  syncPricePrimitive(id, indicator, priceAnnotations, marks.value.length > 0)
-  priceAnnotations.setData(marks.value, pageTheme.value === 'dark')
+  syncPricePrimitive(id, indicator, priceAnnotations, marks.value.length > 0,
+    () => priceAnnotations.setData(marks.value, pageTheme.value === 'dark'))
   writeMainDiagnostics(id, indicator, source, {
     status: enabled ? chartLayerStatus(source, !!source?.value?.bars.length) : 'hidden',
     formulaVersion: source ? displayVersion(indicator) : null,
@@ -382,12 +393,12 @@ function renderPriceAnnotations() {
 }
 watch([marks, pageTheme], renderPriceAnnotations, { flush: 'post' })
 function renderPattern() {
-  publicPattern.setData(null)
   const choice = props.patternSelection
   const value = model.value
   const source = strategySource.value
   const id = 'pattern', indicator = 'newow_pattern'
   if (pure.value || !choice || !value || !source || props.loading) {
+    syncPricePrimitive(id, indicator, publicPattern, false, () => publicPattern.setData(null))
     writeMainDiagnostics(id, indicator, null, {
       status: pure.value || !choice ? 'hidden' : chartLayerStatus(null, false),
     })
@@ -406,6 +417,7 @@ function renderPattern() {
       && current.tradingDay === bar.tradingDay && current.volume === bar.volume
       && priceKeys.every(key => current[key] === bar[key])
   })) {
+    syncPricePrimitive(id, indicator, publicPattern, false, () => publicPattern.setData(null))
     writeMainDiagnostics(id, indicator, null, { status: 'invalid_source', lastError: 'NEWOW_PATTERN_WINDOW_MISMATCH' })
     return
   }
@@ -417,10 +429,11 @@ function renderPattern() {
   try {
     geometry = buildNewowPatternGeometry(choice, value.identity.frequency)
   } catch {
+    syncPricePrimitive(id, indicator, publicPattern, false, () => publicPattern.setData(null))
     writeMainDiagnostics(id, indicator, source, { ...patternSource, status: 'compute_error', lastError: 'NEWOW_PATTERN_GEOMETRY_FAILED' })
     return
   }
-  publicPattern.setData(geometry)
+  syncPricePrimitive(id, indicator, publicPattern, true, () => publicPattern.setData(geometry))
   writeMainDiagnostics(id, indicator, source, { ...patternSource, status: 'ready' })
 }
 watch(()=>[props.patternSelection,props.patternWindowKey,props.loading,props.strategySwitching],renderPattern)
@@ -466,12 +479,14 @@ function renderVisualOverlays(): void {
     const required = visualOverlays.value.window
     const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), required)
     const options = { priceFormat: NEWOW_CHART_PRICE_FORMAT, lineWidth: 1 as const, lineStyle: 2 as const, priceLineVisible: false, lastValueVisible: false }
-    const lines = host.layer('donchian', 'newow_donchian', 'main').band(
-      { ...options, color: 'rgba(52,199,89,0.7)' }, { ...options, color: 'rgba(255,59,48,0.7)' },
-    )
-    for (const side of ['upper', 'lower'] as const) {
-      lines[side].setData(points.map((p, i) => ({ time: chartMarkerTime(p.time, value.identity.frequency, value.bars[i]!.tradingDay), ...(p[side] === null ? {} : { value: p[side]! }) })))
-    }
+    host.renderLayer('donchian', 'newow_donchian', 'main', 'band', layer => {
+      const lines = layer.band(
+        { ...options, color: 'rgba(52,199,89,0.7)' }, { ...options, color: 'rgba(255,59,48,0.7)' },
+      )
+      for (const side of ['upper', 'lower'] as const) {
+        lines[side].setData(points.map((p, i) => ({ time: chartMarkerTime(p.time, value.identity.frequency, value.bars[i]!.tradingDay), ...(p[side] === null ? {} : { value: p[side]! }) })))
+      }
+    })
     const current = value.bars.at(-1)
     let available = 0
     for (let i = value.bars.length - 1; current && i >= 0 && available < required; i--) {
@@ -498,14 +513,14 @@ function renderVisualOverlays(): void {
   const bars = value.bars.filter((bar,i) => { const logical = chart ? detailChartIndex(chart, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), i) : i; return !range || (logical >= Math.ceil(range.from) && logical <= Math.floor(range.to)) })
   retainedStop = retainBuildStop(retainedStop, `${identityKey(value)}:${comparisonActive.value ? 'dual' : 'single'}`, anchorModel.actions.map(a => { const b = anchorModel.bars.find(b => b.barEnd === a.barEnd && b.physicalContract === a.physicalContract && b.segmentId === a.segmentId); return { time:a.barEnd, owner:b ? owner(b) : '', price:a.referencePrice, action:a.kind } }),bars.map(b => ({time:b.barEnd,owner:owner(b)})))
   const price = retainedStopPrice(retainedStop, 0.07)
-  if (price !== null) host.layer('stop', 'newow_stop', 'main').priceLevel(candles, {price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
+  if (price !== null) renderPriceLevel('stop', 'newow_stop', {price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
   writeMainDiagnostics('stop', 'newow_stop', anchorSource, {
     status: chartLayerStatus(anchorSource, price !== null),
     formulaVersion: displayVersion('newow_stop'),
     dataCutoff: price !== null ? retainedStop?.anchor.time ?? null : null,
   })
 }
-const mainLines = new Map<string, ISeriesApi<'Line'>>()
+const mainLines = new Map<string, ISeriesApi<'Line'> | null>()
 
 onMounted(async () => {
   await nextTick()
@@ -535,7 +550,6 @@ onMounted(async () => {
   })
   chart.panes()[0]!.setStretchFactor(5)
   dualBackground.setDark(pageTheme.value==='dark')
-  host.layer('pattern', 'newow_pattern', 'main').primitive(candles, publicPattern)
   // Public detail v3.4.49: volume shares the price pane on its own hidden scale.
   const profile = comparisonActive.value ? 'newow_dual' : `newow_${props.strategy}` as const
   const volumePolicy = CHART_PROFILES[profile].volume
@@ -550,7 +564,6 @@ onMounted(async () => {
     window.addEventListener('pageshow', syncDisplayPreferences)
     window.addEventListener('storage', syncDisplayPreferences)
   }
-  actionMarkers = host.layer('actions', 'newow_actions', 'main').markers(candles, adapter.createSeriesMarkers)
   chart.subscribeCrosshairMove?.(onCrosshair)
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
   observer = adapter.createResizeObserver(resize)
@@ -583,8 +596,9 @@ onUnmounted(createNewowProductChartDisposer({
     }
     host?.dispose()
     host = null
-    chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null
+    chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null; actionMarkers = null
     mainLines.clear(); auxiliaryLines.clear()
+    failedExtraAxes.clear(); failedAuxiliaryAxis = null
   },
 }))
 
@@ -629,6 +643,13 @@ function rememberViewport(): void {
     oscillationTrack: oscillationTrack.value, comparisonBackground: comparisonBackground.value,
   } })
 }
+function renderPriceLevel(id: string, indicator: string, options: CreatePriceLineOptions): void {
+  const anchor = candles
+  if (anchor) host?.renderLayer(id, indicator, 'main', 'price_level_zone', layer => {
+    layer.priceLevel(anchor, options)
+  })
+}
+
 function renderReferencePrices(): void {
   if (!candles || !host) return
   host.removeLayer('target-price')
@@ -642,7 +663,7 @@ function renderReferencePrices(): void {
     const price = value != null && /^\d+(\.\d+)?$/.test(value) ? Number(value) : NaN
     const visible = !pure.value && !!chartSource && !!model.value && Number.isFinite(price) && price > 0
     const indicator = 'newow_price_reference'
-    if (visible) host.layer(id, indicator, 'main').priceLevel(candles, { price, color, title, lineWidth: 1, lineStyle: 1,
+    if (visible) renderPriceLevel(id, indicator, { price, color, title, lineWidth: 1, lineStyle: 1,
       axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' })
     writeMainDiagnostics(id, indicator, null, {
       ...(visible ? source : undefined),
@@ -652,7 +673,7 @@ function renderReferencePrices(): void {
   }
   const breakout = !pure.value && showBreakoutShapes.value && !props.loading && chartSource?.status.status === 'ready' && model.value
     ? newowOscillationBreakout(model.value) : null
-  if (breakout) host.layer('breakout-reference', 'newow_breakout_reference', 'main').priceLevel(candles, {
+  if (breakout) renderPriceLevel('breakout-reference', 'newow_breakout_reference', {
     price: breakout.price, color: '#FF9800', title: `突破 ${breakout.displayScore}/7`,
     lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelColor: '#FF9800', axisLabelTextColor: '#ffffff',
   })
@@ -691,6 +712,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   processOverlays.value = []
   cycleCountOverlays.value = []
   if (chart === null || candles === null) return
+  if (!auxiliaryAnchor && !pure.value) syncAuxiliaryPane()
   renderReferencePrices()
   renderVisualOverlays()
   renderPattern()
@@ -712,7 +734,7 @@ function renderModel(value: NewowProductChartModel | null): void {
       const last = preview.at(-1)
       reportRenderedEnd(last?.time, last?.physicalContract, props.priceFrequency)
 
-      if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, [], 'cleared')
+      writeAuxiliaryAxis(null, 'cleared')
     }
     const previewVolume = props.strategySwitching ? volumeBars.value : detailChartVolumeBars(chart, props.priceBars ?? [])
     volumeBars.value = previewVolume.map(bar => ({ ...bar, confirmed: false }))
@@ -784,7 +806,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   if (!strategySource.value) host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
     ...chartLayerSource(null), status: chartLayerStatus(null, false),
   })
-  if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
+  writeAuxiliaryAxis(value, priceIdentity)
   renderStructure(strategySource.value ? value : null)
   renderAuxiliary()
   renderMarkers(value)
@@ -834,8 +856,7 @@ function renderStructure(value: NewowProductChartModel | null): void {
     host.removeLayer('strategy-band')
   }
   lastBandIndicator = bandIndicator
-  syncPricePrimitive('strategy-band', bandIndicator, band, bandAreas.length > 0)
-  band.setData(bandAreas)
+  syncPricePrimitive('strategy-band', bandIndicator, band, bandAreas.length > 0, () => band.setData(bandAreas))
   if (primaryBand) writeMainDiagnostics('strategy-band', bandIndicator, primary, {
     status: shown ? chartLayerStatus(primary, bandAreas.length > 0, lastFrameStatus(primary)) : 'hidden',
     renderer: 'primitive',
@@ -845,8 +866,8 @@ function renderStructure(value: NewowProductChartModel | null): void {
 
   const backgroundTimes = value && shown && dual && comparisonBackground.value
     ? trendModel?.bandAreas.filter(area => area.color === 'rgba(54, 90, 245, 0.35)').map(area => area.time) ?? [] : []
-  syncPricePrimitive('comparison-background', 'newow_dual_background', dualBackground, backgroundTimes.length > 0)
-  dualBackground.setData(backgroundTimes)
+  syncPricePrimitive('comparison-background', 'newow_dual_background', dualBackground, backgroundTimes.length > 0,
+    () => dualBackground.setData(backgroundTimes))
   if (dual) writeMainDiagnostics('comparison-background', 'newow_dual_background', trendSource, {
     status: shown && comparisonBackground.value ? chartLayerStatus(trendSource, Boolean(trendModel?.bandAreas.length), lastFrameStatus(trendSource)) : 'hidden',
     formulaVersion: trendSource ? displayVersion('newow_dual_background') : null,
@@ -861,11 +882,10 @@ function renderStructure(value: NewowProductChartModel | null): void {
   }
   lastChannelIndicator = channelIndicator
   const channelPoints = value && shown ? channelModel?.channelPoints ?? [] : []
-  syncPricePrimitive('strategy-channel', channelIndicator, trendChannel, channelPoints.length > 0)
-  trendChannel.setData(channelPoints.map(point => ({
+  syncPricePrimitive('strategy-channel', channelIndicator, trendChannel, channelPoints.length > 0, () => trendChannel.setData(channelPoints.map(point => ({
     time: chartMarkerTime(point.barEnd, value!.identity.frequency, point.tradingDay),
     upper: point.upper, lower: point.lower,
-  })))
+  }))))
   const trendChannelSource = channelSource?.value?.trend_channel
   const featureStatus = channelIndicator === 'newow_trend' ? trendChannelSource?.points.at(-1)?.status : lastFrameStatus(channelSource)
   if (dual || props.strategy !== 'main_rise') writeMainDiagnostics('strategy-channel', channelIndicator, channelSource, {
@@ -896,10 +916,8 @@ function syncMainLines(tracks: readonly { model: NewowProductChartModel; source:
   for (const { model: value, source } of tracks) for (const line of value.mainLines) {
     const displayId = ['a', 'b'].includes(line.key) ? 'newow_trend'
       : ['upper', 'lower'].includes(line.key) ? 'newow_oscillation' : 'newow_main_rise'
-    const layer = host.layer(`main:${line.id}`, displayId, 'main')
-    let series = mainLines.get(line.id)
-    if (series === undefined) {
-      series = layer.line({
+    const written = host.renderLayer(`main:${line.id}`, displayId, 'main', 'line', layer => {
+      const series = mainLines.get(line.id) ?? layer.line({
         priceFormat: NEWOW_CHART_PRICE_FORMAT,
         color: mainLineColors[line.key] ?? '#64748B',
         lineWidth: ['a', 'b', 'ma35', 'ma45', 'ma10_display_v1'].includes(line.key) ? 1 : 2,
@@ -909,42 +927,40 @@ function syncMainLines(tracks: readonly { model: NewowProductChartModel; source:
         priceLineVisible: false,
       })
       mainLines.set(line.id, series)
-    }
-    series.setData(line.points.map((point): LineData<Time> => ({
-      time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay), value: point.value,
-    })))
-    layer.updateDiagnostics({
-      ...chartLayerSource(source, line.points.at(-1)?.barEnd ?? null),
-      renderer: 'line', status: 'ready',
+      series.setData(line.points.map((point): LineData<Time> => ({
+        time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay), value: point.value,
+      })))
+      layer.updateDiagnostics({
+        ...chartLayerSource(source, line.points.at(-1)?.barEnd ?? null),
+        renderer: 'line', status: 'ready',
+      })
     })
+    if (!written) mainLines.set(line.id, null)
   }
 }
 
 function renderMarkers(value: NewowProductChartModel | null): void {
-  if (host === null || actionMarkers === null) return
+  if (!host || !candles) return
+  const anchor = candles
   const hidden = pure.value || comparisonActive.value || !showActions.value
   const preview = props.displayOnly || props.strategySwitching || (value !== null && value.identity.strategy !== props.strategy)
   const response = value === null || preview ? null : props.response
   const latest = response ? value?.bars.at(-1) : null
   const featureStatus = response?.status?.status
-  const layer = host.layer('actions', 'newow_actions', 'main')
-  layer.updateDiagnostics({
-    status: hidden ? 'hidden' : latest && featureStatus === 'ready' ? 'ready'
-      : featureStatus === 'warming' ? 'warming' : props.loading || props.strategySwitching ? 'loading' : 'missing_input',
-    formulaVersion: latest ? response?.meta.identity.formula_versions.join(' / ') || null : null,
-    sourceIdentity: latest ? response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null : null,
-    frequency: latest ? value?.identity.frequency ?? null : null,
-    dataCutoff: latest?.barEnd ?? null,
-  })
-  if (hidden || preview || value === null) { actionMarkers.setMarkers([]); return }
-  const actions: SeriesMarker<Time>[] = [...value.actions]
+  const actions: SeriesMarker<Time>[] = hidden || preview || value === null ? [] : [...value.actions]
     .sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
-    .map((item) => ({ ...productChartMarker(
-      item,
-      props.selectedSignalId,
-      chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay),
-    ), text: '' }))
-  actionMarkers.setMarkers(actions)
+    .map(item => ({ ...productChartMarker(item, props.selectedSignalId,
+      chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay)), text: '' }))
+  const written = host.renderLayer('actions', 'newow_actions', 'main', 'marker', layer => {
+    actionMarkers ??= layer.markers(anchor, adapter.createSeriesMarkers)
+    actionMarkers.setMarkers(actions)
+    layer.updateDiagnostics({
+      status: hidden ? 'hidden' : latest && featureStatus === 'ready' ? 'ready'
+        : featureStatus === 'warming' ? 'warming' : props.loading || props.strategySwitching ? 'loading' : 'missing_input',
+      ...chartLayerSource(latest ? response : null, latest?.barEnd ?? null),
+    })
+  })
+  if (!written) actionMarkers = null
 }
 
 function renderEventDiagnostics(): void {
@@ -1244,6 +1260,7 @@ function scrollToLatest(): void {
 
 const auxiliaryPaneKey = 'newow-selected'
 const auxiliaryPane = { auxiliary: auxiliaryPaneKey } as const
+let failedAuxiliaryAxis: LayerDiagnostics | null = null
 let attachedAuxiliaryComponent: string | null = null
 function syncAuxiliaryPane(): void {
   if (!host) return
@@ -1253,6 +1270,8 @@ function syncAuxiliaryPane(): void {
       extraPanes.delete(component)
     }
     host.removeAuxiliary(auxiliaryPaneKey)
+    failedExtraAxes.clear()
+    failedAuxiliaryAxis = null
     auxiliaryLines.clear()
     auxiliaryAnchor = null
     auxiliaryZeroLine = null
@@ -1264,13 +1283,62 @@ function syncAuxiliaryPane(): void {
   if (auxiliaryAnchor) return
   host.addAuxiliary(auxiliaryPaneKey)
   // Whitespace pins the secondary timeline without inventing zero values.
-  const axis = host.layer('auxiliary-axis', 'auxiliary_axis', auxiliaryPane)
-  auxiliaryAnchor = axis.line({
-    lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+  const written = host.renderLayer('auxiliary-axis', 'auxiliary_axis', auxiliaryPane, 'line', axis => {
+    auxiliaryAnchor = axis.line({
+      lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+    })
+    auxiliaryZeroLine = axis.priceLevel(auxiliaryAnchor, {
+      price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false,
+    })
   })
-  auxiliaryZeroLine = axis.priceLevel(auxiliaryAnchor, {
-    price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false,
+  if (!written) {
+    recordAuxiliaryAxisFailure()
+  } else {
+    failedAuxiliaryAxis = null
+    const existingExtras = [...extraPanes.values()].sort((left, right) =>
+      host!.paneIndex(left.pane) - host!.paneIndex(right.pane))
+    host.orderAuxiliaries([auxiliaryPaneKey, ...existingExtras.map(item => item.pane.auxiliary)])
+  }
+}
+
+function clearSelectedAuxiliary(): void {
+  host?.removeLayer('auxiliary-selected')
+  auxiliaryLines.clear()
+  attachedAuxiliaryComponent = null
+  renderedAuxiliaryKey = null
+}
+
+function recordAuxiliaryAxisFailure(): void {
+  auxiliaryAnchor = null
+  auxiliaryZeroLine = null
+  failedAuxiliaryAxis = host?.inspectLayer('auxiliary-axis') ?? null
+  activeAuxiliary.value = failedAuxiliaryAxis
+  host?.removeAuxiliary(auxiliaryPaneKey)
+}
+
+function writeAuxiliaryAxis(value: NewowProductChartModel | null, identity: string): void {
+  const anchor = auxiliaryAnchor
+  if (!host || !anchor) return
+  const written = host.renderLayer('auxiliary-axis', 'auxiliary_axis', auxiliaryPane, 'line', axis => {
+    try {
+      anchorWriter.write(anchor, value?.bars.map(bar => ({
+        time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
+      })) ?? [], identity)
+    } catch (error) {
+      // The selected primitive must detach before the host releases its axis.
+      clearSelectedAuxiliary()
+      throw error
+    }
+    axis.updateDiagnostics({
+      ...chartLayerSource(strategySource.value, value?.bars.at(-1)?.barEnd ?? null),
+      formulaVersion: displayVersion('auxiliary_axis'),
+      status: value?.bars.length ? 'ready' : 'missing_input',
+    })
   })
+  if (!written) {
+    clearSelectedAuxiliary()
+    recordAuxiliaryAxisFailure()
+  }
 }
 type SpecializedAuxiliary = NewowZhaoyaoMirrorPrimitive | NewowUpDownEnergyPrimitive | NewowMainForceControlPrimitive | NewowTrendReversalPrimitive
 const reversalMarks = computed(() => {
@@ -1306,13 +1374,15 @@ const primitiveConstructors = {
   main_force_control: NewowMainForceControlPrimitive, trend_reversal: NewowTrendReversalPrimitive,
 }
 const extraPanes = new Map<NewowAuxiliaryPaneComponent, {
-  pane: { auxiliary: string }; layer: ChartLayer; anchor: ISeriesApi<'Line'>; primitive: SpecializedAuxiliary | null;
+  pane: { auxiliary: string }; anchor: ISeriesApi<'Line'>; primitive: SpecializedAuxiliary | null;
   lines: AuxiliaryLines; snapshot: string | null;
 }>()
+const failedExtraAxes = new Map<NewowAuxiliaryPaneComponent, LayerDiagnostics>()
 function renderExtraAuxiliaries() {
   if (!host) return
   const panes = pure.value ? [] : props.extraAuxiliaryPanes ?? []
   const active = new Set(panes.map(pane => pane.component))
+  for (const component of failedExtraAxes.keys()) if (!active.has(component)) failedExtraAxes.delete(component)
   for (const [component, existing] of extraPanes) {
     if (active.has(component)) continue
     host.removeAuxiliary(existing.pane.auxiliary)
@@ -1324,37 +1394,59 @@ function renderExtraAuxiliaries() {
     let current = extraPanes.get(item.component)
     if (!current) {
       const pane = host.addAuxiliary(id)
-      const axis = host.layer(`${id}:axis`, 'auxiliary_axis', pane)
-      const layer = host.layer(id, id, pane)
-      const anchor = axis.line({ lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false })
-      const primitive = item.component === 'macd' ? null : layer.primitive(anchor, new primitiveConstructors[item.component]())
-      if (item.component === 'macd') axis.priceLevel(anchor, { price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
-      current = { pane, layer, anchor, primitive, lines: new Map(), snapshot: null }
+      const axisId = `${id}:axis`
+      let anchor: ISeriesApi<'Line'> | undefined
+      const initialized = host.renderLayer(axisId, 'auxiliary_axis', pane, 'line', axis => {
+        anchor = axis.line({ lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false })
+        if (item.component === 'macd') axis.priceLevel(anchor, { price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
+      })
+      if (!initialized || !anchor) {
+        const failure = host.inspectLayer(axisId)
+        if (failure) failedExtraAxes.set(item.component, failure)
+        host.removeAuxiliary(pane.auxiliary)
+        continue
+      }
+      failedExtraAxes.delete(item.component)
+      const primitive = item.component === 'macd' ? null : new primitiveConstructors[item.component]()
+      current = { pane, anchor, primitive, lines: new Map(), snapshot: null }
       extraPanes.set(item.component, current)
     }
     const aligned = item.lifecycle === 'input_conflict' ? null : alignNewowAuxiliaryChartModel(props.response, item.response)
     const value = aligned?.component === item.component ? aligned : null
     const height = item.height ?? 120
     const key = JSON.stringify([newowChartSnapshotKey(props.response), main?.bars[0]?.barEnd, main?.bars.at(-1)?.barEnd, value, mirrorEvents.value, height, pageTheme.value])
-    if (current.snapshot !== key) {
-      current.anchor.setData(main?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay) })) ?? [])
-      if (current.primitive) updateAuxiliaryPrimitive(current.primitive, value, value ? item.response : null, 20)
-      else renderMacdLines(current.layer, current.lines, value, 20 / height)
-      current.snapshot = key
-    }
     const response = value === null ? null : item.response
     const readiness = projectNewowAuxiliaryReadiness(response?.value, props.response?.value?.bars.at(-1))
     const hasPoints = value?.series.some(series => series.points.length > 0) ?? false
     const status = newowAuxiliaryLayerStatus(item.lifecycle, Boolean(item.response?.value), value !== null, readiness?.currentStatus ?? null, hasPoints, item.error)
-    current.layer.updateDiagnostics({
-      status,
-      sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
-      formulaVersion: response?.value?.formula_version ?? null,
-      frequency: main?.identity.frequency ?? null, dataCutoff: response?.meta.as_of ?? null,
-      lastError: item.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
+    const pane = current
+    const written = host.renderLayer(id, id, pane.pane, pane.primitive ? 'primitive' : 'histogram', layer => {
+      if (pane.snapshot !== key) {
+        pane.anchor.setData(main?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay) })) ?? [])
+        if (pane.primitive) {
+          if (pane.snapshot === null) layer.primitive(pane.anchor, pane.primitive)
+          updateAuxiliaryPrimitive(pane.primitive, value, response, 20)
+        } else renderMacdLines(layer, pane.lines, value, 20 / height)
+      }
+      layer.updateDiagnostics({
+        status,
+        sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
+        formulaVersion: response?.value?.formula_version ?? null,
+        frequency: main?.identity.frequency ?? null, dataCutoff: response?.meta.as_of ?? null,
+        lastError: item.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
+      })
     })
+    pane.snapshot = written ? key : null
+    if (!written) pane.lines.clear()
   }
-  if (!pure.value && auxiliaryAnchor) host.orderAuxiliaries([auxiliaryPaneKey, ...panes.map(item => newowPaneId(item.component))])
+  orderAuxiliaryPanes()
+}
+
+function orderAuxiliaryPanes(): void {
+  if (!host || pure.value) return
+  const activeExtras = (props.extraAuxiliaryPanes ?? []).flatMap(item =>
+    extraPanes.has(item.component) ? [newowPaneId(item.component)] : [])
+  host.orderAuxiliaries(auxiliaryAnchor ? [auxiliaryPaneKey, ...activeExtras] : activeExtras)
 }
 
 function positionPaneHeaders(): void {
@@ -1371,10 +1463,11 @@ function positionPaneHeaders(): void {
   extraPaneHeaders.value = [...extraPanes]
     .sort(([, left], [, right]) => host!.paneIndex(left.pane) - host!.paneIndex(right.pane))
     .map(([component, pane]) => {
-      const diagnostic = pane.layer.inspect()
+      const diagnostic = host!.inspectLayer(newowPaneId(component))
       return {
         component, title: DISPLAY_CATALOG[newowPaneId(component)]!.label,
-        top: offset(host!.paneIndex(pane.pane)), status: diagnostic.status, formulaVersion: diagnostic.formulaVersion,
+        top: offset(host!.paneIndex(pane.pane)), status: diagnostic?.status ?? 'missing_input',
+        formulaVersion: diagnostic?.formulaVersion ?? null,
       }
     })
 }
@@ -1392,7 +1485,7 @@ function resize(): void {
   chart.resize(container.value.clientWidth, container.value.clientHeight, true)
   positionPaneHeaders()
   // Swapping panes updates the native DOM on the chart's next frame.
-  if (extraPanes.size && paneHeaderFrame === null) {
+  if (extraPanes.size && paneHeaderFrame === null && typeof requestAnimationFrame !== 'undefined') {
     paneHeaderFrame = requestAnimationFrame(() => { paneHeaderFrame = null; positionPaneHeaders() })
   }
   renderAuxiliary()
@@ -1408,34 +1501,41 @@ function renderAuxiliary(): void {
   if (value === null && !auxiliarySourceConflict.value && (props.strategySwitching || props.auxiliaryLifecycle === 'loading')) return
   const component = value?.component ?? null
   if (component !== attachedAuxiliaryComponent) {
-    host.removeLayer('auxiliary-selected')
-    auxiliaryLines.clear()
+    clearSelectedAuxiliary()
     attachedAuxiliaryComponent = component
-    renderedAuxiliaryKey = null
   }
   const primitive = component && component in primitives ? primitives[component as keyof typeof primitives] : null
   const displayId = primitive ? `newow.${component}` : component === 'macd' ? 'macd' : null
-  const layer = displayId ? host.layer('auxiliary-selected', displayId, auxiliaryPane) : null
-  if (primitive && layer && renderedAuxiliaryKey === null) layer.primitive(auxiliaryAnchor, primitive)
+  if (!displayId) {
+    activeAuxiliary.value = null
+    return
+  }
+  const anchor = auxiliaryAnchor
   const response = props.auxiliaryResponse
   const readiness = auxiliaryReadiness.value
-  layer?.updateDiagnostics({
-    sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
-    formulaVersion: response?.value?.formula_version ?? null,
-    frequency: response?.meta.identity.frequency ?? props.priceFrequency ?? null,
-    status: newowAuxiliaryLayerStatus(props.auxiliaryLifecycle ?? 'not_requested', Boolean(response?.value), value !== null,
-      readiness?.currentStatus ?? null, value?.series.some(series => series.points.length > 0) ?? false, props.auxiliaryError ?? null),
-    dataCutoff: response?.meta.as_of ?? null,
-    lastError: props.auxiliaryError ?? null,
-  })
-  activeAuxiliary.value = layer?.inspect() ?? null
-  auxiliaryZeroLine?.applyOptions({ color: primitive ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
   const { topInset, auxiliaryHeight } = newowAuxiliaryPaneLayout(container.value?.clientHeight ?? 700, auxiliaryToolbar.value?.offsetHeight ?? 0)
   const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, mirrorEvents.value, primitive ? model.value?.bars : null])
-  if (nextKey === renderedAuxiliaryKey) return
-  renderedAuxiliaryKey = nextKey
-  if (primitive) updateAuxiliaryPrimitive(primitive, value, response, topInset)
-  if (layer && component === 'macd') renderMacdLines(layer, auxiliaryLines, value, topInset / auxiliaryHeight)
+  const written = host.renderLayer('auxiliary-selected', displayId, auxiliaryPane, primitive ? 'primitive' : 'histogram', layer => {
+    auxiliaryZeroLine?.applyOptions({ color: primitive ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
+    if (nextKey !== renderedAuxiliaryKey) {
+      if (primitive) {
+        if (renderedAuxiliaryKey === null) layer.primitive(anchor, primitive)
+        updateAuxiliaryPrimitive(primitive, value, response, topInset)
+      } else renderMacdLines(layer, auxiliaryLines, value, topInset / auxiliaryHeight)
+    }
+    layer.updateDiagnostics({
+      sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
+      formulaVersion: response?.value?.formula_version ?? null,
+      frequency: response?.meta.identity.frequency ?? props.priceFrequency ?? null,
+      status: newowAuxiliaryLayerStatus(props.auxiliaryLifecycle ?? 'not_requested', Boolean(response?.value), value !== null,
+        readiness?.currentStatus ?? null, value?.series.some(series => series.points.length > 0) ?? false, props.auxiliaryError ?? null),
+      dataCutoff: response?.meta.as_of ?? null,
+      lastError: props.auxiliaryError ?? null,
+    })
+  })
+  renderedAuxiliaryKey = written ? nextKey : null
+  if (!written) auxiliaryLines.clear()
+  activeAuxiliary.value = host.inspectLayer('auxiliary-selected')
 }
 
 function renderMacdLines(
@@ -1479,7 +1579,12 @@ function onFullscreenChange(): void {
 }
 
 
-function inspectLayers() { return [...(host?.diagnostics() ?? []), ...(detailSession?.inspectExecutionLayers() ?? [])] }
+function inspectLayers() {
+  return [
+    ...(host?.diagnostics() ?? []), ...(failedAuxiliaryAxis ? [failedAuxiliaryAxis] : []),
+    ...failedExtraAxes.values(), ...(detailSession?.inspectExecutionLayers() ?? []),
+  ]
+}
 
 defineExpose({ revealSignal, scrollToLatest, inspectLayers })
 </script>
