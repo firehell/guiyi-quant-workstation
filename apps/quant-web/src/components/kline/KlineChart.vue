@@ -37,6 +37,7 @@ import type {
   SeriesKind,
 } from '@/types/market'
 import { marketStudyLayerStatus, type EmaIndicatorId, type MarketChartStudyDisplay, type MarketChartStudyIssue, type MarketChartStudyPoint } from '@/utils/marketChartStudies'
+import { HTDY_WEB_OBSERVATION_METADATA } from '@/utils/mainIndicators'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
   formatChartAxisTimeInShanghai,
@@ -1029,9 +1030,18 @@ function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void 
         zd1: layer.line({ color: theme.htdyZd1, lineWidth: 2, lineStyle: 2, lastValueVisible: false }),
         zd2: layer.line({ color: theme.htdyZd2, lineWidth: 2, lineStyle: 0, lastValueVisible: false }),
       }
-      for (const key of ['zk1', 'zd1', 'zd2'] as const) htdyLines[key].setData(chartValues(derivedData.htdy?.[key]))
-      layer.updateDiagnostics({ frequency: props.period, formulaVersion: 'original-v0',
-        status: derivedData.htdy ? 'ready' : 'missing_input', dataCutoff: renderedBars.at(-1)?.time ?? null })
+      const barsByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
+      let cutoff: string | null = null
+      for (const key of ['zk1', 'zd1', 'zd2'] as const) {
+        const points = derivedData.htdy?.[key] ?? []
+        htdyLines[key].setData(chartValues(points, barsByTime))
+        const last = lastMatching(points, point => Number.isFinite(point.value) && barsByTime.has(point.time))
+        if (last && (cutoff === null || Date.parse(last.time) > Date.parse(cutoff))) cutoff = last.time
+      }
+      layer.updateDiagnostics({
+        frequency: props.period, formulaVersion: HTDY_WEB_OBSERVATION_METADATA.indicator_version, sourceIdentity: null, dataCutoff: cutoff,
+        status: cutoff ? 'ready' : props.loading ? 'loading' : 'missing_input',
+      })
     })
     if (!written) htdyLines = null
   } else {

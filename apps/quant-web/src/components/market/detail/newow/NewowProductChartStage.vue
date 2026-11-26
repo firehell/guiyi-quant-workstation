@@ -85,7 +85,7 @@ import {
 
 type ChartResponse = NewowProductSectionResponse<'chart'>
 type LayerSource = Pick<LayerDiagnostics, 'sourceIdentity' | 'formulaVersion' | 'frequency' | 'dataCutoff'>
-type LayerPatch = Partial<Omit<LayerDiagnostics, 'indicatorId' | 'packageVersion' | 'pane'>>
+type LayerPatch = Parameters<ChartLayer['updateDiagnostics']>[0]
 
 const props = withDefaults(defineProps<{
   response: ChartResponse | null

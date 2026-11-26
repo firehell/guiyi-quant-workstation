@@ -189,6 +189,40 @@ test('all detail strategies retain one native canvas and their period without re
   await page.screenshot({ path: '/private/tmp/guiyi-detail-unified-desktop.png', fullPage: true })
 })
 
+test('HTDY diagnostics follow the drawable window when it is cleared and restored', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page)
+  await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=1d')
+  const stage = page.locator('[data-detail-workspace="htdy"] .market-kline-stage')
+  const diagnostics = stage.locator('.chart-layer-diagnostics')
+  const shell = stage.getByTestId('kline-shell')
+  await expect(stage.getByTestId('htdy-chart-legend')).toBeVisible()
+  const candles = stage.locator('[data-kline-end]')
+  await expect(candles).toHaveAttribute('data-kline-end', /T/)
+  const cutoff = await candles.getAttribute('data-kline-end')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const row = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: /^htdy · / })
+  await expect(row.locator('summary')).toHaveText('htdy · 就绪')
+  await row.locator('summary').click()
+  await expect(row.getByText(`1d / ${cutoff}`, { exact: true })).toBeVisible()
+  await expect(row.getByText(/original-v0/)).toBeVisible()
+
+  const replaceWindow = restored => shell.evaluate((node, useOriginal) => {
+    const chart = node.__vueParentComponent
+    chart.exposed.replaceBars(useOriginal ? chart.props.bars : [])
+  }, restored)
+  const refresh = diagnostics.getByRole('button', { name: '刷新诊断', exact: true })
+  await replaceWindow(false)
+  await refresh.click()
+  await expect(row.locator('summary')).toHaveText('htdy · 缺少输入')
+  await expect(row.getByText('1d / —', { exact: true })).toBeVisible()
+
+  await replaceWindow(true)
+  await refresh.click()
+  await expect(row.locator('summary')).toHaveText('htdy · 就绪')
+  await expect(row.getByText(`1d / ${cutoff}`, { exact: true })).toBeVisible()
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('unsupported analysis keeps the selected one-minute chart without issuing strategy requests', async ({ page }) => {
   const fixture = await installNewowProductFixtures(page)
   await page.goto('/market/chart?symbol=rb&view=free&frequency=1m&series_kind=actual_dominant')

@@ -39,6 +39,8 @@ function refresh() {
           <dt>预热 / 缓存</dt>
           <dd>{{ layer.warmup ? `${layer.warmup.available}/${layer.warmup.required}` : '—' }} / {{ layer.cacheState ?? '—' }}</dd>
           <dt>最后错误</dt><dd>{{ layer.lastError ?? '—' }}</dd>
+          <dt>错误记录时间</dt>
+          <dd><time v-if="layer.lastErrorAt" :datetime="layer.lastErrorAt">{{ layer.lastErrorAt }}</time><template v-else>—</template></dd>
           <dt>更新时间</dt><dd>{{ layer.updatedAt }}</dd>
         </dl>
       </details>

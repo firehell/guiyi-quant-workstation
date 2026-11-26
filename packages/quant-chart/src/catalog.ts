@@ -2,7 +2,7 @@ import type { VolumePolicy } from './volume.js'
 
 export const CHART_MANIFEST = Object.freeze({
   name: '@guiyi/quant-chart',
-  version: '0.1.5',
+  version: '0.1.6',
   catalogSchemaVersion: 1,
   rendererVersion: 1,
   preferenceSchemaVersion: 1,

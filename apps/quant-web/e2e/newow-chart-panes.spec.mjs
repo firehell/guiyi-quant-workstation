@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { CHART_MANIFEST } from '@guiyi/quant-chart'
-import { NEWOW_STRATEGIES, buildNewowSplitFixtureEnvelopeForTest, installNewowProductFixtures, newowRoute, productRequests, releaseDeferred, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
+import { NEWOW_AS_OF, NEWOW_STRATEGIES, buildNewowSplitFixtureEnvelopeForTest, installNewowProductFixtures, newowRoute, productRequests, releaseDeferred, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
   test(`${strategy} ${frequency}: native panes, indicator replacement and action diagnostics`, async ({ page }) => {
@@ -184,8 +184,10 @@ test('a later native canvas frame reports a failed trend band and the chart can 
   await chart.getByText('副图管理', { exact: true }).click()
   const diagnostics = chart.locator('.chart-layer-diagnostics')
   await diagnostics.getByText('图层诊断', { exact: true }).click()
-  await diagnostics.getByText('newow_trend · 渲染错误', { exact: true }).click()
-  await expect(diagnostics.getByText('CHART_RENDERER_PAINT_FAILED', { exact: true })).toBeVisible()
+  const failedRow = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: /^newow_trend · 渲染错误/ })
+  await failedRow.locator('summary').click()
+  await expect(failedRow.getByText('CHART_RENDERER_PAINT_FAILED', { exact: true })).toBeVisible()
+  await expect(failedRow.locator('time')).toHaveText(NEWOW_AS_OF)
   await expect(diagnostics.getByText('price · 就绪', { exact: true })).toBeVisible()
   const before = await page.evaluate(() => window.guiyiBandPaintProbe.healthy)
   await chart.getByRole('button', { name: '图表设置', exact: true }).click()

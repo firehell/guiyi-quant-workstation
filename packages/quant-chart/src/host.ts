@@ -24,6 +24,7 @@ export interface LayerDiagnostics {
   dataCutoff: string | null
   cacheState: string | null
   lastError: string | null
+  lastErrorAt: string | null
   updatedAt: string
 }
 
@@ -122,19 +123,17 @@ export function createChartHost(chart: IChartApi) {
     function quarantine(item: object, renderer: RendererId, onReleased?: () => void): void {
       const release = owned.get(item)
       if (!release) return
-      const failure: LayerDiagnostics = {
-        ...initialDiagnostics(indicatorId, pane, renderer), status: 'renderer_failure',
-        lastError: 'CHART_RENDERER_PAINT_FAILED', sourceIdentity: null,
-      }
-      paintFailures.set(item, failure)
+      paintFailures.set(item, failedDiagnostics(indicatorId, pane, renderer, 'renderer_failure', 'CHART_RENDERER_PAINT_FAILED'))
       // Native iteration holds the pane's renderer list until this frame returns.
       queueMicrotask(() => {
         if (owned.get(item) !== release) return
+        const reportCleanupFailure = () => paintFailures.set(item,
+          failedDiagnostics(indicatorId, pane, renderer, 'renderer_failure', 'CHART_RENDERER_CLEANUP_FAILED'))
         try { release() } catch {
-          paintFailures.set(item, { ...failure, lastError: 'CHART_RENDERER_CLEANUP_FAILED' })
+          reportCleanupFailure()
         }
         try { onReleased?.() } catch {
-          paintFailures.set(item, { ...failure, lastError: 'CHART_RENDERER_CLEANUP_FAILED' })
+          reportCleanupFailure()
         }
       })
     }
@@ -144,8 +143,11 @@ export function createChartHost(chart: IChartApi) {
       remove,
       hasResource: (item: object) => owned.has(item),
       inspect: () => ({ ...(paintFailures.values().next().value ?? diagnostic) }),
-      updateDiagnostics(patch: Partial<Omit<LayerDiagnostics, 'indicatorId' | 'packageVersion' | 'pane'>>) {
-        diagnostic = { ...diagnostic, ...patch, updatedAt: new Date().toISOString() }
+      updateDiagnostics(patch: Partial<Omit<LayerDiagnostics, 'indicatorId' | 'packageVersion' | 'pane' | 'lastErrorAt' | 'updatedAt'>>) {
+        const updatedAt = new Date().toISOString()
+        const lastError = patch.lastError === undefined ? diagnostic.lastError : patch.lastError
+        const lastErrorAt = lastError === diagnostic.lastError ? diagnostic.lastErrorAt : lastError === null ? null : updatedAt
+        diagnostic = { ...diagnostic, ...patch, lastError, lastErrorAt, updatedAt }
       },
       candles(options: CandlestickSeriesPartialOptions) {
         resources.assertActive()
@@ -244,8 +246,13 @@ export function createChartHost(chart: IChartApi) {
       indicatorId, pane, renderer, status: 'missing_input',
       packageVersion: CHART_MANIFEST.version, formulaVersion: null, sourceIdentity: identity,
       frequency: null, warmup: null, dataCutoff: null, cacheState: null, lastError: null,
-      updatedAt: new Date().toISOString(),
+      lastErrorAt: null, updatedAt: new Date().toISOString(),
     }
+  }
+
+  function failedDiagnostics(indicatorId: string, pane: ChartPane, renderer: RendererId, status: LayerStatus, lastError: string | null): LayerDiagnostics {
+    const initial = initialDiagnostics(indicatorId, pane, renderer)
+    return { ...initial, status, sourceIdentity: null, lastError, lastErrorAt: lastError === null ? null : initial.updatedAt }
   }
 
   function samePane(left: ChartPane, right: ChartPane): boolean {
@@ -310,9 +317,7 @@ export function createChartHost(chart: IChartApi) {
       status = 'renderer_failure'
       lastError = 'CHART_RENDERER_CLEANUP_FAILED'
     }
-    failures.set(id, {
-      ...initialDiagnostics(indicatorId, pane, renderer), status, lastError, sourceIdentity: null,
-    })
+    failures.set(id, failedDiagnostics(indicatorId, pane, renderer, status, lastError))
     return false
   }
 

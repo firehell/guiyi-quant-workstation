@@ -112,6 +112,7 @@ test('a rejected renderer leaves an actionable diagnostic and releases only its 
   const failed = host.inspectLayer('boll')
   assert.equal(failed.status, 'renderer_failure')
   assert.equal(failed.lastError, 'CHART_RENDERER_UPDATE_FAILED')
+  assert.equal(failed.lastErrorAt, failed.updatedAt)
   assert.equal(failed.sourceIdentity, null)
   assert.equal(failed.dataCutoff, null)
   assert.equal(failed.formulaVersion, null)
@@ -137,6 +138,28 @@ test('a rejected renderer leaves an actionable diagnostic and releases only its 
   assert.equal(series.size, 3)
   host.dispose()
   assert.equal(series.size, 0)
+})
+
+test('passive diagnostic updates preserve the recorded time of the active error', ({ mock }) => {
+  mock.timers.enable({ apis: ['Date'], now: new Date('2026-11-26T14:00:00.000Z') })
+  const { chart } = chartAdapter()
+  const host = createChartHost(chart)
+  const layer = host.layer('ema', 'ema_10', 'main')
+  assert.equal(layer.inspect().lastErrorAt, null)
+
+  layer.updateDiagnostics({ status: 'compute_error', lastError: 'COMPUTE_FAILED' })
+  const failedAt = new Date().toISOString()
+  assert.equal(layer.inspect().lastErrorAt, failedAt)
+  mock.timers.tick(1_000)
+  layer.updateDiagnostics({ frequency: '15m', lastError: 'COMPUTE_FAILED' })
+  assert.equal(layer.inspect().lastErrorAt, failedAt)
+  assert.notEqual(layer.inspect().updatedAt, failedAt)
+
+  layer.updateDiagnostics({ status: 'invalid_source', lastError: 'INPUT_PREFIX_INTERRUPTED' })
+  assert.equal(layer.inspect().lastErrorAt, new Date().toISOString())
+  layer.updateDiagnostics({ status: 'ready', lastError: null })
+  assert.equal(layer.inspect().lastErrorAt, null)
+  host.dispose()
 })
 
 test('partial native allocation and failed primitive attachment are reclaimed', () => {
@@ -209,6 +232,7 @@ test('a later paint failure quarantines just the primitive, and retry rejects ob
   assert.equal(attempts, 1)
   assert.equal(attached.size, 1, 'never detach while native draw is iterating')
   assert.equal(layer.inspect().lastError, 'CHART_RENDERER_PAINT_FAILED')
+  assert.equal(layer.inspect().lastErrorAt, layer.inspect().updatedAt)
   layer.updateDiagnostics({ status: 'ready', sourceIdentity: 'unpainted' })
   assert.equal(layer.inspect().sourceIdentity, null)
   assert.equal(layer.inspect().status, 'renderer_failure')
