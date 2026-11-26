@@ -29,6 +29,11 @@ STARTS = tuple(day for day in ALL_DAYS if day.day in (16, 19, 22, 23))
 FROZEN_SCOPE = dict(published_bands=True, right_entries=True, left_mode="shape-overlap", advance_at_touch=True)
 
 
+def verify_tape(actions, diagnostics, reference, *, diagnostics_key="blocked"):
+    if json.loads(encoded((actions, diagnostics))) != [reference["actions"], reference[diagnostics_key]]:
+        raise ValueError("COMBINED_FROZEN_TAPE_CHANGED")
+
+
 def cohort_price_support(leg, average, trading_day, quote_end, minutes, tick):
     """Bound the reported prior/current lots using minutes strictly before the quote minute."""
     lots, today = leg["quantity"], leg["today_quantity"]

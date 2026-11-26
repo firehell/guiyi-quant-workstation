@@ -7,7 +7,9 @@ from pathlib import Path
 
 from guiyi_quant.lms405.portfolio_tasks import Book
 from lms405_iron_first_protection import by_knowledge, support
+from lms405_jm_first_lock_chain import FIRST_RUN
 from lms405_jm_m_leg_handoff import CLOSE, CONTRACT, FIRST, LATER, LONG_BANDS, NEW_PLAN, NIGHT
+from lms405_portfolio_origin_window import observed_average
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_portfolio_task_policy import project_fixture
 from lms405_protection_lot_timing import EXPOSURE, displayed_tick_totals, tick_bounds, verified_json
@@ -22,8 +24,6 @@ from lms405_sh_protection_replacement import compatible_counts
 from lms405_sizing_audit import EXPOSURE_SHA256
 from lms_near405_replay import encoded, sha
 
-FIRST_RUN = (Path("output/lms405-jm-first-lock-chain-20261126/final-a.json"),
-             "6d3e40d15650cc40475629471ca3411c263f3b7e8d2e0efe3bc5b0a14c0d854f")
 FOLLOWUP = (Path("output/lms405-jm-m-leg-handoff-20261125/final.json"),
             "3f768f34ccacc10739ef168aa119f3b5d6beb8c2fbf6ebe4d31e5caa787719ae")
 DAYS = (date(2026, 10, 23), date(2026, 10, 26))
@@ -46,6 +46,43 @@ def counts_from_replay(minutes, *, old_at, old_quote, next_quote, known_at, tick
         gate_known_at=known_at, gate_known_before_quote_minute=known_at < next_quote - ONE,
         old_range_ticks=old_range, actual_opening_fills=None,
     )
+
+
+def close_cohort_continuity(rows, minutes, tick):
+    long_rows = {row["source"]: row for row in rows if row["side"] == "long"}
+    first, close = long_rows[FIRST], long_rows[CLOSE]
+    lots = first["visible"]["quantity"]
+    if (first["assumed_trading_day"] != close["assumed_trading_day"]
+            or any(row["visible"]["quantity"] != lots or row["visible"]["today_quantity"] != lots
+                   for row in (first, close))):
+        raise ValueError("JM_HANDOFF_CLOSE_COHORT_SCOPE_CHANGED")
+    old_total, new_total = (displayed_tick_totals(observed_average(CONTRACT, row), lots, tick)
+                            for row in (first, close))
+    first_checks, close_checks = (row["by_variant"]["strict_replay"] for row in (first, close))
+    pairs = {}
+    for old_label, old in first_checks.items():
+        for new_label, new in close_checks.items():
+            if old["status"] != "PRICE_COMPATIBLE" or new["status"] != "PRICE_COMPATIBLE":
+                continue
+            old_at = old["origin_at"]
+            new_at = new["origin_at"]
+            bounds = counts_from_replay(
+                minutes, old_at=old_at, old_quote=datetime.fromisoformat(old_label),
+                next_quote=datetime.fromisoformat(new_label), known_at=new_at, tick=tick,
+                lots=lots, old_total=old_total, new_total=new_total,
+            )
+            # The unit replay can carry the entire leg or replace it, without fractional cohorts.
+            unchanged_leg = old_at == new_at
+            max_retained = bounds.get("max_old_retained")
+            pairs[f"{old_label} / {new_label}"] = dict(
+                projected_retained=lots if unchanged_leg else 0,
+                minimum_replacement=lots - max_retained if max_retained is not None else None,
+                price_compatible=max_retained == lots if unchanged_leg
+                else bounds.get("all_ending_lots_new_after_possible", False),
+            )
+    return dict(sources=(FIRST, CLOSE), opening_tick_sums={FIRST: list(old_total), CLOSE: list(new_total)},
+                same_account_and_synchronous_observation_assumed=True,
+                individually_compatible_quote_pairs=pairs)
 
 
 def project_roles(old, lots, gates, night_gates, revision):

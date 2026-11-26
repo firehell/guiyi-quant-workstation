@@ -10,10 +10,9 @@ from lms405_divider_short_candidates import DividerShortPlan, divider_short_even
 from lms405_first_night_pa import REFERENCE, REFERENCE_HASH
 from lms405_m_permission_study import read_pair
 from lms405_old_short_entry_retention import attempts, before_first_photo
-from lms405_portfolio_combined_cases import START, verify_tape
 from lms405_portfolio_left_entry import scope_for
 from lms405_portfolio_leg_audit import SIZE, SIZE_SHA, lot_profile, summarize
-from lms405_portfolio_origin_window import ALL_DAYS, compare_rows
+from lms405_portfolio_origin_window import ALL_DAYS, compare_rows, verify_tape
 from lms405_portfolio_protection_gate import plan_rows, price_admission
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_portfolio_right_entry import branches
@@ -31,8 +30,11 @@ CONTRACT, PHOTO = "JM2701", "WRnTlEfj1t"
 DIVIDER, PROTECTION = "A5356507058536457", "A5356884629782554"
 NIGHT_START, POST = at("2026-10-22T21:00"), at("2026-10-22T22:10")
 PROTECT_TRADING_DAY = date(2026, 10, 23)
+START = date(2026, 10, 19)
 COMBINED = (Path("output/lms405-portfolio-combined-20261126/a.json"),
             "d4f93e04cbf4bb570b5a7791d4bb67693d7ca9a98844983f835ca60099a02fbb")
+FIRST_RUN = (Path("output/lms405-jm-first-lock-chain-20261126/final-a.json"),
+             "6d3e40d15650cc40475629471ca3411c263f3b7e8d2e0efe3bc5b0a14c0d854f")
 
 
 def retention_sensitivity(book, _shape, _bar, _evaluated_at):
@@ -62,6 +64,24 @@ def protection_events_15m(series, bands, cutoff):
             period=15, confirmation_period=15, signal=event, operation="PROTECT_REGULAR",
         ))
     return result
+
+
+def replay_first_lock(series, bands, end, *, retain=False, extend=False, divider=None):
+    prefix = {period: [bar for bar in bars if bar.end + US < end] for period, bars in series.items()}
+    protections = published_protection_events(prefix, bands, end, advance_at_touch=True)
+    if extend:
+        protections += protection_events_15m(prefix, bands, end)
+
+    def first_window_retention(book, shape, bar, evaluated_at):
+        if evaluated_at >= POST:
+            return dict(admitted=True)
+        return retention_sensitivity(book, shape, bar, evaluated_at)
+
+    return gated_replay(
+        prefix[5], end, protections, minutes=prefix[1], range_exit_requires_confirmation=True,
+        original_reversal_evidence=first_window_retention if retain else None,
+        divider_events=divider_short_events(prefix, divider, end) if divider is not None else (),
+    )
 
 
 def study(session, market):
@@ -106,15 +126,8 @@ def study(session, market):
         raise ValueError("JM_FIRST_ORIGINAL_LOT_SCOPE_CHANGED")
 
     def replay(end, *, retain=False, extend=False, enter_divider=False):
-        prefix = {period: [bar for bar in bars if bar.end + US < end] for period, bars in series.items()}
-        protection = published_protection_events(prefix, bands, end, advance_at_touch=True)
-        if extend:
-            protection += protection_events_15m(prefix, bands, end)
-        return gated_replay(
-            prefix[5], end, protection, minutes=prefix[1], range_exit_requires_confirmation=True,
-            original_reversal_evidence=retention_sensitivity if retain else None,
-            divider_events=divider_short_events(prefix, next_short, end) if enter_divider else (),
-        )
+        return replay_first_lock(series, bands, end, retain=retain, extend=extend,
+                                 divider=next_short if enter_divider else None)
 
     actions, blocked = replay(POST)
     frozen = control["tapes"]["control"]

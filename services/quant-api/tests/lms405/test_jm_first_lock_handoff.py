@@ -2,7 +2,10 @@ from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.portfolio_tasks import Book
-from lms405_jm_first_lock_handoff import EARLY_SHORT, LONG_WINDOWS, NEW_SHORT, counts_from_replay, project_roles
+from lms405_jm_first_lock_handoff import (
+    EARLY_SHORT, LONG_WINDOWS, NEW_SHORT, close_cohort_continuity, counts_from_replay, project_roles,
+)
+from lms405_jm_m_leg_handoff import CLOSE, FIRST
 from lms405_protection_lot_timing import displayed_tick_totals
 from lms405_right_side_study import ONE, US, at
 
@@ -30,6 +33,27 @@ def test_replacement_respects_old_protection_cohort_and_excludes_both_quote_minu
     assert out["old_range_ticks"] == (99, 101)
     assert out["all_ending_lots_new_after_possible"]
     assert out["max_old_retained"] == 0
+
+
+def test_individually_compatible_prices_cannot_explain_two_averages_with_one_unchanged_leg():
+    opened = at("2026-10-22T21:45") + US
+    minutes = [bar(at("2026-10-22T21:47"), 1399, 1401), bar(at("2026-10-22T21:53"), 1410, 1410)]
+    first_quote = "2026-10-22T21:50:00+08:00"
+    close_quote = "2026-10-23T15:00:00+08:00"
+
+    def snapshot(source, quote, origin, average):
+        return dict(source=source, side="long", assumed_trading_day="2026-10-23",
+                    visible=dict(quantity=20, today_quantity=20, opening_average=average),
+                    by_variant=dict(strict_replay={quote: dict(status="PRICE_COMPATIBLE", origin_at=origin)}))
+
+    old = snapshot(FIRST, first_quote, opened, "1400.1")
+    for origin, retained in ((opened, 20), (at("2026-10-22T21:52"), 0)):
+        new = snapshot(CLOSE, close_quote, origin, "1410.00")
+        result = close_cohort_continuity([old, new], minutes, Decimal("0.5"))
+        assert result["opening_tick_sums"][FIRST] == [56004]
+        assert list(result["individually_compatible_quote_pairs"].values()) == [
+            dict(projected_retained=retained, minimum_replacement=20, price_compatible=retained == 0),
+        ]
 
 
 def test_fixture_has_independent_exit_and_fresh_short_with_new_episode():

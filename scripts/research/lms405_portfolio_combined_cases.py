@@ -2,19 +2,26 @@
 
 import argparse
 from collections import Counter, defaultdict
-from datetime import date, datetime
+from datetime import datetime
 import json
 from pathlib import Path
 
 from lms405_iron_original_exit import CONTRACT as IRON
 from lms405_iron_original_exit import evidence_gate, published_exit_plans
+from lms405_jm_first_lock_chain import COMBINED as COAL_CONTROL
+from lms405_jm_first_lock_chain import CONTRACT as COAL
+from lms405_jm_first_lock_chain import FIRST_RUN, POST, PROTECT_TRADING_DAY, START, replay_first_lock
+from lms405_jm_first_lock_handoff import close_cohort_continuity
 from lms405_m_permission_study import read_pair
+from lms405_portfolio_left_entry import scope_for
 from lms405_portfolio_leg_audit import SIZE, SIZE_SHA, SPECS, SPECS_SHA, load_specs, lot_profile, pta_example, summarize
-from lms405_portfolio_origin_window import ALL_DAYS, FROZEN_SCOPE, compare_rows
+from lms405_portfolio_origin_window import ALL_DAYS, FROZEN_SCOPE, compare_rows, verify_tape
 from lms405_portfolio_protection_gate import plan_rows
 from lms405_portfolio_replay import CONTRACTS, input_sources
+from lms405_portfolio_right_entry import branches
 from lms405_portfolio_task_policy import replay_scoped_policy
 from lms405_protection_lot_timing import verified_json
+from lms405_protection_timeframes import read_window
 from lms405_public_plan_roles import load_source
 from lms405_rubber_protection_handoff import CONTRACT as RUBBER
 from lms405_rubber_protection_handoff import CONTROL, OLD, RECOVER, REPLACE, handoff_plan
@@ -30,7 +37,6 @@ from lms405_v_ta_case import identity
 from lms_near405_replay import encoded
 from lms405_right_side_study import US, at
 
-START = date(2026, 10, 19)
 CAUSTIC_REFERENCE = (Path("output/lms405-sh-middle-protection-20261126/final-a.json"),
                      "665ac4c965ee0cd3316130254081802eeb0ed97f97a7281b0be6d166a0dd2a93")
 IRON_REFERENCE = (Path("output/lms405-iron-original-exit-20261126/verified-a.json"),
@@ -46,6 +52,7 @@ THREE_LEG = (Path("output/lms405-three-night-deadlines-20261126/final-a.json"),
              "609ca99cf782fb570256638cfdd758e18df49095c7a7dcdf1cfc1a5fdb689af0")
 LOCK_CLOCK_STARTS = (at("2026-10-22T21:00"), at("2026-10-27T21:00"))
 CLOCK_REJECTIONS = "RESEARCH_WAIT_FOR_COMMON_PROTECTION_CLOCK"
+COAL_CASE = "JM_FIRST_LOCK"
 
 
 def source_alignment(comparisons):
@@ -80,11 +87,6 @@ def source_alignment(comparisons):
     return results
 
 
-def verify_tape(actions, diagnostics, reference, *, diagnostics_key="blocked"):
-    if json.loads(encoded((actions, diagnostics))) != [reference["actions"], reference[diagnostics_key]]:
-        raise ValueError("COMBINED_FROZEN_TAPE_CHANGED")
-
-
 def clock_windows():
     first = verified_json(*CROSS_DATE)
     second = verified_json(*THREE_LEG)
@@ -113,7 +115,34 @@ def variant_summary(rows, selection):
                 quote_alignment=source_alignment(rows), comparisons=rows)
 
 
-def study(session, market, *, compare_protection_clocks=False):
+def before(actions, blocked, cutoff):
+    return ([row for row in actions if datetime.fromisoformat(row["at"]) < cutoff],
+            [row for row in blocked if row["at"] < cutoff])
+
+
+def coal_extension(session, market, index, series, cutoff, reference):
+    if (reference["reference_sha256"] != COAL_CONTROL[1]
+            or any(load_source(index, key) != source for key, source in reference["sources"].items())
+            or scope_for(index, COAL) is not None or branches(index, COAL)):
+        raise ValueError("COMBINED_COAL_SOURCE_CHANGED")
+    first_day = read_window(session, market, COAL, PROTECT_TRADING_DAY)
+    if {f"{p}m": digest(bars) for p, bars in first_day.items()} != reference["price_window"]["market"]:
+        raise ValueError("COMBINED_COAL_MARKET_CHANGED")
+    series = series | {15: first_day[15]}
+    bands, _, _ = plan_rows(index, COAL)
+    controls = dict(retain=True, extend=True)
+    actions, blocked = replay_first_lock(series, bands, cutoff, **controls)
+    expected = reference["modes"]["RETAIN_AND_ADD_15M"]
+    verify_tape(*before(actions, blocked, POST), expected)
+    for value in ("2026-10-22T21:45", "2026-10-22T22:08", "2026-10-23T10:38",
+                  "2026-10-23T15:00", "2026-10-23T21:16", "2026-10-23T22:05", "2026-10-26T23:00"):
+        cut = at(value)
+        if replay_first_lock(series, bands, cut, **controls) != before(actions, blocked, cut):
+            raise ValueError("COMBINED_COAL_PREFIX_CHANGED")
+    return actions, blocked
+
+
+def study(session, market, *, compare_protection_clocks=False, compare_coal_first_lock=False):
     baseline = verified_json(*CONTROL)
     rubber = verified_json(*RUBBER_REFERENCE)
     caustic = verified_json(*CAUSTIC_REFERENCE)
@@ -147,8 +176,10 @@ def study(session, market, *, compare_protection_clocks=False):
 
     scope = FROZEN_SCOPE | dict(range_exit_requires_confirmation=True)
     waits = clock_windows() if compare_protection_clocks else {}
+    coal_first = verified_json(*FIRST_RUN) if compare_coal_first_lock else None
     days = tuple(day for day in ALL_DAYS if day >= START)
     traces, comparisons = {}, {}
+    coal_continuity = None
     for contract in CONTRACTS:
         raw, series = read_pair(session, market, contract, days)
         minutes = raw[1]
@@ -171,6 +202,9 @@ def study(session, market, *, compare_protection_clocks=False):
             )
             verify_tape(actions, blocked, iron["windows"][start]["comparisons"]["require_disclosed_exit"])
             cases["retention"] = actions, blocked, frozen["comparisons"]
+        if contract == COAL and coal_first is not None:
+            actions, blocked = coal_extension(session, market, index, series, cutoff, coal_first)
+            cases[COAL_CASE] = actions, blocked, frozen["comparisons"]
         if contract == CAUSTIC:
             rows = reread_morning_field(frozen["comparisons"], reread)
             for mode in MODES:
@@ -216,6 +250,8 @@ def study(session, market, *, compare_protection_clocks=False):
         }
         if json.loads(encoded(comparisons[contract]["control"])) != frozen["comparisons"]:
             raise ValueError("COMBINED_FROZEN_COMPARISONS_CHANGED")
+        if contract == COAL and coal_first is not None:
+            coal_continuity = close_cohort_continuity(comparisons[COAL][COAL_CASE], series[1], specs[COAL]["tick"])
 
     results = {}
     for mode in MODES:
@@ -227,9 +263,25 @@ def study(session, market, *, compare_protection_clocks=False):
             if not retain and result["strict_totals"] != caustic["windows"][start]["cases"][mode + ":SHAPE_ONLY"]["portfolio"]:
                 raise ValueError("COMBINED_PREVIOUS_TOTALS_CHANGED")
             results[f"{mode}:{'IRON_RETAIN' if retain else 'IRON_CONTROL'}"] = result
+    chosen_control = "TOUCH_FAR:IRON_RETAIN"
     extra = {}
+    if coal_first is not None:
+        control = results[chosen_control]
+        selection = control["modes"] | {COAL: COAL_CASE}
+        rows = {contract: comparisons[contract][label] for contract, label in selection.items()}
+        result = variant_summary(rows, selection)
+        if any(result["strict_totals"][m] != control["strict_totals"][m] for m in (
+            "VISIBLE_LEGS_CHECKED", "TWO_VISIBLE_LEGS_CHECKED",
+        )):
+            raise ValueError("COMBINED_COAL_SCORING_SCOPE_CHANGED")
+        results[COAL_CASE] = result
+        extra["coal_first_lock_experiment"] = dict(
+            reference_sha256=FIRST_RUN[1], conditional_control=chosen_control,
+            retention_sensitivity_until=POST, continuation_uses_control_management=True,
+            screenshots_only_for_validation=True, close_cohort_continuity=coal_continuity,
+        )
     if waits:
-        control = results["TOUCH_FAR:IRON_RETAIN"]
+        control = results[chosen_control]
         for label in waits:
             rows = {contract: comparisons[contract][label] for contract in CONTRACTS}
             result = variant_summary(rows, dict.fromkeys(CONTRACTS, label))
@@ -240,12 +292,12 @@ def study(session, market, *, compare_protection_clocks=False):
             result["rejections_by_contract"] = {c: [r for r in traces[c]["tapes"][label]["blocked"]
                                                             if r.get("reason") == CLOCK_REJECTIONS] for c in CONTRACTS}
             results[label] = result
-        extra = dict(clock_experiment=dict(
+        extra["clock_experiment"] = dict(
             reference_sha256=dict(six_leg=CROSS_DATE[1], three_leg=THREE_LEG[1]),
-            conditional_control="TOUCH_FAR:IRON_RETAIN", windows=waits,
+            conditional_control=chosen_control, windows=waits,
             waiting_only_rejects_early_local_protection=True, discarded_signals_not_reused=True,
             shared_wait_never_supplies_local_signal_or_permission=True,
-        ))
+        )
     return dict(
         study="LMS405_NINE_CONTRACT_COMBINED_RESEARCH_REPLAY", as_of=cutoff, start_trading_day=START, runs=results,
         contracts=traces, reference_sha256=dict(control=CONTROL[1], rubber=RUBBER_REFERENCE[1],
@@ -263,6 +315,7 @@ def main():
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--compare-protection-clocks", action="store_true")
+    parser.add_argument("--compare-coal-first-lock", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -277,7 +330,8 @@ def main():
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
             report = study(session, build_market_data_service(session),
-                           compare_protection_clocks=args.compare_protection_clocks)
+                           compare_protection_clocks=args.compare_protection_clocks,
+                           compare_coal_first_lock=args.compare_coal_first_lock)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
