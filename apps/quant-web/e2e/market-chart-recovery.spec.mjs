@@ -63,6 +63,72 @@ test('price, preview, volume and MACD diagnostics follow their own plotted input
   await expect(rows.getByText('subing_volume · 缺少输入', { exact: true })).toHaveCount(1)
 })
 
+test('a saved reference write failure revokes the old source and preserves the sibling line', async ({ page }) => {
+  await mockMarketDetail(page, { barsPage: () => ({ bars: [detailBar('jm', 0)] }) })
+  await page.goto(chartUrl())
+  await expect(candles(page)).toHaveCount(1)
+  const modules = await (await page.waitForFunction(() => {
+    const entries = performance.getEntriesByType('resource').map(entry => entry.name)
+    const find = name => entries.find(url => new URL(url).pathname.endsWith(name))
+    const vue = find('/vue.js'), native = find('/lightweight-charts.js')
+    return vue && native ? { vue, native } : false
+  })).jsonValue()
+  const reads = await page.evaluate(async ({ vue, native }) => {
+    const [{ createApp, h, nextTick, ref }, { createChart, LineSeries }, { default: KlineChart }] = await Promise.all([
+      import(vue), import(native), import('/src/components/kline/KlineChart.vue'),
+    ])
+    const root = document.createElement('div')
+    document.body.append(root)
+    const probes = createChart(document.createElement('div'))
+    const prototype = Object.getPrototypeOf(probes.addSeries(LineSeries))
+    probes.remove()
+    const setData = prototype.setData
+    let reject = false
+    prototype.setData = function (values) {
+      if (reject && this.options().title === 'reference A') throw Error('injected saved reference write')
+      return setData.call(this, values)
+    }
+    const time = '2026-09-03T02:15:00Z'
+    const base = { formulaVersion: 'saved-formula', color: '#334455', points: [{ time, value: 103 }] }
+    const first = { ...base, id: 'a', label: 'reference A', sourceRevision: 'source-a' }
+    const sibling = { ...base, id: 'b', label: 'reference B', sourceRevision: 'source-b' }
+    const lines = ref([first, sibling]), chart = ref(null)
+    const bars = [{ time, trading_day: '2026-09-03', physicalContract: 'JM2601',
+      open: 100, high: 104, low: 99, close: 103, volume: 10, confirmed: true }]
+    const app = createApp({ render: () => h(KlineChart, { ref: chart, bars, seriesKind: 'actual_dominant', savedReferenceLines: lines.value }) })
+    const inspect = () => chart.value.inspectLayers().filter(row => row.indicatorId === 'saved_reference')
+    try {
+      app.mount(root)
+      await nextTick()
+      const initial = inspect()
+      reject = true
+      const next = { ...first, sourceRevision: 'source-new' }
+      lines.value = [next, sibling]
+      await nextTick()
+      const failed = inspect()
+      reject = false
+      lines.value = [next, sibling]
+      await nextTick()
+      const recovered = inspect()
+      lines.value = []
+      await nextTick()
+      return { initial, failed, recovered, removed: inspect(), time }
+    } finally {
+      app.unmount()
+      root.remove()
+      prototype.setData = setData
+    }
+  }, modules)
+  expect(reads.initial.map(row => row.sourceIdentity).sort()).toEqual(['source-a', 'source-b'])
+  expect(reads.failed).toEqual(expect.arrayContaining([
+    expect.objectContaining({ status: 'renderer_failure', sourceIdentity: null, dataCutoff: null,
+      lastError: 'CHART_RENDERER_UPDATE_FAILED', lastErrorAt: expect.any(String) }),
+    expect.objectContaining({ status: 'ready', sourceIdentity: 'source-b', dataCutoff: reads.time }),
+  ]))
+  expect(reads.recovered.map(row => row.sourceIdentity).sort()).toEqual(['source-b', 'source-new'])
+  expect(reads.removed).toEqual([])
+})
+
 test('native price, volume and THS write failures clear diagnostics and recover independently', async ({ page }) => {
   await installDetailFakeWebSocket(page)
   const historical = { ...detailBar('jm', 0), source_bar_sha256: 'b'.repeat(64) }

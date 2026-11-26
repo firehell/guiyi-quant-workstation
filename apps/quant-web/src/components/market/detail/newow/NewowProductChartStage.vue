@@ -1384,6 +1384,16 @@ function recordAuxiliaryAxisFailure(): void {
   host?.removeAuxiliary(auxiliaryPaneKey)
 }
 
+function auxiliaryAxisDiagnostics(value: NewowProductChartModel | null): LayerPatch {
+  const cutoff = value?.bars.at(-1)?.barEnd ?? null
+  return {
+    ...chartLayerSource(cutoff ? props.response : null, cutoff),
+    frequency: value?.identity.frequency ?? null,
+    formulaVersion: displayVersion('auxiliary_axis'),
+    status: cutoff ? 'ready' : 'missing_input',
+  }
+}
+
 function writeAuxiliaryAxis(value: NewowProductChartModel | null, identity: string): void {
   const anchor = auxiliaryAnchor
   if (!host || !anchor) return
@@ -1397,11 +1407,7 @@ function writeAuxiliaryAxis(value: NewowProductChartModel | null, identity: stri
       clearSelectedAuxiliary()
       throw error
     }
-    axis.updateDiagnostics({
-      ...chartLayerSource(strategySource.value, value?.bars.at(-1)?.barEnd ?? null),
-      formulaVersion: displayVersion('auxiliary_axis'),
-      status: value?.bars.length ? 'ready' : 'missing_input',
-    })
+    axis.updateDiagnostics(auxiliaryAxisDiagnostics(value))
   })
   if (!written) {
     clearSelectedAuxiliary()
@@ -1441,13 +1447,13 @@ function renderExtraAuxiliaries() {
     host.removeAuxiliary(existing.pane.auxiliary)
     extraPanes.delete(component)
   }
-  const main = model.value
+  const main = priceWriteFailed.value ? null : model.value
   for (const item of panes) {
     const id = newowPaneId(item.component)
+    const axisId = `${id}:axis`
     let current = extraPanes.get(item.component)
     if (!current) {
       const pane = host.addAuxiliary(id)
-      const axisId = `${id}:axis`
       let anchor: ISeriesApi<'Line'> | undefined
       const initialized = host.renderLayer(axisId, 'auxiliary_axis', pane, 'line', axis => {
         anchor = axis.line({ lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false })
@@ -1464,15 +1470,34 @@ function renderExtraAuxiliaries() {
       current = { pane, anchor, primitive, lines: new Map(), snapshot: null, response: null, dataCutoff: null }
       extraPanes.set(item.component, current)
     }
-    const aligned = item.lifecycle === 'input_conflict' ? null : alignNewowAuxiliaryChartModel(props.response, item.response)
+    const aligned = !main || item.lifecycle === 'input_conflict' ? null : alignNewowAuxiliaryChartModel(props.response, item.response)
     const value = aligned?.component === item.component ? aligned : null
     const height = item.height ?? 120
     const key = JSON.stringify([newowChartSnapshotKey(props.response), main?.bars[0]?.barEnd, main?.bars.at(-1)?.barEnd, value, mirrorEvents.value, height, pageTheme.value])
     const response = value === null ? null : item.response
     const pane = current
+    const changed = pane.snapshot !== key || response !== pane.response
+    if (changed) {
+      const axisWritten = host.renderLayer(axisId, 'auxiliary_axis', pane.pane, 'line', axis => {
+        try {
+          pane.anchor.setData(main?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay) })) ?? [])
+        } catch (error) {
+          // Detach the optional indicator before releasing its timeline anchor.
+          host?.removeLayer(id)
+          throw error
+        }
+        axis.updateDiagnostics(auxiliaryAxisDiagnostics(main))
+      })
+      if (!axisWritten) {
+        const failure = host.inspectLayer(axisId)
+        if (failure) failedExtraAxes.set(item.component, failure)
+        host.removeAuxiliary(pane.pane.auxiliary)
+        extraPanes.delete(item.component)
+        continue
+      }
+    }
     const written = host.renderLayer(id, id, pane.pane, pane.primitive ? 'primitive' : 'histogram', layer => {
-      if (pane.snapshot !== key || response !== pane.response) {
-        pane.anchor.setData(main?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay) })) ?? [])
+      if (changed) {
         if (pane.primitive) {
           if (!value) layer.remove(pane.primitive)
           else if (!layer.hasResource(pane.primitive)) layer.primitive(pane.anchor, pane.primitive, positionPaneHeaders)

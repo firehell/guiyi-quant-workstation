@@ -895,15 +895,17 @@ test('a failing Newow main line removes its old native series and recovers witho
   assert.equal(liveSeries.size, 0)
 })
 
-for (const failedPane of ['primary', 'primary write', 'extra MACD'] as const) test(`a failed ${failedPane} axis releases its pane slot and a sibling still renders`, async () => {
+for (const failedPane of ['primary', 'primary write', 'extra MACD', 'extra MACD write'] as const) test(`a failed ${failedPane} axis releases its pane slot and a sibling still renders`, async () => {
   const Stage = await loadComponent()
   const response = ref(strategyResponse('trend'))
-  const failIndex = failedPane === 'extra MACD' ? 2 : 1
+  const extra = failedPane.startsWith('extra')
+  const failIndex = extra ? 2 : 1
+  const failWrite = failedPane.endsWith('write')
   const activePanes = ref([
-    ...(failedPane === 'extra MACD' ? [{ component: 'macd', lifecycle: 'loading', response: null, error: null }] : []),
+    ...(extra ? [{ component: 'macd', lifecycle: 'loading', response: null, error: null }] : []),
     { component: 'main_force_control', lifecycle: 'loading', response: null, error: null },
   ])
-  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; pane: unknown; status: string }> } | null>(null)
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; pane: unknown; status: string; dataCutoff: string | null }> } | null>(null)
   const swaps: Array<[number, number]> = []
   const live = new Set<object>()
   let fail = true
@@ -912,12 +914,12 @@ for (const failedPane of ['primary', 'primary write', 'extra MACD'] as const) te
       let hasZeroLine = false
       const item = {
         setData() {
-          if (fail && failedPane === 'primary write' && hasZeroLine) throw new Error('could not write the primary axis')
+          if (fail && failWrite && index === failIndex && hasZeroLine) throw new Error('could not write the axis')
         },
         attachPrimitive() {}, detachPrimitive() {},
         priceScale: () => ({ applyOptions() {} }),
         createPriceLine(options: { price: number }) {
-          if (index === failIndex && fail && failedPane !== 'primary write') throw new Error('could not allocate the zero line')
+          if (index === failIndex && fail && !failWrite) throw new Error('could not allocate the zero line')
           if (options.price === 0) hasZeroLine = true
           return { applyOptions() {} }
         },
@@ -945,10 +947,13 @@ for (const failedPane of ['primary', 'primary write', 'extra MACD'] as const) te
   fail = false
   response.value = { ...response.value }
   activePanes.value = [...activePanes.value]; await nextTick(); await nextTick()
-  if (failedPane === 'extra MACD') assert.ok(diagnostics().some(item => item.indicatorId === 'macd' && item.status === 'loading'))
+  if (extra) assert.ok(diagnostics().some(item => item.indicatorId === 'macd' && item.status === 'loading'))
   assert.ok(diagnostics().every(item => item.status !== 'renderer_failure'))
+  const axes = diagnostics().filter(item => item.indicatorId === 'auxiliary_axis')
+  assert.equal(axes.length, extra ? 3 : 2)
+  assert.ok(axes.every(axis => axis.status === 'ready' && axis.dataCutoff === response.value.value?.bars.at(-1)?.bar_end))
   assert.equal(live.size, afterFailure + 1)
-  assert.deepEqual(swaps, [failedPane === 'extra MACD' ? [2, 3] : [1, 2]])
+  assert.deepEqual(swaps, [extra ? [2, 3] : [1, 2]])
   app.unmount()
   assert.equal(live.size, 0)
 })

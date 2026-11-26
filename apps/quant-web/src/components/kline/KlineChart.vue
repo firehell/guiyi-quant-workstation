@@ -222,7 +222,7 @@ const chartViewportReady = ref(false)
 let derivedData = buildKlineDerivedData([], [])
 // One latest result only; normalized Bar arrays are replaced on every input mutation.
 let rangeCache: { bars: BarData[]; key: string; result: NonNullable<typeof derivedData.rangeDetector> } | null = null
-const savedReferenceSeries = new Map<string, ISeriesApi<'Line'>>()
+const savedReferenceSeries = new Map<string, ISeriesApi<'Line'> | null>()
 let renderedMarkerById = new Map<string, KlineMarker>()
 const drawnMarkers = shallowRef<KlineMarker[]>([])
 let viewportStabilityFrame: number | null = null
@@ -701,23 +701,19 @@ function renderSavedReferenceLines(): void {
   if (!lines.length) return
   const barsByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
   for (const line of lines) {
-    const layer = host.layer(`saved-reference:${line.id}`, 'saved_reference', 'main')
     let series = savedReferenceSeries.get(line.id)
-    if (!series) {
-      series = layer.line({
+    const written = host.renderLayer(`saved-reference:${line.id}`, 'saved_reference', 'main', 'line', layer => {
+      series ??= layer.line({
         color: line.color, title: line.label, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
       })
-      savedReferenceSeries.set(line.id, series)
-    }
-    series.setData(chartValues(line.points, barsByTime))
-    let cutoff: string | null = null
-    for (const point of line.points) {
-      if (barsByTime.has(point.time) && Number.isFinite(point.value)) cutoff = point.time
-    }
-    layer.updateDiagnostics({
-      status: cutoff ? 'ready' : 'missing_input', frequency: props.period,
-      sourceIdentity: cutoff ? line.sourceRevision : null, formulaVersion: cutoff ? line.formulaVersion : null, dataCutoff: cutoff,
+      series.setData(chartValues(line.points, barsByTime))
+      const cutoff = lastMatching(line.points, point => barsByTime.has(point.time) && Number.isFinite(point.value))?.time ?? null
+      layer.updateDiagnostics({
+        status: cutoff ? 'ready' : 'missing_input', frequency: props.period,
+        sourceIdentity: cutoff ? line.sourceRevision : null, formulaVersion: cutoff ? line.formulaVersion : null, dataCutoff: cutoff,
+      })
     })
+    savedReferenceSeries.set(line.id, written ? series ?? null : null)
   }
 }
 

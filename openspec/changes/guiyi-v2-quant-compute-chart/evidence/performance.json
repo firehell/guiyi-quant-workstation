@@ -1,16 +1,16 @@
 {
   "bars": 66590,
   "cache_hot_latency_ms": [
-    0.0261,
-    0.0317,
-    0.0606
+    0.0263,
+    0.0312,
+    0.0512
   ],
   "covered_product_frequencies": 415,
   "host": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
   "incremental_latency_ms": [
-    0.0792,
-    0.0913,
-    0.1038
+    0.0785,
+    0.0906,
+    0.1087
   ],
   "missing": [
     [
@@ -40,35 +40,35 @@
     ]
   ],
   "new_comparable_batch": {
-    "cpu_seconds": 1.3741,
-    "process_peak_rss_bytes": 301203456,
+    "cpu_seconds": 1.3766,
+    "process_peak_rss_bytes": 323846144,
     "segment_latency_ms": [
-      0.1007,
-      1.8392,
-      2.7047
+      0.1008,
+      1.8192,
+      2.6772
     ],
-    "total_seconds": 1.3829
+    "total_seconds": 1.3824
   },
   "new_expanded_batch": {
-    "cpu_seconds": 6.8391,
-    "process_peak_rss_bytes": 304824320,
+    "cpu_seconds": 6.6215,
+    "process_peak_rss_bytes": 327761920,
     "segment_latency_ms": [
-      0.4933,
-      7.3691,
-      12.8722
+      0.482,
+      7.1701,
+      11.1093
     ],
-    "total_seconds": 6.9133
+    "total_seconds": 6.6435
   },
   "numpy": "2.5.0",
   "old_comparable_batch": {
-    "cpu_seconds": 2.1353,
-    "process_peak_rss_bytes": 285720576,
+    "cpu_seconds": 2.0619,
+    "process_peak_rss_bytes": 302399488,
     "segment_latency_ms": [
-      0.1532,
-      2.7523,
-      5.0616
+      0.1514,
+      2.6728,
+      4.8704
     ],
-    "total_seconds": 2.1424
+    "total_seconds": 2.0681
   },
   "owner_segments_by_frequency": {
     "15m": 70,
@@ -79,19 +79,20 @@
     "5m": 64,
     "60m": 91
   },
+  "quant_core": "0.3.0",
   "queued_full_registry": {
     "batch_job_latency_ms": [
-      3.9262,
-      37.8335,
-      96.6867
+      3.6965,
+      35.6141,
+      98.2767
     ],
-    "cpu_seconds": 2.8016,
-    "process_peak_rss_bytes": 304824320,
+    "cpu_seconds": 2.7567,
+    "process_peak_rss_bytes": 329170944,
     "queue_load": {
       "batch": {
         "peak_pending": 4,
         "pending": 0,
-        "rejected": 420
+        "rejected": 373
       },
       "incremental": {
         "peak_pending": 0,
