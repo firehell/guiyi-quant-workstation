@@ -105,6 +105,7 @@ export interface NewowPriceChannelChartPoint {
 
 export interface NewowProductBandArea {
   readonly time: Time
+  readonly barEnd: string
   readonly a: number
   readonly b: number
   readonly color: string
@@ -177,6 +178,7 @@ export function buildNewowProductChartModel(
         || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(frame.main_state)) continue
       bandAreas.push({
         time: chartMarkerTime(bar.barEnd, response.meta.identity.frequency, bar.tradingDay),
+        barEnd: bar.barEnd,
         a: chartCoordinate(frame.main_values[firstKey]),
         b: chartCoordinate(frame.main_values[secondKey]),
         color: response.meta.identity.strategy === 'main_rise'

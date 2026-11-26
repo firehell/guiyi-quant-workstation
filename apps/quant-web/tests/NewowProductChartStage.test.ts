@@ -412,7 +412,7 @@ test('same product and frequency strategy switches keep viewport while replacing
     assert.deepEqual(bandCalls.at(-1), [])
     assert.equal(channelCalls.at(-1)?.length, 1)
 
-    response.value = strategyResponse('main_rise'); await nextTick()
+    strategy.value = 'main_rise'; response.value = strategyResponse('main_rise'); await nextTick()
     assert.deepEqual(range, { from: 12, to: 42 })
     assert.equal(bandCalls.at(-1)?.length, 1)
     assert.deepEqual(channelCalls.at(-1), [])
@@ -425,7 +425,7 @@ test('same product and frequency strategy switches keep viewport while replacing
     const incompatible = strategyResponse('trend')
     incompatible.value!.bars[0]!.bar_end = '2026-08-15T06:00:00Z'
     incompatible.value!.frames[0]!.bar_end = '2026-08-15T06:00:00Z'
-    response.value = incompatible; await nextTick()
+    strategy.value = 'trend'; response.value = incompatible; await nextTick()
     assert.notDeepEqual(range, { from: 12, to: 42 })
     assert.equal(ranges.length >= 4, true)
     app.unmount()
@@ -708,6 +708,98 @@ test('action diagnostics follow the rendered strategy and clear old provenance d
   app.unmount()
 })
 
+test('main layers report actual cutoffs and revoke stale pattern, prices and strategy identities', async () => {
+  const Stage = await loadComponent()
+  const { buildNewowProductChartModel } = await import('../src/components/market/detail/newow/newowProductChartPrimitives.ts')
+  const response = ref(strategyResponse('trend'))
+  response.value.meta.identity.frequency = '1d'
+  response.value.meta.data_revision_identity = 'revision-trend'
+  response.value.value!.trend_channel = channelFor(response.value.value!.bars, 110, 90)
+  const strategy = ref<'trend' | 'main_rise'>('trend')
+  const switching = ref(false)
+  const bars = buildNewowProductChartModel(response.value).bars
+  const selection = ref({
+    key: 'fixture-pattern', windowKey: 'fixture-window', ownerKey: 'fixture-owner', bars,
+    pattern: { type: 'flat-base', score: 80, params: { startIdx: 0, endIdx: 0, upperPrice: 110, lowerPrice: 90 } },
+  })
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{
+    indicatorId: string; renderer: string; status: string; sourceIdentity: string | null
+    dataCutoff: string | null; formulaVersion: string | null; lastError: string | null
+  }> } | null>(null)
+  const prices = new Set<unknown>()
+  const fakeChart = {
+    addSeries: () => ({
+      setData() {},
+      createPriceLine(input: { title: string }) {
+        const line = { ...input, applyOptions() {} }
+        prices.add(line)
+        return line
+      },
+      removePriceLine(input: unknown) { prices.delete(input) },
+    }),
+    removeSeries() {}, resize() {}, remove() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const targetSource = {
+    sourceIdentity: 'target-input', formulaVersion: 'target-formula', frequency: '1d', dataCutoff: bars[0]!.barEnd,
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: strategy.value, strategySwitching: switching.value,
+    patternSelection: selection.value, patternWindowKey: 'fixture-window',
+    targetPrice: strategy.value === 'trend' ? '120' : null, targetPriceSource: targetSource, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  const layers = (indicator: string) => stage.value!.inspectLayers().filter(layer => layer.indicatorId === indicator)
+  const band = () => layers('newow_trend').find(layer => layer.renderer === 'primitive' && layer.status === 'ready')
+  assert.equal(band()?.dataCutoff, bars[0]!.barEnd)
+  assert.equal(band()?.sourceIdentity, 'revision-trend')
+  assert.deepEqual(layers('newow_trend').filter(layer => layer.renderer === 'line').map(layer => layer.status), ['ready', 'ready'])
+  assert.equal(layers('newow_pattern')[0]!.status, 'ready')
+  assert.equal(layers('newow_pattern')[0]!.formulaVersion, 'newow_public_patterns_v3379_v1')
+  const target = layers('newow_price_reference').find(layer => layer.status === 'ready')
+  assert.equal(target?.sourceIdentity, 'target-input')
+  assert.equal(target?.formulaVersion, 'target-formula')
+  assert.equal(target?.dataCutoff, bars[0]!.barEnd)
+
+  const channel = response.value.value!.trend_channel!.points[0]!
+  channel.status = { ...ready(), status: 'unavailable', reason_code: 'NEWOW_TREND_CHANNEL_OWNER_CONFLICT' }
+  await nextTick()
+  const invalidChannel = layers('newow_trend').find(layer => layer.formulaVersion === 'newow_hhv_llv_channel_page_v1')
+  assert.equal(invalidChannel?.status, 'invalid_source')
+  assert.equal(invalidChannel?.lastError, 'NEWOW_TREND_CHANNEL_OWNER_CONFLICT')
+  channel.status.reason_code = 'NEWOW_TREND_CHANNEL_WARMUP_INSUFFICIENT'
+  await nextTick()
+  assert.equal(layers('newow_trend').find(layer => layer.formulaVersion === 'newow_hhv_llv_channel_page_v1')?.status, 'warming')
+
+  selection.value = { ...selection.value, bars: bars.map(bar => ({ ...bar, volume: bar.volume + 1 })) }
+  await nextTick()
+  const rejected = layers('newow_pattern')[0]!
+  assert.equal(rejected.status, 'invalid_source')
+  assert.equal(rejected.sourceIdentity, null)
+  assert.equal(rejected.lastError, 'NEWOW_PATTERN_WINDOW_MISMATCH')
+
+  switching.value = true; await nextTick()
+  assert.ok(layers('newow_trend').every(layer => layer.status === 'loading' && layer.sourceIdentity === null))
+  assert.equal(layers('newow_trend').filter(layer => layer.renderer === 'line').length, 0)
+  assert.equal(layers('newow_price_reference').some(layer => layer.sourceIdentity !== null), false)
+  assert.ok([...prices].every(line => (line as { title: string }).title !== '目标价'))
+
+  strategy.value = 'main_rise'
+  response.value = strategyResponse('main_rise')
+  response.value.meta.data_revision_identity = 'revision-main-rise'
+  selection.value = { ...selection.value, windowKey: 'old-window' }
+  switching.value = false; await nextTick()
+  assert.equal(layers('newow_trend').length, 0)
+  const mainRise = layers('newow_main_rise').find(layer => layer.renderer === 'primitive')
+  assert.equal(mainRise?.status, 'ready')
+  assert.equal(mainRise?.sourceIdentity, 'revision-main-rise')
+  assert.equal(layers('newow_process')[0]!.status, 'ready')
+  app.unmount()
+  assert.equal(prices.size, 0)
+})
+
 test('dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit', async () => {
   const Stage = await loadComponent()
   const response = prependBar(strategyResponse('trend'))
@@ -801,6 +893,7 @@ test('oscillation breakout is an orange native price line and is revoked on stra
   const response = ref<MutableChartResponse | null>(payload)
   const loading = ref(false)
   const selectedStrategy = ref('oscillation')
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; formulaVersion: string | null; dataCutoff: string | null }> } | null>(null)
   const active = new Set<Record<string, unknown>>()
   const fakeChart = { addSeries: () => ({ setData() {},
     createPriceLine(options: Record<string, unknown>) { const line = { ...options, applyOptions() {} }; active.add(line); return line },
@@ -810,12 +903,18 @@ test('oscillation breakout is an orange native price line and is revoked on stra
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
-    response: response.value, strategy: selectedStrategy.value, loading: loading.value, selectedSignalId: null,
+    ref: stage, response: response.value, strategy: selectedStrategy.value, loading: loading.value, selectedSignalId: null,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(element('root')); await nextTick()
   const breakout = () => [...active].filter(line => String(line.title).startsWith('突破'))
   assert.deepEqual(breakout().map(line => [line.title, line.price, line.color, line.lineStyle, line.axisLabelVisible]), [['突破 6/7', 95, '#FF9800', 2, true]])
+  const diagnostics = stage.value!.inspectLayers()
+  const level = diagnostics.find(layer => layer.indicatorId === 'newow_breakout_reference')
+  const markers = diagnostics.find(layer => layer.indicatorId === 'newow_breakouts')
+  assert.equal(level?.formulaVersion, 'newow_oscillation_breakout_line_page_v1')
+  assert.equal(level?.dataCutoff, bars.at(-1)!.bar_end)
+  assert.equal(markers?.dataCutoff, null)
   loading.value = true; await nextTick()
   assert.equal(breakout().length, 0, 'refresh loading revokes the old line even when a ready response is retained')
   loading.value = false; await nextTick()
@@ -961,6 +1060,7 @@ function channelFor(bars: NonNullable<MutableChartResponse['value']>['bars'], up
       status: ready(),
       physical_contract: item.physical_contract,
       segment_id: item.segment_id,
+      calculation_segment_id: item.calculation_segment_id,
       source_identity: item.source_identity,
     })),
   }

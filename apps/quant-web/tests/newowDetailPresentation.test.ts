@@ -71,7 +71,12 @@ test('chart price remains visible when explanation is unopened and FLAT', () => 
     target: { raw: '110', display: '110.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
     absorb: { raw: '90', display: '90.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
   }
-  assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, true).target?.display, '110.00')
+  const target = projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, true).target
+  assert.equal(target?.display, '110.00')
+  assert.deepEqual(target?.chartSource, {
+    frequency: '1d', sourceIdentity: c.value.price_reference.input_sha256,
+    formulaVersion: c.value.price_reference.formula_version, dataCutoff: latest.bar_end,
+  })
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, true).target?.display, '110.00')
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, false).target, null)
   c.value.price_reference.anchor_bar_end = '2020-01-01T07:00:00Z'
@@ -85,7 +90,10 @@ test('proven target retains original price strings and source time, rejecting st
   const price = { raw_value: '0108.2500', display_value: '108.2500', branch: 'fixture', source_frequency: '1d', bar_end: latest.bar_end, physical_contract: latest.physical_contract, segment_id: latest.segment_id }
   e.value.target_absorb = { ...e.value.target_absorb, status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null, value: { target: price, absorb: { ...price, display_value: '98.5000' } } }
   assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.display_value, '108.2500')
-  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.bar_end, latest.bar_end)
+  assert.deepEqual(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.chartSource, {
+    frequency: '1d', sourceIdentity: e.meta.input_content_sha256,
+    formulaVersion: e.value.target_absorb.formula_versions.join(' / ') || null, dataCutoff: latest.bar_end,
+  })
   assert.equal(projectNewowDetail(c, 'ready', e, 'stale', true, null, 'not_requested', false, true).target, null)
   e.value.target_absorb.value.target = { ...price, physical_contract: 'OTHER' }
   assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target, null)

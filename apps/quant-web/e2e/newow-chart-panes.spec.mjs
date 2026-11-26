@@ -43,6 +43,9 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
     const diagnostics = stage.locator('.chart-layer-diagnostics')
     await diagnostics.getByText('图层诊断', { exact: true }).click()
     await expect(diagnostics.getByText('newow_actions · 就绪', { exact: true })).toBeVisible()
+    const mainIndicator = { trend: 'newow_trend', oscillation: 'newow_oscillation', main_rise: 'newow_main_rise' }[strategy]
+    await expect(diagnostics.getByText(`${mainIndicator} · 就绪`, { exact: true }).first()).toBeVisible()
+    await expect(diagnostics.getByText('newow_volume · 就绪', { exact: true })).toBeVisible()
     await diagnostics.getByText('图层诊断', { exact: true }).click()
 
     await stage.getByRole('button', { name: '图表设置', exact: true }).click()
@@ -65,6 +68,19 @@ test('weekly deep link remains closed without requesting strategy data', async (
   await expect(page.getByText(/1w 尚未开放/)).toBeVisible()
   expect(productRequests(fixture, 'chart')).toHaveLength(0)
   expect(productRequests(fixture, 'auxiliary')).toHaveLength(0)
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('the dual chart diagnostics keep trend and oscillation action sources separate', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { dualMarket: true })
+  await page.goto(newowRoute('trend', '1d', '&newow_mode=dual'))
+  const chart = page.getByTestId('newow-product-chart-stage')
+  await expect(chart).toHaveAttribute('data-comparison-active', 'true')
+  await chart.getByText('副图管理', { exact: true }).click()
+  const diagnostics = chart.locator('.chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('newow_actions · 就绪', { exact: true })).toHaveCount(2)
+  await expect(diagnostics.getByText('newow_dual_background · 就绪', { exact: true })).toBeVisible()
   assertNoUnexpectedRequests(fixture)
 })
 

@@ -4,7 +4,7 @@ import NewowMainRiseProcessLabels from './NewowMainRiseProcessLabels.vue'
 import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
 import {layoutMainRiseProcessLabels} from '@/utils/newowProcessHintDisplay'
 import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
-import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
+import {BREAKOUT_VERSION,breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { cautionDisplayTitle, cautionStateLabel, type CautionState } from '@/utils/newowCautionDisplay.ts'
@@ -18,10 +18,10 @@ import { newowFourStepMarks } from '@/utils/newowFourStepMarks'
 import { newowExtrema, newowNineTurn } from '@/utils/newowChartAnnotations'
 import { readChartAnnotationPreferences, readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import { newowReferencePrice, newowSimpleDualLabel, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
-import { CHART_PROFILES, DISPLAY_CATALOG, mountChartHost, type ChartHost, type ChartLayer, type LayerStatus } from '@guiyi/quant-chart'
+import { CHART_PROFILES, DISPLAY_CATALOG, mountChartHost, type ChartHost, type ChartLayer, type LayerDiagnostics, type LayerStatus } from '@guiyi/quant-chart'
 import { newowAuxiliaryLayerStatus, newowPaneId, type NewowAdditionalPane, type NewowAuxiliaryPaneComponent } from '@/utils/newowAdditionalPanes'
 import { volumePresentation, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
-import { newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
+import { NEWOW_BREAKOUT_DISPLAY_VERSION, newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
 import { newowChartReadout } from '@/utils/newowChartReadout'
 import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
@@ -50,6 +50,7 @@ import {
 import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import { buildNewowPatternGeometry, type PatternChoice } from '@/utils/newowPatternDisplay'
+import { NEWOW_PUBLIC_PATTERNS_METADATA } from '@/utils/newowPublicPatterns'
 import { NewowTrendChannelPrimitive } from '@/components/market/detail/newow/newowTrendChannelPrimitive'
 import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
 import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
@@ -57,7 +58,7 @@ import { NewowMainForceControlPrimitive, buildNewowMainForceData } from '@/compo
 import { NewowTrendReversalPrimitive, buildNewowTrendReversalData, buildNewowTrendReversalMarks } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
 import { newowAuxiliaryPaneLayout } from '@/components/market/detail/newow/newowAuxiliaryPaneLayout'
 import { resolveChartTheme } from '@/styles/chartTheme'
-import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
+import type { NewowFeatureStatus, NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowComparisonCompatible } from '@/utils/newowComparison'
@@ -80,8 +81,12 @@ import {
   type NewowProductResizeObserver,
 } from '@/components/market/detail/newow/newowProductChartPrimitives'
 
+type ChartResponse = NewowProductSectionResponse<'chart'>
+type LayerSource = Pick<LayerDiagnostics, 'sourceIdentity' | 'formulaVersion' | 'frequency' | 'dataCutoff'>
+type LayerPatch = Partial<Omit<LayerDiagnostics, 'indicatorId' | 'packageVersion' | 'pane'>>
+
 const props = withDefaults(defineProps<{
-  response: NewowProductSectionResponse<'chart'> | null
+  response: ChartResponse | null
   priceBars?: readonly BarData[]
   priceFrequency?: string
   displayOnly?: boolean
@@ -90,6 +95,8 @@ const props = withDefaults(defineProps<{
   strategy: NewowProductStrategy
   targetPrice?: string | null
   absorbPrice?: string | null
+  targetPriceSource?: LayerSource
+  absorbPriceSource?: LayerSource
   referenceTrades?: readonly import('@/types/newowProduct').NewowReferenceTrade[]
   referenceTradesComplete?: boolean
   referenceStatsLoading?: boolean
@@ -203,6 +210,8 @@ const showActions = ref(true)
 const showStructure = ref(true)
 const showHints = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
+const strategySource = computed(() => !props.displayOnly && !props.strategySwitching
+  && props.response?.meta.identity.strategy === props.strategy ? props.response : null)
 const settingsIdentity = computed(() => {
   const value = model.value
   return value ? identityKey(value) : props.strategy
@@ -282,6 +291,52 @@ const dualBackground = new NewowDualBackgroundPrimitive()
 const trendChannel = new NewowTrendChannelPrimitive()
 const publicPattern = new NewowPublicPatternPrimitive()
 const priceAnnotations = new NewowPriceAnnotationPrimitive()
+
+function chartLayerSource(response: ChartResponse | null, dataCutoff: string | null = null): LayerSource {
+  return {
+    sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
+    formulaVersion: response?.meta.identity.formula_versions.join(' / ') || null,
+    frequency: response?.meta.identity.frequency ?? null,
+    dataCutoff,
+  }
+}
+
+function chartLayerStatus(response: ChartResponse | null, hasOutput: boolean, feature = response?.status): LayerStatus {
+  if (feature?.reason_code === 'NEWOW_TREND_CHANNEL_OWNER_CONFLICT' || feature?.reason_code === 'NEWOW_TREND_CHANNEL_ORDER_CONFLICT') return 'invalid_source'
+  if (feature?.status === 'warming' || feature?.reason_code === 'NEWOW_TREND_CHANNEL_WARMUP_INSUFFICIENT') return 'warming'
+  if (hasOutput && feature?.status === 'ready') return 'ready'
+  if (props.loading || props.strategySwitching) return 'loading'
+  return 'missing_input'
+}
+
+function lastFrameStatus(response: ChartResponse | null): NewowFeatureStatus | undefined {
+  const value = response?.value
+  const last = value?.bars.at(-1)
+  return value && last ? lastMatching(value.frames, frame => frame.bar_end === last.bar_end)?.status : undefined
+}
+
+function displayVersion(indicator: string): string | null {
+  const source = DISPLAY_CATALOG[indicator]?.source
+  return source?.type === 'display_transform' ? source.version : null
+}
+
+function writeMainDiagnostics(id: string, indicator: string, response: ChartResponse | null, patch: LayerPatch): void {
+  host?.layer(id, indicator, 'main').updateDiagnostics({
+    ...chartLayerSource(response),
+    status: chartLayerStatus(response, false),
+    lastError: response?.status.reason_code ?? null,
+    warmup: null,
+    ...patch,
+  })
+}
+
+function lastMatching<T>(items: readonly T[], matches: (item: T) => boolean): T | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!
+    if (matches(item)) return item
+  }
+}
+
 const marks = computed<NewowPriceAnnotation[]>(() => {
   const value = model.value
   if (!value || props.displayOnly || props.strategySwitching || props.loading) return []
@@ -303,24 +358,70 @@ const marks = computed<NewowPriceAnnotation[]>(() => {
   })) : []
   return [...extrema, ...nine].sort((a, b) => a.index - b.index)
 })
+const attachedPricePrimitives = new Set<string>()
 function syncPricePrimitive(id: string, indicator: string, primitive: ISeriesPrimitive<Time>, show: boolean) {
   if (!host || !candles) return
-  if (!show) host.removeLayer(id)
-  else if (!host.hasLayer(id)) host.layer(id, indicator, 'main').primitive(candles, primitive)
+  if (show && !attachedPricePrimitives.has(id)) {
+    host.layer(id, indicator, 'main').primitive(candles, primitive)
+    attachedPricePrimitives.add(id)
+  } else if (!show && attachedPricePrimitives.delete(id)) {
+    host.removeLayer(id)
+  }
 }
 function renderPriceAnnotations() {
-  syncPricePrimitive('annotations', 'newow_annotations', priceAnnotations, marks.value.length > 0)
+  const id = 'annotations', indicator = 'newow_annotations'
+  const source = props.loading ? null : strategySource.value
+  const enabled = annotations.value.extrema || (!pure.value && annotations.value.nineTurn)
+  syncPricePrimitive(id, indicator, priceAnnotations, marks.value.length > 0)
   priceAnnotations.setData(marks.value, pageTheme.value === 'dark')
+  writeMainDiagnostics(id, indicator, source, {
+    status: enabled ? chartLayerStatus(source, !!source?.value?.bars.length) : 'hidden',
+    formulaVersion: source ? displayVersion(indicator) : null,
+    dataCutoff: source?.value?.bars.at(-1)?.bar_end ?? null,
+  })
 }
 watch([marks, pageTheme], renderPriceAnnotations, { flush: 'post' })
-function renderPattern(){
- publicPattern.setData(null)
- const choice=props.patternSelection
- if(pure.value||!choice||!model.value||props.loading||props.strategySwitching||choice.windowKey!==props.patternWindowKey)return
- // Every source bar must still be exactly present in the accepted owner window.
- const accepted=new Map(model.value.bars.map(b=>[b.barEnd,b]))
- if(!choice.bars.every(b=>{const current=accepted.get(b.barEnd);return current&&current.sourceIdentity===b.sourceIdentity&&current.physicalContract===b.physicalContract&&current.segmentId===b.segmentId&&current.calculationSegmentId===b.calculationSegmentId}))return
- try{publicPattern.setData(buildNewowPatternGeometry(choice,model.value.identity.frequency))}catch{publicPattern.setData(null)}
+function renderPattern() {
+  publicPattern.setData(null)
+  const choice = props.patternSelection
+  const value = model.value
+  const source = strategySource.value
+  const id = 'pattern', indicator = 'newow_pattern'
+  if (pure.value || !choice || !value || !source || props.loading) {
+    writeMainDiagnostics(id, indicator, null, {
+      status: pure.value || !choice ? 'hidden' : chartLayerStatus(null, false),
+    })
+    return
+  }
+  // Selection must still belong to the accepted calculation window and price revision.
+  const accepted = new Map(value.bars.map(bar => [bar.barEnd, bar]))
+  const owner = choice.bars[0]
+  const priceKeys = ['open', 'high', 'low', 'close'] as const
+  if (choice.windowKey !== props.patternWindowKey || !owner || !choice.bars.every(bar => {
+    const current = accepted.get(bar.barEnd)
+    return current && current.sourceIdentity === bar.sourceIdentity
+      && current.physicalContract === bar.physicalContract && current.physicalContract === owner.physicalContract
+      && current.segmentId === bar.segmentId && current.segmentId === owner.segmentId
+      && current.calculationSegmentId === bar.calculationSegmentId && current.calculationSegmentId === owner.calculationSegmentId
+      && current.tradingDay === bar.tradingDay && current.volume === bar.volume
+      && priceKeys.every(key => current[key] === bar[key])
+  })) {
+    writeMainDiagnostics(id, indicator, null, { status: 'invalid_source', lastError: 'NEWOW_PATTERN_WINDOW_MISMATCH' })
+    return
+  }
+  const patternSource = {
+    formulaVersion: NEWOW_PUBLIC_PATTERNS_METADATA.version,
+    dataCutoff: choice.bars.at(-1)!.barEnd,
+  }
+  let geometry: ReturnType<typeof buildNewowPatternGeometry>
+  try {
+    geometry = buildNewowPatternGeometry(choice, value.identity.frequency)
+  } catch {
+    writeMainDiagnostics(id, indicator, source, { ...patternSource, status: 'compute_error', lastError: 'NEWOW_PATTERN_GEOMETRY_FAILED' })
+    return
+  }
+  publicPattern.setData(geometry)
+  writeMainDiagnostics(id, indicator, source, { ...patternSource, status: 'ready' })
 }
 watch(()=>[props.patternSelection,props.patternWindowKey,props.loading,props.strategySwitching],renderPattern)
 const zhaoyaoMirror = new NewowZhaoyaoMirrorPrimitive()
@@ -352,10 +453,18 @@ function renderVisualOverlays(): void {
   host.removeLayer('donchian')
   host.removeLayer('stop')
   const value = model.value
-  if (pure.value || !value || props.displayOnly || props.loading || props.strategySwitching || props.response?.status.status !== 'ready' || value.identity.strategy !== props.strategy) { retainedStop = null; return }
+  const source = strategySource.value
+  if (pure.value || !value || props.loading || source?.status.status !== 'ready') {
+    retainedStop = null
+    for (const id of ['donchian', 'stop'] as const) writeMainDiagnostics(id, `newow_${id}`, props.loading ? null : source, {
+      status: pure.value || (id === 'donchian' && !visualOverlays.value.donchian) ? 'hidden' : chartLayerStatus(source, false),
+    })
+    return
+  }
   const owner = (b: NewowProductChartModel['bars'][number]) => `${b.physicalContract}:${b.segmentId}:${b.calculationSegmentId}`
   if (visualOverlays.value.donchian) {
-    const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), visualOverlays.value.window)
+    const required = visualOverlays.value.window
+    const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), required)
     const options = { priceFormat: NEWOW_CHART_PRICE_FORMAT, lineWidth: 1 as const, lineStyle: 2 as const, priceLineVisible: false, lastValueVisible: false }
     const lines = host.layer('donchian', 'newow_donchian', 'main').band(
       { ...options, color: 'rgba(52,199,89,0.7)' }, { ...options, color: 'rgba(255,59,48,0.7)' },
@@ -363,15 +472,38 @@ function renderVisualOverlays(): void {
     for (const side of ['upper', 'lower'] as const) {
       lines[side].setData(points.map((p, i) => ({ time: chartMarkerTime(p.time, value.identity.frequency, value.bars[i]!.tradingDay), ...(p[side] === null ? {} : { value: p[side]! }) })))
     }
-  }
+    const current = value.bars.at(-1)
+    let available = 0
+    for (let i = value.bars.length - 1; current && i >= 0 && available < required; i--) {
+      const bar = value.bars[i]!
+      if (owner(bar) !== owner(current) || !Number.isFinite(bar.high) || !Number.isFinite(bar.low) || bar.high < bar.low) break
+      available++
+    }
+    writeMainDiagnostics('donchian', 'newow_donchian', source, {
+      formulaVersion: displayVersion('newow_donchian'),
+      status: current ? available === required ? 'ready' : 'warming' : 'missing_input',
+      warmup: { available, required },
+      dataCutoff: lastMatching(points, point => point.upper !== null)?.time ?? null,
+    })
+  } else writeMainDiagnostics('donchian', 'newow_donchian', null, { status: 'hidden' })
   const anchorModel = comparisonActive.value ? trackModels.value.find(m => m.identity.strategy === 'oscillation') : value
-  if (!anchorModel) { retainedStop = null; return }
+  const anchorSource = anchorModel === value ? source : props.comparisonResponse ?? null
+  if (!anchorModel || !anchorSource) {
+    retainedStop = null
+    writeMainDiagnostics('stop', 'newow_stop', null, { status: 'missing_input' })
+    return
+  }
   const range = chart.timeScale().getVisibleLogicalRange()
   // Logical indexes belong to the primary candle axis; partner windows can begin earlier.
   const bars = value.bars.filter((bar,i) => { const logical = chart ? detailChartIndex(chart, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), i) : i; return !range || (logical >= Math.ceil(range.from) && logical <= Math.floor(range.to)) })
   retainedStop = retainBuildStop(retainedStop, `${identityKey(value)}:${comparisonActive.value ? 'dual' : 'single'}`, anchorModel.actions.map(a => { const b = anchorModel.bars.find(b => b.barEnd === a.barEnd && b.physicalContract === a.physicalContract && b.segmentId === a.segmentId); return { time:a.barEnd, owner:b ? owner(b) : '', price:a.referencePrice, action:a.kind } }),bars.map(b => ({time:b.barEnd,owner:owner(b)})))
   const price = retainedStopPrice(retainedStop, 0.07)
   if (price !== null) host.layer('stop', 'newow_stop', 'main').priceLevel(candles, {price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
+  writeMainDiagnostics('stop', 'newow_stop', anchorSource, {
+    status: chartLayerStatus(anchorSource, price !== null),
+    formulaVersion: displayVersion('newow_stop'),
+    dataCutoff: price !== null ? retainedStop?.anchor.time ?? null : null,
+  })
 }
 const mainLines = new Map<string, ISeriesApi<'Line'>>()
 
@@ -426,6 +558,7 @@ onMounted(async () => {
   if (stageRoot.value) observer.observe(stageRoot.value)
   if (auxiliaryToolbar.value) observer.observe(auxiliaryToolbar.value)
   renderModel(model.value)
+  renderEventDiagnostics()
   renderPriceAnnotations()
   resize()
 })
@@ -455,8 +588,14 @@ onUnmounted(createNewowProductChartDisposer({
   },
 }))
 
-watch([model, () => props.strategySwitching, () => props.priceBars, () => props.displayOnly], ([value]) => { renderModel(value) })
-watch([() => props.targetPrice, () => props.absorbPrice, () => props.loading, () => props.strategy], renderReferencePrices, { flush: 'post' })
+watch([model, () => props.strategy, () => props.strategySwitching, () => props.priceBars, () => props.displayOnly], ([value]) => { renderModel(value) })
+watch(() => strategySource.value?.value?.trend_channel?.points.at(-1)?.status.reason_code,
+  () => renderStructure(strategySource.value ? model.value : null))
+watch([strategySource, partnerModel, pure, showActions, showHints, detailLabels, showBreakoutShapes,
+  showBreakoutWicks, trendTrack, oscillationTrack, () => props.loading, () => props.response?.status.status],
+renderEventDiagnostics, { flush: 'post' })
+watch([() => props.targetPrice, () => props.absorbPrice, () => props.targetPriceSource, () => props.absorbPriceSource,
+  () => props.loading, () => props.strategy], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(pure, () => {
   cursorRows.value = []
@@ -492,24 +631,35 @@ function rememberViewport(): void {
 }
 function renderReferencePrices(): void {
   if (!candles || !host) return
-  host.removeLayer('price-references')
+  host.removeLayer('target-price')
+  host.removeLayer('absorb-price')
   host.removeLayer('breakout-reference')
-  if (pure.value || !model.value) return
-  for (const [value, color, title] of [
-    [props.targetPrice, '#ff4d9d', '目标价'],
-    [props.absorbPrice, '#ff3b30', '吸筹价'],
+  const chartSource = strategySource.value
+  for (const [id, value, source, color, title] of [
+    ['target-price', props.targetPrice, props.targetPriceSource, '#ff4d9d', '目标价'],
+    ['absorb-price', props.absorbPrice, props.absorbPriceSource, '#ff3b30', '吸筹价'],
   ] as const) {
-    if (value == null || !/^\d+(\.\d+)?$/.test(value)) continue
-    const price = Number(value)
-    if (!Number.isFinite(price) || price <= 0) continue
-    host.layer('price-references', 'newow_price_reference', 'main').priceLevel(candles, { price, color, title, lineWidth: 1, lineStyle: 1,
+    const price = value != null && /^\d+(\.\d+)?$/.test(value) ? Number(value) : NaN
+    const visible = !pure.value && !!chartSource && !!model.value && Number.isFinite(price) && price > 0
+    const indicator = 'newow_price_reference'
+    if (visible) host.layer(id, indicator, 'main').priceLevel(candles, { price, color, title, lineWidth: 1, lineStyle: 1,
       axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' })
+    writeMainDiagnostics(id, indicator, null, {
+      ...(visible ? source : undefined),
+      status: pure.value ? 'hidden' : chartLayerStatus(chartSource, visible),
+      renderer: 'price_level_zone',
+    })
   }
-  const breakout = showBreakoutShapes.value && !props.displayOnly && !props.loading && !props.strategySwitching && props.strategy === model.value.identity.strategy
-    && props.response?.status.status === 'ready' ? newowOscillationBreakout(model.value) : null
-  if (breakout) host.layer('breakout-reference', 'newow_breakouts', 'main').priceLevel(candles, {
+  const breakout = !pure.value && showBreakoutShapes.value && !props.loading && chartSource?.status.status === 'ready' && model.value
+    ? newowOscillationBreakout(model.value) : null
+  if (breakout) host.layer('breakout-reference', 'newow_breakout_reference', 'main').priceLevel(candles, {
     price: breakout.price, color: '#FF9800', title: `突破 ${breakout.displayScore}/7`,
     lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelColor: '#FF9800', axisLabelTextColor: '#ffffff',
+  })
+  if (props.strategy === 'oscillation') writeMainDiagnostics('breakout-reference', 'newow_breakout_reference', chartSource, {
+    status: pure.value || !showBreakoutShapes.value ? 'hidden' : chartLayerStatus(chartSource, breakout !== null),
+    formulaVersion: chartSource ? NEWOW_BREAKOUT_DISPLAY_VERSION : null,
+    dataCutoff: breakout ? model.value?.bars.at(-1)?.barEnd ?? null : null,
   })
 }
 
@@ -523,6 +673,12 @@ function renderVolume(value:NewowProductChartModel|null):void {
   volumeBars.value = input
   const { colors } = volumePresentation('newow', input, { theme: pageTheme.value, enabled: !pure.value && showBreakoutShapes.value })
   volumeWriter.write(volume,input.map((bar,index)=>({time:detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, value.identity.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})),`${value.identity.product}:${value.identity.frequency}`)
+  const latest = lastMatching(input, validVolume)
+  host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
+    ...chartLayerSource(strategySource.value, latest?.time ?? null),
+    formulaVersion: displayVersion('newow_volume'),
+    status: latest ? 'ready' : chartLayerStatus(strategySource.value, false),
+  })
 }
 function reportRenderedEnd(end?: string, contract?: string, frequency?: string) {
   if (!stageRoot.value) return
@@ -565,15 +721,13 @@ function renderModel(value: NewowProductChartModel | null): void {
       time: detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, props.priceFrequency ?? '1d'),
       ...(validVolume(bar) ? { value: bar.volume, color: previewColors[index] } : {}),
     })), 'preview')
-    host?.removeLayer('strategy-band')
-    host?.removeLayer('comparison-background')
-    host?.removeLayer('strategy-channel')
-    band.setData([])
-    dualBackground.setData([])
-    trendChannel.setData([])
+    host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
+      ...chartLayerSource(null),
+      status: chartLayerStatus(null, false),
+    })
+    writeMainDiagnostics('price', 'price', null, { status: chartLayerStatus(null, false) })
+    renderStructure(null)
     renderAuxiliary()
-    for (const id of mainLines.keys()) host?.removeLayer(`main:${id}`)
-    mainLines.clear()
     renderMarkers(null)
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     resolvedSignalKey = null
@@ -620,27 +774,19 @@ function renderModel(value: NewowProductChartModel | null): void {
   })), priceIdentity)
   const last = value.bars.at(-1)
   reportRenderedEnd(last?.barEnd, last?.physicalContract, value.identity.frequency)
+  const acceptedSource = strategySource.value
+  writeMainDiagnostics('price', 'price', acceptedSource, {
+    formulaVersion: null,
+    status: acceptedSource && last ? 'ready' : chartLayerStatus(acceptedSource, false),
+    dataCutoff: acceptedSource ? last?.barEnd ?? null : null,
+  })
   renderVolume(value)
+  if (!strategySource.value) host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
+    ...chartLayerSource(null), status: chartLayerStatus(null, false),
+  })
   if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
-  const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')
-  const showStructureLayers = !pure.value && showStructure.value
-  const bandAreas = showStructureLayers && !comparisonActive.value ? value.bandAreas : []
-  syncPricePrimitive('strategy-band', 'newow_trend', band, bandAreas.length > 0)
-  band.setData(bandAreas)
-  const backgroundTimes = showStructureLayers && comparisonActive.value && comparisonBackground.value
-    ? (trendModel?.bandAreas.filter(area => area.color === 'rgba(54, 90, 245, 0.35)').map(area => area.time) ?? []) : []
-  syncPricePrimitive('comparison-background', 'newow_dual_background', dualBackground, backgroundTimes.length > 0)
-  dualBackground.setData(backgroundTimes)
-  const channelModel = comparisonActive.value ? trackModels.value.find(item => item.identity.strategy === 'oscillation') : value
-  const channelPoints = showStructureLayers ? channelModel?.channelPoints ?? [] : []
-  syncPricePrimitive('strategy-channel', 'newow_oscillation', trendChannel, channelPoints.length > 0)
-  trendChannel.setData(channelPoints.map((point) => ({
-    time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay),
-    upper: point.upper,
-    lower: point.lower,
-  })))
+  renderStructure(strategySource.value ? value : null)
   renderAuxiliary()
-  syncMainLines(comparisonActive.value ? { ...value, mainLines: trackModels.value.flatMap(item => item.mainLines) } : value)
   renderMarkers(value)
   const sharedViewport = detailChartViewport(chart)
   if (sharedViewport) {
@@ -670,21 +816,90 @@ function renderModel(value: NewowProductChartModel | null): void {
   resolveSelectedSignal()
 }
 
-function syncMainLines(value: NewowProductChartModel): void {
+function renderStructure(value: NewowProductChartModel | null): void {
+  if (!host) return
+  const shown = !pure.value && showStructure.value
+  const dual = comparisonActive.value
+  const primary = strategySource.value
+  const secondary = value && dual ? props.comparisonResponse ?? null : null
+  const trendSource = primary?.meta.identity.strategy === 'trend' ? primary : secondary
+  const trendModel = value?.identity.strategy === 'trend' ? value : partnerModel.value
+  const channelModel = dual && value?.identity.strategy !== 'oscillation' ? partnerModel.value : value
+  const channelSource = channelModel === value ? primary : secondary
+  const primaryBand = props.strategy !== 'oscillation' && !dual
+  const bandAreas = shown && primaryBand ? value?.bandAreas ?? [] : []
+  const bandIndicator = props.strategy === 'main_rise' ? 'newow_main_rise' : 'newow_trend'
+  if (lastBandIndicator !== bandIndicator) {
+    syncPricePrimitive('strategy-band', lastBandIndicator, band, false)
+    host.removeLayer('strategy-band')
+  }
+  lastBandIndicator = bandIndicator
+  syncPricePrimitive('strategy-band', bandIndicator, band, bandAreas.length > 0)
+  band.setData(bandAreas)
+  if (primaryBand) writeMainDiagnostics('strategy-band', bandIndicator, primary, {
+    status: shown ? chartLayerStatus(primary, bandAreas.length > 0, lastFrameStatus(primary)) : 'hidden',
+    renderer: 'primitive',
+    dataCutoff: bandAreas.at(-1)?.barEnd ?? null,
+  })
+  else host.removeLayer('strategy-band')
+
+  const backgroundTimes = value && shown && dual && comparisonBackground.value
+    ? trendModel?.bandAreas.filter(area => area.color === 'rgba(54, 90, 245, 0.35)').map(area => area.time) ?? [] : []
+  syncPricePrimitive('comparison-background', 'newow_dual_background', dualBackground, backgroundTimes.length > 0)
+  dualBackground.setData(backgroundTimes)
+  if (dual) writeMainDiagnostics('comparison-background', 'newow_dual_background', trendSource, {
+    status: shown && comparisonBackground.value ? chartLayerStatus(trendSource, Boolean(trendModel?.bandAreas.length), lastFrameStatus(trendSource)) : 'hidden',
+    formulaVersion: trendSource ? displayVersion('newow_dual_background') : null,
+    dataCutoff: trendSource?.value?.bars.at(-1)?.bar_end ?? null,
+  })
+  else host.removeLayer('comparison-background')
+
+  const channelIndicator = dual || props.strategy !== 'trend' ? 'newow_oscillation' : 'newow_trend'
+  if (lastChannelIndicator !== channelIndicator) {
+    syncPricePrimitive('strategy-channel', lastChannelIndicator, trendChannel, false)
+    host.removeLayer('strategy-channel')
+  }
+  lastChannelIndicator = channelIndicator
+  const channelPoints = value && shown ? channelModel?.channelPoints ?? [] : []
+  syncPricePrimitive('strategy-channel', channelIndicator, trendChannel, channelPoints.length > 0)
+  trendChannel.setData(channelPoints.map(point => ({
+    time: chartMarkerTime(point.barEnd, value!.identity.frequency, point.tradingDay),
+    upper: point.upper, lower: point.lower,
+  })))
+  const trendChannelSource = channelSource?.value?.trend_channel
+  const featureStatus = channelIndicator === 'newow_trend' ? trendChannelSource?.points.at(-1)?.status : lastFrameStatus(channelSource)
+  if (dual || props.strategy !== 'main_rise') writeMainDiagnostics('strategy-channel', channelIndicator, channelSource, {
+    status: shown ? chartLayerStatus(channelSource, channelPoints.length > 0, featureStatus) : 'hidden',
+    renderer: 'primitive',
+    formulaVersion: trendChannelSource?.formula_version ?? chartLayerSource(channelSource).formulaVersion,
+    dataCutoff: channelPoints.at(-1)?.barEnd ?? null,
+    lastError: featureStatus?.reason_code ?? channelSource?.status.reason_code ?? null,
+  })
+  else host.removeLayer('strategy-channel')
+
+  syncMainLines(shown && value && primary
+    ? [{ model: value, source: primary }, ...(partnerModel.value && secondary ? [{ model: partnerModel.value, source: secondary }] : [])]
+    : [])
+}
+let lastBandIndicator = 'newow_trend'
+let lastChannelIndicator = 'newow_oscillation'
+
+function syncMainLines(tracks: readonly { model: NewowProductChartModel; source: ChartResponse }[]): void {
   if (host === null) return
-  const active = new Set((!pure.value && showStructure.value ? value.mainLines : []).map((line) => line.id))
+  const active = new Set(tracks.flatMap(track => track.model.mainLines.map(line => line.id)))
   for (const id of mainLines.keys()) {
     if (active.has(id)) continue
     host.removeLayer(`main:${id}`)
     mainLines.delete(id)
   }
 
-  for (const line of !pure.value && showStructure.value ? value.mainLines : []) {
+  for (const { model: value, source } of tracks) for (const line of value.mainLines) {
+    const displayId = ['a', 'b'].includes(line.key) ? 'newow_trend'
+      : ['upper', 'lower'].includes(line.key) ? 'newow_oscillation' : 'newow_main_rise'
+    const layer = host.layer(`main:${line.id}`, displayId, 'main')
     let series = mainLines.get(line.id)
     if (series === undefined) {
-      const displayId = ['a', 'b'].includes(line.key) ? 'newow_trend'
-        : ['upper', 'lower'].includes(line.key) ? 'newow_oscillation' : 'newow_main_rise'
-      series = host.layer(`main:${line.id}`, displayId, 'main').line({
+      series = layer.line({
         priceFormat: NEWOW_CHART_PRICE_FORMAT,
         color: mainLineColors[line.key] ?? '#64748B',
         lineWidth: ['a', 'b', 'ma35', 'ma45', 'ma10_display_v1'].includes(line.key) ? 1 : 2,
@@ -698,6 +913,10 @@ function syncMainLines(value: NewowProductChartModel): void {
     series.setData(line.points.map((point): LineData<Time> => ({
       time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay), value: point.value,
     })))
+    layer.updateDiagnostics({
+      ...chartLayerSource(source, line.points.at(-1)?.barEnd ?? null),
+      renderer: 'line', status: 'ready',
+    })
   }
 }
 
@@ -728,6 +947,53 @@ function renderMarkers(value: NewowProductChartModel | null): void {
   actionMarkers.setMarkers(actions)
 }
 
+function renderEventDiagnostics(): void {
+  if (!host) return
+  const primary = strategySource.value
+  const partner = primary && comparisonActive.value ? props.comparisonResponse ?? null : null
+  const current = primary?.value
+  const dual = comparisonActive.value
+  function record(id: string, indicator: string, visible: boolean, source: ChartResponse | null,
+    available: boolean, formulaVersion?: string | null) {
+    const inputReady = available && source?.status.status === 'ready'
+    const status = pure.value || !visible ? 'hidden' : chartLayerStatus(source, inputReady)
+    writeMainDiagnostics(id, indicator, source, {
+      status,
+      dataCutoff: inputReady ? source.value?.bars.at(-1)?.bar_end ?? null : null,
+      ...(formulaVersion !== undefined ? { formulaVersion } : {}),
+    })
+  }
+  record('hints', 'newow_hints', showHints.value && !dual, primary, current?.hints !== undefined)
+  record('detail', 'newow_detail', detailLabels.value && showActions.value, primary,
+    current?.actions !== undefined, primary ? displayVersion('newow_detail') : null)
+  record('caution', 'newow_caution', true, primary, current?.caution_events !== undefined,
+    current?.caution_events?.at(-1)?.formula_version ?? null)
+  record('display-events', 'newow_display_events', true, primary, current?.display_events !== undefined,
+    current?.display_events?.length ? [...new Set(current.display_events.map(event => event.formula_version))].join(' / ') : null)
+  if (partner) record('comparison-display-events', 'newow_display_events', true, partner,
+    partner.value?.display_events !== undefined, partner.value?.display_events?.length
+      ? [...new Set(partner.value.display_events.map(event => event.formula_version))].join(' / ') : null)
+  else host.removeLayer('comparison-display-events')
+
+  const breakoutAvailable = current?.breakout_events !== undefined
+  const breakoutVersion = breakoutAvailable ? BREAKOUT_VERSION : null
+  if (props.strategy === 'oscillation') {
+    record('breakout-markers', 'newow_breakouts', showBreakoutShapes.value, primary, breakoutAvailable, breakoutVersion)
+    record('wick-markers', 'newow_wicks', showBreakoutWicks.value, primary, breakoutAvailable, breakoutVersion)
+    record('attack', 'newow_attack', showHints.value, primary, current?.hints !== undefined)
+  } else for (const id of ['breakout-markers', 'wick-markers', 'attack']) host.removeLayer(id)
+  if (props.strategy === 'main_rise') record('process', 'newow_process', showHints.value && !dual, primary, current?.hints !== undefined)
+  else host.removeLayer('process')
+
+  for (const strategy of ['trend', 'oscillation'] as const) {
+    const id = `comparison-actions:${strategy}`
+    if (!dual) { host.removeLayer(id); continue }
+    const response = primary?.meta.identity.strategy === strategy ? primary : partner
+    const visible = showActions.value && (strategy === 'trend' ? trendTrack.value : oscillationTrack.value)
+    record(id, 'newow_actions', visible, response, response?.value?.actions !== undefined)
+  }
+}
+
 function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
   breakoutPoints.value=[]
   displayPoints.value=[]
@@ -735,7 +1001,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   attackOverlays.value = []
   processOverlays.value = []
   cycleCountOverlays.value = []
-  if (pure.value || props.displayOnly || props.strategySwitching || chart === null || candles === null || container.value === null || value === null) {
+  if (pure.value || !strategySource.value || chart === null || candles === null || container.value === null || value === null) {
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     return
   }

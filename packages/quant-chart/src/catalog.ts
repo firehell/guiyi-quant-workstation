@@ -2,7 +2,7 @@ import type { VolumePolicy } from './volume.js'
 
 export const CHART_MANIFEST = Object.freeze({
   name: '@guiyi/quant-chart',
-  version: '0.1.1',
+  version: '0.1.2',
   catalogSchemaVersion: 1,
   rendererVersion: 1,
   preferenceSchemaVersion: 1,
@@ -70,13 +70,16 @@ export const DISPLAY_CATALOG: Readonly<Record<string, DisplayDefinition>> = Obje
   newow_oscillation: fact('震荡区间', 'newow.chart.oscillation', 'main', 'band', 'line', 'primitive'),
   newow_main_rise: fact('主升浪均线与状态', 'newow.chart.main_rise', 'main', 'line', 'primitive'),
   newow_process: fact('D1–D6 过程提示', 'newow.chart.process_hints', 'main', 'marker'),
-  newow_pattern: fact('杯柄形态', 'newow.chart.public_pattern', 'main', 'primitive'),
+  newow_pattern: { ...display('回看形态', 'newow_public_patterns_v3379_v1', 'main', 'primitive'), retrospective: true },
   newow_actions: fact('参考策略动作', 'newow.chart.actions', 'main', 'marker'),
   newow_hints: fact('参考策略提示', 'newow.chart.hints', 'main', 'marker'),
-  newow_breakouts: fact('突破形态', 'newow.chart.breakout_events', 'main', 'marker', 'price_level_zone'),
-  newow_wicks: fact('影线形态', 'newow.chart.display_events', 'main', 'marker'),
+  newow_breakouts: fact('突破形态', 'newow.chart.breakout_events', 'main', 'marker'),
+  newow_breakout_reference: display('突破价位', 'newow_oscillation_breakout_line_page_v1', 'main', 'price_level_zone'),
+  newow_wicks: fact('影线形态', 'newow.chart.breakout_events', 'main', 'marker'),
+  newow_display_events: fact('破位与 J 风险提示', 'newow.chart.display_events', 'main', 'marker'),
+  newow_caution: { ...fact('小心提示', 'newow.chart.caution_events', 'main', 'marker'), retrospective: true },
   newow_attack: fact('主力攻击线', 'newow.chart.force_attack', 'main', 'primitive'),
-  newow_price_reference: fact('目标价与吸筹价', 'newow.explanation.price_references', 'main', 'price_level_zone'),
+  newow_price_reference: fact('目标价与吸筹价', 'newow.product_detail.price_projection', 'main', 'price_level_zone'),
   newow_detail: display('详细标注', 'newow_detail_labels_v1', 'main', 'marker'),
   newow_donchian: display('唐奇安通道', 'newow_donchian_display_v1', 'main', 'band'),
   newow_stop: display('止损参考线', 'newow_build_stop_display_v1', 'main', 'price_level_zone'),
@@ -124,6 +127,7 @@ const generic = ['price', 'price_preview', 'generic_volume', 'ema_10', 'ema_21',
   'paper_executions', 'auxiliary_axis', 'ths_macd', 'macd', 'atr', 'stddev', 'obv'] as const
 const newowDefaults = ['newow_actions', 'newow_hints', 'newow_breakouts', 'newow_wicks', 'newow_detail', 'newow_price_reference', 'newow_annotations'] as const
 const newow = ['price', 'price_preview', 'newow_volume', ...newowDefaults, 'newow_pattern', 'newow_stop', 'newow_donchian',
+  'newow_display_events', 'newow_caution', 'newow_breakout_reference',
   'newow_dual_background', 'reconciliation_executions', 'paper_executions', 'auxiliary_axis', 'macd', 'newow.main_force_control',
   'newow.up_down_energy', 'newow.zhaoyao_mirror', 'newow.trend_reversal'] as const
 
@@ -140,8 +144,8 @@ export const CHART_PROFILES = Object.freeze({
   subing: { volume: 'subing', mainDefaults: [], auxiliaryDefault: 'ths_macd', allowed: [...generic, 'subing_volume'] },
   backtest: { volume: 'generic', mainDefaults: [], auxiliaryDefault: null, allowed: generic },
   newow_trend: newowProfile('newow_trend'),
-  newow_oscillation: newowProfile('newow_oscillation'),
-  newow_main_rise: newowProfile('newow_main_rise', 'newow_process', 'newow_attack'),
-  newow_dual: newowProfile('newow_trend', 'newow_oscillation', 'newow_dual_background'),
+  newow_oscillation: newowProfile('newow_oscillation', 'newow_attack'),
+  newow_main_rise: newowProfile('newow_main_rise', 'newow_process'),
+  newow_dual: newowProfile('newow_trend', 'newow_oscillation', 'newow_dual_background', 'newow_attack'),
 } satisfies Record<string, ChartProfile>)
 export type ChartProfileId = keyof typeof CHART_PROFILES

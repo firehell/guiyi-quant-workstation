@@ -355,12 +355,14 @@ test('trend model projects one 35%-opacity column per ready Bar with its own sta
   assert.deepEqual(model.bandAreas, [
     {
       time: { year: 2026, month: 8, day: 14 },
+      barEnd: '2026-08-14T07:00:00Z',
       a: 99,
       b: 101,
       color: 'rgba(54, 90, 245, 0.35)',
     },
     {
       time: { year: 2026, month: 8, day: 15 },
+      barEnd: '2026-08-15T07:00:00Z',
       a: 100,
       b: 102,
       color: 'rgba(245, 183, 38, 0.35)',
