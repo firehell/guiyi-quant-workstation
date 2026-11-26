@@ -8,9 +8,10 @@ from pathlib import Path
 
 from lms405_break_pressure_comparison import continuous_groups, first_shape_after, inspect
 from lms405_jm_oct_recovery_clock import window_signals
-from lms405_portfolio_replay import input_sources
+from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_timeframes import read_window
 from lms405_public_plan_roles import load_source
+from lms405_replay import ohlc
 from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import completed, digest
 from lms_near405_replay import encoded, sha
@@ -20,6 +21,10 @@ OI_PUBLICATION = at("2025-12-17T22:02")
 OI_PRESSURE = Decimal(9010), Decimal(9043)
 OI_TRIGGER = Decimal(8969)
 SH_BAND = Decimal(1859), Decimal(1870)
+GLASS_PUBLICATION = at("2026-10-09T17:22")
+GLASS_DAY = date(2026, 10, 12)
+GLASS_PRESSURE = Decimal(882), Decimal(886)
+GLASS_TRIGGER = Decimal(878)
 PRESSURE_VARIANTS = (
     "uninterrupted_observed_retest",
     "uninterrupted_full_bar_retest",
@@ -109,10 +114,51 @@ def study(session, market):
                 author_match_rate=None, author_permission_from_market=None, fills=None, executable=False)
 
 
+def glass_study(session, market):
+    index = Path("docs/research/lms405/sources.csv")
+    with index.open(newline="", encoding="utf-8") as stream:
+        rows = {row["id"]: row for row in csv.DictReader(stream)}
+    article = rows["E02"]
+    if (article["url"] != "https://weibo.com/ttarticle/p/show?id=2309405352159557844998"
+            or at(article["published"].replace(" ", "T")) != GLASS_PUBLICATION
+            or article["version"] != "4.0.5" or "压制882至886且破878" not in article["summary"]):
+        raise ValueError("LMS_SHORT_GLASS_SOURCE_CHANGED")
+    later_id = "S5353961087567230"
+    with ARCHIVE.open(newline="", encoding="utf-8") as stream:
+        later_contract = next(row["contracts"] for row in csv.DictReader(stream) if row["source_id"] == later_id)
+    if rows["E46"]["market"] != "FG2701" or later_contract != "FG2701":
+        raise ValueError("LMS_SHORT_GLASS_CONTRACT_CONTEXT_CHANGED")
+    source = load_source(input_sources(), later_id)
+    contract = "FG2701"
+    prior_day = GLASS_PUBLICATION.date()
+    prior = read_window(session, market, contract, prior_day)[1]
+    series = read_window(session, market, contract, GLASS_DAY)
+    start, close = series[1][0].start, series[1][-1].end
+    day_open = at("2026-10-12T09:00")
+    last_before = prior[-1]
+    if last_before.end >= GLASS_PUBLICATION or not GLASS_PUBLICATION + ONE < start < day_open < close:
+        raise ValueError("LMS_SHORT_GLASS_WINDOW_CHANGED")
+    scopes = (("trading_night", start, day_open), ("day_session", day_open, close + 2 * US))
+    return dict(
+        version="lms405-ordered-original-short-glass-v1", trading_day=GLASS_DAY,
+        contract=contract, article_contract_verified=False, source_index_sha256=sha(index.read_bytes()),
+        author_article=article, neighborhood_sources=[rows["E46"], source], published_at=GLASS_PUBLICATION,
+        author_article_history_verified=False, pressure_band=GLASS_PRESSURE, trigger=GLASS_TRIGGER,
+        windows=observe(series, scopes, GLASS_PRESSURE, GLASS_TRIGGER),
+        prior_minute_market=dict(trading_day=prior_day, count=len(prior), sha256=digest(prior)),
+        prior_close=dict(bar_end=last_before.end, close=last_before.close),
+        first_after_publication=dict(bar_end=series[1][0].end, ohlc=ohlc(series[1][0])),
+        market={str(p): dict(count=len(bars), sha256=digest(bars)) for p, bars in series.items()},
+        author_action_samples=0, author_match_rate=None, author_action_at=None, author_signal_at=None,
+        author_permission_from_market=None, fills=None, executable=False,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--glass", action="store_true", help="Compare the October 9 glass article as an FG2701 scenario")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -126,7 +172,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            market = build_market_data_service(session)
+            report = (glass_study if args.glass else study)(session, market)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
