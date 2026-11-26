@@ -15,6 +15,9 @@ from guiyi_quant.lms405.portfolio_tasks import REQUIRED, VERSION, Book, Intent, 
 from guiyi_quant.lms405.protection_band import active_band, visible_bands
 from guiyi_quant.lms405.public_conditions import Condition
 from lms405_portfolio_leg_audit import study as audit_legs
+from lms405_portfolio_left_entry import (
+    MODES as LEFT_MODES, assess_left_proposal, assumed_carry_comparison, left_signals, scope_for,
+)
 from lms405_portfolio_protection_gate import advance_due, plan_rows, price_admission
 from lms405_portfolio_replay import input_sources
 from lms405_portfolio_right_entry import active_branch, assess_entry, branches, entry_events
@@ -143,7 +146,8 @@ def published_protection_events(series, bands, cutoff):
     return sorted(events, key=lambda row: (row["at"], row["period"]))
 
 
-def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branches=(), right_events=()):
+def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branches=(), right_events=(),
+                 left_scope=None, left_mode=None, left_events=()):
     """Keep old directional suggestions while requiring independent management evidence."""
     if not bars:
         return [], []
@@ -159,7 +163,7 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
         if evaluated_at >= cutoff:
             break
         clock = evaluated_at - US
-        entry_context = protection_context = None
+        entry_context = protection_context = left_context = None
         if source == 2:
             slot = sorted(right_by_time[evaluated_at], key=lambda row: row["clock"])
             directions = set()
@@ -237,6 +241,11 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
                 blocked.append(dict(at=evaluated_at, operation="ENTRY_REPLACED_BY_RIGHT_BRANCH", action=action,
                                     source=branch.case.source, reason="REQUIRES_SEPARATE_PRICE_PATH_AND_SIGNAL"))
                 continue
+            if left_scope is not None and action == "ENTER_LONG" and left_scope.active(bar.contract, evaluated_at):
+                left_context = assess_left_proposal(left_scope, left_events, left_mode, proposal, evaluated_at)
+                if not left_context["can_project_fixture"]:
+                    blocked.append(dict(at=evaluated_at, operation="ENTER_LEFT", action=action, left_entry=left_context))
+                    continue
             book = Book(bar.contract, plan, proposal["plan"]["side"], local_clock(state["known_at"]))
             operation, qty = "ENTER_TREND", UNIT
         elif not source and action == "CLEAR" and book is not None:
@@ -257,12 +266,17 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
             row["protection"] = protection_context
         if entry_context is not None:
             row["right_entry"] = entry_context
+        if left_context is not None:
+            row["left_entry"] = left_context
         transitions.append(row)
     return transitions, blocked
 
 
-def rolling_comparison(session, market, frozen, *, published_bands=False, right_entries=False):
+def rolling_comparison(session, market, frozen, *, published_bands=False, right_entries=False, left_mode=None):
+    if left_mode is not None and (left_mode not in LEFT_MODES or not (published_bands and right_entries)):
+        raise ValueError("PORTFOLIO_TASK_POLICY_LEFT_REQUIRES_PUBLISHED_ENTRIES")
     gates = {}
+    left_minutes = {}
     index = input_sources() if published_bands else {}
 
     def challenger(bars, raw_minutes, cutoff):
@@ -271,10 +285,13 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
                   5: bars}
         plans, _, sources = plan_rows(index, symbol) if published_bands else ((), {}, {})
         scoped = branches(index, symbol) if right_entries else ()
+        left_scope = scope_for(index, symbol) if left_mode is not None else None
         events = published_protection_events(series, plans, cutoff) if published_bands else []
         entries = entry_events(series, scoped, cutoff)
+        left = left_signals(series, left_scope, cutoff)
+        left_args = dict(left_scope=left_scope, left_mode=left_mode)
         actions, blocked = gated_replay(bars, cutoff, events, minutes=series[1],
-                                       right_branches=scoped, right_events=entries)
+                                       right_branches=scoped, right_events=entries, left_events=left, **left_args)
         for split in (bars[0].end, bars[len(bars) // 2].end, cutoff):
             prefix = [b for b in bars if b.end + US < split]
             sliced = {period: [b for b in candles if b.end + US < split] for period, candles in series.items()}
@@ -284,14 +301,18 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
             right_prefix = entry_events(sliced, scoped, split)
             if right_prefix != [e for e in entries if e["at"] < split]:
                 raise ValueError("PORTFOLIO_TASK_POLICY_RIGHT_PREFIX_DIVERGED")
-            replayed = gated_replay(prefix, split, available, minutes=sliced[1],
-                                   right_branches=scoped, right_events=right_prefix)
+            left_prefix = left_signals(sliced, left_scope, split)
+            if left_prefix != [e for e in left if e["signal_known_at"] < split]:
+                raise ValueError("PORTFOLIO_TASK_POLICY_LEFT_PREFIX_DIVERGED")
+            replayed = gated_replay(prefix, split, available, minutes=sliced[1], right_branches=scoped,
+                                   right_events=right_prefix, left_events=left_prefix, **left_args)
             expected = (
                 [item for item in actions if local_clock(item["at"]) < split],
                 [item for item in blocked if item["at"] < split],
             )
             if replayed != expected or replayed != gated_replay(bars, split, events, minutes=series[1],
-                                                               right_branches=scoped, right_events=entries):
+                                                               right_branches=scoped, right_events=entries,
+                                                               left_events=left, **left_args):
                 raise ValueError("PORTFOLIO_TASK_POLICY_PREFIX_DIVERGED")
         gates[symbol] = dict(directional_actions=sum(row["action"] != "LOCK" for row in actions),
                              blocked_locks=blocked)
@@ -312,10 +333,24 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
                 }, e, fixture=True)) for e in entries
             ]
             gate["blocked_locks"] = [r for r in blocked if r not in gate["blocked_right_entries"]]
+        if left_scope is not None:
+            gate = gates[symbol]
+            gate.update(scoped_left_branch=asdict(left_scope), left_market_geometry=left,
+                        accepted_left_entries=[r for r in actions if "left_entry" in r],
+                        blocked_left_entries=[r for r in blocked if r["operation"] == "ENTER_LEFT"])
+            gate["blocked_locks"] = [r for r in gate["blocked_locks"] if r["operation"] != "ENTER_LEFT"]
+            left_minutes[symbol] = raw_minutes
         return variant, actions
 
     variant = RIGHT_VARIANT if right_entries else PLAN_VARIANT if published_bands else VARIANT
+    if left_mode is not None:
+        variant = f"published_entries_left_{left_mode.replace('-', '_')}"
     result = audit_legs(session, market, extra_variant=challenger)
+    for symbol, minutes in left_minutes.items():
+        gate = gates[symbol]
+        gate["left_assumed_carry_comparison"] = assumed_carry_comparison(
+            gate["left_market_geometry"], result["contracts"][symbol], minutes, variant,
+        )
     stats = result["classifications"]
     if set(result["contracts"]) != set(frozen["contracts"]):
         raise ValueError("PORTFOLIO_TASK_POLICY_AUDIT_CONTRACTS_CHANGED")
@@ -333,6 +368,9 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
                       author_permissions_supplied=0)
     if right_entries:
         result["right_entries_are_conditional_test_fixtures"] = True
+    if left_mode is not None:
+        result.update(left_entry_mode=left_mode, left_entry_approvals_are_fixtures=True,
+                      left_entry_clock="ONLY_EXISTING_5M_TO_5M_PROPOSALS")
     return result
 
 
@@ -367,10 +405,11 @@ def main():
     parser.add_argument("--env-file", type=Path)
     parser.add_argument("--published-bands", action="store_true")
     parser.add_argument("--right-entries", action="store_true")
+    parser.add_argument("--left-entries", choices=LEFT_MODES)
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PORTFOLIO_TASK_POLICY_OUTPUT_EXISTS")
-    if (args.published_bands or args.right_entries) and args.env_file is None:
+    if (args.published_bands or args.right_entries or args.left_entries) and args.env_file is None:
         parser.error("PORTFOLIO_TASK_POLICY_ENV_FILE_MISSING")
     try:
         report = study()
@@ -386,10 +425,12 @@ def main():
             from sqlalchemy.exc import OperationalError
 
             try:
+                right_entries = args.right_entries or args.left_entries is not None
                 with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
                     report["rolling_nine_contract_comparison"] = rolling_comparison(
                         session, build_market_data_service(session), verified_json(*AUDIT),
-                        published_bands=args.published_bands or args.right_entries, right_entries=args.right_entries,
+                        published_bands=args.published_bands or right_entries, right_entries=right_entries,
+                        left_mode=args.left_entries,
                     )
             except MarketDataError as exc:
                 parser.exit(2, f"MDS_BLOCKED: {exc.code}\n")
