@@ -14,7 +14,7 @@ from lms405_m_permission_study import read_pair
 from lms405_opening_clock_comparison import boundary_clocks
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_handoff_study import complete_window, price_window
-from lms405_protection_lot_timing import verified_json
+from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
 from lms405_protection_timeframes import VARIANTS, geometry_events, read_window
 from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import completed, signals, digest as bar_digest
@@ -76,6 +76,12 @@ DAY_PLAN = {
     "extreme_m": ("SHORT", "4956", "4983"),
 }
 TARGET_REFERENCES = ("first_range_reaches_direction", "first_range_contains_level", "first_close_strict_beyond")
+NIGHT_EXIT = (Path("output/lms405-v-exit-20261125/verified.json"),
+              "b6082e514c80036c0907d39bb2690f6c9416ba1e852beab2a7ad087f64939e58")
+SALE = at("2026-10-26T21:09:59")
+SALE_MINUTE = at("2026-10-26T21:09")
+NIGHT_PHOTO = "WRov1j6e10"
+NIGHT_CLOSE = "WRovrUdwHi"
 
 
 def quote_pair_counts(known, before, after):
@@ -287,11 +293,145 @@ def compute(session, market):
     )
 
 
+def lot_partition(left, right, *, quantity, totals):
+    limits = tick_bounds(left, TICK), tick_bounds(right, TICK)
+    counts = earlier_lot_counts(*limits, quantity, totals)
+    return dict(before_after_ticks=limits, allowed_earlier_lot_counts=counts,
+                minimum_earlier_lots=min(counts, default=None), all_new_after_possible=0 in counts)
+
+
+def sale_price_cohorts(minutes, quote, *, quantity, totals):
+    """Separate full minutes on either side of the report and leave its minute ambiguous."""
+    cutoff = quote - ONE
+    eligible = [bar for bar in minutes if bar.end + US < cutoff]
+    prior = [bar for bar in eligible if bar.end <= SALE_MINUTE]
+    overlap = [bar for bar in eligible if bar.start == SALE_MINUTE]
+    later = [bar for bar in eligible if SALE < bar.start]
+
+    return dict(
+        quote_starts_at=cutoff,
+        relationship=("SAME_MINUTE_ORDER_UNRESOLVED" if cutoff <= SALE < quote else "REPORT_BEFORE_QUOTE_MINUTE"),
+        exclude_report_minute=lot_partition(prior, later, quantity=quantity, totals=totals),
+        allow_report_minute_as_prior=lot_partition(prior + overlap, later, quantity=quantity, totals=totals),
+        allow_report_minute_as_later=lot_partition(prior, overlap + later, quantity=quantity, totals=totals),
+    )
+
+
+def long_shapes_after_sale(series, shape, confirm, start, cutoff):
+    return [event for event in signals(series, shape, confirm, side="LONG", start=start, cut=cutoff)
+            if SALE < event["shape_end"] - shape * ONE]
+
+
+def compute_night_sale(session, market):
+    reference = verified_json(*NIGHT_EXIT)
+    scope = verified_json(EXIT_SCOPE, EXIT_SCOPE_SHA)
+    report = reference["software_row"]
+    if (report["displayed_time"] != "21:09:59" or report["direction_closed"] != "LONG"
+            or report["status"] != "FILLED" or set(report["repeated_in"]) != set(REPORT_ATTACHMENTS)
+            or any(report[key] is not None for key in ("account", "version", "date", "quantity", "price"))):
+        raise ValueError("V_NIGHT_REPORT_SCOPE_CHANGED")
+    images = verified_images(REPORT_ATTACHMENTS)
+    holdings = verified_images({key: POSITION_ATTACHMENTS[key] for key in (EARLY, NIGHT_PHOTO, "WRoAkcEppg")})
+    index = input_sources()
+    sources = {key: index[key] | {"archive_sha256": sha((ARCHIVE.parent / index[key]["archive_path"]).read_bytes())}
+               for key in (*REPORT_ATTACHMENTS, EARLY, MIDDAY, POST_EXIT, NEW_PLAN, NIGHT_PHOTO)}
+    first_public = min(datetime.fromisoformat(sources[key]["published_at"]) for key in images)
+    old = scope["observed_rows"][EARLY][f"{CONTRACT}/long"]
+    current = scope["observed_rows"][NIGHT_PHOTO][f"{CONTRACT}/long"]
+    later = scope["observed_rows"]["WRoAkcEppg"][f"{CONTRACT}/long"]
+    empty = (MIDDAY, NIGHT_CLOSE)
+    if (any(row["quantity"] != QUANTITY for row in (old, current, later)) or old["today_quantity"] != 0
+            or Decimal(old["opening_average"]) != Decimal(5045)
+            or current["today_quantity"] != QUANTITY or Decimal(current["opening_average"]) != OLD_AVERAGE
+            or later["today_quantity"] != QUANTITY or Decimal(later["opening_average"]) != LUNCH_AVERAGE
+            or any(any(key.startswith(CONTRACT + "/") for key in scope["observed_rows"][src]) for src in empty)
+            or f"{CONTRACT}/short" in scope["observed_rows"][NIGHT_PHOTO]
+            or not stamp(sources[POST_EXIT]) < stamp(sources[NEW_PLAN]) < SALE < stamp(sources[NIGHT_PHOTO]) < first_public):
+        raise ValueError("V_NIGHT_POSITION_SCOPE_CHANGED")
+
+    day = DATES[1]
+    series = read_window(session, market, CONTRACT, date.fromisoformat(day))
+    if bar_digest(series[1]) != MINUTE_HASHES[day]:
+        raise ValueError("V_NIGHT_MARKET_CHANGED")
+    start, first_seen = at("2026-10-26T21:00"), stamp(sources[NIGHT_PHOTO])
+    minutes = completed(series[1], start, first_seen)
+    anchors = tuple(map(datetime.fromisoformat, scope["pvc_row_price_anchors"][NIGHT_PHOTO]))
+    if anchors != tuple(b.end for b in minutes if b.low <= Decimal(5111) <= b.high):
+        raise ValueError("V_NIGHT_QUOTE_SCOPE_CHANGED")
+    totals = displayed_tick_totals(OLD_AVERAGE, QUANTITY, TICK)
+    windows = {display_quote.isoformat(): sale_price_cohorts(minutes, display_quote, quantity=QUANTITY, totals=totals)
+               for display_quote in anchors}
+    for quote in anchors:
+        cut = quote - ONE
+        prefix = [b for b in minutes if b.end + US < cut]
+        if sale_price_cohorts(prefix, quote, quantity=QUANTITY, totals=totals) != windows[quote.isoformat()]:
+            raise ValueError("V_NIGHT_QUOTE_PREFIX_CHANGED")
+    before_sale = {}
+    after_sale = {}
+    price_after_confirm = {}
+    for shape, confirm in VARIANTS:
+        name = f"{shape}m_to_{confirm}m"
+        available = {p: [b for b in bars if b.end + US < SALE] for p, bars in series.items()}
+        opposed = signals(series, shape, confirm, side="SHORT", start=start, cut=SALE)
+        if signals(available, shape, confirm, side="SHORT", start=start, cut=SALE) != opposed:
+            raise ValueError("V_NIGHT_REPORTED_EVENT_PREFIX_CHANGED")
+        before_sale[name] = opposed
+        after_sale[name] = long_shapes_after_sale(series, shape, confirm, start, first_seen)
+        for quote in anchors:
+            cut = quote - ONE
+            prefix = {p: [b for b in bars if b.end + US < cut] for p, bars in series.items()}
+            if (long_shapes_after_sale(prefix, shape, confirm, start, cut)
+                    != [row for row in after_sale[name] if row["available_at"] < cut]):
+                raise ValueError("V_NIGHT_REOPEN_PREFIX_CHANGED")
+        price_after_confirm[name] = []
+        for event in after_sale[name]:
+            known = event["available_at"]
+            quote_checks = {}
+            for quote in anchors:
+                eligible = [b for b in minutes if b.end + US < quote - ONE]
+                early = [b for b in eligible if b.start <= known]
+                late = [b for b in eligible if known < b.start]
+                quote_checks[quote.isoformat()] = lot_partition(early, late, quantity=QUANTITY, totals=totals)
+            price_after_confirm[name].append(dict(event=event, quote_checks=quote_checks))
+    sale_window = minute_context(series[1], "2026-10-26T21:09", ("4918", "5045", "5117"))
+    current_plan_geometry = dict(
+        checked_archive_revision=NEW_PLAN, historic_revision_verified=False,
+        full_night_prefix_bounds=price_envelope(minutes),
+        left_long_band_touched=any(b.low <= 5074 and 5045 <= b.high for b in minutes),
+        right_long_first_close_above_5195=next((b.end for b in minutes if b.close > 5195), None),
+        short_reference_band_touched=any(b.low <= 5074 and 5055 <= b.high for b in minutes),
+    )
+    return dict(
+        version="lms405-pvc-night-sale-role-v1", contract=CONTRACT, sources=sources,
+        report=report | dict(assumed_report_at=SALE, first_public_post=first_public,
+                             assumed_public_availability_boundary=first_public + ONE, report_order_id="102694086"),
+        report_minute_price=sale_window, report_images=images, holdings_images=holdings,
+        observed_before_day_gap=old, observed_night=current, observed_lunch=later, observed_night_short=None,
+        no_displayed_pvc_in_sources=empty, strict_quote_windows=windows, opening_tick_sums=list(totals),
+        if_same_complete_account=dict(
+            observation_requirements=["SAME_ACCOUNT", "COMPLETE_CONTRACT_DISPLAY", "SYNCHRONIZED_AND_ORDERED_CAPTURES"],
+            old_morning_long_left_before_night_report_if_dates_hold=True,
+            covering_entire_first_night_long_after_sale_requires_all_new_after_price_support=True,
+            if_sale_removed_protection_long_and_original_short_unmodified="SHORT_SURVIVES_SELL_CLOSE",
+            if_short_survived_sale_but_complete_night_only_long="ADDITIONAL_SHORT_EXIT_REQUIRED",
+            if_no_longs_remained_after_sale_but_night_long_visible="NEW_LONG_ENTRY_REQUIRED",
+            independent_accounts_or_transient_positions_remain_possible=True,
+        ),
+        opposing_geometry_before_assumed_sale=before_sale, fresh_long_geometry_after_assumed_sale=after_sale,
+        long_price_when_waiting_for_confirmation=price_after_confirm, current_plan_geometry=current_plan_geometry,
+        market={f"{p}m": dict(count=len(rows), sha256=bar_digest(rows)) for p, rows in series.items()},
+        account_scope_verified=None, author_decision=None, admitted_author_samples=0, author_matches=None,
+        executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--daytime-clocks", action="store_true")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--daytime-clocks", action="store_true")
+    group.add_argument("--night-sale", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -305,7 +445,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            run = compute_daytime_clocks if args.daytime_clocks else compute
+            run = compute_night_sale if args.night_sale else compute_daytime_clocks if args.daytime_clocks else compute
             result = run(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
