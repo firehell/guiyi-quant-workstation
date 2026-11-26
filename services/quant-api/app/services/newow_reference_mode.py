@@ -4,10 +4,12 @@ import os
 from urllib.parse import urlsplit
 
 
+def market_foundation_isolated() -> bool:
+    return os.getenv("GUIYI_NEWOW_REFERENCE_MODE") == "market_foundation_isolated"
+
+
 def after_market_only() -> bool:
-    return os.getenv("GUIYI_NEWOW_REFERENCE_MODE") == "after_market_isolated"
-
-
+    return os.getenv("GUIYI_NEWOW_REFERENCE_MODE") == "after_market_isolated" or market_foundation_isolated()
 
 def require_isolated_redis(url: str) -> None:
     try:

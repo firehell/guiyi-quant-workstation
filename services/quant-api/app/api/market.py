@@ -19,6 +19,7 @@ from app.market_data.composition import (
 )
 from app.market_data.domain import (
     BarFrequency,
+    canonical_bar_source_sha256,
     ContractError,
     SeriesKind,
     SeriesPageQuery,
@@ -63,6 +64,7 @@ def market_home_overview(
 
 @router.get("/bars/page", response_model=MarketBarsPageResponse)
 def canonical_market_bars_page(
+    http_request: Request,
     series_kind: str = Query(...),
     symbol: str = Query(...),
     frequency: str = Query(...),
@@ -92,6 +94,7 @@ def canonical_market_bars_page(
         ) from exc
     except MarketDataError as exc:
         raise HTTPException(status_code=409, detail={"code": exc.code}) from exc
+    include_source_hash = getattr(http_request.app.state, "market_foundation_reference_sessions", None) is not None
     return MarketBarsPageResponse(
         request=dict(result.request_identity),
         bars=[
@@ -105,6 +108,7 @@ def canonical_market_bars_page(
                 volume=bar.volume,
                 turnover=bar.turnover,
                 open_interest=bar.open_interest,
+                source_bar_sha256=canonical_bar_source_sha256(bar) if include_source_hash else None,
             )
             for bar in result.bars
         ],

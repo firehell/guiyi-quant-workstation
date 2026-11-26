@@ -16,6 +16,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from hashlib import sha256
+import json
 from pathlib import PurePosixPath
 import re
 from types import MappingProxyType
@@ -538,6 +540,16 @@ class CanonicalBar:
     def as_record(self) -> dict[str, object]:
         """转为与 Parquet schema 列名一致的字典，供 ``pyarrow`` 写盘。"""
         return asdict(self)
+
+
+def canonical_bar_source_sha256(bar: CanonicalBar) -> str:
+    """Fingerprint exact source values using the existing Newow historical encoding."""
+    return sha256(json.dumps((
+        bar.bar_end.isoformat(), bar.trading_day.isoformat(),
+        str(bar.open), str(bar.high), str(bar.low), str(bar.close),
+        str(bar.volume), str(bar.turnover),
+        None if bar.open_interest is None else str(bar.open_interest),
+    ), separators=(",", ":")).encode()).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)

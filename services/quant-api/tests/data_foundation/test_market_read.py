@@ -846,3 +846,217 @@ def test_latest_canonical_window_rejects_unsupported_identity(
 
     with pytest.raises(MarketReadWindowError, match="MARKET_READ_IDENTITY_UNSUPPORTED"):
         service.latest_canonical_window(identity, trading_day=date(2025, 1, 2))
+
+
+@pytest.mark.parametrize("completed_available", (True, False))
+def test_candidate_preview_never_enters_completed_snapshot(completed_available) -> None:
+    from app.market_data.market_display_preview import MarketActivity, MarketPreview, MarketQuote
+
+    now = datetime(2025, 1, 2, 1, 3, 30, tzinfo=UTC)
+    day = now.date()
+    activity = MarketActivity("J2505", "candidate-1", _bar(4), now, now)
+    quote = MarketQuote(day, "J2505", "candidate-1", now, now, Decimal("100"))
+
+    class Data(FakeMarketDataService):
+        def dominant_segment_for_day(self, symbol, trading_day):
+            return ResolvedContractSegment("J2505", trading_day, trading_day)
+
+        def previous_trading_day(self, symbol, trading_day):
+            from app.market_data.market_data_service import MarketDataError
+
+            raise MarketDataError("SESSION_FACT_MISSING")
+
+    class PreviewStore:
+        def snapshot(self, *, trading_day, symbol, contract, frequency):
+            assert (trading_day, symbol, contract, frequency) == (day, "j", "J2505", "1m")
+            return MarketPreview(quote=quote, activity=activity)
+
+    service = MarketReadService(
+        market_data=Data(_bar(2)),
+        phase_resolver=FakePhaseResolver(ProductMarketPhase("j", MarketPhase.TRADING, day, None, None)),
+        operational_products=("j",),
+        live_store=FakeLiveStore((_bar(3),), available=completed_available),
+        preview_reader=PreviewStore(),
+    )
+    identity = SeriesPageQuery("actual_dominant", "j", "1m")
+    display = service.display_snapshot(identity, after=None, now=now)
+    assert display.state.display_preview
+    assert display.preview == MarketPreview(quote=quote, activity=activity)
+    expected = (_bar(3),) if completed_available else ()
+    assert display.bars == expected
+    assert service.live_snapshot(identity, after=None, now=now) == expected
+
+
+def test_candidate_live_read_preserves_previous_unarchived_owner_during_night() -> None:
+    from app.market_data.aggregation import SessionWindow
+    from app.market_data.market_display_preview import MarketPreview
+
+    now = datetime(2025, 1, 2, 13, 2, tzinfo=UTC)
+    prior_day, next_day = date(2025, 1, 2), date(2025, 1, 3)
+    prior_tail = _bar_at(datetime(2025, 1, 2, 7, 0, tzinfo=UTC))
+    night = replace(_bar_at(datetime(2025, 1, 2, 13, 1, tzinfo=UTC)), trading_day=next_day)
+
+    class Data(FakeMarketDataService):
+        def dominant_segment_for_day(self, symbol, trading_day):
+            contract = "J2505" if trading_day == prior_day else "J2509"
+            return ResolvedContractSegment(contract, trading_day, trading_day)
+
+        def previous_trading_day(self, symbol, trading_day):
+            assert (symbol, trading_day) == ("j", next_day)
+            return prior_day
+
+        def session_windows(self, *, symbol, trading_day):
+            assert (symbol, trading_day) == ("j", prior_day)
+            return (SessionWindow(prior_tail.bar_end - timedelta(hours=1), prior_tail.bar_end),)
+
+    class Live(FakeLiveStore):
+        def subscriptions(self, trading_day):
+            return {"j": "J2505" if trading_day == prior_day else "J2509"}
+
+        def bar_observations(self, trading_day, symbol, frequency, after, until, *, inclusive_after, expected_contract):
+            bar = prior_tail if trading_day == prior_day else night
+            return (LiveBarObservation(bar, expected_contract),) if after is None or bar.bar_end > after else ()
+
+    class PreviewStore:
+        def snapshot(self, **kwargs):
+            return MarketPreview()
+
+    data = Data(_bar(2))
+    service = MarketReadService(
+        market_data=data,
+        phase_resolver=FakePhaseResolver(ProductMarketPhase("j", MarketPhase.TRADING, next_day, None, None)),
+        operational_products=("j",),
+        live_store=Live(()),
+        preview_reader=PreviewStore(),
+    )
+    identity = SeriesPageQuery("actual_dominant", "j", "1m")
+    display = service.display_snapshot(identity, after=None, now=now)
+    assert display.bars == (night,)
+    assert display.retained is not None
+    assert (display.retained.trading_day, display.retained.contract, display.retained.bars) == (
+        prior_day, "J2505", (prior_tail,),
+    )
+
+    data.latest = prior_tail
+    display = service.display_snapshot(identity, after=None, now=now)
+    assert display.bars == (night,)
+    assert display.retained is None
+
+
+@pytest.mark.parametrize("problem", (None, "missing_daily", "unproved_owner", "other_week_owner"))
+def test_weekly_preview_requires_same_owner_calendar_and_complete_daily_prefix(problem) -> None:
+    from types import SimpleNamespace
+
+    from app.market_data.market_data_service import MarketDataError
+    from app.market_data.market_display_preview import MarketActivity, MarketPreview
+
+    monday, current, friday = date(2025, 1, 6), date(2025, 1, 8), date(2025, 1, 10)
+    now = datetime(2025, 1, 8, 6, 0, tzinfo=UTC)
+    daily = replace(_bar_at(datetime(2025, 1, 8, 7, 0, tzinfo=UTC), close="104"), trading_day=current)
+    prior = tuple(
+        replace(_bar_at(datetime(2025, 1, day, 7, 0, tzinfo=UTC), close=str(day + 90)), trading_day=date(2025, 1, day))
+        for day in (6, 7)
+    )
+
+    class Data(FakeMarketDataService):
+        def dominant_segment_for_day(self, symbol, trading_day):
+            if trading_day == friday:
+                if problem == "unproved_owner":
+                    raise MarketDataError("UNPROVEN_WEEK_OWNER")
+                if problem == "other_week_owner":
+                    return ResolvedContractSegment("J2509", trading_day, trading_day)
+            return ResolvedContractSegment("J2505", trading_day, trading_day)
+
+        def calendar_week_facts(self, *, symbol, week_monday):
+            assert (symbol, week_monday) == ("j", monday)
+            return tuple((monday + timedelta(days=offset), offset < 5) for offset in range(7))
+
+        def query_contract_trading_days(self, request):
+            assert (request.symbol, request.contract, request.frequency, request.since, request.through) == (
+                "j", "J2505", "1d", monday, date(2025, 1, 7),
+            )
+            return SimpleNamespace(bars=prior[1:] if problem == "missing_daily" else prior)
+
+    class Store:
+        def snapshot(self, *, trading_day, symbol, contract, frequency):
+            assert (trading_day, symbol, contract, frequency) == (current, "j", "J2505", "1d")
+            return MarketPreview(activity=MarketActivity("J2505", "candidate-1", daily, now, now))
+
+    service = MarketReadService(
+        market_data=Data(_bar(2)),
+        phase_resolver=FakePhaseResolver(ProductMarketPhase("j", MarketPhase.TRADING, current, None, None)),
+        operational_products=("j",),
+        live_store=FakeLiveStore(()),
+        preview_reader=Store(),
+    )
+    # The existing Redis fixture belongs to another day. Weekly preview proving
+    # this day's physical owner remains independent of completed input delivery.
+    display = service.display_snapshot(SeriesPageQuery("actual_dominant", "j", "1w"), None, now)
+    assert display.bars == ()
+    assert display.preview is not None
+    if problem is not None:
+        assert display.preview.activity is None
+    else:
+        activity = display.preview.activity
+        assert activity is not None
+        assert (activity.bar.open, activity.bar.close, activity.bar.volume, activity.bar.trading_day) == (
+            Decimal("96"), Decimal("104"), Decimal("30"), current,
+        )
+
+
+def test_candidate_state_exposes_only_verified_product_revision(tmp_path) -> None:
+    from app.market_data.after_market import _atomic_write_status, _evidence_hash
+    from tests.data_foundation.test_market_archive import FINISHED, _status
+
+    status_path = tmp_path / "after-market-status.json"
+    status = _status()
+    status["last_run"]["products"] = ["j"]
+    evidence = status["last_run"]["live_evidence"]
+    evidence["scope_sha256"] = _evidence_hash(["j"])
+    evidence["canonical_readback"] = {"j": "a" * 64}
+    _atomic_write_status(status_path, status)
+    service = MarketReadService(
+        market_data=FakeMarketDataService(_bar(2)),
+        phase_resolver=FakePhaseResolver(ProductMarketPhase("j", MarketPhase.CLOSED, FINISHED.date(), None, None)),
+        operational_products=("j",), live_store=FakeLiveStore(()),
+        after_market_status_path=status_path, preview_reader=object(),
+    )
+    identity = SeriesPageQuery("actual_dominant", "j", "1m")
+    assert service.state(identity, FINISHED - timedelta(seconds=1)).canonical_revision is None
+    assert service.state(identity, FINISHED).canonical_revision == "a" * 64
+    evidence["canonical_readback"] = {"j": "b" * 64}
+    _atomic_write_status(status_path, status)
+    assert service.state(identity, FINISHED).canonical_revision == "b" * 64
+
+
+@pytest.mark.parametrize("market_phase", (MarketPhase.TRADING, MarketPhase.BREAK, MarketPhase.CLOSED))
+def test_candidate_uses_stale_quote_only_as_a_labeled_trading_snapshot(market_phase) -> None:
+    from app.market_data.market_data_service import MarketDataError
+    from app.market_data.market_display_preview import MarketActivity, MarketPreview, MarketQuote
+
+    now = datetime(2025, 1, 2, 1, 3, 30, tzinfo=UTC)
+    day = now.date()
+    quote = MarketQuote(day, "J2505", "candidate-1", now, now, Decimal("100"), stale=True)
+    activity = MarketActivity("J2505", "candidate-1", _bar(4), now, now)
+
+    class Data(FakeMarketDataService):
+        def dominant_segment_for_day(self, symbol, trading_day):
+            return ResolvedContractSegment("J2505", trading_day, trading_day)
+
+        def previous_trading_day(self, symbol, trading_day):
+            raise MarketDataError("SESSION_FACT_MISSING")
+
+    class Preview:
+        def snapshot(self, **kwargs):
+            return MarketPreview(quote, activity)
+
+    service = MarketReadService(
+        market_data=Data(_bar(2)),
+        phase_resolver=FakePhaseResolver(ProductMarketPhase("j", market_phase, day, None, None)),
+        operational_products=("j",), live_store=FakeLiveStore((), available=False),
+        preview_reader=Preview(),
+    )
+    snapshot = service.display_snapshot(SeriesPageQuery("actual_dominant", "j", "1m"), None, now)
+    assert snapshot.preview is not None and snapshot.preview.quote is not None
+    assert snapshot.preview.quote.stale is (market_phase is MarketPhase.TRADING)
+    assert snapshot.preview.activity is None

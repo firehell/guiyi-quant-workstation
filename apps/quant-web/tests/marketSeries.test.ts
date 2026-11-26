@@ -1404,3 +1404,74 @@ describe('volume display page ownership',()=>{
   assert.equal(new Set(prependHistoricalPage(current,rolled).bars.map(bar=>bar.calculationSegmentId)).size,2)
  })
 })
+
+it('keeps Tick activity out of completed bars and retains the prior trading day during a roll', async () => {
+  const sockets: FakeSocket[] = []
+  const currentDay = '2026-08-10'
+  const series = useMarketSeries({
+    fetchPage: async () => page([liveBar('2026-08-07T06:30:00Z', 99)], { has_more_before: false, next_before: null }),
+    fetchState: async () => state({ trading_day: currentDay, live_contract: 'AG2605', canonical_end: '2026-08-07T06:30:00Z', display_preview: true }),
+    createWebSocket: url => {
+      const socket = new FakeSocket(url)
+      sockets.push(socket)
+      return socket
+    },
+  })
+  await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+  const socket = sockets[0]!
+  const night = { ...liveBar('2026-08-07T13:15:00Z', 101), trading_day: currentDay }
+  const preview = { ...liveBar('2026-08-07T13:30:00Z', 102), trading_day: currentDay }
+  const prior = liveBar('2026-08-07T07:00:00Z', 100)
+  socket.message({ type: 'snapshot', source: 'realtime', trading_day: currentDay, contract: 'AG2605', bars: [night] })
+  socket.message({ type: 'retained', trading_day: '2026-08-07', contract: 'AG2601', bars: [prior] })
+  socket.message({ type: 'preview', quote: null, activity: {
+    contract: 'AG2605', generation: 'candidate-1', observed_at: '2026-08-07T13:19:00Z',
+    received_at: '2026-08-07T13:19:00Z', bar: preview,
+  } })
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 100, 101])
+  assert.equal(series.bars.value[1]?.physicalContract, 'AG2601')
+  assert.equal(series.activeBar.value?.close, 102)
+  socket.message({ type: 'bar', bar: preview })
+  assert.equal(series.bars.value.at(-1)?.close, 102)
+  assert.equal(series.activeBar.value, null)
+  socket.message({ type: 'retained', trading_day: null, contract: null, bars: [] })
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 101, 102])
+  series.dispose()
+})
+
+it('coalesces a same-end Canonical revision and rereads the loaded older pages', async () => {
+  const first = '2026-08-07T06:30:00Z', last = '2026-08-07T07:00:00Z'
+  const requests: Array<string | undefined> = []
+  const sockets: FakeSocket[] = []
+  const start = state({ canonical_end: last, display_preview: true })
+  let currentState: MarketReadState = start
+  let revision = 0
+  const series = useMarketSeries({
+    fetchPage: async ({ before }) => {
+      requests.push(before)
+      return before ? page([liveBar(first, 99 + revision)], { has_more_before: false, next_before: null })
+        : page([liveBar(last, 100 + revision)], { has_more_before: true, next_before: last })
+    },
+    fetchState: async () => currentState,
+    createWebSocket: url => {
+      const socket = new FakeSocket(url)
+      sockets.push(socket)
+      return socket
+    },
+  })
+  await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+  await series.loadMoreBefore()
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 100])
+
+  revision = 10
+  currentState = { ...start, canonical_revision: 'a'.repeat(64) }
+  for (let n = 0; n < 3; n++) sockets[0].message({ type: 'state', state: currentState })
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [109, 110])
+  assert.deepEqual(requests, [undefined, last, undefined, last])
+  assert.equal(series.hasMoreBefore.value, false)
+  sockets[0].message({ type: 'state', state: currentState })
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.equal(requests.length, 4)
+  series.dispose()
+})

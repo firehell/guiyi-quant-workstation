@@ -64,6 +64,7 @@ _PUBLIC_ERROR_CODES = frozenset(
         "PUBLICATION_EVIDENCE_COUNT_MISMATCH",
         "COMMIT_OUTCOME_UNKNOWN",
         "HISTORICAL_MAINTENANCE_REQUIRED",
+        "CANONICAL_READBACK_UNVERIFIED",
         "CALENDAR_NIGHT_AUTHORITY_MISSING",
         "AFTER_MARKET_INTERRUPTED",
     }
@@ -169,10 +170,17 @@ class AfterMarketUpdater:
         late_failure_schedule: Callable[..., None] | None = None,
         research_update: Callable[[Path, date], None] | None = None,
         retain_research_publication: Callable[[Path], None] | None = None,
+        products: tuple[str, ...] | None = None,
+        archive_readback: Callable[
+            [tuple[str, ...], date, list[dict[str, object]]],
+            AbstractContextManager[Mapping[str, str]],
+        ] | None = None,
     ) -> None:
         self.late_failure_schedule = late_failure_schedule
         self.research_update = research_update
         self.retain_research_publication = retain_research_publication
+        self.archive_readback = archive_readback
+        self._archive_products = products
         self.manager = manager
         self.rqdata = rqdata
         self.rqdata_factory = rqdata_factory
@@ -210,23 +218,87 @@ class AfterMarketUpdater:
         with self.recovery_guard_factory():
             # Preserve the previous success before the mutable status file is
             # invalidated. This also closes the crash window after its commit.
-            self._retain_research()
-            result = self._run_guarded()
+            if self._retain_research() is None:
+                return AfterMarketResult("failed", _local_timestamp(self.now()).date(), 0,
+                                         "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE")
+            result = self._resume_archive() if self.archive_readback is not None else None
+            if result is None:
+                result = self._run_guarded()
+            source = self.status_path
             if result.status == "passed":
-                self._retain_research()
+                source = self._retain_research()
+                if source is None or (self.archive_readback is not None and source == self.status_path):
+                    return AfterMarketResult("failed", result.trading_day, result.attempts,
+                                             "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE")
         if self.research_update is not None and result.status == "passed":
-            self.research_update(self.status_path, result.trading_day)
+            self.research_update(source, result.trading_day)
         if self.consumer_audit is not None:
             self._run_consumer_audit(result)
         return result
 
-    def _retain_research(self) -> None:
-        if self.retain_research_publication is None:
-            return
+    def _resume_archive(self) -> AfterMarketResult | None:
+        """Finish a proved cleanup edge without starting another supplier attempt."""
+        if not self.status_path.exists():
+            return None
+        status = public_after_market_status(_load_status(self.status_path))
+        prior = status.get("last_run") or {}
+        if prior.get("error_code") == "COMMIT_OUTCOME_UNKNOWN":
+            return AfterMarketResult("failed", date.fromisoformat(prior["trading_day"]),
+                                     prior["attempts"], "COMMIT_OUTCOME_UNKNOWN")
+        pending = status.get("current_run")
+        if pending is None:
+            return None if status else AfterMarketResult(
+                "failed", _local_timestamp(self.now()).date(), 0, "CANONICAL_READBACK_UNVERIFIED",
+            )
+
+        day = date.fromisoformat(pending["scheduled_date"])
+        products = tuple(pending["products"])
+        evidence = pending.get("live_evidence") or {}
+        revisions = evidence.get("canonical_readback")
+        publications = pending.get("historical_publications")
+        attempt = pending["attempt"]
+        unverified = AfterMarketResult("failed", day, attempt, "CANONICAL_READBACK_UNVERIFIED")
+        cleanup_stages = {"canonical_updated", "live_reconciliation", "live_cleanup", "projection"}
+        if (attempt not in {1, 2} or pending["stage"] not in cleanup_stages
+                or products != self._products() or revisions is None
+                or not isinstance(publications, list)):
+            return unverified
+        assert self.archive_readback is not None
         try:
-            self.retain_research_publication(self.status_path)
+            with self.archive_readback(products, day, publications) as committed:
+                if committed != revisions:
+                    return unverified
+                self._run_started_at = pending["started_at"]
+                self._current = dict(pending)
+                self._historical_publications = publications
+                self._progress_failed = False
+                code = self._clean_archived_live(
+                    products, day, attempt, revisions=committed, restart_evidence=evidence,
+                )
+                if code is not None:
+                    return AfterMarketResult("failed", day, attempt, code)
+                result = AfterMarketResult("passed", day, attempt, None)
+                self._write_status(result, datetime.fromisoformat(pending["started_at"]), products)
+                return result
+        except _ProgressPersistenceError:
+            raise
+        except (OSError, RuntimeError, ValueError):
+            return unverified
+
+    def _retain_research(self) -> Path | None:
+        try:
+            if self.archive_readback is not None:
+                from app.market_data.market_archive import retain_archive_receipt
+
+                receipt = retain_archive_receipt(self.status_path, now=_local_timestamp(self.now()))
+                return self.status_path if receipt is None else receipt
+            if self.retain_research_publication is not None:
+                self.retain_research_publication(self.status_path)
         except (OSError, ValueError, RuntimeError):
             _LOGGER.warning("after_market_research_publication_retain_failed")
+            if self.archive_readback is not None:
+                return None
+        return self.status_path
 
     def _run_consumer_audit(self, result: AfterMarketResult) -> None:
         checks = {key: {"status": "not_verified"} for key in self.consumer_check_keys}
@@ -316,10 +388,13 @@ class AfterMarketUpdater:
                 exception_type=type(exc).__name__,
             )
 
+    def _products(self) -> tuple[str, ...]:
+        return load_operational_products() if self._archive_products is None else self._archive_products
+
     def _run_guarded(self) -> AfterMarketResult:
         started_at = _local_timestamp(self.now())
         self._run_started_at = started_at.isoformat()
-        products = load_operational_products()
+        products = self._products()
         self._write_current_run(started_at, products)
         # 先用仅依赖 Calendar 的日期判断今天是否为交易日。当天 Session 正是下方
         # manager.update() 要同步的 metadata，不能反过来把它作为进入更新的前置条件。
@@ -467,6 +542,19 @@ class AfterMarketUpdater:
         self._publication_bytes = 2
         self._current.pop("live_evidence", None)
         self._current.pop("historical_publications", None)
+        if self.archive_readback is not None:
+            try:
+                snapshot = self.live_store.subscriptions(trading_day)
+                same_scope = _rank1_matches_snapshot(self.manager, snapshot, products, trading_day)
+                already_cleaned = snapshot is None and self._previous_cleanup(
+                    products, trading_day, restart_evidence=None,
+                ) is not None
+                if not same_scope and not already_cleaned:
+                    return "LIVE_DOMINANT_MISMATCH"
+            except Exception as exc:  # noqa: BLE001 - connection details remain private
+                _diagnostic_warning("after_market_archive_scope_unverified exception_type=%s", type(exc).__name__,
+                                    detail_code="LIVE_DOMINANT_MISMATCH", exception_type=type(exc).__name__)
+                return "LIVE_DOMINANT_MISMATCH"
         try:
             if self.rqdata is None:
                 if self.rqdata_factory is None:
@@ -613,37 +701,69 @@ class AfterMarketUpdater:
                 _log_first_maintenance_failure(result.failures[0], attempt, len(result.failures))
             return error_code
 
+        if self.archive_readback is None:
+            return self._clean_archived_live(products, trading_day, attempt)
+        if self._historical_publications is None:
+            return "CANONICAL_READBACK_UNVERIFIED"
+        try:
+            self._stage("canonical_readback")
+            with self.archive_readback(products, trading_day, self._historical_publications) as revisions:
+                if not _valid_archive_revisions(revisions, products):
+                    return "CANONICAL_READBACK_UNVERIFIED"
+                return self._clean_archived_live(products, trading_day, attempt, revisions=revisions)
+        except _ProgressPersistenceError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - do not expose Catalog or provider details
+            _diagnostic_warning(
+                "after_market_archive_readback_failed exception_type=%s", type(exc).__name__,
+                stage="canonical_readback", detail_code="CANONICAL_READBACK_UNVERIFIED",
+                exception_type=type(exc).__name__,
+            )
+            return "CANONICAL_READBACK_UNVERIFIED"
+
+    def _clean_archived_live(
+        self, products: tuple[str, ...], trading_day: date, attempt: int, *,
+        revisions: Mapping[str, str] | None = None,
+        restart_evidence: Mapping[str, Any] | None = None,
+    ) -> str | None:
         try:
             self._stage("canonical_updated")
             # A successful Canonical write must notify the Web seam even when the
             # temporary intraday snapshot disagrees with the formal map.
-            self.live_store.publish_state(
-                {
-                    "trading_day": trading_day.isoformat(),
-                    "reason": "canonical_updated",
-                }
-            )
+            change = {"trading_day": trading_day.isoformat(), "reason": "canonical_updated"}
+            if revisions is None:
+                self.live_store.publish_state(change)
             self._stage("live_reconciliation")
             snapshot = self.live_store.subscriptions(trading_day)
-            if not _rank1_matches_snapshot(self.manager, snapshot, products, trading_day):
+            repeat = None
+            if snapshot is None and revisions is not None:
+                repeat = self._previous_cleanup(products, trading_day, restart_evidence=restart_evidence)
+            if repeat is not None:
+                snapshot_sha256 = repeat["snapshot_sha256"]
+            elif _rank1_matches_snapshot(self.manager, snapshot, products, trading_day):
+                snapshot_sha256 = _evidence_hash({
+                    key.strip().lower(): value.strip().upper() for key, value in snapshot.items()
+                })
+            else:
                 _diagnostic_warning(
                     "after_market_attempt_failed stage=live_reconciliation attempt=%s "
                     "detail_code=LIVE_DOMINANT_MISMATCH",
                     attempt,
-                    stage="live_reconciliation", attempt=attempt,
+                    stage="live_reconciliation",
                     detail_code="LIVE_DOMINANT_MISMATCH",
                 )
                 return "LIVE_DOMINANT_MISMATCH"
-            normalized_snapshot = {key.strip().lower(): value.strip().upper()
-                                   for key, value in snapshot.items()}
+            if (revisions is not None and restart_evidence is None
+                    and (repeat is None or revisions != repeat["canonical_readback"])):
+                self.live_store.publish_state(change)
             self._live_evidence = {
                 "trading_day": trading_day.isoformat(),
                 "run_started_at": self._run_started_at,
                 "attempt": attempt,
                 "scope_sha256": _evidence_hash(list(products)),
-                "snapshot_sha256": _evidence_hash(normalized_snapshot),
+                "snapshot_sha256": snapshot_sha256,
                 # Equality was checked against formal Catalog rank1 above.
-                "formal_rank1_sha256": _evidence_hash(normalized_snapshot),
+                "formal_rank1_sha256": snapshot_sha256,
                 "rank1_matches_snapshot": True,
                 "reconciled_at": _local_timestamp(self.now()).isoformat(),
                 "code_commit": _local_code_commit(),
@@ -656,10 +776,13 @@ class AfterMarketUpdater:
                     else "no_publication" if self._historical_publications == [] else "not_verified"
                 ),
             }
+            if revisions is not None:
+                self._live_evidence["canonical_readback"] = dict(revisions)
             self._current["live_evidence"] = self._live_evidence
             # Preserve the reconciliation before destroying its Redis source.
             self._stage("live_cleanup")
-            self.live_store.cleanup_trading_day(trading_day)
+            if repeat is None:
+                self.live_store.cleanup_trading_day(trading_day)
             readback = self.live_store.cleanup_readback(trading_day)
             remaining = readback["remaining_bar_keys"]
             present = readback["subscription_present"]
@@ -686,6 +809,31 @@ class AfterMarketUpdater:
             )
             return "UPDATE_FAILED"
         return None
+
+    def _previous_cleanup(
+        self, products: tuple[str, ...], trading_day: date, *,
+        restart_evidence: Mapping[str, Any] | None,
+    ) -> Mapping[str, Any] | None:
+        formal = _formal_rank1(self.manager, products, trading_day)
+        if formal is None:
+            return None
+        rank1 = _evidence_hash(formal)
+        if restart_evidence is None:
+            from app.market_data.market_archive import retained_cleanup_receipt
+
+            evidence = retained_cleanup_receipt(
+                self.status_path.parent, day=trading_day, now=_local_timestamp(self.now()), products=products, formal_rank1_sha256=rank1,
+            )
+        else:
+            # Interrupted-run recovery still requires its own Canonical proof.
+            evidence = restart_evidence
+        if evidence is None or evidence["formal_rank1_sha256"] != rank1:
+            return None
+        if self.live_store.cleanup_readback(trading_day) != {
+            "remaining_bar_keys": 0, "subscription_present": False,
+        }:
+            return None
+        return evidence
 
     def _invalidate_market_home_projection(self) -> None:
         if self.market_home_projection_invalidate is not None:
@@ -964,8 +1112,20 @@ def build_after_market_updater(
     from app.alerts.notification_composition import notifications_disabled_from_env
 
     notification_transport: NotificationTransport | None = None
-    from app.services.newow_reference_mode import after_market_only, require_isolated_redis
+    from app.services.newow_reference_mode import (
+        after_market_only, market_foundation_isolated, require_isolated_redis,
+    )
 
+    if market_foundation_isolated():
+        from app.market_data.market_archive import (
+            build_isolated_archive, isolated_archive_products, require_isolated_archive,
+        )
+
+        products = isolated_archive_products(os.environ.get("GUIYI_MARKET_FOUNDATION_PRODUCTS", ""))
+        require_isolated_archive(manager.catalog.session.get_bind().url, REDIS_URL, manager.catalog.canonical_root)
+        return build_isolated_archive(manager, redis_url=REDIS_URL,
+            live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+            rqdata_factory=ready_client, sleep=time.sleep, products=products)
     isolated_research = after_market_only()
     state_root = PROJECT_ROOT / ".run"
     if isolated_research:
@@ -1311,16 +1471,22 @@ def _rank1_matches_snapshot(
     }
     if set(live) != set(products):
         return False
+    return live == _formal_rank1(manager, products, trading_day)
+
+
+def _formal_rank1(
+    manager: HistoricalDataManager, products: tuple[str, ...], trading_day: date,
+) -> dict[str, str] | None:
     formal: dict[str, str] = {}
     for symbol in products:
         facts = manager.catalog.main_map(symbol, trading_day, trading_day)
         if len(facts) != 1:
-            return False
+            return None
         contract = facts[0].contract
         if not isinstance(contract, str) or not contract.strip():
-            return False
+            return None
         formal[symbol] = contract.strip().upper()
-    return live == formal
+    return formal
 
 
 def _public_historical_publications(
@@ -1362,6 +1528,12 @@ def _evidence_hash(value: object) -> str:
                                      ensure_ascii=True).encode("ascii")).hexdigest()
 
 
+def _valid_archive_revisions(value: object, products) -> bool:
+    return (isinstance(value, Mapping) and set(value) == set(products)
+            and all(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)
+                    for digest in value.values()))
+
+
 def _public_live_evidence(
     value: object, day: str, started: str, products: list[str], attempt: int | None,
 ) -> dict[str, object] | None:
@@ -1370,7 +1542,9 @@ def _public_live_evidence(
               "formal_rank1_sha256", "rank1_matches_snapshot", "reconciled_at", "code_commit",
               "cleanup_verified", "cleanup_checked_at", "remaining_bar_keys",
               "subscription_present", "canonical_live_exclusion"}
-    if not isinstance(value, Mapping) or set(value) != fields:
+    if not isinstance(value, Mapping) or set(value) - {"canonical_readback"} != fields:
+        return None
+    if "canonical_readback" in value and not _valid_archive_revisions(value["canonical_readback"], products):
         return None
     if (value["trading_day"] != day or value["run_started_at"] != started
             or type(value["attempt"]) is not int or value["attempt"] != attempt
@@ -1869,7 +2043,7 @@ def _public_current_run(value: object, *, schema_version: int = 2) -> dict[str, 
 
 _MAINTENANCE_PHASES = frozenset({"planning", "reading", "provider", "publishing", "aggregation"})
 _AFTER_MARKET_STAGES = _MAINTENANCE_PHASES | {
-    "calendar", "rqdata_readiness", "retry_wait", "canonical_updated",
+    "calendar", "rqdata_readiness", "retry_wait", "canonical_readback", "canonical_updated",
     "live_reconciliation", "live_cleanup", "projection",
 }
 

@@ -1,0 +1,20 @@
+{
+  "kind": "synthetic_accelerated_complete_session",
+  "platform": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+  "products": 60,
+  "frequency_hz_per_open_contract": 2,
+  "ticks": 2448225,
+  "completed_1m": 20400,
+  "expected_1m": 20400,
+  "duration_s": 49.11,
+  "ticks_per_wall_second": 49851,
+  "callback_through_processing_ms_p50": 0.822,
+  "callback_through_processing_ms_p95": 1.246,
+  "callback_through_processing_ms_p99": 1.994,
+  "callback_through_processing_ms_max": 42.01,
+  "max_queue_depth": 60,
+  "end_queue_depth": 0,
+  "rss_max_bytes": 181501952,
+  "cpu_seconds": 48.035,
+  "diagnostics": {}
+}

@@ -2462,3 +2462,164 @@ def test_isolated_research_runs_after_durable_publication_outside_market_guard(t
     updater.research_update = research
     assert updater.run().status == "passed"
     assert triggers == [date(2026, 8, 10)]
+
+
+def test_candidate_archive_rejects_unverified_scope_before_live_cleanup(tmp_path):
+    from contextlib import contextmanager
+
+    day = date(2026, 8, 10)
+    updater, manager, _, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[_result("passed", applied=1)],
+    )
+    manager.publication_evidence = [_capacity_publication()]
+
+    @contextmanager
+    def rejected(products, trading_day, publications):
+        assert products == _ACTIVE_PRODUCTS
+        assert trading_day == day
+        assert publications == manager.publication_evidence
+        raise ValueError("source scope incomplete")
+        yield
+
+    updater.archive_readback = rejected
+    assert updater.run().error_code == "CANONICAL_READBACK_UNVERIFIED"
+    assert live.cleaned == []
+    assert live.published == []
+    status = public_after_market_status(_status(updater.status_path))
+    assert status["last_successful_trading_day"] is None
+
+
+def test_candidate_archive_reconciles_repeat_using_same_day_cleanup_proof(tmp_path):
+    from contextlib import contextmanager
+
+    day = date(2026, 8, 10)
+    updater, manager, _, _, notices, live = _updater(
+        tmp_path, trading_day=day, readiness=[True, False, False, True],
+        results=[_result("noop"), _result("noop")],
+    )
+    manager.publication_evidence = []
+
+    @contextmanager
+    def readback(products, trading_day, publications):
+        assert trading_day == day
+        assert publications == []
+        yield {product: "a" * 64 for product in products}
+
+    updater.archive_readback = readback
+    updater.notification_transport = None
+    assert updater.run().status == "passed"
+    assert updater.run().error_code == "RQDATA_NOT_READY"
+    assert public_after_market_status(_status(updater.status_path))["last_run"]["status"] == "failed"
+    assert updater.run().status == "passed"
+    evidence = public_after_market_status(_status(updater.status_path))["last_run"]["live_evidence"]
+    assert evidence["canonical_readback"] == {product: "a" * 64 for product in _ACTIVE_PRODUCTS}
+    assert live.cleaned == [day]
+    assert notices == []
+
+
+def test_candidate_keeps_unretained_success_status_for_safe_restart(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+
+    from app.market_data import market_archive
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[_result("noop")],
+    )
+    manager.publication_evidence = []
+    updater.archive_readback = lambda products, *_: nullcontext({product: "a" * 64 for product in products})
+    original = market_archive.retain_archive_receipt
+
+    def unavailable(path, *, now):
+        if path.exists():
+            raise OSError("Archive receipt storage unavailable")
+        return original(path, now=now)
+
+    monkeypatch.setattr(market_archive, "retain_archive_receipt", unavailable)
+    assert updater.run().error_code == "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE"
+    retained_preimage = updater.status_path.read_bytes()
+    assert updater.run().error_code == "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE"
+    assert updater.status_path.read_bytes() == retained_preimage
+    assert provider.calls == [day] and live.cleaned == [day]
+
+
+def test_candidate_restart_after_exact_day_cleanup_uses_readback_without_provider_retry(tmp_path):
+    from contextlib import contextmanager
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[_result("noop")],
+    )
+    manager.publication_evidence = []
+
+    @contextmanager
+    def readback(products, trading_day, publications):
+        assert trading_day == day
+        assert publications == []
+        yield {product: "a" * 64 for product in products}
+
+    updater.archive_readback = readback
+    read = live.cleanup_readback
+
+    def stop_after_cleanup(_day):
+        raise KeyboardInterrupt
+
+    live.cleanup_readback = stop_after_cleanup
+    with pytest.raises(KeyboardInterrupt):
+        updater.run()
+    assert live.cleaned == [day]
+    live.cleanup_readback = read
+    assert updater.run().status == "passed"
+    assert provider.calls == [day]
+    assert live.cleaned == [day]
+
+
+def test_candidate_restart_refuses_an_unknown_commit_before_provider_retry(tmp_path):
+    from contextlib import contextmanager
+    from app.market_data.storage import StorageError
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[],
+    )
+    manager.publication_evidence = []
+
+    def unknown(*_args, **_kwargs):
+        raise StorageError("COMMIT_OUTCOME_UNKNOWN")
+
+    @contextmanager
+    def readback(*_args):
+        raise AssertionError("No proof binding an unknown commit to the run")
+        yield
+
+    manager.update = unknown
+    updater.archive_readback = readback
+    assert updater.run().error_code == "COMMIT_OUTCOME_UNKNOWN"
+    original = updater.status_path.read_bytes()
+    assert updater.run().error_code == "COMMIT_OUTCOME_UNKNOWN"
+    assert updater.status_path.read_bytes() == original
+    assert provider.calls == [day]
+    assert live.cleaned == []
+
+
+@pytest.mark.parametrize("snapshot", [None, {"jm": "JM2701"}, {**_ACTIVE_CONTRACTS, "ag": "AG2612"}])
+def test_isolated_archive_rejects_missing_extra_or_wrong_owners_before_provider(tmp_path, snapshot):
+    from contextlib import nullcontext
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[], results=[],
+    )
+    updater.archive_readback = lambda *_: nullcontext({})
+    live.snapshot = snapshot
+    assert updater.run().error_code == "LIVE_DOMINANT_MISMATCH"
+    assert provider.calls == [] and manager.calls == [] and live.cleaned == []
+
+
+def test_isolated_archive_scope_requires_an_exact_explicit_list():
+    from app.market_data.market_archive import isolated_archive_products
+
+    assert isolated_archive_products("rb,jm") == ("rb", "jm")
+    for raw in ("", "rb,", "rb,rb", "RB", "rb, jm", "unregistered"):
+        with pytest.raises(ValueError, match="MARKET_ARCHIVE_SCOPE_INVALID"):
+            isolated_archive_products(raw)

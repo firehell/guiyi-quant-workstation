@@ -26,6 +26,20 @@ _health = ForwardReferenceHealth(
 )
 
 
+def _bound_market_sessions(request: Request):
+    return getattr(request.app.state, "market_foundation_reference_sessions", None)
+
+
+def _reader(request: Request) -> HistoricalReferenceQuery:
+    factory = _bound_market_sessions(request)
+    return _query if factory is None else HistoricalReferenceQuery(factory)
+
+
+def _only_existing_runtime(request: Request) -> None:
+    if _bound_market_sessions(request) is not None:
+        raise HTTPException(status_code=404, detail={"code": "MARKET_REFERENCE_NOT_ENABLED"})
+
+
 def _keys(request: Request, allowed: frozenset[str]) -> None:
     keys = [key for key, _ in request.query_params.multi_items()]
     if set(keys) - allowed or len(keys) != len(set(keys)):
@@ -54,11 +68,12 @@ def _run(call):
 @router.get("/capabilities")
 def capabilities(request: Request):
     _keys(request, frozenset())
-    return _query.capabilities()
+    return _reader(request).capabilities()
 
 
 @router.get("/health")
 async def health(request: Request):
+    _only_existing_runtime(request)
     _keys(request, frozenset())
     from app.reference_trading.inbox_protocol import read_receiving_health
     detail, receiving = await gather(
@@ -70,6 +85,7 @@ async def health(request: Request):
 
 @router.get("/health/summary")
 def health_summary(request: Request):
+    _only_existing_runtime(request)
     _keys(request, frozenset())
     from app.reference_trading.health import read_worker_health_summary
     from app.reference_trading.inbox_protocol import read_receiving_health
@@ -87,7 +103,7 @@ def health_summary(request: Request):
 def streams(request: Request, strategy: str, product: str, frequency: str,
             mode: str = "historical_replay"):
     _keys(request, frozenset({"strategy", "product", "frequency", "mode"}))
-    return {"items": _run(lambda: _query.streams(
+    return {"items": _run(lambda: _reader(request).streams(
         strategy=strategy, product=product, frequency=frequency, mode=mode,
     ))}
 
@@ -103,7 +119,7 @@ def trades(request: Request, stream_id: str, since: date, through: date,
     _keys(request, _VIEW_FIELDS)
     if cursor is not None and snapshot is None:
         raise HTTPException(409, detail={"code": "CURSOR_CONFLICT"})
-    return _run(lambda: _query.trades(
+    return _run(lambda: _reader(request).trades(
         stream_id, since=since, through=through, cutoff=cutoff,
         limit=limit, cursor=cursor, snapshot_token=snapshot,
     ))
@@ -117,7 +133,7 @@ def signals(request: Request, stream_id: str, since: date, through: date,
     _keys(request, _VIEW_FIELDS)
     if cursor is not None and snapshot is None:
         raise HTTPException(409, detail={"code": "CURSOR_CONFLICT"})
-    return _run(lambda: _query.signals(
+    return _run(lambda: _reader(request).signals(
         stream_id, since=since, through=through, cutoff=cutoff,
         limit=limit, cursor=cursor, snapshot_token=snapshot,
         point_kind="display_signal",
@@ -132,7 +148,7 @@ def indicators(request: Request, stream_id: str, since: date, through: date,
     _keys(request, _VIEW_FIELDS)
     if cursor is not None and snapshot is None:
         raise HTTPException(409, detail={"code": "CURSOR_CONFLICT"})
-    return _run(lambda: _query.signals(
+    return _run(lambda: _reader(request).signals(
         stream_id, since=since, through=through, cutoff=cutoff,
         limit=limit, cursor=cursor, snapshot_token=snapshot,
         point_kind="indicator",
@@ -144,7 +160,7 @@ def forward_reference_panel(request: Request, stream_id: str, since: date, throu
                             cutoff: datetime | None = None):
     from app.reference_trading.forward_panel import forward_panel
     _keys(request, frozenset({"since", "through", "cutoff"}))
-    return _run(lambda: forward_panel(_query, stream_id, since=since, through=through, cutoff=cutoff))
+    return _run(lambda: forward_panel(_reader(request), stream_id, since=since, through=through, cutoff=cutoff))
 
 
 @router.get("/streams/{stream_id}/summary")
@@ -152,14 +168,78 @@ def summary(request: Request, stream_id: str, since: date, through: date,
             cutoff: datetime | None = None,
             snapshot: str | None = Query(None, max_length=2048)):
     _keys(request, frozenset({"since", "through", "cutoff", "snapshot"}))
-    return _run(lambda: _query.summary(
+    return _run(lambda: _reader(request).summary(
         stream_id, since=since, through=through, cutoff=cutoff,
         snapshot_token=snapshot,
     ))
 
 
+@router.get("/newow/after-close")
+def newow_after_close(request: Request, product: str, strategy: str, frequency: str):
+    from app.services.newow_reference_mode import market_foundation_isolated
+
+    factory = _bound_market_sessions(request)
+    if factory is None:
+        if not market_foundation_isolated():
+            raise HTTPException(status_code=404, detail={"code": "MARKET_REFERENCE_NOT_ENABLED"})
+        from app.db.session import engine
+        from app.market_data.composition import canonical_root
+        from app.market_data.market_archive import require_isolated_archive
+        from app.redis_connections import REDIS_URL
+        try:
+            require_isolated_archive(engine.url, REDIS_URL, canonical_root())
+        except (OSError, ValueError):
+            raise HTTPException(status_code=503, detail={"code": "MARKET_REFERENCE_NOT_ENABLED"}) from None
+        factory = SessionLocal
+    _keys(request, frozenset({"product", "strategy", "frequency"}))
+    from app.market_data.newow.market_reference_after_close import latest_reference
+    return {"result": _run(lambda: latest_reference(product, strategy, frequency, session_factory=factory))}
+
+
+@router.get("/newow/after-close/presentation")
+def newow_after_close_presentation(
+    request: Request, stream_id: str, since: date, through: date, cutoff: datetime,
+    snapshot: str = Query(..., max_length=2048),
+    bar_from: datetime = Query(...), bar_through: datetime = Query(...),
+):
+    if _bound_market_sessions(request) is None:
+        raise HTTPException(status_code=404, detail={"code": "MARKET_REFERENCE_NOT_ENABLED"})
+    _keys(request, frozenset({"stream_id", "since", "through", "cutoff", "snapshot", "bar_from", "bar_through"}))
+    from app.market_data.newow.market_reference_after_close import present_saved_chart
+    return _run(lambda: present_saved_chart(
+        _reader(request), stream_id, since=since, through=through, cutoff=cutoff,
+        snapshot=snapshot, bar_from=bar_from, bar_through=bar_through,
+    ))
+
+
+@router.get("/newow/after-close/section")
+def newow_after_close_section(request: Request, product: str, strategy: str, frequency: str,
+                              section: str, component: str | None = None):
+    factory = _bound_market_sessions(request)
+    sandbox = getattr(request.app.state, "market_foundation_section_root", None)
+    if factory is None or sandbox is None:
+        raise HTTPException(status_code=404, detail={"code": "MARKET_REFERENCE_NOT_ENABLED"})
+    _keys(request, frozenset({"product", "strategy", "frequency", "section", "component"}))
+    if section not in {"auxiliary", "comparator"} or (component is None) != (section == "comparator"):
+        raise HTTPException(status_code=422, detail={"code": "QUERY_INVALID"})
+    from app.market_data.newow.market_reference_after_close import latest_reference
+    from app.market_data.newow.market_reference_sections import saved_section
+
+    def read():
+        reference = latest_reference(product, strategy, frequency, session_factory=factory)
+        if reference is None:
+            return {"status": "pending", "receipt": None, "result": None, "chart": None}
+        try:
+            return saved_section(sandbox, reference, strategy=strategy, frequency=frequency,
+                                 section=section, component=component)
+        except (OSError, ValueError):
+            raise HTTPException(503, detail={"code": "MARKET_REFERENCE_SECTION_UNAVAILABLE"}) from None
+    return _run(read)
+
+
 @router.get("/newow/matrix")
 def newow_matrix(request: Request):
+    _only_existing_runtime(request)
     _keys(request, frozenset())
     from app.market_data.operational_universe import load_operational_products
     from app.reference_trading.recording_matrix import newow_recording_matrix
@@ -174,5 +254,5 @@ def newow_messages(request: Request, since: date, through: date, product: str | 
                    limit: int = Query(500, ge=1, le=500)):
     from app.reference_trading.messages import read_messages
     _keys(request, frozenset({"since", "through", "product", "strategy", "frequency", "limit"}))
-    return _run(lambda: read_messages(SessionLocal, since=since, through=through,
+    return _run(lambda: read_messages(_bound_market_sessions(request) or SessionLocal, since=since, through=through,
                                      product=product, strategy=strategy, frequency=frequency, limit=limit))

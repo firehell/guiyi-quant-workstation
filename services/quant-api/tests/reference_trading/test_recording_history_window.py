@@ -6,7 +6,7 @@ import pytest
 
 from app.market_data.newow.product_reader import NewowProductReader
 from app.market_data.market_data_service import MarketDataError
-from scripts.newow_history_window import new_plan_since
+from app.reference_trading.newow_history_window import new_plan_since
 from scripts import newow_recording_history as script
 from scripts.reference_trading_p9_manifest import _newow
 from guiyi_quant.newow.product_contracts import ProductStrategy
