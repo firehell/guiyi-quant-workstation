@@ -3,6 +3,7 @@
 import argparse
 from datetime import date, datetime
 from decimal import Decimal
+import json
 from pathlib import Path
 
 from lms405_common_protection_window import OCT27_QUOTES, OCT27_SNAPSHOT
@@ -10,8 +11,10 @@ from lms405_i2701_case import FROZEN_COMPARISON_SHA256, readback
 from lms405_m_permission_study import read_pair
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
+from lms405_protection_timeframes import VARIANTS, read_window
+from lms405_recovery_confirmation_audit import strict_runs
 from lms405_replay import display, ohlc
-from lms405_right_side_study import US, at
+from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import completed, digest, signals
 from lms405_sizing_audit import SPECS, load_specs
 from lms_near405_replay import encoded, sha
@@ -30,6 +33,10 @@ COMMON_SHA = "1f8faeba34873d4be26cb01145dbb994305c01aa45a0af3d905ea35442f09264"
 CONTINUITY = Path("output/lms405-position-continuity-20261125/final.json")
 CONTINUITY_SHA = "664dad4a242846f9602f86839788a319bf3d0091ece2e7a3cbdedaa731ccca60"
 SPECS_SHA = "fc430ad455e81d41cdd479f470e26a7a543cac0f427729de150185dfb3e40652"
+RANGE_REFERENCE = (Path("output/lms405-oi-range-roles-20261125/final.json"),
+                   "2270fc86233facf687b31566dd9d24d557e258cfbabaed2380fbe8fe3e04451e")
+RECOVERY_REFERENCE = (Path("output/lms405-recovery-path-20261125/final.json"),
+                      "46eaa17983c645fd9035dd4317851e2d47ffc26b7105f45aed37e1efaa768fa7")
 
 
 def first_contact(bars, band):
@@ -138,10 +145,121 @@ def study(session, market, common, continuity, quotes, specification):
     )
 
 
+def quote_relation(event_known_at, quote_end):
+    if event_known_at is None:
+        return "EVENT_UNAVAILABLE"
+    if event_known_at < quote_end - ONE:
+        return "BEFORE_QUOTE_MINUTE"
+    if event_known_at < quote_end:
+        return "WITHIN_QUOTE_MINUTE"
+    return "AT_OR_AFTER_QUOTE_END"
+
+
+def standing_long(series, observations, upper, start, cut):
+    """A fresh shape must start during a continuous run after two complete closes."""
+    runs = strict_runs(observations, Decimal(upper), "LONG")
+    two = next((end for end, run in runs.items() if run["close_count"] >= 2), None)
+    candidates = {}
+    for shape, confirm in VARIANTS:
+        kept = []
+        for event in signals(series, shape, confirm, side="LONG", start=start, cut=cut):
+            run = runs.get(event["confirmed_at"])
+            if not run or run["close_count"] < 2:
+                continue
+            stand = event["confirmed_at"] - (run["close_count"] - 2) * ONE
+            if stand + US < event["shape_end"] - shape * ONE:
+                kept.append(dict(event=event, two_closes_known_at=stand + US))
+        candidates[f"{shape}m_to_{confirm}m"] = kept
+    return dict(first_strict_close=next(iter(runs), None), first_two_strict_closes=two,
+                fresh_long_in_same_run=candidates)
+
+
+def role_study(session, market, common, continuity, quotes, specification):
+    base = study(session, market, common, continuity, quotes, specification)
+    september = verified_json(*RANGE_REFERENCE)["cases"]["september_protection_plan"]
+    recovery = verified_json(*RECOVERY_REFERENCE)["cases"]["OI-long"]
+    sources = base["sources"]
+    known_recovery = datetime.fromisoformat(sources["S5341725283323022"]["published_at"]) + ONE
+    known_protection = datetime.fromisoformat(sources["S5343801842598111"]["published_at"]) + ONE
+    october = read_window(session, market, CONTRACT, DAY)
+    protected = read_window(session, market, CONTRACT, date(2026, 9, 17))
+    reverse = read_window(session, market, CONTRACT, date(2026, 9, 11))
+    fingerprints = {name: {f"{p}m": dict(count=len(bars), sha256=digest(bars)) for p, bars in series.items()}
+                    for name, series in (("october", october), ("protection", protected), ("reversal", reverse))}
+    oct_compact = [[b.end.isoformat(), *map(str, ohlc(b))] for b in october[1]]
+    if (sha(json.dumps(oct_compact, separators=(",", ":")).encode()) != base["market"]["1m"]["ohlc_sha256"]
+            or any(fingerprints["protection"][key] != val for key, val in september["market"].items())
+            or digest(reverse[1]) != recovery["local_market_sha256"]):
+        raise ValueError("OI_LEG_ROLE_MARKET_CHANGED")
+    last_protection = protected[1][-1].end + 2 * US
+    protected_obs = completed(protected[1], known_protection, last_protection)
+    band = (10059, 10109)
+    protection_low = min(b.low for b in protected_obs)
+    if protection_low <= band[1] or first_contact(protected_obs, band) is not None:
+        raise ValueError("OI_LEG_ROLE_REFERENCE_RANGE_CHANGED")
+    protection = dict(band=band, low=protection_low, high=max(b.high for b in protected_obs), overlap=False,
+                      signal_counts_confirmed_above_upper={f"{p}m_to_{c}m": sum(row["close"] > band[1]
+                          for row in signals(protected, p, c, side="LONG", start=known_protection,
+                                             cut=last_protection)) for p, c in VARIANTS})
+    reverse_cut = reverse[1][-1].end + 2 * US
+    reverse_obs = completed(reverse[1], known_recovery, reverse_cut)
+    reversal = standing_long(reverse, reverse_obs, 10270, known_recovery, reverse_cut)
+    expected_reversal_price = recovery["routes"]["price_recovery_candidate"]["first_active"]
+    if len(reverse_obs) != recovery["plan_observable_minutes"] or (
+        display(reversal["first_two_strict_closes"]) != expected_reversal_price
+    ):
+        raise ValueError("OI_LEG_ROLE_REVERSAL_PRICE_CHANGED")
+
+    whole_day_cut = october[1][-1].end + 2 * US
+    oct_full = standing_long(october, october[1], DIVIDER[1], START, whole_day_cut)
+    minutes = completed(october[1], START, CUT)
+    contact = first_contact(minutes, DIVIDER)
+    inside = next((b for b in minutes if DIVIDER[0] <= b.close <= DIVIDER[1]), None)
+    if contact is None or inside is None:
+        raise ValueError("OI_LEG_ROLE_DIVIDER_CONTACT_CHANGED")
+    marks = quotes["photos"][OCT27_SNAPSHOT]["per_symbol"]["oi"]
+    totals = displayed_tick_totals(DISPLAYED_OPENING_AVERAGE, base["observed_lots"], specification["tick"])
+    results = {}
+    for label in marks["contains"]:
+        quote = datetime.fromisoformat(label)
+        cut = quote - ONE
+        current = completed(october[1], START, cut)
+        prefix = {p: [b for b in bars if b.end + US < cut] for p, bars in october.items()}
+        context = standing_long(october, current, DIVIDER[1], START, cut)
+        if context != standing_long(prefix, current, DIVIDER[1], START, cut):
+            raise ValueError("OI_LEG_ROLE_PREFIX_CHANGED")
+        price = {row["confirmed_at"].isoformat(): lot_bound(current, row["available_at"],
+                         lots=base["observed_lots"], tick=specification["tick"], totals=totals)
+                 for events in base["geometry"].values() for row in events if row["available_at"] < cut}
+        relation = quote_relation(inside.end + US, quote)
+        results[label] = dict(
+            quote_anchor_verified=False, price_of_long_after_early_candidate=price,
+            raw_touch_minute_overlaps_quote=contact.start < quote and quote - ONE < contact.end,
+            completed_first_range_touch_relation=quote_relation(contact.end + US, quote),
+            completed_first_close_inside_relation=relation,
+            hypothetical_first_close_exit=dict(
+                prerequisites=["ASSUMED_QUOTE_MATCH_AND_SYNCHRONOUS_POSITION", "SAME_ACCOUNT_AND_LONG_ROLE",
+                               "FULL_LONG_EXIT_WHEN_FIRST_CLOSE_INSIDE_BECOMES_KNOWN", "NO_REENTRY_BEFORE_QUOTE"],
+                conflicts_with_visible_long=relation == "BEFORE_QUOTE_MINUTE",
+            ),
+            strong_side_context=context,
+        )
+    return dict(version="lms405-oi-protection-or-short-term-v1", contract=CONTRACT, sources=sources,
+                market=fingerprints, september_protection=protection, september_reversal=reversal,
+                october_full_trading_day=dict(maximum_high=max(b.high for b in october[1]), strength_proxy=oct_full),
+                october_divider_clocks=dict(range_touch_minute_end=contact.end, first_close_inside=inside.end),
+                october_quote_cases=results, october_actual_protection_band=None,
+                author_vplus=None, proven_author_leg_role=None, author_action_samples=0, author_match_rate=None,
+                assumptions=dict(october_comparison_upper_used_only_for_test=True,
+                                 september_window_starts=dict(protection=known_protection, reversal=known_recovery)),
+                executable=False, fills=None, pnl=None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--role-contrast", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -159,7 +277,8 @@ def main():
         quotes = verified_json(OCT27_QUOTES, FROZEN_COMPARISON_SHA256)
         specification = load_specs(verified_json(SPECS, SPECS_SHA))[CONTRACT]
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session), common, continuity, quotes, specification)
+            run = role_study if args.role_contrast else study
+            report = run(session, build_market_data_service(session), common, continuity, quotes, specification)
         report["input_sha256"] = dict(common=COMMON_SHA, continuity=CONTINUITY_SHA, quotes=FROZEN_COMPARISON_SHA256)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
