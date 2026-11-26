@@ -301,6 +301,47 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
     return transitions, blocked
 
 
+def replay_scoped_policy(bars, raw_minutes, cutoff, index, *, published_bands, right_entries, left_mode,
+                         advance_at_touch):
+    """Evaluate the same scoped policy across different completed history windows."""
+    symbol = bars[0].contract
+    series = {1: [Bar(symbol, bar.bar_end, *ohlc(bar), start=bar.bar_end - ONE) for bar in raw_minutes],
+              5: bars}
+    plans, _, sources = plan_rows(index, symbol) if published_bands else ((), {}, {})
+    scoped = branches(index, symbol) if right_entries else ()
+    left_scope = scope_for(index, symbol) if left_mode is not None else None
+    events = published_protection_events(series, plans, cutoff, advance_at_touch=advance_at_touch) if published_bands else []
+    entries = entry_events(series, scoped, cutoff)
+    left = left_signals(series, left_scope, cutoff)
+    left_args = dict(left_scope=left_scope, left_mode=left_mode)
+    actions, blocked = gated_replay(bars, cutoff, events, minutes=series[1],
+                                   right_branches=scoped, right_events=entries, left_events=left, **left_args)
+    for split in (bars[0].end, bars[len(bars) // 2].end, cutoff):
+        prefix = [b for b in bars if b.end + US < split]
+        sliced = {period: [b for b in candles if b.end + US < split] for period, candles in series.items()}
+        available = published_protection_events(sliced, plans, split,
+                                                 advance_at_touch=advance_at_touch) if published_bands else []
+        if [e for e in events if e["at"] < split] != [e for e in available if e["at"] < split]:
+            raise ValueError("PORTFOLIO_TASK_POLICY_SIGNAL_PREFIX_DIVERGED")
+        right_prefix = entry_events(sliced, scoped, split)
+        if right_prefix != [e for e in entries if e["at"] < split]:
+            raise ValueError("PORTFOLIO_TASK_POLICY_RIGHT_PREFIX_DIVERGED")
+        left_prefix = left_signals(sliced, left_scope, split)
+        if left_prefix != [e for e in left if e["signal_known_at"] < split]:
+            raise ValueError("PORTFOLIO_TASK_POLICY_LEFT_PREFIX_DIVERGED")
+        replayed = gated_replay(prefix, split, available, minutes=sliced[1], right_branches=scoped,
+                               right_events=right_prefix, left_events=left_prefix, **left_args)
+        expected = (
+            [item for item in actions if local_clock(item["at"]) < split],
+            [item for item in blocked if item["at"] < split],
+        )
+        if replayed != expected or replayed != gated_replay(bars, split, events, minutes=series[1],
+                                                           right_branches=scoped, right_events=entries,
+                                                           left_events=left, **left_args):
+            raise ValueError("PORTFOLIO_TASK_POLICY_PREFIX_DIVERGED")
+    return actions, blocked, sources, scoped, events, entries, left_scope, left
+
+
 def rolling_comparison(session, market, frozen, *, published_bands=False, right_entries=False, left_mode=None,
                        advance_at_touch=False):
     if left_mode is not None and (left_mode not in LEFT_MODES or not (published_bands and right_entries)):
@@ -313,40 +354,10 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
 
     def challenger(bars, raw_minutes, cutoff):
         symbol = bars[0].contract
-        series = {1: [Bar(symbol, bar.bar_end, *ohlc(bar), start=bar.bar_end - ONE) for bar in raw_minutes],
-                  5: bars}
-        plans, _, sources = plan_rows(index, symbol) if published_bands else ((), {}, {})
-        scoped = branches(index, symbol) if right_entries else ()
-        left_scope = scope_for(index, symbol) if left_mode is not None else None
-        events = published_protection_events(series, plans, cutoff, advance_at_touch=advance_at_touch) if published_bands else []
-        entries = entry_events(series, scoped, cutoff)
-        left = left_signals(series, left_scope, cutoff)
-        left_args = dict(left_scope=left_scope, left_mode=left_mode)
-        actions, blocked = gated_replay(bars, cutoff, events, minutes=series[1],
-                                       right_branches=scoped, right_events=entries, left_events=left, **left_args)
-        for split in (bars[0].end, bars[len(bars) // 2].end, cutoff):
-            prefix = [b for b in bars if b.end + US < split]
-            sliced = {period: [b for b in candles if b.end + US < split] for period, candles in series.items()}
-            available = published_protection_events(sliced, plans, split,
-                                                     advance_at_touch=advance_at_touch) if published_bands else []
-            if [e for e in events if e["at"] < split] != [e for e in available if e["at"] < split]:
-                raise ValueError("PORTFOLIO_TASK_POLICY_SIGNAL_PREFIX_DIVERGED")
-            right_prefix = entry_events(sliced, scoped, split)
-            if right_prefix != [e for e in entries if e["at"] < split]:
-                raise ValueError("PORTFOLIO_TASK_POLICY_RIGHT_PREFIX_DIVERGED")
-            left_prefix = left_signals(sliced, left_scope, split)
-            if left_prefix != [e for e in left if e["signal_known_at"] < split]:
-                raise ValueError("PORTFOLIO_TASK_POLICY_LEFT_PREFIX_DIVERGED")
-            replayed = gated_replay(prefix, split, available, minutes=sliced[1], right_branches=scoped,
-                                   right_events=right_prefix, left_events=left_prefix, **left_args)
-            expected = (
-                [item for item in actions if local_clock(item["at"]) < split],
-                [item for item in blocked if item["at"] < split],
-            )
-            if replayed != expected or replayed != gated_replay(bars, split, events, minutes=series[1],
-                                                               right_branches=scoped, right_events=entries,
-                                                               left_events=left, **left_args):
-                raise ValueError("PORTFOLIO_TASK_POLICY_PREFIX_DIVERGED")
+        actions, blocked, sources, scoped, events, entries, left_scope, left = replay_scoped_policy(
+            bars, raw_minutes, cutoff, index, published_bands=published_bands, right_entries=right_entries,
+            left_mode=left_mode, advance_at_touch=advance_at_touch,
+        )
         gates[symbol] = dict(directional_actions=sum(row["action"] != "LOCK" for row in actions),
                              blocked_locks=blocked)
         if published_bands:
