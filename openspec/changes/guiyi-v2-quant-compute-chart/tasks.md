@@ -33,7 +33,7 @@
 - [x] C5. 更新 Newow MACD auxiliary 使用 TA-Lib 12/26/9 原始输出的 active delta；保持 Newow API envelope、as-of、physical owner、warming 和 research-display-only 边界。
 - [ ] C6. 迁移 Web/牛哇/回测/快期/苏冰消费者到统一接口；每个消费者只请求自身需要的指标。
 - [ ] C7. 执行 60 品种 × 7 周期性能、内存、缓存、增量恢复、计算隔离和图表视觉回归。
-- [ ] C8. 完成独立 Review、OpenSpec strict validation、受影响测试和 develop 集成；同步已接受 delta 到 active specs 与 canonical。
+- [x] C8. 完成独立 Review、OpenSpec strict validation、受影响测试和 develop 集成；同步已接受 delta 到 active specs 与 canonical。
 
 ## 验收要求
 
@@ -58,3 +58,4 @@
 - C3 验证独立候选安装。Quant API 候选以独立消费锁校验 Python wheel，Web 锁定独立 tarball 的完整性。正式消费者升级与候选构建分开。
 - C6 Web 历史指标已接入批量计算队列，牛哇 MACD 保留同 owner 前缀，RQAlpha 使用独立冻结输入通过 17 项回归，快期 HTDY、苏冰独立模拟的 completed 消费、权威修订回调和持久化游标须与 Market Foundation 接口联验。牛哇正式盘后参考沿用原归档凭证入口。
 - C7 [M4 冻结性能结果](evidence/performance.json) 覆盖 415/420 个品种周期组合及 66,590 根已完成 Bar。OI/RS 日线与 PD/PT/RS 周线有源缺口。已做工作台夹具与图层资源释放验证，未更新在基线上同样失败的旧截图。完整 420 组合与 Market/模拟进程并行现场尚待联验。
+- C8 实现提交 `a92f3343634242c15095316c45004289b4be6a0d` 已进入远端 develop。后端定向 315 项、Web 1,430 项、RQAlpha 17 项、浏览器 7 项、Chart 包 5 项和独立 wheel 27 项通过。两侧独立 Review 的阻断项已修正复验，本 change 和同步后的牛哇 active spec 均通过 strict validation。
