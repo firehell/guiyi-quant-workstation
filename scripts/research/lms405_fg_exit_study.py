@@ -5,6 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from lms405_break_pressure_comparison import continuous_groups
 from lms405_fg_sa_cycle_order import fresh_geometry
 from lms405_m_permission_study import read_pair
 from lms405_opening_clock_comparison import boundary_clocks
@@ -56,6 +57,11 @@ ORDER_SCREEN_ROWS = {
     "WRoAkcEppg": ("1415102", "1415109", "102694086", "12979723"),
     "U03": ("1415102", "1415109", "102694086", "12979723", "49974780"),
 }
+JULY_PROTECTION = "S5318448139471722"
+JULY_BASELINE = Path("output/lms405-glass-lock-followup-20261125/reviewed.json")
+JULY_BASELINE_SHA = "cbc1a8e41badb0cf18cc97c3ce63b82953f916b5f863643561d0cd996690f9f8"
+ORDER_BASELINE = Path("output/lms405-fg-order-window-20261126/checked-c.json")
+ORDER_BASELINE_SHA = "6fd0463441b614e10548155951ed09a1971a67b5e54574e8dc898daecb3dccde"
 
 
 def fg_window(series, start, cutoff, side, *, after_report):
@@ -317,6 +323,104 @@ def order_window(session, market):
     )
 
 
+def new_crosses(minutes, edge, side):
+    return {run["fresh_crossing_known_at"]: end for end, run in strict_runs(minutes, edge, side).items()
+            if run["fresh_crossing_known_at"] is not None and run["close_count"] == 2}
+
+
+def first_same_segment_recapture(minutes, down, up):
+    for segment in continuous_groups(minutes):
+        first_down = next((end for end in down.values() if segment[0].start < end <= segment[-1].end), None)
+        if first_down is None:
+            continue
+        first_up = next((end for instant, end in up.items()
+                         if first_down + US < instant and end <= segment[-1].end), None)
+        if first_up is not None:
+            return dict(down_two_closes_at=first_down, recapture_two_closes_at=first_up)
+    return None
+
+
+def pressure_timeline(minutes, edge):
+    """Two-close crossing evidence in each direction and a same-session recovery."""
+    up = new_crosses(minutes, edge, "LONG")
+    down = new_crosses(minutes, edge, "SHORT")
+    return dict(first_up_two_closes_at=next(iter(up.values()), None),
+                first_down_two_closes_at=next(iter(down.values()), None),
+                up_after_down_in_same_segment=first_same_segment_recapture(minutes, down, up))
+
+
+def range_recapture(minutes, lower, upper):
+    return first_same_segment_recapture(minutes, new_crosses(minutes, lower, "SHORT"),
+                                        new_crosses(minutes, upper, "LONG"))
+
+
+def compare_exit_pressure(session, market):
+    july = verified_json(JULY_BASELINE, JULY_BASELINE_SHA)
+    order = verified_json(ORDER_BASELINE, ORDER_BASELINE_SHA)
+    index = input_sources()
+    cases = (
+        ("july_4_0_5_protection", "FG2609", "2026-07-08", JULY_PROTECTION, "LOCK_INTENDED", (957, 960)),
+        ("september_4_0_5_take_profit", CONTRACT, "2026-09-14", FG_REPORT, "TAKE_PROFIT_REPORTED", (940, 946)),
+        ("october_software_buy_close", CONTRACT, "2026-10-27", "U03", "BUY_CLOSE_ROW_VERSION_UNKNOWN",
+         (829, 836, 842, 844)),
+    )
+    observations = {}
+    for label, contract, date_text, source_id, statement, levels in cases:
+        source = index[source_id]
+        published = datetime.fromisoformat(source["published_at"])
+        series = read_window(session, market, contract, date.fromisoformat(date_text))
+        market_id = {f"{p}m": dict(count=len(rows), sha256=bar_digest(rows)) for p, rows in series.items()}
+        if source_id == JULY_PROTECTION:
+            frozen = july["market_digests"][date_text]
+            if any(row != {"count": frozen[p]["bars"], "sha256": frozen[p]["sha256"]}
+                   for p, row in market_id.items()):
+                raise ValueError("FG_PRESSURE_FROZEN_JULY_MARKET_CHANGED")
+        elif market_id["1m"]["sha256"] != MINUTE_HASHES[date_text]:
+            raise ValueError("FG_PRESSURE_FROZEN_MARKET_CHANGED")
+        is_order = source_id == "U03"
+        start = at(f"{date_text}T11:30") if is_order else series[1][0].start
+        cutoff = at(f"{date_text}T14:08") if is_order else series[1][-1].end + 2 * US
+        if not start < cutoff < published or (is_order and market_id != order["market"]):
+            raise ValueError("FG_PRESSURE_SOURCE_SCOPE_CHANGED")
+        active = completed(series[1], start, cutoff)
+        bounds = {str(edge): pressure_timeline(active, Decimal(edge)) for edge in levels}
+        bands = tuple(zip(levels[::2], levels[1::2]))
+        recaptures = {(lower, upper): range_recapture(active, Decimal(lower), Decimal(upper)) for lower, upper in bands}
+        clock_end = {
+            time for row in bounds.values() for time in (row["first_up_two_closes_at"],
+                                                        row["first_down_two_closes_at"],
+                                                        (row["up_after_down_in_same_segment"] or {}).get(
+                                                            "recapture_two_closes_at")) if time is not None
+        }
+        clock_end.update(pair["recapture_two_closes_at"] for pair in recaptures.values() if pair)
+        for end in sorted(clock_end):
+            prefix = completed(series[1], start, end + US)
+            for edge, row in bounds.items():
+                expected = {key: value if value and value < end else None for key, value in row.items()
+                            if not isinstance(value, dict)}
+                pair = row["up_after_down_in_same_segment"]
+                expected["up_after_down_in_same_segment"] = pair if pair and pair["recapture_two_closes_at"] < end else None
+                if pressure_timeline(prefix, Decimal(edge)) != expected:
+                    raise ValueError("FG_PRESSURE_PREFIX_CHANGED")
+            for (lower, upper), pair in recaptures.items():
+                expected = pair if pair and pair["recapture_two_closes_at"] < end else None
+                if range_recapture(prefix, Decimal(lower), Decimal(upper)) != expected:
+                    raise ValueError("FG_PRESSURE_RANGE_PREFIX_CHANGED")
+        geometry = fresh_geometry(series, start, cutoff, "LONG")
+        observations[label] = dict(
+            contract=contract, source_id=source_id, source=source, author_statement=statement,
+            start=start, cutoff_exclusive=cutoff, completed_minutes=len(active), market=market_id,
+            edges=bounds, long_geometry_counts={clock: len(events) for clock, events in geometry.items()},
+            full_range_recaptures={f"{lower}–{upper}": pair for (lower, upper), pair in recaptures.items()},
+            price_prefix_checks=len(clock_end), author_action_at=None, author_exit_trigger=None,
+        )
+    return dict(
+        version="lms405-fg-exit-pressure-study-v1", cases=observations, retrospective=True,
+        frozen_evidence_sha256={"july": JULY_BASELINE_SHA, "october": ORDER_BASELINE_SHA},
+        author_match_rate=None, admitted_author_samples=0, executable=False, fills=None, pnl=None,
+    )
+
+
 def compute(session, market):
     index = input_sources()
     sources = {key: index[key] | {"archive_sha256": sha((ARCHIVE.parent / index[key]["archive_path"]).read_bytes())}
@@ -345,6 +449,7 @@ def main():
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--september-clocks", action="store_true")
     group.add_argument("--order-window", action="store_true")
+    group.add_argument("--pressure-contrast", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -360,6 +465,8 @@ def main():
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
             if args.september_clocks:
                 run = compute_september_clocks
+            elif args.pressure_contrast:
+                run = compare_exit_pressure
             else:
                 run = order_window if args.order_window else compute
             result = run(session, build_market_data_service(session))
