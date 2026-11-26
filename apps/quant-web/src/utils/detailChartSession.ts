@@ -1,6 +1,6 @@
 import { createChartHost, type ChartHost, type LayerDiagnostics } from '@guiyi/quant-chart'
 import type { DisplayVolumeBar } from './volumeDisplay.ts'
-import type { createChart, IChartApi, LogicalRange, SeriesType, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
+import type { createChart, IChartApi, IRange, LogicalRange, SeriesType, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
 import { createPriceSeriesWriter } from './priceSeriesWriter.ts'
 import { ExecutionOverlayPrimitive, type ExecutionOverlayPoint } from '../components/kline/executionOverlayPrimitive.ts'
 import { toChartTimeForPeriod } from './barTime.ts'
@@ -28,9 +28,17 @@ export function detailChartVolumeBars(chart: IChartApi, incoming: readonly Displ
 }
 const volumeInputs = new WeakMap<IChartApi, (incoming: readonly DisplayVolumeBar[]) => readonly DisplayVolumeBar[]>()
 const owners = new WeakMap<IChartApi, DetailChartSession>()
+const automaticViewports = new WeakMap<IChartApi, (range: IRange<number> | null) => void>()
 /** A strategy adapter can recover the page-owned viewport without owning the canvas. */
 export function detailChartViewport(chart: IChartApi): LogicalRange | null {
   return owners.get(chart)?.viewport() ?? null
+}
+/** A default fit must not become a user viewport on a reused chart. */
+export function placeDetailChartViewport(chart: IChartApi, range: IRange<number> | null): void {
+  const place = automaticViewports.get(chart)
+  if (place) place(range)
+  else if (range) chart.timeScale().setVisibleLogicalRange(range)
+  else chart.timeScale().fitContent()
 }
 export function resetDetailChartWindow(chart: IChartApi): void { owners.get(chart)?.resetWindow() }
 export function detailChartIndex(chart: IChartApi, time: Time, fallback: number): number {
@@ -134,6 +142,7 @@ export function createDetailChartSession(dependencies: {
     cursor = null
     chart?.clearCrosshairPosition?.()
     setExecutions([])
+    viewports.delete(identity)
     ownsViewport = false; hasPrices = false
     clearPriceWindow()
   }
@@ -209,6 +218,17 @@ export function createDetailChartSession(dependencies: {
       host = createChartHost(chart)
       chart.subscribeCrosshairMove?.(rememberCursor)
       host.own(() => chart?.unsubscribeCrosshairMove?.(rememberCursor))
+      const viewportSurface = surface
+      const claimWheel = () => { if (hasPrices) ownsViewport = true }
+      const claimDrag = (event: PointerEvent) => {
+        if (hasPrices && (event.buttons & 1) && (event.movementX || event.movementY)) ownsViewport = true
+      }
+      viewportSurface.addEventListener?.('wheel', claimWheel, { capture: true, passive: true })
+      viewportSurface.addEventListener?.('pointermove', claimDrag, { capture: true, passive: true })
+      host.own(() => {
+        viewportSurface.removeEventListener?.('wheel', claimWheel, true)
+        viewportSurface.removeEventListener?.('pointermove', claimDrag, true)
+      })
     } else {
       chart.applyOptions(options ?? {})
       if (retainedRange && hasPrices) chart.timeScale().setVisibleLogicalRange(retainedRange)
@@ -358,6 +378,11 @@ export function createDetailChartSession(dependencies: {
       return member(target, property)
     } })
     owners.set(lease, session)
+    automaticViewports.set(lease, range => {
+      if (!active) return
+      if (range) native.timeScale().setVisibleLogicalRange(range)
+      else native.timeScale().fitContent()
+    })
     volumeInputs.set(lease, incoming => active ? mergeVolumeBars(incoming) : incoming)
     return lease
   }

@@ -10,7 +10,7 @@ import { DYNAMIC_RANGE_VERSION, matchesRangeBar, pointKey, type DynamicRangeDisp
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { inject, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
-import { DETAIL_CHART_SESSION, detailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
+import { DETAIL_CHART_SESSION, detailChartViewport, placeDetailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
   ColorType,
   createChart,
@@ -227,6 +227,7 @@ let renderedMarkerById = new Map<string, KlineMarker>()
 const drawnMarkers = shallowRef<KlineMarker[]>([])
 let viewportStabilityFrame: number | null = null
 let viewportStabilityTarget: ChartViewportRange | null = null
+let viewportStabilityAutomatic = false
 let viewportStableFrames = 0
 let viewportStabilityAttempts = 0
 
@@ -469,9 +470,8 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   const mappedSessionViewport = previousSessionViewport !== null ? detailChartViewport(chart) : null
   const targetRange = detailSession ? mappedSessionViewport ?? initialNewowChartLogicalRange(renderedBars.length, container.value?.clientWidth ?? 1000)
     : visibleRange ?? initialChartLogicalRange(renderedBars.length)
-  if (targetRange) chart.timeScale().setVisibleLogicalRange(targetRange)
-  else chart.timeScale().fitContent()
-  beginViewportStabilityCheck(targetRange)
+  placeDetailChartViewport(chart, targetRange)
+  beginViewportStabilityCheck(targetRange, detailSession !== null && mappedSessionViewport === null)
   requestAnimationFrame(() => {
     // Initial placement is not a pagination request. Even when the first
     // page fills the viewport, the first user move toward its left edge
@@ -483,24 +483,35 @@ function replaceBars(bars: BarData[], preserveViewport = false): void {
   })
 }
 
-function beginViewportStabilityCheck(target: ChartViewportRange | null): void {
+function beginViewportStabilityCheck(target: ChartViewportRange | null, automatic = false): void {
   if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
   viewportStabilityTarget = target
+  viewportStabilityAutomatic = automatic
   viewportStableFrames = 0
   viewportStabilityAttempts = 0
   chartViewportReady.value = false
   if (target) viewportStabilityFrame = requestAnimationFrame(checkViewportStability)
 }
 
+function canStabilizeViewport(chart: IChartApi): boolean {
+  if (!viewportStabilityTarget) return false
+  if (viewportStabilityAutomatic && detailChartViewport(chart) !== null) {
+    viewportStabilityTarget = null
+    chartViewportReady.value = true
+    return false
+  }
+  return true
+}
+
 function checkViewportStability(): void {
   viewportStabilityFrame = null
-  if (!chart || !viewportStabilityTarget) return
+  if (!chart || !canStabilizeViewport(chart) || !viewportStabilityTarget) return
   viewportStabilityAttempts += 1
   const actual = chart.timeScale().getVisibleLogicalRange()
   if (sameLogicalRange(actual, viewportStabilityTarget)) viewportStableFrames += 1
   else {
     viewportStableFrames = 0
-    chart.timeScale().setVisibleLogicalRange(viewportStabilityTarget)
+    placeDetailChartViewport(chart, viewportStabilityTarget)
   }
   if (viewportStableFrames >= REQUIRED_VIEWPORT_STABLE_FRAMES) {
     chartViewportReady.value = true
@@ -522,6 +533,9 @@ function prependBars(bars: BarData[]): void {
   if (!chart || !bars.length) return
   const previousLength = renderedBars.length
   const visibleRange = chart.timeScale().getVisibleLogicalRange()
+  const firstBar = renderedBars.at(0)
+  const anchor = firstBar ? chartTime(firstBar) : null
+  const previousIndex = detailSession && anchor !== null ? detailChartIndex(chart, anchor, 0) : 0
   renderedBars = normalizeBarSeries([...bars, ...renderedBars])
   const prependedCount = renderedBars.length - previousLength
   if (!prependedCount) return
@@ -533,9 +547,14 @@ function prependBars(bars: BarData[]): void {
   paginationArmed = false
   renderAllSeries()
   if (detailSession) {
-    const mapped = detailChartViewport(chart)
-    if (viewportStabilityTarget) viewportStabilityTarget = mapped
-    if (mapped) chart.timeScale().setVisibleLogicalRange(mapped)
+    const offset = anchor === null ? prependedCount : detailChartIndex(chart, anchor, prependedCount) - previousIndex
+    const owned = detailChartViewport(chart)
+    const shift = (range: ChartViewportRange | null) => range && { from: range.from + offset, to: range.to + offset }
+    if (viewportStabilityTarget && canStabilizeViewport(chart)) {
+      viewportStabilityTarget = owned ?? shift(viewportStabilityTarget)
+    }
+    const mapped = owned ?? shift(visibleRange)
+    if (mapped) placeDetailChartViewport(chart, mapped)
   } else if (visibleRange) {
     chart.timeScale().setVisibleLogicalRange({
       from: visibleRange.from + prependedCount,
@@ -1216,9 +1235,9 @@ function resize() {
   if (!container.value || !chart) return
   if (detailSession) syncPaneLayout()
   chart.resize(container.value.clientWidth, container.value.clientHeight)
-  if (viewportStabilityTarget) {
+  if (viewportStabilityTarget && canStabilizeViewport(chart)) {
     viewportStableFrames = 0
-    chart.timeScale().setVisibleLogicalRange(viewportStabilityTarget)
+    placeDetailChartViewport(chart, viewportStabilityTarget)
   }
   requestAnimationFrame(syncMacdLabelTop)
 }

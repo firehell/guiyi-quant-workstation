@@ -20,9 +20,9 @@ import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonch
 import {newowReferencePoints,newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,inject,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
 import {createChart,type CandlestickData,type IChartApi,type ISeriesApi,type Time,type IRange} from 'lightweight-charts'
-import {DETAIL_CHART_SESSION,detailChartVolumeBars, detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
+import {DETAIL_CHART_SESSION,detailChartVolumeBars, detailChartViewport,placeDetailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
 import {getNewowExperiment,getNewowExperimentHistory} from '@/api/newowExperiments'
-import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
+import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentBar,type ExperimentKind} from '@/utils/newowExperiments'
 import {formatPerformancePercent} from '@/utils/marketDisplay'
 import {pagePerformanceAnnualized} from '@/utils/newowPagePerformance'
 import {layoutNiuwaReferenceCallouts,type PositionedCallout} from '@/utils/referenceCalloutLayout'
@@ -129,6 +129,7 @@ function applySharedCursor(value:Time|null){
  else chart?.clearCrosshairPosition()
 }
 let resetViewport=false
+let framedBars: readonly ExperimentBar[] | null = null
 watch([data,selectedSegment],()=>{sharedViewport.value=null;sharedCursor.value=null})
 watch(selectedSegment,()=>{if(chart){resetDetailChartWindow(chart);resetViewport=true}})
 function renderVisual(){
@@ -353,13 +354,16 @@ function renderChannel() {
 
 function render(){
  if (!chart || !host) return
- const viewport = resetViewport ? null : detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange()
+ const standaloneRange = !detailSession && !resetViewport ? chart.timeScale().getVisibleLogicalRange() : null
+ const shouldFrame = resetViewport || framedBars !== chartBars.value
  resetViewport = false
  renderPrice()
  renderVolume(chart)
  renderChannel()
- if (viewport && priceWritten) chart.timeScale().setVisibleLogicalRange(viewport)
- else chart.timeScale().fitContent()
+ if (priceWritten && chartBars.value.length) {
+  if (!detailSession || (shouldFrame && !detailChartViewport(chart))) placeDetailChartViewport(chart, standaloneRange)
+  framedBars = chartBars.value
+ }
  publishViewport()
  renderVisual()
  projectCallouts()

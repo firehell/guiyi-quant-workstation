@@ -9,7 +9,7 @@ import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { cautionDisplayTitle, cautionStateLabel, type CautionState } from '@/utils/newowCautionDisplay.ts'
 import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vue'
-import { DETAIL_CHART_SESSION, detailChartTime, detailChartVolumeBars, detailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
+import { DETAIL_CHART_SESSION, detailChartTime, detailChartVolumeBars, detailChartViewport, placeDetailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
 import NewowChartSettings, { type NewowChartLayers } from './NewowChartSettings.vue'
@@ -639,8 +639,9 @@ function identityKey(value: NewowProductChartModel): string {
 function axisKey(bars: NewowProductChartModel['bars']): string { return JSON.stringify(bars.map(bar => [bar.barEnd, bar.physicalContract, bar.calculationSegmentId])) }
 function rememberViewport(): void {
   if (!renderedIdentity || !chart) return
+  const range = detailSession ? detailChartViewport(chart) : retainedVisibleRange ?? chart.timeScale().getVisibleLogicalRange()
   rememberNewowUiPreferences(`newow:${renderedIdentity.product}:${renderedIdentity.strategy}:${renderedIdentity.frequency}`, { chart: {
-    axis: axisKey(renderedBars), range: retainedVisibleRange ?? chart.timeScale().getVisibleLogicalRange(), detail: detailLabels.value,
+    axis: axisKey(renderedBars), range, detail: detailLabels.value,
     actions: showActions.value, structure: showStructure.value, hints: showHints.value,
     breakouts: showBreakoutShapes.value, wicks: showBreakoutWicks.value, trendTrack: trendTrack.value,
     oscillationTrack: oscillationTrack.value, comparisonBackground: comparisonBackground.value,
@@ -878,18 +879,18 @@ function renderModel(value: NewowProductChartModel | null): void {
     setRange(sharedViewport)
   } else if (renderedIdentity !== null && initialPreferences?.range && initialPreferences.axis === axisKey(value.bars)) {
     followLatest.value = false
-    setRange(initialPreferences.range)
+    setRange(initialPreferences.range, true)
   } else if (resetViewport || previousModel === null || renderedBars.length === 0) {
     followLatest.value = true
     resolvedSignalKey = null
     resolvedFocusRequestKey = null
     const range = initialNewowChartLogicalRange(value.bars.length, container.value?.clientWidth ?? 1000)
-    if (range === null) chart.timeScale().fitContent()
-    else setRange(range)
+    if (range === null) placeDetailChartViewport(chart, null)
+    else setRange(range, true)
   } else if (prepended > 0 && previousRange !== null) {
-    setRange({ from: previousRange.from + prepended, to: previousRange.to + prepended })
+    setRange({ from: previousRange.from + prepended, to: previousRange.to + prepended }, true)
   } else if (previousRange !== null) {
-    setRange(previousRange)
+    setRange(previousRange, true)
   }
   renderedBars = value.bars
   renderedIdentity = { ...value.identity }
@@ -1308,11 +1309,12 @@ function onRangeChange(range: LogicalRange | null): void {
   nearLeftBoundary = nearLeft
 }
 
-function setRange(range: { from: number; to: number }): void {
+function setRange(range: { from: number; to: number }, automatic = false): void {
   paginationArmed = false
   programmaticRange = range
   nearLeftBoundary = range.from < firstLogicalIndex() + 10
-  chart?.timeScale().setVisibleLogicalRange(range as LogicalRange)
+  if (chart && automatic) placeDetailChartViewport(chart, range)
+  else chart?.timeScale().setVisibleLogicalRange(range as LogicalRange)
   armPagination()
 }
 

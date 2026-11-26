@@ -309,6 +309,50 @@ async function appVueModuleUrl(page) {
     .find(entry => new URL(entry.name).pathname === '/node_modules/.vite/deps/vue.js')?.name)).jsonValue()
 }
 
+test('shared K-line keeps its automatic target when earlier history arrives before frame stabilization', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+  const vueUrl = await appVueModuleUrl(page)
+  const nativeUrl = await (await page.waitForFunction(() => performance.getEntriesByType('resource')
+    .find(entry => new URL(entry.name).pathname.endsWith('/lightweight-charts.js'))?.name)).jsonValue()
+  const beforeFrame = await page.evaluate(async ({ vueUrl, nativeUrl }) => {
+    const [{ createApp, h, nextTick, ref }, { createChart }, { default: KlineChart }, { DETAIL_CHART_SESSION, createDetailChartSession }] = await Promise.all([
+      import(vueUrl), import(nativeUrl), import('/src/components/kline/KlineChart.vue'), import('/src/utils/detailChartSession.ts'),
+    ])
+    const root = document.createElement('div')
+    root.style.width = '1200px'
+    root.id = 'prepend-before-stable'
+    document.body.append(root)
+    let native
+    const session = createDetailChartSession({ createChart(...args) { native = createChart(...args); return native } })
+    const chart = ref(null)
+    const start = Date.parse('2026-09-03T01:00:00Z')
+    const bars = Array.from({ length: 30 }, (_, index) => ({
+      time: new Date(start + index * 900_000).toISOString(), trading_day: '2026-09-03', physicalContract: 'JM2601',
+      open: 100, high: 104, low: 99, close: 103, volume: 10, confirmed: true,
+    }))
+    const app = createApp({ render: () => h(KlineChart, { ref: chart, bars: bars.slice(10), seriesKind: 'actual_dominant' }) })
+    app.provide(DETAIL_CHART_SESSION, session)
+    app.mount(root)
+    await nextTick()
+    const readyBefore = root.querySelector('[data-chart-viewport-ready]').dataset.chartViewportReady
+    const countBefore = session.length()
+    chart.value.prependBars(bars.slice(0, 10))
+    window.__prependBeforeStable = {
+      read: () => native.timeScale().getVisibleLogicalRange(),
+      stop: () => { app.unmount(); session.dispose(); root.remove() },
+    }
+    return { readyBefore, countBefore, countAfter: session.length(), userRange: session.viewport() }
+  }, { vueUrl, nativeUrl })
+  try {
+    expect(beforeFrame).toEqual({ readyBefore: 'false', countBefore: 20, countAfter: 30, userRange: null })
+    await expect(page.locator('#prepend-before-stable [data-chart-viewport-ready]')).toHaveAttribute('data-chart-viewport-ready', 'true')
+    expect(await page.evaluate(() => window.__prependBeforeStable.read())).toEqual({ from: 9.5, to: 29.5 })
+  } finally {
+    await page.evaluate(() => window.__prependBeforeStable.stop())
+  }
+})
+
 test('shared K-line focus retries an unresolved target and clears it on identity replacement', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)

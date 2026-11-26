@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createChartHost } from '@guiyi/quant-chart'
-import { createDetailChartSession, detailChartVolumeBars, detailChartIndex, detailChartLength, detailChartTimeAt } from '../src/utils/detailChartSession.ts'
+import { createDetailChartSession, detailChartVolumeBars, detailChartIndex, detailChartLength, detailChartTimeAt, placeDetailChartViewport } from '../src/utils/detailChartSession.ts'
 
 function fixture() {
   const calls = { creates: 0, removes: 0, candles: 0, updates: 0, overlays: 0, detached: 0 }
   let range: any = { from: 3, to: 7 }
-  const container = () => ({ style: {}, appendChild() {}, clientWidth: 1000, clientHeight: 700 }) as any
+  const surfaceListeners = new Map<string, (event: any) => void>()
+  const container = () => ({ style: {}, appendChild() {}, clientWidth: 1000, clientHeight: 700,
+    addEventListener(name: string, listener: (event: any) => void) { surfaceListeners.set(name, listener) },
+    removeEventListener(name: string, listener: (event: any) => void) {
+      if (surfaceListeners.get(name) === listener) surfaceListeners.delete(name)
+    },
+  }) as any
   const scale = { getVisibleLogicalRange: () => range, setVisibleLogicalRange: (value: any) => { range = value } }
   const panes = [0, 1, 2].map(() => ({ setStretchFactor() {} }))
   const raw = {
@@ -17,7 +23,7 @@ function fixture() {
   const session = createDetailChartSession({ createChart: (() => { calls.creates++; return raw }) as any, createContainer: container })
   const candle = { type: 'Candlestick' } as any, line = { type: 'Line' } as any
   const bars = [{ time: 1, open: 1, high: 2, low: 1, close: 2 }]
-  return { session, calls, raw, container, candle, line, bars }
+  return { session, calls, raw, container, candle, line, bars, surfaceListeners }
 }
 
 test('one price series and canvas survive an adapter change without rewriting unchanged candles', () => {
@@ -257,6 +263,28 @@ test('native automatic placement is not a saved user viewport, and a live adapte
   f.session.setIdentity('jm:60m'); candles.setData(f.bars)
   assert.equal(f.calls.candles, 3, 'same component can accept new-period prices after the clear')
   f.session.dispose()
+})
+
+for (const gesture of ['wheel', 'pointermove']) test(`automatic viewport placement yields to ${gesture} and releases its listener`, () => {
+  const f = fixture()
+  f.session.setIdentity('jm:1d')
+  const first = f.session.acquire(f.container(), {})
+  first.addSeries(f.candle).setData(f.bars)
+  placeDetailChartViewport(first, { from: 0, to: 1 })
+  assert.deepEqual(first.timeScale().getVisibleLogicalRange(), { from: 0, to: 1 })
+  assert.equal(f.session.viewport(), null)
+  f.surfaceListeners.get('pointermove')?.({ buttons: 0, movementX: 3, movementY: 0 })
+  assert.equal(f.session.viewport(), null)
+  f.surfaceListeners.get(gesture)?.({ buttons: 1, movementX: 3, movementY: 0 })
+  f.raw.timeScale().setVisibleLogicalRange({ from: .1, to: 1.1 })
+  assert.deepEqual(f.session.viewport(), { from: .1, to: 1.1 })
+  const second = f.session.acquire(f.container(), {})
+  placeDetailChartViewport(first, { from: 7, to: 8 })
+  assert.deepEqual(second.timeScale().getVisibleLogicalRange(), { from: .1, to: 1.1 })
+  f.session.resetWindow()
+  assert.equal(f.session.viewport(), null)
+  f.session.dispose()
+  assert.equal(f.surfaceListeners.size, 0)
 })
 
 test('a shorter identical suffix retains loaded history and the same visible bars', () => {
