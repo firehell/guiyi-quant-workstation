@@ -48,6 +48,31 @@ test('late writes and disposal from an obsolete adapter cannot alter the active 
   f.session.dispose()
 })
 
+for (const reuse of [false, true]) test(`an unsuccessful primary candle ${reuse ? 'configuration' : 'allocation'} leaves the lease eligible for retry`, () => {
+  const f = fixture()
+  const addSeries = f.raw.addSeries.bind(f.raw)
+  let fail = !reuse
+  let candles = 0
+  f.raw.addSeries = (definition: typeof f.candle) => {
+    if (definition.type === 'Candlestick' && fail) throw Error('primary candle failure')
+    if (definition.type === 'Candlestick') candles++
+    return Object.assign(addSeries(definition), { applyOptions() { if (fail) throw Error('primary candle failure') } })
+  }
+  if (reuse) {
+    const first = f.session.acquire(f.container(), {})
+    first.addSeries(f.candle).setData(f.bars)
+    first.remove()
+    fail = true
+  }
+  const lease = f.session.acquire(f.container(), {})
+  assert.throws(() => lease.addSeries(f.candle), /primary candle failure/)
+  fail = false
+  lease.addSeries(f.candle).setData([...f.bars, { ...f.bars[0]!, time: 2 }])
+  assert.equal(f.session.length(), 2)
+  assert.equal(candles, 1)
+  f.session.dispose()
+})
+
 test('a partial native attachment is removed through the page lease before an indicator retry', () => {
   const f = fixture()
   const original = f.raw.addSeries.bind(f.raw)

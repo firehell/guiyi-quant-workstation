@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { experimentVolumeBars, type ExperimentVolumeSource } from '@/utils/newowExperimentVolume'
-import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS } from '@/utils/volumeDisplay'
+import { volumeColors, validVolume, VOLUME_DISPLAY_VERSION, VOLUME_SCALE_OPTIONS } from '@/utils/volumeDisplay'
 import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
+import { createChartHost, DISPLAY_CATALOG, type ChartHost } from '@guiyi/quant-chart'
+import ChartLayerDiagnostics from '../../../kline/ChartLayerDiagnostics.vue'
 
 import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
 import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
@@ -17,7 +19,7 @@ import NewowVisualOverlayControls from './NewowVisualOverlayControls.vue'
 import { readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import {newowReferencePoints,newowReferencePrice,newowReferencePercent} from '@/utils/newowPagePresentation'
 import {computed,inject,onBeforeUnmount,onMounted,ref,shallowRef,watch} from 'vue'
-import {createChart,CandlestickSeries,HistogramSeries,LineSeries,createSeriesMarkers,type IChartApi,type ISeriesMarkersPluginApi,type Time,type IPriceLine,type IRange} from 'lightweight-charts'
+import {createChart,type CandlestickData,type IChartApi,type ISeriesApi,type Time,type IRange} from 'lightweight-charts'
 import {DETAIL_CHART_SESSION,detailChartVolumeBars, detailChartViewport,detailChartTime,detailChartIndex,resetDetailChartWindow,type DetailChartSession} from '@/utils/detailChartSession'
 import {getNewowExperiment,getNewowExperimentHistory} from '@/api/newowExperiments'
 import {EXPERIMENT_OPTIONS,ExperimentRequestGeneration,experimentRangeParams,experimentVisibleSegments,experimentMarkerLabel,type ExperimentRange,type ExperimentDetail,type ExperimentKind} from '@/utils/newowExperiments'
@@ -30,6 +32,11 @@ const props=defineProps<{product:string;frequency:string;kind:ExperimentKind;asO
 const detailSession=inject<DetailChartSession|null>(DETAIL_CHART_SESSION,null)
 let retainedStop:RetainedBuildStop|null=null
 const data=shallowRef<ExperimentDetail|null>(null),loading=ref(false),error=ref<string|null>(null),container=ref<HTMLElement|null>(null)
+const inputRejected = ref(false)
+const requestErrorCode = computed(() => inputRejected.value ? 'NEWOW_RESPONSE_INVALID' : error.value ? 'NEWOW_EXPERIMENT_UNAVAILABLE' : null)
+function emptyLayerStatus() {
+ return loading.value ? 'loading' : inputRejected.value ? 'invalid_source' : error.value ? 'compute_error' : 'missing_input'
+}
 const visualOverlays=ref(readVisualOverlayPreferences())
 watch(visualOverlays,value=>{saveVisualOverlayPreferences(value);render()})
 const range=ref<ExperimentRange>('1y')
@@ -57,7 +64,7 @@ async function moreRecords(){
   historyRows.value=historyStarted.value?[...historyRows.value,...page.items]:page.items;historyStarted.value=true;historyBefore.value=page.next_before;recordCount.value=historyRows.value.length
  }catch(failure){if(own===historyGeneration){
   const classification=failure instanceof Error && 'classification' in failure ? failure.classification : null
-  if(classification==='conflict'||classification==='response_invalid'){resetHistory();data.value=null;error.value='快照已变化或响应校验失败，旧结果已清除，请重试当前实验。'}
+  if(classification==='conflict'||classification==='response_invalid'){resetHistory();data.value=null;inputRejected.value=true;error.value='快照已变化或响应校验失败，旧结果已清除，请重试当前实验。'}
   else historyError.value='历史记录暂时读取失败，请重试。'
  }}finally{if(own===historyGeneration)historyLoading.value=false}
 }
@@ -75,12 +82,38 @@ const curvePlot=computed(()=>{
 })
 const option=computed(()=>EXPERIMENT_OPTIONS.find(x=>x.kind===props.kind)!)
 const generation=new ExperimentRequestGeneration()
-async function load(){const token=generation.begin();data.value=null;selectedSegment.value=null;retainedStop=null;error.value=null;loading.value=true;if(!props.asOf){loading.value=false;return}try{const result=await getNewowExperiment({product:props.product,frequency:props.frequency,kind:props.kind,as_of:props.asOf,...experimentRangeParams(props.asOf,range.value)},token.signal);if(token.current())data.value=result}catch{if(token.current())error.value='实验数据暂不可用，请重试。'}finally{if(token.current())loading.value=false}}
+async function load() {
+ const token = generation.begin()
+ data.value = null
+ selectedSegment.value = null
+ retainedStop = null
+ error.value = null
+ inputRejected.value = false
+ if (!props.asOf) { loading.value = false; return }
+ loading.value = true
+ try {
+  const result = await getNewowExperiment({ product: props.product, frequency: props.frequency, kind: props.kind,
+   as_of: props.asOf, ...experimentRangeParams(props.asOf, range.value) }, token.signal)
+  if (token.current()) data.value = result
+ } catch (failure) {
+  if (!token.current()) return
+  const classification = failure instanceof Error && 'classification' in failure ? failure.classification : null
+  inputRejected.value = classification === 'response_invalid' || classification === 'conflict'
+  error.value = '实验数据暂不可用，请重试。'
+ } finally {
+  if (token.current()) loading.value = false
+ }
+}
 watch(()=>[props.product,props.frequency,props.kind,props.asOf,range.value],load,{immediate:true})
 let chart:IChartApi|null=null,observer:ResizeObserver|null=null
-let candles:ReturnType<IChartApi['addSeries']>|null=null,upper:ReturnType<IChartApi['addSeries']>|null=null,lower:ReturnType<IChartApi['addSeries']>|null=null
-let volume:ReturnType<IChartApi['addSeries']>|null=null
-let markers:ISeriesMarkersPluginApi<Time>|null=null
+let host: ChartHost | null = null
+let candles: ISeriesApi<'Candlestick'> | null = null
+let priceWritten = false
+let priceWriteFailed = false
+let volume: ISeriesApi<'Histogram'> | null = null
+let upper: ISeriesApi<'Line'> | null = null
+let lower: ISeriesApi<'Line'> | null = null
+function inspectLayers() { return host?.diagnostics() ?? [] }
 const time=(text:string):Time=>detailChartTime({time:text,trading_day:formatChartTimeInShanghai(text).slice(0,10)},props.frequency)
 const sharedViewport=shallowRef<IRange<Time>|null>(null),sharedCursor=shallowRef<Time|null>(null),sharedRightScaleWidth=ref(0)
 function publishViewport(){sharedRightScaleWidth.value=chart?.priceScale?.('right').width?.()??0;sharedViewport.value=chartBars.value.length?chart?.timeScale().getVisibleRange?.()??null:null}
@@ -98,78 +131,288 @@ function applySharedCursor(value:Time|null){
 let resetViewport=false
 watch([data,selectedSegment],()=>{sharedViewport.value=null;sharedCursor.value=null})
 watch(selectedSegment,()=>{if(chart){resetDetailChartWindow(chart);resetViewport=true}})
-let stopLine:IPriceLine|null=null
-const visualLines:ReturnType<IChartApi['addSeries']>[]=[]
 function renderVisual(){
- if(!chart||!candles)return
- for(const line of visualLines)chart.removeSeries(line)
- visualLines.length=0
- if(stopLine)candles.removePriceLine(stopLine)
- stopLine=null
+ if(!chart||!host)return
+ host.removeLayer('donchian')
+ host.removeLayer('stop')
+ if(!candles || !priceWritten)return
  const bars=chartBars.value
  if(visualOverlays.value.donchian){
   const points=visualDonchian(bars.map(b=>({time:b.bar_end,high:Number(b.high),low:Number(b.low),owner:`${b.physical_contract}:${b.segment_id}`})),visualOverlays.value.window)
-  for(const [side,color] of [['upper','rgba(52,199,89,0.7)'],['lower','rgba(255,59,48,0.7)']] as const){
-   const line=chart.addSeries(LineSeries,{color,lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false})
-   line.setData(points.map(p=>({time:time(p.time),...(p[side]===null?{}:{value:p[side]!})})))
-   visualLines.push(line)
-  }
+  host.renderLayer('donchian', 'newow_donchian', 'main', 'band', layer => {
+   for(const [side,color] of [['upper','rgba(52,199,89,0.7)'],['lower','rgba(255,59,48,0.7)']] as const){
+    const line=layer.line({color,lineWidth:1,lineStyle:2,priceLineVisible:false,lastValueVisible:false})
+    line.setData(points.map(p=>({time:time(p.time),...(p[side]===null?{}:{value:p[side]!})})))
+   }
+   const last = points.filter(point => point.upper !== null && point.lower !== null).at(-1)
+   layer.updateDiagnostics({ ...experimentDiagnostics(last?.time),
+    formulaVersion: displayFormula('newow_donchian'),
+    status: last ? 'ready' : bars.length ? 'warming' : 'missing_input',
+    warmup: { available: Math.min(bars.length, visualOverlays.value.window), required: visualOverlays.value.window },
+   })
+  })
  }
  const range=chart.timeScale().getVisibleLogicalRange()
  const visible=bars.filter((bar,i)=>{const index=detailChartIndex(chart!,time(bar.bar_end),i);return !range||(index>=Math.ceil(range.from)&&index<=Math.floor(range.to))})
  const pct=props.kind==='osc-test4'?0.12:0.07
  retainedStop=retainBuildStop(retainedStop, `${props.product}:${props.frequency}:${props.kind}`, chartMarkers.value.map(m=>({time:m.bar_end,owner:`${m.physical_contract}:${m.segment_id}`,price:m.reference_price,action:m.action})),visible.map(b=>({time:b.bar_end,owner:`${b.physical_contract}:${b.segment_id}`})))
  const price=retainedStopPrice(retainedStop,pct)
- if(price!==null&&props.kind!=='osc-test5')stopLine=candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
+ const anchor = candles
+ if (price !== null && retainedStop && props.kind !== 'osc-test5') {
+  const cutoff = retainedStop.anchor.time
+  host.renderLayer('stop', 'newow_stop', 'main', 'price_level_zone', layer => {
+   layer.priceLevel(anchor,{price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:`止损价（−${pct*100}%）`,axisLabelVisible:true})
+   layer.updateDiagnostics({ ...experimentDiagnostics(cutoff), formulaVersion: displayFormula('newow_stop'), status: 'ready' })
+  })
+ }
 }
 const callouts=shallowRef<PositionedCallout[]>([])
 const breakoutPoints=ref<BreakoutPoint[]>([]),showBreakoutShapes=ref(true),showBreakoutWicks=ref(true)
 const displayPoints=ref<DisplayPoint[]>([]),displayWidth=ref(0),displayHeight=ref(0)
-watch(()=>[props.product,props.frequency,props.kind],()=>{breakoutPoints.value=[]},{flush:'sync'})
-function projectCallouts(){
- breakoutPoints.value=[]
-  displayPoints.value=[]
- if(!chart||!candles||!container.value)return
- const scale=chart.timeScale(),width=scale.width?.()??container.value.clientWidth,height=chart.panes()[0]?.getHeight?.()??414
- displayWidth.value=width;displayHeight.value=height
- const bars=chartBars.value
- displayPoints.value=(data.value?.display_events??[]).flatMap(event=>{
-  if(event.kind==='TREND_REVERSAL')return []
-  const bar=bars.find(b=>b.bar_end===event.bar_end&&b.physical_contract===event.physical_contract&&b.segment_id===event.segment_id)
-  if(!bar)return []
-  const x=scale.timeToCoordinate(time(bar.bar_end)),y=candles!.priceToCoordinate(Number(event.kind==='OSC_BREAKDOWN'?bar.low:event.kind==='ZLGJ_J'?String(Number(bar.high)*1.01):bar.high))
-  return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y}]:[]
- })
- const breakoutRange=scale.getVisibleLogicalRange(),breakoutCandleWidth=Math.max(2,width/Math.max(1,breakoutRange?breakoutRange.to-breakoutRange.from:bars.length)*.6)
- breakoutPoints.value=(props.kind==='osc-test5'?data.value?.breakout_events??[]:[]).flatMap(event=>{
-  const bar=bars.find(b=>b.bar_end===event.bar_end&&b.physical_contract===event.physical_contract&&b.calculation_segment_id===event.calculation_segment_id)
-  if(!bar)return []
-  const x=scale.timeToCoordinate(time(bar.bar_end)),y=candles!.priceToCoordinate(Number(event.side==='up'?bar.high:bar.low))
-  return x!=null&&y!=null&&displayIndexVisible(detailChartIndex(chart!,time(bar.bar_end),bars.indexOf(bar)),scale.getVisibleLogicalRange())?[{event,x,y,candleWidth:breakoutCandleWidth,band:breakoutBand(event,bars,bars.indexOf(bar),i=>scale.timeToCoordinate(time(bars[i]!.bar_end)),p=>candles!.priceToCoordinate(p),breakoutCandleWidth)}]:[]
- })
- callouts.value=layoutNiuwaReferenceCallouts(chartMarkers.value.flatMap(m=>{
-  const x=scale.timeToCoordinate?.(time(m.bar_end)),y=candles?.priceToCoordinate?.(Number(m.reference_price))
-  if(x===null||x===undefined||y===null||y===undefined)return []
-  const bar=chartBars.value.find(b=>b.bar_end===m.bar_end)
-  const high=bar?candles?.priceToCoordinate?.(Number(bar.high)):null,low=bar?candles?.priceToCoordinate?.(Number(bar.low)):null
-  return [{callout:{id:m.marker_id,time:m.bar_end,physicalContract:m.physical_contract,price:m.reference_price,title:experimentMarkerLabel(m),detail:'',tone:'neutral' as const,above:m.action==='CLEAR'},x,y,boxWidth:100,boxHeight:28,...(high!=null&&low!=null?{candle:{left:x-8,top:Math.min(high,low)-3,width:16,height:Math.abs(high-low)+6}}:{})}]
- }),width,height)
-}
-function render(){
- if(!chart||!candles||!upper||!lower||!markers)return
- const bars=chartBars.value
- const viewport=resetViewport?null:detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange();resetViewport=false
- if(bars.length || !detailSession) candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close),physicalContract:b.physical_contract.toUpperCase()})))
- if(volume){const input=detailChartVolumeBars(chart,volumeBars.value),colors=volumeColors(input,readNewowChartDisplayTheme());volume.setData(input.map((bar,index)=>({time:detailChartTime({time:bar.time,trading_day:bar.tradingDay??bar.trading_day},props.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})))}
+watch([showBreakoutShapes, showBreakoutWicks], () => projectCallouts())
 
- upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}))
- lower.setData(bars.map(b=>b.channel_low===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_low)}))
- markers.setMarkers([])
- if(viewport)chart.timeScale().setVisibleLogicalRange(viewport);else chart.timeScale().fitContent();publishViewport();renderVisual();projectCallouts()
+type PositionedFact = { bar_end: string; formula_version: string | null }
+function renderPositionedOverlay(id: string, enabled: boolean, project: () => readonly PositionedFact[] | null) {
+ return host?.renderLayer(id, id, 'main', 'marker', layer => {
+  const positioned = enabled ? project() : []
+  if (positioned === null) return
+  let latest: PositionedFact | undefined
+  for (const fact of positioned) {
+   if (!latest || Date.parse(fact.bar_end) > Date.parse(latest.bar_end)) latest = fact
+  }
+  layer.updateDiagnostics({ ...experimentDiagnostics(latest?.bar_end), formulaVersion: latest?.formula_version ?? null,
+   status: !enabled ? 'hidden' : latest ? 'ready' : emptyLayerStatus(), lastError: enabled ? requestErrorCode.value : null })
+ })
 }
-watch([data,selectedSegment,()=>props.volumeBars],render)
-onMounted(()=>{if(!container.value)return;if(typeof MutationObserver!=='undefined'&&typeof document!=='undefined'){volumeThemeObserver=new MutationObserver(()=>render());for(const root of [document.documentElement,document.body])if(root)volumeThemeObserver.observe(root,{attributes:true,attributeFilter:['data-theme']});}chart=(detailSession?.acquire??createChart)(container.value,{height:500,width:container.value.clientWidth,layout:{background:{color:'#fff'},textColor:'#333',fontSize:12},localization:{timeFormatter:formatChartTimeInShanghai,priceFormatter:(value:number)=>newowReferencePrice(String(value))},timeScale:{timeVisible:true},grid:{vertLines:{color:'#f0f0f0'},horzLines:{color:'#f0f0f0'}}});candles=chart.addSeries(CandlestickSeries,{upColor:'#ff3b30',downColor:'#34c759',wickUpColor:'#ff3b30',wickDownColor:'#34c759',borderVisible:false});volume=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false,priceScaleId:'volume'},0);volume.priceScale().applyOptions({...VOLUME_SCALE_OPTIONS});chart.priceScale('right').applyOptions({scaleMargins:{top:.05,bottom:.14}});upper=chart.addSeries(LineSeries,{color:'#f7bb23',lineWidth:2,priceLineVisible:false});lower=chart.addSeries(LineSeries,{color:'#3984ff',lineWidth:2,priceLineVisible:false});markers=createSeriesMarkers(candles);chart.timeScale().subscribeVisibleLogicalRangeChange(()=>{publishViewport();renderVisual();projectCallouts()});chart.subscribeCrosshairMove?.(param=>{const next=chartBars.value.length?(param.time??null):null;if(JSON.stringify(sharedCursor.value)!==JSON.stringify(next))sharedCursor.value=next});observer=new ResizeObserver(()=>{if(container.value){chart?.applyOptions({width:container.value.clientWidth});publishViewport();projectCallouts()}});observer.observe(container.value);render()})
-onBeforeUnmount(()=>{volumeThemeObserver?.disconnect();generation.clear();emit('context',null);observer?.disconnect();chart?.remove()})
+
+function projectCallouts() {
+ breakoutPoints.value = []
+ displayPoints.value = []
+ callouts.value = []
+ const activeChart = chart
+ const anchor = candles
+ const scale = activeChart?.timeScale()
+ const bounds = container.value
+ const width = scale?.width?.() ?? bounds?.clientWidth ?? 0
+ const height = activeChart?.panes()[0]?.getHeight?.() ?? 414
+ displayWidth.value = width
+ displayHeight.value = height
+ const bars = priceWritten && anchor && scale ? chartBars.value : []
+ const range = scale?.getVisibleLogicalRange() ?? null
+ const isVisible = (x: number | null, y: number | null) => x !== null && y !== null &&
+  Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= width && y >= 0 && y <= height
+
+ if (!renderPositionedOverlay('newow_display_events', true, () => {
+  displayPoints.value = (data.value?.display_events ?? []).flatMap(event => {
+   if (event.kind === 'TREND_REVERSAL') return []
+   const bar = bars.find(b => b.bar_end === event.bar_end && b.physical_contract === event.physical_contract && b.segment_id === event.segment_id)
+   if (!bar) return []
+   const x = scale!.timeToCoordinate(time(bar.bar_end))
+   const y = anchor!.priceToCoordinate(event.kind === 'OSC_BREAKDOWN' ? Number(bar.low) : Number(bar.high) * (event.kind === 'ZLGJ_J' ? 1.01 : 1))
+   return x != null && y != null && displayIndexVisible(detailChartIndex(activeChart!, time(bar.bar_end), bars.indexOf(bar)), range) ? [{ event, x, y }] : []
+  })
+  return displayPoints.value.length ? null : []
+ })) displayPoints.value = []
+
+ const candleWidth = Math.max(2, width / Math.max(1, range ? range.to - range.from : bars.length) * .6)
+ const byEvent = new Map<string, BreakoutPoint>()
+ for (const [id, wick, show] of [['newow_breakouts', false, showBreakoutShapes.value], ['newow_wicks', true, showBreakoutWicks.value]] as const) {
+  renderPositionedOverlay(id, props.kind === 'osc-test5' && show, () => {
+   const projected = (data.value?.breakout_events ?? []).flatMap(event => {
+    if (event.kind.startsWith('wick_') !== wick) return []
+    const bar = bars.find(b => b.bar_end === event.bar_end && b.physical_contract === event.physical_contract && b.calculation_segment_id === event.calculation_segment_id)
+    if (!bar) return []
+    const x = scale!.timeToCoordinate(time(bar.bar_end))
+    const y = anchor!.priceToCoordinate(Number(event.side === 'up' ? bar.high : bar.low))
+    const index = bars.indexOf(bar)
+    return x != null && y != null && displayIndexVisible(detailChartIndex(activeChart!, time(bar.bar_end), index), range) ? [{ event, x, y, candleWidth,
+     band: breakoutBand(event, bars, index, i => scale!.timeToCoordinate(time(bars[i]!.bar_end)), price => anchor!.priceToCoordinate(price), candleWidth),
+    }] : []
+   })
+   for (const point of projected) byEvent.set(point.event.event_id, point)
+   return projected.filter(point => isVisible(point.x, point.y)).map(point => point.event)
+  })
+ }
+ breakoutPoints.value = (data.value?.breakout_events ?? []).flatMap(event => {
+  const point = byEvent.get(event.event_id)
+  return point ? [point] : []
+ })
+
+ if (!renderPositionedOverlay('newow_actions', true, () => {
+  callouts.value = layoutNiuwaReferenceCallouts(chartMarkers.value.flatMap(marker => {
+   const bar = bars.find(b => b.bar_end === marker.bar_end && b.physical_contract === marker.physical_contract && b.segment_id === marker.segment_id)
+   if (!bar) return []
+   const x = scale!.timeToCoordinate?.(time(marker.bar_end)), y = anchor!.priceToCoordinate?.(Number(marker.reference_price))
+   if (x == null || y == null) return []
+   const high = anchor!.priceToCoordinate(Number(bar.high)), low = anchor!.priceToCoordinate(Number(bar.low))
+   return [{ callout: { id: marker.marker_id, time: marker.bar_end, physicalContract: marker.physical_contract, price: marker.reference_price,
+    title: experimentMarkerLabel(marker), detail: '', tone: 'neutral' as const, above: marker.action === 'CLEAR' }, x, y, boxWidth: 100, boxHeight: 28,
+    ...(high != null && low != null ? { candle: { left: x - 8, top: Math.min(high, low) - 3, width: 16, height: Math.abs(high - low) + 6 } } : {}),
+   }]
+  }), width, height)
+  return callouts.value.map(({ callout }) => ({ bar_end: callout.time, formula_version: data.value?.formula_version ?? null }))
+ })) callouts.value = []
+}
+function recordDisplayPaint(events: readonly NewowDisplayEvent[] | null) {
+ if (!host) return
+ if (events === null) {
+  host.layer('newow_display_events', 'newow_display_events', 'main').updateDiagnostics({
+   ...experimentDiagnostics(), formulaVersion: null, status: 'renderer_failure', renderer: 'marker', lastError: 'CHART_RENDERER_PAINT_FAILED',
+  })
+ } else {
+  renderPositionedOverlay('newow_display_events', true, () => events)
+ }
+}
+function displayFormula(id: string) {
+ const source = DISPLAY_CATALOG[id]?.source
+ return source?.type === 'display_transform' ? source.version : null
+}
+
+function experimentDiagnostics(cutoff?: string) {
+ return {
+  frequency: props.frequency,
+  sourceIdentity: cutoff ? data.value?.meta?.data_revision_identity ?? data.value?.meta?.input_content_sha256 ?? null : null,
+  dataCutoff: cutoff ?? null,
+ }
+}
+
+function renderPrice() {
+ if (!host) return
+ const bars = chartBars.value
+ const last = bars.at(-1)
+ const retained = last ? undefined : detailSession?.readBaseLayer('candles')
+ const facts = retained ?? { ...experimentDiagnostics(last?.bar_end), formulaVersion: null,
+  cacheState: null, physicalContract: last?.physical_contract }
+ const layer = host.layer('price', 'price', 'main')
+ try {
+  candles ??= layer.candles({ upColor: '#ff3b30', downColor: '#34c759', wickUpColor: '#ff3b30', wickDownColor: '#34c759', borderVisible: false })
+  if (bars.length || !detailSession) candles.setData(bars.map(bar => ({
+   time: time(bar.bar_end), open: Number(bar.open), high: Number(bar.high), low: Number(bar.low), close: Number(bar.close),
+   physicalContract: bar.physical_contract.toUpperCase(),
+  } satisfies CandlestickData<Time> & { physicalContract: string })))
+  if (priceWriteFailed && !detailSession) candles.applyOptions({ visible: true })
+  priceWritten = true
+  priceWriteFailed = false
+  layer.updateDiagnostics({ ...facts, renderer: 'candles', status: facts.dataCutoff ? 'ready' : emptyLayerStatus(),
+   lastError: !facts.dataCutoff ? requestErrorCode.value : null })
+  detailSession?.recordBaseLayer('candles', facts)
+ } catch {
+  priceWritten = false
+  priceWriteFailed = true
+  if (!detailSession) {
+   try { candles?.applyOptions({ visible: false }) } catch { /* Retry the price write independently. */ }
+  }
+  const invalid = { ...experimentDiagnostics(), formulaVersion: null, cacheState: null }
+  layer.updateDiagnostics({ ...invalid, renderer: 'candles', status: 'renderer_failure', lastError: 'CHART_RENDERER_UPDATE_FAILED' })
+  detailSession?.recordBaseLayer('candles', invalid)
+ }
+}
+
+function renderVolume(chart: IChartApi) {
+ if (!host) return
+ const input = detailChartVolumeBars(chart, volumeBars.value)
+ const colors = volumeColors(input, readNewowChartDisplayTheme())
+ const last = input.filter(validVolume).at(-1)
+ const lastSource = last && 'sourceIdentity' in last && typeof last.sourceIdentity === 'string' ? last.sourceIdentity : null
+ const retained = detailSession?.readBaseLayer('volume')
+ const facts = { frequency: props.frequency, formulaVersion: VOLUME_DISPLAY_VERSION, cacheState: null,
+  dataCutoff: last?.time ?? null, physicalContract: last?.physicalContract,
+  sourceIdentity: lastSource ?? (!volumeBars.value.length && retained?.dataCutoff === last?.time ? retained?.sourceIdentity ?? null : null) }
+ const written = host.renderLayer('volume', 'generic_volume', 'volume', 'histogram', layer => {
+  if (!volume) {
+   volume = layer.histogram({ priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false, priceScaleId: 'volume' })
+   volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
+  }
+  volume.setData(input.map((bar, index) => ({
+   time: detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, props.frequency),
+   ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}),
+  })))
+  layer.updateDiagnostics({ ...facts, status: last ? 'ready' : emptyLayerStatus(), lastError: last ? null : requestErrorCode.value })
+  detailSession?.recordBaseLayer('volume', facts)
+ })
+ if (!written) volume = null
+}
+
+function renderChannel() {
+ if (!host) return
+ const bars = priceWritten ? chartBars.value : []
+ const level = (value: string | null) => value !== null && Number.isFinite(Number(value))
+ const last = bars.filter(bar => level(bar.channel_high) || level(bar.channel_low)).at(-1)
+ const written = host.renderLayer('channel', 'newow_oscillation', 'main', 'line', layer => {
+  upper ??= layer.line({ color: '#f7bb23', lineWidth: 2, priceLineVisible: false })
+  lower ??= layer.line({ color: '#3984ff', lineWidth: 2, priceLineVisible: false })
+  upper.setData(bars.map(bar => ({ time: time(bar.bar_end), ...(level(bar.channel_high) ? { value: Number(bar.channel_high) } : {}) })))
+  lower.setData(bars.map(bar => ({ time: time(bar.bar_end), ...(level(bar.channel_low) ? { value: Number(bar.channel_low) } : {}) })))
+  const readiness = visibleSegments.value[0]?.readiness ?? data.value?.readiness
+  layer.updateDiagnostics({ ...experimentDiagnostics(last?.bar_end), formulaVersion: data.value?.formula_version ?? null,
+   status: last ? 'ready' : readiness?.status === 'WARMUP' ? 'warming' : emptyLayerStatus(),
+   lastError: requestErrorCode.value ?? readiness?.reason_code ?? null })
+ })
+ if (!written) { upper = null; lower = null }
+}
+
+function render(){
+ if (!chart || !host) return
+ const viewport = resetViewport ? null : detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange()
+ resetViewport = false
+ renderPrice()
+ renderVolume(chart)
+ renderChannel()
+ if (viewport && priceWritten) chart.timeScale().setVisibleLogicalRange(viewport)
+ else chart.timeScale().fitContent()
+ publishViewport()
+ renderVisual()
+ projectCallouts()
+}
+watch([data,selectedSegment,loading,error,()=>props.volumeBars],render)
+onMounted(() => {
+ if (!container.value) return
+ if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+  volumeThemeObserver = new MutationObserver(render)
+  for (const root of [document.documentElement, document.body]) {
+   if (root) volumeThemeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
+  }
+ }
+ chart = (detailSession?.acquire ?? createChart)(container.value, {
+  height: 500, width: container.value.clientWidth,
+  layout: { background: { color: '#fff' }, textColor: '#333', fontSize: 12 },
+  localization: { timeFormatter: formatChartTimeInShanghai, priceFormatter: (value: number) => newowReferencePrice(String(value)) },
+  timeScale: { timeVisible: true },
+  grid: { vertLines: { color: '#f0f0f0' }, horzLines: { color: '#f0f0f0' } },
+ })
+ host = createChartHost(chart)
+ chart.priceScale('right').applyOptions({ scaleMargins: { top: .05, bottom: .14 } })
+ const timeScale = chart.timeScale()
+ const onRange = () => {
+  publishViewport()
+  renderVisual()
+  projectCallouts()
+ }
+ timeScale.subscribeVisibleLogicalRangeChange(onRange)
+ host.own(() => timeScale.unsubscribeVisibleLogicalRangeChange?.(onRange))
+ const onCrosshair: Parameters<IChartApi['subscribeCrosshairMove']>[0] = param => {
+  const next = chartBars.value.length ? param.time ?? null : null
+  if (JSON.stringify(sharedCursor.value) !== JSON.stringify(next)) sharedCursor.value = next
+ }
+ const mountedChart = chart
+ mountedChart.subscribeCrosshairMove?.(onCrosshair)
+ host.own(() => mountedChart.unsubscribeCrosshairMove?.(onCrosshair))
+ observer = new ResizeObserver(() => {
+  if (!container.value) return
+  chart?.applyOptions({ width: container.value.clientWidth })
+  publishViewport()
+  projectCallouts()
+ })
+ observer.observe(container.value)
+ render()
+})
+onBeforeUnmount(() => {
+ volumeThemeObserver?.disconnect()
+ generation.clear()
+ emit('context', null)
+ observer?.disconnect()
+ host?.dispose()
+})
 const pct=(v:unknown,signed=true)=>typeof v==='string'?formatPerformancePercent(v,signed):'—'
 const date=(v:unknown)=>typeof v==='string'?formatChartTimeInShanghai(time(v)):'—'
 const annualized=(model:Record<string,unknown>|null)=>pagePerformanceAnnualized(model&&Array.isArray(model.dates)&&Array.isArray(model.equity)?{dates:model.dates as string[],equity:model.equity as string[]}:null)
@@ -184,8 +427,8 @@ const allRecords=(model:Record<string,unknown>|null)=>Array.isArray(model?.trade
 <header class="experiment-heading"><strong>{{option.label}}</strong><slot name="frequency" /></header>
 <p v-if="loading" role="status">正在读取实验策略…</p><p v-else-if="error" role="alert">{{error}} <button @click="load">重试</button></p><p v-else-if="!asOf" role="status">等待当前周期行情快照…</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='DATA_INSUFFICIENT'" role="status">当前合约段数据不足，暂时没有实验结果。</p><p v-else-if="(visibleSegments[0]?.readiness??data?.readiness)?.status==='WARMUP'" role="status">当前合约段正在预热。</p>
 <slot name="overview" />
-<div class="experiment-chart-controls"><template v-if="kind==='osc-test5'"><button type="button" :aria-pressed="showBreakoutShapes" @click="showBreakoutShapes=!showBreakoutShapes">突破形态</button><button type="button" :aria-pressed="showBreakoutWicks" @click="showBreakoutWicks=!showBreakoutWicks">影线提示</button></template><slot name="chart-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /></div>
-<div class="experiment-chart-wrap"><NewowBreakoutOverlay :points="breakoutPoints" :width="displayWidth" :height="displayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" @select-breakout="emit('select-breakout',$event)" /><NewowDisplayOverlay :points="displayPoints" :width="displayWidth" :height="displayHeight" @select-display="emit('select-display',$event)" /><div ref="container" class="experiment-chart" />
+<div class="experiment-chart-controls"><template v-if="kind==='osc-test5'"><button type="button" :aria-pressed="showBreakoutShapes" @click="showBreakoutShapes=!showBreakoutShapes">突破形态</button><button type="button" :aria-pressed="showBreakoutWicks" @click="showBreakoutWicks=!showBreakoutWicks">影线提示</button></template><slot name="chart-controls" /><NewowVisualOverlayControls v-model="visualOverlays" @analyze="emit('analyze-channel')" /><ChartLayerDiagnostics :inspect="inspectLayers" /></div>
+<div class="experiment-chart-wrap"><NewowBreakoutOverlay :points="breakoutPoints" :width="displayWidth" :height="displayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" @select-breakout="emit('select-breakout',$event)" /><NewowDisplayOverlay :points="displayPoints" :width="displayWidth" :height="displayHeight" @select-display="emit('select-display',$event)" @paint="recordDisplayPaint" /><div ref="container" class="experiment-chart" />
 <div class="experiment-callouts" aria-label="实验策略参考动作"><svg aria-hidden="true"><polyline v-for="item in callouts" :key="item.callout.id" :points="`${item.x},${item.y} ${item.x},${(item.y+item.lineY)/2} ${item.lineX},${(item.y+item.lineY)/2} ${item.lineX},${item.lineY}`" fill="none" /></svg>
 <div v-for="item in callouts" :key="item.callout.id" class="experiment-callout" :class="{'is-compact':item.compact}" :style="{left:`${item.left}px`,top:`${item.top}px`,width:`${item.width}px`,height:`${item.height}px`}" :data-action-id="item.callout.id" :data-reference-price="item.callout.price" :title="`${item.callout.title} ${newowReferencePrice(item.callout.price)} · ${item.callout.time} · ${item.callout.physicalContract}`"><template v-if="!item.compact"><strong>{{item.callout.title}}</strong><span>{{newowReferencePrice(item.callout.price)}}</span></template><template v-else>{{item.callout.above?'▽':'△'}}</template></div></div></div>
 <slot name="chart-auxiliary" :viewport="sharedViewport" :on-viewport="applySharedViewport" :right-scale-width="sharedRightScaleWidth" :cursor="sharedCursor" :on-cursor="applySharedCursor" />

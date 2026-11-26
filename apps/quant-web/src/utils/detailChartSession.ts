@@ -329,7 +329,6 @@ export function createDetailChartSession(dependencies: {
         if (!active) throw new Error('DETAIL_CHART_LEASE_EXPIRED')
         const role = definition.type === 'Candlestick' && !primaryCandlesBound
           ? 'candles' : definition.type === 'Histogram' && settings?.priceScaleId === 'volume' ? 'volume' : null
-        if (role === 'candles') primaryCandlesBound = true
         let raw = role ? prices.get(role) : undefined
         if (!raw) {
           const candlePaneOverlay = !role && pane === 0 && (!settings?.priceScaleId || settings.priceScaleId === 'right')
@@ -345,7 +344,9 @@ export function createDetailChartSession(dependencies: {
           if (role === 'volume' && raw.getPane().paneIndex() !== pane) raw.moveToPane(pane)
           raw.applyOptions(role === 'volume' ? { ...settings, priceScaleId: settings?.priceScaleId ?? 'right' } : settings ?? {})
         }
-        return wrapSeries(raw, role ?? undefined)
+        const wrapped = wrapSeries(raw, role ?? undefined)
+        if (role === 'candles') primaryCandlesBound = true
+        return wrapped
       }
       if (property === 'setCrosshairPosition') return (price: number, time: Time, item: ISeriesApi<SeriesType, Time>) => {
         if (active) target.setCrosshairPosition(price, time, wrappers.get(item) ?? item)

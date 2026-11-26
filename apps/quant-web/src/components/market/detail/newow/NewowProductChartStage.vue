@@ -1049,12 +1049,6 @@ function renderEventDiagnostics(): void {
     current?.actions !== undefined, primary ? displayVersion('newow_detail') : null)
   record('caution', 'newow_caution', true, primary, current?.caution_events !== undefined,
     current?.caution_events?.at(-1)?.formula_version ?? null)
-  record('display-events', 'newow_display_events', true, primary, current?.display_events !== undefined,
-    current?.display_events?.length ? [...new Set(current.display_events.map(event => event.formula_version))].join(' / ') : null)
-  if (partner) record('comparison-display-events', 'newow_display_events', true, partner,
-    partner.value?.display_events !== undefined, partner.value?.display_events?.length
-      ? [...new Set(partner.value.display_events.map(event => event.formula_version))].join(' / ') : null)
-  else host.removeLayer('comparison-display-events')
 
   const breakoutAvailable = current?.breakout_events !== undefined
   const breakoutVersion = breakoutAvailable ? BREAKOUT_VERSION : null
@@ -1072,6 +1066,27 @@ function renderEventDiagnostics(): void {
     const response = primary?.meta.identity.strategy === strategy ? primary : partner
     const visible = showActions.value && (strategy === 'trend' ? trendTrack.value : oscillationTrack.value)
     record(id, 'newow_actions', visible, response, response?.value?.actions !== undefined)
+  }
+}
+
+function recordDisplayPaint(events: readonly NewowDisplayEvent[] | null): void {
+  if (!host) return
+  const primary = strategySource.value
+  const partner = primary && comparisonActive.value ? props.comparisonResponse ?? null : null
+  for (const [id, response] of [['display-events', primary], ['comparison-display-events', partner]] as const) {
+    if (id === 'comparison-display-events' && !response) { host.removeLayer(id); continue }
+    const source = new Set(response?.value?.display_events?.map(event => event.event_id))
+    const painted = (events ?? []).filter(event => source.has(event.event_id))
+    const last = painted.reduce<NewowDisplayEvent | undefined>((latest, event) =>
+      !latest || Date.parse(event.bar_end) > Date.parse(latest.bar_end) ? event : latest, undefined)
+    const failed = events === null && Boolean(response) && !pure.value
+    host.layer(id, 'newow_display_events', 'main').updateDiagnostics({
+      ...chartLayerSource(last ? response : null, last?.bar_end ?? null),
+      renderer: 'marker',
+      formulaVersion: last ? [...new Set(painted.map(event => event.formula_version))].join(' / ') : null,
+      status: failed ? 'renderer_failure' : pure.value ? 'hidden' : chartLayerStatus(response, Boolean(last)),
+      lastError: failed ? 'CHART_RENDERER_PAINT_FAILED' : null,
+    })
   }
 }
 
@@ -1754,7 +1769,7 @@ defineExpose({ revealSignal, scrollToLatest, inspectLayers })
       @dblclick="scheduleActionProjection"
     />
     <NewowBreakoutOverlay :points="breakoutPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-breakout="emit('select-breakout',$event)" />
-    <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" />
+    <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" @paint="recordDisplayPaint" />
     <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
       <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative, invalidated: item.state === 'invalidated' }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg class="caution-capsule" aria-hidden="true" width="32" height="16" viewBox="0 0 32 16"><rect x="0" y="0" width="32" height="16" rx="8" /><line v-if="item.state === 'invalidated'" class="caution-withdrawal" x1="3" y1="13" x2="29" y2="3" /></svg><svg class="caution-leader" aria-hidden="true" width="32" height="10" viewBox="0 0 32 10"><line :x1="item.stemX" y1="0" :x2="item.stemX" :y2="item.stemEnd" :stroke-dasharray="item.tentative || item.state === 'invalidated' ? '1 3' : '3 3'" /></svg><span>小心</span></button>
     </div>
