@@ -1,21 +1,26 @@
 # Market Core 设计
 
+目标机对照选择 Canonical Parquet + PostgreSQL Catalog。候选入口使用锁定的 VeighNa EventEngine
+分发，保留归一 Decimal 行情对象、交易所 Session 和聚合。实际证据见
+[存储与组件](evidence/storage/README.md)、[Tick 与完成流](evidence/tick/README.md) 及
+[盘后与参考](evidence/archive-reference.md)。隔离装配与正式切换前置见 [切换准备](cutover.md)。
+
 ## 1. 目标结构
 
 ```mermaid
 flowchart TB
     H[RQData 历史 1m / 交易所日行情 / 元数据] --> A[历史适配与质量检查]
-    T[RQData Live Tick 长连接] --> L[薄适配与单源接收]
-    L --> E[VeighNa EventEngine / 候选 BarGenerator]
+    T[RQData 已校验证书 Live Tick 长连接] --> L[薄适配与单源接收]
+    L --> E[VeighNa 4.4.0 EventEngine · 有界分发]
     E --> Q[报价与活动 K 线]
     E --> B[Session 校验 / Completed 1m / 多周期]
     B --> C[Live 内存 / Redis / 必要观察原件]
-    A --> S[唯一历史存储 · PostgreSQL 或 Parquet]
+    A --> S[Canonical Parquet + 八表 Catalog]
     S --> M[MarketDataService / 统一读取门面]
     C --> M
     Q --> M
     M --> W[PC Web / 自由看盘]
-    C --> X[快期 HTDY / 苏冰 Paper 各自订阅]
+    C --> X[快期 HTDY / 苏冰 Paper / Alert 独立完成输入]
     S --> P[已核验盘后发布凭证]
     P --> N[Market 参考研究 / 牛哇盘后调度]
     R[RQAlpha 独立数据维护与回测] --> V[独立研究结果查询]

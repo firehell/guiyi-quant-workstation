@@ -5,7 +5,7 @@ import json
 from collections import deque
 from contextlib import contextmanager
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any
@@ -814,3 +814,58 @@ async def test_pubsub_cleanup_failure_still_closes_all_clients(monkeypatch):
     with pytest.raises(RuntimeError, match="unsubscribe failed"):
         await market_websocket(DisconnectingWebSocket())
     assert pubsub.closed and redis.closed
+
+
+def test_isolated_market_websocket_separates_exact_tick_quote_and_activity(monkeypatch) -> None:
+    from contextlib import nullcontext
+
+    from fastapi import FastAPI
+
+    from app.api.market_live import MarketDisplayRuntime, router
+    from app.market_data.market_display_preview import MarketActivity, MarketPreview, MarketQuote
+
+    def production_redis_forbidden():
+        raise AssertionError("isolated display must not open production Redis")
+
+    monkeypatch.setattr("app.api.market_live.get_async_redis_connection", production_redis_forbidden)
+    instance = FastAPI()
+    instance.include_router(router)
+    completed = _bar(2)
+    active = _bar(3)
+    observed = completed.bar_end + timedelta(seconds=10)
+    state = MarketReadState(
+        "j", "actual_dominant", "1m", True, "TRADING", active.trading_day,
+        True, True, "J2505", _bar(1).bar_end, {}, display_preview=True,
+    )
+
+    class ReadService(StaticReadService):
+        def display_snapshot(self, identity, after, now, *, retained_after=None):
+            return MarketDisplaySnapshot(
+                state=state, source="realtime", trading_day=active.trading_day, contract="J2505", bars=(completed,),
+                preview=MarketPreview(
+                    MarketQuote(
+                        active.trading_day, "J2505", "candidate-1", observed, observed, Decimal("100.123456789012345678"),
+                        bids=((Decimal("100"), Decimal("2")),),
+                    ),
+                    MarketActivity("J2505", "candidate-1", active, observed, observed),
+                ),
+            )
+
+    redis = FakeAsyncRedis(IdlePubSub())  # type: ignore[arg-type]
+    instance.state.market_display_runtime = MarketDisplayRuntime(
+        open_reader=lambda: nullcontext(ReadService(state)),
+        socket_redis_factory=lambda: redis,  # type: ignore[arg-type,return-value]
+    )
+    with TestClient(instance).websocket_connect(
+        "/api/v1/market/ws?series_kind=actual_dominant&symbol=j&frequency=1m"
+    ) as websocket:
+        assert websocket.receive_json()["state"]["display_preview"] is True
+        snapshot = websocket.receive_json()
+        preview = websocket.receive_json()
+        assert websocket.receive_json() == {"type": "retained", "trading_day": None, "contract": None, "bars": []}
+
+    assert [bar["bar_end"] for bar in snapshot["bars"]] == ["2025-01-02T01:02:00Z"]
+    assert preview["type"] == "preview"
+    assert preview["quote"]["last_price"] == "100.123456789012345678"
+    assert preview["quote"]["bids"] == [["100", "2"]]
+    assert preview["activity"]["bar"]["bar_end"] == "2025-01-02T01:03:00Z"

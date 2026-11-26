@@ -60,6 +60,7 @@ import { mergeKlineMarkers } from '@/utils/alertMarkers'
 import { referencePriceLevelSegments } from '@/utils/referencePriceLevels'
 import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitive'
 
+import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
 
 const props = withDefaults(defineProps<{
@@ -67,6 +68,7 @@ const props = withDefaults(defineProps<{
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
+  activeBar?: BarData | null
   volumeScoring?: boolean
   subingVolumeTiers?: boolean
   loading?: boolean
@@ -79,6 +81,7 @@ const props = withDefaults(defineProps<{
   showDerivedMarkers?: boolean
   alertMarkers?: KlineMarker[]
   researchMarkers?: KlineMarker[]
+  savedReferenceLines?: SavedReferenceLine[]
   markerSelectionEnabled?: boolean
   referenceCallouts?: KlineReferenceCallout[]
   referenceIndicators?: KlineReferenceIndicator[]
@@ -166,6 +169,7 @@ let referenceLevelSeries: ISeriesApi<'Line'>[] = []
 const referenceTargetSegments = ref(0), referenceStopSegments = ref(0)
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
+let activeCandle: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
 let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
@@ -199,6 +203,7 @@ const chartViewportReady = ref(false)
 let derivedData = buildKlineDerivedData([], [])
 // One latest result only; normalized Bar arrays are replaced on every input mutation.
 let rangeCache: { bars: BarData[]; key: string; result: NonNullable<typeof derivedData.rangeDetector> } | null = null
+const savedReferenceSeries = new Map<string, ISeriesApi<'Line'>>()
 let renderedMarkerById = new Map<string, KlineMarker>()
 let viewportStabilityFrame: number | null = null
 let viewportStabilityTarget: ChartViewportRange | null = null
@@ -314,6 +319,7 @@ watch(() => props.visibleMainIndicators, () => {
   detailSession?.restoreInspectionCursor()
 }, { deep: true })
 watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); detailSession?.restoreInspectionCursor() })
+watch(() => props.savedReferenceLines, renderSavedReferenceLines)
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
 watch(() => [props.subingVolumeTiers, props.volumeScoring, props.loading, props.error, props.period], () => { renderAllSeries() })
@@ -570,9 +576,54 @@ function onClick(param: MouseEventParams<Time>) {
   if (marker) emit('marker-select', marker)
 }
 
+function renderActiveCandle(): void {
+  if (!chart) return
+  const active = props.activeBar
+  const completed = renderedBars.at(-1)
+  if (!active || (completed && compareChartTimes(chartTime(active), chartTime(completed)) <= 0)) {
+    activeCandle?.setData([])
+    return
+  }
+  if (!activeCandle) {
+    const color = '#b47820'
+    activeCandle = chart.addSeries(CandlestickSeries, {
+      upColor: 'transparent', downColor: 'transparent',
+      borderUpColor: color, borderDownColor: color, wickUpColor: color, wickDownColor: color,
+      priceLineVisible: false, lastValueVisible: false,
+    }, 0)
+  }
+  activeCandle.setData([{
+    time: chartTime(active), open: active.open, high: active.high, low: active.low, close: active.close,
+  }])
+}
+
+watch(() => props.activeBar, renderActiveCandle)
+
+function renderSavedReferenceLines(): void {
+  if (!chart) return
+  const lines = props.savedReferenceLines ?? []
+  const active = new Set(lines.map(line => line.id))
+  for (const [id, series] of savedReferenceSeries) {
+    if (active.has(id)) continue
+    chart.removeSeries(series)
+    savedReferenceSeries.delete(id)
+  }
+  for (const line of lines) {
+    let series = savedReferenceSeries.get(line.id)
+    if (!series) {
+      series = chart.addSeries(LineSeries, {
+        color: line.color, title: line.label, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
+      }, 0)
+      savedReferenceSeries.set(line.id, series)
+    }
+    series.setData(chartValues(line.points))
+  }
+}
+
 function renderAllSeries(): void {
   if (!candles || !volume || !chart) return
   candles.setData(barValues(renderedBars))
+  renderActiveCandle()
   const last = renderedBars.at(-1)
   if (container.value) {
     container.value.dataset.klineEnd = last?.time ?? ''
@@ -582,6 +633,7 @@ function renderAllSeries(): void {
     container.value.dataset.klineFrequency = props.period
   }
   volume.setData(volumeValues(renderedBars))
+  renderSavedReferenceLines()
   renderDerivedSeries()
 }
 

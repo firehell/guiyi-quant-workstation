@@ -35,6 +35,7 @@ from app.market_data.market_home_projection import (
 )
 from app.market_data.market_home_live import MarketHomeLiveService
 from app.market_data.market_phase import MarketPhaseResolver
+from app.market_data.market_display_preview import MarketPreviewReader
 from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_research_service import MarketResearchService
 from app.market_data.operational_universe import (
@@ -248,8 +249,11 @@ def build_market_home_projection(session: Session) -> MarketHomeProjection:
     )
 
 
-def build_market_read_service(session: Session, *, redis: RedisClient | None = None,
-                              check_cancelled=None) -> MarketReadService:
+def build_market_read_service(
+    session: Session, *, redis: RedisClient | None = None,
+    check_cancelled=None, preview_reader: MarketPreviewReader | None = None,
+    after_market_status_path: Path | None = None,
+) -> MarketReadService:
     """Compose Market reads with an optional transient Redis Live overlay."""
 
     return MarketReadService(
@@ -257,6 +261,8 @@ def build_market_read_service(session: Session, *, redis: RedisClient | None = N
         phase_resolver=MarketPhaseResolver(session),
         operational_products=load_operational_products(),
         live_store=RedisLiveStore(redis if redis is not None else cast(RedisClient, get_redis_connection())),
+        preview_reader=preview_reader,
+        after_market_status_path=after_market_status_path,
     )
 
 

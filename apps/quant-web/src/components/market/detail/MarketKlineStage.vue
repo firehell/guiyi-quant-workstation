@@ -8,6 +8,7 @@ import KlineChart from '@/components/kline/KlineChart.vue'
 import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
 import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
 import { DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
+import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
 
 const props = withDefaults(defineProps<{
@@ -17,7 +18,9 @@ const props = withDefaults(defineProps<{
   subingVolumeTiers?: boolean
   volumeScoring?: boolean
   researchMarkers?: KlineMarker[]
+  savedReferenceLines?: SavedReferenceLine[]
   bars: BarData[]
+  activeBar?: BarData | null
   mutation: MarketSeriesMutation
   loading: boolean
   error: string | null
@@ -116,9 +119,11 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
+      :active-bar="activeBar"
       :subing-volume-tiers="subingVolumeTiers"
       :volume-scoring="volumeScoring"
       :research-markers="researchMarkers"
+      :saved-reference-lines="savedReferenceLines"
     :dynamic-range-points="dynamicRangePoints"
     :dynamic-range-enabled="dynamicRangeEnabled"
     :pattern-geometry="patternGeometry"

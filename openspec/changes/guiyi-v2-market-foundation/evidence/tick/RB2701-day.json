@@ -1,0 +1,20 @@
+{
+  "capture_sha256": "ff5116e42bf90ae00e52829a77d020e3adb7f0d17eec2f07ef5dae4ad3536c70",
+  "contract": "RB2701",
+  "trading_day": "2026-11-26",
+  "tick_completed": 3,
+  "live_1m": 4,
+  "diagnostics": {
+    "TICK_MINUTE_UNPROVED": 119,
+    "tick_input": 491
+  },
+  "tick_to_live": {
+    "overlap": 3,
+    "exact": 3,
+    "left_only": 0,
+    "right_only": 1,
+    "different_fields": {},
+    "first": "2026-11-26T05:32:00+00:00",
+    "last": "2026-11-26T05:34:00+00:00"
+  }
+}

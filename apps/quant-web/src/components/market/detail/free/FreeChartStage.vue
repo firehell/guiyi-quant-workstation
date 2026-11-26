@@ -14,6 +14,7 @@ const props = withDefaults(defineProps<{
   dynamicRangeEnabled?: boolean
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
+  activeBar?: BarData | null
   mutation: MarketSeriesMutation
   loading: boolean
   error: string | null
@@ -39,6 +40,7 @@ const freeMarkers = computed(() => markersForDetailView('free', props.markers))
 <template>
   <MarketKlineStage :subing-volume-tiers="true" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
     :bars="bars"
+    :active-bar="activeBar"
     :dynamic-range-points="dynamicRangePoints"
     :dynamic-range-enabled="dynamicRangeEnabled"
     :pattern-geometry="patternGeometry"

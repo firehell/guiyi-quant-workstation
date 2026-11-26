@@ -805,6 +805,7 @@ class HistoricalReferenceQuery:
         self, stream_id: str, *, snapshot_token: str, since: date, through: date,
         cutoff: datetime | None, kinds: tuple[str, ...], max_points: int = 100_000,
         check_cancelled=None,
+        bar_from: datetime | None = None, bar_through: datetime | None = None,
     ) -> dict[str, list[dict[str, object]]]:
         """One bounded scan of saved facts, with daily availability aggregation.
 
@@ -813,9 +814,14 @@ class HistoricalReferenceQuery:
         or through day and does not recalculate any strategy.
         """
         self._window(since, through, cutoff)
-        if not kinds or not set(kinds) <= {"availability", "boundary", "hint", "action"}:
+        if not kinds or not set(kinds) <= {"availability", "boundary", "hint", "action", "indicator"}:
             raise QueryConflict("QUERY_INVALID")
         if type(max_points) is not int or not 1 <= max_points <= 200_000:
+            raise QueryConflict("QUERY_INVALID")
+        if (bar_from is None) != (bar_through is None) or bar_from is not None and (
+                bar_from.utcoffset() is None or bar_through.utcoffset() is None
+                or bar_from > bar_through
+        ):
             raise QueryConflict("QUERY_INVALID")
         saved = _decode(snapshot_token, kind="snapshot")
         saved_since, saved_through = _day(saved.get("since")), _day(saved.get("through"))
@@ -826,6 +832,8 @@ class HistoricalReferenceQuery:
         count = 0
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
             row = self._resolve(session, stream_id)
+            if "indicator" in kinds and row.recording_mode != "historical_replay":
+                raise QueryConflict("QUERY_INVALID")
             snapshot, _, _ = self._snapshot(
                 session, row, since=saved_since, through=saved_through,
                 cutoff=cutoff, encoded=snapshot_token,
@@ -852,7 +860,8 @@ class HistoricalReferenceQuery:
                     if instant is None:
                         raise QueryConflict("PRESENTATION_CORRUPT")
                     day = _day(point.get("trading_day"))
-                    if not since <= day <= through or cutoff is not None and instant > cutoff:
+                    if (not since <= day <= through or cutoff is not None and instant > cutoff
+                            or bar_from is not None and not bar_from <= instant <= bar_through):
                         continue
                     if kind == "hint":
                         known = _instant(value.get("known_at"))
