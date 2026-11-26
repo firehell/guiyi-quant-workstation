@@ -1,16 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
-import { mountChartHost, type ChartHost } from '@guiyi/quant-chart'
+import { mountChartHost, type ChartHost, type LayerDiagnostics } from '@guiyi/quant-chart'
 import { createChart, type ISeriesApi, type IRange, type MouseEventParams, type Time } from 'lightweight-charts'
 import type { NewowAuxiliaryComponent, NewowProductSectionResponse, NewowResourceLifecycle } from '@/types/newowProduct'
 import { alignNewowAuxiliaryChartModel, buildNewowProductChartModel, chartMarkerTime } from './newowProductChartPrimitives'
-import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from './newowZhaoyaoMirrorPrimitive'
-import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from './newowUpDownEnergyPrimitive'
-import { NewowMainForceControlPrimitive, buildNewowMainForceData } from './newowMainForceControlPrimitive'
-import { NewowTrendReversalPrimitive, buildNewowTrendReversalData } from './newowTrendReversalPrimitive'
+import { NewowZhaoyaoMirrorPrimitive } from './newowZhaoyaoMirrorPrimitive'
+import { NewowUpDownEnergyPrimitive } from './newowUpDownEnergyPrimitive'
+import { NewowMainForceControlPrimitive } from './newowMainForceControlPrimitive'
+import { NewowTrendReversalPrimitive } from './newowTrendReversalPrimitive'
+import { newowAuxiliaryDiagnostics, paintNewowAuxiliaryPrimitive } from './newowAuxiliaryLayer'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
-import { newowAuxiliaryLayerStatus } from '@/utils/newowAdditionalPanes'
-import { projectNewowAuxiliaryReadiness } from '@/utils/newowDetailPresentation'
 import ChartLayerDiagnostics from '../../../kline/ChartLayerDiagnostics.vue'
 
 const props = defineProps<{
@@ -19,6 +18,7 @@ const props = defineProps<{
   auxiliary: NewowProductSectionResponse<'auxiliary'> | null
   component?: NewowAuxiliaryComponent | null
   lifecycle?: NewowResourceLifecycle
+  cacheState?: LayerDiagnostics['cacheState']
   error?: string | null
   rightScaleWidth?: number
   viewport?: IRange<Time> | null
@@ -100,30 +100,14 @@ function render() {
     attachedComponent = null
     diagnosticComponent = component
   }
-  const latest = props.chart?.value?.bars.at(-1)
   if (component) {
-    const readiness = accepted ? projectNewowAuxiliaryReadiness(response?.value, latest) : null
-    const status = newowAuxiliaryLayerStatus(
-      props.lifecycle ?? 'not_requested', Boolean(response?.value), Boolean(accepted), readiness?.currentStatus ?? null,
-      value?.series.some(item => item.points.length > 0) ?? false, props.error ?? null,
-    )
     const anchor = series
     const written = host.renderLayer('selected', `newow.${component}`, pane, 'primitive', layer => {
       if (accepted && !layer.hasResource(primitives[accepted])) layer.primitive(anchor, primitives[accepted])
-      if (value?.component === 'zhaoyao_mirror') primitives.zhaoyao_mirror.setData(buildNewowZhaoyaoMirrorData(value.series), 12)
-      if (value?.component === 'up_down_energy' && model) primitives.up_down_energy.setData(buildNewowUpDownEnergyData(value.series, model.bars), 12)
-      if (value?.component === 'main_force_control' && props.auxiliary?.value?.component === 'main_force_control') {
-        primitives.main_force_control.setData(buildNewowMainForceData(value.series, props.auxiliary.value.segments), 12)
-      }
-      if (value?.component === 'trend_reversal') primitives.trend_reversal.setData(buildNewowTrendReversalData(value.series), 12)
-      layer.updateDiagnostics({
-        status,
-        sourceIdentity: accepted ? response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null : null,
-        frequency: model?.identity.frequency ?? null,
-        formulaVersion: accepted ? response?.value?.formula_version ?? null : null,
-        dataCutoff: accepted ? response?.meta.as_of ?? null : null,
-        lastError: props.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
-      })
+      const dataCutoff = accepted ? paintNewowAuxiliaryPrimitive(primitives[accepted], value, response, model, 12) : null
+      layer.updateDiagnostics({ ...newowAuxiliaryDiagnostics({ chart: props.chart, response, aligned: Boolean(accepted),
+        lifecycle: props.lifecycle ?? 'not_requested', error: props.error ?? null, dataCutoff }),
+        cacheState: accepted ? props.cacheState ?? null : null })
     })
     attachedComponent = written ? accepted : null
   }
@@ -180,7 +164,7 @@ onMounted(() => {
 })
 watch(()=>props.viewport,syncViewport,{flush:'post'})
 watch(()=>props.cursor,syncCursor,{flush:'post'})
-watch([() => props.chart, () => props.auxiliary, () => props.component, () => props.lifecycle, () => props.error], render, { flush: 'post' })
+watch([() => props.chart, () => props.auxiliary, () => props.component, () => props.lifecycle, () => props.error, () => props.cacheState], render, { flush: 'post' })
 onBeforeUnmount(() => { host?.dispose(); host = null; series = null })
 </script>
 <template>

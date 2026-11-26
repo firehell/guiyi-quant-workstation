@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { CHART_MANIFEST } from '@guiyi/quant-chart'
-import { NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, releaseDeferred, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
+import { NEWOW_STRATEGIES, buildNewowSplitFixtureEnvelopeForTest, installNewowProductFixtures, newowRoute, productRequests, releaseDeferred, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
   test(`${strategy} ${frequency}: native panes, indicator replacement and action diagnostics`, async ({ page }) => {
@@ -115,6 +115,46 @@ test('the dual chart diagnostics keep trend and oscillation action sources separ
   assertNoUnexpectedRequests(fixture)
 })
 
+test('Newow auxiliary readback stops at the last renderable point on selected and added panes', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
+    const component = url.searchParams.get('component')
+    if (section !== 'auxiliary' || !['up_down_energy', 'main_force_control'].includes(component)) return
+    const payload = buildNewowSplitFixtureEnvelopeForTest(url)
+    const data = payload.auxiliary.value.segments[0].data
+    if (component === 'up_down_energy') {
+      data.var4[1] = null
+      data.band_entry[0] = 80
+    } else {
+      data.status[0] = '有庄控盘'
+      data.status[1] = 'fixture_missing_status'
+    }
+    await route.fulfill({ json: payload })
+    return 'handled'
+  } })
+  await page.goto(newowRoute('trend', '1d'))
+  const stage = page.getByTestId('newow-product-chart-stage')
+  await expect(stage).toHaveAttribute('data-auxiliary-component', 'zhaoyao_mirror')
+  const latest = await stage.getAttribute('data-kline-end')
+  await expect(stage).toHaveAttribute('data-auxiliary-cutoff', latest)
+  await stage.getByRole('button', { name: '涨跌动能', exact: true }).click()
+  await expect(stage).toHaveAttribute('data-auxiliary-component', 'up_down_energy')
+  const earlier = await stage.getAttribute('data-auxiliary-cutoff')
+  expect(Date.parse(earlier)).toBeLessThan(Date.parse(latest))
+  await stage.getByText('副图管理', { exact: true }).click()
+  await stage.getByRole('combobox', { name: '选择附加副图' }).selectOption('main_force_control')
+  await stage.getByRole('button', { name: '添加', exact: true }).click()
+  await expect(stage.locator('[data-auxiliary-pane="main_force_control"]')).toHaveAttribute('data-auxiliary-formula', 'newow_main_force_control_page_v1')
+  const diagnostics = stage.locator('.chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  for (const component of ['up_down_energy', 'main_force_control']) {
+    const row = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: `newow.${component} · 缺少输入` })
+    await row.locator('summary').click()
+    await expect(row).toContainText(earlier)
+    await expect(row).not.toContainText(latest)
+  }
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('a later native canvas frame reports a failed trend band and the chart can retry it', async ({ page }) => {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
@@ -164,7 +204,26 @@ test('a later native canvas frame reports a failed trend band and the chart can 
 test('explicit additional panes share the primary candle timeline and release their native resources', async ({ page }) => {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
-  const fixture = await installNewowProductFixtures(page)
+  const fixture = await installNewowProductFixtures(page, { onProductRequest: async ({ route, url, section }) => {
+    const component = url.searchParams.get('component')
+    if (section !== 'auxiliary' || !['main_force_control', 'macd'].includes(component)) return
+    const payload = buildNewowSplitFixtureEnvelopeForTest(url)
+    const value = payload.auxiliary.value
+    const newest = value.segments[0]
+    if (component === 'main_force_control') {
+      newest.data.status = ['有庄控盘', '有庄控盘']
+      newest.data.current_status = '有庄控盘'
+    } else {
+      const barEnd = new Date(Date.parse(newest.bar_ends[0]) - 86_400_000).toISOString()
+      const status = { ...newest.status, status: 'unavailable', reason_code: 'NEWOW_MACD_UNAVAILABLE' }
+      const point = { bar_end: barEnd, value: null, ready: false, valid: false, reason: 'NEWOW_MACD_UNAVAILABLE' }
+      value.segments.unshift({ physical_contract: newest.physical_contract, segment_id: 'fixture-earlier-macd-owner',
+        bar_ends: [barEnd], status, data: { dif: [point], dea: [point], histogram: [point] } })
+      payload.auxiliary.status = status
+    }
+    await route.fulfill({ json: payload })
+    return 'handled'
+  } })
   await page.goto(newowRoute('trend', '1d'))
   const stage = page.getByTestId('newow-product-chart-stage')
   const nativeRows = stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })

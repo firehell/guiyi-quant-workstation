@@ -110,12 +110,18 @@ export function referenceTimeDisplay(
 export function projectNewowAuxiliaryReadiness(value: NewowAuxiliaryValue | null | undefined, latestBar: Pick<NewowProductBar, 'bar_end' | 'physical_contract' | 'calculation_segment_id'> | null | undefined) {
   if (!value || !latestBar) return null
   // Auxiliary segment_id is the backend calculation segment identity, including price-gap resets.
-  const latest = value.segments.find(segment => segment.physical_contract === latestBar.physical_contract && segment.segment_id === latestBar.calculation_segment_id && segment.bar_ends.includes(latestBar.bar_end))
+  const ownsBar = (segment: NewowAuxiliaryValue['segments'][number]) => segment.physical_contract === latestBar.physical_contract
+    && segment.segment_id === latestBar.calculation_segment_id && segment.bar_ends.includes(latestBar.bar_end)
+  const latest = value.segments.find(ownsBar)
   if (!latest) return null
+  const point = value.component === 'macd' && latest.data && 'dif' in latest.data
+    ? latest.data.dif[latest.bar_ends.indexOf(latestBar.bar_end)] : undefined
+  const status = point ? point.ready ? 'ready' : point.valid ? 'warming' : 'unavailable' : latest.status.status
+  const reason = point ? point.reason : latest.status.reason_code
   const historicalWarming = value.segments.filter(segment => segment !== latest && segment.status.status === 'warming').length
-  const currentLabel = latest.status.status === 'ready' ? '当前可计算'
-    : latest.status.status === 'warming' ? '当前数据不足，待每日增量积累' : '当前指标不可用'
-  return { currentStatus: latest.status.status, historicalWarming,
+  const currentLabel = status === 'ready' ? '当前可计算'
+    : status === 'warming' ? '当前数据不足，待每日增量积累' : '当前指标不可用'
+  return { currentStatus: status, historicalWarming, reason,
     message: `${currentLabel}${historicalWarming ? `；历史部分仍在预热（${historicalWarming} 个区段）` : ''}` }
 }
 

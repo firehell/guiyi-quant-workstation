@@ -19,7 +19,7 @@ import { newowExtrema, newowNineTurn } from '@/utils/newowChartAnnotations'
 import { readChartAnnotationPreferences, readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import { newowReferencePrice, newowSimpleDualLabel, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
 import { CHART_PROFILES, DISPLAY_CATALOG, mountChartHost, type ChartHost, type ChartLayer, type LayerDiagnostics, type LayerStatus } from '@guiyi/quant-chart'
-import { newowAuxiliaryLayerStatus, newowPaneId, type NewowAdditionalPane, type NewowAuxiliaryPaneComponent } from '@/utils/newowAdditionalPanes'
+import { newowPaneId, type NewowAdditionalPane, type NewowAuxiliaryPaneComponent } from '@/utils/newowAdditionalPanes'
 import { volumePresentation, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
 import { NEWOW_BREAKOUT_DISPLAY_VERSION, newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
 import { newowChartReadout } from '@/utils/newowChartReadout'
@@ -53,13 +53,14 @@ import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/ne
 import { buildNewowPatternGeometry, type PatternChoice } from '@/utils/newowPatternDisplay'
 import { NEWOW_PUBLIC_PATTERNS_METADATA } from '@/utils/newowPublicPatterns'
 import { NewowTrendChannelPrimitive } from '@/components/market/detail/newow/newowTrendChannelPrimitive'
-import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
-import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
-import { NewowMainForceControlPrimitive, buildNewowMainForceData } from '@/components/market/detail/newow/newowMainForceControlPrimitive'
-import { NewowTrendReversalPrimitive, buildNewowTrendReversalData, buildNewowTrendReversalMarks } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
+import { NewowZhaoyaoMirrorPrimitive } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
+import { NewowUpDownEnergyPrimitive } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
+import { NewowMainForceControlPrimitive } from '@/components/market/detail/newow/newowMainForceControlPrimitive'
+import { NewowTrendReversalPrimitive, buildNewowTrendReversalMarks } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
+import { auxiliaryPaintCutoff, newowAuxiliaryDiagnostics, paintNewowAuxiliaryPrimitive, type NewowAuxiliaryPrimitive } from '@/components/market/detail/newow/newowAuxiliaryLayer'
 import { newowAuxiliaryPaneLayout } from '@/components/market/detail/newow/newowAuxiliaryPaneLayout'
 import { resolveChartTheme } from '@/styles/chartTheme'
-import type { NewowFeatureStatus, NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
+import type { NewowAuxiliaryComponent, NewowFeatureStatus, NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowComparisonCompatible } from '@/utils/newowComparison'
@@ -107,6 +108,8 @@ const props = withDefaults(defineProps<{
   comparisonResponse?: NewowProductSectionResponse<'chart'> | null
   comparisonReferenceTrades?: readonly import('@/types/newowProduct').NewowReferenceTrade[]
   auxiliaryResponse?: NewowProductSectionResponse<'auxiliary'> | null
+  auxiliaryComponent?: NewowAuxiliaryComponent
+  auxiliaryCacheState?: LayerDiagnostics['cacheState']
   auxiliaryLifecycle?: import('@/types/newowProduct').NewowResourceLifecycle
   auxiliaryError?: string | null
   extraAuxiliaryPanes?: readonly NewowAdditionalPane[]
@@ -622,7 +625,8 @@ watch([model, allReferenceTrades], () => { cursorRows.value = []; scheduleAction
 watch([detailLabels, showHints], scheduleActionProjection, { flush: 'post' })
 watch([() => props.loading, () => props.strategySwitching, () => props.strategy, () => props.response?.status.status, () => props.displayOnly], renderVisualOverlays)
 watch([partnerModel, trendTrack, oscillationTrack, comparisonBackground], () => renderModel(model.value))
-watch([auxiliaryModel, auxiliaryPresentation, () => props.extraAuxiliaryPanes], () => { cursorRows.value = []; resize() }, { flush: 'post' })
+watch([auxiliaryModel, auxiliaryPresentation, () => props.auxiliaryComponent, () => props.auxiliaryCacheState,
+  () => props.extraAuxiliaryPanes], () => { cursorRows.value = []; resize() }, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
   renderMarkers(model.value)
   resolveSelectedSignal()
@@ -1322,7 +1326,7 @@ function scrollToLatest(): void {
 const auxiliaryPaneKey = 'newow-selected'
 const auxiliaryPane = { auxiliary: auxiliaryPaneKey } as const
 let failedAuxiliaryAxis: LayerDiagnostics | null = null
-let attachedAuxiliaryComponent: string | null = null
+let attachedAuxiliaryComponent: NewowAuxiliaryComponent | null = null
 function syncAuxiliaryPane(): void {
   if (!host) return
   if (pure.value) {
@@ -1368,6 +1372,8 @@ function clearSelectedAuxiliary(): void {
   attachedAuxiliaryComponent = null
   renderedAuxiliaryKey = null
   renderedAuxiliaryResponse = null
+  renderedAuxiliaryChart = null
+  selectedAuxiliaryCutoff = null
 }
 
 function recordAuxiliaryAxisFailure(): void {
@@ -1402,7 +1408,6 @@ function writeAuxiliaryAxis(value: NewowProductChartModel | null, identity: stri
     recordAuxiliaryAxisFailure()
   }
 }
-type SpecializedAuxiliary = NewowZhaoyaoMirrorPrimitive | NewowUpDownEnergyPrimitive | NewowMainForceControlPrimitive | NewowTrendReversalPrimitive
 const reversalMarks = computed(() => {
   const value = model.value
   const response = props.auxiliaryResponse?.value
@@ -1417,27 +1422,13 @@ const mirrorEvents = computed(() => (props.response?.value?.caution_events ?? []
   const bar = event.detail_visible ? main?.bars.find(item => item.barEnd === event.bar_end) : undefined
   return main && bar ? [{ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay), tentative: event.tentative, state: event.display_state }] : []
 }))
-function updateAuxiliaryPrimitive(
-  primitive: SpecializedAuxiliary,
-  value: ReturnType<typeof alignNewowAuxiliaryChartModel>,
-  response: NewowProductSectionResponse<'auxiliary'> | null | undefined,
-  topInset: number,
-) {
-  const series = value?.series ?? []
-  const main = model.value
-  if (primitive instanceof NewowZhaoyaoMirrorPrimitive) primitive.setData(buildNewowZhaoyaoMirrorData(series, mirrorEvents.value), topInset)
-  else if (primitive instanceof NewowUpDownEnergyPrimitive) primitive.setData(buildNewowUpDownEnergyData(series, main?.bars ?? []), topInset)
-  else if (primitive instanceof NewowMainForceControlPrimitive) primitive.setData(response?.value?.component === 'main_force_control' ? buildNewowMainForceData(series, response.value.segments) : [], topInset)
-  else primitive.setData(buildNewowTrendReversalData(series), topInset, main && response?.value?.component === 'trend_reversal' ? buildNewowTrendReversalMarks(main, response.value.segments) : [])
-}
-
 const primitiveConstructors = {
   zhaoyao_mirror: NewowZhaoyaoMirrorPrimitive, up_down_energy: NewowUpDownEnergyPrimitive,
   main_force_control: NewowMainForceControlPrimitive, trend_reversal: NewowTrendReversalPrimitive,
 }
 const extraPanes = new Map<NewowAuxiliaryPaneComponent, {
-  pane: { auxiliary: string }; anchor: ISeriesApi<'Line'>; primitive: SpecializedAuxiliary | null;
-  lines: AuxiliaryLines; snapshot: string | null; response: NewowProductSectionResponse<'auxiliary'> | null;
+  pane: { auxiliary: string }; anchor: ISeriesApi<'Line'>; primitive: NewowAuxiliaryPrimitive | null;
+  lines: AuxiliaryLines; snapshot: string | null; response: NewowProductSectionResponse<'auxiliary'> | null; dataCutoff: string | null;
 }>()
 const failedExtraAxes = new Map<NewowAuxiliaryPaneComponent, LayerDiagnostics>()
 function renderExtraAuxiliaries() {
@@ -1470,7 +1461,7 @@ function renderExtraAuxiliaries() {
       }
       failedExtraAxes.delete(item.component)
       const primitive = item.component === 'macd' ? null : new primitiveConstructors[item.component]()
-      current = { pane, anchor, primitive, lines: new Map(), snapshot: null, response: null }
+      current = { pane, anchor, primitive, lines: new Map(), snapshot: null, response: null, dataCutoff: null }
       extraPanes.set(item.component, current)
     }
     const aligned = item.lifecycle === 'input_conflict' ? null : alignNewowAuxiliaryChartModel(props.response, item.response)
@@ -1478,32 +1469,28 @@ function renderExtraAuxiliaries() {
     const height = item.height ?? 120
     const key = JSON.stringify([newowChartSnapshotKey(props.response), main?.bars[0]?.barEnd, main?.bars.at(-1)?.barEnd, value, mirrorEvents.value, height, pageTheme.value])
     const response = value === null ? null : item.response
-    const readiness = projectNewowAuxiliaryReadiness(response?.value, props.response?.value?.bars.at(-1))
-    const hasPoints = value?.series.some(series => series.points.length > 0) ?? false
-    const status = newowAuxiliaryLayerStatus(item.lifecycle, Boolean(item.response?.value), value !== null, readiness?.currentStatus ?? null, hasPoints, item.error)
     const pane = current
     const written = host.renderLayer(id, id, pane.pane, pane.primitive ? 'primitive' : 'histogram', layer => {
-      const missingPrimitive = pane.primitive && !layer.hasResource(pane.primitive)
-      if (pane.snapshot !== key || (missingPrimitive && response !== pane.response)) {
+      if (pane.snapshot !== key || response !== pane.response) {
         pane.anchor.setData(main?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay) })) ?? [])
         if (pane.primitive) {
-          if (!layer.hasResource(pane.primitive)) layer.primitive(pane.anchor, pane.primitive, positionPaneHeaders)
-          updateAuxiliaryPrimitive(pane.primitive, value, response, 20)
-        } else renderMacdLines(layer, pane.lines, value, 20 / height)
+          if (!value) layer.remove(pane.primitive)
+          else if (!layer.hasResource(pane.primitive)) layer.primitive(pane.anchor, pane.primitive, positionPaneHeaders)
+          pane.dataCutoff = paintNewowAuxiliaryPrimitive(pane.primitive, value, response, main, 20, { mirrorEvents: mirrorEvents.value })
+        } else {
+          renderMacdLines(layer, pane.lines, value, 20 / height)
+          pane.dataCutoff = auxiliaryPaintCutoff(main, value?.series.map(series => series.points.at(-1)?.time) ?? [])
+        }
         pane.snapshot = key
         pane.response = response
       }
-      layer.updateDiagnostics({
-        status,
-        sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
-        formulaVersion: response?.value?.formula_version ?? null,
-        frequency: main?.identity.frequency ?? null, dataCutoff: response?.meta.as_of ?? null,
-        lastError: item.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
-      })
+      layer.updateDiagnostics(newowAuxiliaryDiagnostics({ chart: props.response, response: item.response, aligned: value !== null,
+        lifecycle: item.lifecycle, error: item.error, dataCutoff: pane.dataCutoff }))
     })
     if (!written) {
       pane.snapshot = null
       pane.response = null
+      pane.dataCutoff = null
       pane.lines.clear()
     }
   }
@@ -1562,13 +1549,23 @@ function resize(): void {
 
 let renderedAuxiliaryKey: string | null = null
 let renderedAuxiliaryResponse: NewowProductSectionResponse<'auxiliary'> | null | undefined
+let renderedAuxiliaryChart: ChartResponse | null = null
+let selectedAuxiliaryCutoff: string | null = null
 function renderAuxiliary(): void {
   if (!host || !auxiliaryAnchor || pure.value) return
-  const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
+  const response = props.auxiliaryResponse
+  const pending = props.auxiliaryLifecycle === 'loading' || props.strategySwitching
+  const component = props.auxiliaryComponent ?? response?.value?.component ?? (pending ? attachedAuxiliaryComponent : null)
+  const value = auxiliaryPresentation.value.showRetainedValue && auxiliaryModel.value?.component === component ? auxiliaryModel.value : null
+  const current = host.inspectLayer('auxiliary-selected')
   // A strategy switch does not revoke the last accepted market indicator.
   // The new generation must prove compatibility before it can replace this layer.
-  if (value === null && !auxiliarySourceConflict.value && (props.strategySwitching || props.auxiliaryLifecycle === 'loading')) return
-  const component = value?.component ?? null
+  if (!value && component === attachedAuxiliaryComponent && renderedAuxiliaryResponse && current && current.status !== 'renderer_failure'
+      && !auxiliarySourceConflict.value && pending && (props.strategySwitching || props.response === renderedAuxiliaryChart)) {
+    host.layer('auxiliary-selected', current.indicatorId, auxiliaryPane).updateDiagnostics({ status: 'loading', cacheState: 'hit' })
+    activeAuxiliary.value = host.inspectLayer('auxiliary-selected')
+    return
+  }
   if (component !== attachedAuxiliaryComponent) {
     clearSelectedAuxiliary()
     attachedAuxiliaryComponent = component
@@ -1580,36 +1577,35 @@ function renderAuxiliary(): void {
     return
   }
   const anchor = auxiliaryAnchor
-  const response = props.auxiliaryResponse
-  const readiness = auxiliaryReadiness.value
+  const accepted = value ? response : null
   const { topInset, auxiliaryHeight } = newowAuxiliaryPaneLayout(container.value?.clientHeight ?? 700, auxiliaryToolbar.value?.offsetHeight ?? 0)
   const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, mirrorEvents.value, primitive ? model.value?.bars : null])
   const written = host.renderLayer('auxiliary-selected', displayId, auxiliaryPane, primitive ? 'primitive' : 'histogram', layer => {
     auxiliaryZeroLine?.applyOptions({ color: primitive ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
-    const missingPrimitive = primitive && !layer.hasResource(primitive)
-    if (nextKey !== renderedAuxiliaryKey || (missingPrimitive && response !== renderedAuxiliaryResponse)) {
+    if (nextKey !== renderedAuxiliaryKey || accepted !== renderedAuxiliaryResponse) {
       if (primitive) {
-        if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive, () => {
+        if (!value) layer.remove(primitive)
+        else if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive, () => {
           activeAuxiliary.value = host?.inspectLayer('auxiliary-selected') ?? null
         })
-        updateAuxiliaryPrimitive(primitive, value, response, topInset)
-      } else renderMacdLines(layer, auxiliaryLines, value, topInset / auxiliaryHeight)
+        selectedAuxiliaryCutoff = paintNewowAuxiliaryPrimitive(primitive, value, accepted, model.value, topInset, { mirrorEvents: mirrorEvents.value })
+      } else {
+        renderMacdLines(layer, auxiliaryLines, value, topInset / auxiliaryHeight)
+        selectedAuxiliaryCutoff = auxiliaryPaintCutoff(model.value, value?.series.map(series => series.points.at(-1)?.time) ?? [])
+      }
       renderedAuxiliaryKey = nextKey
-      renderedAuxiliaryResponse = response
+      renderedAuxiliaryResponse = accepted
+      renderedAuxiliaryChart = value ? props.response : null
     }
-    layer.updateDiagnostics({
-      sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
-      formulaVersion: response?.value?.formula_version ?? null,
-      frequency: response?.meta.identity.frequency ?? props.priceFrequency ?? null,
-      status: newowAuxiliaryLayerStatus(props.auxiliaryLifecycle ?? 'not_requested', Boolean(response?.value), value !== null,
-        readiness?.currentStatus ?? null, value?.series.some(series => series.points.length > 0) ?? false, props.auxiliaryError ?? null),
-      dataCutoff: response?.meta.as_of ?? null,
-      lastError: props.auxiliaryError ?? null,
-    })
+    layer.updateDiagnostics({ ...newowAuxiliaryDiagnostics({ chart: props.response, response, aligned: value !== null,
+      lifecycle: props.auxiliaryLifecycle ?? 'not_requested', error: props.auxiliaryError ?? null, dataCutoff: selectedAuxiliaryCutoff }),
+      cacheState: value ? props.auxiliaryCacheState ?? null : null })
   })
   if (!written) {
     renderedAuxiliaryKey = null
     renderedAuxiliaryResponse = null
+    renderedAuxiliaryChart = null
+    selectedAuxiliaryCutoff = null
     auxiliaryLines.clear()
   }
   activeAuxiliary.value = host.inspectLayer('auxiliary-selected')

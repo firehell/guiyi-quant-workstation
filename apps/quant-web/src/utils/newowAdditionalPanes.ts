@@ -50,10 +50,12 @@ export function newowAuxiliaryLayerStatus(
   hasPoints: boolean,
   error: string | null,
 ): LayerStatus {
+  if (lifecycle === 'input_conflict' || error === 'CHART_AUXILIARY_SOURCE_INVALID') return 'invalid_source'
   if (lifecycle === 'loading') return 'loading'
-  if (lifecycle === 'input_conflict' || error === 'CHART_AUXILIARY_SOURCE_INVALID' || (hasResponse && !aligned)) return 'invalid_source'
-  if (currentStatus === 'warming') return 'warming'
+  if (hasResponse && !aligned) return 'invalid_source'
+  if (lifecycle === 'stale' || lifecycle === 'unavailable' || lifecycle === 'busy') return 'compute_error'
+  if (currentStatus === 'warming' || (currentStatus === null && lifecycle === 'warming')) return 'warming'
   if (currentStatus === 'ready' && hasPoints) return 'ready'
-  if (currentStatus === 'unavailable' || lifecycle === 'unavailable' || (error && !hasResponse)) return 'compute_error'
+  if (currentStatus === 'unavailable' || (error && !hasResponse && lifecycle !== 'not_applicable' && lifecycle !== 'evidence_required')) return 'compute_error'
   return 'missing_input'
 }

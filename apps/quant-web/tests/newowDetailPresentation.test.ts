@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildNewowFixtureEnvelopeForTest } from '../e2e/newow-product.helpers.mjs'
+import { newowAuxiliaryDiagnostics } from '../src/components/market/detail/newow/newowAuxiliaryLayer.ts'
 import { projectNewowDetail, priceDirection, projectNewowAuxiliaryReadiness, newowQuoteFreshness } from '../src/utils/newowDetailPresentation.ts'
 const response = (section) => { const raw = buildNewowFixtureEnvelopeForTest(section); return { meta: raw.meta, section, ...raw[section] } }
 const chart = () => response('chart')
@@ -185,4 +186,37 @@ test('same-contract repeated prefix dates cannot supply another calculation segm
   assert.equal(projectNewowAuxiliaryReadiness(value, bar).currentStatus, 'warming')
   assert.match(projectNewowAuxiliaryReadiness(value, bar).message, /当前数据不足/)
   assert.equal(projectNewowAuxiliaryReadiness(value, { ...bar, calculation_segment_id: 'not-present' }), null)
+})
+
+test('MACD chart alignment reads the state of the exact Bar before a later ready suffix', () => {
+  const earlier = '2026-09-23T07:00:00Z', later = '2026-09-24T07:00:00Z'
+  const bar = { bar_end: earlier, physical_contract: 'JM2701', calculation_segment_id: 'owner' }
+  const value = { component: 'macd', segments: [{ segment_id: 'owner', physical_contract: 'JM2701',
+    bar_ends: [earlier, later], status: { status: 'ready', reason_code: null },
+    data: { dif: [{ ready: false, valid: true, reason: 'warming_up' }, { ready: true, valid: true, reason: null }] } }] }
+  assert.equal(projectNewowAuxiliaryReadiness(value, bar)?.currentStatus, 'warming')
+  assert.equal(projectNewowAuxiliaryReadiness(value, bar)?.reason, 'warming_up')
+  assert.equal(projectNewowAuxiliaryReadiness(value, { ...bar, bar_end: later })?.currentStatus, 'ready')
+})
+
+test('an earlier owner failure does not replace a ready current MACD diagnostic', () => {
+  const currentChart = chart()
+  const bar = currentChart.value.bars.at(-1)
+  const auxiliary = { meta: currentChart.meta, status: { status: 'unavailable', reason_code: 'NEWOW_MACD_UNAVAILABLE' },
+    value: { component: 'macd', formula_version: 'talib_macd_12_26_9_v1', segments: [{
+      physical_contract: bar.physical_contract, segment_id: bar.calculation_segment_id, bar_ends: [bar.bar_end],
+      status: { status: 'ready', reason_code: null }, data: { dif: [{ ready: true, valid: true, reason: null }] },
+    }] } }
+  const available = { chart: currentChart, response: auxiliary, aligned: true,
+    lifecycle: 'unavailable', error: null, dataCutoff: bar.bar_end }
+  const diagnostic = newowAuxiliaryDiagnostics(available)
+  assert.equal(diagnostic.status, 'ready')
+  assert.equal(diagnostic.lastError, null)
+  const failedRefresh = newowAuxiliaryDiagnostics({ ...available, lifecycle: 'stale', error: 'NEWOW_RESOURCE_BUSY' })
+  assert.equal(failedRefresh.status, 'compute_error')
+  assert.equal(failedRefresh.dataCutoff, bar.bar_end)
+  const rejected = newowAuxiliaryDiagnostics({ ...available, lifecycle: 'input_conflict', aligned: false })
+  assert.equal(rejected.lastError, 'CHART_AUXILIARY_SOURCE_INVALID')
+  assert.equal(rejected.sourceIdentity, null)
+  assert.equal(rejected.dataCutoff, null)
 })

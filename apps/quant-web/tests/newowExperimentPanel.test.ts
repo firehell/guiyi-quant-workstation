@@ -201,7 +201,7 @@ test('shared auxiliary replaces only its selected primitive and revokes a mismat
     meta: { ...meta, snapshot_token: snapshot },
     value: { component, formula_version: 'fixture-formula', segments: [{ physical_contract: bar.physical_contract, segment_id: segmentId, bar_ends: [bar.bar_end], status: { status }, data }] },
   })
-  const selected = ref<ReturnType<typeof layer> | null>(layer('main_force_control', { kongpan: [12], status: ['HOLD'], current_status: 'HOLD' }))
+  const selected = ref<ReturnType<typeof layer> | null>(layer('main_force_control', { kongpan: [12], status: ['有庄控盘'], current_status: '有庄控盘' }))
   const component = ref('main_force_control')
   const startingCharts = chartMock.charts.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({
@@ -223,6 +223,12 @@ test('shared auxiliary replaces only its selected primitive and revokes a mismat
   assert.match(accepted, /newow\.main_force_control · 就绪/)
   assert.match(accepted, /fixture-formula/)
   assert.match(accepted, /revision-a/)
+  assert.match(accepted, /2026-09-02T07:00:00Z/)
+  assert.doesNotMatch(accepted, /2026-09-02T08:00:00Z/)
+
+  selected.value = layer('main_force_control', { kongpan: [12], status: ['HOLD'], current_status: 'HOLD' })
+  await flush()
+  assert.match(await showDiagnostics(), /newow\.main_force_control · 缺少输入/)
 
   component.value = 'up_down_energy'
   selected.value = null
