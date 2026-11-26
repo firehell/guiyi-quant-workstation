@@ -9,13 +9,15 @@ from pathlib import Path
 
 from guiyi_quant.lms405 import Action, Position, apply_action
 from guiyi_quant.lms405.portfolio_tasks import Book
+from lms405_exit_position_scope import NEXT_EARLY, NIGHT_CLOSE, NIGHT, NIGHT_SHA
 from lms405_iron_first_protection import by_knowledge, support
 from lms405_jm_divider_study import IMAGES, LUNCH
 from lms405_jm_first_lock_handoff import DAYS, SHORT_BANDS, project_roles
 from lms405_portfolio_origin_window import compare_rows
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_portfolio_task_policy import project_fixture
-from lms405_protection_lot_timing import displayed_tick_totals, verified_json
+from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
+from lms405_protection_snapshot_window import price_window
 from lms405_protection_timeframes import read_window
 from lms405_public_plan_roles import load_source
 from lms405_replay import display, read_session_series
@@ -39,6 +41,8 @@ PREVIOUS = (Path("output/lms405-jm-first-lock-handoff-20261126/final-a.json"),
             "477cd10a951d399f3e8bc44641d37a899634ae82c532055f4e3412b0f0594310")
 OPENING = (Path("output/lms405-opening-plan-management-20261125/checked.json"),
            "43eec0d91262c22f133b776538bc291b538f988d3f8648a6d28858463ed9362d")
+DISPLAY_SCOPE = (Path("output/lms405-exit-position-scope-20261125/final.json"),
+                 "9ba998d56d83f28cc6b2f0b7a4a4365b315a1dcbe076ee01b9cdc035f12a6801")
 
 
 def first_reversal_after(series, observed, cutoff, *, position_known_at):
@@ -131,7 +135,105 @@ def before_lunch(series, minutes, row, open_short, retouch, tick):
                 observed_short="UNLISTED_UNKNOWN")
 
 
-def study(session, market):
+def shared_visible_legs(left, right):
+    """Compare disclosed quantities and opening averages without assuming row identity."""
+    return [key for key in sorted(left.keys() & right.keys())
+            if left[key]["quantity"] == right[key]["quantity"]
+            and left[key]["opening_average"] is not None and right[key]["opening_average"] is not None
+            and Decimal(left[key]["opening_average"]) == Decimal(right[key]["opening_average"])]
+
+
+def fresh_longs_after(series, clock, cutoff, shape, confirm):
+    events = signals(series, shape, confirm, side="LONG", start=DAY_START, cut=cutoff)
+    return [event for event in events if clock < event["shape_end"] - shape * ONE]
+
+
+def intermediate_scope(series, native, previous_noon, index, anchors, tick):
+    display_audit = verified_json(*DISPLAY_SCOPE)
+    night_audit = verified_json(NIGHT, NIGHT_SHA)
+    snapshots = display_audit["observed_rows"]
+    anchors_by_source = display_audit["quote_anchors"]
+    sources = {key: load_source(index, key) | dict(image=display_audit["sources"][key]["image"])
+               for key in (PHOTO, NIGHT_CLOSE, NEXT_EARLY, LUNCH)}
+    for key, source in sources.items():
+        image = source["image"]
+        if (source["published_at"] != display_audit["sources"][key]["published_at"]
+                or sha((ARCHIVE.parent / image["path"]).read_bytes()) != image["sha256"]):
+            raise ValueError("JM_OCT26_INTERMEDIATE_SOURCE_CHANGED")
+
+    night, = map(datetime.fromisoformat, anchors_by_source[NIGHT_CLOSE])
+    morning_post = datetime.fromisoformat(sources[NEXT_EARLY]["published_at"])
+    noon, = map(datetime.fromisoformat, anchors_by_source[LUNCH])
+    if (noon != LUNCH_QUOTE or anchors_by_source[NEXT_EARLY]
+            or set(night_audit["quote_alignment"]["joint_equal_close"]) != {display(night)}
+            or {key: sources[NIGHT_CLOSE][key] for key in night_audit["source"]} != night_audit["source"]
+            or night_audit["image_sha256"] != sources[NIGHT_CLOSE]["image"]["sha256"]
+            or not max(anchors) < night < DAY_START < morning_post < noon):
+        raise ValueError("JM_OCT26_INTERMEDIATE_QUOTE_CHANGED")
+
+    long_key, short_key = f"{CONTRACT}/long", f"{CONTRACT}/short"
+    start_short = snapshots[PHOTO][short_key]
+    end_long = snapshots[LUNCH][long_key]
+    if (any({long_key, short_key} & snapshots[s].keys() for s in (NIGHT_CLOSE, NEXT_EARLY))
+            or start_short != dict(opening_average="1372", quantity=20, today_quantity=20)
+            or end_long != dict(opening_average="1385.25", quantity=20, today_quantity=20)):
+        raise ValueError("JM_OCT26_INTERMEDIATE_VISIBILITY_CHANGED")
+
+    cut = noon - ONE
+    prefix = strict_prefix(series, cut)
+    # Requiring the full public minute to pass is a deliberately later, precisely known stress test.
+    after_post = morning_post + ONE
+    long_totals = displayed_tick_totals(Decimal(end_long["opening_average"]), end_long["quantity"], tick)
+
+    def entering_prices(known_at):
+        eligible = [bar for bar in native if known_at < bar.bar_end - ONE and bar.bar_end + US < cut]
+        result = price_window(eligible, tick, end_long["quantity"], long_totals)
+        counts = earlier_lot_counts(tick_bounds(eligible[-1:], tick), tick_bounds(eligible[:-1], tick),
+                                    end_long["quantity"], long_totals)
+        return result | dict(last_admitted_minute_end=eligible[-1].bar_end if eligible else None,
+                             minimum_lots_from_last_admitted_minute=min(counts, default=None))
+
+    candidate_results = {}
+    for shape, confirm in ((1, 1), (5, 1), (5, 5), (15, 15)):
+        events = fresh_longs_after(series, after_post, cut, shape, confirm)
+        if events != fresh_longs_after(prefix, after_post, cut, shape, confirm):
+            raise ValueError("JM_OCT26_INTERMEDIATE_PREFIX_CHANGED")
+        candidate_results[f"{shape}m_to_{confirm}m"] = [
+            dict(event=event, long_price=entering_prices(event["available_at"])) for event in events
+        ]
+    exit_known = previous_noon["night_exit_candidate"]["available_at"]
+    exit_bars = [bar for bar in native if exit_known < bar.bar_end - ONE and bar.bar_end + US < night - ONE]
+    if (not max(anchors) < exit_known < night - ONE or not exit_bars):
+        raise ValueError("JM_OCT26_INTERMEDIATE_EXIT_WINDOW_CHANGED")
+    return dict(
+        independent_observations={key: dict(source=source, observed_long=snapshots[key].get(long_key),
+                                           observed_short=snapshots[key].get(short_key),
+                                           quote_anchors=anchors_by_source[key],
+                                           display_totals=display_audit["display_totals"][key])
+                                  for key, source in sources.items()},
+        unchanged_other_visible_legs={f"{a}__{b}": shared_visible_legs(snapshots[a], snapshots[b])
+                                      for a, b in ((PHOTO, NIGHT_CLOSE), (NIGHT_CLOSE, NEXT_EARLY),
+                                                   (NEXT_EARLY, LUNCH))},
+        conditional_same_scope=dict(
+            source_ids=[PHOTO, NIGHT_CLOSE, LUNCH],
+            prerequisites=["SAME_ACCOUNT", "COMPLETE_CONTRACT_DISPLAY", "POSITIONS_SYNCHRONIZED_WITH_QUOTES",
+                           "CAPTURES_IN_ASSUMED_ORDER"],
+            minimum_short_lots_removed_by_night_quote=start_short["quantity"],
+            minimum_long_lots_opened_after_night_quote=end_long["quantity"],
+            original_short_held_through_night_quote=False,
+            overnight_long_held_through_night_quote_to_lunch=False,
+            transient_protection_before_night_quote=None,
+        ),
+        night_exit_candidate_price_range=dict(known_at=exit_known, count=len(exit_bars),
+                                              low=min(b.low for b in exit_bars), high=max(b.high for b in exit_bars)),
+        after_morning_public_minute=dict(ready_at=after_post, strict_lunch_cutoff=cut,
+                                         price_without_signal=entering_prices(after_post), candidates=candidate_results),
+        morning_capture_at=None, account_continuity=None, author_short_exit=None, author_long_entry=None,
+        author_action_samples=0,
+    )
+
+
+def study(session, market, *, include_intermediate=False):
     opening = verified_json(*OPENING)["cases"]
     previous = verified_json(*PREVIOUS)
     combined = verified_json(*COMBINED)
@@ -262,6 +364,8 @@ def study(session, market):
     lunch_row = lunch_row | dict(by_variant={"replay": lunch_row["by_variant"]["strict_replay"]})
     noon = before_lunch(current, native, lunch_row, action_row(open_current, "ENTER_SHORT"),
                         after_entry_retouch, tick)
+    intermediate = ({"intermediate_scope": intermediate_scope(current, native, noon, source_index, anchors, tick)}
+                    if include_intermediate else {})
 
     return dict(
         study="JM2701_OCT26_FRESH_SHORT_AFTER_OLD_CYCLE", sources=sources,
@@ -274,6 +378,7 @@ def study(session, market):
         photo_reread=dict(image_sha256=PHOTO_HASH, opening_average=REREAD_AVERAGE),
         historical_revision_verified=False, actual_account_continuity=None, author_permissions_supplied=False,
         author_action_samples=0, author_match_rate=None, fills=None, executable=False,
+        **intermediate,
     )
 
 
@@ -281,6 +386,7 @@ def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--intermediate-scope", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -294,7 +400,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), include_intermediate=args.intermediate_scope)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

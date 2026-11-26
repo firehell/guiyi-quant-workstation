@@ -3,7 +3,9 @@ from decimal import Decimal
 import pytest
 
 from guiyi_quant.lms405 import Bar
-from lms405_jm_oct26_fresh_short import CONTRACT, first_reversal_after, position_action, strict_prefix
+from lms405_jm_oct26_fresh_short import (
+    CONTRACT, first_reversal_after, fresh_longs_after, position_action, shared_visible_legs, strict_prefix,
+)
 from lms405_right_side_study import ONE, US, at
 
 
@@ -35,3 +37,23 @@ def test_position_paths_end_with_identical_long_but_different_intermediate_expos
     assert released[-2]["after"] == ["1", "1"]
     with pytest.raises(ValueError, match="JM_OCT26_POSITION_ORDER_CONFLICT"):
         position_action(protected, "EXIT_SHORT", start + 2 * ONE)
+
+
+def test_morning_gate_requires_fresh_shape_not_just_later_confirmation():
+    clock = at("2026-10-27T10:14")
+    bars = [Bar(CONTRACT, clock + (i + 1) * ONE, *map(Decimal, prices), start=clock + i * ONE)
+            for i, prices in enumerate(((100, 103, 98, 101), (101, 105, 100, 104)), start=0)]
+    bars.insert(0, Bar(CONTRACT, clock, Decimal(100), Decimal(106), Decimal(95), Decimal(100), start=clock - ONE))
+    cutoff = clock + 3 * ONE
+    assert fresh_longs_after({1: bars}, clock, cutoff, 1, 1) == []
+    event, = fresh_longs_after({1: bars}, clock - US, cutoff, 1, 1)
+    assert event["confirmed_at"] == clock + 2 * ONE
+
+
+def test_visible_leg_similarity_does_not_join_missing_or_unreadable_rows():
+    old = {"match": {"quantity": 20, "opening_average": "1.0"},
+           "missing": {"quantity": 20, "opening_average": "1.0"},
+           "unknown": {"quantity": 20, "opening_average": None}}
+    new = {"match": {"quantity": 20, "opening_average": "1.00"},
+           "unknown": {"quantity": 20, "opening_average": "1.0"}}
+    assert shared_visible_legs(old, new) == ["match"]
