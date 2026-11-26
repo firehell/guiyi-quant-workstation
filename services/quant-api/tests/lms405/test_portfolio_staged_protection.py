@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar, Position
+from lms405_fg_boundary_price_support import summarize_prices
 from lms405_portfolio_staged_protection import common_quote_ends, exposure_bounds, tape
 from lms405_staged_protection_clocks import phase_prices
 import pytest
@@ -75,3 +76,15 @@ def test_permission_minute_price_relaxations_are_independent_and_exclude_quote_m
     assert phase_prices(*args, tick=Decimal(1)) == ((828, 833), (829, 834))
     assert phase_prices(*args, tick=Decimal(1), allow_early=True) == ((826, 833), (829, 834))
     assert phase_prices(*args, tick=Decimal(1), allow_late=True) == ((828, 833), (827, 834))
+
+
+def test_glass_rounded_mean_requires_price_specific_lots_before_topup():
+    tiers = summarize_prices(20, low_prices=(826, 827), early=(828, 831), late=(829, 836),
+                             totals=range(16559, 16561))
+    assert list(tiers) == list(range(7, 21))
+    assert tiers[7] == dict(minimum_lots_at_lowest=6, minimum_lots_at_either_low_price=7,
+                            minimum_lots_at_higher_low_if_lowest_unavailable=None,
+                            possible_using_neither_low_price=False)
+    assert tiers[10]["minimum_lots_at_higher_low_if_lowest_unavailable"] == 10
+    assert tiers[15]["minimum_lots_at_higher_low_if_lowest_unavailable"] == 5
+    assert [n for n, row in tiers.items() if row["possible_using_neither_low_price"]] == [20]
