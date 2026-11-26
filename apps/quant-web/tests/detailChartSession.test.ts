@@ -190,6 +190,22 @@ test('an identity change withdraws both price windows even if one native clear t
   f.session.dispose()
 })
 
+test('base provenance follows a shared canvas lease and expires with the market identity', () => {
+  const f = fixture()
+  f.session.setIdentity('jm:15m')
+  const first = f.session.acquire(f.container(), {})
+  first.addSeries(f.candle).setData(f.bars)
+  const fact = { frequency: '15m', dataCutoff: '2026-09-03T02:30:00Z', sourceIdentity: 'checked-bar',
+    formulaVersion: null, cacheState: 'miss' as const, physicalContract: 'JM2701' }
+  const diagnostic = { ...fact, renderer: 'candles', indicatorId: 'price' }
+  f.session.recordBaseLayer('candles', diagnostic)
+  f.session.acquire(f.container(), {}).addSeries(f.candle).setData([])
+  assert.deepEqual(f.session.readBaseLayer('candles'), fact)
+  f.session.setIdentity('rb:15m')
+  assert.equal(f.session.readBaseLayer('candles'), undefined)
+  f.session.dispose()
+})
+
 test('leases remove anonymous subscriptions and block old time-scale mutations', () => {
   const f = fixture(), listeners = new Set<Function>()
   const scale = f.raw.timeScale()

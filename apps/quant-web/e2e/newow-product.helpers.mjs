@@ -249,7 +249,9 @@ export async function installNewowProductFixtures(page, options = {}) {
       if (options.genericSeries === 'pending') return new Promise(() => {})
       if (options.genericSeries === 'failed') return route.abort('failed')
       if (options.genericSeries === 'failed-once' && state.requests.filter(item => item.url.pathname === url.pathname).length === 1) return route.abort('failed')
-      return route.fulfill({ json: genericBarsPage(url, options) })
+      const marketPage = genericBarsPage(url, options)
+      if (options.genericBarSourceHash) marketPage.bars.at(-1).source_bar_sha256 = options.genericBarSourceHash
+      return route.fulfill({ json: marketPage })
     }
     if (url.pathname === '/api/v1/market/newow/trend-detail') {
       return route.abort('failed')

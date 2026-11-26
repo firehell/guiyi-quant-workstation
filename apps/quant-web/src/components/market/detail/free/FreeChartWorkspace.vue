@@ -177,7 +177,7 @@ function loadEarlier() { void props.loadEarlier() }
       <template v-if="!dynamicRange.supported.value">震荡／趋势研究指标目前支持30分钟、60分钟、日线，请切换周期。</template>
       <template v-else>震荡蓝色／上涨红色／下跌绿色；每根保留当时边界，向左加载不会重算显示起点。仅历史已归档完成K线，实时部分待归档。研究v2：方向连续2根确认，连续3根中性退出；ER仅衡量效率。
         <span v-if="dynamicRange.loading.value">正在计算历史前缀…</span>
-        <span v-else>已计算 {{ dynamicRange.points.value.length }} 根。</span>
+        <span v-else>已计算 {{ dynamicRange.display.value?.points.length ?? 0 }} 根。</span>
         <span v-if="dynamicRange.error.value">{{ dynamicRange.error.value }} <button type="button" @click="dynamicRange.refresh">重试指标</button></span>
       </template>
     </p>
@@ -203,8 +203,7 @@ function loadEarlier() { void props.loadEarlier() }
     <FreeChartStage
       :bars="bars"
       :active-bar="activeBar"
-      :dynamic-range-points="dynamicRange.points.value"
-      :dynamic-range-enabled="showDynamicRange && dynamicRange.supported.value"
+      :dynamic-range="dynamicRange.display.value"
       :pattern-geometry="patternGeometry"
       :mutation="mutation" :has-more-before="hasMoreBefore" :loading-before="loadingBefore" :history-error="historyError"
       :loading="loading"

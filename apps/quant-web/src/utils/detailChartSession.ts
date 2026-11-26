@@ -1,4 +1,4 @@
-import { createChartHost, type ChartHost } from '@guiyi/quant-chart'
+import { createChartHost, type ChartHost, type LayerDiagnostics } from '@guiyi/quant-chart'
 import type { DisplayVolumeBar } from './volumeDisplay.ts'
 import type { createChart, IChartApi, LogicalRange, SeriesType, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
 import { createPriceSeriesWriter } from './priceSeriesWriter.ts'
@@ -8,6 +8,10 @@ import { previewInstant } from './candidatePreviewInstant.ts'
 
 export const DETAIL_CHART_SESSION = Symbol('detail-chart-session')
 export type DetailChartSession = ReturnType<typeof createDetailChartSession>
+type SharedLayerRole = 'candles' | 'volume'
+type SharedLayerFact = Pick<LayerDiagnostics, 'sourceIdentity' | 'formulaVersion' | 'frequency' | 'dataCutoff' | 'cacheState'> & {
+  physicalContract?: string
+}
 export function detailChartPaneLayout(chartHeight: number, toolbarHeight: number, indicatorHeight = 150) {
   const topInset = Math.max(44, toolbarHeight + 12)
   const auxiliaryHeight = topInset + indicatorHeight + 15
@@ -62,6 +66,7 @@ export function createDetailChartSession(dependencies: {
   const writers = new Map<string, ReturnType<typeof createPriceSeriesWriter<any>>>()
   const pricePoints = new Map<string, any[]>()
   const hiddenPrices = new Set<string>()
+  const sharedLayerFacts = new Map<SharedLayerRole, SharedLayerFact>()
   let volumeInput: readonly DisplayVolumeBar[] = []
   let hasPrices = false
   let ownsViewport = false
@@ -134,6 +139,7 @@ export function createDetailChartSession(dependencies: {
   }
   function clearPriceWindow() {
     writers.clear(); pricePoints.clear(); volumeInput = []
+    sharedLayerFacts.clear()
     for (const [role, series] of prices) {
       try {
         series.setData([])
@@ -144,6 +150,7 @@ export function createDetailChartSession(dependencies: {
   }
   function hideUnverifiedSeries(role: string, series: ISeriesApi<SeriesType, Time>) {
     hiddenPrices.add(role)
+    if (role === 'candles' || role === 'volume') sharedLayerFacts.delete(role)
     try { series.applyOptions({ visible: false }) } catch { /* Retry on the next write. */ }
   }
   function knownCandles() {
@@ -360,6 +367,7 @@ export function createDetailChartSession(dependencies: {
     cursor = null
     setExecutions([])
     host?.dispose(); chart = null; host = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); hiddenPrices.clear(); volumeInput = []; viewports.clear()
+    sharedLayerFacts.clear()
   }
   function setExecutions(points: readonly ExecutionOverlayPoint[], frequency: string | null = null) {
     executionPoints = points
@@ -402,6 +410,13 @@ export function createDetailChartSession(dependencies: {
   function restoreInspectionCursor() {
     if (chart) restoreCursor(chart)
   }
-  const session = { zoom, scrollToLatest, setExecutions, inspectExecutionLayers, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
+  function recordBaseLayer(role: SharedLayerRole, { frequency, dataCutoff, sourceIdentity, formulaVersion, cacheState, physicalContract }: SharedLayerFact) {
+    if (dataCutoff && !hiddenPrices.has(role)) sharedLayerFacts.set(role, {
+      frequency, dataCutoff, sourceIdentity, formulaVersion, cacheState, physicalContract,
+    })
+    else sharedLayerFacts.delete(role)
+  }
+  function readBaseLayer(role: SharedLayerRole) { return sharedLayerFacts.get(role) }
+  const session = { zoom, scrollToLatest, setExecutions, inspectExecutionLayers, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, recordBaseLayer, readBaseLayer, dispose }
   return session
 }

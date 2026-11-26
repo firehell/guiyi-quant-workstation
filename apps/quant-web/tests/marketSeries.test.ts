@@ -3,12 +3,11 @@ import { describe, it } from 'node:test'
 
 import {
   isCurrentGeneration,
-  MarketSeriesPhysicalIdentityError,
   mergeInitialPage,
   prependHistoricalPage,
-  resolveHistoricalPhysicalContract,
   useMarketSeries,
 } from '../src/composables/useMarketSeries.ts'
+import { MarketSeriesPhysicalIdentityError, resolveHistoricalPhysicalContract } from '../src/utils/marketBarDisplay.ts'
 import type { MarketBarsPageResponse, MarketReadState } from '../src/types/market.ts'
 
 function page(

@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 import { CHART_MANIFEST } from '@guiyi/quant-chart'
-import { NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
+import { NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, releaseDeferred, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
   test(`${strategy} ${frequency}: native panes, indicator replacement and action diagnostics`, async ({ page }) => {
@@ -68,6 +68,37 @@ test('weekly deep link remains closed without requesting strategy data', async (
   await expect(page.getByText(/1w 尚未开放/)).toBeVisible()
   expect(productRequests(fixture, 'chart')).toHaveLength(0)
   expect(productRequests(fixture, 'auxiliary')).toHaveLength(0)
+  assertNoUnexpectedRequests(fixture)
+})
+
+test('Newow labels the price and volume actually painted before strategy verification', async ({ page }) => {
+  const hash = 'f'.repeat(64)
+  const fixture = await installNewowProductFixtures(page, { deferOnce: 'trend:1d:chart', genericBarSourceHash: hash })
+  await page.goto(newowRoute('trend', '1d'))
+  const stage = page.getByTestId('newow-product-chart-stage')
+  await expect(stage).toHaveAttribute('data-kline-end', /2026-/)
+  await expect(stage).toHaveAttribute('data-volume-bar-count', '2')
+  const previewEnd = await stage.getAttribute('data-kline-end')
+  await stage.getByText('副图管理', { exact: true }).click()
+  const diagnostics = stage.locator('.chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const rows = diagnostics.locator('.chart-layer-diagnostics__row')
+  const price = rows.filter({ has: page.getByText('price · 就绪', { exact: true }) })
+  const volume = rows.filter({ has: page.getByText('newow_volume · 就绪', { exact: true }) })
+  for (const row of [price, volume]) {
+    await row.locator('summary').click()
+    await expect(row).toContainText(hash)
+    await expect(row).toContainText(previewEnd)
+    await expect(row).toContainText('miss')
+  }
+  await expect(diagnostics.getByText('newow_actions · 就绪', { exact: true })).toHaveCount(0)
+  await expect.poll(() => fixture.deferred.has('trend:1d:chart')).toBe(true)
+  await releaseDeferred(fixture, 'trend:1d:chart')
+  await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
+  await diagnostics.getByRole('button', { name: '刷新诊断', exact: true }).click()
+  await expect(price).not.toContainText(hash)
+  await expect(volume).not.toContainText(hash)
+  await expect(diagnostics.getByText('newow_actions · 就绪', { exact: true })).toBeVisible()
   assertNoUnexpectedRequests(fixture)
 })
 

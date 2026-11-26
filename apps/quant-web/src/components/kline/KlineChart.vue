@@ -6,7 +6,7 @@ import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
 
 import { formatDisplayNumber } from '@/utils/marketDisplay'
 import { DynamicRangePrimitive } from '@/components/kline/dynamicRangePrimitive'
-import { matchesRangeBar, pointKey, type DynamicRangePoint } from '@/utils/dynamicRange'
+import { DYNAMIC_RANGE_VERSION, matchesRangeBar, pointKey, type DynamicRangeDisplay, type VerifiedRangePoint } from '@/utils/dynamicRange'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { inject, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
@@ -82,8 +82,7 @@ function latestStudyPoint(
 
 const props = withDefaults(defineProps<{
   chartProfile?: ChartProfileId
-  dynamicRangePoints?: DynamicRangePoint[]
-  dynamicRangeEnabled?: boolean
+  dynamicRange?: DynamicRangeDisplay | null
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
   activeBar?: BarData | null
@@ -110,8 +109,6 @@ const props = withDefaults(defineProps<{
 }>(), {
   volumeScoring: true,
   subingVolumeTiers: false,
-  dynamicRangePoints: () => [],
-  dynamicRangeEnabled: false,
   loading: false,
   error: null,
   period: '15m',
@@ -208,6 +205,7 @@ watch(() => props.patternGeometry, () => {
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
 let htdyLines: Record<'zk1' | 'zd1' | 'zd2', ISeriesApi<'Line'>> | null = null
 const dynamicRangePrimitive = new DynamicRangePrimitive()
+let drawnRangePoints: readonly VerifiedRangePoint[] = []
 let renderedBars: BarData[] = []
 const rangeCalculationMs = ref(0)
 const rangeCount = ref(0)
@@ -337,7 +335,7 @@ watch([() => props.studyDisplay, () => props.studyIssue], () => {
   renderDerivedSeries()
   detailSession?.restoreInspectionCursor()
 })
-watch(() => [props.dynamicRangePoints, props.dynamicRangeEnabled], () => { renderDynamicRange(); detailSession?.restoreInspectionCursor() })
+watch(() => props.dynamicRange, () => { renderDynamicRange(); detailSession?.restoreInspectionCursor() })
 watch(() => props.savedReferenceLines, renderSavedReferenceLines)
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
@@ -430,12 +428,15 @@ function renderVolumeBars(): void {
   }
   const latestVolume = lastMatching<DisplayVolumeBar>(input, validVolume)
   const scoringVersion = !props.subingVolumeTiers && props.volumeScoring ? VOLUME_DISPLAY_VERSION : null
-  volumeLayer?.updateDiagnostics({
+  const volumeFact = {
     ...barProvenance(latestVolume),
     ...(scoringVersion ? { sourceIdentity: null } : {}),
-    status: latestVolume ? 'ready' : props.loading ? 'loading' : 'missing_input',
-    formulaVersion: scoringVersion, lastError: null,
+    formulaVersion: scoringVersion, cacheState: null, physicalContract: latestVolume?.physicalContract,
+  }
+  volumeLayer?.updateDiagnostics({
+    ...volumeFact, status: latestVolume ? 'ready' : props.loading ? 'loading' : 'missing_input', lastError: null,
   })
+  detailSession?.recordBaseLayer('volume', volumeFact)
   const anchor = volume
   const tierSource = DISPLAY_CATALOG.subing_volume?.source
   const written = Boolean(props.subingVolumeTiers && host?.renderLayer('volume-tiers', 'subing_volume', 'volume', 'primitive', layer => {
@@ -641,8 +642,8 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
       markersForHoverContext(),
     )
     : null
-  if (nextContext && props.dynamicRangeEnabled) {
-    const point=props.dynamicRangePoints.find(p => matchesRangeBar(p, nextContext.bar))
+  if (nextContext && props.dynamicRange) {
+    const point=drawnRangePoints.find(p => matchesRangeBar(p, nextContext.bar))
     nextContext.dynamicRange=point ?? null
     nextContext.dynamicRangeEnabled=true
   }
@@ -723,13 +724,16 @@ function renderAllSeries(): void {
   if (!host || !candles || !volume || !chart) return
   const price = host.layer('price', 'price', 'main')
   const wasWritten = sharedPriceWritten
+  const retained = !renderedBars.length ? detailSession?.readBaseLayer('candles') : undefined
   try {
     candles.setData(barValues(renderedBars))
     sharedPriceWritten = true
     const confirmed = lastMatching(renderedBars, bar => bar.confirmed !== false)
+    const priceFact = retained ?? { ...barProvenance(confirmed), formulaVersion: null, cacheState: null, physicalContract: confirmed?.physicalContract }
     price.updateDiagnostics({
-      ...barProvenance(confirmed), status: confirmed ? 'ready' : props.loading ? 'loading' : 'missing_input', lastError: null,
+      ...priceFact, status: priceFact.dataCutoff ? 'ready' : props.loading ? 'loading' : 'missing_input', lastError: null,
     })
+    detailSession?.recordBaseLayer('candles', priceFact)
   } catch {
     sharedPriceWritten = false
     positionedCallouts.value = []
@@ -745,11 +749,12 @@ function renderAllSeries(): void {
   if (sharedPriceWritten !== wasWritten) renderPublicPattern()
   renderActiveCandle()
   const last = sharedPriceWritten ? renderedBars.at(-1) : undefined
+  const retainedPrice = sharedPriceWritten ? retained : undefined
   if (container.value) {
-    container.value.dataset.klineEnd = last?.time ?? ''
-    container.value.dataset.klineCount = String(sharedPriceWritten ? renderedBars.length : 0)
+    container.value.dataset.klineEnd = last?.time ?? retainedPrice?.dataCutoff ?? ''
+    container.value.dataset.klineCount = String(sharedPriceWritten ? renderedBars.length || detailSession?.length() || 0 : 0)
     container.value.dataset.klineClose = last ? String(last.close) : ''
-    container.value.dataset.klineContract = last?.physicalContract ?? ''
+    container.value.dataset.klineContract = last?.physicalContract ?? retainedPrice?.physicalContract ?? ''
     container.value.dataset.klineFrequency = props.period
   }
   renderVolumeBars()
@@ -759,21 +764,43 @@ function renderAllSeries(): void {
 
 function renderDynamicRange(): void {
   if (!host || !candles) return
-  if (!props.dynamicRangeEnabled || !sharedPriceWritten) {
-    host.removeLayer('dynamic-range')
+  const display = props.dynamicRange
+  if (!display || !sharedPriceWritten) {
+    if (host.inspectLayer('dynamic-range')) host.removeLayer('dynamic-range')
+    publishDynamicRangePoints([])
     return
   }
   const anchor = candles
   const bars = new Map(renderedBars.map(b => [pointKey(b.physicalContract ?? '',b.time),b]))
-  const points = props.dynamicRangePoints.filter(p => {
-    const b=bars.get(pointKey(p.contract,p.time)); return b && matchesRangeBar(p,b)
-  }).map(p => ({...p,time:bars.get(pointKey(p.contract,p.time))!.time}))
-  host.renderLayer('dynamic-range', 'dynamic_range', 'main', 'primitive', layer => {
-    if (!layer.hasResource(dynamicRangePrimitive)) layer.primitive(anchor, dynamicRangePrimitive)
-    dynamicRangePrimitive.setData(points, ribbonTime)
-    layer.updateDiagnostics({ status: points.length ? 'ready' : 'missing_input', frequency: props.period,
-      dataCutoff: points.at(-1)?.time ?? null })
+  const points = display.points.flatMap(point => {
+    const bar = bars.get(pointKey(point.contract, point.time))
+    return bar && matchesRangeBar(point, bar) ? [point.time === bar.time ? point : { ...point, time: bar.time }] : []
   })
+  const written = host.renderLayer('dynamic-range', 'dynamic_range', 'main', 'primitive', layer => {
+    if (!layer.hasResource(dynamicRangePrimitive)) layer.primitive(anchor, dynamicRangePrimitive, () => publishDynamicRangePoints([]))
+    dynamicRangePrimitive.setData(points, ribbonTime)
+    const last = points.at(-1)
+    layer.updateDiagnostics({
+      status: display.issue?.status ?? (display.loading ? 'loading' : !last ? 'missing_input'
+        : last.reason === 'WARMUP' ? 'warming' : last.regime === 'UNKNOWN' ? 'invalid_source' : 'ready'),
+      frequency: props.period, formulaVersion: last ? DYNAMIC_RANGE_VERSION : null,
+      sourceIdentity: last?.prefixSourceHash ?? null, dataCutoff: last?.time ?? null,
+      lastError: display.issue?.code ?? last?.reason ?? null,
+    })
+  })
+  publishDynamicRangePoints(written ? points : [])
+}
+
+function publishDynamicRangePoints(points: readonly VerifiedRangePoint[]) {
+  drawnRangePoints = points
+  const current = hoverContext.value
+  if (!current) return
+  const enabled = Boolean(props.dynamicRange)
+  const point = enabled ? points.find(item => matchesRangeBar(item, current.bar)) ?? null : null
+  if (point === current.dynamicRange && enabled === current.dynamicRangeEnabled) return
+  const next = { ...current, dynamicRange: point, dynamicRangeEnabled: enabled }
+  hoverContext.value = next
+  emit('crosshair-change', next)
 }
 
 const indicatorRenderFailed = ref(false)

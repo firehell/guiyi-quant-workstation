@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ChartProfileId } from '@guiyi/quant-chart'
-import type { DynamicRangePoint } from '@/utils/dynamicRange'
+import type { DynamicRangeDisplay } from '@/utils/dynamicRange'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
@@ -18,8 +18,7 @@ import { MARKET_CHART_STUDY_BAR_LIMIT, MARKET_CHART_STUDY_IDENTITY, marketChartS
 
 const props = withDefaults(defineProps<{
   chartProfile?: ChartProfileId
-  dynamicRangePoints?: DynamicRangePoint[]
-  dynamicRangeEnabled?: boolean
+  dynamicRange?: DynamicRangeDisplay | null
   patternGeometry?: PatternGeometry | null
   subingVolumeTiers?: boolean
   volumeScoring?: boolean
@@ -171,9 +170,8 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :volume-scoring="volumeScoring"
       :research-markers="researchMarkers"
       :saved-reference-lines="savedReferenceLines"
-    :dynamic-range-points="dynamicRangePoints"
-    :dynamic-range-enabled="dynamicRangeEnabled"
-    :pattern-geometry="patternGeometry"
+      :dynamic-range="dynamicRange"
+      :pattern-geometry="patternGeometry"
       :loading="loading"
       :error="error"
       :period="period"

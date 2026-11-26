@@ -232,4 +232,53 @@ test('indicator request failure leaves the base candles updating', async ({ page
   await expect(candles(page)).toHaveAttribute('data-kline-count', '3')
   await expect(candles(page)).toHaveAttribute('data-kline-close', '130')
   await expect(page.getByTestId('dynamic-range-status')).toContainText('指标计算不可用')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('dynamic_range · 计算错误', { exact: true })).toHaveCount(1)
+})
+
+test('dynamic range readers display a verified prefix and never extend it with live prices', async ({ page }) => {
+  await installDetailFakeWebSocket(page)
+  const historical = [detailBar('jm', 0), detailBar('jm', 1)]
+  const prefixHash = 'a'.repeat(64)
+  let reads = 0
+  await mockMarketDetail(page, { live: true, barsPage: () => ({ bars: historical }) })
+  await page.route('**/api/v1/market/indicators/dynamic-range?*', route => {
+    if (++reads === 1) return route.fulfill({ status: 409, json: { detail: { code: 'DYNAMIC_RANGE_SOURCE_CHANGED' } } })
+    return route.fulfill({ json: {
+      version: 'subing_dynamic_range_v2', trend_version: 'subing_ema21_ols5_atr14_v2', profile: 'bounded_confirmed',
+      symbol: 'jm', frequency: '30m', contract: 'JM2601', prefix_start: historical[0].bar_end, source_hash: prefixHash,
+      source_proof: { lifecycle_hash: 'b'.repeat(64), partitions: { '2026-9': 'c'.repeat(64) } },
+      points: historical.map(bar => ({ ...bar, time: bar.bar_end, contract: bar.physical_contract, regime: 'RANGE',
+        phase: 'SEARCHING', reason: null, er: 0.2, chop: 60, trend_candidate: false, break_side: null, box: null })),
+    } })
+  })
+  await page.goto(chartUrl('', '30m'))
+  await waitForSocket(page, 1)
+  const button = page.getByRole('button', { name: '震荡／趋势' })
+  const hint = page.getByTestId('dynamic-range-status')
+  await button.click()
+  await expect(hint).toContainText('历史前缀来源已变化')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const rows = diagnostics.locator('.chart-layer-diagnostics__row')
+  const invalid = rows.filter({ has: page.getByText('dynamic_range · 来源无效', { exact: true }) })
+  await invalid.locator('summary').click()
+  await expect(invalid).toContainText('DYNAMIC_RANGE_SOURCE_CHANGED')
+  await expect(invalid).not.toContainText(historical[1].bar_end)
+  await hint.getByRole('button', { name: '重试指标' }).click()
+  expect(reads).toBe(1)
+
+  await button.click()
+  await button.click()
+  await expect(hint).toContainText('已计算 2 根')
+  const live = detailBar('jm', 3)
+  await send(page, 0, [snapshot('JM2601', [live])])
+  await expect(candles(page)).toHaveAttribute('data-kline-end', live.bar_end)
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  const ready = rows.filter({ has: page.getByText('dynamic_range · 就绪', { exact: true }) })
+  await expect(ready).toContainText(prefixHash)
+  await expect(ready).toContainText(historical[1].bar_end)
+  await expect(ready).not.toContainText(live.bar_end)
+  expect(reads).toBe(2)
 })

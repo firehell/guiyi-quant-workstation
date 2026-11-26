@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, shallowRef, watch, type Ref } from 'vue'
 import { getMarketBarsPage } from '../api/market.ts'
 import { peekDetailPrice, rememberDetailPrice, restoreDetailPrice } from '../api/detailPriceCache.ts'
 import { validateDetailPrice } from '../utils/detailPricePreview.ts'
+import { historicalDisplayBar } from '../utils/marketBarDisplay.ts'
 import type { MarketDetailIdentity } from '../types/marketDetail.ts'
 import type { BarData, MarketBarsPageRequest, MarketBarsPageResponse } from '../types/market.ts'
 
@@ -15,7 +16,7 @@ export function useDetailPricePreview(identity: Readonly<Ref<MarketDetailIdentit
     controller?.abort()
     const owner = controller = new AbortController()
     const current = identity.value
-    if (!current) { page.value = null; loading.value = false; error.value = null; return }
+    if (!current) { page.value = null; loading.value = false; error.value = null; cached.value = false; return }
     const query: MarketBarsPageRequest = { symbol: current.symbol, series_kind: current.seriesKind, frequency: current.frequency, ...(current.contract ? { contract: current.contract } : {}), limit: 500 }
     page.value = peekDetailPrice(query) ?? null
     cached.value = page.value !== null
@@ -36,10 +37,10 @@ export function useDetailPricePreview(identity: Readonly<Ref<MarketDetailIdentit
   }
   watch(() => [identity.value?.symbol, identity.value?.frequency, identity.value?.seriesKind, identity.value?.contract].join('|'), refresh, { immediate: true, flush: 'sync' })
   onBeforeUnmount(() => controller?.abort())
-  const bars = computed<BarData[]>(() => page.value?.bars.map(bar => {
-    const segment = page.value!.resolved_contract_segments.find(item => item.start_trading_day <= bar.trading_day && item.end_trading_day >= bar.trading_day)
-    return { time: bar.bar_end, trading_day: bar.trading_day, physicalContract: segment?.contract, calculationSegmentId: segment ? `${segment.contract}:${segment.start_trading_day}` : undefined, open: bar.open, high: bar.high, low: bar.low, close: bar.close, volume: bar.volume }
-  }) ?? [])
+  const bars = computed<BarData[]>(() => {
+    const current = page.value
+    return current ? current.bars.map(bar => historicalDisplayBar(current, bar)) : []
+  })
   return { bars, cached, loading, error, refresh, cutoff: computed(() => page.value?.bars.at(-1)?.bar_end ?? null) }
 }
 

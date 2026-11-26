@@ -1,5 +1,7 @@
 import type { BarData } from '../types/market.ts'
 
+export const DYNAMIC_RANGE_VERSION = 'subing_dynamic_range_v2'
+
 export interface DynamicRangePoint {
   time: string; contract: string; open: number; high: number; low: number; close: number
   regime: 'RANGE' | 'TREND_UP' | 'TREND_DOWN' | 'UNKNOWN'
@@ -7,18 +9,54 @@ export interface DynamicRangePoint {
   trend_candidate: boolean; break_side: string | null
   box: { box_id: string; confirmed_at: string; lower: number; upper: number; atr_reference: number; revision: number } | null
 }
+export interface VerifiedRangePoint extends DynamicRangePoint {
+  prefixSourceHash: string
+  barSourceHash?: string
+}
+export interface DynamicRangeIssue {
+  status: 'missing_input' | 'invalid_source' | 'compute_error'
+  code: string
+  message: string
+}
+export interface DynamicRangeDisplay {
+  points: readonly VerifiedRangePoint[]
+  loading: boolean
+  issue: DynamicRangeIssue | null
+}
 export const regimeLabel = { RANGE: '震荡', TREND_UP: '上涨趋势', TREND_DOWN: '下跌趋势', UNKNOWN: '不可用' }
 export const phaseLabel: Record<string, string> = { SEARCHING: '寻找箱体', FORMING: '形成中', RANGE_ACTIVE: '箱内', RANGE_EXPANDING: '有限扩展', BOUNDARY_TEST: '边界试探', BREAK_PENDING: '突破待确认', BREAK_CONFIRMED: '突破确认', BREAK_FAILED: '假突破' }
+const rangeReasons = new Set(['WARMUP', 'COVERAGE_INVALID', 'INPUT_INVALID', 'FACTOR_INPUT_INVALID', 'BOX_WIDTH_EXCEEDED'])
+export function rangeDiagnosticReason(reason: string | null | undefined): string | null {
+  return reason && rangeReasons.has(reason) ? reason : null
+}
+
+const rangeIssueStatuses = new Map<string, DynamicRangeIssue['status']>([
+  ['DYNAMIC_RANGE_CANONICAL_ENDPOINT_MISSING', 'missing_input'], ['DYNAMIC_RANGE_PREFIX_UNAVAILABLE', 'missing_input'],
+  ['DATA_INSUFFICIENT', 'missing_input'], ['DATA_CONFLICT', 'invalid_source'],
+  ['DYNAMIC_RANGE_SOURCE_MISMATCH', 'invalid_source'], ['DYNAMIC_RANGE_COVERAGE_INVALID', 'invalid_source'],
+  ['DYNAMIC_RANGE_WINDOW_INVALID', 'invalid_source'], ['DYNAMIC_RANGE_QUERY_INVALID', 'invalid_source'],
+  ['DYNAMIC_RANGE_INVALID', 'compute_error'], ['DYNAMIC_RANGE_BUSY', 'compute_error'],
+  ['DYNAMIC_RANGE_BUDGET_EXCEEDED', 'compute_error'], ['DYNAMIC_RANGE_UNAVAILABLE', 'compute_error'],
+])
+export function rangeRequestIssue(code: unknown): DynamicRangeIssue {
+  const key = typeof code === 'string' ? code : ''
+  const status = rangeIssueStatuses.get(key)
+  return {
+    status: status ?? 'compute_error', code: status ? key : 'DYNAMIC_RANGE_UNAVAILABLE',
+    message: '指标计算不可用或输入不一致；已有历史结果保留，可重试',
+  }
+}
 export function pointKey(contract: string, time: string) { return `${contract}:${Date.parse(time)}` }
-export function matchesRangeBar(p: DynamicRangePoint, b: BarData) {
-  return p.contract === b.physicalContract && Date.parse(p.time) === Date.parse(b.time)
+export function matchesRangeBar(p: DynamicRangePoint | VerifiedRangePoint, b: BarData) {
+  return b.confirmed !== false && p.contract === b.physicalContract && Date.parse(p.time) === Date.parse(b.time)
     && p.open === b.open && p.high === b.high && p.low === b.low && p.close === b.close
+    && (!('prefixSourceHash' in p) || p.barSourceHash === b.sourceBarSha256)
 }
 
 /** Fail closed on wire identity, gaps or source disagreement; never backfill estimates. */
-export function normalizeRangeResponse(raw: unknown, symbol: string, frequency: string, bars: BarData[]): DynamicRangePoint[] {
+export function normalizeRangeResponse(raw: unknown, symbol: string, frequency: string, bars: BarData[]): VerifiedRangePoint[] {
   const r = raw as Record<string, any>
-  if (!r || r.version !== 'subing_dynamic_range_v2' || r.trend_version !== 'subing_ema21_ols5_atr14_v2'
+  if (!r || r.version !== DYNAMIC_RANGE_VERSION || r.trend_version !== 'subing_ema21_ols5_atr14_v2'
       || r.profile !== 'bounded_confirmed' || r.symbol !== symbol || r.frequency !== frequency
       || r.contract !== bars[0]?.physicalContract || !Array.isArray(r.points) || r.points.length !== bars.length
       || !/^[a-f0-9]{64}$/.test(r.source_hash) || !Number.isFinite(Date.parse(r.prefix_start))
@@ -30,8 +68,10 @@ export function normalizeRangeResponse(raw: unknown, symbol: string, frequency: 
   return r.points.map((wire: any, i: number) => {
     if (!wire || !(wire.regime in regimeLabel) || !(wire.phase in phaseLabel) || typeof wire.trend_candidate !== 'boolean'
         || !(wire.reason === null || typeof wire.reason === 'string')) throw new Error('DYNAMIC_RANGE_INVALID')
-    const p: DynamicRangePoint = { ...wire, open: numeric(wire.open), high: numeric(wire.high), low: numeric(wire.low), close: numeric(wire.close),
-      er: wire.er === null ? null : numeric(wire.er), chop: wire.chop === null ? null : numeric(wire.chop), box: null }
+    const barSourceHash = bars[i]?.sourceBarSha256
+    const p: VerifiedRangePoint = { ...wire, open: numeric(wire.open), high: numeric(wire.high), low: numeric(wire.low), close: numeric(wire.close),
+      er: wire.er === null ? null : numeric(wire.er), chop: wire.chop === null ? null : numeric(wire.chop), box: null,
+      reason: rangeDiagnosticReason(wire.reason), prefixSourceHash: r.source_hash, barSourceHash }
     if (wire.box !== null) {
       const b = wire.box
       if (!b || typeof b.box_id !== 'string' || !Number.isInteger(b.revision) || b.revision < 0
@@ -44,7 +84,7 @@ export function normalizeRangeResponse(raw: unknown, symbol: string, frequency: 
   })
 }
 
-export function mergeRangePoints(old: readonly DynamicRangePoint[], incoming: readonly DynamicRangePoint[]): DynamicRangePoint[] {
+export function mergeRangePoints<T extends DynamicRangePoint>(old: readonly T[], incoming: readonly T[]): T[] {
   const map = new Map(old.map(p => [pointKey(p.contract, p.time), p]))
   for (const p of incoming) {
     const key = pointKey(p.contract, p.time), previous = map.get(key)

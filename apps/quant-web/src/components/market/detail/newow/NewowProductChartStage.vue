@@ -90,6 +90,7 @@ const props = withDefaults(defineProps<{
   response: ChartResponse | null
   priceBars?: readonly BarData[]
   priceFrequency?: string
+  priceHistoryState?: { cached: boolean; loading: boolean; failed: boolean }
   displayOnly?: boolean
   patternSelection?:PatternChoice|null
   patternWindowKey?:string|null
@@ -177,7 +178,7 @@ const extraStatusMessages: Partial<Record<LayerStatus, string>> = {
 }
 const extraPaneHeight = computed(() => pure.value ? 0 : (props.extraAuxiliaryPanes ?? []).reduce((sum, pane) => sum + (pane.height ?? 120), 0))
 function onCrosshair(event: MouseEventParams<Time>): void {
-  cursorRows.value = event.point == null ? [] : newowChartReadout(model.value, null, event.time ?? null)
+  cursorRows.value = event.point == null || priceWriteFailed.value ? [] : newowChartReadout(model.value, null, event.time ?? null)
   const chartTop = container.value?.offsetTop ?? 0
   const paneOffset = chart?.panes?.().slice(0, event.paneIndex ?? 0).reduce((height, pane) => height + pane.getHeight(), 0) ?? 0
   const cardHeight = cursorRows.value.length * 18 + 20
@@ -212,7 +213,8 @@ const showActions = ref(true)
 const showStructure = ref(true)
 const showHints = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
-const strategySource = computed(() => !props.displayOnly && !props.strategySwitching
+const priceWriteFailed = ref(false)
+const strategySource = computed(() => !priceWriteFailed.value && !props.displayOnly && !props.strategySwitching
   && props.response?.meta.identity.strategy === props.strategy ? props.response : null)
 const settingsIdentity = computed(() => {
   const value = model.value
@@ -343,7 +345,7 @@ function lastMatching<T>(items: readonly T[], matches: (item: T) => boolean): T 
 
 const marks = computed<NewowPriceAnnotation[]>(() => {
   const value = model.value
-  if (!value || props.displayOnly || props.strategySwitching || props.loading) return []
+  if (!value || priceWriteFailed.value || props.displayOnly || props.strategySwitching || props.loading) return []
   const bars = value.bars.map(bar => ({ ...bar, owner: JSON.stringify(
     [bar.physicalContract, bar.segmentId, bar.calculationSegmentId],
   ) }))
@@ -598,7 +600,8 @@ onUnmounted(createNewowProductChartDisposer({
   },
 }))
 
-watch([model, () => props.strategy, () => props.strategySwitching, () => props.priceBars, () => props.displayOnly], ([value]) => { renderModel(value) })
+watch([model, () => props.strategy, () => props.strategySwitching, () => props.priceBars,
+  () => props.priceHistoryState, () => props.priceFrequency, () => props.displayOnly], ([value]) => { renderModel(value) })
 watch(() => strategySource.value?.value?.trend_channel?.points.at(-1)?.status.reason_code,
   () => renderStructure(strategySource.value ? model.value : null))
 watch([strategySource, partnerModel, pure, showActions, showHints, detailLabels, showBreakoutShapes,
@@ -684,17 +687,67 @@ const candleWriter = createPriceSeriesWriter<CandlestickData<Time>>()
 const volumeWriter = createPriceSeriesWriter<HistogramData<Time> | WhitespaceData<Time>>()
 const anchorWriter = createPriceSeriesWriter<{ time: Time }>()
 
-function renderVolume(value:NewowProductChartModel|null):void {
-  if(!volume||!value||props.strategySwitching||props.displayOnly)return
-  const input = detailChartVolumeBars(chart!, value.bars.map(bar => ({ ...bar, time: bar.barEnd })))
-  volumeBars.value = input
-  const { colors } = volumePresentation('newow', input, { theme: pageTheme.value, enabled: !pure.value && showBreakoutShapes.value })
-  volumeWriter.write(volume,input.map((bar,index)=>({time:detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, value.identity.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})),`${value.identity.product}:${value.identity.frequency}`)
-  const latest = lastMatching(input, validVolume)
-  host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
-    ...chartLayerSource(strategySource.value, latest?.time ?? null),
-    formulaVersion: displayVersion('newow_volume'),
-    status: latest ? 'ready' : chartLayerStatus(strategySource.value, false),
+function writePriceWindow(points: CandlestickData<Time>[], identity: string, diagnostics: LayerPatch, physicalContract?: string): boolean {
+  if (!host || !candles) return false
+  const layer = host.layer('price', 'price', 'main')
+  try {
+    candleWriter.write(candles, points, identity)
+    priceWriteFailed.value = false
+    layer.updateDiagnostics({ ...diagnostics, formulaVersion: null, renderer: 'candles' })
+    detailSession?.recordBaseLayer('candles', { ...layer.inspect(), physicalContract })
+    return true
+  } catch {
+    priceWriteFailed.value = true
+    cursorRows.value = []
+    layer.updateDiagnostics({ ...chartLayerSource(null), status: 'renderer_failure',
+      frequency: diagnostics.frequency, cacheState: null, lastError: 'CHART_RENDERER_UPDATE_FAILED' })
+    return false
+  }
+}
+
+function historyBarDiagnostics(bar: Pick<BarData, 'time' | 'sourceBarSha256'> | undefined): LayerPatch {
+  const state = props.priceHistoryState
+  return {
+    status: bar ? 'ready' : state?.loading ? 'loading' : state?.failed ? 'compute_error' : 'missing_input',
+    sourceIdentity: bar?.sourceBarSha256 ?? null, dataCutoff: bar?.time ?? null, frequency: props.priceFrequency ?? null,
+    cacheState: bar && state ? state.cached ? 'hit' : 'miss' : null,
+    lastError: state?.failed ? 'MARKET_PRICE_WINDOW_UNAVAILABLE' : null,
+  }
+}
+
+function writeVolumeWindow(input: readonly DisplayVolumeBar[], frequency: string, identity: string,
+  enabled: boolean, diagnostics: LayerPatch): void {
+  if (!host || !volume) return
+  const layer = host.layer('volume', 'newow_volume', 'volume')
+  const { colors } = volumePresentation('newow', input, { theme: pageTheme.value, enabled })
+  try {
+    volumeWriter.write(volume, input.map((bar, index) => ({
+      time: detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, frequency),
+      ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}),
+    })), identity)
+    volumeBars.value = input
+    layer.updateDiagnostics({ ...diagnostics, renderer: 'histogram' })
+    detailSession?.recordBaseLayer('volume', layer.inspect())
+  } catch {
+    volumeBars.value = []
+    layer.updateDiagnostics({ ...chartLayerSource(null), status: 'renderer_failure', frequency,
+      cacheState: null, lastError: 'CHART_RENDERER_UPDATE_FAILED' })
+  }
+}
+
+function renderVolume(value: NewowProductChartModel | null): void {
+  if (!chart || !value) return
+  const input = detailChartVolumeBars(chart, value.bars.map(bar => ({ ...bar, time: bar.barEnd })))
+  const latest = lastMatching<DisplayVolumeBar>(input, validVolume)
+  const source = latest && value.bars.some(bar => bar.barEnd === latest.time && bar.volume === latest.volume
+    && bar.physicalContract === latest.physicalContract)
+    ? props.response : null
+  const coloring = Boolean(strategySource.value && !pure.value && showBreakoutShapes.value)
+  writeVolumeWindow(input, value.identity.frequency, `${value.identity.product}:${value.identity.frequency}`, coloring, {
+    ...chartLayerSource(latest ? source : null, latest?.time ?? null), frequency: value.identity.frequency,
+    formulaVersion: coloring ? displayVersion('newow_volume') : null,
+    status: latest ? 'ready' : chartLayerStatus(source, false), cacheState: props.displayOnly && latest ? 'hit' : null,
+    lastError: null,
   })
 }
 function reportRenderedEnd(end?: string, contract?: string, frequency?: string) {
@@ -709,10 +762,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   cycleCountOverlays.value = []
   if (chart === null || candles === null) return
   if (!auxiliaryAnchor && !pure.value) syncAuxiliaryPane()
-  renderReferencePrices()
-  renderVisualOverlays()
-  renderPattern()
-  if (value === null) {
+  if (!value?.bars.length) {
     rememberViewport()
     paginationArmed = false
     if (renderedIdentity !== null && renderedBars.length > 0) {
@@ -722,32 +772,41 @@ function renderModel(value: NewowProductChartModel | null): void {
     // Keep only the price facts while switching strategy, never its old indicators or signals.
     if (!props.strategySwitching) {
       const preview = props.priceBars ?? []
-
-      const points = preview.map(bar => ({ time: (props.priceFrequency ?? '').endsWith('m')
-        ? Math.floor(Date.parse(bar.time) / 1000) as import('lightweight-charts').UTCTimestamp
-        : chartMarkerTime(bar.time, '1d', bar.trading_day ?? bar.time.slice(0, 10)), open: bar.open, high: bar.high, low: bar.low, close: bar.close }))
-      candleWriter.write(candles, points, 'preview')
       const last = preview.at(-1)
-      reportRenderedEnd(last?.time, last?.physicalContract, props.priceFrequency)
-
+      const retained = !last ? detailSession?.readBaseLayer('candles') : undefined
+      if (retained) {
+        host?.layer('price', 'price', 'main').updateDiagnostics({
+          ...retained, status: 'ready', lastError: null,
+        })
+        reportRenderedEnd(retained.dataCutoff ?? undefined, retained.physicalContract, retained.frequency ?? undefined)
+      } else {
+        const written = writePriceWindow(preview.map(bar => ({
+          time: detailChartTime(bar, props.priceFrequency ?? '1d'), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+        })), 'preview', historyBarDiagnostics(last), last?.physicalContract)
+        reportRenderedEnd(written ? last?.time : undefined, written ? last?.physicalContract : undefined, props.priceFrequency)
+      }
       writeAuxiliaryAxis(null, 'cleared')
+      const retainedVolume = !last ? detailSession?.readBaseLayer('volume') : undefined
+      if (retainedVolume) {
+        volumeBars.value = detailChartVolumeBars(chart, [])
+        host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
+          ...retainedVolume, status: 'ready', lastError: null,
+        })
+      } else {
+        const previewVolume = preview.length ? detailChartVolumeBars(chart, preview) : preview
+        const latest = lastMatching<DisplayVolumeBar>(previewVolume, validVolume)
+        writeVolumeWindow(previewVolume, props.priceFrequency ?? '1d', 'preview', false, {
+          ...historyBarDiagnostics(latest), formulaVersion: null,
+        })
+      }
     }
-    const previewVolume = props.strategySwitching ? volumeBars.value : detailChartVolumeBars(chart, props.priceBars ?? [])
-    volumeBars.value = previewVolume.map(bar => ({ ...bar, confirmed: false }))
-    const { colors: previewColors } = volumePresentation('newow', volumeBars.value, { theme: pageTheme.value, enabled: false })
-    if (volume) volumeWriter.write(volume, volumeBars.value.map((bar, index) => ({
-      time: detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, props.priceFrequency ?? '1d'),
-      ...(validVolume(bar) ? { value: bar.volume, color: previewColors[index] } : {}),
-    })), 'preview')
-    host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
-      ...chartLayerSource(null),
-      status: chartLayerStatus(null, false),
-    })
-    writeMainDiagnostics('price', 'price', null, { status: chartLayerStatus(null, false) })
+    renderReferencePrices()
+    renderVisualOverlays()
+    renderPattern()
     renderStructure(null)
     renderAuxiliary()
     renderMarkers(null)
-    positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
+    projectActionLabels(null)
     resolvedSignalKey = null
     resolvedFocusRequestKey = null
     return
@@ -785,27 +844,30 @@ function renderModel(value: NewowProductChartModel | null): void {
   const resetViewport = previousModel !== null && !retainsPreviousAxis
   rendering = true
   const priceIdentity = `${value.identity.product}:${value.identity.frequency}`
-  candleWriter.write(candles, value.bars.map((bar) => ({
+  const last = value.bars.at(-1)
+  const written = writePriceWindow(value.bars.map(bar => ({
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
-    physicalContract: props.displayOnly ? undefined : bar.physicalContract.toUpperCase(),
-  })), priceIdentity)
-  const last = value.bars.at(-1)
-  reportRenderedEnd(last?.barEnd, last?.physicalContract, value.identity.frequency)
-  const acceptedSource = strategySource.value
-  writeMainDiagnostics('price', 'price', acceptedSource, {
-    formulaVersion: null,
-    status: acceptedSource && last ? 'ready' : chartLayerStatus(acceptedSource, false),
-    dataCutoff: acceptedSource ? last?.barEnd ?? null : null,
-  })
+    physicalContract: props.displayOnly || props.strategySwitching ? undefined : bar.physicalContract.toUpperCase(),
+  })), priceIdentity, {
+    ...chartLayerSource(last ? props.response : null, last?.barEnd ?? null),
+    frequency: value.identity.frequency, status: last ? 'ready' : chartLayerStatus(props.response, false),
+    cacheState: props.displayOnly && last ? 'hit' : null, lastError: null,
+  }, last?.physicalContract)
+  reportRenderedEnd(written ? last?.barEnd : undefined, written ? last?.physicalContract : undefined, value.identity.frequency)
   renderVolume(value)
-  if (!strategySource.value) host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
-    ...chartLayerSource(null), status: chartLayerStatus(null, false),
-  })
-  writeAuxiliaryAxis(value, priceIdentity)
+  renderReferencePrices()
+  renderVisualOverlays()
+  renderPattern()
+  writeAuxiliaryAxis(written ? value : null, priceIdentity)
   renderStructure(strategySource.value ? value : null)
   renderAuxiliary()
-  renderMarkers(value)
+  renderMarkers(written ? value : null)
+  if (!written) {
+    rendering = false
+    projectActionLabels(null)
+    return
+  }
   const sharedViewport = detailChartViewport(chart)
   if (sharedViewport) {
     followLatest.value = false
@@ -939,11 +1001,10 @@ function renderMarkers(value: NewowProductChartModel | null): void {
   if (!host || !candles) return
   const anchor = candles
   const hidden = pure.value || comparisonActive.value || !showActions.value
-  const preview = props.displayOnly || props.strategySwitching || (value !== null && value.identity.strategy !== props.strategy)
-  const response = value === null || preview ? null : props.response
+  const response = value === null ? null : strategySource.value
   const latest = response ? value?.bars.at(-1) : null
   const featureStatus = response?.status?.status
-  const actions: SeriesMarker<Time>[] = hidden || preview || value === null ? [] : [...value.actions]
+  const actions: SeriesMarker<Time>[] = hidden || !response || value === null ? [] : [...value.actions]
     .sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
     .map(item => ({ ...productChartMarker(item, props.selectedSignalId,
       chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay)), text: '' }))
