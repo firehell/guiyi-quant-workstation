@@ -60,10 +60,7 @@ def summarize_exit_tape(actions, blocked):
     )
 
 
-def study(session, market):
-    baseline = verified_json(*FROZEN)
-    cutoff = datetime.fromisoformat(baseline["as_of"])
-    index = input_sources()
+def published_exit_plans(index):
     plans = []
     for revision, state, role, edge in PLANS:
         source = load_source(index, revision)
@@ -72,7 +69,14 @@ def study(session, market):
         plans.append(dict(revision=revision, state=state, role=role, edge=Decimal(edge), known_at=known, source=source))
     if sorted({plan["known_at"] for plan in plans}) != [plan["known_at"] for plan in plans]:
         raise ValueError("IRON_EXIT_SOURCE_TIMELINE_CHANGED")
+    return plans
 
+
+def study(session, market):
+    baseline = verified_json(*FROZEN)
+    cutoff = datetime.fromisoformat(baseline["as_of"])
+    index = input_sources()
+    plans = published_exit_plans(index)
     raw, series = read_pair(session, market, CONTRACT, tuple(day for day in ALL_DAYS if day >= STARTS[0]))
     spec = load_specs(verified_json(SPECS, SPECS_SHA))[CONTRACT]
     unit_lots = lot_profile(verified_json(SIZE, SIZE_SHA))[CONTRACT]

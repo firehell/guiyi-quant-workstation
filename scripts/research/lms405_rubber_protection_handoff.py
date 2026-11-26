@@ -35,6 +35,11 @@ def displayed_minute_end(source):
     return datetime.fromisoformat(source["published_at"]).replace(second=0, microsecond=0) + ONE
 
 
+def handoff_plan(sources, clock):
+    return HandoffPlan(CONTRACT, OLD, RECOVER, displayed_minute_end(sources[RECOVER]), at("2026-10-26T21:00"),
+                       Decimal(19505), REPLACE, displayed_minute_end(sources[REPLACE]), at("2026-10-27T21:00"), clock)
+
+
 def totals(portfolio, start, rubber):
     counters = [rubber, *(windows[start]["strict_replay"] for symbol, windows in portfolio.items() if symbol != CONTRACT)]
     identities = ("VISIBLE_LEGS_CHECKED", "AT_LEAST_ONE_QUOTE_COMPATIBLE", "TWO_VISIBLE_LEGS_CHECKED",
@@ -94,8 +99,7 @@ def study(session, market):
             raise ValueError("RUBBER_HANDOFF_CONTROL_ACTIONS_CHANGED")
         variants = {}
         for clock in CLOCKS:
-            plan = HandoffPlan(CONTRACT, OLD, RECOVER, displayed_minute_end(sources[RECOVER]), at("2026-10-26T21:00"),
-                               Decimal(19505), REPLACE, displayed_minute_end(sources[REPLACE]), at("2026-10-27T21:00"), clock)
+            plan = handoff_plan(sources, clock)
             candidate, diagnostics, *_ = replay_scoped_policy(fives, minutes, cutoff, index, handoff_plan=plan, **opts)
             rows = compare_rows(CONTRACT, control["comparisons"], "replay", candidate, minutes, profile[CONTRACT], None, tick)
             counts = summarize({CONTRACT: rows})[CONTRACT]["strict_replay"]

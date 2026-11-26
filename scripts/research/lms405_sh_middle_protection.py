@@ -120,6 +120,14 @@ def phase_events(series, bands, sources, cutoff, mode, night_edge):
             sorted(recoveries, key=lambda row: (row["at"], row["period"])))
 
 
+def replay_middle(series, entry, bands, sources, cutoff, mode, night_edge):
+    prefix = {p: [bar for bar in bars if bar.end + US < cutoff] for p, bars in series.items()}
+    protect, recover = phase_events(prefix, bands, sources, cutoff, mode, night_edge)
+    return gated_replay(prefix[5], cutoff, protect, minutes=prefix[1], recovery_events=recover,
+                        divider_events=divider_short_events(prefix, entry, cutoff),
+                        range_exit_requires_confirmation=True)
+
+
 def table_conditions(actions, observations):
     changes = leg_changes(CONTRACT, actions)
     results = {}
@@ -185,11 +193,7 @@ def study(session, market):
         for mode in MODES:
             for night_edge in (None, Decimal(1543)):
                 def replay_at(cut):
-                    prefix = {p: [bar for bar in bars if bar.end + US < cut] for p, bars in series.items()}
-                    protect, recover = phase_events(prefix, bands, sources, cut, mode, night_edge)
-                    return gated_replay(prefix[5], cut, protect, minutes=prefix[1], recovery_events=recover,
-                                        divider_events=divider_short_events(prefix, entry, cut),
-                                        range_exit_requires_confirmation=True)
+                    return replay_middle(series, entry, bands, sources, cut, mode, night_edge)
 
                 actions, blocked = replay_at(cutoff)
                 for cut in (at("2026-10-23T22:03"), at("2026-10-26T11:30"), at("2026-10-26T23:00"),
