@@ -1,0 +1,24 @@
+{
+  "capture_sha256": "8bf7d1ccadf849c870b0955af6cd2777d0a4e1520825fec8fa6e728e30783460",
+  "contract": "RB2701",
+  "trading_day": "2026-11-26",
+  "tick_completed": 1,
+  "live_1m": 2,
+  "diagnostics": {
+    "TICK_MINUTE_UNPROVED": 119,
+    "TICK_OUTSIDE_SESSION": 1,
+    "tick_input": 241
+  },
+  "tick_to_live": {
+    "overlap": 1,
+    "exact": 1,
+    "left_only": 0,
+    "right_only": 1,
+    "different_fields": {},
+    "first": "2026-11-26T07:00:00+00:00",
+    "last": "2026-11-26T07:00:00+00:00"
+  },
+  "authority_readback": "CAPTURE_AUTHORITY_NOT_READY",
+  "authority_probe_window_cst": "2026-11-26 15:01:36 to 15:02:31",
+  "tls_certificate_verification": "required"
+}
