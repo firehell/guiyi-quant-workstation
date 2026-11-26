@@ -5,7 +5,7 @@ import pytest
 from guiyi_quant.lms405 import Bar, Position
 from guiyi_quant.lms405.handoff import Handoff
 from lms405_portfolio_recovery_progress import position_at, simulated_confirmation, study_paths
-from lms405_portfolio_recovery_shape_lifetime import BOUNDED, EARLIER, NEW, first_candidates
+from lms405_portfolio_recovery_shape_lifetime import BOUNDED, EARLIER, NEW, RECROSS, first_candidates
 from lms405_right_side_study import ONE, US, at
 
 
@@ -68,3 +68,30 @@ def test_bounded_shape_stops_after_next_full_shape_bar(first_above, expected):
     else:
         assert result[BOUNDED][variant]["confirmed_at"] == marks[expected]
         assert result[BOUNDED][variant]["shape_expires_at"] == marks[10]
+
+
+@pytest.mark.parametrize(("early_closes", "break_between", "recross"), [
+    ([100, 102, 102, 101], False, True),
+    ([100, 102, 101, 101], False, False),
+    ([102, 102, 102, 101], False, False),
+    ([100, 102, 102, 101], True, False),
+])
+def test_bounded_recross_requires_completed_earlier_cross_and_return_in_same_segment(early_closes, break_between,
+                                                                                    recross):
+    start = at("2026-10-27T09:00")
+    late_start = start + (14 if break_between else 4) * ONE
+    bars = []
+    for segment_start, closes in ((start, early_closes), (late_start, [101, 101, 102, 103])):
+        bars.extend(Bar("JM2701", segment_start + n * ONE, *([Decimal(close)] * 4),
+                        start=segment_start + (n - 1) * ONE) for n, close in enumerate(closes, 1))
+    variant = "1m_to_1m"
+    event = dict(shape_start=bars[-2].start, shape_end=bars[-2].end, confirmed_at=bars[-1].end,
+                 available_at=bars[-1].end + US, boundary=Decimal(102))
+    result = first_candidates(bars, {variant: [event]}, edge=Decimal(101), side="LONG", include_recross=True)
+    assert result[BOUNDED][variant]["confirmed_at"] == bars[-1].end
+    if recross:
+        assert result[RECROSS][variant]["prior_crossing_known_at"] == start + 2 * ONE + US
+        assert result[RECROSS][variant]["prior_two_close_run_known_at"] == start + 3 * ONE + US
+        assert result[RECROSS][variant]["return_at"] == start + 4 * ONE
+    else:
+        assert not result[RECROSS]

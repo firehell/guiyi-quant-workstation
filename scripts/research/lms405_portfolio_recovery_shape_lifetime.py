@@ -26,13 +26,16 @@ NEXT = date(2026, 10, 28)
 VERSION = "lms405-portfolio-recovery-shape-lifetime-v1"
 EARLIER, NEW = MODES = ("active_shape", "active_shape_started_after_cross")
 BOUNDED = "active_shape_within_next_shape_bar"
+RECROSS = "bounded_shape_on_confirmed_recross"
 IRON_REPORT = Path("output/lms405-iron-release-lifetime-20261126/verified-a.json")
 IRON_SHA = "546471f7aa95729dcdd64164bd52352df0f0449f4b49bc7d7f451c551dc970f9"
 
 
-def first_candidates(minutes, geometry, *, edge, side, include_bounded=False):
+def first_candidates(minutes, geometry, *, edge, side, include_bounded=False, include_recross=False):
     """All modes share the same consecutive closes and shape invalidation rule."""
-    modes = (*MODES, BOUNDED) if include_bounded else MODES
+    modes = (*MODES, BOUNDED) if include_bounded or include_recross else MODES
+    if include_recross:
+        modes = (*modes, RECROSS)
     first = {mode: {} for mode in modes}
     by_end = {}
     for variant, events in geometry.items():
@@ -45,14 +48,22 @@ def first_candidates(minutes, geometry, *, edge, side, include_bounded=False):
     for segment in continuous_groups(minutes):
         active = []
         runs = strict_runs(segment, edge, side)
+        current_run = prior_run = return_at = None
         for bar in segment:
             active = [(variant, event) for variant, event in active if beyond(bar.close, event["boundary"], side)]
             active.extend((variant, event) for variant, event in by_end.get(bar.end, ())
                           if event["shape_start"] >= segment[0].start and beyond(bar.close, event["boundary"], side))
             run = runs.get(bar.end)
-            if run is None or run["fresh_crossing_known_at"] is None or run["close_count"] < 2:
+            if run is None:
+                if include_recross and current_run is not None:
+                    prior_run, return_at = current_run, bar.end
+                    current_run = None
+                continue
+            if run["fresh_crossing_known_at"] is None or run["close_count"] < 2:
                 continue
             crossing = run["fresh_crossing_known_at"]
+            if include_recross and run["close_count"] == 2:
+                current_run = crossing, bar.end + US
             for variant, event in active:
                 candidate = dict(
                     variant=variant, shape_minutes=event["shape_minutes"], confirm_minutes=event["confirm_minutes"],
@@ -60,21 +71,26 @@ def first_candidates(minutes, geometry, *, edge, side, include_bounded=False):
                     confirmed_at=bar.end, available_at=bar.end + US, crossing_known_at=crossing,
                     conditions={EARLIER: True, NEW: crossing < event["shape_start"]},
                 )
-                if include_bounded:
+                if BOUNDED in modes:
                     expires = event["shape_end"] + event["shape_minutes"] * ONE
                     candidate["conditions"][BOUNDED] = bar.end <= expires
                     candidate["shape_expires_at"] = expires
+                if include_recross:
+                    candidate["conditions"][RECROSS] = candidate["conditions"][BOUNDED] and prior_run is not None
+                    candidate.update(prior_crossing_known_at=prior_run[0] if prior_run else None,
+                                     prior_two_close_run_known_at=prior_run[1] if prior_run else None,
+                                     return_at=return_at)
                 for mode in modes:
                     if candidate["conditions"][mode]:
                         first[mode].setdefault(variant, candidate)
     return first
 
 
-def compare(series, start, cutoff, *, side, edge, include_bounded=False):
+def compare(series, start, cutoff, *, side, edge, include_bounded=False, include_recross=False):
     def evaluate(inputs, as_of):
         return first_candidates(completed(inputs[1], start, as_of),
                                 fresh_geometry(inputs, start, as_of, side), edge=edge, side=side,
-                                include_bounded=include_bounded)
+                                include_bounded=include_bounded, include_recross=include_recross)
 
     result = evaluate(series, cutoff)
     clocks = {v["available_at"] for rows in result.values() for v in rows.values()}
@@ -116,7 +132,7 @@ def project_seed(evidence, case, *, start, cutoff, scenario):
                 account_continuity=None, actual_release_at=None)
 
 
-def study(session, market):
+def study(session, market, *, include_recross=False):
     refs = {key: verified_json(Path("output") / name, h) for key, (name, h) in SOURCES.items()
             if key in ("roles", "seeds")}
     table, series_cache = {}, {}
@@ -136,7 +152,8 @@ def study(session, market):
         side = evidence["side_scenario"]
         edge = Decimal(evidence["band"][0 if side == "LONG" else 1])
         table[contract] = dict(role=evidence["role"], near_edge=edge, sources=evidence["sources"],
-                               market=market_id, comparison=compare(series, start, cutoff, side=side, edge=edge),
+                               market=market_id, comparison=compare(series, start, cutoff, side=side, edge=edge,
+                                                                    include_recross=include_recross),
                                actual_recovery_permission=None)
 
     iron = verified_json(IRON_REPORT, IRON_SHA)
@@ -156,11 +173,14 @@ def study(session, market):
             series, edge = night, Decimal("662.5")
             start = max(start, at("2026-10-27T21:00"))
             price_role = "OLD_SHORT_TARGET_NEAR_SENSITIVITY"
-        scenario = compare(series, start, cutoff, side="SHORT", edge=edge)
+        scenario = compare(series, start, cutoff, side="SHORT", edge=edge, include_recross=include_recross)
+        projection_scope = scenario | dict(earliest={mode: scenario["earliest"][mode] for mode in MODES})
         seeds[name] = dict(start=start, cutoff_exclusive=cutoff, near_edge=edge, comparison=scenario,
                            price_role=price_role,
-                           projection=project_seed(evidence, name, start=start, cutoff=cutoff, scenario=scenario))
-    return dict(version=VERSION, portfolio=table, seeded=seeds, iron_reference_sha256=IRON_SHA,
+                           projection=project_seed(evidence, name, start=start, cutoff=cutoff,
+                                                   scenario=projection_scope))
+    return dict(version="lms405-portfolio-recovery-recross-v1" if include_recross else VERSION,
+                portfolio=table, seeded=seeds, iron_reference_sha256=IRON_SHA,
                 portfolio_reference_sha256={key: SOURCES[key][1] for key in ("roles", "seeds")},
                 author_action_samples=0, author_match_rate=None, executable=False, fills=None, pnl=None)
 
@@ -169,6 +189,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--include-recross", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -182,7 +203,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), include_recross=args.include_recross)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

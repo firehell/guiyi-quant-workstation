@@ -48,13 +48,13 @@ def verify_market(series, contract, day, pvc, sh):
     return actual
 
 
-def price_comparison(series, start, cutoff, side, *, include_bounded=False, **levels):
+def price_comparison(series, start, cutoff, side, *, include_bounded=False, include_recross=False, **levels):
     return {role: dict(edge=edge, comparison=compare(series, start, cutoff, side=side, edge=edge,
-                                                   include_bounded=include_bounded))
+                                                   include_bounded=include_bounded, include_recross=include_recross))
             for role, edge in levels.items()}
 
 
-def reference_cases(session, market, index, *, include_bounded=False):
+def reference_cases(session, market, index, *, include_bounded=False, include_recross=False):
     jm_path, jm_hash = REFERENCES["jm"]
     jm = verified_json(Path("output") / jm_path, jm_hash)
     jm_contract, jm_day = jm["contract"], date.fromisoformat(jm["trading_day"])
@@ -88,14 +88,14 @@ def reference_cases(session, market, index, *, include_bounded=False):
             timeframe="POST_PUBLICATION" if post_publication else "RETROSPECTIVE",
             price_role="STRONG_TARGET" if name == "morning_strong_target" else "RECOVERY_REFERENCE",
             edges=price_comparison(ru_series, start, cutoff, "LONG", near=band[0], far=band[1],
-                                   include_bounded=include_bounded),
+                                   include_bounded=include_bounded, include_recross=include_recross),
         )
     return dict(
         coking_coal=dict(contract=jm_contract, trading_day=jm_day, start=OPEN, cutoff_exclusive=NOON_POST,
                          sources=jm["sources"], source_report_sha256=jm_hash, market=jm["market"],
                          later_reference_article_entry_at=article_at, author_statement="NOON_UNLOCK_REPORTED",
                          edges=price_comparison(jm_series, OPEN, NOON_POST, "SHORT", near=EDGE, far=FAR,
-                                                include_bounded=include_bounded),
+                                                include_bounded=include_bounded, include_recross=include_recross),
                          timeframe="RETROSPECTIVE", author_action_at=None, verified_as_of_plan=None,
                          research_permission=None, version_405=None),
         rubber=dict(contract=ru["contract"], trading_day=ru_day, source=ru_source, source_report_sha256=RU[1],
@@ -105,7 +105,7 @@ def reference_cases(session, market, index, *, include_bounded=False):
     )
 
 
-def report(session, market, *, include_reference_cases=False, include_bounded=False):
+def report(session, market, *, include_reference_cases=False, include_bounded=False, include_recross=False):
     pvc, sh = (verified_json(Path("output") / path, digest_) for path, digest_ in (PVC, SH))
     index, cases = input_sources(), {}
     for contract, day, source_id, side, band, statement, version_405 in CASES:
@@ -124,7 +124,8 @@ def report(session, market, *, include_reference_cases=False, include_bounded=Fa
             source_id=source_id, source=source, version_405=version_405, author_statement=statement,
             market=verify_market(series, contract, day, pvc, sh),
             price_range=(min(b.low for b in series[1]), max(b.high for b in series[1])),
-            edges=price_comparison(series, start, cutoff, side, near=near, far=far, include_bounded=include_bounded),
+            edges=price_comparison(series, start, cutoff, side, near=near, far=far, include_bounded=include_bounded,
+                                   include_recross=include_recross),
             verified_as_of_plan=None, research_permission=None, author_action_at=None, projected_position=None,
         )
     result = dict(version="lms405-recovery-shape-controls-v1", cases=cases, retrospective=True,
@@ -132,9 +133,12 @@ def report(session, market, *, include_reference_cases=False, include_bounded=Fa
                   author_match_rate=None, executable=False, fills=None, pnl=None)
     if include_reference_cases:
         result.update(version="lms405-recovery-shape-controls-v2",
-                      references=reference_cases(session, market, index, include_bounded=include_bounded))
+                      references=reference_cases(session, market, index, include_bounded=include_bounded,
+                                                 include_recross=include_recross))
     if include_bounded:
         result.update(version="lms405-recovery-shape-controls-bounded-v1")
+    if include_recross:
+        result.update(version="lms405-recovery-shape-controls-recross-v1")
     return result
 
 
@@ -144,6 +148,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--include-reference-cases", action="store_true")
     parser.add_argument("--include-bounded", action="store_true")
+    parser.add_argument("--include-recross", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -159,7 +164,7 @@ def main():
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
             result = report(session, build_market_data_service(session),
                             include_reference_cases=args.include_reference_cases,
-                            include_bounded=args.include_bounded)
+                            include_bounded=args.include_bounded, include_recross=args.include_recross)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:

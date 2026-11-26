@@ -126,7 +126,7 @@ def protection_origin(series, published):
     )
 
 
-def recovery_lifetime(series, start, cutoff, shared, *, include_bounded=False):
+def recovery_lifetime(series, start, cutoff, shared, *, batch):
     reference = verified_json(RECOVERY_REFERENCE, RECOVERY_REFERENCE_SHA)
     if any(shared[name] != reference[name] for name in ("sources", "market", "source_index_sha256")):
         raise ValueError("JULY_RECOVERY_LIFETIME_REFERENCE_CHANGED")
@@ -138,7 +138,8 @@ def recovery_lifetime(series, start, cutoff, shared, *, include_bounded=False):
     scopes = {}
     for label, edge in PRICE_LEVELS.items():
         lifetime = compare_shape_lifetime(series, start, cutoff, side="LONG", edge=edge,
-                                          include_bounded=include_bounded)
+                                          include_bounded=batch == "recovery-bounded",
+                                          include_recross=batch == "recovery-recross")
         current = {}
         for period in (1, 5):
             # Shared source clocks, but both period permission and snapshot continuity are hypothetical.
@@ -158,8 +159,9 @@ def recovery_lifetime(series, start, cutoff, shared, *, include_bounded=False):
         scopes[label] = dict(edge=edge, shape_lifetime_comparison=lifetime, current_minute_proposals=current,
                              minute_evaluator_prefix_checks=2 * len(cuts))
     return shared | dict(
-        version=("lms405-jm-july-recovery-lifetime-bounded-v1" if include_bounded else
-                 "lms405-jm-july-recovery-lifetime-v1"),
+        version={"recovery-bounded": "lms405-jm-july-recovery-lifetime-bounded-v1",
+                 "recovery-recross": "lms405-jm-july-recovery-recross-v1",
+                 "recovery-lifetime": "lms405-jm-july-recovery-lifetime-v1"}[batch],
         comparisons=scopes, start=start, cutoff_exclusive=cutoff,
         input_reference_sha256=RECOVERY_REFERENCE_SHA, author_permission=None, author_version_405=None,
         counterfactual_minute_permission=True, account_continuity=None,
@@ -190,8 +192,8 @@ def study(session, market, *, batch="recovery-clock"):
     )
     if batch == "protection-origin":
         return shared | protection_origin(series, published)
-    if batch in ("recovery-lifetime", "recovery-bounded"):
-        return recovery_lifetime(series, start, cutoff, shared, include_bounded=batch == "recovery-bounded")
+    if batch in ("recovery-lifetime", "recovery-bounded", "recovery-recross"):
+        return recovery_lifetime(series, start, cutoff, shared, batch=batch)
     return shared | dict(
         version="lms405-jm-july-recovery-clock-v1",
         start=start, cutoff_exclusive=cutoff,
@@ -205,7 +207,7 @@ def main():
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--batch", choices=("recovery-clock", "protection-origin", "recovery-lifetime",
-                                            "recovery-bounded"),
+                                            "recovery-bounded", "recovery-recross"),
                         default="recovery-clock")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
