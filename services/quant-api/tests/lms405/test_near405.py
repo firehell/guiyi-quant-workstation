@@ -442,6 +442,33 @@ def test_portfolio_range_gate_keeps_concurrent_regime_reversal_available():
     assert not [r for r in blocked if r["operation"] == "CLEAR_TREND"]
 
 
+def test_portfolio_recovery_needs_same_contract_and_a_break_after_the_current_lock():
+    from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
+    from lms405_portfolio_task_policy import gated_replay
+
+    rows = [replace(b, open=210 - b.open, high=210 - b.low, low=210 - b.high, close=210 - b.close)
+            for b in entry_bars()]
+    opened = rows[-1].end
+    minute = timedelta(minutes=1)
+    old = ProtectionBandUpdate("JM2509", "old", "PROTECTION", opened + minute, opened + minute,
+                               "test", "SHORT", D("101"), D("105"))
+    locked_at = opened + 3 * minute
+    protection = dict(at=locked_at, known_at=locked_at - US, shape_start=opened + 2 * minute,
+                      band=old, signal={"close": D("102")}, period=1, operation="PROTECT_EARLY")
+    break_start = locked_at + minute
+    when = break_start + 4 * minute
+    good = dict(at=when, contract="JM2509", shape_start=break_start + 2 * minute, first_break_start=break_start,
+                revision="recovery", old_lock_revision="old")
+    for invalid in (good | dict(first_break_start=locked_at), good | dict(contract="RU2701"),
+                    good | dict(old_lock_revision="other")):
+        transitions, _ = gated_replay(rows, when + US, (protection,), recovery_events=(invalid,))
+        assert [r["action"] for r in transitions] == ["ENTER_SHORT", "LOCK"]
+
+    transitions, _ = gated_replay(rows, when + US, (protection,), recovery_events=(good,))
+    assert [r["action"] for r in transitions] == ["ENTER_SHORT", "LOCK", "UNLOCK_SHORT"]
+    assert transitions[-1]["after"] == ["0", "1"]
+
+
 def test_managed_recovery_requires_fresh_cross_and_human_decisions():
     rows = managed_lock_restore_bars()
     for i in (11, 12):
