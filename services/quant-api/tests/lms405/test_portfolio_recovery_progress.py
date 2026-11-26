@@ -5,7 +5,7 @@ import pytest
 from guiyi_quant.lms405 import Bar, Position
 from guiyi_quant.lms405.handoff import Handoff
 from lms405_portfolio_recovery_progress import position_at, simulated_confirmation, study_paths
-from lms405_portfolio_recovery_shape_lifetime import EARLIER, NEW, first_candidates
+from lms405_portfolio_recovery_shape_lifetime import BOUNDED, EARLIER, NEW, first_candidates
 from lms405_right_side_study import ONE, US, at
 
 
@@ -49,3 +49,22 @@ def test_both_recovery_variants_share_price_gate_and_preserve_distinct_shape_ord
     assert result[EARLIER]["1m_to_1m"]["confirmed_at"] == marks[3]
     assert result[NEW]["1m_to_1m"]["confirmed_at"] == marks[5]
     assert result[NEW]["1m_to_1m"]["original_geometry_confirmed_at"] == marks[5]
+
+
+@pytest.mark.parametrize(("first_above", "expected"), [(8, 9), (9, 10), (10, None)])
+def test_bounded_shape_stops_after_next_full_shape_bar(first_above, expected):
+    start = at("2026-10-27T09:00")
+    marks = [start + n * ONE for n in range(13)]
+    bars = [Bar("JM2701", marks[n], *([Decimal(102 if n >= first_above else 101)] * 4), start=marks[n - 1])
+            for n in range(1, len(marks))]
+    variant = "5m_to_1m"
+    event = dict(shape_start=marks[0], shape_end=marks[5], confirmed_at=marks[6],
+                 available_at=marks[6] + US, boundary=Decimal(100))
+    result = first_candidates(bars, {variant: [event]}, edge=Decimal(101), side="LONG", include_bounded=True)
+    assert result[EARLIER][variant]["confirmed_at"] == marks[first_above + 1]
+    assert not result[NEW]
+    if expected is None:
+        assert not result[BOUNDED]
+    else:
+        assert result[BOUNDED][variant]["confirmed_at"] == marks[expected]
+        assert result[BOUNDED][variant]["shape_expires_at"] == marks[10]

@@ -25,13 +25,15 @@ DAY = date(2026, 10, 27)
 NEXT = date(2026, 10, 28)
 VERSION = "lms405-portfolio-recovery-shape-lifetime-v1"
 EARLIER, NEW = MODES = ("active_shape", "active_shape_started_after_cross")
+BOUNDED = "active_shape_within_next_shape_bar"
 IRON_REPORT = Path("output/lms405-iron-release-lifetime-20261126/verified-a.json")
 IRON_SHA = "546471f7aa95729dcdd64164bd52352df0f0449f4b49bc7d7f451c551dc970f9"
 
 
-def first_candidates(minutes, geometry, *, edge, side):
-    """Both modes share the same consecutive closes and shape invalidation rule."""
-    first = {mode: {} for mode in MODES}
+def first_candidates(minutes, geometry, *, edge, side, include_bounded=False):
+    """All modes share the same consecutive closes and shape invalidation rule."""
+    modes = (*MODES, BOUNDED) if include_bounded else MODES
+    first = {mode: {} for mode in modes}
     by_end = {}
     for variant, events in geometry.items():
         shape, confirm = (int(part.removesuffix("m")) for part in variant.split("_to_"))
@@ -58,16 +60,21 @@ def first_candidates(minutes, geometry, *, edge, side):
                     confirmed_at=bar.end, available_at=bar.end + US, crossing_known_at=crossing,
                     conditions={EARLIER: True, NEW: crossing < event["shape_start"]},
                 )
-                for mode in MODES:
+                if include_bounded:
+                    expires = event["shape_end"] + event["shape_minutes"] * ONE
+                    candidate["conditions"][BOUNDED] = bar.end <= expires
+                    candidate["shape_expires_at"] = expires
+                for mode in modes:
                     if candidate["conditions"][mode]:
                         first[mode].setdefault(variant, candidate)
     return first
 
 
-def compare(series, start, cutoff, *, side, edge):
+def compare(series, start, cutoff, *, side, edge, include_bounded=False):
     def evaluate(inputs, as_of):
         return first_candidates(completed(inputs[1], start, as_of),
-                                fresh_geometry(inputs, start, as_of, side), edge=edge, side=side)
+                                fresh_geometry(inputs, start, as_of, side), edge=edge, side=side,
+                                include_bounded=include_bounded)
 
     result = evaluate(series, cutoff)
     clocks = {v["available_at"] for rows in result.values() for v in rows.values()}
@@ -80,7 +87,7 @@ def compare(series, start, cutoff, *, side, edge):
             raise ValueError("LMS_SHAPE_LIFETIME_PREFIX_DIVERGED")
     overall = {mode: min(rows.values(), key=lambda row: (row["available_at"], row["variant"]), default=None)
                for mode, rows in result.items()}
-    earlier, newer = (overall[mode] for mode in MODES)
+    earlier, newer = overall[EARLIER], overall[NEW]
     if newer and (not earlier or earlier["available_at"] > newer["available_at"]):
         raise ValueError("LMS_SHAPE_LIFETIME_BRANCH_ORDER_CHANGED")
     return dict(first_by_clock=result, earliest=overall, prefix_checks=len(cuts),

@@ -6,7 +6,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds
+from guiyi_quant.lms405 import Position
+from guiyi_quant.lms405.handoff import Handoff
+from guiyi_quant.lms405.minute_recovery import assess_minute_recovery
+from guiyi_quant.lms405.recovery_permission import MinuteRecoveryPermission
+from lms405_portfolio_recovery_shape_lifetime import compare as compare_shape_lifetime
+from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
 from lms405_protection_timeframes import VARIANTS, geometry_events, read_window
 from lms405_recovery_confirmation_audit import edge_candidates, strict_runs
 from lms405_right_side_study import ONE, US, at
@@ -21,6 +26,8 @@ FROZEN = Path(
 )
 FROZEN_SHA = "71c668cc3874cfdcb1c52b47c26615a89ed455977bfb5c80883a9e18b3cb91b3"
 PRICE_LEVELS = {"published_recovery_point": Decimal("1025.5"), "early_ibar_low_proxy": Decimal("1026.5")}
+RECOVERY_REFERENCE = Path("output/lms405-jm-july-recovery-20261125/final.json")
+RECOVERY_REFERENCE_SHA = "bf5ee9333bbef15285d3cd45210023c347642feca3241c02ac90f0f4bf3cb0d0"
 
 
 def source_records():
@@ -119,6 +126,46 @@ def protection_origin(series, published):
     )
 
 
+def recovery_lifetime(series, start, cutoff, shared, *, include_bounded=False):
+    reference = verified_json(RECOVERY_REFERENCE, RECOVERY_REFERENCE_SHA)
+    if any(shared[name] != reference[name] for name in ("sources", "market", "source_index_sha256")):
+        raise ValueError("JULY_RECOVERY_LIFETIME_REFERENCE_CHANGED")
+    if (start, cutoff) != tuple(datetime.fromisoformat(reference[k]) for k in ("start", "cutoff_exclusive")):
+        raise ValueError("JULY_RECOVERY_LIFETIME_SCOPE_CHANGED")
+    request = Handoff("RESUME_ORIGINAL", Position(CONTRACT, Decimal(16), Decimal(16)), "LONG",
+                      "july-H06-research-plan", "july-H11-assumed-lock", None, start, start)
+    cuts = [bar.end + 2 * US for bar in series[1] if bar.start >= start and bar.end + 2 * US < cutoff]
+    scopes = {}
+    for label, edge in PRICE_LEVELS.items():
+        lifetime = compare_shape_lifetime(series, start, cutoff, side="LONG", edge=edge,
+                                          include_bounded=include_bounded)
+        current = {}
+        for period in (1, 5):
+            # Shared source clocks, but both period permission and snapshot continuity are hypothetical.
+            permit = MinuteRecoveryPermission(CONTRACT, request.plan_id, request.cycle_id, "LONG", start, start + US,
+                                              "PERMIT", "NEAR", edge, "JULY_LIFETIME_TEST_FIXTURE", "TEST_FIXTURE",
+                                              shape_minutes=period)
+            proposals = []
+            for as_of in cuts:
+                opts = dict(as_of=as_of, permissions=(permit,), allow_test_fixture=True, version_405=True)
+                full = assess_minute_recovery(request, series[1], series[5], **opts)
+                prior = {p: [b for b in series[p] if b.end + US < as_of] for p in (1, 5)}
+                if full != assess_minute_recovery(request, prior[1], prior[5], **opts) or full["after"] is not None:
+                    raise ValueError("JULY_RECOVERY_LIFETIME_PREFIX_DIVERGED")
+                if full["proposal"] is not None:
+                    proposals.append(full["proposal"])
+            current[str(period)] = proposals
+        scopes[label] = dict(edge=edge, shape_lifetime_comparison=lifetime, current_minute_proposals=current,
+                             minute_evaluator_prefix_checks=2 * len(cuts))
+    return shared | dict(
+        version=("lms405-jm-july-recovery-lifetime-bounded-v1" if include_bounded else
+                 "lms405-jm-july-recovery-lifetime-v1"),
+        comparisons=scopes, start=start, cutoff_exclusive=cutoff,
+        input_reference_sha256=RECOVERY_REFERENCE_SHA, author_permission=None, author_version_405=None,
+        counterfactual_minute_permission=True, account_continuity=None,
+    )
+
+
 def study(session, market, *, batch="recovery-clock"):
     sources = source_records()
     published = {key: datetime.fromisoformat(row["published_at"]) for key, row in sources.items()}
@@ -143,6 +190,8 @@ def study(session, market, *, batch="recovery-clock"):
     )
     if batch == "protection-origin":
         return shared | protection_origin(series, published)
+    if batch in ("recovery-lifetime", "recovery-bounded"):
+        return recovery_lifetime(series, start, cutoff, shared, include_bounded=batch == "recovery-bounded")
     return shared | dict(
         version="lms405-jm-july-recovery-clock-v1",
         start=start, cutoff_exclusive=cutoff,
@@ -155,7 +204,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--batch", choices=("recovery-clock", "protection-origin"), default="recovery-clock")
+    parser.add_argument("--batch", choices=("recovery-clock", "protection-origin", "recovery-lifetime",
+                                            "recovery-bounded"),
+                        default="recovery-clock")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
