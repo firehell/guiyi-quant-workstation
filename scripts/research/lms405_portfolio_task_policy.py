@@ -257,7 +257,8 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
             protection_context = dict(revision=area.revision, url=area.source, band=[area.lower, area.upper],
                                       signal_known_at=event["known_at"], shape_start=event["shape_start"],
                                       confirmation_close=event["signal"]["close"], shape_period=event["period"],
-                                      confirmation_period=1, operation=operation, approval_kind="TEST_FIXTURE")
+                                      confirmation_period=event.get("confirmation_period", 1),
+                                      operation=operation, approval_kind="TEST_FIXTURE")
             if "touch_known_at" in event:
                 protection_context["deferred_until_touch_known_at"] = event["touch_known_at"]
             if required_recovery is not None:
