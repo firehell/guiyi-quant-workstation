@@ -83,6 +83,7 @@ class ComputeCheckpoint:
     state_schema_version: str
     prefix_digest: str
     mode: str
+    live_commit_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

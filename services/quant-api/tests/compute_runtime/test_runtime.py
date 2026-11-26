@@ -149,6 +149,10 @@ def test_live_scope_accepts_only_completed_contiguous_commits_and_deduplicates()
         assert original.checkpoint == repeated.checkpoint
         assert first_loads == 1
 
+        rewritten_id = replace(commit, commit_id="a-different-commit")
+        with pytest.raises(ValueError, match="COMPUTE_LIVE_COMMIT_CONFLICT"):
+            runtime.submit_live("htdy_simulation", rewritten_id, load=initial_prefix).result(timeout=3)
+
         changed = replace(commit, bar=replace(first, close=first.close + 0.5))
         with pytest.raises(ValueError, match="STATE_INPUT_OUT_OF_ORDER_OR_REVISED"):
             runtime.submit_live("htdy_simulation", changed, load=initial_prefix).result(timeout=3)
@@ -177,7 +181,7 @@ def test_live_worker_rebuilds_incompatible_checkpoint_only_from_verified_prefix(
     with ComputeRuntime(REGISTRY, live_scopes=(target,)) as first:
         update, = first.submit_live("subing_simulation", prior_commit, load=lambda: prior_full).result(timeout=3)
 
-    prior = replace(update.checkpoint, state_schema_version="retired", prefix_digest="incompatible-bytes")
+    prior = replace(update.checkpoint, state_schema_version="retired", prefix_digest="incompatible-bytes", live_commit_id=None)
     with ComputeRuntime(REGISTRY, live_scopes=(target,)) as restarted:
         with pytest.raises(ValueError, match="COMPUTE_LIVE_PREFIX_UNVERIFIED"):
             restarted.submit_live(
@@ -190,6 +194,96 @@ def test_live_worker_rebuilds_incompatible_checkpoint_only_from_verified_prefix(
         assert recovered.point == expected.points[-1]
         assert recovered.recovery == "STATE_SCHEMA_REBUILT"
         assert recovered.checkpoint.prefix_digest != prior.prefix_digest
+
+
+def test_live_restart_rejects_changed_earlier_prefix_under_the_same_source_identity():
+    from app.compute_runtime import CommittedLiveBar
+
+    full = series()
+    target = scope(full, consumer="subing_simulation", revision=full.identity.source_revision)
+    before_prior = CommittedLiveBar(full.identity, full.bars[-3], "commit-0", full.bars[-4].bar_end)
+    prior = CommittedLiveBar(full.identity, full.bars[-2], "commit-1", full.bars[-3].bar_end)
+    following = CommittedLiveBar(full.identity, full.bars[-1], "commit-2", full.bars[-2].bar_end)
+    with ComputeRuntime(REGISTRY, live_scopes=(target,)) as runtime:
+        older, = runtime.submit_live("subing_simulation", before_prior, load=lambda: full).result(timeout=3)
+        first, = runtime.submit_live("subing_simulation", prior, load=lambda: full).result(timeout=3)
+
+    old = full.bars[3]
+    changed = replace(old, low=old.low - 1, close=old.close - 1)
+    revised = BarSeries(full.identity, (*full.bars[:3], changed, *full.bars[4:]))
+    with ComputeRuntime(REGISTRY, live_scopes=(target,)) as restarted:
+        with pytest.raises(ValueError, match="COMPUTE_LIVE_NONCONTIGUOUS"):
+            restarted.submit_live(
+                "subing_simulation", following, load=lambda: full, checkpoints=(older.checkpoint,),
+            ).result(timeout=3)
+        for checkpoint in (first.checkpoint, replace(first.checkpoint, state_schema_version="unsupported")):
+            with pytest.raises(ValueError, match="COMPUTE_LIVE_CHECKPOINT_CONFLICT"):
+                restarted.submit_live(
+                    "subing_simulation", following, load=lambda: revised, checkpoints=(checkpoint,),
+                ).result(timeout=3)
+        with pytest.raises(ValueError, match="COMPUTE_LIVE_COMMIT_CONFLICT"):
+            restarted.submit_live(
+                "subing_simulation", replace(following, commit_id=prior.commit_id),
+                load=lambda: full, checkpoints=(first.checkpoint,),
+            ).result(timeout=3)
+        continued, = restarted.submit_live(
+            "subing_simulation", following, load=lambda: full, checkpoints=(first.checkpoint,),
+        ).result(timeout=3)
+        expected, = REGISTRY.calculate(full, (EMA,), as_of=following.bar.available_at, use="research")
+        assert not continued.duplicate
+        assert continued.point == expected.points[-1]
+
+
+def test_live_restart_preserves_committed_bar_boundary_when_availability_ties():
+    from app.compute_runtime import CommittedLiveBar
+
+    full = series()
+    first, following = full.bars[-2:]
+    first = replace(first, available_at=following.available_at)
+    full = BarSeries(full.identity, (*full.bars[:-2], first, following))
+    prefix = BarSeries(full.identity, full.bars[:-1])
+    consumer = "subing_simulation"
+    target = scope(full, consumer=consumer, revision=full.identity.source_revision)
+    prior_commit = CommittedLiveBar(full.identity, first, "commit-1", full.bars[-3].bar_end)
+    next_commit = CommittedLiveBar(full.identity, following, "commit-2", first.bar_end)
+
+    with ComputeRuntime(REGISTRY, live_scopes=(target,)) as continuous:
+        prior, = continuous.submit_live(consumer, prior_commit, load=lambda: prefix).result(timeout=3)
+        expected, = continuous.submit_live(consumer, next_commit, load=lambda: full).result(timeout=3)
+    with ComputeRuntime(REGISTRY, live_scopes=(target,)) as restarted:
+        restored, = restarted.submit_live(
+            consumer, next_commit, load=lambda: full, checkpoints=(prior.checkpoint,),
+        ).result(timeout=3)
+        assert restored.checkpoint == expected.checkpoint
+        assert restored.point == expected.point
+    with ComputeRuntime(REGISTRY, live_scopes=(target,)) as restarted:
+        repeated, = restarted.submit_live(
+            consumer, prior_commit, load=lambda: full, checkpoints=(prior.checkpoint,),
+        ).result(timeout=3)
+        assert repeated.duplicate
+        assert repeated.checkpoint == prior.checkpoint
+        assert repeated.point == prior.point
+        assert restarted.submit_live(consumer, next_commit, load=lambda: full).result(timeout=3) == (expected,)
+
+
+def test_live_restart_rejects_multiple_checkpoints_for_one_feature_or_an_unsubscribed_feature():
+    from app.compute_runtime import CommittedLiveBar
+
+    full = series()
+    consumer = "subing_simulation"
+    target = replace(scope(full, consumer=consumer, revision=full.identity.source_revision),
+                     features=(EMA, FeatureRequest("ema21")))
+    latest = CommittedLiveBar(full.identity, full.bars[-1], "commit-2", full.bars[-2].bar_end)
+    earlier = CommittedLiveBar(full.identity, full.bars[-2], "commit-1", full.bars[-3].bar_end)
+    with ComputeRuntime(REGISTRY, live_scopes=(target,)) as running:
+        first, _ = running.submit_live(consumer, latest, load=lambda: full).result(timeout=3)
+    checkpoint = first.checkpoint
+    stale = replace(checkpoint, identity=replace(checkpoint.identity, source=replace(full.identity, source_revision="old")))
+    unrelated = replace(checkpoint, identity=replace(checkpoint.identity, feature_id="macd"))
+    with ComputeRuntime(REGISTRY, live_scopes=(target,)) as restarted:
+        for checkpoints in ((stale, checkpoint), (unrelated,)):
+            with pytest.raises(ValueError, match="COMPUTE_CHECKPOINT_SCOPE_INVALID"):
+                restarted.submit_live(consumer, earlier, load=lambda: full, checkpoints=checkpoints)
 
 
 def test_post_canonical_revisions_reuse_only_verified_prefix_and_leave_live_worker_available():
@@ -381,6 +475,16 @@ def test_restart_with_latest_checkpoint_identifies_replayed_commit_and_rejects_c
                 restarted.submit_live(
                     "subing_simulation", earlier, load=lambda: full, checkpoints=(checkpoint,),
                 ).result(timeout=3)
+        with pytest.raises(ValueError, match="COMPUTE_LIVE_COMMIT_CONFLICT"):
+            restarted.submit_live(
+                "subing_simulation", replace(final, commit_id="rewritten"),
+                load=lambda: full, checkpoints=(final_update.checkpoint,),
+            ).result(timeout=3)
+        with pytest.raises(ValueError, match="COMPUTE_LIVE_COMMIT_CONFLICT"):
+            restarted.submit_live(
+                "subing_simulation", final, load=lambda: full,
+                checkpoints=(replace(final_update.checkpoint, live_commit_id=None),),
+            ).result(timeout=3)
         repeated, = restarted.submit_live(
             "subing_simulation", final, load=lambda: full, checkpoints=(final_update.checkpoint,),
         ).result(timeout=3)

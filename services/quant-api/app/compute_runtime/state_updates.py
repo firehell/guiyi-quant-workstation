@@ -1,5 +1,6 @@
 """Checkpoint discipline and scoped post-close/completed-bar advancement."""
 
+from bisect import bisect_right
 from collections import OrderedDict
 from collections.abc import Callable, Hashable
 from concurrent.futures import Future
@@ -236,27 +237,28 @@ class StateUpdates:
         if requests is None:
             raise ValueError("COMPUTE_SCOPE_NOT_ENABLED")
         nodes = tuple(map(self._node, requests))
-        if len(checkpoints) > len(nodes):
+        by_node = {_identity_node(item.identity): item for item in checkpoints}
+        if len(by_node) != len(checkpoints) or not by_node.keys() <= set(nodes):
             raise ValueError("COMPUTE_CHECKPOINT_SCOPE_INVALID")
-        key = (commit, nodes, checkpoints)
-        return self._live.submit(key, lambda _: self._run_live(commit, requests, nodes, load, checkpoints))
+        ordered_checkpoints = tuple(by_node.get(node) for node in nodes)
+        key = (commit, nodes, ordered_checkpoints)
+        return self._live.submit(key, lambda _: self._run_live(commit, requests, nodes, load, ordered_checkpoints))
 
     def _run_live(
         self, commit: CommittedLiveBar, requests: tuple[FeatureRequest, ...], nodes: tuple[_Node, ...],
-        load: Callable[[], BarSeries], checkpoints: tuple[ComputeCheckpoint, ...],
+        load: Callable[[], BarSeries], checkpoints: tuple[ComputeCheckpoint | None, ...],
     ) -> _Updates:
         records = {}
         updates = []
         series = None
         bar = commit.bar
         first: datetime | None
-        for request, node in zip(requests, nodes, strict=True):
+        for request, node, checkpoint in zip(requests, nodes, checkpoints, strict=True):
             key = (commit.source, node)
             previous = self._live_states.get(key)
             if previous is None:
                 if series is None:
                     series = self._verified_live_prefix(commit, load)
-                checkpoint = next((item for item in checkpoints if _identity_node(item.identity) == node), None)
                 state, duplicate, recovery = self._restore_live(commit, series, request, checkpoint)
                 first = series.bars[0].bar_end
                 resumed = 0
@@ -267,8 +269,11 @@ class StateUpdates:
                 point = state.last_point
                 if last is None or point is None:
                     raise ValueError("COMPUTE_LIVE_STATE_INVALID")
-                if bar.bar_end == last.bar_end and commit.previous_bar_end != previous.predecessor:
-                    raise ValueError("COMPUTE_LIVE_PREDECESSOR_CONFLICT")
+                if bar.bar_end == last.bar_end:
+                    if commit.previous_bar_end != previous.predecessor:
+                        raise ValueError("COMPUTE_LIVE_PREDECESSOR_CONFLICT")
+                    if commit.commit_id != previous.commit_id:
+                        raise ValueError("COMPUTE_LIVE_COMMIT_CONFLICT")
                 if bar.bar_end > last.bar_end and (
                     commit.previous_bar_end != last.bar_end or bar.available_at < point.available_at
                     or commit.commit_id == previous.commit_id
@@ -279,7 +284,9 @@ class StateUpdates:
                 duplicate = state is previous.value
                 recovery = None
 
-            updates.append(_update(state, first, bar.available_at, resumed, duplicate, recovery))
+            updates.append(_update(
+                state, first, bar.available_at, resumed, duplicate, recovery, live_commit_id=commit.commit_id,
+            ))
             records[key] = previous if duplicate and previous is not None else _State(
                 first, state, commit.commit_id, commit.previous_bar_end,
             )
@@ -296,13 +303,16 @@ class StateUpdates:
             or len(series.bars) > self._max_prefix_bars
         ):
             raise ValueError("COMPUTE_LIVE_PREFIX_UNVERIFIED")
-        count = series.available_count(commit.bar.available_at)
-        if not 0 < count <= self._max_prefix_bars:
+        available = series.available_count(commit.bar.available_at)
+        count = bisect_right(series.bars, commit.bar.bar_end, hi=available, key=lambda bar: bar.bar_end)
+        if not count or series.bars[count - 1].bar_end != commit.bar.bar_end:
             raise ValueError("COMPUTE_LIVE_PREFIX_UNVERIFIED")
         predecessor = series.bars[count - 2].bar_end if count > 1 else None
-        if series.bars[count - 1].bar_end != commit.bar.bar_end or predecessor != commit.previous_bar_end:
+        if predecessor != commit.previous_bar_end:
             raise ValueError("COMPUTE_LIVE_PREFIX_UNVERIFIED")
-        return series
+        # Multiple recovered commits can share an availability time. This job
+        # may seed only through the committed Bar's own endpoint.
+        return series if count == available else BarSeries(series.identity, series.bars[:count])
 
     def _restore_live(
         self, commit: CommittedLiveBar, series: BarSeries, request: FeatureRequest,
@@ -314,14 +324,32 @@ class StateUpdates:
             if checkpoint is not None and checkpoint.mode == "live" and checkpoint.identity.source == commit.source
             else None
         )
+        duplicate = False
         if matching_cursor is not None:
-            checkpoint_end = matching_cursor.identity.last_bar_end
+            identity = matching_cursor.identity
+            checkpoint_end = identity.last_bar_end
             if checkpoint_end is not None and (
-                checkpoint_end > commit.bar.bar_end or matching_cursor.identity.as_of > commit.bar.available_at
+                checkpoint_end > commit.bar.bar_end or identity.as_of > commit.bar.available_at
             ):
                 raise ValueError("COMPUTE_LIVE_CHECKPOINT_AHEAD")
+            count = identity.bar_count
+            if (
+                not 0 < count <= series.available_count(identity.as_of)
+                or series.bars[0].bar_end != identity.first_bar_end
+                or series.bars[count - 1].bar_end != checkpoint_end
+                or series.prefix_digest(count) != identity.input_digest
+            ):
+                raise ValueError("COMPUTE_LIVE_CHECKPOINT_CONFLICT")
             if matching_cursor.state_schema_version != STATE_SCHEMA_VERSION:
                 recovery = "STATE_SCHEMA_REBUILT"
+            elif matching_cursor.prefix_digest != identity.input_digest:
+                raise ValueError("COMPUTE_LIVE_CHECKPOINT_CONFLICT")
+            duplicate = checkpoint_end == commit.bar.bar_end
+            same_commit = matching_cursor.live_commit_id == commit.commit_id
+            if duplicate != same_commit:
+                raise ValueError("COMPUTE_LIVE_COMMIT_CONFLICT")
+            if not duplicate and commit.previous_bar_end != checkpoint_end:
+                raise ValueError("COMPUTE_LIVE_NONCONTIGUOUS")
         elif checkpoint is not None:
             recovery = "STATE_SOURCE_REBUILT"
 
@@ -330,15 +358,7 @@ class StateUpdates:
         )
         # Use the kernel's exact duplicate guard, which also recognizes non-finite input.
         state, _ = advance(self._registry, state, commit.source, commit.bar)
-        current = _update(state, series.bars[0].bar_end, commit.bar.available_at).checkpoint
-        if matching_cursor is not None and matching_cursor.identity.last_bar_end == commit.bar.bar_end:
-            if (
-                matching_cursor.identity.input_digest != current.identity.input_digest
-                or matching_cursor.prefix_digest != current.prefix_digest
-            ):
-                raise ValueError("COMPUTE_LIVE_CHECKPOINT_CONFLICT")
-            return state, True, recovery
-        return state, False, recovery
+        return state, duplicate, recovery
 
     def invalidate_revision(self, source: SeriesIdentity, *, from_bar_end: datetime) -> None:
         """Invalidate Historical Canonical state. Live cursors bind their own commit lineage."""
@@ -388,11 +408,12 @@ def _identity_node(identity: FeatureIdentity) -> _Node:
 def _update(
     state: IncrementalState, first: datetime | None, as_of: datetime,
     resumed_bars: int = 0, duplicate: bool = False, recovery: str | None = None,
+    *, live_commit_id: str | None = None,
 ) -> FeatureUpdate:
     identity = FeatureIdentity(
         state.identity, state.request.feature_id, state.formula_version, hash_parameters(state.request.parameters),
         state.backend_version, as_of, first, state.last_bar.bar_end if state.last_bar else None,
         state.bar_count, state.prefix_digest,
     )
-    checkpoint = ComputeCheckpoint(identity, state.state_schema_version, state.prefix_digest, state.mode)
+    checkpoint = ComputeCheckpoint(identity, state.state_schema_version, state.prefix_digest, state.mode, live_commit_id)
     return FeatureUpdate(checkpoint, state.last_point, resumed_bars, duplicate, recovery)
