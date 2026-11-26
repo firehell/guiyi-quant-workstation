@@ -1,5 +1,7 @@
 # 归一量化 V2 · 开发计划
 
+> **2026-11-26 owner 边界修订：** 第一阶段 Market 底座另见 [guiyi-v2-market-foundation](../guiyi-v2-market-foundation/proposal.md)。RQAlpha 数据由独立研究域维护，不纳入 Market 下载、存储、迁移、对照或验收；下文已有 MDS 冻结输入及 P3/P4 盘后接线描述仅为既有隔离实现/历史证据，不能作为新目标的数据耦合要求。研究域改造另行设计，当前不改代码、收益、触发器或正式运行；Market 盘后参考与研究数据就绪分别核验。
+
 2026-11-25 修订。以 [需求与验收](proposal.md)、[架构设计](design.md)与六份 change specs 为准。开发目标是牛哇参考盘后自动更新、盘中行情继续展示、既有独立模拟按各自合同运行。旧计划里的实时牛哇共享账户及其 P6 秒级调优已退出本轮工作。
 
 ## 当前判断与可复用的实现
@@ -73,6 +75,8 @@
 此轮保持 `auto_order=false`，只修改验收任务表并保留隔离证据。
 
 ## 可直接复制的 Codex Goal
+
+以下为 2026-11-25 原隔离任务记录，不用于启动 2026-11-26 Market change 或 RQAlpha 独立数据改造。
 
 ```text
 /goal 在归一量化最新 develop 上完成牛哇参考策略改为盘后自动计算的隔离实现、验证和集成。使用 GPT-6.2 Sol，中推理。先读 STATUS.md、AGENTS.md、docs/DEVELOPMENT.md，以及 openspec/changes/guiyi-v2-rearchitecture/ 的 proposal.md、design.md、tasks.md 和六份规格。按当前 HEAD 续做，复用已合入的 P2–P4。
