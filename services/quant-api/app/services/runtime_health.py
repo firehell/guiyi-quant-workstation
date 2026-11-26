@@ -81,7 +81,6 @@ def build_runtime_health(
     try:
         after_binding = resolve_service_binding("after-market")
         weekly_binding = resolve_service_binding("weekly-audit")
-        recovery_binding = resolve_service_binding("late-provider-recovery")
         if after_binding is not None and after_market_status_path == DEFAULT_AFTER_MARKET_STATUS_PATH:
             after_market_status_path = Path(after_binding.root) / ".run/after-market-status.json"
         if weekly_binding is not None and weekly_audit_status_path == PROJECT_ROOT / ".run/weekly-audit-status.json":
@@ -89,7 +88,7 @@ def build_runtime_health(
         weekly_identity = runtime_heartbeat_identity() if weekly_binding is None else {
             "runtime_root": weekly_binding.root, "runtime_commit": weekly_binding.commit,
             "runtime_generation": weekly_binding.generation, "runtime_tag": weekly_binding.tag}
-        recovery_root = PROJECT_ROOT if recovery_binding is None else Path(recovery_binding.root)
+        recovery_root = PROJECT_ROOT if after_binding is None else Path(after_binding.root)
     except RuntimeBindingError:
         # No authority can be established. Do not read another service's legacy files.
         after_market_status_path = weekly_audit_status_path = None

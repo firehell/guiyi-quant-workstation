@@ -455,7 +455,17 @@ def build_closed_cleanup_evidence(store, products):
                 public = public_after_market_status(json.loads(content))
                 source_commit = binding.commit
                 kind = 'current'
-            else:
+            current_run = public.get('last_run') if current else None
+            harmless_skip = (
+                current_run and current_run.get('status') == 'skipped'
+                and current_run.get('error_code') == 'NON_TRADING_DAY'
+                and current_run.get('attempts') == 0
+                and current_run.get('trading_day') == day.isoformat()
+                and tuple(current_run.get('products', ())) == products
+                and public.get('current_run') is None and public.get('last_failure') is None
+                and public.get('last_successful_trading_day') in {None, day.isoformat()}
+            )
+            if not current or harmless_skip:
                 history = read_history(path.with_name(NAME), products=products, now=now)
                 if history is None:
                     return None

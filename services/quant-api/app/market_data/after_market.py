@@ -30,6 +30,7 @@ from app.alerts.notification import (
     ProviderAcceptance,
 )
 from app.core.env import PROJECT_ROOT
+from app.market_data.archive_worker_policy import maintenance_failure_fields
 from app.market_data.after_market_limits import MAX_PUBLICATIONS, MAX_PUBLICATION_BYTES, MAX_STATUS_BYTES
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import HistoricalDataManager, MaintenanceProgressEvent, UpdateRequest
@@ -1445,27 +1446,9 @@ def _log_first_maintenance_failure(
     failure: Mapping[str, object], attempt: int, failure_count: int,
 ) -> None:
     """Log bounded target identity and reason without exposing provider text."""
-    fields: dict[str, object] = {
-        "stage": "canonical_update_result", "attempt": attempt,
-        "failure_count": min(failure_count, 100000),
-    }
-    dataset = failure.get("dataset")
-    if isinstance(dataset, (tuple, list)) and len(dataset) == 4:
-        kind, symbol, contract, frequency = dataset
-        if kind in {"contract", "continuous"} and isinstance(symbol, str) and _PUBLIC_PRODUCT_CODE.fullmatch(symbol):
-            fields["symbol"] = symbol
-            if kind == "contract" and isinstance(contract, str) and re.fullmatch(r"[A-Z]{1,2}[0-9]{3,4}\Z", contract):
-                fields["contract"] = contract
-        if isinstance(frequency, str) and frequency in {"1m", "1d", "1w", "5m", "15m", "30m", "60m"}:
-            fields["frequency"] = frequency
-    for name, upper in (("year", 9999), ("month", 12)):
-        value = failure.get(name)
-        if type(value) is int and 1 <= value <= upper:
-            fields[name] = value
-    reason = failure.get("reason_code")
-    fields["reason_code"] = (
-        reason if isinstance(reason, str) and reason in _MAINTENANCE_DIAGNOSTIC_REASON_CODES
-        else "OTHER_TARGET_FAILURE"
+    fields = maintenance_failure_fields(
+        failure, attempt, failure_count, product_code=_PUBLIC_PRODUCT_CODE,
+        reason_codes=_MAINTENANCE_DIAGNOSTIC_REASON_CODES,
     )
     _LOGGER.warning(
         "after_market_target_failure",

@@ -236,3 +236,35 @@ def test_closed_cleanup_proof_is_revalidated_after_every_poll(isolated_redis, tm
     assert service._provider is None
     assert source.cursor('live', day) == '0-0'
     assert completed.cursor('reference', day) == '0-0'
+
+
+
+def test_market_release_preserves_closed_cleanup_through_nontrading_skip(tmp_path, monkeypatch):
+    import json
+    from types import SimpleNamespace
+
+    from app.market_data.after_market_history import NAME, make_history, publish_history
+    from app.market_data.composition import build_closed_cleanup_evidence
+    from tests.data_foundation.test_closed_cleaned_idle import _passed_status
+
+    bar = _bar(1)
+    day, now = bar.trading_day, bar.bar_end.replace(hour=12)
+    commit = "a" * 40
+    directory = tmp_path / ".run"
+    status = _passed_status(day.isoformat(), commit)
+    publish_history(directory / NAME, make_history(
+        json.dumps(status).encode(), commit=commit, products=("rb",), now=now,
+    ))
+    binding = SimpleNamespace(root=str(tmp_path), commit="b" * 40, generation=20, enabled=True)
+    monkeypatch.setattr("app.runtime_bindings.resolve_service_binding", lambda _: binding)
+    store = SimpleNamespace(cleanup_readback=lambda _: {"remaining_bar_keys": 0, "subscription_present": False})
+    read = build_closed_cleanup_evidence(store, ("rb",))
+    path = directory / "after-market-status.json"
+    status["last_successful_trading_day"] = None
+    status["last_run"].pop("live_evidence")
+    status["last_run"].update(status="skipped", attempts=0, error_code="NON_TRADING_DAY")
+    path.write_text(json.dumps(status))
+    assert read(day, now)["source_commit"] == commit
+    status["last_run"].update(status="failed", attempts=1, error_code="COMMIT_OUTCOME_UNKNOWN")
+    path.write_text(json.dumps(status))
+    assert read(day, now) is None

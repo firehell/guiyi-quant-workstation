@@ -11,11 +11,13 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from contextlib import contextmanager
 import os
+import re
 import stat
 import json
 import secrets
 from collections.abc import Callable
 
+from app.market_data.late_worker_policy import provider_ready
 from app.market_data.after_market import (
     _load_status,
     _local_timestamp,
@@ -299,7 +301,6 @@ def run_runtime_scheduled(manager) -> dict:
     import os
     from app.core.env import PROJECT_ROOT
     from app.market_data.captured_recovery_runtime import (
-        _read_command,
         _verify_loaded_service,
     )
     from app.market_data.live_recovery_guard import after_market_recovery_guard
@@ -323,74 +324,56 @@ def run_runtime_scheduled(manager) -> dict:
             if not after_market_only() or updater.status_path.parent != PROJECT_ROOT / ".run" / "newow-isolated":
                 raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
             return
-        git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
-        commit = _read_command([*git, "rev-parse", "HEAD"], root=PROJECT_ROOT)
-        if (
-            commit != os.environ.get("GUIYI_RUNTIME_COMMIT")
-            or _read_command(
-                [*git, "rev-parse", "--abbrev-ref", "HEAD"], root=PROJECT_ROOT
-            )
-            != "HEAD"
-            or _read_command([*git, "status", "--porcelain=v1"], root=PROJECT_ROOT)
-        ):
-            raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
-        tag = _read_command(
-            [*git, "describe", "--exact-match", "--tags", "HEAD"], root=PROJECT_ROOT
-        )
-        if (
-            _read_command(
-                [*git, "cat-file", "-t", "refs/tags/" + tag], root=PROJECT_ROOT
-            )
-            != "tag"
-            or _read_command(
-                [*git, "rev-parse", "refs/tags/" + tag + "^{commit}"], root=PROJECT_ROOT
-            )
-            != commit
-        ):
-            raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
-        import stat
+        from app.runtime_bindings import authorized_program_arguments, read_bindings, verify_release
+        from app.runtime_identity import launchd_arguments, launchd_environments, read_launchd_service
 
-        marker = PROJECT_ROOT / ".run" / "market-runtime-enabled"
-        info = marker.lstat()
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600
-            or info.st_nlink != 1
-            or marker.read_bytes() != b"enabled\n"
-        ):
-            raise ValueError("LATE_RECOVERY_RUNTIME_DISABLED")
-        for label in (
-            "com.guiyi.quant-api",
-            "com.guiyi.quant-live",
-            "com.guiyi.quant-after-market",
-            "com.guiyi.quant-late-provider-recovery",
-        ):
-            output = _read_command(
-                ["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"],
-                root=PROJECT_ROOT,
-            )
+        if read_bindings() != registry or registry is None:
+            raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+        for service in ("api", "live", "after-market", "late-provider-recovery"):
+            binding = registry.services[service]
+            root = Path(binding.root)
+            if not binding.enabled:
+                raise ValueError("LATE_RECOVERY_RUNTIME_DISABLED")
+            if service == "late-provider-recovery" and (
+                root != PROJECT_ROOT or binding.commit != os.environ.get("GUIYI_RUNTIME_COMMIT")
+                or binding.tag != os.environ.get("GUIYI_RUNTIME_TAG")
+                or str(binding.generation) != os.environ.get("GUIYI_RUNTIME_GENERATION")
+            ):
+                raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+            verify_release(root, binding.tag, binding.commit)
+            output = read_launchd_service(binding.label, root=root)
+            if (output is None or launchd_arguments(output) != authorized_program_arguments(binding, Path.home())
+                    or re.findall(r"^\tprogram = (.+)$", output, re.MULTILINE) != ["/bin/bash"]):
+                raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+            environments = launchd_environments(output)
+            overrides = {"GUIYI_RUNTIME_ENV", "GUIYI_RUNTIME_DIR", "DATABASE_URL", "REDIS_URL",
+                         "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_MARKET_SOURCE"}
+            if (any(env.keys() & overrides for env in environments)
+                    or not any(env.get("GUIYI_RUNTIME_TAG") == binding.tag
+                               and env.get("GUIYI_RUNTIME_GENERATION") == str(binding.generation)
+                               for env in environments)):
+                raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
             _verify_loaded_service(
-                output,
-                root=PROJECT_ROOT,
-                commit=commit,
-                allow_idle=label.endswith(("after-market", "late-provider-recovery")),
-                working_directory=Path.home()
-                if label.endswith("-api")
-                else PROJECT_ROOT,
+                output, root=root, commit=binding.commit,
+                allow_idle=service in {"after-market", "late-provider-recovery"},
+                working_directory=Path.home() if service == "api" else root,
             )
 
-    def ready(day: date) -> bool:
-        if updater.rqdata is None:
-            updater.rqdata = updater.rqdata_factory()
-        return updater.rqdata.is_future_data_ready(day)
+    from app.runtime_bindings import read_bindings
 
+    registry = None
     with after_market_recovery_guard(wait=False):
+        if updater.research_update is not None:
+            status_path = updater.status_path
+        else:
+            registry = read_bindings()
+            verify()
+            status_path = Path(registry.services["after-market"].root) / ".run/after-market-status.json"
         result = run_scheduled(
             manager,
-            path=updater.status_path.with_name("late-provider-recovery-status.json"),
+            path=status_path.with_name("late-provider-recovery-status.json"),
             now=lambda: datetime.now(SHANGHAI),
-            ready=ready,
+            ready=lambda day: provider_ready(updater, day),
             invalidate=updater._invalidate_market_home_projection,
             verify_identity=verify,
             live_store=updater.live_store,

@@ -147,6 +147,24 @@ def _valid_market_intent(value):
     )
 
 
+def _require_forward_application_release(tag, previous):
+    from app.market_release_identity import APPLICATION_TAG, market_release_version
+
+    def version(value):
+        require(re.fullmatch(APPLICATION_TAG, value) is not None, "COHORT_TAG_INVALID")
+        return tuple(map(int, value[1:].split(".")))
+
+    old_versions = [
+        version(binding.tag) for binding in previous.services.values()
+        if market_release_version(binding.tag) is None
+    ]
+    require(
+        version(tag) > max(old_versions, default=(0, 0, 0)),
+        "COHORT_FORWARD_RELEASE_REQUIRED",
+    )
+
+
+
 def freeze_cohort(host, *, candidate_root, tag, commit, market_source=False):
     from app.market_data.market_foundation_scope import formal_tick_requested
 
@@ -168,16 +186,7 @@ def freeze_cohort(host, *, candidate_root, tag, commit, market_source=False):
     _release_layout(candidate_root, tag, previous)
     host.verify_release(candidate_root, tag, commit)
 
-    def version(value):
-        require(
-            re.fullmatch(r"v\d+\.\d+\.\d+", value) is not None, "COHORT_TAG_INVALID"
-        )
-        return tuple(map(int, value[1:].split(".")))
-
-    require(
-        version(tag) > max(version(v.tag) for v in previous.services.values()),
-        "COHORT_FORWARD_RELEASE_REQUIRED",
-    )
+    _require_forward_application_release(tag, previous)
     contracts = host.contracts(candidate_root)
     for old in previous.services.values():
         host.verify_release(Path(old.root), old.tag, old.commit)
@@ -339,11 +348,7 @@ def validate(
                 ),
                 "COHORT_REFERENCE_BACKLOG_UNPROVEN",
             )
-        require(
-            tuple(map(int, next(iter(new.services.values())).tag[1:].split(".")))
-            > max(tuple(map(int, v.tag[1:].split("."))) for v in old.services.values()),
-            "COHORT_FORWARD_RELEASE_REQUIRED",
-        )
+        _require_forward_application_release(next(iter(new.services.values())).tag, old)
         return old, new
     except (KeyError, TypeError, OverflowError) as error:
         raise CohortError("COHORT_PLAN_INVALID") from error

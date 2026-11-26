@@ -14,6 +14,7 @@ import stat
 from typing import Any
 
 from app.db.readonly import readonly_transaction
+from app.market_data.weekly_worker_policy import safe_error_type
 from app.market_data.after_market import _atomic_write_status, _local_timestamp, _public_timestamp
 from app.market_data.domain import DatasetKey
 from app.market_data.historical_data_manager import (
@@ -214,17 +215,6 @@ def _has_scheduled_attempt(
         raise RuntimeError("WEEKLY_AUDIT_FAILED") from None
 
 
-def _safe_error_type(exc: Exception) -> str:
-    # Never persist exception text, arbitrary class names, SQL or tracebacks.
-    from sqlalchemy.exc import SQLAlchemyError
-
-    for kind, label in ((TimeoutError, "TIMEOUT"), (OSError, "IO_ERROR"),
-                        (SQLAlchemyError, "DATABASE_ERROR"), (ValueError, "VALIDATION_ERROR")):
-        if isinstance(exc, kind):
-            return label
-    return "AUDIT_ERROR"
-
-
 def _run_owned_audit(
     manager: HistoricalDataManager, *, status_path: Path, products: tuple[str, ...],
     now: Callable[[], datetime], payload: dict[str, Any],
@@ -235,7 +225,7 @@ def _run_owned_audit(
         lease = manager.catalog.acquire_maintenance_lock()
     except Exception as exc:
         payload.update(status="failed", error_code="WEEKLY_AUDIT_FAILED",
-                       error_stage="maintenance_lock", error_type=_safe_error_type(exc),
+                       error_stage="maintenance_lock", error_type=safe_error_type(exc),
                        finished_at=_local_timestamp(now()).isoformat(), updated_at=_local_timestamp(now()).isoformat())
         _atomic_write_status(status_path, payload)
         return payload
@@ -267,7 +257,7 @@ def _run_owned_audit(
         except Exception as exc:
             payload.update(status="failed", error_code="WEEKLY_AUDIT_FAILED",
                            failed_symbol=payload["current_symbol"], current_symbol=None,
-                           error_stage=stage, error_type=_safe_error_type(exc))
+                           error_stage=stage, error_type=safe_error_type(exc))
         payload.update(finished_at=_local_timestamp(now()).isoformat(), updated_at=_local_timestamp(now()).isoformat())
         _atomic_write_status(status_path, payload)
         return payload

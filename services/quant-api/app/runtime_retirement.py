@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import stat
 
+from app.market_release_identity import valid_release_tag
 from app.runtime_bindings import _git
 
 _INVENTORY_SEALS = ContextVar("inventory_seals", default=None)
@@ -138,7 +139,7 @@ def _verify_git(repo_root, identity):
         return
     tag, commit = identity["tag"], identity["commit"]
     require(
-        re.fullmatch(r"v\d+\.\d+\.\d+", tag) and re.fullmatch(r"[0-9a-f]{40}", commit)
+        valid_release_tag(tag) and re.fullmatch(r"[0-9a-f]{40}", commit)
     )
     require(
         _git(repo_root, "cat-file", "-t", f"refs/tags/{tag}") == "tag"

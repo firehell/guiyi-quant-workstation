@@ -159,22 +159,54 @@ def recovery_progress_reached(current, boundary, *, service, proof=None):
 
 
 def prove_feed_quiescent(binding):
-    from datetime import UTC, datetime
+    from datetime import UTC, datetime, timedelta
+    from app.db.readonly import readonly_transaction
     from app.db.session import SessionLocal
-    from app.market_data.composition import build_market_feed_service
+    from app.market_data.composition import build_market_data_service
+    from app.market_data.market_foundation_scope import (
+        formal_tick_requested, require_bar_writer_namespace, require_formal_tick_binding,
+    )
+    from app.market_data.market_phase import MarketPhase, MarketPhaseResolver
+    from app.market_data.operational_universe import load_operational_products
     from app.redis_connections import get_redis_connection
+
     now = datetime.now(UTC)
-    with SessionLocal() as session:
-        if not build_market_feed_service(session).quiescent(now):
+    with SessionLocal() as session, readonly_transaction(session, timeout_seconds=10):
+        market = build_market_data_service(session)
+        resolver = MarketPhaseResolver(session)
+        products = load_operational_products()
+        if not products:
             raise DeploymentError('MARKET_FEED_SESSION_BREAK_REQUIRED')
-    raw = get_redis_connection().get('live:feed:heartbeat')
+        for product in products:
+            phase = resolver.resolve(product, now)
+            if (phase.phase not in {MarketPhase.BREAK, MarketPhase.CLOSED}
+                    or phase.current_session is not None
+                    or phase.next_session_start is not None and phase.next_session_start <= now):
+                raise DeploymentError('MARKET_FEED_SESSION_BREAK_REQUIRED')
+            if phase.trading_day is not None:
+                windows = market.session_windows(symbol=product, trading_day=phase.trading_day)
+                if not windows or any(window.end <= now < window.end + timedelta(seconds=60) for window in windows):
+                    raise DeploymentError('MARKET_FEED_SESSION_BREAK_REQUIRED')
+            elif phase.phase is not MarketPhase.CLOSED:
+                raise DeploymentError('MARKET_FEED_SESSION_BREAK_REQUIRED')
+        redis = get_redis_connection()
+        try:
+            if formal_tick_requested():
+                require_formal_tick_binding(redis, session.get_bind().url, market.catalog.canonical_root)
+            else:
+                require_bar_writer_namespace(redis)
+            raw = redis.get('live:feed:heartbeat')
+        finally:
+            redis.close()
     if raw is None:
         raise DeploymentError('MARKET_FEED_HEARTBEAT_MISSING')
     value = json.loads(raw)
     generated = datetime.fromisoformat(value['generated_at'])
+    now = datetime.now(UTC)
     if (not 0 <= (now-generated).total_seconds() <= 30 or value.get('input_pending_count') != 0
             or value.get('runtime_generation') != binding.generation
-            or value.get('runtime_commit') != binding.commit):
+            or value.get('runtime_commit') != binding.commit
+            or value.get('runtime_tag') != binding.tag):
         raise DeploymentError('MARKET_FEED_DRAIN_UNPROVEN')
     progress = observation_progress('market-feed')
     if any(v['cursor'] != v['tail'] for v in progress.values()):
