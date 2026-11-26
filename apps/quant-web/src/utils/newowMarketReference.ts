@@ -12,12 +12,14 @@ export interface SavedReferenceLine {
   id: string
   label: string
   color: string
+  sourceRevision: string | null
+  formulaVersion: string | null
   points: { time: string; value: number }[]
 }
 
 export function projectMarketReferenceChart(
   frames: readonly MarketAfterCloseFrame[], bars: readonly BarData[],
-  product: string, strategy: string, frequency: string,
+  product: string, strategy: string, frequency: string, sourceRevision: string | null = null,
 ) {
   const byTime = new Map<number, MarketAfterCloseFrame>()
   const ambiguous = new Set<number>()
@@ -32,7 +34,7 @@ export function projectMarketReferenceChart(
   const lines = new Map<string, SavedReferenceLine>()
   const matched: MarketAfterCloseFrame[] = []
   let active = new Map<string, SavedReferenceLine>()
-  let segment: string | undefined
+  let owner: string | undefined
   for (const bar of bars) {
     const at = Date.parse(bar.time)
     const frame = byTime.get(at)
@@ -40,12 +42,14 @@ export function projectMarketReferenceChart(
         !bar.sourceBarSha256 || bar.sourceBarSha256 !== frame.source_bar_sha256 ||
         bar.trading_day !== frame.trading_day || bar.physicalContract !== frame.physical_contract) {
       active = new Map()
-      segment = undefined
+      owner = undefined
       continue
     }
     matched.push(frame)
-    if (segment !== frame.calculation_segment_id) active = new Map()
-    segment = frame.calculation_segment_id
+    const formulaVersion = frame.formula_versions?.join(' / ') || null
+    const nextOwner = JSON.stringify([frame.physical_contract, frame.calculation_segment_id, frame.formula_versions])
+    if (owner !== nextOwner) active = new Map()
+    owner = nextOwner
     for (const [key, style] of Object.entries(PRICE_LINES)) {
       const raw = frame.main_values[key]
       const value = typeof raw === 'string' ? Number(raw) : NaN
@@ -55,7 +59,7 @@ export function projectMarketReferenceChart(
       }
       let line = active.get(key)
       if (!line) {
-        line = { id: `${key}:${frame.bar_end}`, ...style, points: [] }
+        line = { id: `${key}:${frame.bar_end}`, ...style, sourceRevision, formulaVersion, points: [] }
         active.set(key, line)
         lines.set(line.id, line)
       }

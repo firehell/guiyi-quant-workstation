@@ -625,15 +625,26 @@ function renderSavedReferenceLines(): void {
     host.removeLayer(`saved-reference:${id}`)
     savedReferenceSeries.delete(id)
   }
+  if (!lines.length) return
+  const barsByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
   for (const line of lines) {
+    const layer = host.layer(`saved-reference:${line.id}`, 'saved_reference', 'main')
     let series = savedReferenceSeries.get(line.id)
     if (!series) {
-      series = host.layer(`saved-reference:${line.id}`, 'saved_reference', 'main').line({
+      series = layer.line({
         color: line.color, title: line.label, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
       })
       savedReferenceSeries.set(line.id, series)
     }
-    series.setData(chartValues(line.points))
+    series.setData(chartValues(line.points, barsByTime))
+    let cutoff: string | null = null
+    for (const point of line.points) {
+      if (barsByTime.has(point.time) && Number.isFinite(point.value)) cutoff = point.time
+    }
+    layer.updateDiagnostics({
+      status: cutoff ? 'ready' : 'missing_input', frequency: props.period,
+      sourceIdentity: cutoff ? line.sourceRevision : null, formulaVersion: cutoff ? line.formulaVersion : null, dataCutoff: cutoff,
+    })
   }
 }
 
@@ -829,9 +840,9 @@ function markersForHoverContext(): KlineMarker[] {
   )
 }
 
-function chartValues(points: KlineValuePoint[] | undefined): Array<SingleValueData<Time> | WhitespaceData<Time>> {
+function chartValues(points: KlineValuePoint[] | undefined, visibleBars?: ReadonlyMap<string, BarData>): Array<SingleValueData<Time> | WhitespaceData<Time>> {
   if (!points?.length) return []
-  const barsByTime = new Map(renderedBars.map((bar) => [bar.time, bar]))
+  const barsByTime = visibleBars ?? new Map(renderedBars.map((bar) => [bar.time, bar]))
   return points.flatMap((point) => {
     const bar = barsByTime.get(point.time)
     return bar ? [point.value !== null && Number.isFinite(point.value)

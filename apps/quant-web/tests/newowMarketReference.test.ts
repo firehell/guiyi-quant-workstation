@@ -19,7 +19,7 @@ const frame = (bar_end: string, overrides: Partial<MarketAfterCloseFrame> = {}):
   actions: [{ kind: 'BUILD', signal_id: 'signal-1', trade_eligibility: 'ELIGIBLE' }], hints: [],
   ...overrides,
 })
-const project = (frames: MarketAfterCloseFrame[], bars: BarData[]) => projectMarketReferenceChart(frames, bars, 'jm', 'trend', '1d')
+const project = (frames: MarketAfterCloseFrame[], bars: BarData[]) => projectMarketReferenceChart(frames, bars, 'jm', 'trend', '1d', 'reference-revision')
 
 test('plots persisted actions and exact numerical lines against matching Canonical Bars', () => {
   const result = project([frame(first), frame(second, { actions: [{ kind: 'CLOSE', source_signal_id: 'fusion-close' }] })], [bar(first), bar(second)])
@@ -27,6 +27,8 @@ test('plots persisted actions and exact numerical lines against matching Canonic
     ['signal-1', first, 'arrowUp'], ['fusion-close', second, 'arrowDown'],
   ])
   assert.deepEqual(result.lines[0]?.points, [{ time: first, value: 10.1 }, { time: second, value: 10.1 }])
+  assert.equal(result.lines[0]?.sourceRevision, 'reference-revision')
+  assert.equal(result.lines[0]?.formulaVersion, 'v1')
 })
 
 test('suppresses overlays for live, revised, wrong contract, and ambiguous frames', () => {
@@ -42,6 +44,10 @@ test('suppresses overlays for live, revised, wrong contract, and ambiguous frame
 
 test('does not draw lines across a different calculation segment', () => {
   assert.deepEqual(project([frame(first), frame(second, { calculation_segment_id: 'segment-2' })], [bar(first), bar(second)]).lines, [])
+})
+
+test('does not draw a saved line across a different formula identity', () => {
+  assert.deepEqual(project([frame(first), frame(second, { formula_versions: ['v2'] })], [bar(first), bar(second)]).lines, [])
 })
 
 test('saved auxiliary is read through the archive route and bound to the chart identity and token', async () => {

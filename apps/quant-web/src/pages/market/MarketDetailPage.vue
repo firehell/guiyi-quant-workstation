@@ -157,7 +157,7 @@ const expectedReferenceRun = computed(() => newowAfterMarketOnly.value && typeof
 const published = ref<LatestBacktest['result']>(null)
 const referenceMarkers = computed(() => publishedActionMarkers(expectedReferenceRun.value && published.value?.run_id !== expectedReferenceRun.value ? null : published.value, controller.bars.value, explicitIdentity.value?.frequency ?? ''))
 const savedReference = ref<{ source: MarketAfterCloseReference; snapshot: string } | null>(null)
-const savedPresentation = ref<MarketAfterClosePresentation | null>(null)
+const savedPresentation = ref<(MarketAfterClosePresentation & { sourceRevision: string }) | null>(null)
 const savedChartStatus = ref<'waiting' | 'loading' | 'ready' | 'unavailable'>('waiting')
 const savedVisibleFrom = ref<string | null>(null)
 const savedStrategy = computed(() => explicitIdentity.value?.newowMode === 'dual' ? 'dual_fusion' : explicitIdentity.value?.strategy ?? 'trend')
@@ -184,7 +184,7 @@ watch([savedReference, savedChartSpan], async ([selection, span], _, onCleanup) 
   try {
     const presentation = await getMarketAfterClosePresentation(selection.source, selection.snapshot, JSON.parse(span), { signal: signal.signal })
     if (signal.signal.aborted) return
-    savedPresentation.value = presentation
+    savedPresentation.value = { ...presentation, sourceRevision: selection.source.revision_id }
     savedChartStatus.value = presentation.main_status === 'saved' ? 'ready' : 'unavailable'
   } catch {
     if (!signal.signal.aborted) savedChartStatus.value = 'unavailable'
@@ -201,6 +201,7 @@ watch(() => {
 const savedChart = computed(() => projectMarketReferenceChart(
   savedPresentation.value?.frames ?? [], controller.bars.value,
   explicitIdentity.value?.symbol ?? '', savedStrategy.value, explicitIdentity.value?.frequency ?? '',
+  savedPresentation.value?.sourceRevision ?? null,
 ))
 const savedLatest = computed(() => savedChart.value.matched.at(-1))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
