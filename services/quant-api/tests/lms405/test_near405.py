@@ -406,6 +406,90 @@ def test_managed_range_target_requires_later_opposing_confirmation_and_full_post
                             checkpoint=json.loads(json.dumps(earlier["checkpoint"])))
 
 
+def test_portfolio_range_exit_needs_independent_confirmation_but_hard_risk_still_clears():
+    from lms405_portfolio_task_policy import RANGE_TARGET_EXIT, gated_replay
+
+    rows = entry_bars() + [bar(8, 106, 109, 101, 107), bar(9, 107, 110, 101, 106),
+                          bar(10, 107, 108, 103, 105), bar(11, 105, 107, 101, 102)]
+    candidate = dict(range_exit_requires_confirmation=True)
+    action_at = rows[-1].end + 5 * US
+    assert [row["action"] for row in gated_replay(rows, action_at + US)[0]] == ["ENTER_LONG", "CLEAR"]
+    held, blocked = gated_replay(rows, action_at + US, **candidate)
+    assert [row["action"] for row in held] == ["ENTER_LONG"]
+    assert [(r["at"], r["reason"], r["unknown"]) for r in blocked if r["operation"] == "CLEAR_TREND"] == [
+        (action_at, RANGE_TARGET_EXIT, ["TREND_EXIT_SIGNAL", "SCOPED_APPROVAL"]),
+    ]
+    assert gated_replay(rows, action_at, **candidate) == (held, [])
+
+    rows.append(bar(12, 102, 104, 98, 99))
+    exited, _ = gated_replay(rows, rows[-1].end + 6 * US, **candidate)
+    assert [row["action"] for row in exited] == ["ENTER_LONG", "CLEAR"]
+    assert exited[-1]["research_exit_reason"] == "RISK_INVALID"
+
+
+def test_portfolio_range_gate_keeps_concurrent_regime_reversal_available():
+    from lms405_portfolio_task_policy import RANGE_TARGET_EXIT, gated_replay
+
+    rows = entry_bars() + [bar(8, 107, 109, 104, 108), bar(9, 108, 112, 105, 108),
+                          bar(10, 106, 109, 103, 104), bar(11, 105, 108, 102, 104),
+                          bar(12, 104, 106, 101, 104), bar(13, 104, 105, 102, 103),
+                          bar(14, 103, 104, 100.5, 101)]
+    baseline = replay(rows, as_of=until(rows), timely_fixture=True, managed_lifecycle=True)
+    assert baseline["transitions"][-1]["reason"] == RANGE_TARGET_EXIT
+    actions, blocked = gated_replay(rows, rows[-1].end + 6 * US, range_exit_requires_confirmation=True)
+    assert [row["action"] for row in actions] == ["ENTER_LONG", "CLEAR"]
+    assert actions[-1]["research_exit_reason"] == "OPPOSING_KEYBAR_REGIME_REVERSAL"
+    assert not [r for r in blocked if r["operation"] == "CLEAR_TREND"]
+
+
+def test_portfolio_recovery_needs_same_contract_and_a_break_after_the_current_lock():
+    from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
+    from lms405_portfolio_task_policy import gated_replay
+
+    rows = [replace(b, open=210 - b.open, high=210 - b.low, low=210 - b.high, close=210 - b.close)
+            for b in entry_bars()]
+    opened = rows[-1].end
+    minute = timedelta(minutes=1)
+    old = ProtectionBandUpdate("JM2509", "old", "PROTECTION", opened + minute, opened + minute,
+                               "test", "SHORT", D("101"), D("105"))
+    locked_at = opened + 3 * minute
+    protection = dict(at=locked_at, known_at=locked_at - US, shape_start=opened + 2 * minute,
+                      band=old, signal={"close": D("102")}, period=1, operation="PROTECT_EARLY")
+    break_start = locked_at + minute
+    when = break_start + 4 * minute
+    good = dict(at=when, contract="JM2509", shape_start=break_start + 2 * minute, first_break_start=break_start,
+                revision="recovery", old_lock_revision="old")
+    for invalid in (good | dict(first_break_start=locked_at), good | dict(contract="RU2701"),
+                    good | dict(old_lock_revision="other")):
+        transitions, _ = gated_replay(rows, when + US, (protection,), recovery_events=(invalid,))
+        assert [r["action"] for r in transitions] == ["ENTER_SHORT", "LOCK"]
+
+    transitions, _ = gated_replay(rows, when + US, (protection,), recovery_events=(good,))
+    assert [r["action"] for r in transitions] == ["ENTER_SHORT", "LOCK", "UNLOCK_SHORT"]
+    assert transitions[-1]["after"] == ["0", "1"]
+
+
+def test_divider_probe_keeps_an_existing_opposite_position_and_can_enter_from_flat():
+    from lms405_divider_short_candidates import DividerShortPlan
+    from lms405_portfolio_task_policy import gated_replay
+
+    rows = entry_bars()
+    start = rows[-1].end
+    minute = timedelta(minutes=1)
+    plan = DividerShortPlan("JM2509", "divider", start - minute, start, start + 4 * minute, D("100"), D("110"),
+                            "FIRST_FAR_CLOSE")
+    event = dict(at=start + 3 * minute + 9 * US, known_at=start + 3 * minute + US, setup_start=start + 2 * minute,
+                 close=D("99"), signal=None, plan=plan)
+    actions, blocked = gated_replay(rows, event["at"] + US, divider_events=(event,))
+    assert [row["action"] for row in actions] == ["ENTER_LONG"]
+    assert blocked[-1]["reason"] == "FRESH_FLAT_STATE_REQUIRED"
+
+    actions, blocked = gated_replay(rows[:-1], event["at"] + US, divider_events=(event,))
+    assert [row["action"] for row in actions] == ["ENTER_SHORT"]
+    assert not blocked
+    assert actions[-1]["divider_short"]["approval_kind"] == "TEST_FIXTURE"
+
+
 def test_managed_recovery_requires_fresh_cross_and_human_decisions():
     rows = managed_lock_restore_bars()
     for i in (11, 12):
