@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar, Position
+from lms405_protection_clock_cases import compare_quote
 from lms405_protection_route_comparison import candidate_clocks, replay_case, wick_beyond
 from lms405_right_side_study import ONE, US, at
 
@@ -103,3 +104,20 @@ def test_protection_geometry_uses_mirrored_prices_for_short_confirmation():
         assert "precontact" in clocks and "ordinary" in clocks and "wick_1m_to_1m" in clocks
         results.append((clocks, contact.end))
     assert results[0] == results[1]
+
+
+def test_same_quote_minute_is_only_retrospective_price_evidence_for_first_touch():
+    start = at("2026-10-22T21:00")
+    bars = [Bar("RU2701", start + i * ONE, *map(Decimal, values), start=start + (i - 1) * ONE)
+            for i, values in enumerate(((90, 95, 89, 92), (96, 104, 94, 100)), 1)]
+    touch = bars[-1]
+    modes = {"IMMEDIATE": [dict(at=touch.start - US)],
+             "WAIT_FOR_VALID_FIRST_TOUCH": [dict(at=touch.end + 6 * US)]}
+    outcome = compare_quote(bars, touch.end, touch, modes, tick=Decimal(1), lots=20, totals=range(2000, 2001))
+    assert outcome["touch_shares_quote_minute"] and not outcome["touch_known_strictly_before_quote"]
+    assert not outcome["BEFORE_QUOTE_MINUTE"]["price_possible_without_clock"]
+    wider = outcome["INCLUDE_ENTIRE_QUOTE_MINUTE"]
+    assert wider["IMMEDIATE"]["whole_leg_compatible"]
+    assert wider["WAIT_FOR_VALID_FIRST_TOUCH"] is None
+    assert wider["from_touch_minute_start"]["minimum_lots_outside_window"] == 0
+    assert wider["strictly_after_touch_is_known"]["minimum_lots_outside_window"] == 20
