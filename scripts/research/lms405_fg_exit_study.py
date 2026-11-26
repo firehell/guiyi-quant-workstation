@@ -1,10 +1,13 @@
 """Reconcile FG2701 take-profit text and software rows with completed local bars."""
 
 import argparse
+import csv
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from guiyi_quant.lms405 import Action, Position
+from guiyi_quant.lms405.public_conditions import Condition, PublicCase, assess_case
 from lms405_break_pressure_comparison import continuous_groups
 from lms405_fg_sa_cycle_order import fresh_geometry
 from lms405_m_permission_study import read_pair
@@ -41,6 +44,7 @@ IMAGES = {
                           "f5afb7da82441bcea7e0b2e96b67b038fb421e9cc51de753fe149e8fc81f0165"),
 }
 FG_REPORT, LATER_HOLD = SOURCE_IDS[:2]
+OCTOBER_PLAN = "A5358325549629506"
 PVC_CLOCKS = Path("output/lms405-v-daytime-exit-20261125/final.json")
 PVC_CLOCKS_SHA = "18e1c1ebbc8ef71a4d9ab9f74a9ed7a76d3730d9882cb2f4eca4ce556c22aab3"
 EXTREME_BAND = Decimal(940), Decimal(946)
@@ -62,6 +66,8 @@ JULY_BASELINE = Path("output/lms405-glass-lock-followup-20261125/reviewed.json")
 JULY_BASELINE_SHA = "cbc1a8e41badb0cf18cc97c3ce63b82953f916b5f863643561d0cd996690f9f8"
 ORDER_BASELINE = Path("output/lms405-fg-order-window-20261126/checked-c.json")
 ORDER_BASELINE_SHA = "6fd0463441b614e10548155951ed09a1971a67b5e54574e8dc898daecb3dccde"
+PRESSURE_SHA = "dcde821a829910773c4dda7951ff787fb09123d8017f4215716ad4cd844fb1d4"
+SHORT_PLAN_ACTIONS = {"protection": "LOCK", "exit_original_short": "EXIT_SHORT"}
 
 
 def fg_window(series, start, cutoff, side, *, after_report):
@@ -421,6 +427,140 @@ def compare_exit_pressure(session, market):
     )
 
 
+def short_pressure_case(label, purpose, contract, source, available_at, version_405):
+    return PublicCase(
+        f"{label}:{contract}:{purpose}", contract, source, available_at, version_405,
+        (SHORT_PLAN_ACTIONS[purpose],),
+        (("PLAN_AUTHORIZES_PURPOSE", "COMPLETED_PRESSURE", "PURPOSE_CONFIRMATION"),),
+        (("PLAN_AUTHORIZES_PURPOSE", "COMPLETED_PRESSURE"), ("COMPLETED_PRESSURE", "PURPOSE_CONFIRMATION")),
+    )
+
+
+def assess_short_pressure(case, close_at, as_of, *, purpose_allowed=None, approval=None,
+                          plan_known_at=None, approval_at=None):
+    """Project a unit old short under a purpose-specific, external plan."""
+    price = Condition("COMPLETED_PRESSURE", case.id, case.contract, True, close_at, close_at + US,
+                      "FROZEN_MARKET_PRICE_ONLY", "EVENT_TIME")
+    facts = [price]
+    if purpose_allowed is not None:
+        # Late knowledge cannot bind an already completed market observation to a plan.
+        value = purpose_allowed if plan_known_at < close_at else None
+        facts.append(Condition("PLAN_AUTHORIZES_PURPOSE", case.id, case.contract, value,
+                               case.available_at, plan_known_at, "TEST_FIXTURE", "EVENT_TIME"))
+    if approval is not None:
+        # Bind the approval to information available at decision time, as well as evaluation time.
+        if approval_at <= max(fact.known_at for fact in facts):
+            approval = None
+        facts.append(Condition("PURPOSE_CONFIRMATION", case.id, case.contract, approval,
+                               approval_at, approval_at + US, "TEST_FIXTURE", "EVENT_TIME"))
+    unit = Decimal(1)
+    position = Position(case.contract, short=unit)
+    result = assess_case(case, position, Action(case.actions[0], unit), tuple(facts), as_of=as_of)
+    return result | dict(
+        before={"long": str(position.long), "short": str(position.short)},
+        conditions={fact.name: dict(value=fact.value, source=fact.source, observed_at=fact.observed_at,
+                                   known_at=fact.known_at) for fact in facts if fact.known_at < as_of},
+    )
+
+
+def plan_intent_sources(pressure):
+    expected = {row["source_id"]: row["source"] for row in pressure["cases"].values()}
+    expected[OCTOBER_PLAN] = input_sources()[OCTOBER_PLAN]
+    result = {}
+    with ARCHIVE.open(newline="", encoding="utf-8") as stream:
+        for row in csv.DictReader(stream):
+            key = row["source_id"]
+            if key not in expected:
+                continue
+            source = expected[key]
+            if (key in result or row["path"] != source["archive_path"]
+                    or row["published_at"] != source["published_at"] or row["url"] != source["source_url"]):
+                raise ValueError("FG_PLAN_INTENT_ARCHIVE_BINDING_CHANGED")
+            result[key] = dict(observed_at=datetime.fromisoformat(row["observed_at"]),
+                               archive_sha256=sha((ARCHIVE.parent / row["path"]).read_bytes()),
+                               source_url=row["url"], published_at=row["published_at"], archive_path=row["path"])
+    if set(result) != set(expected):
+        raise ValueError("FG_PLAN_INTENT_ARCHIVE_SOURCE_MISSING")
+    return result
+
+
+def compare_plan_intents(pressure, source_reads):
+    """Compare what a separately authorized purpose changes on identical frozen price evidence."""
+    public = {}
+    definitions = (
+        ("july_4_0_5_protection", "FG2609", "960", True, ("protection",)),
+        ("september_4_0_5_take_profit", CONTRACT, "946", True, ("exit_original_short",)),
+        ("october_software_buy_close", CONTRACT, "836", None, tuple(SHORT_PLAN_ACTIONS)),
+    )
+    fixture_close = None
+    for label, contract, edge, version, purposes in definitions:
+        row = pressure["cases"][label]
+        cutoff = datetime.fromisoformat(row["cutoff_exclusive"])
+        close_at = datetime.fromisoformat(row["edges"][edge]["first_up_two_closes_at"]).astimezone(cutoff.tzinfo)
+        publication = datetime.fromisoformat(row["source"]["published_at"])
+        source = source_reads[row["source_id"]]
+        if row["contract"] != contract or not close_at + 6 * US < cutoff <= publication <= source["observed_at"]:
+            raise ValueError("FG_PLAN_INTENT_PRICE_OR_SOURCE_WINDOW_INVALID")
+        if label == "october_software_buy_close":
+            fixture_close = close_at
+        public[label] = {}
+        for purpose in purposes:
+            case = short_pressure_case(label, purpose, contract, row["source_id"], source["observed_at"], version)
+            price_only = short_pressure_case("PRICE_ONLY", purpose, contract, "FROZEN_MARKET_PRICE_ONLY",
+                                             source["observed_at"], None)
+            public[label][purpose] = dict(
+                before_disclosure=assess_short_pressure(price_only, close_at, cutoff),
+                archived_readback=assess_short_pressure(case, close_at, case.available_at + US),
+            )
+
+    # Use the October close in both treatments. The historical 829–836 zone only
+    # has a protection role in the archive. The alternative represents a separately
+    # declared trailing profit exit, not a claim the original target was reached.
+    close_at = fixture_close
+    plan_at, approval_at = close_at - ONE, close_at + 2 * US
+    approval_known_at = approval_at + US
+    evaluated_at = approval_known_at + US
+    fixture_inputs = dict(purpose_allowed=True, plan_known_at=plan_at, approval=True, approval_at=approval_at)
+    fixtures = {}
+    for purpose in SHORT_PLAN_ACTIONS:
+        case = short_pressure_case("TEST_FIXTURE", purpose, CONTRACT, "TEST_FIXTURE", plan_at, True)
+        fixtures[purpose] = dict(
+            approved=assess_short_pressure(case, close_at, evaluated_at, **fixture_inputs),
+            price_only=assess_short_pressure(case, close_at, evaluated_at),
+            before_close_known=assess_short_pressure(case, close_at, close_at + US, **fixture_inputs),
+            before_plan_known=assess_short_pressure(
+                case, close_at, approval_known_at,
+                **(fixture_inputs | {"plan_known_at": approval_known_at}),
+            ),
+            plan_learned_after_approval=assess_short_pressure(
+                case, close_at, evaluated_at,
+                **(fixture_inputs | {"plan_known_at": approval_known_at}),
+            ),
+            plan_learned_after_pressure=assess_short_pressure(
+                case, close_at, evaluated_at,
+                **(fixture_inputs | {"plan_known_at": close_at + US}),
+            ),
+            approval_without_plan=assess_short_pressure(
+                case, close_at, evaluated_at, approval=True, approval_at=approval_at,
+            ),
+            at_approval_known=assess_short_pressure(case, close_at, approval_known_at, **fixture_inputs),
+            simultaneous=assess_short_pressure(
+                case, close_at, evaluated_at, **(fixture_inputs | {"approval_at": close_at}),
+            ),
+            wrong_purpose=assess_short_pressure(
+                case, close_at, evaluated_at, **(fixture_inputs | {"purpose_allowed": False}),
+            ),
+            denied=assess_short_pressure(case, close_at, evaluated_at, **(fixture_inputs | {"approval": False})),
+        )
+    return dict(
+        version="lms405-fg-plan-intent-contrast-v1", contract=CONTRACT, pressure_at=close_at, pressure_edge="836",
+        pressure_report_sha256=PRESSURE_SHA, source_reads=source_reads, public=public, fixtures=fixtures,
+        source_read_times_are_not_event_times=True,
+        fixture_exit_intent="EXPLICIT_TRAILING_PROFIT_EXIT_ON_THE_SHARED_PRESSURE_EVENT",
+        author_match_rate=None, admitted_author_samples=0, executable=False, fills=None, pnl=None,
+    )
+
+
 def compute(session, market):
     index = input_sources()
     sources = {key: index[key] | {"archive_sha256": sha((ARCHIVE.parent / index[key]["archive_path"]).read_bytes())}
@@ -444,15 +584,27 @@ def compute(session, market):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--env-file", type=Path, required=True)
+    parser.add_argument("--env-file", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--september-clocks", action="store_true")
     group.add_argument("--order-window", action="store_true")
     group.add_argument("--pressure-contrast", action="store_true")
+    group.add_argument("--plan-intents", type=Path, metavar="FROZEN_PRESSURE_REPORT")
     args = parser.parse_args()
-    if not args.env_file.is_file() or args.output.exists():
-        parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
+    if args.output.exists():
+        parser.error("OUTPUT_EXISTS")
+    if args.plan_intents is not None:
+        try:
+            pressure = verified_json(args.plan_intents, PRESSURE_SHA)
+            result = compare_plan_intents(pressure, plan_intent_sources(pressure))
+            with args.output.open("x", encoding="utf-8") as stream:
+                stream.write(encoded(result))
+        except (OSError, ValueError, KeyError):
+            parser.exit(2, "FG_PLAN_INTENT_FROZEN_INPUT_UNVERIFIED\n")
+        return
+    if args.env_file is None or not args.env_file.is_file():
+        parser.error("ENV_FILE_MISSING")
     from dotenv import load_dotenv
     load_dotenv(args.env_file, override=False)
     from app.db.readonly import readonly_transaction

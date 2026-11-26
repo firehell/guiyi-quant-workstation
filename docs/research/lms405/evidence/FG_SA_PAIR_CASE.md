@@ -368,6 +368,28 @@ services/quant-api/.venv/bin/python scripts/research/lms405_fg_exit_study.py \
 
 统一MDS用三个实月交易日的1／5／15分钟冻结行情复算，共1,035／207／69根。实际比较窗口包含727根1分钟，九个价格时钟前缀通过。两次定稿逐字节一致，路径为 `output/lms405-fg-exit-pressure-20261126/final-a.json`，SHA256 `dcde821a829910773c4dda7951ff787fb09123d8017f4215716ad4cd844fb1d4`。可评分作者动作样本为0。
 
+### 同一压力的保护与止盈计划重放
+
+使用上节冻结的 FG2701 在10月27日13:49连续两根1分钟收于836之上的同一观测，从单位原空（多0空1）开始。当前可见的26日VPLUS将829–836写为反弹中断与保护参考，历史编辑前像未知。此处两项正向结果均为独立的 `TEST_FIXTURE`。止盈情景预先明确把反弹压力作为移动止盈条件，实际 VPLUS 的保护带用途和9月止盈触发条件仍按原证据记录。 [10月26日VPLUS](../../lms-source-archive/01-VPLUS每日复盘/2026-10-26/A5358325549629506.md) · [9月14日止盈自述](https://www.sina.cn/news/detail/5343083008886025.html)
+
+| 同一条价格路径下的输入 | 条件重放结果 |
+|---|---|
+| 预先明确允许等量锁定，分钟收盘可知后另确认保护 | 保留原空，加多1，结果多1空1 |
+| 预先明确允许反弹移动止盈，分钟收盘可知后另确认退出原空 | 平空1，结果多0空0 |
+| 仅有价格、仅有确认、计划迟到、确认和价格同刻、读取时点正好等于信息可用时点 | 不可判定，单位旧仓保持 |
+| 用途不符或确认被拒绝 | 条件不满足，单位旧仓保持 |
+
+7月锁定说明、9月止盈自述、10月软件买平三组公开证据分别检查披露前和实际归档读回阶段。披露前只投影回看所选价位对应的已完成行情，该价位当时是否已知仍未知，系统版本留空。归档读回使用索引里的实际读取时间，保留前两例明示版本及末例未知版本。四个公开分支仍不可判定，10月的买平归属、信号和前后腿均不足以给保护或止盈的许可。研究优先检查当期计划的作用对象、适用时段和后续确认，价格条件可按品种独立评估。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_fg_exit_study.py \
+  --plan-intents output/lms405-fg-exit-pressure-20261126/final-a.json \
+  --output /tmp/lms405-fg-plan-intents-new.json
+```
+
+定稿位于 `output/lms405-fg-plan-intents-20261126/verified-a.json`，SHA256 `824a96b61cd4eb1fadf4d13bc802af2cae9573218a0b7ffd3e05db560d652055`。两份输出逐字节一致，有效的正向结果均为模拟单位仓，作者动作匹配分母仍为0。
+
 ## 纯碱与玻璃的保护区和 M 区
 
 补到SA2609 7月10日与FG2609 7月22日作者复盘。纯碱将相邻两档分别给保护与M判定，玻璃明确在保护带之前或之内观察多向V+。两篇未明确系统子版本，旧VPLUS未定位，三张附图返回403。菜油和PVC用于检验后续动作语义，四个正文均在日盘后可见，价带按当前文字回看。 [纯碱原文](https://www.sina.cn/news/detail/5319173366613171.html) · [玻璃原文](https://www.sina.cn/news/detail/5323519697094213.html)

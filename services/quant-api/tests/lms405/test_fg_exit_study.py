@@ -1,7 +1,8 @@
+from datetime import datetime
 from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
-from lms405_fg_exit_study import minute_context, pressure_timeline, range_recapture
+from lms405_fg_exit_study import compare_plan_intents, minute_context, pressure_timeline, range_recapture
 from lms405_right_side_study import ONE, at
 
 
@@ -43,3 +44,44 @@ def test_two_close_recapture_requires_earlier_down_cross_in_same_segment():
     split = pressure_timeline(bars[:3] + renewed, Decimal(100))
     assert split["first_up_two_closes_at"] == renewed[-1].end
     assert split["up_after_down_in_same_segment"] is None
+
+
+def test_same_price_pressure_requires_distinct_plan_purpose_and_permission():
+    def case(contract, published_at, close_at, edge):
+        return {
+            "contract": contract, "source_id": published_at,
+            "source": {"published_at": published_at},
+            "edges": {edge: {"first_up_two_closes_at": close_at}},
+            "cutoff_exclusive": published_at,
+        }
+
+    pressure = {"cases": {
+        "july_4_0_5_protection": case("FG2609", "2026-07-08T15:10:00+08:00", "2026-07-08T11:11:00+08:00", "960"),
+        "september_4_0_5_take_profit": case(
+            "FG2701", "2026-09-14T15:10:00+08:00", "2026-09-14T09:31:00+08:00", "946",
+        ),
+        "october_software_buy_close": case(
+            "FG2701", "2026-10-27T14:08:00+08:00", "2026-10-27T05:49:00+00:00", "836",
+        ),
+    }}
+    source_reads = {row["source_id"]: {"observed_at": datetime.fromisoformat(row["source_id"]) + ONE}
+                    for row in pressure["cases"].values()}
+    result = compare_plan_intents(pressure, source_reads)
+
+    assert result["fixtures"]["protection"]["approved"]["after"] == {"long": "1", "short": "1"}
+    assert result["fixtures"]["exit_original_short"]["approved"]["after"] == {"long": "0", "short": "0"}
+    assert result["pressure_at"].isoformat() == "2026-10-27T13:49:00+08:00"
+    for scenario in result["fixtures"].values():
+        for key in ("price_only", "before_close_known", "before_plan_known", "at_approval_known", "simultaneous",
+                    "wrong_purpose", "denied", "plan_learned_after_approval", "plan_learned_after_pressure",
+                    "approval_without_plan"):
+            assert scenario[key]["after"] is None
+        assert scenario["wrong_purpose"]["status"] == "NOT_PERMITTED"
+        assert scenario["denied"]["status"] == "NOT_PERMITTED"
+    for routes in result["public"].values():
+        for route in routes.values():
+            before = route["before_disclosure"]
+            assert before["after"] is None and route["archived_readback"]["after"] is None
+            assert before["sources"] == ["FROZEN_MARKET_PRICE_ONLY"]
+            assert "case_version_405" in before["unknown"]
+    assert result["admitted_author_samples"] == 0
