@@ -3,14 +3,17 @@
 import argparse
 from datetime import datetime
 from decimal import Decimal
+from itertools import product
 from pathlib import Path
 
+from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
 from lms405_counter_m_lot_roles import RETENTION, RETENTION_SHA, check_images, retention_row
 from lms405_oi_leg_intent import DISPLAYED_OPENING_AVERAGE
 from lms405_oi_ru_next_session import CLOSE, DAY, NIGHT, OI_PLAN, RU_PLAN, market_identity
 from lms405_pa_signal_deadline import comparison, minute_ticks, quantity_support, time_constraints
 from lms405_portfolio_leg_audit import scoped_input_quotes
 from lms405_portfolio_replay import input_sources
+from lms405_portfolio_task_policy import published_protection_events
 from lms405_protection_lot_timing import displayed_tick_totals, verified_json
 from lms405_protection_next_night_replay import OI, OI_SHA, TOUCH, TOUCH_SHA
 from lms405_protection_timeframes import VARIANTS, read_window
@@ -27,6 +30,9 @@ CONFIG = {
     "OI2701": (OI_PLAN, "RANGE_DIVIDER", (Decimal(10240), Decimal(10283)), None),
     "RU2701": (RU_PLAN, "PROTECTION_SEARCH_REFERENCE", (Decimal(19360), Decimal(19405)), Decimal(19515)),
 }
+THREE_CONFIG = CONFIG | {"SH2701": (RU_PLAN, "PROTECTION_SEARCH_REFERENCE", (Decimal(1490), Decimal(1501)), Decimal(1513))}
+COMMON_THREE = (Path("output/lms405-common-protection-oct27-20261125/final.json"),
+                "1f8faeba34873d4be26cb01145dbb994305c01aa45a0af3d905ea35442f09264")
 
 
 def first_time(rows, predicate):
@@ -195,10 +201,138 @@ def study(session, market):
     )
 
 
+def quote_combinations(end_sets):
+    """Compare row labels without assigning a capture time."""
+    count, joint, shortest = 0, 0, None
+    for labels in product(*(sorted(ends) for ends in end_sets)):
+        spread = max(labels) - min(labels)
+        count += 1
+        joint += min(labels) == max(labels)
+        if shortest is None or (spread, labels) < shortest:
+            shortest = (spread, labels)
+    return dict(count=count, same_label_count=joint,
+                min_spread_minutes=shortest[0] // ONE if shortest is not None else None,
+                example_end_labels=shortest[1] if shortest is not None else None)
+
+
+def strict_row_quote_check(minutes, quote_end, gate, *, tick, lots, totals):
+    cut = quote_end - ONE
+    prefix = [b for b in minutes if b.end + US < cut]
+    audit = gate_check(prefix, gate, tick=tick, lots=lots, totals=totals)
+    return audit | dict(candidate_ready_at_boundary=gate < cut)
+
+
+def three_study(session, market):
+    report = verified_json(*COMMON_THREE)
+    retention = verified_json(RETENTION, RETENTION_SHA)
+    spec = load_specs(verified_json(SPECS, SPECS_SHA))
+    photos = retention["snapshot_sources"]
+    check_images(photos[CLOSE], photos[NIGHT])
+    if report["image"] != photos[NIGHT]["image"] or photos[NIGHT]["quote_anchor"] is not None:
+        raise ValueError("OI_RU_DEADLINE_THREE_PHOTO_CHANGED")
+    index, quotes = input_sources(), scoped_input_quotes()
+    post = datetime.fromisoformat(photos[NIGHT]["published_at"])
+    data, local = {}, {}
+    for contract, (plan_id, role, band, m) in THREE_CONFIG.items():
+        series = read_window(session, market, contract, DAY)
+        identity = market_identity(series)
+        if identity["1"] != retention["contracts"][contract]["market"][str(DAY)]:
+            raise ValueError("OI_RU_DEADLINE_THREE_MARKET_CHANGED")
+        plan = load_source(index, plan_id)
+        published = datetime.fromisoformat(plan["published_at"]) + ONE
+        start = series[1][0].start
+        if not published < start < post:
+            raise ValueError("OI_RU_DEADLINE_THREE_PLAN_CHANGED")
+        previous = retention_row(retention, contract, CLOSE, NIGHT, "short")
+        current = retention_row(retention, contract, CLOSE, NIGHT, "long")
+        observed = current["later_leg"]
+        lots = observed["quantity"]
+        tick, average = spec[contract]["tick"], Decimal(observed["opening_average"]).quantize(Decimal("0.1"))
+        if (observed["today_quantity"] != lots or previous["retained"] != [lots]
+                or previous["later_leg"]["today_quantity"] != 0 or current["earlier_leg"] is not None
+                or report["by_contract"][contract]["quantity"] != lots
+                or Decimal(report["by_contract"][contract]["shown_average"]) != average):
+            raise ValueError("OI_RU_DEADLINE_THREE_LEG_CHANGED")
+        minutes = completed(series[1], start, post)
+        quote = quotes[NIGHT, contract]
+        mark = Decimal(quote["mark"])
+        ends = {b.end for b in minutes if b.low <= mark <= b.high}
+        if sorted(map(display, ends)) != quote["contains"] or not ends:
+            raise ValueError("OI_RU_DEADLINE_THREE_QUOTE_CHANGED")
+        clocks = candidate_clocks(series, start, post, band, role, m)
+        deferred = None
+        if contract == "SH2701":
+            protection = ProtectionBandUpdate(contract, plan_id, "PROTECTION", published, published,
+                                              plan_id, "SHORT", *band)
+            options = published_protection_events(series, (protection,), post)
+            delayed = published_protection_events(series, (protection,), post, advance_at_touch=True)
+            early = next((row for row in options if row["operation"] == "PROTECT_EARLY"), None)
+            first = early["signal"] | {"clock": f"{early['period']}m_to_1m"} if early is not None else None
+            if early is not None:
+                deferred = next((row["touch_known_at"] for row in delayed if "touch_known_at" in row
+                                 and row["signal"] == early["signal"] and row["period"] == early["period"]), None)
+        else:
+            first = next(iter(clocks["candidates"]), None)
+        if first is None or (contract == "SH2701" and deferred is None):
+            raise ValueError("OI_RU_DEADLINE_THREE_CANDIDATE_CHANGED")
+        period = int(first["clock"].split("m", 1)[0])
+        (shape,) = [bar for bar in series[period] if bar.end == first["shape_end"]]
+        location = "BELOW" if first["close"] < band[0] else "INSIDE" if first["close"] <= band[1] else "ABOVE"
+        data[contract] = dict(minutes=minutes, ends=ends, lots=lots, tick=tick,
+                              totals=displayed_tick_totals(average, lots, tick))
+        local[contract] = dict(plan=plan, reference_role=role, band=band, first_candidate=first,
+                               first_candidate_price_context=dict(
+                                   shape_range=[shape.low, shape.high], confirmation_close_location=location,
+                                   shape_overlaps_reference=shape.low <= band[1] and band[0] <= shape.high),
+                               first_touch=clocks["contact"], first_m_touch=clocks["m_touch"],
+                               deferred_advance_known_at=deferred, observed_long=observed, old_short=previous,
+                               row_quote=quote, market=identity, author_signal=None, author_permission=None)
+
+    order = tuple(THREE_CONFIG)
+    learned = tuple(local[c]["first_candidate"]["available_at"] for c in order)
+    caustic_gate = local["SH2701"]["deferred_advance_known_at"]
+    oil_gate = local["OI2701"]["first_touch"] + US
+    policies = {
+        "separate_early_clocks": learned,
+        "common_after_all_early_clocks": (max(learned),) * len(order),
+        "only_caustic_waits_for_band_contact": (*learned[:-1], caustic_gate),
+        "common_after_caustic_band_contact": (caustic_gate,) * len(order),
+        "common_after_oil_divider_contact": (oil_gate,) * len(order),
+    }
+    evaluated, cache = {}, {}
+    for name, gates in policies.items():
+        rows, matched = {}, []
+        for contract, gate in zip(order, gates, strict=True):
+            entry = data[contract]
+            checks, allowed = {}, set()
+            for end in sorted(entry["ends"]):
+                ident = contract, end, gate
+                if ident not in cache:
+                    cache[ident] = strict_row_quote_check(entry["minutes"], end, gate,
+                                                         tick=entry["tick"], lots=entry["lots"], totals=entry["totals"])
+                checks[end.isoformat()] = cache[ident]
+                if cache[ident]["price_compatible"]:
+                    allowed.add(end)
+            matched.append(allowed)
+            rows[contract] = dict(gate=gate, compatible_quote_count=len(allowed), by_quote=checks)
+        evaluated[name] = dict(by_contract=rows, price_compatible_quote_combinations=quote_combinations(matched))
+    return dict(
+        version="lms405-three-contract-protection-deadlines-v1", source=photos[NIGHT], references=dict(
+            joint_holdings=COMMON_THREE[1], retention=RETENTION_SHA,
+        ), local=local, policies=evaluated, contract_order=order,
+        raw_quote_combinations=quote_combinations([data[c]["ends"] for c in order]),
+        quote_prices_exclude_quote_minute=True, same_account_as_predecessor_assumed=True,
+        each_position_synchronized_with_its_quote_row_assumed=True,
+        common_decision_time_verified=False, quote_capture_time_verified=False, historical_revision_verified=False,
+        author_action_samples=0, author_match_rate=None, fills=None, pnl=None, executable=False,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--with-caustic", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -212,7 +346,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            run = three_study if args.with_caustic else study
+            report = run(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as output:
             output.write(encoded(report))
     except MarketDataError as exc:
