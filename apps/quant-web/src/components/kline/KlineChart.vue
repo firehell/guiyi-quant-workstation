@@ -190,12 +190,11 @@ const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 let bollLines: Record<'upper' | 'middle' | 'lower', ISeriesApi<'Line'>> | null = null
 const bollPointCount = ref(0)
 const publicPatternPrimitive = new NewowPublicPatternPrimitive(point => chartTime({ time: point.barEnd, trading_day: point.tradingDay } as BarData))
-watch(() => props.patternGeometry, value => {
-  publicPatternPrimitive.setData(value ?? null)
+watch(() => props.patternGeometry, () => {
+  renderPublicPattern()
   detailSession?.restoreInspectionCursor()
 })
 const rangeDetectorPrimitive = new RangeDetectorPrimitive()
-let rangeAttached = false
 let htdyLines: Record<'zk1' | 'zd1' | 'zd2', ISeriesApi<'Line'>> | null = null
 const dynamicRangePrimitive = new DynamicRangePrimitive()
 let renderedBars: BarData[] = []
@@ -277,9 +276,7 @@ onMounted(async () => {
     wickUpColor: theme.candleUp,
     wickDownColor: theme.candleDown,
   })
-  host.layer('pattern', 'newow_pattern', 'main').primitive(candles, publicPatternPrimitive)
-  publicPatternPrimitive.setData(props.patternGeometry ?? null)
-  htdyMarkers = host.layer('markers', 'display_markers', 'main').markers(candles)
+  renderPublicPattern()
   const profile = props.chartProfile ?? (props.subingVolumeTiers ? 'subing' : props.visibleMainIndicators.includes('htdy') ? 'htdy' : 'free')
   const volumeId = props.subingVolumeTiers && CHART_PROFILES[profile].volume === 'subing' ? 'subing_volume' : 'generic_volume'
   const volumeLayer = host.layer('volume', volumeId, 'volume')
@@ -287,13 +284,11 @@ onMounted(async () => {
     priceFormat: { type: 'volume' }, priceScaleId: 'volume', priceLineVisible: false, lastValueVisible: false,
   })
   volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
-  if (props.subingVolumeTiers) volumeLayer.primitive(volume, volumeTierPrimitive)
   chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: .05, bottom: .14 } })
   const macd = host.layer('macd', 'ths_macd', auxiliary)
   macdHistogram = macd.histogram({ base: 0, lastValueVisible: false })
   macdDif = macd.line({ color: '#00bfcf', lineWidth: 1, lastValueVisible: false })
   macdDea = macd.line({ color: '#d4b000', lineWidth: 1, lastValueVisible: false })
-  macdCrossMarkers = macd.markers(macdDif)
   macd.priceLevel(macdDif, { price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
   chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
@@ -383,6 +378,20 @@ function barValues(bars: BarData[]) {
 function volumeTime(bar: DisplayVolumeBar) {
   return chartTime({ ...bar, trading_day: bar.trading_day ?? bar.tradingDay } as BarData)
 }
+function renderPublicPattern(): void {
+  const anchor = candles
+  const pattern = props.patternGeometry
+  if (!host || !anchor) return
+  if (!pattern) {
+    host.removeLayer('pattern')
+    return
+  }
+  host.renderLayer('pattern', 'newow_pattern', 'main', 'primitive', layer => {
+    if (!layer.hasResource(publicPatternPrimitive)) layer.primitive(anchor, publicPatternPrimitive)
+    publicPatternPrimitive.setData(pattern)
+  })
+}
+
 function volumeValues(bars: BarData[]) {
   const input = chart ? detailChartVolumeBars(chart, bars) : bars
   const theme = readNewowChartDisplayTheme()
@@ -390,8 +399,16 @@ function volumeValues(bars: BarData[]) {
     theme, enabled: props.volumeScoring, allowTiers: !props.loading && !props.error, breaks: props.qualityBreaks,
   })
   const marks = tiers.map(point => ({ time: volumeTime(point.bar), volume: point.bar.volume!, tier: point.tier }))
-  volumeTierMarkCount.value = marks.length
-  volumeTierPrimitive.setData(marks, theme)
+  const anchor = volume
+  const written = Boolean(props.subingVolumeTiers && anchor && host?.renderLayer('volume-tiers', 'subing_volume', 'volume', 'primitive', layer => {
+    if (!layer.hasResource(volumeTierPrimitive)) layer.primitive(anchor, volumeTierPrimitive, () => {
+      volumeTierMarkCount.value = 0
+    })
+    volumeTierPrimitive.setData(marks, theme)
+    layer.updateDiagnostics({ status: input.length ? 'ready' : 'missing_input', renderer: 'primitive' })
+  }))
+  if (!props.subingVolumeTiers) host?.removeLayer('volume-tiers')
+  volumeTierMarkCount.value = written ? marks.length : 0
   return input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) }))
 }
 
@@ -670,12 +687,10 @@ function renderAllSeries(): void {
   renderDerivedSeries()
 }
 
-let dynamicRangeAttached = false
 function renderDynamicRange(): void {
   if (!host || !candles) return
   if (!props.dynamicRangeEnabled) {
     host.removeLayer('dynamic-range')
-    dynamicRangeAttached = false
     return
   }
   const anchor = candles
@@ -683,8 +698,8 @@ function renderDynamicRange(): void {
   const points = props.dynamicRangePoints.filter(p => {
     const b=bars.get(pointKey(p.contract,p.time)); return b && matchesRangeBar(p,b)
   }).map(p => ({...p,time:bars.get(pointKey(p.contract,p.time))!.time}))
-  dynamicRangeAttached = host.renderLayer('dynamic-range', 'dynamic_range', 'main', 'primitive', layer => {
-    if (!dynamicRangeAttached) layer.primitive(anchor, dynamicRangePrimitive)
+  host.renderLayer('dynamic-range', 'dynamic_range', 'main', 'primitive', layer => {
+    if (!layer.hasResource(dynamicRangePrimitive)) layer.primitive(anchor, dynamicRangePrimitive)
     dynamicRangePrimitive.setData(points, ribbonTime)
     layer.updateDiagnostics({ status: points.length ? 'ready' : 'missing_input', frequency: props.period,
       dataCutoff: points.at(-1)?.time ?? null })
@@ -766,8 +781,8 @@ function writeDerivedSeries(): void {
   }
   renderBoll(theme)
   const anchor = candles
-  if (rangeEnabled) rangeAttached = host.renderLayer('range-detector', 'range_detector', 'main', 'primitive', layer => {
-    if (!rangeAttached) layer.primitive(anchor, rangeDetectorPrimitive)
+  if (rangeEnabled) host.renderLayer('range-detector', 'range_detector', 'main', 'primitive', layer => {
+    if (!layer.hasResource(rangeDetectorPrimitive)) layer.primitive(anchor, rangeDetectorPrimitive)
     rangeDetectorPrimitive.setStyle({
       rangeIntact: theme.rangeIntact,
       rangeBrokenUp: theme.rangeBrokenUp,
@@ -784,7 +799,6 @@ function writeDerivedSeries(): void {
   })
   else {
     host.removeLayer('range-detector')
-    rangeAttached = false
   }
 
   writeMarkersAndMacd(theme)
@@ -833,11 +847,21 @@ function renderBoll(theme: ReturnType<typeof resolveChartTheme>): void {
 function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void {
   if (!host || !macdHistogram || !macdDif || !macdDea) return
   const displayBarByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
-  macdCrossMarkers?.setMarkers(derivedData.macd.crosses.map(point => ({
-    time: chartTime(displayBarByTime.get(point.time)!), position: 'atPriceMiddle' as const, price: point.value,
-    shape: 'circle' as const, size: 0, text: point.side === 'golden' ? '▲' : '▼',
-    color: point.side === 'golden' ? '#ef232a' : '#14b143',
-  })))
+  const anchor = macdDif
+  const crosses = host.renderLayer('macd-crosses', 'ths_macd', { auxiliary: 'default' }, 'marker', layer => {
+    if (macdCrossMarkers && !layer.hasResource(macdCrossMarkers)) {
+      layer.remove(macdCrossMarkers)
+      macdCrossMarkers = null
+    }
+    macdCrossMarkers ??= layer.markers(anchor)
+    macdCrossMarkers.setMarkers(derivedData.macd.crosses.map(point => ({
+      time: chartTime(displayBarByTime.get(point.time)!), position: 'atPriceMiddle' as const, price: point.value,
+      shape: 'circle' as const, size: 0, text: point.side === 'golden' ? '▲' : '▼',
+      color: point.side === 'golden' ? '#ef232a' : '#14b143',
+    })))
+    layer.updateDiagnostics({ status: renderedBars.length ? 'ready' : 'missing_input', renderer: 'marker' })
+  })
+  if (!crosses) macdCrossMarkers = null
   macdPointCount.value = derivedData.macd.dif.filter(point => Number.isFinite(point.value)).length
   macdDif.setData(chartValues(derivedData.macd.dif))
   macdDea.setData(chartValues(derivedData.macd.dea))
@@ -863,14 +887,24 @@ function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void 
   }
   const displayMarkers = mergedDisplayMarkers()
   const { native, drawn } = chartMarkers(displayMarkers)
-  htdyMarkers?.setMarkers(native)
-  drawnMarkers.value = drawn
-  renderedMarkerById = new Map(drawn.map(marker => [marker.id, marker]))
+  const markerAnchor = candles
   // Keep one marker renderer so same-Bar stacking and hit testing stay consistent.
-  host.layer('markers', 'display_markers', 'main').updateDiagnostics({
-    status: native.length ? 'ready' : 'missing_input', frequency: props.period,
-    formulaVersion: 'main_marker_layout_v1', dataCutoff: drawn.at(-1)?.time ?? null,
-  })
+  const written = Boolean(markerAnchor && host.renderLayer('markers', 'display_markers', 'main', 'marker', layer => {
+    if (htdyMarkers && !layer.hasResource(htdyMarkers)) {
+      layer.remove(htdyMarkers)
+      htdyMarkers = null
+    }
+    htdyMarkers ??= layer.markers(markerAnchor, undefined, clearMarkerPaintReadback)
+    htdyMarkers.setMarkers(native)
+    layer.updateDiagnostics({
+      status: native.length ? 'ready' : 'missing_input', frequency: props.period,
+      formulaVersion: 'main_marker_layout_v1', dataCutoff: drawn.at(-1)?.time ?? null,
+    })
+  }))
+  if (!written) htdyMarkers = null
+  const visible = written ? drawn : []
+  drawnMarkers.value = visible
+  renderedMarkerById = new Map(visible.map(marker => [marker.id, marker]))
   for (const id of MARKER_FACT_LAYERS) {
     const layerId = `marker-facts:${id}`
     if (!displayMarkers.some(marker => marker.fact?.layer === id)) {
@@ -878,13 +912,32 @@ function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void 
       continue
     }
     let latest: KlineMarker | undefined
-    for (const marker of drawn) {
+    for (const marker of visible) {
       if (marker.fact?.layer === id) latest = marker
     }
     host.layer(layerId, id, 'main').updateDiagnostics({
       status: latest ? 'ready' : 'missing_input', frequency: props.period,
       sourceIdentity: latest?.fact?.sourceIdentity ?? null,
       formulaVersion: latest?.fact?.formulaVersion ?? null, dataCutoff: latest?.time ?? null,
+      lastError: null,
+    })
+  }
+}
+
+function clearMarkerPaintReadback(): void {
+  if (!host) return
+  drawnMarkers.value = []
+  renderedMarkerById.clear()
+  if (hoverContext.value) {
+    hoverContext.value = null
+    emit('crosshair-change', null)
+  }
+  for (const id of MARKER_FACT_LAYERS) {
+    const layerId = `marker-facts:${id}`
+    if (host.inspectLayer(layerId)?.status !== 'ready') continue
+    host.layer(layerId, id, 'main').updateDiagnostics({
+      status: 'renderer_failure', lastError: 'CHART_RENDERER_PAINT_FAILED',
+      frequency: null, sourceIdentity: null, formulaVersion: null, dataCutoff: null,
     })
   }
 }

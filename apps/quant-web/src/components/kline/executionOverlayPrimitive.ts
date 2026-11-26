@@ -21,7 +21,6 @@ export class ExecutionOverlayPrimitive implements ISeriesPrimitive<Time> {
       if (!this.chartContext) return
       const { chart, series } = this.chartContext
       const scale = chart.timeScale()
-      context.save()
       context.beginPath()
       context.rect(0, 0, mediaSize.width, mediaSize.height)
       context.clip()
@@ -43,7 +42,6 @@ export class ExecutionOverlayPrimitive implements ISeriesPrimitive<Time> {
         if (!order) context.fill()
         context.stroke()
       }
-      context.restore()
     }),
   }
   private view: IPrimitivePaneView = { zOrder: () => 'top', renderer: () => this.renderer }

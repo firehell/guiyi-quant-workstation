@@ -678,6 +678,40 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   expect(requests.newowRequests).toEqual([])
 })
 
+test('a deferred SuBing marker paint failure clears drawn provenance and keeps the stored event', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => {
+    const state = window.guiyiAlertPaintProbe = { failed: 0 }
+    const fillText = CanvasRenderingContext2D.prototype.fillText
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+      if (text === 'S↑') {
+        state.failed++
+        throw new Error('injected deferred native marker text')
+      }
+      return fillText.call(this, text, ...args)
+    }
+  })
+  await mockDetailDailyQuote(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const chart = page.getByTestId('kline-shell')
+  await expect.poll(() => page.evaluate(() => window.guiyiAlertPaintProbe.failed)).toBeGreaterThan(0)
+  await expect(chart).toHaveAttribute('data-rendered-marker-count', '0')
+  await expect(chart).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(chart.locator('canvas').first()).toBeVisible()
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('display_markers · 渲染错误', { exact: true })).toBeVisible()
+  const alerts = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'alerts · 渲染错误' })
+  await alerts.locator('summary').click()
+  await expect(alerts).toContainText('CHART_RENDERER_PAINT_FAILED')
+  await expect(alerts).not.toContainText('alert-event:9')
+  expect(errors).toEqual([])
+})
+
 test('SuBing omits removed disclosure cards and empty history for all runtime states', async ({ page }) => {
   let errorType = 'evaluation_warming_up'
   await mockDetailDailyQuote(page, {

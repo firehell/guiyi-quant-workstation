@@ -17,12 +17,11 @@ export class NewowDualBackgroundPrimitive implements ISeriesPrimitive<Time> {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const scale = attachment.chart.timeScale()
       const spacing = scale.options().barSpacing
-      context.save(); context.fillStyle = this.dark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.055)'
+      context.fillStyle = this.dark ? 'rgba(255,255,255,0.045)' : 'rgba(0,0,0,0.055)'
       for (const time of this.times) {
         const x = scale.timeToCoordinate(time)
         if (x !== null) context.fillRect(x - spacing / 2, 0, spacing, mediaSize.height)
       }
-      context.restore()
     })
   }
 }

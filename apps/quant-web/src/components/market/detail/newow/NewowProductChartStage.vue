@@ -362,22 +362,18 @@ const marks = computed<NewowPriceAnnotation[]>(() => {
   })) : []
   return [...extrema, ...nine].sort((a, b) => a.index - b.index)
 })
-const attachedPricePrimitives = new Set<string>()
 function syncPricePrimitive(id: string, indicator: string, primitive: ISeriesPrimitive<Time>, show: boolean, update?: () => void) {
   if (!host || !candles) return
   if (!show) {
-    attachedPricePrimitives.delete(id)
     host.removeLayer(id)
     update?.()
     return
   }
   const anchor = candles
-  const written = host.renderLayer(id, indicator, 'main', 'primitive', layer => {
-    if (!attachedPricePrimitives.has(id)) layer.primitive(anchor, primitive)
+  host.renderLayer(id, indicator, 'main', 'primitive', layer => {
+    if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive)
     update?.()
   })
-  if (written) attachedPricePrimitives.add(id)
-  else attachedPricePrimitives.delete(id)
 }
 function renderPriceAnnotations() {
   const id = 'annotations', indicator = 'newow_annotations'
@@ -952,6 +948,10 @@ function renderMarkers(value: NewowProductChartModel | null): void {
     .map(item => ({ ...productChartMarker(item, props.selectedSignalId,
       chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay)), text: '' }))
   const written = host.renderLayer('actions', 'newow_actions', 'main', 'marker', layer => {
+    if (actionMarkers && !layer.hasResource(actionMarkers)) {
+      layer.remove(actionMarkers)
+      actionMarkers = null
+    }
     actionMarkers ??= layer.markers(anchor, adapter.createSeriesMarkers)
     actionMarkers.setMarkers(actions)
     layer.updateDiagnostics({
@@ -1306,6 +1306,7 @@ function clearSelectedAuxiliary(): void {
   auxiliaryLines.clear()
   attachedAuxiliaryComponent = null
   renderedAuxiliaryKey = null
+  renderedAuxiliaryResponse = null
 }
 
 function recordAuxiliaryAxisFailure(): void {
@@ -1375,7 +1376,7 @@ const primitiveConstructors = {
 }
 const extraPanes = new Map<NewowAuxiliaryPaneComponent, {
   pane: { auxiliary: string }; anchor: ISeriesApi<'Line'>; primitive: SpecializedAuxiliary | null;
-  lines: AuxiliaryLines; snapshot: string | null;
+  lines: AuxiliaryLines; snapshot: string | null; response: NewowProductSectionResponse<'auxiliary'> | null;
 }>()
 const failedExtraAxes = new Map<NewowAuxiliaryPaneComponent, LayerDiagnostics>()
 function renderExtraAuxiliaries() {
@@ -1408,7 +1409,7 @@ function renderExtraAuxiliaries() {
       }
       failedExtraAxes.delete(item.component)
       const primitive = item.component === 'macd' ? null : new primitiveConstructors[item.component]()
-      current = { pane, anchor, primitive, lines: new Map(), snapshot: null }
+      current = { pane, anchor, primitive, lines: new Map(), snapshot: null, response: null }
       extraPanes.set(item.component, current)
     }
     const aligned = item.lifecycle === 'input_conflict' ? null : alignNewowAuxiliaryChartModel(props.response, item.response)
@@ -1421,12 +1422,15 @@ function renderExtraAuxiliaries() {
     const status = newowAuxiliaryLayerStatus(item.lifecycle, Boolean(item.response?.value), value !== null, readiness?.currentStatus ?? null, hasPoints, item.error)
     const pane = current
     const written = host.renderLayer(id, id, pane.pane, pane.primitive ? 'primitive' : 'histogram', layer => {
-      if (pane.snapshot !== key) {
+      const missingPrimitive = pane.primitive && !layer.hasResource(pane.primitive)
+      if (pane.snapshot !== key || (missingPrimitive && response !== pane.response)) {
         pane.anchor.setData(main?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay) })) ?? [])
         if (pane.primitive) {
-          if (pane.snapshot === null) layer.primitive(pane.anchor, pane.primitive)
+          if (!layer.hasResource(pane.primitive)) layer.primitive(pane.anchor, pane.primitive, positionPaneHeaders)
           updateAuxiliaryPrimitive(pane.primitive, value, response, 20)
         } else renderMacdLines(layer, pane.lines, value, 20 / height)
+        pane.snapshot = key
+        pane.response = response
       }
       layer.updateDiagnostics({
         status,
@@ -1436,8 +1440,11 @@ function renderExtraAuxiliaries() {
         lastError: item.error ?? (status === 'invalid_source' ? 'CHART_AUXILIARY_SOURCE_INVALID' : null),
       })
     })
-    pane.snapshot = written ? key : null
-    if (!written) pane.lines.clear()
+    if (!written) {
+      pane.snapshot = null
+      pane.response = null
+      pane.lines.clear()
+    }
   }
   orderAuxiliaryPanes()
 }
@@ -1493,6 +1500,7 @@ function resize(): void {
 }
 
 let renderedAuxiliaryKey: string | null = null
+let renderedAuxiliaryResponse: NewowProductSectionResponse<'auxiliary'> | null | undefined
 function renderAuxiliary(): void {
   if (!host || !auxiliaryAnchor || pure.value) return
   const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
@@ -1517,11 +1525,16 @@ function renderAuxiliary(): void {
   const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, mirrorEvents.value, primitive ? model.value?.bars : null])
   const written = host.renderLayer('auxiliary-selected', displayId, auxiliaryPane, primitive ? 'primitive' : 'histogram', layer => {
     auxiliaryZeroLine?.applyOptions({ color: primitive ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
-    if (nextKey !== renderedAuxiliaryKey) {
+    const missingPrimitive = primitive && !layer.hasResource(primitive)
+    if (nextKey !== renderedAuxiliaryKey || (missingPrimitive && response !== renderedAuxiliaryResponse)) {
       if (primitive) {
-        if (renderedAuxiliaryKey === null) layer.primitive(anchor, primitive)
+        if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive, () => {
+          activeAuxiliary.value = host?.inspectLayer('auxiliary-selected') ?? null
+        })
         updateAuxiliaryPrimitive(primitive, value, response, topInset)
       } else renderMacdLines(layer, auxiliaryLines, value, topInset / auxiliaryHeight)
+      renderedAuxiliaryKey = nextKey
+      renderedAuxiliaryResponse = response
     }
     layer.updateDiagnostics({
       sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
@@ -1533,8 +1546,11 @@ function renderAuxiliary(): void {
       lastError: props.auxiliaryError ?? null,
     })
   })
-  renderedAuxiliaryKey = written ? nextKey : null
-  if (!written) auxiliaryLines.clear()
+  if (!written) {
+    renderedAuxiliaryKey = null
+    renderedAuxiliaryResponse = null
+    auxiliaryLines.clear()
+  }
   activeAuxiliary.value = host.inspectLayer('auxiliary-selected')
 }
 

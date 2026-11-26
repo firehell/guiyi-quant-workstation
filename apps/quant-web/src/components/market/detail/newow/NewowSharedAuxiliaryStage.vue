@@ -109,7 +109,7 @@ function render() {
     )
     const anchor = series
     const written = host.renderLayer('selected', `newow.${component}`, pane, 'primitive', layer => {
-      if (accepted && !attachedComponent) layer.primitive(anchor, primitives[accepted])
+      if (accepted && !layer.hasResource(primitives[accepted])) layer.primitive(anchor, primitives[accepted])
       if (value?.component === 'zhaoyao_mirror') primitives.zhaoyao_mirror.setData(buildNewowZhaoyaoMirrorData(value.series), 12)
       if (value?.component === 'up_down_energy' && model) primitives.up_down_energy.setData(buildNewowUpDownEnergyData(value.series, model.bars), 12)
       if (value?.component === 'main_force_control' && props.auxiliary?.value?.component === 'main_force_control') {

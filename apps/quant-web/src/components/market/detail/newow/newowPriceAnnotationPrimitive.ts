@@ -44,7 +44,6 @@ export class NewowPriceAnnotationPrimitive implements ISeriesPrimitive<Time> {
       else hi = mid
     }
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
-      context.save()
       context.font = '600 10px system-ui, sans-serif'
       context.textAlign = 'center'
       for (let i = lo; i < this.marks.length; i++) {
@@ -65,7 +64,6 @@ export class NewowPriceAnnotationPrimitive implements ISeriesPrimitive<Time> {
         context.fillText(mark.text, Math.max(half, Math.min(mediaSize.width - half, x)),
           upper ? Math.max(10, y - distance) : Math.min(mediaSize.height - 10, y + distance))
       }
-      context.restore()
     })
   }
 }

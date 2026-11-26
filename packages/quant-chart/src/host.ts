@@ -5,6 +5,7 @@ import {
   type CreatePriceLineOptions, type SeriesMarker, type SeriesType, type Time,
 } from 'lightweight-charts'
 import { CHART_MANIFEST, DISPLAY_CATALOG, type RendererId } from './catalog.js'
+import { guardPrimitivePaint } from './primitivePaint.js'
 
 export const MAX_AUXILIARY_PANES = 3
 export type ChartPane = 'main' | 'volume' | { auxiliary: string }
@@ -104,6 +105,7 @@ export function createChartHost(chart: IChartApi) {
     if (definition.retired) throw new Error(`CHART_DISPLAY_RETIRED: ${indicatorId}`)
     let diagnostic = initialDiagnostics(indicatorId, pane, definition.renderers[0])
     const owned = new Map<object, () => void>()
+    const paintFailures = new Map<object, LayerDiagnostics>()
     function remember<T extends object>(item: T, dispose: () => void): T {
       owned.set(item, resources.own(() => {
         owned.delete(item)
@@ -114,13 +116,34 @@ export function createChartHost(chart: IChartApi) {
     function remove(item: object): void {
       const dispose = owned.get(item)
       owned.delete(item)
+      paintFailures.delete(item)
       dispose?.()
+    }
+    function quarantine(item: object, renderer: RendererId, onReleased?: () => void): void {
+      const release = owned.get(item)
+      if (!release) return
+      const failure: LayerDiagnostics = {
+        ...initialDiagnostics(indicatorId, pane, renderer), status: 'renderer_failure',
+        lastError: 'CHART_RENDERER_PAINT_FAILED', sourceIdentity: null,
+      }
+      paintFailures.set(item, failure)
+      // Native iteration holds the pane's renderer list until this frame returns.
+      queueMicrotask(() => {
+        if (owned.get(item) !== release) return
+        try { release() } catch {
+          paintFailures.set(item, { ...failure, lastError: 'CHART_RENDERER_CLEANUP_FAILED' })
+        }
+        try { onReleased?.() } catch {
+          paintFailures.set(item, { ...failure, lastError: 'CHART_RENDERER_CLEANUP_FAILED' })
+        }
+      })
     }
     return {
       own: resources.own,
       dispose: resources.dispose,
       remove,
-      inspect: () => ({ ...diagnostic }),
+      hasResource: (item: object) => owned.has(item),
+      inspect: () => ({ ...(paintFailures.values().next().value ?? diagnostic) }),
       updateDiagnostics(patch: Partial<Omit<LayerDiagnostics, 'indicatorId' | 'packageVersion' | 'pane'>>) {
         diagnostic = { ...diagnostic, ...patch, updatedAt: new Date().toISOString() }
       },
@@ -147,35 +170,52 @@ export function createChartHost(chart: IChartApi) {
         const bottom = chart.addSeries(LineSeries, lower, index)
         return { upper: top, lower: remember(bottom, () => chart.removeSeries(bottom)) }
       },
-      markers(series: ISeriesApi<SeriesType>, factory: MarkerFactory = createSeriesMarkers) {
+      markers(series: ISeriesApi<SeriesType>, factory: MarkerFactory = createSeriesMarkers, onPaintFailure?: () => void) {
         resources.assertActive()
         // Lightweight Charts attaches inside the factory before a plugin handle
         // exists. Keep enough information to roll back a partial attachment.
-        const attempted = new Set<ISeriesPrimitive<Time>>()
-        let constructing = true
+        const attached = new Map<ISeriesPrimitive<Time>, ReturnType<typeof guardPrimitivePaint>>()
+        function detach(guarded: ReturnType<typeof guardPrimitivePaint>) {
+          guarded.stop()
+          try { series.detachPrimitive(guarded.primitive) } finally { guarded.releaseSubscriptions() }
+        }
+        let plugin: ISeriesMarkersPluginApi<Time> | undefined
+        let paintFailed = false
         const target = new Proxy(series, {
           get(native, property) {
             if (property === 'attachPrimitive') return (primitive: ISeriesPrimitive<Time>) => {
-              if (constructing) attempted.add(primitive)
-              native.attachPrimitive(primitive)
+              const guarded = guardPrimitivePaint(primitive, () => {
+                if (plugin) quarantine(plugin, 'marker', onPaintFailure)
+                else paintFailed = true
+              }, true)
+              attached.set(primitive, guarded)
+              native.attachPrimitive(guarded.primitive)
             }
             if (property === 'detachPrimitive') return (primitive: ISeriesPrimitive<Time>) => {
-              native.detachPrimitive(primitive)
-              attempted.delete(primitive)
+              const guarded = attached.get(primitive)
+              if (guarded) detach(guarded)
+              else native.detachPrimitive(primitive)
+              attached.delete(primitive)
             }
             const value = Reflect.get(native, property)
             return typeof value === 'function' ? value.bind(native) : value
           },
         })
         try {
-          const plugin = factory(target as never)
-          return remember(plugin, () => plugin.detach?.())
+          const created = factory(target as never)
+          plugin = remember(created, () => {
+            const cleanup = resourceScope()
+            for (const [original, guarded] of attached) cleanup.own(() => {
+              if (attached.delete(original)) detach(guarded)
+            })
+            cleanup.own(() => created.detach?.())
+            cleanup.dispose()
+          })
+          if (paintFailed) quarantine(plugin, 'marker', onPaintFailure)
+          return plugin
         } catch (error) {
-          for (const primitive of attempted) resources.own(() => series.detachPrimitive(primitive))
+          for (const guarded of attached.values()) resources.own(() => detach(guarded))
           throw error
-        } finally {
-          constructing = false
-          attempted.clear()
         }
       },
       priceLevel(series: ISeriesApi<SeriesType>, options: CreatePriceLineOptions) {
@@ -184,10 +224,16 @@ export function createChartHost(chart: IChartApi) {
         if (line) remember(line, () => series.removePriceLine(line))
         return line
       },
-      primitive<T extends ISeriesPrimitive<Time>>(series: ISeriesApi<SeriesType>, primitive: T) {
+      primitive<T extends ISeriesPrimitive<Time>>(series: ISeriesApi<SeriesType>, primitive: T, onPaintFailure?: () => void) {
         resources.assertActive()
-        remember(primitive, () => series.detachPrimitive(primitive))
-        series.attachPrimitive(primitive)
+        if (owned.has(primitive)) return primitive
+        paintFailures.delete(primitive)
+        const guarded = guardPrimitivePaint(primitive, () => quarantine(primitive, 'primitive', onPaintFailure))
+        remember(primitive, () => {
+          guarded.stop()
+          series.detachPrimitive(guarded.primitive)
+        })
+        series.attachPrimitive(guarded.primitive)
         return primitive
       },
     }

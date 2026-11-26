@@ -84,6 +84,52 @@ test('the dual chart diagnostics keep trend and oscillation action sources separ
   assertNoUnexpectedRequests(fixture)
 })
 
+test('a later native canvas frame reports a failed trend band and the chart can retry it', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => {
+    const state = window.guiyiBandPaintProbe = { arm: false, failed: 0, healthy: 0 }
+    const fillRect = CanvasRenderingContext2D.prototype.fillRect
+    CanvasRenderingContext2D.prototype.fillRect = function (...args) {
+      if (['rgba(245,183,38,0.35)', 'rgba(54,90,245,0.35)'].includes(String(this.fillStyle).replaceAll(' ', ''))) {
+        if (state.arm) {
+          state.arm = false
+          state.failed++
+          throw new Error('injected later trend band paint')
+        }
+        state.healthy++
+      }
+      return fillRect.apply(this, args)
+    }
+  })
+  const fixture = await installNewowProductFixtures(page)
+  await page.goto(newowRoute('trend', '1d'))
+  const chart = page.getByTestId('newow-product-chart-stage')
+  await expect(chart).toHaveAttribute('data-auxiliary-state', 'ready')
+  await expect.poll(() => page.evaluate(() => window.guiyiBandPaintProbe.healthy)).toBeGreaterThan(0)
+  await page.evaluate(() => { window.guiyiBandPaintProbe.arm = true })
+  await page.setViewportSize({ width: 1410, height: 900 })
+  await expect.poll(() => page.evaluate(() => window.guiyiBandPaintProbe.failed)).toBe(1)
+  await chart.getByText('副图管理', { exact: true }).click()
+  const diagnostics = chart.locator('.chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await diagnostics.getByText('newow_trend · 渲染错误', { exact: true }).click()
+  await expect(diagnostics.getByText('CHART_RENDERER_PAINT_FAILED', { exact: true })).toBeVisible()
+  await expect(diagnostics.getByText('price · 就绪', { exact: true })).toBeVisible()
+  const before = await page.evaluate(() => window.guiyiBandPaintProbe.healthy)
+  await chart.getByRole('button', { name: '图表设置', exact: true }).click()
+  const settings = page.getByRole('dialog', { name: '图表设置' })
+  const structure = settings.getByRole('checkbox', { name: '策略线 / 趋势带', exact: true })
+  await structure.uncheck()
+  await structure.check()
+  await settings.getByRole('button', { name: '完成', exact: true }).click()
+  await expect.poll(() => page.evaluate(() => window.guiyiBandPaintProbe.healthy)).toBeGreaterThan(before)
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('newow_trend · 渲染错误', { exact: true })).toHaveCount(0)
+  expect(errors).toEqual([])
+  assertNoUnexpectedRequests(fixture)
+})
+
 test('explicit additional panes share the primary candle timeline and release their native resources', async ({ page }) => {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))

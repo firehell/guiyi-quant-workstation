@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createRequire } from 'node:module'
 import test from 'node:test'
 import { CHART_MANIFEST, CHART_PROFILES, DISPLAY_CATALOG, createChartHost, readChartPreferences, setChartLayer, validateDisplayCatalog } from '../dist/index.js'
 
@@ -171,6 +172,151 @@ test('the native marker factory cannot leave an attachment when construction thr
     assert.equal(host.renderLayer('actions', 'newow_actions', 'main', 'marker', layer => layer.markers(candles)), false)
     assert.equal(host.inspectLayer('actions').lastError, 'CHART_RENDERER_UPDATE_FAILED')
     assert.equal(attached.size, 0)
+  }
+  host.dispose()
+})
+
+test('a later paint failure quarantines just the primitive, and retry rejects obsolete callbacks', async () => {
+  const { chart, series } = chartAdapter()
+  const host = createChartHost(chart)
+  const candles = host.layer('price', 'price', 'main').candles({})
+  const attached = new Set()
+  candles.attachPrimitive = primitive => attached.add(primitive)
+  candles.detachPrimitive = primitive => { assert.ok(attached.delete(primitive)) }
+  const layer = host.layer('overlay', 'newow_pattern', 'main')
+  let attempts = 0
+  let fail = true
+  const view = {
+    renderer: () => renderer,
+  }
+  const renderer = {
+    draw() {
+      attempts++
+      if (fail) throw new Error('private canvas message')
+    },
+  }
+  const views = [view]
+  const primitive = { paneViews: () => views }
+  layer.primitive(candles, primitive)
+  layer.updateDiagnostics({ status: 'ready', sourceIdentity: 'prior', formulaVersion: 'prior', dataCutoff: 'prior' })
+  const first = [...attached][0]
+  const list = first.paneViews()
+  assert.equal(first.paneViews(), list)
+  const firstPainter = list[0].renderer()
+  assert.equal(list[0].renderer(), firstPainter)
+  firstPainter.draw({})
+  firstPainter.draw({})
+  assert.equal(attempts, 1)
+  assert.equal(attached.size, 1, 'never detach while native draw is iterating')
+  assert.equal(layer.inspect().lastError, 'CHART_RENDERER_PAINT_FAILED')
+  layer.updateDiagnostics({ status: 'ready', sourceIdentity: 'unpainted' })
+  assert.equal(layer.inspect().sourceIdentity, null)
+  assert.equal(layer.inspect().status, 'renderer_failure')
+  await Promise.resolve()
+  assert.equal(layer.hasResource(primitive), false)
+  assert.equal(attached.size, 0)
+  assert.deepEqual([...series], [candles])
+
+  fail = false
+  layer.primitive(candles, primitive)
+  const second = [...attached][0]
+  assert.notEqual(second, first)
+  firstPainter.draw({})
+  assert.equal(attempts, 1)
+  second.paneViews()[0].renderer().draw({})
+  assert.equal(attempts, 2)
+  assert.equal(layer.inspect().status, 'ready')
+  host.dispose()
+})
+
+test('a failed native marker paint clears the plugin once even if the view is replaced first', async () => {
+  const { chart } = chartAdapter()
+  const host = createChartHost(chart)
+  const candles = host.layer('price', 'price', 'main').candles({})
+  const attached = new Set()
+  candles.attachPrimitive = primitive => attached.add(primitive)
+  candles.detachPrimitive = primitive => { assert.ok(attached.delete(primitive)) }
+  const factory = series => {
+    const marker = {
+      paneViews: () => [{ renderer: () => ({
+        draw() {},
+        drawBackground() { throw new Error('background paint failed') },
+      }) }],
+    }
+    series.attachPrimitive(marker)
+    return { detach: () => series.detachPrimitive(marker) }
+  }
+  const original = host.layer('marks', 'newow_actions', 'main')
+  original.markers(candles, factory)
+  const native = [...attached][0]
+  native.paneViews()[0].renderer().drawBackground({})
+  assert.equal(original.inspect().renderer, 'marker')
+  host.removeLayer('marks')
+  const replacement = host.layer('marks', 'newow_actions', 'main')
+  replacement.markers(candles, factory)
+  await Promise.resolve()
+  assert.equal(attached.size, 1)
+  assert.equal(replacement.inspect().lastError, null)
+  host.dispose()
+  assert.equal(attached.size, 0)
+})
+
+test('real marker paint failure restores Fancy Canvas state and releases the native subscription', async () => {
+  const { CanvasRenderingTarget2D } = createRequire(import.meta.resolve('lightweight-charts'))('fancy-canvas')
+  const timeScale = {
+    options: () => ({ barSpacing: 10 }), getVisibleLogicalRange: () => ({ from: 0, to: 3 }),
+    timeToIndex: () => 1, logicalToCoordinate: () => 20,
+  }
+  const chart = { timeScale: () => timeScale, options: () => ({ layout: { fontSize: 10, fontFamily: 'sans-serif' } }), remove() {} }
+  const bar = { time: 1, value: 4 }
+  const listeners = new Set()
+  let current
+  let released = 0
+  const native = {
+    attachPrimitive(primitive) {
+      current = primitive
+      primitive.attached({ chart, series: native, requestUpdate() {} })
+    },
+    detachPrimitive(primitive) { assert.equal(primitive, current); primitive.detached(); current = undefined },
+    subscribeDataChanged(listener) { listeners.add(listener) },
+    unsubscribeDataChanged(listener) { assert.ok(listeners.delete(listener)) },
+    options: () => ({ visible: true }), data: () => [bar], dataByIndex: () => bar,
+    priceScale: () => ({ options: () => ({ invertScale: false }) }), priceToCoordinate: value => value,
+  }
+  const host = createChartHost(chart)
+  let depth = 0
+  let crashes = 0
+  const context = {
+    save() { depth++ }, restore() { depth-- }, setTransform() {}, scale() {},
+    measureText: () => ({ width: 4, actualBoundingBoxAscent: 2, actualBoundingBoxDescent: 1 }),
+    fillText() { crashes++; throw new Error('injected text paint failure') },
+  }
+  const save = context.save
+  const size = { width: 100, height: 100 }
+  const target = new CanvasRenderingTarget2D(context, size, size)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const layer = host.layer('marks', 'newow_actions', 'main')
+    const plugin = layer.markers(native, undefined, () => released++)
+    assert.equal(listeners.size, 1)
+    plugin.setMarkers([{ time: 1, position: 'atPriceMiddle', price: 4, color: 'red', shape: 'circle', text: 'X' }])
+    current.updateAllViews()
+    current.paneViews()[0].renderer().draw(target)
+    assert.equal(crashes, attempt)
+    assert.equal(depth, 0)
+    assert.equal(context.save, save)
+    assert.equal(layer.inspect().lastError, 'CHART_RENDERER_PAINT_FAILED')
+    await Promise.resolve()
+    assert.equal(released, attempt)
+    assert.equal(current, undefined)
+    assert.equal(listeners.size, 0)
+    host.removeLayer('marks')
+  }
+  for (let index = 0; index < 100; index++) {
+    host.layer('marks', 'newow_actions', 'main').markers(native)
+    assert.equal(listeners.size, 1)
+    host.removeLayer('marks')
+    assert.equal(current, undefined)
+    assert.equal(listeners.size, 0)
   }
   host.dispose()
 })

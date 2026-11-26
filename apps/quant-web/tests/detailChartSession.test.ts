@@ -51,14 +51,14 @@ test('late writes and disposal from an obsolete adapter cannot alter the active 
 test('a partial native attachment is removed through the page lease before an indicator retry', () => {
   const f = fixture()
   const original = f.raw.addSeries.bind(f.raw)
-  const pattern = {}
+  const pattern = { testAttachment: 'pattern' }
   const attached = new Set<unknown>()
   let fail = true
   f.raw.addSeries = (...args: unknown[]) => Object.assign(original(...args), {
     attachPrimitive(primitive: unknown) {
       assert.equal(attached.has(primitive), false)
       attached.add(primitive)
-      if (primitive === pattern && fail) throw new Error('native attached callback failed')
+      if ((primitive as typeof pattern).testAttachment === 'pattern' && fail) throw new Error('native attached callback failed')
     },
     detachPrimitive(primitive: unknown) { assert.ok(attached.delete(primitive)) },
   })

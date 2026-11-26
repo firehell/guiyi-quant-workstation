@@ -297,8 +297,6 @@ export function createDetailChartSession(dependencies: {
           if (role) {
             prices.set(role, raw)
             if (role === 'candles') {
-              host?.layer('tq-executions', 'reconciliation_executions', 'main').primitive(raw, tqExecutions)
-              host?.layer('paper-executions', 'paper_executions', 'main').primitive(raw, paperExecutions)
               syncExecutionLayers()
             }
           } else series.add(raw)
@@ -336,7 +334,8 @@ export function createDetailChartSession(dependencies: {
     syncExecutionLayers()
   }
   function syncExecutionLayers() {
-    if (!host) return
+    const anchor = prices.get('candles')
+    if (!host || !anchor) return
     // Only the owners on the shared candle axis can authorize placement.
     const candles = executionPoints.length ? pricePoints.get('candles') ?? [] : []
     const owners = new Map(candles.map(bar => [timeKey(bar.time), bar.physicalContract]))
@@ -346,9 +345,7 @@ export function createDetailChartSession(dependencies: {
       ['tq-executions', 'reconciliation_executions', tqExecutions, false],
       ['paper-executions', 'paper_executions', paperExecutions, true],
     ] as const) {
-      if (!host.hasLayer(layerId)) continue
       const points = eligible.filter(point => (point.source === '苏冰模型成交') === paper)
-      primitive.setData(points)
       let latest: ExecutionOverlayPoint | undefined
       let cutoff: bigint | null = null
       for (const point of points) {
@@ -358,9 +355,13 @@ export function createDetailChartSession(dependencies: {
           cutoff = instant
         }
       }
-      host.layer(layerId, indicator, 'main').updateDiagnostics({
-        status: executionFrequency === null ? 'hidden' : latest ? 'ready' : 'missing_input',
-        frequency: executionFrequency, sourceIdentity: latest?.id ?? null, dataCutoff: latest?.at ?? null,
+      host.renderLayer(layerId, indicator, 'main', 'primitive', layer => {
+        if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive)
+        primitive.setData(points)
+        layer.updateDiagnostics({
+          status: executionFrequency === null ? 'hidden' : latest ? 'ready' : 'missing_input',
+          frequency: executionFrequency, sourceIdentity: latest?.id ?? null, dataCutoff: latest?.at ?? null,
+        })
       })
     }
   }

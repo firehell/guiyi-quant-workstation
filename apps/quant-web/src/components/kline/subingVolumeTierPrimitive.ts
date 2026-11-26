@@ -14,7 +14,6 @@ export class SubingVolumeTierPrimitive implements ISeriesPrimitive<Time> {
     if (!this.chart || !this.series) return
     const scale = this.chart.timeScale()
     const compact = scale.options().barSpacing < 5
-    context.save()
     context.beginPath(); context.rect(0, 0, mediaSize.width, mediaSize.height); context.clip()
     for (const point of this.points) {
       const x = scale.timeToCoordinate(point.time), top = this.series.priceToCoordinate(point.volume)
@@ -32,7 +31,6 @@ export class SubingVolumeTierPrimitive implements ISeriesPrimitive<Time> {
       }
       context.fill()
     }
-    context.restore()
   }) }
   private view: IPrimitivePaneView = { zOrder: () => 'top', renderer: () => this.renderer }
   attached(value: SeriesAttachedParameter<Time>) { this.chart = value.chart as IChartApi; this.series = value.series; this.requestUpdate = value.requestUpdate }
