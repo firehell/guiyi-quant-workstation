@@ -1,12 +1,15 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 
+from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, Book, Intent, assess
+from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
 from guiyi_quant.lms405.public_conditions import Condition
-from lms405_portfolio_task_policy import gated_replay
+from lms405_portfolio_task_policy import gated_replay, published_protection_events
 
 STEP = timedelta(seconds=1)
 T0 = datetime(2026, 10, 22, 12, tzinfo=UTC)
@@ -86,3 +89,32 @@ def test_whole_leg_early_is_not_a_topup():
 
 def test_empty_market_prefix_produces_no_directional_or_blocked_action():
     assert gated_replay([], T0) == ([], [])
+
+
+def test_preband_signal_needs_prepublished_current_zone_and_strict_event_clock():
+    minute = timedelta(minutes=1)
+    us = timedelta(microseconds=1)
+    contract = "SH2701"
+    candles = []
+    for i, prices in enumerate(((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106))):
+        start = T0 + i * minute
+        candles.append(Bar(contract, start + minute, *map(Decimal, prices), start=start))
+    longer = Bar(contract, T0 + 5 * minute, *map(Decimal, (100, 107, 98, 106)), start=T0)
+    series = {1: candles, 5: [longer]}
+    published = T0 - minute
+    area = ProtectionBandUpdate(contract, "A5357264793370945", "PROTECTION", published, published, "plan",
+                                "SHORT", Decimal(109), Decimal(110))
+    clock = candles[-1].end + 6 * us
+    assert published_protection_events(series, (area,), clock) == []
+    (event,) = published_protection_events(series, (area,), clock + us)
+    assert published_protection_events({1: candles, 5: []}, (area,), clock + us) == [event]
+    assert event["operation"] == "PROTECT_EARLY" and event["period"] == 1
+    assert event["at"] == clock and event["shape_start"] == candles[1].start
+
+    late = replace(area, known_at=candles[1].start, effective_after=candles[1].start)
+    assert published_protection_events(series, (late,), clock + us) == []
+    review_at = candles[-1].start
+    review = ProtectionBandUpdate(contract, "review", "REVIEW_PENDING", review_at, review_at, "review", "SHORT")
+    assert published_protection_events(series, (area, review), clock + us) == []
+    review_after_signal = replace(review, known_at=clock - us, effective_after=clock - us)
+    assert published_protection_events(series, (area, review_after_signal), clock + us) == []

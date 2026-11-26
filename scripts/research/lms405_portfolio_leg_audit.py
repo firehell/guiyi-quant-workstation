@@ -147,7 +147,7 @@ def study(session, market, *, extra_variant=None):
         minute_index = {b.bar_end: b for b in minutes}
         states = {name: leg_changes(contract, variant["transitions"]) for name, variant in case["variants"].items()}
         if extra_variant is not None:
-            name, rows = extra_variant(fives, cut)
+            name, rows = extra_variant(fives, minutes, cut)
             if not name or name in states:
                 raise ValueError("AUDIT_VARIANT_NAME_CONFLICT")
             states[name] = leg_changes(contract, rows)
