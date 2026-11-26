@@ -13,6 +13,7 @@ from app.market_data.composition import (
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.session_clock import resolved_session_windows_for_trading_day
 from app.market_data.domain import SeriesPageQuery, SeriesKind, BarFrequency
+from app.market_data.live_market import LIVE_FINALIZATION_DELAY
 from app.redis_connections import get_redis_connection
 from app.alerts.runtime import _parse_live_bar_trigger
 from app.alerts.evaluators import HtdyOriginalEvaluator
@@ -221,6 +222,13 @@ class MarketBridge:
                 end=trigger.bar.bar_end,
                 limit=32,
             )
+            if (
+                window.contract != snapshot.contract or window.trading_day != trigger.bar.trading_day
+                or not window.bars or window.bars[-1] != trigger.bar
+            ):
+                raise ValueError("LATEST_NATURAL_OBSERVATION_UNPROVEN")
+            if (journal := getattr(self, "completed_observations", None)) is not None:
+                self._verify_completed_original(journal, trigger, window.contract, observed_at)
             result = signal_from_window(
                 reader,
                 window,
@@ -231,6 +239,28 @@ class MarketBridge:
             if closed_tail:
                 self.closed_tails[result.source_id] = (result.bar_end, trigger.bar.trading_day)
             return result
+
+    @staticmethod
+    def _verify_completed_original(journal, trigger, contract, observed_at):
+        if trigger.contract != contract:
+            raise ValueError("HTDY_COMPLETED_ORIGINAL_UNPROVEN")
+        end = trigger.bar.bar_end
+        day = trigger.bar.trading_day
+        identity = f"{day}:{contract}:{trigger.frequency.value}:{end.isoformat()}"
+        try:
+            event = journal.read_original(day, identity)
+        except ValueError as exc:
+            raise ValueError("HTDY_COMPLETED_ORIGINAL_UNPROVEN") from exc
+        if (
+            _parse_live_bar_trigger(event.channel, event.data) != trigger
+            or event.confirmed_at is None or event.raw_received_at is None
+            or not end + LIVE_FINALIZATION_DELAY <= event.confirmed_at <= observed_at
+            or not event.source_observed_at <= event.raw_received_at <= event.confirmed_at
+            or (event.source_generation is not None and event.source_observed_at < end)
+        ):
+            raise ValueError("HTDY_COMPLETED_ORIGINAL_UNPROVEN")
+        if not event.notification_eligible or not event.timely_for_forward(end, event.confirmed_at):
+            raise ValueError("HTDY_EXECUTION_REQUIRES_FIRST_SEEN")
 
     def recovery(self, state, now):
         p = next(p for p in state.products if p.product == self.product)

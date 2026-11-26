@@ -8,6 +8,7 @@ import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vu
 import { useMarketDetailQuote, projectMarketDetailQuoteHeader } from '@/composables/useMarketDetailQuote'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { candidatePreview } from '@/utils/candidatePreview'
+import { MARKET_CHART_STUDY_IDENTITY } from '@/utils/marketChartStudies'
 import { computed, onBeforeUnmount, onUnmounted, provide, ref, watch } from 'vue'
 import { createChart } from 'lightweight-charts'
 import { createDetailChartSession, detailChartTime, DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
@@ -50,6 +51,7 @@ import {
   replaceNewowDetailPreferences,
   saveMarketDetailPreferences,
   type FlexibleDetailPreferences,
+  type FreeDetailPreferences,
 } from '@/utils/marketDetailPreferences'
 import { isNewowStrategySwitch, originalNewowCombinationSupported, parseMarketDetailRoute, serializeMarketDetailIdentity } from '@/utils/marketDetailRoute'
 
@@ -63,6 +65,7 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
+provide(MARKET_CHART_STUDY_IDENTITY, explicitIdentity)
 const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
 const newowAfterMarketOnly = computed(() => marketFoundation || isolatedNewow || explicitIdentity.value?.newowSource === 'after-market')
 const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()
@@ -100,12 +103,13 @@ const marketAxisKey = computed(() => {
   return identity ? [identity.symbol, identity.seriesKind, identity.contract ?? '', identity.frequency].join(':') : 'invalid'
 })
 watch(marketAxisKey, key => chartSession.setIdentity(key), { immediate: true, flush: 'sync' })
-watch(positionedExecutions, points => {
-  const frequency = explicitIdentity.value?.frequency
+watch([positionedExecutions, showExecutions], ([points, enabled]) => {
+  const frequency = enabled ? explicitIdentity.value?.frequency ?? null : null
   chartSession.setExecutions(frequency ? points.map(point => ({
+    id: point.id, at: point.time, physicalContract: point.contract.toUpperCase(),
     from: detailChartTime(point.before, frequency), to: detailChartTime(point.after, frequency),
     ratio: point.ratio, price: Number(point.price), source: point.source,
-  })) : [])
+  })) : [], frequency)
 }, { immediate: true })
 
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))
@@ -154,7 +158,7 @@ const expectedReferenceRun = computed(() => newowAfterMarketOnly.value && typeof
 const published = ref<LatestBacktest['result']>(null)
 const referenceMarkers = computed(() => publishedActionMarkers(expectedReferenceRun.value && published.value?.run_id !== expectedReferenceRun.value ? null : published.value, controller.bars.value, explicitIdentity.value?.frequency ?? ''))
 const savedReference = ref<{ source: MarketAfterCloseReference; snapshot: string } | null>(null)
-const savedPresentation = ref<MarketAfterClosePresentation | null>(null)
+const savedPresentation = ref<(MarketAfterClosePresentation & { sourceRevision: string }) | null>(null)
 const savedChartStatus = ref<'waiting' | 'loading' | 'ready' | 'unavailable'>('waiting')
 const savedVisibleFrom = ref<string | null>(null)
 const savedStrategy = computed(() => explicitIdentity.value?.newowMode === 'dual' ? 'dual_fusion' : explicitIdentity.value?.strategy ?? 'trend')
@@ -181,7 +185,7 @@ watch([savedReference, savedChartSpan], async ([selection, span], _, onCleanup) 
   try {
     const presentation = await getMarketAfterClosePresentation(selection.source, selection.snapshot, JSON.parse(span), { signal: signal.signal })
     if (signal.signal.aborted) return
-    savedPresentation.value = presentation
+    savedPresentation.value = { ...presentation, sourceRevision: selection.source.revision_id }
     savedChartStatus.value = presentation.main_status === 'saved' ? 'ready' : 'unavailable'
   } catch {
     if (!signal.signal.aborted) savedChartStatus.value = 'unavailable'
@@ -198,6 +202,7 @@ watch(() => {
 const savedChart = computed(() => projectMarketReferenceChart(
   savedPresentation.value?.frames ?? [], controller.bars.value,
   explicitIdentity.value?.symbol ?? '', savedStrategy.value, explicitIdentity.value?.frequency ?? '',
+  savedPresentation.value?.sourceRevision ?? null,
 ))
 const savedLatest = computed(() => savedChart.value.matched.at(-1))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
@@ -327,7 +332,7 @@ function selectProduct(option: ProductOption) {
   selectIdentity({ ...identity, symbol: option.symbol, focusBarEnd: undefined })
 }
 
-function updateFreePreferences(free: FlexibleDetailPreferences) {
+function updateFreePreferences(free: FreeDetailPreferences) {
   preferences.value = replaceFreeDetailPreferences(preferences.value, free)
   saveMarketDetailPreferences(preferences.value)
 }

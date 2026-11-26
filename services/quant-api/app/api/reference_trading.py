@@ -61,6 +61,8 @@ def _run(call):
         raise HTTPException(503, detail={"code": str(exc)}) from None
     except SQLAlchemyError:
         raise HTTPException(503, detail={"code": "REFERENCE_SCHEMA_UNAVAILABLE"}) from None
+    except OSError:
+        raise HTTPException(503, detail={"code": "MARKET_REFERENCE_SECTION_UNAVAILABLE"}) from None
     except (ValueError, TypeError):
         raise HTTPException(422, detail={"code": "QUERY_INVALID"}) from None
 
@@ -192,8 +194,11 @@ def newow_after_close(request: Request, product: str, strategy: str, frequency: 
             raise HTTPException(status_code=503, detail={"code": "MARKET_REFERENCE_NOT_ENABLED"}) from None
         factory = SessionLocal
     _keys(request, frozenset({"product", "strategy", "frequency"}))
-    from app.market_data.newow.market_reference_after_close import latest_reference
-    return {"result": _run(lambda: latest_reference(product, strategy, frequency, session_factory=factory))}
+    from app.market_data.market_foundation_scope import formal_tick_requested
+    from app.market_data.newow.market_reference_after_close import latest_formal_reference, latest_reference
+
+    resolve = latest_formal_reference if formal_tick_requested() else latest_reference
+    return {"result": _run(lambda: resolve(product, strategy, frequency, session_factory=factory))}
 
 
 @router.get("/newow/after-close/presentation")
@@ -217,21 +222,36 @@ def newow_after_close_section(request: Request, product: str, strategy: str, fre
                               section: str, component: str | None = None):
     factory = _bound_market_sessions(request)
     sandbox = getattr(request.app.state, "market_foundation_section_root", None)
+    if sandbox is None and factory is not None:
+        from app.market_data.market_archive import formal_archive_root
+        from app.market_data.market_foundation_scope import formal_tick_requested
+
+        if formal_tick_requested():
+            try:
+                sandbox = formal_archive_root()
+            except (OSError, ValueError):
+                raise HTTPException(503, detail={"code": "MARKET_REFERENCE_SECTION_UNAVAILABLE"}) from None
     if factory is None or sandbox is None:
         raise HTTPException(status_code=404, detail={"code": "MARKET_REFERENCE_NOT_ENABLED"})
     _keys(request, frozenset({"product", "strategy", "frequency", "section", "component"}))
     if section not in {"auxiliary", "comparator"} or (component is None) != (section == "comparator"):
         raise HTTPException(status_code=422, detail={"code": "QUERY_INVALID"})
-    from app.market_data.newow.market_reference_after_close import latest_reference
+    from app.market_data.market_foundation_scope import formal_tick_requested
+    from app.market_data.newow.market_reference_after_close import latest_formal_reference, latest_reference
     from app.market_data.newow.market_reference_sections import saved_section
 
     def read():
-        reference = latest_reference(product, strategy, frequency, session_factory=factory)
+        formal = formal_tick_requested()
+        resolve = latest_formal_reference if formal else latest_reference
+        reference = resolve(product, strategy, frequency, session_factory=factory)
         if reference is None:
             return {"status": "pending", "receipt": None, "result": None, "chart": None}
         try:
-            return saved_section(sandbox, reference, strategy=strategy, frequency=frequency,
-                                 section=section, component=component)
+            result = saved_section(sandbox, reference, strategy=strategy, frequency=frequency,
+                                   section=section, component=component)
+            if formal and result["status"] == "ready" and result["receipt"] != reference["receipt"]:
+                return {"status": "pending", "receipt": None, "result": None, "chart": None}
+            return result
         except (OSError, ValueError):
             raise HTTPException(503, detail={"code": "MARKET_REFERENCE_SECTION_UNAVAILABLE"}) from None
     return _run(read)

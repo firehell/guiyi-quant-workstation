@@ -30,9 +30,8 @@ from guiyi_quant.newow.page_comparator import (
 from guiyi_quant.newow.product_adapters import (
     build_product_identity, label_calculation_segments,
 )
-from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
-
 from guiyi_quant.newow.caution_display import CAUTION_DISPLAY_VERSION
+from .auxiliary_dispatch import calculate_auxiliary_component
 from .home_cards import project_caution_events
 from .page_performance_adapter import project_page_performance
 from .product_macd import MACD_CACHE_IDENTITY, calculate_macd_display
@@ -1487,7 +1486,7 @@ class NewowProductService:
         elif request.section is ProductSection.AUXILIARY:
             assert request.component is not None
             layer = (
-                calculate_macd_display(identity, read)
+                calculate_macd_display(identity, read, source_revision=fact_key)
                 if request.component is AuxiliaryComponent.MACD
                 else calculate_auxiliary_component(
                     identity,

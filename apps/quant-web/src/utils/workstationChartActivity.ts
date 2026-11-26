@@ -1,6 +1,7 @@
 import type { MonitorRecord } from '../api/simulationMonitor.ts'
 import type { SubingPortfolioStatus } from '../api/subingPortfolio.ts'
 import type { BarData, MarketFrequency } from '../types/market.ts'
+import { previewInstant } from './candidatePreviewInstant.ts'
 
 export interface ChartExecution {
   id: string
@@ -18,7 +19,7 @@ export interface PlottableExecution extends ChartExecution {
 }
 
 const exactInstant = (value: string | null | undefined): value is string =>
-  !!value && /T.*(?:Z|[+-]\d\d:\d\d)$/.test(value) && Number.isFinite(Date.parse(value))
+  !!value && previewInstant(value) !== null
 const positivePrice = (value: string | null | undefined): value is string =>
   !!value && /^\d+(\.\d+)?$/.test(value) && Number.isFinite(Number(value)) && Number(value) > 0
 
@@ -48,20 +49,24 @@ export function subingChartExecutions(status: SubingPortfolioStatus | null, prod
 export function locateChartExecutions(
   executions: readonly ChartExecution[], bars: readonly BarData[], period: MarketFrequency,
 ): PlottableExecution[] {
-  const maxSpan = period.endsWith('m') ? Number(period.slice(0, -1)) * 60_000 : 0
-  const barTimes = bars.map(bar => Date.parse(bar.time))
+  if (!executions.length || !bars.length) return []
+  const maxSpan = period.endsWith('m') ? BigInt(period.slice(0, -1)) * 60_000_000_000n : 0n
+  const barTimes = bars.map(bar => previewInstant(bar.time))
   return executions.flatMap(event => {
-    const at = Date.parse(event.time)
-    const right = barTimes.findIndex(time => time >= at)
+    const at = previewInstant(event.time)
+    if (at === null) return []
+    const right = barTimes.findIndex(time => time !== null && time >= at)
     const after = bars[right]
-    if (!after || after.confirmed === false || after.physicalContract?.toUpperCase() !== event.contract.toUpperCase()) return []
-    if (barTimes[right] === at) return [{ ...event, before: after, after, ratio: 0 }]
+    const afterTime = barTimes[right]
+    if (!after || afterTime == null || after.confirmed === false || after.physicalContract?.toUpperCase() !== event.contract.toUpperCase()) return []
+    if (afterTime === at) return [{ ...event, before: after, after, ratio: 0 }]
     const before = bars[right - 1]
-    if (!before || before.confirmed === false || before.physicalContract !== after.physicalContract
+    const beforeTime = barTimes[right - 1]
+    if (!before || beforeTime == null || before.confirmed === false || before.physicalContract !== after.physicalContract
       || before.trading_day !== after.trading_day
       || !before.calculationSegmentId || before.calculationSegmentId !== after.calculationSegmentId) return []
-    const span = barTimes[right]! - barTimes[right - 1]!
-    if (span !== maxSpan) return []
-    return [{ ...event, before, after, ratio: (at - barTimes[right - 1]!) / span }]
+    const span = afterTime - beforeTime
+    if (span <= 0n || span !== maxSpan || at <= beforeTime) return []
+    return [{ ...event, before, after, ratio: Number(at - beforeTime) / Number(span) }]
   })
 }

@@ -29,28 +29,34 @@ _MAX_ELAPSED = 1_800.0
 _MAX_TICKS = 4_320
 
 
+def _acknowledged_routes(sandbox: Path, identity: str) -> tuple[str, ...]:
+    try:
+        existing = json.loads(_bytes(sandbox / _CONSUMED / f"{identity}.json"))
+    except FileNotFoundError:
+        return ()
+    routes = existing.get("routes") if isinstance(existing, dict) else None
+    if (not isinstance(routes, list) or not routes
+            or any(not isinstance(key, str) or re.fullmatch(r"reference-stream:[0-9a-f]{64}", key) is None
+                   for key in routes)
+            or routes != sorted(set(routes)) or existing.get("receipt") != identity):
+        raise ValueError("MARKET_REFERENCE_ACK_INVALID")
+    return tuple(routes)
+
+
 def consume_receipt(
     sandbox: Path, receipt: MarketArchiveReceipt, *,
     refresh: Callable[[MarketArchiveReceipt, set[str], Callable[[], bool]], tuple[str, ...]],
+    stop_requested: Callable[[], bool] = lambda: False,
 ) -> dict[str, Any]:
     """A finished cohort is acknowledged once; partial progress stays in the native runner."""
     acknowledgement = sandbox / _CONSUMED / f"{receipt.identity}.json"
-    try:
-        existing = json.loads(_bytes(acknowledgement))
-    except FileNotFoundError:
-        existing = None
-    if existing is not None:
-        routes = existing.get("routes") if isinstance(existing, dict) else None
-        if (not isinstance(routes, list) or not routes
-                or any(not isinstance(key, str) or re.fullmatch(r"reference-stream:[0-9a-f]{64}", key) is None
-                       for key in routes)
-                or routes != sorted(set(routes)) or existing.get("receipt") != receipt.identity):
-            raise ValueError("MARKET_REFERENCE_ACK_INVALID")
-        return {"status": "already_consumed", "receipt": receipt.identity, "routes": len(routes)}
+    existing = _acknowledged_routes(sandbox, receipt.identity)
+    if existing:
+        return {"status": "already_consumed", "receipt": receipt.identity, "routes": len(existing)}
 
     deadline = monotonic() + _MAX_ELAPSED
     def cancelled():
-        return monotonic() >= deadline
+        return stop_requested() or monotonic() >= deadline
 
     completed: set[str] = set()
     expected = None
@@ -75,12 +81,17 @@ def consume_receipt(
     return {"status": "pending", "receipt": receipt.identity, "routes_complete": len(completed)}
 
 
-def run_receipt(sandbox: Path, receipt: MarketArchiveReceipt, *, session_factory) -> dict:
+def run_receipt(
+    sandbox: Path, receipt: MarketArchiveReceipt, *, session_factory,
+    canonical_root: Path | None = None, stop_requested: Callable[[], bool] = lambda: False,
+    formal: bool = False,
+) -> dict:
     def verify_publication(product):
         # Called inside the native Catalog maintenance lease when planning,
         # verifying or committing one product. Never hold that lease for a cohort.
         with session_factory() as session, readonly_transaction(session, timeout_seconds=30):
-            actual = reference_catalog_revision(session, product, receipt.trading_day)
+            actual = (reference_catalog_revision(session, product, receipt.trading_day, archive_scope=True)
+                      if formal else reference_catalog_revision(session, product, receipt.trading_day))
         if actual != receipt.revisions.get(product):
             raise ValueError("MARKET_ARCHIVE_SOURCE_CHANGED")
 
@@ -106,12 +117,16 @@ def run_receipt(sandbox: Path, receipt: MarketArchiveReceipt, *, session_factory
             raise ValueError("MARKET_REFERENCE_SCOPE_INCOMPLETE")
         return tuple(stream_id for stream_id, _key in runner.last_scope)
 
-    result = consume_receipt(sandbox, receipt, refresh=refresh)
-    if result["status"] in {"completed", "already_consumed"}:
+    from app.market_data.live_recovery_guard import _file_guard
+
+    with _file_guard("newow-receipt.lock", root=sandbox / "live-recovery-guards", wait=False, legacy_root=True):
+        result = consume_receipt(sandbox, receipt, refresh=refresh, stop_requested=stop_requested)
+    if not stop_requested() and result["status"] in {"completed", "already_consumed"}:
         from app.market_data.newow.market_reference_sections import materialize_sections
 
         result["sections"] = materialize_sections(
             sandbox, receipt, session_factory=session_factory, verify_publication=verify_publication,
+            canonical_root=canonical_root, stop_requested=stop_requested,
         )
     return result
 
@@ -166,6 +181,23 @@ def latest_reference(product: str, strategy: str, frequency: str, *, session_fac
     }
 
 
+def latest_formal_reference(product: str, strategy: str, frequency: str, *, session_factory) -> dict | None:
+    """Expose the Market result only after the exact formal receipt was acknowledged."""
+    from app.market_data.market_archive import current_retained_receipt, formal_archive_root
+
+    root = formal_archive_root()
+    receipt = current_retained_receipt(root, now=datetime.now(UTC))
+    if receipt is None or product not in receipt.revisions:
+        return None
+    routes = _acknowledged_routes(root, receipt.identity)
+    if not routes:
+        return None
+    result = latest_reference(product, strategy, frequency, session_factory=session_factory)
+    if result is None or result["stream_id"] not in routes or result["cutoff"] > receipt.finished_at:
+        return None
+    return {**result, "receipt": receipt.identity}
+
+
 def present_saved_chart(
     reader, stream_id: str, *, since: date, through: date, cutoff: datetime,
     snapshot: str, bar_from: datetime, bar_through: datetime,
@@ -213,14 +245,101 @@ def present_saved_chart(
             "comparator_status": "not_materialized"}
 
 
+def warmup_formal_receipts() -> dict:
+    """Prove the formal receipt source without calculating or polling Live."""
+    from app.db.session import engine
+    from app.market_data.composition import canonical_root
+    from app.market_data.market_archive import current_retained_receipt, formal_archive_root
+    from app.market_data.market_foundation_scope import require_formal_tick_binding
+    from app.market_data.operational_universe import load_operational_products
+    from app.redis_connections import get_redis_connection
+
+    with get_redis_connection() as redis:
+        binding = require_formal_tick_binding(redis, engine.url, canonical_root())
+    receipt = current_retained_receipt(formal_archive_root(), now=datetime.now(UTC))
+    if receipt is not None and set(receipt.revisions) != set(load_operational_products()):
+        raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+    return {"receipt_only": True, "binding": binding,
+            "receipt": None if receipt is None else receipt.identity, "natural_archive_verified": False}
+
+
+def serve_formal_receipts(ownership, *, stop_requested):
+    """Supervised, receipt-only Reference role. No Live subscription or transport."""
+    from time import sleep
+
+    from app.db.session import SessionLocal, engine
+    from app.market_data.composition import canonical_root
+    from app.market_data.market_archive import current_retained_receipt, formal_archive_root
+    from app.market_data.market_foundation_scope import require_formal_tick_binding
+    from app.market_data.operational_universe import load_operational_products
+    from app.redis_connections import get_redis_connection
+    from redis.exceptions import RedisError
+
+    canonical = canonical_root()
+    products = set(load_operational_products())
+    completed_receipt = None
+
+    def stopping():
+        return stop_requested() or ownership.should_drain()
+
+    heartbeat_at = monotonic()
+
+    def check_owner():
+        nonlocal heartbeat_at
+        ownership.assert_owned()
+        if stopping():
+            return True
+        if monotonic() - heartbeat_at >= 5:
+            ownership.mark_ready({"reference_receipts": "calculating"})
+            heartbeat_at = monotonic()
+        return False
+
+    with get_redis_connection() as redis:
+        while not check_owner():
+            try:
+                require_formal_tick_binding(redis, engine.url, canonical)
+                root = formal_archive_root()
+                receipt = current_retained_receipt(root, now=datetime.now(UTC))
+                if receipt is not None and set(receipt.revisions) != products:
+                    raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+                status = "waiting_archive" if receipt is None else "current"
+                if receipt is not None and receipt.identity != completed_receipt:
+                    ownership.mark_ready({"reference_receipts": "calculating"})
+                    try:
+                        result = run_receipt(root, receipt, session_factory=SessionLocal,
+                                             canonical_root=canonical, stop_requested=check_owner, formal=True)
+                    except RuntimeError as error:
+                        if str(error) != "LIVE_RECOVERY_BUSY":
+                            raise
+                        result = {"status": "pending"}
+                    if (result["status"] in {"completed", "already_consumed"}
+                            and result.get("sections", {}).get("status") == "completed"):
+                        completed_receipt = receipt.identity
+                    else:
+                        status = "pending"
+                ownership.mark_ready({"reference_receipts": status})
+            except (OSError, ValueError, RedisError, SQLAlchemyError):
+                ownership.mark_not_ready({"reference_receipts": "unavailable",
+                                          "failure_code": "MARKET_REFERENCE_RECEIPT_UNAVAILABLE"})
+            for _ in range(5):
+                if stopping():
+                    return
+                sleep(1)
+
+
 def main() -> None:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--receipt", help="Exact Market archive receipt SHA-256; defaults to current status")
     arguments = parser.parse_args()
     if arguments.receipt is not None and not re.fullmatch(r"[0-9a-f]{64}", arguments.receipt):
         raise SystemExit("MARKET_ARCHIVE_RECEIPT_INVALID")
-    if not market_foundation_isolated():
+    from app.market_data.market_foundation_scope import formal_tick_requested, require_formal_tick_binding
+
+    formal = formal_tick_requested()
+    if not market_foundation_isolated() and not formal:
         raise SystemExit("MARKET_FOUNDATION_ISOLATION_REQUIRED")
+    if formal and arguments.receipt is None:
+        raise SystemExit("MARKET_ARCHIVE_RECEIPT_REQUIRED")
     from app.db.session import SessionLocal, engine
     from app.market_data.composition import canonical_root
     from app.redis_connections import REDIS_URL
@@ -228,7 +347,16 @@ def main() -> None:
     from app.market_data.market_archive import retain_archive_receipt
 
     try:
-        sandbox = require_isolated_archive(engine.url, REDIS_URL, canonical_root())
+        root = canonical_root()
+        if formal:
+            from app.market_data.market_archive import formal_archive_root
+            from app.redis_connections import get_redis_connection
+
+            with get_redis_connection() as redis:
+                require_formal_tick_binding(redis, engine.url, root)
+            sandbox = formal_archive_root()
+        else:
+            sandbox = require_isolated_archive(engine.url, REDIS_URL, root)
         now = datetime.now(UTC)
         identity = arguments.receipt
         if identity is None:
@@ -239,7 +367,14 @@ def main() -> None:
             retain_archive_receipt(status_path, now=now)
             identity = current.identity
         receipt = read_archive_receipt(sandbox / RECEIPT_DIRECTORY / f"{identity}.json", now=now)
-        result = run_receipt(sandbox, receipt, session_factory=SessionLocal)
+        if formal:
+            from app.market_data.operational_universe import load_operational_products
+
+            if set(receipt.revisions) != set(load_operational_products()):
+                raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+            # The supervised worker and this recovery entry serialize the
+            # actual calculation for this receipt in the shared runner.
+        result = run_receipt(sandbox, receipt, session_factory=SessionLocal, canonical_root=root, formal=formal)
     except (OSError, RuntimeError, ValueError, SQLAlchemyError) as error:
         code = str(error)
         if not re.fullmatch(r"MARKET_[A-Z_]{1,64}", code):

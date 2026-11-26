@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 import json
 import logging
 import os
@@ -17,15 +17,30 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from uvicorn import Config, Server
 
+from app.db.readonly import readonly_transaction
 from app.db.url import normalize_database_url
+from app.market_data.catalog import MarketCatalog
+from app.market_data.market_data_service import MarketDataService
+from app.market_data.storage import CanonicalMonthlyStore
 from app.market_data.rqdata_adapter import RQDataClient
 from app.market_data.tick_rqdata_client import create_tick_client
 from app.market_data.tick_runtime import build_isolated_tick_display, open_isolated_tick_market
 from app.private_settings import load_private_readonly_settings
 
 
+def natural_window_seconds(windows, *, now: datetime) -> float:
+    first = min(window.start for window in windows)
+    close = max(window.end for window in windows)
+    stop = close + timedelta(minutes=2)
+    if not first - timedelta(minutes=2) <= now < first or not timedelta(0) < stop - now <= timedelta(hours=24):
+        raise ValueError("MARKET_FOUNDATION_DISPLAY_NATURAL_WINDOW_INVALID")
+    return (stop - now).total_seconds()
+
+
 def run(args) -> dict:
-    if not 1024 <= args.port <= 65_535 or args.port == 8000 or not 1 <= args.seconds <= 14_400:
+    if not 1024 <= args.port <= 65_535 or args.port == 8000 or (
+        args.seconds is not None and not 1 <= args.seconds <= 14_400
+    ):
         raise ValueError("MARKET_FOUNDATION_DISPLAY_SCOPE_INVALID")
     database = make_url(normalize_database_url(os.environ["DATABASE_URL"]))
     redis_url = os.environ["REDIS_URL"]
@@ -33,7 +48,6 @@ def run(args) -> dict:
     canonical = Path(os.environ["GUIYI_CANONICAL_DATA_ROOT"])
     provider_settings, _ = load_private_readonly_settings(args.provider_settings)
     engine = create_engine(database, hide_parameters=True, connect_args={"connect_timeout": 5})
-    deadline = monotonic() + args.seconds
     failures: Counter[str] = Counter()
     try:
         with Session(engine) as session, open_isolated_tick_market(
@@ -41,6 +55,15 @@ def run(args) -> dict:
             canonical_root=canonical, products=tuple(args.product),
             client_factory=lambda: create_tick_client(RQDataClient(settings=provider_settings)),
         ) as market:
+            seconds = args.seconds
+            if seconds is None:
+                with readonly_transaction(session, timeout_seconds=15):
+                    data = MarketDataService(MarketCatalog(session, canonical), CanonicalMonthlyStore(canonical))
+                    windows = tuple(window for product in args.product for window in data.session_windows(
+                        symbol=product, trading_day=args.trading_day,
+                    ))
+                seconds = natural_window_seconds(windows, now=datetime.now(UTC))
+            deadline = monotonic() + seconds
             market.bind_day(args.trading_day)
             app = build_isolated_tick_display(
                 market, redis_url=redis_url, canonical_root=canonical,
@@ -80,7 +103,10 @@ def main():
     parser.add_argument("--trading-day", required=True, type=date.fromisoformat)
     parser.add_argument("--product", action="append", required=True)
     parser.add_argument("--port", type=int, default=8011)
-    parser.add_argument("--seconds", required=True, type=int)
+    bounds = parser.add_mutually_exclusive_group(required=True)
+    bounds.add_argument("--seconds", type=int)
+    bounds.add_argument("--complete-trading-day", action="store_true",
+                        help="from two minutes before the first Session to two minutes after the last; max 24h")
     logging.disable(logging.CRITICAL)
     warnings.simplefilter("ignore")
     try:

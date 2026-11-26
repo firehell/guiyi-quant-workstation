@@ -14,6 +14,7 @@ from app.db.session import SessionLocal
 from app.market_data.composition import build_market_read_service
 from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
 from app.market_data.market_phase import MarketPhase, MarketPhaseResolver
+from app.market_data.observation_stream import ObservationStream
 from app.market_data.operational_universe import load_operational_products
 from app.redis_connections import get_redis_connection
 from app.simnow_controlled_market import MarketBridge
@@ -38,7 +39,8 @@ class PortfolioMarket:
     """Shares one Redis pubsub while retaining MarketBridge's proof per product."""
 
     def __init__(
-        self, products, *, redis=None, session_factory=None, receipt_clock=None, record_closed_tails=False
+        self, products, *, redis=None, session_factory=None, receipt_clock=None,
+        record_closed_tails=False, require_completed_journal=False,
     ):
         operational = set(load_operational_products())
         chosen = tuple(product.upper() for product in products)
@@ -63,8 +65,10 @@ class PortfolioMarket:
         # These views allocate no Redis clients or subscriptions. They only reuse
         # the existing single-product authority, recovery and signal proofs.
         self._views: dict[str, MarketBridge] = {}
+        journal = ObservationStream(self.redis, kind="completed") if require_completed_journal else None
         for product in chosen:
             view = self._authority_view(product)
+            view.completed_observations = journal
             if record_closed_tails:
                 view.closed_tails = self.closed_tails
             self._views[product] = view
@@ -168,6 +172,7 @@ class PortfolioMarket:
                         "NATURAL_TRIGGER_INVALID",
                         "HTDY_EXECUTION_REQUIRES_60M_WINDOW32",
                         "HTDY_EXECUTION_REQUIRES_FIRST_SEEN",
+                        "HTDY_COMPLETED_ORIGINAL_UNPROVEN",
                     }
                     else "MARKET_INPUT_UNPROVEN"
                 )
@@ -182,6 +187,7 @@ class PortfolioMarket:
                 "MARKET_INPUT_UNPROVEN",
                 "HTDY_EXECUTION_REQUIRES_60M_WINDOW32",
                 "HTDY_EXECUTION_REQUIRES_FIRST_SEEN",
+                "HTDY_COMPLETED_ORIGINAL_UNPROVEN",
             }:
                 self.issues.pop(product)
             if signal is not None:

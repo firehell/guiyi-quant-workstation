@@ -278,3 +278,45 @@ def build_isolated_tick_display(
     app.add_api_route("/api/v1/reference-trading/streams/{stream_id}/summary", summary, methods=["GET"])
     app.add_api_route("/api/v1/reference-trading/streams/{stream_id}/trades", trades, methods=["GET"])
     return app
+
+
+
+def build_formal_tick_feed(redis, *, client, dispatch, **kwargs) -> MarketFeedService:
+    """Use the supervised Feed role and its existing durable publication guard."""
+    from app.market_data.tick_preview_redis import RedisTickPreviewPublisher
+    from app.market_data.tick_rqdata_client import create_tick_client
+
+    if dispatch is None:
+        raise ValueError("MARKET_TICK_DISPATCH_REQUIRED")
+
+    def assert_owned():
+        check = getattr(feed, "assert_owned", None)
+        if check is None:
+            raise ValueError("MARKET_TICK_SUPERVISOR_REQUIRED")
+        check()
+
+    def provider():
+        preview = RedisTickPreviewPublisher(redis, assert_owned=assert_owned)
+        # Invalidate any previous process generation before opening this reader.
+        preview.clear_activity(None)
+        preview.flush()
+        tick_client = create_tick_client(client)
+        return TickMarketDataProvider(
+            tick_client, connection_identity=lambda: tick_client._client,
+            preview=preview, dispatch=dispatch, flush_preview=preview.flush,
+        )
+
+    feed = MarketFeedService(
+        provider_factory=provider, source_stream=ObservationStream(redis, kind="source"),
+        tick_source=True, **kwargs,
+    )
+    return feed
+
+
+@contextmanager
+def open_formal_tick_dispatch():
+    dispatch = VeighNaTickDispatch()
+    try:
+        yield dispatch
+    finally:
+        dispatch.close()

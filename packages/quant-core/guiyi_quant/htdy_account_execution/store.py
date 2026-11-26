@@ -73,8 +73,26 @@ class LocalStore:
             return cls._inspect_frozen(target)
 
     @classmethod
-    def _inspect_frozen(cls, path):
-        """Verify existing immutable journal through a SQLite read-only connection."""
+    def inspect_tip(cls, path):
+        """Read the projection matched to the committed tail in one read-only snapshot."""
+        path = Path(path)
+        directory = path.parent.stat()
+        before = path.lstat()
+        if (
+            path.resolve(strict=True) != path.absolute()
+            or directory.st_uid != os.getuid() or directory.st_mode & 0o077
+            or before.st_uid != os.getuid() or before.st_nlink != 1
+        ):
+            raise StoreError("PRIVATE_LOCAL_STORE_REQUIRED")
+        state = cls._inspect_frozen(path, replay=False)
+        after = path.lstat()
+        if path.is_symlink() or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+            raise StoreError("PRIVATE_LOCAL_STORE_REQUIRED")
+        return state
+
+    @classmethod
+    def _inspect_frozen(cls, path, *, replay=True):
+        """Verify the journal or its committed tip through a read-only connection."""
         path = Path(path)
         if path.is_symlink() or not path.is_file() or path.stat().st_mode & 0o077:
             raise StoreError("PRIVATE_LOCAL_STORE_REQUIRED")
@@ -84,7 +102,7 @@ class LocalStore:
             raise StoreError("READ_ONLY_JOURNAL_MODE_UNSUPPORTED")
         view = cls.__new__(cls)
         view._mutex = threading.RLock()
-        view._conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)
+        view._conn = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=0.1)
         try:
             view._conn.execute("PRAGMA query_only=ON")
             view._conn.execute("BEGIN")
@@ -92,8 +110,10 @@ class LocalStore:
                 "SELECT value FROM metadata WHERE key=?", ("execution_identity",)
             ).fetchone()
             view._execution_identity = identity[0] if identity else None
-            view._verify()
-            return view._projection()[1]
+            if replay:
+                view._verify()
+                return view._projection()[1]
+            return view._verified_projection()
         except (sqlite3.Error, KeyError, TypeError, ValueError):
             raise StoreError("LOCAL_STORE_INVALID") from None
         finally:
@@ -238,7 +258,7 @@ class LocalStore:
                 digest.update(json.dumps(row, separators=(",", ":")).encode() + b"\n")
         return digest.hexdigest()
 
-    def _verify(self, verified_fingerprint=None):
+    def _verified_projection(self):
         identity = self._conn.execute(
             "SELECT value FROM metadata WHERE key=?", ("execution_identity",)
         ).fetchone()
@@ -253,7 +273,10 @@ class LocalStore:
         ).fetchone()
         if schema != ("htdy_local_account_journal_v1",):
             raise StoreError("STORE_SCHEMA_INVALID")
-        _, current = self._projection()
+        return self._projection()[1]
+
+    def _verify(self, verified_fingerprint=None):
+        current = self._verified_projection()
         if verified_fingerprint and self._fingerprint() == verified_fingerprint:
             return
         if self.replay() != current:

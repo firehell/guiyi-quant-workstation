@@ -36,3 +36,16 @@ test('identity change replaces equal points and volume decorations are compared'
   writer.write(series, [{...point,color:'green'}], 'rb:1d')
   assert.deepEqual(calls, ['set','update','set'])
 })
+
+test('a failed native write forces a full replacement on retry', () => {
+  const calls: string[] = []
+  const writer = createPriceSeriesWriter<{ time: number }>()
+  const series = {
+    setData: () => calls.push('set'),
+    update: () => { calls.push('update'); throw Error('native update failed') },
+  }
+  writer.write(series, [{ time: 1 }])
+  assert.throws(() => writer.write(series, [{ time: 1 }, { time: 2 }]), /native update failed/)
+  writer.write(series, [{ time: 1 }, { time: 2 }])
+  assert.deepEqual(calls, ['set', 'update', 'set'])
+})

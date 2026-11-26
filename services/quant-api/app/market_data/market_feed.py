@@ -11,6 +11,7 @@ import json
 from typing import Any
 from redis.exceptions import ConnectionError as RedisConnectionError, TimeoutError as RedisTimeoutError
 
+from app.market_data.feed_buffer import buffered_message_count
 from app.market_data.aggregation import aggregate_from_1m, bucket_window_for_bar
 from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
 from app.runtime_identity import runtime_heartbeat_identity
@@ -18,6 +19,7 @@ from app.market_data.live_market import (
     LiveMarketService, LiveProvider, ProviderRetirementPending, RedisLiveStore, _bar_from_payload, _bar_payload, _compact_json,
     _epoch_millis, live_bar_channel,
 )
+from app.market_data.completed_worker_policy import due_observations
 from app.market_data.live_recovery_scripts import COMMIT_OBSERVATIONS
 from app.market_data.market_phase import MarketPhase
 from app.market_data.observation_stream import (
@@ -345,8 +347,7 @@ class MarketFeedService(LiveMarketService):
         self._publish_heartbeat(now, self._phases(now))
 
     def _buffered_count(self) -> int:
-        count = getattr(self._provider, "buffered_message_count", None)
-        return count() if callable(count) else len(getattr(self._provider, "_messages", ()))
+        return buffered_message_count(self._provider)
 
     def _publish_heartbeat(self, now, phases):
         try:
@@ -863,17 +864,7 @@ class DurableLiveMarketService(LiveMarketService):
 
     def _flush_pending(self, now, phases, pending):
         source_events = self.source_provider.events
-        due = [
-            (key, bar, window, contract) for key, (bar, window, contract) in pending
-            if (now - bar.bar_end).total_seconds() >= 2
-            and (
-                not source_events[(contract, bar.bar_end)].source_generation
-                or (
-                    (received_at := source_events[(contract, bar.bar_end)].raw_received_at) is not None
-                    and received_at <= now
-                )
-            )
-        ]
+        due = due_observations(pending, source_events, now)
         if not due:
             return ()
         plan = []

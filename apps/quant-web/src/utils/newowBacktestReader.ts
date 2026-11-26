@@ -130,6 +130,9 @@ export function publishedActionMarkers(
   const actions = result.summary.decisions
   const contract = result.manifest.physical_contract
   if (!Array.isArray(actions) || typeof contract !== 'string') return []
+  const versions = result.manifest.formula_versions
+  const formulaVersion = Array.isArray(versions) && versions.every(version => typeof version === 'string')
+    ? versions.join(' / ') || null : null
   const byTime = new Map(bars.map(bar => [Date.parse(bar.time), bar]))
   return actions.flatMap(action => {
     if (!action || typeof action.decision_id !== 'string' || typeof action.signal_bar_end !== 'string'
@@ -144,6 +147,7 @@ export function publishedActionMarkers(
     const build = action.action === 'BUILD'
     return [{
       id: action.decision_id, time: action.signal_bar_end,
+      fact: { layer: 'research_actions', sourceIdentity: result.run_id, formulaVersion, physicalContract: contract, frequency },
       label: (result.qualification === 'TRIAL' ? '牛哇试验参考' : '牛哇盘后参考') + (build ? '建仓' : '清仓'),
       tooltip: typeof action.reason === 'string' ? action.reason : undefined,
       position: build ? 'belowBar' : 'aboveBar', shape: build ? 'arrowUp' : 'arrowDown',

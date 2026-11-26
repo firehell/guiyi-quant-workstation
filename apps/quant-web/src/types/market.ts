@@ -239,6 +239,13 @@ export interface KlineMarker {
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
   alertRuleCode?: AlertRuleCode
+  fact?: {
+    layer: 'alerts' | 'research_actions' | 'reconciliation_execution_markers'
+    sourceIdentity: string
+    formulaVersion: string | null
+    physicalContract: string
+    frequency: string | null
+  }
 }
 
 interface AlertEventCommon {
@@ -250,6 +257,7 @@ interface AlertEventCommon {
   bar_end: string
   detected_at: string
   notification_attempted_at: string | null
+  formula_version?: string | null
 }
 
 export type AlertDirection = 'buy' | 'sell'
@@ -265,7 +273,6 @@ export interface HtdyAlertEvent extends AlertEventCommon {
 export interface SubingThsAlertEvent extends AlertEventCommon {
   rule_code: SubingThsAlertRuleCode
   frequency: SubingFrequency
-  formula_version?: string | null
   subing_alignment?: SubingAlignment | null
   result_codes: ['buy'] | ['sell']
 }
@@ -312,7 +319,7 @@ export type MarketHomeLiveFrame =
   | { type: 'quote'; schemaVersion: 1; observedAt: string; item: MarketHomeLiveItem }
   | { type: 'reset'; schemaVersion: 1; observedAt: string; reason: 'AUTHORITY_CHANGED'; items: MarketHomeLiveItem[] }
   | { type: 'unavailable'; schemaVersion: 1; observedAt: string; code: 'MARKET_HOME_LIVE_UNAVAILABLE' }
-export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'range_detector' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'boll' | 'range_detector' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
 export interface MainIndicatorDefinition {

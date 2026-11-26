@@ -32,23 +32,16 @@ from .reference_trading.contracts import (
 from .reference_trading.reducer import reduce_reference
 from .reference_trading.adapters import strategy_input_fingerprint
 
+from .compute.owned import SUBING_THS_REFERENCE_USE, subing_ths_state_step
 from .indicators.subing_ths import (
     SUBING_THS_FORMULA_VERSION,
-    SubingThs15mKernel,
+    SUBING_THS_FORMULA_VERSIONS as FORMULA_VERSIONS,
     SubingThs15mState,
 )
 
 FORMULA_VERSION = SUBING_THS_FORMULA_VERSION
 REFERENCE_MODEL_VERSION = "subing_reference_reverse_close_v1"
 REFERENCE_MODEL_VERSION_V2 = "subing_reference_reverse_close_quality_segment_v2"
-FORMULA_VERSIONS = {
-    "5m": "subing_ths_5m_v1",
-    "1w": "subing_ths_1w_v1",
-    "15m": FORMULA_VERSION,
-    "30m": "subing_ths_30m_v1",
-    "60m": "subing_ths_60m_v1",
-    "1d": "subing_ths_1d_v1",
-}
 ReferenceReadiness: TypeAlias = Literal[
     "ready", "warming", "WARMING",
     "INDICATOR_READY_CROSS_UNEVALUABLE", "CROSS_EVALUATED",
@@ -189,8 +182,9 @@ class SubingReplayState:
     last_input_fingerprint: str | None = None
 
 
-def seed_subing_replay_state() -> SubingReplayState:
-    return SubingReplayState(SubingThs15mKernel().initial_state())
+def seed_subing_replay_state(*, frequency: str = "15m") -> SubingReplayState:
+    initial_state, _ = subing_ths_state_step(frequency, use=SUBING_THS_REFERENCE_USE)
+    return SubingReplayState(initial_state())
 
 
 def _conflict() -> None:
@@ -305,8 +299,8 @@ def _replay_subing_step(
     if not isinstance(state, SubingReplayState):
         raise TypeError("state must be SubingReplayState")
     calculation_segment_id = segment.calculation_segment_id or segment.segment_id
-    kernel = SubingThs15mKernel()
-    state.kernel_state, result = kernel.step(
+    _, step = subing_ths_state_step(frequency, use=SUBING_THS_REFERENCE_USE)
+    state.kernel_state, result = step(
         state.kernel_state, float(bar.close), bar_end=bar.bar_end.isoformat()
     )
     state.processed_count += 1
@@ -656,7 +650,7 @@ def _project_reference(
     warming = False
     latest_processed_count = 0
     for segment in segments:
-        state = seed_subing_replay_state()
+        state = seed_subing_replay_state(frequency=frequency)
         for bar in segment.bars:
             if bar.bar_end > as_of or bar.trading_day > through:
                 break

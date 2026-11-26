@@ -1,9 +1,19 @@
-"""Read-only MACD display projection over the existing physical replay prefix."""
+"""Read-only MACD display projection over the completed physical replay prefix."""
 
 from dataclasses import dataclass
+from datetime import datetime
 
-from guiyi_quant.indicators.macd import MACD_VERSION, macd_series
-from guiyi_quant.indicators.models import IndicatorPoint
+from guiyi_quant.compute import (
+    REGISTRY,
+    BarSeries,
+    CompletedBar,
+    FeaturePoint,
+    FeatureRequest,
+    SeriesIdentity,
+    Status,
+)
+from guiyi_quant.compute.contracts import ParameterValue, hash_parameters
+from guiyi_quant.newow.product_adapters import label_calculation_segments
 from guiyi_quant.newow.product_auxiliary import (
     AuxiliaryLayer,
     AuxiliarySegment,
@@ -15,33 +25,56 @@ from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, ProductIde
 
 from .product_reader import ProductReadSet
 
-DISPLAY_ADAPTER_VERSION = "guiyi_newow_macd_display_v1"
-_PROFILE = macd_series(
-    (), 12, 26, 9, ema_seed_policy="sma_window", histogram_scale=2, round_digits=6
+DISPLAY_ADAPTER_VERSION = "guiyi_newow_macd_display_v2"
+_REQUEST = FeatureRequest("macd", {"fast": 12, "slow": 26, "signal": 9})
+_DEFINITION = REGISTRY.definition(_REQUEST.feature_id)
+_PARAMETERS = _DEFINITION.resolve(_REQUEST)
+_PARAMETERS_HASH = hash_parameters(_PARAMETERS)
+MACD_CACHE_IDENTITY = (
+    _DEFINITION.formula_version,
+    DISPLAY_ADAPTER_VERSION,
+    _PARAMETERS_HASH,
+    _DEFINITION.backend_version,
 )
-MACD_CACHE_IDENTITY = (MACD_VERSION, DISPLAY_ADAPTER_VERSION, _PROFILE.parameters_hash)
+_WARMING_CODE = "NEWOW_MACD_WARMING"
+_UNAVAILABLE_CODE = "NEWOW_MACD_UNAVAILABLE"
+
+
+@dataclass(frozen=True, slots=True)
+class MacdDisplayPoint:
+    bar_end: datetime
+    value: float | None
+    ready: bool
+    valid: bool
+    reason: str | None
 
 
 @dataclass(frozen=True, slots=True)
 class MacdDisplayData:
-    dif: tuple[IndicatorPoint, ...]
-    dea: tuple[IndicatorPoint, ...]
-    histogram: tuple[IndicatorPoint, ...]
+    dif: tuple[MacdDisplayPoint, ...]
+    dea: tuple[MacdDisplayPoint, ...]
+    histogram: tuple[MacdDisplayPoint, ...]
 
 
 @dataclass(frozen=True, slots=True)
 class MacdDisplayLayer(AuxiliaryLayer[MacdDisplayData]):
     display_adapter_version: str
-    parameters: dict[str, int | str]
+    parameters: dict[str, ParameterValue]
     parameters_hash: str
 
 
-def calculate_macd_display(
-    identity: ProductIdentity, read: ProductReadSet
-) -> MacdDisplayLayer:
-    # Share the auxiliary identity/order/owner seam; never seed from a viewport.
-    from guiyi_quant.newow.product_adapters import label_calculation_segments
+def _point(point: FeaturePoint, output: str) -> MacdDisplayPoint:
+    if point.status is Status.READY:
+        assert point.values is not None
+        return MacdDisplayPoint(point.bar_end, float(point.values[output]), True, True, None)
+    if point.status is Status.WARMING:
+        return MacdDisplayPoint(point.bar_end, None, False, True, "warming_up")
+    return MacdDisplayPoint(point.bar_end, None, False, False, point.diagnostic or _UNAVAILABLE_CODE)
 
+
+def calculate_macd_display(
+    identity: ProductIdentity, read: ProductReadSet, *, source_revision: str
+) -> MacdDisplayLayer:
     owners = _validated_segments(
         identity,
         label_calculation_segments(identity, read.replay_bars, read.data_interruptions),
@@ -59,49 +92,61 @@ def calculate_macd_display(
         )
         if not visible:
             continue
-        calculated = macd_series(
-            [float(bar.close) for bar in owner.bars],
-            12,
-            26,
-            9,
-            ema_seed_policy="sma_window",
-            histogram_scale=2,
-            round_digits=6,
-            bar_ends=[bar.bar_end.isoformat() for bar in owner.bars],
+        series = BarSeries(
+            SeriesIdentity(
+                identity.product, owner.physical_contract, owner.segment_id,
+                identity.frequency.value, source_revision,
+            ),
+            tuple(
+                # Completed historical replay uses event time at the certified Bar end.
+                # The reader supplies a trading day, with no exchange subsession or capture timestamp.
+                CompletedBar(
+                    owner.physical_contract, owner.segment_id, bar.trading_day,
+                    f"historical:{bar.trading_day.isoformat()}",
+                    bar.bar_end, bar.bar_end, bar.bar_end,
+                    None, None, None, float(bar.close), None, "VALID",
+                )
+                for bar in owner.bars
+            ),
         )
+        (calculated,) = REGISTRY.calculate(series, (_REQUEST,), as_of=read.as_of, use="web")
+        points = tuple(calculated.points[index] for index in visible)
         data = MacdDisplayData(
-            tuple(calculated.dif.points[index] for index in visible),
-            tuple(calculated.dea.points[index] for index in visible),
-            tuple(calculated.histogram.points[index] for index in visible),
+            tuple(_point(point, "dif") for point in points),
+            tuple(_point(point, "dea") for point in points),
+            tuple(_point(point, "histogram") for point in points),
         )
-        ready = all(
-            points[-1].ready and points[-1].valid
-            for points in (data.dif, data.dea, data.histogram)
-        )
-        status = (
-            _status(FeatureRuntimeStatus.READY)
-            if ready
-            else _status(FeatureRuntimeStatus.WARMING, "NEWOW_MACD_WARMING")
-        )
+        match points[-1].status:
+            case Status.READY:
+                status = _status(FeatureRuntimeStatus.READY)
+            case Status.WARMING:
+                status = _status(FeatureRuntimeStatus.WARMING, _WARMING_CODE)
+            case _:
+                status = _status(FeatureRuntimeStatus.UNAVAILABLE, _UNAVAILABLE_CODE)
         segments.append(
             AuxiliarySegment(
                 owner.physical_contract,
                 owner.segment_id,
-                tuple(owner.bars[index].bar_end for index in visible),
+                tuple(point.bar_end for point in points),
                 status,
                 data,
             )
         )
     values = tuple(segments)
+    availability = (
+        _status(FeatureRuntimeStatus.UNAVAILABLE, _UNAVAILABLE_CODE)
+        if any(segment.status.status is FeatureRuntimeStatus.UNAVAILABLE for segment in values)
+        else _layer_availability(values, _WARMING_CODE)
+    )
     return MacdDisplayLayer(
         name="macd",
-        formula_version=MACD_VERSION,
-        availability=_layer_availability(values, "NEWOW_MACD_WARMING"),
+        formula_version=_DEFINITION.formula_version,
+        availability=availability,
         segments=values,
         repainting=False,
         formal_signal_eligible=False,
         page_parity=False,
         display_adapter_version=DISPLAY_ADAPTER_VERSION,
-        parameters=dict(_PROFILE.parameters),
-        parameters_hash=_PROFILE.parameters_hash,
+        parameters=dict(_PARAMETERS),
+        parameters_hash=_PARAMETERS_HASH,
     )

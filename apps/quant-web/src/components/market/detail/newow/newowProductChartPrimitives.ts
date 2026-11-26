@@ -105,6 +105,7 @@ export interface NewowPriceChannelChartPoint {
 
 export interface NewowProductBandArea {
   readonly time: Time
+  readonly barEnd: string
   readonly a: number
   readonly b: number
   readonly color: string
@@ -177,6 +178,7 @@ export function buildNewowProductChartModel(
         || !['BUILD', 'HOLD', 'CLEAR', 'FLAT'].includes(frame.main_state)) continue
       bandAreas.push({
         time: chartMarkerTime(bar.barEnd, response.meta.identity.frequency, bar.tradingDay),
+        barEnd: bar.barEnd,
         a: chartCoordinate(frame.main_values[firstKey]),
         b: chartCoordinate(frame.main_values[secondKey]),
         color: response.meta.identity.strategy === 'main_rise'
@@ -570,7 +572,15 @@ export function alignNewowAuxiliaryChartModel(
   const proof = newowChartSnapshotKey(chart)
   const sameSnapshot = proof !== null && proof === newowChartSnapshotKey(auxiliary)
   if ((!sameSnapshot && !canShareNewowAuxiliary(chart, auxiliary)) || !chart?.value || !auxiliary?.value) return null
-  const raw = buildNewowAuxiliaryChartModel(auxiliary.value)
+  const input = auxiliary.value
+  const bars = chart.value.bars
+  const visibleBars = new Map(bars.map(bar => [bar.bar_end, bar]))
+  const hasSharedBar = input.segments.some(segment => segment.bar_ends.some(end => {
+    const bar = visibleBars.get(end)
+    return bar?.physical_contract === segment.physical_contract && bar.calculation_segment_id === segment.segment_id
+  }))
+  if (!hasSharedBar) return null
+  const raw = buildNewowAuxiliaryChartModel(input)
   const series: NewowAlignedAuxiliaryChartModel['series'][number][] = []
   for (const source of raw.series) {
     const pointsByOwnerTime = new Map(source.points.map(point => [`${point.physicalContract}:${point.segmentId}:${point.barEnd}`, point]))
@@ -580,7 +590,7 @@ export function alignNewowAuxiliaryChartModel(
       if (points.length) series.push({ ...source, id: `${source.id}:visible:${run++}`, points })
       points = []
     }
-    for (const bar of chart.value.bars) {
+    for (const bar of bars) {
       // Auxiliary segment_id identifies the calculation segment, including quality resets.
       const point = pointsByOwnerTime.get(`${bar.physical_contract}:${bar.calculation_segment_id}:${bar.bar_end}`)
       if (!point) { flush(); continue }

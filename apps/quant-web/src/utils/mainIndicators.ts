@@ -59,6 +59,7 @@ export const MAIN_INDICATOR_DEFINITIONS: MainIndicatorDefinition[] = [
   { id: 'ema_10', name: 'ema10', displayName: 'EMA10', pane: 'main', renderer: 'line', capability: 'standard_overlay', defaultVisible: false, parameters: { period: 10 }, lookbackBars: 10, alertCapable: false, available: true },
   { id: 'ema_21', name: 'ema21', displayName: 'EMA21', pane: 'main', renderer: 'line', capability: 'standard_overlay', defaultVisible: false, parameters: { period: 21 }, lookbackBars: 21, alertCapable: false, available: true },
   { id: 'ema_60', name: 'ema60', displayName: 'EMA60', pane: 'main', renderer: 'line', capability: 'standard_overlay', defaultVisible: false, parameters: { period: 60 }, lookbackBars: 60, alertCapable: false, available: true },
+  { id: 'boll', name: 'boll', displayName: 'BOLL', pane: 'main', renderer: 'band', capability: 'standard_overlay', defaultVisible: false, parameters: { period: 20, deviation: 2 }, lookbackBars: 20, alertCapable: false, available: true },
   {
     id: 'range_detector', name: 'range_detector_lux_v1', displayName: '箱体识别（Lux Range）',
     pane: 'main', renderer: 'band', capability: 'standard_overlay', defaultVisible: false,

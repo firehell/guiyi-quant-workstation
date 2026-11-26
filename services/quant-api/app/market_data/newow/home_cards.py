@@ -6,10 +6,11 @@ from guiyi_quant.newow.caution_display import CAUTION_DISPLAY_VERSION, DETAIL_MA
 
 from guiyi_quant.newow.home_independent_trend import calculate_home_trend
 
-from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
 from guiyi_quant.newow.main_rise import calculate_main_rise_series
 
 from guiyi_quant.newow.product_contracts import FeatureRuntimeStatus, MainState, TradeEligibility
+
+from .auxiliary_dispatch import calculate_auxiliary_component
 
 
 def project_home_inputs(replay, anchor):

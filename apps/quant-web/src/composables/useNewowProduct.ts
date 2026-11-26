@@ -273,6 +273,26 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     await run(request)
   }
 
+  /** Optional panes share the accepted chart window without changing the primary request owner. */
+  async function loadAdditionalAuxiliary(component: NewowAuxiliaryComponent, signal: AbortSignal): Promise<NewowProductSectionResponse<'auxiliary'> | null> {
+    const chart = resources.chart.data.value
+    const common = requestCommon('auxiliary')
+    if (fusionRecoveryActive.value || chart?.section !== 'chart' || !chart.value || common?.snapshotToken === undefined || signal.aborted) return null
+    const request = { ...common, section: 'auxiliary' as const, component, from: chart.value.chart_from, through: chart.value.chart_through }
+    const requestedGeneration = generation
+    const cached = auxiliaryCache.get(auxiliaryCacheKey(request))
+    const response = cached ?? await fetchSection(request, signal)
+    const currentChart = resources.chart.data.value
+    if (signal.aborted || requestedGeneration !== generation || disposed || currentChart?.section !== 'chart'
+      || currentChart.meta.snapshot_token !== request.snapshotToken || currentChart.value?.chart_from !== request.from
+      || currentChart.value.chart_through !== request.through) return null
+    if (response.section !== 'auxiliary' || !ownsNewowIdentity(response, request.identity, request.asOf)
+      || response.meta.snapshot_token !== request.snapshotToken
+      || (response.value !== null && response.value.component !== component)) throw new Error('CHART_AUXILIARY_SOURCE_INVALID')
+    if (response.value !== null) cacheAuxiliary(response, request)
+    return response
+  }
+
   async function loadNextChartPage(): Promise<void> {
     cancelFusionRecovery()
     const current = resources.chart.data.value
@@ -850,7 +870,7 @@ export function useNewowProduct(options: UseNewowProductOptions) {
     fusionRecoveryActive: readonly(fusionRecoveryActive),
     referenceChartCompatible: readonly(referenceChartCompatible),
     referenceCapped,
-    loadChart, loadNextChartPage, loadAuxiliary, loadReference, recoverFusionSnapshotConflict, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
+    loadChart, loadNextChartPage, loadAuxiliary, loadAdditionalAuxiliary, loadReference, recoverFusionSnapshotConflict, loadNextReferencePage, loadExplanation, loadComparator, switchToHistorical, returnToCurrent, refreshCurrent, dispose,
   }
 
   function resetAll(): void {

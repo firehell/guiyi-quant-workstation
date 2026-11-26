@@ -361,6 +361,10 @@ def apply_captured_recovery(
     commit_guard: Callable[[], ContextManager],
 ) -> dict:
     """Single apply attempt; unknown Redis outcome propagates without retry."""
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    if formal_tick_requested():
+        raise ValueError("MARKET_TICK_LEGACY_RECOVERY_BLOCKED")
     _now(request, clock)
     _validated_plan(request, source, plan, runtime_identity)
     current = _read(store, request)

@@ -78,7 +78,7 @@ def apply_subing_activation(factory, plan, *, expected_plan_hash, operational, n
         stored = repository.ensure_stream(identity)
         manifest = {'subing_activation_v2': frozen, 'plan_hash': expected_plan_hash}
         revision = repository.create_revision(identity.stream_id, stored.row_version, manifest_sha256(manifest))
-        checkpoint = AdapterCheckpoint(seed_subing_forward(), stream=identity,
+        checkpoint = AdapterCheckpoint(seed_subing_forward(frequency=identity.frequency), stream=identity,
             reference_state=ReferenceState.flat(identity, recording_start=start))
         encoded = adapter_checkpoint_to_json(checkpoint, strategy_schema='subing_forward_v1')
         repository.stage_seed_chunk(revision, SeedChunk('seed:'+expected_plan_hash, 0, 1,

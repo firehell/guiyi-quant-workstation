@@ -30,6 +30,7 @@ from app.alerts.notification import (
     ProviderAcceptance,
 )
 from app.core.env import PROJECT_ROOT
+from app.market_data.archive_worker_policy import maintenance_failure_fields
 from app.market_data.after_market_limits import MAX_PUBLICATIONS, MAX_PUBLICATION_BYTES, MAX_STATUS_BYTES
 from app.market_data.errors import InfrastructureError
 from app.market_data.historical_data_manager import HistoricalDataManager, MaintenanceProgressEvent, UpdateRequest
@@ -171,6 +172,7 @@ class AfterMarketUpdater:
         research_update: Callable[[Path, date], None] | None = None,
         retain_research_publication: Callable[[Path], None] | None = None,
         products: tuple[str, ...] | None = None,
+        archive_root: Path | None = None,
         archive_readback: Callable[
             [tuple[str, ...], date, list[dict[str, object]]],
             AbstractContextManager[Mapping[str, str]],
@@ -180,6 +182,7 @@ class AfterMarketUpdater:
         self.research_update = research_update
         self.retain_research_publication = retain_research_publication
         self.archive_readback = archive_readback
+        self.archive_root = archive_root
         self._archive_products = products
         self.manager = manager
         self.rqdata = rqdata
@@ -290,7 +293,11 @@ class AfterMarketUpdater:
             if self.archive_readback is not None:
                 from app.market_data.market_archive import retain_archive_receipt
 
-                receipt = retain_archive_receipt(self.status_path, now=_local_timestamp(self.now()))
+                checked_at = _local_timestamp(self.now())
+                if self.archive_root is None:
+                    receipt = retain_archive_receipt(self.status_path, now=checked_at)
+                else:
+                    receipt = retain_archive_receipt(self.status_path, now=checked_at, archive_root=self.archive_root)
                 return self.status_path if receipt is None else receipt
             if self.retain_research_publication is not None:
                 self.retain_research_publication(self.status_path)
@@ -822,7 +829,8 @@ class AfterMarketUpdater:
             from app.market_data.market_archive import retained_cleanup_receipt
 
             evidence = retained_cleanup_receipt(
-                self.status_path.parent, day=trading_day, now=_local_timestamp(self.now()), products=products, formal_rank1_sha256=rank1,
+                self.archive_root or self.status_path.parent, day=trading_day,
+                now=_local_timestamp(self.now()), products=products, formal_rank1_sha256=rank1,
             )
         else:
             # Interrupted-run recovery still requires its own Canonical proof.
@@ -1177,26 +1185,64 @@ def build_after_market_updater(
 
         retain_publication(path)
 
+    from app.market_data.market_foundation_scope import formal_tick_requested, require_formal_tick_binding
+
+    redis = get_redis_connection()
+    formal_tick = formal_tick_requested()
+    archive_readback = None
+    archive_root = None
+    if formal_tick:
+        from contextlib import contextmanager
+        from sqlalchemy.orm import Session
+
+        from app.market_data.composition import build_historical_data_manager
+        from app.market_data.market_archive import (
+            formal_after_market_status_path, formal_archive_root, verified_archive_readback,
+        )
+
+        bind = manager.catalog.session.get_bind()
+        root = manager.catalog.canonical_root
+        require_formal_tick_binding(redis, bind.url, root)
+        archive_root = formal_archive_root()
+        state_root = formal_after_market_status_path().parent
+        if state_root != PROJECT_ROOT / ".run" or isolated_research:
+            raise ValueError("MARKET_FORMAL_ARCHIVE_OWNER_UNPROVEN")
+
+        @contextmanager
+        def open_verified_manager():
+            with Session(bind) as session:
+                yield build_historical_data_manager(session, data_root=root)
+
+        def read_formal_archive(products, day, publications):
+            require_formal_tick_binding(redis, bind.url, root)
+            return verified_archive_readback(
+                open_verified_manager, products, day, publications, verify_rank1_day=True,
+            )
+
+        archive_readback = read_formal_archive
+
     return AfterMarketUpdater(
         manager=manager,
         rqdata=None,
         rqdata_factory=ready_client,
-        live_store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+        live_store=RedisLiveStore(cast(RedisClient, redis)),
         status_path=state_root / "after-market-status.json",
         sleep=time.sleep,
         notification_transport=notification_transport,
         now=lambda: datetime.now(SHANGHAI),
         market_home_projection_invalidate=projection_store.invalidate,
         market_home_projection_refresh=None,
-        home_strategy_projection_refresh=None if isolated_research else refresh_home_strategy_projection,
+        home_strategy_projection_refresh=None if isolated_research or formal_tick else refresh_home_strategy_projection,
         recovery_guard_factory=lambda: after_market_recovery_guard(wait=True),
         consumer_guard_factory=lambda: after_market_recovery_guard(wait=False),
-        consumer_audit=None if isolated_research else audit_newow_consumers,
+        consumer_audit=None if isolated_research or formal_tick else audit_newow_consumers,
         research_update=refresh_research if isolated_research else None,
         retain_research_publication=retain_research if isolated_research else None,
-        consumer_revision=lambda products, day: _read_newow_consumer_revisions(products, day),
+        consumer_revision=None if formal_tick else _read_newow_consumer_revisions,
+        archive_readback=archive_readback,
+        archive_root=archive_root,
         consumer_check_keys=("newow_d1", "newow_w1"),
-        late_failure_schedule=lambda result, products, started: schedule_failure(
+        late_failure_schedule=None if formal_tick else lambda result, products, started: schedule_failure(
             state_root / "late-provider-recovery-status.json", result, products, started
         ),
     )
@@ -1400,27 +1446,9 @@ def _log_first_maintenance_failure(
     failure: Mapping[str, object], attempt: int, failure_count: int,
 ) -> None:
     """Log bounded target identity and reason without exposing provider text."""
-    fields: dict[str, object] = {
-        "stage": "canonical_update_result", "attempt": attempt,
-        "failure_count": min(failure_count, 100000),
-    }
-    dataset = failure.get("dataset")
-    if isinstance(dataset, (tuple, list)) and len(dataset) == 4:
-        kind, symbol, contract, frequency = dataset
-        if kind in {"contract", "continuous"} and isinstance(symbol, str) and _PUBLIC_PRODUCT_CODE.fullmatch(symbol):
-            fields["symbol"] = symbol
-            if kind == "contract" and isinstance(contract, str) and re.fullmatch(r"[A-Z]{1,2}[0-9]{3,4}\Z", contract):
-                fields["contract"] = contract
-        if isinstance(frequency, str) and frequency in {"1m", "1d", "1w", "5m", "15m", "30m", "60m"}:
-            fields["frequency"] = frequency
-    for name, upper in (("year", 9999), ("month", 12)):
-        value = failure.get(name)
-        if type(value) is int and 1 <= value <= upper:
-            fields[name] = value
-    reason = failure.get("reason_code")
-    fields["reason_code"] = (
-        reason if isinstance(reason, str) and reason in _MAINTENANCE_DIAGNOSTIC_REASON_CODES
-        else "OTHER_TARGET_FAILURE"
+    fields = maintenance_failure_fields(
+        failure, attempt, failure_count, product_code=_PUBLIC_PRODUCT_CODE,
+        reason_codes=_MAINTENANCE_DIAGNOSTIC_REASON_CODES,
     )
     _LOGGER.warning(
         "after_market_target_failure",

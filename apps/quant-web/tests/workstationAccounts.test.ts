@@ -85,3 +85,15 @@ test('native manual order coordinates require recorded original price, time and 
   }])
   assert.deepEqual(tqChartExecutions([{ ...manual, facts: { ...manual.facts, evidence_sha256: null } }], '快期模拟主账户'), [])
 })
+
+test('an execution a microsecond after a Bar does not match the old owner at rollover', () => {
+  const microsecond = '2026-11-25T02:00:00.000001Z'
+  const base = { time: earlier, trading_day: '2026-11-25', physicalContract: 'JM2701',
+    calculationSegmentId: 'segment', open: 800, high: 810, low: 799, close: 800, volume: 100 }
+  const next = { ...base, time: later }
+  const records = tqChartExecutions([{ ...fill, facts: { ...fill.facts, filled_at: microsecond } }], '快期模拟主账户')
+  const mark = locateChartExecutions(records, [base, next], '30m')[0]
+  assert.equal(mark?.time, microsecond)
+  assert.ok(mark && mark.ratio > 0)
+  assert.deepEqual(locateChartExecutions(records, [base, { ...next, physicalContract: 'JM2705' }], '30m'), [])
+})

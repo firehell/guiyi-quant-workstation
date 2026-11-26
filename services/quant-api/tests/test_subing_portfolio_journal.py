@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import asdict, replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 import os
 from pathlib import Path
 import uuid
@@ -19,7 +19,12 @@ from tests.unit.subing_one_lot.test_portfolio import segment
 
 
 def inputs(products=EXPANDED_PORTFOLIO_PRODUCTS):
-    segments = [segment(p, [100, 101, 102]) for p in products]
+    days, batch = input_days(products)
+    return next(iter(days.values())), batch
+
+
+def input_days(products=EXPANDED_PORTFOLIO_PRODUCTS, *, next_day_at=None):
+    segments = [segment(p, [100, 101, 102], next_day_at=next_day_at) for p in products]
     batch = []
     contexts = {}
     for i in range(3):
@@ -30,21 +35,22 @@ def inputs(products=EXPANDED_PORTFOLIO_PRODUCTS):
             c, day = b.physical_contract, b.trading_day.isoformat()
             at = b.bar_end
             confirmed = at + timedelta(seconds=2)
-            ctx = contexts.setdefault(
+            session = [row.bar for row in s.executions if row.bar.trading_day == b.trading_day]
+            ctx = contexts.setdefault(b.trading_day, {}).setdefault(
                 s.product,
                 dict(
                     contract=c,
                     **dict(
                         s.schedule[day],
-                        day_end=s.executions[-1].bar.bar_end.isoformat(),
+                        day_end=session[-1].bar_end.isoformat(),
                     ),
                     sessions=[
                         [
                             b.session_open_at.isoformat(),
-                            s.executions[-1].bar.bar_end.isoformat(),
+                            session[-1].bar_end.isoformat(),
                         ]
                     ],
-                    expected_1m=[row.bar.bar_end.isoformat() for row in s.executions],
+                    expected_1m=[row.bar_end.isoformat() for row in session],
                 ),
             )
             assert ctx["contract"] == c
@@ -393,3 +399,182 @@ def test_same_night_accounts_replay_while_previous_day_research_fails_and_recove
     assert report["computed"] == 1
     assert eod.reconcile_publications(path, config) == []
     print("night replay, seconds, Tq then SuBing:", baseline_seconds, concurrent_seconds)
+
+
+def test_market_handoff_reads_paper_watermark_from_postgres_and_completed_redis():
+    from redis import Redis
+    from app.market_data.observation_stream import ObservationStream
+    from app.runtime_cohort_errors import CohortError
+    from app.runtime_market_account_readback import paper_watermark
+
+    url = os.getenv("GUIYI_MARKET_PAPER_TEST_DATABASE_URL")
+    redis_port = int(os.getenv("GUIYI_TEST_REDIS_PORT", "0"))
+    target_port = int(os.getenv("GUIYI_MARKET_TARGET_REDIS_PORT", "0"))
+    if not url or not redis_port or not target_port:
+        pytest.skip("requires disposable PostgreSQL and two isolated Redis instances")
+    assert all(port > 1024 and port != 6379 for port in (redis_port, target_port))
+    store = ModelStore(url, test_only=True)
+    contexts, batches = inputs()
+    run_id = "market-handoff-" + uuid.uuid4().hex
+    day = batches[0][0]
+    fixture_generation = "rqdata-tick:" + "a" * 32 + ":"
+    with Redis(host="127.0.0.1", port=redis_port) as old, Redis(
+        host="127.0.0.1", port=target_port,
+    ) as target:
+        assert old.dbsize() == target.dbsize() == 0
+        stream = ObservationStream(target, kind="completed")
+        old_stream = ObservationStream(old, kind="completed")
+        try:
+            store.initialize()
+            writer = PortfolioJournal.create(store, run_id, batches[0][1] - timedelta(minutes=1))
+            expected = {}
+            for index, (day, at, observed, prepared) in enumerate(batches):
+                inputs_at = {}
+                for product, row in prepared.items():
+                    old_stream.append(row.envelope)
+                    event = replace(
+                        row.envelope,
+                        raw_received_at=row.envelope.source_observed_at,
+                        source_generation=fixture_generation + "1",
+                    )
+                    stream_id = stream.append(event)
+                    inputs_at[product] = replace(row, envelope=replace(event, stream_id=stream_id))
+                    expected[product] = (event.data["contract"], at)
+                assert writer.submit(day, at, observed, inputs_at, contexts=contexts if index == 0 else None)
+            reader = ModelStore(url, test_only=True)
+            reader.engine = reader.engine.execution_options(
+                isolation_level="REPEATABLE READ", postgresql_readonly=True,
+            )
+            try:
+                result = paper_watermark(reader, run_id, stream, day, expected,
+                                         generation_prefix=fixture_generation)
+                assert result["status"] == "verified"
+                assert result["sequence"] == len(batches)
+                assert result["run_id"] == run_id
+                assert set(result["watermarks"]) == set(EXPANDED_PORTFOLIO_PRODUCTS)
+                with pytest.raises(CohortError, match="SUBING_HANDOFF_SOURCE_MISMATCH"):
+                    paper_watermark(reader, run_id, stream, day, expected)
+                with pytest.raises(CohortError, match="SUBING_HANDOFF_SOURCE_(MISSING|MISMATCH)"):
+                    paper_watermark(reader, run_id, old_stream, day, expected,
+                                    generation_prefix=fixture_generation)
+            finally:
+                reader.engine.dispose()
+        finally:
+            store.engine.dispose()
+            for journal_stream in (old_stream, stream):
+                journal_stream.redis.delete(journal_stream.key(day), journal_stream.identity_key(day))
+
+
+@pytest.mark.isolated_postgresql
+def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatch, tmp_path):
+    import json
+    from hashlib import sha256
+
+    from redis import Redis
+    from sqlalchemy.engine import make_url
+
+    from app import subing_portfolio_worker as worker
+    from app.market_data.live_market import _bar_payload
+    from app.market_data.observation_stream import ObservationStream
+    from app.runtime_market_account_readback import paper_watermark
+    from scripts.research.subing_model_facts import CAPTURE_VERSION, FEE_POLICY
+
+    url = os.getenv("GUIYI_MARKET_PAPER_TEST_DATABASE_URL")
+    ports = tuple(int(os.getenv(key, "0")) for key in (
+        "GUIYI_TEST_REDIS_PORT", "GUIYI_MARKET_TARGET_REDIS_PORT",
+    ))
+    if not url or not all(ports):
+        pytest.skip("requires disposable PostgreSQL and two isolated Redis instances")
+    assert (pg_port := make_url(url).port) and 1024 < pg_port <= 65535 and pg_port != 5432
+    assert ports[0] != ports[1] and all(1024 < port <= 65535 and port != 6379 for port in ports)
+
+    sessions, (first, last, upcoming) = input_days(next_day_at=2)
+    old_day, _, _, _ = last
+    new_day, at, observed, prepared = upcoming
+    contexts = sessions[new_day]
+    generation = "rqdata-tick:" + "b" * 32 + ":"
+    heartbeat = tmp_path / "heartbeat.json"
+    run_id = "market-worker-handoff-" + uuid.uuid4().hex
+
+    class ReplayClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return observed.astimezone(tz)
+
+    monkeypatch.setattr(worker, "datetime", ReplayClock)
+    monkeypatch.setattr(worker, "HEARTBEAT", heartbeat)
+    with Redis(host="127.0.0.1", port=ports[0], db=13) as old_redis, Redis(
+        host="127.0.0.1", port=ports[1], db=13,
+    ) as target_redis:
+        # Limit all writes to the isolated instances allocated for this test.
+        assert old_redis.dbsize() == target_redis.dbsize() == 0
+        old = ObservationStream(old_redis, kind="completed")
+        target = ObservationStream(target_redis, kind="completed")
+        store = ModelStore(url, test_only=True)
+        try:
+            store.initialize()
+            writer = PortfolioJournal.create(store, run_id, first[1] - timedelta(minutes=1))
+            for day, endpoint, known, items in (first, last):
+                recorded = {}
+                for product, row in items.items():
+                    contract = sessions[day][product]["contract"]
+                    data = _bar_payload(worker.bar(row.envelope.data), contract=contract)
+                    event = replace(row.envelope, data=data, observation_id=f"{day}:{contract}:1m:{data['bar_end']}")
+                    recorded[product] = replace(row, envelope=replace(event, stream_id=old.append(event)))
+                assert writer.submit(day, endpoint, known, recorded,
+                                     contexts=sessions[day] if writer.day != day else None)
+            old_expected = {product: (row["contract"], last[1]) for product, row in sessions[old_day].items()}
+            before = paper_watermark(store, run_id, old, old_day, old_expected)
+            old_head, old_events = store.load(run_id)
+            assert before["status"] == "verified" and before["sequence"] == 2
+
+            for product, row in prepared.items():
+                context = contexts[product]
+                contract = context["contract"]
+                facts = deepcopy(row.execution_facts)
+                facts.update(capture_version=CAPTURE_VERSION, fee_policy_version=FEE_POLICY,
+                             time_semantics="current_effective_execution_facts",
+                             fee_assumption=dict(contract=contract, target_day=str(new_day),
+                                                 source_day=str(new_day), assumed=False))
+                facts["contracts"][contract].update(start=str(new_day), end=str(new_day),
+                                                    field_sources={"snapshot_at": context["first_open"]})
+                raw = json.dumps(facts).encode()
+                payload = tmp_path / f"{product}-facts.json"
+                payload.write_bytes(raw)
+                (tmp_path / f"{product}.json").write_text(json.dumps({str(new_day): {
+                    "path": str(payload), "sha256": sha256(raw).hexdigest(),
+                }}))
+                # This fixture Session contains one minute. Its shortened M30 and H1
+                # aggregates settle at the same endpoint with the same OHLCV.
+                data = _bar_payload(worker.bar(row.envelope.data), contract=contract)
+                for frequency in ("60m", "30m", "1m"):
+                    context[f"expected_{frequency}"] = [data["bar_end"]]
+                    target.append(replace(
+                        row.envelope, stream_id="", channel=live_bar_channel(product, frequency), data=data,
+                        observation_id=f"{new_day}:{contract}:{frequency}:{data['bar_end']}",
+                        source_observed_at=at, raw_received_at=at + timedelta(milliseconds=10),
+                        source_generation=generation + "1",
+                    ))
+
+            def consume(stream):
+                restored = PortfolioJournal.restore(store, run_id)
+                factors = {product: worker.Factors(row["contract"]) for product, row in contexts.items()}
+                worker.consume_day(restored, new_day, contexts, factors, stream, tmp_path, once=True)
+
+            consume(old)
+            assert store.load(run_id) == (old_head, old_events)
+            consume(target)
+            expected = {product: (row["contract"], at) for product, row in contexts.items()}
+            after = paper_watermark(store, run_id, target, new_day, expected, generation_prefix=generation)
+            assert after["status"] == "verified" and after["sequence"] == before["sequence"] + 1
+            assert after["run_id"] == before["run_id"]
+            assert after["tail_hash"] != before["tail_hash"]
+            new_head, new_events = store.load(run_id)
+            assert new_head["identity"] == old_head["identity"] and new_events[:-1] == old_events
+            assert json.loads(heartbeat.read_text())["status"] == "SESSION_COMPLETE"
+            consume(target)
+            assert store.load(run_id) == (new_head, new_events)
+        finally:
+            store.engine.dispose()
+            for stream, day in ((old, old_day), (target, new_day)):
+                stream.redis.delete(stream.key(day), stream.identity_key(day))

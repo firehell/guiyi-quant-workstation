@@ -401,9 +401,9 @@ def test_macd_and_atr_are_public_functions_but_not_validated_registry_entries() 
 
     assert callable(macd_series)
     assert callable(atr_series)
-    assert indicator_registry["macd"].status == "compatibility_validated"
-    assert indicator_registry["atr"].status == "compatibility_validated"
-    assert indicator_registry["ema21"].status == "validated"
+    assert "macd" not in indicator_registry
+    assert "atr" not in indicator_registry
+    assert "ema21" not in indicator_registry
 
 
 def test_indicator_kernel_numeric_modules_do_not_import_business_or_runtime_layers() -> (

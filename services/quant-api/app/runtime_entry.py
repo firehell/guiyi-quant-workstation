@@ -8,7 +8,7 @@ JSON contract.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, nullcontext
 import logging
 import os
 import signal
@@ -238,9 +238,22 @@ def main(
     command = _COMMANDS[service]
     try:
         if service == 'market-feed':
+            from app.market_data.market_foundation_scope import formal_tick_requested
+
+            tick = formal_tick_requested()
+
             def run_feed(owner, should_stop):
-                with session_factory() as session:
-                    feed = build_market_feed_service(session)
+                if tick and owner is None:
+                    raise ValueError('MARKET_TICK_SUPERVISOR_REQUIRED')
+                if tick:
+                    from app.market_data.tick_runtime import open_formal_tick_dispatch
+
+                    dispatch_scope = open_formal_tick_dispatch()
+                else:
+                    dispatch_scope = nullcontext()
+                with session_factory() as session, dispatch_scope as dispatch:
+                    feed = (build_market_feed_service(session, tick_dispatch=dispatch) if tick
+                            else build_market_feed_service(session))
                     if owner is not None:
                         feed.assert_owned = owner.assert_owned
                         poll = feed.poll

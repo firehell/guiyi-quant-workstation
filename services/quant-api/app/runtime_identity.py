@@ -11,6 +11,7 @@ import subprocess
 from typing import NoReturn
 
 from app.core.env import PROJECT_ROOT
+from app.market_release_identity import valid_release_tag
 
 
 SUBING_DEVELOPMENT_LABEL = "com.guiyi.quant-subing-development-model"
@@ -35,7 +36,7 @@ def runtime_heartbeat_identity() -> dict[str, object]:
     }
     generation = os.environ.get("GUIYI_RUNTIME_GENERATION", "")
     tag = os.environ.get("GUIYI_RUNTIME_TAG", "")
-    if re.fullmatch(r"[1-9][0-9]*", generation) and re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+    if re.fullmatch(r"[1-9][0-9]*", generation) and valid_release_tag(tag):
         identity.update(runtime_generation=int(generation), runtime_tag=tag)
     return identity
 

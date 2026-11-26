@@ -3,6 +3,9 @@ import type {
 } from 'lightweight-charts'
 
 export interface ExecutionOverlayPoint {
+  id: string
+  at: string
+  physicalContract: string
   from: Time
   to: Time
   ratio: number
@@ -18,7 +21,6 @@ export class ExecutionOverlayPrimitive implements ISeriesPrimitive<Time> {
       if (!this.chartContext) return
       const { chart, series } = this.chartContext
       const scale = chart.timeScale()
-      context.save()
       context.beginPath()
       context.rect(0, 0, mediaSize.width, mediaSize.height)
       context.clip()
@@ -40,7 +42,6 @@ export class ExecutionOverlayPrimitive implements ISeriesPrimitive<Time> {
         if (!order) context.fill()
         context.stroke()
       }
-      context.restore()
     }),
   }
   private view: IPrimitivePaneView = { zOrder: () => 'top', renderer: () => this.renderer }
@@ -48,6 +49,7 @@ export class ExecutionOverlayPrimitive implements ISeriesPrimitive<Time> {
   detached() { this.chartContext = null }
   paneViews() { return [this.view] }
   setData(points: readonly ExecutionOverlayPoint[]) {
+    if (points.length === this.points.length && points.every((point, index) => point === this.points[index])) return
     this.points = points
     this.chartContext?.requestUpdate()
   }

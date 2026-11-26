@@ -139,9 +139,7 @@ export class NewowZhaoyaoMirrorPrimitive implements ISeriesPrimitive<Time> {
     const attachment = this.attachment
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const projected = buildNewowZhaoyaoMirrorCommands(this.data, mediaSize.width, mediaSize.height, time => attachment.chart.timeScale().timeToCoordinate(time), this.topInset)
-      context.save()
       for (const item of projected.items) drawItem(context, item, mediaSize.width)
-      context.restore()
     })
   }
 }

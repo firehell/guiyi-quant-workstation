@@ -552,10 +552,15 @@ export interface NewowMacdData {
   readonly histogram: readonly NewowMacdPoint[]
 }
 
-export interface NewowMacdValue extends Omit<NewowLegacyAuxiliaryValue, 'component' | 'segments' | 'repainting' | 'formal_signal_eligible' | 'page_parity'> {
+export const NEWOW_MACD_FORMULA_VERSION = 'talib_macd_12_26_9_v1'
+export const NEWOW_MACD_DISPLAY_ADAPTER_VERSION = 'guiyi_newow_macd_display_v2'
+
+export interface NewowMacdValue extends Omit<NewowLegacyAuxiliaryValue, 'component' | 'formula_version' | 'segments' | 'repainting' | 'formal_signal_eligible' | 'page_parity' | 'allowed_uses'> {
   readonly component: 'macd'
-  readonly display_adapter_version: 'guiyi_newow_macd_display_v1'
-  readonly parameters: { readonly fast: 12; readonly slow: 26; readonly signal: 9; readonly ema_seed_policy: 'sma_window'; readonly histogram_scale: 2; readonly round_digits: 6 }
+  readonly formula_version: typeof NEWOW_MACD_FORMULA_VERSION
+  readonly display_adapter_version: typeof NEWOW_MACD_DISPLAY_ADAPTER_VERSION
+  readonly parameters: { readonly fast: 12; readonly slow: 26; readonly signal: 9 }
+  readonly allowed_uses: readonly ['research_display']
   readonly parameters_hash: string
   readonly segments: readonly (Omit<NewowAuxiliarySegment, 'data'> & { readonly data: NewowMacdData })[]
   readonly repainting: false

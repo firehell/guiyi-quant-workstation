@@ -20,6 +20,7 @@ test('preview accepts normalized stored prices while rejecting corruption and an
     value => { value.bars[0].bar_end = 'broken' },
     value => { value.bars.push(value.bars[0]) },
     value => { value.resolved_contract_segments = [] },
+    value => { value.resolved_contract_segments.push({ ...value.resolved_contract_segments[0], contract: 'JM2705' }) },
   ]) {
     const corrupt = page(); mutate(corrupt)
     assert.throws(() => validateDetailPrice(corrupt, query))

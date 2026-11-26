@@ -833,35 +833,25 @@ server statistics. Explanation and comparator SHALL remain user-requested and di
 
 ### Requirement: MACD auxiliary display preserves the generic kernel contract
 
-`section=auxiliary&component=macd` SHALL be a read-only display branch of the existing route,
-with the same product identity, snapshot proof and resource budgets. It MUST use the existing
-`macd_series` kernel with fast=12, slow=26, signal=9, ema_seed_policy=`sma_window`,
-histogram_scale=2 and round_digits=6. The kernel `MACD_VERSION` and `parameters_hash` SHALL
-be preserved separately from `display_adapter_version=guiyi_newow_macd_display_v1`.
-The client SHALL retain the kernel parameter hash as 16 lowercase hexadecimal characters;
-this hash is distinct from the 64-character snapshot/input SHA-256 fields.
-The display adapter version and parameters hash MUST participate in the MACD section cache key.
+`section=auxiliary&component=macd` SHALL remain a read-only display branch of the existing route, with the same product identity, snapshot proof, resource budgets and physical-owner lifecycle. It MUST use the registered TA-Lib MACD implementation with fast=12, slow=26 and signal=9, and expose the TA-Lib DIF, DEA and histogram outputs directly. The display calculation MUST NOT apply the legacy `sma_window` custom kernel or an additional histogram ×2 multiplier. The formula identity SHALL be `talib_macd_12_26_9_v1`; the display adapter identity SHALL be `guiyi_newow_macd_display_v2`. TA-Lib package version and parameter identity MUST be included in the calculation manifest/cache identity. The client SHALL retain `parameters_hash` as 16 lowercase hexadecimal characters, distinct from the 64-character source/snapshot SHA-256 fields. The display adapter version and parameters hash MUST participate in the MACD section cache key.
 
-Each physical owner segment SHALL calculate from the existing completed, as-of-bounded lifecycle
-replay prefix before projecting observation-eligible points into the display window. Warm-up-only
-bars MAY seed that same physical segment but MUST NOT be displayed. The adapter MUST NOT fetch
-provider data, borrow another contract's state, change strategy formula versions, Action or
-ReferenceTrade identities, or turn missing/warming values into zero.
+Each physical owner segment SHALL calculate from the existing completed, as-of-bounded lifecycle replay prefix before projecting observation-eligible points into the display window. Warm-up-only Bars MAY seed that same physical segment but MUST NOT be displayed. The adapter MUST NOT fetch provider data, borrow another contract's state, change strategy formula versions, Action or ReferenceTrade identities, or turn missing/warming values into zero.
 
-The MACD-only envelope SHALL add `display_adapter_version`, `parameters` and `parameters_hash`;
-each segment's `data.dif/dea/histogram` SHALL contain aligned points with `bar_end`, `value`,
-`ready`, `valid` and `reason`. DIF MAY be ready while DEA and histogram remain warming.
-The branch SHALL set `repainting=false`, `formal_signal_eligible=false`, `page_parity=false`,
-and `allowed_uses=["research_display"]`. Existing auxiliary branch shapes SHALL remain compatible;
-the top-level envelope SHALL use `newow_product_detail_v2`. MACD MUST NOT feed actions, reference returns
-or Alert. The client SHALL reject malformed, non-finite, misaligned or contradictory points.
+The MACD-only envelope SHALL retain `display_adapter_version`, `parameters` and `parameters_hash`; each segment's `data.dif/dea/histogram` SHALL contain aligned points with `bar_end`, `value`, `ready`, `valid` and `reason`. Readiness SHALL follow finite TA-Lib output and the registered warm-up policy; non-finite values MUST remain unavailable. The branch SHALL set `repainting=false`, `formal_signal_eligible=false`, `page_parity=false`, and `allowed_uses=["research_display"]`. Existing auxiliary branch shapes SHALL remain compatible; the top-level envelope SHALL remain `newow_product_detail_v4`. MACD MUST NOT feed actions, reference returns or Alert. The client SHALL reject malformed, non-finite, misaligned or contradictory points.
 
 #### Scenario: Display windows share a physical MACD prefix
 
 - **GIVEN** two compatible snapshots differ only in their requested display windows
 - **WHEN** each window displays the same physical Bar
 - **THEN** DIF, DEA and histogram values and point states SHALL be equal for that Bar
-- **AND** a later physical owner segment SHALL restart its own MACD state
+- **AND** a later physical owner segment SHALL restart its own MACD calculation prefix.
+
+#### Scenario: MACD output follows TA-Lib directly
+
+- **GIVEN** a valid completed same-owner Bar prefix and the registered TA-Lib 12/26/9 definition
+- **WHEN** the auxiliary MACD section is calculated
+- **THEN** its DIF, DEA and histogram are the direct TA-Lib outputs with no additional histogram scaling
+- **AND** the section remains research-display-only and does not affect strategy actions, reference returns or Alert.
 
 ### Requirement: Reference cutoff is authoritative and independent of chart data
 
@@ -1820,6 +1810,37 @@ events are page-parity, non-executable and have `quantity_effect=none`.
 - **AND** actions, reference trade pairing and performance remain unchanged
 
 
+### Requirement: Explicit forward formula transition
+
+A forward oscillator formula change SHALL retire its old oscillator and dependent
+fusion streams together in one fenced transaction and activate distinct current-formula
+streams from verified published historical checkpoints. Old checkpoint/action bytes and
+reference history SHALL remain available under their original identities. Existing OPEN
+references SHALL acquire an appended `OBSERVATION_INTERRUPTED` version without an exit
+action, exit price or return; the control boundary SHALL NOT extend market coverage.
+Old immutable snapshot tokens SHALL still resolve their original temporal version.
+
+The replacement streams SHALL start with flat reference state; historical positions
+SHALL NOT carry forward. Kernel warm-up SHALL remain scoped to the current physical
+contract and calculation segment. A seed without existing READY availability SHALL
+be labelled `FORMULA_WARMING` and may receive completed observations. Only actual
+subsequent READY availability clears this label; no extra strategy gate or fabricated
+warm-up facts are introduced. Unknown commit outcomes require receipt/status readback,
+never a blind second activation. This operation does not change account trades or orders.
+
+Historical reference input policy `through_trading_day_boundaries_v1` SHALL exclude
+rollover and quality-gap events whose trading day exceeds the explicit request
+`through`, or whose effective instant exceeds `as_of`. Later-owner dependency
+metadata is not an observed event in that window. Required kernel warm-up remains
+unchanged; the source manifest binds this event-scope policy.
+
+#### Scenario: A forward oscillator formula is replaced
+
+- **GIVEN** active oscillator and dependent fusion streams and a verified current-formula checkpoint
+- **WHEN** the replacement is committed in its fenced transaction
+- **THEN** both old streams are retired together, their saved facts remain available, and their open reference lineage gains an interruption without a fabricated exit
+- **AND** the new streams start flat and retain the current physical segment's verified warming state
+
 ## Intraday pilot contracts (P0–P6 candidate)
 
 The product identity and wire frequency recognize 5m, 15m, 30m and 60m. Default legacy frequency requests remain W1/D1/60m; extending the enum MUST NOT expand default reads, explanations or release scope. Candidate minute scope consists of trend and oscillation kernels plus the existing independent dual-fusion reference model. Recognition does not open any formal frequency. Existing D1/W1/60m identities remain unchanged. All data is completed physical-contract Canonical through Catalog/MainContractMap/MDS; each derived period is sourced directly from verified 1m using authoritative Session (start,end], including legal short tails. No missing-minute interpolation or cross-period fallback is permitted.
@@ -1856,27 +1877,3 @@ Fusion snapshot v2 adds complete CLOSED curve facts, summary, entry/exit trading
 `openspec/specs/market-home-overview/spec.md` 的首页投影合同。首页摘要与普通页面参考收益在显式
 构建中复用本域原计算；不保留短期snapshot token，不改变详情独立校验或收益口径。
 旧进程展示缓存及home-card-display-cache入口已退出，不保留兼容reader。
-
-### Requirement: Explicit forward formula transition
-
-A forward oscillator formula change SHALL retire its old oscillator and dependent
-fusion streams together in one fenced transaction and activate distinct current-formula
-streams from verified published historical checkpoints. Old checkpoint/action bytes and
-reference history SHALL remain available under their original identities. Existing OPEN
-references SHALL acquire an appended `OBSERVATION_INTERRUPTED` version without an exit
-action, exit price or return; the control boundary SHALL NOT extend market coverage.
-Old immutable snapshot tokens SHALL still resolve their original temporal version.
-
-The replacement streams SHALL start with flat reference state; historical positions
-SHALL NOT carry forward. Kernel warm-up SHALL remain scoped to the current physical
-contract and calculation segment. A seed without existing READY availability SHALL
-be labelled `FORMULA_WARMING` and may receive completed observations. Only actual
-subsequent READY availability clears this label; no extra strategy gate or fabricated
-warm-up facts are introduced. Unknown commit outcomes require receipt/status readback,
-never a blind second activation. This operation does not change account trades or orders.
-
-Historical reference input policy `through_trading_day_boundaries_v1` SHALL exclude
-rollover and quality-gap events whose trading day exceeds the explicit request
-`through`, or whose effective instant exceeds `as_of`. Later-owner dependency
-metadata is not an observed event in that window. Required kernel warm-up remains
-unchanged; the source manifest binds this event-scope policy.

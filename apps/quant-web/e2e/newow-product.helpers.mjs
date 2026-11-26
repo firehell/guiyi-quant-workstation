@@ -110,6 +110,7 @@ export async function installNewowProductFixtures(page, options = {}) {
   page.on('requestfailed', (request) => state.aborted.push(request.url()))
   await page.addInitScript(({ frozenNow }) => {
     const NativeDate = Date
+    const NativeWebSocket = WebSocket
     class FrozenDate extends NativeDate {
       constructor(...args) { super(...(args.length === 0 ? [frozenNow] : args)) }
       static now() { return NativeDate.parse(frozenNow) }
@@ -123,7 +124,16 @@ export async function installNewowProductFixtures(page, options = {}) {
       readyState = FixtureWebSocket.OPEN
       onopen = null
       onclose = null
-      constructor(url) { this.url = url; window.__newowFixtureWebSockets.push(url); queueMicrotask(() => this.onopen?.()) }
+      constructor(url, protocols) {
+        // Vite owns its same-origin development transport. Only application sockets are fixtures.
+        if (protocols === 'vite-hmr' && new URL(url).host === window.location.host
+            && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+          return new NativeWebSocket(url, protocols)
+        }
+        this.url = url
+        window.__newowFixtureWebSockets.push(url)
+        queueMicrotask(() => this.onopen?.())
+      }
       close() { this.readyState = FixtureWebSocket.CLOSED; this.onclose?.() }
     }
     window.WebSocket = FixtureWebSocket
@@ -240,7 +250,7 @@ export async function installNewowProductFixtures(page, options = {}) {
     }
     // The chart fixtures have neither account snapshots nor chart progress data.
     if (['/api/simulation/monitor/overview', '/api/simulation/monitor/records',
-      '/api/v1/subing-portfolio/status', '/api/v1/market/chart-progress'].includes(url.pathname)) {
+      '/api/v1/subing-portfolio/status', '/api/v1/market/chart-progress', '/api/v1/market/indicators/chart-window'].includes(url.pathname)) {
       return route.fulfill({ status: 503, json: {} })
     }
     if (url.pathname === '/api/v1/market/research/product') return route.fulfill({ json: researchProduct() })
@@ -249,7 +259,9 @@ export async function installNewowProductFixtures(page, options = {}) {
       if (options.genericSeries === 'pending') return new Promise(() => {})
       if (options.genericSeries === 'failed') return route.abort('failed')
       if (options.genericSeries === 'failed-once' && state.requests.filter(item => item.url.pathname === url.pathname).length === 1) return route.abort('failed')
-      return route.fulfill({ json: genericBarsPage(url, options) })
+      const marketPage = genericBarsPage(url, options)
+      if (options.genericBarSourceHash) marketPage.bars.at(-1).source_bar_sha256 = options.genericBarSourceHash
+      return route.fulfill({ json: marketPage })
     }
     if (url.pathname === '/api/v1/market/newow/trend-detail') {
       return route.abort('failed')
@@ -533,7 +545,12 @@ function envelope(url, section, strategy, frequency, options) {
     if (options.auxiliaryState?.[component]) {
       status = options.auxiliaryState[component]
       value = null
-    } else value = auxiliaryValue(component, frequency, options, strategy)
+    } else {
+      value = auxiliaryValue(component, frequency, options, strategy)
+      if (component === 'macd' && value.segments.some(segment => segment.status.status === 'warming')) {
+        status = { status: 'warming', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: 'NEWOW_MACD_WARMING' }
+      }
+    }
   } else if (section === 'explanation') value = explanationValue(url.searchParams.get('as_of') || NEWOW_AS_OF)
   else value = comparatorValue(strategy, frequency, url.searchParams.get('as_of') || NEWOW_AS_OF)
   wrappers[section] = delivered(status, value)
@@ -828,7 +845,9 @@ function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') 
     if (options.visualRich) return richMacdFixture(base, strategy, frequency, options)
     const barEnds = [productBar(frequency, 62).bar_end, productBar(frequency, 63).bar_end]
     const points = barEnds.map((bar_end, index) => ({ bar_end, value: index === 0 ? 0 : 0.5, ready: true, valid: true, reason: null }))
-    return { ...base, formal_signal_eligible: false, formula_version: 'v1-draft', display_adapter_version: 'guiyi_newow_macd_display_v1', parameters: { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 }, parameters_hash: '5dd0ebd25122eea6', allowed_uses: ['research_display'], segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { dif: points, dea: points.map(point => ({ ...point, value: point.value / 2 })), histogram: points } }] }
+    const half = points.map(point => ({ ...point, value: point.value / 2 }))
+    const { formula_version, display_adapter_version, parameters, parameters_hash } = richMacd['trend:1d']
+    return { ...base, formal_signal_eligible: false, formula_version, display_adapter_version, parameters, parameters_hash, allowed_uses: ['research_display'], segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { dif: points, dea: half, histogram: half } }] }
   }
   if (component === 'cup_handle') {
     const pivot = (kind, price, day) => ({ kind, price, pivot_at: `2026-09-0${day}T07:00:00.000Z`, confirmed_at: '2026-09-03T07:00:00.000Z', pivot_index: day, confirmed_index: 3, atr_at_pivot: 1 })
@@ -846,12 +865,12 @@ function auxiliaryValue(component, frequency, options = {}, strategy = 'trend') 
   return { ...base, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1', repainting: true, formal_signal_eligible: false, segments: [{ physical_contract: CONTRACT, segment_id: SEGMENT, bar_ends: barEnds, status: ready(), data: { entry: [0, 1], wash: [1, 0], distribution: [0, 0], markup: [1, 2], exit: [0, 0], inducement: [0, 0], peaks: [1, 2], caution: [0, 1], repainting: true, formal_signal_eligible: false, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1' } }] }
 }
 
-// Precomputed by the existing Python macd_series kernel over these exact fixture
+// Precomputed by the registered TA-Lib calculation over these exact fixture
 // closes; fixture-only rendering evidence, never external market or formula parity.
 function richMacdFixture(base, strategy, frequency, options) {
   const { fixture_input, ...wire } = structuredClone(richMacd[`${strategy}:${frequency}${options.recordsHistory ? ':records' : ''}`])
   const bars = chartValue(fixtureValidationUrl('chart', strategy, frequency, false, null), strategy, frequency, options).bars
-  if (JSON.stringify(fixture_input) !== JSON.stringify(bars.map(bar => [bar.bar_end, bar.physical_contract, bar.segment_id, bar.close]))) throw new Error('rich MACD fixture input drift; regenerate through the Python kernel')
+  if (JSON.stringify(fixture_input) !== JSON.stringify(bars.map(bar => [bar.bar_end, bar.physical_contract, bar.calculation_segment_id, bar.close]))) throw new Error('rich MACD fixture input drift; regenerate through the registered TA-Lib calculation')
   return { ...base, ...wire }
 }
 

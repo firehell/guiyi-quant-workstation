@@ -73,3 +73,49 @@ def test_original_inode_replacement_during_copy_is_rejected(tmp_path, monkeypatc
     # Replacement happens after the original inode was frozen, before backup.
     with pytest.raises(module.StoreError, match="PRIVATE_LOCAL_STORE_REQUIRED"):
         LocalStore.inspect(path)
+
+
+def test_market_handoff_reads_tq_h1_without_restamping_the_account(tmp_path):
+    from test_account_execution import sig
+    from app.runtime_market_account_readback import tq_watermark
+    from app.runtime_cohort_errors import CohortError
+    import pytest
+
+    path = tmp_path / "account.sqlite"
+    signal = sig(direction=None)
+    store = LocalStore(path, initial())
+    try:
+        store.execute("rb-h1", signal)
+    finally:
+        store.close()
+    before = path.read_bytes()
+    result = tq_watermark(path, "simnow-test", {
+        "rb": ("RB2701", signal.bar_end),
+        "jm": ("JM2701", signal.bar_end),
+    }, signal.observed_at)
+    assert result["status"] == "blocked"
+    assert result["watermarks"]["rb"] == {
+        "contract": "RB2701", "bar_end": signal.bar_end.isoformat(),
+    }
+    assert result["mismatched_products"] == ["jm"]
+    assert result["scope_status"] == "NOT_APPLIED"
+    with pytest.raises(CohortError, match="TQ_HANDOFF_ACCOUNT_MISMATCH"):
+        tq_watermark(path, "other-account", {}, signal.observed_at)
+    assert path.read_bytes() == before
+
+
+def test_read_only_tip_refuses_projection_that_differs_from_committed_tail(tmp_path):
+    from test_account_execution import sig
+    from guiyi_quant.htdy_account_execution.store import StoreError
+    import pytest
+
+    path = tmp_path / "account.sqlite"
+    store = LocalStore(path, initial())
+    try:
+        store.execute("rb-h1", sig(direction=None))
+    finally:
+        store.close()
+    with sqlite3.connect(path) as connection:
+        connection.execute("UPDATE projection SET sequence=sequence+1 WHERE id=1")
+    with pytest.raises(StoreError, match="^LOCAL_STORE_INVALID$"):
+        LocalStore.inspect_tip(path)

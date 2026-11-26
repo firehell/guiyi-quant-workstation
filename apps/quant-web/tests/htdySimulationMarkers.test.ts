@@ -17,12 +17,17 @@ test('stable execution identity links a chain but missing formula/frequency cann
   assert.match(records[2]!.linkageReason, /版本|周期/)
   assert.equal(records[2]!.callout?.price, '1405.5')
   assert.equal(records[2]!.callout?.time, at)
+  assert.deepEqual(records[2]!.marker?.fact, {
+    layer: 'reconciliation_execution_markers', sourceIdentity: 'fill-row',
+    formulaVersion: null, physicalContract: 'JM2701', frequency: null,
+  })
 })
 
 test('different contract, nonexact timestamp, pending or second-precision fills are retained without invented coordinates', () => {
   for (const changed of [
     { ...fill, contract: 'JM2609' },
     { ...fill, facts: { ...fill.facts, filled_at: '2026-10-30T07:00:01Z' } },
+    { ...fill, facts: { ...fill.facts, filled_at: '2026-10-30T07:00:00.000001Z' } },
     { ...fill, status: 'PENDING' },
     { ...fill, facts: { ...fill.facts, native_precision_seconds: '1' } },
   ]) {

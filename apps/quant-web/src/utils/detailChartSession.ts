@@ -1,11 +1,17 @@
+import { createChartHost, type ChartHost, type LayerDiagnostics } from '@guiyi/quant-chart'
 import type { DisplayVolumeBar } from './volumeDisplay.ts'
-import type { createChart, IChartApi, LogicalRange, SeriesType, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
+import type { createChart, IChartApi, IRange, LogicalRange, SeriesType, ISeriesApi, MouseEventParams, Time } from 'lightweight-charts'
 import { createPriceSeriesWriter } from './priceSeriesWriter.ts'
 import { ExecutionOverlayPrimitive, type ExecutionOverlayPoint } from '../components/kline/executionOverlayPrimitive.ts'
 import { toChartTimeForPeriod } from './barTime.ts'
+import { previewInstant } from './candidatePreviewInstant.ts'
 
 export const DETAIL_CHART_SESSION = Symbol('detail-chart-session')
 export type DetailChartSession = ReturnType<typeof createDetailChartSession>
+type SharedLayerRole = 'candles' | 'volume'
+type SharedLayerFact = Pick<LayerDiagnostics, 'sourceIdentity' | 'formulaVersion' | 'frequency' | 'dataCutoff' | 'cacheState'> & {
+  physicalContract?: string
+}
 export function detailChartPaneLayout(chartHeight: number, toolbarHeight: number, indicatorHeight = 150) {
   const topInset = Math.max(44, toolbarHeight + 12)
   const auxiliaryHeight = topInset + indicatorHeight + 15
@@ -22,9 +28,17 @@ export function detailChartVolumeBars(chart: IChartApi, incoming: readonly Displ
 }
 const volumeInputs = new WeakMap<IChartApi, (incoming: readonly DisplayVolumeBar[]) => readonly DisplayVolumeBar[]>()
 const owners = new WeakMap<IChartApi, DetailChartSession>()
+const automaticViewports = new WeakMap<IChartApi, (range: IRange<number> | null) => void>()
 /** A strategy adapter can recover the page-owned viewport without owning the canvas. */
 export function detailChartViewport(chart: IChartApi): LogicalRange | null {
   return owners.get(chart)?.viewport() ?? null
+}
+/** A default fit must not become a user viewport on a reused chart. */
+export function placeDetailChartViewport(chart: IChartApi, range: IRange<number> | null): void {
+  const place = automaticViewports.get(chart)
+  if (place) place(range)
+  else if (range) chart.timeScale().setVisibleLogicalRange(range)
+  else chart.timeScale().fitContent()
 }
 export function resetDetailChartWindow(chart: IChartApi): void { owners.get(chart)?.resetWindow() }
 export function detailChartIndex(chart: IChartApi, time: Time, fallback: number): number {
@@ -52,22 +66,28 @@ export function createDetailChartSession(dependencies: {
   createContainer?: () => HTMLElement
 }) {
   let chart: IChartApi | null = null, surface: HTMLElement | null = null
+  let host: ChartHost | null = null
   let identity = '', disposed = false
   let releaseActive: (() => void) | null = null
   const viewports = new Map<string, LogicalRange>()
   const prices = new Map<string, ISeriesApi<SeriesType, Time>>()
   const writers = new Map<string, ReturnType<typeof createPriceSeriesWriter<any>>>()
   const pricePoints = new Map<string, any[]>()
+  const hiddenPrices = new Set<string>()
+  const sharedLayerFacts = new Map<SharedLayerRole, SharedLayerFact>()
   let volumeInput: readonly DisplayVolumeBar[] = []
   let hasPrices = false
   let ownsViewport = false
-  const executions = new ExecutionOverlayPrimitive()
+  const tqExecutions = new ExecutionOverlayPrimitive()
+  const paperExecutions = new ExecutionOverlayPrimitive()
+  let executionFrequency: string | null = null
+  let executionPoints: readonly ExecutionOverlayPoint[] = []
   let cursor: { time: Time; price: number } | null = null
   let cursorFrame: number | null = null
   let restoringCursor = false
 
   function rememberCursor(event: MouseEventParams<Time>) {
-    if (restoringCursor) return
+    if (restoringCursor || hiddenPrices.has('candles')) return
     if (event.time === undefined || !event.point || event.paneIndex !== 0) return
     const price = prices.get('candles')?.coordinateToPrice(event.point.y)
     cursor = price == null ? null : { time: event.time, price }
@@ -96,9 +116,8 @@ export function createDetailChartSession(dependencies: {
     if (next === identity) return
     saveViewport(); identity = next; hasPrices = false; ownsViewport = false; cursor = null
     chart?.clearCrosshairPosition?.()
-    executions.setData([])
-    for (const series of prices.values()) series.setData([])
-    writers.clear(); pricePoints.clear(); volumeInput = []
+    setExecutions([])
+    clearPriceWindow()
   }
   function viewport(): LogicalRange | null {
     const live = hasPrices && ownsViewport ? chart?.timeScale().getVisibleLogicalRange() : null
@@ -122,17 +141,37 @@ export function createDetailChartSession(dependencies: {
   function resetWindow() {
     cursor = null
     chart?.clearCrosshairPosition?.()
-    executions.setData([])
-    for (const series of prices.values()) series.setData([])
-    writers.clear(); pricePoints.clear(); volumeInput = []; ownsViewport = false; hasPrices = false
+    setExecutions([])
+    viewports.delete(identity)
+    ownsViewport = false; hasPrices = false
+    clearPriceWindow()
+  }
+  function clearPriceWindow() {
+    writers.clear(); pricePoints.clear(); volumeInput = []
+    sharedLayerFacts.clear()
+    for (const [role, series] of prices) {
+      try {
+        series.setData([])
+      } catch {
+        hideUnverifiedSeries(role, series)
+      }
+    }
+  }
+  function hideUnverifiedSeries(role: string, series: ISeriesApi<SeriesType, Time>) {
+    hiddenPrices.add(role)
+    if (role === 'candles' || role === 'volume') sharedLayerFacts.delete(role)
+    try { series.applyOptions({ visible: false }) } catch { /* Retry on the next write. */ }
+  }
+  function knownCandles() {
+    return hiddenPrices.has('candles') ? [] : pricePoints.get('candles') ?? []
   }
   function indexOf(time: Time): number | null {
-    const index = (pricePoints.get('candles') ?? []).findIndex(point => timeKey(point.time) === timeKey(time))
+    const index = knownCandles().findIndex(point => timeKey(point.time) === timeKey(time))
     return index < 0 ? null : index
   }
-  function length() { return pricePoints.get('candles')?.length ?? 0 }
+  function length() { return knownCandles().length }
   function timeAt(index: number): Time | null {
-    const data = pricePoints.get('candles') ?? []
+    const data = knownCandles()
     return data[Math.max(0, Math.min(data.length - 1, Math.floor(index)))]?.time ?? null
   }
   function mergeVolumeBars(incoming: readonly DisplayVolumeBar[]): readonly DisplayVolumeBar[] {
@@ -145,6 +184,26 @@ export function createDetailChartSession(dependencies: {
     volumeInput = suffix ? [...volumeInput.slice(0, volumeInput.length - incoming.length), ...incoming] : [...incoming]
     return volumeInput
   }
+  function writePrices(target: ISeriesApi<SeriesType, Time>, role: string, points: any[]) {
+    const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
+    writers.set(role, writer)
+    try {
+      writer.write(target, points, identity)
+      if (hiddenPrices.has(role)) {
+        target.applyOptions({ visible: true })
+        hiddenPrices.delete(role)
+      }
+    } catch (error) {
+      hideUnverifiedSeries(role, target)
+      if (role === 'candles') {
+        cursor = null
+        if (executionFrequency !== null) syncExecutionLayers()
+      }
+      throw error
+    }
+    pricePoints.set(role, points)
+    if (role === 'candles' && executionFrequency !== null) syncExecutionLayers()
+  }
   function acquire(container: HTMLElement, options: Parameters<typeof createChart>[1]): IChartApi {
     if (disposed) throw new Error('DETAIL_CHART_DISPOSED')
     const retainedRange = viewport()
@@ -156,7 +215,20 @@ export function createDetailChartSession(dependencies: {
     container.appendChild(surface)
     if (!chart) {
       chart = dependencies.createChart(surface, options)
+      host = createChartHost(chart)
       chart.subscribeCrosshairMove?.(rememberCursor)
+      host.own(() => chart?.unsubscribeCrosshairMove?.(rememberCursor))
+      const viewportSurface = surface
+      const claimWheel = () => { if (hasPrices) ownsViewport = true }
+      const claimDrag = (event: PointerEvent) => {
+        if (hasPrices && (event.buttons & 1) && (event.movementX || event.movementY)) ownsViewport = true
+      }
+      viewportSurface.addEventListener?.('wheel', claimWheel, { capture: true, passive: true })
+      viewportSurface.addEventListener?.('pointermove', claimDrag, { capture: true, passive: true })
+      host.own(() => {
+        viewportSurface.removeEventListener?.('wheel', claimWheel, true)
+        viewportSurface.removeEventListener?.('pointermove', claimDrag, true)
+      })
     } else {
       chart.applyOptions(options ?? {})
       if (retainedRange && hasPrices) chart.timeScale().setVisibleLogicalRange(retainedRange)
@@ -164,9 +236,10 @@ export function createDetailChartSession(dependencies: {
     }
     const native = chart
     let active = true, paneIndex = 1
+    let primaryCandlesBound = false
     const series = new Set<ISeriesApi<SeriesType, Time>>()
     const cleanup = new Set<() => void>()
-    const wrappers = new Map<ISeriesApi<SeriesType, Time>, ISeriesApi<SeriesType, Time>>()
+    const wrappers = new WeakMap<ISeriesApi<SeriesType, Time>, ISeriesApi<SeriesType, Time>>()
     function member(target: any, property: PropertyKey) {
       const value = Reflect.get(target, property)
       if (typeof value !== 'function') return value
@@ -177,7 +250,7 @@ export function createDetailChartSession(dependencies: {
         const unsubscribe = target[name.replace(/^subscribe/, 'unsubscribe')]
         if (typeof unsubscribe === 'function') cleanup.add(() => unsubscribe.apply(target, args))
       }
-      const mutates = /^(set|apply|resize|scroll|fit|reset)/.test(name)
+      const mutates = /^(set|apply|resize|scroll|fit|reset|swapPanes)/.test(name)
       return (...args: any[]) => {
         if (!active && mutates) return
         if (/^(setVisible|scroll|fitContent|resetTimeScale)/.test(name)) ownsViewport = true
@@ -191,6 +264,7 @@ export function createDetailChartSession(dependencies: {
       saveViewport(); active = false
       for (const remove of cleanup) remove()
       cleanup.clear()
+      primitiveCleanup.clear(); priceLineCleanup.clear()
       for (const item of series) native.removeSeries(item)
       series.clear()
       if (releaseActive === release) releaseActive = null
@@ -203,7 +277,7 @@ export function createDetailChartSession(dependencies: {
           const previous = pricePoints.get(role) ?? []
           const range = role === 'candles' ? viewport() : null
           const sameFact = (a: any, b: any) => JSON.stringify(a.time) === JSON.stringify(b.time)
-            && (role === 'candles' ? ['open', 'high', 'low', 'close'] : ['value']).every(field => Object.is(a[field], b[field]))
+            && (role === 'candles' ? ['open', 'high', 'low', 'close', 'physicalContract'] : ['value']).every(field => Object.is(a[field], b[field]))
           const suffix = role === 'candles' && previous.length > data.length && data.length > 0
             && data.every((point, index) => sameFact(point, previous[previous.length - data.length + index]))
           if (suffix) {
@@ -218,8 +292,7 @@ export function createDetailChartSession(dependencies: {
             mappedRange = offset === null ? null : { from: range.from + offset, to: range.to + offset } as LogicalRange
             if (mappedRange && (mappedRange.to < -.5 || mappedRange.from > data.length - .5)) mappedRange = null
           }
-          const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
-          writers.set(role, writer); writer.write(target, data, identity); pricePoints.set(role, data)
+          writePrices(target, role, data)
           if (role === 'candles' && data.length) {
             hasPrices = true
             if (range && !mappedRange) ownsViewport = false
@@ -233,14 +306,13 @@ export function createDetailChartSession(dependencies: {
           const index = previous.findIndex(item => JSON.stringify(item.time) === key)
           const next = [...previous]
           if (index < 0) next.push(point); else next[index] = point
-          const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
-          writers.set(role, writer); writer.write(target, next, identity); pricePoints.set(role, next)
+          writePrices(target, role, next)
         }
         if (property === 'attachPrimitive') return (primitive: any) => {
           if (!active) return
-          target.attachPrimitive(primitive)
           const remove = () => target.detachPrimitive(primitive)
           primitiveCleanup.set(primitive, remove); cleanup.add(remove)
+          target.attachPrimitive(primitive)
         }
         if (property === 'detachPrimitive') return (primitive: any) => {
           const remove = primitiveCleanup.get(primitive)
@@ -249,8 +321,13 @@ export function createDetailChartSession(dependencies: {
         if (property === 'createPriceLine') return (settings: any) => {
           if (!active) return
           const line = target.createPriceLine(settings)
-          cleanup.add(() => { try { target.removePriceLine(line) } catch { /* Adapter already released it. */ } })
+          const remove = () => target.removePriceLine(line)
+          priceLineCleanup.set(line, remove); cleanup.add(remove)
           return line
+        }
+        if (property === 'removePriceLine') return (line: unknown) => {
+          const remove = priceLineCleanup.get(line)
+          if (remove) { cleanup.delete(remove); priceLineCleanup.delete(line); remove() }
         }
         const value = Reflect.get(target, property)
         if (typeof value !== 'function') return value
@@ -260,6 +337,7 @@ export function createDetailChartSession(dependencies: {
       return wrapper
     }
     const primitiveCleanup = new Map<unknown, () => void>()
+    const priceLineCleanup = new Map<unknown, () => void>()
     const lease = new Proxy(native, { get(target, property) {
       if (property === 'remove') return release
       if (property === 'timeScale') return () => timeScale
@@ -269,21 +347,26 @@ export function createDetailChartSession(dependencies: {
       }
       if (property === 'addSeries') return (definition: any, settings: any, pane = 0) => {
         if (!active) throw new Error('DETAIL_CHART_LEASE_EXPIRED')
-        const role = definition.type === 'Candlestick' ? 'candles' : definition.type === 'Histogram' && settings?.priceScaleId === 'volume' ? 'volume' : null
+        const role = definition.type === 'Candlestick' && !primaryCandlesBound
+          ? 'candles' : definition.type === 'Histogram' && settings?.priceScaleId === 'volume' ? 'volume' : null
         let raw = role ? prices.get(role) : undefined
         if (!raw) {
           const candlePaneOverlay = !role && pane === 0 && (!settings?.priceScaleId || settings.priceScaleId === 'right')
           raw = target.addSeries(definition, candlePaneOverlay ? { ...settings, autoscaleInfoProvider: () => null } : settings, pane)
           if (role) {
             prices.set(role, raw)
-            if (role === 'candles') raw.attachPrimitive(executions)
+            if (role === 'candles') {
+              syncExecutionLayers()
+            }
           } else series.add(raw)
         } else {
           // Every adapter shares the main-pane volume overlay.
           if (role === 'volume' && raw.getPane().paneIndex() !== pane) raw.moveToPane(pane)
           raw.applyOptions(role === 'volume' ? { ...settings, priceScaleId: settings?.priceScaleId ?? 'right' } : settings ?? {})
         }
-        return wrapSeries(raw, role ?? undefined)
+        const wrapped = wrapSeries(raw, role ?? undefined)
+        if (role === 'candles') primaryCandlesBound = true
+        return wrapped
       }
       if (property === 'setCrosshairPosition') return (price: number, time: Time, item: ISeriesApi<SeriesType, Time>) => {
         if (active) target.setCrosshairPosition(price, time, wrappers.get(item) ?? item)
@@ -295,6 +378,11 @@ export function createDetailChartSession(dependencies: {
       return member(target, property)
     } })
     owners.set(lease, session)
+    automaticViewports.set(lease, range => {
+      if (!active) return
+      if (range) native.timeScale().setVisibleLogicalRange(range)
+      else native.timeScale().fitContent()
+    })
     volumeInputs.set(lease, incoming => active ? mergeVolumeBars(incoming) : incoming)
     return lease
   }
@@ -303,12 +391,58 @@ export function createDetailChartSession(dependencies: {
     releaseActive?.(); disposed = true
     if (cursorFrame !== null) cancelAnimationFrame(cursorFrame)
     cursor = null
-    chart?.remove(); chart = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); volumeInput = []; viewports.clear()
+    setExecutions([])
+    host?.dispose(); chart = null; host = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); hiddenPrices.clear(); volumeInput = []; viewports.clear()
+    sharedLayerFacts.clear()
   }
-  const setExecutions = (points: readonly ExecutionOverlayPoint[]) => executions.setData(points)
+  function setExecutions(points: readonly ExecutionOverlayPoint[], frequency: string | null = null) {
+    executionPoints = points
+    executionFrequency = frequency
+    syncExecutionLayers()
+  }
+  function syncExecutionLayers() {
+    const anchor = prices.get('candles')
+    if (!host || !anchor) return
+    // Only the owners on the shared candle axis can authorize placement.
+    const candles = executionPoints.length ? knownCandles() : []
+    const owners = new Map(candles.map(bar => [timeKey(bar.time), bar.physicalContract]))
+    const eligible = executionFrequency === null ? [] : executionPoints.filter(point =>
+      owners.get(timeKey(point.from)) === point.physicalContract && owners.get(timeKey(point.to)) === point.physicalContract)
+    for (const [layerId, indicator, primitive, paper] of [
+      ['tq-executions', 'reconciliation_executions', tqExecutions, false],
+      ['paper-executions', 'paper_executions', paperExecutions, true],
+    ] as const) {
+      const points = eligible.filter(point => (point.source === '苏冰模型成交') === paper)
+      let latest: ExecutionOverlayPoint | undefined
+      let cutoff: bigint | null = null
+      for (const point of points) {
+        const instant = previewInstant(point.at)
+        if (instant !== null && (cutoff === null || instant > cutoff)) {
+          latest = point
+          cutoff = instant
+        }
+      }
+      host.renderLayer(layerId, indicator, 'main', 'primitive', layer => {
+        if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive)
+        primitive.setData(points)
+        layer.updateDiagnostics({
+          status: executionFrequency === null ? 'hidden' : latest ? 'ready' : 'missing_input',
+          frequency: executionFrequency, sourceIdentity: latest?.id ?? null, dataCutoff: latest?.at ?? null,
+        })
+      })
+    }
+  }
+  function inspectExecutionLayers() { return host?.diagnostics() ?? [] }
   function restoreInspectionCursor() {
     if (chart) restoreCursor(chart)
   }
-  const session = { zoom, scrollToLatest, setExecutions, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
+  function recordBaseLayer(role: SharedLayerRole, { frequency, dataCutoff, sourceIdentity, formulaVersion, cacheState, physicalContract }: SharedLayerFact) {
+    if (dataCutoff && !hiddenPrices.has(role)) sharedLayerFacts.set(role, {
+      frequency, dataCutoff, sourceIdentity, formulaVersion, cacheState, physicalContract,
+    })
+    else sharedLayerFacts.delete(role)
+  }
+  function readBaseLayer(role: SharedLayerRole) { return sharedLayerFacts.get(role) }
+  const session = { zoom, scrollToLatest, setExecutions, inspectExecutionLayers, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, recordBaseLayer, readBaseLayer, dispose }
   return session
 }

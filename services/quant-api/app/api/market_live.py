@@ -71,6 +71,7 @@ class MarketDisplayRuntime:
     open_reader: Callable[[], AbstractContextManager[MarketReadService]]
     socket_redis_factory: Callable[[], AsyncRedis]
     open_home_reader: Callable[[], AbstractContextManager[MarketHomeLiveService]] | None = None
+    verify_socket_binding: Callable[[AsyncRedis], Awaitable[None]] | None = None
 
 
 def _display_runtime(connection: Request | WebSocket) -> MarketDisplayRuntime | None:
@@ -143,6 +144,8 @@ async def market_websocket(websocket: WebSocket) -> None:
     pubsub = redis.pubsub()
     channels = (live_bar_channel(identity.symbol, identity.frequency), LIVE_STATE_CHANNEL)
     try:
+        if runtime is not None and runtime.verify_socket_binding is not None:
+            await runtime.verify_socket_binding(redis)
         await pubsub.subscribe(*channels)
         display = await _read_detail_display(identity, after, after, runtime)
         initial_state = display.state
@@ -177,6 +180,8 @@ async def market_websocket(websocket: WebSocket) -> None:
         last_refresh = loop.time()
 
         while True:
+            if runtime is not None and runtime.verify_socket_binding is not None:
+                await runtime.verify_socket_binding(redis)
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             now_tick = loop.time()
             if now_tick - last_refresh >= _MARKET_DETAIL_REFRESH_SECONDS:
@@ -275,6 +280,8 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
         )
         redis = redis_factory()
         pubsub = redis.pubsub()
+        if runtime is not None and runtime.verify_socket_binding is not None:
+            await runtime.verify_socket_binding(redis)
         await pubsub.subscribe(*channels)
         snapshot = await read_snapshot()
         current = {item.symbol: item for item in snapshot.items}
@@ -292,6 +299,8 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
         last_authority_check = loop.time()
 
         while True:
+            if runtime is not None and runtime.verify_socket_binding is not None:
+                await runtime.verify_socket_binding(redis)
             message = await pubsub.get_message(
                 ignore_subscribe_messages=True,
                 timeout=1.0,

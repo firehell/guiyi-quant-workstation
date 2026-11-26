@@ -1,11 +1,15 @@
 """Read-only natural-source and authoritative session fences, no production reads."""
 
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import datetime, UTC, timedelta, date
+from decimal import Decimal
 from types import SimpleNamespace as NS
 import pytest
 from app import simnow_controlled_market as m
-from app.market_data.domain import SeriesPageQuery, SeriesKind, BarFrequency
+from app.market_data.domain import CanonicalBar, SeriesPageQuery, SeriesKind, BarFrequency
+from app.market_data.live_market import _bar_payload
+from app.market_data.observation_stream import ObservationEnvelope
 
 T = datetime(2026, 10, 27, 1, tzinfo=UTC)
 
@@ -27,7 +31,7 @@ def bridge(monkeypatch, source="realtime", latest_matches=True):
         "_parse_live_bar_trigger",
         lambda *_: NS(symbol="rb", frequency=BarFrequency.H1, bar=bar),
     )
-    window = NS(qualified=True)
+    window = NS(qualified=True, contract="RB2701", trading_day=bar.trading_day, bars=(bar,))
     reader = NS(
         observation_snapshot=lambda *_: NS(
             source=source,
@@ -71,6 +75,52 @@ def test_startup_historical_bar_is_ignored(monkeypatch):
     b, bar, _ = bridge(monkeypatch)
     b.started = bar.bar_end
     assert b.poll(bar.bar_end + timedelta(seconds=2), T) is None
+
+
+def test_calculation_window_tail_must_match_the_proved_observation(monkeypatch):
+    b, bar, reader = bridge(monkeypatch)
+    reader.bars_until = lambda *_a, **_k: NS(contract="RB2705", trading_day=bar.trading_day, bars=(bar,))
+    with pytest.raises(ValueError, match="LATEST_NATURAL_OBSERVATION_UNPROVEN"):
+        b.poll(bar.bar_end + timedelta(seconds=2), T)
+
+
+def test_completed_original_checks_availability_and_retains_first_seen_fence():
+    price = Decimal(100)
+    bar = CanonicalBar(T, T.date(), price, price, price, price, Decimal(1), None, None)
+    channel, contract = "live:bar:rb:60m", "RB2701"
+    payload = _bar_payload(bar, contract=contract)
+    trigger = m._parse_live_bar_trigger(channel, payload)
+    confirmed = T + timedelta(seconds=2)
+    observation_id = f"{T.date()}:{contract}:60m:{T.isoformat()}"
+    original = ObservationEnvelope(observation_id, T.date(), T, channel, payload, True,
+                                   raw_received_at=T, confirmed_at=confirmed)
+    read = []
+
+    def lookup(day, identity):
+        read.append((day, identity))
+        return original
+
+    journal = NS(read_original=lookup)
+    m.MarketBridge._verify_completed_original(journal, trigger, contract, confirmed)
+    assert read == [(T.date(), observation_id)]
+    for invalid_contract in (None, "RB2705"):
+        with pytest.raises(ValueError, match="HTDY_COMPLETED_ORIGINAL_UNPROVEN"):
+            m.MarketBridge._verify_completed_original(
+                journal, replace(trigger, contract=invalid_contract), contract, confirmed,
+            )
+    with pytest.raises(ValueError, match="HTDY_COMPLETED_ORIGINAL_UNPROVEN"):
+        m.MarketBridge._verify_completed_original(journal, trigger, contract, T + timedelta(seconds=1))
+    accepted = original
+    original = replace(accepted, confirmed_at=confirmed - timedelta(seconds=1))
+    with pytest.raises(ValueError, match="HTDY_COMPLETED_ORIGINAL_UNPROVEN"):
+        m.MarketBridge._verify_completed_original(journal, trigger, contract, confirmed)
+    original = replace(accepted, source_generation=f"rqdata-tick:{'a' * 32}:1",
+                       source_observed_at=T - timedelta(seconds=1))
+    with pytest.raises(ValueError, match="HTDY_COMPLETED_ORIGINAL_UNPROVEN"):
+        m.MarketBridge._verify_completed_original(journal, trigger, contract, confirmed)
+    original = replace(accepted, notification_eligible=False)
+    with pytest.raises(ValueError, match="HTDY_EXECUTION_REQUIRES_FIRST_SEEN"):
+        m.MarketBridge._verify_completed_original(journal, trigger, contract, confirmed)
 
 
 def test_recovery_unavailable_does_not_invent_direction(monkeypatch):

@@ -23,3 +23,20 @@
 新源尚未发布有效事实时，按已有 Runtime 交接合同恢复原源并读回原水位。新源已经发布后，按新代次的不可变原件、消费水位和待处理义务前向恢复。Redis 缓存可用已证明的原件重建。Catalog 提交结果未知时先独立只读查明。符合正式切换和原件可读性条件后，按 [M1 依赖库存](evidence/M1-inventory.md) 的精确前置处理退役。
 
 正式数据写入、源切换、发布和 Runtime 操作遵循 [部署合同](../../../deploy/README.md)。本次实施记录见 [任务状态](tasks.md)。
+
+
+## 正式装配实施边界
+
+- 正式 Tick 使用显式源模式及独立正式 Redis 实例。启动核对 PostgreSQL/Catalog、Canonical 根、Redis 实例和源标记。正式读端拒绝旧 bar namespace，候选隔离绑定仍单独校验。正式新 namespace 的原子基线包含已冻结交易日、完整 rank1 订阅、Live 和已启用 Alert 的初始游标。旧 Reference 游标留在退役实例供读回。
+- 构建源切换版本时，在专用发布树先完成锁文件依赖安装，再用 `bash scripts/ops/macos/build-market-foundation.sh` 安装经 SHA256 锁定的 headless EventEngine 并构建对应 Web。归档凭证、Reference 领取及保存图表使用稳定运行目录 `market-foundation`，随发布树创建的盘后状态仍归 after-market binding。
+- 常规 cohort 的进度和回退合同限定同一 Redis，目前会拒绝 Tick 模式。正式切换仍须接通独立的跨实例 cohort 计划、停旧证明、原子 binding 和快期/苏冰独立接管，并完成正式迟到归档恢复路由。旧迟到任务在 Tick 模式保全状态并拒绝任何未经严格归档读回的清理。当前无需切换或执行正式初始化。
+
+采样脚本保留 3,600 秒和 100,000 条上限。检查末条的结束原因及 listener 状态。分片用
+`compare_tick.py FIRST --capture-shard NEXT`，每片独立证明累计基线，丢弃相互冲突端点，
+按完整 Session 输出缺失端点。旧格式没有结束记录，可用于逐值复核。
+自然连测可用 `run_display.py --complete-trading-day` 绑定 Calendar 首尾，提前两分钟内启动并在当天最后时段后两分钟停机，上限 24 小时。真实采样与供应商历史对照仍使用已批准额度和窗口。
+
+
+跨实例交接的隔离验证复用 cohort 的部署锁和一次 CAS。停旧后按交易日核对 source、completed、identity 索引和各接收游标，落原件并再次读回。新实例在旧实例身份、目标实例身份和新交易日明确后一次性建立零位点，CAS 前重验。跨实例故障前像无法证明时停驻，CAS 结果未知时独立读取 registry。只有精确匹配新绑定才判为仅可前向恢复，其他不确定状态继续停驻。macOS 部署宿主提供只读账户预检 `install-local-services.sh --read-market-account-handover --trading-day YYYY-MM-DD`，可用 `--consumer tqkq` 或 `--consumer subing` 单独运行。快期从私有 SQLite 同一读事务核对投影和提交尾，再按 Catalog 核对逐品种物理合约及 H1 水位，并检查 monitor、Scope、账户读回有效期和恢复义务。苏冰从独立 PostgreSQL 只读快照校验 run、序号、哈希链和重放，再逐品种按原 stream ID 及 identity 索引核对末根分钟。入口按私有项目设置和 registry 解释现有 bar 源，输出不作为切换授权。
+
+正式交接仍需在停写边界证明两个账户的独立 owner，以及启动后实际使用目标 Redis 的证据。快期 H1 水位本身没有 Market source generation，须另外证明其进程重启后使用了目标 Redis。苏冰续用原 run，必须核验新增分钟来自目标 completed journal，不能把旧 stream ID 当作新实例的推进证据。常规 macOS apply 入口继续拒绝跨实例计划，直至账户接管、配置激活及前向恢复接通。

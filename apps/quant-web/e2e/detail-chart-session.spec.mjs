@@ -1,6 +1,159 @@
 import { expect, test } from '@playwright/test'
-import { installNewowProductFixtures, newowRoute } from './newow-product.helpers.mjs'
+import { closeSync, openSync, writeFileSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { assertNoUnexpectedRequests, installNewowProductFixtures, newowRoute } from './newow-product.helpers.mjs'
 import { navigateClient } from './market-detail.helpers.mjs'
+
+test('isolated chart soak measures pane and canvas teardown across repeated workspaces', async ({ page }) => {
+  const output = process.env.GUIYI_CHART_SOAK_JSON
+  test.skip(!output, 'Requires an explicit scratch JSON destination')
+  const seconds = Number(process.env.GUIYI_CHART_SOAK_SECONDS ?? 180)
+  const fixedCycles = Number(process.env.GUIYI_CHART_SOAK_CYCLES ?? 0)
+  const heapDirectory = process.env.GUIYI_CHART_SOAK_HEAP_DIRECTORY
+  expect(Number.isInteger(seconds) && seconds > 0 && Number.isInteger(fixedCycles) && fixedCycles >= 0).toBe(true)
+  test.setTimeout((seconds + 75) * 1000)
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  const fixture = await installNewowProductFixtures(page)
+  await page.goto(newowRoute())
+  const stage = page.getByTestId('newow-product-chart-stage')
+  await expect(stage).toHaveAttribute('data-auxiliary-component', 'zhaoyao_mirror')
+  const chartPackage = await stage.getAttribute('data-chart-package')
+  const canvas = page.locator('.tv-lightweight-charts')
+  const baseCanvas = await canvas.first().elementHandle()
+  const library = await (await page.waitForFunction(() => performance.getEntriesByType('resource')
+    .find(entry => new URL(entry.name).pathname.endsWith('/lightweight-charts.js'))?.name)).jsonValue()
+  await page.evaluate(async (moduleUrl) => {
+    const { createChart, CandlestickSeries } = await import(moduleUrl)
+    const probe = createChart(document.createElement('div'))
+    const chartApi = Object.getPrototypeOf(probe)
+    const seriesApi = Object.getPrototypeOf(probe.addSeries(CandlestickSeries))
+    const timeApi = Object.getPrototypeOf(probe.timeScale())
+    probe.remove()
+    const series = new Set(), primitives = new Set(), listeners = new Set()
+    function hook(prototype, method, observe) {
+      const original = prototype[method]
+      prototype[method] = function (...args) {
+        const result = original.apply(this, args)
+        observe(args, result)
+        return result
+      }
+    }
+    hook(chartApi, 'addSeries', (_, result) => series.add(result))
+    hook(chartApi, 'removeSeries', ([item]) => series.delete(item))
+    hook(seriesApi, 'attachPrimitive', ([item]) => primitives.add(item))
+    hook(seriesApi, 'detachPrimitive', ([item]) => primitives.delete(item))
+    hook(timeApi, 'subscribeVisibleLogicalRangeChange', ([listener]) => listeners.add(listener))
+    hook(timeApi, 'unsubscribeVisibleLogicalRangeChange', ([listener]) => listeners.delete(listener))
+    hook(chartApi, 'subscribeCrosshairMove', ([listener]) => listeners.add(listener))
+    hook(chartApi, 'unsubscribeCrosshairMove', ([listener]) => listeners.delete(listener))
+    window.__chartSoakResources = () => ({ series: series.size, primitives: primitives.size, listeners: listeners.size })
+  }, library)
+  const resources = () => page.evaluate(() => window.__chartSoakResources())
+  const session = await page.context().newCDPSession(page)
+  const samples = [], times = []
+  async function snapshot(phase) {
+    if (!heapDirectory) return
+    const fd = openSync(join(heapDirectory, `${phase}.heapsnapshot`), 'wx')
+    const writeChunk = ({ chunk }) => writeFileSync(fd, chunk)
+    session.on('HeapProfiler.addHeapSnapshotChunk', writeChunk)
+    try {
+      await session.send('HeapProfiler.collectGarbage')
+      await session.send('HeapProfiler.takeHeapSnapshot', { reportProgress: false })
+    } finally {
+      session.off('HeapProfiler.addHeapSnapshotChunk', writeChunk)
+      closeSync(fd)
+    }
+  }
+  async function sample(phase, cycles) {
+    await session.send('HeapProfiler.collectGarbage')
+    const heap = await session.send('Runtime.getHeapUsage')
+    const dom = await session.send('Memory.getDOMCounters')
+    const caches = await page.evaluate(async () => {
+      const { newowSessionResources } = await import('/src/utils/newowSessionResources.ts')
+      const { detailPriceCacheStats } = await import('/src/api/detailPriceCache.ts')
+      return { strategy: newowSessionResources.stats(), price: detailPriceCacheStats() }
+    })
+    for (const cache of Object.values(caches)) {
+      expect(cache.entries).toBeLessThanOrEqual(cache.maxEntries)
+      expect(cache.bytes).toBeLessThanOrEqual(cache.maxBytes)
+    }
+    const fixtureSocketUrls = await page.evaluate(() => window.__newowFixtureWebSockets.length)
+    samples.push({ phase, cycles, elapsedSeconds: (Date.now() - start) / 1000, heap, dom, caches,
+      resources: await resources(), fixtureSocketUrls })
+  }
+  const start = Date.now()
+  let cycles = 0
+  const workspaceResources = new Map()
+  let nextSample = start + 15_000
+  const rows = stage.locator('tr').filter({ has: page.locator('td:nth-child(3)') })
+  const selector = stage.getByRole('combobox', { name: '选择附加副图' })
+  const macd = stage.locator('[data-auxiliary-pane="macd"]')
+  await sample('mounted', cycles)
+  while (fixedCycles ? cycles < fixedCycles : Date.now() - start < seconds * 1000) {
+    const cycleStart = Date.now()
+    await stage.getByRole('button', { name: '涨跌动能', exact: true }).click()
+    await expect(stage).toHaveAttribute('data-auxiliary-component', 'up_down_energy')
+    const baseResources = await resources()
+    if (!await selector.isVisible()) await stage.getByText('副图管理', { exact: true }).click()
+    await selector.selectOption('macd')
+    await stage.getByRole('button', { name: '添加', exact: true }).click()
+    await expect(macd).toHaveAttribute('data-auxiliary-status', 'ready')
+    await expect(rows).toHaveCount(4)
+    expect((await resources()).series).toBe(baseResources.series + 4)
+    await stage.getByRole('button', { name: '隐藏MACD副图' }).click()
+    await expect(rows).toHaveCount(3)
+    await stage.getByRole('button', { name: '显示MACD副图' }).click()
+    await expect(rows).toHaveCount(4)
+    await stage.getByRole('button', { name: '移除MACD副图' }).click()
+    await expect(rows).toHaveCount(3)
+    await expect.poll(resources).toEqual(baseResources)
+    await stage.getByRole('button', { name: '主力照妖镜', exact: true }).click()
+    await expect(stage).toHaveAttribute('data-auxiliary-component', 'zhaoyao_mirror')
+
+    for (const [label, view] of [['震荡策略', 'newow'], ['火天大有', 'htdy'], ['苏冰预警', 'subing'], ['自由看盘', 'free']]) {
+      await page.getByRole('tab', { name: label, exact: true }).click()
+      await expect(page.locator(`[data-detail-workspace="${view}"]`)).toBeVisible()
+      await expect(canvas).toHaveCount(1)
+      expect(await baseCanvas.evaluate(node => node === document.querySelector('.tv-lightweight-charts'))).toBe(true)
+    }
+    const strategy = cycles % 2 === 0 ? 'main_rise' : 'trend'
+    await navigateClient(page, newowRoute(strategy))
+    await expect(stage).toHaveAttribute('data-auxiliary-state', 'ready')
+    await expect(rows).toHaveCount(3)
+    if (workspaceResources.has(strategy)) await expect.poll(resources).toEqual(workspaceResources.get(strategy))
+    else workspaceResources.set(strategy, await resources())
+    cycles++
+    times.push(Date.now() - cycleStart)
+    if (cycles === 10) await snapshot('cycle-10')
+    if (Date.now() >= nextSample) {
+      await sample('cycling', cycles)
+      nextSample = Date.now() + 15_000
+    }
+  }
+  expect(cycles).toBeGreaterThan(0)
+  await sample('before_unmount', cycles)
+  await snapshot('before-unmount')
+  await page.evaluate(() => document.querySelector('#app').__vue_app__.unmount())
+  await expect(canvas).toHaveCount(0)
+  await expect.poll(resources).toEqual({ series: 0, primitives: 0, listeners: 0 })
+  await baseCanvas.dispose()
+  await expect.poll(() => page.evaluate(async () => {
+    const { newowSessionResources } = await import('/src/utils/newowSessionResources.ts')
+    return newowSessionResources.stats().pending
+  })).toBe(0)
+  await sample('after_unmount', cycles)
+  await snapshot('after-unmount')
+  await session.detach()
+  expect(errors).toEqual([])
+  assertNoUnexpectedRequests(fixture)
+  const ordered = times.toSorted((a, b) => a - b)
+  const percentiles = [0.5, 0.95, 0.99].map(fraction => ordered[Math.ceil(fraction * ordered.length) - 1])
+  await writeFile(output, JSON.stringify({ startedAt: new Date(start).toISOString(), chartPackage,
+    elapsedSeconds: (Date.now() - start) / 1000, thresholdSeconds: fixedCycles ? null : seconds, fixedCycles: fixedCycles || null,
+    cycles, cycleTimeP50P95P99Ms: percentiles, samples, productRequests: fixture.productRequests.length, errors }, null, 2) + '\n', { flag: 'wx' })
+})
 
 test('all detail strategies retain one native canvas and their period without repeating price pagination', async ({ page }, testInfo) => {
   const errors = []
@@ -34,6 +187,40 @@ test('all detail strategies retain one native canvas and their period without re
   expect(errors).toEqual([])
   await testInfo.attach('strategy-switch-timings', { body: JSON.stringify(timings), contentType: 'application/json' })
   await page.screenshot({ path: '/private/tmp/guiyi-detail-unified-desktop.png', fullPage: true })
+})
+
+test('HTDY diagnostics follow the drawable window when it is cleared and restored', async ({ page }) => {
+  const fixture = await installNewowProductFixtures(page)
+  await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=1d')
+  const stage = page.locator('[data-detail-workspace="htdy"] .market-kline-stage')
+  const diagnostics = stage.locator('.chart-layer-diagnostics')
+  const shell = stage.getByTestId('kline-shell')
+  await expect(stage.getByTestId('htdy-chart-legend')).toBeVisible()
+  const candles = stage.locator('[data-kline-end]')
+  await expect(candles).toHaveAttribute('data-kline-end', /T/)
+  const cutoff = await candles.getAttribute('data-kline-end')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const row = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: /^htdy · / })
+  await expect(row.locator('summary')).toHaveText('htdy · 就绪')
+  await row.locator('summary').click()
+  await expect(row.getByText(`1d / ${cutoff}`, { exact: true })).toBeVisible()
+  await expect(row.getByText(/original-v0/)).toBeVisible()
+
+  const replaceWindow = restored => shell.evaluate((node, useOriginal) => {
+    const chart = node.__vueParentComponent
+    chart.exposed.replaceBars(useOriginal ? chart.props.bars : [])
+  }, restored)
+  const refresh = diagnostics.getByRole('button', { name: '刷新诊断', exact: true })
+  await replaceWindow(false)
+  await refresh.click()
+  await expect(row.locator('summary')).toHaveText('htdy · 缺少输入')
+  await expect(row.getByText('1d / —', { exact: true })).toBeVisible()
+
+  await replaceWindow(true)
+  await refresh.click()
+  await expect(row.locator('summary')).toHaveText('htdy · 就绪')
+  await expect(row.getByText(`1d / ${cutoff}`, { exact: true })).toBeVisible()
+  assertNoUnexpectedRequests(fixture)
 })
 
 test('unsupported analysis keeps the selected one-minute chart without issuing strategy requests', async ({ page }) => {

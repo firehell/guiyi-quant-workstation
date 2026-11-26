@@ -36,6 +36,10 @@ def execute_scheduled_update(service, previous, candidate, *, backend=None, comm
                 journal['phase'] = 'scheduled_busy'
                 backend.journal(journal)
                 return 'scheduled_busy'
+            if service == "after-market" and previous.root != candidate.root:
+                backend.preserve_after_market(previous, candidate)
+            if service == "weekly-audit" and previous.root != candidate.root:
+                backend.prove_weekly_window()
             mutated = True
             backend.disable(previous)
             if not backend.idle(previous):
@@ -133,6 +137,51 @@ class ScheduledBackend:
                     raise ScheduledUpdateError('SCHEDULED_MAINTENANCE_BUSY')
                 stack.callback(lease.release)
             yield
+
+    def preserve_after_market(self, previous, candidate):
+        from datetime import UTC, datetime
+        from app.market_data.after_market_history import NAME, publish_history, read_history, select_terminal_history
+        from app.market_data.late_provider_recovery import _read as read_late_state, _write as write_late_state
+        from app.market_data.operational_universe import load_operational_products
+
+        old = Path(previous.root) / ".run"
+        new = Path(candidate.root) / ".run"
+        if new.resolve() != new or os.path.lexists(new / "after-market-status.json"):
+            raise ScheduledUpdateError("SCHEDULED_ARCHIVE_TARGET_DIRTY")
+        products = load_operational_products()
+        now = datetime.now(UTC)
+        history = select_terminal_history(old / "after-market-status.json", commit=previous.commit,
+                                          products=products, now=now)
+        if history is not None and history["status"]["last_run"].get("error_code") == "COMMIT_OUTCOME_UNKNOWN":
+            raise ScheduledUpdateError("SCHEDULED_ARCHIVE_COMMIT_READBACK_REQUIRED")
+        retained = read_history(new / NAME, products=products, now=now)
+        late_name = "late-provider-recovery-status.json"
+        late = read_late_state(old / late_name)
+        if (
+            retained is not None and (history is None or any(
+                retained.get(key) != value for key, value in history.items() if key != "retained_at"
+            ))
+            or os.path.lexists(new / late_name) and read_late_state(new / late_name) != late
+        ):
+            raise ScheduledUpdateError("SCHEDULED_ARCHIVE_TARGET_DRIFT")
+        if history is not None and retained is None:
+            publish_history(new / NAME, history)
+            if read_history(new / NAME, products=products, now=now) != history:
+                raise ScheduledUpdateError("SCHEDULED_ARCHIVE_HISTORY_UNPROVEN")
+        if late["runs"] and not os.path.lexists(new / late_name):
+            write_late_state(new / late_name, late)
+        if read_late_state(new / late_name) != late:
+            raise ScheduledUpdateError("SCHEDULED_ARCHIVE_LATE_STATE_UNPROVEN")
+
+    def prove_weekly_window(self):
+        from datetime import datetime
+        from app.market_data.session_clock import SHANGHAI
+        from app.market_data.weekly_audit import _current_week_schedule
+
+        now = datetime.now(SHANGHAI)
+        scheduled = _current_week_schedule(now)
+        if scheduled.date() == now.date() and now >= scheduled:
+            raise ScheduledUpdateError("SCHEDULED_WEEKLY_ATTEMPT_WINDOW")
 
     def disable(self, binding):
         self._launchctl('disable', f'gui/{os.getuid()}/{binding.label}')

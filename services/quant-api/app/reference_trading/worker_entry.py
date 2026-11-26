@@ -100,11 +100,11 @@ def _open_forward_worker(*, ownership=None, warmup=False, warmup_deadline=None,
                          publish_stage=lambda _stage, **_fields: None,
                          report_health=lambda _proof: None):
     """Open DB and Redis only after an explicit local enable marker is present."""
-    from app.services.newow_reference_mode import after_market_only
+    from app.services.newow_reference_mode import market_reference_receipts_only
 
     # The active recording scope is Newow-only. HTDY and SuBing account
     # owners read their independent inputs outside this worker.
-    if after_market_only():
+    if market_reference_receipts_only():
         raise RuntimeError("NEWOW_AFTER_MARKET_ONLY")
     require_worker_enabled()
     from app.db.session import SessionLocal
@@ -385,6 +385,16 @@ def main() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     def run(ownership=None):
+        from app.market_data.market_foundation_scope import formal_tick_requested
+
+        if formal_tick_requested():
+            if ownership is None:
+                raise ValueError("MARKET_TICK_SUPERVISOR_REQUIRED")
+            require_worker_enabled()
+            from app.market_data.newow.market_reference_after_close import serve_formal_receipts
+
+            serve_formal_receipts(ownership, stop_requested=lambda: stopped)
+            return
         with open_forward_worker(ownership=ownership) as (worker, wake, reconciliation):
             def should_stop():
                 return stopped or bool(ownership and ownership.should_drain())
@@ -417,6 +427,12 @@ if __name__ == "__main__":
 
 def warmup_reference_worker(*, allow_classified_weekly_unavailable=False):
     """Validate every route while sharing raw inputs for one scheduling group."""
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    if formal_tick_requested():
+        from app.market_data.newow.market_reference_after_close import warmup_formal_receipts
+
+        return warmup_formal_receipts()
     deadline = monotonic() + 120.0
     with open_forward_worker(warmup=True, warmup_deadline=deadline) as (worker, _wake, _reconciliation):
         from app.reference_trading.prewarm_quality import ClassifiedWeeklyUnavailable

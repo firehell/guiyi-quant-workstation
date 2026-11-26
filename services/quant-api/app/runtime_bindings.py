@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 from typing import Any
 
+from app.market_release_identity import MARKET_SERVICES, MARKET_TAG_PREFIX, market_release_version, valid_release_tag
 from app.runtime_contracts import SERVICES
 
 CONTRACTS = frozenset({"db", "live", "input", "formula", "reference", "launcher"})
@@ -53,7 +54,8 @@ class ServiceBinding:
                         or re.fullmatch(rf"com\.guiyi\.quant-{re.escape(self.service)}-candidate-[0-9a-f]{{32}}", self.launchd_label) is None))
                     or path != path.resolve(strict=not historical)
                     or (not historical and not path.is_dir())
-                    or re.fullmatch(r"v\d+\.\d+\.\d+", self.tag) is None
+                    or not valid_release_tag(self.tag)
+                    or (market_release_version(self.tag) is not None and self.service not in MARKET_SERVICES)
                     or re.fullmatch(r"[0-9a-f]{40}", self.commit) is None
                     or type(self.generation) is not int or self.generation < 1
                     or type(self.enabled) is not bool or self.contracts.keys() != CONTRACTS
@@ -276,7 +278,7 @@ def _git_uncached(root: Path, *arguments: str) -> str:
 
 def verify_release(root: Path, tag: str, commit: str) -> None:
     if (not root.is_absolute() or root != root.resolve(strict=True)
-            or re.fullmatch(r"v\d+\.\d+\.\d+", tag) is None
+            or not valid_release_tag(tag)
             or re.fullmatch(r"[0-9a-f]{40}", commit) is None
             or _git(root, "rev-parse", "--show-toplevel") != str(root)
             or _git(root, "rev-parse", "--abbrev-ref", "HEAD") != "HEAD"
@@ -285,6 +287,15 @@ def verify_release(root: Path, tag: str, commit: str) -> None:
             or _git(root, "rev-parse", f"refs/tags/{tag}^{{commit}}") != commit
             or _git(root, "status", "--porcelain=v1", "--untracked-files=all")):
         raise RuntimeBindingError("RELEASE_IDENTITY_INVALID")
+
+    if market_release_version(tag) is not None:
+        identity = _git(root, "show", "HEAD:services/quant-api/app/market_version.py")
+        version = tag.removeprefix(MARKET_TAG_PREFIX)
+        if identity.splitlines() != [
+            '"""Release version for the Market Foundation component."""', "",
+            f'MARKET_RELEASE_VERSION = "{version}"',
+        ]:
+            raise RuntimeBindingError("MARKET_RELEASE_VERSION_MISMATCH")
 
 
 # Conservative file classification is frozen in this version. Unknown changes affect all services.
@@ -305,6 +316,10 @@ OFFLINE_RESEARCH = frozenset({
 
 
 def _owners(path: str) -> frozenset[str]:
+    if path == MARKET_VERSION_PATH:
+        return frozenset()
+    if path in MARKET_PRIVATE_OWNERS:
+        return frozenset({MARKET_PRIVATE_OWNERS[path]})
     if path.startswith("apps/") or path == "services/quant-api/app/version.py":
         return frozenset({"api", "web"})
     if path.startswith(("packages/quant-core/", "services/quant-api/app/reference_trading/", "services/quant-api/app/strategies/")):
@@ -358,10 +373,37 @@ def bootstrap_registry(bindings: list[ServiceBinding]) -> BindingRegistry:
     return BindingRegistry(1, {binding.service: binding for binding in bindings})
 
 
+MARKET_VERSION_PATH = "services/quant-api/app/market_version.py"
+MARKET_IDENTITY_PATH = "services/quant-api/app/market_release_identity.py"
+# These files run behind the existing writer and published wire contracts.
+# Unknown runtime changes require a coordinated application release.
+MARKET_PRIVATE_OWNERS = {
+    "services/quant-api/app/market_data/feed_buffer.py": "market-feed",
+    "services/quant-api/app/market_data/tick_rqdata_client.py": "market-feed",
+    "services/quant-api/app/market_data/completed_worker_policy.py": "live",
+    "services/quant-api/app/market_data/archive_worker_policy.py": "after-market",
+    "services/quant-api/app/market_data/late_worker_policy.py": "late-provider-recovery",
+    "services/quant-api/app/market_data/weekly_worker_policy.py": "weekly-audit",
+}
+
+
+def _market_release_changes(name, old_files, new_files):
+    changed = {path for path in old_files.keys() | new_files.keys()
+               if old_files.get(path) != new_files.get(path)}
+    private = {path for path in changed if MARKET_PRIVATE_OWNERS.get(path) == name}
+    incompatible = sorted(path for path in changed if
+                          (path in MARKET_PRIVATE_OWNERS and path not in new_files)
+                          or (path not in MARKET_PRIVATE_OWNERS and path != MARKET_VERSION_PATH
+                               and _owners(path) & MARKET_SERVICES))
+    return private, incompatible
+
+
+
 def build_release_plan(registry: BindingRegistry, *, candidate_root: Path, tag: str,
                        commit: str, registry_sha256: str | None = None) -> dict[str, Any]:
     """Read-only plan. Equality of contract fingerprints is the only v1 compatibility proof."""
     verify_release(candidate_root, tag, commit)
+    market_version = market_release_version(tag)
     candidate_files = _tracked(candidate_root)
     candidate_contracts = contract_fingerprints(candidate_root)
     affected = set()
@@ -373,11 +415,29 @@ def build_release_plan(registry: BindingRegistry, *, candidate_root: Path, tag: 
         if old.contracts != contract_fingerprints(Path(old.root)):
             raise RuntimeBindingError("CONTRACT_IDENTITY_DRIFT")
         previous = _tracked(Path(old.root))
-        changed = {key for key in previous.keys() | candidate_files.keys() if previous.get(key) != candidate_files.get(key)}
-        if any(name in _owners(key) for key in changed):
+        old_market_version = market_release_version(old.tag)
+        if market_version is not None:
+            private, incompatible = _market_release_changes(name, previous, candidate_files)
+            if old.enabled and MARKET_IDENTITY_PATH not in previous:
+                reasons.append({"service": name, "code": "MARKET_RELEASE_BINDING_UPGRADE_REQUIRED"})
+            if old.enabled and incompatible:
+                reasons.append({"service": name, "code": "MARKET_RELEASE_SHARED_CHANGE", "paths": incompatible})
+            if name not in MARKET_SERVICES or not old.enabled or not private:
+                continue
+            if old_market_version is not None and market_version <= old_market_version:
+                reasons.append({"service": name, "code": "MARKET_RELEASE_FORWARD_VERSION_REQUIRED"})
             affected.add(name)
-        fingerprints[name] = {"previous": _digest({key: value for key, value in previous.items() if name in _owners(key)}),
-                              "candidate": _digest({key: value for key, value in candidate_files.items() if name in _owners(key)})}
+            owned = {path for path, service in MARKET_PRIVATE_OWNERS.items() if service == name}
+        else:
+            if old_market_version is not None:
+                continue
+            changed = {key for key in previous.keys() | candidate_files.keys()
+                       if previous.get(key) != candidate_files.get(key)}
+            if any(name in _owners(key) for key in changed):
+                affected.add(name)
+            owned = {path for path in previous.keys() | candidate_files.keys() if name in _owners(path)}
+        fingerprints[name] = {"previous": _digest({key: value for key, value in previous.items() if key in owned}),
+                              "candidate": _digest({key: value for key, value in candidate_files.items() if key in owned})}
         candidates[name] = asdict(ServiceBinding(name, str(candidate_root), tag, commit,
                                 old.generation + 1, old.enabled, candidate_contracts))
     if affected & {"api", "web"}:
@@ -393,6 +453,8 @@ def build_release_plan(registry: BindingRegistry, *, candidate_root: Path, tag: 
             incompatible = sorted(key for key in CONTRACTS if old.contracts[key] != candidate_contracts[key])
             if incompatible:
                 reasons.append({"service": name, "code": "MIXED_CONTRACT_INCOMPATIBLE", "contracts": incompatible})
+    if market_version is not None and not affected:
+        reasons.append({"code": "MARKET_RELEASE_NO_AFFECTED_SERVICE"})
     payload = {"schema_version": 1, "readonly": True, "registry_sha256": registry_sha256,
                "candidate": {"root": str(candidate_root), "tag": tag, "commit": commit},
                "previous_bindings": asdict(registry)["services"], "candidate_bindings": candidates,

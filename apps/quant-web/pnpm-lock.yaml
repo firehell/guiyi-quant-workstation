@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@guiyi/quant-chart':
+        specifier: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.6.tgz
+        version: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.6.tgz(lightweight-charts@5.2.0)
       axios:
         specifier: ^1.18.0
         version: 1.18.0
@@ -110,6 +113,12 @@ packages:
 
   '@emotion/hash@0.8.0':
     resolution: {integrity: sha512-kBJtf7PH6aWwZ6fka3zQ0p6SBYzx4fl1LoZXE2RrnYST9Xljm7WfKJrU4g/Xr3Beg72MLrp1AWNUmuYJTL7Cow==}
+
+  '@guiyi/quant-chart@file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.6.tgz':
+    resolution: {integrity: sha512-7r6J5ThRvE02N1yadZm3SLCokLrIbjeykVRN1bd/FIvqDx7xm6XjxGm7p84sm2FtyxVk5RxFYj4k/RgUDBkrAg==, tarball: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.6.tgz}
+    version: 0.1.6
+    peerDependencies:
+      lightweight-charts: 5.2.0
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -914,6 +923,10 @@ snapshots:
     optional: true
 
   '@emotion/hash@0.8.0': {}
+
+  '@guiyi/quant-chart@file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.6.tgz(lightweight-charts@5.2.0)':
+    dependencies:
+      lightweight-charts: 5.2.0
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

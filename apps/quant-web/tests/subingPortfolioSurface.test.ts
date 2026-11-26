@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { compileScript, parse } from '@vue/compiler-sfc'
 import ts from 'typescript'
-import { createRenderer, nextTick } from 'vue'
+import { createRenderer, defineComponent, h, nextTick, ref } from 'vue'
 
 const products = ['jm','lc','rb','sa','fg','ma','ec','v','pr','ta','ur','sh','sc','cj','oi','i']
 const moduleUrl = (source: string) => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`
@@ -156,3 +156,70 @@ function nodeOperations() {
     insertStaticContent: () => [element('#static'), element('#static')] as const,
   }
 }
+
+test('SuBing replay draws supplied OHLC or close-only history and releases its levels and chart series', async () => {
+  const chartModule = moduleUrl(`
+    export const paints = [], levels = new Set(), mounts = [], removed = []
+    export const CandlestickSeries = { type: 'Candlestick' }, LineSeries = { type: 'Line' }
+    export const ColorType = { Solid: 'solid' }, CrosshairMode = { Normal: 0 }, LineStyle = { Dashed: 2 }
+    export function createChart(_container, options) {
+      mounts.push(options)
+      return {
+        addSeries(definition, options) {
+          const record = { type: definition.type, color: options.color, data: [] }
+          paints.push(record)
+          return {
+            setData(data) { record.data = data },
+            createPriceLine(level) { levels.add(level); return level },
+            removePriceLine(level) { levels.delete(level) },
+          }
+        },
+        removeSeries(series) { removed.push(series) },
+        remove() { removed.push('chart') },
+        timeScale() { return { fitContent() {} } },
+      }
+    }
+  `)
+  const api = await import(chartModule)
+  const url = new URL('../src/components/subing/SubingReplayChart.vue', import.meta.url)
+  const { descriptor, errors } = parse(readFileSync(url, 'utf8'), { filename: url.pathname })
+  assert.deepEqual(errors, [])
+  const compiled = compileScript(descriptor, { id: 'subing-replay', inlineTemplate: true })
+  const imports: Record<string, string> = {
+    vue: import.meta.resolve('vue'),
+    '@guiyi/quant-chart': import.meta.resolve('@guiyi/quant-chart'),
+    'lightweight-charts': chartModule,
+    '@/utils/barTime': new URL('../src/utils/barTime.ts', import.meta.url).href,
+  }
+  const code = ts.transpileModule(compiled.content, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
+    .replace(/from ['"]([^'"]+)['"]/g, (_, name: string) => `from '${imports[name] ?? name}'`)
+  const Replay = (await import(moduleUrl(code))).default
+  const rows = ref<Array<{ at: string; open?: string; high?: string; low?: string; close: string; ema21?: string }>>([
+    { at: '2026-11-19T02:30:00Z', open: '100', high: '112', low: '97', close: '110', ema21: '104' },
+  ])
+  const target = ref<string | null>('120')
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({
+    setup: () => () => h(Replay, { rows: rows.value, stop: '96', target: target.value }),
+  }))
+  app.mount(root)
+  await flush()
+  assert.equal(api.mounts.length, 1)
+  assert.equal(api.mounts[0].height, 390)
+  assert.equal(api.paints.length, 5)
+  assert.deepEqual(api.paints[0].data.map(({ open, high, low, close }) => [open, high, low, close]), [[100, 112, 97, 110]])
+  assert.deepEqual(api.paints[4].data.map(({ value }) => value), [104])
+  assert.deepEqual([...api.levels].map(({ price }) => price), [96, 120])
+
+  rows.value = [{ at: '2026-11-19T03:00:00Z', close: '113' }]
+  target.value = null
+  await flush()
+  assert.equal(api.paints[0].data.length, 0)
+  assert.deepEqual(api.paints[1].data.map(({ value }) => value), [113])
+  assert.deepEqual([...api.levels].map(({ price }) => price), [96])
+  assert.match(textOf(root), /仅提供收盘线/)
+  app.unmount()
+  assert.equal(api.levels.size, 0)
+  assert.equal(api.removed.length, 6)
+  assert.equal(api.removed.at(-1), 'chart')
+})

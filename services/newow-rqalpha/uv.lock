@@ -113,6 +113,7 @@ name = "guiyi-newow-rqalpha-proof"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "guiyi-quant-core", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "rqalpha", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 
@@ -122,10 +123,31 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "rqalpha", specifier = "==6.3.0" }]
+requires-dist = [
+    { name = "guiyi-quant-core", editable = "../../packages/quant-core" },
+    { name = "rqalpha", specifier = "==6.3.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8,<10" }]
+
+[[package]]
+name = "guiyi-quant-core"
+version = "0.4.0"
+source = { editable = "../../packages/quant-core" }
+dependencies = [
+    { name = "numpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "ta-lib", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy", specifier = ">=2.4.4,<3" },
+    { name = "ta-lib", specifier = "==0.8.3.post1" },
+]
+
+[package.metadata.requires-dev]
+test = [{ name = "pytest", specifier = "==9.2.0" }]
 
 [[package]]
 name = "h5py"
@@ -485,6 +507,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/a8/1f/a3cbf6ed7cf6286af
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/60/a885751cd3aa796ef94b60f6d3de0c9ace4190feb3e55414ee728d2a0abc/statsmodels-0.15.0-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:0ffe08752f420f12a0b03e8f7d8f3a45417615309b1f37f10561f9a53f044737", size = 11556170, upload-time = "2026-08-27T10:36:29.848Z" },
     { url = "https://files.pythonhosted.org/packages/28/f5/386c6cfda27c47df81643dc9466b3e28dc2a82152e524131977275a88e0c/statsmodels-0.15.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl", hash = "sha256:ac9bce461d0c8f529f8ed331a469eaa5dd7c3213c06b62623a2e5438a6383093", size = 9809418, upload-time = "2026-08-27T10:36:50.646Z" },
+]
+
+[[package]]
+name = "ta-lib"
+version = "0.8.3.post1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ac/a1/73042ee092befb86de6bc20e135a1a7c6701abe296d76d2aeb9055fe307f/ta_lib-0.8.3.post1-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:a8c9d23c3bb798354737cd7752c75e20d7fc7ac5209d953b286268ee6c88fbab", size = 3992643, upload-time = "2026-11-21T18:32:36.512518Z" },
 ]
 
 [[package]]

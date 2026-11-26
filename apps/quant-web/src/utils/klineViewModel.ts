@@ -1,28 +1,26 @@
 import { formatDisplayNumber } from './marketDisplay.ts'
 import type { BarData, HoverKlineContext, KlineMarker, MainIndicatorId, MainIndicatorValue } from '../types/market.ts'
-import { calculateEMA, calculateHuoTianDaYou, calculateMACD } from './indicators.ts'
+import { calculateHuoTianDaYou } from './indicators.ts'
 import { MAIN_INDICATOR_DEFINITIONS } from './mainIndicators.ts'
+import { isEmaIndicator, type EmaIndicatorId, type MarketChartStudyPoint, type MarketChartStudyPoints } from './marketChartStudies.ts'
 import { calculateRangeDetectorLux, type RangeDetectorLuxResult, type RangeDetectorSnapshot } from './rangeDetectorLux.ts'
-
-type EmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
+import { calculateThsMacdDisplay } from './thsMacdDisplay.ts'
 
 export interface KlineValuePoint {
   time: string
-  value: number
+  value: number | null
 }
 
 export interface KlineDerivedData {
   ema: Partial<Record<EmaIndicatorId, KlineValuePoint[]>>
-  macd: {
-    dif: KlineValuePoint[]
-    dea: KlineValuePoint[]
-    histogram: KlineValuePoint[]
-  }
+  emaFacts: MarketChartStudyPoints
+  macd: ReturnType<typeof calculateThsMacdDisplay>
   htdy: HtdyDerivedData | null
   rangeDetector: RangeDetectorLuxResult | null
 }
 
 export interface KlineDerivedOptions {
+  emaPoints?: MarketChartStudyPoints
   rangeDetector?: {
     enabled: boolean
     sourceIdentity: string
@@ -43,15 +41,8 @@ export function formatKlineHoverValue(value: number | null | undefined): string 
   return formatDisplayNumber(value, true)
 }
 
-const EMA_PERIODS: Record<EmaIndicatorId, number> = {
-  ema_10: 10,
-  ema_21: 21,
-  ema_60: 60,
-}
-
 /**
- * 浏览器侧只负责将已有、已验证的观察镜像整理为图表数据。
- * 指标业务口径仍以 quant-core Indicator Kernel 为权威。
+ * 通用 EMA 只投影服务端事实。专属同花顺 MACD 与 HTDY 观察保持各自公式。
  */
 export function buildKlineDerivedData(
   bars: BarData[],
@@ -59,12 +50,13 @@ export function buildKlineDerivedData(
   options: KlineDerivedOptions = {},
 ): KlineDerivedData {
   const ema: KlineDerivedData['ema'] = {}
+  const emaFacts = options.emaPoints ?? {}
   for (const indicator of visibleMainIndicators) {
     if (!isEmaIndicator(indicator) || ema[indicator]) continue
-    ema[indicator] = calculateEMA(bars, EMA_PERIODS[indicator]).map(toKlineValuePoint)
+    const facts = emaFacts[indicator]
+    ema[indicator] = chartStudySeries(bars, facts, 'value')
   }
 
-  const macd = calculateMACD(bars)
   const anchoredBars = options.rangeDetector?.anchorTime
     ? bars.filter((bar) => Date.parse(bar.time) >= Date.parse(options.rangeDetector!.anchorTime!))
     : []
@@ -73,14 +65,21 @@ export function buildKlineDerivedData(
     : null
   return {
     ema,
-    macd: {
-      dif: macd.dif.map(toKlineValuePoint),
-      dea: macd.dea.map(toKlineValuePoint),
-      histogram: macd.histogram.map(toKlineValuePoint),
-    },
+    emaFacts,
+    macd: calculateThsMacdDisplay(bars),
     htdy: visibleMainIndicators.includes('htdy') ? buildHtdyDerivedData(bars) : null,
     rangeDetector,
   }
+}
+
+export function chartStudySeries(
+  bars: readonly BarData[], facts: Record<string, MarketChartStudyPoint> | undefined, output: string,
+): KlineValuePoint[] {
+  if (!facts) return []
+  return bars.flatMap(bar => {
+    const point = facts[bar.time]
+    return point && bar.confirmed !== false ? [{ time: bar.time, value: point.values?.[output] ?? null }] : []
+  })
 }
 
 /** Physical/quality ownership limits the kernel warm-up just like its input validity reset. */
@@ -163,8 +162,8 @@ export function resolveKlineHoverContext(
   return {
     time,
     bar,
-    mainIndicators: hoverEmaIndicators(visibleMainIndicators, derived).map((indicator) => (
-      toHoverIndicatorValue(indicator, pointValue(derived.ema[indicator], time))
+    mainIndicators: hoverEmaIndicators(visibleMainIndicators).map((indicator) => (
+      toHoverIndicatorValue(indicator, pointValue(derived.ema[indicator], time), derived.emaFacts[indicator]?.[time])
     )),
     macd: {
       dif: pointValue(derived.macd.dif, time),
@@ -227,7 +226,6 @@ function sameMarkerTime(left: string, right: string): boolean {
 
 function hoverEmaIndicators(
   visibleMainIndicators: MainIndicatorId[],
-  _derived: KlineDerivedData,
 ): EmaIndicatorId[] {
   const ids: EmaIndicatorId[] = []
   for (const indicator of visibleMainIndicators) {
@@ -237,26 +235,20 @@ function hoverEmaIndicators(
   return ids
 }
 
-function isEmaIndicator(indicator: MainIndicatorId): indicator is EmaIndicatorId {
-  return indicator in EMA_PERIODS
-}
-
-function toKlineValuePoint(point: { time: unknown; value: number }): KlineValuePoint {
-  return { time: String(point.time), value: point.value }
-}
-
 function pointValue(points: KlineValuePoint[] | undefined, time: string): number | null {
   return points?.find((point) => point.time === time)?.value ?? null
 }
 
-function toHoverIndicatorValue(indicator: EmaIndicatorId, value: number | null): MainIndicatorValue {
+function toHoverIndicatorValue(
+  indicator: EmaIndicatorId, value: number | null, point?: NonNullable<MarketChartStudyPoints[EmaIndicatorId]>[string],
+): MainIndicatorValue {
   const definition = MAIN_INDICATOR_DEFINITIONS.find((item) => item.id === indicator)
   return {
     id: indicator,
     displayName: definition?.displayName || indicator,
     value,
     ready: value !== null,
-    valid: true,
-    reason: value === null ? 'warming_up' : null,
+    valid: value !== null || point?.status === 'WARMING',
+    reason: value === null ? point?.diagnostic ?? 'missing_input' : null,
   }
 }

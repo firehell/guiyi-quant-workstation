@@ -10,7 +10,7 @@ import json
 import math
 import re
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.env import PROJECT_ROOT
@@ -153,6 +153,8 @@ def catalog_revision(
     products: tuple[str, ...],
     day: date,
     frequencies: tuple[str, ...],
+    *,
+    archive_scope: bool = False,
 ) -> str:
     """Hash exact Catalog inputs used by one post-maintenance consumer scope."""
     product_symbols = tuple(sorted(products))
@@ -164,30 +166,44 @@ def catalog_revision(
     exchanges = tuple(sorted(set(session.scalars(
         select(Instrument.exchange_code).where(Instrument.symbol.in_(product_symbols))
     ))))
+    contracts = select(Contract.__table__).where(Contract.instrument_symbol.in_(product_symbols))
+    sessions = select(TradingSession.__table__).where(TradingSession.instrument_symbol.in_(product_symbols))
+    ranks = select(MainContractMap.__table__).where(
+        MainContractMap.symbol.in_(product_symbols), MainContractMap.trade_date <= day,
+    )
+    datasets = select(MarketDataset.__table__).where(
+        MarketDataset.symbol.in_(product_symbols), MarketDataset.kind == "contract",
+        MarketDataset.frequency.in_(frequencies),
+    )
+    partitions = select(MarketPartition.__table__).join(
+        MarketDataset.__table__, MarketPartition.dataset_id == MarketDataset.id,
+    ).where(
+        MarketDataset.symbol.in_(product_symbols), MarketDataset.kind == "contract",
+        MarketDataset.frequency.in_(frequencies),
+    )
+    if archive_scope:
+        ranks = ranks.where(MainContractMap.rank == 1)
+        owner_codes = ranks.with_only_columns(MainContractMap.contract_code).distinct()
+        sessions = sessions.where(TradingSession.effective_from <= day)
+        contracts = contracts.where(Contract.contract_code.in_(owner_codes))
+        datasets = datasets.where(MarketDataset.series_or_contract.in_(owner_codes))
+        partitions = partitions.where(
+            MarketDataset.series_or_contract.in_(owner_codes),
+            or_(MarketPartition.year < day.year,
+                (MarketPartition.year == day.year) & (MarketPartition.month <= day.month)),
+        )
     tables = (
         ("instrument", select(Instrument.__table__).where(Instrument.symbol.in_(product_symbols))),
         ("exchange", select(Exchange.__table__).where(Exchange.code.in_(exchanges))),
-        ("contract", select(Contract.__table__).where(Contract.instrument_symbol.in_(product_symbols))),
+        ("contract", contracts),
         ("calendar", select(TradingCalendar.__table__).where(
             TradingCalendar.exchange_code.in_(exchanges),
             TradingCalendar.trade_date <= calendar_through,
         )),
-        ("session", select(TradingSession.__table__).where(
-            TradingSession.instrument_symbol.in_(product_symbols)
-        )),
-        ("rank1", select(MainContractMap.__table__).where(
-            MainContractMap.symbol.in_(product_symbols), MainContractMap.trade_date <= day,
-        )),
-        ("dataset", select(MarketDataset.__table__).where(
-            MarketDataset.symbol.in_(product_symbols), MarketDataset.kind == "contract",
-            MarketDataset.frequency.in_(frequencies),
-        )),
-        ("partition", select(MarketPartition.__table__).join(
-            MarketDataset.__table__, MarketPartition.dataset_id == MarketDataset.id,
-        ).where(
-            MarketDataset.symbol.in_(product_symbols), MarketDataset.kind == "contract",
-            MarketDataset.frequency.in_(frequencies),
-        )),
+        ("session", sessions),
+        ("rank1", ranks),
+        ("dataset", datasets),
+        ("partition", partitions),
     )
     digest = hashlib.sha256()
     for name, statement in tables:

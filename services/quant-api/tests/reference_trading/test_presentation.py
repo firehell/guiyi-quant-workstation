@@ -40,7 +40,17 @@ def test_presentation_has_byte_budget() -> None:
         envelope([{"value": "x" * MAX_PRESENTATION_BYTES}])
 
 
-def test_subing_materialization_matches_kernel_signals_and_warmup_indicators() -> None:
+def test_subing_materialization_matches_kernel_signals_and_warmup_indicators(monkeypatch) -> None:
+    from app.reference_trading import service
+
+    seed = service.seed_subing_replay_state
+    seeded_periods: list[str] = []
+
+    def record_seed(*, frequency: str):
+        seeded_periods.append(frequency)
+        return seed(frequency=frequency)
+
+    monkeypatch.setattr(service, "seed_subing_replay_state", record_seed)
     at = datetime(2026, 1, 1, 15, tzinfo=UTC)
     random = Random(0)
     prices = [100] * 50
@@ -70,6 +80,7 @@ def test_subing_materialization_matches_kernel_signals_and_warmup_indicators() -
     _next, sources, _transitions, _schema = _advance_batch(
         stream, checkpoint, inputs, points,
     )
+    assert seeded_periods == ["1d", "1d"]
     saved = require_envelope(envelope(points))
     legacy = project_reference(
         "rb", (segment,), since=segment.owner_since,

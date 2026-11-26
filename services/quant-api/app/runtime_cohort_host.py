@@ -775,7 +775,7 @@ class CohortHost(FaultRecoveryHost):
         sources.update(stable)
         for service, name in (
             ("weekly-audit", "weekly-audit-status.json"),
-            ("late-provider-recovery", "late-provider-recovery-status.json"),
+            ("after-market", "late-provider-recovery-status.json"),
         ):
             sources.add(Path(old.services[service].root) / ".run" / name)
         captured = {}
@@ -900,7 +900,7 @@ class CohortHost(FaultRecoveryHost):
         from app.market_data.late_provider_recovery import _read as read_late_state
 
         late_source = (
-            Path(old.services["late-provider-recovery"].root)
+            Path(old.services["after-market"].root)
             / ".run/late-provider-recovery-status.json"
         )
         late_target = target_root / ".run/late-provider-recovery-status.json"

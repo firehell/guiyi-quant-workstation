@@ -63,8 +63,8 @@ def test_bridge_bounds_signal_and_recovery_work_in_same_request(monkeypatch):
     class Market:
         started = s.activated_at
 
-        def __init__(self, chosen, *, record_closed_tails=False):
-            assert chosen == products and record_closed_tails
+        def __init__(self, chosen, *, record_closed_tails=False, require_completed_journal=False):
+            assert chosen == products and record_closed_tails and require_completed_journal
             self.closed_tails = {}
 
         def activate(self, now):

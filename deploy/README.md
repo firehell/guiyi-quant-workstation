@@ -344,6 +344,12 @@ Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 com
 ### 休市窗口整组发布
 
 当待发布共享合同改变、不能与旧消费者并行时，使用 `install-local-services.sh --plan-cohort --candidate-root <absolute-release-root> --tag <annotated-tag> --commit <peeled-commit>` 冻结整组计划，再用 `--apply-cohort-plan --plan <absolute-plan>` 单次执行。
+
+Market 跨 Redis 交接前，可在候选代码所在 macOS 宿主运行
+`install-local-services.sh --read-market-account-handover --trading-day YYYY-MM-DD --consumer tqkq`
+和 `--consumer subing`，分别核对正式 bar 源下的快期 H1 账本水位和苏冰 Paper 提交水位。
+该入口仅读取服务绑定、私有设置和账本，输出预检证据。正式跨 Redis apply 仍受独立接管与配置校验保护。
+
 仅支持现有十服务、六常驻全部启用的向前版本；数据库合同默认不变，仅已预装的0052→0053新增接收表可按
 `reference_inbox_preinstalled_additive_0053_v1`提供精确Git差异、单链head及新鲜只读schema/约束/触发器证明；
 另允许已预装的0053→0054不可变Inbox恢复结果表，按`reference_inbox_recovery_preinstalled_additive_0054_v1`核对原表、原guard不变以及新增表完整约束/触发器；
@@ -535,3 +541,24 @@ selective发布明确要求 `COHORT_REQUIRED`，避免候选Disabled/marker不�
 写入意图后结果未知保持停驻，先用同一脚本 `--phase readback --exact-root ... --exact-commit ... --inventory ... --plan ... --expected-plan-hash ...`
 在同一显式只读快照校验终态。独立读回不是再次apply，也不自动取消未知排空。成功写入后只允许有证据的向前修复，
 不能删除原件或回改历史交易；新流达到自然预热与产生参考交易须另看实际观察。
+
+## Market Foundation 独立发布
+
+组件版本由 `services/quant-api/app/market_version.py` 声明，使用
+`market-foundation/v0.1.0` 形式的 annotated tag。发布树目录使用
+`release-market-foundation-v0.1.0`，与应用版本目录并列。切换沿用
+`--plan-release` 和 `--apply-release-plan`，按实际变更选择服务。
+对精确 tag 的待用发布树运行 `bash scripts/ops/macos/build-market-foundation.sh --data-only`，
+同步锁定的 Python 依赖并校验 headless EventEngine。
+
+首次采用前，先按应用发布流程更新读取 registry 的服务和部署控制器，
+使它们识别 Market tag 并采用新的合同基线。独立计划比对各服务已安装提交，
+仅为已明确归属的 Feed、Live、盘后实现改动生成候选绑定。Catalog、Bar、Session、
+Redis/journal、归档凭证和其他共享运行代码变更需要协调发布。盘后定时任务交接前保留旧版清理证明
+及迟到重试状态，迟到任务按现役盘后绑定读回状态。
+兼容的应用独立发布保留已采用 Market tag 的服务绑定。
+
+Feed 独立切换使用权威 Session 静默窗口、旧 owner 心跳、source 尾部读回和现有 CAS。
+提交前失败按现有取消流程恢复原 owner，提交状态未知则先独立读回绑定和消费水位。
+首次组件发布沿用 [Market Foundation 证据清单](../openspec/changes/guiyi-v2-market-foundation/tasks.md)。
+M4、M6、M7 的自然证据和 M9 的正式 Tick 切换各自验收。

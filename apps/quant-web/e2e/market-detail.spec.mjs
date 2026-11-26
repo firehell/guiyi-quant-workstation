@@ -237,6 +237,21 @@ test('Free discloses insufficient same-segment history and revisable Range graph
   await expect(workspace).toHaveAttribute('data-range-detector-status', 'insufficient')
   await expect(workspace.locator('.free-workspace__hint')).toContainText('同合约／质量分段预热不足')
   await expect(workspace.locator('.free-workspace__hint')).toContainText('历史图形参考；加载更早数据可能修订箱体。')
+  const diagnostics = workspace.locator('.chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const range = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'range_detector · 预热中' })
+  await range.locator('summary').click()
+  await expect(range).toContainText('warming_up')
+  await expect(range).toContainText('range_detector_lux_v1')
+})
+
+test('Free selected Range reports missing input when no Bars are available', async ({ page }) => {
+  await mockMarketDetail(page, { barsPage: () => ({ bars: [] }) })
+  await page.goto(freeJm)
+  await enableRangeDetector(page)
+  const diagnostics = page.locator('[data-detail-workspace="free"] .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('range_detector · 缺少输入', { exact: true })).toHaveCount(1)
 })
 
 test('Free pagination keeps an away-from-latest viewport while prepending history', async ({ page }) => {
@@ -293,6 +308,50 @@ async function appVueModuleUrl(page) {
   return (await page.waitForFunction(() => performance.getEntriesByType('resource')
     .find(entry => new URL(entry.name).pathname === '/node_modules/.vite/deps/vue.js')?.name)).jsonValue()
 }
+
+test('shared K-line keeps its automatic target when earlier history arrives before frame stabilization', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+  const vueUrl = await appVueModuleUrl(page)
+  const nativeUrl = await (await page.waitForFunction(() => performance.getEntriesByType('resource')
+    .find(entry => new URL(entry.name).pathname.endsWith('/lightweight-charts.js'))?.name)).jsonValue()
+  const beforeFrame = await page.evaluate(async ({ vueUrl, nativeUrl }) => {
+    const [{ createApp, h, nextTick, ref }, { createChart }, { default: KlineChart }, { DETAIL_CHART_SESSION, createDetailChartSession }] = await Promise.all([
+      import(vueUrl), import(nativeUrl), import('/src/components/kline/KlineChart.vue'), import('/src/utils/detailChartSession.ts'),
+    ])
+    const root = document.createElement('div')
+    root.style.width = '1200px'
+    root.id = 'prepend-before-stable'
+    document.body.append(root)
+    let native
+    const session = createDetailChartSession({ createChart(...args) { native = createChart(...args); return native } })
+    const chart = ref(null)
+    const start = Date.parse('2026-09-03T01:00:00Z')
+    const bars = Array.from({ length: 30 }, (_, index) => ({
+      time: new Date(start + index * 900_000).toISOString(), trading_day: '2026-09-03', physicalContract: 'JM2601',
+      open: 100, high: 104, low: 99, close: 103, volume: 10, confirmed: true,
+    }))
+    const app = createApp({ render: () => h(KlineChart, { ref: chart, bars: bars.slice(10), seriesKind: 'actual_dominant' }) })
+    app.provide(DETAIL_CHART_SESSION, session)
+    app.mount(root)
+    await nextTick()
+    const readyBefore = root.querySelector('[data-chart-viewport-ready]').dataset.chartViewportReady
+    const countBefore = session.length()
+    chart.value.prependBars(bars.slice(0, 10))
+    window.__prependBeforeStable = {
+      read: () => native.timeScale().getVisibleLogicalRange(),
+      stop: () => { app.unmount(); session.dispose(); root.remove() },
+    }
+    return { readyBefore, countBefore, countAfter: session.length(), userRange: session.viewport() }
+  }, { vueUrl, nativeUrl })
+  try {
+    expect(beforeFrame).toEqual({ readyBefore: 'false', countBefore: 20, countAfter: 30, userRange: null })
+    await expect(page.locator('#prepend-before-stable [data-chart-viewport-ready]')).toHaveAttribute('data-chart-viewport-ready', 'true')
+    expect(await page.evaluate(() => window.__prependBeforeStable.read())).toEqual({ from: 9.5, to: 29.5 })
+  } finally {
+    await page.evaluate(() => window.__prependBeforeStable.stop())
+  }
+})
 
 test('shared K-line focus retries an unresolved target and clears it on identity replacement', async ({ page }) => {
   await mockMarketDetail(page)
@@ -431,15 +490,155 @@ test('Free migrates legacy continuous links and keeps 60-minute and daily naviga
   expect(requests.some(url => url.searchParams.get('series_kind') === 'continuous')).toBe(false)
 })
 
+function chartStudyWire(bars, requestedStudies, point = () => ({ status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' })) {
+  return {
+    schema_version: 'guiyi_market_chart_studies_v1', result_schema_version: 'guiyi_feature_result_v1',
+    symbol: 'jm', series_kind: 'actual_dominant', contract: null, frequency: '15m',
+    as_of: bars.at(-1).bar_end, source_revision: 'a'.repeat(64), unavailable_reason: null,
+    segments: [{
+      physical_contract: 'JM2601', segment_id: 'JM2601:2026-09-03',
+      bars: bars.map(bar => ({ bar_end: bar.bar_end, close: String(bar.close), source_bar_sha256: 'c'.repeat(64) })),
+      features: requestedStudies.split(',').map(study => ({
+        study, formula_version: `talib_${study}_v1`,
+        backend_version: 'ta-lib:fixture', parameters_hash: 'b'.repeat(16),
+        points: bars.map(point),
+      })),
+    }],
+  }
+}
+
 test('Free restores enabled EMA preferences after reload', async ({ page }) => {
   await mockMarketDetail(page)
+  const requests = []
+  const bars = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(Object.fromEntries(params))
+    return route.fulfill({ json: chartStudyWire(bars, params.get('studies')) })
+  })
   await page.goto(freeJm)
 
   const ema10 = page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })
+  await expect(ema10).toBeVisible()
+  expect(requests).toHaveLength(0)
   await ema10.click()
   await expect(ema10).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => requests.length).toBe(1)
+  expect(requests[0]).toEqual({
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m',
+    first: bars[0].bar_end, last: bars.at(-1).bar_end, count: '2', studies: 'ema10',
+  })
   await page.reload()
   await expect(page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => requests.length).toBe(2)
+  expect(requests[1]).toEqual(requests[0])
+})
+
+test('Free recovers the newest EMA selection when a superseded load still occupies the worker', async ({ page }) => {
+  await mockMarketDetail(page)
+  const requests = []
+  const bars = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  let releaseFirst
+  await page.route('**/api/v1/market/indicators/chart-window?**', async route => {
+    const studies = new URL(route.request().url()).searchParams.get('studies')
+    requests.push(studies)
+    if (studies === 'ema10') {
+      await new Promise(resolve => { releaseFirst = resolve })
+      await route.fulfill({ json: chartStudyWire(bars, studies) }).catch(() => {})
+      return
+    }
+    if (requests.length === 2) {
+      releaseFirst()
+      return route.fulfill({ status: 503, json: { detail: { code: 'MARKET_CHART_STUDY_BUSY' } } })
+    }
+    return route.fulfill({ json: chartStudyWire(bars, studies) })
+  })
+  await page.goto(freeJm)
+
+  const indicators = page.getByRole('group', { name: '主图指标' })
+  await indicators.getByRole('button', { name: /EMA10/ }).click()
+  await expect.poll(() => requests).toEqual(['ema10'])
+  const recovered = page.waitForResponse(response => response.url().includes('/market/indicators/chart-window')
+    && new URL(response.url()).searchParams.get('studies') === 'ema10,ema60' && response.ok())
+  await indicators.getByRole('button', { name: /EMA60/ }).click()
+  await recovered
+  expect(requests).toEqual(['ema10', 'ema10,ema60', 'ema10,ema60'])
+  await expect(page.getByText('当前行情窗口的所选指标暂不可用。')).toHaveCount(0)
+})
+
+test('Free BOLL restores on reload, requests only its bounded study and disposes when hidden', async ({ page }) => {
+  const bars = freeHistory(20)
+  await mockMarketDetail(page, { barsPage({ url }) {
+    return url.searchParams.get('frequency') === '15m' ? { bars } : undefined
+  } })
+  const requests = []
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(Object.fromEntries(params))
+    return route.fulfill({ json: chartStudyWire(bars, params.get('studies'), (_bar, index) => index < 19
+      ? { status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' }
+      : { status: 'READY', values: { upper: 125, middle: 110, lower: 95 }, diagnostic: null }) })
+  })
+  await page.goto(freeJm)
+
+  const boll = page.getByRole('button', { name: 'BOLL', exact: true })
+  const chart = page.getByTestId('kline-shell')
+  await expect(boll).toHaveAttribute('aria-pressed', 'false')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  expect(requests).toHaveLength(0)
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  expect(requests).toHaveLength(1)
+  expect(requests[0].studies).toBe('boll')
+  expect(requests[0].count).toBe('20')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await diagnostics.getByText('boll · 就绪', { exact: true }).click()
+  await expect(diagnostics).toContainText('talib_boll_v1')
+  await page.reload()
+  await expect(boll).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  expect(requests).toEqual([requests[0], requests[0]])
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  await page.reload()
+  await expect(boll).toHaveAttribute('aria-pressed', 'false')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  expect(requests).toHaveLength(2)
+})
+
+test('Free BOLL rejects an incompatible result schema and recovers on a fresh selection', async ({ page }) => {
+  const bars = freeHistory(20)
+  await mockMarketDetail(page, { barsPage({ url }) {
+    return url.searchParams.get('frequency') === '15m' ? { bars } : undefined
+  } })
+  let calls = 0
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const wire = chartStudyWire(bars, 'boll', (_bar, index) => index < 19
+      ? { status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' }
+      : { status: 'READY', values: { upper: 125, middle: 110, lower: 95 }, diagnostic: null })
+    if (++calls === 1) wire.result_schema_version = 'future-feature-result'
+    return route.fulfill({ json: wire })
+  })
+  await page.goto(freeJm)
+  const boll = page.getByRole('button', { name: 'BOLL', exact: true })
+  await boll.click()
+  await expect(page.getByText('当前行情窗口的所选指标暂不可用。')).toBeVisible()
+  const chart = page.getByTestId('kline-shell')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  await expect(chart.locator('canvas').first()).toBeVisible()
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await diagnostics.getByText('boll · 指标目录不匹配', { exact: true }).click()
+  await expect(diagnostics.getByText('MARKET_CHART_STUDY_SCHEMA_MISMATCH', { exact: true })).toBeVisible()
+  await boll.click()
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('boll · 指标目录不匹配', { exact: true })).toHaveCount(0)
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('boll · 就绪', { exact: true })).toBeVisible()
+  expect(calls).toBe(2)
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
@@ -493,8 +692,9 @@ test('invalid identity fails closed and only recovers after an explicit click', 
 })
 
 test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', { tag: '@contract-alignment' }, async ({ page }) => {
+  const stored = { ...subingEvent('jm'), formula_version: 'subing-diagnostic-fixture' }
   const requests = await mockDetailDailyQuote(page, {
-    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [stored] : [],
     alertRules: [subingRule()],
   })
   await page.goto(freeJm)
@@ -523,11 +723,52 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await subingAudit.locator('summary').click()
   await expect(subingAudit).toContainText('首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const source = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'alerts · 就绪' })
+  await source.locator('summary').click()
+  await expect(source).toContainText('alert-event:9')
+  await expect(source).toContainText('subing-diagnostic-fixture')
+  await expect(source).toContainText('2026-09-03T02:45:00.000Z')
   await expect(subingAudit.locator('tbody')).toContainText('2026-09-03 10:45')
   await expect(subingAudit.locator('tbody')).toContainText('买入观察')
   await expect(page.getByRole('button', { name: '参考记录', exact: true })).toHaveCount(0)
   expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
+})
+
+test('a deferred SuBing marker paint failure clears drawn provenance and keeps the stored event', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => {
+    const state = window.guiyiAlertPaintProbe = { failed: 0 }
+    const fillText = CanvasRenderingContext2D.prototype.fillText
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+      if (text === 'S↑') {
+        state.failed++
+        throw new Error('injected deferred native marker text')
+      }
+      return fillText.call(this, text, ...args)
+    }
+  })
+  await mockDetailDailyQuote(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const chart = page.getByTestId('kline-shell')
+  await expect.poll(() => page.evaluate(() => window.guiyiAlertPaintProbe.failed)).toBeGreaterThan(0)
+  await expect(chart).toHaveAttribute('data-rendered-marker-count', '0')
+  await expect(chart).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(chart.locator('canvas').first()).toBeVisible()
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('display_markers · 渲染错误', { exact: true })).toBeVisible()
+  const alerts = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'alerts · 渲染错误' })
+  await alerts.locator('summary').click()
+  await expect(alerts).toContainText('CHART_RENDERER_PAINT_FAILED')
+  await expect(alerts).not.toContainText('alert-event:9')
+  expect(errors).toEqual([])
 })
 
 test('SuBing omits removed disclosure cards and empty history for all runtime states', async ({ page }) => {

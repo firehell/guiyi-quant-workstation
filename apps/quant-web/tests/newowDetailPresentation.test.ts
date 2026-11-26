@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildNewowFixtureEnvelopeForTest } from '../e2e/newow-product.helpers.mjs'
+import { newowAuxiliaryDiagnostics } from '../src/components/market/detail/newow/newowAuxiliaryLayer.ts'
 import { projectNewowDetail, priceDirection, projectNewowAuxiliaryReadiness, newowQuoteFreshness } from '../src/utils/newowDetailPresentation.ts'
 const response = (section) => { const raw = buildNewowFixtureEnvelopeForTest(section); return { meta: raw.meta, section, ...raw[section] } }
 const chart = () => response('chart')
@@ -71,7 +72,12 @@ test('chart price remains visible when explanation is unopened and FLAT', () => 
     target: { raw: '110', display: '110.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
     absorb: { raw: '90', display: '90.00', status: { status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null } },
   }
-  assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, true).target?.display, '110.00')
+  const target = projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, true).target
+  assert.equal(target?.display, '110.00')
+  assert.deepEqual(target?.chartSource, {
+    frequency: '1d', sourceIdentity: c.value.price_reference.input_sha256,
+    formulaVersion: c.value.price_reference.formula_version, dataCutoff: latest.bar_end,
+  })
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, true).target?.display, '110.00')
   assert.equal(projectNewowDetail(c, 'ready', null, 'not_requested', false, null, 'not_requested', false, false, false).target, null)
   c.value.price_reference.anchor_bar_end = '2020-01-01T07:00:00Z'
@@ -85,7 +91,10 @@ test('proven target retains original price strings and source time, rejecting st
   const price = { raw_value: '0108.2500', display_value: '108.2500', branch: 'fixture', source_frequency: '1d', bar_end: latest.bar_end, physical_contract: latest.physical_contract, segment_id: latest.segment_id }
   e.value.target_absorb = { ...e.value.target_absorb, status: 'ready', evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: null, value: { target: price, absorb: { ...price, display_value: '98.5000' } } }
   assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.display_value, '108.2500')
-  assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.bar_end, latest.bar_end)
+  assert.deepEqual(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target.chartSource, {
+    frequency: '1d', sourceIdentity: e.meta.input_content_sha256,
+    formulaVersion: e.value.target_absorb.formula_versions.join(' / ') || null, dataCutoff: latest.bar_end,
+  })
   assert.equal(projectNewowDetail(c, 'ready', e, 'stale', true, null, 'not_requested', false, true).target, null)
   e.value.target_absorb.value.target = { ...price, physical_contract: 'OTHER' }
   assert.equal(projectNewowDetail(c, 'ready', e, 'ready', true, null, 'not_requested', false, true).target, null)
@@ -177,4 +186,37 @@ test('same-contract repeated prefix dates cannot supply another calculation segm
   assert.equal(projectNewowAuxiliaryReadiness(value, bar).currentStatus, 'warming')
   assert.match(projectNewowAuxiliaryReadiness(value, bar).message, /当前数据不足/)
   assert.equal(projectNewowAuxiliaryReadiness(value, { ...bar, calculation_segment_id: 'not-present' }), null)
+})
+
+test('MACD chart alignment reads the state of the exact Bar before a later ready suffix', () => {
+  const earlier = '2026-09-23T07:00:00Z', later = '2026-09-24T07:00:00Z'
+  const bar = { bar_end: earlier, physical_contract: 'JM2701', calculation_segment_id: 'owner' }
+  const value = { component: 'macd', segments: [{ segment_id: 'owner', physical_contract: 'JM2701',
+    bar_ends: [earlier, later], status: { status: 'ready', reason_code: null },
+    data: { dif: [{ ready: false, valid: true, reason: 'warming_up' }, { ready: true, valid: true, reason: null }] } }] }
+  assert.equal(projectNewowAuxiliaryReadiness(value, bar)?.currentStatus, 'warming')
+  assert.equal(projectNewowAuxiliaryReadiness(value, bar)?.reason, 'warming_up')
+  assert.equal(projectNewowAuxiliaryReadiness(value, { ...bar, bar_end: later })?.currentStatus, 'ready')
+})
+
+test('an earlier owner failure does not replace a ready current MACD diagnostic', () => {
+  const currentChart = chart()
+  const bar = currentChart.value.bars.at(-1)
+  const auxiliary = { meta: currentChart.meta, status: { status: 'unavailable', reason_code: 'NEWOW_MACD_UNAVAILABLE' },
+    value: { component: 'macd', formula_version: 'talib_macd_12_26_9_v1', segments: [{
+      physical_contract: bar.physical_contract, segment_id: bar.calculation_segment_id, bar_ends: [bar.bar_end],
+      status: { status: 'ready', reason_code: null }, data: { dif: [{ ready: true, valid: true, reason: null }] },
+    }] } }
+  const available = { chart: currentChart, response: auxiliary, aligned: true,
+    lifecycle: 'unavailable', error: null, dataCutoff: bar.bar_end }
+  const diagnostic = newowAuxiliaryDiagnostics(available)
+  assert.equal(diagnostic.status, 'ready')
+  assert.equal(diagnostic.lastError, null)
+  const failedRefresh = newowAuxiliaryDiagnostics({ ...available, lifecycle: 'stale', error: 'NEWOW_RESOURCE_BUSY' })
+  assert.equal(failedRefresh.status, 'compute_error')
+  assert.equal(failedRefresh.dataCutoff, bar.bar_end)
+  const rejected = newowAuxiliaryDiagnostics({ ...available, lifecycle: 'input_conflict', aligned: false })
+  assert.equal(rejected.lastError, 'CHART_AUXILIARY_SOURCE_INVALID')
+  assert.equal(rejected.sourceIdentity, null)
+  assert.equal(rejected.dataCutoff, null)
 })

@@ -1,18 +1,35 @@
 <script setup lang="ts">
 import {ref,watch,onMounted,nextTick,onBeforeUnmount} from 'vue'
 import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
-import {BREAKDOWN_FONT,layoutDisplayLabels,drawDisplayLabels,displayEventTitle,type DisplayPoint,type DisplayLabel,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
+import {BREAKDOWN_FONT,layoutDisplayLabels,drawDisplayLabels,displayEventTitle,displayLabelIntersectsViewport,type DisplayPoint,type DisplayLabel,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 const props=defineProps<{points:readonly DisplayPoint[];width:number;height:number}>()
-const emit=defineEmits<{'select-display':[event:NewowDisplayEvent]}>()
+const emit=defineEmits<{'select-display':[event:NewowDisplayEvent]; paint:[events: readonly NewowDisplayEvent[] | null]}>()
 const canvas=ref<HTMLCanvasElement|null>(null),labels=ref<DisplayLabel[]>([])
 let observer:MutationObserver|null=null
 function draw(){
  const el=canvas.value;if(!el)return
- const dpr=typeof window==='undefined'?1:window.devicePixelRatio||1;el.width=Math.round(props.width*dpr);el.height=Math.round(props.height*dpr)
- const ctx=el.getContext?.('2d');if(!ctx)return
- ctx.scale(dpr,dpr);ctx.font=BREAKDOWN_FONT
- labels.value=layoutDisplayLabels(props.points,text=>ctx.measureText(text).width)
- drawDisplayLabels(ctx,labels.value,readNewowChartDisplayTheme()==='dark')
+ const dpr=typeof window==='undefined'?1:window.devicePixelRatio||1
+ el.width=Math.round(props.width*dpr);el.height=Math.round(props.height*dpr)
+ if (!props.points.length || props.width <= 0 || props.height <= 0) {
+  labels.value = []
+  emit('paint', [])
+  return
+ }
+ try {
+  const ctx=el.getContext?.('2d')
+  if (!ctx) throw Error('CHART_RENDERER_PAINT_FAILED')
+  ctx.scale(dpr,dpr);ctx.font=BREAKDOWN_FONT
+  const visible = layoutDisplayLabels(props.points,text=>ctx.measureText(text).width)
+   .filter(label => displayLabelIntersectsViewport(label, props.width, props.height))
+  drawDisplayLabels(ctx,visible,readNewowChartDisplayTheme()==='dark')
+  labels.value = visible
+ } catch {
+  el.width = Math.round(props.width * dpr)
+  labels.value = []
+  emit('paint', null)
+  return
+ }
+ emit('paint', labels.value.map(label => label.event))
 }
 watch(()=>[props.points,props.width,props.height],()=>void nextTick(draw),{deep:true})
 onMounted(()=>{draw();if(typeof MutationObserver!=='undefined'){observer=new MutationObserver(draw);observer.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','class']});observer.observe(document.body,{attributes:true,attributeFilter:['data-theme','class']})}if(typeof window!=='undefined')window.addEventListener('resize',draw)})

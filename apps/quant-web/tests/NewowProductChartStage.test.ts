@@ -412,7 +412,7 @@ test('same product and frequency strategy switches keep viewport while replacing
     assert.deepEqual(bandCalls.at(-1), [])
     assert.equal(channelCalls.at(-1)?.length, 1)
 
-    response.value = strategyResponse('main_rise'); await nextTick()
+    strategy.value = 'main_rise'; response.value = strategyResponse('main_rise'); await nextTick()
     assert.deepEqual(range, { from: 12, to: 42 })
     assert.equal(bandCalls.at(-1)?.length, 1)
     assert.deepEqual(channelCalls.at(-1), [])
@@ -425,7 +425,7 @@ test('same product and frequency strategy switches keep viewport while replacing
     const incompatible = strategyResponse('trend')
     incompatible.value!.bars[0]!.bar_end = '2026-08-15T06:00:00Z'
     incompatible.value!.frames[0]!.bar_end = '2026-08-15T06:00:00Z'
-    response.value = incompatible; await nextTick()
+    strategy.value = 'trend'; response.value = incompatible; await nextTick()
     assert.notDeepEqual(range, { from: 12, to: 42 })
     assert.equal(ranges.length >= 4, true)
     app.unmount()
@@ -536,13 +536,16 @@ test('channel primitive replaces strategy-owned data on snapshot pagination and 
   }
 })
 
-test('signed MACD bars share pane 2 and switch/invalidated snapshots remove every old series', async () => {
+test('signed MACD bars share the selected auxiliary pane and switch/invalidated snapshots remove every old series', async () => {
   const Stage = await loadComponent()
   const records: Array<{ definition: { type: string }; pane: number; data: Array<{ value?: number; color?: string; time: unknown }>; removed: boolean }> = []
   const chart = ref<NewowProductSectionResponse<'chart'> | null>(prependBar(chartResponse()))
   const times = chart.value!.value!.bars.map(bar => bar.bar_end)
   const points = times.map((bar_end, index) => ({ bar_end, value: index === 0 ? -2 : 3, ready: true, valid: true, reason: null }))
-  const auxiliary = ref({ section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: { dif: points, dea: points, histogram: points } }] } })
+  const valid = { section: 'auxiliary', meta: chart.value!.meta, status: ready(), value: { component: 'macd', segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: { dif: points, dea: points, histogram: points } }] } }
+  const auxiliary = ref<typeof valid | null>(valid)
+  const lifecycle = ref<'ready' | 'loading' | 'input_conflict'>('ready')
+  const switching = ref(false)
   const fakeChart = {
     addSeries(definition: { type: string }, _options: unknown, pane = 0) {
       const record = { definition, pane, data: [] as Array<{ value?: number; color?: string; time: unknown }>, removed: false }; records.push(record)
@@ -554,14 +557,15 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
     response: chart.value,
     strategy: chart.value?.meta.identity.strategy ?? 'oscillation',
+    strategySwitching: switching.value,
     auxiliaryResponse: auxiliary.value,
-    auxiliaryLifecycle: 'ready',
+    auxiliaryLifecycle: lifecycle.value,
     selectedSignalId: null,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   const root = element('root')
   app.mount(root); await nextTick()
-  const histogram = records.find(record => record.pane === 2 && record.definition.type === 'Histogram')!
+  const histogram = records.find(record => record.pane === 1 && record.definition.type === 'Histogram')!
   assert.deepEqual(histogram.data.map(point => [point.value, point.color]), [[-2, '#80DCA1'], [3, '#FF8383']])
   const candleTimes = records.find(record => record.definition.type === 'Candlestick')!.data.map(point => point.time)
   assert.deepEqual(histogram.data.map(point => point.time), candleTimes)
@@ -571,48 +575,83 @@ test('signed MACD bars share pane 2 and switch/invalidated snapshots remove ever
   setPure(); await nextTick()
   assert.deepEqual(activeAuxiliary(), [])
   ;(findCheckbox(root, '纯净模式')!.props.onChange as () => void)(); await nextTick()
-  assert.equal(activeAuxiliary().filter(record => record.pane === 2).length, 3)
-  assert.equal(activeAuxiliary().filter(record => record.pane === 1).length, 1)
-  auxiliary.value = { ...auxiliary.value, meta: { ...auxiliary.value.meta, snapshot_token: 'invalidated' } }
+  assert.equal(activeAuxiliary().filter(record => record.pane === 1).length, 4)
+  assert.equal(activeAuxiliary().filter(record => record.pane > 1).length, 0)
+  const wrongOwner = { ...valid.value.segments[0]!, segment_id: 'different-calculation-segment' }
+  auxiliary.value = { ...valid, value: { ...valid.value, segments: [wrongOwner] } }
   await nextTick()
-  assert.equal(records.filter(record => record.pane === 2 && record.data.some(point => point.value !== undefined) && !record.removed).length, 0)
+  const stage = findNode(root, node => node.props['data-testid'] === 'newow-product-chart-stage')!
+  assert.equal(stage.props['data-auxiliary-state'], 'error')
+  assert.equal(stage.props['data-auxiliary-component'], '')
+  assert.equal(activeAuxiliary().length, 1, 'only the auxiliary anchor remains')
+
+  auxiliary.value = valid; await nextTick()
+  assert.equal(activeAuxiliary().length, 4)
+  switching.value = true; lifecycle.value = 'loading'; auxiliary.value = null; await nextTick()
+  assert.equal(activeAuxiliary().length, 4, 'loading retains the last accepted value')
+  lifecycle.value = 'input_conflict'; await nextTick()
+  assert.equal(activeAuxiliary().length, 1, 'confirmed conflict clears the previously accepted value')
+  switching.value = false; lifecycle.value = 'ready'; auxiliary.value = valid; await nextTick()
+  assert.equal(activeAuxiliary().length, 4)
+
+  auxiliary.value = { ...valid, meta: { ...valid.meta, snapshot_token: 'invalidated' } }
+  await nextTick()
+  assert.equal(records.filter(record => record.pane === 1 && record.data.some(point => point.value !== undefined) && !record.removed).length, 0)
   chart.value = null; await nextTick()
   assert.equal(records.filter(record => !record.removed && record.data.length > 0).length, 0, 'price, volume and auxiliary clear together')
   app.unmount()
 })
 
-test('zhaoyao mirror uses one dedicated primitive and no generic value series', async () => {
+test('zhaoyao mirror uses one dedicated primitive and retries paint on a new equal response', async (t) => {
   const Stage = await loadComponent()
   const attached: object[] = []
   const records: Array<{ pane: number; data: Array<{ value?: number }> }> = []
   const chart = prependBar(chartResponse())
   const times = chart.value!.bars.map(item => item.bar_end)
-  const auxiliary = { section: 'auxiliary', meta: chart.meta, status: ready(), value: {
+  const auxiliary = ref({ section: 'auxiliary', meta: chart.meta, status: ready(), value: {
     component: 'zhaoyao_mirror', formula_version: 'newow_zhaoyao_mirror_repainting_page_v1',
     segments: [{ segment_id: 'segment-1', physical_contract: 'JM2601', bar_ends: times, status: ready(), data: {
       entry: [1, 2], wash: [2, 1], distribution: [3, 1], markup: [4, 2], exit: [5, 0], inducement: [6, 1], peaks: [9, 9], caution: [0, 50],
       repainting: true, formal_signal_eligible: false, formula_version: 'newow_zhaoyao_mirror_repainting_page_v1',
     } }],
-  } } as NewowProductSectionResponse<'auxiliary'>
+  } } as NewowProductSectionResponse<'auxiliary'>)
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; status: string }> } | null>(null)
   const fakeChart = {
     addSeries(_definition: unknown, _options: unknown, pane = 0) {
       const record = { pane, data: [] as Array<{ value?: number }> }; records.push(record)
-      return { setData(data: typeof record.data) { record.data = data }, attachPrimitive(value: object) { attached.push(value) }, detachPrimitive() {}, createPriceLine() {} }
+      return {
+        setData(data: typeof record.data) { record.data = data },
+        attachPrimitive(value: object) { attached.push(value) },
+        detachPrimitive(value: object) { attached.splice(attached.indexOf(value), 1) },
+        createPriceLine() {},
+      }
     }, removeSeries() {},
     timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null, scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
-    response: chart,
+    ref: stage, response: chart,
     strategy: chart.meta.identity.strategy,
-    auxiliaryResponse: auxiliary,
+    auxiliaryResponse: auxiliary.value,
     auxiliaryLifecycle: 'ready',
     selectedSignalId: null,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(element('root')); await nextTick()
-  assert.equal(attached.some(value => value.constructor.name === 'NewowZhaoyaoMirrorPrimitive'), true)
-  assert.equal(records.filter(record => record.pane === 2 && record.data.some(point => point.value !== undefined)).length, 0)
+  const mirror = attached.find(value => value.constructor.name === 'NewowZhaoyaoMirrorPrimitive') as { paneViews(): unknown[] }
+  assert.ok(mirror)
+  assert.equal(records.filter(record => record.pane === 1 && record.data.some(point => point.value !== undefined)).length, 0)
+  const { NewowZhaoyaoMirrorPrimitive } = await import('../src/components/market/detail/newow/newowZhaoyaoMirrorPrimitive.ts')
+  const failure = t.mock.method(NewowZhaoyaoMirrorPrimitive.prototype, 'paneViews', () => { throw new Error('fixture later view error') })
+  assert.deepEqual(mirror.paneViews(), [])
+  await Promise.resolve()
+  assert.equal(attached.includes(mirror), false)
+  const diagnostic = () => stage.value!.inspectLayers().find(layer => layer.indicatorId === 'newow.zhaoyao_mirror')
+  assert.equal(diagnostic()?.status, 'renderer_failure')
+  failure.mock.restore()
+  auxiliary.value = { ...auxiliary.value }; await nextTick(); await nextTick()
+  assert.equal(diagnostic()?.status, 'ready')
+  assert.equal(attached.some(value => value.constructor.name === 'NewowZhaoyaoMirrorPrimitive' && value !== mirror), true)
   app.unmount()
 })
 
@@ -646,13 +685,288 @@ test('same chart instance restores identity-specific layers and viewport across 
   app.unmount()
 })
 
+test('action diagnostics follow the rendered strategy and clear old provenance during a switch', async () => {
+  const Stage = await loadComponent()
+  const response = ref<MutableChartResponse | null>(chartResponse())
+  const switching = ref(false)
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{
+    indicatorId: string; status: string; sourceIdentity: string | null; dataCutoff: string | null; formulaVersion: string | null
+  }> } | null>(null)
+  let failMarkers = false
+  let detached = 0
+  const fakeChart = {
+    addSeries: () => ({ setData() {} }), removeSeries() {}, resize() {}, remove() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: 'oscillation', loading: response.value === null,
+    strategySwitching: switching.value,
+    selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
+    ...adapter(fakeChart),
+    createSeriesMarkers: () => ({
+      setMarkers() { if (failMarkers) throw new Error('native marker rejected') },
+      detach() { detached++ },
+    }) as never,
+  })
+  const root = element('root')
+  app.mount(root); await nextTick()
+
+  const actions = () => stage.value!.inspectLayers().find(layer => layer.indicatorId === 'newow_actions')!
+  assert.equal(actions().status, 'ready')
+  assert.equal(actions().sourceIdentity, response.value!.meta.input_content_sha256)
+  assert.equal(actions().dataCutoff, response.value!.value!.bars[0]!.bar_end)
+  assert.equal(actions().formulaVersion, response.value!.meta.identity.formula_versions.join(' / '))
+  failMarkers = true
+  response.value = { ...response.value! }; await nextTick()
+  assert.equal(actions().status, 'renderer_failure')
+  assert.equal(actions().sourceIdentity, null)
+  assert.equal(detached, 1)
+  failMarkers = false
+  response.value = { ...response.value! }; await nextTick()
+  assert.equal(actions().status, 'ready')
+
+  const toggle = findCheckbox(root, '建仓 / 清仓')!
+  ;(toggle.props.onChange as () => void)(); await nextTick()
+  assert.equal(actions().status, 'hidden')
+  ;(toggle.props.onChange as () => void)(); await nextTick()
+  switching.value = true; await nextTick()
+  assert.equal(actions().status, 'loading')
+  assert.equal(actions().sourceIdentity, null)
+  assert.equal(actions().formulaVersion, null)
+  assert.equal(actions().dataCutoff, null)
+  response.value = null; switching.value = false; await nextTick()
+  assert.equal(actions().status, 'loading')
+  app.unmount()
+})
+
+test('main layers report actual cutoffs and revoke stale pattern, prices and strategy identities', async () => {
+  const Stage = await loadComponent()
+  const { buildNewowProductChartModel } = await import('../src/components/market/detail/newow/newowProductChartPrimitives.ts')
+  const response = ref(strategyResponse('trend'))
+  response.value.meta.identity.frequency = '1d'
+  response.value.meta.data_revision_identity = 'revision-trend'
+  response.value.value!.trend_channel = channelFor(response.value.value!.bars, 110, 90)
+  const strategy = ref<'trend' | 'main_rise'>('trend')
+  const switching = ref(false)
+  const bars = buildNewowProductChartModel(response.value).bars
+  const selection = ref({
+    key: 'fixture-pattern', windowKey: 'fixture-window', ownerKey: 'fixture-owner', bars,
+    pattern: { type: 'flat-base', score: 80, params: { startIdx: 0, endIdx: 0, upperPrice: 110, lowerPrice: 90 } },
+  })
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{
+    indicatorId: string; renderer: string; status: string; sourceIdentity: string | null
+    dataCutoff: string | null; formulaVersion: string | null; lastError: string | null
+  }> } | null>(null)
+  const prices = new Set<unknown>()
+  const fakeChart = {
+    addSeries: () => ({
+      setData() {},
+      createPriceLine(input: { title: string }) {
+        const line = { ...input, applyOptions() {} }
+        prices.add(line)
+        return line
+      },
+      removePriceLine(input: unknown) { prices.delete(input) },
+    }),
+    removeSeries() {}, resize() {}, remove() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const targetSource = {
+    sourceIdentity: 'target-input', formulaVersion: 'target-formula', frequency: '1d', dataCutoff: bars[0]!.barEnd,
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: strategy.value, strategySwitching: switching.value,
+    patternSelection: selection.value, patternWindowKey: 'fixture-window',
+    targetPrice: strategy.value === 'trend' ? '120' : null, targetPriceSource: targetSource, selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  app.mount(element('root')); await nextTick()
+  const layers = (indicator: string) => stage.value!.inspectLayers().filter(layer => layer.indicatorId === indicator)
+  const band = () => layers('newow_trend').find(layer => layer.renderer === 'primitive' && layer.status === 'ready')
+  assert.equal(band()?.dataCutoff, bars[0]!.barEnd)
+  assert.equal(band()?.sourceIdentity, 'revision-trend')
+  assert.deepEqual(layers('newow_trend').filter(layer => layer.renderer === 'line').map(layer => layer.status), ['ready', 'ready'])
+  assert.equal(layers('newow_pattern')[0]!.status, 'ready')
+  assert.equal(layers('newow_pattern')[0]!.formulaVersion, 'newow_public_patterns_v3379_v1')
+  const target = layers('newow_price_reference').find(layer => layer.status === 'ready')
+  assert.equal(target?.sourceIdentity, 'target-input')
+  assert.equal(target?.formulaVersion, 'target-formula')
+  assert.equal(target?.dataCutoff, bars[0]!.barEnd)
+
+  const channel = response.value.value!.trend_channel!.points[0]!
+  channel.status = { ...ready(), status: 'unavailable', reason_code: 'NEWOW_TREND_CHANNEL_OWNER_CONFLICT' }
+  await nextTick()
+  const invalidChannel = layers('newow_trend').find(layer => layer.formulaVersion === 'newow_hhv_llv_channel_page_v1')
+  assert.equal(invalidChannel?.status, 'invalid_source')
+  assert.equal(invalidChannel?.lastError, 'NEWOW_TREND_CHANNEL_OWNER_CONFLICT')
+  channel.status.reason_code = 'NEWOW_TREND_CHANNEL_WARMUP_INSUFFICIENT'
+  await nextTick()
+  assert.equal(layers('newow_trend').find(layer => layer.formulaVersion === 'newow_hhv_llv_channel_page_v1')?.status, 'warming')
+
+  selection.value = { ...selection.value, bars: bars.map(bar => ({ ...bar, volume: bar.volume + 1 })) }
+  await nextTick()
+  const rejected = layers('newow_pattern')[0]!
+  assert.equal(rejected.status, 'invalid_source')
+  assert.equal(rejected.sourceIdentity, null)
+  assert.equal(rejected.lastError, 'NEWOW_PATTERN_WINDOW_MISMATCH')
+
+  switching.value = true; await nextTick()
+  assert.ok(layers('newow_trend').every(layer => layer.status === 'loading' && layer.sourceIdentity === null))
+  assert.equal(layers('newow_trend').filter(layer => layer.renderer === 'line').length, 0)
+  assert.equal(layers('newow_price_reference').some(layer => layer.sourceIdentity !== null), false)
+  assert.ok([...prices].every(line => (line as { title: string }).title !== '目标价'))
+
+  strategy.value = 'main_rise'
+  response.value = strategyResponse('main_rise')
+  response.value.meta.data_revision_identity = 'revision-main-rise'
+  selection.value = { ...selection.value, windowKey: 'old-window' }
+  switching.value = false; await nextTick()
+  assert.equal(layers('newow_trend').length, 0)
+  const mainRise = layers('newow_main_rise').find(layer => layer.renderer === 'primitive')
+  assert.equal(mainRise?.status, 'ready')
+  assert.equal(mainRise?.sourceIdentity, 'revision-main-rise')
+  assert.equal(layers('newow_process')[0]!.status, 'ready')
+  app.unmount()
+  assert.equal(prices.size, 0)
+})
+
+test('a failing Newow main line removes its old native series and recovers without losing candles', async () => {
+  const Stage = await loadComponent()
+  const response = ref(strategyResponse('trend'))
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; renderer: string; status: string; lastError: string | null }> } | null>(null)
+  const liveSeries = new Set<{ type: string; color?: string }>()
+  let fail = false
+  const chart = {
+    addSeries(definition: { type: string }, options: { color?: string }) {
+      const series = {
+        type: definition.type, color: options.color,
+        setData() {
+          if (fail && options.color === '#2563EB') throw new Error('native line paint error')
+        },
+      }
+      liveSeries.add(series)
+      return series
+    },
+    removeSeries(item: { type: string; color?: string }) { liveSeries.delete(item) },
+    resize() {}, remove() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: 'trend', selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
+    ...adapter(chart),
+    // Keep chartAdapter identity intact when checking that the original native series is removed.
+    createChart: () => {
+      const add = chart.addSeries.bind(chart)
+      return {
+        ...chart, panes: () => [pane(), pane(), pane()], addPane: () => pane(),
+        addSeries(definition: { type: string }, options: { color?: string }) {
+          return Object.assign(add(definition, options), {
+            attachPrimitive() {}, detachPrimitive() {}, createPriceLine() {}, priceScale: () => ({ applyOptions() {} }),
+          })
+        },
+      } as never
+    },
+  })
+  app.mount(element('root')); await nextTick()
+  const lineDiagnostics = () => stage.value!.inspectLayers().filter(layer => layer.indicatorId === 'newow_trend' && layer.renderer === 'line')
+  assert.deepEqual(lineDiagnostics().map(layer => layer.status), ['ready', 'ready'])
+  const candles = [...liveSeries].find(series => series.type === 'Candlestick')
+  assert.ok(candles)
+
+  fail = true
+  response.value = { ...response.value }; await nextTick()
+  assert.equal(lineDiagnostics().find(layer => layer.status === 'renderer_failure')?.lastError, 'CHART_RENDERER_UPDATE_FAILED')
+  assert.equal(lineDiagnostics().filter(layer => layer.status === 'ready').length, 1)
+  assert.ok(liveSeries.has(candles))
+  assert.equal([...liveSeries].some(series => series.color === '#2563EB'), false)
+
+  fail = false
+  response.value = { ...response.value }; await nextTick()
+  assert.deepEqual(lineDiagnostics().map(layer => layer.status), ['ready', 'ready'])
+  assert.equal([...liveSeries].filter(series => series.color === '#2563EB').length, 1)
+  app.unmount()
+  assert.equal(liveSeries.size, 0)
+})
+
+for (const failedPane of ['primary', 'primary write', 'extra MACD', 'extra MACD write'] as const) test(`a failed ${failedPane} axis releases its pane slot and a sibling still renders`, async () => {
+  const Stage = await loadComponent()
+  const response = ref(strategyResponse('trend'))
+  const extra = failedPane.startsWith('extra')
+  const failIndex = extra ? 2 : 1
+  const failWrite = failedPane.endsWith('write')
+  const activePanes = ref([
+    ...(extra ? [{ component: 'macd', lifecycle: 'loading', response: null, error: null }] : []),
+    { component: 'main_force_control', lifecycle: 'loading', response: null, error: null },
+  ])
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; pane: unknown; status: string; dataCutoff: string | null }> } | null>(null)
+  const swaps: Array<[number, number]> = []
+  const live = new Set<object>()
+  let fail = true
+  const chart = {
+    addSeries(_definition: unknown, _options: unknown, index = 0) {
+      let hasZeroLine = false
+      const item = {
+        setData() {
+          if (fail && failWrite && index === failIndex && hasZeroLine) throw new Error('could not write the axis')
+        },
+        attachPrimitive() {}, detachPrimitive() {},
+        priceScale: () => ({ applyOptions() {} }),
+        createPriceLine(options: { price: number }) {
+          if (index === failIndex && fail && !failWrite) throw new Error('could not allocate the zero line')
+          if (options.price === 0) hasZeroLine = true
+          return { applyOptions() {} }
+        },
+        removePriceLine() {},
+      }
+      live.add(item)
+      return item
+    },
+    removeSeries(item: object) { assert.ok(live.delete(item)) },
+    resize() {}, remove() {},
+    panes: () => [pane(), pane(), pane(), pane()], addPane: () => pane(),
+    swapPanes(left: number, right: number) { swaps.push([left, right]) },
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: 'trend', selectedSignalId: null, extraAuxiliaryPanes: activePanes.value,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, { ...adapter(chart), createChart: () => chart as never })
+  app.mount(element('root')); await nextTick()
+  const diagnostics = () => stage.value!.inspectLayers()
+  assert.ok(diagnostics().some(item => item.indicatorId === 'auxiliary_axis' && item.status === 'renderer_failure'))
+  assert.ok(diagnostics().some(item => item.indicatorId === 'newow.main_force_control' && item.status === 'loading'))
+  const afterFailure = live.size
+  fail = false
+  response.value = { ...response.value }
+  activePanes.value = [...activePanes.value]; await nextTick(); await nextTick()
+  if (extra) assert.ok(diagnostics().some(item => item.indicatorId === 'macd' && item.status === 'loading'))
+  assert.ok(diagnostics().every(item => item.status !== 'renderer_failure'))
+  const axes = diagnostics().filter(item => item.indicatorId === 'auxiliary_axis')
+  assert.equal(axes.length, extra ? 3 : 2)
+  assert.ok(axes.every(axis => axis.status === 'ready' && axis.dataCutoff === response.value.value?.bars.at(-1)?.bar_end))
+  assert.equal(live.size, afterFailure + 1)
+  assert.deepEqual(swaps, [extra ? [2, 3] : [1, 2]])
+  app.unmount()
+  assert.equal(live.size, 0)
+})
+
 test('dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit', async () => {
   const Stage = await loadComponent()
-  const response = strategyResponse('trend')
-  const partner = ref<MutableChartResponse | null>(strategyResponse('oscillation'))
+  const response = prependBar(strategyResponse('trend'))
+  response.value!.frames[0]!.main_values = { a: '99', b: '101' }
+  const partner = ref<MutableChartResponse | null>(prependBar(strategyResponse('oscillation')))
+  const detached: string[] = []
   const attached: Array<{ setData(data: unknown[]): void; constructor: { name: string } }> = []
   const fakeChart = { addSeries: () => ({ setData() {}, createPriceLine() {},
-    attachPrimitive(value: typeof attached[number]) { attached.push(value) }, detachPrimitive() {}, priceToCoordinate: (price: number) => price * 2 }),
+    attachPrimitive(value: typeof attached[number]) { attached.push(value) }, detachPrimitive(value: typeof attached[number]) { detached.push(value.constructor.name) }, priceToCoordinate: (price: number) => price * 2 }),
     removeSeries() {}, panes: () => [{ getHeight: () => 400, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }, { getHeight: () => 100, setStretchFactor() {} }],
     timeScale: () => ({ width: () => 600, timeToCoordinate: () => 210, fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
       scrollToRealTime() {}, subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
@@ -689,6 +1003,7 @@ test('dual overlay projects both strategies at prices, exposes blue/orange label
   partner.value = null; await nextTick(); await nextTick()
   assert.equal(findNode(root, n => n.props['aria-label'] === '双策略本视图摘要'), undefined)
   assert.equal(findNode(root, n => n.props['data-origin-strategy'] === 'oscillation'), undefined)
+  assert.ok(detached.includes('NewowDualBackgroundPrimitive'))
   app.unmount()
 })
 
@@ -736,6 +1051,7 @@ test('oscillation breakout is an orange native price line and is revoked on stra
   const response = ref<MutableChartResponse | null>(payload)
   const loading = ref(false)
   const selectedStrategy = ref('oscillation')
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{ indicatorId: string; formulaVersion: string | null; dataCutoff: string | null }> } | null>(null)
   const active = new Set<Record<string, unknown>>()
   const fakeChart = { addSeries: () => ({ setData() {},
     createPriceLine(options: Record<string, unknown>) { const line = { ...options, applyOptions() {} }; active.add(line); return line },
@@ -745,12 +1061,18 @@ test('oscillation breakout is an orange native price line and is revoked on stra
     subscribeClick() {}, unsubscribeClick() {}, resize() {}, remove() {},
   }
   const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
-    response: response.value, strategy: selectedStrategy.value, loading: loading.value, selectedSignalId: null,
+    ref: stage, response: response.value, strategy: selectedStrategy.value, loading: loading.value, selectedSignalId: null,
   }) }))
   app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
   app.mount(element('root')); await nextTick()
   const breakout = () => [...active].filter(line => String(line.title).startsWith('突破'))
   assert.deepEqual(breakout().map(line => [line.title, line.price, line.color, line.lineStyle, line.axisLabelVisible]), [['突破 6/7', 95, '#FF9800', 2, true]])
+  const diagnostics = stage.value!.inspectLayers()
+  const level = diagnostics.find(layer => layer.indicatorId === 'newow_breakout_reference')
+  const markers = diagnostics.find(layer => layer.indicatorId === 'newow_breakouts')
+  assert.equal(level?.formulaVersion, 'newow_oscillation_breakout_line_page_v1')
+  assert.equal(level?.dataCutoff, bars.at(-1)!.bar_end)
+  assert.equal(markers?.dataCutoff, null)
   loading.value = true; await nextTick()
   assert.equal(breakout().length, 0, 'refresh loading revokes the old line even when a ready response is retained')
   loading.value = false; await nextTick()
@@ -896,6 +1218,7 @@ function channelFor(bars: NonNullable<MutableChartResponse['value']>['bars'], up
       status: ready(),
       physical_contract: item.physical_contract,
       segment_id: item.segment_id,
+      calculation_segment_id: item.calculation_segment_id,
       source_identity: item.source_identity,
     })),
   }
@@ -917,6 +1240,7 @@ async function componentModule(url: URL): Promise<string> {
   }).outputText
     .replace(/from ['"]vue['"]/g, `from '${import.meta.resolve('vue')}'`)
     .replace(/from ['"]lightweight-charts['"]/g, `from '${import.meta.resolve('lightweight-charts')}'`)
+    .replace(/from ['"](@guiyi\/quant-chart(?:\/volume)?)['"]/g, (_match, specifier: string) => `from '${import.meta.resolve(specifier)}'`)
     .replace(/from ['"](\.[^'"]+\.ts)['"]/g, (_match, specifier: string) => `from '${new URL(specifier, url).href}'`)
     .replace(/from ['"]@\/([^'"]+)['"]/g, (_match, specifier: string) => {
       const path = resolveSourceImport(specifier)

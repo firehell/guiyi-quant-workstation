@@ -119,7 +119,6 @@ export class NewowTrendReversalPrimitive implements ISeriesPrimitive<Time> {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const { items, limit } = buildNewowTrendReversalCommands(this.data, mediaSize.width, mediaSize.height,
         time => this.attachment!.chart.timeScale().timeToCoordinate(time), this.topInset)
-      context.save()
       for (const item of items) {
         context.fillStyle = item.color
         if (item.kind === 'axis') context.fillRect(0, item.y, mediaSize.width, 1)
@@ -153,7 +152,6 @@ export class NewowTrendReversalPrimitive implements ISeriesPrimitive<Time> {
       context.font = '10px -apple-system, sans-serif'
       context.textAlign = 'left'; context.fillText('0', 4, mediaSize.height - 5)
       context.textAlign = 'right'; context.fillText(`+${limit.toFixed(2)}% / −${limit.toFixed(2)}%`, mediaSize.width - 5, mediaSize.height - 5)
-      context.restore()
     })
   }
 }
