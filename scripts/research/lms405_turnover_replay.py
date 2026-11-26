@@ -159,11 +159,13 @@ def capture_cuts(raw_minutes, capture, quote):
     return sorted(set(minutes) | {end - ONE for end in minutes})
 
 
-def study(session, market, turnover, retention):
+def study(session, market, turnover, retention, *, reprotection=None):
     scenarios, markets = {}, {}
     quotes = scoped_input_quotes()
     for name, case in turnover["cases"].items():
         contract = case["contract"]
+        if reprotection is not None and contract != "SH2701":
+            continue
         refs = retention["contracts"][contract]
         sources = [turnover["sources"][key] for key in case["sources"]]
         days = tuple(sorted({date.fromisoformat(row["trading_day"]) for row in sources}))
@@ -188,10 +190,15 @@ def study(session, market, turnover, retention):
             if cuts[0] <= seed_at:
                 raise ValueError("TURNOVER_REPLAY_CAPTURE_PRECEDES_SEED")
             points.append(dict(source=source, cuts=cuts, scope=capture["scope"],
+                               displayed_legs=displayed,
                                visible={side: Decimal(row["quantity"]) for side, row in displayed.items()},
                                conditional=quantities(exposure), bounds=transition["sides"]))
         through = max(point["cuts"][-1] for point in points)
-        tapes = candidate_steps(contract, raw, bars, seed_at, through, seed["short"], first, points[0]["cuts"][0])
+        tapes = (
+            candidate_steps(contract, raw, bars, seed_at, through, seed["short"], first, points[0]["cuts"][0])
+            if reprotection is None
+            else reprotection(raw, bars, seed_at, through, seed, points)
+        )
         scenarios[name] = dict(
             contract=contract, seed_source=first, seed_at=seed_at, seed=seed,
             tapes=tapes, comparisons={key: compare_tape(seed, tape, seed_at, points)

@@ -54,13 +54,13 @@ def price_after(minutes, known_at, leg):
                 whole_leg_possible=bool(earlier_lot_counts(None, envelope, lots, totals)))
 
 
-def analyze(series, *, start, cut, band, side, leg):
+def analyze(series, *, start, cut, band, side, leg, variants=None):
     lower, upper = band
     approach, other_side = ("BELOW", "SHORT") if side == "LONG" else ("ABOVE", "LONG")
     minutes = completed(series[1], start, cut)
     segments, touches = first_touches(minutes, lower, upper)
-    variants = {}
-    for shape, confirm in VARIANTS:
+    results = {}
+    for shape, confirm in VARIANTS if variants is None else variants:
         key = f"{shape}m_to_{confirm}m"
         forward = signals(series, shape, confirm, side=side, start=start, cut=cut)
         opposing = signals(series, shape, confirm, side=other_side, start=start, cut=cut)
@@ -94,8 +94,8 @@ def analyze(series, *, start, cut, band, side, leg):
                 observed_leg_price_after_signal=price_after(minutes, available, leg),
                 observed_leg_price_after_touch=price_after(minutes, gate, leg),
             ))
-        variants[key] = events
-    return dict(minute_count=len(minutes), contact_bar_ends=[b.end for b in touches.values()], variants=variants)
+        results[key] = events
+    return dict(minute_count=len(minutes), contact_bar_ends=[b.end for b in touches.values()], variants=results)
 
 
 def compare_policies(cases):
