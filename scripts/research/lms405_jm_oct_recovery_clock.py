@@ -12,7 +12,7 @@ from lms405_fg_sa_cycle_order import fresh_geometry
 from lms405_fresh_reprotection import leg_envelope
 from lms405_portfolio_retention_prices import feasible_retention
 from lms405_position_continuity import continuity
-from lms405_protection_lot_timing import displayed_tick_totals, tick_bounds, verified_json
+from lms405_protection_lot_timing import displayed_tick_totals, latest_whole_leg_start, tick_bounds, verified_json
 from lms405_protection_timeframes import read_window
 from lms405_replay import ohlc, photo_comparison, read_session_series
 from lms405_right_side_study import ONE, US, at
@@ -45,6 +45,8 @@ WEAK_REFERENCE = Decimal("1517.5")
 M_BAND = (Decimal("1507.5"), Decimal("1512.5"))
 BASELINE = Path("output/lms405-jm-oct-recovery-clock-20261126/final-a.json")
 BASELINE_SHA = "00de58c37951973e50c262ba2b6981ec8878b4b2baaa34a557e5a00bf03d0167"
+PORTFOLIO_BASELINE = Path("output/lms405-oct9-portfolio-leg-carry-20261126/checked-c.json")
+PORTFOLIO_BASELINE_SHA = "0c028653aa10f6c469add9265a9b2d038cdbc3a0201453f490b9c8364da32ea0"
 PORTFOLIO_LEGS = (
     ("V2701", "long", 40, 40, "4930.3"),
     ("OI2701", "long", 40, 0, "10046.2"),
@@ -87,11 +89,15 @@ def price_checks(bars):
                 first_directional_reach_1571=next((b.end for b in bars if b.high >= EXTENSION_FAR), None))
 
 
-def observed_before_quote(signals, quote_minutes):
-    return {clock: [dict(confirmed_at=row["confirmed_at"], close=row["close"],
-                         strict_before_candidates=sum(row["available_at"] < end - ONE for end in quote_minutes),
-                         closes_above_1542_5=row["close"] > SHORT_TERM_TARGET_UPPER)
-                    for row in rows] for clock, rows in signals.items()}
+def observed_before_quote(signals, quote_minutes, *, compare_jm_target=True):
+    def observation(row):
+        result = dict(confirmed_at=row["confirmed_at"], close=row["close"],
+                      strict_before_candidates=sum(row["available_at"] < end - ONE for end in quote_minutes))
+        if compare_jm_target:
+            result["closes_above_1542_5"] = row["close"] > SHORT_TERM_TARGET_UPPER
+        return result
+
+    return {clock: [observation(row) for row in rows] for clock, rows in signals.items()}
 
 
 def portfolio_leg_study(report, quotes):
@@ -152,7 +158,57 @@ def portfolio_leg_study(report, quotes):
     )
 
 
-def study(session, market, *, portfolio_legs=False):
+def short_leg_study(session, market, report, quotes, jm_series):
+    carry = verified_json(PORTFOLIO_BASELINE, PORTFOLIO_BASELINE_SHA)
+    if encoded(portfolio_leg_study(report, quotes)) != encoded(carry):
+        raise ValueError("JM_OCT_PORTFOLIO_BASELINE_CHANGED")
+    result = {}
+    for symbol, leg, day_start in (
+        ("jm", report["sources"]["E11"]["jm_short"], PLAN_START),
+        ("oi", dict(quantity=40, today=40, opening_average="10325.1"), at("2026-10-09T09:00")),
+    ):
+        contract = f"{symbol.upper()}2701"
+        # Both sets of minute bars are independently identical to the bound quote inputs.
+        series = jm_series if symbol == "jm" else {day: read_window(session, market, contract, day) for day in DAYS}
+        day, night = (series[d] for d in DAYS)
+        for label, bars in (("E11", day), ("E49", night)):
+            if [(b.end, ohlc(b)) for b in bars[1]] != [(b.bar_end, ohlc(b)) for b in quotes[label][symbol]]:
+                raise ValueError("JM_OCT_SHORT_LEG_QUOTES_CHANGED")
+        tick = Decimal(carry["common_legs"][contract]["tick"])
+        totals = displayed_tick_totals(Decimal(leg["opening_average"]), leg["quantity"], tick, include_upper_tie=True)
+        close_cut = DAY_CLOSE + 2 * US
+        day_shapes, day_checks = window_signals(day, day_start, close_cut, "SHORT")
+        night_post = report["sources"]["E49"]["published_at"]
+        night_shapes, night_checks = window_signals(night, NIGHT_START, night_post, "LONG")
+        quote_scope = report["photos"]["E49"]["primary"]
+        ends = set(quote_scope["per_symbol"][symbol]["contains"])
+        joint = set(quote_scope["joint_contains"])
+        if not joint or not joint <= ends:
+            raise ValueError("JM_OCT_SHORT_LEG_QUOTE_SCOPE_CHANGED")
+        result[contract] = dict(
+            day_short=leg, night_short_quantity=None, observed_release_at=None, recovery_permission=None,
+            day_geometry_scope_start=day_start,
+            latest_compatible_open_window=latest_whole_leg_start(day[1], tick, leg["quantity"], totals,
+                                                                 start_of=lambda bar: bar.start),
+            day_short_geometry={clock: [event | dict(price=leg_envelope(
+                day[1], event["confirmed_at"], close_cut, leg, tick, include_upper_tie=True,
+            )) for event in events] for clock, events in day_shapes.items()},
+            night_quote_candidates=sorted(ends), five_product_quote_candidates=sorted(joint),
+            night_long_geometry=observed_before_quote(night_shapes, sorted(map(datetime.fromisoformat, ends)),
+                                                      compare_jm_target=symbol == "jm"),
+            night_long_geometry_before_joint=observed_before_quote(night_shapes, sorted(map(datetime.fromisoformat, joint)),
+                                                                   compare_jm_target=symbol == "jm"),
+            market={str(d): {f"{p}m": digest(b) for p, b in s.items()} for d, s in series.items()},
+            prefix_checks=day_checks + night_checks,
+        )
+    return dict(
+        version="lms405-oct9-short-protection-clocks-v1", prior_source_report_sha256=PORTFOLIO_BASELINE_SHA,
+        sources=report["sources"], cases=result, historical_plan_coverage_verified=False, actual_account_continuity=None,
+        author_actions_scored=0, author_match_rate=None, executable=False, fills=None, pnl=None,
+    )
+
+
+def study(session, market, *, portfolio_legs=False, short_legs=False):
     sources = source_bindings()
     series = {day: read_window(session, market, CONTRACT, day) for day in DAYS}
     photos = {}
@@ -196,6 +252,8 @@ def study(session, market, *, portfolio_legs=False):
                                          long_candidates_for_release_hypothesis=observed_before_quote(night_long, night_quotes)),
                 prefix_checks=day_checks + night_checks, author_bd_at=None, author_action_at=None,
                 author_actions_scored=0, author_match_rate=None, executable=False, fills=None, pnl=None)
+    if short_legs:
+        return short_leg_study(session, market, report, quotes, series)
     return portfolio_leg_study(report, quotes) if portfolio_legs else report
 
 
@@ -203,7 +261,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--portfolio-legs", action="store_true")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--portfolio-legs", action="store_true")
+    group.add_argument("--short-legs", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -217,7 +277,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=75):
-            report = study(session, build_market_data_service(session), portfolio_legs=args.portfolio_legs)
+            report = study(session, build_market_data_service(session), portfolio_legs=args.portfolio_legs,
+                           short_legs=args.short_legs)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

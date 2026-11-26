@@ -44,9 +44,9 @@ def annotated_geometry(series, start, cut, *, side="LONG"):
     return rows
 
 
-def leg_envelope(bars, gate_end, quote_cut, leg, tick):
+def leg_envelope(bars, gate_end, quote_cut, leg, tick, *, include_upper_tie=False):
     lots = leg["quantity"]
-    totals = displayed_tick_totals(Decimal(leg["opening_average"]), lots, tick)
+    totals = displayed_tick_totals(Decimal(leg["opening_average"]), lots, tick, include_upper_tie=include_upper_tie)
     rows = [bar for bar in bars if bar.end + US < quote_cut]
     result = {}
     # Completed evidence is known just after the gate. One minute can overlap that timestamp.
