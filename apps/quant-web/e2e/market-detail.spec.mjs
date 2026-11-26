@@ -599,8 +599,9 @@ test('invalid identity fails closed and only recovers after an explicit click', 
 })
 
 test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', { tag: '@contract-alignment' }, async ({ page }) => {
+  const stored = { ...subingEvent('jm'), formula_version: 'subing-diagnostic-fixture' }
   const requests = await mockDetailDailyQuote(page, {
-    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [stored] : [],
     alertRules: [subingRule()],
   })
   await page.goto(freeJm)
@@ -629,6 +630,13 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await subingAudit.locator('summary').click()
   await expect(subingAudit).toContainText('首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const source = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'alerts · 就绪' })
+  await source.locator('summary').click()
+  await expect(source).toContainText('alert-event:9')
+  await expect(source).toContainText('subing-diagnostic-fixture')
+  await expect(source).toContainText('2026-09-03T02:45:00.000Z')
   await expect(subingAudit.locator('tbody')).toContainText('2026-09-03 10:45')
   await expect(subingAudit.locator('tbody')).toContainText('买入观察')
   await expect(page.getByRole('button', { name: '参考记录', exact: true })).toHaveCount(0)

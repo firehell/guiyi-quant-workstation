@@ -9,7 +9,7 @@ import { DynamicRangePrimitive } from '@/components/kline/dynamicRangePrimitive'
 import { matchesRangeBar, pointKey, type DynamicRangePoint } from '@/utils/dynamicRange'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
-import { inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { inject, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { DETAIL_CHART_SESSION, detailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
   ColorType,
@@ -53,6 +53,7 @@ import {
   type KlineValuePoint,
 } from '@/utils/klineViewModel'
 import { mergeKlineMarkers } from '@/utils/alertMarkers'
+import { previewInstant } from '@/utils/candidatePreviewInstant'
 import { referencePriceLevelSegments } from '@/utils/referencePriceLevels'
 import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitive'
 
@@ -213,6 +214,7 @@ let derivedData = buildKlineDerivedData([], [])
 let rangeCache: { bars: BarData[]; key: string; result: NonNullable<typeof derivedData.rangeDetector> } | null = null
 const savedReferenceSeries = new Map<string, ISeriesApi<'Line'>>()
 let renderedMarkerById = new Map<string, KlineMarker>()
+const drawnMarkers = shallowRef<KlineMarker[]>([])
 let viewportStabilityFrame: number | null = null
 let viewportStabilityTarget: ChartViewportRange | null = null
 let viewportStableFrames = 0
@@ -220,6 +222,7 @@ let viewportStabilityAttempts = 0
 
 type ChartViewportRange = { from: number; to: number }
 const EMA_INDICATORS: EmaIndicatorId[] = ['ema_10', 'ema_21', 'ema_60']
+const MARKER_FACT_LAYERS = ['alerts', 'research_actions', 'reconciliation_execution_markers'] as const
 const REQUIRED_VIEWPORT_STABLE_FRAMES = 3
 const MAX_VIEWPORT_STABILITY_ATTEMPTS = 12
 const LOGICAL_RANGE_EPSILON = 0.001
@@ -354,12 +357,13 @@ watch(() => props.researchMarkers, () => {
 }, { deep: true })
 
 function barValues(bars: BarData[]) {
-  const values: Array<{ time: Time; open: number; high: number; low: number; close: number } | WhitespaceData<Time>> = bars.map((bar) => ({
+  const values: Array<{ time: Time; open: number; high: number; low: number; close: number; physicalContract?: string } | WhitespaceData<Time>> = bars.map((bar) => ({
     time: chartTime(bar),
     open: bar.open,
     high: bar.high,
     low: bar.low,
     close: bar.close,
+    physicalContract: bar.confirmed === false ? undefined : bar.physicalContract?.toUpperCase(),
   }))
   const occupied = new Set(values.map(item => chartTimeKey(item.time)))
   for (const item of props.qualityBreaks) {
@@ -821,9 +825,31 @@ function writeDerivedSeries(): void {
     htdyLines = null
   }
   const displayMarkers = mergedDisplayMarkers()
-  const renderedMarkers = chartMarkers(displayMarkers)
-  renderedMarkerById = new Map(displayMarkers.filter((marker) => renderedMarkers.some((rendered) => rendered.id === marker.id)).map((marker) => [marker.id, marker]))
-  htdyMarkers?.setMarkers(renderedMarkers)
+  const { native, drawn } = chartMarkers(displayMarkers)
+  htdyMarkers?.setMarkers(native)
+  drawnMarkers.value = drawn
+  renderedMarkerById = new Map(drawn.map(marker => [marker.id, marker]))
+  // Keep one marker renderer so same-Bar stacking and hit testing stay consistent.
+  host.layer('markers', 'display_markers', 'main').updateDiagnostics({
+    status: native.length ? 'ready' : 'missing_input', frequency: props.period,
+    formulaVersion: 'main_marker_layout_v1', dataCutoff: drawn.at(-1)?.time ?? null,
+  })
+  for (const id of MARKER_FACT_LAYERS) {
+    const layerId = `marker-facts:${id}`
+    if (!displayMarkers.some(marker => marker.fact?.layer === id)) {
+      host.removeLayer(layerId)
+      continue
+    }
+    let latest: KlineMarker | undefined
+    for (const marker of drawn) {
+      if (marker.fact?.layer === id) latest = marker
+    }
+    host.layer(layerId, id, 'main').updateDiagnostics({
+      status: latest ? 'ready' : 'missing_input', frequency: props.period,
+      sourceIdentity: latest?.fact?.sourceIdentity ?? null,
+      formulaVersion: latest?.fact?.formulaVersion ?? null, dataCutoff: latest?.time ?? null,
+    })
+  }
 }
 
 function mergedDisplayMarkers(): KlineMarker[] {
@@ -834,10 +860,7 @@ function mergedDisplayMarkers(): KlineMarker[] {
 }
 
 function markersForHoverContext(): KlineMarker[] {
-  return mergeKlineMarkers(
-    mergeKlineMarkers(props.showDerivedMarkers ? derivedData.htdy?.markers ?? [] : [], props.alertMarkers),
-    props.researchMarkers,
-  )
+  return drawnMarkers.value
 }
 
 function chartValues(points: KlineValuePoint[] | undefined, visibleBars?: ReadonlyMap<string, BarData>): Array<SingleValueData<Time> | WhitespaceData<Time>> {
@@ -854,9 +877,16 @@ function chartValues(points: KlineValuePoint[] | undefined, visibleBars?: Readon
 function chartMarkers(markers: KlineMarker[]) {
   const barsByTime = new Map(renderedBars.map((bar) => [markerTimeKey(bar.time), bar]))
   const theme = resolveChartTheme()
+  const drawn: KlineMarker[] = []
   const ordinary = markers.flatMap((marker) => {
     const bar = barsByTime.get(markerTimeKey(marker.time))
-    return bar ? [{
+    if (!bar) return []
+    const fact = marker.fact
+    if (fact && (bar.confirmed === false
+      || bar.physicalContract?.toUpperCase() !== fact.physicalContract.toUpperCase()
+      || (fact.frequency !== null && fact.frequency !== props.period))) return []
+    drawn.push(marker)
+    return [{
       id: marker.id,
       time: chartTime(bar),
       position: marker.position,
@@ -868,7 +898,7 @@ function chartMarkers(markers: KlineMarker[]) {
           : marker.tone === 'htdy' ? theme.htdy : theme.textMuted,
       text: marker.label,
       size: marker.tone === 'htdy' ? 1.5 : 1,
-    }] : []
+    }]
   })
   const quality = props.qualityBreaks.flatMap(item => {
     const time = ribbonTime(item.time)
@@ -877,12 +907,12 @@ function chartMarkers(markers: KlineMarker[]) {
       color: theme.textMuted, text: item.label, size: 1,
     }]
   })
-  return [...ordinary, ...quality].sort((left, right) => compareChartTimes(left.time, right.time))
+  return { native: [...ordinary, ...quality].sort((left, right) => compareChartTimes(left.time, right.time)), drawn }
 }
 
 function markerTimeKey(value: string): string {
-  const timestamp = Date.parse(value)
-  return Number.isFinite(timestamp) ? `instant:${timestamp}` : `raw:${value}`
+  const timestamp = previewInstant(value)
+  return timestamp === null ? `raw:${value}` : `instant:${timestamp}`
 }
 
 function chartTime(bar: BarData): Time {
@@ -946,7 +976,7 @@ defineExpose({
   updateLiveBars,
   scrollToLatest,
   revealTime,
-  inspectLayers: () => host?.diagnostics() ?? [],
+  inspectLayers: () => [...(host?.diagnostics() ?? []), ...(detailSession?.inspectExecutionLayers() ?? [])],
 })
 </script>
 
@@ -962,10 +992,10 @@ defineExpose({
     :data-reference-target-segments="referenceTargetSegments"
     :data-reference-stop-segments="referenceStopSegments"
     :data-research-marker-count="researchMarkers.length"
-    :data-rendered-marker-count="mergedDisplayMarkers().length"
-    :data-rendered-marker-times="mergedDisplayMarkers().map(marker => marker.time).join(',')"
-    :data-rendered-marker-ids="mergedDisplayMarkers().map(marker => marker.id).join(',')"
-    :data-rendered-research-marker-count="researchMarkers.length"
+    :data-rendered-marker-count="drawnMarkers.length"
+    :data-rendered-marker-times="drawnMarkers.map(marker => marker.time).join(',')"
+    :data-rendered-marker-ids="drawnMarkers.map(marker => marker.id).join(',')"
+    :data-rendered-research-marker-count="drawnMarkers.filter(marker => marker.fact?.layer === 'research_actions').length"
     :data-research-marker-ids="researchMarkers.map((marker) => marker.id).join(',')"
     :data-research-marker-times="researchMarkers.map((marker) => marker.time).join(',')"
     :data-range-detector-range-count="rangeCount"

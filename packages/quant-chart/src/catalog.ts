@@ -2,7 +2,7 @@ import type { VolumePolicy } from './volume.js'
 
 export const CHART_MANIFEST = Object.freeze({
   name: '@guiyi/quant-chart',
-  version: '0.1.0',
+  version: '0.1.1',
   catalogSchemaVersion: 1,
   rendererVersion: 1,
   preferenceSchemaVersion: 1,
@@ -64,6 +64,7 @@ export const DISPLAY_CATALOG: Readonly<Record<string, DisplayDefinition>> = Obje
   research_actions: fact('研究标记', 'strategy_research_projection', 'main', 'marker'),
   display_markers: display('主图标记排布', 'main_marker_layout_v1', 'main', 'marker'),
   reconciliation_executions: fact('账户对账委托和成交', 'tq_simulation_account.executions', 'main', 'primitive'),
+  reconciliation_execution_markers: fact('账户对账成交标记', 'tq_simulation_account.executions', 'main', 'marker'),
   paper_executions: fact('模型委托和成交', 'paper_execution_ledger', 'main', 'primitive'),
   newow_trend: fact('趋势带与通道', 'newow.chart.trend', 'main', 'band', 'line', 'primitive'),
   newow_oscillation: fact('震荡区间', 'newow.chart.oscillation', 'main', 'band', 'line', 'primitive'),
@@ -123,7 +124,7 @@ const generic = ['price', 'price_preview', 'generic_volume', 'ema_10', 'ema_21',
   'paper_executions', 'auxiliary_axis', 'ths_macd', 'macd', 'atr', 'stddev', 'obv'] as const
 const newowDefaults = ['newow_actions', 'newow_hints', 'newow_breakouts', 'newow_wicks', 'newow_detail', 'newow_price_reference', 'newow_annotations'] as const
 const newow = ['price', 'price_preview', 'newow_volume', ...newowDefaults, 'newow_pattern', 'newow_stop', 'newow_donchian',
-  'newow_dual_background', 'reconciliation_executions', 'auxiliary_axis', 'macd', 'newow.main_force_control',
+  'newow_dual_background', 'reconciliation_executions', 'paper_executions', 'auxiliary_axis', 'macd', 'newow.main_force_control',
   'newow.up_down_energy', 'newow.zhaoyao_mirror', 'newow.trend_reversal'] as const
 
 function newowProfile(...layers: string[]): ChartProfile {
@@ -135,7 +136,7 @@ function newowProfile(...layers: string[]): ChartProfile {
 
 export const CHART_PROFILES = Object.freeze({
   free: { volume: 'subing', mainDefaults: [], auxiliaryDefault: 'ths_macd', allowed: [...generic, 'subing_volume'] },
-  htdy: { volume: 'subing', mainDefaults: ['htdy'], auxiliaryDefault: 'ths_macd', allowed: [...generic, 'htdy', 'subing_volume'] },
+  htdy: { volume: 'subing', mainDefaults: ['htdy'], auxiliaryDefault: 'ths_macd', allowed: [...generic, 'htdy', 'subing_volume', 'reconciliation_execution_markers'] },
   subing: { volume: 'subing', mainDefaults: [], auxiliaryDefault: 'ths_macd', allowed: [...generic, 'subing_volume'] },
   backtest: { volume: 'generic', mainDefaults: [], auxiliaryDefault: null, allowed: generic },
   newow_trend: newowProfile('newow_trend'),

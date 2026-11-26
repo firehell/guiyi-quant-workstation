@@ -21,7 +21,7 @@ const records = [
   { id: 'fill:1', kind: 'fill', at: fillTime, product: 'JM', contract: 'JM2601', status: 'RECORDED', label: '已成交',
     order_id: '1', signal_id: null, facts: { filled_at: fillTime, price: '208', quantity: '1', native_precision_seconds: '0.000001' } },
 ]
-async function fixtures(page, { live = true } = {}) {
+async function fixtures(page, { live = true, paperFill = false } = {}) {
   const requests = await mockMarketDetail(page, {
     live,
     barsPage({ url, symbol }) {
@@ -38,6 +38,7 @@ async function fixtures(page, { live = true } = {}) {
   ] } }))
   let stale = false
   let model = portfolio()
+  if (paperFill) model.products[0].accounts[0].fills.push({ fill_at: fillTime, price: '209', action: 'OPEN' })
   await page.route('**/api/v1/subing-portfolio/status', route => route.fulfill({ json: model }))
   await page.route('**/api/v1/subing-portfolio/history', route => route.fulfill({ json: { ...model, status: 'NOT_REGISTERED', run_id: null } }))
   await page.route('**/api/simulation/monitor/overview', route => route.fulfill({ json: {
@@ -104,6 +105,58 @@ async function screenshot(page, name) {
   await mkdir(desktopEvidence, { recursive: true })
   await page.screenshot({ path: `${desktopEvidence}/${name}.png`, animations: 'disabled' })
 }
+
+test('execution layer diagnostics distinguish native and Paper fills and clear when hidden', async ({ page }) => {
+  await fixtures(page, { live: false, paperFill: true })
+  await page.goto('/market/chart?view=free&symbol=jm&series_kind=actual_dominant&frequency=15m')
+  await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-chart-viewport-ready', 'true')
+  const toggle = page.getByRole('checkbox', { name: '委托/成交' })
+  await toggle.check()
+  await expect(page.getByRole('region', { name: '只读委托与成交' })).toContainText('苏冰模型成交')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  for (const [layer, identity] of [
+    ['reconciliation_executions', 'fill:1'],
+    ['paper_executions', 'fixture-paper:JM2601:'],
+  ]) {
+    const source = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: `${layer} · 就绪` })
+    await source.locator('summary').click()
+    await expect(source).toContainText(identity)
+    await expect(source).toContainText(fillTime)
+  }
+  await toggle.uncheck()
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('reconciliation_executions · 已隐藏', { exact: true })).toBeVisible()
+  await expect(diagnostics.getByText('paper_executions · 已隐藏', { exact: true })).toBeVisible()
+  await expect(diagnostics).not.toContainText('fill:1')
+  await expect(diagnostics).not.toContainText('fixture-paper:JM2601:')
+})
+
+test('research marker diagnostics report the published run and omit mismatched frozen inputs', async ({ page }) => {
+  await fixtures(page, { live: false })
+  const frozen = { ...detailBar('jm', 110), frequency: '15m', completed: true }
+  const decision = { decision_id: 'qualified-decision', action: 'BUILD', frequency: '15m', signal_bar_end: frozen.bar_end, bar: frozen }
+  await page.route('**/api/v1/newow/backtests/latest?*', route => route.fulfill({ json: {
+    result: {
+      run_id: 'published-run', as_of_trading_day: '2026-09-03', qualification: 'QUALIFIED',
+      manifest: { physical_contract: 'JM2601', formula_versions: ['published-formula'] },
+      summary: { result_kind: 'reference_only', decisions: [
+        decision, { ...decision, decision_id: 'wrong-source', bar: { ...frozen, close: 999 } },
+      ] },
+    },
+    last_attempt: null,
+  } }))
+  await page.goto('/market/chart?view=newow&newow_source=after-market&symbol=jm&series_kind=actual_dominant&frequency=15m')
+  const chart = page.getByTestId('kline-shell')
+  await expect(chart).toHaveAttribute('data-rendered-marker-ids', 'qualified-decision')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const source = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'research_actions · 就绪' })
+  await source.locator('summary').click()
+  await expect(source).toContainText('published-run')
+  await expect(source).toContainText('published-formula')
+  await expect(source).toContainText(frozen.bar_end)
+})
 
 test('operations reads two independent accounts, goes directly to the held old contract and restores the watchlist', async ({ page }) => {
   const fixture = await fixtures(page)

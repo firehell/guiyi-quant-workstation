@@ -103,12 +103,13 @@ const marketAxisKey = computed(() => {
   return identity ? [identity.symbol, identity.seriesKind, identity.contract ?? '', identity.frequency].join(':') : 'invalid'
 })
 watch(marketAxisKey, key => chartSession.setIdentity(key), { immediate: true, flush: 'sync' })
-watch(positionedExecutions, points => {
-  const frequency = explicitIdentity.value?.frequency
+watch([positionedExecutions, showExecutions], ([points, enabled]) => {
+  const frequency = enabled ? explicitIdentity.value?.frequency ?? null : null
   chartSession.setExecutions(frequency ? points.map(point => ({
+    id: point.id, at: point.time, physicalContract: point.contract.toUpperCase(),
     from: detailChartTime(point.before, frequency), to: detailChartTime(point.after, frequency),
     ratio: point.ratio, price: Number(point.price), source: point.source,
-  })) : [])
+  })) : [], frequency)
 }, { immediate: true })
 
 const isWorkspacePreview = computed(() => ['newow', 'free', 'htdy', 'subing'].includes(explicitIdentity.value?.view ?? 'invalid'))

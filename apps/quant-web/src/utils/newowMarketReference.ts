@@ -73,6 +73,7 @@ export function projectMarketReferenceChart(
       if (typeof id !== 'string' || !id) continue
       markers.push({
         id, time: bar.time,
+        fact: { layer: 'research_actions', sourceIdentity: sourceRevision ?? id, formulaVersion, physicalContract: frame.physical_contract, frequency: frame.frequency },
         label: build ? '盘后参考建仓' : action.trade_eligibility === 'INITIAL_CLEAR_NO_ENTRY' ? '盘后参考清仓（无入场）' : '盘后参考清仓',
         shape: build ? 'arrowUp' : 'arrowDown',
         position: build ? 'belowBar' : 'aboveBar', tone: build ? 'up' : 'down',

@@ -4,6 +4,7 @@ import type { createChart, IChartApi, LogicalRange, SeriesType, ISeriesApi, Mous
 import { createPriceSeriesWriter } from './priceSeriesWriter.ts'
 import { ExecutionOverlayPrimitive, type ExecutionOverlayPoint } from '../components/kline/executionOverlayPrimitive.ts'
 import { toChartTimeForPeriod } from './barTime.ts'
+import { previewInstant } from './candidatePreviewInstant.ts'
 
 export const DETAIL_CHART_SESSION = Symbol('detail-chart-session')
 export type DetailChartSession = ReturnType<typeof createDetailChartSession>
@@ -65,6 +66,8 @@ export function createDetailChartSession(dependencies: {
   let ownsViewport = false
   const tqExecutions = new ExecutionOverlayPrimitive()
   const paperExecutions = new ExecutionOverlayPrimitive()
+  let executionFrequency: string | null = null
+  let executionPoints: readonly ExecutionOverlayPoint[] = []
   let cursor: { time: Time; price: number } | null = null
   let cursorFrame: number | null = null
   let restoringCursor = false
@@ -169,6 +172,7 @@ export function createDetailChartSession(dependencies: {
     }
     const native = chart
     let active = true, paneIndex = 1
+    let primaryCandlesBound = false
     const series = new Set<ISeriesApi<SeriesType, Time>>()
     const cleanup = new Set<() => void>()
     const wrappers = new WeakMap<ISeriesApi<SeriesType, Time>, ISeriesApi<SeriesType, Time>>()
@@ -209,7 +213,7 @@ export function createDetailChartSession(dependencies: {
           const previous = pricePoints.get(role) ?? []
           const range = role === 'candles' ? viewport() : null
           const sameFact = (a: any, b: any) => JSON.stringify(a.time) === JSON.stringify(b.time)
-            && (role === 'candles' ? ['open', 'high', 'low', 'close'] : ['value']).every(field => Object.is(a[field], b[field]))
+            && (role === 'candles' ? ['open', 'high', 'low', 'close', 'physicalContract'] : ['value']).every(field => Object.is(a[field], b[field]))
           const suffix = role === 'candles' && previous.length > data.length && data.length > 0
             && data.every((point, index) => sameFact(point, previous[previous.length - data.length + index]))
           if (suffix) {
@@ -226,6 +230,7 @@ export function createDetailChartSession(dependencies: {
           }
           const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
           writers.set(role, writer); writer.write(target, data, identity); pricePoints.set(role, data)
+          if (role === 'candles' && executionFrequency !== null) syncExecutionLayers()
           if (role === 'candles' && data.length) {
             hasPrices = true
             if (range && !mappedRange) ownsViewport = false
@@ -241,6 +246,7 @@ export function createDetailChartSession(dependencies: {
           if (index < 0) next.push(point); else next[index] = point
           const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
           writers.set(role, writer); writer.write(target, next, identity); pricePoints.set(role, next)
+          if (role === 'candles' && executionFrequency !== null) syncExecutionLayers()
         }
         if (property === 'attachPrimitive') return (primitive: any) => {
           if (!active) return
@@ -281,7 +287,9 @@ export function createDetailChartSession(dependencies: {
       }
       if (property === 'addSeries') return (definition: any, settings: any, pane = 0) => {
         if (!active) throw new Error('DETAIL_CHART_LEASE_EXPIRED')
-        const role = definition.type === 'Candlestick' ? 'candles' : definition.type === 'Histogram' && settings?.priceScaleId === 'volume' ? 'volume' : null
+        const role = definition.type === 'Candlestick' && !primaryCandlesBound
+          ? 'candles' : definition.type === 'Histogram' && settings?.priceScaleId === 'volume' ? 'volume' : null
+        if (role === 'candles') primaryCandlesBound = true
         let raw = role ? prices.get(role) : undefined
         if (!raw) {
           const candlePaneOverlay = !role && pane === 0 && (!settings?.priceScaleId || settings.priceScaleId === 'right')
@@ -291,6 +299,7 @@ export function createDetailChartSession(dependencies: {
             if (role === 'candles') {
               host?.layer('tq-executions', 'reconciliation_executions', 'main').primitive(raw, tqExecutions)
               host?.layer('paper-executions', 'paper_executions', 'main').primitive(raw, paperExecutions)
+              syncExecutionLayers()
             }
           } else series.add(raw)
         } else {
@@ -318,15 +327,47 @@ export function createDetailChartSession(dependencies: {
     releaseActive?.(); disposed = true
     if (cursorFrame !== null) cancelAnimationFrame(cursorFrame)
     cursor = null
+    setExecutions([])
     host?.dispose(); chart = null; host = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); volumeInput = []; viewports.clear()
   }
-  function setExecutions(points: readonly ExecutionOverlayPoint[]) {
-    tqExecutions.setData(points.filter(point => point.source !== '苏冰模型成交'))
-    paperExecutions.setData(points.filter(point => point.source === '苏冰模型成交'))
+  function setExecutions(points: readonly ExecutionOverlayPoint[], frequency: string | null = null) {
+    executionPoints = points
+    executionFrequency = frequency
+    syncExecutionLayers()
   }
+  function syncExecutionLayers() {
+    if (!host) return
+    // Only the owners on the shared candle axis can authorize placement.
+    const candles = executionPoints.length ? pricePoints.get('candles') ?? [] : []
+    const owners = new Map(candles.map(bar => [timeKey(bar.time), bar.physicalContract]))
+    const eligible = executionFrequency === null ? [] : executionPoints.filter(point =>
+      owners.get(timeKey(point.from)) === point.physicalContract && owners.get(timeKey(point.to)) === point.physicalContract)
+    for (const [layerId, indicator, primitive, paper] of [
+      ['tq-executions', 'reconciliation_executions', tqExecutions, false],
+      ['paper-executions', 'paper_executions', paperExecutions, true],
+    ] as const) {
+      if (!host.hasLayer(layerId)) continue
+      const points = eligible.filter(point => (point.source === '苏冰模型成交') === paper)
+      primitive.setData(points)
+      let latest: ExecutionOverlayPoint | undefined
+      let cutoff: bigint | null = null
+      for (const point of points) {
+        const instant = previewInstant(point.at)
+        if (instant !== null && (cutoff === null || instant > cutoff)) {
+          latest = point
+          cutoff = instant
+        }
+      }
+      host.layer(layerId, indicator, 'main').updateDiagnostics({
+        status: executionFrequency === null ? 'hidden' : latest ? 'ready' : 'missing_input',
+        frequency: executionFrequency, sourceIdentity: latest?.id ?? null, dataCutoff: latest?.at ?? null,
+      })
+    }
+  }
+  function inspectExecutionLayers() { return host?.diagnostics() ?? [] }
   function restoreInspectionCursor() {
     if (chart) restoreCursor(chart)
   }
-  const session = { zoom, scrollToLatest, setExecutions, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
+  const session = { zoom, scrollToLatest, setExecutions, inspectExecutionLayers, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, dispose }
   return session
 }

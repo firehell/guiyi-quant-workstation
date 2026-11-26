@@ -29,6 +29,9 @@ test('plots persisted actions and exact numerical lines against matching Canonic
   assert.deepEqual(result.lines[0]?.points, [{ time: first, value: 10.1 }, { time: second, value: 10.1 }])
   assert.equal(result.lines[0]?.sourceRevision, 'reference-revision')
   assert.equal(result.lines[0]?.formulaVersion, 'v1')
+  assert.deepEqual(result.markers[1]?.fact, {
+    layer: 'research_actions', sourceIdentity: 'reference-revision', formulaVersion: 'v1', physicalContract: 'JM2701', frequency: '1d',
+  })
 })
 
 test('suppresses overlays for live, revised, wrong contract, and ambiguous frames', () => {

@@ -58,6 +58,45 @@ test('new market identity clears old prices and restores its own saved viewport'
   f.session.dispose()
 })
 
+test('execution diagnostics bind each authority to positioned records and clear on identity change', () => {
+  const f = fixture()
+  f.session.setIdentity('jm:15m')
+  const point = { from: 1, to: 1, ratio: 0, price: 2, physicalContract: 'JM2701' } as const
+  f.session.setExecutions([
+    { ...point, id: 'native-fill', at: '2026-09-03T02:30:00.000001Z', source: '快期原生成交' },
+    { ...point, id: 'latest', at: '2026-09-03T10:30:00.000009+08:00', source: '快期原生成交' },
+    { ...point, id: 'paper-fill', at: '2026-09-03T02:30:00Z', source: '苏冰模型成交' },
+    { ...point, to: 2, id: 'unanchored', at: '2026-09-03T02:45:00Z', source: '快期原生委托' },
+  ], '15m')
+  assert.deepEqual(f.session.inspectExecutionLayers(), [])
+  const lease = f.session.acquire(f.container(), {})
+  const candles = lease.addSeries(f.candle)
+  const bind = (physicalContract: string) => f.bars.map(bar => ({ ...bar, physicalContract }))
+  candles.setData(bind('JM2701'))
+  const rows = () => f.session.inspectExecutionLayers().map(row =>
+    [row.indicatorId, row.status, row.sourceIdentity, row.dataCutoff, row.frequency],
+  )
+  assert.deepEqual(rows(), [
+    ['reconciliation_executions', 'ready', 'latest', '2026-09-03T10:30:00.000009+08:00', '15m'],
+    ['paper_executions', 'ready', 'paper-fill', '2026-09-03T02:30:00Z', '15m'],
+  ])
+  const preview = lease.addSeries(f.candle)
+  preview.setData([{ ...f.bars[0]!, time: 2 }])
+  assert.equal(f.session.timeAt(Infinity), 1, 'preview uses a separate native series')
+  assert.deepEqual(rows().map(row => row[1]), ['ready', 'ready'])
+  candles.setData(bind('JM2705'))
+  assert.deepEqual(rows(), [
+    ['reconciliation_executions', 'missing_input', null, null, '15m'],
+    ['paper_executions', 'missing_input', null, null, '15m'],
+  ])
+  f.session.setIdentity('rb:15m')
+  assert.deepEqual(rows(), [
+    ['reconciliation_executions', 'hidden', null, null, null],
+    ['paper_executions', 'hidden', null, null, null],
+  ])
+  f.session.dispose()
+})
+
 test('leases remove anonymous subscriptions and block old time-scale mutations', () => {
   const f = fixture(), listeners = new Set<Function>()
   const scale = f.raw.timeScale()

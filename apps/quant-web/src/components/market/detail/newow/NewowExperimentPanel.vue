@@ -159,7 +159,7 @@ function render(){
  if(!chart||!candles||!upper||!lower||!markers)return
  const bars=chartBars.value
  const viewport=resetViewport?null:detailChartViewport(chart) ?? chart.timeScale().getVisibleLogicalRange();resetViewport=false
- if(bars.length || !detailSession) candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close)})))
+ if(bars.length || !detailSession) candles.setData(bars.map(b=>({time:time(b.bar_end),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close),physicalContract:b.physical_contract.toUpperCase()})))
  if(volume){const input=detailChartVolumeBars(chart,volumeBars.value),colors=volumeColors(input,readNewowChartDisplayTheme());volume.setData(input.map((bar,index)=>({time:detailChartTime({time:bar.time,trading_day:bar.tradingDay??bar.trading_day},props.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})))}
 
  upper.setData(bars.map(b=>b.channel_high===null?{time:time(b.bar_end)}:{time:time(b.bar_end),value:Number(b.channel_high)}))

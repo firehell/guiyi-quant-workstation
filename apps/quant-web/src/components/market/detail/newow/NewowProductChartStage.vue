@@ -616,6 +616,7 @@ function renderModel(value: NewowProductChartModel | null): void {
   candleWriter.write(candles, value.bars.map((bar) => ({
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+    physicalContract: props.displayOnly ? undefined : bar.physicalContract.toUpperCase(),
   })), priceIdentity)
   const last = value.bars.at(-1)
   reportRenderedEnd(last?.barEnd, last?.physicalContract, value.identity.frequency)
@@ -1212,7 +1213,7 @@ function onFullscreenChange(): void {
 }
 
 
-function inspectLayers() { return host?.diagnostics() ?? [] }
+function inspectLayers() { return [...(host?.diagnostics() ?? []), ...(detailSession?.inspectExecutionLayers() ?? [])] }
 
 defineExpose({ revealSignal, scrollToLatest, inspectLayers })
 </script>

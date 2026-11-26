@@ -3,6 +3,9 @@ import type {
 } from 'lightweight-charts'
 
 export interface ExecutionOverlayPoint {
+  id: string
+  at: string
+  physicalContract: string
   from: Time
   to: Time
   ratio: number
@@ -48,6 +51,7 @@ export class ExecutionOverlayPrimitive implements ISeriesPrimitive<Time> {
   detached() { this.chartContext = null }
   paneViews() { return [this.view] }
   setData(points: readonly ExecutionOverlayPoint[]) {
+    if (points.length === this.points.length && points.every((point, index) => point === this.points[index])) return
     this.points = points
     this.chartContext?.requestUpdate()
   }

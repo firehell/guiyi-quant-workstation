@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { CHART_MANIFEST } from '@guiyi/quant-chart'
 import { NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
@@ -86,7 +87,7 @@ test('explicit additional panes share the primary candle timeline and release th
   await expect(energy).toHaveAttribute('data-auxiliary-status', 'ready')
   await expect(nativeRows).toHaveCount(4)
   await expect(stage).toHaveAttribute('data-auxiliary-component', 'zhaoyao_mirror')
-  await expect(stage).toHaveAttribute('data-chart-package', '0.1.0')
+  await expect(stage).toHaveAttribute('data-chart-package', CHART_MANIFEST.version)
   await selector.selectOption('main_force_control')
   await stage.getByRole('button', { name: '添加', exact: true }).click()
   await expect(stage.locator('[data-auxiliary-pane="main_force_control"]')).toHaveAttribute('data-auxiliary-status', 'ready')
