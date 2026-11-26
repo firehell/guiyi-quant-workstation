@@ -1,0 +1,966 @@
+{
+  "tested_commit": "f300dd4b4eb0cab99ed759c5e605e11d9f6a5607",
+  "host": {
+    "hardware": "Apple M4",
+    "memory_bytes": 17179869184,
+    "platform": "macOS-27.2.1-arm64-arm-64bit-Mach-O"
+  },
+  "core_wheel": {
+    "version": "0.2.1",
+    "sha256": "cf068a6fbe9d12829b5e2bbb750b2cbeacd54f143d848f8f849d6f2ebee5c93c",
+    "ta_lib": "0.8.3.post1",
+    "numpy": "2.5.0"
+  },
+  "frozen_matrix": {
+    "sha256": "534f774398feafcbc6e8ecbb57831a3a856f819693ae079728b994f0d2fedcee",
+    "through": "2026-11-25",
+    "combinations_covered": 415,
+    "combinations_required": 420,
+    "batch_windows": 995,
+    "completed_bars": 66590,
+    "missing": [
+      [
+        "oi",
+        "1d",
+        "PRICE_UNAVAILABLE"
+      ],
+      [
+        "rs",
+        "1d",
+        "PRICE_UNAVAILABLE"
+      ],
+      [
+        "pd",
+        "1w",
+        "TRADING_SESSION_MISSING"
+      ],
+      [
+        "pt",
+        "1w",
+        "TRADING_SESSION_MISSING"
+      ],
+      [
+        "rs",
+        "1w",
+        "MAPPED_CONTRACT_DATASET_MISSING"
+      ]
+    ]
+  },
+  "measurement_scope": {
+    "input": "Frozen historical market Bars. Canonical receipt and live commit identities are isolated test values.",
+    "live_and_canonical": "60 frozen 1m product scopes, EMA21, MACD and ATR. No real Market service, simulation business process or account is started.",
+    "fixed_rate": "One submission attempt per 30ms per lane. A refused attempt retries the same Bar in the next slot. Percentiles are admitted-attempt slot to Future completion, excluding earlier refused attempts. First owner initialization is reported separately.",
+    "batch": "Bounded 4-slot queue under saturation. Fixed-rate profile records acceptance-attempt to Future completion; post-completion warm reads are measured separately.",
+    "memory": "Process RSS is sampled; peak bytes cover the process lifetime including preparation. Browser measurements use a fixture clock and are post-GC observations.",
+    "restart": "Runtime object recreated in the same process from in-memory checkpoint and frozen prefix. Fixed-rate runs verify deduplication and exact next-Bar continuation.",
+    "browser_probe": "Native LWC methods count resources created after chart mount. Browser fixtures hold their business clock fixed. No claim of absolute JS memory quiescence or realtime transport behavior."
+  },
+  "closed_loop_load_with_browser": {
+    "compute": {
+      "wall_seconds": 210.067,
+      "cpu_seconds": 207.614,
+      "live": {
+        "count": 4693,
+        "p50_p95_p99_ms": [
+          7.0169,
+          29.4996,
+          104.9407
+        ]
+      },
+      "final_queues": {
+        "batch": {
+          "pending": 0,
+          "peak_pending": 4,
+          "rejected": 25368
+        },
+        "incremental": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "live": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        }
+      },
+      "resident_bytes": 268992512,
+      "peak_bytes": 325206016,
+      "batch_source_loads": 50758,
+      "hot_cache": {
+        "count": 50751,
+        "p50_p95_p99_ms": [
+          0.2063,
+          0.4363,
+          0.6572
+        ]
+      },
+      "post_completion_evictions": 7,
+      "unique_windows": 995,
+      "matrix_passes": 51.01306532663317,
+      "canonical": {
+        "count": 4737,
+        "p50_p95_p99_ms": [
+          8.7068,
+          29.009,
+          108.4129
+        ]
+      },
+      "verified_restarts": 60,
+      "rss_samples_mib": [
+        [
+          0.0,
+          241.297
+        ],
+        [
+          15.04,
+          246.188
+        ],
+        [
+          30.08,
+          249.578
+        ],
+        [
+          45.19,
+          251.016
+        ],
+        [
+          60.23,
+          252.109
+        ],
+        [
+          75.27,
+          251.906
+        ],
+        [
+          90.48,
+          252.109
+        ],
+        [
+          105.51,
+          254.641
+        ],
+        [
+          120.54,
+          252.734
+        ],
+        [
+          135.56,
+          252.531
+        ],
+        [
+          150.6,
+          253.812
+        ],
+        [
+          165.61,
+          254.109
+        ],
+        [
+          180.63,
+          252.062
+        ],
+        [
+          195.67,
+          255.219
+        ]
+      ],
+      "batch_admission_to_collection": {
+        "count": 50758,
+        "p50_p95_p99_ms": [
+          7.2124,
+          54.6615,
+          135.3029
+        ]
+      }
+    },
+    "browser": {
+      "startedAt": "2026-11-26T15:04:07.562Z",
+      "elapsedSeconds": 180.451,
+      "thresholdSeconds": 180,
+      "cycles": 284,
+      "cycleTimeP50P95P99Ms": [
+        636,
+        726,
+        830
+      ],
+      "samples": [
+        {
+          "phase": "mounted",
+          "cycles": 0,
+          "elapsed_seconds": 0.025,
+          "js_heap_used_bytes_after_gc": 14419416,
+          "dom": {
+            "documents": 1,
+            "nodes": 1119,
+            "jsEventListeners": 213
+          },
+          "strategy_cache_entries": 5,
+          "strategy_cache_bytes": 68136,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 26,
+          "elapsed_seconds": 15.308,
+          "js_heap_used_bytes_after_gc": 22627132,
+          "dom": {
+            "documents": 1,
+            "nodes": 1173,
+            "jsEventListeners": 226
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 53,
+          "elapsed_seconds": 30.407,
+          "js_heap_used_bytes_after_gc": 23593744,
+          "dom": {
+            "documents": 1,
+            "nodes": 1183,
+            "jsEventListeners": 233
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 79,
+          "elapsed_seconds": 45.628,
+          "js_heap_used_bytes_after_gc": 23811044,
+          "dom": {
+            "documents": 1,
+            "nodes": 1183,
+            "jsEventListeners": 227
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 105,
+          "elapsed_seconds": 61.276,
+          "js_heap_used_bytes_after_gc": 24920552,
+          "dom": {
+            "documents": 1,
+            "nodes": 1192,
+            "jsEventListeners": 227
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 129,
+          "elapsed_seconds": 76.366,
+          "js_heap_used_bytes_after_gc": 24997400,
+          "dom": {
+            "documents": 1,
+            "nodes": 1183,
+            "jsEventListeners": 227
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 153,
+          "elapsed_seconds": 91.514,
+          "js_heap_used_bytes_after_gc": 25670920,
+          "dom": {
+            "documents": 1,
+            "nodes": 1183,
+            "jsEventListeners": 233
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 177,
+          "elapsed_seconds": 106.78,
+          "js_heap_used_bytes_after_gc": 26168788,
+          "dom": {
+            "documents": 1,
+            "nodes": 1184,
+            "jsEventListeners": 233
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 200,
+          "elapsed_seconds": 121.927,
+          "js_heap_used_bytes_after_gc": 26320160,
+          "dom": {
+            "documents": 1,
+            "nodes": 1179,
+            "jsEventListeners": 226
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 222,
+          "elapsed_seconds": 137.002,
+          "js_heap_used_bytes_after_gc": 26212880,
+          "dom": {
+            "documents": 1,
+            "nodes": 1173,
+            "jsEventListeners": 226
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 244,
+          "elapsed_seconds": 152.214,
+          "js_heap_used_bytes_after_gc": 26469392,
+          "dom": {
+            "documents": 1,
+            "nodes": 1173,
+            "jsEventListeners": 226
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "cycling",
+          "cycles": 266,
+          "elapsed_seconds": 167.285,
+          "js_heap_used_bytes_after_gc": 26837488,
+          "dom": {
+            "documents": 1,
+            "nodes": 1173,
+            "jsEventListeners": 226
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "before_unmount",
+          "cycles": 284,
+          "elapsed_seconds": 180.4,
+          "js_heap_used_bytes_after_gc": 27388084,
+          "dom": {
+            "documents": 1,
+            "nodes": 1173,
+            "jsEventListeners": 226
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        },
+        {
+          "phase": "after_unmount",
+          "cycles": 284,
+          "elapsed_seconds": 180.447,
+          "js_heap_used_bytes_after_gc": 21418672,
+          "dom": {
+            "documents": 1,
+            "nodes": 160,
+            "jsEventListeners": 38
+          },
+          "strategy_cache_entries": 17,
+          "strategy_cache_bytes": 177126,
+          "strategy_pending_requests": 0,
+          "price_cache_entries": 0,
+          "price_cache_bytes": 0
+        }
+      ],
+      "productRequests": 4504,
+      "errors": []
+    }
+  },
+  "fixed_rate": {
+    "live_only_control": {
+      "wall_seconds": 30.006,
+      "cpu_seconds": 0.664,
+      "started_epoch_seconds": 1795705683.766426,
+      "finished_epoch_seconds": 1795705713.772545,
+      "final_queues": {
+        "batch": {
+          "pending": 0,
+          "peak_pending": 0,
+          "rejected": 0
+        },
+        "incremental": {
+          "pending": 0,
+          "peak_pending": 0,
+          "rejected": 0
+        },
+        "live": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        }
+      },
+      "resident_bytes": 264929280,
+      "peak_bytes": 326680576,
+      "live": {
+        "scheduled_slots": 999,
+        "offered": 999,
+        "admitted": 999,
+        "refused_attempts": 0,
+        "first_owner": {
+          "count": 60,
+          "p50_p95_p99_ms": [
+            5.5272,
+            10.8726,
+            11.419
+          ]
+        },
+        "steady": {
+          "count": 939,
+          "p50_p95_p99_ms": [
+            6.047,
+            10.6278,
+            10.8692
+          ]
+        },
+        "peak_client_uncollected_futures": 2
+      },
+      "runtime_recreations_verified": 60,
+      "remaining_compute_threads": 0,
+      "rss_samples_mib": [
+        [
+          0.0,
+          310.547
+        ],
+        [
+          15.01,
+          288.438
+        ]
+      ]
+    },
+    "same_process": {
+      "wall_seconds": 120.098,
+      "cpu_seconds": 120.545,
+      "started_epoch_seconds": 1795705713.82197,
+      "finished_epoch_seconds": 1795705833.917741,
+      "final_queues": {
+        "batch": {
+          "pending": 0,
+          "peak_pending": 4,
+          "rejected": 15723
+        },
+        "incremental": {
+          "pending": 0,
+          "peak_pending": 4,
+          "rejected": 9
+        },
+        "live": {
+          "pending": 0,
+          "peak_pending": 6,
+          "rejected": 0
+        }
+      },
+      "resident_bytes": 269189120,
+      "peak_bytes": 326680576,
+      "batch_admission_to_completion": {
+        "count": 31851,
+        "p50_p95_p99_ms": [
+          4.62,
+          43.417,
+          120.1725
+        ]
+      },
+      "batch_source_loads": 31851,
+      "hot_cache": {
+        "count": 31850,
+        "p50_p95_p99_ms": [
+          0.2005,
+          0.2755,
+          0.5788
+        ]
+      },
+      "post_completion_evictions": 1,
+      "unique_windows": 995,
+      "matrix_passes": 32.01105527638191,
+      "canonical": {
+        "scheduled_slots": 3999,
+        "offered": 3999,
+        "admitted": 3990,
+        "refused_attempts": 9,
+        "first_owner": {
+          "count": 60,
+          "p50_p95_p99_ms": [
+            14.9849,
+            64.9402,
+            72.7347
+          ]
+        },
+        "steady": {
+          "count": 3930,
+          "p50_p95_p99_ms": [
+            13.185,
+            76.9577,
+            100.973
+          ]
+        },
+        "peak_client_uncollected_futures": 5
+      },
+      "live": {
+        "scheduled_slots": 3999,
+        "offered": 3999,
+        "admitted": 3999,
+        "refused_attempts": 0,
+        "first_owner": {
+          "count": 60,
+          "p50_p95_p99_ms": [
+            16.2947,
+            71.8004,
+            75.5925
+          ]
+        },
+        "steady": {
+          "count": 3939,
+          "p50_p95_p99_ms": [
+            12.5906,
+            77.4713,
+            103.1087
+          ]
+        },
+        "peak_client_uncollected_futures": 7
+      },
+      "runtime_recreations_verified": 60,
+      "remaining_compute_threads": 0,
+      "rss_samples_mib": [
+        [
+          0.0,
+          254.156
+        ],
+        [
+          15.02,
+          246.953
+        ],
+        [
+          30.03,
+          250.281
+        ],
+        [
+          45.06,
+          252.297
+        ],
+        [
+          60.09,
+          254.609
+        ],
+        [
+          75.11,
+          252.312
+        ],
+        [
+          90.13,
+          254.5
+        ],
+        [
+          105.16,
+          254.75
+        ]
+      ]
+    },
+    "separate_processes": {
+      "overlap_seconds": 120.009,
+      "live": {
+        "wall_seconds": 120.009,
+        "cpu_seconds": 1.202,
+        "started_epoch_seconds": 1795705946.137742,
+        "finished_epoch_seconds": 1795706066.146376,
+        "final_queues": {
+          "batch": {
+            "pending": 0,
+            "peak_pending": 0,
+            "rejected": 0
+          },
+          "incremental": {
+            "pending": 0,
+            "peak_pending": 0,
+            "rejected": 0
+          },
+          "live": {
+            "pending": 0,
+            "peak_pending": 2,
+            "rejected": 0
+          }
+        },
+        "resident_bytes": 150650880,
+        "peak_bytes": 325632000,
+        "live": {
+          "scheduled_slots": 3999,
+          "offered": 3999,
+          "admitted": 3999,
+          "refused_attempts": 0,
+          "peak_client_uncollected_futures": 3,
+          "first_owner": {
+            "count": 60,
+            "p50_p95_p99_ms": [
+              2.7455,
+              8.8124,
+              10.2328
+            ]
+          },
+          "steady": {
+            "count": 3939,
+            "p50_p95_p99_ms": [
+              2.7786,
+              9.5484,
+              10.3116
+            ]
+          }
+        },
+        "runtime_recreations_verified": 60,
+        "remaining_compute_threads": 0,
+        "rss_samples_mib": [
+          [
+            0.0,
+            309.547
+          ],
+          [
+            15.01,
+            310.109
+          ],
+          [
+            30.02,
+            310.125
+          ],
+          [
+            45.03,
+            298.875
+          ],
+          [
+            60.04,
+            182.672
+          ],
+          [
+            75.05,
+            140.016
+          ],
+          [
+            90.06,
+            140.297
+          ],
+          [
+            105.06,
+            140.422
+          ]
+        ]
+      },
+      "historical": {
+        "wall_seconds": 120.017,
+        "cpu_seconds": 120.967,
+        "started_epoch_seconds": 1795705946.137685,
+        "finished_epoch_seconds": 1795706066.1546419,
+        "final_queues": {
+          "batch": {
+            "pending": 0,
+            "peak_pending": 4,
+            "rejected": 15877
+          },
+          "incremental": {
+            "pending": 0,
+            "peak_pending": 4,
+            "rejected": 3
+          },
+          "live": {
+            "pending": 0,
+            "peak_pending": 0,
+            "rejected": 0
+          }
+        },
+        "resident_bytes": 287735808,
+        "peak_bytes": 361283584,
+        "batch_admission_to_completion": {
+          "count": 34108,
+          "p50_p95_p99_ms": [
+            4.068,
+            40.3926,
+            111.0573
+          ]
+        },
+        "batch_source_loads": 34108,
+        "hot_cache": {
+          "count": 34105,
+          "p50_p95_p99_ms": [
+            0.1984,
+            0.2359,
+            0.4148
+          ]
+        },
+        "post_completion_evictions": 3,
+        "unique_windows": 995,
+        "matrix_passes": 34.279396984924624,
+        "canonical": {
+          "scheduled_slots": 3999,
+          "offered": 3999,
+          "admitted": 3996,
+          "refused_attempts": 3,
+          "peak_client_uncollected_futures": 5,
+          "first_owner": {
+            "count": 60,
+            "p50_p95_p99_ms": [
+              12.5276,
+              63.2424,
+              66.4639
+            ]
+          },
+          "steady": {
+            "count": 3936,
+            "p50_p95_p99_ms": [
+              13.9587,
+              74.1875,
+              94.2932
+            ]
+          }
+        },
+        "remaining_compute_threads": 0,
+        "rss_samples_mib": [
+          [
+            0.0,
+            310.328
+          ],
+          [
+            15.03,
+            341.578
+          ],
+          [
+            30.07,
+            344.156
+          ],
+          [
+            45.09,
+            338.984
+          ],
+          [
+            60.12,
+            279.531
+          ],
+          [
+            75.13,
+            271.516
+          ],
+          [
+            90.15,
+            273.219
+          ],
+          [
+            105.2,
+            273.641
+          ]
+        ]
+      }
+    }
+  },
+  "browser_resource_probe": {
+    "startedAt": "2026-11-26T15:11:13.801Z",
+    "chartPackage": "0.1.5",
+    "elapsedSeconds": 70.179,
+    "thresholdSeconds": 70,
+    "cycles": 123,
+    "cycleTimeP50P95P99Ms": [
+      565,
+      625,
+      667
+    ],
+    "samples": [
+      {
+        "phase": "mounted",
+        "cycles": 0,
+        "elapsed_seconds": 0.024,
+        "js_heap_used_bytes_after_gc": 14527364,
+        "dom": {
+          "documents": 1,
+          "nodes": 1119,
+          "jsEventListeners": 213
+        },
+        "strategy_cache_entries": 5,
+        "strategy_cache_bytes": 68136,
+        "strategy_pending_requests": 0,
+        "price_cache_entries": 0,
+        "price_cache_bytes": 0,
+        "tracked_native": {
+          "series": 0,
+          "primitives": 0,
+          "listeners": 0
+        },
+        "fixture_socket_urls": 3
+      },
+      {
+        "phase": "cycling",
+        "cycles": 27,
+        "elapsed_seconds": 15.135,
+        "js_heap_used_bytes_after_gc": 22787304,
+        "dom": {
+          "documents": 1,
+          "nodes": 1183,
+          "jsEventListeners": 227
+        },
+        "strategy_cache_entries": 17,
+        "strategy_cache_bytes": 177126,
+        "strategy_pending_requests": 0,
+        "price_cache_entries": 0,
+        "price_cache_bytes": 0,
+        "tracked_native": {
+          "series": 3,
+          "primitives": 3,
+          "listeners": 2
+        },
+        "fixture_socket_urls": 3
+      },
+      {
+        "phase": "cycling",
+        "cycles": 55,
+        "elapsed_seconds": 30.632,
+        "js_heap_used_bytes_after_gc": 23828960,
+        "dom": {
+          "documents": 1,
+          "nodes": 1192,
+          "jsEventListeners": 227
+        },
+        "strategy_cache_entries": 17,
+        "strategy_cache_bytes": 177126,
+        "strategy_pending_requests": 0,
+        "price_cache_entries": 0,
+        "price_cache_bytes": 0,
+        "tracked_native": {
+          "series": 3,
+          "primitives": 3,
+          "listeners": 2
+        },
+        "fixture_socket_urls": 3
+      },
+      {
+        "phase": "cycling",
+        "cycles": 82,
+        "elapsed_seconds": 45.965,
+        "js_heap_used_bytes_after_gc": 24393928,
+        "dom": {
+          "documents": 1,
+          "nodes": 1186,
+          "jsEventListeners": 227
+        },
+        "strategy_cache_entries": 17,
+        "strategy_cache_bytes": 177126,
+        "strategy_pending_requests": 0,
+        "price_cache_entries": 0,
+        "price_cache_bytes": 0,
+        "tracked_native": {
+          "series": 3,
+          "primitives": 4,
+          "listeners": 2
+        },
+        "fixture_socket_urls": 3
+      },
+      {
+        "phase": "cycling",
+        "cycles": 108,
+        "elapsed_seconds": 61.274,
+        "js_heap_used_bytes_after_gc": 25083972,
+        "dom": {
+          "documents": 1,
+          "nodes": 1173,
+          "jsEventListeners": 226
+        },
+        "strategy_cache_entries": 17,
+        "strategy_cache_bytes": 177126,
+        "strategy_pending_requests": 0,
+        "price_cache_entries": 0,
+        "price_cache_bytes": 0,
+        "tracked_native": {
+          "series": 3,
+          "primitives": 4,
+          "listeners": 2
+        },
+        "fixture_socket_urls": 3
+      },
+      {
+        "phase": "before_unmount",
+        "cycles": 123,
+        "elapsed_seconds": 70.147,
+        "js_heap_used_bytes_after_gc": 24778948,
+        "dom": {
+          "documents": 1,
+          "nodes": 1183,
+          "jsEventListeners": 227
+        },
+        "strategy_cache_entries": 17,
+        "strategy_cache_bytes": 177126,
+        "strategy_pending_requests": 0,
+        "price_cache_entries": 0,
+        "price_cache_bytes": 0,
+        "tracked_native": {
+          "series": 3,
+          "primitives": 3,
+          "listeners": 2
+        },
+        "fixture_socket_urls": 3
+      },
+      {
+        "phase": "after_unmount",
+        "cycles": 123,
+        "elapsed_seconds": 70.177,
+        "js_heap_used_bytes_after_gc": 20230728,
+        "dom": {
+          "documents": 1,
+          "nodes": 160,
+          "jsEventListeners": 38
+        },
+        "strategy_cache_entries": 17,
+        "strategy_cache_bytes": 177126,
+        "strategy_pending_requests": 0,
+        "price_cache_entries": 0,
+        "price_cache_bytes": 0,
+        "tracked_native": {
+          "series": 0,
+          "primitives": 0,
+          "listeners": 0
+        },
+        "fixture_socket_urls": 3
+      }
+    ],
+    "productRequests": 1925,
+    "errors": []
+  }
+}
