@@ -32,9 +32,11 @@ LONG_WINDOWS = ("m_near_5m_to_1m_same_run", "m_near_5m_to_5m_same_run", "extreme
 SHORT_BANDS = {"divider": (Decimal(1392), Decimal("1415.5"))}
 EARLY_SHORT, NEW_SHORT = "divider_near_strict_close", "divider_near_1m_to_1m_same_run"
 FAR_SHORT = "divider_far_strict_close"
+DAY_TABLES = {LATER: (246, (40, 20, 20, 40, 20, 10, 40, 20, 16, 20)),
+              CLOSE: (226, (40, 20, 20, 40, 20, 10, 40, 20, 16))}
 
 
-def counts_from_replay(minutes, *, old_at, old_quote, next_quote, known_at, tick, lots, old_total, new_total):
+def cohort_allocations(minutes, *, old_at, old_quote, next_quote, known_at, tick, lots, old_total, new_total):
     # Quote-minute prices are excluded from the old leg and may not be reused at a later observation.
     old_rows = [bar for bar in minutes if old_at < bar.start and bar.end <= old_quote - ONE]
     between = [bar for bar in minutes if old_quote <= bar.start and bar.end <= next_quote - ONE]
@@ -44,6 +46,13 @@ def counts_from_replay(minutes, *, old_at, old_quote, next_quote, known_at, tick
     if old_range is None:
         raise ValueError("JM_HANDOFF_FIRST_COHORT_EMPTY")
     counts = compatible_counts(lots, old_total, new_total, old_range, tick_bounds(earlier, tick), tick_bounds(later, tick))
+    return counts, old_range
+
+
+def counts_from_replay(minutes, *, old_at, old_quote, next_quote, known_at, tick, lots, old_total, new_total):
+    counts, old_range = cohort_allocations(minutes, old_at=old_at, old_quote=old_quote, next_quote=next_quote,
+                                           known_at=known_at, tick=tick, lots=lots, old_total=old_total,
+                                           new_total=new_total)
     return (count_bounds(counts, lots) if counts else dict(no_compatible_allocations=True)) | dict(
         gate_known_at=known_at, gate_known_before_quote_minute=known_at < next_quote - ONE,
         old_range_ticks=old_range, actual_opening_fills=None,
@@ -221,7 +230,82 @@ def compare_action_clocks(old, old_day, new_day, quotes, *, old_known, new_known
     )
 
 
-def study(session, market, *, with_action_clocks=False):
+def retained_after_gate(minutes, *, old_at, old_quote, next_quote, known_at, tick, lots, old_total, new_total):
+    if not old_at < old_quote - ONE or not old_quote <= known_at < next_quote - ONE:
+        return []
+    counts, _ = cohort_allocations(minutes, old_at=old_at, old_quote=old_quote, next_quote=next_quote,
+                                   known_at=known_at, tick=tick, lots=lots, old_total=old_total, new_total=new_total)
+    return sorted({old for old, prior, after in counts if 0 < old < lots and prior == 0 and old + after == lots})
+
+
+def partial_carry_comparison(old, action_paths, minutes, quotes, *, tick, totals, visible):
+    """Hold old short through the day snapshot, and change the composition of its opposite leg."""
+    lots = int(old.protection)
+    old_total, new_total = totals(FIRST, "long"), totals(CLOSE, "long")
+    if totals(LATER, "long") != new_total:
+        raise ValueError("JM_HANDOFF_PARTIAL_DAY_AVERAGES_DIFFER")
+    display_checks = {}
+    for source, (reported, row_sizes) in DAY_TABLES.items():
+        display_checks[source] = dict(image=visible[source]["image"], reported=reported, visible_rows=row_sizes,
+                                      headroom=reported - sum(row_sizes))
+    if any(row["headroom"] != 0 for row in display_checks.values()):
+        raise ValueError("JM_HANDOFF_PARTIAL_TABLE_SUM_CHANGED")
+    results = {}
+    day_cache = {}
+    for name, path in action_paths.items():
+        steps = path["steps"]
+        if len(steps) != 4:
+            continue
+        _, rotate, exit_both, open_short = (step["at"] for step in steps)
+        nights = [key for key, row in path["checks"]["night"].items()
+                  if row["fresh_short_visible"] and row["whole_leg_price_possible"]]
+        day_key = rotate, exit_both
+        if day_key not in day_cache:
+            pairs = {}
+            for source in (CLOSE, LATER):
+                pairs[source] = {}
+                for a, b in product(quotes[FIRST], quotes[source]):
+                    if b - ONE > exit_both:
+                        continue
+                    keep = retained_after_gate(minutes, old_at=old.known_at, old_quote=a, next_quote=b,
+                                               known_at=rotate, tick=tick, lots=lots, old_total=old_total,
+                                               new_total=new_total)
+                    if keep:
+                        pairs[source][(a, b)] = keep
+            # Both daytime quotes display the same size and opening average. With no additional
+            # turnover, any eligible assignment before the earlier quote stays valid at the later one.
+            consecutive = {
+                f"{display(a)} / {display(mid)} / {display(close)}": sorted(set(kept).intersection(later_kept))
+                for (a, mid), kept in pairs[LATER].items() for (first, close), later_kept in pairs[CLOSE].items()
+                if a == first and mid < close and set(kept).intersection(later_kept)
+            }
+            day_cache[day_key] = (pairs, consecutive)
+        pairs, consecutive = day_cache[day_key]
+        original_quantity = int(old.original)
+        results[name] = dict(
+            replace_long_cohort_after=rotate, test_clear_both_long_cohorts_after=exit_both,
+            independent_fresh_short_after=open_short,
+            old_short_sensitivities=dict(
+                keep_through_day_quote=dict(close_after=exit_both, short_at_day_quote=original_quantity,
+                                            possible_if_table_complete=False),
+                close_before_day_quote=dict(close_after=rotate, short_at_day_quote=0,
+                                            possible_if_table_complete=bool(pairs[CLOSE]) and bool(nights),
+                                            retained_old_longs_have_directional_exposure=True),
+            ),
+            first_to_close={f"{display(a)} / {display(b)}": keep for (a, b), keep in pairs[CLOSE].items()},
+            first_mixed_post_and_close=consecutive, compatible_night_quote_labels=nights,
+            first_close_and_night_price_possible=bool(pairs[CLOSE]) and bool(nights),
+        )
+    return dict(
+        paths=results, day_table_total_checks=display_checks, account_completeness_verified=False,
+        early_old_short_exit_requires_independent_test_permission=True,
+        test_assumption_no_long_turnover_between_mixed_post_and_close=True,
+        same_account_and_synchronous_observation_assumed=True, within_minute_order_known=False,
+        author_actions_confirmed=0, actual_opening_or_closing_fills=None,
+    )
+
+
+def study(session, market, *, with_action_clocks=False, with_partial_carry=False):
     lead = verified_json(*FIRST_RUN)
     follow = verified_json(*FOLLOWUP)
     selected = lead["modes"]["RETAIN_AND_ADD_15M"]
@@ -310,11 +394,16 @@ def study(session, market, *, with_action_clocks=False):
     old = Book(CONTRACT, "first-original-and-protection", "SHORT", lock_at, amount, amount, attempt=1)
     role_projection = project_roles(old, amount, gates, short_gates, NEW_PLAN)
     action_clocks = {}
-    if with_action_clocks:
+    if with_action_clocks or with_partial_carry:
         old_revision = sources[OLD_PLAN]["published_at"]
         action_clocks["action_clock_comparison"] = compare_action_clocks(
             old, old_day, new_day, anchors, old_known=datetime.fromisoformat(old_revision) + ONE,
             new_known=new_plan, cutoff=end_night, tick=tick, totals=totals,
+        )
+    if with_partial_carry:
+        action_clocks["partial_carry_comparison"] = partial_carry_comparison(
+            old, action_clocks["action_clock_comparison"]["paths"], old_day[1], anchors, tick=tick, totals=totals,
+            visible=visible,
         )
     return dict(
         study="JM2701_FIRST_LOCK_TO_DAY_AND_NEW_NIGHT_SHORT_RESEARCH", sources=sources, quotes=anchors,
@@ -334,6 +423,7 @@ def main():
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--compare-action-clocks", action="store_true")
+    parser.add_argument("--compare-partial-carry", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -347,7 +437,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session), with_action_clocks=args.compare_action_clocks)
+            report = study(session, build_market_data_service(session), with_action_clocks=args.compare_action_clocks,
+                           with_partial_carry=args.compare_partial_carry)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

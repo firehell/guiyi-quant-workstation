@@ -4,7 +4,7 @@ from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.portfolio_tasks import Book
 from lms405_jm_first_lock_handoff import (
     EARLY_SHORT, LONG_WINDOWS, NEW_SHORT, close_cohort_continuity, counts_from_replay, project_action_clocks,
-    project_roles,
+    project_roles, retained_after_gate,
 )
 from lms405_jm_m_leg_handoff import CLOSE, FIRST
 from lms405_protection_lot_timing import displayed_tick_totals
@@ -89,3 +89,15 @@ def test_fresh_short_waits_for_independent_exit_and_fresh_setup():
     assert stopped is None
     assert replay[-1]["before"].episode != old.episode
     assert replay[-1]["fixture"]["after"].visible.short == 20
+
+
+def test_partial_replacement_requires_all_new_lots_after_its_own_gate():
+    start = at("2026-10-22T21:45")
+    old_quote, next_quote, gate = (start + minutes * ONE for minutes in (4, 9, 6))
+    rows = [bar(start + offset * ONE, price, price)
+            for offset, price in ((2, 100), (3, 1000), (5, 105), (7, 110), (8, 120))]
+    args = dict(old_at=start + US, old_quote=old_quote, next_quote=next_quote, tick=Decimal(1), lots=4,
+                old_total=range(400, 401), new_total=range(420, 421))
+    assert retained_after_gate(rows, **args, known_at=gate) == [2]
+    assert retained_after_gate(rows, **args, known_at=gate + ONE) == []
+    assert retained_after_gate(rows, **args, known_at=old_quote - US) == []
