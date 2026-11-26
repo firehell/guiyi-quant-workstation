@@ -165,9 +165,9 @@ export async function mockMarketDetail(page, options = {}) {
           limit: Number(url.searchParams.get('limit')),
         },
         bars,
-        canonical_coverage: { start: bars[0].bar_end, end: bars.at(-1).bar_end },
+        canonical_coverage: { start: bars[0]?.bar_end ?? null, end: bars.at(-1)?.bar_end ?? null },
         page: customPage?.page ?? { has_more_before: false, next_before: null },
-        resolved_contract_segments: customPage?.resolvedContractSegments ?? (url.searchParams.get('series_kind') === 'actual_dominant'
+        resolved_contract_segments: customPage?.resolvedContractSegments ?? (bars.length && url.searchParams.get('series_kind') === 'actual_dominant'
           ? [{ contract: `${upper}2601`, start_trading_day: bars[0].trading_day, end_trading_day: bars.at(-1).trading_day }]
           : []),
       } })

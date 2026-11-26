@@ -195,7 +195,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       @range-detector-result="emit('range-detector-result', $event)"
       @marker-select="emit('marker-select', $event)"
     />
-    <ChartLayerDiagnostics v-if="chart && bars.length" :key="identityKey" :inspect="chart.inspectLayers" />
+    <ChartLayerDiagnostics v-if="chart" :key="identityKey" :inspect="chart.inspectLayers" />
   </section>
 </template>
 

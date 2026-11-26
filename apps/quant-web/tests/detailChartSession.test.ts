@@ -131,6 +131,65 @@ test('execution diagnostics bind each authority to positioned records and clear 
   f.session.dispose()
 })
 
+test('a failed candle update withdraws execution placement until a full repair binds the owners', () => {
+  const f = fixture()
+  const addSeries = f.raw.addSeries.bind(f.raw)
+  f.raw.addSeries = (...args: unknown[]) => Object.assign(addSeries(...args), {
+    update() { throw Error('injected native update failure') },
+  })
+  const lease = f.session.acquire(f.container(), {})
+  const candles = lease.addSeries(f.candle)
+  const point = { from: 1, to: 1, ratio: 0, price: 2, physicalContract: 'JM2701', at: '2026-09-03T02:30:00Z' } as const
+  f.session.setExecutions([
+    { ...point, id: 'native-fill', source: '快期原生成交' },
+    { ...point, id: 'paper-fill', source: '苏冰模型成交' },
+  ], '15m')
+  const first = { ...f.bars[0]!, physicalContract: 'JM2701' }
+  candles.setData([first])
+  const sources = () => f.session.inspectExecutionLayers().map(row => row.sourceIdentity)
+  assert.deepEqual(sources(), ['native-fill', 'paper-fill'])
+  const next = [first, { ...first, time: 2 }]
+  assert.throws(() => candles.setData(next), /injected native update failure/)
+  assert.deepEqual(sources(), [null, null])
+  assert.equal(f.session.indexOf(1 as any), null)
+  candles.setData(next)
+  assert.deepEqual(sources(), ['native-fill', 'paper-fill'])
+  assert.equal(f.calls.candles, 2)
+  f.session.dispose()
+})
+
+test('an identity change withdraws both price windows even if one native clear throws', () => {
+  const f = fixture()
+  const calls: string[] = []
+  let rejectClear = false
+  const addSeries = f.raw.addSeries.bind(f.raw)
+  f.raw.addSeries = (definition: { type: string }, ...args: unknown[]) => Object.assign(addSeries(definition, ...args), {
+    setData(points: unknown[]) {
+      calls.push(`${definition.type}:${points.length}`)
+      if (rejectClear && !points.length && definition.type === 'Candlestick') throw Error('injected clear failure')
+    },
+    applyOptions(options: { visible: boolean }) { calls.push(`${definition.type}:visible=${options.visible}`) },
+  })
+  f.session.setIdentity('jm:15m')
+  const lease = f.session.acquire(f.container(), {})
+  const candles = lease.addSeries(f.candle)
+  const volume = lease.addSeries({ type: 'Histogram' } as any, { priceScaleId: 'volume' })
+  candles.setData(f.bars)
+  volume.setData([{ time: 1 as any, value: 5 }])
+  f.session.mergeVolumeBars([{ ...f.bars[0]!, time: '2026-09-03T02:30:00Z', volume: 5 }])
+
+  rejectClear = true
+  f.session.setIdentity('rb:15m')
+  assert.deepEqual(calls.slice(-3), ['Candlestick:0', 'Candlestick:visible=false', 'Histogram:0'])
+  assert.equal(f.session.indexOf(1 as any), null)
+  assert.equal(f.session.length(), 0)
+  assert.deepEqual(f.session.mergeVolumeBars([]), [])
+  candles.setData([{ ...f.bars[0]!, time: 2 }])
+  assert.deepEqual(calls.slice(-2), ['Candlestick:1', 'Candlestick:visible=true'])
+  assert.equal(f.session.timeAt(0), 2)
+  f.session.dispose()
+})
+
 test('leases remove anonymous subscriptions and block old time-scale mutations', () => {
   const f = fixture(), listeners = new Set<Function>()
   const scale = f.raw.timeScale()

@@ -237,6 +237,21 @@ test('Free discloses insufficient same-segment history and revisable Range graph
   await expect(workspace).toHaveAttribute('data-range-detector-status', 'insufficient')
   await expect(workspace.locator('.free-workspace__hint')).toContainText('同合约／质量分段预热不足')
   await expect(workspace.locator('.free-workspace__hint')).toContainText('历史图形参考；加载更早数据可能修订箱体。')
+  const diagnostics = workspace.locator('.chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const range = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'range_detector · 预热中' })
+  await range.locator('summary').click()
+  await expect(range).toContainText('warming_up')
+  await expect(range).toContainText('range_detector_lux_v1')
+})
+
+test('Free selected Range reports missing input when no Bars are available', async ({ page }) => {
+  await mockMarketDetail(page, { barsPage: () => ({ bars: [] }) })
+  await page.goto(freeJm)
+  await enableRangeDetector(page)
+  const diagnostics = page.locator('[data-detail-workspace="free"] .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('range_detector · 缺少输入', { exact: true })).toHaveCount(1)
 })
 
 test('Free pagination keeps an away-from-latest viewport while prepending history', async ({ page }) => {

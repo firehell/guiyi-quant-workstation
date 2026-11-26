@@ -52,21 +52,30 @@ export interface SubingVolumeTierPoint {
   previousEnd: string
 }
 export function subingVolumeTierPoints(bars: readonly DisplayVolumeBar[], breaks: readonly { time: string }[] = []): SubingVolumeTierPoint[] {
+  return evaluateSubingVolumeTiers(bars, breaks).points
+}
+
+function evaluateSubingVolumeTiers(bars: readonly DisplayVolumeBar[], breaks: readonly { time: string }[]) {
   const interruptions = breaks.map(item => Date.parse(item.time))
-  return bars.flatMap((bar, index) => {
+  const points: SubingVolumeTierPoint[] = []
+  let lastEvaluated: DisplayVolumeBar | undefined
+  for (const [index, bar] of bars.entries()) {
     const previous = bars[index - 1]
     if (!previous || !validVolume(bar) || !validVolume(previous) || previous.volume <= 0
       || bar.confirmed === false || previous.confirmed === false
       || !bar.physicalContract || bar.physicalContract !== previous.physicalContract
       || !bar.calculationSegmentId || bar.calculationSegmentId !== previous.calculationSegmentId
-      || bar.segmentId !== previous.segmentId) return []
+      || bar.segmentId !== previous.segmentId) continue
     const start = Date.parse(previous.time), end = Date.parse(bar.time)
     if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start
-      || interruptions.some(time => time >= start && time <= end)) return []
-    const tier = bar.volume >= previous.volume * 3 ? 3 : bar.volume >= previous.volume * 2 ? 2 : null
+      || interruptions.some(time => time >= start && time <= end)) continue
     const ratio = bar.volume / previous.volume
-    return tier && Number.isFinite(ratio) ? [{ bar, tier, ratio, previousEnd: previous.time }] : []
-  })
+    if (!Number.isFinite(ratio)) continue
+    lastEvaluated = bar
+    const tier = bar.volume >= previous.volume * 3 ? 3 : bar.volume >= previous.volume * 2 ? 2 : null
+    if (tier) points.push({ bar, tier, ratio, previousEnd: previous.time })
+  }
+  return { points, lastEvaluated }
 }
 
 export type VolumePolicy = 'generic' | 'subing' | 'newow'
@@ -83,8 +92,10 @@ export function volumePresentation(
   },
 ) {
   const { theme, enabled, allowTiers, breaks } = options
+  const tiers = enabled && policy === 'subing' && allowTiers ? evaluateSubingVolumeTiers(bars, breaks ?? []) : undefined
   return {
     colors: volumeColors(bars, theme, enabled && policy !== 'subing'),
-    tiers: enabled && policy === 'subing' && allowTiers ? subingVolumeTierPoints(bars, breaks) : [],
+    tiers: tiers?.points ?? [],
+    lastTierEvaluation: tiers?.lastEvaluated,
   }
 }

@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@guiyi/quant-chart':
-        specifier: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.4.tgz
-        version: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.4.tgz(lightweight-charts@5.2.0)
+        specifier: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.5.tgz
+        version: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.5.tgz(lightweight-charts@5.2.0)
       axios:
         specifier: ^1.18.0
         version: 1.18.0
@@ -114,9 +114,9 @@ packages:
   '@emotion/hash@0.8.0':
     resolution: {integrity: sha512-kBJtf7PH6aWwZ6fka3zQ0p6SBYzx4fl1LoZXE2RrnYST9Xljm7WfKJrU4g/Xr3Beg72MLrp1AWNUmuYJTL7Cow==}
 
-  '@guiyi/quant-chart@file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.4.tgz':
-    resolution: {integrity: sha512-PkdSsXTx1UZF+csfo9LLxfi4f0dIlKsnaAZUrNTKWAwPhMIXzme2+g8LmbNbIzVacIWMw1u1sRr/qdrAX060+w==, tarball: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.4.tgz}
-    version: 0.1.4
+  '@guiyi/quant-chart@file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.5.tgz':
+    resolution: {integrity: sha512-udgVZvv/85v0R+xIjrnQ4R7S6koMsdb+69ovlJD+x57NclTrFxck18YSWqnx4RnEaEGi+15fZXn6OcuJf5wpQg==, tarball: file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.5.tgz}
+    version: 0.1.5
     peerDependencies:
       lightweight-charts: 5.2.0
 
@@ -924,7 +924,7 @@ snapshots:
 
   '@emotion/hash@0.8.0': {}
 
-  '@guiyi/quant-chart@file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.4.tgz(lightweight-charts@5.2.0)':
+  '@guiyi/quant-chart@file:../../packages/quant-chart/artifacts/guiyi-quant-chart-0.1.5.tgz(lightweight-charts@5.2.0)':
     dependencies:
       lightweight-charts: 5.2.0
 

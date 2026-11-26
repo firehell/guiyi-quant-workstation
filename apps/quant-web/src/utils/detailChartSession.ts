@@ -61,6 +61,7 @@ export function createDetailChartSession(dependencies: {
   const prices = new Map<string, ISeriesApi<SeriesType, Time>>()
   const writers = new Map<string, ReturnType<typeof createPriceSeriesWriter<any>>>()
   const pricePoints = new Map<string, any[]>()
+  const hiddenPrices = new Set<string>()
   let volumeInput: readonly DisplayVolumeBar[] = []
   let hasPrices = false
   let ownsViewport = false
@@ -73,7 +74,7 @@ export function createDetailChartSession(dependencies: {
   let restoringCursor = false
 
   function rememberCursor(event: MouseEventParams<Time>) {
-    if (restoringCursor) return
+    if (restoringCursor || hiddenPrices.has('candles')) return
     if (event.time === undefined || !event.point || event.paneIndex !== 0) return
     const price = prices.get('candles')?.coordinateToPrice(event.point.y)
     cursor = price == null ? null : { time: event.time, price }
@@ -103,8 +104,7 @@ export function createDetailChartSession(dependencies: {
     saveViewport(); identity = next; hasPrices = false; ownsViewport = false; cursor = null
     chart?.clearCrosshairPosition?.()
     setExecutions([])
-    for (const series of prices.values()) series.setData([])
-    writers.clear(); pricePoints.clear(); volumeInput = []
+    clearPriceWindow()
   }
   function viewport(): LogicalRange | null {
     const live = hasPrices && ownsViewport ? chart?.timeScale().getVisibleLogicalRange() : null
@@ -129,16 +129,33 @@ export function createDetailChartSession(dependencies: {
     cursor = null
     chart?.clearCrosshairPosition?.()
     setExecutions([])
-    for (const series of prices.values()) series.setData([])
-    writers.clear(); pricePoints.clear(); volumeInput = []; ownsViewport = false; hasPrices = false
+    ownsViewport = false; hasPrices = false
+    clearPriceWindow()
+  }
+  function clearPriceWindow() {
+    writers.clear(); pricePoints.clear(); volumeInput = []
+    for (const [role, series] of prices) {
+      try {
+        series.setData([])
+      } catch {
+        hideUnverifiedSeries(role, series)
+      }
+    }
+  }
+  function hideUnverifiedSeries(role: string, series: ISeriesApi<SeriesType, Time>) {
+    hiddenPrices.add(role)
+    try { series.applyOptions({ visible: false }) } catch { /* Retry on the next write. */ }
+  }
+  function knownCandles() {
+    return hiddenPrices.has('candles') ? [] : pricePoints.get('candles') ?? []
   }
   function indexOf(time: Time): number | null {
-    const index = (pricePoints.get('candles') ?? []).findIndex(point => timeKey(point.time) === timeKey(time))
+    const index = knownCandles().findIndex(point => timeKey(point.time) === timeKey(time))
     return index < 0 ? null : index
   }
-  function length() { return pricePoints.get('candles')?.length ?? 0 }
+  function length() { return knownCandles().length }
   function timeAt(index: number): Time | null {
-    const data = pricePoints.get('candles') ?? []
+    const data = knownCandles()
     return data[Math.max(0, Math.min(data.length - 1, Math.floor(index)))]?.time ?? null
   }
   function mergeVolumeBars(incoming: readonly DisplayVolumeBar[]): readonly DisplayVolumeBar[] {
@@ -150,6 +167,26 @@ export function createDetailChartSession(dependencies: {
     })
     volumeInput = suffix ? [...volumeInput.slice(0, volumeInput.length - incoming.length), ...incoming] : [...incoming]
     return volumeInput
+  }
+  function writePrices(target: ISeriesApi<SeriesType, Time>, role: string, points: any[]) {
+    const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
+    writers.set(role, writer)
+    try {
+      writer.write(target, points, identity)
+      if (hiddenPrices.has(role)) {
+        target.applyOptions({ visible: true })
+        hiddenPrices.delete(role)
+      }
+    } catch (error) {
+      hideUnverifiedSeries(role, target)
+      if (role === 'candles') {
+        cursor = null
+        if (executionFrequency !== null) syncExecutionLayers()
+      }
+      throw error
+    }
+    pricePoints.set(role, points)
+    if (role === 'candles' && executionFrequency !== null) syncExecutionLayers()
   }
   function acquire(container: HTMLElement, options: Parameters<typeof createChart>[1]): IChartApi {
     if (disposed) throw new Error('DETAIL_CHART_DISPOSED')
@@ -228,9 +265,7 @@ export function createDetailChartSession(dependencies: {
             mappedRange = offset === null ? null : { from: range.from + offset, to: range.to + offset } as LogicalRange
             if (mappedRange && (mappedRange.to < -.5 || mappedRange.from > data.length - .5)) mappedRange = null
           }
-          const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
-          writers.set(role, writer); writer.write(target, data, identity); pricePoints.set(role, data)
-          if (role === 'candles' && executionFrequency !== null) syncExecutionLayers()
+          writePrices(target, role, data)
           if (role === 'candles' && data.length) {
             hasPrices = true
             if (range && !mappedRange) ownsViewport = false
@@ -244,9 +279,7 @@ export function createDetailChartSession(dependencies: {
           const index = previous.findIndex(item => JSON.stringify(item.time) === key)
           const next = [...previous]
           if (index < 0) next.push(point); else next[index] = point
-          const writer = writers.get(role) ?? createPriceSeriesWriter<any>()
-          writers.set(role, writer); writer.write(target, next, identity); pricePoints.set(role, next)
-          if (role === 'candles' && executionFrequency !== null) syncExecutionLayers()
+          writePrices(target, role, next)
         }
         if (property === 'attachPrimitive') return (primitive: any) => {
           if (!active) return
@@ -326,7 +359,7 @@ export function createDetailChartSession(dependencies: {
     if (cursorFrame !== null) cancelAnimationFrame(cursorFrame)
     cursor = null
     setExecutions([])
-    host?.dispose(); chart = null; host = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); volumeInput = []; viewports.clear()
+    host?.dispose(); chart = null; host = null; surface = null; prices.clear(); writers.clear(); pricePoints.clear(); hiddenPrices.clear(); volumeInput = []; viewports.clear()
   }
   function setExecutions(points: readonly ExecutionOverlayPoint[], frequency: string | null = null) {
     executionPoints = points
@@ -337,7 +370,7 @@ export function createDetailChartSession(dependencies: {
     const anchor = prices.get('candles')
     if (!host || !anchor) return
     // Only the owners on the shared candle axis can authorize placement.
-    const candles = executionPoints.length ? pricePoints.get('candles') ?? [] : []
+    const candles = executionPoints.length ? knownCandles() : []
     const owners = new Map(candles.map(bar => [timeKey(bar.time), bar.physicalContract]))
     const eligible = executionFrequency === null ? [] : executionPoints.filter(point =>
       owners.get(timeKey(point.from)) === point.physicalContract && owners.get(timeKey(point.to)) === point.physicalContract)

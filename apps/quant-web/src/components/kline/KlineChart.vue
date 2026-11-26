@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { SubingVolumeTierPrimitive } from './subingVolumeTierPrimitive'
-import { CHART_PROFILES, mountChartHost, type ChartHost, type ChartProfileId } from '@guiyi/quant-chart'
-import { volumePresentation, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
+import { CHART_PROFILES, DISPLAY_CATALOG, mountChartHost, type ChartHost, type ChartLayer, type ChartProfileId } from '@guiyi/quant-chart'
+import { volumePresentation, validVolume, VOLUME_DISPLAY_VERSION, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
 import { readNewowChartDisplayTheme } from '@/utils/newowChartDisplayTheme'
 
 import { formatDisplayNumber } from '@/utils/marketDisplay'
@@ -59,6 +59,15 @@ import { RangeDetectorPrimitive } from '@/components/kline/rangeDetectorPrimitiv
 
 import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import { referenceIndicatorOverlay } from '@/utils/referenceIndicatorOverlay'
+import { NEWOW_PUBLIC_PATTERNS_METADATA } from '@/utils/newowPublicPatterns'
+import { THS_MACD_DISPLAY_VERSION } from '@/utils/thsMacdDisplay'
+
+function lastMatching<T>(items: readonly T[], matches: (item: T) => boolean): T | undefined {
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index]!
+    if (matches(item)) return item
+  }
+}
 
 function latestStudyPoint(
   points: readonly KlineValuePoint[] | undefined,
@@ -141,7 +150,7 @@ function scheduleReferenceCallouts() {
 }
 function projectReferenceCallouts() {
   calloutFrame = null
-  if (chart && candles && container.value) {
+  if (sharedPriceWritten && chart && candles && container.value) {
     const width = chart.timeScale().width()
     const height = chart.panes()[0]?.getHeight() ?? 0
     const points = props.referenceCallouts.flatMap((callout) => {
@@ -179,8 +188,10 @@ const referenceTargetSegments = ref(0), referenceStopSegments = ref(0)
 let host: ChartHost | null = null
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
+let sharedPriceWritten = false
 let activeCandle: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
+let volumeLayer: ChartLayer | null = null
 let macdHistogram: ISeriesApi<'Histogram'> | null = null
 let macdDif: ISeriesApi<'Line'> | null = null
 let macdDea: ISeriesApi<'Line'> | null = null
@@ -263,10 +274,9 @@ onMounted(async () => {
     },
   }, detailSession?.acquire ?? createChart)
   chart = host.chart
-  const paneLayout = detailSession ? detailChartPaneLayout(container.value.clientHeight, 32) : null
-  chart.panes()[0].setStretchFactor(paneLayout?.mainHeight ?? 6)
-  chart.addPane().setStretchFactor(paneLayout?.auxiliaryHeight ?? 2)
-  const auxiliary = host.addAuxiliary('default')
+  chart.addPane()
+  syncPaneLayout()
+  host.addAuxiliary('default')
   const price = host.layer('price', 'price', 'main')
   candles = price.candles({
     upColor: theme.candleUp,
@@ -276,21 +286,14 @@ onMounted(async () => {
     wickUpColor: theme.candleUp,
     wickDownColor: theme.candleDown,
   })
-  renderPublicPattern()
   const profile = props.chartProfile ?? (props.subingVolumeTiers ? 'subing' : props.visibleMainIndicators.includes('htdy') ? 'htdy' : 'free')
   const volumeId = props.subingVolumeTiers && CHART_PROFILES[profile].volume === 'subing' ? 'subing_volume' : 'generic_volume'
-  const volumeLayer = host.layer('volume', volumeId, 'volume')
+  volumeLayer = host.layer('volume', volumeId, 'volume')
   volume = volumeLayer.histogram({
     priceFormat: { type: 'volume' }, priceScaleId: 'volume', priceLineVisible: false, lastValueVisible: false,
   })
   volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
   chart.priceScale('right', 0).applyOptions({ scaleMargins: { top: .05, bottom: .14 } })
-  const macd = host.layer('macd', 'ths_macd', auxiliary)
-  macdHistogram = macd.histogram({ base: 0, lastValueVisible: false })
-  macdDif = macd.line({ color: '#00bfcf', lineWidth: 1, lastValueVisible: false })
-  macdDea = macd.line({ color: '#d4b000', lineWidth: 1, lastValueVisible: false })
-  macd.priceLevel(macdDif, { price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
-  chart.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
   chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChange)
   chart.subscribeCrosshairMove(onCrosshairMove)
   chart.subscribeClick(onClick)
@@ -306,7 +309,7 @@ onMounted(async () => {
   host.own(() => chartContainer.removeEventListener('pointerup', syncMacdLabelTop))
   replaceBars(props.bars, detailChartViewport(chart) !== null)
   if (typeof MutationObserver !== 'undefined') {
-    const themeObserver = new MutationObserver(() => { if (volume) volume.setData(volumeValues(renderedBars)) })
+    const themeObserver = new MutationObserver(renderVolumeBars)
     for (const root of [document.documentElement, document.body]) if (root) themeObserver.observe(root, { attributes: true, attributeFilter: ['data-theme'] })
     volumeLayer.own(() => themeObserver.disconnect())
   }
@@ -319,6 +322,7 @@ onUnmounted(() => {
   host?.dispose()
   host = null
   chart = null
+  volumeLayer = null
 })
 
 watch(() => props.period, () => {
@@ -382,34 +386,73 @@ function renderPublicPattern(): void {
   const anchor = candles
   const pattern = props.patternGeometry
   if (!host || !anchor) return
-  if (!pattern) {
+  if (!pattern || !sharedPriceWritten) {
     host.removeLayer('pattern')
     return
   }
   host.renderLayer('pattern', 'newow_pattern', 'main', 'primitive', layer => {
     if (!layer.hasResource(publicPatternPrimitive)) layer.primitive(anchor, publicPatternPrimitive)
     publicPatternPrimitive.setData(pattern)
+    // The geometry carries drawing coordinates but no hash of its scanner input.
+    let cutoff: string | null = null
+    for (const point of [...pattern.anchors, ...pattern.lines.flatMap(line => line.points)]) {
+      if (cutoff === null || Date.parse(point.barEnd) > Date.parse(cutoff)) cutoff = point.barEnd
+    }
+    layer.updateDiagnostics({
+      status: cutoff ? 'ready' : 'missing_input', formulaVersion: NEWOW_PUBLIC_PATTERNS_METADATA.version,
+      frequency: pattern.frequency, dataCutoff: cutoff, sourceIdentity: null,
+    })
   })
 }
 
-function volumeValues(bars: BarData[]) {
-  const input = chart ? detailChartVolumeBars(chart, bars) : bars
+function barProvenance(bar: Pick<BarData, 'time' | 'sourceBarSha256'> | undefined) {
+  return { frequency: props.period, sourceIdentity: bar?.sourceBarSha256 ?? null, dataCutoff: bar?.time ?? null }
+}
+
+function renderVolumeBars(): void {
+  if (!volume) return
+  const input = chart ? detailChartVolumeBars(chart, renderedBars) : renderedBars
   const theme = readNewowChartDisplayTheme()
-  const { colors, tiers } = volumePresentation(props.subingVolumeTiers ? 'subing' : 'generic', input, {
+  const { colors, tiers, lastTierEvaluation } = volumePresentation(props.subingVolumeTiers ? 'subing' : 'generic', input, {
     theme, enabled: props.volumeScoring, allowTiers: !props.loading && !props.error, breaks: props.qualityBreaks,
   })
   const marks = tiers.map(point => ({ time: volumeTime(point.bar), volume: point.bar.volume!, tier: point.tier }))
+  try {
+    volume.setData(input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) })))
+  } catch {
+    volumeLayer?.updateDiagnostics({
+      status: 'renderer_failure', frequency: props.period, sourceIdentity: null, dataCutoff: null,
+      formulaVersion: null, lastError: 'CHART_RENDERER_UPDATE_FAILED',
+    })
+    host?.removeLayer('volume-tiers')
+    volumeTierMarkCount.value = 0
+    return
+  }
+  const latestVolume = lastMatching<DisplayVolumeBar>(input, validVolume)
+  const scoringVersion = !props.subingVolumeTiers && props.volumeScoring ? VOLUME_DISPLAY_VERSION : null
+  volumeLayer?.updateDiagnostics({
+    ...barProvenance(latestVolume),
+    ...(scoringVersion ? { sourceIdentity: null } : {}),
+    status: latestVolume ? 'ready' : props.loading ? 'loading' : 'missing_input',
+    formulaVersion: scoringVersion, lastError: null,
+  })
   const anchor = volume
-  const written = Boolean(props.subingVolumeTiers && anchor && host?.renderLayer('volume-tiers', 'subing_volume', 'volume', 'primitive', layer => {
+  const tierSource = DISPLAY_CATALOG.subing_volume?.source
+  const written = Boolean(props.subingVolumeTiers && host?.renderLayer('volume-tiers', 'subing_volume', 'volume', 'primitive', layer => {
     if (!layer.hasResource(volumeTierPrimitive)) layer.primitive(anchor, volumeTierPrimitive, () => {
       volumeTierMarkCount.value = 0
     })
     volumeTierPrimitive.setData(marks, theme)
-    layer.updateDiagnostics({ status: input.length ? 'ready' : 'missing_input', renderer: 'primitive' })
+    layer.updateDiagnostics({
+      sourceIdentity: null, frequency: props.period, dataCutoff: lastTierEvaluation?.time ?? null,
+      status: !props.volumeScoring ? 'hidden' : props.loading ? 'loading' : props.error ? 'missing_input'
+        : lastTierEvaluation ? 'ready' : 'missing_input',
+      renderer: 'primitive',
+      formulaVersion: tierSource?.type === 'display_transform' ? tierSource.version : null,
+    })
   }))
   if (!props.subingVolumeTiers) host?.removeLayer('volume-tiers')
   volumeTierMarkCount.value = written ? marks.length : 0
-  return input.map((bar, index) => ({ time: volumeTime(bar), ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}) }))
 }
 
 function replaceBars(bars: BarData[], preserveViewport = false): void {
@@ -583,7 +626,7 @@ function onVisibleLogicalRangeChange(range: LogicalRange | null) {
 }
 
 function onCrosshairMove(param: MouseEventParams<Time>) {
-  if (param.time === undefined) {
+  if (!sharedPriceWritten || param.time === undefined) {
     hoverContext.value = null
     emit('crosshair-change', null)
     return
@@ -616,31 +659,37 @@ function onClick(param: MouseEventParams<Time>) {
 }
 
 function renderActiveCandle(): void {
-  if (!chart) return
+  if (!host) return
   const active = props.activeBar
-  const completed = renderedBars.at(-1)
-  if (!active || (completed && compareChartTimes(chartTime(active), chartTime(completed)) <= 0)) {
-    activeCandle?.setData([])
+  const tail = renderedBars.at(-1)
+  const leading = active && (!tail || compareChartTimes(chartTime(active), chartTime(tail)) > 0) ? active : null
+  const pending = leading ?? (sharedPriceWritten ? lastMatching(renderedBars, bar => bar.confirmed === false) : undefined)
+  if (!activeCandle && !leading && !pending) {
+    host.removeLayer('price-preview')
     return
   }
-  if (!activeCandle) {
-    const color = '#b47820'
-    activeCandle = host?.layer('price-preview', 'price_preview', 'main').candles({
-      upColor: 'transparent', downColor: 'transparent',
-      borderUpColor: color, borderDownColor: color, wickUpColor: color, wickDownColor: color,
-      priceLineVisible: false, lastValueVisible: false,
-    }) ?? null
-  }
-  activeCandle?.setData([{
-    time: chartTime(active), open: active.open, high: active.high, low: active.low, close: active.close,
-  }])
+  const written = host.renderLayer('price-preview', 'price_preview', 'main', 'candles', layer => {
+    if (leading && !activeCandle) {
+      const color = '#b47820'
+      activeCandle = layer.candles({
+        upColor: 'transparent', downColor: 'transparent',
+        borderUpColor: color, borderDownColor: color, wickUpColor: color, wickDownColor: color,
+        priceLineVisible: false, lastValueVisible: false,
+      })
+    }
+    activeCandle?.setData(leading ? [{
+      time: chartTime(leading), open: leading.open, high: leading.high, low: leading.low, close: leading.close,
+    }] : [])
+    layer.updateDiagnostics({ ...barProvenance(pending), status: pending ? 'ready' : 'hidden' })
+  })
+  if (!written) activeCandle = null
 }
 
 watch(() => props.activeBar, renderActiveCandle)
 
 function renderSavedReferenceLines(): void {
   if (!host) return
-  const lines = props.savedReferenceLines ?? []
+  const lines = sharedPriceWritten ? props.savedReferenceLines ?? [] : []
   const active = new Set(lines.map(line => line.id))
   for (const id of savedReferenceSeries.keys()) {
     if (active.has(id)) continue
@@ -671,25 +720,46 @@ function renderSavedReferenceLines(): void {
 }
 
 function renderAllSeries(): void {
-  if (!candles || !volume || !chart) return
-  candles.setData(barValues(renderedBars))
+  if (!host || !candles || !volume || !chart) return
+  const price = host.layer('price', 'price', 'main')
+  const wasWritten = sharedPriceWritten
+  try {
+    candles.setData(barValues(renderedBars))
+    sharedPriceWritten = true
+    const confirmed = lastMatching(renderedBars, bar => bar.confirmed !== false)
+    price.updateDiagnostics({
+      ...barProvenance(confirmed), status: confirmed ? 'ready' : props.loading ? 'loading' : 'missing_input', lastError: null,
+    })
+  } catch {
+    sharedPriceWritten = false
+    positionedCallouts.value = []
+    positionedSelection.value = []
+    if (hoverContext.value) {
+      hoverContext.value = null
+      emit('crosshair-change', null)
+    }
+    price.updateDiagnostics({
+      ...barProvenance(undefined), status: 'renderer_failure', lastError: 'CHART_RENDERER_UPDATE_FAILED',
+    })
+  }
+  if (sharedPriceWritten !== wasWritten) renderPublicPattern()
   renderActiveCandle()
-  const last = renderedBars.at(-1)
+  const last = sharedPriceWritten ? renderedBars.at(-1) : undefined
   if (container.value) {
     container.value.dataset.klineEnd = last?.time ?? ''
-    container.value.dataset.klineCount = String(renderedBars.length)
+    container.value.dataset.klineCount = String(sharedPriceWritten ? renderedBars.length : 0)
     container.value.dataset.klineClose = last ? String(last.close) : ''
     container.value.dataset.klineContract = last?.physicalContract ?? ''
     container.value.dataset.klineFrequency = props.period
   }
-  volume.setData(volumeValues(renderedBars))
+  renderVolumeBars()
   renderSavedReferenceLines()
   renderDerivedSeries()
 }
 
 function renderDynamicRange(): void {
   if (!host || !candles) return
-  if (!props.dynamicRangeEnabled) {
+  if (!props.dynamicRangeEnabled || !sharedPriceWritten) {
     host.removeLayer('dynamic-range')
     return
   }
@@ -713,16 +783,17 @@ function renderDerivedSeries(): void {
     writeDerivedSeries()
     indicatorRenderFailed.value = false
   } catch {
-    // Price and volume have already been committed to their own series.
+    // A derived layer must not prevent the remaining base series from updating.
     indicatorRenderFailed.value = true
   }
 }
 
 function writeDerivedSeries(): void {
-  if (!host || !candles || !macdHistogram || !macdDif || !macdDea) return
+  if (!host || !candles) return
   renderDynamicRange()
   const calculationStarted = performance.now()
-  const rangeEnabled = props.visibleMainIndicators.includes('range_detector') && Boolean(props.rangeDetectorSourceIdentity) && Boolean(props.rangeDetectorAnchorTime)
+  const rangeSelected = props.visibleMainIndicators.includes('range_detector')
+  const rangeEnabled = sharedPriceWritten && rangeSelected && Boolean(props.rangeDetectorSourceIdentity) && Boolean(props.rangeDetectorAnchorTime)
   const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])
   const cachedRange = rangeEnabled && rangeCache?.bars === renderedBars && rangeCache.key === rangeKey ? rangeCache.result : null
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
@@ -740,7 +811,7 @@ function writeDerivedSeries(): void {
     derivedData.ema.ema_21 = referenceOverlay.ema21
   }
   host.removeLayer('trade-reference')
-  const levels = referencePriceLevelSegments(renderedBars, props.referenceIndicators ?? [])
+  const levels = sharedPriceWritten ? referencePriceLevelSegments(renderedBars, props.referenceIndicators ?? []) : []
   referenceTargetSegments.value = levels.filter(level => level.kind === 'target').length
   referenceStopSegments.value = levels.filter(level => level.kind === 'stop').length
   for (const level of levels) {
@@ -781,7 +852,7 @@ function writeDerivedSeries(): void {
   }
   renderBoll(theme)
   const anchor = candles
-  if (rangeEnabled) host.renderLayer('range-detector', 'range_detector', 'main', 'primitive', layer => {
+  if (rangeSelected) host.renderLayer('range-detector', 'range_detector', 'main', 'primitive', layer => {
     if (!layer.hasResource(rangeDetectorPrimitive)) layer.primitive(anchor, rangeDetectorPrimitive)
     rangeDetectorPrimitive.setStyle({
       rangeIntact: theme.rangeIntact,
@@ -791,10 +862,15 @@ function writeDerivedSeries(): void {
       rangeMid: theme.rangeMid,
     })
     rangeDetectorPrimitive.setData(derivedData.rangeDetector?.ranges ?? [], renderedBars.at(-1)?.time ?? null, ribbonTime)
+    const point = derivedData.rangeDetector?.points.at(-1)
     layer.updateDiagnostics({
-      status: derivedData.rangeDetector ? 'ready' : 'missing_input', frequency: props.period,
-      sourceIdentity: props.rangeDetectorSourceIdentity ?? null, formulaVersion: 'range_detector_lux_v1',
-      dataCutoff: derivedData.rangeDetector ? renderedBars.at(-1)?.time ?? null : null,
+      status: !point ? (props.loading ? 'loading' : 'missing_input') : !point.valid ? 'invalid_source' : point.ready ? 'ready' : 'warming',
+      frequency: props.period,
+      sourceIdentity: point?.snapshot?.sourceIdentity ?? null,
+      formulaVersion: 'range_detector_lux_v1',
+      dataCutoff: point?.time ?? null,
+      cacheState: point ? (cachedRange ? 'hit' : 'miss') : null,
+      lastError: point?.reason ?? null,
     })
   })
   else {
@@ -844,31 +920,81 @@ function renderBoll(theme: ReturnType<typeof resolveChartTheme>): void {
   }
 }
 
-function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void {
-  if (!host || !macdHistogram || !macdDif || !macdDea) return
-  const displayBarByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
+function renderThsMacd(theme: ReturnType<typeof resolveChartTheme>): void {
+  const currentHost = host
+  if (!currentHost) return
+  const pane = { auxiliary: 'default' } as const
+  const barsByTime = new Map(renderedBars.map(bar => [bar.time, bar]))
+  const dif = chartValues(derivedData.macd.dif, barsByTime)
+  const dea = chartValues(derivedData.macd.dea, barsByTime)
+  const histogram = chartValues(derivedData.macd.histogram, barsByTime)
+  const latestValue = lastMatching(derivedData.macd.histogram, point => Number.isFinite(point.value))
+  const latestBar = latestValue && barsByTime.get(latestValue.time)
+  const written = currentHost.renderLayer('macd', 'ths_macd', pane, 'histogram', layer => {
+    if (!macdDif) {
+      macdHistogram = layer.histogram({ base: 0, lastValueVisible: false })
+      macdDif = layer.line({ color: '#00bfcf', lineWidth: 1, lastValueVisible: false })
+      macdDea = layer.line({ color: '#d4b000', lineWidth: 1, lastValueVisible: false })
+      layer.priceLevel(macdDif, { price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
+      chart?.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
+      syncPaneLayout()
+    }
+    try {
+      macdDif?.setData(dif)
+      macdDea?.setData(dea)
+      macdHistogram?.setData(histogram.map(point => 'value' in point
+        ? { ...point, color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : point))
+    } catch (error) {
+      // The cross marks own a plugin on DIF, so detach before the series is removed.
+      currentHost.removeLayer('macd-crosses')
+      throw error
+    }
+    layer.updateDiagnostics({
+      frequency: props.period, sourceIdentity: null, dataCutoff: latestBar?.time ?? null,
+      status: latestBar ? 'ready' : props.loading ? 'loading' : 'missing_input',
+      formulaVersion: THS_MACD_DISPLAY_VERSION, renderer: 'histogram',
+    })
+  })
   const anchor = macdDif
-  const crosses = host.renderLayer('macd-crosses', 'ths_macd', { auxiliary: 'default' }, 'marker', layer => {
+  if (!written || !anchor) {
+    currentHost.removeLayer('macd-crosses')
+    macdHistogram = null
+    macdDif = null
+    macdDea = null
+    macdCrossMarkers = null
+    macdPointCount.value = 0
+    return
+  }
+  macdPointCount.value = dif.filter(point => 'value' in point).length
+
+  const latest = renderedBars.at(-1)
+  const { available, required } = derivedData.macd.crossWarmup
+  const marks = derivedData.macd.crosses.flatMap(point => {
+    const bar = barsByTime.get(point.time)
+    if (!bar || !Number.isFinite(point.value)) return []
+    return [{ time: chartTime(bar), position: 'atPriceMiddle' as const, price: point.value, shape: 'circle' as const,
+      size: 0, text: point.side === 'golden' ? '▲' : '▼', color: point.side === 'golden' ? '#ef232a' : '#14b143' }]
+  })
+  const crosses = currentHost.renderLayer('macd-crosses', 'ths_macd', pane, 'marker', layer => {
     if (macdCrossMarkers && !layer.hasResource(macdCrossMarkers)) {
       layer.remove(macdCrossMarkers)
       macdCrossMarkers = null
     }
     macdCrossMarkers ??= layer.markers(anchor)
-    macdCrossMarkers.setMarkers(derivedData.macd.crosses.map(point => ({
-      time: chartTime(displayBarByTime.get(point.time)!), position: 'atPriceMiddle' as const, price: point.value,
-      shape: 'circle' as const, size: 0, text: point.side === 'golden' ? '▲' : '▼',
-      color: point.side === 'golden' ? '#ef232a' : '#14b143',
-    })))
-    layer.updateDiagnostics({ status: renderedBars.length ? 'ready' : 'missing_input', renderer: 'marker' })
+    macdCrossMarkers.setMarkers(marks)
+    layer.updateDiagnostics({
+      frequency: props.period, sourceIdentity: null, dataCutoff: available > 0 ? latest?.time ?? null : null,
+      status: available === required ? 'ready' : available > 0 ? 'warming' : props.loading ? 'loading' : 'missing_input',
+      renderer: 'marker', formulaVersion: THS_MACD_DISPLAY_VERSION,
+      warmup: { available, required },
+    })
   })
   if (!crosses) macdCrossMarkers = null
-  macdPointCount.value = derivedData.macd.dif.filter(point => Number.isFinite(point.value)).length
-  macdDif.setData(chartValues(derivedData.macd.dif))
-  macdDea.setData(chartValues(derivedData.macd.dea))
-  macdHistogram.setData(chartValues(derivedData.macd.histogram).map((point) => (
-    'value' in point ? { ...point, color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : point
-  )))
+}
 
+function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void {
+  if (!host) return
+  renderThsMacd(theme)
   if (props.visibleMainIndicators.includes('htdy')) {
     const written = host.renderLayer('htdy', 'htdy', 'main', 'line', layer => {
       htdyLines ??= {
@@ -887,7 +1013,8 @@ function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void 
   }
   const displayMarkers = mergedDisplayMarkers()
   const { native, drawn } = chartMarkers(displayMarkers)
-  const markerAnchor = candles
+  const markerAnchor = sharedPriceWritten ? candles : null
+  if (!markerAnchor) host.removeLayer('markers')
   // Keep one marker renderer so same-Bar stacking and hit testing stay consistent.
   const written = Boolean(markerAnchor && host.renderLayer('markers', 'display_markers', 'main', 'marker', layer => {
     if (htdyMarkers && !layer.hasResource(htdyMarkers)) {
@@ -1044,14 +1171,17 @@ function syncMacdLabelTop() {
   macdLabelTop.value = panes[0].getHeight()
 }
 
+function syncPaneLayout() {
+  if (!container.value || !chart) return
+  const layout = detailSession ? detailChartPaneLayout(container.value.clientHeight, 32) : null
+  const panes = chart.panes()
+  panes[0]?.setStretchFactor(layout?.mainHeight ?? 6)
+  panes[1]?.setStretchFactor(layout?.auxiliaryHeight ?? 2)
+}
+
 function resize() {
   if (!container.value || !chart) return
-  if (detailSession) {
-    const layout = detailChartPaneLayout(container.value.clientHeight, 32)
-    const panes = chart.panes()
-    panes[0]?.setStretchFactor(layout.mainHeight)
-    panes[1]?.setStretchFactor(layout.auxiliaryHeight)
-  }
+  if (detailSession) syncPaneLayout()
   chart.resize(container.value.clientWidth, container.value.clientHeight)
   if (viewportStabilityTarget) {
     viewportStableFrames = 0
