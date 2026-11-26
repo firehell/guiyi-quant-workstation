@@ -53,18 +53,18 @@ class Attempt:
         number(self.quantity, positive=True)
         if not self.id or not self.expected.at < min(self.at, self.expires_at) or self.operation not in (
             "PROTECT_ADD", "PROTECT_WITHDRAW", "CLEAR", "ENTER_LONG", "REENTER_LONG",
+            "DIRECTIONAL_LONG_REDUCE", "DIRECTIONAL_LONG_ADD",
         ):
             raise ValueError("LIFECYCLE_INVALID_ATTEMPT")
 
     @property
     def request(self):
         before = self.expected.position
-        if self.operation == "PROTECT_ADD":
-            # The scoped empty slice makes the entry permission specific to
-            # this exact aggregate position, stage, quantity, and price zone.
+        if self.operation in ("PROTECT_ADD", "DIRECTIONAL_LONG_ADD"):
+            # The empty slice shares the exact parent state and operation scope.
             before, kind = Position(before.contract), "ENTER_LONG"
         else:
-            kind = "EXIT_LONG" if self.operation == "PROTECT_WITHDRAW" else self.operation
+            kind = "EXIT_LONG" if self.operation in ("PROTECT_WITHDRAW", "DIRECTIONAL_LONG_REDUCE") else self.operation
         context = sha256(encoded([self.expected.identity, self.id, self.operation, self.expires_at]).encode()).hexdigest()
         return PlanAction(before, context, self.expected.at, Action(kind, self.quantity), self.plan)
 
@@ -79,6 +79,13 @@ class Attempt:
             if self.quantity > protected:
                 raise ValueError("LIFECYCLE_WITHDRAW_UNASSIGNED_PROTECTION")
             return apply_action(before, self.request.action), protected - self.quantity
+        if self.operation in ("DIRECTIONAL_LONG_REDUCE", "DIRECTIONAL_LONG_ADD"):
+            if before.long <= 0 or before.short or protected:
+                raise ValueError("LIFECYCLE_DIRECTIONAL_LONG_REQUIRED")
+            if self.operation == "DIRECTIONAL_LONG_ADD":
+                return Position(before.contract, before.long + self.quantity, before.short), protected
+            if self.quantity >= before.long:
+                raise ValueError("LIFECYCLE_REDUCE_MUST_RETAIN_DIRECTIONAL_LONG")
         return apply_action(before, self.request.action), Decimal(0)
 
 
@@ -143,6 +150,9 @@ def replay(seeds, attempts, publications, *, cutoff, start=None, cursors=None, a
                          decision_id=event.id, status=status,
                          before=asdict(before) if before else None, after=asdict(after) if after else None,
                          changed=before != after,
-                         condition_position_scope="PROTECTION_SLICE" if event.operation == "PROTECT_ADD" else "EPISODE",
+                         condition_position_scope={
+                             "PROTECT_ADD": "PROTECTION_SLICE",
+                             "DIRECTIONAL_LONG_ADD": "DIRECTIONAL_ADDITION_SLICE",
+                         }.get(event.operation, "EPISODE"),
                          conditions=result))
     return rows, state
