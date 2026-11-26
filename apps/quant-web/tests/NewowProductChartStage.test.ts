@@ -646,6 +646,47 @@ test('same chart instance restores identity-specific layers and viewport across 
   app.unmount()
 })
 
+test('action diagnostics follow the rendered strategy and clear old provenance during a switch', async () => {
+  const Stage = await loadComponent()
+  const response = ref<MutableChartResponse | null>(chartResponse())
+  const switching = ref(false)
+  const stage = ref<{ inspectLayers: () => ReadonlyArray<{
+    indicatorId: string; status: string; sourceIdentity: string | null; dataCutoff: string | null; formulaVersion: string | null
+  }> } | null>(null)
+  const fakeChart = {
+    addSeries: () => ({ setData() {} }), removeSeries() {}, resize() {}, remove() {},
+    timeScale: () => ({ fitContent() {}, setVisibleLogicalRange() {}, getVisibleLogicalRange: () => null,
+      subscribeVisibleLogicalRangeChange() {}, unsubscribeVisibleLogicalRangeChange() {} }),
+  }
+  const app = createRenderer(nodeOperations()).createApp(defineComponent({ setup: () => () => h(Stage, {
+    ref: stage, response: response.value, strategy: 'oscillation', loading: response.value === null,
+    strategySwitching: switching.value,
+    selectedSignalId: null,
+  }) }))
+  app.provide(NEWOW_PRODUCT_CHART_ADAPTER_KEY, adapter(fakeChart))
+  const root = element('root')
+  app.mount(root); await nextTick()
+
+  const actions = () => stage.value!.inspectLayers().find(layer => layer.indicatorId === 'newow_actions')!
+  assert.equal(actions().status, 'ready')
+  assert.equal(actions().sourceIdentity, response.value!.meta.input_content_sha256)
+  assert.equal(actions().dataCutoff, response.value!.value!.bars[0]!.bar_end)
+  assert.equal(actions().formulaVersion, response.value!.meta.identity.formula_versions.join(' / '))
+
+  const toggle = findCheckbox(root, '建仓 / 清仓')!
+  ;(toggle.props.onChange as () => void)(); await nextTick()
+  assert.equal(actions().status, 'hidden')
+  ;(toggle.props.onChange as () => void)(); await nextTick()
+  switching.value = true; await nextTick()
+  assert.equal(actions().status, 'loading')
+  assert.equal(actions().sourceIdentity, null)
+  assert.equal(actions().formulaVersion, null)
+  assert.equal(actions().dataCutoff, null)
+  response.value = null; switching.value = false; await nextTick()
+  assert.equal(actions().status, 'loading')
+  app.unmount()
+})
+
 test('dual overlay projects both strategies at prices, exposes blue/orange labels and clears on exit', async () => {
   const Stage = await loadComponent()
   const response = prependBar(strategyResponse('trend'))

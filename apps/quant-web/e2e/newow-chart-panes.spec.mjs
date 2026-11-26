@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { NEWOW_STRATEGIES, installNewowProductFixtures, newowRoute, productRequests, assertNoUnexpectedRequests } from './newow-product.helpers.mjs'
 
 for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
-  test(`${strategy} ${frequency}: native panes, indicator replacement and exact Hint dialog`, async ({ page }) => {
+  test(`${strategy} ${frequency}: native panes, indicator replacement and action diagnostics`, async ({ page }) => {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const fixture = await installNewowProductFixtures(page)
@@ -16,7 +16,9 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
     const paneHeights = await nativeRows.evaluateAll(rows => rows.slice(0, 2).map(row => row.getBoundingClientRect().height))
     expect(paneHeights[0]).toBeGreaterThanOrEqual(280)
     expect(paneHeights[1]).toBeGreaterThanOrEqual(112)
-    await expect(stage.locator('.newow-product-chart-stage__volume-label')).toBeVisible()
+    await expect(stage).toHaveAttribute('data-volume-policy', 'newow')
+    await expect(stage).toHaveAttribute('data-volume-bar-count', /^[1-9]\d*$/)
+    await expect(stage.locator('.newow-product-chart-stage__volume-label')).toHaveCount(0)
     await expect.poll(async () => {
       const native = await nativeRows.nth(1).boundingBox()
       const controls = await stage.locator('.newow-product-chart-stage__auxiliary-toolbar').boundingBox()
@@ -36,25 +38,20 @@ for (const strategy of NEWOW_STRATEGIES) for (const frequency of ['1d']) {
     expect(productRequests(fixture, 'chart')).toHaveLength(1)
     expect(productRequests(fixture, 'explanation').filter(item => item.url.searchParams.get('decision_v2') === 'true')).toHaveLength(1)
     expect(productRequests(fixture, 'explanation').filter(item => !item.url.searchParams.has('decision_v2'))).toHaveLength(0)
-    await stage.locator('.newow-product-chart-stage__legend summary').filter({ hasText: /^过程提示$/ }).click()
-    const hint = stage.locator('[data-hint-id]').first()
-    const id = await hint.getAttribute('data-hint-id')
-    await hint.click()
-    const dialog = page.getByRole('dialog')
-    await expect(dialog).toContainText('历史过程提示')
-    await dialog.getByText('来源与原始事实', { exact: true }).click()
-    await expect(dialog).toContainText(id)
-    await expect(dialog).toContainText('known_at')
-    expect(productRequests(fixture, 'explanation').filter(item => !item.url.searchParams.has('decision_v2'))).toHaveLength(0)
-    await page.keyboard.press('Escape')
-    if (strategy === 'trend' && frequency === '1d') {
-      await page.getByRole('button', { name: '图表全屏', exact: true }).click()
-      await expect.poll(() => stage.evaluate(element => document.fullscreenElement === element)).toBe(true)
-      await page.getByRole('button', { name: '退出图表全屏', exact: true }).click()
-      await expect.poll(() => page.evaluate(() => document.fullscreenElement === null)).toBe(true)
-      await stage.locator('.newow-product-chart-stage__legend summary').filter({ hasText: /^过程提示$/ }).click()
-      await stage.screenshot({ path: '/private/tmp/newow-task3-chart.png' })
-    }
+    await stage.getByText('副图管理', { exact: true }).click()
+    const diagnostics = stage.locator('.chart-layer-diagnostics')
+    await diagnostics.getByText('图层诊断', { exact: true }).click()
+    await expect(diagnostics.getByText('newow_actions · 就绪', { exact: true })).toBeVisible()
+    await diagnostics.getByText('图层诊断', { exact: true }).click()
+
+    await stage.getByRole('button', { name: '图表设置', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: '图表设置' })
+    await settings.getByRole('checkbox', { name: '建仓 / 清仓' }).uncheck()
+    await settings.getByRole('button', { name: '完成', exact: true }).click()
+    await diagnostics.getByText('图层诊断', { exact: true }).click()
+    await expect(diagnostics.getByText('newow_actions · 已隐藏', { exact: true })).toBeVisible()
+    await expect(nativeRows).toHaveCount(3)
+    expect(productRequests(fixture, 'chart')).toHaveLength(1)
     expect(errors).toEqual([])
     assertNoUnexpectedRequests(fixture)
   })

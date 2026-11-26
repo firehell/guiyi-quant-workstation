@@ -156,7 +156,8 @@ watch(() => [props.product, props.strategy, props.frequency, revision.value], as
             </template>
           </template>
           <template v-else>
-            <NewowSharedAuxiliaryStage label="盘后辅助指标" :chart="section.chart" :auxiliary="auxiliary" />
+            <NewowSharedAuxiliaryStage label="盘后辅助指标" :chart="section.chart" :auxiliary="auxiliary"
+              :component="selectedSection === 'comparator' ? null : selectedSection" :lifecycle="auxiliary?.status.status" />
             <p v-if="readiness && readiness.message !== '当前可计算'" role="status">{{ readiness.message }}</p>
             <p v-if="disclosure">{{ disclosure }}</p>
           </template>

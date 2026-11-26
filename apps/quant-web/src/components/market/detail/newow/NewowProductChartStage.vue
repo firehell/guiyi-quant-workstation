@@ -457,7 +457,7 @@ watch(pure, () => {
   resize()
 }, { flush: 'post' })
 watch(showBreakoutShapes, () => { renderReferencePrices(); renderVolume(model.value) })
-watch(showActions, () => { renderMarkers(model.value); scheduleActionProjection() })
+watch([showActions, () => props.loading], () => { renderMarkers(model.value); scheduleActionProjection() })
 watch([model, allReferenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
 watch([detailLabels, showHints], scheduleActionProjection, { flush: 'post' })
 watch([() => props.loading, () => props.strategySwitching, () => props.strategy, () => props.response?.status.status, () => props.displayOnly], renderVisualOverlays)
@@ -566,7 +566,7 @@ function renderModel(value: NewowProductChartModel | null): void {
     renderAuxiliary()
     for (const id of mainLines.keys()) host?.removeLayer(`main:${id}`)
     mainLines.clear()
-    actionMarkers?.setMarkers([])
+    renderMarkers(null)
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     resolvedSignalKey = null
     resolvedFocusRequestKey = null
@@ -693,9 +693,23 @@ function syncMainLines(value: NewowProductChartModel): void {
 }
 
 function renderMarkers(value: NewowProductChartModel | null): void {
-  if (chart === null || actionMarkers === null || value === null) return
-  if (pure.value || comparisonActive.value || props.displayOnly) { actionMarkers.setMarkers([]); return }
-  const actions: SeriesMarker<Time>[] = [...(showActions.value ? value.actions : [])]
+  if (host === null || actionMarkers === null) return
+  const hidden = pure.value || comparisonActive.value || !showActions.value
+  const preview = props.displayOnly || props.strategySwitching || (value !== null && value.identity.strategy !== props.strategy)
+  const response = value === null || preview ? null : props.response
+  const latest = response ? value?.bars.at(-1) : null
+  const featureStatus = response?.status?.status
+  const layer = host.layer('actions', 'newow_actions', 'main')
+  layer.updateDiagnostics({
+    status: hidden ? 'hidden' : latest && featureStatus === 'ready' ? 'ready'
+      : featureStatus === 'warming' ? 'warming' : props.loading || props.strategySwitching ? 'loading' : 'missing_input',
+    formulaVersion: latest ? response?.meta.identity.formula_versions.join(' / ') || null : null,
+    sourceIdentity: latest ? response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null : null,
+    frequency: latest ? value?.identity.frequency ?? null : null,
+    dataCutoff: latest?.barEnd ?? null,
+  })
+  if (hidden || preview || value === null) { actionMarkers.setMarkers([]); return }
+  const actions: SeriesMarker<Time>[] = [...value.actions]
     .sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
     .map((item) => ({ ...productChartMarker(
       item,

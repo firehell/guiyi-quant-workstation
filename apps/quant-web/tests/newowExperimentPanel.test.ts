@@ -188,7 +188,7 @@ test('shared auxiliary replaces only its selected primitive and revokes a mismat
   const url = new URL('../src/components/market/detail/newow/NewowSharedAuxiliaryStage.vue', import.meta.url)
   const Shared = (await import(await compiledModule(url))).default
   const meta = {
-    snapshot_token: 'snapshot-a',
+    snapshot_token: 'snapshot-a', as_of: '2026-09-02T08:00:00Z', data_revision_identity: 'revision-a',
     identity: { product: 'rb', strategy: 'oscillation', frequency: '1d' },
   }
   const bar = {
@@ -197,28 +197,60 @@ test('shared auxiliary replaces only its selected primitive and revokes a mismat
     open: '100', high: '110', low: '90', close: '105', volume: 1,
   }
   const chart = { meta, value: { bars: [bar], frames: [], actions: [], hints: [], trend_channel: null, next_before: null } }
-  const layer = (component: string, data: object, snapshot = 'snapshot-a') => ({
+  const layer = (component: string, data: object | null, snapshot = 'snapshot-a', segmentId = 'a', status = 'ready') => ({
     meta: { ...meta, snapshot_token: snapshot },
-    value: { component, segments: [{ physical_contract: bar.physical_contract, segment_id: 'a', bar_ends: [bar.bar_end], data }] },
+    value: { component, formula_version: 'fixture-formula', segments: [{ physical_contract: bar.physical_contract, segment_id: segmentId, bar_ends: [bar.bar_end], status: { status }, data }] },
   })
-  const selected = ref(layer('main_force_control', { kongpan: [12], status: ['HOLD'], current_status: 'HOLD' }))
+  const selected = ref<ReturnType<typeof layer> | null>(layer('main_force_control', { kongpan: [12], status: ['HOLD'], current_status: 'HOLD' }))
+  const component = ref('main_force_control')
   const startingCharts = chartMock.charts.length
   const app = createRenderer(nodeOperations()).createApp(defineComponent({
-    setup: () => () => h(Shared, { chart, auxiliary: selected.value }),
+    setup: () => () => h(Shared, { chart, auxiliary: selected.value, component: component.value, lifecycle: selected.value ? 'ready' : 'loading' }),
   }))
-  app.mount(element('root'))
+  const root = element('root')
+  app.mount(root)
+  const panel = () => findNode(root, n => n.props.class === 'chart-layer-diagnostics')!
+  async function showDiagnostics() {
+    (panel().props.onToggle as () => void)()
+    await flush()
+    return nodeText(panel())
+  }
   await flush()
   const native = chartMock.charts[startingCharts]
   assert.deepEqual(native.resources(), { series: 1, primitives: 1, range: true, cursor: true })
+
+  const accepted = await showDiagnostics()
+  assert.match(accepted, /newow\.main_force_control · 就绪/)
+  assert.match(accepted, /fixture-formula/)
+  assert.match(accepted, /revision-a/)
+
+  component.value = 'up_down_energy'
+  selected.value = null
+  await flush()
+  assert.match(await showDiagnostics(), /newow\.up_down_energy · 加载中/)
+  assert.deepEqual(native.resources(), { series: 1, primitives: 0, range: true, cursor: true })
+
+  selected.value = layer('up_down_energy', null, 'snapshot-a', 'a', 'warming')
+  await flush()
+  const warming = await showDiagnostics()
+  assert.match(warming, /newow\.up_down_energy · 预热中/)
+  assert.match(warming, /fixture-formula/)
 
   selected.value = layer('up_down_energy', { var4: [2], ma10: [1] })
   await flush()
   assert.equal(chartMock.charts.length, startingCharts + 1)
   assert.deepEqual(native.resources(), { series: 1, primitives: 1, range: true, cursor: true })
 
-  selected.value = layer('up_down_energy', { var4: [2], ma10: [1] }, 'obsolete')
-  await flush()
-  assert.deepEqual(native.resources(), { series: 1, primitives: 0, range: true, cursor: true })
+  for (const [snapshot, segment] of [['snapshot-a', 'other-calculation-segment'], ['obsolete', 'a']]) {
+    selected.value = layer('up_down_energy', { var4: [2], ma10: [1] }, snapshot, segment)
+    await flush()
+    assert.deepEqual(native.resources(), { series: 1, primitives: 0, range: true, cursor: true })
+    assert.match(nodeText(root), /当前合约段的辅助指标未就绪/)
+    const rejected = await showDiagnostics()
+    assert.match(rejected, /newow\.up_down_energy · 来源无效/)
+    assert.match(rejected, /CHART_AUXILIARY_SOURCE_INVALID/)
+    assert.doesNotMatch(rejected, /fixture-formula/)
+  }
 
   app.unmount()
   assert.deepEqual(native.resources(), { series: 0, primitives: 0, range: false, cursor: false })
