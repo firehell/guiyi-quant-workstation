@@ -4,13 +4,14 @@ import argparse
 import csv
 from datetime import date, datetime
 from decimal import Decimal
+from itertools import product
 from pathlib import Path
 
 from lms405_i2701_case import readback
-from lms405_oi_short_retention import CONTRACT, FIRST, TICK
+from lms405_oi_short_retention import CLOSE, CONTRACT, DAYS, FIRST, NIGHT, TICK
 from lms405_portfolio_replay import ARCHIVE
 from lms405_protection_lot_origins import allocations
-from lms405_protection_lot_timing import displayed_tick_totals, tick_bounds, verified_json
+from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
 from lms405_replay import read_session_series
 from lms405_right_side_study import ONE, US, at
 from lms_near405_replay import encoded, sha
@@ -28,6 +29,9 @@ PLAN = "A5358325549629506"
 DIVIDER = (Decimal(10240), Decimal(10283))
 TRADE_DAY = date(2026, 10, 27)
 EVENT = at("2026-10-26T21:05:52")  # Candidate date, since the source displays no date for the row.
+SCOPE = (Path("output/lms405-oi-report-scope-20261126/reviewed.json"),
+         "081ea4f6d3616ff16d3d7563c54388a9bda8cd6fcba92f55c507bc11e3962f7d")
+COHORTS = ("before_report_minute", "inside_report_minute", "after_report_minute")
 
 
 def archived_image(index, source, filename):
@@ -117,10 +121,126 @@ def study(session, market):
     )
 
 
+def sum_bounds(counts, envelopes):
+    if any(count and limits is None for count, limits in zip(counts, envelopes, strict=True)):
+        return None
+    return tuple(sum(count * (limits or (0, 0))[edge] for count, limits in zip(counts, envelopes, strict=True))
+                 for edge in (0, 1))
+
+
+def retained_origins(lots, opening_phases, replacements, first_totals, close_totals):
+    """Keep the same retained tick sum in both observed opening averages."""
+    paths = []
+    for _, *opened in allocations(lots, None, opening_phases, None, first_totals):
+        for kept in product(*(range(n + 1) for n in opened)):
+            removed = tuple(old - stay for old, stay in zip(opened, kept, strict=True))
+            new = sum(removed)
+            kept_low, kept_high = sum_bounds(kept, opening_phases)
+            removed_low, removed_high = sum_bounds(removed, opening_phases)
+            add = sum_bounds((new,), (replacements,))
+            if add is None:
+                continue
+            new_low, new_high = add
+            low = max(kept_low, first_totals.start - removed_high, close_totals.start - new_high)
+            high = min(kept_high, first_totals.stop - 1 - removed_low, close_totals.stop - 1 - new_low)
+            if low <= high:
+                paths.append((kept, removed))
+    return paths
+
+
+def carry_origin_study(session, market):
+    reference = verified_json(*SCOPE)
+    holdings = verified_json(RETENTION, RETENTION_SHA)
+    if reference["earlier_holdings_sha256"] != RETENTION_SHA:
+        raise ValueError("OI_ORIGIN_REFERENCE_LINK_CHANGED")
+    snapshots = holdings["snapshots"]
+    for photo in (*reference["screenshots"], *(snapshots[key]["image"] for key in (FIRST, CLOSE, NIGHT))):
+        if sha((ARCHIVE.parent / photo["path"]).read_bytes()) != photo["sha256"]:
+            raise ValueError("OI_ORIGIN_ATTACHMENT_CHANGED")
+    quotes = tuple(map(datetime.fromisoformat, holdings["capture_minutes"][FIRST]))
+    close, = map(datetime.fromisoformat, holdings["capture_minutes"][CLOSE])
+    if (tuple(row["quote_minute_end"] for row in reference["conditional_405_opening_price_cases"])
+            != tuple(map(str, quotes)) or not EVENT < min(quotes) <= max(quotes) < close):
+        raise ValueError("OI_ORIGIN_CAPTURE_CHANGED")
+    rows = read_session_series(session, market, "oi", CONTRACT, "1m", ONE, DAYS)
+    market_input = readback(rows)
+    if market_input != holdings["market"] or market_input[str(DAYS[0])] != reference["market"][str(DAYS[0])]:
+        raise ValueError("OI_ORIGIN_MARKET_CHANGED")
+    day = [b for b in rows if b.trading_day == DAYS[0]]
+    next_day = [b for b in rows if b.trading_day == DAYS[1]]
+    event_end = datetime.fromisoformat(reference["candidate_date"]["bar_end"])
+    close_below = datetime.fromisoformat(reference["candidate_date"]["first_close_below_divider_high_bar_end"])
+    old_short, close_short, night_short = (snapshots[key]["legs"]["short"] for key in (FIRST, CLOSE, NIGHT))
+    night_long = snapshots[NIGHT]["legs"]["long"]
+    amounts = (old_short, close_short, night_short, night_long)
+    if (any(row["quantity"] != 40 for row in amounts)
+            or [row["today_quantity"] for row in amounts] != [40, 40, 0, 40]
+            or any(Decimal(row["opening_average"]) != Decimal("10340.0") for row in amounts[:3])
+            or Decimal(night_long["opening_average"]) != Decimal("10224.0")
+            or max(b.high for b in next_day) != Decimal(holdings["hindsight_next_trading_day_high"])):
+        raise ValueError("OI_ORIGIN_POSITION_CHANGED")
+    lots = old_short["quantity"]
+    totals = displayed_tick_totals(Decimal("10340.0"), lots, TICK)
+
+    first_cut = {datetime.fromisoformat(case["quote_minute_end"]): case
+                 for case in reference["conditional_405_opening_price_cases"]}
+    same_close = holdings["comparisons"][f"{FIRST}/{CLOSE}"]
+    results = {}
+    for quote in quotes:
+        prefix = [b for b in day if b.bar_end <= quote]
+        first = first_cut[quote]
+        phases = tuple(tick_bounds(bucket, TICK) for bucket in (
+            [b for b in prefix if b.bar_end < event_end],
+            [b for b in prefix if b.bar_end == event_end],
+            [b for b in prefix if event_end < b.bar_end],
+        ))
+        fields = ("earlier_tick_bounds", "event_tick_bounds", "later_tick_bounds")
+        if phases != tuple(tuple(first[key]) for key in fields):
+            raise ValueError("OI_ORIGIN_FIRST_SNAPSHOT_PRICE_CHANGED")
+        replacement = tick_bounds([b for b in day if quote <= b.bar_end <= close], TICK)
+        paths = retained_origins(lots, phases, replacement, totals, totals)
+        (control,) = [c for c in same_close["cases"] if datetime.fromisoformat(c["earlier_quote_minute_end"]) == quote]
+        if not paths or min(sum(kept) for kept, _ in paths) != control["minimum_retained"]:
+            raise ValueError("OI_ORIGIN_RETENTION_PARITY_CHANGED")
+        ranges = {name: [min(kept[i] for kept, _ in paths), max(kept[i] for kept, _ in paths)]
+                  for i, name in enumerate(COHORTS)}
+        kept, removed = min(paths, key=lambda pair: (pair[0][2], sum(pair[0]), pair))
+        gate_prices = tick_bounds([b for b in prefix if close_below + US < b.bar_end - ONE], TICK)
+        pre_gate = tick_bounds([b for b in prefix if b.bar_end - ONE <= close_below + US], TICK)
+        gate_counts = earlier_lot_counts(pre_gate, gate_prices, lots, totals)
+        results[quote.isoformat()] = dict(
+            quote=quote, first_tick_bounds=phases, replacement_tick_bounds=replacement,
+            allocation_count=len(paths), close_retained_cohorts=ranges,
+            minimum_total_retained=min(sum(stay) for stay, _ in paths),
+            minimum_after_report_witness=dict(kept=kept, removed=removed, added=sum(removed)),
+            wait_for_completed_close_below_divider=dict(
+                close_at=close_below, post_gate_full_minute_ticks=gate_prices,
+                minimum_earlier_lots=min(gate_counts, default=None), all_after_gate_possible=0 in gate_counts,
+            ),
+        )
+    return dict(
+        version="lms405-oi-report-cohort-carry-v1", contract=CONTRACT, market=market_input,
+        candidate_report_time=EVENT, quote_cases=results, totals=list(totals),
+        conditional_scope=dict(
+            requires_same_account_complete_synchronized_snapshots=True,
+            quote_minute_price_allowed_on_both_sides=True,
+            close_short_yesterday_in_dual_snapshot=lots, night_new_long=night_long,
+            report_minute_short_cohort_in_later_dual=[min(r["close_retained_cohorts"][COHORTS[1]][0] for r in results.values()),
+                                                    max(r["close_retained_cohorts"][COHORTS[1]][1] for r in results.values())],
+            minimum_after_report_minute_short_in_later_dual=min(r["close_retained_cohorts"][COHORTS[2]][0]
+                                                               for r in results.values()),
+        ),
+        same_second_ordering=None, report_account=None, report_order_lots=None, later_long_purpose=None,
+        snapshots=snapshots, references=dict(report_scope=SCOPE[1], retention=RETENTION_SHA),
+        author_action_samples=0, author_match_rate=None, fills=None, pnl=None, executable=False,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--carry-origin", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -134,15 +254,17 @@ def main():
     load_dotenv(args.env_file, override=False)
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session))
+            run = carry_origin_study if args.carry_origin else study
+            report = run(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
         parser.exit(2, f"MDS_BLOCKED: {exc.code}\n")
     except OperationalError:
         parser.exit(2, "LOCAL_MDS_CONNECTION_UNAVAILABLE\n")
-    except (OSError, KeyError, ValueError):
-        parser.exit(2, "OI_REPORT_INPUT_UNVERIFIED\n")
+    except (OSError, KeyError, ValueError) as exc:
+        code = str(exc)
+        parser.exit(2, f"{code if code.startswith('OI_ORIGIN_') else 'OI_REPORT_INPUT_UNVERIFIED'}\n")
 
 
 if __name__ == "__main__":
