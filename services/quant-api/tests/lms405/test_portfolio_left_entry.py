@@ -3,7 +3,13 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from guiyi_quant.lms405 import Bar
-from lms405_portfolio_left_entry import LeftScope, assess_left_proposal, assumed_carry_comparison, left_signals
+from lms405_portfolio_left_entry import (
+    LeftScope,
+    assess_left_proposal,
+    assumed_carry_comparison,
+    left_signals,
+    zone_signal_geometry,
+)
 from lms405_right_side_study import FIVE, US, at
 
 
@@ -54,3 +60,23 @@ def test_assumed_carry_strict_quotes_exclude_the_quote_minute_and_preserve_tradi
         False, True, True,
     )
     assert report["exits_simulated"] is False and report["author_continuity_verified"] is False
+
+
+def test_short_shape_touches_zone_before_confirmation_closes_below_it():
+    contract = "JM2509"
+    start = at("2025-07-25T21:20")
+    candles = [
+        Bar(contract, start + (i + 1) * FIVE, *map(Decimal, ohlc), start=start + i * FIVE)
+        for i, ohlc in enumerate(((5138, 5142, 5130, 5136), (5136, 5141, 5133, 5138), (5137, 5140, 5122, 5124)))
+    ]
+    series = {1: [], 5: candles}
+    low, high = Decimal(5126), Decimal(5155)
+    known = candles[-1].end + US
+
+    assert zone_signal_geometry(series, contract, start, known, low, high, direction="SHORT") == []
+    (event,) = zone_signal_geometry(series, contract, start, known + US, low, high, direction="SHORT")
+    assert event["shape_end"] == candles[1].end
+    assert event["signal_known_at"] == known
+    assert event["shape_overlap"] and event["confirmation_overlaps"]
+    assert not event["confirmation_inside"] and event["close_distance"] == 2
+    assert zone_signal_geometry(series, contract, start, known + US, low, high, direction="LONG") == []

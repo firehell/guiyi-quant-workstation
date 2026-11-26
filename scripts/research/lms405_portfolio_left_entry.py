@@ -50,29 +50,37 @@ def left_signals(series, scope, cutoff):
     cut = min(scope.through, cutoff)
     if cut <= scope.start:
         return []
+    events = zone_signal_geometry(series, scope.contract, scope.start, cut, scope.low, scope.high, direction="LONG")
+    if any(not scope.available < event["shape_start"] for event in events):
+        raise ValueError("LEFT_ENTRY_SIGNAL_SCOPE_MISMATCH")
+    return [dict(scope=scope.identity, **event) for event in events]
+
+
+def zone_signal_geometry(series, contract, start, cutoff, low, high, *, direction):
+    """Compute symmetric price relations for a completed shape and its confirmation."""
+    if low > high or direction not in ("LONG", "SHORT"):
+        raise ValueError("LEFT_ENTRY_INVALID_ANALYSIS_INPUT")
     by_end = {period: {bar.end: bar for bar in rows} for period, rows in series.items()}
     events = []
     for shape_period, confirmation_period in ((1, 1), (5, 1), (5, 5)):
-        for frame in signals(series, shape_period, confirmation_period, side="LONG", start=scope.start, cut=cut):
+        for frame in signals(series, shape_period, confirmation_period, side=direction, start=start, cut=cutoff):
             shape = by_end[shape_period][frame["shape_end"]]
             confirmation = by_end[confirmation_period][frame["confirmed_at"]]
-            if (shape.contract != scope.contract or confirmation.contract != scope.contract
-                    or not scope.available < shape.start
+            if (shape.contract != contract or confirmation.contract != contract
                     or not (shape.end <= confirmation.start < confirmation.end)
                     or frame["close"] != confirmation.close):
                 raise ValueError("LEFT_ENTRY_SIGNAL_SCOPE_MISMATCH")
-            shape_overlap = shape.low <= scope.high and scope.low <= shape.high
-            if not shape_overlap and not scope.low <= confirmation.close <= scope.high:
+            shape_overlap = shape.low <= high and low <= shape.high
+            if not shape_overlap and not low <= confirmation.close <= high:
                 continue
             events.append(dict(
-                scope=scope.identity, mode=f"{shape_period}m_to_{confirmation_period}m",
-                shape_end=shape.end, shape_start=shape.start,
+                mode=f"{shape_period}m_to_{confirmation_period}m", shape_end=shape.end, shape_start=shape.start,
                 shape_low=shape.low, shape_high=shape.high,
                 signal_at=confirmation.end, signal_known_at=frame["available_at"], close=confirmation.close,
                 confirmation_low=confirmation.low, confirmation_high=confirmation.high,
-                shape_overlap=shape_overlap, confirmation_inside=scope.low <= confirmation.close <= scope.high,
-                confirmation_overlaps=confirmation.low <= scope.high and scope.low <= confirmation.high,
-                close_distance=max(scope.low - confirmation.close, confirmation.close - scope.high, Decimal(0)),
+                shape_overlap=shape_overlap, confirmation_inside=low <= confirmation.close <= high,
+                confirmation_overlaps=confirmation.low <= high and low <= confirmation.high,
+                close_distance=max(low - confirmation.close, confirmation.close - high, Decimal(0)),
             ))
     return sorted(events, key=lambda row: (row["signal_known_at"], row["mode"]))
 
