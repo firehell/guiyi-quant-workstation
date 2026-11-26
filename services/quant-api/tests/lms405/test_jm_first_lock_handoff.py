@@ -3,7 +3,8 @@ from decimal import Decimal
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.portfolio_tasks import Book
 from lms405_jm_first_lock_handoff import (
-    EARLY_SHORT, LONG_WINDOWS, NEW_SHORT, close_cohort_continuity, counts_from_replay, project_roles,
+    EARLY_SHORT, LONG_WINDOWS, NEW_SHORT, close_cohort_continuity, counts_from_replay, project_action_clocks,
+    project_roles,
 )
 from lms405_jm_m_leg_handoff import CLOSE, FIRST
 from lms405_protection_lot_timing import displayed_tick_totals
@@ -69,3 +70,22 @@ def test_fixture_has_independent_exit_and_fresh_short_with_new_episode():
     assert all(row["public"]["after"] is None for row in result["independent_approvals"])
     assert fresh["before"].episode != old.episode
     assert result["late_book"].visible.short == 20
+
+
+def test_fresh_short_waits_for_independent_exit_and_fresh_setup():
+    start = at("2026-10-22T21:45")
+    old = Book("JM2701", "old", "SHORT", start, Decimal(20), Decimal(20), attempt=1)
+    gates = dict(clear_old=start + ONE, open_m=start + 2 * ONE, exit_m=start + 3 * ONE,
+                 new_short=start + 4 * ONE)
+    cutoff = start + 5 * ONE
+    for times, shapes in ((gates | dict(new_short=gates["exit_m"]), {}),
+                           (gates, {"new_short": gates["exit_m"]})):
+        replay, stopped = project_action_clocks(old, times, cutoff=cutoff, shape_starts=shapes)
+        assert stopped == {"stage": "new_short", "reason": "GATE_NOT_FRESH_FOR_POSITION"}
+        assert len(replay) == 3
+        position = replay[-1]["fixture"]["after"].visible
+        assert (position.long, position.short) == (0, 0)
+    replay, stopped = project_action_clocks(old, gates, cutoff=cutoff)
+    assert stopped is None
+    assert replay[-1]["before"].episode != old.episode
+    assert replay[-1]["fixture"]["after"].visible.short == 20

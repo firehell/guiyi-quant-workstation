@@ -3,12 +3,13 @@
 import argparse
 from datetime import date, datetime
 from decimal import Decimal
+from itertools import product
 from pathlib import Path
 
 from guiyi_quant.lms405.portfolio_tasks import Book
 from lms405_iron_first_protection import by_knowledge, support
 from lms405_jm_first_lock_chain import FIRST_RUN
-from lms405_jm_m_leg_handoff import CLOSE, CONTRACT, FIRST, LATER, LONG_BANDS, NEW_PLAN, NIGHT
+from lms405_jm_m_leg_handoff import CLOSE, CONTRACT, FIRST, LATER, LONG_BANDS, NEW_PLAN, NIGHT, OLD_PLAN
 from lms405_portfolio_origin_window import observed_average
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_portfolio_task_policy import project_fixture
@@ -30,6 +31,7 @@ DAYS = (date(2026, 10, 23), date(2026, 10, 26))
 LONG_WINDOWS = ("m_near_5m_to_1m_same_run", "m_near_5m_to_5m_same_run", "extreme_m_far_strict_close")
 SHORT_BANDS = {"divider": (Decimal(1392), Decimal("1415.5"))}
 EARLY_SHORT, NEW_SHORT = "divider_near_strict_close", "divider_near_1m_to_1m_same_run"
+FAR_SHORT = "divider_far_strict_close"
 
 
 def counts_from_replay(minutes, *, old_at, old_quote, next_quote, known_at, tick, lots, old_total, new_total):
@@ -104,7 +106,122 @@ def project_roles(old, lots, gates, night_gates, revision):
     )
 
 
-def study(session, market):
+def project_action_clocks(old, gates, *, cutoff, shape_starts=None):
+    """Research-only clearance, independent M trade, then a fresh short from flat."""
+    book = old
+    steps = []
+    shape_starts = shape_starts or {}
+    for key, operation, qty in (
+        ("clear_old", "CLEAR_TREND", old.original + old.protection),
+        ("open_m", "ENTER_COUNTER_M", old.protection),
+        ("exit_m", "EXIT_COUNTER_M", old.protection),
+        ("new_short", "ENTER_TREND", old.original),
+    ):
+        end = gates[key]
+        if end is None or end + 6 * US >= cutoff:
+            return steps, dict(stage=key, reason="NO_COMPLETED_GATE_AS_OF")
+        if end <= book.known_at or shape_starts.get(key, end) <= book.known_at:
+            return steps, dict(stage=key, reason="GATE_NOT_FRESH_FOR_POSITION")
+        if key == "new_short":
+            if book.visible.long or book.visible.short:
+                raise ValueError("JM_HANDOFF_NOT_FLAT_FOR_FRESH_CYCLE")
+            book = Book(old.contract, "new-2026-10-26-short", "SHORT", book.known_at)
+        row = project_fixture(book, operation, qty, end + 5 * US, plan=f"{key}:{end.isoformat()}")
+        steps.append(row)
+        book = row["fixture"]["after"]
+    return steps, None
+
+
+def close_m_gate(minutes, entry, cutoff, far):
+    """Sensitivity for an M exit at the completed day close after an extreme-M break."""
+    close = at("2026-10-23T15:00")
+    if entry is None or close + US >= cutoff:
+        return None
+    window = [bar for bar in minutes if entry < bar.start and bar.end <= close]
+    if (window and window[-1].end == close and window[-1].close <= far
+            and any(bar.close > far for bar in window[:-1])):
+        return close
+    return None
+
+
+def chain_checks(old, steps, quotes, old_minutes, new_minutes, *, tick, totals):
+    def at_quote(end):
+        return next((row["fixture"]["after"] for row in reversed(steps) if row["at"] < end - ONE), old)
+
+    day_checks, night_checks = {}, {}
+    m_open = next((row["at"] for row in steps if row["operation"] == "ENTER_COUNTER_M"), None)
+    fresh_short = next((row["at"] for row in steps if row["operation"] == "ENTER_TREND"), None)
+    lots = int(old.protection)
+    for source in (CLOSE, LATER):
+        pairs = {}
+        for a, b in product(quotes[FIRST], quotes[source]):
+            key = f"{display(a)} / {display(b)}"
+            pairs[key] = False
+            if (old.known_at < a - ONE and at_quote(a) == old and m_open is not None
+                    and at_quote(b).counter_m == old.protection):
+                bounds = counts_from_replay(
+                    old_minutes, old_at=old.known_at, old_quote=a, next_quote=b, known_at=m_open,
+                    tick=tick, lots=lots, old_total=totals(FIRST, "long"), new_total=totals(source, "long"),
+                )
+                pairs[key] = bounds.get("all_ending_lots_new_after_possible", False)
+        day_checks[source] = pairs
+    for end in quotes[NIGHT]:
+        book = at_quote(end)
+        late = by_knowledge(new_minutes, fresh_short, overlapping=False)
+        support_row = support(new_minutes, end, late, tick=tick, lots=int(old.original),
+                              totals=totals(NIGHT, "short"), include_quote=False)
+        night_checks[display(end)] = dict(
+            fresh_short_visible=fresh_short is not None and book.episode != old.episode and book.original == old.original,
+            whole_leg_price_possible=support_row["entire_leg_allowed"],
+            minimum_lots_outside_allowed=support_row["minimum_lots_outside_allowed_minutes"],
+        )
+    return dict(first_to_close=day_checks[CLOSE], first_to_mixed_post=day_checks[LATER], night=night_checks,
+                first_close_and_night_price_possible=any(day_checks[CLOSE].values()) and any(
+                    row["fresh_short_visible"] and row["whole_leg_price_possible"] for row in night_checks.values()
+                ))
+
+
+def compare_action_clocks(old, old_day, new_day, quotes, *, old_known, new_known, cutoff, tick, totals):
+    day_end = at("2026-10-23T15:00")
+    day_cut = day_end + 2 * US
+    far = LONG_BANDS["extreme_m"][1]
+    long_bands = {name: LONG_BANDS[name] for name in ("m", "extreme_m")}
+    clearance = first_gates(old_day, max(old.known_at, old_known), day_cut, bands=long_bands)
+    short_start = max(new_day[1][0].start, new_known)
+    short = first_gates(new_day, short_start, cutoff, bands=SHORT_BANDS, side="SHORT")
+    results = {}
+    for clear_key in ("m_far_strict_close", "extreme_m_far_strict_close"):
+        clear_at = clearance[clear_key]["end"]
+        fresh_long = first_gates(old_day, clear_at + 6 * US, day_cut, bands=long_bands) if clear_at else {}
+        for enter_key, exit_key, short_key in product(LONG_WINDOWS, ("day_close", "night_near"),
+                                                     (EARLY_SHORT, NEW_SHORT, FAR_SHORT)):
+            entry = fresh_long.get(enter_key, {}).get("end")
+            exit_at = (close_m_gate(old_day[1], entry, cutoff, far) if exit_key == "day_close"
+                       else short[EARLY_SHORT]["end"])
+            gates = dict(clear_old=clear_at, open_m=entry, exit_m=exit_at,
+                         new_short=short.get(short_key, {}).get("end"))
+            shape_starts = {key: row["geometry"]["shape_start"] for key, row in (
+                ("open_m", fresh_long.get(enter_key, {})), ("new_short", short.get(short_key, {})),
+            ) if "geometry" in row}
+            steps, stopped = project_action_clocks(old, gates, cutoff=cutoff, shape_starts=shape_starts)
+            cuts = {row["at"] for row in steps} | {q - ONE for source in (FIRST, CLOSE, NIGHT) for q in quotes[source]}
+            for cut in cuts:
+                prefix, _ = project_action_clocks(old, gates, cutoff=cut, shape_starts=shape_starts)
+                if prefix != [row for row in steps if row["at"] < cut]:
+                    raise ValueError("JM_HANDOFF_ACTION_CLOCK_PREFIX_CHANGED")
+            key = "/".join((clear_key, enter_key, exit_key, short_key))
+            results[key] = dict(gates=gates, shape_starts=shape_starts, steps=steps, stopped=stopped,
+                                prefix_checks=len(cuts),
+                                checks=chain_checks(old, steps, quotes, old_day[1], new_day[1], tick=tick, totals=totals))
+    return dict(
+        paths=results, public_author_actions=0, author_permissions_supplied=False,
+        first_position_direction_and_time_from_replay=True, size_scaled_to_first_snapshot_quantity=True,
+        same_account_and_synchronous_observation_assumed=True, author_side_not_displayed_stays_unknown=True,
+        price_only_entries_are_sensitivity=True, day_close_exit_is_sensitivity=True,
+    )
+
+
+def study(session, market, *, with_action_clocks=False):
     lead = verified_json(*FIRST_RUN)
     follow = verified_json(*FOLLOWUP)
     selected = lead["modes"]["RETAIN_AND_ADD_15M"]
@@ -192,6 +309,13 @@ def study(session, market):
     amount = Decimal(lot_count)
     old = Book(CONTRACT, "first-original-and-protection", "SHORT", lock_at, amount, amount, attempt=1)
     role_projection = project_roles(old, amount, gates, short_gates, NEW_PLAN)
+    action_clocks = {}
+    if with_action_clocks:
+        old_revision = sources[OLD_PLAN]["published_at"]
+        action_clocks["action_clock_comparison"] = compare_action_clocks(
+            old, old_day, new_day, anchors, old_known=datetime.fromisoformat(old_revision) + ONE,
+            new_known=new_plan, cutoff=end_night, tick=tick, totals=totals,
+        )
     return dict(
         study="JM2701_FIRST_LOCK_TO_DAY_AND_NEW_NIGHT_SHORT_RESEARCH", sources=sources, quotes=anchors,
         original_opened_at=open_at, protection_known_at=lock_at, replacement=replacement, fresh_short=short,
@@ -201,6 +325,7 @@ def study(session, market):
         same_account_assumed_for_replacement_bounds=True, old_side_absence_never_inferred=True,
         author_action_samples=0, author_match_rate=None, fills=None, executable=False,
         reference_sha256=dict(first=FIRST_RUN[1], followup=FOLLOWUP[1]),
+        **action_clocks,
     )
 
 
@@ -208,6 +333,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--compare-action-clocks", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -221,7 +347,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), with_action_clocks=args.compare_action_clocks)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
