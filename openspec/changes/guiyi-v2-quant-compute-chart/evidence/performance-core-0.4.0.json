@@ -1,0 +1,108 @@
+{
+  "bars": 71172,
+  "cache_hot_latency_ms": [
+    0.0257,
+    0.0315,
+    0.0919
+  ],
+  "covered_product_frequencies": 416,
+  "host": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+  "incremental_latency_ms": [
+    0.0775,
+    0.0901,
+    0.1244
+  ],
+  "missing": [
+    [
+      "rs",
+      "1d",
+      "PRICE_UNAVAILABLE"
+    ],
+    [
+      "pd",
+      "1w",
+      "TRADING_SESSION_MISSING"
+    ],
+    [
+      "pt",
+      "1w",
+      "TRADING_SESSION_MISSING"
+    ],
+    [
+      "rs",
+      "1w",
+      "MAPPED_CONTRACT_DATASET_MISSING"
+    ]
+  ],
+  "new_comparable_batch": {
+    "cpu_seconds": 1.4474,
+    "process_peak_rss_bytes": 314556416,
+    "segment_latency_ms": [
+      0.1013,
+      1.8516,
+      2.7446
+    ],
+    "total_seconds": 1.4519
+  },
+  "new_expanded_batch": {
+    "cpu_seconds": 7.3139,
+    "process_peak_rss_bytes": 315064320,
+    "segment_latency_ms": [
+      0.4949,
+      7.7315,
+      12.65
+    ],
+    "total_seconds": 7.3615
+  },
+  "numpy": "2.5.0",
+  "old_comparable_batch": {
+    "cpu_seconds": 2.2102,
+    "process_peak_rss_bytes": 312541184,
+    "segment_latency_ms": [
+      0.1508,
+      3.4999,
+      4.8662
+    ],
+    "total_seconds": 2.2142
+  },
+  "owner_segments_by_frequency": {
+    "15m": 70,
+    "1d": 153,
+    "1m": 60,
+    "1w": 473,
+    "30m": 79,
+    "5m": 65,
+    "60m": 92
+  },
+  "quant_core": "0.4.0",
+  "queued_full_registry": {
+    "batch_job_latency_ms": [
+      3.664,
+      38.9586,
+      97.3643
+    ],
+    "cpu_seconds": 2.9465,
+    "process_peak_rss_bytes": 315490304,
+    "queue_load": {
+      "batch": {
+        "peak_pending": 4,
+        "pending": 0,
+        "rejected": 420
+      },
+      "incremental": {
+        "peak_pending": 0,
+        "pending": 0,
+        "rejected": 0
+      },
+      "live": {
+        "peak_pending": 0,
+        "pending": 0,
+        "rejected": 0
+      }
+    }
+  },
+  "repeats": 3,
+  "source_sha256": "1fba613283b1c6b2e99b620d52e6b8c77e0e846d29d4f738997069ebe6a6191d",
+  "ta_lib": "0.8.3.post1",
+  "through": "2026-11-26"
+}
