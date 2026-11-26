@@ -1,8 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
-from guiyi_quant.lms405 import Position
+from guiyi_quant.lms405 import Bar, Position
 from lms405_portfolio_staged_protection import common_quote_ends, exposure_bounds, tape
+from lms405_staged_protection_clocks import phase_prices
 import pytest
 
 
@@ -61,3 +62,16 @@ def test_two_paths_are_joined_at_the_same_evaluation_time():
     assert glass["protective_lots_range"] == [20, 36]
     assert coal["abs_net_lots_range"] == quote["abs_net_lots_range"] == [0, 0]
     assert report["comparable_as_money_or_portfolio_risk"] is False
+
+
+def test_permission_minute_price_relaxations_are_independent_and_exclude_quote_minute():
+    minute = timedelta(minutes=1)
+    microseconds = timedelta(microseconds=6)
+    candles = [Bar("FG2701", START + i * minute, *map(Decimal, prices), start=START + (i - 1) * minute)
+               for i, prices in enumerate(((828, 830, 827, 829), (829, 831, 826, 828), (828, 832, 828, 830),
+                                          (830, 833, 829, 831), (831, 834, 827, 833), (833, 834, 829, 830),
+                                          (830, 834, 825, 833)), 1)]
+    args = (candles, START + minute + microseconds, START + 4 * minute + microseconds, candles[-1].end)
+    assert phase_prices(*args, tick=Decimal(1)) == ((828, 833), (829, 834))
+    assert phase_prices(*args, tick=Decimal(1), allow_early=True) == ((826, 833), (829, 834))
+    assert phase_prices(*args, tick=Decimal(1), allow_late=True) == ((828, 833), (827, 834))
