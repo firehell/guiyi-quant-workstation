@@ -1874,6 +1874,28 @@ services/quant-api/.venv/bin/python scripts/research/lms405_carry_scoped_protect
 
 焦煤以23:04发帖为最晚边界，报价分钟未知。烧碱、铁矿使用已经核验的独立单行报价候选，报价候选时间以分钟结束计。铁矿21:20口径的31/31包含一根允许在该报价分钟内撤腿的情景，分钟内持仓与报价顺序仍未知。三案的数量分母不同，不能合并计算作者动作匹配率。铁矿补搜合约、日期、解锁、卖平及截图价格，公开结果未找到可确认的夜盘多腿原件。
 
+### 提前保护等首次触区的九品种对照
+
+沿用九品种从空仓起算、PVC左右侧分支和常规区内保护。在公开材料允许提前寻找反向信号的范围内，再比较一条可选路径。原版研究候选在1→1或5→1形态确认后即可给模拟许可。等待分支把许可移到同一连续交易段的首次范围触区可知之后，继续要求当时仍用同一修订，形态开始前已持有当前原空，且原空早于价带生效。在等待期间若确认周期收回突破界、出现严格新生的反向确认、有休市或数据间隔，或价格整根越到区外高侧，都取消该候选。确认后的第一根分钟若在信号可知以前已经开始并触区，分钟内先后不可判定，该候选作废。触区与失效发生在同一根分钟时也不接受。 [烧碱和橡胶的信号存续](SH2701_OCT_CASE.md#夜盘旧保护候选的存续检验) · [此前九品种入场对照](V_TA_CASE.md#左多形态触区和确认收盘)
+
+|原件及比较窗口|立即触发研究口径|等待首次触区研究口径|
+|---|---|---|
+|烧碱23日夜图多20、开均1568.6|21:16有5→1的模拟保护，五个报价时点中的四个与多腿相容。|未触发该次保护，五个报价时点均无研究多腿。 [23日计划](../../lms-source-archive/01-VPLUS每日复盘/2026-10-23/A5357264793370945.md) · [23日夜图](../../lms-source-archive/02-持仓记录/2026-10-23/WRo2KQ43iX.md)|
+|烧碱27日早图多20、今20、开均1490.1|仍显示较早研究多腿，开均窗口不相容。|尚无研究多腿。现有两种口径均漏掉此保护。 [27日早图](../../lms-source-archive/02-持仓记录/2026-10-27/WRozNbg3en.md)|
+|烧碱27日夜图多20、今20、开均1492.0|仍为前交易日研究多腿，12个报价时点均因今仓时序不相容。|21:21的1→1候选通过失效检查，21:29首次触1490–1501后才加模拟保护。21:29这一报价分钟本身仍无多腿，其余11个报价候选均严格价格相容。 [27日晚计划](../../lms-source-archive/01-VPLUS每日复盘/2026-10-27/A5358686695981271.md) · [27日夜图](../../lms-source-archive/02-持仓记录/2026-10-27/WRoEvasxQR.md)|
+|橡胶及其余七品种|橡胶保留两次常规模拟保护。|两次常规保护保持。另识别到橡胶22日21:14至21:25的市场候选，当前原空前像未通过，未投影保护。|
+
+两种口径各有5/70单腿相容、0/15双腿相容，单腿相容的烧碱来源不同。烧碱逐腿逐报价共十条记录的研究状态或依赖时钟变化。同开均1720的原空仍不相容，因此不能把新多腿相容升级为整条双持路径。只有模拟许可可以改变研究仓位，未增加作者动作评分。两篇VPLUS可见稿均允许在区前或区内找多向V+，单靠这项措辞无法在两个时钟间作选择。当前保留两种研究路径，下一份有时间轴的同合约信号、许可或逐笔回报才可能区分实际采用的口径。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_task_policy.py \
+  --env-file .env --right-entries --left-entries shape-overlap --advance-at-touch \
+  --output /tmp/lms405-portfolio-advance-wait-fresh.json
+```
+
+统一MDS只读复算九个实月合约，三个截断点逐一核对行情和持仓前缀。两份定稿逐字节一致，定稿 `output/lms405-portfolio-advance-wait-20261126/final-a.json`，SHA256 `880478bf2ad0d4c9d6d2c075d32118b430a787a8cfeed70dfafff516a4b09279`。去掉 `--advance-at-touch` 的控制组与之前的PVC形态触区版逐字节一致。即时模式、旧停止条件、相交分钟和计划更新均通过定向验证。
+
 ```sh
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
 services/quant-api/.venv/bin/python scripts/research/lms405_cross_session_protection.py \

@@ -22,6 +22,7 @@ from lms405_portfolio_protection_gate import advance_due, plan_rows, price_admis
 from lms405_portfolio_replay import input_sources
 from lms405_portfolio_right_entry import active_branch, assess_entry, branches, entry_events
 from lms405_protection_lot_timing import verified_json
+from lms405_protection_signal_lifetime import lifetime
 from lms405_replay import ohlc
 from lms405_right_side_study import ONE, US
 from lms405_sh_lock_lifecycle import signals
@@ -115,7 +116,27 @@ def project_oil(timeline):
     return result
 
 
-def published_protection_events(series, bands, cutoff):
+def deferred_protection_touch(series, band, signal, period, cutoff):
+    """Keep an advance candidate only until first contact in its own segment."""
+    known = signal["available_at"]
+    previous_end = signal["confirmed_at"]
+    for bar in series[1]:
+        if bar.end <= previous_end:
+            continue
+        if bar.start != previous_end or bar.end + US >= cutoff or bar.low > band.upper:
+            return None
+        if bar.low <= band.upper and band.lower <= bar.high:
+            if bar.start <= known:
+                return None
+            (shape,) = [candidate for candidate in series[period] if candidate.end == signal["shape_end"]]
+            audit = lifetime(series, signal | {"shape_low": shape.low}, period, 1,
+                             as_of=bar.end + 2 * US, revision_at=None)
+            return bar if audit["no_failure_observed_in_completed_prefix"] else None
+        previous_end = bar.end
+    return None
+
+
+def published_protection_events(series, bands, cutoff, *, advance_at_touch=False):
     if not series[1]:
         return []
     contract = series[1][0].contract
@@ -130,19 +151,25 @@ def published_protection_events(series, bands, cutoff):
             band, _ = active_band(visible_bands(bands, contract, known), known, "SHORT")
             if band is None:
                 continue
-            latest, _ = active_band(visible_bands(bands, contract, ready_at), ready_at, "SHORT")
-            if latest != band:
-                continue
             step = period * ONE
             price = price_admission(series[1], band, shape, shape_step=step)
             regular = price["ordinary_due_at"] is not None
             if not regular and advance_due(quotes[shape["confirmed_at"]], band, price) is None:
                 continue
+            touch = None
+            if advance_at_touch and not regular:
+                touch = deferred_protection_touch(series, band, shape, period, cutoff)
+                if touch is None:
+                    continue
+                ready_at = touch.end + 6 * US
+            latest, _ = active_band(visible_bands(bands, contract, ready_at), ready_at, "SHORT")
+            if latest != band or ready_at >= cutoff:
+                continue
             events.append(dict(
                 at=ready_at, known_at=known, shape_start=shape["shape_end"] - step,
                 band=band, period=period, signal=shape,
                 operation="PROTECT_REGULAR" if regular else "PROTECT_EARLY",
-            ))
+            ) | ({"touch_known_at": touch.end + US} if touch is not None else {}))
     return sorted(events, key=lambda row: (row["at"], row["period"]))
 
 
@@ -219,6 +246,8 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
                                       signal_known_at=event["known_at"], shape_start=event["shape_start"],
                                       confirmation_close=event["signal"]["close"], shape_period=event["period"],
                                       confirmation_period=1, operation=operation, approval_kind="TEST_FIXTURE")
+            if "touch_known_at" in event:
+                protection_context["deferred_until_touch_known_at"] = event["touch_known_at"]
         else:
             bar = bars[index]
             latest_five = index
@@ -272,9 +301,12 @@ def gated_replay(bars, cutoff, protection_events=(), *, minutes=(), right_branch
     return transitions, blocked
 
 
-def rolling_comparison(session, market, frozen, *, published_bands=False, right_entries=False, left_mode=None):
+def rolling_comparison(session, market, frozen, *, published_bands=False, right_entries=False, left_mode=None,
+                       advance_at_touch=False):
     if left_mode is not None and (left_mode not in LEFT_MODES or not (published_bands and right_entries)):
         raise ValueError("PORTFOLIO_TASK_POLICY_LEFT_REQUIRES_PUBLISHED_ENTRIES")
+    if advance_at_touch and not published_bands:
+        raise ValueError("PORTFOLIO_TASK_POLICY_TOUCH_REQUIRES_PUBLISHED_BANDS")
     gates = {}
     left_minutes = {}
     index = input_sources() if published_bands else {}
@@ -286,7 +318,7 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
         plans, _, sources = plan_rows(index, symbol) if published_bands else ((), {}, {})
         scoped = branches(index, symbol) if right_entries else ()
         left_scope = scope_for(index, symbol) if left_mode is not None else None
-        events = published_protection_events(series, plans, cutoff) if published_bands else []
+        events = published_protection_events(series, plans, cutoff, advance_at_touch=advance_at_touch) if published_bands else []
         entries = entry_events(series, scoped, cutoff)
         left = left_signals(series, left_scope, cutoff)
         left_args = dict(left_scope=left_scope, left_mode=left_mode)
@@ -295,7 +327,8 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
         for split in (bars[0].end, bars[len(bars) // 2].end, cutoff):
             prefix = [b for b in bars if b.end + US < split]
             sliced = {period: [b for b in candles if b.end + US < split] for period, candles in series.items()}
-            available = published_protection_events(sliced, plans, split) if published_bands else []
+            available = published_protection_events(sliced, plans, split,
+                                                     advance_at_touch=advance_at_touch) if published_bands else []
             if [e for e in events if e["at"] < split] != [e for e in available if e["at"] < split]:
                 raise ValueError("PORTFOLIO_TASK_POLICY_SIGNAL_PREFIX_DIVERGED")
             right_prefix = entry_events(sliced, scoped, split)
@@ -319,6 +352,10 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
         if published_bands:
             gates[symbol].update(protections=[row for row in actions if row["action"] == "LOCK"],
                                  plan_sources=sources, historical_plan_revisions_verified=False)
+        if advance_at_touch:
+            gates[symbol]["deferred_market_candidates"] = [
+                row | {"band": asdict(row["band"])} for row in events if "touch_known_at" in row
+            ]
         if right_entries:
             gate = gates[symbol]
             gate.update(scoped_right_branches=[asdict(branch) for branch in scoped],
@@ -345,6 +382,8 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
     variant = RIGHT_VARIANT if right_entries else PLAN_VARIANT if published_bands else VARIANT
     if left_mode is not None:
         variant = f"published_entries_left_{left_mode.replace('-', '_')}"
+    if advance_at_touch:
+        variant += "_advance_waits_first_touch"
     result = audit_legs(session, market, extra_variant=challenger)
     for symbol, minutes in left_minutes.items():
         gate = gates[symbol]
@@ -371,6 +410,8 @@ def rolling_comparison(session, market, frozen, *, published_bands=False, right_
     if left_mode is not None:
         result.update(left_entry_mode=left_mode, left_entry_approvals_are_fixtures=True,
                       left_entry_clock="ONLY_EXISTING_5M_TO_5M_PROPOSALS")
+    if advance_at_touch:
+        result["advance_protection_clock"] = "SAME_SEGMENT_FIRST_TOUCH_AFTER_LIVE_CANDIDATE"
     return result
 
 
@@ -406,10 +447,11 @@ def main():
     parser.add_argument("--published-bands", action="store_true")
     parser.add_argument("--right-entries", action="store_true")
     parser.add_argument("--left-entries", choices=LEFT_MODES)
+    parser.add_argument("--advance-at-touch", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PORTFOLIO_TASK_POLICY_OUTPUT_EXISTS")
-    if (args.published_bands or args.right_entries or args.left_entries) and args.env_file is None:
+    if (args.published_bands or args.right_entries or args.left_entries or args.advance_at_touch) and args.env_file is None:
         parser.error("PORTFOLIO_TASK_POLICY_ENV_FILE_MISSING")
     try:
         report = study()
@@ -429,8 +471,8 @@ def main():
                 with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
                     report["rolling_nine_contract_comparison"] = rolling_comparison(
                         session, build_market_data_service(session), verified_json(*AUDIT),
-                        published_bands=args.published_bands or right_entries, right_entries=right_entries,
-                        left_mode=args.left_entries,
+                        published_bands=args.published_bands or right_entries or args.advance_at_touch,
+                        right_entries=right_entries, left_mode=args.left_entries, advance_at_touch=args.advance_at_touch,
                     )
             except MarketDataError as exc:
                 parser.exit(2, f"MDS_BLOCKED: {exc.code}\n")

@@ -118,3 +118,40 @@ def test_preband_signal_needs_prepublished_current_zone_and_strict_event_clock()
     assert published_protection_events(series, (area, review), clock + us) == []
     review_after_signal = replace(review, known_at=clock - us, effective_after=clock - us)
     assert published_protection_events(series, (area, review_after_signal), clock + us) == []
+
+
+def test_deferred_protection_waits_for_fresh_touch_and_cancels_on_reset_gap_or_revision():
+    minute, us = timedelta(minutes=1), timedelta(microseconds=1)
+    contract = "SH2701"
+    published = T0 - minute
+    area = ProtectionBandUpdate(contract, "A5357264793370945", "PROTECTION", published, published, "plan",
+                                "SHORT", Decimal(109), Decimal(110))
+    prices = ((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106),
+              (106, 108, 106, 108), (108, 109, 108, 109))
+    candles = [Bar(contract, T0 + (i + 1) * minute, *map(Decimal, ohlc), start=T0 + i * minute)
+               for i, ohlc in enumerate(prices)]
+
+    def candidates(candles, cutoff, bands=(area,)):
+        return published_protection_events({1: candles, 5: []}, bands, cutoff, advance_at_touch=True)
+
+    touch = candles[-1]
+    clock = touch.end + 6 * us
+    assert candidates(candles[:-1], clock + us) == []
+    assert candidates(candles, clock) == []
+    (entry,) = candidates(candles, clock + us)
+    assert entry["at"] == clock and entry["known_at"] == candles[2].end + us
+    assert entry["touch_known_at"] == touch.end + us
+
+    lost = Bar(contract, candles[-2].end, Decimal(106), Decimal(108), Decimal(105), Decimal(105),
+               start=candles[-2].start)
+    assert candidates([*candles[:3], lost, touch], clock + us) == []
+    assert candidates([*candles[:3], touch], clock + us) == []
+    first_next = replace(candles[-2], high=Decimal(109))
+    assert candidates([*candles[:3], first_next, touch], clock + us) == []
+    skipped = Bar(contract, candles[-2].end, Decimal(112), Decimal(113), Decimal(112), Decimal(113),
+                  start=candles[-2].start)
+    assert candidates([*candles[:3], skipped, touch], clock + us) == []
+
+    review_at = candles[-2].end
+    review = ProtectionBandUpdate(contract, "pending", "REVIEW_PENDING", review_at, review_at, "review", "SHORT")
+    assert candidates(candles, clock + us, bands=(area, review)) == []
