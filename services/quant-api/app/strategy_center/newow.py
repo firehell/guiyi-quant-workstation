@@ -116,14 +116,20 @@ class Newow:
             with self.sessions() as session:
                 require_isolated_archive(session.get_bind().url, REDIS_URL, canonical_root())
         result = None
+        current_status = current_diagnostic = None
         if self.formal:
-            result = latest_formal_reference(product, strategy.owner_key, frequency, session_factory=self.sessions)
-        current = result is not None
+            try:
+                result = latest_formal_reference(product, strategy.owner_key, frequency, session_factory=self.sessions)
+                current_status = "PUBLISHED" if result is not None else "NOT_PUBLISHED"
+            except (OSError, ValueError, SQLAlchemyError):
+                current_status = "UNAVAILABLE"
+                current_diagnostic = "MARKET_REFERENCE_CURRENT_UNAVAILABLE"
+        current = {"current_publication": current_status, "current_diagnostic": current_diagnostic}
         if result is None:
             result = latest_reference(product, strategy.owner_key, frequency, session_factory=self.sessions)
         if result is None:
-            return projection(EVIDENCE, "NOT_PUBLISHED")
-        status = "PUBLISHED" if current else "HISTORICAL_RESULT"
+            return projection(EVIDENCE, current_status or "NOT_PUBLISHED", diagnostic=current_diagnostic, **current)
+        status = "PUBLISHED" if current_status == "PUBLISHED" else "HISTORICAL_RESULT"
         through = date.fromisoformat(result["through"])
         window = {"since": through, "through": through, "cutoff": result["cutoff"]}
         try:
@@ -138,11 +144,10 @@ class Newow:
             return projection(EVIDENCE, "UNAVAILABLE", diagnostic=error.code)
         return projection(
             EVIDENCE, status, source_as_of=result["computed_at"], result=result,
-            current_publication=("PUBLISHED" if current else "NOT_PUBLISHED") if self.formal else None,
             action_trading_day=through, trade_cutoff=result["cutoff"],
             presentation_status=chart["main_status"],
             actions=[item for frame in chart["frames"] for item in frame["actions"]][-8:],
             hints=[item for frame in chart["frames"] for item in frame["hints"]][-8:],
             reference_trades=trades["items"],
-            more_trades=trades["next_cursor"] is not None, dependencies=strategy.dependencies,
+            more_trades=trades["next_cursor"] is not None, dependencies=strategy.dependencies, **current,
         )

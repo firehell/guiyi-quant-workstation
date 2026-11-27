@@ -246,6 +246,7 @@ const newowFacts = computed(() => [
             <p v-if="evidence" class="source">{{ evidence.source }} · {{ at(evidence.source_as_of) }}</p>
             <template v-if="selected.domain === 'newow'">
               <p v-if="evidence?.current_publication === 'NOT_PUBLISHED'">当前盘后凭证尚无已发布结果</p>
+              <p v-if="evidence?.current_publication === 'UNAVAILABLE'">当前盘后结果待核验 <code>{{ evidence.current_diagnostic }}</code></p>
               <template v-if="evidence && ['PUBLISHED', 'HISTORICAL_RESULT'].includes(evidence.status)">
                 <p>交易日 {{ text(evidence.action_trading_day) }} · 修订 <code>{{ asFacts(evidence.result).revision_id }}</code> · 序号 {{ asFacts(evidence.result).seq }}</p>
                 <p v-if="asFacts(evidence.result).receipt">盘后凭证 <code>{{ asFacts(evidence.result).receipt }}</code></p>

@@ -103,6 +103,16 @@ def test_formal_evidence_fallback_keeps_history_and_current_result_distinct(monk
     assert read["status"] == "PUBLISHED"
     assert read["result"]["receipt"] == "hash"
 
+    def old_scope(*args, **kwargs):
+        raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+
+    monkeypatch.setattr(newow, "latest_formal_reference", old_scope)
+    read = adapter.evidence(CATALOG["newow_dual_fusion"], "jm", "60m")
+    assert read["status"] == "HISTORICAL_RESULT"
+    assert read["current_publication"] == "UNAVAILABLE"
+    assert read["current_diagnostic"] == "MARKET_REFERENCE_CURRENT_UNAVAILABLE"
+    assert read["result"] == result
+
 
 def test_runtime_fanout_times_out_one_owner_and_prioritizes_the_directory(client, monkeypatch):
     stalled = Event()
