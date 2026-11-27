@@ -19,7 +19,7 @@ from app.reference_trading.models import (
 from app.reference_trading.presentation import require_envelope
 
 
-def read_worker_health_summary():
+def read_worker_health_summary(*, include_receipts=False):
     """Read the current binding's published diagnostics without scanning market data."""
     from app.runtime_bindings import resolve_service_binding
     from app.runtime_handover import read_service_state
@@ -27,21 +27,33 @@ def read_worker_health_summary():
     service = "reference-worker"
     binding = resolve_service_binding(service)
     if binding is None or not binding.enabled:
-        return {"status": "disabled"}
+        value = {"status": "disabled"}
+        if include_receipts:
+            value["binding_status"] = "UNKNOWN" if binding is None else "DISABLED"
+        return value
+    binding_summary = {"generation": binding.generation}
+    if include_receipts:
+        binding_summary.update(binding_status="ENABLED", deployment=binding.tag, commit=binding.commit)
     state = read_service_state(service)
     if not state or state.get("generation") != binding.generation:
-        return {"status": "unverified", "generation": binding.generation}
+        return {"status": "unverified", **binding_summary}
     stamp = state.get("at")
     if not isinstance(stamp, str):
-        return {"status": "unverified", "generation": binding.generation}
+        return {"status": "unverified", **binding_summary}
     observed_at = datetime.fromisoformat(stamp)
     if observed_at.tzinfo is None:
-        return {"status": "unverified", "generation": binding.generation}
+        return {"status": "unverified", **binding_summary}
     age_seconds = (datetime.now(UTC) - observed_at).total_seconds()
-    summary = {"generation": binding.generation, "observed_at": observed_at.isoformat()}
+    proof = state.get("proof", {})
+    summary = {**binding_summary, "observed_at": observed_at.isoformat()}
+    if include_receipts:
+        summary.update({key: proof[key] for key in ("reference_receipts", "canonical_compute", "failure_code")
+                        if key in proof})
     if state.get("phase") != "active" or not 0 <= age_seconds <= 60:
+        if include_receipts:
+            summary["heartbeat_stale"] = not 0 <= age_seconds <= 60
         return {**summary, "status": "unverified"}
-    report = state.get("proof", {}).get("reference_runtime", {})
+    report = proof.get("reference_runtime", {})
     return {
         **summary,
         "status": "ready" if state.get("ready") is True else "not_ready",
