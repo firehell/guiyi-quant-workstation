@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from types import SimpleNamespace
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -55,6 +56,26 @@ def test_market_data_service_uses_configured_canonical_root(
     assert service.catalog.canonical_root == root.resolve()
     assert service.store.root == root.resolve()
     session.close()
+
+
+def test_formal_tick_build_does_not_initialize_provider(monkeypatch, tmp_path):
+    from app.market_data import composition, market_foundation_scope, rqdata_adapter
+
+    binding = "a" * 64
+    monkeypatch.setenv("GUIYI_MARKET_SOURCE", "rqdata_tick")
+    monkeypatch.setenv("GUIYI_OBSERVATION_STREAM_ENABLED", "1")
+    monkeypatch.setenv("GUIYI_RUNTIME_HANDOVER_ENABLED", "1")
+    monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(tmp_path))
+    monkeypatch.setattr(composition, "get_redis_connection", lambda: object())
+    monkeypatch.setattr(market_foundation_scope, "require_formal_tick_binding", lambda *_: binding)
+    monkeypatch.setattr(
+        rqdata_adapter, "RQDataClient",
+        lambda: pytest.fail("Formal Tick construction must not initialize RQData"),
+    )
+    with _session() as session:
+        live = composition.build_live_market_service(session)
+        feed = composition.build_market_feed_service(session, tick_dispatch=object())
+    assert live._formal_tick_binding == feed._formal_tick_binding == binding
 
 
 def test_metadata_synchronizer_uses_existing_composition_boundary(

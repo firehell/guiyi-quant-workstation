@@ -32,6 +32,13 @@ Market SHALL 在经验证的隔离 Tick 路径中用单源单代次、物理合�
 - **WHEN** 候选产生相同合约/端点的输出
 - **THEN** 对照不写正式流；只有已授权且核实停旧、末水位与新源身份后才切换。重复、迟到和异值不触发补开仓或重放通知。
 
+#### Scenario: Formal Tick owners start before the staged trading day opens
+
+- **GIVEN** 跨 Redis 交接已建立正式 Tick 绑定、次日完整 rank1 订阅和空 source / completed 基线
+- **WHEN** Live 和 Feed 在盘后启动，品种仍处于 CLOSED 且各自的下一场 Session 均证明属于该登记日
+- **THEN** 两个写入者仅从已有基线恢复内存身份并发布休市心跳，开盘前不连接供应商、不生成 Bar、不改写订阅或游标
+- **AND** 绑定、Session、订阅或基线冲突时拒绝就绪
+
 ### Requirement: MF03 History lifecycle and unified reading
 
 Market SHALL 初次校验历史后日常采用增量维护，保留只读审计及必要的定向修复；以 RQData 1m、交易所 D1 及完整 Session/周派生七周期，按身份组合已归档历史与 Live，区分活动 K 线、盘中已完成事实和盘后权威数据。
