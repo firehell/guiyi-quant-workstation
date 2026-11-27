@@ -28,7 +28,9 @@ from app.market_data.aggregation import expected_intraday_ends
 from app.market_data.catalog import MarketCatalog
 from app.market_data.market_archive import current_retained_receipt, reference_catalog_revision
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.market_foundation_scope import formal_tick_fingerprint, require_formal_tick_binding
+from app.market_data.market_foundation_scope import (
+    formal_tick_fingerprint, require_formal_tick_binding, verify_formal_tick_preopen,
+)
 from app.market_data.market_phase import MarketPhase, MarketPhaseResolver
 from app.market_data.observation_stream import ObservationStream
 from app.market_data.operational_universe import load_operational_products
@@ -664,12 +666,12 @@ class MarketCohortHost(CohortHost):
         intent = plan["market_source_handover"]
         with _redis(settings["REDIS_URL"]) as target:
             require(redis_instance(target) == intent["target_instance"], "MARKET_SOURCE_INSTANCE_DRIFT")
-            require_formal_tick_binding(target, args["database"], args["canonical"])
-            source = ObservationStream(target, kind="source")
+            binding = require_formal_tick_binding(target, args["database"], args["canonical"])
             completed = ObservationStream(target, kind="completed")
             day = args["day"]
-            require(source.registered_day("live") == day and source.cursor("live", day) == source.tail(day) == "0-0"
-                    and completed.tail(day) == "0-0", "MARKET_SOURCE_CLOSED_BASELINE_DRIFT")
+            require(verify_formal_tick_preopen(target, binding, day=day, prior_day=date.fromisoformat(intent["old_day"]),
+                                               subscriptions=args["subscriptions"]),
+                    "MARKET_SOURCE_CLOSED_BASELINE_DRIFT")
             if args["alert_enabled"]:
                 require(completed.registered_day("alert") == day and completed.cursor("alert", day) == "0-0",
                         "MARKET_SOURCE_ALERT_CURSOR_DRIFT")

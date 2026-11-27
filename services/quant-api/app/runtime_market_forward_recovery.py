@@ -9,8 +9,7 @@ from pathlib import Path
 import re
 from time import monotonic
 
-from app.market_data.live_market import RedisLiveStore
-from app.market_data.market_foundation_scope import require_formal_tick_binding
+from app.market_data.market_foundation_scope import require_formal_tick_binding, verify_formal_tick_preopen
 from app.market_data.observation_stream import ObservationStream
 from app.reference_trading.recovery_campaign import digest
 from app.runtime_cohort import (
@@ -115,9 +114,9 @@ def _check_zero_target(host, plan, args, staged):
         source = ObservationStream(target, kind="source")
         completed = ObservationStream(target, kind="completed")
         require(source.days() == (day,) and completed.days() == ((day,) if args["alert_enabled"] else ())
-                and not target.exists(source.key(day), source.identity_key(day), completed.key(day), completed.identity_key(day))
-                and RedisLiveStore(target).subscriptions(day) == args["subscriptions"]
-                and source.registered_day("live") == day and source.cursor("live", day) == "0-0",
+                and verify_formal_tick_preopen(target, staged["binding"], day=day,
+                                               prior_day=date.fromisoformat(plan["market_source_handover"]["old_day"]),
+                                               subscriptions=args["subscriptions"]),
                 "MARKET_SOURCE_FORWARD_TARGET_NOT_PRISTINE")
         if args["alert_enabled"]:
             require(completed.registered_day("alert") == day and completed.cursor("alert", day) == "0-0",
