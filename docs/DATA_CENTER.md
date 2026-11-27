@@ -840,8 +840,10 @@ absent，其他退出码或输出均为 unknown。部分安装失败先逆序停
 不得回滚已启用 Runtime，也不得返回可被误读为“安装未发生”的普通失败；安装器成功退出并报告
 `cleanup=unknown retry_safe=false` 与 `do not retry`，后续只能只读核实清理状态。
 
-V2 研究和运行名单各有 58 个品种，分别使用 `active_products.txt` 与 `operational_products.txt`。PD（钯金）和
-PT（铂金）登记在 `retired_products.txt`，与 active 互斥。历史 Canonical、Catalog 和原归档结果保留。
+V2 研究和运行名单各有 57 个品种，分别使用 `active_products.txt` 与 `operational_products.txt`。
+PD（钯金）、PT（铂金）与 RS（油菜籽）登记在 `retired_products.txt`，与 active 互斥。
+历史 Canonical、Catalog、原始观察和归档凭证按当时范围保留。参考计算等待新范围首份有效凭证，
+对其他不明范围继续失败关闭。
 
 ## 批量 Session 读取的可信边界
 
@@ -896,8 +898,10 @@ MetadataSynchronizer.capture_current_day，冻结 snapshot 和经过共享 exact
 不改历史 Canonical、不将 Redis 映射晋升 Catalog，也不调用或放宽 failed/interrupted recovery CLI Gate。
 RQData 尚未发布下一交易日主力或 capture 异常属于真实 source 失败证据，不能依据单元测试判定已可用。
 
-日切 state 固定保存在 `~/Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json`，
-独立于 release 的 `.run`。它绑定 Catalog 连接身份、Canonical root 和 operational products 的摘要，
+日切 state 保存在 `~/Library/Application Support/GuiyiQuant/`。旧 Bar 源、原 58 品种 Tick 和当前 57 品种 Tick
+分别使用 `market-day-metadata-preparation.json`、`market-day-metadata-preparation-tick.json` 和
+`market-day-metadata-preparation-tick-57.json`。这些文件独立于发布树的 `.run`，分别绑定 Catalog 连接身份、
+Canonical root 和对应运行范围。新版日切先核对前两份的同日状态。
 索引保留 status、source/plan hash、receipt 和归档引用；passed/blocked 的完整 snapshot、exact plan 与
 receipt 按日写入相邻 `.json.archives` 目录，以 day+content SHA 文件名不可变保留，文件和目录
 fsync 后才替换 index。当前选中日验证 archive hash、大小、Catalog binding 和记录摘要；

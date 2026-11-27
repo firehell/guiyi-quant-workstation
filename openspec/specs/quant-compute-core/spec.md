@@ -1,4 +1,10 @@
-## ADDED Requirements
+# Quant Compute Core
+
+## Purpose
+
+This specification defines the shared calculation registry, formula and result identities, deterministic inputs, incremental state and publication boundaries for Quant Core consumers.
+
+## Requirements
 
 ### Requirement: QC01 Quant Core is a pure independently versioned compute package
 

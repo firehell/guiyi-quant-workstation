@@ -560,8 +560,9 @@ Redis/journal、归档凭证和其他共享运行代码变更需要协调发布�
 
 Feed 独立切换使用权威 Session 静默窗口、旧 owner 心跳、source 尾部读回和现有 CAS。
 提交前失败按现有取消流程恢复原 owner，提交状态未知则先独立读回绑定和消费水位。
-首次组件发布沿用 [Market Foundation 证据清单](../openspec/changes/guiyi-v2-market-foundation/tasks.md)。
-M4、M6、M7 的自然证据和 M9 的正式 Tick 切换各自验收。目标为 58 个品种，旧源仍按原绑定完整留存。
+首次组件发布沿用 [Market Foundation 待核对事项](../openspec/changes/guiyi-v2-market-foundation/tasks.md)。
+现场读回与首启状态见 [STATUS](../STATUS.md)。V2 候选范围为 57 个品种，旧源按原绑定完整留存。
+现役范围变更需先确认上一范围的归档、订阅和游标，再生成适用的切换计划。
 Tick 次日元数据准备使用独立状态文件。旧范围在同一交易日存在未决提交时，先核实原任务结果。
 正式 Canonical Compute 的订阅跳过退役品种，并使用新版进度文件保留旧范围的计算水位。
 旧范围的盘后状态、成功凭证和迟到处理记录随切换前像留存，新范围的盘后水位从自身首份凭证开始。旧盘后提交结果未明时阻断切换。

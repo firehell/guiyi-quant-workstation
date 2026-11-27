@@ -51,7 +51,7 @@ def redis_pair():
 
 
 @pytest.mark.isolated_postgresql
-def test_source_retirement_preserves_60_old_terminals_and_stages_58_products(
+def test_source_retirement_preserves_60_old_terminals_and_stages_57_products(
     tmp_path, redis_pair, disposable_market, monkeypatch,  # noqa: F811
 ):
     from contextlib import contextmanager
@@ -67,7 +67,7 @@ def test_source_retirement_preserves_60_old_terminals_and_stages_58_products(
     engine, _ = disposable_market
     old, target = redis_pair
     products = load_operational_products()
-    old_products = tuple(sorted((*products, "pd", "pt")))
+    old_products = tuple(sorted((*products, "pd", "pt", "rs")))
     contracts = {product: f"{product.upper()}2701" for product in old_products}
     with Session(engine) as session:
         session.add(Exchange(code="GFEX", name="test"))
@@ -107,8 +107,8 @@ def test_source_retirement_preserves_60_old_terminals_and_stages_58_products(
     window, day, subscribed, windows, _, _ = host._authority({}, OLD_DAY, old_products)
     assert window["products"] == 60
     assert day == NEW_DAY
-    assert tuple(subscribed) == products and len(subscribed) == 58
-    assert all(windows[product][2:] == (None, ()) for product in ("pd", "pt"))
+    assert tuple(subscribed) == products and len(subscribed) == 57
+    assert all(windows[product][2:] == (None, ()) for product in ("pd", "pt", "rs"))
     host.directory.mkdir(parents=True)
     previous = host.directory / "market-day-metadata-preparation.json"
     with Session(engine) as session:

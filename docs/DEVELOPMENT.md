@@ -48,9 +48,19 @@ owner 控制任务、架构与节奏，Codex 负责定位、实现、必要验�
 - 牛哇公式与最新对照只维护[唯一手册](research/newow-v3.2.82/REPLICATION_MANUAL.md)，不因应用发版另建版本手册或常驻导出件。
 - 只维护当前应用实现，不维护旧应用兼容矩阵、历史发布分支或常驻回滚源码。旧发布树解除实际运行与恢复引用后清理，
   具体引用检查见 [部署合同](../deploy/README.md#发布工作树存储)，不固定执行完整封存链。
-- 应用版本唯一来源仍为 `services/quant-api/app/version.py` 的 `APP_VERSION`，API、包与 Web 共用。
-  编号、现有工具要求的 tag/commit 和对应构建检查由 Codex 随发布处理，不单开版本管理任务或等待 owner 指定编号。
-  改版本时运行版本一致性检查、`uv lock --check --offline --project services/quant-api` 和受影响构建。
+- [现行版本和运行身份](../STATUS.md)记录实际发布和生效版本。维护分工如下。
+
+  | 版本线 | 职责 | 版本来源 |
+  | --- | --- | --- |
+  | 应用 `v1.x` | 工作站 Web、API、安装与运行控制器。应用发布锁定本次集成的组件版本，正式部署另记录运行 commit 与代次。 | [APP_VERSION](../services/quant-api/app/version.py) |
+  | Market Foundation | 米筐接入、Calendar、Session、主力映射、Canonical、Catalog、统一读数、Tick/Live 与盘后行情归档。维护独立组件 tag。 | [MARKET_RELEASE_VERSION](../services/quant-api/app/market_version.py) |
+  | Quant Core | 通用指标、Compute Registry 和计算执行。API 由发行记录与消费锁选择精确 wheel。策略专属公式继续各自管理语义版本。 | [Core 包版本](../packages/quant-core/pyproject.toml) · [API 消费锁](../services/quant-api/quant-core-release.toml) |
+  | Quant Chart | 图层、Renderer、Pane 和 Indicator Catalog。Web 构建使用锁定的 Chart 包。 | [Chart 包版本](../packages/quant-chart/package.json) · [Web 锁文件](../apps/quant-web/pnpm-lock.yaml) |
+
+- 应用 API、Python 应用包和 Web 共用 `APP_VERSION`。各组件按自身变更维护版本。应用发版记录本次选用的组件版本，
+  组件发版后由消费端更新锁并按实际绑定核对。编号、tag/commit 和构建检查由发布流程处理。
+  改应用版本时运行版本一致性检查、`uv lock --check --offline --project services/quant-api` 和受影响构建。
+- 现役组件合同见 [量化计算](../openspec/specs/quant-compute-core/spec.md)、[图表](../openspec/specs/chart-indicator-system/spec.md) 和 [独立发布](../openspec/specs/independent-package-release/spec.md)。
 - 不移动已发布 tag、不将 dirty 源码冒充原版本。运行代码保留可核对的 commit；公式、数据和账户历史所需身份继续保留，
   不为此维护旧应用代码或人工版本材料。研究比较固定输入、规则和评价口径；普通工程不套用研究冻结流程。
 

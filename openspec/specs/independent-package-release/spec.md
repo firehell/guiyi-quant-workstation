@@ -1,4 +1,10 @@
-## ADDED Requirements
+# Independent Package Release
+
+## Purpose
+
+This specification defines the independent release identities and artifacts for the Compute and Chart packages. It describes how applications select and verify the exact dependencies they consume.
+
+## Requirements
 
 ### Requirement: PR01 Quant Core and Quant Chart have independent package versions
 

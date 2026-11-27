@@ -35,7 +35,7 @@ class PublicationProgress:
         self._fingerprint = _digest(key)
         self._root = root
         # Retired windows belonged to a different ordered scope. Preserve its
-        # progress file and keep the 58-product scope independently resumable.
+        # progress file and keep the current scope independently resumable.
         self._path = root / "canonical-compute-progress-v2.json"
 
     def guard(self):
