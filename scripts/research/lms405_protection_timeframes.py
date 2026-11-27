@@ -270,6 +270,80 @@ def ur_ibar_source_study(session, market):
     )
 
 
+def jd_ibar_protection_study(session, market):
+    from lms405_portfolio_replay import input_sources
+    from lms405_public_plan_roles import load_source
+
+    contract = "JD2612"
+    index = input_sources()
+    sources = {identity: load_source(index, identity) for identity in (
+        "S5364440250977429", "R20261113JD2612DEFENSE", "S5365839312453793",
+    )}
+    prior, friday_excerpt, review = (datetime.fromisoformat(row["published_at"]) for row in sources.values())
+    if (prior, friday_excerpt, review) != (
+        at("2026-11-12T14:41:25"), at("2026-11-13T11:09:54"), at("2026-11-16T11:20:46"),
+    ):
+        raise ValueError("JD_IBAR_SOURCE_CLOCKS_CHANGED")
+    series = {day: read_window(session, market, contract, date(2026, 11, day)) for day in (12, 13, 16)}
+    early_price, trigger, lower, top_price = map(Decimal, (3639, 3614, 3582, 3674))
+    prices, window_minutes = {}, {}
+    for day, periods in series.items():
+        cutoff = review if day == 16 else periods[1][-1].end + 2 * US
+        rows = [bar for bar in periods[1] if bar.end + US < cutoff]
+        window_minutes[day] = rows
+        prices[day] = dict(cutoff_exclusive=cutoff, minimum=min(bar.low for bar in rows),
+                           maximum=max(bar.high for bar in rows), first_minute=asdict(rows[0]),
+                           early_price_range_matches=[bar.end for bar in rows if bar.low <= early_price <= bar.high])
+
+    friday = window_minutes[13]
+    pivot = next((bar for bar in friday if bar.high == top_price), None)
+    if pivot is None:
+        raise ValueError("JD_IBAR_HIGH_PRICE_ANCHOR_NOT_FOUND")
+    after_high = [bar for bar in friday if bar.start >= pivot.end]
+    first_early = next((bar for bar in after_high if bar.low <= early_price <= bar.high), None)
+    first_later_cross = next((bar for previous, bar in zip(after_high, after_high[1:])
+                            if previous.end == bar.start and bar.close < trigger <= previous.close), None)
+    if first_early is None or first_later_cross is None or first_early.end >= first_later_cross.end:
+        raise ValueError("JD_IBAR_PRICE_ORDER_UNVERIFIED")
+    after_lower = next((b for b in window_minutes[16] if b.low <= lower <= b.high and b.close < lower), None)
+    trigger_known_at = first_later_cross.end + US
+    visible_after_excerpt = friday_excerpt.replace(second=0, microsecond=0) + timedelta(minutes=1)
+    if not trigger_known_at < visible_after_excerpt < review:
+        raise ValueError("JD_IBAR_CONFIRMATION_ORDER_UNVERIFIED")
+
+    branches = {}
+    for shape, confirm in VARIANTS:
+        by_end = {period: {b.end: b for b in series[13][period]} for period in (shape, confirm)}
+        events = geometry_events(series[13], shape, confirm, start=pivot.end + US,
+                                 as_of=visible_after_excerpt, side="SHORT")
+        early, same_or_later = [], []
+        for row in events:
+            setup = by_end[shape][row["shape_end"]]
+            mother = by_end[shape].get(setup.start)
+            confirmation = by_end[confirm][row["confirmed_at"]]
+            if not row["ibar"] or mother is None:
+                continue
+            if row["available_at"] < trigger_known_at:
+                early.append(row | dict(confirmation_range_contains_early_price=(
+                    confirmation.low <= early_price <= confirmation.high
+                )))
+            if lower <= row["close"] < trigger and row["available_at"] >= trigger_known_at:
+                same_or_later.append(row | dict(shape_starts_after_cross_known=setup.start > trigger_known_at,
+                                                confirmation_after_cross_known=row["available_at"] > trigger_known_at))
+        branches[f"{shape}m_to_{confirm}m"] = dict(before_break=early, at_or_after_break_in_band=same_or_later)
+    return dict(
+        version="lms405-jd-early-ibar-vs-break-defense-v1", contract=contract, sources=sources, prices=prices,
+        friday_peak_minute=asdict(pivot), first_3639_minute_after_peak=asdict(first_early),
+        fresh_down_close_through_3614=asdict(first_later_cross), friday_excerpt_known_after=visible_after_excerpt,
+        monday_first_below_far_contact_close=asdict(after_lower) if after_lower else None,
+        fixed_periods_retrospective_comparison=branches,
+        market={day: {f"{p}m": dict(count=len(bars), sha256=sha(encoded([asdict(b) for b in bars]).encode()))
+                      for p, bars in periods.items()} for day, periods in series.items()},
+        actual_author_ibar_period=None, actual_author_action=None, admitted_author_action_samples=0,
+        admitted_author_bar_samples=0, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
@@ -277,6 +351,7 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--compare-confirmations", action="store_true")
     modes.add_argument("--ur-ibar-source", action="store_true")
+    modes.add_argument("--jd-ibar-protection", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -291,9 +366,11 @@ def main():
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
             market = build_market_data_service(session)
-            report = ur_ibar_source_study(session, market) if args.ur_ibar_source else study(
-                session, market, compare_confirmations=args.compare_confirmations,
-            )
+            if args.ur_ibar_source or args.jd_ibar_protection:
+                review = ur_ibar_source_study if args.ur_ibar_source else jd_ibar_protection_study
+                report = review(session, market)
+            else:
+                report = study(session, market, compare_confirmations=args.compare_confirmations)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
