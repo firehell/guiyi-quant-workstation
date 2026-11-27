@@ -358,3 +358,51 @@ def test_market_sequence_uses_only_confirmed_books_and_rechecks_the_active_plan(
     short_end = first_end - 30 * timedelta(seconds=1)
     shorter_plans = [plans[0] | {"expires_at": short_end.isoformat()}, plans[1]]
     assert run(revisions=shorter_plans)["steps"][0]["cutoff_exclusive"] == short_end
+
+
+def test_sequence_external_m_evidence_is_scoped_to_the_carried_book():
+    seed = Book("JM2701", "m-sequence", "SHORT", START, Decimal(20), Decimal(20), attempt=1)
+    rev = plan("m-plan", START - SECOND, ("ROTATE_TO_COUNTER_M", "EXIT_COUNTER_M"))
+    def bind(event):
+        prefix = f"{plan_replay.EXTERNAL_FIXTURE_PREFIX}{plan_replay.revision_digest(rev)}:"
+        facts = tuple(replace(fact, source=prefix + fact.source) for fact in event.facts)
+        approval = replace(event.approval, scope=event.request.confirmation_scope(facts))
+        return replace(event, facts=facts, approval=approval)
+
+    rotation = bind(proposal(seed, "ROTATE_TO_COUNTER_M", 7, rev.id, START + SECOND))
+    _, m_book = replay(seed, (rotation,), (rev,), cutoff=rotation.at + SECOND, allow_test_fixture=True)
+    exit_m = bind(proposal(m_book, "EXIT_COUNTER_M", 20, rev.id, rotation.at + 8 * SECOND))
+
+    def step(key, event):
+        return dict(id=key, plan_id=rev.id, operation=event.request.operation,
+                    quantity=str(event.request.quantity), start=event.at - SECOND, cutoff=event.at + SECOND,
+                    request_expires_at=event.request.expires_at,
+                    evidence=dict(at=event.at, facts=[asdict(fact) for fact in event.facts]))
+
+    data = json.loads(encoded(dict(version=plan_replay.MARKET_SEQUENCE_VERSION, seed=asdict(seed),
+                                   revisions=[plan_replay.revision_record(rev)],
+                                   steps=[step("rotate", rotation), step("exit-m", exit_m)],
+                                   cutoff=exit_m.at + SECOND)))
+    approvals = json.loads(encoded({"rotate": asdict(rotation.approval), "exit-m": asdict(exit_m.approval)}))
+
+    def run(**changes):
+        return plan_replay.market_sequence(session=None, market=None, **(data | changes))
+
+    with pytest.raises(ValueError, match="FIXTURE_FACT_DISABLED"):
+        run()
+    pending = run(allow_test_fixture=True)
+    assert [row["status"] for row in pending["steps"]] == ["INDETERMINATE", "POSITION_PREREQUISITE_UNMET"]
+    complete = run(approvals=approvals, allow_test_fixture=True)
+    assert complete["steps"][0]["after"] == complete["steps"][1]["before"]
+    assert complete["steps"][0]["after"]["counter_m"] == 20 and complete["final"]["counter_m"] == 0
+    changed = data["seed"] | {"original": "18", "protection": "18"}
+    mismatched = run(seed=changed, approvals=approvals, allow_test_fixture=True)
+    assert mismatched["steps"][0]["status"] == "EVIDENCE_POSITION_OR_REQUEST_MISMATCH"
+    revised = data["revisions"][0] | {"source": "revised-source"}
+    stale = run(revisions=[revised], approvals=approvals, allow_test_fixture=True)
+    assert stale["steps"][0]["status"] == "EXTERNAL_FACT_PLAN_REVISION_MISMATCH"
+    assert stale["final"] == asdict(seed)
+    late = approvals | {"rotate": approvals["rotate"] | {"known_at": rotation.at.isoformat()}}
+    assert run(approvals=late, allow_test_fixture=True)["final"] == asdict(seed)
+    cut = (rotation.at + SECOND).isoformat()
+    assert run(cutoff=cut, approvals=approvals, allow_test_fixture=True)["steps"] == complete["steps"][:1]

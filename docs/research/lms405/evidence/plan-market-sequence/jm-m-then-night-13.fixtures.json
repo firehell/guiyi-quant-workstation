@@ -1,0 +1,84 @@
+{
+  "approvals": {
+    "exit_counter_m": {
+      "accepted": true,
+      "decided_at": "2026-10-23 15:00:00.000002+08:00",
+      "id": "TEST_FIXTURE:7864c8c31b0ef3297b842c173f09e75a71091d07158600cbe5be524093cc574f",
+      "known_at": "2026-10-23 15:00:00.000003+08:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "0c10c011cf1788ed2099baf26fdf3437f512d972dc7419ae9608ffd191a91f26"
+    },
+    "night-short": {
+      "accepted": true,
+      "decided_at": "2026-10-23T13:13:00.000002+00:00",
+      "id": "fixture:jm-m-then-night-13:night-short",
+      "known_at": "2026-10-23T13:13:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "d43d85a8eecfaf3221a13a7f86aa67ce1196f1fa61e181fc0156c241b634ef91"
+    },
+    "rotate_to_counter_m": {
+      "accepted": true,
+      "decided_at": "2026-10-22 14:59:00.000002+00:00",
+      "id": "TEST_FIXTURE:7d355e351ac2643ce17c195f081998d52b18378e1a64c244f96a64dea83b4b37",
+      "known_at": "2026-10-22 14:59:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "56a93f98b20e92a729987fd4633fc1b90a33f194fed3ee14019aacc5d59a0ca7"
+    }
+  },
+  "facts": {
+    "exit_counter_m": [
+      {
+        "case_id": "7864c8c31b0ef3297b842c173f09e75a71091d07158600cbe5be524093cc574f",
+        "contract": "JM2701",
+        "known_at": "2026-10-23 15:00:00.000001+08:00",
+        "name": "COUNTER_M_EXIT_PERMITTED",
+        "observed_at": "2026-10-23 15:00:00+08:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:7ad5abd906aaad22d6a4821a7674f4cca5b83eeaa1e247ebd7fecaaf3b1f10a9:TEST_FIXTURE_JM:exit_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      },
+      {
+        "case_id": "7864c8c31b0ef3297b842c173f09e75a71091d07158600cbe5be524093cc574f",
+        "contract": "JM2701",
+        "known_at": "2026-10-23 15:00:00.000001+08:00",
+        "name": "COUNTER_M_EXIT_SIGNAL",
+        "observed_at": "2026-10-23 15:00:00+08:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:7ad5abd906aaad22d6a4821a7674f4cca5b83eeaa1e247ebd7fecaaf3b1f10a9:TEST_FIXTURE_JM:exit_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      }
+    ],
+    "rotate_to_counter_m": [
+      {
+        "case_id": "7d355e351ac2643ce17c195f081998d52b18378e1a64c244f96a64dea83b4b37",
+        "contract": "JM2701",
+        "known_at": "2026-10-22 14:59:00.000001+00:00",
+        "name": "TREND_EXIT_SIGNAL",
+        "observed_at": "2026-10-22 14:50:00+00:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:7ad5abd906aaad22d6a4821a7674f4cca5b83eeaa1e247ebd7fecaaf3b1f10a9:TEST_FIXTURE_JM:open_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      },
+      {
+        "case_id": "7d355e351ac2643ce17c195f081998d52b18378e1a64c244f96a64dea83b4b37",
+        "contract": "JM2701",
+        "known_at": "2026-10-22 14:59:00.000001+00:00",
+        "name": "COUNTER_M_ENTRY_PERMITTED",
+        "observed_at": "2026-10-22 14:50:00+00:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:7ad5abd906aaad22d6a4821a7674f4cca5b83eeaa1e247ebd7fecaaf3b1f10a9:TEST_FIXTURE_JM:open_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      },
+      {
+        "case_id": "7d355e351ac2643ce17c195f081998d52b18378e1a64c244f96a64dea83b4b37",
+        "contract": "JM2701",
+        "known_at": "2026-10-22 14:59:00.000001+00:00",
+        "name": "COUNTER_M_ENTRY_SIGNAL",
+        "observed_at": "2026-10-22 14:50:00+00:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:7ad5abd906aaad22d6a4821a7674f4cca5b83eeaa1e247ebd7fecaaf3b1f10a9:TEST_FIXTURE_JM:open_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      }
+    ]
+  }
+}

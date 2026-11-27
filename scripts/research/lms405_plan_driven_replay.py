@@ -36,6 +36,8 @@ MARKET_SEQUENCE_VERSION = "lms405-plan-market-sequence-v1"
 INDEPENDENT_PREFIX = "INDEPENDENT:"
 INDEPENDENT_MANAGEMENT = frozenset({"CLEAR_TREND", "EXIT_COUNTER_M"})
 MARKET_FACT_PREFIX = "RESEARCH_MDS_CANDIDATE:"
+EXTERNAL_FACT_PREFIX = "RESEARCH_EXTERNAL_EVIDENCE:"
+EXTERNAL_FIXTURE_PREFIX = "TEST_FIXTURE_EXTERNAL_EVIDENCE:"
 RIGHT_ENTRY_ROUTES = frozenset({"BREAK_THEN_SIGNAL", "BREAK_PRESSURE_THEN_SIGNAL"})
 ENTRY_ROUTES = RIGHT_ENTRY_ROUTES | {"IN_BAND_SIGNAL", "DO_NOT_CHASE"}
 EXIT_ROLES = frozenset({"DIRECTIONAL_TARGET", "ADVERSE_EXIT"})
@@ -113,6 +115,11 @@ def evaluate(book, event, revisions, allow_test_fixture):
                  and not fact.source.startswith(f"{MARKET_FACT_PREFIX}{revision_digest(plan)}:")
                  for fact in event.facts):
             status = "MARKET_FACT_PLAN_REVISION_MISMATCH"
+        elif any(fact.known_at < event.at and fact.source.startswith((EXTERNAL_FACT_PREFIX, EXTERNAL_FIXTURE_PREFIX))
+                 and not fact.source.startswith((f"{EXTERNAL_FACT_PREFIX}{revision_digest(plan)}:",
+                                                 f"{EXTERNAL_FIXTURE_PREFIX}{revision_digest(plan)}:"))
+                 for fact in event.facts):
+            status = "EXTERNAL_FACT_PLAN_REVISION_MISMATCH"
         elif any(fact.known_at < event.at and fact.observed_at <= plan.known_at for fact in event.facts):
             status = "CONDITION_NOT_NEW_UNDER_PLAN"
     elif request.operation not in INDEPENDENT_MANAGEMENT:
@@ -391,6 +398,14 @@ def market_position_ready(position, operation, quantity):
             raise ValueError("PLAN_REPLAY_MARKET_OPERATION_UNSUPPORTED")
 
 
+def sequence_position_ready(position, operation, quantity, *, has_evidence):
+    if has_evidence and operation == "ENTER_COUNTER_M":
+        return not position.counter_m and position.attempt > 0
+    if has_evidence and operation == "ROTATE_TO_COUNTER_M":
+        return not position.counter_m and quantity <= position.protection == position.original
+    return market_position_ready(position, operation, quantity)
+
+
 def market_request(*, session, market, version, seed, revision, trading_day, start, cutoff, request_expires_at,
                    band, operation, quantity, shape_period, confirmation_period, entry_route=None,
                    next_reference=None, exit_role=None, inherit_observed_target=False, sequence_window=False):
@@ -574,6 +589,7 @@ def market_sequence(*, session, market, version, seed, revisions, steps, cutoff,
         end = min(end, limit)
         plan, unavailable = current_plan(position.contract, plans, start)
         operation = step["operation"]
+        evidence = step.get("evidence")
         quantity = decimal_text(step["quantity"])
         if not quantity.is_finite() or quantity <= 0:
             raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_QUANTITY_INVALID")
@@ -587,7 +603,7 @@ def market_sequence(*, session, market, version, seed, revisions, steps, cutoff,
         if operation not in plan.operations:
             row["status"] = "PLAN_DOES_NOT_ALLOW_ACTION"
             continue
-        if not market_position_ready(position, operation, quantity):
+        if not sequence_position_ready(position, operation, quantity, has_evidence=evidence is not None):
             row["status"] = "POSITION_PREREQUISITE_UNMET"
             continue
         if plan.expires_at is not None:
@@ -597,15 +613,44 @@ def market_sequence(*, session, market, version, seed, revisions, steps, cutoff,
             row["status"] = "NO_VISIBLE_EVALUATION"
             continue
 
-        arguments = {name: value for name, value in step.items() if name not in {"id", "plan_id", "cutoff"}}
-        compiled = market_request(session=session, market=market, version=MARKET_REQUEST_VERSION,
-                                  seed=json.loads(encoded(before)), revision=json.loads(encoded(revision_record(plan))),
-                                  cutoff=end.isoformat(), sequence_window=True, **arguments)
-        row["market"] = compiled
-        tape = compiled["tape"] | {"revisions": revisions}
-        if not tape["evaluations"]:
-            row["status"] = "NO_MARKET_CANDIDATE"
-            continue
+        if evidence is not None:
+            if (set(evidence) != {"at", "facts"} or not isinstance(evidence["facts"], list)
+                    or set(step) != {"id", "plan_id", "start", "cutoff", "operation", "quantity",
+                                     "request_expires_at", "evidence"}):
+                raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_EVIDENCE_INVALID")
+            at = datetime.fromisoformat(evidence["at"])
+            timestamp(at)
+            if not max(start, position.known_at) < at:
+                raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_EVIDENCE_TIME_INVALID")
+            if at >= end:
+                row["status"] = "NO_VISIBLE_EVALUATION"
+                continue
+            source = input_evaluation(at=evidence["at"], before=json.loads(encoded(before)), operation=operation,
+                                      quantity=step["quantity"], plan_id=plan.id, expires_at=step["request_expires_at"],
+                                      facts=evidence["facts"])
+            if any(fact.known_at < at and not fact.source.startswith((EXTERNAL_FACT_PREFIX, EXTERNAL_FIXTURE_PREFIX))
+                   for fact in source.facts):
+                row["status"] = "EXTERNAL_FACT_SCOPE_REQUIRED"
+                continue
+            if any(fact.known_at < at and (fact.case_id != source.request.scope or fact.contract != position.contract)
+                   for fact in source.facts):
+                row["status"] = "EVIDENCE_POSITION_OR_REQUEST_MISMATCH"
+                continue
+            row["evidence_at"] = at
+            tape = dict(version=INPUT_VERSION, cutoff=end.isoformat(), seed=json.loads(encoded(before)),
+                        revisions=revisions, evaluations=[dict(at=evidence["at"], before=json.loads(encoded(before)),
+                            operation=operation, quantity=step["quantity"], plan_id=plan.id,
+                            expires_at=step["request_expires_at"], facts=evidence["facts"])])
+        else:
+            arguments = {name: value for name, value in step.items() if name not in {"id", "plan_id", "cutoff"}}
+            compiled = market_request(session=session, market=market, version=MARKET_REQUEST_VERSION,
+                                      seed=json.loads(encoded(before)), revision=json.loads(encoded(revision_record(plan))),
+                                      cutoff=end.isoformat(), sequence_window=True, **arguments)
+            row["market"] = compiled
+            tape = compiled["tape"] | {"revisions": revisions}
+            if not tape["evaluations"]:
+                row["status"] = "NO_MARKET_CANDIDATE"
+                continue
         result = replay_input(**tape, allow_test_fixture=allow_test_fixture)
         event, = result["events"]
         pending = event.get("pending_approval_scope")
@@ -613,7 +658,7 @@ def market_sequence(*, session, market, version, seed, revisions, steps, cutoff,
         if pending is not None and confirmation is not None:
             known = datetime.fromisoformat(confirmation["known_at"])
             timestamp(known)
-            if known + US < end:
+            if (known < event["at"] if evidence is not None else known + US < end):
                 evaluation, = tape["evaluations"]
                 at = max(event["at"], known + US)
                 tape["evaluations"] = [evaluation | {"at": at.isoformat(), "approval": confirmation}]

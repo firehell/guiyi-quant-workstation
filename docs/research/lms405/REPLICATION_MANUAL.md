@@ -2,6 +2,8 @@
 
 使用入口为[近似研究策略使用说明](NEAR405_V1.md)。[作者公开策略说明](AUTHOR_STRATEGY.md)保存公开证据与不可识别条件；本手册保存P0–P5的来源、复算命令和验证结果。
 
+近似复刻研究范围已经闭环。P0核对焦煤与烧碱跨图分腿，P1将两案加入九品种对照，P2核对其他品种的等待、暂停、旧仓和新动作。P3用计划、已完成行情与外部证据连续重放。P4分别对照确认时钟、环境和价带。P5冻结规则后验证日期外与跨实月窗口。原版的实际动作、私有公式及账户收益仍无法验收。 [九品种及反例](evidence/PORTFOLIO_REPLAY.md#在九品种入口复算烧碱和焦煤的连续分腿) · [留出结果](#p5留出验证口径)
+
 ## P5留出验证口径
 
 正式读取留出行情前锁定研究基线 `9543960f8`。首个日期外窗口为2026年11月16–20日交易日，OI、RU、JM、FG、SA、V、TA、SH、I的2701实月。按统一MDS核对1m与5m完整交易时段及聚合一致性。单合约任一必要周期缺失则整段出具缺口。各窗口从显式空仓开始，独立候选使用原有七根5分钟K暖机，期末未平保留盯市。另行选择的跨实月窗口须先核对独立性再读取。
@@ -191,6 +193,33 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 ```
 
 若需复算测试确认，先用 `jq --slurpfile approvals <同名.fixtures.json> '. + {approvals: $approvals[0]}' <输入文件>` 生成一份含测试记录的输入，再显式增加 `--allow-test-fixture`，并使用新的输出路径。两案均连续复算两次逐字节一致，四次测试许可的作用域逐项核对。无许可与测试许可报告在 `output/lms405-plan-market-sequence-20261127/`。
+
+### 焦煤抓M证据与夜盘行情持续回放
+
+同一连续回放可混用外部证据窗口和本地行情窗口。外部窗口声明 `evidence.at` 及 `facts`。每条已知事实须绑定当前合约、动作、仓位前像和请求标识，并以 `RESEARCH_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 或测试用的 `TEST_FIXTURE_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 锁定修订内容。同ID换来源或改计划字段，旧事实与许可无法沿用。确认必须严格早于该步骤固定评估时刻，迟到不能改变它。行情窗口继续自动查完成K并为下一步传入确认后的仓位。
+
+焦煤 JM2701 从10月22日图上空20、保护多20开始。初始条件来自图和价格约束。全换及留旧多13手是既有相容路径，各次日盘动作仍用显式测试证据及许可。两条路径独立验证。
+
+| 路径 | 日盘前后条件投影 | 10月23日夜盘 |
+|---|---|---|
+| 全换 | 22日22:40清旧双腿，22:59另开M多20，次日15:00结束M多 | 21:06 1m出现1415.5近沿新穿越，21:13严格收于1404.5且确认空向关键K。独立测试许可后，从空仓开启第二次尝试，原方向空20 |
+| 部分换 | 22日22:59清旧空20，保留13手旧多、替换7手，独立M多共20，次日15:00退出 | 同一完成行情给出相同空候选，单独许可，重新开空20 |
+
+未提交测试证据及许可时，两案均保持双腿。只提供白天的测试输入时，M退出后保持空仓，夜盘新空等待自身许可。带夜盘许可时两案最终均为原空20、保护与M为零、尝试编号2。夜盘1392远沿未到，研究只验证近沿路径，并保持前案关于21:16与22:05报价候选的区别。部分换仓内部开平顺序、实际作者触发和数量仍未确认，作者动作分母为0。 [焦煤前后图与数量推导](evidence/COUNTER_M_STUDY.md#部分留存旧保护多并检验日盘总仓)
+
+```sh
+dir=docs/research/lms405/evidence/plan-market-sequence
+jq --slurpfile fixture "$dir/jm-m-then-night-13.fixtures.json" '
+  . + {approvals: $fixture[0].approvals}
+  | .steps |= map(.id as $id | if has("evidence") then .evidence.facts = $fixture[0].facts[$id] else . end)
+' "$dir/jm-m-then-night-13.json" > /tmp/lms405-jm-m-sequence-input-new.json
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-sequence /tmp/lms405-jm-m-sequence-input-new.json --allow-test-fixture \
+  --output /tmp/lms405-jm-m-sequence-new.json
+```
+
+将13换为0可复算全换路径。两条路径各复算两次逐字节一致，在夜盘开始时截断后，已完成日盘窗口保持一致。无许可及测试报告在 `output/lms405-plan-jm-market-sequence-20261127/`。
 
 ### 烧碱从本地行情生成候选
 
