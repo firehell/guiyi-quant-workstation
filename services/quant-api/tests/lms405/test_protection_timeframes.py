@@ -6,7 +6,7 @@ import pytest
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms_keybar_approx import classify, classify_research_period
-from lms405_protection_timeframes import geometry_events
+from lms405_protection_timeframes import geometry_events, ibar_source_prefix
 
 
 BASE = datetime.fromisoformat("2026-10-22T21:00:00+08:00")
@@ -44,3 +44,23 @@ def test_fast_close_has_own_availability_and_never_skips_a_missing_minute():
                         as_of=next_five.end + 2 * US, **args)
     assert geometry_events(data, 5, 1, as_of=m12.end + 2 * US,
                            start=shape.start + US, side="SHORT") == []
+
+
+def test_ibar_source_separates_equality_strict_break_and_next_full_confirmation():
+    mother, shape, following = bar(15, 15, 8, 15, 12), bar(30, 15, 10, 15, 12), bar(45, 15, 9, 14, 9)
+    touch, crossed = bar(31, 1, 10, 12, 10), bar(32, 1, 9, 12, 9)
+    series = {15: [mother, shape, following], 1: [touch, crossed]}
+    (before,) = ibar_source_prefix(series, crossed.end + US)
+    assert before["strict_range_inside"] is False
+    assert before["first_1m_touch"]["end"] == touch.end
+    assert before["first_1m_strict_low_below"] is None
+    (after,) = ibar_source_prefix(series, following.end + 2 * US)
+    assert after["first_1m_strict_close_below"]["end"] == crossed.end
+    assert after["next_contiguous_15m_strict_close_below"] is True
+    (before_next,) = ibar_source_prefix(series, following.end + US)
+    assert before_next["next_contiguous_15m"] is None
+
+    skipped_line = bar(31, 1, 8, 9, 9)
+    (gap,) = ibar_source_prefix(series | {1: [skipped_line]}, skipped_line.end + 2 * US)
+    assert gap["first_1m_touch"] is None
+    assert gap["first_1m_strict_low_below"]["end"] == skipped_line.end

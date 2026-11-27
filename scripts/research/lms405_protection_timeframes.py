@@ -1,7 +1,8 @@
 """Compare frozen ibar/pinbar geometry across protection observation timeframes."""
 
 import argparse
-from datetime import date, timedelta
+from dataclasses import asdict
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -201,11 +202,81 @@ def study(session, market, *, compare_confirmations=False):
     )
 
 
+def ibar_source_prefix(series, as_of):
+    """Compare two 15m containment hypotheses using same-segment completed bars only."""
+    rows = [bar for bar in series[15] if bar.end + US < as_of]
+    minute = [bar for bar in series[1] if bar.end + US < as_of]
+    result = []
+    for index, (parent, signal) in enumerate(zip(rows, rows[1:]), start=1):
+        if parent.end != signal.start:
+            continue
+        strict = classify_research_period(parent, signal, minutes=15).ibar
+        if not (signal.high <= parent.high and signal.low >= parent.low):
+            continue
+        following = rows[index + 1] if index + 1 < len(rows) and rows[index + 1].start == signal.end else None
+        next_minutes = [bar for bar in minute if signal.end <= bar.start < signal.end + timedelta(minutes=15)]
+        first_touch = next((bar for bar in next_minutes if bar.low <= signal.low <= bar.high), None)
+        first_cross = next((bar for bar in next_minutes if bar.low < signal.low), None)
+        first_close = next((bar for bar in next_minutes if bar.close < signal.low), None)
+        result.append(dict(
+            mother=asdict(parent), signal=asdict(signal), strict_range_inside=strict,
+            next_contiguous_15m=asdict(following) if following else None,
+            next_contiguous_15m_strict_close_below=following.close < signal.low if following else None,
+            first_1m_touch=asdict(first_touch) if first_touch else None,
+            first_1m_strict_low_below=asdict(first_cross) if first_cross else None,
+            first_1m_strict_close_below=asdict(first_close) if first_close else None,
+        ))
+    return result
+
+
+def ur_ibar_source_study(session, market):
+    # Source loading already uses this module for price-window helpers.
+    from lms405_portfolio_replay import input_sources
+    from lms405_public_plan_roles import load_source
+
+    contract, day = "UR2609", date(2026, 4, 21)
+    source = load_source(input_sources(), "S5290151945438276")
+    shown_at = at("2026-04-21T14:46")
+    if (datetime.fromisoformat(source["published_at"]) != shown_at
+            or source["source_url"] != "https://www.sina.cn/news/detail/5290151945438276.html"):
+        raise ValueError("UR_IBAR_SOURCE_CHANGED")
+    series = read_window(session, market, contract, day)
+    candidates = ibar_source_prefix(series, shown_at)
+    minute = [bar for bar in series[1] if bar.end + US < shown_at]
+    weak = Decimal(1995), Decimal(2003)
+    first_area_touch = next((bar for bar in minute if bar.high >= weak[0] and bar.low <= weak[1]), None)
+    first_later_below = next((bar for bar in minute if first_area_touch and first_area_touch.end < bar.end
+                             and bar.close < weak[0]), None)
+    anchored = [row for row in candidates if row["strict_range_inside"] and row["next_contiguous_15m_strict_close_below"]]
+    for row in anchored:
+        next_end = row["next_contiguous_15m"]["end"]
+        before = ibar_source_prefix(series, next_end + US)
+        after = ibar_source_prefix(series, next_end + 2 * US)
+        key = row["signal"]["end"]
+        earlier, = [match for match in before if match["signal"]["end"] == key]
+        later, = [match for match in after if match["signal"]["end"] == key]
+        if earlier["next_contiguous_15m"] is not None or later != row:
+            raise ValueError("UR_IBAR_STRICT_BEFORE_DIVERGED")
+    return dict(
+        version="lms405-ur-public-ibar-geometry-v1", source=source, contract=contract, trading_day=day,
+        analysis_cutoff_exclusive=shown_at, assumed_author_bar=None, author_version=None, author_action=None,
+        candidates=candidates, strict_ibar_with_next_15m_down_closes=len(anchored),
+        weak_side_reference=weak, later_protection_reference=(Decimal(1972), Decimal(1995)),
+        first_weak_side_range_contact=asdict(first_area_touch) if first_area_touch else None,
+        first_completed_close_below_after_contact=asdict(first_later_below) if first_later_below else None,
+        market={f"{period}m": dict(count=len(bars), sha256=sha(encoded([asdict(bar) for bar in bars]).encode()))
+                for period, bars in series.items()},
+        admitted_author_bar_samples=0, admitted_author_action_samples=0, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--compare-confirmations", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--compare-confirmations", action="store_true")
+    modes.add_argument("--ur-ibar-source", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -219,8 +290,10 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session),
-                           compare_confirmations=args.compare_confirmations)
+            market = build_market_data_service(session)
+            report = ur_ibar_source_study(session, market) if args.ur_ibar_source else study(
+                session, market, compare_confirmations=args.compare_confirmations,
+            )
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
