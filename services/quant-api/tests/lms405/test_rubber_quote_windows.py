@@ -1,7 +1,7 @@
 from decimal import Decimal
 from types import SimpleNamespace
 
-from lms405_rubber_quote_windows import compare_candidate, joint_quote_timing, price_constraints
+from lms405_rubber_quote_windows import compare_candidate, compare_release_lots, joint_quote_timing, price_constraints
 from lms405_right_side_study import ONE, US, at
 
 
@@ -47,3 +47,25 @@ def test_joint_quote_report_keeps_asynchronous_fit_distinct_from_same_minute():
         "last_minute_end": later, "matched_per_symbol": {"ru": later, "sh": earlier, "oi": later},
     }]
     assert result["equal_close"]["minimum_bar_end_separation_minutes"] is None
+
+
+def test_release_lot_bounds_separate_boundary_minutes_and_earliest_whole_leg():
+    start = at("2026-10-22T21:25")
+    bars = [SimpleNamespace(start=start + (n - 1) * ONE, end=start + n * ONE,
+                            low=Decimal(low), high=Decimal(high))
+            for n, (low, high) in enumerate(((19505, 19540), (19530, 19540), (19530, 19545), (19530, 19545),
+                                             (19535, 19550), (19540, 19550), (19500, 19540)), 1)]
+    outcome = compare_release_lots(bars, touch=start + US, confirmed=start + 5 * ONE + US,
+                                   anchors=[bars[-1].end], tick=Decimal(5), lots=20, average=Decimal("19505.0"))
+    inside = outcome["by_quote_minute"][0]["scopes"]
+    assert inside["before_quote_minute_start"]["complete_minutes_only"][
+        "possible_lots_after_touch_before_confirmation"
+    ] == []
+    assert inside["through_quote_minute_end"]["complete_minutes_only"][
+        "possible_lots_after_touch_before_confirmation"
+    ] == [0, 1, 2, 3]
+    assert inside["through_quote_minute_end"]["boundary_minutes_allowed"][
+        "possible_lots_after_touch_before_confirmation"
+    ] == list(range(21))
+    for path in outcome["paths"].values():
+        assert path["earliest_whole_leg_compatible_completed_prefix_known_at"] == bars[-1].end + US
