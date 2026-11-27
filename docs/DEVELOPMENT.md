@@ -60,6 +60,7 @@ owner 控制任务、架构与节奏，Codex 负责定位、实现、必要验�
 - 应用 API、Python 应用包和 Web 共用 `APP_VERSION`。各组件按自身变更维护版本。应用发版记录本次选用的组件版本，
   组件发版后由消费端更新锁并按实际绑定核对。编号、tag/commit 和构建检查由发布流程处理。
   改应用版本时运行版本一致性检查、`uv lock --check --offline --project services/quant-api` 和受影响构建。
+- 现役组件合同见 [量化计算](../openspec/specs/quant-compute-core/spec.md)、[图表](../openspec/specs/chart-indicator-system/spec.md) 和 [独立发布](../openspec/specs/independent-package-release/spec.md)。
 - 不移动已发布 tag、不将 dirty 源码冒充原版本。运行代码保留可核对的 commit；公式、数据和账户历史所需身份继续保留，
   不为此维护旧应用代码或人工版本材料。研究比较固定输入、规则和评价口径；普通工程不套用研究冻结流程。
 

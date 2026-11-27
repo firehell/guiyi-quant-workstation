@@ -15,7 +15,7 @@ from app.market_data.product_retirement import (
 
 def test_retired_products_file_is_exact_and_disjoint_from_active() -> None:
     retired = load_retired_products()
-    assert retired == frozenset({"br", "cs", "ic", "if", "ih", "im", "lu", "nr", "pd", "pt", "sp"})
+    assert retired == frozenset({"br", "cs", "ic", "if", "ih", "im", "lu", "nr", "pd", "pt", "rs", "sp"})
     active = {
         line.strip().lower()
         for line in (PROJECT_ROOT / "data/universe/active_products.txt").read_text(
@@ -23,7 +23,7 @@ def test_retired_products_file_is_exact_and_disjoint_from_active() -> None:
         ).splitlines()
         if line.strip()
     }
-    assert len(active) == 58
+    assert len(active) == 57
     assert retired.isdisjoint(active)
 
 
@@ -36,7 +36,7 @@ def test_assert_not_retired_uses_exact_membership() -> None:
     assert exc.value.code == "PRODUCT_RETIRED"
 
 
-@pytest.mark.parametrize(("product", "contract"), [(" PD ", "PD2701"), (" Pt ", "PT2701")])
+@pytest.mark.parametrize(("product", "contract"), [(" PD ", "PD2701"), (" Pt ", "PT2701"), (" RS ", "RS2701")])
 def test_retirement_precedes_catalog_and_strategy_reads(product, contract):
     from app.guiyi_cli.data_commands import _active_product
     from app.market_data.domain import ContractTradingDayQuery

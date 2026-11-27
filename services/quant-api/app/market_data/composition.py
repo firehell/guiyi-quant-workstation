@@ -367,11 +367,20 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
     rqdata = None if tick else RQDataClient()
     from app.market_data.day_preparation import build_day_metadata_preparation
     products = load_operational_products()
-    previous_path = Path.home() / "Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json"
+    from app.market_data.product_retirement import (
+        MARKET_FOUNDATION_RETIRED_PRODUCTS, RS_RETIREMENT_SCOPE_DELTA,
+    )
+
+    legacy_state = Path.home() / "Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json"
+    previous_tick_state = legacy_state.with_name("market-day-metadata-preparation-tick.json")
+    previous_scopes = (
+        (legacy_state, set(products) | MARKET_FOUNDATION_RETIRED_PRODUCTS),
+        (previous_tick_state, set(products) | RS_RETIREMENT_SCOPE_DELTA),
+    ) if tick else ()
     preparation = build_day_metadata_preparation(
         SessionLocal,
-        state_path=previous_path.with_name("market-day-metadata-preparation-tick.json") if tick else previous_path,
-        previous_state_path=previous_path if tick else None,
+        state_path=legacy_state.with_name("market-day-metadata-preparation-tick-57.json") if tick else legacy_state,
+        previous_scopes=previous_scopes,
         products=products, canonical_root=canonical_root(),
     )
     market_data = build_market_data_service(session)

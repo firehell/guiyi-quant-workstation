@@ -125,7 +125,7 @@ RQData -> staging + hard validation -> Canonical Parquet
 
 - RQData 是唯一外部行情事实源，Canonical Parquet 是唯一 active Historical Bar 存储，PostgreSQL 不存 Bar。
 - RQData `1m` session 首根时间是首根 `bar_end`；adapter 必须先减一分钟，将其规范化为统一 `(start, end]` 的排他 start。Canonical 仍只有一个 V2 当前事实，不并行创建 data-version。
-- V2 的 `active_products.txt` 定义 58 个研究品种，`operational_products.txt` 定义持续 Runtime 授权。PD（钯金）及 PT（铂金）已列入退役名单。
+- V2 的 `active_products.txt` 定义 57 个研究品种，`operational_products.txt` 定义持续 Runtime 授权。PD（钯金）、PT（铂金）与 RS（油菜籽）已列入退役名单。
 - 物理 Dataset 只有 `continuous` 与 `contract`；`actual_dominant` 只通过 `MainContractMap rank=1` 有效区间拼接。
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 - 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的交办范围内；数据补全或历史候选闭环无需逐批人工批准，由执行者冻结并校验 exact plan hash。

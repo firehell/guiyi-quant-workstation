@@ -258,6 +258,16 @@ def present_saved_chart(
             "comparator_status": "not_materialized"}
 
 
+def _current_scope_receipt(receipt, products):
+    from app.market_data.product_retirement import RS_RETIREMENT_SCOPE_DELTA
+
+    if receipt is None or set(receipt.revisions) == products:
+        return receipt
+    if set(receipt.revisions) == products | RS_RETIREMENT_SCOPE_DELTA:
+        return None
+    raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+
+
 def warmup_formal_receipts() -> dict:
     """Prove the formal receipt source without calculating or polling Live."""
     from app.db.session import engine
@@ -269,9 +279,10 @@ def warmup_formal_receipts() -> dict:
 
     with get_redis_connection() as redis:
         binding = require_formal_tick_binding(redis, engine.url, canonical_root())
-    receipt = current_retained_receipt(formal_archive_root(), now=datetime.now(UTC))
-    if receipt is not None and set(receipt.revisions) != set(load_operational_products()):
-        raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+    receipt = _current_scope_receipt(
+        current_retained_receipt(formal_archive_root(), now=datetime.now(UTC)),
+        set(load_operational_products()),
+    )
     return {"receipt_only": True, "binding": binding,
             "receipt": None if receipt is None else receipt.identity, "natural_archive_verified": False}
 
@@ -314,9 +325,9 @@ def serve_formal_receipts(ownership, *, stop_requested):
             try:
                 require_formal_tick_binding(redis, engine.url, canonical)
                 root = formal_archive_root()
-                receipt = current_retained_receipt(root, now=datetime.now(UTC))
-                if receipt is not None and set(receipt.revisions) != products:
-                    raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+                receipt = _current_scope_receipt(
+                    current_retained_receipt(root, now=datetime.now(UTC)), products,
+                )
                 status = "waiting_archive" if receipt is None else "current"
                 if receipt is not None and receipt.identity != completed_receipt:
                     ownership.mark_ready({"reference_receipts": "calculating"})

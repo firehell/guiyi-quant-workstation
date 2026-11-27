@@ -295,3 +295,22 @@ def test_stable_formal_receipt_survives_release_rotation(tmp_path):
     next_receipt = retain_archive_receipt(new_status, now=later, archive_root=stable)
     assert current_retained_receipt(stable, now=later).identity == next_receipt.stem
     assert read_archive_receipt(path, now=later) == first
+
+
+def test_formal_reference_waits_for_current_scope_after_rs_retirement():
+    from types import SimpleNamespace
+
+    import pytest
+    from app.market_data.newow.market_reference_after_close import _current_scope_receipt
+    from app.market_data.operational_universe import load_operational_products
+
+    products = set(load_operational_products())
+    current = SimpleNamespace(revisions=dict.fromkeys(products, "verified"))
+    former = SimpleNamespace(revisions={**current.revisions, "rs": "verified"})
+    unexpected = SimpleNamespace(revisions={**current.revisions, "pt": "verified"})
+
+    assert _current_scope_receipt(current, products) is current
+    assert _current_scope_receipt(former, products) is None
+    assert "rs" in former.revisions
+    with pytest.raises(ValueError, match="MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID"):
+        _current_scope_receipt(unexpected, products)

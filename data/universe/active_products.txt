@@ -40,7 +40,6 @@ ps
 px
 rb
 rm
-rs
 ru
 sa
 sc

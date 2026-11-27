@@ -117,7 +117,7 @@ flowchart LR
 - `/market` 的市场/消息 Tab 分别消费 overview、`GET /api/runtime/health`、有界历史 Alert Events 与独立 completed 1m 报价。首页成功快照在详情往返间复用，失效后后台刷新；消息不阻塞市场。首页只允许一个 server 固定 operational Scope 的批量 WebSocket，无 per-product HTTP 或写入；详情原有单品种 WebSocket 不作为60品种 fanout 使用。
 - 分钟报价 overlay 使用现有 Live/Calendar/Session/MainContractMap 与 MDS 读取能力，先订阅后快照，按交易日/物理合约身份重建并处理同日 availability 恢复；同合约昨收涨跌幅由后端 Decimal 计算。它不覆写 completed D1/W1 overview，不让 Redis 成为历史行情 authority，也不把休市、断线或历史收盘标成 tick 实时。
 - 消息历史是 registry-owned immutable Event 的有界日期/规则/品种查询与稳定游标投影；事件生成、尝试通知、实际收件分开，不新增 Event writer、删除/重发、Scope 或通知入口。
-- V2 的 `active_products.txt` 定义 58 个研究品种，`operational_products.txt` 定义 Market/Alert Runtime 范围。数据和策略入口共用退役名单。
+- V2 的 `active_products.txt` 定义 57 个研究品种，`operational_products.txt` 定义 Market/Alert Runtime 范围。数据和策略入口共用退役名单。
 - Alert 独立于 Market Catalog。一个 `single Alert Runtime` 按 Rule dispatch 到 HTDY `first_seen` 与 `SubingThs15mEvaluator` `exact`，不新增进程。SuBing 只使用同物理 rank1 合约的 completed `actual_dominant` 15m；首次/换月重建经 `MarketReadService -> MarketDataService` 取得同合约 lifecycle Canonical prefix，再严格合并当日 completed Live，缺 history 即 fail-closed；Event 持久化后最多尝试一次 transport。
 - Web 的正式 SuBing `S↑/S↓` 只来自 immutable Event，通用 Overlay 不增加 SuBing（`no SuBing overlay`）；API、Web 与 formatter 不复制公式。独立历史参考服务经现有 `ActualDominantResearchSegmentLoader` 和 `MarketDataService` 获取完整主力区段、物理生命周期 Bar 及 coverage，复用同一个 Kernel 后进入纯 Decimal 参考投影。`GET /api/v1/market/{symbol}/subing/reference` 提供单品种只读响应，进程内单并发、30 秒协作式预算；输入 hash 绑定游标、统计与信号，历史参考不依赖 Alert Rule/Scope、Redis 或 Event 写入。
 - 默认关闭的 Live recovery worker 属于既有 Market Runtime；复用 RQData adapter、Session 与聚合器，

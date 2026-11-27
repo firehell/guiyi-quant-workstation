@@ -101,7 +101,7 @@ def test_actual_provider_attempt_is_counted_when_commit_clock_becomes_invalid(
 def test_operational_slow_queue_converges_45_gaps_without_spending_stale_request_budget():
     _, _, base, bars = _setup()
     products = load_operational_products()
-    assert len(products) == 58
+    assert len(products) == 57
     complete_prefixes = len(products) - 45
     redis = FakeRedis()
     store = RedisLiveStore(redis)
