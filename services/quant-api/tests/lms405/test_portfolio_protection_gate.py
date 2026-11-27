@@ -1,5 +1,6 @@
 from dataclasses import replace
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -37,6 +38,22 @@ def test_contact_on_confirmation_minute_cannot_be_used_earlier():
     bars.append(minute(11, 1087))
     assert price_admission(bars, BAND, signal(11, 1087))["ordinary_due_at"] is None
     assert price_admission(bars, BAND, signal(12, 1087))["ordinary_due_at"] == bars[-1].end + US
+
+
+def test_joint_close_uses_only_a_scoped_completed_minute():
+    bars = [minute(n, 1088) for n in range(1, 11)]
+    contact, future = minute(11, 1087), minute(12, 1081)
+    event = signal(11, 1087)
+    result = price_admission([*bars, contact], BAND, event, allow_joint_close=True)
+    assert result["ordinary_due_at"] == contact.end + US == event["available_at"]
+    assert result == price_admission([*bars, contact, future], BAND, event, allow_joint_close=True)
+    assert price_admission([*bars, future], BAND, event, allow_joint_close=True)["ordinary_due_at"] is None
+    assert price_admission([*bars, contact], BAND, event, position_since=bars[5].end + US,
+                           allow_joint_close=True)["ordinary_due_at"] is None
+    unfinished = SimpleNamespace(end=contact.end, completed=False, contract=contact.contract)
+    for bad in (unfinished, replace(contact, contract="SH2609")):
+        with pytest.raises(ValueError, match="PROTECTION_JOINT_CLOSE_BAR_IDENTITY_MISMATCH"):
+            price_admission([*bars, bad], BAND, event, allow_joint_close=True)
 
 
 def test_shared_edge_preserves_protection_scope_and_session_boundary():

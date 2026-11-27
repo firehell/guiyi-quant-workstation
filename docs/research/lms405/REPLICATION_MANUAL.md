@@ -235,6 +235,8 @@ services/quant-api/.venv/bin/python scripts/research/lms405_protection_timeframe
   --warning-confirmation --env-file .env --output /tmp/lms405-warning-confirmation-new.json
 ```
 
+[九品种同刻触区对照](evidence/PORTFOLIO_REPLAY.md#首次触区与形态同刻完成的对照)将同一问题落到明确用途的保护带。允许触区与形态完成同刻可知后，1→1仍为10条价格候选，5→5仍为4条。每条候选及其可知时刻逐组相同，联合口径保留为价格研究条件。
+
 ## P4环境分类与降周期候选
 
 九品种沿用现有三晚开发窗口。19个作者明确盘整或空头标签用六个开盘判读点比较。滚动环境首点相容12/19、六点均相容2/19、有翻转17/19。沿用日盘环境为7/19、7/19、0/19。等连续两个同类开盘判读后切换为7/19、3/19、14/19。固定及两票口径降低翻转，但首点与归档说法相容的次数减少。作者并未逐时点标注环境，三组均保留为研究对照。 [九品种归档标签与时点](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)

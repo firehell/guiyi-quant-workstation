@@ -18,6 +18,7 @@ from lms405_protection_lot_timing import EXPOSURE, displayed_tick_totals, earlie
 from lms405_protection_quote_bounds import gate_price_support
 from lms405_protection_route_comparison import FROZEN_ROUTES
 from lms405_public_plan_roles import load_source
+from lms405_replay import ohlc
 from lms405_right_side_study import ONE, US
 from lms405_sh_lock_lifecycle import digest, signals
 from lms405_sizing_audit import EXPOSURE_SHA256
@@ -25,6 +26,7 @@ from lms_near405_replay import encoded, sha
 
 VERSION = "lms405-portfolio-protection-price-admission-v1"
 ADVANCE_VERSION = "lms405-portfolio-advance-protection-v1"
+JOINT_CLOSE_VERSION = "lms405-portfolio-protection-joint-close-v1"
 BASELINE = Path("output/lms405-portfolio-oct-20261125/fixture.json")
 CONTROLS = Path("output/lms405-public-protection-and-m-20261126/final-a.json")
 CONTROL_SHA = "0d3068a8a05cf32fa8f4954c413d4d2534d198ea79b5a1915ac5cb92d2cc9cad"
@@ -85,7 +87,7 @@ def plan_rows(index, contract):
     return tuple(updates), m_by_revision, sources
 
 
-def price_admission(minutes, band, event, *, position_since=None, shape_step=FIVE):
+def price_admission(minutes, band, event, *, position_since=None, shape_step=FIVE, allow_joint_close=False):
     """Read only completed bars from the signal's continuous segment and plan revision."""
     shape_start = event["shape_end"] - shape_step
     known = event["available_at"]
@@ -94,8 +96,11 @@ def price_admission(minutes, band, event, *, position_since=None, shape_step=FIV
         return dict(status="PLAN_NOT_KNOWN_BEFORE_SHAPE", loose_due_at=None, ordinary_due_at=None)
     window = []
     for bar in reversed(minutes):
-        if bar.end + US >= known:
+        bar_known = bar.end + US
+        if bar_known > known or (bar_known == known and not allow_joint_close):
             continue
+        if bar_known == known and (bar.completed is not True or bar.contract != band.contract):
+            raise ValueError("PROTECTION_JOINT_CLOSE_BAR_IDENTITY_MISMATCH")
         if bar.start < from_time or (window and bar.end != window[-1].start):
             break
         window.append(bar)
@@ -154,7 +159,7 @@ def describe_advance_candidates(bars, events):
     return rows
 
 
-def observations_for_contract(series, updates, m_bands, cutoff, *, period=5):
+def observations_for_contract(series, updates, m_bands, cutoff, *, period=5, allow_joint_close=False):
     minutes, fives = series[1], series[5]
     step = period * ONE
     events = {}
@@ -163,7 +168,7 @@ def observations_for_contract(series, updates, m_bands, cutoff, *, period=5):
             key = event["confirmed_at"], signal_side
             shown = visible_bands(updates, fives[0].contract, event["available_at"])
             area, issue = active_band(shown, event["available_at"], OPPOSITE[signal_side])
-            price = (price_admission(minutes, area, event, shape_step=step) if area else
+            price = (price_admission(minutes, area, event, shape_step=step, allow_joint_close=allow_joint_close) if area else
                      dict(status=issue, loose_due_at=None, ordinary_due_at=None))
             m = m_bands.get(area.revision) if area else None
             events[key] = dict(event=event, area=area, price=price,
@@ -308,7 +313,45 @@ def compare_caustic_quote(minutes, transitions, frozen):
                 first_fixture_lock=first_lock, author_capture_at=None, author_account_continuity=None, minutes=rows)
 
 
-def study(session, market, baseline, control, exposure, *, advance=False):
+def joint_close_comparison(series, updates, m_bands, cutoff, *, ordinary_five):
+    minutes = {bar.end: bar for bar in series[1]}
+    results = {}
+    for period, strict in ((1, observations_for_contract(series, updates, m_bands, cutoff, period=1)),
+                           (5, ordinary_five)):
+        joint = observations_for_contract(series, updates, m_bands, cutoff, period=period, allow_joint_close=True)
+        if joint.keys() != strict.keys():
+            raise ValueError("PROTECTION_JOINT_CLOSE_GEOMETRY_DIVERGED")
+        additions = []
+        for (end, side), row in sorted(joint.items()):
+            due = row["price"]["ordinary_due_at"]
+            earlier = strict[end, side]["price"]
+            if earlier["ordinary_due_at"] is not None and earlier["ordinary_due_at"] != due:
+                raise ValueError("PROTECTION_JOINT_CLOSE_CHANGED_PRIOR_CONTACT")
+            if due is None or earlier["ordinary_due_at"] is not None:
+                continue
+            band, event = row["area"], row["event"]
+            if due != event["available_at"] or row["price"]["first_contact_at"] != end:
+                raise ValueError("PROTECTION_JOINT_CLOSE_ADDED_NON_COINCIDENT_CONTACT")
+            current, previous = minutes[end], minutes.get(end - ONE)
+            upward = side == "LONG"
+            edge = band.lower if upward else band.upper
+            fresh = previous is not None and previous.end == current.start and (
+                previous.close <= edge < current.close if upward else previous.close >= edge > current.close
+            )
+            additions.append(dict(confirmed_at=end, known_at=due, direction=side, revision=band.revision,
+                                  lower=band.lower, upper=band.upper, confirmation_close=event["close"],
+                                  first_contact_minute_ohlc=ohlc(current), strict_fresh_near_close_same_minute=fresh,
+                                  prior_price_status=earlier["status"]))
+        results[f"{period}m"] = dict(
+            geometry_count=len(strict),
+            ordinary_before_count=sum(row["price"]["ordinary_due_at"] is not None for row in strict.values()),
+            ordinary_joint_count=sum(row["price"]["ordinary_due_at"] is not None for row in joint.values()),
+            additions=additions,
+        )
+    return results
+
+
+def study(session, market, baseline, control, exposure, *, advance=False, joint_close=False):
     cutoff = datetime.fromisoformat(baseline["as_of"])
     index = input_sources()
     modes = {key: [] for key in (
@@ -355,6 +398,10 @@ def study(session, market, baseline, control, exposure, *, advance=False):
             baseline_locks=check_baseline_locks(original, events),
             manual_suggestions=len(manual["proposals"]), fixtures=fixtures, unit_carry_fixtures=carry,
         )
+        if joint_close:
+            results[contract]["joint_close_comparison"] = joint_close_comparison(
+                series, updates, m_bands, cutoff, ordinary_five=events,
+            )
         if advance:
             fast = observations_for_contract(series, updates, m_bands, cutoff, period=1)
             results[contract]["pre_contact_candidates"] = {
@@ -384,7 +431,8 @@ def study(session, market, baseline, control, exposure, *, advance=False):
     if actions["baseline"]["timeline"] != [row for row in baseline["timeline"] if row["layer"] == "FIXTURE_STATE_BATCH"]:
         raise ValueError("PROTECTION_PRICE_BASELINE_DIVERGED")
     controls = control["cases"]
-    report = dict(version=ADVANCE_VERSION if advance else VERSION, contracts=results, actions=actions,
+    report = dict(version=JOINT_CLOSE_VERSION if joint_close else ADVANCE_VERSION if advance else VERSION,
+                contracts=results, actions=actions,
                 baseline_sha256=BASELINE_SHA256,
                 historical_plan_revision_verified=False, author_action_samples=0, author_match_rate=None,
                 evidence_controls_sha256=CONTROL_SHA,
@@ -403,7 +451,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--advance", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--advance", action="store_true")
+    modes.add_argument("--joint-close", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -419,7 +469,7 @@ def main():
         baseline, control = verified_json(BASELINE, BASELINE_SHA256), verified_json(CONTROLS, CONTROL_SHA)
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=90):
             report = study(session, build_market_data_service(session), baseline, control,
-                           verified_json(EXPOSURE, EXPOSURE_SHA256), advance=args.advance)
+                           verified_json(EXPOSURE, EXPOSURE_SHA256), advance=args.advance, joint_close=args.joint_close)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
