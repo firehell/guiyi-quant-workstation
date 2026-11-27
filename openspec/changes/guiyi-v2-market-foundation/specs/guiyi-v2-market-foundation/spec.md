@@ -39,6 +39,14 @@ Market SHALL 在经验证的隔离 Tick 路径中用单源单代次、物理合�
 - **THEN** 两个写入者仅从已有基线恢复内存身份并发布休市心跳，开盘前不连接供应商、不生成 Bar、不改写订阅或游标
 - **AND** 绑定、Session、订阅或基线冲突时拒绝就绪
 
+
+#### Scenario: A switched target is awaiting natural completed minutes
+
+- **GIVEN** the exact handoff plan has a proven registry CAS, a target binding and frozen Session windows and rank1 owners for every subscribed product
+- **WHEN** the operator reads the first completed minutes from the target
+- **THEN** read back the first emitted 1m observation per product through the durable journal and its identity index, proving its Bar, Session endpoint, physical owner, source generation and confirmation time
+- **AND** report any opening-minute gap separately; pending, missing, late or unproved observations do not qualify as timely completion and the readback does not advance any cursor
+
 ### Requirement: MF03 History lifecycle and unified reading
 
 Market SHALL 初次校验历史后日常采用增量维护，保留只读审计及必要的定向修复；以 RQData 1m、交易所 D1 及完整 Session/周派生七周期，按身份组合已归档历史与 Live，区分活动 K 线、盘中已完成事实和盘后权威数据。

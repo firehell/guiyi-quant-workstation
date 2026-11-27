@@ -472,6 +472,45 @@ def test_old_market_terminal_proof_ignores_neither_missing_route_nor_wrong_contr
             old_observation_snapshot(old, OLD_DAY, terminals=terminals, **options)
 
 
+@pytest.mark.parametrize(("kind", "contract"), [("source", "RB2705"), ("completed", "RB2701")])
+def test_old_market_terminal_proof_rejects_two_distinct_originals_at_frozen_end(redis_pair, kind, contract):
+    old, _ = redis_pair
+    end = datetime(2026, 10, 23, 7, tzinfo=UTC)
+    for stream_kind, consumers in (("source", ("live",)), ("completed", ("alert", "reference"))):
+        stream = ObservationStream(old, kind=stream_kind)
+        tail = stream.append(ObservationEnvelope(
+            "expected", OLD_DAY, end, "live:bar:rb:1m", {"contract": "RB2701", "bar_end": end.isoformat()}, True,
+        ))
+        if stream_kind == kind:
+            tail = stream.append(ObservationEnvelope(
+                "duplicate", OLD_DAY, end, "live:bar:rb:1m", {"contract": contract, "bar_end": end.isoformat()}, True,
+            ))
+        for consumer in consumers:
+            stream.initialize(consumer, OLD_DAY, cursor=tail)
+
+    with pytest.raises(CohortError, match="MARKET_SOURCE_OLD_TERMINAL_UNPROVEN"):
+        old_observation_snapshot(old, OLD_DAY, alert_enabled=True, check_budget=lambda: None,
+                                 terminals={"rb": ("RB2701", end)})
+
+
+def test_old_market_retention_byte_budget_is_combined_and_enforced_before_stop(tmp_path, redis_pair, monkeypatch):
+    old, _ = redis_pair
+    IsolatedHost(tmp_path, *redis_pair)
+    options = dict(alert_enabled=True, check_budget=lambda: None)
+    snapshot = preserve_stopped_observations(old, OLD_DAY, attempt=tmp_path, **options)
+    original = tmp_path / "old-observation-originals.jsonl"
+    assert old_observation_snapshot(old, OLD_DAY, **options) == {
+        key: value for key, value in snapshot.items() if key != "archive_sha256"
+    }
+    rows = original.read_bytes().splitlines(keepends=True)
+    assert len(rows) == 2
+    limit = len(b"".join(rows)) - 1
+    assert max(map(len, rows)) <= limit
+    monkeypatch.setattr("app.runtime_market_source_handover._MAX_RETAINED_BYTES", limit)
+    with pytest.raises(CohortError, match="MARKET_SOURCE_RETENTION_LIMIT"):
+        old_observation_snapshot(old, OLD_DAY, **options)
+
+
 def test_macos_market_configuration_preserves_pinned_account_parser_and_other_settings(tmp_path):
     from app.runtime_market_cohort_host import _market_config_pair
 
@@ -542,7 +581,10 @@ with Redis(host='127.0.0.1', port=int(sys.argv[1])) as client, client.pubsub() a
 """, str(port), *channels], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as owner:
             try:
                 assert owner.stdout.readline().strip() == "ready"
-                assert _connects_to(target, owner.pid)
+                # Docker Desktop may translate the host socket to another TCP tuple.
+                subscriptions = [row for row in target.client_list() if int(row["sub"]) == len(channels)]
+                assert len(subscriptions) == 1
+                assert _connects_to(target, owner.pid) == (subscriptions[0]["laddr"] == f"127.0.0.1:{port}")
                 assert not _connects_to(old, owner.pid)
                 # Redis connectivity by itself does not advance the native tip.
                 assert tq_watermark(account, A, expected(new_end), checking_old)["status"] == "blocked"
@@ -555,10 +597,130 @@ with Redis(host='127.0.0.1', port=int(sys.argv[1])) as client, client.pubsub() a
         store.close()
 
 
+@pytest.mark.parametrize(("subscribers", "verified"), [
+    ([{"addr": "127.0.0.1:30100", "laddr": "127.0.0.1:16400", "db": 0, "sub": 16}], True),
+    ([{"addr": "127.0.0.1:30100", "laddr": "127.0.0.1:16400", "db": 6, "sub": 16}], False),
+    ([{"addr": "127.0.0.1:30101", "laddr": "127.0.0.1:16400", "db": 0, "sub": 16}], False),
+    ([{"addr": "192.168.0.2:30100", "laddr": "192.168.0.3:6379", "db": 0, "sub": 16}], False),
+])
+def test_macos_redis_socket_requires_same_pid_tcp_tuple_and_database(monkeypatch, subscribers, verified):
+    from types import SimpleNamespace
+
+    from app import runtime_market_cohort_host as host
+
+    monkeypatch.setattr(host, "command_result", lambda *_args, **_kwargs: SimpleNamespace(
+        returncode=0, stdout="n127.0.0.1:30100->127.0.0.1:16400\n",
+    ))
+    redis = SimpleNamespace(
+        connection_pool=SimpleNamespace(connection_kwargs={"host": "127.0.0.1", "port": 16400}),
+        client_list=lambda: subscribers,
+        pubsub_numsub=lambda *channels: [(channel, 1) for channel in channels],
+    )
+    assert host._connects_to(redis, 123) is verified
+
+
+@pytest.mark.parametrize("late", [False, True])
+def test_target_first_completed_minutes_use_exact_session_and_indexed_original(tmp_path, redis_pair, late):
+    from decimal import Decimal
+
+    from app.market_data.aggregation import SessionWindow
+    from app.market_data.domain import CanonicalBar
+    from app.market_data.live_market import _bar_payload
+    from app.market_data.observation_stream import completed_observation_id
+    from app.runtime_market_source_handover import read_first_completed_minutes
+
+    _, target = redis_pair
+    subscriptions = {product: f"{product.upper()}2701" for product in load_operational_products()}
+    stage_new_observations(
+        target, make_url("postgresql+psycopg://operator@127.0.0.1:5432/guiyi_quant"), tmp_path,
+        expected_instance=redis_instance(target), old_instance=redis_instance(redis_pair[0]),
+        day=NEW_DAY, subscriptions=subscriptions, alert_enabled=True,
+    )
+    night = datetime(2026, 10, 25, 13, 1, tzinfo=UTC)
+    day = night + timedelta(hours=12)
+    expected = {product: (contract, day if product == "ec" else night) for product, contract in subscriptions.items()}
+    sessions = {product: (contract, (SessionWindow(end - timedelta(minutes=1), end + timedelta(hours=1)),))
+                for product, (contract, end) in expected.items()}
+    stream = ObservationStream(target, kind="completed")
+    generation = "rqdata-tick:" + "a" * 32 + ":1"
+
+    def append(product, contract, end, *, delay=2):
+        identity = completed_observation_id(NEW_DAY, contract, "1m", end)
+        confirmed = end + timedelta(seconds=delay)
+        price = Decimal("10")
+        bar = CanonicalBar(end, NEW_DAY, price, price, price, price, Decimal("2"), None, None)
+        stream_id = stream.append(ObservationEnvelope(
+            identity, NEW_DAY, end, f"live:bar:{product}:1m", _bar_payload(bar, contract=contract), delay <= 30,
+            raw_received_at=end, confirmed_at=confirmed, source_generation=generation,
+        ))
+        return identity, stream_id
+
+    rb_end = night + timedelta(minutes=1)
+    rb_identity, rb_stream_id = append("rb", subscriptions["rb"], rb_end)
+    first = read_first_completed_minutes(target, NEW_DAY, sessions=sessions, now=night + timedelta(minutes=2))
+    assert first["status"] == "first_completed_incomplete"
+    assert first["products"]["ec"]["status"] == "pending"
+    assert first["products"]["au"]["status"] == "missing"
+    assert first["products"]["rb"]["status"] == "verified"
+    assert first["products"]["rb"]["opening_is_first"] is False
+
+    for product, (contract, end) in expected.items():
+        if product != "rb":
+            append(product, contract, end, delay=31 if late and product == "ec" else 2)
+    now = day + timedelta(minutes=1)
+    final = read_first_completed_minutes(target, NEW_DAY, sessions=sessions, now=now)
+    assert final["status"] == ("first_completed_incomplete" if late else "first_completed_verified")
+    assert final["products"]["ec"]["status"] == ("late" if late else "verified")
+    assert len(final["products"]) == 60
+    assert final["products"]["rb"] == {
+        "status": "verified", "contract": subscriptions["rb"], "bar_end": rb_end.isoformat(),
+        "opening_bar_end": night.isoformat(), "opening_is_first": False,
+        "observation_id": rb_identity, "stream_id": rb_stream_id, "source_generation": generation,
+        "confirmed_at": (rb_end + timedelta(seconds=2)).isoformat(),
+    }
+    assert stream.cursor("alert", NEW_DAY) == "0-0"
+    target.xdel(stream.key(NEW_DAY), rb_stream_id)
+    with pytest.raises(CohortError, match="MARKET_SOURCE_TARGET_COMPLETED_PREFIX_UNPROVEN"):
+        read_first_completed_minutes(target, NEW_DAY, sessions=sessions, now=now)
+
+
+@pytest.mark.parametrize("invalid", ["payload", "confirmation", "index"])
+def test_target_first_completed_rejects_unproved_payload_confirmation_or_identity(redis_pair, invalid):
+    from decimal import Decimal
+
+    from app.market_data.aggregation import SessionWindow
+    from app.market_data.domain import CanonicalBar
+    from app.market_data.live_market import RedisLiveStore, _bar_payload
+    from app.market_data.observation_stream import completed_observation_id
+    from app.runtime_market_source_handover import read_first_completed_minutes
+
+    _, target = redis_pair
+    end = datetime(2026, 10, 26, 1, 1, tzinfo=UTC)
+    sessions = {"rb": ("RB2701", (SessionWindow(end - timedelta(minutes=1), end),))}
+    RedisLiveStore(target).set_subscriptions(NEW_DAY, {"rb": "RB2701"})
+    price = Decimal("10")
+    bar = CanonicalBar(end, NEW_DAY, price, price, price, price, Decimal("2"), None, None)
+    data = _bar_payload(bar, contract="RB2701")
+    if invalid == "payload":
+        del data["volume"]
+    stream = ObservationStream(target, kind="completed")
+    identity = completed_observation_id(NEW_DAY, "RB2701", "1m", end)
+    stream.append(ObservationEnvelope(
+        identity, NEW_DAY, end, "live:bar:rb:1m", data, True,
+        raw_received_at=end, confirmed_at=end + timedelta(seconds=1 if invalid == "confirmation" else 2),
+        source_generation="rqdata-tick:" + "a" * 32 + ":1",
+    ))
+    if invalid == "index":
+        target.hdel(stream.identity_key(NEW_DAY), identity)
+    with pytest.raises(CohortError, match="MARKET_SOURCE_TARGET_FIRST_MINUTE_UNPROVEN"):
+        read_first_completed_minutes(target, NEW_DAY, sessions=sessions, now=end + timedelta(seconds=5))
+
+
 def test_macos_restores_exact_config_after_known_pre_cas_failure_with_expired_apply_budget(tmp_path, redis_pair, monkeypatch):
     from hashlib import sha256
     from time import monotonic
 
+    from app.market_data.aggregation import SessionWindow
     from app.runtime_market_cohort_host import MarketCohortHost, _market_config_pair
 
     fixture = IsolatedHost(tmp_path, *redis_pair)
@@ -579,6 +741,11 @@ def test_macos_restores_exact_config_after_known_pre_cas_failure_with_expired_ap
     _, native._old_settings, _, _ = _market_config_pair(private, candidate)
     native._target_config_sha = sha256(proposed).hexdigest()
     native._old_terminals = None
+    start = datetime(2026, 10, 26, 1, tzinfo=UTC)
+    native._old_windows = {
+        product: (contract, (), contract, (SessionWindow(start, start + timedelta(hours=1)),))
+        for product, contract in fixture.subscriptions.items()
+    }
     native.deadline = monotonic() + 30
     attempt = native._attempt(plan)
     attempt.mkdir(mode=0o700, parents=True)

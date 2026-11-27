@@ -24,7 +24,7 @@ from app.market_data.live_recovery_scripts import COMMIT_OBSERVATIONS
 from app.market_data.market_phase import MarketPhase
 from app.market_data.market_foundation_scope import formal_tick_initial_day, verify_formal_tick_preopen
 from app.market_data.observation_stream import (
-    DAILY_LIMIT, TTL_SECONDS, ObservationEnvelope, ObservationStream,
+    DAILY_LIMIT, TTL_SECONDS, ObservationEnvelope, ObservationStream, completed_observation_id,
 )
 
 
@@ -1114,7 +1114,7 @@ class DurableLiveMarketService(LiveMarketService):
                 keys.append(key)
             payload = _bar_payload(bar, contract=contract)
             channel = live_bar_channel(symbol, frequency)
-            identity = f'{bar.trading_day}:{contract}:{frequency.value}:{bar.bar_end.isoformat()}'
+            identity = completed_observation_id(bar.trading_day, contract, frequency.value, bar.bar_end)
             score = _epoch_millis(bar.bar_end)
             serialized_payload = _compact_json(payload)
             existing_bars = stream.redis.zrangebyscore(key, score, score)

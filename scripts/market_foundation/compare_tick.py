@@ -180,6 +180,7 @@ def replay(path, settings_path=None, *, provider_history=False, additional_captu
             for end, bar in rows.items():
                 if target.setdefault(end, bar) != bar:
                     diagnostics[f"{label}_shard_conflict"] += 1
+                    conflicts[label].add(end)
     for label, target in (("tick", tick_bars), ("bar", direct_bars)):
         for end in conflicts[label]:
             target.pop(end, None)

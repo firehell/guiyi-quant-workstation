@@ -47,6 +47,7 @@ from app.runtime_market_account_readback import tq_watermark
 from app.runtime_market_macos import _TQ_LABEL, _paper, _paper_identity, _private, _tq
 from app.runtime_market_source_handover import (
     old_observation_snapshot,
+    read_first_completed_minutes,
     preserve_stopped_observations,
     read_staged_observations,
     redis_instance,
@@ -116,14 +117,16 @@ def _connects_to(client, pid):
     if not connections:
         return False
     clients = client.client_list()
-    direct = [row for row in clients if _socket_address(row["laddr"]) in destinations]
-    if direct:
-        return any((_socket_address(row["addr"]), _socket_address(row["laddr"])) in connections
-                   and int(row["db"]) == 0 and int(row["sub"]) == len(TRADING_PRODUCTS) for row in direct)
-    # A local port forward rewrites the server-side TCP tuple. The helper's OS
-    # endpoint still proves the connection to the independently verified server.
-    subscriptions = client.pubsub_numsub(*(f"live:bar:{p}:60m" for p in TRADING_PRODUCTS))
-    return len(subscriptions) == len(TRADING_PRODUCTS) and all(count > 0 for _, count in subscriptions)
+    # Unmapped port forwards cannot associate a Redis subscriber with this PID.
+    return any((_socket_address(row["addr"]), _socket_address(row["laddr"])) in connections
+               and int(row["db"]) == 0 and int(row["sub"]) == len(TRADING_PRODUCTS) for row in clients)
+
+
+def _target_sessions_digest(sessions):
+    return digest({
+        product: (contract, [(window.start, window.end) for window in windows])
+        for product, (contract, windows) in sessions.items()
+    })
 
 
 def _socket_address(raw):
@@ -495,11 +498,14 @@ class MarketCohortHost(CohortHost):
                 and sha256(target_config).hexdigest() == self._target_config_sha,
                 "MARKET_SOURCE_CONFIG_DRIFT")
         args = self._target_arguments(plan, target)
+        sessions = {product: (contract, windows) for product, (_, _, contract, windows) in self._old_windows.items()}
+        sessions_sha = _target_sessions_digest(sessions)
         with _redis(target["REDIS_URL"]) as redis:
             require(len(redis.client_list()) == 1, "MARKET_SOURCE_TARGET_HAS_CLIENTS")
             binding = stage_new_observations(redis, old_instance=retained["instance"], **args)
         self._staged_arguments = args
-        return {"binding": binding, "config_sha256": self._target_config_sha}
+        return {"binding": binding, "config_sha256": self._target_config_sha,
+                "target_sessions_sha256": sessions_sha}
 
     def install(self, plan, attempt):
         self._assert_stopped(plan)
@@ -864,6 +870,37 @@ class MarketCohortHost(CohortHost):
                     "registry": binding_side, "private_phase": state["phase"], "pointer_phase": pointer.get("phase"),
                     "same_generation_recovery": forward_recovery_status(self, plan, state),
                     "plan_sha256": plan["plan_sha256"]}
+
+    def read_market_source_first_completed(self, supplied):
+        from app.runtime_market_forward_recovery import forward_completed
+
+        plan, state = self._evidence(supplied)
+        new = registry(plan["new"])
+        require((state["phase"] == "switched" or forward_completed(self, plan, state)) and self.bindings() == new,
+                "MARKET_SOURCE_ACCEPTANCE_NOT_RECORDED")
+        intent = plan["market_source_handover"]
+        day = date.fromisoformat(intent["target_day"])
+        staged = state["effects"]["market_source_stage"]
+        self._target_config_sha = staged["config_sha256"]
+        settings = self._active_target(plan)
+        with self._catalog_session(settings) as (session, canonical), _redis(settings["REDIS_URL"]) as redis:
+            market = MarketDataService(MarketCatalog(session, canonical), CanonicalMonthlyStore(canonical))
+            sessions = {
+                product: (
+                    market.dominant_segment_for_day(product, day).contract,
+                    market.session_windows(symbol=product, trading_day=day),
+                )
+                for product in load_operational_products()
+            }
+            require(len(sessions) == 60 and _target_sessions_digest(sessions) == staged.get("target_sessions_sha256"),
+                    "MARKET_SOURCE_CATALOG_DRIFT")
+            require(redis_instance(redis) == intent["target_instance"], "MARKET_SOURCE_INSTANCE_DRIFT")
+            require(require_formal_tick_binding(redis, session.get_bind().url, canonical) == staged["binding"],
+                    "MARKET_SOURCE_FORMAL_BINDING_DRIFT")
+            result = read_first_completed_minutes(redis, day, sessions=sessions, now=self.now())
+            require(redis_instance(redis) == intent["target_instance"], "MARKET_SOURCE_INSTANCE_DRIFT")
+        require(self.bindings() == new and self._active_target(plan) == settings, "MARKET_SOURCE_CONFIG_DRIFT")
+        return {**result, "plan_sha256": plan["plan_sha256"], "target_instance": intent["target_instance"]}
 
     def read_market_source_accounts(self, supplied):
         plan, state = self._evidence(supplied)

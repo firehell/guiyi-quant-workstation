@@ -132,6 +132,21 @@ def test_capture_stops_with_explicit_reason(changes, reason):
     assert _termination(**(arguments | changes)) == reason
 
 
+def test_complete_day_capture_has_preopen_and_wall_time_limits():
+    from app.market_data.aggregation import SessionWindow
+    from scripts.market_foundation.capture_tick import complete_day_stop
+
+    close = OPEN + timedelta(hours=18)
+    windows = (SessionWindow(OPEN, OPEN + timedelta(hours=4)),
+               SessionWindow(close - timedelta(hours=2), close))
+    assert complete_day_stop(windows, OPEN - timedelta(seconds=30)) == close + timedelta(minutes=2)
+    for now in (OPEN - timedelta(seconds=121), OPEN, close):
+        with pytest.raises(ValueError, match="CAPTURE_COMPLETE_DAY_WINDOW_INVALID"):
+            complete_day_stop(windows, now)
+    with pytest.raises(ValueError, match="CAPTURE_COMPLETE_DAY_WINDOW_INVALID"):
+        complete_day_stop((SessionWindow(OPEN, OPEN + timedelta(hours=24)),), OPEN - timedelta(seconds=1))
+
+
 def test_compare_capture_reports_missing_session_endpoints_and_scope_drift(tmp_path):
     from scripts.market_foundation.compare_tick import replay
 
@@ -159,6 +174,30 @@ def test_compare_capture_reports_missing_session_endpoints_and_scope_drift(tmp_p
     with pytest.raises(ValueError, match="CAPTURE_SCOPE_MISMATCH"):
         replay(first, additional_captures=(shard("drift.jsonl", day="2026-11-27", note=None, footer=False),))
 
+
+
+def test_compare_capture_discards_conflicting_cross_shard_endpoint(tmp_path, monkeypatch, capsys):
+    from scripts.market_foundation.compare_tick import main, replay
+
+    end = OPEN + timedelta(minutes=1)
+    header = dict(symbol="rb", contract="RB2701", trading_day=str(DAY),
+                  sessions=[[OPEN.isoformat(), end.isoformat()]])
+    captures = [tmp_path / name for name in ("first.jsonl", "second.jsonl")]
+    for path, price in zip(captures, (10, 11), strict=True):
+        payload = dict(action="feed", channel="bar_RB2701", order_book_id="RB2701",
+                       datetime=end.isoformat(), trading_date=str(DAY),
+                       open=price, high=price, low=price, close=price, volume=1)
+        path.write_text(json.dumps(header) + "\n" + json.dumps({"payload": payload}) + "\n")
+
+    result = replay(captures[0], additional_captures=captures[1:])
+    assert result["diagnostics"]["bar_shard_conflict"] == 1
+    assert result["conflicting_endpoints"]["bar"] == [end.isoformat()]
+    assert result["endpoint_coverage"]["live"]["covered"] == 0
+    assert result["endpoint_coverage"]["live"]["missing"] == [end.isoformat()]
+
+    monkeypatch.setattr("sys.argv", ["compare_tick.py", str(captures[0]), "--capture-shard", str(captures[1])])
+    assert main() == 2
+    assert json.loads(capsys.readouterr().out)["conflicting_endpoints"]["bar"] == [end.isoformat()]
 
 
 def test_ordinary_cohort_cannot_switch_source(monkeypatch):

@@ -138,6 +138,10 @@ class ObservationEnvelope:
                    item.get('source_generation'))
 
 
+def completed_observation_id(day: date, contract: str, frequency: str, end: datetime) -> str:
+    return f"{day}:{contract}:{frequency}:{end.isoformat()}"
+
+
 class ObservationStream:
     def __init__(self, redis: Any, *, kind: Literal['source', 'completed']) -> None:
         if kind not in ('source', 'completed'):

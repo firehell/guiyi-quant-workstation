@@ -31,6 +31,7 @@ _TICK_FIELDS = frozenset({
 
 
 _MAX_MESSAGES = 100_000
+_MAX_FILE_BYTES = 60 * 1024 * 1024
 
 
 def _termination(*, overflow: bool, listener_alive: bool, count: int, now: float, deadline: float) -> str | None:
@@ -45,8 +46,18 @@ def _termination(*, overflow: bool, listener_alive: bool, count: int, now: float
     return None
 
 
+def complete_day_stop(windows, now: datetime) -> datetime:
+    first, last = windows[0].start, windows[-1].end
+    end = last + timedelta(minutes=2)
+    if not first - timedelta(minutes=2) <= now < first or not timedelta(0) < end - now <= timedelta(hours=24):
+        raise ValueError("CAPTURE_COMPLETE_DAY_WINDOW_INVALID")
+    return end
+
+
 def capture(args: argparse.Namespace) -> dict:
-    if args.symbol not in load_operational_products() or not 1 <= args.seconds <= 3600:
+    if args.symbol not in load_operational_products() or (
+        args.seconds is not None and not 1 <= args.seconds <= 3600
+    ):
         raise ValueError("CAPTURE_SCOPE_INVALID")
     path = args.output
     if path.suffix != ".jsonl" or path.parent.resolve() != path.parent or not path.is_absolute():
@@ -61,6 +72,8 @@ def capture(args: argparse.Namespace) -> dict:
         with Session(engine) as session, readonly_transaction(session, timeout_seconds=10):
             mds = MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
             contract = mds.dominant_segment_for_day(args.symbol, args.day).contract
+            if args.expected_contract is not None and contract != args.expected_contract:
+                raise ValueError("CAPTURE_RANK1_CHANGED")
             windows = mds.session_windows(symbol=args.symbol, trading_day=args.day)
     finally:
         engine.dispose()
@@ -76,11 +89,14 @@ def capture(args: argparse.Namespace) -> dict:
             raise ValueError("CAPTURE_START_TIME_INVALID")
         sleep((target - now).total_seconds())
         now = datetime.now(UTC)
-    if not any(window.start - timedelta(minutes=2) <= now <= window.end for window in windows):
-        next_open = next((window.start for window in windows if window.start > now), None)
-        if next_open is None or (next_open - now).total_seconds() > args.wait_seconds:
-            raise ValueError("CAPTURE_OUTSIDE_READY_WINDOW")
-        sleep(max(0, (next_open - now).total_seconds() - 15))
+    if args.complete_trading_day:
+        complete_day_stop(windows, now)
+    else:
+        if not any(window.start - timedelta(minutes=2) <= now <= window.end for window in windows):
+            next_open = next((window.start for window in windows if window.start > now), None)
+            if next_open is None or (next_open - now).total_seconds() > args.wait_seconds:
+                raise ValueError("CAPTURE_OUTSIDE_READY_WINDOW")
+            sleep(max(0, (next_open - now).total_seconds() - 15))
     queue: Queue = Queue(maxsize=4096)
     overflow = Event()
     channels = (f"tick_{contract}", f"bar_{contract}")
@@ -98,28 +114,45 @@ def capture(args: argparse.Namespace) -> dict:
     end_reason = None
     with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as output:
         start = datetime.now(UTC)
-        end = start + timedelta(seconds=args.seconds)
-        deadline = monotonic() + args.seconds
+        end = (complete_day_stop(windows, start) if args.complete_trading_day
+               else start + timedelta(seconds=args.seconds))
+        deadline = monotonic() + (end - start).total_seconds()
+        bytes_written = 0
+        last_flush = monotonic()
         generations = {}
         client = create_tick_client(RQDataClient(settings=settings))
 
         def write_record(received, connection, item):
-            counts[item["channel"]] += 1
+            nonlocal bytes_written, last_flush
             generation = generations.setdefault(connection, len(generations) + 1)
-            output.write(json.dumps({
+            record = json.dumps({
                 "received_at": received.isoformat(), "connection": generation,
                 "payload": {key: item[key] for key in sorted(item.keys() & _TICK_FIELDS)},
-            }) + "\n")
+            }) + "\n"
+            if bytes_written + len(record) > _MAX_FILE_BYTES:
+                return False
+            output.write(record)
+            bytes_written += len(record)
+            counts[item["channel"]] += 1
+            if monotonic() - last_flush >= 2:
+                output.flush()
+                last_flush = monotonic()
+            return True
 
         try:
             client.subscribe(list(channels))
             listener = client.listen(handler=enqueue)
-            output.write(json.dumps({
+            header = json.dumps({
                 "symbol": args.symbol, "contract": contract, "trading_day": args.day.isoformat(),
                 "sessions": [[window.start.isoformat(), window.end.isoformat()] for window in windows],
                 "started_at": start.isoformat(), "planned_end_at": end.isoformat(),
                 "tls_certificate_verification": "required",
-            }) + "\n")
+                "complete_trading_day": args.complete_trading_day,
+                "message_limit": _MAX_MESSAGES, "file_byte_limit": _MAX_FILE_BYTES,
+            }) + "\n"
+            output.write(header)
+            bytes_written = len(header)
+            output.flush()
             while end_reason is None:
                 now = monotonic()
                 end_reason = _termination(
@@ -135,7 +168,8 @@ def capture(args: argparse.Namespace) -> dict:
                 if received >= end:
                     end_reason = "window_elapsed"
                     break
-                write_record(received, connection, item)
+                if not write_record(received, connection, item):
+                    end_reason = "file_size_limit"
         finally:
             client.close()
             if listener is not None:
@@ -148,8 +182,9 @@ def capture(args: argparse.Namespace) -> dict:
             # Drain only the bounded buffer after confirmed shutdown.
             while not queue.empty() and sum(counts.values()) < _MAX_MESSAGES:
                 received, connection, item = queue.get_nowait()
-                if received < end:
-                    write_record(received, connection, item)
+                if received < end and not write_record(received, connection, item):
+                    end_reason = "file_size_limit"
+                    break
             if sum(counts.values()) >= _MAX_MESSAGES:
                 end_reason = "message_limit"
         footer = {"capture_end": {"reason": end_reason, "ended_at": datetime.now(UTC).isoformat(),
@@ -166,7 +201,10 @@ def main() -> int:
     parser.add_argument("--settings", required=True, type=Path)
     parser.add_argument("--day", required=True, type=date.fromisoformat)
     parser.add_argument("--symbol", required=True)
-    parser.add_argument("--seconds", required=True, type=int)
+    parser.add_argument("--expected-contract", help="Require this independently proved physical rank1.")
+    window = parser.add_mutually_exclusive_group(required=True)
+    window.add_argument("--seconds", type=int)
+    window.add_argument("--complete-trading-day", action="store_true")
     parser.add_argument("--start-at", type=datetime.fromisoformat)
     parser.add_argument("--wait-seconds", type=int, default=0, choices=range(0, 7201), metavar="0..7200")
     parser.add_argument("--output", required=True, type=Path)

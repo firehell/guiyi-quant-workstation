@@ -308,7 +308,8 @@ def read_current(home, day, now, *, consumer="all"):
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] in {
-        "cohort-market-plan", "cohort-market-apply", "cohort-market-recovery", "cohort-market-forward", "cohort-market-accounts",
+        "cohort-market-plan", "cohort-market-apply", "cohort-market-recovery", "cohort-market-forward",
+        "cohort-market-accounts", "cohort-market-first-completed",
     }:
         return _cohort_main(argv)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -356,6 +357,8 @@ def _cohort_main(argv):
             result = recover_market_source_forward(host, args.plan)
         elif mode == "cohort-market-accounts":
             result = host.read_market_source_accounts(args.plan)
+        elif mode == "cohort-market-first-completed":
+            result = host.read_market_source_first_completed(args.plan)
         else:
             _, plan = _resolution_source(args.plan)
             intent = plan.get("market_source_handover")
@@ -367,7 +370,7 @@ def _cohort_main(argv):
         result = {"status": "blocked", "code": code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code)
                   else "MARKET_SOURCE_OPERATION_BLOCKED"}
     print(json.dumps(result, sort_keys=True))
-    return int(result.get("status") == "blocked")
+    return {"blocked": 1, "first_completed_incomplete": 2}.get(result.get("status"), 0)
 
 
 if __name__ == "__main__":
