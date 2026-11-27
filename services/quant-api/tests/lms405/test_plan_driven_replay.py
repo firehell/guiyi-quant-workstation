@@ -302,6 +302,58 @@ def test_plan_exit_keeps_other_legs_and_requires_explicit_role_and_fresh_evidenc
     assert m["replay"]["events"][0]["unknown"] == ["SCOPED_APPROVAL"]
 
 
+@pytest.mark.parametrize("direction, entry_side", [("SHORT", "LONG"), ("LONG", "SHORT")])
+def test_counter_m_market_entry_keeps_trend_and_protection_separate(monkeypatch, direction, entry_side):
+    minute, us = timedelta(minutes=1), timedelta(microseconds=1)
+    prices = ((98, 100, 97, 99), (99, 104, 99, 102), (102, 106, 101, 104),
+              (104, 105, 102, 104), (104, 107, 104, 106), (106, 110, 105, 108))
+    if entry_side == "SHORT":
+        prices = tuple((200 - o, 200 - lo, 200 - hi, 200 - c) for o, hi, lo, c in prices)
+    bars = [Bar("JM2701", START + (i + 1) * minute, *map(Decimal, row), start=START + i * minute)
+            for i, row in enumerate(prices)]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    seed = Book("JM2701", "counter-m-entry-test", direction, START - minute, Decimal(20), Decimal(20), attempt=1)
+    definition = dict(
+        version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
+        cutoff=(bars[-1].end + 2 * us).isoformat(), seed=json.loads(encoded(asdict(seed))),
+        operation="ENTER_COUNTER_M", quantity="2", shape_period=1, confirmation_period=1, band=["100", "100"],
+        entry_route="BREAK_THEN_SIGNAL", next_reference="110" if entry_side == "LONG" else "90",
+        request_expires_at=(START + 8 * minute).isoformat(),
+        revision=dict(contract=seed.contract, id="explicit-m-plan", source="public-plan-source",
+                      published_at=seed.known_at.isoformat(), known_at=seed.known_at.isoformat(),
+                      operations=["ENTER_COUNTER_M"]),
+    )
+
+    def compile_case(**changes):
+        return plan_replay.market_request(session=None, market=None, **(definition | changes))
+
+    report = compile_case()
+    event, = report["replay"]["events"]
+    assert report["entry"]["managed_side"] == entry_side
+    assert report["entry"]["band_role"] == "COUNTER_M_INTERRUPTION"
+    assert report["candidate"]["confirmed_at"] == bars[4].end
+    assert report["candidate"]["entry_precondition_known_at"] == bars[1].end + us
+    assert event["unknown"] == ["SCOPED_APPROVAL"] and report["replay"]["final"] == asdict(seed)
+    assert {fact["name"] for fact in event["known_facts"]} == {"COUNTER_M_ENTRY_PERMITTED", "COUNTER_M_ENTRY_SIGNAL"}
+    assert compile_case(cutoff=(bars[4].end + 3 * us).isoformat())["tape"]["evaluations"] == report["tape"]["evaluations"]
+    assert compile_case(cutoff=(bars[4].end + us).isoformat())["candidate"] is None
+    assert compile_case(next_reference="107" if entry_side == "LONG" else "93")["candidate"] is None
+    with pytest.raises(ValueError, match="REQUEST_SCOPE_INVALID"):
+        compile_case(revision=definition["revision"] | {"operations": ["PROTECT_REGULAR"]})
+    with pytest.raises(ValueError, match="ENTRY_SCOPE_INVALID"):
+        compile_case(seed=definition["seed"] | {"counter_m": "1"})
+
+    tape = report["tape"]
+    row, = tape["evaluations"]
+    request_at = datetime.fromisoformat(row["at"])
+    row["at"] = (request_at + 2 * us).isoformat()
+    row["approval"] = dict(scope=event["pending_approval_scope"], id="counter-m-fixture", accepted=True,
+                           decided_at=request_at.isoformat(), known_at=(request_at + us).isoformat(),
+                           record_kind="TEST_FIXTURE")
+    final = replay_input(**tape, allow_test_fixture=True)["final"]
+    assert (final["original"], final["protection"], final["counter_m"], final["attempt"]) == (20, 20, 2, 1)
+
+
 def test_market_sequence_uses_only_confirmed_books_and_rechecks_the_active_plan(monkeypatch):
     minute, us = timedelta(minutes=1), timedelta(microseconds=1)
     values = ((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106), (106, 111, 104, 110))

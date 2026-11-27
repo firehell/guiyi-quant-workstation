@@ -1,0 +1,32 @@
+{
+  "version": "lms405-plan-market-request-v1",
+  "seed": {
+    "contract": "JM2701",
+    "episode": "JM:OCT23:COUNTER_M_RESEARCH",
+    "direction": "SHORT",
+    "known_at": "2026-10-22T22:11:00+08:00",
+    "original": "20",
+    "protection": "20",
+    "counter_m": "0",
+    "attempt": 1
+  },
+  "revision": {
+    "contract": "JM2701",
+    "id": "A5356884629782554",
+    "published_at": "2026-10-22T18:18:00+08:00",
+    "known_at": "2026-10-22T18:19:00+08:00",
+    "source": "https://weibo.com/ttarticle/p/show?id=2309405356884629782554",
+    "operations": ["ENTER_COUNTER_M"]
+  },
+  "trading_day": "2026-10-23",
+  "start": "2026-10-23T09:00:00+08:00",
+  "cutoff": "2026-10-23T15:00:00.000002+08:00",
+  "request_expires_at": "2026-10-23T15:00:00.000002+08:00",
+  "operation": "ENTER_COUNTER_M",
+  "quantity": "1",
+  "shape_period": 5,
+  "confirmation_period": 1,
+  "band": ["1382.5", "1397.5"],
+  "entry_route": "BREAK_THEN_SIGNAL",
+  "next_reference": "1420"
+}

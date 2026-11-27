@@ -40,6 +40,7 @@ EXTERNAL_FACT_PREFIX = "RESEARCH_EXTERNAL_EVIDENCE:"
 EXTERNAL_FIXTURE_PREFIX = "TEST_FIXTURE_EXTERNAL_EVIDENCE:"
 RIGHT_ENTRY_ROUTES = frozenset({"BREAK_THEN_SIGNAL", "BREAK_PRESSURE_THEN_SIGNAL"})
 ENTRY_ROUTES = RIGHT_ENTRY_ROUTES | {"IN_BAND_SIGNAL", "DO_NOT_CHASE"}
+COUNTER_M_ENTRY_ROUTES = frozenset({"BREAK_THEN_SIGNAL", "DO_NOT_CHASE"})
 EXIT_ROLES = frozenset({"DIRECTIONAL_TARGET", "ADVERSE_EXIT"})
 
 
@@ -382,6 +383,8 @@ def market_position_ready(position, operation, quantity):
     match operation:
         case "ENTER_TREND" | "REENTER_TREND":
             return not (original or protection or counter) and (position.attempt == 0) == (operation == "ENTER_TREND")
+        case "ENTER_COUNTER_M":
+            return not counter and position.attempt > 0
         case "CLEAR_TREND":
             return quantity == original + protection
         case "EXIT_COUNTER_M":
@@ -399,8 +402,6 @@ def market_position_ready(position, operation, quantity):
 
 
 def sequence_position_ready(position, operation, quantity, *, has_evidence):
-    if has_evidence and operation == "ENTER_COUNTER_M":
-        return not position.counter_m and position.attempt > 0
     if has_evidence and operation == "ROTATE_TO_COUNTER_M":
         return not position.counter_m and quantity <= position.protection == position.original
     return market_position_ready(position, operation, quantity)
@@ -426,7 +427,9 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
         raise ValueError("PLAN_REPLAY_MARKET_BAND_ARRAY_REQUIRED")
     lower, upper = map(decimal_text, band)
     quantity = decimal_text(quantity)
-    entry_operation = operation in ("ENTER_TREND", "REENTER_TREND")
+    counter_m_entry = operation == "ENTER_COUNTER_M"
+    entry_operation = counter_m_entry or operation in ("ENTER_TREND", "REENTER_TREND")
+    entry_side = ("SHORT" if position.direction == "LONG" else "LONG") if counter_m_entry else position.direction
     exit_operation = operation in ("CLEAR_TREND", "EXIT_COUNTER_M")
     plan_wait = entry_operation and entry_route == "DO_NOT_CHASE"
     plan_permits = operation in plan.operations
@@ -439,14 +442,15 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
             or plan.expires_at is not None and plan.expires_at < cutoff):
         raise ValueError("PLAN_REPLAY_MARKET_REQUEST_SCOPE_INVALID")
     if entry_operation:
+        routes = COUNTER_M_ENTRY_ROUTES if counter_m_entry else ENTRY_ROUTES
         if (not market_position_ready(position, operation, quantity)
-                or not isinstance(entry_route, str) or entry_route not in ENTRY_ROUTES):
+                or not isinstance(entry_route, str) or entry_route not in routes):
             raise ValueError("PLAN_REPLAY_MARKET_ENTRY_SCOPE_INVALID")
         if entry_route in RIGHT_ENTRY_ROUTES:
             next_reference = decimal_text(next_reference)
-            edge = upper if position.direction == "LONG" else lower
+            edge = upper if entry_side == "LONG" else lower
             if not next_reference.is_finite() or not (
-                next_reference > edge if position.direction == "LONG" else next_reference < edge
+                next_reference > edge if entry_side == "LONG" else next_reference < edge
             ):
                 raise ValueError("PLAN_REPLAY_MARKET_ENTRY_REFERENCE_INVALID")
         elif next_reference is not None:
@@ -474,10 +478,12 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
     side = position.direction
     diagnostics = {}
     if entry_operation:
-        candidate, diagnostic = entry_candidate(series, route=entry_route, side=side, start=effective_start,
+        candidate, diagnostic = entry_candidate(series, route=entry_route, side=entry_side, start=effective_start,
                                                cutoff=cutoff, lower=lower, upper=upper, next_reference=next_reference,
                                                shape_period=shape_period, confirmation_period=confirmation_period)
         diagnostics["entry"] = dict(route=entry_route, next_reference=next_reference, **diagnostic)
+        if counter_m_entry:
+            diagnostics["entry"].update(managed_side=entry_side, band_role="COUNTER_M_INTERRUPTION")
     elif exit_operation:
         exit_side = side if operation == "CLEAR_TREND" else ("SHORT" if side == "LONG" else "LONG")
         target_start = max(start, plan.known_at + US) if inherit_observed_target else effective_start

@@ -173,6 +173,29 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 同目录四份输入可各自复算。四份报告在 `output/lms405-plan-first-entry-20261127/`。两次只读复算逐字节一致，原烧碱两份保护与恢复报告逐字节一致。定向用例另外覆盖目标同分钟、计划生效的重叠分钟、晚许可过期、期后前缀及有效测试许可。作者动作可评分样本仍为0。
 
+### 从作者计划和行情生成独立M入场候选
+
+`--market-request` 和 `--market-sequence` 可通过 `ENTER_COUNTER_M` 检查反向短线的右侧候选。需要已有原方向尝试、当前没有M仓、当前计划明确列入该动作。`band` 给定中断参考，上沿用于抓多、下沿用于抓空。`BREAK_THEN_SIGNAL` 复用现有时序，要求在同一交易段内先出现新的完成1m收越，之后才形成新的反向关键K，确认仍在中断边界外。进入下一价格节点后停止追价，节点作为显式输入。独立请求也可用 `DO_NOT_CHASE` 表达计划没有许可时的等待。成交手数、角色变更及退出继续另证。市场候选经精确绑定的独立确认后，仅增加M数量，原仓和保护腿各自保留。
+
+作者10月22日JM2701计划明确说反弹中断后才用多VPLUS抓M。当前正文列中断及提前保护1382.5–1397.5、M区1410.5–1420。计划的历史编辑、原仓是否延续至次日、作者实际VPLUS与准入仍未确认。按当前可见计划，把22日双腿快照用作单位情景的前像，假设延续至次日开窗。复算两种边界用于识别严格候选遗漏，比较用到的1410.5仍标为M近沿替代标尺。 [作者计划现有归档](../lms-source-archive/01-VPLUS每日复盘/2026-10-22/A5356884629782554.md) · [明确跳过的焦煤负例](https://www.sina.cn/news/detail/5341270434121818.html) · [早盘持仓证据](evidence/P2_TWO_LEG_CONTINUITY.md#追查焦煤早盘表的账户及筛选范围)
+
+| 10月23日日盘候选，北京时间 | 5分钟形态、1分钟确认 | 5分钟形态、5分钟确认 |
+|---|---|---|
+| 中断上沿1397.5 | 价在界外开窗，窗口内无新收越，无候选 | 无候选 |
+| M近沿1410.5仅作敏感性比较 | 09:26新收过，09:43收1415.5，待独立确认 | 09:26新收过，09:45收1414.0，待独立确认 |
+
+两组使用同一个1420的停止追价参考，10:35结束的分钟首次达该节点。首次显示候选的敏感性结果无法认证作者09:43或09:45开仓。早盘表账户范围仍未知。独立重放无确认时均维持原空20和原保护多20。方向镜像、独立许可、候选可知时钟、确认时同根触达目标、已有M仓阻止重复开仓、原仓与保护数量不变均有定向验证。
+
+```bash
+dir=$(mktemp -d /tmp/lms405-counter-m-entry.XXXXXX)
+input=docs/research/lms405/evidence/plan-counter-m-entry/jm-oct23.json
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-request "$input" --output "$dir/author-interruption.json"
+```
+
+将输入另存，并分别修改 `confirmation_period` 为5，或把 `band` 设为 `["1410.5", "1410.5"]`，复算其余三个组合。截止时间含收盘已完成1m。两次只读复算逐字节一致，本地结果位于 `output/lms405-plan-counter-m-entry-20261127/`。改动前后的烧碱、焦煤原计划案例逐字节一致，LMS定向测试726通过、1跳过。作者动作评分分母为0，独立近似基线保持原版本。下一项验证将原计划中断条件在首次成立后是否延续到同一交易日的下一连续交易段，和本段必须新越界并列比较，检查先前已经完成的M目标是否阻止继续入场。
+
 ### 从作者计划和行情生成退出及回补候选
 
 退出使用 `CLEAR_TREND` 或 `EXIT_COUNTER_M`，并显式声明 `exit_role`。`DIRECTIONAL_TARGET` 要求完整1m的价格实际覆盖顺向远沿，之后新形成的反向形态再完成确认。默认只观察当前仓位前像之后的触价。仅原仓退出可显式启用 `inherit_observed_target`，承接同一交易日及该计划生效后较早的目标观察。它只承接价格事实，始终要求仓位已知后形成新的反向形态。原仓当时是否已在账户中需另证。`ADVERSE_EXIT` 按明确给出的退出带，用完成1m严格收过逆向端点确认候选。触及保护带、价格恰好等于风险端点或没有可信仓位前像时，均无法据此生成原仓退出。
