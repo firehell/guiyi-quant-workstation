@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from hashlib import file_digest
 import json
 import os
@@ -205,6 +205,108 @@ def test_two_redis_handover_preserves_original_and_never_retries(tmp_path, redis
         validate(plan, host.now())
 
 
+@pytest.mark.parametrize("failure", ["before_replace", "after_replace", "after_commit"])
+def test_macos_recovery_reads_actual_registry_after_interrupted_cas(tmp_path, redis_pair, monkeypatch, failure):
+    from hashlib import sha256
+
+    from app import runtime_bindings as bindings
+    from app.runtime_cohort import registry
+    from app.runtime_handover import _write
+    from app.runtime_market_cohort_host import MarketCohortHost
+
+    home = tmp_path / "isolated-home"
+    monkeypatch.setenv("HOME", str(home))
+    native = MarketCohortHost()
+    native.directory.mkdir(mode=0o700, parents=True)
+    old, target = redis_pair
+    redis_urls = [f"redis://127.0.0.1:{client.connection_pool.connection_kwargs['port']}/0"
+                  for client in (old, target)]
+    stable = (f'GUIYI_CANONICAL_DATA_ROOT="{tmp_path}"\n'
+              'DATABASE_URL=postgresql+psycopg://operator@127.0.0.1:5432/guiyi_quant\n').encode()
+    original = stable + f"REDIS_URL={redis_urls[0]}\n".encode()
+    proposed = stable + f"REDIS_URL={redis_urls[1]}\n# guiyi-market-source: rqdata_tick\n".encode()
+    native._private_original(native.project_config, original)
+    native._target_config_sha = sha256(proposed).hexdigest()
+
+    class NativeRegistryHost(IsolatedHost):
+        def bindings(self):
+            return bindings.read_bindings(home=home)
+
+        def binding_hash(self):
+            return bindings.bindings_sha256(home=home)
+
+        def protected(self, old):
+            return {"files": {str(native.project_config): sha256(original).hexdigest()}}
+
+        def install(self, plan, attempt):
+            super().install(plan, attempt)
+            native._replace_plist(native.project_config, proposed)
+
+        def stage_market_source(self, plan, proof, retained):
+            binding = super().stage_market_source(plan, proof, retained)
+            return {"binding": binding, "config_sha256": native._target_config_sha}
+
+        def check_staged_market_source(self, plan, proof, retained, staged):
+            super().check_staged_market_source(plan, proof, retained, staged["binding"])
+
+        def commit(self, plan):
+            assert self.in_guard and self.active_writer is None
+            assert json.loads((self.directory / "cohort-release.json").read_text())["phase"] == "committing"
+            self.calls.append("commit")
+            return native.commit(plan)
+
+    host = NativeRegistryHost(tmp_path, old, target)
+    host.directory = native.directory
+    monkeypatch.setattr(native, "_assert_stopped", lambda _plan: host.active_writer is None or pytest.fail("writer active"))
+    bindings.write_bindings(host.old, home=home, expected_sha256=None)
+    plan = _plan(host)
+    host.failure = "verify" if failure == "after_commit" else None
+    raw_replace = os.replace
+    registry_path = bindings.registry_path(home)
+    replace_count = 0
+
+    def replace_registry(src, dst):
+        nonlocal replace_count
+        if dst != registry_path:
+            return raw_replace(src, dst)
+        replace_count += 1
+        if failure == "before_replace":
+            raise OSError("isolated registry replace rejected")
+        return raw_replace(src, dst)
+
+    with monkeypatch.context() as faults:
+        faults.setattr(bindings.os, "replace", replace_registry)
+        if failure == "after_replace":
+            write_registry = bindings.write_bindings
+
+            def lose_cas_reply(*args, **kwargs):
+                write_registry(*args, **kwargs)
+                raise OSError("isolated reply lost after fsync")
+
+            faults.setattr(bindings, "write_bindings", lose_cas_reply)
+        with pytest.raises(CohortError, match="COHORT_OUTCOME_UNKNOWN_READBACK_REQUIRED"):
+            apply_cohort(host, plan)
+
+    supplied = native.directory / "cohort-attempts" / plan["plan_sha256"] / "plan.json"
+    registry_image = registry_path.read_bytes()
+    recovery = MarketCohortHost().read_market_source_recovery(supplied)
+    assert recovery["registry"] == ("legacy" if failure == "before_replace" else "target")
+    assert recovery["direction"] == ("binding_readback_required" if failure == "before_replace" else "forward_only")
+    assert recovery["active_configuration"] == "target"
+    assert bindings.read_bindings(home=home) == (host.old if failure == "before_replace" else registry(plan["new"]))
+    state_path = supplied.with_name("state.json")
+    state = json.loads(state_path.read_text())
+    interrupted = {**state, "phase": "committing"}
+    _write(state_path, interrupted)  # Private state persisted just ahead of the global pointer.
+    observed = MarketCohortHost().read_market_source_recovery(supplied)
+    assert observed["direction"] == recovery["direction"]
+    assert (observed["private_phase"], observed["pointer_phase"]) == ("committing", "outcome_unknown")
+    with pytest.raises(CohortError, match="COHORT_RECOVERY_READBACK_REQUIRED"):
+        apply_cohort(host, plan)
+    assert "restore_old" not in host.calls and host.calls.count("commit") == replace_count == 1
+    assert registry_path.read_bytes() == registry_image
+
+
 def test_legacy_backlog_blocks_before_target_stage(tmp_path, redis_pair):
     host = IsolatedHost(tmp_path, *redis_pair)
     event = ObservationEnvelope("unconsumed", OLD_DAY, datetime.now(UTC), "live:bar:rb:1m", {}, True)
@@ -249,14 +351,46 @@ def test_macos_market_configuration_preserves_pinned_account_parser_and_other_se
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS process socket readback")
-def test_macos_uses_the_owner_socket_on_the_actual_target_redis(redis_pair):
+def test_macos_uses_target_redis_socket_and_native_account_watermark(redis_pair, tmp_path):
+    from app.runtime_market_account_readback import tq_watermark
     from app.runtime_market_cohort_host import _connects_to
-    from guiyi_quant.trading_universe import TRADING_PRODUCTS
+    from guiyi_quant.htdy_account_execution import model
+    from guiyi_quant.htdy_account_execution.reducer import start
+    from guiyi_quant.htdy_account_execution.store import LocalStore
+    from guiyi_quant.trading_universe import TRADING_PRODUCTS, TRADING_SCOPE_VERSION
+    from tests.unit.tq_simulation.test_execution import A, rb
 
     old, target = redis_pair
+    account = tmp_path / "account.sqlite"
+    products = tuple(name.upper() for name in TRADING_PRODUCTS)
+    old_end = datetime(2026, 10, 23, 7, tzinfo=UTC)
+    new_end = datetime(2026, 10, 26, 7, tzinfo=UTC)
+    activated = old_end - timedelta(hours=1)
+    store = LocalStore(account, start(A, products, activated, rb(activated)),
+                       execution_identity="TQKQ:" + A + ":htdy_tqkq_v1")
+
+    def expected(end):
+        return {name.lower(): (name + "2701", end) for name in products}
+
+    def record(close, previous):
+        observed = close + timedelta(seconds=2)
+        for product in products:
+            identifier = f"{product}:{close.isoformat()}"
+            signal = model.Signal(identifier, product, product + "2701", close, observed, previous, (), "b" * 64)
+            assert not store.execute(identifier, signal).effects
+        assert not store.execute("readback:" + close.isoformat(), rb(observed)).effects
+
     port = target.connection_pool.connection_kwargs["port"]
     channels = [f"live:bar:{name}:60m" for name in TRADING_PRODUCTS]
-    with subprocess.Popen([sys.executable, "-c", """
+    checking_old = old_end + timedelta(seconds=3)
+    checking_new = new_end + timedelta(seconds=3)
+    try:
+        store.execute("scope", model.TqKqTradingScopeV1(activated, products, TRADING_SCOPE_VERSION))
+        for product in products:
+            store.execute("owner:" + product, model.Owner(product, product + "2701", activated, "owner:" + product))
+        record(old_end, None)
+        assert tq_watermark(account, A, expected(old_end), checking_old)["status"] == "verified"
+        with subprocess.Popen([sys.executable, "-c", """
 import sys
 from redis import Redis
 with Redis(host='127.0.0.1', port=int(sys.argv[1])) as client, client.pubsub() as pubsub:
@@ -266,12 +400,19 @@ with Redis(host='127.0.0.1', port=int(sys.argv[1])) as client, client.pubsub() a
     print('ready', flush=True)
     sys.stdin.read()
 """, str(port), *channels], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as owner:
-        try:
-            assert owner.stdout.readline().strip() == "ready"
-            assert _connects_to(target, owner.pid)
-            assert not _connects_to(old, owner.pid)
-        finally:
-            owner.stdin.close()
+            try:
+                assert owner.stdout.readline().strip() == "ready"
+                assert _connects_to(target, owner.pid)
+                assert not _connects_to(old, owner.pid)
+                # Redis connectivity by itself does not advance the native tip.
+                assert tq_watermark(account, A, expected(new_end), checking_old)["status"] == "blocked"
+                record(new_end, old_end)
+            finally:
+                owner.stdin.close()
+        assert tq_watermark(account, A, expected(new_end), checking_new)["status"] == "verified"
+        assert tq_watermark(account, A, expected(old_end), checking_new)["status"] == "blocked"
+    finally:
+        store.close()
 
 
 def test_macos_restores_exact_config_after_known_pre_cas_failure_with_expired_apply_budget(tmp_path, redis_pair, monkeypatch):
