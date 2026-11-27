@@ -1,0 +1,37 @@
+{
+  "version": "lms405-plan-market-request-v1",
+  "trading_day": "2026-10-26",
+  "start": "2026-10-23T21:00:00+08:00",
+  "cutoff": "2026-10-26T11:30:00+08:00",
+  "operation": "CLEAR_TREND",
+  "quantity": "40",
+  "shape_period": 5,
+  "confirmation_period": 1,
+  "request_expires_at": "2026-10-26T11:30:00+08:00",
+  "band": [
+    "5155",
+    "5180"
+  ],
+  "exit_role": "DIRECTIONAL_TARGET",
+  "inherit_observed_target": true,
+  "seed": {
+    "contract": "V2701",
+    "episode": "pvc-target-exit",
+    "direction": "LONG",
+    "known_at": "2026-10-26T10:10:00+08:00",
+    "original": "40",
+    "protection": "0",
+    "counter_m": "0",
+    "attempt": 1
+  },
+  "revision": {
+    "contract": "V2701",
+    "id": "A5357264059367516:V-EXIT-HYPOTHESIS",
+    "published_at": "2026-10-23T19:25:00+08:00",
+    "known_at": "2026-10-23T19:25:59.999999+08:00",
+    "source": "https://weibo.com/ttarticle/p/show?id=2309405357264059367516",
+    "operations": [
+      "CLEAR_TREND"
+    ]
+  }
+}

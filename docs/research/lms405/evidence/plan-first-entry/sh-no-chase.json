@@ -1,0 +1,34 @@
+{
+  "version": "lms405-plan-market-request-v1",
+  "trading_day": "2026-10-22",
+  "start": "2026-10-22T09:30:00+08:00",
+  "cutoff": "2026-10-22T15:00:00.000002+08:00",
+  "request_expires_at": "2026-10-22T15:00:00.000002+08:00",
+  "operation": "ENTER_TREND",
+  "quantity": "1",
+  "shape_period": 5,
+  "confirmation_period": 1,
+  "band": [
+    "1653",
+    "1667"
+  ],
+  "entry_route": "DO_NOT_CHASE",
+  "seed": {
+    "contract": "SH2701",
+    "episode": "sh-no-chase",
+    "direction": "SHORT",
+    "known_at": "2026-10-22T09:30:00+08:00",
+    "original": "0",
+    "protection": "0",
+    "counter_m": "0",
+    "attempt": 0
+  },
+  "revision": {
+    "contract": "SH2701",
+    "id": "WRnOnrllRX:SH-WAIT",
+    "published_at": "2026-10-22T09:30:00+08:00",
+    "known_at": "2026-10-22T09:30:59.999999+08:00",
+    "source": "https://weibo.com/1885745060/RnOnrllRX",
+    "operations": []
+  }
+}

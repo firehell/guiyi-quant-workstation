@@ -1,0 +1,83 @@
+{
+  "cutoff": "2026-10-23T22:07:00+08:00",
+  "revisions": [
+    {
+      "contract": "JM2701",
+      "id": "A5356884629782554",
+      "known_at": "2026-10-22 18:19:00+08:00",
+      "operations": [
+        "EXIT_COUNTER_M",
+        "ROTATE_TO_COUNTER_M"
+      ],
+      "published_at": "2026-10-22T18:18:00+08:00",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405356884629782554"
+    },
+    {
+      "contract": "JM2701",
+      "id": "A5357264059367516",
+      "known_at": "2026-10-23 19:26:00+08:00",
+      "operations": [
+        "REENTER_TREND"
+      ],
+      "published_at": "2026-10-23T19:25:00+08:00",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405357264059367516"
+    }
+  ],
+  "seed": {
+    "attempt": 1,
+    "contract": "JM2701",
+    "counter_m": "0",
+    "direction": "SHORT",
+    "episode": "JM:OCT22-23:CONDITIONAL",
+    "known_at": "2026-10-22 22:11:00+08:00",
+    "original": "20",
+    "protection": "20"
+  },
+  "steps": [
+    {
+      "cutoff": "2026-10-22T15:00:00.000006+00:00",
+      "evidence": {
+        "at": "2026-10-22 14:59:00.000006+00:00",
+        "facts": []
+      },
+      "id": "rotate_to_counter_m",
+      "operation": "ROTATE_TO_COUNTER_M",
+      "plan_id": "A5356884629782554",
+      "quantity": "7",
+      "request_expires_at": "2026-10-22T15:00:00.000006+00:00",
+      "start": "2026-10-22T14:50:00+00:00"
+    },
+    {
+      "cutoff": "2026-10-23T15:01:00.000006+08:00",
+      "evidence": {
+        "at": "2026-10-23 15:00:00.000006+08:00",
+        "facts": []
+      },
+      "id": "exit_counter_m",
+      "operation": "EXIT_COUNTER_M",
+      "plan_id": "A5356884629782554",
+      "quantity": "20",
+      "request_expires_at": "2026-10-23T15:01:00.000006+08:00",
+      "start": "2026-10-23T15:00:00+08:00"
+    },
+    {
+      "band": [
+        "1415.5",
+        "1415.5"
+      ],
+      "confirmation_period": 1,
+      "cutoff": "2026-10-23T22:07:00+08:00",
+      "entry_route": "BREAK_THEN_SIGNAL",
+      "id": "night-short",
+      "next_reference": "1392",
+      "operation": "REENTER_TREND",
+      "plan_id": "A5357264059367516",
+      "quantity": "20",
+      "request_expires_at": "2026-10-23T22:07:00+08:00",
+      "shape_period": 1,
+      "start": "2026-10-23T21:00:00+08:00",
+      "trading_day": "2026-10-26"
+    }
+  ],
+  "version": "lms405-plan-market-sequence-v1"
+}

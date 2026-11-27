@@ -1,0 +1,37 @@
+{
+  "version": "lms405-plan-market-request-v1",
+  "trading_day": "2026-10-27",
+  "start": "2026-10-26T21:00:00+08:00",
+  "cutoff": "2026-10-27T15:00:00.000002+08:00",
+  "request_expires_at": "2026-10-27T15:00:00.000002+08:00",
+  "operation": "ENTER_TREND",
+  "quantity": "1",
+  "shape_period": 5,
+  "confirmation_period": 1,
+  "band": [
+    "5055",
+    "5074"
+  ],
+  "entry_route": "BREAK_PRESSURE_THEN_SIGNAL",
+  "seed": {
+    "contract": "V2701",
+    "episode": "pvc-right-short",
+    "direction": "SHORT",
+    "known_at": "2026-10-26T17:43:00+08:00",
+    "original": "0",
+    "protection": "0",
+    "counter_m": "0",
+    "attempt": 0
+  },
+  "revision": {
+    "contract": "V2701",
+    "id": "A5358325549629506:V-RIGHT-SHORT",
+    "published_at": "2026-10-26T17:43:00+08:00",
+    "known_at": "2026-10-26T17:43:59.999999+08:00",
+    "source": "https://weibo.com/ttarticle/p/show?id=2309405358325549629506",
+    "operations": [
+      "ENTER_TREND"
+    ]
+  },
+  "next_reference": "5045"
+}
