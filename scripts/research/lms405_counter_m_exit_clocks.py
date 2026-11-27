@@ -35,6 +35,16 @@ PROGRESS_CASES = (
     ("JM2701", "2026-10-23", "A5356884629782554", "LONG", "1427.5", "PREVIOUS_PLAN_M_RATING",
      "133c90a735f864f09b13ad3573abedfa179e3b47fa7ec971e250abc8a8549757"),
 )
+PROGRESS_CONTROL_CASES = (
+    ("OI2609", "2026-06-04", "S5306128623993006", None, "10273", "PROTECTION_REVIEW", "LOCK_REPORTED",
+     "08d3008b356293284b2a0081c9ab5af3093294caddaa93f12f269b9bc3ce296f"),
+    ("SH2609", "2026-07-24", "S5324249205048926", None, "1854", "TREND_TARGET", "WAIT_TO_REENTER_REPORTED",
+     "2039d863991477782c46c303dc7eb0a94a46cc933ee0ad567c06d061ac0f5bc1"),
+    ("JM2609", "2026-06-23", "S5313011682379978", None, "1241.5", "TREND_TARGET", "TREND_FOLLOW_INTENDED",
+     "c3e566ef7c378f7eeb6ac5110d6862cbff84e3b21d46dffe65384d63127e275c"),
+    ("SH2701", "2026-10-27", "WRozPmaK10", "WRouYm67Bc", "1483", "TREND_TARGET", "LOCK_REPORTED",
+     "3d919342b223d370957d8c1d4b798d4c821bcf5691e12a36e3118d0d806dd66c"),
+)
 
 
 def inspect_level(groups, side, level, signals):
@@ -140,14 +150,7 @@ def progress_study(session, market):
             raise ValueError("LMS_M_PROGRESS_SOURCE_CLOCK_CHANGED")
         bars = completed(series[1], start, end + 2 * US)
         result = progress_clocks(bars, side, Decimal(far))
-        for bar in bars:
-            # The selection and decision on each visible prefix must agree with the full result.
-            cut = bar.end + US
-            expected = {key: value for key, value in result.items() if value is not None
-                        and (value["at"] if isinstance(value, dict) else value) + US < cut}
-            prefix = progress_clocks([b for b in bars if b.end + US < cut], side, Decimal(far))
-            if any(prefix[key] != expected.get(key) for key in prefix):
-                raise ValueError("LMS_M_PROGRESS_PREFIX_DRIFT")
+        check_progress_prefixes(bars, side, Decimal(far), result)
         comparisons[contract] = dict(trading_day=day, source=source, role=role, start=start,
                                      position_side=side, reference=Decimal(far), prefix_checks=len(bars),
                                      **result)
@@ -156,11 +159,48 @@ def progress_study(session, market):
                 author_action_match_rate=None, fills=None, pnl=None, executable=False)
 
 
+def check_progress_prefixes(bars, side, far, result):
+    for bar in bars:
+        cut = bar.end + US
+        expected = {key: value for key, value in result.items() if value is not None
+                    and (value["at"] if isinstance(value, dict) else value) + US < cut}
+        prefix = progress_clocks([b for b in bars if b.end + US < cut], side, far)
+        if any(prefix[key] != expected.get(key) for key in prefix):
+            raise ValueError("LMS_M_PROGRESS_PREFIX_DRIFT")
+
+
+def progress_controls(session, market):
+    index = input_sources()
+    cases = {}
+    for contract, day, action_id, plan_id, mark, price_role, public_action, fingerprint in PROGRESS_CONTROL_CASES:
+        series = read_window(session, market, contract, date.fromisoformat(day))
+        if digest(series[1]) != fingerprint:
+            raise ValueError("LMS_M_PROGRESS_CONTROL_MARKET_CHANGED")
+        action = load_source(index, action_id)
+        plan = load_source(index, plan_id) if plan_id else None
+        start = at(day + "T09:00")
+        published = datetime.fromisoformat(action["published_at"])
+        if not start < published or (plan and not datetime.fromisoformat(plan["published_at"]) + ONE < start):
+            raise ValueError("LMS_M_PROGRESS_CONTROL_SOURCE_CLOCK_CHANGED")
+        bars = completed(series[1], start, min(published, series[1][-1].end + 2 * US))
+        result = progress_clocks(bars, "SHORT", Decimal(mark))
+        check_progress_prefixes(bars, "SHORT", Decimal(mark), result)
+        cases[contract] = dict(day=day, action_source=action, plan_source=plan, public_action=public_action,
+                               price_role=price_role, reference=Decimal(mark), prefix_checks=len(bars),
+                               last_bar_end=bars[-1].end, window_low=min(bar.low for bar in bars),
+                               short_m_task_verified=False, exit_admission="SHORT_M_TASK_AND_TARGET_UNVERIFIED",
+                               **result)
+    return dict(version="lms405-m-progress-role-controls-v1", cases=cases, admitted_author_actions=0,
+                author_action_match_rate=None, fills=None, pnl=None, executable=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--progress-comparison", action="store_true")
+    comparison = parser.add_mutually_exclusive_group()
+    comparison.add_argument("--progress-comparison", action="store_true")
+    comparison.add_argument("--progress-controls", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -174,7 +214,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            compare = progress_study if args.progress_comparison else study
+            compare = (progress_controls if args.progress_controls
+                       else progress_study if args.progress_comparison else study)
             report = compare(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))

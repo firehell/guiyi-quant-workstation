@@ -52,6 +52,20 @@ def test_shared_position_lifecycle_preserves_original_and_counter_m_roles(direct
     assert advance(flat, "REENTER_TREND", 20).attempt == 2
 
 
+def test_counter_m_exit_cannot_close_protection_with_the_same_displayed_two_legs():
+    lots = Decimal(20)
+    locked = Book("SH2701", "locked", "SHORT", T0, lots, protection=lots, attempt=1)
+    short_term = replace(locked, protection=Decimal(0), counter_m=lots)
+    assert locked.visible == short_term.visible
+
+    request, facts, approval = prepare(locked, "EXIT_COUNTER_M", 1)
+    denied = assess(locked, request, facts, approval=approval,
+                    as_of=approval.known_at + STEP, allow_test_fixture=True)
+    assert denied["status"] == "ACTION_STATE_CONFLICT" and denied["after"] is None
+    after = advance(short_term, "EXIT_COUNTER_M", 1)
+    assert (after.original, after.protection, after.counter_m) == (20, 0, 19)
+
+
 def test_prior_scope_and_prior_action_cannot_authorize_topup_and_overprotection_fails():
     current = Book("FG2701", "cycle", "SHORT", T0, Decimal(20), attempt=1)
     early, _, permission = prepare(current, "PROTECT_EARLY", 7)
