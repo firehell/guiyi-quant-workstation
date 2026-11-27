@@ -23,6 +23,7 @@ from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
 from app.api.reference_trading import router as reference_trading_router
 from app.api.subing_model import router as subing_model_router
+from app.api.strategy_center import router as strategy_center_router
 from app.api.subing_portfolio import router as subing_portfolio_router
 from app.middleware.request_timing import RequestTimingMiddleware
 from app.services.newow_reference_mode import market_reference_receipts_only
@@ -106,6 +107,7 @@ app.include_router(runtime_router)
 app.include_router(reference_trading_router)
 app.include_router(subing_model_router)
 app.include_router(subing_portfolio_router)
+app.include_router(strategy_center_router)
 
 
 @app.get("/health")

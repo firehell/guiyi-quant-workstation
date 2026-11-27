@@ -10,6 +10,7 @@
 | 策略计算 | quant-core 纯内核；Newow/SuBing/HTDY adapter 绑定输入身份 | Web 状态、DB/Redis、通知 |
 | 参考交易 | 纯投影；统一 ReferenceTrading 的历史重算/前向观察仓储与查询 | Order、Fill、Position、PnL |
 | API/Web | app.main 的注册路由；Market 两条页面路由和统一详情控制器 | 重新算公式、配对交易或自选行情事实 |
+| 策略中心 | `app.strategy_center` 读取 ReferenceTrading、TQKQ Monitor 和 SuBing PortfolioJournal | 策略计算、账户、调度、配置写入 |
 | Runtime/Alert | runtime_entry 与既有监督服务；Event 持久化后 one-shot transport | 自行扩大 Scope、重放通知或晋升策略 |
 | 维护工具 | guiyi CLI、部署入口和有界修复脚本复用领域服务 | 另建行情 resolver 或绕过维护锁 |
 
@@ -126,6 +127,10 @@ flowchart LR
   CLI 复用这些读取与 coverage 入口，不组合 evaluator、downloader 或 transport。
 - 0044 只创建 disabled + empty-scope Rule；0045 只把 RQData 1m 首根标签规范化为 `(start, end]` 排他 start。首次 operational × 15m activation 只在精确 0045 使用专用锁定、单 commit、readback seam。
 - EMA21 10K slope 是纯函数 primitive，不连接 Runtime、Alert 或周期级正式因子。
+
+## 策略中心
+
+策略中心通过三个领域适配器投影已保存内容。目录与能力查询可独立于运行来源读取。每个 API 进程对每个领域最多发起一笔运行或结果读取，领域超时后保留独立状态并等待原读取释放资源。牛哇正式结果沿用盘后凭证校验，历史审计引用保留原计算序号和截止时间。Compute Registry、市场读数和领域状态推进继续由其原有模块负责。
 
 ## 统一参考交易的独立生命周期
 
