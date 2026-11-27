@@ -9,6 +9,7 @@ from guiyi_quant.lms405 import Action, Position, Zone, apply_action
 from guiyi_quant.lms405.handoff import Handoff, assess_handoff
 from guiyi_quant.lms405.recovery_path import RecoveryPlan
 from lms405_common_protection_window import OCT27_QUOTES
+from lms405_counter_m_study import beyond
 from lms405_i2701_case import FROZEN_COMPARISON_SHA256
 from lms405_oi_leg_intent import CONTINUITY, CONTINUITY_SHA
 from lms405_portfolio_replay import ARCHIVE
@@ -94,7 +95,56 @@ def projection(position, end_rows, event, mark_minutes):
     )
 
 
-def study(session, market):
+def carried_crossings(minutes, edge, side):
+    """Keep a witnessed crossing only through a new segment opening beyond the edge."""
+    runs = strict_runs(minutes, edge, side)
+    previous = witness = segment_start = None
+    preceding_count = 0
+    carried = {}
+    for bar in minutes:
+        if previous is None or previous.end != bar.start:
+            segment_start = bar.start
+            if preceding_count < 2 or not beyond(bar.open, edge, side):
+                witness = None
+        previous = bar
+        run = runs.get(bar.end)
+        if run is None:
+            witness, preceding_count = None, 0
+            continue
+        preceding_count = run["close_count"]
+        if run["fresh_crossing_known_at"] is not None:
+            witness = run["fresh_crossing_known_at"]
+        if witness is not None and preceding_count >= 2:
+            carried[bar.end] = dict(witness_at=witness, segment_start=segment_start,
+                                    from_prior_segment=witness < segment_start)
+    return carried
+
+
+def opening_continuity(series, events, *, starts, cut, edge):
+    rows = {}
+    checks = 0
+    for scope, start in starts.items():
+        minutes = completed(series, start, cut)
+        continuity = carried_crossings(minutes, edge, "SHORT")
+        matches = []
+        for event in events:
+            end, as_of = event["confirmed_at"], event["available_at"]
+            witness = continuity.get(end)
+            if witness is not None and witness["witness_at"] >= as_of:
+                raise ValueError("SEEDED_CLOCK_CARRY_WITNESS_NOT_EARLIER")
+            for split in (as_of, as_of + US):
+                prefix = completed(minutes, start, split)
+                expected = {bar.end: continuity[bar.end] for bar in prefix if bar.end in continuity}
+                if carried_crossings(prefix, edge, "SHORT") != expected:
+                    raise ValueError("SEEDED_CLOCK_CARRY_PREFIX_DIVERGED")
+                checks += 1
+            if witness is not None:
+                matches.append(dict(confirmed_at=end, variant=event["variant"], **witness))
+        rows[scope] = dict(available_from=start, matches=matches)
+    return dict(scopes=rows, checked_prefixes=checks)
+
+
+def study(session, market, *, check_opening_continuity=False):
     original = verified_json(ORIGINAL, ORIGINAL_SHA)
     continuity = verified_json(CONTINUITY, CONTINUITY_SHA)
     quotes = verified_json(OCT27_QUOTES, FROZEN_COMPARISON_SHA256)
@@ -110,6 +160,7 @@ def study(session, market):
                 raise ValueError("SEEDED_CLOCK_SOURCE_CHANGED")
             sources[key] = source | dict(current_archive_sha256=current)
         position, (before, later, photos) = positions(continuity, contract, first, last)
+        plan_start = stamp(sources[plan_id]) + ONE
         start = max(stamp(sources[first]), stamp(sources[plan_id])) + ONE
         cut = at(end)
         if photos[last]["quote_anchor"] is not None and datetime.fromisoformat(photos[last]["quote_anchor"]) != cut:
@@ -151,11 +202,30 @@ def study(session, market):
                                  and event["available_at"] + US < cut), None)
             by_edge[label] = dict(price=price, events=events, checked_prefixes=checks, modes=modes,
                                   shape_and_single_close=projection(position, later, single_close, mark_minutes))
+            if check_opening_continuity:
+                market_prefix = [bar for d in DAYS if d <= day for bar in series_by_contract[contract][d][1]]
+                scope = ("same_visible_plan_revision" if role == "PUBLISHED_STRONG_SIDE_RECOVERY"
+                         else "earlier_resistance_proxy_sensitivity")
+                starts = {scope: plan_start}
+                if name == "iron_night":
+                    # Identical numeric edges are not evidence that the earlier article remained active.
+                    starts["reuse_previous_revision_sensitivity"] = stamp(
+                        original["sources"]["A5358325549629506"],
+                    ) + ONE
+                prior = opening_continuity(market_prefix, events, starts=starts, cut=cut, edge=price)
+                matches = {(row["confirmed_at"], row["variant"]): row
+                           for row in prior["scopes"][scope]["matches"]}
+                for mode, flag in CLOCKS.items():
+                    event = next((e for e in events if e[flag] and e["available_at"] + US < cut
+                                  and (e["confirmed_at"], e["variant"]) in matches), None)
+                    by_edge[label]["modes"][mode]["carry_witnessed"] = projection(position, later, event, mark_minutes)
+                by_edge[label]["opening_continuity"] = prior | {"projection_scope": scope}
         results[name] = dict(contract=contract, start=start, cut=cut, sources=sources, photos=photos,
                              before_visible=before, later_visible=later, original_side_hypothesis="SHORT",
                              price_role=role, account_continuity=None, author_assessment=public,
                              quote_minutes=mark_minutes, edges=by_edge)
-    return dict(version="lms405-seeded-recovery-clocks-v1", cases=results, author_action_samples=0,
+    version = "lms405-seeded-opening-continuity-v1" if check_opening_continuity else "lms405-seeded-recovery-clocks-v1"
+    return dict(version=version, cases=results, author_action_samples=0,
                 author_match_rate=None, executable=False, fills=None, pnl=None)
 
 
@@ -163,6 +233,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--opening-continuity", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -177,7 +248,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), check_opening_continuity=args.opening_continuity)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
