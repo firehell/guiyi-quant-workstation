@@ -147,8 +147,12 @@ def test_json_tape_waits_for_exact_approval_and_requires_fixture_opt_in():
         replay_input(**approval_only)
 
 
-@pytest.mark.parametrize("original_side,period", [("SHORT", 1), ("LONG", 1), ("LONG", 15)])
-def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monkeypatch, original_side, period):
+@pytest.mark.parametrize("original_side,period,confirmation", [
+    ("SHORT", 1, 1), ("LONG", 1, 1), ("SHORT", 5, 1), ("LONG", 5, 1), ("LONG", 15, 15),
+])
+def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(
+    monkeypatch, original_side, period, confirmation,
+):
     minute = timedelta(minutes=1)
     step = period * minute
     seed = Book("SH2701", "market-test", original_side, START - minute, Decimal(20), attempt=1)
@@ -168,7 +172,7 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
     definition = dict(
         version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
         cutoff=(candles[-1].end + timedelta(microseconds=2)).isoformat(), seed=json.loads(encoded(asdict(seed))),
-        operation="PROTECT_EARLY", quantity="20", shape_period=period, confirmation_period=period, band=band,
+        operation="PROTECT_EARLY", quantity="20", shape_period=period, confirmation_period=confirmation, band=band,
         request_expires_at=(START + 8 * step).isoformat(),
         revision=dict(contract=seed.contract, id="market-plan", source="source-a",
                       published_at=seed.known_at.isoformat(), known_at=seed.known_at.isoformat(),
@@ -179,11 +183,14 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
 
     report = compile_case()
     assert report["candidate"]["relation"] == ("ABOVE" if original_side == "LONG" else "BELOW")
+    confirmed_at = candles[2].start + confirmation * minute
+    assert report["candidate"]["confirmed_at"] == confirmed_at
+    assert compile_case(cutoff=(confirmed_at + plan_replay.US).isoformat())["candidate"] is None
     row, = report["replay"]["events"]
     assert row["status"] == "INDETERMINATE"
     scope = row["pending_approval_scope"]
     assert report["replay"]["final"] == asdict(seed)
-    cut = (candles[2].end + timedelta(microseconds=3)).isoformat()
+    cut = (confirmed_at + timedelta(microseconds=3)).isoformat()
     assert compile_case(cutoff=cut)["replay"]["events"][0]["pending_approval_scope"] == scope
     altered = definition["revision"] | {"source": "source-b"}
     assert compile_case(revision=altered)["replay"]["events"][0]["pending_approval_scope"] != scope
@@ -197,8 +204,8 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
     assert (final["direction"], final["attempt"], final["original"], final["protection"], final["counter_m"]) == (
         original_side, 1, Decimal(20), Decimal(20), Decimal(0),
     )
-    if original_side == "LONG":
-        expiry = candles[2].end + minute + timedelta(microseconds=1)
+    if (original_side, period) != ("SHORT", 1):
+        expiry = confirmed_at + minute + timedelta(microseconds=1)
         assert report["protection"]["candidate_expires_at"] == expiry
         tape["cutoff"] = (expiry + SECOND).isoformat()
         event["at"] = expiry.isoformat()
@@ -210,6 +217,19 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
     )
     with pytest.raises(ValueError, match="BAND_ARRAY_REQUIRED"):
         compile_case(band={"109": False, "110": False})
+    if period == 5:
+        assert compile_case(revision=definition["revision"] | {
+            "known_at": candles[1].start.isoformat(),
+        })["candidate"] is None
+        # Touching the band during the confirmation minute cancels an early proposal.
+        i = 2 * period
+        before_touch = series[1][i]
+        series[1][i] = (replace(before_touch, high=Decimal(band[0])) if original_side == "SHORT"
+                        else replace(before_touch, low=Decimal(band[1])))
+        assert compile_case()["candidate"] is None
+        series[1][i] = before_touch
+        with pytest.raises(ValueError, match="MARKET_EARLY_SCOPE_UNSUPPORTED"):
+            compile_case(confirmation_period=5)
 
 
 def test_plan_entry_requires_a_fresh_shape_before_target_and_waits_for_approval(monkeypatch):

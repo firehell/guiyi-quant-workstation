@@ -1,0 +1,30 @@
+{
+  "version": "lms405-plan-market-request-v1",
+  "seed": {
+    "contract": "SH2701",
+    "episode": "SH2701:2026-10-23:SHORT_AFTER_RECOVERY_HYPOTHESIS",
+    "direction": "SHORT",
+    "known_at": "2026-10-23T20:59:00+08:00",
+    "original": "1",
+    "protection": "0",
+    "counter_m": "0",
+    "attempt": 1
+  },
+  "revision": {
+    "contract": "SH2701",
+    "id": "A5357264793370945",
+    "published_at": "2026-10-23T19:28:00+08:00",
+    "known_at": "2026-10-23T19:29:00+08:00",
+    "source": "https://weibo.com/ttarticle/p/show?id=2309405357264793370945",
+    "operations": ["PROTECT_EARLY"]
+  },
+  "trading_day": "2026-10-26",
+  "start": "2026-10-23T21:00:00+08:00",
+  "cutoff": "2026-10-23T22:07:00+08:00",
+  "request_expires_at": "2026-10-23T22:07:00+08:00",
+  "band": ["1595", "1603"],
+  "operation": "PROTECT_EARLY",
+  "quantity": "1",
+  "shape_period": 5,
+  "confirmation_period": 1
+}

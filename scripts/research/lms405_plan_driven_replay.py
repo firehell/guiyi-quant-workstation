@@ -545,7 +545,7 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
             raise ValueError("PLAN_REPLAY_MARKET_PROTECTION_SCOPE_INVALID")
         side = "LONG" if side == "SHORT" else "SHORT"
         if operation == "PROTECT_EARLY":
-            if (shape_period, confirmation_period) not in ((1, 1), (15, 15)):
+            if (shape_period, confirmation_period) not in ((1, 1), (5, 1), (15, 15)):
                 raise ValueError("PLAN_REPLAY_MARKET_EARLY_SCOPE_UNSUPPORTED")
             candidate = first_early_candidate(series, start=start, cutoff=cutoff, band=(lower, upper),
                                               side=side, setup_not_before=effective_start,
