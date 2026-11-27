@@ -25,7 +25,8 @@ WINDOWS = (
 )
 
 
-def geometry_events(bars, shape_period, confirmation_period, *, start, as_of, side):
+def geometry_events(bars, shape_period, confirmation_period, *, start, as_of, side,
+                    range_excursion=False):
     if (shape_period, confirmation_period) not in VARIANTS or side not in ("LONG", "SHORT"):
         raise ValueError("UNSUPPORTED_TIMEFRAME_GEOMETRY")
     shape_step = timedelta(minutes=shape_period)
@@ -48,7 +49,8 @@ def geometry_events(bars, shape_period, confirmation_period, *, start, as_of, si
             if (not isinstance(following, Bar) or following.completed is not True
                     or following.contract != shape.contract or following.start != close_at - close_step):
                 raise ValueError("CONFIRMATION_BAR_IDENTITY_MISMATCH")
-            if (following.close > boundary if side == "LONG" else following.close < boundary):
+            comparison = (following.high if side == "LONG" else following.low) if range_excursion else following.close
+            if (comparison > boundary if side == "LONG" else comparison < boundary):
                 events.append(dict(
                     shape_end=shape.end, confirmed_at=following.end, available_at=following.end + US,
                     ibar=frame.ibar is True, pinbar=frame.pinbar, boundary=boundary, close=following.close,
@@ -56,6 +58,85 @@ def geometry_events(bars, shape_period, confirmation_period, *, start, as_of, si
                 break
             close_at += close_step
     return events
+
+
+def confirmation_contrast(series, shape, confirmation, *, start, as_of, side):
+    """Measure range excursions and closes on identical shapes and completed prefixes."""
+    shapes = series[shape]
+    contiguous = {bar.end for before, bar in zip(shapes, shapes[1:]) if before.end == bar.start}
+    args = dict(start=start, as_of=as_of, side=side)
+    excursions = [row for row in geometry_events(
+        series, shape, confirmation, **args, range_excursion=True,
+    ) if row["shape_end"] in contiguous]
+    closes = {row["shape_end"]: row for row in geometry_events(
+        series, shape, confirmation, **args,
+    ) if row["shape_end"] in contiguous}
+    if not closes.keys() <= {row["shape_end"] for row in excursions}:
+        raise ValueError("TIMEFRAME_CONFIRMATION_WITHOUT_RANGE_EXCURSION")
+    bars = series[confirmation]
+    by_start = {bar.start: bar for bar in bars if bar.end + US < as_of}
+    shape_by_end = {bar.end: bar for bar in shapes}
+    step = timedelta(minutes=shape)
+    confirm_step = timedelta(minutes=confirmation)
+
+    def still_beyond(value, boundary):
+        return value > boundary if side == "LONG" else value < boundary
+
+    rows = []
+    for excursion in excursions:
+        shape_end, boundary = excursion["shape_end"], excursion["boundary"]
+        confirmed = closes.get(shape_end)
+        deadline = shape_end + step
+        # Inspect only the contiguous confirmation stream and the declared shape lifetime.
+        reset = None
+        if confirmed is not None:
+            after = confirmed["confirmed_at"]
+            while (bar := by_start.get(after)) is not None and bar.end <= deadline:
+                if (not isinstance(bar, Bar) or bar.completed is not True
+                        or bar.contract != shape_by_end[shape_end].contract or bar.end - bar.start != confirm_step):
+                    raise ValueError("TIMEFRAME_RESET_BAR_IDENTITY_MISMATCH")
+                if not still_beyond(bar.close, boundary):
+                    reset = bar.end + US
+                    break
+                after = bar.end
+        rows.append(dict(
+            shape_end=shape_end, last_confirmation_bar_end=deadline, boundary=boundary,
+            excursion_known_at=excursion["available_at"],
+            excursion_bar_closes_beyond=still_beyond(excursion["close"], boundary),
+            strict_close_known_at=confirmed["available_at"] if confirmed else None,
+            reset_known_at=reset,
+        ))
+    return rows
+
+
+def confirmation_window(series, *, start, as_of, side, split):
+    results = {}
+    for shape, confirm in VARIANTS:
+        args = dict(start=start, side=side)
+        rows = confirmation_contrast(series, shape, confirm, as_of=as_of, **args)
+        prefix = {p: [bar for bar in bars if bar.end + US < split] for p, bars in series.items()}
+        earlier = confirmation_contrast(prefix, shape, confirm, as_of=split, **args)
+        expected = []
+        for row in rows:
+            if row["excursion_known_at"] >= split:
+                continue
+            visible = row.copy()
+            for field in ("strict_close_known_at", "reset_known_at"):
+                if visible[field] is not None and visible[field] >= split:
+                    visible[field] = None
+            expected.append(visible)
+        if earlier != expected:
+            raise ValueError("TIMEFRAME_CONFIRMATION_PREFIX_DIVERGED")
+        results[f"{shape}m_to_{confirm}m"] = dict(
+            excursion_count=len(rows),
+            same_bar_close=sum(row["excursion_bar_closes_beyond"] for row in rows),
+            later_close=sum(row["strict_close_known_at"] is not None and not row["excursion_bar_closes_beyond"]
+                            for row in rows),
+            no_close_observed=sum(row["strict_close_known_at"] is None for row in rows),
+            reset_within_shape_window=sum(row["reset_known_at"] is not None for row in rows),
+            rows=rows,
+        )
+    return results
 
 
 def summarize(events, *, band, milestones):
@@ -84,7 +165,7 @@ def read_window(session, market, contract, day):
     return series
 
 
-def study(session, market):
+def study(session, market, *, compare_confirmations=False):
     cases = {}
     for name, contract, day, lower, upper, side, band, source, milestones in WINDOWS:
         series = read_window(session, market, contract, date.fromisoformat(day))
@@ -110,6 +191,9 @@ def study(session, market):
             ) for p, bars in series.items()},
             actual_protection_signal=None, actual_action_at=None, historical_source_revision_verified=False,
         )
+        if compare_confirmations:
+            cases[name]["confirmation_contrast"] = confirmation_window(series, start=start, as_of=as_of,
+                                                                         side=side, split=split)
     return dict(
         version="lms405-protection-timeframe-comparison-v1", cases=cases,
         checkpoints_role="RETROSPECTIVE_INTERVAL_COMPARISON_ONLY",
@@ -121,6 +205,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--compare-confirmations", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -134,7 +219,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session),
+                           compare_confirmations=args.compare_confirmations)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
