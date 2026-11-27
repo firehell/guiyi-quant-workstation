@@ -3,7 +3,7 @@ from decimal import Decimal
 from guiyi_quant.lms405 import Bar
 from lms405_protection_lot_timing import displayed_tick_totals
 from lms405_right_side_study import ONE, US, at
-from lms405_sh_first_protection_rearm import reclaim_tape, stage_allocations
+from lms405_sh_first_protection_rearm import first_close_reset, reclaim_tape, stage_allocations
 
 
 def candle(time, price):
@@ -28,3 +28,19 @@ def test_late_only_and_two_stage_require_a_quote_minute_when_the_prior_range_is_
     assert result["allocations"] == [(1, 0, 1)]
     assert result["both"] and not result["late_only"] and not result["without_quote_minute"]
     assert stage_allocations([early], [near], quote.end, lots=2, totals=totals)["allocations"] == []
+
+
+def test_failed_first_breach_does_not_authorize_later_minutes_without_rearming():
+    start = at("2026-10-22T21:20")
+    prices = ((100, 101, 99, 100), (100, 101, 100, 100), (100, 102, 100, 102),
+              (102, 105, 102, 103), (103, 110, 103, 105))
+    rows = [Bar("SH2701", start + (i + 1) * ONE, *map(Decimal, fields), start=start + i * ONE)
+            for i, fields in enumerate(prices)]
+    breach = {"breach_end": rows[0].end, "boundary": Decimal(100)}
+    result = first_close_reset(rows, breach, rows[-1].end, lots=1, totals=range(110, 111))
+    assert result["witnessed_recross_minute_ends"] == [rows[1].end, rows[2].end]
+    outcomes = result["allocations"]
+    for path in ("no_rearm", "fresh_intraminute_recross_minutes_only", "2_close_rearm_complete_minutes_only"):
+        assert not outcomes[path]["allocations"]
+    for path in ("1_close_rearm_complete_minutes_only", "2_close_rearm_overlap"):
+        assert outcomes[path]["allocations"] == [(0, 0, 1)]

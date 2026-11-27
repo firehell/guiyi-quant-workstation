@@ -61,7 +61,36 @@ def stage_allocations(earlier, later, quote_end, *, lots, totals):
     )
 
 
-def study(session, market):
+def first_close_reset(minutes, breach, quote_end, *, lots, totals):
+    """Compare protection windows after the first intraminute breach closes back inside."""
+    breach_end, edge = breach["breach_end"], breach["boundary"]
+    before = [bar for bar in minutes if bar.end <= breach_end]
+    after = [bar for bar in minutes if breach_end <= bar.start and bar.end <= quote_end]
+    if not before or before[-1].end != breach_end or before[-1].close > edge:
+        raise ValueError("SH_FIRST_CLOSE_RESET_NOT_OBSERVED")
+    # The whole range of each proven recross is an optimistic price allowance.
+    # Only a recross after a completed close on the inactive side can rearm this path.
+    recrosses = [bar for prior, bar in zip([before[-1], *after], after)
+                 if prior.end == bar.start and prior.close <= edge < bar.high
+                 and (bar.open <= edge or bar.low <= edge < bar.close)]
+    result = {
+        "no_rearm": stage_allocations(before, (), quote_end, lots=lots, totals=totals),
+        "fresh_intraminute_recross_minutes_only": stage_allocations(before, recrosses, quote_end,
+                                                                    lots=lots, totals=totals),
+    }
+    for required in (1, 2):
+        observations, eligible = reclaim_tape(after, edge=edge, required=required)
+        for overlap in (False, True):
+            rows = [bar for bar, known in eligible if overlap or known < bar.start]
+            key = f"{required}_close_rearm_{'overlap' if overlap else 'complete_minutes_only'}"
+            result[key] = stage_allocations(before, rows, quote_end, lots=lots, totals=totals) | dict(
+                rearm_closes=observations,
+            )
+    return dict(edge=edge, breach_close=before[-1].close, reset_end=breach_end,
+                witnessed_recross_minute_ends=[bar.end for bar in recrosses], allocations=result)
+
+
+def study(session, market, *, reset_at_first_close=False):
     reference = verified_json(FROZEN, FROZEN_SHA)
     case = reference["cases"][CONTRACT]
     index = input_sources()
@@ -87,12 +116,21 @@ def study(session, market):
     if encoded(breach) != encoded(frozen["first_observed_breach"]):
         raise ValueError("SH_REARM_BREACH_CHANGED")
     prefix = [bar for bar in minutes if bar.end <= QUOTE]
+    lots = case["visible_long"]["today_quantity"]
+    totals = displayed_tick_totals(Decimal(case["visible_long"]["opening_average"]), lots, TICK)
+    if reset_at_first_close:
+        controls = first_close_reset(prefix, breach, QUOTE, lots=lots, totals=totals)
+        return dict(
+            study="SH2701_FIRST_PROTECTION_BREACH_CLOSE_RESET", snapshot=reference["photo_source"],
+            photo=photo, plan=source, reference_sha256=FROZEN_SHA, market=case["market"], shape_breach=breach,
+            quote_end=QUOTE, quote_mark=mark, quote_ohlc=ohlc(prefix[-1]), visible_long=case["visible_long"],
+            controls=controls, author_action_samples=0, author_match_rate=None, actual_quote_time=None,
+            executable=False, fills=None, pnl=None,
+        )
     loss = next(bar for bar in prefix if bar.start >= known and bar.close < NEAR)
     if loss.end != datetime.fromisoformat(frozen["bounds"]["first_later_close_below_shape_low"]):
         raise ValueError("SH_REARM_LOSS_CHANGED")
     remaining = [bar for bar in prefix if bar.start >= loss.end]
-    lots = case["visible_long"]["today_quantity"]
-    totals = displayed_tick_totals(Decimal(case["visible_long"]["opening_average"]), lots, TICK)
     # A new shape must start after the failure was observable. The quote minute only brackets price.
     fresh = {f"{a}m_to_{b}m": signals(series, a, b, start=loss.end + US, cut=QUOTE, side="LONG")
              for a, b in VARIANTS}
@@ -141,6 +179,7 @@ def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--reset-at-first-close", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -154,7 +193,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            report = study(session, build_market_data_service(session), reset_at_first_close=args.reset_at_first_close)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
