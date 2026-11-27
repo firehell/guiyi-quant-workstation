@@ -1,6 +1,7 @@
 """Audit which candidate survives a hypothetical protection-area change and a timed public update."""
 
 import argparse
+from dataclasses import asdict
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -13,7 +14,7 @@ from lms405_protection_route_comparison import candidate_clocks
 from lms405_protection_timeframes import VARIANTS, read_window
 from lms405_public_plan_roles import load_source
 from lms405_right_side_study import ONE, US, at
-from lms405_sh_lock_lifecycle import digest, signals
+from lms405_sh_lock_lifecycle import completed, digest, signals
 from lms_near405_replay import encoded
 
 BASE = (Path("output/lms405-protection-external-cases-20261126/final.json"),
@@ -225,11 +226,87 @@ def handoff_study(session, market):
                 author_action_samples=0, author_match_rate=None, executable=False, fills=None, pnl=None)
 
 
+def protection_candidates(series, *, start, cutoff, side, band):
+    clocks, first_contact = candidate_clocks(series, band, start=start, cutoff=cutoff, side=side)
+    clocks = {role: instant for role, instant in clocks.items() if role in ("precontact", "ordinary")}
+    observations = {role: [] for role in clocks}
+    for shape, confirm in VARIANTS:
+        for row in signals(series, shape, confirm, side=side, start=start, cut=cutoff):
+            for role, instant in clocks.items():
+                if row["available_at"] != instant:
+                    continue
+                low, high = band
+                close = row["close"]
+                matching_role = (low <= close <= high if role == "ordinary"
+                                 else close < low if side == "LONG" else close > high)
+                if matching_role:
+                    observations[role].append(row | dict(shape_minutes=shape, confirmation_minutes=confirm))
+    return dict(window_start=start, cutoff_exclusive=cutoff, first_contact_end=(
+        first_contact.end if first_contact else None
+    ), first_candidates=observations)
+
+
+def coal_migration_study(session, market):
+    index = input_sources()
+    sunday = load_source(index, "G63272-550")
+    june_plan = load_source(index, "S5306449299508533")
+    june_report = load_source(index, "S5307830937850724")
+    sep = read_window(session, market, "JM2601", date(2025, 9, 29))
+    june_day = read_window(session, market, "JM2609", date(2026, 6, 8))
+    june_night = read_window(session, market, "JM2609", date(2026, 6, 9))
+    sep_open, sep_cutoff = at("2025-09-29T09:00"), at("2025-09-29T15:00") + 2 * US
+    if not (sep[1][0].start < at(sunday["published_at"]) + ONE < sep_open
+            and at(june_plan["published_at"]) + ONE < june_day[1][0].start
+            and at(june_report["published_at"]) > at("2026-06-08T23:00")):
+        raise ValueError("COAL_MIGRATION_SOURCE_CLOCK_CHANGED")
+
+    old_sep, new_sep = (Decimal(1184), Decimal(1194)), (Decimal("1160.5"), Decimal("1176.5"))
+    sep_bars = completed(sep[1], sep_open, sep_cutoff)
+    night_before_plan = [bar for bar in sep[1] if bar.end + US < at(sunday["published_at"])]
+    far = new_sep[0]
+    migrations = {}
+    for label, completed_gate in (
+        ("FAR_TOUCH", next((bar for bar in sep_bars if bar.low <= far), None)),
+        ("STRICT_CLOSE_BEYOND_FAR", next((bar for bar in sep_bars if bar.close < far), None)),
+    ):
+        known_at = completed_gate.end + US if completed_gate else None
+        migrations[label] = dict(
+            completed_gate=asdict(completed_gate) if completed_gate else None, assumed_change_known_at=known_at,
+            original_protection=protection_candidates(sep, start=sep_open, cutoff=known_at or sep_cutoff,
+                                                      side="LONG", band=old_sep),
+            replacement_protection=protection_candidates(sep, start=known_at + US, cutoff=sep_cutoff,
+                                                         side="LONG", band=new_sep) if known_at else None,
+            former_band_role_after_change="COUNTER_M_REFERENCE_ONLY" if known_at else None,
+        )
+    june = {}
+    for name, series, day_start, end in (
+        ("june_8_day", june_day, at("2026-06-08T09:00"), at("2026-06-08T15:00")),
+        ("june_8_night", june_night, at("2026-06-08T21:00"), at("2026-06-08T23:00")),
+    ):
+        args = dict(start=day_start, cutoff=end + 2 * US, side="SHORT")
+        june[name] = {role: protection_candidates(series, band=tuple(map(Decimal, levels)), **args)
+                      for role, levels in (("june_5_reference", (1425, 1446)),
+                                           ("june_9_retrospective_reference", (1446, 1464)))}
+    return dict(
+        version="lms405-coal-protection-migration-v1", author_action_samples=0, author_match_rate=None,
+        executable=False, fills=None, pnl=None,
+        jm2601=dict(source=sunday, author_version=None, original_area=old_sep, replacement_area=new_sep,
+                    night_low_before_plan=min(bar.low for bar in night_before_plan), migrations=migrations,
+                    market={f"{p}m": digest(rows) for p, rows in sep.items()}, author_action=None),
+        jm2609=dict(older_plan=june_plan, retrospective_action=june_report, replacement_known_at=None,
+                    comparison_only=True, windows=june, market={label: {f"{p}m": digest(rows) for p, rows in s.items()}
+                        for label, s in (("june_8", june_day), ("june_9", june_night))}, author_action_at=None),
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--compile-handoff", action="store_true")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--compile-handoff", dest="calculate", action="store_const", const=handoff_study)
+    modes.add_argument("--coal-migration", dest="calculate", action="store_const", const=coal_migration_study)
+    parser.set_defaults(calculate=study)
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -243,8 +320,7 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            calculate = handoff_study if args.compile_handoff else study
-            result = calculate(session, build_market_data_service(session))
+            result = args.calculate(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
