@@ -241,3 +241,62 @@ def test_plan_entry_requires_a_fresh_shape_before_target_and_waits_for_approval(
     assert wait["entry"]["status"] == "PLAN_WAIT_NO_CHASE" and wait["tape"]["evaluations"] == []
     with pytest.raises(ValueError, match="REQUEST_SCOPE_INVALID"):
         compile_case(entry_route="DO_NOT_CHASE", next_reference=None)
+
+    reentry = dict(operation="REENTER_TREND", seed=definition["seed"] | {"attempt": 1},
+                   revision=definition["revision"] | {"operations": ["REENTER_TREND"]})
+    retry = compile_case(**reentry)
+    retry_row, = retry["replay"]["events"]
+    assert retry_row["unknown"] == ["SCOPED_APPROVAL"]
+    assert {f["name"] for f in retry_row["known_facts"]} == {"FRESH_REENTRY_SIGNAL", "PLAN_REENTRY_ALLOWED"}
+    assert retry_row["pending_approval_scope"] != row["pending_approval_scope"]
+    with pytest.raises(ValueError, match="ENTRY_SCOPE_INVALID"):
+        compile_case(**(reentry | {"seed": reentry["seed"] | {"original": "1"}}))
+    late_seed = reentry["seed"] | {"known_at": (bars[1].end + microsecond).isoformat()}
+    assert compile_case(**(reentry | {"seed": late_seed}))["candidate"] is None
+
+
+def test_plan_exit_keeps_other_legs_and_requires_explicit_role_and_fresh_evidence(monkeypatch):
+    minute = timedelta(minutes=1)
+    us = timedelta(microseconds=1)
+    prices = ((100, 111, 99, 108), (108, 109, 103, 105), (105, 108, 104, 106),
+              (106, 107, 101, 102), (102, 103, 96, 99), (99, 111, 99, 110), (110, 111, 107, 108))
+    bars = [Bar("SH2701", START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+            for i, prices in enumerate(prices)]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    seed = Book("SH2701", "exit-test", "LONG", START + minute + us, Decimal(2), Decimal(1), Decimal(1), 1)
+    definition = dict(
+        version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
+        cutoff=(bars[-1].end + 2 * us).isoformat(), seed=json.loads(encoded(asdict(seed))),
+        revision=dict(contract=seed.contract, id="exit-plan", source="source-exit",
+                      published_at=(START - minute).isoformat(), known_at=(START - minute).isoformat(),
+                      operations=["CLEAR_TREND", "EXIT_COUNTER_M"]),
+        operation="CLEAR_TREND", quantity="3", shape_period=1, confirmation_period=1, band=["110", "110"],
+        request_expires_at=(START + 8 * minute).isoformat(), exit_role="DIRECTIONAL_TARGET",
+    )
+
+    def compile_case(**changes):
+        return plan_replay.market_request(session=None, market=None, **(definition | changes))
+
+    assert compile_case()["exit"]["target_known_at"] == bars[5].end + us
+    assert compile_case()["candidate"] is None
+    report = compile_case(inherit_observed_target=True)
+    assert report["exit"]["target_known_at"] == bars[0].end + us
+    assert report["candidate"]["confirmed_at"] == bars[3].end
+    row, = report["replay"]["events"]
+    assert report["replay"]["final"] == asdict(seed) and row["unknown"] == ["SCOPED_APPROVAL"]
+    tape = report["tape"]
+    event, = tape["evaluations"]
+    at = datetime.fromisoformat(event["at"])
+    event["at"] = (at + 2 * us).isoformat()
+    event["approval"] = dict(scope=row["pending_approval_scope"], id="exit-fixture", accepted=True,
+                             decided_at=at.isoformat(), known_at=(at + us).isoformat(), record_kind="TEST_FIXTURE")
+    cleared = replay_input(**tape, allow_test_fixture=True)["final"]
+    assert (cleared["original"], cleared["protection"], cleared["counter_m"]) == (0, 0, 1)
+
+    with pytest.raises(ValueError, match="EXIT_ROLE_REQUIRED"):
+        compile_case(exit_role="PROTECTION")
+    m = compile_case(operation="EXIT_COUNTER_M", quantity="1", seed=json.loads(encoded(cleared)),
+                     exit_role="ADVERSE_EXIT", band=["98", "109"])
+    assert m["exit"]["managed_side"] == "SHORT"
+    assert m["candidate"]["confirmed_at"] == bars[5].end
+    assert m["replay"]["events"][0]["unknown"] == ["SCOPED_APPROVAL"]
