@@ -11,7 +11,7 @@ from lms405_jm_oct_recovery_clock import window_signals
 from lms405_portfolio_replay import input_sources
 from lms405_protection_timeframes import read_window
 from lms405_public_plan_roles import load_source
-from lms405_right_side_study import US, at
+from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import completed, digest
 from lms_near405_replay import encoded
 
@@ -26,6 +26,14 @@ CASES = (
         ("retreat_from_extreme_m_far", "1911"), ("retreat_from_extreme_m_near", "1896"),
         ("original_short_recovery_near", "1870"), ("original_short_recovery_far", "1859"),
     )),
+)
+PROGRESS_CASES = (
+    ("FG2701", "2026-09-14", "S5343083008886025", "SHORT", "940", "RETROSPECTIVE_M_RATING",
+     "c91019bae89eec405aacfa8492048121abd12c96d20cd36c3bdbd848326b461c"),
+    ("OI2609", "2026-06-08", "WR2IUYCQHj", "SHORT", "9924", "FORWARD_REFERENCE_HYPOTHETICAL_POSITION",
+     "2f722530356aef05c2c7b8f767cd416749ef5db7dc6019c325def34fd550a583"),
+    ("JM2701", "2026-10-23", "A5356884629782554", "LONG", "1427.5", "PREVIOUS_PLAN_M_RATING",
+     "133c90a735f864f09b13ad3573abedfa179e3b47fa7ec971e250abc8a8549757"),
 )
 
 
@@ -93,10 +101,66 @@ def study(session, market):
                 author_action_match_rate=None, fills=None, pnl=None, executable=False)
 
 
+def progress_clocks(bars, side, far):
+    """Compare two completed-minute reactions inside the segment of the first target touch."""
+    group = next((g for g in continuous_groups(bars) if any(b.low <= far <= b.high for b in g)), [])
+    touch = next((i for i, b in enumerate(group) if b.low <= far <= b.high), None)
+    if touch is None:
+        return dict(first_contact=None, far_retreat=None, last_push_retreat=None)
+    favorable = "high" if side == "LONG" else "low"
+    adverse = "low" if side == "LONG" else "high"
+    opposite = "SHORT" if side == "LONG" else "LONG"
+    anchor = group[touch]
+    far_retreat = last_push_retreat = None
+    for bar in group[touch + 1:]:
+        if far_retreat is None and beyond(bar.close, far, opposite):
+            far_retreat = dict(at=bar.end, close=bar.close, threshold=far)
+        if beyond(getattr(bar, favorable), getattr(anchor, favorable), side):
+            anchor = bar
+        elif last_push_retreat is None and beyond(bar.close, getattr(anchor, adverse), opposite):
+            last_push_retreat = dict(at=bar.end, close=bar.close, threshold=getattr(anchor, adverse),
+                                     anchor_end=anchor.end)
+    return dict(first_contact=group[touch].end, far_retreat=far_retreat,
+                last_push_retreat=last_push_retreat)
+
+
+def progress_study(session, market):
+    index = input_sources()
+    comparisons = {}
+    for contract, day, source_id, side, far, role, fingerprint in PROGRESS_CASES:
+        series = read_window(session, market, contract, date.fromisoformat(day))
+        if digest(series[1]) != fingerprint:
+            raise ValueError("LMS_M_PROGRESS_MARKET_CHANGED")
+        source = load_source(index, source_id)
+        start = at(day + ("T10:37" if contract == "JM2701" else "T09:00"))
+        published = datetime.fromisoformat(source["published_at"])
+        end = series[1][-1].end
+        in_scope = (end + US < published if role == "RETROSPECTIVE_M_RATING" else published + ONE < start)
+        if not in_scope:
+            raise ValueError("LMS_M_PROGRESS_SOURCE_CLOCK_CHANGED")
+        bars = completed(series[1], start, end + 2 * US)
+        result = progress_clocks(bars, side, Decimal(far))
+        for bar in bars:
+            # The selection and decision on each visible prefix must agree with the full result.
+            cut = bar.end + US
+            expected = {key: value for key, value in result.items() if value is not None
+                        and (value["at"] if isinstance(value, dict) else value) + US < cut}
+            prefix = progress_clocks([b for b in bars if b.end + US < cut], side, Decimal(far))
+            if any(prefix[key] != expected.get(key) for key in prefix):
+                raise ValueError("LMS_M_PROGRESS_PREFIX_DRIFT")
+        comparisons[contract] = dict(trading_day=day, source=source, role=role, start=start,
+                                     position_side=side, reference=Decimal(far), prefix_checks=len(bars),
+                                     **result)
+    return dict(version="lms405-m-progress-exit-observation-v1", cases=comparisons,
+                actual_exit_at=None, confirms_author_rule=False, admitted_author_actions=0,
+                author_action_match_rate=None, fills=None, pnl=None, executable=False)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--progress-comparison", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -110,7 +174,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session))
+            compare = progress_study if args.progress_comparison else study
+            report = compare(session, build_market_data_service(session))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
