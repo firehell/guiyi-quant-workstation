@@ -95,7 +95,8 @@ def test_expired_plan_and_late_revision_cannot_revive_an_approval():
     assert rows[0]["current_plan_id"] == "active" and rows[0]["approval"] == step.approval
 
 
-def test_early_protection_does_not_read_future_or_same_minute_contact():
+@pytest.mark.parametrize("side", ["LONG", "SHORT"])
+def test_early_protection_does_not_read_future_or_same_minute_contact(side):
     minute = timedelta(minutes=1)
     us = timedelta(microseconds=1)
     candles = []
@@ -104,13 +105,18 @@ def test_early_protection_does_not_read_future_or_same_minute_contact():
         start = START + i * minute
         candles.append(Bar("SH2701", start + minute, *map(Decimal, prices), start=start))
     band = Decimal(109), Decimal(110)
+    if side == "SHORT":
+        candles = [replace(bar, open=200 - bar.open, high=200 - bar.low,
+                           low=200 - bar.high, close=200 - bar.close) for bar in candles]
+        band = Decimal(90), Decimal(91)
     known = candles[2].end + us
-    assert first_early_candidate({1: candles}, start=START, cutoff=known, band=band) is None
-    early = first_early_candidate({1: candles}, start=START, cutoff=known + us, band=band)
-    later = first_early_candidate({1: candles}, start=START, cutoff=candles[-1].end + 2 * us, band=band)
+    assert first_early_candidate({1: candles}, start=START, cutoff=known, band=band, side=side) is None
+    early = first_early_candidate({1: candles}, start=START, cutoff=known + us, band=band, side=side)
+    later = first_early_candidate({1: candles}, start=START, cutoff=candles[-1].end + 2 * us, band=band, side=side)
     assert early == later and early["pre_touch_arm"] and early["segment_first_touch"] is None
-    same_minute = candles[:2] + [replace(candles[2], high=Decimal(109))]
-    assert first_early_candidate({1: same_minute}, start=START, cutoff=known + us, band=band) is None
+    touch = {"high": band[0]} if side == "LONG" else {"low": band[1]}
+    same_minute = candles[:2] + [replace(candles[2], **touch)]
+    assert first_early_candidate({1: same_minute}, start=START, cutoff=known + us, band=band, side=side) is None
 
 
 def test_json_tape_waits_for_exact_approval_and_requires_fixture_opt_in():
@@ -141,18 +147,29 @@ def test_json_tape_waits_for_exact_approval_and_requires_fixture_opt_in():
         replay_input(**approval_only)
 
 
-def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monkeypatch):
+@pytest.mark.parametrize("original_side,period", [("SHORT", 1), ("LONG", 1), ("LONG", 15)])
+def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monkeypatch, original_side, period):
     minute = timedelta(minutes=1)
-    seed = Book("SH2701", "market-test", "SHORT", START - minute, Decimal(20), attempt=1)
+    step = period * minute
+    seed = Book("SH2701", "market-test", original_side, START - minute, Decimal(20), attempt=1)
     prices = ((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106), (106, 111, 104, 110))
-    candles = [Bar(seed.contract, START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+    candles = [Bar(seed.contract, START + (i + 1) * step, *map(Decimal, prices), start=START + i * step)
                for i, prices in enumerate(prices)]
-    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: candles})
+    band = ["109", "110"]
+    if original_side == "LONG":
+        candles = [replace(bar, open=200 - bar.open, high=200 - bar.low,
+                           low=200 - bar.high, close=200 - bar.close) for bar in candles]
+        band = ["90", "91"]
+    series = {period: candles}
+    if period != 1:
+        series[1] = [replace(bar, start=bar.start + i * minute, end=bar.start + (i + 1) * minute)
+                     for bar in candles for i in range(period)]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: series)
     definition = dict(
         version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
         cutoff=(candles[-1].end + timedelta(microseconds=2)).isoformat(), seed=json.loads(encoded(asdict(seed))),
-        operation="PROTECT_EARLY", quantity="20", shape_period=1, confirmation_period=1, band=["109", "110"],
-        request_expires_at=(START + 8 * minute).isoformat(),
+        operation="PROTECT_EARLY", quantity="20", shape_period=period, confirmation_period=period, band=band,
+        request_expires_at=(START + 8 * step).isoformat(),
         revision=dict(contract=seed.contract, id="market-plan", source="source-a",
                       published_at=seed.known_at.isoformat(), known_at=seed.known_at.isoformat(),
                       operations=["PROTECT_EARLY"]),
@@ -161,6 +178,7 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
         return plan_replay.market_request(session=None, market=None, **(definition | changes))
 
     report = compile_case()
+    assert report["candidate"]["relation"] == ("ABOVE" if original_side == "LONG" else "BELOW")
     row, = report["replay"]["events"]
     assert row["status"] == "INDETERMINATE"
     scope = row["pending_approval_scope"]
@@ -175,7 +193,17 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
     event["at"] = (at + 2 * timedelta(microseconds=1)).isoformat()
     event["approval"] = dict(scope=scope, id="test-approval", accepted=True, decided_at=at.isoformat(),
                              known_at=(at + timedelta(microseconds=1)).isoformat(), record_kind="TEST_FIXTURE")
-    assert replay_input(**tape, allow_test_fixture=True)["final"]["protection"] == Decimal(20)
+    final = replay_input(**tape, allow_test_fixture=True)["final"]
+    assert (final["direction"], final["attempt"], final["original"], final["protection"], final["counter_m"]) == (
+        original_side, 1, Decimal(20), Decimal(20), Decimal(0),
+    )
+    if original_side == "LONG":
+        expiry = candles[2].end + minute + timedelta(microseconds=1)
+        assert report["protection"]["candidate_expires_at"] == expiry
+        tape["cutoff"] = (expiry + SECOND).isoformat()
+        event["at"] = expiry.isoformat()
+        late = replay_input(**tape, allow_test_fixture=True)
+        assert late["events"][0]["status"] == "EXPIRED" and late["final"] == asdict(seed)
     changed_tape = tape | {"revisions": [altered]}
     assert replay_input(**changed_tape, allow_test_fixture=True)["events"][0]["status"] == (
         "MARKET_FACT_PLAN_REVISION_MISMATCH"

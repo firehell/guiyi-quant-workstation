@@ -361,7 +361,7 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 `--market-request` 读取一份声明计划的JSON，使用统一MDS加载单个物理合约的完整交易日。输入要求 `version=lms405-plan-market-request-v1`、`seed`、`revision`、`trading_day`、带时区的 `start`、`cutoff`、独立请求有效期 `request_expires_at`、两个十进制字符串组成的 `band`、`operation`、`quantity`、`shape_period`、`confirmation_period`。计划和种子沿用上节结构，实际出处与历史版本由研究输入提供。
 
-支持原向恢复、区内保护和原仓为空头时的1→1区前多向保护。恢复要求新穿越及确认仍在方向侧，区内保护要求收盘在价带内。区前保护在声明窗口内保留同段接触历史，即使某次接触比计划或仓位更早也不重置；候选自身仍须在计划及仓位可知后形成。这是保守的研究候选口径，作者区间重置条件未知。
+支持原向恢复、区内保护及双向区前保护。恢复要求新穿越及确认仍在方向侧，区内保护要求收盘在价带内。区前保护在声明窗口内保留同段接触历史，即使某次接触比计划或仓位更早也不重置；候选自身仍须在计划及仓位可知后形成。这是保守的研究候选口径，作者区间重置条件未知。
 
 报告内嵌通用 `tape`。报告记录确认周期、形态和价格。候选事实绑定这些内容及完整计划修订指纹。复算换掉计划内容或来源时，旧候选事实会被拒绝。输入的截止时刻可改变观测范围，已生成候选的许可作用域还取决于单独给定的请求有效期。待确认标识产生后，许可方须以对应作用域创建独立记录，并将下一次评估放在许可可知之后、计划和请求到期之前。
 
@@ -373,6 +373,31 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 ```
 
 烧碱日盘14:08恢复、夜盘21:21提前保护分别用对应计划和条件前像复算。夜盘前像假设日盘撤腿已发生。两次均仅等待当次许可，数量保持各自起点。两组各复算两次逐字节一致。报告在 `output/lms405-market-request-20261127/`，日盘与夜盘SHA256分别为 `d2a262f6e598d54d6113193522c1fd197bf84f97b4bc8c46653fc6a25f777984` 和 `490008d4d221429f11f8f30fee4788d2eb0ce74b10db62bf7ab1b3a03d3b5f07`。LMS定向测试710通过、1跳过。
+
+### 原多仓的区前空向保护
+
+菜油6月3日的作者记录明确提出高波动时可在10175–10197之前或区内寻找空向V+，可降低到15分钟。焦煤6月9日复盘也描述了原多仓在1446–1464之前或区内保护，但事前VPLUS原件仍缺。研究入口现在允许区前保护使用1→1或15→15，采用同一价带几何的镜像口径。原多找空向确认时，收盘须在保护带上方，且确认时严格已完成的同段分钟尚未触区。跳至带下方不提供提前保护候选。15→15属于研究配置，作者的具体确认K周期和V+公式未披露。 [菜油归档](../lms-source-archive/03-单品种分析/2026-06-03/菜油/S5305666088472874.md) · [焦煤复盘](https://www.sina.cn/news/detail/5307830937850724.html)
+
+新增的原多分支及15→15分支，和连续序列采用同一许可时限。下一根1分钟Bar可知、计划到期或请求退出窗口，任一先到即停止接受该提案。分钟内触区与许可的先后仍未知。测试许可按期只增加指定保护腿，原方向、原腿数量和尝试编号延续。已有烧碱原空的独立1→1保护和恢复报告复算逐字节相同。
+
+|实月和窗口|价带和周期|本地MDS结果|
+|---|---|---|
+|OI2609，6月3日，10:14可知后至收盘|10175–10197，15→15|第一根接触带的完整分钟10:31结束。15→15及1→1的补充诊断在可用窗口均无合格区前确认。|
+|RU2701，10月14日交易日|20765–20905，1→1|全日最高20455，开盘已在低于价带的远侧。没有区前候选，也没有区内接触。正文仅说明下一次保护参考，系统版本未知。 [橡胶原文](https://www.sina.cn/news/detail/5353606200165081.html)|
+
+两份输入采用原多一单位的研究前像，当前文章按发帖显示分钟结束作可知代理。未将账户、真实持仓或具体成交补入。两例原多保持一单位，保护仓均为零。可评分作者动作0。
+
+```sh
+d=$(mktemp -d /tmp/lms405-original-long.XXXXXX)
+export PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research
+for sym in oi2609 ru2701; do
+  services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py \
+    --market-request "docs/research/lms405/evidence/$sym-before-band-protection-request.json" \
+    --env-file .env --output "$d/$sym.json"
+done
+```
+
+两份报告重复复算一致。结果见 `output/lms405-original-long-protection-20261128/`，OI2609与RU2701的SHA256分别为 `c333c4f7911aa873c4049b0fd3b12af475decd15e70d94f114e9c94b0f9ec480` 和 `fd84bea1bfcc38d5c97e6a6287bafaa41fe33fbe1c26bc993628872c9bc68d6a`。
 
 ## 菜油、纯碱与PTA的计划准入
 

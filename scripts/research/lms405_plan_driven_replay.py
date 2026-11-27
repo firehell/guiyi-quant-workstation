@@ -302,17 +302,18 @@ def sh_market_candidates(session, market, contract, lifecycle):
     return {"recovery_candidate": day_event, "protection_candidate": night_event}, market_digests
 
 
-def first_early_candidate(series, *, start, cutoff, band, setup_not_before=None):
+def first_early_candidate(series, *, start, cutoff, band, side="LONG", setup_not_before=None, periods=(1, 1)):
     """Return the first armed shape using the completed prefix at its own reveal clock."""
-    for event in signals(series, 1, 1, side="LONG", start=start, cut=cutoff):
-        if setup_not_before is not None and event["shape_end"] - ONE < setup_not_before:
+    shape, confirm = periods
+    for event in signals(series, shape, confirm, side=side, start=start, cut=cutoff):
+        if setup_not_before is not None and event["shape_end"] - shape * ONE < setup_not_before:
             continue
         cut = event["available_at"] + US
         if cut > cutoff:
             break
         prefix = {period: [bar for bar in rows if bar.end + US < cut] for period, rows in series.items()}
-        scoped = analyze(prefix, start=start, cut=cut, band=band, side="LONG", leg=None, variants=((1, 1),))
-        candidate = scoped["variants"]["1m_to_1m"][-1]
+        scoped = analyze(prefix, start=start, cut=cut, band=band, side=side, leg=None, variants=(periods,))
+        candidate = scoped["variants"][f"{shape}m_to_{confirm}m"][-1]
         if candidate["confirmed_at"] != event["confirmed_at"]:
             raise ValueError("PLAN_REPLAY_SH_NIGHT_PREFIX_CHANGED")
         if candidate["pre_touch_arm"]:
@@ -544,10 +545,15 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
             raise ValueError("PLAN_REPLAY_MARKET_PROTECTION_SCOPE_INVALID")
         side = "LONG" if side == "SHORT" else "SHORT"
         if operation == "PROTECT_EARLY":
-            if (side, shape_period, confirmation_period) != ("LONG", 1, 1):
+            if (shape_period, confirmation_period) not in ((1, 1), (15, 15)):
                 raise ValueError("PLAN_REPLAY_MARKET_EARLY_SCOPE_UNSUPPORTED")
             candidate = first_early_candidate(series, start=start, cutoff=cutoff, band=(lower, upper),
-                                              setup_not_before=effective_start)
+                                              side=side, setup_not_before=effective_start,
+                                              periods=(shape_period, confirmation_period))
+            if (side, shape_period, confirmation_period) != ("LONG", 1, 1):
+                diagnostics["protection"] = dict(protective_side=side, status=(
+                    "CANDIDATE_FOUND" if candidate else "NO_FRESH_PRE_TOUCH_CONFIRMATION"
+                ))
         else:
             events = signals(series, shape_period, confirmation_period, side=side, start=effective_start, cut=cutoff)
             candidate = next((row for row in events if lower <= row["close"] <= upper), None)
@@ -562,7 +568,9 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
         # The next minute can change the premise. A saved tape cannot authorize across it.
         expires = min(expires, candidate["confirmed_at"] + ONE + US)
         if diagnostics:
-            diagnostics["entry" if entry_operation else "exit"]["candidate_expires_at"] = expires
+            diagnostics["entry" if entry_operation else "exit" if exit_operation else "protection"][
+                "candidate_expires_at"
+            ] = expires
     ready_before = min(cutoff, expires) if cap_approval else cutoff
     if candidate is not None and candidate["available_at"] + US < ready_before:
         known_at = candidate["available_at"]

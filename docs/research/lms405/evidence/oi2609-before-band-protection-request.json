@@ -1,0 +1,31 @@
+{
+  "version": "lms405-plan-market-request-v1",
+  "seed": {
+    "contract": "OI2609",
+    "episode": "OI2609:2026-06-03:LONG_UNIT_HYPOTHESIS",
+    "direction": "LONG",
+    "known_at": "2026-06-03T08:59:00+08:00",
+    "original": "1",
+    "protection": "0",
+    "counter_m": "0",
+    "attempt": 1
+  },
+  "revision": {
+    "contract": "OI2609",
+    "id": "S5305666088472874",
+    "published_at": "2026-06-03T10:13:00+08:00",
+    "known_at": "2026-06-03T10:14:00+08:00",
+    "source": "https://www.sina.cn/news/detail/5305666088472874.html",
+    "operations": ["PROTECT_EARLY"],
+    "expires_at": "2026-06-03T15:00:00.000002+08:00"
+  },
+  "trading_day": "2026-06-03",
+  "start": "2026-06-03T09:00:00+08:00",
+  "cutoff": "2026-06-03T15:00:00.000002+08:00",
+  "request_expires_at": "2026-06-03T15:00:00.000002+08:00",
+  "band": ["10175", "10197"],
+  "operation": "PROTECT_EARLY",
+  "quantity": "1",
+  "shape_period": 15,
+  "confirmation_period": 15
+}
