@@ -27,6 +27,8 @@ from lms_near405_replay import encoded, sha
 VERSION = "lms405-portfolio-protection-price-admission-v1"
 ADVANCE_VERSION = "lms405-portfolio-advance-protection-v1"
 JOINT_CLOSE_VERSION = "lms405-portfolio-protection-joint-close-v1"
+SCHEDULED_PROOF_VERSION = "lms405-portfolio-protection-scheduled-proof-v1"
+JOINT_CONTACT = "ordinary_joint_contact"
 BASELINE = Path("output/lms405-portfolio-oct-20261125/fixture.json")
 CONTROLS = Path("output/lms405-public-protection-and-m-20261126/final-a.json")
 CONTROL_SHA = "0d3068a8a05cf32fa8f4954c413d4d2534d198ea79b5a1915ac5cb92d2cc9cad"
@@ -143,6 +145,8 @@ def route_due(price, band, confirming_bar, route):
         if route == "ordinary_or_advance" and price["ordinary_due_at"] is not None:
             return price["ordinary_due_at"], "ORDINARY_CONTACT"
         return advance_due(confirming_bar, band, price), "ADVANCE_APPROACH"
+    if route == JOINT_CONTACT:
+        return price["ordinary_due_at"], "ORDINARY_CONTACT"
     return price[route], "DIRECTIONAL_REACH" if route == "loose_due_at" else "ORDINARY_CONTACT"
 
 
@@ -176,60 +180,115 @@ def observations_for_contract(series, updates, m_bands, cutoff, *, period=5, all
     return events
 
 
-def replay_with_price_context(series, updates, events, *, cutoff, due_field, seed=None, period=5,
-                              recovery_boundary=None):
+def next_protection_driver_end(anchor, signal_end, minutes_by_end):
+    if signal_end < anchor + FIVE:
+        return anchor + FIVE
+    # A fresh segment can start after the last readable 5m bar without waiting for its first 5m completion.
+    current = minutes_by_end.get(signal_end)
+    while current is not None and signal_end < current.start + FIVE:
+        previous = minutes_by_end.get(current.start)
+        if previous is None:
+            return current.start + FIVE
+        current = previous
+    return None
+
+
+def compile_price_confirmations(series, events, replay_args, *, cutoff, due_field, seed, period, scheduled):
     minutes, fives = series[1], series[5]
     proofs, attempts = [], []
-    replay_args = dict(protection_bands=updates, timely_fixture=True)
-    if seed:
-        replay_args.update(carry_in=seed, carry_exit_evidence=())
-    if recovery_boundary is not None:
-        replay_args["carry_recovery"] = recovery_boundary
     driver_ends = [bar.end for bar in fives]
     confirming_bars = {bar.end: bar for bar in series[period]}
+    minutes_by_end = confirming_bars if scheduled and period == 1 else {}
     step = period * ONE
+    allow_joint = due_field == JOINT_CONTACT
+    if allow_joint and not scheduled:
+        raise ValueError("PROTECTION_JOINT_CONTACT_REQUIRES_SCHEDULED_PROOF")
     for (end, side), row in sorted(events.items()):
         signal, band = row["event"], row["area"]
+        known = signal["available_at"]
+        if scheduled and known + US > cutoff:
+            continue
         bar = confirming_bars[end]
         if band is None or route_due(row["price"], band, bar, due_field)[0] is None:
             continue
-        known = signal["available_at"]
         next_index = bisect_right(driver_ends, end)
-        if ((seed and known <= seed.known_at) or next_index == len(fives)
-                or fives[next_index].start > end):
+        if seed and known <= seed.known_at:
             continue
+        if scheduled:
+            if next_index == 0:
+                continue
+            driver_end = next_protection_driver_end(driver_ends[next_index - 1], end, minutes_by_end)
+            if driver_end is None or not known + US < driver_end:
+                continue
+        else:
+            if next_index == len(fives) or fives[next_index].start > end:
+                continue
+            driver_end = fives[next_index].end
         # Give other actions from the signal bar time to update the position.
         state = candidate.replay(fives, as_of=known + US, protection_confirmations=tuple(proofs),
                                  **replay_args)["current_state"]
         if state["original_side"] != band.side or state["long"] == state["short"]:
             continue
         since = datetime.fromisoformat(state["since"])
-        price = price_admission(minutes, band, signal, position_since=since, shape_step=step)
+        price = price_admission(minutes, band, signal, position_since=since, shape_step=step,
+                                allow_joint_close=allow_joint)
         due_at, route = route_due(price, band, bar, due_field)
         if due_at is None:
             continue
         advance = due_field in ("ordinary_or_advance", "advance_only")
         version = ADVANCE_VERSION if advance else VERSION
-        proof = candidate.ScopedProtectionConfirmation(
-            band.contract, candidate.fingerprint(state), due_at, end, known,
-            f"{version}:{due_field}", "TEST_FIXTURE", band.scope, signal["shape_end"] - step, side,
-        )
+        if scheduled:
+            proof = candidate.ScheduledProtectionConfirmation(
+                band.contract, candidate.fingerprint(state), due_at, end, known + US,
+                f"{SCHEDULED_PROOF_VERSION}:{due_field}", "TEST_FIXTURE", band.scope,
+                signal["shape_end"] - step, side, driver_end,
+            )
+        else:
+            proof = candidate.ScopedProtectionConfirmation(
+                band.contract, candidate.fingerprint(state), due_at, end, known,
+                f"{version}:{due_field}", "TEST_FIXTURE", band.scope, signal["shape_end"] - step, side,
+            )
         proofs.append(proof)
         attempts.append(dict(
-            proof=asdict(proof), price=price, next_driver_end=fives[next_index].end,
+            proof=asdict(proof), price=price, next_driver_end=driver_end,
             signal_close=signal["close"], protection_revision=band.revision, m_reference=row["m_reference"],
             confirmed_in_m=row["close_also_in_m"],
         ))
         if advance:
             attempts[-1]["route"] = route
             attempts[-1]["signal_period_minutes"] = period
+    return tuple(proofs), attempts
+
+
+def replay_with_price_context(series, updates, events, *, cutoff, due_field, seed=None, period=5,
+                              recovery_boundary=None, scheduled=False):
+    fives = series[5]
+    replay_args = dict(protection_bands=updates, timely_fixture=True)
+    if seed:
+        replay_args.update(carry_in=seed, carry_exit_evidence=())
+    if recovery_boundary is not None:
+        replay_args["carry_recovery"] = recovery_boundary
+    compiler_args = dict(due_field=due_field, seed=seed, period=period, scheduled=scheduled)
+    proofs, attempts = compile_price_confirmations(series, events, replay_args, cutoff=cutoff, **compiler_args)
     args = replay_args | dict(protection_confirmations=tuple(proofs))
     result = candidate.replay(fives, as_of=cutoff, **args)
     default_probe = seed.known_at if seed else fives[len(fives) // 2].end
-    probes = [proof.known_at - US for proof in proofs] or [default_probe]
-    for probe in probes:
+    if scheduled and not seed:
+        default_probe = fives[0].end + US
+    probes = {proof.known_at - US for proof in proofs} or {default_probe}
+    if scheduled:
+        probes.update(proof.known_at for proof in proofs)
+        probes.update(proof.driver_end + US for proof in proofs if proof.driver_end + US <= cutoff)
+    for probe in sorted(probes):
         prefix = [bar for bar in fives if bar.end + US <= probe]
         known_proofs = tuple(proof for proof in proofs if proof.known_at <= probe)
+        if scheduled:
+            prefix_series = {1: [bar for bar in series[1] if bar.end + US <= probe], 5: prefix}
+            visible_events = {key: row for key, row in events.items() if row["event"]["available_at"] < probe}
+            compiled, _ = compile_price_confirmations(prefix_series, visible_events, replay_args, cutoff=probe,
+                                                       **compiler_args)
+            if compiled != known_proofs:
+                raise ValueError("PROTECTION_SCHEDULED_COMPILER_PREFIX_DIVERGED")
         prev = candidate.replay(prefix, as_of=probe, protection_confirmations=known_proofs, **replay_args)
         if (prev != candidate.replay(fives, as_of=probe, **args)
                 or result != candidate.replay(fives, as_of=cutoff,
@@ -351,7 +410,7 @@ def joint_close_comparison(series, updates, m_bands, cutoff, *, ordinary_five):
     return results
 
 
-def study(session, market, baseline, control, exposure, *, advance=False, joint_close=False):
+def study(session, market, baseline, control, exposure, *, advance=False, joint_close=False, scheduled=False):
     cutoff = datetime.fromisoformat(baseline["as_of"])
     index = input_sources()
     modes = {key: [] for key in (
@@ -382,12 +441,13 @@ def study(session, market, baseline, control, exposure, *, advance=False, joint_
         fixtures = {}
         carry = {}
         for name, due_field in price_modes:
-            outcome, attempts = replay_with_price_context(series, updates, events, cutoff=cutoff, due_field=due_field)
+            outcome, attempts = replay_with_price_context(series, updates, events, cutoff=cutoff,
+                                                          due_field=due_field, scheduled=scheduled)
             modes[name].extend(outcome["transitions"])
             fixtures[name] = dict(attempts=attempts, terminal_status=outcome["terminal_status"])
             if contract in seeds:
                 outcome, attempts = replay_with_price_context(series, updates, events, cutoff=cutoff,
-                                                               due_field=due_field, seed=seeds[contract])
+                                                               due_field=due_field, seed=seeds[contract], scheduled=scheduled)
                 carry[name] = dict(attempts=attempts, terminal_status=outcome["terminal_status"],
                                    transitions=outcome["transitions"])
         results[contract] = dict(
@@ -411,6 +471,7 @@ def study(session, market, baseline, control, exposure, *, advance=False, joint_
             if contract in seeds:
                 outcome, attempts = replay_with_price_context(
                     series, updates, fast, cutoff=cutoff, due_field="advance_only", seed=seeds[contract], period=1,
+                    scheduled=scheduled,
                 )
                 carry["fast_advance_only_fixture"] = dict(
                     attempts=attempts, terminal_status=outcome["terminal_status"], transitions=outcome["transitions"],
@@ -431,7 +492,10 @@ def study(session, market, baseline, control, exposure, *, advance=False, joint_
     if actions["baseline"]["timeline"] != [row for row in baseline["timeline"] if row["layer"] == "FIXTURE_STATE_BATCH"]:
         raise ValueError("PROTECTION_PRICE_BASELINE_DIVERGED")
     controls = control["cases"]
-    report = dict(version=JOINT_CLOSE_VERSION if joint_close else ADVANCE_VERSION if advance else VERSION,
+    version = SCHEDULED_PROOF_VERSION if scheduled else JOINT_CLOSE_VERSION if joint_close else (
+        ADVANCE_VERSION if advance else VERSION
+    )
+    report = dict(version=version,
                 contracts=results, actions=actions,
                 baseline_sha256=BASELINE_SHA256,
                 historical_plan_revision_verified=False, author_action_samples=0, author_match_rate=None,
@@ -454,6 +518,7 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--advance", action="store_true")
     modes.add_argument("--joint-close", action="store_true")
+    modes.add_argument("--scheduled-proofs", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -469,7 +534,8 @@ def main():
         baseline, control = verified_json(BASELINE, BASELINE_SHA256), verified_json(CONTROLS, CONTROL_SHA)
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=90):
             report = study(session, build_market_data_service(session), baseline, control,
-                           verified_json(EXPOSURE, EXPOSURE_SHA256), advance=args.advance, joint_close=args.joint_close)
+                           verified_json(EXPOSURE, EXPOSURE_SHA256), advance=args.advance or args.scheduled_proofs,
+                           joint_close=args.joint_close, scheduled=args.scheduled_proofs)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

@@ -38,6 +38,7 @@ RULES = dict(
 )
 RULE_HASH = fingerprint(RULES)
 US = timedelta(microseconds=1)
+FIVE = timedelta(minutes=5)
 STUDY_VERSION = "lms-near405-author-study-v1"
 CLOCK_VERSIONS = {
     "DEFER_WHILE_LOCKED": "lms-near405-hold-clock-defer-v1",
@@ -185,6 +186,20 @@ class ScopedProtectionConfirmation(ProtectionConfirmation):
                 or self.signal_side not in ("LONG", "SHORT") or self.signal_start >= self.signal_at):
             raise ValueError("INVALID_SCOPED_PROTECTION_CONFIRMED_SIGNAL")
         object.__setattr__(self, "signal_start", self.signal_start.astimezone(UTC))
+
+
+@dataclass(frozen=True)
+class ScheduledProtectionConfirmation(ScopedProtectionConfirmation):
+    """Research evidence scoped to the next five-minute evaluation slot."""
+
+    driver_end: datetime
+
+    def __post_init__(self):
+        super().__post_init__()
+        timestamp(self.driver_end)
+        if not self.driver_end - FIVE <= self.signal_at < self.known_at < self.driver_end:
+            raise ValueError("INVALID_PROTECTION_DRIVER_WINDOW")
+        object.__setattr__(self, "driver_end", self.driver_end.astimezone(UTC))
 
 
 def _visible_protection(confirmations, contract, *, as_of, timely_fixture):
@@ -766,6 +781,8 @@ def _evaluate(
                     and item.signal_side != original_side
                     and band.effective_after < item.due_at
                     and max(since, band.effective_after) < item.signal_start
+                    and (not isinstance(item, ScheduledProtectionConfirmation)
+                         or c.end == item.driver_end and c.start == c.end - FIVE)
                 ]
             if band_issue:
                 result["status"] = band_issue

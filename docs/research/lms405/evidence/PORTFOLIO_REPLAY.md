@@ -1223,6 +1223,22 @@ services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_protection
 
 同一36个合约交易日两次输出逐字节一致，`output/lms405-portfolio-advance-protection-20261126/verified-a.json` 的SHA256为 `8bbf892fbce5ea5b2d40465113ee9522d22ca2a167e9b867f4fb40cee3734815`。新路线也在每条测试确认前检查截断输入及续跑，默认模式与前批冻结输出一致。可评分作者动作仍为0。
 
+### 锁定依据的实时前缀与预定评估时点
+
+增加研究模式 `--scheduled-proofs`。编译依据时只读取信号当时可知的行情与仓位，并将依据绑定到一根明确的5分钟评估K。时段内从已经完成的5分钟K确定下一时点。若复市后首根5分钟K尚未完成，使用截至信号可知时的连续分钟段起点确定预定时点。只有实际到来的K精确覆盖这5分钟，且价带、原仓和方向仍匹配，才可提出锁定。缺失目标K时依据到此失效。信号事实、依据可知、评估K完成和测试接受分别记时。
+
+用合成同刻触区复现旧编译问题，并验证新口径。信号刚可知时无依据，随后可记录依据但还没有锁定；前缀文件和完整文件在同一截止时点得到相同状态和检查点。复市首个5分钟周期内的新信号也可按此工作。删掉预定K、只保留其后行情，或等待过程中换版，均不会锁定。从信号前、依据可知后、目标K边界的截断结果均可继续复算。合成动作只说明时序合同。
+
+九品种36个合约交易日，真实行情上共生成4条测试依据，来自橡胶RU2701的5分钟方向到达和烧碱SH2701的1分钟区前保护，各2条。对每条分别在依据之前、依据可知当刻与预定K可知当刻，从实际裁切的输入重新编译并验证续跑。与原提前保护报告逐笔对齐，模拟动作、时点与烧碱报价对照相同，4次锁定的建议和测试接受ID反映新证据身份。本轮没有找到可核实的作者同刻触区锁定，作者可评分动作仍为0。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_protection_gate.py \
+  --scheduled-proofs --env-file .env --output /tmp/lms405-scheduled-proof-new.json
+```
+
+新报告 `output/lms405-portfolio-scheduled-proof-20261128/final.json` 两次复算逐字节一致，SHA256为 `f60f1bfc85987018037c8ecd710bc411fa1fe44f3f898a0fb598899766263d56`。原 `--advance` 路径仍复现原报告字节。本轮使用的锁定为研究测试许可。
+
 ## 保护信号的周期选择对照
 
 作者在菜油案例建议用15分钟观察保护；焦煤图解明确是5分钟内包，盘后另谈到极端波动时可能缩短周期。股指问答与截图还提到5分钟甚至1分钟应急，但它没有给出商品4.0.5的统一开关。以四个已知窗口检验「同样的内包或pinbar几何，换周期能否解释此前缺失的保护信号」。窗口在读数前固定为当日作者建议之后、持仓图发出之前或已核对的图表时点。 [菜油保护说明](PORTFOLIO_RECONSTRUCTION.md#菜油提前保护与常规关键k的交叉验证) · [焦煤图解](SIGNAL_CHAIN_JULY22.md) · [股指周期问答](../../lms-source-archive/03-单品种分析/2026-10-22/股指/WRnTjn0HU8.md)
