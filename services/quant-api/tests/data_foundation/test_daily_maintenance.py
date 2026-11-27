@@ -1,3 +1,4 @@
+from collections import Counter
 from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
@@ -334,6 +335,16 @@ def daily_manager(session, tmp_path):  # noqa: F811
                 end, end.date(), Decimal(10), Decimal(10), Decimal(10), Decimal(10),
                 Decimal(1), Decimal(10), Decimal(20),
             ) for end in ends)
+        # Physical W1 fixtures must agree with their corresponding D1 source.
+        if kind is DatasetKind.CONTRACT:
+            daily = bars[(kind.value, "jm", contract, "1d")]
+            weekly = (kind.value, "jm", contract, "1w")
+            days_by_week = Counter(row.trading_day.isocalendar()[:2] for row in daily)
+            bars[weekly] = tuple(
+                replace(bar, volume=Decimal(days_by_week[bar.trading_day.isocalendar()[:2]]),
+                        turnover=Decimal(10 * days_by_week[bar.trading_day.isocalendar()[:2]]))
+                for bar in bars[weekly]
+            )
     manager = _manager(session, tmp_path / "canonical", coverage, FakeProvider(bars))
     result = manager.update(UpdateRequest(("jm",), None, date(2025, 1, 31), apply=True))
     assert result.status == "passed"

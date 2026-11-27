@@ -27,6 +27,19 @@ consumer cursors and later trading days. A partial publication SHALL NOT issue a
 A successful retry of the same day and committed data revision SHALL be one logical publication.
 An unknown commit SHALL be independently read back before the affected mutation can proceed.
 
+In formal Tick mode, the existing late-provider schedule SHALL claim at most one check at the
+same D+2 window after two safe pre-publication failures. The check MUST bind the current Runtime
+owners, the formal Tick source and the exact failed day's subscription or retained cleanup proof.
+A subscription that expired between the original runs and D+2 MAY use its retained digest
+bound to the same day, formal source and current rank1. A changed subscription or source SHALL block.
+An unresolved schedule from a different source SHALL preserve its original claim budget.
+Metadata recovery MUST reject conflicting existing facts. The recovery SHALL use the same committed
+readback and cleanup evidence as the natural archive and retain its receipt independently of the
+original natural status. Unknown or interrupted commit attempts MUST park further archive writes
+pending independent readback. Restart after a verified cleanup checkpoint MAY finish the same
+claim through a fresh strict readback before the next natural batch advances Canonical pointers.
+This continuation MUST NOT call the provider, reapply a historical plan or send a notification.
+
 #### Scenario: Old physical corruption is outside daily scope
 - **WHEN** an old partition has complete Catalog edges but damaged Parquet
 - **THEN** daily does not open that partition or claim its integrity; full update/audit remains responsible
@@ -44,3 +57,9 @@ An unknown commit SHALL be independently read back before the affected mutation 
 - **WHEN** the archive publishes or completes an interrupted cleanup
 - **THEN** the receipt identifies the verified prior-day revision and cleanup removes only the prior day's regenerable cache
 - **AND** next-day cache, original observations and every consumer cursor retain their identity
+
+#### Scenario: Historical provider data becomes ready at the late check
+- **GIVEN** two safe natural failures and a due, unclaimed late check for the same operational scope
+- **WHEN** the single check finishes publication, independent readback and day-scoped cleanup
+- **THEN** the late status references the retained archive receipt and the original natural failure remains readable
+- **AND** an older repaired day does not replace a newer receipt on the latest pointer

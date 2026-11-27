@@ -2,6 +2,8 @@ from datetime import UTC, date, datetime
 from hashlib import file_digest
 import json
 import os
+import subprocess
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -20,6 +22,7 @@ from app.runtime_market_source_handover import (
     read_staged_observations,
     redis_instance,
     stage_new_observations,
+    verify_preserved_observations,
 )
 from tests.test_runtime_cohort import Host
 
@@ -176,6 +179,10 @@ def test_two_redis_handover_preserves_original_and_never_retries(tmp_path, redis
     if failure in {"redis_unknown", "cas_unknown", "verify"}:
         direction = "target_readback_required" if failure == "redis_unknown" else "forward_only"
         assert market_source_recovery_direction(plan, state, host.registry) == direction
+    if failure == "cas_unknown":
+        for phase in ("committing", "committed", "consumers", "feed"):
+            assert market_source_recovery_direction(plan, {**state, "phase": phase}, host.registry) == "forward_only"
+        assert market_source_recovery_direction(plan, {**state, "phase": "committing"}, host.old) == "binding_readback_required"
     with pytest.raises(CohortError):
         apply_cohort(host, plan)
     assert host.stage_count == 1
@@ -184,6 +191,11 @@ def test_two_redis_handover_preserves_original_and_never_retries(tmp_path, redis
         retained_hash = file_digest(stream, "sha256").hexdigest()
     assert len(original.read_bytes().splitlines()) == 2
     assert state["effects"]["market_source_preserve"]["archive_sha256"] == retained_hash
+    verify_preserved_observations(attempt, retained_hash, check_budget=lambda: None)
+    with original.open("ab") as stream:
+        stream.write(b"\n")
+    with pytest.raises(CohortError, match="MARKET_SOURCE_ORIGINALS_DRIFT"):
+        verify_preserved_observations(attempt, retained_hash, check_budget=lambda: None)
     assert ObservationStream(host.old_redis, kind="source").tail(OLD_DAY) != "0-0"
     assert ObservationStream(host.target, kind="source").cursor("live", NEW_DAY) == "0-0"
     assert not host.target.exists("live:observations:registered:completed:reference")
@@ -201,6 +213,113 @@ def test_legacy_backlog_blocks_before_target_stage(tmp_path, redis_pair):
         apply_cohort(host, _plan(host))
     assert host.stage_count == 0 and host.target.dbsize() == 0
     assert "commit" not in host.calls and host.active_writer == "old"
+
+
+def test_old_market_terminal_proof_ignores_neither_missing_route_nor_wrong_contract(redis_pair):
+    old, _ = redis_pair
+    end = datetime(2026, 10, 23, 7, tzinfo=UTC)
+    for kind, consumers in (("source", ("live",)), ("completed", ("alert", "reference"))):
+        stream = ObservationStream(old, kind=kind)
+        tail = stream.append(ObservationEnvelope(
+            "known", OLD_DAY, end, "live:bar:rb:1m", {"contract": "RB2701", "bar_end": end.isoformat()}, True,
+        ))
+        for consumer in consumers:
+            stream.initialize(consumer, OLD_DAY, cursor=tail)
+    options = {"alert_enabled": True, "check_budget": lambda: None}
+    assert old_observation_snapshot(old, OLD_DAY, terminals={"rb": ("RB2701", end)}, **options)["source"]
+    for terminals in ({"rb": ("RB2705", end)}, {"rb": ("RB2701", end), "jm": ("JM2701", end)}):
+        with pytest.raises(CohortError, match="MARKET_SOURCE_OLD_TERMINAL_UNPROVEN"):
+            old_observation_snapshot(old, OLD_DAY, terminals=terminals, **options)
+
+
+def test_macos_market_configuration_preserves_pinned_account_parser_and_other_settings(tmp_path):
+    from app.runtime_market_cohort_host import _market_config_pair
+
+    old, target = (tmp_path / name for name in ("project.env", "market-tick.env"))
+    stable = (f'GUIYI_CANONICAL_DATA_ROOT="{tmp_path}"\n'
+              'DATABASE_URL=postgresql+psycopg://test@127.0.0.1:25491/guiyi_quant\n').encode()
+    old.write_bytes(stable + b"REDIS_URL=redis://127.0.0.1:26391/0\n")
+    target.write_bytes(stable + b"REDIS_URL=redis://127.0.0.1:26392/0\n# guiyi-market-source: rqdata_tick\n")
+    for path in (old, target):
+        path.chmod(0o600)
+    assert _market_config_pair(old, target)[3]["REDIS_URL"] == "redis://127.0.0.1:26392/0"
+    target.write_bytes(target.read_bytes() + b"# unrelated change\n")
+    with pytest.raises(CohortError, match="MARKET_SOURCE_CONFIG_TRANSITION_INVALID"):
+        _market_config_pair(old, target)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS process socket readback")
+def test_macos_uses_the_owner_socket_on_the_actual_target_redis(redis_pair):
+    from app.runtime_market_cohort_host import _connects_to
+    from guiyi_quant.trading_universe import TRADING_PRODUCTS
+
+    old, target = redis_pair
+    port = target.connection_pool.connection_kwargs["port"]
+    channels = [f"live:bar:{name}:60m" for name in TRADING_PRODUCTS]
+    with subprocess.Popen([sys.executable, "-c", """
+import sys
+from redis import Redis
+with Redis(host='127.0.0.1', port=int(sys.argv[1])) as client, client.pubsub() as pubsub:
+    pubsub.subscribe(*sys.argv[2:])
+    for _ in sys.argv[2:]:
+        assert pubsub.get_message(timeout=3)['type'] == 'subscribe'
+    print('ready', flush=True)
+    sys.stdin.read()
+""", str(port), *channels], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) as owner:
+        try:
+            assert owner.stdout.readline().strip() == "ready"
+            assert _connects_to(target, owner.pid)
+            assert not _connects_to(old, owner.pid)
+        finally:
+            owner.stdin.close()
+
+
+def test_macos_restores_exact_config_after_known_pre_cas_failure_with_expired_apply_budget(tmp_path, redis_pair, monkeypatch):
+    from hashlib import sha256
+    from time import monotonic
+
+    from app.runtime_market_cohort_host import MarketCohortHost, _market_config_pair
+
+    fixture = IsolatedHost(tmp_path, *redis_pair)
+    plan = _plan(fixture)
+    native = MarketCohortHost()
+    native.directory = fixture.directory
+    private = native.project_config
+    candidate = native.target_config
+    old_redis_url, target_redis_url = [f"redis://127.0.0.1:{r.connection_pool.connection_kwargs['port']}/0"
+                                      for r in redis_pair]
+    stable = (f'GUIYI_CANONICAL_DATA_ROOT="{tmp_path}"\n'
+              'DATABASE_URL=postgresql+psycopg://test@127.0.0.1:25491/guiyi_quant\n').encode()
+    original = stable + f"REDIS_URL={old_redis_url}\n".encode()
+    proposed = stable + f"REDIS_URL={target_redis_url}\n# guiyi-market-source: rqdata_tick\n".encode()
+    native._private_original(private, original)
+    native._private_original(candidate, proposed)
+    plan["protected"] = {"files": {str(private): sha256(original).hexdigest()}}
+    _, native._old_settings, _, _ = _market_config_pair(private, candidate)
+    native._target_config_sha = sha256(proposed).hexdigest()
+    native._old_terminals = None
+    native.deadline = monotonic() + 30
+    attempt = native._attempt(plan)
+    attempt.mkdir(mode=0o700, parents=True)
+    native._old_journal = old_observation_snapshot(fixture.old_redis, OLD_DAY, alert_enabled=True, check_budget=lambda: None)
+    monkeypatch.setattr(native, "_assert_stopped", lambda _plan: None)
+    monkeypatch.setattr(native, "_target_arguments", lambda *_: {
+        **fixture.target_arguments(plan), "database": fixture.database, "canonical": fixture.canonical,
+    })
+    retained = native.preserve_market_source(plan, None, attempt)
+    fixture.target.connection_pool.disconnect()
+    staged = native.stage_market_source(plan, None, retained)
+    originals = attempt / "originals"
+    originals.mkdir(mode=0o700)
+    native._private_original(originals / "000.bin", original)
+    native._private_original(originals / "index.json", json.dumps({"files": [
+        {"source": str(private), "file": "000.bin"},
+    ]}).encode())
+    native._replace_plist(private, proposed)
+    native.deadline = monotonic() - 1
+    native.verify_market_source_restore(plan, {"market_source_preserve": retained, "market_source_stage": staged})
+    assert private.read_bytes() == original
+    assert fixture.target.dbsize() > 0
 
 
 def test_ordinary_controller_refuses_sealed_cross_instance_plan(tmp_path):
@@ -296,4 +415,23 @@ def test_macos_account_job_rejects_program_override(tmp_path, monkeypatch):
         pytest.fail("unexpected launchd read for invalid installed launcher")
     monkeypatch.setattr(macos, "read_launchd_service", launchd)
     with pytest.raises(CohortError, match="MARKET_HANDOFF_ACCOUNT_LAUNCHER_MISMATCH"):
+        macos._job(tmp_path, label, args, tmp_path)
+
+
+def test_macos_account_job_recognizes_exact_definition_waiting_for_its_first_pid(tmp_path, monkeypatch):
+    import plistlib
+    from app import runtime_market_macos as macos
+
+    label = macos.SUBING_PAPER_LABEL
+    agents = tmp_path / "Library" / "LaunchAgents"
+    agents.mkdir(parents=True)
+    args = ("/bin/bash", "expected-script")
+    (agents / f"{label}.plist").write_bytes(plistlib.dumps({
+        "Label": label, "ProgramArguments": list(args), "WorkingDirectory": str(tmp_path),
+    }))
+    output = (f"gui/501/{label} = {{\n\tstate = spawn scheduled\n\tprogram = /bin/bash\n"
+              f"\tworking directory = {tmp_path}\n\targuments = {{\n\t\t/bin/bash\n"
+              "\t\texpected-script\n\t}\n\tenvironment = {\n\t}\n}")
+    monkeypatch.setattr(macos, "read_launchd_service", lambda *_args, **_kwargs: output)
+    with pytest.raises(CohortError, match="MARKET_HANDOFF_ACCOUNT_STARTING"):
         macos._job(tmp_path, label, args, tmp_path)

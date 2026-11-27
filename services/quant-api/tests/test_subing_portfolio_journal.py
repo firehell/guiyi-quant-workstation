@@ -479,6 +479,7 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
     from app.market_data.live_market import _bar_payload
     from app.market_data.market_foundation_scope import bind_market_redis, bind_tick_source
     from app.market_data.observation_stream import ObservationStream
+    from app.runtime_cohort_errors import CohortError
     from app.runtime_market_account_readback import paper_watermark
     from guiyi_quant.compute import REGISTRY
     from scripts.research.subing_model_facts import CAPTURE_VERSION, FEE_POLICY
@@ -613,7 +614,9 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
             consume(target, check_duplicate=True)
             assert len(factor_calls) == 2 * len(contexts)
             expected = {product: (row["contract"], at) for product, row in contexts.items()}
-            after = paper_watermark(store, run_id, target, new_day, expected, generation_prefix=generation)
+            prefix = [before["sequence"], before["tail_hash"]]
+            after = paper_watermark(store, run_id, target, new_day, expected,
+                                    generation_prefix=generation, prefix=prefix)
             assert after["status"] == "verified" and after["sequence"] == before["sequence"] + 1
             assert after["run_id"] == before["run_id"]
             assert after["tail_hash"] != before["tail_hash"]
@@ -632,7 +635,10 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
             assert final_head["identity"] == old_head["identity"] and final_events[:-1] == new_events
             next_expected = {product: (row["contract"], next_at) for product, row in contexts.items()}
             assert paper_watermark(store, run_id, target, new_day, next_expected,
-                                   generation_prefix=generation)["status"] == "verified"
+                                   generation_prefix=generation, prefix=prefix)["status"] == "verified"
+            with pytest.raises(CohortError, match="SUBING_HANDOFF_LEDGER_PREFIX_CHANGED"):
+                paper_watermark(store, run_id, target, new_day, next_expected, generation_prefix=generation,
+                                prefix=[before["sequence"], "a" * 64])
             assert json.loads(heartbeat.read_text())["status"] == "SESSION_COMPLETE"
         finally:
             store.engine.dispose()

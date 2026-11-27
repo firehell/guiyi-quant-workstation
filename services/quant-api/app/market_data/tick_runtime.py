@@ -118,16 +118,10 @@ class IsolatedTickMarket:
 
 def _isolated_cleanup_evidence(store, sandbox: Path, products):
     def read(day, now):
-        from app.market_data.market_archive import retained_cleanup_receipt
+        from app.market_data.market_archive import verified_retained_cleanup
 
         try:
-            retained = retained_cleanup_receipt(sandbox, day=day, now=now, products=products)
-            if retained is None:
-                return None
-            actual = store.cleanup_readback(day)
-            if actual != {"remaining_bar_keys": 0, "subscription_present": False}:
-                return None
-            return {**retained, "trading_day": day.isoformat(), "cleanup_verified": True, **actual}
+            return verified_retained_cleanup(store, sandbox, day=day, products=products, now=now)
         except (OSError, ValueError, TypeError, KeyError):
             return None
     return read

@@ -29,7 +29,7 @@
 
 - 正式 Tick 使用显式源模式及独立正式 Redis 实例。启动核对 PostgreSQL/Catalog、Canonical 根、Redis 实例和源标记。正式读端拒绝旧 bar namespace，候选隔离绑定仍单独校验。正式新 namespace 的原子基线包含已冻结交易日、完整 rank1 订阅、Live 和已启用 Alert 的初始游标。旧 Reference 游标留在退役实例供读回。
 - 构建源切换版本时，在专用发布树先完成锁文件依赖安装，再用 `bash scripts/ops/macos/build-market-foundation.sh` 安装经 SHA256 锁定的 headless EventEngine 并构建对应 Web。归档凭证、Reference 领取及保存图表使用稳定运行目录 `market-foundation`，随发布树创建的盘后状态仍归 after-market binding。
-- 常规 cohort 的进度和回退合同限定同一 Redis，目前会拒绝 Tick 模式。正式切换仍须接通独立的跨实例 cohort 计划、停旧证明、原子 binding 和快期/苏冰独立接管，并完成正式迟到归档恢复路由。旧迟到任务在 Tick 模式保全状态并拒绝任何未经严格归档读回的清理。当前无需切换或执行正式初始化。
+- 常规 cohort 的进度和回退合同限定同一 Redis。跨实例切换使用独立的 macOS 入口。正式操作还需完成下一交易日休市接收、正式迟到归档和整组联验。
 
 采样脚本保留 3,600 秒和 100,000 条上限。检查末条的结束原因及 listener 状态。分片用
 `compare_tick.py FIRST --capture-shard NEXT`，每片独立证明累计基线，丢弃相互冲突端点，
@@ -39,4 +39,9 @@
 
 跨实例交接的隔离验证复用 cohort 的部署锁和一次 CAS。停旧后按交易日核对 source、completed、identity 索引和各接收游标，落原件并再次读回。新实例在旧实例身份、目标实例身份和新交易日明确后一次性建立零位点，CAS 前重验。跨实例故障前像无法证明时停驻，CAS 结果未知时独立读取 registry。只有精确匹配新绑定才判为仅可前向恢复，其他不确定状态继续停驻。macOS 部署宿主提供只读账户预检 `install-local-services.sh --read-market-account-handover --trading-day YYYY-MM-DD`，可用 `--consumer tqkq` 或 `--consumer subing` 单独运行。快期从私有 SQLite 同一读事务核对投影和提交尾，再按 Catalog 核对逐品种物理合约及 H1 水位，并检查 monitor、Scope、账户读回有效期和恢复义务。苏冰从独立 PostgreSQL 只读快照校验 run、序号、哈希链和重放，再逐品种按原 stream ID 及 identity 索引核对末根分钟。入口按私有项目设置和 registry 解释现有 bar 源，输出不作为切换授权。
 
-正式交接仍需在停写边界证明两个账户的独立 owner，以及启动后实际使用目标 Redis 的证据。快期 H1 水位本身没有 Market source generation，须另外证明其进程重启后使用了目标 Redis。苏冰续用原 run，必须核验新增分钟来自目标 completed journal，不能把旧 stream ID 当作新实例的推进证据。常规 macOS apply 入口继续拒绝跨实例计划，直至账户接管、配置激活及前向恢复接通。
+### macOS 跨实例入口
+
+- `install-local-services.sh --plan-market-source-handover --candidate-root <release-root> --tag <application-tag> --commit <commit>` 输出计划。候选必须包含已发布的 Market Foundation 组件提交，并使用支持组件 tag 的 registry 合同。私有 `market-tick.env` 以现役 `project.env` 为前像，只改 `REDIS_URL` 并追加一行 `# guiyi-market-source: rqdata_tick`。注释让固定版本的账户配置解析器继续读取原配置格式。目标使用专用本地 Redis 实例和 db0。计划及公开读回保存摘要，凭据留在私有配置和进程内。
+- `install-local-services.sh --apply-market-source-handover --plan <plan>` 单次执行。旧实例 source、completed、identity 索引、60 品种最后完成分钟和三条消费水位全部核对后，留存原件，再初始化目标交易日及零游标。独立账户的旧进程退出与 owner lock 持有证明覆盖配置替换及 registry CAS。目标端先验证 Tick Feed 和凭证式 Reference 装配，再执行配置原子替换和 registry CAS。已存在的归档凭证须匹配完整 Catalog 修订；首张凭证缺席时 Reference 等待合格归档。
+- `install-local-services.sh --read-market-source-recovery --plan <plan>` 独立核对实际 registry、私有 attempt、全局记录及配置身份。CAS 前的已知失败可按原定义恢复；阶段或写入结果不明时保留证据。registry 已切换后仅允许前向恢复。目标 Redis 若已初始化，其原件保留，后续尝试须重新证明目标清洁。
+- `install-local-services.sh --read-market-source-accounts --plan <plan>` 在目标首个交易日结束后、任一账户开始提交次日数据前独立读回。快期核对原生 H1 水位和实际 Market helper socket。苏冰使用原 checkout 与原 run，验证冻结前缀和目标 completed journal 的新增分钟。休市启动确认原 run、原账本和固定版本配置解析，实际提交须等目标自然分钟。

@@ -10,6 +10,7 @@ import re
 from app.market_data.observation_stream import ObservationEnvelope, _text
 from app.runtime_cohort_errors import CohortError
 from app.subing_model.account import decode_execution
+from app.subing_model.store import ZERO, digest
 from app.subing_portfolio_journal import PortfolioJournal, source_hashes, stamp
 from guiyi_quant.htdy_account_execution.scope import scope_status
 from guiyi_quant.htdy_account_execution.store import LocalStore
@@ -36,6 +37,8 @@ def tq_watermark(path, account_id, expected, now):
     reservations = sum(not row.released for row in state.reservations)
     obligations_clear = (
         scope["status"] == "ACTIVE"
+        and state.readback_valid
+        and now < state.readback.valid_until
         and {item.lower() for item in scope.get("products", ())} == set(expected)
         and not (orders or reservations or state.unresolved_fill_ids or state.blocked_products)
         and not any(row.rolling or row.must_close for row in state.products)
@@ -102,7 +105,8 @@ def _paper_observation(stream, day, product, row, *, generation_prefix):
     }
 
 
-def paper_watermark(store, run_id, stream, day: date, expected, *, generation_prefix=None, source_root=None):
+def paper_watermark(store, run_id, stream, day: date, expected, *, generation_prefix=None,
+                    source_root=None, prefix=None):
     # ModelStore independently verifies the journal hash chain. Replay verifies
     # both projection and the exact active policy/source-code identity.
     head, events = store.load(run_id)
@@ -126,14 +130,31 @@ def paper_watermark(store, run_id, stream, day: date, expected, *, generation_pr
     if journal.day != day or set(journal.products) != set(expected):
         raise CohortError("SUBING_HANDOFF_DAY_OR_SCOPE_MISMATCH")
     terminals = {}
-    for batch in reversed(events):
-        if batch["day"] != day.isoformat() or len(terminals) == len(expected):
-            break
-        for product, row in batch["rows"].items():
-            if product not in terminals:
-                terminals[product] = _paper_observation(
-                    stream, day, product, row, generation_prefix=generation_prefix,
-                )
+    if prefix is not None:
+        sequence, tail_hash = prefix
+        if type(sequence) is not int or not 0 < sequence < head["sequence"] or generation_prefix is None:
+            raise CohortError("SUBING_HANDOFF_NEW_PREFIX_UNPROVEN")
+        previous = ZERO
+        for number, batch in enumerate(events[:sequence], 1):
+            previous = digest(dict(run_id=run_id, sequence=number, event_id=batch["event_id"],
+                                   input_hash=digest(batch), previous_hash=previous))
+        if previous != tail_hash or events[sequence - 1]["day"] >= day.isoformat():
+            raise CohortError("SUBING_HANDOFF_LEDGER_PREFIX_CHANGED")
+        for batch in events[sequence:]:
+            if batch["day"] != day.isoformat():
+                raise CohortError("SUBING_HANDOFF_NEW_PREFIX_UNPROVEN")
+            for product, row in batch["rows"].items():
+                terminals[product] = _paper_observation(stream, day, product, row,
+                                                        generation_prefix=generation_prefix)
+    else:
+        for batch in reversed(events):
+            if batch["day"] != day.isoformat() or len(terminals) == len(expected):
+                break
+            for product, row in batch["rows"].items():
+                if product not in terminals:
+                    terminals[product] = _paper_observation(
+                        stream, day, product, row, generation_prefix=generation_prefix,
+                    )
     actual = {
         product: (row["contract"], datetime.fromisoformat(row["bar_end"]))
         for product, row in terminals.items()
@@ -165,10 +186,17 @@ def _paper_reader():
     try:
         request = json.load(sys.stdin)
         root = Path(request["root"])
-        from app.subing_model.worker import ROOT
+        from app.subing_model.worker import ROOT, settings_and_redis
 
         if ROOT != root:
             raise CohortError("SUBING_HANDOFF_REPLAY_ROOT_CHANGED")
+        if (active_instance := request.get("active_instance")) is not None:
+            _, runtime_redis = settings_and_redis()
+            with closing(runtime_redis):
+                run_id = runtime_redis.info("server").get("run_id")
+                if (not isinstance(run_id, str) or re.fullmatch(r"[a-f0-9]{40}", run_id) is None
+                        or sha256(run_id.encode("ascii")).hexdigest() != active_instance):
+                    raise CohortError("SUBING_HANDOFF_ACTIVE_REDIS_UNPROVEN")
         day = date.fromisoformat(request["trading_day"])
         expected = {
             product: (contract, stamp(at))
@@ -194,7 +222,10 @@ def _paper_reader():
                 stage = "journal_and_source"
                 if redis_frontier() != request["redis_frontier"]:
                     raise CohortError("SUBING_HANDOFF_REDIS_FRONTIER_CHANGED")
-                result = paper_watermark(store, request["run_id"], stream, day, expected, source_root=root)
+                result = paper_watermark(
+                    store, request["run_id"], stream, day, expected, source_root=root,
+                    prefix=request.get("prefix"), generation_prefix=request.get("generation_prefix"),
+                )
                 result["redis_frontier"] = redis_frontier()
                 if result["redis_frontier"] != request["redis_frontier"]:
                     raise CohortError("SUBING_HANDOFF_REDIS_FRONTIER_CHANGED")

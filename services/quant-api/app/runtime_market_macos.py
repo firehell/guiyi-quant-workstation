@@ -67,11 +67,11 @@ def _job(home, label, args, root, *, tq=False):
     if output is None:
         raise CohortError("MARKET_HANDOFF_ACCOUNT_NOT_LOADED")
     pids = re.findall(r"^\tpid = ([1-9][0-9]*)$", output, re.MULTILINE)
+    states = re.findall(r"^\tstate = (.+)$", output, re.MULTILINE)
     environment = installed.get("EnvironmentVariables", {})
     if (
-        launchd_arguments(output) != args or len(pids) != 1
+        launchd_arguments(output) != args
         or re.findall(r"^\tprogram = (.+)$", output, re.MULTILINE) != ["/bin/bash"]
-        or re.findall(r"^\tstate = (.+)$", output, re.MULTILINE) != ["running"]
         or re.findall(r"^\tworking directory = (.+)$", output, re.MULTILINE) != [str(home)]
         or (tq and environment.get("GUIYI_PROJECT_ROOT") != str(root))
         or any(
@@ -85,6 +85,10 @@ def _job(home, label, args, root, *, tq=False):
         if "GUIYI_PROJECT_ROOT" in values
     } != {str(root)}:
         raise CohortError("MARKET_HANDOFF_TQ_ROOT_UNPROVEN")
+    if not pids and states in (["waiting"], ["spawn scheduled"], ["not running"]):
+        raise CohortError("MARKET_HANDOFF_ACCOUNT_STARTING")
+    if len(pids) != 1 or states != ["running"]:
+        raise CohortError("MARKET_HANDOFF_ACCOUNT_LAUNCHER_MISMATCH")
     return {"pid": int(pids[0]), "plist_sha256": sha256(raw).hexdigest()}
 
 
@@ -150,11 +154,14 @@ def _tq(home, runtime, expected, now):
         result["status"] = "blocked"
     return {
         **result, **job, "commit": config["commit"], "tag": config["tag"], "mode": mode,
+        "root": str(root),
+        "config_sha256": sha256(configuration).hexdigest(),
+        "control_sha256": sha256(control).hexdigest(),
         "monitor_fresh": fresh, "monitor_readback_status": overview.get("readback_status"),
     }
 
 
-def _paper(home, runtime, expected, day, redis_url, redis_frontier):
+def _paper_identity(home, runtime, *, stopped=False):
     base = runtime / "subing-paper"
     installed = home / "Library/LaunchAgents" / f"{SUBING_PAPER_LABEL}.plist"
     arguments = plistlib.loads(file_snapshot(installed)[0])["ProgramArguments"]
@@ -162,18 +169,30 @@ def _paper(home, runtime, expected, day, redis_url, redis_frontier):
     if not root.is_absolute() or root.resolve(strict=True) != root:
         raise CohortError("MARKET_HANDOFF_SUBING_ROOT_UNPROVEN")
     args = ("/bin/bash", str(root / "scripts/ops/macos/run-subing-paper.sh"), str(root))
-    job = _job(home, SUBING_PAPER_LABEL, args, root)
+    if stopped:
+        if tuple(arguments) != args or read_launchd_service(SUBING_PAPER_LABEL, root=root) is not None:
+            raise CohortError("MARKET_HANDOFF_SUBING_STOP_UNPROVEN")
+        job = {"plist_sha256": sha256(file_snapshot(installed)[0]).hexdigest()}
+    else:
+        job = _job(home, SUBING_PAPER_LABEL, args, root)
     commit = read_command(["/usr/bin/git", "rev-parse", "HEAD"], root=root)
     active = base / "subing-portfolio-active.json"
     registration = _private(active)
     run_id = json.loads(registration)["run_id"]
     if not isinstance(run_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,100}", run_id):
         raise CohortError("MARKET_HANDOFF_SUBING_RUN_UNPROVEN")
-    heartbeat = base / "subing-portfolio-heartbeat.json"
     database_path = base / "subing-model-database.url"
     database_bound = _private(database_path)
     if read_command(["/usr/bin/git", "-c", "core.fsmonitor=false", "status", "--porcelain"], root=root):
         raise CohortError("MARKET_HANDOFF_SUBING_WORKTREE_DIRTY")
+    return root, job, commit, run_id, registration, database_bound
+
+
+def _paper(home, runtime, expected, day, redis_url, redis_frontier, *,
+           generation_prefix=None, prefix=None, stopped=False, active_instance=None):
+    base = runtime / "subing-paper"
+    identity = _paper_identity(home, runtime, stopped=stopped)
+    root, job, commit, run_id, registration, database_bound = identity
     adapter = Path(runtime_market_account_readback.__file__).resolve(strict=True)
     completed = subprocess.run(
         [str(root / "services/quant-api/.venv/bin/python"), str(adapter)],
@@ -181,6 +200,8 @@ def _paper(home, runtime, expected, day, redis_url, redis_frontier):
             "root": str(root), "database_url": database_bound.decode().strip(),
             "redis_url": redis_url, "run_id": run_id, "trading_day": day.isoformat(),
             "redis_frontier": redis_frontier,
+            "generation_prefix": generation_prefix, "prefix": prefix,
+            "active_instance": active_instance,
             "expected": {product: (contract, at.isoformat()) for product, (contract, at) in expected.items()},
         }),
         cwd=root, env={
@@ -198,21 +219,22 @@ def _paper(home, runtime, expected, day, redis_url, redis_frontier):
         return result
     if result.get("run_id") != run_id or result.get("redis_frontier") != redis_frontier:
         raise CohortError("MARKET_HANDOFF_SUBING_FRONTIER_CHANGED")
-    if (
-        _private(active) != registration or _private(database_path) != database_bound
-        or _job(home, SUBING_PAPER_LABEL, args, root) != job
-        or read_command(["/usr/bin/git", "rev-parse", "HEAD"], root=root) != commit
-        or read_command(["/usr/bin/git", "-c", "core.fsmonitor=false", "status", "--porcelain"], root=root)
-    ):
+    if _paper_identity(home, runtime, stopped=stopped) != identity:
         raise CohortError("MARKET_HANDOFF_SUBING_OWNER_CHANGED")
-    pulse = json.loads(_private(heartbeat))
+    stable = {**result, **job, "disk_commit": commit, "root": str(root),
+              "registration_sha256": sha256(registration).hexdigest(),
+              "database_sha256": sha256(database_bound).hexdigest()}
+    if stopped:
+        return stable
+    pulse = json.loads(_private(base / "subing-portfolio-heartbeat.json"))
     elapsed = datetime.now(UTC) - datetime.fromisoformat(pulse["at"])
     fresh = timedelta(0) <= elapsed <= timedelta(seconds=60)
-    if (not fresh or pulse.get("run_id") != run_id
-            or pulse.get("status") not in {"SESSION_COMPLETE", "SESSION_CLOSED"}):
-        result["status"] = "blocked"
-    return {**result, **job, "disk_commit": commit, "heartbeat_fresh": fresh,
-            "heartbeat_status": pulse.get("status")}
+    allowed = {"SESSION_COMPLETE", "SESSION_CLOSED"} if prefix is None else {
+        "RUNNING", "SESSION_BREAK", "SESSION_COMPLETE", "SESSION_CLOSED",
+    }
+    if not fresh or pulse.get("run_id") != run_id or pulse.get("status") not in allowed:
+        stable["status"] = "blocked"
+    return {**stable, "heartbeat_fresh": fresh, "heartbeat_status": pulse.get("status")}
 
 
 def _read_account(reader):
@@ -284,6 +306,9 @@ def read_current(home, day, now, *, consumer="all"):
 
 
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"cohort-market-plan", "cohort-market-apply", "cohort-market-recovery", "cohort-market-accounts"}:
+        return _cohort_main(argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trading-day", required=True, type=date.fromisoformat)
     parser.add_argument("--consumer", choices=("all", "tqkq", "subing"), default="all")
@@ -300,6 +325,43 @@ def main(argv=None):
         result = {"status": "blocked", "code": "MARKET_HANDOFF_DEPENDENCIES_UNAVAILABLE"}
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] == "watermarks_verified" else 1
+
+
+def _cohort_main(argv):
+    from app.runtime_cohort import _resolution_source, apply_cohort, freeze_cohort, require
+    from app.runtime_market_cohort_host import MarketCohortHost
+
+    mode, *arguments = argv
+    parser = argparse.ArgumentParser(prog=mode)
+    if mode == "cohort-market-plan":
+        parser.add_argument("--candidate-root", type=Path, required=True)
+        parser.add_argument("--tag", required=True)
+        parser.add_argument("--commit", required=True)
+    else:
+        parser.add_argument("--plan", type=Path, required=True)
+    args = parser.parse_args(arguments)
+    try:
+        require(sys.platform == "darwin", "MARKET_HANDOFF_MACOS_REQUIRED")
+        host = MarketCohortHost()
+        if mode == "cohort-market-plan":
+            result = freeze_cohort(host, candidate_root=args.candidate_root, tag=args.tag,
+                                   commit=args.commit, market_source=True)
+        elif mode == "cohort-market-recovery":
+            result = host.read_market_source_recovery(args.plan)
+        elif mode == "cohort-market-accounts":
+            result = host.read_market_source_accounts(args.plan)
+        else:
+            _, plan = _resolution_source(args.plan)
+            intent = plan.get("market_source_handover")
+            require(isinstance(intent, dict) and "host_sha256" in intent,
+                    "COHORT_MARKET_SOURCE_PLAN_INVALID")
+            result = apply_cohort(host, plan)
+    except Exception as exc:
+        code = str(exc) if isinstance(exc, CohortError) else "MARKET_SOURCE_OPERATION_BLOCKED"
+        result = {"status": "blocked", "code": code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code)
+                  else "MARKET_SOURCE_OPERATION_BLOCKED"}
+    print(json.dumps(result, sort_keys=True))
+    return int(result.get("status") == "blocked")
 
 
 if __name__ == "__main__":
