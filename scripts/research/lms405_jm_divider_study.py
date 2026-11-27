@@ -1,7 +1,7 @@
 """Bound the visible JM2701 long leg around the return to the public divider."""
 
 import argparse
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from fractions import Fraction
 import json
@@ -11,10 +11,16 @@ from pathlib import Path
 from guiyi_quant.lms405 import Bar
 from lms405_carry_in_study import SNAPSHOT_SHA256
 from lms405_fg_sa_case import FIVE, ONE, at, identity
-from lms405_protection_timeframes import geometry_events
+from lms405_protection_lot_timing import EXPOSURE, displayed_tick_totals, tick_bounds, verified_json
+from lms405_protection_timeframes import geometry_events, read_window
 from lms405_replay import display, ohlc, read_session_series
+from lms405_right_side_study import US
 from lms405_sa_reentry_study import SHORT_DAY, SHORT_IMAGES, source_evidence
 from lms405_session_carry_study import ARCHIVE_PLANS, DAYS, MARKET_HASHES
+from lms405_sh_lock_lifecycle import completed, digest
+from lms405_sh_protection_replacement import compatible_counts
+from lms405_sizing_audit import EXPOSURE_SHA256
+from lms405_trial_to_trend import assess_role
 from lms_near405_replay import encoded, sha
 
 CONTRACT = "JM2701"
@@ -25,6 +31,9 @@ PREVIOUS_POST = "WRov1j6e10"
 LUNCH = "WRoAkcEppg"
 CLOSE = "U03"
 NEXT_NIGHT = "WRoEvasxQR"
+NEXT_PLAN = "A5358686423089344"
+NEXT_PLAN_SHA256 = "add29c32af564b02876a11b0901606738ccf07ce9c4ee8ca8c551b22de13e541"
+NIGHT_MARKET_SHA256 = "c8efc8249d565dafb3f0e85dd7c44ebaee65a55ac3aa595a5db8ca6c4d574528"
 IMAGES = {
     PREVIOUS_POST: SHORT_IMAGES[PREVIOUS_POST],
     LUNCH: (
@@ -153,11 +162,78 @@ def study(minutes, fives, evidence, comparison):
     )
 
 
+def holding_continuity(minutes, next_series, evidence, comparison):
+    if identity(minutes)["ohlc_sha256"] != MARKET_HASHES[CONTRACT][0]:
+        raise ValueError("JM_HOLD_CONTINUITY_DAY_MARKET_CHANGED")
+    if digest(next_series[1]) != NIGHT_MARKET_SHA256:
+        raise ValueError("JM_HOLD_CONTINUITY_NIGHT_MARKET_CHANGED")
+    anchors = quote_witnesses(comparison, evidence, minutes)
+    lunch, close = (anchors[key]["time"] for key in (LUNCH, CLOSE))
+    exposure = verified_json(EXPOSURE, EXPOSURE_SHA256)
+    night_table, = (row for row in exposure["tables"] if row["source"] == NEXT_NIGHT)
+    night_legs = night_table["contracts"][CONTRACT]["legs"]
+    if (night_table["image"]["sha256"] != evidence[NEXT_NIGHT]["image_sha256"]
+            or night_legs.get("long") != dict(quantity=QTY, today_quantity=0, opening_average=str(AVERAGE))):
+        raise ValueError("JM_HOLD_CONTINUITY_NIGHT_LEG_CHANGED")
+
+    tick = Decimal("0.5")
+    total_ticks = displayed_tick_totals(AVERAGE, QTY, tick)
+    current = [bar for bar in minutes if bar.trading_day == SHORT_DAY]
+    if not current or close != current[-1].bar_end:
+        raise ValueError("JM_HOLD_CONTINUITY_DAY_END_CHANGED")
+    bounds = {}
+    for label, start in (("full_trading_day", current[0].bar_end - ONE), ("day_session", at("27T09:00"))):
+        for include_quote in (False, True):
+            old = tick_bounds([b for b in current if start < b.bar_end < lunch + include_quote * US], tick)
+            available = [b for b in current if lunch - include_quote * US < b.bar_end < close + include_quote * US]
+            later = tick_bounds(available, tick)
+            candidates = compatible_counts(QTY, total_ticks, total_ticks, old, None, later)
+            frozen_from = next(b.bar_end - ONE for i, b in enumerate(available) if
+                               compatible_counts(QTY, total_ticks, total_ticks, old, None,
+                                                 tick_bounds(available[i:], tick)) == [[QTY, 0, 0]])
+            name = "with_quote_minutes" if include_quote else "without_quote_minutes"
+            bounds.setdefault(label, {})[name] = dict(
+                retained_lunch_lots=sorted({row[0] for row in candidates}),
+                whole_lunch_leg_required_if_all_replacement_starts_from=frozen_from,
+                prior_price_ticks=old, replacement_price_ticks=later,
+            )
+
+    plan_at, posted = (datetime.fromisoformat(evidence[key]["published_at"]) for key in (NEXT_PLAN, NEXT_NIGHT))
+    night_open = next_series[1][0].start
+    if not lunch < close < plan_at + ONE < night_open < posted:
+        raise ValueError("JM_HOLD_CONTINUITY_PLAN_CLOCK_CHANGED")
+    night = completed(next_series[1], night_open, posted)
+    if not night:
+        raise ValueError("JM_HOLD_CONTINUITY_NIGHT_EMPTY")
+    levels = {key: next((b.end for b in night if b.high >= Decimal(key)), None)
+              for key in ("1435", "1444", "1455.5")}
+    return dict(
+        version="lms405-jm-lunch-to-night-continuity-v1", contract=CONTRACT,
+        sources={key: evidence[key] for key in (LUNCH, CLOSE, NEXT_PLAN, NEXT_NIGHT)}, anchors=anchors,
+        input_market_sha256={"base_trading_days_1m": MARKET_HASHES[CONTRACT][0],
+                             "next_trading_day_1m": NIGHT_MARKET_SHA256},
+        base_trading_days=DAYS,
+        opening_average=AVERAGE, opening_total_ticks=list(total_ticks), lunch_to_close=bounds,
+        next_night_long=night_legs["long"], next_night_unlisted_short=None,
+        conditional_day_end_lots_required_by_night_yesterday_field=QTY,
+        closing_photo_pair_requires="NO_POSITION_CHANGE_AFTER_PHOTO_BEFORE_TRADING_DAY_END",
+        conditional_lunch_to_night_retention=bounds["full_trading_day"]["with_quote_minutes"]["retained_lunch_lots"],
+        continuity_assumptions=["SAME_ACCOUNT_AND_SCOPE", "COMPLETE_AND_SYNCHRONIZED_SNAPSHOTS",
+                                "CONSISTENT_OPENING_AVERAGE_AND_TRADING_DAY_POSITION_AGE"],
+        night_window=dict(count=len(night), highest=max(b.high for b in night), last_bar_end=night[-1].end,
+                          band_reach=levels, source_price_revision_verified=False),
+        holding_review=assess_role(trend=None, trial_success=None, current_position_is_trial=None,
+                                   version_405=None, author_role=None),
+        account_and_position_scope_verified=False, author_action_samples=0, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--snapshot-comparison", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--hold-continuity", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -173,12 +249,18 @@ def main():
         raw = args.snapshot_comparison.read_bytes()
         if sha(raw) != SNAPSHOT_SHA256:
             parser.exit(2, "JM_SNAPSHOT_COMPARISON_CHANGED\n")
-        evidence = source_evidence(ARCHIVE_PLANS, IMAGES)
+        plans = ARCHIVE_PLANS | {NEXT_PLAN: NEXT_PLAN_SHA256} if args.hold_continuity else ARCHIVE_PLANS
+        evidence = source_evidence(plans, IMAGES)
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
             market = build_market_data_service(session)
             minutes = read_session_series(session, market, "jm", CONTRACT, "1m", ONE, DAYS)
-            fives = read_session_series(session, market, "jm", CONTRACT, "5m", FIVE, DAYS)
-        result = study(minutes, fives, evidence, json.loads(raw))
+            if args.hold_continuity:
+                next_series = read_window(session, market, CONTRACT, date(2026, 10, 28))
+            else:
+                fives = read_session_series(session, market, "jm", CONTRACT, "5m", FIVE, DAYS)
+        comparison = json.loads(raw)
+        result = (holding_continuity(minutes, next_series, evidence, comparison) if args.hold_continuity
+                  else study(minutes, fives, evidence, comparison))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
