@@ -14,6 +14,7 @@ from guiyi_quant.lms405.task_roles import ROUTES, TaskBook, assess_task_action
 from lms405_portfolio_lifecycle import candidate, published, run_mode, seed
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_lot_timing import verified_json
+from lms405_pta_public_plan_handoff import study as study_pta_handoff
 from lms405_public_plan_roles import load_source
 from lms405_right_side_study import ONE, US
 from lms_near405_replay import encoded, sha
@@ -177,7 +178,41 @@ def oil_case(index, report):
                         protection_band=None, actual_time=None)
 
 
-def study():
+def plan_admission(oil_events, oil, soda_path, soda, pta):
+    """Expose the evidence boundary for each route before a multi-session replay."""
+    oil_routes = {}
+    for event in oil_events:
+        action = event["result"]["requested_action"]
+        route = oil_routes.setdefault(action, {})
+        route[event["mode"]] = event["result"]
+
+    observed = soda_path["long"]["observed"]
+    next_short, repeated_short = (soda_path["short"]["observed"][key] for key in ("WRov1j6e10", "WRozNbg3en"))
+    windows = [
+        observed["morning_short"] | {"side": "SHORT"},
+        observed["night_long"] | {"side": "LONG"},
+        next_short | {"source": "WRov1j6e10"},
+    ]
+    days = [row["assumed_trading_day"] for row in windows]
+    if (days != sorted(set(days)) or repeated_short != next_short
+            or any(row["today_quantity"] != row["quantity"] for row in windows)
+            or observed["same_account_chain"] is not None or soda_path["short"]["same_account_chain"] is not None):
+        raise ValueError("PORTFOLIO_ROLE_SODA_CROSS_DAY_SCOPE_CHANGED")
+    return {
+        OIL: dict(display=oil, routes=oil_routes, order_or_position_detail_for_role_required=True),
+        SODA: dict(observed_legs=windows, repeated_short_source="WRozNbg3en",
+                   post_confirmation_price_checks=soda["later_independent_price_checks"],
+                   omitted_side=None, account_continuity=None, cross_day_close_or_reverse=None),
+        pta["contract"]: dict(
+            public=pta["historical_assessments"], test=pta["test_fixtures"], carry=pta["carry"],
+            published_revisions={key: value["known_at"] for key, value in pta["publication_timeline"].items()},
+            last_archived_publication_known_at=pta["last_archived_publication_known_at"],
+            author_restart_at=pta["author_restart_at"], author_protection_or_exit_at=pta["author_protection_or_exit_at"],
+        ),
+    }
+
+
+def study(*, compare_plan_admission=False):
     refs = {key: verified_json(Path("output") / path, digest) for key, (path, digest) in REFS.items()}
     base = refs["portfolio"]
     index = input_sources()
@@ -190,18 +225,22 @@ def study():
     timeline = sorted((*base["timeline"], soda, *oil), key=lambda row: (
         datetime.fromisoformat(str(row["at"])), row["mode"], row.get("episode", ""),
     ))
-    return base | dict(version=VERSION, contracts=contracts, timeline=timeline, soda=soda_report, oil=oil_report,
-                       references={key: digest for key, (_, digest) in REFS.items()})
+    report = base | dict(version=VERSION, contracts=contracts, timeline=timeline, soda=soda_report, oil=oil_report,
+                         references={key: digest for key, (_, digest) in REFS.items()})
+    if compare_plan_admission:
+        report["plan_admission"] = plan_admission(oil, oil_report, refs["soda_later"], soda_report, study_pta_handoff())
+    return report
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--compare-plan-admission", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PORTFOLIO_ROLE_OUTPUT_EXISTS")
     try:
-        report = encoded(study())
+        report = encoded(study(compare_plan_admission=args.compare_plan_admission))
         with args.output.open("x", encoding="utf-8") as output:
             output.write(report)
     except (KeyError, OSError, ValueError) as exc:
