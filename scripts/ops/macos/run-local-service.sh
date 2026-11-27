@@ -52,6 +52,9 @@ if [[ "$SERVICE" == "market-runtime-preflight" ]]; then
         set -a
         source "$runtime_env" >/dev/null 2>&1
         set +a
+        if /usr/bin/grep -Fxq '# guiyi-market-source: rqdata_tick' "$runtime_env"; then
+          export GUIYI_MARKET_SOURCE=rqdata_tick
+        fi
       fi
       export HOME="$authority_home"
       unset GUIYI_AFTER_MARKET_STATUS_PATH
@@ -98,6 +101,11 @@ if [[ -f "$RUNTIME_ENV" ]]; then
   # shellcheck disable=SC1091
   source "$RUNTIME_ENV"
   set +a
+  # The source marker is a comment so the independently pinned account
+  # readers can continue using their unchanged project.env parser.
+  if /usr/bin/grep -Fxq '# guiyi-market-source: rqdata_tick' "$RUNTIME_ENV"; then
+    export GUIYI_MARKET_SOURCE=rqdata_tick
+  fi
 elif [[ -f "$PROJECT_ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
@@ -122,6 +130,11 @@ case "$SERVICE" in
     shift
     export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
     exec "$PYTHON_BIN" -m app.runtime_cohort apply-plan "$@"
+    ;;
+  cohort-market-plan|cohort-market-apply)
+    shift
+    export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
+    exec "$PYTHON_BIN" -m app.runtime_market_macos "$SERVICE" "$@"
     ;;
   cohort-resolve)
     shift

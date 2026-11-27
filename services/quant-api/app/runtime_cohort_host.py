@@ -978,6 +978,9 @@ class CohortHost(FaultRecoveryHost):
                 os.unlink(temp)
 
     def commit(self, plan):
+        return write_bindings(self.check_commit(plan), expected_sha256=plan["registry_sha256"])
+
+    def check_commit(self, plan):
         self.check_schema_compatibility(plan)
         old, new = registry(plan["old"]), registry(plan["new"])
         require(
@@ -998,7 +1001,7 @@ class CohortHost(FaultRecoveryHost):
         require(datetime.fromisoformat(plan["created_at"]) <= now < datetime.fromisoformat(plan["expires_at"]),
                 "COHORT_PLAN_EXPIRED")
         require(monotonic() < self.deadline, "COHORT_DOWNTIME_EXCEEDED")
-        return write_bindings(new, expected_sha256=plan["registry_sha256"])
+        return new
 
     def start_consumers(self, plan):
         new = registry(plan["new"])
@@ -1007,7 +1010,7 @@ class CohortHost(FaultRecoveryHost):
                 self.start(new.services[name])
         return {"started": "consumers"}
 
-    def _feed_closed_healthy(self, binding, state, window):
+    def _feed_closed_healthy(self, binding, state, window, *, redis=None):
         """A Feed poll success and its own exact heartbeat must agree.
 
         Feed marks not-ready before every poll, including rejected polls which
@@ -1017,11 +1020,12 @@ class CohortHost(FaultRecoveryHost):
         from app.redis_connections import get_redis_connection
 
         try:
-            redis = get_redis_connection()
+            client = redis if redis is not None else get_redis_connection()
             try:
-                raw = redis.get("live:feed:heartbeat")
+                raw = client.get("live:feed:heartbeat")
             finally:
-                redis.close()
+                if redis is None:
+                    client.close()
             if not isinstance(raw, (str, bytes)) or len(raw) > 65536:
                 return False
             value = json.loads(raw)
@@ -1263,6 +1267,14 @@ class CohortHost(FaultRecoveryHost):
 
     def verify(self, plan, proof):
         modes = self._await_names(plan, continuous_services(registry(plan["new"])), proof, 120)
+        self.verify_continuous_identity(plan)
+        return {
+            "continuous_modes": modes,
+            "natural_acceptance": "pending",
+            "continuous_identity": "matched",
+        }
+
+    def verify_continuous_identity(self, plan):
         from app.services.deployment_identity import deployment_identity_health
 
         new = registry(plan["new"])
@@ -1286,11 +1298,6 @@ class CohortHost(FaultRecoveryHost):
                 == ("matched" if new.services[name].enabled else "disabled"),
                 "COHORT_CONTINUOUS_IDENTITY_UNPROVEN",
             )
-        return {
-            "continuous_modes": modes,
-            "natural_acceptance": "pending",
-            "continuous_identity": "matched",
-        }
 
     def restore_calendars(self, plan):
         new = registry(plan["new"])
