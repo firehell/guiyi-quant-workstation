@@ -26,6 +26,9 @@ limited to recreatable content for the proved trading day and SHALL preserve all
 consumer cursors and later trading days. A partial publication SHALL NOT issue a complete receipt.
 A successful retry of the same day and committed data revision SHALL be one logical publication.
 An unknown commit SHALL be independently read back before the affected mutation can proceed.
+Natural archive and late recovery SHALL report `LIVE_SUBSCRIPTION_SNAPSHOT_MISSING` for an absent
+snapshot that has no eligible retained proof. A present snapshot conflicting with the required scope
+or rank1 SHALL report `LIVE_DOMINANT_MISMATCH`. Neither condition permits Live cleanup or a receipt.
 
 In formal Tick mode, the existing late-provider schedule SHALL claim at most one check at the
 same D+2 window after two safe pre-publication failures. The check MUST bind the current Runtime
