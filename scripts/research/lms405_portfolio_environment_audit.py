@@ -18,7 +18,7 @@ from lms405_protection_shape_audit import price_digest
 from lms405_protection_timeframes import read_window
 from lms405_replay import ohlc, read_session_series
 from lms405_reversal_stage_bounds import SPECS_SHA
-from lms405_right_side_study import US
+from lms405_right_side_study import ONE, US
 from lms405_sizing_audit import SPECS, load_specs
 from lms_near405_replay import encoded, sha
 
@@ -37,6 +37,12 @@ MINUTE_CONTEXT = (Path("output/lms405-minute-recovery-context-20261126/replay-a.
                   "4d4d3f6ec34603c4542bfb451cf860236e7ac1289cc76f61df6cd28bede7d48c")
 LABEL_CUES = {"RANGE": ("盘整",), "RANGE_MIXED": ("盘整与循环交替",), "DOWN": ("空头趋势",),
               "UP_CYCLE": ("多循环", "多头循环"), "UP_PVC_CONTEXT": ("多趋势",), None: ("建模",)}
+SHORT_TARGETS_BY_PLAN_DATE = {
+    "I2701": (((654, "662.5"),), ((654, "662.5"),)),
+    "FG2701": (((825, 825), (814, 821)), ((825, 825), (814, 821))),
+    "RU2701": (((19320, 19420), (19220, 19290)), ((19320, 19420), (19220, 19290))),
+    "SH2701": (((1543, 1543),), ((1506, 1520), (1498, 1498))),
+}
 
 
 def archive_case(index, source_id, session_date, contract, author_class):
@@ -264,7 +270,78 @@ def paired_band_summary(baseline, alternatives):
     return dict(common_pairs=len(pairs), **result)
 
 
-def study(session, market, *, compare_admission=False, compare_ranges=False, compare_resistance=False):
+def short_target_progress(minutes, cutoff, lower, upper):
+    usable = [bar for bar in minutes if bar.bar_end + US < cutoff]
+    return {label: {
+        "first_reach": next((bar.bar_end for bar in usable if bar.low <= edge), None),
+        "first_contact": next((bar.bar_end for bar in usable if bar.low <= edge <= bar.high), None),
+        "first_close_below": next((bar.bar_end for bar in usable if bar.close < edge), None),
+    } for label, edge in (("near", upper), ("far", lower))}
+
+
+def protection_revision_progress(session, market, index):
+    cases = []
+    days = DAYS[1:3]
+    observed_ids = {plan_id for plan in PLANS.values() for plan_id in plan[:2]}
+    for contract, targets in SHORT_TARGETS_BY_PLAN_DATE.items():
+        updates, _, sources = plan_rows(index, contract)
+        known_plans = [row for row in updates if row.role == "PROTECTION" and row.revision in observed_ids]
+        if len(known_plans) != 3:
+            raise ValueError("PROTECTION_REVISION_PLAN_COVERAGE_CHANGED")
+        raw = read_session_series(session, market, contract[:-4].lower(), contract, "1m", ONE, days)
+        for day, bands, prior, next_plan in zip(days, targets, known_plans[:-1], known_plans[1:], strict=True):
+            bars = [bar for bar in raw if bar.trading_day == day]
+            if not bars or not prior.known_at < bars[0].bar_end - ONE or not (
+                bars[-1].bar_end + US < next_plan.known_at
+            ):
+                raise ValueError("PROTECTION_REVISION_KNOWLEDGE_WINDOW_CHANGED")
+            original = ARCHIVE.parent / sources[prior.revision]["archive_path"]
+            chapter, = [line for line in original.read_text(encoding="utf-8").splitlines()
+                        if line.startswith(f"|{contract}|")]
+            chapter = chapter.replace("–", "-").replace("—", "-")
+            progress = []
+            for lower, upper in bands:
+                marker = str(lower) if lower == upper else f"{lower}-{upper}"
+                if marker not in chapter:
+                    raise ValueError("PROTECTION_REVISION_TARGET_TEXT_CHANGED")
+                lower, upper = Decimal(str(lower)), Decimal(str(upper))
+                record = short_target_progress(bars, next_plan.known_at, lower, upper)
+                checks = {clock + US for edge in record.values() for clock in edge.values() if clock is not None}
+                for cut in checks | {clock + US for clock in checks}:
+                    prefix = [bar for bar in bars if bar.bar_end + US < cut]
+                    if short_target_progress(prefix, cut, lower, upper) != short_target_progress(bars, cut, lower, upper):
+                        raise ValueError("PROTECTION_REVISION_TARGET_PREFIX_CHANGED")
+                progress.append(dict(lower=lower, upper=upper, events=record))
+            cases.append(dict(
+                contract=contract, trading_day=day, prior=sources[prior.revision], next_plan=sources[next_plan.revision],
+                prior_protection=(prior.lower, prior.upper), next_protection=(next_plan.lower, next_plan.upper),
+                published_band_changed=(prior.lower, prior.upper) != (next_plan.lower, next_plan.upper),
+                market_count=len(bars), market_sha256=sha(encoded([
+                    (bar.bar_end, *ohlc(bar)) for bar in bars
+                ]).encode()), market_low=min(bar.low for bar in bars), target_progress=progress,
+            ))
+    gates = {}
+    for name, select, field in (
+        ("FIRST_NEAR_REACH", lambda bands: bands[:1], ("near", "first_reach")),
+        ("FIRST_FAR_REACH", lambda bands: bands[:1], ("far", "first_reach")),
+        ("FIRST_FAR_STRICT_CLOSE", lambda bands: bands[:1], ("far", "first_close_below")),
+        ("ALL_DECLARED_FAR_REACH", lambda bands: bands, ("far", "first_reach")),
+        ("ALL_DECLARED_FAR_STRICT_CLOSE", lambda bands: bands, ("far", "first_close_below")),
+    ):
+        outcomes = Counter()
+        for case in cases:
+            predicts_update = all(band["events"][field[0]][field[1]] is not None
+                                  for band in select(case["target_progress"]))
+            outcomes[("predicts_change" if predicts_update else "predicts_keep") + (
+                "_changed" if case["published_band_changed"] else "_kept"
+            )] += 1
+        gates[name] = dict(outcomes)
+    return dict(cases=cases, gate_diagnostics=gates, historical_source_revisions_verified=False,
+                development_evidence_only=True, admitted_author_action_samples=0)
+
+
+def study(session, market, *, compare_admission=False, compare_ranges=False, compare_resistance=False,
+          compare_revisions=False):
     reference = verified_json(BASELINE, BASELINE_SHA256)
     index = input_sources()
     rows = []
@@ -311,6 +388,8 @@ def study(session, market, *, compare_admission=False, compare_ranges=False, com
             known_price_window="LAST_SIX_COMPLETED_FIVES", generated_role="SHORT_PROTECTION_RESEARCH_ONLY",
             rule="LATEST_STRICT_CONTIGUOUS_HIGH_PIVOT_UPPER_WICK",
         )
+    if compare_revisions:
+        extra["protection_revision_progress"] = protection_revision_progress(session, market, index)
     return dict(version="lms405-portfolio-environment-audit-v1", label_comparison=summarize(rows), cases=rows,
                 rule_hash=candidate.RULE_HASH, frozen_baseline_sha256=BASELINE_SHA256,
                 comparison_role="ARCHIVED_WORDING_VERSUS_RESEARCH_CLOCKS_ONLY",
@@ -325,6 +404,7 @@ def main():
     parser.add_argument("--compare-admission", action="store_true")
     parser.add_argument("--compare-generated-ranges", action="store_true")
     parser.add_argument("--compare-resistance-pivots", action="store_true")
+    parser.add_argument("--compare-protection-revisions", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -339,7 +419,8 @@ def main():
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
             report = study(session, build_market_data_service(session), compare_admission=args.compare_admission,
-                           compare_ranges=args.compare_generated_ranges, compare_resistance=args.compare_resistance_pivots)
+                           compare_ranges=args.compare_generated_ranges, compare_resistance=args.compare_resistance_pivots,
+                           compare_revisions=args.compare_protection_revisions)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

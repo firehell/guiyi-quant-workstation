@@ -1,6 +1,7 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
@@ -11,6 +12,7 @@ from lms405_portfolio_environment_audit import (
     opening_alternatives,
     range_revision_audit,
     resistance_context_before,
+    short_target_progress,
 )
 
 
@@ -55,6 +57,21 @@ def test_resistance_requires_an_adjacent_completed_right_bar_and_drops_a_broken_
     gap = bars[:5] + [replace(bars[5], start=bars[5].start + step, end=bars[5].end + step)]
     assert resistance_context_before(gap, gap[-1].end + 2 * us) is None
     assert resistance_context_before(bars, bars[-1].end + 2 * us) is None
+
+
+def test_short_target_progress_keeps_gap_reach_separate_from_range_contact():
+    start = datetime(2026, 10, 22, 12, tzinfo=UTC)
+    step, us = timedelta(minutes=1), timedelta(microseconds=1)
+    bars = [SimpleNamespace(bar_end=start + i * step, low=Decimal(low), high=Decimal(high), close=Decimal(close))
+            for i, (low, high, close) in enumerate(((98, 99, 99), (99, 101, 100)), 1)]
+    clock = bars[-1].bar_end + us
+    first = short_target_progress(bars, clock, Decimal(98), Decimal(100))
+    assert first["near"] == {"first_reach": bars[0].bar_end, "first_contact": None,
+                             "first_close_below": bars[0].bar_end}
+    assert first["far"]["first_reach"] == bars[0].bar_end and first["far"]["first_close_below"] is None
+    assert short_target_progress(bars, clock + us, Decimal(98), Decimal(100))["near"][
+        "first_contact"
+    ] == bars[-1].bar_end
 
 
 def test_generated_ranges_update_and_frozen_boundary_never_recovers():
