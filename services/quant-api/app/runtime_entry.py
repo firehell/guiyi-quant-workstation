@@ -114,9 +114,9 @@ def _live_poll_failure_code(result: object) -> str:
     return result if type(result) is str and result in _LIVE_POLL_FAILURE_CODES else 'LIVE_POLL_FAILED'
 
 
-def build_market_feed_service(session):
+def build_market_feed_service(session, *, tick_dispatch=None):
     from app.market_data.composition import build_market_feed_service as factory
-    return factory(session)
+    return factory(session) if tick_dispatch is None else factory(session, tick_dispatch=tick_dispatch)
 
 
 def _owned_runner(service: str, run) -> None:

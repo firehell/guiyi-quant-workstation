@@ -29,7 +29,7 @@
 
 - 正式 Tick 使用显式源模式及独立正式 Redis 实例。启动核对 PostgreSQL/Catalog、Canonical 根、Redis 实例和源标记。正式读端拒绝旧 bar namespace，候选隔离绑定仍单独校验。正式新 namespace 的原子基线包含已冻结交易日、完整 rank1 订阅、Live 和已启用 Alert 的初始游标。旧 Reference 游标留在退役实例供读回。
 - 构建源切换版本时，在专用发布树先完成锁文件依赖安装，再用 `bash scripts/ops/macos/build-market-foundation.sh` 安装经 SHA256 锁定的 headless EventEngine 并构建对应 Web。归档凭证、Reference 领取及保存图表使用稳定运行目录 `market-foundation`，随发布树创建的盘后状态仍归 after-market binding。
-- 常规 cohort 的进度和回退合同限定同一 Redis。跨实例切换使用独立的 macOS 入口。正式操作还需完成下一交易日休市接收、正式迟到归档和整组联验。
+- 常规 cohort 的进度和回退合同限定同一 Redis。跨实例切换使用独立的 macOS 入口。隔离复演中，正式 Tick 的 Live 和 Feed 在当天 CLOSED 时按权威下一场 Session 恢复已登记的次日基线。次日订阅和零游标来自既有目标 Redis，等待开盘期间只发布休市心跳。现场自然接收与发布另行验收。
 
 采样脚本保留 3,600 秒和 100,000 条上限。检查末条的结束原因及 listener 状态。分片用
 `compare_tick.py FIRST --capture-shard NEXT`，每片独立证明累计基线，丢弃相互冲突端点，

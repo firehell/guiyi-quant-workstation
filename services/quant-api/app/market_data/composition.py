@@ -323,10 +323,11 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
     tick = formal_tick_requested()
     durable = os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1'
     connection = get_redis_connection()
+    tick_binding = None
     if tick:
         if not durable or os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') != '1':
             raise ValueError('MARKET_TICK_SUPERVISOR_REQUIRED')
-        require_formal_tick_binding(connection, session.get_bind().url, canonical_root())
+        tick_binding = require_formal_tick_binding(connection, session.get_bind().url, canonical_root())
     elif _feed or not durable:
         require_bar_writer_namespace(connection)
 
@@ -363,7 +364,7 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
         recovery_fetch_factory = RQDataLiveRecoveryAdapter
         recovery_sessions_source = coverage_sessions
         recovery_guard_factory = recovery_guard
-    rqdata = RQDataClient()
+    rqdata = None if tick else RQDataClient()
     from app.market_data.day_preparation import build_day_metadata_preparation
     products = load_operational_products()
     preparation = build_day_metadata_preparation(
@@ -412,12 +413,16 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
         from app.market_data.live_recovery_guard import after_market_recovery_guard
         common_kwargs['shutdown_guard_factory'] = lambda: after_market_recovery_guard(wait=False)
         def bar_provider():
+            assert rqdata is not None
             return RQDataLiveProvider(rqdata.live_market_client())
 
         if tick:
             from app.market_data.tick_runtime import build_formal_tick_feed
 
-            return build_formal_tick_feed(connection, client=rqdata, dispatch=tick_dispatch, **common_kwargs)
+            return build_formal_tick_feed(
+                connection, client_factory=RQDataClient, dispatch=tick_dispatch,
+                formal_tick_binding=tick_binding, **common_kwargs,
+            )
         return MarketFeedService(provider_factory=bar_provider,
                                  source_stream=ObservationStream(connection, kind='source'), **common_kwargs)
     if durable:
@@ -428,7 +433,9 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
             common_kwargs['store'], products, formal_tick=tick,
         )
         return DurableLiveMarketService(source_provider=StreamLiveProvider(
-            ObservationStream(connection, kind='source'), require_tick=tick), **common_kwargs)
+            ObservationStream(connection, kind='source'), require_tick=tick),
+            formal_tick_binding=tick_binding, **common_kwargs)
+    assert rqdata is not None
     return LiveMarketService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
                              **common_kwargs)
 

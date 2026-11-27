@@ -1018,6 +1018,9 @@ class LiveMarketService:
             return "LIVE_REDIS_UNAVAILABLE"
         return None
 
+    def _can_start_history_preparation(self) -> bool:
+        return True
+
     def run_forever(self, *, should_stop: Callable[[], bool] | None = None) -> None:
         """前台循环；由 CLI/launchd 管理进程，不在 Python 内 daemonize。"""
         if self._sleep is None:
@@ -1027,7 +1030,8 @@ class LiveMarketService:
         history_started = False
         try:
             while should_stop is None or not should_stop():
-                if self._history_preparation is not None and not history_started:
+                if (self._history_preparation is not None and not history_started
+                        and self._can_start_history_preparation()):
                     self._history_preparation.start()
                     history_started = True
                 self.poll(self._clock())

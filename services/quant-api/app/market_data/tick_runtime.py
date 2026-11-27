@@ -275,13 +275,14 @@ def build_isolated_tick_display(
 
 
 
-def build_formal_tick_feed(redis, *, client, dispatch, **kwargs) -> MarketFeedService:
+def build_formal_tick_feed(redis, *, client_factory, dispatch, **kwargs) -> MarketFeedService:
     """Use the supervised Feed role and its existing durable publication guard."""
     from app.market_data.tick_preview_redis import RedisTickPreviewPublisher
     from app.market_data.tick_rqdata_client import create_tick_client
 
     if dispatch is None:
         raise ValueError("MARKET_TICK_DISPATCH_REQUIRED")
+    client = None
 
     def assert_owned():
         check = getattr(feed, "assert_owned", None)
@@ -290,10 +291,13 @@ def build_formal_tick_feed(redis, *, client, dispatch, **kwargs) -> MarketFeedSe
         check()
 
     def provider():
+        nonlocal client
         preview = RedisTickPreviewPublisher(redis, assert_owned=assert_owned)
         # Invalidate any previous process generation before opening this reader.
         preview.clear_activity(None)
         preview.flush()
+        if client is None:
+            client = client_factory()
         tick_client = create_tick_client(client)
         return TickMarketDataProvider(
             tick_client, connection_identity=lambda: tick_client._client,
