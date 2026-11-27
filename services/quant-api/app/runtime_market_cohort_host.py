@@ -42,7 +42,7 @@ from app.runtime_deployment import owner_process_matches
 from app.runtime_handover import _read, _write, deployment_lock, owner_lock_available, read_service_state
 from app.runtime_identity import SUBING_PAPER_LABEL, command_result, read_command, read_launchd_service
 from app.runtime_market_account_readback import tq_watermark
-from app.runtime_market_macos import _TQ_LABEL, _paper, _private, _tq
+from app.runtime_market_macos import _TQ_LABEL, _paper, _paper_identity, _private, _tq
 from app.runtime_market_source_handover import (
     old_observation_snapshot,
     preserve_stopped_observations,
@@ -294,15 +294,20 @@ class MarketCohortHost(CohortHost):
         }
         return {name: {key: row[key] for key in stable[name]} for name, row in accounts.items()}
 
-    def freeze_market_source_handover(self, old_registry, new_registry, window):
+    @staticmethod
+    def check_controller_catalog(settings):
         from app.db.session import engine
         from app.market_data.composition import canonical_root
+
+        require(engine.url == make_url(normalize_database_url(settings["DATABASE_URL"]))
+                and canonical_root() == Path(settings["GUIYI_CANONICAL_DATA_ROOT"]),
+                "MARKET_SOURCE_CONTROLLER_CATALOG_UNPROVEN")
+
+    def freeze_market_source_handover(self, old_registry, new_registry, window):
         from app.redis_connections import get_redis_connection
 
         old_config, old_settings, target_config, target_settings = self._configs()
-        require(engine.url == make_url(normalize_database_url(old_settings["DATABASE_URL"]))
-                and canonical_root() == Path(old_settings["GUIYI_CANONICAL_DATA_ROOT"]),
-                "MARKET_SOURCE_CONTROLLER_CATALOG_UNPROVEN")
+        self.check_controller_catalog(old_settings)
         candidate = Path(new_registry.services["api"].root)
         git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
         require(read_command([*git, "cat-file", "-t", "refs/tags/" + _COMPONENT_TAG], root=candidate) == "tag",
@@ -422,17 +427,31 @@ class MarketCohortHost(CohortHost):
         previous = self._accounts["subing"]
         require(paper["status"] == "verified" and all(paper[k] == v for k, v in previous.items() if k != "pid"),
                 "MARKET_SOURCE_STOPPED_SUBING_DRIFT")
-        base = self.directory / _ACCOUNTS["tqkq"][1]
-        raw = _private(base / "config.json")
+        account, base = self._check_stopped_account_config("tqkq")
         previous = self._accounts["tqkq"]
-        require(sha256(raw).hexdigest() == previous["config_sha256"]
-                and sha256(_private(base / "control.json")).hexdigest() == previous["control_sha256"]
-                and not os.path.lexists(base / "hold.json"), "MARKET_SOURCE_STOPPED_TQ_CONFIG_DRIFT")
-        account = json.loads(raw)["account_id"]
         tq = tq_watermark(base / "accounts" / account / "account.sqlite", account,
-                          self._terminals(windows, TRADING_PRODUCTS, "60m"), self.now())
+                          self._terminals(windows, TRADING_PRODUCTS, "60m"), self.now(), stopped=True)
         require(tq["status"] == "verified" and tq["watermarks"] == previous["watermarks"],
                 "MARKET_SOURCE_STOPPED_TQ_WATERMARK_DRIFT")
+
+    def _check_stopped_account_config(self, name):
+        previous = self._accounts[name]
+        if name == "subing":
+            root, _job, commit, run_id, registered, database = _paper_identity(self.home, self.directory, stopped=True)
+            require((str(root), commit, run_id, sha256(registered).hexdigest(), sha256(database).hexdigest())
+                    == tuple(previous[key] for key in ("root", "disk_commit", "run_id", "registration_sha256", "database_sha256")),
+                    "MARKET_SOURCE_STOPPED_SUBING_CONFIG_DRIFT")
+            return None
+        from guiyi_quant.tq_simulation.worker import verify_config
+
+        base = self.directory / _ACCOUNTS["tqkq"][1]
+        raw = _private(base / "config.json")
+        config = json.loads(raw)
+        require(sha256(raw).hexdigest() == previous["config_sha256"]
+                and sha256(_private(base / "control.json")).hexdigest() == previous["control_sha256"]
+                and not os.path.lexists(base / "hold.json") and str(verify_config(config)) == previous["root"],
+                "MARKET_SOURCE_STOPPED_TQ_CONFIG_DRIFT")
+        return config["account_id"], base
 
     def _before_deadline(self):
         require(monotonic() < self.deadline, "COHORT_DOWNTIME_EXCEEDED")
@@ -568,13 +587,7 @@ class MarketCohortHost(CohortHost):
         if sha256(active).hexdigest() != old_sha:
             require(staged is not None and sha256(active).hexdigest() == staged["config_sha256"],
                     "MARKET_SOURCE_CONFIG_RESTORE_UNPROVEN")
-            originals = self._attempt(plan) / "originals"
-            index = json.loads(_private(originals / "index.json"))
-            rows = [row for row in index["files"] if row["source"] == str(self.project_config)]
-            require(len(rows) == 1 and re.fullmatch(r"[0-9]{3}\.bin", rows[0]["file"]),
-                    "MARKET_SOURCE_CONFIG_RESTORE_UNPROVEN")
-            previous = _private(originals / rows[0]["file"])
-            require(sha256(previous).hexdigest() == old_sha, "MARKET_SOURCE_CONFIG_RESTORE_UNPROVEN")
+            previous, _ = self.retained_project_config(plan)
             self._replace_plist(self.project_config, previous)
             require(_private(self.project_config) == previous, "MARKET_SOURCE_CONFIG_RESTORE_UNKNOWN")
 
@@ -587,6 +600,7 @@ class MarketCohortHost(CohortHost):
             path = self.home / "Library/LaunchAgents" / (label + ".plist")
             require(sha256(self.bytes(path)).hexdigest() == self._accounts[name]["plist_sha256"],
                     "MARKET_SOURCE_ACCOUNT_PLIST_DRIFT")
+            self._check_stopped_account_config(name)
             if track_successor:
                 self._successor_start_requests.append(name)
             self.launch("enable", f"gui/{os.getuid()}/{label}")
@@ -627,6 +641,17 @@ class MarketCohortHost(CohortHost):
 
     def _attempt(self, plan):
         return self.directory / "cohort-attempts" / plan["plan_sha256"]
+
+    def retained_project_config(self, plan):
+        originals = self._attempt(plan) / "originals"
+        index = json.loads(_private(originals / "index.json"))
+        rows = [row for row in index["files"] if row["source"] == str(self.project_config)]
+        require(len(rows) == 1 and re.fullmatch(r"[0-9]{3}\.bin", rows[0]["file"]),
+                "MARKET_SOURCE_CONFIG_PREIMAGE_UNPROVEN")
+        raw, settings = _private_configuration(originals / rows[0]["file"])
+        require(sha256(raw).hexdigest() == plan["protected"]["files"][str(self.project_config)],
+                "MARKET_SOURCE_CONFIG_PREIMAGE_UNPROVEN")
+        return raw, settings
 
     def _active_target(self, plan):
         raw, settings = _private_configuration(self.project_config)
@@ -763,17 +788,29 @@ class MarketCohortHost(CohortHost):
                 "natural_acceptance": "pending"}
 
     def halt_unknown(self, plan):
-        if self.bindings() != registry(plan["new"]):
+        new = registry(plan["new"])
+        if self.bindings() != new:
             return
+        service_stop_status = "attempted"
         try:
             super().halt_unknown(plan)
-        finally:
-            for name in getattr(self, "_successor_start_requests", ()):
-                label = _ACCOUNTS[name][0]
-                target = f"gui/{os.getuid()}/{label}"
+        except Exception:
+            service_stop_status = "unproven"
+        stopped = {}
+        for name in getattr(self, "_successor_start_requests", ()):
+            label, folder = _ACCOUNTS[name]
+            target = f"gui/{os.getuid()}/{label}"
+            try:
+                require(self.bindings() == new, "MARKET_SOURCE_BINDINGS_DRIFT")
                 self.launch("disable", target)
                 if not self._account_absent(name):
                     self.launch("bootout", target)
+                require(self._account_absent(name), "MARKET_SOURCE_ACCOUNT_STOP_UNPROVEN")
+                with _account_lock(self.directory / folder / "owner.lock", stopped=True):
+                    stopped[name] = "stopped"
+            except Exception:
+                stopped[name] = "unproven"
+        return {"service_stop_status": service_stop_status, "account_stops": stopped}
 
     def _evidence(self, supplied):
         from app.runtime_cohort import _resolution_source
@@ -791,6 +828,8 @@ class MarketCohortHost(CohortHost):
         return plan, state
 
     def read_market_source_recovery(self, supplied):
+        from app.runtime_market_forward_recovery import forward_recovery_status
+
         with deployment_lock(runtime_dir=self.directory):
             plan, state = self._evidence(supplied)
             pointer = _read(self.directory / "cohort-release.json")
@@ -821,12 +860,15 @@ class MarketCohortHost(CohortHost):
             require(self.bindings() == bindings and _private(self.project_config) == raw, "COHORT_BINDING_DRIFT")
             return {"status": "readback", "direction": direction, "active_configuration": name,
                     "registry": binding_side, "private_phase": state["phase"], "pointer_phase": pointer.get("phase"),
+                    "same_generation_recovery": forward_recovery_status(self, plan, state),
                     "plan_sha256": plan["plan_sha256"]}
 
     def read_market_source_accounts(self, supplied):
         plan, state = self._evidence(supplied)
         new = registry(plan["new"])
-        require(state["phase"] == "switched" and self.bindings() == new,
+        from app.runtime_market_forward_recovery import forward_completed
+
+        require((state["phase"] == "switched" or forward_completed(self, plan, state)) and self.bindings() == new,
                 "MARKET_SOURCE_ACCOUNT_ACCEPTANCE_NOT_RECORDED")
         intent = plan["market_source_handover"]
         old = state["effects"]["old_exited"]["accounts"]["subing"]

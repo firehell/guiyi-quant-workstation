@@ -488,8 +488,11 @@ class LaunchdBackend:
 
 
 def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=False):
-    cohort = _read(runtime_directory() / 'cohort-release.json')
-    if (cohort is not None and cohort.get('phase') not in {'switched', 'cancelled'}
+    from app.runtime_cohort import terminal_cohort_state
+
+    directory = runtime_directory()
+    cohort = _read(directory / 'cohort-release.json')
+    if (cohort is not None and not terminal_cohort_state(directory, cohort)
             and (cohort_plan_sha256 is None or cohort.get('plan_sha256') != cohort_plan_sha256)):
         raise DeploymentError('COHORT_RECOVERY_READBACK_REQUIRED')
     journal = _read(runtime_directory() / 'deployment-outcome.json')

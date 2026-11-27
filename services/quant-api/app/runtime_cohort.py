@@ -69,6 +69,16 @@ def require(value, code):
         raise CohortError(code)
 
 
+def terminal_cohort_state(directory, state):
+    if state.get("phase") not in TERMINAL:
+        return False
+    if "market_forward_sha256" not in state:
+        return True
+    from app.runtime_market_forward_recovery import verified_forward_pointer
+
+    return verified_forward_pointer(directory, state)
+
+
 def registry(value, *, historical=False, history_directory=None, history_verifier=None):
     from app.runtime_bindings import historical_binding
 
@@ -181,7 +191,7 @@ def freeze_cohort(host, *, candidate_root, tag, commit, market_source=False):
     )
     state = _read(host.directory / "cohort-release.json")
     require(
-        state is None or state.get("phase") in TERMINAL,
+        state is None or terminal_cohort_state(host.directory, state),
         "COHORT_RECOVERY_READBACK_REQUIRED",
     )
     _release_layout(candidate_root, tag, previous)
@@ -381,7 +391,7 @@ def apply_cohort(host, plan):
     with deployment_lock(runtime_dir=host.directory):
         current = _read(host.directory / "cohort-release.json")
         require(
-            current is None or current.get("phase") in TERMINAL,
+            current is None or terminal_cohort_state(host.directory, current),
             "COHORT_RECOVERY_READBACK_REQUIRED",
         )
         require(

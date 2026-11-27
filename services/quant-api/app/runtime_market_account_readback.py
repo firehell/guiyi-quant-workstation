@@ -16,11 +16,12 @@ from guiyi_quant.htdy_account_execution.scope import scope_status
 from guiyi_quant.htdy_account_execution.store import LocalStore
 
 
-def tq_watermark(path, account_id, expected, now):
+def tq_watermark(path, account_id, expected, now, *, stopped=False):
     state = LocalStore.inspect_tip(path)
     if state.account_id != account_id:
         raise CohortError("TQ_HANDOFF_ACCOUNT_MISMATCH")
-    scope = scope_status(state, now)
+    evidence_at = state.readback.at if stopped else now
+    scope = scope_status(state, evidence_at)
     watermarks = {
         row.product.lower(): {
             "contract": row.owner,
@@ -38,7 +39,7 @@ def tq_watermark(path, account_id, expected, now):
     obligations_clear = (
         scope["status"] == "ACTIVE"
         and state.readback_valid
-        and now < state.readback.valid_until
+        and evidence_at <= now and evidence_at < state.readback.valid_until
         and {item.lower() for item in scope.get("products", ())} == set(expected)
         and not (orders or reservations or state.unresolved_fill_ids or state.blocked_products)
         and not any(row.rolling or row.must_close for row in state.products)

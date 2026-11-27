@@ -131,7 +131,7 @@ case "$SERVICE" in
     export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
     exec "$PYTHON_BIN" -m app.runtime_cohort apply-plan "$@"
     ;;
-  cohort-market-plan|cohort-market-apply)
+  cohort-market-plan|cohort-market-apply|cohort-market-forward)
     shift
     export GUIYI_RUNTIME_HANDOVER_ENABLED=1 GUIYI_OBSERVATION_STREAM_ENABLED=1
     exec "$PYTHON_BIN" -m app.runtime_market_macos "$SERVICE" "$@"

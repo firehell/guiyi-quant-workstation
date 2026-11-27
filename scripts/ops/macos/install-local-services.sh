@@ -26,6 +26,7 @@ case "$MODE" in
   --plan-market-source-handover) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-market-plan "$@" ;;
   --apply-market-source-handover) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-market-apply "$@" ;;
   --read-market-source-recovery) shift; exec "$PYTHON_BIN" -m app.runtime_market_macos cohort-market-recovery "$@" ;;
+  --recover-market-source-forward) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-market-forward "$@" ;;
   --read-market-source-accounts) shift; exec "$PYTHON_BIN" -m app.runtime_market_macos cohort-market-accounts "$@" ;;
   --plan-cohort) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-plan "$@" ;;
   --apply-cohort-plan) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-apply "$@" ;;

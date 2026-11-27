@@ -307,7 +307,9 @@ def read_current(home, day, now, *, consumer="all"):
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0] in {"cohort-market-plan", "cohort-market-apply", "cohort-market-recovery", "cohort-market-accounts"}:
+    if argv and argv[0] in {
+        "cohort-market-plan", "cohort-market-apply", "cohort-market-recovery", "cohort-market-forward", "cohort-market-accounts",
+    }:
         return _cohort_main(argv)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trading-day", required=True, type=date.fromisoformat)
@@ -348,6 +350,10 @@ def _cohort_main(argv):
                                    commit=args.commit, market_source=True)
         elif mode == "cohort-market-recovery":
             result = host.read_market_source_recovery(args.plan)
+        elif mode == "cohort-market-forward":
+            from app.runtime_market_forward_recovery import recover_market_source_forward
+
+            result = recover_market_source_forward(host, args.plan)
         elif mode == "cohort-market-accounts":
             result = host.read_market_source_accounts(args.plan)
         else:
