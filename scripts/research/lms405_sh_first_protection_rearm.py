@@ -1,10 +1,14 @@
 """Bound SH2701's first protection after the early shape loses its low."""
 
 from argparse import ArgumentParser
+from dataclasses import asdict
 from datetime import datetime
 from decimal import Decimal
+import json
 from pathlib import Path
 
+from guiyi_quant.lms405.portfolio_tasks import REQUIRED, Book, Intent
+from guiyi_quant.lms405.public_conditions import Condition
 from lms405_first_night_confirmation_clocks import DAY, POST, START
 from lms405_first_night_shape_cross import PHOTO, breaches
 from lms405_portfolio_replay import ARCHIVE, input_sources
@@ -13,7 +17,7 @@ from lms405_protection_quantity_stages import compatible_allocations
 from lms405_protection_timeframes import VARIANTS, read_window
 from lms405_public_plan_roles import load_source
 from lms405_replay import display, ohlc
-from lms405_right_side_study import US, at
+from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import completed, digest, signals
 from lms_near405_replay import encoded, sha
 
@@ -90,7 +94,78 @@ def first_close_reset(minutes, breach, quote_end, *, lots, totals):
                 witnessed_recross_minute_ends=[bar.end for bar in recrosses], allocations=result)
 
 
-def study(session, market, *, reset_at_first_close=False):
+def conditional_topup(series, controls, source):
+    """Test a separately authorized top-up from an explicitly hypothetical partial position."""
+    from lms405_plan_driven_replay import (
+        EXTERNAL_FIXTURE_PREFIX,
+        INPUT_VERSION,
+        PlanRevision,
+        replay_input,
+        revision_digest,
+        revision_record,
+    )
+
+    reset = controls["reset_end"]
+    cutoff = QUOTE
+    original, partial = 20, 10
+    seed = Book(CONTRACT, "SH2701:2026-10-22:HYPOTHETICAL_PARTIAL_PROTECTION", "SHORT", reset + US,
+                Decimal(original), Decimal(partial), attempt=1)
+    metadata_time = datetime.fromisoformat(source["published_at"])
+    plan = PlanRevision(CONTRACT, f"{PLAN}:CONDITIONAL_TOPUP", metadata_time, metadata_time + ONE, source["source_url"],
+                        frozenset({"PROTECT_TOPUP"}))
+    baseline = {}
+    for shape, confirm in VARIANTS:
+        events = signals(series, shape, confirm, start=seed.known_at + US, cut=cutoff, side="LONG")
+        baseline[f"{shape}m_to_{confirm}m"] = [row for row in events if NEAR <= row["close"] <= FAR]
+    visible_minutes = completed(series[1], reset, cutoff)
+    clock_rows = {}
+    for n in (1, 2):
+        closes, _ = reclaim_tape(visible_minutes, edge=controls["edge"], required=n)
+        if not closes:
+            clock_rows[str(n)] = dict(candidate_close_at=None, status="NO_VISIBLE_RECROSS_CONFIRMATION")
+            continue
+        clock, close = closes[0]
+        if not seed.known_at < clock or not NEAR <= close <= FAR:
+            raise ValueError("SH_TOPUP_SCOPE_CHANGED")
+        request = Intent(seed, "PROTECT_TOPUP", Decimal(original - partial), plan.id, clock + ONE + US)
+        source_id = (f"{EXTERNAL_FIXTURE_PREFIX}{revision_digest(plan)}:"
+                     + sha(encoded((controls["edge"], reset, n, clock, close)).encode()))
+        facts = tuple(Condition(name, request.scope, CONTRACT, True, clock, clock + US, source_id, "EVENT_TIME")
+                      for name in REQUIRED[request.operation])
+        evaluation_at = clock + 4 * US
+        approval = dict(scope=request.confirmation_scope(facts), id=f"TEST_FIXTURE:SH_TOPUP:{n}", accepted=True,
+                        decided_at=clock + 2 * US, known_at=clock + 3 * US, record_kind="TEST_FIXTURE")
+        evidence = dict(**asdict(request), at=evaluation_at, facts=[asdict(fact) for fact in facts])
+        tape = dict(version=INPUT_VERSION, cutoff=cutoff, seed=asdict(seed), revisions=[revision_record(plan)])
+
+        def replay_case(changes, *, fixture=True):
+            inputs = json.loads(encoded(tape | {"evaluations": [evidence | changes]}))
+            return replay_input(**inputs, allow_test_fixture=fixture)
+
+        public = replay_case({"facts": []}, fixture=False)
+        signal_only = replay_case({})
+        approved = replay_case({"approval": approval})
+        at_same_clock = replay_case({"at": approval["known_at"], "approval": approval})
+        statuses = [row["events"][0]["status"] for row in (public, signal_only, approved, at_same_clock)]
+        positions = [row["final"]["protection"] for row in (public, signal_only, approved, at_same_clock)]
+        if (statuses != ["INDETERMINATE", "INDETERMINATE", "CONDITIONAL_ACTION", "INDETERMINATE"]
+                or positions != [partial, partial, original, partial] or approved["final"]["original"] != original):
+            raise ValueError("SH_TOPUP_PERMISSION_CHANGED")
+        strict = controls["allocations"][f"{n}_close_rearm_complete_minutes_only"]
+        overlap = controls["allocations"][f"{n}_close_rearm_overlap"]
+        clock_rows[str(n)] = dict(
+            candidate_close_at=clock, candidate_close=close, public_input=public, fixture_without_approval=signal_only,
+            fixture_at_approval_visibility=at_same_clock, approved_fixture=approved,
+            partial_seed_quantity_price_compatible={
+                name: any(row[0] == partial and sum(row) == original for row in result["allocations"])
+                for name, result in (("whole_minutes_only", strict), ("allow_overlap", overlap))
+            },
+        )
+    return dict(partial_seed=asdict(seed), default_fresh_in_band_candidates=baseline,
+                explicit_test_fixture_clocks=clock_rows, historical_plan_revision_verified=False)
+
+
+def study(session, market, *, reset_at_first_close=False, include_topup=False):
     reference = verified_json(FROZEN, FROZEN_SHA)
     case = reference["cases"][CONTRACT]
     index = input_sources()
@@ -118,15 +193,18 @@ def study(session, market, *, reset_at_first_close=False):
     prefix = [bar for bar in minutes if bar.end <= QUOTE]
     lots = case["visible_long"]["today_quantity"]
     totals = displayed_tick_totals(Decimal(case["visible_long"]["opening_average"]), lots, TICK)
-    if reset_at_first_close:
+    if reset_at_first_close or include_topup:
         controls = first_close_reset(prefix, breach, QUOTE, lots=lots, totals=totals)
-        return dict(
+        output = dict(
             study="SH2701_FIRST_PROTECTION_BREACH_CLOSE_RESET", snapshot=reference["photo_source"],
             photo=photo, plan=source, reference_sha256=FROZEN_SHA, market=case["market"], shape_breach=breach,
             quote_end=QUOTE, quote_mark=mark, quote_ohlc=ohlc(prefix[-1]), visible_long=case["visible_long"],
             controls=controls, author_action_samples=0, author_match_rate=None, actual_quote_time=None,
             executable=False, fills=None, pnl=None,
         )
+        if include_topup:
+            output["conditional_topup"] = conditional_topup(series, controls, source)
+        return output
     loss = next(bar for bar in prefix if bar.start >= known and bar.close < NEAR)
     if loss.end != datetime.fromisoformat(frozen["bounds"]["first_later_close_below_shape_low"]):
         raise ValueError("SH_REARM_LOSS_CHANGED")
@@ -179,7 +257,9 @@ def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--reset-at-first-close", action="store_true")
+    batch = parser.add_mutually_exclusive_group()
+    batch.add_argument("--reset-at-first-close", action="store_true")
+    batch.add_argument("--conditional-topup", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -193,7 +273,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session), reset_at_first_close=args.reset_at_first_close)
+            report = study(session, build_market_data_service(session), reset_at_first_close=args.reset_at_first_close,
+                           include_topup=args.conditional_topup)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

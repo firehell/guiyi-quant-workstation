@@ -713,6 +713,22 @@ services/quant-api/.venv/bin/python scripts/research/lms405_sh_first_protection_
 
 统一MDS实月输入、计划与持仓图指纹均与冻结报告一致。新报告两次复算相同，原命令输出与历史定稿逐字节一致。新结果在 `output/lms405-sh-first-protection-rearm-20261126/first-close-reset.json`，SHA256 `f0d2e3e1bc06e9ca83bead803f2ff070651e618c1da6c17014197db3b96bb85f`。
 
+#### 部分保护补足的条件重放
+
+复看22:10的4.0.5持仓表和22:12的软件回报图。持仓表仍只有两腿字段，没有交易时钟。22:08原帖仅预告两套系统，22:12图的成交行均为5.0聚丙烯2701。未取得本次烧碱的同账户买开回报。 [22:08发布入口](../../lms-source-archive/02-持仓记录/2026-10-22/WRnTl1Ej2P.md) · [4.0.5持仓图](../../lms-source-archive/02-持仓记录/2026-10-22/RnTlEfj1t-table2-screen.png) · [5.0软件回报](../../lms-source-archive/02-持仓记录/2026-10-22/WRnTmqo3x5.md)
+
+以21:21失效已可知、原空20及保护多10为假设前像，比较现有 `PROTECT_TOPUP` 的默认信号与前节两种重新放行候选。10手仅为试验输入。自失效可知后形成的1→1、5→1、5→5、15→15四种区内新几何信号在22:08之前均为空。另将22:06单根、22:07双根分别作为测试触发，经严格晚于触发的独立测试许可后，两路研究仓位均从多10空20变为多20空20。只有公开输入、已给测试触发但缺许可、或许可可知与评估同刻时，均保持多10空20。
+
+仓位投影与价格分开验证。以假设首批10手计算，单根路线的完整分钟和宽口径价格均相容，双根只在允许22:08整根相交价格时相容。22:08只用于核对开均，未参与触发或放行。测试结果没有为作者提供首批比例、真实许可、成交时点或独立可评分动作。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_sh_first_protection_rearm.py \
+  --conditional-topup --env-file .env --output /tmp/lms405-sh-conditional-topup-new.json
+```
+
+两次输出逐字节相同，两份旧报告重新生成也各自与冻结结果一致。报告位于 `output/lms405-sh-first-protection-rearm-20261126/conditional-topup.json`，SHA256为 `ecd68ec85c8778c0578b76d1b9a68066ae3b0732f735704dff3ec7e5503745eb`。
+
 ### 夜盘旧保护候选的存续检验
 
 冻结此前唯一能按开均价格范围解释早图多腿的烧碱候选。原形态对照明确是1分钟内包加1分钟确认，26日21:15结束的形态K高低为1497和1495，21:16收1502确认。分别观察同确认周期收回突破边界、严格收破完整形态、新生反向形态确认，以及完成行情中首次可见的交易段间断。新生反向形态须整根起于原确认已可知之后。多方候选只用于研究，评估严格截止于可知时点之前。时间均为北京时间，以K线结束时点标记。 [此前形态对照](PORTFOLIO_REPLAY.md#反向保护形态的跨品种对照) · [26日晚改判](../../lms-source-archive/03-单品种分析/2026-10-26/烧碱/WRouYm67Bc.md)
