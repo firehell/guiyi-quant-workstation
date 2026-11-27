@@ -13,7 +13,8 @@ import stat
 from typing import Any
 
 from app.market_release_identity import valid_release_tag
-from app.runtime_bindings import SERVICES, _git, read_bindings, verify_release
+from app.runtime_bindings import _git, read_bindings, verify_release
+from app.runtime_identity import MARKET_TARGET_REDIS_LABEL, file_snapshot, is_known_launchd_label
 
 
 class RetentionError(ValueError):
@@ -27,6 +28,55 @@ def _hash(value: Any) -> str:
 def _references(value: str, root: Path) -> bool:
     # A conservative prefix match retains descendants and ambiguous shell quoting.
     return str(root) in value
+
+
+_REDIS_VALUE_DIRECTIVES = frozenset({
+    "bind", "protected-mode", "port", "daemonize", "appendonly",
+    "appendfsync", "maxmemory-policy", "requirepass",
+})
+_REDIS_DIR = re.compile(r"""dir[ \t]+(?:"([^"\\]+)"|'([^'\\]+)'|([^\s"'\\]+))""", re.IGNORECASE)
+_REDIS_PLIST_KEYS = frozenset({
+    "Label", "Program", "ProgramArguments", "WorkingDirectory", "StandardOutPath",
+    "StandardErrorPath", "RunAtLoad", "KeepAlive", "Umask",
+})
+
+
+def _target_redis_paths(
+    arguments: list[str], program: str, configs: dict[Path, tuple[bytes, tuple[int, ...]]],
+) -> list[str]:
+    """Validate the standalone Redis config shape and collect its filesystem paths."""
+    try:
+        if (len(arguments) != 2 or program != arguments[0] or Path(program).name != "redis-server"
+                or any(not Path(value).is_absolute() for value in arguments)):
+            raise ValueError
+        config = Path(arguments[1])
+        snapshot = file_snapshot(config)
+        if configs.setdefault(config, snapshot) != snapshot:
+            raise ValueError
+        data_dir = None
+        for raw_line in snapshot[0].decode("utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            directive = line.split(maxsplit=1)[0].lower()
+            if directive in _REDIS_VALUE_DIRECTIVES:
+                continue
+            match = _REDIS_DIR.fullmatch(line)
+            if data_dir is not None or match is None:
+                raise ValueError
+            data_dir = Path(next(value for value in match.groups() if value is not None))
+        if data_dir is None or not data_dir.is_absolute():
+            raise ValueError
+        appendonly = data_dir / "appendonlydir"
+        files = [data_dir, data_dir / "dump.rdb", appendonly]
+        if appendonly.is_dir():
+            for index, path in enumerate(appendonly.iterdir()):
+                if index >= 256:
+                    raise ValueError
+                files.append(path)
+        return [str(path) for path in files]
+    except (OSError, ValueError):
+        raise RetentionError("CLEANUP_TARGET_REDIS_CONFIG_UNPROVEN") from None
 
 
 class _SimNowReferences:
@@ -500,9 +550,26 @@ class RetentionBackend:
             raise RetentionError("CLEANUP_PROBE_UNAVAILABLE") from None
 
     def references_by_root(self, roots: tuple[Path, ...]) -> dict[str, list[str]]:
-        from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments, file_snapshot as _snapshot
+        from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments
+        from app.runtime_identity import read_launchd_service as _read_launchd_service
+
         result: dict[str, list[str]] = {str(root): [] for root in roots}
+        redis_configs: dict[Path, tuple[bytes, tuple[int, ...]]] = {}
+        redis_dependencies = {}
         simnow = _SimNowReferences(roots, result)
+
+        def redis_paths(arguments: list[str], program: str, paths: list[str]) -> list[str]:
+            paths.extend(_target_redis_paths(arguments, program, redis_configs))
+            resolved = []
+            for value in paths:
+                path = Path(value)
+                if path.is_absolute():
+                    snapshot = simnow.dependency_snapshot(path)
+                    if redis_dependencies.setdefault(path, snapshot) != snapshot:
+                        raise RetentionError("CLEANUP_TARGET_REDIS_PATH_DRIFT")
+                    resolved.extend(entry for entry, _ in snapshot[1])
+            return paths + resolved
+
         registry = read_bindings(home=self.home)
         if registry is not None:
             for service, binding in registry.services.items():
@@ -514,7 +581,7 @@ class RetentionBackend:
             if directory != directory.resolve(strict=True):
                 raise RetentionError("CLEANUP_PLIST_DIRECTORY_INVALID")
             for path in directory.glob("com.guiyi.quant-*.plist"):
-                content, _ = _snapshot(path)
+                content, _ = file_snapshot(path)
                 try:
                     payload = plistlib.loads(content)
                     label = payload["Label"]
@@ -530,32 +597,49 @@ class RetentionBackend:
                     simnow.arguments(arguments, label, "plist")
                     if any(not isinstance(value, str) for value in values):
                         raise ValueError
+                    if label == MARKET_TARGET_REDIS_LABEL:
+                        if (payload.keys() - _REDIS_PLIST_KEYS or not arguments
+                                or any(type(payload.get(key, False)) is not bool for key in ("KeepAlive", "RunAtLoad"))):
+                            raise ValueError
+                        values = redis_paths(arguments, payload.get("Program", arguments[0]), values + [str(path)] + [
+                            payload.get(key, "") for key in ("StandardOutPath", "StandardErrorPath")
+                        ])
                     for root in roots:
                         if any(_references(value, root) for value in values):
                             result[str(root)].append(f"plist:{label}")
                 except (KeyError, TypeError, ValueError, plistlib.InvalidFileException):
                     raise RetentionError("CLEANUP_PLIST_UNAVAILABLE") from None
         # Inventory loaded labels as well as installed plists; stale candidate jobs are pins.
-        output = self._command(["/bin/launchctl", "list"])
-        for line in output.splitlines()[1:]:
+        lines = self._command(["/bin/launchctl", "list"]).splitlines()
+        if not lines or lines[0].split() != ["PID", "Status", "Label"]:
+            raise RetentionError("CLEANUP_LOADED_INVENTORY_INVALID")
+        for line in lines[1:]:
             parts = line.split()
             if len(parts) != 3:
                 raise RetentionError("CLEANUP_LOADED_INVENTORY_INVALID")
             if parts[2].startswith("com.guiyi.quant-"):
                 labels.add(parts[2])
-        valid_label = re.compile(r"com\.guiyi\.quant-(?:" + "|".join(re.escape(item) for item in (*SERVICES, "simnow", "tqkq-simulation")) + r")(?:-candidate-[0-9a-f]{32})?")
-        from app.runtime_identity import SUBING_DEVELOPMENT_LABEL, SUBING_PAPER_LABEL, read_launchd_service as _read_launchd_service
         for label in labels:
-            if label not in (SUBING_DEVELOPMENT_LABEL, SUBING_PAPER_LABEL) and not valid_label.fullmatch(label):
+            if not is_known_launchd_label(label):
                 raise RetentionError("CLEANUP_LOADED_LABEL_UNSUPPORTED")
             observed = _read_launchd_service(label, root=self.home)
             if observed is None:
                 continue
-            values = list(_arguments(observed))
-            simnow.arguments(values, label, "loaded")
-            values.extend(environment.get(key, "") for environment in _environments(observed)
+            arguments = list(_arguments(observed))
+            values = arguments.copy()
+            simnow.arguments(arguments, label, "loaded")
+            environments = _environments(observed)
+            values.extend(environment.get(key, "") for environment in environments
                           for key in ("GUIYI_PROJECT_ROOT", "PYTHONPATH", "VIRTUAL_ENV"))
             values.extend(re.findall(r"^\s*working directory = (.*)$", observed, flags=re.M))
+            if label == MARKET_TARGET_REDIS_LABEL:
+                programs = re.findall(r"^\s*program = (.*)$", observed, flags=re.M)
+                if (len(programs) != 1 or re.search(r"^\s*root directory =", observed, flags=re.M)
+                        or any(key.startswith(("DYLD_", "LD_")) for env in environments for key in env)):
+                    raise RetentionError("CLEANUP_TARGET_REDIS_CONFIG_UNPROVEN")
+                values = redis_paths(arguments, programs[0], values + re.findall(
+                    r"^\s*(?:path|stdout path|stderr path) = (.*)$", observed, flags=re.M,
+                ))
             for root in roots:
                 if any(_references(value, root) for value in values):
                     result[str(root)].append(f"loaded:{label}")
@@ -608,6 +692,10 @@ class RetentionBackend:
         from app.core.env import PROJECT_ROOT
         simnow.intents(PROJECT_ROOT, home=self.home)
         simnow.verify()
+        if any(file_snapshot(path) != snapshot for path, snapshot in redis_configs.items()):
+            raise RetentionError("CLEANUP_TARGET_REDIS_CONFIG_DRIFT")
+        if any(simnow.dependency_snapshot(path) != snapshot for path, snapshot in redis_dependencies.items()):
+            raise RetentionError("CLEANUP_TARGET_REDIS_PATH_DRIFT")
         if read_bindings(home=self.home) != registry:
             raise RetentionError("CLEANUP_REGISTRY_DRIFT")
         return result

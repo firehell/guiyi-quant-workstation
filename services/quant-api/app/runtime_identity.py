@@ -12,10 +12,23 @@ from typing import NoReturn
 
 from app.core.env import PROJECT_ROOT
 from app.market_release_identity import valid_release_tag
+from app.runtime_contracts import SERVICES
 
 
 SUBING_DEVELOPMENT_LABEL = "com.guiyi.quant-subing-development-model"
 SUBING_PAPER_LABEL = "com.guiyi.quant-subing-paper"
+MARKET_TARGET_REDIS_LABEL = "com.guiyi.quant-market-target-redis"
+_RELEASE_LAUNCHD_LABEL = re.compile(
+    r"com\.guiyi\.quant-(?:"
+    + "|".join(re.escape(service) for service in sorted(SERVICES | {"simnow", "tqkq-simulation"}))
+    + r")(?:-candidate-[0-9a-f]{32})?"
+)
+
+
+def is_known_launchd_label(label: str) -> bool:
+    return label in (SUBING_DEVELOPMENT_LABEL, SUBING_PAPER_LABEL, MARKET_TARGET_REDIS_LABEL) or (
+        _RELEASE_LAUNCHD_LABEL.fullmatch(label) is not None
+    )
 
 
 class RuntimeIdentityError(ValueError):
@@ -68,10 +81,7 @@ def read_command(arguments: list[str], *, root: Path) -> str:
 
 def read_launchd_service(label: str, *, root: Path) -> str | None:
     """Return one loaded definition, or None only for an explicit label absence."""
-    if label not in (SUBING_DEVELOPMENT_LABEL, SUBING_PAPER_LABEL) and re.fullmatch(
-        r"com\.guiyi\.quant-(?:api|web|live|alert|after-market|late-provider-recovery|log-rotate|weekly-audit|reference-worker|home-projection|market-feed|simnow|tqkq-simulation)(?:-candidate-[0-9a-f]{32})?",
-        label,
-    ) is None:
+    if not is_known_launchd_label(label):
         _reject("IDENTITY_UNAVAILABLE")
     domain = f"gui/{os.getuid()}"
     read_command(["/bin/launchctl", "print", domain], root=root)

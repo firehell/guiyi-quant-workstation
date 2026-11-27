@@ -112,7 +112,7 @@ def test_simnow_arguments_are_checked_as_references_without_ignoring_its_label(t
         backend.references_by_root((root,))
 
 
-@pytest.mark.parametrize("service", ["simnow", "subing-development-model", "subing-paper"])
+@pytest.mark.parametrize("service", ["simnow", "subing-development-model", "subing-paper", "market-target-redis"])
 def test_native_reader_allows_known_standalone_label_and_still_rejects_unknown(tmp_path, monkeypatch, service):
     import subprocess
     from app import runtime_identity as identity
@@ -127,7 +127,59 @@ def test_native_reader_allows_known_standalone_label_and_still_rejects_unknown(t
     before = len(calls)
     with pytest.raises(identity.RuntimeIdentityError):
         identity.read_launchd_service("com.guiyi.quant-unrecognized", root=tmp_path)
+    with pytest.raises(identity.RuntimeIdentityError):
+        identity.read_launchd_service("com.guiyi.quant-market-target-redis-candidate-" + "a" * 32, root=tmp_path)
     assert len(calls) == before
+
+
+@pytest.mark.parametrize("source", ["installed", "loaded"])
+def test_target_redis_retains_paths_used_by_its_config(tmp_path, monkeypatch, source):
+    import plistlib
+    from app.runtime_retention import RetentionBackend
+
+    root = tmp_path / "old"
+    root.mkdir()
+    unused = tmp_path / "unused"
+    unused.mkdir()
+    alias = tmp_path / "data"
+    alias.symlink_to(root, target_is_directory=True)
+    config = tmp_path / "redis.conf"
+    config.write_text(f'dir "{alias}"\nrequirepass "private value"\n')
+    label = "com.guiyi.quant-market-target-redis"
+    program = "/usr/local/bin/redis-server"
+    backend = RetentionBackend(home=tmp_path)
+    monkeypatch.setattr("app.core.env.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(backend, "candidate_identity", lambda path: {"root": str(path)})
+    monkeypatch.setattr(backend, "_command", lambda argv: (
+        "PID\tStatus\tLabel\n" + ("42\t0\t" + label if source == "loaded" else "") if argv[0] == "/bin/launchctl"
+        else "p99\nfcwd\nn/unrelated" if argv[0] == "/usr/sbin/lsof" else "99 python unrelated"
+    ))
+    if source == "installed":
+        directory = tmp_path / "Library/LaunchAgents"
+        directory.mkdir(parents=True)
+        (directory / (label + ".plist")).write_bytes(plistlib.dumps({
+            "Label": label, "WorkingDirectory": str(tmp_path), "ProgramArguments": [program, str(config)],
+        }))
+    observed = (
+        f"{label} = {{\nprogram = {program}\nworking directory = {tmp_path}\n"
+        f"arguments = {{\n{program}\n{config}\n}}\nenvironment = {{\n}}\n}}"
+    )
+    monkeypatch.setattr("app.runtime_identity.read_launchd_service",
+                        lambda *a, **k: observed if source == "loaded" else None)
+
+    plan = build_cleanup_plan((root, unused), backend=backend)
+    assert [target["status"] for target in plan["targets"]] == ["retained", "eligible"]
+    assert "private value" not in str(plan)
+
+    config.write_text(f'dir "{unused}"\n')
+    (unused / "dump.rdb").symlink_to(root / "database.rdb")
+    plan = build_cleanup_plan((root,), backend=backend)
+    assert plan["targets"][0]["status"] == "retained"
+
+    for directive in ("include other.conf", rf'dir "{tmp_path}/\x6fld"'):
+        config.write_text(directive + "\n")
+        plan = build_cleanup_plan((root, unused), backend=backend)
+        assert [target["status"] for target in plan["targets"]] == ["blocked", "blocked"]
 
 
 def _simnow_fixture(tmp_path, monkeypatch, *, installed=True, loaded=True):
