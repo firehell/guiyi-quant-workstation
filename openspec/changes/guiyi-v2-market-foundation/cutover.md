@@ -41,7 +41,7 @@
 
 ### macOS 跨实例入口
 
-- `install-local-services.sh --plan-market-source-handover --candidate-root <release-root> --tag <application-tag> --commit <commit>` 输出计划。候选必须包含已发布的 Market Foundation 组件提交，并使用支持组件 tag 的 registry 合同。私有 `market-tick.env` 以现役 `project.env` 为前像，只改 `REDIS_URL` 并追加一行 `# guiyi-market-source: rqdata_tick`。注释让固定版本的账户配置解析器继续读取原配置格式。目标使用专用本地 Redis 实例和 db0。计划及公开读回保存摘要，凭据留在私有配置和进程内。
+- `install-local-services.sh --plan-market-source-handover --candidate-root <release-root> --tag <application-tag> --commit <commit>` 输出计划。控制器固定候选应用提交，从中读取 Market 版本声明，核对对应的 annotated tag、标签提交的版本声明及祖先关系。apply 开始时读回组件身份，CAS 前重验。私有 `market-tick.env` 以现役 `project.env` 为前像，只改 `REDIS_URL` 并追加一行 `# guiyi-market-source: rqdata_tick`。注释让固定版本的账户配置解析器继续读取原配置格式。目标使用专用本地 Redis 实例和 db0。计划及公开读回保存摘要，凭据留在私有配置和进程内。
 - `install-local-services.sh --apply-market-source-handover --plan <plan>` 单次执行。旧实例 source、completed、identity 索引、旧绑定所列全部品种的最后完成分钟和三条消费水位全部核对后，留存原件，再按新版 58 品种初始化目标交易日及零游标。PD、PT 的旧日志参与末端核验和留存。独立账户的旧进程退出与 owner lock 持有证明覆盖配置替换及 registry CAS。目标端先验证 Tick Feed 和凭证式 Reference 装配，再执行配置原子替换和 registry CAS。已存在的归档凭证须匹配完整 Catalog 修订；首张凭证缺席时 Reference 等待合格归档。
 - `install-local-services.sh --read-market-source-recovery --plan <plan>` 独立核对实际 registry、私有 attempt、全局记录及配置身份。CAS 前的已知失败可按原定义恢复；阶段或写入结果不明时保留证据。registry 已切换后仅允许前向恢复。目标 Redis 若已初始化，其原件保留，后续尝试须重新证明目标清洁。
 - 经 owner 单独批准后，`install-local-services.sh --recover-market-source-forward --plan <original-plan>` 可在首个目标 Session 前恢复已提交的同一代。入口只接纳真实 registry、两账户前像、旧流原件和目标空流均通过复核的停驻状态，按消费者、账户、Feed、日历顺序启动。原尝试记录逐字保留，恢复另记一次结果。已有目标观察或日历注册结果不明时继续停驻，另行核对业务前缀。

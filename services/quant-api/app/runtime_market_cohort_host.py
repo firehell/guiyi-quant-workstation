@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.db.readonly import readonly_transaction
 from app.db.url import normalize_database_url
+from app.market_release_identity import MARKET_VERSION_PATH, declared_market_release_tag
 from app.market_data.aggregation import expected_intraday_ends
 from app.market_data.catalog import MarketCatalog
 from app.market_data.day_preparation import DayMetadataPreparation, metadata_preparation_binding
@@ -44,7 +45,7 @@ from app.runtime_cohort_errors import CohortError
 from app.runtime_cohort_host import CohortHost
 from app.runtime_deployment import owner_process_matches
 from app.runtime_handover import _read, _write, deployment_lock, owner_lock_available, read_service_state
-from app.runtime_identity import SUBING_PAPER_LABEL, command_result, read_command, read_launchd_service
+from app.runtime_identity import SUBING_PAPER_LABEL, RuntimeIdentityError, command_result, read_command, read_launchd_service
 from app.runtime_market_account_readback import tq_watermark
 from app.runtime_market_macos import _TQ_LABEL, _paper, _paper_identity, _private, _tq
 from app.runtime_market_source_handover import (
@@ -63,7 +64,25 @@ from guiyi_quant.trading_universe import TRADING_PRODUCTS
 _REDIS_SETTING = re.compile(rb"^\s*(?:export )?REDIS_URL=")
 _TICK_MARKER = b"# guiyi-market-source: rqdata_tick"
 _ACCOUNTS = {"tqkq": (_TQ_LABEL, "tqkq-simulation"), "subing": (SUBING_PAPER_LABEL, "subing-paper")}
-_COMPONENT_TAG = "market-foundation/v0.1.0"
+
+
+def _candidate_market_component(candidate: Path) -> tuple[str, str]:
+    git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
+    code = "MARKET_SOURCE_COMPONENT_TAG_UNPROVEN"
+    try:
+        source = read_command([*git, "show", f"HEAD:{MARKET_VERSION_PATH}"], root=candidate)
+        tag = declared_market_release_tag(source)
+        require(tag is not None, code)
+        ref = f"refs/tags/{tag}"
+        require(read_command([*git, "cat-file", "-t", ref], root=candidate) == "tag", code)
+        commit = read_command([*git, "rev-parse", "--verify", f"{ref}^{{commit}}"], root=candidate)
+        require(re.fullmatch(r"[a-f0-9]{40}", commit) is not None, code)
+        declared = read_command([*git, "show", f"{commit}:{MARKET_VERSION_PATH}"], root=candidate)
+        require(declared_market_release_tag(declared) == tag, code)
+        read_command([*git, "merge-base", "--is-ancestor", commit, "HEAD"], root=candidate)
+    except RuntimeIdentityError:
+        raise CohortError(code) from None
+    return tag, commit
 
 
 def _bound_operational_products(bindings):
@@ -363,11 +382,10 @@ class MarketCohortHost(CohortHost):
         source_products = _bound_operational_products(old_registry)
         require(_bound_operational_products(new_registry) == load_operational_products(),
                 "COHORT_SCOPE_INVALID")
-        git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
-        require(read_command([*git, "cat-file", "-t", "refs/tags/" + _COMPONENT_TAG], root=candidate) == "tag",
+        component = _candidate_market_component(candidate)
+        require(getattr(self, "_market_component", component) == component,
                 "MARKET_SOURCE_COMPONENT_TAG_UNPROVEN")
-        read_command([*git, "merge-base", "--is-ancestor", _COMPONENT_TAG + "^{commit}", "HEAD"],
-                     root=candidate)
+        self._market_component = component
         with (_redis(old_settings["REDIS_URL"]) as old, _redis(target_settings["REDIS_URL"]) as target,
               get_redis_connection() as controller):
             old_id, target_id = redis_instance(old), redis_instance(target)
@@ -601,6 +619,9 @@ class MarketCohortHost(CohortHost):
         require(sha256(active).hexdigest() == staged["config_sha256"] and active == _private(self.target_config),
                 "MARKET_SOURCE_CONFIG_DRIFT")
         self._verify_stopped_namespaces(plan, retained, staged, target)
+        candidate = Path(registry(plan["new"]).services["api"].root)
+        require(_candidate_market_component(candidate) == self._market_component,
+                "MARKET_SOURCE_COMPONENT_TAG_UNPROVEN")
 
     def commit(self, plan):
         from app.runtime_bindings import write_bindings
