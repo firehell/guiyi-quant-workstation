@@ -1,7 +1,7 @@
 """Keep isolated and formally promoted Market Redis identities disjoint."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from hashlib import sha256
 import json
 import os
@@ -15,12 +15,17 @@ _SOURCE = "live:market-foundation:source"
 _TICK_POLICY = "rqdata-tick-v1"
 _FORMAL_BINDING = "live:market-foundation:formal-binding"
 _LEGACY_REFERENCE = "live:observations:registered:completed:reference"
+LIVE_FINALIZATION_DELAY = timedelta(seconds=2)
+
+
+def _isolated_market_fingerprint(sandbox: Path, database: URL) -> str:
+    return sha256(
+        f"{sandbox}\0{database.host}\0{database.port}\0{database.database}".encode()
+    ).hexdigest()
 
 
 def bind_market_redis(redis, sandbox: Path, database: URL) -> None:
-    identity = sha256(
-        f"{sandbox}\0{database.host}\0{database.port}\0{database.database}".encode()
-    ).hexdigest()
+    identity = _isolated_market_fingerprint(sandbox, database)
     result = redis.eval(
         """
         if redis.call('EXISTS', KEYS[2]) ~= 0 then return 0 end
@@ -35,6 +40,17 @@ def bind_market_redis(redis, sandbox: Path, database: URL) -> None:
     )
     if result != 1:
         raise ValueError("MARKET_FOUNDATION_REDIS_BINDING_CONFLICT")
+
+
+def require_isolated_market_tick(redis, sandbox: Path, database: URL) -> None:
+    """Prove the candidate source without installing or changing Redis markers."""
+    isolated, formal, source = redis.mget(_BINDING, _FORMAL_BINDING, _SOURCE)
+    identity = _isolated_market_fingerprint(sandbox, database)
+    if (isolated not in {identity, identity.encode()} or formal is not None
+            or source not in {_TICK_POLICY, _TICK_POLICY.encode()}
+            or redis.connection_pool.connection_kwargs.get("db", 0) != 0
+            and "db0" in redis.info("keyspace")):
+        raise ValueError("COMPUTE_LIVE_ISOLATION_REQUIRED")
 
 
 def bind_tick_source(redis) -> None:

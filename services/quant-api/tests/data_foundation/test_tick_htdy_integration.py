@@ -15,6 +15,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.alerts.composition import StreamAlertMessageSource
+from app.compute_runtime import ComputeRuntime
+from app.compute_runtime.owned_live import OwnedLiveScope
 from app.db.base import Base
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m
 from app.market_data.catalog import MarketCatalog
@@ -23,6 +25,7 @@ from app.market_data.htdy_input_admission import current_minute_input
 from app.market_data.live_market import RedisLiveStore
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_feed import DurableLiveMarketService, FeedLiveStore, MarketFeedService, StreamLiveProvider
+from app.market_data.market_foundation_scope import bind_market_redis, bind_tick_source
 from app.market_data.market_phase import MarketPhaseResolver
 from app.market_data.market_read_service import MarketReadService
 from app.market_data.observation_stream import ObservationStream
@@ -32,6 +35,7 @@ from app.models import Contract, Exchange, Instrument, MainContractMap, TradingC
 from app.simnow_portfolio_market import PortfolioMarket
 from tests.data_foundation.test_live_market import FakeDominants, FakePhases, _phase
 from tests.data_foundation.test_tick_market import DAY, MINUTE
+from guiyi_quant.compute import REGISTRY
 
 pytestmark = pytest.mark.isolated_postgresql
 
@@ -131,19 +135,23 @@ def _wait_for_subscriber(redis):
     pytest.fail("expected exactly one HTDY subscription")
 
 
-@pytest.mark.parametrize("delayed_completion", (False, True), ids=("normal", "late-restart"))
+@pytest.mark.parametrize(("delayed_completion", "owned_live"), (
+    (False, False), (True, False), (False, True),
+), ids=("normal", "late-restart", "isolated-live"))
 def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
-    disposable_market, tmp_path, monkeypatch, delayed_completion,
+    disposable_market, tmp_path, monkeypatch, delayed_completion, owned_live, request,
 ):
     engine, redis = disposable_market
-    _seed_history(engine, tmp_path)
+    root = tmp_path / "canonical"
+    root.mkdir()
+    _seed_history(engine, root)
     clock_now = [OPEN]
 
     def clock():
         return clock_now[0]
 
     def market_data(db):
-        return MarketDataService(MarketCatalog(db, tmp_path), CanonicalMonthlyStore(tmp_path))
+        return MarketDataService(MarketCatalog(db, root), CanonicalMonthlyStore(root))
 
     def scoped_market_read(db, *, redis):
         return MarketReadService(
@@ -152,7 +160,13 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
             after_market_status_path=tmp_path / "absent-status.json",
         )
 
-    monkeypatch.setattr("app.simnow_portfolio_market.build_market_read_service", scoped_market_read)
+    if owned_live:
+        def reject_ambient(*_args, **_kwargs):
+            pytest.fail("isolated reader must never fall back to the ambient Catalog root")
+
+        monkeypatch.setattr("app.simnow_portfolio_market.build_market_read_service", reject_ambient)
+    else:
+        monkeypatch.setattr("app.simnow_portfolio_market.build_market_read_service", scoped_market_read)
     class Client:
         def subscribe(self, channels):
             assert channels == [f"tick_{CONTRACT}"]
@@ -167,6 +181,8 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
     preview = TickPreviewStore()
     store = RedisLiveStore(redis)
     store.set_subscriptions(DAY, {PRODUCT: CONTRACT})
+    if owned_live:
+        bind_tick_source(redis)
     source = ObservationStream(redis, kind="source")
     source.initialize("live", DAY, cursor="0-0")
     completed = ObservationStream(redis, kind="completed")
@@ -189,30 +205,66 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
     def live():
         return DurableLiveMarketService(source_provider=StreamLiveProvider(source), store=store, **args)
 
-    def portfolio_market():
+    def portfolio_market(runtime=None):
         return PortfolioMarket((PRODUCT,), redis=redis, session_factory=lambda: Session(engine),
-                               receipt_clock=clock, require_completed_journal=True)
+                               receipt_clock=clock, require_completed_journal=True, isolated_live_compute=runtime,
+                               isolated_canonical_root=root if runtime is not None else None)
 
-    compute = live()
-    assert feed.poll(OPEN) is None and compute.poll(OPEN) is None
-    inlet = portfolio_market()
+    def make_runtime():
+        if not owned_live:
+            return None
+        runtime = ComputeRuntime(REGISTRY, owned_live_scopes=(
+            OwnedLiveScope("htdy_simulation", PRODUCT, CONTRACT, "60m", DAY),
+        ))
+        request.addfinalizer(runtime.close)
+        return runtime
+
+    market_compute = live()
+
+    def tick(minute):
+        seen = OPEN + minute * MINUTE
+        clock_now[0] = seen + timedelta(milliseconds=10)
+        client.handler({
+            "channel": f"tick_{CONTRACT}", "action": "feed", "order_book_id": CONTRACT,
+            "datetime": seen, "volume": minute, "last": 101 + minute,
+            "total_turnover": 100 * minute, "open_interest": 51,
+        })
+        clock_now[0] = seen + timedelta(seconds=3)
+        assert feed.poll(clock()) is None
+
+    assert feed.poll(OPEN) is None and market_compute.poll(OPEN) is None
+    runtime = make_runtime()
+    if owned_live:
+        with pytest.raises(ValueError, match="COMPUTE_LIVE_ISOLATION_REQUIRED"):
+            portfolio_market(runtime)
+        # Prove that Pub/Sub is fenced by a candidate binding and stays
+        # unavailable if the same logical DB claims to be a formal source.
+        bind_market_redis(redis, tmp_path, engine.url)
+        redis.set("live:market-foundation:formal-binding", "f" * 64)
+        try:
+            with pytest.raises(ValueError, match="COMPUTE_LIVE_ISOLATION_REQUIRED"):
+                portfolio_market(runtime)
+        finally:
+            redis.delete("live:market-foundation:formal-binding")
+        port = redis.connection_pool.connection_kwargs["port"]
+        with Redis(host="127.0.0.1", port=port, db=0) as shared:
+            assert shared.dbsize() == 0
+            shared.set("test:another-owner", "present")
+            try:
+                with pytest.raises(ValueError, match="COMPUTE_LIVE_ISOLATION_REQUIRED"):
+                    portfolio_market(runtime)
+            finally:
+                shared.delete("test:another-owner")
+    inlet = portfolio_market(runtime)
     try:
         _wait_for_subscriber(redis)
         inlet.activate(OPEN)
         for minute in range(61):
-            seen = OPEN + minute * MINUTE
-            clock_now[0] = seen + timedelta(milliseconds=10)
-            client.handler({
-                "channel": f"tick_{CONTRACT}", "action": "feed", "order_book_id": CONTRACT,
-                "datetime": seen, "volume": minute, "last": 101 + minute,
-                "total_turnover": 100 * minute, "open_interest": 51,
-            })
-            clock_now[0] = seen + timedelta(seconds=3)
-            assert feed.poll(clock()) is None
+            tick(minute)
             if minute == 35:
-                compute = live()
+                market_compute = live()
             if not delayed_completion or minute < 59:
-                assert compute.poll(clock()) is None
+                assert market_compute.poll(clock()) is None
 
         if delayed_completion:
             # The source journal accepted the last two Tick-derived minutes,
@@ -247,6 +299,9 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
 
             trigger = _parse_live_bar_trigger(original.channel, original.data)
             view = inlet._views[PRODUCT.upper()]
+            if owned_live:
+                assert runtime.queue_load()["live"]["peak_pending"] == 1
+                assert view.signal_from_trigger(trigger, clock(), OPEN) is signals[0]
             index_key = completed.identity_key(DAY)
             index = redis.hget(index_key, original.observation_id)
             assert index is not None
@@ -283,11 +338,28 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
         alert.close()
 
     tail = completed.tail(DAY)
-    restarted = portfolio_market()
+    account = None
+    if owned_live:
+        from guiyi_quant import htdy_account_execution as account_api, htdy_execution as execution
+        from tests.unit.htdy_execution.test_account_execution import readback
+
+        state = account_api.start("simnow-test", (PRODUCT.upper(),), OPEN, readback(OPEN))
+        state = account_api.apply(state, "owner", execution.Owner(PRODUCT.upper(), CONTRACT, OPEN, "owner-rb")).state
+        account = tmp_path / "tq-live.sqlite"
+        ledger = account_api.LocalStore(account, state)
+        try:
+            ledger.execute(signals[0].source_id, signals[0])
+        finally:
+            ledger.close()
+        assert account_api.LocalStore.inspect_tip(account).products[0].last_bar == CUTOFF
+        runtime.close()
+
+    restarted = portfolio_market(make_runtime())
     try:
         _wait_for_subscriber(redis)
         restarted.activate(clock())
-        assert live().poll(clock()) is None
+        market_compute = live()
+        assert market_compute.poll(clock()) is None
         assert completed.tail(DAY) == tail
         assert restarted.poll(clock(), {PRODUCT: CUTOFF}) == ()
         restarted_alert = StreamAlertMessageSource(redis)
@@ -295,6 +367,33 @@ def test_tick_completed_h1_and_m1_admit_to_htdy_without_replay_after_restart(
             assert restarted_alert.get_message(timeout_seconds=0) is None
         finally:
             restarted_alert.close()
+        if owned_live:
+            # The owner and Live queue have both been recreated. Re-publishing
+            # a wake-up for the same retained original cannot update the book.
+            settled = account_api.LocalStore.inspect_tip(account)
+            floor = {PRODUCT: settled.products[0].last_bar}
+            redis.publish(original.channel, json.dumps(original.data))
+            assert restarted.poll(clock(), floor) == ()
+            assert account_api.LocalStore.inspect_tip(account) == settled
+            for minute in range(61, 121):
+                tick(minute)
+                assert market_compute.poll(clock()) is None
+            (next_signal,) = restarted.poll(clock(), floor)
+            assert next_signal.bar_end == CUTOFF + timedelta(hours=1)
+            assert next_signal.previous_bar_end == CUTOFF
+            ledger = account_api.LocalStore(account)
+            try:
+                recovery = account_api.Recover(
+                    readback(CUTOFF + timedelta(seconds=4)),
+                    (execution.RecoveryInput(PRODUCT.upper(), CONTRACT, settled.products[0].desired,
+                                             CUTOFF, "reopen-from-proven-h1"),),
+                )
+                ledger.execute("recover", recovery)
+                assert ledger.current().products[0].last_bar == CUTOFF
+                ledger.execute(next_signal.source_id, next_signal)
+            finally:
+                ledger.close()
+            assert account_api.LocalStore.inspect_tip(account).products[0].last_bar == next_signal.bar_end
     finally:
         restarted.close()
 

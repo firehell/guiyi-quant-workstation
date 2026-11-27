@@ -12,6 +12,7 @@ from guiyi_quant.compute import BarSeries, ComputeRegistry, FeatureIdentity, Fea
 from guiyi_quant.compute.contracts import hash_parameters, require_aware
 
 from .contracts import CommittedLiveBar, ComputeCheckpoint, ComputeScope, ComputeWindow, FeatureUpdate
+from .owned_live import OwnedLiveCommit, OwnedLiveScope, OwnedLiveUpdate
 from .scheduler import JobQueue
 from .state_updates import StateUpdates
 
@@ -32,12 +33,14 @@ class ComputeRuntime:
         live_pending: int = 32, max_batch_bars: int = 100_000, max_batch_work_points: int = 500_000,
         cache_entries: int = 64, cache_points: int = 250_000, max_checkpoints: int = 1024,
         canonical_scopes: tuple[ComputeScope, ...] = (), live_scopes: tuple[ComputeScope, ...] = (),
+        owned_live_scopes: tuple[OwnedLiveScope, ...] = (),
     ) -> None:
         if min(max_batch_bars, max_batch_work_points, cache_entries, cache_points) < 1:
             raise ValueError("COMPUTE_LIMIT_INVALID")
         self._registry = registry
         self._state = StateUpdates(
             registry, canonical_scopes=canonical_scopes, live_scopes=live_scopes,
+            owned_live_scopes=owned_live_scopes,
             canonical_pending=canonical_pending, live_pending=live_pending,
             max_prefix_bars=max_batch_bars, max_checkpoints=max_checkpoints,
         )
@@ -83,6 +86,12 @@ class ComputeRuntime:
     ) -> Future[tuple[FeatureUpdate, ...]]:
         """Advance only explicitly subscribed simulation features on a completed commit."""
         return self._state.submit_live(consumer, commit, load=load, checkpoints=checkpoints)
+
+    def submit_owned_live[T](
+        self, commit: OwnedLiveCommit, *, owner: object, run: Callable[[], T],
+    ) -> Future[OwnedLiveUpdate[T]]:
+        """Schedule an existing simulation kernel without changing its formula or state."""
+        return self._state.submit_owned_live(commit, owner=owner, run=run)
 
     def _batch_key(self, window: ComputeWindow, requests: tuple[FeatureRequest, ...], use: str) -> BatchKey:
         if use not in {"web", "research", "backtest"}:

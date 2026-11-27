@@ -16,12 +16,12 @@ from zoneinfo import ZoneInfo
 from app.market_data.aggregation import SessionWindow, aggregate_from_1m, bucket_window_for_bar
 from app.runtime_identity import runtime_heartbeat_identity
 from app.market_data.domain import BarFrequency, CanonicalBar, normalize_contract_for_symbol
+from app.market_data.market_foundation_scope import LIVE_FINALIZATION_DELAY as LIVE_FINALIZATION_DELAY
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 
 
 _LIVE_TTL_SECONDS = 3 * 24 * 60 * 60
 _HEARTBEAT_TTL_SECONDS = 30
-LIVE_FINALIZATION_DELAY = timedelta(seconds=2)
 LIVE_SESSION_END_ARRIVAL_GRACE = timedelta(seconds=60)
 _PROVIDER_RETRY_DELAY = timedelta(seconds=10)
 _LIVE_BAR_FRESHNESS = timedelta(minutes=5)

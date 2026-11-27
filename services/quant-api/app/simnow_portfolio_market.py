@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any, Mapping
 
 from sqlalchemy import text
@@ -40,7 +41,8 @@ class PortfolioMarket:
 
     def __init__(
         self, products, *, redis=None, session_factory=None, receipt_clock=None,
-        record_closed_tails=False, require_completed_journal=False,
+        record_closed_tails=False, require_completed_journal=False, isolated_live_compute=None,
+        isolated_canonical_root: Path | None = None,
     ):
         operational = set(load_operational_products())
         chosen = tuple(product.upper() for product in products)
@@ -54,6 +56,16 @@ class PortfolioMarket:
         self.closed_tails = {}
         self._session_factory = session_factory or SessionLocal
         self._receipt_clock = receipt_clock or (lambda: datetime.now(UTC))
+        if isolated_live_compute is not None:
+            from app.compute_runtime.isolated_simulation import require_isolated_market_binding
+
+            if redis is None or session_factory is None or not require_completed_journal or isolated_canonical_root is None:
+                raise ValueError("COMPUTE_LIVE_ISOLATION_REQUIRED")
+            with session_factory() as db:
+                require_isolated_market_binding(db.get_bind().url, redis, isolated_canonical_root)
+        elif isolated_canonical_root is not None:
+            raise ValueError("COMPUTE_LIVE_ISOLATION_REQUIRED")
+        self._isolated_canonical_root = isolated_canonical_root
         self.redis = redis if redis is not None else get_redis_connection()
         self.pubsub = self.redis.pubsub(ignore_subscribe_messages=True)
         self.pubsub.subscribe(
@@ -69,6 +81,7 @@ class PortfolioMarket:
         for product in chosen:
             view = self._authority_view(product)
             view.completed_observations = journal
+            view.isolated_live_compute = isolated_live_compute
             if record_closed_tails:
                 view.closed_tails = self.closed_tails
             self._views[product] = view
@@ -93,8 +106,28 @@ class PortfolioMarket:
     @contextmanager
     def reader(self):
         with self._session_factory() as db:
-            db.execute(text("SET TRANSACTION READ ONLY"))
-            yield db, build_market_read_service(db, redis=self.redis)
+            if self._isolated_canonical_root is None:
+                db.execute(text("SET TRANSACTION READ ONLY"))
+                yield db, build_market_read_service(db, redis=self.redis)
+            else:
+                from app.compute_runtime.isolated_simulation import require_isolated_market_binding
+                from app.db.readonly import readonly_transaction
+                from app.market_data.catalog import MarketCatalog
+                from app.market_data.live_market import RedisLiveStore
+                from app.market_data.market_data_service import MarketDataService
+                from app.market_data.market_read_service import MarketReadService
+                from app.market_data.storage import CanonicalMonthlyStore
+
+                root = self._isolated_canonical_root
+                require_isolated_market_binding(db.get_bind().url, self.redis, root)
+                with readonly_transaction(db, timeout_seconds=10):
+                    yield db, MarketReadService(
+                        market_data=MarketDataService(MarketCatalog(db, root), CanonicalMonthlyStore(root)),
+                        phase_resolver=MarketPhaseResolver(db),
+                        operational_products=tuple(product.lower() for product in self.products),
+                        live_store=RedisLiveStore(self.redis),
+                        after_market_status_path=root.parent / "after-market-status.json",
+                    )
 
     def activate(self, now: datetime) -> None:
         # Any queued message predating activation is recovery, not first-seen.
