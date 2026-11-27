@@ -1,5 +1,19 @@
 # L.M.S 4.0.5 复刻研究说明
 
+## P4环境分类与降周期候选
+
+九品种沿用现有三晚开发窗口。19个作者明确盘整或空头标签用六个开盘判读点比较。滚动环境首点相容12/19、六点均相容2/19、有翻转17/19。沿用日盘环境为7/19、7/19、0/19。等连续两个同类开盘判读后切换为7/19、3/19、14/19。固定及两票口径降低翻转，但首点与归档说法相容的次数减少。作者并未逐时点标注环境，三组均保留为研究对照。 [九品种归档标签与时点](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)
+
+另复算烧碱、焦煤、PVC的五条分钟恢复候选。环境取形态开始前已经可知的最近六根5分钟K，确认前另读一次。烧碱14:08候选由空头转盘整；焦煤14:41由盘整转空头；两次判断阶段不同。仅用整日收缩会放行五条，包括PVC两条作者已明确未解锁的候选。合并同向环境和整日收缩仍会放行PVC 09:33。合并同向环境和超ATR只留下烧碱14:08，两个焦煤候选也被挡。烧碱及焦煤的实际降周期与许可未获证实，这些门槛仅作过滤敏感性比较。高波动保护和锁后恢复继续独立检查。 [既有降周期及PVC负例](evidence/PORTFOLIO_REPLAY.md#分钟恢复的波动与降周期条件)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environment_audit.py \
+  --compare-admission --env-file .env --output /tmp/lms405-environment-admission-new.json
+```
+
+两次MDS只读复算逐字节一致。原环境报告与分钟波动报告逐字段一致。定稿 `output/lms405-p4-environment-20261127/report.json` 的SHA256为 `3a730d512a7f0bd015e9875d1450a2cb07d40f1a4c9579f07f51e3092c6149cd`。LMS定向测试713通过、1跳过。
+
 ## P4关键K穿越、收盘与失效对照
 
 复用菜油OI2609、铁矿I2701、烧碱SH2701和焦煤JM2509四个既有开发窗。对1→1、5→1、5→5、15→15逐项使用同样的母K、形态、连续时段和下一形态周期确认窗。高低价严格越过形态边界，以及收盘严格越过形态边界分别输出。两者均只在对应K已完成后可知，分钟高低价不能推定分钟内成交次序。
