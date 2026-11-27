@@ -8,4 +8,5 @@ lu
 nr
 pd
 pt
+rs
 sp

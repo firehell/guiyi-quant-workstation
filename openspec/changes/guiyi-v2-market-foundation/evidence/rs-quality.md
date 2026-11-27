@@ -33,3 +33,5 @@ PD、PT 原周线窗口分别严格读回 51 根，挂牌前映射处理复用 d
 用原 100 天日线和 470 天周线窗口复读，仍分别返回 `PRICE_UNAVAILABLE` 和 `MAPPED_CONTRACT_DATASET_MISSING`。
 本轮未发现可发布的源修订，继续保留既有质量记录和严格读数合同。生产 Catalog、Canonical 写入均为 0。
 本地原始响应证据 SHA-256 为 `20799a3853083fcd073aaf6a0c30edb326a0a3cf4df3ba50233ca5fb420e2132`。
+
+RS 随新版范围调整退出现役数据和计算。该记录用于追溯退役前的行情与质量事实。

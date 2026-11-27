@@ -10,7 +10,7 @@ from app.market_data.product_retirement import load_retired_products, normalize_
 
 _OPERATIONAL_PATH = PROJECT_ROOT / "data/universe/operational_products.txt"
 _ACTIVE_PATH = PROJECT_ROOT / "data/universe/active_products.txt"
-_EXPECTED_ACTIVE_COUNT = 58
+_EXPECTED_ACTIVE_COUNT = 57
 
 
 class ActiveUniverseError(ValueError):

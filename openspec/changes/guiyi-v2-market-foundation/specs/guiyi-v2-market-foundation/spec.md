@@ -43,7 +43,7 @@ Market SHALL 在经验证的隔离 Tick 路径中用单源单代次、物理合�
 
 - **GIVEN** 旧 Bar 源的精确运行范围仍含 PD 和 PT
 - **WHEN** 执行首次正式 Tick 交接
-- **THEN** 旧源及盘后记录按旧范围校验、留存，目标订阅、历史维护、策略消费、页面及归档使用新版 58 品种
+- **THEN** 旧源及盘后记录按旧范围校验、留存，目标订阅、历史维护、策略消费、页面及归档使用现役名单的 57 品种
 - **AND** 旧盘后记录不得作为新版范围的成功凭证。涉及切换日且尚未确认的元数据或盘后提交须先核验结果
 
 
@@ -82,7 +82,7 @@ Market SHALL 向 Web 提供报价和活动行情，向已启用的独立模拟�
 
 ### Requirement: MF05 Selection, capacity and controlled retirement
 
-Market SHALL 在目标本机隔离对照真实代表性历史和实时负载，以正确性、稳定性、延迟、资源和维护复杂度为选择依据；按 design 测量 500/5000/100000 根与 58/70 品种负载，70 只作隔离容量，未经授权不扩大生产。正式迁移前 SHALL 完成对应 active delta、独立 Review、消费者验证和原件保护。
+Market SHALL 在目标本机隔离对照真实代表性历史和实时负载，以正确性、稳定性、延迟、资源和维护复杂度为选择依据；按 design 测量 500/5000/100000 根与 57/70 品种负载，70 只作隔离容量，未经授权不扩大生产。正式迁移前 SHALL 完成对应 active delta、独立 Review、消费者验证和原件保护。
 
 #### Scenario: Faster candidate lacks proof or operational permission
 

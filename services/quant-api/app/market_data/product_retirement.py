@@ -11,8 +11,9 @@ from app.core.env import PROJECT_ROOT
 
 
 _RETIRED_PATH = PROJECT_ROOT / "data/universe/retired_products.txt"
-_EXPECTED_RETIRED_COUNT = 11
-MARKET_FOUNDATION_RETIRED_PRODUCTS = frozenset({"pd", "pt"})
+_EXPECTED_RETIRED_COUNT = 12
+MARKET_FOUNDATION_RETIRED_PRODUCTS = frozenset({"pd", "pt", "rs"})
+RS_RETIREMENT_SCOPE_DELTA = frozenset({"rs"})
 
 
 class ProductRetiredError(ValueError):

@@ -209,7 +209,7 @@ def test_operational_products_recover_afternoon_first_minute_and_all_derived_buc
     from app.market_data.operational_universe import load_operational_products
 
     products = load_operational_products()
-    assert len(products) == 58
+    assert len(products) == 57
     redis = FakeRedis()
     store = RedisLiveStore(redis)
     day = date(2026, 9, 7)
@@ -273,7 +273,7 @@ def test_monday_open_freezes_operational_contracts_and_schedules_45_night_prefix
             "zn",
         )
     )
-    assert len(products) == 58
+    assert len(products) == 57
     assert len(night_products) == 45
     assert night_products < set(products)
     contracts = {symbol: f"{symbol.upper()}2701" for symbol in products}
@@ -343,7 +343,7 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
             "zn",
         )
     )
-    assert len(products) == 58
+    assert len(products) == 57
     assert len(night_products) == 45
     trading_day = date(2026, 9, 14)
     prior_trading_day = date(2026, 9, 11)
