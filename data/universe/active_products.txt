@@ -30,7 +30,6 @@ ni
 oi
 p
 pb
-pd
 pf
 pg
 pk
@@ -38,7 +37,6 @@ pl
 pp
 pr
 ps
-pt
 px
 rb
 rm

@@ -3,12 +3,11 @@ import { describe, it } from 'node:test'
 
 import {
   isCurrentGeneration,
-  MarketSeriesPhysicalIdentityError,
   mergeInitialPage,
   prependHistoricalPage,
-  resolveHistoricalPhysicalContract,
   useMarketSeries,
 } from '../src/composables/useMarketSeries.ts'
+import { MarketSeriesPhysicalIdentityError, resolveHistoricalPhysicalContract } from '../src/utils/marketBarDisplay.ts'
 import type { MarketBarsPageResponse, MarketReadState } from '../src/types/market.ts'
 
 function page(
@@ -655,7 +654,7 @@ describe('market Live overlay', () => {
     assert.deepEqual(series.bars.value.map((bar) => bar.close), [200])
   })
 
-  it('retains history after a socket disconnect and reconnects with its newest live bar', async () => {
+  it('retains history after a socket disconnect and reconciles the full current snapshot after reconnect', async () => {
     const sockets: FakeSocket[] = []
     const scheduled: Array<() => void> = []
     const series = useMarketSeries({
@@ -675,12 +674,14 @@ describe('market Live overlay', () => {
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
     sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
     sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
+    assert.equal(series.studyCompletedAvailable.value, true)
     sockets[0].disconnect()
     assert.equal(series.liveUnavailable.value, true)
-    assert.equal(series.bars.value.length, 2)
+    assert.equal(series.studyCompletedAvailable.value, false)
+    assert.deepEqual(series.bars.value.map(bar => bar.marketSource), ['canonical', 'completed_live'])
     scheduled[0]()
 
-    assert.match(sockets[1].url, /after=2026-08-07T09%3A45%3A00Z/)
+    assert.equal(new URL(sockets[1].url).searchParams.has('after'), false)
     sockets[1].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
     sockets[1].message({ type: 'bar', bar: liveBar('2026-08-07T10:00:00Z', 102) })
     assert.equal(series.liveUnavailable.value, false)
@@ -802,6 +803,7 @@ describe('market Live overlay', () => {
     })
 
     assert.equal(series.overlaySource.value, 'post_close')
+    assert.equal(series.studyCompletedAvailable.value, false)
     assert.deepEqual(series.bars.value.map((bar) => bar.time), [
       '2026-08-10T07:00:00Z',
       '2026-08-10T07:15:00Z',
@@ -892,6 +894,7 @@ describe('market Live overlay', () => {
     })
 
     assert.equal(series.overlaySource.value, 'post_close')
+    assert.equal(series.studyCompletedAvailable.value, false)
     assert.deepEqual(series.bars.value.map((bar) => bar.time), [
       '2026-08-10T07:00:00Z',
       '2026-08-10T07:15:00Z',
@@ -1011,16 +1014,35 @@ describe('market Live overlay', () => {
     ])
   })
 
-  it('keeps the canonical page visible when the optional state request is unavailable', async () => {
+  it('keeps the canonical page visible and retries the initial state request', async () => {
+    let stateReads = 0
+    let retry: (() => void) | undefined
+    const sockets: FakeSocket[] = []
     const series = useMarketSeries({
       fetchPage: async () => page([liveBar('2026-08-07T09:30:00Z', 100)], { has_more_before: false, next_before: null }),
-      fetchState: async () => { throw new Error('state unavailable') },
+      fetchState: async () => {
+        if (++stateReads === 1) throw new Error('state unavailable')
+        return state({ canonical_end: '2026-08-07T09:30:00Z' })
+      },
+      scheduleReconnect: callback => { retry = callback; return 1 },
+      createWebSocket: url => { const socket = new FakeSocket(url); sockets.push(socket); return socket },
     })
 
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
-
     assert.equal(series.bars.value.length, 1)
     assert.equal(series.liveUnavailable.value, true)
+    assert.ok(retry)
+    retry()
+    await new Promise<void>(resolve => setImmediate(resolve))
+    const recovered = liveBar('2026-08-07T09:45:00Z', 101)
+    sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [recovered, recovered] })
+    assert.deepEqual(series.bars.value.map(({ time, open, high, low, close, volume }) =>
+      [time, open, high, low, close, volume]), [
+      ['2026-08-07T09:30:00Z', 99, 101, 98, 100, 10],
+      ['2026-08-07T09:45:00Z', 100, 102, 99, 101, 10],
+    ])
+    assert.equal(series.liveUnavailable.value, false)
+    series.dispose()
   })
 
   it('does not open a Live socket for continuous, non-rank1 contract, daily, or weekly history', async () => {
@@ -1384,4 +1406,82 @@ describe('volume display page ownership',()=>{
   const rolled=make(['10','11']);rolled.request.before=current[0]!.time;rolled.resolved_contract_segments[0]!.contract='JM2609'
   assert.equal(new Set(prependHistoricalPage(current,rolled).bars.map(bar=>bar.calculationSegmentId)).size,2)
  })
+})
+
+it('keeps Tick activity out of completed bars and retains the prior trading day during a roll', async () => {
+  const sockets: FakeSocket[] = []
+  const currentDay = '2026-08-10'
+  const series = useMarketSeries({
+    fetchPage: async () => page([liveBar('2026-08-07T06:30:00Z', 99)], { has_more_before: false, next_before: null }),
+    fetchState: async () => state({ trading_day: currentDay, live_contract: 'AG2605', canonical_end: '2026-08-07T06:30:00Z', display_preview: true }),
+    createWebSocket: url => {
+      const socket = new FakeSocket(url)
+      sockets.push(socket)
+      return socket
+    },
+  })
+  await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+  const socket = sockets[0]!
+  const night = { ...liveBar('2026-08-07T13:15:00Z', 101), trading_day: currentDay }
+  const preview = { ...liveBar('2026-08-07T13:30:00Z', 102), trading_day: currentDay }
+  const prior = liveBar('2026-08-07T07:00:00Z', 100)
+  socket.message({ type: 'snapshot', source: 'realtime', trading_day: currentDay, contract: 'AG2605', bars: [night] })
+  socket.message({ type: 'retained', trading_day: '2026-08-07', contract: 'AG2601', bars: [prior] })
+  socket.message({ type: 'preview', quote: null, activity: {
+    contract: 'AG2605', generation: 'candidate-1', observed_at: '2026-08-07T13:19:00Z',
+    received_at: '2026-08-07T13:19:00Z', bar: preview,
+  } })
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 100, 101])
+  assert.equal(series.bars.value[1]?.physicalContract, 'AG2601')
+  assert.deepEqual(series.bars.value.map(bar => bar.marketSource), ['canonical', 'retained', 'completed_live'])
+  assert.equal(series.activeBar.value?.close, 102)
+  assert.equal(series.studyActivity.value?.generation, 'candidate-1')
+  assert.equal(series.studyCompletedAvailable.value, true)
+  socket.message({ type: 'bar', bar: preview })
+  assert.equal(series.bars.value.at(-1)?.close, 102)
+  assert.equal(series.activeBar.value, null)
+  socket.message({ type: 'retained', trading_day: null, contract: null, bars: [] })
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 101, 102])
+  socket.message({ type: 'state', state: state({ trading_day: currentDay, live_contract: 'AG2701',
+    canonical_end: '2026-08-07T06:30:00Z', display_preview: true }) })
+  assert.equal(series.studyCompletedAvailable.value, false)
+  assert.equal(series.bars.value.at(-1)?.physicalContract, 'AG2605')
+  series.dispose()
+})
+
+it('coalesces a same-end Canonical revision and rereads the loaded older pages', async () => {
+  const first = '2026-08-07T06:30:00Z', last = '2026-08-07T07:00:00Z'
+  const requests: Array<string | undefined> = []
+  const sockets: FakeSocket[] = []
+  const start = state({ canonical_end: last, display_preview: true })
+  let currentState: MarketReadState = start
+  let revision = 0
+  const series = useMarketSeries({
+    fetchPage: async ({ before }) => {
+      requests.push(before)
+      return before ? page([liveBar(first, 99 + revision)], { has_more_before: false, next_before: null })
+        : page([liveBar(last, 100 + revision)], { has_more_before: true, next_before: last })
+    },
+    fetchState: async () => currentState,
+    createWebSocket: url => {
+      const socket = new FakeSocket(url)
+      sockets.push(socket)
+      return socket
+    },
+  })
+  await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
+  await series.loadMoreBefore()
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 100])
+
+  revision = 10
+  currentState = { ...start, canonical_revision: 'a'.repeat(64) }
+  for (let n = 0; n < 3; n++) sockets[0].message({ type: 'state', state: currentState })
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.deepEqual(series.bars.value.map(bar => bar.close), [109, 110])
+  assert.deepEqual(requests, [undefined, last, undefined, last])
+  assert.equal(series.hasMoreBefore.value, false)
+  sockets[0].message({ type: 'state', state: currentState })
+  await new Promise<void>(resolve => setImmediate(resolve))
+  assert.equal(requests.length, 4)
+  series.dispose()
 })

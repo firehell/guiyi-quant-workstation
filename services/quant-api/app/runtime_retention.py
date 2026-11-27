@@ -12,6 +12,7 @@ import subprocess
 import stat
 from typing import Any
 
+from app.market_release_identity import valid_release_tag
 from app.runtime_bindings import SERVICES, _git, read_bindings, verify_release
 
 
@@ -363,7 +364,7 @@ class _SimNowReferences:
                     or release.get("tag") != candidate.get("tag")
                     or release.get("commit") != candidate.get("commit")
                     or "root" in candidate and candidate["root"] != release["root"]
-                    or not isinstance(candidate.get("tag"), str) or not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", candidate["tag"])
+                    or not isinstance(candidate.get("tag"), str) or not valid_release_tag(candidate["tag"])
                     or not isinstance(candidate.get("commit"), str) or not re.fullmatch(r"[0-9a-f]{40}", candidate["commit"])
                     or any(candidate.get(key) is not True for key in ("annotated_exact", "clean", "sdk_check", "preflight_valid"))
                     or not isinstance(identities, dict)
@@ -470,11 +471,17 @@ class RetentionBackend:
         if Path(common).resolve(strict=True) != Path(authorized_common).resolve(strict=True):
             raise RetentionError("CLEANUP_REPOSITORY_IDENTITY_INVALID")
         commit = _git(root, "rev-parse", "HEAD")
-        tag = _git(root, "describe", "--exact-match", "--tags", "HEAD")
+        tags = [tag for tag in _git(root, "tag", "--points-at", "HEAD").splitlines()
+                if valid_release_tag(tag)]
+        named = [tag for tag in tags if root.name == "release-" + tag.replace("/", "-")]
+        choices = named or tags
+        if len(choices) != 1:
+            raise RetentionError("CLEANUP_RELEASE_TAG_AMBIGUOUS")
+        tag = choices[0]
         verify_release(root, tag, commit)
         if clone is not None:
             verify_shared_release_identity(root, tag, commit)
-            if root.name != "release-" + tag or _git(root, "branch", "--show-current"):
+            if not named or _git(root, "branch", "--show-current"):
                 raise RetentionError("CLEANUP_WORKTREE_IDENTITY_INVALID")
             return {"root": str(root), "commit": commit, "tag": tag}
         listed = _git(root, "worktree", "list", "--porcelain")

@@ -94,17 +94,17 @@ def evaluate_subing_capture(token, checkpoint, evidence, *, dependency_manifest)
 
 def subing_warmup_checkpoint(identity, contract, owner_id, calculation_id, bars, *, check_cancelled=lambda: None):
     """Warm only indicators from an authority-validated strict-before prefix."""
-    from guiyi_quant.indicators.subing_ths import SubingThs15mKernel
+    from guiyi_quant.compute.owned import SUBING_THS_REFERENCE_USE, subing_ths_state_step
     from guiyi_quant.reference_trading import ReferenceState
     from guiyi_quant.reference_trading.strategy_checkpoint import adapter_checkpoint_to_json
-    kernel = SubingThs15mKernel()
-    state = kernel.initial_state()
+    initial_state, step = subing_ths_state_step(identity.frequency, use=SUBING_THS_REFERENCE_USE)
+    state = initial_state()
     last = None
     for bar in bars:
         check_cancelled()
         if last is not None and bar.bar_end <= last:
             raise ValueError("SUBING_WARMUP_ORDER_INVALID")
-        state, _ = kernel.step(state, float(bar.close), bar_end=bar.bar_end.isoformat())
+        state, _ = step(state, float(bar.close), bar_end=bar.bar_end.isoformat())
         last = bar.bar_end
     checkpoint = AdapterCheckpoint(SubingForwardState(state, state.macd.fast.count, contract, calculation_id),
         last, None if last is None else sha256(json.dumps([str(state), last.isoformat()]).encode()).hexdigest(),

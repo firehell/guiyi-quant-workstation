@@ -40,5 +40,8 @@ test('prefix invariant, flat market and physical/quality resets', () => {
     const reset = calculateThsMacdDisplay(input)
     assert.deepEqual(reset.dif.slice(120), calculateThsMacdDisplay(input.slice(120)).dif)
     assert.ok(!reset.crosses.some(p => p.time >= input[120].time && p.time < input[140].time))
+    assert.deepEqual(calculateThsMacdDisplay(input.slice(0, 122)).crossWarmup, { available: 2, required: 21 })
   }
+  assert.deepEqual(calculateThsMacdDisplay([...bars.slice(0, 22), { ...bars[22], close: NaN }]).crossWarmup,
+    { available: 0, required: 21 })
 })

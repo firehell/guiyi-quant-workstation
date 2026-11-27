@@ -98,10 +98,11 @@ def test_actual_provider_attempt_is_counted_when_commit_clock_becomes_invalid(
     assert redis.published == []
 
 
-def test_all_60_slow_queue_converges_45_gaps_without_spending_stale_request_budget():
+def test_operational_slow_queue_converges_45_gaps_without_spending_stale_request_budget():
     _, _, base, bars = _setup()
     products = load_operational_products()
-    assert len(products) == 60
+    assert len(products) == 58
+    complete_prefixes = len(products) - 45
     redis = FakeRedis()
     store = RedisLiveStore(redis)
     snapshot = {symbol: f"{symbol.upper()}2505" for symbol in products}
@@ -121,11 +122,11 @@ def test_all_60_slow_queue_converges_45_gaps_without_spending_stale_request_budg
         for symbol, contract in snapshot.items()
     )
     for index, request in enumerate(requests):
-        for bar in bars if index < 15 else bars[1:]:
+        for bar in bars if index < complete_prefixes else bars[1:]:
             store.put_bar(
                 base.trading_day, request.symbol, "1m", bar, contract=request.contract
             )
-        if index < 15:
+        if index < complete_prefixes:
             assert (
                 recover_product(
                     store,

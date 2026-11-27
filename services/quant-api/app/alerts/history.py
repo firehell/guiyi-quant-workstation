@@ -36,6 +36,7 @@ class AlertHistoryQuery:
     frequency: str | None = None
     alignment_status: str | None = None
     max_event_id: int | None = None
+    market_products: tuple[str, ...] | None = None
 
     @property
     def identity(self) -> dict[str, object]:
@@ -52,6 +53,8 @@ class AlertHistoryQuery:
             identity["frequency"] = self.frequency
         if self.alignment_status is not None:
             identity["alignment_status"] = self.alignment_status
+        if self.market_products is not None:
+            identity["market_products"] = list(self.market_products)
         return identity
 
 
@@ -74,6 +77,8 @@ def read_alert_history(session: Session, query: AlertHistoryQuery) -> AlertHisto
         filters.append(AlertEvent.id <= query.max_event_id)
     if query.symbol is not None:
         filters.append(AlertEvent.symbol == query.symbol)
+    if query.market_products is not None:
+        filters.append(AlertEvent.symbol.in_(query.market_products))
     if query.rule_code is not None:
         filters.append(AlertRule.rule_code == query.rule_code)
 

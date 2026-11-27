@@ -90,6 +90,7 @@ export interface CanonicalBarDto {
   volume: number
   turnover: number | null
   open_interest: number | null
+  source_bar_sha256?: string
 }
 
 /** Raw transport shape; the backend serializes Decimal values as strings. */
@@ -105,14 +106,17 @@ export interface MarketBarWireDto {
   volume: MarketNumericWire
   turnover: MarketNumericWire | null
   open_interest: MarketNumericWire | null
+  source_bar_sha256?: string
 }
 
 export interface BarData {
   confirmed?: boolean
+  marketSource?: 'canonical' | 'completed_live' | 'active_preview' | 'retained'
   time: string
   trading_day?: string
   physicalContract?: string
   calculationSegmentId?: string
+  sourceBarSha256?: string
   open: number
   high: number
   low: number
@@ -193,12 +197,43 @@ export interface MarketReadState {
   live_contract: string | null
   canonical_end: string | null
   after_market: Record<string, unknown>
+  display_preview?: boolean
+  canonical_revision?: string | null
+}
+
+export interface MarketTickQuote {
+  trading_day: string
+  contract: string
+  generation: string
+  observed_at: string
+  received_at: string
+  last_price: string
+  stale?: boolean
+  bids: [string, string][]
+  asks: [string, string][]
+}
+
+export interface MarketActivityFrame {
+  contract: string
+  generation: string
+  observed_at: string
+  received_at: string
+  bar: CanonicalBarDto
+}
+
+export interface MarketStudyActivity {
+  bar: BarData
+  generation: string
+  observedAt: string
+  receivedAt: string
 }
 
 export type MarketOverlaySource = 'none' | 'realtime' | 'post_close'
 export type MarketWsMessage =
   | { type: 'state'; state: MarketReadState }
   | { type: 'snapshot'; source: MarketOverlaySource; trading_day: string | null; contract: string | null; bars: CanonicalBarDto[] }
+  | { type: 'preview'; quote: MarketTickQuote | null; activity: MarketActivityFrame | null }
+  | { type: 'retained'; trading_day: string | null; contract: string | null; bars: CanonicalBarDto[] }
   | { type: 'bar'; bar: CanonicalBarDto }
   | { type: 'reset'; trading_day: string | null; contract: string | null }
 
@@ -212,6 +247,13 @@ export interface KlineMarker {
   position: 'aboveBar' | 'belowBar' | 'inBar'
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown'
   alertRuleCode?: AlertRuleCode
+  fact?: {
+    layer: 'alerts' | 'research_actions' | 'reconciliation_execution_markers'
+    sourceIdentity: string
+    formulaVersion: string | null
+    physicalContract: string
+    frequency: string | null
+  }
 }
 
 interface AlertEventCommon {
@@ -223,6 +265,7 @@ interface AlertEventCommon {
   bar_end: string
   detected_at: string
   notification_attempted_at: string | null
+  formula_version?: string | null
 }
 
 export type AlertDirection = 'buy' | 'sell'
@@ -238,7 +281,6 @@ export interface HtdyAlertEvent extends AlertEventCommon {
 export interface SubingThsAlertEvent extends AlertEventCommon {
   rule_code: SubingThsAlertRuleCode
   frequency: SubingFrequency
-  formula_version?: string | null
   subing_alignment?: SubingAlignment | null
   result_codes: ['buy'] | ['sell']
 }
@@ -285,7 +327,7 @@ export type MarketHomeLiveFrame =
   | { type: 'quote'; schemaVersion: 1; observedAt: string; item: MarketHomeLiveItem }
   | { type: 'reset'; schemaVersion: 1; observedAt: string; reason: 'AUTHORITY_CHANGED'; items: MarketHomeLiveItem[] }
   | { type: 'unavailable'; schemaVersion: 1; observedAt: string; code: 'MARKET_HOME_LIVE_UNAVAILABLE' }
-export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'range_detector' | 'htdy'
+export type MainIndicatorId = 'ema_10' | 'ema_21' | 'ema_60' | 'boll' | 'range_detector' | 'htdy'
 export type OptionalEmaIndicatorId = 'ema_10' | 'ema_21' | 'ema_60'
 
 export interface MainIndicatorDefinition {

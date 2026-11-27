@@ -10,6 +10,7 @@ import {
   type NewowStrategy,
 } from '../types/marketDetail.ts'
 import { normalizeOptionalEmaIndicators } from './mainIndicators.ts'
+import type { GenericChartProfile } from './marketChartStudies.ts'
 
 export const MARKET_DETAIL_PREFERENCES_KEY = 'guiyi.market.detail.preferences.v2'
 const LEGACY_DETAIL_KEY = 'guiyi.market.detail.preferences.v1'
@@ -23,12 +24,17 @@ export interface FlexibleDetailPreferences extends FlexibleViewRestore {
   showRangeDetector: boolean
 }
 
+export interface FreeDetailPreferences extends FlexibleDetailPreferences {
+  showBoll?: true
+}
+
 export interface MarketDetailPreferences {
   version: 2
   lastView: Exclude<MarketDetailView, 'trend'>
   newow: MarketDetailViewRestore['newow']
   htdy: FlexibleDetailPreferences
-  free: FlexibleDetailPreferences
+  free: FreeDetailPreferences
+  talibMacd?: GenericChartProfile[]
 }
 
 export type DetailPreferenceStorage = Pick<Storage, 'getItem' | 'setItem'>
@@ -73,9 +79,9 @@ export function saveMarketDetailPreferences(
 
 export function replaceFreeDetailPreferences(
   current: MarketDetailPreferences,
-  free: Omit<FlexibleDetailPreferences, 'seriesKind'> & { seriesKind: SeriesKind },
+  free: Omit<FreeDetailPreferences, 'seriesKind'> & { seriesKind: SeriesKind },
 ): MarketDetailPreferences {
-  return { ...current, free: normalizeFlexible(free) }
+  return { ...current, free: normalizeFree(free) }
 }
 
 export function replaceHtdyDetailPreferences(
@@ -94,12 +100,17 @@ export function replaceNewowDetailPreferences(
 
 function normalizeCurrent(value: unknown): MarketDetailPreferences {
   if (!isRecord(value) || value.version !== 2) return defaultMarketDetailPreferences()
+  const selected = value.talibMacd
+  const talibMacd = Array.isArray(selected)
+    ? (['free', 'htdy', 'subing'] as const).filter(profile => selected.includes(profile))
+    : []
   return {
     version: 2,
     lastView: isRestorableView(value.lastView) ? value.lastView : 'newow',
     newow: normalizeNewow(value.newow),
     htdy: normalizeFlexible(value.htdy),
-    free: normalizeFlexible(value.free),
+    free: normalizeFree(value.free),
+    ...(talibMacd.length ? { talibMacd } : {}),
   }
 }
 
@@ -140,6 +151,13 @@ function normalizeFlexible(value: unknown): FlexibleDetailPreferences {
     frequency: normalizeFrequency(value.frequency),
     optionalEmaIndicators: normalizeOptionalEmaIndicators(value.optionalEmaIndicators),
     showRangeDetector: value.showRangeDetector === true,
+  }
+}
+
+function normalizeFree(value: unknown): FreeDetailPreferences {
+  return {
+    ...normalizeFlexible(value),
+    ...(isRecord(value) && value.showBoll === true ? { showBoll: true } : {}),
   }
 }
 

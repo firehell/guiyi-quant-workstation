@@ -1,6 +1,7 @@
 import request from './request'
 import { createConditionalHomeRead } from './homeConditionalRead'
 import { READ_PRIORITY } from '../utils/readAdmission.ts'
+import { retryMarketStudyWhenBusy, type MarketChartStudyQuery, type MarketChartStudyTailQuery } from '../utils/marketChartStudies.ts'
 import type {
   DominantContractListResponse,
   MarketProductDirectoryResponse,
@@ -75,6 +76,18 @@ export function getMarketBarsPage(params: MarketBarsPageRequest, signal?: AbortS
     .then(normalizeMarketBarsPageResponse)
 }
 
+export function getMarketChartStudyDisplay(params: MarketChartStudyQuery, signal: AbortSignal): Promise<unknown> {
+  return retryMarketStudyWhenBusy(() => request.get<never, unknown>('/market/indicators/chart-window', {
+    params, signal, timeout: 10_000, readPriority: READ_PRIORITY.visibleDetail,
+  }), signal)
+}
+
+export function getMarketChartStudyTail(params: MarketChartStudyTailQuery, signal: AbortSignal): Promise<unknown> {
+  return request.get<never, unknown>('/market/indicators/chart-tail', {
+    params, signal, timeout: 10_000, readPriority: READ_PRIORITY.visibleDetail,
+  })
+}
+
 export interface MarketStateRequest {
   seriesKind: SeriesKind
   symbol: string
@@ -85,11 +98,36 @@ export interface MarketStateRequest {
 export function getMarketState(params: MarketStateRequest, signal?: AbortSignal) {
   return request.get<never, MarketReadState>('/market/state', {
     signal,
+    timeout: 5_000,
     params: {
       series_kind: params.seriesKind,
       symbol: params.symbol,
       contract: params.seriesKind === 'contract' ? params.contract : undefined,
       frequency: params.frequency,
+    },
+  })
+}
+
+export interface MarketChartProgress {
+  phase: MarketReadState['phase']
+  trading_day: string | null
+  contract: string | null
+  status: 'historical' | 'waiting' | 'unknown' | 'source' | 'confirmation' | 'confirmed'
+  expected_end: string | null
+  source_end: string | null
+  source_received_at: string | null
+  completed_end: string | null
+}
+
+export function getMarketChartProgress(identity: MarketStateRequest, signal: AbortSignal) {
+  return request.get<never, MarketChartProgress>('/market/chart-progress', {
+    signal,
+    timeout: 5_000,
+    params: {
+      series_kind: identity.seriesKind,
+      symbol: identity.symbol,
+      contract: identity.contract,
+      frequency: identity.frequency,
     },
   })
 }

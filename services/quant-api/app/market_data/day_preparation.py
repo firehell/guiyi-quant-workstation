@@ -21,8 +21,17 @@ class MetadataArchiveError(ValueError):
     """Missing or altered retained source evidence requires readback."""
 
 
+def metadata_preparation_binding(session, canonical_root, products):
+    return hashlib.sha256(json.dumps({
+        "catalog": session.get_bind().url.render_as_string(hide_password=True),
+        "canonical_root": str(Path(canonical_root).resolve()),
+        "products": sorted(products),
+    }, sort_keys=True).encode()).hexdigest()
+
+
 class DayMetadataPreparation:
-    def __init__(self, *, state_path, select_day, is_ready, capture, apply, acquire_lease, plan, binding_id, archive_cache=None):
+    def __init__(self, *, state_path, select_day, is_ready, capture, apply, acquire_lease, plan,
+                 binding_id, archive_cache=None, previous_state=None):
         self.path = Path(state_path)
         self.binding_id = binding_id
         self.archive_root = self.path.with_name(self.path.name + ".archives")
@@ -33,15 +42,27 @@ class DayMetadataPreparation:
         self.apply = apply
         self.plan = plan
         self.acquire_lease = acquire_lease
+        self.previous_state = previous_state
 
     def read_state(self):
-        if not self.path.exists():
-            return {}
-        if self.path.is_symlink() or self.path.stat().st_size > 16_000_000:
+        return self._read_state(self.path, self.binding_id)
+
+    @classmethod
+    def previous_day_status(cls, path, binding_id, day):
+        row = cls._read_state(path, binding_id).get(day.isoformat())
+        return row["status"] if row else None
+
+    @staticmethod
+    def _read_state(path, binding_id):
+        if path.is_symlink():
             raise ValueError("METADATA_PREPARATION_STATE_INVALID")
-        value = json.loads(self.path.read_text(encoding="utf-8"))
+        if not path.exists():
+            return {}
+        if path.stat().st_size > 16_000_000:
+            raise ValueError("METADATA_PREPARATION_STATE_INVALID")
+        value = json.loads(path.read_text(encoding="utf-8"))
         if (not isinstance(value, dict) or set(value) != {"version", "days", "binding_id"}
-                or value["version"] != VERSION or value["binding_id"] != self.binding_id
+                or value["version"] != VERSION or value["binding_id"] != binding_id
                 or not isinstance(value["days"], dict)
                 or len(value["days"]) > 4096):
             raise ValueError("METADATA_PREPARATION_STATE_INVALID")
@@ -205,9 +226,16 @@ class DayMetadataPreparation:
                 day = self.select_day(now)
                 if day is None:
                     return None
+                key = day.isoformat()
+                if self.previous_state is not None:
+                    previous = self.previous_day_status(*self.previous_state, day)
+                    if previous is not None:
+                        if previous != "passed":
+                            return "METADATA_PREPARATION_READBACK_REQUIRED"
+                        if not self.is_ready(day):
+                            return "METADATA_PREPARATION_CATALOG_DRIFT"
                 days = self.read_state()
                 self._compact_legacy_terminals(days)
-                key = day.isoformat()
                 prior = days.get(key)
                 if prior is not None and "archive" in prior:
                     self._read_archive(key, prior)
@@ -363,7 +391,8 @@ def catalog_day_fingerprint(session, products, day):
     encoded = sorted(json.dumps(item, sort_keys=True, default=str) for item in facts)
     return hashlib.sha256(json.dumps(encoded).encode()).hexdigest()
 
-def build_day_metadata_preparation(session_factory, *, state_path, products, canonical_root):
+def build_day_metadata_preparation(session_factory, *, state_path, products, canonical_root,
+                                   previous_state_path=None):
     """Independent short Catalog session per Live reconcile, lazy provider on a missing day."""
     from app.market_data.catalog import MarketCatalog
     from app.market_data.current_day_metadata_recovery import (
@@ -371,10 +400,12 @@ def build_day_metadata_preparation(session_factory, *, state_path, products, can
     )
     from app.market_data.market_phase import MarketPhaseResolver
     from app.market_data.metadata import MetadataSynchronizer
+    from app.market_data.operational_universe import load_operational_products
+    from app.market_data.product_retirement import MARKET_FOUNDATION_RETIRED_PRODUCTS
     from app.market_data.rqdata_adapter import RQDataMarketAdapter
 
     products = tuple(products)
-    if len(products) != 60 or len(set(products)) != 60:
+    if not products or products != load_operational_products():
         raise ValueError("METADATA_PREPARATION_SCOPE_INVALID")
 
     verified_days = {}
@@ -383,12 +414,12 @@ def build_day_metadata_preparation(session_factory, *, state_path, products, can
     def tick(now, **phase_args):
         with session_factory() as session:
             catalog = MarketCatalog(session, canonical_root)
-            import hashlib
-            binding_id = hashlib.sha256(json.dumps({
-                "catalog": session.get_bind().url.render_as_string(hide_password=True),
-                "canonical_root": str(Path(canonical_root).resolve()),
-                "products": sorted(products),
-            }, sort_keys=True).encode()).hexdigest()
+            binding_id = metadata_preparation_binding(session, canonical_root, products)
+            previous_state = None if previous_state_path is None else (
+                Path(previous_state_path),
+                metadata_preparation_binding(session, canonical_root,
+                                             set(products) | MARKET_FOUNDATION_RETIRED_PRODUCTS),
+            )
             def ready(day):
                 session.rollback()
                 fingerprint = catalog_day_fingerprint(session, products, day)
@@ -444,6 +475,6 @@ def build_day_metadata_preparation(session_factory, *, state_path, products, can
                 select_day=lambda value: select_preparation_day(MarketPhaseResolver(session), products, value),
                 is_ready=ready, capture=capture, apply=apply, plan=plan,
                 acquire_lease=catalog.acquire_maintenance_lock, binding_id=binding_id,
-                archive_cache=archive_cache,
+                archive_cache=archive_cache, previous_state=previous_state,
             ).tick(now, **phase_args)
     return tick

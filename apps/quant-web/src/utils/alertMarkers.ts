@@ -39,12 +39,17 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
   return [...events]
     .sort((left, right) => Date.parse(left.bar_end) - Date.parse(right.bar_end))
     .flatMap<KlineMarker>((event): KlineMarker[] => {
+      const id = `alert:${alertEventIdentityKey(event)}`
+      const fact = {
+        layer: 'alerts', sourceIdentity: `alert-event:${event.id}`, formulaVersion: event.formula_version ?? null,
+        physicalContract: event.contract, frequency: event.frequency,
+      } as const
       if (isSubingThsAlertEvent(event)) {
         const direction = event.result_codes[0]
         if (direction !== 'buy' && direction !== 'sell') return []
         const rising = direction === 'buy'
         return [{
-          id: `alert:${alertEventIdentityKey(event)}`,
+          id, fact,
           time: event.bar_end,
           label: rising ? 'S↑' : 'S↓',
           tooltip: [
@@ -68,7 +73,7 @@ export function alertEventsToMarkers(events: AlertEvent[]): KlineMarker[] {
       const label = alertEventResultLabel(event, observations)
       if (label === '提醒记录') return []
       return [{
-        id: `alert:${alertEventIdentityKey(event)}`,
+        id, fact,
         time: event.bar_end,
         label: `${label} · 首次识别`,
         tooltip: [

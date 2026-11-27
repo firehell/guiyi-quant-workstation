@@ -98,7 +98,6 @@ export class NewowMainForceControlPrimitive implements ISeriesPrimitive<Time> {
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const items = buildNewowMainForceCommands(this.data, mediaSize.width, mediaSize.height,
         time => this.attachment!.chart.timeScale().timeToCoordinate(time), this.topInset)
-      context.save()
       for (const item of items) {
         context.fillStyle = item.color; context.strokeStyle = item.color; context.lineWidth = 1
         if (item.kind === 'reference') {
@@ -120,7 +119,6 @@ export class NewowMainForceControlPrimitive implements ISeriesPrimitive<Time> {
           context.fillRect(item.x! - item.width! / 2, item.fromY, item.width!, Math.max(item.toY - item.fromY, 0.8))
         }
       }
-      context.restore()
     })
   }
 }

@@ -1,0 +1,484 @@
+{
+  "trading_day": "2026-11-27",
+  "contract": "CU2701",
+  "capture_sha256": "3083289499c870fec9131ef56265109ae0be579367d4d34b9680e86d45b909c0",
+  "capture_finished": {
+    "reason": "window_elapsed",
+    "ended_at": "2026-11-27T07:02:00.155888+00:00",
+    "counts": {
+      "tick_CU2701": 51894,
+      "bar_CU2701": 465
+    },
+    "listener_stopped": true
+  },
+  "canonical_input_sha256": "eec0a53f4db8e6470c2b25f61d603a17503fd3500196e70550a00459487ccbb1",
+  "authority_day_rows": 465,
+  "source_sessions": [
+    {
+      "start": "2026-11-26T13:00:00+00:00",
+      "end": "2026-11-26T17:00:00+00:00",
+      "count": 25227,
+      "generations": [
+        1
+      ],
+      "max_observed_gap_s": 5.5
+    },
+    {
+      "start": "2026-11-27T01:00:00+00:00",
+      "end": "2026-11-27T02:15:00+00:00",
+      "count": 8909,
+      "generations": [
+        2
+      ],
+      "max_observed_gap_s": 1.5
+    },
+    {
+      "start": "2026-11-27T02:30:00+00:00",
+      "end": "2026-11-27T03:30:00+00:00",
+      "count": 7139,
+      "generations": [
+        2
+      ],
+      "max_observed_gap_s": 1.5
+    },
+    {
+      "start": "2026-11-27T05:30:00+00:00",
+      "end": "2026-11-27T07:00:00+00:00",
+      "count": 10616,
+      "generations": [
+        2
+      ],
+      "max_observed_gap_s": 2.0
+    }
+  ],
+  "source_observed_day_and_trading_date_counts": [
+    [
+      "2026-11-26",
+      "20261127",
+      19479
+    ],
+    [
+      "2026-11-27",
+      "20261127",
+      32415
+    ]
+  ],
+  "connection_tick_counts": {
+    "1": 25228,
+    "2": 26666
+  },
+  "book_levels_and_counts": [
+    [
+      5,
+      5,
+      51894
+    ]
+  ],
+  "baseline": {
+    "tick_minute_version": 1,
+    "endpoint_coverage": {
+      "expected": 465,
+      "tick": {
+        "covered": 463,
+        "missing": [
+          "2026-11-26T13:01:00+00:00",
+          "2026-11-27T01:01:00+00:00"
+        ],
+        "unexpected": []
+      },
+      "live": {
+        "covered": 465,
+        "missing": [],
+        "unexpected": []
+      },
+      "historical": {
+        "covered": 465,
+        "missing": [],
+        "unexpected": []
+      }
+    },
+    "tick_to_live": {
+      "overlap": 463,
+      "exact": 444,
+      "left_only": 0,
+      "right_only": 2,
+      "different_fields": {
+        "close": 1,
+        "high": 14,
+        "low": 5,
+        "open_interest": 1,
+        "turnover": 2,
+        "volume": 2
+      },
+      "first": "2026-11-26T13:02:00+00:00",
+      "last": "2026-11-27T07:00:00+00:00"
+    },
+    "tick_to_authority": {
+      "overlap": 463,
+      "exact": 444,
+      "left_only": 0,
+      "right_only": 2,
+      "different_fields": {
+        "high": 13,
+        "low": 5,
+        "open_interest": 1
+      },
+      "first": "2026-11-26T13:02:00+00:00",
+      "last": "2026-11-27T07:00:00+00:00"
+    }
+  },
+  "candidate": {
+    "tick_minute_version": 2,
+    "endpoint_coverage": {
+      "expected": 465,
+      "tick": {
+        "covered": 463,
+        "missing": [
+          "2026-11-26T13:01:00+00:00",
+          "2026-11-27T01:01:00+00:00"
+        ],
+        "unexpected": []
+      },
+      "live": {
+        "covered": 465,
+        "missing": [],
+        "unexpected": []
+      },
+      "historical": {
+        "covered": 465,
+        "missing": [],
+        "unexpected": []
+      }
+    },
+    "tick_to_live": {
+      "different_endpoints": [
+        {
+          "end": "2026-11-27T03:30:00+00:00",
+          "fields": [
+            "high",
+            "close",
+            "volume",
+            "turnover",
+            "open_interest"
+          ]
+        },
+        {
+          "end": "2026-11-27T05:31:00+00:00",
+          "fields": [
+            "volume",
+            "turnover"
+          ]
+        }
+      ],
+      "overlap": 463,
+      "exact": 461,
+      "left_only": 0,
+      "right_only": 2,
+      "different_fields": {
+        "close": 1,
+        "high": 1,
+        "open_interest": 1,
+        "turnover": 2,
+        "volume": 2
+      },
+      "first": "2026-11-26T13:02:00+00:00",
+      "last": "2026-11-27T07:00:00+00:00"
+    },
+    "tick_to_authority": {
+      "different_endpoints": [
+        {
+          "end": "2026-11-27T07:00:00+00:00",
+          "fields": [
+            "open_interest"
+          ]
+        }
+      ],
+      "overlap": 463,
+      "exact": 462,
+      "left_only": 0,
+      "right_only": 2,
+      "different_fields": {
+        "open_interest": 1
+      },
+      "first": "2026-11-26T13:02:00+00:00",
+      "last": "2026-11-27T07:00:00+00:00"
+    }
+  },
+  "same_minute_cumulative_extrema_witnesses": [
+    {
+      "endpoint": "2026-11-26T13:03:00+00:00",
+      "field": "high",
+      "previous": "89980.0",
+      "value": "90000.0",
+      "previous_observed_at": "2026-11-26T13:02:10+00:00",
+      "observed_at": "2026-11-26T13:02:10.500000+00:00",
+      "generation": 1,
+      "volume_delta": "103"
+    },
+    {
+      "endpoint": "2026-11-26T13:04:00+00:00",
+      "field": "low",
+      "previous": "89470.0",
+      "value": "89460.0",
+      "previous_observed_at": "2026-11-26T13:03:57+00:00",
+      "observed_at": "2026-11-26T13:03:57.500000+00:00",
+      "generation": 1,
+      "volume_delta": "29"
+    },
+    {
+      "endpoint": "2026-11-26T13:06:00+00:00",
+      "field": "low",
+      "previous": "89290.0",
+      "value": "89280.0",
+      "previous_observed_at": "2026-11-26T13:05:13.500000+00:00",
+      "observed_at": "2026-11-26T13:05:14+00:00",
+      "generation": 1,
+      "volume_delta": "6"
+    },
+    {
+      "endpoint": "2026-11-26T13:09:00+00:00",
+      "field": "low",
+      "previous": "89260.0",
+      "value": "89250.0",
+      "previous_observed_at": "2026-11-26T13:08:54+00:00",
+      "observed_at": "2026-11-26T13:08:54.500000+00:00",
+      "generation": 1,
+      "volume_delta": "15"
+    },
+    {
+      "endpoint": "2026-11-26T13:11:00+00:00",
+      "field": "low",
+      "previous": "89140.0",
+      "value": "89130.0",
+      "previous_observed_at": "2026-11-26T13:10:49.500000+00:00",
+      "observed_at": "2026-11-26T13:10:50+00:00",
+      "generation": 1,
+      "volume_delta": "6"
+    },
+    {
+      "endpoint": "2026-11-27T01:05:00+00:00",
+      "field": "low",
+      "previous": "88960.0",
+      "value": "88950.0",
+      "previous_observed_at": "2026-11-27T01:04:11.500000+00:00",
+      "observed_at": "2026-11-27T01:04:12+00:00",
+      "generation": 2,
+      "volume_delta": "10"
+    },
+    {
+      "endpoint": "2026-11-27T01:46:00+00:00",
+      "field": "high",
+      "previous": "90100.0",
+      "value": "90120.0",
+      "previous_observed_at": "2026-11-27T01:45:59+00:00",
+      "observed_at": "2026-11-27T01:45:59.500000+00:00",
+      "generation": 2,
+      "volume_delta": "72"
+    },
+    {
+      "endpoint": "2026-11-27T01:57:00+00:00",
+      "field": "high",
+      "previous": "90590.0",
+      "value": "90600.0",
+      "previous_observed_at": "2026-11-27T01:56:59+00:00",
+      "observed_at": "2026-11-27T01:56:59.500000+00:00",
+      "generation": 2,
+      "volume_delta": "111"
+    },
+    {
+      "endpoint": "2026-11-27T01:59:00+00:00",
+      "field": "high",
+      "previous": "90770.0",
+      "value": "90780.0",
+      "previous_observed_at": "2026-11-27T01:58:59+00:00",
+      "observed_at": "2026-11-27T01:58:59.500000+00:00",
+      "generation": 2,
+      "volume_delta": "89"
+    },
+    {
+      "endpoint": "2026-11-27T02:02:00+00:00",
+      "field": "high",
+      "previous": "91730.0",
+      "value": "91760.0",
+      "previous_observed_at": "2026-11-27T02:01:07.500000+00:00",
+      "observed_at": "2026-11-27T02:01:08+00:00",
+      "generation": 2,
+      "volume_delta": "61"
+    },
+    {
+      "endpoint": "2026-11-27T02:03:00+00:00",
+      "field": "high",
+      "previous": "91760.0",
+      "value": "91770.0",
+      "previous_observed_at": "2026-11-27T02:02:37+00:00",
+      "observed_at": "2026-11-27T02:02:37.500000+00:00",
+      "generation": 2,
+      "volume_delta": "96"
+    },
+    {
+      "endpoint": "2026-11-27T02:04:00+00:00",
+      "field": "high",
+      "previous": "92000.0",
+      "value": "92080.0",
+      "previous_observed_at": "2026-11-27T02:03:48.500000+00:00",
+      "observed_at": "2026-11-27T02:03:49+00:00",
+      "generation": 2,
+      "volume_delta": "214"
+    },
+    {
+      "endpoint": "2026-11-27T02:06:00+00:00",
+      "field": "high",
+      "previous": "92210.0",
+      "value": "92230.0",
+      "previous_observed_at": "2026-11-27T02:05:45.500000+00:00",
+      "observed_at": "2026-11-27T02:05:46+00:00",
+      "generation": 2,
+      "volume_delta": "96"
+    },
+    {
+      "endpoint": "2026-11-27T02:07:00+00:00",
+      "field": "high",
+      "previous": "92510.0",
+      "value": "92520.0",
+      "previous_observed_at": "2026-11-27T02:06:45+00:00",
+      "observed_at": "2026-11-27T02:06:45.500000+00:00",
+      "generation": 2,
+      "volume_delta": "63"
+    },
+    {
+      "endpoint": "2026-11-27T02:08:00+00:00",
+      "field": "high",
+      "previous": "92840.0",
+      "value": "92850.0",
+      "previous_observed_at": "2026-11-27T02:07:43.500000+00:00",
+      "observed_at": "2026-11-27T02:07:44+00:00",
+      "generation": 2,
+      "volume_delta": "84"
+    },
+    {
+      "endpoint": "2026-11-27T02:34:00+00:00",
+      "field": "high",
+      "previous": "93260.0",
+      "value": "93270.0",
+      "previous_observed_at": "2026-11-27T02:33:46.500000+00:00",
+      "observed_at": "2026-11-27T02:33:47+00:00",
+      "generation": 2,
+      "volume_delta": "48"
+    },
+    {
+      "endpoint": "2026-11-27T03:02:00+00:00",
+      "field": "high",
+      "previous": "93390.0",
+      "value": "93400.0",
+      "previous_observed_at": "2026-11-27T03:01:22.500000+00:00",
+      "observed_at": "2026-11-27T03:01:23+00:00",
+      "generation": 2,
+      "volume_delta": "62"
+    },
+    {
+      "endpoint": "2026-11-27T05:31:00+00:00",
+      "field": "high",
+      "previous": "95000.0",
+      "value": "95030.0",
+      "previous_observed_at": "2026-11-27T05:30:27.500000+00:00",
+      "observed_at": "2026-11-27T05:30:28+00:00",
+      "generation": 2,
+      "volume_delta": "90"
+    }
+  ],
+  "live_to_canonical": {
+    "different_endpoints": [
+      {
+        "end": "2026-11-27T03:30:00+00:00",
+        "fields": [
+          "high",
+          "close",
+          "volume",
+          "turnover",
+          "open_interest"
+        ]
+      },
+      {
+        "end": "2026-11-27T05:31:00+00:00",
+        "fields": [
+          "volume",
+          "turnover"
+        ]
+      },
+      {
+        "end": "2026-11-27T07:00:00+00:00",
+        "fields": [
+          "open_interest"
+        ]
+      }
+    ],
+    "overlap": 465,
+    "exact": 462,
+    "left_only": 0,
+    "right_only": 0,
+    "different_fields": {
+      "close": 1,
+      "high": 1,
+      "open_interest": 2,
+      "turnover": 2,
+      "volume": 2
+    },
+    "first": "2026-11-26T13:01:00+00:00",
+    "last": "2026-11-27T07:00:00+00:00"
+  },
+  "live_break_boundary_deltas": {
+    "11:30": {
+      "volume": -9,
+      "turnover": -4183700
+    },
+    "13:31": {
+      "volume": 9,
+      "turnover": 4183700
+    }
+  },
+  "unresolved": {
+    "opening_endpoints": [
+      "2026-11-26T21:01:00+08:00",
+      "2026-11-27T09:01:00+08:00"
+    ],
+    "opening_source_baseline": "UNPROVEN",
+    "session_close_endpoint": "2026-11-27T15:00:00+08:00",
+    "open_interest": {
+      "tick": "199885",
+      "live": "199885",
+      "canonical": "199886"
+    }
+  },
+  "rb2701_regression": {
+    "capture_hashes": [
+      "ff5116e42bf90ae00e52829a77d020e3adb7f0d17eec2f07ef5dae4ad3536c70",
+      "495be700889c70228d064f9e7776b93cfcdcc2d9b80bb712540b43f556996c3a",
+      "8bf7d1ccadf849c870b0955af6cd2777d0a4e1520825fec8fa6e728e30783460"
+    ],
+    "canonical_input_sha256": "b75807310210382517b6d214eba0cb72db256d1a12c62d44fab84d0ff5ffc6c2",
+    "matching_completed_minutes": 5
+  },
+  "natural_bar_1m_batch": {
+    "binding": {
+      "tag": "v1.16.141",
+      "commit": "e956d84277706fbe1e0ce82bad114deca2fcfabf",
+      "generation": 94
+    },
+    "status_sha256": "45fc9d0d151c8b5e5af47197d66ada494bba5adc52a6972190455c47268ea831",
+    "trading_day": "2026-11-27",
+    "status": "failed",
+    "error_code": "LIVE_DOMINANT_MISMATCH",
+    "attempts": 1,
+    "product_count": 60,
+    "exact_operational_scope": true,
+    "started_at": "2026-11-27T18:05:06.433078+08:00",
+    "finished_at": "2026-11-27T18:16:31.936365+08:00",
+    "publications": 960,
+    "cleanup_verified": null,
+    "active_partition_count": 840,
+    "strict_active_partitions_verified": 840,
+    "strict_rank1_products_verified": 60,
+    "repeated_daily_partition_targets": 120,
+    "live_subscription_snapshot_present": false
+  }
+}

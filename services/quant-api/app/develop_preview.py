@@ -9,6 +9,7 @@ import threading
 import os
 from pathlib import Path
 
+from app.services.newow_reference_mode import after_market_only, market_foundation_isolated
 from app.private_settings import PrivateSettingsError, load_private_readonly_settings
 
 
@@ -55,8 +56,28 @@ def run_develop_recovery(stop, *, worker=None, wait=None, report=None):
     report('stopped')
 
 
+def _validate_market_foundation_preview():
+    from sqlalchemy.engine import make_url
+
+    from app.db.url import normalize_database_url
+    from app.market_data.market_archive import require_isolated_archive
+
+    try:
+        require_isolated_archive(
+            make_url(normalize_database_url(os.environ["DATABASE_URL"])),
+            os.environ["REDIS_URL"],
+            Path(os.environ["GUIYI_CANONICAL_DATA_ROOT"]),
+        )
+    except (OSError, ValueError, KeyError):
+        raise SystemExit("MARKET_FOUNDATION_ISOLATION_REQUIRED") from None
+
+
 def create_develop_app():
+    if market_foundation_isolated():
+        _validate_market_foundation_preview()
     from app.main import app
+    if after_market_only():
+        return app
     previous_lifespan = app.router.lifespan_context
     from datetime import UTC, datetime
     app.state.develop_home_recovery = {'status': 'starting', 'updated_at': None}
@@ -89,6 +110,14 @@ def main():
     parser.add_argument('command', choices=('api', 'build'))
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[3]
+    if market_foundation_isolated():
+        if args.command != 'api':
+            raise SystemExit("MARKET_FOUNDATION_AFTER_MARKET_ONLY")
+        _validate_market_foundation_preview()
+        import uvicorn
+        uvicorn.run('app.develop_preview:create_develop_app', factory=True,
+                    host='127.0.0.1', port=8002, workers=1)
+        return
     try:
         settings, _ = load_private_readonly_settings(
             Path.home() / 'Library/Application Support/GuiyiQuant/project.env')

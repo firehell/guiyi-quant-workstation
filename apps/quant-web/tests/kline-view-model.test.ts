@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { BarData } from '../src/types/market.ts'
 import { calculateRangeDetectorLux, type RangeDetectorLuxResult } from '../src/utils/rangeDetectorLux.ts'
+import type { MarketChartStudyPoints } from '../src/utils/marketChartStudies.ts'
+import { calculateThsMacdDisplay } from '../src/utils/thsMacdDisplay.ts'
 import {
   buildKlineDerivedData,
   formatKlineHoverValue,
@@ -22,15 +24,21 @@ const bars: BarData[] = Array.from({ length: 100 }, (_, index) => {
   }
 })
 
-test('only enabled EMA is derived while MACD is always available', () => {
-  const result = buildKlineDerivedData(bars, ['ema_21'])
+const emaPoints: MarketChartStudyPoints = {
+  ema_10: { [bars[79]!.time]: { status: 'READY', values: { value: 179 }, diagnostic: null } },
+  ema_21: {
+    [bars[0]!.time]: { status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' },
+    [bars[79]!.time]: { status: 'READY', values: { value: 175 }, diagnostic: null },
+  },
+}
 
+test('only the enabled server EMA is displayed and the dedicated THS MACD remains aligned', () => {
+  const result = buildKlineDerivedData(bars, ['ema_21'], { emaPoints })
   assert.equal(result.ema.ema_10, undefined)
   assert.equal(result.ema.ema_60, undefined)
-  assert.equal(result.ema.ema_21?.length, 80)
-  assert.ok(result.macd.dif.length > 0)
-  assert.equal(result.macd.dif.length, result.macd.dea.length)
-  assert.equal(result.macd.dea.length, result.macd.histogram.length)
+  assert.deepEqual(result.ema.ema_21, [{ time: bars[0]!.time, value: null }, { time: bars[79]!.time, value: 175 }])
+  assert.deepEqual(result.macd, calculateThsMacdDisplay(bars))
+  assert.deepEqual(buildKlineDerivedData(bars, ['ema_21']).ema.ema_21, [])
 })
 
 test('HTDY is only derived when its observation overlay is explicitly visible', () => {
@@ -75,7 +83,7 @@ test('Range Detector calculates only from its anchored bars and ignores later pr
 })
 
 test('crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp', () => {
-  const result = buildKlineDerivedData(bars, ['ema_21'])
+  const result = buildKlineDerivedData(bars, ['ema_21'], { emaPoints })
   const target = bars[79]
   const hover = resolveKlineHoverContext(bars, result, ['ema_21'], target.time)
 
@@ -88,7 +96,10 @@ test('crosshair context keeps OHLCV OI EMA and MACD on the hovered bar timestamp
   assert.equal(hover.bar.volume, 1_079)
   assert.equal(hover.bar.openInterest, 2_079)
   assert.equal(hover.mainIndicators?.[0]?.id, 'ema_21')
-  assert.ok(hover.mainIndicators?.[0]?.value)
+  assert.equal(hover.mainIndicators?.[0]?.value, 175)
+  const warming = resolveKlineHoverContext(bars, result, ['ema_21'], bars[0]!.time)
+  assert.equal(warming?.mainIndicators?.[0]?.value, null)
+  assert.equal(warming?.mainIndicators?.[0]?.reason, 'LOOKBACK_REQUIRED')
   assert.notEqual(hover.macd?.dif, null)
   assert.notEqual(hover.macd?.dea, null)
   assert.notEqual(hover.macd?.histogram, null)
@@ -192,7 +203,7 @@ function makeDeterministicHtdyBars(seed: number, length = 100): BarData[] {
   const low = close.map((item, index) => Math.min(open[index], item) - 0.1 - random() * 1.9)
 
   return close.map((item, index) => ({
-    time: `htdy-${index}`,
+    time: new Date(Date.UTC(2026, 0, index + 1, 7)).toISOString(),
     open: open[index],
     high: high[index],
     low: low[index],

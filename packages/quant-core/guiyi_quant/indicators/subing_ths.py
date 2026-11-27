@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Literal
 
 from .ema import initial_ema_state, step_ema
@@ -10,6 +11,14 @@ from .models import EmaState, MacdState
 
 
 SUBING_THS_FORMULA_VERSION = "subing_ths_15m_v3"
+SUBING_THS_FORMULA_VERSIONS = MappingProxyType({
+    "5m": "subing_ths_5m_v1",
+    "15m": SUBING_THS_FORMULA_VERSION,
+    "30m": "subing_ths_30m_v1",
+    "60m": "subing_ths_60m_v1",
+    "1d": "subing_ths_1d_v1",
+    "1w": "subing_ths_1w_v1",
+})
 SubingThsResultCode = Literal["buy", "sell"]
 
 
@@ -36,7 +45,7 @@ class SubingThs15mResult:
 
 
 class SubingThs15mKernel:
-    """Pure, incremental authority for ``subing_ths_15m_v3`` candidates."""
+    """Pure incremental SuBing THS calculation with an existing period identity."""
 
     formula_version = SUBING_THS_FORMULA_VERSION
     fast = 12
@@ -46,6 +55,12 @@ class SubingThs15mKernel:
     ema_seed_policy: Literal["sma_window"] = "sma_window"
     histogram_scale: Literal[2] = 2
     round_digits = 6
+
+    def __init__(self, *, frequency: str = "15m") -> None:
+        try:
+            self.formula_version = SUBING_THS_FORMULA_VERSIONS[frequency]
+        except KeyError:
+            raise ValueError("SUBING_THS_FREQUENCY_UNSUPPORTED") from None
 
     def initial_state(self) -> SubingThs15mState:
         return SubingThs15mState(

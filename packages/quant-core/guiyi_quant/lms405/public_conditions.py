@@ -108,6 +108,25 @@ def _all(values: list[bool | None]) -> bool | None:
     return None if None in values else True
 
 
+def check_route(route, precedence, visible):
+    """Evaluate one named route over evidence already scoped and revealed."""
+    checks = {k: visible[k].value if k in visible else None for k in route}
+    for first, second in precedence:
+        if first not in route or second not in route:
+            continue
+        value = None
+        if (
+            checks[first] is True
+            and checks[second] is True
+            and visible[first].time_kind == "EVENT_TIME"
+            and visible[second].time_kind == "EVENT_TIME"
+        ):
+            a, b = visible[first].observed_at, visible[second].observed_at
+            value = a < b if a != b else None
+        checks[f"ORDER:{first}<{second}"] = value
+    return dict(checks=checks, value=_all(list(checks.values())))
+
+
 def assess_case(
     case: PublicCase,
     position: Position,
@@ -143,23 +162,7 @@ def assess_case(
         seen.add(fact.name)
         if fact.known_at < as_of:
             visible[fact.name] = fact
-    routes = []
-    for route in case.alternatives:
-        checks = {k: visible[k].value if k in visible else None for k in route}
-        for first, second in case.precedence:
-            if first not in route or second not in route:
-                continue
-            value = None
-            if (
-                checks[first] is True
-                and checks[second] is True
-                and visible[first].time_kind == "EVENT_TIME"
-                and visible[second].time_kind == "EVENT_TIME"
-            ):
-                a, b = visible[first].observed_at, visible[second].observed_at
-                value = a < b if a != b else None
-            checks[f"ORDER:{first}<{second}"] = value
-        routes.append(dict(checks=checks, value=_all(list(checks.values()))))
+    routes = [check_route(route, case.precedence, visible) for route in case.alternatives]
     values = [r["value"] for r in routes]
     ready = True if True in values else None if None in values else False
     result = decide(

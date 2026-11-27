@@ -8,7 +8,7 @@ from itertools import groupby
 from guiyi_quant.new_subing import ExecutionBar
 from guiyi_quant.subing_decision import REGIME_PROFILE, _wire
 
-from . import PORTFOLIO_POLICY, PORTFOLIO_PRODUCTS, build_engine, portfolio_policy
+from . import PORTFOLIO_POLICY, PORTFOLIO_PRODUCTS, RESEARCH_EXIT_PROFILES, build_engine, portfolio_policy
 
 D = Decimal
 INITIAL_CASH = D(PORTFOLIO_POLICY["initial_cash"])
@@ -30,18 +30,31 @@ def required_margin(mark, facts, side):
     return max(mark, facts.prev_settlement) * facts.multiplier * ratio
 
 
-def opening_quote(mark, facts, side):
-    entry = mark + facts.tick_size * (1 if side == "LONG" else -1)
-    cost = facts.tick_size * facts.multiplier + facts.fees.amount(
+def opening_quote(mark, facts, side, slippage_ticks=1):
+    slippage = facts.tick_size * slippage_ticks
+    entry = mark + slippage * (1 if side == "LONG" else -1)
+    cost = slippage * facts.multiplier + facts.fees.amount(
         "open", entry, facts.multiplier
     )
     return entry, cost
 
 
 class Portfolio:
-    def __init__(self, segments, run_id, *, products=PORTFOLIO_PRODUCTS):
+    def __init__(self, segments, run_id, *, products=PORTFOLIO_PRODUCTS,
+                 exit_profile=None, slippage_ticks=1, research_scope=False):
         self.products = products
-        self.policy = portfolio_policy(products)
+        self.policy = portfolio_policy(products, research_scope=research_scope)
+        self.research_scope = research_scope
+        if (exit_profile is not None and exit_profile not in RESEARCH_EXIT_PROFILES
+                or type(slippage_ticks) is not int or slippage_ticks not in (1, 2, 3)):
+            raise ValueError("PORTFOLIO_RESEARCH_SETTINGS_INVALID")
+        self.exit_profile = exit_profile
+        self.slippage_ticks = slippage_ticks
+        if exit_profile:
+            self.policy = {**self.policy, "version": f"{self.policy['version']}:{exit_profile}",
+                           "exit_profile": exit_profile}
+        if slippage_ticks != 1:
+            self.policy["research_slippage_ticks"] = slippage_ticks
         self.run_id = run_id
         self.accounts = {}
         self.last_observed_at = None
@@ -80,12 +93,15 @@ class Portfolio:
             execution_model="completed_close",
             portfolio=True,
             portfolio_products=self.products,
+            exit_profile=self.exit_profile,
+            research_scope=self.research_scope,
         )
         account = module.AccountEngine(
             contract,
             product,
             first.facts.multiplier,
             f"{self.run_id}:{contract}",
+            slippage_ticks=self.slippage_ticks,
             live=True,
             regime_research_profile=REGIME_PROFILE,
         )
@@ -123,7 +139,7 @@ class Portfolio:
                 and not pending["cancel_requested"]
             ):
                 side = pending["side"]
-                entry, cost = opening_quote(x.bar.close, x.facts, side)
+                entry, cost = opening_quote(x.bar.close, x.facts, side, self.slippage_ticks)
                 total += required_margin(entry, x.facts, side)
                 costs += cost
         return total, costs
@@ -146,7 +162,7 @@ class Portfolio:
         contract = account.contract
         at = self.marks[contract].bar.bar_end
         self.mark_risk(at)
-        entry, cost = opening_quote(mark, facts, side)
+        entry, cost = opening_quote(mark, facts, side, self.slippage_ticks)
         margin, reserved_cost = self.reserved_finance(excluding=contract)
         prospective_equity = self.equity() - cost - reserved_cost
         margin_limit = prospective_equity * MARGIN_FRACTION
@@ -299,8 +315,12 @@ class Portfolio:
         )
 
 
-def replay(segments, run_id, *, products=PORTFOLIO_PRODUCTS, on_batch=None):
-    portfolio = Portfolio(segments, run_id, products=products)
+def replay(segments, run_id, *, products=PORTFOLIO_PRODUCTS, on_batch=None,
+           exit_profile=None, slippage_ticks=1, research_scope=False):
+    portfolio = Portfolio(
+        segments, run_id, products=products, exit_profile=exit_profile, slippage_ticks=slippage_ticks,
+        research_scope=research_scope,
+    )
     rows = sorted(
         (
             (x, segment.observations[x.bar.bar_end])

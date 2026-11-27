@@ -84,16 +84,13 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
     } == {
         code: expected
         for code in (
-            "ema10",
-            "ema21",
-            "ema60",
-            "macd",
-            "atr",
             "range_detector_lux_v1",
             "huotian_dayou_original_v0",
             "huotian_dayou_strict_v1",
         )
     }
+    from guiyi_quant.compute import REGISTRY
+    assert all(item.supported_frequencies == frozenset(expected) for item in REGISTRY.definitions.values())
 
 
 def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() -> None:
@@ -110,7 +107,7 @@ def test_alert_rule_capabilities_keep_stable_identity_and_exact_frequencies() ->
         "1w",
     )
     assert HTDY_RULE.rule_code == "htdy_original_15m"
-    assert SUBING_THS_RULE.input_frequencies == ("15m",)
+    assert SUBING_THS_RULE.input_frequencies == ("5m", "15m", "30m", "60m", "1d", "1w")
     assert SUBING_THS_RULE.rule_code == "subing_ths_alert_15m_v1"
     assert alert_rule_definitions() == (HTDY_RULE, SUBING_THS_RULE)
 
@@ -302,43 +299,19 @@ def test_formal_policy_enforces_allowed_and_blocked_consumers() -> None:
         require_formal_policy("huotian_dayou_original_v0", consumer="Backtest")
 
 
-def test_ema_registry_is_validated_with_formal_policy() -> None:
-    from guiyi_quant.indicators import definition_to_metadata, get_indicator, require_formal_policy
+def test_owned_registry_cannot_select_retired_generic_formulas() -> None:
+    from guiyi_quant.compute import REGISTRY
+    from guiyi_quant.indicators import get_indicator, require_formal_policy
 
-    for code in ("ema10", "ema21", "ema60"):
-        definition = get_indicator(code)
-        assert definition.status == "validated"
-        assert definition.formal_policy_id == "ema_sma_window_v1"
-        assert definition.seed_policy == "sma_window"
-        assert definition.confirmed_only is True
-        assert definition.alert_capable is False
-        metadata = definition_to_metadata(definition)
-        assert metadata["formal_policy_id"] == "ema_sma_window_v1"
-        assert metadata["indicator_code"] == code
+    for code in ("ema10", "ema21", "ema60", "macd", "atr"):
+        with pytest.raises(KeyError):
+            get_indicator(code)
+        assert REGISTRY.definition(code).backend_version.startswith("ta-lib:")
 
-    policy = require_formal_policy("ema_sma_window_v1")
-    assert policy.seed_policy == "sma_window"
-    assert policy.frozen_legacy is False
-
-
-def test_macd_and_atr_are_compatibility_validated_not_validated() -> None:
-    from guiyi_quant.indicators import get_indicator, indicator_registry
-
-    assert "macd" in indicator_registry
-    assert "atr" in indicator_registry
-    macd = get_indicator("macd")
-    atr = get_indicator("atr")
-    assert macd.status == "compatibility_validated"
-    assert atr.status == "compatibility_validated"
-    assert macd.status != "validated"
-    assert atr.status != "validated"
-    assert macd.formal_policy_id == "web_macd_legacy_v1"
-    assert atr.formal_policy_id == "web_atr_wilder_sma_seed_v1"
-    assert macd.backtest_capable is False
-    assert macd.live_capable is False
-    assert macd.alert_capable is False
-    assert atr.live_capable is False
-    assert atr.alert_capable is False
+    # Recorded and source-owned algorithms still resolve their historical policy IDs.
+    assert require_formal_policy("ema_sma_window_v1").seed_policy == "sma_window"
+    assert require_formal_policy("web_macd_legacy_v1").histogram_scale == 2
+    assert require_formal_policy("web_atr_wilder_sma_seed_v1").smoothing_policy == "wilder_sma_seed"
 
 
 def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> None:

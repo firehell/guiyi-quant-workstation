@@ -7,7 +7,7 @@ from app.reference_trading.messages import FREQUENCIES, STRATEGIES
 from app.reference_trading.query import QueryConflict
 
 
-def _scope_statement(product=None, strategy=None, frequency=None):
+def _scope_statement(product=None, strategy=None, frequency=None, market_products=None):
     scope_statement = (
         select(
             ReferenceStream.stream_id,
@@ -37,14 +37,16 @@ def _scope_statement(product=None, strategy=None, frequency=None):
         )
     if frequency:
         scope_statement = scope_statement.where(ReferenceStream.frequency == frequency)
+    if market_products is not None:
+        scope_statement = scope_statement.where(ReferenceStream.product.in_(market_products))
     return scope_statement
 
 
-def read_message_scope(factory, *, product=None, strategy=None, frequency=None):
+def read_message_scope(factory, *, product=None, strategy=None, frequency=None, market_products=None):
     """Read only active source identities, without scanning calculation batches."""
     with factory() as session, readonly_transaction(session, timeout_seconds=20):
         rows = session.execute(
-            _scope_statement(product, strategy, frequency).limit(10001)
+            _scope_statement(product, strategy, frequency, market_products).limit(10001)
         ).all()
         if len(rows) > 10000:
             raise QueryConflict("QUERY_BUDGET_EXCEEDED")

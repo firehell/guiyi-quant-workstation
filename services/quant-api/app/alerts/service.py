@@ -15,7 +15,7 @@ from app.alerts.registry import (
     get_alert_rule_definition,
 )
 from app.market_data.domain import normalize_contract_for_symbol
-from app.market_data.product_retirement import normalize_symbol
+from app.market_data.product_retirement import MARKET_FOUNDATION_RETIRED_PRODUCTS, normalize_symbol
 
 
 class AlertConsistencyError(RuntimeError):
@@ -105,6 +105,9 @@ class AlertService:
         return frequency in self._normalized_frequency_scope(rule, definition).get(
             normalized, ()
         )
+
+    def effective_frequency_scope(self, rule: AlertRule) -> dict[str, tuple[str, ...]]:
+        return self._normalized_frequency_scope(rule, _definition(rule.rule_code))
 
     def create_first_seen_observation_event(
         self, request: AlertEventCreate
@@ -371,12 +374,14 @@ class AlertService:
             if (
                 not isinstance(symbol, str)
                 or normalize_symbol(symbol) != symbol
-                or symbol not in self._operational_products
+                or (symbol not in self._operational_products and symbol not in MARKET_FOUNDATION_RETIRED_PRODUCTS)
                 or not isinstance(frequencies, list)
                 or not frequencies
                 or any(value not in definition.input_frequencies for value in frequencies)
             ):
                 raise AlertScopeError("ALERT_SCOPE_STATE_INVALID")
+            if symbol not in self._operational_products:
+                continue
             normalized[symbol] = tuple(
                 value for value in definition.input_frequencies if value in set(frequencies)
             )

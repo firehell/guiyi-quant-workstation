@@ -1,0 +1,113 @@
+{
+  "bars": 66590,
+  "cache_hot_latency_ms": [
+    0.0263,
+    0.0312,
+    0.0512
+  ],
+  "covered_product_frequencies": 415,
+  "host": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+  "incremental_latency_ms": [
+    0.0785,
+    0.0906,
+    0.1087
+  ],
+  "missing": [
+    [
+      "oi",
+      "1d",
+      "PRICE_UNAVAILABLE"
+    ],
+    [
+      "rs",
+      "1d",
+      "PRICE_UNAVAILABLE"
+    ],
+    [
+      "pd",
+      "1w",
+      "TRADING_SESSION_MISSING"
+    ],
+    [
+      "pt",
+      "1w",
+      "TRADING_SESSION_MISSING"
+    ],
+    [
+      "rs",
+      "1w",
+      "MAPPED_CONTRACT_DATASET_MISSING"
+    ]
+  ],
+  "new_comparable_batch": {
+    "cpu_seconds": 1.3766,
+    "process_peak_rss_bytes": 323846144,
+    "segment_latency_ms": [
+      0.1008,
+      1.8192,
+      2.6772
+    ],
+    "total_seconds": 1.3824
+  },
+  "new_expanded_batch": {
+    "cpu_seconds": 6.6215,
+    "process_peak_rss_bytes": 327761920,
+    "segment_latency_ms": [
+      0.482,
+      7.1701,
+      11.1093
+    ],
+    "total_seconds": 6.6435
+  },
+  "numpy": "2.5.0",
+  "old_comparable_batch": {
+    "cpu_seconds": 2.0619,
+    "process_peak_rss_bytes": 302399488,
+    "segment_latency_ms": [
+      0.1514,
+      2.6728,
+      4.8704
+    ],
+    "total_seconds": 2.0681
+  },
+  "owner_segments_by_frequency": {
+    "15m": 70,
+    "1d": 157,
+    "1m": 60,
+    "1w": 473,
+    "30m": 80,
+    "5m": 64,
+    "60m": 91
+  },
+  "quant_core": "0.3.0",
+  "queued_full_registry": {
+    "batch_job_latency_ms": [
+      3.6965,
+      35.6141,
+      98.2767
+    ],
+    "cpu_seconds": 2.7567,
+    "process_peak_rss_bytes": 329170944,
+    "queue_load": {
+      "batch": {
+        "peak_pending": 4,
+        "pending": 0,
+        "rejected": 373
+      },
+      "incremental": {
+        "peak_pending": 0,
+        "pending": 0,
+        "rejected": 0
+      },
+      "live": {
+        "peak_pending": 0,
+        "pending": 0,
+        "rejected": 0
+      }
+    }
+  },
+  "repeats": 3,
+  "source_sha256": "534f774398feafcbc6e8ecbb57831a3a856f819693ae079728b994f0d2fedcee",
+  "ta_lib": "0.8.3.post1",
+  "through": "2026-11-25"
+}

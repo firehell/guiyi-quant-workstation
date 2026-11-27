@@ -107,6 +107,18 @@ def test_feed_never_uses_historical_or_seed_facts():
     )
 
 
+def test_v2_scope_excludes_retired_rows_without_changing_the_legacy_audit_read():
+    factory = saved()
+    with factory() as session:
+        row = session.scalar(select(ReferenceStream))
+        row.product = "pt"
+        session.commit()
+    args = dict(since=date(2026, 9, 19), through=date(2026, 9, 19))
+    assert len(read_messages(factory, **args)["items"]) == 2
+    scoped = read_messages(factory, **args, market_products=("rb",))
+    assert scoped["items"] == [] and scoped["revision_snapshot"] == []
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [{"strategy": "invented"}, {"frequency": "5m"}, {"product": "../"}, {"limit": 501}],

@@ -91,9 +91,16 @@ def _instant(value: object) -> datetime | None:
 
 
 class HistoricalReferenceQuery:
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory, *, market_scope: bool = False) -> None:
         self._factory = session_factory
         self._repository = ReferenceRepository(session_factory)
+        self._market_scope = market_scope
+
+    def _require_market_product(self, product: str) -> None:
+        if self._market_scope:
+            from app.market_data.product_retirement import assert_not_retired
+
+            assert_not_retired(product)
 
     @staticmethod
     def capabilities() -> dict[str, object]:
@@ -141,6 +148,7 @@ class HistoricalReferenceQuery:
         self, *, strategy: str, product: str, frequency: str,
         mode: str = "historical_replay",
     ) -> list[dict[str, object]]:
+        self._require_market_product(product)
         if mode not in {"historical_replay", "forward_observation"}:
             raise QueryConflict("MODE_NOT_AVAILABLE")
         if (
@@ -177,6 +185,7 @@ class HistoricalReferenceQuery:
 
     def stream_for(self, identity: StreamIdentity) -> dict[str, object] | None:
         """Look up the exact registered identity without enumerating sibling versions."""
+        self._require_market_product(identity.product)
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
             row = session.get(ReferenceStream, identity.stream_id)
             if row is None:
@@ -214,6 +223,7 @@ class HistoricalReferenceQuery:
         row = session.get(ReferenceStream, stream_id)
         if row is None:
             raise QueryConflict("STREAM_NOT_FOUND")
+        self._require_market_product(row.product)
         if not self._registered(row):
             from app.reference_trading.formula_transition import retired_proof
             if retired_proof(session, row) is None:
@@ -805,6 +815,7 @@ class HistoricalReferenceQuery:
         self, stream_id: str, *, snapshot_token: str, since: date, through: date,
         cutoff: datetime | None, kinds: tuple[str, ...], max_points: int = 100_000,
         check_cancelled=None,
+        bar_from: datetime | None = None, bar_through: datetime | None = None,
     ) -> dict[str, list[dict[str, object]]]:
         """One bounded scan of saved facts, with daily availability aggregation.
 
@@ -813,9 +824,14 @@ class HistoricalReferenceQuery:
         or through day and does not recalculate any strategy.
         """
         self._window(since, through, cutoff)
-        if not kinds or not set(kinds) <= {"availability", "boundary", "hint", "action"}:
+        if not kinds or not set(kinds) <= {"availability", "boundary", "hint", "action", "indicator"}:
             raise QueryConflict("QUERY_INVALID")
         if type(max_points) is not int or not 1 <= max_points <= 200_000:
+            raise QueryConflict("QUERY_INVALID")
+        if (bar_from is None) != (bar_through is None) or bar_from is not None and (
+                bar_from.utcoffset() is None or bar_through.utcoffset() is None
+                or bar_from > bar_through
+        ):
             raise QueryConflict("QUERY_INVALID")
         saved = _decode(snapshot_token, kind="snapshot")
         saved_since, saved_through = _day(saved.get("since")), _day(saved.get("through"))
@@ -826,6 +842,8 @@ class HistoricalReferenceQuery:
         count = 0
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
             row = self._resolve(session, stream_id)
+            if "indicator" in kinds and row.recording_mode != "historical_replay":
+                raise QueryConflict("QUERY_INVALID")
             snapshot, _, _ = self._snapshot(
                 session, row, since=saved_since, through=saved_through,
                 cutoff=cutoff, encoded=snapshot_token,
@@ -852,7 +870,8 @@ class HistoricalReferenceQuery:
                     if instant is None:
                         raise QueryConflict("PRESENTATION_CORRUPT")
                     day = _day(point.get("trading_day"))
-                    if not since <= day <= through or cutoff is not None and instant > cutoff:
+                    if (not since <= day <= through or cutoff is not None and instant > cutoff
+                            or bar_from is not None and not bar_from <= instant <= bar_through):
                         continue
                     if kind == "hint":
                         known = _instant(value.get("known_at"))

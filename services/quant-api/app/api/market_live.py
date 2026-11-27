@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
+from functools import partial
+import json
 from threading import BoundedSemaphore
 
 import anyio
-from datetime import UTC, date, datetime
-import json
 from typing import cast
 
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -31,15 +34,18 @@ from app.market_data.domain import (
     parse_rfc3339_instant,
 )
 from app.market_data.live_market import LIVE_STATE_CHANNEL, LiveBarObservation, live_bar_channel
-from app.market_data.market_home_live import MarketHomeLiveItem, MarketHomeLiveSnapshot
+from app.market_data.market_display_preview import MarketPreview
+from app.market_data.market_home_live import MarketHomeLiveItem, MarketHomeLiveService, MarketHomeLiveSnapshot
 from app.market_data.market_read_service import (
     MarketDisplaySnapshot,
     MarketReadService,
     MarketReadState,
+    MarketRetainedTail,
 )
 from app.market_data.operational_universe import load_operational_products
 from app.redis_connections import get_async_redis_connection
-from app.schemas.market import MarketReadStateResponse
+from redis.asyncio import Redis as AsyncRedis
+from app.schemas.market import MarketProgressResponse, MarketReadStateResponse
 from app.schemas.market_home_live import (
     MarketHomeLiveItemResponse,
     MarketHomeLiveQuoteFrame,
@@ -58,8 +64,32 @@ _HOME_LIVE_STATUS_REFRESH_SECONDS = 5.0
 _HOME_LIVE_AUTHORITY_REFRESH_SECONDS = 60.0
 
 
+@dataclass(frozen=True, slots=True)
+class MarketDisplayRuntime:
+    """Explicit display composition for an isolated app and its transient sources."""
+
+    open_reader: Callable[[], AbstractContextManager[MarketReadService]]
+    socket_redis_factory: Callable[[], AsyncRedis]
+    open_home_reader: Callable[[], AbstractContextManager[MarketHomeLiveService]] | None = None
+    verify_socket_binding: Callable[[AsyncRedis], Awaitable[None]] | None = None
+
+
+def _display_runtime(connection: Request | WebSocket) -> MarketDisplayRuntime | None:
+    app = getattr(connection, "app", None)
+    runtime = getattr(getattr(app, "state", None), "market_display_runtime", None)
+    if runtime is not None and not isinstance(runtime, MarketDisplayRuntime):
+        raise TypeError("MARKET_DISPLAY_RUNTIME_INVALID")
+    return runtime
+
+
+def _request_reader(request: Request, session: Session) -> AbstractContextManager[MarketReadService]:
+    runtime = _display_runtime(request)
+    return runtime.open_reader() if runtime is not None else nullcontext(build_market_read_service(session))
+
+
 @router.get("/state", response_model=MarketReadStateResponse)
 def market_state(
+    request: Request,
     series_kind: str = Query(...),
     symbol: str = Query(...),
     frequency: str = Query(...),
@@ -69,10 +99,29 @@ def market_state(
     """读取图表状态；Live Redis 不可用时由 read service 降级为 historical-only。"""
     try:
         identity = _identity(series_kind, symbol, frequency, contract)
-        state = build_market_read_service(session).state(identity, datetime.now(UTC))
+        with _request_reader(request, session) as reader:
+            state = reader.state(identity, datetime.now(UTC))
     except ContractError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "facts": dict(exc.facts)}) from exc
     return _state_response(state)
+
+
+@router.get("/chart-progress", response_model=MarketProgressResponse)
+def market_chart_progress(
+    request: Request,
+    series_kind: str = Query(...),
+    symbol: str = Query(...),
+    frequency: str = Query(...),
+    contract: str | None = Query(default=None),
+    session: Session = Depends(get_db),
+) -> MarketProgressResponse:
+    try:
+        identity = _identity(series_kind, symbol, frequency, contract)
+        with _request_reader(request, session) as reader:
+            progress = reader.chart_progress(identity, datetime.now(UTC))
+    except ContractError as exc:
+        raise HTTPException(status_code=422, detail={"code": exc.code, "facts": dict(exc.facts)}) from exc
+    return MarketProgressResponse(**progress)
 
 
 @router.websocket("/ws")
@@ -90,14 +139,15 @@ async def market_websocket(websocket: WebSocket) -> None:
         await websocket.close(code=1008, reason="MARKET_DATA_CONTRACT_INVALID")
         return
 
-    redis = get_async_redis_connection()
+    runtime = _display_runtime(websocket)
+    redis = runtime.socket_redis_factory() if runtime is not None else get_async_redis_connection()
     pubsub = redis.pubsub()
     channels = (live_bar_channel(identity.symbol, identity.frequency), LIVE_STATE_CHANNEL)
     try:
+        if runtime is not None and runtime.verify_socket_binding is not None:
+            await runtime.verify_socket_binding(redis)
         await pubsub.subscribe(*channels)
-        display = await _read_in_worker(
-            lambda service: service.display_snapshot(identity, after, datetime.now(UTC)),
-        )
+        display = await _read_detail_display(identity, after, after, runtime)
         initial_state = display.state
         await websocket.accept()
         await _send_state(websocket, initial_state)
@@ -121,6 +171,8 @@ async def market_websocket(websocket: WebSocket) -> None:
                 "bars": [_bar_response(bar) for bar in snapshot],
             }
         )
+        extras = _DisplayExtras()
+        await extras.send(websocket, display, force=display.state.display_preview)
         last_sent = snapshot[-1].bar_end if snapshot else cutoff
         current_state = initial_state
         current_authority = _detail_display_authority(display)
@@ -128,6 +180,8 @@ async def market_websocket(websocket: WebSocket) -> None:
         last_refresh = loop.time()
 
         while True:
+            if runtime is not None and runtime.verify_socket_binding is not None:
+                await runtime.verify_socket_binding(redis)
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             now_tick = loop.time()
             if now_tick - last_refresh >= _MARKET_DETAIL_REFRESH_SECONDS:
@@ -138,6 +192,8 @@ async def market_websocket(websocket: WebSocket) -> None:
                     last_sent=last_sent,
                     current_state=current_state,
                     current_authority=current_authority,
+                    runtime=runtime,
+                    extras=extras,
                 )
                 last_refresh = now_tick
             if message is None:
@@ -154,6 +210,8 @@ async def market_websocket(websocket: WebSocket) -> None:
                     last_sent=last_sent,
                     current_state=current_state,
                     current_authority=current_authority,
+                    runtime=runtime,
+                    extras=extras,
                     force_state=True,
                 )
                 last_refresh = now_tick
@@ -205,14 +263,27 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
         if websocket.query_params:
             await websocket.close(code=1008, reason="MARKET_HOME_LIVE_SCOPE_FIXED")
             return
+        runtime = _display_runtime(websocket)
+        if runtime is None:
+            read_snapshot = _read_home_live_snapshot
+            read_item = _read_home_live_item
+            redis_factory = get_async_redis_connection
+        else:
+            if runtime.open_home_reader is None:
+                raise RuntimeError("MARKET_HOME_LIVE_ISOLATED_READER_REQUIRED")
+            read_snapshot = partial(_read_home_live_snapshot, opener=runtime.open_home_reader)
+            read_item = partial(_read_home_live_item, opener=runtime.open_home_reader)
+            redis_factory = runtime.socket_redis_factory
         products = load_operational_products()
         channels = tuple(live_bar_channel(symbol, BarFrequency.M1) for symbol in products) + (
             LIVE_STATE_CHANNEL,
         )
-        redis = get_async_redis_connection()
+        redis = redis_factory()
         pubsub = redis.pubsub()
+        if runtime is not None and runtime.verify_socket_binding is not None:
+            await runtime.verify_socket_binding(redis)
         await pubsub.subscribe(*channels)
-        snapshot = await _read_home_live_snapshot()
+        snapshot = await read_snapshot()
         current = {item.symbol: item for item in snapshot.items}
         await websocket.accept()
         accepted = True
@@ -228,6 +299,8 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
         last_authority_check = loop.time()
 
         while True:
+            if runtime is not None and runtime.verify_socket_binding is not None:
+                await runtime.verify_socket_binding(redis)
             message = await pubsub.get_message(
                 ignore_subscribe_messages=True,
                 timeout=1.0,
@@ -240,6 +313,7 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
                         websocket,
                         snapshot,
                         current,
+                        read_snapshot=read_snapshot,
                     )
                 status_signature = next_signature
                 last_status_check = now_tick
@@ -248,6 +322,7 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
                     websocket,
                     snapshot,
                     current,
+                    read_snapshot=read_snapshot,
                 )
                 last_authority_check = now_tick
             if message is None:
@@ -263,6 +338,7 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
                     snapshot,
                     current,
                     force=True,
+                    read_snapshot=read_snapshot,
                 )
                 status_signature = await _home_live_status_signature(redis)
                 last_status_check = now_tick
@@ -274,7 +350,7 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
             old_item = current.get(symbol)
             if old_item is None:
                 continue
-            item = await _read_home_live_item(symbol, old_item)
+            item = await read_item(symbol, old_item)
             if item == old_item:
                 continue
             if _home_item_authority(item) != _home_item_authority(old_item):
@@ -328,15 +404,10 @@ async def market_home_live_websocket(websocket: WebSocket) -> None:
                     await redis.aclose()
 
 
-async def _read_in_worker[T](operation: Callable[[MarketReadService], T]) -> T:
+async def _read_on_worker[T](read: Callable[[], T]) -> T:
     """Keep admission until the actual worker exits, even if its caller cancels."""
     if not _READ_SLOTS.acquire(blocking=False):
         raise RuntimeError("MARKET_READ_BUSY")
-
-    def read() -> T:
-        with open_market_read_service() as service:
-            return operation(service)
-
     try:
         future = _READ_EXECUTOR.submit(read)
     except BaseException:
@@ -344,49 +415,39 @@ async def _read_in_worker[T](operation: Callable[[MarketReadService], T]) -> T:
         raise
     future.add_done_callback(lambda _: _READ_SLOTS.release())
     return await asyncio.wrap_future(future)
+
+
+async def _read_in_worker[T](
+    operation: Callable[[MarketReadService], T], *,
+    opener: Callable[[], AbstractContextManager[MarketReadService]] | None = None,
+) -> T:
+    def read() -> T:
+        with (opener or open_market_read_service)() as service:
+            return operation(service)
+
+    return await _read_on_worker(read)
 
 
 async def _read_home_live_snapshot(
-    previous: MarketHomeLiveSnapshot | None = None,
+    previous: MarketHomeLiveSnapshot | None = None, *,
+    opener: Callable[[], AbstractContextManager[MarketHomeLiveService]] | None = None,
 ) -> MarketHomeLiveSnapshot:
-    if not _READ_SLOTS.acquire(blocking=False):
-        raise RuntimeError("MARKET_READ_BUSY")
-
     def read() -> MarketHomeLiveSnapshot:
-        with open_market_home_live_service() as service:
+        with (opener or open_market_home_live_service)() as service:
             return service.snapshot(_home_live_now(), previous=previous)
 
-    try:
-        future = _READ_EXECUTOR.submit(read)
-    except BaseException:
-        _READ_SLOTS.release()
-        raise
-    future.add_done_callback(lambda _: _READ_SLOTS.release())
-    return await asyncio.wrap_future(future)
+    return await _read_on_worker(read)
 
 
 async def _read_home_live_item(
-    symbol: str,
-    previous: MarketHomeLiveItem,
+    symbol: str, previous: MarketHomeLiveItem, *,
+    opener: Callable[[], AbstractContextManager[MarketHomeLiveService]] | None = None,
 ) -> MarketHomeLiveItem:
-    if not _READ_SLOTS.acquire(blocking=False):
-        raise RuntimeError("MARKET_READ_BUSY")
-
     def read() -> MarketHomeLiveItem:
-        with open_market_home_live_service() as service:
-            return service.refresh_item(
-                symbol,
-                _home_live_now(),
-                previous=previous,
-            )
+        with (opener or open_market_home_live_service)() as service:
+            return service.refresh_item(symbol, _home_live_now(), previous=previous)
 
-    try:
-        future = _READ_EXECUTOR.submit(read)
-    except BaseException:
-        _READ_SLOTS.release()
-        raise
-    future.add_done_callback(lambda _: _READ_SLOTS.release())
-    return await asyncio.wrap_future(future)
+    return await _read_on_worker(read)
 
 
 async def _refresh_home_live(
@@ -395,8 +456,9 @@ async def _refresh_home_live(
     current: dict[str, MarketHomeLiveItem],
     *,
     force: bool = False,
+    read_snapshot: Callable[[MarketHomeLiveSnapshot | None], Awaitable[MarketHomeLiveSnapshot]],
 ) -> tuple[MarketHomeLiveSnapshot, dict[str, MarketHomeLiveItem]]:
-    refreshed = await _read_home_live_snapshot(None if force else previous)
+    refreshed = await read_snapshot(None if force else previous)
     refreshed_items = {item.symbol: item for item in refreshed.items}
     if _home_snapshot_authority(refreshed_items) != _home_snapshot_authority(current):
         await websocket.send_json(
@@ -517,11 +579,74 @@ def _state_response(state: MarketReadState) -> MarketReadStateResponse:
         live_contract=state.live_contract,
         canonical_end=state.canonical_end,
         after_market=dict(state.after_market),
+        display_preview=state.display_preview,
+        canonical_revision=state.canonical_revision,
     )
 
 
 async def _send_state(websocket: WebSocket, state: MarketReadState) -> None:
     await websocket.send_json({"type": "state", "state": _state_response(state).model_dump(mode="json")})
+
+
+async def _read_detail_display(
+    identity: SeriesPageQuery, after: datetime | None, retained_after: datetime | None,
+    runtime: MarketDisplayRuntime | None,
+) -> MarketDisplaySnapshot:
+    if runtime is None:
+        return await _read_in_worker(lambda service: service.display_snapshot(identity, after, datetime.now(UTC)))
+    return await _read_in_worker(
+        lambda service: service.display_snapshot(identity, after, datetime.now(UTC), retained_after=retained_after),
+        opener=runtime.open_reader,
+    )
+
+
+@dataclass(slots=True)
+class _DisplayExtras:
+    preview: MarketPreview | None = None
+    retained: MarketRetainedTail | None = None
+
+    async def send(
+        self, websocket: WebSocket, snapshot: MarketDisplaySnapshot, *, force: bool = False,
+    ) -> None:
+        preview = snapshot.preview
+        if force or preview != self.preview:
+            await websocket.send_json(_preview_response(preview))
+            self.preview = preview
+        retained = snapshot.retained
+        if force or retained != self.retained:
+            await websocket.send_json({
+                "type": "retained",
+                "trading_day": retained.trading_day.isoformat() if retained else None,
+                "contract": retained.contract if retained else None,
+                "bars": [_bar_response(bar) for bar in retained.bars] if retained else [],
+            })
+            self.retained = retained
+
+
+def _preview_response(preview: MarketPreview | None) -> dict[str, object]:
+    quote = preview.quote if preview is not None else None
+    activity = preview.activity if preview is not None else None
+    return {
+        "type": "preview",
+        "quote": {
+            "trading_day": quote.trading_day.isoformat(),
+            "contract": quote.contract,
+            "generation": quote.generation,
+            "observed_at": _instant(quote.observed_at),
+            "received_at": _instant(quote.received_at),
+            "last_price": str(quote.last_price),
+            "stale": quote.stale,
+            "bids": [[str(price), str(size)] for price, size in quote.bids],
+            "asks": [[str(price), str(size)] for price, size in quote.asks],
+        } if quote is not None else None,
+        "activity": {
+            "contract": activity.contract,
+            "generation": activity.generation,
+            "observed_at": _instant(activity.observed_at),
+            "received_at": _instant(activity.received_at),
+            "bar": _bar_response(activity.bar),
+        } if activity is not None else None,
+    }
 
 
 async def _refresh_detail_display(
@@ -532,14 +657,15 @@ async def _refresh_detail_display(
     last_sent: datetime | None,
     current_state: MarketReadState,
     current_authority: tuple[date | None, str | None],
+    runtime: MarketDisplayRuntime | None,
+    extras: _DisplayExtras,
     force_state: bool = False,
 ) -> tuple[MarketReadState, tuple[date | None, str | None], datetime | None]:
-    refreshed = await _read_in_worker(
-        lambda service: service.display_snapshot(identity, last_sent, datetime.now(UTC)),
-    )
+    refreshed = await _read_detail_display(identity, last_sent, after, runtime)
     next_state = refreshed.state
     next_authority = _detail_display_authority(refreshed)
-    if next_authority != current_authority:
+    reset = next_authority != current_authority
+    if reset:
         await websocket.send_json(
             {
                 "type": "reset",
@@ -552,6 +678,7 @@ async def _refresh_detail_display(
         last_sent = _later(after, next_state.canonical_end)
     if force_state or next_state != current_state:
         await _send_state(websocket, next_state)
+    await extras.send(websocket, refreshed, force=reset and next_state.display_preview)
     refreshed_bars = _newer_bars(
         refreshed.bars,
         canonical_end=next_state.canonical_end,

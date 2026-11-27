@@ -1130,6 +1130,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         before_apply: Callable[[], None] | None = None,
         verify_identity: Callable[[], None] | None = None,
         observer: MaintenanceObserver | None = None,
+        before_daily_apply: Callable[[int, int], None] | None = None,
     ) -> DailyRecoveryResult:
         """Plan or execute one fixed daily recovery without widening its metadata scope."""
 
@@ -1155,6 +1156,7 @@ class HistoricalDataManager(ContractWarmupPlanner):
         self._progress_counts = {}
         try:
             if request.apply:
+                self.publication_evidence = []
                 if expected_plan_sha256 is None:
                     raise ValueError("DAILY_RECOVERY_PLAN_HASH_INVALID")
                 lease = self.catalog.acquire_maintenance_lock()
@@ -1182,6 +1184,8 @@ class HistoricalDataManager(ContractWarmupPlanner):
                         raise ValueError("DAILY_RECOVERY_PLAN_CHANGED")
                     if verify_identity is not None:
                         verify_identity()
+                    if before_daily_apply is not None:
+                        before_daily_apply(*_daily_publication_capacity(locked_plan))
                     if before_apply is not None:
                         before_apply()
                     if request.require_source_ready:

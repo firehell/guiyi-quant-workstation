@@ -6,4 +6,6 @@ ih
 im
 lu
 nr
+pd
+pt
 sp

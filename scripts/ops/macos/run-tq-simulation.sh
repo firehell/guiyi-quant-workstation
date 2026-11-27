@@ -11,6 +11,9 @@ exec /usr/bin/env -i HOME="$HOME" USER="$USER" LOGNAME="$LOGNAME" \
     set -a
     source "$tq_private/project.env" >/dev/null 2>&1
     set +a
+    if /usr/bin/grep -Fxq "# guiyi-market-source: rqdata_tick" "$tq_private/project.env"; then
+      export GUIYI_MARKET_SOURCE=rqdata_tick
+    fi
     export REDIS_PASSWORD="${REDIS_PASSWORD:-$POSTGRES_PASSWORD}"
     if [[ -z "${REDIS_URL:-}" || "$REDIS_URL" == "redis://127.0.0.1:6379/0" ]]; then
       export REDIS_URL="redis://:${REDIS_PASSWORD}@127.0.0.1:6379/0"

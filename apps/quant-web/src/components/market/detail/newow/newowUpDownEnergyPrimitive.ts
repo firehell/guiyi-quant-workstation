@@ -119,7 +119,6 @@ export class NewowUpDownEnergyPrimitive implements ISeriesPrimitive<Time> {
     const attachment = this.attachment
     target.useMediaCoordinateSpace(({ context, mediaSize }) => {
       const items = buildNewowUpDownEnergyCommands(this.data, mediaSize.width, mediaSize.height, time => attachment.chart.timeScale().timeToCoordinate(time), this.topInset)
-      context.save()
       for (const item of items) {
         context.strokeStyle = item.color; context.fillStyle = item.color; context.lineWidth = 1
         if (item.kind === 'reference') {
@@ -134,7 +133,6 @@ export class NewowUpDownEnergyPrimitive implements ISeriesPrimitive<Time> {
           context.setLineDash([3, 3]); context.beginPath(); context.moveTo(x, apex + 11); context.lineTo(x, item.toY); context.stroke(); context.setLineDash([])
         }
       }
-      context.restore()
     })
   }
 }

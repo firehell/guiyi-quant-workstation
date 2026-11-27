@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { readChartPreferences, setChartLayer } from '@guiyi/quant-chart'
+import { defaultNewowPane, MAX_ADDITIONAL_NEWOW_PANES, NEWOW_AUXILIARY_OPTIONS, NEWOW_EXTRA_AUXILIARY_OPTIONS, newowPaneId, readNewowAdditionalPanes, saveNewowAdditionalPanes,
+  type NewowAdditionalPane, type NewowAuxiliaryPaneComponent } from '@/utils/newowAdditionalPanes'
 import NewowTrendReversalBadge from './NewowTrendReversalBadge.vue'
 import {breakoutTitle,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import {trendReversalBadge,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
@@ -28,6 +31,7 @@ import { sharedChartForOwner, sharedDecisionForOwner, type NewowDisplayOwner } f
 import { chartPriceSources } from '@/utils/newowPriceSources'
 import NewowSharedAuxiliaryStage from './NewowSharedAuxiliaryStage.vue'
 import NewowProductChartStage from './NewowProductChartStage.vue'
+import ChartLayerDiagnostics from '@/components/kline/ChartLayerDiagnostics.vue'
 import NewowDecisionV2Panel from './NewowDecisionV2Panel.vue'
 import { NEWOW_ZHAOYAO_MIRROR_LEGEND } from './newowZhaoyaoMirrorPrimitive'
 import { NEWOW_UP_DOWN_ENERGY_STYLE } from './newowUpDownEnergyPrimitive'
@@ -74,6 +78,7 @@ const menuChoice = computed<ExperimentKind | 'main_rise' | null>({
 watch([()=>[props.identity.view,props.identity.symbol,props.identity.strategy,props.identity.frequency].join(':'),()=>props.identity.newowMode,()=>props.identity.newowTest],()=>{experimentKind.value=props.identity.newowTest ?? null},{flush:'sync'})
 const dualMode = computed(() => !experimentKind.value && props.identity.newowMode === 'dual')
 const selectedStrategy = computed(() => identity.value.strategy as NewowProductStrategy)
+const chartProfile = computed(() => dualMode.value ? 'newow_dual' : `newow_${selectedStrategy.value}` as const)
 const strategySwitching = ref(false)
 // Register before the loader so quote listeners see the transition before its invalidation.
 watch(identity, (next, previous) => {
@@ -81,6 +86,9 @@ watch(identity, (next, previous) => {
 }, { flush: 'sync' })
 const releasedMinuteHistory = computed(() => ['newow_product_capabilities_v28', 'newow_product_capabilities_v29', 'newow_product_capabilities_v30', 'newow_product_capabilities_v31', 'newow_product_capabilities_v32'].includes(props.capabilities.schema_version) && ['5m', '15m', '30m', '60m'].includes(identity.value.frequency) && !props.capabilities.latest_completed_frequencies?.some(frequency => frequency === identity.value.frequency))
 const pricePreview = props.pricePreview
+const priceHistoryState = computed(() => ({
+  cached: pricePreview.cached.value, loading: pricePreview.loading.value, failed: pricePreview.error.value !== null,
+}))
 const pageOwnsChart = inject(DETAIL_CHART_SESSION, null) !== null
 const loader = useNewowProduct({ identity, now: () => releasedMinuteHistory.value ? props.capabilities.intraday_as_of! : candidatePreviewNow() })
 const comparisonSelected = ref(false)
@@ -92,7 +100,7 @@ const selectedDisplayEvent=ref<NewowDisplayEvent|null>(null)
 const selectedHintId = ref<string | null>(null)
 function restoredAuxiliary(): NewowAuxiliaryComponent {
   const saved = readNewowUiPreferences(identityKey.value).auxiliary
-  return saved && saved !== 'macd' ? saved : 'zhaoyao_mirror'
+  return saved && saved !== 'macd' ? saved : defaultNewowPane(chartProfile.value)
 }
 const selectedAuxiliary = ref<NewowAuxiliaryComponent>(restoredAuxiliary())
 const dialogKind = ref<'explanation' | 'action' | 'hint' | 'indicator' | 'comparator' | 'cup_handle' | 'formula' | 'magic11' | 'patterns' | null>(null)
@@ -219,7 +227,9 @@ const currentAuxiliaryResponse = computed(() => {
   if (Boolean(canShareNewowAuxiliary(chartResponse.value, response, requiredAuxiliaryComponent.value))) return response
   const lifecycle = dialogKind.value === 'cup_handle' ? loader.sections.auxiliary.state.value : retainedPaneCompatible.value ? retainedPane.value!.lifecycle : loader.sections.auxiliary.state.value
   const acceptedWindow = loader.acceptedAuxiliaryWindow.value
-  return (lifecycle === 'ready' || lifecycle === 'warming')
+  const deliveredUnavailable = lifecycle === 'unavailable' && response?.status.status === 'unavailable'
+    && loader.sections.auxiliary.error.value === null
+  return (lifecycle === 'ready' || lifecycle === 'warming' || deliveredUnavailable)
     && acceptedWindow !== null && auxiliaryChartWindow.value !== null
     && acceptedWindow.from === auxiliaryChartWindow.value.from && acceptedWindow.through === auxiliaryChartWindow.value.through
     && response?.value?.component === requiredAuxiliaryComponent.value && newowChartSnapshotKey(response) !== null
@@ -232,6 +242,8 @@ const currentAuxiliaryLifecycle = computed(() => loader.sections.auxiliary.state
 const currentAuxiliaryError = computed(() => loader.sections.auxiliary.state.value === 'input_conflict' ? loader.sections.auxiliary.error.value
   : dialogKind.value === 'cup_handle' ? loader.sections.auxiliary.error.value
   : retainedPaneCompatible.value ? retainedPane.value!.error : loader.sections.auxiliary.error.value)
+const sharedAuxiliaryCacheState = computed(() => currentAuxiliaryResponse.value
+  && currentAuxiliaryResponse.value === loader.sharedAuxiliary.value ? 'hit' as const : null)
 const auxiliaryChartWindow = computed(() => chartResponse.value?.value === null || chartResponse.value === null
   ? null
   : { from: chartResponse.value.value.chart_from, through: chartResponse.value.value.chart_through })
@@ -242,7 +254,55 @@ const summary = computed(() => projectNewowDetail(chartResponse.value, loader.se
   loader.currentChartWindow.value, loader.historicalChartWindow.value))
 const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(currentAuxiliaryResponse.value?.value, chartResponse.value?.value?.bars.at(-1)))
 const auxiliaryDisclosure = computed(() => buildNewowAuxiliaryDisclosure(selectedAuxiliary.value, props.identity.frequency as '1w' | '1d' | '5m' | '15m' | '30m' | '60m', auxiliaryReadiness.value?.currentStatus ?? currentAuxiliaryLifecycle.value))
-const auxiliaryOptions = [{ id: 'zhaoyao_mirror', label: '主力照妖镜' }, { id: 'up_down_energy', label: '涨跌动能' }, { id: 'main_force_control', label: '主力控盘' }, { id: 'trend_reversal', label: '趋势转折' }] as const
+const auxiliaryOptions = NEWOW_AUXILIARY_OPTIONS
+const extraAuxiliaryOptions = NEWOW_EXTRA_AUXILIARY_OPTIONS
+const extraPreferences = ref(readNewowAdditionalPanes(chartProfile.value))
+const extraResults = shallowRef<Record<string, NewowAdditionalPane>>({})
+const extraSelection = ref<NewowAuxiliaryPaneComponent | ''>('')
+const visibleExtraOptions = computed(() => extraPreferences.value.layers.flatMap(layer => {
+  const option = extraAuxiliaryOptions.find(item => newowPaneId(item.id) === layer.id)
+  return option && option.id !== selectedAuxiliary.value && !layer.hidden ? [{ ...option, height: layer.height }] : []
+}))
+const extraAuxiliaryPanes = computed(() => visibleExtraOptions.value.map(({ id, height }): NewowAdditionalPane => ({
+  component: id, height, response: extraResults.value[id]?.response ?? null,
+  lifecycle: extraResults.value[id]?.lifecycle ?? 'not_requested', error: extraResults.value[id]?.error ?? null,
+})))
+const availableExtraOptions = computed(() => extraAuxiliaryOptions.filter(item => item.id !== selectedAuxiliary.value
+  && !extraPreferences.value.layers.some(layer => layer.id === newowPaneId(item.id))))
+watch(chartProfile, profile => {
+  extraPreferences.value = readNewowAdditionalPanes(profile, extraPreferences.value)
+  extraSelection.value = ''
+}, { flush: 'sync' })
+function updateExtraPane(id: NewowAuxiliaryPaneComponent, patch: { hidden?: boolean; height?: number } | null): void {
+  extraPreferences.value = setChartLayer(extraPreferences.value, chartProfile.value, newowPaneId(id), patch)
+  saveNewowAdditionalPanes(chartProfile.value, extraPreferences.value)
+}
+function addExtraPane(): void {
+  if (extraSelection.value === '' || extraPreferences.value.layers.length >= MAX_ADDITIONAL_NEWOW_PANES) return
+  updateExtraPane(extraSelection.value, {})
+  extraSelection.value = ''
+}
+function restoreExtraPanes(): void {
+  extraPreferences.value = readChartPreferences(null, chartProfile.value)
+  saveNewowAdditionalPanes(chartProfile.value, extraPreferences.value)
+}
+watch(() => JSON.stringify([chartWindowProof(chartResponse.value), visibleExtraOptions.value.map(item => item.id), sectionOpen('auxiliary')]),
+  (_, _previous, onCleanup) => {
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    extraResults.value = {}
+    if (!chartResponse.value || !sectionOpen('auxiliary')) return
+    const update = (component: NewowAuxiliaryPaneComponent, value: Omit<NewowAdditionalPane, 'component'>) => {
+      if (!controller.signal.aborted) extraResults.value = { ...extraResults.value, [component]: { component, ...value } }
+    }
+    for (const { id } of visibleExtraOptions.value) {
+      update(id, { response: null, lifecycle: 'loading', error: null })
+      void loader.loadAdditionalAuxiliary(id, controller.signal).then(response => {
+        update(id, { response, lifecycle: response?.status.status ?? 'not_requested', error: null })
+      }).catch(error => update(id, { response: null, lifecycle: 'unavailable', error: error instanceof Error && error.message === 'CHART_AUXILIARY_SOURCE_INVALID' ? error.message : 'CHART_AUXILIARY_READ_FAILED' }))
+    }
+  }, { immediate: true })
+
 const zhaoyaoMirrorLegend = NEWOW_ZHAOYAO_MIRROR_LEGEND
 const upDownEnergyLegend = [
   { label: '上涨', color: NEWOW_UP_DOWN_ENERGY_STYLE.up, marker: 'square' },
@@ -543,7 +603,7 @@ onBeforeUnmount(() => {
         <div class="newow-product-workspace__comparison-controls" aria-label="震荡背景参考价格"><span>目标 {{ newowReferencePrice(experimentDecision?.prices?.shared.target?.display_value ?? experimentDecision?.prices?.shared.target?.raw) }}</span><span>吸筹 {{ newowReferencePrice(experimentDecision?.prices?.shared.absorb?.display_value ?? experimentDecision?.prices?.shared.absorb?.raw) }}</span><span>当前测试 {{ experimentContext?.latestState ? (experimentContext.latestState.holding ? '持有' : '空仓') : '不可用' }}</span></div>
       </template>
       <template #chart-auxiliary="{viewport,onViewport,cursor,onCursor,rightScaleWidth}">
-        <NewowSharedAuxiliaryStage :right-scale-width="rightScaleWidth" :viewport="viewport" @viewport="onViewport" :cursor="cursor" @cursor="onCursor" :chart="experimentSharedChart" :auxiliary="currentAuxiliaryResponse" :error="currentAuxiliaryError">
+        <NewowSharedAuxiliaryStage :right-scale-width="rightScaleWidth" :viewport="viewport" @viewport="onViewport" :cursor="cursor" @cursor="onCursor" :chart="experimentSharedChart" :auxiliary="currentAuxiliaryResponse" :component="selectedAuxiliary" :cache-state="sharedAuxiliaryCacheState" :lifecycle="currentAuxiliaryLifecycle" :error="currentAuxiliaryError">
           <template #controls><div class="newow-product-workspace__auxiliary-controls"><button v-for="option in auxiliaryOptions" :key="option.id" :aria-pressed="selectedAuxiliary === option.id" :title="option.id==='trend_reversal' ? trendBadge?.title : undefined" :aria-label="option.id==='trend_reversal' ? trendBadge?.title : undefined" @click="toggleAuxiliary(option.id)">{{ option.label }}<NewowTrendReversalBadge v-if="option.id==='trend_reversal' && selectedAuxiliary!==option.id && trendBadge" :state="trendBadge.state" /></button><button @click="openDialog('indicator')">指标解读</button></div></template>
         </NewowSharedAuxiliaryStage>
       </template>
@@ -553,10 +613,10 @@ onBeforeUnmount(() => {
     <p v-if="!chartResponse && displayChartResponse" class="newow-product-workspace__load-notice" role="status">历史图层预览 · 正在核验当前策略数据</p>
     <MarketDetailUnavailable v-if="chartResponse === null && loader.sections.chart.state.value !== 'loading' && !loader.dailyLoading.value" class="newow-product-workspace__unavailable-chart" title="主图事实不可用" :message="`${newowErrorDisplay(loader.sections.chart.error.value) ?? '当前主图没有可显示的已验证数值'}；参考与解释保持独立状态。`" :technical-detail="loader.sections.chart.error.value" recovery-label="重试加载" :can-recover="true" :can-return-market="false" @recover="retryChart" />
     <NewowDailyWeeklyPath :key="identityKey" :decision="pathContext.decision" :loading="pathContext.loading" :error="pathContext.error" />
-    <div ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :show-tools="false" :response="displayChartResponse" :display-only="!chartResponse" :price-bars="pricePreview.bars.value" :price-frequency="identity.frequency" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartStatsPrimary.chartCompatible.value ? chartStatsPrimary.trades.value : referenceParts.chartCompatible.value ? referenceParts.trades.value : []" :reference-trades-complete="comparisonEnabled && comparison.response.value ? chartReferenceStatsComplete : primaryReferenceComplete" :reference-stats-loading="chartReferenceStatsLoading" :reference-stats-error="chartReferenceStatsError ?? chartStatsPrimary.error.value ?? chartStatsPrimary.historyError.value" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="chartStatsPartner.complete.value ? chartStatsPartner.trades.value : []" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" @load-earlier="loader.loadNextChartPage" @load-reference-stats="loadChartReferenceStats" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-breakout="selectBreakout" @select-display="selectDisplay" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
+    <div ref="chartRegion" class="newow-product-workspace__chart"><NewowProductChartStage :show-tools="false" :response="displayChartResponse" :display-only="!chartResponse" :price-bars="pricePreview.bars.value" :price-history-state="priceHistoryState" :price-frequency="identity.frequency" :pattern-selection="patternSelection" :pattern-window-key="chartWindowProof(chartResponse)" :reference-trades="chartStatsPrimary.chartCompatible.value ? chartStatsPrimary.trades.value : referenceParts.chartCompatible.value ? referenceParts.trades.value : []" :reference-trades-complete="comparisonEnabled && comparison.response.value ? chartReferenceStatsComplete : primaryReferenceComplete" :reference-stats-loading="chartReferenceStatsLoading" :reference-stats-error="chartReferenceStatsError ?? chartStatsPrimary.error.value ?? chartStatsPrimary.historyError.value" :target-price="summary.target?.display_value ?? null" :absorb-price="summary.absorb?.display_value ?? null" :target-price-source="summary.target?.chartSource" :absorb-price-source="summary.absorb?.chartSource" :reference-price-status="!sectionOpen('explanation') ? '未开放' : loader.sections.explanation.state.value === 'loading' ? '读取中' : '不可用 / 证据不足'" :comparison-response="comparisonEnabled ? comparison.response.value : null" :comparison-reference-trades="chartStatsPartner.complete.value ? chartStatsPartner.trades.value : []" :strategy="selectedStrategy" :selected-signal-id="selectedSignalId" :focus-request-id="chartFocusRequestId" :loading="loader.dailyLoading.value || loader.sections.chart.state.value === 'loading'" :strategy-switching="strategySwitching" :has-more-before="chartModel?.nextBefore != null || chartResponse?.value?.next_older_window != null" :auxiliary-response="currentAuxiliaryResponse" :auxiliary-component="selectedAuxiliary" :auxiliary-cache-state="sharedAuxiliaryCacheState" :auxiliary-lifecycle="currentAuxiliaryLifecycle" :auxiliary-error="currentAuxiliaryError" :extra-auxiliary-panes="extraAuxiliaryPanes" @load-earlier="loader.loadNextChartPage" @load-reference-stats="loadChartReferenceStats" @select-signal="selectSignal" @select-comparison-signal="selectComparisonSignal" @focus-resolved="resolveSignalFocus" @select-breakout="selectBreakout" @select-display="selectDisplay" @select-hint="selectHint" @analyze-channel="openDialog('comparator')" @explain-main="openDialog(selectedStrategy === 'main_rise' ? 'magic11' : 'explanation')" @explain-auxiliary="openDialog('indicator')">
     <template #frequency-controls><div class="newow-product-workspace__toolbar"><slot name="chart-frequency" /></div></template>
     <template #main-controls><div class="newow-product-workspace__comparison-controls"><button v-if="!dualMode" type="button" :disabled="selectedStrategy === 'main_rise'" :title="selectedStrategy === 'main_rise' ? '双策略对照由趋势与震荡组成，请切换到其中一个策略' : '读取相同时间与物理合约的另一策略，不合并收益'" :aria-pressed="comparisonEnabled && selectedStrategy !== 'main_rise'" @click="comparisonSelected = !comparisonSelected">双策略对照</button><span v-if="comparisonEnabled && selectedStrategy !== 'main_rise' && comparison.state.value !== 'ready'" role="status">{{ newowUiStateLabel(comparison.state.value) }} · {{ dualMode ? '下方统计为独立融合参考模型' : '参考统计仍属于 ' + newowDisplayLabel(selectedStrategy) }}</span><span v-if="comparison.referenceError.value" role="status">{{ comparison.referenceError.value }}</span><span v-if="comparison.error.value" role="status">{{ comparison.error.value }} <button @click="comparison.reload">重试对照</button></span></div></template>
-    <template #auxiliary-controls>
+    <template #auxiliary-controls="{ inspectLayers }">
     <section class="newow-product-workspace__auxiliary" aria-label="Newow 辅助图层">
       <div class="newow-product-workspace__auxiliary-controls">
         <div class="newow-product-workspace__auxiliary-tabs">
@@ -583,6 +643,28 @@ onBeforeUnmount(() => {
         <p v-if="trendReversalWarmup !== null" role="status">当前合约计算段仅 {{ trendReversalWarmup }} 根 Bar，未满 120 根；图形为预热参考。</p>
       </div>
         <button class="newow-product-workspace__indicator-help" type="button" @click="openDialog('indicator')">指标解读</button>
+        <details v-if="sectionOpen('auxiliary')" class="newow-extra-panes">
+          <summary>副图管理</summary>
+          <label v-if="extraPreferences.layers.length < MAX_ADDITIONAL_NEWOW_PANES">添加副图
+            <select v-model="extraSelection" aria-label="选择附加副图">
+              <option value="" disabled>选择指标</option>
+              <option v-for="option in availableExtraOptions" :key="option.id" :value="option.id">{{ option.label }}</option>
+            </select>
+          </label>
+          <button v-if="extraPreferences.layers.length < MAX_ADDITIONAL_NEWOW_PANES" type="button" :disabled="!extraSelection" @click="addExtraPane">添加</button>
+          <template v-for="option in extraAuxiliaryOptions" :key="option.id">
+            <div v-for="layer in extraPreferences.layers.filter(layer => layer.id === newowPaneId(option.id))" :key="layer.id" class="newow-extra-panes__entry">
+              <strong>{{ option.label }}</strong>
+              <button type="button" :aria-label="`${layer.hidden ? '显示' : '隐藏'}${option.label}副图`" @click="updateExtraPane(option.id, { hidden: !layer.hidden })">{{ layer.hidden ? '显示' : '隐藏' }}</button>
+              <button type="button" :aria-label="`移除${option.label}副图`" @click="updateExtraPane(option.id, null)">移除</button>
+              <label>高度 <select :value="layer.height ?? 120" :aria-label="`${option.label}副图高度`" @change="updateExtraPane(option.id, { height: Number(($event.target as HTMLSelectElement).value) })"><option :value="96">紧凑</option><option :value="120">常规</option><option :value="160">加高</option></select></label>
+              <span v-if="option.id === selectedAuxiliary">已在主副图显示</span>
+              <span v-else-if="!layer.hidden" role="status">{{ newowUiStateLabel(extraResults[option.id]?.lifecycle ?? 'not_requested') }}</span>
+            </div>
+          </template>
+          <button v-if="extraPreferences.layers.length" type="button" @click="restoreExtraPanes">恢复默认</button>
+          <ChartLayerDiagnostics v-if="inspectLayers" :inspect="inspectLayers" />
+        </details>
       </div>
       <p v-if="currentAuxiliaryError" role="status">{{ newowErrorDisplay(currentAuxiliaryError) }} · 辅助图层不可用 <button @click="loadAuxiliaryForChart()">重试指标</button></p>
     </section>
@@ -817,6 +899,12 @@ onBeforeUnmount(() => {
 .newow-window-state h3 { font-size:14px; }
 pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 @media(max-width:640px) { .newow-product-workspace__auxiliary-controls button,.newow-summary__evidence { min-height:44px; }.newow-summary { padding:12px; }.newow-summary__facts { grid-template-columns:1fr 1fr; }.newow-summary__evidence { margin-left:0; } }
+.newow-extra-panes { position: relative; margin-left: auto; }
+.newow-extra-panes[open] { position: absolute; right: 0; top: 100%; min-width: 250px; padding: 8px; background: var(--gy-bg-panel); border: 1px solid var(--gy-border); z-index: 5; }
+.newow-extra-panes summary { cursor: pointer; }
+.newow-extra-panes__diagnostics dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 8px; }
+.newow-extra-panes__diagnostics dd { margin: 0; overflow-wrap: anywhere; }
+.newow-extra-panes__entry { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
 </style>
 
 <style>

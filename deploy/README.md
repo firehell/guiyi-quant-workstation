@@ -24,6 +24,9 @@ Newow 的 snapshot token、重型门禁与在途去重都由该进程持有；�
 # 已加载进程 commit 身份与本地 HTTP/Runtime health
 ./scripts/ops/macos/local-services-status.sh
 
+# Mac：读回历史审计、行情、提醒、苏冰共享 Paper 和快期的业务状态
+./scripts/ops/macos/local-services-status.sh --business
+
 # Mac：本地端口与 FRPC
 ./scripts/ops/network/local-tunnel-healthcheck.sh
 
@@ -39,6 +42,13 @@ PUBLIC_BASE_URL=https://<your_domain> ./scripts/ops/network/public-healthcheck.s
 
 未认证公网检查预期 HTTP 401；提供 Basic Auth 后，页面/API 预期 200，
 `/api/v1/market/ws` WebSocket Upgrade 预期 101。
+
+业务状态从本机既有只读 API 读取，每项独立展示范围、当前进度、受阻原因和可证明的最后成功。
+历史研究行使用独立的周度全历史审计，行情行保留实时覆盖和盘后发布两项进度，提醒行分别列计算成功与服务商接收时间。
+苏冰 Paper 使用已提交观察和组合序号，快期只有当前账户读回经核验时才列入最后成功，并保留范围退出、待处理委托和资金预留的计数。
+字段为空表示现有来源没有对应证据，例如周度审计仅保留当前尝试、过期快期读回无法确认账户，或苏冰尚无正式 run。
+可以附加 `--research-result /absolute/result.json` 检查 `subing_exit_comparison.py` 已完成的三品种或十四品种历史 A/B 回放结果。
+`offline_replay` 单列结果文件的可读性、范围与字节摘要。它不受实时 API 断连影响，周度历史数据审计状态仍来自既有 Runtime 来源。
 
 ## 发布工作树存储
 
@@ -73,6 +83,9 @@ SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.rele
 共享 `run-local-service.sh` 只做稳定分派，业务 launcher 保留在各自发布树。普通发布不覆盖共享分派器。
 API/Web 配套影响；未知依赖按全服务受影响。v1 对共享合同只接受内容指纹相等，不能证明兼容时阻止混合版本。
 所有已启用服务都参加兼容检查，即使它们全部在本次受影响集合中，也不默许顺序制造未知混合版本。
+
+纯离线研究在隔离环境验证，无需停启运行服务。共享合同兼容的独立消费者改动使用下方 `--plan-release`，以计划中的受影响服务、预检与交接证明为准。
+共享合同不能与现有消费者并行时，使用[休市窗口整组发布](#休市窗口整组发布)的 `--plan-cohort`。
 
 安装器的四个新入口在 legacy render/mutation 之前分派（计划文件需当前用户独占 0600）：
 
@@ -331,6 +344,12 @@ Canonical 维护锁。普通扫描不会反复取消长输入读取，真实 com
 ### 休市窗口整组发布
 
 当待发布共享合同改变、不能与旧消费者并行时，使用 `install-local-services.sh --plan-cohort --candidate-root <absolute-release-root> --tag <annotated-tag> --commit <peeled-commit>` 冻结整组计划，再用 `--apply-cohort-plan --plan <absolute-plan>` 单次执行。
+
+Market 跨 Redis 交接前，可在候选代码所在 macOS 宿主运行
+`install-local-services.sh --read-market-account-handover --trading-day YYYY-MM-DD --consumer tqkq`
+和 `--consumer subing`，分别核对正式 bar 源下的快期 H1 账本水位和苏冰 Paper 提交水位。
+该入口仅读取服务绑定、私有设置和账本，输出预检证据。正式跨 Redis apply 仍受独立接管与配置校验保护。
+
 仅支持现有十服务、六常驻全部启用的向前版本；数据库合同默认不变，仅已预装的0052→0053新增接收表可按
 `reference_inbox_preinstalled_additive_0053_v1`提供精确Git差异、单链head及新鲜只读schema/约束/触发器证明；
 另允许已预装的0053→0054不可变Inbox恢复结果表，按`reference_inbox_recovery_preinstalled_additive_0054_v1`核对原表、原guard不变以及新增表完整约束/触发器；
@@ -522,3 +541,27 @@ selective发布明确要求 `COHORT_REQUIRED`，避免候选Disabled/marker不�
 写入意图后结果未知保持停驻，先用同一脚本 `--phase readback --exact-root ... --exact-commit ... --inventory ... --plan ... --expected-plan-hash ...`
 在同一显式只读快照校验终态。独立读回不是再次apply，也不自动取消未知排空。成功写入后只允许有证据的向前修复，
 不能删除原件或回改历史交易；新流达到自然预热与产生参考交易须另看实际观察。
+
+## Market Foundation 独立发布
+
+组件版本由 `services/quant-api/app/market_version.py` 声明，使用
+`market-foundation/v0.1.0` 形式的 annotated tag。发布树目录使用
+`release-market-foundation-v0.1.0`，与应用版本目录并列。切换沿用
+`--plan-release` 和 `--apply-release-plan`，按实际变更选择服务。
+对精确 tag 的待用发布树运行 `bash scripts/ops/macos/build-market-foundation.sh --data-only`，
+同步锁定的 Python 依赖并校验 headless EventEngine。
+
+首次采用前，先按应用发布流程更新读取 registry 的服务和部署控制器，
+使它们识别 Market tag 并采用新的合同基线。独立计划比对各服务已安装提交，
+仅为已明确归属的 Feed、Live、盘后实现改动生成候选绑定。Catalog、Bar、Session、
+Redis/journal、归档凭证和其他共享运行代码变更需要协调发布。盘后定时任务交接前保留旧版清理证明
+及迟到重试状态，迟到任务按现役盘后绑定读回状态。
+兼容的应用独立发布保留已采用 Market tag 的服务绑定。
+
+Feed 独立切换使用权威 Session 静默窗口、旧 owner 心跳、source 尾部读回和现有 CAS。
+提交前失败按现有取消流程恢复原 owner，提交状态未知则先独立读回绑定和消费水位。
+首次组件发布沿用 [Market Foundation 证据清单](../openspec/changes/guiyi-v2-market-foundation/tasks.md)。
+M4、M6、M7 的自然证据和 M9 的正式 Tick 切换各自验收。目标为 58 个品种，旧源仍按原绑定完整留存。
+Tick 次日元数据准备使用独立状态文件。旧范围在同一交易日存在未决提交时，先核实原任务结果。
+正式 Canonical Compute 的订阅跳过退役品种，并使用新版进度文件保留旧范围的计算水位。
+旧范围的盘后状态、成功凭证和迟到处理记录随切换前像留存，新范围的盘后水位从自身首份凭证开始。旧盘后提交结果未明时阻断切换。

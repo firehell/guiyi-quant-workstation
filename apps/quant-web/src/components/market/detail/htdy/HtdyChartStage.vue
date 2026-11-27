@@ -34,7 +34,7 @@ const htdyMarkers = computed(() => props.historicalMode ? [...props.markers] : m
 </script>
 
 <template>
-  <MarketKlineStage
+  <MarketKlineStage chart-profile="htdy"
     :subing-volume-tiers="true"
     :show-derived-markers="false" :reference-callouts="referenceCallouts"
     :bars="bars" :mutation="mutation" :loading="loading" :error="error" :period="period" :series-kind="seriesKind"

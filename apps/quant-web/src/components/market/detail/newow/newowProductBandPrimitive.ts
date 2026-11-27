@@ -22,7 +22,6 @@ export class NewowProductBandPrimitive implements ISeriesPrimitive<Time> {
     const attachment = this.attachment
     if (!attachment) return
     target.useMediaCoordinateSpace(({ context }) => {
-      context.save()
       const timeScale = attachment.chart.timeScale()
       const width = timeScale.options().barSpacing * 0.8
       for (const area of this.areas) {
@@ -33,7 +32,6 @@ export class NewowProductBandPrimitive implements ISeriesPrimitive<Time> {
         context.fillStyle = area.color
         context.fillRect(x - width / 2, Math.min(a, b), width, Math.abs(a - b))
       }
-      context.restore()
     })
   }
 }

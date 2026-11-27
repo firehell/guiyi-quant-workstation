@@ -21,7 +21,7 @@ export class NewowPublicPatternPrimitive implements ISeriesPrimitive<Time> {
  const attachment=this.attachment,data=this.data;if(!attachment||!data)return
  target.useMediaCoordinateSpace(({context:ctx,mediaSize})=>{
  const xy=(p:PatternPoint)=>{const x=attachment.chart.timeScale().timeToCoordinate((this.resolveTime?.(p) ?? chartMarkerTime(p.barEnd,data.frequency,p.tradingDay))),y=attachment.series.priceToCoordinate(p.price);return x===null||y===null?null:{x,y}}
- ctx.save();ctx.beginPath();ctx.rect?.(0,0,mediaSize.width,mediaSize.height);ctx.clip?.();ctx.strokeStyle='#1b5e20';ctx.fillStyle='#1b5e20';ctx.lineWidth=2;ctx.lineJoin='round';ctx.lineCap='round'
+ ctx.beginPath();ctx.rect?.(0,0,mediaSize.width,mediaSize.height);ctx.clip?.();ctx.strokeStyle='#1b5e20';ctx.fillStyle='#1b5e20';ctx.lineWidth=2;ctx.lineJoin='round';ctx.lineCap='round'
  for(const line of data.lines){const ps=line.points.map(xy);if(ps.some(p=>p===null)||!ps.length)continue
  const a=ps[0]!;ctx.setLineDash(line.dashed?[6,4]:[]);ctx.beginPath();ctx.moveTo(a.x,a.y)
  if(line.curve&&ps.length===3){const b=ps[1]!,c=ps[2]!
@@ -43,7 +43,6 @@ export class NewowPublicPatternPrimitive implements ISeriesPrimitive<Time> {
  for(const p of data.anchors){const v=xy(p);if(!v)continue;ctx.beginPath();ctx.arc(v.x,v.y,4.5,0,Math.PI*2);ctx.fill();ctx.fillText(`${p.label} ${p.price.toFixed(2)}`,v.x+7,v.y-9)}
  const first=data.lines[0]?.points[0];const label=first?xy(first):null
  if(label)ctx.fillText(data.label,Math.max(4,Math.min(label.x,mediaSize.width-180)),Math.max(15,label.y-26))
- ctx.restore()
  })
  }
 }

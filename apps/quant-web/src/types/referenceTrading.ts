@@ -1,3 +1,5 @@
+import type { NewowAuxiliaryComponent, NewowProductIdentity, NewowProductSectionResponse } from './newowProduct.ts'
+
 export type ReferenceMode = 'historical_replay' | 'forward_observation'
 
 export interface ReferenceStreamInfo {
@@ -70,6 +72,57 @@ export interface ReferencePoint {
   formula_versions: string[]
   value: Record<string, unknown>
 }
+
+export interface MarketAfterCloseReference extends ReferenceWindow {
+  cutoff: string
+  stream_id: string
+  revision_id: string
+  seq: number
+  computed_at: string
+}
+
+export interface MarketAfterCloseFrame {
+  product: string
+  strategy: string
+  frequency: string
+  trading_day: string
+  bar_end: string
+  physical_contract: string
+  calculation_segment_id: string
+  source_bar_sha256: string
+  formula_versions: string[]
+  main_state: string
+  main_values: Record<string, string | null>
+  availability?: { status?: string; reason_code?: string }
+  actions: { kind: string; signal_id?: string; source_signal_id?: string; trade_eligibility?: string }[]
+  hints: { kind?: string; hint_id?: string }[]
+}
+
+export interface MarketAfterClosePresentation {
+  snapshot: string
+  frames: MarketAfterCloseFrame[]
+  main_status: 'saved' | 'not_materialized'
+  auxiliary_status: 'not_materialized'
+  explanation_status: 'not_materialized'
+  comparator_status: 'not_materialized'
+}
+
+export type MarketAfterCloseSectionQuery = {
+  identity: NewowProductIdentity
+  asOf: string
+} & (
+  | { section: 'auxiliary'; component: NewowAuxiliaryComponent }
+  | { section: 'comparator' }
+)
+
+export type MarketAfterCloseSection =
+  | { status: 'pending' | 'unavailable'; receipt: string | null; chart: null; result: null }
+  | {
+      status: 'ready'
+      receipt: string
+      chart: NewowProductSectionResponse<'chart'>
+      result: NewowProductSectionResponse<'auxiliary' | 'comparator'>
+    }
 
 export interface ReferenceIdentity {
   strategy: string

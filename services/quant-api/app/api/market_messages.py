@@ -63,6 +63,14 @@ def market_messages(
         or (cursor is not None and resume_count != 0)
     ):
         raise HTTPException(422, detail={"code": "MESSAGE_QUERY_INVALID"})
+    market_products = None
+    if getattr(request.app.state, "market_foundation_reference_sessions", None) is not None:
+        from app.market_data.operational_universe import load_operational_products
+        from app.market_data.product_retirement import is_retired
+
+        if symbol is not None and is_retired(symbol):
+            raise HTTPException(410, detail={"code": "PRODUCT_RETIRED"})
+        market_products = load_operational_products()
     identity = {
         "start_day": start_day.isoformat(),
         "end_day": end_day.isoformat(),
@@ -73,6 +81,8 @@ def market_messages(
         "frequency": frequency,
         "search": search.strip().lower(),
     }
+    if market_products is not None:
+        identity["market_products"] = list(market_products)
     if cursor is not None:
         try:
             result = _snapshots.read(cursor, identity)
@@ -87,6 +97,7 @@ def market_messages(
                     product=identity["symbol"],
                     strategy=strategy,
                     frequency=frequency,
+                    market_products=market_products,
                 )
                 digest = hashlib.sha256(json.dumps(scope).encode()).hexdigest()
                 if digest != previous["revision_hash"]:
@@ -126,6 +137,7 @@ def market_messages(
                             before,
                             frequency=frequency,
                             max_event_id=highwater,
+                            market_products=market_products,
                         ),
                     )
                     scan_batches += 1
@@ -168,6 +180,7 @@ def market_messages(
                     strategy=strategy,
                     frequency=frequency,
                     observed_before=cutoff,
+                    market_products=market_products,
                 )
                 if frequency in (None, *FREQUENCIES)
                 else {"items": [], "truncated": False}

@@ -284,6 +284,8 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
 )
 def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse | JSONResponse:
     """Return the single public scope used by clients for this staged release."""
+    if getattr(request.app.state, "market_foundation_reference_sessions", None) is not None:
+        return JSONResponse({"detail": {"code": "NEWOW_AFTER_MARKET_ONLY"}}, status_code=409)
     if getattr(request.state, "intraday_preview_products", None) is not None:
         batch = getattr(request.state, "intraday_preview_batch", False)
         single = batch and not request.state.intraday_preview_products <= INTRADAY_BATCH_PREVIEW_SYMBOLS
@@ -383,6 +385,22 @@ def _build_product_service(
         ),
     )
 
+    return _compose_product_service(
+        composition, cancelled,
+        historical_intraday=historical_intraday,
+        reuse_read_inputs=reuse_read_inputs,
+        use_persisted_reference=use_persisted_reference,
+    )
+
+
+def _compose_product_service(
+    composition: NewowComposition,
+    cancelled: Callable[[], bool] | None,
+    *,
+    historical_intraday: bool = False,
+    reuse_read_inputs: bool = False,
+    use_persisted_reference: bool = True,
+) -> NewowProductService:
     # Public history has one saved Canonical authority. Reader configuration must
     # never switch a missing/stale asset to a different recomputation or Live.
     from app.reference_trading.persisted_newow import PersistedNewowReference
@@ -391,7 +409,7 @@ def _build_product_service(
         if historical_intraday else SessionLocal)
     persisted_reference = PersistedNewowReference(
         factory, cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
-        reference_price_policy=reference_price_policy,
+        reference_price_policy=composition.reference_price_policy,
     ).section if use_persisted_reference else None
     return composition.service(
         cache=_INTRADAY_HISTORY_CACHE if historical_intraday else _PRODUCT_CACHE,
@@ -411,6 +429,7 @@ def _build_snapshot_inputs(
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
     *, home_services: list[NewowProductService] | None = None,
     reference_price_policy: str | None = None,
+    verify_reference_source: bool = True,
 ):
     market_data = build_market_data_service(session)
     coverage = build_database_coverage_source(
@@ -421,6 +440,7 @@ def _build_snapshot_inputs(
         # windows never cross transactions or reach a maintenance writer.
         market_data.replay_coverage = coverage
     active = load_active_products()
+    use_persisted_reference = verify_reference_source and reference_price_policy is None
     if reference_price_policy is None:
         reference_price_policy = FORMAL_HISTORICAL_REFERENCE_PRICE_POLICY
     composition = NewowComposition(
@@ -430,11 +450,9 @@ def _build_snapshot_inputs(
     reader = composition.reader(cancelled=cancelled)
 
     def service_factory(deadline_cancelled: Callable[[], bool]) -> NewowProductService:
-        service = composition.service(
-            cache=_PRODUCT_CACHE,
-            heavy_gate=_PRODUCT_GATE,
-            inflight=_PRODUCT_INFLIGHT,
-            cancelled=deadline_cancelled,
+        service = _compose_product_service(
+            composition, deadline_cancelled,
+            use_persisted_reference=use_persisted_reference,
             reuse_read_inputs=home_services is not None,
         )
         if home_services is not None:
@@ -451,7 +469,7 @@ def _build_historical_resolver(
     quality_policy: InputQualityPolicy = InputQualityPolicy.V1,
 ) -> NewowHistoricalSnapshotResolver:
     reader, service_factory = _build_snapshot_inputs(
-        session, cancelled, now, quality_policy
+        session, cancelled, now, quality_policy, verify_reference_source=False,
     )
     return NewowHistoricalSnapshotResolver(reader, service_factory, now=now, cancelled=cancelled)
 

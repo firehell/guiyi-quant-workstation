@@ -4,11 +4,12 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
 
 TTL_SECONDS = 259200
 DAILY_LIMIT = 120000
+_TICK_FORWARD_MAX_DELAY = timedelta(seconds=30)
 _ID = re.compile(r'^[0-9]+-[0-9]+$')
 _NAME = re.compile(r'^[a-zA-Z0-9_.:-]{1,128}$')
 
@@ -88,6 +89,7 @@ class ObservationEnvelope:
     stream_id: str = ''
     raw_received_at: datetime | None = None
     confirmed_at: datetime | None = None
+    source_generation: str | None = None
 
     def __post_init__(self) -> None:
         if self.source_observed_at.tzinfo is None or self.source_observed_at.utcoffset() is None:
@@ -97,16 +99,33 @@ class ObservationEnvelope:
                 raise ValueError('OBSERVATION_TIME_INVALID')
         if not self.observation_id or not _NAME.fullmatch(self.channel) or type(self.data) is not dict:
             raise ValueError('OBSERVATION_ENVELOPE_INVALID')
+        if self.source_generation is not None and (
+            not isinstance(self.source_generation, str)
+            or not re.fullmatch(r"rqdata-tick:[0-9a-f]{32}:[1-9][0-9]*", self.source_generation)
+            or self.raw_received_at is None or self.raw_received_at < self.source_observed_at
+            or self.confirmed_at is not None and self.confirmed_at < self.raw_received_at
+        ):
+            raise ValueError('OBSERVATION_SOURCE_IDENTITY_INVALID')
         if type(self.notification_eligible) is not bool:
             raise ValueError('OBSERVATION_ENVELOPE_INVALID')
 
+    def timely_for_forward(self, bar_end: datetime, confirmed_at: datetime) -> bool:
+        # Tick recovery after a stopped computation process is retained as
+        # evidence. The existing 30-second observation window still fences
+        # fresh strategy/notification admission.
+        return self.source_generation is None or (
+            timedelta(0) <= confirmed_at - bar_end <= _TICK_FORWARD_MAX_DELAY
+        )
+
     def to_json(self) -> str:
-        return json.dumps({'observation_id': self.observation_id, 'trading_day': self.trading_day.isoformat(),
-                           'source_observed_at': self.source_observed_at.isoformat(), 'channel': self.channel,
-                           'data': self.data, 'notification_eligible': self.notification_eligible,
-                           'raw_received_at': self.raw_received_at.isoformat() if self.raw_received_at else None,
-                           'confirmed_at': self.confirmed_at.isoformat() if self.confirmed_at else None},
-                          sort_keys=True, separators=(',', ':'), allow_nan=False)
+        content = {'observation_id': self.observation_id, 'trading_day': self.trading_day.isoformat(),
+                   'source_observed_at': self.source_observed_at.isoformat(), 'channel': self.channel,
+                   'data': self.data, 'notification_eligible': self.notification_eligible,
+                   'raw_received_at': self.raw_received_at.isoformat() if self.raw_received_at else None,
+                   'confirmed_at': self.confirmed_at.isoformat() if self.confirmed_at else None}
+        if self.source_generation is not None:
+            content['source_generation'] = self.source_generation
+        return json.dumps(content, sort_keys=True, separators=(',', ':'), allow_nan=False)
 
     @classmethod
     def from_json(cls, raw: str | bytes, *, stream_id: str = '') -> ObservationEnvelope:
@@ -115,7 +134,12 @@ class ObservationEnvelope:
                    datetime.fromisoformat(item['source_observed_at']), item['channel'], item['data'],
                    item['notification_eligible'], stream_id,
                    datetime.fromisoformat(item['raw_received_at']) if item.get('raw_received_at') else None,
-                   datetime.fromisoformat(item['confirmed_at']) if item.get('confirmed_at') else None)
+                   datetime.fromisoformat(item['confirmed_at']) if item.get('confirmed_at') else None,
+                   item.get('source_generation'))
+
+
+def completed_observation_id(day: date, contract: str, frequency: str, end: datetime) -> str:
+    return f"{day}:{contract}:{frequency}:{end.isoformat()}"
 
 
 class ObservationStream:
@@ -160,6 +184,27 @@ class ObservationStream:
     def tail(self, day: date) -> str:
         rows = self.redis.xrevrange(self.key(day), count=1)
         return _text(rows[0][0]) if rows else '0-0'
+
+    def read_original(self, day: date, observation_id: str) -> ObservationEnvelope:
+        """Read one indexed original and verify it against the durable row."""
+        try:
+            indexed = self.redis.hget(self.identity_key(day), observation_id)
+            if indexed is None:
+                raise ValueError
+            index = json.loads(indexed)
+            stream_id = index['id']
+            if not isinstance(stream_id, str) or not _ID.fullmatch(stream_id):
+                raise ValueError
+            (identifier, fields), = self.redis.xrange(self.key(day), min=stream_id, max=stream_id, count=1)
+            raw = fields.get('envelope', fields.get(b'envelope'))
+            if raw is None or _text(identifier) != stream_id or _text(raw) != index['payload']:
+                raise ValueError
+            event = ObservationEnvelope.from_json(raw, stream_id=stream_id)
+            if event.observation_id != observation_id or event.trading_day != day:
+                raise ValueError
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ValueError('OBSERVATION_ORIGINAL_UNPROVEN') from exc
+        return event
 
     def initialize(self, consumer: str, day: date, *, cursor: str) -> None:
         """Explicit migration baseline only; callers must freeze the supplied cutoff."""

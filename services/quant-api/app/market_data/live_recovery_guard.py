@@ -38,6 +38,13 @@ def guard_directory(*, root: Path | None = None, legacy_root: bool = False) -> P
         if root is None:
             raise ValueError('LIVE_RECOVERY_GUARD_UNSAFE')
         return root
+    from app.services.newow_reference_mode import market_foundation_isolated
+
+    if market_foundation_isolated():
+        sandbox = Path(os.environ["GUIYI_MARKET_FOUNDATION_SANDBOX"])
+        if not sandbox.is_absolute() or sandbox.resolve(strict=True) != sandbox:
+            raise ValueError("LIVE_RECOVERY_GUARD_UNSAFE")
+        return sandbox / "live-recovery-guards"
     from app.runtime_bindings import read_bindings
     from app.runtime_handover import runtime_directory
     if os.environ.get('GUIYI_RUNTIME_HANDOVER_ENABLED') == '1' or read_bindings() is not None:

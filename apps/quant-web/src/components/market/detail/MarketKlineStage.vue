@@ -1,20 +1,31 @@
 <script setup lang="ts">
-import type { DynamicRangePoint } from '@/utils/dynamicRange'
+import type { ChartProfileId } from '@guiyi/quant-chart'
+import type { DynamicRangeDisplay } from '@/utils/dynamicRange'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { KlineQualityBreak, KlineReferenceCallout, KlineReferenceIndicator, KlineReferenceSelection } from '@/types/referenceCallout'
 import KlineChart from '@/components/kline/KlineChart.vue'
+import ChartLayerDiagnostics from '@/components/kline/ChartLayerDiagnostics.vue'
 import MarketDetailIcon from '@/components/market/detail/MarketDetailIcon.vue'
 import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/market'
+import { DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
+import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
+import { MARKET_CHART_STUDY_BAR_LIMIT, MARKET_CHART_STUDY_CONTEXT } from '@/utils/marketChartStudies'
+import { candidatePreview } from '@/utils/candidatePreview'
+import { useMarketChartStudies } from '@/composables/useMarketChartStudies'
 
 const props = withDefaults(defineProps<{
-  dynamicRangePoints?: DynamicRangePoint[]
-  dynamicRangeEnabled?: boolean
+  chartProfile?: ChartProfileId
+  dynamicRange?: DynamicRangeDisplay | null
   patternGeometry?: PatternGeometry | null
   subingVolumeTiers?: boolean
+  volumeScoring?: boolean
+  researchMarkers?: KlineMarker[]
+  savedReferenceLines?: SavedReferenceLine[]
   bars: BarData[]
+  activeBar?: BarData | null
   mutation: MarketSeriesMutation
   loading: boolean
   error: string | null
@@ -37,7 +48,7 @@ const props = withDefaults(defineProps<{
   loadingBefore?: boolean
   historyError?: string | null
   focusRequestId?: number
-}>(), { markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
+}>(), { volumeScoring: true, markers: () => [], markerSelectionEnabled: true, showDerivedMarkers: true, showNavigationButtons: true })
 
 const emit = defineEmits<{
   loadEarlier: []
@@ -46,7 +57,23 @@ const emit = defineEmits<{
   'focus-resolved': [focusBarEnd: string]
   'marker-select': [marker: KlineMarker]
 }>()
+const pageOwnsNavigation = Boolean(inject(DETAIL_CHART_SESSION, null))
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
+const market = inject(MARKET_CHART_STUDY_CONTEXT, null)
+const studyContext = computed(() => {
+  const context = market?.value
+  if (!context || context.identity.profile !== props.chartProfile
+    || context.identity.frequency !== props.period || context.identity.seriesKind !== props.seriesKind) return null
+  return props.focusBarEnd ? { ...context, allowTail: false } : context
+})
+const showTalibMacd = computed(() => studyContext.value?.talibMacd === true)
+const { demand: studyRequest, canonical: studyDisplay, canonicalIssue: studyIssue, historyUnavailable: studyUnavailable,
+  completed: studyCompleted, preview: studyPreview, tailIssue: studyTailIssue } = useMarketChartStudies(
+  () => studyContext.value,
+  () => props.bars,
+  () => showTalibMacd.value ? [...props.visibleMainIndicators, 'macd'] : props.visibleMainIndicators,
+)
+const activeDisplayBar = computed(() => props.activeBar ?? (studyContext.value?.allowTail ? studyContext.value.active.value?.bar : null) ?? null)
 const followLatest = ref(true)
 const fullscreen = ref(false)
 let resolvedFocusKey: string | null = null
@@ -83,7 +110,7 @@ watch(() => props.mutation, async (mutation) => {
   if (mutation.kind === 'replace') chart.value.replaceBars(props.bars, !followLatest.value)
   else if (mutation.kind === 'prepend') chart.value.prependBars(mutation.bars)
   else {
-    for (const bar of mutation.bars) chart.value.updateBar(bar)
+    chart.value.updateLiveBars(props.bars)
     if (followLatest.value) chart.value.scrollToLatest()
   }
   resolveFocus()
@@ -97,7 +124,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
 <template>
   <section class="market-kline-stage" :class="{ 'market-kline-stage--fullscreen': fullscreen }">
     <div class="market-kline-stage__controls">
-      <button v-if="showNavigationButtons && !followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
+      <button v-if="showNavigationButtons && !pageOwnsNavigation && !followLatest" type="button" @click="chart?.scrollToLatest()"><MarketDetailIcon name="refresh" :size="16" />回到最新</button>
     </div>
     <div v-if="hasMoreBefore !== undefined && (loadingBefore || historyError || hasMoreBefore === false)" class="market-kline-stage__history" role="status">
       <button v-if="hasMoreBefore && historyError" type="button" :disabled="loading || loadingBefore" @click="emit('loadEarlier')">
@@ -107,20 +134,36 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       <span v-if="hasMoreBefore === false && !loading && bars.length">已到最早可用数据</span>
       <span v-if="historyError">{{ historyError }}</span>
     </div>
+    <p v-if="studyUnavailable" class="market-kline-stage__history" role="status">当前行情窗口的所选指标暂不可用。</p>
+    <p v-else-if="studyDisplay && studyRequest?.truncatedBefore" class="market-kline-stage__history" role="status">
+      所选通用指标仅覆盖最近 {{ MARKET_CHART_STUDY_BAR_LIMIT.toLocaleString('zh-CN') }} 根已完成行情。
+    </p>
     <KlineChart
       :key="identityKey"
+      :chart-profile="chartProfile"
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
+      :active-bar="activeDisplayBar"
       :subing-volume-tiers="subingVolumeTiers"
-    :dynamic-range-points="dynamicRangePoints"
-    :dynamic-range-enabled="dynamicRangeEnabled"
-    :pattern-geometry="patternGeometry"
+      :volume-scoring="volumeScoring"
+      :research-markers="researchMarkers"
+      :saved-reference-lines="savedReferenceLines"
+      :dynamic-range="dynamicRange"
+      :pattern-geometry="patternGeometry"
       :loading="loading"
       :error="error"
       :period="period"
       :series-kind="seriesKind"
       :visible-main-indicators="visibleMainIndicators"
+      :study-display="studyDisplay"
+      :study-issue="studyIssue"
+      :study-completed="studyCompleted"
+      :study-preview="studyPreview"
+      :study-tail-issue="studyTailIssue"
+      :talib-macd="showTalibMacd"
+      :allow-generic-macd="Boolean(studyContext) && !candidatePreview.enabled"
+      @toggle-talib-macd="studyContext?.toggleMacd()"
       :range-detector-source-identity="rangeDetectorSourceIdentity"
       :range-detector-anchor-time="rangeDetectorAnchorTime"
       :alert-markers="markers"
@@ -135,6 +178,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       @range-detector-result="emit('range-detector-result', $event)"
       @marker-select="emit('marker-select', $event)"
     />
+    <ChartLayerDiagnostics v-if="chart" :key="identityKey" :inspect="chart.inspectLayers" />
   </section>
 </template>
 

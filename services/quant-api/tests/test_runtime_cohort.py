@@ -677,3 +677,17 @@ def test_final_schema_read_crossing_plan_expiry_cannot_commit(tmp_path):
     assert "commit" not in h.calls
     assert "restore_old" in h.calls
     assert h.registry == h.old
+
+
+def test_application_cohort_accepts_previous_market_component_tag(tmp_path):
+    from app.runtime_cohort import validate
+
+    host = Host(tmp_path)
+    previous = host.old.services["market-feed"]
+    host.old = host.registry = BindingRegistry(1, {
+        **host.old.services, "market-feed": replace(previous, tag="market-foundation/v2.0.0"),
+    })
+    plan = freeze_cohort(host, candidate_root=host.root, tag="v1.16.5", commit="e" * 40)
+    old, new = validate(plan, host.now())
+    assert old.services["market-feed"].tag == "market-foundation/v2.0.0"
+    assert new.services["market-feed"].tag == "v1.16.5"

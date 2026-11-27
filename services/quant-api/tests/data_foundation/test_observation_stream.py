@@ -193,6 +193,10 @@ def test_feed_captures_raw_without_publishing_completed_and_obeys_owner(isolated
     now = bar.bar_end - timedelta(seconds=1)
     assert feed.ingest('RB2505', bar, now=now) is None
     assert stream.read('live', bar.trading_day)[0].source_observed_at == now
+    feed._publish_heartbeat(now, feed._phases(now))
+    assert feed._store.feed_heartbeat()['input_progress'] == {
+        'rb': {'contract': 'RB2505', 'bar_end': bar.bar_end.isoformat(), 'received_at': now.isoformat()}
+    }
     assert feed.flush_due(bar.bar_end + timedelta(seconds=3)) == ()
     assert not isolated_redis.exists('live:bars:' + bar.trading_day.isoformat() + ':rb:1m')
     def reject_owner():

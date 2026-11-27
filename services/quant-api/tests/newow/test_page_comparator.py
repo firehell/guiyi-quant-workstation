@@ -12,6 +12,7 @@ import pytest
 
 from app.market_data.newow.product_reader import NewowProductReader
 from guiyi_quant.newow.models import NewowDailyBar
+from guiyi_quant.newow.oscillation_channel import CHANNEL_FORMULA_VERSION, OSCILLATION_FORMULA_VERSION
 from guiyi_quant.newow.product_contracts import (
     ProductBar,
     ProductFrequency,
@@ -35,8 +36,12 @@ def _api():
     return module
 
 
+def _frozen_comparator_identity(identity: ProductIdentity) -> ProductIdentity:
+    return replace(identity, formula_versions=(OSCILLATION_FORMULA_VERSION, CHANNEL_FORMULA_VERSION), profile_id="")
+
+
 def _identity(frequency: str = "1d") -> ProductIdentity:
-    return build_product_identity("rb", "oscillation", frequency)
+    return _frozen_comparator_identity(build_product_identity("rb", "oscillation", frequency))
 
 
 def _bars(
@@ -121,7 +126,7 @@ def test_comparator_without_evidence_returns_an_explicit_gap(product_cases) -> N
         pytest.fail("page comparator is not implemented", pytrace=False)
 
     result = module.compare_page_windows(
-        case.identity,
+        _frozen_comparator_identity(case.identity),
         case.bars,
         evidence=None,
         authoritative_segments=(_owner(module, case.bars),),

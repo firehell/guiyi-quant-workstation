@@ -1575,8 +1575,13 @@ def test_session_final_bar_arriving_after_finalization_delay_is_still_accepted()
     assert module.RedisLiveStore(fake).bars_after(day, "j", "1m", None) == (_bar(5),)
 
 
-def test_closed_product_final_bar_completes_all_derived_while_another_product_trades() -> None:
-    """Catches a shorter-session product losing its close while another feed remains active."""
+def test_closed_product_final_bar_completes_all_derived_while_another_product_trades(monkeypatch) -> None:
+    """A shorter Session closes normally without scheduling Newow reference work."""
+    from app.services import newow_backtest_eod
+
+    triggers = []
+    monkeypatch.setenv("GUIYI_NEWOW_REFERENCE_MODE", "after_market_isolated")
+    monkeypatch.setattr(newow_backtest_eod, "reconcile_publications", lambda *_: triggers.append("live"))
     module = importlib.import_module("app.market_data.live_market")
     day = date(2025, 1, 2)
     j_window = SessionWindow(
@@ -1632,6 +1637,7 @@ def test_closed_product_final_bar_completes_all_derived_while_another_product_tr
         "CLOSED": 1,
         "TRADING": 1,
     }
+    assert triggers == []
 
 
 def test_post_session_grace_rejects_nonfinal_and_overdue_final_bars() -> None:

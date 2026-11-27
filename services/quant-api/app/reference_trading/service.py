@@ -236,7 +236,7 @@ def _seed_checkpoint(stream: StreamIdentity) -> tuple[AdapterCheckpoint[object],
         state: object = FusionReferenceReplayState(model_version=stream.reference_model_version)
         schema = "newow_dual_fusion_reference_v1"
     elif stream.strategy_code.replace("-", "_") == "subing_reference":
-        state = seed_subing_replay_state()
+        state = seed_subing_replay_state(frequency=stream.frequency)
         schema = "subing_replay_v1"
     else:
         from guiyi_quant.newow.product_adapters import seed_replay_state
@@ -293,7 +293,7 @@ def _subing_step(
         checkpoint.physical_contract != item.physical_contract
         or checkpoint.calculation_segment_id != item.calculation_segment_id
     ):
-        strategy_state = seed_subing_replay_state()
+        strategy_state = seed_subing_replay_state(frequency=stream.frequency)
         strategy_state.reference_state = prior_reference
     next_state, signal, _closed, indicator = replay_subing_step(
         stream.product.lower(),

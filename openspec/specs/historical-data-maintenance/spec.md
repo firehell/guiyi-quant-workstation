@@ -740,6 +740,12 @@ immediately after a callback-lock-protected raw count of zero, without taking th
 buffer or acquiring the maintenance guard. A later callback MUST remain untouched
 for the next poll and its phase-independent old-day cleanup check.
 
+Feed heartbeats within that poll SHALL reuse the same empty grace sample while
+the provider is unchanged. When an isolated provider's retirement is unverified,
+the heartbeat MUST leave `input_pending_count` unknown (`null`), report
+unavailable and avoid sampling the isolated buffer. Explicit quiescence and
+retirement checks MUST obtain their own eligible buffer sample.
+
 Feed MUST inspect its original registered/local day for a missing subscription
 before every normal poll, independently of phase or whether a previous CLOSED
 poll occurred. Observed cleanup SHALL persist as an isolated old-day/provider

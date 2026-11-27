@@ -2796,7 +2796,7 @@ def _listing_market(session, tmp_path, symbol, *, night=False):
     return MarketDataService(MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path))
 
 
-@pytest.mark.parametrize("symbol", ["pd", "pt"])
+@pytest.mark.parametrize("symbol", ["ps", "lc"])
 def test_reference_listing_lower_bound_does_not_require_prelisting_session(session, tmp_path, symbol):
     from types import SimpleNamespace
     from app.market_data.subing_reference import SubingReferenceQuery, SubingReferenceService
@@ -2811,17 +2811,91 @@ def test_reference_listing_lower_bound_does_not_require_prelisting_session(sessi
     ) == (date(2025, 11, 27), date(2025, 11, 27), datetime(2025, 11, 27, 7, tzinfo=UTC))
 
 
+@pytest.mark.parametrize("symbol", ["ps", "lc"])
+@pytest.mark.parametrize("fault,code", [
+    (None, None),
+    ("next_week_unopened", None),
+    ("session", "TRADING_SESSION_MISSING"),
+    ("calendar", "TRADING_CALENDAR_MISSING"),
+    ("listing_closed", "TRADING_CALENDAR_MISSING"),
+    ("cutoff_calendar", "TRADING_CALENDAR_MISSING"),
+    ("map", "MAIN_CONTRACT_MAP_MISSING"),
+    ("prelisting_map", "MAIN_CONTRACT_MAP_CONFLICT"),
+    ("week", "MAPPED_CONTRACT_DATASET_MISSING"),
+])
+def test_weekly_actual_range_uses_verified_listing_boundary(session, tmp_path, monkeypatch, symbol, fault, code):
+    from sqlalchemy import delete
+    from app.market_data import market_data_service
+
+    market = _listing_market(session, tmp_path, symbol)
+    listing = date(2025, 11, 27)
+    config = tmp_path / "data/universe/product_window_starts.csv"
+    config.parent.mkdir(parents=True)
+    config.write_text(f"product,window_start,note\n{symbol},{listing},exchange_listing_start\n")
+    monkeypatch.setattr(market_data_service, "PROJECT_ROOT", tmp_path)
+    week_end = date(2025, 11, 28)
+    contract = f"{symbol.upper()}2606"
+    session.add(Contract(
+        contract_code=contract, instrument_symbol=symbol, exchange_code="GFEX",
+        listed_date=listing, expired_date=date(2026, 6, 12), provider="rqdata",
+    ))
+    session.add_all(
+        TradingCalendar(exchange_code="GFEX", trade_date=date(2025, 11, day), is_trading_day=False)
+        for day in ((29,) if fault == "cutoff_calendar" else (29, 30))
+    )
+    if fault == "next_week_unopened":
+        session.add(TradingCalendar(
+            exchange_code="GFEX", trade_date=date(2025, 12, 1), is_trading_day=True,
+        ))
+    session.add_all(
+        MainContractMap(symbol=symbol, trade_date=day, contract_code=contract)
+        for day in (listing, week_end) if not (fault == "map" and day == listing)
+    )
+    if fault == "prelisting_map":
+        session.add(MainContractMap(symbol=symbol, trade_date=listing - timedelta(days=1),
+                                    contract_code=contract))
+    if fault == "session":
+        session.execute(update(TradingSession).where(
+            TradingSession.instrument_symbol == symbol).values(effective_from=week_end))
+    if fault == "calendar":
+        session.execute(delete(TradingCalendar).where(
+            TradingCalendar.exchange_code == "GFEX", TradingCalendar.trade_date == listing))
+    if fault == "listing_closed":
+        session.execute(update(TradingCalendar).where(
+            TradingCalendar.exchange_code == "GFEX", TradingCalendar.trade_date == listing,
+        ).values(is_trading_day=False))
+    bar = _bar(28, 100, month=11)
+    if fault != "week":
+        _publish(market.catalog, market.store, DatasetKey("contract", symbol, contract, "1w"), (bar,))
+    session.commit()
+
+    start = datetime(2025, 11, 26, 8, tzinfo=UTC)
+    end = (datetime(2025, 11, 30, 16, tzinfo=UTC) if fault == "next_week_unopened"
+           else datetime(2025, 11, 28, 8, tzinfo=UTC))
+    request = SeriesQuery("actual_dominant", symbol, "1w", start, end)
+    if code is not None:
+        with pytest.raises(MarketDataError, match=code):
+            market.query(request)
+        return
+
+    result = market.query(request)
+    assert result.bars == (bar,)
+    assert result.request_identity["start"] == start.isoformat()
+    assert result.request_identity["end"] == end.isoformat()
+    assert result.resolved_contract_segments == (ResolvedContractSegment(contract, week_end, week_end),)
+
+
 def test_session_lower_bound_keeps_first_trading_days_prior_natural_night(session, tmp_path):
-    market = _listing_market(session, tmp_path, "pd", night=True)
+    market = _listing_market(session, tmp_path, "ps", night=True)
     listing = date(2025, 11, 27)
     windows = market.catalog.session_windows_overlapping_window(
-        "pd", datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
+        "ps", datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
         datetime(2025, 11, 26, 14, tzinfo=UTC), earliest=listing, latest=listing,
     )
     assert len(windows) == 1 and windows[0][0] == listing
     assert windows[0][1][0].start == datetime(2025, 11, 26, 13, tzinfo=UTC)
     assert market.completed_trading_days(
-        symbol="pd", start=datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
+        symbol="ps", start=datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
         as_of=datetime(2025, 11, 26, 14, tzinfo=UTC), latest=listing, calendar_since=listing,
     ) == ()  # The first trading day has not closed yet.
 
@@ -2834,10 +2908,10 @@ def test_session_lower_bound_keeps_first_trading_days_prior_natural_night(sessio
 def test_listing_lower_bound_still_rejects_required_missing_facts(session, tmp_path, fault, code):
     from sqlalchemy import delete
 
-    market = _listing_market(session, tmp_path, "pt", night=fault == "night_anchor")
+    market = _listing_market(session, tmp_path, "lc", night=fault == "night_anchor")
     if fault == "session":
         session.execute(update(TradingSession).where(
-            TradingSession.instrument_symbol == "pt").values(is_active=False))
+            TradingSession.instrument_symbol == "lc").values(is_active=False))
     else:
         day = date(2025, 11, 26 if fault == "night_anchor" else 27)
         session.execute(delete(TradingCalendar).where(
@@ -2845,7 +2919,7 @@ def test_listing_lower_bound_still_rejects_required_missing_facts(session, tmp_p
     session.commit()
     with pytest.raises(MarketDataError, match=code):
         market.completed_trading_days(
-            symbol="pt", start=datetime(2025, 11, 26, 0, tzinfo=UTC),
+            symbol="lc", start=datetime(2025, 11, 26, 0, tzinfo=UTC),
             as_of=datetime(2025, 11, 28, 2, tzinfo=UTC), latest=date(2025, 11, 28),
             calendar_since=date(2025, 11, 27),
         )
@@ -3149,15 +3223,15 @@ def test_daily_snapshot_cache_keeps_quality_union_and_window_distinct(monkeypatc
 
 
 def test_market_session_batch_matches_day_authority_and_does_not_survive_updates(session, tmp_path):
-    market = _listing_market(session, tmp_path, 'pd')
+    market = _listing_market(session, tmp_path, 'ps')
     start = datetime(2025, 11, 27, 1, tzinfo=UTC)
     end = datetime(2025, 11, 28, 7, tzinfo=UTC)
-    values = market.session_windows_overlapping_window(symbol='pd', start=start, end=end)
-    assert tuple(day for day, _ in values) == market.trading_days_overlapping_window(symbol='pd', start=start, end=end)
-    assert all(windows == market.session_windows(symbol='pd', trading_day=day) for day, windows in values)
-    session.execute(update(TradingSession).where(TradingSession.instrument_symbol == 'pd').values(end_time=time(14)))
+    values = market.session_windows_overlapping_window(symbol='ps', start=start, end=end)
+    assert tuple(day for day, _ in values) == market.trading_days_overlapping_window(symbol='ps', start=start, end=end)
+    assert all(windows == market.session_windows(symbol='ps', trading_day=day) for day, windows in values)
+    session.execute(update(TradingSession).where(TradingSession.instrument_symbol == 'ps').values(end_time=time(14)))
     session.commit()
-    changed = market.session_windows_overlapping_window(symbol='pd', start=start, end=end)
+    changed = market.session_windows_overlapping_window(symbol='ps', start=start, end=end)
     assert changed != values
     assert all(windows[-1].end.hour == 6 for _, windows in changed)
 

@@ -1,12 +1,23 @@
 """MACD display adapts the real kernel without changing strategy facts."""
 
-from dataclasses import asdict, replace
+from dataclasses import replace
 from decimal import Decimal
+from importlib.metadata import version
+from math import isfinite
+import re
 
-from guiyi_quant.indicators.macd import MACD_VERSION, macd_series
+import numpy as np
+import pytest
+import talib
+from guiyi_quant.compute import REGISTRY
 from app.api.market_newow import _product_response
+from app.market_data.newow.product_macd import MACD_CACHE_IDENTITY
 from app.market_data.newow.product_service import ProductServiceQuery
 from newow.test_product_service import _service
+
+
+def _auxiliary_out(result):
+    return _product_response(result).model_dump(mode="json")["auxiliary"]
 
 
 def _query(service, bars, **kwargs):
@@ -23,50 +34,45 @@ def _query(service, bars, **kwargs):
     )
 
 
-def _points(series, indices):
-    return [asdict(series.points[index]) for index in indices]
+def _direct_macd(bars):
+    closes = np.array([float(item.bar.close) for item in bars], dtype=np.float64)
+    return dict(zip(
+        ("dif", "dea", "histogram"),
+        talib.MACD(closes, fastperiod=12, slowperiod=26, signalperiod=9),
+        strict=True,
+    ))
 
 
-def test_macd_matches_real_kernel_prefix_including_warming_and_zero(product_cases):
+@pytest.mark.parametrize("constant", [False, True])
+def test_macd_matches_unscaled_talib_prefix_including_warming_and_zero(product_cases, constant):
     service, reader, _, _ = _service(product_cases)
-    reader.bars = tuple(
-        replace(
-            item,
-            bar=replace(
-                item.bar,
-                open=Decimal(100),
-                high=Decimal(100),
-                low=Decimal(100),
-                close=Decimal(100),
-            ),
-        )
-        for item in reader.bars[:45]
-    )
-    result = _query(service, reader.bars)
-    value = _product_response(result).model_dump(mode="json")["auxiliary"]["value"]
-    expected = macd_series(
-        [100] * 45,
-        12,
-        26,
-        9,
-        ema_seed_policy="sma_window",
-        histogram_scale=2,
-        round_digits=6,
-        bar_ends=[
-            item.bar.bar_end.isoformat().replace("+00:00", "Z") for item in reader.bars
-        ],
-    )
-    assert value["formula_version"] == MACD_VERSION
-    assert value["display_adapter_version"] == "guiyi_newow_macd_display_v1"
-    assert value["parameters"] == expected.parameters
-    assert value["parameters_hash"] == expected.parameters_hash
+    reader.bars = reader.bars[:45]
+    if constant:
+        reader.bars = _constant_bars(reader.bars, Decimal(100))
+    value = _auxiliary_out(_query(service, reader.bars))["value"]
+    expected = _direct_macd(reader.bars)
+    assert value["formula_version"] == REGISTRY.definition("macd").formula_version == "talib_macd_12_26_9_v1"
+    assert value["display_adapter_version"] == "guiyi_newow_macd_display_v2"
+    assert value["parameters"] == {"fast": 12, "slow": 26, "signal": 9}
+    assert re.fullmatch("[0-9a-f]{16}", value["parameters_hash"])
+    assert value["parameters_hash"] == MACD_CACHE_IDENTITY[2]
     indices = [i for i, item in enumerate(reader.bars) if item.bar.observation_eligible]
     data = value["segments"][0]["data"]
-    for key in ("dif", "dea", "histogram"):
-        assert data[key] == _points(getattr(expected, key), indices)
-    assert expected.dif.points[25].ready and not expected.dea.points[25].ready
-    assert data["histogram"][-1]["value"] == 0
-    assert data["histogram"][-1]["valid"] is True
+    for key, outputs in expected.items():
+        assert data[key] == [
+            {
+                "bar_end": reader.bars[index].bar.bar_end.isoformat().replace("+00:00", "Z"),
+                "value": float(outputs[index]) if isfinite(outputs[index]) else None,
+                "ready": index >= 33,
+                "valid": True,
+                "reason": None if index >= 33 else "warming_up",
+            }
+            for index in indices
+        ]
+    if constant:
+        assert data["histogram"][-1]["value"] == 0
+    else:
+        assert any(point["value"] not in (None, 0) for point in data["histogram"])
     assert (
         value["repainting"]
         is value["formal_signal_eligible"]
@@ -74,6 +80,28 @@ def test_macd_matches_real_kernel_prefix_including_warming_and_zero(product_case
         is False
     )
     assert value["allowed_uses"] == ["research_display"]
+
+
+def _constant_bars(bars, price):
+    return tuple(
+        replace(item, bar=replace(item.bar, open=price, high=price, low=price, close=price))
+        for item in bars
+    )
+
+
+def test_macd_nonfinite_outputs_are_unavailable(product_cases):
+    service, reader, _, _ = _service(product_cases)
+    reader.bars = _constant_bars(reader.bars[:45], Decimal("1e308"))
+    direct = _direct_macd(reader.bars)
+    assert all(not isfinite(outputs[-1]) for outputs in direct.values())
+    wire = _auxiliary_out(_query(service, reader.bars))
+    assert wire["status"]["status"] == "unavailable"
+    segment = wire["value"]["segments"][0]
+    assert segment["status"]["status"] == "unavailable"
+    for points in segment["data"].values():
+        assert points[-1] | {"bar_end": None} == {
+            "bar_end": None, "value": None, "ready": False, "valid": False, "reason": "OUTPUT_NONFINITE",
+        }
 
 
 def test_macd_window_and_as_of_only_clip_same_lifecycle_values(product_cases):
@@ -85,9 +113,6 @@ def test_macd_window_and_as_of_only_clip_same_lifecycle_values(product_cases):
     clipped = _query(
         service, bars, since=since, through=through, as_of=cutoff
     ).auxiliary.value
-    expected = {
-        point.bar_end: point for segment in full.segments for point in segment.value.dif
-    }
     assert clipped.segments
     for segment in clipped.segments:
         assert segment.bar_ends
@@ -124,20 +149,13 @@ def test_macd_resets_each_physical_segment_and_hides_warmup_only_bars(product_ca
     layer = _query(service, reader.bars).auxiliary.value
     assert len(layer.segments) == 2
     segment = layer.segments[1]
-    expected = macd_series(
-        [float(item.bar.close) for item in second],
-        12,
-        26,
-        9,
-        ema_seed_policy="sma_window",
-        histogram_scale=2,
-        round_digits=6,
-        bar_ends=[item.bar.bar_end.isoformat() for item in second],
-    )
-    assert segment.value.dif == tuple(expected.dif.points[3:])
-    assert segment.value.dea == tuple(expected.dea.points[3:])
-    assert segment.value.histogram == tuple(expected.histogram.points[3:])
-    assert not segment.value.dif[0].ready
+    for key, values in _direct_macd(second).items():
+        points = getattr(segment.value, key)
+        assert [point.value for point in points] == [
+            float(value) if isfinite(value) else None for value in values[3:]
+        ]
+        assert not points[29].ready
+        assert points[30].ready
     assert segment.bar_ends[0] == second[3].bar.bar_end
 
 
@@ -171,20 +189,27 @@ def test_macd_cache_identity_and_budget_cover_display_payload(
     calls = []
     calculate = module.calculate_macd_display
 
-    def counted(identity, read):
+    def counted(identity, read, *, source_revision):
         calls.append(read)
-        return calculate(identity, read)
+        return calculate(identity, read, source_revision=source_revision)
 
     monkeypatch.setattr(module, "calculate_macd_display", counted)
     first = _query(service, reader.bars)
     assert first.meta.snapshot_token is not None
     assert _query(service, reader.bars).auxiliary == first.auxiliary
     assert len(calls) == 1
-    monkeypatch.setattr(
-        module, "MACD_CACHE_IDENTITY", ("v1-draft", "test-adapter-v2", "new-parameters")
-    )
-    _query(service, reader.bars)
-    assert len(calls) == 2
+    formula, adapter, parameters, backend = MACD_CACHE_IDENTITY
+    assert backend == f"ta-lib:{version('ta-lib')}"
+    for index, changed in enumerate((
+        (formula, "test-adapter-v3", parameters, backend),
+        (formula, adapter, "a" * 16, backend),
+        (formula, adapter, parameters, "ta-lib:testing"),
+    ), start=2):
+        monkeypatch.setattr(module, "MACD_CACHE_IDENTITY", changed)
+        result = _query(service, reader.bars)
+        assert len(calls) == index
+        assert result.meta.shared_input_proof.market_input_sha256 == first.meta.shared_input_proof.market_input_sha256
+        assert result.meta.shared_input_proof.auxiliary_input_sha256 != first.meta.shared_input_proof.auxiliary_input_sha256
 
     cache = SnapshotCache(max_entry_bytes=4096)
     assert cache.put("facts", ("macd",), first) is None

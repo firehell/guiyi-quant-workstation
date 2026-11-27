@@ -2,7 +2,7 @@ import { computed, readonly, shallowRef, watch, type Ref } from 'vue'
 import type { MarketBarsPageRequest, MarketBarsPageResponse } from '../types/market.ts'
 import type { NewowProductSectionResponse } from '../types/newowProduct.ts'
 import { formatChartTimeInShanghai } from '../utils/barTime.ts'
-import { resolveHistoricalPhysicalContract } from './useMarketSeries.ts'
+import { resolveHistoricalPhysicalContract } from '../utils/marketBarDisplay.ts'
 import { candidatePreview } from '../utils/candidatePreview.ts'
 
 // Preserve sub-millisecond provenance when comparing a trusted exclusive cutoff.

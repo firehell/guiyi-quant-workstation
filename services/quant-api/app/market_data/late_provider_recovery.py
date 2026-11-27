@@ -11,20 +11,37 @@ from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from contextlib import contextmanager
 import os
+import re
 import stat
 import json
 import secrets
 from collections.abc import Callable
 
+from app.market_data.late_worker_policy import provider_ready
 from app.market_data.after_market import (
+    AfterMarketUpdater,
     _load_status,
     _local_timestamp,
+    _public_historical_publications,
+    _public_live_evidence,
+    public_after_market_status,
 )
+from app.market_data.after_market_limits import MAX_PUBLICATIONS, MAX_PUBLICATION_BYTES, MAX_STATUS_BYTES
 from app.market_data.historical_data_manager import UpdateRequest
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.session_clock import SHANGHAI
 
 SAFE_FAILURES = {"RQDATA_NOT_READY", "NEXT_TRADING_SESSION_NOT_READY"}
+_PUBLIC_RECOVERY_CODES = SAFE_FAILURES | {
+    "COMMIT_OUTCOME_UNKNOWN",
+    "PROVIDER_QUOTA_EXHAUSTED",
+    "CANONICAL_READBACK_UNVERIFIED",
+    "LIVE_DOMINANT_MISMATCH",
+    "MAINTENANCE_LOCKED",
+    "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE",
+    "PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED",
+    "LATE_RECOVERY_PUBLICATION_EVIDENCE_INVALID",
+}
 
 
 @contextmanager
@@ -72,17 +89,17 @@ def _state_bytes(path: Path, directory: int) -> bytes | None:
             or info.st_uid != os.getuid()
             or info.st_nlink != 1
             or info.st_mode & 0o022
-            or info.st_size > 1024 * 1024
+            or info.st_size > MAX_STATUS_BYTES
         ):
             raise ValueError("LATE_RECOVERY_STATE_INVALID")
-        return os.read(descriptor, 1024 * 1024 + 1)
+        return os.read(descriptor, MAX_STATUS_BYTES + 1)
     finally:
         os.close(descriptor)
 
 
 def _write(path: Path, payload: dict) -> None:
-    content = (json.dumps(payload, ensure_ascii=True, indent=2) + "\n").encode()
-    if len(content) > 1024 * 1024:
+    content = _state_content(payload)
+    if len(content) > MAX_STATUS_BYTES:
         raise ValueError("LATE_RECOVERY_STATE_INVALID")
     with _owned_parent(path, create=True) as directory:
         _state_bytes(
@@ -109,6 +126,10 @@ def _write(path: Path, payload: dict) -> None:
                 pass
 
 
+def _state_content(payload: dict) -> bytes:
+    return (json.dumps(payload, ensure_ascii=True, separators=(",", ":")) + "\n").encode("ascii")
+
+
 def _read(path: Path) -> dict:
     with _owned_parent(path) as directory:
         content = _state_bytes(path, directory) if directory is not None else None
@@ -119,24 +140,33 @@ def _read(path: Path) -> dict:
         raise ValueError("LATE_RECOVERY_STATE_INVALID")
     if payload.get("schema_version") != 1 or not isinstance(payload.get("runs"), dict):
         raise ValueError("LATE_RECOVERY_STATE_INVALID")
-    products = list(load_operational_products())
     for day, row in payload["runs"].items():
         failed_day = date.fromisoformat(day)
         due = datetime.combine(failed_day + timedelta(days=2), time(19, 5), SHANGHAI)
         if (
             not isinstance(row, dict)
-            or row.get("products") != products
+            or not isinstance(row.get("products"), list)
+            or not row["products"]
+            or any(not isinstance(product, str) or re.fullmatch(r"[a-z]{1,4}", product) is None
+                   for product in row["products"])
+            or len(set(row["products"])) != len(row["products"])
             or row.get("due_at") != due.isoformat()
             or row.get("state")
             not in {"pending", "claimed", "passed", "failed", "expired"}
             or row.get("error_code") not in SAFE_FAILURES
+            or row.get("archive_mode") not in (None, "rqdata_tick")
+            or "archive_scope_sha256" in row and (
+                not isinstance(row["archive_scope_sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", row["archive_scope_sha256"]) is None
+            )
         ):
             raise ValueError("LATE_RECOVERY_STATE_INVALID")
     return payload
 
 
 def schedule_failure(
-    path: Path, result, products: tuple[str, ...], started: datetime
+    path: Path, result, products: tuple[str, ...], started: datetime, *,
+    archive_scope: Callable[[], str | None] | None = None,
 ) -> None:
     """Caller owns the shared after-market guard; only pre-publication failures qualify."""
     if result.error_code not in SAFE_FAILURES or result.attempts != 2:
@@ -160,7 +190,179 @@ def schedule_failure(
         "announcement": "unavailable",
         "checks": 0,
     }
+    if archive_scope is not None:
+        payload["runs"][day]["archive_mode"] = "rqdata_tick"
+        if (proof := archive_scope()) is not None:
+            payload["runs"][day]["archive_scope_sha256"] = proof
     _write(path, payload)
+
+
+def _unresolved_archive_commit(payload: dict) -> bool:
+    return any(
+        row.get("recovery_error") == "COMMIT_OUTCOME_UNKNOWN"
+        or row.get("archive_mode") == "rqdata_tick"
+        and row["state"] == "claimed" and (
+            row.get("stage") in {"metadata_apply", "apply"}
+            or row.get("stage") == "readback" and "historical_publications" not in row
+        )
+        for row in payload["runs"].values()
+    )
+
+
+def _sync_archive_metadata(manager, products, day, verify_identity, checkpoint) -> None:
+    from app.market_data.current_day_metadata_recovery import (
+        apply_current_day_metadata,
+        encode_current_day_snapshot,
+        plan_current_day_metadata,
+    )
+
+    metadata = manager.metadata
+    lease = manager.catalog.acquire_maintenance_lock()
+    if lease is None:
+        raise ValueError("MAINTENANCE_LOCKED")
+    try:
+        verify_identity()
+        snapshot = encode_current_day_snapshot(
+            metadata.capture_current_day(products, day), products=products, trading_day=day,
+        )
+        digest = snapshot["snapshot_sha256"]
+        plan = plan_current_day_metadata(
+            manager.catalog, snapshot, expected_snapshot_sha256=digest,
+            products=products, trading_day=day,
+        )
+    finally:
+        lease.release()
+    if any(plan["counts"][kind] for kind in ("calendar_insert", "session_insert", "main_contract_insert")):
+        checkpoint("metadata_apply")
+        apply_current_day_metadata(
+            metadata, snapshot, expected_snapshot_sha256=digest,
+            expected_plan_sha256=plan["plan_sha256"], products=products, trading_day=day,
+            acquire_maintenance_lock=manager.catalog.acquire_maintenance_lock,
+            verify_identity=verify_identity,
+        )
+
+
+def _preflight_archive_publications(payload: dict, count: int, evidence_bytes: int) -> None:
+    # Capacity must include the existing late-state history and the cleanup checkpoint.
+    if (count > MAX_PUBLICATIONS or evidence_bytes > MAX_PUBLICATION_BYTES
+            or len(_state_content(payload)) + evidence_bytes + 64 * 1024 > MAX_STATUS_BYTES):
+        raise ValueError("PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED")
+
+
+def _formal_archive_blocker(path: Path, late_state: dict) -> str | None:
+    from app.market_data.after_market_history import _bytes
+
+    if _unresolved_archive_commit(late_state):
+        return "commit_outcome_unknown"
+    try:
+        natural = public_after_market_status(json.loads(_bytes(path)))
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError):
+        return "natural_archive_unverified"
+    if (natural.get("last_run") or {}).get("error_code") == "COMMIT_OUTCOME_UNKNOWN":
+        return "commit_outcome_unknown"
+    if not natural or natural.get("current_run") is not None:
+        return "natural_archive_unverified"
+    return None
+
+
+def _recovery_error(exc: Exception) -> str:
+    # Only bounded public codes are retained. Raw provider/DB details stay private.
+    code = getattr(exc, "code", None)
+    if type(exc) is ValueError and len(exc.args) == 1:
+        code = exc.args[0]
+    if code == "CURRENT_DAY_METADATA_COMMIT_OUTCOME_UNKNOWN":
+        return "COMMIT_OUTCOME_UNKNOWN"
+    if code == "CURRENT_DAY_METADATA_MAINTENANCE_LOCKED":
+        return "MAINTENANCE_LOCKED"
+    return code if isinstance(code, str) and code in _PUBLIC_RECOVERY_CODES else "RECOVERY_CHECK_OR_APPLY_FAILED"
+
+
+def _finish_formal_archive(
+    archive: AfterMarketUpdater, day: date, row: dict, *, publications: list[dict[str, object]],
+    verify_identity: Callable[[], None], persist: Callable[[], None], restart_evidence: dict | None = None,
+) -> None:
+    def record_cleanup(evidence: dict) -> None:
+        row.update(
+            stage="receipt" if evidence["cleanup_verified"] else "live_cleanup",
+            live_evidence=evidence, historical_publications=publications,
+        )
+        persist()
+
+    row["market_archive_receipt_sha256"] = archive.finish_late_archive(
+        tuple(row["products"]), day, started_at=row["claimed_at"], publications=publications,
+        verify_identity=verify_identity, checkpoint=record_cleanup, restart_evidence=restart_evidence,
+        scheduled_scope=row.get("archive_scope_sha256"),
+    )
+    row.pop("historical_publications", None)
+
+
+def _resume_formal_archive(
+    archive: AfterMarketUpdater, day: date, row: dict, *,
+    verify_identity: Callable[[], None], persist: Callable[[], None],
+) -> None:
+    publications = _public_historical_publications(row.get("historical_publications"), row["products"])
+    if row.get("checks") != 1 or publications is None:
+        raise ValueError("CANONICAL_READBACK_UNVERIFIED")
+    if row["stage"] == "readback":
+        _finish_formal_archive(
+            archive, day, row, publications=publications, verify_identity=verify_identity, persist=persist,
+        )
+        return
+    evidence = _public_live_evidence(row.get("live_evidence"), day.isoformat(), row.get("claimed_at"),
+                                     row["products"], 1)
+    if (evidence is None
+            or "canonical_readback" not in evidence
+            or evidence["cleanup_verified"] != (row["stage"] == "receipt")
+            or evidence["canonical_live_exclusion"] != (
+                "historical_publications_recorded" if publications else "no_publication"
+            )):
+        raise ValueError("CANONICAL_READBACK_UNVERIFIED")
+    _finish_formal_archive(
+        archive, day, row, publications=publications, verify_identity=verify_identity,
+        persist=persist, restart_evidence=evidence,
+    )
+
+
+def _has_archive_checkpoint(row: dict) -> bool:
+    return (row.get("archive_mode") == "rqdata_tick" and row["state"] == "claimed"
+            and row.get("stage") in {"readback", "live_cleanup", "receipt"})
+
+
+def _finish_archive_claim(archive: AfterMarketUpdater, day: date, row: dict, *, verify_identity, persist) -> str:
+    if tuple(row["products"]) != load_operational_products():
+        raise ValueError("LATE_RECOVERY_STATE_INVALID")
+    verify_identity()
+    try:
+        _resume_formal_archive(archive, day, row, verify_identity=verify_identity, persist=persist)
+    except Exception as exc:
+        row["recovery_error"] = _recovery_error(exc)
+        persist()
+        return "failed"
+    row.update(state="passed", recovery_error=None, finished_at=_local_timestamp(archive.now()).isoformat())
+    persist()
+    return row["state"]
+
+
+def prepare_natural_archive(archive: AfterMarketUpdater) -> str | None:
+    """While holding the shared guard, finish prior cleanup before advancing pointers."""
+    path = archive.status_path.with_name("late-provider-recovery-status.json")
+    payload = _read(path)
+    if _unresolved_archive_commit(payload):
+        return "COMMIT_OUTCOME_UNKNOWN"
+    for day, row in sorted(payload["runs"].items()):
+        if _has_archive_checkpoint(row):
+            blocker = _formal_archive_blocker(archive.status_path, payload)
+            if blocker == "commit_outcome_unknown":
+                return "COMMIT_OUTCOME_UNKNOWN"
+            if blocker is not None or archive.archive_binding is None:
+                return "CANONICAL_READBACK_UNVERIFIED"
+            if _finish_archive_claim(archive, date.fromisoformat(day), row,
+                                     verify_identity=archive.archive_binding,
+                                     persist=lambda: _write(path, payload)) != "passed":
+                return "CANONICAL_READBACK_UNVERIFIED"
+    return None
 
 
 def run_scheduled(
@@ -172,96 +374,144 @@ def run_scheduled(
     invalidate: Callable[[], None],
     verify_identity: Callable[[], None],
     live_store,
+    formal_archive: AfterMarketUpdater | None = None,
 ) -> dict:
     """Caller owns after-market guard. No notification, manual rerun or backfill."""
     current = _local_timestamp(now())
     payload = _read(path)
     outcome = "not_due"
+    if formal_archive is not None:
+        blocker = _formal_archive_blocker(formal_archive.status_path, payload)
+        if blocker is not None:
+            return {"schema_version": 1, "command": "data.late-provider-recovery", "status": blocker}
+
+    def persist() -> None:
+        _write(path, payload)
+
     for day, row in sorted(payload["runs"].items()):
+        if formal_archive is not None and _has_archive_checkpoint(row):
+            # Continue the existing claim using its durable publication or cleanup proof.
+            # This path cannot call the provider or write the historical Catalog.
+            outcome = _finish_archive_claim(formal_archive, date.fromisoformat(day), row,
+                                            verify_identity=verify_identity, persist=persist)
+            if outcome != "passed":
+                break
+            continue
         due = datetime.fromisoformat(row["due_at"])
         if row["state"] != "pending" or current < due:
             continue
+        if tuple(row["products"]) != load_operational_products():
+            raise ValueError("LATE_RECOVERY_STATE_INVALID")
         if current.date() != due.date() or current >= due + timedelta(hours=1):
             row.update(state="expired", finished_at=current.isoformat())
-            _write(path, payload)
+            persist()
             outcome = "expired"
             continue
+        if (formal_archive is not None) != (row.get("archive_mode") == "rqdata_tick"):
+            outcome = "archive_source_changed"
+            continue
         verify_identity()
-        row.update(state="claimed", checks=1, claimed_at=current.isoformat())
-        _write(path, payload)
+        claimed_at = _local_timestamp(now())
+        if claimed_at < due:
+            continue
+        if claimed_at >= due + timedelta(hours=1):
+            row.update(state="expired", finished_at=claimed_at.isoformat())
+            persist()
+            outcome = "expired"
+            continue
+        row.update(state="claimed", checks=1, claimed_at=claimed_at.isoformat())
+        persist()
         # Any exception after the claim consumes the sole check, including unknown
         # commit/readback outcomes. Keep original natural task status untouched.
+        products = tuple(row["products"])
+        target_day = date.fromisoformat(day)
+
+        def archive_scope() -> None:
+            if formal_archive is not None and not formal_archive.archive_live_scope_matches(
+                products, target_day, scheduled_scope=row.get("archive_scope_sha256"),
+            ):
+                raise ValueError("LIVE_DOMINANT_MISMATCH")
+
+        def stage(value: str) -> None:
+            row["stage"] = value
+            persist()
+
+        def before_apply() -> None:
+            archive_scope()
+            invalidate()
+
         try:
             row["stage"] = "source_readiness"
-            target_day = date.fromisoformat(day)
+            archive_scope()
             if not ready(target_day):
                 row.update(state="failed", recovery_error="RQDATA_NOT_READY")
             else:
                 row["stage"] = "metadata"
-                lease = manager.catalog.acquire_maintenance_lock()
-                if lease is None:
-                    raise ValueError("MAINTENANCE_LOCKED")
-                try:
-                    verify_identity()
-                    manager.metadata.synchronize_current_day(
-                        tuple(row["products"]), target_day
-                    )
-                finally:
-                    lease.release()
+                if formal_archive is not None:
+                    _sync_archive_metadata(manager, products, target_day, verify_identity, stage)
+                else:
+                    lease = manager.catalog.acquire_maintenance_lock()
+                    if lease is None:
+                        raise ValueError("MAINTENANCE_LOCKED")
+                    try:
+                        verify_identity()
+                        manager.metadata.synchronize_current_day(products, target_day)
+                    finally:
+                        lease.release()
+                row["stage"] = "plan"
                 request = UpdateRequest(
-                    tuple(row["products"]),
+                    products,
                     None,
                     target_day,
                     mode="daily",
                     require_source_ready=True,
                 )
-                row["stage"] = "plan"
                 plan = manager.daily_recovery(request, verify_identity=verify_identity)
                 row["plan_sha256"] = plan.plan_sha256
-                _write(path, payload)
-                row["stage"] = "apply"
-                _write(path, payload)
+                stage("apply")
                 applied = manager.daily_recovery(
                     replace(request, apply=True),
                     expected_plan_sha256=plan.plan_sha256,
-                    before_apply=invalidate,
+                    before_apply=before_apply,
                     verify_identity=verify_identity,
+                    **({"before_daily_apply": lambda count, size: _preflight_archive_publications(payload, count, size)}
+                       if formal_archive is not None else {}),
                 )
                 if applied.maintenance.status not in {"passed", "noop"}:
-                    raise ValueError("RECOVERY_FAILED")
-                # Fresh resolver planning reads physical pointers and proves no
-                # remaining exact daily target. Writer also strict-reads every
-                # published partition via MarketDataService before commit.
-                row["stage"] = "readback"
-                readback = manager.daily_recovery(
-                    request, verify_identity=verify_identity
-                )
-                if readback.target_windows:
-                    raise ValueError("RECOVERY_READBACK_INCOMPLETE")
-                row["stage"] = "live_cleanup"
-                live_store.publish_state(
-                    {"trading_day": day, "reason": "canonical_updated"}
-                )
-                live_store.cleanup_trading_day(target_day)
+                    raise ValueError(getattr(applied.maintenance, "stop_reason", None) or "RECOVERY_FAILED")
+                if formal_archive is not None:
+                    publications = _public_historical_publications(manager.publication_evidence, row["products"])
+                    if publications is None or len(publications) != applied.maintenance.applied:
+                        stage("readback")
+                        raise ValueError("LATE_RECOVERY_PUBLICATION_EVIDENCE_INVALID")
+                    row["historical_publications"] = publications
+                    stage("readback")
+                    _finish_formal_archive(
+                        formal_archive, target_day, row, publications=publications,
+                        verify_identity=verify_identity, persist=persist,
+                    )
+                else:
+                    row["stage"] = "readback"
+                    readback = manager.daily_recovery(request, verify_identity=verify_identity)
+                    if readback.target_windows:
+                        raise ValueError("RECOVERY_READBACK_INCOMPLETE")
+                    row["stage"] = "live_cleanup"
+                    live_store.publish_state({"trading_day": day, "reason": "canonical_updated"})
+                    live_store.cleanup_trading_day(target_day)
                 row.update(state="passed", recovery_error=None)
         except Exception as exc:
-            # Raw provider/DB exceptions never enter public status/logs.
-            code = getattr(exc, "code", None)
-            row.update(
-                state="failed",
-                recovery_error=code
-                if code
-                in {
-                    "COMMIT_OUTCOME_UNKNOWN",
-                    "RQDATA_NOT_READY",
-                    "NEXT_TRADING_SESSION_NOT_READY",
-                    "PROVIDER_QUOTA_EXHAUSTED",
-                }
-                else "RECOVERY_CHECK_OR_APPLY_FAILED",
-            )
+            row["recovery_error"] = _recovery_error(exc)
+            if _has_archive_checkpoint(row):
+                persist()
+                outcome = "failed"
+                break
+            row["state"] = "failed"
         row["finished_at"] = _local_timestamp(now()).isoformat()
-        _write(path, payload)
+        persist()
         outcome = row["state"]
+        if formal_archive is not None and row.get("recovery_error") == "COMMIT_OUTCOME_UNKNOWN":
+            outcome = "commit_outcome_unknown"
+            break
     return {
         "schema_version": 1,
         "command": "data.late-provider-recovery",
@@ -271,90 +521,87 @@ def run_scheduled(
 
 def run_runtime_scheduled(manager) -> dict:
     """Launchd composition bound to the current exact Runtime release."""
-    import os
     from app.core.env import PROJECT_ROOT
     from app.market_data.captured_recovery_runtime import (
-        _read_command,
         _verify_loaded_service,
     )
     from app.market_data.live_recovery_guard import after_market_recovery_guard
     from app.market_data.after_market import build_after_market_updater
 
-    updater = build_after_market_updater(manager, failure_notification=False)
+    from app.market_data.market_foundation_scope import (
+        formal_tick_requested,
+        require_bar_writer_namespace,
+        require_formal_tick_binding,
+    )
+    from app.redis_connections import get_redis_connection
+
+    formal_tick = formal_tick_requested()
+    updater = build_after_market_updater(manager, failure_notification=False, late_recovery=formal_tick)
 
     def verify() -> None:
-        git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
-        commit = _read_command([*git, "rev-parse", "HEAD"], root=PROJECT_ROOT)
-        if (
-            commit != os.environ.get("GUIYI_RUNTIME_COMMIT")
-            or _read_command(
-                [*git, "rev-parse", "--abbrev-ref", "HEAD"], root=PROJECT_ROOT
-            )
-            != "HEAD"
-            or _read_command([*git, "status", "--porcelain=v1"], root=PROJECT_ROOT)
-        ):
-            raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
-        tag = _read_command(
-            [*git, "describe", "--exact-match", "--tags", "HEAD"], root=PROJECT_ROOT
-        )
-        if (
-            _read_command(
-                [*git, "cat-file", "-t", "refs/tags/" + tag], root=PROJECT_ROOT
-            )
-            != "tag"
-            or _read_command(
-                [*git, "rev-parse", "refs/tags/" + tag + "^{commit}"], root=PROJECT_ROOT
-            )
-            != commit
-        ):
-            raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
-        import stat
+        from app.runtime_bindings import authorized_program_arguments, read_bindings, verify_release
+        from app.runtime_identity import launchd_arguments, launchd_environments, read_launchd_service
 
-        marker = PROJECT_ROOT / ".run" / "market-runtime-enabled"
-        info = marker.lstat()
-        if (
-            not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600
-            or info.st_nlink != 1
-            or marker.read_bytes() != b"enabled\n"
-        ):
-            raise ValueError("LATE_RECOVERY_RUNTIME_DISABLED")
-        for label in (
-            "com.guiyi.quant-api",
-            "com.guiyi.quant-live",
-            "com.guiyi.quant-after-market",
-            "com.guiyi.quant-late-provider-recovery",
-        ):
-            output = _read_command(
-                ["/bin/launchctl", "print", f"gui/{os.getuid()}/{label}"],
-                root=PROJECT_ROOT,
-            )
+        if read_bindings() != registry or registry is None:
+            raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+        services = ("api", "live", "after-market", "late-provider-recovery")
+        if formal_tick:
+            services += ("market-feed",)
+        for service in services:
+            binding = registry.services[service]
+            root = Path(binding.root)
+            if not binding.enabled:
+                raise ValueError("LATE_RECOVERY_RUNTIME_DISABLED")
+            if service == "late-provider-recovery" and (
+                root != PROJECT_ROOT or binding.commit != os.environ.get("GUIYI_RUNTIME_COMMIT")
+                or binding.tag != os.environ.get("GUIYI_RUNTIME_TAG")
+                or str(binding.generation) != os.environ.get("GUIYI_RUNTIME_GENERATION")
+            ):
+                raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+            verify_release(root, binding.tag, binding.commit)
+            output = read_launchd_service(binding.label, root=root)
+            if (output is None or launchd_arguments(output) != authorized_program_arguments(binding, Path.home())
+                    or re.findall(r"^\tprogram = (.+)$", output, re.MULTILINE) != ["/bin/bash"]):
+                raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+            environments = launchd_environments(output)
+            overrides = {"GUIYI_RUNTIME_ENV", "GUIYI_RUNTIME_DIR", "DATABASE_URL", "REDIS_URL",
+                         "GUIYI_CANONICAL_DATA_ROOT", "GUIYI_MARKET_SOURCE"}
+            if (any(env.keys() & overrides for env in environments)
+                    or not any(env.get("GUIYI_RUNTIME_TAG") == binding.tag
+                               and env.get("GUIYI_RUNTIME_GENERATION") == str(binding.generation)
+                               for env in environments)):
+                raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
             _verify_loaded_service(
-                output,
-                root=PROJECT_ROOT,
-                commit=commit,
-                allow_idle=label.endswith(("after-market", "late-provider-recovery")),
-                working_directory=Path.home()
-                if label.endswith("-api")
-                else PROJECT_ROOT,
+                output, root=root, commit=binding.commit,
+                allow_idle=service in {"after-market", "late-provider-recovery"},
+                working_directory=Path.home() if service == "api" else root,
             )
+        with get_redis_connection() as redis:
+            if formal_tick:
+                if updater.status_path != Path(registry.services["after-market"].root) / ".run/after-market-status.json":
+                    raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
+                require_formal_tick_binding(redis, manager.catalog.session.get_bind().url, manager.catalog.canonical_root)
+            else:
+                require_bar_writer_namespace(redis)
 
-    def ready(day: date) -> bool:
-        if updater.rqdata is None:
-            updater.rqdata = updater.rqdata_factory()
-        return updater.rqdata.is_future_data_ready(day)
+    from app.runtime_bindings import read_bindings
 
+    registry = None
     with after_market_recovery_guard(wait=False):
-        return run_scheduled(
+        registry = read_bindings()
+        verify()
+        status_path = Path(registry.services["after-market"].root) / ".run/after-market-status.json"
+        result = run_scheduled(
             manager,
-            path=PROJECT_ROOT / ".run" / "late-provider-recovery-status.json",
+            path=status_path.with_name("late-provider-recovery-status.json"),
             now=lambda: datetime.now(SHANGHAI),
-            ready=ready,
+            ready=lambda day: provider_ready(updater, day),
             invalidate=updater._invalidate_market_home_projection,
             verify_identity=verify,
             live_store=updater.live_store,
+            formal_archive=updater if formal_tick else None,
         )
+    return result
 
 
 def recovery_health(path: Path, current: datetime) -> dict:
@@ -373,6 +620,7 @@ def recovery_health(path: Path, current: datetime) -> dict:
                         "recovery_error",
                         "finished_at",
                         "stage",
+                        "market_archive_receipt_sha256",
                     )
                 },
             }
