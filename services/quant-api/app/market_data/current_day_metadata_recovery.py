@@ -12,6 +12,7 @@ from datetime import date, datetime, time, timedelta
 import hashlib
 import json
 import re
+import sys
 from typing import Any, Callable, Mapping
 
 from sqlalchemy import or_, select
@@ -531,7 +532,12 @@ def apply_current_day_metadata(
             "provider_requests": 0,
         }
     finally:
-        lease.release()
+        pending = sys.exception()
+        try:
+            lease.release()
+        except Exception:
+            if getattr(pending, "code", None) != "CURRENT_DAY_METADATA_COMMIT_OUTCOME_UNKNOWN":
+                raise
 
 
 def _fact_diff(session, prepared) -> list[dict[str, Any]]:

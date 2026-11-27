@@ -406,7 +406,9 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
         from app.market_data.observation_stream import ObservationStream
         common_kwargs.update(store=FeedLiveStore(cast(RedisClient, connection)), recovery_fetch_factory=None,
                              recovery_sessions=None, recovery_guard_factory=None)
-        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(
+            common_kwargs['store'], products, formal_tick=tick,
+        )
         from app.market_data.live_recovery_guard import after_market_recovery_guard
         common_kwargs['shutdown_guard_factory'] = lambda: after_market_recovery_guard(wait=False)
         def bar_provider():
@@ -422,7 +424,9 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
         from app.market_data.market_feed import DurableLiveMarketService, StreamLiveProvider
         from app.market_data.observation_stream import ObservationStream
         common_kwargs['prepare_trading_day'] = None
-        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(
+            common_kwargs['store'], products, formal_tick=tick,
+        )
         return DurableLiveMarketService(source_provider=StreamLiveProvider(
             ObservationStream(connection, kind='source'), require_tick=tick), **common_kwargs)
     return LiveMarketService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
@@ -435,7 +439,7 @@ def build_market_feed_service(session: Session, *, tick_dispatch=None) -> LiveMa
     return build_live_market_service(session, _feed=True, tick_dispatch=tick_dispatch)
 
 
-def build_closed_cleanup_evidence(store, products):
+def build_closed_cleanup_evidence(store, products, *, formal_tick=False):
     """Bind existing terminal cleanup evidence; this never runs maintenance."""
     from app.market_data.after_market import public_after_market_status
     from app.market_data.after_market_history import NAME, _bytes, read_history
@@ -448,6 +452,16 @@ def build_closed_cleanup_evidence(store, products):
             binding = resolve_service_binding('after-market')
             if binding is None or not binding.enabled:
                 return None
+            if formal_tick:
+                from app.market_data.market_archive import formal_archive_root, verified_retained_cleanup
+
+                evidence = verified_retained_cleanup(store, formal_archive_root(), day=day, products=products, now=now)
+                if evidence is None or evidence["code_commit"] is None or resolve_service_binding('after-market') != binding:
+                    return None
+                return dict(trading_day=day.isoformat(), cleanup_verified=True,
+                            cleanup_checked_at=evidence['cleanup_checked_at'], source_commit=evidence['code_commit'],
+                            evidence_kind='retained', after_market_generation=binding.generation,
+                            remaining_bar_keys=0, subscription_present=False)
             path = Path(binding.root) / '.run/after-market-status.json'
             current = os.path.lexists(path)
             if current:

@@ -80,14 +80,24 @@ def retain_archive_receipt(
     status_path: Path, *, now: datetime, archive_root: Path | None = None,
 ) -> Path | None:
     try:
-        status = public_after_market_status(json.loads(_bytes(status_path)))
+        status = json.loads(_bytes(status_path))
     except FileNotFoundError:
         return
+    return retain_archive_status(
+        status, now=now, archive_root=archive_root or status_path.parent, formal=archive_root is not None,
+    )
+
+
+def retain_archive_status(
+    status: dict, *, now: datetime, archive_root: Path, formal: bool,
+) -> Path | None:
+    """Retain verified archive evidence independently of the mutable natural-run status."""
+    status = public_after_market_status(status)
     receipt = archive_receipt(status, now=now)
     if receipt is None:
         return
-    sandbox = archive_root if archive_root is not None else status_path.parent
-    if archive_root is not None:
+    sandbox = archive_root
+    if formal:
         sandbox.mkdir(mode=0o700, exist_ok=True)
         info = sandbox.lstat()
         if (not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o700
@@ -108,7 +118,7 @@ def retain_archive_receipt(
         # Each exact rank1 map needs one verified cleanup. Later Canonical
         # revisions retain their own receipts without replacing this proof.
         publish_history(scope_path, {"receipt": receipt.identity})
-    if archive_root is not None:
+    if formal:
         from app.runtime_handover import _read, _write
 
         pointer = archive_root / "latest-receipt.json"
@@ -173,6 +183,16 @@ def retained_cleanup_receipt(
             raise ValueError("MARKET_ARCHIVE_CLEANUP_RECEIPT_INVALID")
         return evidence
     return None
+
+
+def verified_retained_cleanup(store, root: Path, *, day: date, products: tuple[str, ...], now: datetime) -> dict | None:
+    evidence = retained_cleanup_receipt(root, day=day, products=products, now=now)
+    if evidence is None:
+        return None
+    actual = store.cleanup_readback(day)
+    if actual != {"remaining_bar_keys": 0, "subscription_present": False}:
+        return None
+    return {**evidence, **actual}
 
 
 def _partition_identity(partition: CatalogPartition) -> tuple[str, str, str, str, int, int]:

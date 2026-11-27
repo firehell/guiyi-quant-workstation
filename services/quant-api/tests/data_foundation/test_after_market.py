@@ -601,6 +601,22 @@ def test_production_builder_defers_provider_client_until_run(tmp_path, monkeypat
     module.build_after_market_updater(manager, failure_notification=False)
 
 
+def test_bar_after_market_never_enters_guarded_run_on_tick_redis(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    from app import redis_connections
+
+    monkeypatch.delenv("GUIYI_MARKET_SOURCE", raising=False)
+    monkeypatch.setattr(redis_connections, "get_redis_connection", lambda: SimpleNamespace(
+        mget=lambda *_: [b"formal-tick-marker", None],
+    ))
+    monkeypatch.setattr(after_market, "after_market_recovery_guard", lambda **_: nullcontext())
+    manager = SimpleNamespace(provider=object(), catalog=SimpleNamespace(canonical_root=tmp_path))
+    updater = after_market.build_after_market_updater(manager, failure_notification=False)
+    monkeypatch.setattr(updater, "_run_guarded", lambda: pytest.fail("bar update on Tick Redis"))
+    with pytest.raises(ValueError, match="MARKET_BAR_WRITER_NAMESPACE_CONFLICT"):
+        updater.run()
+
+
 def test_provider_factory_runs_after_durable_current_run_and_init_failure_has_one_terminal(tmp_path):
     updater, manager, _, _, notices, live_store = _updater(
         tmp_path, trading_day=date(2026, 8, 10), readiness=[], results=[],
