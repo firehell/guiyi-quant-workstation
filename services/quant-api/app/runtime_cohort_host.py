@@ -59,6 +59,11 @@ class CohortHost(FaultRecoveryHost):
 
     def bytes(self, path, *, limit=None):
         path = Path(path)
+        if limit is None and path.parent.name == ".run" and path.name == "after-market-history.json":
+            from app.market_data.after_market_limits import MAX_HISTORY_BYTES
+            from app.runtime_identity import file_snapshot
+
+            return file_snapshot(path, limit=MAX_HISTORY_BYTES)[0]
         if (limit is None and path.parent == self.directory
                 and path.name == "newow-historical-refresh-state.json"):
             # Preserve the original control bytes under their existing reader
@@ -763,8 +768,6 @@ class CohortHost(FaultRecoveryHost):
             os.close(fd)
 
     def preserve(self, plan, attempt):
-        from app.market_data.after_market_limits import MAX_HISTORY_BYTES
-
         old, new = registry(plan["old"]), registry(plan["new"])
         market_source = "market_source_handover" in plan
         source = Path(old.services["after-market"].root) / ".run/after-market-status.json"
@@ -799,7 +802,7 @@ class CohortHost(FaultRecoveryHost):
             for path in sorted(sources):
                 row = {"source": str(path), "present": os.path.lexists(path)}
                 if row["present"]:
-                    raw = self.bytes(path, limit=MAX_HISTORY_BYTES) if path == history_path else self.bytes(path)
+                    raw = self.bytes(path)
                     digest = sha256(raw).hexdigest()
                     expected = plan["protected"]["files"].get(str(path))
                     require(

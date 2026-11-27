@@ -594,6 +594,9 @@ def test_market_source_cutover_preserves_old_archive_without_activating_it(tmp_p
     status.write_bytes(raw)
     history = old / ".run/after-market-history.json"
     publish_history(history, make_history(raw, commit="a" * 40, products=host._source_products, now=host.now()))
+    with history.open("ab") as existing:
+        existing.write(b" " * (1024 * 1024))
+    assert host.bytes(history) == history.read_bytes()
     late = old / ".run/late-provider-recovery-status.json"
     late.write_text(json.dumps({"schema_version": 1, "runs": {"2026-10-23": {
         "products": list(host._source_products), "due_at": "2026-10-25T19:05:00+08:00",
