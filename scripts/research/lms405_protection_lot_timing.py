@@ -63,6 +63,22 @@ def earlier_lot_counts(earlier, later, lots, totals):
     return counts
 
 
+def compatible_allocations(lots, totals, bounds):
+    """Integer allocations satisfying a single displayed opening-average sum."""
+    matches = []
+    for first in range(lots + 1):
+        for last in range(lots - first + 1):
+            quantities = (first, lots - first - last, last)
+            if any(q and bound is None for q, bound in zip(quantities, bounds, strict=True)):
+                continue
+            pieces = [(q, b) for q, b in zip(quantities, bounds, strict=True) if q]
+            lowest = sum(q * interval[0] for q, interval in pieces)
+            highest = sum(q * interval[1] for q, interval in pieces)
+            if max(lowest, totals.start) <= min(highest, totals.stop - 1):
+                matches.append(quantities)
+    return matches
+
+
 def latest_whole_leg_start(minutes, tick, lots, totals, *, start_of=lambda bar: bar.bar_end - ONE):
     """Latest minute start whose remaining price envelope can contain the whole leg."""
     envelope = None

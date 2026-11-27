@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+from dataclasses import asdict
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -11,7 +12,13 @@ from guiyi_quant.lms405.handoff import Handoff
 from guiyi_quant.lms405.minute_recovery import assess_minute_recovery
 from guiyi_quant.lms405.recovery_permission import MinuteRecoveryPermission
 from lms405_portfolio_recovery_shape_lifetime import compare as compare_shape_lifetime
-from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
+from lms405_protection_lot_timing import (
+    compatible_allocations,
+    displayed_tick_totals,
+    earlier_lot_counts,
+    tick_bounds,
+    verified_json,
+)
 from lms405_protection_timeframes import VARIANTS, geometry_events, read_window
 from lms405_recovery_confirmation_audit import edge_candidates, strict_runs
 from lms405_right_side_study import ONE, US, at
@@ -28,6 +35,8 @@ FROZEN_SHA = "71c668cc3874cfdcb1c52b47c26615a89ed455977bfb5c80883a9e18b3cb91b3"
 PRICE_LEVELS = {"published_recovery_point": Decimal("1025.5"), "early_ibar_low_proxy": Decimal("1026.5")}
 RECOVERY_REFERENCE = Path("output/lms405-jm-july-recovery-20261125/final.json")
 RECOVERY_REFERENCE_SHA = "bf5ee9333bbef15285d3cd45210023c347642feca3241c02ac90f0f4bf3cb0d0"
+PROTECTION_REFERENCE = RECOVERY_REFERENCE.with_name("protection-origin.json")
+PROTECTION_REFERENCE_SHA = "4d45113813a483fa790ad9cc03f79d902ba0c518645912da77d845270c94825f"
 
 
 def source_records():
@@ -126,6 +135,53 @@ def protection_origin(series, published):
     )
 
 
+def protection_stages(series, published, shared):
+    reference = verified_json(PROTECTION_REFERENCE, PROTECTION_REFERENCE_SHA)
+    if any(shared[key] != reference[key] for key in ("sources", "source_index_sha256", "market")):
+        raise ValueError("JULY_PROTECTION_STAGE_REFERENCE_CHANGED")
+
+    lots, tick = reference["quantity"], Decimal(reference["price_tick"])
+    totals = displayed_tick_totals(Decimal(reference["average_shown"]), lots, tick)
+    point = PRICE_LEVELS["early_ibar_low_proxy"]
+    edge_tick = int(point / tick)
+    day_open = at(f"{DAY}T09:00")
+    windows = {}
+    for source_id, window in reference["windows"].items():
+        breach_end, confirm_end = (datetime.fromisoformat(window["gates"][gate]["bar_end"]) for gate in (
+            "first_intraminute_strict_break_bar", "first_minute_strict_close_below",
+        ))
+        minutes = [bar for bar in series[1] if bar.end + US < published[source_id]]
+        breach = next(bar for bar in minutes if bar.end == breach_end)
+        confirm = next(bar for bar in minutes if bar.end == confirm_end)
+        if breach.end != confirm.start or not breach.low < point == breach.close or not confirm.close < point:
+            raise ValueError("JULY_PROTECTION_STAGE_CLOCK_CHANGED")
+        scenarios = {}
+        for end in (breach.end, confirm.end):
+            middle = tick_bounds([bar for bar in minutes if breach.start < bar.end <= end], tick)
+            # Apply the cap only if every opening in this minute is assumed to follow the breach.
+            capped = (middle[0], min(middle[1], edge_tick))
+            later = tick_bounds([bar for bar in minutes if bar.start >= end], tick)
+            if later is None or later[1] > edge_tick:
+                raise ValueError("JULY_PROTECTION_STAGE_LATER_RETRACE_CHANGED")
+            for start in (minutes[0].start, day_open):
+                earlier = tick_bounds([bar for bar in minutes if start <= bar.start < breach.start], tick)
+                for key, eligible in (("whole_break_range", middle), ("break_triggered_without_retrace", capped)):
+                    bounds = (earlier, eligible, later)
+                    matches = compatible_allocations(lots, totals, bounds)
+                    label = f"{end.isoformat()}/{start.isoformat()}/{key}"
+                    scenarios[label] = dict(
+                        start=start, before=breach.start, middle_ends_at=end, observed_through=minutes[-1].end,
+                        constraint=key, bounds_in_ticks=bounds, allocations=matches,
+                    )
+        windows[source_id] = dict(break_minute=asdict(breach), close_confirmation_minute=asdict(confirm),
+                                  scenarios=scenarios)
+    return shared | dict(
+        version="lms405-jm-july-protection-stages-v1", input_reference_sha256=PROTECTION_REFERENCE_SHA,
+        lot_order=("before_break_minute", "break_to_cut", "from_cut_to_observation"),
+        lots=lots, tick_size=tick, ibar_low_candidate=point, possible_tick_sums=list(totals), windows=windows,
+    )
+
+
 def recovery_lifetime(series, start, cutoff, shared, *, batch):
     reference = verified_json(RECOVERY_REFERENCE, RECOVERY_REFERENCE_SHA)
     if any(shared[name] != reference[name] for name in ("sources", "market", "source_index_sha256")):
@@ -192,6 +248,8 @@ def study(session, market, *, batch="recovery-clock"):
     )
     if batch == "protection-origin":
         return shared | protection_origin(series, published)
+    if batch == "protection-stages":
+        return protection_stages(series, published, shared)
     if batch in ("recovery-lifetime", "recovery-bounded", "recovery-recross"):
         return recovery_lifetime(series, start, cutoff, shared, batch=batch)
     return shared | dict(
@@ -206,7 +264,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--batch", choices=("recovery-clock", "protection-origin", "recovery-lifetime",
+    parser.add_argument("--batch", choices=("recovery-clock", "protection-origin", "protection-stages", "recovery-lifetime",
                                             "recovery-bounded", "recovery-recross"),
                         default="recovery-clock")
     args = parser.parse_args()

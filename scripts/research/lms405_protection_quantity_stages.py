@@ -8,7 +8,7 @@ from pathlib import Path
 from lms405_portfolio_leg_audit import scoped_input_quotes
 from lms405_portfolio_replay import ARCHIVE
 from lms405_protection_location_audit import location_flags
-from lms405_protection_lot_timing import displayed_tick_totals, tick_bounds, verified_json
+from lms405_protection_lot_timing import compatible_allocations, displayed_tick_totals, tick_bounds, verified_json
 from lms405_protection_next_night_replay import TOUCH, TOUCH_SHA
 from lms405_protection_timeframes import read_window
 from lms405_right_side_study import US
@@ -22,23 +22,6 @@ CLOCKS = {
     "FIXED_FAST": ((1, 1), (5, 1)),
     "ADD_15M": ((1, 1), (5, 1), (15, 15)),
 }
-
-
-def compatible_allocations(lots, totals, bounds):
-    """Integer allocations satisfying a single displayed opening-average sum."""
-    matches = []
-    for before_touch in range(lots + 1):
-        for after_confirm in range(lots - before_touch + 1):
-            middle = lots - before_touch - after_confirm
-            quantities = (before_touch, middle, after_confirm)
-            if any(q and bound is None for q, bound in zip(quantities, bounds, strict=True)):
-                continue
-            pieces = [(q, b) for q, b in zip(quantities, bounds, strict=True) if q]
-            lowest = sum(q * interval[0] for q, interval in pieces)
-            highest = sum(q * interval[1] for q, interval in pieces)
-            if max(lowest, totals.start) <= min(highest, totals.stop - 1):
-                matches.append(quantities)
-    return matches
 
 
 def phase_bounds(minutes, touch, known, quote_end, tick, *, overlap):
