@@ -12,6 +12,8 @@ from lms405_jm_first_lock_chain import COMBINED as COAL_CONTROL
 from lms405_jm_first_lock_chain import CONTRACT as COAL
 from lms405_jm_first_lock_chain import FIRST_RUN, POST, PROTECT_TRADING_DAY, START, replay_first_lock
 from lms405_jm_first_lock_handoff import close_cohort_continuity
+from lms405_jm_first_lock_handoff import FOLLOWUP as COAL_HANDOFF_REFERENCE
+from lms405_jm_first_lock_handoff import study as study_coal_handoff
 from lms405_m_permission_study import read_pair
 from lms405_portfolio_left_entry import scope_for
 from lms405_portfolio_leg_audit import SIZE, SIZE_SHA, SPECS, SPECS_SHA, load_specs, lot_profile, pta_example, summarize
@@ -28,6 +30,9 @@ from lms405_rubber_protection_handoff import CONTROL, OLD, RECOVER, REPLACE, han
 from lms405_sh_entry_and_handoff import RUBBER as RUBBER_REFERENCE
 from lms405_sh_entry_and_handoff import case_options
 from lms405_sh_lock_lifecycle import digest
+from lms405_sh_protection_replacement import LIFECYCLE as CAUSTIC_LIFECYCLE
+from lms405_sh_protection_replacement import LIFECYCLE_SHA as CAUSTIC_LIFECYCLE_SHA
+from lms405_sh_protection_replacement import study as study_caustic_replacement
 from lms405_sh_middle_protection import CONTRACT as CAUSTIC
 from lms405_sh_middle_protection import (
     ENTRY, INTERMEDIATE, MID_LOCK, MORNING_SOURCE, NEW_PROTECTION, OLD_LOCK, RECOVERY_REF, REREVIEW,
@@ -142,7 +147,26 @@ def coal_extension(session, market, index, series, cutoff, reference):
     return actions, blocked
 
 
-def study(session, market, *, compare_protection_clocks=False, compare_coal_first_lock=False):
+def continuous_leg_cases(session, market, specs, runs):
+    """Recompute the conditional case paths alongside the nine-contract decision tapes."""
+    caustic = study_caustic_replacement(
+        session, market, verified_json(CAUSTIC_LIFECYCLE, CAUSTIC_LIFECYCLE_SHA), specs[CAUSTIC],
+        with_leg_lifetimes=True,
+    )
+    coal = study_coal_handoff(session, market, with_partial_carry=True)
+    return dict(
+        evaluation="CONDITIONAL_POSITION_PATHS",
+        baseline_unchanged=True,
+        compared_run=COAL_CASE if COAL_CASE in runs else "TOUCH_FAR:IRON_RETAIN",
+        cases={
+            CAUSTIC: caustic,
+            COAL: dict(coal, visible_snapshots=verified_json(*COAL_HANDOFF_REFERENCE)["visible"]),
+        },
+    )
+
+
+def study(session, market, *, compare_protection_clocks=False, compare_coal_first_lock=False,
+          compare_continuous_legs=False):
     baseline = verified_json(*CONTROL)
     rubber = verified_json(*RUBBER_REFERENCE)
     caustic = verified_json(*CAUSTIC_REFERENCE)
@@ -298,6 +322,8 @@ def study(session, market, *, compare_protection_clocks=False, compare_coal_firs
             waiting_only_rejects_early_local_protection=True, discarded_signals_not_reused=True,
             shared_wait_never_supplies_local_signal_or_permission=True,
         )
+    if compare_continuous_legs:
+        extra["continuous_leg_cases"] = continuous_leg_cases(session, market, specs, results)
     return dict(
         study="LMS405_NINE_CONTRACT_COMBINED_RESEARCH_REPLAY", as_of=cutoff, start_trading_day=START, runs=results,
         contracts=traces, reference_sha256=dict(control=CONTROL[1], rubber=RUBBER_REFERENCE[1],
@@ -316,6 +342,7 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--compare-protection-clocks", action="store_true")
     parser.add_argument("--compare-coal-first-lock", action="store_true")
+    parser.add_argument("--compare-continuous-legs", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -331,7 +358,8 @@ def main():
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
             report = study(session, build_market_data_service(session),
                            compare_protection_clocks=args.compare_protection_clocks,
-                           compare_coal_first_lock=args.compare_coal_first_lock)
+                           compare_coal_first_lock=args.compare_coal_first_lock,
+                           compare_continuous_legs=args.compare_continuous_legs)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
@@ -340,7 +368,7 @@ def main():
         parser.exit(2, "LOCAL_MDS_CONNECTION_UNAVAILABLE\n")
     except (KeyError, ValueError, OSError) as exc:
         code = str(exc)
-        parser.exit(2, (code if code.isidentifier() and code.startswith("COMBINED_")
+        parser.exit(2, (code if code.isidentifier() and code.startswith(("COMBINED_", "SH_REPLACEMENT_", "JM_HANDOFF_"))
                         else "COMBINED_INPUT_UNVERIFIED") + "\n")
 
 
