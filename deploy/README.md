@@ -572,6 +572,10 @@ Tick 次日元数据准备使用独立状态文件。旧范围在同一交易日
 计划验证正式品种在开盘前的 Session 与 rank1、现有 Catalog schema、已安装 Core/Chart 和独占空 Tick Redis。
 新服务从私有 `market-tick.env` 读取 Market 配置。计划用现有 `project.env` 复核同一 Catalog 和 Canonical，以独立 Redis 服务新源。
 
+交易日已开盘时，可以显式加 `--active-session`。计划确认正在交易的品种属于指定交易日、全部正式品种的 Session 和
+rank1 齐全、旧实例该日订阅和观察原件为空，且下一时段边界前留有部署时间。启用后读回新采集的真实完成分钟。
+当日开盘至启用的观察缺口保留。权威历史行情由盘后米筐流程发布，历史分钟不进入实时观察流。
+
 用 `--apply-market-direct-start --plan <private-plan>` 执行。部署锁下校验原 registry 字节、确认旧注册服务空闲并停驻其 launchd 定义，
 保留 registry 和安装前像，在空 Tick Redis 建立新代次和水位，再原子更新服务绑定。启用 API、Web、Feed、Live、Reference 和盘后。
 迟到恢复、周审计及日志轮转沿用原启用设置。Alert、首页投影、快期和苏冰账户不进入本次启动。
