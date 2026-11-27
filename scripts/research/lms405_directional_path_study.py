@@ -11,7 +11,7 @@ from lms405_protection_timeframes import read_window
 from lms405_right_side_study import US
 from lms405_sh_lock_lifecycle import digest
 from lms405_trial_to_trend import assess_role, milestones
-from lms405_v_zone_progress import observations
+from lms405_v_zone_progress import observations, publication_windows
 from lms_near405_replay import encoded, sha
 
 
@@ -25,6 +25,28 @@ WINDOWS = (
      {"SHORT": ("699.5 703.5",), "LONG": ("709.5 712",)}, None),
     ("S5306120929544557", "I2609", "2026-06-04", "STRONG_SHORT_CYCLE_THEN_TREND_REPORTED",
      {"SHORT": ("774.5 777", "771.5 773")}, ("SHORT", "766.5 768.5")),
+)
+
+TRIAL_REVIEWS = (
+    ("PEKMSnUvf", "PS2511", ("2025-08-05", "2025-08-06", "2025-08-07"), {
+        "long_trend_gate": ("LONG", "51815 52480"),
+    }),
+    ("S5329232944955498", "CF2609", ("2026-08-07",), {
+        "long_rebound_quality": ("LONG", "16265 16345"),
+        "balance_boundary": ("SHORT", "16190 16190"),
+        "long_rebound_interruption": ("SHORT", "16120 16155"),
+    }),
+    ("S5288088578560326", "LH2605", ("2026-04-15",), {
+        "reported_short_trial_end_price": ("LONG", "9280 9280"),
+    }),
+    ("S5288088578560326", "LH2607", ("2026-04-16",), {
+        "long_rebound_quality": ("LONG", "11075 11105"),
+        "stop_falling_reference": ("SHORT", "10730 10730"),
+        "rebound_failure_boundary": ("SHORT", "10660 10730"),
+    }),
+    ("S5306494870623342", "V2609", ("2026-06-05",), {
+        "recalled_short_target": ("SHORT", "4776 4802"),
+    }),
 )
 
 
@@ -91,14 +113,59 @@ def study(*, market_input):
     )
 
 
+def trial_price_observations(bars, bands):
+    return dict(
+        bars=len(bars), sha256=digest(bars),
+        high=max((bar.high for bar in bars), default=None),
+        low=min((bar.low for bar in bars), default=None),
+        levels={name: dict(side=side, **observations(bars, tuple(map(Decimal, band.split())), side))
+                for name, (side, band) in bands.items()},
+    )
+
+
+def trial_outcome_study(*, market_input):
+    from app.market_data.market_data_service import MarketDataError
+    session, market = market_input
+    archive = input_sources()
+    cases = {}
+    for source_id, contract, dates, bands in TRIAL_REVIEWS:
+        source = archive[source_id]
+        # Exclude the publication minute even when the visible source provides seconds.
+        publication = datetime.fromisoformat(source["published_at"]).replace(second=0, microsecond=0)
+        for day in dates:
+            case = dict(contract=contract, trading_day=day, source_id=source_id, source=source | {
+                "archive_sha256": sha((ARCHIVE.parent / source["archive_path"]).read_bytes()),
+            }, trial_identity=None, actual_transition_at=None, historical_plan_verified=False)
+            cases[f"{contract}/{day}"] = case
+            try:
+                series = read_window(session, market, contract, date.fromisoformat(day))
+            except MarketDataError as exc:
+                case["market_gap"] = exc.code
+                continue
+            comparison = {}
+            for period, bars in series.items():
+                before, after = publication_windows(bars, publication)
+                comparison[f"{period}m"] = dict(
+                    whole_day=trial_price_observations(bars, bands),
+                    before_publication=trial_price_observations(before, bands),
+                    after_publication=trial_price_observations(after, bands),
+                )
+            case["comparison"] = comparison
+    return dict(
+        version="lms405-trial-outcome-price-review-v1", mode="RETROSPECTIVE_PRICE_COMPARISON", cases=cases,
+        admitted_author_actions=0, author_matches=None, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--trial-outcome", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("OUTPUT_EXISTS")
-    result = local_market_case(args.env_file, case=study)
+    result = local_market_case(args.env_file, case=trial_outcome_study if args.trial_outcome else study)
     try:
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
