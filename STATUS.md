@@ -1,3 +1,17 @@
+## 2026-11-27 23:23｜V2 正式运行
+
+- **应用。** [v1.16.152](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.152) 经
+  [PR #681](https://github.com/firehell/guiyi-quant-workstation/pull/681) 发布，精确提交 `d0d35936f1b4b52a8c17f59193d9d742f72b43e5`。
+  这是工作站集成版本，覆盖 Web、API、安装和运行控制器。本次新增盘中直接首启，沿用 Market Foundation 0.1.2、
+  Quant Core 0.4.1、Quant Chart 0.1.7。各组件职责和版本入口见 [开发文档](docs/DEVELOPMENT.md#文档与版本的唯一入口)。
+- **正式运行。** 已按 11/30 交易日盘中切换至代次 96，API、Web、Feed、Live、Reference 和盘后任务已绑定。
+  工作站本机 Web/API 正常响应，Canonical 历史读取和 EMA10 计算经正式 API 验证。参考计算进程等待 11/30 归档凭证。
+- **数据。** 11/30 共 58/58 主力映射、5 条 Calendar 和 219 条 Session 读回；22:19 已读回 45 个夜盘品种首根真实完成分钟。
+  米筐恢复文件保存开盘缺口 3,510 根及 PL2701 的 22:29 一根，719 根重叠 1m 与正式 Tick 逐字段一致。
+  盘后完整 Canonical 发布和 Live 对账待 11/30 收盘。12/01 日历和时段已齐，截至读回 rank1 为 0/58。
+- **RS。** 最新权威源复查覆盖 13 周、63 个日线端点。32 个非正收盘事实逐日匹配现有质量记录，31 根有效日线逐值相同。
+  严格 D1 保留 `PRICE_UNAVAILABLE`，W1 保留 `MAPPED_CONTRACT_DATASET_MISSING`。详见 [RS 证据](openspec/changes/guiyi-v2-market-foundation/evidence/rs-quality.md)。
+
 ## 2026-11-27 20:35｜V2 发布与运行核验
 
 - **GitHub 发布。** [PR #676](https://github.com/firehell/guiyi-quant-workstation/pull/676) 合入
