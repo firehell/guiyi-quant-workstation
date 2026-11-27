@@ -344,6 +344,95 @@ def jd_ibar_protection_study(session, market):
     )
 
 
+def warning_phase_comparison(series, *, known_after, as_of, bands):
+    from lms405_recovery_confirmation_audit import strict_runs
+    from lms405_sh_lock_lifecycle import signals
+
+    minutes = [bar for bar in series[1] if known_after < bar.start and bar.end + US < as_of]
+    segment_by_end, previous = {}, None
+    for bar in minutes:
+        if previous is None or previous.end != bar.start:
+            segment = bar.start
+        segment_by_end[bar.end] = segment
+        previous = bar
+
+    availability = dict(start=known_after + US, side="LONG")
+    frames = {}
+    for shape, confirm in VARIANTS:
+        rows = signals(series, shape, confirm, cut=as_of, **availability)
+        frames[shape, confirm] = [(row, row["shape_end"] - timedelta(minutes=shape)) for row in rows]
+
+    results = {}
+    for role, (near, far) in bands.items():
+        overlap = next((bar.end + US for bar in minutes if bar.low <= far and bar.high >= near), None)
+        clocks = {"range_overlap": (near, overlap)}
+        for edge_name, edge in (("near", near), ("far", far)):
+            runs = strict_runs(minutes, edge, "LONG")
+            fresh = next((r["fresh_crossing_known_at"] for r in runs.values()
+                          if r["fresh_crossing_known_at"] is not None), None)
+            clocks[f"strict_fresh_{edge_name}"] = edge, fresh
+        phases = {}
+        for clock, (edge, known_at) in clocks.items():
+            if known_at is None:
+                phases[clock] = None
+                continue
+            segment = segment_by_end[known_at - US]
+            prefix = {p: [bar for bar in bars if bar.end + US < known_at] for p, bars in series.items()}
+            observations = {}
+            for (shape, confirm), rows in frames.items():
+                visible = [row for row, _ in rows if row["available_at"] < known_at]
+                if visible != signals(prefix, shape, confirm, cut=known_at, **availability):
+                    raise ValueError("WARNING_PHASE_PREFIX_DIVERGED")
+                eligible = [(row, start) for row, start in rows if row["available_at"] >= known_at
+                            and segment_by_end[row["confirmed_at"]] == segment]
+                observations[f"{shape}m_to_{confirm}m"] = dict(
+                    coincident=next((row for row, _ in eligible if row["available_at"] == known_at), None),
+                    confirmed_later=next((row for row, _ in eligible if row["available_at"] > known_at), None),
+                    shape_starts_later=next((row for row, start in eligible if start > known_at), None),
+                    shape_starts_later_and_confirms_above=next((row for row, start in eligible
+                                                               if start > known_at and row["close"] > edge), None),
+                    first_later_segment_observation=next((row for row, _ in rows if row["available_at"] > known_at
+                                                          and segment_by_end[row["confirmed_at"]] != segment), None),
+                )
+            phases[clock] = dict(known_at=known_at, edge=edge, observations=observations)
+        results[role] = dict(lower=near, upper=far, phases=phases)
+    return dict(minute_count=len(minutes), roles=results, as_of=as_of)
+
+
+def warning_confirmation_study(session, market):
+    from lms405_portfolio_replay import ARCHIVE, input_sources
+    from lms405_public_plan_roles import load_source
+
+    index = input_sources()
+    cases = []
+    for contract, day, source_id, role_cue, bands in (
+        ("SH2701", "2026-10-26", "WRoqwqpfSc", "第一个弱侧警告", {"FIRST_WARNING": (1546, 1556)}),
+        ("JD2612", "2026-10-22", "S5356775440386223", "反弹中断", {
+            "RESISTANCE": (3151, 3169), "REBOUND_INTERRUPTION": (3193, 3201), "M": (3239, 3270),
+        }),
+    ):
+        source = load_source(index, source_id)
+        body = (ARCHIVE.parent / source["archive_path"]).read_text(encoding="utf-8").replace("—", "–")
+        if role_cue not in body or any(f"{lo}–{hi}" not in body for lo, hi in bands.values()):
+            raise ValueError("WARNING_PHASE_SOURCE_TEXT_CHANGED")
+        published = datetime.fromisoformat(source["published_at"])
+        if published.astimezone(at(day).tzinfo).date() != date.fromisoformat(day):
+            raise ValueError("WARNING_PHASE_SOURCE_DATE_CHANGED")
+        series = read_window(session, market, contract, date.fromisoformat(day))
+        cutoff = at(f"{day}T15:00") + 2 * US
+        if series[1][-1].end != cutoff - 2 * US:
+            raise ValueError("WARNING_PHASE_SESSION_CLOSE_CHANGED")
+        known = published.replace(second=0, microsecond=0) + timedelta(minutes=1)
+        result = warning_phase_comparison(series, known_after=known, as_of=cutoff,
+                                          bands={role: tuple(map(Decimal, band)) for role, band in bands.items()})
+        cases.append(result | dict(contract=contract, source=source, known_after=known, trading_day=day,
+                                   market_counts={p: len(rows) for p, rows in series.items()},
+                                   minute_sha256=sha(encoded([(b.end, *ohlc(b)) for b in series[1]]).encode()),
+                                   author_version=None, author_warning_decision=None, author_action=None))
+    return dict(version="lms405-warning-confirmation-study-v1", cases=cases, admitted_author_action_samples=0,
+                admitted_author_bar_samples=0, executable=False, fills=None, pnl=None)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", type=Path, required=True)
@@ -352,6 +441,7 @@ def main():
     modes.add_argument("--compare-confirmations", action="store_true")
     modes.add_argument("--ur-ibar-source", action="store_true")
     modes.add_argument("--jd-ibar-protection", action="store_true")
+    modes.add_argument("--warning-confirmation", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -369,6 +459,8 @@ def main():
             if args.ur_ibar_source or args.jd_ibar_protection:
                 review = ur_ibar_source_study if args.ur_ibar_source else jd_ibar_protection_study
                 report = review(session, market)
+            elif args.warning_confirmation:
+                report = warning_confirmation_study(session, market)
             else:
                 report = study(session, market, compare_confirmations=args.compare_confirmations)
         with args.output.open("x", encoding="utf-8") as stream:

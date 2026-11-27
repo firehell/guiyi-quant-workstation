@@ -6,7 +6,7 @@ import pytest
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms_keybar_approx import classify, classify_research_period
-from lms405_protection_timeframes import geometry_events, ibar_source_prefix
+from lms405_protection_timeframes import geometry_events, ibar_source_prefix, warning_phase_comparison
 
 
 BASE = datetime.fromisoformat("2026-10-22T21:00:00+08:00")
@@ -64,3 +64,16 @@ def test_ibar_source_separates_equality_strict_break_and_next_full_confirmation(
     (gap,) = ibar_source_prefix(series | {1: [skipped_line]}, skipped_line.end + 2 * US)
     assert gap["first_1m_touch"] is None
     assert gap["first_1m_strict_low_below"]["end"] == skipped_line.end
+
+
+def test_warning_confirmation_needs_contiguous_mother_and_keeps_coincidence_separate():
+    shape, warning = bar(21, 1, 102, 106, 104), bar(22, 1, 106, 108, 108)
+    cutoff = warning.end + 2 * US
+    for mother, has_coincidence in ((bar(1, 1, 95, 110, 100), False), (bar(20, 1, 95, 110, 100), True)):
+        report = warning_phase_comparison({1: [mother, shape, warning], 5: [], 15: []}, known_after=BASE,
+                                          as_of=cutoff, bands={"WARNING": (Decimal(107), Decimal(109))})
+        phase = report["roles"]["WARNING"]["phases"]["strict_fresh_near"]
+        assert phase["known_at"] == warning.end + US
+        observation = phase["observations"]["1m_to_1m"]
+        assert (observation["coincident"] is not None) is has_coincidence
+        assert observation["confirmed_later"] is None
