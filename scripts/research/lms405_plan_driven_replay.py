@@ -11,6 +11,7 @@ from guiyi_quant.lms405 import physical_contract, timestamp
 from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, ROTATION_VERSION, Book, Intent, assess
 from guiyi_quant.lms405.public_conditions import Condition
+from lms405_breakout_trial_study import price_states
 from lms405_jm_first_lock_handoff import DAYS as JM_TRADING_DAYS
 from lms405_jm_first_lock_handoff import FOLLOWUP as JM_FOLLOWUP
 from lms405_jm_first_lock_handoff import study as study_jm_handoff
@@ -34,6 +35,8 @@ MARKET_REQUEST_VERSION = "lms405-plan-market-request-v1"
 INDEPENDENT_PREFIX = "INDEPENDENT:"
 INDEPENDENT_MANAGEMENT = frozenset({"CLEAR_TREND", "EXIT_COUNTER_M"})
 MARKET_FACT_PREFIX = "RESEARCH_MDS_CANDIDATE:"
+RIGHT_ENTRY_ROUTES = frozenset({"BREAK_THEN_SIGNAL", "BREAK_PRESSURE_THEN_SIGNAL"})
+ENTRY_ROUTES = RIGHT_ENTRY_ROUTES | {"IN_BAND_SIGNAL", "DO_NOT_CHASE"}
 
 
 @dataclass(frozen=True)
@@ -305,8 +308,45 @@ def first_early_candidate(series, *, start, cutoff, band, setup_not_before=None)
     return None
 
 
+def entry_candidate(series, *, route, side, start, cutoff, lower, upper, next_reference,
+                    shape_period, confirmation_period):
+    if route == "DO_NOT_CHASE":
+        return None, {"status": "PLAN_WAIT_NO_CHASE"}
+    if route == "IN_BAND_SIGNAL":
+        events = signals(series, shape_period, confirmation_period, side=side, start=start, cut=cutoff)
+        candidate = next((row for row in events if lower <= row["close"] <= upper), None)
+        return candidate, {"status": "CANDIDATE_FOUND" if candidate else "NO_IN_BAND_CONFIRMATION"}
+
+    edge, risk_edge = (upper, lower) if side == "LONG" else (lower, upper)
+    minutes = completed(series[1], start, cutoff)
+    pressure = route == "BREAK_PRESSURE_THEN_SIGNAL"
+    paths = price_states(minutes, side, edge, risk_edge if pressure else None)
+    # A bar overlapping plan activation can rule out a fresh attempt, but cannot establish a breakout.
+    reference_at = next((bar.end + US for bar in series[1] if start < bar.end and bar.end + US < cutoff and (
+        bar.high >= next_reference if side == "LONG" else bar.low <= next_reference
+    )), None)
+    first_cross_at = next((end + US for end, row in paths.items() if row["crossing"]), None)
+    first_pressure_at = next((row["retest_confirmed_at"] + US for row in paths.values()
+                              if row["retest_confirmed_at"] is not None), None)
+    candidate = None
+    for event in signals(series, shape_period, confirmation_period, side=side, start=start, cut=cutoff):
+        if reference_at is not None and reference_at <= event["available_at"]:
+            break
+        path = paths[event["confirmed_at"]]
+        entry_at = path["retest_confirmed_at"] if pressure else path["active_cross_at"]
+        shape_start = event["shape_end"] - shape_period * ONE
+        # A preceding close must already be known when the next shape starts.
+        if path["outside"] and entry_at is not None and entry_at + US < shape_start:
+            candidate = event | {"entry_precondition_known_at": entry_at + US}
+            break
+    return candidate, dict(status="CANDIDATE_FOUND" if candidate else "NO_FRESH_ENTRY_CONFIRMATION",
+                           first_cross_known_at=first_cross_at, first_pressure_known_at=first_pressure_at,
+                           next_reference_known_at=reference_at)
+
+
 def market_request(*, session, market, version, seed, revision, trading_day, start, cutoff, request_expires_at,
-                   band, operation, quantity, shape_period, confirmation_period):
+                   band, operation, quantity, shape_period, confirmation_period, entry_route=None,
+                   next_reference=None):
     """Compile one explicitly scoped market candidate into an unsigned replay tape."""
     if version != MARKET_REQUEST_VERSION:
         raise ValueError("PLAN_REPLAY_MARKET_REQUEST_VERSION_UNSUPPORTED")
@@ -324,18 +364,43 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
         raise ValueError("PLAN_REPLAY_MARKET_BAND_ARRAY_REQUIRED")
     lower, upper = map(decimal_text, band)
     quantity = decimal_text(quantity)
-    if (position.contract != plan.contract or operation not in plan.operations
-            or not lower.is_finite() or not upper.is_finite() or not quantity.is_finite() or not lower < upper
+    first_entry = operation == "ENTER_TREND"
+    plan_wait = first_entry and entry_route == "DO_NOT_CHASE"
+    plan_permits = operation in plan.operations
+    if (position.contract != plan.contract or plan_permits == plan_wait
+            or not lower.is_finite() or not upper.is_finite() or not quantity.is_finite() or quantity <= 0
+            or lower > upper or (lower == upper and (not first_entry or entry_route not in ("BREAK_THEN_SIGNAL", "DO_NOT_CHASE")))
             or not start < cutoff or max(position.known_at, plan.known_at) >= min(cutoff, expires)
             or plan.expires_at is not None and plan.expires_at < cutoff):
         raise ValueError("PLAN_REPLAY_MARKET_REQUEST_SCOPE_INVALID")
+    if first_entry:
+        if (position.original or position.protection or position.counter_m or position.attempt
+                or not isinstance(entry_route, str) or entry_route not in ENTRY_ROUTES):
+            raise ValueError("PLAN_REPLAY_MARKET_FIRST_ENTRY_SCOPE_INVALID")
+        if entry_route in RIGHT_ENTRY_ROUTES:
+            next_reference = decimal_text(next_reference)
+            edge = upper if position.direction == "LONG" else lower
+            if not next_reference.is_finite() or not (
+                next_reference > edge if position.direction == "LONG" else next_reference < edge
+            ):
+                raise ValueError("PLAN_REPLAY_MARKET_ENTRY_REFERENCE_INVALID")
+        elif next_reference is not None:
+            raise ValueError("PLAN_REPLAY_MARKET_ENTRY_REFERENCE_UNEXPECTED")
+    elif entry_route is not None or next_reference is not None:
+        raise ValueError("PLAN_REPLAY_MARKET_ENTRY_FIELDS_UNEXPECTED")
     series = read_window(session, market, position.contract, day)
     if start < series[1][0].start or cutoff > series[1][-1].end + 2 * US:
         raise ValueError("PLAN_REPLAY_MARKET_WINDOW_OUTSIDE_COVERAGE")
     # Strictly later than both the applicable plan and the position pre-image.
     effective_start = max(start, position.known_at + US, plan.known_at + US)
     side = position.direction
-    if operation == "RECOVER_ORIGINAL":
+    entry = {}
+    if first_entry:
+        candidate, diagnostic = entry_candidate(series, route=entry_route, side=side, start=effective_start,
+                                               cutoff=cutoff, lower=lower, upper=upper, next_reference=next_reference,
+                                               shape_period=shape_period, confirmation_period=confirmation_period)
+        entry = dict(entry=dict(route=entry_route, next_reference=next_reference, **diagnostic))
+    elif operation == "RECOVER_ORIGINAL":
         if quantity != position.protection or not quantity:
             raise ValueError("PLAN_REPLAY_MARKET_RECOVERY_SCOPE_INVALID")
         events = signals(series, shape_period, confirmation_period, side=side, start=effective_start, cut=cutoff)
@@ -362,13 +427,19 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
 
     market_digests = {f"{period}m": digest(completed(rows, start, cutoff)) for period, rows in series.items()}
     evaluations = []
-    if candidate is not None and candidate["available_at"] + US < cutoff:
+    if first_entry and candidate is not None:
+        # The next minute can change the entry premise. A saved tape cannot authorize across it.
+        expires = min(expires, candidate["confirmed_at"] + ONE + US)
+        entry["entry"]["candidate_expires_at"] = expires
+    if candidate is not None and candidate["available_at"] + US < min(cutoff, expires if first_entry else cutoff):
         known_at = candidate["available_at"]
         setup = candidate["shape_end"] - timedelta(minutes=shape_period)
         request = Intent(position, operation, quantity, plan.id, expires)
         plan_digest = revision_digest(plan)
-        candidate_id = sha(encoded([plan.id, position.contract, operation, shape_period, confirmation_period,
-                                    lower, upper, candidate]).encode())
+        scope = [plan.id, position.contract, operation, shape_period, confirmation_period, lower, upper, candidate]
+        if first_entry:
+            scope.extend((entry_route, next_reference))
+        candidate_id = sha(encoded(scope).encode())
         facts = [
             asdict(Condition(name, request.scope, position.contract, True, setup, known_at,
                              f"{MARKET_FACT_PREFIX}{plan_digest}:{candidate_id}", "EVENT_TIME"))
@@ -383,7 +454,7 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
         version=MARKET_REQUEST_VERSION, contract=position.contract, trading_day=day, operation=operation,
         candidate=candidate, timeframe=dict(shape_minutes=shape_period, confirmation_minutes=confirmation_period),
         band=(lower, upper), market_digests=market_digests, tape=tape, replay=replay_input(**tape),
-        declared_plan_revision=plan.id, plan_historical_revision_verified=False,
+        declared_plan_revision=plan.id, plan_historical_revision_verified=False, **entry,
     )
 
 

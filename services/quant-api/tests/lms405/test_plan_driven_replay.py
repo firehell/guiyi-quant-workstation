@@ -181,3 +181,63 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
     )
     with pytest.raises(ValueError, match="BAND_ARRAY_REQUIRED"):
         compile_case(band={"109": False, "110": False})
+
+
+def test_plan_entry_requires_a_fresh_shape_before_target_and_waits_for_approval(monkeypatch):
+    minute = timedelta(minutes=1)
+    microsecond = timedelta(microseconds=1)
+    prices = ((98, 100, 97, 99), (99, 104, 99, 102), (102, 106, 101, 104),
+              (104, 105, 102, 104), (104, 107, 104, 106), (106, 110, 105, 108))
+    bars = [Bar("JM2701", START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+            for i, prices in enumerate(prices)]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    seed = Book("JM2701", "entry-test", "LONG", START - minute)
+    definition = dict(
+        version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
+        cutoff=(bars[-1].end + 2 * microsecond).isoformat(), seed=json.loads(encoded(asdict(seed))),
+        operation="ENTER_TREND", quantity="1", shape_period=1, confirmation_period=1, band=["100", "100"],
+        entry_route="BREAK_THEN_SIGNAL", next_reference="110",
+        request_expires_at=(START + 8 * minute).isoformat(),
+        revision=dict(contract=seed.contract, id="market-entry", source="source-entry",
+                      published_at=seed.known_at.isoformat(), known_at=seed.known_at.isoformat(),
+                      operations=["ENTER_TREND"]),
+    )
+
+    def compile_case(**changes):
+        return plan_replay.market_request(session=None, market=None, **(definition | changes))
+
+    report = compile_case()
+    row, = report["replay"]["events"]
+    assert report["candidate"]["confirmed_at"] == bars[4].end
+    assert report["candidate"]["entry_precondition_known_at"] == bars[1].end + microsecond
+    assert row["status"] == "INDETERMINATE" and report["replay"]["final"] == asdict(seed)
+    cutoff = (bars[4].end + 3 * microsecond).isoformat()
+    assert compile_case(cutoff=cutoff)["tape"]["evaluations"] == report["tape"]["evaluations"]
+    assert compile_case(next_reference="107")["candidate"] is None
+    assert compile_case(next_reference="106")["replay"]["events"] == []
+    # The opening minute may block chasing even if its intraminute order is unknown.
+    bars[0] = replace(bars[0], high=Decimal(110))
+    partial_start = (START + timedelta(seconds=30)).isoformat()
+    partial = compile_case(start=partial_start)
+    assert partial["entry"]["next_reference_known_at"] == bars[0].end + microsecond
+    assert partial["candidate"] is None
+    bars[0] = replace(bars[0], high=Decimal(100))
+
+    tape = report["tape"]
+    event, = tape["evaluations"]
+    proposal_at = datetime.fromisoformat(event["at"])
+    event["at"] = (proposal_at + 2 * microsecond).isoformat()
+    event["approval"] = dict(scope=row["pending_approval_scope"], id="entry-fixture", accepted=True,
+                             decided_at=proposal_at.isoformat(), known_at=(proposal_at + microsecond).isoformat(),
+                             record_kind="TEST_FIXTURE")
+    approved = replay_input(**tape, allow_test_fixture=True)
+    assert approved["final"]["original"] == Decimal(1) and approved["final"]["attempt"] == 1
+    event["at"] = report["entry"]["candidate_expires_at"].isoformat()
+    later = replay_input(**(tape | {"cutoff": (bars[-1].end + 3 * microsecond).isoformat()}), allow_test_fixture=True)
+    assert later["events"][0]["status"] == "EXPIRED" and later["final"] == asdict(seed)
+
+    wait_plan = definition["revision"] | {"operations": []}
+    wait = compile_case(entry_route="DO_NOT_CHASE", next_reference=None, revision=wait_plan)
+    assert wait["entry"]["status"] == "PLAN_WAIT_NO_CHASE" and wait["tape"]["evaluations"] == []
+    with pytest.raises(ValueError, match="REQUEST_SCOPE_INVALID"):
+        compile_case(entry_route="DO_NOT_CHASE", next_reference=None)

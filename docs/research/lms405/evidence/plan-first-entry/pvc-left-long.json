@@ -1,0 +1,36 @@
+{
+  "version": "lms405-plan-market-request-v1",
+  "trading_day": "2026-10-27",
+  "start": "2026-10-27T09:00:00+08:00",
+  "cutoff": "2026-10-27T11:30:00+08:00",
+  "request_expires_at": "2026-10-27T11:30:00+08:00",
+  "operation": "ENTER_TREND",
+  "quantity": "1",
+  "shape_period": 5,
+  "confirmation_period": 1,
+  "band": [
+    "5045",
+    "5074"
+  ],
+  "entry_route": "IN_BAND_SIGNAL",
+  "seed": {
+    "contract": "V2701",
+    "episode": "pvc-left-long",
+    "direction": "LONG",
+    "known_at": "2026-10-26T17:43:00+08:00",
+    "original": "0",
+    "protection": "0",
+    "counter_m": "0",
+    "attempt": 0
+  },
+  "revision": {
+    "contract": "V2701",
+    "id": "A5358325549629506:V-LEFT-LONG",
+    "published_at": "2026-10-26T17:43:00+08:00",
+    "known_at": "2026-10-26T17:43:59.999999+08:00",
+    "source": "https://weibo.com/ttarticle/p/show?id=2309405358325549629506",
+    "operations": [
+      "ENTER_TREND"
+    ]
+  }
+}
