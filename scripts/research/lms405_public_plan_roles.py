@@ -10,6 +10,7 @@ from lms405_recovery_confirmation_audit import examine
 from lms405_protection_timeframes import VARIANTS, geometry_events, read_window, summarize
 from lms405_replay import display
 from lms405_right_side_study import ONE, US, at
+from lms405_sh_lock_lifecycle import completed, digest
 from lms405_v_zone_progress import observations
 from lms_near405_replay import encoded, sha
 
@@ -72,10 +73,24 @@ PROTECTION_AND_M_CASES = {
     )),
 }
 EARLIER_PROTECTION_CONTEXT = {"S5323519697094213": "2026-07-21"}
+COTTON_CASES = {
+    "S5290450810569076": ("2026-04-22", "10:33", None, (
+        ("new_extension_target", "LONG", 16085, 16335),
+        ("extreme_target", "LONG", 16460, 16460),
+        ("protection_reference", "SHORT", 16175, 16225),
+        ("possible_m_transition", "SHORT", 16140, 16175),
+    )),
+    "S5295515541443911": ("2026-05-06", "09:59", "4.0.5_METHOD_ONLY", (
+        ("new_extension_target", "LONG", 16900, 17060),
+        ("weakness_onset_or_optional_earlier_protection", "SHORT", 16855, 16930),
+        ("protection_reference", "SHORT", 16755, 16855),
+    )),
+}
 BATCHES = {
     "published-updates": CASES,
     "management": MANAGEMENT_CASES,
     "protection-and-m": PROTECTION_AND_M_CASES,
+    "cotton-intraday": COTTON_CASES,
 }
 
 
@@ -85,7 +100,63 @@ def load_source(index, key):
     return source | dict(archive_sha256=sha(path.read_bytes()))
 
 
+def cotton_protection_clocks(minutes, signals, band):
+    lower, upper = band
+    overlap = next((bar for bar in minutes if bar.low <= upper and bar.high >= lower), None)
+    overlap_known = overlap.end + US if overlap is not None else None
+    clocks = {}
+    for clock, rows in signals.items():
+        inside = [row for row in rows if lower <= row["close"] <= upper]
+        clocks[clock] = dict(
+            in_band=next(iter(inside), None),
+            fresh_after_completed_overlap=next((row for row in inside if overlap_known is not None
+                                                and overlap_known < row["shape_start"]), None),
+        )
+    return dict(overlap_known_at=overlap_known, clocks=clocks)
+
+
+def cotton_intraday(session, market):
+    from lms405_jm_oct_recovery_clock import window_signals
+
+    index = input_sources()
+    cases = {}
+    for key, (day, time, version_scope, roles) in COTTON_CASES.items():
+        source = load_source(index, key)
+        published = datetime.fromisoformat(source["published_at"])
+        series = read_window(session, market, "CF2609", date.fromisoformat(day))
+        start = published + ONE
+        close = at(f"{day}T15:00")
+        if (published != at(f"{day}T{time}") or not series[1][0].start < published < start < close
+                or series[1][-1].end != close):
+            raise ValueError("COTTON_PUBLICATION_WINDOW_UNVERIFIED")
+        cutoff = close + 2 * US
+        after = completed(series[1], start, cutoff)
+        before = completed(series[1], series[1][0].start, published)
+        signals, checks = window_signals(series, start, cutoff, "SHORT")
+        windows = {}
+        for role, side, lower, upper in roles:
+            band = (Decimal(lower), Decimal(upper))
+            windows[role] = dict(
+                side=side, band=band, before_publication_retrospective=observations(before, band, side),
+                after_publication=observations(after, band, side),
+                in_band_short_geometry=cotton_protection_clocks(after, signals, band) if side == "SHORT" else None,
+            )
+        cases[key] = dict(
+            source=source, author_version_scope=version_scope, source_current_text_only=True,
+            after_publication_start=start, cutoff_exclusive=cutoff, before_count=len(before),
+            after_count=len(after), after_extremes=dict(low=min(b.low for b in after), high=max(b.high for b in after)),
+            market={f"{p}m": dict(count=len(rows), sha256=digest(rows)) for p, rows in series.items()},
+            geometry_prefix_checks=checks, role_windows=windows,
+            author_signal_at=None, author_action_at=None, held_position=None,
+        )
+    return dict(version="lms405-cotton-intraday-roles-v1", contract="CF2609", cases=cases,
+                article_revision_history_verified=False, admitted_author_action_samples=0, author_match_rate=None,
+                executable=False, fills=None, pnl=None)
+
+
 def study(session, market, *, batch="published-updates"):
+    if batch == "cotton-intraday":
+        return cotton_intraday(session, market)
     index = input_sources()
     use_management = batch == "management"
     compare_protection = batch == "protection-and-m"
