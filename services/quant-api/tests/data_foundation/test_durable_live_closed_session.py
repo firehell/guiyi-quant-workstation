@@ -187,7 +187,7 @@ def test_market_owners_start_from_staged_next_day_after_close(redis_pair, sessio
         assert live._can_start_history_preparation()
 
 
-def make_service(redis, session, *, registered_day=date(2025, 1, 6)):
+def make_service(redis, session, *, registered_day=date(2025, 1, 6), formal_tick_binding=None):
     products = ('jm', 'ap')
     contracts = {'jm': 'JM2505', 'ap': 'AP2505'}
     source = ObservationStream(redis, kind='source')
@@ -200,9 +200,22 @@ def make_service(redis, session, *, registered_day=date(2025, 1, 6)):
     service = DurableLiveMarketService(source_provider=StreamLiveProvider(source),
         dominant_source=FakeDominants({(symbol, registered_day): contract for symbol, contract in contracts.items()}),
         phase_resolver=resolver, store=store, operational_products=products, authoritative_dominants=True,
+        formal_tick_binding=formal_tick_binding,
         coverage_sessions=lambda symbol, day: session_windows_for_trading_day(session,
             exchange='DCE' if symbol == 'jm' else 'CZCE', symbol=symbol, trading_day=day))
     return service, source, completed, store, resolver
+
+
+def test_formal_live_resumes_history_preparation_on_proved_cleaned_day(isolated_redis, session):
+    service, source, completed, store, _ = make_service(isolated_redis, session, formal_tick_binding='a' * 64)
+    day = date(2025, 1, 6)
+    isolated_redis.delete(store._subscription_key(day))
+    service.closed_cleanup_evidence = lambda *_: {'trading_day': day.isoformat(), 'cleanup_verified': True}
+    assert not service._can_start_history_preparation()
+    assert service.poll(_now(6, 17)) is None
+    assert service.closed_cleaned_proof['status'] == 'CLOSED_CLEANED'
+    assert service._can_start_history_preparation()
+    assert source.cursor('live', day) == completed.tail(day) == '0-0'
 
 
 def test_real_weekend_closed_has_no_day_but_next_session_proves_registered_day(isolated_redis, session):

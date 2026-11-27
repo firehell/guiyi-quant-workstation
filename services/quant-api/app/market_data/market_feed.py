@@ -869,6 +869,7 @@ class DurableLiveMarketService(LiveMarketService):
                     self.assert_owned()
                 day = _accept_closed_cleaned(self, proof, now, phases)
                 self.source_provider.select_day(day)
+                self._journal_started = True
                 return None
         if _closed_cleanup_requires_proof(self, self.source_provider.stream, phases):
             source = self.source_provider
