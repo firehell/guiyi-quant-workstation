@@ -843,6 +843,11 @@ class CohortHost(FaultRecoveryHost):
             products=products,
             now=self.now(),
         )
+        if market_source and history:
+            require(
+                history["status"]["last_run"].get("error_code") != "COMMIT_OUTCOME_UNKNOWN",
+                "COHORT_AFTER_MARKET_READBACK_REQUIRED",
+            )
         if source.exists():
             raw = self.bytes(source)
             if market_source:
@@ -853,6 +858,11 @@ class CohortHost(FaultRecoveryHost):
                 "COHORT_AFTER_MARKET_RUNNING",
             )
             last = public.get("last_run") or {}
+            if market_source:
+                require(
+                    last.get("error_code") != "COMMIT_OUTCOME_UNKNOWN",
+                    "COHORT_AFTER_MARKET_READBACK_REQUIRED",
+                )
             day = public.get("last_successful_trading_day")
             retained_day = (
                 history["status"].get("last_successful_trading_day")
@@ -888,10 +898,6 @@ class CohortHost(FaultRecoveryHost):
         target_history = target_root / ".run/after-market-history.json"
         if market_source:
             require(not os.path.lexists(target_history), "COHORT_TARGET_HISTORY_CONFLICT")
-            require(
-                history is None or history["status"]["last_run"].get("error_code") != "COMMIT_OUTCOME_UNKNOWN",
-                "COHORT_AFTER_MARKET_READBACK_REQUIRED",
-            )
             # The old archive covers the predecessor universe. Its status and
             # receipt are retained in originals, outside successor authority.
         elif history and target_history.exists():

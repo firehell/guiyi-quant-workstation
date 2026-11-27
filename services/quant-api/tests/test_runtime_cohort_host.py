@@ -987,7 +987,7 @@ def test_native_commit_checks_deadline_after_all_schema_and_session_readbacks(tm
     assert writes == []
 
 
-@pytest.mark.parametrize("location", ["current", "retained"])
+@pytest.mark.parametrize("location", ["current", "retained", "retained_with_newer_pass"])
 def test_market_source_rejects_unknown_natural_archive(tmp_path, monkeypatch, location):
     from app.market_data.after_market_history import make_history, publish_history
 
@@ -1007,6 +1007,14 @@ def test_market_source_rejects_unknown_natural_archive(tmp_path, monkeypatch, lo
     else:
         history = make_history(raw, commit="a" * 40, products=("jm",), now=host.now())
         publish_history(old / ".run/after-market-history.json", history)
+    if location == "retained_with_newer_pass":
+        current = json.loads(raw)
+        current["last_run"].update(
+            trading_day="2026-10-01", status="passed", error_code=None,
+            started_at="2026-10-01T18:05:00+08:00", finished_at="2026-10-01T18:11:00+08:00",
+        )
+        current["last_successful_trading_day"] = "2026-10-01"
+        (old / ".run/after-market-status.json").write_text(json.dumps(current))
 
     with pytest.raises(CohortError, match="COHORT_AFTER_MARKET_READBACK_REQUIRED"):
         host.preserve(plan, attempt)
