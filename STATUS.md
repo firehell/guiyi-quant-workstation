@@ -1,17 +1,16 @@
-## 2026-11-27 22:10｜V2 首启准备
+## 2026-11-27 23:23｜V2 正式运行
 
-- 11/30 生产 Catalog 已补齐米筐 rank1，独立读回 58/58、5 条 Calendar 和 58 品种 219 条 Session。
-  截至 21:52 可从米筐读到 45 个夜盘品种完整的 2,340 根已收 1m。旧、新 Redis 均无该日订阅和实时观察原件。
-  应用 v1.16.152 提供显式盘中直接首启，首日开盘前缀仍按观察缺口保留。实际启用状态以服务绑定和真实 Tick 读回为准。
-
-## 2026-11-27 21:35｜V2 直接首启
-
-- 应用 v1.16.151 增加 V2 直接首启入口，沿用 Market Foundation 0.1.2、Quant Core 0.4.1、Quant Chart 0.1.7。
-  首启使用现有 Canonical/Catalog 和独立 Tick Redis。旧工作树恢复、旧 Reference 游标和快期、苏冰原账户交接均已移出首启路径。
-  正式运行身份仍以实际绑定、进程和首启回执为准。[部署入口](deploy/README.md#v2-直接首启)
-- 米筐确认下一候选为 12/01 交易日。生产 Catalog 已插入且独立读回 5 条权威 Calendar、58 品种 219 条 Session。
-  最早 Session 是北京时间 11/30 21:00。12/01 的 rank1 当前为 0/58，米筐目标日 RB 精确查询返回空，
-  待 11/30 日盘收盘后复核。专用 Redis 仍为空，盘前条件齐备后生成首启计划。既有自然验收证据沿用。
+- **应用。** [v1.16.152](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.152) 经
+  [PR #681](https://github.com/firehell/guiyi-quant-workstation/pull/681) 发布，精确提交 `d0d35936f1b4b52a8c17f59193d9d742f72b43e5`。
+  这是工作站集成版本，覆盖 Web、API、安装和运行控制器。本次新增盘中直接首启，沿用 Market Foundation 0.1.2、
+  Quant Core 0.4.1、Quant Chart 0.1.7。各组件职责和版本入口见 [开发文档](docs/DEVELOPMENT.md#文档与版本的唯一入口)。
+- **正式运行。** 已按 11/30 交易日盘中切换至代次 96，API、Web、Feed、Live、Reference 和盘后任务已绑定。
+  工作站本机 Web/API 正常响应，Canonical 历史读取和 EMA10 计算经正式 API 验证。参考计算进程等待 11/30 归档凭证。
+- **数据。** 11/30 共 58/58 主力映射、5 条 Calendar 和 219 条 Session 读回；22:19 已读回 45 个夜盘品种首根真实完成分钟。
+  米筐恢复文件保存开盘缺口 3,510 根及 PL2701 的 22:29 一根，719 根重叠 1m 与正式 Tick 逐字段一致。
+  盘后完整 Canonical 发布和 Live 对账待 11/30 收盘。12/01 日历和时段已齐，截至读回 rank1 为 0/58。
+- **RS。** 最新权威源复查覆盖 13 周、63 个日线端点。32 个非正收盘事实逐日匹配现有质量记录，31 根有效日线逐值相同。
+  严格 D1 保留 `PRICE_UNAVAILABLE`，W1 保留 `MAPPED_CONTRACT_DATASET_MISSING`。详见 [RS 证据](openspec/changes/guiyi-v2-market-foundation/evidence/rs-quality.md)。
 
 ## 2026-11-27 20:35｜V2 发布与运行核验
 
@@ -2035,7 +2034,7 @@ Ruff/OpenSpec12/secret0/diff通过。证据在 `output/htdy-source-conflicts-202
 
 AL15m续算及RB四周期追加脚本原先先导入应用、后加载私有配置，数据库连接池提前缓存开发配置。已调整初始化顺序，默认离线行为保留；新增只读check-only和安全错误定位。18项定向测试通过、独立Review无Confirmed Issue。正式v18现场只读：AL225792/320074原生续算位置一致、RB四周期exact append/旧事实校验全部PREFLIGHT_PASSED，production_writes=0。旧失败目录不重写，修复版v2目录独占；本步未执行apply，不代表全量历史计算完成。下一步仍须确认旧writer退出、现场锁和来源后精确续算/追加。详见[修复记录](docs/tasks/subing-history-preflight-fix-20261024.md)。
 
-## 新苏冰固定参数研究版：工程与历史回放验收完成，未晋升
+## 新苏冰固定参数研究版（已退役，以下为当时记录）
 
 新增独立 `new_subing_v1`，规则见 [策略合同](docs/NEW_SUBING_STRATEGY.md)，
 交付记录见 [任务验收](docs/tasks/new-subing-v1-20261012.md)。独立只读页面 `/research/new-subing`
