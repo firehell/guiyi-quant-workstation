@@ -101,7 +101,7 @@ def _setup(tmp_path, engine=None, real_redis=None):
     Base.metadata.create_all(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
     identity = StreamIdentity(
-        "subing_reference",
+        "newow_trend",
         ("test",),
         "test",
         "test",

@@ -8,21 +8,8 @@ import pytest
 
 from app import runtime_cohort_recovery as recovery
 from app.runtime_handover import _write
+from tests.test_runtime_cohort_forward_recovery import typed_intake
 from tests.test_runtime_feed_halt_recovery import feed_halt_case, close_plan
-
-
-def typed_intake():
-    return {
-        "schema_version": 2,
-        "kind": "reference_receiving_liveness_v1",
-        "mode": "durable_receiving_caught_up_idle",
-        "calculation_ready": False,
-        "before_sha256": "a" * 64,
-        "after_sha256": "b" * 64,
-        "advanced_count": 0,
-        "remaining_count": 0,
-        "old_tail_reached": True,
-    }
 
 
 def complete_stopped_outputs(host):

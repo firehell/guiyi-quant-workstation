@@ -40,6 +40,15 @@ class _CleanupIsolation:
     retired: bool = False
 
 
+@dataclass(slots=True)
+class _FeedPoll:
+    now: datetime
+    metadata_checked: bool = False
+    metadata_failure: str | None = None
+    empty_grace_provider: LiveProvider | None = None
+    failed: bool = False
+
+
 def _closed_cleaned_idle_proof(service, source_stream, now, phases):
     """Prove a terminal cleaned day; never manufacture its missing snapshot."""
     callback = service.closed_cleanup_evidence
@@ -258,6 +267,7 @@ class MarketFeedService(LiveMarketService):
         self._first_retirement_failure_at = None
         self._first_retirement_failure_code = None
         self._cleanup_isolation: _CleanupIsolation | None = None
+        self._feed_poll: _FeedPoll | None = None
 
     def _isolate_cleaned_day(self, day, provider, contracts) -> None:
         if self._cleanup_isolation is None:
@@ -382,6 +392,8 @@ class MarketFeedService(LiveMarketService):
                 # No buffer take/publication exists to fence. In particular, a
                 # normal empty CLOSED poll must not contend with 18:05 maintenance.
                 # A callback after this locked count remains for the next poll.
+                if self._feed_poll is not None:
+                    self._feed_poll.empty_grace_provider = provider
                 return
             with self._buffer_publication_guard(provider, self._trading_day, dict(self._contracts)):
                 super()._drain_session_grace(now)
@@ -429,14 +441,34 @@ class MarketFeedService(LiveMarketService):
         now = self._clock()
         self._publish_heartbeat(now, self._phases(now))
 
-    def _buffered_count(self) -> int:
-        return buffered_message_count(self._provider)
+    def _registered_source_day(self) -> date | None:
+        try:
+            return self.source_stream.registered_day('live')
+        except Exception:
+            return None
+
+    def _buffered_count(self, registered_day: date | None, *,
+                        empty_grace_provider: LiveProvider | None = None) -> int | None:
+        isolation = self._cleanup_isolation
+        if (self._input_failure is not None or self._metadata_preparation_error is not None
+                or (isolation is not None and not isolation.retired)):
+            return None
+        provider = self._provider
+        if provider is None:
+            return 0
+        if registered_day is None or registered_day != self._trading_day:
+            return None
+        if provider is empty_grace_provider:
+            return 0
+        count = buffered_message_count(provider)
+        return count if type(count) is int and count >= 0 else None
 
     def _publish_heartbeat(self, now, phases):
-        try:
-            registered_day = self.source_stream.registered_day('live')
-        except Exception:
-            registered_day = None
+        poll = self._feed_poll
+        registered_day = self._registered_source_day()
+        buffered = None if poll and poll.failed else self._buffered_count(
+            registered_day, empty_grace_provider=poll.empty_grace_provider if poll else None,
+        )
         trading = any(item.phase is MarketPhase.TRADING for item in phases.values())
         fresh = not trading or (self._last_input_received_at is not None and
             timedelta(0) <= now - self._last_input_received_at <= timedelta(minutes=5))
@@ -451,7 +483,7 @@ class MarketFeedService(LiveMarketService):
             },
             'phase_by_product': {symbol: phase.phase.value for symbol, phase in phases.items()},
             'available': bool(registered_day is not None and fresh and self._available and self._provider_available and
-                self._input_failure is None and self._metadata_preparation_error is None and
+                buffered is not None and
                 all(item.phase is not MarketPhase.UNKNOWN for item in phases.values())),
             'input_failure': self._input_failure,
             'retirement_stage': self._retirement_stage,
@@ -459,23 +491,23 @@ class MarketFeedService(LiveMarketService):
             'first_failure_code': self._first_retirement_failure_code,
             'registered_day': registered_day.isoformat() if registered_day else None,
             'target_days': sorted({p.trading_day.isoformat() for p in phases.values() if p.trading_day}),
-            'input_pending_count': len(self._pending) + self._buffered_count(),
+            'input_pending_count': len(self._pending) + buffered if buffered is not None else None,
             'closed_cleaned': self.closed_cleaned_proof,
         })
 
     def _prepare_metadata(self, now):
-        cache = getattr(self, '_feed_metadata_cache', None)
-        if cache is None:
+        poll = self._feed_poll
+        if poll is None:
             return super()._prepare_metadata(now)
-        if 'result' not in cache:
-            cache['result'] = super()._prepare_metadata(now)
-        return cache['result']
+        if not poll.metadata_checked:
+            poll.metadata_failure = super()._prepare_metadata(now)
+            poll.metadata_checked = True
+        return poll.metadata_failure
 
     def poll(self, now):
         if hasattr(self, 'assert_owned'):
             self.assert_owned()
-        self._feed_metadata_cache = {}
-        failed = False
+        poll = self._feed_poll = _FeedPoll(now)
         try:
             if self._formal_tick_binding is not None and self._input_failure is None:
                 try:
@@ -499,24 +531,27 @@ class MarketFeedService(LiveMarketService):
             failure = self._prepare_metadata(now)
             if failure is not None:
                 return self._input_failure or failure
-            return self._poll_prepared(now)
+            return self._poll_prepared(poll)
         except BaseException:
-            failed = True
+            poll.failed = True
             self._available = False
             self._note_retirement_failure('FEED_POLL_FAILED')
             raise
         finally:
-            self._feed_metadata_cache = None
-            if hasattr(self, 'assert_owned'):
-                self.assert_owned()
             try:
-                self._publish_heartbeat(now, self._phases(now))
-            except Exception:
-                self._available = False
-                if not failed:
-                    raise
+                if hasattr(self, 'assert_owned'):
+                    self.assert_owned()
+                try:
+                    self._publish_heartbeat(poll.now, self._phases(poll.now))
+                except Exception:
+                    self._available = False
+                    if not poll.failed:
+                        raise
+            finally:
+                self._feed_poll = None
 
-    def _poll_prepared(self, now):
+    def _poll_prepared(self, poll: _FeedPoll):
+        now = poll.now
         if hasattr(self, 'assert_owned'):
             self.assert_owned()
         if self._input_failure is not None:
@@ -533,7 +568,7 @@ class MarketFeedService(LiveMarketService):
         # Only a real bounded join advances the observation clock. Cold starts
         # keep their caller's exact timestamp and create no provider at all.
         if isolation is not None and not isolation.retired and isolation.provider is not None:
-            now = max(now, self._clock())
+            now = poll.now = max(now, self._clock())
         phases = self._phases(now)
         # A retired old-day reader still owns next-session metadata preparation.
         # Run it before either CLOSED cleanup return, without recreating the old
@@ -714,12 +749,18 @@ class MarketFeedService(LiveMarketService):
                 return False
             if not windows or any(window.end <= now < window.end + timedelta(seconds=60) for window in windows):
                 return False
-        return bool(phases) and not self._pending and all(
-            item.phase in (MarketPhase.BREAK, MarketPhase.CLOSED)
-            for item in phases.values()
-        ) and not self._channels_in_session_grace(now) and not (
-            self._buffered_count()
-        )
+        if not phases or self._pending or self._channels_in_session_grace(now):
+            return False
+        day = None
+        if self._provider is not None:
+            day = self._registered_source_day()
+            try:
+                if (day is None or set(self._contracts) != set(self._products)
+                        or self._store.subscriptions(day) != self._contracts):
+                    return False
+            except Exception:
+                return False
+        return self._buffered_count(day) == 0
 
 
 class StreamLiveProvider:

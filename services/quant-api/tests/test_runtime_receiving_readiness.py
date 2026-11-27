@@ -35,7 +35,7 @@ def test_recovery_completed_receiver_report_does_not_wait_for_calculation(
     host.monotonic = lambda: tick[0]
     active = host._active
     host._active = lambda b: (
-        report(stage) if b.service == "reference-worker" else active(b)
+        {**active(b), **report(stage)} if b.service == "reference-worker" else active(b)
     )
     host._calculation_boundary = lambda **kwargs: (
         False
@@ -186,16 +186,21 @@ def test_wait_timeout_identifies_first_blocking_service_without_raw_details(
 
     host._active = state
     read_source = recovery._resolution_source
+    day = NOW.date().isoformat()
 
     def source_state(path):
         raw, value = read_source(path)
         if reason == "progress_pending":
-            value["effects"]["drain"]["progress"]["api"] = {}
+            value["effects"]["drain"]["progress"]["live"] = {
+                day: {"cursor": "1-0", "tail": "1-0"},
+            }
         return raw, value
 
     monkeypatch.setattr(recovery, "_resolution_source", source_state)
-    monkeypatch.setattr(recovery, "observation_progress", lambda *_: {})
-    monkeypatch.setattr(recovery, "progress_reached", lambda *a, **k: False)
+    monkeypatch.setattr(
+        recovery, "observation_progress",
+        lambda name: {day: {"cursor": "0-0", "tail": "1-0"}} if name == "live" else {},
+    )
     monkeypatch.setattr(
         recovery,
         "port_is_ready",
@@ -205,7 +210,7 @@ def test_wait_timeout_identifies_first_blocking_service_without_raw_details(
     with pytest.raises(recovery.CohortError, match="COHORT_FORWARD_READY_TIMEOUT"):
         host.await_consumers(source, audit, lambda: None)
     diagnostic = recovery._safe_verification_diagnostic(host)
-    assert diagnostic["service"] == "api"
+    assert diagnostic["service"] == ("live" if reason == "progress_pending" else "api")
     assert diagnostic["reason"] == reason
 
 
@@ -218,7 +223,7 @@ def test_recovery_two_phases_of_one_poll_are_not_two_receiving_rounds(
     active = host._active
     stages = ("receiving_cycle", "cycle", "receiving_cycle")
     host._active = lambda b: (
-        report(stages[min(len(samples), len(stages) - 1)])
+        {**active(b), **report(stages[min(len(samples), len(stages) - 1)])}
         if b.service == "reference-worker"
         else active(b)
     )

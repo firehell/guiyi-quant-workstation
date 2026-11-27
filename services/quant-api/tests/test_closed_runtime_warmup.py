@@ -17,8 +17,8 @@ NOW = datetime(2026, 10, 25, 4, tzinfo=UTC)
 DAY = date(2026, 10, 23)
 
 
-def phase(kind=MarketPhase.CLOSED, day=None):
-    return ProductMarketPhase('jm', kind, day, None, NOW + timedelta(days=10))
+def phase(kind=MarketPhase.CLOSED, day=None, *, as_of=NOW):
+    return ProductMarketPhase('jm', kind, day, None, as_of + timedelta(days=10))
 
 
 @pytest.mark.parametrize('service', ['market-feed', 'live'])
@@ -30,7 +30,8 @@ def test_nontrading_warmup_proves_idle_without_day_mapping(monkeypatch, service)
     monkeypatch.setattr(composition, 'build_market_data_service', lambda _: SimpleNamespace(
         dominant_segment_for_day=lambda *_: pytest.fail('nontrading day has no mapping')))
     monkeypatch.setattr(operational_universe, 'load_operational_products', lambda: ('jm',))
-    monkeypatch.setattr(market_phase, 'MarketPhaseResolver', lambda _: SimpleNamespace(resolve=lambda *_: phase()))
+    monkeypatch.setattr(market_phase, 'MarketPhaseResolver', lambda _: SimpleNamespace(
+        resolve=lambda _, now: phase(as_of=now)))
     monkeypatch.setattr(deployment, 'observation_progress', lambda _: {})
     result = deployment.warmup_service(service)
     assert result['proven_closed_idle'] is True
@@ -57,6 +58,9 @@ def feed_for(state):
     feed._coverage_session_source = lambda *_: pytest.fail('must not infer a nontrading day')
     feed._pending = {}
     feed._provider = None
+    feed._input_failure = None
+    feed._metadata_preparation_error = None
+    feed._cleanup_isolation = None
     feed._known_sessions = {}
     feed._contracts = {}
     feed._channels = set()
@@ -198,7 +202,8 @@ def test_known_day_warmup_still_requires_exact_dominant_mapping(monkeypatch):
     monkeypatch.setattr(session_module, 'SessionLocal', lambda: nullcontext(object()))
     monkeypatch.setattr(composition, 'build_market_data_service', lambda _: SimpleNamespace(dominant_segment_for_day=lambda *args: calls.append(args)))
     monkeypatch.setattr(operational_universe, 'load_operational_products', lambda: ('jm',))
-    monkeypatch.setattr(market_phase, 'MarketPhaseResolver', lambda _: SimpleNamespace(resolve=lambda *_: phase(day=DAY)))
+    monkeypatch.setattr(market_phase, 'MarketPhaseResolver', lambda _: SimpleNamespace(
+        resolve=lambda _, now: phase(day=DAY, as_of=now)))
     monkeypatch.setattr(deployment, 'observation_progress', lambda _: {})
     assert deployment.warmup_service('live')['proven_closed_idle'] is True
     assert calls == [('jm', DAY)]
