@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from lms405_portfolio_replay import ARCHIVE, input_sources
-from lms405_recovery_confirmation_audit import examine
+from lms405_recovery_confirmation_audit import examine, strict_runs
 from lms405_protection_timeframes import VARIANTS, geometry_events, read_window, summarize
 from lms405_replay import display
 from lms405_right_side_study import ONE, US, at
@@ -86,11 +86,15 @@ COTTON_CASES = {
         ("protection_reference", "SHORT", 16755, 16855),
     )),
 }
+SILVER_SOURCE = "S5325950005019835"
+SILVER_BANDS = ((Decimal(13910), Decimal(14005)), (Decimal(14041), Decimal(14069)))
+SILVER_M = Decimal(14440)
 BATCHES = {
     "published-updates": CASES,
     "management": MANAGEMENT_CASES,
     "protection-and-m": PROTECTION_AND_M_CASES,
     "cotton-intraday": COTTON_CASES,
+    "silver-ordered-bands": (SILVER_SOURCE,),
 }
 
 
@@ -154,9 +158,98 @@ def cotton_intraday(session, market):
                 executable=False, fills=None, pnl=None)
 
 
+def ordered_stand(minutes, edges, side, *, fresh_first, m_level=None):
+    """Fixed candidate: two adjacent closes per edge and distinct release bars."""
+    first_runs, second_runs = (strict_runs(minutes, edge, side) for edge in edges)
+    previous = first_at = second_at = None
+    milestones = dict(first_band=None, second_band=None, m_boundary=None)
+    for bar in minutes:
+        if bar.start != previous:
+            first_at = second_at = None
+        previous = bar.end
+        visible_at = bar.end + US
+        first = first_runs.get(bar.end)
+        if (first is None or first["close_count"] < 2
+                or (fresh_first and first["fresh_crossing_known_at"] is None)):
+            first_at = second_at = None
+            continue
+        if first_at is None:
+            first_at = visible_at
+            milestones["first_band"] = milestones["first_band"] or dict(known_at=first_at)
+            continue
+        second = second_runs.get(bar.end)
+        if second is None or second["close_count"] < 2:
+            second_at = None
+        elif second_at is None:
+            second_at = visible_at
+            milestones["second_band"] = milestones["second_band"] or dict(known_at=second_at, first_band_known_at=first_at)
+        elif m_level is not None and bar.close > m_level and milestones["m_boundary"] is None:
+            milestones["m_boundary"] = dict(known_at=visible_at, first_band_known_at=first_at, second_band_known_at=second_at)
+    return milestones
+
+
+def silver_ordered_bands(session, market):
+    from lms405_jm_oct_recovery_clock import window_signals
+
+    source = load_source(input_sources(), SILVER_SOURCE)
+    published = datetime.fromisoformat(source["published_at"])
+    if published != at("2026-07-29T09:34"):
+        raise ValueError("SILVER_PUBLICATION_TIME_UNVERIFIED")
+    windows = {}
+    for day, start, scope in (
+        ("2026-07-29", published + ONE, "CURRENT_TEXT_POST_PUBLICATION"),
+        ("2026-07-30", at("2026-07-29T21:00"), "PLAN_CARRY_SENSITIVITY"),
+    ):
+        series = read_window(session, market, "AG2610", date.fromisoformat(day))
+        close = at(f"{day}T15:00")
+        cutoff = close + 2 * US
+        minutes = completed(series[1], start, cutoff)
+        if not minutes or minutes[-1].end != close or not published < start:
+            raise ValueError("SILVER_WINDOW_UNVERIFIED")
+        signals, geometry_checks = window_signals(series, start, cutoff, "LONG")
+        counts = 0
+        routes = {}
+        for side, edges, m_level in (
+            ("LONG", tuple(band[1] for band in SILVER_BANDS), SILVER_M),
+            ("SHORT", tuple(band[0] for band in reversed(SILVER_BANDS)), None),
+        ):
+            candidates = {}
+            for label, fresh_first in (("allow_starts_beyond", False), ("require_fresh_first_cross", True)):
+                options = dict(fresh_first=fresh_first, m_level=m_level)
+                full = ordered_stand(minutes, edges, side, **options)
+                checks = {event["known_at"] + step for event in full.values() if event is not None for step in (0 * US, US)}
+                for cut in checks:
+                    prefix = [bar for bar in minutes if bar.end + US < cut]
+                    expected = {key: event if event is not None and event["known_at"] < cut else None
+                                for key, event in full.items()}
+                    if ordered_stand(prefix, edges, side, **options) != expected:
+                        raise ValueError("SILVER_PRICE_PREFIX_DIVERGED")
+                counts += len(checks)
+                candidates[label] = full
+            routes[side] = dict(ordered_edges=edges, candidates=candidates)
+        windows[day] = dict(
+            scope=scope, start=start, cutoff_exclusive=cutoff, open=minutes[0].open,
+            low=min(bar.low for bar in minutes), high=max(bar.high for bar in minutes),
+            market={f"{p}m": dict(count=len(rows), sha256=digest(rows)) for p, rows in series.items()},
+            bands=[observations(minutes, band, "LONG") for band in SILVER_BANDS],
+            first_protection_geometry_by_band=[{
+                clock: next((row for row in rows if lower <= row["close"] <= upper), None)
+                for clock, rows in signals.items()
+            } for lower, upper in SILVER_BANDS],
+            routes=routes, price_prefix_checks=counts, geometry_prefix_checks=geometry_checks,
+        )
+    return dict(version="lms405-silver-ordered-bands-v1", contract="AG2610", source=source,
+                author_version_scope="4.0.5_PUBLIC_PLAN", windows=windows, author_signal_at=None,
+                author_action_at=None, author_held_position=None, historical_plan_revision_verified=False,
+                reversal_pressure_confirmation=None, admitted_author_action_samples=0, author_match_rate=None,
+                executable=False, fills=None, pnl=None)
+
+
 def study(session, market, *, batch="published-updates"):
     if batch == "cotton-intraday":
         return cotton_intraday(session, market)
+    if batch == "silver-ordered-bands":
+        return silver_ordered_bands(session, market)
     index = input_sources()
     use_management = batch == "management"
     compare_protection = batch == "protection-and-m"
