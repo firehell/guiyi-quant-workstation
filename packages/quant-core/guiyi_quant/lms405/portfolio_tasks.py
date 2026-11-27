@@ -10,6 +10,7 @@ from .handoff import HandoffConfirmation
 from .public_conditions import Condition
 
 VERSION = "lms-near405-portfolio-tasks-v1"
+ROTATION_VERSION = "lms405-counter-m-rotation-v1"
 REQUIRED = {
     "ENTER_TREND": ("DIRECTIONAL_SIGNAL",),
     "REENTER_TREND": ("FRESH_REENTRY_SIGNAL", "PLAN_REENTRY_ALLOWED"),
@@ -20,6 +21,7 @@ REQUIRED = {
     "ENTER_COUNTER_M": ("COUNTER_M_ENTRY_PERMITTED", "COUNTER_M_ENTRY_SIGNAL"),
     "EXIT_COUNTER_M": ("COUNTER_M_EXIT_PERMITTED", "COUNTER_M_EXIT_SIGNAL"),
     "CLEAR_TREND": ("TREND_EXIT_SIGNAL",),
+    "ROTATE_TO_COUNTER_M": ("TREND_EXIT_SIGNAL", "COUNTER_M_ENTRY_PERMITTED", "COUNTER_M_ENTRY_SIGNAL"),
 }
 
 
@@ -69,7 +71,8 @@ class Intent:
 
     @property
     def scope(self) -> str:
-        return fingerprint((VERSION, asdict(self)))
+        version = ROTATION_VERSION if self.operation == "ROTATE_TO_COUNTER_M" else VERSION
+        return fingerprint((version, asdict(self)))
 
     def confirmation_scope(self, facts: tuple[Condition, ...]) -> str:
         return fingerprint((self.scope, [asdict(fact) for fact in sorted(facts, key=lambda fact: fact.name)]))
@@ -101,6 +104,10 @@ def _project(request: Intent, known_at: datetime) -> Book | None:
         case "CLEAR_TREND":
             if qty == before.original + before.protection:
                 return replace(before, original=ZERO, protection=ZERO, known_at=known_at)
+        case "ROTATE_TO_COUNTER_M":
+            # Quantity is the replaced portion. The surviving protection becomes directional M exposure.
+            if not before.counter_m and qty <= before.protection == before.original:
+                return replace(before, original=ZERO, protection=ZERO, counter_m=before.protection, known_at=known_at)
     return None
 
 

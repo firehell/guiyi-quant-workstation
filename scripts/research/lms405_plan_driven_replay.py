@@ -8,8 +8,14 @@ import argparse
 
 from guiyi_quant.lms405 import physical_contract, timestamp
 from guiyi_quant.lms405.handoff import HandoffConfirmation
-from guiyi_quant.lms405.portfolio_tasks import REQUIRED, Book, Intent, assess
+from guiyi_quant.lms405.portfolio_tasks import REQUIRED, ROTATION_VERSION, Book, Intent, assess
 from guiyi_quant.lms405.public_conditions import Condition
+from lms405_jm_first_lock_handoff import DAYS as JM_TRADING_DAYS
+from lms405_jm_first_lock_handoff import FOLLOWUP as JM_FOLLOWUP
+from lms405_jm_first_lock_handoff import study as study_jm_handoff
+from lms405_jm_m_leg_handoff import FIRST as JM_FIRST
+from lms405_jm_m_leg_handoff import NEW_PLAN as JM_NEW_PLAN
+from lms405_jm_m_leg_handoff import OLD_PLAN as JM_OLD_PLAN
 from lms405_portfolio_replay import input_sources
 from lms405_pre_touch_protection import analyze
 from lms405_protection_lot_timing import verified_json
@@ -144,6 +150,11 @@ def report_rows(rows):
 
 
 SH_CANDIDATE_KEYS = ("shape_end", "confirmed_at", "available_at", "boundary", "close", "ibar", "pinbar")
+JM_CASE = (
+    Path("output/lms405-jm-partial-carry-20261126/verified-a.json"),
+    "eddece8ff04e266bd3722a5b1153bb55712266414b7837c1bbaaa92afc03945e",
+)
+JM_PATH = "m_far_strict_close/m_near_5m_to_1m_same_run/day_close/divider_near_1m_to_1m_same_run"
 
 
 def sh_market_candidates(session, market, contract, lifecycle):
@@ -263,15 +274,109 @@ def sh_oct27_case(*, market_input=None):
     )
 
 
+def jm_projection(seed, revisions, path, retained):
+    gates, starts = path["gates"], path["shape_starts"]
+    before, evaluations = seed, []
+    size = seed.protection
+    rotation = (
+        (("open_m", "ROTATE_TO_COUNTER_M", size - retained),) if retained else
+        (("clear_old", "CLEAR_TREND", seed.original + size), ("open_m", "ENTER_COUNTER_M", size))
+    )
+    for key, operation, quantity in (*rotation, ("exit_m", "EXIT_COUNTER_M", size),
+                                     ("new_short", "REENTER_TREND", seed.original)):
+        revision = revisions[1] if key == "new_short" else revisions[0]
+        confirmed = datetime.fromisoformat(str(gates[key]))
+        setup = datetime.fromisoformat(str(starts.get(key, gates[key])))
+        available, at = confirmed + US, confirmed + 6 * US
+        if not before.known_at < setup <= confirmed:
+            raise ValueError("PLAN_REPLAY_JM_SETUP_NOT_FRESH")
+        request = Intent(before, operation, quantity, revision.id, at + ONE)
+        facts = tuple(Condition(name, request.scope, seed.contract, True, setup, available,
+                                f"TEST_FIXTURE_JM:{key}", "EVENT_TIME") for name in REQUIRED[operation])
+        approval = HandoffConfirmation(request.confirmation_scope(facts), f"TEST_FIXTURE:{request.scope}",
+                                       True, available + US, available + 2 * US, "TEST_FIXTURE")
+        evaluations.append(Evaluation(at, request, facts, approval))
+        _, before = replay(seed, evaluations, revisions, cutoff=at + US, allow_test_fixture=True)
+        if before.known_at != at:
+            raise ValueError("PLAN_REPLAY_JM_FIXTURE_STEP_REJECTED")
+    cutoff = evaluations[-1].at + US
+    fixture, final = replay(seed, evaluations, revisions, cutoff=cutoff, allow_test_fixture=True)
+    public, public_end = replay(seed, [Evaluation(row.at, row.request) for row in evaluations], revisions, cutoff=cutoff)
+    if final.original != seed.original or final.attempt != seed.attempt + 1 or public_end != seed:
+        raise ValueError("PLAN_REPLAY_JM_FRESH_SHORT_DIVERGED")
+    return dict(
+        retained_old_protection_as_m=retained, closed_old_short=seed.original,
+        replaced_old_long=size - retained, opened_new_m_long=size - retained, fresh_short=final.original,
+        before_night_entry=asdict(fixture[-1]["before"]), new_short_attempt=final.attempt,
+        research_traded_lot_count=seed.original + 2 * (size - retained) + size + final.original,
+        public=report_rows(public), test_fixture=[
+            row | {"request_quantity": event.request.quantity}
+            for row, event in zip(report_rows(fixture), evaluations, strict=True)
+        ], within_rotation_order_known=False,
+    )
+
+
+def jm_oct23_case(*, market_input=None):
+    frozen = verified_json(*JM_CASE)
+    report = frozen
+    if market_input is not None:
+        report = study_jm_handoff(*market_input, with_partial_carry=True)
+        if encoded(report) != encoded(frozen):
+            raise ValueError("PLAN_REPLAY_JM_MDS_RESULT_CHANGED")
+    source_ids = (JM_FIRST, JM_OLD_PLAN, JM_NEW_PLAN)
+    index = input_sources()
+    sources = {key: load_source(index, key) for key in source_ids}
+    if any(source != report["sources"][key] for key, source in sources.items()):
+        raise ValueError("PLAN_REPLAY_JM_SOURCES_CHANGED")
+    full = report["action_clock_comparison"]["paths"][JM_PATH]
+    partial = report["partial_carry_comparison"]["paths"][JM_PATH]
+    joint = partial["first_mixed_post_and_close"]
+    full_checks = full["checks"]
+    compatible_day_triplets = {key: [0, *values] for key, values in joint.items() if (
+        full_checks["first_to_mixed_post"].get(" / ".join(key.split(" / ")[:2]))
+        and full_checks["first_to_close"].get(" / ".join(key.split(" / ")[::2]))
+    )}
+    retained = {n for values in compatible_day_triplets.values() for n in values}
+    if not compatible_day_triplets or not partial["compatible_night_quote_labels"]:
+        raise ValueError("PLAN_REPLAY_JM_COMPARABLE_PRICE_PATH_MISSING")
+    visible = verified_json(*JM_FOLLOWUP)["visible"]
+    legs = visible[JM_FIRST]["legs"]
+    seed_at = datetime.fromisoformat(sources[JM_FIRST]["published_at"]) + ONE
+    seed = Book("JM2701", "JM:OCT22-23:CONDITIONAL", "SHORT", seed_at,
+                Decimal(legs["short"]["quantity"]), Decimal(legs["long"]["quantity"]), attempt=1)
+    revisions = []
+    for key, operations in (
+        (JM_OLD_PLAN, {"CLEAR_TREND", "ENTER_COUNTER_M", "ROTATE_TO_COUNTER_M", "EXIT_COUNTER_M"}),
+        (JM_NEW_PLAN, {"REENTER_TREND"}),
+    ):
+        source = sources[key]
+        published = datetime.fromisoformat(source["published_at"])
+        revisions.append(PlanRevision(seed.contract, key, published, published + ONE,
+                                      source["source_url"], frozenset(operations)))
+    return dict(
+        version=VERSION, contract=seed.contract, seed=asdict(seed), sources=sources, compared_path=JM_PATH,
+        rotation_version=ROTATION_VERSION,
+        trading_days=JM_TRADING_DAYS, frozen_case_sha256=JM_CASE[1],
+        local_market_recomputed=market_input is not None,
+        joint_day_price_constraints=compatible_day_triplets,
+        compatible_night_quote_labels=partial["compatible_night_quote_labels"],
+        historical_plan_revision_verified=False, actual_release_or_entry_at=None,
+        cases={str(n): jm_projection(seed, revisions, full, Decimal(n)) for n in sorted(retained)},
+        author_action_samples=0, author_match_rate=None, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--env-file", type=Path, help="Recompute candidates using local MDS and this environment file.")
+    parser.add_argument("--case", choices=("sh-oct27", "jm-oct23"), default="sh-oct27")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PLAN_REPLAY_OUTPUT_EXISTS")
     try:
-        result = sh_oct27_case() if args.env_file is None else local_market_case(args.env_file)
+        case = sh_oct27_case if args.case == "sh-oct27" else jm_oct23_case
+        result = case() if args.env_file is None else local_market_case(args.env_file, case=case)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except (KeyError, ValueError, OSError) as exc:
@@ -280,7 +385,7 @@ def main():
                         else "PLAN_REPLAY_INPUT_UNVERIFIED") + "\n")
 
 
-def local_market_case(env_file):
+def local_market_case(env_file, *, case=sh_oct27_case):
     from dotenv import load_dotenv
 
     if not env_file.is_file():
@@ -294,7 +399,7 @@ def local_market_case(env_file):
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            return sh_oct27_case(market_input=(session, build_market_data_service(session)))
+            return case(market_input=(session, build_market_data_service(session)))
     except MarketDataError as exc:
         raise ValueError("PLAN_REPLAY_MDS_" + exc.code) from None
     except OperationalError:

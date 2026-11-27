@@ -87,6 +87,25 @@ def test_whole_leg_early_is_not_a_topup():
     assert result["status"] == "ACTION_STATE_CONFLICT"
 
 
+def test_rotate_exits_the_original_and_preserves_only_the_directional_m_exposure():
+    original = Book("JM2701", "one-cycle", "SHORT", T0, Decimal(20), Decimal(20), attempt=1)
+    request, facts, approval = prepare(original, "ROTATE_TO_COUNTER_M", 7)
+    unapproved = assess(original, request, facts, as_of=approval.known_at)
+    assert unapproved["after"] is None
+    rotated = assess(original, request, facts, approval=approval, as_of=approval.known_at + STEP,
+                     allow_test_fixture=True)["after"]
+    assert (rotated.original, rotated.protection, rotated.counter_m) == (0, 0, 20)
+    assert (rotated.visible.long, rotated.visible.short) == (20, 0)
+    for incompatible, quantity in ((original, 21), (replace(original, counter_m=Decimal(1)), 7),
+                                   (replace(original, protection=Decimal(13)), 7)):
+        intent, required, confirm = prepare(incompatible, "ROTATE_TO_COUNTER_M", quantity)
+        result = assess(incompatible, intent, required, approval=confirm, as_of=confirm.known_at + STEP,
+                        allow_test_fixture=True)
+        assert result["status"] == "ACTION_STATE_CONFLICT" and result["after"] is None
+    fresh = advance(advance(rotated, "EXIT_COUNTER_M", 20), "REENTER_TREND", 20)
+    assert (fresh.visible.long, fresh.visible.short, fresh.attempt) == (0, 20, 2)
+
+
 def test_empty_market_prefix_produces_no_directional_or_blocked_action():
     assert gated_replay([], T0) == ([], [])
 

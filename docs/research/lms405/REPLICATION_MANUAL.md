@@ -28,6 +28,25 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 两次行情模式复算逐字节一致，报告 `output/lms405-plan-driven-sh-20261127/market-verified.json` 的SHA256为 `e7d263ac0690ba2fac929064449e3199685f6d4647eecf058ce65a6d7a916a6e`。LMS定向测试707通过、1跳过，独立复核通过。
 
+### 焦煤跨交易日的部分换腿与新开空仓
+
+用JM2701的10月23日、26日交易日复算原首锁、两张日盘多仓及新交易日今空。选择一组同时可比较全换与部分换的候选时钟，保留140个共同日盘报价三元组。条件起点按22日夜图发布时间后的多20、空20入账。全部结果依赖同账户、完整持仓展示和行情与报价同期等假设，首次图中报价候选只用于条件核验。
+
+| 测试分支 | 22日自然日晚 | 23日自然日及次交易日夜盘 |
+|---|---|---|
+| 全换 | 22:40清旧空及旧保护多，22:59新开M多20 | 15:00收盘后清M多，21:13确认后才从空仓尝试新空20 |
+| 部分换 | 22:59条件投影关闭旧空20，保留旧多1–13作为M方向敞口，同时退出并换入其余7–19手多 | 同样先退出全部M多，再用当晚新计划、独立触发和许可开新空20 |
+
+部分换的复合操作各自要求原仓退出信号、独立M入场条件及当次许可。投影只允许运用等量锁仓且无既有M的前像，令原空和保护归零，保留及换入多合计为独立M。内部开平先后和各批真实成交仍未知。21:13候选下仅22:05为相容夜图报价标签。新空对应第二次研究尝试，上一轮的仓位与许可均不能直接延续。公开输入下所有分支保持原投影。用于成本敏感性比较的换手合计为全换100手次、部分换74–98手次，均从假定初始双腿起算，按每次开或平单腿计数。 [焦煤原始对照](evidence/COUNTER_M_STUDY.md#部分留存旧保护多并检验日盘总仓)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py \
+  --case jm-oct23 --env-file .env --output /tmp/lms405-jm-plan-driven-new.json
+```
+
+两次MDS结果逐字节一致，与离线结果除行情来源标记外逐字段相同。报告 `output/lms405-plan-driven-jm-20261127/verified.json` 的SHA256为 `1823b6b0b881fa4bbd09813cbc5b491f92beaea125d0636c1530026ec2a89a9f`。LMS定向测试708通过、1跳过，独立复核通过。作者动作可评分样本仍为0。
+
 ## 菜油、纯碱与PTA的计划准入
 
 [三案准入对照](evidence/PORTFOLIO_REPLAY.md#菜油纯碱与pta的计划准入对照)复算仓位用途、跨交易日可见腿及公开价带暂停三类缺口。首个候选留出窗口预留为11月16日至20日交易日，待规则固定后再读取验证材料。焦煤、烧碱、玻璃、铁矿、PVC与橡胶的已见对照仍归开发证据。
